@@ -6,7 +6,7 @@
  * question answered in place. Deterministic and free. When the answer carries a storyline,
  * Hamilton's written memo over it (POST /api/hamilton/ask/memo) follows; that call is paid.
  */
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import type { AskObjective, AskResponse, ClarifyingQuestion, Scenario } from "@/lib/hamilton/workspace/types";
 import { ANSWER_EVIDENCE_LABELS } from "@/components/hamilton/memo/exhibit-view";
@@ -14,6 +14,9 @@ import { AnswerMemo } from "@/components/hamilton/memo/answer-memo";
 import { SegmentTable } from "@/components/hamilton/memo/segment-table";
 import { StorylineView, type MemoState } from "@/components/hamilton/storyline/StorylineView";
 import type { StorylineMemoResult } from "@/lib/hamilton/workspace/storyline-types";
+import { AnswerFollowThrough } from "./AnswerFollowThrough";
+import { AddToReportButton } from "@/components/hamilton/basket/AddToReportButton";
+import { basketItemId } from "@/lib/hamilton/report-basket";
 import { Callout, LinkButton, SERIF, fmtMoney, fmtSignedMoney } from "@/components/hamilton/memo/memo";
 import { getDisplayName, getSpotlightCategories } from "@/lib/fee-taxonomy";
 import { FactList, SchedulePositionsChart } from "./schedule-answer";
@@ -22,6 +25,7 @@ import { isLocalMarketQuestion } from "@/lib/hamilton/local-market-question";
 import { matchFeeCategory } from "@/lib/hamilton/workspace/ask";
 import type { LocalMarketAnswer } from "@/lib/hamilton/local-market-answer";
 import { hamiltonIdentityLines, readHamiltonIdentitySnapshot } from "@/lib/hamilton/identity-display";
+import { readStampedFigures } from "@/lib/dataset-note";
 
 /** The engine answered on its own (an answer, every fee's position, or sourced findings), so no written answer is needed. */
 export function engineAnswered(res: AskResponse): boolean {
@@ -58,11 +62,12 @@ async function postMarket(institutionId: string | null): Promise<LocalMarketAnsw
   }
 }
 
-async function postAsk(body: AskBody): Promise<AskResponse> {
+async function postAsk(body: AskBody, signal?: AbortSignal): Promise<AskResponse> {
   const res = await fetch("/api/hamilton/ask", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ...body, institutionId: body.institutionId ?? undefined }),
+    signal,
   });
   const json = (await res.json().catch(() => ({}))) as AskResponse & { error?: string };
   if (!res.ok) throw new Error(json.error ?? "Hamilton could not answer that just now.");
@@ -180,26 +185,29 @@ function FeeCharts({ busy, notFound, onPick }: { busy: boolean; notFound: string
   );
 }
 
-function QuestionForm({
+/**
+ * Hamilton's one question, shown above the page's one composer (#979, H04-T04). A choice (the
+ * objective) is answered with a tap here; a typed answer goes in the composer, which switches to
+ * answering this question. There is no second text field.
+ */
+function ClarificationCard({
   question,
   onAnswer,
   busy,
   notFound,
+  onOffer,
 }: {
   question: ClarifyingQuestion;
   onAnswer: (value: string) => void;
   busy: boolean;
   /** The last answer Hamilton could not use, so the reader sees why it asked again. */
   notFound?: string | null;
+  /** Set while the composer is not answering this question: a tap hands it to the composer. */
+  onOffer?: () => void;
 }) {
-  const [value, setValue] = useState("");
-  const submit = (e: FormEvent) => {
-    e.preventDefault();
-    if (value.trim()) onAnswer(value.trim());
-  };
   const objective = question.fieldKey === "decision.objective";
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-terra/40 bg-white p-5 shadow-sm">
+    <div role="group" aria-label="Hamilton has one question" className="flex flex-col gap-3 rounded-lg border border-terra/40 bg-white p-5 shadow-sm">
       <p className="text-xs font-medium uppercase tracking-[0.1em] text-terra-text">Hamilton has one question</p>
       <p className="text-lg leading-snug text-warm-900" style={SERIF}>
         {question.prompt}
@@ -222,37 +230,41 @@ function QuestionForm({
               type="button"
               disabled={busy}
               onClick={() => onAnswer(o.key)}
-              className="rounded-md border border-warm-300 bg-white px-3.5 py-2 text-sm text-warm-900 hover:border-terra hover:text-terra-text disabled:opacity-50"
+              className="min-h-11 rounded-md border border-warm-300 bg-white px-3.5 py-2 text-sm text-warm-900 hover:border-terra hover:text-terra-text disabled:opacity-50 sm:min-h-9"
             >
               {o.label}
             </button>
           ))}
         </div>
+      ) : onOffer ? (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={onOffer}
+          className="min-h-11 self-start rounded-md border border-warm-300 bg-white px-3.5 py-2 text-sm text-warm-900 hover:border-terra hover:text-terra-text disabled:opacity-50 sm:min-h-9"
+        >
+          Answer this question
+        </button>
       ) : (
-        <form onSubmit={submit} className="flex flex-wrap items-center gap-3">
-          <div className="relative w-56">
-            <input
-              aria-label={question.prompt}
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              inputMode={question.inputKind === "number" ? "numeric" : question.inputKind === "percent" ? "decimal" : "text"}
-              autoComplete="off"
-              className={`w-full rounded-md border border-warm-300 bg-white px-3 py-2 text-sm text-warm-900 focus:border-terra focus:outline-none focus:ring-1 focus:ring-terra ${question.inputKind === "percent" ? "pr-8" : ""}`}
-            />
-            {question.inputKind === "percent" ? <span className="pointer-events-none absolute right-3 top-2 text-sm text-warm-600">%</span> : null}
-          </div>
-          <button
-            type="submit"
-            disabled={busy || !value.trim()}
-            className="rounded-md bg-terra px-3.5 py-2 text-sm font-medium text-white hover:bg-terra-dark disabled:opacity-50"
-          >
-            {busy ? "Saving..." : "Answer"}
-          </button>
-        </form>
+        <p className="text-sm text-warm-700">Type the answer in the question box below, or ask something else instead.</p>
       )}
       <p className="text-xs text-warm-600">Hamilton keeps this answer in your private workspace under the researched institution.</p>
     </div>
   );
+}
+
+/** A clarification the page's composer can answer: typed, not a choice or a file. */
+export function typedClarification(q: ClarifyingQuestion | null): ClarifyingQuestion | null {
+  if (!q || q.fieldKey === "ask.fee_category" || q.fieldKey === "decision.objective" || q.inputKind === "file") return null;
+  return q;
+}
+
+/** What one engine answer leaves for the conversation: the decision to continue and the saved row. */
+export interface StructuredAnswerInfo {
+  route: "structured" | "peer_list";
+  decisionId: string | null;
+  feeCategory: string | null;
+  savedAnalysisId: string | null;
 }
 
 function ScenarioSummary({ s, modelHref }: { s: Scenario; modelHref: string | null }) {
@@ -314,6 +326,12 @@ export function StructuredAsk(props: Parameters<typeof StructuredAskConversation
 function StructuredAskConversation({
   question,
   nonce = 0,
+  decisionId: carriedDecisionId = null,
+  onAnswered,
+  onClarification,
+  clarificationReply = null,
+  showClarification = true,
+  onClarificationReplyFailed,
   institutionId,
   modelHrefFor,
   researchHrefFor,
@@ -321,11 +339,25 @@ function StructuredAskConversation({
   onStoryline,
   onBusyChange,
   onLead,
+  onEngineRows,
+  proseShown = false,
 }: {
   /** The question just asked; a new value asks again. */
   question: string | null;
   /** Bumped on every ask, so the same question asked again (or Try again) runs again. */
   nonce?: number;
+  /** The conversation's engine decision this question continues (same subject, same or no fee). */
+  decisionId?: string | null;
+  /** Reports each engine answer's decision and saved row, for the conversation state. */
+  onAnswered?: (info: StructuredAnswerInfo) => void;
+  /** Reports Hamilton's pending typed question (or null once there is none) for the page's composer. */
+  onClarification?: (question: ClarifyingQuestion | null, invalidValue: string | null) => void;
+  /** The composer's reply to the pending question; a new seq sends it once. */
+  clarificationReply?: { value: string; seq: number } | null;
+  /** False once the reader cancels the question; the card then hides. */
+  showClarification?: boolean;
+  /** The reply could not be sent, so the page can put it back in the composer. */
+  onClarificationReplyFailed?: (value: string) => void;
   institutionId: string | null;
   modelHrefFor: (feeCategory: string, tested: number) => string;
   /** My fees for a fee, where the full market picture lives. */
@@ -338,15 +370,25 @@ function StructuredAskConversation({
   onBusyChange?: (busy: boolean) => void;
   /** The answer's one-line lead once known, for the conversation above the next question. */
   onLead?: (lead: string) => void;
+  /**
+   * Called before a question is handed to a written answer, with whether this answer still shows
+   * rows of its own (a tested price, a market slice). Rows lead; the written answer follows them.
+   */
+  onEngineRows?: (hasRows: boolean) => void;
+  /** True while the page shows a written answer with its own lead, so this one adds no second intro. */
+  proseShown?: boolean;
 }) {
   const [response, setResponse] = useState<AskResponse | null>(null);
   // A competitors-and-locations question is answered with the market itself (no fee to chart).
   const [market, setMarket] = useState<LocalMarketAnswer | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const decisionId = useRef<string | undefined>(undefined);
+  const decisionId = useRef<string | undefined>(carriedDecisionId ?? undefined);
+  // The request in flight; aborted when this answer is left (new conversation, subject or question).
+  const inFlight = useRef<AbortController | null>(null);
   const lastQuestion = useRef<string | null>(null);
   const lastNonce = useRef<number | null>(null);
+  const askRun = useRef(0);
   const [memo, setMemo] = useState<MemoState | undefined>(undefined);
   // An answer Hamilton could not use: it asks again, and the card says why.
   const [notFound, setNotFound] = useState<string | null>(null);
@@ -354,15 +396,22 @@ function StructuredAskConversation({
   const memoFor = useRef<string | null>(null);
   const active = useRef(true);
   const requestGeneration = useRef(0);
+  const onAnsweredRef = useRef(onAnswered);
+  onAnsweredRef.current = onAnswered;
   // Set the moment an answer to Hamilton's question is sent, before React re-renders `busy`, so a
   // second Enter, click or fee pick in the same instant cannot send (and save) the answer twice.
   const answering = useRef(false);
   useEffect(() => {
     active.current = true;
+    // A remount (React Strict Mode runs effects twice in development) aborts the first request,
+    // so the question is asked again rather than left waiting with the engine marked busy.
+    lastQuestion.current = null;
+    lastNonce.current = null;
     return () => {
       active.current = false;
       requestGeneration.current += 1;
       memoFor.current = null;
+      inFlight.current?.abort();
     };
   }, []);
 
@@ -371,10 +420,18 @@ function StructuredAskConversation({
       const generation = ++requestGeneration.current;
       setBusy(true);
       setError(null);
+      const controller = new AbortController();
+      inFlight.current = controller;
       try {
-        const res = await postAsk({ ...body, institutionId, decisionId: decisionId.current });
+        const res = await postAsk({ ...body, institutionId, decisionId: decisionId.current }, controller.signal);
         if (!active.current || generation !== requestGeneration.current) return null;
         if (res.decisionId) decisionId.current = res.decisionId;
+        onAnsweredRef.current?.({
+          route: "structured",
+          decisionId: res.decisionId ?? null,
+          feeCategory: res.answer?.feeCategory ?? res.scenario?.feeCategory ?? null,
+          savedAnalysisId: res.savedAnalysisId ?? null,
+        });
         return res;
       } catch (e) {
         if (!active.current || generation !== requestGeneration.current) return null;
@@ -395,6 +452,12 @@ function StructuredAskConversation({
       if (res?.answer?.storyline) {
         onStoryline?.();
         onLead?.(res.answer.storyline.governingThought);
+        // A list is the answer itself; no memo is written over it (#2033).
+        if (res.answer.storyline.kind === "list") {
+          memoFor.current = null;
+          setMemo(undefined);
+          return;
+        }
         memoFor.current = asked;
         setMemo({ state: "writing" });
         void postMemo({ institutionId, question: asked, decisionId: decisionId.current, savedAnalysisId: res.savedAnalysisId }).then((m) => {
@@ -412,14 +475,28 @@ function StructuredAskConversation({
       }
       // The written answer takes over, so a failed engine call is not shown above it as an error.
       setError(null);
+      onEngineRows?.(Boolean(res?.scenario || res?.segment));
       onNoStoryline?.(asked);
     },
-    [institutionId, onNoStoryline, onStoryline, onLead],
+    [institutionId, onNoStoryline, onStoryline, onLead, onEngineRows],
   );
 
   useEffect(() => {
     onBusyChange?.(busy);
   }, [busy, onBusyChange]);
+
+  // Hamilton's typed question goes to the page's composer; a choice or none clears it there.
+  // A question Hamilton needs before it can answer takes the composer at once; one offered beside
+  // an answer (to refine it) waits until the reader chooses to answer it.
+  const blocking = typedClarification(response?.question ?? null);
+  const offered = blocking ?? typedClarification(response?.answer?.question ?? null);
+  const [offerTaken, setOfferTaken] = useState(false);
+  const pending = blocking ?? (offerTaken ? offered : null);
+  useEffect(() => {
+    onClarification?.(pending, pending ? notFound : null);
+    // The question object is rebuilt on every render; its key and prompt identify it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pending?.fieldKey, pending?.prompt, notFound, onClarification]);
 
   useEffect(() => {
     if (!question || (question === lastQuestion.current && nonce === lastNonce.current)) return;
@@ -431,11 +508,13 @@ function StructuredAskConversation({
     setMarket(null);
     setNotFound(null);
     const asked = question;
+    // Only the newest ask may show its answer or hand it to a written answer.
+    const token = ++askRun.current;
     void (async () => {
       if (isLocalMarketQuestion(asked) && !matchFeeCategory(asked)) {
         setBusy(true);
         const found = await postMarket(institutionId);
-        if (!active.current) return;
+        if (!active.current || token !== askRun.current) return;
         setBusy(false);
         if (lastQuestion.current !== asked) return;
         if (found) {
@@ -445,7 +524,7 @@ function StructuredAskConversation({
         }
       }
       const res = await run({ question: asked });
-      if (!active.current || lastQuestion.current !== asked) return;
+      if (!active.current || token !== askRun.current || lastQuestion.current !== asked) return;
       if (res) setResponse(res);
       follow(asked, res);
     })();
@@ -461,10 +540,24 @@ function StructuredAskConversation({
     }
   };
 
+  // A reply typed in the page's composer is sent once per seq, to the question still pending.
+  const lastReply = useRef<number | null>(null);
+  useEffect(() => {
+    if (!clarificationReply || clarificationReply.seq === lastReply.current) return;
+    lastReply.current = clarificationReply.seq;
+    if (offered) void answerQuestion(offered, clarificationReply.value);
+    // Only a new reply sends; the response it answers is read at that moment.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clarificationReply]);
+
   const sendAnswer = async (q: ClarifyingQuestion, value: string) => {
     setNotFound(null);
     const saved = await run({ answer: { fieldKey: q.fieldKey, value } });
-    if (!active.current || !saved) return;
+    if (!active.current) return;
+    if (!saved) {
+      onClarificationReplyFailed?.(value);
+      return;
+    }
     const again = saved.question ?? saved.answer?.question ?? null;
     if (again && again.fieldKey === q.fieldKey) setNotFound(value);
     // A fee answer that found a storyline gets Hamilton's memo like any other answer.
@@ -512,30 +605,29 @@ function StructuredAskConversation({
   const answerExhibit = response.answer?.exhibit ?? null;
   const exhibitOwn =
     answerExhibit && (answerExhibit.kind === "fee_position" || answerExhibit.kind === "competitor_range") ? answerExhibit : null;
+  // One lead sentence per answer, before anything else. The memo or storyline carries its own
+  // headline; a written answer on the page carries its own lead; a clarifying question shows as
+  // the question; an opinion shows once, in its callout.
+  const lead = response.shortAnswer.trim();
+  const showLead =
+    Boolean(lead) &&
+    !proseShown &&
+    !(q && lead === q.prompt.trim()) &&
+    !(response.kind === "opinion" && response.opinion) &&
+    (Boolean(response.positions?.length) || !response.answer);
   return (
     <div className="flex flex-col gap-5">
-      {response.identityContext ? (
-        <details className="text-sm text-warm-700">
-          <summary className="cursor-pointer text-xs text-warm-600">Institution and peer group behind this answer</summary>
-          {hamiltonIdentityLines(readHamiltonIdentitySnapshot(response.identityContext)).map(line => <p key={line}>{line}</p>)}
-        </details>
+      {showLead ? (
+        <p className="max-w-[68ch] text-xl leading-snug text-warm-900 sm:text-2xl [font-variant-numeric:tabular-nums]" style={SERIF}>
+          {response.shortAnswer}
+        </p>
       ) : null}
-      {response.positions && response.positions.length > 0 ? (
-        <>
-          {/* The takeaways lead; the table and the top fee's storyline follow. Without a storyline
-              or answer the same sentence already shows below, so it is not repeated. */}
-          {response.answer && response.shortAnswer.trim() ? (
-            <p className="max-w-[68ch] text-xl leading-snug text-warm-900 sm:text-2xl [font-variant-numeric:tabular-nums]" style={SERIF}>
-              {response.shortAnswer}
-            </p>
-          ) : null}
-          <SchedulePositionsChart rows={response.positions} hrefFor={researchHrefFor} />
-        </>
-      ) : null}
+      {response.positions && response.positions.length > 0 ? <SchedulePositionsChart rows={response.positions} hrefFor={researchHrefFor} /> : null}
       {response.answer && storyline ? (
         <StorylineView
           story={storyline}
           identityContext={response.identityContext}
+          stamps={readStampedFigures(response.answer.provenance?.stamps)}
           memo={memo}
           nextSteps={
             researchHrefFor ? (
@@ -552,6 +644,7 @@ function StructuredAskConversation({
       ) : response.answer ? (
         <AnswerMemo
           answer={{ ...response.answer, question: null }}
+          stamps={readStampedFigures(response.answer.provenance?.stamps)}
           nextSteps={
             researchHrefFor ? (
               <>
@@ -564,11 +657,7 @@ function StructuredAskConversation({
             ) : null
           }
         />
-      ) : q && response.shortAnswer.trim() === q.prompt.trim() ? null : (
-        <p className="text-xl leading-snug text-warm-900 sm:text-2xl" style={SERIF}>
-          {response.shortAnswer}
-        </p>
-      )}
+      ) : null}
       {!response.answer && !response.positions?.length && response.facts && response.facts.length > 0 ? <FactList facts={response.facts} /> : null}
       {segment && !storyline ? <SegmentTable data={segment} own={exhibitOwn?.own ?? null} ownLabel={exhibitOwn?.ownLabel ?? "Research subject"} /> : null}
       {response.kind === "opinion" && response.opinion ? (
@@ -581,13 +670,49 @@ function StructuredAskConversation({
         <FeeCharts busy={busy} notFound={notFound} onPick={(label) => void answerQuestion(q, label)} />
       ) : null}
       {q && q.fieldKey !== "ask.fee_category" && q.inputKind !== "file" ? (
-        <QuestionForm
+        <ClarificationCard
           key={q.fieldKey}
           question={q}
           busy={busy}
-          notFound={notFound}
+          notFound={onClarification ? null : notFound}
           onAnswer={(v) => void answerQuestion(q, v)}
+          onOffer={onClarification && offered && !(pending && showClarification) ? () => {
+            setOfferTaken(true);
+            onClarification(offered, notFound);
+          } : undefined}
         />
+      ) : null}
+      {/* One row to carry the answer on (#2045); a written answer on the page carries its own. */}
+      {response.answer && response.savedAnalysisId && !proseShown ? (
+        <AnswerFollowThrough
+          analysisId={response.savedAnalysisId}
+          institutionId={institutionId}
+          institutionName={response.identityContext?.researchInstitutionName ?? null}
+          feeCategory={response.answer.feeCategory}
+          inDecision={Boolean(response.decisionId)}
+          report={
+            <AddToReportButton
+              variant="link"
+              item={{
+                id: basketItemId("Ask", institutionId, response.shortAnswer),
+                source: "Ask",
+                title: response.shortAnswer,
+                detail: response.answer.headline,
+                feeCategory: response.answer.feeCategory,
+                institutionId,
+                savedAnalysisId: response.savedAnalysisId,
+                ...(response.identityContext ? { identityContext: response.identityContext } : {}),
+              }}
+            />
+          }
+        />
+      ) : null}
+      {/* Who the answer is about stays one click away, after the answer itself. */}
+      {response.identityContext ? (
+        <details className="text-sm text-warm-700">
+          <summary className="cursor-pointer text-xs text-warm-600">Institution and peer group behind this answer</summary>
+          {hamiltonIdentityLines(readHamiltonIdentitySnapshot(response.identityContext)).map(line => <p key={line}>{line}</p>)}
+        </details>
       ) : null}
       {error ? <p className="text-sm text-terra-text">{error}</p> : null}
     </div>

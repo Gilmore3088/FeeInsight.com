@@ -171,6 +171,39 @@ describe("saved evidence appendix for H06 T08 PDF parity", () => {
     expect(appendix.narrativeClaimsVerified).toBe(false);
   });
 
+  it("recalculates a peer median whose inputs spell the same frequency differently (#1975)", () => {
+    const peer = (id: number, value: number, frequency: string | null) => ({
+      ...originalFact,
+      id: `fee:published:${id}`,
+      value,
+      frequency,
+      scope: { ...originalFact.scope, institutionId: id },
+      source: { ...originalFact.source, recordId: id },
+    });
+    const peers = [peer(30001, 29, "per item"), peer(30002, 30, "Per_Item"), peer(30003, 31, " per-item ")];
+    const median: HamiltonDerivedFact = {
+      id: "derived:peer-median:overdraft",
+      kind: "derived",
+      scope: { ...originalFact.scope, institutionId: null },
+      value: 30,
+      unit: "usd",
+      currency: "USD",
+      status: "derived",
+      derivation: {
+        kind: "peer_median",
+        inputFactIds: peers.map((row) => row.id),
+        denominatorFactId: null,
+        formula: "median",
+        rounding: "stored",
+      },
+    };
+    const input = saved(originalFact, [median]);
+    input.factEvidence!.facts = peers;
+    expect(savedEvidenceAppendix(input).derivations[0].problems).not.toContain("input_frequency_mismatch");
+    input.factEvidence!.facts = [peers[0], peers[1], peer(30003, 31, "monthly")];
+    expect(savedEvidenceAppendix(input).derivations[0].problems).toContain("input_frequency_mismatch");
+  });
+
   it("marks duplicate evidence IDs and does not mutate stored source arrays", () => {
     const input = saved();
     input.factEvidence!.facts.push({ ...originalFact });

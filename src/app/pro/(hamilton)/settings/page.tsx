@@ -20,6 +20,13 @@ import {
 } from "@/lib/hamilton/peer-index";
 import { MIN_PEERS_FOR_POSITION } from "@/lib/hamilton/workspace/scenario";
 import {
+  hasPeerSetPrefill,
+  parsePeerSetPrefillParams,
+  peerSetPrefillSearch,
+  resolvePeerSetPrefill,
+  type PeerSetPrefillParams,
+} from "@/lib/hamilton/peer-set-prefill";
+import {
   getIntelligenceSnapshot,
 } from "./actions";
 import { FeatureToggles } from "./FeatureToggles";
@@ -61,14 +68,18 @@ const PLAN_LABEL: Record<string, string> = {
 export default async function SettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ instId?: string }>;
+  searchParams: Promise<{ instId?: string } & PeerSetPrefillParams>;
 }) {
   const params = await searchParams;
+  // A peer set handed over by a public page (#1981), each parameter checked and dropped if bad.
+  const prefillParams = parsePeerSetPrefillParams(params);
   const user = await getCurrentUser();
   if (!user) {
-    const returnPath = params.instId
-      ? `/pro/settings?instId=${encodeURIComponent(params.instId)}`
-      : "/pro/settings";
+    const returnSearch = new URLSearchParams();
+    if (typeof params.instId === "string" && params.instId) returnSearch.set("instId", params.instId);
+    for (const [key, value] of peerSetPrefillSearch(prefillParams)) returnSearch.set(key, value);
+    const query = returnSearch.toString();
+    const returnPath = `/pro/settings${query ? `?${query}` : ""}${hasPeerSetPrefill(prefillParams) ? "#peer-sets" : ""}`;
     redirect(`/login?from=${encodeURIComponent(returnPath)}`);
   }
 
@@ -82,23 +93,29 @@ export default async function SettingsPage({
   const isAdmin = user.role === "admin" || user.role === "analyst";
 
   // Parallel data fetching
-  const [snapshot, cappedConsultant, accountContext, pendingLink, [fetchedMembership, workspaceMembers, workspaceInvitations]] = await Promise.all([
+  const [snapshot, cappedConsultant, accountContext, pendingLink, fetchedMembership] = await Promise.all([
     getIntelligenceSnapshot(),
     isCappedConsultant(user).catch(() => false),
     loadHamiltonAccountContext(user),
     getPendingInstitutionLink(sql, user.id),
     selectedInstitution
-      ? Promise.all([
-          getActiveInstitutionMembership({ userId: user.id, institutionId: selectedInstitution.id }).catch(() => null),
-          getInstitutionWorkspaceMembers(selectedInstitution.id).catch(() => []),
-          getPendingInstitutionWorkspaceInvitations(selectedInstitution.id).catch(() => []),
-        ])
-      : Promise.resolve([null, [] as InstitutionWorkspaceMembership[], [] as InstitutionWorkspaceInvitation[]] as const),
+      ? getActiveInstitutionMembership({ userId: user.id, institutionId: selectedInstitution.id }).catch(() => null)
+      : Promise.resolve(null),
   ]);
   const selectedMembership = fetchedMembership?.userId === user.id &&
     fetchedMembership.institutionId === selectedInstitution?.id && fetchedMembership.status === "active"
       ? fetchedMembership
       : null;
+  // The research subject can be any institution (?instId=), so its team (names, emails, pending
+  // invites) is read only for an active member of that institution or platform staff (#1922).
+  const canSeeTeam = isAdmin || selectedMembership !== null;
+  const [workspaceMembers, workspaceInvitations]: [InstitutionWorkspaceMembership[], InstitutionWorkspaceInvitation[]] =
+    selectedInstitution && canSeeTeam
+      ? await Promise.all([
+          getInstitutionWorkspaceMembers(selectedInstitution.id).catch(() => []),
+          getPendingInstitutionWorkspaceInvitations(selectedInstitution.id).catch(() => []),
+        ])
+      : [[], []];
   const peerSetWorkspace = selectedMembership
     ? { institutionId: selectedMembership.institutionId, role: selectedMembership.role }
     : null;
@@ -106,13 +123,14 @@ export default async function SettingsPage({
     String(user.id),
     peerSetWorkspace?.institutionId ?? null,
   ).catch(() => []);
-  // Creator-owned shared groups from another institution remain available in the
-  // store, but they cannot become the displayed baseline for this research subject.
+  // Team groups from another institution the user belongs to stay in the store, but
+  // they cannot become the displayed baseline for this research subject.
   const peerSets: SavedPeerSet[] = loadedPeerSets.filter((set) =>
     set.institution_id === null || set.institution_id === peerSetWorkspace?.institutionId,
   );
-  // Real counts of the institutions each set resolves to, and names for the chosen-peer chips.
-  const [peerSetCounts, peerInstitutionNames] = await Promise.all([
+  // Real counts of the institutions each set resolves to, names for the chosen-peer chips, and
+  // the handed-over set's peers (unknown institutions dropped). Nothing is saved here.
+  const [peerSetCounts, peerInstitutionNames, peerSetPrefill] = await Promise.all([
     getPeerGroupCounts(
       peerSets.map((set) => parseSavedPeerSetFilters(set)),
       peerSetWorkspace?.institutionId ?? selectedInstitution?.id ?? null,
@@ -120,6 +138,7 @@ export default async function SettingsPage({
     getPeerInstitutionNames(peerSets.flatMap((set) => set.institution_ids ?? [])).catch(
       () => new Map<number, string>(),
     ),
+    resolvePeerSetPrefill(prefillParams, getPeerInstitutionNames),
   ]);
   // Where a set is too thin for a fee, charts fall back to the bank's own default group.
   const firstDefaultGroup = selectedInstitution
@@ -202,7 +221,7 @@ export default async function SettingsPage({
         }
         actions={
           <>
-            <LinkButton href={`/pro/monitor${selectedInstParam}`}>All changes</LinkButton>
+            <LinkButton href={`/pro/monitor${selectedInstParam}`}>Alerts and watches</LinkButton>
             <LinkButton href={`/pro/analyze${selectedInstParam}`}>Ask Hamilton</LinkButton>
             <LinkButton href={`/pro/reports${selectedInstAndIntentParam}`} primary>
               Build a report
@@ -267,7 +286,12 @@ export default async function SettingsPage({
       >
         <div className={`${panel} scroll-mt-24`}>
           <PeerSetManager
-            key={JSON.stringify([user.id, selectedInstitution?.id ?? null, peerSetWorkspace?.institutionId ?? null])}
+            key={JSON.stringify([
+              user.id,
+              selectedInstitution?.id ?? null,
+              peerSetWorkspace?.institutionId ?? null,
+              peerSetPrefill ? [peerSetPrefill.peers.map((peer) => peer.id), peerSetPrefill.name, peerSetPrefill.fee?.key, peerSetPrefill.asOf] : null,
+            ])}
             researchInstitutionId={selectedInstitution?.id ?? null}
             initialPeerSets={peerSets}
             initialCounts={Object.fromEntries(
@@ -279,6 +303,7 @@ export default async function SettingsPage({
             currentUserId={String(user.id)}
             minPeers={MIN_PEERS_FOR_POSITION}
             widerGroupLabel={widerGroupLabel}
+            prefill={peerSetPrefill}
           />
         </div>
       </MemoSection>
@@ -289,14 +314,20 @@ export default async function SettingsPage({
         note="Manage institution workspace access separately from research selection."
       >
         <div className={`${panel} scroll-mt-24`}>
-          <WorkspaceAccessManager
-            institutionId={selectedInstitution?.id ?? null}
-            members={workspaceMembers}
-            invitations={workspaceInvitations}
-            canManage={canManageWorkspaceAccess}
-            inviteLinks={workspaceInviteLinks}
-            inviteLinksReady={inviteLinksReady}
-          />
+          {selectedInstitution && !canSeeTeam ? (
+            <p className="text-sm text-warm-700">
+              Only people on {selectedInstitution.name}&apos;s team can see who has access to it.
+            </p>
+          ) : (
+            <WorkspaceAccessManager
+              institutionId={selectedInstitution?.id ?? null}
+              members={workspaceMembers}
+              invitations={workspaceInvitations}
+              canManage={canManageWorkspaceAccess}
+              inviteLinks={workspaceInviteLinks}
+              inviteLinksReady={inviteLinksReady}
+            />
+          )}
         </div>
       </MemoSection>
 
@@ -361,7 +392,7 @@ export default async function SettingsPage({
               <>
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="text-lg text-warm-900" style={SERIF}>
-                    Hamilton Pro
+                    Hamilton
                   </p>
                   <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${statusClass}`}>{statusLabel}</span>
                 </div>

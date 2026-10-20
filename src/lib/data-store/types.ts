@@ -7,18 +7,6 @@ import type {
   InstitutionSourceNeededReason,
 } from "@/lib/institution-quality";
 
-export interface InstitutionSummary {
-  id: number;
-  institution_name: string;
-  state_code: string | null;
-  charter_type: string;
-  asset_size: number | null;
-  website_url: string | null;
-  fee_schedule_url: string | null;
-  document_type: string | null;
-  fee_count: number;
-}
-
 export interface ExtractedFee {
   fee_audience?: FeeAudience;
   audience_evidence?: string | null;
@@ -37,14 +25,16 @@ export interface ExtractedFee {
   fee_family?: string | null;
   source_url?: string | null;
   created_at?: string | Date;
-}
-
-export interface ReviewableFee extends ExtractedFee {
-  state_code: string | null;
-  charter_type: string;
-  fee_category: string | null;
-  document_url: string | null;
-  fee_schedule_url: string | null;
+  /** The stored fee schedule the row was read from; set by readers that select it. */
+  source_document_id?: number | null;
+  /** The account the schedule lists the fee under, when the reader selects it. */
+  account_product_type?: string | null;
+  /** The balance that avoids the fee, when the schedule states one and the reader selects it. */
+  min_balance_to_avoid?: number | null;
+  /** The schedule's own words for how the fee is waived, when the reader selects it. */
+  waiver_text?: string | null;
+  /** The schedule line the fee was read from, when the reader selects it. */
+  source_line?: string | null;
 }
 
 export interface FeeReview {
@@ -58,14 +48,6 @@ export interface FeeReview {
   new_values: unknown;
   notes: string | null;
   created_at: string | Date;
-}
-
-export interface ReviewStats {
-  pending: number;
-  staged: number;
-  flagged: number;
-  approved: number;
-  rejected: number;
 }
 
 export interface InstitutionDetail {

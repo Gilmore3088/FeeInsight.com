@@ -1,7 +1,13 @@
+import { incurredProviderUsageSql } from "@/lib/provider-usage-accounting";
 import { sql } from "@/lib/data-store/connection";
-import { ACCURACY_TARGET, ACCURACY_TARGET_LABEL } from "@/lib/accuracy-target";
+import { ACCURACY_TARGET_LABEL } from "@/lib/accuracy-target";
 import { inSavepoint } from "@/lib/agents/savepoint";
-import { FRESH_AUDIT_MIN_SCORABLE } from "@/lib/agents/deming/fresh-audit";
+import { accuracyStatusLabel, formatAccuracyBound, type AccuracyMeasure } from "@/lib/agents/deming/accuracy-measure";
+export { poolFreshAudits, wilsonRange } from "@/lib/agents/deming/accuracy-measure";
+import { poolFreshAudits } from "@/lib/agents/deming/accuracy-measure";
+import { BATCH_REVIEW_CHECK, type BatchMissKind } from "@/lib/agents/rosetta/batch-review";
+import { readLiveSourceAudit } from "@/lib/data-store/live-source-audit-read";
+import { liveAuditBrief,validateLiveAuditComponent,type LiveAuditComponent } from "./deming/live-source-audit-records";
 
 /**
  * The goal scorecard (#1040): the numbers that say whether Fee Insight is getting closer to a
@@ -21,6 +27,8 @@ import { FRESH_AUDIT_MIN_SCORABLE } from "@/lib/agents/deming/fresh-audit";
 type SqlTag = typeof sql;
 
 export const GOAL_WINDOW_DAYS = 7;
+/** `published_fee_catalog` shows an institution only once it has live fees in this many categories. */
+export const CATALOG_MIN_CATEGORIES = 3;
 
 /** James, 2026-10-12 (#1028): a state × size group under $10B is covered at 30 live institutions, or 75% below 40. */
 export const COVERAGE_TARGET_INSTITUTIONS = 30;
@@ -45,7 +53,50 @@ export const GOAL_QUERIES = {
   knoxPasses: "goal.knox_passes_7d",
   unstatedAudience: "goal.unstated_audience",
   answerQuality: "goal.hamilton_answer_eval_latest",
+  readerMissWeeks: "goal.rosetta_miss_rate_weekly",
+  readerRemedies: "goal.rosetta_remedy_outcomes",
+  dataQuality: "goal.deming_data_quality_latest",
 } as const;
+
+/** Weeks of text-reading misses shown, oldest first, the current week last (#1054). */
+export const READER_MISS_WEEKS = 8;
+/** The miss kinds Rosetta's batch review writes (`rosetta/batch-review.ts`). */
+export const READER_MISS_KINDS: BatchMissKind[] = ["no_fees_found", "short_text", "missed_fee_page", "unresolved_fee_page", "unread"];
+
+export interface ReaderMissWeek {
+  /** Monday of the week, UTC, as YYYY-MM-DD. Batches count in the week they were reviewed. */
+  weekStart: string;
+  batches: number;
+  reads: number;
+  errors: number;
+  /** Misses ÷ reads; null in a week with no reviewed batch. */
+  rate: number | null;
+  byKind: Record<BatchMissKind, number>;
+  /** True for the week still running: its counts are not a full week yet. */
+  partial: boolean;
+}
+
+export interface ReaderMissWeeks {
+  query: string;
+  weeks: ReaderMissWeek[];
+}
+
+export interface ReaderRemedyOutcome {
+  remedy: string;
+  /** Misses the batch review sent to a fix. */
+  remedied: number;
+  /** Of those, misses whose document (or, for `INSTITUTION_JUDGED_REMEDIES`, institution) later gave Knox fees. */
+  knoxFound: number;
+  share: number | null;
+}
+
+export interface ReaderRemedies {
+  query: string;
+  remedied: number;
+  knoxFound: number;
+  share: number | null;
+  byRemedy: ReaderRemedyOutcome[];
+}
 
 export interface CoverageCells {
   query: string;
@@ -53,6 +104,8 @@ export interface CoverageCells {
   totalCells: number;
   /** Covered institutions still needed to bring every group to its target. */
   institutionsShort: number;
+  /** The same gap seven days ago, from the institutions live then. Absent on snapshots from before it. */
+  institutionsShortWeekAgo?: number;
   bySize: Array<{ size: SizeGroupKey; label: string; readyCells: number; totalCells: number; institutionsShort: number }>;
   /** Each state's gap (#1117), largest first: the same groups, summed per state. Absent on snapshots from before it. */
   byState?: StateCoverageGap[];
@@ -85,38 +138,12 @@ export interface LiveInstitutions {
   live: number;
   /** Live now, with no live fee seven days ago. */
   addedThisWeek: number;
+  /** Live seven days ago, with no live fee now (taken down). Absent on snapshots from before it. */
+  droppedThisWeek?: number;
 }
 
-export interface WeeklyAccuracy {
+export interface WeeklyAccuracy extends AccuracyMeasure {
   query: string;
-  /** Right ÷ scorable over every Deming fresh audit in the window; null below the minimum sample. */
-  accuracy: number | null;
-  right: number;
-  scorable: number;
-  audits: number;
-  latestAt: string | null;
-  latestAccuracy: number | null;
-  /** 95% Wilson range around `accuracy` (200 fees gives about ±3–4 points); null with no percentage. */
-  range: { low: number; high: number } | null;
-  /** One dated row per audit in the window, newest first, kept with each daily snapshot (#1119). */
-  daily: FreshAuditDay[];
-  /** Misses per check across the window. */
-  misses: FreshAuditMisses;
-}
-
-export interface FreshAuditMisses {
-  amount: number;
-  category: number;
-  evidence: number;
-  notAFee: number;
-  name: number;
-}
-
-export interface FreshAuditDay extends FreshAuditMisses {
-  at: string;
-  right: number;
-  scorable: number;
-  accuracy: number | null;
 }
 
 export interface WrongAfterPublish {
@@ -195,6 +222,10 @@ export interface AnswerQuality {
   /** When the latest paid sample finished (ISO), the date the paid rates are for; null when none ran in the window. */
   paidAt?: string | null;
   timedOut: boolean;
+  institutionsAsked?: number | null;
+  institutionsPlanned?: number | null;
+  proQuestionsAsked?: number | null;
+  proQuestionsPlanned?: number | null;
   paths: AnswerPathQuality[];
 }
 
@@ -259,6 +290,10 @@ export function answerQualityFrom(
     at,
     paidAt: newestPaid,
     timedOut: detail.timedOut === true,
+    institutionsAsked: detail.institutions == null ? null : Number(detail.institutions),
+    institutionsPlanned: detail.planned == null ? null : Number(detail.planned),
+    proQuestionsAsked: pro?.questions == null ? null : Number(pro.questions),
+    proQuestionsPlanned: pro?.planned == null ? null : Number(pro.planned),
     paths: [
       path("free_ask", "Free Ask, standard questions", detail.answers, detail.passed, detail.correctness),
       ...(pro ? [path("pro_replay", "Free Ask, Pro readers' questions", pro.questions, pro.passed, pro.correctness)] : []),
@@ -270,6 +305,68 @@ export function answerQualityFrom(
       }),
     ],
   };
+}
+
+/** One line of the daily data-quality checks (#1065), each with its own query name. */
+export interface DataQualityLine {
+  catalog: "dollar" | "rate";
+  check: "duplicates" | "stale" | "noCategory" | "noSource" | "categoryShare";
+  query: string;
+  count: number;
+  rate: number | null;
+  status: string;
+}
+
+export interface DataQuality {
+  query: string;
+  /** When the check finished (ISO). */
+  at: string;
+  /** Checks at FAIL, as "catalog.check": the alarm. */
+  failing: string[];
+  warning: string[];
+  lines: DataQualityLine[];
+  /** Categories out of line with their normal share of live institutions. */
+  drifts: Array<{ catalog: "dollar" | "rate"; category: string; normalShare: number; share: number; direction: string }>;
+}
+
+const DATA_QUALITY_CHECKS = ["duplicates", "stale", "noCategory", "noSource"] as const;
+
+/** The latest `deming-data-quality` step detail as scorecard lines; null when it is not that step's shape. */
+export function dataQualityFrom(at: string, detail: Record<string, unknown>): Omit<DataQuality, "query"> | null {
+  const strings = (value: unknown) => (Array.isArray(value) ? value.map(String) : []);
+  const lines: DataQualityLine[] = [];
+  const drifts: DataQuality["drifts"] = [];
+  for (const catalog of ["dollar", "rate"] as const) {
+    const part = detail[catalog] as Record<string, unknown> | undefined;
+    if (!part || typeof part !== "object") continue;
+    const checks = (part.checks ?? {}) as Record<string, { query?: unknown; count?: unknown; rate?: unknown; status?: unknown }>;
+    for (const check of DATA_QUALITY_CHECKS) {
+      const row = checks[check];
+      if (!row) continue;
+      lines.push({
+        catalog,
+        check,
+        query: String(row.query ?? ""),
+        count: Number(row.count ?? 0),
+        rate: row.rate == null ? null : Number(row.rate),
+        status: String(row.status ?? "unknown"),
+      });
+    }
+    const share = (part.category_share ?? {}) as { query?: unknown; status?: unknown; drifts?: unknown };
+    const shareDrifts = Array.isArray(share.drifts) ? (share.drifts as Array<Record<string, unknown>>) : [];
+    lines.push({ catalog, check: "categoryShare", query: String(share.query ?? ""), count: shareDrifts.length, rate: null, status: String(share.status ?? "unknown") });
+    for (const drift of shareDrifts) {
+      drifts.push({
+        catalog,
+        category: String(drift.category ?? ""),
+        normalShare: Number(drift.normalShare ?? 0),
+        share: Number(drift.share ?? 0),
+        direction: String(drift.direction ?? ""),
+      });
+    }
+  }
+  if (lines.length === 0) return null;
+  return { at, failing: strings(detail.failing), warning: strings(detail.warning), lines, drifts };
 }
 
 export interface GoalScorecard {
@@ -285,6 +382,13 @@ export interface GoalScorecard {
   unstatedAudience: UnstatedAudience | null;
   /** Hamilton's answers: form and correctness per path (#1079); absent on snapshots from before it. */
   answerQuality?: AnswerQuality | null;
+  /** Rosetta's batch review: weekly miss rate by kind, and whether its fixes gave Knox fees (#1054). */
+  readerMisses?: ReaderMissWeeks | null;
+  readerRemedies?: ReaderRemedies | null;
+  /** Deming's daily data-quality checks (#1065); absent on snapshots from before it. */
+  dataQuality?: DataQuality | null;
+  /** Separate automated fresh-site diagnostic; not missing-fee recall or the weekly launch review. */
+  liveSourceAudit?:LiveAuditComponent|null;
 }
 
 const usd = (micro: unknown): number => Math.round(Number(micro ?? 0) / 10_000) / 100;
@@ -305,6 +409,23 @@ export function coverageShort(total: number, covered: number): number {
 }
 
 /**
+ * Institutions live seven days ago, by the catalog's own rule: a fee neither taken down nor
+ * quarantined by then, at an institution with three or more such categories. Without the
+ * three-category rule an institution with one or two fees counted as live a week ago though the
+ * catalog never showed it, so it read as dropped this week (283 "dropped" on 2026-10-17, 98 real).
+ */
+export function liveWeekAgoSql(db: SqlTag) {
+  return db`
+    SELECT fp.institution_id FROM public.published_fee_records fp
+     WHERE fp.published_at < NOW() - make_interval(days => ${GOAL_WINDOW_DAYS}::int)
+       AND (fp.rolled_back_at IS NULL OR fp.rolled_back_at >= NOW() - make_interval(days => ${GOAL_WINDOW_DAYS}::int))
+       AND (fp.quarantined_at IS NULL OR fp.quarantined_at >= NOW() - make_interval(days => ${GOAL_WINDOW_DAYS}::int))
+     GROUP BY fp.institution_id
+    HAVING COUNT(DISTINCT fp.canonical_fee_key) >= ${CATALOG_MIN_CATEGORIES}::int
+  `;
+}
+
+/**
  * The state × size groups under $10B, one row each: state_code, size_group, total, covered,
  * covered_week_ago, newly_covered, target and short. The one definition the scorecard and Atlas's lane
  * priority (#1117) both read, so the gap a lane works on is the gap the page shows. Institutions
@@ -319,17 +440,15 @@ export function coverageShort(total: number, covered: number): number {
  */
 export function coverageGroupsSql(db: SqlTag, options: { weekAgo?: boolean } = {}) {
   const liveWeekAgo = options.weekAgo
-    ? db`EXISTS (
-        SELECT 1 FROM public.published_fee_records fp
-         WHERE fp.institution_id = i.id
-           AND fp.published_at < NOW() - make_interval(days => ${GOAL_WINDOW_DAYS}::int)
-           AND (fp.rolled_back_at IS NULL OR fp.rolled_back_at >= NOW() - make_interval(days => ${GOAL_WINDOW_DAYS}::int))
-      )`
+    ? db`(i.id IN (SELECT institution_id FROM week_ago))`
     : db`FALSE`;
+  const weekAgoCte = options.weekAgo
+    ? db`, week_ago AS MATERIALIZED (${liveWeekAgoSql(db)})`
+    : db``;
   return db`
     WITH live AS MATERIALIZED (
       SELECT DISTINCT institution_id FROM public.published_fee_catalog
-    )
+    )${weekAgoCte}
     SELECT state_code, size_group, total, covered, covered_week_ago, newly_covered, target,
            GREATEST(0, target - covered)::int AS short
       FROM (
@@ -392,6 +511,9 @@ export function summarizeCoverageCells(rows: CoverageGroupRow[]): Omit<CoverageC
     readyCells: bySize.reduce((sum, row) => sum + row.readyCells, 0),
     totalCells: bySize.reduce((sum, row) => sum + row.totalCells, 0),
     institutionsShort: bySize.reduce((sum, row) => sum + row.institutionsShort, 0),
+    ...(rows.some((row) => row.covered_week_ago !== undefined)
+      ? { institutionsShortWeekAgo: rows.reduce((sum, row) => sum + (row.total > 0 ? coverageShort(row.total, row.covered_week_ago ?? row.covered) : 0), 0) }
+      : {}),
     bySize,
     ...(rows.some((row) => row.state_code) ? { byState: summarizeStateGaps(rows) } : {}),
   };
@@ -416,6 +538,8 @@ export const HOUSEKEEPING_REASON_KEYS: ReadonlySet<string> = new Set([
   "rules_recheck_restore",
   "taxonomy_fold",
   "closed_institution",
+  // A non-checking account's monthly fee held as verified (#1100): publish policy, not a wrong fee.
+  "account_type_hold",
 ]);
 
 /** The reason's key: "source_check_untraceable:no_amount" → "source_check_untraceable", "refreshed by #9" → "refreshed by". */
@@ -443,65 +567,10 @@ export function summarizeWrongAfterPublish(rows: Array<{ reason: string | null; 
   return { published, wrong, rate: ratio(wrong, published), housekeeping, topErrors };
 }
 
-/** Pure: Deming's fresh-audit step details from the window, pooled. */
-/** 95% Wilson score interval for `right` of `n`; rounded to four places. */
-export function wilsonRange(right: number, n: number): { low: number; high: number } | null {
-  if (n <= 0) return null;
-  const z = 1.96;
-  const p = right / n;
-  const denominator = 1 + (z * z) / n;
-  const centre = p + (z * z) / (2 * n);
-  const margin = z * Math.sqrt((p * (1 - p)) / n + (z * z) / (4 * n * n));
-  const round = (value: number) => Math.round(Math.min(1, Math.max(0, value)) * 10_000) / 10_000;
-  return { low: round((centre - margin) / denominator), high: round((centre + margin) / denominator) };
-}
-
 const missCount = (value: unknown) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 };
-
-/** Pure: Deming's fresh-audit step details from the window, pooled, with a dated row per audit. */
-export function poolFreshAudits(events: Array<{ at: string; detail: Record<string, unknown> | null }>): Omit<WeeklyAccuracy, "query"> {
-  let right = 0;
-  let scorable = 0;
-  const daily: FreshAuditDay[] = [];
-  for (const event of events) {
-    if (!event.detail || event.detail.readable === false) continue;
-    const r = Number(event.detail.right);
-    const s = Number(event.detail.scorable);
-    if (!Number.isFinite(r) || !Number.isFinite(s) || s <= 0) continue;
-    right += r;
-    scorable += s;
-    daily.push({
-      at: event.at,
-      right: r,
-      scorable: s,
-      accuracy: ratio(r, s),
-      amount: missCount(event.detail.amount_miss),
-      category: missCount(event.detail.category_miss),
-      evidence: missCount(event.detail.evidence_miss),
-      notAFee: missCount(event.detail.not_a_fee),
-      name: missCount(event.detail.name_miss),
-    });
-  }
-  daily.sort((a, b) => b.at.localeCompare(a.at));
-  const newest = [...events].sort((a, b) => b.at.localeCompare(a.at))[0];
-  const latestAccuracy = newest?.detail?.accuracy == null ? null : Number(newest.detail.accuracy);
-  const enough = scorable >= FRESH_AUDIT_MIN_SCORABLE;
-  const sum = (key: keyof FreshAuditMisses) => daily.reduce((total, day) => total + day[key], 0);
-  return {
-    accuracy: enough ? ratio(right, scorable) : null,
-    right,
-    scorable,
-    audits: daily.length,
-    latestAt: newest?.at ?? null,
-    latestAccuracy: Number.isFinite(latestAccuracy) ? latestAccuracy : null,
-    range: enough ? wilsonRange(right, scorable) : null,
-    daily,
-    misses: { amount: sum("amount"), category: sum("category"), evidence: sum("evidence"), notAFee: sum("notAFee"), name: sum("name") },
-  };
-}
 
 async function readCoverageCells(db: SqlTag): Promise<CoverageCells> {
   const rows = await db<Array<Record<string, number | string>>>`
@@ -522,17 +591,24 @@ async function readCoverageCells(db: SqlTag): Promise<CoverageCells> {
 }
 
 async function readLiveInstitutions(db: SqlTag): Promise<LiveInstitutions> {
+  // Added and dropped both compare with the institutions live seven days ago, so a week of
+  // takedowns shows beside the week's additions instead of hiding behind them.
   const [row] = await db`
-    SELECT COUNT(*)::int AS live,
-           (COUNT(*) FILTER (WHERE NOT EXISTS (
-             SELECT 1 FROM published_fee_records fp
-              WHERE fp.institution_id = live.institution_id
-                AND fp.published_at < NOW() - make_interval(days => ${GOAL_WINDOW_DAYS}::int)
-                AND (fp.rolled_back_at IS NULL OR fp.rolled_back_at >= NOW() - make_interval(days => ${GOAL_WINDOW_DAYS}::int))
-           )))::int AS added
-      FROM (SELECT DISTINCT institution_id FROM published_fee_catalog) live
+    WITH live AS MATERIALIZED (
+      SELECT DISTINCT institution_id FROM published_fee_catalog
+    ), week_ago AS MATERIALIZED (${liveWeekAgoSql(db)})
+    SELECT (SELECT COUNT(*) FROM live)::int AS live,
+           (SELECT COUNT(*) FROM live
+             WHERE NOT EXISTS (SELECT 1 FROM week_ago w WHERE w.institution_id = live.institution_id))::int AS added,
+           (SELECT COUNT(*) FROM week_ago w
+             WHERE NOT EXISTS (SELECT 1 FROM live WHERE live.institution_id = w.institution_id))::int AS dropped
   `;
-  return { query: GOAL_QUERIES.liveInstitutions, live: Number(row?.live ?? 0), addedThisWeek: Number(row?.added ?? 0) };
+  return {
+    query: GOAL_QUERIES.liveInstitutions,
+    live: Number(row?.live ?? 0),
+    addedThisWeek: Number(row?.added ?? 0),
+    ...(row?.dropped == null ? {} : { droppedThisWeek: Number(row.dropped) }),
+  };
 }
 
 async function readAccuracy(db: SqlTag): Promise<WeeklyAccuracy> {
@@ -584,7 +660,7 @@ async function readSpend(db: SqlTag, addedThisWeek: number | null): Promise<Goal
              COALESCE(SUM(estimated_cost_microusd) FILTER (
                WHERE created_at >= date_trunc('month', NOW() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'), 0)::bigint AS month
         FROM public.ai_api_usage_events
-       WHERE status = 'completed'
+       WHERE ${incurredProviderUsageSql(db)}
          AND created_at >= LEAST(
                NOW() - make_interval(days => ${GOAL_WINDOW_DAYS}::int),
                date_trunc('month', NOW() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')
@@ -708,6 +784,140 @@ async function readAnswerQuality(db: SqlTag): Promise<AnswerQuality | null> {
   };
 }
 
+/** Monday 00:00 UTC of the week holding `date`, as YYYY-MM-DD (Postgres `date_trunc('week')`). */
+export function weekStartUtc(date: Date): string {
+  const day = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  day.setUTCDate(day.getUTCDate() - ((day.getUTCDay() + 6) % 7));
+  return day.toISOString().slice(0, 10);
+}
+
+/** The first day `bucketReaderMissWeeks` shows: Monday of the oldest week. */
+export function readerMissSince(now: Date, weeks = READER_MISS_WEEKS): string {
+  const start = new Date(`${weekStartUtc(now)}T00:00:00Z`);
+  start.setUTCDate(start.getUTCDate() - (weeks - 1) * 7);
+  return start.toISOString().slice(0, 10);
+}
+
+const emptyKinds = (): Record<BatchMissKind, number> =>
+  Object.fromEntries(READER_MISS_KINDS.map((kind) => [kind, 0])) as Record<BatchMissKind, number>;
+
+/**
+ * Pure: the batch review's `batch_error_rate` rows, one per batch of 50 reads, summed into
+ * the last `weeks` UTC weeks. Every week is listed, so a week with no reviewed batch shows as
+ * empty (no rate) rather than dropping out of the trend.
+ */
+export function bucketReaderMissWeeks(
+  rows: Array<{ at: string; evidence: Record<string, unknown> | null }>,
+  now: Date,
+  weeks = READER_MISS_WEEKS,
+): ReaderMissWeek[] {
+  const buckets: ReaderMissWeek[] = [];
+  const first = new Date(`${readerMissSince(now, weeks)}T00:00:00Z`);
+  for (let index = 0; index < weeks; index += 1) {
+    const start = new Date(first);
+    start.setUTCDate(first.getUTCDate() + index * 7);
+    buckets.push({ weekStart: start.toISOString().slice(0, 10), batches: 0, reads: 0, errors: 0, rate: null, byKind: emptyKinds(), partial: index === weeks - 1 });
+  }
+  const byWeek = new Map(buckets.map((bucket) => [bucket.weekStart, bucket]));
+  for (const row of rows) {
+    const at = new Date(row.at);
+    if (!row.evidence || Number.isNaN(at.getTime())) continue;
+    const bucket = byWeek.get(weekStartUtc(at));
+    if (!bucket) continue;
+    bucket.batches += 1;
+    bucket.reads += missCount(row.evidence.reads);
+    bucket.errors += missCount(row.evidence.errors);
+    const kinds = row.evidence.by_kind as Record<string, unknown> | null | undefined;
+    for (const kind of READER_MISS_KINDS) bucket.byKind[kind] += missCount(kinds?.[kind]);
+  }
+  for (const bucket of buckets) bucket.rate = ratio(bucket.errors, bucket.reads);
+  return buckets;
+}
+
+async function readReaderMissWeeks(db: SqlTag, now: Date): Promise<ReaderMissWeeks> {
+  const rows = await db<Array<{ created_at: Date | string; evidence: unknown }>>`
+    SELECT created_at, evidence
+      FROM pipeline_feedback
+     WHERE check_name = ${BATCH_REVIEW_CHECK}
+       AND kind = 'batch_error_rate'
+       AND created_at >= ${`${readerMissSince(now)}T00:00:00Z`}::timestamptz
+  `;
+  return {
+    query: GOAL_QUERIES.readerMissWeeks,
+    weeks: bucketReaderMissWeeks(rows.map((row) => ({
+      at: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
+      evidence: (typeof row.evidence === "string" ? JSON.parse(row.evidence) : row.evidence) as Record<string, unknown> | null,
+    })), now),
+  };
+}
+
+/** Pure: per-remedy counts summed, largest first. */
+export function summarizeReaderRemedies(rows: Array<{ remedy: string; remedied: number; knox_found: number }>): Omit<ReaderRemedies, "query"> {
+  const byRemedy = rows
+    .map((row) => ({ remedy: row.remedy, remedied: Number(row.remedied) || 0, knoxFound: Number(row.knox_found) || 0 }))
+    .map((row) => ({ ...row, share: ratio(row.knoxFound, row.remedied) }))
+    .sort((a, b) => b.remedied - a.remedied || a.remedy.localeCompare(b.remedy));
+  const remedied = byRemedy.reduce((sum, row) => sum + row.remedied, 0);
+  const knoxFound = byRemedy.reduce((sum, row) => sum + row.knoxFound, 0);
+  return { remedied, knoxFound, share: ratio(knoxFound, remedied), byRemedy };
+}
+
+/**
+ * Remedies whose Knox fees can land on another document row: a new link search, a JS re-read of
+ * a linked document stored as its own row (`covered_by`), and a reopened fee page's new copy.
+ * Their success is judged by the institution, not the document (#1581).
+ */
+const INSTITUTION_JUDGED_REMEDIES = ["magellan_paid_find", "reread_js_fallback", "reopen_fee_page"];
+
+/**
+ * Misses the batch review sent to a fix (every remedy but `lesson_only`) in the shown weeks,
+ * and how many later gave Knox fees: a Knox fee from the same document after the review, or,
+ * for the remedies in `INSTITUTION_JUDGED_REMEDIES`, from the same institution.
+ */
+async function readReaderRemedies(db: SqlTag, now: Date): Promise<ReaderRemedies> {
+  const rows = await db<Array<{ remedy: string; remedied: number; knox_found: number }>>`
+    SELECT f.evidence->>'remedy' AS remedy,
+           COUNT(*)::int AS remedied,
+           (COUNT(*) FILTER (WHERE
+             (NOT (f.evidence->>'remedy' = ANY(${INSTITUTION_JUDGED_REMEDIES}::text[])) AND EXISTS (
+               SELECT 1 FROM raw_fee_observations fr
+                WHERE fr.source = 'knox' AND fr.source_document_id = f.source_document_id AND fr.created_at > f.created_at
+             ))
+             OR (f.evidence->>'remedy' = ANY(${INSTITUTION_JUDGED_REMEDIES}::text[]) AND EXISTS (
+               SELECT 1 FROM raw_fee_observations fr
+                WHERE fr.source = 'knox' AND fr.institution_id = f.institution_id AND fr.created_at > f.created_at
+             ))
+           ))::int AS knox_found
+      FROM pipeline_feedback f
+     WHERE f.check_name = ${BATCH_REVIEW_CHECK}
+       AND f.kind = ANY(${READER_MISS_KINDS}::text[])
+       AND f.evidence->>'remedy' IS NOT NULL
+       AND f.evidence->>'remedy' <> 'lesson_only'
+       AND f.created_at >= ${`${readerMissSince(now)}T00:00:00Z`}::timestamptz
+     GROUP BY 1
+  `;
+  return { query: GOAL_QUERIES.readerRemedies, ...summarizeReaderRemedies(rows) };
+}
+
+async function readDataQuality(db: SqlTag): Promise<DataQuality | null> {
+  const [row] = await db<Array<{ created_at: Date | string; detail: unknown }>>`
+    SELECT e.created_at, e.detail
+      FROM agent_run_events e
+      JOIN agent_run_steps s ON s.id = e.step_id
+     WHERE s.step_key = 'deming-data-quality'
+       AND e.event_type = 'step.finished'
+       AND e.status = 'completed'
+       AND e.created_at >= NOW() - make_interval(days => ${GOAL_WINDOW_DAYS}::int)
+     ORDER BY e.created_at DESC
+     LIMIT 1
+  `;
+  if (!row) return null;
+  const detail = (typeof row.detail === "string" ? JSON.parse(row.detail) : row.detail) as Record<string, unknown> | null;
+  const at = row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at);
+  const read = detail ? dataQualityFrom(at, detail) : null;
+  return read ? { query: GOAL_QUERIES.dataQuality, ...read } : null;
+}
+
 /** One read, in its own savepoint: a failure leaves that number null and the others standing. */
 async function guarded<T>(db: SqlTag, name: string, read: (scope: SqlTag) => Promise<T>): Promise<T | null> {
   return inSavepoint(db, read).catch((error) => {
@@ -727,6 +937,10 @@ export async function readGoalScorecard(db: SqlTag = sql, now = new Date()): Pro
     readKnoxPasses(scope, spend?.byAgent.find((row) => row.agent === "knox")));
   const unstatedAudience = await guarded(db, GOAL_QUERIES.unstatedAudience, readUnstatedAudience);
   const answerQuality = await guarded(db, GOAL_QUERIES.answerQuality, readAnswerQuality);
+  const readerMisses = await guarded(db, GOAL_QUERIES.readerMissWeeks, (scope) => readReaderMissWeeks(scope, now));
+  const readerRemedies = await guarded(db, GOAL_QUERIES.readerRemedies, (scope) => readReaderRemedies(scope, now));
+  const dataQuality = await guarded(db, GOAL_QUERIES.dataQuality, readDataQuality);
+  const liveSourceAudit=await guarded(db,"goal.live_source_audit",scope=>readLiveSourceAudit(scope,now));
   return {
     readAt: now.toISOString(),
     windowDays: GOAL_WINDOW_DAYS,
@@ -738,18 +952,27 @@ export async function readGoalScorecard(db: SqlTag = sql, now = new Date()): Pro
     knoxPasses: spend ? knoxPasses : null,
     unstatedAudience,
     answerQuality,
+    readerMisses,
+    readerRemedies,
+    dataQuality,
+    liveSourceAudit,
   };
 }
 
 const pct = (value: number | null | undefined) => (value == null ? "n/a" : `${(value * 100).toFixed(1)}%`);
 const count = (value: number) => value.toLocaleString("en-US");
+const signedCount = (value: number) => `${value > 0 ? "+" : ""}${count(value)}`;
 
 /** One clause for the step summary: the three numbers the goal turns on. */
 export function goalHeadline(goal: GoalScorecard): string {
   const c = goal.coverageCells;
+  const live = validateLiveAuditComponent(goal.liveSourceAudit)?.summary;
+  const sourceSupport = live
+    ? `live-source support ${live.support == null ? "unmeasured" : `${pct(live.support)} conditional`} (${live.state.replaceAll("_", " ")}; ${count(live.supported + live.mismatch)} scorable of ${count(live.selected)}, ${count(live.unknown)} unknown, ${count(live.unattempted)} unattempted)`
+    : "live-source support unavailable";
   return [
     c ? `${c.readyCells} of ${c.totalCells} groups covered` : "coverage n/a",
-    `accuracy ${pct(goal.accuracy?.accuracy)} (7 days)`,
+    sourceSupport,
     `wrong after publish ${pct(goal.wrongAfterPublish?.rate)}`,
   ].join(", ");
 }
@@ -757,9 +980,10 @@ export function goalHeadline(goal: GoalScorecard): string {
 /** Plain lines for the morning brief: the same numbers as the page, unknown said as unknown. */
 export function goalBriefLines(goal: GoalScorecard): string[] {
   const lines: string[] = [];
+  lines.push(liveAuditBrief(goal.liveSourceAudit??null));
   const c = goal.coverageCells;
   lines.push(c
-    ? `Coverage: ${c.readyCells} of ${c.totalCells} state and size groups under $10B meet the target; ${count(c.institutionsShort)} more covered institutions would close the gap.`
+    ? `Coverage: ${c.readyCells} of ${c.totalCells} state and size groups under $10B meet the target; ${count(c.institutionsShort)} more covered institutions would close the gap${c.institutionsShortWeekAgo == null ? "" : ` (${count(c.institutionsShortWeekAgo)} 7 days ago)`}.`
     : "Coverage: could not be read today.");
   const gaps = c?.byState?.filter((state) => state.institutionsShort > 0).slice(0, 5) ?? [];
   if (gaps.length > 0) {
@@ -767,13 +991,13 @@ export function goalBriefLines(goal: GoalScorecard): string[] {
   }
   const live = goal.liveInstitutions;
   lines.push(live
-    ? `Institutions with live fees: ${count(live.live)}, ${count(live.addedThisWeek)} added in the last 7 days.`
+    ? `Institutions with live fees: ${count(live.live)}, ${count(live.addedThisWeek)} added in the last 7 days${live.droppedThisWeek == null ? "" : ` and ${count(live.droppedThisWeek)} dropped (net ${signedCount(live.addedThisWeek - live.droppedThisWeek)})`}.`
     : "Institutions with live fees: could not be read today.");
   const a = goal.accuracy;
-  lines.push(!a ? "Accuracy: could not be read today."
+  lines.push(!a ? "Stored-copy support (secondary): could not be read today."
     : a.accuracy == null
-      ? `Accuracy: not enough audited fees in the last 7 days (${count(a.scorable)} scorable, ${a.audits} audits).`
-      : `Accuracy: ${(Math.floor(a.accuracy * 10000) / 100).toFixed(2)}% over the last 7 days${a.range ? ` (95% range ${pct(a.range.low)}–${pct(a.range.high)})` : ""}: ${count(a.right)} of ${count(a.scorable)} fees right, ${a.audits} Deming audits; target ${ACCURACY_TARGET_LABEL}, ${a.accuracy >= ACCURACY_TARGET ? "met" : "not met"}.`);
+      ? `Stored-copy support (secondary): not enough audited fees in the last 7 days (${count(a.scorable)} scorable, ${a.audits} audits).`
+      : `Stored-copy support (secondary): ${(Math.floor(a.accuracy * 10000) / 100).toFixed(2)}% over the last 7 days${a.range ? ` (95% range ${formatAccuracyBound(a.range.low, "low")}–${formatAccuracyBound(a.range.high, "high")})` : ""}: ${count(a.right)} of ${count(a.scorable)} fees supported, ${a.audits} Deming audits; diagnostic target ${ACCURACY_TARGET_LABEL}, ${accuracyStatusLabel(a)}.`);
   const w = goal.wrongAfterPublish;
   lines.push(w
     ? `Wrong after publish: ${pct(w.rate)} (${count(w.wrong)} of ${count(w.published)} fees published in the last 7 days taken down as errors).`
@@ -795,10 +1019,22 @@ export function goalBriefLines(goal: GoalScorecard): string[] {
     const parts = measured.map((p) => `${p.label}${sampleDay(p)}: form ${pct(p.formRate)} (${p.formPassed} of ${p.answers}), figures tie out ${p.checked == null ? "not checked" : `${pct(p.correctRate)} (${p.correct} of ${p.checked})`}`);
     const unmeasured = q.paths.filter((p) => !p.measured).map((p) => p.label.replace(/ \(paid\)$/, "").toLowerCase());
     const paidAt = q.paidAt ? `; paid sample of ${q.paidAt.slice(0, 16).replace("T", " ")} UTC` : "";
+    const completeness = [
+      q.institutionsAsked != null && q.institutionsPlanned != null ? `${q.institutionsAsked} of ${q.institutionsPlanned} planned institutions asked` : null,
+      q.proQuestionsAsked != null && q.proQuestionsPlanned != null ? `${q.proQuestionsAsked} of ${q.proQuestionsPlanned} Pro questions replayed` : null,
+    ].filter(Boolean).join(", ");
+    const smallPaid = measured.some(p => PAID_ANSWER_PATHS.some(paid => paid.path === p.path) && (p.answers ?? 0) < 10)
+      ? " Paid paths with fewer than 10 answers are small samples, not reliability estimates." : "";
     const rest = unmeasured.length === PAID_ANSWER_PATHS.length
       ? " Paid paths not measured yet."
       : unmeasured.length > 0 ? ` Not measured yet: ${unmeasured.join(", ")}.` : "";
-    lines.push(`Hamilton answers (eval of ${q.at.slice(0, 16).replace("T", " ")} UTC${q.timedOut ? ", stopped at its time budget" : ""}${paidAt}): ${parts.join("; ")}.${rest}`);
+    lines.push(`Hamilton answers (eval of ${q.at.slice(0, 16).replace("T", " ")} UTC${q.timedOut ? ", stopped at its time budget" : ""}${paidAt}${completeness ? `; ${completeness}` : ""}): ${parts.join("; ")}.${rest}${smallPaid}`);
+  }
+  const d = goal.dataQuality;
+  if (d) {
+    lines.push(d.failing.length === 0
+      ? `Data checks (${d.at.slice(0, 10)}): no check failed its threshold${d.warning.length > 0 ? `; ${d.warning.length} to watch` : ""}.`
+      : `Data checks (${d.at.slice(0, 10)}): ALARM, ${d.failing.length} failed their threshold (${d.failing.join(", ")}).`);
   }
   return lines;
 }

@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import { LocalDate } from "@/components/hamilton/common/LocalDate";
 import { checkMessageFigures, confidenceFromFigureCheck, type FigureCheckResult } from "@/lib/hamilton/figure-check";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
@@ -16,18 +18,30 @@ import { renderInline } from "./markdown";
 import { inferFeeCategory } from "@/lib/hamilton/infer-category";
 import { basketItemId } from "@/lib/hamilton/report-basket";
 import { HAMILTON_VERSION } from "@/lib/hamilton/voice";
-import { withConversationContext, type ConversationTurn } from "@/lib/hamilton/conversation-context";
+import { withConversationContext } from "@/lib/hamilton/conversation-context";
+import {
+  clarificationInputError, composerMode, conversationReducer, currentTurn, decisionForQuestion, earlierTurns, emptyConversation,
+  resetConversation, serializeConversationState, unreadableReplyMessage,
+  type ActivePeerSet, type ConversationAction, type HamiltonConversationState,
+} from "@/lib/hamilton/conversation-state";
+import { matchFeeCategory } from "@/lib/hamilton/workspace/ask";
+import type { ClarifyingQuestion } from "@/lib/hamilton/workspace/types";
 import { HAMILTON_PAUSED_MESSAGE, isHamiltonPausedText } from "@/lib/hamilton/provider-paused";
 import { STANDARD_METHOD, type AuditTrail } from "@/lib/hamilton/audit-trail";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { marketBriefHref, parseMarketQuestion } from "@/lib/hamilton/market-question";
+import { isPeerListContinuationQuestion } from "@/lib/hamilton/peer-list";
 import type { HamiltonSelectedInstitutionContext } from "@/lib/hamilton/institution-context";
+import { AnswerFollowThrough } from "./AnswerFollowThrough";
 import { AddToReportButton } from "@/components/hamilton/basket/AddToReportButton";
-import { DownloadAnswerPdf } from "./StructuredAsk";
+import { DownloadAnswerPdf, type StructuredAnswerInfo } from "./StructuredAsk";
 import { PeerAwareStructuredAsk as StructuredAsk } from "./PeerAwareStructuredAsk";
 import { StorylineView } from "@/components/hamilton/storyline/StorylineView";
-import { ExhibitFrame } from "@/components/hamilton/memo/exhibit-view";
-import { AuditPanel, Callout, LinkButton, MemoHeader, MemoPage, MemoSection, More, SERIF } from "@/components/hamilton/memo/memo";
+import { readStampedFigures } from "@/lib/dataset-note";
+import { ANSWER_TYPE, AuditPanel, Callout, InterpretationBox, LinkButton, MemoHeader, MemoPage, MemoSection, More, SERIF, SectionHeading } from "@/components/hamilton/memo/memo";
+import type { NarrativeBinding } from "@/lib/hamilton/narrative-bound";
+import { proseFeeName } from "@/lib/hamilton/workspace/names";
+import { applyNarrativeBinding, boundFallbackLead, readNarrativeBinding, withoutOmitted } from "@/lib/hamilton/written-answer-binding";
 
 type MessagePart = { type: string; text?: string; output?: unknown };
 
@@ -58,6 +72,15 @@ export function namesInstitution(question: string, name: string | null): boolean
   if (core.length < 3 || words.every((w) => GENERIC_NAME_WORDS.has(w))) return false;
   const escaped = core.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return new RegExp(`(?:^|[^a-z0-9])${escaped}(?![a-z0-9])`).test(question.toLowerCase());
+}
+
+/**
+ * A question about a market opens the market brief, unless it names the institution being
+ * researched or follows up a peer list (#1538). "Only show the California ones" names a state,
+ * but it narrows the list on screen; sending it to the brief left the page and lost the list.
+ */
+export function opensMarketBrief(question: string, institutionName: string | null): boolean {
+  return Boolean(parseMarketQuestion(question)) && !namesInstitution(question, institutionName) && !isPeerListContinuationQuestion(question);
 }
 
 /** The data lookups Hamilton made for an answer, named in plain words ("tool-getPeerFees" -> "peer fees"). */
@@ -164,6 +187,17 @@ interface AnalyzeWorkspaceProps {
   autoSend?: boolean;
   /** Keep saved content readable without guessing a missing or unavailable subject. */
   readOnlyReason?: string | null;
+  /**
+   * The conversation this screen continues (#979, H04-T06): a reload or back/forward visit of
+   * ?conversation=, or the state stored when a reopened saved answer was filed. Its subject is
+   * already checked against the authorized institution by the page.
+   */
+  initialConversation?: HamiltonConversationState | null;
+  /** A visible line when the conversation's institution differs from the one asked for. */
+  subjectNotice?: { text: string; href?: string; linkLabel?: string } | null;
+  /** Stores the conversation (server actions); without them it lives only on this screen. */
+  startConversationAction?: () => Promise<{ id: string } | { error: string }>;
+  recordConversationAction?: (conversationId: string, state: unknown) => Promise<{ ok: boolean }>;
 }
 
 /**
@@ -172,10 +206,12 @@ interface AnalyzeWorkspaceProps {
  * and how it was built. Hamilton shows evidence; it never recommends a price.
  */
 /**
- * The Evidence rows ("- Label: Value — note") drawn as figure tiles in the shared exhibit frame;
- * a row with no value is a group heading. The figures are the answer's own, unchanged.
+ * The Evidence rows ("- Label: Value — note") drawn as figure tiles; a row with no value is a
+ * group heading. The figures are the answer's own, unchanged. Model-written figures carry no
+ * source of their own, so they sit under a plain heading rather than in a sourced exhibit, and a
+ * figure the check could not trace to the data is marked on its tile.
  */
-export function EvidenceExhibit({ rows }: { rows: ParsedResponse["evidence"] }) {
+export function EvidenceExhibit({ rows, untraced = [] }: { rows: ParsedResponse["evidence"]; untraced?: readonly string[] }) {
   const groups: { heading: string | null; items: { label: string; value: string; note?: string }[] }[] = [];
   for (const m of rows) {
     const label = m.label.replace(/^\*+|\*+$/g, "").trim();
@@ -187,30 +223,37 @@ export function EvidenceExhibit({ rows }: { rows: ParsedResponse["evidence"] }) 
     if (groups.length === 0) groups.push({ heading: null, items: [] });
     groups[groups.length - 1].items.push({ label, value, note: m.note });
   }
+  const isUntraced = (value: string) => untraced.some((figure) => figure && value.includes(figure));
   return (
-    <ExhibitFrame title="The figures behind this answer" sources={[]}>
-      <div className="flex flex-col gap-4">
-        {groups
-          .filter((g) => g.items.length > 0)
-          .map((g, gi) => (
-            <section key={gi} className="flex flex-col gap-2">
-              {g.heading ? <h3 className="text-[11px] font-semibold uppercase tracking-[0.12em] text-warm-600">{g.heading}</h3> : null}
-              <dl className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                {g.items.map((m, i) => (
-                  <div key={i} className="flex min-w-0 flex-col gap-1 rounded-lg border border-warm-200 bg-warm-100/50 px-4 py-3">
-                    <dt className="text-xs leading-tight text-warm-600">{m.label}</dt>
-                    <dd className="text-2xl leading-tight text-warm-900 [font-variant-numeric:tabular-nums]" style={SERIF}>
-                      {m.value ? renderInline(m.value) : null}
-                    </dd>
-                    {m.note ? <dd className="text-xs leading-snug text-warm-700">{renderInline(m.note)}</dd> : null}
-                  </div>
-                ))}
-              </dl>
-            </section>
-          ))}
-      </div>
-    </ExhibitFrame>
+    <section aria-labelledby="figures-cited" className="flex flex-col gap-4">
+      <h2 id="figures-cited" className={ANSWER_TYPE.section} style={SERIF}>Figures Hamilton cited</h2>
+      {groups
+        .filter((g) => g.items.length > 0)
+        .map((g, gi) => (
+          <section key={gi} className="flex flex-col gap-2">
+            {g.heading ? <h3 className="text-[11px] font-semibold uppercase tracking-[0.12em] text-warm-600">{g.heading}</h3> : null}
+            <dl className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {g.items.map((m, i) => (
+                <div key={i} className="flex min-w-0 flex-col gap-1 rounded-lg border border-warm-200 bg-warm-100/50 px-4 py-3">
+                  <dt className="text-xs leading-tight text-warm-600">{m.label}</dt>
+                  <dd className="text-2xl leading-tight text-warm-900 [font-variant-numeric:tabular-nums]" style={SERIF}>
+                    {/* A true minus sign, as every other Hamilton figure prints it. */}
+                    {m.value ? renderInline(m.value.replace(/(^|[\s(])-(?=[$\d])/g, "$1\u2212")) : null}
+                  </dd>
+                  {m.value && isUntraced(m.value) ? <dd className="text-xs font-medium text-warm-600">Not traced to the data</dd> : null}
+                  {m.note ? <dd className="text-xs leading-snug text-warm-700">{renderInline(m.note)}</dd> : null}
+                </div>
+              ))}
+            </dl>
+          </section>
+        ))}
+    </section>
   );
+}
+
+/** The question that asks for one fee from the published fee data, for a sourced comparison. */
+export function sourcedFeeQuestion(feeCategory: string): string {
+  return `How does this institution's ${proseFeeName(feeCategory)} fee compare with its peers?`;
 }
 
 /** How long a sent ask holds the composer before the page's own busy state must have taken over. */
@@ -306,6 +349,10 @@ function AnalyzeConversationWorkspace({
   initialQuestion = null,
   autoSend = false,
   readOnlyReason = null,
+  initialConversation = null,
+  subjectNotice = null,
+  startConversationAction,
+  recordConversationAction,
 }: AnalyzeWorkspaceProps) {
   // The focus lens still shapes the prompt from deep links; there are no lens tabs on screen.
   const focus = useRef<AnalysisFocus>(focusForIntent(initialIntent));
@@ -328,6 +375,9 @@ function AnalyzeConversationWorkspace({
   const [savedAnalysisId, setSavedAnalysisId] = useState<string | null>(initialAnalysisId);
   const [answerIdentity, setAnswerIdentity] = useState(() => readHamiltonIdentitySnapshot(initialAnalysis?.identityContext));
   const [figureCheck, setFigureCheck] = useState<FigureCheckResult | null>(null);
+  // Which sentences of the written answer rest on fee records (#981, H06-T06). A reopened answer
+  // shows the binding saved with it; one saved before bindings shows as it always did.
+  const [binding, setBinding] = useState<NarrativeBinding | null>(() => readNarrativeBinding(initialAnalysis?.narrativeBinding));
   const [lookups, setLookups] = useState<string[]>([]);
   const [answeredAt, setAnsweredAt] = useState<string>(() => new Date().toISOString());
   const [exportError, setExportError] = useState<string | null>(null);
@@ -335,22 +385,39 @@ function AnalyzeConversationWorkspace({
   // The route's line in place of a written answer its source check held back (#981).
   const [heldLine, setHeldLine] = useState<string | null>(null);
   const [askedQuestion, setAskedQuestion] = useState<string | null>(null);
-  // Bumped on every ask, so asking the same question again (or Try again) really asks again.
-  const [askSeq, setAskSeq] = useState(0);
   // A new conversation drops the engine's decision context along with the earlier answers.
   const [conversation, setConversation] = useState(0);
-  // Earlier questions in this conversation and their one-line answers, oldest first.
-  const [thread, setThread] = useState<Array<{ question: string; lead: string | null }>>([]);
+  // The one conversation state (#979, H04-T02): turns, subject, peer list, carried decision and a
+  // pending clarification. Its nonce is bumped on every ask, so asking the same question again
+  // (or Try again) really asks again. Mirrored in a ref so an answer sent right after an ask never
+  // reads a stale list.
+  const [conv, setConv] = useState<HamiltonConversationState>(() => initialConversation ?? seedConversation({
+    institutionId: normalizeCanonicalInstitutionId(selectedInstitution?.id ?? institutionId),
+    institutionName: selectedInstitution?.name ?? null,
+  }, initialAnalysis ? { question: initialAnalysisPrompt, savedAnalysisId: initialAnalysisId } : null));
+  const convRef = useRef(conv);
+  // The revision the screen opened at; opening a conversation or saved answer stores nothing.
+  const openedRevision = useRef(conv.revision);
+  const apply = useCallback((action: ConversationAction) => {
+    const next = conversationReducer(convRef.current, action);
+    if (next !== convRef.current) {
+      convRef.current = next;
+      setConv(next);
+    }
+    return next;
+  }, []);
+  // The composer's reply to Hamilton's pending question, sent once per seq.
+  const [clarificationReply, setClarificationReply] = useState<{ value: string; seq: number } | null>(null);
+  const [composerError, setComposerError] = useState<string | null>(null);
   const [engineBusy, setEngineBusy] = useState(false);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [storyLead, setStoryLead] = useState<string | null>(null);
+  // The engine answer still shows rows of its own (a tested price, a market slice), so they lead
+  // and the written answer follows them.
+  const [engineRows, setEngineRows] = useState(false);
   const currentLeadRef = useRef<string | null>(null);
   const answerHeadingRef = useRef<HTMLDivElement>(null);
   const lastPromptRef = useRef<string>("");
-  // The earlier turns of this conversation (question and one-line answer), so a follow-up's
-  // written answer knows what "this", "those" and "us" refer to. Kept in step with `thread`
-  // synchronously, so an answer sent right after an ask never reads a stale list.
-  const historyRef = useRef<ConversationTurn[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const active = useRef(true);
   const answerGeneration = useRef(0);
@@ -381,6 +448,7 @@ function AnalyzeConversationWorkspace({
         setHeldLine(content.trim());
         setParsedResponse(null);
         setFigureCheck(null);
+        setBinding(null);
         setSavedAnalysisId(null);
         setInput((current) => current || lastPromptRef.current);
         return;
@@ -389,7 +457,9 @@ function AnalyzeConversationWorkspace({
       const parsed = parseAnalyzeResponse(content);
       const parts = message.parts as ReadonlyArray<MessagePart>;
       const check = checkMessageFigures(parts);
+      const sentBinding = readNarrativeBinding((message.metadata as { narrativeBinding?: unknown } | undefined)?.narrativeBinding);
       setFigureCheck(check);
+      setBinding(sentBinding);
       setLookups(lookupsUsed(parts));
       setAnsweredAt(new Date().toISOString());
       setParsedResponse(parsed);
@@ -400,28 +470,36 @@ function AnalyzeConversationWorkspace({
       // The route saves the answer itself and sends the row's id, so a reload mid-stream loses
       // nothing; the browser saves only when an older route sent no id.
       const serverSaved = (message.metadata as { savedAnalysisId?: string } | undefined)?.savedAnalysisId;
+      const turnId = currentTurn(convRef.current)?.id ?? "";
+      const lead = shapeHamiltonView(parsed.hamiltonView).lead || null;
       if (serverSaved) {
         setSavedAnalysisId(serverSaved);
+        apply({ type: "answered", turnId, route: "written", lead, savedAnalysisId: serverSaved });
         return;
       }
+      apply({ type: "answered", turnId, route: "written", lead });
       if (userId) {
+        const kept = withoutOmitted(parsed, sentBinding);
         const result = await saveAnalysis({
           institutionId: normalizeCanonicalInstitutionId(selectedInstitution?.id ?? institutionId) ?? "",
           analysisFocus: focus.current,
           prompt: lastPromptRef.current,
           responseJson: {
-            title: answerTitle(parsed.hamiltonView),
+            title: answerTitle(kept.hamiltonView),
             confidence: confidenceFromFigureCheck(check),
-            hamiltonView: parsed.hamiltonView,
-            whatThisMeans: parsed.whatThisMeans,
-            whyItMatters: parsed.whyItMatters,
-            evidence: { metrics: parsed.evidence },
-            exploreFurther: parsed.exploreFurther,
+            hamiltonView: kept.hamiltonView,
+            whatThisMeans: kept.whatThisMeans,
+            whyItMatters: kept.whyItMatters,
+            evidence: { metrics: kept.evidence },
+            exploreFurther: kept.exploreFurther,
+            ...(sentBinding ? { narrativeBinding: sentBinding } : {}),
           } satisfies AnalyzeResponse,
         });
         if (!active.current || generation !== answerGeneration.current) return;
-        if ("id" in result) setSavedAnalysisId(result.id);
-        else setSaveError("This answer couldn't be saved to your history.");
+        if ("id" in result) {
+          setSavedAnalysisId(result.id);
+          apply({ type: "answered", turnId, savedAnalysisId: result.id });
+        } else setSaveError("This answer couldn't be saved to your history.");
       }
     },
   });
@@ -459,7 +537,7 @@ function AnalyzeConversationWorkspace({
   const answerInProse = useCallback(
     (question: string) => {
       if (!active.current || readOnlyReason || question !== lastPromptRef.current) return;
-      sendMessage({ text: withConversationContext(question, historyRef.current) });
+      sendMessage({ text: withConversationContext(question, earlierTurns(convRef.current)) });
     },
     [sendMessage, readOnlyReason],
   );
@@ -471,30 +549,33 @@ function AnalyzeConversationWorkspace({
       if (!active.current || readOnlyReason || !trimmed || isLoading || engineBusy) return;
       // A question about a market, not this institution, opens the market brief (no provider call).
       // One that names the institution being researched stays here, so the answer is about it.
-      if (parseMarketQuestion(trimmed) && !namesInstitution(trimmed, selectedInstitution?.name ?? null)) {
-        window.location.assign(marketBriefHref(trimmed, institutionId));
+      if (opensMarketBrief(trimmed, selectedInstitution?.name ?? null)) {
+        // The brief is a turn of this conversation: its follow-up comes back here with the
+        // conversation, so the next answer knows what was asked.
+        const turn = currentTurn(apply({ type: "ask", question: trimmed, route: "market_brief", previousLead: currentLeadRef.current }));
+        if (turn) apply({ type: "answered", turnId: turn.id, route: "market_brief" });
+        const href = marketBriefHref(trimmed, institutionId);
+        void persistConversation().then((id) => window.location.assign(id ? `${href}&${new URLSearchParams({ conversation: id })}` : href));
         return;
       }
       const pendingSince = askPendingSince.current;
       if (pendingSince !== null && Date.now() - pendingSince < ASK_PENDING_MS) return;
       askPendingSince.current = Date.now();
       answerGeneration.current += 1;
-      if (lastPromptRef.current && lastPromptRef.current !== trimmed) {
-        // The answer just read moves up into the conversation, collapsed to its question and lead.
-        const earlier: ConversationTurn = { question: lastPromptRef.current, lead: currentLeadRef.current };
-        historyRef.current = [...historyRef.current, earlier];
-        setThread((t) => [...t, earlier]);
-      }
+      // The answer just read moves up into the conversation, collapsed to its question and lead.
+      apply({ type: "ask", question: trimmed, previousLead: currentLeadRef.current });
+      setComposerError(null);
       lastPromptRef.current = trimmed;
       setStartedAt(Date.now());
       setStoryLead(null);
+      setEngineRows(false);
       clearError();
       setHeldLine(null);
       setParsedResponse(null);
       setAnswerIdentity(null);
       setFigureCheck(null);
+      setBinding(null);
       setAskedQuestion(trimmed);
-      setAskSeq((n) => n + 1);
       setMessages([]);
       // The engine answers first. A storyline answer gets Hamilton's memo in place; only a
       // question without one is sent on for a written answer (onNoStoryline below), so one
@@ -504,7 +585,9 @@ function AnalyzeConversationWorkspace({
       if (window.innerWidth < 640) textareaRef.current?.blur();
       window.scrollTo({ top: 0, behavior: "smooth" });
     },
-    [clearError, isLoading, engineBusy, readOnlyReason, setMessages, institutionId, selectedInstitution?.name],
+    // persistConversation is declared below and only read when a brief opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [clearError, isLoading, engineBusy, readOnlyReason, setMessages, institutionId, selectedInstitution?.name, apply],
   );
 
   /** Starts over: no earlier answers, no carried context, the start screen. */
@@ -513,13 +596,20 @@ function AnalyzeConversationWorkspace({
     askPendingSince.current = null;
     answerGeneration.current += 1;
     clearError();
-    setThread([]);
-    historyRef.current = [];
+    convRef.current = resetConversation(convRef.current);
+    setConv(convRef.current);
+    conversationEpoch.current += 1;
+    storing.current = null;
+    openedRevision.current = -1;
+    setClarificationReply(null);
+    setComposerError(null);
     lastPromptRef.current = "";
     setEngineBusy(false);
+    setEngineRows(false);
     setAskedQuestion(null);
     setHeldLine(null);
     setParsedResponse(null);
+    setBinding(null);
     setAnswerIdentity(null);
     setStoryLead(null);
     setMessages([]);
@@ -529,11 +619,85 @@ function AnalyzeConversationWorkspace({
     textareaRef.current?.focus();
   }, [clearError, isLoading, setMessages, stop]);
 
+  // The conversation is stored once its first answer arrives (hamilton_conversations), then one
+  // snapshot per change, so a reload, back/forward visit or reopened answer resumes it. Storing
+  // never blocks an answer; a "New conversation" during a store drops that store's ID.
+  const conversationEpoch = useRef(0);
+  const storing = useRef<Promise<string | null> | null>(null);
+  const persistConversation = useCallback(async (): Promise<string | null> => {
+    if (!startConversationAction || !recordConversationAction || readOnlyReason) return null;
+    const epoch = conversationEpoch.current;
+    let id = convRef.current.conversationId;
+    if (!id) {
+      storing.current ??= startConversationAction().then((r) => ("id" in r ? r.id : null)).catch(() => null);
+      const started = storing.current;
+      id = await started;
+      if (!id) {
+        if (storing.current === started) storing.current = null;
+        return null;
+      }
+      if (!active.current || epoch !== conversationEpoch.current) return null;
+      apply({ type: "stored", conversationId: id });
+      try {
+        const url = new URL(window.location.href);
+        for (const key of ["q", "send", "analysis", "from_brief"]) url.searchParams.delete(key);
+        url.searchParams.set("conversation", id);
+        window.history.replaceState(window.history.state, "", url.toString());
+      } catch {
+        // The address is a convenience; the conversation is stored either way.
+      }
+    }
+    if (epoch !== conversationEpoch.current) return null;
+    const result = await recordConversationAction(id, serializeConversationState(convRef.current)).catch(() => null);
+    return result?.ok ? id : null;
+  }, [apply, readOnlyReason, recordConversationAction, startConversationAction]);
+
+  // Store each settled turn shortly after it changes (several changes land together).
+  const current = currentTurn(conv);
+  useEffect(() => {
+    if (conv.revision === openedRevision.current) return;
+    if (!current || current.status !== "answered" || current.route === "market_brief") return;
+    const timer = setTimeout(() => void persistConversation(), 250);
+    return () => clearTimeout(timer);
+  }, [conv.revision, current, persistConversation]);
+
+  const handleLead = useCallback((lead: string) => {
+    setStoryLead(lead);
+    const turn = currentTurn(convRef.current);
+    if (turn) apply({ type: "answered", turnId: turn.id, lead });
+  }, [apply]);
+  const handleAnswered = useCallback((info: StructuredAnswerInfo) => {
+    const turn = currentTurn(convRef.current);
+    if (!turn) return;
+    if (info.decisionId) apply({ type: "decision", value: { decisionId: info.decisionId, feeCategory: info.feeCategory } });
+    apply({ type: "answered", turnId: turn.id, route: info.route, savedAnalysisId: info.savedAnalysisId });
+  }, [apply]);
+  const handlePeerSet = useCallback((value: ActivePeerSet) => {
+    apply({ type: "peerSet", value });
+  }, [apply]);
+  const handleClarification = useCallback((question: ClarifyingQuestion | null, invalidValue: string | null) => {
+    const turn = currentTurn(convRef.current);
+    if (turn) apply({ type: "clarify", turnId: turn.id, question, invalidValue });
+  }, [apply]);
+  const handleReplyFailed = useCallback((value: string) => {
+    setInput((existing) => existing || value);
+    setComposerError("Hamilton couldn't send your reply just now. It's back in the question box. Send it again.");
+  }, []);
+
+  // Hamilton's question takes the composer, so the reader answers where they type.
+  const pendingField = conv.clarification?.fieldKey ?? null;
+  useEffect(() => {
+    if (!pendingField) return;
+    textareaRef.current?.focus({ preventScroll: true });
+    document.getElementById("hamilton-ask")?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+  }, [pendingField]);
+
   // A storyline answer for a fee picked after a written answer replaces that answer.
   const dropWrittenAnswer = useCallback(() => {
     if (isLoading) stop();
     setHeldLine(null);
     setParsedResponse(null);
+    setBinding(null);
     setMessages([]);
   }, [isLoading, setMessages, stop]);
 
@@ -550,16 +714,41 @@ function AnalyzeConversationWorkspace({
     }
   }, [autoSend, initialQuestion, initialAnalysis, ask]);
 
+  /** Sends the composer: an ordinary question, or the answer to Hamilton's pending question. */
+  function submitComposer() {
+    const pending = convRef.current.clarification;
+    if (!pending) {
+      ask(input);
+      return;
+    }
+    if (engineBusy) return;
+    const problem = clarificationInputError(pending.inputKind, input);
+    if (problem) {
+      setComposerError(problem);
+      return;
+    }
+    setComposerError(null);
+    setClarificationReply((r) => ({ value: input.trim(), seq: (r?.seq ?? 0) + 1 }));
+    setInput("");
+  }
+
+  /** Leaves Hamilton's question unanswered; the composer asks ordinary questions again. */
+  function cancelClarification() {
+    apply({ type: "cancelClarification" });
+    setComposerError(null);
+    textareaRef.current?.focus();
+  }
+
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    ask(input);
+    submitComposer();
   }
 
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     // Enter that confirms an IME composition (Japanese, Chinese) is not a send.
-    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) {
       e.preventDefault();
-      ask(input);
+      submitComposer();
     }
   }
 
@@ -608,10 +797,42 @@ function AnalyzeConversationWorkspace({
   // A stream that so far holds only a section heading has nothing to read yet; the progress note stays.
   const streamingHasText = streamingContent.replace(/^#+[^\n]*$/gm, "").trim().length > 0;
   const liveParsed = isLoading && streamingHasText ? parseAnalyzeResponse(streamingContent) : null;
-  const shown = (chatError || heldLine) && !isLoading ? null : (parsedResponse ?? liveParsed);
-  const view = shown ? shapeHamiltonView(shown.hamiltonView) : { lead: "", paragraphs: [] };
+  const rawShown = (chatError || heldLine) && !isLoading ? null : (parsedResponse ?? liveParsed);
+  // A finished answer carries its binding in state; a held answer's arrives with its first chunk.
+  const activeBinding = parsedResponse
+    ? binding
+    : readNarrativeBinding((lastMessage?.metadata as { narrativeBinding?: unknown } | undefined)?.narrativeBinding);
+  // Left-out sentences never show; Hamilton's reading shows only under its own label.
+  const bound = rawShown ? applyNarrativeBinding(rawShown, activeBinding) : null;
+  const shown = bound ? bound.sections : null;
+  const reading = bound?.reading ?? [];
+  const fallbackLead = bound && activeBinding ? boundFallbackLead(bound) : null;
+  const view = shown
+    ? fallbackLead
+      ? { lead: fallbackLead, paragraphs: [] }
+      : shapeHamiltonView(shown.hamiltonView)
+    : { lead: "", paragraphs: [] };
+  // An untraced figure sits in a sentence the binding already labels or leaves out, so a bound
+  // answer names it once, under the label, instead of in a second warning.
+  const untracedInReading = activeBinding && figureCheck
+    ? figureCheck.unmatched.filter((figure) => reading.some((sentence) => sentence.includes(figure)))
+    : [];
   const feeCategory = view.lead ? inferFeeCategory(view.lead) : null;
   const feeName = feeCategory ? getDisplayName(feeCategory).replace(/\s*\([^)]*\)\s*$/, "").toLowerCase() : null;
+  // The one fee a held or unsourced answer was about, so the reader can ask for it from the
+  // published fee data in one step.
+  const feeAskedAbout = (question: string | null | undefined) => (question ? matchFeeCategory(question) ?? inferFeeCategory(question) : null);
+  const heldFee = heldLine ? feeAskedAbout(lastPromptRef.current) : null;
+  const sourcedFee = feeAskedAbout(askedQuestion ?? initialAnalysisPrompt) ?? (reading.length ? inferFeeCategory(reading.join(" ")) : null) ?? feeCategory;
+  const sourcedAsk = sourcedFee && !readOnlyReason ? (
+    <button
+      type="button"
+      onClick={() => ask(sourcedFeeQuestion(sourcedFee))}
+      className="mt-2 inline-flex min-h-11 items-center rounded-md border border-warm-300 bg-white px-3.5 text-sm font-medium text-warm-800 hover:border-warm-500 sm:min-h-9"
+    >
+      Compare the {proseFeeName(sourcedFee)} fee with sourced figures
+    </button>
+  ) : null;
   const instId = normalizeCanonicalInstitutionId(selectedInstitution?.id ?? institutionId);
   const complete = !isLoading && parsedResponse !== null && Boolean(view.lead);
   const instName = answerIdentity?.researchInstitutionName ?? selectedInstitution?.name ?? null;
@@ -626,7 +847,21 @@ function AnalyzeConversationWorkspace({
     { label: "Research competitors", href: "/pro/intelligence?lens=fees", icon: Search },
     { label: "Build a board brief", href: "/pro/saved", icon: Presentation },
   ];
-  const starting = !(askedQuestion || shown);
+  // A conversation reopened without an answer to show (a reload after a peer list, say) picks up
+  // at the composer, with every earlier turn listed above it.
+  const resumedOnly = !askedQuestion && !shown && !reopenedStory && conv.turns.length > 0 && !initialAnalysis;
+  const starting = !(askedQuestion || shown || resumedOnly);
+  // The turn on screen is the last one; the ones before it are "earlier in this conversation".
+  const earlier = resumedOnly ? conv.turns : conv.turns.slice(0, -1);
+  const lastTurn = conv.turns[conv.turns.length - 1];
+  const lastTurnUnsavedList = resumedOnly && lastTurn?.route === "peer_list" && !lastTurn.savedAnalysisId;
+  const showEarlier = earlier.length > 0 && (Boolean(askedQuestion) || resumedOnly || (Boolean(initialAnalysis) && conversation === 0));
+  const mode = composerMode(conv, !starting);
+  const composerLabel = mode.kind === "clarification" ? mode.label : "Ask a follow-up";
+  const composerProblem = composerError ?? (mode.kind === "clarification" && mode.invalidValue && conv.clarification
+    ? unreadableReplyMessage(conv.clarification.inputKind, mode.invalidValue)
+    : null);
+  const carriedDecision = askedQuestion ? decisionForQuestion(conv, matchFeeCategory(askedQuestion)) : null;
 
   // The ask box sits in the page, never over it: under the heading before the first question,
   // and after the answer once there is one, so it never covers a line of the answer.
@@ -668,18 +903,25 @@ function AnalyzeConversationWorkspace({
       className="flex scroll-mb-8 flex-col gap-2 rounded-lg border border-[var(--fi-border)] bg-[var(--fi-surface-0)] p-3 shadow-[var(--fi-shadow-1)] print:hidden sm:p-4"
     >
       <label htmlFor="hamilton-ask-page" className="text-sm font-semibold text-[var(--fi-ink)]">
-        Ask a follow-up
+        {composerLabel}
       </label>
       <div className="flex items-end gap-2 rounded-md border border-[var(--fi-control-border)] bg-white p-2 pl-3 focus-within:border-[var(--fi-ink)]">
         <textarea
           id="hamilton-ask-page"
           ref={textareaRef}
           value={input}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={(e) => {
+            setInput(e.target.value);
+            if (composerError) setComposerError(null);
+          }}
           onKeyDown={handleKeyDown}
           rows={1}
           maxLength={500}
-          placeholder="What about this institution’s NSF fee?"
+          inputMode={mode.kind === "clarification" ? mode.inputMode : undefined}
+          enterKeyHint="send"
+          aria-invalid={composerProblem ? true : undefined}
+          aria-describedby={composerProblem ? "hamilton-ask-problem" : undefined}
+          placeholder={mode.kind === "clarification" ? mode.placeholder : "What about this institution’s NSF fee?"}
           className="min-w-0 flex-1 resize-none bg-transparent px-1 py-2 text-base leading-relaxed text-[var(--fi-ink)] placeholder:text-[var(--fi-muted)] focus:outline-none"
         />
         <button
@@ -688,9 +930,17 @@ function AnalyzeConversationWorkspace({
           className="fi-btn fi-btn-primary fi-btn-sm min-h-11 sm:min-h-9"
         >
           {isLoading || engineBusy ? <Loader2 aria-hidden className="h-4 w-4 animate-spin" /> : <ArrowUp aria-hidden className="h-4 w-4" />}
-          Ask
+          {mode.kind === "clarification" ? "Answer" : "Ask"}
         </button>
       </div>
+      {composerProblem ? (
+        <p id="hamilton-ask-problem" role="alert" className="text-sm text-terra-text">{composerProblem}</p>
+      ) : null}
+      {mode.kind === "clarification" ? (
+        <button type="button" onClick={cancelClarification} className="min-h-11 self-start text-sm font-medium text-warm-800 underline sm:min-h-9">
+          Ask something else instead
+        </button>
+      ) : null}
     </form>
   );
 
@@ -706,44 +956,105 @@ function AnalyzeConversationWorkspace({
         <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-terra bg-terra-soft px-4 py-3 text-sm text-warm-900">
           <span>{askErrorMessage(chatError)}</span>
           {lastPromptRef.current ? (
-            <button type="button" onClick={() => ask(lastPromptRef.current)} className="font-medium text-terra-text underline">
+            <button type="button" onClick={() => ask(lastPromptRef.current)} className="min-h-11 font-medium text-terra-text underline sm:min-h-9">
               Try again
             </button>
           ) : null}
         </div>
       ) : null}
+      {subjectNotice ? (
+        <Callout>
+          <p>{subjectNotice.text}</p>
+          {subjectNotice.href ? <a href={subjectNotice.href} className="font-medium text-terra-text underline">{subjectNotice.linkLabel ?? "Open it"}</a> : null}
+        </Callout>
+      ) : null}
+      {!subjectNotice && conv.previousSubject && conv.turns.length === 0 ? (
+        <Callout>
+          <p>
+            Now researching {conv.subject.institutionName ?? "a different institution"}. Earlier answers about{" "}
+            {conv.previousSubject.institutionName ?? "the previous institution"} are not carried into this conversation.
+          </p>
+        </Callout>
+      ) : null}
       {heldLine && !chatError && !isLoading ? (
         <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-terra bg-terra-soft px-4 py-3 text-sm text-warm-900">
-          <span>{heldLine}</span>
+          <span className="min-w-0 flex-1">{heldLine}</span>
           {lastPromptRef.current ? (
-            <button type="button" onClick={() => ask(lastPromptRef.current)} className="font-medium text-terra-text underline">
-              Ask again
-            </button>
+            <span className="flex flex-wrap items-center gap-3">
+              {heldFee ? (
+                <button
+                  type="button"
+                  onClick={() => ask(sourcedFeeQuestion(heldFee))}
+                  className="min-h-11 rounded-md border border-terra bg-white px-3.5 font-medium text-terra-text hover:bg-terra-soft sm:min-h-9"
+                >
+                  Compare the {proseFeeName(heldFee)} fee only
+                </button>
+              ) : null}
+              <button type="button" onClick={() => ask(lastPromptRef.current)} className="min-h-11 font-medium text-terra-text underline sm:min-h-9">
+                Ask again
+              </button>
+            </span>
           ) : null}
         </div>
       ) : null}
 
-      {thread.length > 0 && askedQuestion ? (
+      {resumedOnly ? (
+        <MemoHeader
+          kicker={instName ? `Conversation · ${instName}` : "Conversation"}
+          title="Pick up where you left off"
+          dek={lastTurnUnsavedList
+            ? "Your last peer list wasn't saved. Show it again, or ask a follow-up below."
+            : conv.peerSet ? "Follow-ups keep this conversation's institution, peer list and earlier answers." : "Follow-ups keep this conversation's institution and earlier answers."}
+          actions={readOnlyReason ? undefined : (
+            <button
+              type="button"
+              onClick={newQuestion}
+              className="inline-flex min-h-11 items-center rounded-md border border-warm-300 bg-warm-50 px-3.5 py-2 text-sm font-medium text-warm-800 hover:border-warm-500 sm:min-h-9"
+            >
+              New conversation
+            </button>
+          )}
+        />
+      ) : null}
+
+      {showEarlier ? (
         <section aria-label="Earlier in this conversation" className="flex flex-col gap-2">
           <p className="text-xs font-semibold uppercase tracking-[0.12em] text-warm-600">Earlier in this conversation</p>
           <ol className="flex flex-col divide-y divide-warm-200 rounded-lg border border-warm-300 bg-warm-50">
-            {thread.map((t, i) => (
+            {earlier.map((t, i) => (
               <li key={i} className="flex flex-col gap-0.5 px-4 py-3">
                 <p className="text-warm-900" style={SERIF}>{t.question}</p>
                 {t.lead ? <p className="line-clamp-2 text-sm text-warm-700">{renderInline(t.lead)}</p> : null}
+                {readOnlyReason ? null : t.savedAnalysisId ? (
+                  <a
+                    href={hrefWithInstitutionContext(`/pro/analyze?analysis=${encodeURIComponent(t.savedAnalysisId)}`, instId)}
+                    className="mt-1 inline-flex min-h-11 items-center self-start text-sm font-medium text-terra-text underline sm:min-h-0"
+                  >
+                    Open this answer
+                  </a>
+                ) : resumedOnly && t.route === "peer_list" ? (
+                  // A peer list is a lookup, so showing it again makes no paid call.
+                  <button
+                    type="button"
+                    onClick={() => ask(t.question)}
+                    className="mt-1 inline-flex min-h-11 items-center self-start text-sm font-medium text-terra-text underline sm:min-h-0"
+                  >
+                    Show this list again
+                  </button>
+                ) : null}
               </li>
             ))}
           </ol>
         </section>
       ) : null}
 
-      {askedQuestion || shown ? (
+      {resumedOnly ? null : askedQuestion || shown ? (
         <div ref={answerHeadingRef} tabIndex={-1} className="focus:outline-none">
           <MemoHeader
             kicker={instName ? `You asked · ${instName}` : "You asked"}
             title={askedQuestion ?? initialAnalysisPrompt ?? "A saved answer"}
             compact={longQuestion}
-            dek={thread.length > 0 && askedQuestion ? `Following up on: “${thread[thread.length - 1].question}”` : undefined}
+            dek={showEarlier ? `Following up on: “${earlier[earlier.length - 1].question}”` : undefined}
             actions={readOnlyReason ? undefined : (
               <div className="flex flex-wrap gap-2">
               <a
@@ -762,7 +1073,7 @@ function AnalyzeConversationWorkspace({
                 onClick={newQuestion}
                 className="inline-flex min-h-11 items-center rounded-md border border-warm-300 bg-warm-50 px-3.5 py-2 text-sm font-medium text-warm-800 hover:border-warm-500 sm:min-h-9"
               >
-                New question
+                New conversation
               </button>
               </div>
             )}
@@ -770,13 +1081,13 @@ function AnalyzeConversationWorkspace({
         </div>
       ) : (
         <div className="flex max-w-[72rem] flex-col gap-10">
-          <header className="flex flex-col gap-3">
+          <header className="flex flex-col gap-3 text-center sm:text-left">
             <p className="fi-text-label text-[var(--fi-muted)]">Ask Hamilton</p>
             <h1 className="text-4xl font-semibold leading-tight tracking-tight text-[var(--fi-ink)] sm:text-[2.75rem]">
               What are you working on?
             </h1>
             <p className="text-lg text-[var(--fi-muted)]">
-              Ask a question. Get a research brief built around {instName ?? "your institution"}.
+              {instName ? `Ask a question. Get a research brief built around ${instName}.` : "Choose an institution, then ask a question."}
             </p>
           </header>
           <div className="flex flex-col gap-3">
@@ -819,7 +1130,7 @@ function AnalyzeConversationWorkspace({
                     >
                       <FileText aria-hidden className="h-5 w-5 shrink-0 text-[var(--fi-muted)]" strokeWidth={1.75} />
                       <span className="min-w-0 flex-1">{r.title}</span>
-                      <span className="shrink-0 text-sm text-[var(--fi-muted)]">{shortDate(r.updated_at)}</span>
+                      <LocalDate iso={r.updated_at} options={SHORT_DATE} className="shrink-0 text-sm text-[var(--fi-muted)]" />
                       <ArrowRight aria-hidden className="h-4 w-4 shrink-0 text-[var(--fi-muted)]" />
                     </a>
                   </li>
@@ -841,22 +1152,12 @@ function AnalyzeConversationWorkspace({
         {complete ? "Answer ready." : ""}
       </p>
 
-      {answerIdentity && (shown || reopenedStory) ? (
-        <aside aria-label="Saved answer institution context" className="text-sm text-warm-700">
-          {/* The record of whose answer this is stays one click away, below the header that already names the institution. */}
-          <details>
-            <summary className="cursor-pointer text-xs text-warm-600">Institution and peer group behind this answer</summary>
-            {hamiltonIdentityLines(answerIdentity).map(line => <p key={line}>{line}</p>)}
-          </details>
-        </aside>
-      ) : initialAnalysis && conversation === 0 && !askedQuestion ? (
-        <p className="text-sm text-warm-600">Historical account and peer context was not recorded with this answer.</p>
-      ) : null}
-
       {reopenedStory ? (
         <StorylineView
           story={reopenedStory}
           identityContext={answerIdentity}
+          // The stamps saved with the answer (#1924), never a fresh read; none on older answers.
+          stamps={readStampedFigures(initialAnalysis?.datasetStamps)}
           memo={initialAnalysis?.memo ? { state: "written", memo: initialAnalysis.memo } : undefined}
           nextSteps={initialAnalysisId && !readOnlyReason ? <><LinkButton href={`/pro/reports?from_analysis=${encodeURIComponent(initialAnalysisId)}`}>Build board brief</LinkButton><DownloadAnswerPdf analysisId={initialAnalysisId} /></> : null}
         />
@@ -864,14 +1165,24 @@ function AnalyzeConversationWorkspace({
 
       <div className="flex flex-col gap-8">
       {askedQuestion ? (
-        <div className={proseActive ? "order-last" : undefined}>
+        <div className={proseActive && !engineRows ? "order-last" : undefined}>
         <StructuredAsk
           key={conversation}
           question={askedQuestion}
-          nonce={askSeq}
+          nonce={conv.nonce}
+          decisionId={carriedDecision}
+          onAnswered={handleAnswered}
+          peerSet={conv.peerSet}
+          onPeerSet={handlePeerSet}
+          onClarification={handleClarification}
+          clarificationReply={clarificationReply}
+          showClarification={Boolean(conv.clarification)}
+          onClarificationReplyFailed={handleReplyFailed}
           onStoryline={dropWrittenAnswer}
           onBusyChange={setEngineBusy}
-          onLead={setStoryLead}
+          onLead={handleLead}
+          onEngineRows={setEngineRows}
+          proseShown={Boolean(shown && view.lead)}
           institutionId={instId}
           modelHrefFor={(fee, tested) => hrefWithInstitutionContext(`/pro/simulate?fee=${encodeURIComponent(fee)}&prices=${tested}`, instId)}
           researchHrefFor={(fee) => hrefWithInstitutionContext(`/pro/research?fee=${encodeURIComponent(fee)}`, instId)}
@@ -882,13 +1193,31 @@ function AnalyzeConversationWorkspace({
 
       {shown && view.lead && !reopenedStory ? (
         <div className="flex flex-col gap-8">
-          {/* The figures lead and the prose follows, so a written answer opens on an exhibit. */}
-          {shown.evidence.length > 0 ? <EvidenceExhibit rows={shown.evidence} /> : null}
-          <article className="flex max-w-[68ch] flex-col gap-4">
-            {askedQuestion ? (
-              <h2 className="text-xs font-semibold uppercase tracking-[0.12em] text-warm-600">Hamilton&apos;s commentary</h2>
-            ) : null}
-            <p className={askedQuestion ? "text-xl leading-snug text-warm-900" : "text-2xl leading-snug text-warm-900 sm:text-[1.7rem]"} style={SERIF}>
+          {/* A limitation comes before the figures and commentary it qualifies. */}
+          {complete && !activeBinding && figureCheck && figureCheck.unmatched.length > 0 ? (
+            <Callout>
+              <p>
+                <strong>Check these figures:</strong> {figureCheck.unmatched.join(", ")} could not be traced to the data
+                Hamilton looked up for this answer. Treat them as unverified.
+              </p>
+              {sourcedAsk}
+            </Callout>
+          ) : null}
+          {/* The figures lead and the prose follows. */}
+          {shown.evidence.length > 0 ? <EvidenceExhibit rows={shown.evidence} untraced={complete ? figureCheck?.unmatched : undefined} /> : null}
+          {complete && bound && bound.notes.length > 0 ? (
+            <Callout>
+              {bound.notes.map((line) => (
+                <p key={line}>{line}</p>
+              ))}
+            </Callout>
+          ) : null}
+          {/* Text keeps its reading measure; on a wide screen the next steps sit beside it, so the
+              column is used rather than left empty. */}
+          <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_16rem] lg:items-start">
+          <article className="flex flex-col gap-4">
+            {askedQuestion ? <SectionHeading as="h2">Hamilton&apos;s commentary</SectionHeading> : null}
+            <p className={`max-w-[68ch] ${askedQuestion ? "text-xl leading-snug text-warm-900" : "text-2xl leading-snug text-warm-900 sm:text-[1.7rem]"}`} style={SERIF}>
               {renderInline(view.lead)}
             </p>
             {view.paragraphs.slice(0, 1).map((para, i) => (
@@ -908,7 +1237,7 @@ function AnalyzeConversationWorkspace({
                 ) : null}
                 {shown.whyItMatters.length > 0 ? (
                   <section>
-                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-[0.1em] text-warm-600">Why it matters</h3>
+                    <SectionHeading>Why it matters</SectionHeading>
                     <ul className="flex list-disc flex-col gap-2 pl-5 text-base text-warm-800">
                       {shown.whyItMatters.map((item, i) => (
                         <li key={i}>{renderInline(item)}</li>
@@ -918,19 +1247,31 @@ function AnalyzeConversationWorkspace({
                 ) : null}
               </More>
             ) : null}
+            {reading.length > 0 ? (
+              <InterpretationBox
+                sentences={reading}
+                renderSentence={(sentence) => {
+                  const basis = bound?.basis[sentence.trim()];
+                  return basis ? (
+                    <>
+                      {renderInline(sentence)}
+                      <span className="mt-0.5 block text-xs text-warm-600">{basis}</span>
+                    </>
+                  ) : renderInline(sentence);
+                }}
+              >
+                {untracedInReading.length > 0 ? (
+                  <p className="mt-2 text-xs text-warm-700">
+                    These figures were not in the data Hamilton looked up: {untracedInReading.join(", ")}.
+                  </p>
+                ) : null}
+                {/* With no fee-record figure in the answer, the reader gets one step to a sourced one. */}
+                {complete && fallbackLead ? sourcedAsk : null}
+              </InterpretationBox>
+            ) : null}
           </article>
-
-          {complete && figureCheck && figureCheck.unmatched.length > 0 ? (
-            <Callout>
-              <strong>Check these figures:</strong> {figureCheck.unmatched.join(", ")} could not be traced to the data
-              Hamilton looked up for this answer. Treat them as unverified.
-            </Callout>
-          ) : null}
-
-
-          {complete ? (
-            <>
-              {!readOnlyReason ? <div className="flex flex-wrap items-center gap-3">
+            {complete && !readOnlyReason ? (
+              <aside aria-label="Next steps" className="flex flex-wrap items-center gap-3 lg:sticky lg:top-6 lg:flex-col lg:items-stretch">
                 <LinkButton
                   href={hrefWithInstitutionContext(feeCategory ? `/pro/research?fee=${encodeURIComponent(feeCategory)}` : "/pro/research", instId)}
                   primary
@@ -944,24 +1285,41 @@ function AnalyzeConversationWorkspace({
                   type="button"
                   onClick={handleExportPdf}
                   disabled={isExporting}
-                  className="rounded-md border border-warm-300 bg-warm-50 px-3.5 py-2 text-sm text-warm-800 hover:border-warm-500 disabled:opacity-50"
+                  className="min-h-11 rounded-md border border-warm-300 bg-warm-50 px-3.5 py-2 text-sm text-warm-800 hover:border-warm-500 disabled:opacity-50 sm:min-h-9"
                 >
                   {isExporting ? "Preparing the PDF…" : "Download PDF"}
                 </button>
-                <AddToReportButton
-                  variant="link"
-                  item={{
-                    id: basketItemId("Ask", instId, view.lead),
-                    source: "Ask",
-                    title: view.lead,
-                    detail: [view.paragraphs.join(" "), shown.whatThisMeans].filter(Boolean).join(" "),
-                    feeCategory,
-                    institutionId: instId,
-                    savedAnalysisId,
-                    ...(answerIdentity ? { identityContext: answerIdentity } : {}),
-                  }}
+              </aside>
+            ) : null}
+          </div>
+
+
+          {complete ? (
+            <>
+              {readOnlyReason ? null : (
+                <AnswerFollowThrough
+                  analysisId={savedAnalysisId}
+                  institutionId={instId}
+                  institutionName={instName}
+                  feeCategory={feeCategory}
+                  report={<>
+                    <AddToReportButton
+                      variant="link"
+                      item={{
+                        id: basketItemId("Ask", instId, view.lead),
+                        source: "Ask",
+                        title: view.lead,
+                        detail: [view.paragraphs.join(" "), shown.whatThisMeans].filter(Boolean).join(" "),
+                        feeCategory,
+                        institutionId: instId,
+                        savedAnalysisId,
+                        ...(answerIdentity ? { identityContext: answerIdentity } : {}),
+                      }}
+                    />
+                    {savedAnalysisId ? <Link href={hrefWithInstitutionContext(`/pro/reports?from_analysis=${encodeURIComponent(savedAnalysisId)}`, instId)} className="text-sm font-medium text-terra-text underline-offset-2 hover:underline">Build board brief</Link> : null}
+                  </>}
                 />
-              </div> : null}
+              )}
               {exportError ? (
                 <p role="alert" className="text-sm text-terra-text">
                   {exportError}
@@ -992,16 +1350,40 @@ function AnalyzeConversationWorkspace({
       ) : null}
       </div>
 
-      {askedQuestion || shown ? askBox : null}
+      {answerIdentity && (shown || reopenedStory) ? (
+        <aside aria-label="Saved answer institution context" className="text-sm text-warm-700">
+          {/* The record of whose answer this is stays one click away, after the answer itself. */}
+          <details>
+            <summary className="cursor-pointer text-xs text-warm-600">Institution and peer group behind this answer</summary>
+            {hamiltonIdentityLines(answerIdentity).map(line => <p key={line}>{line}</p>)}
+          </details>
+        </aside>
+      ) : initialAnalysis && conversation === 0 && !askedQuestion ? (
+        <p className="text-sm text-warm-600">Historical account and peer context was not recorded with this answer.</p>
+      ) : null}
+
+      {askedQuestion || shown || resumedOnly ? askBox : null}
     </MemoPage>
   );
 }
 
-/** "Oct 8" for a saved answer's date; empty when the date can't be read. */
-function shortDate(iso: string): string {
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+/**
+ * A fresh conversation, or (for a saved answer reopened with no stored conversation) one whose
+ * only turn is that answer, so a follow-up knows what it follows.
+ */
+function seedConversation(
+  subject: { institutionId: string | null; institutionName: string | null },
+  saved: { question: string | null; savedAnalysisId: string | null } | null,
+): HamiltonConversationState {
+  const empty = emptyConversation(subject);
+  if (!saved?.question) return empty;
+  const asked = conversationReducer(empty, { type: "ask", question: saved.question });
+  const turn = currentTurn(asked);
+  return turn ? conversationReducer(asked, { type: "answered", turnId: turn.id, savedAnalysisId: saved.savedAnalysisId }) : asked;
 }
+
+/** "Oct 8" for a saved answer's date, in the reader's time zone. */
+const SHORT_DATE: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
 
 /** The focus a deep link asks for (?intent=benchmark → Peer Position, etc.). */
 function focusForIntent(intent: string | null | undefined): AnalysisFocus {

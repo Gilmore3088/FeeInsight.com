@@ -1,15 +1,19 @@
+import { feeSourceFetch } from "@/lib/agents/fee-source-fetch";
 import { sql } from "@/lib/data-store/connection";
 import { EmergencyStopActiveError } from "@/lib/automation-control";
 import { ProviderBudgetBlockedError } from "@/lib/api-hardening/budget";
+import { ProviderCircuitOpenError } from "@/lib/ai-provider-usage";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
+import { lessonsForModel } from "@/lib/agents/learning/lesson-reader";
 import { loadMarketLeaderIds } from "@/lib/data-store/market-leaders";
 import { classifyFetchFailure, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { PAID_PASS_MODELS, paidModelCall, paidResponseJson, type PaidMessageCreator } from "@/lib/agents/paid-pass";
-import { loadGroupGaps, pickFromWorkLists, WORK_LIST_POOL, workListDetail, workListPoolRankSql, type GroupGaps, type WorkListPlacement } from "@/lib/agents/state-expert/work-list";
+import { loadGroupGaps, WORK_LIST_POOL, workListDetail, workListPoolRankSql, type GroupGaps, type WorkListPlacement } from "@/lib/agents/state-expert/work-list";
 
 import { FOUND_COOLDOWN_DAYS, MISS_COOLDOWN_DAYS } from "./cooldowns";
 import { looksLikePdfUrl, validateFeeCandidate } from "./find-validate";
 import { urlIdentity } from "./finders";
+import { loadTopTenMissingIds, pickTopTenFirst, TOP_TEN_RETRY_DAYS } from "./top-ten-first";
 import { loadSharedNameIds } from "./other-bank-host";
 import { blockedAnswerHostConfirmed, loadOwnHosts, onBankHosts } from "./own-hosts";
 import { domainRule, ownSiteDomains, webSearchToolFor } from "./web-search-tool";
@@ -60,7 +64,12 @@ type Fetcher = typeof fetch;
  * Knox read the new document next.
  */
 
-export const SCHEDULE_SEARCH_STRATEGY = { strategy: "discover.paid_schedule_search", version: 2 } as const;
+/**
+ * Version 3 (2026-10-17, `top-ten-first.ts`): state top-10 slot holders with nothing live go
+ * first in each lane, and an uncovered one whose tries in the miss cooldown never used the
+ * three-document ask gets it once a week instead of waiting out the cooldown.
+ */
+export const SCHEDULE_SEARCH_STRATEGY = { strategy: "discover.paid_schedule_search", version: 3 } as const;
 /** Uncovered institutions (no live fee) one paid step searches. Not tied to the step's state. */
 export const SCHEDULE_SEARCH_PER_RUN = 10;
 /** Covered banks one paid step searches to fill a gap (the gap-fill lane). */
@@ -109,6 +118,10 @@ export interface ScheduleSearchRow {
   requested: boolean | null;
   /** In its state's top 15 by deposits, service charge income or total income. */
   leader?: boolean | null;
+  /** Holds a state top-10 slot with nothing live (`top-ten-first.ts`). */
+  top_ten?: boolean | null;
+  /** A top-10 slot holder's weekly try inside the miss cooldown, with the three-document ask. */
+  top_ten_retry?: boolean | null;
   /** No live fee at all: the uncovered lane. Otherwise the gap-fill lane. */
   uncovered?: boolean | null;
   business_only: boolean | null;
@@ -256,7 +269,7 @@ export function proposedDocuments(row: Pick<ScheduleSearchRow, "uncovered">, ans
  * order and takes its cap from the state experts' work lists (#1029): requesters and paying
  * customers first, then one per state in turn.
  */
-async function selectRows(db: SqlTag, limit: number, gapLimit: number, leaderIds: number[], gaps: GroupGaps): Promise<ScheduleSearchRow[]> {
+async function selectRows(db: SqlTag, limit: number, gapLimit: number, leaderIds: number[], gaps: GroupGaps, topTenIds: number[]): Promise<ScheduleSearchRow[]> {
   const pool = await db<ScheduleSearchRow[]>`
     -- incomplete-link schedule search
     WITH live AS (
@@ -274,6 +287,8 @@ async function selectRows(db: SqlTag, limit: number, gapLimit: number, leaderIds
              ) AS paying,
              COALESCE(NULLIF(btrim(profile.platform), ''), NULLIF(btrim(inst.cms_platform), '')) AS platform,
              inst.id = ANY(${leaderIds}::bigint[]) AS leader,
+             inst.id = ANY(${topTenIds}::bigint[]) AS top_ten,
+             (cooled.on_cooldown AND retry.early) AS top_ten_retry,
              (
                inst.asset_size >= ${LARGE_BANK_ASSETS}
                OR inst.id = ANY(${leaderIds}::bigint[])
@@ -337,24 +352,50 @@ async function selectRows(db: SqlTag, limit: number, gapLimit: number, leaderIds
         FROM institution_sources inst
         LEFT JOIN institution_source_profiles profile ON profile.institution_id = inst.id
         LEFT JOIN live ON live.institution_id = inst.id
+        -- The rolling cooldown (#1031): one real answer in the last FOUND_COOLDOWN_DAYS (a find)
+        -- or MISS_COOLDOWN_DAYS (a miss).
+        LEFT JOIN LATERAL (
+          SELECT EXISTS (
+            SELECT 1 FROM pipeline_attempts pa
+             WHERE pa.institution_id = inst.id
+               AND pa.stage = 'discover'
+               AND pa.strategy = ${SCHEDULE_SEARCH_STRATEGY.strategy}
+               AND pa.created_at >= NOW() - make_interval(days => CASE WHEN pa.outcome = 'ok' THEN ${FOUND_COOLDOWN_DAYS}::int ELSE ${MISS_COOLDOWN_DAYS}::int END)
+               AND pa.outcome <> ALL(${TRANSIENT_OUTCOMES})
+          ) AS on_cooldown
+        ) cooled ON true
+        -- A state top-10 slot holder with nothing live (top-ten-first.ts) and no live record may
+        -- skip the miss cooldown when no real try in it used the three-document ask
+        -- (detail.lane = 'uncovered', version 2 on; the Oct 6-11 tries asked for the schedule
+        -- only), at most once in TOP_TEN_RETRY_DAYS from its last real try. A find keeps its
+        -- FOUND_COOLDOWN_DAYS.
+        LEFT JOIN LATERAL (
+          SELECT (
+            inst.id = ANY(${topTenIds}::bigint[])
+            AND COALESCE(live.categories, 0) = 0
+            AND NOT EXISTS (
+              SELECT 1 FROM pipeline_attempts pa
+               WHERE pa.institution_id = inst.id
+                 AND pa.stage = 'discover'
+                 AND pa.strategy = ${SCHEDULE_SEARCH_STRATEGY.strategy}
+                 AND pa.outcome <> ALL(${TRANSIENT_OUTCOMES})
+                 AND (
+                   pa.created_at >= NOW() - make_interval(days => CASE WHEN pa.outcome = 'ok' THEN ${FOUND_COOLDOWN_DAYS}::int ELSE ${TOP_TEN_RETRY_DAYS}::int END)
+                   OR (pa.detail->>'lane' = 'uncovered' AND pa.created_at >= NOW() - make_interval(days => ${MISS_COOLDOWN_DAYS}::int))
+                 )
+            )
+          ) AS early
+        ) retry ON true
        WHERE COALESCE(inst.status, 'active') = 'active'
          AND inst.website_url IS NOT NULL AND btrim(inst.website_url) <> ''
          AND inst.fee_schedule_url IS NOT NULL AND btrim(inst.fee_schedule_url) <> ''
          AND COALESCE(profile.source_kind, 'unknown') <> 'offline'
          AND COALESCE(profile.read_strategy, '') <> 'manual_review'
          AND COALESCE(profile.locked_by_correction, false) = false
-         -- On cooldown (#1031): one real answer in the last FOUND_COOLDOWN_DAYS (a find) or
-         -- MISS_COOLDOWN_DAYS (a miss), or MAX_TRANSIENT_TRIES that timed out or were refused
-         -- in the last MISS_COOLDOWN_DAYS (Morgan Stanley and Northern Trust timed out 35
-         -- times in 9 hours).
-         AND NOT EXISTS (
-           SELECT 1 FROM pipeline_attempts pa
-            WHERE pa.institution_id = inst.id
-              AND pa.stage = 'discover'
-              AND pa.strategy = ${SCHEDULE_SEARCH_STRATEGY.strategy}
-              AND pa.created_at >= NOW() - make_interval(days => CASE WHEN pa.outcome = 'ok' THEN ${FOUND_COOLDOWN_DAYS}::int ELSE ${MISS_COOLDOWN_DAYS}::int END)
-              AND pa.outcome <> ALL(${TRANSIENT_OUTCOMES})
-         )
+         -- Off the cooldown, or on a top-10 weekly try; and fewer than MAX_TRANSIENT_TRIES
+         -- tries (timeouts and refusals too) in the last MISS_COOLDOWN_DAYS (Morgan Stanley and
+         -- Northern Trust timed out 35 times in 9 hours).
+         AND (NOT cooled.on_cooldown OR retry.early)
          AND (
            SELECT count(*) FROM pipeline_attempts pa
             WHERE pa.institution_id = inst.id
@@ -379,11 +420,12 @@ async function selectRows(db: SqlTag, limit: number, gapLimit: number, leaderIds
              ${workListPoolRankSql(db, { state: "state_code", assets: "asset_size", id: "id", within: "pool_lane" })} AS cell_rank
         FROM eligible
     )
-    -- Each pool's cut keeps requesters and paying customers, then market leaders, then each
+    -- Each pool's cut keeps requesters and paying customers, then top-10 slot holders with
+    -- nothing live, then market leaders, then each
     -- work-list cell's first rows in turn (#1269), so no small-bank group drops out whole.
     , lanes AS (
       SELECT due.*,
-             row_number() OVER (PARTITION BY pool_lane ORDER BY requested DESC, paying DESC, leader DESC, cell_rank ASC, asset_size DESC NULLS LAST, id ASC) AS lane_rank
+             row_number() OVER (PARTITION BY pool_lane ORDER BY requested DESC, paying DESC, top_ten DESC, leader DESC, cell_rank ASC, asset_size DESC NULLS LAST, id ASC) AS lane_rank
         FROM due
     )
     SELECT * FROM lanes
@@ -391,10 +433,16 @@ async function selectRows(db: SqlTag, limit: number, gapLimit: number, leaderIds
      ORDER BY pool_lane DESC, lane_rank ASC
   `;
   const rows = Array.isArray(pool) ? pool : [];
-  const uncovered = pickFromWorkLists(rows.filter((row) => row.uncovered), gaps, limit);
-  const gapPriority = pickFromWorkLists(rows.filter((row) => !row.uncovered && row.priority), gaps, gapLimit);
-  const gapOther = pickFromWorkLists(rows.filter((row) => !row.uncovered && !row.priority), gaps, gapLimit - gapPriority.length);
+  const topTen = (row: ScheduleSearchRow) => Boolean(row.top_ten);
+  const uncovered = pickTopTenFirst(rows.filter((row) => row.uncovered), gaps, limit, topTen);
+  const gapPriority = pickTopTenFirst(rows.filter((row) => !row.uncovered && row.priority), gaps, gapLimit, topTen);
+  const gapOther = pickTopTenFirst(rows.filter((row) => !row.uncovered && !row.priority), gaps, gapLimit - gapPriority.length, topTen);
   return [...uncovered, ...gapPriority, ...gapOther];
+}
+
+/** What a result entry and attempt record about the top-10 rule (`top-ten-first.ts`). */
+function topTenDetail(row: Pick<ScheduleSearchRow, "top_ten" | "top_ten_retry">): Record<string, unknown> {
+  return row.top_ten ? { top_ten: true, top_ten_retry: Boolean(row.top_ten_retry) } : {};
 }
 
 /** What the gap-fill lane spent in the last `GAP_FILL_CAP_DAYS`. */
@@ -433,6 +481,8 @@ async function knownUrls(db: SqlTag, institutionId: number, link: string): Promi
 function budgetStop(error: unknown): string | null {
   if (error instanceof ProviderBudgetBlockedError) return error.message || error.reasonCode;
   if (error instanceof EmergencyStopActiveError) return error.message;
+  // A provider billing refusal (#1056) stops the step like a cap; the institution stays queued.
+  if (error instanceof ProviderCircuitOpenError) return error.message;
   return null;
 }
 
@@ -521,6 +571,8 @@ export async function runScheduleSearch(options: {
   gapLimit?: number;
   /** Market leader ids; loaded from the shared ranking when left out. */
   leaderIds?: number[];
+  /** State top-10 slot holders with nothing live (`top-ten-first.ts`); loaded when left out. */
+  topTenIds?: number[];
   dryRun?: boolean;
   db?: SqlTag;
   create?: PaidMessageCreator;
@@ -538,7 +590,8 @@ export async function runScheduleSearch(options: {
   const gapLimit = gapSpent >= GAP_FILL_CAP_MICROUSD ? 0 : requestedGap;
   const leaderIds = options.leaderIds ?? (await leaderIdsOrNone(db));
   const gaps = options.gaps ?? (await loadGroupGaps(db));
-  const rows = await selectRows(db, limit, gapLimit, leaderIds, gaps);
+  const topTenIds = options.topTenIds ?? (await loadTopTenMissingIds(db));
+  const rows = await selectRows(db, limit, gapLimit, leaderIds, gaps, topTenIds);
   result.selected = rows.length;
   if (options.dryRun) {
     result.results = rows.map((row) => ({
@@ -547,12 +600,13 @@ export async function runScheduleSearch(options: {
       lane: laneOf(row),
       would_search_schedule: true,
       why: whyNotIt(row),
+      ...topTenDetail(row),
       ...workListDetail(row.work_list),
     }));
     return result;
   }
 
-  const fetchImpl = options.fetchImpl ?? fetch;
+  const fetchImpl = options.fetchImpl ?? feeSourceFetch;
   const model = PAID_PASS_MODELS.find();
   const ownHostsById = await loadOwnHosts(db, rows);
   const sharedNames = await loadSharedNameIds(db, rows, { runId: options.runId, stepId: options.stepId ?? null });
@@ -577,16 +631,18 @@ export async function runScheduleSearch(options: {
     const documents: CheckedDocument[] = [];
 
     try {
+      const roleLessons = lessonsForModel("magellan", "discover-paid");
       const call = await paidModelCall({
         agent: "magellan",
         operation: "schedule_search",
         runId: options.runId,
         create: options.create,
-        metadata: { institution_id: institutionId, step_id: options.stepId ?? null, lane },
+        metadata: { institution_id: institutionId, step_id: options.stepId ?? null, lane, lessons_applied: roleLessons.lessonIds },
         params: {
           model,
           max_tokens: MAX_OUTPUT_TOKENS,
           tools: [webSearchToolFor(siteDomains, WEB_SEARCH_MAX_USES)],
+          ...(roleLessons.system ? { system: roleLessons.system } : {}),
           messages: [{ role: "user", content: scheduleSearchPrompt(row, siteDomains) }],
         },
       });
@@ -667,6 +723,7 @@ export async function runScheduleSearch(options: {
         overdraft_price_seen: kept[0]?.overdraft_price_seen ?? null,
         documents,
         reason,
+        ...topTenDetail(row),
         ...workListDetail(row.work_list),
       },
     });
@@ -679,6 +736,7 @@ export async function runScheduleSearch(options: {
       cost_microusd: costMicrousd,
       reason,
       by: "schedule_search",
+      ...topTenDetail(row),
       ...workListDetail(row.work_list),
     });
   }

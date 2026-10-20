@@ -3,7 +3,9 @@ import type {
   ReportArtifactMetadata,
   ReportSummaryResponse,
 } from "@/lib/hamilton/types";
-import { SERIF } from "@/components/hamilton/memo/memo";
+import { InterpretationBox, SERIF } from "@/components/hamilton/memo/memo";
+import { DatasetNote } from "@/components/hamilton/DatasetNote";
+import { readStampedFigures } from "@/lib/dataset-note";
 import { ReportSection } from "./ReportSection";
 import { StatCalloutBox } from "./StatCalloutBox";
 import {
@@ -23,6 +25,8 @@ interface ReportOutputProps {
   report: ReportSummaryResponse;
   reportType: string;
   artifactMetadata?: ReportArtifactMetadata | null;
+  /** Runs this report again with the current checks (shown beside the note on older ratings). */
+  onRunAgain?: () => void;
 }
 
 const body = "text-base leading-relaxed text-pretty text-warm-800";
@@ -32,6 +36,7 @@ export function ReportOutput({
   editable = false,
   reportType,
   artifactMetadata,
+  onRunAgain,
 }: ReportOutputProps) {
   const typeLabel = reportTypeLabel(reportType);
   const identity = readHamiltonIdentitySnapshot(report.identityContext);
@@ -75,11 +80,14 @@ export function ReportOutput({
             </span>
           </p>
         )}
+        {/* Where the report's medians came from, as saved with it (#1924); nothing on older reports. */}
+        {/* A board brief prints the stamp in its sources instead, the copy a committee sees. */}
+        {!report.boardBrief ? <DatasetNote className="mt-3" figures={readStampedFigures(report.datasetStamps)} /> : null}
       </header>
 
       <div className="max-w-3xl">
         {report.answer ? (
-          <ConsultantReportBody report={report} />
+          <ConsultantReportBody report={report} onRunAgain={onRunAgain} />
         ) : (
           <LegacyReportBody report={report} />
         )}
@@ -128,7 +136,7 @@ function AddedFindings({ report }: { report: ReportSummaryResponse }) {
 }
 
 /** Answer first, then the evidence, the reasoning, the trade-offs, and the sources. */
-function ConsultantReportBody({ report }: { report: ReportSummaryResponse }) {
+function ConsultantReportBody({ report, onRunAgain }: { report: ReportSummaryResponse; onRunAgain?: () => void }) {
   const exhibits = report.exhibits ?? [];
   const watchlist = report.watchlist ?? [];
   return (
@@ -138,6 +146,7 @@ function ConsultantReportBody({ report }: { report: ReportSummaryResponse }) {
           headline={report.answer.headline}
           decisions={report.answer.decisions}
           goal={report.answer.goal}
+          onRunAgain={onRunAgain}
         />
       )}
 
@@ -157,6 +166,9 @@ function ConsultantReportBody({ report }: { report: ReportSummaryResponse }) {
 
       <ReportSection heading="What is behind it">
         <Paragraphs text={report.strategicRationale} />
+        {report.boardBrief?.reading?.length ? (
+          <div className="mt-6"><InterpretationBox sentences={report.boardBrief.reading} /></div>
+        ) : null}
       </ReportSection>
 
       <ReportSection heading={report.boardBrief ? "Limits of this evidence" : "Trade-offs"}>

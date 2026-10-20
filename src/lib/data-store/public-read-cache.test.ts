@@ -4,20 +4,25 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // stores only results that resolve (a throw is never cached, as in Next).
 const store = new Map<string, unknown>();
 let cacheAvailable = true;
+// vi.mock is hoisted above this file's declarations, so the list it fills is hoisted too.
+const registered = vi.hoisted(() => [] as { keyParts: string[]; options?: { revalidate?: number } }[]);
 
 vi.mock("next/cache", () => ({
-  unstable_cache: <A extends unknown[], R>(fn: (...args: A) => Promise<R>, keyParts: string[]) =>
-    async (...args: A): Promise<R> => {
+  unstable_cache: <A extends unknown[], R>(fn: (...args: A) => Promise<R>, keyParts: string[], options?: { revalidate?: number }) => {
+    registered.push({ keyParts, options });
+    return async (...args: A): Promise<R> => {
       if (!cacheAvailable) throw new Error("Invariant: incrementalCache missing in unstable_cache");
       const key = JSON.stringify([keyParts, args]);
       if (store.has(key)) return store.get(key) as R;
       const value = await fn(...args);
       store.set(key, value);
       return value;
-    },
+    };
+  },
 }));
 
-import { cachedPublicRead } from "./public-read-cache";
+import { DEGRADED_PAGE_SECONDS, cachedPublicRead, shortenPageLife } from "./public-read-cache";
+import { STATS_METHOD_VERSION } from "./fee-stats";
 
 beforeEach(() => {
   store.clear();
@@ -77,5 +82,27 @@ describe("cachedPublicRead", () => {
 
     expect(await cached()).toEqual([7]);
     expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  // 2026-10-18-public-cache-ignores-stats-rules: after #1816 changed what the medians count, the
+  // cached snapshot kept serving counts made under the old rule, since nothing in its key changed.
+  it("keys every entry by the statistics rules' version", () => {
+    cachedPublicRead("test-stats-key", async () => [1]);
+    const entry = registered.find((e) => e.keyParts.includes("test-stats-key"));
+    expect(entry?.keyParts).toContain(`stats-v${STATS_METHOD_VERSION}`);
+  });
+});
+
+describe("shortenPageLife (#1572)", () => {
+  it("makes a cached read with a one-minute life, which caps the page's cache life", async () => {
+    const marker = registered.find((entry) => entry.keyParts.includes("degraded-page-marker"));
+    expect(DEGRADED_PAGE_SECONDS).toBe(60);
+    expect(marker?.options?.revalidate).toBe(DEGRADED_PAGE_SECONDS);
+    await expect(shortenPageLife()).resolves.toBeUndefined();
+  });
+
+  it("does nothing outside a Next render", async () => {
+    cacheAvailable = false;
+    await expect(shortenPageLife()).resolves.toBeUndefined();
   });
 });

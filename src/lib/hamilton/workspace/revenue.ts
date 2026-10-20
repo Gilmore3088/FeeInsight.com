@@ -129,7 +129,10 @@ const OVERDRAFT_LINE_CATEGORIES = new Set(["overdraft", "od_daily_cap", "continu
  * The filed income line for one fee, trailing four quarters, when the filing has one.
  * Credit unions file overdraft (IS0048) and NSF (IS0049) income separately. Banks over $1B
  * file one line for consumer overdraft and NSF together (RIAD H032), so that line is
- * returned for either fee with `combinedWith` naming the other.
+ * returned for either fee with `combinedWith` naming the other. A line more than one quarter
+ * older than the newest service charge filing is not returned: an older year's figure is not
+ * current revenue (#2034, #2047). One quarter's gap is allowed because the bank line loads
+ * about three weeks after the quarter's service charges; the storyline then gives no share.
  */
 export function feeRevenueLine(rows: ServiceChargeRow[], feeCategory: string, charterType: string): RevenueLine | null {
   const isOverdraft = OVERDRAFT_LINE_CATEGORIES.has(feeCategory);
@@ -140,7 +143,12 @@ export function feeRevenueLine(rows: ServiceChargeRow[], feeCategory: string, ch
   const source = creditUnion ? "ncua" : "fdic";
   const filed = rows.filter((r) => r.source === source && r[field] !== null && r[field] !== undefined);
   const latest = filed.map((r) => r.report_date.slice(0, 10)).sort().pop();
-  if (!latest) return null;
+  const newestFiling = rows
+    .filter((r) => r.source === source && r.service_charge_income !== null && r.service_charge_income !== undefined)
+    .map((r) => r.report_date.slice(0, 10))
+    .sort()
+    .pop();
+  if (!latest || (newestFiling && latest < quarterEnds(newestFiling, 2)[1])) return null;
   const annualIncome = sumAll(quarterlyIncome(rows, source, field), quarterEnds(latest, 4));
   if (annualIncome === null) return null;
   const label = creditUnion
@@ -153,6 +161,14 @@ export function feeRevenueLine(rows: ServiceChargeRow[], feeCategory: string, ch
     source: { label, table: "institution_financial_records", asOf: latest },
     ...(creditUnion ? {} : { combinedWith: isNsf ? "overdraft" : "NSF" }),
   };
+}
+
+/**
+ * What a filed income line covers, in a few words. A bank's RIAD H032 holds overdraft and NSF
+ * together, so both fees' answers name it as combined, never as that fee alone (#1543).
+ */
+export function revenueLineName(line: Pick<RevenueLine, "combinedWith">, feeName: string): string {
+  return line.combinedWith ? "overdraft and NSF income combined (call report)" : `${feeName} income`;
 }
 
 /** The latest four quarters against the four before, only when all eight are on file. */

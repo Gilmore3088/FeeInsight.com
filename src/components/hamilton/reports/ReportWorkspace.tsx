@@ -14,6 +14,7 @@ import { ReportLibrary } from "./ReportLibrary";
 import { PRODUCT_NAME, RESEARCH_IMPRINT } from "@/lib/constants";
 import { Callout, MemoHeader, MemoPage, MemoSection, SERIF } from "@/components/hamilton/memo/memo";
 import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
+import { readHamiltonIdentitySnapshot } from "@/lib/hamilton/identity-display";
 import {
   generateReport,
   loadActiveScenarios,
@@ -98,6 +99,10 @@ interface ReportWorkspaceProps {
   selectedSource?: HamiltonContextSource;
   selectedSourceLabel?: string | null;
   legacyPeerFilterLabel?: string | null;
+}
+
+function isReportTemplateType(value: string): value is ReportTemplateType {
+  return TEMPLATES.some((template) => template.type === value);
 }
 
 function getInitialTemplateFromIntent(
@@ -376,6 +381,13 @@ export function ReportWorkspace({
       : defaultPeerSetLabel;
 
   const setupVisible = !reportGenerated;
+  // A shown report can be run again with today's checks when it is a template report about the
+  // institution now selected, so a rerun never quietly switches institution.
+  const shownResearchId = readHamiltonIdentitySnapshot(generatedReport?.identityContext)?.researchInstitutionId ?? null;
+  const rerunTemplate = isReportTemplateType(generatedReportType)
+    && (shownResearchId === null || String(shownResearchId) === String(selectedInstitution?.id ?? ""))
+    ? generatedReportType
+    : null;
 
   return (
     <MemoPage>
@@ -414,7 +426,7 @@ export function ReportWorkspace({
           <span aria-hidden="true">·</span>
           <span className="[font-variant-numeric:tabular-nums]">
             {/* The report reads published fees only, so the header counts the same set. */}
-            {selectedInstitution.publishedFeeCount.toLocaleString()} published fees
+            {selectedInstitution.publishedFeeCount.toLocaleString("en-US")} published fees
           </span>
           {selectedInstitution.assetSizeLabel && (
             <>
@@ -423,6 +435,19 @@ export function ReportWorkspace({
             </>
           )}
         </p>
+      )}
+
+      {selectedInstitution && (
+        <Link
+          href={hrefWithInstitutionContext("/pro/reports/committee", String(selectedInstitution.id))}
+          className="flex flex-col gap-0.5 rounded-lg border border-warm-300 bg-warm-50 px-5 py-4 no-underline hover:border-warm-500 focus:outline-none focus-visible:border-terra focus-visible:ring-2 focus-visible:ring-terra"
+        >
+          <span className="text-base font-semibold text-warm-900">Pricing committee brief</span>
+          <span className="text-sm text-warm-700">
+            A two-page brief for the pricing committee: the largest differences from your peers, what to resolve first and a next step, with every source in an appendix.
+          </span>
+          <span className="mt-1 text-sm font-medium text-terra-text">Open the brief →</span>
+        </Link>
       )}
 
       {!selectedInstitution && !reportGenerated && (
@@ -559,6 +584,7 @@ export function ReportWorkspace({
               report={generatedReport}
               reportType={generatedReportType}
               artifactMetadata={generatedReportMetadata}
+              onRunAgain={rerunTemplate ? () => void handleGenerate({ template: rerunTemplate }) : undefined}
             />
             <div className="flex flex-wrap items-center gap-2">
               <button

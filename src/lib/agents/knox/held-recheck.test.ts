@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { runFreeSpecialists } from "./specialists";
-import { classifyFeeText, KNOX_HELD_NAME_RULES_LIVE } from "./rules";
+import { classifyFeeText, KNOX_HELD_NAME_RULES_LIVE, withHeldNameRules } from "./rules";
+import { researchSplitTarget } from "@/lib/fee-fold";
 
 import {
   fileHeldByName,
@@ -23,12 +24,18 @@ import {
   promotionWithdrawnFlag,
   recategorizeHeld,
   recheckHeldRows,
+  HELD_NAME_RULE_FLAG,
   recheckPromotedRows,
   recheckSupersededRows,
   recheckUntracedRows,
   refiledConditions,
   refiledFlags,
   refiledRead,
+  isRangeBand,
+  RANGE_BAND_FLAG,
+  RANGE_BAND_SET_ASIDE_BY_FLAG,
+  RANGE_BAND_SET_ASIDE_LIVE,
+  setAsideRangeBands,
   refileSupersededRows,
   STALE_HINT_REPAIRED_FLAG,
   supersededConditions,
@@ -88,8 +95,8 @@ describe("Knox held-line re-check", () => {
   it("categorizes held lines today's rules know, at the same amount", () => {
     expect(recategorizeHeld(courtesyPay)?.canonicalHint).toBe("overdraft");
     expect(recategorizeHeld(inactivity)?.canonicalHint).toBe("dormant_account");
-    // v26 folds returned mail into account research (James, Oct 7 2026).
-    expect(recategorizeHeld(returnedMail)?.canonicalHint).toBe("account_research");
+    // v26 folds returned mail into account research (James, Oct 7 2026); v77: its own type once the research split is on.
+    expect(recategorizeHeld(returnedMail)?.canonicalHint).toBe(researchSplitTarget("returned_mail"));
     expect(recategorizeHeld(membership)).toBeNull();
     expect(recategorizeHeld({ ...courtesyPay, amount: "35.00" })).toBeNull();
   });
@@ -446,7 +453,7 @@ describe("retired lines today's rules file under another category (#1093, Oregon
   it("finds today's category for a real fee read under the same name and amount", () => {
     expect(refiledRead(cardReplacement, reads())?.canonicalHint).toBe("card_replacement");
     expect(refiledRead(incomingWires, reads())?.canonicalHint).toBe("wire_domestic_incoming");
-    expect(refiledRead(badAddress, reads())?.canonicalHint).toBe("account_research");
+    expect(refiledRead(badAddress, reads())?.canonicalHint).toBe(researchSplitTarget("returned_mail"));
   });
 
   it("does not bring back a threshold today's rules no longer read as a fee", () => {
@@ -529,7 +536,7 @@ describe("retired lines today's rules file under another category (#1093, Oregon
     expect(result.sample.map((row) => `${row.fee_name}:${row.from}->${row.to}`)).toEqual([
       "Card Replacement:atm_non_network->card_replacement",
       "Incoming Wires:nsf->wire_domestic_incoming",
-      "Bad Address/Returned Mail:monthly_maintenance->account_research",
+      `Bad Address/Returned Mail:monthly_maintenance->${researchSplitTarget("returned_mail")}`,
     ]);
     expect(calls.some((call) => call.text.includes("UPDATE"))).toBe(false);
   });
@@ -562,15 +569,11 @@ describe("held-name rules for unclassified held lines (#1102)", () => {
 
   it.each([
     [stopPay, "stop_payment"],
-    [held(653776, "95.00", "Deed of Trust Reconveyance Fee", "Deed of Trust Reconveyance Fee | $95.00"), "reconveyance"],
     [held(295678, "5.00", "Early closure fee (90 days)", "Early closure fee (90 days) | $5.00"), "early_closure"],
-    [held(643931, "10.00", "Christmas Club Withdrawal Fee", "Christmas Club Withdrawal Fee | $10.00"), "early_closure"],
-    // Returned mail is account research (fee-fold.ts), tracing the new address too.
-    [held(163946, "3.00", "Returned Statement Fee", "Returned Statement Fee | $3 | per statement"), "account_research"],
-    [held(219557, "25.00", "Returned statements after 3, tracer fee", "Returned statements after 3, tracer fee | $25.00"), "account_research"],
+    // Returned statements are returned mail (James's decision card, Oct 20, "File them"; v90).
+    [held(163946, "3.00", "Returned Statement Fee", "Returned Statement Fee | $3 | per statement"), "returned_mail"],
+    [held(219557, "25.00", "Returned statements after 3, tracer fee", "Returned statements after 3, tracer fee | $25.00"), "returned_mail"],
     [held(678207, "5.00", "Printed / Mailed Monthly Statement Fee", "Printed / Mailed Monthly Statement Fee | $5.00"), "paper_statement"],
-    [held(341058, "25.00", "IRA Early Closeout Fee", "IRA Early Closeout Fee . . . . . . . . $25"), "ira_termination"],
-    [held(227987, "100.00", "IRA Account Early Withdrawal Fee", "IRA Account Early Withdrawal Fee | $100.00 per withdrawal"), "ira_distribution"],
     [held(472697, "95.00", "7″x10″ Rental", "7″x10″ Rental | $95.00 annual charge (Eldersburg Location Only)"), "safe_deposit_box"],
     // A HELOC's early closure fee (Great Southern Bank) and a mortgage's 36-month one stay held.
     [heloc, null],
@@ -587,20 +590,52 @@ describe("held-name rules for unclassified held lines (#1102)", () => {
     if (category) expect(release?.passChecks).toBe(true);
   });
 
-  it("is switched off: today's rules and the held re-check read these names as before", () => {
-    expect(KNOX_HELD_NAME_RULES_LIVE).toBe(false);
-    expect(classifyFeeText("Stop Pay Fee")).toBeNull();
-    expect(recategorizeHeld(stopPay)).toBeNull();
+  // v75 (Knox recall, 17 Oct): today's rules name these four lines, so the held re-check files
+  // them itself and the held-name rules have nothing left to release. Reconveyance and IRA
+  // withdrawals land on their top-50 fold homes (fee-fold.ts RETIRED_CATEGORIES).
+  it.each([
+    [held(653776, "95.00", "Deed of Trust Reconveyance Fee", "Deed of Trust Reconveyance Fee | $95.00"), "other_lending_fee"],
+    [held(643931, "10.00", "Christmas Club Withdrawal Fee", "Christmas Club Withdrawal Fee | $10.00"), "early_closure"],
+    [held(341058, "25.00", "IRA Early Closeout Fee", "IRA Early Closeout Fee . . . . . . . . $25"), "ira_termination"],
+    [held(227987, "100.00", "IRA Account Early Withdrawal Fee", "IRA Account Early Withdrawal Fee | $100.00 per withdrawal"), "ira_termination"],
+  ] as const)("files held line %# under v75's own rules, leaving nothing for the held-name rules", (row, category) => {
+    expect(recategorizeHeld(row)?.canonicalHint).toBe(category);
+    expect(heldNameRelease(row)).toBeNull();
   });
 
-  it("counts what would go to Darwin and writes nothing", async () => {
+  it("ships switched on (v89, sampled clean Oct 20): today's rules file these names, returned statements as returned mail (v90)", () => {
+    expect(KNOX_HELD_NAME_RULES_LIVE).toBe(true);
+    expect(classifyFeeText("Stop Pay Fee")).toBe("stop_payment");
+    expect(recategorizeHeld(stopPay)?.canonicalHint).toBe("stop_payment");
+    expect(classifyFeeText("Returned Statement Fee")).toBe("returned_mail");
+    // Off, today's rules read these names as before.
+    expect(withHeldNameRules(false, () => classifyFeeText("Stop Pay Fee"))).toBeNull();
+  });
+
+  it("previews nothing once on, since the held re-check sends these lines itself, and writes nothing", async () => {
     const db = createDb([stopPay, heloc, courtesyPay]);
     const result = await previewHeldNameRules(db as never);
-    expect(result).toMatchObject({
-      live: false, candidates: 3, wouldRelease: 1, passChecks: 1, setAside: 1, institutions: 1, byCategory: { stop_payment: 1 },
-      examples: [{ feeRawId: 265119, feeName: "Stop Pay Fee", amount: 30, category: "stop_payment" }],
-    });
+    expect(result).toMatchObject({ live: true, candidates: 0, wouldRelease: 0, passChecks: 0 });
     expect(db.mock.calls.some(([strings]) => /UPDATE|INSERT/.test(templateText(strings)))).toBe(false);
+  });
+
+  it("marks a line only the held-name rules file, so the release can be counted and reversed", async () => {
+    const db = createDb([stopPay, courtesyPay]);
+    const result = await recheckHeldRows(db as unknown as Db, { stateCode: "tx", runId: 7 });
+    expect(result.promoted).toBe(2);
+    const promotions = db.mock.calls.map((call) => ({ text: templateText(call[0]), json: JSON.stringify(call) }))
+      .filter((call) => call.text.includes("RETURNING fr.fee_raw_id"));
+    const stop = promotions.find((call) => call.json.includes("canonical_hint:stop_payment"));
+    const overdraft = promotions.find((call) => call.json.includes("canonical_hint:overdraft"));
+    expect(stop?.json).toContain(HELD_NAME_RULE_FLAG);
+    expect(overdraft?.json).not.toContain(HELD_NAME_RULE_FLAG);
+  });
+
+  it("drops page markup from a promoted name", () => {
+    const row = held(928156, "35.00", "Miscellaneous Fees and Charges<br> Stop Pay Order or Renewal", "Miscellaneous Fees and Charges<br> Stop Pay Order or Renewal | $35.00");
+    const candidate = withHeldNameRules(true, () => recategorizeHeld(row));
+    expect(candidate?.canonicalHint).toBe("stop_payment");
+    expect(promotedName(row, candidate!)).not.toMatch(/</);
   });
 });
 
@@ -612,7 +647,8 @@ describe("held lines filed by their name: a person's label or the store's settle
     range_p5: "1.00", range_p95: "60.00",
     outlier_flags: ["knox_review:unclassified", HELD_SET_ASIDE_FLAG],
   });
-  const returnedStatement = held(200601, "10.00", "Returned Statement Fee", "Returned Statement Fee** | $10.00", "account_research");
+  // Live returned statements settle as returned mail (83 at 82 banks, Oct 20).
+  const returnedStatement = held(200601, "10.00", "Returned Statement Fee", "Returned Statement Fee** | $10.00", "returned_mail");
   const membership = held(109152, "5.00", "Membership Fee", "Membership Fee | $5.00", "account_research", "label");
   const cashAdvance = held(186564, "3.00", "Credit Card Cash Advance Fee", "$3.00 | Credit Card Cash Advance Fee | 2%", "cash_advance");
 
@@ -637,7 +673,9 @@ describe("held lines filed by their name: a person's label or the store's settle
     // The $10 is the row before's monthly fee; the paper statement fee is $2.50.
     [held(421833, "10.00", "Paper Statement Fee (per Statement)", "• $10.00/month if none of the above criteria are met. | Paper Statement Fee (per Statement) | $2.50", "paper_statement"), "price_not_under_name"],
     // Outside the category's live spread (p5 to p95, weighted by row).
-    [held(200602, "500.00", "Returned Statement Fee", "Returned Statement Fee | $500.00", "account_research"), "outside_category_range"],
+    [held(200602, "500.00", "Returned Statement Fee", "Returned Statement Fee | $500.00", "returned_mail"), "outside_category_range"],
+    // A store that settled the name elsewhere loses to today's rule, which reads returned mail (v90).
+    [held(200603, "10.00", "Returned Statement Fee", "Returned Statement Fee | $10.00", "account_research"), "name_reads_other_category"],
     // Second review of #1385: the price is the next fee's, or the line contradicts the store's category.
     [held(506621, "1.00", "Overdraft Transfer Fee", "Overdraft Transfer Fee (Applicable to overdraft transfers generated automatically | Inquiry Fee12. . . . . . . . $1.00 per transaction inquiry", "od_protection_transfer"), "price_not_under_name"],
     [held(114480, "2.00", "Statement Fee", "Statement Fee | $2.00/Copy", "paper_statement"), "line_contradicts_category"],
@@ -676,7 +714,7 @@ describe("held lines filed by their name: a person's label or the store's settle
     expect(nameFileCheckedFlag(now)).toBe("knox_name_file_checked:k2:2026-W42");
     const result = await fileHeldByName(db as never, { stateCode: "tx", runId: 7, now });
     expect(result).toMatchObject({
-      checked: 3, filed: 2, kept: { not_a_plain_price: 1 }, bySource: { label: 1, store: 1 }, byCategory: { account_research: 2 }, institutions: 1, dryRun: false,
+      checked: 3, filed: 2, kept: { not_a_plain_price: 1 }, bySource: { label: 1, store: 1 }, byCategory: { account_research: 1, returned_mail: 1 }, institutions: 1, dryRun: false,
     });
     const select = calls[0];
     // Settled names come from a hash join of live fees on the held rows' own names, and labels from
@@ -693,7 +731,7 @@ describe("held lines filed by their name: a person's label or the store's settle
     expect(select.values).toEqual(expect.arrayContaining(["knox_name_file_checked:k2:2026-W42", 5, "name_label", "TX"]));
     const moves = calls.filter((call) => call.text.includes("RETURNING fr.fee_raw_id")).map((call) => JSON.stringify(call.values));
     expect(moves[0]).toContain("knox_name_filed:store");
-    expect(moves[0]).toContain("canonical_hint:account_research");
+    expect(moves[0]).toContain("canonical_hint:returned_mail");
     expect(moves[1]).toContain("knox_name_filed:label");
     // The line that stayed gets this week's mark, replacing an older week's; with every candidate
     // read, the lane's other held lines get it too, so the week's later steps read only new lines.
@@ -737,5 +775,118 @@ describe("held names with footnote marks (Oct 15, after #1385)", () => {
     expect(nameFileCheckedFlag(now)).toBe("knox_name_file_checked:k2:2026-W42");
     // The v1 mark the IN lane wrote on Oct 15 is not this week's mark any more.
     expect(nameFileCheckedFlag(now)).not.toBe("knox_name_file_checked:2026-W42");
+  });
+});
+
+// #1102: held range lines with no category. Production excerpts, read 16 Oct 2026.
+describe("held range lines that are deposit or loan rate bands, not fees (#1102)", () => {
+  // The text just before the line in its document; a rate table's own header by default.
+  const RATE_HEADER = "Savings Rates | Balance | Dividend Rate | APY";
+  const range = (fee_raw_id: number, excerpt: string, hint = "none", prev_context: string | null = RATE_HEADER) => ({
+    fee_raw_id,
+    amount: "0.00",
+    fee_name: "Tier",
+    institution_id: fee_raw_id % 3,
+    source_document_id: 9,
+    conditions: `Knox held for review (range) from Rosetta artifact #704. canonical_hint=${hint}; text_hash=abc; excerpt="${excerpt}"`,
+    outlier_flags: hint === "none" ? ["knox_review:range", "amount_max:49999.99"] : ["knox_review:range", `canonical_hint:${hint}`],
+    prev_context,
+  });
+  const tier = range(1, "Tier 3 | $25,000.00 – $49,999.99 | 0.75% | 2.02 to 1.39%");
+  const loan = range(2, "Loan amounts range from $1,000 to $75,000 and loan term lengths range from 24 months to 84 months");
+  const apy = range(3, "Balances $25,000.00 to $34,999.99 earn 0.75% APY");
+  const minimums = range(4, "$2,500 to $24,999.99 | 0.35% | 0.35% | $2,500.00 | $500.00");
+
+  it.each([
+    [tier, true],
+    [apy, true],
+    [minimums, true],
+    [range(13, "$3,500 to $20,000 | 11.25% | 48 months"), true],
+    [range(14, "If your daily balance is from $10,000.00 to $19,999.99, the second dividend rate and annual percentage yield will apply"), true],
+    // No deposit or loan rate signal: a loan amount alone stays held.
+    [loan, false],
+    // A band whose text cannot be found, or that sits under a fee heading, stays held.
+    [range(15, "Tier 3 | $25,000.00 – $49,999.99 | 0.75%", "none", null), false],
+    [range(16, "Tier 3 | $25,000.00 – $49,999.99 | 0.75%", "none", "Large Amount (currency) Withdrawal Fee\n"), false],
+    // Real fees a second review of #1622 found among the bands, checked against the stored text
+    // (production raw ids): a rate charged on an amount, a big-dollar fee, a commission table.
+    [range(114351, "$25,000.00 - $49,999.99…… 1.25% of amount withdrawn(1)", "none", "Large Amount (currency) Withdrawal Fee\n"), false],
+    [range(114352, "$50,000.00 - $99,999.99…… 1.25% of amount withdrawn(1)"), false],
+    [range(114536, "$25,000.00 - $49,999.99…… 1.25% of amount withdrawn(1)"), false],
+    [range(114537, "$50,000.00 - $99,999.99…… 1.25% of amount withdrawn(1)"), false],
+    [range(325674, "$25,000.00 - $49,999.99…… 1.25% of amount withdrawn(1)"), false],
+    [range(325675, "$50,000.00 - $99,999.99…… 1.25% of amount withdrawn(1)"), false],
+    [range(484337, "Foreign $15,001-$25,000 | ½ of 1%"), false],
+    [range(662023, "First Mortgage rate modification | $1,500 - $2,500 based on mortgage balance"), false],
+    [range(154206, "First Mortgage rate modification | $1,500 - $2,500 based on mortgage balance"), false],
+    [range(454859, "$50,001 - $100,000 | $125 + 0.55% of principal"), false],
+    [range(454862, "$0 - $10,000 | The lesser of 5% of principal"), false],
+    // A balance band priced in its own cell is a fee: it stays held.
+    [range(5, "Tier 1 | $50.00 - $149.99 | $2.00"), false],
+    [range(6, "Average monthly balance from $0.00 to $99.99: $5.00"), false],
+    [range(7, "Money Market Account | $.01 - $1499.99 | $10.00 if below $1500"), false],
+    // A fee word, a box, a wire or a waiver: a fee line.
+    [range(8, "$0 -$999.99 -- Service charge: $11.00/month. No interest."), false],
+    [range(9, "Box Rental | Range from $20-$100/Year ⓘDepending on size"), false],
+    [range(10, "$50.01 - $500 | 4% (Waived w/combined Deposit & Loan Balance Relationship of $10,000 or greater)"), false],
+    // A price that is itself a small range is a fee, not a band (review of #1622; production raw ids).
+    [range(115327, "Balance Verification Letters | $5.00 to $25.00"), false],
+    [range(408784, "Pay-By-Phone Loan Payment | $1.00 - $5.00"), false],
+    [range(376138, "Personal Checking $8-$9 (based on balance)"), false],
+    [range(376139, "Commercial Checking $6-$15 (based on balance)"), false],
+    [range(423664, "Negative account balance $0-$9.99 | Medallion Signature guarantee, members | 5.00"), false],
+    [range(152384, "Health Savings Account | $0.00 - $3.00 | $500.00 - $2000.00"), false],
+    // No rate or balance word: left held.
+    [range(11, "Available in any denomination from $10 to $1,000."), false],
+    // A range with a fee category is a real fee priced as a range (#1060), never a band.
+    [range(12, "Safe Deposit Boxes (Annual) $20.00-$100.00 interest", "safe_deposit_box"), false],
+  ] as const)("reads held range line %# as a band or not", (row, band) => {
+    expect(isRangeBand(row)).toBe(band);
+  });
+
+  it("ships switched on (sampled clean, Oct 20)", () => {
+    expect(RANGE_BAND_SET_ASIDE_LIVE).toBe(true);
+  });
+
+  it("switched off: counts the bands and writes nothing", async () => {
+    const db = createDb([tier, apy, range(5, "Tier 1 | $50.00 - $149.99 | $2.00")]);
+    const result = await setAsideRangeBands(db as never, { stateCode: "tx", live: false });
+    expect(result).toMatchObject({ live: false, dryRun: true, checked: 3, bands: 2, institutions: 2, setAside: 0 });
+    // The uncapped lane count comes from the query itself, not from the rows read.
+    const counted = createDb([{ ...tier, candidates: "5047" }]);
+    expect(await setAsideRangeBands(counted as never, { live: false })).toMatchObject({ candidates: 5047, checked: 1 });
+    expect(result.examples.map((example) => example.feeRawId)).toEqual([1, 3]);
+    expect(db.mock.calls.some(([strings]) => /UPDATE|INSERT/.test(templateText(strings)))).toBe(false);
+  });
+
+  it("switched on, flags each band set aside (kept, never deleted) and logs it", async () => {
+    const db = vi.fn((strings: TemplateStringsArray) => {
+      const text = templateText(strings);
+      if (text.includes("SELECT fr.fee_raw_id")) return Promise.resolve([tier, apy]);
+      // Raw 3 was already set aside by another pass, so this pass did not set it aside.
+      if (text.includes("UPDATE raw_fee_observations")) return Promise.resolve([{ fee_raw_id: 1, set_aside_here: true }, { fee_raw_id: 3, set_aside_here: false }]);
+      if (text.includes("to_regclass")) return Promise.resolve([{ ready: true }]);
+      if (text.includes("INSERT INTO pipeline_feedback")) return Promise.resolve([{ id: 1 }, { id: 2 }]);
+      return Promise.resolve([]);
+    });
+    const result = await setAsideRangeBands(db as never, { live: true, runId: 5 });
+    expect(result).toMatchObject({ live: true, dryRun: false, bands: 2, setAside: 2 });
+    const update = db.mock.calls.find(([strings]) => templateText(strings).includes("UPDATE raw_fee_observations"));
+    expect(templateText(update?.[0])).not.toMatch(/DELETE/);
+    // A line already set aside keeps its own flag; only a line this pass sets aside is marked as such.
+    expect(templateText(update?.[0])).not.toMatch(/ - /);
+    expect(update?.slice(1)).toContain(JSON.stringify([RANGE_BAND_FLAG]));
+    expect(update?.slice(1)).toContain(JSON.stringify([RANGE_BAND_FLAG, HELD_SET_ASIDE_FLAG, RANGE_BAND_SET_ASIDE_BY_FLAG]));
+    const insert = db.mock.calls.find(([strings]) => templateText(strings).includes("INSERT INTO pipeline_feedback"));
+    const logged = JSON.stringify(insert?.slice(1));
+    expect(logged).toContain('\\"set_aside_by_this_pass\\":true');
+    expect(logged).toContain('\\"set_aside_by_this_pass\\":false');
+  });
+
+  it("a dry run writes nothing even with the switch on", async () => {
+    const db = createDb([tier]);
+    const result = await setAsideRangeBands(db as never, { live: true, dryRun: true });
+    expect(result).toMatchObject({ bands: 1, setAside: 0, dryRun: true });
+    expect(db.mock.calls.some(([strings]) => /UPDATE|INSERT/.test(templateText(strings)))).toBe(false);
   });
 });

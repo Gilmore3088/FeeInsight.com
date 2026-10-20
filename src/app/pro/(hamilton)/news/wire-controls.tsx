@@ -209,7 +209,7 @@ export function WireDate({ value, now, prefix }: { value: string | null | undefi
 export function WireHeader({ params }: { params: WireParams }) {
   const states = params.view === "states";
   return (
-    <header>
+    <header className="text-center sm:text-left">
       <h1
         className="font-extrabold text-[1.75rem] leading-[1.12] tracking-[-0.02em] text-ink sm:text-[2.25rem]"
         style={{ fontFamily: "var(--fi-font-sans)" }}
@@ -218,7 +218,7 @@ export function WireHeader({ params }: { params: WireParams }) {
       </h1>
       <p className="mt-1 text-[13px] text-ink-muted">
         {states
-          ? "State fee bills, state banking regulators' own posts, and the press coverage of them, in one feed."
+          ? "State fee bills and state banking regulators' own posts, in one feed."
           : "Federal rulemaking with its comment deadlines and effective dates, and the agencies' own releases."}
       </p>
       <nav aria-label="Wire view" className="mt-4 inline-flex overflow-hidden rounded-lg border border-warm-200 bg-white/70 text-[12px]">

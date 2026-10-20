@@ -28,6 +28,8 @@ const TIER_NAME = new RegExp(`\\b${TIER_NAME_WORDS}\\b`, "i");
 /** Postgres forms (`~*`) of the address and name tests, for Hamilton's product-page conflict check. */
 export const TIER_PATH_SQL = TIER_PATH_SOURCE;
 export const TIER_NAME_SQL = `\\y${TIER_NAME_WORDS}\\y`;
+/** The tier words alone, for a product page address ("/personal/checking/bankon"). */
+export const TIER_WORDS_SQL = TIER_WORDS;
 
 function pathOf(url: string | null | undefined): string {
   if (!url) return "";
@@ -56,13 +58,26 @@ export function isTierSchedule(url: string | null | undefined, text: string | nu
   return TIER_PATH.test(pathOf(url)) || TIER_TITLE.test(titleOf(text));
 }
 
-/** True when a $0 fee is a tier's perk: read from a tier's own schedule, or named for a tier's account. */
+/**
+ * The account's own price: a fee named for the account here ("Premier Checking", monthly
+ * maintenance, "NONE (with no minimum balance or other requirements)") is that account's real
+ * price, not a perk the account grants on another fee (#1574).
+ */
+const ACCOUNT_OWN_KEYS = new Set(["monthly_maintenance", "minimum_balance"]);
+
+/**
+ * True when a $0 fee is a tier's perk: read from a tier's own schedule, or named for a tier's
+ * account. The name test is skipped for the account's own price (`ACCOUNT_OWN_KEYS`) when the
+ * category is known; the schedule test still applies.
+ */
 export function tierPerkZero(
   amount: number | null,
   feeName: string | null | undefined,
   url: string | null | undefined,
   text: string | null | undefined,
+  canonicalFeeKey?: string | null,
 ): boolean {
   if (amount == null || Math.abs(amount) >= 0.005) return false;
-  return TIER_NAME.test(feeName ?? "") || isTierSchedule(url, text);
+  const accountOwn = canonicalFeeKey != null && ACCOUNT_OWN_KEYS.has(canonicalFeeKey);
+  return (!accountOwn && TIER_NAME.test(feeName ?? "")) || isTierSchedule(url, text);
 }

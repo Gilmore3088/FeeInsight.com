@@ -38,7 +38,7 @@ export async function scheduleGuardCatchUpRun(db: SqlTag = sql): Promise<GuardCa
   `;
   if (existing) return { ...base, scheduled: false, runId: Number(existing.id) };
   const started = await startAgentRun({
-    agent: "hamilton",
+    agent: "gutenberg",
     kind: "manual_repair",
     title: `Re-check live fees: category guard v${CATEGORY_GUARD_VERSION}, frequency v${FREQUENCY_FILL_VERSION}`,
     params: marker,
@@ -46,8 +46,8 @@ export async function scheduleGuardCatchUpRun(db: SqlTag = sql): Promise<GuardCa
     triggerSource: "schedule",
     idempotencyKey: `hamilton:guard-catch-up:g${CATEGORY_GUARD_VERSION}:f${FREQUENCY_FILL_VERSION}`,
     steps: [
-      { key: "category-guard", agent: "hamilton", title: "Re-check every live fee against today's category guard" },
-      { key: "frequency-fill", agent: "hamilton", title: "Re-read every live fee's frequency from its own schedule row" },
+      { key: "category-guard", agent: "gutenberg", title: "Re-check every live fee against today's category guard" },
+      { key: "frequency-fill", agent: "gutenberg", title: "Re-read every live fee's frequency from its own schedule row" },
     ],
     summary: "A guard or frequency fix deployed; every live fee is re-checked now rather than at the next publish step.",
   });

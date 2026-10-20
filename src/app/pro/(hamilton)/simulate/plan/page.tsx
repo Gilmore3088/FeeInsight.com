@@ -29,6 +29,7 @@ import {
 import { PrintButton } from "@/components/hamilton/memo/PrintButton";
 import { buildFeeAnswer } from "@/lib/hamilton/workspace/answer";
 import { ExhibitView, FactList } from "@/components/hamilton/memo/exhibit-view";
+import { DatasetNote } from "@/components/hamilton/DatasetNote";
 
 export const metadata: Metadata = { title: "Plan a change" };
 
@@ -105,7 +106,7 @@ export default async function PlanPage({ searchParams }: PageProps) {
     clientFigures: { paidItems, waiverRate },
     enteredBy: user.display_name || user.username,
     extraAssumptions: [
-      `${fmtMoney(from)} is the starting price${ws.ownAmount === from ? ", your published fee" : ", as entered"}; ${fmtMoney(to)} is the price management is weighing.`,
+      `${fmtMoney(from)} is the starting price${ws.ownAmount === from ? ", your published fee" : params.from ? ", as entered" : ws.ownSeveral ? `, since your schedule lists several fees (${ws.ownSeveral})` : ", with no published fee"}; ${fmtMoney(to)} is the price management is weighing.`,
       `Notice dates assume notice goes out on ${longDate(noticeDate)}.`,
       "Notice periods follow Reg DD (banks) or NCUA Truth in Savings (credit unions) for consumer accounts. Confirm with compliance.",
     ],
@@ -115,12 +116,21 @@ export default async function PlanPage({ searchParams }: PageProps) {
     .filter((l) => l.n > 0)
     .map((l) => ({ layer: l, now: peerPosition(l.amounts, from), after: peerPosition(l.amounts, to) }));
 
+  // The chosen layer's stamp leads the note; each other layer shown says how its read differs.
+  // A chosen layer with no stamp (the local market) gets no note rather than another layer's.
+  const stampedLayers = mainLayer.stamp
+    ? [mainLayer, ...layerRows.map((r) => r.layer).filter((l) => l.key !== mainLayer.key)]
+        .flatMap((l) => (l.stamp ? [{ label: l.label, stamp: l.stamp }] : []))
+    : [];
   const marketTable = (
-    <PositionShift
-      fromLabel={`${fmtMoney(from)} today`}
-      toLabel={`${fmtMoney(to)}`}
-      rows={layerRows.map(({ layer, now, after }) => ({ label: layer.label, n: layer.n, median: layer.median, from: now, to: after }))}
-    />
+    <>
+      <PositionShift
+        fromLabel={`${fmtMoney(from)} today`}
+        toLabel={`${fmtMoney(to)}`}
+        rows={layerRows.map(({ layer, now, after }) => ({ label: layer.label, n: layer.n, median: layer.median, from: now, to: after }))}
+      />
+      <DatasetNote figures={stampedLayers} />
+    </>
   );
 
   const timing = (
@@ -174,7 +184,7 @@ export default async function PlanPage({ searchParams }: PageProps) {
           <PrintButton />
         </div>
         <article className="flex flex-col gap-6 rounded-lg border border-warm-300 bg-white p-8 shadow-sm print:border-0 print:p-0 print:shadow-none">
-          <header className="border-b border-warm-300 pb-4">
+          <header className="border-b border-warm-300 pb-4 text-center sm:text-left">
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-terra-text">
               {title} · {inst?.name ?? "Your institution"}
             </p>

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { FEE_FAMILIES } from "@/lib/fee-taxonomy";
 import {
   DEFAULT_LOCAL_MARKET_CATEGORIES, HOMEPAGE_MARKET_CATEGORIES, LocalMarketRequestError,
-  homepageLocalMarketRequest, parseLocalMarketRequest, resolveLocalMarketCategories, selectMarketFees,
+  homepageLocalMarketRequest, parseLocalMarketRequest, resolveLocalMarketCategories, selectMarketFees, selectMarketStated,
 } from "./local-market-request";
 
 describe("local-market request scope", () => {
@@ -82,5 +82,23 @@ describe("local-market request scope", () => {
     );
     expect(result).toEqual({ cashiers_check: 5, paper_statement: 0 });
     expect(result).not.toHaveProperty("money_order");
+  });
+});
+
+describe("selectMarketStated (#1931)", () => {
+  const levy = { low: 150, high: 175, fees: [{ name: "Levy", amount: 150 }, { name: "Garnishment", amount: 175 }] };
+
+  it("keeps a competitor's one stated price as its fee", () => {
+    expect(selectMarketStated({ nsf: 30 }, undefined, ["nsf"])).toEqual({ fees: { nsf: 30 }, several: {} });
+  });
+
+  it("moves a category with several different fees out of the price map, with their range and names", () => {
+    const stated = selectMarketStated({ nsf: 30, garnishment: 162.5 }, { garnishment: levy }, ["nsf", "garnishment"]);
+    expect(stated.fees).toEqual({ nsf: 30 });
+    expect(stated.several).toEqual({ garnishment: levy });
+  });
+
+  it("never leaks an unrequested category", () => {
+    expect(selectMarketStated({ garnishment: 162.5 }, { garnishment: levy }, ["nsf"])).toEqual({ fees: {}, several: {} });
   });
 });

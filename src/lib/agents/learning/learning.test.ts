@@ -34,6 +34,7 @@ describe("outcomes", () => {
   });
 
   it("classifies HTTP failures and thrown errors into typed outcomes", () => {
+    expect(classifyFetchFailure(null, Object.assign(new Error("source body exceeds cap"), { name: "FeeSourceFetchError", code: "too_large" }))).toBe("too_large");
     expect(classifyFetchFailure(403)).toBe("http_403");
     expect(classifyFetchFailure(401)).toBe("http_403");
     expect(classifyFetchFailure(404)).toBe("http_404");
@@ -127,6 +128,18 @@ describe("applyAttempt", () => {
     expect(playbook.doNotRetry).toHaveLength(1);
     expect(playbook.doNotRetry[0]).toMatchObject({ stage: "read", outcome: "scanned_pdf" });
     expect(playbook.strategyStats[strategyKey("verify", "verify.rules", 1)]).toMatchObject({ attempts: 80, successes: 0 });
+  });
+
+  it("keeps a search-from outcome off the list and drops that strategy's old entries (#1494)", () => {
+    const search = { stage: "discover", strategy: "discover.second_document", fingerprint: "https://a.example/fees.pdf", outcome: "wrong_document" } as const;
+    let playbook = applyAttempt(EMPTY_PLAYBOOK, attempt({ stage: "read", strategy: "read.pdf_text", outcome: "scanned_pdf" }), NOW);
+    playbook = applyAttempt(playbook, attempt({ ...search, version: 3 }), NOW);
+    playbook = applyAttempt(playbook, attempt({ ...search, version: 4, outcome: "no_candidates", fingerprint: "https://a.example/old" }), NOW);
+    expect(playbook.doNotRetry).toHaveLength(3);
+
+    playbook = applyAttempt(playbook, attempt({ ...search, version: 4, rememberInputFailure: false }), NOW);
+    expect(playbook.doNotRetry).toEqual([expect.objectContaining({ stage: "read", outcome: "scanned_pdf" })]);
+    expect(playbook.strategyStats[strategyKey("discover", "discover.second_document", 4)]).toMatchObject({ attempts: 2, lastOutcome: "wrong_document" });
   });
 
   it("does not block retries after transient failures", () => {

@@ -1,5 +1,6 @@
 import { registryFetch, type RegistryFetchOptions } from "./http";
 import { parseCsv } from "./ncua";
+import { validCoordinates } from "./coordinates";
 
 /**
  * US Census Bureau batch geocoder (free, no key): street addresses in, longitude and
@@ -42,8 +43,10 @@ export function parseCensusBatch(text: string): GeocodeResult[] {
   return rows
     .filter((row) => row.ID)
     .map((row) => {
-      const [lon, lat] = (row.COORDS ?? "").split(",").map((v) => Number(v));
-      const matched = row.MATCH === "Match" && Number.isFinite(lat) && Number.isFinite(lon);
+      const coordinates = (row.COORDS ?? "").split(",");
+      const [lon, lat] = coordinates.map((v) => Number(v));
+      const matched = row.MATCH === "Match" && coordinates.length === 2
+        && coordinates.every(value => value.trim() !== "") && validCoordinates(lat, lon);
       return { id: row.ID, matched, latitude: matched ? lat : null, longitude: matched ? lon : null };
     });
 }

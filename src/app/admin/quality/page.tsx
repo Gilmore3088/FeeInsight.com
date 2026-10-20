@@ -1,3 +1,4 @@
+import { requireAuth } from "@/lib/auth";
 export const dynamic = "force-dynamic";
 
 import Link from "next/link";
@@ -135,7 +136,7 @@ function ownerHref(row: DataTrustQueueRow): string {
   if (row.owner === "magellan") return "/admin/magellan";
   if (row.owner === "darwin") return "/admin/darwin";
   if (row.owner === "knox") return "/admin/knox";
-  if (row.owner === "hamilton") return "/admin/hamilton";
+  if (row.owner === "gutenberg") return "/admin/hamilton";
   return "/admin";
 }
 
@@ -160,6 +161,7 @@ export default async function DataTrustWorkbench({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  await requireAuth("operate");
   const params = await searchParams;
   const stateParam = typeof params.state === "string" ? params.state : "all";
   const state = DATA_TRUST_QUEUE_STATES.includes(stateParam as DataTrustQueueState)

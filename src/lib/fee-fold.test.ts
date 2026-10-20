@@ -4,6 +4,7 @@ import { passesDarwinChecks } from "./agents/knox/layout";
 import {
   foldContext,
   foldRetiredCategory,
+  isRetiredCategory,
   ownAtmSection,
   RETIRED_CATEGORIES,
   RETIRED_CATEGORY_KEYS,
@@ -29,9 +30,10 @@ const RETURNED = researchSplitTarget("returned_mail");
 const to = (key: string, name: string, context?: string) => foldRetiredCategory(key, name, context)?.to;
 
 describe("top-50 fold", () => {
-  test("the taxonomy is the top 50 plus excess withdrawals and returned mail (Oct 15), and no retired key is in it", () => {
-    // The two new types are listed only once the research split is on (#1398).
-    expect(TAXONOMY.size).toBe(RESEARCH_SPLIT_LIVE ? 52 : 50);
+  test("the taxonomy is the top 50 plus excess withdrawals and returned mail (Oct 15) and International ATM (Oct 19), and no retired key is in it", () => {
+    // The two research types are listed only once the research split is on (#1398).
+    expect(TAXONOMY.size).toBe(RESEARCH_SPLIT_LIVE ? 53 : 51);
+    expect(TAXONOMY.has("atm_international")).toBe(true);
     expect(TAXONOMY.has("excess_withdrawal")).toBe(RESEARCH_SPLIT_LIVE);
     expect(TAXONOMY.has("returned_mail")).toBe(RESEARCH_SPLIT_LIVE);
     for (const key of RETIRED_CATEGORY_KEYS) expect(TAXONOMY.has(key)).toBe(false);
@@ -84,17 +86,33 @@ describe("top-50 fold", () => {
     expect(to("nsf_daily_cap", "Wire Transfer (over daily limit)")).toBeNull();
   });
 
-  test("international ATM fees are International ATM & Card; a domestic ATM line is the network ATM fee", () => {
-    expect(to("atm_international", "International ATM Withdrawal Fee")).toBe("card_foreign_txn");
-    expect(to("atm_international", "Non–Wells Fargo ATMs outside the U.S.")).toBe("card_foreign_txn");
-    expect(to("atm_international", "Non-IBC ATM locations (outside the U.S.): Withdrawal")).toBe("card_foreign_txn");
-    expect(to("atm_international", "ATM Inquiry (any non-international ATM)")).toBe("atm_non_network");
-    expect(to("atm_international", "ATMs inside United States & internationally")).toBe("atm_non_network");
-    expect(passesDarwinChecks("atm_non_network", "ATM Inquiry (any non-international ATM)", 0)).toBe(true);
-    expect(passesDarwinChecks("atm_non_network", "ATMs inside United States & internationally", 3)).toBe(true);
-    expect(to("atm_international", "Allpoint ATM Transactions – Domestic/International")).toBeNull();
-    expect(to("atm_international", "ATM: non-RCU or non- ATMs outside U.S. excluded)")).toBeNull();
-    expect(to("card_foreign_txn", "Foreign Transaction Fee")).toBeUndefined();
+  // International ATM is its own type again (James, Oct 19, #2037: "Split"), so it is not folded;
+  // what the retired fold rule placed elsewhere, the category guard now places (fee-category-guard.test.ts).
+  test("international ATM fees are their own type again; an ATM used abroad filed as the card's fee splits out", () => {
+    expect(isRetiredCategory("atm_international")).toBe(false);
+    expect(to("atm_international", "International ATM Withdrawal Fee")).toBeUndefined();
+    for (const name of [
+      "International ATM Withdrawal Fee",
+      "Non–Wells Fargo ATMs outside the U.S.",
+      "Non-IBC ATM locations (outside the U.S.): Withdrawal",
+      "ATM fees per transaction – At non-Wells Fargo ATMs: Cash withdrawals - Outside U.S",
+      "International ATM balance inquiry",
+      "Foreign Country ATM Cash Activity Fees",
+      "ATM Transaction/Outside USA",
+    ]) {
+      expect(splitLiveCategory("card_foreign_txn", name)?.to, name).toBe("atm_international");
+    }
+    for (const name of [
+      "Foreign Transaction Fee",
+      "International ATM/Debit Card Transaction",
+      "ATM/Visa Debit Foreign Transactions",
+      "ATM Card & VISA® Debit Card Fees: International Fee",
+      "ATM – Surcharge for Foreign Transactions",
+      "Transaction Fees Balance Transfer Cash Advance Foreign Transaction",
+      "International Point of Sale Fee",
+    ]) {
+      expect(splitLiveCategory("card_foreign_txn", name)?.to ?? null, name).not.toBe("atm_international");
+    }
   });
 
   test("card disputes are account research", () => {
@@ -168,8 +186,8 @@ describe("top-50 fold", () => {
       "Check Cashing",
       "Non-Member Check Cashing",
       "Foreign Check Cashing",
-      "Returned Canadian Check",
-      "Foreign Item Return Fee",
+      "Canadian Check Cashing/Processing",
+      "Foreign Item Cashed/Deposited Fee",
       "Negative Balance Collection Fee (after 30 days)",
       "Overdrawn Account Sent for Collection",
       "Return of Check Due to Hold or Uncollected Funds",
@@ -180,11 +198,69 @@ describe("top-50 fold", () => {
     expect(TAXONOMY.has("collection_item")).toBe(true);
   });
 
+  test("guard v70: a skipped loan payment leaves late payment and loan origination for other lending", () => {
+    for (const name of ["Skip-A-Pay Fee", "Skip A Payment (each)", "Loan Skip-a-Pay (per loan, two per year)", "Holiday skip payment program", "Extension Agreement or Skip Pay"]) {
+      expect(splitLiveCategory("late_payment", name)?.to, name).toBe("other_lending_fee");
+    }
+    expect(splitLiveCategory("loan_origination", "Loan Extension (Skip-A-Pay)")?.to).toBe("other_lending_fee");
+    expect(splitLiveCategory("loan_origination", "Loan Extension Fee")).toBeNull();
+    expect(splitLiveCategory("late_payment", "Late Payment Fee")).toBeNull();
+    expect(CANONICAL_KEY_MAP.skip_a_pay).toBe("other_lending_fee");
+    expect(CANONICAL_KEY_MAP.skipapay_fee).toBe("other_lending_fee");
+  });
+
+  test("a returned foreign check or item leaves check cashing for the returned deposited item fee (guard v68)", () => {
+    const split = (name: string) => splitLiveCategory("check_cashing", name)?.to ?? null;
+    // The 10 live check cashing rows, each read on its bank's own schedule (Oct 17).
+    for (const name of [
+      "Foreign Check Cashing Return",
+      "Foreign Check per Item Processing: Returned",
+      "Foreign Check Return Fee",
+      "FOREIGN CHECK RETURN FEE",
+      "Foreign Item Return Fee",
+      "RETURN FOREIGN CHECK FEE",
+      "Returned Canadian Check",
+      "Returned Canadian Check Fee",
+      "Returned Foreign Check Handling Fee",
+    ]) {
+      expect(split(name), name).toBe("deposited_item_return");
+      expect(passesDarwinChecks("deposited_item_return", name, 20), name).toBe(true);
+    }
+    // A collection names its collection first; cashing a foreign check, a domestic return and mail stay.
+    expect(split("Returned Foreign Item Collection")).toBe("collection_item");
+    for (const name of [
+      "Foreign Check Cashing",
+      "Return of Check Due to Hold or Uncollected Funds",
+      "Foreign: Returned Mail Fee",
+      "Returned Check",
+    ]) {
+      expect(split(name), name).toBeNull();
+    }
+  });
+
+  test("a returned foreign item leaves NSF, and an IRA's own closing charge leaves early closure (guard v69)", () => {
+    const split = (key: string, name: string) => splitLiveCategory(key, name)?.to ?? null;
+    for (const name of ["International Returned Item", "Canadian Returned Checks (per check)", "Returned item fee for Canadian checks"]) {
+      expect(split("nsf", name), name).toBe("deposited_item_return");
+      expect(passesDarwinChecks("deposited_item_return", name, 35), name).toBe(true);
+    }
+    for (const name of ["Returned Items, each - Within U.S./Outside U.S.", "Non-Sufficient Funds Fee - Canadian Check", "NSF Fee", "Foreign returned check fee (at cost plus)8"]) {
+      expect(split("nsf", name), name).toBeNull();
+    }
+    for (const name of ["Individual Retirement Account Closing Fee", "IRA Closed Account Fee", "Retirement/HSA Account Closing Fee"]) {
+      expect(split("early_closure", name), name).toBe("ira_termination");
+      expect(passesDarwinChecks("ira_termination", name, 50), name).toBe(true);
+    }
+    for (const name of ["Early closure of CD (fee to close prior to maturity)", "Account Closed within 90 days of opening (including IRA's)", "Christmas Club Withdrawal Fee", "HSA Account Closure Fee"]) {
+      expect(split("early_closure", name), name).toBeNull();
+    }
+  });
+
   // Written for either setting of SUBORDINATION_REFILE_LIVE, so turning it on is a one-line change.
   test("a subordination stays legal process (James, Oct 15) and moves from other lending only once switched on; a money order copy is a check copy", () => {
     const split = (key: string, name: string) => splitLiveCategory(key, name)?.to ?? null;
-    const off = splitCategoriesFor({ subordinationRefileLive: false });
-    const on = splitCategoriesFor({ subordinationRefileLive: true });
+    const off = splitCategoriesFor({ subordinationRefileLive: false, researchSplitLive: RESEARCH_SPLIT_LIVE });
+    const on = splitCategoriesFor({ subordinationRefileLive: true, researchSplitLive: RESEARCH_SPLIT_LIVE });
     expect(SPLIT_CATEGORIES).toEqual(SUBORDINATION_REFILE_LIVE ? on : off);
     for (const name of ["Mortgage Subordination", "Subordination Agreement", "Lien Subordination Fee", "HELOC / 2nd Trust Deed Subordination"]) {
       expect(split("legal_process", name)).toBeNull();
@@ -418,7 +494,8 @@ describe("top-50 fold", () => {
       if (key === "estatement_fee") {
         const ruleTo = (live: boolean) => estatementReturnRules(live).find((rule) => rule.name.test(name))?.to ?? null;
         // Off, main's rule; a name main's rule misses falls through to the same later rules as on main.
-        expect([name, ruleTo(false) ?? to(key, name) ?? null]).toEqual([name, main]);
+        // The fall-through reads today's later rules, which match main's only while the switch is off.
+        if (!RESEARCH_SPLIT_LIVE || ruleTo(false) != null) expect([name, ruleTo(false) ?? to(key, name) ?? null]).toEqual([name, main]);
         expect([name, ruleTo(true)]).toEqual([name, onTo]);
         if (!RESEARCH_SPLIT_LIVE) expect([name, to(key, name) ?? null]).toEqual([name, main]);
       } else {
@@ -465,5 +542,17 @@ describe("own-ATM balance inquiry (Regions, Oct 9)", () => {
     expect(ownAtmSection("Foreign ATM: Withdrawal $2.00")).toBe(false);
     expect(ownAtmSection("ATM Fees Withdrawal $2.00")).toBe(false);
     expect(ownAtmSection("Non-Regions ATM: Withdrawal $3.00")).toBe(false);
+  });
+});
+
+describe("guard v72 fold splits (#1788)", () => {
+  it("moves international ATM, sustained overdraft and incoming wire fees to their types", () => {
+    expect(splitLiveCategory("atm_non_network", "Non-PNC Bank ATM Fee (All Other Countries)")?.to).toBe("atm_international");
+    expect(splitLiveCategory("atm_non_network", "Foreign ATM Transaction Fee")).toBeNull();
+    expect(splitLiveCategory("overdraft", "Cont OD Charge")?.to).toBe("continuous_od");
+    expect(splitLiveCategory("overdraft", "Overdraft Fee (Max 5 items per day)")).toBeNull();
+    expect(splitLiveCategory("wire_domestic_outgoing", "Domestic Wire Transfer Fee – In Coming")?.to).toBe("wire_domestic_incoming");
+    expect(splitLiveCategory("wire_intl_outgoing", "Income Wire Transfer (foreign)")?.to).toBe("wire_intl_incoming");
+    expect(splitLiveCategory("wire_domestic_outgoing", "Wire Transfer (In or Out)")).toBeNull();
   });
 });

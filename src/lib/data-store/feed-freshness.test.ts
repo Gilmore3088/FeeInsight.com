@@ -21,6 +21,8 @@ describe("getRegistryFeedFreshness", () => {
         last_success_at: new Date("2026-10-05T11:17:43Z"),
         next_attempt_at: null,
         failed: 0,
+        partial: 0,
+        partialReason: null,
         scheduled: 0,
         last_error: null,
       },
@@ -30,12 +32,50 @@ describe("getRegistryFeedFreshness", () => {
         source: "fdic-financials",
         latestPeriod: "2026Q2",
         lastSuccessAt: "2026-10-05T11:17:43.000Z",
+        lastAttemptAt: null,
+        lastLoadedAt: null,
+        emptyReason: null,
+        emptyPartition: null,
+        unreachable: 0,
+        unreachablePartition: null,
+        unreachablePages: null,
         nextAttemptAt: null,
         failed: 0,
+        partial: 0,
+        partialReason: null,
         scheduled: 0,
         lastError: null,
+        blocked: 0,
+        blockedHost: null,
+        succeeded: 0,
+        lastFailedAt: null,
+        lastBlockedAt: null,
       },
     ]);
+  });
+
+  it("reports blocked partitions apart from successes (#1806)", async () => {
+    mock.mockResolvedValueOnce([
+      { source: "fr-y9c", latest_period: null, last_success_at: null, next_attempt_at: null, failed: 0, scheduled: 0, last_error: null, blocked: 3, blocked_host: "www.ffiec.gov" },
+    ]);
+    const [feed] = await getRegistryFeedFreshness();
+    expect(feed).toMatchObject({ lastSuccessAt: null, blocked: 3, blockedHost: "www.ffiec.gov" });
+    const text = (mock.mock.calls[0][0] as string[]).join("?");
+    expect(text).toContain("status = 'succeeded' OR (status = 'empty' AND NOT (detail ? 'missing_source') AND NOT unreachable)");
+    expect(text).toContain("COUNT(*) FILTER (WHERE status = 'empty' AND detail ? 'missing_source')::int AS blocked");
+  });
+
+  it("reports partitions that reached no landing page apart from successes (#2306)", async () => {
+    mock.mockResolvedValueOnce([
+      { source: "industry-events", last_success_at: new Date("2026-10-18T00:00:00Z"), failed: 0, scheduled: 0, succeeded: 9,
+        unreachable: 1, unreachable_partition: "ncua-mergers", unreachable_pages: "https://ncua.gov/x 404; https://ncua.gov/y 404" },
+    ]);
+    const [feed] = await getRegistryFeedFreshness();
+    expect(feed).toMatchObject({ unreachable: 1, unreachablePartition: "ncua-mergers", unreachablePages: "https://ncua.gov/x 404; https://ncua.gov/y 404" });
+    const text = (mock.mock.calls[0][0] as string[]).join("?");
+    // Legacy empty receipts whose every page failed, and new failure receipts, are both unreachable.
+    expect(text).toContain(`NOT (detail->'pages_tried' @> '[{"status":"ok"}]'::jsonb)`);
+    expect(text).toContain("detail->>'failure_kind' = 'landing_pages_unreachable'");
   });
 });
 

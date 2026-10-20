@@ -8,6 +8,9 @@ import { PRO_TIERS, tierPriceLabel, type ProTier } from "@/lib/pro-tiers";
  */
 export const FIND_PRICING_LABEL = "Find your price";
 export const SEE_PLAN_LABEL = "See your plan";
+/** The closing card's heading, in the same two states as its button. */
+export const FIND_PRICE_HEADING = "Find your Hamilton price";
+export const CHOSEN_PLAN_HEADING = "Your Hamilton plan";
 
 export interface ChosenInstitutionPrice {
   name: string;
@@ -27,4 +30,9 @@ export function fromPriceLine(): string {
 
 export function pricingCtaLabel(chosen: ChosenInstitutionPrice | null): string {
   return chosen ? SEE_PLAN_LABEL : FIND_PRICING_LABEL;
+}
+
+/** Once the page has priced an institution, the heading names its plan rather than asking for a search. */
+export function closingHeading(chosen: ChosenInstitutionPrice | null): string {
+  return chosen ? CHOSEN_PLAN_HEADING : FIND_PRICE_HEADING;
 }

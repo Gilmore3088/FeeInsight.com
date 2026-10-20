@@ -1,4 +1,4 @@
-export type AdminAgent = "atlas" | "magellan" | "rosetta" | "darwin" | "knox" | "hamilton" | "gutenberg" | "growth";
+export type AdminAgent = "atlas" | "magellan" | "rosetta" | "darwin" | "knox" | "hamilton" | "gutenberg" | "hoovie" | "growth";
 
 export type AgentRunStatus =
   | "queued"
@@ -93,18 +93,24 @@ export interface AgentRunEventSnapshot {
  * provider budget policy and the global (provider) automation stop. Every other step
  * is deterministic and is paused only by the separate pipeline control.
  */
-/** Pass-3 steps: paid model calls for what the free passes left, under the budget caps. */
-export const PROVIDER_STEP_KEYS: readonly string[] = [
+/** Optional pass-3 work in state lanes; a cap must not strand the free steps behind it. */
+export const OPTIONAL_PAID_PASS_STEP_KEYS: readonly string[] = [
   "discover-paid",
   "read-paid",
   "extract-paid",
   "verify-paid",
+];
+
+export const PROVIDER_STEP_KEYS: readonly string[] = [
+  ...OPTIONAL_PAID_PASS_STEP_KEYS,
   "report-render",
   "marketing-write",
   // Magellan's Regulatory Wire research notes; shadow mode until REG_WIRE_SUMMARIES_LIVE=true.
   "registry-wire-research",
   // Hamilton's paid answer eval (#1079): at most five memos a day.
   "hamilton-paid-answer-eval",
+  // The consumer guide draft writes with a model (src/lib/agents/guides/draft.ts, #1580).
+  "guide-draft",
 ];
 
 export function isProviderStep(stepKey: string): boolean {
@@ -119,6 +125,8 @@ export const MAX_STEP_ATTEMPTS = 3;
 /**
  * Steps that report on the pipeline rather than change data. They still run while
  * the pipeline control is paused, so the operator keeps hearing from Atlas.
+ * `score-answer-key` first applies James's answer-key relabels (atlas/answer-key-relabels.ts),
+ * which write only the hand-checked answer key and never a fee row, so the step stays exempt.
  */
 export const PAUSE_EXEMPT_STEP_KEYS: readonly string[] = [
   "bayes-replay-ledger",
@@ -127,10 +135,13 @@ export const PAUSE_EXEMPT_STEP_KEYS: readonly string[] = [
   "daily-brief",
   "deming-benchmark-health",
   "deming-change-outcomes",
+  "deming-data-quality",
   "deming-fresh-audit",
   "deming-knox-misses",
+  "deming-monthly-review",
   "deming-playbook-check",
   "deming-regression",
+  "deming-source-health",
   "deming-sunday-maintenance",
   "fee-alert-dispatch",
   "lead-watch",

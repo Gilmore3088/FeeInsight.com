@@ -162,6 +162,8 @@ export interface ThesisSummaryPayload {
     institution_count: number;
     maturity_tier: string;
   }>;
+  financial_income_groups?: import("@/lib/report-assemblers/financial-income").FinancialIncomeGroup[];
+  /** Legacy pooled snapshot is ignored by Hamilton generation. */
   revenue_snapshot: {
     latest_quarter: string;
     total_service_charges: number;
@@ -174,7 +176,6 @@ export interface ThesisSummaryPayload {
     fed_funds_rate: number | null;
     unemployment_rate: number | null;
     cpi_yoy_pct: number | null;
-    consumer_sentiment: number | null;
     as_of: string;
   } | null;
   /** Beige Book headline text snippets, one per Fed district that has data. */
@@ -217,6 +218,18 @@ export interface AnalyzeResponse {
   engineVersion?: string;
   /** The shared evidence gate's verdict on a written answer (#981); absent on answers saved before it. */
   answerEvidence?: SavedAnswerEvidence;
+  /**
+   * A written answer's sentence binding (#981, H06-T06): which sentences rest on fee records, which
+   * are Hamilton's reading and which were left out. Absent on answers saved before it, and on one
+   * written with no fee record to bind to.
+   */
+  narrativeBinding?: import("./narrative-bound").NarrativeBinding;
+  /**
+   * The dataset stamps of the reads behind the answer's medians, percentiles and counts, frozen
+   * when it was saved (#1924). Reopening shows these, never a fresh read. Absent on answers saved
+   * before them, which then show no note.
+   */
+  datasetStamps?: import("@/lib/dataset-note").StampedFigure[];
   // NOTE: No recommendedPosition — screen boundary rule (ARCH-05)
 }
 
@@ -262,7 +275,7 @@ export interface ReportDecision {
 
 /** A table built from data (never written by the model); its title is the takeaway. */
 export interface ReportExhibit {
-  id: "local_market" | "peer_range" | "dollar_impact" | "competitor_moves" | "regulatory" | "fee_income_trend" | "statistical_appendix";
+  id: "local_market" | "peer_range" | "dollar_impact" | "competitor_moves" | "regulatory" | "fee_income_trend" | "fee_income_trend_fdic" | "fee_income_trend_ncua" | "statistical_appendix" | "evidence_records";
   title: string;
   subtitle: string;
   columns: string[];
@@ -279,10 +292,19 @@ export interface ReportSource {
 export interface ReportSummaryResponse {
   /** A board brief made from one saved answer: its findings stay frozen; only the title and team note change. */
   /** A board brief's origin: a saved Ask answer (`sourceAnalysisId`) or a market view (`sourceResearchHref`). */
-  boardBrief?: { sourceAnalysisId?: string; sourceResearchHref?: string; teamNote: string; includeEvidence: boolean; factEvidence?: import("./evidence-contract").HamiltonEvidenceBundle };
+  boardBrief?: {
+    sourceAnalysisId?: string; sourceResearchHref?: string; teamNote: string; includeEvidence: boolean; factEvidence?: import("./evidence-contract").HamiltonEvidenceBundle;
+    /** Sentences printed only under "Hamilton's reading, not tied to a fee record" (#981 H06-T08); absent on briefs made before it. */
+    reading?: string[];
+  };
   title: string;
   /** Historical reference identity captured on the authenticated generation request. */
   identityContext?: HamiltonIdentitySnapshot;
+  /**
+   * The dataset stamps behind the report's medians and counts, as they were when it was made
+   * (#1924); a board brief carries its saved answer's. Absent on reports made before them.
+   */
+  datasetStamps?: import("@/lib/dataset-note").StampedFigure[];
   /** Answer page: one-sentence headline and up to three decisions (reports since v4 voice). */
   answer?: { headline: string; decisions: ReportDecision[]; /** The client goal the decisions are ranked by, when one was chosen. */ goal?: string | null };
   exhibits?: ReportExhibit[];

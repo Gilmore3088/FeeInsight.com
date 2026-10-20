@@ -1,7 +1,7 @@
 import { displayCity } from "@/lib/format";
 import { RESEARCH_SPLIT_LIVE } from "@/lib/fee-fold";
 import { sql } from "@/lib/data-store/connection";
-import { MIN_INSTITUTIONS_FOR_MEDIAN, STATS_ROW_FILTER, valuePerInstitution } from "@/lib/data-store/fee-stats";
+import { MIN_INSTITUTIONS_FOR_MEDIAN, STATS_ROW_FILTER, activeInstitutionFilter, valuePerInstitution } from "@/lib/data-store/fee-stats";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { median } from "@/lib/hamilton/fee-scenario";
 import { institutionDisplayName } from "@/lib/institution-display-name";
@@ -79,6 +79,8 @@ export interface SnapshotFeeRow {
   normalized_text: string | null;
   /** The catalog's charge frequency ("monthly", "annual", "per_item"...), null when unknown. */
   frequency?: string | null;
+  /** `consumer`, `both` or `unknown` (statistics rows only); unknown earns the asterisk (#1132). */
+  fee_audience?: string | null;
 }
 
 export interface SnapshotValue {
@@ -224,7 +226,21 @@ export interface MarketSnapshot {
   subject: SnapshotInstitution;
   peers: SnapshotInstitution[];
   fees: SnapshotFee[];
+  /**
+   * "metro": peers share the subject's CBSA. "state": the subject is in no metro, so its peers
+   * are the open institutions in its state closest to it in assets (SNAPSHOT_STATE_PEERS).
+   */
+  scope: MarketScope;
 }
+
+export type MarketScope = "metro" | "state";
+
+/**
+ * Peers for an institution in no metro: the open institutions in its state with live fees whose
+ * assets are closest to its own (James asked for rural prospects with a statewide comparison,
+ * Oct 17). Capped so a snapshot of a Texas bank doesn't read every schedule in Texas.
+ */
+export const SNAPSHOT_STATE_PEERS = 40;
 
 function toInstitution(row: Record<string, unknown>): SnapshotInstitution {
   const text = (value: unknown) => (value === null || value === undefined || value === "" ? null : String(value));
@@ -252,14 +268,34 @@ function toInstitution(row: Record<string, unknown>): SnapshotInstitution {
  * rows). Credit unions file no Summary of Deposits and are never excluded here. The same
  * filter is written into `loadStateComparison`; its thresholds live in `branchless-banks.ts`.
  */
-export async function loadMarket(db: SqlTag, institutionId: number): Promise<{ subject: SnapshotInstitution; peers: SnapshotInstitution[] } | null> {
+export async function loadMarket(
+  db: SqlTag,
+  institutionId: number,
+): Promise<{ subject: SnapshotInstitution; peers: SnapshotInstitution[]; scope: MarketScope } | null> {
   const [subjectRow] = await db`
-    SELECT id, institution_name, city, state_code, cbsa_code, cbsa_name, charter_type
+    SELECT id, institution_name, city, state_code, cbsa_code, cbsa_name, charter_type, asset_size
       FROM institution_sources WHERE id = ${institutionId}
   `;
   if (!subjectRow) return null;
   const subject = toInstitution(subjectRow);
-  if (!subject.cbsaCode) return { subject, peers: [] };
+  if (!subject.cbsaCode) {
+    if (!subject.stateCode || subjectRow.asset_size === null || subjectRow.asset_size === undefined) return { subject, peers: [], scope: "state" };
+    const stateRows = await db`
+      SELECT s.id, s.institution_name, s.city, s.state_code, s.cbsa_code, s.cbsa_name, s.charter_type
+        FROM institution_sources s
+       WHERE s.state_code = ${subject.stateCode} AND s.id <> ${institutionId} AND s.closed_date IS NULL
+         AND s.asset_size IS NOT NULL
+         AND EXISTS (SELECT 1 FROM published_fee_catalog ef WHERE ef.institution_id = s.id)
+         AND s.id NOT IN (
+               SELECT b.institution_id FROM institution_branch_deposits b
+                WHERE b.year = (SELECT MAX(year) FROM institution_branch_deposits)
+                GROUP BY b.institution_id
+               HAVING COUNT(*) <= ${BRANCHLESS_MAX_OFFICES} AND SUM(b.deposits) >= ${BRANCHLESS_MIN_DEPOSITS} AND MAX(b.deposits) >= ${BRANCHLESS_ONE_OFFICE_SHARE} * SUM(b.deposits))
+       ORDER BY ABS(s.asset_size - ${Number(subjectRow.asset_size)}), s.id
+       LIMIT ${SNAPSHOT_STATE_PEERS}
+    `;
+    return { subject, peers: stateRows.map(toInstitution).sort((a, b) => a.name.localeCompare(b.name)), scope: "state" };
+  }
   const peerRows = await db`
     SELECT s.id, s.institution_name, s.city, s.state_code, s.cbsa_code, s.cbsa_name, s.charter_type
       FROM institution_sources s
@@ -272,19 +308,24 @@ export async function loadMarket(db: SqlTag, institutionId: number): Promise<{ s
              HAVING COUNT(*) <= ${BRANCHLESS_MAX_OFFICES} AND SUM(b.deposits) >= ${BRANCHLESS_MIN_DEPOSITS} AND MAX(b.deposits) >= ${BRANCHLESS_ONE_OFFICE_SHARE} * SUM(b.deposits))
      ORDER BY s.institution_name
   `;
-  return { subject, peers: peerRows.map(toInstitution) };
+  return { subject, peers: peerRows.map(toInstitution), scope: "metro" };
 }
 
-/** Statistics-grade catalog rows for the snapshot's fees, with each row's newest source text. */
+/**
+ * Statistics-grade catalog rows for the snapshot's fees, with each row's newest source text.
+ * The public price check (/tools/price-check) reads its state figures here, so institutions the
+ * regulator marks inactive are left out, as in every public median (activeInstitutionFilter, #2149).
+ */
 export async function loadSnapshotRows(db: SqlTag, institutionIds: number[], categories: readonly string[]): Promise<SnapshotFeeRow[]> {
   if (institutionIds.length === 0) return [];
   const rows = await db.unsafe(
     `SELECT ef.fee_published_id, ef.institution_id, ef.fee_category, ef.fee_name, ef.amount, ef.canonical_fee_key,
             COALESCE(ef.extraction_note, ef.conditions) AS conditions, ef.account_product_type, ef.waiver_text, ef.frequency,
-            COALESCE(sd.document_url, ef.document_url, ef.source_url) AS document_url,
+            ef.fee_audience, COALESCE(sd.document_url, ef.document_url, ef.source_url) AS document_url,
             COALESCE(sd.last_checked_at, sd.crawled_at) AS read_at,
             t.normalized_text
        FROM published_fee_catalog ef
+       JOIN institution_sources ct ON ef.institution_id = ct.id
        LEFT JOIN source_documents sd ON sd.id = ef.source_document_id
        LEFT JOIN LATERAL (
          SELECT ast.normalized_text FROM agent_source_texts ast
@@ -293,6 +334,7 @@ export async function loadSnapshotRows(db: SqlTag, institutionIds: number[], cat
           ORDER BY ast.id DESC LIMIT 1
        ) t ON true
       WHERE ${STATS_ROW_FILTER}
+        AND ${activeInstitutionFilter("ct")}
         AND ef.fee_category = ANY($1::text[])
         AND ef.institution_id = ANY($2::bigint[])
         AND ef.amount IS NOT NULL AND ef.amount >= 0`,
@@ -301,7 +343,7 @@ export async function loadSnapshotRows(db: SqlTag, institutionIds: number[], cat
   return rows as unknown as SnapshotFeeRow[];
 }
 
-/** The whole snapshot for one institution, or null when it isn't in the catalog. */
+/** The whole snapshot for one institution (metro peers, or state peers when it is in no metro), or null when it isn't in the catalog. */
 export async function loadMarketSnapshot(
   institutionId: number,
   options: { db?: SqlTag; categories?: readonly string[] } = {},

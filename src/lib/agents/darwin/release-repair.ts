@@ -79,11 +79,11 @@ type SqlTag = typeof sql;
  */
 export const RELEASE_REPAIR_CHECK = "darwin.release_repair";
 /**
- * Default-off takedown switch. It turns on by PR after James has seen the whole dry run by bucket,
- * reason and category (`release_repair_full_count: true` on a Darwin verify run) and a hand check of
- * the fees it would take down.
+ * Takedown switch, on (James's OK, 2026-10-17). The full loops of Oct 16-17 found 0 takedown
+ * candidates among 1,639 live released fees, so today it guards future releases. Set it to false
+ * to report only.
  */
-export const DARWIN_RELEASE_REPAIR_LIVE = false;
+export const DARWIN_RELEASE_REPAIR_LIVE = true;
 /** Released fees read per step. Each needs its schedule's stored text, so a modest share. */
 export const RELEASE_REPAIR_BATCH = 250;
 export const RELEASE_REPAIR_SAMPLES = 20;
@@ -423,7 +423,7 @@ function restoreClearedFeedback(fee: { feePublishedId: number; institutionId: nu
   const row = {
     aboutStage: "publish" as const,
     aboutStrategy: RELEASE_REPAIR_CHECK,
-    reportedBy: "hamilton" as const,
+    reportedBy: "gutenberg" as const,
     checkName: RELEASE_REPAIR_CHECK,
     institutionId: fee.institutionId,
     sourceDocumentId: fee.sourceDocumentId,

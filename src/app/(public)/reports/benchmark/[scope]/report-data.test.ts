@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { IndexEntry } from "@/lib/data-store/fee-index";
+import type { FeeCategorySummary } from "@/lib/data-store/fees";
+import { HEADLINE_FEE_KEYS } from "@/lib/data-store/market-readiness";
+import { FEE_FAMILIES, PUBLIC_FEE_TYPE_LIMIT, TAXONOMY_COUNT, onlyPublicFeeTypes } from "@/lib/fee-taxonomy";
+import { nationalIndexEntries, withRequiredFees } from "@/lib/public-stats";
 import {
   buildReportCharterPairs,
   buildReportRows,
@@ -66,7 +70,7 @@ describe("report findings", () => {
 
   it("leads a district report with its overdraft median against national", () => {
     const [first] = computeDistrictFindings("St. Louis district", rows, []);
-    expect(first.headline).toBe("The typical St. Louis district overdraft fee");
+    expect(first.headline).toBe("The St. Louis district median overdraft fee");
     expect(first.detail).toContain("20% above the national median of $25.00");
   });
 
@@ -77,10 +81,64 @@ describe("report findings", () => {
   });
 
   it("leads the national report with overdraft and NSF, then the charter gap", () => {
-    const national = buildReportRows([entry("overdraft", 30, 1200), entry("nsf", 32, 1100)], null);
+    const national = buildReportRows(
+      [entry("overdraft", 30, 1200), entry("nsf", 32, 1100), entry("monthly_maintenance", 8, 900), entry("stop_payment", 30, 900)],
+      null,
+    );
     const pairs = [{ fee_category: "overdraft", bank_median_amount: 32, cu_median_amount: 25 }];
     const findings = computeNationalFindings(national, pairs);
-    expect(findings.map((f) => f.key)).toEqual(["overdraft", "nsf", "charter-gap"]);
-    expect(findings[2].headline).toBe("Credit unions charge less for overdraft");
+    // Across fees first; overdraft last, with NSF folded into it.
+    expect(findings.map((f) => f.key)).toEqual(["charter-gap", "spread", "overdraft"]);
+    expect(findings[0].headline).toBe("The widest charter gap is on overdraft, where the credit union median is lower");
+    expect(findings[1].fee_category).toBe("monthly_maintenance");
+    expect(findings[1].figure).toBe("$3.00 to $13.00");
+    expect(findings[2].detail).toContain("NSF median is $32.00 across 1,100");
+  });
+});
+
+describe("national benchmark: every headline fee, even outside the public top 50 (#1955)", () => {
+  function summaryRow(fee_category: string, institution_count: number): FeeCategorySummary {
+    return {
+      fee_category,
+      institution_count,
+      total_observations: institution_count,
+      min_amount: 0,
+      max_amount: 50,
+      avg_amount: 20,
+      median_amount: 20,
+      p25_amount: 15,
+      p75_amount: 25,
+      bank_count: 0,
+      cu_count: 0,
+      zero_count: 0,
+      bank_median_amount: null,
+      cu_median_amount: null,
+    };
+  }
+
+  // Two headline fees rank last, so the top-50 rule leaves them out of the public list.
+  const low = new Set(["deposited_item_return", "card_replacement"]);
+  const all = Object.values(FEE_FAMILIES)
+    .flat()
+    .map((key, i) => summaryRow(key, low.has(key) ? MIN_BENCHMARK_INSTITUTIONS + 1 : 1000 - i));
+
+  it("the top-50 list alone would drop them", () => {
+    expect(TAXONOMY_COUNT).toBeGreaterThan(PUBLIC_FEE_TYPE_LIMIT);
+    const listed = new Set(onlyPublicFeeTypes(all).map((r) => r.fee_category));
+    for (const key of low) expect(listed.has(key)).toBe(false);
+    expect(buildReportRows(nationalIndexEntries(onlyPublicFeeTypes(all)), null)).toHaveLength(HEADLINE_FEE_KEYS.length - low.size);
+  });
+
+  it("the benchmark read keeps all 15 rows", () => {
+    const national = nationalIndexEntries(withRequiredFees(onlyPublicFeeTypes(all), all, HEADLINE_FEE_KEYS));
+    const rows = buildReportRows(national, null);
+    expect(rows.map((r) => r.fee_category)).toEqual([...HEADLINE_FEE_KEYS]);
+  });
+
+  it("adds only the required fees, once, and nothing when every one is already public", () => {
+    const publicRows = onlyPublicFeeTypes(all);
+    const out = withRequiredFees(publicRows, all, HEADLINE_FEE_KEYS);
+    expect(out.length).toBe(publicRows.length + low.size);
+    expect(withRequiredFees(all, all, HEADLINE_FEE_KEYS)).toBe(all);
   });
 });

@@ -11,6 +11,7 @@ Official sources are from [google/fonts](https://github.com/google/fonts):
 | Local file | Upstream source | Upstream Git blob |
 | --- | --- | --- |
 | `newsreader-variable.ttf` | `ofl/newsreader/Newsreader[opsz,wght].ttf` | `ad4a9a8c44ec328c80b61c773f1ba02f6b5ed292` |
+| `newsreader-latin-500.woff2` | `ofl/newsreader/Newsreader[opsz,wght].ttf`, via `newsreader-variable.ttf` (below) | `ad4a9a8c44ec328c80b61c773f1ba02f6b5ed292` |
 | `newsreader-italic-variable.ttf` | `ofl/newsreader/Newsreader-Italic[opsz,wght].ttf` | `d25879656a601d44c49836f9e773d100190c62e1` |
 | `jetbrains-mono-variable.ttf` | `ofl/jetbrainsmono/JetBrainsMono[wght].ttf` | `aa310be8b717fe3774f9444dd89d5f4101cc6d10` |
 | `plus-jakarta-sans-variable.ttf` | `ofl/plusjakartasans/PlusJakartaSans[wght].ttf` | `0cb13a998ed525ba226d911b10d6c4c4f923a961` |
@@ -32,4 +33,29 @@ from fontTools.varLib.instancer import instantiateVariableFont
 
 font = TTFont(source_path)
 instantiateVariableFont(font, {"opsz": 16}, inplace=True).save(output_path)
+```
+
+`newsreader-latin-500.woff2` is the homepage headline face (`src/app/landing-serif.ts`, 12,588
+bytes). It is `newsreader-variable.ttf` instanced at weight 500, subset to printable ASCII plus
+U+00A0, U+00B7, U+2013, U+2014, U+2018, U+2019, U+201C, U+201D and U+2026, and saved as woff2
+(fontTools 4.67.0 with brotli):
+
+```python
+from fontTools.ttLib import TTFont
+from fontTools.varLib.instancer import instantiateVariableFont
+from fontTools import subset
+
+font = TTFont("newsreader-variable.ttf")
+instantiateVariableFont(font, {"wght": 500}, inplace=True)
+opts = subset.Options()
+opts.flavor = "woff2"
+opts.layout_features = ["kern", "liga", "calt", "ccmp", "locl", "mark", "mkmk"]
+opts.name_IDs = ["*"]
+opts.notdef_outline = True
+unicodes = list(range(0x20, 0x7F)) + [0xA0, 0xB7, 0x2013, 0x2014, 0x2018, 0x2019, 0x201C, 0x201D, 0x2026]
+subsetter = subset.Subsetter(opts)
+subsetter.populate(unicodes=unicodes)
+subsetter.subset(font)
+font.flavor = "woff2"
+font.save("newsreader-latin-500.woff2")
 ```

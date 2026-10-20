@@ -1,18 +1,16 @@
 /**
- * Rendered per request, deliberately — unlike the guide pages themselves, which are
- * statically prerendered.
+ * Regenerated in the background (ISR) at most hourly, like the guide pages themselves
+ * (#1811). Publishing a guide from admin revalidates this path, and a takedown
+ * invalidates the public read cache the medians come from.
  *
  * This page reads no session; the professional set is labelled by what it is rather than
- * by who is reading. It could be prerendered on that basis, and it is not, for one
- * reason: it has no route params, so there is no `generateStaticParams` to skip
- * prerendering through when the database is unreachable at build time. A build during a
- * database blip would bake an index with no medians and serve it until the next
- * revalidation. The guide pages avoid that by prerendering nothing in that case.
- *
- * The cost of rendering per request is small — the benchmark summaries are cached and
- * invalidated on publish — so correctness is the better trade here.
+ * by who is reading. It used to render per request so that a build during a database
+ * blip could not bake an index with no medians for the whole interval. The homepage's
+ * guard covers that now (#1572): the snapshot is never cached while a read failed, and a
+ * render with a failed read is cached for one minute instead of an hour
+ * (`shortenPageLife`), so the next render reads the database again.
  */
-export const dynamic = "force-dynamic";
+export const revalidate = 3600;
 
 import type { Metadata } from "next";
 import { ProLock } from "@/components/public/pro-lock";
@@ -20,12 +18,14 @@ import Link from "next/link";
 import { guideCategories, type Guide } from "@/lib/guides";
 import { loadConsumerGuides, loadProfessionalGuides } from "@/lib/guides/source";
 import type { FeeCategorySummary } from "@/lib/data-store/fees";
-import { getDisplayName } from "@/lib/fee-taxonomy";
+import { getDisplayName, sentenceFeeName } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { SITE_URL } from "@/lib/constants";
 import { COVERAGE_LABELS, getPublicSnapshot } from "@/lib/public-stats";
 import { UnstatedAudienceFootnote, UnstatedAudienceMark, medianHasUnstatedAudience } from "@/components/unstated-audience";
+import { PAGE_HEADER } from "@/components/public/page-header";
+import { shortenPageLife } from "@/lib/data-store/public-read-cache";
 
 const TITLE = "Consumer Guides — Understanding Bank Fees";
 const DESCRIPTION =
@@ -149,7 +149,7 @@ function GuideCard({
                 <UnstatedAudienceMark show={medianHasUnstatedAudience(primary)} />
               </span>
               <span className="text-[11px] text-ink-muted">
-                median {getDisplayName(primary.fee_category).toLowerCase()}
+                median {sentenceFeeName(getDisplayName(primary.fee_category))}
               </span>
             </div>
 
@@ -190,7 +190,7 @@ function GuideCard({
               <UnstatedAudienceMark show={medianHasUnstatedAudience(primary)} />
             </span>
             <span className="text-[10px] text-ink-muted">
-              median {getDisplayName(primary.fee_category).toLowerCase()}
+              median {sentenceFeeName(getDisplayName(primary.fee_category))}
             </span>
           </div>
         )}
@@ -216,6 +216,8 @@ export default async function GuidesIndexPage() {
       loadConsumerGuides(),
       loadProfessionalGuides(),
     ]);
+  // A render with a failed snapshot read is cached for a minute, not an hour (see the note at the top).
+  if (!summary.complete || allSummaries.length === 0) await shortenPageLife();
 
   const summaryFor = new Map(allSummaries.map((s) => [s.fee_category, s]));
 
@@ -237,8 +239,8 @@ export default async function GuidesIndexPage() {
       />
 
       {/* ── Hero ── */}
-      <div className="max-w-2xl">
-        <div className="mb-4 flex items-center gap-2">
+      <header className={`mx-auto max-w-2xl sm:mx-0 ${PAGE_HEADER}`}>
+        <div className="mb-4 flex items-center justify-center gap-2 sm:justify-start">
           <span className="h-px w-8 bg-brick/40" aria-hidden="true" />
           <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-brick/60">
             Consumer Guides
@@ -252,7 +254,7 @@ export default async function GuidesIndexPage() {
           Understand what your bank <em style={{ fontWeight: 300 }}>charges</em>
         </h1>
 
-        <p className="mt-4 text-[15px] leading-relaxed text-ink-muted">
+        <p className="mx-auto mt-4 max-w-[34rem] text-[15px] leading-relaxed text-ink-muted sm:mx-0 sm:max-w-none">
           Plain-language guides backed by live benchmark data from{" "}
           <span className="font-medium tabular-nums text-ink-soft">
             {summary.institutionsLabel}
@@ -260,14 +262,14 @@ export default async function GuidesIndexPage() {
           institutions with published fees (of {summary.monitoredLabel} monitored).
         </p>
 
-        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-ink-muted">
+        <div className="mt-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[12px] text-ink-muted sm:justify-start">
           <span className="tabular-nums">
             {summary.observationsLabel} {COVERAGE_LABELS.observations.toLowerCase()}
           </span>
           <span className="h-3 w-px bg-border" aria-hidden="true" />
           <span>{summary.freshnessLabel}</span>
         </div>
-      </div>
+      </header>
 
       {/* ── Featured consumer guides ── */}
       <section aria-labelledby="featured-heading" className="mt-12">

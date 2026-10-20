@@ -1,8 +1,10 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { decodeLandingResearch, encodeLandingResearch, RESEARCH_STATE_CODES, type LandingResearchHandoff } from "@/lib/hamilton/landing-research-handoff";
+import { decodeLandingResearch, encodeLandingResearch, RESEARCH_STATE_CODES, type LandingResearchHandoff, type ResearchStateCode } from "@/lib/hamilton/landing-research-handoff";
 import { loadLandingGeographicResearch, type GeographicResearchResult } from "@/lib/hamilton/landing-geographic-research";
 import { getStateEconomicContext, type IndicatorSeries, type StateEconomicContext } from "@/lib/data-store/economic-context";
+import { FINANCIAL_SOURCES, type FinancialSource } from "@/lib/data-store/financial-sources";
+import { financialMeasureDefinition, financialSourceForCharter } from "@/lib/data-store/financial-peer-contract";
 import { getRevenueByTier, getRevenueTrend, type RevenueTrend, type TierRevenue } from "@/lib/data-store/call-reports";
 import { getArticles, SOURCE_LABELS, TOPIC_LABELS, type RegArticle } from "@/lib/data-store/news";
 import { getDisplayName } from "@/lib/fee-taxonomy";
@@ -10,6 +12,7 @@ import { proseFeeName } from "@/lib/hamilton/workspace/names";
 import { STATE_NAMES } from "@/lib/us-states";
 import { STATE_TO_DISTRICT, DISTRICT_NAMES } from "@/lib/fed-districts";
 import { formatAssets } from "@/lib/format";
+import { feeScheduleUrls, ownFeeList, statedFeeLabel } from "@/lib/own-fee";
 import {
   joinSeries, loadComplaintTrend, loadFeeMap, loadPeerTable, loadStatePosts, percentChange, yearOverYear,
   type ComplaintTrend, type FeeMap, type FeeSpread, type PeerTable, type StatePost,
@@ -19,6 +22,7 @@ import { assetSizeFor, type AssetSize } from "@/lib/hamilton/asset-size";
 import { ScopeControls } from "./ScopeControls";
 import { BoardBriefButton } from "./BoardBriefButton";
 import { EvidenceDetails } from "./EvidenceDetails";
+import { DatasetNote } from "@/components/hamilton/DatasetNote";
 import { FeeLandscapeChart, HorizontalBars, MultiTrend, StateFeeMap } from "./IntelligenceCharts";
 import { LandingResearchResults } from "@/components/hamilton/landing/LandingResearchResults";
 
@@ -31,7 +35,15 @@ const pct = (v: number | null | undefined, digits = 1) => v == null ? "Unavailab
 const CHARTER_LABEL: Record<LandingResearchHandoff["charter"], string> = { all: "Banks & credit unions", bank: "Banks", credit_union: "Credit unions" };
 const TIER_LABEL: Record<string, string> = { micro: "Under $100M", community: "$100M–$1B", midsize: "$1B–$10B", regional: "$10B–$250B", mega: "$250B and up" };
 
+export interface IntelligenceFinancialGroup {
+  source: FinancialSource;
+  definition: ReturnType<typeof financialMeasureDefinition>;
+  revenue: RevenueTrend | null;
+  tiers: TierRevenue[] | null;
+}
+
 export interface Loaded {
+  financialGroups?: IntelligenceFinancialGroup[] | null;
   fees: GeographicResearchResult | null;
   feeMap: FeeMap | null;
   peers: PeerTable | null;
@@ -60,6 +72,40 @@ export async function IntelligenceWorkspace({ params, overview = false }: { para
   return <IntelligenceView selection={selection} data={data} lens={lens} overview={overview} instId={params.instId} size={size} />;
 }
 
+/**
+ * The market behind an institution's briefing (#2042): its state's fees, finances, economy,
+ * complaints and regulation, compact, as the supporting layer under the briefing on Overview.
+ * National research stays its own view, linked here.
+ */
+export async function MarketContext({ stateCode }: { stateCode: string | null }) {
+  const state = stateCode && (RESEARCH_STATE_CODES as readonly string[]).includes(stateCode) ? stateCode as ResearchStateCode : null;
+  const selection: LandingResearchHandoff = state ? { ...DEFAULT, scope: { kind: "state", stateCode: state } } : DEFAULT;
+  const place = state ? STATE_NAMES[state] ?? state : "the United States";
+  const data = await loadIntelligence(selection, LENSES.map(l => l.id), { compact: true });
+  const lensHref = (id: Lens) => `/pro/intelligence?${new URLSearchParams({ research: encodeLandingResearch(selection), lens: id })}`;
+  const panels = lensPanels({ data, selection, stateHrefs: stateLinks(selection, "/pro/hamilton"), compact: true, explore: lensHref });
+  return <section aria-labelledby="market-context" className="flex flex-col gap-7">
+    <header className="flex flex-col gap-2 border-t border-[var(--fi-border)] pt-7 sm:flex-row sm:items-baseline sm:justify-between">
+      <div>
+        <p className="fi-text-label text-[var(--fi-muted)]">Market context</p>
+        <h2 id="market-context" className="mt-1 text-2xl font-semibold">The market in {place}</h2>
+      </div>
+      <Link href={`/pro/hamilton?${new URLSearchParams({ research: encodeLandingResearch(DEFAULT) })}`} className="text-sm font-medium text-[var(--fi-ink)] underline">Open the U.S. fee landscape</Link>
+    </header>
+    {panels.fees}
+    {/* The rest of the market stays one click away, so the briefing leads the page. */}
+    <details className="group flex flex-col gap-7">
+      <summary className="cursor-pointer text-sm font-medium text-[var(--fi-ink)] underline">More on {state ? place : "the market"}: finances, economy, complaints and regulation</summary>
+      <div className="mt-7 flex flex-col gap-7">
+        {panels.financials}
+        {panels.economy}
+        {panels.complaints}
+        {panels.regulation}
+      </div>
+    </details>
+  </section>;
+}
+
 /** Loads only what the chosen lenses show, in parallel; a reader that fails leaves its slot null. */
 export async function loadIntelligence(selection: LandingResearchHandoff, lenses: readonly Lens[], { compact, segment = null }: { compact: boolean; segment?: { minAssets: number | null; maxAssets: number | null; tiers?: readonly string[] | null } | null }): Promise<Loaded> {
   const state = selection.scope.kind === "state" ? selection.scope.stateCode : null;
@@ -67,12 +113,22 @@ export async function loadIntelligence(selection: LandingResearchHandoff, lenses
   const primary = selection.categories[0];
   const want = (id: Lens) => lenses.includes(id);
   const tiers = segment?.tiers ?? null;
+  const expectedSource = financialSourceForCharter(selection.charter);
+  const financialSources = selection.charter === "all" ? FINANCIAL_SOURCES : expectedSource ? [expectedSource] : [];
   return Object.fromEntries(await Promise.all(([
     ["fees", want("fees") ? loadLandingGeographicResearch(selection, undefined, tiers).catch(() => null) : null],
     ["feeMap", want("fees") && primary ? loadFeeMap(primary, selection.charter, state, tiers) : null],
     ["peers", want("fees") && primary && (state || !compact) ? loadPeerTable(state, selection.charter, primary, compact ? 10 : 25, segment) : null],
-    ["revenue", want("financials") ? getRevenueTrend(12).catch(() => null) : null],
-    ["tiers", !compact && want("financials") ? getRevenueByTier().catch(() => null) : null],
+    // Old pooled fields stay empty; only explicit regulator groups can feed Hamilton.
+    ["revenue", null],
+    ["tiers", null],
+    ["financialGroups", want("financials") ? Promise.all(financialSources.map(async source => {
+      const [revenue, tiers] = await Promise.all([
+        getRevenueTrend(12, source).catch(() => null),
+        compact ? null : getRevenueByTier(undefined, source).catch(() => null),
+      ]);
+      return { source, definition: financialMeasureDefinition(source), revenue, tiers };
+    })) : null],
     ["economy", want("economy") ? getStateEconomicContext(state ?? "US", district).catch(() => null) : null],
     ["complaints", want("complaints") ? loadComplaintTrend(state) : null],
     ["articles", want("regulation") ? getArticles({ limit: compact ? 5 : 12 }).catch(() => null) : null],
@@ -94,7 +150,7 @@ export function IntelligenceView({ selection, data, lens, overview, instId, size
   const panels = lensPanels({ data, selection, stateHrefs, compact: overview, explore: id => overview ? lensHref(id) : null, size });
 
   return <div className="mx-auto flex max-w-7xl flex-col gap-7">
-    <header className="flex flex-wrap items-start justify-between gap-4">
+    <header className="flex flex-col items-center gap-4 text-center sm:flex-row sm:flex-wrap sm:items-start sm:justify-between sm:text-left">
       <div>
         <p className="fi-text-label text-[var(--fi-muted)]">{overview ? "Intelligence overview" : "Research"}</p>
         <h1 className="mt-1 text-3xl font-semibold sm:text-4xl">{overview ? (state ? `${place}: fees, finances and market` : "The U.S. fee landscape") : `Research · ${place}`}</h1>
@@ -131,7 +187,7 @@ export function lensPanels({ data, selection, stateHrefs, compact, explore, peer
   const district = state ? STATE_TO_DISTRICT[state] ?? null : null;
   return {
     fees: <FeePanels data={data} selection={selection} place={place} state={state} stateHrefs={stateHrefs} compact={compact} exploreHref={explore("fees")} peerNote={peerNote ?? (size.id === "all" ? undefined : `(${size.label} only)`)} sizeNote={size.id === "all" ? undefined : `(${size.label} only)`} focusHref={category => feeFocusHref(selection, category, size)} />,
-    financials: <FinancialPanel revenue={data.revenue} tiers={data.tiers} state={state} compact={compact} exploreHref={explore("financials")} />,
+    financials: <FinancialPanels groups={data.financialGroups} state={state} compact={compact} exploreHref={explore("financials")} />,
     economy: <EconomyPanel economy={data.economy} place={place} state={state} district={district} compact={compact} exploreHref={explore("economy")} />,
     complaints: <ComplaintPanel complaints={data.complaints} place={place} compact={compact} exploreHref={explore("complaints")} />,
     regulation: <RegulationPanel articles={data.articles} statePosts={data.statePosts} place={place} compact={compact} exploreHref={explore("regulation")} />,
@@ -156,7 +212,7 @@ function midSentence(name: string): string {
 
 export interface Finding { lens: Lens; title: string; body: string; source: string }
 
-/** Observed facts from loaded data, one per lens at most, each naming its source; no interpretation, no pricing advice. */
+/** Observed facts with separate financial regulator groups, each naming its source. */
 export function readFindings(data: Loaded, place: string, state: string | null, primary: string | undefined): Finding[] {
   const findings: Finding[] = [];
   const row = data.fees?.comparisons.find(c => c.category === primary) ?? data.fees?.comparisons.find(c => c.selected.status === "available");
@@ -169,13 +225,14 @@ export function readFindings(data: Loaded, place: string, state: string | null, 
       source: "Bank Fee Index published catalog",
     });
   }
-  const latest = data.revenue?.latest;
-  if (latest) {
+  for (const group of data.financialGroups ?? []) {
+    const latest = group.revenue?.latest;
+    if (!latest) continue;
     findings.push({
       lens: "financials",
-      title: `Deposit service-charge income was $${(latest.total_service_charges / 1_000_000).toFixed(2)}B in ${latest.quarter}.`,
-      body: `${latest.yoy_change_pct != null ? `${pct(latest.yoy_change_pct)} on the same quarter a year earlier` : "No same-quarter comparison a year earlier"}, across ${latest.total_institutions.toLocaleString()} filers nationally${state ? "; a state aggregate is not available" : ""}.`,
-      source: "FDIC Call Reports and NCUA 5300",
+      title: `${group.source === "ncua" ? "Broad credit-union fee income" : "Bank deposit service-charge income"} was $${(latest.total_service_charges / 1_000_000).toFixed(2)}B in ${latest.quarter}.`,
+      body: `${latest.yoy_change_pct != null ? `${pct(latest.yoy_change_pct)} on the same quarter a year earlier` : "No same-quarter comparison a year earlier"}, across ${latest.total_institutions.toLocaleString()} ${group.definition.charter_type === "bank" ? "bank" : "credit-union"} filers nationally${state ? "; a state aggregate is not available" : ""}. Standalone quarterly income; reporting populations can change.`,
+      source: group.definition.publisher,
     });
   }
   const e = data.economy;
@@ -187,14 +244,14 @@ export function readFindings(data: Loaded, place: string, state: string | null, 
       lens: "economy",
       title: `${place} unemployment is ${e.state_unemployment.latest.value.toFixed(1)}%.`,
       body: `${e.national_unemployment ? `The U.S. rate is ${e.national_unemployment.latest.value.toFixed(1)}% (${e.national_unemployment.latest.date.slice(0, 7)})` : "The U.S. comparison is unavailable"}; state figure as of ${e.state_unemployment.latest.date.slice(0, 7)}.`,
-      source: "BLS via FRED",
+      source: "Bureau of Labor Statistics",
     });
   } else if (bankYoY !== null) {
     findings.push({
       lens: "economy",
       title: `Prices for bank services rose ${pct(bankYoY)} over twelve months.`,
       body: `${allYoY !== null ? `All consumer prices rose ${pct(allYoY)} over the same period` : "The all-items comparison is unavailable"}, to ${bank!.latest.date.slice(0, 7)}.`,
-      source: "BLS consumer price index via FRED",
+      source: "BLS consumer price index",
     });
   }
   const years = data.complaints?.years ?? [];
@@ -203,8 +260,8 @@ export function readFindings(data: Loaded, place: string, state: string | null, 
     const prior = years[years.length - 2];
     findings.push({
       lens: "complaints",
-      title: `${year.total.toLocaleString()} CFPB complaints in ${year.year} named institutions headquartered in ${place}.`,
-      body: `${((year.feeRelated / year.total) * 100).toFixed(1)}% were about fees${prior ? `; the year before there were ${prior.total.toLocaleString()}` : ""}. Counts follow who complains and how complaints are matched, so they do not rank institutions.`,
+      title: `${year.total.toLocaleString()} CFPB complaints in ${yearLabel(year.year)} named institutions headquartered in ${place}.`,
+      body: `${((year.feeRelated / year.total) * 100).toFixed(1)}% were about fees${prior ? `; ${prior.year}${isCurrentYear(year.year) ? ", a full year," : ""} had ${prior.total.toLocaleString()}` : ""}. Counts follow who complains and how complaints are matched, so they do not rank institutions.`,
       source: "CFPB Consumer Complaint Database",
     });
   }
@@ -278,6 +335,10 @@ function FeePanels({ data, selection, place, state, stateHrefs, compact, explore
             </tr>)}</tbody>
           </table>
         </div> : null}
+        {result?.stamps ? <DatasetNote className="mt-4" figures={[
+          { label: place, stamp: result.stamps.selected },
+          result.stamps.national ? { label: "the U.S. reference", stamp: result.stamps.national } : null,
+        ]} /> : null}
         <EvidenceDetails source="Bank Fee Index · published fee catalog" period="Per-category record dates in the table" geography={place} coverage="Published consumer fees from the selected institution type; cohorts under the minimum are withheld" method="One value per institution; median and 25th–75th percentiles. State figures use the same institution type as the national reference. Missing is not zero; record dates are not a fresh schedule recheck." />
       </Panel>
       <Panel title={`${primaryName} by state`} subtitle={`Published median by state · ${CHARTER_LABEL[selection.charter]}${sizeNote ? ` ${sizeNote}` : ""}${data.feeMap?.nationalMedian != null ? ` · U.S. ${dollars(data.feeMap.nationalMedian)}` : ""}`}>
@@ -296,19 +357,23 @@ function PeerTablePanel({ peers, place, primaryName, charter, compact, exploreHr
   return <Panel title={`Largest institutions in ${place}: ${midSentence(primaryName)}`} subtitle={`${peers.rows.length} shown of ${peers.institutionsInScope.toLocaleString()} ${CHARTER_LABEL[charter].toLowerCase()}${note ? ` ${note}` : ""} in scope, largest by assets first`} explore={exploreHref}>
     {peers.rows.length ? <div className="mt-4 overflow-x-auto" tabIndex={0} role="region" aria-label="Institutions and their published fee">
       <table className="w-full text-left text-sm"><caption className="sr-only">Published {primaryName} by institution with source documents</caption>
-        <thead><tr className="border-b border-[var(--fi-border)] text-xs uppercase tracking-wide text-[var(--fi-muted)]">{["Institution", "Type", "Assets", primaryName, "Published", "Evidence"].map(h => <th key={h} scope="col" className="p-2.5 font-semibold">{h}</th>)}</tr></thead>
+        <thead><tr className="border-b border-[var(--fi-border)] text-xs uppercase tracking-wide text-[var(--fi-muted)]">{["Institution", "Type", "Assets", primaryName, "Latest published", "Evidence"].map(h => <th key={h} scope="col" className="p-2.5 font-semibold">{h}</th>)}</tr></thead>
         <tbody>{peers.rows.map(r => <tr key={r.institutionId} className="border-b border-[var(--fi-border)]">
           <th scope="row" className="p-2.5 font-medium"><Link href={`/pro/intelligence?view=institution&instId=${r.institutionId}`} className="text-[var(--fi-ink)] no-underline hover:underline">{r.name}</Link></th>
           <td className="p-2.5 text-[var(--fi-muted)]">{r.charter === "credit_union" ? "Credit union" : r.charter === "bank" ? "Bank" : "—"}</td>
           <td className="p-2.5 tabular-nums">{formatAssets(r.totalAssets)}</td>
-          <td className="p-2.5 font-semibold tabular-nums">{dollars(r.amount)}</td>
+          <td className="p-2.5 font-semibold tabular-nums">{statedFeeLabel(r.amount, r.several, dollars)}
+            {r.several ? <span className="block text-xs font-normal">{ownFeeList(r.several, dollars)}</span> : null}
+          </td>
           <td className="p-2.5 text-[var(--fi-muted)]">{r.publishedAt?.slice(0, 10) ?? "Not recorded"}</td>
-          <td className="p-2.5">{r.documentUrl ? <a href={r.documentUrl} target="_blank" rel="noreferrer" className="text-[var(--fi-brick)]">Fee schedule ↗</a> : <span className="text-[var(--fi-muted)]">No link</span>}</td>
+          <td className="p-2.5">{feeScheduleUrls(r.documentUrls, r.documentUrl).length
+            ? feeScheduleUrls(r.documentUrls, r.documentUrl).map((url, i, urls) => <a key={url} href={url} target="_blank" rel="noreferrer" className="block text-[var(--fi-brick)]">Fee schedule{urls.length > 1 ? ` ${i + 1}` : ""} ↗</a>)
+            : <span className="text-[var(--fi-muted)]">No link</span>}</td>
         </tr>)}</tbody>
       </table>
     </div> : <Unavailable>No institution in this scope publishes {midSentence(primaryName)} yet.</Unavailable>}
-    {!compact && amounts.length ? <p className="mt-3 text-sm text-[var(--fi-muted)]">Among these {amounts.length}: lowest {dollars(amounts[0])}, highest {dollars(amounts[amounts.length - 1])}.</p> : null}
-    <EvidenceDetails source="Bank Fee Index · published fee catalog; assets from FDIC and NCUA filings" period="Each row's published date" geography={place} coverage="Institutions in scope with a published value; others are not shown, not $0" method="One value per institution under the statistics contract; each links to the fee schedule it was read from." />
+    {!compact && amounts.length ? <p className="mt-3 text-sm text-[var(--fi-muted)]">These {amounts.length} institutions&apos; values in group statistics run from {dollars(amounts[0])} to {dollars(amounts[amounts.length - 1])}.</p> : null}
+    <EvidenceDetails source="Bank Fee Index · published fee catalog; assets from FDIC and NCUA filings" period="Latest publication among each institution's listed charges" geography={place} coverage="Institutions in scope with a published value; others are not shown, not $0" method="Named rows show stated prices or their range and fee names. Statistics count one value per institution. Schedule links cover the stored rows behind each price or range." />
   </Panel>;
 }
 
@@ -327,22 +392,29 @@ function SpreadPanel({ spread, place, primaryName, charter, note }: { spread: Fe
   </Panel>;
 }
 
-function FinancialPanel({ revenue, tiers, state, compact, exploreHref }: { revenue: RevenueTrend | null; tiers: TierRevenue[] | null; state: string | null; compact: boolean; exploreHref: string | null }) {
+function FinancialPanels({ groups, ...props }: { groups?: IntelligenceFinancialGroup[] | null; state: string | null; compact: boolean; exploreHref: string | null }) {
+  return groups?.length ? <>{groups.map(group => <FinancialPanel key={group.source} group={group} {...props} />)}</>
+    : <Panel title="Financial income" explore={props.exploreHref}><Unavailable>The national filing trend could not load.</Unavailable></Panel>;
+}
+
+function FinancialPanel({ group, state, compact, exploreHref }: { group: IntelligenceFinancialGroup; state: string | null; compact: boolean; exploreHref: string | null }) {
+  const { revenue, tiers, source, definition } = group;
+  const label = source === "ncua" ? "Broad credit-union fee income" : "Bank deposit service-charge income";
   const quarters = [...(revenue?.quarters ?? [])].reverse();
-  const rows = quarters.map(q => ({ period: q.quarter, total: q.total_service_charges / 1_000_000, bank: q.bank_service_charges / 1_000_000, cu: q.cu_service_charges / 1_000_000 }));
-  return <Panel title="Deposit service-charge income" subtitle={`United States · quarterly, USD billions${state ? " · a state aggregate is not available" : ""}`} explore={exploreHref}>
-    {rows.length ? <div className="mt-4"><MultiTrend rows={rows} series={[{ key: "total", name: "All filers" }, { key: "bank", name: "Banks" }, { key: "cu", name: "Credit unions" }]} label="Deposit service-charge income" unit="USD billions" format="billions" height={compact ? 220 : 280} /></div>
+  const rows = quarters.map(q => ({ period: q.quarter, total: q.total_service_charges / 1_000_000 }));
+  return <Panel title={label} subtitle={`United States · standalone quarterly income, USD billions${state ? " · a state aggregate is not available" : ""}`} explore={exploreHref}>
+    {rows.length ? <div className="mt-4"><MultiTrend rows={rows} series={[{ key: "total", name: label }]} label={label} unit="USD billions" format="billions" height={compact ? 220 : 280} /></div>
       : <Unavailable>The national filing trend could not load.</Unavailable>}
-    {!compact && revenue?.quarters.length ? <div className="mt-4 overflow-x-auto" tabIndex={0} role="region" aria-label="Quarterly filings">
-      <table className="w-full text-left text-sm"><thead><tr className="border-b border-[var(--fi-border)] text-xs uppercase tracking-wide text-[var(--fi-muted)]">{["Quarter", "All filers", "Banks", "Credit unions", "Year over year", "Filers"].map(h => <th key={h} scope="col" className="p-2.5 font-semibold">{h}</th>)}</tr></thead>
+    {!compact && revenue?.quarters.length ? <div className="mt-4 overflow-x-auto" tabIndex={0} role="region" aria-label={`${label} quarterly filings`}>
+      <table className="w-full text-left text-sm"><thead><tr className="border-b border-[var(--fi-border)] text-xs uppercase tracking-wide text-[var(--fi-muted)]">{["Quarter", label, "Year over year", "Filers"].map(h => <th key={h} scope="col" className="p-2.5 font-semibold">{h}</th>)}</tr></thead>
         <tbody>{revenue.quarters.map(q => <tr key={q.quarter} className="border-b border-[var(--fi-border)] tabular-nums">
-          <th scope="row" className="p-2.5 font-medium">{q.quarter}</th><td className="p-2.5">${(q.total_service_charges / 1_000_000).toFixed(2)}B</td><td className="p-2.5">${(q.bank_service_charges / 1_000_000).toFixed(2)}B</td><td className="p-2.5">${(q.cu_service_charges / 1_000_000).toFixed(2)}B</td><td className="p-2.5">{pct(q.yoy_change_pct)}</td><td className="p-2.5">{q.total_institutions.toLocaleString()}</td>
+          <th scope="row" className="p-2.5 font-medium">{q.quarter}</th><td className="p-2.5">${(q.total_service_charges / 1_000_000).toFixed(2)}B</td><td className="p-2.5">{pct(q.yoy_change_pct)}</td><td className="p-2.5">{q.total_institutions.toLocaleString()}</td>
         </tr>)}</tbody></table>
     </div> : null}
     {!compact && tiers?.length ? <div className="mt-6"><h3 className="text-base font-semibold">By asset size, latest quarter</h3>
-      <HorizontalBars label="Deposit service-charge income by asset size" valueLabel="USD billions" format="billions" rows={tiers.map(t => ({ name: `${TIER_LABEL[t.tier] ?? t.tier} (${t.institution_count.toLocaleString()})`, value: t.total_sc_income / 1_000_000 }))} />
+      <HorizontalBars label={`${label} by asset size`} valueLabel="USD billions" format="billions" rows={tiers.map(t => ({ name: `${TIER_LABEL[t.tier] ?? t.tier} (${t.institution_count.toLocaleString()})`, value: t.total_sc_income / 1_000_000 }))} />
     </div> : null}
-    <EvidenceDetails source="FDIC Call Reports (RIAD 4080) and NCUA 5300 filings" period={revenue?.latest?.quarter ?? "Unavailable"} geography="United States" coverage="Banks and credit unions that filed a positive service-charge figure; coverage varies by quarter" method="Credit union year-to-date lines converted to quarters. Deposit service charges are not wire- or overdraft-specific income." />
+    <EvidenceDetails source={definition.publisher} period={revenue?.latest?.quarter ?? "Unavailable"} geography="United States" coverage={`${definition.charter_type === "bank" ? "Banks" : "Credit unions"} with a positive computable quarter; coverage varies by quarter; all asset sizes`} method={`${definition.definition}. ${source === "ncua" ? "Year-to-date income converted to standalone quarters. " : ""}Reporting populations can change; this is not constant-cohort growth. The two regulators' income definitions are not pooled.`} />
   </Panel>;
 }
 
@@ -370,8 +442,17 @@ function EconomyPanel({ economy, place, state, district, compact, exploreHref }:
         <p className="mt-2 text-xs text-[var(--fi-muted)]">District commentary covers the whole {DISTRICT_NAMES[district] ?? ""} Federal Reserve district, not {place} alone.{economy.beige_book.source_url ? <> <a href={economy.beige_book.source_url} target="_blank" rel="noreferrer" className="text-[var(--fi-brick)]">Source ↗</a></> : null}</p>
       </div> : null}
     </> : null}
-    <EvidenceDetails source="BLS (LAUS, CES, CPI) and Federal Reserve, via FRED; Beige Book" period={[economy.state_unemployment?.latest.date, economy.national_unemployment?.latest.date, economy.cpi_bank_services?.latest.date].filter(Boolean).map(d => d!.slice(0, 7)).join(" · ") || "Unavailable"} geography={state ? `${place} and United States` : "United States"} coverage="Monthly observations as published; months BLS did not publish stay gaps" method="Rates as reported; price and payroll lines are twelve-month percent changes. State and national dates are shown separately." />
+    <EvidenceDetails source="BLS (LAUS, CES, CPI) and Federal Reserve Board (H.15); Beige Book" period={[economy.state_unemployment?.latest.date, economy.national_unemployment?.latest.date, economy.cpi_bank_services?.latest.date].filter(Boolean).map(d => d!.slice(0, 7)).join(" · ") || "Unavailable"} geography={state ? `${place} and United States` : "United States"} coverage="Monthly observations as published; months BLS did not publish stay gaps" method="Rates as reported; price and payroll lines are twelve-month percent changes. State and national dates are shown separately." />
   </Panel>;
+}
+
+/** The current calendar year is still being counted, so its total is labelled as partial. */
+function isCurrentYear(year: string | number): boolean {
+  return Number(year) === new Date().getUTCFullYear();
+}
+
+function yearLabel(year: string | number): string {
+  return isCurrentYear(year) ? `${year} to date` : String(year);
 }
 
 function ComplaintPanel({ complaints, place, compact, exploreHref }: { complaints: ComplaintTrend | null; place: string; compact: boolean; exploreHref: string | null }) {
@@ -379,12 +460,12 @@ function ComplaintPanel({ complaints, place, compact, exploreHref }: { complaint
   const latest = years[years.length - 1];
   return <Panel title="Consumer complaints" subtitle={`${place} · CFPB complaints matched to institutions headquartered here`} explore={exploreHref}>
     {!complaints ? <Unavailable>Complaint records could not load.</Unavailable> : years.length === 0 ? <Unavailable>No complaint records are matched to institutions in this scope.</Unavailable> : <>
-      {latest ? <p className="mt-3 text-sm"><span className="text-2xl font-semibold" style={{ fontVariantNumeric: "tabular-nums" }}>{latest.total.toLocaleString()}</span> complaints in {latest.year}, {latest.total ? `${((latest.feeRelated / latest.total) * 100).toFixed(1)}%` : "0%"} about fees, across {latest.institutions.toLocaleString()} institutions.</p> : null}
-      <div className="mt-3"><MultiTrend rows={years.map(y => ({ period: y.year, total: y.total, fees: y.feeRelated }))} series={[{ key: "total", name: "All complaints" }, { key: "fees", name: "Fee-related" }]} label="Complaints per year" unit="complaints" height={compact ? 200 : 240} /></div>
-      {!compact && complaints.products.length ? <div className="mt-5"><h3 className="text-sm font-semibold">Products complained about, {latest?.year}</h3><HorizontalBars label="Complaints by product" valueLabel="Complaints" rows={complaints.products.map(p => ({ name: p.product, value: p.count }))} /></div> : null}
+      {latest ? <p className="mt-3 text-sm"><span className="text-2xl font-semibold" style={{ fontVariantNumeric: "tabular-nums" }}>{latest.total.toLocaleString()}</span> complaints in {yearLabel(latest.year)}, {latest.total ? `${((latest.feeRelated / latest.total) * 100).toFixed(1)}%` : "0%"} about fees, across {latest.institutions.toLocaleString()} institutions.</p> : null}
+      <div className="mt-3"><MultiTrend rows={years.map(y => ({ period: isCurrentYear(y.year) ? `${y.year} to date` : y.year, total: y.total, fees: y.feeRelated }))} series={[{ key: "total", name: "All complaints" }, { key: "fees", name: "Fee-related" }]} label="Complaints per year" unit="complaints" height={compact ? 200 : 240} /></div>
+      {!compact && complaints.products.length ? <div className="mt-5"><h3 className="text-sm font-semibold">Products complained about, {latest ? yearLabel(latest.year) : null}</h3><HorizontalBars label="Complaints by product" valueLabel="Complaints" rows={complaints.products.map(p => ({ name: p.product, value: p.count }))} /></div> : null}
     </>}
     <p className="mt-3 text-xs text-[var(--fi-muted)]">Counts reflect who complains and how complaints are matched; they do not rank institutions.</p>
-    <EvidenceDetails source="CFPB Consumer Complaint Database" period={latest ? `${years[0].year}–${latest.year}` : "Unavailable"} geography={`${place}, by institution headquarters (not the consumer's location)`} coverage="Complaints matched to institutions in the registry; unmatched complaints are not counted" method="Annual totals; fee-related uses the shared fee-issue definition." />
+    <EvidenceDetails source="CFPB Consumer Complaint Database" period={latest ? `${years[0].year}–${latest.year}${isCurrentYear(latest.year) ? " (latest year to date)" : ""}` : "Unavailable"} geography={`${place}, by institution headquarters (not the consumer's location)`} coverage="Complaints matched to institutions in the registry; unmatched complaints are not counted" method="Annual totals; the current year counts complaints received so far. Fee-related uses the shared fee-issue definition." />
   </Panel>;
 }
 

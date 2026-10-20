@@ -13,7 +13,8 @@ import {
   type LeadStatus,
 } from "@/lib/leads/lead-status";
 import { countInstitutionsPassingReportRule, getMarketReadiness } from "@/lib/data-store/market-readiness";
-import { getProAccounts, type ProAccount } from "@/lib/data-store/pro-accounts";
+import { getProAccounts, getProInstitutionCoverage, type ProAccount, type ProInstitutionCoverage } from "@/lib/data-store/pro-accounts";
+import { PRO_INSTITUTION_MIN_FEES } from "@/lib/data-store/data-room";
 import { getPlanWatchList, type PlanWatchList } from "@/lib/pro-plan-watch-store";
 import { logReadFailure, type ReadFailure } from "@/lib/admin-read-failure";
 import { RoomHeader, Unreadable } from "../room-hub";
@@ -60,10 +61,10 @@ function LeadCard({ lead, now }: { lead: LeadRow; now: Date }) {
 
 /** The Customers room: requests as a board by stage, plus who could get a report today. */
 export default async function CustomersRoomPage({ searchParams }: { searchParams?: Promise<{ stage?: string }> }) {
-  await requireAuth("view");
+  await requireAuth("operate");
   const stageParam = (await searchParams)?.stage;
   const activeLane = LANES.find((lane) => lane.key === stageParam) ?? null;
-  const [leads, markets, proAccounts, planWatch] = await Promise.all([
+  const [leads, markets, proAccounts, planWatch, proInstitutions] = await Promise.all([
     getLeads(500),
     getMarketReadiness().catch((error) => {
       console.error("Customers room market readiness failed", error);
@@ -74,6 +75,10 @@ export default async function CustomersRoomPage({ searchParams }: { searchParams
       return null;
     }),
     getPlanWatchList().catch((error): ReadFailure => logReadFailure("Customers room plan watch list", error)),
+    getProInstitutionCoverage().catch((error) => {
+      console.error("Customers room Pro institution fees failed", error);
+      return null;
+    }),
   ]);
   const now = new Date();
   // Named test requests stay in Leads but out of the counts and the board.
@@ -193,6 +198,8 @@ export default async function CustomersRoomPage({ searchParams }: { searchParams
 
       {proAccounts ? <ProAccounts accounts={proAccounts} /> : <Unreadable what="Pro accounts" />}
 
+      {proInstitutions ? <ProInstitutionFees rows={proInstitutions} /> : <Unreadable what="Pro institutions' own fees" />}
+
       {markets === null ? <Unreadable what="Market readiness" /> : null}
     </div>
   );
@@ -243,9 +250,9 @@ function PlanWatch({ list: { rows, unread } }: { list: PlanWatchList }) {
 function ProAccounts({ accounts }: { accounts: ProAccount[] }) {
   const billed = accounts.filter((account) => account.hasStripeCustomer).length;
   return (
-    <section aria-label="Hamilton Pro accounts">
+    <section aria-label="Pro accounts">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <p className="admin-section-title">Hamilton Pro accounts</p>
+        <p className="admin-section-title">Pro accounts</p>
         <p className="text-xs text-gray-500">
           {accounts.length} with Pro access · {billed} linked to a Stripe customer · {accounts.length - billed} granted without Stripe
         </p>
@@ -282,6 +289,59 @@ function ProAccounts({ accounts }: { accounts: ProAccount[] }) {
                     {account.hasStripeCustomer ? "Stripe customer" : "Granted without Stripe"}
                   </td>
                   <td className="px-4 py-2.5 tabular-nums text-gray-600 dark:text-gray-300">{formatAdminDateTime(account.createdAt)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/**
+ * Each Pro account's own institution and its live fees (#1078). One under the minimum is the gap
+ * Atlas runs first; the last direct run says when collection was last tried.
+ */
+function ProInstitutionFees({ rows }: { rows: ProInstitutionCoverage[] }) {
+  const below = rows.filter((row) => row.belowMinimum).length;
+  return (
+    <section aria-label="Pro institutions' own fees">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <p className="admin-section-title">Pro institutions&apos; own fees</p>
+        <p className="text-xs text-gray-500">
+          {rows.length} with an active membership · {below} under {PRO_INSTITUTION_MIN_FEES} live fees, which Atlas collects first
+        </p>
+      </div>
+      {rows.length === 0 ? (
+        <p className="mt-2 text-sm text-gray-500">No institution has an active Pro membership.</p>
+      ) : (
+        <div className="admin-card mt-2 overflow-x-auto">
+          <table className="w-full min-w-[620px] text-sm">
+            <thead>
+              <tr className="border-b border-black/[0.06] text-left text-[11px] uppercase tracking-wide text-gray-500 dark:border-white/[0.06]">
+                <th className="px-4 py-2 font-semibold">Institution</th>
+                <th className="px-4 py-2 font-semibold">Members</th>
+                <th className="px-4 py-2 font-semibold">Live fees</th>
+                <th className="px-4 py-2 font-semibold">Last Atlas direct run</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.institutionId} className="border-b border-black/[0.04] last:border-0 dark:border-white/[0.04]">
+                  <td className="px-4 py-2.5">
+                    <Link href={`/admin/institution/${row.institutionId}`} prefetch={false} className="font-semibold text-gray-900 hover:underline dark:text-gray-100">
+                      {row.name}
+                    </Link>
+                  </td>
+                  <td className="px-4 py-2.5 tabular-nums text-gray-700 dark:text-gray-200">{row.members}</td>
+                  <td className={`px-4 py-2.5 tabular-nums ${row.belowMinimum ? "font-semibold text-red-700 dark:text-red-400" : "text-gray-700 dark:text-gray-200"}`}>
+                    {row.liveFees}
+                    {row.belowMinimum ? <span className="block text-xs font-normal">Under the minimum</span> : null}
+                  </td>
+                  <td className="px-4 py-2.5 text-gray-600 dark:text-gray-300">
+                    {row.lastAtlasRunAt ? `${formatAdminDateTime(row.lastAtlasRunAt)} · ${row.lastAtlasRunStatus ?? "unknown"}` : row.belowMinimum ? "Not run yet" : "Not needed"}
+                  </td>
                 </tr>
               ))}
             </tbody>

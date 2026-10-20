@@ -5,7 +5,8 @@ import { checkRateLimitWithTier } from "@/lib/api-rate-limit";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium, canExportData } from "@/lib/access";
 import { getNationalIndex, getPeerIndex } from "@/lib/data-store";
-import { getSpotlightCategories } from "@/lib/fee-taxonomy";
+import { logApiUsage } from "@/lib/api-usage";
+import { FEE_FAMILIES, getSpotlightCategories } from "@/lib/fee-taxonomy";
 import { GET } from "./route";
 
 vi.mock("@/lib/api-auth", () => ({
@@ -14,6 +15,7 @@ vi.mock("@/lib/api-auth", () => ({
 
 vi.mock("@/lib/api-rate-limit", () => ({
   checkRateLimitWithTier: vi.fn(),
+  checkBurstLimitWithTier: vi.fn(() => Promise.resolve({ allowed: true, remaining: 59, limit: 60, reset: new Date("2026-10-17T12:01:00.000Z") })),
 }));
 
 vi.mock("@/lib/auth", () => ({
@@ -28,6 +30,11 @@ vi.mock("@/lib/access", () => ({
 vi.mock("@/lib/api-usage", () => ({
   logApiUsage: vi.fn(() => Promise.resolve()),
 }));
+
+vi.mock("@/lib/public-stats", async () => {
+  const { publicFeeTypes } = await vi.importActual<typeof import("@/lib/fee-taxonomy")>("@/lib/fee-taxonomy");
+  return { getPublicFeeTypes: vi.fn(() => Promise.resolve(publicFeeTypes([]))) };
+});
 
 vi.mock("@/lib/data-store", () => ({
   getNationalIndex: vi.fn(() => Promise.resolve([])),
@@ -50,7 +57,7 @@ function indexEntry(category: string) {
 }
 
 const enterpriseKey = { valid: true, organizationId: 7, tier: "enterprise" };
-const freeKey = { valid: true, organizationId: 3, tier: "free" };
+const freeKey = { valid: true, organizationId: 3, tier: "free", keyId: 41 };
 
 describe("/api/v1/index", () => {
   beforeEach(() => {
@@ -113,7 +120,7 @@ describe("/api/v1/index", () => {
     );
 
     await expect(response.json()).resolves.toEqual({
-      error: "CSV export requires a Pro or Enterprise API key",
+      error: "CSV export requires a Hamilton API key or a paid partner key",
       code: "plan_required",
       upgrade_url: "/subscribe",
     });
@@ -174,6 +181,51 @@ describe("/api/v1/index", () => {
     expect(response.headers.get("x-ratelimit-limit")).toBeNull();
     expect(response.headers.get("x-ratelimit-reset")).toBe("2026-11-01T00:00:00.000Z");
     expect(response.headers.get("access-control-allow-origin")).toBe("*");
+  });
+
+  it("lists at most the top 50 fee types: a taxonomy type outside them is left out (James, Oct 17 2026)", async () => {
+    vi.mocked(validateApiKey).mockResolvedValue(enterpriseKey);
+    const all = Object.values(FEE_FAMILIES).flat();
+    vi.mocked(getNationalIndex).mockResolvedValue(all.map((key) => indexEntry(key)) as never);
+
+    const response = await GET(new NextRequest("https://feeinsight.com/api/v1/index"));
+    const body = await response.json();
+
+    expect(body.data.length).toBe(Math.min(50, all.length));
+  });
+
+  it("reports each category's unstated-audience institution count, 0 when none (#1132)", async () => {
+    const [spotlight, second] = getSpotlightCategories();
+    vi.mocked(getNationalIndex).mockResolvedValue([
+      { ...indexEntry(spotlight), unstated_audience_institution_count: 38 },
+      indexEntry(second),
+    ] as never);
+
+    const response = await GET(new NextRequest("https://feeinsight.com/api/v1/index"));
+    const body = await response.json();
+
+    expect(body.data.map((d: { category: string; unstated_audience_institution_count: number }) => [d.category, d.unstated_audience_institution_count]))
+      .toEqual([[spotlight, 38], [second, 0]]);
+  });
+
+  it("tags the index with an ETag and answers 304 when the client already has it", async () => {
+    const first = await GET(new NextRequest("https://feeinsight.com/api/v1/index"));
+    const etag = first.headers.get("etag") as string;
+
+    expect(first.headers.get("cache-control")).toBe("private, max-age=300");
+    expect(etag).toMatch(/^W\//);
+
+    const again = await GET(new NextRequest("https://feeinsight.com/api/v1/index", { headers: { "if-none-match": etag } }));
+
+    expect(again.status).toBe(304);
+    expect(again.headers.get("x-ratelimit-remaining")).toBe("99");
+  });
+
+  it("logs a refused parameter as a 400", async () => {
+    const response = await GET(new NextRequest("https://feeinsight.com/api/v1/index?state=Texas"));
+
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(logApiUsage).toHaveBeenCalledWith(3, null, "api.v1.index", { status: 400 }, 41);
   });
 
   it("answers 503, not 429, when usage tracking is down", async () => {

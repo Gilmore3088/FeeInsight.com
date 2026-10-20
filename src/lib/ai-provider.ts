@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { anthropic as sharedAnthropicProvider, createAnthropic } from "@ai-sdk/anthropic";
+import { createAnthropic } from "@ai-sdk/anthropic";
+import type { ProviderResponseOperation } from "./ai-response-budget";
 
 /** SDK types for modules that build typed Messages requests through this provider. */
 export type { Anthropic };
@@ -84,14 +85,21 @@ export function assertAnthropicApiKey(context = "Anthropic provider", agent?: Pr
   return apiKey;
 }
 
-export function getAnthropicMessagesClient(context?: string, agent?: ProviderAgent): Anthropic {
-  return new Anthropic({ apiKey: assertAnthropicApiKey(context, agent) });
+/** Public SDK identity survives bundled/minified constructor names; timeouts inherit this type. */
+export function isAnthropicConnectionError(error: unknown): boolean {
+  return error instanceof Anthropic.APIConnectionError;
 }
 
-export function getAnthropicLanguageModel(model: string, agent?: ProviderAgent) {
+/** Fresh client per operation; its retry attempts share the bound transport and caller signal. */
+export function getAnthropicMessagesClient(context: string | undefined, agent: ProviderAgent | undefined, operation: ProviderResponseOperation): Anthropic {
+  return new Anthropic({ apiKey: assertAnthropicApiKey(context, agent), fetch: operation.fetch });
+}
+
+/** Fresh model per logical generation, reused only by that generation's tool steps. */
+export function getAnthropicLanguageModel(model: string, agent: ProviderAgent | undefined, operation: ProviderResponseOperation) {
   const { apiKey, source } = resolveAnthropicApiKey(agent);
-  // The shared provider reads ANTHROPIC_API_KEY itself; only an agent's own key needs a new one.
-  return source === "own" ? createAnthropic({ apiKey })(model) : sharedAnthropicProvider(model);
+  // Shared/missing keys retain the provider's environment lookup; every branch uses the same cap.
+  return createAnthropic({ ...(source === "own" ? { apiKey } : {}), fetch: operation.fetch })(model);
 }
 
 type AnthropicTextBlock = {
@@ -124,7 +132,7 @@ export function extractAnthropicText(response: { content?: unknown }): string {
  * a monthly usage limit, exhausted credits, or a billing quota. Retrying does not help
  * until billing changes, so readers see Hamilton's "paused" line instead of an error.
  */
-const PROVIDER_LIMIT_MARKERS = [
+export const PROVIDER_LIMIT_MARKERS = [
   "usage limit",
   "credit balance is too low",
   "insufficient credits",

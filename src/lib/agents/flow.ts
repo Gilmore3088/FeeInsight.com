@@ -1,7 +1,9 @@
 import { unstable_cache } from "next/cache";
-import { sql } from "@/lib/data-store/connection";
+import { after } from "next/server";
+import { sql, withTransaction } from "@/lib/data-store/connection";
 import { DARWIN_VERIFY_STRATEGY } from "./darwin/verify";
-import { INSTITUTION_STEPS, isWentLive, movesFromEvents, nowFromSteps, toObject, type FlowSnapshot, type FlowWaiting, type Sample } from "./flow-model";
+import { PUBLISHER_AGENT_NAMES } from "./gutenberg/names";
+import { INSTITUTION_STEPS, isWentLive, movesFromEvents, nowFromSteps, toObject, type FlowSnapshot, type FlowWaitingCounts, type Sample } from "./flow-model";
 
 export * from "./flow-model";
 
@@ -15,9 +17,39 @@ export * from "./flow-model";
  * so they are cached for five minutes and shared by every viewer.
  */
 
-const FLOW_WORKERS = ["magellan", "rosetta", "knox", "darwin", "hamilton"];
+/**
+ * Limits for the polled Live page (#2016). On 2026-10-18 an open Live tab's polls hung 300 s each
+ * on a saturated pool (26 timeouts, 06:59-07:01 UTC), so every read here is bounded:
+ * - the snapshot's reads (16 ms and 1 ms on average) stop after FLOW_STATEMENT_TIMEOUT_MS;
+ * - the cached waiting counts (14 s on average, 45 s at most) stop after FLOW_WAITING_TIMEOUT_MS,
+ *   inside the route's 30 s maxDuration, so a cache refresh that would run longer leaves the last
+ *   value in place;
+ * - a request waits FLOW_WAITING_WAIT_MS at most for those counts, then answers without them and
+ *   the page keeps showing the last counts with their age.
+ */
+type SqlTag = typeof sql;
+
+export const FLOW_STATEMENT_TIMEOUT_MS = 10_000;
+export const FLOW_WAITING_TIMEOUT_MS = 25_000;
+export const FLOW_WAITING_WAIT_MS = 3_000;
+
+/** Runs `work` in a transaction whose statements stop after `ms` (SET LOCAL, so the pool's other users keep their own limit). */
+async function bounded<T>(ms: number, work: (tx: SqlTag) => Promise<T>): Promise<T> {
+  return withTransaction(async (tx) => {
+    await tx.unsafe(`SET LOCAL statement_timeout = ${Math.max(1, Math.floor(ms))}`);
+    return work(tx);
+  });
+}
+
+// Publish steps from before #1075 step 2 carry Hamilton's name, so both publisher names are read;
+// `STEP_OWNER` files every publish move under Gutenberg either way.
+const FLOW_WORKERS = ["magellan", "rosetta", "knox", "darwin", ...PUBLISHER_AGENT_NAMES];
 
 export async function getFlowSnapshot(): Promise<FlowSnapshot> {
+  return bounded(FLOW_STATEMENT_TIMEOUT_MS, (tx) => readFlowSnapshot(tx));
+}
+
+async function readFlowSnapshot(sql: SqlTag): Promise<FlowSnapshot> {
   const [events, active] = await Promise.all([
     // The last few finished steps per agent, so every agent shows its own latest
     // banks even when one state's pass floods the log. ~1ms on the live database.
@@ -92,7 +124,7 @@ export async function getFlowSnapshot(): Promise<FlowSnapshot> {
 
 /** Institutions waiting in front of each agent (and published), cached five minutes. */
 export const getFlowWaiting = unstable_cache(
-  async (): Promise<FlowWaiting> => {
+  async (): Promise<FlowWaitingCounts> => bounded(FLOW_WAITING_TIMEOUT_MS, async (sql) => {
     const [row] = await sql`
       SELECT
         (SELECT COUNT(*)::int FROM institution_sources i
@@ -145,7 +177,7 @@ export const getFlowWaiting = unstable_cache(
             AND fv.outlier_flags ? 'agentic_darwin_verified'
             AND NOT EXISTS (
               SELECT 1 FROM published_fee_records fp
-               WHERE fp.lineage_ref = fv.fee_verified_id AND fp.rolled_back_at IS NULL)) AS hamilton,
+               WHERE fp.lineage_ref = fv.fee_verified_id AND fp.rolled_back_at IS NULL)) AS gutenberg,
         (SELECT COUNT(DISTINCT institution_id)::int FROM published_fee_catalog) AS published,
         (SELECT COUNT(*)::int FROM institution_sources) AS total
     `;
@@ -154,11 +186,59 @@ export const getFlowWaiting = unstable_cache(
       rosetta: Number(row?.rosetta ?? 0),
       knox: Number(row?.knox ?? 0),
       darwin: Number(row?.darwin ?? 0),
-      hamilton: Number(row?.hamilton ?? 0),
+      gutenberg: Number(row?.gutenberg ?? 0),
       published: Number(row?.published ?? 0),
       total: Number(row?.total ?? 0),
+      computedAt: new Date().toISOString(),
     };
-  },
+  }),
   ["admin", "flow-waiting"],
   { revalidate: 300 },
 );
+
+/**
+ * The one counts read in flight on this server instance. Polls and renders that arrive while it
+ * runs share it, so a cold or failing cache starts one 25 s transaction per instance, not one per
+ * poll per tab (#2027 review).
+ */
+let waitingInFlight: Promise<FlowWaitingCounts | null> | null = null;
+
+function sharedWaitingRead(): Promise<FlowWaitingCounts | null> {
+  if (!waitingInFlight) {
+    waitingInFlight = getFlowWaiting()
+      .catch((error) => {
+        console.error("Live flow waiting counts failed", error);
+        return null;
+      })
+      .finally(() => {
+        waitingInFlight = null;
+      });
+  }
+  return waitingInFlight;
+}
+
+/**
+ * The cached waiting counts, or null when they are not ready within `waitMs`: a cold cache or a
+ * slow refresh never holds the request. The read it leaves running is handed to `after()`, so
+ * the platform keeps the instance until that read ends (its 25 s statement timeout at most)
+ * instead of suspending it mid-transaction on a pooled connection; the counts are then cached.
+ */
+export async function getFlowWaitingWithin(waitMs: number = FLOW_WAITING_WAIT_MS): Promise<FlowWaitingCounts | null> {
+  const read = sharedWaitingRead();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<"late">((resolve) => {
+    timer = setTimeout(() => resolve("late"), waitMs);
+  });
+  try {
+    const result = await Promise.race([read, late]);
+    if (result !== "late") return result;
+    try {
+      after(() => read.then(() => undefined));
+    } catch {
+      // Outside a request (tests, scripts): nothing to keep alive; the read ends on its own.
+    }
+    return null;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}

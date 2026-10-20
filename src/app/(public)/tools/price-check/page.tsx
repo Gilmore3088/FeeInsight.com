@@ -8,6 +8,7 @@ import { DistributionChart } from "@/components/public/distribution-chart";
 import { CountyPriceMap, type CountyDetail } from "@/components/public/county-price-map";
 import { InstitutionSearchBar } from "@/app/(public)/institutions/search-bar";
 import { TrackLink } from "@/components/track-link";
+import { PAGE_HEADER } from "@/components/public/page-header";
 import { UnstatedAudienceFootnote, UnstatedAudienceMark, medianHasUnstatedAudience } from "@/components/unstated-audience";
 import { countyFeatures } from "@/lib/geo/counties";
 import { getCountyFeeMapCached, getFeeCategoryDetailCached } from "@/lib/data-store/public-cached-reads";
@@ -178,7 +179,7 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
         {/* 1. The question and the form (a GET form, so every answer has its own link). Once a
             fee is answered, the form folds to one line so the answer leads on a phone. */}
         <section aria-labelledby="pc-heading" className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)] lg:items-end">
-          <div className="max-w-xl">
+          <header className={`mx-auto max-w-xl sm:mx-0 ${PAGE_HEADER}`}>
             <p className={EYEBROW}>{COPY.eyebrow}</p>
             <h1
               id="pc-heading"
@@ -187,7 +188,7 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
               {COPY.title}
             </h1>
             {!answered && <p className="mt-2 text-[15px] text-ink-muted">{COPY.intro}</p>}
-          </div>
+          </header>
           {answered && price !== null ? (
             <details className="group rounded-2xl border border-border bg-surface-0 shadow-fi-1">
               <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-4 text-[15px] text-ink [&::-webkit-details-marker]:hidden">

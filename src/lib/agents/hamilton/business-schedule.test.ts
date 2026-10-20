@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { footnoteMarksBusiness, pageFootnotes, restoreBusinessScheduleTakedowns, retireBusinessScheduleFees } from "./business-schedule";
+import { businessScheduleFeesSql, footnoteMarksBusiness, pageFootnotes, restoreBusinessScheduleTakedowns, retireBusinessScheduleFees } from "./business-schedule";
 
 function templateText(strings: unknown): string {
   return Array.isArray(strings) ? strings.join(" ") : String(strings);
@@ -29,7 +29,7 @@ function createDb(
       return Promise.resolve(pendingFlag ? [{ fee_published_id: 1, kind: "takedown_pending", evidence: { ...pendingFlag, reason: "business" } }] : []);
     }
     if (text.includes("SELECT fp.fee_published_id, fp.lineage_ref")) return Promise.resolve(restorable);
-    if (text.includes("SET rolled_back_at = NULL")) return Promise.resolve(restorable.map((row) => ({ lineage_ref: row.lineage_ref })));
+    if (text.includes("SET rolled_back_at = NULL")) return Promise.resolve(restorable);
     if (text.includes("SET rolled_back_at = NOW()")) return Promise.resolve([{ fee_published_id: 1 }]);
     return Promise.resolve([]);
   };
@@ -72,6 +72,21 @@ describe("retireBusinessScheduleFees", () => {
     const query = mainQuery(db);
     expect(query).toContain("fp.fee_name ~* '^\\s*(business|commercial)\\M[^|:]*$'");
     expect(query).toContain("fp.fee_name !~* '^\\s*business\\s+days?\\M'");
+    expect(query).toBe(businessScheduleFeesSql(false));
+  });
+
+  it("reads verified rows about to publish against the bank's live consumer fees, with the sweep's own rule (#1069 step 2)", () => {
+    const verified = businessScheduleFeesSql("verified");
+    expect(verified).toContain("fv.fee_verified_id = ANY($1::bigint[])");
+    expect(verified).toContain("fv.fee_name ~* '^\\s*(business|commercial)\\M[^|:]*$'");
+    expect(verified).toContain("COALESCE(fv.fee_audience, 'unknown') = 'unknown'");
+    // The consumer side is the bank's live fees, footnoted ones passed as $2.
+    expect(verified).toContain("fp.fee_published_id = ANY($2::bigint[])");
+    expect(verified).toContain("fp.institution_id IN (SELECT institution_id FROM candidates)");
+    expect(verified).toContain("FROM candidates b");
+    expect(businessScheduleFeesSql(true)).toContain("fp.institution_id = $1");
+    expect(businessScheduleFeesSql(true)).toContain("ANY($2::bigint[])");
+    expect(businessScheduleFeesSql(false)).toContain("ANY($1::bigint[])");
   });
 
   it("changes nothing in a dry run", async () => {
@@ -89,6 +104,73 @@ describe("restoreBusinessScheduleTakedowns", () => {
     expect(writes(db).some((text) => /UPDATE|INSERT INTO/.test(text))).toBe(false);
     expect(await restoreBusinessScheduleTakedowns(db, { runId: 5, dryRun: false })).toBe(1);
     expect(writes(db).some((text) => text.includes("hamilton.business_schedule_restored"))).toBe(true);
+  });
+});
+
+type FeeRow = { fee_published_id: number; lineage_ref: number; institution_id: number; canonical_fee_key: string; amount: number; fee_name: string; source_url: string; rolled_back_reason: string | null };
+
+/**
+ * A bank's fee rows, with the restore's SELECT evaluated against them: a business-schedule
+ * takedown comes back unless another row in its category is live, or (when the query says so)
+ * held by the account type hold. The held-counts-as-present clause is read off the query itself.
+ */
+function bankDb(fees: FeeRow[]) {
+  const query = (strings: TemplateStringsArray, ...values: unknown[]) => {
+    const text = templateText(strings);
+    if (text.includes("SELECT fp.fee_published_id, fp.lineage_ref")) {
+      const heldCounts = text.includes("OR live.rolled_back_reason LIKE") && values.includes("account_type_hold:%");
+      const present = (fee: FeeRow) => fee.rolled_back_reason == null || (heldCounts && fee.rolled_back_reason.startsWith("account_type_hold:"));
+      return Promise.resolve(fees.filter((fee) =>
+        fee.rolled_back_reason?.startsWith("business_schedule:") && fee.rolled_back_reason !== "business_schedule: business-only footnote" &&
+        !fees.some((other) => other !== fee && present(other) && other.institution_id === fee.institution_id && other.canonical_fee_key === fee.canonical_fee_key)));
+    }
+    if (text.includes("SET rolled_back_at = NULL")) {
+      const ids = values.find(Array.isArray) as number[];
+      return Promise.resolve(fees.filter((fee) => ids.includes(fee.fee_published_id)).map((fee) => ({ ...fee, taken_down_for: fee.rolled_back_reason })));
+    }
+    return Promise.resolve([]);
+  };
+  const db = vi.fn(query) as unknown as ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
+  db.unsafe = vi.fn(() => Promise.resolve([]));
+  return db as unknown as Parameters<typeof restoreBusinessScheduleTakedowns>[0] & typeof db;
+}
+
+const FAB = 1176;
+const fabFee = (id: number, amount: number, name: string, reason: string | null): FeeRow => ({
+  fee_published_id: id, lineage_ref: id + 1_000_000, institution_id: FAB, canonical_fee_key: "monthly_maintenance",
+  amount, fee_name: name, source_url: `https://bank.test/${id}.pdf`, rolled_back_reason: reason,
+});
+
+describe("restoreBusinessScheduleTakedowns and the account type hold (#1100, First American Bank 16 Oct)", () => {
+  it("keeps the business fees down when the hold took the bank's last consumer monthly fee", async () => {
+    const db = bankDb([
+      fabFee(500, 5, "Statement Savings monthly fee", "account_type_hold: savings (#1100)"),
+      fabFee(111321, 15, "Monthly maintenance fee", "business_schedule: consumer fee #500"),
+      fabFee(111322, 25, "Monthly maintenance fee", "business_schedule: consumer fee #500"),
+      fabFee(111353, 10, "Monthly service charge", "business_schedule: consumer fee #500"),
+    ]);
+    expect(await restoreBusinessScheduleTakedowns(db, { runId: 7249, dryRun: true })).toBe(0);
+    expect(await restoreBusinessScheduleTakedowns(db, { runId: 7249, dryRun: false })).toBe(0);
+    expect(writes(db).some((text) => /UPDATE|INSERT INTO/.test(text))).toBe(false);
+  });
+
+  it("still restores when the bank has no consumer fee in the category, live or held, and names what came back", async () => {
+    const db = bankDb([
+      // A live fee in another category does not keep it down.
+      { ...fabFee(600, 30, "Outgoing domestic wire", null), canonical_fee_key: "wire_domestic_outgoing" },
+      fabFee(111321, 15, "Monthly maintenance fee", "business_schedule: consumer fee #500"),
+      // A consumer fee taken down for another reason is not there: the restore fires.
+      fabFee(500, 5, "Monthly fee", "source_mismatch: #1496"),
+    ]);
+    db.mockClear();
+    expect(await restoreBusinessScheduleTakedowns(db, { runId: 7300, dryRun: false })).toBe(1);
+    const calls = JSON.stringify(db.mock.calls);
+    expect(writes(db).some((text) => text.includes("hamilton.business_schedule_restored"))).toBe(true);
+    expect(calls).toContain('\\"fee_published_ids\\":[111321]');
+    // One weight-0 feedback row per restored fee, keyed to the run.
+    expect(calls).toContain("hamilton.business_schedule:restored:pub:111321:run:7300");
+    expect(calls).toContain("business_schedule_restored");
+    expect(calls).toContain("business_schedule: consumer fee #500");
   });
 });
 

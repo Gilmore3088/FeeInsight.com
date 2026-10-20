@@ -35,6 +35,25 @@ export interface HandAmountCorrection {
   /** The fee's name as its line prints it (the cut cents taken off the front where they were). */
   feeName: string;
   why: string;
+  /** The lesson's pattern; the #1334 entries leave it out (`cut_cents`). */
+  pattern?: string;
+  /** The issue that holds the evidence; the #1334 entries leave it out. */
+  issue?: number;
+  /**
+   * A wrong read whose name the document never prints. The shared check matches such a name
+   * loosely to other fees' lines (#1655: "Overdraft Item Fee" at $0 traces to Primis's "to cover
+   * overdrafts. There is no fee for this service." and "Overdraft Protection Transfer | No Fee"), so
+   * the wrong-read test is instead that the old name appears nowhere in the stored text.
+   */
+  oldNameNotPrinted?: boolean;
+  /**
+   * The other fee's line the wrong read was taken from, when the old name is printed (#1659: U.S.
+   * Bank's "$12 Monthly Maintenance Fee waived on every U.S. Bank Smartly® Checking account1" read
+   * at the next line's $10). The shared check still traces the wrong read there; the correction
+   * applies only while that exact line is the one it traces to, and is left alone if the wrong read
+   * traces anywhere else.
+   */
+  wrongReadTracesTo?: string;
 }
 
 export const HAND_AMOUNT_CORRECTIONS: readonly HandAmountCorrection[] = [
@@ -77,6 +96,69 @@ export const HAND_AMOUNT_CORRECTIONS: readonly HandAmountCorrection[] = [
     feePublishedId: 79237, institution: "American Heritage Federal Credit Union", institutionId: 4972, sourceDocumentId: 20917,
     canonicalFeeKey: "gift_card_purchase", from: 3, to: 3.5, feeName: "Gift Card",
     why: "\"Gift Card | $3 50 | Late Payment Fee\"",
+  },
+  // #1655 (read-only, Oct 16): Primis's only live overdraft row, an April read of an older Perks
+  // Checking packet at $0, now linked to a document (text 20768) that prints no "Overdraft Item"
+  // line. Knox read the $35 line twice (raw 456416, Oct 9, doc 23695; raw 633316, Oct 11, doc
+  // 28523), but Darwin never verified either read, so the row is corrected in place rather than
+  // taken down (a takedown would drop Primis from the overdraft stats).
+  {
+    feePublishedId: 5600, institution: "Primis Bank", institutionId: 341, sourceDocumentId: 23695,
+    canonicalFeeKey: "overdraft", from: 0, to: 35, feeName: "Overdraft or Returned-Item Fee",
+    why: "\"Overdraft or Returned-Item Fee | $35 Per Item\"; the stored text has no \"Overdraft Item Fee\" line and no $0 overdraft price",
+    pattern: "wrong_read", issue: 1655,
+    oldNameNotPrinted: true,
+  },
+  // #1659 (read-only, Oct 16): U.S. Bank's Bank Smartly Checking row on checking-accounts.html (text
+  // 20686) took its price from the Elite Money Market waiver line after its own. Corrected in place
+  // to the account's printed $12 and named for the account; the student page's copy (102973) comes
+  // down as its duplicate (hand-takedowns.ts), which runs after this in the same publish step.
+  {
+    feePublishedId: 102971, institution: "U.S. Bank", institutionId: 5, sourceDocumentId: 23628,
+    canonicalFeeKey: "monthly_maintenance", from: 10, to: 12, feeName: "Bank Smartly Checking Monthly Maintenance Fee",
+    why: "\"Bank Smartly Checking\" / \"$12 Monthly Maintenance Fee can be waived in multiple ways1\"; the $10 is the next line's \"$10 Monthly Maintenance Fee waived on all Elite Money Market account with a U.S. Bank Smartly® Checking account\"",
+    pattern: "wrong_read", issue: 1659,
+    wrongReadTracesTo: "$10 Monthly Maintenance Fee waived on all Elite Money Market account with a U.S. Bank Smartly® Checking account",
+  },  // #1827 (read-only, Oct 17): Valley Strong CU's safe deposit box table (doc 36716, text 34862)
+  // prints the price before the name ("| **$45** | Rental of 3 × 5 Box Annual Fee |"), and Knox gave
+  // each rent the next row's price. Each is corrected in place to its own row's price. The shared
+  // check matches a box size loosely, so the wrong read still traces, to the next row's line; the
+  // correction applies only while that exact line is the one it traces to. The five new prices are
+  // distinct and no other box rent is live there, so no correction makes a duplicate.
+  {
+    feePublishedId: 151737, institution: "Valley Strong Credit Union", institutionId: 8637, sourceDocumentId: 36716,
+    canonicalFeeKey: "safe_deposit_box", from: 55, to: 45, feeName: "Rental of 3 × 5 Box Annual Fee",
+    why: "\"| **$45** | Rental of 3 × 5 Box Annual Fee |\"; the $55 is the next row's \"| **$55** | Rental of 5 × 5 Box Annual Fee |\"",
+    pattern: "next_row_price", issue: 1827,
+    wrongReadTracesTo: "| **$55** | Rental of 5 × 5 Box Annual Fee |",
+  },
+  {
+    feePublishedId: 151738, institution: "Valley Strong Credit Union", institutionId: 8637, sourceDocumentId: 36716,
+    canonicalFeeKey: "safe_deposit_box", from: 80, to: 55, feeName: "Rental of 5 × 5 Box Annual Fee",
+    why: "\"| **$55** | Rental of 5 × 5 Box Annual Fee |\"; the $80 is the next row's \"| **$80** | Rental of 3 × 10 Box Annual Fee |\"",
+    pattern: "next_row_price", issue: 1827,
+    wrongReadTracesTo: "| **$80** | Rental of 3 × 10 Box Annual Fee |",
+  },
+  {
+    feePublishedId: 151739, institution: "Valley Strong Credit Union", institutionId: 8637, sourceDocumentId: 36716,
+    canonicalFeeKey: "safe_deposit_box", from: 100, to: 80, feeName: "Rental of 3 × 10 Box Annual Fee",
+    why: "\"| **$80** | Rental of 3 × 10 Box Annual Fee |\"; the $100 is the next row's \"| **$100** | Rental of 5 × 10 Box Annual Fee |\"",
+    pattern: "next_row_price", issue: 1827,
+    wrongReadTracesTo: "| **$100** | Rental of 5 × 10 Box Annual Fee |",
+  },
+  {
+    feePublishedId: 151740, institution: "Valley Strong Credit Union", institutionId: 8637, sourceDocumentId: 36716,
+    canonicalFeeKey: "safe_deposit_box", from: 120, to: 100, feeName: "Rental of 5 × 10 Box Annual Fee",
+    why: "\"| **$100** | Rental of 5 × 10 Box Annual Fee |\"; the $120 is the next row's \"| **$120** | Rental of 6 × 10 Box Annual Fee |\"",
+    pattern: "next_row_price", issue: 1827,
+    wrongReadTracesTo: "| **$120** | Rental of 6 × 10 Box Annual Fee |",
+  },
+  {
+    feePublishedId: 151741, institution: "Valley Strong Credit Union", institutionId: 8637, sourceDocumentId: 36716,
+    canonicalFeeKey: "safe_deposit_box", from: 175, to: 120, feeName: "Rental of 6 × 10 Box Annual Fee",
+    why: "\"| **$120** | Rental of 6 × 10 Box Annual Fee |\"; the $175 is the next row's \"| **$175** | Rental of 10 × 10 Box Annual Fee |\"",
+    pattern: "next_row_price", issue: 1827,
+    wrongReadTracesTo: "| **$175** | Rental of 10 × 10 Box Annual Fee |",
   },
 ];
 
@@ -134,9 +216,45 @@ export const HAND_REJECTED_TWINS: readonly HandRejectedTwin[] = [
     feeVerifiedId: 102462, ofFeePublishedId: 92248, sourceDocumentId: 12989, canonicalFeeKey: "overdraft", amount: 5,
     feeName: "E-statements Free Enhanced Overdraft Privilege Fee (per month)", pattern: "optional_overdraft_plan_twin", issue: 1360,
     why: "#1360: St. Louis Community's optional $5/month Enhanced Privilege plan, not the overdraft fee ($18 per item, 27613)",
+  },  // #1832 (read-only, Oct 17): unpublished copies of two misreads #1834 took down by hand
+  // (hand-takedowns.ts), each held back only as "Identical fee already published" behind its live
+  // twin. With the twin down, a publish strategy bump would select them again.
+  {
+    feeVerifiedId: 188270, ofFeePublishedId: 152366, sourceDocumentId: 32251, canonicalFeeKey: "other_lending_fee", amount: 1000,
+    feeName: "Varies – Mortgage satisfaction", pattern: "next_line_price_twin", issue: 1827,
+    why: "#1827: Citadel FCU (doc 32251) prints \"Mortgage satisfaction fee (varies)\" then \"$1,000.00 Mortgage modification\"; the $1,000 is the modification fee",
+  },
+  {
+    feeVerifiedId: 188271, ofFeePublishedId: 152366, sourceDocumentId: 23805, canonicalFeeKey: "other_lending_fee", amount: 1000,
+    feeName: "Mortgage satisfaction fee (varies)", pattern: "next_line_price_twin", issue: 1827,
+    why: "#1827: Citadel FCU (doc 23805) prints \"Mortgage satisfaction fee (varies)\" then \"$1,000.00 Mortgage modification\"; the $1,000 is the modification fee",
+  },
+  {
+    feeVerifiedId: 188272, ofFeePublishedId: 152366, sourceDocumentId: 23805, canonicalFeeKey: "other_lending_fee", amount: 1000,
+    feeName: "Varies – Mortgage satisfaction", pattern: "next_line_price_twin", issue: 1827,
+    why: "#1827: Citadel FCU (doc 23805) prints \"Mortgage satisfaction fee (varies)\" then \"$1,000.00 Mortgage modification\"; the $1,000 is the modification fee",
+  },
+  {
+    feeVerifiedId: 188273, ofFeePublishedId: 152366, sourceDocumentId: 20905, canonicalFeeKey: "other_lending_fee", amount: 1000,
+    feeName: "Mortgage satisfaction fee (varies)", pattern: "next_line_price_twin", issue: 1827,
+    why: "#1827: Citadel FCU (doc 20905) prints \"Mortgage satisfaction fee (varies)\" then \"$1,000.00 Mortgage modification\"; the $1,000 is the modification fee",
+  },
+  {
+    feeVerifiedId: 188274, ofFeePublishedId: 152366, sourceDocumentId: 20905, canonicalFeeKey: "other_lending_fee", amount: 1000,
+    feeName: "Varies – Mortgage satisfaction", pattern: "next_line_price_twin", issue: 1827,
+    why: "#1827: Citadel FCU (doc 20905) prints \"Mortgage satisfaction fee (varies)\" then \"$1,000.00 Mortgage modification\"; the $1,000 is the modification fee",
+  },
+  {
+    feeVerifiedId: 188724, ofFeePublishedId: 152591, sourceDocumentId: 13272, canonicalFeeKey: "other_lending_fee", amount: 4.95,
+    feeName: "Reconveyance .. Actual Cost: Returned payment", pattern: "heading_join_twin", issue: 1828,
+    why: "#1828: Oregon Community FCU (doc 13272) prints \"Reconveyance…… Actual Cost\" then \"Returned payment…… $4.95\"; two lines joined",
+  },
+  {
+    feeVerifiedId: 188725, ofFeePublishedId: 152591, sourceDocumentId: 21634, canonicalFeeKey: "other_lending_fee", amount: 4.95,
+    feeName: "Reconveyance .. Actual Cost: Returned payment", pattern: "heading_join_twin", issue: 1828,
+    why: "#1828: Oregon Community FCU (doc 21634) prints \"Reconveyance…… Actual Cost\" then \"Returned payment…… $4.95\"; two lines joined",
   },
 ];
-export const HAND_REJECTED_TWIN_FLAG = "hand_rejected:cut_cents_twin";
 const twinPattern = (twin: HandRejectedTwin) => twin.pattern ?? "cut_cents_twin";
 /** The flag a rejected twin carries. */
 export const twinFlag = (twin: HandRejectedTwin) => `hand_rejected:${twinPattern(twin)}`;
@@ -182,6 +300,8 @@ export interface HandAmountResult {
 }
 
 const sameAmount = (a: number | string | null, b: number) => a != null && Math.abs(Number(a) - b) < 0.005;
+/** Lowercase with runs of whitespace as one space, for a printed-name test. */
+const squash = (value: string) => value.toLowerCase().replace(/\s+/g, " ").trim();
 
 /** Pure: which listed fees are corrected, from their live rows and stored texts. */
 export function planHandAmountCorrections(rows: LiveRow[]): Pick<HandAmountResult, "corrected" | "skipped"> {
@@ -200,8 +320,14 @@ export function planHandAmountCorrections(rows: LiveRow[]): Pick<HandAmountResul
     const text = row.normalized_text;
     const traced = checkFeeAgainstSource(text, fix.feeName, fix.to, ".", fix.canonicalFeeKey);
     if (!traced.ok) { skipped.push({ feePublishedId: fix.feePublishedId, reason: `corrected price does not trace: ${traced.reason}` }); continue; }
-    if (checkFeeAgainstSource(text, row.fee_name, fix.from, ".", fix.canonicalFeeKey).ok) {
-      skipped.push({ feePublishedId: fix.feePublishedId, reason: "cut amount still traces" });
+    const wrongRead = fix.oldNameNotPrinted ? null : checkFeeAgainstSource(text, row.fee_name, fix.from, ".", fix.canonicalFeeKey);
+    const wrongReadStands = wrongRead == null
+      ? squash(text ?? "").includes(squash(row.fee_name))
+      : wrongRead.ok && (fix.wrongReadTracesTo == null || wrongRead.sourceLine !== fix.wrongReadTracesTo);
+    if (wrongReadStands) {
+      const reason = fix.oldNameNotPrinted ? "old name still printed"
+        : fix.wrongReadTracesTo != null ? "wrong read traces to another line" : "cut amount still traces";
+      skipped.push({ feePublishedId: fix.feePublishedId, reason });
       continue;
     }
     corrected.push({
@@ -331,7 +457,7 @@ export async function applyHandAmountCorrections(
             aboutStage: "extract" as const,
             signal: "wrong" as const,
             kind: "wrong_amount",
-            reportedBy: "hamilton" as const,
+            reportedBy: "gutenberg" as const,
             checkName: HAND_AMOUNT_CHECK,
             institutionId: entry.institutionId,
             sourceDocumentId: entry.sourceDocumentId,
@@ -341,7 +467,7 @@ export async function applyHandAmountCorrections(
             amount: fix.to,
             runId: options.runId,
             dedupeKey: `${HAND_AMOUNT_CHECK}:pub:${fix.feePublishedId}`,
-            evidence: { old_amount: fix.from, new_amount: fix.to, old_name: fix.oldName, new_name: fix.newName, source_line: fix.sourceLine, why: entry.why, pattern: "cut_cents", issue: 1334 },
+            evidence: { old_amount: fix.from, new_amount: fix.to, old_name: fix.oldName, new_name: fix.newName, source_line: fix.sourceLine, why: entry.why, pattern: entry.pattern ?? "cut_cents", issue: entry.issue ?? 1334 },
           };
         }),
         ...result.rejectedTwins.map((id) => {
@@ -350,7 +476,7 @@ export async function applyHandAmountCorrections(
             aboutStage: "extract" as const,
             signal: "wrong" as const,
             kind: "wrong_amount",
-            reportedBy: "hamilton" as const,
+            reportedBy: "gutenberg" as const,
             checkName: HAND_AMOUNT_CHECK,
             sourceDocumentId: twin.sourceDocumentId,
             feeVerifiedId: id,
@@ -367,7 +493,7 @@ export async function applyHandAmountCorrections(
         INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
         VALUES (
           ${options.runId}, ${HAND_AMOUNT_CHECK}, 'completed',
-          ${`Corrected ${result.corrected.length} live fee(s) read with their cents cut off (#1334) and rejected ${result.rejectedTwins.length} unpublished cop(ies) of hand-checked wrong reads`},
+          ${`Corrected ${result.corrected.length} listed live fee(s) to their printed price and rejected ${result.rejectedTwins.length} unpublished cop(ies) of hand-checked wrong reads`},
           ${JSON.stringify({
             corrected: result.corrected.map((fix) => ({ fee_published_id: fix.feePublishedId, from: fix.from, to: fix.to, old_name: fix.oldName, new_name: fix.newName })),
             rejected_twins: result.rejectedTwins,

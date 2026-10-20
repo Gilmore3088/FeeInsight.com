@@ -269,7 +269,7 @@ export function economySection(data: StateReportData, visuals: StateReportVisual
     { label, title },
     panels
       ? `<figure class="state-exhibit state-chart-pair">${panels}</figure>` +
-          source(null, "Unemployment: BLS Local Area Unemployment Statistics and the national rate (UNRATE). Inflation: BLS consumer price index, all items, change from the same month a year earlier. Fed funds: effective rate (FEDFUNDS). Read from FRED.")
+          source(null, "Unemployment: BLS Local Area Unemployment Statistics and the national rate (UNRATE). Inflation: BLS consumer price index, all items, change from the same month a year earlier. Fed funds: effective rate (FEDFUNDS), Federal Reserve Board H.15.")
       : emptyNotice(`Economic series for ${data.stateName} are not loaded yet.`),
     "economy",
   );

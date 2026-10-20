@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ReportLine } from "@/lib/custom-report/analysis";
-import { sourcedFees, verifiedSourceQuote } from "./sample-sources";
+import { displayQuote, sourcedFees, verifiedSourceQuote } from "./sample-sources";
 
 // Source rows as the live sample report stored them on 2026-10-15 (West Shore Bank's schedule).
 function line(key: string, fee_name: string, amount: number, source_line: string): ReportLine {
@@ -33,7 +33,7 @@ describe("verifiedSourceQuote", () => {
 
   it("keeps a name and its price that sit in two cells", () => {
     expect(verifiedSourceQuote(line("stop_payment", "Stop Payment", 25, "Stop Payment | $25.00 per item"))).toBe(
-      "Stop Payment | $25.00 per item",
+      "Stop Payment … $25.00 per item",
     );
   });
 
@@ -53,5 +53,13 @@ describe("verifiedSourceQuote", () => {
       ["overdraft", "Overdraft (items paid) … $10.00"],
       ["stop_payment", "Stop Payment … $35.00"],
     ]);
+  });
+});
+
+describe("displayQuote", () => {
+  it("joins schedule cells with one leader, never the stored row's pipe", () => {
+    expect(displayQuote("Outgoing International Fee | $75")).toBe("Outgoing International Fee … $75");
+    expect(displayQuote("Overdraft Item Fee*…………… | $35")).toBe("Overdraft Item Fee* … $35");
+    expect(displayQuote("Stop Payment………… $35.00")).toBe("Stop Payment … $35.00");
   });
 });

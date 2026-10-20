@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { feeLineIndex, hasBusinessFees, sectionHeadingAudience, suggestAudience } from "./audience-context";
+import { feeLineIndex, hasBusinessFees, nameAudience, scheduleSectionTitle, sectionHeadingAudience, suggestAudience } from "./audience-context";
 
 const suggest = (documentUrl: string | null, text: string, feeName: string, amount: number | null = 30) =>
   suggestAudience({ documentUrl, text, feeName, amount });
@@ -108,6 +108,77 @@ describe("Knox audience suggestion from context (#1059)", () => {
     // A business sentence still leaves the fee unknown.
     const business = ["These fees apply to business accounts.", "Statement Copy | $5.00", "Stop Payment | $30.00"].join("\n");
     expect(suggest(null, business, "Statement Copy", 5)).toBeNull();
+  });
+
+  // #1626: live fees whose names the name rule misread (fee_published_id in each comment).
+  it.each([
+    "Personal Money Order", // 142173, 54818: a product any customer buys
+    "Personal Money Orders (customers)",
+    "Stop Payment Fee - Personal Money Orders",
+    "Subpoena or litigation demand for production of documents or personal appearance: minimum", // 40566
+    "Stop payments: Personal Drafts", // 94850
+    "Stop Payment (personal draft only)",
+    "Convert Personal Draft Into Teller Check",
+    "Counter Check: A blank page of 3 personal", // 75914
+    "Paper Statement Fee on Checking Accounts (Not applicable when accessing eStatements through Consumer eBanking)", // 85812
+    "Check Copy – Personal or Corporate (personal are free on Netbranch)", // 77083
+    "Personal, Cashier’s or Bill Pay checks", // 90850
+    "Services Stop Payment for checks and Corporate ACH", // 101176
+    "» all loan and certificate account balances as of the last business: Inactivity Fee", // 96200
+    "Return Item Fee² (Max 6 [$222.00/day] for retail customers) (unlimited for commercial customers)", // 128993
+  ])("reads no audience in a product, an exception or a time in the name: %s", (name) => {
+    expect(nameAudience(name)).toBeNull();
+    // With the name silent, the schedule decides: a general schedule with no business fees is consumer.
+    expect(suggest(null, `Fee Schedule\nStop Payment $30`, name)?.source).not.toBe("fee_name");
+  });
+
+  it.each([
+    "Returned Deposited Item – Member or Business", // 138277
+    "Bill Pay: Regular Member Accounts and Business Accounts", // 127883
+    "ATM/VISA® Debit Card/VISA® Rewards Debit Card/ VISA® Business Debit Card replacement card fee", // 123246
+    "Star Rewards Savings/Business Savings",
+    "Personal/Business",
+    "Personal & Small Business",
+    "Retail and Commercial Customers",
+    "Stop Payment Fee (Personal/Business)", // 90296
+    "Card Replacement (Personal or Business ATM/Debit Card)", // 86165
+    "Stop Payment of Personal or Business Check", // 137663
+  ])("reads a name that lists both sides as both: %s", (name) => {
+    expect(suggest(null, `Fee Schedule\nBusiness Accounts\nStop Payment $30`, name)).toMatchObject({ audience: "both", source: "fee_name" });
+  });
+
+  it.each([
+    "Commercial Account Continuous Overdraft Fee^", // 130558, Capital City Bank
+    "‐ Basic Business or Personal Business Share Draft (average balance below $1,000)", // 140082
+    "Business Checking, Savings and Money Market Accounts Monthly Fee",
+    "On commercial accounts, if your account balance remains overdrawn for longer than 3 days, the account will be charged a", // 133325
+    "Member/Corporate Account Fee",
+    "Business Debit/ATM Card replacement",
+    "Stop Payment (Business Checking)",
+    "5 Business Mobile Deposit is available",
+    // Review of #1628: the business word carries over to the products listed after it.
+    "Business Checking or Premium Checking",
+    "Business Checking and Interest Checking",
+    "Commercial Checking and Analysis Checking",
+    "Business Money Market Account or Savings Account",
+    "Business Account Research or Account Balancing",
+    "Business Checking Account and Account Research",
+    "Business Debit Card Replacement / Card Replacement Rush",
+    "Business Card Replacement - Debit or Credit Card",
+    "Excessive Withdrawal for Business Share/Savings, Share/Savings and Share Club only", // 129758
+    "Commercial Customers Wire (retail customers free)",
+  ])("keeps a business name business: %s", (name) => {
+    expect(nameAudience(name)).toBe("business");
+  });
+
+  it.each([
+    "Individual Retirement Account Closing Fee", // 90972
+    "Consumer Loan Origination Fee",
+    "Personal Checking Monthly Service Charge",
+    "Personal Draft Account Monthly Fee",
+    "Overdraft (Business accounts excluded)",
+  ])("keeps a consumer name consumer: %s", (name) => {
+    expect(nameAudience(name)).toBe("consumer");
   });
 
   it("lets the fee's own name decide first", () => {
@@ -490,5 +561,229 @@ describe("Knox audience suggestion from context (#1059)", () => {
     expect(suggest(null, ["Business Schedule of Fees", "Non-Consumer Information Request $5.00"].join("\n"), "Non-Consumer Information Request", 5)?.audience).not.toBe("consumer");
     expect(suggest("https://bank.example/business/non-consumer-checks.pdf", "Fees\nStop Payment $30", "Stop Payment", 30)?.audience).not.toBe("consumer");
     expect(suggest(null, ["Business Accounts", "Non-Personal Data Export $5.00", "Personal Accounts", "Stop Payment $30"].join("\n"), "Non-Personal Data Export", 5)?.audience).not.toBe("consumer");
+  });
+});
+
+// #1059 unknown review, 2026-10-16: live fees the relabel left unknown, with lines quoted from the
+// stored documents named.
+describe("Knox audience: fewer unknowns from neutral headings and prose (#1059 unknown review)", () => {
+  // Industrial Bank, document 19151: a perk list over "OTHER SERVICES" sent all its fees ambiguous.
+  const industrial = [
+    "INDUSTRIAL BANK FEE SCHEDULE",
+    "PERSONAL CHECKING ACCOUNTS",
+    "PERSONAL CHECKING",
+    "Monthly maintenance fee if minimum daily balance is not met $8.00",
+    "BUSINESS CHECKING ACCOUNTS",
+    "ENTERPRISE CHECKING (Formerly Super Now Business)",
+    "Monthly maintenance fee if minimum daily balance is not met $10.00",
+    "Monthly maintenance fee if minimum balance requirement is not met $20.00",
+    "Benefits of Business Premier Banking:",
+    "Waived monthly maintenance fee on a business checking account",
+    "Free incoming wire transfers",
+    "Discounted merchant services set-up fee",
+    "Free 30-minute merchant services consultation",
+    "Company's eligible employees receive a free savings account",
+    "OTHER SERVICES",
+    "Account closed within 60 days of opening $25.00",
+    "Account closed by mail $5.00",
+  ].join("\n");
+
+  it("stops the heading climb at a neutral section heading (F1B)", () => {
+    expect(headingAbove(industrial, "Account closed within 60 days of opening", 25)).toBeNull();
+    expect(suggest(null, industrial, "Account closed within 60 days of opening", 25)).toMatchObject({ audience: "both", source: "mixed_schedule_unqualified" });
+    expect(suggest(null, industrial, "Account closed by mail", 5)).toMatchObject({ audience: "both" });
+    // Unitus CCU, document 2109: "Other Service Fees" under the business and lending sections.
+    const unitus = [
+      "Unitus Deposit Accounts and Services",
+      "Personal Money Market Account | $5 per month if average balance falls below $2,500 | A great way to enjoy competitive rates",
+      "Unitus Business Accounts and Services",
+      "Business Interest Checking | No monthly service fee if account balance minimums met | $10 per month if minimum daily balance falls below $3,000",
+      "Business Debit Card | First 2 cards free of charge, additional cards $4 each |",
+      "Lending Account Fees",
+      "Business Credit Card Annual Fee | $25 per card | Waived if annual qualified purchases exceed $2,500 per card in the previous 12 months",
+      "Other Service Fees",
+      "Account Reconciliation/Research | $15 per 30 minutes, 30 minute minimum, plus copy fees",
+      "Card Replacement Fee | $4 per card",
+    ].join("\n");
+    expect(suggest(null, unitus, "Card Replacement Fee", 4)).toMatchObject({ audience: "both", source: "mixed_schedule_unqualified" });
+  });
+
+  it("stops at the schedule's own title that names no audience, before a menu link (F1B)", () => {
+    // Coast360 FCU, document 23907: the nav menu's "Business Services" sits above "Common Fee Schedule".
+    const coast = ["Business Services", "Locations & ATMs", "Contact Us", "Common Fee Schedule", "Check Printing | Varies based on style & quantity", "Personal Accounts Counter checks (4 per sheet) | $3.00", "Non-Personal Accounts Counter checks (4 per sheet) | $5.00", "Copy of check (each) | $3.00", "Cashier's Check (each) | $5.00"].join("\n");
+    expect(suggest(null, coast, "Cashier's Check (each)", 5)).toMatchObject({ audience: "both", source: "mixed_schedule_unqualified" });
+    // FSB Minnesota, document 1089: nothing priced for business, so the consumer default.
+    const fsb = ["Business Savings", ...Array(16).fill(""), "Enter User ID", "Fee Schedule", "Returned Item Fee | $25.00 per item", "Stop Payments | $10.00", "Dormant Account Fee | $1.00 per month until account reaches zero"].join("\n");
+    expect(suggest(null, fsb, "Dormant Account Fee", 1)).toMatchObject({ audience: "consumer", source: "default_general_schedule" });
+    // A business heading below the neutral heading still heads its fees.
+    const business = ["Other Services", "BUSINESS CHECKING ACCOUNTS", "Monthly maintenance fee $10.00", "Personal Checking", "Overdraft $30.00"].join("\n");
+    expect(headingAbove(business, "Monthly maintenance fee", 10)).toMatchObject({ audience: "business" });
+    // An all-accounts heading keeps giving both.
+    expect(headingAbove(["Business Fees", "Business Savings Closing Fee $10.00", "OTHER SERVICES (APPLY TO ALL ACCOUNTS)", "Stop Payment $30.00"].join("\n"), "Stop Payment", 30)).toMatchObject({ audience: "both" });
+  });
+
+  it("keeps doc 22705's consumer labels, which the broader F1A variant broke", () => {
+    const pinnacle = [
+      "Overdraft Services",
+      "OVERDRAFT PROTECTION SERVICES",
+      "Our Bank's Overdraft Protection Services are designed to help protect our customers from the inconvenience and merchant fees incurred when overdrawing their",
+      "personal checking accounts. With one of our overdraft services, you will have protection from the hassle and fees associated with a returned item. Multiple",
+      "overdraft protection options mean you can choose the overdraft protection service that is appropriate for you. You can opt-out of any of our Overdraft Services at",
+      "any time.",
+      "READY RESERVE LINE OF CREDIT | OVERDRAFT PRIVILEGE",
+      "A Ready Reserve Line of Credit provides line of credit advances to cover your | Overdraft Privilege is a discretionary service that cushions your Pinnacle checking",
+      "overdrafts and help prevent your account from becoming overdrawn: | account from inadvertent overdrafts and reduces the possibility for returned items:",
+      "• Transfers are made in $100 increments up to your credit limit to cover | • Will give you more confident check writing",
+      "overdrafts in your deposit account | • Payment of check and ACH overdrafts up to your assigned limit",
+      "• Subject to credit underwriting based on a credit application and credit | • NEW ACCOUNTS: $100 limit",
+      "approval | • EXISTING ACCOUNTS IN GOOD STANDING FOR 60 DAYS: $900",
+      "• $30 annual Ready Reserve fee | Limit",
+      "• No additional per use fees | • If you choose to specifically opt-in to payment of your ATM and everyday",
+      "• A.P.R. 21.00% (19.00% - Mitchell, NE) | debit card transactions, they will also be considered for payment up to your",
+      "See Ready Reserve LOC Agreement or talk to a Pinnacle Bank representative for | assigned limit.",
+      "complete details. | • No charge for this service unless you use it. You may opt-out of any or all",
+      "of Overdraft Privilege or payment of your everyday debit card transactions at",
+      "OVERDRAFT TRANSFER | any time.",
+      "You can also arrange for funds to be transferred from your other checking or | • $10 per item NSF Paid Item Fee/NSF Returned Item Fee for items $10 or",
+      "savings accounts with us into your personal checking account if it becomes | less",
+      "overdrawn. Features of Overdraft Transfer include: | • $32 per item NSF Paid Item Fee/Returned Item Fee for items paid over",
+      "• Transfers are made in $100 increments to cover overdrafts providing you | $10.",
+      "have funds in your other Checking or Savings accounts sufficient to cover | • No NSF Paid Item Fee/NSF Returned Item Fee if your account is",
+      "the overdraft | overdrawn $5 or less at end of the day.",
+      "• $20 Overdraft Transfer set-up fee | • $4 overdraft fee is charged the 4th business day following initial overdraft",
+      "• $2 fee for each Overdraft Transfer | and continues each business day you are overdrawn more than $5. The fee is",
+      "• Ideal for customers who maintain balances in other checking or saving | charged even if the overdraft was caused by a bank fee.",
+      "accounts with us. | • There is a limit of $196 on total fees for overdrawing your account each",
+    ].join("\n");
+    for (const [name, amount] of [["Overdraft fee", 4], ["Overdraft Transfer fee", 2], ["NSF Paid Item Fee/NSF Returned Item Fee for items", 10], ["NSF Paid Item Fee/Returned Item Fee (items over $10)", 32]] as const) {
+      expect(suggest("https://www.wypinnbank.com/sites/default/files/document/file/OD%20Services%2005.23%20-%20WY.pdf", pinnacle, name, amount)).toMatchObject({ audience: "consumer", source: "default_general_schedule" });
+    }
+  });
+
+  it("never reads a bullet as a heading (F5)", () => {
+    // Unitus CCU, document 2109: "• Basic Business Checking" in a list of member benefits.
+    const unitus = [
+      "NO – COST BENEFITS PROVIDED TO UNITUS MEMBERS",
+      "• Multiple options for free checking",
+      "• Basic Business Checking",
+      "• Online Bill Pay",
+      "DESCRIPTION | FEE | ADDITIONAL INFORMATION",
+      "Unitus Deposit Accounts and Services",
+      "NSF (non-sufficient funds) | $30 per returned transaction/limit of 3 fees per day per membership account. |",
+      "Stop Payment Request | $30 per item | This fee applies to stop payments on member checks, ACH transactions, Bill Payments, recurring debit card transactions and Cashiers Checks",
+      "Unitus Business Accounts and Services",
+      "Business Interest Checking | No monthly service fee if account balance minimums met | $10 per month if minimum daily balance falls below $3,000",
+    ].join("\n");
+    expect(headingAbove(unitus, "Stop Payment Request", 30)).toBeNull();
+    expect(suggest(null, unitus, "Stop Payment Request", 30)).toMatchObject({ audience: "both", source: "mixed_schedule_unqualified" });
+  });
+
+  it("reads a sign-off, a wrapped business day and an individual check as no audience (F3)", () => {
+    // Merchants Commercial Bank, document 16221: a change notice's sign-off over the fees.
+    const merchants = [
+      "We encourage you to review the updated Fee Schedule carefully. If you have any questions regarding these",
+      "changes, please feel free to contact us. We appreciate your continued business and thank you for banking with",
+      "Merchants Commercial Bank.",
+      "Cashier's Check Fees - Client $10.00",
+      "Stop Payment Order/Renewal $35.00",
+    ].join("\n");
+    expect(headingAbove(merchants, "Stop Payment Order/Renewal", 35)).toBeNull();
+    expect(suggest(null, merchants, "Stop Payment Order/Renewal", 35)).toMatchObject({ audience: "consumer", source: "default_general_schedule" });
+    expect(suggest(null, ["Thank you for your business.", "Stop Payment $30.00"].join("\n"), "Stop Payment", 30)).toMatchObject({ audience: "consumer" });
+    // GUASFCU, document 24481: "after 2 business" / "days" is no business fee line, and "$80.00 for each" / "individual check." no consumer one.
+    const guasfcu = [
+      "your debit card, the member’s liability is limited to $50. If you notify GUASFCU after 2 business",
+      "days but before 60 calendar days of learning of your lost or stolen card, the member’s liability is",
+      "United States, then the member will be charged a $25.00 processing fee plus $80.00 for each",
+      "individual check.",
+      "Fees",
+      "Insufficient Funds: $35.00",
+      "Cashier’s Check (per item): $5.00 for members, $10 for non-members",
+    ].join("\n");
+    expect(hasBusinessFees(guasfcu.split("\n"))).toBe(false);
+    expect(suggest(null, guasfcu, "Cashier’s Check (per item)", 5)).toMatchObject({ audience: "consumer", source: "default_general_schedule" });
+    // A business account named in the same words still reads as business.
+    expect(hasBusinessFees(["Your business account will be charged $5.00 per month"])).toBe(true);
+    expect(nameAudience("Individual Checking Account Fee")).toBe("consumer");
+  });
+
+  it("reads the audience printed in the fee's own price cell", () => {
+    // True Sky CU, document 2262 (fee 43451).
+    const truesky = ["Verification of Deposit/Mortgage | $15.00", "Paper statement fee per statement cycle (excludes Real Estate, Top Brass, and Visa) | $2.00 personal", "| $5.00 business", "Early Closing (within 6 months of opening) | $25.00"].join("\n");
+    expect(suggest(null, truesky, "Paper statement fee per statement cycle (excludes Real Estate, Top Brass, and Visa)", 2)).toMatchObject({ audience: "consumer", source: "fee_price_cell" });
+    expect(suggest(null, ["Fees", "Paper statement | $2.00 personal / $5.00 business"].join("\n"), "Paper statement", 2)).toMatchObject({ audience: "consumer", source: "fee_price_cell" });
+    expect(suggest(null, ["Fees", "Paper statement | $5.00 business / $2.00 personal"].join("\n"), "Paper statement", 5)).toMatchObject({ audience: "business", source: "fee_price_cell" });
+    // One price with an audience word decides nothing on its own.
+    expect(suggest(null, ["Fees", "Paper statement | $2.00 personal", "Business Checking Maintenance $10.00"].join("\n"), "Paper statement", 2)?.source).not.toBe("fee_price_cell");
+  });
+
+  it("still withholds a consumer heading in a mixed schedule (F2 not taken: #1059 holdout 4)", () => {
+    // Industrial Bank's "PERSONAL CHECKING ACCOUNTS" sits right above the fee, but the Oct 14 rule holds.
+    expect(suggest(null, industrial, "Monthly maintenance fee if minimum daily balance is not met", 8)).toBeNull();
+  });
+});
+
+describe("a schedule's own title decides the fees under it (#1687)", () => {
+  // Kaw Valley 53479: the title is set on two lines, and a night-drop row mentions business access.
+  const kawValley = [
+    "Kaw Valley Bank", "Consumer Deposit Account", "Fee Schedule", "Safe Deposit Boxes - Size | Annual Rate",
+    "2-1/2 x 5 | $18.00", "3 x 5 | $18.00", "Replacement Key | $70.00",
+    "Night Drop Key Deposit | Charge for night deposit key for after hours business access. | $5.00",
+    "Overdrafts | $25.00",
+  ].join("\n");
+  // F&M 143832: a personal schedule, then a business one, in one document.
+  const fm = [
+    "TABLE OF CONTENTS", "PERSONAL SCHEDULE OF FEES ........................................................ 4",
+    "BUSINESS & ACCOUNT ANALYSIS SCHEDULE OF FEES............................................. 5",
+    "ACCOUNTS........................................................................................ 7",
+    "Bankruptcy Trustee Account...................................................................... 7",
+    "Effective July 2026",
+    "PERSONAL SCHEDULE OF FEES", "SERVICES | FEE | CURRENCY (IN OR OUT) | FEE", "Cashier's Check | $10.00",
+    "Endorsement Stamp | Per Catalog Pricing | SAFE DEPOSIT BOX | FEE", "Escheatment Notice | $2.00 | Annual Rent – 2 x 5 | $25.00",
+    "Effective July 2026 | 4", "BUSINESS & ACCOUNT ANALYSIS", "ACH | FEE | BUSINESS ONLINE BANKING & BILL PAY | FEE",
+    "ACH Stop Payment Per Request | $30.00 | Custom File Creation Monthly | $50.00",
+    "Debit Item Business Analyzed Checking (Checks Paid) | $0.25 | Coin & Currency Change Order | $5.00",
+  ].join("\n");
+
+  it("reads a two-line title, and a personal schedule's title over its fees", () => {
+    expect(suggest("https://www.kawvalleybank.com/assets/files/1CYOAjQ6", kawValley, "3 x 5", 18)).toMatchObject({
+      audience: "consumer", source: "document_title", evidence: "Consumer Deposit Account Fee Schedule",
+    });
+    expect(suggest("https://www.kawvalleybank.com/assets/files/1CYOAjQ6", kawValley, "Overdrafts", 25)).toMatchObject({ audience: "consumer", source: "document_title" });
+    expect(suggest(null, fm, "Annual Rent – 2 x 5", 25)).toMatchObject({ audience: "consumer", source: "schedule_section_title", evidence: "PERSONAL SCHEDULE OF FEES" });
+  });
+
+  it("never reaches a title past a line that names another audience", () => {
+    expect(suggest(null, fm, "ACH Stop Payment Per Request", 30)).not.toMatchObject({ audience: "consumer" });
+    expect(suggest(null, fm, "Coin & Currency Change Order", 5)).not.toMatchObject({ audience: "consumer" });
+    expect(scheduleSectionTitle(["PERSONAL FEE SCHEDULE", "Personal | Business", "Stop Payment | $30.00"], 2)).toBeNull();
+  });
+
+  it("takes no title from a menu of two schedules, a title naming none, or a sentence", () => {
+    expect(scheduleSectionTitle(["Personal Fee Schedule", "Business Fee Schedule", "Stop Payment | $30.00"], 2)).toBeNull();
+    const neutralTitle = ["PERSONAL SCHEDULE OF FEES", "Stop Payment | $30.00", "FEE SCHEDULE", "Wire | $25.00"];
+    expect(scheduleSectionTitle(neutralTitle, 3)).toBeNull();
+    expect(scheduleSectionTitle(neutralTitle, 1)).toMatchObject({ audience: "consumer" });
+    expect(scheduleSectionTitle(["See the Personal Fee Schedule for details.", "Stop Payment | $30.00"], 1)).toBeNull();
+  });
+
+  it("takes only a whole audience's schedule: never a product's, a joined audience, a menu or a line cut mid-sentence (dry run, Oct 17)", () => {
+    for (const title of [
+      "Business Remote Deposit Capture Fee Schedule",
+      "General and Business Membership Fee Schedule",
+      "Dividend Rates · Loan Rates · Business Rates & Fees · Fee Schedule",
+      "of Fees and/or Business & Account Analysis Schedule of Fees.",
+    ]) {
+      expect(scheduleSectionTitle([title, "Safe Deposit Box 3 x 5 | $35.00"], 1)).toBeNull();
+    }
+    for (const [title, audience] of [
+      ["Commercial Account FEE SCHEDULE", "business"],
+      ["SCHEDULE OF FEES - BUSINESS", "business"],
+      ["First National Bank of Middle Tennessee Schedule of Fees for Businesses", "business"],
+      ["Northwest Personal Additional Account Fee Schedule", "consumer"],
+      ["PERSONAL ACCOUNTS SCHEDULE OF FEES & CHARGES", "consumer"],
+    ]) {
+      expect(scheduleSectionTitle([title, "Safe Deposit Box 3 x 5 | $35.00"], 1)).toMatchObject({ audience });
+    }
   });
 });

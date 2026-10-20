@@ -66,6 +66,15 @@ describe("StructuredAsk", () => {
     expect(onNoStoryline).not.toHaveBeenCalled();
   });
 
+  it("asks for no memo over a list of peers' fees (#2033)", async () => {
+    const list: AskResponse = { ...withStoryline, answer: buildFeeAnswer(overdraftResearch(), { story: { list: true } }) };
+    expect(list.answer?.storyline?.kind).toBe("list");
+    const calls = mockFetch(list, {});
+    render(<StructuredAsk question="list peers' overdraft fees" institutionId="8109" modelHrefFor={() => "/"} onNoStoryline={vi.fn()} />);
+    await screen.findByText(list.answer!.storyline!.governingThought);
+    expect(calls.map((c) => c.url)).toEqual(["/api/hamilton/ask"]);
+  });
+
   it("keeps the storyline and says why when the memo is withheld", async () => {
     mockFetch(withStoryline, { status: "withheld", reason: "A figure could not be traced, so the memo is held back." });
     render(<StructuredAsk question="q" institutionId="8109" modelHrefFor={() => "/"} />);
@@ -154,7 +163,7 @@ describe("StructuredAsk", () => {
     const onNoStoryline = vi.fn();
     render(<StructuredAsk question="Why is our fee income lower than peers?" institutionId="8109" modelHrefFor={() => "/"} onNoStoryline={onNoStoryline} />);
     await screen.findByText(/per \$1,000 of deposits/);
-    expect(screen.getByText("Call reports, 2026-06-30 · 25 institutions")).toBeTruthy();
+    expect(screen.getByText("Call reports · Jun 2026 · n=25")).toBeTruthy();
     expect(onNoStoryline).not.toHaveBeenCalled();
   });
 

@@ -15,10 +15,21 @@ export interface FeeLineRule {
   allowZero: boolean;
 }
 
+/**
+ * A fee stated for a small-item variant ("Overdraft fee on item under $5 | $7") is a different
+ * charge from the standard per-item fee, so it never stands for the line (#1177). The standard
+ * fee with its exemption stated stays: "items over $5", "no charge for items under $5", "waived
+ * on items below $10", "overdrawn by less than $5". Known gap: a $0 variant worded "items $5 or
+ * less" still matches the line.
+ */
+export const CONDITIONAL_VARIANT = "^(?!.*(no (fee|charge)|waive|exempt|not charged)).*\\mitems? (under|less than|below) ?\\$ ?[0-9]";
+
 export const FEE_LINE_RULES: FeeLineRule[] = [
   {
     key: "monthly_maintenance",
-    label: "Monthly maintenance (entry checking)",
+    // One basis for the institution and every competitor alike: the middle of each one's eligible
+    // checking account fees (`institutionValue`), since few schedules name an entry account.
+    label: "Monthly maintenance (checking)",
     sourceKeys: ["monthly_maintenance", "minimum_balance"],
     include: "(maintenance|monthly service|service charge|monthly fee)",
     exclude:
@@ -32,7 +43,7 @@ export const FEE_LINE_RULES: FeeLineRule[] = [
     label: "Overdraft (per item)",
     sourceKeys: ["overdraft", "nsf"],
     include: "(overdraft|overdrawn|\\mod\\M|o/d|paid item|paid nsf|courtesy pay|bounce protection|privilege)",
-    exclude: "(transfer|sweep|daily|continuous|extended|sustained|limit|line of credit|protection plan|\\mcap\\M|maximum|return)",
+    exclude: `(transfer|sweep|daily|continuous|extended|sustained|limit|line of credit|protection plan|\\mcap\\M|maximum|return|${CONDITIONAL_VARIANT})`,
     lo: 5,
     hi: 45,
     // A bank that states $0 (no overdraft or NSF charge) is a real data point, not a gap.
@@ -43,7 +54,7 @@ export const FEE_LINE_RULES: FeeLineRule[] = [
     label: "NSF / returned item",
     sourceKeys: ["nsf", "overdraft"],
     include: "(nsf|insufficient|non-?sufficient|returned item|return(ed)? (check|item|ach|payment)|unpaid item)",
-    exclude: "(deposit|\\mcap\\M|daily max|maximum|\\mpaid\\M|others|re-?present|credit card|loan|transfer|cover)",
+    exclude: `(deposit|\\mcap\\M|daily max|maximum|\\mpaid\\M|others|re-?present|credit card|loan|transfer|cover|${CONDITIONAL_VARIANT})`,
     lo: 5,
     hi: 45,
     // A bank that states $0 (no overdraft or NSF charge) is a real data point, not a gap.
@@ -51,10 +62,13 @@ export const FEE_LINE_RULES: FeeLineRule[] = [
   },
   {
     key: "atm_non_network",
-    label: "Out-of-network ATM",
+    // Domestic withdrawals only: a withdrawal abroad is left out by the evidence builder.
+    label: "Out-of-network ATM (domestic)",
     sourceKeys: ["atm_non_network"],
     include: "atm",
-    exclude: "(replace|deposit|statement|card fee|annual|\\mpin\\M|inquir|denied|declin)",
+    // A balance-inquiry-only fee is a different charge; one that also covers withdrawals or
+    // transfers ("for each inquiry, transfer or withdrawal") is the out-of-network fee itself.
+    exclude: "(replace|deposit|statement|card fee|annual|\\mpin\\M|^(?!.*(withdraw|transaction|transfer)).*inquir|denied|declin)",
     lo: 0.5,
     hi: 10,
     allowZero: false,
@@ -150,6 +164,23 @@ export const FEE_LINE_RULES: FeeLineRule[] = [
     allowZero: false,
   },
 ];
+
+/** How each line is charged, for the CSV's fee_basis column. */
+export const FEE_LINE_BASIS: Record<string, string> = {
+  monthly_maintenance: "per month",
+  overdraft: "per item",
+  nsf: "per item",
+  atm_non_network: "per withdrawal",
+  wire_domestic_outgoing: "per transfer",
+  wire_intl_outgoing: "per transfer",
+  wire_domestic_incoming: "per transfer",
+  stop_payment: "per request",
+  cashiers_check: "per check",
+  od_protection_transfer: "per transfer",
+  paper_statement: "per statement cycle",
+  card_replacement: "per card",
+  deposited_item_return: "per item",
+};
 
 export const FEE_LINE_LABELS: Record<string, string> = Object.fromEntries(
   FEE_LINE_RULES.map((rule) => [rule.key, rule.label]),

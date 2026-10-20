@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const startAgentRun = vi.fn();
 vi.mock("@/lib/agents/run-store", () => ({ startAgentRun: (...args: unknown[]) => startAgentRun(...args) }));
 
-import { AUDIENCE_RELABEL_MODE, decideAudience, dryRunFullTotals, runAudienceRelabel, type AudienceRelabelRow } from "./audience-relabel";
+import { AUDIENCE_RELABEL_MODE, changesAudience, decideAudience, dryRunFullTotals, relabelRecord, runAudienceRelabel, type AudienceRelabelRow } from "./audience-relabel";
 import { scheduleAudienceRelabelRun } from "./audience-relabel-schedule";
 
 const row = (overrides: Partial<AudienceRelabelRow> = {}): AudienceRelabelRow => ({
@@ -13,7 +13,7 @@ const row = (overrides: Partial<AudienceRelabelRow> = {}): AudienceRelabelRow =>
 });
 const consumerSchedule = "Fee Schedule\nStop Payment | $30.00\nNSF Fee | $32.00";
 
-function createDb(options: { rows?: AudienceRelabelRow[]; docs?: number[]; remaining?: number; feedback?: unknown[]; migrated?: boolean; lastBatch?: unknown } = {}) {
+function createDb(options: { rows?: AudienceRelabelRow[]; docs?: number[]; remaining?: number; feedback?: unknown[]; migrated?: boolean; lastBatch?: unknown; text?: string } = {}) {
   const rows = options.rows ?? [];
   const docs = options.docs ?? [...new Set(rows.map((r) => Number(r.source_document_id)))];
   const db = vi.fn((strings: TemplateStringsArray) => {
@@ -22,9 +22,9 @@ function createDb(options: { rows?: AudienceRelabelRow[]; docs?: number[]; remai
     if (text.includes("to_regclass")) return Promise.resolve([{ ready: true }]);
     if (text.includes("FROM agent_runs")) return Promise.resolve(options.lastBatch ? [options.lastBatch] : []);
     if (text.includes("docs AS")) return Promise.resolve(docs.map((id) => ({ source_document_id: id, remaining: docs.length + (options.remaining ?? 0) })));
-    if (text.includes("array_agg")) return Promise.resolve(rows);
-    if (text.includes("FROM agent_source_texts")) return Promise.resolve([{ source_document_id: 21, normalized_text: consumerSchedule }]);
     if (text.includes("FROM pipeline_feedback")) return Promise.resolve(options.feedback ?? []);
+    if (text.includes("array_agg")) return Promise.resolve(rows);
+    if (text.includes("FROM agent_source_texts")) return Promise.resolve([{ source_document_id: 21, normalized_text: options.text ?? consumerSchedule }]);
     if (text.includes("UPDATE verified_fee_observations")) return Promise.resolve([{ fee_verified_id: 501 }]);
     if (text.includes("UPDATE published_fee_records")) return Promise.resolve([{ fee_published_id: 601 }]);
     if (text.includes("INSERT INTO pipeline_feedback")) return Promise.resolve([{ id: 1 }]);
@@ -56,10 +56,10 @@ describe("Darwin audience relabel (#1059)", () => {
     expect(writes(db)).toEqual([]);
   });
 
-  it("ships as the full dry run: the cursor chain as live, counts only, no migration needed", async () => {
-    expect(AUDIENCE_RELABEL_MODE).toBe("dry_run_full");
+  it("ships live (James, Oct 16); the full dry run still counts only, no migration needed", async () => {
+    expect(AUDIENCE_RELABEL_MODE).toBe("live");
     const db = createDb({ rows: [row()], remaining: 40, migrated: false });
-    const result = await runAudienceRelabel(db as never, { afterId: 20 });
+    const result = await runAudienceRelabel(db as never, { afterId: 20, mode: "dry_run_full" });
     expect(result).toMatchObject({ mode: "dry_run_full", dryRun: true, fees: 1, byAudience: { consumer: 1 }, relabeled: 0, nextAfterId: 21, remaining: 40, done: false });
     expect(writes(db)).toEqual([]);
   });
@@ -88,11 +88,58 @@ describe("Darwin audience relabel (#1059)", () => {
     expect(writes(db)).toEqual([]);
   });
 
-  it("rollback: sets the audience back to unknown with the old evidence, so the trigger copies the raw audience", async () => {
-    const db = createDb({ feedback: [{ fee_verified_id: 501, from_evidence: null, to_evidence: "darwin:default_general_schedule: x", fee_published_ids: [601], remaining: 1 }] });
+  it("rollback: sets the audience back to its first recorded value with the old evidence, so the trigger copies the raw audience", async () => {
+    const db = createDb({ feedback: [{ fee_verified_id: 501, from_audience: "unknown", from_evidence: null, to_evidence: "darwin:default_general_schedule: x", fee_published_ids: [601], remaining: 1 }] });
     const result = await runAudienceRelabel(db as never, { mode: "rollback" });
     expect(result).toMatchObject({ restored: 1, publishedTouched: 1, done: true });
-    expect(writes(db).find((text) => text.includes("verified_fee_observations"))).toMatch(/fee_audience = 'unknown'/);
+    const [strings, ...values] = db.mock.calls.find(([s]) => (s as string[]).join(" ").includes("UPDATE verified_fee_observations"))!;
+    expect((strings as string[]).join(" ")).toMatch(/fee_audience = d\.from_audience/);
+    expect(values[1]).toEqual(["unknown"]);
+    // The first record's old value, the last record's evidence (a fee relabelled twice).
+    const read = (db.mock.calls.find(([s]) => (s as string[]).join(" ").includes("FROM pipeline_feedback"))![0] as string[]).join(" ");
+    expect(read).toMatch(/ORDER BY id\)\)\[1\] AS from_audience/);
+    expect(read).toMatch(/ORDER BY id DESC\)\)\[1\] AS to_evidence/);
+  });
+
+  describe("v4: a mixed-schedule `both` under a schedule's own title (#1687)", () => {
+    const fm = [
+      "Services & Fees", "This document is current as of July 2026.", "TABLE OF CONTENTS",
+      "PERSONAL SCHEDULE OF FEES ........................................................ 4",
+      "BUSINESS & ACCOUNT ANALYSIS SCHEDULE OF FEES............................................. 5",
+      "ACCOUNTS........................................................................................ 7",
+      "PERSONAL SCHEDULE OF FEES", "SERVICES | FEE", "Escheatment Notice | $2.00 | Annual Rent – 2 x 5 | $25.00",
+      "BUSINESS & ACCOUNT ANALYSIS", "Debit Item Business Analyzed Checking (Checks Paid) | $0.25 | Coin & Currency Change Order | $5.00",
+    ].join("\n");
+    const both = (overrides: Partial<AudienceRelabelRow> = {}) => row({
+      fee_verified_id: 173609, fee_name: "Annual Rent – 2 x 5", amount: "25.00", canonical_fee_key: "safe_deposit_box",
+      fee_audience: "both", audience_evidence: "darwin:mixed_schedule_unqualified: SERVICES | Debit Item | $0.45", ...overrides,
+    });
+
+    it("re-reads Darwin's mixed-schedule both, and writes only a single audience", async () => {
+      const db = createDb({ rows: [both(), both({ fee_verified_id: 173610, fee_name: "Coin & Currency Change Order", amount: "5.00" })], text: fm });
+      const result = await runAudienceRelabel(db as never, { mode: "dry_run_full" });
+      expect(result.byChange).toEqual({ "both->consumer": 1 });
+      expect(result.samples).toEqual([expect.objectContaining({ feeVerifiedId: 173609, audience: "consumer", evidence: "darwin:schedule_section_title: PERSONAL SCHEDULE OF FEES" })]);
+      expect(writes(db)).toEqual([]);
+    });
+
+    it("live: records the both under its own key and writes only a row still as read", async () => {
+      const db = createDb({ rows: [both()], text: fm });
+      await runAudienceRelabel(db as never, { mode: "live", runId: 9 });
+      const insert = db.mock.calls.find(([s]) => (s as string[]).join(" ").includes("INSERT INTO pipeline_feedback"));
+      expect(JSON.stringify(insert)).toContain("darwin.audience_relabel:v4:both:verified:173609");
+      expect(JSON.stringify(insert)).toContain('\\"from_audience\\":\\"both\\"');
+      const update = db.mock.calls.find(([s]) => (s as string[]).join(" ").includes("UPDATE verified_fee_observations"))!;
+      expect((update[0] as string[]).join(" ")).toMatch(/v\.fee_audience = d\.from_audience/);
+      expect(update.slice(1)).toEqual([[173609], ["consumer"], ["darwin:schedule_section_title: PERSONAL SCHEDULE OF FEES"], ["both"], [both().audience_evidence]]);
+    });
+
+    it("never turns a both into unknown, and keeps the unknown fees' old key", () => {
+      expect(changesAudience(both(), { feeVerifiedId: 1, feeAudience: "unknown", source: "none", evidence: null })).toBe(false);
+      expect(changesAudience(both(), { feeVerifiedId: 1, feeAudience: "both", source: "mixed_schedule_unqualified", evidence: "x" })).toBe(false);
+      expect(changesAudience(row(), { feeVerifiedId: 1, feeAudience: "both", source: "mixed_schedule_unqualified", evidence: "x" })).toBe(true);
+      expect(relabelRecord(row(), { feeVerifiedId: 501, feeAudience: "consumer", source: "x", evidence: "x" }, null).dedupeKey).toBe("darwin.audience_relabel:verified:501");
+    });
   });
 });
 
@@ -108,13 +155,13 @@ describe("audience relabel schedule", () => {
     const result = await scheduleAudienceRelabelRun(createDb(db) as never, new Date("2026-10-15T00:00:00Z"), "live");
     expect(result).toMatchObject(expected);
     if (afterId == null) expect(startAgentRun).not.toHaveBeenCalled();
-    else expect(startAgentRun.mock.calls[0][0]).toMatchObject({ params: { mode: "live", after_id: afterId }, idempotencyKey: `darwin:audience-relabel:live:v1:after:${afterId}` });
+    else expect(startAgentRun.mock.calls[0][0]).toMatchObject({ params: { mode: "live", after_id: afterId }, idempotencyKey: `darwin:audience-relabel:live:v4:after:${afterId}` });
   });
 
   it("full dry run: its own key chain, from the cursor, with no migration check", async () => {
     const lastBatch = { id: 5, status: "completed", after_id: "0", next_after_id: "900", done: false };
     await scheduleAudienceRelabelRun(createDb({ migrated: false, lastBatch }) as never, new Date("2026-10-15T00:00:00Z"), "dry_run_full");
-    expect(startAgentRun.mock.calls[0][0]).toMatchObject({ kind: "dry_run", params: { mode: "dry_run_full", after_id: 900 }, idempotencyKey: "darwin:audience-relabel:dry:v1:after:900" });
+    expect(startAgentRun.mock.calls[0][0]).toMatchObject({ kind: "dry_run", params: { mode: "dry_run_full", after_id: 900 }, idempotencyKey: "darwin:audience-relabel:dry:v4:after:900" });
   });
 
   it("off: one sampled dry run a day", async () => {

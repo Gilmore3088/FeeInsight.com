@@ -40,7 +40,7 @@ async function handlePOST(request: Request) {
       if (!refreshed || refreshed.peerList.status !== "ready")
         return NextResponse.json({ error: "Original peer selection is no longer available. Run it again before saving." }, { status: 409 });
       const saved = await savePeerResearchSnapshot(user, body.question, refreshed, body.expectedPeerList);
-      if (!saved) return NextResponse.json({ error: "The selection or published evidence changed. Re-run before saving." }, { status: 409 });
+      if (!saved) return NextResponse.json({ error: "The list changed after it was shown. Ask the question again to see the current list, then save it." }, { status: 409 });
       return NextResponse.json({ savedAnalysisId: saved });
     }
     const peerList = await answerPeerList(user, body);

@@ -15,6 +15,7 @@ const store = vi.hoisted(() => ({
   events: [] as DecisionEvent[],
   logged: [] as { kind: string; detail: Record<string, unknown> }[],
   saved: [] as { fieldKey: string; value: unknown }[],
+  opened: [] as string[],
   status: undefined as string | undefined,
   failRead: false,
   analyses: [] as { id: string; userId: number; institutionId: string; prompt: string; analysisFocus: string; response: Record<string, unknown>; replaceRecentDuplicate?: { request: string } }[],
@@ -38,7 +39,10 @@ vi.mock("@/lib/data-store/hamilton-workspace", () => ({
     return { id: "m1", institutionId: input.institutionId, fieldKey: input.fieldKey, value: input.value, givenBy: input.givenBy, source: "answer", createdAt: "2026-10-06T08:01:00Z" };
   },
   getDecision: async (_user: number, id: string) => (id === decision.id ? decision : null),
-  findOrOpenDecision: async () => ({ decision, opened: true }),
+  findOrOpenDecision: async (input: { feeCategory: string }) => {
+    store.opened.push(input.feeCategory);
+    return { decision, opened: true };
+  },
   getDecisionEvents: async () => store.events,
   addDecisionEvents: async (_id: string, events: { kind: string; detail: Record<string, unknown> }[], status?: string) => {
     store.logged.push(...events);
@@ -91,6 +95,7 @@ beforeEach(() => {
   store.events = [];
   store.logged = [];
   store.saved = [];
+  store.opened = [];
   store.status = undefined;
   store.failRead = false;
   store.analyses = [];
@@ -129,10 +134,10 @@ describe("H01 Structured Ask identity acceptance", () => {
       identityStore.memberships.mockResolvedValue(records);
       identityStore.research.mockClear();
       const result = await answerAsk(user, { institutionId: "2", question: "Compare their overdraft fee with us" });
-      expect(result.body).toMatchObject({ shortAnswer: expect.stringContaining("comparison with your account institution is withheld") });
+      expect(result.body).toMatchObject({ shortAnswer: expect.stringContaining("No institution is linked to this account, so there is no comparison") });
       expect(identityStore.research.mock.calls.map((call) => call[0])).toEqual([2]);
       expect(result.body).not.toHaveProperty("accountComparison");
-      expect(JSON.stringify((result.body as { answer?: unknown }).answer)).toContain("comparison with your account institution is withheld");
+      expect(JSON.stringify((result.body as { answer?: unknown }).answer)).toContain("No institution is linked to this account, so there is no comparison");
     }
     identityStore.memberships.mockRejectedValue(new Error("membership unavailable"));
     const result = await answerAsk(user, { institutionId: "2", question: "Compare their overdraft fee with us" });
@@ -150,7 +155,7 @@ describe("H01 Structured Ask identity acceptance", () => {
     }
     identityStore.memberships.mockResolvedValue([]);
     const unlinked = await answerAsk(user, { institutionId: "2", question: "How do our overdraft fees compare with peers?" });
-    expect(JSON.stringify((unlinked.body as { answer?: unknown }).answer)).toContain("comparison with your account institution is withheld");
+    expect(JSON.stringify((unlinked.body as { answer?: unknown }).answer)).toContain("No institution is linked to this account, so there is no comparison");
   });
 
   it("reads memberships afresh after revocation and never uses profile text as home identity", async () => {
@@ -221,6 +226,15 @@ describe("answerAsk", () => {
     expect(result.status).toBe(200);
     expect(result.body).toMatchObject({ kind: "research", decisionId: decision.id });
     expect(store.logged.map((e) => e.kind)).toEqual(["question_asked"]);
+  });
+
+  it("continues a carried decision for its own fee, never for a different fee (#979 H04-T05)", async () => {
+    // Same fee: the conversation's decision is continued, no new one opened.
+    await answerAsk(user, { institutionId: "1", decisionId: decision.id, question: "How does our overdraft fee compare?" });
+    expect(store.opened).toEqual([]);
+    // A follow-up naming another fee opens that fee's own decision.
+    await answerAsk(user, { institutionId: "1", decisionId: decision.id, question: "How does our NSF fee compare?" });
+    expect(store.opened).toEqual(["nsf"]);
   });
 
   it("logs each tested price and moves the decision to modeling", async () => {

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   BROKERAGE_DOCUMENT_TAKEDOWN_LIVE,
+  CARD_PROGRAM_TAKEDOWN_LIVE,
   NON_DEPOSIT_BATCH,
   NON_DEPOSIT_CHECK,
   NON_DEPOSIT_DOCUMENT_TAKEDOWN_LIVE,
@@ -10,6 +11,8 @@ import {
   hasLendingWording,
   hasRatePageLendingWording,
   isLendingCategory,
+  nonDepositTakedownReason,
+  nonDepositVerdict,
   nonDepositCountSql,
   nonDepositDetail,
   nonDepositFeeVerdictsSql,
@@ -45,10 +48,11 @@ const asDb = (db: DbMock) => db as unknown as Parameters<typeof recheckNonDeposi
 const texts = (db: DbMock) => db.mock.calls.map(([strings]) => (strings as TemplateStringsArray).join("?"));
 
 describe("Darwin live non-deposit document re-check (#1442)", () => {
-  it("ships with the switch off", () => {
-    expect(NON_DEPOSIT_DOCUMENT_TAKEDOWN_LIVE).toBe(false);
-    expect(BROKERAGE_DOCUMENT_TAKEDOWN_LIVE).toBe(false);
-    expect(NON_DEPOSIT_CHECK_VERSION).toBe(2);
+  it("ships with all three switches on (James, 2026-10-16; card programs 2026-10-18)", () => {
+    expect(NON_DEPOSIT_DOCUMENT_TAKEDOWN_LIVE).toBe(true);
+    expect(BROKERAGE_DOCUMENT_TAKEDOWN_LIVE).toBe(true);
+    expect(NON_DEPOSIT_CHECK_VERSION).toBe(3);
+    expect(CARD_PROGRAM_TAKEDOWN_LIVE).toBe(true);
     expect(NON_DEPOSIT_BATCH).toBe(2_000);
   });
 
@@ -56,7 +60,7 @@ describe("Darwin live non-deposit document re-check (#1442)", () => {
     const found = findNonDepositFees(ROWS);
     expect(found).toMatchObject({
       checked: 8, withDocument: 7, onMatchedDocument: 4, keptDepositCategory: 1, keptGenericOnRatePage: 0, matched: 2, brokerageDocument: 1,
-      byKind: { loan: 1, brokerage: 1 }, byRule: { lending_category: 2, lending_wording_on_loan_document: 0, brokerage_document: 1 }, documents: 2, institutions: 2,
+      byKind: { loan: 1, brokerage: 1, card_program: 0 }, byRule: { lending_category: 2, lending_wording_on_loan_document: 0, brokerage_document: 1, card_program_document: 0 }, documents: 2, institutions: 2,
     });
     expect(found.matches.map((fee) => [fee.feePublishedId, fee.kind, fee.reason])).toEqual([
       [101, "loan", "non_deposit_document: loan #71"],
@@ -76,7 +80,7 @@ describe("Darwin live non-deposit document re-check (#1442)", () => {
 
   it("in shadow, reports and moves the cursor but writes no fee and logs no flag", async () => {
     const db = dbFor(ROWS, { cursor: "100" });
-    const result = await recheckNonDepositDocuments(asDb(db), { runId: 7, stepId: 70, dryRun: false });
+    const result = await recheckNonDepositDocuments(asDb(db), { runId: 7, stepId: 70, dryRun: false, live: false });
     expect(result).toMatchObject({ live: false, matched: 2, afterId: 100, nextAfterId: 0, flagged: 0, takenDown: [] });
     const sent = texts(db);
     expect(sent.some((text) => text.includes("UPDATE"))).toBe(false);
@@ -136,12 +140,12 @@ describe("Darwin live non-deposit document re-check (#1442)", () => {
 
   it("gives step detail with the switch state and samples", () => {
     const detail = nonDepositDetail({
-      ...findNonDepositFees(ROWS), live: false, brokerageLive: false, dryRun: false, afterId: 0, nextAfterId: 0, flagged: 0, waiting: 0, cleared: 0, takenDown: [],
+      ...findNonDepositFees(ROWS), live: false, brokerageLive: false, cardProgramLive: false, dryRun: false, afterId: 0, nextAfterId: 0, flagged: 0, waiting: 0, cleared: 0, takenDown: [],
     });
     expect(detail).toMatchObject({
-      check: "darwin.non_deposit_document", version: 2, switch_live: false, brokerage_switch_live: false, would_take_down: 2, brokerage_document: 1,
+      check: "darwin.non_deposit_document", version: 3, switch_live: false, brokerage_switch_live: false, would_take_down: 2, brokerage_document: 1,
       kept_deposit_category: 1, kept_generic_on_rate_page: 0, on_matched_document: 4, taken_down: 0,
-      by_rule: { lending_category: 2, lending_wording_on_loan_document: 0, brokerage_document: 1 },
+      by_rule: { lending_category: 2, lending_wording_on_loan_document: 0, brokerage_document: 1, card_program_document: 0 },
     });
     expect(detail.samples_brokerage_document[0]).toMatchObject({ fee_published_id: 102, rule: "brokerage_document" });
     expect(detail.samples[0]).toMatchObject({ fee_published_id: 101, kind: "loan", document_url: "https://www.bankofgreene.com/current-rates/" });
@@ -174,7 +178,7 @@ describe("v2 rules: lending wording on loan documents, brokerage documents, gene
   });
 
   it("counts each rule on its own, and only the main rules in matched", () => {
-    expect(found.byRule).toEqual({ lending_category: 8, lending_wording_on_loan_document: 11, brokerage_document: 7 });
+    expect(found.byRule).toEqual({ lending_category: 8, lending_wording_on_loan_document: 11, brokerage_document: 7, card_program_document: 0 });
     expect(found.matched).toBe(19);
     expect(found.brokerageDocument).toBe(7);
     expect(found.keptGenericOnRatePage).toBe(2);
@@ -216,7 +220,7 @@ describe("v2 rules: lending wording on loan documents, brokerage documents, gene
   it("switched on, takes down lending wording on a loan page but not a brokerage_document fee while its sub-switch is off", async () => {
     // 1000: brokerage Wire; 1008: yourgcu mortgage processing; 1025: Siouxland Late Fee.
     const db = feeDb([1000, 1008, 1025]);
-    const result = await recheckNonDepositDocuments(asDb(db), { runId: 7, dryRun: false, live: true, now });
+    const result = await recheckNonDepositDocuments(asDb(db), { runId: 7, dryRun: false, live: true, brokerageLive: false, now });
     expect(result.brokerageLive).toBe(false);
     expect(result.takenDown).toEqual([1008]);
     expect(archivedIds(db)).toEqual([1008]);
@@ -226,7 +230,8 @@ describe("v2 rules: lending wording on loan documents, brokerage documents, gene
 
   it("with the brokerage sub-switch on as well, a brokerage_document fee comes down under its own reason", async () => {
     const db = feeDb([1000, 1008]);
-    const result = await recheckNonDepositDocuments(asDb(db), { runId: 7, dryRun: false, live: true, brokerageLive: true, now });
+    const result = await recheckNonDepositDocuments(asDb(db), { runId: 7, dryRun: false, now });
+    expect(result).toMatchObject({ live: true, brokerageLive: true });
     expect(result.takenDown).toEqual([1000, 1008]);
     const update = db.mock.calls.find(([strings]) => (strings as TemplateStringsArray).join("?").includes("UPDATE published_fee_records"));
     expect(update?.[3]).toEqual(["brokerage_document: brokerage #100", "lending_wording_on_loan_document: loan #108"]);
@@ -287,5 +292,60 @@ describe("per-fee verdict SQL", () => {
     expect(text).toContain("WHERE n <= 40");
     expect(text).not.toMatch(/\b(?:UPDATE|INSERT|DELETE)\b/);
     expect(text).not.toMatch(/\\[bsdwy]/);
+  });
+});
+
+describe("v3 rule: fees on prepaid, payroll and gift card documents (#1908)", () => {
+  const PAYROLL = "https://www.schoolsfirstfcu.org/disclosures/payroll-card-statement-of-fees-disclosure/";
+  const GIFT = "https://csb.bank/gift-cards.html";
+  const CARD_ROWS = [
+    { fee_published_id: "201", fee_verified_id: "9201", institution_id: "6741", fee_name: "Monthly Fee", amount: "0", canonical_fee_key: "monthly_maintenance", source_document_id: "81", document_url: PAYROLL },
+    { fee_published_id: "202", fee_verified_id: "9202", institution_id: "6741", fee_name: "Rush Payroll Card replacement (per card)", amount: "20", canonical_fee_key: "rush_card", source_document_id: "81", document_url: PAYROLL },
+    { fee_published_id: "203", fee_verified_id: "9203", institution_id: "1530", fee_name: "Inactivity fee", amount: "2.95", canonical_fee_key: "dormant_account", source_document_id: "82", document_url: GIFT },
+    { fee_published_id: "204", fee_verified_id: "9204", institution_id: "1530", fee_name: "Gift card purchase", amount: "4", canonical_fee_key: "gift_card_purchase", source_document_id: "82", document_url: GIFT },
+    { fee_published_id: "205", fee_verified_id: "9205", institution_id: "6741", fee_name: "Overdraft", amount: "22", canonical_fee_key: "overdraft", source_document_id: "83", document_url: "https://www.schoolsfirstfcu.org/globalassets/pdf/disclosures/mk360-fees.pdf" },
+  ];
+
+  it("takes every fee on a card program document except the card's purchase and reload price", () => {
+    expect(nonDepositVerdict("card_program", false, "monthly_maintenance", "Monthly Fee")).toBe("card_program_document");
+    expect(nonDepositVerdict("card_program", false, "late_payment", "Late fee")).toBe("card_program_document");
+    expect(nonDepositVerdict("card_program", false, "gift_card_purchase", "Purchase")).toBe("kept_card_purchase");
+    expect(nonDepositVerdict("card_program", false, "prepaid_card_reload", "Reload Fee")).toBe("kept_card_purchase");
+  });
+
+  it("counts them on their own, outside matched, with their documents and institutions", () => {
+    const found = findNonDepositFees(CARD_ROWS);
+    expect(found.matched).toBe(0);
+    expect(found.byKind.card_program).toBe(0);
+    expect(found.byRule.card_program_document).toBe(3);
+    expect(found.cardProgramDocument).toBe(3);
+    expect(found.cardProgramDocuments).toBe(2);
+    expect(found.cardProgramInstitutions).toBe(2);
+    expect(found.keptCardPurchase).toBe(1);
+    expect(found.onMatchedDocument).toBe(4);
+    expect(found.cardProgramMatches.map((fee) => fee.reason)).toEqual(["card_program_document: card_program #81", "card_program_document: card_program #81", "card_program_document: card_program #82"]);
+    expect(found.passing).toEqual([204, 205]);
+  });
+
+  it("leaves them live while the sub-switch is off, at publish and on the re-check", async () => {
+    const fee = { documentUrl: PAYROLL, sourceDocumentId: 81, canonicalFeeKey: "monthly_maintenance", feeName: "Monthly Fee" };
+    expect(nonDepositTakedownReason(fee, { live: true, cardProgramLive: false })).toBeNull();
+    expect(nonDepositTakedownReason(fee, { live: false, cardProgramLive: true })).toBeNull();
+    expect(nonDepositTakedownReason(fee, { live: true, cardProgramLive: true })).toBe("card_program_document: card_program #81");
+    expect(nonDepositTakedownReason({ ...fee, canonicalFeeKey: "gift_card_purchase" }, { live: true, cardProgramLive: true })).toBeNull();
+
+    const db = dbFor(CARD_ROWS);
+    const result = await recheckNonDepositDocuments(asDb(db), { runId: 7, dryRun: false, live: true, brokerageLive: true, cardProgramLive: false, institutionId: 6741 });
+    expect(result.cardProgramDocument).toBe(3);
+    expect(result.takenDown).toEqual([]);
+    expect(texts(db).some((text) => text.includes("UPDATE published_fee_records"))).toBe(false);
+    expect(nonDepositDetail(result)).toMatchObject({ card_program_switch_live: false, card_program_document: 3, kept_card_purchase: 1 });
+  });
+
+  it("puts them in the count SQL as their own verdict", () => {
+    const sql = nonDepositCountSql();
+    expect(sql).toContain("WHEN j.kind = 'card_program' AND COALESCE(l.canonical_fee_key IN ('gift_card_purchase', 'prepaid_card_reload'), false) THEN 'kept_card_purchase'");
+    expect(sql).toContain("AS card_program_document,");
+    expect(nonDepositFeeVerdictsSql({ verdicts: ["card_program_document"] })).toContain("WHERE v.verdict IN ('card_program_document')");
   });
 });

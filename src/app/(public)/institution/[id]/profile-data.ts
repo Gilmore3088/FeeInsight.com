@@ -10,7 +10,19 @@ import type { DisplayFee } from "./fee-schedule-table";
 import { getRateFeesByInstitution, type RateFee } from "@/lib/data-store/rate-fees";
 import { rateDisplayParts } from "@/lib/percent-fees";
 import { feeDisplayName } from "@/lib/fee-display-name";
-import { institutionValue } from "@/lib/data-store/fee-stats";
+import { HIGHEST_TIER_CATEGORIES, institutionValue } from "@/lib/data-store/fee-stats";
+import { accountPricesText, comparedAtText, type AccountPrice } from "@/lib/fee-representative";
+import {
+  CARD_INACTIVITY_REASON,
+  CD_IRA_REASON,
+  SAFE_DEPOSIT_SERVICE_REASON,
+  basisMismatchReason,
+  notComparableReason,
+} from "@/lib/fee-comparability";
+import { countsInMarketComparison, marketIneligibleReason, type MarketEligibilityInput } from "@/lib/market-eligibility";
+import { productNameFromFeeName, readableProductName } from "@/lib/agents/knox/lineup";
+import { waiverPhrase } from "./account-waiver";
+import { feeScheduleContext } from "./profile-fee-context";
 
 export const getPublicInstitutionForPage = cache(getPublicInstitutionById);
 
@@ -39,7 +51,7 @@ export const getRateFeesForPage = cache(async (institutionId: number): Promise<R
 export function toRateDisplayFees(fees: RateFee[]): DisplayFee[] {
   return fees.map((fee) => ({
     id: `rate-${fee.id}`,
-    feeName: fee.fee_name,
+    feeName: feeDisplayName(fee.fee_name, fee.fee_category),
     feeAudience: fee.fee_audience ?? "unknown",
     feeTreatment: fee.fee_treatment ?? "unknown",
     feeCategory: fee.fee_category,
@@ -65,9 +77,13 @@ export function toDisplayFees(fees: ExtractedFee[]): DisplayFee[] {
     feeCategory: fee.fee_category ?? null,
     amount: fee.amount,
     frequency: fee.frequency,
-    conditions: fee.conditions,
+    conditions: feeScheduleContext(fee),
     status: isVerifiedFee(fee) ? "verified" : "provisional",
     sourceUrl: fee.source_url ?? null,
+    accountProduct: fee.account_product_type ?? null,
+    sourceLine: fee.source_line ?? null,
+    sourced: fee.source_document_id != null,
+    rawFeeName: fee.fee_name,
   }));
 }
 
@@ -108,7 +124,9 @@ export interface HeadlineFees {
 }
 
 const MONTHLY_MAINTENANCE_NAME = /monthly|maintenance|service charge|service fee/i;
-const NOT_A_MONTHLY_FEE = /fax|photocop|copy|per page|statement|research|wire|check|card/i;
+// Whole words, so an account's own name ("Flagship Checking Monthly Fee") is never read as a
+// per-check charge; a check, card, copy or statement fee filed here still drops out.
+const NOT_A_MONTHLY_FEE = /\bfax|\bphotocop|\bcop(?:y|ies)\b|\bper page\b|\bstatements?\b|\bresearch\b|\bwires?\b|\bchecks?\b|\bcards?\b/i;
 
 function pickAmount(
   fees: ExtractedFee[],
@@ -167,7 +185,7 @@ export function buildProfileTitle(institutionName: string, headline: HeadlineFee
   const parts = [
     headline.overdraft !== null ? `Overdraft ${formatFeeAmount(headline.overdraft)}` : null,
     headline.nsf !== null ? `NSF ${formatFeeAmount(headline.nsf)}` : null,
-    headline.monthly !== null ? `Monthly ${formatFeeAmount(headline.monthly)}` : null,
+    // No monthly fee in the title: it belongs to one named account, so it is not the institution's price.
   ].filter((part): part is string => Boolean(part));
   if (parts.length === 0) return `${institutionName} Fees and Fee Schedule`;
   // #1166 T9: fees come off the end, then the year, until the title fits; one fee always stays.
@@ -204,6 +222,21 @@ export function buildLocationParts(input: {
   return parts;
 }
 
+/** A published fee as the market eligibility test reads it (the same fields a median row carries). */
+export function marketEligibilityOf(fee: ExtractedFee): MarketEligibilityInput {
+  return {
+    category: fee.fee_category ?? null,
+    amount: fee.amount,
+    audience: fee.fee_audience ?? null,
+    sourced: fee.source_document_id != null,
+    sourceUrl: fee.source_url ?? null,
+    feeName: fee.fee_name,
+    accountProduct: fee.account_product_type ?? null,
+    sourceLine: fee.source_line ?? null,
+    frequency: fee.frequency ?? null,
+  };
+}
+
 export interface HeadlineValue {
   category: string;
   /** The value the index uses for this institution: the median of its amounts, the highest for overdraft. */
@@ -213,6 +246,24 @@ export interface HeadlineValue {
   low: number;
   high: number;
   sourceUrl: string | null;
+  /** The account the quoted fee belongs to, when the schedule names one (the city page's rule). */
+  account: string | null;
+  /** "Carefree Checking $7.95 · Everyday Checking $8.95" when it lists several named prices. */
+  accountPrices?: string | null;
+  /** "Compared at $8.45, the middle of its prices" when it lists several prices (fee-representative). */
+  comparedAt?: string | null;
+  /** Compared at its highest price (overdraft's standard fee), not the middle. */
+  highestTier?: boolean;
+  /** CD or IRA fees filed under this category that this page leaves out of the compared value. */
+  excludedCdIra?: number;
+  /** Card inactivity fees filed under an account-dormancy category, left out the same way. */
+  excludedCard?: number;
+  /** Safe deposit drilling, key and late fees filed under the box's rent, left out the same way. */
+  excludedSafeDeposit?: number;
+  /** Fees whose stated frequency contradicts the category's charging basis (#1901), left out the same way. */
+  excludedBasis?: number;
+  /** "waived with an average daily balance of $1,500 or more" when its one price states a waiver balance. */
+  waiver?: string | null;
 }
 
 /**
@@ -223,30 +274,63 @@ export interface HeadlineValue {
 export function pickHeadlineValues(verifiedFees: ExtractedFee[], categories: readonly string[]): HeadlineValue[] {
   const values: HeadlineValue[] = [];
   for (const category of categories) {
-    const amounts = verifiedFees
-      .filter(
-        (fee) =>
-          fee.fee_category === category &&
-          fee.amount !== null &&
-          fee.amount >= 0 &&
-          countsAsPersonal(fee.fee_audience) &&
-          !(fee.source_url && isBusinessOnlyLink(fee.source_url)),
-      )
-      .map((fee) => fee.amount as number);
+    // Exactly the rows the medians beside it count (market-eligibility, the one test for both
+    // sides): sourced, personal, not from a business-only schedule, and not a CD/IRA, card
+    // inactivity or safe deposit service fee filed under a category that measures something else,
+    // and not a fee charged on a different basis than the category's (#1901).
+    const inCategory = verifiedFees.filter((fee) => fee.fee_category === category);
+    const rows = inCategory.filter((fee) => countsInMarketComparison(marketEligibilityOf(fee)));
+    const amounts = rows.map((fee) => fee.amount as number);
+    const excludedReasons = inCategory
+      .filter((fee) => marketIneligibleReason(marketEligibilityOf(fee)) === "not_comparable")
+      .map((fee) => notComparableReason(fee.fee_category, fee.fee_name, fee.account_product_type ?? null, fee.source_line ?? null, fee.frequency ?? null));
+    const excludedCdIra = excludedReasons.filter((reason) => reason === CD_IRA_REASON).length;
+    const excludedCard = excludedReasons.filter((reason) => reason === CARD_INACTIVITY_REASON).length;
+    const excludedSafeDeposit = excludedReasons.filter((reason) => reason === SAFE_DEPOSIT_SERVICE_REASON).length;
+    const excludedBasis = inCategory.filter(
+      (fee) =>
+        marketIneligibleReason(marketEligibilityOf(fee)) === "not_comparable" &&
+        basisMismatchReason(fee.fee_category, fee.frequency) !== null,
+    ).length;
     if (amounts.length === 0) continue;
     const quoted =
       category === "overdraft"
-        ? pickFee(verifiedFees, category, NON_PAID_ITEM_OVERDRAFT_PATTERN)
+        ? pickFee(rows, category, NON_PAID_ITEM_OVERDRAFT_PATTERN)
         : category === "monthly_maintenance"
-          ? pickFee(verifiedFees, category, undefined, isMonthlyMaintenanceFee)
-          : pickFee(verifiedFees, category);
+          ? pickFee(rows, category, undefined, isMonthlyMaintenanceFee)
+          : pickFee(rows, category);
+    const value = institutionValue(category, amounts);
+    const named: AccountPrice[] = rows.flatMap((fee) => {
+      const name = readableProductName(fee.account_product_type ?? null) ?? productNameFromFeeName(fee.fee_name);
+      return name ? [{ account: name, amount: fee.amount as number }] : [];
+    });
+    const several = new Set(amounts).size > 1;
     values.push({
       category,
-      amount: institutionValue(category, amounts),
+      amount: value,
       count: amounts.length,
       low: Math.min(...amounts),
       high: Math.max(...amounts),
       sourceUrl: quoted?.source_url ?? null,
+      account: quoted
+        ? (readableProductName(quoted.account_product_type ?? null) ?? productNameFromFeeName(quoted.fee_name))
+        : null,
+      accountPrices: several ? accountPricesText(named, amounts) : null,
+      highestTier: HIGHEST_TIER_CATEGORIES.has(category),
+      excludedCdIra,
+      excludedCard,
+      excludedSafeDeposit,
+      excludedBasis,
+      comparedAt: comparedAtText({ value, amounts, highestTier: HIGHEST_TIER_CATEGORIES.has(category) }),
+      // One price only: with several, a waiver belongs to one account, not the compared value.
+      waiver:
+        !several && quoted
+          ? waiverPhrase({
+              minBalanceToAvoid: quoted.min_balance_to_avoid ?? null,
+              waiverText: quoted.waiver_text ?? null,
+              sourceLine: quoted.source_line ?? null,
+            })
+          : null,
     });
   }
   return values;

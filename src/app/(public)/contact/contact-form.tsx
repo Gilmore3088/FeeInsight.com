@@ -1,20 +1,21 @@
 "use client";
 
-import { useState, use } from "react";
+import { Suspense, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { HoneypotField, honeypotValue } from "@/components/public/honeypot-field";
 import { LEAD_HONEYPOT_FIELD } from "@/lib/lead-capture";
 import { readFirstTouch } from "@/lib/marketing-touch";
 import { REPORT_OFFER, REPORT_PRICE_INLINE } from "@/lib/constants";
 import { DEMO_REQUEST_NAV } from "@/components/nav-items";
+import { PAGE_HEADER } from "@/components/public/page-header";
 
 const INQUIRY_TYPES = [
   // Pro first, the one-off report second (site v3 brief 03 section 4: Pro is the goal).
   // Short enough to show whole in the select at 375px (growth OS review M2).
   { value: "demo", label: "Hamilton demo" },
   { value: "report", label: `${REPORT_OFFER.name} (${REPORT_PRICE_INLINE})` },
-  { value: "enterprise", label: "Hamilton Pro (seats, invoicing)" },
+  { value: "enterprise", label: "Hamilton (seats, invoicing)" },
   { value: "billing", label: "Billing or my subscription" },
-  { value: "advisory", label: "Fee Insight Advisory (custom work)" },
   { value: "partnership", label: "Data licensing / API" },
   { value: "general", label: "Something else" },
 ];
@@ -27,20 +28,41 @@ export interface ContactHeadings {
 }
 
 interface ContactFormProps {
-  searchParamsPromise: Promise<Record<string, string | string[] | undefined>>;
   /** The page's h1 and intro; they follow the select, as the button and reply do. */
   headings?: ContactHeadings;
 }
 
-export function ContactForm({ searchParamsPromise, headings }: ContactFormProps) {
-  const searchParams = use(searchParamsPromise);
+/**
+ * The query (`?source=demo`, `?company=`) is read here, in the browser, so /contact itself
+ * reads no search params and is prerendered once for everyone (#1811). The prerendered HTML
+ * carries the general form; the form with the query's option chosen replaces it on load.
+ */
+export function ContactForm(props: ContactFormProps) {
+  return (
+    <Suspense fallback={<ContactFormInner {...props} source={null} company={null} />}>
+      <ContactFormWithParams {...props} />
+    </Suspense>
+  );
+}
+
+function ContactFormWithParams(props: ContactFormProps) {
+  const params = useSearchParams();
+  // Keyed on the query so a same-page link that changes `?source=` opens on that option
+  // (useState reads the default only on first render).
+  return (
+    <ContactFormInner key={params.toString()} {...props} source={params.get("source")} company={params.get("company")} />
+  );
+}
+
+function ContactFormInner({
+  headings,
+  source,
+  company,
+}: ContactFormProps & { source: string | null; company: string | null }) {
   // A source with no option of its own (e.g. sample_report, a correction) opens on "Something
   // else", not on the first option, so it is never recorded as a demo request.
-  const defaultSource =
-    typeof searchParams.source === "string" && INQUIRY_TYPES.some((t) => t.value === searchParams.source)
-      ? searchParams.source
-      : "general";
-  const defaultCompany = typeof searchParams.company === "string" ? searchParams.company.slice(0, 160) : "";
+  const defaultSource = source && INQUIRY_TYPES.some((t) => t.value === source) ? source : "general";
+  const defaultCompany = company ? company.slice(0, 160) : "";
 
   const [inquiry, setInquiry] = useState(defaultSource);
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
@@ -86,26 +108,26 @@ export function ContactForm({ searchParamsPromise, headings }: ContactFormProps)
   const isDemo = inquiry === "demo";
   const heading = headings ? (isDemo ? headings.demo : headings.general) : null;
   const header = heading ? (
-    <>
+    <header className={PAGE_HEADER}>
       <h1
         className="font-extrabold text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] text-ink"
         style={{ fontFamily: "var(--fi-font-sans)" }}
       >
         {heading.title}
       </h1>
-      <p className="mt-2 text-[14px] text-ink-muted">{heading.intro}</p>
-    </>
+      <p className="mx-auto mt-2 max-w-[34rem] text-[14px] text-ink-muted sm:mx-0 sm:max-w-none">{heading.intro}</p>
+    </header>
   ) : null;
 
   if (status === "success") {
     return (
       <>
       {header}
-      <div className={`${header ? "mt-8 " : ""}rounded-xl border border-emerald-200 bg-emerald-50/50 px-6 py-8 text-center`}>
-        <p className="text-[16px] font-medium text-emerald-800">
+      <div className={`${header ? "mt-8 " : ""}rounded-xl border border-below-market/30 bg-below-market/5 px-6 py-8 text-center`}>
+        <p className="text-[16px] font-medium text-below-market">
           {isDemo ? "Request received" : "Message received"}
         </p>
-        <p className="mt-2 text-[13px] text-emerald-700">
+        <p className="mt-2 text-[13px] text-below-market">
           {isDemo
             ? "We'll reply within one business day to set a time."
             : "We'll get back to you within one business day."}
@@ -214,7 +236,7 @@ export function ContactForm({ searchParamsPromise, headings }: ContactFormProps)
       </div>
 
       {status === "error" && (
-        <p className="text-[12px] text-red-600">
+        <p className="text-[12px] text-brick">
           Something went wrong. Please try again or email us directly.
         </p>
       )}

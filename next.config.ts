@@ -73,7 +73,10 @@ const nextConfig: NextConfig = {
               "img-src 'self' data: blob:",
               // Google Fonts font files (Material Symbols served from gstatic)
               "font-src 'self' https://fonts.gstatic.com",
-              "connect-src 'self' https://api.stripe.com https://vitals.vercel-insights.com",
+              // OpenFreeMap: the city branch map's free, keyless vector tiles, style, fonts and sprites.
+              "connect-src 'self' https://api.stripe.com https://vitals.vercel-insights.com https://tiles.openfreemap.org",
+              // MapLibre runs its tile worker from a blob URL.
+              "worker-src 'self' blob:",
               "frame-src 'self' https://js.stripe.com",
               "frame-ancestors 'none'",
             ].join("; "),

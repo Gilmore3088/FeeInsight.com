@@ -91,3 +91,5 @@ coverage, legacy preference repair and the URL-based preference write all remain
 open under H01/H06/H07. No entire H01 task or release checkbox is satisfied merely
 by this partial patch. No source-fee data, database schema, permissions, model
 prompts, billing rules or production settings are changed.
+
+**Agent lesson:** hamilton/pr-985-subject-not-account

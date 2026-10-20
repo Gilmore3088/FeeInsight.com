@@ -50,6 +50,14 @@ export const PRIORITY_RULES_REREADS_PER_HOUR = 6;
  * (2877) failed on the 12:06 Oct 8 publish break and waited a full day after the 12:36 fix.
  */
 export const PRIORITY_FIXED_BREAK_RUNS = 3;
+/**
+ * A priority run the reaper failed (a step left running MAX_STEP_ATTEMPTS times, which is a tick
+ * timeout or crash rather than the bank) does not hold its institution for the retry window: it
+ * reruns on the next tick, once. A second reaper death of the same institution within this many
+ * hours of the first holds as usual, so a page that always times out cannot rerun every tick
+ * (#2014: UT 8547's publish was reaped twice on Oct 18; a third would have held it a day).
+ */
+export const PRIORITY_REAPER_RETRY_HOURS = 24;
 /** $10B in assets; `asset_size` is in thousands. */
 export const PRIORITY_MIN_ASSETS_THOUSANDS = 10_000_000;
 /** A Pro account's own institution under this many live dollar fees gets a direct run (#1078). */
@@ -457,6 +465,26 @@ export async function selectPriorityInstitutions(
                 -- A request by name is new work after an overdraft-gap run of the same bank
                 -- (Bluestone FCU's 06:45 gap run held Marketing's 18:44 request for a day).
                 AND (c.tier <> 2 OR r.params_json->>'tier' = 'requested')
+                -- A run the reaper failed (its step left running MAX_STEP_ATTEMPTS times: a tick
+                -- timeout or crash, not the bank) holds nothing once: it reruns now. A second
+                -- reaper death of the same bank inside PRIORITY_REAPER_RETRY_HOURS holds (#2014).
+                AND NOT (
+                  r.status = 'failed'
+                  AND EXISTS (
+                    SELECT 1 FROM agent_run_events dead
+                     WHERE dead.agent_run_id = r.id AND dead.event_type = 'step.dead'
+                  )
+                  AND NOT EXISTS (
+                    SELECT 1 FROM agent_runs prev
+                      JOIN agent_run_events prev_dead
+                        ON prev_dead.agent_run_id = prev.id AND prev_dead.event_type = 'step.dead'
+                     WHERE prev.params_json->>'source' = ${PRIORITY_INSTITUTION_SOURCE}::text
+                       AND prev.params_json->>'institution_id' = c.id::text
+                       AND prev.id <> r.id
+                       AND prev.started_at <= r.started_at
+                       AND prev.started_at > r.started_at - make_interval(hours => ${PRIORITY_REAPER_RETRY_HOURS}::int)
+                  )
+                )
                 -- A run that failed on a break since fixed holds nothing: it reruns once
                 -- under the new deploy (a second failure records that deploy and holds).
                 AND NOT (
@@ -476,7 +504,8 @@ export async function selectPriorityInstitutions(
                        ) >= ${PRIORITY_FIXED_BREAK_RUNS}::int
                        AND NOT EXISTS (
                          SELECT 1 FROM agent_run_steps other
-                           JOIN agent_run_events event ON event.step_id = other.id AND event.event_type = 'step.failed'
+                           JOIN agent_run_events event ON event.step_id = other.id
+                                AND event.event_type IN ('step.failed', 'step.dead')
                           WHERE other.step_key = step.step_key
                             AND other.error_summary = step.error_summary
                             AND other.status = 'failed'
@@ -514,7 +543,7 @@ export function priorityInstitutionSteps(institutionId: number): AgentRunStepDef
     { key: "read", agent: "rosetta", title: "Read and normalize the fee documents" },
     { key: "extract", agent: "knox", title: "Extract fee observations" },
     { key: "classify", agent: "darwin", title: "Classify and verify extracted fees", input: { verify_limit: DARWIN_VERIFY_MAX_LIMIT } },
-    { key: "publish", agent: "hamilton", title: "Publish verified fees", input: { publish_limit: HAMILTON_PUBLISH_MAX_LIMIT } },
+    { key: "publish", agent: "gutenberg", title: "Publish verified fees", input: { publish_limit: HAMILTON_PUBLISH_MAX_LIMIT } },
   ];
 }
 

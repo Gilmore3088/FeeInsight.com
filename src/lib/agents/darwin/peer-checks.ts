@@ -1,3 +1,4 @@
+import { sameProduct } from "@/lib/fee-product";
 import type { sql } from "@/lib/data-store/connection";
 import { countsAsPersonal, isAudienceUnstated, type FeeAudience } from "@/lib/fee-audience";
 import { isBusinessOnlyLink } from "@/lib/agents/magellan/link-coverage";
@@ -38,7 +39,18 @@ type SqlTag = typeof sql;
 // v3: consumer/both-only source-grounded peer population; unknown/business inputs skip checks.
 // v4 (#1112): an unknown-audience fee is compared too, as the benchmarks count it (#1058), unless
 // its schedule's address is business-only. A business fee still never is.
-export const DARWIN_PEER_STRATEGY = { strategy: "verify.peer_range", version: 4 } as const;
+// v5 (#1112, Oct 16): an outlier is held only in the categories whose real prices sit in a narrow
+// band, where an outlier is usually a misread (`PEER_HOLD_CATEGORIES`). Elsewhere a real fee's
+// unusual price (a $0.25 photocopy, a $250 box drilling, a $5 stop payment) is kept as evidence
+// on the attempt and no longer held. Every audience the check admits is treated alike.
+export const DARWIN_PEER_STRATEGY = { strategy: "verify.peer_range", version: 5 } as const;
+/**
+ * The peer versions whose holds were graded against stored text before v5 (#1112, Oct 16: 113 v3
+ * and 123 v4 holds). A hold made before attempts recorded `peer_version` is re-decided only when
+ * its own run's `verify.peer_range` attempt is one of these versions and held it. The 2,350 or so
+ * v1/v2 holds from Oct 5–10 were never graded and stay held until they are (#1694).
+ */
+export const DARWIN_PEER_GRADED_VERSIONS: readonly number[] = [3, 4];
 export const DARWIN_SECOND_SOURCE_STRATEGY = { strategy: "verify.second_source", version: 2 } as const;
 
 /**
@@ -126,8 +138,25 @@ export function peerCheck(
 }
 
 /** Only a state-level outlier is held; a district or national one is recorded evidence. */
-export function holdsForPeerReview(check: PeerCheckResult | null): boolean {
-  return Boolean(check?.outlier && check.scope === "state");
+/**
+ * Where a state-level peer outlier is held for review (v5, #1112). Graded on the 123 v4 holds
+ * and the 113 v3 holds of Oct 15, read against their banks' stored text: outside these
+ * categories nearly every outlier was a real fee at its printed price, and inside them most were
+ * misreads (another service filed under the ATM, overdraft or wire fee; a free allowance; a
+ * balance requirement read as a fee). A no-fee, discount or allowance line in any category is
+ * the shared name rule's (`ruleFor` in `hamilton/eval-verdicts.ts`), not this check's.
+ */
+export const PEER_HOLD_CATEGORIES: ReadonlySet<string> = new Set([
+  "atm_non_network",
+  "overdraft",
+  "od_protection_transfer",
+  "rush_card",
+  "minimum_balance",
+  "wire_domestic_outgoing",
+]);
+
+export function holdsForPeerReview(check: PeerCheckResult | null, canonicalFeeKey: string | null | undefined): boolean {
+  return Boolean(check?.outlier && check.scope === "state" && canonicalFeeKey && PEER_HOLD_CATEGORIES.has(canonicalFeeKey));
 }
 
 export function peerOutlierReason(check: PeerCheckResult, amount: number): string {
@@ -259,6 +288,7 @@ export class PeerLevelCache {
 }
 
 export interface SourceCopy {
+  productName?: string | null;
   feeRawId: number;
   institutionId: number;
   sourceDocumentId: number;
@@ -287,6 +317,7 @@ export function secondSourceCheck(
     canonicalFeeKey: string;
     amount: number;
     feeAudience: FeeAudience;
+    productName?: string | null;
   },
   copies: readonly SourceCopy[],
 ): SecondSourceResult | null {
@@ -298,6 +329,7 @@ export function secondSourceCheck(
   const others = copies.filter((copy) =>
     copy.institutionId === row.institutionId &&
     copy.canonicalFeeKey === row.canonicalFeeKey &&
+    sameProduct(copy.productName, row.productName) &&
     audienceMatches(copy.feeAudience) &&
     copy.sourceDocumentId !== row.sourceDocumentId &&
     copy.feeRawId !== row.feeRawId,
@@ -337,9 +369,10 @@ export async function loadSourceCopies(
     outlier_flags: unknown;
     conditions: string | null;
     fee_audience: FeeAudience | null;
+    product_name: string | null;
   }>>`
     SELECT fr.fee_raw_id, fr.institution_id, fr.source_document_id, fr.amount, fr.outlier_flags, COALESCE(fr.extraction_note, fr.conditions) AS conditions,
-           fr.fee_audience
+           fr.fee_audience, fr.product_name
       FROM raw_fee_observations fr
      WHERE fr.source = 'knox'
        AND fr.institution_id = ANY(${institutionIds}::int[])
@@ -358,6 +391,7 @@ export async function loadSourceCopies(
       canonicalFeeKey,
       amount: Number(row.amount),
       feeAudience: row.fee_audience ?? "unknown",
+      productName: row.product_name,
     });
   }
   return copies;

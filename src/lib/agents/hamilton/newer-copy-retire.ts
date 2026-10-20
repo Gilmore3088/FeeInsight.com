@@ -1,18 +1,22 @@
+import { PUBLISHED_IDENTITY_COLUMNS, unchangedPublishedIdentities, withPublishedIdentityWrite, type PublishedIdentity } from "./published-identity";
+import { productKey, productKeySql, sameProduct } from "@/lib/fee-product";
+import { primaryAncillaryProduct } from "@/lib/agents/knox/ancillary-product";
 import { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { markRestoredForSourceCheck } from "@/lib/agents/hamilton/source-check";
+import { ACCOUNT_TYPE_HOLD_REASON } from "@/lib/agents/hamilton/account-type-hold";
 
 type SqlTag = typeof sql;
 
 /** Older documents checked against their newest copy per publish step; later steps pick up the rest. */
 export const NEWER_COPY_DOCUMENT_LIMIT = 25;
 export const NEWER_COPY_RETIRE_REASON = "newer_copy_drops_fee";
-// The text-hash guards (identical text skipped, newer text read by Knox, a fee Knox read
-// from the newer text never retired) joined version 1 without a bump: they only retire
-// less, and in all of version 1 one fee was retired.
+// Keep v1 pair fingerprints closed (#2117/#2118/#2121): identity/hold fixes apply only to
+// pending pairs and future copies. Historical decisions are not automatically replayed;
+// Bayes documents this deliberate no-replay contract in VERSIONS_WITHOUT_REPLAY.
 export const NEWER_COPY_STRATEGY = { strategy: "hamilton.newer_copy_check", version: 1 } as const;
 /**
  * The newest copy must still state at least this share of the older copy's fees before
@@ -34,7 +38,10 @@ export function newerCopyFingerprint(olderDocumentId: number, newerDocumentId: n
   return `v${NEWER_COPY_STRATEGY.version}${live ? "" : "-shadow"}:${olderDocumentId}:${newerDocumentId}`;
 }
 
-export interface NewerCopyFeeRow {
+export type RestoreBlockReason = "existing_twin" | "account_type_hold_twin";
+
+export interface NewerCopyFeeRow extends Partial<Omit<PublishedIdentity, "fee_published_id">> {
+  product_name?: string | null;
   fee_published_id: number | string;
   lineage_ref: number | string;
   institution_id: number | string;
@@ -43,12 +50,19 @@ export interface NewerCopyFeeRow {
   canonical_fee_key: string;
   fee_name: string;
   amount: number | string | null;
+  /** An operator hold wins even when a caller supplies a row selected before the hold. */
+  quarantined_at?: string | Date | null;
   /** Retired by an earlier newer-copy check; restored if the newest copy states it again. */
   retired?: boolean | null;
+  /** Exact selected closure, with the timestamp read as text to preserve PostgreSQL microseconds. */
+  rolled_back_at?: string | null;
+  rolled_back_reason?: string | null;
+  /** Same complete identity already present, including an account-type-held twin. */
+  restore_block_reason?: RestoreBlockReason | null;
   /**
-   * True when Knox holds a row with this fee's name or amount (under any category, held or
-   * not) read from the newer copy or from any document with the same text. Such a fee is
-   * never retired: the reader found it, whatever the text matcher says.
+   * True when Knox read a row of the same institution, normalized name, audience,
+   * frequency, amount kind/rate basis and product scope from the newer text. An amount
+   * alone is never identity; a row without this witness follows the source verdict.
    */
   newer_row_match?: boolean | null;
 }
@@ -104,11 +118,17 @@ function wordsSurvive(newerText: string, feeName: string, olderLine: string): bo
  * reads the newer copy.
  */
 export function newerCopyVerdict(
-  fee: Pick<NewerCopyFeeRow, "fee_name" | "amount">,
+  fee: Pick<NewerCopyFeeRow, "fee_name" | "amount" | "product_name">,
   newerText: string,
   olderText: string,
 ): NewerCopyVerdict {
   if (fee.amount == null) return "no_amount";
+  if (productKey(fee.product_name)) {
+    const owner = primaryAncillaryProduct(newerText);
+    if (!owner || !sameProduct(owner.productName, fee.product_name)) return "unproven";
+    // Use only the proven product block; another section's price cannot be a witness.
+    newerText = owner.block;
+  }
   const newer = states(newerText, fee);
   if (newer.ok || newer.reason === "tiered_fee") return "still_stated";
   const older = states(olderText, fee);
@@ -130,6 +150,7 @@ export interface NewerCopyDocumentResult {
   recognized: boolean;
   retire: NewerCopyFeeRow[];
   restore: NewerCopyFeeRow[];
+  blockedRestore: NewerCopyFeeRow[];
 }
 
 /** Pure: verdicts for one older document's fees against its newest copy. */
@@ -146,10 +167,12 @@ export function judgeNewerCopy(fees: NewerCopyFeeRow[], newerText: string, older
     recognized: false,
     retire: [],
     restore: [],
+    blockedRestore: [],
   };
   const dropped: NewerCopyFeeRow[] = [];
   const stated: NewerCopyFeeRow[] = [];
   for (const fee of fees) {
+    if (fee.quarantined_at != null) continue;
     const verdict = newerCopyVerdict(fee, newerText, olderText);
     if (verdict === "still_stated") {
       result.stillStated += 1;
@@ -170,7 +193,8 @@ export function judgeNewerCopy(fees: NewerCopyFeeRow[], newerText: string, older
     result.stillStated >= NEWER_COPY_MIN_SHARED_FEES && judged > 0 && result.stillStated / judged >= NEWER_COPY_MIN_SHARED_SHARE;
   if (result.recognized) {
     result.retire = dropped.filter((fee) => !fee.retired);
-    result.restore = stated.filter((fee) => fee.retired);
+    result.restore = stated.filter((fee) => fee.retired && !fee.restore_block_reason);
+    result.blockedRestore = stated.filter((fee) => fee.retired && fee.restore_block_reason);
   }
   return result;
 }
@@ -183,11 +207,69 @@ export interface NewerCopyRetireResult {
   stillStated: number;
   stillNamed: number;
   retired: NewerCopyFeeRow[];
+  /** Eligible source-stated proposals after excluding known exact twins. No write implied. */
+  proposedRestores: number;
+  /** Source-stated retired rows excluded while planning, by the reasons below. */
+  blockedRestores: number;
+  restoreBlockReasons: Partial<Record<RestoreBlockReason, number>>;
+  /** Eligible proposals whose final selected-state/twin guard updated nothing. */
+  notUpdatedRestores: number;
+  /** The mutation savepoint failed; its pair decision remains pending. */
+  writeFailed: boolean;
+  /** Proposals in the failed write, distinct from final-guard no-ops. */
+  failedRestores: number;
+  /** Actual UPDATE RETURNING count; zero in dry runs and shadow mode. */
   restored: number;
 }
 
-const EMPTY: NewerCopyRetireResult = { live: NEWER_COPY_RETIRE_LIVE, documentsChecked: 0, unrecognized: 0, stillStated: 0, stillNamed: 0, retired: [], restored: 0 };
+const EMPTY: NewerCopyRetireResult = { live: NEWER_COPY_RETIRE_LIVE, documentsChecked: 0, unrecognized: 0, stillStated: 0, stillNamed: 0, retired: [],
+  proposedRestores: 0, blockedRestores: 0, restoreBlockReasons: {}, notUpdatedRestores: 0,
+  writeFailed: false, failedRestores: 0, restored: 0 };
 const RETIRED = `${NEWER_COPY_RETIRE_REASON}:%`;
+
+/** Parent publish receipt: a failed write is visible, while proposals stay separate from changes. */
+export function newerCopyReceiptNote(result: Pick<NewerCopyRetireResult,
+  "live" | "retired" | "restored" | "proposedRestores" | "writeFailed" | "failedRestores">, dryRun: boolean): string {
+  if (result.writeFailed) return ` Newer-copy check write failed; ${result.failedRestores} restoration proposal(s) remain pending for normal retry. No newer-copy pair decision was recorded.`;
+  const retired = result.live ? result.retired.length : 0;
+  const restored = result.live ? (dryRun ? result.proposedRestores : result.restored) : 0;
+  return retired > 0 || restored > 0
+    ? ` ${dryRun ? "Would retire" : "Retired"} ${retired.toLocaleString()} live fee(s) whose line is gone from a newer copy of the page${restored > 0 ? ` and ${dryRun ? "would restore" : "restored"} ${restored.toLocaleString()} a later copy states again` : ""}.`
+    : "";
+}
+
+/**
+ * One controlled fragment for planning and the final write, correlated to `fp`.
+ * A held twin is still present: restoring around its publication policy is unsafe.
+ * No user-controlled identifiers or values enter this SQL.
+ */
+function restoreBlockerSql(db: SqlTag) {
+  return db.unsafe(`(
+    SELECT CASE WHEN other.rolled_back_at IS NULL THEN 'existing_twin' ELSE 'account_type_hold_twin' END
+      FROM published_fee_records other
+     WHERE (other.rolled_back_at IS NULL OR other.rolled_back_reason LIKE '${ACCOUNT_TYPE_HOLD_REASON}:%')
+       AND other.institution_id = fp.institution_id
+       AND other.canonical_fee_key = fp.canonical_fee_key
+       AND COALESCE(other.fee_audience, 'unknown') = COALESCE(fp.fee_audience, 'unknown')
+       AND COALESCE(other.frequency, '') = COALESCE(fp.frequency, '')
+       AND COALESCE(other.variant_type, '') = COALESCE(fp.variant_type, '')
+       AND COALESCE(other.amount_kind, 'flat') = COALESCE(fp.amount_kind, 'flat')
+       AND COALESCE(other.rate_basis, '') = COALESCE(fp.rate_basis, '')
+       AND other.rate_percent IS NOT DISTINCT FROM fp.rate_percent
+       AND other.rate_min_amount IS NOT DISTINCT FROM fp.rate_min_amount
+       AND other.rate_max_amount IS NOT DISTINCT FROM fp.rate_max_amount
+       AND other.amount IS NOT DISTINCT FROM fp.amount
+       AND other.fee_name = fp.fee_name
+     ORDER BY (other.rolled_back_at IS NULL) DESC, other.fee_published_id
+     LIMIT 1
+  )`);
+}
+
+function blockReasonCounts(fees: readonly NewerCopyFeeRow[]) {
+  const counts: Partial<Record<RestoreBlockReason, number>> = {};
+  for (const fee of fees) if (fee.restore_block_reason) counts[fee.restore_block_reason] = (counts[fee.restore_block_reason] ?? 0) + 1;
+  return counts;
+}
 
 /**
  * Hamilton repair: a fee line the bank removed from its schedule comes down. When
@@ -228,6 +310,7 @@ export async function retireFeesDroppedFromNewerCopy(
           JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
           JOIN institution_sources inst ON inst.id = fp.institution_id
          WHERE (fp.rolled_back_at IS NULL OR fp.rolled_back_reason LIKE ${RETIRED})
+           AND fp.quarantined_at IS NULL
            AND fr.source_document_id IS NOT NULL
            AND (${options.institutionId ?? null}::bigint IS NULL OR fp.institution_id = ${options.institutionId ?? null}::bigint)
            AND (${options.stateCode ?? null}::text IS NULL OR upper(btrim(inst.state_code)) = ${options.stateCode ?? null}::text)
@@ -297,8 +380,13 @@ export async function retireFeesDroppedFromNewerCopy(
       WITH newer_rows AS MATERIALIZED (
         -- Every fee row Knox read from the newer copy's text, from whichever copy holds it.
         SELECT DISTINCT newer_text.source_document_id AS newer_id,
+               nr.institution_id,
                lower(regexp_replace(nr.fee_name, '[^a-zA-Z0-9]+', '', 'g')) AS name_key,
-               nr.amount
+               COALESCE(nr.fee_audience, 'unknown') AS fee_audience,
+               COALESCE(nr.frequency, '') AS frequency,
+               COALESCE(nr.amount_kind, 'flat') AS amount_kind,
+               COALESCE(nr.rate_basis, '') AS rate_basis,
+               ${scope.unsafe(productKeySql("nr.product_name"))} AS product_name
           FROM agent_source_texts newer_text
           JOIN agent_source_texts same ON same.text_hash = newer_text.text_hash AND same.status = 'completed'
           JOIN raw_fee_observations nr ON nr.source_document_id = same.source_document_id
@@ -307,20 +395,28 @@ export async function retireFeesDroppedFromNewerCopy(
            AND newer_text.text_hash IS NOT NULL
       )
       SELECT fp.fee_published_id, fp.lineage_ref, fp.institution_id, fr.source_document_id, pair.newer_id AS newer_document_id,
-             fp.canonical_fee_key, fp.fee_name, fp.amount, fp.rolled_back_at IS NOT NULL AS retired,
+             fp.canonical_fee_key, fp.fee_name, fp.amount, fr.product_name, fp.quarantined_at, ${scope.unsafe(PUBLISHED_IDENTITY_COLUMNS)},
+             fp.rolled_back_at::text AS rolled_back_at, fp.rolled_back_reason,
+             fp.rolled_back_at IS NOT NULL AS retired,
+             CASE WHEN fp.rolled_back_at IS NOT NULL THEN ${restoreBlockerSql(scope)} ELSE NULL END AS restore_block_reason,
              EXISTS (
                SELECT 1 FROM newer_rows
                 WHERE newer_rows.newer_id = pair.newer_id
-                  AND (
-                    newer_rows.name_key = lower(regexp_replace(fp.fee_name, '[^a-zA-Z0-9]+', '', 'g'))
-                    OR (fp.amount IS NOT NULL AND newer_rows.amount = fp.amount)
-                  )
+                  AND newer_rows.institution_id = fp.institution_id
+                  AND newer_rows.name_key <> ''
+                  AND newer_rows.name_key = lower(regexp_replace(fp.fee_name, '[^a-zA-Z0-9]+', '', 'g'))
+                  AND newer_rows.fee_audience = COALESCE(fp.fee_audience, 'unknown')
+                  AND newer_rows.frequency = COALESCE(fp.frequency, '')
+                  AND newer_rows.amount_kind = COALESCE(fp.amount_kind, 'flat')
+                  AND newer_rows.rate_basis = COALESCE(fp.rate_basis, '')
+                  AND newer_rows.product_name = ${scope.unsafe(productKeySql("fr.product_name"))}
              ) AS newer_row_match
         FROM unnest(${olderIds}::bigint[], ${newerIds}::bigint[]) AS pair(older_id, newer_id)
         JOIN raw_fee_observations fr ON fr.source_document_id = pair.older_id
         JOIN verified_fee_observations fv ON fv.fee_raw_id = fr.fee_raw_id
         JOIN published_fee_records fp ON fp.lineage_ref = fv.fee_verified_id
-       WHERE fp.rolled_back_at IS NULL OR fp.rolled_back_reason LIKE ${RETIRED}
+       WHERE (fp.rolled_back_at IS NULL OR fp.rolled_back_reason LIKE ${RETIRED})
+         AND fp.quarantined_at IS NULL
        ORDER BY fr.source_document_id, fp.fee_published_id
     `);
     const rows = await inSavepoint(db, (scope) => scope<{ source_document_id: number | string; normalized_text: string }[]>`
@@ -353,34 +449,53 @@ export async function retireFeesDroppedFromNewerCopy(
     stillStated: documents.reduce((total, doc) => total + doc.stillStated, 0),
     stillNamed: documents.reduce((total, doc) => total + doc.stillNamed, 0),
     retired: documents.flatMap((doc) => doc.retire),
-    restored: documents.reduce((total, doc) => total + doc.restore.length, 0),
+    proposedRestores: documents.reduce((total, doc) => total + doc.restore.length, 0),
+    blockedRestores: documents.reduce((total, doc) => total + doc.blockedRestore.length, 0),
+    restoreBlockReasons: blockReasonCounts(documents.flatMap((doc) => doc.blockedRestore)),
+    notUpdatedRestores: 0,
+    writeFailed: false,
+    failedRestores: 0,
+    restored: 0,
   };
   if (options.dryRun) return result;
 
   const change = live;
-  const restoreIds = live ? documents.flatMap((doc) => doc.restore.map((fee) => Number(fee.fee_published_id))) : [];
+  const retiredFeeIds = new Set<number>();
+  const restoredFeeIds = new Set<number>();
+  const restoreFees = live ? documents.flatMap((doc) => doc.restore) : [];
+  const restoreIds = restoreFees.map((fee) => Number(fee.fee_published_id));
   try {
-    await inSavepoint(db, async (scope) => {
+    await withPublishedIdentityWrite(db, async (scope) => {
+      const planned = [...(change ? result.retired : []), ...restoreFees];
+      const unchanged = await unchangedPublishedIdentities(scope, planned as PublishedIdentity[], [], true);
+      const eligibleRetire = result.retired.filter((fee) => unchanged.has(Number(fee.fee_published_id)));
+      const eligibleRestore = restoreFees.filter((fee) => unchanged.has(Number(fee.fee_published_id)));
       if (change && result.retired.length > 0) {
-        await scope`
+        const retired = await scope<{ fee_published_id: number | string; lineage_ref: number | string }[]>`
           UPDATE published_fee_records fp
              SET rolled_back_at = NOW(),
                  rolled_back_by_batch_id = ${options.batchId},
                  rolled_back_reason = ${NEWER_COPY_RETIRE_REASON} || ':#' || retire.newer_id::text
-            FROM unnest(${result.retired.map((fee) => Number(fee.fee_published_id))}::bigint[],
-                        ${result.retired.map((fee) => Number(fee.newer_document_id))}::bigint[])
-                 AS retire(fee_published_id, newer_id)
+            FROM unnest(${eligibleRetire.map((fee) => Number(fee.fee_published_id))}::bigint[],
+                        ${eligibleRetire.map((fee) => Number(fee.newer_document_id))}::bigint[],
+                        ${eligibleRetire.map((fee) => Number(fee.lineage_ref))}::bigint[])
+                 AS retire(fee_published_id, newer_id, lineage_ref)
            WHERE fp.fee_published_id = retire.fee_published_id
+             AND fp.lineage_ref = retire.lineage_ref
              AND fp.rolled_back_at IS NULL
+             AND fp.quarantined_at IS NULL
+          RETURNING fp.fee_published_id, fp.lineage_ref
         `;
-        await scope`
+        for (const fee of retired) retiredFeeIds.add(Number(fee.fee_published_id));
+        result.retired = result.retired.filter((fee) => retiredFeeIds.has(Number(fee.fee_published_id)));
+        if (retired.length > 0) await scope`
           UPDATE verified_fee_observations
              SET review_status = 'rejected',
                  outlier_flags = CASE
                    WHEN outlier_flags ? ${NEWER_COPY_RETIRE_REASON} THEN outlier_flags
                    ELSE COALESCE(outlier_flags, '[]'::jsonb) || ${JSON.stringify([NEWER_COPY_RETIRE_REASON])}::jsonb
                  END
-           WHERE fee_verified_id = ANY(${result.retired.map((fee) => Number(fee.lineage_ref))}::bigint[])
+           WHERE fee_verified_id = ANY(${retired.map((fee) => Number(fee.lineage_ref))}::bigint[])
              AND review_status IN ('verified', 'approved')
         `;
       }
@@ -391,20 +506,25 @@ export async function retireFeesDroppedFromNewerCopy(
              SET rolled_back_at = NULL,
                  rolled_back_by_batch_id = NULL,
                  rolled_back_reason = NULL
-           WHERE fp.fee_published_id = ANY(${restoreIds}::bigint[])
+            -- Bind closure timestamps as text: postgres.js timestamp-array serialization
+            -- otherwise passes them through Date and loses PostgreSQL microseconds.
+            FROM unnest(${eligibleRestore.map((fee) => Number(fee.fee_published_id))}::bigint[], ${eligibleRestore.map((fee) => Number(fee.lineage_ref))}::bigint[],
+                        ${eligibleRestore.map((fee) => fee.rolled_back_at ?? null)}::text[],
+                        ${eligibleRestore.map((fee) => fee.rolled_back_reason ?? null)}::text[])
+                 AS restore(fee_published_id, lineage_ref, rolled_back_at_text, rolled_back_reason)
+           WHERE fp.fee_published_id = restore.fee_published_id
+             AND fp.lineage_ref = restore.lineage_ref
+             AND fp.rolled_back_at = restore.rolled_back_at_text::timestamptz
+             AND fp.rolled_back_reason = restore.rolled_back_reason
              AND fp.rolled_back_reason LIKE ${RETIRED}
-             AND NOT EXISTS (
-               SELECT 1 FROM published_fee_records other
-                WHERE other.rolled_back_at IS NULL
-                  AND other.institution_id = fp.institution_id
-                  AND other.canonical_fee_key = fp.canonical_fee_key
-                  AND other.amount IS NOT DISTINCT FROM fp.amount
-                  AND other.fee_name = fp.fee_name
-             )
+             AND fp.quarantined_at IS NULL
+             AND ${restoreBlockerSql(scope)} IS NULL
           RETURNING fp.lineage_ref, fp.fee_published_id, fp.institution_id
         `;
         await markRestoredForSourceCheck(scope, restored, { runId: options.runId, restoredBy: "hamilton.newer_copy_check" });
+        for (const fee of restored) restoredFeeIds.add(Number(fee.fee_published_id));
         result.restored = restored.length;
+        result.notUpdatedRestores = restoreIds.length - restored.length;
         if (restored.length > 0) {
           await scope`
             UPDATE verified_fee_observations
@@ -417,6 +537,8 @@ export async function retireFeesDroppedFromNewerCopy(
         }
       }
       for (const doc of documents) {
+        const retiredCount = live ? doc.retire.filter((fee) => retiredFeeIds.has(Number(fee.fee_published_id))).length : doc.retire.length;
+        const restoredCount = doc.restore.filter((fee) => restoredFeeIds.has(Number(fee.fee_published_id))).length;
         await recordAttempt(scope, {
           institutionId: doc.institutionId,
           sourceDocumentId: doc.olderDocumentId,
@@ -424,7 +546,7 @@ export async function retireFeesDroppedFromNewerCopy(
           strategy: NEWER_COPY_STRATEGY.strategy,
           version: NEWER_COPY_STRATEGY.version,
           fingerprint: newerCopyFingerprint(doc.olderDocumentId, doc.newerDocumentId, live),
-          outcome: !doc.recognized ? "wrong_document" : doc.retire.length > 0 ? "ok_partial" : "ok",
+          outcome: !doc.recognized ? "wrong_document" : retiredCount > 0 ? "ok_partial" : "ok",
           yieldCount: doc.stillStated,
           costMicrousd: 0,
           runId: options.runId,
@@ -436,8 +558,14 @@ export async function retireFeesDroppedFromNewerCopy(
             still_named: doc.stillNamed,
             dropped: doc.dropped,
             unproven: doc.unproven,
-            retired: doc.retire.length,
-            restored: doc.restore.length,
+            planned_retired: doc.retire.length,
+            planned_restored: doc.restore.length,
+            proposed_restores: doc.restore.length,
+            blocked_restores: doc.blockedRestore.length,
+            restore_block_reasons: blockReasonCounts(doc.blockedRestore),
+            not_updated_restores: live ? doc.restore.length - restoredCount : 0,
+            retired: retiredCount,
+            restored: restoredCount,
           },
         });
       }
@@ -445,7 +573,7 @@ export async function retireFeesDroppedFromNewerCopy(
         INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
         VALUES (
           ${options.runId}, 'hamilton.newer_copy_check', 'completed',
-          ${`${live ? "" : "Shadow run, no fee changed. "}Checked ${result.documentsChecked} older document(s) against their newest copy: ${result.stillStated} fee(s) still stated, ${result.stillNamed} still named but not read at their price (kept), ${result.retired.length} ${live ? "retired" : "would be retired"} (line gone), ${result.restored} ${live ? "restored" : "would be restored"}, ${result.unrecognized} newer cop(ies) not recognizably the same schedule`},
+          ${`${live ? "" : "Shadow run, no fee changed. "}Checked ${result.documentsChecked} older document(s) against their newest copy: ${result.stillStated} fee(s) still stated, ${result.stillNamed} still named but not read at their price (kept), ${result.retired.length} ${live ? "retired" : "would be retired"} (line gone), ${live ? result.restored : result.proposedRestores} ${live ? "restored" : "would be restored"}, ${result.blockedRestores} restore(s) blocked by an existing or account-type-held twin, ${result.notUpdatedRestores} proposed restore(s) skipped by the final guard, ${result.unrecognized} newer cop(ies) not recognizably the same schedule`},
           ${JSON.stringify({
             batch_id: options.batchId,
             live,
@@ -455,6 +583,10 @@ export async function retireFeesDroppedFromNewerCopy(
             still_named: result.stillNamed,
             retired: result.retired.length,
             restored: result.restored,
+            proposed_restores: result.proposedRestores,
+            blocked_restores: result.blockedRestores,
+            restore_block_reasons: result.restoreBlockReasons,
+            not_updated_restores: result.notUpdatedRestores,
             samples: result.retired.slice(0, 20).map((fee) => ({
               fee_published_id: Number(fee.fee_published_id),
               institution_id: Number(fee.institution_id),
@@ -470,7 +602,7 @@ export async function retireFeesDroppedFromNewerCopy(
     });
   } catch (error) {
     console.error("retireFeesDroppedFromNewerCopy write failed:", error);
-    return { ...result, retired: [], restored: 0 };
+    return { ...result, retired: [], restored: 0, notUpdatedRestores: 0, writeFailed: true, failedRestores: restoreIds.length };
   }
   if (change && (result.retired.length > 0 || result.restored > 0)) invalidatePublicReadCache();
   return result;

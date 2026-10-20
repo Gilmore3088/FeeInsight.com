@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { CONSULTANT_PRICE_NOTE } from "@/lib/pro-tiers";
+import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
 import { TrackLink } from "@/components/track-link";
-import { CONTACT_EMAIL, PRODUCT_NAME, REPORT_OFFER, SITE_NAME } from "@/lib/constants";
+import { CONTACT_EMAIL, PRODUCT_NAME, REPORT_OFFER } from "@/lib/constants";
 import type { PublicStatsSummary } from "@/lib/public-stats";
 import { DEMO_REQUEST_NAV } from "@/components/nav-items";
 import { REPORT_PRICE_LABEL } from "./pricing";
@@ -12,18 +13,18 @@ const LINK_CLASS = "inline-flex min-h-11 items-center text-sm font-medium text-i
 const REPORT_ANCHOR_HREF = "/reports?report=institution&src=pricing#request";
 // Contact form, not mailto, so every ask lands in /admin/leads with a due time.
 const CONTACT_SALES_HREF = "/contact?source=enterprise";
-const ADVISORY_HREF = "/contact?source=advisory";
 
 const DISPLAY = { fontFamily: "var(--fi-font-sans)" };
 
 /**
  * The rest of the catalog for a direct visit (James, 9 Oct 2026): a Pro demo, the one-time
- * report, the free index and Advisory, one line each, so Pro stays the page's subject.
+ * report and the free index, one line each, so Pro stays the page's subject. No "Advisory" row:
+ * Fee Insight is not marketed as advisory (James, 16 Oct 2026, #1174); demos and calls stay.
  */
 export function OtherOptions() {
   const rows = [
     {
-      name: "A Pro demo",
+      name: "A Hamilton demo",
       note: "A walkthrough of Hamilton on your own market",
       link: (
         <TrackLink event="contact_sales" eventProps={{ placement: "pricing_demo" }} href={DEMO_REQUEST_NAV.href} className={LINK_CLASS}>
@@ -47,15 +48,6 @@ export function OtherOptions() {
         <Link href="/institutions" className={LINK_CLASS}>
           Search the index
         </Link>
-      ),
-    },
-    {
-      name: `${SITE_NAME} Advisory`,
-      note: "Custom research, teams over 5, data feeds",
-      link: (
-        <TrackLink event="contact_sales" eventProps={{ placement: "pricing_advisory" }} href={ADVISORY_HREF} className={LINK_CLASS}>
-          Talk to us
-        </TrackLink>
       ),
     },
   ];
@@ -117,7 +109,7 @@ function faqItems(summary: PublicStatsSummary) {
       answer: `Yes, for annual plans. Email ${CONTACT_EMAIL} and we will send an invoice or work from your PO.`,
     },
     {
-      question: "How is the Pro price set?",
+      question: "How is the Hamilton price set?",
       answer: `By your institution's total assets in its latest call report. ${CONSULTANT_PRICE_NOTE} If we don't have your institution's total assets, email ${CONTACT_EMAIL} and we'll set your price. If the plan is used for a larger institution, we'll email you before changing the price.`,
     },
     {
@@ -132,12 +124,21 @@ function faqItems(summary: PublicStatsSummary) {
       question: "How often is the data refreshed?",
       answer: `On a rolling calendar. ${summary.freshnessLabel}.`,
     },
+    {
+      question: "What if my market has only a few institutions?",
+      answer: `Under ${MIN_INSTITUTIONS_FOR_MEDIAN} institutions, a market shows "Too few for a median yet" instead of a median. You still see your state, district, peer group and the nation.`,
+    },
+    {
+      question: "Does Hamilton tell us what to charge?",
+      answer: "No. Hamilton shows where each fee stands and what a price would mean; the decision is yours.",
+    },
   ];
 }
 
 export function PricingFaq({ summary }: { summary: PublicStatsSummary }) {
   return (
-    <section aria-labelledby="pricing-faq-heading">
+    // id="faq": the homepage's FAQ link lands here (James, Oct 18).
+    <section id="faq" aria-labelledby="pricing-faq-heading" className="scroll-mt-20">
       <h2 id="pricing-faq-heading" className="mb-4 text-xl text-ink font-semibold tracking-tight" style={DISPLAY}>
         Questions before you start
       </h2>

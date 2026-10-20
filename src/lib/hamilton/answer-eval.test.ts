@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/data-store/connection", () => ({ sql: {} }));
 vi.mock("./ask-service", () => ({ resolveAskIntent: vi.fn() }));
 
-import { EVAL_QUESTION_IDS, failureShape, liveDataFailures, offSubjectFailure, pickProQuestions, summarizeCorrectness, summarizeEval, summarizeProReplay, wireFailures, type EvalResult, type ProQuestionResult } from "./answer-eval";
+import { EVAL_QUESTION_IDS, failureShape, institutionsAskedToday, unaskedFirst, liveDataFailures, offSubjectFailure, peerListRowFailures, pickProQuestions, replayPeerList, summarizeCorrectness, summarizeEval, summarizeProReplay, wireFailures, type EvalResult, type ProQuestionResult } from "./answer-eval";
 import type { SqlTag } from "@/lib/agents/hamilton/studies/common";
 import { QUALITY_QUESTIONS } from "./workspace/quality-bar";
 import type { AskResponse, FeeResearch } from "./workspace/types";
@@ -114,6 +114,15 @@ describe("answer eval", () => {
     expect(await pickProQuestions(db, 1)).toHaveLength(1);
   });
 
+  it("asks the institutions no earlier run reached today first, so the day's runs cover the sample (#1076)", async () => {
+    const db = (async () => [{ ids: [339, 1123, "50"] }, { ids: null }, { ids: [5] }]) as unknown as SqlTag;
+    const asked = await institutionsAskedToday(db, "2026-10-16");
+    expect([...asked].sort((a, b) => a - b)).toEqual([5, 50, 339, 1123]);
+    const sample = [5, 50, 108, 339, 1123, 3182].map((id) => ({ id }));
+    expect(unaskedFirst(sample, asked).map((i) => i.id)).toEqual([108, 3182, 5, 50, 339, 1123]);
+    expect(unaskedFirst(sample, new Set()).map((i) => i.id)).toEqual([5, 50, 108, 339, 1123, 3182]);
+  });
+
   it("counts the real questions Hamilton still asks back on, and lists every one that falls short", () => {
     const row = (question: string, kind: string, failures: string[]): ProQuestionResult => ({ institutionId: 8109, question, askedAt: "2026-10-08", kind, shortAnswer: "", failures });
     const s = summarizeProReplay([
@@ -148,5 +157,30 @@ describe("off-subject answers (#1077)", () => {
     expect(offSubjectFailure("Which of our fees sit furthest from our peers, and by how much?", onFee("late_payment"))).toBeNull();
     expect(offSubjectFailure("What are 1b - <10b institutions doing around service fee income", onFee("late_payment"))).toBeNull();
     expect(offSubjectFailure("Which credit unions in the top 25 of the $1 billion to $10 billion tier run a fee share below 4%?", onFee("late_payment"))).toBeNull();
+  });
+});
+
+describe("replayPeerList (#977)", () => {
+  const subject = { institutionId: 323, name: "Capital City Bank", charterType: "bank" as const, city: "Tallahassee", stateCode: "FL", totalAssetsUsd: 4.3e9, reportDate: "2026-06-30", source: "fdic" as const, sourceUrl: null, recordId: 1 };
+  const row = { ...subject, institutionId: 5, name: "Peer Bank", totalAssetsUsd: 6e9, feeCoverage: "available" as const, inclusionReason: "Florida bank above $5B" };
+  const deps = { subject: vi.fn(async () => subject), rows: vi.fn(async () => ({ rows: [row], totalMatches: 1 })) };
+
+  it("answers a list question with the list, not a question back", async () => {
+    const out = await replayPeerList(323, "List institutions in Florida over $5B.", deps);
+    expect(out).toEqual({ kind: "peer_list", shortAnswer: "1 of 1 matching institutions for Capital City Bank.", failures: [] });
+    expect(deps.rows).toHaveBeenCalledWith(323, expect.objectContaining({ states: ["FL"] }), expect.any(String));
+  });
+
+  it("leaves fee questions to the fee engine", async () => {
+    expect(await replayPeerList(323, "How does our overdraft fee compare?", deps)).toBeNull();
+  });
+
+  it("skips lists that need the reader's saved group", async () => {
+    expect(await replayPeerList(323, "List my saved peer group", deps)).toBeNull();
+  });
+
+  it("fails a listed institution with no dated assets", () => {
+    expect(peerListRowFailures([{ ...row, reportDate: null }], true)).toEqual(["listed institution without dated, sourced assets"]);
+    expect(peerListRowFailures([row], true)).toEqual([]);
   });
 });

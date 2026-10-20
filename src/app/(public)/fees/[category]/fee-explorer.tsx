@@ -7,7 +7,7 @@ import { MARKET_ROW_GRID, MarketRowBody, marketScale, money } from "./exhibits";
 
 /**
  * The page's one interactive exhibit. Tapping a bar of the distribution shows how many
- * institutions charge that much and, in every market list, what share of that market does.
+ * institutions are counted in that range and, in every market list, what share of that market does.
  * Tapping a market (a district, banks or credit unions, and for Pro a size group or state)
  * redraws the distribution for that market over the national one.
  */
@@ -99,7 +99,7 @@ export function FeeExplorer({ points, children }: { points: ExplorerPoint[]; chi
 }
 
 /** The distribution as tappable bars, with a readout of whatever is selected above it. */
-export function ExplorerChart({ median }: { median: number | null }) {
+export function ExplorerChart({ median, measure }: { median: number | null; measure: string }) {
   const { points, bins, binOf, selection, select, chartRef } = useExplorer();
 
   const market = selection?.kind === "market" ? selection : null;
@@ -142,7 +142,7 @@ export function ExplorerChart({ median }: { median: number | null }) {
                 {COUNT.format(selectedBin.count)} institutions
               </p>
               <p className="text-[13px] text-ink-muted">
-                charge {rangeLabel(selectedBin)}, {Math.round((selectedBin.count / total) * 100)}% of all
+                with a {measure} of {rangeLabel(selectedBin)}, {Math.round((selectedBin.count / total) * 100)}% of all
               </p>
             </>
           ) : market && marketCounts ? (
@@ -219,7 +219,7 @@ export function ExplorerChart({ median }: { median: number | null }) {
       <p className="mt-3 text-[12px] text-ink-muted">
         {market
           ? `Solid bars are ${inSentence(market.dim, market.label)}; pale bars are all ${COUNT.format(total)} U.S. institutions, each as a share of its own total.`
-          : `Each bar counts institutions whose fee falls in that range; ${COUNT.format(total)} in all.`}
+          : `Each bar counts the institutions whose ${measure} falls in that range; ${COUNT.format(total)} in all.`}
         {overflow ? ` The last bar is ${money(overflow.low)} and up.` : ""}
       </p>
     </div>

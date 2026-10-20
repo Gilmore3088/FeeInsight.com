@@ -26,9 +26,29 @@ export function openStatesJurisdictionId(stateCode: string): string {
 /** Full-text searches run per state. A bill must also pass BANK_FEE_PATTERN to count. */
 export const STATE_BILL_QUERIES = ["overdraft", "insufficient funds", "deposit account fee"];
 
+/**
+ * Puerto Rico's bills are written in Spanish, so Open States' full-text search never matches
+ * "overdraft" there (0 hits at any date on prod, 2026-10-09, #1427). The same three searches in
+ * Spanish: sobregiro (overdraft), fondos insuficientes (insufficient funds), cargos bancarios (bank fees).
+ */
+export const STATE_BILL_QUERIES_ES = ["sobregiro", "fondos insuficientes", "cargos bancarios"];
+
+/** The full-text searches for one jurisdiction, in the language its bills are written in. */
+export function stateBillQueries(stateCode: string): string[] {
+  return stateCode.toUpperCase() === "PR" ? STATE_BILL_QUERIES_ES : STATE_BILL_QUERIES;
+}
+
+/**
+ * Open States' `q` search reads only the bill text it has extracted from bill versions, never the
+ * title (api-v3 bills.py joins SearchableBill.search_vector). When the fee searches find nothing,
+ * this broad search ("act" or Spanish "ley", law) over the same window says whether Open States
+ * holds any searchable bill text for the jurisdiction there. Zero means no source data, not a quiet year.
+ */
+export const SEARCHABLE_TEXT_PROBE = "act or ley";
+
 /** Keeps payday, hotel and ticket "junk fee" bills out: the bill has to be about bank or credit union fees. */
 const BANK_FEE_PATTERN =
-  /\b(overdraft|non-?sufficient funds|insufficient funds|nsf|returned (check|item)|deposit accounts?|checking accounts?|dormant accounts?|bank fees?|banking fees?)\b/i;
+  /\b(overdraft|non-?sufficient funds|insufficient funds|nsf|returned (check|item)|deposit accounts?|checking accounts?|dormant accounts?|bank fees?|banking fees?|sobregiros?|fondos insuficientes|cheques? devueltos?|cuentas? de (dep[oó]sito|cheques)|cargos? bancarios?)(?![\wáéíóúñ])/i;
 
 /**
  * Water law uses "overdraft" for pumping more groundwater than a basin recharges (California's
@@ -42,19 +62,21 @@ const WATER_OVERDRAFT =
 const WATER_CONTEXT = /\b(groundwater|aquifers?|water years?|water code|sustainability agenc(y|ies)|(sub)?basins?)\b/i;
 /** Words that place a bill in consumer banking. */
 const BANKING_CONTEXT =
-  /\b(banks?|banking|credit unions?|financial institutions?|depository|checking|deposit accounts?|debit cards?|account ?holders?|consumers?)\b/i;
+  /\b(banks?|banking|credit unions?|financial institutions?|depository|checking|deposit accounts?|debit cards?|account ?holders?|consumers?|bancos?|bancari[oa]s?|cooperativas?|instituci[oó]n(es)? financieras?|depositantes?|consumidor(es)?)(?![\wáéíóúñ])/i;
 
-const FEE_WORDS = /\b(fees?|charges?|penalt(y|ies))\b/i;
+const FEE_WORDS = /\b(fees?|charges?|penalt(y|ies)|cargos?|penalidad(es)?|comisi[oó]n(es)?)(?![\wáéíóúñ])/i;
 
 /**
  * Words that place a bill in tax or state agency payments. A bounced tax payment draws a state
  * penalty, not a bank fee, so "Insufficient Funds for Taxes Penalty Modification" (NC HB 1164,
  * prod 2026-10-09) is not a bank fee bill unless the sentence also names a bank or account holder.
  */
-const GOVERNMENT_PAYMENT_CONTEXT = /\b(tax(es|ation|payers?)?|revenue|state agenc(y|ies))\b/i;
+const GOVERNMENT_PAYMENT_CONTEXT =
+  /\b(tax(es|ation|payers?)?|revenue|state agenc(y|ies)|impuestos?|contribuciones|hacienda|agencias? del gobierno)(?![\wáéíóúñ])/i;
 
 /** The overdraft and insufficient funds terms that set the overdraft_nsf topic. */
-const OVERDRAFT_TERMS = /\b(overdraft\w*|non-?sufficient funds|insufficient funds|nsf|returned (check|item)s?)\b/gi;
+const OVERDRAFT_TERMS =
+  /\b(overdraft\w*|non-?sufficient funds|insufficient funds|nsf|returned (check|item)s?|sobregiros?|fondos insuficientes|cheques? devueltos?)(?![\wáéíóúñ])/gi;
 
 /**
  * The bill's text with non-banking overdraft and insufficient funds wording taken out. Known water
@@ -106,6 +128,8 @@ export interface StateBillItem {
   topics: string[];
   /** The words that made it a bank fee bill (diagnostics only, not stored on the row). */
   match: string | null;
+  /** The latest actions as Open States sent them (diagnostics only, not stored on the row). */
+  recent_actions: string[];
 }
 
 interface RawAction {
@@ -166,10 +190,7 @@ export function billStage(actions: RawAction[]): { stage: BillStage; date: strin
       passedBy.add(action.organization?.classification ?? "unknown");
       stage = passedBy.size >= 2 ? "passed_legislature" : "passed_chamber";
       date = at;
-    } else if (
-      (stage === "introduced" || stage === "in_committee") &&
-      kinds.some((kind) => kind.startsWith("referral-committee") || kind.startsWith("committee-"))
-    ) {
+    } else if ((stage === "introduced" || stage === "in_committee") && isCommitteeStep(action)) {
       // A later referral or committee action moves the date on: IL HB 4474 was referred to Rules
       // on 2026-03-18 and to Financial Institutions on 2026-03-27, and the tracker kept 03-18.
       stage = "in_committee";
@@ -177,6 +198,25 @@ export function billStage(actions: RawAction[]): { stage: BillStage; date: strin
     }
   }
   return { stage, date };
+}
+
+/**
+ * A referral or committee step. Open States classifies some of these and leaves others unclassified
+ * (an Illinois "Assigned to ... Committee" line): the IL HB 4474 re-read on 2026-10-16 still stopped
+ * at 03-18, so a committee named in the wording counts once the bill is already in committee.
+ */
+function isCommitteeStep(action: RawAction): boolean {
+  const kinds = action.classification ?? [];
+  if (kinds.some((kind) => kind.startsWith("referral") || kind.startsWith("committee-"))) return true;
+  return kinds.length === 0 && /\bcommittee\b/i.test(action.description ?? "");
+}
+
+/** The latest few actions, kept in the run detail so a stage date can be checked against what Open States sent. */
+export function recentActions(actions: RawAction[], count = 4): string[] {
+  return [...actions]
+    .sort((a, b) => String(a.date ?? "").localeCompare(String(b.date ?? "")))
+    .slice(-count)
+    .map((action) => `${day(action.date) ?? "?"} [${(action.classification ?? []).join(",")}] ${(action.description ?? "").slice(0, 80)}`);
 }
 
 /** The earliest action classified as an introduction; a filing date that comes before it is not the introduction. */
@@ -192,9 +232,11 @@ export function introducedDate(actions: RawAction[]): string | null {
 function topicsFor(text: string): string[] {
   const lower = text.toLowerCase();
   const topics = new Set<string>();
-  if (/overdraft|insufficient funds|non-?sufficient funds|\bnsf\b|returned (check|item)/.test(lower)) topics.add("overdraft_nsf");
-  if (/dormant/.test(lower)) topics.add("dormancy");
-  if (/\bfees?\b|service charge/.test(lower)) topics.add("fees");
+  if (/overdraft|insufficient funds|non-?sufficient funds|\bnsf\b|returned (check|item)|sobregiro|fondos insuficientes|cheques? devueltos?/.test(lower)) {
+    topics.add("overdraft_nsf");
+  }
+  if (/dormant|inactivas?\b/.test(lower)) topics.add("dormancy");
+  if (/\bfees?\b|service charge|\bcargos?\b|comisi[oó]n/.test(lower)) topics.add("fees");
   return [...topics].sort();
 }
 
@@ -220,6 +262,7 @@ export function parseOpenStatesBill(raw: RawBill, stateCode: string): StateBillI
     stage_date: date,
     topics: topicsFor(text),
     match: bankFeeMatch(text),
+    recent_actions: recentActions(raw.actions ?? []),
   };
 }
 
@@ -256,6 +299,15 @@ async function waitForOpenStatesSlot(intervalMs: number): Promise<void> {
   lastOpenStatesRequestAt = Date.now();
 }
 
+/**
+ * What a state's searches say about Open States' coverage there:
+ * - "fee_hits": the fee searches found bills (whether or not they pass the bank fee test);
+ * - "no_fee_bills": Open States holds searchable bill text in the window, none of it about these fees;
+ * - "no_source_data": Open States holds no searchable bill text for the jurisdiction in the window,
+ *   so zero bills says nothing about the legislature.
+ */
+export type StateBillCoverage = "fee_hits" | "no_fee_bills" | "no_source_data";
+
 /** Fee bills in one state with any action on or after `since`, deduplicated across the searches. */
 export async function fetchStateFeeBills(
   stateCode: string,
@@ -270,6 +322,9 @@ export async function fetchStateFeeBills(
   requests: number;
   /** Set only when nothing matched since `since`: hits for the first query at any date. */
   anyDateHits: number | null;
+  /** Set only when nothing matched since `since`: bills with any searchable text in the window (SEARCHABLE_TEXT_PROBE). */
+  searchableTextHits: number | null;
+  coverage: StateBillCoverage;
   /** Up to REJECTED_SAMPLE_SIZE search hits the fee test turned away, identifier to title. */
   rejectedSample: Record<string, string>;
 }> {
@@ -281,7 +336,8 @@ export async function fetchStateFeeBills(
   const rejectedSample = new Map<string, string>();
   let searched = 0;
   let requests = 0;
-  for (const query of STATE_BILL_QUERIES) {
+  const queries = stateBillQueries(stateCode);
+  for (const query of queries) {
     for (let page = 1; page <= MAX_PAGES_PER_QUERY; page += 1) {
       await waitForOpenStatesSlot(requestIntervalMs);
       const body = await registryFetchJson<RawPage>(openStatesUrl(stateCode, query, since, page), {
@@ -306,21 +362,29 @@ export async function fetchStateFeeBills(
       if ((body.pagination?.max_page ?? 1) <= page) break;
     }
   }
-  // No search hit at all since `since`: ask once more with no date limit, so the run log says
-  // whether Open States holds no matching bill text for the state at any date (a coverage gap)
-  // or the legislature simply had no fee bill action in the lookback.
+  // No search hit at all since `since`: two more requests say why. The first fee search with no
+  // date limit tells whether matching text exists in older sessions; a broad search over the same
+  // window tells whether Open States holds any searchable bill text there at all. Zero on the
+  // second is a coverage gap ("no source data"), not a legislature with no fee bills (#1427).
   let anyDateHits: number | null = null;
+  let searchableTextHits: number | null = null;
+  let coverage: StateBillCoverage = "fee_hits";
   if (searched === 0) {
-    await waitForOpenStatesSlot(requestIntervalMs);
-    const probe = await registryFetchJson<RawPage>(openStatesUrl(stateCode, STATE_BILL_QUERIES[0], null), {
-      retries: 2,
-      timeoutMs: 30_000,
-      backoffMs: 6_000,
-      ...options,
-      headers: { "X-API-KEY": apiKey, ...options.headers },
-    });
-    requests += 1;
-    anyDateHits = probe.pagination?.total_items ?? probe.results?.length ?? 0;
+    const total = async (query: string, from: string | null) => {
+      await waitForOpenStatesSlot(requestIntervalMs);
+      const probe = await registryFetchJson<RawPage>(openStatesUrl(stateCode, query, from), {
+        retries: 2,
+        timeoutMs: 30_000,
+        backoffMs: 6_000,
+        ...options,
+        headers: { "X-API-KEY": apiKey, ...options.headers },
+      });
+      requests += 1;
+      return probe.pagination?.total_items ?? probe.results?.length ?? 0;
+    };
+    anyDateHits = await total(queries[0], null);
+    searchableTextHits = await total(SEARCHABLE_TEXT_PROBE, since);
+    coverage = searchableTextHits === 0 ? "no_source_data" : "no_fee_bills";
   }
   return {
     items: [...byId.values()],
@@ -329,5 +393,7 @@ export async function fetchStateFeeBills(
     searched,
     requests,
     anyDateHits,
+    searchableTextHits,
+    coverage,
   };
 }

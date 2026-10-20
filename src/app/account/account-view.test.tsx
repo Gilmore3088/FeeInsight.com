@@ -1,13 +1,14 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ setEmail: vi.fn() }));
+const mocks = vi.hoisted(() => ({ setEmail: vi.fn(), createKey: vi.fn() }));
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }) }));
 vi.mock("@/lib/analytics", () => ({ trackEvent: vi.fn() }));
 vi.mock("./actions", () => ({ updateProfile: vi.fn() }));
 vi.mock("./alert-actions", () => ({ removeInstitutionAlert: vi.fn() }));
 vi.mock("./email-actions", () => ({ setAccountEmail: mocks.setEmail }));
+vi.mock("./api-key-actions", () => ({ createAccountApiKey: mocks.createKey, revokeAccountApiKey: vi.fn() }));
 vi.mock("./email-confirm-actions", () => ({ resendEmailConfirmation: vi.fn() }));
 vi.mock("@/lib/stripe-actions", () => ({ createPortalSession: vi.fn() }));
 vi.mock("@/lib/access", () => ({ isInPaymentGrace: () => false }));
@@ -37,6 +38,7 @@ const proPlan = {
     cadence: "Annual",
     priceLabel: "$3,000 per year",
     tierLabel: "$500M to $2B in assets",
+    tier: "mid" as const,
     periodEnd: new Date("2027-10-08T00:00:00Z"),
     cancelsAtPeriodEnd: false,
   },
@@ -58,7 +60,7 @@ describe("AccountView", () => {
     const headings = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
     expect(headings).toEqual(["Banks you follow", "Your reports", "Your plan", "Your organization", "Sign-in"]);
     expect(section("Your plan")).toHaveTextContent("From $150 a month");
-    expect(within(section("Your plan")).getByRole("link", { name: "See Pro plans" })).toHaveAttribute(
+    expect(within(section("Your plan")).getByRole("link", { name: "See Hamilton plans" })).toHaveAttribute(
       "href",
       "/subscribe?from=%2Faccount",
     );
@@ -67,7 +69,7 @@ describe("AccountView", () => {
 
   it("pro: plan details, team seats, Hamilton and billing", () => {
     render(<AccountView data={{ ...base, plan: proPlan, emails: { watchlist_alerts: true, pro_digest: false } }} />);
-    const plan = section("Fee Insight Pro");
+    const plan = section("Your plan");
     expect(plan).toHaveTextContent("$3,000 per year");
     expect(plan).toHaveTextContent("RenewsOctober 8, 2027");
     expect(plan).toHaveTextContent("Team: 3 of 5 seats used");
@@ -81,7 +83,7 @@ describe("AccountView", () => {
     expect(screen.getByRole("switch", { name: "Monday digest" })).toHaveAttribute("aria-checked", "false");
   });
 
-  it("ended Pro: the plan says so and offers Restart Pro once", () => {
+  it("ended Pro: the plan says so and offers Restart Hamilton once", () => {
     render(
       <AccountView
         data={{
@@ -90,9 +92,9 @@ describe("AccountView", () => {
         }}
       />,
     );
-    expect(section("Your plan")).toHaveTextContent("Your Pro subscription has ended.");
-    expect(screen.getAllByRole("link", { name: "Restart Pro" })).toHaveLength(1);
-    expect(screen.queryByRole("link", { name: "See Pro plans" })).toBeNull();
+    expect(section("Your plan")).toHaveTextContent("Your Hamilton subscription has ended.");
+    expect(screen.getAllByRole("link", { name: "Restart Hamilton" })).toHaveLength(1);
+    expect(screen.queryByRole("link", { name: "See Hamilton plans" })).toBeNull();
   });
 
   it("every account shows Sign out at the top", () => {
@@ -110,7 +112,7 @@ describe("AccountView", () => {
         }}
       />,
     );
-    const plan = section("Fee Insight Pro");
+    const plan = section("Your plan");
     expect(plan).toHaveTextContent("You’re on First Bank's team plan");
     expect(within(plan).queryByRole("button", { name: "Billing and invoices" })).toBeNull();
   });
@@ -193,6 +195,93 @@ describe("AccountView", () => {
 
   it("a pending team invite shows first", () => {
     render(<AccountView data={{ ...base, invitations: [{ id: 1, institutionName: "Lone Star CU", role: "analyst" }] }} />);
-    expect(screen.getByRole("status")).toHaveTextContent("You're invited to Lone Star CU's Pro team.");
+    expect(screen.getByRole("status")).toHaveTextContent("You're invited to Lone Star CU's Hamilton team.");
+  });
+
+  it("api: no card unless the page passes access", () => {
+    render(<AccountView data={{ ...base, plan: proPlan }} />);
+    expect(screen.queryByRole("region", { name: "API and Claude connector" })).toBeNull();
+  });
+
+  it("api: the $150 plan sees that the API comes with the $300 and $500 plans", () => {
+    render(<AccountView data={{ ...base, plan: proPlan, apiAccess: { kind: "upgrade" } }} />);
+    const card = section("API and Claude connector");
+    expect(card).toHaveTextContent("come with the $300 and $500 plans");
+    expect(within(card).queryByRole("button")).toBeNull();
+  });
+
+  it("api: a new key and its Claude connector link show once", async () => {
+    mocks.createKey.mockResolvedValue({ key: "bfi_testkey123" });
+    render(<AccountView data={{ ...base, plan: proPlan, apiAccess: { kind: "included", key: null } }} />);
+    const card = section("API and Claude connector");
+    expect(card).toHaveTextContent("shares 10,000 calls a month");
+    fireEvent.click(within(card).getByRole("button", { name: "Make a key" }));
+    await waitFor(() => expect(card).toHaveTextContent("bfi_testkey123"));
+    expect(card).toHaveTextContent("/api/v1/mcp?api_key=bfi_testkey123");
+    expect(await within(card).findByRole("button", { name: "Replace key" })).toBeInTheDocument();
+  });
+
+  it("api: an existing key shows only its prefix", () => {
+    render(
+      <AccountView
+        data={{
+          ...base,
+          plan: proPlan,
+          apiAccess: { kind: "included", key: { prefix: "bfi_abcd1234", createdAt: "2026-10-16T12:00:00Z", lastUsedAt: null } },
+        }}
+      />,
+    );
+    const card = section("API and Claude connector");
+    expect(card).toHaveTextContent("bfi_abcd1234");
+    expect(card).toHaveTextContent("not used yet");
+    expect(within(card).getByRole("button", { name: "Turn off key" })).toBeInTheDocument();
+  });
+
+  it("api: the plan's calls this month show, split by person when more than one has a key", () => {
+    render(
+      <AccountView
+        data={{
+          ...base,
+          plan: proPlan,
+          apiAccess: {
+            kind: "included",
+            key: null,
+            usage: {
+              used: 1234,
+              allowance: 10000,
+              people: [
+                { userId: 7, label: "Dana Lee", calls: 1200 },
+                { userId: 12, label: "sam@bank.example", calls: 1 },
+              ],
+            },
+          },
+        }}
+      />,
+    );
+    const card = section("API and Claude connector");
+    expect(card).toHaveTextContent("Calls used this month: 1,234 of 10,000");
+    expect(card).toHaveTextContent("Dana Lee: 1,200 calls");
+    expect(card).toHaveTextContent("sam@bank.example: 1 call");
+  });
+
+  it("api: one person's use shows the total only, and no usage hides the line", () => {
+    const { unmount } = render(
+      <AccountView
+        data={{
+          ...base,
+          plan: proPlan,
+          apiAccess: {
+            kind: "included",
+            key: null,
+            usage: { used: 0, allowance: 10000, people: [{ userId: 7, label: "Dana Lee", calls: 0 }] },
+          },
+        }}
+      />,
+    );
+    expect(section("API and Claude connector")).toHaveTextContent("Calls used this month: 0 of 10,000");
+    expect(section("API and Claude connector")).not.toHaveTextContent("Dana Lee");
+    unmount();
+    render(<AccountView data={{ ...base, plan: proPlan, apiAccess: { kind: "included", key: null, usage: null } }} />);
+    expect(section("API and Claude connector")).not.toHaveTextContent("Calls used this month");
   });
 });

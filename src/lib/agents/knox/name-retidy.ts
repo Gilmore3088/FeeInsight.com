@@ -5,11 +5,24 @@ import { inSavepoint } from "@/lib/agents/savepoint";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { feedbackSchemaReady, recordFeedback } from "@/lib/agents/learning/feedback";
 import { repairNameShape, tidyFeeName } from "@/lib/agents/knox/layout";
-import { stripFootnoteMarks, usableName } from "@/lib/agents/knox/rules";
+import { hasLeadingFootnoteShape, stripFootnoteMarks, usableName, withoutLeadingFootnoteMark } from "@/lib/agents/knox/rules";
 import { traceLiveFee, type InstitutionText, type LiveFeeRow } from "@/lib/agents/hamilton/source-check";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
 import { runFreeSpecialists } from "@/lib/agents/knox/specialists";
 import { classifyFeeText } from "@/lib/agents/knox/rules";
+import {
+  FEE_NOUN,
+  LIVE_PRONOUN,
+  LIVE_SENTENCE_END,
+  LIVE_SENTENCE_END_ARTICLE,
+  LIVE_TRAILING_RANGE,
+  PARENTHETICAL,
+  PRONOUN_WORDS,
+  SENTENCE_END_WORDS,
+  endsIn,
+  trailingRange,
+  wordsIn,
+} from "@/lib/fee-name-fragments";
 
 type SqlTag = typeof sql;
 
@@ -23,8 +36,6 @@ type SqlTag = typeof sql;
  */
 const VERB_END =
   /\b(?:is|are|was|were|be|will|shall|may|can|incur|incurs|receive|receives|charges|charged|imposed|assessed|apply|applies|pay|pays|cost|costs|maintain|exceed|exceeds|lesser|greater|up|than|least|over|under|varies)$/i;
-const FEE_NOUN =
-  /\b(?:fees?|charges?|service|transfers?|wires?|checks?|cards?|statements?|overdrafts?|nsf|payments?|box|boxes|orders?|deposits?|withdrawals?|cop(?:y|ies)|research|address|items?|atms?|accounts?|drafts?|stop|fax|notary|photocop(?:y|ies)|printing|coins?|money|cashier'?s?|official|bill|replacement|closing|closure|inactivity|inactive|dormant|maintenance|balance|garnishments?|levy|levies|subpoenas?|returned|returns?|counter|temporary|starter|rush|express|expedited|delivery|ach|zelle|p2p|transactions?|reissue|key|drilling|advances?)\b/i;
 const MAX_WORDS = 12;
 /** A cell that qualifies a price ("Per quarter (inactive ...)", "each request"), not a name. */
 const QUALIFIER_START = /^(?:per|each|a|an|the|\/|for|if|when|plus|includes?)\b/i;
@@ -55,8 +66,6 @@ const TRAILING_FEE_OF = /\s+(?:a|an|the)\s+(?:(?:monthly|service|annual)\s+)?(?:
 const LEADING_HEADER = /^(?:Fees?|Charge)\s+(?=[A-Z])(?!(?:Backs?|Off|Cards?|Schedule|Type|Description|Structure|Amount|Name|Above|Below|Per|Each|For|To|Of|If|When)\b)/;
 /** A header cell cut to its first letters, or a header word, left after the name ("... | F", "... | Fee"). */
 const TRAILING_HEADER_CELL = /\s*\|\s*(?:[A-Za-z]{1,2}|fees?|charges?|amount|cost|price)\s*$/i;
-/** A name that ends in one of `words`, after any separator ("Late Fee | Up to"); shared with the live twin. */
-const trailingRange = (words: string) => new RegExp(String.raw`[\s\-–—|:,]*\b(?:${words})\s*$`, "i");
 /** The start of a range or unit left dangling after the name ("Late Fee | Up to", "NSF fee (ACH, ATM, or check) - per"). */
 const TRAILING_RANGE = trailingRange(String.raw`up\s+to|per|each`);
 /**
@@ -106,13 +115,9 @@ const CONDITION_TAIL = /\s+(?:(?:is|are)\s+)?(?:waived\s+)?(?:if|when|unless|oth
 const UNIT_AFTER_NAME = /\s+(?:per|each|a)\s+(?:month|statement(?:\s+cycle)?|year|quarter|item|day|occurrence|transaction)$/i;
 /** A parenthetical condition after the name ("(Dormant Account Fee assessed after 12 months of inactivity.)"). */
 const CONDITION_PARENTHETICAL = /\s*\([^()]*\b(?:after|if|when|assessed|within|inactivity|no activity|unless)\b[^()]*\)\s*$/i;
-const PRONOUN_WORDS = ["i", "we", "you", "my", "our", "your", "will", "would", "may", "must", "shall"] as const;
-const wordsIn = (words: readonly string[], flags = "i") => new RegExp(String.raw`\b(?:${words.join("|")})\b`, flags);
 const PRONOUN = wordsIn(PRONOUN_WORDS);
 /** A verb that makes the words a sentence ("Checking accounts are considered dormant"). */
 const SENTENCE_VERB = /\b(?:is|are|was|were|be|been|considered|incurs?|applies|apply|impose|assessed|excluding|including|includes?|do(?:es)?\s+not)\b/i;
-const SENTENCE_END_WORDS = ["of", "to", "from", "for", "at", "is", "and", "or", "with", "by", "a", "an", "the", "per", "than", "below", "above", "up to", "each"] as const;
-const endsIn = (words: readonly string[], flags = "i") => new RegExp(String.raw`\b(?:${words.join("|")})$`, flags);
 const SENTENCE_END = endsIn(SENTENCE_END_WORDS);
 
 /** True when the words still read as a sentence or a condition, not a fee's name. */
@@ -193,33 +198,36 @@ export function isCutoffName(name: string): boolean {
 }
 
 /**
- * The live twin of `isCutoffName` (#1443, #1436): the cut-off shapes narrow enough to take a
- * live fee down. `isCutoffName` matched 1,571 live fees on Oct 15 and a labelled sample of 155
- * found about half were real fees, so only the shapes the sample found to be fragments are kept:
- * - `sentence_end`: the name ends on a joining word ("... reduce your monthly fee to"). "a", "an"
- *   and "the" count only in lower case, so "N/A" never fires; "above" ("... not listed above") and
- *   "each" ("Loan Application, each") are real fees and are left out.
- * - `trailing_range`: a dangling "up to" or "per"; never "each".
- * - `pronoun`: "will" or "you" (a sentence); not "my", "our", "your", "we" or "i", which name
- *   products ("my Value Checking", "Save Your Way", "i.e.").
- * - `plus`: a leading "+" with no fee noun after it; "+Returned Item Fee" is a list bullet.
- * Not kept: LEADING_HEADER, TRAILING_HEADER_CELL, CONDITION_TAIL, SENTENCE_VERB, FEE_OF_SENTENCE.
+ * The name before the comma clauses that read as a sentence ("Stop Payment, all items including
+ * ACH and bill pay" is "Stop Payment"; "Legal Process Fee, per occurrence, or such lesser rate as
+ * may be set by law" is "Legal Process Fee, per occurrence"; Beacon Bank & Trust, doc 37581), or
+ * null when no clause is cut or what is left names no fee. Publish only (`publishNameHold`,
+ * `publishedFeeName`): live names keep `retidiedFeeName`, so no live fee is renamed by it.
  */
-export type LiveFragmentPattern = "plus" | "trailing_range" | "sentence_end" | "pronoun";
-const LIVE_TRAILING_RANGE = trailingRange(String.raw`up\s+to|per`);
-const LIVE_SENTENCE_END = endsIn(SENTENCE_END_WORDS.filter((word) => !["a", "an", "the", "above", "each"].includes(word)));
-/** Case-sensitive: "N/A" ends in a capital A and never reads as a dangling article. */
-const LIVE_SENTENCE_END_ARTICLE = endsIn(["a", "an", "the"], "");
-const LIVE_PRONOUN = wordsIn(PRONOUN_WORDS.filter((word) => word === "will" || word === "you"));
+const MAX_CLAUSE_HEAD_WORDS = 6;
 /**
- * #1443 switch-on prerequisites: a balanced parenthetical ("Stop Payment (per item, if you request
- * it)") qualifies the fee; a pronoun inside one is not a sentence. Only `pronoun` can sit inside one:
- * the other shapes are read at the end of the name, which a closing ")" never is.
+ * The clauses cut: what the fee covers ("all items including ACH and bill pay", "including
+ * On-us"), the legal cap ("or such lesser rate as may be set by law") and a waiver note ("which
+ * can be waived ..."). Any other clause may be a condition the fee needs, so the name stays held.
  */
-const PARENTHETICAL = /\([^()]*\)/g;
-export function withoutParentheticals(name: string): string {
-  return name.replace(PARENTHETICAL, " ").replace(/\s+/g, " ").trim();
+const QUALIFYING_CLAUSE = /^(?:(?:all|any)\s+[\w\s]{0,20}?)?\b(?:including|includes)\b|^(?:or\s+)?such\s+lesser\s+(?:rate|amount)\b|^which\s+can\s+be\s+waived\b/i;
+/** A fee's name opens on a capitalised word, never on the words that open a sentence ("For each item paid ...", "To avoid ..."). */
+const CLAUSE_HEAD = /^(?!(?:for|to|in|an?|any|the|per|note|if|when|by|with|this|our|your|each|cost|fee|under|after|simply|choose)\b)[A-Z]/i;
+export function nameBeforeSentenceClauses(name: string): string | null {
+  const current = name.replace(/\s+/g, " ").trim();
+  // A line cut off mid-sentence ("..., will be charged a", "... Network is") or holding two
+  // sentences is no name with a clause after it.
+  if (current.includes("|") || SENTENCE_END.test(current) || TRAILING_RANGE.test(current) || FEE_OF_SENTENCE.test(current) || /[.:;]\s/.test(current)) return null;
+  // Commas inside a parenthesis are the parenthesis's own ("(Check, ACH, or other item ...)").
+  const clauses = current.split(/,\s+(?![^()]*\))/);
+  while (clauses.length > 1 && QUALIFYING_CLAUSE.test(clauses[clauses.length - 1])) clauses.pop();
+  const head = clauses.join(", ").replace(/[\s,;:\-–—]+$/u, "").trim();
+  if (head === current || !/^[A-Z]/.test(head) || !CLAUSE_HEAD.test(head) || /[\d.%$]/.test(head) || (head.match(/\(/g)?.length ?? 0) !== (head.match(/\)/g)?.length ?? 0)) return null;
+  const words = head.split(/\s+/).length;
+  if (words < 2 || words > MAX_CLAUSE_HEAD_WORDS || !FEE_NOUN.test(head) || sentenceShaped(head) || isCutoffName(head)) return null;
+  return head;
 }
+
 
 /**
  * #1443: the words a fee's real name ends on, case-free ("Overdraft Fee", "Stop Payment",
@@ -432,26 +440,6 @@ export const LIVE_FRAGMENT_REGEXES = {
   glued_generic_bars: GLUED_GENERIC_BARS,
 } as const;
 
-/** The live fragment shape a name carries, parentheticals included (the shape before #1443's exemption). */
-export function liveFragmentShape(name: string | null | undefined): LiveFragmentPattern | null {
-  const current = (name ?? "").replace(/\s+/g, " ").trim();
-  if (!current) return null;
-  if (/^\+/.test(current) && !FEE_NOUN.test(current.replace(/^\++\s*/, ""))) return "plus";
-  if (LIVE_TRAILING_RANGE.test(current)) return "trailing_range";
-  if (LIVE_SENTENCE_END.test(current) || LIVE_SENTENCE_END_ARTICLE.test(current)) return "sentence_end";
-  if (LIVE_PRONOUN.test(current)) return "pronoun";
-  return null;
-}
-
-/**
- * The live fragment shape a live fee's name carries, or null (the name may stay live). #1443: a
- * pronoun only inside a parenthetical ("Stop Payment (per item, if you request it)") is no fragment.
- */
-export function liveFragmentName(name: string | null | undefined): LiveFragmentPattern | null {
-  const shape = liveFragmentShape(name);
-  if (shape === "pronoun" && !LIVE_PRONOUN.test(withoutParentheticals((name ?? "").replace(/\s+/g, " ").trim()))) return null;
-  return shape;
-}
 
 /** v7: a word that joins the name to the sentence before it ("Otherwise, a monthly service fee"); Knox v57's tidy drops it. */
 const LEADING_DISCOURSE = /^\s*(?:otherwise|additionally|also|however|in addition|furthermore|further)\s*,?\s/i;
@@ -685,8 +673,27 @@ function fullyTidiedName(name: string, canonicalKey: string): string | null {
  * Nonsufficient funds" read as "00 per month Nonsufficient funds"), and a row number read as a
  * cell ("13 | Outgoing domestic wire transfer"). 44 live fees at 21 banks on 2026-10-13. A name
  * that begins with its own number ("30 Day Late Charge", "12 Months of Inactivity") is left alone.
+ * v20: a footnote number glued to the front of the name ("1Monthly fee", "3Automated Overdraft item
+ * fee", "10NON-MEMBER Loan Application Fee"), cut only where the fee's own page prints that token
+ * opening a line or a cell and never inside a line (`withoutLeadingFootnoteMark`, Knox rules v74):
+ * "3Hill CU Cashier's Checks" keeps its name, since the page also says "Call 3Hill CU for Details".
+ * 35 live fees at 25 banks carried one on 2026-10-16.
+ * v21 (#1450): a monthly maintenance or minimum balance name loses the footnote marks, product codes
+ * and quotes the bank prints around its words ("Monthly Service Charge¹", "Rewards Checking (CK06)
+ * Monthly service charge", "Monthly2 Maintenance Fee", "A “maintenance service charge”"), and
+ * nothing else (`footnoteMarkFreeName`). A mark opening a sentence ("¹A service charge") is a
+ * fragment and waits for #1443. 30 live fees carried a mark on 2026-10-17; 24 take the rename.
+ * v22 (#1810): an all-caps name reads in title case, acronyms kept ("OVERDRAFT FEE" -> "Overdraft
+ * Fee", `capsCasedName`). 770 of 81,775 live names at 113 institutions were all caps on 2026-10-17.
+ * v23 (#1596, James's live-fee check Oct 18): every category's name loses its footnote marks, not
+ * only maintenance and minimum balance ("Wire Transfer1: Domestic – Outgoing", "Domestic Outgoing
+ * Wire Transfer†", "Non-Sufficient Funds Fee^", "Cashier's check**"), with "^", "*" and "∞" read as
+ * marks and a number glued before a ":" or ")" ("ATM1:", "items4)") read as one. Product codes, plain
+ * words' glued numbers and quotes still leave only maintenance and minimum balance names. A rename
+ * that lands on a name another live row of the institution's category has, at any price, or that two
+ * rows would share ("Wire (MT103)" and "Wire (MT202)"), is left.
  */
-export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 19 } as const;
+export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 23 } as const;
 export const NAME_RETIDY_KIND = "name_retidied";
 /**
  * Institutions the scan visits first after a version change, then the rest in id order. v9:
@@ -705,7 +712,108 @@ export const NAME_RETIDY_FIRST_INSTITUTIONS = [
   4624, 278, 268, 8658, 2526, 217, 5668, 834, 7757, 457,
   // v17: the junk-glyph names UAT found (77845 at 8511) and the institutions with the most of them.
   8511, 6272, 219, 5647, 8445, 1484, 206, 6512, 4802, 6048, 1445, 699, 887, 4769, 568, 8024, 3397,
+  // v21 (#1450): the institutions with a marked maintenance or minimum balance name on Oct 17.
+  68, 229, 745, 1141, 2193, 2341, 2524, 2993, 4818, 6133, 7911, 8221, 8448,
 ];
+
+/** A footnote glyph the bank prints after a word ("Charge¹", "Checking†", "accounts) †"); v23: "^", "*" and "∞" too ("Fee^", "check**"). */
+const FOOTNOTE_GLYPHS = /\s*[†‡§¹²³⁴⁵⁶⁷⁸⁹⁰^*∞]+/gu;
+/** v23: a footnote number glued to a word before a ":" or ")" ("Wire Transfer1:", "ATM3:", "(all items4)"). */
+const GLUED_MARK_BEFORE_PUNCTUATION =
+  /\b(?!(?:tier|level|step|option|plan|zone|group|class|type|package|phase|section|part|item|form|age|term|months?|years?|days?|weeks?|page|grade|kids|covid)\d)([A-Za-z]{3,})\d{1,2}(?=[:)])/gi;
+/** A product code in parentheses after an account's name ("Rewards Checking (CK06)", "(CB02)*"). */
+const PRODUCT_CODE = /\s*\([A-Z]{1,4}-?\d{1,4}\)\*?/g;
+/** A footnote number glued to a plain word of a monthly fee's name ("Monthly2", "Account5", "Checking09"). */
+const GLUED_WORD_MARK = /\b(monthly|account|checking|savings|maintenance|service|charge)\d{1,2}(?=[\s,:;)]|$)/gi;
+/** The words a name opens with, in the bank's quotes, after an article ("A “maintenance service charge”"). */
+const QUOTED_OPENING = /^(?:(?:a|an|the)\s+)?[“"]([^“”"]+)[”"]/i;
+
+/**
+ * v21 (#1450): the name without the footnote marks, product codes and opening quotes the bank
+ * prints around its words, or null. Only a name that is otherwise whole is renamed: one that opens
+ * on a mark ("¹A service charge", a footnote's sentence), in lower case, with "No", with a
+ * condition or a verb is a fragment and waits for #1443 or a re-read.
+ */
+export function footnoteMarkFreeName(name: string, canonicalKey?: string): string | null {
+  const current = name.replace(/\s+/g, " ").trim();
+  // v23: the v21 product-code, glued-word and quote cuts stay with the account-named categories.
+  const accountNamed = canonicalKey == null || ACCOUNT_NAMED_KEYS.has(canonicalKey);
+  if (/^[†‡§¹²³⁴⁵⁶⁷⁸⁹⁰]/u.test(current)) return null;
+  // v23: a mark standing alone before words ("^^ If your account balance ...") opens a footnote's sentence.
+  if (/^[\^*∞]+\s/u.test(current)) return null;
+  // v23: so does a mark glued to the next word mid-name ("ATM Withdrawals§ §Non-TEFCU owned ATMs only").
+  if (/\s[†‡§¹²³⁴⁵⁶⁷⁸⁹⁰^*∞]+[A-Za-z]/u.test(current)) return null;
+  // v23: "^" or "*" between numbers or standing alone between words is arithmetic ("2^3", "$25 * hours").
+  if (/\d\s*[\^*]+\s*\d/.test(current) || /\S\s+[\^*]+\s+[^\s†‡§¹²³⁴⁵⁶⁷⁸⁹⁰^*∞]/u.test(current)) return null;
+  // v23: a web page's footnote link ("Inactive Account Fee[4](#disclaimer4)").
+  let next = current.replace(/\[\d{1,2}\]\(#[^)\s]*\)/g, "");
+  if (accountNamed) next = next.replace(PRODUCT_CODE, "");
+  next = next.replace(FOOTNOTE_GLYPHS, "");
+  if (accountNamed) next = next.replace(GLUED_WORD_MARK, "$1");
+  next = next
+    .replace(GLUED_MARK_BEFORE_PUNCTUATION, "$1")
+    // v23: a heading's colon left doubled once its mark is gone ("Domestic Wires**: : Incoming").
+    .replace(/:\s*:/g, ":");
+  const quoted = accountNamed ? next.match(QUOTED_OPENING) : null;
+  if (quoted) next = `${quoted[1].charAt(0).toUpperCase()}${quoted[1].slice(1)}${next.slice(quoted[0].length)}`;
+  // v23: a separator left dangling where marks were ("OD Charge‡, ‡‡").
+  next = next.replace(/\s+/g, " ").replace(/\s+([,:;)])/g, "$1").replace(/[\s,;]+$/, "").trim();
+  if (!next || next === current) return null;
+  if (/^[a-z]/.test(next) || NOT_A_NAME.test(next) || CONDITION_TAIL.test(next) || SENTENCE_VERB.test(next) || next.includes("|") || /[“”"]/.test(next)) return null;
+  return next;
+}
+
+/**
+ * Words of three letters or fewer an all-caps name spells out; any other short group is an
+ * acronym and keeps its capitals ("ATM", "NSF", "IRA", "NCB", "W/D").
+ */
+const SHORT_WORDS = new Set([
+  "A", "ADD", "ALL", "AN", "AND", "ANY", "APP", "AS", "AT", "BAD", "BAG", "BOX", "BY", "CAR", "DAY", "DUE", "END", "ETC", "EX", "FAX", "FED", "FEE",
+  "FOR", "FROM", "GET", "HR", "IF", "IN", "KEY", "LOW", "MAX", "MAY", "MIN", "MO", "NEW", "NO", "NON", "NOT", "OF", "OFF", "ON", "ONE", "OR",
+  "OUR", "OUT", "OWN", "PAY", "PER", "RE", "SET", "SR", "TAX", "THE", "TO", "TWO", "UP", "USE", "VIA", "WEB", "YR",
+]);
+/** Longer groups that are acronyms ("MMDA", "UTMA"); a credit union's initials end in "CU" or "FCU". */
+const LONG_ACRONYMS = new Set(["MMDA", "UGMA", "UTMA"]);
+/** Acronyms a name pluralises ("ATMS" -> "ATMs"). */
+const PLURAL_ACRONYMS = new Set(["ATM", "CD", "HSA", "IRA"]);
+/** Joining words that stay lower case inside a name ("Cost of Collection", "Check Cashing for Non-Members"). */
+const SMALL_WORDS = new Set(["a", "an", "and", "as", "at", "by", "for", "from", "in", "of", "on", "or", "per", "the", "to", "via", "with"]);
+
+function acronym(letters: string): boolean {
+  return LONG_ACRONYMS.has(letters) || /^[A-Z]{2,}F?CU$/.test(letters) || (letters.length <= 3 && !SHORT_WORDS.has(letters));
+}
+
+/**
+ * v22 (#1810): an all-caps name in title case ("OVERDRAFT FEE" -> "Overdraft Fee", "CASHIER’S
+ * CHECK" -> "Cashier’s Check", "NON-MEMBER ATM/DEBIT CARD FEE" -> "Non-Member ATM/Debit Card Fee",
+ * "DEBIT CARD REPLACEMENT 2ND AND AFTER" -> "... 2nd and After"), or null. Only a name with no
+ * lower-case letter and a run of four capitals counts, so "ATM Fee" and "NSF" stay as printed.
+ * Acronyms keep their capitals and take a small plural "s" ("ATMs"). A name with any other flaw
+ * is left for the rest of the tidy.
+ */
+export function capsCasedName(name: string): string | null {
+  const current = name.replace(/\s+/g, " ").trim();
+  if (/[a-z]/.test(current) || !/[A-Z]{4}/.test(current)) return null;
+  const cased = current
+    .split(" ")
+    .map((word, index) => {
+      const bare = word.replace(/[^A-Z'’]/g, "");
+      return word.replace(/[A-Z][A-Z'’]*/g, (letters: string, offset: number) => {
+        // An ordinal or a size after its number ("2ND", "3X10").
+        if (offset > 0 && /\d/.test(word.charAt(offset - 1))) return letters.toLowerCase();
+        const plain = letters.replace(/['’]S$|['’]$/, "");
+        if (acronym(plain)) return letters === plain ? letters : `${plain}${letters.slice(plain.length).toLowerCase()}`;
+        const plural = plain.match(/^(.+)S$/);
+        if (plural && PLURAL_ACRONYMS.has(plural[1])) return `${plural[1]}s`;
+        const lower = letters.toLowerCase();
+        if (index > 0 && letters === bare && SMALL_WORDS.has(lower)) return lower;
+        return lower.charAt(0).toUpperCase() + lower.slice(1);
+      });
+    })
+    .join(" ");
+  if (cased === current || isMessyName(cased)) return null;
+  return cased;
+}
 /**
  * v16: a live name that opens in lower case (758 of 67,670 live names on 2026-10-09, Agentic OS's
  * adversarial test). A list marker ("f. Returned Mail Fee", "ii. Stop Payment Charge", "o A
@@ -730,6 +838,23 @@ const LOWER_NOT_A_START =
 const LOWER_CONDITION =
   /\b(?:waived?|reduced|regardless|requirements?|without|such as|plus|charged|created|received|section|and no)\b|\s[-–—]\s*get$|,\s*or\b|\b([a-z]{3,})\s+(?:[a-z]+\s+)?\1\b/i;
 const LOWER_NAME_MAX_WORDS = 8;
+/** v20: the prefixes a bank's lower-case brand opens with ("eStatement", "iBank", "myChance", "e-Checking"). */
+const BRAND_PREFIX = /^(?:e|i|my)-?[A-Z][A-Za-z]{2,}/;
+/**
+ * v20: the name with its first word in the case the stored name writes it, when that word is a
+ * lower-case brand ("myChance", "eCorp") the stored name holds; null when there is nothing to keep.
+ * Only a real brand prefix counts: "ofOperation" is a run-together word, "lAte" a font's mangled
+ * text, and neither keeps its case.
+ */
+export function brandCased(name: string, storedName: string): string | null {
+  const first = name.match(/^\S+/)?.[0];
+  if (!first || !/^[A-Z]/.test(first)) return null;
+  const lower = first.charAt(0).toLowerCase() + first.slice(1);
+  if (!BRAND_PREFIX.test(lower)) return null;
+  const words = storedName.split(/\s+/);
+  return words.includes(lower) ? lower + name.slice(first.length) : null;
+}
+
 export function capitalisedName(name: string): string | null {
   const stored = name.replace(/\s+/g, " ").trim();
   // UAT's 12:40 Darwin sample: a capital list marker or article opens the name too ("H. The
@@ -1373,7 +1498,7 @@ function uniqueHeadName(fee: LiveFeeRow, liveFees: LiveFeeRow[]): string | null 
 }
 
 /** A live fee with the name Knox read for it, before publish shaped it. */
-export type RetidyFeeRow = LiveFeeRow & { raw_fee_name?: string | null; retidied?: boolean | null };
+export type RetidyFeeRow = LiveFeeRow & { raw_fee_name?: string | null; retidied?: boolean | null; institution_name?: string | null };
 
 /**
  * v16: a condition Hamilton's publish cut off the name Knox read (56431 went live as 107240
@@ -1400,11 +1525,59 @@ export function planRetidy(
   const lineKey = (fee: Pick<LiveFeeRow, "institution_id" | "canonical_fee_key" | "amount">, name: string) =>
     `${Number(fee.institution_id)}|${fee.canonical_fee_key}|${fee.amount == null ? "" : Number(fee.amount).toFixed(2)}|${name.trim().toLowerCase()}`;
   const taken = new Set(liveFees.map((fee) => lineKey(fee, fee.fee_name)));
+  // v23: a mark-free name is a twin when another live row of the institution's category has it at any
+  // price, or when another row's marks come off to the same name ("Wire (MT103)", "Wire (MT202)").
+  const nameKey = (fee: Pick<LiveFeeRow, "institution_id" | "canonical_fee_key">, name: string) =>
+    `${Number(fee.institution_id)}|${fee.canonical_fee_key}|${name.trim().toLowerCase()}`;
+  const namedBy = new Map<string, Set<number>>();
+  const claim = (key: string, id: number) => namedBy.set(key, (namedBy.get(key) ?? new Set()).add(id));
+  for (const fee of liveFees) {
+    claim(nameKey(fee, fee.fee_name), Number(fee.fee_published_id));
+    const off = footnoteMarkFreeName(fee.fee_name, fee.canonical_fee_key);
+    if (off) claim(nameKey(fee, off), Number(fee.fee_published_id));
+  }
   const shared = sharedNameFeeIds(liveFees);
   for (const stored of fees) {
     // v15: a name v14 trimmed past its condition gets the condition back from its logged old name.
     // v16: or a condition publish cut off Knox's name.
     const last = logged.get(Number(stored.fee_published_id)) ?? publishCutName(stored);
+    // v21 (#1450): a maintenance name whose only flaw is its footnote marks loses them, and nothing else.
+    // v23: in every category.
+    const marksOff = footnoteMarkFreeName(stored.fee_name, stored.canonical_fee_key);
+    // v22 (#1810): an all-caps name reads in title case, and nothing else changes.
+    const markFree = capsCasedName(marksOff ?? stored.fee_name) ?? marksOff;
+    if (markFree) {
+      if (checkFeeCategory(stored.canonical_fee_key, stored.fee_name).ok && !checkFeeCategory(stored.canonical_fee_key, markFree).ok) {
+        skipped.category_guard += 1;
+        continue;
+      }
+      // A change of case alone keys the same as the fee's own row, so only another live row counts.
+      const caseOnly = lineKey(stored, markFree) === lineKey(stored, stored.fee_name);
+      const twin =
+        (caseOnly
+          ? liveFees.some((other) => Number(other.fee_published_id) !== Number(stored.fee_published_id) && lineKey(other, other.fee_name) === lineKey(stored, markFree))
+          : taken.has(lineKey(stored, markFree))) ||
+        (marksOff != null && [...(namedBy.get(nameKey(stored, marksOff)) ?? [])].some((id) => id !== Number(stored.fee_published_id)));
+      if (twin) {
+        skipped.same_name_live += 1;
+        continue;
+      }
+      if (traceLiveFee(stored, texts).kind !== "untraceable" && traceLiveFee({ ...stored, fee_name: markFree }, texts).kind === "untraceable") {
+        skipped.would_not_trace += 1;
+        continue;
+      }
+      taken.add(lineKey(stored, markFree));
+      renames.push({
+        feePublishedId: Number(stored.fee_published_id),
+        institutionId: Number(stored.institution_id),
+        sourceDocumentId: stored.source_document_id == null ? null : Number(stored.source_document_id),
+        canonicalFeeKey: stored.canonical_fee_key,
+        amount: stored.amount == null ? null : Number(stored.amount),
+        oldName: stored.fee_name,
+        newName: markFree,
+      });
+      continue;
+    }
     const restored =
       last && last.newName === stored.fee_name && !CONTROL_CHARACTER.test(last.oldName) && !LIGATURE_CHARACTER.test(last.oldName)
         ? restoredName(last.oldName, stored.fee_name, stored.canonical_fee_key)
@@ -1441,7 +1614,17 @@ export function planRetidy(
     const controlRead = spacedControlName(storedName) ?? (fontMapped ? fontDecodedName(storedName) : null);
     const fontRead = controlRead ?? unligated;
     // v17: and junk glyphs cut from its start and end.
-    const spaced = junkStrippedName(fontRead ?? stored.fee_name) ?? fontRead;
+    const junkFree = junkStrippedName(fontRead ?? stored.fee_name) ?? fontRead;
+    // v20: a footnote number glued to the front of the name, where the fee's own page prints the
+    // footnote as its own line or cell ("1Monthly fee" from "1Monthly fee of $5.95 applies ...").
+    const unmarked = withoutLeadingFootnoteMark(junkFree ?? stored.fee_name, storedOwnTexts, stored.institution_name);
+    // A name whose only flaw was the mark's shape, and whose page shows it is no mark ("3Hill CU"),
+    // stays as it is: the earlier versions never tidied it.
+    if (!unmarked && !junkFree && hasLeadingFootnoteShape(stored.fee_name) && !messyBeforeV16(stored.fee_name) && !openerOnlyName(stored.fee_name)) {
+      skipped.no_better_name += 1;
+      continue;
+    }
+    const spaced = unmarked ?? junkFree;
     const fee = spaced ? { ...stored, fee_name: spaced } : stored;
     const readTexts = fontRead
       ? texts.map((text) =>
@@ -1507,7 +1690,13 @@ export function planRetidy(
       continue;
     }
     // v16: a tidied name that still opens in lower case takes a capital when it reads as a name.
-    const newName = chosen && /^[a-z]/.test(chosen) ? capitalisedName(chosen) ?? chosen : chosen;
+    const capitalised = chosen && /^[a-z]/.test(chosen) ? capitalisedName(chosen) ?? chosen : chosen;
+    // v20: a brand the bank writes in lower case keeps its case when a cut leaves it first
+    // ("2A myChance Checking ..." is "myChance Checking ...", never "MyChance").
+    const branded = capitalised ? brandCased(capitalised, fee.fee_name) : null;
+    // v20: and a mark the tidy left at the front once a cell before it went ("each | 8Legal ...", 119352).
+    const tidiedName = branded ?? capitalised;
+    const newName = (tidiedName && withoutLeadingFootnoteMark(tidiedName, storedOwnTexts, stored.institution_name)) || tidiedName;
     if (
       !newName ||
       (LEADING_DISCOURSE.test(fee.fee_name) && sentenceShaped(newName)) ||
@@ -1515,7 +1704,7 @@ export function planRetidy(
       (BUSINESS_NAMED.test(fee.fee_name) && !/[|:]/.test(fee.fee_name) && !BUSINESS_NAMED.test(newName)) ||
       // v16: a name that would still open in lower case is no better ("atM transfers"), unless a
       // brand is written that way ("eCorp Outgoing Wires").
-      (/^[a-z]/.test(newName) && (!/^[a-z]/.test(fee.fee_name) || !LOWER_BRAND.test(newName)))
+      (/^[a-z]/.test(newName) && !branded && (!/^[a-z]/.test(fee.fee_name) || !LOWER_BRAND.test(newName)))
     ) {
       skipped.no_better_name += 1;
       continue;
@@ -1651,6 +1840,8 @@ export function retidyDueInstitutions(
                    OR fp.fee_name ~* '\\m(i|we|you|my|our|your|will|may|must|shall)\\M'
                    OR length(fp.fee_name) > 80
                    OR fp.fee_name ~ ${FOOTNOTE_SQL}
+                   -- v20: a number glued to the front of a word; planRetidy reads the page to decide.
+                   OR (fp.fee_name ~ '^[0-9]{1,2}[A-Za-z]' AND fp.fee_name !~* '^[0-9]+[[:space:]]*x[[:space:]]*[0-9]')
                    OR fp.fee_name <> btrim(fp.fee_name)
                    OR fp.fee_name ~* ${DOUBLED_WORD_SQL}
                    OR length(fp.fee_name) - length(replace(fp.fee_name, '(', ''))
@@ -1674,6 +1865,14 @@ export function retidyDueInstitutions(
                    OR fp.fee_name ~* '[[:space:]](below|under|than|over|above)[[:space:]]*$'
                    OR fp.fee_name ~ '^(([A-H]|[IVX]{1,4})[.)][[:space:]]+[A-Z]|(The|A|An)[[:space:]]+[A-Za-z])'
                    OR fp.fee_name ~ '^[[:space:]]*[0-9.]+[[:space:]]*[xX×][[:space:]]*[0-9.]+[[:space:]]*["”″][[:space:]]*[0-9]{1,2}[[:space:]]*$'
+                   -- v21 (#1450): a maintenance name with footnote marks, a product code or opening quotes.
+                   OR (fp.canonical_fee_key IN ('monthly_maintenance', 'minimum_balance')
+                       AND (fp.fee_name ~ '[†‡§¹²³⁴⁵⁶⁷⁸⁹⁰]'
+                            OR fp.fee_name ~ '\\([A-Z]{1,4}-?[0-9]{1,4}\\)'
+                            OR fp.fee_name ~* '(monthly|account|checking|savings|maintenance|service|charge)[0-9]{1,2}([[:space:],:;)]|$)'
+                            OR fp.fee_name ~ '^((A|An|The)[[:space:]]+)?[“"]'))
+                   -- v22 (#1810): an all-caps name (capsCasedName decides).
+                   OR (fp.fee_name ~ '[A-Z]{4}' AND fp.fee_name !~ '[a-z]')
                  )
                  -- v14: the same test as sharedNameFeeIds, a monthly-fee name shared at different prices.
                  OR count(DISTINCT lower(regexp_replace(btrim(fp.fee_name), '[[:space:]]+', ' ', 'g')))
@@ -1779,6 +1978,7 @@ export async function retidyLiveFeeNames(
     liveFees = await inSavepoint(db, (scope) => scope<RetidyFeeRow[]>`
       SELECT fp.fee_published_id, fp.lineage_ref, fv.fee_raw_id, fp.institution_id, fr.source, fr.source_document_id,
              fp.canonical_fee_key, fp.fee_name, fp.amount, fp.amount_kind, fp.rate_percent, fr.fee_name AS raw_fee_name,
+             (SELECT inst.institution_name FROM institution_sources inst WHERE inst.id = fp.institution_id) AS institution_name,
              EXISTS (
                SELECT 1 FROM pipeline_feedback pf
                 WHERE pf.fee_published_id = fp.fee_published_id AND pf.kind = ${NAME_RETIDY_KIND}
@@ -1828,6 +2028,10 @@ export async function retidyLiveFeeNames(
     const messy = fees.filter(
       (fee) =>
         isMessyName(fee.fee_name) ||
+        // v21 (#1450): a maintenance name with footnote marks.
+        footnoteMarkFreeName(fee.fee_name) != null ||
+        // v22 (#1810): an all-caps name.
+        capsCasedName(fee.fee_name) != null ||
         shared.has(Number(fee.fee_published_id)) ||
         logged.get(Number(fee.fee_published_id))?.newName === fee.fee_name ||
         publishCutName(fee) != null,
@@ -1900,7 +2104,8 @@ export async function retidyLiveFeeNames(
  * footnote number, untrimmed space, a doubled word or a cut-off parenthesis.
  */
 export function isMessyName(name: string): boolean {
-  return messyBeforeV16(name) || openerOnlyName(name);
+  // v20: or a number glued to its front the way a footnote mark is (the page decides in planRetidy).
+  return messyBeforeV16(name) || openerOnlyName(name) || hasLeadingFootnoteShape(name);
 }
 
 /** v16: a name the earlier versions left alone whose only flaw is how it opens (lower case, a list marker, an article). */

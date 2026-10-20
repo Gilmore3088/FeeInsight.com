@@ -6,9 +6,9 @@
 import { confidenceFromFigureCheck } from "../figure-check";
 import { structuredEvidenceConfidence, type EvidenceBoundAnalyzeResponse, type HamiltonEvidenceBundle } from "../evidence-contract";
 import type { AnalysisFocus } from "../navigation";
-import type { AnalyzeResponse } from "../types";
 import type { Storyline, StorylineKind, StorylineMemo } from "./storyline-types";
 import type { HamiltonIdentitySnapshot } from "../account-context";
+import type { StampedFigure } from "@/lib/dataset-note";
 
 const FOCUS: Record<StorylineKind, AnalysisFocus> = {
   position: "Peer Position",
@@ -17,6 +17,7 @@ const FOCUS: Record<StorylineKind, AnalysisFocus> = {
   price_test: "Pricing",
   board_decision: "Pricing",
   trend: "Trend",
+  list: "Peer Position",
 };
 
 export function analysisFocusFor(storyline: Storyline): AnalysisFocus {
@@ -37,6 +38,8 @@ export function storylineAnalysis(
   engineVersion: string,
   factEvidence?: HamiltonEvidenceBundle | null,
   identity?: HamiltonIdentitySnapshot,
+  /** The stamps of the data behind the storyline's figures (#1924), saved as they are now. */
+  datasetStamps?: readonly StampedFigure[] | null,
 ): EvidenceBoundAnalyzeResponse {
   return {
     ...(identity ? { identityContext: identity } : {}),
@@ -50,14 +53,22 @@ export function storylineAnalysis(
     storyline,
     engineVersion,
     ...(factEvidence ? { factEvidence } : {}),
+    ...(datasetStamps && datasetStamps.length > 0 ? { datasetStamps: [...datasetStamps] } : {}),
   };
+}
+
+/** The memo's figure-check rating, with its sentence binding's limits (#981, H06-T06) so a board brief and export carry them. */
+function memoConfidence(memo: StorylineMemo): EvidenceBoundAnalyzeResponse["confidence"] {
+  const confidence = confidenceFromFigureCheck(memo.figureCheck);
+  const limits = memo.narrativeBinding?.limitations ?? [];
+  return limits.length ? { ...confidence, basis: [...new Set([...confidence.basis, ...limits])] } : confidence;
 }
 
 /** The saved analysis once Hamilton's memo is written: the memo leads, the storyline stays. */
 export function withMemo(saved: EvidenceBoundAnalyzeResponse, memo: StorylineMemo): EvidenceBoundAnalyzeResponse {
   return {
     ...saved,
-    confidence: confidenceFromFigureCheck(memo.figureCheck),
+    confidence: memoConfidence(memo),
     hamiltonView: memo.summary,
     whatThisMeans: `${memo.board}\n\n${memo.market}`,
     exploreFurther: memo.questions.length > 0 ? memo.questions : saved.exploreFurther,

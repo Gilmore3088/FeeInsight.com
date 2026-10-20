@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { DARWIN_RECHECK_CHECK, DARWIN_RECHECK_SAME_STEP_TAKEDOWN, DARWIN_RECHECK_STRATEGY, recheckVerifiedFees } from "./verified-recheck";
+import { DARWIN_RECHECK_OLDER_LIVE, DARWIN_RECHECK_SECOND_LOOK_LIVE, DARWIN_RECHECK_SECOND_LOOK_LIVE_CODES, DARWIN_RECHECK_SAME_STEP_TAKEDOWN, DARWIN_RECHECK_STRATEGY, recheckVerifiedFees, recheckAssessment, olderLiveShadow, dueSecondLookShadow } from "./verified-recheck";
 
 type DbMock = ReturnType<typeof vi.fn>;
 
@@ -26,11 +26,22 @@ const verifiedRow = {
   rate_percent: null,
 };
 
-function dbWith(rows: Array<Record<string, unknown>>): DbMock {
+function dbWith(
+  rows: Array<Record<string, unknown>>,
+  older: Array<Record<string, unknown>> = [],
+  due: Array<Record<string, unknown>> = [],
+  firstLooks: Array<Record<string, unknown>> = [],
+  texts: Array<{ source_document_id: number; normalized_text: string }> = [{ source_document_id: 55, normalized_text: TEXT }],
+): DbMock {
   const db = vi.fn((strings: TemplateStringsArray) => {
     const text = templateText(strings);
+    // Live rows whose first look is due its second (#1397), and the second look's own read of the flags.
+    if (text.includes("JOIN published_fee_records p ON p.fee_published_id = f.fee_published_id")) return Promise.resolve(due);
+    if (text.includes("SELECT fee_published_id, kind, evidence")) return Promise.resolve(firstLooks);
+    // Live rows verified under an older verify version (#1568).
+    if (text.includes("JOIN LATERAL")) return Promise.resolve(older);
     if (text.includes("FROM verified_fee_observations v")) return Promise.resolve(rows);
-    if (text.includes("FROM agent_source_texts")) return Promise.resolve([{ source_document_id: 55, normalized_text: TEXT }]);
+    if (text.includes("FROM agent_source_texts")) return Promise.resolve(texts);
     if (text.includes("to_regclass")) return Promise.resolve([{ ready: true }]);
     if (text.includes("UPDATE published_fee_records")) return Promise.resolve([{ fee_published_id: 7001 }]);
     return Promise.resolve([]);
@@ -38,93 +49,53 @@ function dbWith(rows: Array<Record<string, unknown>>): DbMock {
   return db;
 }
 
-describe("Darwin verified re-check", () => {
-  it("rejects an unpublished conditional $0 row, archives a live one in the same step, passes a good row", async () => {
-    const db = dbWith([
-      { ...verifiedRow, fee_verified_id: 120552, fee_raw_id: 217716, canonical_fee_key: "bill_pay", verified_amount: "0.00", fee_name: "Bill Pay", amount: "0.00", outlier_flags: ["knox_review:zero"], conditions: "excerpt=\"Bill Pay - FREE\"", fee_published_id: 7001 },
-      { ...verifiedRow, fee_verified_id: 120907, fee_raw_id: 233082, canonical_fee_key: "monthly_maintenance", verified_amount: "0.00", fee_name: "Monthly fee for balance of & over", amount: "0.00", outlier_flags: ["knox_review:zero"], conditions: null, fee_published_id: null },
-      { ...verifiedRow, fee_verified_id: 120920, fee_raw_id: 251150, canonical_fee_key: "estatement_fee", verified_amount: "0.00", fee_name: "Includes: Bill Pay E-Statement Mobile Access", amount: "0.00", outlier_flags: ["knox_review:zero"], conditions: null, fee_published_id: null },
-      { ...verifiedRow, fee_verified_id: 120999, fee_raw_id: 251135, canonical_fee_key: "overdraft", verified_amount: "35.00", fee_name: "Overdraft fee", amount: "35.00", outlier_flags: [], conditions: null, fee_published_id: 7002 },
-    ]);
-
-    const result = await recheckVerifiedFees(db as never, { runId: 500, stepId: 9, sameStepTakedown: true });
-
-    expect(result.checked).toBe(4);
-    expect(result.passed).toBe(1);
-    expect(result.rejected).toEqual([
-      { feeVerifiedId: 120907, code: "conditional_zero" },
-      { feeVerifiedId: 120920, code: "retired_category" },
-    ]);
-    // The live row is archived now (James: no 12-hour wait), with the reason on the record.
-    expect(result.takenDown).toEqual([7001]);
-    const sqlText = db.mock.calls.map((call) => templateText(call[0]));
-    const rollback = db.mock.calls.find((call) => templateText(call[0]).includes("UPDATE published_fee_records"));
-    expect(rollback?.slice(1)).toEqual(expect.arrayContaining(["darwin-recheck-500", [7001], ["darwin_recheck:conditional_zero"]]));
-    expect(sqlText.filter((text) => text.includes("rolled_back_at IS NULL"))).toHaveLength(2);
-    const rejects = db.mock.calls.filter((call) => templateText(call[0]).includes("UPDATE verified_fee_observations"));
-    expect(rejects).toHaveLength(3);
-    expect(rejects[0].slice(1)).toContain(JSON.stringify(["darwin_recheck:conditional_zero"]));
-    const attempts = db.mock.calls.filter((call) => templateText(call[0]).includes("INSERT INTO pipeline_attempts"));
-    expect(attempts).toHaveLength(4);
-    expect(attempts[0].slice(1)).toEqual(expect.arrayContaining([DARWIN_RECHECK_STRATEGY.strategy, "verified:120552", "evidence_mismatch"]));
+// Mutation/feedback assertions moved from permissive mocks to verified-recheck.db.test.ts.
+// Historical price/column decisions remain pure controls against the unchanged checker.
+describe("Darwin recheck policy and unsupported contexts",()=>{
+  const base:Parameters<typeof recheckAssessment>[0]={...verifiedRow,fee_verified_id:1,fee_raw_id:2,canonical_fee_key:"bill_pay",verified_amount:0,amount:0,fee_name:"Bill Pay",outlier_flags:[],conditions:null,fee_published_id:null,
+    selected_verified:"selected-v",selected_raw:"selected-r",selected_published:null,selected_feedback:null};
+  const assess=(changes:Partial<typeof base>,text=TEXT)=>recheckAssessment({...base,...changes},new Map([[55,text]]));
+  it("keeps settled versions, default-off switches and narrow live reason unchanged",()=>{
+    expect(DARWIN_RECHECK_STRATEGY).toEqual({strategy:"verify.recheck",version:5});
+    expect(DARWIN_RECHECK_SAME_STEP_TAKEDOWN).toBe(false);expect(DARWIN_RECHECK_OLDER_LIVE).toBe(false);expect(DARWIN_RECHECK_SECOND_LOOK_LIVE).toBe(false);
+    expect(DARWIN_RECHECK_SECOND_LOOK_LIVE_CODES).toEqual(["tier_perk_zero"]);
   });
-
-  it("with the switch off (the default) flags a failing live row for the 12-hour second look instead", async () => {
-    expect(DARWIN_RECHECK_SAME_STEP_TAKEDOWN).toBe(false);
-    const db = dbWith([
-      { ...verifiedRow, fee_verified_id: 120552, fee_raw_id: 217716, canonical_fee_key: "bill_pay", verified_amount: "0.00", fee_name: "Bill Pay", amount: "0.00", outlier_flags: ["knox_review:zero"], conditions: "excerpt=\"Bill Pay - FREE\"", fee_published_id: 7001 },
-    ]);
-
-    const result = await recheckVerifiedFees(db as never, { runId: 502 });
-
-    expect(result).toMatchObject({ checked: 1, passed: 0, flagged: 1, takenDown: [] });
-    const sqlText = db.mock.calls.map((call) => templateText(call[0]));
-    expect(sqlText.some((text) => text.includes("UPDATE published_fee_records"))).toBe(false);
-    expect(sqlText.some((text) => text.includes("UPDATE verified_fee_observations"))).toBe(false);
-    const feedback = db.mock.calls.filter((call) => templateText(call[0]).includes("INSERT INTO pipeline_feedback"));
-    expect(JSON.stringify(feedback.map((call) => call.slice(1)))).toContain(DARWIN_RECHECK_CHECK);
-    const attempts = db.mock.calls.filter((call) => templateText(call[0]).includes("INSERT INTO pipeline_attempts"));
-    expect(JSON.stringify(attempts[0].slice(1))).toContain("second_look");
+  it("preserves conditional-zero, retired-category and ordinary paid decisions",()=>{
+    expect(assess({conditions:'excerpt="Bill Pay - FREE"'}).check?.code).toBe("conditional_zero");
+    expect(assess({canonical_fee_key:"monthly_maintenance",fee_name:"Monthly fee for balance of & over"}).check?.code).toBe("conditional_zero");
+    expect(assess({canonical_fee_key:"estatement_fee",fee_name:"Includes: Bill Pay E-Statement Mobile Access"}).check?.code).toBe("retired_category");
+    expect(assess({canonical_fee_key:"overdraft",fee_name:"Overdraft fee",amount:35,verified_amount:35}).check).toBeNull();
   });
-
-  it("restores a row an earlier version rejected when it passes now, and leaves a still-failing one rejected", async () => {
-    const db = dbWith([
-      { ...verifiedRow, review_status: "rejected", fee_verified_id: 119878, fee_raw_id: 468414, source_document_id: 56, canonical_fee_key: "bill_pay", verified_amount: "0.00", fee_name: "Bill Pay", amount: "0.00", outlier_flags: ["knox_review:zero", "darwin_recheck:conditional_zero"], conditions: "excerpt=\"FREE Debit Card, FREE Bill Pay, FREE eStatements, Buy back of unused checks up to $10 within 30 days\"", fee_published_id: null },
-      { ...verifiedRow, review_status: "rejected", fee_verified_id: 119842, fee_raw_id: 230322, canonical_fee_key: "monthly_maintenance", verified_amount: "0.00", fee_name: "Monthly Fee", amount: "0.00", outlier_flags: ["darwin_recheck:conditional_zero"], conditions: "excerpt=\"Monthly Fee: $0 with $100 minimum daily balance OR $2.50/month\"", fee_published_id: null },
-    ]);
-
-    const result = await recheckVerifiedFees(db as never, { runId: 503 });
-
-    expect(result).toMatchObject({ checked: 2, passed: 0, restored: [119878], rejected: [], takenDown: [] });
-    const restores = db.mock.calls.filter((call) => templateText(call[0]).includes("SET review_status = 'verified'"));
-    expect(restores).toHaveLength(1);
-    expect(restores[0].slice(1)).toContain(119878);
-    const attempts = db.mock.calls.filter((call) => templateText(call[0]).includes("INSERT INTO pipeline_attempts"));
-    expect(JSON.stringify(attempts[0].slice(1))).toContain("restored");
-    expect(JSON.stringify(attempts[1].slice(1))).toContain("still_rejected");
+  it("keeps a genuinely free Bill Pay even with unrelated buy-back money",()=>{
+    const text="FREE Debit Card, FREE Bill Pay, FREE eStatements, Buy back of unused checks up to $10 within 30 days";
+    expect(assess({conditions:`excerpt="${text}"`},text).check).toBeNull();
   });
-
-  it("does nothing when every verified row has been re-checked under this version", async () => {
-    const db = dbWith([]);
-    const result = await recheckVerifiedFees(db as never, { runId: 501 });
-    expect(result).toMatchObject({ checked: 0, passed: 0, takenDown: [] });
+  it("v5 keeps two-column free ATM and Bill Pay separate from a scoped check-print price",()=>{
+    const poca="POS transactions No Charge Wire Transfers\nForeign ATM usage No Charge Customer (incoming) $15.00\nReplacement Card $10.00 Customer Domestic (outgoing) $30.00\nCustomer International $60.00";
+    expect(assess({canonical_fee_key:"atm_non_network",fee_name:"Foreign ATM usage"},poca).check).toBeNull();
+    const tcfcu="Check Printing (members over 62) ----------- No Charge | Money Orders ------------------------------------ $3.00 each\nBill Pay | Other Fees\nBill Pay ------------------------------------------- No Charge | Account History ---------------------------------- $3.00 each";
+    expect(assess({},tcfcu).check).toBeNull();
+    expect(assess({canonical_fee_key:"check_printing",fee_name:"Check Printing (members over 62)"},tcfcu).check).not.toBeNull();
   });
-
-  it("flags an already verified $0 from a tier's own schedule, live or not (v3, #1397)", async () => {
-    const premium = { ...verifiedRow, source_url: "https://www.examplebank.com/agreements-disclosures/truth-in-savings/premium-account-fees" };
-    const db = dbWith([
-      { ...premium, fee_verified_id: 130001, fee_raw_id: 300001, canonical_fee_key: "stop_payment", verified_amount: "0.00", fee_name: "Stop Payment", amount: "0.00", outlier_flags: [], conditions: null, fee_published_id: 7101 },
-      { ...premium, fee_verified_id: 130002, fee_raw_id: 300002, canonical_fee_key: "wire_transfer_incoming", verified_amount: "0.00", fee_name: "Incoming Wire", amount: "0.00", outlier_flags: [], conditions: null, fee_published_id: null },
-      { ...premium, fee_verified_id: 130003, fee_raw_id: 300003, canonical_fee_key: "overdraft", verified_amount: "35.00", fee_name: "Overdraft fee", amount: "35.00", outlier_flags: [], conditions: null, fee_published_id: null },
-    ]);
-
-    const result = await recheckVerifiedFees(db as never, { runId: 503 });
-
-    expect(DARWIN_RECHECK_STRATEGY.version).toBe(3);
-    expect(result).toMatchObject({ checked: 3, passed: 1, flagged: 1, rejected: [{ feeVerifiedId: 130002, code: "tier_perk_zero" }] });
-    const rejects = db.mock.calls.filter((call) => templateText(call[0]).includes("UPDATE verified_fee_observations"));
-    expect(rejects).toHaveLength(1);
-    expect(rejects[0].slice(1)).toContain(JSON.stringify(["darwin_recheck:tier_perk_zero"]));
-    expect(rejects[0].slice(1)).toContain(130002);
+  it("keeps zero tier perks challenged and an ordinary paid price passing",()=>{
+    const source_url="https://www.examplebank.com/agreements-disclosures/truth-in-savings/premium-account-fees";
+    expect(assess({source_url,canonical_fee_key:"stop_payment",fee_name:"Stop Payment"}).check?.code).toBe("tier_perk_zero");
+    expect(assess({source_url,canonical_fee_key:"overdraft",fee_name:"Overdraft fee",amount:35,verified_amount:35}).check).toBeNull();
+  });
+  it("unsupported standalone tags cannot claim atomic effects",async()=>{
+    const db=dbWith([]);const result=await recheckVerifiedFees(db as never,{runId:503,stepId:9});
+    expect(result.execution).toMatchObject({state:"unavailable",reasonCode:"transaction_unavailable",eventId:null});expect(db).not.toHaveBeenCalled();
+  });
+  it("legacy older-live shadow stays read-only with its existing sample semantics",async()=>{
+    const rows=[{...base,source_url:"https://www.examplebank.com/premium-account-fees",canonical_fee_key:"overdraft",fee_name:"Overdraft",fee_published_id:10}];
+    const db=dbWith([],rows);const result=await olderLiveShadow(db as never,{runId:600});
+    expect(result).toMatchObject({read:1,wouldFail:{tier_perk_zero:1}});
+    expect(db.mock.calls.some(call=>/\b(INSERT|UPDATE)\b/.test(templateText(call[0])))).toBe(false);
+  });
+  it("legacy due shadow is still a would-outcome report, not a settlement",async()=>{
+    const row={...base,source_url:"https://www.examplebank.com/premium-account-fees",canonical_fee_key:"overdraft",fee_name:"Overdraft",fee_published_id:10};
+    const db=dbWith([],[],[row]);const result=await dueSecondLookShadow(db as never);
+    expect(result).toMatchObject({due:1,wouldConfirm:{tier_perk_zero:1},wouldClear:0});
+    expect(db.mock.calls.some(call=>/\b(INSERT|UPDATE)\b/.test(templateText(call[0])))).toBe(false);
   });
 });

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { HAMILTON_ACCOUNT_NAV, HAMILTON_REFERENCE_NAV } from "@/lib/hamilton/navigation";
-import { PRIMARY_CTA_NAV } from "./nav-items";
+import { HEADER_CTA_NAV } from "./nav-items";
 import { SignOutForm } from "./sign-out-form";
 import { useSessionChrome, type SessionChrome } from "./use-session-chrome";
 import { useHamiltonNavigationHref } from "./hamilton/layout/hamilton-navigation-context";
@@ -56,8 +56,8 @@ const PRIMARY_CTA_CLASS =
 
 function PrimaryCtaLink() {
   return (
-    <Link href={PRIMARY_CTA_NAV.href} className={PRIMARY_CTA_CLASS}>
-      {PRIMARY_CTA_NAV.label}
+    <Link href={HEADER_CTA_NAV.href} className={PRIMARY_CTA_CLASS}>
+      {HEADER_CTA_NAV.label}
     </Link>
   );
 }
@@ -80,7 +80,7 @@ const MENU_LINK = "block px-4 py-1.5 text-[13px] text-ink no-underline hover:bg-
 
 /**
  * For Pro users the account corner holds everything outside Hamilton's four tabs: the bank and
- * its data, all changes, the reference pages, Admin for staff, account and sign out. One header
+ * its data, alerts and watches, the reference pages, Admin for staff, account and sign out. One header
  * across the site and Pro (James, 2026-10-06), so the tabs stay four.
  */
 function ProAccountMenu({ session }: { session: SessionChrome }) {

@@ -27,6 +27,8 @@ import { regulatorSentence } from "./workspace/regulators";
 import { isWireFact } from "./workspace/wire";
 import { getFeeResearch } from "./workspace/research";
 import { withDepth } from "./workspace/story-extras";
+import { getPeerListRows, getPeerListSubject } from "@/lib/data-store/hamilton-peer-list";
+import { parsePeerListQuestion, planPeerList, type PeerListRow } from "./peer-list";
 import type { AskResponse, FeeResearch } from "./workspace/types";
 
 /** The questions asked of every institution: one per kind of ask, across six fees. */
@@ -222,6 +224,33 @@ export async function pickEvalInstitutions(db: SqlTag, perGroup: number, seed: s
   }));
 }
 
+/**
+ * Institutions an earlier eval run asked today. A run stops at its time budget, often before all
+ * eleven groups (6 of 11 in run 7166), so the next run asks the rest first and the day's runs
+ * together cover the whole sample (#1076).
+ */
+export async function institutionsAskedToday(db: SqlTag, day: string): Promise<Set<number>> {
+  const rows = await db`
+    SELECT e.detail->'institutionIds' AS ids
+      FROM agent_run_events e
+      JOIN agent_runs r ON r.id = e.agent_run_id
+     WHERE r.params_json->>'source' = 'hamilton.answer_eval'
+       AND e.event_type = 'step.finished'
+       AND e.created_at >= (${day}::date::timestamp AT TIME ZONE 'UTC')
+       AND e.created_at < ((${day}::date + 1)::timestamp AT TIME ZONE 'UTC')
+  `;
+  const asked = new Set<number>();
+  for (const r of rows as unknown as Array<{ ids: unknown }>) {
+    if (Array.isArray(r.ids)) for (const id of r.ids) if (Number.isFinite(Number(id))) asked.add(Number(id));
+  }
+  return asked;
+}
+
+/** The day's sample with the institutions no run has asked yet first, each part in its own order. */
+export function unaskedFirst<T extends { id: number }>(institutions: T[], asked: Set<number>): T[] {
+  return [...institutions.filter((i) => !asked.has(i.id)), ...institutions.filter((i) => asked.has(i.id))];
+}
+
 /** A question a Pro reader asked, for the institution they asked it about. */
 export interface ProQuestion {
   institutionId: number;
@@ -274,12 +303,60 @@ export interface ProQuestionResult {
   correctness?: string[] | null;
 }
 
+export interface PeerListReplayDeps {
+  subject: typeof getPeerListSubject;
+  rows: typeof getPeerListRows;
+}
+
+/**
+ * A list question ("List institutions in Florida over $5B") as the Ask bar answers it: through the
+ * peer list, never the fee engine, which would ask which fee (#977). Null when the question is not
+ * a list, or needs the reader's saved group or account institution, which a replay does not have.
+ */
+export async function replayPeerList(
+  institutionId: number,
+  question: string,
+  deps: PeerListReplayDeps = { subject: getPeerListSubject, rows: getPeerListRows },
+): Promise<{ kind: "peer_list"; shortAnswer: string; failures: string[] } | null> {
+  const intent = parsePeerListQuestion(question);
+  if (!intent || intent.saved || intent.accountSubject || (intent.peerBased && !hasExplicitFilters(intent))) return null;
+  if (intent.problems.length) return { kind: "peer_list", shortAnswer: intent.problems.join(" "), failures: ["peer list asks for criteria instead of listing"] };
+  const asOf = new Date().toISOString().slice(0, 10);
+  const subject = await deps.subject(institutionId, asOf);
+  if (!subject) return { kind: "peer_list", shortAnswer: "", failures: ["peer list subject could not be loaded"] };
+  const planned = planPeerList(intent, subject, null);
+  if (!planned.criteria) return { kind: "peer_list", shortAnswer: planned.problem ?? "", failures: ["peer list asks for criteria instead of listing"] };
+  const found = await deps.rows(subject.institutionId, planned.criteria, asOf);
+  return {
+    kind: "peer_list",
+    shortAnswer: `${found.rows.length} of ${found.totalMatches} matching institutions for ${subject.name}.`,
+    failures: peerListRowFailures(found.rows, planned.criteria.requiresAssets),
+  };
+}
+
+function hasExplicitFilters(i: NonNullable<ReturnType<typeof parsePeerListQuestion>>): boolean {
+  return Boolean(i.charterType || i.bothTypes || i.states.length || i.sameState || i.minAssets || i.maxAssets || i.similarSize || i.largest);
+}
+
+/** Every listed institution shows its assets with a filing date and source, and why it is listed. */
+export function peerListRowFailures(rows: PeerListRow[], requiresAssets: boolean): string[] {
+  const out: string[] = [];
+  if (requiresAssets && rows.some((r) => r.totalAssetsUsd === null || !r.reportDate || !r.source)) out.push("listed institution without dated, sourced assets");
+  if (rows.some((r) => !r.inclusionReason)) out.push("listed institution without a reason it is listed");
+  return out;
+}
+
 /** One institution's real questions through today's engine, scored by the same quality bar. */
 export async function evaluateProQuestions(institutionId: number, questions: ProQuestion[], live: LiveReader = liveCatalogReader()): Promise<ProQuestionResult[]> {
   const research = new Map<string, Promise<FeeResearch | null>>();
   const out: ProQuestionResult[] = [];
   for (const q of questions) {
     try {
+      const listed = await replayPeerList(institutionId, q.question);
+      if (listed) {
+        out.push({ institutionId, question: q.question, askedAt: q.askedAt, ...listed });
+        continue;
+      }
       const answered = await answer(institutionId, q.question, research);
       const { response } = answered;
       const correctness = await correctnessOf(institutionId, q.question, answered, live);
@@ -295,6 +372,8 @@ export async function evaluateProQuestions(institutionId: number, questions: Pro
 
 export interface ProReplaySummary {
   questions: number;
+  /** Questions drawn for the replay; more than `questions` when the time budget ran out first. */
+  planned?: number;
   passed: number;
   /** Questions Hamilton still answers with a question of its own. */
   askedBack: number;
@@ -411,27 +490,43 @@ export async function runAnswerEval({
   const proQuestions = await pickProQuestions(db).catch(() => []);
   const byInstitution = new Map<number, ProQuestion[]>();
   for (const q of proQuestions) byInstitution.set(q.institutionId, [...(byInstitution.get(q.institutionId) ?? []), q]);
+  // A batch starts only when the slowest batch so far still fits the budget: the route stops at
+  // 300 seconds, and a step it stops is left running until the reaper re-queues it (runs 8960, 9168).
+  let slowest = 0;
+  let timedOut = false;
+  const fits = () => Date.now() - started + slowest <= budgetMs;
+  const timed = async <T>(work: () => Promise<T>): Promise<T> => {
+    const t = Date.now();
+    const out = await work();
+    slowest = Math.max(slowest, Date.now() - t);
+    return out;
+  };
   const proResults: ProQuestionResult[] = [];
   const asked = [...byInstitution.entries()];
   for (let i = 0; i < asked.length; i += CONCURRENCY) {
+    if (!fits()) {
+      timedOut = true;
+      break;
+    }
     const batch = asked.slice(i, i + CONCURRENCY);
-    for (const rows of await Promise.all(batch.map(([id, qs]) => evaluateProQuestions(id, qs, live)))) proResults.push(...rows);
+    for (const rows of await timed(() => Promise.all(batch.map(([id, qs]) => evaluateProQuestions(id, qs, live))))) proResults.push(...rows);
   }
 
-  const institutions = await pickEvalInstitutions(db, perGroup, now.toISOString().slice(0, 10));
+  const day = now.toISOString().slice(0, 10);
+  const askedToday = await institutionsAskedToday(db, day).catch(() => new Set<number>());
+  const institutions = unaskedFirst(await pickEvalInstitutions(db, perGroup, day), askedToday);
   const results: EvalResult[] = [];
   let done = 0;
-  let timedOut = false;
   // A few institutions at a time: each spends most of its time waiting on reads.
   for (let i = 0; i < institutions.length; i += CONCURRENCY) {
-    if (Date.now() - started > budgetMs) {
+    if (!fits()) {
       timedOut = true;
       break;
     }
     const batch = institutions.slice(i, i + CONCURRENCY);
-    for (const rows of await Promise.all(batch.map((institution) => evaluateInstitution(institution, live)))) results.push(...rows);
+    for (const rows of await timed(() => Promise.all(batch.map((institution) => evaluateInstitution(institution, live))))) results.push(...rows);
     done += batch.length;
   }
   const summary = { ...summarizeEval(results, done, timedOut, institutions.length), institutionIds: institutions.slice(0, done).map((i) => i.id) };
-  return proResults.length > 0 ? { ...summary, pro: summarizeProReplay(proResults) } : summary;
+  return proResults.length > 0 ? { ...summary, pro: { ...summarizeProReplay(proResults), planned: proQuestions.length } } : summary;
 }

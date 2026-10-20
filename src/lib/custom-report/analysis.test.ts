@@ -1,19 +1,19 @@
 import { describe, expect, it } from "vitest";
 import type { CustomReportMarketData, MarketFeeLine } from "@/lib/data-store/custom-report-market";
-import { analyzeMarket, buildReportCsv, diffReports, positionCounts, MIN_COMPARABLE_LINES, NAMED_COMPETITORS, NAMED_WITHOUT_DEPOSITS, pickNamedCompetitors, quantile, type NamedCompetitor } from "./analysis";
+import { analyzeMarket, buildReportCsv, diffReports, excludedReason, incompleteNote, inputProduct, isIncomplete, MISSING_EXCLUDED, MISSING_NOT_FOUND, MISSING_TOO_FEW, positionCounts, MIN_COMPARABLE_LINES, NAMED_COMPETITORS, NAMED_WITHOUT_DEPOSITS, pickNamedCompetitors, quantile, type NamedCompetitor } from "./analysis";
 
 const KEYS = ["overdraft", "nsf", "stop_payment", "cashiers_check", "wire_domestic_outgoing", "card_replacement"];
 
 function market(opts: { competitors: number; ownKeys?: string[]; ownAmount?: number }): CustomReportMarketData {
   const lines: MarketFeeLine[] = [];
   for (const key of opts.ownKeys ?? KEYS) {
-    lines.push({ institution_id: 1, line: key, amount: opts.ownAmount ?? 20, fee_name: `Own ${key}`, source_url: "https://a", updated_at: "2026-10-01", schedule_read_on: "2026-09-30", source_line: `${key} | $20` });
+    lines.push({ institution_id: 1, line: key, amount: opts.ownAmount ?? 20, fee_name: `Own ${key}`, source_url: "https://a", updated_at: "2026-10-01", schedule_read_on: "2026-09-30", source_line: `${key} | $${opts.ownAmount ?? 20}` });
   }
   const competitors = [];
   for (let i = 0; i < opts.competitors; i += 1) {
     const id = 100 + i;
     competitors.push({ institution_id: id, institution_name: `Rival ${i}`, city: "X", state_code: "CA", charter_type: "bank", market_deposits: 1000 - i });
-    for (const key of KEYS) lines.push({ institution_id: id, line: key, amount: 10 + i, fee_name: key, source_url: null, updated_at: null, schedule_read_on: null, source_line: key });
+    for (const key of KEYS) lines.push({ institution_id: id, line: key, amount: 10 + i, fee_name: key, source_url: null, updated_at: null, schedule_read_on: null, source_line: `${key} | $${10 + i}` });
   }
   return {
     subject: { institution_id: 1, institution_name: "Subject Bank", city: "X", state_code: "CA", charter_type: "bank", market_deposits: null, asset_size: null },
@@ -57,7 +57,7 @@ describe("analyzeMarket", () => {
     expect(overdraft.peers?.median).toBe(19.5);
     expect(overdraft.position).toBe("above_market");
     expect(overdraft.percentile).toBe(100);
-    expect(result.findings[0]).toContain("($40) is above the local range");
+    expect(result.findings[0]).toContain("($40) is above the local middle half");
     expect(result.findings.at(-1)).toBe("0 of your 6 comparable fee lines sit inside the middle half of your local market.");
   });
 
@@ -87,7 +87,10 @@ describe("tiered fees", () => {
       { amount: 5, fee_name: "Negative $25 or less", source_line: "Negative $25 or less | $5" },
     ];
     const line = analyzeMarket(data).lines.find((l) => l.key === "overdraft")!;
-    expect(line.own?.tiers?.map((t) => t.amount)).toEqual([35, 5]);
+    // Lowest first, each with its own quote; overdraft compares at the highest (standard) tier.
+    expect(line.own?.tiers?.map((t) => t.amount)).toEqual([5, 35]);
+    expect(line.own?.amount).toBe(35);
+    expect(line.own?.evidence?.basis).toBe("highest of 2 published prices");
   });
 });
 
@@ -100,7 +103,7 @@ describe("rank and sources", () => {
     expect(overdraft.peerFigures).toHaveLength(20);
     expect(overdraft.peerFigures[0].amount).toBe(10);
     expect(overdraft.own?.schedule_read_on).toBe("2026-09-30");
-    expect(result.named[0].sources.overdraft.source_line).toBe("overdraft");
+    expect(result.named[0].sources.overdraft.source_line).toBe("overdraft | $10");
   });
 
   it("is null on lines that are not comparable", () => {
@@ -132,14 +135,63 @@ describe("pickNamedCompetitors", () => {
   });
 });
 
+function parseCsv(csv: string): Record<string, string>[] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let quoted = false;
+  for (let i = 0; i < csv.length; i += 1) {
+    const ch = csv[i];
+    if (quoted) {
+      if (ch === '"' && csv[i + 1] === '"') { cell += '"'; i += 1; }
+      else if (ch === '"') quoted = false;
+      else cell += ch;
+    } else if (ch === '"') quoted = true;
+    else if (ch === ",") { row.push(cell); cell = ""; }
+    else if (ch === "\r") continue;
+    else if (ch === "\n") { row.push(cell); rows.push(row); row = []; cell = ""; }
+    else cell += ch;
+  }
+  const [header, ...body] = rows;
+  return body.map((cells) => Object.fromEntries(header.map((h, i) => [h, cells[i] ?? ""])));
+}
+
 describe("buildReportCsv", () => {
-  it("lists the institution's lines, then every competitor figure on comparable lines", () => {
+  it("writes one row per record with the report's context, the institution first", () => {
     const data = market({ competitors: 20 });
-    const csv = buildReportCsv(data, analyzeMarket(data));
-    const rows = csv.trim().split("\r\n");
-    expect(rows[0]).toContain("competitors_charging_less");
-    expect(rows.filter((r) => r.startsWith("yours,"))).toHaveLength(analyzeMarket(data).lines.length);
-    expect(rows.filter((r) => r.startsWith("competitor,"))).toHaveLength(20 * KEYS.length);
+    const rows = parseCsv(buildReportCsv(data, analyzeMarket(data), "2026-10-17"));
+    const yours = rows.filter((r) => r.row === "yours");
+    expect(yours).toHaveLength(analyzeMarket(data).lines.length);
+    expect(rows.filter((r) => r.row === "competitor")).toHaveLength(20 * KEYS.length);
+    expect(rows[0]).toMatchObject({ report_institution_id: "1", report_date: "2026-10-17", currency: "USD" });
+    expect(rows[0].market_counties).toContain("Los Angeles");
+    const overdraft = yours.find((r) => r.fee_line === "Overdraft (per item)")!;
+    expect(overdraft).toMatchObject({ fee_basis: "per item", amount: "20", amount_basis: "published price", record: "1", records: "1", record_used: "yes", missing_reason: "" });
+  });
+
+  it("says why a cell is empty: not found, too few competitors", () => {
+    const data = market({ competitors: 20, ownKeys: KEYS.slice(0, 5) });
+    data.lines = data.lines.filter((l) => !(l.line === "nsf" && l.institution_id >= 107));
+    const rows = parseCsv(buildReportCsv(data, analyzeMarket(data))).filter((r) => r.row === "yours");
+    expect(rows.find((r) => r.fee_line === "Debit card replacement")?.missing_reason).toBe(MISSING_NOT_FOUND);
+    expect(rows.find((r) => r.fee_line === "NSF / returned item")?.missing_reason).toBe(MISSING_TOO_FEW);
+    expect(rows.find((r) => r.fee_line === "Paper statement")?.missing_reason).toBe(MISSING_NOT_FOUND);
+  });
+
+  it("lists every record behind a calculated amount and the record left out", () => {
+    const data = market({ competitors: 20 });
+    const rival = data.lines.find((l) => l.institution_id === 100 && l.line === "overdraft")!;
+    rival.tiers = [
+      { id: 11, amount: 10, fee_name: "Overdraft (Basic)", source_line: "Overdraft fee | $10", source_url: "https://r/fees.pdf", schedule_read_on: "2026-10-01" },
+      { id: 12, amount: 30, fee_name: "Overdraft (Premier)", source_line: "Overdraft fee | $30", source_url: "https://r/fees.pdf", schedule_read_on: "2026-10-01" },
+      { id: 13, amount: 35, fee_name: "Overdraft fees vary", source_line: "The amount for overdraft fees varies, but $35 is common.", source_url: "https://r/learning/money-management/checking", schedule_read_on: "2026-10-01" },
+    ];
+    const analysis = analyzeMarket(data);
+    const rows = parseCsv(buildReportCsv(data, analysis)).filter((r) => r.row === "competitor" && r.institution_id === "100" && r.fee_line === "Overdraft (per item)");
+    expect(rows.map((r) => [r.record_id, r.record_amount, r.record_used])).toEqual([["11", "10", "yes"], ["12", "30", "yes"], ["13", "35", "no"]]);
+    expect(rows[0]).toMatchObject({ amount: "30", amount_basis: "highest of 2 published prices", published_range: "$10 to $30", records: "3" });
+    expect(rows[2].missing_reason).toBe("excluded: educational article, not the institution's own fee schedule");
+    expect(analysis.exclusions).toEqual({ competitorAmounts: 0, competitorRecords: 1, ownAmounts: 0, ownRecords: 0, scopeRecords: 0 });
   });
 
   it("quotes commas and neutralizes spreadsheet formulas", () => {
@@ -147,6 +199,68 @@ describe("buildReportCsv", () => {
     data.subject.institution_name = "=HYPERLINK(1), Bank";
     const csv = buildReportCsv(data, analyzeMarket(data));
     expect(csv).toContain(`"'=HYPERLINK(1), Bank"`);
+  });
+});
+
+describe("evidence check", () => {
+  it("leaves out a competitor amount its evidence does not show and works the medians out without it", () => {
+    const data = market({ competitors: 20 });
+    const before = analyzeMarket(data).lines.find((l) => l.key === "overdraft")!;
+    const rival = data.lines.find((l) => l.institution_id === 119 && l.line === "overdraft")!;
+    rival.source_url = "https://bank.example/personal-banking/learning/money-management/types-of-checking-accounts";
+    rival.source_line = "The amount for overdraft fees varies, but $29 each occurrence is common.";
+    const analysis = analyzeMarket(data);
+    const after = analysis.lines.find((l) => l.key === "overdraft")!;
+    expect(before.peers?.n).toBe(20);
+    expect(after.peers?.n).toBe(19);
+    expect(after.peers?.median).toBe(19);
+    expect(after.excludedFigures?.map((f) => f.institution_id)).toEqual([119]);
+    expect(after.excludedFigures?.[0].evidence.excluded[0].problem).toBe("not_a_fee_schedule");
+    expect(analysis.named.find((c) => c.institution_id === 119)?.fees.overdraft).toBeUndefined();
+    expect(analysis.exclusions?.competitorAmounts).toBe(1);
+    const csv = parseCsv(buildReportCsv(data, analysis)).filter((r) => r.institution_id === "119" && r.fee_line === "Overdraft (per item)");
+    expect(csv).toHaveLength(1);
+    expect(csv[0]).toMatchObject({ amount: "", record_used: "no", missing_reason: "excluded: educational article, not the institution's own fee schedule" });
+  });
+
+  it("leaves out a record whose quote does not state its amount", () => {
+    const data = market({ competitors: 20 });
+    const rival = data.lines.find((l) => l.institution_id === 105 && l.line === "stop_payment")!;
+    rival.source_line = "Stop payment | $5";
+    const line = analyzeMarket(data).lines.find((l) => l.key === "stop_payment")!;
+    expect(line.excludedFigures?.[0].evidence.excluded[0].problem).toBe("quote_without_amount");
+    const csv = parseCsv(buildReportCsv(data, analyzeMarket(data))).filter((r) => r.institution_id === "105" && r.fee_line === "Stop payment");
+    expect(csv[0].missing_reason).toBe(MISSING_EXCLUDED);
+    expect(MISSING_EXCLUDED).toBe("excluded: the quote does not show the amount");
+  });
+
+  it("names what the quote describes and the fee it is not, on the page's records and in the CSV", () => {
+    const data = market({ competitors: 20 });
+    const blank = { source_url: null, updated_at: null, schedule_read_on: null };
+    const atm: MarketFeeLine = { institution_id: 103, line: "atm_non_network", amount: 4, fee_name: "ATM", source_line: "", ...blank };
+    const maintenance: MarketFeeLine = { institution_id: 104, line: "monthly_maintenance", amount: 3.49, fee_name: "Monthly", source_line: "", ...blank };
+    data.lines.push(atm, maintenance);
+    // PNC's two ATM prices (rows 13164 and the $3 domestic one): $5 abroad must not average in.
+    atm.tiers = [
+      { id: 21, amount: 3, fee_name: "Non-PNC Bank ATM Fee (US, Canada, Puerto Rico, US Virgin Islands)", source_line: "Puerto Rico and the U.S. Virgin Islands ..... $3.00 each", source_url: "https://r/fees.pdf", schedule_read_on: "2026-10-01" },
+      { id: 22, amount: 5, fee_name: "Non-PNC Bank ATM Fee (All Other Countries)", source_line: "At non-PNC Bank ATMs in all other countries ..... $5.00 each", source_url: "https://r/fees.pdf", schedule_read_on: "2026-10-01" },
+    ];
+    maintenance.tiers = [
+      { id: 31, amount: 2.99, fee_name: "For a monthly fee", source_line: "First Commerce offers the ATM Freedom add-on for the Power Checking account. For a monthly fee of $2.99, you'll get unlimited surcharge refunds", source_url: "https://r/checking", schedule_read_on: "2026-10-01" },
+      { id: 32, amount: 3.99, fee_name: "Power Checking + CoverMe Monthly service charge", source_line: "Power Checking + CoverMe - $3.99/month", source_url: "https://r/checking", schedule_read_on: "2026-10-01" },
+    ];
+    const analysis = analyzeMarket(data);
+    const atmLine = analysis.lines.find((l) => l.key === "atm_non_network")!;
+    const pnc = atmLine.peerFigures.find((f) => f.institution_id === 103)!;
+    expect(pnc.amount).toBe(3);
+    expect(pnc.evidence?.excluded[0]).toMatchObject({ record_id: 22, problem: "international_atm", reason: "international ATM withdrawal, not domestic" });
+    const commerce = analysis.lines.find((l) => l.key === "monthly_maintenance")!.peerFigures.find((f) => f.institution_id === 104)!;
+    expect(commerce.amount).toBe(3.99);
+    expect(commerce.evidence?.excluded[0]).toMatchObject({ record_id: 31, reason: "ATM surcharge-refund add-on, not account maintenance" });
+    expect(analysis.exclusions?.scopeRecords).toBe(2);
+    // The CSV's missing_reason for a left-out record (one line, so only compared lines get rows).
+    expect(excludedReason(pnc.evidence?.excluded[0])).toBe("excluded: international ATM withdrawal, not domestic");
+    expect(excludedReason(commerce.evidence?.excluded[0])).toBe("excluded: ATM surcharge-refund add-on, not account maintenance");
   });
 });
 
@@ -160,7 +274,9 @@ describe("diffReports", () => {
     const before = market({ competitors: 20 });
     const after = market({ competitors: 20 });
     // Every rival raises stop payment by $5: each named rival's fee and the median move.
-    after.lines = after.lines.map((l) => (l.institution_id !== 1 && l.line === "stop_payment" ? { ...l, amount: l.amount + 5 } : l));
+    after.lines = after.lines.map((l) =>
+      l.institution_id !== 1 && l.line === "stop_payment" ? { ...l, amount: l.amount + 5, source_line: `stop_payment | $${l.amount + 5}` } : l,
+    );
     const changes = diffReports(analyzeMarket(before), analyzeMarket(after));
     const median = changes.find((c) => c.subject === "median");
     expect(median).toMatchObject({ key: "stop_payment", before: expect.any(Number) });
@@ -175,5 +291,75 @@ describe("positionCounts", () => {
   it("counts above, inside and below the local middle half", () => {
     const counts = positionCounts(analyzeMarket(market({ competitors: 20, ownAmount: 100 })).lines);
     expect(counts).toEqual({ above: KEYS.length, inside: 0, below: 0 });
+  });
+});
+
+describe("an incomplete comparison (the institution's own record the source check could not match)", () => {
+  // Capital City Bank, Oct 17: Everyday Checking's $8.95 (140267) is live but the shared check reads
+  // its waiver sentence as a tier, so the line compares only Carefree Checking's $7.95 (140263).
+  function checking(unmatched: CustomReportMarketData["unmatchedOwn"]): CustomReportMarketData {
+    const data = market({ competitors: 20 });
+    data.subject.institution_name = "Capital City Bank";
+    data.lines.push({ institution_id: 1, line: "monthly_maintenance", id: 140263, amount: 7.95, fee_name: "Carefree Checking Monthly service charge", source_url: "https://a", updated_at: null, schedule_read_on: "2026-10-12", source_line: "$7.95 monthly service charge" });
+    for (let i = 0; i < 20; i += 1) {
+      data.lines.push({ institution_id: 100 + i, line: "monthly_maintenance", amount: 5 + i, fee_name: "Monthly service charge", source_url: null, updated_at: null, schedule_read_on: null, source_line: `Monthly service charge $${5 + i}` });
+    }
+    data.unmatchedOwn = unmatched;
+    return data;
+  }
+  const everyday = {
+    line: "monthly_maintenance", id: 140267, amount: 8.95, fee_name: "Monthly service charge (Everyday Checking)",
+    excerpt: "No monthly service charge with either 20 debit card transactions* OR a minimum daily balance of $1,500; otherwise, $8.95 per month",
+    source_url: "https://a", reason: "tiered_fee" as const,
+  };
+  const NOTE = "Incomplete: Capital City Bank's Everyday Checking at $8.95 is on its published schedule, but we could not match it to a line in the saved schedule, so this comparison leaves it out.";
+
+  it("marks the line incomplete and says which record is missing, in the page's and the CSV's words", () => {
+    const data = checking([everyday]);
+    const analysis = analyzeMarket(data);
+    const line = analysis.lines.find((l) => l.key === "monthly_maintenance")!;
+    expect(line.own?.amount).toBe(7.95);
+    expect(line.incomplete).toEqual([{ record_id: 140267, fee_name: everyday.fee_name, amount: 8.95 }]);
+    expect(isIncomplete(line)).toBe(true);
+    expect(incompleteNote("Capital City Bank", line)).toBe(NOTE);
+    const rows = parseCsv(buildReportCsv(data, analysis)).filter((r) => r.fee_line === "Monthly maintenance (checking)");
+    expect(rows.find((r) => r.row === "yours")?.comparison_note).toBe(NOTE);
+    expect(rows.filter((r) => r.row === "competitor").every((r) => r.comparison_note === NOTE)).toBe(true);
+    // Other lines stay complete.
+    expect(parseCsv(buildReportCsv(data, analysis)).find((r) => r.row === "yours" && r.fee_line === "Overdraft (per item)")?.comparison_note).toBe("");
+    expect(analysis.lines.find((l) => l.key === "overdraft")?.incomplete).toEqual([]);
+  });
+
+  it("clears by itself once the checker passes the record (nothing unmatched, or its price already used)", () => {
+    expect(analyzeMarket(checking([])).lines.find((l) => l.key === "monthly_maintenance")?.incomplete).toEqual([]);
+    expect(analyzeMarket(checking(undefined)).lines.find((l) => l.key === "monthly_maintenance")?.incomplete).toEqual([]);
+    const samePrice = { ...everyday, amount: 7.95 };
+    expect(analyzeMarket(checking([samePrice])).lines.find((l) => l.key === "monthly_maintenance")?.incomplete).toEqual([]);
+  });
+
+  it("leaves out a record the line's own rules would leave out anyway (an add-on, an educational page)", () => {
+    const addOn = { ...everyday, fee_name: "ATM Freedom add-on monthly fee", amount: 2.99 };
+    const article = { ...everyday, source_url: "https://bank.example/learning/money-management/what-checking-costs" };
+    expect(analyzeMarket(checking([addOn, article])).lines.find((l) => l.key === "monthly_maintenance")?.incomplete).toEqual([]);
+  });
+
+  it("does not mark a line that is not compared", () => {
+    const data = checking([{ ...everyday, line: "paper_statement", amount: 3 }]);
+    expect(analyzeMarket(data).lines.find((l) => l.key === "paper_statement")?.incomplete).toEqual([]);
+  });
+
+  it("qualifies the line's finding so its position never reads as settled", () => {
+    const data = checking([everyday]);
+    // Every competitor above the bank puts its $7.95 below the local middle half.
+    for (const l of data.lines) if (l.line === "monthly_maintenance" && l.institution_id !== 1) { l.amount += 10; l.source_line = `Monthly service charge $${l.amount}`; }
+    const analysis = analyzeMarket(data);
+    const line = analysis.lines.find((l) => l.key === "monthly_maintenance")!;
+    expect(line.position).toBe("below_market");
+    expect(analysis.findings.find((f) => f.includes("monthly maintenance"))).toContain("below the local middle half, on incomplete inputs");
+  });
+
+  it("names the account from the fee's published name", () => {
+    expect(inputProduct("Monthly service charge (Everyday Checking)")).toBe("Everyday Checking");
+    expect(inputProduct("Overdraft fee")).toBe("Overdraft fee");
   });
 });

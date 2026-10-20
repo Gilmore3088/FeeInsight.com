@@ -1,13 +1,41 @@
 import { describe, expect, it } from "vitest";
 import { buildFeeAnswer, economicDrivers, proseFeeName } from "./answer";
 import { economicBackdrop, beigeBookExcerpt } from "./economy";
-import { evaluateFourRoles, sentences } from "./four-roles";
+import { evaluateFourRoles, findUnrequestedAdvice, MAX_STORY_LINE_WORDS, sentences, words } from "./four-roles";
 import { economyContext, overdraftResearch } from "./test-fixtures";
 import type { HamiltonAnswer } from "./types";
 
 function failuresOf(answer: HamiltonAnswer, role: string): string[] {
   return evaluateFourRoles(answer).roles.find((r) => r.role === role)?.failures ?? [];
 }
+
+describe("source cautions versus unrequested fee advice (#2328)", () => {
+  it.each([
+    "This figure should not be annualized.",
+    "The YTD total should not be doubled.",
+    "This is a six-month figure and should not be doubled into a yearly one.",
+    "Reported income should not be annualised.",
+    "These amounts should not be annualized.",
+    "The total is not annualized and should not be doubled to estimate a full year.",
+  ])("allows a narrowly stated reporting-basis caution: %s", (text) => expect(findUnrequestedAdvice(text)).toBeNull());
+
+  it.each([
+    "You should raise your fee to $35.",
+    "You should not raise your fee.",
+    "You should not lower your price.",
+    "The fee should not be doubled.",
+    "The amount should not be doubled.",
+    "The figure should not be doubled.",
+    "Your fee figure should not be doubled.",
+    "Your fee total is not annualized and should not be doubled to estimate a full year.",
+    "The total is not annualized and should not be doubled to estimate a full year; you should raise the fee.",
+    "This figure should be annualized.",
+    "This figure should not be annualized, but you should raise your fee.",
+    "The figure should not be doubled. We recommend lowering the fee.",
+    "The total should not be doubled and you ought to cut the price.",
+    "You should not assume that raising the fee is safe.",
+  ])("retains advice rejection, including negated advice: %s", (text) => expect(findUnrequestedAdvice(text)).not.toBeNull());
+});
 
 describe("four-roles eval: one overdraft answer", () => {
   const answer = buildFeeAnswer(overdraftResearch());
@@ -131,10 +159,43 @@ describe("answer edge cases", () => {
         },
       }),
     );
-    expect(answer.claims.map((c) => c.text)).toContain("Your filing reports $1.3 million in overdraft income over the four quarters to June 30, 2026.");
+    expect(answer.claims.map((c) => c.text)).toContain("Your filing reports $1.3 million in overdraft income in the year to June 30, 2026.");
     expect(answer.evidenceLevel).toBe("working_estimate");
     expect(answer.question).toBeNull();
     expect(evaluateFourRoles(answer).pass).toBe(true);
+  });
+
+  it("names a bank's combined overdraft and NSF line as combined in both fees' answers (#1543)", () => {
+    const combined = (combinedWith: string) => ({
+      annualIncome: 241_000_000,
+      label: "Consumer overdraft and NSF fee income (call report Schedule RI-E, RIAD H032)",
+      quarterEnd: "2026-06-30",
+      source: { label: "Consumer overdraft and NSF fee income (call report Schedule RI-E, RIAD H032)", table: "institution_financial_records" },
+      combinedWith,
+    });
+    for (const [feeCategory, other] of [["overdraft", "NSF"], ["nsf", "overdraft"]]) {
+      const texts = buildFeeAnswer(overdraftResearch({ feeCategory, revenueLine: combined(other) })).claims.map((c) => c.text);
+      expect(texts).toContain("Your filing reports $241 million in overdraft and NSF income combined (call report) in the year to June 30, 2026.");
+      expect(texts.join(" ")).not.toMatch(/returned item income|NSF income over/i);
+    }
+  });
+
+  it("keeps the combined income line within 20 words when the institution is named (#1076)", () => {
+    const revenueLine = {
+      annualIncome: 10_100_000,
+      label: "Consumer overdraft and NSF fee income (call report Schedule RI-E, RIAD H032)",
+      quarterEnd: "2026-06-30",
+      source: { label: "Consumer overdraft and NSF fee income (call report Schedule RI-E, RIAD H032)", table: "institution_financial_records" },
+      combinedWith: "NSF",
+    };
+    for (const subjectName of [undefined, "U.S. Bank", "Capital City Bank"]) {
+      const lines = buildFeeAnswer(overdraftResearch({ revenueLine, ...(subjectName ? { subjectName } : {}) })).claims
+        .map((c) => c.text).filter((t) => t.includes("income combined"));
+      expect(lines).toHaveLength(1);
+      expect(words(lines[0])).toBeLessThanOrEqual(MAX_STORY_LINE_WORDS);
+    }
+    const named = buildFeeAnswer(overdraftResearch({ revenueLine, subjectName: "Capital City Bank" })).claims.map((c) => c.text);
+    expect(named).toContain("The filing reports $10.1 million in overdraft and NSF income combined (call report) in the year to June 30, 2026.");
   });
 
   it("draws local competitors when asked for that view", () => {

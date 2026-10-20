@@ -2,6 +2,36 @@ import { describe, expect, it } from "vitest";
 import { checkFeeAgainstSource, joinLabeledFeeCards, stripPriceFootnoteMarks } from "./source-check";
 
 describe("checkFeeAgainstSource layouts", () => {
+  it("reads an opening deposit under an account heading as the account's, not the heading's price (#1810)", () => {
+    // Frontier Bank's checking page (prod source document of fee 117602, Oct 18).
+    const text = [
+      "Frontier Bank Classic Checking",
+      "$100.00 opening deposit required",
+      "Monthly maintenance fee of $7.00",
+      "Now Checking",
+      "$1,000.00 opening deposit required",
+      "Monthly maintenance fee $10.00",
+    ].join("\n\n");
+    expect(checkFeeAgainstSource(text, "Now Checking Monthly Maintenance Fee", 10, ".", "monthly_maintenance").ok).toBe(true);
+    expect(checkFeeAgainstSource(text, "Frontier Bank Classic Checking Monthly Maintenance Fee", 7, ".", "monthly_maintenance").ok).toBe(true);
+    // The opening deposit is never a fee's price ("Send and receive money fast with Zelle®" / "$25 deposit to open").
+    expect(checkFeeAgainstSource("Send and receive money fast with Zelle®\n$25 deposit to open", "Send and receive money fast with Zelle®", 25, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource("Christmas Club\n$5 to open", "Christmas Club", 5, ".").ok).toBe(false);
+    for (const deposit of ["$25 initial deposit", "$100 minimum deposit", "$100 min. opening deposit", "$1,000.00+ to open", "$50 to open this account."]) {
+      expect(checkFeeAgainstSource(`Basic Club\n${deposit}`, "Basic Club", Number(deposit.replace(/[^\d.]/g, "").replace(/\.$/, "")), ".").ok, deposit).toBe(false);
+    }
+    // Opening wording on a real fee's price is still the price.
+    for (const [name, price, amount] of [
+      ["Safe Deposit Box Rental", "$10 opening fee", 10],
+      ["Account Opening Fee", "$25 opening service charge", 25],
+      ["Vault Access", "$10 per opening", 10],
+      ["Box Drilling", "$125 plus cost to open", 125],
+      ["Night Depository Bag", "$25 deposit", 25],
+    ] as const) {
+      expect(checkFeeAgainstSource(`${name}\n${price}`, name, amount, ".").ok, price).toBe(true);
+    }
+  });
+
   it("reads a price printed under its fee's name", () => {
     const text = "Overnight Courier Service\n$50.00\n/Item";
     expect(checkFeeAgainstSource(text, "Overnight Courier Service", 50, ".").ok).toBe(true);
@@ -624,5 +654,305 @@ describe("checkFeeAgainstSource daily caps", () => {
     // Without the statement label, a long "$30 for each ..." sentence under a bare name is not its price.
     const bare = "Overdraft\nIf we pay an item when your account does not have enough money to cover a transaction.\n$30 for each check presented against your account.";
     expect(checkFeeAgainstSource(bare, "Overdraft", 30, ".", "overdraft").ok).toBe(false);
+  });
+});
+
+// #1646: a name stem matches where a word begins, never inside another word.
+describe("name words match whole words", () => {
+  // Bay Cities' checking comparison (source document 31579) has no Star Checking; "Star" was found in "started".
+  const bayCities = [
+    "Express Checking For members who want more financial control | 1st Checking Students just getting started, ages 16-24 | Dividend Checking For Members who maintain higher balances and want to earn interest",
+    "",
+    "Monthly Service Charge | $0 Monthly Service Charge with e-Statements & Direct Deposit $5 Monthly Service Charge with either e-Statements or Direct Deposit $10 Monthly Service Charge without e-Statements or Direct Deposit",
+  ].join("\n");
+
+  it("does not find \"Star\" inside \"started\"", () => {
+    expect(checkFeeAgainstSource(bayCities, "Star Checking Monthly Fee", 10, ".", "monthly_maintenance").ok).toBe(false);
+    expect(checkFeeAgainstSource("Upstart Checking Monthly Fee | $10.00", "Star Checking Monthly Fee", 10, ".").ok).toBe(false);
+  });
+
+  it("still finds the name where it is printed", () => {
+    expect(checkFeeAgainstSource("Star Checking Monthly Fee | $10.00", "Star Checking Monthly Fee", 10, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("STAR CHECKING - Monthly Fee | $10.00", "Star Checking Monthly Fee", 10, ".").ok).toBe(true);
+  });
+
+  it("keeps matching longer words that begin with the stem", () => {
+    // Plurals and suffixes: "Stop Payment" in "Stop Payments", "Overdraft" in "Overdrafts".
+    expect(checkFeeAgainstSource("Stop Payments | $30.00", "Stop Payment", 30, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("Overdrafts (per item) | $35.00", "Overdraft Fee", 35, ".").ok).toBe(true);
+    // A word after punctuation still begins a word ("Non-Sufficient", "(Outgoing").
+    expect(checkFeeAgainstSource("Wire Transfer (Outgoing) | $25.00", "Outgoing Wire", 25, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("NSF/Non-Sufficient Funds | $32.00", "Non-Sufficient Funds Fee", 32, ".").ok).toBe(true);
+  });
+
+  it("reads a word against a footnote number or run into a label", () => {
+    expect(checkFeeAgainstSource("Safe deposit box fees\nFee type | Fee amount\nLost key13 | $18", "Lost key", 18, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("Product/ServiceStop Payments | Fee $30.00\nProduct/ServiceTemporary Checks | Fee $5.00 per set", "Temporary Checks", 5, ".").ok).toBe(true);
+  });
+
+  it("reads the name's own words closed up into one", () => {
+    expect(checkFeeAgainstSource("Nonsufficient Funds Fee | $32.00", "Non-Sufficient Funds Fee", 32, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("Overlimit Fee | $25.00", "Over Limit Fee", 25, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("Representment Fee | $30.00", "Re-presentment Fee", 30, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("Prepaid Card Reload | $3.00", "Pre-paid Card Reload", 3, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("Debitcard Replacement | $10.00", "Debit Card Replacement", 10, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("Billpay Monthly | $5.00", "Bill Pay Monthly", 5, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("Nonmember ATM Withdrawal | $2.00", "Non-Member ATM Withdrawal", 2, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("Cardholder Replacement | $10.00", "Card Replacement", 10, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("Returned Mailing | $5.00", "Returned Mail", 5, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("after that it's just $4.95 per month, Electronic Bill Payment. Login To Online Account Access Above To Sign Up", "Online Bill Pay", 4.95, ".").ok).toBe(true);
+    // Closed-up words still have to be the name's own: "Unpaid" is not "Paid", "Reprint" is not "Print".
+    expect(checkFeeAgainstSource("Unpaid Items | $30.00", "Paid Items", 30, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource("Statement Reprint | $5.00", "Statement Print", 5, ".").ok).toBe(false);
+  });
+
+  it("reads text printed without its spaces", () => {
+    // MassMutual FCU (document 16621) and Northpointe (document 128) as their text reads.
+    const glued = [
+      "Replacelostdebitcard(each)..............$15",
+      "Wiretransfers(domestic,outgoing)$20",
+      "Officialchecks$2",
+      "Stoppayment...........$15",
+      "Earlyclosurefee! $10",
+      "Canceledcheckcopy $5",
+    ].join("\n");
+    expect(checkFeeAgainstSource(glued, "Replace Lost Debit Card", 15, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(glued, "Wire Transfers Domestic Outgoing", 20, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(glued, "Official Checks", 2, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(glued, "Stop Payment", 15, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(glued, "Early closure fee", 10, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(glued, "Canceled check copy", 5, ".").ok).toBe(true);
+    // Spaced text keeps the rule: "NSF" is not in "transfers".
+    expect(checkFeeAgainstSource("Online transfers | $30.00", "NSF Fee", 30, ".").ok).toBe(false);
+  });
+
+  it("reads an abbreviation as its one word, and \"-ment\" only after \"Pay\"", () => {
+    expect(checkFeeAgainstSource("Regulation D Transfers** | $15.00 Per Item", "Reg D", 15, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("Register D Transfers | $15.00 Per Item", "Reg D", 15, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource("Department Fee | $5.00", "Dep Fee", 5, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource("Starment Checking Monthly Fee | $10.00", "Star Checking Monthly Fee", 10, ".").ok).toBe(false);
+  });
+
+  it("does not find a word inside a longer compound", () => {
+    // "Draft" is not the "Overdraft" fee.
+    expect(checkFeeAgainstSource("Overdraft Fee | $35.00", "Draft Fee", 35, ".").ok).toBe(false);
+  });
+
+  describe("a price under a count-cap note (Gate City Bank 349, doc 13087)", () => {
+    // Gate City's schedule as stored (text 503, prod, read-only, Oct 17).
+    const GATE_CITY = [
+      "Statement Print Service Fee | $5 per statement",
+      "Duplicate statement or specific cycle date requests.",
+      "Overdraft Fees",
+      "Overdraft fee for items paid resulting in a negative",
+      "balance.",
+      "Maximum of 4 fees per calendar day.",
+      "$32 per item",
+      "If your account is charged more than four overdraft",
+      "Overdraft /Non-Sufficient Funds (NSF) | fees per day, the additional fees will be refunded",
+      "within 48 hours. The date the fee is charged is used",
+      "to calculate the number of fees charged per day.",
+      "BankOn Checking Account Overdraft Fee for items",
+      "$0 per item",
+      "paid resulting in a negative balance.",
+    ].join("\n");
+
+    it("must pass: the price under the name's wrapped last word and the cap note", () => {
+      for (const name of ["Overdraft fee for items paid resulting in a negative balance", "Overdraft Fees", "Overdraft Fee"]) {
+        expect(checkFeeAgainstSource(GATE_CITY, name, 32, ".", "overdraft")).toMatchObject({
+          ok: true,
+          sourceLine: "Overdraft fee for items paid resulting in a negative | $32 per item",
+        });
+      }
+    });
+
+    it("must pass: a price one cap-note line under its name", () => {
+      const text = "Overdraft Fee\nMaximum of 4 fees per calendar day.\n$32 per item\nStop Payment | $30";
+      expect(checkFeeAgainstSource(text, "Overdraft Fee", 32, ".", "overdraft").ok).toBe(true);
+      expect(checkFeeAgainstSource("Paid Item Fee\n(Limit 5 items per day)\n$30.00", "Paid Item Fee", 30, ".", "overdraft").ok).toBe(true);
+    });
+
+    it("must fail: the note's own figure", () => {
+      expect(checkFeeAgainstSource(GATE_CITY, "Overdraft Fees", 4, ".", "overdraft").ok).toBe(false);
+      // A note with a dollar figure is a cap, not a count: the price under it is not read through it.
+      const dollarCap = "Overdraft Fee\nMaximum of $128 in fees per day.\n$32 per item";
+      expect(checkFeeAgainstSource(dollarCap, "Overdraft Fee", 128, ".", "overdraft").ok).toBe(false);
+    });
+
+    it("must fail: a balance band under the note", () => {
+      const band = "Overdraft Fee\nMaximum of 4 fees per calendar day.\n$50.01 or more";
+      expect(checkFeeAgainstSource(band, "Overdraft Fee", 50.01, ".", "overdraft").ok).toBe(false);
+    });
+
+    it("must fail: another fee's row under the note", () => {
+      const nextRow = "Overdraft Fee\nMaximum of 4 fees per calendar day.\nReturned Item Fee | $30.00";
+      expect(checkFeeAgainstSource(nextRow, "Overdraft Fee", 30, ".", "overdraft").ok).toBe(false);
+      const nextName = "Overdraft Fee\nMaximum of 4 fees per calendar day.\nNSF Fee\n$30.00";
+      expect(checkFeeAgainstSource(nextName, "Overdraft Fee", 30, ".", "overdraft").ok).toBe(false);
+      // A sentence that is not a count cap ("Fees are charged per item.") still ends the row.
+      expect(checkFeeAgainstSource("Overdraft Fee\nFees are charged per item paid.\n$32", "Overdraft Fee", 32, ".", "overdraft").ok).toBe(false);
+    });
+  });
+});
+
+describe("checkFeeAgainstSource joined prices (Knox v76)", () => {
+  const ok = (text: string, name: string, amount: number) => checkFeeAgainstSource(text, name, amount, ".").ok;
+
+  it("traces each slash variant to its own price, and only that one", () => {
+    const row = "Domestic Outbound Wires (Online/Manual) | $35/$60 | $35/$60";
+    expect(ok(row, "Domestic Outbound Wires (Online)", 35)).toBe(true);
+    expect(ok(row, "Domestic Outbound Wires (Manual)", 60)).toBe(true);
+    expect(ok(row, "Domestic Outbound Wires (Manual)", 35)).toBe(false);
+    expect(ok(row, "Domestic Outbound Wires (Online)", 60)).toBe(false);
+    // A name keeping both variants reads the first price, as before.
+    expect(ok(row, "Domestic Outbound Wires (Online/Manual)", 35)).toBe(true);
+    expect(ok(row, "Domestic Outbound Wires (Online/Manual)", 60)).toBe(false);
+  });
+
+  it("traces the second price of a slash pair to the words after it", () => {
+    const row = "Debit Card Replacement Fee | $10.00 / $50 expedited delivery";
+    expect(ok(row, "Debit Card Replacement Fee expedited delivery", 50)).toBe(true);
+    expect(ok(row, "Debit Card Replacement Fee", 10)).toBe(true);
+    expect(ok(row, "Debit Card Replacement Fee", 50)).toBe(false);
+  });
+
+  it("traces both column prices of a box size", () => {
+    expect(ok("2” x 5” $45.00 $65.00", "2” x 5”", 45)).toBe(true);
+    expect(ok("2” x 5” $45.00 $65.00", "2” x 5”", 65)).toBe(true);
+    expect(ok("Monthly Fee $5.00 $10.00", "Monthly Fee", 10)).toBe(false);
+  });
+
+  it("reads No Cost and No fees as free words", () => {
+    expect(ok("Notary Public Services | No Cost to Members", "Notary Public Services", 0)).toBe(true);
+  });
+
+  it("reads a waiver sentence's otherwise price as the fee, not a balance tier", () => {
+    // Capital City Bank (institution 323), live fee 140267: agent_source_texts for source_document_id 31376.
+    const page = [
+      "Everyday Checking Content",
+      "",
+      "Everyday Checking",
+      "",
+      "Access and convenience with a straightforward account.",
+      "",
+      "Features and benefits:",
+      "",
+      "No monthly service charge with either 20 debit card transactions* OR a minimum daily balance of $1,500; otherwise, $8.95 per month",
+      "",
+      "Free e-statements**",
+      "",
+      "No per-check charge+",
+      "",
+      "Only $50 minimum opening deposit",
+    ].join("\n");
+    const read = (amount: number) =>
+      checkFeeAgainstSource(page, "Monthly service charge (Everyday Checking)", amount, ".", "monthly_maintenance");
+    expect(read(8.95).ok).toBe(true);
+    // The waiving balance is still not the fee.
+    expect(read(1500).ok).toBe(false);
+    const waived = "Monthly Maintenance Fee | waived with a $500 minimum daily balance, if not $6.00";
+    expect(checkFeeAgainstSource(waived, "Monthly Maintenance Fee", 6, ".").ok).toBe(true);
+  });
+
+  it("takes a row's category word from its own section heading, not from an earlier section (#1835)", () => {
+    // Capital City Bank (institution 323), live fee 69700: agent_source_texts 1418 for source_document_id 13900,
+    // each price printed under its fee's name, so "Wire Transfers" sits six lines above the incoming fee.
+    const page = [
+      "Online Banking Bank-to-Bank (External) Transfers", "Outbound: External Bank-to-Bank Transfer Fee", "$2",
+      "Returned Bank-to-Bank Transfer Fee", "$6",
+      "Wire Transfers", "Outgoing Domestic Fee", "$35", "Outgoing International Fee", "$75",
+      "Incoming Domestic Fee", "$25", "Incoming International Fee", "$25", "Returned Wire Fee", "$25",
+      "Wire Transfer Confirmation Fee", "$5",
+      "Collection Services", "Incoming Domestic Item Fee", "$20", "Incoming International Item Fee", "$20",
+    ].join("\n\n");
+    const report = { sectionHeadingCategory: true };
+    for (const key of [undefined, "wire_domestic_incoming"]) {
+      // The report path (custom-report-market.ts) reads the category word from the section heading.
+      expect(checkFeeAgainstSource(page, "Wire Transfers: Incoming Domestic Fee", 25, "wire", key, report)).toEqual({
+        ok: true,
+        sourceLine: "Incoming Domestic Fee | $25",
+      });
+      // Every other caller keeps main's verdict: the category word must sit in the nearby lines.
+      expect(checkFeeAgainstSource(page, "Wire Transfers: Incoming Domestic Fee", 25, "wire", key)).toEqual({
+        ok: false,
+        reason: "category_not_in_text",
+      });
+    }
+    // A heading further up belongs to an earlier section: a fax fee filed as an ATM fee stays out.
+    const fees = [
+      "ATM Service Charge", "First Bank ATMs | No charge", "All other ATMs | $1.50 per withdrawal and/or per inquiry",
+      "Check Cashing Fee (Customers) | No charge", "(We do not cash checks for non-customers)",
+      "Check Printing | Prices vary", "Faxes – | Outgoing | $4.00 for first page",
+    ].join("\n\n");
+    expect(checkFeeAgainstSource(fees, "ATM Service Charge: Outgoing", 4, "atm", undefined, report)).toEqual({ ok: false, reason: "category_not_in_text" });
+    expect(checkFeeAgainstSource(fees, "ATM Service Charge: Outgoing", 4, "atm")).toEqual({ ok: false, reason: "category_not_in_text" });
+  });
+
+  it("leaves Darwin's verdict on a heading-only row as it is on main (#1835 scoped to the report)", () => {
+    // Darwin (verify.ts, adjudicate.ts, release-held.ts) calls with "." and a canonical key and no
+    // options; the report-only heading rule must not change what it decides.
+    const page = ["Wire Transfers", "Outgoing Domestic Fee", "$35", "Outgoing International Fee", "$75", "Incoming Domestic Fee", "$25"].join("\n\n");
+    const fees = ["ATM Service Charge", "All other ATMs | $1.50 per withdrawal", "Check Printing | Prices vary", "Faxes – | Outgoing | $4.00 for first page"].join("\n\n");
+    for (const [text, name, amount, key] of [
+      [page, "Wire Transfers: Incoming Domestic Fee", 25, "wire_domestic_incoming"],
+      [fees, "ATM Service Charge: Outgoing", 4, "atm_non_network"],
+    ] as const) {
+      const darwin = checkFeeAgainstSource(text, name, amount, ".", key);
+      expect(darwin).toEqual(checkFeeAgainstSource(text, name, amount, ".", key, {}));
+      expect(darwin).toEqual(checkFeeAgainstSource(text, name, amount, ".", key, { sectionHeadingCategory: false }));
+    }
+    // Verdict recorded by running main's source-check.ts on this row: stated either way,
+    // because Darwin's "." category pattern never asks for a category word.
+    expect(checkFeeAgainstSource(page, "Wire Transfers: Incoming Domestic Fee", 25, ".", "wire_domestic_incoming")).toEqual({
+      ok: true,
+      sourceLine: "Incoming Domestic Fee | $25",
+    });
+    expect(checkFeeAgainstSource(fees, "ATM Service Charge: Outgoing", 4, ".", "atm_non_network")).toEqual({
+      ok: true,
+      sourceLine: "Faxes – | Outgoing | $4.00 for first page",
+    });
+  });
+
+  it("quotes the fee's own row, not an earlier line at the same price for another fee", () => {
+    // Hancock Whitney, live fee 66419: agent_source_texts for source_document_id 19615.
+    const page = [
+      "made at a financial center or ATM do | calendar days, you agree to pay one",
+      "not qualify as a direct deposit. | Sustained Overdraft Fee of $36.00. This",
+      "fee is separate from and may be charged",
+      "in addition to the Overdraft Fee or NSF Fee",
+      "which may be charged on each individual",
+      "NSF item.",
+      "",
+      "Other Fees for Commonly Used Services",
+      "The following fees may be assessed against your account:",
+      "Levies/Garnishments | $75.00",
+      "On Us Check Cashing Fee** | $9.00",
+      "Overdraft Charge/Overdraft Fee (each item) | $36.00",
+      "Nonsufficient Funds Charge (NSF Charge or NSF Fee) each item | $36.00",
+      "Returned Deposit Item Fee (Chargeback) | $9.00",
+      "Stop Payment Fee | $36.00",
+      "Sustained Overdraft Fee | $36.00",
+    ].join("\n");
+    // Read with no category key (report rules, account-type hold) and with one.
+    for (const key of [undefined, "overdraft"]) {
+      expect(checkFeeAgainstSource(page, "Overdraft Charge/Overdraft Fee (each item)", 36, ".", key)).toEqual({
+        ok: true,
+        sourceLine: "Overdraft Charge/Overdraft Fee (each item) | $36.00",
+      });
+    }
+    // The sustained fee itself still quotes a sustained line.
+    const sustained = checkFeeAgainstSource(page, "Sustained Overdraft Fee", 36, ".", "continuous_od");
+    expect(sustained.ok && /Sustained Overdraft Fee/.test(sustained.sourceLine)).toBe(true);
+  });
+
+  it("still reads a price per balance band as tiered", () => {
+    const banded = "Monthly Service Charge | Balance under $500 | $15.00";
+    expect(checkFeeAgainstSource(banded, "Monthly Service Charge", 15, ".")).toEqual({ ok: false, reason: "tiered_fee" });
+    // A band's price followed by "otherwise no charge" is still that band's price.
+    const bandThenFree = "Monthly Service Charge balance below $1,500 $8.95; otherwise no charge";
+    expect(checkFeeAgainstSource(bandThenFree, "Monthly Service Charge", 8.95, ".")).toEqual({ ok: false, reason: "tiered_fee" });
+    // "otherwise" with no waiver before it is a band schedule's last band.
+    const lastBand = "Monthly Service Charge | balance of $1,000 or more, otherwise $10.00";
+    expect(checkFeeAgainstSource(lastBand, "Monthly Service Charge", 10, ".")).toEqual({ ok: false, reason: "tiered_fee" });
   });
 });

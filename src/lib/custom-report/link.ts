@@ -13,10 +13,6 @@ function secret(): string | null {
   return process.env.CUSTOM_REPORT_LINK_SECRET || null;
 }
 
-export function isReportLinkConfigured(): boolean {
-  return secret() !== null;
-}
-
 function sign(key: string, institutionId: number, issued: string): string {
   return createHmac("sha256", key).update(`custom-report:${institutionId}:${issued}`).digest("hex").slice(0, 24);
 }

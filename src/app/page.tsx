@@ -7,38 +7,46 @@
  * on Oct 8-15 its function TTFB was 146 ms at p50 but 3,834 ms at p75 (#1168), the slow
  * renders being the ones whose cached reads had to go to the database.
  *
- * A render with a failed read is never cached (`homeReadsCacheable`): at build time it
- * falls back to rendering per request for that deployment, and in a background
- * regeneration it fails, so the last good page keeps being served. A database blip
- * therefore never bakes a homepage with blank numbers.
+ * Each read keeps serving its last good value while the database is down
+ * (`cachedPublicRead`), so a render only has a failed read when no good value is cached
+ * at all. Such a render (`homeReadsCacheable` false) is cached for one minute instead of
+ * fifteen (`shortenPageLife`): the visitor gets the page with the failed parts hidden,
+ * never an error page, and the next render a minute later reads the database again
+ * (#1572). It used to opt out of the cache with `connection()`, which on a cold cache
+ * miss turned the failed read into a 500.
  */
 export const revalidate = 900;
 
 import type { Metadata } from "next";
-import { connection } from "next/server";
 import { getPublicSnapshot } from "@/lib/public-stats";
 import { CONTACT_EMAIL, LEGAL_ENTITY_NAME, PRODUCT_NAME, SITE_NAME, SITE_URL } from "@/lib/constants";
-import { loadSampleReport } from "@/lib/custom-report/sample-report";
+import { DEMO_SAMPLE_INSTITUTION_ID, loadSampleReport } from "@/lib/custom-report/sample-report";
+import { getRevenueContextCached } from "@/lib/custom-report/revenue-context";
+import { getReportPeerContextCached, getReportPeerFinancialCached, peerLinesFor } from "@/lib/custom-report/peer-context";
+import { createReadBudget } from "@/lib/read-deadline";
+import type { MarketBranchFootprint } from "@/lib/data-store/branches";
 import { ConsumerNav } from "@/components/consumer-nav";
 import { CustomerFooter } from "@/components/customer-footer";
 import { SearchModal } from "@/components/public/search-modal";
-import { getFeeCategoryDetailCached } from "@/lib/data-store/public-cached-reads";
-import { LandingHero } from "./landing-hero";
-import { LandingDemo } from "./landing-demo";
-import { LandingPillars } from "./landing-pillars";
-import { LandingProvenance } from "./landing-provenance";
+import type { IndexRow } from "@/lib/data-store";
+import { getIndexRowsCached, getMarketBranchFootprintCached } from "@/lib/data-store/public-cached-reads";
+import { shortenPageLife } from "@/lib/data-store/public-read-cache";
+import { getSpotlightCategories, publicFeeTypes } from "@/lib/fee-taxonomy";
+import { LandingHero, LandingProof } from "./landing-hero";
+import { LandingHamilton } from "./landing-hamilton";
+import { LandingResearch } from "./landing-research-section";
+import { LandingDeliverable } from "./landing-deliverable";
 import { LandingPricing } from "./landing-pricing";
-import { LandingFaq } from "./landing-faq";
-import { LandingClose } from "./landing-close";
-import { buildHomeData, buildSampleView, homeReadsCacheable } from "./landing-shared";
-import { loadSampleLadder } from "./for-institutions/market-ladder";
-import { buildScenario } from "./subscribe/scenario";
+import { buildIndexCard } from "./landing-index";
+import { HOME_READ_BUDGET_MS, homeReadsCacheable } from "./landing-shared";
+import { homeSerif } from "./landing-serif";
+import "./landing-motion.css";
 
-// The buyer promise from site v3 brief 08 §B.3 (h1) and its subhead; no counts, so nothing goes stale.
-const HOME_TITLE = `Know where your fees stand, with a source for every figure | ${SITE_NAME}`;
+// The title follows the hero h1 (conversion headlines, Oct 17); neither line carries a count, so nothing goes stale.
+const HOME_TITLE = `Your next fee review doesn’t need to take weeks | ${SITE_NAME}`;
 const HOME_DESCRIPTION =
-  `The ${PRODUCT_NAME} reads the published fee schedules of U.S. banks and credit unions. ` +
-  "See each of your fees against your market, your state, your Fed district, your peer group and the nation.";
+  `Compare your fees with competitors using the ${PRODUCT_NAME}. ` +
+  "Turn the evidence into analysis and board reports with Hamilton.";
 
 export const metadata: Metadata = {
   title: { absolute: HOME_TITLE },
@@ -79,48 +87,70 @@ const WEBSITE_JSON_LD = {
 };
 
 export default async function LandingPage() {
-  // Counts and the national ranges come from one shared snapshot, so they match the fee
-  // index, research hub and directory to the number. The district medians are the cached
-  // read /fees/overdraft already makes; a failed read only hides the district rows. The
-  // live sample report (the same one /for-institutions and the sample page show) gives the
-  // named bank's fees, their source lines and its market ladder; a failed read hides them.
-  // The sample is read once: it is null both when none passes the bar today and on error.
-  const [{ summary, categories }, sampleRead, overdraftRead] = await Promise.all([
-    getPublicSnapshot(),
-    loadSampleReport().then(
-      (report) => ({ report, failed: false }),
-      (error: unknown) => {
-        console.error("[home] sample report read failed; sample exhibits hidden", error);
-        return { report: null, failed: true };
-      },
-    ),
-    getFeeCategoryDetailCached("overdraft").then(
-      // The overdraft category always has fees; an empty detail is a read that went wrong.
-      (detail) => ({ detail, failed: detail.fees.length === 0 }),
-      (error: unknown) => {
-        console.error("[home] overdraft district read failed; district rows hidden", error);
-        return { detail: null, failed: true };
-      },
+  // Counts come from the one shared snapshot, so they match the fee index, research hub and
+  // directory to the number. The hero card reads each free fee's published rows, the same cached
+  // read /fees makes; a failed fee read only leaves that fee out of the card. The live sample
+  // report (the one /for-institutions and the sample page show) gives the One question demo
+  // its figures; a failed read shows the demo without figures. It is null both when none
+  // passes the bar today and on error. The One question section draws on it, the sample bank's
+  // reported service-charge income and Call Report peers (the reads the sample report page shows),
+  // and that page's peer-context and branch-footprint reads, from the same cache. The same report
+  // draws the first page of the sample before the plans.
+  const { summary, categories } = await getPublicSnapshot();
+  // The fee types the public site lists (the top 50, as /fees counts them) that have published fees.
+  const listed = publicFeeTypes(categories);
+  const publicKeys = new Set(categories.filter((c) => listed.has(c.fee_category) && Number(c.institution_count ?? 0) > 0).map((c) => c.fee_category));
+  const cardFees = getSpotlightCategories().filter((fee) => publicKeys.has(fee));
+  // One deadline for every read below (#1988): a slow read during an ISR prerender or a
+  // saturated pool leaves its part of the page out instead of holding the render or failing
+  // the build. Every read is optional; a fallback counts as a failed read, so the render is
+  // cached for a minute (shortenPageLife), not fifteen.
+  const budget = createReadBudget(HOME_READ_BUDGET_MS, "Home");
+  const optional = <T,>(read: Promise<T>, label: string) =>
+    budget.optional(read.then((value) => ({ value, failed: false })), label, { value: null as T | null, failed: true });
+  const [sampleRead, indexReads] = await Promise.all([
+    optional(loadSampleReport(), "sample report").then(async ({ value: report, failed }) => {
+      if (!report) return { report: null, revenue: null, financial: null, peers: null, branches: null, failed };
+      const id = report.data.subject.institution_id;
+      const market = report.data.market;
+      const [revenue, financial, peers, branches] = await Promise.all([
+        optional(getRevenueContextCached(id), "sample bank revenue"),
+        optional(getReportPeerFinancialCached(id), "sample bank peer financial"),
+        // The One question section's size-peer fee median and market footprint: the sample
+        // report page's own reads, with the same arguments, so they share its cache entries.
+        optional(getReportPeerContextCached(id, peerLinesFor(report.analysis.lines)), "sample bank peer context"),
+        market
+          ? optional(getMarketBranchFootprintCached(market.county_fips, market.sod_year), "sample market footprint")
+          : Promise.resolve({ value: null as MarketBranchFootprint | null, failed: false }),
+      ]);
+      return {
+        report,
+        revenue: revenue.value,
+        financial: financial.value,
+        peers: peers.value,
+        branches: branches.value,
+        failed: revenue.failed || financial.failed || peers.failed || branches.failed,
+      };
+    }),
+    Promise.all(
+      cardFees.map((fee) =>
+        optional(getIndexRowsCached(fee), `index rows for ${fee}`).then(({ value, failed }) => ({ fee, rows: value ?? ([] as IndexRow[]), failed })),
+      ),
     ),
   ]);
   const cacheable = homeReadsCacheable({
     summary,
     categories,
     sampleFailed: sampleRead.failed,
-    overdraftFailed: overdraftRead.failed,
+    indexFailed: indexReads.some((r) => r.failed),
   });
-  // Opts this render out of the page cache (see the note at the top of the file).
-  if (!cacheable) await connection();
-  const liveSample = sampleRead.report;
-  const ladder = liveSample ? await loadSampleLadder(liveSample, categories) : null;
-  const data = buildHomeData(summary, categories, overdraftRead.detail?.by_fed_district, {
-    sample: buildSampleView(liveSample),
-    ladder,
-    scenario: buildScenario("Overdraft", categories.find((c) => c.fee_category === "overdraft")),
-  });
+  // A render with a failed read is cached for a minute, not fifteen (see the note at the top).
+  if (!cacheable) await shortenPageLife();
+  // The demo bank's own fees come from the same rows, so the card can mark it with no extra read.
+  const index = buildIndexCard(new Map(indexReads.map((r) => [r.fee, r.rows])), [DEMO_SAMPLE_INSTITUTION_ID]);
 
   return (
-    <div className="min-h-screen overflow-x-clip bg-paper consumer-brand">
+    <div className={`${homeSerif.variable} min-h-screen overflow-x-clip bg-paper consumer-brand`}>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(ORGANIZATION_JSON_LD) }}
@@ -131,13 +161,21 @@ export default async function LandingPage() {
       />
       <ConsumerNav />
       <main id="main-content">
-        <LandingHero summary={summary} />
-        <LandingDemo data={data} />
-        <LandingPillars data={data} />
-        <LandingProvenance summary={summary} />
+        {/* James's landing critique (Oct 17, §8), six sections: the hero, live data (the Index card
+            and the proof strip), the Hamilton introduction, the One question demo (James's review, Oct 19:
+            the one interactive demonstration), the sample report's first page, the plans. */}
+        <LandingHero index={index} freshness={summary.refreshedOn || summary.freshnessLabel} />
+        <LandingProof summary={summary} feeTypes={publicKeys.size} />
+        <LandingHamilton />
+        <LandingResearch
+          report={sampleRead.report}
+          revenue={sampleRead.revenue}
+          financial={sampleRead.financial}
+          peers={sampleRead.peers}
+          branches={sampleRead.branches}
+        />
+        <LandingDeliverable report={sampleRead.report} preparedOn={new Date()} />
         <LandingPricing />
-        <LandingFaq summary={summary} />
-        <LandingClose />
       </main>
       <CustomerFooter />
       <SearchModal />

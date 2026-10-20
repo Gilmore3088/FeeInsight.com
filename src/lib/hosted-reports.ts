@@ -9,6 +9,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import hostedReportMap from "../../Reports/studio/hosted-reports.json";
+import { reportRequestHref } from "./report-request-href";
 
 export interface HostedReportEntry {
   institution_id: number;
@@ -98,12 +99,7 @@ export function lookupHostedReport(
 
 /** The free request form, prefilled for this institution; the request enters the lead loop. */
 export function hostedReportRequestHref(report: HostedReportEntry, src: "hosted_report" | "hosted_report_expired"): string {
-  const params = new URLSearchParams({
-    institution: String(report.institution_id),
-    name: report.institution_name,
-    src,
-  });
-  return `/for-institutions?${params.toString()}#report`;
+  return reportRequestHref({ institution: String(report.institution_id), name: report.institution_name, src });
 }
 
 /** Read the finished report HTML for an institution; null when no report exists. */

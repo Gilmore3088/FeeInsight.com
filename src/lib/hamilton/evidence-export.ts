@@ -8,12 +8,14 @@
  */
 import {
   CLAIM_BINDING_LIMITATION,
+  normalizeFrequency,
   normalizeLegacyAnalyzeConfidence,
   type EvidenceBoundAnalyzeResponse,
   type HamiltonDerivedFact,
   type HamiltonEvidenceFact,
   type HamiltonFactSource,
 } from "./evidence-contract";
+import { datasetNoteWords, readStampedFigures, type DatasetNoteWords } from "@/lib/dataset-note";
 
 export interface SavedEvidenceFactRow {
   id: string;
@@ -51,7 +53,19 @@ export interface SavedEvidenceAppendix {
   facts: SavedEvidenceFactRow[];
   derivations: SavedEvidenceDerivationRow[];
   limitations: string[];
+  /**
+   * Where the saved answer's medians, percentiles and counts came from, in the note's words, from
+   * the stamps saved with it (#1924): the dataset and read time, the filters that set who is
+   * counted, the details and, for figures from different reads, how they differ. Null for an
+   * answer saved without stamps; none is made up for it.
+   */
+  dataset: DatasetNoteWords | null;
 }
+
+export const APPENDIX_LINEAGE_LIMITATION =
+  "This appendix records saved input lineage; it does not independently verify the written claims.";
+export const NO_RECORD_EVIDENCE_LIMITATION = "No record-bound evidence was saved with this answer.";
+export const INCOMPLETE_RECORDS_LIMITATION = "Some recorded inputs are incomplete or not independently inspectable.";
 
 function copySource(source: HamiltonFactSource): HamiltonFactSource {
   return {
@@ -206,7 +220,7 @@ export function savedEvidenceAppendix(
         ? fact.unit !== "percent" || fact.currency !== null
         : inputs.some((row) => row.unit !== fact.unit || row.currency !== fact.currency));
     const currencyMismatched = inputs.some((row) => row.currency !== first?.currency);
-    const frequencies = inputs.map((row) => row.frequency?.trim().toLowerCase() ?? null);
+    const frequencies = inputs.map((row) => normalizeFrequency(row.frequency));
     const frequencyMismatched = frequencies.length > 1 && frequencies.some((frequency) => frequency !== frequencies[0]);
     const comparisonPeriodMismatched = fact.derivation.kind === "difference"
       && (inputs.length !== 2 || !inputs[0].scope.reportingDate || !inputs[1].scope.reportingDate
@@ -251,13 +265,13 @@ export function savedEvidenceAppendix(
   const limitations = new Set([
     ...(evidence?.limitations ?? []),
     CLAIM_BINDING_LIMITATION,
-    "This appendix records saved input lineage; it does not independently verify the written claims.",
+    APPENDIX_LINEAGE_LIMITATION,
   ]);
   if (!evidence || (facts.length === 0 && derivations.length === 0)) {
-    limitations.add("No record-bound evidence was saved with this answer.");
+    limitations.add(NO_RECORD_EVIDENCE_LIMITATION);
   }
   if (facts.some((fact) => fact.problems.length > 0) || derivations.some((fact) => fact.problems.length > 0)) {
-    limitations.add("Some recorded inputs are incomplete or not independently inspectable.");
+    limitations.add(INCOMPLETE_RECORDS_LIMITATION);
   }
 
   return {
@@ -268,5 +282,6 @@ export function savedEvidenceAppendix(
     facts,
     derivations,
     limitations: [...limitations],
+    dataset: datasetNoteWords(readStampedFigures(response.datasetStamps)),
   };
 }

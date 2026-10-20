@@ -8,12 +8,15 @@
  * failures named, then withheld; it is never shown unchecked.
  */
 
+import { withRawProviderResponseOperation } from "@/lib/ai-response-budget";
+
 import { getAnthropicMessagesClient, extractAnthropicText, getHamiltonModel, hasAnthropicApiKey, isProviderLimitError } from "@/lib/ai-provider";
 import { HAMILTON_PAUSED_MESSAGE } from "./provider-paused";
-import { trackAnthropicRequest } from "@/lib/ai-provider-usage";
+import { trackAnthropicRequest, assertCompletedAnthropicTextResponse, incompleteProviderResponse } from "@/lib/ai-provider-usage";
 import { extractFigures } from "./figure-check";
 import { checkAnswerEvidence } from "./answer-gate";
 import type { HamiltonEvidenceBundle } from "./evidence-contract";
+import { bindNarrative, type NarrativeBinding } from "./narrative-bound";
 import { HAMILTON_VOICE } from "./voice";
 import type { Storyline, StorylineMemo, StorylineMemoResult } from "./workspace/storyline-types";
 import type { HamiltonIdentitySnapshot } from "./account-context";
@@ -25,6 +28,8 @@ import type { HamiltonIdentitySnapshot } from "./account-context";
 const MAX_TOKENS = 4_000;
 const REQUEST_TIMEOUT_MS = 90_000;
 const MAX_ATTEMPTS = 2;
+/** Institution rows a table gives the memo: the institution and the 12 the page shows first. */
+const MEMO_MATRIX_ROWS = 13;
 /** The Ask memo's own line in provider spend and its own budget row (#1080, #1125). */
 export const MEMO_ROUTE_ID = "api.hamilton.ask.memo";
 
@@ -58,10 +63,13 @@ Hard rules:
   Account identity alone provides no evidence about its fees or financials. Compare it only when the storyline states sourced account-institution figures.
 - Never recommend raising, lowering, cutting, dropping or removing a fee, and never say what the bank should do. Lay out what each path means.
 - Where DATA says a figure is missing, say it is missing; never fill it in.
-- An exhibit with "own": null means the bank's own fee is not in the index yet. It never means the bank charges no fee:
+- An exhibit with "own": null means no price for the bank's own fee is in the index. Say it as DATA's claims word it
+  (for example "its schedule lists no such fee", or "not in the index yet"). It never means the bank charges no fee:
   never call it a no-fee position, a $0 fee, or a claim the bank can make.
 - A fee changed only where DATA lists the change (a change_timeline exhibit or a dated change line). Never infer a
   price change from anything else. When DATA lists none, say the change history is still building.
+- Every sentence names what it is about. Never open a sentence with "That one", "This one", "Those" or "These"
+  pointing back at an earlier sentence; name the institution or fee again.
 - Plain language, short sentences, no jargon, no internal system names. DATA is this prompt's name for the payload:
   never write the word in the memo; say "the filings", "the index" or "the schedule" instead.`;
 
@@ -72,6 +80,8 @@ function withoutPayloadName(text: string): string {
 
 /** Phrases that treat a fee missing from the index as a fee the bank does not charge. */
 const NO_FEE_CLAIM = /\bno-[a-z]+ (?:position|claim|policy|stance)\b|\bno-fee\b|\bschedule shows no\b|\bcharges? no [a-z/ ]{0,30}fee\b/i;
+/** A sentence that points back instead of naming its subject: "That one is Bank of America at $10." (#2036) */
+const POINTING_OPENER = /(?:^|[.!?]["')\]]*\s+|;\s+)((?:[Tt]hat|[Tt]his) ones?\b(?!-)|(?:Those|These) (?:are|were|charge|include|sit)\b)[^.!?\n]{0,40}/m;
 /** An opening sentence that leads with what the data lacks. */
 const LIMIT_OPENING = /^(?:the data|DATA|hamilton|we|this (?:data|index))\b[^.]{0,40}\b(?:cannot|can't|does not|doesn't|has no|holds no|lacks)\b/i;
 
@@ -86,11 +96,31 @@ function ownFeeMissing(payload: unknown): boolean {
 }
 
 /** Everything the model may draw on: the storyline, plus every figure its sentences state. */
+/** Rows folded under "Show N more" stay on the page, not in the memo's prompt (#2036). */
+function memoStoryline(storyline: Storyline): Storyline {
+  return {
+    ...storyline,
+    exhibits: storyline.exhibits.map((e) => {
+      const x = e.exhibit;
+      if (x.kind === "competitor_range" && x.rest) {
+        const kept = { ...x };
+        delete kept.rest;
+        return { ...e, exhibit: kept };
+      }
+      if (x.kind === "structure_matrix" && x.rows.some((r) => r.own) && x.rows.length > MEMO_MATRIX_ROWS) {
+        return { ...e, exhibit: { ...x, rows: [...x.rows.filter((r) => r.own), ...x.rows.filter((r) => !r.own).slice(0, MEMO_MATRIX_ROWS - 1)] } };
+      }
+      return e;
+    }),
+  };
+}
+
 export function memoPayload(
   storyline: Storyline,
   factEvidence?: HamiltonEvidenceBundle | null,
   identityContext?: HamiltonIdentitySnapshot,
 ): Record<string, unknown> {
+  storyline = memoStoryline(storyline);
   const text = JSON.stringify(storyline);
   const figures = extractFigures(text);
   return {
@@ -151,8 +181,34 @@ export function parseMemo(raw: string): MemoDraft | null {
   }
 }
 
+/** Why a memo sentence was left out, in words the model can act on. */
+const OMIT_FEEDBACK: Record<string, string> = {
+  wrong_institution: "states another institution's figure as this one's",
+  gap_as_fee: "states a gap between two fees as a fee",
+  median_as_fee: "states the peer median as an institution's own fee; call it the peer median",
+  wrong_direction: "states a gap or change in the wrong direction",
+  wrong_period: "states a figure for the wrong year",
+  wrong_unit: "states a rate fee as a dollar amount",
+  conflicting_sources: "picks one of two sources that disagree; say that they disagree instead",
+  instruction_text: "repeats instruction-like text from a source",
+};
+
+/**
+ * The memo's sentence binding (#981, H06-T06): with record evidence in DATA, each sentence's figures
+ * must bind to a validated record. A sentence the records contradict is a problem; a figure the records
+ * do not hold is kept as Hamilton's reading and listed in the binding. Advice is the shared gate's.
+ */
+export function memoBinding(draft: MemoDraft, payload: unknown, question?: string): NarrativeBinding | null {
+  const evidence = (payload as { fact_evidence?: HamiltonEvidenceBundle } | null)?.fact_evidence;
+  if (!evidence) return null;
+  const identity = (payload as { identityContext?: HamiltonIdentitySnapshot } | null)?.identityContext;
+  const names = new Map<number, string>();
+  if (identity?.researchInstitutionId && identity.researchInstitutionName) names.set(identity.researchInstitutionId, identity.researchInstitutionName);
+  return bindNarrative({ text: [draft.summary, draft.board, draft.market].join("\n"), evidence, names, question });
+}
+
 /** What is wrong with a draft: untraced figures, advice, internal names. Empty when it passes. */
-export function memoProblems(draft: MemoDraft, payload: unknown): { problems: string[]; figureCheck: { checked: number; unmatched: string[] } } {
+export function memoProblems(draft: MemoDraft, payload: unknown, question?: string): { problems: string[]; figureCheck: { checked: number; unmatched: string[] }; binding: NarrativeBinding | null } {
   const all = [draft.summary, draft.board, draft.market, ...draft.questions].join("\n");
   // The shared gate every paid answer passes (answer-gate.ts); the checks below are the memo's own.
   const shared = checkAnswerEvidence(all, payload);
@@ -170,8 +226,16 @@ export function memoProblems(draft: MemoDraft, payload: unknown): { problems: st
       problems.push(`These evidence_fact_ids are not in DATA.fact_evidence: ${unknown.join(", ")}.`);
     }
   }
+  const binding = memoBinding(draft, payload, question);
+  for (const omitted of binding?.omitted ?? []) {
+    const why = OMIT_FEEDBACK[omitted.reason];
+    if (why) problems.push(`This sentence ${why}: "${omitted.text}"`);
+  }
+  for (const line of binding?.limitations ?? []) if (line.startsWith("Sources disagree")) problems.push(`State this instead of either figure: ${line}`);
   const noFee = ownFeeMissing(payload) ? all.match(NO_FEE_CLAIM) : null;
-  if (noFee) problems.push(`"${noFee[0]}" reads as if the bank charges no fee. Its fee is not in the index yet; say that instead.`);
+  if (noFee) problems.push(`"${noFee[0]}" reads as if the bank charges no fee. No price for its fee is in the index; say it as DATA's claims word it.`);
+  const pointing = all.match(POINTING_OPENER);
+  if (pointing) problems.push(`"${pointing[0].replace(/^[.!?;"')\]]*\s*/, "")}" points back at an earlier sentence. Name the institution or fee instead.`);
   const opening = firstSentence(draft.summary).match(LIMIT_OPENING);
   if (opening) problems.push(`The summary opens with a limit ("${opening[0]}"). Open with what DATA shows; state the limit after.`);
   const identity = (payload as { identityContext?: HamiltonIdentitySnapshot } | null)?.identityContext;
@@ -185,7 +249,7 @@ export function memoProblems(draft: MemoDraft, payload: unknown): { problems: st
       problems.push(`The memo references ${home} without account-institution evidence in the storyline. Account identity alone supplies no fee or financial facts.`);
     }
   }
-  return { problems, figureCheck };
+  return { problems, figureCheck, binding };
 }
 
 export interface MemoClient {
@@ -200,7 +264,6 @@ export interface MemoTracking {
 }
 
 function anthropicMemoClient(institutionId: number | null, usage?: MemoUsage, tracking?: MemoTracking): MemoClient {
-  const client = getAnthropicMessagesClient("Hamilton storyline memo", "hamilton");
   return {
     async create({ system, user, model }) {
       const response = await trackAnthropicRequest(
@@ -213,11 +276,13 @@ function anthropicMemoClient(institutionId: number | null, usage?: MemoUsage, tr
           ...(tracking?.agentRunId ? { agentRunId: tracking.agentRunId } : {}),
           metadata: { institution_id: institutionId },
         },
-        () =>
-          client.messages.create(
+        () => withRawProviderResponseOperation(REQUEST_TIMEOUT_MS, (scope) => {
+          const client = getAnthropicMessagesClient("Hamilton storyline memo", "hamilton", scope);
+          return (attempt) => client.messages.create(
             { model, max_tokens: MAX_TOKENS, system, messages: [{ role: "user", content: user }] },
-            { timeout: REQUEST_TIMEOUT_MS },
-          ),
+            { ...attempt, timeout: REQUEST_TIMEOUT_MS },
+          );
+        }).then((response) => assertCompletedAnthropicTextResponse(response)),
       );
       if (usage) {
         usage.inputTokens += response.usage?.input_tokens ?? 0;
@@ -265,6 +330,16 @@ export async function writeStorylineMemo(
       // Counted once the call returns: a call the budget refused never reached the model.
       if (options.usage) options.usage.calls += 1;
     } catch (error) {
+      const incomplete = incompleteProviderResponse(error);
+      if (incomplete) {
+        // A known incurred call still counts toward the memo quota when no answer is saved.
+        if (options.usage && incomplete.observedUsage) {
+          options.usage.calls += 1;
+          options.usage.inputTokens += incomplete.observedUsage.inputTokens ?? 0;
+          options.usage.outputTokens += incomplete.observedUsage.outputTokens ?? 0;
+        }
+        return { status: "unavailable", reason: incomplete.message };
+      }
       if (isProviderLimitError(error)) return { status: "unavailable", reason: HAMILTON_PAUSED_MESSAGE };
       const message = error instanceof Error ? error.message : String(error);
       return { status: "unavailable", reason: /budget|usage limit/i.test(message) ? "Hamilton's writing budget for today is used up." : "Hamilton's writer could not be reached." };
@@ -275,9 +350,16 @@ export async function writeStorylineMemo(
       feedback = "\n\nYour last reply was not the complete JSON object asked for. Return only the JSON object, within the word limits.";
       continue;
     }
-    const { problems, figureCheck } = memoProblems(draft, payload);
+    const { problems, figureCheck, binding } = memoProblems(draft, payload, question);
     if (problems.length === 0) {
-      const memo: StorylineMemo = { ...draft, model, generatedAt: (options.now ?? new Date()).toISOString(), figureCheck, ...(options.identityContext ? { identityContext: options.identityContext } : {}) };
+      const memo: StorylineMemo = {
+        ...draft,
+        model,
+        generatedAt: (options.now ?? new Date()).toISOString(),
+        figureCheck,
+        ...(binding ? { narrativeBinding: binding } : {}),
+        ...(options.identityContext ? { identityContext: options.identityContext } : {}),
+      };
       return { status: "written", memo };
     }
     lastProblems = problems;

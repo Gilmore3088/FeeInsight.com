@@ -4,6 +4,7 @@ vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
 
 import {
   amountMatches,
+  keyFeesForVersion,
   normalizeDocumentUrl,
   rawCanonicalHint,
   scoreAnswerKey,
@@ -80,7 +81,7 @@ describe("rawCanonicalHint", () => {
 });
 
 describe("scoreAnswerKey", () => {
-  it.each([1, 2, 3] as const)("scores a perfect pipeline at precision and recall 1 on every stage (v%i)", (version) => {
+  it.each([1, 2, 3, 4, 5] as const)("scores a perfect pipeline at precision and recall 1 on every stage (v%i)", (version) => {
     const score = scoreAnswerKey([ENTRY], new Map([[7, evidence()]]), version);
     expect(score.scorerVersion).toBe(version);
     expect(score.overall).toMatchObject({ precision: 1, recall: 1, expected: 4 });
@@ -176,6 +177,37 @@ describe("scoreAnswerKey", () => {
     expect(v3.byStage.knox).toEqual(v2.byStage.knox);
   });
 
+  it("v4 also counts Knox's rows on a document holding the same text as the key's document; v3 does not", () => {
+    // Inst 7217 (Oct 17): the key's page (17333, /fee-schedule) has no Knox rows; Knox read the same
+    // text under /services/fee-schedule (2886) once, so its rows sit there.
+    const bank = evidence({
+      documents: [
+        { id: 11, url: "http://example-bank.com/fees", contentHash: "abc" },
+        { id: 21, url: "https://example-bank.com/services/fees", contentHash: "def" },
+        { id: 22, url: "https://example-bank.com/rates", contentHash: "ghi" },
+      ],
+      texts: [
+        { sourceDocumentId: 11, status: "completed", charCount: 900, textHash: "same" },
+        { sourceDocumentId: 21, status: "completed", charCount: 900, textHash: "same" },
+        { sourceDocumentId: 22, status: "completed", charCount: 300, textHash: "other" },
+      ],
+      knox: [
+        { canonicalKey: "overdraft", amount: 32, sourceDocumentId: 21 },
+        { canonicalKey: "nsf", amount: 30, sourceDocumentId: 21 },
+        { canonicalKey: "monthly_maintenance", amount: 10, sourceDocumentId: 22 },
+      ],
+    });
+    const v3 = scoreAnswerKey([ENTRY], new Map([[7, bank]]), 3);
+    const v4 = scoreAnswerKey([ENTRY], new Map([[7, bank]]), 4);
+    expect(v3.byStage.knox).toMatchObject({ matched: 0, predicted: 0, otherDocument: 3 });
+    expect(v4.byStage.knox).toMatchObject({ matched: 2, predicted: 2, correct: 2, recall: 0.5, otherDocument: 1 });
+    // The key's own document and its rows score the same under both.
+    expect(v4.byStage.darwin).toEqual(v3.byStage.darwin);
+    // A document with another text never joins, and no text hash means v3's documents only.
+    const noHash = scoreAnswerKey([ENTRY], new Map([[7, { ...bank, texts: bank.texts!.map((text) => ({ ...text, textHash: null })) }]]), 4);
+    expect(noHash.byStage.knox).toMatchObject({ matched: 0, predicted: 0 });
+  });
+
   it("scores a bank the pipeline never touched as zero recall", () => {
     const score = scoreAnswerKey([{ ...ENTRY, documentType: "scanned_pdf" }], new Map());
     expect(score.overall).toMatchObject({ recall: 0, precision: null });
@@ -241,5 +273,30 @@ describe("scoreAnswerKey", () => {
       stepKey: "scoreboard-snapshot",
       stateCode: null,
     })).toBe("Recorded the daily scoreboard: coverage 50.0%, accuracy n/a precision.");
+  });
+});
+
+describe("scorer v5: the key read in today's taxonomy (#1398 split)", () => {
+  const key: ConfirmedAnswerKeyEntry = {
+    ...ENTRY,
+    fees: [
+      { canonicalKey: "account_research", amount: 5, amountKind: "fixed", sourceLine: "Return Mail | $5.00/piece" },
+      { canonicalKey: "account_research", amount: 25, amountKind: "fixed", sourceLine: "Account Research (per hour) | $25.00" },
+    ],
+  };
+  const live = [
+    { canonicalKey: "returned_mail", amount: 5, sourceDocumentId: 11 },
+    { canonicalKey: "account_research", amount: 25, sourceDocumentId: 11 },
+  ];
+
+  it("files a key line under the category the live split gives its printed line", () => {
+    expect(keyFeesForVersion(key.fees, 5).map((fee) => fee.canonicalKey)).toEqual(["returned_mail", "account_research"]);
+    expect(keyFeesForVersion(key.fees, 4)).toBe(key.fees);
+  });
+
+  it("scores a re-filed fee right under v5 and wrong under v4", () => {
+    const byId = new Map([[7, evidence({ knox: live, darwin: live, hamilton: live })]]);
+    expect(scoreAnswerKey([key], byId, 4).byStage.hamilton.correct).toBe(1);
+    expect(scoreAnswerKey([key], byId, 5).byStage.hamilton.correct).toBe(2);
   });
 });

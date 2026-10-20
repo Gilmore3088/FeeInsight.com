@@ -44,7 +44,16 @@ describe("admin fee hold", () => {
     const { db, calls } = createDb((query) => (query.includes("UPDATE published_fee_records") ? [liveRow] : [{ id: 1 }]));
     const result = await holdPublishedFee(db, 117687, "Wrong category", actor);
 
-    expect(result).toEqual({ ok: true, feePublishedId: 117687, institutionId: 809 });
+    // The mock has no fee_index_cache writer column, so the rebuild reports "not applied".
+    expect(result).toEqual({ ok: true, feePublishedId: 117687, institutionId: 809, indexRefreshed: false, runId: 1 });
+    // James, 2026-10-16: a hold is a visible run and rebuilds the national index straight away.
+    const run = calls.find((call) => call.query.includes("INSERT INTO agent_runs"));
+    expect(run?.query).toContain("'manual_repair'");
+    expect(run?.values).toContain("admin.fee_hold");
+    expect(calls.some((call) => call.query.includes("INSERT INTO agent_run_steps"))).toBe(true);
+    expect(calls.some((call) => call.query.includes("fee_index_cache"))).toBe(true);
+    const indexEvent = calls.find((call) => call.query.includes("INSERT INTO agent_run_events") && call.query.includes("'index.refresh'"));
+    expect(indexEvent).toBeDefined();
     const update = calls.find((call) => call.query.includes("UPDATE published_fee_records"));
     expect(update?.query).toContain("rolled_back_at IS NULL");
     expect(update?.query).toContain("quarantined_at IS NULL");
@@ -73,7 +82,8 @@ describe("admin fee hold", () => {
     const { db, calls } = createDb((query) => (query.includes("UPDATE published_fee_records") ? [held] : [{ id: 2 }]));
     const result = await releasePublishedFee(db, 117687, actor);
 
-    expect(result).toEqual({ ok: true, feePublishedId: 117687, institutionId: 809 });
+    expect(result).toEqual({ ok: true, feePublishedId: 117687, institutionId: 809, indexRefreshed: false, runId: 2 });
+    expect(calls.find((call) => call.query.includes("INSERT INTO agent_runs"))?.values).toContain("admin.fee_release");
     const update = calls.find((call) => call.query.includes("UPDATE published_fee_records"));
     expect(update?.query).toContain("left(fp.quarantine_reason");
     expect(update?.values).toContain(ADMIN_HOLD_PREFIX);

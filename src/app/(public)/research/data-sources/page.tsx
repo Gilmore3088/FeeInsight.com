@@ -1,285 +1,78 @@
-export const dynamic = "force-dynamic";
+/**
+ * Regenerated in the background (ISR) at most hourly, and sooner when a takedown
+ * invalidates the public read cache its reads carry (#1811). The page reads no session,
+ * cookies or search params; the header's signed-in parts are client islands. A render
+ * with a failed read is cached for a minute instead (`shortenPageLife`, as the homepage).
+ */
+export const revalidate = 3600;
+
 import type { Metadata } from "next";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
-import { SITE_NAME, SITE_URL } from "@/lib/constants";
-import { getDataCoverageSummaryCached } from "@/lib/data-store/public-cached-reads";
+import { PRODUCT_NAME, SITE_NAME, SITE_URL } from "@/lib/constants";
+import { getPublicStatsSummary, UNAVAILABLE_LABEL } from "@/lib/public-stats";
+import { getDataCoverageSummaryCached, getStatsCached } from "@/lib/data-store/public-cached-reads";
+import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
+import { shortenPageLife } from "@/lib/data-store/public-read-cache";
+import { DATA_SOURCES, coverageBar, nextAction, sourceMap, type SourceCounts } from "./data-sources-view";
+import { DataSourcesHero, MethodologyLine, NextAction, SourceMap, SourceTable } from "./data-sources-exhibits";
+
+const PAGE_URL = `${SITE_URL}/research/data-sources`;
+const TITLE = "Data sources: where every number comes from";
+const DESCRIPTION = `The sources behind the ${PRODUCT_NAME}: each institution's own fee schedule, FDIC and NCUA data, Federal Reserve districts, and the public data used for context.`;
 
 export const metadata: Metadata = {
-  title: "Data Sources & Coverage — Methodology",
-  description:
-    "Federal data sources powering the Bank Fee Index: FDIC Call Reports, NCUA 5300, CFPB Complaints, FRED, BLS, NY Fed, OFR, Summary of Deposits, Census ACS, and FFIEC Census Tracts.",
-  keywords: [
-    "bank fee data sources",
-    "FDIC call reports",
-    "NCUA 5300",
-    "CFPB complaints",
-    "bank fee methodology",
-  ],
+  title: TITLE,
+  description: DESCRIPTION,
+  alternates: { canonical: PAGE_URL },
+  openGraph: { title: TITLE, description: DESCRIPTION, url: PAGE_URL, siteName: SITE_NAME, type: "website" },
+  keywords: ["bank fee data sources", "FDIC call reports", "NCUA 5300", "bank fee schedules", "bank fee methodology"],
 };
 
-const DATA_SOURCES = [
-  {
-    name: "Fee Schedule Extractions",
-    description: "Bank and credit union fee observations extracted from published PDFs and web pages with source lineage and review gates.",
-    agency: SITE_NAME,
-    cadence: "Weekly",
-    key: null as string | null,
-  },
-  {
-    name: "FDIC Call Reports",
-    description: "Quarterly financial data for all FDIC-insured banks. Includes service charge income (RIAD4080), total assets, deposits, and revenue metrics.",
-    agency: "Federal Deposit Insurance Corporation",
-    cadence: "Quarterly",
-    key: "fdic_financials",
-  },
-  {
-    name: "NCUA 5300 Reports",
-    description: "Quarterly financial data for federally insured credit unions. Includes fee income (ACCT_131), assets, deposits, and member counts.",
-    agency: "National Credit Union Administration",
-    cadence: "Quarterly",
-    key: "ncua_financials",
-  },
-  {
-    name: "CFPB Consumer Complaints",
-    description: "Consumer complaints about checking accounts, savings accounts, and fee-related issues. Filtered to overdraft, NSF, and account management complaints.",
-    agency: "Consumer Financial Protection Bureau",
-    cadence: "Weekly",
-    key: "cfpb_complaints",
-  },
-  {
-    name: "FRED Economic Indicators",
-    description: "Federal Reserve Economic Data including federal funds rate, CPI, unemployment, and bank-specific Quarterly Banking Profile metrics (net interest income, service charges).",
-    agency: "Federal Reserve Bank of St. Louis",
-    cadence: "Weekly",
-    key: "fred_indicators",
-  },
-  {
-    name: "BLS Consumer Price Index",
-    description: "Bureau of Labor Statistics CPI data including the bank-specific series CUUR0000SS68021 (Checking Account and Other Bank Services) and CUUR0000SEGD05 (Financial Services).",
-    agency: "Bureau of Labor Statistics",
-    cadence: "Weekly",
-    key: "bls_observations",
-  },
-  {
-    name: "NY Fed Reference Rates",
-    description: "Daily reference rates including SOFR (Secured Overnight Financing Rate), EFFR (Effective Federal Funds Rate), and OBFR (Overnight Bank Funding Rate).",
-    agency: "Federal Reserve Bank of New York",
-    cadence: "Daily",
-    key: "nyfed_rates",
-  },
-  {
-    name: "OFR Financial Stress Index",
-    description: "Daily composite financial stress index from 33 market variables. Tracks credit, equity, funding, and volatility stress indicators.",
-    agency: "Office of Financial Research",
-    cadence: "Daily",
-    key: "ofr_stress",
-  },
-  {
-    name: "FDIC Summary of Deposits",
-    description: "Annual branch-level deposit data for all domestic banking offices. Used to compute Herfindahl-Hirschman Index (HHI) market concentration by MSA.",
-    agency: "Federal Deposit Insurance Corporation",
-    cadence: "Annual",
-    key: "sod_branches",
-  },
-  {
-    name: "Market Concentration (HHI)",
-    description: "Derived market concentration metrics per Metropolitan Statistical Area. Computed from Summary of Deposits branch-level data.",
-    agency: "Derived",
-    cadence: "Annual",
-    key: "market_concentrations",
-  },
-  {
-    name: "Census ACS Demographics",
-    description: "American Community Survey 5-year estimates: median household income, poverty rates, and population by state and county.",
-    agency: "U.S. Census Bureau",
-    cadence: "Annual",
-    key: "demographics",
-  },
-  {
-    name: "FFIEC Census Tract Classifications",
-    description: "Income classifications (low/moderate/middle/upper) and demographics for census tracts. Enables CRA-type equity analysis of fee distributions.",
-    agency: "Federal Financial Institutions Examination Council",
-    cadence: "Annual",
-    key: "census_tracts",
-  },
-];
-
-function formatCount(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return n.toLocaleString();
-}
+const JSON_LD = {
+  "@context": "https://schema.org",
+  "@type": "WebPage",
+  name: TITLE,
+  description: DESCRIPTION,
+  url: PAGE_URL,
+};
 
 export default async function DataSourcesPage() {
-  const coverage = await getDataCoverageSummaryCached();
+  // Every read is served from the public cache between publishes; a failed read hides its number.
+  const [summary, collection, coverage, sampleLive] = await Promise.all([
+    getPublicStatsSummary().catch(() => null),
+    getStatsCached().catch(() => null),
+    getDataCoverageSummaryCached().catch(() => null),
+    sampleReportAvailable().catch(() => false),
+  ]);
+  if (!summary?.complete || !collection || !coverage) await shortenPageLife();
 
-  const coverageMap: Record<string, number> = {
-    fdic_financials: coverage.fdic_financials,
-    ncua_financials: coverage.ncua_financials,
-    cfpb_complaints: coverage.cfpb_complaints,
-    fred_indicators: coverage.fred_indicators,
-    bls_observations: coverage.bls_observations,
-    nyfed_rates: coverage.nyfed_rates,
-    ofr_stress: coverage.ofr_stress,
-    sod_branches: coverage.sod_branches,
-    market_concentrations: coverage.market_concentrations,
-    demographics: coverage.demographics,
-    census_tracts: coverage.census_tracts,
+  const counts: SourceCounts = {
+    observations: summary && summary.observationsLabel !== UNAVAILABLE_LABEL ? summary.observations : null,
+    institutions: summary && summary.institutionsLabel !== UNAVAILABLE_LABEL ? summary.institutions : null,
+    banks: collection?.banks ?? null,
+    creditUnions: collection?.credit_unions ?? null,
+    fdicReports: coverage?.fdic_financials ?? null,
+    ncuaReports: coverage?.ncua_financials ?? null,
   };
 
-  const totalRecords = Object.values(coverageMap).reduce((a, b) => a + b, 0);
-  const populatedSources = Object.values(coverageMap).filter((v) => v > 0).length;
-
   return (
-    <div className="mx-auto max-w-page px-6 py-14">
+    <div className="bg-paper">
       <BreadcrumbJsonLd
         items={[
           { name: "Home", href: "/" },
           { name: "Research", href: "/research" },
-          { name: "Data Sources", href: "/research/data-sources" },
+          { name: "Data sources", href: "/research/data-sources" },
         ]}
       />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD).replace(/</g, "\\u003c") }} />
+      <DataSourcesHero freshnessLabel={summary?.freshnessLabel ?? null} />
 
-      <div className="flex items-center gap-2 mb-4">
-        <span className="h-px w-8 bg-brick/40" />
-        <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-brick/60">
-          Methodology
-        </span>
+      <div className="mx-auto max-w-page space-y-12 px-4 py-10 sm:px-6 sm:py-14">
+        <SourceMap map={sourceMap(counts)} coverage={coverageBar(counts)} />
+        <SourceTable sources={DATA_SOURCES} />
+        <MethodologyLine />
+        <NextAction action={nextAction(sampleLive)} />
       </div>
-      <h1
-        className="text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] font-extrabold text-ink"
-        style={{ fontFamily: "var(--fi-font-sans)" }}
-      >
-        Data Sources & Coverage
-      </h1>
-      <p className="mt-2 max-w-2xl text-[14px] text-ink-muted">
-        The Bank Fee Index integrates data from {DATA_SOURCES.length} federal and
-        derived sources. All data is publicly available, sourced from official
-        government APIs, and refreshed on automated schedules.
-      </p>
-
-      {/* Summary strip */}
-      <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-[12px] text-ink-muted">
-        <span>
-          <span className="font-semibold tabular-nums text-ink-soft">
-            {DATA_SOURCES.length}
-          </span>{" "}
-          data sources
-        </span>
-        <span className="hidden sm:inline text-border">|</span>
-        <span>
-          <span className="font-semibold tabular-nums text-ink-soft">
-            {populatedSources}
-          </span>{" "}
-          populated
-        </span>
-        <span className="hidden sm:inline text-border">|</span>
-        <span>
-          <span className="font-semibold tabular-nums text-ink-soft">
-            {formatCount(totalRecords)}
-          </span>{" "}
-          total records
-        </span>
-      </div>
-
-      {/* Data source cards */}
-      <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {DATA_SOURCES.map((source) => {
-          const count = source.key ? coverageMap[source.key] ?? 0 : null;
-          const hasData = count === null || count > 0;
-
-          return (
-            <div
-              key={source.name}
-              className={`rounded-xl border px-5 py-4 transition-colors ${
-                hasData
-                  ? "border-border/80 bg-white/70 backdrop-blur-sm"
-                  : "border-border/40 bg-paper/30 opacity-60"
-              }`}
-            >
-              <div className="flex items-start justify-between gap-2">
-                <h3 className="text-sm font-semibold text-ink">
-                  {source.name}
-                </h3>
-                <span
-                  className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                    source.cadence === "Daily"
-                      ? "bg-blue-50 text-blue-600"
-                      : source.cadence === "Weekly"
-                        ? "bg-emerald-50 text-emerald-600"
-                        : source.cadence === "Quarterly"
-                          ? "bg-amber-50 text-amber-700"
-                          : "bg-slate-50 text-slate-500"
-                  }`}
-                >
-                  {source.cadence}
-                </span>
-              </div>
-              <p className="mt-1.5 text-[12px] leading-relaxed text-ink-muted">
-                {source.description}
-              </p>
-              <div className="mt-3 flex items-center justify-between text-[11px]">
-                <span className="text-ink-muted">{source.agency}</span>
-                {count !== null && (
-                  <span
-                    className={`font-semibold tabular-nums ${
-                      count > 0 ? "text-emerald-600" : "text-ink-muted"
-                    }`}
-                  >
-                    {count > 0 ? formatCount(count) : "Not populated"}
-                  </span>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Refresh schedule */}
-      <section className="mt-10 rounded-xl border border-border bg-paper/50 px-5 py-4">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-          Automated Refresh Schedule
-        </h2>
-        <div className="mt-3 grid gap-2 text-[13px] text-ink-muted">
-          <div className="flex items-center gap-3">
-            <span className="w-20 shrink-0 rounded-full bg-blue-50 px-2 py-0.5 text-center text-[10px] font-semibold text-blue-600">
-              Daily
-            </span>
-            <span>OFR Financial Stress Index, NY Fed reference rates</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="w-20 shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-center text-[10px] font-semibold text-emerald-600">
-              Weekly
-            </span>
-            <span>FRED macroeconomic indicators, BLS CPI, CFPB complaints, Fed speeches &amp; research, fee schedule crawls</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="w-20 shrink-0 rounded-full bg-amber-50 px-2 py-0.5 text-center text-[10px] font-semibold text-amber-700">
-              Quarterly
-            </span>
-            <span>FDIC Call Reports, NCUA 5300 Reports</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="w-20 shrink-0 rounded-full bg-slate-50 px-2 py-0.5 text-center text-[10px] font-semibold text-slate-500">
-              Annual
-            </span>
-            <span>FDIC Summary of Deposits, Census ACS demographics, FFIEC census tracts</span>
-          </div>
-        </div>
-      </section>
-
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{
-          __html: JSON.stringify({
-            "@context": "https://schema.org",
-            "@type": "WebPage",
-            name: "Data Sources & Coverage",
-            description: "Federal data sources powering the Bank Fee Index.",
-            url: `${SITE_URL}/research/data-sources`,
-          }).replace(/</g, "\\u003c"),
-        }}
-      />
     </div>
   );
 }

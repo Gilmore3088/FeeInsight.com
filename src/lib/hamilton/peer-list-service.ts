@@ -1,14 +1,43 @@
 import { recordProRequest } from "@/lib/agents/run-store";
 import { getPeerListRows, getPeerListSubject } from "@/lib/data-store/hamilton-peer-list";
-import { getPublishedPeerFees } from "@/lib/data-store/hamilton-peer-fees";
+import { getPublishedPeerFees, getPublishedPeerRateFees } from "@/lib/data-store/hamilton-peer-fees";
+import { isStaleSource } from "./source-age";
 import { getActivePeerSet } from "./active-peer-set";
 import { loadHamiltonAccountContext } from "./account-context-store";
 import { normalizeCanonicalInstitutionId } from "./context-link";
 import { resolveHamiltonInstitutionContext } from "./workspace-context";
-import { isPeerListContinuationQuestion, peerListFeeFollowUp, parsePeerListQuestion, peerListRefinementState, validatePeerListContinuation, peerListReferencesUnchanged, planPeerList, type PeerListData, type PeerListResponse, type PeerListSubject } from "./peer-list";
+import { feeCategoriesIn } from "./workspace/ask";
+import { proseFeeName } from "./workspace/names";
+import { isPeerListContinuationQuestion, peerListFeeFollowUp, peerListFollowUpFeePhrase, parsePeerListQuestion, peerListRefinementState, validatePeerListContinuation, peerListReferencesUnchanged, planPeerList, readPeerListOffset, MAX_PEER_LIST_ROWS, type PeerListCriteria, type PeerListData, type PeerListResponse, type PeerListSubject } from "./peer-list";
 
-interface PeerAskBody { institutionId?: unknown; question?: unknown; answer?: unknown; previousPeerList?: unknown }
+/** Why "us" has no institution: none linked, or more than one. Never the researched institution. */
+function noAccountInstitution(status: string): string {
+  const why = status === "ambiguous"
+    ? "More than one institution is linked to your account, so Hamilton can't tell which one is \"us\"."
+    : "No institution is linked to your account, so there is no \"us\" to compare. To link yours, open Settings & account.";
+  return `${why} Hamilton did not treat the institution you are researching as yours.`;
+}
+
+interface PeerAskBody { institutionId?: unknown; question?: unknown; answer?: unknown; previousPeerList?: unknown; peerListOffset?: unknown }
 interface PeerAsker { id: number; institution_name?: string | null }
+
+/**
+ * Says which institutions a capped list kept and how to see the others (#1540). A list asked for
+ * "all" pages through the rest (#977, H02-T08), so its note names the rows shown and the way on.
+ */
+/** Counts read with thousands separators ("4,218"), as every other Hamilton count does. */
+const n = (value: number) => value.toLocaleString("en-US");
+
+export function cappedListNote(criteria: Pick<PeerListCriteria, "sort" | "limit">, shown: number, total: number, offset = 0): string {
+  const order = criteria.sort === "closest_assets" ? "closest in size first" : criteria.sort === "largest_assets" ? "largest by assets first" : "by name";
+  if (criteria.limit >= MAX_PEER_LIST_ROWS) {
+    const end = offset + shown;
+    const more = total - end;
+    return `Showing institutions ${n(offset + 1)} to ${n(end)} of ${n(total)} matching institutions, ${order}.${more > 0 ? ` ${n(more)} more ${more === 1 ? "is" : "are"} on the next page${more > MAX_PEER_LIST_ROWS ? "s" : ""}.` : ""}`;
+  }
+  const kept = criteria.sort === "closest_assets" ? `the ${n(shown)} closest in size` : criteria.sort === "largest_assets" ? `the ${n(shown)} largest by assets` : `the first ${n(shown)} by name`;
+  return `Showing ${kept} of ${n(total)} matching institutions; ${n(total - shown)} more are not shown. Ask for "all" to see them ${MAX_PEER_LIST_ROWS} at a time.`;
+}
 
 /** A recognized list is never sent to fee analysis or a paid narrative fallback. */
 export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordActivity = true): Promise<PeerListResponse | null> {
@@ -34,6 +63,23 @@ export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordA
         const prior = validatePeerListContinuation(body.previousPeerList);
         const state = peerListRefinementState(question);
         const feeIntent = peerListFeeFollowUp(question);
+        // "Compare their overdraft fees" names one fee; "How does this compare with us?" means NSF.
+        const phrase = feeIntent ? peerListFollowUpFeePhrase(question) : null;
+        const named = phrase ? feeCategoriesIn(phrase) : ["nsf"];
+        if (feeIntent && named.length !== 1)
+          return message("needs_criteria", `Name one fee to compare, for example "Compare their overdraft fees" or "Compare their NSF fees". ${named.length ? "That names more than one fee." : "Hamilton did not recognize that fee."} Nothing was compared.`);
+        const category = named[0];
+        const label = proseFeeName(category);
+        // "Compare with us" with no list yet: say whether the account has an institution to be "us",
+        // from the account alone. The researched institution is never taken to be the asker's.
+        if (!prior && feeIntent === "with_account") {
+          const resolved = await loadHamiltonAccountContext(user);
+          if (resolved.status === "unavailable")
+            return message("unavailable", "Hamilton could not check which institution is linked to your account. Nothing was compared.");
+          if (resolved.status !== "identified" || !resolved.institution)
+            return message("needs_criteria", `${noAccountInstitution(resolved.status)} To see peers' ${label} fees, ask for a peer list first, then "Compare their ${label} fees".`);
+          return message("needs_criteria", `Ask for a peer list first, for example "List ten similarly sized peers". Then ask "How does this compare with us?" to add ${resolved.institution.name}.`);
+        }
         if (!prior || !isPeerListContinuationQuestion(question))
           return message("needs_criteria", "This follow-up has no valid prior peer list. Run the peer list again; no replacement list was selected.");
         const suppliedId = body.institutionId === undefined || body.institutionId === null || body.institutionId === ""
@@ -46,6 +92,7 @@ export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordA
         const original = await answerPeerList(user, {
           question: prior.originQuestion,
           institutionId: prior.originInstitutionId,
+          ...(prior.originOffset ? { peerListOffset: prior.originOffset } : {}),
         }, false);
         if (!original || original.peerList.status !== "ready" ||
             original.peerList.subject?.institutionId !== prior.originSubjectId ||
@@ -53,6 +100,8 @@ export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordA
           return message("unavailable", "The original peer selection or its dated records have changed. Run the original list again; no substitute peer group was used.");
         }
         const selected = new Set(prior.selectedIds);
+        // A fee follow-up after "Only Florida" still describes the Florida list, not the original nationwide one.
+        const shownState = state ?? prior.refinedState ?? null;
         const rows = original.peerList.rows.filter(row =>
           selected.has(row.institutionId) && (!state || row.stateCode === state));
         const count = prior.selectedIds.length;
@@ -62,37 +111,43 @@ export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordA
           if (feeIntent === "with_account") {
             const resolved = await loadHamiltonAccountContext(user);
             if (resolved.status !== "identified" || !resolved.institution)
-              return message(resolved.status === "unavailable" ? "unavailable" : "needs_criteria",
-                "Your account institution is not verified. The researched institution was not assumed to be yours.");
+              return resolved.status === "unavailable"
+                ? message("unavailable", "Hamilton could not check which institution is linked to your account. Nothing was compared.")
+                : message("needs_criteria", `${noAccountInstitution(resolved.status)} To compare the listed peers, ask "Compare their ${label} fees".`);
             account = { institutionId: Number(resolved.institution.id), name: resolved.institution.name };
             if (!Number.isSafeInteger(account.institutionId) || account.institutionId <= 0)
               return message("unavailable", "The account institution ID is invalid. No comparison was generated.");
           }
           const ids = rows.map(row => row.institutionId);
-          const fees = ids.length || account ? await getPublishedPeerFees(
-            [...new Set([...ids, ...(account ? [account.institutionId] : [])])], "nsf") : [];
+          const compared = [...new Set([...ids, ...(account ? [account.institutionId] : [])])];
+          const [fees, rateFees] = compared.length
+            ? await Promise.all([getPublishedPeerFees(compared, category), getPublishedPeerRateFees(compared, category)])
+            : [[], []];
           feeComparison = {
-            category: "nsf", comparedPeerIds: ids, fees, account, includesAccount: account !== null,
-            note: "Each published consumer NSF fee row is shown separately, including zero fees and distinct charges. Missing records mean no published matching fee on file; no amount is inferred.",
+            category, label, comparedPeerIds: ids, fees, rateFees, account, includesAccount: account !== null,
+            note: `Each consumer ${label} fee a peer publishes is listed on its own line, $0 fees included.${rateFees.length ? " A fee charged as a rate is shown as that rate and is not converted to dollars or compared with dollar amounts." : ""} A peer with no line has no matching published fee on file, and Hamilton fills in no amount for it.`,
           };
         }
+        // A refinement is its own list of the displayed rows, so it has no pages of its own.
+        const { offset: _page, ...originalList } = original.peerList;
+        void _page;
         return {
           kind: "peer_list",
           shortAnswer: feeIntent
-            ? feeIntent === "with_account" ? "NSF fees for " + rows.length + " selected peers versus your verified account institution." : "Published NSF fees for " + rows.length + " selected peers."
+            ? feeIntent === "with_account" ? `${label[0].toUpperCase()}${label.slice(1)} fees for ${rows.length} selected peer${rows.length === 1 ? "" : "s"} compared with your institution.` : `Published ${label} fees for ${rows.length} selected peer${rows.length === 1 ? "" : "s"}.`
             : rows.length + " of " + count + " previously displayed peers are in " + state + ".",
           peerList: {
-            ...original.peerList,
+            ...originalList,
             rows,
             totalMatches: rows.length,
-            criteria: original.peerList.criteria ? {
-              ...original.peerList.criteria,
-              states: state ? [state] : original.peerList.criteria.states,
+            criteria: originalList.criteria ? {
+              ...originalList.criteria,
+              states: shownState ? [shownState] : originalList.criteria.states,
               institutionIds: [...prior.selectedIds],
-              descriptions: [...original.peerList.criteria.descriptions,
+              descriptions: [...originalList.criteria.descriptions,
                 "This refinement used only the " + count + " institutions displayed in the previous list."],
             } : null,
-            notes: [...original.peerList.notes,
+            notes: [...originalList.notes,
               "Only the previously displayed peer IDs were considered; no new peers were introduced. Reporting dates were rechecked."],
             ...(feeComparison ? { feeComparison } : {}),
           },
@@ -103,7 +158,10 @@ export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordA
         result = message("needs_criteria", "Keep the peer-list question to 1,000 characters or fewer.");
       } else if (intent.problems.length) {
         result = message("needs_criteria", intent.problems.join(" "));
+      } else if (readPeerListOffset(body.peerListOffset) === null) {
+        result = message("needs_criteria", "That page of the list is not available. Run the list again from its first page.");
       } else {
+        const offset = readPeerListOffset(body.peerListOffset) ?? 0;
         const supplied = body.institutionId;
         const hasSupplied = supplied !== undefined && supplied !== null && supplied !== "";
         const explicitId = typeof supplied === "string" || typeof supplied === "number" ? normalizeCanonicalInstitutionId(supplied) : null;
@@ -131,19 +189,31 @@ export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordA
         const active = intent.saved || (!explicitFilters && intent.peerBased)
           ? await getActivePeerSet({ userId: user.id, institutionId: subject.institutionId })
           : null;
+        // No saved group: "list my peers" keeps half to twice the assets, and the reader can save their own (James, Oct 19, #2097).
         const planned = planPeerList(intent, subject, active);
         if (!planned.criteria) return message("needs_criteria", planned.problem ?? "Specify peer criteria.");
         const criteria = planned.criteria;
-        const found = await getPeerListRows(subject.institutionId, criteria, asOf);
+        // A page never runs past the count asked for: "List 60 peers" shows 50, then 10.
+        const pageLimit = criteria.requestedCount === null ? criteria.limit : Math.min(criteria.limit, criteria.requestedCount - offset);
+        if (offset > 0 && (criteria.limit < MAX_PEER_LIST_ROWS || pageLimit < 1))
+          return message("needs_criteria", "That page of the list is not available. Run the list again from its first page.");
+        const found = await getPeerListRows(subject.institutionId, criteria, asOf, undefined, { offset, limit: pageLimit });
+        if (offset > 0 && found.rows.length === 0)
+          return message("needs_criteria", `The list now has ${n(found.totalMatches)} matching institution${found.totalMatches === 1 ? "" : "s"}, so that page is empty. Run the list again from its first page.`);
         const notes = ["Assets are from each institution's latest stored FDIC or NCUA filing, not a live check. Reporting dates may differ.", "Stored financial amounts are in USD thousands and are converted once to dollars here; dollar formatting does not imply more source precision."];
-        if (criteria.requestedCount === null || (criteria.requestedCount ?? 0) > criteria.limit) notes.push(`This view is limited to ${criteria.limit} rows. Narrow the criteria to inspect a smaller group.`);
-        if (criteria.requestedCount !== null && found.totalMatches < criteria.requestedCount) notes.push(`Only ${found.totalMatches} institutions meet these criteria; the filters were not widened to reach ${criteria.requestedCount}.`);
-        const older = found.rows.filter(row => row.reportDate && now.getTime() - new Date(`${row.reportDate}T00:00:00Z`).getTime() > 365 * 86400000).length;
-        if (older) notes.push(`${older} displayed asset filing${older === 1 ? " is" : "s are"} more than 365 days old. Review the reporting dates before comparing.`);
+        if (found.totalMatches > found.rows.length) notes.push(cappedListNote(criteria, found.rows.length, found.totalMatches, offset));
+        else if ((criteria.requestedCount ?? 0) > criteria.limit) notes.push(`This view shows at most ${criteria.limit} institutions.`);
+        if (criteria.requestedCount !== null && found.totalMatches < criteria.requestedCount) notes.push(found.totalMatches === 0
+          ? `No institution meets these criteria. The filters above were not widened to find ${criteria.requestedCount}.`
+          : `Only ${found.totalMatches} institution${found.totalMatches === 1 ? " meets" : "s meet"} these criteria. The filters above were not widened to reach ${criteria.requestedCount}.`);
+        const older = found.rows.filter(row => isStaleSource(row.reportDate, now)).length;
+        if (older) notes.push(`${n(older)} displayed asset filing${older === 1 ? " is" : "s are"} over a year old. Review the reporting dates before comparing.`);
         result = {
           kind: "peer_list",
-          shortAnswer: `${found.rows.length} of ${found.totalMatches} matching institutions for ${subject.name}.`,
-          peerList: { version: 1, status: "ready", subject, criteria, rows: found.rows, totalMatches: found.totalMatches, queriedAt, notes },
+          shortAnswer: offset > 0
+            ? `Institutions ${n(offset + 1)} to ${n(offset + found.rows.length)} of ${n(found.totalMatches)} matching institutions for ${subject.name}.`
+            : `${n(found.rows.length)} of ${n(found.totalMatches)} matching institutions for ${subject.name}.`,
+          peerList: { version: 1, status: "ready", subject, criteria, rows: found.rows, totalMatches: found.totalMatches, queriedAt, notes, ...(offset > 0 ? { offset } : {}) },
         };
       }
     } catch (error) {
@@ -159,7 +229,8 @@ export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordA
     operation: "ask", title: "Hamilton peer list", status: result.peerList.status === "unavailable" ? "failed" : "completed",
     summary: result.shortAnswer, userId: user.id,
     ...(recordedSubject ? { institutionId: recordedSubject.institutionId } : {}),
-    detail: { response_kind: "peer_list", question, criteria: result.peerList.criteria, returned_count: result.peerList.rows.length, matching_count: result.peerList.totalMatches, provider_called: false },
+    detail: { response_kind: "peer_list", question, criteria: result.peerList.criteria, offset: result.peerList.offset ?? 0, returned_count: result.peerList.rows.length, matching_count: result.peerList.totalMatches, provider_called: false },
   }).catch((error) => console.error("[hamilton-peer-list] activity receipt failed", error));
   return result;
 }
+

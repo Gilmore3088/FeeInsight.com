@@ -5,6 +5,24 @@ import { benchmarkPositionMeaning } from "@/lib/guides/benchmark-position";
 import type { DimensionBreakdown, FeeCategorySummary } from "@/lib/data-store/fees";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
+import { GuideCalculator } from "./guide-calculator";
+import { GuideAnimation } from "./fee-animation/guide-animation";
+import {
+  ActionsBlock,
+  BreakdownBlock,
+  CapScopeBlock,
+  ComplaintsBlock,
+  DistributionBlock,
+  NetworkMentionsBlock,
+  OutcomesBlock,
+  PathsBlock,
+  PolicyTableBlock,
+  ScenariosBlock,
+  UpdatesBlock,
+  type GuideExtras,
+} from "./guide-decision-blocks";
+
+export type { GuideExtras };
 
 /** Breakdowns a guide's comparison blocks need, keyed by fee category. */
 export type GuideBreakdowns = Map<
@@ -121,6 +139,12 @@ function CalloutBlock({
       >
         {tone.label}
       </p>
+      {block.title && (
+        <p className="mt-1.5 text-[15px] font-semibold text-ink">
+          {block.title}
+          {block.rule && <span className="ml-2 text-[12.5px] font-normal text-ink-muted">{block.rule}</span>}
+        </p>
+      )}
       <p className="mt-2 text-[14.5px] leading-[1.7] text-ink-soft">
         <Prose text={block.text} summaries={summaries} />
         <SourceLink source={block.source} />
@@ -138,8 +162,8 @@ function BenchmarkBlock({
 }) {
   const name = getDisplayName(block.category);
   return (
-    <div className="mt-5 overflow-x-auto rounded-xl border border-border/80 bg-white/70">
-      <table className="w-full min-w-[420px] text-left">
+    <div className="mt-5 overflow-hidden rounded-xl border border-border/80 bg-white/70">
+      <table className="w-full text-left">
         <caption className="sr-only">
           Where your {name} fee sits against the national distribution
         </caption>
@@ -147,13 +171,13 @@ function BenchmarkBlock({
           <tr className="border-b border-border">
             <th
               scope="col"
-              className="px-5 py-3 text-[10px] font-bold uppercase tracking-[0.12em] text-ink-muted"
+              className="px-4 py-3 text-[10px] font-bold uppercase tracking-[0.12em] text-ink-muted"
             >
               If your bank charges
             </th>
             <th
               scope="col"
-              className="px-5 py-3 text-[10px] font-bold uppercase tracking-[0.12em] text-ink-muted"
+              className="px-4 py-3 text-[10px] font-bold uppercase tracking-[0.12em] text-ink-muted"
             >
               Where that puts you
             </th>
@@ -162,10 +186,10 @@ function BenchmarkBlock({
         <tbody>
           {block.rows.map((row, i) => (
             <tr key={i} className="border-b border-border/50 last:border-0">
-              <td className="px-5 py-3 text-[14px] text-ink">
+              <td className="px-4 py-3 text-[14px] text-ink">
                 <Prose text={row.condition} summaries={summaries} />
               </td>
-              <td className="px-5 py-3 text-[13.5px] text-ink-muted">
+              <td className="px-4 py-3 text-[13.5px] text-ink-muted">
                 <Prose text={benchmarkPositionMeaning(row.meaning)} summaries={summaries} />
               </td>
             </tr>
@@ -247,14 +271,32 @@ function ComparisonBlock({
   );
 }
 
+/**
+ * The ATM calculator starts from the receipt's two live fees when the page has them, so the
+ * calculator and the receipt above it agree; otherwise from the guide's illustrative values.
+ */
+function calculatorStart(
+  block: Extract<GuideBlock, { type: "calculator" }>,
+  extras: GuideExtras,
+): { defaults: Record<string, number>; note?: string } {
+  const example = extras.atmExample;
+  if (block.kind !== "atm" || !example) return { defaults: block.defaults };
+  return {
+    defaults: { ...block.defaults, operatorFee: example.owner.amount, bankFee: example.holder.amount },
+    note: `Starting fees are the receipt's: ${example.owner.institutionName}'s surcharge and ${example.holder.institutionName}'s fee. ${block.defaults.withdrawals ?? 4} withdrawals is an example amount. Enter your own account's terms.`,
+  };
+}
+
 export function GuideBlockRenderer({
   block,
   summaries,
   breakdowns,
+  extras = {},
 }: {
   block: GuideBlock;
   summaries: FeeCategorySummary[];
   breakdowns: GuideBreakdowns;
+  extras?: GuideExtras;
 }) {
   switch (block.type) {
     case "paragraph":
@@ -272,6 +314,41 @@ export function GuideBlockRenderer({
       return <BenchmarkBlock block={block} summaries={summaries} />;
     case "comparison":
       return <ComparisonBlock block={block} breakdowns={breakdowns} />;
+    case "paths":
+      return <PathsBlock block={block} summaries={summaries} />;
+    case "outcomes":
+      return <OutcomesBlock block={block} summaries={summaries} />;
+    case "scenarios":
+      return <ScenariosBlock block={block} summaries={summaries} />;
+    case "calculator":
+      return (
+        <div>
+          {block.intro && (
+            <p className="mt-5 text-[15px] leading-[1.75] text-ink-soft">
+              <Prose text={block.intro} summaries={summaries} />
+            </p>
+          )}
+          <GuideCalculator kind={block.kind} {...calculatorStart(block, extras)} />
+        </div>
+      );
+    case "breakdown":
+      return <BreakdownBlock block={block} extras={extras} />;
+    case "actions":
+      return <ActionsBlock block={block} summaries={summaries} />;
+    case "distribution":
+      return <DistributionBlock block={block} extras={extras} />;
+    case "cap_scope":
+      return <CapScopeBlock extras={extras} />;
+    case "network_mentions":
+      return <NetworkMentionsBlock block={block} extras={extras} />;
+    case "policy_table":
+      return <PolicyTableBlock block={block} summaries={summaries} />;
+    case "complaints":
+      return <ComplaintsBlock block={block} summaries={summaries} extras={extras} />;
+    case "animation":
+      return <GuideAnimation scene={block.scene} actions={block.actions} />;
+    case "updates":
+      return <UpdatesBlock block={block} summaries={summaries} />;
   }
 }
 
@@ -280,11 +357,13 @@ export function GuideSectionRenderer({
   summaries,
   breakdowns,
   isLast,
+  extras,
 }: {
   section: GuideSection;
   summaries: FeeCategorySummary[];
   breakdowns: GuideBreakdowns;
   isLast: boolean;
+  extras?: GuideExtras;
 }) {
   return (
     <section
@@ -305,6 +384,7 @@ export function GuideSectionRenderer({
           block={block}
           summaries={summaries}
           breakdowns={breakdowns}
+          extras={extras}
         />
       ))}
       {!isLast && (

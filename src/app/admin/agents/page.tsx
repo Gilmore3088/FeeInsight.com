@@ -34,7 +34,7 @@ const getCachedPipelineFunnel = unstable_cache(getPipelineFunnel, ["admin", "atl
 
 /** The Agents room: pipeline health, the run buttons, the pipeline crew and the marketing team, and what each costs. */
 export default async function AgentsRoomPage() {
-  await requireAuth("view");
+  await requireAuth("operate");
   const [center, health, funnel, crew, feed, spend, marketing] = await Promise.all([
     getCachedAtlasCommandCenter(),
     getPipelineHealth().catch((error) => {

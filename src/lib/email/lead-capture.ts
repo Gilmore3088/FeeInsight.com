@@ -4,7 +4,7 @@
  * also delivers the offer they asked for; the inbox behind CONTACT_EMAIL gets a
  * heads-up. Storage happens first in /api/leads; this only reports delivery.
  */
-import { CONTACT_EMAIL, REPORT_OFFER, REPORT_OFFER_LINE, SITE_NAME, SITE_URL } from "@/lib/constants";
+import { CONTACT_EMAIL, REPORT_OFFER, SITE_NAME, SITE_URL } from "@/lib/constants";
 import { deliversSampleReport, type LeadCapturePlacement } from "@/lib/lead-capture";
 import { STATE_NAMES } from "@/lib/us-states";
 import {
@@ -21,9 +21,11 @@ import {
   oneClickUnsubscribeUrl,
   subscriptionPageUrl,
 } from "./subscription-token";
+import { REPORT_SHOWCASE } from "@/lib/report-showcase";
+import { REPORT_REQUEST_HREF } from "@/lib/report-request-href";
 
-export const SAMPLE_REPORT_PDF_PATH = "/reports/sample-competitive-fee-position.pdf";
-export const REPORT_REQUEST_PATH = "/for-institutions#report";
+export const SAMPLE_REPORT_PDF_PATH = REPORT_SHOWCASE.pdfHref;
+export const REPORT_REQUEST_PATH = REPORT_REQUEST_HREF;
 
 export interface LeadCaptureNotificationInput {
   email: string;
@@ -55,59 +57,67 @@ export function describeCaptureOffer(input: LeadCaptureNotificationInput): strin
 function stateEditionLine(stateCode: string | null): string {
   const name = stateCode ? STATE_NAMES[stateCode] ?? stateCode : null;
   return name
-    ? `Once you confirm, you'll also get the ${name} edition each month: ${name}'s fee medians against the national ones, once enough ${name} institutions publish them.`
+    ? `Each month you'll also get the ${name} edition by email, once enough ${name} institutions publish their fees.`
     : "";
 }
 
+/** What the reader receives, said briefly; each entry is its own paragraph. */
 function deliveryLines(input: LeadCaptureNotificationInput): string[] {
   if (deliversSampleReport(input.placement)) {
-    return [
-      "Here is the sample report (PDF), prepared for a real ~$400M community bank with the client anonymized:",
-      absolute(SAMPLE_REPORT_PDF_PATH),
-    ];
+    return [`Open the sample report: ${absolute(REPORT_SHOWCASE.sampleHref)}`];
   }
   switch (input.placement) {
     case "institution_alerts":
       return [
-        `Fee-change alerts go to free accounts: create one and follow this institution to get an email when its published fee schedule changes: ${absolute(input.institutionId !== null ? `/register?from=${encodeURIComponent(`/institution/${input.institutionId}`)}` : "/register")}`,
+        `Fee-change alerts go to free accounts. Create one and follow this institution to get an email when its published fee schedule changes: ${absolute(input.institutionId !== null ? `/register?from=${encodeURIComponent(`/institution/${input.institutionId}`)}` : "/register")}`,
         input.institutionId !== null ? `Current profile: ${absolute(`/institution/${input.institutionId}`)}` : "",
       ];
-    case "state_benchmark":
+    case "state_benchmark": {
+      const name = input.stateCode ? STATE_NAMES[input.stateCode] ?? input.stateCode : "your state";
       return [
-        "Here is the benchmark: state medians against national, updated as new fee schedules are verified.",
-        input.stateCode ? `${absolute(`/research/state/${input.stateCode}`)}` : "",
+        input.stateCode
+          ? `The ${name} benchmark puts the state's fee medians next to the national ones and updates as new fee schedules are verified. Open the ${name} benchmark: ${absolute(`/research/state/${input.stateCode}`)}`
+          : "",
         stateEditionLine(input.stateCode),
       ];
+    }
     case "national_index":
       return [
-        "New national medians and one table worth bringing to a pricing meeting, no more than once a month.",
-        `Current index: ${absolute("/research/national-fee-index")}`,
+        `You'll get new national medians and one table worth bringing to a pricing meeting, no more than once a month. Open the current index: ${absolute("/research/national-fee-index")}`,
         stateEditionLine(input.stateCode),
       ];
   }
 }
 
+/**
+ * The double opt-in email: the confirm button comes first, then a short note on what the
+ * reader receives. It sells nothing; the lifecycle emails that follow confirmation do that.
+ */
 export function buildCaptureConfirmation(
   input: LeadCaptureNotificationInput,
   links: { confirmUrl: string | null; unsubscribeUrl: string | null },
 ): LeadEmailContent {
   const offer = describeCaptureOffer(input);
-  const lines = [
-    `Thanks for signing up for ${offer} from ${SITE_NAME}.`,
-    "",
-    ...deliveryLines(input).filter(Boolean),
-    "",
+  const closing = [
+    ...deliveryLines(input).filter(Boolean).flatMap((line) => [line, ""]),
     links.confirmUrl
-      ? "Confirm your address with the button below. If you didn't sign up, ignore this email and you won't hear from us again."
-      : "If you didn't sign up, reply to this email and we'll remove you.",
-    "",
-    `Want your market or your own institution? ${REPORT_OFFER_LINE}: ${absolute(REPORT_REQUEST_PATH)}`,
+      ? "Didn't sign up? Ignore this email and you won't hear from us again."
+      : "Didn't sign up? Reply to this email and we'll remove you.",
   ];
-  if (links.unsubscribeUrl) lines.push("", `Unsubscribe: ${links.unsubscribeUrl}`);
+  if (links.unsubscribeUrl) closing.push("", `Unsubscribe: ${links.unsubscribeUrl}`);
+  // Confirming does not switch on fee-change alerts (those need a free account), so that
+  // placement asks the reader to follow the institution instead of promising alerts.
+  const alerts = input.placement === "institution_alerts";
+  const followed = input.institutionName ?? "this institution";
+  const ask = alerts
+    ? `Confirm your address to follow ${followed} on ${SITE_NAME}. Alerts when its fee schedule changes need a free account (link below).`
+    : `Confirm your address to get ${offer} from ${SITE_NAME}.`;
   return {
-    subject: `Confirm: ${offer}`,
-    lines,
+    subject: alerts ? `Confirm your email to follow ${followed}` : `Confirm your email for ${offer}`,
+    heading: "Confirm your email",
+    lines: [links.confirmUrl ? ask : `Thanks for signing up for ${offer} from ${SITE_NAME}.`],
     cta: links.confirmUrl ? { label: "Confirm my email", href: links.confirmUrl } : undefined,
+    closing,
   };
 }
 

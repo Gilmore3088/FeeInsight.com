@@ -12,7 +12,8 @@ export const FLOW_AGENTS: Array<{ agent: AdminAgent; name: string; job: string; 
   { agent: "rosetta", name: "Rosetta", job: "Opens the document and turns it into text", href: "/admin/rosetta" },
   { agent: "knox", name: "Knox", job: "Pulls the fees out of the text", href: "/admin/knox" },
   { agent: "darwin", name: "Darwin", job: "Checks every fee before it counts", href: "/admin/darwin" },
-  { agent: "hamilton", name: "Hamilton", job: "Publishes checked fees to the site", href: "/admin/hamilton" },
+  // Publishing is Gutenberg's from #1075 step 2; its tools still sit on the Hamilton admin page.
+  { agent: "gutenberg", name: "Gutenberg", job: "Publishes checked fees to the site", href: "/admin/hamilton" },
   { agent: "growth", name: "Growth", job: "Drafts marketing posts and emails for James to approve", href: "/admin/customers/content" },
 ];
 
@@ -46,10 +47,13 @@ export interface FlowSnapshot {
   generatedAt: string;
 }
 
-/** Institutions waiting in front of each data agent; growth handles no institutions. */
-// Gutenberg joins the flow when it takes over publishing (#1075 step 2); until then the
-// publisher's queue is Hamilton's column.
-export type FlowWaiting = Record<Exclude<AdminAgent, "atlas" | "growth" | "gutenberg">, number> & { published: number; total: number };
+/**
+ * Institutions waiting in front of each data agent; growth and Hoovie (public data) handle no institutions. Gutenberg
+ * took over publishing in #1075 step 2, so Hamilton (the product) has no column.
+ */
+export type FlowWaiting = Record<Exclude<AdminAgent, "atlas" | "growth" | "hamilton" | "hoovie">, number> & { published: number; total: number };
+/** The waiting counts as cached, with when they were counted (the Live page shows their age). */
+export type FlowWaitingCounts = FlowWaiting & { computedAt?: string };
 
 export type Sample = Record<string, unknown>;
 
@@ -250,9 +254,9 @@ export function movesFromEvents(rows: Array<Record<string, unknown>>, names: Map
   return moves;
 }
 
-/** A Hamilton move that put at least one fee on the site. */
+/** A Gutenberg move that put at least one fee on the site. */
 export function isWentLive(move: FlowMove): boolean {
-  return move.agent === "hamilton" && move.text.startsWith("Published");
+  return move.agent === "gutenberg" && move.text.startsWith("Published");
 }
 
 /**

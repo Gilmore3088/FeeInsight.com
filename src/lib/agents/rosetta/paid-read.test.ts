@@ -1,13 +1,20 @@
 import { describe, expect, it, vi } from "vitest";
+import { createHash } from "node:crypto";
 
-const trackAnthropicRequest = vi.fn(async (_context: unknown, request: () => PromiseLike<unknown>) => request());
+const trackAnthropicRequest = vi.fn(async (_context: unknown, request: () => PromiseLike<unknown>, policy?: PaidResponsePolicy) => {
+  const response = await request() as Parameters<PaidResponsePolicy>[0];
+  const assessment = policy?.(response);
+  if (assessment && !assessment.accepted) throw new IncompleteProviderResponseError(assessment.reason, observedProviderUsage(response.usage));
+  return response;
+});
 vi.mock("@/lib/ai-provider-usage", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/ai-provider-usage")>()),
-  trackAnthropicRequest: (context: unknown, request: () => PromiseLike<unknown>) => trackAnthropicRequest(context, request),
+  trackAnthropicRequest: (context: unknown, request: () => PromiseLike<unknown>, policy?: PaidResponsePolicy) => trackAnthropicRequest(context, request, policy),
 }));
 
-import { ProviderBudgetBlockedError } from "@/lib/ai-provider-usage";
-import { PAID_PASS_MODELS } from "@/lib/agents/paid-pass";
+import { ProviderBudgetBlockedError, observedProviderUsage } from "@/lib/ai-provider-usage";
+import { IncompleteProviderResponseError } from "@/lib/ai-response-budget";
+import { PAID_PASS_MODELS, type PaidResponsePolicy } from "@/lib/agents/paid-pass";
 
 import { PAID_READ_PROMPT, runRosettaPaidRead } from "./paid-read";
 
@@ -22,7 +29,7 @@ const scan = (id: number) => ({
   institution_id: 40 + id,
   institution_name: `Scan Bank ${id}`,
   document_url: `https://scan${id}.example/fees.pdf`,
-  content_hash: `hash-${id}`,
+  content_hash: createHash("sha256").update(pdfBytes).digest("hex"),
 });
 
 function paidDb(rows: Array<Record<string, unknown>>, { learning = true } = {}): DbMock {
@@ -38,7 +45,11 @@ function paidDb(rows: Array<Record<string, unknown>>, { learning = true } = {}):
   return db;
 }
 
-const asDb = (db: DbMock) => db as unknown as NonNullable<Parameters<typeof runRosettaPaidRead>[0]["db"]>;
+const asDb = (db: DbMock) => {
+  // Callback facade only; native SQL tests prove actual rollback/savepoint behavior.
+  Object.assign(db, { begin: vi.fn(async (work: (scope: DbMock) => Promise<unknown>) => work(db)) });
+  return db as unknown as NonNullable<Parameters<typeof runRosettaPaidRead>[0]["db"]>;
+};
 
 const pdfBytes = new TextEncoder().encode("%PDF-1.4 scanned bytes");
 const pdfFetch = () => vi.fn(async () => new Response(pdfBytes, { status: 200, headers: { "content-type": "application/pdf" } }));
@@ -52,6 +63,22 @@ function attempts(db: DbMock): Array<[string, string, number]> {
 }
 
 describe("Rosetta paid read (pass 3)", () => {
+  it.each([null, "hash-1", "f".repeat(64)])("never calls or settles paid transcription with unavailable identity %j", async (contentHash) => {
+    const db = paidDb([{ ...scan(1), content_hash: contentHash }]);
+    const create = vi.fn(); const pageCounter = vi.fn(async () => 2);
+    const previousTracking = trackAnthropicRequest.mock.calls.length;
+    const result = await runRosettaPaidRead({ runId: 900, db: asDb(db), create, fetchImpl: pdfFetch(), pageCounter });
+    expect(result).toMatchObject({ selected: 1, processed: 1, failed: 1, succeeded: 0,
+      costMicrousd: 0, unknownCostResponses: 0 });
+    expect(result.results[0]).toMatchObject({ outcome: "evidence_mismatch", response_received: false });
+    expect(create).not.toHaveBeenCalled(); expect(pageCounter).not.toHaveBeenCalled();
+    expect(trackAnthropicRequest.mock.calls).toHaveLength(previousTracking);
+    expect(attempts(db)).toEqual([["read.document_access", "evidence_mismatch", 0]]);
+    const statements = db.mock.calls.map((call) => templateText(call[0])).join("\n");
+    expect(statements).not.toContain("INSERT INTO agent_source_texts");
+    expect(statements).not.toContain("UPDATE institution_source_profiles");
+  });
+
   it("sends a scan as a PDF document block and stores the transcription like a normal read", async () => {
     const db = paidDb([scan(1)]);
     const transcription = ["SCHEDULE OF FEES", "Overdraft fee | $35.00", "NSF fee | $35.00", "Stop payment | $30.00"].join("\n");
@@ -68,7 +95,7 @@ describe("Rosetta paid read (pass 3)", () => {
       source: { type: "base64", media_type: "application/pdf", data: Buffer.from(pdfBytes).toString("base64") },
     });
     expect(params.messages[0].content[1]).toEqual({ type: "text", text: PAID_READ_PROMPT });
-    expect(trackAnthropicRequest).toHaveBeenCalledWith(expect.objectContaining({ agent: "rosetta", operation: "paid_read", agentRunId: 900 }), expect.any(Function));
+    expect(trackAnthropicRequest).toHaveBeenCalledWith(expect.objectContaining({ agent: "rosetta", operation: "paid_read", agentRunId: 900 }), expect.any(Function), expect.any(Function));
 
     const insert = db.mock.calls.find((call) => templateText(call[0]).includes("INSERT INTO agent_source_texts"));
     expect(insert).toEqual(expect.arrayContaining([900, 1, 41, "completed", transcription]));
@@ -141,9 +168,24 @@ describe("Rosetta paid read (pass 3)", () => {
 
     const result = await runRosettaPaidRead({ runId: 901, db: asDb(db), create, fetchImpl: pdfFetch(), pageCounter: async () => 2 });
 
-    expect(result).toMatchObject({ selected: 2, processed: 0, budgetStopped: true, budgetReason: "Rosetta monthly cap reached", costMicrousd: 0 });
+    expect(result).toMatchObject({ selected: 2, processed: 0, budgetStopped: true, budgetReason: "Rosetta monthly cap reached", costMicrousd: 0, unknownCostResponses: 0 });
     expect(create).not.toHaveBeenCalled();
     expect(attempts(db)).toEqual([]);
+  });
+
+  it("stops on a billing refusal without recording, so the scan stays queued (#1056)", async () => {
+    const db = paidDb([scan(1), scan(2)]);
+    const create = vi.fn(async () => {
+      throw Object.assign(new Error("400 Your credit balance is too low to access the Anthropic API."), { status: 400 });
+    });
+
+    const result = await runRosettaPaidRead({ runId: 905, db: asDb(db), create, fetchImpl: pdfFetch(), pageCounter: async () => 2 });
+
+    expect(result).toMatchObject({ processed: 0, budgetStopped: true, costMicrousd: 0 });
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(attempts(db)).toEqual([]);
+    // An attempt a billing refusal ended before this fix does not settle the scan either.
+    expect(String(db.unsafe.mock.calls[0][0])).toContain("AND NOT COALESCE(paid.detail->>'error', '') ~* ");
   });
 
   it("records an empty transcription with its cost and leaves the text queued", async () => {

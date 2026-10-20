@@ -5,6 +5,9 @@ import { LIMIT_GUARD_CHECK } from "@/lib/agents/hamilton/limit-guard";
 import { replayCase, SOURCE_CHECK_NAME, type CaseInput } from "@/lib/agents/deming/checkers";
 import { severityFor, reasonCode, type Severity } from "@/lib/agents/deming/severity";
 
+import { CORRECTIVE_CHECK } from "./corrective-source";
+import { runCorrectiveSource, type CorrectiveResult } from "./corrective-source-store";
+
 type SqlTag = typeof sql;
 
 /**
@@ -52,6 +55,8 @@ export interface DemingRegressionResult {
   retired: number;
   activeTotal: number;
   candidateTotal: number;
+  /** Prospective human corrective contexts; historical totals above are not trusted source denominators. */
+  corrective?: CorrectiveResult;
 }
 
 interface TakedownRow {
@@ -114,7 +119,7 @@ const num = (value: number | string | null | undefined): number | null =>
 
 const emptySeverities = (): Record<Severity, number> => ({ critical: 0, major: 0, minor: 0, info: 0 });
 
-/** Pure: one confirmed takedown as a case, replayed on the rules this code ships with. */
+/** Historical fixture builder. Runtime excludes unbound source takedowns; new source contexts require the canonical v2 path. */
 export function buildTakedownCase(row: TakedownRow, texts: TextRow[]): NewCase {
   const feePublishedId = Number(row.fee_published_id);
   const institutionId = Number(row.institution_id);
@@ -188,6 +193,7 @@ async function loadNewTakedowns(db: SqlTag, limit: number): Promise<TakedownRow[
       LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
      WHERE f.kind = ${CONFIRMED_KIND}
        AND f.check_name IS NOT NULL
+       AND f.check_name <> ${SOURCE_CHECK_NAME}
        AND fp.rolled_back_at IS NOT NULL
        AND NOT EXISTS (
          SELECT 1 FROM eval_cases c
@@ -195,18 +201,6 @@ async function loadNewTakedowns(db: SqlTag, limit: number): Promise<TakedownRow[
        )
      ORDER BY f.id
      LIMIT ${limit}
-  `;
-}
-
-async function loadTexts(db: SqlTag, institutionIds: number[]): Promise<TextRow[]> {
-  if (institutionIds.length === 0) return [];
-  return db<TextRow[]>`
-    SELECT DISTINCT ON (source_document_id) institution_id, source_document_id, normalized_text, text_hash
-      FROM agent_source_texts
-     WHERE institution_id = ANY(${institutionIds}::bigint[])
-       AND status = 'completed'
-       AND normalized_text IS NOT NULL
-     ORDER BY source_document_id, id DESC
   `;
 }
 
@@ -302,9 +296,9 @@ export async function runDemingRegression({
 
   // 1. Promote confirmed takedowns that have no case yet.
   const takedowns = await inSavepoint(db, (scope) => loadNewTakedowns(scope, promoteLimit));
-  const sourceInstitutions = [...new Set(takedowns.filter((row) => row.check_name === SOURCE_CHECK_NAME).map((row) => Number(row.institution_id)))];
-  const texts = await inSavepoint(db, (scope) => loadTexts(scope, sourceInstitutions));
-  const cases = takedowns.map((row) => buildTakedownCase(row, texts));
+  // Unbound temporal source labels cannot authorize a new extraction lesson. Existing source
+  // history remains immutable; prospective human corrections use their own canonical context.
+  const cases = takedowns.map((row) => buildTakedownCase(row, []));
   for (const item of cases) {
     result.promotedBySeverity[item.severity] += 1;
     if (item.status === "active") result.promotedActive += 1;
@@ -320,7 +314,7 @@ export async function runDemingRegression({
            ) AS fee_live
       FROM eval_cases c
      WHERE c.status IN ('active', 'candidate')
-       AND c.input->>'kind' IN ('limit_guard', 'source_check')
+       AND c.input->>'kind' = 'limit_guard'
      ORDER BY c.last_checked_at NULLS FIRST, c.id
      LIMIT ${replayLimit}
   `;
@@ -356,6 +350,14 @@ export async function runDemingRegression({
     `;
   }
 
+  result.corrective = await runCorrectiveSource({ db, runId, dryRun, promoteLimit, replayLimit: Math.max(0, replayLimit - due.length) });
+  result.promoted += result.corrective.promoted;
+  result.promotedBySeverity.major += result.corrective.promoted;
+  result.regressions.push(...result.corrective.regressionCases.map((miss) => ({ ...miss, checkName: CORRECTIVE_CHECK, severity: "major" as const })));
+  result.replayed += result.corrective.evaluated;
+  result.caught += result.corrective.caught;
+  result.activated += result.corrective.activated;
+
   const [totals] = await db<Array<{ active: number | string; candidate: number | string }>>`
     SELECT COUNT(*) FILTER (WHERE status = 'active') AS active,
            COUNT(*) FILTER (WHERE status = 'candidate') AS candidate
@@ -377,5 +379,9 @@ export function summarizeDemingRegression(result: DemingRegressionResult): strin
   const regressions = result.regressions.length === 0
     ? "no regressions"
     : `${result.regressions.length} regression${result.regressions.length === 1 ? "" : "s"}: the deployed rules no longer catch ${result.regressions.length === 1 ? "a case" : "cases"} they used to`;
-  return `${added}Replayed ${result.replayed} cases on the deployed rules: ${result.caught} still caught, ${regressions}. ${result.activeTotal} active, ${result.candidateTotal} waiting for a replayer.`;
+  const corrective = result.corrective ? ` Corrective source context: ${result.corrective.evaluated} evaluated, ${result.corrective.caught} matched, ${result.corrective.regressions} semantic regressions; unavailable ${result.corrective.unavailable.count == null ? "unknown" : `${result.corrective.unavailable.atLeast ? "at least " : ""}${result.corrective.unavailable.count}`}. Historical all-dataset totals are not a trusted source denominator. CI fixture import remains unimplemented.` : "";
+  const failed = result.corrective?.warnings ?? [];
+  const warned = failed.length === 0 ? "" : ` Corrective source could not finish: ${failed.map((w) => `${w.phase.replaceAll("_", " ")}${w.timedOut ? " (statement timeout)" : ""}`).join(", ")}; those rows are unknown, not verdicts.`;
+  const history = result.corrective ? `${result.activeTotal} active history, ${result.candidateTotal} candidate history.` : `${result.activeTotal} active, ${result.candidateTotal} waiting for a replayer.`;
+  return `${added}Replayed ${result.replayed} cases on the deployed rules: ${result.caught} still caught, ${regressions}. ${history}${corrective}${warned}`;
 }

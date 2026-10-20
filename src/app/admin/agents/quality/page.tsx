@@ -41,7 +41,7 @@ function Regressions({ quality }: { quality: AgentQuality }) {
         <p className="text-xs tabular-nums text-gray-600 dark:text-gray-400">
           {quality.evalCases.length === 0
             ? "No test cases yet."
-            : quality.evalCases.map((row) => `${row.dataset} ${row.status}: ${num(row.count)}`).join(" · ")}
+            : "Historical all-dataset counts (including unbound source history): " + quality.evalCases.map((row) => `${row.dataset} ${row.status}: ${num(row.count)}`).join(" · ")}
         </p>
       )}
       {misses.length > 0 ? (
@@ -146,7 +146,7 @@ function RepeatedErrors({ quality }: { quality: AgentQuality }) {
 
 /** Quality (PRD 12.3): regressions, the replay backlog, schedules and repeated errors, from the ledgers. */
 export default async function AgentsQualityPage() {
-  await requireAuth("view");
+  await requireAuth("operate");
   const quality = await getAgentQuality();
   return (
     <section className="flex flex-col gap-4 pb-10">

@@ -3,7 +3,8 @@
 import { sql } from "@/lib/data-store/connection";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
-import { getInstitutionFeeValues, getNationalIndex } from "@/lib/data-store/fee-index";
+import { getInstitutionOwnFees, getNationalIndex, getNationalIndexStamped, getPeerFeeValues } from "@/lib/data-store/fee-index";
+import { peerAmounts } from "@/lib/hamilton/workspace/research";
 import { getInstitutionById } from "@/lib/data-store";
 import { computeConfidenceTier, canSimulate } from "@/lib/hamilton/confidence";
 import { getHamiltonScenarioById } from "@/lib/hamilton/pro-tables";
@@ -66,10 +67,12 @@ export async function getDistributionForCategory(
     let peerSource = peerIndex.source;
     let peerSetId = peerIndex.peerSetId;
     let peerFallbackReason = peerIndex.fallbackReason;
+    let stamp = peerIndex.stamp;
 
     if (!entry && peerIndex.source !== "national") {
-      const nationalIndex = await getNationalIndex();
-      entry = nationalIndex.find((e) => e.fee_category === feeCategory);
+      const national = await getNationalIndexStamped();
+      entry = national.entries.find((e) => e.fee_category === feeCategory);
+      stamp = national.stamp;
       peerLabel = "Verified national index";
       peerSource = "national";
       peerSetId = null;
@@ -104,7 +107,15 @@ export async function getDistributionForCategory(
       peer_source: peerSource,
       peer_set_id: peerSetId,
       peer_fallback_reason: peerFallbackReason,
+      stamp,
     };
+
+    // The peers' own amounts, from the same group as the distribution, for the shared mid-rank percentile (#2048).
+    const excluded = peerContext?.institutionId ? Number(peerContext.institutionId) : undefined;
+    const [values] = await getPeerFeeValues([peerSource === "national" ? {} : peerIndex.filters ?? {}], [feeCategory], Number.isInteger(excluded) ? excluded : undefined).catch(() => [null]);
+    const amounts = peerAmounts(values?.get(feeCategory) ?? []);
+    if (amounts.length > 0) distribution.peer_amounts = amounts;
+    if (!values) distribution.peer_amounts_unread = true;
 
     const confidenceTier = computeConfidenceTier(entry.institution_count);
     return { distribution, confidenceTier };
@@ -128,11 +139,11 @@ export async function getInstitutionFee(
   const numericInstitutionId = Number(canonicalInstitutionId);
 
   try {
-    // The institution's value under the statistics contract (median of its approved,
-    // sourced amounts), measured the same way as the benchmark it is compared with.
-    const values = await getInstitutionFeeValues(numericInstitutionId, [feeCategory]);
-    const value = values.get(feeCategory);
-    return value === undefined ? null : { amount: value };
+    // The price the institution's schedule states. With several different fees in the
+    // category there is none: their median is no price to start a scenario from (#1913).
+    const own = await getInstitutionOwnFees(numericInstitutionId, [feeCategory]);
+    const price = own.get(feeCategory)?.price;
+    return price === undefined || price === null ? null : { amount: price };
   } catch {
     return null;
   }
@@ -337,7 +348,7 @@ export async function getScenario(
     created_at: string;
 } | null> {
   const user = await getCurrentUser();
-  if (!user) return null;
+  if (!user || !canAccessPremium(user)) return null;
 
   try {
     const scenario = await getHamiltonScenarioById(scenarioId, user.id);

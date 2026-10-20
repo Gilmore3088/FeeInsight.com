@@ -81,7 +81,7 @@ describe("answer correctness", () => {
     const built = buildAskResponse({ question: "How does our overdraft fee compare?", intent: parseAsk("How does our overdraft fee compare?"), research: r, memory: [] });
     const response = { ...built, facts: [...(built.facts ?? []), { text: "Peers' median is $47.", source: { label: "Fees", table: "published_fee_catalog" } }] };
     const result = reconcileAnswer({ question: "How does our overdraft fee compare?", response, research: r, live: liveFor(r) });
-    expect(result.failures).toEqual(["figures that tie to no live catalog value: $47"]);
+    expect(result.failures).toEqual([expect.stringMatching(/^figures that tie to no live catalog value: \$47 \(/)]);
   });
 
   it("fails a peer value that is no longer live, and a median that no longer recomputes", () => {
@@ -94,6 +94,19 @@ describe("answer correctness", () => {
     expect(failures).toContain(`peer group (${r.peerLabel}): 1 of 16 values have no live catalog row`);
     expect(failures).toContain(`peer group (${r.peerLabel}): 1 of 16 values differ from the catalog`);
     expect(failures.some((f) => /^National layer: counts \d+ institutions, the catalog has \d+ publishing this fee$/.test(f))).toBe(true);
+  });
+
+  it("recomputes a band that counts sister charters on one shared schedule once (rule 7, #1441)", () => {
+    // Peers 303 and 304 are sister charters of 302 reading one schedule: five values count, seven are listed.
+    const sisters = [10, 20, 30, 32, 34, 40, 50].map((amount, i) => ({ ...member(300 + i, amount), ...(i === 3 || i === 4 ? { countedAs: 302 } : {}) }));
+    const base = research();
+    const withLayer = (amounts: number[]): FeeResearch => ({ ...base, layers: [base.layers[0], marketLayer("state", "Tennessee", amounts, base.current, [], sisters)] });
+    const check = (r: FeeResearch) => {
+      const response = buildAskResponse({ question: "How does our overdraft fee compare?", intent: parseAsk("How does our overdraft fee compare?"), research: r, memory: [] });
+      return reconcileAnswer({ question: "How does our overdraft fee compare?", response, research: r, live: liveFor(r) }).failures.filter((f) => f.startsWith("Tennessee layer"));
+    };
+    expect(check(withLayer([10, 20, 32, 40, 50]))).toEqual([]);
+    expect(check(withLayer(sisters.map((m) => m.amount)))).toEqual(["Tennessee layer: p25, p75 do not recompute from the members' live values"]);
   });
 
   it("leaves an answer unchecked when the catalog could not be read", () => {
@@ -130,7 +143,7 @@ describe("answer correctness", () => {
     it("fails a memo figure that ties to no live value", () => {
       const { r, response } = setup();
       const result = reconcileMemoText({ question: q, response, research: r, live: liveFor(r), text: "Your overdraft fee is $32 and peers charge $91.37." });
-      expect(result.failures).toEqual(["figures that tie to no live catalog value: $91.37"]);
+      expect(result.failures).toEqual([expect.stringMatching(/^figures that tie to no live catalog value: \$91\.37 \(/)]);
     });
 
     it("accepts a figure the storyline states from another source, as the free check does", () => {
@@ -145,6 +158,25 @@ describe("answer correctness", () => {
       };
       const result = reconcileMemoText({ question: q, response: withIncome, research: r, live: liveFor(r), text: "Service charges were $4.2 million." });
       expect(result.failures).toEqual([]);
+    });
+
+    it("skips the overdraft pricing groups' fixed rules, but still checks a fee beside them", () => {
+      const { r, response } = setup();
+      const text = "Your $32 puts you in the mid group ($15.01 to $30) with 4 peers. Of 9 peers: 5 at $15.01–$30 and 4 over $30.";
+      expect(reconcileMemoText({ question: q, response, research: r, live: liveFor(r), text }).failures).toEqual([]);
+      const untied = reconcileMemoText({ question: q, response, research: r, live: liveFor(r), text: `${text} Peers charge $15.01.` });
+      expect(untied.failures).toEqual([expect.stringMatching(/^figures that tie to no live catalog value: \$15\.01 \(/)]);
+    });
+
+    it.each([
+      ["Peers charge up to $15.50.", "$15.50"],
+      ["2 peers charge up to $150.", "$150"],
+      ["3 over $300 stand out.", "$300"],
+      ["The top fee is just over $30.33 here.", "$30.33"],
+    ])("still checks a fee that only starts like a group rule: %s", (text, figure) => {
+      const { r, response } = setup();
+      const result = reconcileMemoText({ question: q, response, research: r, live: liveFor(r), text });
+      expect(result.failures).toEqual([expect.stringContaining(`value: ${figure} (`)]);
     });
 
     it("leaves the memo unchecked when the catalog could not be read", () => {
@@ -169,9 +201,9 @@ describe("answer correctness", () => {
       const ok = reconcileSimulateText({ question: q, response, research: r, live: liveFor(r), text, readerAnchors: [tested, r.current!] });
       expect(ok).toMatchObject({ checked: true, figures: 3, failures: [] });
       // As a single (the old memo path), the tested price could not anchor the gap.
-      expect(reconcileMemoText({ question: q, response, research: r, live: liveFor(r), text, extra: [tested] }).failures).toEqual([`figures that tie to no live catalog value: $${gap}`]);
+      expect(reconcileMemoText({ question: q, response, research: r, live: liveFor(r), text, extra: [tested] }).failures).toEqual([expect.stringMatching(new RegExp(`^figures that tie to no live catalog value: \\$${String(gap).replace(".", "\\.")} \\(`))]);
       const bad = reconcileSimulateText({ question: q, response, research: r, live: liveFor(r), text: "At $43.17 peers would charge $91.37.", readerAnchors: [tested] });
-      expect(bad.failures).toEqual(["figures that tie to no live catalog value: $91.37"]);
+      expect(bad.failures).toEqual([expect.stringMatching(/^figures that tie to no live catalog value: \$91\.37 \(/)]);
     });
 
     it("scores only the read's figures, not the free answer's stale values", () => {

@@ -7,7 +7,7 @@ import { getStateOverview } from "@/lib/admin-queries";
 import { StateLanesTable } from "./state-lanes-table";
 
 export default async function StatesPage() {
-  await requireAuth("view");
+  await requireAuth("operate");
 
   let states: Awaited<ReturnType<typeof getStateOverview>> = [];
   try {
@@ -40,7 +40,13 @@ export default async function StatesPage() {
         <p className="text-sm text-gray-500 dark:text-gray-400">
           State-sized Atlas work partitions for source memory, public discovery, coverage, publication status, and repair backlog.
         </p>
-        <div className="mt-3">
+        <div className="mt-3 flex gap-2">
+          <Link
+            href="/admin/states/experts"
+            className="inline-flex rounded-md border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:border-blue-200 hover:text-blue-700 dark:border-white/[0.08] dark:text-gray-300 dark:hover:border-blue-900/60 dark:hover:text-blue-300"
+          >
+            State experts
+          </Link>
           <Link
             href="/admin/districts"
             className="inline-flex rounded-md border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:border-blue-200 hover:text-blue-700 dark:border-white/[0.08] dark:text-gray-300 dark:hover:border-blue-900/60 dark:hover:text-blue-300"

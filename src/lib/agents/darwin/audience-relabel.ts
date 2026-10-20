@@ -30,11 +30,33 @@ type SqlTag = typeof sql;
 /**
  * "dry_run_full" (#1059 gate before live): the same cursor chain as live, one bounded batch per
  * tick over every document, writing nothing but each batch's counts; the last batch adds the
- * chain's totals (`dryRunFullTotals`). Live waits until those totals pass.
+ * chain's totals (`dryRunFullTotals`).
+ *
+ * Live since James's typed "switch it on" in the Data quality thread, 2026-10-16 16:40 UTC.
  */
 export type AudienceRelabelMode = "off" | "dry_run_full" | "live" | "rollback";
-export const AUDIENCE_RELABEL_MODE: AudienceRelabelMode = "dry_run_full";
-export const AUDIENCE_RELABEL_VERSION = 1;
+export const AUDIENCE_RELABEL_MODE: AudienceRelabelMode = "live";
+/**
+ * v2 (#1626): the fee-name reading changed (product words, exceptions and two-sided lists), so the
+ * full dry run's key chain and totals start again from the first document under v2.
+ */
+/**
+ * v3 (#1059 unknown review, 2026-10-16): the context reading leaves fewer fees unknown (a neutral
+ * section heading or schedule title ends the heading climb, a bullet is no heading, a sign-off, a
+ * wrapped "business days" and "individual check" name no audience, and a two-audience price cell
+ * names the fee's). The live chain starts again from the first document, so the fees still unknown
+ * are read again; fees already labelled are not read.
+ */
+/**
+ * v4 (#1687, 2026-10-17): a schedule's own title decides the fees under it ("PERSONAL SCHEDULE OF
+ * FEES"; "Consumer Deposit Account" over "Fee Schedule"), so the relabel also re-reads live fees
+ * Darwin called `both` only because the schedule prices business items somewhere
+ * (`darwin:mixed_schedule_unqualified`). Such a fee changes only to one audience, never back to
+ * unknown; its old value is recorded under its own key, so a rollback still reaches the first.
+ */
+export const AUDIENCE_RELABEL_VERSION = 4;
+/** The evidence of a `both` that only says the schedule also prices business items: re-read from v4. */
+export const MIXED_SCHEDULE_EVIDENCE = "darwin:mixed_schedule_unqualified:";
 export const AUDIENCE_RELABEL_SOURCE = "darwin.audience_relabel";
 export const AUDIENCE_RELABEL_KIND = "audience_relabeled";
 const SAMPLE_SIZE = 25;
@@ -49,6 +71,8 @@ export interface AudienceRelabelRow {
   amount: number | string | null;
   amount_kind?: string | null;
   canonical_fee_key: string | null;
+  /** The verified row's audience now: `unknown`, or `both` from a mixed schedule (v4). */
+  fee_audience?: string | null;
   audience_evidence: string | null;
   fee_published_ids: Array<number | string>;
 }
@@ -68,6 +92,8 @@ export interface AudienceRelabelResult {
   fees: number;
   byAudience: Record<string, number>;
   bySource: Record<string, number>;
+  /** Decisions that would write, as `from->to` ("unknown->consumer", "both->consumer"). */
+  byChange: Record<string, number>;
   relabeled: number;
   publishedTouched: number;
   restored: number;
@@ -90,8 +116,25 @@ export function decideAudience(row: AudienceRelabelRow, text: string | null): Au
   return { feeVerifiedId, feeAudience: decision.feeAudience, source, evidence: decision.audienceEvidence };
 }
 
+const fromAudience = (row: AudienceRelabelRow) => row.fee_audience ?? "unknown";
+
+/** The decisions that move a mixed-schedule `both`: a schedule's own title (v4, #1687). */
+const TITLE_SOURCES = new Set(["document_title", "schedule_section_title"]);
+
+/**
+ * Whether the decision changes the fee: an unknown fee takes any decision; a mixed-schedule `both`
+ * takes only one audience read from a schedule's title (v4), never `unknown` again, and never a
+ * default read from a newer copy of the text.
+ */
+export function changesAudience(row: AudienceRelabelRow, decision: AudienceDecision): boolean {
+  const from = fromAudience(row);
+  if (from === "unknown") return decision.feeAudience !== "unknown";
+  return from === "both" && (decision.feeAudience === "consumer" || decision.feeAudience === "business") && TITLE_SOURCES.has(decision.source);
+}
+
 /** The old value, recorded before a relabel writes, so a rollback can restore it. */
 export function relabelRecord(row: AudienceRelabelRow, decision: AudienceDecision, runId: number | null): FeedbackRow {
+  const from = fromAudience(row);
   return {
     aboutStage: "verify",
     aboutStrategy: AUDIENCE_RELABEL_SOURCE,
@@ -109,14 +152,18 @@ export function relabelRecord(row: AudienceRelabelRow, decision: AudienceDecisio
     // A record of what changed, never a lesson.
     weight: 0,
     evidence: {
-      from_audience: "unknown",
+      from_audience: from,
       from_evidence: row.audience_evidence,
       to_audience: decision.feeAudience,
       to_evidence: decision.evidence,
       fee_published_ids: row.fee_published_ids.map(Number),
     },
     runId,
-    dedupeKey: `${AUDIENCE_RELABEL_SOURCE}:verified:${decision.feeVerifiedId}`,
+    // A fee relabelled from `both` may have been relabelled from `unknown` before: its own key keeps
+    // that first record, so a rollback restores the fee's first value.
+    dedupeKey: from === "unknown"
+      ? `${AUDIENCE_RELABEL_SOURCE}:verified:${decision.feeVerifiedId}`
+      : `${AUDIENCE_RELABEL_SOURCE}:v${AUDIENCE_RELABEL_VERSION}:${from}:verified:${decision.feeVerifiedId}`,
   };
 }
 
@@ -142,7 +189,7 @@ export interface AudienceRelabelOptions {
 
 function emptyResult(mode: AudienceRelabelMode, dryRun: boolean): AudienceRelabelResult {
   return {
-    mode, dryRun, documents: 0, fees: 0, byAudience: {}, bySource: {}, relabeled: 0, publishedTouched: 0, restored: 0, samples: [],
+    mode, dryRun, documents: 0, fees: 0, byAudience: {}, bySource: {}, byChange: {}, relabeled: 0, publishedTouched: 0, restored: 0, samples: [],
     nextAfterId: null, remaining: 0, done: true,
   };
 }
@@ -163,11 +210,12 @@ const LIVE_UNKNOWN_SQL = `
                                   UNION SELECT fee_published_id FROM published_fee_rate_catalog)
   ), unknown_live AS (
     SELECT live.fee_published_id, v.fee_verified_id, v.fee_raw_id, v.institution_id, r.source_document_id, r.source_url,
-           r.fee_name, r.amount, r.amount_kind, v.canonical_fee_key, v.audience_evidence
+           r.fee_name, r.amount, r.amount_kind, v.canonical_fee_key, v.fee_audience, v.audience_evidence
       FROM live
       JOIN verified_fee_observations v ON v.fee_verified_id = live.lineage_ref
       JOIN raw_fee_observations r ON r.fee_raw_id = v.fee_raw_id
-     WHERE v.fee_audience = 'unknown'
+     WHERE (v.fee_audience = 'unknown'
+            OR (v.fee_audience = 'both' AND starts_with(v.audience_evidence, '${MIXED_SCHEDULE_EVIDENCE}')))
        AND r.source_document_id IS NOT NULL
        AND NOT COALESCE(r.outlier_flags, '[]'::jsonb) ? 'audience_correction_required'
   )`;
@@ -198,12 +246,12 @@ async function candidateRows(db: SqlTag, documentIds: number[], institutionId: n
   return db<AudienceRelabelRow[]>`
     WITH ${db.unsafe(LIVE_UNKNOWN_SQL)}
     SELECT fee_verified_id, fee_raw_id, institution_id, source_document_id, source_url, fee_name, amount, amount_kind,
-           canonical_fee_key, audience_evidence, array_agg(fee_published_id ORDER BY fee_published_id) AS fee_published_ids
+           canonical_fee_key, fee_audience, audience_evidence, array_agg(fee_published_id ORDER BY fee_published_id) AS fee_published_ids
       FROM unknown_live
      WHERE source_document_id = ANY(${documentIds}::bigint[])
        AND (${institutionId}::int IS NULL OR institution_id = ${institutionId}::int)
      GROUP BY fee_verified_id, fee_raw_id, institution_id, source_document_id, source_url, fee_name, amount, amount_kind,
-              canonical_fee_key, audience_evidence
+              canonical_fee_key, fee_audience, audience_evidence
      ORDER BY source_document_id, fee_verified_id
   `;
 }
@@ -220,16 +268,20 @@ async function touchPublished(db: SqlTag, publishedIds: number[]): Promise<numbe
 }
 
 async function writeDecisions(db: SqlTag, rows: AudienceRelabelRow[], decisions: AudienceDecision[]): Promise<{ relabeled: number; publishedTouched: number }> {
-  const decided = decisions.filter((decision) => decision.feeAudience !== "unknown");
-  if (decided.length === 0) return { relabeled: 0, publishedTouched: 0 };
+  const changed = rows.flatMap((row, index) => (changesAudience(row, decisions[index]) ? [{ row, decision: decisions[index] }] : []));
+  if (changed.length === 0) return { relabeled: 0, publishedTouched: 0 };
+  // Only a row still as it was read: unknown, or the same mixed-schedule `both` evidence.
   const updated = await db<Array<{ fee_verified_id: number | string }>>`
     UPDATE verified_fee_observations v
        SET fee_audience = d.fee_audience,
            audience_evidence = d.audience_evidence
-      FROM unnest(${decided.map((d) => d.feeVerifiedId)}::bigint[], ${decided.map((d) => d.feeAudience)}::text[], ${decided.map((d) => d.evidence)}::text[])
-           AS d(fee_verified_id, fee_audience, audience_evidence)
+      FROM unnest(${changed.map((c) => c.decision.feeVerifiedId)}::bigint[], ${changed.map((c) => c.decision.feeAudience)}::text[],
+                  ${changed.map((c) => c.decision.evidence)}::text[], ${changed.map((c) => fromAudience(c.row))}::text[],
+                  ${changed.map((c) => c.row.audience_evidence)}::text[])
+           AS d(fee_verified_id, fee_audience, audience_evidence, from_audience, from_evidence)
      WHERE v.fee_verified_id = d.fee_verified_id
-       AND v.fee_audience = 'unknown'
+       AND v.fee_audience = d.from_audience
+       AND (d.from_audience = 'unknown' OR v.audience_evidence = d.from_evidence)
     RETURNING v.fee_verified_id
   `;
   const ids = new Set(updated.map((row) => Number(row.fee_verified_id)));
@@ -239,27 +291,35 @@ async function writeDecisions(db: SqlTag, rows: AudienceRelabelRow[], decisions:
 
 /**
  * Puts recorded fees still carrying the relabel's evidence back to their old value, a batch at a
- * time in verified-id order. The audience goes back to `unknown` with the old evidence (NULL for
- * every relabelled fee today), so the trigger copies the raw row's audience back, as it did before.
+ * time in verified-id order. The audience goes back to its first recorded value: `unknown` with the
+ * old evidence (NULL for every fee relabelled from unknown), so the trigger copies the raw row's
+ * audience back, or a mixed-schedule `both` with its `darwin:` evidence (v4).
  */
 async function rollbackRelabel(db: SqlTag, afterId: number, limit: number): Promise<{ restored: number; publishedTouched: number; nextAfterId: number | null; remaining: number }> {
-  const records = await db<Array<{ fee_verified_id: number | string; from_evidence: string | null; to_evidence: string | null; fee_published_ids: unknown; remaining: number | string }>>`
+  // A fee relabelled twice (unknown, then `both` to one audience in v4) goes back to its first
+  // value, when it still carries the last relabel's evidence.
+  const records = await db<Array<{ fee_verified_id: number | string; from_audience: string | null; from_evidence: string | null; to_evidence: string | null; fee_published_ids: unknown; remaining: number | string }>>`
     WITH recorded AS (
-      SELECT fee_verified_id, evidence->>'from_evidence' AS from_evidence, evidence->>'to_evidence' AS to_evidence,
-             evidence->'fee_published_ids' AS fee_published_ids
+      SELECT fee_verified_id,
+             (array_agg(COALESCE(evidence->>'from_audience', 'unknown') ORDER BY id))[1] AS from_audience,
+             (array_agg(evidence->>'from_evidence' ORDER BY id))[1] AS from_evidence,
+             (array_agg(evidence->>'to_evidence' ORDER BY id DESC))[1] AS to_evidence,
+             (array_agg(evidence->'fee_published_ids' ORDER BY id DESC))[1] AS fee_published_ids
         FROM pipeline_feedback
        WHERE kind = ${AUDIENCE_RELABEL_KIND} AND check_name = ${AUDIENCE_RELABEL_SOURCE}
          AND fee_verified_id IS NOT NULL AND fee_verified_id > ${afterId}
+       GROUP BY fee_verified_id
     )
     SELECT *, (SELECT COUNT(*) FROM recorded) AS remaining FROM recorded ORDER BY fee_verified_id LIMIT ${limit}
   `;
   if (records.length === 0) return { restored: 0, publishedTouched: 0, nextAfterId: null, remaining: 0 };
   const restored = await db<Array<{ fee_verified_id: number | string }>>`
     UPDATE verified_fee_observations v
-       SET fee_audience = 'unknown',
+       SET fee_audience = d.from_audience,
            audience_evidence = d.from_evidence
-      FROM unnest(${records.map((r) => Number(r.fee_verified_id))}::bigint[], ${records.map((r) => r.from_evidence)}::text[], ${records.map((r) => r.to_evidence)}::text[])
-           AS d(fee_verified_id, from_evidence, to_evidence)
+      FROM unnest(${records.map((r) => Number(r.fee_verified_id))}::bigint[], ${records.map((r) => r.from_audience ?? "unknown")}::text[],
+                  ${records.map((r) => r.from_evidence)}::text[], ${records.map((r) => r.to_evidence)}::text[])
+           AS d(fee_verified_id, from_audience, from_evidence, to_evidence)
      WHERE v.fee_verified_id = d.fee_verified_id
        AND v.audience_evidence = d.to_evidence
     RETURNING v.fee_verified_id
@@ -315,8 +375,11 @@ export async function runAudienceRelabel(db: SqlTag, options: AudienceRelabelOpt
     decisions.forEach((decision, index) => {
       result.byAudience[decision.feeAudience] = (result.byAudience[decision.feeAudience] ?? 0) + 1;
       result.bySource[decision.source] = (result.bySource[decision.source] ?? 0) + 1;
-      if (decision.feeAudience !== "unknown" && result.samples.length < SAMPLE_SIZE) {
-        const row = rows[index];
+      const row = rows[index];
+      if (!changesAudience(row, decision)) return;
+      const change = `${fromAudience(row)}->${decision.feeAudience}`;
+      result.byChange[change] = (result.byChange[change] ?? 0) + 1;
+      if (result.samples.length < SAMPLE_SIZE) {
         result.samples.push({
           feeVerifiedId: decision.feeVerifiedId, feeName: row.fee_name, amount: row.amount == null ? null : Number(row.amount),
           canonicalFeeKey: row.canonical_fee_key, audience: decision.feeAudience, evidence: decision.evidence,
@@ -325,7 +388,7 @@ export async function runAudienceRelabel(db: SqlTag, options: AudienceRelabelOpt
     });
     if (canRecord) {
       // The old value first, so every write can be undone.
-      const records = rows.flatMap((row, index) => (decisions[index].feeAudience === "unknown" ? [] : [relabelRecord(row, decisions[index], options.runId ?? null)]));
+      const records = rows.flatMap((row, index) => (changesAudience(row, decisions[index]) ? [relabelRecord(row, decisions[index], options.runId ?? null)] : []));
       if (records.length > 0) await recordFeedback(db, records);
       const written = await writeDecisions(db, rows, decisions);
       result.relabeled += written.relabeled;

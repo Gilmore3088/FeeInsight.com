@@ -3,7 +3,9 @@ import { DARWIN_VERIFY_MAX_LIMIT, DARWIN_VERIFY_STRATEGY, darwinDueSql } from ".
 import { DARWIN_RELEASE_STRATEGY } from "./darwin/release-held";
 import { KNOX_RULES_STRATEGY } from "./knox/specialists";
 import { SOURCE_CHECK_REASON, SOURCE_CHECK_RESTORE_PREFIX, SOURCE_CHECK_STRATEGY } from "./hamilton/source-check";
-import { PUBLISHER_AGENT_NAMES } from "@/lib/agents/gutenberg/names";
+import { GUTENBERG_AGENT, PUBLISHER_AGENT_NAMES, PUBLISHER_STEP_KEYS } from "@/lib/agents/gutenberg/names";
+import { HOOVIE_AGENT, registryLedgerNames } from "@/lib/agents/hoovie/names";
+import { pdfStackedRepairSchemaReady } from "./rosetta/pdf-stacked-repair";
 
 /**
  * Agent health check: the same numbers for every agent every day, stored with the daily
@@ -19,7 +21,7 @@ import { PUBLISHER_AGENT_NAMES } from "@/lib/agents/gutenberg/names";
 
 type SqlTag = typeof sql;
 
-export const HEALTH_AGENTS = ["atlas", "magellan", "rosetta", "knox", "darwin", "hamilton", "growth"] as const;
+export const HEALTH_AGENTS = ["atlas", "magellan", "rosetta", "knox", "darwin", "hamilton", "gutenberg", "growth", "hoovie"] as const;
 export type HealthAgent = (typeof HEALTH_AGENTS)[number];
 
 /** A number that moved more than this share (and by at least 2) since yesterday is flagged. */
@@ -91,18 +93,28 @@ function pct(value: number): string {
   return `${(value * 100).toFixed(1)}%`;
 }
 
-/** Steps failed and spend for one agent over the last 24 hours. */
+/**
+ * Steps failed and spend for one agent over the last 24 hours. Since #1075 step 2 the publisher
+ * is Gutenberg: a publisher step written under Hamilton's name before the switch counts as
+ * Gutenberg's (`ledgerAgent`), so Hamilton's row holds only the product's steps. Spend is read by
+ * the agent's own name: `agent:hamilton` is product spend, and Gutenberg makes no paid calls.
+ * Likewise since #1865 a registry step written under Magellan's name counts as Hoovie's, so
+ * Magellan's row holds only fee-schedule work.
+ */
 async function readCommon(db: SqlTag, agent: HealthAgent): Promise<{ stepsCompleted: number; stepsFailed: number; spendUsd: number }> {
-  // Hamilton's health still reads the publisher's steps, under either name, until #1075 step 2
-  // gives Gutenberg its own health row; spend stays Hamilton's own (product spend).
-  const stepAgents = agent === "hamilton" ? [...PUBLISHER_AGENT_NAMES] : [agent];
+  const stepAgents = agent === GUTENBERG_AGENT ? [...PUBLISHER_AGENT_NAMES] : registryLedgerNames(agent);
+  const publisherKeys = [...PUBLISHER_STEP_KEYS];
   const [row] = await db`
     SELECT
       (SELECT COUNT(*) FROM agent_run_steps
         WHERE agent_name = ANY(${stepAgents}::text[]) AND status = 'completed'
+          AND (CASE WHEN agent_name = 'hamilton' AND step_key = ANY(${publisherKeys}::text[]) THEN 'gutenberg'
+                    WHEN agent_name = 'magellan' AND step_key LIKE 'registry-%' THEN 'hoovie' ELSE agent_name END) = ${agent}
           AND started_at > NOW() - INTERVAL '24 hours')::int AS steps_completed,
       (SELECT COUNT(*) FROM agent_run_steps
         WHERE agent_name = ANY(${stepAgents}::text[]) AND status = 'failed'
+          AND (CASE WHEN agent_name = 'hamilton' AND step_key = ANY(${publisherKeys}::text[]) THEN 'gutenberg'
+                    WHEN agent_name = 'magellan' AND step_key LIKE 'registry-%' THEN 'hoovie' ELSE agent_name END) = ${agent}
           AND started_at > NOW() - INTERVAL '24 hours')::int AS steps_failed,
       (SELECT COALESCE(SUM(estimated_cost_microusd), 0) FROM ai_api_usage_events
         WHERE agent_name = ${agent} AND created_at > NOW() - INTERVAL '24 hours') AS spend_microusd
@@ -365,9 +377,25 @@ export function magellanRules(n: HealthNumbers): HealthRule[] {
   return [noFailedSteps(n), noRepeatFailures(n, "fee link")];
 }
 
+// ---------------------------------------------------------------- Hoovie
+
+/**
+ * Hoovie (public data, #1865): its registry steps, including those written under Magellan's name
+ * before the switch. Spend is read by its own name; the Wire's research step bills `magellan`
+ * (`registry/wire-research.ts`), so this is normally 0.
+ */
+export async function readHoovieNumbers(db: SqlTag): Promise<HealthNumbers> {
+  return readCommon(db, HOOVIE_AGENT);
+}
+
+export function hoovieRules(n: HealthNumbers): HealthRule[] {
+  return [noFailedSteps(n)];
+}
+
 // ---------------------------------------------------------------- Rosetta
 
 export async function readRosettaNumbers(db: SqlTag): Promise<HealthNumbers> {
+  const { countPdfStackedRepairsDue } = await import("./rosetta/read");
   const common = await readCommon(db, "rosetta");
   const [row] = await db`
     SELECT COUNT(*) FILTER (WHERE outcome IN ('ok', 'ok_partial'))::int AS read_ok,
@@ -383,6 +411,7 @@ export async function readRosettaNumbers(db: SqlTag): Promise<HealthNumbers> {
     wrongDocument: num(row?.wrong_document),
     readFailed: num(row?.read_failed),
     repeatFailures: await repeatFailures(db, "read"),
+    stackedPdfRepairsDue: await pdfStackedRepairSchemaReady(db) ? await countPdfStackedRepairsDue(db) : null,
   };
 }
 
@@ -601,10 +630,11 @@ export function darwinRules(n: HealthNumbers): HealthRule[] {
   ];
 }
 
-// ---------------------------------------------------------------- Hamilton
+// ---------------------------------------------------------------- Gutenberg
 
-export async function readHamiltonNumbers(db: SqlTag): Promise<HealthNumbers> {
-  const common = await readCommon(db, "hamilton");
+/** Gutenberg (the publisher, #1075): its steps, the live catalog and the source check. */
+export async function readGutenbergNumbers(db: SqlTag): Promise<HealthNumbers> {
+  const common = await readCommon(db, GUTENBERG_AGENT);
   const [row] = await db`
     SELECT
       (SELECT COUNT(*) FROM published_fee_records WHERE rolled_back_at IS NULL)::int AS live_fees,
@@ -633,15 +663,41 @@ export async function readHamiltonNumbers(db: SqlTag): Promise<HealthNumbers> {
                   AND restore.input_fingerprint LIKE ${`${SOURCE_CHECK_RESTORE_PREFIX}%`}
                   AND restore.id > pa.id
              )
-        ))::int AS banks_not_source_checked,
-      (SELECT MIN(hard_daily_microusd) FROM api_budget_policies
-        WHERE policy_key = 'agent:hamilton' AND enabled) AS daily_cap_microusd
+        ))::int AS banks_not_source_checked
   `;
   return {
     ...common,
     liveFees: num(row?.live_fees),
     sourceChecks: num(row?.source_checks),
     banksNotSourceChecked: num(row?.banks_not_source_checked),
+  };
+}
+
+export function gutenbergRules(n: HealthNumbers): HealthRule[] {
+  const spend = num(n.spendUsd);
+  return [
+    noFailedSteps(n),
+    {
+      key: "no_paid_calls",
+      label: "Gutenberg makes no paid model calls",
+      ok: spend === 0,
+      detail: `$${spend.toFixed(2)} spent`,
+    },
+  ];
+}
+
+// ---------------------------------------------------------------- Hamilton
+
+/** Hamilton (the product): its own steps and its spend against the `agent:hamilton` daily cap. */
+export async function readHamiltonNumbers(db: SqlTag): Promise<HealthNumbers> {
+  const common = await readCommon(db, "hamilton");
+  const [row] = await db`
+    SELECT MIN(hard_daily_microusd) AS daily_cap_microusd
+      FROM api_budget_policies
+     WHERE policy_key = 'agent:hamilton' AND enabled
+  `;
+  return {
+    ...common,
     dailyCapUsd: row?.daily_cap_microusd == null ? null : dollars(row.daily_cap_microusd),
   };
 }
@@ -695,20 +751,24 @@ export function growthRules(n: HealthNumbers): HealthRule[] {
 const READERS: Record<HealthAgent, (db: SqlTag) => Promise<HealthNumbers>> = {
   atlas: readAtlasNumbers,
   magellan: readMagellanNumbers,
+  hoovie: readHoovieNumbers,
   rosetta: readRosettaNumbers,
   knox: readKnoxNumbers,
   darwin: readDarwinNumbers,
   hamilton: readHamiltonNumbers,
+  gutenberg: readGutenbergNumbers,
   growth: readGrowthNumbers,
 };
 
 const RULES: Record<HealthAgent, (numbers: HealthNumbers) => HealthRule[]> = {
   atlas: atlasRules,
   magellan: magellanRules,
+  hoovie: hoovieRules,
   rosetta: rosettaRules,
   knox: knoxRules,
   darwin: darwinRules,
   hamilton: hamiltonRules,
+  gutenberg: gutenbergRules,
   growth: growthRules,
 };
 

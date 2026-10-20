@@ -62,7 +62,7 @@ type Fetcher = typeof fetch;
  */
 export const SECOND_DOCUMENT_FINDER = { strategy: "discover.second_document", version: 4 } as const;
 /** One `pipeline_attempts` row per site-search query, so each query's hit rate is visible. */
-export const SITE_SEARCH_STRATEGY = { strategy: "discover.site_search", version: 1 } as const;
+export const SITE_SEARCH_STRATEGY = { strategy: "discover.site_search", version: 2 } as const;
 /** Live banks with fewer published fee categories than this are searched. */
 export const THIN_BANK_CATEGORY_LIMIT = 8;
 export const SECOND_DOCUMENT_BANKS_PER_STEP = 6;
@@ -529,6 +529,12 @@ export interface SiteSearchResult {
   candidates: number;
   /** Companion pages kept from its results. */
   kept: number;
+  /** Candidate URLs whose validation actually finished, including request failures. */
+  checked: number;
+  /** Candidate URLs left outside the validation caps or time budget. */
+  unchecked: number;
+  /** Checked candidates ruled out by the document check. */
+  rejected: number;
   durationMs: number;
 }
 
@@ -571,11 +577,39 @@ async function selectThinBanks(
          AND (${stateCode}::text IS NULL OR upper(btrim(scoped.state_code)) = ${stateCode})
        GROUP BY c.institution_id
     ),
-    scoped AS (
+    -- The banks this call can pick, by the cheap tests first. The stored-text tests below scan up
+    -- to 60k characters of every text a bank has; run before these filters, the national top-up
+    -- ran them for 5,141 banks to keep 65 (32 s, findings/2026-10-17-lane-publish-and-discover-reads.md).
+    candidates AS MATERIALIZED (
       SELECT inst.id, inst.institution_name, inst.city, inst.cert_number, inst.state_code, inst.website_url, inst.fee_schedule_url, inst.asset_size,
              COALESCE(thin.categories, 0) AS categories,
              COALESCE(thin.has_monthly_fee, FALSE) AS has_monthly_fee,
-             COALESCE(thin.has_overdraft, FALSE) AS has_overdraft,
+             COALESCE(thin.has_overdraft, FALSE) AS has_overdraft
+        FROM institution_sources inst
+        LEFT JOIN thin ON thin.institution_id = inst.id
+       WHERE COALESCE(inst.status, 'active') = 'active'
+         AND (${stateCode}::text IS NULL OR upper(btrim(inst.state_code)) = ${stateCode})
+         AND inst.website_url IS NOT NULL AND btrim(inst.website_url) <> ''
+         AND inst.fee_schedule_url IS NOT NULL AND btrim(inst.fee_schedule_url) <> ''
+         AND inst.id <> ALL(${excludeIds}::bigint[])
+         AND (NOT ${leaderOnly}::boolean OR inst.id = ANY(${leaderIds}::bigint[]))
+         -- Both also tested in the final filter; here they only cut the rows early.
+         AND (NOT ${leaderOnly}::boolean OR NOT COALESCE(thin.has_overdraft, FALSE))
+         AND (NOT ${hiddenOnly}::boolean OR COALESCE(thin.categories, 0) < ${HIDDEN_BELOW_CATEGORIES})
+         AND NOT EXISTS (
+           SELECT 1 FROM pipeline_attempts pa
+            WHERE pa.institution_id = inst.id
+              AND pa.stage = 'discover'
+              AND pa.strategy = ${SECOND_DOCUMENT_FINDER.strategy}
+              AND pa.strategy_version = ${SECOND_DOCUMENT_FINDER.version}
+              AND pa.created_at > NOW() - make_interval(days => ${RECHECK_DAYS})
+         )
+    ),
+    scoped AS (
+      SELECT inst.id, inst.institution_name, inst.city, inst.cert_number, inst.state_code, inst.website_url, inst.fee_schedule_url, inst.asset_size,
+             inst.categories,
+             inst.has_monthly_fee,
+             inst.has_overdraft,
              EXISTS (SELECT 1 FROM leads lead WHERE lead.quote_institution_id = inst.id) AS requested,
              -- The link is not the consumer schedule yet (link-coverage.ts): a business-only
              -- schedule, no stored text that prices an overdraft, a text that sends the
@@ -605,22 +639,7 @@ async function selectThinBanks(
                   AND substring(doc.document_url from ${DOCUMENT_YEAR_SQL})::int
                       <= extract(year from NOW())::int - ${STALE_DOCUMENT_YEARS}
              ) AS stale_copy
-        FROM institution_sources inst
-        LEFT JOIN thin ON thin.institution_id = inst.id
-       WHERE COALESCE(inst.status, 'active') = 'active'
-         AND (${stateCode}::text IS NULL OR upper(btrim(inst.state_code)) = ${stateCode})
-         AND inst.website_url IS NOT NULL AND btrim(inst.website_url) <> ''
-         AND inst.fee_schedule_url IS NOT NULL AND btrim(inst.fee_schedule_url) <> ''
-         AND inst.id <> ALL(${excludeIds}::bigint[])
-         AND (NOT ${leaderOnly}::boolean OR inst.id = ANY(${leaderIds}::bigint[]))
-         AND NOT EXISTS (
-           SELECT 1 FROM pipeline_attempts pa
-            WHERE pa.institution_id = inst.id
-              AND pa.stage = 'discover'
-              AND pa.strategy = ${SECOND_DOCUMENT_FINDER.strategy}
-              AND pa.strategy_version = ${SECOND_DOCUMENT_FINDER.version}
-              AND pa.created_at > NOW() - make_interval(days => ${RECHECK_DAYS})
-         )
+        FROM candidates inst
     )
     SELECT id, institution_name, city, cert_number, state_code, website_url, fee_schedule_url, categories,
            (business_only OR no_overdraft_price OR refers_elsewhere OR stale_copy) AS incomplete
@@ -703,18 +722,38 @@ async function searchBank(
   // first query that found it.
   const searchRuns: Array<{ query: string; url: string; status: number | null; ok: boolean; links: PageLink[]; durationMs: number }> = [];
   const foundBySearch = new Map<string, string>();
+  const candidateOutcomes = new Map<string, AttemptOutcome>();
+  const recordCandidateCheck = (url: string, verdict: string, accepted = false) => {
+    const status = /^http_(\d+)$/.exec(verdict)?.[1];
+    const outcome = accepted ? "ok"
+      : verdict === "fetch_failed" ? "network_error"
+      : status ? Number(status) < 400 ? "unsupported_format" : classifyFetchFailure(Number(status))
+      : "rejected";
+    candidateOutcomes.set(urlIdentity(url), outcome);
+  };
   let siteRef: URL | null = null;
   let excludeRef = new Set<string>();
   const searchResults = (): SiteSearchResult[] =>
     searchRuns.map((search) => {
-      const candidates = siteRef ? companionCandidates(search.links, siteRef, excludeRef).length : 0;
+      const candidateIds = siteRef ? companionCandidates(search.links, siteRef, excludeRef).map((candidate) => urlIdentity(candidate.url)) : [];
+      const candidates = candidateIds.length;
+      const outcomes = candidateIds.map((identity) => candidateOutcomes.get(identity));
+      const checked = outcomes.filter((outcome) => outcome !== undefined).length;
+      const unchecked = candidates - checked;
+      const rejected = outcomes.filter((outcome) => outcome === "rejected").length;
       const kept = pages.filter((page) => foundBySearch.get(urlIdentity(page.url)) === search.query).length;
+      const failedRequest = outcomes.find((outcome) => outcome !== undefined && outcome !== "ok" && outcome !== "rejected");
       let outcome: AttemptOutcome;
       if (!search.ok) outcome = search.status != null && search.status < 400 ? "unsupported_format" : classifyFetchFailure(search.status);
       else if (kept > 0) outcome = "ok";
       else if (candidates === 0) outcome = "no_candidates";
+      else if (unchecked > 0 && Date.now() > deadline) outcome = "timeout";
+      // A duplicate hit already kept by an earlier query is useful and already up to date.
+      else if (outcomes.includes("ok")) outcome = "unchanged";
+      else if (failedRequest) outcome = failedRequest;
+      else if (unchecked > 0) outcome = "no_candidates";
       else outcome = "rejected";
-      return { query: search.query, url: search.url, outcome, status: search.status, candidates, kept, durationMs: search.durationMs };
+      return { query: search.query, url: search.url, outcome, status: search.status, candidates, kept, checked, unchecked, rejected, durationMs: search.durationMs };
     });
   const done = (fields: Pick<SecondDocumentResult, "outcome" | "reason">) => ({
     institutionId,
@@ -835,10 +874,17 @@ async function searchBank(
     const html = await openHtml(candidate.url, "crawl_page", candidate.label);
     const entry = trail[trail.length - 1];
     entry.score = Math.round(candidate.score * 100) / 100;
-    if (!html) continue;
+    if (!html) {
+      const verdict = entry.verdict === "cached"
+        ? [...trail].reverse().find((prior) => urlIdentity(prior.url) === urlIdentity(candidate.url) && prior.verdict !== "cached")?.verdict ?? "fetch_failed"
+        : entry.verdict;
+      recordCandidateCheck(candidate.url, verdict);
+      continue;
+    }
     moreLinks.push(...pageLinks(html, site));
     const check = accountPageListsFees(html, candidate.url);
     entry.verdict = check.ok ? "accepted_html" : "too_few_fee_words";
+    recordCandidateCheck(candidate.url, entry.verdict, check.ok);
     if (check.ok) {
       keep({
         url: candidate.url,
@@ -874,6 +920,7 @@ async function searchBank(
         fetchImpl,
       );
       entry.verdict = validation.verdict;
+      recordCandidateCheck(candidate.url, entry.verdict, validation.ok);
       if (validation.ok) {
         keep({
           url: candidate.url,
@@ -888,6 +935,7 @@ async function searchBank(
       }
     } catch {
       entry.verdict = "fetch_failed";
+      recordCandidateCheck(candidate.url, entry.verdict);
     }
   }
 
@@ -904,6 +952,7 @@ async function searchBank(
     try {
       const check = await agreementListsFees(candidate.url, fetchImpl);
       entry.verdict = check.verdict;
+      recordCandidateCheck(candidate.url, entry.verdict, check.ok);
       if (check.ok) {
         keep({
           url: candidate.url,
@@ -918,6 +967,7 @@ async function searchBank(
       }
     } catch {
       entry.verdict = "fetch_failed";
+      recordCandidateCheck(candidate.url, entry.verdict);
     }
   }
 
@@ -999,7 +1049,7 @@ export async function runSecondDocumentFind(options: {
         durationMs: search.durationMs,
         runId: options.runId,
         stepId: options.stepId ?? null,
-        detail: { pass: 2, finder: SECOND_DOCUMENT_FINDER.strategy, query: search.query, url: search.url, status: search.status, candidates: search.candidates, kept: search.kept },
+        detail: { pass: 2, finder: SECOND_DOCUMENT_FINDER.strategy, query: search.query, url: search.url, status: search.status, candidates: search.candidates, kept: search.kept, checked: search.checked, unchecked: search.unchecked, rejected: search.rejected },
         foldIntoPlaybook: false,
       });
     }
@@ -1008,7 +1058,10 @@ export async function runSecondDocumentFind(options: {
       stage: "discover",
       strategy: SECOND_DOCUMENT_FINDER.strategy,
       version: SECOND_DOCUMENT_FINDER.version,
+      // The address the search started from, not a document it judged: keep the outcome off
+      // the do-not-retry list (#1494). The monthly recheck in `selectThinBanks` stops a repeat.
       fingerprint: row.fee_schedule_url,
+      rememberInputFailure: false,
       outcome: result.outcome,
       yieldCount: result.pages.length,
       costMicrousd: 0,
@@ -1023,7 +1076,7 @@ export async function runSecondDocumentFind(options: {
         reason: result.reason,
         pages_fetched: result.fetches,
         index_documents_checked: result.indexDocumentsChecked,
-        searches: result.searches.map((search) => ({ query: search.query, outcome: search.outcome, candidates: search.candidates, kept: search.kept })),
+        searches: result.searches.map((search) => ({ query: search.query, outcome: search.outcome, candidates: search.candidates, kept: search.kept, checked: search.checked, unchecked: search.unchecked, rejected: search.rejected })),
         trail: trail.slice(0, 40),
       },
     });

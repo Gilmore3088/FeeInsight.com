@@ -31,3 +31,12 @@ describe("buildHistogramBuckets", () => {
     expect(buildHistogramBuckets([])).toEqual([]);
   });
 });
+
+describe("one-dollar bars", () => {
+  it("name their whole range, so prices under $1 never sit in a bar labeled $0", () => {
+    const points = [0.6, 0.75, 1, 1.5, 2, 2.5, 3, 3, 4, 5, 6, 7].map((value) => ({ value, isBank: true }));
+    const buckets = buildHistogramBuckets(points);
+    expect(buckets[0]).toMatchObject({ label: "$0–$0.99", total: 2 });
+    expect(buckets.some((b) => b.label === "$0")).toBe(false);
+  });
+});

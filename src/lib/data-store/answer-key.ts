@@ -2,6 +2,9 @@ import { z } from "zod";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { sql } from "./connection";
 import type { GoalScorecard } from "@/lib/agents/goal-scorecard";
+import { queueBoardFromDetail, type QueueBoard } from "@/lib/agents/queue-board";
+import { eligibleReferences, readReferenceEligibility, referenceScoreCohort, sameReferenceCohort, type ReferenceEligibilitySnapshot } from "./answer-key-reference-store";
+import type { ReferenceScoreCohort } from "./answer-key-eligibility";
 
 /**
  * The answer key: hand-checked fee documents and fees for ~60 institutions, the
@@ -45,10 +48,14 @@ type SqlTag = typeof sql;
  * per version, and every reader picks one series, so a rule change never splices two
  * series into one trend. v2 scores the bank's link and the key's own documents; v3 is v2 plus fees
  * published as a rate (`published_fee_rate_catalog`), which can match a key fee keyed as
- * "varies". v1 (the bank's newest stored page, every document's fees) and v2 keep running
- * for their history.
+ * "varies". v4 is v3 plus the bank's documents holding the same text as the key's document (one
+ * page Magellan stored under several URLs). v1 (the bank's newest stored page, every document's
+ * fees) and v2 keep running for their history. v5 is v4 with the key's lines read in today's
+ * taxonomy: a line under a category a live split has since divided is scored under the category the
+ * split gives its printed line (`keyFeesForVersion`, answer-key-score.ts). The headline stays v3
+ * until James moves it: v4 and v5 are changes of measure, not of data.
  */
-export const ANSWER_KEY_SCORER_VERSIONS = [1, 2, 3] as const;
+export const ANSWER_KEY_SCORER_VERSIONS = [1, 2, 3, 4, 5] as const;
 export type AnswerKeyScorerVersion = (typeof ANSWER_KEY_SCORER_VERSIONS)[number];
 /** The series the scoreboard, the admin page and the goal read. */
 export const ANSWER_KEY_SCORER_VERSION: AnswerKeyScorerVersion = 3;
@@ -104,6 +111,7 @@ export interface AnswerKeyBankScore {
 
 export interface AnswerKeyListRow extends AnswerKeyInstitution {
   score: AnswerKeyBankScore | null;
+  eligibility?: { status: string; reason: string; eventId: number | null; checkedAt: string | null };
 }
 
 /**
@@ -116,6 +124,18 @@ export const MACHINE_ANSWER_KEYERS: ReadonlySet<string> = new Set(["knox-hand-ke
 /** True when a person (not a Claude thread) confirmed the bank's key. */
 export function isPersonChecked(row: Pick<AnswerKeyInstitution, "status" | "confirmed_by">): boolean {
   return row.status === "confirmed" && !MACHINE_ANSWER_KEYERS.has(row.confirmed_by ?? "");
+}
+
+/**
+ * Who checked one fee row. A person's bank-level confirmation covers every row on the key, so a
+ * row a Claude thread keyed (`knox-hand-key`) counts as that person's once they confirm the bank.
+ */
+export function feeCheckedBy(
+  feeConfirmedBy: string | null,
+  institution: Pick<AnswerKeyInstitution, "status" | "confirmed_by">,
+): string | null {
+  if (MACHINE_ANSWER_KEYERS.has(feeConfirmedBy ?? "") && isPersonChecked(institution)) return institution.confirmed_by;
+  return feeConfirmedBy;
 }
 
 /** Banks a person still has to check, shortest key first, so each one is a quick read. */
@@ -434,15 +454,21 @@ export async function saveAnswerKeyDocument(
   `;
 }
 
-/** "Confirm all": the document and every fee row, by this person, now. */
+/**
+ * "Confirm all": the document and every fee row, by this person, now. A row a Claude thread
+ * confirmed (`knox-hand-key`) is re-stamped to the person too, so feedback sync reads it as
+ * human-checked; a row another person already confirmed keeps its confirmer.
+ */
 export async function confirmAnswerKeyInstitution(answerKeyId: number, actor: string, db: SqlTag = sql): Promise<void> {
+  const machineKeyers = [...MACHINE_ANSWER_KEYERS];
   await db.begin(async (txRaw) => {
     const tx = txRaw as unknown as SqlTag;
     await tx`
       UPDATE answer_key_fees
-         SET status = 'confirmed', uncertain = false, confirmed_by = COALESCE(confirmed_by, ${actor}),
-             confirmed_at = COALESCE(confirmed_at, NOW()), updated_at = NOW()
-       WHERE answer_key_institution_id = ${answerKeyId} AND status <> 'confirmed'
+         SET status = 'confirmed', uncertain = false, confirmed_by = ${actor},
+             confirmed_at = NOW(), updated_at = NOW()
+       WHERE answer_key_institution_id = ${answerKeyId}
+         AND (status <> 'confirmed' OR confirmed_by IS NULL OR confirmed_by = ANY(${machineKeyers}::text[]))
     `;
     await tx`
       UPDATE answer_key_institutions
@@ -498,33 +524,39 @@ const INSTITUTION_COLUMNS = `
 `;
 
 /** Per-institution scores from the newest score run, keyed by institution id. */
-async function latestBankScores(db: SqlTag): Promise<Map<number, AnswerKeyBankScore>> {
+async function latestBankScores(db: SqlTag, eligibility: ReferenceEligibilitySnapshot): Promise<Map<number, AnswerKeyBankScore>> {
   const [run] = await db`
-    SELECT by_bank FROM answer_key_score_runs
+    SELECT by_bank, by_stage FROM answer_key_score_runs
      WHERE scorer_version = ${ANSWER_KEY_SCORER_VERSION}
      ORDER BY scored_at DESC, id DESC LIMIT 1
   `;
+  if (!sameReferenceCohort(referenceScoreCohort(run?.by_stage?._reference), eligibility.cohort) || eligibility.readError) return new Map();
   const banks = Array.isArray(run?.by_bank) ? (run.by_bank as AnswerKeyBankScore[]) : [];
   return new Map(banks.map((bank) => [Number(bank.institution_id), bank]));
 }
 
-export async function listAnswerKeyInstitutions(db: SqlTag = sql): Promise<AnswerKeyListRow[]> {
+export async function listAnswerKeyInstitutions(db: SqlTag = sql, eligibility?: ReferenceEligibilitySnapshot): Promise<AnswerKeyListRow[]> {
+  const snapshot = eligibility ?? await readReferenceEligibility(db);
   const rows = await db.unsafe(`
     SELECT ${INSTITUTION_COLUMNS}
       FROM answer_key_institutions ak
       JOIN institution_sources inst ON inst.id = ak.institution_id
      ORDER BY ak.status DESC, inst.institution_name
   `);
-  const scores = await latestBankScores(db);
+  const scores = await latestBankScores(db, snapshot);
   return rows.map((row) => {
     const institution = mapInstitution(row);
-    return { ...institution, score: scores.get(institution.institution_id) ?? null };
+    const decision = snapshot.keys.find((key) => key.input.key.answerKeyId === institution.id);
+    return { ...institution, score: decision?.status === "eligible" ? scores.get(institution.institution_id) ?? null : null,
+      eligibility: { status: decision?.status ?? "unknown", reason: decision?.reason ?? "eligibility_missing",
+        eventId: decision?.eventId ?? null, checkedAt: decision?.receipt?.checkedAt ?? null } };
   });
 }
 
 export async function getAnswerKeyInstitution(
   answerKeyId: number,
   db: SqlTag = sql,
+  eligibility?: ReferenceEligibilitySnapshot,
 ): Promise<{ institution: AnswerKeyListRow; fees: AnswerKeyFee[] } | null> {
   const [row] = await db.unsafe(
     `SELECT ${INSTITUTION_COLUMNS}
@@ -542,9 +574,13 @@ export async function getAnswerKeyInstitution(
      ORDER BY canonical_key, id
   `;
   const institution = mapInstitution(row);
-  const scores = await latestBankScores(db);
+  const snapshot = eligibility ?? await readReferenceEligibility(db);
+  const scores = await latestBankScores(db, snapshot);
+  const decision = snapshot.keys.find((key) => key.input.key.answerKeyId === institution.id);
   return {
-    institution: { ...institution, score: scores.get(institution.institution_id) ?? null },
+    institution: { ...institution, score: decision?.status === "eligible" ? scores.get(institution.institution_id) ?? null : null,
+      eligibility: { status: decision?.status ?? "unknown", reason: decision?.reason ?? "eligibility_missing",
+        eventId: decision?.eventId ?? null, checkedAt: decision?.receipt?.checkedAt ?? null } },
     fees: fees.map((fee) => ({
       id: Number(fee.id),
       canonical_key: String(fee.canonical_key),
@@ -567,34 +603,19 @@ export interface ConfirmedAnswerKeyEntry {
   documentUrl: string;
   documentType: AnswerKeyDocumentType;
   contentHash: string | null;
-  fees: Array<{ canonicalKey: string; amount: number | null; amountKind: AnswerKeyAmountKind }>;
+  /** `sourceLine` is the schedule line the key's reader confirmed; v5 reads its category through live splits. */
+  fees: Array<{ canonicalKey: string; amount: number | null; amountKind: AnswerKeyAmountKind; sourceLine?: string | null }>;
 }
 
-export async function getConfirmedAnswerKey(db: SqlTag = sql): Promise<ConfirmedAnswerKeyEntry[]> {
-  const rows = await db`
-    SELECT ak.institution_id, ak.document_url, ak.document_type, ak.content_hash,
-           COALESCE(
-             jsonb_agg(jsonb_build_object('canonical_key', f.canonical_key, 'amount', f.amount, 'amount_kind', f.amount_kind)
-                       ORDER BY f.id) FILTER (WHERE f.id IS NOT NULL),
-             '[]'::jsonb
-           ) AS fees
-      FROM answer_key_institutions ak
-      LEFT JOIN answer_key_fees f ON f.answer_key_institution_id = ak.id AND f.status = 'confirmed'
-     WHERE ak.status = 'confirmed'
-     GROUP BY ak.id
-     ORDER BY ak.institution_id
-  `;
-  return rows.map((row) => ({
-    institutionId: Number(row.institution_id),
-    documentUrl: String(row.document_url),
-    documentType: row.document_type as AnswerKeyDocumentType,
-    contentHash: (row.content_hash as string | null) ?? null,
-    fees: (row.fees as Array<{ canonical_key: string; amount: number | string | null; amount_kind: AnswerKeyAmountKind }>).map((fee) => ({
-      canonicalKey: fee.canonical_key,
-      amount: fee.amount == null ? null : Number(fee.amount),
-      amountKind: fee.amount_kind,
+export async function getConfirmedAnswerKey(db: SqlTag = sql, eligibility?: ReferenceEligibilitySnapshot): Promise<ConfirmedAnswerKeyEntry[]> {
+  const snapshot = eligibility ?? await readReferenceEligibility(db);
+  return eligibleReferences(snapshot).map(({ input: { key } }) => ({
+    institutionId: key.institutionId, documentUrl: key.documentUrl,
+    documentType: key.documentType as AnswerKeyDocumentType, contentHash: key.contentHash,
+    fees: key.fees.filter((fee) => fee.canonicalKey !== "unmapped").map((fee) => ({
+      canonicalKey: fee.canonicalKey, amount: fee.amount, amountKind: fee.amountKind as AnswerKeyAmountKind, sourceLine: fee.sourceLine,
     })),
-  }));
+  })).sort((a, b) => a.institutionId - b.institutionId);
 }
 
 export interface AnswerKeyScoreRunRow {
@@ -609,11 +630,14 @@ export interface AnswerKeyScoreRunRow {
   by_stage: Record<string, unknown>;
   by_category: Record<string, unknown>;
   by_document_type: Record<string, unknown>;
+  reference?: ReferenceScoreCohort | null;
+  referenceState?: "measured" | "no_measurement" | "legacy_ungated" | "cohort_changed" | "unavailable";
 }
 
 export async function getLatestAnswerKeyScoreRun(
   db: SqlTag = sql,
   version: AnswerKeyScorerVersion = ANSWER_KEY_SCORER_VERSION,
+  eligibility?: ReferenceEligibilitySnapshot,
 ): Promise<AnswerKeyScoreRunRow | null> {
   const [row] = await db`
     SELECT id, agent_run_id, scorer_version, scored_at, banks_scored, fees_expected, precision, recall,
@@ -624,6 +648,13 @@ export async function getLatestAnswerKeyScoreRun(
      LIMIT 1
   `;
   if (!row) return null;
+  const snapshot = eligibility ?? await readReferenceEligibility(db);
+  const storedReference = referenceScoreCohort((row.by_stage as Record<string, unknown> | null)?._reference);
+  const compatible = sameReferenceCohort(storedReference, snapshot.cohort) && !snapshot.readError;
+  const referenceState = snapshot.readError ? "unavailable" : !storedReference ? "legacy_ungated" : !compatible ? "cohort_changed" : snapshot.cohort.state;
+  const canMeasure = compatible && snapshot.cohort.state === "measured";
+  const stages = Object.fromEntries(Object.entries((row.by_stage as Record<string, unknown> | null) ?? {})
+    .filter(([name]) => ["magellan", "rosetta", "knox", "darwin", "hamilton"].includes(name)));
   return {
     id: Number(row.id),
     agent_run_id: row.agent_run_id == null ? null : Number(row.agent_run_id),
@@ -631,11 +662,12 @@ export async function getLatestAnswerKeyScoreRun(
     scored_at: toIso(row.scored_at) ?? "",
     banks_scored: Number(row.banks_scored),
     fees_expected: Number(row.fees_expected),
-    precision: row.precision == null ? null : Number(row.precision),
-    recall: row.recall == null ? null : Number(row.recall),
-    by_stage: (row.by_stage as Record<string, unknown>) ?? {},
-    by_category: (row.by_category as Record<string, unknown>) ?? {},
-    by_document_type: (row.by_document_type as Record<string, unknown>) ?? {},
+    precision: !compatible || snapshot.cohort.state !== "measured" || row.precision == null ? null : Number(row.precision),
+    recall: !compatible || snapshot.cohort.state !== "measured" || row.recall == null ? null : Number(row.recall),
+    by_stage: canMeasure ? stages : {},
+    by_category: canMeasure ? (row.by_category as Record<string, unknown>) ?? {} : {},
+    by_document_type: canMeasure ? (row.by_document_type as Record<string, unknown>) ?? {} : {},
+    reference: snapshot.cohort, referenceState,
   };
 }
 
@@ -663,12 +695,19 @@ export interface ScoreboardSnapshotRow {
    * or for older snapshots the version of the score run they name. Null when no score run is named.
    */
   accuracy_scorer_version: number | null;
+  accuracy_reference?: ReferenceScoreCohort | null;
+  accuracy_reference_state?: string;
+  accuracy_series?: string | null;
+  legacy_accuracy_precision?: number | null;
+  legacy_accuracy_recall?: number | null;
   freshness_median_days: number | null;
   freshness_live_fees: number | null;
   /** The goal scorecard stored that day (`detail.goal`, #1040); null on older snapshots. */
   goal: GoalScorecard | null;
   /** Darwin's undecided rows from that day's agent health check (`detail.agent_health`); null when not recorded. */
   darwin_backlog: number | null;
+  /** The piles board stored that day (`detail.queues`, #1108); null on older snapshots. */
+  queues: QueueBoard | null;
 }
 
 const SNAPSHOT_NUMBER_COLUMNS = [
@@ -689,8 +728,8 @@ export async function scoreboardSchemaReady(db: SqlTag = sql): Promise<boolean> 
  * Where each run of one series starts, for a trend that must not join two series (#1354).
  * A day with no known series belongs to no run: the same series on both sides of it is one run.
  */
-export function seriesBreaks(keys: Array<number | null>): Array<{ start: number; key: number }> {
-  const runs: Array<{ start: number; key: number }> = [];
+export function seriesBreaks<T extends string | number>(keys: Array<T | null>): Array<{ start: number; key: T }> {
+  const runs: Array<{ start: number; key: T }> = [];
   keys.forEach((key, index) => {
     if (key != null && key !== runs.at(-1)?.key) runs.push({ start: index, key });
   });
@@ -699,14 +738,15 @@ export function seriesBreaks(keys: Array<number | null>): Array<{ start: number;
 
 /** The newest snapshots, oldest first (for a trend line). */
 export async function listScoreboardSnapshots(days = 30, db: SqlTag = sql): Promise<ScoreboardSnapshotRow[]> {
+  const current = await readReferenceEligibility(db);
   const rows = await db`
-    SELECT s.*, s.snapshot_date::text AS snapshot_day, r.scorer_version AS run_scorer_version
+    SELECT s.*, s.snapshot_date::text AS snapshot_day, r.scorer_version AS run_scorer_version, r.by_stage AS run_by_stage
       FROM pipeline_scoreboard_snapshots s
       LEFT JOIN answer_key_score_runs r ON r.id = s.accuracy_score_run_id
      WHERE s.snapshot_date >= CURRENT_DATE - ${days}::int
      ORDER BY s.snapshot_date ASC
   `;
-  return rows.map((row) => {
+  return rows.map((row, index) => {
     const snapshot: Record<string, unknown> = {
       snapshot_date: String(row.snapshot_day),
     };
@@ -716,13 +756,29 @@ export async function listScoreboardSnapshots(days = 30, db: SqlTag = sql): Prom
     const detail = (typeof row.detail === "string" ? JSON.parse(row.detail) : row.detail) as {
       goal?: GoalScorecard;
       accuracy_scorer_version?: number | null;
+      accuracy_reference?: unknown;
+      accuracy_reference_state?: string;
       agent_health?: { agents?: Array<{ agent?: string; numbers?: Record<string, unknown> }> };
     } | null;
     snapshot.goal = detail?.goal ?? null;
     const scorer = detail?.accuracy_scorer_version ?? row.run_scorer_version;
     snapshot.accuracy_scorer_version = scorer == null || !Number.isFinite(Number(scorer)) ? null : Number(scorer);
+    const reference = referenceScoreCohort(detail?.accuracy_reference ?? (row.run_by_stage as Record<string, unknown> | null)?._reference);
+    snapshot.accuracy_reference = reference;
+    snapshot.accuracy_reference_state = !reference ? "legacy_ungated" : reference.readError ? "unavailable" : reference.state;
+    snapshot.accuracy_series = reference?.state === "measured" ? `v${scorer}:reference${reference.protocol}:${reference.cohortFingerprint}:${reference.frameFingerprint}` : null;
+    if (!reference || reference.state !== "measured" || (index === rows.length - 1 && (current.readError || !sameReferenceCohort(reference, current.cohort)))) {
+      if (!reference) {
+        snapshot.legacy_accuracy_precision = snapshot.accuracy_precision;
+        snapshot.legacy_accuracy_recall = snapshot.accuracy_recall;
+      } else if (reference.state === "measured") snapshot.accuracy_reference_state = current.readError ? "unavailable" : "cohort_changed";
+      snapshot.accuracy_precision = null;
+      snapshot.accuracy_recall = null;
+      snapshot.accuracy_series = null;
+    }
     const undecided = detail?.agent_health?.agents?.find((section) => section.agent === "darwin")?.numbers?.undecided;
     snapshot.darwin_backlog = undecided == null || !Number.isFinite(Number(undecided)) ? null : Number(undecided);
+    snapshot.queues = queueBoardFromDetail((detail as { queues?: unknown } | null)?.queues);
     return snapshot as unknown as ScoreboardSnapshotRow;
   });
 }

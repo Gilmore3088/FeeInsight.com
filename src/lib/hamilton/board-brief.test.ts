@@ -34,6 +34,17 @@ describe("board brief reuses frozen analysis", () => {
     expect(report.exhibits).toEqual([]);
     expect(report.boardBrief?.factEvidence).toEqual(frozen.factEvidence);
   });
+  it("lists every saved evidence record by ID, with the stored-source limit, and never claims a live check", () => {
+    const report = boardBriefFromAnalysis(frozen, "saved-original", edits);
+    const records = report.exhibits?.find(e => e.id === "evidence_records");
+    const ids = [...frozen.factEvidence!.facts, ...frozen.factEvidence!.derivations].map(f => f.id);
+    expect(ids.length).toBeGreaterThan(0);
+    // The record ID leads each row's source line, so an auditor can match it.
+    expect(records?.rows.map(r => r[2].match(/^record (\S+?)[;\s]/)?.[1])).toEqual(ids);
+    expect(records?.note).toContain("did not re-check it against the bank's current live schedule");
+    expect(report.recommendation).toContain("not re-checked against the bank's current live schedule");
+    expect(JSON.stringify(report)).not.toMatch(/verified against the (current )?live/i);
+  });
   it("labels missing legacy provenance instead of substituting current sources", () => {
     const report = boardBriefFromAnalysis({ ...frozen, storyline: undefined, factEvidence: undefined, identityContext: undefined }, "legacy", edits);
     expect(report.identityContext).toBeUndefined();

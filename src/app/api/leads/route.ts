@@ -27,6 +27,8 @@ import {
   parseInstitutionId,
   parseSrc,
 } from "./lead-notifications";
+import { lifecycleFields } from "@/lib/email/lifecycle-fields";
+import { lifecycleDeps } from "@/lib/email/lifecycle-deps";
 import { isRequestLead } from "@/lib/leads/lead-status";
 import { knownReaderEmail } from "@/lib/leads/known-reader";
 import { STATE_TO_DISTRICT } from "@/lib/fed-districts";
@@ -213,6 +215,8 @@ async function handlePOST(request: NextRequest) {
         // Only a state picked on this form changes the reader's state group; a form with no
         // state leaves their group alone (an older row's state must not add a second one).
         state: stateCode,
+        // This form first, then the older rows (newest first), for the lifecycle emails' fields.
+        fields: await lifecycleFields([{ source, use_case: useCase, created_at: new Date() }, ...known], lifecycleDeps),
       });
       if (sync.status === "failed") console.error("[api/leads] MailerLite sync failed", { error: sync.error });
     }

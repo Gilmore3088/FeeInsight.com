@@ -126,7 +126,7 @@ export function DigestView({
   const noStates = digest.states.length === 0;
   return (
     <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
-      <header>
+      <header className="text-center sm:text-left">
         <p className={LABEL} style={SANS}>
           <Link href="/pro/news" className="text-warm-600 no-underline hover:text-brick">
             Regulatory Wire
@@ -154,7 +154,7 @@ export function DigestView({
           <Link href="/pro/news?view=states" className="font-semibold text-brick no-underline hover:underline">
             States view
           </Link>{" "}
-          and choose <span className="font-semibold">Watch this state</span>; it will appear here with its bills, regulator posts and press.
+          and choose <span className="font-semibold">Watch this state</span>; it will appear here with its bills and regulator posts.
         </p>
       ) : null}
 
@@ -173,7 +173,7 @@ export function DigestView({
       <p className="mt-5 text-[11px] leading-relaxed text-warm-600">
         Items are dated by publication or, for bills, the latest action (UTC), in the last 7 days. Fee types come from keywords in
         the headline. AI summaries are written by a model from the item&apos;s own text where one has been written; they can be
-        wrong, and the source is what counts. Press stories are the outlet&apos;s reporting and are never summarised.
+        wrong, and the source is what counts.
       </p>
     </div>
   );

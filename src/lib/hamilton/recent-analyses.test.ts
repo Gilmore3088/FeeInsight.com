@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { recentLabel, recentQuestions, type SavedAnalysisRow } from "./recent-analyses";
+import { recentLabel, recentQuestions, withInstitution, type SavedAnalysisRow } from "./recent-analyses";
 
 const row = (id: string, title: string, prompt: string, updated_at: string, institution_id = "8109"): SavedAnalysisRow => ({
   id,
@@ -51,5 +51,18 @@ describe("recentLabel", () => {
 
   it("falls back to the saved title when there is no question", () => {
     expect(recentLabel({ title: "The typical institution earned", prompt: null })).toBe("The typical institution earned");
+  });
+});
+
+describe("saved titles name the institution (#1542)", () => {
+  it("adds the research institution to a follow-up that names none", () => {
+    const rows = [{ ...row("a", "What about their overdraft fee?", "What about their overdraft fee?", "2026-10-16T02:30:00Z", "323"), institution_name: "Capital City Bank" }];
+    expect(recentQuestions(rows, 5)[0].title).toBe("What about their overdraft fee? · Capital City Bank");
+  });
+  it("leaves a title that already names it, drops legal endings, and copes with no name", () => {
+    expect(withInstitution("How does U.S. Bank's NSF fee compare?", "U.S. Bank National Association")).toBe("How does U.S. Bank's NSF fee compare?");
+    expect(withInstitution("Overdraft against peers.", "Navy Federal Credit Union")).toBe("Overdraft against peers. · Navy Federal Credit Union");
+    expect(withInstitution("Wire fees.", "U.S. Bank National Association")).toBe("Wire fees. · U.S. Bank");
+    expect(withInstitution("Overdraft against peers.", null)).toBe("Overdraft against peers.");
   });
 });

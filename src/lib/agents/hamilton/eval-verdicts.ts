@@ -60,7 +60,13 @@ type SqlTag = typeof sql;
  * stays a waiver as "Monthly Service Charge", and a labelled row matches under either name.
  */
 export const EVAL_VERDICT_CHECK = "hamilton.eval_verdict";
-export const EVAL_VERDICT_VERSION = 7;
+/**
+ * v8 (#1112, Oct 16): the name rules learn the no-fee, discount and allowance lines Darwin's peer
+ * check used to hold as price outliers: "No-Fee on Skip-a-Pay", "There is no … monthly service fee
+ * after a $50 opening deposit", a leading "Fee-free …", "Safe Deposit Box Discount", "$5 Allowance",
+ * and a loan's own term amount read as its application fee.
+ */
+export const EVAL_VERDICT_VERSION = 8;
 /** Why v5 cleared v4's price_in_name flags; written on the rule_revised lesson and each reconstructed first look. */
 const RULE_REVISED_VERSION = 5;
 export const RULE_REVISED_WHY = "A dollar figure in a fee's name is a threshold, floor, cap, balance or range more often than the fee's price; price_in_name now fires only on a price the name presents as the fee's own";
@@ -328,8 +334,91 @@ export const HAND_CHECKED_VERDICTS: readonly (EvalVerdict & { pattern: string })
 const REBATE_WORDING = /\b(rebate|reimburse|refund)/i;
 const NON_REFUNDABLE = /non[- ]?refundable/i;
 const ATM_KEYS = new Set(["atm_non_network", "atm_international"]);
-/** A sentence about what is free ("No fee for stop payments"), not a priced row. */
-const NO_FEE_SENTENCE = /^\s*(no|without)\s+(fee|charge)s?\s+(for|to|on|when|if)\b/i;
+/** A sentence about what is free ("No fee for stop payments", "No-Fee on Skip-a-Pay"), not a priced row. */
+const NO_FEE_SENTENCE = /^\s*(no|without)[\s-]+(fee|charge)s?\s+(for|to|on|when|if)\b/i;
+/**
+ * v8: a name that opens on "There is/are no … fee" ("There is no minimum balance or monthly service
+ * fee after a $50 opening deposit"). Anchored to the start of the name: "Wire fee; there are no other
+ * charges" and "Paper statement fee - there is no fee for e-statements" are the fee itself.
+ */
+const NO_FEE_CLAUSE = /^\s*there\s+(?:is|are)\s+no\s+(?:[\w-]+\s+){0,5}(?:fees?|charges?)\b/i;
+/** v8: a line that opens on what is free ("Fee-free debit card use at any Allpoint® Network ATM"). */
+const FEE_FREE_LEAD = /^\s*\*?\s*fee-free\b/i;
+/**
+ * v8: a no-fee sentence whose next clause prices the fee at its own amount is that fee ("Fee-free
+ * ATMs; out-of-network $3" at $3, "No charge for the first 2; $2 each after" at $2), so the no-fee
+ * rule leaves it. A later price that is not the amount keeps the rule ("No fee for overdrafts under
+ * $5; $35 otherwise" at $0), and so does a price inside the free clause itself ("… no monthly
+ * service fee after a $50 opening deposit").
+ */
+const CLAUSE_BREAK = /[;,:|]|\.\s/;
+const DOLLAR_PRICE = /\$\s?(\d[\d,]*(?:\.\d{1,2})?)/g;
+function laterClausePricesAmount(name: string, amount: number | null | undefined): boolean {
+  const cut = CLAUSE_BREAK.exec(name);
+  if (!cut || amount == null) return false;
+  for (const match of name.slice(cut.index).matchAll(DOLLAR_PRICE)) {
+    if (sameAmount(match[1], amount)) return true;
+  }
+  return false;
+}
+/**
+ * v8: a discount the bank gives, published as a fee ("Safe Deposit Box Discount", "$5.00 discount for
+ * direct debit of safe deposit fees", "Maintenance Charge discount"). A discounted price ("Discounted
+ * overdraft item fee", "3x5 …… w/ discount") is the fee itself and stays, and so does a fee that names
+ * a percentage discount off itself ("Stop payment discount of 50% for seniors" at $15).
+ */
+const DISCOUNT_NAME = /\bdiscounts?\s*$|^\s*(?:annual\s+)?discount\s+(?:on|for)\b/i;
+/**
+ * "discount by/of": a credit, unless what follows is a percentage, or a dollar figure that is not
+ * the fee's amount ("Stop payment discount of $5 for seniors" at $15 is the $15 fee). A cut name
+ * ("… receive a discount of") or the credit's own amount ("discount by $10.00" at $10) is the credit.
+ */
+const DISCOUNT_BY_OF = /\bdiscount\s+(?:by|of)\b(?!\s*\d+(?:\.\d+)?\s*%)(?:\s*\$\s?(\d[\d,]*(?:\.\d{1,2})?))?/i;
+function namesDiscount(name: string, amount: number | null | undefined): boolean {
+  if (DISCOUNTED_PRICE.test(name)) return false;
+  if (DISCOUNT_NAME.test(name)) return true;
+  const byOf = DISCOUNT_BY_OF.exec(name);
+  return Boolean(byOf && (byOf[1] == null || sameAmount(byOf[1], amount)));
+}
+const DISCOUNTED_PRICE = /\bdiscounted\b|w\/\s*discount/i;
+/**
+ * v8: an allowance the bank grants, in the name or right after the price on the line ("Courtesy Pay /
+ * $5 Allowance"). On the line it counts only when the allowance is the fee's own amount: "Overdraft
+ * Fee $30 / $5 allowance on first item" at $30 is the overdraft fee.
+ */
+const ALLOWANCE_NAME = /\ballowance\s*$/i;
+const ALLOWANCE_PRICE = /\$\s?(\d[\d,]*(?:\.\d{1,2})?)\s+allowance\b/gi;
+/** v8: a loan's own term amount read as its fee ("Budget Assist Loan Application Fee (4 month term/$1,000)"). */
+const LOAN_TERM_AMOUNT = /\bterm\s*\/\s*\$\s?(\d[\d,]*(?:\.\d{1,2})?)/i;
+
+function sameAmount(text: string, amount: number | null | undefined): boolean {
+  return amount != null && Math.abs(Number(text.replace(/,/g, "")) - amount) < 0.005;
+}
+
+/** True when the stored line prints "$X allowance" with X the fee's own amount. */
+function allowanceAtAmount(excerpt: string | null | undefined, amount: number | null | undefined): boolean {
+  if (!excerpt || amount == null) return false;
+  for (const match of excerpt.matchAll(ALLOWANCE_PRICE)) {
+    if (sameAmount(match[1], amount)) return true;
+  }
+  return false;
+}
+
+/**
+ * v8: the live re-check's SQL prefilter for the v8 shapes, in Postgres regex syntax (`\y` is a word
+ * edge). Each is at least as wide as its rule above, so every fee a v8 rule fails is read; `ruleFor`
+ * then decides. `column` is the fee's name or its stored line.
+ */
+export const V8_PREFILTER: ReadonlyArray<{ column: "name" | "line"; pattern: string }> = [
+  { column: "name", pattern: "^\\s*(no|without)[\\s-]+(fee|charge)s?\\s+(for|to|on|when|if)\\y" },
+  { column: "name", pattern: "^\\s*there\\s+(is|are)\\s+no\\y" },
+  { column: "name", pattern: "^\\s*\\*?\\s*fee-free\\y" },
+  { column: "name", pattern: "\\ydiscounts?\\y" },
+  { column: "name", pattern: "\\yallowance\\s*$" },
+  { column: "line", pattern: "\\$\\s?[0-9][0-9,]*(\\.[0-9]{1,2})?\\s+allowance\\y" },
+  { column: "name", pattern: "\\yterm\\s*/\\s*\\$" },
+  { column: "line", pattern: "\\yterm\\s*/\\s*\\$" },
+];
 
 /** The condition under which a fee is waived, or the balance that avoids it, as a $0 "fee". */
 const WAIVER_SENTENCE = /\b(if|when|unless)\s+you\b|\bof\s+the\s+following\b|\bqualifications?\s+(are|is)\s+met\b|^\s*to\s+avoid\b|\bto\s+avoid\s+(a\s+|an\s+|the\s+)?(monthly\s+|maintenance\s+)?(service\s+charge|monthly\s+fee|maintenance\s+fee|fee)/i;
@@ -419,7 +508,7 @@ export function distinctPrices(text: string | null | undefined): number {
  */
 const RATE_BOUND_NAME = /\d\s*%.*\b(minimum|maximum|min|max)\.?:?\s*$/i;
 
-export type NameRule = "rebate" | "no_fee_sentence" | "waiver_sentence" | "merchant_payer" | "two_fees_one_line" | "price_in_name" | "rate_bound" | "balance_threshold";
+export type NameRule = "rebate" | "no_fee_sentence" | "waiver_sentence" | "merchant_payer" | "two_fees_one_line" | "price_in_name" | "rate_bound" | "balance_threshold" | "discount_or_allowance" | "loan_amount";
 export const RULE_VERDICTS: Readonly<Record<NameRule, Verdict>> = {
   rebate: "not_a_fee",
   no_fee_sentence: "not_a_fee",
@@ -429,6 +518,8 @@ export const RULE_VERDICTS: Readonly<Record<NameRule, Verdict>> = {
   price_in_name: "wrong_amount",
   rate_bound: "wrong_amount",
   balance_threshold: "not_a_fee",
+  discount_or_allowance: "not_a_fee",
+  loan_amount: "wrong_amount",
 };
 export const RULE_WHY: Readonly<Record<NameRule, string>> = {
   rebate: "A surcharge rebate or reimbursement the bank gives, published as the ATM fee it charges",
@@ -439,13 +530,20 @@ export const RULE_WHY: Readonly<Record<NameRule, string>> = {
   price_in_name: "The name states a price that is not the published amount, so the amount came from another cell",
   rate_bound: "The name states a percent and ends on minimum or maximum: the amount is the rate fee's floor or cap, not the fee",
   balance_threshold: "The balance that avoids a fee, published as a fee: the amount is the threshold or another cell, not a charge",
+  discount_or_allowance: "A discount or allowance the bank gives, published as a fee it charges",
+  loan_amount: "The loan's own term amount, published as its fee",
 };
 
 /** Which name rule, if any, takes a live fee down. `excerpt` is the schedule line Knox read. Pure. */
 export function ruleFor(canonicalFeeKey: string, feeName: string | null | undefined, amount?: number | null, excerpt?: string | null): NameRule | null {
   const name = feeName ?? "";
   if (ATM_KEYS.has(canonicalFeeKey) && REBATE_WORDING.test(name) && !NON_REFUNDABLE.test(name)) return "rebate";
-  if (NO_FEE_SENTENCE.test(name)) return "no_fee_sentence";
+  if ((NO_FEE_SENTENCE.test(name) || NO_FEE_CLAUSE.test(name) || FEE_FREE_LEAD.test(name)) && !laterClausePricesAmount(name, amount)) return "no_fee_sentence";
+  if (namesDiscount(name, amount) || ALLOWANCE_NAME.test(name) || allowanceAtAmount(excerpt, amount)) {
+    return "discount_or_allowance";
+  }
+  const term = LOAN_TERM_AMOUNT.exec(name) ?? LOAN_TERM_AMOUNT.exec(excerpt ?? "");
+  if (term && sameAmount(term[1], amount)) return "loan_amount";
   if (amount != null && Math.abs(amount) < 0.005 && WAIVER_SENTENCE.test(name)) return "waiver_sentence";
   if (BALANCE_THRESHOLD.test(name) && !STATES_FEE.test(name)) return "balance_threshold";
   if (MERCHANT_PAYER.test(name)) return "merchant_payer";
@@ -459,7 +557,6 @@ export function ruleFor(canonicalFeeKey: string, feeName: string | null | undefi
 }
 
 export type FlagRule = "non_customer_price" | "wire_shared_line";
-export const FLAG_RULES: readonly FlagRule[] = ["non_customer_price", "wire_shared_line"];
 const FLAG_WHY: Readonly<Record<FlagRule, string>> = {
   non_customer_price: "A price for non-customers, published beside the bank's own customer price (Flag until James decides Flag or Hide)",
   wire_shared_line: "A wire fee read from a line that names both scopes and carries two prices; the column read needs a second look",
@@ -474,6 +571,12 @@ export function flagFor(canonicalFeeKey: string, feeName: string | null | undefi
 }
 
 /** Every labelled row, eval or hand check: these are read whatever their name. */
+/**
+ * Live fees a name rule fails that the re-check leaves for a second batch, so each takedown batch
+ * stays under 20 (DECISIONS 2026-10-16, #1613). v8's live re-check fails 20 fees; 120626 (a loan's
+ * term amount, `loan_amount`) waits here. #1696 empties the list once the first 19 are down.
+ */
+export const EVAL_VERDICT_SECOND_BATCH: ReadonlySet<number> = new Set([120626]);
 const LABELLED_IDS = new Set([...EVAL_CRITICAL_VERDICTS, ...HAND_CHECKED_VERDICTS].map((entry) => entry.feePublishedId));
 
 /** The eval verdict a live record still matches, or null when none or the record has changed. Pure. */
@@ -530,6 +633,9 @@ export interface EvalVerdictResult {
   handMatched: number;
   /** Live fees a name rule fails. */
   ruleFailing: number;
+  /** Live fees a name rule fails that wait for a later batch (`EVAL_VERDICT_SECOND_BATCH`). */
+  deferred: number;
+  deferredIds: number[];
   flagged: number;
   waiting: number;
   /** Pending flags cleared because the current rule no longer fails the fee. */
@@ -576,7 +682,7 @@ export function evalVerdictFeesSql(byInstitution: boolean): string {
             OR fp.fee_published_id IN (SELECT pf.fee_published_id FROM pipeline_feedback pf
                                         WHERE pf.check_name = '${EVAL_VERDICT_CHECK}' AND pf.kind = 'takedown_pending')
             OR (fp.canonical_fee_key IN ('atm_non_network', 'atm_international') AND fp.fee_name ~* '(rebate|reimburse|refund)')
-            OR fp.fee_name ~* '^\\s*(no|without)\\s+(fee|charge)s?\\s+(for|to|on|when|if)\\y'
+            ${V8_PREFILTER.map(({ column, pattern }) => `OR ${column === "name" ? "fp.fee_name" : "COALESCE(fr.extraction_note, fr.conditions)"} ~* '${pattern}'`).join("\n            ")}
             OR (fp.amount = 0 AND fp.fee_name ~* '\\y(if|when|unless)\\s+you\\y|\\yof\\s+the\\s+following\\y|\\yqualifications?\\s+(are|is)\\s+met\\y|\\yto\\s+avoid\\y')
             OR fp.fee_name ~* '^\\s*(minimum|average|min\\.?)\\y[a-z ]{0,30}?\\ybalance\\s+(required\\s+|requirement\\s+)?to\\s+avoid\\y'
             OR fp.fee_name ~* '\\y(merchant|payee)\\s+(pays|presenting|presented)\\y|\\ypaid\\s+by\\s+(the\\s+)?(merchant|payee)\\y'
@@ -599,7 +705,7 @@ export async function retireEvalVerdictFees(
 ): Promise<EvalVerdictResult> {
   const limit = Math.max(1, Math.min(options.limit ?? ROLLBACK_LIMIT, 2_000));
   const result: EvalVerdictResult = {
-    evalMatched: 0, evalChanged: 0, handMatched: 0, ruleFailing: 0, flagged: 0, waiting: 0, cleared: 0, reconstructed: 0, rolledBack: [],
+    evalMatched: 0, evalChanged: 0, handMatched: 0, ruleFailing: 0, deferred: 0, deferredIds: [], flagged: 0, waiting: 0, cleared: 0, reconstructed: 0, rolledBack: [],
     flags: { non_customer_price: 0, wire_shared_line: 0 }, flagSamples: [], dryRun: options.dryRun,
   };
   let rows: LiveRow[];
@@ -652,6 +758,11 @@ export async function retireEvalVerdictFees(
     // qualifications are met" at $0 is a waiver after its retidy to "Monthly Service Charge" too.
     const rule = ruleFor(base.canonicalFeeKey, base.feeName, base.amount, excerpt)
       ?? (originalFeeName ? ruleFor(base.canonicalFeeKey, originalFeeName, base.amount, excerpt) : null);
+    if (rule && EVAL_VERDICT_SECOND_BATCH.has(base.feePublishedId)) {
+      result.deferred += 1;
+      result.deferredIds.push(base.feePublishedId);
+      continue;
+    }
     if (rule) {
       const kind = RULE_VERDICTS[rule];
       const prefix = kind === "not_a_fee" ? RULE_REASON_PREFIX : kind;
@@ -668,7 +779,7 @@ export async function retireEvalVerdictFees(
       aboutStage: "extract",
       signal: "wrong",
       kind: flag,
-      reportedBy: "hamilton",
+      reportedBy: "gutenberg",
       checkName: EVAL_VERDICT_CHECK,
       institutionId: base.institutionId,
       sourceDocumentId: base.sourceDocumentId,
@@ -718,7 +829,7 @@ export async function retireEvalVerdictFees(
         aboutVersion: RULE_REVISED_VERSION,
         signal: "right",
         kind: "rule_revised",
-        reportedBy: "hamilton",
+        reportedBy: "gutenberg",
         checkName: EVAL_VERDICT_CHECK,
         weight: 0,
         runId: options.runId,
@@ -785,7 +896,7 @@ export async function retireEvalVerdictFees(
     aboutStage: "extract",
     signal: "wrong",
     kind: fee.kind,
-    reportedBy: "hamilton",
+    reportedBy: "gutenberg",
     checkName: EVAL_VERDICT_CHECK,
     institutionId: fee.institutionId,
     sourceDocumentId: fee.sourceDocumentId,

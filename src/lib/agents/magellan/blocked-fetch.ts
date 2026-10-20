@@ -1,6 +1,7 @@
 import { sql } from "@/lib/data-store/connection";
 import { EmergencyStopActiveError } from "@/lib/automation-control";
 import { ProviderBudgetBlockedError } from "@/lib/api-hardening/budget";
+import { ProviderCircuitOpenError } from "@/lib/ai-provider-usage";
 import type { Anthropic } from "@/lib/ai-provider";
 import { documentVaultSchemaReady, getDocumentVault, type DocumentVault } from "@/lib/agents/document-vault";
 import { learningSchemaReady } from "@/lib/agents/learning/attempts";
@@ -154,6 +155,8 @@ export async function selectBlockedCompanions(db: SqlTag, limit: number): Promis
       JOIN institution_sources inst ON inst.id = ias.institution_id
       LEFT JOIN source_documents latest ON latest.id = ias.last_source_document_id
      WHERE ias.document_role <> 'business'
+       -- A hand-supplied copy (hand-supplied.ts) is already stored; the paid fetch never asks for it.
+       AND ias.found_by_strategy <> 'supply.hand_supplied'
        AND (
          COALESCE(inst.status, 'active') = 'active'
          -- As in companion fetch: a hand-found schedule is fetched for a dormant bank (Stock
@@ -247,6 +250,8 @@ export function responseFromWebFetch(message: Pick<Anthropic.Message, "content">
 function budgetStop(error: unknown): string | null {
   if (error instanceof ProviderBudgetBlockedError) return error.message || error.reasonCode;
   if (error instanceof EmergencyStopActiveError) return error.message;
+  // A provider billing refusal (#1056) stops the step like a cap; the institution stays queued.
+  if (error instanceof ProviderCircuitOpenError) return error.message;
   return null;
 }
 

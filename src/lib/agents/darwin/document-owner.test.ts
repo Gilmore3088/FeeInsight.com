@@ -1,11 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  documentOwnerDetail,
+  documentOwnerLinksSql,
+  DOCUMENT_OWNER_LINK_FAILURE,
+  releaseOwnerLinks,
   buildNameDirectory,
   DARWIN_DOCUMENT_OWNER_TAKEDOWN,
   documentOwnerCountSql,
   documentOwnerFingerprint,
   documentOwnerPairsSql,
+  documentOwnerRefusalsSql,
+  DOCUMENT_OWNER_PENDING_DAYS,
   creditUnionAcronyms,
   documentOwnerVerdict,
   headerNamesInstitution,
@@ -532,16 +538,40 @@ describe("documentOwnerCountSql", () => {
     expect(text).toContain("LIMIT $4");
     expect(text).toContain("LIMIT $5");
   });
+
+  it("also reads pairs whose verified rows are not live yet, first, and re-reads only live pairs", () => {
+    expect(DOCUMENT_OWNER_PENDING_DAYS).toBe(14);
+    const text = documentOwnerPairsSql();
+    expect(text).toContain(`fv.created_at >= NOW() - INTERVAL '${DOCUMENT_OWNER_PENDING_DAYS} days'`);
+    expect(text).toContain("fv.review_status IN ('verified', 'approved')");
+    expect(text).toContain("count(*) FILTER (WHERE fee_published_id IS NULL)::int AS pending_rows");
+    expect(text).toContain("ORDER BY (s.pending_rows > 0) DESC, s.live_fees DESC");
+    expect(text).toContain("WHERE s.live_fees > 0");
+    // The dry-run count still counts live fees only.
+    expect(documentOwnerCountSql()).not.toContain(`INTERVAL '${DOCUMENT_OWNER_PENDING_DAYS} days'`);
+  });
+
+  it("the publish refusal reads the latest verdict, either mode, at the document's current text", () => {
+    const text = documentOwnerRefusalsSql();
+    expect(text).toContain("fv.fee_verified_id = ANY($1::bigint[])");
+    expect(text).toContain("'owner:' || fv.institution_id::text");
+    expect(text).toContain("'owner-shadow:' || fv.institution_id::text");
+    expect(text).toContain("COALESCE(cur.text_hash, 'none')");
+    expect(text).toContain("pa.strategy = 'verify.document_owner'");
+    expect(text).toContain("ORDER BY pa.created_at DESC, pa.id DESC");
+    expect(text).toContain("owner ON owner.outcome = 'evidence_mismatch'");
+    expect(text).not.toMatch(/\b(INSERT|UPDATE|DELETE)\b/);
+  });
 });
 
 function templateText(strings: unknown): string {
   return Array.isArray(strings) ? strings.join(" ") : String(strings);
 }
 
-function createDb(pairs?: unknown[], lastEvent: Record<string, unknown> | null = null, lastEventAt: string | null = null) {
+function createDb(pairs?: unknown[], lastEvent: Record<string, unknown> | null = null, lastEventAt: string | null = null, verifiedId: number | null = null) {
   const query = vi.fn((strings: TemplateStringsArray) => {
     const text = templateText(strings);
-    if (text.includes("max(fee_published_id)")) return Promise.resolve([{ text_id: 10, fee_id: 20 }]);
+    if (text.includes("max(fee_published_id)")) return Promise.resolve([{ text_id: 10, fee_id: 20, verified_id: verifiedId }]);
     if (text.includes("SELECT detail, created_at FROM agent_run_events")) return Promise.resolve(lastEvent ? [{ detail: lastEvent, created_at: lastEventAt }] : []);
     if (text.includes("to_regclass")) return Promise.resolve([{ ready: true }]);
     if (text.includes("current_setting('statement_timeout')")) return Promise.resolve([{ value: "0", jit: "on", applied: "60s", jit_applied: "off" }]);
@@ -569,7 +599,7 @@ function createDb(pairs?: unknown[], lastEvent: Record<string, unknown> | null =
     return Promise.resolve([]);
   });
   const db = query as unknown as ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
-  db.unsafe = vi.fn(() => Promise.resolve(pairs ?? [
+  db.unsafe = vi.fn((text: string) => text.includes("WITH down AS") ? Promise.resolve([]) : Promise.resolve(pairs ?? [
     { institution_id: 5756, source_document_id: 17191, document_url: "https://ukcreditunion.org/Schedule-of-Fees-2026-03.pdf", live_fees: 2, other_ids: [6729], text_hash: "h1", reread: false },
     { institution_id: 6729, source_document_id: 17191, document_url: "https://ukcreditunion.org/Schedule-of-Fees-2026-03.pdf", live_fees: 23, other_ids: [5756], text_hash: "h1", reread: false },
     { institution_id: 1319, source_document_id: 900, document_url: "https://ibc.com/fees.pdf", live_fees: 30, other_ids: [160], text_hash: "h2", reread: false },
@@ -578,13 +608,13 @@ function createDb(pairs?: unknown[], lastEvent: Record<string, unknown> | null =
 }
 
 describe("recheckDocumentOwners (shadow)", () => {
-  it("is off by default", () => {
-    expect(DARWIN_DOCUMENT_OWNER_TAKEDOWN).toBe(false);
+  it("is on (James's yes, 2026-10-17); these tests pass takedown: false for the shadow path", () => {
+    expect(DARWIN_DOCUMENT_OWNER_TAKEDOWN).toBe(true);
   });
 
   it("reports the live fees it would take down, records each pair, and changes no fee", async () => {
     const db = createDb();
-    const result = await recheckDocumentOwners(db, { runId: 77, stepId: 3 });
+    const result = await recheckDocumentOwners(db, { runId: 77, stepId: 3, takedown: false });
     expect(result.live).toBe(false);
     expect(result.verdicts).toEqual({ other_bank: 1, own_named: 1, sibling_shared: 1 });
     expect(result.siblingSharedDocuments).toBe(1);
@@ -620,6 +650,13 @@ describe("recheckDocumentOwners (shadow)", () => {
     const moved = createDb([], { selected: 0, max_text_id: 9, max_fee_id: 20 });
     expect(await recheckDocumentOwners(moved, { runId: 79 })).toMatchObject({ skipped: false });
     expect(moved.unsafe).toHaveBeenCalled();
+
+    // A new verified row (not yet live) is new work too: the pending pairs are read before publish.
+    const sameVerified = createDb([], { selected: 0, max_text_id: 10, max_fee_id: 20, max_verified_id: 30 }, null, 30);
+    expect(await recheckDocumentOwners(sameVerified, { runId: 80 })).toMatchObject({ skipped: true });
+    const newVerified = createDb([], { selected: 0, max_text_id: 10, max_fee_id: 20, max_verified_id: 30 }, null, 31);
+    expect(await recheckDocumentOwners(newVerified, { runId: 80 })).toMatchObject({ skipped: false });
+    expect(newVerified.unsafe).toHaveBeenCalled();
   });
 
   it("scans at most once per interval, even with a backlog, and again once it has passed", async () => {
@@ -639,7 +676,7 @@ describe("recheckDocumentOwners: the skip keys on pairs selected (O3)", () => {
     const db = createDb([
       { institution_id: 99999, source_document_id: 17191, document_url: "https://ukcreditunion.org/x.pdf", live_fees: 2, other_ids: [6729], text_hash: "h1", reread: false },
     ]);
-    const result = await recheckDocumentOwners(db, { runId: 81 });
+    const result = await recheckDocumentOwners(db, { runId: 81, takedown: false });
     expect(result).toMatchObject({ selected: 1, pairs: 0, verdicts: { unproven: 1 } });
     const calls = JSON.stringify(db.mock.calls);
     expect(calls).toContain("owner-shadow:99999:17191:h1");
@@ -652,7 +689,7 @@ describe("recheckDocumentOwners: the skip keys on pairs selected (O3)", () => {
     const query = db.getMockImplementation() as unknown as (strings: TemplateStringsArray, ...values: unknown[]) => unknown;
     db.mockImplementation(((strings: TemplateStringsArray, ...values: unknown[]) =>
       templateText(strings).includes("document-owner name scan") ? Promise.reject(new Error("boom")) : query(strings, ...values)) as never);
-    const result = await recheckDocumentOwners(db, { runId: 82 });
+    const result = await recheckDocumentOwners(db, { runId: 82, takedown: false });
     expect(result).toMatchObject({ selected: 3, pairs: 0 });
     expect(JSON.stringify(db.mock.calls)).toContain('\\"selected\\":3');
   });
@@ -669,5 +706,62 @@ describe("recheckDocumentOwners (takedown on)", () => {
     const calls = JSON.stringify(db.mock.calls);
     expect(calls).toContain("hamilton.second_look:darwin.document_owner:pub:71");
     expect(calls).toContain("owner:5756:17191:h1");
+  });
+});
+
+describe("releaseOwnerLinks (#2018 item 13)", () => {
+  const UK_PDF = "https://www.ukcreditunion.org/Schedule-of-Fees-2026-03.pdf";
+  function linkDb(rows: unknown[], options: { fail?: boolean; updated?: boolean } = {}) {
+    const query = vi.fn((strings: TemplateStringsArray) => {
+      const text = templateText(strings);
+      if (options.fail && text.includes("UPDATE institution_sources")) return Promise.reject(new Error("boom"));
+      if (text.includes("UPDATE institution_sources")) return Promise.resolve(options.updated === false ? [] : [{ id: 5756 }]);
+      return Promise.resolve([]);
+    });
+    const db = query as unknown as ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
+    db.unsafe = vi.fn(() => Promise.resolve(rows));
+    return db as unknown as Parameters<typeof releaseOwnerLinks>[0] & typeof db;
+  }
+
+  it("reads only links whose document's fees for that bank all came down as another bank's, and never locked ones", () => {
+    const text = documentOwnerLinksSql();
+    expect(text).toContain("fp.rolled_back_reason LIKE 'document_owner:%'");
+    expect(text).toContain("btrim(COALESCE(inst.fee_schedule_url, '')) = d.document_url");
+    expect(text).toContain("profile.locked_by_correction IS TRUE");
+    expect(text).toContain("live.rolled_back_at IS NULL");
+    expect(text).not.toMatch(/\b(INSERT|UPDATE|DELETE)\b/);
+  });
+
+  it("sends Bluegrass's UK FCU link back to discovery: rejected, off the fee link and canonical source", async () => {
+    const db = linkDb([{ institution_id: 5756, source_document_id: 17191, document_url: UK_PDF, other_institution_id: "6729" }]);
+    expect(await releaseOwnerLinks(db)).toEqual([5756]);
+    const writes = db.mock.calls.map((call) => [templateText(call[0]), call.slice(1)] as const);
+    const profile = writes.find(([text]) => text.includes("UPDATE institution_source_profiles"))!;
+    expect(profile[0]).toContain("canonical_source_url = CASE");
+    expect(JSON.stringify(profile[1])).toContain(UK_PDF);
+    expect(JSON.stringify(profile[1])).toContain("document_owner");
+    const inst = writes.find(([text]) => text.includes("UPDATE institution_sources"))!;
+    expect(inst[0]).toContain("SET fee_schedule_url = NULL");
+    expect(inst[1]).toEqual(expect.arrayContaining([DOCUMENT_OWNER_LINK_FAILURE, 5756, UK_PDF]));
+    expect(JSON.stringify(inst[1])).toContain("institution 6729's schedule");
+    expect(writes.some(([text]) => text.includes("published_fee_records") || text.includes("verified_fee_observations"))).toBe(false);
+  });
+
+  it("reports nothing released when the link changed meanwhile, and a failed write changes nothing", async () => {
+    const row = { institution_id: 5756, source_document_id: 17191, document_url: UK_PDF, other_institution_id: "6729" };
+    expect(await releaseOwnerLinks(linkDb([row], { updated: false }))).toEqual([]);
+    expect(await releaseOwnerLinks(linkDb([row], { fail: true }))).toEqual([]);
+    expect(await releaseOwnerLinks(linkDb([]))).toEqual([]);
+  });
+
+  it("runs on every live step and lands in the step detail; the shadow path never runs it", async () => {
+    const live = createDb([]);
+    const result = await recheckDocumentOwners(live, { runId: 77, takedown: true });
+    expect(result.linksReleased).toEqual([]);
+    expect(live.unsafe.mock.calls.some((call) => String(call[0]).includes("WITH down AS"))).toBe(true);
+    expect(documentOwnerDetail(result)).toMatchObject({ links_released: [] });
+    const shadow = createDb([]);
+    await recheckDocumentOwners(shadow, { runId: 77, takedown: false });
+    expect(shadow.unsafe.mock.calls.some((call) => String(call[0]).includes("WITH down AS"))).toBe(false);
   });
 });

@@ -5,6 +5,12 @@ import { InstitutionPicker, type InstitutionSearchResult } from "@/components/ha
 import { STATE_NAMES } from "@/lib/us-states";
 import { defaultPeerSetName } from "@/lib/hamilton/peer-set-name";
 import {
+  MAX_PEER_SET_INSTITUTIONS,
+  MAX_PEER_SET_NAME_LENGTH,
+  formatPrefillDate,
+  type PeerSetPrefill,
+} from "@/lib/hamilton/peer-set-prefill";
+import {
   createPeerSet,
   editPeerSet,
   removePeerSet,
@@ -15,7 +21,7 @@ import {
 const inputClass =
   "w-full rounded-md border border-warm-300 bg-white px-3 py-2 text-sm text-warm-900 focus:border-terra focus:outline-none focus:ring-1 focus:ring-terra";
 
-const MAX_CHOSEN_PEERS = 50;
+const MAX_CHOSEN_PEERS = MAX_PEER_SET_INSTITUTIONS;
 
 export interface PeerSetRow {
   id: number;
@@ -79,6 +85,7 @@ export function PeerSetManager({
   researchInstitutionId,
   minPeers,
   widerGroupLabel = "the national index",
+  prefill = null,
 }: {
   initialPeerSets: PeerSetRow[];
   initialCounts?: Record<number, PeerSetCount>;
@@ -93,11 +100,15 @@ export function PeerSetManager({
   minPeers: number;
   /** The group charts widen to when a set is too thin for a fee. */
   widerGroupLabel?: string;
+  /** A set handed over by a public page's link; it opens the form and is saved only on submit. */
+  prefill?: PeerSetPrefill | null;
 }) {
   const [peerSets, setPeerSets] = useState(initialPeerSets);
   const [counts, setCounts] = useState<Record<number, PeerSetCount>>(initialCounts);
   const [names, setNames] = useState<Record<number, string>>(initialInstitutionNames);
-  const [editing, setEditing] = useState<PeerSetRow | "new" | null>(null);
+  const canAdd = canEditWorkspaceSets || !workspaceName;
+  const [pendingPrefill, setPendingPrefill] = useState<PeerSetPrefill | null>(canAdd ? prefill : null);
+  const [editing, setEditing] = useState<PeerSetRow | "new" | null>(pendingPrefill ? "new" : null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -163,6 +174,7 @@ export function PeerSetManager({
         return;
       }
       applySaved(result);
+      setPendingPrefill(null);
       setEditing(null);
     });
   }
@@ -286,7 +298,7 @@ export function PeerSetManager({
       </fieldset>
 
       {editing === null ? (
-        canEditWorkspaceSets || !workspaceName ? (
+        canAdd ? (
           <div>
             <button
               type="button"
@@ -301,10 +313,14 @@ export function PeerSetManager({
         <PeerSetForm
           key={editing === "new" ? "new" : editing.id}
           initial={editing === "new" ? null : editing}
+          prefill={editing === "new" ? pendingPrefill : null}
           names={names}
           isPending={isPending}
           researchInstitutionId={researchInstitutionId}
-          onCancel={() => setEditing(null)}
+          onCancel={() => {
+            setPendingPrefill(null);
+            setEditing(null);
+          }}
           onSubmit={(formData) => handleSubmit(formData, editing)}
         />
       )}
@@ -314,6 +330,7 @@ export function PeerSetManager({
 
 function PeerSetForm({
   initial,
+  prefill = null,
   names,
   isPending,
   researchInstitutionId,
@@ -321,6 +338,7 @@ function PeerSetForm({
   onSubmit,
 }: {
   initial: PeerSetRow | null;
+  prefill?: PeerSetPrefill | null;
   names: Record<number, string>;
   isPending: boolean;
   researchInstitutionId?: number | null;
@@ -329,10 +347,12 @@ function PeerSetForm({
 }) {
   const fieldLabel = "block text-sm font-medium text-warm-800";
   const [mode, setMode] = useState<"filters" | "institutions">(
-    initial?.institution_ids?.length ? "institutions" : "filters",
+    initial?.institution_ids?.length || prefill ? "institutions" : "filters",
   );
   const [chosen, setChosen] = useState<{ id: number; name: string }[]>(
-    (initial?.institution_ids ?? []).map((id) => ({ id, name: names[id] ?? `Institution ${id}` })),
+    prefill
+      ? prefill.peers.slice(0, MAX_CHOSEN_PEERS)
+      : (initial?.institution_ids ?? []).map((id) => ({ id, name: names[id] ?? `Institution ${id}` })),
   );
   const [states, setStates] = useState<string[]>(initial?.states ?? []);
   const [pickerKey, setPickerKey] = useState(0);
@@ -367,12 +387,24 @@ function PeerSetForm({
       className="flex flex-col gap-4 rounded-md border border-warm-200 bg-white p-4"
     >
       {researchInstitutionId !== undefined ? <input type="hidden" name="research_institution_id" value={researchInstitutionId ?? ""} /> : null}
+      {prefill ? (
+        <div role="status" className="rounded-md border border-warm-200 bg-warm-50 px-3 py-2 text-sm text-warm-800">
+          <p>Peers from the link you followed. Nothing is saved until you choose Save this set.</p>
+          {prefill.fee || prefill.asOf ? (
+            <p className="mt-1 text-warm-600">
+              {prefill.fee ? `Fee: ${prefill.fee.label}.` : ""}
+              {prefill.fee && prefill.asOf ? " " : ""}
+              {prefill.asOf ? `Data as of ${formatPrefillDate(prefill.asOf)}.` : ""}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
       <label className="flex flex-col gap-1 text-sm text-warm-800">
         <span className="font-medium">Name (optional)</span>
         <input
           name="name"
-          maxLength={100}
-          defaultValue={initial?.name ?? ""}
+          maxLength={MAX_PEER_SET_NAME_LENGTH}
+          defaultValue={initial?.name ?? prefill?.name ?? ""}
           className={inputClass}
           placeholder="Leave blank to name this group from your selection"
         />
@@ -558,7 +590,7 @@ function PeerSetForm({
           disabled={isPending}
           className="rounded-md bg-terra px-3.5 py-2 text-sm font-medium text-white hover:bg-terra-dark disabled:opacity-50"
         >
-          {isPending ? "Saving..." : initial ? "Save changes" : "Save peer group"}
+          {isPending ? "Saving..." : initial ? "Save changes" : prefill ? "Save this set" : "Save peer group"}
         </button>
         <button
           type="button"

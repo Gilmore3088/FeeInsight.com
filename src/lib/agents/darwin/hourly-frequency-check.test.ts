@@ -1,10 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
+import { W43_HOURLY_LINE_ROWS } from "./hourly-frequency-check.fixtures";
 
 import { hourlyFromLine, hourlyWording, settledFrequency } from "@/lib/fee-frequency";
 
 import {
   HOURLY_CHECK_BATCH,
+  HOURLY_CHECK_VERSION,
   HOURLY_FREQUENCY_LIVE,
+  HOURLY_LINE_LIVE,
   findHourlyFees,
   hourlyCountSql,
   hourlyDetail,
@@ -81,15 +84,15 @@ describe("hourly frequency on a schedule line", () => {
 
 describe("hourlyVerdict", () => {
   it.each([
-    ["Research: Labor Per Hour", "account_research", "per_occurrence", { action: "set" }],
-    ["Subpoena Fee - Per Hour (Minimum One Hour Charge)", "legal_process", null, { action: "set" }],
-    ["Coin Counting (per hour)", "coin_counting", "per_item", { action: "set" }],
-    ["Safe Deposit Box Inventory (per hour)", "safe_deposit_box", null, { action: "set" }],
-    ["Research per 15 min", "account_research", null, { action: "exempt", exemptReason: "partial_hour" }],
-    ["Monthly Fee: (per hour)", "monthly_maintenance", null, { action: "exempt", exemptReason: "category" }],
-    ["Overdraft (per hour)", "overdraft", null, { action: "exempt", exemptReason: "category" }],
-    ["Monthly research per hour", "account_research", null, { action: "exempt", exemptReason: "period_word" }],
-    ["Research per hour", "account_research", "monthly", { action: "exempt", exemptReason: "stated_period" }],
+    ["Research: Labor Per Hour", "account_research", "per_occurrence", { action: "set", basis: "name" }],
+    ["Subpoena Fee - Per Hour (Minimum One Hour Charge)", "legal_process", null, { action: "set", basis: "name" }],
+    ["Coin Counting (per hour)", "coin_counting", "per_item", { action: "set", basis: "name" }],
+    ["Safe Deposit Box Inventory (per hour)", "safe_deposit_box", null, { action: "set", basis: "name" }],
+    ["Research per 15 min", "account_research", null, { action: "exempt", exemptReason: "partial_hour", basis: "name" }],
+    ["Monthly Fee: (per hour)", "monthly_maintenance", null, { action: "exempt", exemptReason: "category", basis: "name" }],
+    ["Overdraft (per hour)", "overdraft", null, { action: "exempt", exemptReason: "category", basis: "name" }],
+    ["Monthly research per hour", "account_research", null, { action: "exempt", exemptReason: "period_word", basis: "name" }],
+    ["Research per hour", "account_research", "monthly", { action: "exempt", exemptReason: "stated_period", basis: "name" }],
   ])("%j (%s, %s)", (name, key, frequency, verdict) => {
     expect(hourlyVerdict(name, key, frequency)).toEqual(verdict);
   });
@@ -122,8 +125,8 @@ const asDb = (db: DbMock) => db as unknown as Parameters<typeof recheckHourlyFre
 const texts = (db: DbMock) => db.mock.calls.map(([strings]) => (strings as TemplateStringsArray).join("?"));
 
 describe("Darwin live hourly re-check", () => {
-  it("ships with the switch off", () => {
-    expect(HOURLY_FREQUENCY_LIVE).toBe(false);
+  it("ships switched on (James, 2026-10-16)", () => {
+    expect(HOURLY_FREQUENCY_LIVE).toBe(true);
     expect(HOURLY_CHECK_BATCH).toBe(2_000);
   });
 
@@ -142,7 +145,7 @@ describe("Darwin live hourly re-check", () => {
 
   it("in shadow, reports and moves the cursor but writes no fee", async () => {
     const db = dbFor(ROWS, "100");
-    const result = await recheckHourlyFrequencies(asDb(db), { runId: 7, stepId: 70, dryRun: false });
+    const result = await recheckHourlyFrequencies(asDb(db), { runId: 7, stepId: 70, dryRun: false, live: false });
     expect(result).toMatchObject({ live: false, wouldSet: 2, exempt: 1, afterId: 100, nextAfterId: 0, set: [] });
     const sent = texts(db);
     expect(sent.some((text) => text.includes("UPDATE"))).toBe(false);
@@ -165,9 +168,10 @@ describe("Darwin live hourly re-check", () => {
     expect(texts(db).some((text) => text.includes("UPDATE") || text.includes("INSERT"))).toBe(false);
   });
 
-  it("switched on, sets the live and verified rows guarded on the old value and logs each change", async () => {
+  it("switched on (the default), sets the live and verified rows guarded on the old value and logs each change", async () => {
     const db = dbFor(ROWS);
-    const result = await recheckHourlyFrequencies(asDb(db), { runId: 7, stepId: 70, dryRun: false, live: true });
+    const result = await recheckHourlyFrequencies(asDb(db), { runId: 7, stepId: 70, dryRun: false });
+    expect(result.live).toBe(true);
     expect(result.set).toEqual([101, 102]);
     const update = db.mock.calls.find(([strings]) => (strings as TemplateStringsArray).join("?").includes("UPDATE published_fee_records"));
     expect((update?.[0] as TemplateStringsArray).join("?")).toContain("fp.frequency IS NOT DISTINCT FROM v.from_frequency");
@@ -190,9 +194,135 @@ describe("Darwin live hourly re-check", () => {
   });
 
   it("gives step detail with the switch state and samples", () => {
-    const detail = hourlyDetail({ ...findHourlyFees(ROWS), live: false, dryRun: false, afterId: 0, nextAfterId: 0, set: [] });
+    const detail = hourlyDetail({ ...findHourlyFees(ROWS), live: false, lineLive: false, dryRun: false, afterId: 0, nextAfterId: 0, set: [] });
     expect(detail).toMatchObject({ check: "darwin.hourly_frequency_check", switch_live: false, would_set: 2, set: 0 });
     expect(detail.samples_set[0]).toMatchObject({ fee_published_id: 101, from: null, action: "set" });
+  });
+});
+
+describe("v2: a fee priced by the hour only on its own line (#1456)", () => {
+  // 1st Source Bank's name is silent; its line prices it by the hour.
+  const LINE_ROWS = [
+    { fee_published_id: "201", fee_verified_id: "9201", institution_id: "7", fee_name: "Account Research Fee", amount: "20", canonical_fee_key: "account_research", frequency: null, source_line: "Account Research Fee $20 per hour" },
+    { fee_published_id: "202", fee_verified_id: "9202", institution_id: "7", fee_name: "Research", amount: "25", canonical_fee_key: "account_research", frequency: "per_item", source_line: "Research | $25.00/hr" },
+    // Another fee's per-hour price on the line is not this fee's.
+    { fee_published_id: "203", fee_verified_id: "9203", institution_id: "7", fee_name: "Stop Payment", amount: "30", canonical_fee_key: "stop_payment", frequency: "per_item", source_line: "Stop Payment | $30.00 | Research (per hour) | $25.00" },
+    // A category never charged by the hour is exempt, as on the name.
+    { fee_published_id: "204", fee_verified_id: "9204", institution_id: "7", fee_name: "Monthly Fee", amount: "25", canonical_fee_key: "monthly_maintenance", frequency: null, source_line: "Monthly Fee: (per hour) | $25.00" },
+    // A line that does not print the fee's price says nothing of it.
+    { fee_published_id: "205", fee_verified_id: "9205", institution_id: "7", fee_name: "Research", amount: "40", canonical_fee_key: "account_research", frequency: null, source_line: "Research (per hour) | $25.00" },
+  ];
+
+  it("is version 2, with the line switch on after James's yes", () => {
+    expect(HOURLY_CHECK_VERSION).toBe(2);
+    expect(HOURLY_LINE_LIVE).toBe(true);
+  });
+
+  it("reads a silent name on its own line, with the same exemptions", () => {
+    expect(hourlyVerdict("Account Research Fee", "account_research", null, "Account Research Fee $20 per hour", 20)).toEqual({ action: "set", basis: "line" });
+    expect(hourlyVerdict("Monthly Fee", "monthly_maintenance", null, "Monthly Fee: (per hour) | $25.00", 25)).toEqual({ action: "exempt", exemptReason: "category", basis: "line" });
+    expect(hourlyVerdict("Research", "account_research", "monthly", "Research | $25.00/hr", 25)).toEqual({ action: "exempt", exemptReason: "stated_period", basis: "line" });
+    expect(hourlyVerdict("Research", "account_research", null, "Research (per hour) | $25.00", 40)).toBeNull();
+    expect(hourlyVerdict("Research", "account_research", null, null, 25)).toBeNull();
+    // The name still decides first.
+    expect(hourlyVerdict("Research per hour", "account_research", null, "Research | $25.00 each", 25)).toEqual({ action: "set", basis: "name" });
+  });
+
+  it("counts line-only fees apart", () => {
+    const found = findHourlyFees([...ROWS, ...LINE_ROWS]);
+    expect(found).toMatchObject({ wouldSet: 4, wouldSetFromLine: 2, exempt: 2 });
+    expect(found.matches.filter((fee) => fee.basis === "line").map((fee) => fee.feePublishedId)).toEqual([201, 202, 204]);
+  });
+
+  it("with the line switch off, writes only fees named by the hour", async () => {
+    const db = dbFor([...ROWS, ...LINE_ROWS]);
+    await recheckHourlyFrequencies(asDb(db), { runId: 7, stepId: 70, dryRun: false, lineLive: false });
+    const update = db.mock.calls.find(([strings]) => (strings as TemplateStringsArray).join("?").includes("UPDATE published_fee_records"));
+    expect(update?.[2]).toEqual([101, 102]);
+    // No feedback row or set event names a line-only fee.
+    const writes = db.mock.calls
+      .filter(([strings]) => /pipeline_feedback|hourly_frequency_set/.test((strings as TemplateStringsArray).join("?")))
+      .map((call) => JSON.stringify(call.slice(1)));
+    expect(writes.length).toBeGreaterThan(0);
+    expect(writes.some((text) => /\b20[12]\b/.test(text))).toBe(false);
+  });
+
+  it("exempts a line-only fee whose line names a period", () => {
+    expect(hourlyVerdict("Research", "account_research", null, "Research | $25.00 per hour, billed monthly", 25)).toEqual({ action: "exempt", exemptReason: "period_word", basis: "line" });
+    // A partial hour on the line is no hourly basis at all.
+    expect(hourlyVerdict("Research", "account_research", null, "Research | $10.00 per 15 minutes", 10)).toBeNull();
+  });
+
+  it("with the line switch on, writes line-only fees too", async () => {
+    const db = dbFor([...ROWS, ...LINE_ROWS]);
+    const result = await recheckHourlyFrequencies(asDb(db), { runId: 7, stepId: 70, dryRun: false, lineLive: true });
+    expect(result.lineLive).toBe(true);
+    const update = db.mock.calls.find(([strings]) => (strings as TemplateStringsArray).join("?").includes("UPDATE published_fee_records"));
+    expect(update?.[2]).toEqual([101, 102, 201, 202]);
+    expect(hourlyDetail(result)).toMatchObject({ line_switch_live: true, would_set_from_line: 2 });
+  });
+
+  it("reads each fee's stored line with it", async () => {
+    const db = dbFor(ROWS);
+    await recheckHourlyFrequencies(asDb(db), { runId: 7, dryRun: true });
+    const read = texts(db).find((text) => text.includes("FROM published_fee_records"));
+    expect(read).toContain("LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id");
+    expect(read).toContain("from 'excerpt=\"(.*)\"\\s*$') AS source_line");
+  });
+});
+
+describe("own-price hourly attribution (#1456, production source witnesses)", () => {
+  it.each([
+    // Citizens Bank, published 19296, artifact 712: two distinct fees at the same price.
+    ["Stop Payment Order (ACH, Debit Card, Check)", "stop_payment", 30,
+      "Stop Payment Order (ACH, Debit Card, Check) $30.00 Research per hour (one hour minimum) $30.00"],
+    // First Service FCU, published 32264, artifact 6275: the previous price's unit.
+    ["Counter Check", "counter_check", 2,
+      "Account Research/Reconcillation $25 per hour Counter Check $2 each"],
+    // Mound City Bank, published 36105, artifact 6676: another equal-price fee.
+    ["3x5", "safe_deposit_box", 25,
+      "Subpoena Response (per hour) | $25.00 3x5 $25.00"],
+  ])("does not borrow an hour from another fee for %s", (name, category, amount, line) => {
+    expect(hourlyVerdict(name, category, null, line, amount)).toBeNull();
+  });
+
+  it("keeps every reviewed W43 whole-hour positive without activating the switch", () => {
+    const found = findHourlyFees(W43_HOURLY_LINE_ROWS);
+    expect(found.wouldSetFromLine).toBe(27);
+    expect(found.matches.map((fee) => fee.feePublishedId)).toEqual(
+      W43_HOURLY_LINE_ROWS.map((row) => Number(row.fee_published_id)).sort((a, b) => a - b),
+    );
+    expect(found.matches.every((fee) => fee.action === "set" && fee.basis === "line")).toBe(true);
+    expect(HOURLY_LINE_LIVE).toBe(true);
+  });
+
+  it("binds equal-price and previous-price units to their named fee", () => {
+    expect(hourlyFromLine("Account Research | $30 per hour", 30, "Stop Payment")).toBe(false);
+    expect(hourlyVerdict("Stop Payment", "stop_payment", null, "Account Research | $30 per hour", 30)).toBeNull();
+    const samePrice = "Stop Payment $30 Research (per hour) $30";
+    expect(hourlyFromLine(samePrice, 30, "Stop Payment")).toBe(false);
+    expect(hourlyFromLine(samePrice, 30, "Research")).toBe(true);
+    // With no named owner, incompatible readings of the same price stay unknown.
+    expect(hourlyFromLine(samePrice, 30)).toBe(false);
+    const previousPrice = "Research $25 per hour Counter Check $2 each";
+    expect(hourlyFromLine(previousPrice, 2)).toBe(false);
+    expect(hourlyFromLine(previousPrice, 25, "Research")).toBe(true);
+  });
+
+  it("reads a unit-only next cell but never a next fee's label", () => {
+    expect(hourlyFromLine("Research | $40 | per hour", 40, "Research")).toBe(true);
+    expect(hourlyFromLine("Research | $40 | Research per hour | $25", 40, "Research")).toBe(false);
+    expect(hourlyFromLine("Research | $40 | per hour | Stop Payment | $40", 40, "Stop Payment")).toBe(false);
+  });
+
+  it("keeps minimum prices separate and refuses an explicit partial-hour price", () => {
+    expect(hourlyFromLine("Research $25 per hour, $25 minimum", 25, "Research")).toBe(true);
+    expect(hourlyFromLine("Research (min. $10) | $25 per hour", 25, "Research (min. $10)")).toBe(true);
+    expect(hourlyFromLine("Reconciliation ($15 per Minimum) | $25 per Hour", 25, "Reconciliation ($15 per Minimum)")).toBe(true);
+    expect(hourlyFromLine("Research (per hour) | $25 minimum | $50 each", 25, "Research")).toBe(false);
+    expect(hourlyFromLine("Research (per hour) | $10 per 15 minutes", 10, "Research")).toBe(false);
+    expect(hourlyFromLine("Research (per hour) | $10 | per half hour", 10, "Research")).toBe(false);
+    expect(hourlyFromLine("Research fee (1/2-hour minimum charge) | $50 per 1/2 hour", 50, "Research fee")).toBe(false);
   });
 });
 

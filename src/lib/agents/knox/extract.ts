@@ -10,17 +10,26 @@ import { chooseStrategy } from "@/lib/agents/learning/router";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { confidenceFor, type DroppedLineReason, type ExtractedFeeCandidate, type HeldFeeCandidate } from "@/lib/agents/knox/rules";
 import type { RateFeeCandidate } from "@/lib/agents/knox/percent";
-import { groundLineup, LINEUP_CATEGORY, withLineupFromText } from "@/lib/agents/knox/lineup";
+import { ACCOUNT_PRODUCT_CATEGORIES, groundLineup, LINEUP_CATEGORY, withLineupFromText } from "@/lib/agents/knox/lineup";
 import { ownCells } from "@/lib/agents/knox/own-cells";
+import { ANCILLARY_PRODUCT_FLAG } from "./ancillary-product";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists, type SpecialistRun } from "@/lib/agents/knox/specialists";
 import { applyKnoxLesson, loadKnoxLessons } from "@/lib/agents/knox/lessons";
-import { loadTakedownLessons, TAKEN_DOWN_REVIEW_FLAG, takedownLessonFlag, takedownLessonFor } from "@/lib/agents/knox/takedown-lessons";
+import { emptyTakedownLessons, loadTakedownLessons, TAKEN_DOWN_REVIEW_FLAG, takedownLessonFlag, takedownLessonsFor, withCurrentTakedownLesson, type TakedownLessons } from "@/lib/agents/knox/takedown-lessons";
+import { candidateWriteFacts } from "./candidate-facts";
+import { monthlyAccountOwnerReview } from "./monthly-account-owners";
+import { capFirstEligibility, CAP_FIRST_ELIGIBILITY_FLAG } from "./cap-first-eligibility";
+import { mayHaveSymbolicLesserFee, symbolicLesserOfReview, SYMBOLIC_LESSER_ELIGIBILITY_FLAG } from "./symbolic-lesser-of";
+import { internationalWireEligibility, requiresInternationalWireSource, INTERNATIONAL_WIRE_ELIGIBILITY_FLAG } from "./international-wire-eligibility";
+import { mayHaveCapFirstItemPrice } from "@/lib/custom-report/stacked-fee-prices";
+import { withPublishedIdentityWrite } from "@/lib/agents/hamilton/published-identity";
 import { layoutSignature, thinLayouts, type LayoutYield } from "@/lib/agents/knox/layout-signature";
 import { calibratedConfidence, calibrationKey, loadKnoxCalibration, PUBLISH_FLOOR } from "@/lib/agents/knox/calibration";
 import { knoxFreeSignature, MISSING_FEES_DETAIL, RULES_RECHECK_STRATEGY } from "@/lib/agents/hamilton/rules-recheck";
 import { currentCopySchemaReady } from "@/lib/agents/magellan/current-copy";
 import { loadMarketLeaderIds } from "@/lib/data-store/market-leaders";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
+import { KNOX_TAKEOVER_FROM_PREFIX } from "@/lib/agents/darwin/category-change";
 
 type SqlTag = typeof sql;
 
@@ -63,19 +72,81 @@ const LARGE_BANK_REREAD_ORDER = `CASE WHEN COALESCE(inst.asset_size, 0) >= ${KNO
               AND last_read.strategy = '${KNOX_RULES_STRATEGY.strategy}'
          ) END ASC NULLS FIRST, `;
 
+// A text no rules version at or above KNOX_STALE_READ_BELOW_VERSION has read (a stale read or a
+// first read) goes before a $10B+ bank's once-per-version repeat. On 2026-10-19 the rules moved
+// v80-v88 in 18 hours and each bump queued the 722 large-bank texts first: 779 of the 854 reads
+// in six hours repeated a v78+ read, 17 reached the stale backlog, and the backlog grew to 12,449
+// pages. 130 of the 198 W43 missing fees Knox never read were on those stale pages. Used only on
+// the current-copy query (schema flag; it does not check each row's supersession). Unlike the
+// large-bank set, the stale set refills only when KNOX_STALE_READ_BELOW_VERSION is raised, so
+// re-reads of texts already read at v78+ (thin text, rules-recheck misses, twins, repeats) wait
+// only until it drains.
+function staleReadFirstOrder(): string {
+  return `NOT EXISTS (
+           SELECT 1 FROM pipeline_attempts current_read
+            WHERE current_read.stage = 'extract'
+              AND current_read.institution_id = adt.institution_id
+              AND current_read.input_fingerprint = adt.text_hash
+              AND current_read.strategy = '${KNOX_RULES_STRATEGY.strategy}'
+              AND current_read.strategy_version >= ${KNOX_STALE_READ_BELOW_VERSION}
+         ) DESC, `;
+}
+
 /**
  * A current copy last read by a rules version below this is read again once (2026-10-07:
  * 5,474 current copies at 4,265 banks were last read before v26, when Knox missed plural
  * wires, low-balance rows and two-column pages; Space Coast CU had 7 live fees of 22 prices).
  * Raise it only when a rules change is worth reading every page again.
+ *
+ * v75 (Knox recall, 17 Oct 2026): raised from 26 so every current copy read before v75 is read
+ * once more. 41 of the 62 answer-key pages were last read at v65 or earlier, and today's rules read
+ * 109 key fees there that their stored rows miss. A re-read only adds rows (the raw dedupe index
+ * keeps existing ones; a same-text read retires nothing), at the extract step's own batch size.
+ *
+ * v76 (Knox recall round 2, 17 Oct 2026): raised with the rules so the running v75 re-read reads the
+ * rest of its queue at v76 instead of reading every page twice. On prod at 06:10 UTC, 733 of 14,306
+ * current copies had a v75 read and 13,573 still waited; this adds those 733 back to the queue.
+ *
+ * v78 (Knox recall round 3, 17 Oct 2026): raised with the rules for the same reason. On prod at 09:10
+ * UTC, 266 text fingerprints had an extract.rules read at v76 or v77; every other one's last read is
+ * below v76, so it is already due. This adds the 266 back, and the queue reads each page at v78 once.
  */
-export const KNOX_STALE_READ_BELOW_VERSION = 26;
+export const KNOX_STALE_READ_BELOW_VERSION = 78;
 /**
  * A current copy with a monthly fee row missing its account name, or both the balance that
  * avoids it and its waiver, last read below this version, is read again once so v49-v51 can
  * fill them (2026-10-09: 8,928 rows on 3,223 current copies had no account name). Free: rules only.
+ * v73 (#1100): raised from 51 so current copies are read once more and every monthly maintenance
+ * and minimum balance row records its account (`accountProductFor`); a minimum balance row with no
+ * account counts as due too. 5,511 current copies at 3,385 banks qualified on 2026-10-16.
  */
-export const KNOX_LINEUP_READ_BELOW_VERSION = 51;
+export const KNOX_LINEUP_READ_BELOW_VERSION = 73;
+/**
+ * v82 (round 2 live check, 19 Oct 2026): a current copy with an overdraft or NSF row named for both
+ * and no twin row, last read below this version, is read again once so the twin is stored now that
+ * the raw key has `line_share`. Free: rules only. On prod, 101 live combined-name overdraft fees sat
+ * at banks with no NSF fee (Oct 19).
+ */
+export const KNOX_TWIN_READ_BELOW_VERSION = 82;
+/**
+ * A loose match for a name that joins NSF (or a returned item) and overdraft; the rules decide
+ * whether the line really is shared. Postgres regex: `\m`/`\M` are word boundaries.
+ */
+export const COMBINED_NSF_OVERDRAFT_SQL =
+  // `\mnsf`: "transfer" holds "nsf", and "Overdraft Transfer" is no shared line.
+  String.raw`(\mnsf|sufficient funds|return(ed)? items?).*(overdraft|\mod\M)|(overdraft|\mod\M).*(\mnsf|sufficient funds|return(ed)? items?)`;
+/**
+ * v73 (#1100): the raw-row flag a read that recorded the account carries. A product stored without
+ * it was written by an older Knox version, and a v73+ read may replace it; one with it is kept.
+ */
+export const ACCOUNT_PRODUCT_FLAG = "account_product:v73";
+/**
+ * Stored product names that name no account (`account-name-exclusions.ts`, as a Postgres regex):
+ * a v73+ read replaces them, and a copy holding one is due a re-read. Prod on Oct 16: 14 "Truth in
+ * Savings", 8 "Health Savings Card" and 2 "Savings Bank/Loan" names, stored at v55.
+ */
+export const NON_ACCOUNT_PRODUCT_SQL =
+  "\\y(truth[[:space:]-]+in[[:space:]-]+savings|(?<!(kids?|youth|junior|student|teen|children.?s?)[[:space:]])savings[[:space:]]+(cards?|programs?|discounts?|benefits?)|(savings|savers)[[:space:]]+(networks?|plans?|rewards?|clubs?)\\y(?![[:space:]]+(accounts?|savings|shares?)\\y)|discount[[:space:]]+savings|savings[[:space:]]+(and[[:space:]]+loan|&[[:space:]]*loan|banks?|institution|association))\\y";
 /**
  * Banks whose pages are read first while the stale backlog lasts, besides each state's market
  * leaders: banks one or two headline fees short of the report rule, whose own schedule shows
@@ -111,7 +182,7 @@ export const KNOX_EXTRACT_MAX_LIMIT = 100;
 export type KnoxTextRow = Pick<
   TextArtifactRow,
   "document_text_id" | "source_document_id" | "institution_id" | "source_url" | "text_hash"
->;
+> & Partial<Pick<TextArtifactRow, "normalized_text" | "institution_name">>;
 
 interface TextArtifactRow {
   document_text_id: number | string;
@@ -186,6 +257,8 @@ export interface RunKnoxExtractResult {
   takedownLessonsLoaded: number;
   /** Fees written held because they repeat a confirmed takedown, by check. */
   takedownHolds: Record<string, number>;
+  takedownLessonsUnknown?: Record<string,number>;
+  takedownGuardDeclines?: Record<string,number>;
   /** Strategy/category groups with survival history, and reads calibration puts below Hamilton's floor (`calibration.ts`, shadow). */
   calibrationGroups: number;
   calibratedBelowPublishFloor: number;
@@ -344,8 +417,17 @@ function textArtifactQuery(
                SELECT 1 FROM raw_fee_observations unnamed
                 WHERE unnamed.source = 'knox'
                   AND unnamed.source_document_id = adt.source_document_id
-                  AND (unnamed.product_name IS NULL OR (unnamed.min_balance_to_avoid IS NULL AND unnamed.waiver_text IS NULL))
-                  AND COALESCE(unnamed.extraction_note, unnamed.conditions) LIKE '%canonical_hint=${LINEUP_CATEGORY};%'
+                  AND (
+                    (COALESCE(unnamed.extraction_note, unnamed.conditions) LIKE '%canonical_hint=${LINEUP_CATEGORY};%'
+                     AND (unnamed.product_name IS NULL OR (unnamed.min_balance_to_avoid IS NULL AND unnamed.waiver_text IS NULL)))
+                    -- v73 (#1100): a minimum balance fee with no account recorded.
+                    OR (COALESCE(unnamed.extraction_note, unnamed.conditions) LIKE '%canonical_hint=minimum_balance;%'
+                        AND unnamed.product_name IS NULL)
+                    -- v73 (#1100): a stored account that names no account ("Truth in Savings").
+                    OR ((COALESCE(unnamed.extraction_note, unnamed.conditions) LIKE '%canonical_hint=${LINEUP_CATEGORY};%'
+                         OR COALESCE(unnamed.extraction_note, unnamed.conditions) LIKE '%canonical_hint=minimum_balance;%')
+                        AND unnamed.product_name ~* '${NON_ACCOUNT_PRODUCT_SQL}')
+                  )
              )
              AND NOT EXISTS (
                SELECT 1 FROM source_documents copy
@@ -359,6 +441,42 @@ function textArtifactQuery(
                   AND recent.input_fingerprint = adt.text_hash
                   AND recent.strategy = '${KNOX_RULES_STRATEGY.strategy}'
                   AND recent.strategy_version >= ${namedParam}
+             )
+           )`;
+    }
+    // v82: a current copy with an overdraft or NSF row named for both ("Overdraft/NSF Fee") and no
+    // twin row is read again once, so the second fee the raw key used to drop is stored.
+    if (currentCopy) {
+      const twinParam = `$${params.push(KNOX_TWIN_READ_BELOW_VERSION)}`;
+      thinTextReextract += `
+           OR (
+             EXISTS (
+               SELECT 1 FROM raw_fee_observations shared
+                WHERE shared.source = 'knox'
+                  AND shared.source_document_id = adt.source_document_id
+                  AND shared.line_share = ''
+                  AND (COALESCE(shared.extraction_note, shared.conditions) LIKE '%canonical_hint=overdraft;%'
+                       OR COALESCE(shared.extraction_note, shared.conditions) LIKE '%canonical_hint=nsf;%')
+                  AND shared.fee_name ~* '${COMBINED_NSF_OVERDRAFT_SQL}'
+             )
+             AND NOT EXISTS (
+               SELECT 1 FROM raw_fee_observations twin
+                WHERE twin.source = 'knox'
+                  AND twin.source_document_id = adt.source_document_id
+                  AND twin.line_share <> ''
+             )
+             AND NOT EXISTS (
+               SELECT 1 FROM source_documents copy
+                WHERE copy.id = adt.source_document_id
+                  AND copy.superseded_by_id IS NOT NULL
+             )
+             AND NOT EXISTS (
+               SELECT 1 FROM pipeline_attempts recent
+                WHERE recent.stage = 'extract'
+                  AND recent.institution_id = adt.institution_id
+                  AND recent.input_fingerprint = adt.text_hash
+                  AND recent.strategy = '${KNOX_RULES_STRATEGY.strategy}'
+                  AND recent.strategy_version >= ${twinParam}
              )
            )`;
     }
@@ -459,7 +577,7 @@ function textArtifactQuery(
                    AND theirs.superseded_by_id IS NOT NULL
               )` : ""}
          )
-       ${forCount ? "" : `ORDER BY ${learning && priorityIds.length > 0 ? `COALESCE(array_position($${params.push(`{${priorityIds.join(",")}}`)}::bigint[], adt.institution_id::bigint), 2147483647), ` : ""}${learning ? `(COALESCE(inst.asset_size, 0) >= ${KNOX_REREAD_ASSET_FLOOR}) DESC, ${LARGE_BANK_REREAD_ORDER}` : ""}adt.updated_at DESC, adt.id DESC`}
+       ${forCount ? "" : `ORDER BY ${learning && priorityIds.length > 0 ? `COALESCE(array_position($${params.push(`{${priorityIds.join(",")}}`)}::bigint[], adt.institution_id::bigint), 2147483647), ` : ""}${learning ? `${currentCopy ? staleReadFirstOrder() : ""}(COALESCE(inst.asset_size, 0) >= ${KNOX_REREAD_ASSET_FLOOR}) DESC, ${LARGE_BANK_REREAD_ORDER}` : ""}adt.updated_at DESC, adt.id DESC`}
        LIMIT $1
     `;
   return { query, params };
@@ -572,9 +690,7 @@ export async function retireRowsFromOlderCopies(
   return retired.length;
 }
 
-export async function insertCandidate(
-  db: SqlTag,
-  options: {
+export interface CandidateInsertOptions {
     runId: number;
     row: KnoxTextRow;
     candidate: ExtractedFeeCandidate;
@@ -584,10 +700,12 @@ export async function insertCandidate(
     method?: string;
     /** Shadow calibrated confidence (`calibration.ts`), recorded in the audit text only. */
     calibratedConfidence?: number;
-    /** The check whose confirmed takedown this fee repeats: written held, not sent to Darwin. */
-    takenDownBy?: string | null;
-  },
-): Promise<boolean> {
+}
+interface CandidateWriteResult { inserted:boolean; flags:string[] }
+async function writeCandidate(
+  db: SqlTag,
+  options: CandidateInsertOptions & { takenDownBy?:string|null },
+): Promise<CandidateWriteResult> {
   const documentTextId = Number(options.row.document_text_id);
   const sourceDocumentId = Number(options.row.source_document_id);
   const institutionId = Number(options.row.institution_id);
@@ -604,18 +722,25 @@ export async function insertCandidate(
   if (options.candidate.strategy && options.candidate.strategy !== KNOX_RULES_STRATEGY.strategy) {
     flags.push(`knox_specialist:${options.candidate.strategy}`);
   }
-  flags.push(...(options.extraFlags ?? []));
+  flags.push(...(options.extraFlags ?? []).filter(flag=>flag!==CAP_FIRST_ELIGIBILITY_FLAG && flag!==SYMBOLIC_LESSER_ELIGIBILITY_FLAG && flag!==INTERNATIONAL_WIRE_ELIGIBILITY_FLAG && flag!==TAKEN_DOWN_REVIEW_FLAG
+    && !flag.startsWith("knox_lesson:taken_down:") && (!options.takenDownBy || flag!=="needs_darwin_verification")));
+  // v73: this read records the account, so a later read keeps it (`ACCOUNT_PRODUCT_FLAG`).
+  if (ACCOUNT_PRODUCT_CATEGORIES.has(options.candidate.canonicalHint) && options.candidate.lineup?.productName) flags.push(ACCOUNT_PRODUCT_FLAG);
+  const { owner, applicability, lineup, sourceConditions } = candidateWriteFacts(options.candidate);
+  if (owner) flags.push(ANCILLARY_PRODUCT_FLAG);
+  const ownExcerpt = options.candidate.ownedBullet || options.candidate.ownedPolicy
+    ? options.candidate.excerpt : options.candidate.ownCondition ?? options.candidate.ownUnit?.sourceLine
+      ?? ownCells(options.candidate.excerpt, options.candidate.feeName, options.candidate.amount).slice(0, 180);
   const conditions =
     `Knox ${options.method ?? "deterministic extraction"} from Rosetta artifact #${documentTextId}. ` +
     `canonical_hint=${options.candidate.canonicalHint}; text_hash=${options.row.text_hash ?? "unknown"}; ` +
     (options.calibratedConfidence === undefined ? "" : `calibrated_confidence=${options.calibratedConfidence.toFixed(2)}; `) +
+    // Keep a referenced count cap in the lineage evidence, before excerptOf's
+    // final price-unit text so downstream frequency cannot borrow its day.
+    ((options.candidate.ownedBullet || options.candidate.ownedPolicy || options.candidate.ownUnit || options.candidate.ownCondition) && options.candidate.linkedConditions ? `linked_conditions="${options.candidate.linkedConditions}"; ` : "") +
     // #1394: only the fee's own cells, not the neighbouring column's fee on the same line.
-    `excerpt="${ownCells(options.candidate.excerpt, options.candidate.feeName, options.candidate.amount).slice(0, 180)}"`;
-  // A checking account's lineup facts, already grounded in the text (`lineup.ts`); only a
-  // monthly maintenance fee carries them.
-  const applicability = feeApplicability(options.candidate.feeName, options.candidate.excerpt, options.candidate.amount);
-  const lineup = options.candidate.canonicalHint === LINEUP_CATEGORY ? (options.candidate.lineup ?? null) : null;
-  // The dedupe index is (document, lowercased fee name, amount, audience), so an existing
+    `excerpt="${ownExcerpt}"`;
+  // The dedupe index is (document, lowercased fee name, amount, audience, line share), so an existing
   // row would block this fee forever. Two kinds take the new read instead:
   //   - a line an older version held as unclassified or untraced;
   //   - a row an earlier read of this document retired on this re-read
@@ -625,7 +750,9 @@ export async function insertCandidate(
   // flags: Darwin reads the first one (`canonicalHintFrom` in darwin/verify.ts), so a fee
   // today's rules file under a new category was judged under the old one. 12 of the 54 rows
   // re-reads took over by 14 Oct were ("Wire Transfer - International" $45 judged as an
-  // overdraft fee and rejected for category, #1093).
+  // overdraft fee and rejected for category, #1093). When the take-over changes the category,
+  // `knox_takeover_from:<old>` keeps the old one (#1295): Darwin's earlier decision was made under
+  // it, and without the flag nothing on the row says so (`darwin/category-change.ts`).
   const inserted = await db`
     INSERT INTO raw_fee_observations AS fr (
       institution_id,
@@ -644,7 +771,9 @@ export async function insertCandidate(
       min_balance_to_avoid,
       min_opening_deposit,
       waiver_text,
-      fee_audience, audience_evidence, fee_treatment
+      fee_audience, audience_evidence, fee_treatment,
+      line_share,
+      conditions
     )
     VALUES (
       ${institutionId},
@@ -663,19 +792,26 @@ export async function insertCandidate(
       ${lineup?.minBalanceToAvoid ?? null},
       ${lineup?.minOpeningDeposit ?? null},
       ${lineup?.waiverText ?? null},
-      ${applicability.feeAudience}, ${applicability.audienceEvidence}, ${applicability.feeTreatment}
+      ${applicability.feeAudience}, ${applicability.audienceEvidence}, ${applicability.feeTreatment},
+      ${options.candidate.lineShare ?? ""},
+      ${sourceConditions}
     )
-    ON CONFLICT (source_document_id, lower(fee_name), COALESCE(amount, '-1'::numeric), fee_audience)
+    ON CONFLICT (source_document_id, lower(fee_name), COALESCE(amount, '-1'::numeric), fee_audience, line_share)
       WHERE source = 'knox' AND source_document_id IS NOT NULL
     DO UPDATE SET
       extraction_confidence = EXCLUDED.extraction_confidence,
       agent_event_id = EXCLUDED.agent_event_id,
       frequency = COALESCE(fr.frequency, EXCLUDED.frequency),
       extraction_note = EXCLUDED.extraction_note,
-      conditions = NULL,
+      conditions = EXCLUDED.conditions,
       audience_evidence = EXCLUDED.audience_evidence,
       fee_treatment = EXCLUDED.fee_treatment,
-      product_name = COALESCE(fr.product_name, EXCLUDED.product_name),
+      -- v73: a product an older Knox wrote, or one that names no account, gives way to this read's.
+      product_name = CASE WHEN EXCLUDED.product_name IS NOT NULL AND (
+                            fr.product_name IS NULL
+                            OR NOT (COALESCE(fr.outlier_flags, '[]'::jsonb) ?| array[${ACCOUNT_PRODUCT_FLAG},${ANCILLARY_PRODUCT_FLAG}])
+                            OR fr.product_name ~* ${NON_ACCOUNT_PRODUCT_SQL})
+                          THEN EXCLUDED.product_name ELSE fr.product_name END,
       min_balance_to_avoid = COALESCE(fr.min_balance_to_avoid, EXCLUDED.min_balance_to_avoid),
       min_opening_deposit = COALESCE(fr.min_opening_deposit, EXCLUDED.min_opening_deposit),
       waiver_text = COALESCE(fr.waiver_text, EXCLUDED.waiver_text),
@@ -689,7 +825,33 @@ export async function insertCandidate(
                       || CASE WHEN fr.outlier_flags ? 'superseded_by_reread'
                               THEN '["knox_reread_took_over"]'::jsonb
                               ELSE '["knox_promoted_from_held"]'::jsonb END
+                      -- #1295: a take-over that changes the category keeps the old one, the proof
+                      -- Darwin needs that its earlier decision was made under another category.
+                      || COALESCE((
+                           SELECT jsonb_build_array(${KNOX_TAKEOVER_FROM_PREFIX}::text || old_hint.hint)
+                             FROM (
+                               SELECT COALESCE(
+                                        (SELECT substring(h.flag FROM '^canonical_hint:(.+)$')
+                                           FROM jsonb_array_elements_text(COALESCE(fr.outlier_flags, '[]'::jsonb)) WITH ORDINALITY AS h(flag, ord)
+                                          WHERE h.flag LIKE 'canonical_hint:%'
+                                          ORDER BY h.ord
+                                          LIMIT 1),
+                                        substring(COALESCE(fr.extraction_note, fr.conditions) FROM 'canonical_hint=([a-z0-9_]+);')
+                                      ) AS hint
+                             ) old_hint
+                            WHERE fr.outlier_flags ? 'superseded_by_reread'
+                              AND old_hint.hint IS NOT NULL
+                              AND old_hint.hint IS DISTINCT FROM ${options.candidate.canonicalHint}::text
+                         ), '[]'::jsonb)
      WHERE fr.source = 'knox'
+       -- Positive learned holds annotate newly inserted lineage only. Never overwrite
+       -- an existing observation's retained owner/frequency/hold on an insert conflict.
+       AND ${!options.takenDownBy}
+       -- v1 ancillary ownership is for new raw lineage only. A conflict keeps the
+       -- existing observation, including held/verified history, for explicit recovery.
+       AND ${!owner}
+       -- #2248: prospective unit evidence does not overwrite any historical raw identity.
+       AND ${!options.candidate.ownUnit && !options.candidate.ownCondition}
        AND NOT fr.outlier_flags ? 'needs_darwin_verification'
        AND (
          -- A line held because the self-check could not trace it, now read and traced, is that fee.
@@ -698,14 +860,23 @@ export async function insertCandidate(
          OR (fr.outlier_flags ? 'superseded_by_reread'
              AND NOT EXISTS (SELECT 1 FROM verified_fee_observations fv WHERE fv.fee_raw_id = fr.fee_raw_id))
        )
-    RETURNING fee_raw_id
+    RETURNING fee_raw_id,outlier_flags
   `;
-  if (inserted.length === 0 && lineup) {
+  if (inserted.length === 0 && lineup && !owner && !options.takenDownBy &&
+      !options.candidate.ownUnit && !options.candidate.ownCondition) {
     // The same fee read again from the same document: fill lineup fields an earlier read
-    // left empty, and change nothing else about the row.
+    // left empty, within its audience. The raw identity includes audience: a business fee
+    // with the same label and price must not take a consumer account's product or waiver.
     await db`
       UPDATE raw_fee_observations
-         SET product_name = COALESCE(product_name, ${lineup.productName}),
+         SET product_name = CASE WHEN ${lineup.productName}::text IS NOT NULL AND (
+                                  product_name IS NULL
+                                  OR NOT (COALESCE(outlier_flags, '[]'::jsonb) ? ${ACCOUNT_PRODUCT_FLAG})
+                                  OR product_name ~* ${NON_ACCOUNT_PRODUCT_SQL})
+                                 THEN ${lineup.productName}::text ELSE product_name END,
+             outlier_flags = CASE WHEN ${lineup.productName}::text IS NOT NULL AND NOT (COALESCE(outlier_flags, '[]'::jsonb) ? ${ACCOUNT_PRODUCT_FLAG})
+                                  THEN COALESCE(outlier_flags, '[]'::jsonb) || jsonb_build_array(${ACCOUNT_PRODUCT_FLAG}::text)
+                                  ELSE outlier_flags END,
              min_balance_to_avoid = COALESCE(min_balance_to_avoid, ${lineup.minBalanceToAvoid}),
              min_opening_deposit = COALESCE(min_opening_deposit, ${lineup.minOpeningDeposit}),
              waiver_text = COALESCE(waiver_text, ${lineup.waiverText})
@@ -713,9 +884,161 @@ export async function insertCandidate(
          AND source_document_id = ${sourceDocumentId}
          AND lower(fee_name) = lower(${options.candidate.feeName})
          AND amount = ${options.candidate.amount}
+         AND fee_audience = ${applicability.feeAudience}
+         AND line_share = ${options.candidate.lineShare ?? ""}
     `;
   }
-  return inserted.length > 0;
+  const rawFlags=inserted[0]?.outlier_flags;
+  return {inserted:inserted.length>0,flags:Array.isArray(rawFlags)?rawFlags.map(String):[]};
+}
+
+/** Ordinary callers cannot supply an unvalidated learned-hold flag. */
+export async function insertCandidate(db:SqlTag,options:CandidateInsertOptions):Promise<boolean> {
+  const internationalHeld = await holdInternationalWireCandidate(db, options);
+  if (internationalHeld !== null) return internationalHeld;
+  const symbolicHeld = await holdSymbolicLesserCandidate(db, options);
+  if (symbolicHeld !== null) return symbolicHeld;
+  const capHeld = await holdCapFirstCandidate(db, options);
+  if (capHeld !== null) return capHeld;
+  const held = await holdAmbiguousMonthlyCandidate(db, options);
+  if (held !== null) return held;
+  return (await writeCandidate(db,{...options,takenDownBy:null})).inserted;
+}
+export interface CandidateLearningReceipt { inserted:boolean; takenDownBy:string|null; declinedReason:string|null }
+
+/** One learning/write path for extraction and re-read feedback, with actual RETURNING receipts. */
+export async function insertCandidateWithLearning(db:SqlTag,options:CandidateInsertOptions,lessons:TakedownLessons):Promise<CandidateLearningReceipt> {
+  const internationalHeld = await holdInternationalWireCandidate(db, options);
+  if (internationalHeld !== null) return {inserted:internationalHeld,takenDownBy:null,declinedReason:internationalHeld?null:"international_scope_declined"};
+  const symbolicHeld = await holdSymbolicLesserCandidate(db, options);
+  if (symbolicHeld !== null) return {inserted:symbolicHeld,takenDownBy:null,declinedReason:symbolicHeld?null:"symbolic_formula_declined"};
+  const capHeld = await holdCapFirstCandidate(db, options);
+  if (capHeld !== null) return {inserted:capHeld,takenDownBy:null,declinedReason:capHeld?null:"cap_scope_declined"};
+  const held = await holdAmbiguousMonthlyCandidate(db, options);
+  if (held !== null) return {inserted:held,takenDownBy:null,declinedReason:null};
+  const matches=takedownLessonsFor(options.candidate,lessons,options.row);
+  if (matches.length===0) return {inserted:await insertCandidate(db,options),takenDownBy:null,declinedReason:null};
+  return withPublishedIdentityWrite(db,async transaction=>{
+    let declinedReason:string|null=null;
+    for (const lesson of matches) {
+      const guarded=await withCurrentTakedownLesson(transaction,lesson,options.row,(scope,check)=>writeCandidate(scope,{...options,takenDownBy:check}));
+      if ("value" in guarded) {
+        const held=guarded.value.inserted && guarded.value.flags.includes(TAKEN_DOWN_REVIEW_FLAG) && !guarded.value.flags.includes("needs_darwin_verification")
+          && guarded.value.flags.includes(takedownLessonFlag(lesson.witness.check));
+        if (held) return {inserted:true,takenDownBy:lesson.witness.check,declinedReason:null};
+        // A positive lesson is for new lineage only. An existing/concurrent row keeps
+        // every fact, including monthly ownership: do not retry through enrichment.
+        if (guarded.value.inserted) return {inserted:true,takenDownBy:null,declinedReason:"hold_flags_not_returned"};
+        return {inserted:false,takenDownBy:null,declinedReason:"existing_raw_kept"};
+      }
+      declinedReason=guarded.reason;
+    }
+    return {inserted:await insertCandidate(transaction,options),takenDownBy:null,declinedReason};
+  });
+}
+
+const MONTHLY_OWNER_READS = new WeakMap<KnoxTextRow, {
+  text: string; review: ReturnType<typeof monthlyAccountOwnerReview>;
+}>();
+function monthlyOwnerEvidence(row: KnoxTextRow, candidate: ExtractedFeeCandidate): string | null {
+  if (candidate.canonicalHint !== LINEUP_CATEGORY || !row.normalized_text) return null;
+  let cached = MONTHLY_OWNER_READS.get(row);
+  if (!cached || cached.text !== row.normalized_text) {
+    cached = { text: row.normalized_text, review: monthlyAccountOwnerReview(row.normalized_text, row.institution_name) };
+    MONTHLY_OWNER_READS.set(row, cached);
+  }
+  return cached.review(candidate);
+}
+
+/** Legacy internal callers may lack source content; absence is never a clean ownership result. */
+async function monthlySourceRow(db: SqlTag, row: KnoxTextRow, canonicalHint: string): Promise<KnoxTextRow | null> {
+  if (canonicalHint !== LINEUP_CATEGORY || row.normalized_text?.trim()) return row;
+  if (!row.text_hash) return null;
+  const [source] = await db<Array<{ normalized_text: string; institution_name: string | null }>>`
+    SELECT st.normalized_text,inst.institution_name FROM agent_source_texts st
+    JOIN institution_sources inst ON inst.id=st.institution_id
+    WHERE st.id=${Number(row.document_text_id)} AND st.source_document_id=${Number(row.source_document_id)}
+      AND st.institution_id=${Number(row.institution_id)} AND st.text_hash=${row.text_hash}
+      AND st.status='completed' AND st.normalized_text IS NOT NULL`;
+  if (!source?.normalized_text.trim() || createHash("sha256").update(source.normalized_text).digest("hex") !== row.text_hash) return null;
+  return { ...row, normalized_text: source.normalized_text, institution_name: source.institution_name };
+}
+
+/** Missing legacy content cannot hide applicability; resolve only the supplied exact artifact. */
+async function eligibilitySourceRow(db: SqlTag, row: KnoxTextRow): Promise<KnoxTextRow | null> {
+  if (![row.document_text_id, row.source_document_id, row.institution_id]
+    .every(id => Number.isSafeInteger(Number(id)) && Number(id) > 0)) return null;
+  if (!row.text_hash) return null;
+  if (row.normalized_text?.trim()) return createHash("sha256").update(row.normalized_text).digest("hex") === row.text_hash ? row : null;
+  const [source] = await db<Array<{ normalized_text: string }>>`
+    SELECT st.normalized_text FROM agent_source_texts st
+    WHERE st.id=${Number(row.document_text_id)} AND st.source_document_id=${Number(row.source_document_id)}
+      AND st.institution_id=${Number(row.institution_id)} AND st.text_hash=${row.text_hash}
+      AND st.status='completed' AND st.normalized_text IS NOT NULL`;
+  if (!source?.normalized_text.trim() || createHash("sha256").update(source.normalized_text).digest("hex") !== row.text_hash) return null;
+  return { ...row, normalized_text: source.normalized_text };
+}
+
+/** Domestic unresolved rows keep their existing contract; positive own international facts do not. */
+async function holdInternationalWireCandidate(db: SqlTag, options: CandidateInsertOptions): Promise<boolean | null> {
+  const candidate = options.candidate;
+  if (!candidate.canonicalHint.startsWith("wire_")) return null;
+  const required = requiresInternationalWireSource(candidate);
+  if (!required && !options.row.normalized_text?.trim()) return null;
+  const source = await eligibilitySourceRow(db, options.row);
+  if (!source) return required ? false : null;
+  const review = internationalWireEligibility(source.normalized_text!, candidate);
+  if (review.kind === "decline") return false;
+  if (review.kind !== "hold") return null;
+  return insertHeldCandidate(db, { runId: options.runId, row: source, extraFlags: options.extraFlags,
+    held: { shape: "eligibility", feeName: candidate.feeName, amount: candidate.amount, amountMax: null,
+      percent: null, frequency: candidate.frequency, canonicalHint: candidate.canonicalHint,
+      excerpt: review.scope.ownText, ownedPolicy: true, lineShare: candidate.lineShare } });
+}
+
+/** A complete symbolic formula is applicability evidence, never a model-supplied price. */
+async function holdSymbolicLesserCandidate(db: SqlTag, options: CandidateInsertOptions): Promise<boolean | null> {
+  const candidate = options.candidate;
+  if (!(candidate.amount > 0)) return null;
+  if (!mayHaveSymbolicLesserFee(candidate.feeName, candidate.canonicalHint)) return null;
+  const source = await eligibilitySourceRow(db, options.row);
+  if (!source) return false;
+  const review = symbolicLesserOfReview(source.normalized_text!, candidate.feeName, candidate.amount);
+  if (!review) return null;
+  if (review.kind === "decline") return false;
+  return insertHeldCandidate(db, { runId: options.runId, row: source, extraFlags: options.extraFlags,
+    held: { shape: "eligibility", feeName: candidate.feeName, amount: candidate.amount, amountMax: null,
+      percent: null, frequency: candidate.frequency, canonicalHint: candidate.canonicalHint,
+      excerpt: review.ownText, ownedPolicy: true, lineShare: candidate.lineShare } });
+}
+
+/** The price was admitted elsewhere; its applicability must be source-owned at every writer. */
+async function holdCapFirstCandidate(db: SqlTag, options: CandidateInsertOptions): Promise<boolean | null> {
+  const candidate = options.candidate;
+  if (!mayHaveCapFirstItemPrice(candidate.feeName)) return null;
+  const source = await eligibilitySourceRow(db, options.row);
+  if (!source) return false;
+  const review = capFirstEligibility(source.normalized_text!, candidate.feeName, candidate.amount, candidate.canonicalHint);
+  if (!review) return null;
+  if (review.kind === "decline") return false;
+  return insertHeldCandidate(db, { runId: options.runId, row: source, extraFlags: options.extraFlags,
+    held: { shape: "eligibility", feeName: candidate.feeName, amount: candidate.amount, amountMax: null,
+      percent: null, frequency: candidate.frequency, canonicalHint: candidate.canonicalHint,
+      excerpt: review.ownText, ownedPolicy: true, lineShare: candidate.lineShare, linkedConditions: review.context } });
+}
+
+/** The same bounded source guard applies to free, paid and reread-feedback callers. */
+async function holdAmbiguousMonthlyCandidate(db: SqlTag, options: CandidateInsertOptions): Promise<boolean | null> {
+  const sourceRow = await monthlySourceRow(db, options.row, options.candidate.canonicalHint);
+  if (!sourceRow) return false;
+  const owners = monthlyOwnerEvidence(sourceRow, options.candidate);
+  if (!owners) return null;
+  const candidate = options.candidate;
+  return insertHeldCandidate(db, { runId: options.runId, row: sourceRow, extraFlags: options.extraFlags,
+    held: { shape: "eligibility", feeName: candidate.feeName, amount: candidate.amount, amountMax: null,
+      percent: null, frequency: candidate.frequency, canonicalHint: candidate.canonicalHint,
+      excerpt: candidate.excerpt, ownedPolicy: true, lineShare: candidate.lineShare,
+      linkedConditions: [candidate.linkedConditions, owners].filter(Boolean).join("\n\n") } });
 }
 
 /**
@@ -737,28 +1060,77 @@ export async function insertHeldCandidate(
     row: KnoxTextRow;
     held: HeldFeeCandidate;
     extraFlags?: string[];
+    /** A paid free-price read's already grounded product, used only to disambiguate its owner. */
+    assignedMonthlyProduct?: string | null;
   },
 ): Promise<boolean> {
   const documentTextId = Number(options.row.document_text_id);
   const sourceDocumentId = Number(options.row.source_document_id);
-  const { held } = options;
+  let { held } = options;
+  const possibleInternational = (held.shape === "zero" || held.shape === "eligibility")
+    && held.amount !== null && Boolean(held.canonicalHint?.startsWith("wire_"));
+  const internationalCandidate = possibleInternational ? { feeName: held.feeName, amount: held.amount!,
+    canonicalHint: held.canonicalHint!, excerpt: held.excerpt } : null;
+  const internationalRequired = internationalCandidate && requiresInternationalWireSource(internationalCandidate);
+  const internationalSource = internationalCandidate && (internationalRequired || options.row.normalized_text?.trim())
+    ? await eligibilitySourceRow(db, options.row) : options.row;
+  if (!internationalSource && internationalRequired) return false;
+  const internationalReview = internationalCandidate && internationalSource?.normalized_text
+    ? internationalWireEligibility(internationalSource.normalized_text, internationalCandidate) : null;
+  if (internationalReview?.kind === "decline") return false;
+  const internationalOwner = internationalReview?.kind === "hold" ? internationalReview : null;
+  if (internationalOwner) held = { ...held, shape: "eligibility", ownedPolicy: true,
+    excerpt: internationalOwner.scope.ownText, linkedConditions: undefined };
+  const possibleCap = held.shape === "eligibility" && held.amount !== null && mayHaveCapFirstItemPrice(held.feeName);
+  const possibleSymbolic = held.shape === "eligibility" && held.amount !== null && held.amount > 0
+    && mayHaveSymbolicLesserFee(held.feeName, held.canonicalHint ?? "");
+  const capSource = possibleCap || possibleSymbolic ? await eligibilitySourceRow(db, options.row) : internationalSource ?? options.row;
+  if (!capSource) return false;
+  const symbolicReview = possibleSymbolic ? symbolicLesserOfReview(capSource.normalized_text!, held.feeName, held.amount!) : null;
+  if (symbolicReview?.kind === "decline") return false;
+  const symbolicOwner = symbolicReview?.kind === "hold" ? symbolicReview : null;
+  if (symbolicOwner) held = { ...held, ownedPolicy: true, excerpt: symbolicOwner.ownText,
+    linkedConditions: undefined };
+  const capReview = possibleCap ? capFirstEligibility(capSource.normalized_text!, held.feeName, held.amount!, held.canonicalHint ?? "") : null;
+  if (capReview?.kind === "decline") return false;
+  const capOwner = capReview?.kind === "hold" ? capReview : null;
+  if (capOwner) held = { ...held, ownedPolicy: true, excerpt: capOwner.ownText,
+    linkedConditions: [...new Set([capOwner.context, held.linkedConditions].filter(Boolean))].join("\n") };
+  const sourceRow = (held.shape === "zero" || held.shape === "eligibility") && held.canonicalHint
+    ? await monthlySourceRow(db, capSource, held.canonicalHint) : capSource;
+  if (!sourceRow) return false;
+  const monthlyOwners = (held.shape === "zero" || held.shape === "eligibility") && held.canonicalHint && held.amount !== null
+    ? monthlyOwnerEvidence(sourceRow, { feeName: held.feeName, amount: held.amount,
+      canonicalHint: held.canonicalHint, excerpt: held.excerpt, frequency: held.frequency, confidence: .5, waivable: false,
+      lineup: options.assignedMonthlyProduct ? { productName: options.assignedMonthlyProduct, minBalanceToAvoid: null,
+        minOpeningDeposit: null, waiverText: null } : null }) : null;
+  if (held.shape === "zero" && monthlyOwners) held = { ...held, shape: "eligibility", ownedPolicy: true,
+    linkedConditions: [held.linkedConditions, monthlyOwners].filter(Boolean).join("\n\n") };
   const applicability = feeApplicability(held.feeName, held.excerpt, held.amount);
   const agentEventId = stableUuid(
     `knox:held:${options.runId}:${documentTextId}:${sourceDocumentId}:${held.shape}:${held.feeName}:${held.amount}:${held.percent}`,
   );
   const toDarwin = heldGoesToDarwin(held);
   const flags = [`knox_review:${held.shape}`];
+  if (capOwner) flags.push(CAP_FIRST_ELIGIBILITY_FLAG);
+  if (symbolicOwner) flags.push(SYMBOLIC_LESSER_ELIGIBILITY_FLAG);
+  if (internationalOwner) flags.push(INTERNATIONAL_WIRE_ELIGIBILITY_FLAG);
   if (toDarwin) flags.push("needs_darwin_verification");
   if (held.canonicalHint) flags.push(`canonical_hint:${held.canonicalHint}`);
   if (held.amountMax != null) flags.push(`amount_max:${held.amountMax}`);
   if (held.percent != null) flags.push(`percent:${held.percent}`);
-  flags.push(...(options.extraFlags ?? []));
+  flags.push(...(options.extraFlags ?? []).filter(flag => flag !== CAP_FIRST_ELIGIBILITY_FLAG
+    && flag !== SYMBOLIC_LESSER_ELIGIBILITY_FLAG && flag !== INTERNATIONAL_WIRE_ELIGIBILITY_FLAG
+    && ((!symbolicOwner && !internationalOwner) || flag !== "needs_darwin_verification")));
+  const protectedEligibility = held.shape === "eligibility" && Boolean(monthlyOwners || capOwner || symbolicOwner || internationalOwner);
   const conditions =
     `${toDarwin ? "Knox read a free fee" : `Knox held for review (${held.shape})`} from Rosetta artifact #${documentTextId}. ` +
     `canonical_hint=${held.canonicalHint ?? "none"}; text_hash=${options.row.text_hash ?? "unknown"}; ` +
-    `excerpt="${held.excerpt.slice(0, 180)}"`;
-  const inserted = await db`
-    INSERT INTO raw_fee_observations (
+    (held.ownedPolicy && held.linkedConditions ? `linked_conditions="${held.linkedConditions}"; ` : "") +
+    `excerpt="${held.ownedPolicy ? held.excerpt : held.ownCondition ?? held.ownUnit?.sourceLine ?? held.excerpt.slice(0, 180)}"`;
+  const write = async (scope: SqlTag): Promise<boolean> => {
+    const inserted = await scope`
+    INSERT INTO raw_fee_observations AS fr (
       institution_id,
       source_document_id,
       document_r2_key,
@@ -770,7 +1142,7 @@ export async function insertHeldCandidate(
       frequency,
       extraction_note,
       outlier_flags,
-      source, fee_audience, audience_evidence, fee_treatment
+      source, fee_audience, audience_evidence, fee_treatment, line_share, conditions
     )
     VALUES (
       ${Number(options.row.institution_id)},
@@ -784,12 +1156,50 @@ export async function insertHeldCandidate(
       ${held.frequency},
       ${conditions},
       ${JSON.stringify(flags)}::jsonb,
-      'knox', ${applicability.feeAudience}, ${applicability.audienceEvidence}, ${applicability.feeTreatment}
+      'knox', ${applicability.feeAudience}, ${applicability.audienceEvidence}, ${applicability.feeTreatment},
+      ${held.lineShare ?? ""}, ${held.ownedPolicy || held.ownUnit || held.ownCondition ? [held.ownedPolicy ? held.excerpt : held.ownCondition ?? held.ownUnit?.sourceLine, held.linkedConditions].filter(Boolean).join(" ") : null}
     )
     ON CONFLICT DO NOTHING
     RETURNING fee_raw_id
-  `;
-  return inserted.length > 0;
+    `;
+    if (inserted.length > 0) return true;
+    if (!protectedEligibility) return false;
+    // Insert first: a concurrent ordinary insert can win an initially absent key.
+    // Lock its exact identity, then use a NEW statement snapshot to see any judgment
+    // committed while this lock waited. Never rewrite a judged raw history.
+    const [existing] = await scope`
+      SELECT fr.fee_raw_id FROM raw_fee_observations fr
+       WHERE fr.source='knox' AND fr.source_document_id=${sourceDocumentId}
+         AND lower(fr.fee_name)=lower(${held.feeName})
+         AND COALESCE(fr.amount, '-1'::numeric)=COALESCE(${held.amount}::numeric, '-1'::numeric)
+         AND fr.fee_audience=${applicability.feeAudience} AND fr.line_share=${held.lineShare ?? ""}
+       FOR UPDATE OF fr`;
+    if (!existing) return false;
+    const updated = await scope`
+      UPDATE raw_fee_observations fr SET
+        extraction_note=${conditions},
+        conditions=${[held.excerpt, held.linkedConditions].filter(Boolean).join(" ")},
+        outlier_flags=${JSON.stringify(flags)}::jsonb || COALESCE((
+          SELECT jsonb_agg(kept.flag ORDER BY kept.ord)
+            FROM jsonb_array_elements(COALESCE(fr.outlier_flags, '[]'::jsonb)) WITH ORDINALITY AS kept(flag, ord)
+           WHERE kept.flag #>> '{}' NOT IN ('needs_darwin_verification', 'knox_review:zero', 'knox_review:eligibility',
+             'knox_review:unclassified', 'knox_review:untraced', 'knox_review:range')
+             AND kept.flag #>> '{}' NOT LIKE 'canonical_hint:%'
+        ), '[]'::jsonb)
+       WHERE fr.fee_raw_id=${Number(existing.fee_raw_id)}
+         AND NOT EXISTS (SELECT 1 FROM verified_fee_observations fv WHERE fv.fee_raw_id=fr.fee_raw_id)
+         AND (${!capOwner && !symbolicOwner && !internationalOwner} OR COALESCE(fr.outlier_flags, '[]'::jsonb) ? 'needs_darwin_verification')
+         AND (NOT COALESCE(fr.outlier_flags, '[]'::jsonb) ? 'knox_review:eligibility'
+           OR COALESCE(fr.outlier_flags, '[]'::jsonb) ? 'needs_darwin_verification')
+      RETURNING fr.fee_raw_id`;
+    return updated.length > 0;
+  };
+  if (!protectedEligibility) return write(db);
+  // Agent steps already hold a transaction. Direct callers need one too, so the
+  // raw lock remains held across the fresh judgment query and update.
+  if (typeof (db as unknown as { savepoint?: unknown }).savepoint === "function") return write(db);
+  const begin = (db as unknown as { begin?: (work: (scope: SqlTag) => Promise<boolean>) => Promise<boolean> }).begin;
+  return typeof begin === "function" ? begin.call(db, write) : write(db);
 }
 
 /** Flag on a raw row that is a percentage fee (`amount_kind` 'percent'). */
@@ -1024,8 +1434,9 @@ export async function runKnoxExtract(
   const rowByDocumentTextId = new Map(rows.map((row) => [Number(row.document_text_id), row]));
   const lessons = !dryRun && rows.length > 0 ? await loadKnoxLessons(db) : new Map();
   const lessonRefiles: Record<string, number> = {};
-  const takedownLessons = !dryRun && rows.length > 0 ? await loadTakedownLessons(db) : new Map<string, string>();
+  const takedownLessons = !dryRun && rows.length > 0 ? await loadTakedownLessons(db,rows.map(row=>Number(row.institution_id))) : emptyTakedownLessons();
   const takedownHolds: Record<string, number> = {};
+  const takedownGuardDeclines: Record<string,number> = {};
   const calibration = !dryRun && rows.length > 0 ? await loadKnoxCalibration(db) : new Map();
   let calibratedBelowPublishFloor = 0;
   const layoutReads: Array<{ signature: string; priceLines: number; found: number }> = [];
@@ -1047,7 +1458,7 @@ export async function runKnoxExtract(
     });
 
     const startedAt = Date.now();
-    const free = runFreeSpecialists(row.normalized_text);
+    const free = runFreeSpecialists(row.normalized_text, { institutionName: row.institution_name ?? null });
     const { held, rates, runs } = free;
     for (const [reason, count] of Object.entries(free.dropped)) {
       droppedLines[reason as DroppedLineReason] = (droppedLines[reason as DroppedLineReason] ?? 0) + count;
@@ -1055,8 +1466,8 @@ export async function runKnoxExtract(
     // The learning reader: a name the category guards keep rejecting under the rules'
     // category, and verify under another, is filed under the verified one.
     const lessoned = free.candidates.map((candidate) => applyKnoxLesson(candidate, lessons, Number(row.institution_id)));
-    const candidates = lessoned.map((entry) => entry.candidate);
-    const lessonFlags = new Map(lessoned.filter((entry) => entry.lessonFlag).map((entry) => [entry.candidate, entry.lessonFlag!]));
+    const candidates = lessoned.map((entry) => withLineupFromText(entry.candidate, row.normalized_text, { institutionName: row.institution_name }));
+    const lessonFlags = new Map(lessoned.flatMap((entry, index) => entry.lessonFlag ? [[candidates[index], entry.lessonFlag] as const] : []));
     for (const flag of lessonFlags.values()) lessonRefiles[flag] = (lessonRefiles[flag] ?? 0) + 1;
     let inserted = 0;
     let heldInserted = 0;
@@ -1070,19 +1481,17 @@ export async function runKnoxExtract(
           calibration.get(calibrationKey(candidate.strategy ?? KNOX_RULES_STRATEGY.strategy, candidate.canonicalHint)),
         );
         if (calibrated < PUBLISH_FLOOR) calibratedBelowPublishFloor += 1;
-        const takenDownBy = takedownLessonFor(candidate, takedownLessons, Number(row.institution_id));
-        if (takenDownBy) takedownHolds[takenDownBy] = (takedownHolds[takenDownBy] ?? 0) + 1;
-        const named = withLineupFromText(candidate, row.normalized_text);
-        if (
-          await insertCandidate(db, {
+        const named = candidate;
+        const receipt=await insertCandidateWithLearning(db, {
             runId: options.runId,
             row,
             candidate: named.lineup ? { ...named, lineup: groundLineup(named.lineup, row.normalized_text) } : named,
             extraFlags: lessonFlag ? [lessonFlag] : [],
             calibratedConfidence: calibrated,
-            takenDownBy,
-          })
-        ) inserted += 1;
+          },takedownLessons);
+        if (receipt.inserted) inserted+=1;
+        if (receipt.takenDownBy) takedownHolds[receipt.takenDownBy]=(takedownHolds[receipt.takenDownBy]??0)+1;
+        if (receipt.declinedReason) takedownGuardDeclines[receipt.declinedReason]=(takedownGuardDeclines[receipt.declinedReason]??0)+1;
       }
       for (const rate of rates) {
         if (await insertRateCandidate(db, { runId: options.runId, row, rate })) inserted += 1;
@@ -1130,6 +1539,8 @@ export async function runKnoxExtract(
           runId: options.runId,
           stepId: options.stepId ?? null,
           foldIntoPlaybook: false,
+          // A Knox rules bump re-reads the document; a specialist with nothing new logs nothing new.
+          skipRepeat: true,
           detail: specialistDetail(row, run),
         });
       }
@@ -1184,8 +1595,10 @@ export async function runKnoxExtract(
     learning,
     lessonsLoaded: lessons.size,
     lessonRefiles,
-    takedownLessonsLoaded: takedownLessons.size,
+    takedownLessonsLoaded: [...takedownLessons.values()].reduce((n,group)=>n+group.length,0),
     takedownHolds,
+    takedownLessonsUnknown: takedownLessons.unknownReasons,
+    takedownGuardDeclines,
     calibrationGroups: calibration.size,
     calibratedBelowPublishFloor,
     layouts: thinLayouts(layoutReads),

@@ -1,0 +1,17 @@
+Insufficient Funds (NSF) Fee
+
+When an item is returned because there are not enough funds available in the account to pay the item or when an item is paid although funds are not available in the account. Items represented for payment will be charged an NSF fee each time they are returned or paid as overdrafts.
+
+$34.00 for each presentment of an item for payment that we return due to insufficient funds or for each presentment of an overdraft item we pay, unless one of the following exceptions apply:
+
+The amount of the overdrawn balance is less than $10.00;
+
+Your account has already been charged a total of 4 NSF fees ($136) for items processed for payment on that business day
+
+$5.00 for each item we return due to insufficient funds or for each overdraft item we pay on accounts for customer ages 18 or younger or 65 and older in our 18/65 checking product, unless one of the following exceptions apply:
+
+The amount of the overdrawn balance is less than $10.00;
+
+Your account has already been charged a total of 4 NSF fees ($20) for items processed for payment on that business day
+
+Funds Availability

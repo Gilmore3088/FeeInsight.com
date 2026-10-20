@@ -1,18 +1,22 @@
 import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
 import type { NextRequest } from "next/server";
 import { handleMcpPost } from "@/lib/api-v1-mcp";
+import { withPrivateV1Context } from "@/lib/api-v1-hamilton-context";
 import { GET as branchesGET } from "../branches/route";
 import { GET as feeChangesGET } from "../fee-changes/route";
 import { GET as feesGET } from "../fees/route";
 import { GET as indexGET } from "../index/route";
 import { GET as institutionsGET } from "../institutions/route";
 import { GET as marketGET } from "../market/route";
+import { GET as peersGET } from "../peers/route";
+import { GET as rateFeesGET } from "../rate-fees/route";
 import { GET as revenueGET } from "../revenue/route";
+import { GET as hamiltonContextGET } from "../hamilton-context/route";
 
 // MCP connector for AI assistants. Each tool call runs the matching v1 route
 // with the caller's own key.
-export const POST = withApiRoutePolicy("api.v1.mcp", "POST", (request: NextRequest) =>
-  handleMcpPost(request, {
+export const POST = withApiRoutePolicy("api.v1.mcp", "POST", async (request: NextRequest) =>
+  withPrivateV1Context(await handleMcpPost(request, {
     fees: feesGET,
     index: indexGET,
     institutions: institutionsGET,
@@ -20,5 +24,8 @@ export const POST = withApiRoutePolicy("api.v1.mcp", "POST", (request: NextReque
     feeChanges: feeChangesGET,
     branches: branchesGET,
     market: marketGET,
-  }),
+    peers: peersGET,
+    rateFees: rateFeesGET,
+    hamiltonContext: hamiltonContextGET,
+  })),
 );

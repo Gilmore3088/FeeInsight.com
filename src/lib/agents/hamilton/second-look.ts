@@ -1,6 +1,7 @@
 import type { sql } from "@/lib/data-store/connection";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { feedbackSchemaReady, recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
+import { exactAmount, readTakedownWitness, type TakedownWitness } from "@/lib/agents/knox/takedown-witness";
 
 type SqlTag = typeof sql;
 
@@ -38,6 +39,8 @@ export interface SecondLookCandidate {
   amount?: number | null;
   sourceDocumentId?: number | null;
   reason: string;
+  /** Optional original input witness supplied by the judging producer, never hydrated here. */
+  takedownWitness?: TakedownWitness;
 }
 
 export interface PendingFlag {
@@ -96,6 +99,8 @@ export interface SecondLookResult<T extends SecondLookCandidate> {
   flagged: number;
   waiting: number;
   cleared: number;
+  /** Present only for strict caller-owned settlement. */
+  feedbackIds?: number[];
 }
 
 interface FlagRow {
@@ -121,6 +126,8 @@ export async function secondLook<T extends SecondLookCandidate>(
     now?: Date;
     /** Minutes a first look must age before it confirms; Infinity logs first looks and confirms none. */
     minMinutes?: number;
+    /** Opt-in: propagate unavailable/short writes to the caller-owned atomic settlement. */
+    strictPersistence?: boolean;
   },
 ): Promise<SecondLookResult<T>> {
   const { check, runId, failing, dryRun } = options;
@@ -130,14 +137,23 @@ export async function secondLook<T extends SecondLookCandidate>(
   const keys = failing.map((fee) => secondLookDedupeKey(check, fee.feePublishedId));
   let rows: FlagRow[];
   try {
-    if (!(await feedbackSchemaReady(db))) return { ...empty, waiting: failing.length };
-    rows = await inSavepoint(db, (scope) => scope<FlagRow[]>`
+    if (!(await feedbackSchemaReady(db))) {
+      if (options.strictPersistence) throw new Error("Second-look feedback unavailable");
+      return { ...empty, waiting: failing.length };
+    }
+    rows = options.strictPersistence ? await db<FlagRow[]>`
+      SELECT fee_published_id, kind, evidence FROM pipeline_feedback
+       WHERE dedupe_key = ANY(${keys}::text[])
+          OR (check_name = ${check} AND kind = ${PENDING_KIND} AND fee_published_id = ANY(${passing}::bigint[]))
+       ORDER BY id FOR UPDATE NOWAIT
+    ` : await inSavepoint(db, (scope) => scope<FlagRow[]>`
       SELECT fee_published_id, kind, evidence
         FROM pipeline_feedback
        WHERE dedupe_key = ANY(${keys}::text[])
           OR (check_name = ${check} AND kind = ${PENDING_KIND} AND fee_published_id = ANY(${passing}::bigint[]))
     `);
   } catch (error) {
+    if (options.strictPersistence) throw error;
     // No log, no takedown: a fee is never taken down without its first look on record.
     console.error(`secondLook(${check}) read failed:`, error);
     return { ...empty, waiting: failing.length };
@@ -169,7 +185,7 @@ export async function secondLook<T extends SecondLookCandidate>(
   const base = (fee: SecondLookCandidate): Omit<FeedbackRow, "signal" | "kind" | "weight" | "evidence"> => ({
     aboutStage: "publish",
     aboutStrategy: check,
-    reportedBy: "hamilton",
+    reportedBy: "gutenberg",
     checkName: check,
     institutionId: fee.institutionId,
     sourceDocumentId: fee.sourceDocumentId ?? null,
@@ -190,6 +206,11 @@ export async function secondLook<T extends SecondLookCandidate>(
       ];
     }),
     ...plan.confirmed.flatMap(({ candidate, first }) => {
+      const selected = readTakedownWitness(candidate.takedownWitness);
+      const witness = selected && selected.check === check && selected.judgeRunId === runId && selected.publishedId === candidate.feePublishedId
+        && selected.identity.institutionId === candidate.institutionId
+        && selected.identity.category === candidate.canonicalFeeKey && selected.identity.amount === exactAmount(candidate.amount)
+        && selected.source.sourceDocumentId === candidate.sourceDocumentId ? selected : null;
       const evidence = {
         flag_run_id: first.flagRunId,
         flagged_at: first.flaggedAt?.toISOString() ?? null,
@@ -198,6 +219,7 @@ export async function secondLook<T extends SecondLookCandidate>(
         confirmed_at: now.toISOString(),
         confirm_reason: candidate.reason,
         flag_key: secondLookEventKey(check, candidate.feePublishedId, "flag", first.flagRunId),
+        ...(witness ? { takedown_witness: witness } : {}),
       };
       return [
         { ...base(candidate), signal: "wrong" as const, kind: CONFIRMED_KIND, weight: 0, evidence },
@@ -209,7 +231,7 @@ export async function secondLook<T extends SecondLookCandidate>(
       const row = {
         aboutStage: "publish" as const,
         aboutStrategy: check,
-        reportedBy: "hamilton" as const,
+        reportedBy: "gutenberg" as const,
         checkName: check,
         feePublishedId: id,
         runId,
@@ -231,8 +253,23 @@ export async function secondLook<T extends SecondLookCandidate>(
     }),
   ];
   try {
-    await inSavepoint(db, (scope) => recordFeedback(scope as SqlTag, writes));
+    const written = await inSavepoint(db, (scope) => recordFeedback(scope as SqlTag, writes));
+    if (options.strictPersistence) {
+      if (written !== writes.length) throw new Error("Second-look feedback short write");
+      const expected = writes.map(row => ({ key:row.dedupeKey, kind:row.kind, signal:row.signal, weight:row.weight ?? 1, evidence:row.evidence ?? {} }));
+      const persisted = await db<{ id: number | string }[]>`
+        SELECT f.id FROM pipeline_feedback f
+        JOIN jsonb_to_recordset(${JSON.stringify(expected)}::jsonb) AS e(key text,kind text,signal text,weight numeric,evidence jsonb)
+          ON f.dedupe_key=e.key
+        WHERE f.kind=e.kind AND f.signal=e.signal AND f.weight=e.weight AND f.evidence=e.evidence AND f.agent_run_id=${runId}
+        ORDER BY f.id
+      `;
+      if (persisted.length !== writes.length) throw new Error("Second-look feedback witness missing");
+      result.feedbackIds = persisted.map((row) => Number(row.id));
+      if (result.feedbackIds.some((id) => !Number.isSafeInteger(id) || id <= 0)) throw new Error("Invalid second-look feedback ID");
+    }
   } catch (error) {
+    if (options.strictPersistence) throw error;
     // The log is the precondition for a takedown; without it, take nothing down.
     console.error(`secondLook(${check}) write failed:`, error);
     return { ...result, confirmed: [] };
@@ -292,7 +329,7 @@ export async function reconstructFirstLooks(
     return {
       aboutStage: "publish",
       aboutStrategy: check,
-      reportedBy: "hamilton",
+      reportedBy: "gutenberg",
       checkName: check,
       institutionId: row.institution_id == null ? null : Number(row.institution_id),
       sourceDocumentId: row.source_document_id == null ? null : Number(row.source_document_id),

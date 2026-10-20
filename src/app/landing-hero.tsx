@@ -1,63 +1,82 @@
 import Link from "next/link";
-import { NATIONAL_INDEX_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
-import { TrackLink } from "@/components/track-link";
-import { PRODUCT_NAME, SITE_NAME } from "@/lib/constants";
+import { PRODUCT_NAME } from "@/lib/constants";
 import type { PublicStatsSummary } from "@/lib/public-stats";
-import { Eyebrow, InstitutionSearchForm, SANS, hasFigure } from "./landing-shared";
-
-const CHIP =
-  "inline-flex min-h-10 shrink-0 items-center whitespace-nowrap rounded-full border border-border bg-surface-0 px-3.5 text-[13px] font-medium text-ink hover:border-ink";
+import { IndexCard } from "./landing-index-card";
+import type { IndexCardData } from "./landing-index-view";
+import { TrackLink } from "@/components/track-link";
+import { HOME_WRAP, SAMPLE_REPORT_HREF, SANS, SERIF, hasFigure } from "./landing-shared";
 
 /**
- * Brief 06 §4.3 item 1: parchment, one centred column at every width. The promise, one
- * sentence, the search, live microcopy and three working chips. It stays short so the
- * product frame under it, centred at the full container width, shows in the first screen.
+ * The hero (James's example, Oct 17): a textured navy band whose bottom edge is a shallow curve
+ * (`.fi-home-hero::before` in landing-motion.css), the buyer, the promise and one action on the
+ * left, and a working Bank Fee Index card on the right that hangs over the curve into the light
+ * section below. The visitor picks their institution inside the card (landing-index-card.tsx),
+ * which replaced the separate search under it. The main action jumps to the card; the quieter
+ * one opens the public sample report. On a phone the card follows the copy and still overlaps
+ * the curve.
  */
-export function LandingHero({ summary }: { summary: Pick<PublicStatsSummary, "institutionsLabel" | "freshnessLabel"> }) {
+export function LandingHero({ index, freshness }: { index: IndexCardData; freshness: string }) {
   return (
-    <section className="bg-paper">
-      <div className="mx-auto flex max-w-6xl flex-col items-center px-4 pb-5 pt-5 text-center sm:px-6 sm:pb-6 sm:pt-8 lg:pt-6">
-        <Eyebrow>The {PRODUCT_NAME}</Eyebrow>
-        <h1
-          className="mt-3 max-w-4xl text-[2.25rem] !font-semibold leading-[1.04] !tracking-[-0.04em] text-ink sm:text-[3rem] lg:text-[3.25rem]"
-          style={SANS}
-        >
-          Know where your fees stand, with a source for every figure
-        </h1>
-        <p className="mt-3 max-w-2xl text-[16px] leading-relaxed text-ink-soft sm:mt-3 sm:text-[18px]">
-          Compare each fee with your market, state, Fed district, peer group and the nation in Hamilton, the{" "}
-          {SITE_NAME} Pro workspace.
-        </p>
-
-        <InstitutionSearchForm id="hero-search" className="mt-4 w-full max-w-2xl [&_.fi-field]:max-w-none [&_label]:sr-only sm:mt-4" />
-        <p className="mt-2.5 text-[13px] leading-5 text-ink-muted">
-          {hasFigure(summary.institutionsLabel) ? `${summary.institutionsLabel} institutions with published fees · ` : ""}
-          {summary.freshnessLabel}
-        </p>
-
-        <ul
-          className="-mx-4 mt-3 flex w-[calc(100%+2rem)] min-w-0 gap-2 overflow-x-auto px-4 pb-1 [mask-image:linear-gradient(to_right,#000_calc(100%_-_2.5rem),transparent)] [scrollbar-width:none] sm:mx-0 sm:[mask-image:none] sm:mt-3 sm:w-auto sm:flex-wrap sm:justify-center sm:overflow-visible sm:px-0"
-          aria-label="Or start here"
-        >
-          {/* Under sm the row scrolls sideways; the fade at its right edge shows there is more. */}
-          {/* The Pro plans chip leads, so a phone shows it whole in the first screen (re-walk R3). */}
-          <li>
-            <TrackLink event="upgrade_click" eventProps={{ placement: "home_hero" }} href={PRO_PLANS_NAV.href} className={CHIP}>
-              {PRO_PLANS_NAV.label}
+    <section className="fi-home-hero relative isolate overflow-visible bg-surface-0 pt-9 lg:pt-14" aria-labelledby="hero-title">
+      <div className={`${HOME_WRAP} grid items-center gap-8 lg:grid-cols-[minmax(0,0.96fr)_minmax(0,1.04fr)] lg:gap-[34px]`}>
+        <div className="fi-home-hero-copy min-w-0 pb-1 lg:pb-12 lg:pt-2">
+          {/* James's own eyebrow and headline (Oct 18); the subhead is the line he chose from the landing critique, with a comma for its dash. */}
+          <p className="text-[15px] text-[#e0e9ee] sm:text-[16px]">For banks and credit unions</p>
+          <h1 id="hero-title" className="fi-home-h1 mt-5 !font-medium text-white lg:mt-6" style={SERIF}>
+            <span className="block whitespace-nowrap">Your next fee review</span>
+            <span className="block whitespace-nowrap">doesn’t need to take weeks.</span>
+          </h1>
+          <p className="mt-6 text-[17px] leading-[1.45] text-[#e0e9ee] sm:text-[19px] lg:mt-7 lg:text-[clamp(18px,1.6vw,23px)]">
+            Understand your institution’s financial position, compare your fees with competitors, and identify what
+            deserves a closer look, all supported by published data and verifiable sources.
+          </p>
+          <div className="mt-7 flex flex-wrap items-center gap-x-6 gap-y-3 lg:mt-9">
+            <a href="#bank-fee-index" className="fi-btn fi-btn-brick min-h-12 px-6 text-[15px]">
+              Compare fees in your market
+            </a>
+            <TrackLink
+              href={SAMPLE_REPORT_HREF}
+              event="sample_report_click"
+              eventProps={{ placement: "home_hero" }}
+              className="inline-flex min-h-12 items-center text-[15px] font-semibold text-white underline decoration-white/40 underline-offset-4 hover:decoration-white"
+            >
+              View sample analysis
             </TrackLink>
-          </li>
-          <li>
-            <Link href="/fees/overdraft" className={CHIP}>
-              Overdraft fees nationwide
-            </Link>
-          </li>
-          <li>
-            <Link href={NATIONAL_INDEX_NAV.href} className={CHIP}>
-              {NATIONAL_INDEX_NAV.label}
-            </Link>
-          </li>
-        </ul>
+          </div>
+        </div>
+        <div className="min-w-0 lg:self-start">
+          <IndexCard data={index} freshness={freshness} />
+        </div>
       </div>
+    </section>
+  );
+}
+
+/** The proof strip: two live counts and the promise behind every figure. A failed count is left out. */
+export function LandingProof({ summary, feeTypes }: { summary: Pick<PublicStatsSummary, "institutionsLabel">; feeTypes: number }) {
+  const items = [
+    hasFigure(summary.institutionsLabel) ? { figure: summary.institutionsLabel, label: "institutions with published fees" } : null,
+    feeTypes > 0 ? { figure: feeTypes.toLocaleString("en-US"), label: "fee categories" } : null,
+  ].filter((x): x is { figure: string; label: string } => x !== null);
+  return (
+    <section aria-label={`The ${PRODUCT_NAME} at a glance`} className="bg-surface-0 pb-9 pt-8 sm:pb-11 sm:pt-10">
+      <ul className={`mx-auto grid max-w-[1030px] px-4 text-center sm:px-6 ${items.length === 2 ? "grid-cols-3" : items.length === 1 ? "grid-cols-2" : "grid-cols-1"}`}>
+        {items.map((item) => (
+          <li key={item.label} className="border-r border-border px-2 sm:px-6" data-proof-count="">
+            <strong className="block text-[23px] font-semibold leading-tight tracking-[-0.02em] text-ink sm:text-[clamp(28px,3vw,40px)]">
+              {item.figure}
+            </strong>
+            <span className="mt-1 block text-[12px] text-ink-muted sm:text-[16px]">{item.label}</span>
+          </li>
+        ))}
+        <li className="flex items-center justify-center px-2 sm:px-6">
+          <Link href="/methodology" className="text-[18px] font-semibold leading-[1.1] tracking-[-0.02em] text-ink hover:underline sm:text-[clamp(22px,2.4vw,32px)]" style={SANS}>
+            A source for
+            <br />
+            every figure
+          </Link>
+        </li>
+      </ul>
     </section>
   );
 }

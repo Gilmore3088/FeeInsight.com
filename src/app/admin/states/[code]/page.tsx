@@ -8,6 +8,7 @@ import { formatAdminDateTime } from "@/lib/admin-time";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { sql } from "@/lib/data-store/connection";
 import { notPublishedOnlineCounts, type NotOnlineTierCount } from "@/lib/agents/magellan/escalation";
+import { stateExpertFor } from "@/lib/agents/state-expert/roster";
 import {
   getStateInstitutions,
   getStateSummary,
@@ -84,7 +85,7 @@ export default async function StateDetailPage({
 }: {
   params: Promise<{ code: string }>;
 }) {
-  const user = await requireAuth("view");
+  const user = await requireAuth("operate");
   const { code } = await params;
   const stateCode = code.toUpperCase();
   const stateName = STATE_NAMES[stateCode] ?? stateCode;
@@ -134,6 +135,14 @@ export default async function StateDetailPage({
           <p className="text-[11px] text-gray-400 mt-0.5">
             State coverage, source memory, and lane health
           </p>
+          {stateExpertFor(stateCode) ? (
+            <Link
+              href={`/admin/states/${stateCode}/expert`}
+              className="mt-2 inline-flex rounded-md border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:border-blue-200 hover:text-blue-700 dark:border-white/[0.08] dark:text-gray-300"
+            >
+              State expert: {stateExpertFor(stateCode)?.name}
+            </Link>
+          ) : null}
         </div>
         <StateLaneRunControl
           stateCode={stateCode}

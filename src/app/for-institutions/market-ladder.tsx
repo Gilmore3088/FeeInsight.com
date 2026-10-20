@@ -2,11 +2,13 @@ import { FeeRange, FeeRangeAxis } from "@/brand/components";
 import { HAMILTON_MODES } from "@/lib/constants";
 import type { IndexEntry } from "@/lib/data-store/fee-index";
 import type { FeeCategorySummary } from "@/lib/data-store/fees";
-import { getDisplayName } from "@/lib/fee-taxonomy";
 import { getPeerIndexCached } from "@/lib/data-store/public-cached-reads";
 import type { MarketReport } from "@/lib/custom-report/report-data";
+import type { ReportLine } from "@/lib/custom-report/analysis";
 import { STATE_NAMES } from "@/lib/us-states";
 import { money } from "@/app/landing-shared";
+import { latestReadOn, lineName } from "./board-math";
+import { SourceFooter } from "./workspace-exhibits";
 
 /** The fees the ladder can show, in order of preference: the first the sample publishes and can compare. */
 const LADDER_KEYS = ["overdraft", "monthly_maintenance", "nsf"] as const;
@@ -25,10 +27,12 @@ export interface MarketLadderData {
   institutionName: string;
   /** The fee's taxonomy key, e.g. "overdraft". */
   feeKey: string;
-  /** Its display name from the fee taxonomy, the same name every exhibit uses. */
+  /** The sample report's own line name ("Outgoing international wire"), as the other exhibits show it. */
   feeLabel: string;
   value: number;
   rows: LadderRow[];
+  /** The newest day a schedule behind the local row was read (YYYY-MM-DD), or null. */
+  readOn?: string | null;
 }
 
 type Spread = Pick<IndexEntry, "min_amount" | "p25_amount" | "median_amount" | "p75_amount" | "max_amount" | "institution_count">;
@@ -57,23 +61,45 @@ const CHARTER_PEERS: Record<string, string> = { bank: "Banks nationwide", credit
  * One fee from the live sample report, placed in each market layer we can read for it: the
  * report's own local competitors, the state, the charter nationwide and the nation. Layers
  * below the minimum sample (`maturity_tier` insufficient) or without a full spread are left
- * out rather than guessed. Null when the sample has no comparable headline fee.
+ * out rather than guessed. Null when the sample has no comparable headline fee. `preferKey`
+ * (the page's lead line) is tried first and kept when it can be placed in two layers or more.
  */
 export function buildMarketLadder({
   sample,
   stateIndex,
   charterIndex,
   national,
+  preferKey = null,
 }: {
   sample: MarketReport;
   stateIndex: IndexEntry[];
   charterIndex: IndexEntry[];
   national: FeeCategorySummary[];
+  /** A fee to try first (the page's lead line), before the usual LADDER_KEYS order. */
+  preferKey?: string | null;
 }): MarketLadderData | null {
-  const line = LADDER_KEYS.map((key) => sample.analysis.lines.find((l) => l.key === key)).find(
-    (l) => l && l.comparable && l.own && l.peers,
-  );
-  if (!line || !line.own || !line.peers) return null;
+  const comparable = (key: string) =>
+    sample.analysis.lines.find((l) => l.key === key && l.comparable && l.own && l.peers) ?? null;
+  // The preferred fee wins when it can be placed in at least two layers; otherwise the usual order.
+  if (preferKey) {
+    const preferred = comparable(preferKey);
+    const ladder = preferred ? ladderFor(preferred, { sample, stateIndex, charterIndex, national }) : null;
+    if (ladder) return ladder;
+  }
+  const line = LADDER_KEYS.map(comparable).find((l) => l !== null) ?? null;
+  return line ? ladderFor(line, { sample, stateIndex, charterIndex, national }) : null;
+}
+
+function ladderFor(
+  line: ReportLine,
+  {
+    sample,
+    stateIndex,
+    charterIndex,
+    national,
+  }: { sample: MarketReport; stateIndex: IndexEntry[]; charterIndex: IndexEntry[]; national: FeeCategorySummary[] },
+): MarketLadderData | null {
+  if (!line.own || !line.peers) return null;
   const usable = (entries: IndexEntry[]) => entries.find((e) => e.fee_category === line.key && e.maturity_tier !== "insufficient");
   const subject = sample.data.subject;
   const state = subject.state_code ? STATE_NAMES[subject.state_code] ?? null : null;
@@ -96,24 +122,43 @@ export function buildMarketLadder({
   return {
     institutionName: subject.institution_name,
     feeKey: line.key,
-    feeLabel: getDisplayName(line.key),
+    feeLabel: lineName(line.label),
     value: line.own.amount,
     rows,
+    readOn: latestReadOn([line.own.schedule_read_on, ...(line.peerFigures ?? []).map((figure) => figure.schedule_read_on)]),
   };
+}
+
+/** The sample's ladder, and whether a benchmark read behind it failed (a failed read drops that row). */
+export interface SampleLadderRead {
+  ladder: MarketLadderData | null;
+  failed: boolean;
 }
 
 /**
  * The live sample's ladder: its state and charter benchmarks read beside the report. A failed
- * read drops that row; null when the sample has no comparable headline fee.
+ * read drops that row and sets `failed`, so a cached page (the homepage) can refuse to keep
+ * the render; `ladder` is null when the sample has no comparable headline fee.
  */
-export async function loadSampleLadder(sample: MarketReport, national: FeeCategorySummary[]): Promise<MarketLadderData | null> {
+export async function readSampleLadder(
+  sample: MarketReport,
+  national: FeeCategorySummary[],
+  preferKey: string | null = null,
+): Promise<SampleLadderRead> {
   const { state_code, charter_type } = sample.data.subject;
   const none: IndexEntry[] = [];
+  let failed = false;
+  const read = (filter: { state_code: string } | { charter_type: string }) =>
+    getPeerIndexCached(filter).catch((error: unknown) => {
+      console.error("[ladder] peer index read failed; ladder row hidden", filter, error);
+      failed = true;
+      return none;
+    });
   const [stateIndex, charterIndex] = await Promise.all([
-    state_code ? getPeerIndexCached({ state_code }).catch(() => none) : none,
-    charter_type ? getPeerIndexCached({ charter_type }).catch(() => none) : none,
+    state_code ? read({ state_code }) : none,
+    charter_type ? read({ charter_type }) : none,
   ]);
-  return buildMarketLadder({ sample, stateIndex, charterIndex, national });
+  return { ladder: buildMarketLadder({ sample, stateIndex, charterIndex, national, preferKey }), failed };
 }
 
 /**
@@ -131,7 +176,6 @@ export function MarketLadder({ data, bare = false }: { data: MarketLadderData; b
             <span aria-hidden className="h-2 w-2 rounded-full bg-ink" />
             Hamilton
           </span>
-          <span className="text-xs text-ink-muted">Illustration, live figures</span>
         </figcaption>
       )}
       <div role="presentation" className="flex gap-1 overflow-x-auto border-b border-border px-3 pt-2 text-[13px]">
@@ -177,6 +221,8 @@ export function MarketLadder({ data, bare = false }: { data: MarketLadderData; b
       <p className="max-w-[none] border-t border-border px-4 py-2.5 text-[12px] text-ink-muted sm:px-6">
         Dot: its own published fee. Box: the middle half of each market. Right: each market&apos;s median.
       </p>
+      {/* The date covers the local row only: the state, charter and nation rows come from the index. */}
+      {bare ? null : <SourceFooter readOn={data.readOn ?? null} readLabel="local figures read" />}
     </figure>
   );
 }

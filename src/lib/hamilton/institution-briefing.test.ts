@@ -37,6 +37,7 @@ const contract: Pick<
 
 describe("Hamilton institution briefing", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     mocks.getInstitutionById.mockResolvedValue({
       id: 2945,
       institution_name: "Example Bank",
@@ -79,7 +80,7 @@ describe("Hamilton institution briefing", () => {
     mocks.getFinancialsByInstitution.mockResolvedValue([
       {
         report_date: "2026-06-30",
-        source: "call_report",
+        source: "fdic",
         total_assets: 2500000000,
         total_deposits: 1800000000,
         service_charge_income: 12000000,
@@ -167,10 +168,73 @@ describe("Hamilton institution briefing", () => {
     expect(prompt).toContain('"confidence":0.95');
   });
 
+  it.each([["bank", "ncua"], ["credit_union", "fdic"], ["unknown", "ncua"]])("excludes %s financials from incompatible source %s", async (charter, source) => {
+    mocks.getInstitutionById.mockResolvedValueOnce({ id: 2945, institution_name: "Subject", charter_type: charter });
+    mocks.getFinancialsByInstitution.mockResolvedValueOnce([
+      { report_date: "2026-06-30", source, service_charge_income: 999999 },
+    ]);
+    const { buildHamiltonInstitutionBriefingSnapshot } = await import("./institution-briefing");
+    const snapshot = await buildHamiltonInstitutionBriefingSnapshot(contract, { writtenAnswer: true });
+    expect(snapshot?.evidence.some((fact) => fact.metric === "service_charge_income")).toBe(false);
+    expect(snapshot?.prompt).not.toContain("999999");
+  });
+
   it("returns null when the selected institution does not exist", async () => {
     mocks.getInstitutionById.mockResolvedValueOnce(null);
     const { buildHamiltonInstitutionBriefing } = await import("./institution-briefing");
 
     await expect(buildHamiltonInstitutionBriefing(contract)).resolves.toBeNull();
+  });
+
+  it("builds the written prompt and validator facts from one dated, unit-aware filing snapshot", async () => {
+    const institution = await mocks.getInstitutionById();
+    mocks.getInstitutionById.mockClear();
+    mocks.getInstitutionById.mockResolvedValueOnce({ ...institution, charter_type: "credit_union" });
+    mocks.getFinancialsByInstitution.mockResolvedValueOnce([
+      { report_date: "2026-06-30", source: "ncua", service_charge_income: 57260, total_assets: 20000000, fee_income_ratio: 0.1, member_count: 123456 },
+      { report_date: "2026-03-31", source: "ncua", service_charge_income: 27230, total_assets: 19000000, fee_income_ratio: null },
+      { report_date: "2026-06-30", source: "ffiec", service_charge_income: 57260000 },
+    ]);
+    const { buildHamiltonInstitutionBriefingSnapshot } = await import("./institution-briefing");
+    const snapshot = await buildHamiltonInstitutionBriefingSnapshot(contract, { writtenAnswer: true });
+
+    expect(snapshot?.evidence).toEqual(expect.arrayContaining([
+      expect.objectContaining({ institution_id: 2945, institution_name: "Example Bank", context_role: "research",
+        metric: "service_charge_income", value: 57260, unit: "thousands of dollars", report_date: "2026-06-30",
+        period_basis: "ytd", source: "ncua", publisher: "NCUA", evidence_tier: "regulatory" }),
+      expect.objectContaining({ metric: "service_charge_income", value: 27230, report_date: "2026-03-31", period_basis: "ytd" }),
+      expect.objectContaining({ metric: "fee_income_ratio", value: 0.1, unit: "fraction", period_basis: "reported_ratio" }),
+      expect.objectContaining({ metric: "member_count", value: 123456, unit: "count", report_date: "2026-06-30", period_basis: "point_in_time" }),
+      expect.objectContaining({ metric: "fee_schedule:overdraft", value: 35, unit: "USD", evidence_tier: "verified" }),
+      expect.objectContaining({ metric: "fee_schedule:wire", value: 25, unit: "USD", evidence_tier: "provisional" }),
+    ]));
+    for (const fact of snapshot?.evidence ?? []) expect(snapshot?.prompt).toContain(JSON.stringify(fact));
+    expect(snapshot?.prompt).not.toContain('"value":57260000');
+    expect(snapshot?.evidence.some((fact) => fact.source === "ffiec")).toBe(false);
+    expect(mocks.getFinancialsByInstitution).toHaveBeenCalledTimes(1);
+    expect(mocks.getInstitutionById).toHaveBeenCalledTimes(1);
+    expect(mocks.getFeesByInstitution).toHaveBeenCalledTimes(1);
+    expect(mocks.getInstitutionRevenueTrend).not.toHaveBeenCalled();
+    expect(mocks.getInstitutionPeerRanking).not.toHaveBeenCalled();
+    expect(snapshot?.prompt).toContain("A comparable peer ranking is not supplied here");
+    expect(snapshot?.prompt).not.toContain("- Peer ranking:");
+    expect(snapshot?.prompt).not.toContain("- Revenue trend:");
+  });
+
+  it("keeps account facts scoped and missing filing fields absent instead of inventing zero", async () => {
+    const institution = await mocks.getInstitutionById();
+    mocks.getInstitutionById.mockClear();
+    mocks.getInstitutionById.mockResolvedValueOnce({ ...institution, charter_type: "credit_union" });
+    mocks.getFinancialsByInstitution.mockResolvedValueOnce([
+      { report_date: "2026-06-30", source: "ncua", service_charge_income: null, total_assets: 0, fee_income_ratio: Number.NaN },
+    ]);
+    const { buildHamiltonInstitutionBriefingSnapshot } = await import("./institution-briefing");
+    const snapshot = await buildHamiltonInstitutionBriefingSnapshot(contract, { writtenAnswer: true, contextRole: "account_evidence" });
+
+    expect(snapshot?.evidence.every((fact) => fact.context_role === "account_evidence")).toBe(true);
+    expect(snapshot?.evidence.filter((fact) => fact.source === "ncua")).toEqual([
+      expect.objectContaining({ metric: "total_assets", value: 0, period_basis: "point_in_time" }),
+    ]);
+    expect(snapshot?.prompt).toContain("Keep the original research subject");
   });
 });

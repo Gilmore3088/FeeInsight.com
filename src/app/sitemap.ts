@@ -1,5 +1,5 @@
 import type { MetadataRoute } from "next";
-import { FEE_FAMILIES } from "@/lib/fee-taxonomy";
+import { FEE_FAMILIES, publicFeeTypes } from "@/lib/fee-taxonomy";
 import { STATE_CODES } from "@/lib/us-states";
 import {
   getDataFreshness,
@@ -8,12 +8,15 @@ import {
   getTopCitiesByState,
 } from "@/lib/data-store";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
-import { getPublicSnapshot } from "@/lib/public-stats";
+import { getStateMarketCitiesCached } from "@/lib/data-store/public-cached-reads";
+import { canonicalCityName, cityPath } from "./(public)/fees/city/[state]/[city]/city-address";
+import { getPublicFeeTypes, getPublicSnapshot } from "@/lib/public-stats";
 import { loadGuides } from "@/lib/guides/source";
 import { getSql } from "@/lib/data-store/connection";
 import { SITE_URL } from "@/lib/constants";
 import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
 import { MIN_VERIFIED_FEES_FOR_OFFER } from "./(public)/institution/[id]/profile-copy";
+import { SAMPLE_REPORT_HREF } from "./landing-shared";
 
 
 // Serve a cached copy and rebuild it in the background at most once an hour. Rendered per
@@ -22,7 +25,6 @@ export const dynamic = "force-static";
 export const revalidate = 3600;
 
 const BASE_URL = SITE_URL;
-const SAMPLE_REPORT_PATH = "/reports/sample-competitive-fee-position";
 /** City pages below this many verified institutions are noindexed and left out of the sitemap. */
 const MIN_INDEXABLE_CITY_INSTITUTIONS = 3;
 const TOP_CITIES_PER_STATE = 20;
@@ -127,13 +129,23 @@ async function loadIndexableStates(): Promise<Set<string> | null> {
 async function loadCityPages(dataUpdated: Date): Promise<Entry[]> {
   const listedStates = new Set<string>(STATE_CODES);
   try {
-    const cities = await getTopCitiesByState(MIN_INDEXABLE_CITY_INSTITUTIONS, TOP_CITIES_PER_STATE);
-    return cities
-      .filter((c) => listedStates.has(c.state_code))
-      .map((c) => {
-        const citySlug = encodeURIComponent(c.city.toLowerCase());
-        return entry(`/fees/city/${c.state_code.toLowerCase()}/${citySlug}`, dataUpdated, "weekly", 0.6);
-      });
+    const cities = (await getTopCitiesByState(MIN_INDEXABLE_CITY_INSTITUTIONS, TOP_CITIES_PER_STATE)).filter((c) =>
+      listedStates.has(c.state_code),
+    );
+    // Each city under the address the city layout keeps (#2092): the directory's spelling when the
+    // state directory lists it, else the headquarters spelling. Any other spelling would 301. A
+    // state whose directory read failed is left out of this build rather than listed under a name
+    // the layout may not keep; the next hourly build lists it.
+    const states = [...new Set(cities.map((c) => c.state_code))];
+    const directories = new Map(
+      await Promise.all(states.map(async (state) => [state, await getStateMarketCitiesCached(state).catch(() => null)] as const)),
+    );
+    const paths = cities.flatMap((c) => {
+      const directory = directories.get(c.state_code);
+      if (!directory) return [];
+      return [cityPath(c.state_code, canonicalCityName(c.city, directory, c.city) ?? c.city)];
+    });
+    return [...new Set(paths)].map((path) => entry(path, dataUpdated, "weekly", 0.6));
   } catch {
     return [];
   }
@@ -167,10 +179,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const staticPages: Entry[] = [
     entry("", dataUpdated, "daily", 1.0),
     entry("/for-institutions", dataUpdated, "weekly", 0.9),
+    entry("/for-consumers", undefined, "monthly", 0.8),
     entry("/subscribe", undefined, "monthly", 0.8),
     entry("/about", undefined, "monthly", 0.7),
     entry("/methodology", undefined, "monthly", 0.8),
     entry("/institutions", dataUpdated, "weekly", 0.9),
+    entry("/check", dataUpdated, "weekly", 0.8),
     entry("/fees", dataUpdated, "weekly", 0.9),
     entry("/research", dataUpdated, "weekly", 0.7),
     entry("/contact", undefined, "yearly", 0.5),
@@ -184,7 +198,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // and the sample stay listed.
   const reportPages: Entry[] = [
     entry("/reports", dataUpdated, "weekly", reportsPriority),
-    ...((await sampleReportAvailable()) ? [entry(SAMPLE_REPORT_PATH, dataUpdated, "monthly", 0.7)] : []),
+    ...((await sampleReportAvailable()) ? [entry(SAMPLE_REPORT_HREF, dataUpdated, "monthly", 0.7)] : []),
   ];
 
   // Category and state pages below the median floor are noindexed (thin), so they stay out
@@ -193,8 +207,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ? await Promise.all([loadIndexableCategories(), loadIndexableStates()])
     : [null, null];
 
+  // The public site lists the top 50 fee types by institution count (James, Oct 17 2026); with no
+  // counts, the tier order decides (`publicFeeTypes`).
+  const publicTypes = dbAvailable ? await getPublicFeeTypes().catch(() => publicFeeTypes([])) : publicFeeTypes([]);
   const categoryPages: Entry[] = Object.values(FEE_FAMILIES)
     .flat()
+    .filter((category) => publicTypes.has(category))
     .filter((category) => !indexableCategories || indexableCategories.has(category))
     .map((category) => entry(`/fees/${category}`, dataUpdated, "weekly", 0.8));
 

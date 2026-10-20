@@ -99,3 +99,17 @@ describe("computeTradeoffs", () => {
     }
   });
 });
+
+describe("computeFeePosition uses the shared mid-rank method when the amounts are on file (#2048)", () => {
+  it("ranks against the peers' own amounts", () => {
+    const pos = computeFeePosition(30, { ...MOCK_DIST, peer_amounts: [20, 25, 30, 30, 35] });
+    expect(pos).toMatchObject({ percentile: 60, method: "mid_rank" });
+  });
+  it("falls back to the quartile estimate, and says so, with too few amounts", () => {
+    expect(computeFeePosition(30, { ...MOCK_DIST, peer_amounts: [20, 40] }).method).toBe("estimated");
+    expect(computeFeePosition(30, MOCK_DIST).method).toBe("estimated");
+    // A failed read is told apart from too few amounts on file (#2103).
+    expect(computeFeePosition(30, { ...MOCK_DIST, peer_amounts_unread: true })).toMatchObject({ method: "estimated", amountsUnread: true });
+    expect(computeFeePosition(30, MOCK_DIST).amountsUnread).toBeUndefined();
+  });
+});

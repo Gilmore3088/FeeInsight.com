@@ -17,6 +17,7 @@ import {
   workspaceSchemaReady,
 } from "@/lib/data-store/hamilton-workspace";
 import { getSavedAnalysisResponse, insertSavedAnalysis, updateSavedAnalysisResponse } from "@/lib/data-store/hamilton-analyses";
+import { collectFeeRefs } from "@/lib/saved-output-corrections";
 import { normalizeCanonicalInstitutionId } from "./context-link";
 import { buildFeeResearchEvidence, type EvidenceBoundAnalyzeResponse, type HamiltonEvidenceBundle } from "./evidence-contract";
 import { writeStorylineMemo, type MemoUsage } from "./memo";
@@ -25,7 +26,7 @@ import { getHamiltonModel } from "@/lib/ai-provider";
 import { logUsage } from "@/lib/research/history";
 import { analysisFocusFor, analysisTitle, storylineAnalysis, withMemo } from "./workspace/analysis-record";
 import { buildAskResponse, clarifyAgain, parseAsk, parseObjective, type AskIntent } from "./workspace/ask";
-import { proseFeeName } from "./workspace/names";
+import { feeItem, proseFeeName } from "./workspace/names";
 import { getFeeResearch, getWorkspaceBriefing, type EnginePeerOptions } from "./workspace/research";
 import { getActivePeerSet } from "./active-peer-set";
 import { asksWholeSchedule, scheduleOverview, withOwnScheduleNote, type ScheduleOverview } from "./workspace/schedule";
@@ -103,9 +104,9 @@ function savedSentence(fieldKey: string, value: unknown, subjectName?: string): 
   const fee = fieldKey.match(/^fee\.([a-z0-9_]+)\./)?.[1];
   const name = fee ? proseFeeName(fee) : "";
   const n = typeof value === "number" ? value : NaN;
-  if (fieldKey.endsWith(".annual_items")) return `Saved: about ${n.toLocaleString("en-US")} ${name} items a year. Scenarios now use it.`;
+  if (fieldKey.endsWith(".annual_items")) return `Saved: about ${n.toLocaleString("en-US")} ${feeItem(name, true)} a year. Scenarios now use it.`;
   if (fieldKey.endsWith(".waiver_rate")) return `Saved: ${Math.round(n * 1000) / 10}% of ${name} fees waived or refunded. Scenarios now use it.`;
-  if (fieldKey.endsWith(".current_amount")) return `Saved: ${subjectName ? `${subjectName} charges` : "you charge"} $${n} for one ${name} item.`;
+  if (fieldKey.endsWith(".current_amount")) return `Saved: ${subjectName ? `${subjectName} charges` : "you charge"} $${n} for one ${feeItem(name)}.`;
   if (fieldKey.endsWith(".annual_volume")) return `Saved: ${subjectName ? `${subjectName}'s` : "your"} ${name} rate applied to about $${n.toLocaleString("en-US")} over the last 12 months.`;
   if (fieldKey === "decision.objective") return `Saved: weigh the options for ${String(value).replace(/_/g, " ")}.`;
   return "Saved.";
@@ -168,11 +169,15 @@ async function fileAnalysis(
         WORKSPACE_ENGINE_VERSION,
         research ? buildFeeResearchEvidence(research) : null,
         response.identityContext,
+        // #1924: the stamps of the reads behind the figures, frozen with the answer.
+        response.answer?.provenance.stamps,
       ),
       // The same request sent twice in quick succession files one row, not two. A storyline
       // never replaces a written answer, or a storyline read against another decision,
       // objective or fee (storylineRequestKey).
       replaceRecentDuplicate: { request: storylineRequestKey(question, request) },
+      // H03-T09: the bank's own rows and the named peers' rows the storyline was read from.
+      ...(research ? { feeRefs: collectFeeRefs(research) } : {}),
     });
   } catch (error) {
     console.error("[hamilton-ask] saving the analysis failed", { institutionId: canonical, error });
@@ -241,7 +246,7 @@ async function withResearchIdentity(
   let accountComparison: AskResponse["accountComparison"];
   if (asksAccountComparison(question)) {
     if (!account.institution) {
-      comparison = " A comparison with your account institution is withheld until one linked institution can be verified.";
+      comparison = ` This answer covers ${subject}. No institution is linked to this account, so there is no comparison.`;
     } else if (account.institution.id === identity.researchInstitutionId) {
       comparison = ` ${subject} is also the linked account institution; the figures above refer to ${subject}.`;
     } else if (!feeCategory) {
@@ -365,11 +370,14 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
   if (!question) return { status: 400, body: { error: "Ask a question." } };
   const resolvedAsk = await resolveAskIntent(institutionId, question, peers, institution.name, fallbackFee);
   const { intent, why } = resolvedAsk;
+  // A carried decision is about one fee (#979, H04-T05): a follow-up naming another fee opens its
+  // own, so its questions and tested prices never land on the earlier fee's record.
+  if (decision && intent.feeCategory && decision.feeCategory && decision.feeCategory !== intent.feeCategory) decision = null;
   const schedule =
     resolvedAsk.schedule && !resolvedAsk.schedule.top && (await ownScheduleQueued(account, institutionId))
       ? withOwnScheduleNote(resolvedAsk.schedule)
       : resolvedAsk.schedule;
-  const loadedResearch = intent.feeCategory ? await getFeeResearch(institutionId, intent.feeCategory, new Date(), { segment: intent.segment, ...peers }) : null;
+  const loadedResearch = intent.feeCategory ? await getFeeResearch(institutionId, intent.feeCategory, new Date(), { segment: intent.segment, listPeers: intent.list, ...peers }) : null;
   const research = loadedResearch ? { ...loadedResearch, subjectName: institution.name || loadedResearch.institutionName } : null;
   if (intent.feeCategory && !research) return { status: 404, body: { error: "That institution could not be loaded." } };
 
@@ -490,13 +498,14 @@ export async function resolveAskIntent(
 ): Promise<ResolvedAsk> {
   let intent = parseAsk(question, fallbackFee);
   // "Where do we stand on every fee?" is answered outright: an overview of every fee,
-  // then the fee furthest from its peer median in detail.
+  // then the fee furthest from its peer median in detail. A list of one fee's peers is only
+  // for a fee the reader named, so "list all our fees vs peers" keeps the overview (#2033).
   const schedule = !intent.feeCategory ? await scheduleFor(institutionId, question, peers, subjectName) : null;
-  if (schedule?.top) intent = { ...intent, feeCategory: schedule.top };
+  if (schedule?.top) intent = { ...intent, feeCategory: schedule.top, list: false };
   // "Why is our fee income lower than peers?" leads with what price explains of the gap, then
   // answers in full for the fee furthest from its median when the question named none.
   const why = await incomeWhyFor(institutionId, question, peers, subjectName);
-  if (!intent.feeCategory && why?.top) intent = { ...intent, feeCategory: why.top };
+  if (!intent.feeCategory && why?.top) intent = { ...intent, feeCategory: why.top, list: false };
   return { intent, schedule, why };
 }
 
@@ -614,7 +623,7 @@ export async function answerAskMemo(user: Asker, body: AskBody): Promise<AskMemo
     );
     if (!intent.feeCategory) return { status: 200, body: { status: "unavailable", reason: "Name a fee and Hamilton will write it up." } };
     feeCategory = intent.feeCategory;
-    const loadedResearch = await getFeeResearch(institutionId, intent.feeCategory, new Date(), { segment: intent.segment, ...peers });
+    const loadedResearch = await getFeeResearch(institutionId, intent.feeCategory, new Date(), { segment: intent.segment, listPeers: intent.list, ...peers });
     if (!loadedResearch) return { status: 404, body: { error: "That institution could not be loaded." } };
     const research = { ...loadedResearch, subjectName: institution.name || loadedResearch.institutionName };
     factEvidence = buildFeeResearchEvidence(research);
@@ -625,6 +634,8 @@ export async function answerAskMemo(user: Asker, body: AskBody): Promise<AskMemo
     storyline = (await withResearchIdentity(response, identity, question, feeCategory, account)).answer?.storyline ?? undefined;
   }
   if (!storyline) return { status: 200, body: { status: "unavailable", reason: "There is no storyline to write up for this question." } };
+  // A list is answered by its rows; the page never asks, and a paid memo is not written over one (#2033).
+  if (storyline.kind === "list") return { status: 200, body: { status: "unavailable", reason: "A list needs no write-up." } };
 
   const usage: MemoUsage = { calls: 0, inputTokens: 0, outputTokens: 0 };
   const result = await writeStorylineMemo(storyline, question, { institutionId, identityContext: identity, factEvidence, usage });

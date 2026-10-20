@@ -1,6 +1,7 @@
 import { unstable_cache, revalidateTag } from "next/cache";
 import { getFeeCategorySummaries, type FeeCategorySummary } from "./fees";
 import { PUBLIC_READ_CACHE_TAG } from "./public-read-cache";
+import { STATS_METHOD_VERSION } from "./fee-stats";
 
 /**
  * Cached read path for national fee summaries.
@@ -17,7 +18,7 @@ const CACHE_CEILING_SECONDS = 3600;
 
 const cachedSummaries = unstable_cache(
   async () => getFeeCategorySummaries(),
-  ["fee-category-summaries", "v2"],
+  ["fee-category-summaries", "v2", `stats-v${STATS_METHOD_VERSION}`],
   { tags: [FEE_SUMMARY_CACHE_TAG], revalidate: CACHE_CEILING_SECONDS },
 );
 
@@ -43,19 +44,25 @@ export function invalidateFeeSummaryCache(): void {
   revalidateQuietly(FEE_SUMMARY_CACHE_TAG);
 }
 
-/** Invalidate every public aggregate read. For paths that take published fees down. */
-export function invalidatePublicReadCache(): void {
-  revalidateQuietly(FEE_SUMMARY_CACHE_TAG);
-  revalidateQuietly(PUBLIC_READ_CACHE_TAG);
+/**
+ * Invalidate every public aggregate read. For paths that take published fees down. True when
+ * both tags were cleared, so an operator's refresh status can say whether it happened.
+ */
+export function invalidatePublicReadCache(): boolean {
+  const summaries = revalidateQuietly(FEE_SUMMARY_CACHE_TAG);
+  const reads = revalidateQuietly(PUBLIC_READ_CACHE_TAG);
+  return summaries && reads;
 }
 
-function revalidateQuietly(tag: string): void {
+function revalidateQuietly(tag: string): boolean {
   try {
     // Next 16 requires a cache-life profile. "max" is the broadest bucket, so it
     // certainly covers these entries' hour-long lifetime.
     revalidateTag(tag, "max");
+    return true;
   } catch {
     // Outside a Next request/render scope — a publish may run from a job context.
     // The time ceiling still bounds staleness, and a publish must never fail on this.
+    return false;
   }
 }

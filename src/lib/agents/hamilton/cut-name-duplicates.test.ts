@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+
+vi.mock("@/lib/data-store/fee-cache", () => ({ invalidatePublicReadCache: vi.fn() }));
+
 import { applyCutNameDuplicates, CUT_NAME_DUPLICATES, planCutNameDuplicates, type LiveFeeRow } from "./cut-name-duplicates";
 import { HAND_REFILES, planHandRefiles } from "./taxonomy-fold";
 
@@ -68,10 +71,54 @@ describe("#1196 cut-name duplicates", () => {
     expect(result.takenDown).toHaveLength(5);
     expect(calls.some((text) => /UPDATE|INSERT/.test(text))).toBe(false);
   });
+
+  function liveDb(options: { updateMatches: boolean; failOn?: string }) {
+    const writes: Array<{ text: string; values: unknown[] }> = [];
+    const db = vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = strings.join("?");
+      if (options.failOn && text.includes(options.failOn)) throw new Error(`boom: ${options.failOn}`);
+      if (text.includes("SELECT fp.fee_published_id")) return LIVE;
+      writes.push({ text, values });
+      if (text.includes("UPDATE published_fee_records")) return options.updateMatches ? [{ fee_published_id: values.find((value) => typeof value === "number") }] : [];
+      return [];
+    });
+    return { db: db as unknown as Parameters<typeof applyCutNameDuplicates>[0], writes };
+  }
+
+  it("repeats institution, category, name and price in the UPDATE", async () => {
+    const { db, writes } = liveDb({ updateMatches: true });
+    const result = await applyCutNameDuplicates(db, { runId: 5, stepId: 50, batchId: "agentic-run-5", dryRun: false });
+    expect(result.takenDown).toHaveLength(5);
+    expect(result.error).toBeNull();
+    const update = writes.find((write) => write.text.includes("UPDATE published_fee_records"))!;
+    for (const clause of ["AND rolled_back_at IS NULL", "AND institution_id = ?", "AND canonical_fee_key = ?", "AND fee_name = ?", "abs(amount - ?::numeric) < 0.005"]) {
+      expect(update.text).toContain(clause);
+    }
+    expect(update.values).toEqual(expect.arrayContaining([143045, 303, "early_closure", "00 Account closing fee", 25]));
+    const events = writes.filter((write) => write.text.includes("INSERT INTO agent_run_events"));
+    expect(events).toHaveLength(1);
+    expect(events[0].values.slice(0, 2)).toEqual([5, 50]);
+  });
+
+  it("writes no run event when every guarded UPDATE matched nothing", async () => {
+    const { db, writes } = liveDb({ updateMatches: false });
+    const result = await applyCutNameDuplicates(db, { runId: 6, batchId: "b", dryRun: false });
+    expect(result.takenDown).toEqual([]);
+    expect(writes.some((write) => write.text.includes("INSERT INTO agent_run_events"))).toBe(false);
+  });
+
+  it("puts a failed write in the run ledger instead of failing the publish", async () => {
+    const { db, writes } = liveDb({ updateMatches: true, failOn: "UPDATE verified_fee_observations" });
+    const result = await applyCutNameDuplicates(db, { runId: 7, stepId: 70, batchId: "b", dryRun: false });
+    expect(result).toMatchObject({ takenDown: [], error: "boom: UPDATE verified_fee_observations" });
+    const warning = writes.find((write) => write.text.includes("'step.warning'"));
+    expect(warning?.values).toEqual(expect.arrayContaining([7, 70, "Cut-name duplicates write failed, nothing written: boom: UPDATE verified_fee_observations"]));
+    expect(String(warning?.values.at(-1))).toContain("hamilton.cut_name_duplicate");
+  });
 });
 
 describe("#1196 hand renames", () => {
-  it("renames each of the 13 rows in place, keeping its category and price", () => {
+  it("renames 11 of the 13 rows in place, keeping its category and price", () => {
     const moves = planHandRefiles(RENAME_ROWS);
     expect(moves.map((move) => [move.refile.feePublishedId, move.refile.from, move.refile.to, move.refile.name])).toEqual([
       [99578, "paper_statement", "paper_statement", "Mailed statement service charge"],
@@ -85,8 +132,10 @@ describe("#1196 hand renames", () => {
       [88068, "counter_check", "counter_check", "Starter/Temporary Checks – 2 Pages"],
       [57548, "money_order", "money_order", "Money Order Fee for First Step Accounts"],
       [108912, "dormant_account", "dormant_account", "Dormant Account (after first 12 months)"],
-      [131129, "atm_non_network", "atm_non_network", "ATM Transactions at DFCU ATM (Local ATM)"],
-      [70319, "dormant_account", "dormant_account", "VISA Gift Card Inactivity Fee"],
+      // 131129 ("ATM Transactions at DFCU ATM (Local ATM)") is not renamed: guard v74 (#2018) refuses
+      // a withdrawal at the institution's own named ATM, and the row has been down since Oct 16 (#1196).
+      // 70319 ("VISA Gift Card Inactivity Fee") is not renamed: guard v70 (#1765) refuses a gift
+      // card's inactivity as a dormant account fee, and the row has been down since Oct 16 (#1196).
     ]);
     // Done once: a row already carrying its new name is not moved again, and a row whose name
     // changed since (a later read or retidy) is left alone.

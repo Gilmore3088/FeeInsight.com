@@ -22,7 +22,8 @@ describe("SegmentTable", () => {
     expect(fmtAssets(3_400_000_000)).toBe("$3.4T");
     expect(fmtAssets(48_300_000)).toBe("$48.3B");
     expect(fmtAssets(950_000)).toBe("$950M");
-    expect(fmtAssets(null)).toBe("—");
+    expect(fmtAssets(750_000_000)).toBe("$750B");
+    expect(fmtAssets(null)).toBe("Not available");
   });
 
   it("lists the largest first with assets, fee, cap and source, the rest folded", () => {
@@ -30,9 +31,14 @@ describe("SegmentTable", () => {
     expect(html).toContain("Exhibit 2");
     expect(html).toContain("The 18 institutions with $10 billion or more in assets that publish this fee, largest first");
     expect(html).toContain("Example Bank");
-    expect(html).toContain("Bars in terra charge less than Example Bank.");
+    // The bar key shows only where bars draw; the caption is about the data, not colours or screens.
+    expect(html).toContain("Charges less than Example Bank");
+    expect(html).toContain("Assets from the institution registry.");
+    expect(html).not.toMatch(/Red bars|wider screens/);
+    expect(html).not.toContain("terra charge");
     expect(html).not.toContain("charge less than you");
-    expect(html).toContain("$3.0T");
+    expect(html).toContain("$3T");
+    expect(html).not.toContain("$3.0T");
     expect(html).toContain("3 a day");
     expect(html).toContain("https://example.com/1.pdf");
     expect(html).toContain("The other 3");

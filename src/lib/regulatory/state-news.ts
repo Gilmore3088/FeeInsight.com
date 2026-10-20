@@ -221,20 +221,35 @@ export function discoverNewsPage(html: string, baseUrl: string): string[] {
   return [...byText, ...byPath].slice(0, 3);
 }
 
+// MONTHS and MONTH_INDEX stay in step: every name MONTHS matches ("Sept.") must start with its
+// three-letter MONTH_INDEX key, which dateInText reads from the first three letters.
 const MONTHS = "jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?";
-const DATE_PATTERNS = [
-  new RegExp(`\\b(${MONTHS})\\.?\\s+\\d{1,2},?\\s+(19|20)\\d{2}\\b`, "i"),
-  /\b\d{1,2}\/\d{1,2}\/(19|20)\d{2}\b/,
-  /\b(19|20)\d{2}-\d{2}-\d{2}\b/,
+const MONTH_INDEX = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+/** Each pattern captures year, month and day; the month may be a name. */
+const DATE_PATTERNS: Array<{ pattern: RegExp; parts: (m: RegExpMatchArray) => [string, string, string] }> = [
+  {
+    pattern: new RegExp(`\\b(${MONTHS})\\.?\\s+(\\d{1,2}),?\\s+((?:19|20)\\d{2})\\b`, "i"),
+    parts: (m) => [m[3], m[1], m[2]],
+  },
+  { pattern: /\b(\d{1,2})\/(\d{1,2})\/((?:19|20)\d{2})\b/, parts: (m) => [m[3], m[1], m[2]] },
+  { pattern: /\b((?:19|20)\d{2})-(\d{2})-(\d{2})\b/, parts: (m) => [m[1], m[2], m[3]] },
 ];
 
-/** First date written in a piece of text, as an ISO timestamp; null when none parses. */
+/**
+ * First date written in a piece of text, as an ISO timestamp at UTC midnight of that calendar
+ * date; null when none parses. Built with Date.UTC so the date never shifts with the host
+ * timezone (#1008).
+ */
 export function dateInText(text: string): string | null {
-  for (const pattern of DATE_PATTERNS) {
+  for (const { pattern, parts } of DATE_PATTERNS) {
     const match = text.match(pattern);
     if (!match) continue;
-    const date = new Date(match[0].replace(/\./, ""));
-    if (!Number.isNaN(date.getTime())) return date.toISOString();
+    const [y, m, d] = parts(match);
+    const year = Number(y);
+    const month = /^\d+$/.test(m) ? Number(m) - 1 : MONTH_INDEX.indexOf(m.slice(0, 3).toLowerCase());
+    const day = Number(d);
+    const date = new Date(Date.UTC(year, month, day));
+    if (month >= 0 && date.getUTCMonth() === month && date.getUTCDate() === day) return date.toISOString();
   }
   return null;
 }

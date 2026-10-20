@@ -3,6 +3,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
 import { sql } from "@/lib/data-store/connection";
 import { getHamiltonReportById, saveHamiltonReport } from "@/lib/hamilton/pro-tables";
+import { readSavedOutputFeeRefs } from "@/lib/data-store/saved-output-fee-refs";
 import { loadAnalysisRecord } from "../analyze/actions";
 import { boardBriefFromAnalysis, editBoardBrief, type BoardBriefEdits } from "@/lib/hamilton/board-brief";
 import { recordProRequest } from "@/lib/agents/run-store";
@@ -33,7 +34,9 @@ export async function saveBoardBrief(input: { analysisId?: string; reportId?: st
     const saved = await loadAnalysisRecord(input.analysisId);
     if (!saved) return { success: false, error: "Saved analysis not found." };
     const report = boardBriefFromAnalysis(saved.responseJson, saved.id, input.edits);
-    const reportId = await saveHamiltonReport({ userId: user.id, institutionId: saved.institutionId ?? "", reportType: "board_brief", reportJson: report, evidencePolicy: "source-diligence", selectedSource: "manual", selectedSourceLabel: "Original saved analysis", peerBaselineLabel: saved.responseJson.identityContext?.peerBaselineLabel ?? null, peerFallbackReason: "Reused the saved analysis; no new research or cohort substitution." });
+    // H03-T09: the brief reuses the answer's findings, so it carries the fee rows the answer recorded.
+    const feeRefs = (await readSavedOutputFeeRefs(sql, "analysis", saved.id)) ?? undefined;
+    const reportId = await saveHamiltonReport({ feeRefs, userId: user.id, institutionId: saved.institutionId ?? "", reportType: "board_brief", reportJson: report, evidencePolicy: "source-diligence", selectedSource: "manual", selectedSourceLabel: "Original saved analysis", peerBaselineLabel: saved.responseJson.identityContext?.peerBaselineLabel ?? null, peerFallbackReason: "Reused the saved analysis; no new research or cohort substitution." });
     await recordProRequest({ operation: "report", title: report.title, status: "completed", summary: "Created board brief from saved research without a provider call", userId: user.id, institutionId: Number(saved.institutionId) || null, detail: { report_id: reportId, analysis_id: saved.id, provider_call_queued: false, evidence_policy: "source-diligence" } });
     return { success: true, reportId };
   } catch (error) {

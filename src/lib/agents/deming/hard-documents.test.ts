@@ -145,8 +145,9 @@ describe(`hard-document gate (category guard v${CATEGORY_GUARD_VERSION})`, () =>
     expect(new Set(all.map((item) => item.case_key)).size).toBe(all.length);
     for (const item of all) expect(Number.isInteger(item.source_document_id)).toBe(true);
     for (const item of [...hard.same_price, ...hard.category]) expect(item.text_hash).toMatch(/^[0-9a-f]{64}$/);
-    // 52 once excess withdrawals and returned mail leave account research (#1398).
-    expect(TAXONOMY_COUNT).toBe(RESEARCH_SPLIT_LIVE ? 52 : 50);
+    // 52 once excess withdrawals and returned mail leave account research (#1398), plus International
+    // ATM split back out of International ATM & Card (James, Oct 19, #2037).
+    expect(TAXONOMY_COUNT).toBe(RESEARCH_SPLIT_LIVE ? 53 : 51);
   });
 
   it("covers each of the five categories with the most wrong-after-publish takedowns", () => {
@@ -210,7 +211,8 @@ describe(`hard-document gate (category guard v${CATEGORY_GUARD_VERSION})`, () =>
   });
 });
 
-describe("hard documents the rules still get wrong (expected failures)", () => {
+// With no known misses left (guard v68 fixed the last, #1304), the suite has nothing to run.
+describe.runIf(hard.known_misses.same_price.length + hard.known_misses.category.length > 0)("hard documents the rules still get wrong (expected failures)", () => {
   it.fails.each(keys(hard.known_misses.same_price))("%s stays two fees", (_key, item) => {
     expect(samePriceDecision(item)).not.toBe("identical");
   });

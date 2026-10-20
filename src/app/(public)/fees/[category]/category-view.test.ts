@@ -50,7 +50,7 @@ describe("fee category view", () => {
     ]);
     expect(districtHeadline(dots)).toEqual({
       title: "Highest in Dallas, lowest in Boston",
-      detail: "Dallas is highest at $35, Boston lowest at $24.",
+      detail: "Dallas is highest at $35; Boston lowest at $24.",
     });
   });
 
@@ -62,7 +62,19 @@ describe("fee category view", () => {
     );
     expect(districtHeadline(dots)).toEqual({
       title: "$30 in 3 of 5 Fed districts",
-      detail: "Philadelphia is highest at $32, San Francisco lowest at $25.",
+      detail: "Philadelphia is highest at $32; San Francisco lowest at $25.",
+    });
+  });
+
+  it("names no single district when the highest median is shared (#1953)", () => {
+    const dots = marketDots(
+      [row("District 6", 30, 300), row("District 7", 30, 351), row("District 1", 30, 168), row("District 12", 25, 269)],
+      band,
+      districtLabel,
+    );
+    expect(districtHeadline(dots)).toEqual({
+      title: "$30 in 3 of 4 Fed districts",
+      detail: "3 districts share the highest median, $30; San Francisco lowest at $25.",
     });
   });
 
@@ -73,9 +85,12 @@ describe("fee category view", () => {
       ["Credit unions", 27, 900],
     ]);
     expect(charterFinding(dots, "Overdraft (OD)")).toBe(
-      "Banks charge a median $32 for an overdraft fee, $5 more than credit unions ($27).",
+      "The bank median overdraft fee is $32, $5 above the credit union median of $27.",
     );
     expect(charterDots(summary({ cu_count: 2 }), band)).toHaveLength(1);
+    expect(charterFinding(dots, "NSF / Returned Item")).toBe(
+      "The bank median NSF / returned item fee is $32, $5 above the credit union median of $27.",
+    );
   });
 
   it("lists related fees that have a full national spread", () => {

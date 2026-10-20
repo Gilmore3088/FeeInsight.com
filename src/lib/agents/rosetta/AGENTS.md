@@ -15,10 +15,40 @@ Rosetta owns source text normalization.
   `institution_additional_sources`; it never sends the bank's main link back to Magellan,
   and its reads never change the bank's source profile or playbook.
 - Rosetta writes normalized text artifacts to `agent_source_texts`.
+- The shared `recordReadResult` boundary groups its artifact, document-kind, table and
+  main-source profile writes in a real transaction (root client) or savepoint (caller
+  transaction), even when normalized-witness capability is unavailable. Injected clients
+  must provide one of those primitives; there is no direct-write fallback. Releasing a
+  savepoint does not commit the outer transaction. Companion reads still leave the main
+  profile unchanged, and legacy reads still skip unavailable text columns.
+- After migration 67, the shared `recordReadResult` boundary retains exact future
+  normalized bytes in private `agent_source_text_witnesses` (#2220). It inserts the
+  current row if absent, locks it, retains a hash-valid incumbent, replaces the
+  mutable current row, then retains incoming bytes in one transaction/savepoint.
+  Current artifact IDs and one-row-per-document uniqueness stay unchanged. Both
+  free and paid readers use it; status-only triage preserves the prior status first.
+  Missing schema is reported as unavailable. A corrupt incumbent is not archived
+  under its claimed hash; an archive failure aborts replacement once capture is active.
+- The exact normalized-witness resolver is diagnostic only. It requires artifact ID,
+  text hash, document ID and institution ID and verifies actual UTF-8 SHA256. It
+  distinguishes current, retained history and unavailable evidence. Capture time
+  and observed artifact metadata never become a claimed original read time. No
+  existing takedown, fee verification, release or public reader gains historical
+  authority. There is no seed/import, replay epoch, automatic purge or retention
+  deletion. Atlas warns at 256 MiB for this table; the warning neither deletes
+  evidence nor pauses a source. Application rollback keeps the table and guards.
+- A document a person supplied by hand (`magellan/hand-supplied.ts`) is read from the uploaded
+  bytes as it is stored (`readHandSuppliedDocument`): the same reader, fee-page check, text record
+  and attempts as the read step (`settleRead`), with every outside request answered as refused,
+  so the bank's site that blocked us is never asked. Later re-reads take the bytes from the vault.
 - Rosetta may classify unreadable, scanned, truncated, or unsupported source documents for manual/OCR follow-up.
 
 ## Required Behavior
 
+- Default fee-source downloads use `../fee-source-fetch.ts`, including linked fallback documents
+  and the paid reader's plain download. Keep source URLs/headers and pass the selected transport
+  through helpers. Vault, hand-supplied and injected test reads keep their existing transports.
+  Scope and compatibility: `docs/project/findings/2026-10-19-safe-fee-source-fetch.md` (#2136).
 - Use deterministic HTML, text, and PDF extraction first.
 - HTML is read through a parsed DOM (`read.html_dom`, `html-dom.ts`): each data-table
   row is one line with cells joined by ` | `, definition lists pair term and
@@ -29,16 +59,48 @@ Rosetta owns source text normalization.
   sentence took its price from the next column's sentence. A gutter is found by how many
   lines cross it (layout version 3), so a PDF that draws each letter as its own item, with
   a full-width form below its columns, is read column by column too. Fee tables, and fee lists set
-  side by side, keep the row-by-row reading. A PDF text an older layout read across its
+  side by side, keep the row-by-row reading. Layout 5 additionally reads two independent
+  stacked label/next-line bullet-price lists as columns: each band needs repeated own
+  pairs, sufficient width and a gutter. Mixed label/amount table rows, monetary or waiver
+  gutter crossings and nested cell columns refuse that detector and retain the earlier
+  baseline reading. A PDF text an older layout read across its
   columns (`INTERLEAVED_PROSE_CELLS` prose cell breaks or more) is read once more. Word files (.docx) are unzipped and read the same way (`read.docx_text`,
   `docx.ts`): a paragraph per line, a tab as a cell break, a table row per line. A
   legacy binary .doc stays `unsupported_format`. Knox pairs fees and amounts per line,
   so keep that contract.
-- Bump `ROSETTA_READ_VERSION` when a reader changes. Completed texts from an older
+- Global reader changes bump `ROSETTA_READ_VERSION`. Completed texts from an older
   version with fewer than `REREAD_MAX_KNOX_FEES` (5) Knox fees are read once more with
   the current reader, so an institution whose flattened table gave up one fee gets its
   whole schedule. Texts with more Knox fees are left alone, and a failed re-read keeps
   the earlier text.
+- Scoped layout 5 repairs (#2219) keep the global reader 3 and prose-layout 4 replay floors
+  settled (`PDF_PROSE_REREAD_VERSION`). `PDF_STACKED_REPAIR_VERSION` v1 makes only current
+  completed PDF-layout texts with at least three crossed bullet-price cells and three
+  standalone bullet-price lines due for a free geometry check. The complete owner query
+  also keeps current-copy, companion-stream, source/profile/access and prior-attempt
+  guards. It requires a content-addressed vault key matching the selected source hash.
+  At most four repair checks run per read step; they reserve part of the existing step
+  limit, never expand it. Unavailable vault configuration, missing bytes or mismatched hashes keep the earlier
+  text, make no outside request and leave one explicit failed request for review rather
+  than retrying every lane run. Failed requests use `read.pdf_stacked_repair` v1 and do
+  not enter the ordinary reader's playbook or settle its retries.
+  Each requested check records `detail.pdf_stacked_requested`. A successful check
+  records `detail.pdf_stacked` only in the same transaction as the saved artifact,
+  bound by `persisted_text_id` and `persisted_text_hash`. Earlier unbound successful
+  outputs do not settle a still-interleaved incumbent (#2313); the same v1 owner
+  witness selects them through normal Extract, without a global reader replay.
+  Replacement locks and rechecks the selected incumbent and source hash. The ordinary
+  text-survival score remains unchanged. Only intrinsic stacked-column geometry on
+  the exact vault bytes may use an alternate conservation proof: every literal token
+  except whitespace and table separators must be retained with the same multiplicity.
+  Prices, punctuation, units and qualifying words cannot be added, lost or changed.
+  A rejected/stale replacement retains the incumbent and remains unsettled; unavailable
+  or mismatched vault bytes retain their existing explicit review exclusion. The same
+  committed artifact settles once, including unchanged geometry. Bayes counts successful checks and failed-review exclusions
+  separately. State readiness first checks the repair capability schema, preserving ordinary backlog
+  on older schemas, then uses the owner's exact query with LIMIT 1/EXISTS; Bayes
+  and daily health (`stackedPdfRepairsDue`) use its full count. Reading a better text
+  does not itself retire previously verified or published wrong fees.
 - No bank is lost to its document's format. Readers escalate within the same document,
   free first, and every try is a `pipeline_attempts` row (stage `read`, own strategy,
   version, outcome, cost):
@@ -51,6 +113,29 @@ Rosetta owns source text normalization.
   | 2 | `read.js_fallback` (`js-fallback.ts`) | JavaScript-built pages | `ROSETTA_JS_FALLBACK_VERSION` |
   | 3 | `read.paid_transcribe` (`paid-read.ts`, step `read-paid`) | scans free OCR could not read | `ROSETTA_PAID_READ_VERSION` |
 
+  - A URL or download failure before a reader can run is logged as
+    `read.document_access@1`, with the detected document type and typed failure outcome.
+    Its `detail.reader_version` preserves the reader-version retry rule for permanent
+    access failures such as `too_large`; historical `read.html`, `read.pdf`, `read.text`,
+    `read.unknown` and `read.docx` failures keep their existing retry behavior. An
+    unsupported format keeps its existing format-specific attempt; a failure from a
+    reader that ran stays attributed to that reader.
+  - Before conversion, the shared byte loader compares the actual vault or HTTP body
+    SHA-256 with the selected document's valid captured hash. A mismatch or malformed
+    selected hash is retryable `read.document_access` evidence failure: no text, kind,
+    table, profile, witness or successful read is written for those bytes. A paid
+    preflight failure makes no provider call, usage event or settled paid-transcription
+    attempt. A later legitimate capture can therefore be read normally. A vault read
+    error keeps the existing HTTP fallback, whose bytes must pass the same check;
+    mismatched vault bytes are refused without silently replacing them by HTTP.
+    Ordinary legacy reads with no captured hash remain explicitly `unbound`, preserving
+    a NULL original hash; the observed digest does not manufacture historical authority.
+    Paid reads require a captured hash (the normal SQL selector already excludes NULL).
+    `primary_byte_identity` describes the initially selected document only. Secondary
+    JavaScript-linked URLs, selected-state concurrency, owner checks without witness
+    capability, source lifecycle/recovery and provider/artifact/attempt settlement remain
+    separate boundaries. This prospective guard changes no reader version or replay
+    policy and does not reopen historical bytes.
   - A scan (`scanned_pdf` from `read.pdf_layout`) goes straight to free OCR: tesseract.js
     on the largest image of each page, English model bundled from
     `@tesseract.js-data/eng` (`ROSETTA_OCR_LANG_PATH` overrides), at most
@@ -128,6 +213,34 @@ Rosetta owns source text normalization.
     bytes (below); their transcription replaces the stored text only when it lists at
     least as many fees with an amount, otherwise the attempt is `low_yield` and the
     earlier text stays.
+    Paid response policy v2 accepts ordinary end-turn text and usable `max_tokens` or
+    `model_context_window_exceeded` fragments under those same content/yield checks. The
+    latter are explicitly `ok_partial`; a completed stored text means a usable artifact,
+    not an exhaustive PDF transcription. Refusal, paused/tool work, unconfigured stop
+    sequences, absent/unknown stop reasons and unexpected tool/result blocks settle as
+    `rejected` before text/profile/table writes. No semantic continuation or retry is added
+    for those native response reasons.
+    Attempts bind the selected source hash, produced text hash and separately retained
+    text hash when a better prior text stays. This scoped version bump does not reopen
+    settled attempts on the same bytes.
+    Paid detail and narration show known cost estimates plus a count of returned replies
+    whose estimate is unavailable. Missing/malformed totals and unpriced models stay
+    unknown, while observed zero remains zero. Unknown-cost attempt columns use an
+    explicitly marked zero placeholder excluded from playbook cost statistics; those
+    replies are therefore absent from that strategy's learned mean. Usage ledger cost is
+    NULL. Pre-call budget denials are not unknown returned responses. Generic paid tools,
+    no-return transport uncertainty and the existing incurred-spend predicate stay unchanged.
+    The provider receipt and paid attempt remain outside the artifact write group
+    (#1050/#1048). The shared transaction/savepoint makes artifact/kind/table/profile
+    writes atomic regardless of witness capability; private witness writes join that
+    group only when capability is ready. Witness retention is still reported unavailable
+    otherwise. Owner/hash validation in the witness-ready path is unchanged; this does
+    not add ordinary-reader selected-state CAS or historical source authority. A
+    successfully committed usage receipt survives a later artifact-write failure, but
+    that error can prevent the normal paid
+    result/attempt/summary. A first text-write failure retains earlier text and can leave
+    later paid selection eligible. This policy adds no atomic provider/artifact/attempt
+    settlement or global no-retry guarantee.
   - Fees that hold up (`text-survival.ts`, learning plan steps 1 to 4). At most once per
     `TEXT_SURVIVAL_REFRESH_HOURS` (20) the read step judges each document's current
     completed text by the published fees Knox pulled from it since that text first
@@ -210,6 +323,12 @@ the cursor. At most two batches per step; a partial batch waits. The step result
 `batchReviews`. Knox dedupes rereads, so the fee count is every Knox fee from the document,
 not only rows since the read.
 
+The admin scorecard (`/admin/scoreboard`, #1054) shows these rows with the daily goal numbers:
+the miss rate by kind for each of the last 8 UTC weeks (`goal.rosetta_miss_rate_weekly`, from the
+`batch_error_rate` rows) and how many misses sent to a fix later gave Knox fees
+(`goal.rosetta_remedy_outcomes`: a Knox fee from the same document after the review, or from the
+same institution for `magellan_paid_find`). Both live in `goal-scorecard.ts`.
+
 ## Boundaries
 
 - Do not write raw, verified, or published fee rows.
@@ -228,7 +347,8 @@ Change this table and `agent-health.ts` in the same PR.
 | Steps do not fail | `stepsFailed` (24 h) | 0 |
 | No document fails the same way 3+ times a day | `repeatFailures` (read: 404, 403, 410, network, timeout, 5xx, 429) | 0 |
 
-Also recorded, without a rule: `stepsCompleted`, `spendUsd`, `readOk`, `wrongDocument`, `readFailed`.
+Also recorded, without a rule: `stepsCompleted`, `spendUsd`, `readOk`, `wrongDocument`, `readFailed`,
+`stackedPdfRepairsDue` (the same complete owner selection Bayes counts).
 
 ## Current versions
 
@@ -240,9 +360,12 @@ fails a PR that changes one of these constants without updating its line here (#
 | `BATCH_REVIEW_VERSION` | — | v1 | `rosetta/batch-review.ts` |
 | `ROSETTA_JS_FALLBACK_VERSION` | — | v3 | `rosetta/reader-versions.ts` |
 | `ROSETTA_OCR_VERSION` | — | v2 | `rosetta/reader-versions.ts` |
-| `ROSETTA_PAID_READ_VERSION` | — | v1 | `rosetta/paid-read.ts` |
-| `PDF_LAYOUT_VERSION` | — | v4 | `rosetta/reader-versions.ts` |
+| `ROSETTA_PAID_READ_VERSION` | — | v2 | `rosetta/paid-read.ts` |
+| `PDF_LAYOUT_VERSION` | — | v5 | `rosetta/reader-versions.ts` |
+| `PDF_PROSE_REREAD_VERSION` | — | v4 | `rosetta/reader-versions.ts` |
+| `PDF_STACKED_REPAIR_VERSION` | `read.pdf_layout` scoped check | v1 | `rosetta/reader-versions.ts` |
 | `ROSETTA_READ_VERSION` | — | v3 | `rosetta/reader-versions.ts` |
+| `ROSETTA_DOCUMENT_ACCESS_VERSION` | `read.document_access` | v1 | `rosetta/read.ts` |
 | `REOPEN_VERSION` | — | v1 | `rosetta/read.ts` |
 | `ROSETTA_TABLE_ROWS_VERSION` | — | v1 | `rosetta/reader-versions.ts` |
 | `TEXT_SURVIVAL_VERSION` | — | v1 | `rosetta/text-survival.ts` |

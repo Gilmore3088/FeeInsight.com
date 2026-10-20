@@ -56,14 +56,14 @@ export const ROOMS: Room[] = [
       { href: "/admin/agents", label: "Overview", role: "Every pipeline agent", exact: true },
       { href: "/admin/atlas/details", label: "Atlas", role: "Schedule and run controls", card: true },
       { href: "/admin/states", label: "State lanes", role: "State queues", more: true },
-      { href: "/admin/magellan", label: "Magellan", role: "1 Find and fetch", activePrefixes: ["/admin/coverage"], card: true },
+      { href: "/admin/magellan", label: "Magellan", role: "1 Find and fetch", card: true },
       { href: "/admin/rosetta", label: "Rosetta", role: "2 Read", card: true },
       {
         href: "/admin/knox",
         label: "Knox",
         role: "3 Extract",
         card: true,
-        activePrefixes: ["/admin/review", "/admin/agents/knox"],
+        activePrefixes: ["/admin/verify/"],
       },
       { href: "/admin/darwin", label: "Darwin", role: "4 Verify", card: true },
       { href: "/admin/agents/learning", label: "Learning", role: "Which methods work", more: true },
@@ -81,14 +81,12 @@ export const ROOMS: Room[] = [
     href: "/admin/work",
     pages: [
       { href: "/admin/work", label: "Overview", role: "Everything waiting for you", exact: true },
-      { href: "/admin/verify", label: "Verify", role: "Fees to check by hand" },
       { href: "/admin/answer-key", label: "Answer key", role: "Hand-checked truth" },
       {
         href: "/admin/quality",
         label: "Trust review",
         role: "Sources to review",
         badgeKey: "trustPending",
-        activePrefixes: ["/admin/data-quality"],
       },
       { href: "/admin/customers/marketing", label: "Marketing approvals", role: "Monthly emails to approve" },
       { href: "/admin/customers/content", label: "Content approvals", role: "Posts to approve" },
@@ -102,11 +100,17 @@ export const ROOMS: Room[] = [
     pages: [
       { href: "/admin/data", label: "Published data", role: "What is live", exact: true },
       { href: "/admin/institutions", label: "Institutions", role: "Every bank and CU", activePrefixes: ["/admin/institution/"] },
-      { href: "/admin/fees/catalog", label: "Fee catalog", role: "Fees by category and segment", activePrefixes: ["/admin/fees"] },
+      {
+        href: "/admin/fees/catalog",
+        label: "Fee catalog",
+        role: "Fees by category and segment",
+        // The old National Index and Peers screens redirect here (#1122); peer groups open from it.
+        activePrefixes: ["/admin/fees", "/admin/peers"],
+        aliases: ["index", "national index", "peers", "peer groups", "benchmarks"],
+      },
       { href: "/admin/market", label: "Local market", role: "One bank's competitors and fees" },
-      { href: "/admin/peers", label: "Peers", role: "Peer groups", more: true },
+      { href: "/admin/corrections", label: "Corrections", role: "Holds and corrections, with history", more: true, aliases: ["audit", "holds", "reversal"] },
       { href: "/admin/districts", label: "Districts", role: "Fed districts", more: true },
-      { href: "/admin/index", label: "Index", role: "National index", activePrefixes: ["/admin/national"], more: true },
       { href: "/admin/query", label: "Query", role: "Ask the database", more: true },
     ],
   },
@@ -117,7 +121,7 @@ export const ROOMS: Room[] = [
     href: "/admin/customers",
     pages: [
       { href: "/admin/customers", label: "Overview", role: "Leads, Pro accounts", exact: true },
-      { href: "/admin/leads", label: "Leads", role: "Every request", activePrefixes: ["/admin/hamilton/leads"] },
+      { href: "/admin/leads", label: "Leads", role: "Every request" },
       { href: "/admin/publishing", label: "Publishing", role: "Reports, briefs, updates" },
       { href: "/admin/hamilton/reports", label: "Reports", role: "National Index, Pulse, state" },
       { href: "/admin/hamilton/guides", label: "Guides", role: "Consumer guides" },
@@ -135,7 +139,6 @@ export const ROOMS: Room[] = [
         label: "Methodology",
         role: "How we build it",
         more: true,
-        activePrefixes: ["/admin/methodology"],
       },
       {
         href: "/admin/hamilton/research",
@@ -153,7 +156,6 @@ export const ROOMS: Room[] = [
     href: "/admin/growth",
     pages: [
       { href: "/admin/growth", label: "Board", role: "Plan, drafts and approvals", exact: true },
-      { href: "/admin/agents/marketing", label: "Marketing team", role: "Eight marketing agents" },
     ],
   },
   {

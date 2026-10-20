@@ -1,99 +1,45 @@
 import Link from "next/link";
-import { PRODUCT_NAME } from "@/lib/constants";
-import { PrintButton } from "./print-button";
+import { PRODUCT_NAME, REPORT_OFFER } from "@/lib/constants";
 import type { PublicStatsSummary } from "@/lib/public-stats";
+import { SectionJump } from "./section-jump";
+import { PageHero } from "@/components/public/page-hero";
 
 const SERIF = { fontFamily: "var(--fi-font-sans)" };
-const MONO_FIGURE = { fontFamily: "var(--fi-font-mono)" } as const;
 
 export const RESEARCH_SECTIONS = [
   { id: "findings", label: "Key findings" },
-  { id: "benchmarks", label: "Benchmarks" },
-  { id: "charters", label: "Banks vs CUs" },
-  { id: "states", label: "States" },
-  { id: "districts", label: "Fed districts" },
-  { id: "library", label: "Studies & guides" },
-  { id: "methodology", label: "How it's built" },
+  { id: "explore", label: "Explore your market" },
+  { id: "benchmarks", label: "National benchmarks" },
+  { id: "economic-data", label: "Economic data" },
+  { id: "apply", label: "For your institution" },
+  { id: "about-data", label: "Methodology" },
 ] as const;
 
-interface ResearchHeroProps {
-  summary: PublicStatsSummary;
-  /** The 50 states (not DC or territories) with published fees. */
-  stateCount: number;
-  hasDc: boolean;
-  territoryCount: number;
-}
-
-/** Dark editorial band: what this page is, the live counts behind it, and where to jump. */
-export function ResearchHero({ summary, stateCount, hasDc, territoryCount }: ResearchHeroProps) {
-  const extras = [hasDc ? "DC" : null, territoryCount > 0 ? `${territoryCount} territories` : null].filter(Boolean);
-  const stats = [
-    { value: summary.observationsLabel, label: "published fee entries", note: "each traced to a published schedule" },
-    { value: summary.institutionsLabel, label: "institutions with published fees", note: `of ${summary.monitoredLabel} monitored` },
-    { value: summary.categoriesLabel, label: "fee categories with published fees", note: "from overdraft to wires" },
-    {
-      value: String(stateCount),
-      label: "states",
-      note: extras.length > 0 ? `plus ${extras.join(" and ")}` : "with published fees",
-    },
-  ];
-
+/**
+ * The hub's opening on the shared curved navy hero (PageHero): what the page is, its coverage
+ * and the date of the data. The findings follow straight after.
+ */
+export function ResearchHero({ summary, sampleHref }: { summary: PublicStatsSummary; sampleHref?: string | null }) {
   return (
-    <section className="relative overflow-hidden bg-ink text-paper">
-      {/* Faint grid of bars as texture: decoration only, carries no data. */}
-      <svg aria-hidden="true" className="pointer-events-none absolute -right-10 bottom-0 h-full w-[46rem] opacity-[0.07]" viewBox="0 0 460 300" preserveAspectRatio="xMaxYMax meet">
-        {Array.from({ length: 18 }).map((_, i) => {
-          const h = 40 + ((i * 53) % 220);
-          return <rect key={i} x={i * 25} y={300 - h} width="14" height={h} rx="2" fill="#f3efe6" />;
-        })}
-      </svg>
-
-      <div className="relative mx-auto max-w-page px-4 pb-10 pt-12 sm:px-6 sm:pb-12 sm:pt-16">
-        <p className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e0716a]">
-          <span aria-hidden="true" className="h-px w-8 bg-[#e0716a]/60" />
-          Research
-        </p>
-        <h1 className="mt-3 max-w-3xl text-[2.25rem] font-extrabold leading-[1.05] tracking-[-0.015em] text-white sm:text-[3.25rem]" style={SERIF}>
-          What banks and credit unions actually charge
-        </h1>
-        <p className="mt-4 max-w-2xl text-[15px] leading-relaxed text-paper/80 sm:text-base">
-          National benchmarks, state and Federal Reserve district coverage, and original studies from the{" "}
-          {PRODUCT_NAME}. Every number on this page comes from verified, published fee schedules.
-        </p>
-
-        <dl className="mt-9 grid grid-cols-2 gap-px overflow-hidden rounded-xl bg-white/10 lg:grid-cols-4">
-          {stats.map((s) => (
-            <div key={s.label} className="bg-ink px-5 py-5">
-              <dt className="sr-only">{s.label}</dt>
-              <dd>
-                <span className="block text-[2rem] font-semibold leading-none tabular-nums text-white sm:text-[2.5rem]" style={MONO_FIGURE}>
-                  {s.value}
-                </span>
-                <span className="mt-2 block text-[13px] font-semibold text-paper">{s.label}</span>
-                <span className="mt-0.5 block text-[11px] text-paper/60">{s.note}</span>
-              </dd>
-            </div>
-          ))}
-        </dl>
-
-        <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-3 text-[12px]">
-          <span className="inline-flex items-center gap-2 text-paper/75">
-            <span aria-hidden="true" className="relative flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#7fb59b] opacity-60 motion-reduce:hidden" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-[#7fb59b]" />
-            </span>
-            {summary.freshnessLabel}
-          </span>
-          <Link href="/research/national-fee-index" className="font-semibold text-[#e0716a] hover:text-white">
-            Open the full {PRODUCT_NAME} &rarr;
-          </Link>
-          <Link href="/methodology" className="text-paper/75 hover:text-white">
-            Methodology
-          </Link>
-          <PrintButton className="rounded-full border border-white/25 px-3.5 py-1.5 font-semibold text-white hover:bg-white/10 print:hidden" />
-        </div>
-      </div>
-    </section>
+    <PageHero
+      eyebrow={`${PRODUCT_NAME} research`}
+      title="Bank fee research"
+      lede={<>National and regional benchmarks, read from each bank&apos;s and credit union&apos;s own published fee schedule.</>}
+    >
+      <p className="text-[14px] font-semibold tabular-nums text-white">
+        {summary.institutionsLabel} institutions <span aria-hidden="true" className="px-1 text-white/50">·</span>{" "}
+        {summary.categoriesLabel} fee categories
+      </p>
+      <p className="mt-1 text-[13px] text-[#c9d6de]">{summary.freshnessLabel}</p>
+      {sampleHref && (
+        <Link
+          href={sampleHref}
+          className="mt-5 inline-flex min-h-11 items-center rounded-full bg-white px-5 text-[14px] font-semibold text-ink hover:bg-paper"
+        >
+          See the sample {REPORT_OFFER.name}
+        </Link>
+      )}
+    </PageHero>
   );
 }
 
@@ -107,12 +53,15 @@ export function ResearchSectionNav({
 } = {}) {
   return (
     <nav aria-label={label} className="print:hidden sticky top-14 z-30 border-b border-border bg-paper/95 backdrop-blur">
-      <ul className="mx-auto flex max-w-page gap-1 overflow-x-auto px-4 py-2 sm:px-6">
+      <div className="mx-auto max-w-page px-4 py-2 sm:hidden">
+        <SectionJump sections={sections} label={label} />
+      </div>
+      <ul className="mx-auto hidden max-w-page flex-wrap gap-1 px-4 py-1 sm:flex sm:px-6">
         {sections.map((s) => (
           <li key={s.id} className="shrink-0">
             <a
               href={`#${s.id}`}
-              className="block rounded-full px-3.5 py-1.5 text-[12px] font-semibold text-ink-soft transition-colors hover:bg-ink hover:text-white"
+              className="inline-flex min-h-11 items-center rounded-full px-3.5 text-[13px] font-semibold text-ink-soft transition-colors hover:bg-ink hover:text-white"
             >
               {s.label}
             </a>

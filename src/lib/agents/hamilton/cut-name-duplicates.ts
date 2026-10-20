@@ -2,6 +2,7 @@ import type { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
+import { recordStepWarning } from "@/lib/agents/hamilton/step-warning";
 
 type SqlTag = typeof sql;
 
@@ -70,6 +71,8 @@ export interface CutNameDuplicateResult {
   takenDown: PlannedTakedown[];
   /** Listed rows left alone, with why (already down, changed since labelling, or the kept row is gone). */
   skipped: Array<{ feePublishedId: number; reason: string }>;
+  /** A failed read or write (nothing written); also a `step.warning` run event. */
+  error: string | null;
 }
 
 const sameAmount = (a: number | string | null, b: number) => a != null && Math.abs(Number(a) - b) < 0.005;
@@ -104,13 +107,14 @@ export function planCutNameDuplicates(live: LiveFeeRow[], list: readonly CutName
 
 /**
  * Runs in the publish step. A dry run reports what it would take down and writes nothing. Never
- * blocks the step it runs in. Running it again changes nothing: a row already down is skipped.
+ * blocks the step it runs in: a failed read or write is kept in the result (`error`) and as a
+ * `step.warning` run event. Running it again changes nothing: a row already down is skipped.
  */
 export async function applyCutNameDuplicates(
   db: SqlTag,
-  options: { runId: number; batchId: string; dryRun: boolean },
+  options: { runId: number; stepId?: number | null; batchId: string; dryRun: boolean },
 ): Promise<CutNameDuplicateResult> {
-  const result: CutNameDuplicateResult = { dryRun: options.dryRun, takenDown: [], skipped: [] };
+  const result: CutNameDuplicateResult = { dryRun: options.dryRun, takenDown: [], skipped: [], error: null };
   const ids = [...new Set(CUT_NAME_DUPLICATES.flatMap((entry) => [entry.feePublishedId, entry.keepFeePublishedId]))];
   let live: LiveFeeRow[];
   try {
@@ -122,7 +126,7 @@ export async function applyCutNameDuplicates(
     `);
   } catch (error) {
     console.error("cut name duplicates read failed:", error);
-    return result;
+    return { ...result, error: await recordStepWarning(db, { runId: options.runId, stepId: options.stepId, check: CUT_NAME_DUPLICATE_CHECK, what: "Cut-name duplicates read", error }) };
   }
   const plan = planCutNameDuplicates(live);
   result.skipped = plan.skipped;
@@ -140,7 +144,10 @@ export async function applyCutNameDuplicates(
                  rolled_back_reason = ${`${CUT_NAME_DUPLICATE_REASON}: live fee #${item.keepFeePublishedId}`}
            WHERE fee_published_id = ${item.feePublishedId}
              AND rolled_back_at IS NULL
+             AND institution_id = ${entry.institutionId}
+             AND canonical_fee_key = ${entry.canonicalFeeKey}
              AND fee_name = ${entry.feeName}
+             AND abs(amount - ${entry.amount}::numeric) < 0.005
           RETURNING fee_published_id
         `;
         if (updated.length === 0) continue;
@@ -162,7 +169,7 @@ export async function applyCutNameDuplicates(
           aboutStage: "extract" as const,
           signal: "wrong" as const,
           kind: "duplicate",
-          reportedBy: "hamilton" as const,
+          reportedBy: "gutenberg" as const,
           checkName: CUT_NAME_DUPLICATE_CHECK,
           institutionId: entry.institutionId,
           feeVerifiedId: item.feeVerifiedId,
@@ -175,10 +182,12 @@ export async function applyCutNameDuplicates(
         };
       });
       if (feedback.length > 0) await recordFeedback(scope, feedback);
+      // No event when every guarded UPDATE matched nothing (a row changed after the read).
+      if (result.takenDown.length === 0) return;
       await scope`
-        INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
+        INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
         VALUES (
-          ${options.runId}, ${CUT_NAME_DUPLICATE_CHECK}, 'completed',
+          ${options.runId}, ${options.stepId ?? null}, ${CUT_NAME_DUPLICATE_CHECK}, 'completed',
           ${`Took down ${result.takenDown.length} live fee(s) whose cut names repeat a clean live row (#1196)`},
           ${JSON.stringify({
             taken_down: result.takenDown.map((item) => ({
@@ -194,7 +203,7 @@ export async function applyCutNameDuplicates(
     });
   } catch (error) {
     console.error("cut name duplicates write failed:", error);
-    return { ...result, takenDown: [] };
+    return { ...result, takenDown: [], error: await recordStepWarning(db, { runId: options.runId, stepId: options.stepId, check: CUT_NAME_DUPLICATE_CHECK, what: "Cut-name duplicates write", error }) };
   }
   if (result.takenDown.length > 0) invalidatePublicReadCache();
   return result;

@@ -16,6 +16,10 @@ import {
   getUserInstitutionMemberships,
 } from "@/lib/hamilton/institution-membership";
 import { PRO_TIERS } from "@/lib/pro-tiers";
+import { apiIncludedInTier } from "@/lib/api-subscriber-access";
+import { findApiPayer, getSubscriberKey } from "@/lib/api-subscriber-keys";
+import { getApiUsageSummary } from "@/lib/api-usage-summary";
+import type { ApiAccess } from "./api-access-card";
 import { getAccountEmails } from "./account-emails";
 import { getAccountReports, getOwnInstitution, getPaidReports } from "./account-data";
 import { isEmailConfirmed } from "@/lib/email/email-confirm";
@@ -25,6 +29,14 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "Account",
 };
+
+/** The plan of the workspace owner who covers a team seat, or null when it can't be read. */
+async function seatPlanTier(userId: number) {
+  const payer = await findApiPayer(userId).catch(() => null);
+  if (!payer?.stripeCustomerId) return null;
+  const summary = await getBillingSummary(payer.stripeCustomerId).catch(() => null);
+  return summary?.tier ?? null;
+}
 
 export default async function AccountPage({
   searchParams,
@@ -78,6 +90,25 @@ export default async function AccountPage({
     emailConfirmed && user.email ? getPaidReports(user.email) : Promise.resolve([]),
   ]);
 
+  // The API comes with the $300 and $500 plans: the payer and each team seat on their
+  // workspace make their own key, sharing the plan's allowance (staff get no card).
+  let apiAccess: ApiAccess | null = null;
+  if (isPro && !isStaff) {
+    const apiTier = paysForPro ? billing?.tier ?? null : await seatPlanTier(user.id);
+    if (apiTier) {
+      apiAccess = apiIncludedInTier(apiTier)
+        ? {
+            kind: "included",
+            key: await getSubscriberKey(user.id).catch(() => null),
+            // The plan's shared allowance: everyone on it sees the team's total. A failed read hides the line.
+            usage: await findApiPayer(user.id)
+              .then((payer) => (payer ? getApiUsageSummary(payer.userId) : null))
+              .catch(() => null),
+          }
+        : { kind: "upgrade" };
+    }
+  }
+
   const plan: AccountPlan = isPro
     ? {
         kind: "pro",
@@ -119,6 +150,7 @@ export default async function AccountPage({
             paidReports,
             ownInstitution,
             emails,
+            apiAccess,
             profile: {
               institution_name: user.institution_name,
               institution_type: user.institution_type,

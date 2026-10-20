@@ -51,7 +51,7 @@ export default async function MarketStudyPage({
       : [];
     return (
       <Shell>
-        <h1 className="font-extrabold tracking-tight text-3xl text-warm-900">Study a new market</h1>
+        <h1 className="text-center font-extrabold tracking-tight text-3xl text-warm-900 sm:text-left">Study a new market</h1>
         <p className="mt-2 max-w-2xl text-sm text-warm-700">
           Pick a county {institution.name} does not serve yet. Hamilton maps every branch there, shows who holds the
           deposits, sets your fees beside the local competitors, and compares households.

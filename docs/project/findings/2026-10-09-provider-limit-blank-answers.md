@@ -18,3 +18,5 @@ the provider circuit are unchanged. PR: claude/hamilton-provider-paused (not mer
 **Lesson:** a provider refusal inside a streamed response never reaches the route's catch; map it
 in the stream's `onError`. Classify provider errors with `isProviderLimitError` rather than
 matching provider text in each route.
+
+**Guard:** `src/lib/ai-provider.test.ts` (`isProviderLimitError`) and `src/lib/hamilton/memo.test.ts`

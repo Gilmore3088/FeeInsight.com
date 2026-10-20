@@ -7,6 +7,8 @@ import {
   markRestoredForSourceCheck,
   READER_LOSS_RESTORES_ON,
   readerLostLine,
+  restorableExcerpt,
+  restoreStillPrinted,
   restorableName,
   importedTwinFingerprint,
   linkImportedFeesToTwins,
@@ -93,6 +95,82 @@ describe("restorableName", () => {
   });
 });
 
+describe("restorableExcerpt", () => {
+  // Lane speed's sample of restores, Oct 20 (data-quality/switch-samples-2026-10-20.md).
+  const sampled = (id: number, name: string, amount: string, key: string, excerpt: string) => ({
+    ...knoxFee(id, name, amount, excerpt),
+    canonical_fee_key: key,
+  });
+
+  it("holds back the five the sample found wrong on the stored line", () => {
+    for (const row of [
+      sampled(30893, "Replacement Credit Card Rush", "25", "rush_card", "$30 Replacement Credit Card Rush | $25 Replace Key"),
+      sampled(14460, "Non-Member Check Cashing Fee", "10", "check_cashing", "$10 Non-Member Check Cashing Fee"),
+      sampled(14461, "Notary Public Fee: Members", "5", "notary_fee", "$5 Notary Public Fee: Members"),
+      sampled(62929, "Return Deposited Items", "6.25", "deposited_item_return", "$6.25 | Return Deposited Items"),
+      sampled(20693, "Notary Fee Free for members", "5", "notary_fee", "Notary Fee Free for members $5.00"),
+      // Review probes: a heading repeating the name's first word, a word inside another word, two spaces after "$".
+      sampled(1, "Wire Transfer International", "15", "wire_intl_outgoing", "Wire Transfers $30 Wire Transfer Domestic $15 Wire Transfer International"),
+      sampled(2, "Card Replacement", "25", "card_replacement", "Discard fee $30 Card Replacement | $25 Replace Key"),
+      sampled(3, "Replacement Credit Card Rush", "25", "rush_card", "$  30 Replacement Credit Card Rush | $25 Replace Key"),
+      // Re-sample, Oct 20: "$25.00 for Incoming – Foreign Wires / $50.00 for Outgoing – Foreign Wires".
+      sampled(90951, "Incoming – Foreign Wires", "50", "wire_intl_incoming", "for Incoming – Foreign Wires $50.00"),
+    ]) {
+      expect(restorableExcerpt(row)).toBe(false);
+    }
+  });
+
+  it("still puts back the ones the sample confirmed, name first", () => {
+    for (const row of [
+      sampled(13942, "Wire Transfer – Domestic", "25", "wire_domestic_outgoing", "Wire Transfer – Domestic $25.00 Charge for outgoing wire transfers"),
+      sampled(16759, "Account Research/ Reconciliation", "25", "account_research", "Account Research/ Reconciliation $25.00 per hour Club Account Withdrawal Fee $5.00 each"),
+      sampled(49636, "Wire Transfers Outgoing- Domestic (USA)", "15", "wire_domestic_outgoing", "Wire Transfers Outgoing- Domestic (USA) $15.00 Per transfer"),
+      sampled(57745, "Verification of Deposit or Loan", "10", "account_verification", "or range of checks Verification of Deposit or Loan $10.00"),
+      stopPayment,
+    ]) {
+      expect(restorableExcerpt(row)).toBe(true);
+    }
+  });
+});
+
+describe("restoreStillPrinted", () => {
+  const doc = (text: string) => [{ source_document_id: 7, normalized_text: text, updated_at: REREAD_AT }];
+  const fee = (name: string, amount: string) => ({ ...stopPayment, fee_name: name, amount });
+  it("needs the name and, first after it on the same line, the fee's price", () => {
+    expect(restoreStillPrinted(stopPayment, doc("Stop Payment | $32.00 per item"), "amount_not_the_fee")).toBe(true);
+    expect(restoreStillPrinted(fee("Return Deposited Items", "6.25"), doc("Return Deposited Items $6.25"), "amount_not_the_fee")).toBe(true);
+    expect(restoreStillPrinted(fee("Return Deposited Items", "6.25"), doc("Return Deposited Items $6.00"), "amount_not_the_fee")).toBe(false);
+    expect(restoreStillPrinted(stopPayment, doc("Stop Payment $320.00"), "amount_not_the_fee")).toBe(false);
+    expect(restoreStillPrinted(stopPayment, doc("Stop Payment up to $32,000"), "amount_not_the_fee")).toBe(false);
+    expect(restoreStillPrinted(stopPayment, doc("Stop Payment $32.00"), "name_not_in_text")).toBe(false);
+  });
+  // Re-sample of restores after #2457, Oct 20: each passed on a price printed elsewhere.
+  it("refuses a price printed on another row or column", () => {
+    expect(restoreStillPrinted(stopPayment, doc("Stop Payment Request EFT\nOverdraft $35.00 $32.00 $5.00"), "amount_not_the_fee")).toBe(false);
+    expect(restoreStillPrinted(fee("ATM Surcharge Rev", "8"), doc("ATM Fees | ATM Surcharge Rev Cashier's Checks | $ 5.00\nReturned Wire | $ 8.00"), "amount_not_the_fee")).toBe(false);
+    expect(restoreStillPrinted(fee("Stop Payments", "30"), doc("Outgoing Domestic Wire | $30.00 Stop Payments | $35.00"), "amount_not_the_fee")).toBe(false);
+    expect(restoreStillPrinted(fee("Deposit item return fee", "15"), doc("Re-opening an account | $15.00\n$30.00 | Deposit item return fee"), "amount_not_the_fee")).toBe(false);
+    // A column-split schedule: names in one run, prices in another (supported by hand, but unprovable here).
+    expect(restoreStillPrinted(fee("Photocopy", "5"), doc("Stop Payment\nPhotocopy\nNotary\n$32.00/Item $5.00/Copy $5.00"), "amount_not_the_fee")).toBe(false);
+  });
+  it("refuses a name glued to the column before it, and reads only the name's first place on a line", () => {
+    expect(restoreStillPrinted(fee("Orders Inactive Par Value Share Account", "1"), doc("Money Orders Inactive Par Value Share Account $1.00 / Item Inactive for 12 Months & Balance < $50 $5.00 / Month"), "amount_not_the_fee")).toBe(false);
+    expect(restoreStillPrinted(stopPayment, doc("Stop Payment $35.00 Stop Payment $32.00"), "amount_not_the_fee")).toBe(false);
+    expect(restoreStillPrinted(stopPayment, doc("Fees: Stop Payment $32.00"), "amount_not_the_fee")).toBe(true);
+  });
+  it("refuses a cut word as the end of the name", () => {
+    expect(restoreStillPrinted(fee("See Safe Deposit Fee Schedul", "25"), doc("See Safe Deposit Fee Schedule for details. Signature Guarantee | $25.00"), "amount_not_the_fee")).toBe(false);
+  });
+  it("reads only the fee's own document", () => {
+    const texts = [
+      { source_document_id: 7, normalized_text: "Stop Payment Request EFT", updated_at: REREAD_AT },
+      { source_document_id: 8, normalized_text: "Stop Payment $32.00", updated_at: REREAD_AT },
+    ];
+    expect(restoreStillPrinted(stopPayment, texts, "amount_not_the_fee")).toBe(false);
+    expect(restoreStillPrinted({ ...stopPayment, source_document_id: null }, texts, "amount_not_the_fee")).toBe(false);
+  });
+});
+
 describe("readerLostLine", () => {
   it("keeps a fee whose own document was re-read after Knox read it and whose stored line still states it", () => {
     const verdict = traceLiveFee(stopPayment, gucuTexts);
@@ -168,6 +246,7 @@ describe("takeDownUntraceableFees", () => {
       if (query.includes("to_regclass('public.pipeline_feedback')")) return Promise.resolve([{ ready: true }]);
       if (query.includes("FROM pipeline_feedback") && query.includes("dedupe_key = ANY")) return Promise.resolve(flags);
       if (query.includes("MAX(fp.fee_published_id)")) return Promise.resolve([{ institution_id: 42, max_fee_id: 9 }]);
+      if (query.includes("SET source_document_id = link.source_document_id")) return Promise.resolve([{ fee_raw_id: 202 }]);
       if (query.includes("FROM agent_source_texts")) return Promise.resolve(storedTexts.map((text) => ({ ...text, institution_id: 42 })));
       if (query.includes("JOIN raw_fee_observations")) return Promise.resolve(rows);
       return Promise.resolve([]);
@@ -187,6 +266,8 @@ describe("takeDownUntraceableFees", () => {
     expect(result.takedowns.map((row) => row.feePublishedId)).toEqual([1]);
     expect(calls.some((query) => query.includes("UPDATE raw_fee_observations"))).toBe(true);
     expect(calls.some((query) => query.includes("UPDATE published_fee_records"))).toBe(true);
+    // #1347: the relinked fee takes its new document's link at every tier, in the same write.
+    expect(calls.some((query) => query.includes("SET source_url = target.url"))).toBe(true);
     expect(calls.some((query) => query.includes("review_status = 'rejected'"))).toBe(true);
     expect(calls.some((query) => query.includes("INSERT INTO pipeline_attempts"))).toBe(true);
     expect(calls.some((query) => query.includes("'hamilton.source_check'"))).toBe(true);

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { ReportSummaryResponse } from "@/lib/hamilton/types";
 import { ReportOutput } from "./ReportOutput";
 import { REPORT_SECTION_HEADINGS } from "./report-labels";
+import { makeStamp } from "@/lib/dataset-stamp";
 
 const report: ReportSummaryResponse = {
   title: "Overdraft fees against your state peers",
@@ -49,6 +50,18 @@ describe("ReportOutput", () => {
 
   it("labels missing historical identity without substituting today's workspace", () => {
     expect(html).toContain("Historical institution, account and peer context: Not recorded");
+  });
+
+  it("shows the dataset note saved with a report on reopen, and none on an older report (#1924)", () => {
+    const stamp = makeStamp({
+      dataset: "fee_index_cache", derivedFrom: "published_fee_catalog", mode: "cached", readAt: "2026-10-17T02:00:00Z", runId: 9001,
+      newestRecordAt: null, methodVersion: 13, counting: "counted_once", filters: [{ key: "state:TX", label: "Institutions in Texas" }],
+    });
+    const saved = JSON.parse(JSON.stringify({ ...report, datasetStamps: [{ label: "Texas peers", stamp }] }));
+    const reopened = renderToStaticMarkup(<ReportOutput report={saved} reportType="competitive_positioning" />);
+    expect(reopened).toContain("Snapshot of published fee schedules, computed 17 Oct 2026 02:00 UTC.");
+    expect(reopened).toContain("Institutions in Texas");
+    expect(html).not.toContain("How these figures were built");
   });
 
 

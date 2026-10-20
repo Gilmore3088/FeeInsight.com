@@ -4,6 +4,7 @@ import type { AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { classifyFetchFailure } from "@/lib/agents/learning/outcomes";
 
 import {
+  checkOpenedFeePage,
   fetchWithTimeout,
   looksLikePdfUrl,
   validateFeeCandidate,
@@ -123,16 +124,21 @@ export const FINDERS = {
   homepageLinks: { strategy: "discover.homepage_links", version: 1, pass: 1 },
   // 2: robots.txt Disallow rules respected, /sitemap_index.xml fallback, fee-named PDFs.
   sitemap: { strategy: "discover.sitemap", version: 2, pass: 1 },
-  hubPages: { strategy: "discover.hub_pages", version: 1, pass: 1 },
-  // 2: learned paths scored by the live fees their links produced (outcome ledger).
-  platformPaths: { strategy: "discover.platform_paths", version: 2, pass: 1 },
-  commonPaths: { strategy: "discover.common_paths", version: 1, pass: 1 },
-  // 2: paths with live fees on the same platform nationwide, not same-state guesses.
-  peerHint: { strategy: "discover.peer_hint", version: 2, pass: 2 },
-  siteCrawl: { strategy: "discover.site_crawl", version: 1, pass: 2 },
+  hubPages: { strategy: "discover.hub_pages", version: 2, pass: 1 },
+  // 3: guessed-path misses use input learning memory; transient requests remain retryable.
+  platformPaths: { strategy: "discover.platform_paths", version: 3, pass: 1 },
+  commonPaths: { strategy: "discover.common_paths", version: 2, pass: 1 },
+  // 3: the same learning memory for nationwide, live-fee-backed peer guesses.
+  peerHint: { strategy: "discover.peer_hint", version: 3, pass: 2 },
+  siteCrawl: { strategy: "discover.site_crawl", version: 2, pass: 2 },
 } as const;
 
 export type FinderKey = keyof typeof FINDERS;
+export type GuessedFinderKey = "platformPaths" | "commonPaths" | "peerHint";
+
+export function isGuessedFinder(key: FinderKey): key is GuessedFinderKey {
+  return key === "platformPaths" || key === "commonPaths" || key === "peerHint";
+}
 
 /** The code a bank's search ends with when this specialist found the schedule. */
 export const FOUND_CODES = {
@@ -245,8 +251,12 @@ export interface SearchContext {
   robots?: string | null;
   /** HTML of same-site pages already opened, so the crawl does not fetch them twice. */
   pages: Map<string, string>;
+  /** Where an opened address redirected to, by its identity (#1051). */
+  redirects?: Map<string, string>;
   /** The learned fee-page classifier, in shadow: scores each opened candidate, decides nothing. */
   pageClassifier?: PageClassifier | null;
+  /** The exact applicable guesses used both by the learning fingerprint and the finder. */
+  guessedCandidates?: Partial<Record<GuessedFinderKey, LinkCandidate[]>>;
 }
 
 export function cleanText(value: string): string {
@@ -421,6 +431,11 @@ async function tryCandidates(ctx: SearchContext, result: FinderResult, candidate
         entry.page_p = Math.round(classifyPage(ctx.pageClassifier, validation.scoringText, candidate.url) * 1000) / 1000;
       }
       if (validation.html && sameSite(new URL(candidate.url), ctx.site)) ctx.pages.set(identity, validation.html);
+      if (validation.finalUrl) recordRedirect(ctx, identity, validation.finalUrl);
+      if (validation.ok && !acceptableAddress(ctx, candidate.url)) {
+        entry.verdict = "redirects_to_rejected";
+        continue;
+      }
       if (validation.ok) {
         result.found = foundFrom(candidate, validation);
         return true;
@@ -450,6 +465,7 @@ async function openPage(
   try {
     const response = await fetchWithTimeout(ctx.fetchImpl, url);
     entry.verdict = `http_${response.status}`;
+    if (response.url && response.url !== url) recordRedirect(ctx, identity, response.url);
     if (!response.ok || !(response.headers.get("content-type") ?? "").toLowerCase().includes("text/html")) return null;
     const html = await response.text();
     ctx.pages.set(identity, html);
@@ -460,10 +476,36 @@ async function openPage(
   }
 }
 
-/** A page that itself lists fees (not a hub that merely links to them). */
-function pageIsFeeSchedule(html: string): boolean {
+function recordRedirect(ctx: SearchContext, identity: string, landed: string): void {
+  (ctx.redirects ??= new Map()).set(identity, landed);
+}
+
+/**
+ * False when the address, or where it redirects, is a page Rosetta ruled out or the link a
+ * re-search is replacing. Rosetta records the address it landed on, so an alias that redirects
+ * to a rejected page passed the old check and was saved again (#1051: Wintrust 169, Macatawa 365).
+ */
+function acceptableAddress(ctx: SearchContext, url: string): boolean {
+  const identity = urlIdentity(url);
+  const landed = ctx.redirects?.get(identity);
+  return [identity, ...(landed ? [urlIdentity(landed)] : [])].every((key) => !ctx.rejected.has(key) && !ctx.replacing?.has(key));
+}
+
+/**
+ * A page a finder opened for its links that itself lists fees, judged by the same checks as a
+ * candidate link (`checkOpenedFeePage`, #1051): a product page quoting a few fees is followed
+ * for its links, never accepted.
+ */
+function pageIsFeeSchedule(ctx: SearchContext, url: string, html: string): boolean {
+  if (!acceptableAddress(ctx, url)) return false;
+  // A cheap pre-filter on the whole HTML; the candidate check below is what decides.
   const page = scoreFeePage(htmlToScoringText(html));
-  return page.verdict === "fee_page" && !(page.rateTerms >= 4 && page.feeLines < 4);
+  if (page.verdict !== "fee_page" || (page.rateTerms >= 4 && page.feeLines < 4)) return false;
+  const landed = ctx.redirects?.get(urlIdentity(url)) ?? url;
+  return checkOpenedFeePage(
+    { url: landed, requestedUrl: landed === url ? null : url, score: 0, reasons: [], websiteUrl: ctx.site.toString(), institutionName: ctx.institutionName ?? null, nameShared: ctx.nameShared, city: ctx.city ?? null, certNumber: ctx.certNumber ?? null },
+    html,
+  ).ok;
 }
 
 function pathCandidates(ctx: SearchContext, paths: string[], source: LinkSource): LinkCandidate[] {
@@ -480,6 +522,35 @@ function pathCandidates(ctx: SearchContext, paths: string[], source: LinkSource)
     seen.add(url);
     candidates.push(scoreLink(url, path, source, source));
   }
+  return candidates;
+}
+
+/** Prepare once, so routing and the requests share the same ordered input. */
+export async function prepareGuessedCandidates(ctx: SearchContext, key: GuessedFinderKey): Promise<LinkCandidate[]> {
+  const prepared = ctx.guessedCandidates?.[key];
+  if (prepared) return prepared;
+  let candidates: LinkCandidate[];
+  if (key === "commonPaths") {
+    candidates = pathCandidates(ctx, COMMON_PATHS, "common_path")
+      .filter((candidate) => candidate.score >= MIN_LINK_SCORE)
+      .sort((a, b) => b.score - a.score);
+  } else if (!ctx.platform) {
+    candidates = [];
+  } else {
+    const paths = key === "platformPaths"
+      ? await ctx.knowledge.platformPaths(ctx.platform)
+      : await ctx.knowledge.peerPaths(ctx.platform, ctx.stateCode, ctx.institutionId);
+    candidates = pathCandidates(ctx, paths, key === "platformPaths" ? "platform_path" : "peer_hint");
+  }
+  const eligible = new Set<string>();
+  candidates = candidates.filter((candidate) => {
+    const identity = urlIdentity(candidate.url);
+    if (ctx.tried.has(identity) || ctx.rejected.has(identity) || ctx.replacing?.has(identity) || eligible.has(identity)) return false;
+    eligible.add(identity);
+    return true;
+  }).slice(0, key === "commonPaths" ? MAX_GUESSED_PATHS : key === "platformPaths" ? MAX_PLATFORM_PATHS : MAX_PEER_PATHS);
+  ctx.guessedCandidates ??= {};
+  ctx.guessedCandidates[key] = candidates;
   return candidates;
 }
 
@@ -687,7 +758,7 @@ export async function findViaHubPages(ctx: SearchContext): Promise<FinderResult>
     const html = await openPage(ctx, result, hub.url, entry);
     if (html == null) continue;
     // The hub itself may be the fee page.
-    if (!ctx.rejected.has(urlIdentity(hub.url)) && !ctx.replacing?.has(urlIdentity(hub.url)) && pageIsFeeSchedule(html)) {
+    if (pageIsFeeSchedule(ctx, hub.url, html)) {
       entry.verdict = "accepted_html";
       result.found = {
         url: hub.url,
@@ -705,9 +776,7 @@ export async function findViaHubPages(ctx: SearchContext): Promise<FinderResult>
 
 /** Paths that worked for other banks on the same website platform (`platform_registry` + learned). */
 export async function findPlatformPaths(ctx: SearchContext): Promise<FinderResult> {
-  if (!ctx.platform) return emptyResult(false);
-  const paths = await ctx.knowledge.platformPaths(ctx.platform);
-  const candidates = pathCandidates(ctx, paths, "platform_path").filter((candidate) => !ctx.tried.has(urlIdentity(candidate.url)));
+  const candidates = await prepareGuessedCandidates(ctx, "platformPaths");
   if (candidates.length === 0) return emptyResult(false);
   const result = { ...emptyResult(true), note: `platform ${ctx.platform}` };
   await tryCandidates(ctx, result, candidates, MAX_PLATFORM_PATHS);
@@ -716,10 +785,8 @@ export async function findPlatformPaths(ctx: SearchContext): Promise<FinderResul
 
 /** Last pass-1 resort: the paths banks most often use. */
 export async function findCommonPaths(ctx: SearchContext): Promise<FinderResult> {
-  const result = emptyResult(true);
-  const guessed = pathCandidates(ctx, COMMON_PATHS, "common_path")
-    .filter((candidate) => candidate.score >= MIN_LINK_SCORE)
-    .sort((a, b) => b.score - a.score);
+  const guessed = await prepareGuessedCandidates(ctx, "commonPaths");
+  const result = emptyResult(guessed.length > 0);
   await tryCandidates(ctx, result, guessed, MAX_GUESSED_PATHS);
   return result;
 }
@@ -728,9 +795,7 @@ export async function findCommonPaths(ctx: SearchContext): Promise<FinderResult>
 
 /** Paths that produced live fees for banks on the same platform, nationwide. */
 export async function findPeerHint(ctx: SearchContext): Promise<FinderResult> {
-  if (!ctx.platform) return emptyResult(false);
-  const paths = await ctx.knowledge.peerPaths(ctx.platform, ctx.stateCode, ctx.institutionId);
-  const candidates = pathCandidates(ctx, paths, "peer_hint").filter((candidate) => !ctx.tried.has(urlIdentity(candidate.url)));
+  const candidates = await prepareGuessedCandidates(ctx, "peerHint");
   if (candidates.length === 0) return emptyResult(false);
   const result = { ...emptyResult(true), note: `platform ${ctx.platform}, nationwide` };
   await tryCandidates(ctx, result, candidates, MAX_PEER_PATHS);
@@ -786,7 +851,7 @@ export async function findBySiteCrawl(ctx: SearchContext): Promise<FinderResult>
     result.trail.push(entry);
     const html = await openPage(ctx, result, next.link.url, entry);
     if (html == null) continue;
-    if (!ctx.replacing?.has(identity) && pageIsFeeSchedule(html)) {
+    if (pageIsFeeSchedule(ctx, next.link.url, html)) {
       entry.verdict = "accepted_html";
       result.found = { url: next.link.url, documentType: "html", confidence: 0.84, reason: `Fee page found by crawling the site (depth ${next.depth})` };
       return result;
@@ -837,4 +902,20 @@ export function finderOutcome(result: FinderResult): AttemptOutcome {
   if (candidates.length > 0 && candidates.every((entry) => entry.verdict === "fetch_failed")) return "network_error";
   if (result.outOfTime && candidates.length === 0) return "timeout";
   return "no_candidates";
+}
+
+/** A guessed address being absent is a miss; a refused or unfinished request is retryable. */
+export function guessedFinderOutcome(result: FinderResult): AttemptOutcome {
+  if (result.found) return "ok";
+  if (result.outOfTime) return "timeout";
+  const candidates = result.trail;
+  const transient = candidates.find((entry) =>
+    entry.verdict === "fetch_failed" || (/^http_\d+$/.test(entry.verdict) && !["http_404", "http_410"].includes(entry.verdict)),
+  );
+  if (transient) {
+    const status = /^http_(\d+)$/.exec(transient.verdict)?.[1];
+    return classifyFetchFailure(status ? Number(status) : null);
+  }
+  if (candidates.length > 0 && candidates.every((entry) => ["http_404", "http_410"].includes(entry.verdict))) return "no_candidates";
+  return finderOutcome(result);
 }

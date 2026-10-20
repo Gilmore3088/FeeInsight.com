@@ -27,6 +27,8 @@ export function extractAccountTableCandidates(text: string): ExtractionRulesResu
       continue;
     }
     result.candidates.push({
+      // v73 (#1100): the column's product is the account the fee belongs to.
+      lineup: { productName: cell.product, minBalanceToAvoid: null, minOpeningDeposit: null, waiverText: null },
       feeName: cell.feeName,
       amount: cell.amount,
       frequency,

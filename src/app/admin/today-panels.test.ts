@@ -20,10 +20,10 @@ describe("todayVitals (admin redesign #1122)", () => {
     } as unknown as ScoreboardSnapshotRow;
     const vitals = todayVitals(snapshot, spend);
     expect(vitals.map((vital) => vital.label)).toEqual([
-      "Accuracy, 7 days", "Coverage groups", "Wrong after publish", "Spend today", "Darwin backlog",
+      "Stored-copy audit, 7 days", "Coverage groups", "Wrong after publish", "Spend today", "Darwin backlog",
     ]);
     expect(vitals.map((vital) => vital.value)).toEqual(["92.0%", "64 of 161", "1.2%", "$4.10", "312"]);
-    expect(vitals[0].note).toBe("target 99.5%, 400 fees audited · scorecard 2026-10-12");
+    expect(vitals[0].note).toBe("target 99.5%: legacy — scoring versions or per-fee receipts unavailable · scorecard 2026-10-12");
     expect(vitals[2].note).toContain("target under 1%, 12 of 975");
   });
 

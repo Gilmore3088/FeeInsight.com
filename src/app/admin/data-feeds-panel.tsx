@@ -3,11 +3,34 @@ import { formatAdminDateTime } from "@/lib/admin-time";
 import type { FeedFreshness } from "@/lib/data-store/feed-freshness";
 
 const FEED_LABELS: Record<string, string> = {
+  alltheplaces: "AllThePlaces bank branches and ATMs",
+  gleif: "GLEIF legal entities and parents",
+  "state-nonbank-lenders": "State non-bank lender licenses (payday, check cashers, money transmitters)",
+  "state-public-depositories": "State qualified public depository lists",
+  "sec-market-value": "SEC public float and shares outstanding",
+  "cfpb-making-ends-meet": "CFPB Making Ends Meet survey (overdraft, bills, savings, alternative credit)",
+  "state-payday-reports": "State payday and small-dollar lending reports (WA, TX)",
+  "urban-debt-in-america": "Urban Institute debt in collections",
+  "bank-merger-orders": "Fed and OCC merger decisions",
+  "uscourts-bankruptcy": "US Courts bankruptcy filings",
+  "usda-farm": "USDA farm income and cash rents",
+  "bls-oews": "BLS wages for bank occupations",
+  "census-permits": "Census building permits by county",
+  "census-popest": "Census county population and migration estimates",
+  "irs-migration": "IRS county-to-county migration with income",
+  "census-bfs": "Census business applications (BFS)",
+  "bls-laus": "BLS county labor force and unemployment (LAUS)",
+  "census-lehd": "LEHD jobs by workplace and home county (LODES)",
+  "fed-payments": "FedACH commercial and Payments Study volumes (Fed Board)",
+  "national-series": "National credit series (Fed Board: H.8, SLOOS, delinquency)",
+  "nyfed-household-debt": "NY Fed household debt by state",
+  "nyfed-sce-credit": "NY Fed consumer credit access survey",
+  "cfpb-credit-trends": "CFPB Consumer Credit Trends originations",
   "fdic-universe": "FDIC bank list",
   "fdic-financials": "FDIC call reports",
   "ncua-financials": "NCUA call reports",
   "fdic-sod": "FDIC branch deposits (SOD)",
-  fred: "FRED economic series",
+  fred: "Economic indicators (BLS, BEA, Fed Board H.15)",
   "beige-book": "Fed Beige Book",
   "reg-news": "Regulator news",
   cfpb: "CFPB complaints",
@@ -15,7 +38,7 @@ const FEED_LABELS: Record<string, string> = {
   "sec-filings": "SEC filings",
   "state-regulators": "State regulators",
   "state-reg-news": "State regulator news",
-  "state-bill-news": "News on state fee bills",
+  "state-bill-news": "News on state fee bills (held: terms unconfirmed)",
   enforcement: "OCC and Fed enforcement actions",
   "census-acs": "Census income and population (ACS)",
   "irs-zip-income": "IRS income by ZIP code",
@@ -25,6 +48,35 @@ const FEED_LABELS: Record<string, string> = {
   "federal-register": "Federal Register rules",
   "wire-research": "Wire research notes",
   "ffiec-overdraft": "FFIEC overdraft and fee revenue",
+  "ffiec-call-detail": "FFIEC call-report detail lines",
+  "ncua-extras": "NCUA 5300 extra lines",
+  "fdic-history": "FDIC mergers and branch history",
+  "usda-rucc": "USDA rural-urban codes by county",
+  "ffiec-census-tracts": "FFIEC census tract income levels",
+  "branch-census-tracts": "Branches placed in census tracts",
+  "urban-rural-fill": "Urban/rural from HQ county (proposal)",
+  "bls-qcew": "BLS county jobs and wages (QCEW)",
+  "census-cbp": "Census County Business Patterns",
+  "census-saipe": "Census county poverty (SAIPE)",
+  "bea-personal-income": "BEA personal income by county",
+  "fhfa-hpi": "FHFA house price index",
+  "fdic-household-survey": "FDIC unbanked and underbanked survey",
+  "fed-shed": "Fed household survey (SHED) banking questions",
+  "fdic-industry-totals": "FDIC industry totals",
+  "fdic-national-rates": "FDIC national rates and rate caps",
+  "world-bank-remittance-prices": "World Bank remittance prices",
+  "hud-zip-county": "HUD ZIP-to-county crosswalk",
+  "industry-events": "Industry events (failures, mergers, SBA, FHLBank)",
+  "payment-networks": "Payment networks (Reg II, OSM ATMs)",
+  "bank-zelle": "Zelle, from each institution's own documents",
+  "hmda": "HMDA mortgage lending by lender and metro",
+  "hmda-apor": "CFPB average prime offer rates",
+  "designation-lists": "Designation lists (MDI, low-income, CDFI)",
+  cra: "FFIEC CRA ratings and small business lending",
+  "fr-y9c": "FR Y-9C holding-company financials",
+  "nic-structure": "NIC holding-company structure",
+  "ubpr-peer-groups": "FFIEC UBPR peer groups and peer averages",
+  "cfpb-card-agreements": "CFPB card and prepaid agreements, TCCP survey",
   "ncua-branches": "NCUA branch list",
   "ncua-branch-geocode": "NCUA branch locations",
   "state-bills": "State fee bills",
@@ -35,12 +87,35 @@ const FEED_LABELS: Record<string, string> = {
 export const FEED_GROUPS = [
   { key: "national", title: "National: banks and credit unions", note: "FDIC, NCUA, FFIEC and SEC" },
   { key: "oversight", title: "National: rules, regulators and news", note: "Congress, Federal Register, enforcement, CFPB" },
-  { key: "economy", title: "Economy and markets", note: "FRED, Fed, Census and IRS" },
+  { key: "economy", title: "Economy and markets", note: "BLS, BEA, Fed, Census and IRS" },
   { key: "state", title: "State", note: "fee bills, enforcement, regulators and news" },
   { key: "other", title: "Other", note: "feeds not yet sorted into a section" },
 ] as const;
 
 const FEED_GROUP_OF: Record<string, (typeof FEED_GROUPS)[number]["key"]> = {
+  alltheplaces: "economy",
+  gleif: "national",
+  "state-nonbank-lenders": "economy",
+  "state-public-depositories": "national",
+  "sec-market-value": "national",
+  "cfpb-making-ends-meet": "economy",
+  "state-payday-reports": "economy",
+  "urban-debt-in-america": "economy",
+  "bank-merger-orders": "national",
+  "uscourts-bankruptcy": "economy",
+  "usda-farm": "economy",
+  "bls-oews": "economy",
+  "census-permits": "economy",
+  "census-popest": "economy",
+  "irs-migration": "economy",
+  "census-bfs": "economy",
+  "bls-laus": "economy",
+  "census-lehd": "economy",
+  "fed-payments": "economy",
+  "national-series": "economy",
+  "nyfed-household-debt": "economy",
+  "nyfed-sce-credit": "economy",
+  "cfpb-credit-trends": "economy",
   "fdic-universe": "national",
   "fdic-financials": "national",
   "ncua-financials": "national",
@@ -48,6 +123,35 @@ const FEED_GROUP_OF: Record<string, (typeof FEED_GROUPS)[number]["key"]> = {
   "sec-links": "national",
   "sec-filings": "national",
   "ffiec-overdraft": "national",
+  "ffiec-call-detail": "national",
+  "ncua-extras": "national",
+  "fdic-history": "national",
+  "usda-rucc": "economy",
+  "ffiec-census-tracts": "economy",
+  "branch-census-tracts": "economy",
+  "urban-rural-fill": "economy",
+  "bls-qcew": "economy",
+  "census-cbp": "economy",
+  "census-saipe": "economy",
+  "bea-personal-income": "economy",
+  "fhfa-hpi": "economy",
+  "fdic-household-survey": "economy",
+  "fed-shed": "economy",
+  "fdic-industry-totals": "economy",
+  "fdic-national-rates": "economy",
+  "world-bank-remittance-prices": "economy",
+  "hud-zip-county": "economy",
+  "industry-events": "national",
+  "payment-networks": "national",
+  "bank-zelle": "national",
+  "hmda": "national",
+  "hmda-apor": "national",
+  "designation-lists": "national",
+  cra: "national",
+  "fr-y9c": "national",
+  "nic-structure": "national",
+  "ubpr-peer-groups": "national",
+  "cfpb-card-agreements": "national",
   "ncua-branches": "national",
   "ncua-branch-geocode": "national",
   "federal-bills": "oversight",
@@ -94,7 +198,7 @@ const REPORT_LABELS: Record<string, string> = {
   "report_jobs:monthly_pulse": "Monthly Pulse report files",
   "report_jobs:state_index": "State Index report files",
   published_reports: "Reports published to the public library",
-  hamilton_reports: "Hamilton Pro reports saved by users",
+  hamilton_reports: "Hamilton reports saved by users",
   "run:atlas.daily_brief": "Daily brief email",
   "run:atlas.fee_alerts": "Fee alert emails",
   "run:atlas.lead_watch": "Lead watch",
@@ -168,6 +272,7 @@ export function DataFeedsPanel({ freshness, now }: { freshness: FeedFreshness; n
         const groupCalls = group.key === "national" ? unmatched : [];
         if (groupFeeds.length === 0 && groupCalls.length === 0) return null;
         const failed = groupFeeds.filter((feed) => feed.failed > 0).length;
+        const blocked = groupFeeds.filter((feed) => feed.blocked > 0).length;
         return (
           <details key={group.key} open className="group rounded-lg border border-black/[0.06] dark:border-white/[0.08]">
             <summary className="flex cursor-pointer flex-wrap items-baseline justify-between gap-2 px-3 py-2">
@@ -175,9 +280,10 @@ export function DataFeedsPanel({ freshness, now }: { freshness: FeedFreshness; n
                 {group.title}
                 <span className="admin-meta ml-2 font-normal">{group.note}</span>
               </span>
-              <span className={`text-xs ${failed > 0 ? warn : "admin-meta"}`}>
+              <span className={`text-xs ${failed > 0 || blocked > 0 ? warn : "admin-meta"}`}>
                 {groupFeeds.length + groupCalls.length} {groupFeeds.length + groupCalls.length === 1 ? "feed" : "feeds"}
                 {failed > 0 ? ` · ${failed} failing` : ""}
+                {blocked > 0 ? ` · ${blocked} blocked` : ""}
               </span>
             </summary>
             <div className="overflow-x-auto px-1 pb-2">
@@ -215,6 +321,11 @@ export function DataFeedsPanel({ freshness, now }: { freshness: FeedFreshness; n
                           {feed.failed > 0 ? (
                             <span className={warn} title={feed.lastError ?? undefined}>
                               {feed.failed} failed{feed.lastError ? `: ${feed.lastError.slice(0, 120)}` : ""}
+                            </span>
+                          ) : feed.blocked > 0 ? (
+                            <span className={warn}>
+                              Blocked: {feed.blockedHost ?? "the publisher's host"} refuses our requests ({feed.blocked}{" "}
+                              {feed.blocked === 1 ? "period" : "periods"} not loaded)
                             </span>
                           ) : feed.scheduled > 0 ? (
                             `${feed.scheduled} waiting${feed.nextAttemptAt ? `, next ${when(feed.nextAttemptAt)}` : ""}`

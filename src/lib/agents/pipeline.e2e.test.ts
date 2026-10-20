@@ -8,15 +8,26 @@
  * an empty database first; the test seeds its own banks. CI does this on every push.
  * Never point it at a shared database: it deletes every VT institution first.
  */
+import { createHash } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { scannedFeePdf } from "@/lib/agents/rosetta/test-fixtures/scanned-pdf";
+
+// The source runtime has its own pinned transport. Route that seam through this
+// suite's existing in-memory bank fixtures too; never resolve/contact fake bank
+// hostnames from an integration test. The source transport has separate network
+// policy tests using owned loopback servers.
+vi.mock("@/lib/agents/fee-source-fetch", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/agents/fee-source-fetch")>(),
+  createFeeSourceFetch: () => (...args: Parameters<typeof fetch>) => globalThis.fetch(...args),
+  feeSourceFetch: (...args: Parameters<typeof fetch>) => globalThis.fetch(...args),
+}));
 
 const E2E_DATABASE_URL = process.env.E2E_DATABASE_URL;
 const STATE = "VT";
 
 const FEE_TABLE = `
-  <h1>Schedule of Fees</h1>
+  <h1>Consumer Fee Schedule</h1>
   <p>Effective January 1, 2026</p>
   <table>
     <tr><th>Service</th><th>Fee</th></tr>
@@ -68,6 +79,10 @@ const SITE: Record<string, { body: string | Uint8Array; type: string }> = {
       <nav><a href="/personal">Personal</a> <a href="/about">About</a>
       <a href="/disclosures/fee-schedule">Fee Schedule</a></nav>
       <p>Welcome to Green Mountain Test Bank.</p>`),
+  },
+  "https://www.greenmountain-test-bank.com/personal": {
+    type: "text/html",
+    body: page("Personal Banking", '<main><a href="/disclosures/fee-schedule">Consumer Fee Schedule</a></main>'),
   },
   "https://www.greenmountain-test-bank.com/disclosures/fee-schedule": {
     type: "text/html",
@@ -159,15 +174,16 @@ const SITE: Record<string, { body: string | Uint8Array; type: string }> = {
     type: "text/html",
     body: page("Fee Schedule | Aspen Test Bank", FEE_TABLE.replace("$32.00", "$5.00")),
   },
-  // Two names no rule files (#1102): the store settles one (live as account research at three
-  // banks), so Knox sends the held line to Darwin by its name; the other stays held.
+  // Two names no rule files (#1102): the store settles one (live as account research at five
+  // banks), so Knox sends the held line to Darwin by its name; the other stays held. Knox v90 reads
+  // "Returned Statement Fee" itself, so the store's case is a name no rule reads.
   "https://www.champlain-test-cu.org/fees": {
     type: "text/html",
     body: page(
       "Fee Schedule | Champlain Test Credit Union",
       FEE_TABLE.replace("$32.00", "$29.00").replace(
         "</table>",
-        "<tr><td>Returned Statement Fee</td><td>$5.00</td></tr><tr><td>Lost Passbook Fee</td><td>$10.00</td></tr></table>",
+        "<tr><td>Statement Hold Fee</td><td>$5.00</td></tr><tr><td>Lost Passbook Fee</td><td>$10.00</td></tr></table>",
       ),
     ),
   },
@@ -289,32 +305,32 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
          AND fee_audience = 'consumer' AND source_document_id IS NOT NULL
     `;
     expect(peerCoverage).toMatchObject({ fees: 27, institutions: 9 });
-    // Five peers publish "Returned Statement Fee" as account research: a name the store settles
+    // Five peers publish "Statement Hold Fee" as account research: a name the store settles
     // (a three-word name needs five banks, all of its live rows in one category here).
     await sql`
       WITH peers AS (
         SELECT id FROM institution_sources WHERE institution_name IN ('Peer Test Bank 1', 'Peer Test Bank 2', 'Peer Test Bank 3', 'Peer Test Bank 4', 'Peer Test Bank 5')
       ), documents AS (
         INSERT INTO source_documents (institution_id, status, document_url)
-        SELECT id, 'success', 'https://peer.example/returned-mail' FROM peers
+        SELECT id, 'success', 'https://peer.example/statement-hold' FROM peers
         RETURNING id, institution_id
       ), raw AS (
         INSERT INTO raw_fee_observations
           (institution_id, source_document_id, agent_event_id, fee_name, amount, source, source_url, fee_audience, audience_evidence, fee_treatment)
-        SELECT institution_id, id, gen_random_uuid(), 'Returned Statement Fee', 5, 'manual_import', 'https://peer.example/returned-mail',
-               'consumer', 'Consumer accounts: Returned Statement Fee', 'charged'
+        SELECT institution_id, id, gen_random_uuid(), 'Statement Hold Fee', 5, 'manual_import', 'https://peer.example/statement-hold',
+               'consumer', 'Consumer accounts: Statement Hold Fee', 'charged'
           FROM documents
         RETURNING fee_raw_id, institution_id
       ), verified AS (
         INSERT INTO verified_fee_observations
           (fee_raw_id, institution_id, canonical_fee_key, verified_by_agent_event_id, fee_name, amount, source_url)
-        SELECT fee_raw_id, institution_id, 'account_research', gen_random_uuid(), 'Returned Statement Fee', 5, 'https://peer.example/returned-mail'
+        SELECT fee_raw_id, institution_id, 'account_research', gen_random_uuid(), 'Statement Hold Fee', 5, 'https://peer.example/statement-hold'
           FROM raw
         RETURNING fee_verified_id, institution_id
       )
       INSERT INTO published_fee_records
         (lineage_ref, institution_id, canonical_fee_key, published_by_adversarial_event_id, fee_name, amount, source_url)
-      SELECT fee_verified_id, institution_id, 'account_research', gen_random_uuid(), 'Returned Statement Fee', 5, 'https://peer.example/returned-mail'
+      SELECT fee_verified_id, institution_id, 'account_research', gen_random_uuid(), 'Statement Hold Fee', 5, 'https://peer.example/statement-hold'
         FROM verified
     `;
   });
@@ -377,19 +393,23 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
     };
     // Found from a homepage link, read from HTML.
     expect(published("Green Mountain Test Bank")).toEqual(tableFees);
-    // Known fee URL, read from HTML. The held "Returned Statement Fee" went to Darwin by its settled
-    // name and was published; "Lost Passbook Fee" has no decision and stays held.
-    expect(published("Champlain Test Credit Union")).toEqual({ ...tableFees, overdraft: 29, account_research: 5 });
+    // Known fee URL, read from HTML. The held "Statement Hold Fee" went to Darwin by its settled
+    // name and was published as account research; "Lost Passbook Fee" has no decision and stays held.
+    expect(published("Champlain Test Credit Union")).toEqual({
+      ...tableFees,
+      overdraft: 29,
+      account_research: 5,
+    });
     const champlainHeld = await sql`
       SELECT fr.fee_name, fr.outlier_flags ? 'knox_name_filed:store' AS filed, fr.outlier_flags ? 'knox_review:unclassified' AS held
         FROM raw_fee_observations fr
         JOIN institution_sources inst ON inst.id = fr.institution_id
-       WHERE inst.institution_name = 'Champlain Test Credit Union' AND fr.fee_name IN ('Returned Statement Fee', 'Lost Passbook Fee')
+       WHERE inst.institution_name = 'Champlain Test Credit Union' AND fr.fee_name IN ('Statement Hold Fee', 'Lost Passbook Fee')
        ORDER BY fr.fee_name
     `;
     expect(champlainHeld.map((row) => [row.fee_name, row.filed, row.held])).toEqual([
       ["Lost Passbook Fee", false, true],
-      ["Returned Statement Fee", true, false],
+      ["Statement Hold Fee", true, false],
     ]);
     // Found from a homepage link, read from a text PDF (curly apostrophe in "Cashier’s").
     expect(published("Lakeside Test Bank")).toEqual({
@@ -433,11 +453,13 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
     expect(triesFor("Maple Test Bank")).toEqual([
       ["discover.homepage_links", "no_candidates"],
       ["discover.sitemap", "no_candidates"],
+      ["discover.second_document", "no_candidates"],
     ].map(([strategy, outcome]) => [strategy, strategy === "discover.sitemap" ? "ok" : outcome]));
     expect(triesFor("Birch Test Bank")).toEqual([
       ["discover.homepage_links", "no_candidates"],
       ["discover.sitemap", "no_candidates"],
       ["discover.hub_pages", "ok"],
+      ["discover.second_document", "no_candidates"],
     ]);
     expect(tries.find((row) => row.institution_name === "Birch Test Bank" && row.strategy === "discover.hub_pages")?.code).toBe("found_deep");
     // A scanned PDF with no text layer: free OCR (pass 2) read it in the same read step,
@@ -549,9 +571,11 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
     const [bank] = await sql`SELECT id FROM institution_sources WHERE cert_number = 'E2E-1'`;
     const institutionId = Number(bank.id);
     await sql`DELETE FROM answer_key_institutions WHERE institution_id = ${institutionId}`;
+    const documentUrl="https://www.greenmountain-test-bank.com/disclosures/fee-schedule";
+    const contentHash=createHash("sha256").update(SITE[documentUrl].body).digest("hex");
     const [entry] = await sql`
-      INSERT INTO answer_key_institutions (institution_id, document_url, document_type, status, confirmed_by, confirmed_at)
-      VALUES (${institutionId}, 'https://greenmountain-test-bank.com/disclosures/fee-schedule/', 'html', 'confirmed', 'e2e', NOW())
+      INSERT INTO answer_key_institutions (institution_id, document_url, document_type, content_hash, status, confirmed_by, confirmed_at)
+      VALUES (${institutionId}, ${documentUrl}, 'html', ${contentHash}, 'confirmed', 'e2e', NOW())
       RETURNING id
     `;
     const fees: Array<[string, number]> = [
@@ -559,10 +583,12 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
       ["wire_domestic_outgoing", 25], ["wire_domestic_incoming", 15], ["atm_non_network", 3],
       ["cashiers_check", 10], ["paper_statement", 3],
     ];
-    for (const [key, amount] of fees) {
+    // This positive fixture binds each complete expected line to the exact captured HTML.
+    const sourceLines=[...FEE_TABLE.matchAll(/<tr><td>(.*?)<\/td><td>(.*?)<\/td><\/tr>/g)].map((match)=>`${match[1]} ${match[2]}`);
+    for (const [index, [key, amount]] of fees.entries()) {
       await sql`
-        INSERT INTO answer_key_fees (answer_key_institution_id, canonical_key, amount, amount_kind, status, confirmed_by, confirmed_at)
-        VALUES (${entry.id}, ${key}, ${amount}, 'fixed', 'confirmed', 'e2e', NOW())
+        INSERT INTO answer_key_fees (answer_key_institution_id, canonical_key, amount, amount_kind, source_line, status, confirmed_by, confirmed_at)
+        VALUES (${entry.id}, ${key}, ${amount}, 'fixed', ${sourceLines[index]}, 'confirmed', 'e2e', NOW())
       `;
     }
 
@@ -590,7 +616,10 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
        WHERE agent_run_id = ${started.run.id} AND scorer_version = 3
     `;
     const versions = await sql`SELECT scorer_version FROM answer_key_score_runs WHERE agent_run_id = ${started.run.id} ORDER BY scorer_version`;
-    expect(versions.map((row) => Number(row.scorer_version))).toEqual([1, 2, 3]);
+    expect(versions.map((row) => Number(row.scorer_version))).toEqual([1, 2, 3, 4, 5]);
+    expect((scoreRun.by_stage as Record<string,unknown>)._reference).toMatchObject({protocol:1,state:"measured",eligibleBanks:1,eligibleFees:9,excludedBanks:0});
+    const [receipt]=await sql`SELECT detail FROM agent_run_events WHERE agent_run_id=${started.run.id} AND event_type='answer_key.eligibility'`;
+    expect(receipt.detail).toMatchObject({status:"eligible",facts:{consumer:{status:"pass"},current:{status:"pass"},priced:{status:"pass"}}});
     expect(Number(scoreRun.precision)).toBe(1);
     expect(Number(scoreRun.recall)).toBe(1);
     const bankScore = (scoreRun.by_bank as Array<Record<string, unknown>>).find((row) => Number(row.institution_id) === institutionId);

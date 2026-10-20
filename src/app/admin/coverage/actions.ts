@@ -3,6 +3,7 @@
 import { requireAuth } from "@/lib/auth";
 import { assertAtlasDispatchReady } from "@/lib/agents/dispatch-readiness";
 import { startAgentRun } from "@/lib/agents/run-store";
+import type { AgentRunStepDefinition } from "@/lib/agents/types";
 import { getExecutionBackendStatus } from "@/lib/execution-backend";
 import { sql } from "@/lib/data-store/connection";
 import { getAgentSpendToday } from "@/lib/data-store/console-spend";
@@ -54,7 +55,25 @@ export async function runMagellanRepair(
     return { success: false, error: "Invalid repair batch request" };
   }
   try {
-    await assertAtlasDispatchReady();
+    const steps: AgentRunStepDefinition[] = [
+      {
+        key: "rescue",
+        agent: "magellan",
+        title: "Resolve failed fee schedule discovery/fetch candidates",
+        input: { size, batches },
+      },
+      {
+        key: "read",
+        agent: "rosetta",
+        title: "Read rescued source documents",
+      },
+      {
+        key: "extract",
+        agent: "knox",
+        title: "Extract fee observations from rescued documents",
+      },
+    ];
+    await assertAtlasDispatchReady(steps.map((step) => step.key));
     const result = await startAgentRun({
       agent: "magellan",
       kind: "workflow_lane",
@@ -63,24 +82,7 @@ export async function runMagellanRepair(
       triggeredBy: user.username,
       triggerSource: "admin",
       idempotencyKey: "magellan:rescue",
-      steps: [
-        {
-          key: "rescue",
-          agent: "magellan",
-          title: "Resolve failed fee schedule discovery/fetch candidates",
-          input: { size, batches },
-        },
-        {
-          key: "read",
-          agent: "rosetta",
-          title: "Read rescued source documents",
-        },
-        {
-          key: "extract",
-          agent: "knox",
-          title: "Extract fee observations from rescued documents",
-        },
-      ],
+      steps,
       summary: "Agentic Magellan run accepted. Watch Atlas live status for step events.",
     });
     return { success: true, jobId: result.run.id, reused: result.reused };

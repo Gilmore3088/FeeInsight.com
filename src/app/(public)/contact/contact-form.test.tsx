@@ -5,11 +5,14 @@ import { ContactForm } from "./contact-form";
 
 vi.mock("@/lib/marketing-touch", () => ({ readFirstTouch: () => null }));
 
+// The form reads the query in the browser, so the page itself can be prerendered (#1811).
+let params = new URLSearchParams();
+vi.mock("next/navigation", () => ({ useSearchParams: () => params }));
+
 async function renderPage(source?: string) {
-  const params = Promise.resolve(source ? { source } : {});
-  const page = await ContactPage({ searchParams: params });
+  params = new URLSearchParams(source ? { source } : {});
   await act(async () => {
-    render(page);
+    render(<ContactPage />);
   });
 }
 
@@ -18,12 +21,12 @@ describe("/contact", () => {
     await renderPage("demo");
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Ask for a Hamilton demo");
     expect(document.body.textContent).toContain(
-      "We walk you through Hamilton, the Fee Insight Pro workspace, using your own market. We reply within one business day to set a time.",
+      "We walk you through Hamilton, the Fee Insight workspace, using your own market. We reply within one business day to set a time.",
     );
     const select = screen.getByLabelText("Inquiry type") as HTMLSelectElement;
     expect(select.selectedOptions[0].textContent).toBe("Hamilton demo");
     expect(screen.getByRole("button", { name: "Ask for a demo" })).toBeInTheDocument();
-    expect(document.body.textContent).not.toMatch(/Fee Insight Pro(?! workspace)/);
+    expect(document.body.textContent).not.toMatch(/Fee Insight Pro|Hamilton Pro/);
 
     // Choosing another option turns the heading, intro and button back into the general page.
     fireEvent.change(select, { target: { value: "report" } });
@@ -57,7 +60,8 @@ describe("/contact", () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({}), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     await act(async () => {
-      render(<ContactForm searchParamsPromise={Promise.resolve({ source: "demo" })} />);
+      params = new URLSearchParams({ source: "demo" });
+      render(<ContactForm />);
     });
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Jane" } });
     fireEvent.change(screen.getByLabelText("Work email"), { target: { value: "jane@example.com" } });

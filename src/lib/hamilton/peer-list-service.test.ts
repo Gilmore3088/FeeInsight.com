@@ -1,13 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ subject: vi.fn(), rows: vi.fn(), fees: vi.fn(), resolve: vi.fn(), account: vi.fn(), active: vi.fn(), record: vi.fn() }));
+const mocks = vi.hoisted(() => ({ subject: vi.fn(), rows: vi.fn(), fees: vi.fn(), rateFees: vi.fn(), resolve: vi.fn(), account: vi.fn(), active: vi.fn(), record: vi.fn() }));
 vi.mock("@/lib/data-store/hamilton-peer-list", () => ({ getPeerListSubject: mocks.subject, getPeerListRows: mocks.rows }));
-vi.mock("@/lib/data-store/hamilton-peer-fees", () => ({ getPublishedPeerFees: mocks.fees }));
+vi.mock("@/lib/data-store/hamilton-peer-fees", () => ({ getPublishedPeerFees: mocks.fees, getPublishedPeerRateFees: mocks.rateFees }));
 vi.mock("./workspace-context", () => ({ resolveHamiltonInstitutionContext: mocks.resolve }));
 vi.mock("./account-context-store", () => ({ loadHamiltonAccountContext: mocks.account }));
 vi.mock("./active-peer-set", () => ({ getActivePeerSet: mocks.active }));
 vi.mock("@/lib/agents/run-store", () => ({ recordProRequest: mocks.record }));
-import { answerPeerList } from "./peer-list-service";
-import { makePeerListContinuation } from "./peer-list";
+import { answerPeerList, cappedListNote } from "./peer-list-service";
+import { makePeerListContinuation, validatePeerListContinuation } from "./peer-list";
 const subject = { institutionId: 202, name: "Synthetic Research CU", charterType: "credit_union", city: "Tampa", stateCode: "FL", totalAssetsUsd: 10_000_000_000, reportDate: "2026-06-30", source: "ncua", sourceUrl: null, recordId: 1 };
 const peer = { ...subject, institutionId: 303, name: "Synthetic Peer CU", feeCoverage: "not_found", inclusionReason: "Matches criteria." };
 const user = { id: 7, institution_name: "Unverified name" };
@@ -15,6 +15,7 @@ beforeEach(() => {
   mocks.subject.mockReset().mockResolvedValue(subject);
   mocks.rows.mockReset().mockResolvedValue({ rows: [peer], totalMatches: 1 });
   mocks.fees.mockReset().mockResolvedValue([{ institutionId: 303, id: 55, name: "NSF", amount: 0, frequency: "per_item", publishedAt: "2026-10-01T00:00:00Z", sourceDocumentId: 5, documentUrl: null, sourceUrl: null }]);
+  mocks.rateFees.mockReset().mockResolvedValue([]);
   mocks.resolve.mockReset().mockImplementation(async ({ instId }: { instId?: string }) => ({ institution: { id: instId ? Number(instId) : 202 }, error: null }));
   mocks.account.mockReset().mockResolvedValue({ status: "identified", institution: { id: 101, name: "Synthetic Account CU" }, profileLabel: null });
   mocks.active.mockReset().mockResolvedValue(null);
@@ -34,7 +35,7 @@ describe("peer list service boundaries", () => {
   it("passes dollar bounds and exact inequalities to the query", async () => { await answerPeerList(user, { institutionId: 202, question: "List 10 credit unions above $1B and under $5B" }); expect(mocks.rows.mock.calls[0][1].minAssets).toEqual({ value: 1_000_000_000, inclusive: false }); expect(mocks.rows.mock.calls[0][1].maxAssets).toEqual({ value: 5_000_000_000, inclusive: false }); });
   it("honors authorized saved peers without making up assets for them", async () => { mocks.active.mockResolvedValue({ id: 8, name: "My list", label: "My list", filters: { institutionIds: [303, 404] } }); await answerPeerList(user, { institutionId: 202, question: "List saved peers" }); expect(mocks.active).toHaveBeenCalledWith({ userId: 7, institutionId: 202 }); expect(mocks.rows.mock.calls[0][1].institutionIds).toEqual([303, 404]); });
   it("does not substitute a default after a saved-group lookup failure", async () => { mocks.active.mockRejectedValue(new Error("synthetic saved-group outage")); const result = await answerPeerList(user, { institutionId: 202, question: "List peers" }); expect(result?.peerList.status).toBe("unavailable"); expect(result?.peerList.totalMatches).toBeNull(); expect(mocks.rows).not.toHaveBeenCalled(); });
-  it("reports the actual shortage without relaxing the query", async () => { const result = await answerPeerList(user, { institutionId: 202, question: "List ten peers" }); expect(result?.peerList.totalMatches).toBe(1); expect(result?.peerList.notes.join(" ")).toContain("Only 1 institutions meet these criteria"); expect(mocks.rows).toHaveBeenCalledTimes(1); });
+  it("reports the actual shortage without relaxing the query", async () => { const result = await answerPeerList(user, { institutionId: 202, question: "List ten peers" }); expect(result?.peerList.totalMatches).toBe(1); expect(result?.peerList.notes.join(" ")).toContain("Only 1 institution meets these criteria"); expect(mocks.rows).toHaveBeenCalledTimes(1); });
   it("keeps zero results distinct from a failed query", async () => { mocks.rows.mockResolvedValue({ rows: [], totalMatches: 0 }); expect((await answerPeerList(user, { institutionId: 202, question: "List peers" }))?.peerList.totalMatches).toBe(0); mocks.rows.mockRejectedValue(new Error("synthetic query outage")); const failed = await answerPeerList(user, { institutionId: 202, question: "List peers" }); expect(failed?.peerList.status).toBe("unavailable"); expect(failed?.peerList.totalMatches).toBeNull(); });
   it("records list criteria and counts without a provider run", async () => { await answerPeerList(user, { institutionId: 202, question: "List peers" }); expect(mocks.record.mock.calls[0][0].detail.provider_called).toBe(false); expect(mocks.record.mock.calls[0][0].detail.matching_count).toBe(1); });
   it("records failed or clarification outcomes as well as successful lists", async () => { await answerPeerList(user, { institutionId: "wrong", question: "List peers" }); expect(mocks.record).toHaveBeenCalledTimes(1); });
@@ -70,6 +71,17 @@ describe("exact displayed peer-list continuation", () => {
     expect(second.peerList.rows).toHaveLength(0);
     expect(second.peerList.totalMatches).toBe(0);
   });
+  it("keeps an earlier state refinement in the criteria of a later fee follow-up", async () => {
+    mocks.rows.mockResolvedValue({ rows: [peer, gaPeer], totalMatches: 2 });
+    const original = (await answerPeerList(user, { institutionId: 202, question: "List peers" }))!;
+    const prior = makePeerListContinuation(original, "List peers", "202")!;
+    const florida = (await answerPeerList(user, { institutionId: 202, question: "Only Florida", previousPeerList: prior }))!;
+    const narrowed = { ...prior, selectedIds: florida.peerList.rows.map(r => r.institutionId), refinedState: "FL" };
+    const nsf = (await answerPeerList(user, { institutionId: 202, question: "Compare their NSF fees", previousPeerList: narrowed }))!;
+    expect(nsf.peerList.status).toBe("ready");
+    expect(nsf.peerList.criteria?.states).toEqual(["FL"]);
+    expect(validatePeerListContinuation({ ...narrowed, refinedState: "Florida" })).toBeNull();
+  });
   it("rejects forged peer IDs and never broadens a client-supplied list", async () => {
     const original = (await answerPeerList(user, { institutionId: 202, question: "List peers" }))!;
     const prior = makePeerListContinuation(original, "List peers", "202")!;
@@ -97,6 +109,47 @@ describe("exact displayed peer-list continuation", () => {
     expect(mocks.account).not.toHaveBeenCalled();
     expect(result.peerList.subject?.institutionId).toBe(202);
   });
+  it("lists a peer's rate fee on its own line as a rate, apart from dollar fees", async () => {
+    mocks.fees.mockResolvedValue([]);
+    mocks.rateFees.mockResolvedValue([{ institutionId: 303, id: 77, name: "Foreign transaction", rateLabel: "1.1% of the transaction", frequency: "per_item", publishedAt: "2026-09-01T00:00:00Z", sourceDocumentId: 6, documentUrl: null, sourceUrl: null }]);
+    const original = (await answerPeerList(user, { institutionId: 202, question: "List peers" }))!;
+    const prior = makePeerListContinuation(original, "List peers", "202")!;
+    const result = (await answerPeerList(user, { institutionId: 202, question: "Compare their foreign transaction fees", previousPeerList: prior }))!;
+    expect(mocks.rateFees).toHaveBeenCalledWith([303], "card_foreign_txn");
+    expect(result.peerList.feeComparison?.fees).toEqual([]);
+    expect(result.peerList.feeComparison?.rateFees?.map(f => f.rateLabel)).toEqual(["1.1% of the transaction"]);
+    expect(result.peerList.feeComparison?.note).toContain("shown as that rate and is not converted to dollars");
+  });
+  it("adds no rate wording when no peer has a rate fee", async () => {
+    const original = (await answerPeerList(user, { institutionId: 202, question: "List peers" }))!;
+    const prior = makePeerListContinuation(original, "List peers", "202")!;
+    const result = (await answerPeerList(user, { institutionId: 202, question: "Compare their NSF fees", previousPeerList: prior }))!;
+    expect(mocks.rateFees).toHaveBeenCalledWith([303], "nsf");
+    expect(result.peerList.feeComparison?.rateFees).toEqual([]);
+    expect(result.peerList.feeComparison?.note).not.toMatch(/rate/);
+  });
+  it("compares any one named fee, not only NSF (#1538)", async () => {
+    const original = (await answerPeerList(user, { institutionId: 202, question: "List peers" }))!;
+    const prior = makePeerListContinuation(original, "List peers", "202")!;
+    const result = (await answerPeerList(user, { institutionId: 202, question: "Compare their overdraft fees", previousPeerList: prior }))!;
+    expect(mocks.fees).toHaveBeenCalledWith([303], "overdraft");
+    expect(result.peerList.feeComparison?.category).toBe("overdraft");
+    expect(result.shortAnswer).toBe("Published overdraft fees for 1 selected peer.");
+  });
+  it("compares a named fee with the account institution", async () => {
+    const original = (await answerPeerList(user, { institutionId: 202, question: "List peers" }))!;
+    const prior = makePeerListContinuation(original, "List peers", "202")!;
+    await answerPeerList(user, { institutionId: 202, question: "Compare their monthly maintenance fees with us", previousPeerList: prior });
+    expect(mocks.fees).toHaveBeenCalledWith([303, 101], "monthly_maintenance");
+  });
+  it("asks for one fee when the follow-up names none it knows", async () => {
+    const original = (await answerPeerList(user, { institutionId: 202, question: "List peers" }))!;
+    const prior = makePeerListContinuation(original, "List peers", "202")!;
+    const result = (await answerPeerList(user, { institutionId: 202, question: "Compare their gizmo fees", previousPeerList: prior }))!;
+    expect(result.peerList.status).toBe("needs_criteria");
+    expect(result.shortAnswer).toMatch(/^Name one fee to compare/);
+    expect(mocks.fees).not.toHaveBeenCalled();
+  });
   it("compares with a separately verified account institution, not the researched subject", async () => {
     const original = (await answerPeerList(user, { institutionId: 202, question: "List peers" }))!;
     const prior = makePeerListContinuation(original, "List peers", "202")!;
@@ -112,6 +165,42 @@ describe("exact displayed peer-list continuation", () => {
     mocks.account.mockResolvedValue({ status: "ambiguous", institution: null });
     const result = (await answerPeerList(user, { institutionId: 202, question: "How does this compare with us?", previousPeerList: prior }))!;
     expect(result.peerList.status).toBe("needs_criteria");
+    expect(result.shortAnswer).toMatch(/^More than one institution is linked to your account, so Hamilton can't tell which one is "us"\./);
+    expect(mocks.fees).not.toHaveBeenCalled();
+  });
+  it("says plainly when 'compare with us' has no linked institution, without using the researched one (#1536)", async () => {
+    mocks.account.mockResolvedValue({ status: "unlinked", institution: null });
+    const result = (await answerPeerList(user, { institutionId: 8109, question: "How does this compare with us?", previousPeerList: null }))!;
+    expect(result.peerList.status).toBe("needs_criteria");
+    expect(result.shortAnswer).toMatch(/^No institution is linked to your account, so there is no "us" to compare\./);
+    expect(result.shortAnswer).toContain("did not treat the institution you are researching as yours");
+    expect(result.shortAnswer).toContain("To link yours, open Settings & account.");
+    expect(mocks.account).toHaveBeenCalledWith(user);
+    for (const read of [mocks.subject, mocks.rows, mocks.fees, mocks.resolve]) expect(read).not.toHaveBeenCalled();
+  });
+  it("asks for a peer list first when the account is linked but no list was shown", async () => {
+    const result = (await answerPeerList(user, { institutionId: 202, question: "How does this compare with us?", previousPeerList: null }))!;
+    expect(result.peerList.status).toBe("needs_criteria");
+    expect(result.shortAnswer).toContain("Ask for a peer list first");
+    expect(result.shortAnswer).toContain("Synthetic Account CU");
+    expect(mocks.fees).not.toHaveBeenCalled();
+  });
+  it("says which problem it is when several institutions are linked and no list was shown", async () => {
+    mocks.account.mockResolvedValue({ status: "ambiguous", institution: null });
+    const result = (await answerPeerList(user, { institutionId: 202, question: "How does this compare with us?", previousPeerList: null }))!;
+    expect(result.peerList.status).toBe("needs_criteria");
+    expect(result.shortAnswer).toMatch(/^More than one institution is linked to your account/);
+    expect(mocks.fees).not.toHaveBeenCalled();
+  });
+  it("keeps the old refusal for other follow-ups with no list", async () => {
+    const result = (await answerPeerList(user, { institutionId: 202, question: "Compare their NSF fees", previousPeerList: null }))!;
+    expect(result.shortAnswer).toBe("This follow-up has no valid prior peer list. Run the peer list again; no replacement list was selected.");
+    expect(mocks.account).not.toHaveBeenCalled();
+  });
+  it("keeps an account lookup failure on 'compare with us' unavailable", async () => {
+    mocks.account.mockResolvedValue({ status: "unavailable", institution: null });
+    const result = (await answerPeerList(user, { institutionId: 202, question: "How does this compare with us?", previousPeerList: null }))!;
+    expect(result.peerList.status).toBe("unavailable");
     expect(mocks.fees).not.toHaveBeenCalled();
   });
   it("refuses stale fee follow-ups without querying fee rows", async () => {
@@ -131,4 +220,52 @@ describe("exact displayed peer-list continuation", () => {
     expect(mocks.rows).not.toHaveBeenCalled();
   });
 
+});
+
+describe("capped peer lists (#1540)", () => {
+  it("says which institutions were kept and how to see the rest", () => {
+    expect(cappedListNote({ sort: "largest_assets", limit: 10 }, 10, 16)).toBe('Showing the 10 largest by assets of 16 matching institutions; 6 more are not shown. Ask for "all" to see them 50 at a time.');
+    expect(cappedListNote({ sort: "closest_assets", limit: 50 }, 50, 80)).toBe("Showing institutions 1 to 50 of 80 matching institutions, closest in size first. 30 more are on the next page.");
+    expect(cappedListNote({ sort: "largest_assets", limit: 50 }, 30, 80, 50)).toBe("Showing institutions 51 to 80 of 80 matching institutions, largest by assets first.");
+  });
+});
+
+describe("peer lists past 50 rows (#977, H02-T08)", () => {
+  const many = (from: number, count: number) => Array.from({ length: count }, (_, i) => ({ ...peer, institutionId: 1000 + from + i, recordId: 1000 + from + i }));
+  it("reads the page that starts at the offset, in the same order, and says which rows it holds", async () => {
+    mocks.rows.mockResolvedValue({ rows: many(50, 50), totalMatches: 120 });
+    const result = (await answerPeerList(user, { institutionId: 202, question: "List all credit unions in Florida", peerListOffset: 50 }))!;
+    expect(mocks.rows.mock.calls[0][4]).toEqual({ offset: 50, limit: 50 });
+    expect(result.peerList.offset).toBe(50);
+    expect(result.shortAnswer).toBe("Institutions 51 to 100 of 120 matching institutions for Synthetic Research CU.");
+    expect(result.peerList.notes.join(" ")).toContain("Showing institutions 51 to 100 of 120 matching institutions, largest by assets first. 20 more are on the next page.");
+    expect(mocks.record.mock.calls[0][0].detail.offset).toBe(50);
+  });
+  it("stops a page at the count asked for", async () => {
+    mocks.rows.mockResolvedValue({ rows: many(50, 10), totalMatches: 120 });
+    await answerPeerList(user, { institutionId: 202, question: "List 60 credit unions in Florida", peerListOffset: 50 });
+    expect(mocks.rows.mock.calls[0][4]).toEqual({ offset: 50, limit: 10 });
+  });
+  it("refuses a page for a list that does not page, a bad offset, or a page the list no longer reaches", async () => {
+    expect((await answerPeerList(user, { institutionId: 202, question: "List ten peers", peerListOffset: 10 }))!.peerList.status).toBe("needs_criteria");
+    expect((await answerPeerList(user, { institutionId: 202, question: "List all credit unions in Florida", peerListOffset: -1 }))!.peerList.status).toBe("needs_criteria");
+    expect((await answerPeerList(user, { institutionId: 202, question: "List all credit unions in Florida", peerListOffset: 1.5 }))!.peerList.status).toBe("needs_criteria");
+    expect(mocks.rows).not.toHaveBeenCalled();
+    mocks.rows.mockResolvedValue({ rows: [], totalMatches: 40 });
+    const empty = (await answerPeerList(user, { institutionId: 202, question: "List all credit unions in Florida", peerListOffset: 50 }))!;
+    expect(empty.peerList.status).toBe("needs_criteria");
+    expect(empty.shortAnswer).toContain("The list now has 40 matching institutions");
+  });
+  it("re-runs the shown page for a follow-up, so it filters those rows and not the first page's", async () => {
+    const second = many(50, 2).map((row, i) => ({ ...row, stateCode: i === 0 ? "FL" : "GA" }));
+    mocks.rows.mockResolvedValue({ rows: second, totalMatches: 52 });
+    const shown = (await answerPeerList(user, { institutionId: 202, question: "List all credit unions", peerListOffset: 50 }))!;
+    const prior = makePeerListContinuation(shown, "List all credit unions", "202")!;
+    expect(prior.originOffset).toBe(50);
+    mocks.rows.mockClear();
+    const refined = (await answerPeerList(user, { institutionId: 202, question: "Only Florida", previousPeerList: prior }))!;
+    expect(mocks.rows.mock.calls[0][4]).toEqual({ offset: 50, limit: 50 });
+    expect(refined.peerList.rows.map(row => row.institutionId)).toEqual([1050]);
+    expect(refined.peerList.offset).toBeUndefined();
+  });
 });

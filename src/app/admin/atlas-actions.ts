@@ -16,7 +16,7 @@ import {
 } from "@/lib/automation-control";
 import { assertAtlasDispatchReady } from "@/lib/agents/dispatch-readiness";
 import { cancelAgentRun, cancelAllActiveAgentRuns, startAgentRun } from "@/lib/agents/run-store";
-import { scheduleDueStateLaneRuns, startStateLaneRun } from "@/lib/agents/state-lane-scheduler";
+import { scheduleDueStateLaneRuns, startStateLaneRun, STATE_LANE_STEPS } from "@/lib/agents/state-lane-scheduler";
 import type { AgentRunStepDefinition, AdminAgent } from "@/lib/agents/types";
 
 export type AtlasWorkflowId =
@@ -68,7 +68,7 @@ const FULL_CYCLE_STEPS: AgentRunStepDefinition[] = [
   },
   {
     key: "publish",
-    agent: "hamilton",
+    agent: "gutenberg",
     title: "Publish clean fee intelligence for product reads",
   },
   {
@@ -84,7 +84,7 @@ const FULL_CYCLE_STEPS: AgentRunStepDefinition[] = [
   },
   {
     key: "public-diagnose",
-    agent: "hamilton",
+    agent: "gutenberg",
     title: "Summarize public discovery diagnosis",
   },
 ];
@@ -191,7 +191,7 @@ export async function runAtlasCycle(): Promise<{
 }> {
   const user = await requireAuth("trigger_jobs");
   try {
-    await assertAtlasDispatchReady();
+    await assertAtlasDispatchReady(FULL_CYCLE_STEPS.map((step) => step.key));
     const result = await startAgentRun({
       agent: "atlas",
       kind: "workflow",
@@ -298,12 +298,12 @@ const WORKFLOW_JOBS: Record<AtlasWorkflowId, {
   },
   publish: {
     title: "Publish verified fee intelligence",
-    agent: "hamilton",
+    agent: "gutenberg",
     idempotencyKey: "hamilton:quick-publish",
     steps: [
       {
         key: "publish",
-        agent: "hamilton",
+        agent: "gutenberg",
         title: "Publish clean fee intelligence",
         input: { limit: 500 },
       },
@@ -339,7 +339,7 @@ const WORKFLOW_JOBS: Record<AtlasWorkflowId, {
       },
       {
         key: "public-diagnose",
-        agent: "hamilton",
+        agent: "gutenberg",
         title: "Summarize public discovery diagnosis",
       },
     ],
@@ -358,7 +358,7 @@ export async function runAtlasWorkflow(workflowId: AtlasWorkflowId): Promise<{
   if (!workflow) return { success: false, error: "Unknown Atlas workflow" };
 
   try {
-    await assertAtlasDispatchReady();
+    await assertAtlasDispatchReady(workflow.steps.map((step) => step.key));
     const result = await startAgentRun({
       agent: workflow.agent,
       kind: "workflow_lane",
@@ -399,7 +399,8 @@ export async function runAtlasDueStateLanes(limit = 2): Promise<{
   const safeLimit = Math.min(Math.max(Math.floor(Number(limit) || 2), 1), 10);
 
   try {
-    await assertAtlasDispatchReady();
+    // A lane can queue any of its steps (full or backlog mode), paid passes included.
+    await assertAtlasDispatchReady(STATE_LANE_STEPS.map((step) => step.key));
     const result = await scheduleDueStateLaneRuns({
       limit: safeLimit,
       triggeredBy: user.username,
@@ -436,7 +437,8 @@ export async function runAtlasStateLane(stateCode: string): Promise<{
   const user = await requireAuth("trigger_jobs");
 
   try {
-    await assertAtlasDispatchReady();
+    // A lane can queue any of its steps (full or backlog mode), paid passes included.
+    await assertAtlasDispatchReady(STATE_LANE_STEPS.map((step) => step.key));
     const result = await startStateLaneRun({
       stateCode,
       triggeredBy: user.username,
@@ -481,7 +483,7 @@ export async function resumeAtlasCycle(runId: number): Promise<{
   }
 
   try {
-    await assertAtlasDispatchReady();
+    await assertAtlasDispatchReady(FULL_CYCLE_STEPS.map((step) => step.key));
     const result = await startAgentRun({
       agent: "atlas",
       kind: "manual_repair",
@@ -504,7 +506,7 @@ export async function resumeAtlasCycle(runId: number): Promise<{
 }
 
 /**
- * Hamilton category-guard repair (issue #51): roll back live catalog rows whose own
+ * Gutenberg category-guard repair (issue #51): roll back live catalog rows whose own
  * name contradicts the category they were filed under. Run the dry run first;
  * its step detail lists counts by category and sample rows.
  */
@@ -521,24 +523,25 @@ export async function runCategoryGuardRepair(dryRun: boolean): Promise<{
     : "Category guard repair: roll back misfiled catalog fees";
 
   try {
-    await assertAtlasDispatchReady();
+    const steps: AgentRunStepDefinition[] = [
+      {
+        key: "category-guard",
+        agent: "gutenberg",
+        title: dryRun
+          ? "Find live fees filed under the wrong category"
+          : "Roll back live fees filed under the wrong category",
+      },
+    ];
+    await assertAtlasDispatchReady(steps.map((step) => step.key));
     const result = await startAgentRun({
-      agent: "hamilton",
+      agent: "gutenberg",
       kind: dryRun ? "dry_run" : "manual_repair",
       title,
       params: { source: "admin.category_guard_repair" },
       triggeredBy: user.username,
       triggerSource: "admin",
       idempotencyKey: dryRun ? "hamilton:category-guard-dry-run" : "hamilton:category-guard-repair",
-      steps: [
-        {
-          key: "category-guard",
-          agent: "hamilton",
-          title: dryRun
-            ? "Find live fees filed under the wrong category"
-            : "Roll back live fees filed under the wrong category",
-        },
-      ],
+      steps,
       summary: "Agentic run accepted. Watch Atlas live status for step events.",
     });
     refreshAtlasDashboard();
@@ -550,7 +553,7 @@ export async function runCategoryGuardRepair(dryRun: boolean): Promise<{
 }
 
 /**
- * Hamilton source-link repair (hamilton/source-link.ts): a live fee with no source link takes
+ * Gutenberg source-link repair (hamilton/source-link.ts): a live fee with no source link takes
  * its own document's URL, or comes down when it has no traceable document. Run the dry run
  * first; its step detail lists the counts and every takedown.
  */
@@ -567,24 +570,25 @@ export async function runSourceLinkRepair(dryRun: boolean): Promise<{
     : "Source link repair: link live fees to their document or take them down";
 
   try {
-    await assertAtlasDispatchReady();
+    const steps: AgentRunStepDefinition[] = [
+      {
+        key: "source-link-repair",
+        agent: "gutenberg",
+        title: dryRun
+          ? "Find live fees with no link to their own document"
+          : "Link live fees to their own document, or take down those with none",
+      },
+    ];
+    await assertAtlasDispatchReady(steps.map((step) => step.key));
     const result = await startAgentRun({
-      agent: "hamilton",
+      agent: "gutenberg",
       kind: dryRun ? "dry_run" : "manual_repair",
       title,
       params: { source: "admin.source_link_repair" },
       triggeredBy: user.username,
       triggerSource: "admin",
       idempotencyKey: dryRun ? "hamilton:source-link-dry-run" : "hamilton:source-link-repair",
-      steps: [
-        {
-          key: "source-link-repair",
-          agent: "hamilton",
-          title: dryRun
-            ? "Find live fees with no link to their own document"
-            : "Link live fees to their own document, or take down those with none",
-        },
-      ],
+      steps,
       summary: "Agentic run accepted. Watch Atlas live status for step events.",
     });
     refreshAtlasDashboard();

@@ -1,6 +1,7 @@
-import { getAnthropicMessagesClient, type Anthropic, type ProviderAgent } from "@/lib/ai-provider";
+import { getAnthropicMessagesClient, isProviderLimitError, PROVIDER_LIMIT_MARKERS, type Anthropic, type ProviderAgent } from "@/lib/ai-provider";
+import { RAW_PROVIDER_TIMEOUT_MS, withRawProviderResponseOperation } from "@/lib/ai-response-budget";
 import type { sql } from "@/lib/data-store/connection";
-import { estimateAnthropicCostMicrousd, trackAnthropicRequest, WEB_SEARCH_COST_MICROUSD } from "@/lib/ai-provider-usage";
+import { estimateAnthropicCostMicrousd, observedProviderUsage, ProviderCircuitOpenError, trackAnthropicRequest, WEB_SEARCH_COST_MICROUSD, type AnthropicResponsePolicy } from "@/lib/ai-provider-usage";
 
 export { WEB_SEARCH_COST_MICROUSD };
 
@@ -37,6 +38,14 @@ export interface PaidCallResult {
   costMicrousd: number;
 }
 
+export interface AssessedPaidCallResult {
+  message: Anthropic.Message;
+  costMicrousd: number | null;
+  usageObservation: "observed" | "unknown";
+}
+
+export type PaidResponsePolicy = AnthropicResponsePolicy<Anthropic.Message>;
+
 type MessageParams = Anthropic.MessageCreateParamsNonStreaming;
 
 export type PaidMessageCreator = (params: MessageParams) => PromiseLike<Anthropic.Message>;
@@ -45,15 +54,7 @@ export type PaidMessageCreator = (params: MessageParams) => PromiseLike<Anthropi
  * One budget-checked, logged model call. Throws ProviderBudgetBlockedError (or the
  * automation stop) before any money is spent when a cap or stop applies.
  */
-export async function paidModelCall({
-  agent,
-  operation,
-  runId,
-  params,
-  create,
-  metadata,
-  keyAgent,
-}: {
+interface PaidCallOptions {
   agent: PaidPassAgent;
   /** The agent whose API key pays, when it is not `agent` (the Wire bills to Magellan's key). */
   keyAgent?: ProviderAgent;
@@ -63,14 +64,62 @@ export async function paidModelCall({
   /** Test seam; defaults to the Anthropic Messages API. */
   create?: PaidMessageCreator;
   metadata?: Record<string, unknown>;
-}): Promise<PaidCallResult> {
+}
+
+/**
+ * A provider refusal for billing (credits exhausted, a usage limit, a quota) is the account's
+ * state, not the item's (#1056). Each paid pass stops on it, like a budget cap, and records
+ * nothing, so the item stays queued. On Oct 5 and Oct 9, before this, 145 items across four paid
+ * passes were recorded `http_other` on "credit balance is too low" and never selected again.
+ */
+export function providerRefusalError(error: unknown): ProviderCircuitOpenError | null {
+  if (error instanceof ProviderCircuitOpenError) return error;
+  if (!isProviderLimitError(error)) return null;
+  const message = error instanceof Error ? error.message : String(error);
+  // Keep the SDK error's status and request id, so logs and callers that read them still can.
+  const refusal = new ProviderCircuitOpenError(`Provider refused the call for billing: ${message.slice(0, 300)}`);
+  const { status, requestID } = (error ?? {}) as { status?: unknown; requestID?: unknown };
+  return Object.assign(refusal, { cause: error, status, requestID });
+}
+
+/** Matches an attempt's error text that a provider billing refusal wrote (see providerRefusalError). */
+export const PROVIDER_REFUSAL_PATTERN = [...PROVIDER_LIMIT_MARKERS, "provider circuit is open"]
+  .map((marker) => marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+  .join("|");
+
+/**
+ * SQL: the attempt row (alias) was ended by a provider billing refusal, so it never settles its
+ * item. Paid selectors that skip settled items add `AND NOT <this>` to their settled clause.
+ */
+export function providerRefusalSql(alias: string): string {
+  return `COALESCE(${alias}.detail->>'error', '') ~* '${PROVIDER_REFUSAL_PATTERN.replace(/'/g, "''")}'`;
+}
+
+export function paidModelCall(options: PaidCallOptions & { responsePolicy: PaidResponsePolicy }): Promise<AssessedPaidCallResult>;
+export function paidModelCall(options: PaidCallOptions): Promise<PaidCallResult>;
+export async function paidModelCall({
+  agent, operation, runId, params, create, metadata, keyAgent, responsePolicy,
+}: PaidCallOptions & { responsePolicy?: PaidResponsePolicy }): Promise<PaidCallResult | AssessedPaidCallResult> {
   const billTo: ProviderAgent | undefined = keyAgent ?? (agent === "wire" ? "magellan" : agent);
-  const send: PaidMessageCreator = create ?? ((body) => getAnthropicMessagesClient(`${agent} ${operation}`, billTo).messages.create(body));
   const searchSettings = webSearchSettings(params.tools);
   const message = await trackAnthropicRequest(
     { model: params.model, agent, operation, agentRunId: runId, metadata: searchSettings ? { ...metadata, ...searchSettings } : metadata },
-    () => send(params),
-  );
+    () => withRawProviderResponseOperation(RAW_PROVIDER_TIMEOUT_MS, (scope) => {
+      const client = create ? null : getAnthropicMessagesClient(`${agent} ${operation}`, billTo, scope);
+      return (attempt) => create ? create(params) : client!.messages.create(params, attempt);
+    }),
+    ...(responsePolicy ? [responsePolicy] as const : []),
+  ).catch((error: unknown) => {
+    throw providerRefusalError(error) ?? error;
+  });
+  if (responsePolicy) {
+    const usage = observedProviderUsage(message.usage);
+    return {
+      message,
+      costMicrousd: usage ? estimateAnthropicCostMicrousd(params.model, usage) : null,
+      usageObservation: usage ? "observed" : "unknown",
+    };
+  }
   return { message, costMicrousd: paidCallCostMicrousd(params.model, message) };
 }
 
@@ -154,6 +203,8 @@ export interface PaidPassResult {
   budgetStopped: boolean;
   budgetReason: string | null;
   costMicrousd: number;
+  /** Opt-in readers: costMicrousd is the known subtotal, excluding these returned replies. */
+  unknownCostResponses?: number;
   dryRun: boolean;
   results: Array<Record<string, unknown>>;
 }

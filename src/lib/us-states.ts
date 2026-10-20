@@ -17,6 +17,8 @@ export const STATE_NAMES: Record<string, string> = {
 // Territory codes — DC is a district, PR/VI/GU/AS are US territories
 const TERRITORY_CODES = ["DC", "PR", "VI", "GU", "AS"] as const;
 export const US_TERRITORIES = new Set<string>(TERRITORY_CODES);
+/** The territories alone, without DC: a list holding one is "states and territories". */
+export const OVERSEAS_TERRITORIES = new Set<string>(["PR", "VI", "GU", "AS"]);
 
 // 50 US states (everything in STATE_NAMES minus territories)
 export const US_STATES_ONLY = new Set<string>(
@@ -25,9 +27,6 @@ export const US_STATES_ONLY = new Set<string>(
 
 // All valid US jurisdiction codes (50 states + DC + territories)
 export const VALID_US_CODES = new Set<string>(Object.keys(STATE_NAMES));
-
-// Freely Associated States — not US jurisdictions, should be excluded from aggregations
-export const EXCLUDED_CODES = new Set(["FM", "MH", "PW"]);
 
 // Compatibility export — 50 states + DC (excludes overseas territories)
 export const STATE_CODES = Object.keys(STATE_NAMES).filter(

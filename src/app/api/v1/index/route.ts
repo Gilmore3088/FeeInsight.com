@@ -1,51 +1,34 @@
 import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
 import { NextRequest, NextResponse } from "next/server";
 import { getNationalIndex, getPeerIndex } from "@/lib/data-store";
-import { getDisplayName, getFeeFamily, getFeeTier, getSpotlightCategories } from "@/lib/fee-taxonomy";
-import { validateApiKey } from "@/lib/api-auth";
-import { checkRateLimitWithTier } from "@/lib/api-rate-limit";
+import { FEE_FAMILIES, getDisplayName, getFeeFamily, getFeeTier, getSpotlightCategories } from "@/lib/fee-taxonomy";
+import { getPublicFeeTypes } from "@/lib/public-stats";
 import { logApiUsage } from "@/lib/api-usage";
-import { getCurrentUser } from "@/lib/auth";
-import { canAccessPremium, canExportData } from "@/lib/access";
+import { canExportData } from "@/lib/access";
 import { API_ATTRIBUTION } from "@/lib/constants";
+import { authorizeV1 } from "@/lib/api-v1-auth";
 import {
-  API_V1_RATE_LIMIT_ROUTE,
   ApiParamError,
   apiError,
-  apiKeyRequiredError,
   apiOptions,
   assetTierParam,
   charterParam,
   districtParam,
   formatParam,
-  getAnonymousId,
   isPaidApiKey,
   planRequiredError,
-  rateLimitError,
   stateParam,
   toCsv,
+  withApiCaching,
   withApiHeaders,
 } from "@/lib/api-v1";
 
+const TAXONOMY_TYPES = new Set(Object.values(FEE_FAMILIES).flat());
+
 async function handleGET(request: NextRequest) {
-  // API auth + rate limiting
-  const auth = await validateApiKey(request);
-  if (auth.error) {
-    return apiError(401, "invalid_api_key", auth.error);
-  }
-  // The API is for partners we have issued a key to; the site's own signed-in
-  // download buttons still work without one.
-  const user = auth.valid ? null : await getCurrentUser();
-  if (!auth.valid && !user) return apiKeyRequiredError();
-  const anonId = auth.organizationId ? null : getAnonymousId(request);
-  const tier = auth.valid ? auth.tier : "free";
-  const rateLimit = await checkRateLimitWithTier(
-    auth.organizationId,
-    anonId,
-    tier,
-    API_V1_RATE_LIMIT_ROUTE,
-  );
-  if (!rateLimit.allowed) return rateLimitError(rateLimit);
+  const caller = await authorizeV1(request);
+  if (caller instanceof Response) return caller;
+  const { auth, user, keyId, anonymousId: anonId, rateLimit, paid } = caller;
 
   const { searchParams } = request.nextUrl;
   let state: string | null;
@@ -61,6 +44,7 @@ async function handleGET(request: NextRequest) {
     format = formatParam(searchParams);
   } catch (error) {
     if (error instanceof ApiParamError) {
+      logApiUsage(auth.organizationId, anonId, "api.v1.index", { status: 400 }, keyId).catch(() => {});
       return apiError(400, "invalid_parameter", error.message, { rateLimit });
     }
     throw error;
@@ -69,7 +53,7 @@ async function handleGET(request: NextRequest) {
   const paidKey = isPaidApiKey(auth);
 
   if (format === "csv" && !paidKey && !canExportData(user)) {
-    logApiUsage(auth.organizationId, anonId, "api.v1.index.csv", { status: 403 }).catch(() => {});
+    logApiUsage(auth.organizationId, anonId, "api.v1.index.csv", { status: 403 }, keyId).catch(() => {});
     return planRequiredError(rateLimit, "CSV export");
   }
 
@@ -84,10 +68,13 @@ async function handleGET(request: NextRequest) {
     : await getNationalIndex();
 
   // The free tier gets the spotlight categories only, matching /fees.
-  const paid = paidKey || canAccessPremium(user);
   const spotlight = new Set(getSpotlightCategories());
 
+  // The listing holds at most the top 50 fee types by institution count on the shared public
+  // snapshot (James, Oct 17 2026), the same 50 for a peer filter as for the national index.
+  const publicTypes = await getPublicFeeTypes();
   const data = entries
+    .filter((e) => !TAXONOMY_TYPES.has(e.fee_category) || publicTypes.has(e.fee_category))
     .filter((e) => paid || spotlight.has(e.fee_category))
     .map((e) => ({
       category: e.fee_category,
@@ -103,22 +90,23 @@ async function handleGET(request: NextRequest) {
       bank_count: e.bank_count,
       cu_count: e.cu_count,
       maturity: e.maturity_tier,
+      unstated_audience_institution_count: e.unstated_audience_institution_count ?? 0,
     }));
 
   if (format === "csv") {
     const csv = toCsv(
       [
         "category", "display_name", "family", "tier", "median", "p25", "p75", "min", "max",
-        "institution_count", "bank_count", "cu_count", "maturity",
+        "institution_count", "bank_count", "cu_count", "maturity", "unstated_audience_institution_count",
       ],
       data.map((d) => [
         d.category, d.display_name, d.family, d.tier, d.median, d.p25, d.p75, d.min, d.max,
-        d.institution_count, d.bank_count, d.cu_count, d.maturity,
+        d.institution_count, d.bank_count, d.cu_count, d.maturity, d.unstated_audience_institution_count,
       ]),
     );
 
-    logApiUsage(auth.organizationId, anonId, "api.v1.index.csv").catch(() => {});
-    return withApiHeaders(
+    logApiUsage(auth.organizationId, anonId, "api.v1.index.csv", { count: data.length, status: 200 }, keyId).catch(() => {});
+    return withApiCaching(request, withApiHeaders(
       new NextResponse(csv, {
         headers: {
           "Content-Type": "text/csv",
@@ -126,11 +114,11 @@ async function handleGET(request: NextRequest) {
         },
       }),
       rateLimit,
-    );
+    ));
   }
 
-  logApiUsage(auth.organizationId, anonId, "api.v1.index").catch(() => {});
-  return withApiHeaders(
+  logApiUsage(auth.organizationId, anonId, "api.v1.index", { count: data.length, status: 200 }, keyId).catch(() => {});
+  return withApiCaching(request, withApiHeaders(
     NextResponse.json({
       scope: hasFilters ? "filtered" : "national",
       filters: {
@@ -144,7 +132,7 @@ async function handleGET(request: NextRequest) {
       attribution: API_ATTRIBUTION,
     }),
     rateLimit,
-  );
+  ));
 }
 
 export const GET = withApiRoutePolicy("api.v1.index", "GET", handleGET);

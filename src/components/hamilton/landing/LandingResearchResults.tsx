@@ -6,6 +6,7 @@
  * represents a prepared selection, never permission to execute a paid request.
  * The host Analyze page supplies a server-validated selection after Pro auth.
  */
+import { hamiltonInstitutionHref } from "@/lib/hamilton/context-link";
 import { useRef, useState } from "react";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import {
@@ -14,12 +15,18 @@ import {
 } from "@/lib/hamilton/landing-research-handoff";
 import type { LocalMarketAnswer } from "@/lib/hamilton/local-market-answer";
 import type { GeographicResearchResult, GeographicFeeMeasure } from "@/lib/hamilton/landing-geographic-research";
+import { statedFeeText } from "@/lib/own-fee";
 
 type Result = LocalMarketAnswer | GeographicResearchResult;
 const dollars = (amount: number | null | undefined) =>
   amount === null || amount === undefined ? "Not on file" :
     new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(amount);
 const integer = (count: number) => count.toLocaleString("en-US");
+/** A named institution's stated price, or the range and each fee by name when it states several (#1931). */
+const statedCell = (row: Pick<LocalMarketAnswer["you"], "fees" | "several">, category: string) => {
+  const span = row.several?.[category];
+  return span ? statedFeeText(span.low, span, (v) => dollars(v)) : dollars(row.fees[category]);
+};
 
 function isLocal(result: Result): result is LocalMarketAnswer {
   return "competitors" in result && "institutionId" in result;
@@ -169,13 +176,13 @@ function LandingResearchResultsForSelection({ selection }: { selection: LandingR
                 <tr className="border-b border-warm-200 bg-warm-50">
                   <th scope="row" className="p-2">{result.institutionName} (subject)</th>
                   <td className="p-2">{result.you.branchesInMarket ?? "Unavailable"}</td>
-                  {selection.categories.map(category => <td key={category} className="p-2">{dollars(result.you.fees[category])}</td>)}
+                  {selection.categories.map(category => <td key={category} className="p-2">{statedCell(result.you, category)}</td>)}
                 </tr>
                 {result.competitors.map(peer => (
                   <tr key={peer.institutionId} className="border-b border-warm-100">
-                    <th scope="row" className="p-2 font-medium"><a className="underline" href={`/institution/${peer.institutionId}`}>{peer.name}</a><div className="text-xs font-normal">{peer.evidenceUrl && /^https?:\/\//i.test(peer.evidenceUrl) ? <a className="underline" href={peer.evidenceUrl} target="_blank" rel="noreferrer">Published schedule</a> : "Schedule link unavailable"}{peer.evidenceDate ? ` · ${peer.evidenceDate}` : ""}</div></th>
+                    <th scope="row" className="p-2 font-medium"><a className="underline" href={hamiltonInstitutionHref(peer.institutionId)}>{peer.name}</a><div className="text-xs font-normal">{peer.evidenceUrl && /^https?:\/\//i.test(peer.evidenceUrl) ? <a className="underline" href={peer.evidenceUrl} target="_blank" rel="noreferrer">Published schedule</a> : "Schedule link unavailable"}{peer.evidenceDate ? ` · ${peer.evidenceDate}` : ""}</div></th>
                     <td className="p-2">{peer.branches ?? "Unavailable"}</td>
-                    {selection.categories.map(category => <td key={category} className="p-2">{dollars(peer.fees[category])}</td>)}
+                    {selection.categories.map(category => <td key={category} className="p-2">{statedCell(peer, category)}</td>)}
                   </tr>
                 ))}
               </tbody>

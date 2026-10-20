@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { DataFreshness } from "@/components/data-freshness";
+import { PAGE_HEADER } from "@/components/public/page-header";
 import { SITE_URL } from "@/lib/constants";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
@@ -84,27 +85,29 @@ export default async function MarketConcentrationPage() {
         ]}
       />
 
-      <div className="flex items-center gap-2 mb-4">
-        <span className="h-px w-8 bg-brick/40" />
-        <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-brick/60">
-          Original Research
-        </span>
-      </div>
-      <h1
-        className="text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] font-extrabold text-ink"
-        style={{ fontFamily: "var(--fi-font-sans)" }}
-      >
-        Market Concentration & Bank Fees
-      </h1>
-      <p className="mt-2 max-w-2xl text-[14px] text-ink-muted">
-        Do banks charge higher fees in markets with less competition? This
-        analysis measures deposit market concentration (HHI) across U.S. metro
-        areas using FDIC Summary of Deposits data, identifying the most and
-        least competitive banking markets.
-      </p>
-      <div className="mt-1">
-        <DataFreshness />
-      </div>
+      <header className={PAGE_HEADER}>
+        <div className="flex items-center justify-center gap-2 mb-4 sm:justify-start">
+          <span className="h-px w-8 bg-brick/40" />
+          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-brick/60">
+            Original Research
+          </span>
+        </div>
+        <h1
+          className="text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] font-extrabold text-ink"
+          style={{ fontFamily: "var(--fi-font-sans)" }}
+        >
+          Market Concentration & Bank Fees
+        </h1>
+        <p className="mx-auto mt-2 max-w-[34rem] text-[14px] text-ink-muted sm:mx-0 sm:max-w-2xl">
+          Do banks charge higher fees in markets with less competition? This
+          analysis measures deposit market concentration (HHI) across U.S. metro
+          areas using FDIC Summary of Deposits data, identifying the most and
+          least competitive banking markets.
+        </p>
+        <div className="mt-1">
+          <DataFreshness />
+        </div>
+      </header>
 
       {/* Summary cards */}
       <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -355,8 +358,7 @@ export default async function MarketConcentrationPage() {
             No market concentration data available yet.
           </p>
           <p className="mt-1 text-[13px] text-ink-muted">
-            Start the Atlas data refresh from the admin console to populate branch deposit
-            data and compute market HHI.
+            This study is being prepared.
           </p>
         </div>
       )}

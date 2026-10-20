@@ -4,6 +4,8 @@ import type { ActivePeerSet } from "./active-peer-set";
 
 export const PEER_LIST_VERSION = 1;
 export const MAX_PEER_LIST_ROWS = 50;
+/** The furthest a list pages into its ordered matches (#977, H02-T08). Past it, narrow the criteria. */
+export const MAX_PEER_LIST_OFFSET = 10_000;
 export type PeerCharter = "bank" | "credit_union";
 export interface AssetBound { value: number; inclusive: boolean }
 export interface PeerListIntent {
@@ -20,6 +22,8 @@ export interface PeerListIntent {
   largest: boolean;
   saved: boolean;
   accountSubject: boolean;
+  /** "Similarly sized … to SchoolsFirst": the institution the size is measured against, as typed. */
+  similarTo?: string | null;
   problems: string[];
 }
 export interface AssetEvidence {
@@ -68,6 +72,11 @@ export interface PeerListData {
   queriedAt: string;
   notes: string[];
   feeComparison?: PeerFeeComparison;
+  /**
+   * How many matches in the list's order come before these rows: 0 is the first page, 50 the
+   * second. Absent on lists saved before paging, which all start at the first match.
+   */
+  offset?: number;
 }
 export interface PeerFeeEntry {
   institutionId: number;
@@ -80,11 +89,32 @@ export interface PeerFeeEntry {
   documentUrl: string | null;
   sourceUrl: string | null;
 }
-/** Preserve individual published charges; never collapse distinct NSF fees into a median. */
+/**
+ * A peer's fee stated as a rate ("1.1% of the transaction"), read from
+ * published_fee_rate_catalog. It has no dollar amount and is never pooled, averaged,
+ * compared with or converted into the dollar entries beside it.
+ */
+export interface PeerRateFeeEntry {
+  institutionId: number;
+  id: number;
+  name: string;
+  /** "1.1% of the transaction", "3% of the advance ($10 minimum)". */
+  rateLabel: string;
+  frequency: string | null;
+  publishedAt: string | null;
+  sourceDocumentId: number | null;
+  documentUrl: string | null;
+  sourceUrl: string | null;
+}
+/** Preserve individual published charges; never collapse distinct fees into a median. */
 export interface PeerFeeComparison {
-  category: "nsf";
+  category: string;
+  /** The fee's plain name ("overdraft"); absent on snapshots saved before #1538, which were all NSF. */
+  label?: string;
   comparedPeerIds: number[];
   fees: PeerFeeEntry[];
+  /** Fees stated as a rate, each on its own line; absent on snapshots saved before rates were listed. */
+  rateFees?: PeerRateFeeEntry[];
   account: { institutionId: number; name: string } | null;
   includesAccount: boolean;
   note: string;
@@ -106,6 +136,30 @@ export interface PeerListContinuation {
   originSubjectId: number;
   originRows: Array<Pick<PeerListRow, "institutionId" | "recordId" | "reportDate" | "source">>;
   selectedIds: number[];
+  /** The displayed page's offset, so a follow-up re-runs that page and not the first; absent means 0. */
+  originOffset?: number;
+  /** The state an earlier "Only Florida" narrowed the list to, so later follow-ups keep saying so. */
+  refinedState?: string;
+}
+
+/** A requested page offset, or null when it is not a whole number from 0 to MAX_PEER_LIST_OFFSET. */
+export function readPeerListOffset(value: unknown): number | null {
+  if (value === undefined || value === null) return 0;
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= MAX_PEER_LIST_OFFSET ? value : null;
+}
+
+/**
+ * Where the next or previous page of a list starts, or null when there is none. Only a list asked
+ * for "all" (or for more than one page holds) pages; "List ten peers" shows its ten and stops.
+ */
+export function peerListPageOffsets(data: Pick<PeerListData, "status" | "criteria" | "rows" | "totalMatches" | "offset" | "feeComparison">): { previous: number | null; next: number | null } {
+  const c = data.criteria;
+  if (data.status !== "ready" || !c || data.feeComparison || data.totalMatches === null || c.limit < MAX_PEER_LIST_ROWS) return { previous: null, next: null };
+  const offset = data.offset ?? 0;
+  const end = offset + data.rows.length;
+  const wanted = c.requestedCount ?? Number.POSITIVE_INFINITY;
+  const next = data.rows.length > 0 && end < data.totalMatches && end < wanted && end <= MAX_PEER_LIST_OFFSET ? end : null;
+  return { previous: offset > 0 ? Math.max(0, offset - c.limit) : null, next };
 }
 
 export function peerListRowReferences(rows: PeerListRow[]): PeerListContinuation["originRows"] {
@@ -128,6 +182,7 @@ export function makePeerListContinuation(
     originSubjectId: data.subject.institutionId,
     originRows: peerListRowReferences(data.rows),
     selectedIds: data.rows.map(row => row.institutionId),
+    ...(data.offset ? { originOffset: data.offset } : {}),
   };
 }
 
@@ -139,6 +194,8 @@ export function validatePeerListContinuation(value: unknown): PeerListContinuati
   if (typeof p.originQuestion !== "string" || p.originQuestion.length > 1000 || !isPeerListQuestion(p.originQuestion)) return null;
   if (p.originInstitutionId !== null &&
       (typeof p.originInstitutionId !== "string" || !/^[1-9][0-9]{0,14}$/.test(p.originInstitutionId))) return null;
+  if (p.originOffset !== undefined && (readPeerListOffset(p.originOffset) === null || p.originOffset === null)) return null;
+  if (p.refinedState !== undefined && (typeof p.refinedState !== "string" || !/^[A-Z]{2}$/.test(p.refinedState))) return null;
   if (!idOK(p.originSubjectId) || !Array.isArray(p.originRows) || p.originRows.length > MAX_PEER_LIST_ROWS ||
       !Array.isArray(p.selectedIds) || p.selectedIds.length > MAX_PEER_LIST_ROWS) return null;
   const seen = new Set<number>();
@@ -162,20 +219,33 @@ export function peerListReferencesUnchanged(rows: PeerListRow[], prior: PeerList
 export function isPeerListContinuationQuestion(question: string): boolean {
   return /^(?:only\b|show\s+only\b|filter\s+to\b|(?:compare|show|list)\s+their\b|how\s+does\s+this\s+compare\s+(?:with|to)\s+us\b)/i.test(question.trim());
 }
+const THEIR_FEES = /^(?:compare|show|list)\s+their\s+(.{1,60}?)\s+fees?(\s+(?:with|to|against)\s+(?:us|ours))?$/i;
+
 /** A finite comparison grammar; other question types never trigger paid inference. */
 export function peerListFeeFollowUp(question: string): "peer_fees" | "with_account" | null {
   const clean = question.trim().replace(/[?.!]+$/, "").trim();
-  if (/^(?:compare|show|list)\s+their\s+(?:nsf|nonsufficient funds|non-sufficient funds)\s+fees?$/i.test(clean)) return "peer_fees";
+  const their = clean.match(THEIR_FEES);
+  if (their) return their[2] ? "with_account" : "peer_fees";
   if (/^how\s+does\s+this\s+compare\s+(?:with|to)\s+us$/i.test(clean)) return "with_account";
   return null;
+}
+
+/**
+ * The fee a "Compare their overdraft fees" follow-up names, as typed; null for "How does this
+ * compare with us?", which compares NSF fees (#1538). The server matches it to one fee category.
+ */
+export function peerListFollowUpFeePhrase(question: string): string | null {
+  return question.trim().replace(/[?.!]+$/, "").trim().match(THEIR_FEES)?.[1] ?? null;
 }
 
 /** Deliberately finite grammar: other follow-ups receive explicit guidance. */
 export function peerListRefinementState(question: string): string | null {
   const cleaned = question.trim().replace(/[?.!]+$/, "").replace(/\s+/g, " ");
-  if (!/^only\s+/i.test(cleaned)) return null;
+  // "Only show the California ones", "Show only Texas", "Filter to Florida" (#1538). A word that is
+  // a condition ("Texas banks") stays in the term, so it matches no state rather than being dropped.
+  if (!/^(?:only|show\s+(?:me\s+)?only|filter\s+to)\s+/i.test(cleaned)) return null;
   const term = cleaned
-    .replace(/^only\s+(?:show\s+)?(?:me\s+)?(?:the\s+)?/i, "")
+    .replace(/^(?:only\s+(?:show\s+)?(?:me\s+)?|show\s+(?:me\s+)?only\s+|filter\s+to\s+)(?:the\s+)?/i, "")
     .replace(/\s+(?:ones|peers|institutions)$/i, "").trim();
   const match = Object.entries(STATE_NAMES).find(([code, name]) =>
     code.toLowerCase() === term.toLowerCase() || name.toLowerCase() === term.toLowerCase());
@@ -201,7 +271,10 @@ export function isPeerListQuestion(question: string): boolean {
   if (/\b(fees?|overdrafts?|nsf|prices?|pricing|revenue|income|median|reports?|recommend\w*|strateg\w*|compar(?:e|ison|ing))\b/i.test(question)) return false;
   const institutions = /\b(peers?|competitors?|banks?|credit unions?|institutions?|CUs?)\b/i.test(question);
   const request = /\b(list|show|find|give|return|identify|name|who|which|what|largest|biggest)\b/i.test(question);
-  return institutions && (request || /^\s*(?:(?:my|our|similar|saved|custom)\s+)*(?:peers|competitors)\s*[?.!]*\s*$/i.test(question));
+  // "Florida institutions with assets above $5,000M" asks for a list as plainly as "List …" does.
+  const assetFilter = /\b(?:over|above|under|below|more than|greater than|less than|at least|at most|up to|between)\s+\$?\d/i.test(question)
+    || new RegExp(`${AMOUNT}\\s*(?:\\+|and up|or more|and above)`, "i").test(question);
+  return institutions && (request || assetFilter || /^\s*(?:(?:my|our|similar|saved|custom)\s+)*(?:peers|competitors)\s*[?.!]*\s*$/i.test(question));
 }
 
 const COUNT_WORDS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, fifteen: 15, twenty: 20, twentyfive: 25, thirty: 30, forty: 40, fifty: 50 };
@@ -266,6 +339,19 @@ export function parsePeerListQuestion(question: string): PeerListIntent | null {
   if (requestedCount !== null && (!Number.isSafeInteger(requestedCount) || requestedCount < 1)) problems.push("Request at least one peer.");
   const limit = requestedCount === null ? MAX_PEER_LIST_ROWS : Math.min(Math.max(requestedCount, 1), MAX_PEER_LIST_ROWS);
 
+  const similarSize = /\bsimilar(?:ly)?(?:[- ]sized?)?\b|\bcomparable\b|\bclosest\b|\bsame size\b|\babout (?:our|its|the same) size\b/i.test(question);
+  // "… to SchoolsFirst" or "… like Navy Federal in VA": the size reference is named at the end. It is
+  // read before state names are removed, so "Texas Capital" stays a name and never becomes a Texas
+  // filter. planPeerList checks it is the research institution; another name is refused.
+  let similarTo: string | null = null;
+  if (similarSize) {
+    const named = remaining.match(/\b(?:to|as|like)\s+([A-Z0-9][\w&'.-]*(?:(?:,?\s+|\s+(?:of|and|the)\s+)[A-Z0-9][\w&'.-]*)*)(?=(?:\s+in\s+[A-Za-z][\w.]*(?:\s+[A-Z][\w.]*)?)?\s*[?.!]*\s*$)/);
+    if (named && !/^(?:us|me|this institution|the selected institution)$/i.test(named[1])) {
+      similarTo = named[1].replace(/[.]+$/, "").replace(/'s$/i, "");
+      remaining = replaceMatch(remaining, named);
+    }
+  }
+
   const states: string[] = [];
   remaining = remaining.replace(/\bDistrict of Columbia\b/gi, "Washington DC");
   for (const [code, name] of Object.entries(STATE_NAMES).sort((a, b) => b[1].length - a[1].length)) {
@@ -292,7 +378,6 @@ export function parsePeerListQuestion(question: string): PeerListIntent | null {
   const bothTypes = (hasCu && hasBank) || /\bboth(?:\s+types)?\b/i.test(question);
   const charterType = bothTypes ? null : hasCu ? "credit_union" : hasBank ? "bank" : null;
   const sameState = /\b(?:same|this|our|my|selected institution's) state\b/i.test(question);
-  const similarSize = /\bsimilar(?:ly)?(?:[- ]sized?)?\b|\bcomparable\b|\bclosest\b|\bsame size\b/i.test(question);
   const largest = /\b(largest|biggest|top)\b/i.test(question);
   const peerBased = /\bpeers?\b/i.test(question);
   const saved = /\b(saved|custom|default)\s+(?:peer\s+)?(?:peers?|group|set)\b/i.test(question);
@@ -302,22 +387,69 @@ export function parsePeerListQuestion(question: string): PeerListIntent | null {
   if (/\b(local|nearby|county|counties|miles?|radius|metro|branches|competitors?)\b/i.test(question)) problems.push("Branch-market selection is not supported in this list yet. Specify a US state or an asset-size group instead; local competitors and asset-size peers are different groups.");
   // A finite grammar is safer than silently ignoring 'not', a named bank, a foreign
   // geography, a reporting year or a metric this list cannot yet apply.
-  const allowed = /\b(please|can|could|would|you|give|me|a|an|the|list|show|find|return|identify|name|who|which|what|are|is|of|for|with|in|across|from|and|or|to|by|total|assets?|size|sized|similarly|similar|comparable|closest|same|type|types|peer|peers|competitors?|banks?|credit|unions?|institutions?|financial|cu|cus|us|my|our|this|selected|saved|custom|group|set|default|national|nationally|nationwide|largest|biggest|top|first|all|only|state|states|both|that|have)\b/gi;
+  const allowed = /\b(please|can|could|would|you|give|me|a|an|the|list|show|find|return|identify|name|who|which|what|are|is|of|for|with|in|across|from|and|or|to|by|total|assets?|size|sized|similarly|similar|comparable|closest|same|type|types|peer|peers|competitors?|banks?|credit|unions?|institutions?|financial|cu|cus|us|my|our|this|selected|saved|custom|group|set|default|national|nationally|nationwide|largest|biggest|top|first|all|only|state|states|both|that|have|about|as|like|ones)\b/gi;
   const residue = remaining.replace(allowed, " ").replace(/['?.,!\s-]/g, "");
   if (residue && !problems.length) problems.push(LIST_HELP);
   if (largest && similarSize) problems.push("Choose largest institutions or closest asset-size peers; those are different sort orders.");
   if (sameState && states.length) problems.push("Choose the subject's state or explicitly named states, not both.");
-  return { requestedCount, limit, charterType, bothTypes, states: [...new Set(states)].sort(), sameState, minAssets, maxAssets, similarSize, peerBased, largest, saved, accountSubject, problems };
+  return { requestedCount, limit, charterType, bothTypes, states: [...new Set(states)].sort(), sameState, minAssets, maxAssets, similarSize, peerBased, largest, saved, accountSubject, similarTo, problems };
 }
 
+// Whole legal endings only: "national" and "federal" alone stay part of a name ("Citizens National").
+const LEGAL_ENDINGS = [["national", "association"], ["federal", "credit", "union"], ["credit", "union"], ["na"], ["fcu"], ["cu"], ["bank"], ["inc"], ["company"], ["co"]];
+/** Words of a name with legal endings dropped: "Schoolsfirst Federal Credit Union" -> ["schoolsfirst"]. */
+function nameCore(name: string): string[] {
+  const words = name.toLowerCase().replace(/[.'’]/g, "").split(/[^a-z0-9&]+/).filter(Boolean);
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const ending of LEGAL_ENDINGS) {
+      if (words.length > ending.length && ending.every((word, i) => words[words.length - ending.length + i] === word)) {
+        words.splice(words.length - ending.length);
+        changed = true;
+      }
+    }
+  }
+  return words;
+}
+
+/** "SchoolsFirst" names "Schoolsfirst Federal Credit Union" and "U.S. Bank" names "U.S. Bank National
+ * Association". Only the whole name counts: "Capital" is not "Capital One", nor "TDECU" "TD Bank". */
+function sameInstitutionName(typed: string, name: string): boolean {
+  return nameCore(typed).join(" ") === nameCore(name).join(" ");
+}
+
+/** Assets in dollars, shown as "$1.2T", "$48.3B" or "$950M" in every Hamilton answer (#980); missing
+ * assets say so, and a genuine zero stays "$0". */
 export function formatPeerAssets(value: number | null): string {
   if (value === null) return "Not available";
+  // "$750B", not "$750.0B": a trailing ".0" adds no precision.
+  if (value >= 1e12) return `$${(value / 1e12).toFixed(1).replace(/\.0$/, "")}T`;
+  if (value >= 1e9) return `$${(value / 1e9).toFixed(1).replace(/\.0$/, "")}B`;
+  if (value >= 1e6) return `$${Math.round(value / 1e6)}M`;
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(value);
+}
+
+/** A selection bound, shown exactly as applied: "$1.25B" when that is exact, else every dollar, so a
+ * row never seems to break the rule its rounded figure sits beside. */
+export function formatAssetBound(value: number): string {
+  for (const [unit, suffix] of [[1e12, "T"], [1e9, "B"], [1e6, "M"]] as const) {
+    if (value < unit) continue;
+    const scaled = Number((value / unit).toFixed(3));
+    if (scaled * unit === value) return `$${scaled}${suffix}`;
+    break;
+  }
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: Number.isInteger(value) ? 0 : 2 }).format(value);
 }
 
-/** Uses explicit filters ahead of defaults. A requested saved group is never replaced. */
+/**
+ * Uses explicit filters ahead of defaults. A requested saved group is never replaced. With no saved
+ * group, "list my peers" lists half to twice the subject's assets (#1716); James kept that on Oct 19
+ * (#2097), since a reader can save their own group.
+ */
 export function planPeerList(intent: PeerListIntent, subject: PeerListSubject, active: ActivePeerSet | null): { criteria: PeerListCriteria | null; problem: string | null } {
   if (intent.problems.length) return { criteria: null, problem: intent.problems.join(" ") };
+  if (intent.similarTo && !sameInstitutionName(intent.similarTo, subject.name))
+    return { criteria: null, problem: `This list measures size against the institution you are researching, ${subject.name.replace(/\.$/, "")}. To list peers sized like ${intent.similarTo}, open ${intent.similarTo} in the workspace first.` };
   const explicit = Boolean(intent.charterType || intent.bothTypes || intent.states.length || intent.sameState || intent.minAssets || intent.maxAssets || intent.similarSize || intent.largest);
   const useSaved = intent.saved || (!explicit && active !== null);
   if (intent.saved && !active) return { criteria: null, problem: "No authorized active saved peer group is available for this institution. Choose one in Settings or specify state, type and asset criteria." };
@@ -354,11 +486,13 @@ export function planPeerList(intent: PeerListIntent, subject: PeerListSubject, a
   if (!useSaved && (intent.peerBased || intent.similarSize) && !charterType && !intent.bothTypes) return { criteria: null, problem: "Choose banks, credit unions, or both; the subject's institution type is unavailable." };
   if (useSaved) descriptions.push(`Saved peer group: ${active!.label}. Its filters remain in force.`);
   descriptions.push(`${charterType === "bank" ? "Banks" : charterType === "credit_union" ? "Credit unions" : "Banks and credit unions"}; ${states.length ? states.map(s => STATE_NAMES[s] ?? s).join(" or ") + " (headquarters state)" : "nationwide"}.`);
-  if (minAssets) descriptions.push(`Assets ${minAssets.inclusive ? "at least" : "greater than"} ${formatPeerAssets(minAssets.value)}.`);
-  if (maxAssets) descriptions.push(`Assets ${maxAssets.inclusive ? "at most" : "less than"} ${formatPeerAssets(maxAssets.value)}.`);
+  if (minAssets) descriptions.push(`Assets ${minAssets.inclusive ? "at least" : "greater than"} ${formatAssetBound(minAssets.value)}.`);
+  if (maxAssets) descriptions.push(`Assets ${maxAssets.inclusive ? "at most" : "less than"} ${formatAssetBound(maxAssets.value)}.`);
   if (filters?.asset_tiers?.length) descriptions.push(`Saved registry asset tiers: ${filters.asset_tiers.join(", ")}; displayed dollar assets come from dated filings.`);
   if (filters?.fed_districts?.length) descriptions.push(`Saved Federal Reserve districts: ${filters.fed_districts.join(", ")}.`);
-  const sort = intent.largest ? "largest_assets" : needsSimilarity ? "closest_assets" : "name";
+  // A capped list keeps the institutions the question is about: closest in size for "similar",
+  // otherwise the largest (#1540). Name order would drop the largest without saying so.
+  const sort = needsSimilarity && !intent.largest ? "closest_assets" : "largest_assets";
   descriptions.push(sort === "closest_assets" ? "Ordered by closest proportional asset size, then institution name and ID." : sort === "largest_assets" ? "Ordered by total assets, largest first, then institution name and ID." : "Ordered by institution name and ID.");
   descriptions.push("The research subject is excluded. Published fee coverage does not determine eligibility.");
   return { problem: null, criteria: {

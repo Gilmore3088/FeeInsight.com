@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { pageCopyRepeats, sameScheduleText, type PageCopyRow } from "./page-copy-collapse";
+import { describe, expect, it, vi } from "vitest";
+import { carriedName, collapsePageCopies, pageCopyRepeats, sameScheduleText, type PageCopyRow } from "./page-copy-collapse";
 
 const row = (over: Partial<PageCopyRow>): PageCopyRow => ({
   fee_published_id: 1,
@@ -178,5 +178,171 @@ describe("pageCopyRepeats (#1439)", () => {
       row({ fee_published_id: 2, source_document_id: 200, crawled_at: "2026-10-10", superseded: true }),
     ];
     expect(pageCopyRepeats(replaced, both).collapses).toEqual([expect.objectContaining({ feePublishedId: 2, keptFeePublishedId: 1 })]);
+  });
+
+  it("ranks a replaced copy below a current copy of the same address only, not of another address (#1439 review)", () => {
+    // A superseded read of the bank's newer address (Oct 10) and a current read of an old address
+    // (Sep 1): the old address may be an older edition, so the later read stays.
+    const otherAddress = [
+      row({ fee_published_id: 1, source_document_id: 100, document_url: "https://bank.com/fee-schedule.pdf?print=1", crawled_at: "2026-09-01" }),
+      row({ fee_published_id: 2, source_document_id: 200, crawled_at: "2026-10-10", superseded: true }),
+    ];
+    expect(pageCopyRepeats(otherAddress, both).collapses).toEqual([expect.objectContaining({ feePublishedId: 1, keptFeePublishedId: 2 })]);
+    // With a current read of that same address in the group, the replaced read is never kept.
+    const three = new Map([...both, ["300", TEXT]]);
+    const sameAddress = [...otherAddress, row({ fee_published_id: 3, source_document_id: 300, crawled_at: "2026-09-15" })];
+    const kept = pageCopyRepeats(sameAddress, three).collapses.map((pick) => [pick.feePublishedId, pick.keptFeePublishedId]);
+    expect(kept).toEqual(expect.arrayContaining([[2, 3]]));
+    expect(kept.some(([, keptId]) => keptId === 2)).toBe(false);
+  });
+});
+
+describe("pageCopyRepeats: a copy the newer copy replaced (#1348)", () => {
+  const TEMP = "Fees Temporary checks (sheet of 3 checks) $1.00 Stop Payment $30.00 Cashier's Check $10.00 Wire Transfer Incoming $15.00 Outgoing $25.00";
+  const texts = new Map([["297", TEMP], ["20497", TEMP]]);
+  const pair = (oldName: string, newName: string) => [
+    row({ fee_published_id: 7255, source_document_id: 297, document_url: "https://www.bankfive.com:443/fees", crawled_at: "2026-02-01", superseded: true, superseded_by_id: 20497, canonical_fee_key: "counter_check", amount: 1, fee_name: oldName }),
+    row({ fee_published_id: 32758, source_document_id: 20497, document_url: "https://www.bankfive.com/fees", crawled_at: "2026-10-01", canonical_fee_key: "counter_check", amount: 1, fee_name: newName }),
+  ];
+
+  it("closes the replaced copy's read of the line under another name (Fall River 7255 / 32758)", () => {
+    const found = pageCopyRepeats(pair("Temporary checks", "Temporary checks (sheet of 3 checks)"), texts);
+    expect(found).toMatchObject({ pairs: 1, renamed: 1, apartOnPage: 0 });
+    expect(found.collapses).toEqual([expect.objectContaining({ feePublishedId: 7255, keptFeePublishedId: 32758 })]);
+  });
+
+  it("keeps both when the newer copy prints the two names as lines of their own", () => {
+    const apart = "Fees Counter Checks $1.00 Temporary checks (sheet of 3 checks) $1.00 Stop Payment $30.00 Cashier's Check $10.00 Wire Transfer Incoming $15.00 Outgoing $25.00";
+    const found = pageCopyRepeats(pair("Counter Checks", "Temporary checks (sheet of 3 checks)").map((one, i) => (i === 1 ? { ...one, fee_name: "Counter checks (sheet of 3)" } : one)), new Map([["297", apart], ["20497", apart.replace("Temporary checks (sheet of 3 checks)", "Counter checks (sheet of 3)")]]));
+    expect(found).toMatchObject({ pairs: 1, renamed: 1, apartOnPage: 1 });
+    expect(found.collapses).toEqual([]);
+  });
+
+  it("pairs with the newer copy's row of the same name before one of another name", () => {
+    const text = "Fees ACH Stop Payment $30.00 Stop Payment $30.00 Temporary checks $1.00 Cashier's Check $10.00 Wire Transfer Incoming $15.00 Outgoing $25.00";
+    const rows = [
+      row({ fee_published_id: 1, source_document_id: 297, crawled_at: "2026-02-01", superseded: true, superseded_by_id: 20497, amount: 30, fee_name: "Stop Payment" }),
+      row({ fee_published_id: 3, source_document_id: 20497, crawled_at: "2026-10-01", amount: 30, fee_name: "Stop Payment" }),
+      row({ fee_published_id: 9, source_document_id: 20497, crawled_at: "2026-10-01", amount: 30, fee_name: "ACH Stop Payment" }),
+    ];
+    const found = pageCopyRepeats(rows, new Map([["297", text], ["20497", text]]));
+    expect(found).toMatchObject({ renamed: 0, apartOnPage: 0 });
+    expect(found.collapses).toEqual([expect.objectContaining({ feePublishedId: 1, keptFeePublishedId: 3 })]);
+  });
+
+  it("never closes a line the newer copy dropped as a copy of an unrelated line", () => {
+    const found = pageCopyRepeats(pair("Money Order", "Temporary checks (sheet of 3 checks)"), texts);
+    expect(found).toMatchObject({ pairs: 0, renamed: 0 });
+    expect(pageCopyRepeats(pair("Online Stop Payment", "Temporary checks (sheet of 3 checks)"), texts).pairs).toBe(0);
+  });
+
+  it("reads a box size as a shared word (\"Safe Deposit Box - 3x5\" / \"3 x 5\")", () => {
+    const box = "Safe Deposit Boxes 3 x 5 $30.00 3 x 10 $45.00 Stop Payment $30.00 Cashier's Check $10.00 Wire Transfer Incoming $15.00";
+    const rows = pair("Safe Deposit Box - 3x5", "3 x 5").map((one) => ({ ...one, canonical_fee_key: "safe_deposit_box", amount: 30 }));
+    const found = pageCopyRepeats(rows, new Map([["297", box], ["20497", box]]));
+    expect(found).toMatchObject({ renamed: 1 });
+    expect(found.collapses).toEqual([expect.objectContaining({ feePublishedId: 7255, keptFeePublishedId: 32758 })]);
+    const other = pair("Safe Deposit Box - 3x10", "3 x 5").map((one) => ({ ...one, canonical_fee_key: "safe_deposit_box", amount: 30 }));
+    expect(pageCopyRepeats(other, new Map([["297", box], ["20497", box]])).pairs).toBe(0);
+    // Both name the box, at other sizes: two boxes, even though "safe deposit box" is shared.
+    const sizes = pair("Safe Deposit Box - 3x10", "Safe Deposit Box 3 x 5").map((one) => ({ ...one, canonical_fee_key: "safe_deposit_box", amount: 30 }));
+    expect(pageCopyRepeats(sizes, new Map([["297", box], ["20497", box]])).pairs).toBe(0);
+  });
+
+  it("never pairs other names across documents that only share a page key", () => {
+    const [older, newer] = pair("Counter Checks", "Temporary checks (sheet of 3 checks)");
+    const found = pageCopyRepeats([{ ...older, superseded: false, superseded_by_id: null }, newer], texts);
+    expect(found.pairs).toBe(0);
+  });
+});
+
+describe("carriedName: the kept row keeps the fuller name (17 Oct count, 3 of 10 renamed closes)", () => {
+  // Doc 36321 (inst 2233) prints the line whole; the kept row read only its tail.
+  const farmers = "ATM Fees | Non-customer use of Farmers ATM | $3.00 | Foreign ATM | $2.00 | Stop Payment | $30.00";
+  // Doc 24006 (inst 1754) prints the box sizes under a Safe Deposit Box heading.
+  const boxes = "Safe Deposit Box: | 3X5 | $35.00 | 10X10 | $150.00 | Stop Payment | $30.00";
+
+  it("carries a heading the kept page prints before the kept name", () => {
+    expect(carriedName("Non-customer use of Farmers ATM", "Farmers ATM", farmers)).toBe("Non-customer use of Farmers ATM");
+    expect(carriedName("Safe Deposit Box: 10X10", "10X10", boxes)).toBe("Safe Deposit Box: 10X10");
+  });
+
+  it("never carries a table cell, a sentence tail, a heading the page does not print, or a long run-in", () => {
+    expect(carriedName("each | Cashier's Check", "Cashier's Check", "each | Cashier's Check | $7.00")).toBeNull();
+    expect(carriedName("per stop payment", "Stop Payment", "per stop payment $30.00")).toBeNull();
+    expect(carriedName("Wire Transfer - Foreign Incoming", "Foreign Incoming", "Wires Foreign Incoming $25.00")).toBeNull();
+    const sentence = "A transaction fee will be charged for each transaction at an ATM not owned by us";
+    expect(carriedName(sentence, "Transaction at an ATM not owned by us", `${sentence} $1.00`)).toBeNull();
+    expect(carriedName("Farmers ATM", "Non-customer use of Farmers ATM", farmers)).toBeNull();
+  });
+
+  it("puts the carried name on the collapse for the kept row once", () => {
+    const rows = [
+      row({ fee_published_id: 15779, source_document_id: 100, document_url: "https://bank.com/fees?print=1", crawled_at: "2026-09-01", canonical_fee_key: "atm_non_network", amount: 3, fee_name: "Non-customer use of Farmers ATM", superseded: true, superseded_by_id: 200 }),
+      row({ fee_published_id: 150723, source_document_id: 200, document_url: "https://bank.com/fees", crawled_at: "2026-10-10", canonical_fee_key: "atm_non_network", amount: 3, fee_name: "Farmers ATM" }),
+    ];
+    const found = pageCopyRepeats(rows, new Map([["100", farmers], ["200", farmers]]));
+    expect(found.collapses).toEqual([expect.objectContaining({ feePublishedId: 15779, keptFeePublishedId: 150723, renamed: true, keptNewName: "Non-customer use of Farmers ATM" })]);
+  });
+});
+
+describe("collapsePageCopies (#1439)", () => {
+  it("reports a failed close as an error, not as nothing closed", async () => {
+    const rows = [
+      row({ fee_published_id: 1, source_document_id: 100, document_url: "https://bank.com/fee-schedule.pdf?print=1", crawled_at: "2026-09-01" }),
+      row({ fee_published_id: 2, source_document_id: 200, crawled_at: "2026-10-10" }),
+    ];
+    const db = vi.fn((strings: TemplateStringsArray) => {
+      const text = strings.join("");
+      if (text.includes("agent_source_texts")) return Promise.resolve([{ source_document_id: 100, normalized_text: TEXT }, { source_document_id: 200, normalized_text: TEXT }]);
+      if (text.includes("UPDATE")) return Promise.reject(new Error("deadlock detected"));
+      return Promise.resolve([]);
+    }) as unknown as ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
+    db.unsafe = vi.fn(() => Promise.resolve(rows));
+    const quiet = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const result = await collapsePageCopies(db as unknown as Parameters<typeof collapsePageCopies>[0], { runId: 1, batchId: "agentic-run-1", dryRun: false, live: true });
+    quiet.mockRestore();
+    expect(result.collapses).toEqual([]);
+    expect(result.error).toBe("close failed: deadlock detected");
+  });
+
+  it("renames the kept row to the carried name when the close is live, and records both names", async () => {
+    const text = "ATM Fees | Non-customer use of Farmers ATM | $3.00 | Foreign ATM | $2.00 | Stop Payment | $30.00";
+    const rows = [
+      row({ fee_published_id: 15779, source_document_id: 100, document_url: "https://bank.com/fees?print=1", crawled_at: "2026-09-01", canonical_fee_key: "atm_non_network", amount: 3, fee_name: "Non-customer use of Farmers ATM", superseded: true, superseded_by_id: 200 }),
+      row({ fee_published_id: 150723, source_document_id: 200, document_url: "https://bank.com/fees", crawled_at: "2026-10-10", canonical_fee_key: "atm_non_network", amount: 3, fee_name: "Farmers ATM" }),
+    ];
+    const writes: string[] = [];
+    const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const sqlText = strings.join("?");
+      if (sqlText.includes("INSERT INTO agent_run_events")) {
+        writes.push(String(values[2]));
+        return Promise.resolve([]);
+      }
+      if (sqlText.includes("agent_source_texts")) return Promise.resolve([{ source_document_id: 100, normalized_text: text }, { source_document_id: 200, normalized_text: text }]);
+      if (sqlText.includes("SET rolled_back_at")) return Promise.resolve([{ fee_published_id: 15779 }]);
+      if (sqlText.includes("SET fee_name")) {
+        writes.push(JSON.stringify(values));
+        return Promise.resolve([{ fee_published_id: 150723 }]);
+      }
+      return Promise.resolve([]);
+    }) as unknown as ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
+    db.unsafe = vi.fn(() => Promise.resolve(rows));
+    const result = await collapsePageCopies(db as unknown as Parameters<typeof collapsePageCopies>[0], { runId: 1, batchId: "agentic-run-1", dryRun: false, live: true });
+    expect(result.collapses).toEqual([expect.objectContaining({ feePublishedId: 15779, keptNewName: "Non-customer use of Farmers ATM" })]);
+    expect(writes[0]).toContain('"Farmers ATM"');
+    expect(writes[0]).toContain('"Non-customer use of Farmers ATM"');
+    expect(writes[1]).toContain('"kept_names_carried":[{"fee_published_id":150723,"old_name":"Farmers ATM","new_name":"Non-customer use of Farmers ATM"}]');
+  });
+
+  it("writes nothing in shadow", async () => {
+    const calls: string[] = [];
+    const db = vi.fn((strings: TemplateStringsArray) => {
+      calls.push(strings.join(""));
+      return Promise.resolve([]);
+    }) as unknown as ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
+    db.unsafe = vi.fn(() => Promise.resolve([]));
+    await collapsePageCopies(db as unknown as Parameters<typeof collapsePageCopies>[0], { runId: 1, batchId: "b", dryRun: false, live: false });
+    expect(calls.some((text) => text.includes("UPDATE"))).toBe(false);
   });
 });

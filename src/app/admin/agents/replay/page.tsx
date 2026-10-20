@@ -1,3 +1,4 @@
+import { requireAuth } from "@/lib/auth";
 import {
   getReasoningTrace,
   type ReasoningTraceRow,
@@ -19,6 +20,7 @@ export default async function AgentsReplayPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
+  await requireAuth("operate");
   const params = await searchParams;
   const correlation = params.correlation?.trim() ?? "";
   const validUuid = UUID_RE.test(correlation) ? correlation : null;

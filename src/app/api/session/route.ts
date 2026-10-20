@@ -1,6 +1,6 @@
 import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
 import { NextResponse } from "next/server";
-import { getCurrentUser, renewSessionCookie } from "@/lib/auth";
+import { SESSION_COOKIE, getCurrentUser, renewSessionCookie } from "@/lib/auth";
 import { sessionChromeFor } from "@/lib/session-chrome";
 
 export const dynamic = "force-dynamic";
@@ -27,4 +27,17 @@ async function handleGET(): Promise<NextResponse> {
   }
 }
 
-export const GET = withApiRoutePolicy("api.session", "GET", handleGET);
+/**
+ * A request with no session cookie is signed out; say so without touching the database (no
+ * session lookup, no audit row). Most page views are anonymous, and each one asks this route.
+ */
+function signedOutWithoutCookie(request: Request | undefined): Response | null {
+  const cookieHeader = request?.headers.get("cookie") ?? "";
+  const hasSession = cookieHeader.split(";").some((part) => part.trim().startsWith(`${SESSION_COOKIE}=`));
+  if (hasSession) return null;
+  return NextResponse.json({ signedIn: false }, { headers: { "Cache-Control": "private, no-store" } });
+}
+
+export const GET = withApiRoutePolicy<[Request]>("api.session", "GET", handleGET, {
+  answerWithoutDatabase: signedOutWithoutCookie,
+});

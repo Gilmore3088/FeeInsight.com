@@ -10,6 +10,10 @@ import {
   type ConfirmedAnswerKeyEntry,
 } from "@/lib/data-store/answer-key";
 import { getFeeFamily } from "@/lib/fee-taxonomy";
+import { splitLiveCategory } from "@/lib/fee-fold";
+import { readReferenceEligibility } from "@/lib/data-store/answer-key-reference-store";
+import type { ReferenceScoreCohort } from "@/lib/data-store/answer-key-eligibility";
+import { refreshReferenceEligibility } from "./answer-key-eligibility";
 
 /**
  * Atlas's score-answer-key step: compares the pipeline against the hand-checked
@@ -40,6 +44,11 @@ import { getFeeFamily } from "@/lib/fee-taxonomy";
  *       src/lib/percent-fees.ts). A rate is never compared with a dollar amount: it can
  *       match only a key fee keyed as "varies" in the same category, and counts as its own
  *       prediction (category + rate).
+ *   v4  v3, plus the bank's other stored documents whose newest text is the same text
+ *       (`agent_source_texts.text_hash`) as the key's document. Magellan stores one page under
+ *       several URLs ("/fee-schedule" and "/learn/fee-schedule"), and Knox reads a text once per
+ *       bank, so its rows can sit on the twin's id (Knox recall diagnosis, Oct 17 2026: 41 key
+ *       fees at inst 7217 and 8466). This changes the measure, not the data: v1-v3 are unchanged.
  */
 
 type SqlTag = typeof sql;
@@ -81,6 +90,8 @@ export interface PipelineText {
   sourceDocumentId: number;
   status: string;
   charCount: number;
+  /** The text's hash (v4 counts a document with the same text as the key's document). */
+  textHash?: string | null;
 }
 
 export interface PipelineFee {
@@ -263,19 +274,33 @@ function formatFee(fee: { canonicalKey: string; amount: number | null; ratePerce
   return fee.amount == null ? fee.canonicalKey : `${fee.canonicalKey} $${fee.amount.toFixed(2)}`;
 }
 
-/** Which stored documents are the right one: URL match, or the same bytes as the right one. */
-function rightDocumentIds(entry: ConfirmedAnswerKeyEntry, evidence: BankEvidence): Set<number> {
+/**
+ * Which stored documents are the right one: URL match, or the same bytes as the right one. From v4,
+ * also a stored document of the bank whose newest text is the same text as a right document's.
+ */
+function rightDocumentIds(entry: ConfirmedAnswerKeyEntry, evidence: BankEvidence, version: AnswerKeyScorerVersion = ANSWER_KEY_SCORER_VERSION): Set<number> {
   const target = normalizeDocumentUrl(entry.documentUrl);
   const hashes = new Set<string>();
   if (entry.contentHash) hashes.add(entry.contentHash);
   for (const doc of evidence.documents) {
     if (doc.contentHash && normalizeDocumentUrl(doc.url) === target) hashes.add(doc.contentHash);
   }
-  return new Set(
+  const ids = new Set(
     evidence.documents
       .filter((doc) => normalizeDocumentUrl(doc.url) === target || (doc.contentHash != null && hashes.has(doc.contentHash)))
       .map((doc) => doc.id),
   );
+  if (version < 4) return ids;
+  const texts = evidence.texts ?? [];
+  const textHashes = new Set(
+    texts.filter((text) => ids.has(text.sourceDocumentId) && text.textHash).map((text) => text.textHash as string),
+  );
+  if (textHashes.size === 0) return ids;
+  const stored = new Set(evidence.documents.map((doc) => doc.id));
+  for (const text of texts) {
+    if (text.textHash && textHashes.has(text.textHash) && stored.has(text.sourceDocumentId)) ids.add(text.sourceDocumentId);
+  }
+  return ids;
 }
 
 function textCompleted(text: PipelineText | null | undefined): text is PipelineText {
@@ -331,6 +356,22 @@ function scopeFees(version: AnswerKeyScorerVersion, fees: PipelineFee[], rightId
   };
 }
 
+/**
+ * v5: the key's fees in today's taxonomy. A key line filed under a category that a live split has
+ * since divided (account research's returned mail and excess withdrawals, #1398) is read under the
+ * category the split gives its printed line, the same rule that re-filed the live fee
+ * (`splitLiveCategory`). Without it a correctly re-filed fee scores as wrong and the key's line as
+ * missed: "Return Mail $5" live as returned mail against the key's account research $5. Earlier
+ * versions keep the key as confirmed. Pure.
+ */
+export function keyFeesForVersion<T extends ExpectedFee>(fees: T[], version: AnswerKeyScorerVersion): T[] {
+  if (version < 5) return fees;
+  return fees.map((fee) => {
+    const to = splitLiveCategory(fee.canonicalKey, fee.sourceLine ?? null)?.to;
+    return to && to !== fee.canonicalKey ? { ...fee, canonicalKey: to } : fee;
+  });
+}
+
 /** Pure: scores the pipeline against the confirmed answer key under one scorer version. */
 export function scoreAnswerKey(
   entries: ConfirmedAnswerKeyEntry[],
@@ -362,14 +403,15 @@ export function scoreAnswerKey(
       darwin: [],
       hamilton: [],
     };
-    feesExpected += entry.fees.length;
+    const expectedFees = keyFeesForVersion(entry.fees, version);
+    feesExpected += expectedFees.length;
     const docType = (byDocumentType[entry.documentType] ??= {
       banks: 0,
       stages: Object.fromEntries(SCORED_STAGES.map((stage) => [stage, emptyCounts()])) as Record<ScoredStage, PrecisionRecall>,
     });
     docType.banks += 1;
 
-    const rightIds = rightDocumentIds(entry, evidence);
+    const rightIds = rightDocumentIds(entry, evidence, version);
     const { magellan, rosetta } = documentStages(version, entry, evidence, rightIds);
     const magellanRight = magellan.matched === 1;
     const rosettaRight = rosetta.matched === 1;
@@ -393,9 +435,9 @@ export function scoreAnswerKey(
         ? [...evidence.hamilton, ...(evidence.hamiltonRates ?? [])]
         : evidence[stage as FeeStage];
       const scope = scopeFees(version, rows, rightIds);
-      const comparison = compareFees(entry.fees, scope.scored);
+      const comparison = compareFees(expectedFees, scope.scored);
       const counts: Counts = {
-        expected: entry.fees.length,
+        expected: expectedFees.length,
         predicted: comparison.predictions.length,
         matched: comparison.matchedExpected.filter(Boolean).length,
         correct: comparison.correctPredicted.filter(Boolean).length,
@@ -407,9 +449,9 @@ export function scoreAnswerKey(
         right: counts.expected > 0 ? counts.matched === counts.expected && counts.correct === counts.predicted : null,
         ...counts,
       };
-      if (stage === "knox" && rosettaRight && entry.fees.length > 0) {
+      if (stage === "knox" && rosettaRight && expectedFees.length > 0) {
         knoxMissBanks += 1;
-        entry.fees.forEach((fee, index) => {
+        expectedFees.forEach((fee, index) => {
           const missed = !comparison.matchedExpected[index];
           for (const bucket of [
             knoxMissTotal,
@@ -420,10 +462,10 @@ export function scoreAnswerKey(
             if (missed) bucket.missed += 1;
           }
         });
-        knoxMissed = entry.fees.filter((_, index) => !comparison.matchedExpected[index]).map((fee) => formatFee(fee));
+        knoxMissed = expectedFees.filter((_, index) => !comparison.matchedExpected[index]).map((fee) => formatFee(fee));
       }
       if (stage === "hamilton") {
-        entry.fees.forEach((fee, index) => {
+        expectedFees.forEach((fee, index) => {
           const bucket = category(fee.canonicalKey);
           bucket.expected += 1;
           if (comparison.matchedExpected[index]) bucket.matched += 1;
@@ -433,7 +475,7 @@ export function scoreAnswerKey(
           bucket.predicted += 1;
           if (comparison.correctPredicted[index]) bucket.correct += 1;
         });
-        missing = entry.fees
+        missing = expectedFees
           .filter((_, index) => !comparison.matchedExpected[index])
           .map((fee) => formatFee(fee));
         extra = comparison.predictions
@@ -547,7 +589,7 @@ export async function gatherBankEvidence(institutionIds: number[], db: SqlTag = 
        ORDER BY institution_id, crawled_at DESC, id DESC
     `,
     db`
-      SELECT DISTINCT ON (institution_id, source_document_id) id, institution_id, source_document_id, status, char_count, updated_at
+      SELECT DISTINCT ON (institution_id, source_document_id) id, institution_id, source_document_id, status, char_count, text_hash, updated_at
         FROM agent_source_texts
        WHERE institution_id = ANY(${ids}::bigint[])
        ORDER BY institution_id, source_document_id, updated_at DESC, id DESC
@@ -597,6 +639,7 @@ export async function gatherBankEvidence(institutionIds: number[], db: SqlTag = 
       sourceDocumentId: Number(row.source_document_id),
       status: String(row.status),
       charCount: Number(row.char_count ?? 0),
+      textHash: (row.text_hash as string | null) ?? null,
     };
     bank.texts?.push(text);
     const at = new Date(row.updated_at as string | Date).getTime() || 0;
@@ -654,6 +697,8 @@ export interface AnswerKeyScoreRunResult {
   /** Every version scored on this run, each stored as its own row, oldest version first. */
   series?: Array<{ scorerVersion: AnswerKeyScorerVersion; scoreRunId: number | null; score: AnswerKeyScore }>;
   dryRun: boolean;
+  reference?: ReferenceScoreCohort;
+  referenceChecks?: { attempted: number; persisted: number; failed: number };
 }
 
 /**
@@ -664,19 +709,26 @@ export async function runAnswerKeyScore({
   runId,
   dryRun = false,
   db = sql,
+  stepId = null,
+  fetchImpl,
 }: {
   runId: number | null;
   dryRun?: boolean;
   db?: SqlTag;
+  stepId?: number | null;
+  fetchImpl?: typeof fetch;
 }): Promise<AnswerKeyScoreRunResult> {
   if (!(await answerKeySchemaReady(db))) return { schemaReady: false, scoreRunId: null, score: null, dryRun };
-  const entries = await getConfirmedAnswerKey(db);
+  const initial = await readReferenceEligibility(db);
+  const checked = await refreshReferenceEligibility({ db, runId, stepId, dryRun, snapshot: initial, fetchImpl });
+  const reference = checked.snapshot.cohort;
+  const entries = await getConfirmedAnswerKey(db, checked.snapshot);
   const evidence = await gatherBankEvidence(entries.map((entry) => entry.institutionId), db);
   const series: NonNullable<AnswerKeyScoreRunResult["series"]> = [];
   for (const version of ANSWER_KEY_SCORER_VERSIONS) {
     const score = scoreAnswerKey(entries, evidence, version);
     let scoreRunId: number | null = null;
-    if (!dryRun && entries.length > 0) {
+    if (!dryRun) {
       const [row] = await db`
         INSERT INTO answer_key_score_runs
           (agent_run_id, scorer_version, banks_scored, fees_expected, precision, recall,
@@ -684,7 +736,7 @@ export async function runAnswerKeyScore({
         VALUES
           (${runId}, ${score.scorerVersion}, ${score.banksScored}, ${score.feesExpected},
            ${score.overall.precision}, ${score.overall.recall},
-           ${JSON.stringify(score.byStage)}::jsonb, ${JSON.stringify(score.byCategory)}::jsonb,
+           ${JSON.stringify({ ...score.byStage, _reference: reference })}::jsonb, ${JSON.stringify(score.byCategory)}::jsonb,
            ${JSON.stringify(score.byDocumentType)}::jsonb, ${JSON.stringify(score.banks)}::jsonb)
         RETURNING id
       `;
@@ -693,7 +745,8 @@ export async function runAnswerKeyScore({
     series.push({ scorerVersion: version, scoreRunId, score });
   }
   const current = series.find((entry) => entry.scorerVersion === ANSWER_KEY_SCORER_VERSION)!;
-  return { schemaReady: true, scoreRunId: current.scoreRunId, score: current.score, series, dryRun };
+  return { schemaReady: true, scoreRunId: current.scoreRunId, score: current.score, series, dryRun, reference,
+    referenceChecks: { attempted: checked.attempted, persisted: checked.persisted, failed: checked.failed } };
 }
 
 function percent(value: number | null): string {
@@ -703,7 +756,10 @@ function percent(value: number | null): string {
 /** One sentence for the step summary. */
 export function summarizeAnswerKeyScore(result: AnswerKeyScoreRunResult): string {
   if (!result.schemaReady) return "Atlas skipped the answer-key score: the answer-key migration is not applied yet.";
+  if (result.reference?.readError) return "Atlas recorded no measurement: reference eligibility could not be read; reference counts are unavailable.";
   const score = result.score;
+  const reference = result.reference;
+  if (reference?.state === "no_measurement") return `Atlas has no eligible answer-key measurement: ${reference.excludedBanks} of ${reference.confirmedBanks} confirmed institutions excluded (${reference.excludedFees} fees). Document eligibility is separate from human confirmation; scorer v${ANSWER_KEY_SCORER_VERSION} is unchanged.`;
   if (!score || score.banksScored === 0) return "Atlas found no confirmed answer-key institutions to score yet.";
   const stages = SCORED_STAGES
     .map((stage) => `${stage} ${percent(score.byStage[stage].precision)}/${percent(score.byStage[stage].recall)}`)
@@ -717,5 +773,6 @@ export function summarizeAnswerKeyScore(result: AnswerKeyScoreRunResult): string
   const knox = misses.overall.expected > 0
     ? ` On the ${misses.banks} documents Rosetta read right, Knox missed ${misses.overall.missed} of ${misses.overall.expected} key fees (${percent(misses.overall.missRate)})${top ? `; most in ${top}` : ""}.`
     : "";
-  return `Atlas scored ${score.banksScored} answer-key institution${score.banksScored === 1 ? "" : "s"} (${score.feesExpected} fees) with scorer v${score.scorerVersion}: precision ${percent(score.overall.precision)}, recall ${percent(score.overall.recall)}. By stage (precision/recall): ${stages}.${older}${knox}`;
+  const cohort = reference ? ` Reference eligibility v${reference.protocol}: ${reference.eligibleBanks} eligible, ${reference.excludedBanks} excluded; reference changes start a separate measurement cohort.` : "";
+  return `Atlas scored ${score.banksScored} answer-key institution${score.banksScored === 1 ? "" : "s"} (${score.feesExpected} fees) with scorer v${score.scorerVersion}: precision ${percent(score.overall.precision)}, recall ${percent(score.overall.recall)}. By stage (precision/recall): ${stages}.${older}${knox}${cohort}`;
 }

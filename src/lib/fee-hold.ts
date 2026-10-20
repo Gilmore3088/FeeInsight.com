@@ -3,11 +3,14 @@
  * customer-facing read without SQL or a code release. A hold sets the existing quarantine
  * flag, which `published_fee_catalog` already excludes; nothing is deleted and no
  * replacement value is invented. Release clears only a hold placed here, never a
- * quarantine set by an agent. Every hold and release is logged in `pipeline_feedback`.
+ * quarantine set by an agent. Every hold and release is logged in `pipeline_feedback`, recorded
+ * as a completed Hamilton run, and rebuilds the national index (`fee_index_cache`) straight away
+ * (James, 2026-10-16), so Hamilton's national figures drop or regain the fee at once.
  */
 
 import type { sql as Sql } from "@/lib/data-store/connection";
 import { recordFeedback } from "@/lib/agents/learning/feedback";
+import { rebuildIndexAfterAdminAction, recordAdminFeeRun } from "@/lib/fee-admin-run";
 
 import {
   ADMIN_HOLD_PREFIX,
@@ -37,8 +40,16 @@ async function logHoldEvent(
   action: "hold" | "release",
   actor: FeeHoldActor,
   reason: string | null,
-): Promise<void> {
+): Promise<{ indexRefreshed: boolean; runId: number }> {
   const at = new Date().toISOString();
+  const run = await recordAdminFeeRun(tx, {
+    action,
+    title: action === "hold" ? "Admin fee hold" : "Admin fee release",
+    summary: `${action === "hold" ? "Held" : "Released"} ${row.fee_name} (fee #${row.fee_published_id})${reason ? `: ${reason}` : "."}`,
+    actor,
+    institutionId: Number(row.institution_id),
+    detail: { fee_published_id: Number(row.fee_published_id), reason },
+  });
   await recordFeedback(tx, [{
     aboutStage: "publish",
     signal: action === "hold" ? "wrong" : "restored",
@@ -50,8 +61,11 @@ async function logHoldEvent(
     canonicalFeeKey: row.canonical_fee_key,
     amount: row.amount == null ? null : Number(row.amount),
     evidence: { action, actor_id: actor.id, actor: actor.name, reason, fee_name: row.fee_name, at },
+    runId: run.runId,
     dedupeKey: `${FEE_HOLD_CHECK}:${row.fee_published_id}:${action}:${at}`,
   }]);
+  const refresh = await rebuildIndexAfterAdminAction(tx, run);
+  return { indexRefreshed: refresh.refreshed, runId: run.runId };
 }
 
 /**
@@ -77,8 +91,8 @@ export async function holdPublishedFee(
     `;
     const row = rows[0];
     if (!row) return { ok: false, error: "That fee is not live, or it is already held." } as const;
-    await logHoldEvent(tx, row, "hold", actor, reason);
-    return { ok: true, feePublishedId, institutionId: Number(row.institution_id) } as const;
+    const logged = await logHoldEvent(tx, row, "hold", actor, reason);
+    return { ok: true, feePublishedId, institutionId: Number(row.institution_id), ...logged } as const;
   }) as Promise<FeeHoldResult>;
 }
 
@@ -104,8 +118,8 @@ export async function releasePublishedFee(
     `;
     const row = rows[0];
     if (!row) return { ok: false, error: "That fee is not on an admin hold." } as const;
-    await logHoldEvent(tx, row, "release", actor, readHoldReason(row.quarantine_reason));
-    return { ok: true, feePublishedId, institutionId: Number(row.institution_id) } as const;
+    const logged = await logHoldEvent(tx, row, "release", actor, readHoldReason(row.quarantine_reason));
+    return { ok: true, feePublishedId, institutionId: Number(row.institution_id), ...logged } as const;
   }) as Promise<FeeHoldResult>;
 }
 

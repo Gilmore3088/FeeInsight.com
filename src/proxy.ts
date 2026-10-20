@@ -1,7 +1,38 @@
 import { NextRequest, NextResponse } from "next/server";
+import { REPORT_REQUEST_HREF } from "@/lib/report-request-href";
+import { SESSION_COOKIE, verifyAndExtractSessionId } from "@/lib/session-cookie";
+import { sanitizeInternalRedirect } from "@/lib/safe-redirect";
+import { cityMetroPath, isSignedInVariantPath, signedInVariantPath } from "@/lib/viewer-variant";
+import { FEE_FAMILIES } from "@/lib/fee-taxonomy";
+
+const FEE_CATEGORIES = new Set<string>(Object.values(FEE_FAMILIES).flat());
+/** The directory's filters; any one of them makes the view per request. */
+const DIRECTORY_FILTER_KEYS = ["q", "state", "charter", "page", "fee"];
+
+/**
+ * The cached route that serves a public address whose query string changes the page (#1811).
+ * The profile and the directory are cached (ISR), and a cached page cannot read its query
+ * string, so the variants live at their own paths: /institution/82?fee=nsf is served by
+ * /institution/82/fee/nsf (also cached) and a filtered directory by /institutions/results.
+ * The address in the browser keeps its query string. Null when no rewrite applies.
+ */
+export function cachedVariantPath(pathname: string, search: URLSearchParams): string | null {
+  const profile = /^\/institution\/(\d+)$/.exec(pathname);
+  if (profile) {
+    const fee = search.get("fee");
+    return fee && FEE_CATEGORIES.has(fee) ? `/institution/${profile[1]}/fee/${fee}` : null;
+  }
+  // `fees` counts only as "1", the one value the page reads, so `?fees=x` stays on the cached page.
+  if (pathname === "/institutions" && (DIRECTORY_FILTER_KEYS.some((key) => search.get(key)) || search.get("fees") === "1")) {
+    return "/institutions/results";
+  }
+  return null;
+}
 
 function requestHeadersWithPath(request: NextRequest) {
   const requestHeaders = new Headers(request.headers);
+  // Legacy login markers are never client authority, even on rewritten requests.
+  requestHeaders.delete("x-bfi-admin-login-route");
   const pathWithSearch = `${request.nextUrl.pathname}${request.nextUrl.search}`;
   requestHeaders.set("x-invoke-path", pathWithSearch);
   requestHeaders.set("x-next-url", pathWithSearch);
@@ -15,10 +46,9 @@ function isRouteBranch(pathname: string, branch: string) {
 
 /** Retired public paths -> their current homes (exact-path, permanent). */
 const LEGACY_PATH_REDIRECTS: Record<string, string> = {
-  "/consumer": "/institutions",
-  "/check": "/institutions",
+  "/consumer": "/for-consumers",
   "/districts": "/research#districts",
-  "/waitlist": "/for-institutions#report",
+  "/waitlist": REPORT_REQUEST_HREF,
   // Typed and drafted often; the site's own links go to /subscribe.
   "/pricing": "/subscribe",
 };
@@ -59,19 +89,17 @@ export function proxy(request: NextRequest) {
     return NextResponse.redirect(url, permanentRedirectStatus(request.method));
   }
 
-  // Skip login page itself
+  // Legacy login goes straight to the shared login, outside the protected layout.
   if (pathname === "/admin/login") {
-    const requestHeaders = requestHeadersWithPath(request);
-    requestHeaders.set("x-bfi-admin-login-route", "1");
-    return NextResponse.next({
-      request: { headers: requestHeaders },
-    });
+    const loginUrl = new URL("/login", request.url);
+    loginUrl.searchParams.set("from", sanitizeInternalRedirect(request.nextUrl.searchParams.get("from"), "/admin"));
+    return NextResponse.redirect(loginUrl);
   }
 
-  // Check for session cookie on all /admin routes.
+  // Reject forged cookies early; pages still validate the live session and operator role.
   if (isRouteBranch(pathname, "/admin")) {
-    const session = request.cookies.get("fsh_session");
-    if (!session?.value) {
+    const session = request.cookies.get(SESSION_COOKIE)?.value;
+    if (!session || !verifyAndExtractSessionId(session)) {
       const loginUrl = new URL("/admin/login", request.url);
       loginUrl.searchParams.set("from", `${pathname}${request.nextUrl.search}`);
       return NextResponse.redirect(loginUrl);
@@ -87,6 +115,20 @@ export function proxy(request: NextRequest) {
       loginUrl.searchParams.set("from", `${pathname}${request.nextUrl.search}`);
       return NextResponse.redirect(loginUrl);
     }
+  }
+
+  // Cached pages' per-request and query-string routes (#1811, see viewer-variant.ts).
+  if (isSignedInVariantPath(pathname)) {
+    return new NextResponse("Not found", { status: 404 });
+  }
+  const variant =
+    cachedVariantPath(pathname, request.nextUrl.searchParams) ??
+    signedInVariantPath(pathname, request.cookies.get(SESSION_COOKIE)?.value) ??
+    cityMetroPath(pathname, request.nextUrl.searchParams);
+  if (variant) {
+    const url = request.nextUrl.clone();
+    url.pathname = variant;
+    return NextResponse.rewrite(url, { request: { headers: requestHeadersWithPath(request) } });
   }
 
   return NextResponse.next({

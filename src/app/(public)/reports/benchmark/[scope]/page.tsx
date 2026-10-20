@@ -2,13 +2,12 @@ export const dynamic = "force-dynamic";
 
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { getNationalIndexCached } from "@/lib/data-store";
 import type { IndexEntry } from "@/lib/data-store/fee-index";
 import { getDistrictStatsCached, getPeerIndexCached } from "@/lib/data-store/public-cached-reads";
 import { HEADLINE_FEE_KEYS } from "@/lib/data-store/market-readiness";
 import { benchmarkReportTitle, parseBenchmarkScope, type BenchmarkScope } from "@/lib/benchmark-report";
 import { DISTRICT_NAMES, STATE_TO_DISTRICT } from "@/lib/fed-districts";
-import { formatCount, getPublicStatsSummary } from "@/lib/public-stats";
+import { formatCount, getPublicNationalIndexWith, getPublicStatsSummary } from "@/lib/public-stats";
 import { STATE_NAMES } from "@/lib/us-states";
 import { PRODUCT_NAME } from "@/lib/constants";
 import { TrackView } from "@/components/track-view";
@@ -21,9 +20,12 @@ import {
   computeDistrictFindings,
   computeNationalFindings,
 } from "./report-data";
+import { loadSampleReport } from "@/lib/custom-report/sample-report";
+import { institutionTeaser } from "./institution-view";
 import {
   BenchmarkBoard,
-  LockedInstitutionReport,
+  ClosingBand,
+  InstitutionView,
   ReportHero,
   ReportMethodology,
   type HeroStat,
@@ -38,7 +40,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   if (!scope) return { title: "Report not found" };
   return {
     title: benchmarkReportTitle(scope),
-    description: `Median and typical range for the 15 headline bank and credit union fees, from the ${PRODUCT_NAME}.`,
+    description: `Median and typical range for 15 common bank and credit union fees, from the ${PRODUCT_NAME}.`,
     robots: { index: false, follow: true },
   };
 }
@@ -52,13 +54,30 @@ interface Indexes {
 
 async function loadIndexes(scope: BenchmarkScope): Promise<Indexes> {
   const area = scope.kind === "district" ? { fed_districts: [scope.district] } : {};
+  // The U.S. figures come from the shared public snapshot, the read /research, /fees/[category],
+  // the guides and the homepage state them from, so a fee's institution count matches (#1951).
+  // Every headline fee is read, even one ranked outside the public top 50 (#1955).
   const [areaIndex, national, bank, cu] = await Promise.all([
-    scope.kind === "district" ? getPeerIndexCached(area) : getNationalIndexCached(),
-    scope.kind === "district" ? getNationalIndexCached() : Promise.resolve(null),
+    scope.kind === "district" ? getPeerIndexCached(area) : getPublicNationalIndexWith(HEADLINE_FEE_KEYS),
+    scope.kind === "district" ? getPublicNationalIndexWith(HEADLINE_FEE_KEYS) : Promise.resolve(null),
     getPeerIndexCached({ ...area, charter_type: "bank" }),
     getPeerIndexCached({ ...area, charter_type: "credit_union" }),
   ]);
   return { area: areaIndex, national, bank, cu };
+}
+
+const TEASER_DEADLINE_MS = 5_000;
+
+/** The live sample's lines, for the institution view; the report renders without it when it is slow or down. */
+async function loadTeaser() {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), TEASER_DEADLINE_MS);
+  });
+  const teaser = loadSampleReport()
+    .then(institutionTeaser)
+    .catch(() => null);
+  return Promise.race([teaser, late]).finally(() => clearTimeout(timer));
 }
 
 const DISTRICT_SECTIONS = [
@@ -98,10 +117,11 @@ export default async function BenchmarkReportPage({ params }: PageProps) {
   if (!scope) notFound();
 
   const district = scope.kind === "district" ? scope.district : null;
-  const [indexes, summary, stats] = await Promise.all([
+  const [indexes, summary, stats, teaser] = await Promise.all([
     loadIndexes(scope),
     getPublicStatsSummary(),
     district ? getDistrictStatsCached(district) : Promise.resolve(null),
+    loadTeaser(),
   ]);
   const asOf = summary.refreshedOn;
 
@@ -116,7 +136,7 @@ export default async function BenchmarkReportPage({ params }: PageProps) {
         <ReportHero
           eyebrow="Free report · United States"
           title="National fee benchmark"
-          lede="What U.S. banks and credit unions charge for the 15 fees customers notice most. Every number comes from an institution's own published fee schedule."
+          lede="What U.S. banks and credit unions charge for 15 common banking fees, read from each institution's own published fee schedule. Each median counts only the institutions that publish that fee, and every card shows how many."
           stats={[
             { value: summary.institutionsLabel, label: "institutions with published fees", note: `of ${summary.monitoredLabel} we monitor` },
             { value: `${rows.length} of 15`, label: "headline fees with a median", note: "each with 20 or more institutions" },
@@ -130,7 +150,8 @@ export default async function BenchmarkReportPage({ params }: PageProps) {
           <KeyFindings findings={computeNationalFindings(rows, charterPairs)} asOf={asOf} />
           <BenchmarkBoard rows={rows} place="the U.S." areaLabel="US" omitted={omitted} asOf={asOf} />
           <CharterExhibit benchmarks={charterPairs} asOf={asOf} />
-          <LockedInstitutionReport />
+          <InstitutionView teaser={teaser} asOf={asOf} />
+          <ClosingBand />
           <ReportMethodology area="the United States" />
         </div>
         <PrintStyles />
@@ -146,7 +167,7 @@ export default async function BenchmarkReportPage({ params }: PageProps) {
       <ReportHero
         eyebrow={`Free report · Federal Reserve District ${district}`}
         title={`${name} district fee benchmark`}
-        lede={`What banks and credit unions in the ${name} Fed district charge for the 15 fees customers notice most, measured against the national ${PRODUCT_NAME}. Every number comes from an institution's own published fee schedule.`}
+        lede={`What banks and credit unions in the ${name} Fed district charge for 15 common banking fees, measured against the national ${PRODUCT_NAME}. Every number comes from an institution's own published fee schedule.`}
         stats={districtStats(district, stats, rows.length)}
         freshnessLabel={summary.freshnessLabel}
       />
@@ -157,7 +178,8 @@ export default async function BenchmarkReportPage({ params }: PageProps) {
         <PositionExhibit rows={rows} stateName={place} asOf={asOf} />
         <CharterExhibit benchmarks={charterPairs} asOf={asOf} eyebrow="Exhibit 3 · Banks vs credit unions" place={place} />
         <FullTable rows={rows} stateName={place} asOf={asOf} />
-        <LockedInstitutionReport />
+        <InstitutionView teaser={teaser} asOf={asOf} />
+        <ClosingBand />
         <ReportMethodology area={`the ${name} Fed district`} district />
       </div>
       <PrintStyles />

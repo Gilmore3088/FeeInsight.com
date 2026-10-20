@@ -119,7 +119,9 @@ describe("Hamilton chat memory", () => {
 
     const text = mocks.state.sqlCalls[1].text.replace(/\s+/g, " ");
     expect(text).toMatch(/ORDER BY created_at DESC LIMIT \?.*ORDER BY created_at ASC/);
-    expect(mocks.state.sqlCalls[1].values).toEqual(["e7f37394-d8dd-49ef-a842-e453c89415b5", 20]);
+    // Analyze conversation state snapshots (#979) are not chat turns.
+    expect(text).toContain("NOT (tool_calls ? ?)");
+    expect(mocks.state.sqlCalls[1].values).toEqual(["e7f37394-d8dd-49ef-a842-e453c89415b5", "hamiltonConversationState", 20]);
   });
 
   it("only retitles the user's own conversation", async () => {

@@ -12,7 +12,7 @@ function number(value: number): string {
 }
 
 export default async function RosettaPage() {
-  await requireAuth("view");
+  await requireAuth("operate");
   const status = await getRosettaStatus();
 
   return (

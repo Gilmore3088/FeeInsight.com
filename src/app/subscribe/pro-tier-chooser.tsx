@@ -3,6 +3,7 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { InstitutionPicker } from "@/components/hamilton/InstitutionPicker";
 import { trackEvent } from "@/lib/analytics";
+import { CHOOSER_INPUT_ID } from "./plan-ids";
 
 interface ProTierChooserProps {
   /** What the price below is for, once chosen: "First Bank, Huntsville, AL · Under $500M in assets". */
@@ -15,6 +16,8 @@ interface ProTierChooserProps {
   bandChoices?: { key: string; label: string }[] | null;
   /** The band already picked (?band=), highlighted among the choices. */
   pickedBand?: string | null;
+  /** The chosen institution, from ?inst= or the buyer's saved choice, kept when a band is picked. */
+  institutionId?: number | null;
   /** Where the buyer came from ("Regulatory Wire", or "direct"), sent with each funnel event. */
   entry: string;
 }
@@ -23,7 +26,7 @@ interface ProTierChooserProps {
  * Picks who the plan covers. The choice lives in the URL (?inst= or ?org=other) so it
  * survives sign-up and the server can price it; checkout re-checks the tier itself.
  */
-export function ProTierChooser({ chosenLabel, chosenDetail = null, problem = null, bandChoices = null, pickedBand = null, entry }: ProTierChooserProps) {
+export function ProTierChooser({ chosenLabel, chosenDetail = null, problem = null, bandChoices = null, pickedBand = null, institutionId = null, entry }: ProTierChooserProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -34,6 +37,7 @@ export function ProTierChooser({ chosenLabel, chosenDetail = null, problem = nul
     params.delete("org");
     params.delete("checkout");
     params.delete("band");
+    params.delete("change");
     update(params);
     const query = params.toString();
     router.push(query ? `${pathname}?${query}#pro-heading` : `${pathname}#pro-heading`, { scroll: false });
@@ -49,7 +53,7 @@ export function ProTierChooser({ chosenLabel, chosenDetail = null, problem = nul
           </div>
           <button
             type="button"
-            onClick={() => go(() => {})}
+            onClick={() => go((params) => params.set("change", "1"))}
             className="inline-flex min-h-11 flex-shrink-0 items-start text-sm font-medium text-ink underline underline-offset-2"
           >
             Change
@@ -66,9 +70,9 @@ export function ProTierChooser({ chosenLabel, chosenDetail = null, problem = nul
                   type="button"
                   aria-pressed={pickedBand === band.key}
                   onClick={() => {
-                    const inst = searchParams.get("inst");
+                    const inst = institutionId ?? searchParams.get("inst");
                     go((params) => {
-                      if (inst) params.set("inst", inst);
+                      if (inst) params.set("inst", String(inst));
                       params.set("band", band.key);
                     });
                   }}
@@ -92,7 +96,7 @@ export function ProTierChooser({ chosenLabel, chosenDetail = null, problem = nul
   return (
     <div>
       <InstitutionPicker
-        inputId="pro_tier_institution"
+        inputId={CHOOSER_INPUT_ID}
         name="pro_tier_institution_id"
         label="Your bank or credit union"
         help="Its total assets set the price."

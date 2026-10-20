@@ -4,6 +4,8 @@ import { normalizeDocumentUrl } from "@/lib/agents/answer-key-score";
 import { gateKeyFor, gateReads } from "@/lib/agents/knox/answer-key-gate";
 import { latestFinishedStep } from "@/lib/data-store/agent-quality";
 import { severityFor } from "./severity";
+import { eligibleReferences, loadReferenceOrigins, referenceFeeFingerprint, readReferenceEligibility, type ReferenceEligibilitySnapshot } from "@/lib/data-store/answer-key-reference-store";
+import { referenceKeyFingerprint } from "@/lib/data-store/answer-key-eligibility";
 
 /**
  * Deming's daily replay of Knox's answer-key misses (#1099). Every hand-checked answer-key fee
@@ -40,6 +42,9 @@ const DETAIL_LIST = 25;
 export type KnoxMissVerdict = "read" | "missed" | "no_text" | "not_scored";
 
 interface KeyFeeRow {
+  reference_fingerprint: string;
+  reference_fee_fingerprint: string;
+  reference_event_id: number;
   fee_id: number | string;
   institution_id: number | string;
   document_url: string;
@@ -71,9 +76,13 @@ interface CaseRow {
   status: string;
   institution_id: number | string | null;
   last_checked_at: string | null;
+  input?: Record<string, unknown>;
 }
 
 export interface KeyFee {
+  referenceFingerprint?: string;
+  referenceFeeFingerprint?: string;
+  referenceEventId?: number;
   feeId: number;
   institutionId: number;
   documentUrl: string;
@@ -105,6 +114,9 @@ export interface MissCount {
 }
 
 export interface KnoxMissesResult {
+  referenceExcludedBanks?: number;
+  referenceExcludedFees?: number;
+  referenceExcludedCases?: number;
   version: number;
   ready: boolean;
   dryRun: boolean;
@@ -128,7 +140,10 @@ export interface KnoxMissesResult {
   banksLeftIds: number[];
 }
 
-export const caseKeyFor = (feeId: number) => `answer_key_read:${feeId}`;
+const positiveReferenceEventId = (value: unknown): number | null =>
+  typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : null;
+
+export const caseKeyFor = (feeId: number, fingerprint?: string) => `answer_key_read:${feeId}${fingerprint ? `:reference:${fingerprint}` : ""}`;
 
 function ratio(numerator: number, denominator: number): number | null {
   return denominator > 0 ? Math.round((numerator / denominator) * 10_000) / 10_000 : null;
@@ -195,7 +210,8 @@ export async function runKnoxMisses({
   dryRun = false,
   now = () => Date.now(),
   budgetMs = KNOX_MISSES_BUDGET_MS,
-}: { db?: SqlTag; runId?: number | null; dryRun?: boolean; now?: () => number; budgetMs?: number } = {}): Promise<KnoxMissesResult> {
+  eligibility,
+}: { db?: SqlTag; runId?: number | null; dryRun?: boolean; now?: () => number; budgetMs?: number; eligibility?: ReferenceEligibilitySnapshot } = {}): Promise<KnoxMissesResult> {
   const result: KnoxMissesResult = {
     version: KNOX_MISSES_VERSION, ready: false, dryRun, banksRead: 0, banksLeft: 0, banksNoText: 0,
     feesScored: 0, feesRead: 0, feesMissed: 0, missRate: null, byCategory: {}, byDocumentType: {},
@@ -205,21 +221,42 @@ export async function runKnoxMisses({
   result.ready = true;
   const started = now();
 
-  const keyRows = await db<KeyFeeRow[]>`
-    SELECT f.id AS fee_id, ak.institution_id, ak.document_url, ak.document_type, ak.content_hash,
-           f.canonical_key, f.amount, f.amount_kind, f.source_line
-      FROM answer_key_fees f
-      JOIN answer_key_institutions ak ON ak.id = f.answer_key_institution_id
-     WHERE ak.status = 'confirmed' AND f.status = 'confirmed'
-     ORDER BY ak.institution_id, f.id
-  `;
+  const reference = eligibility ?? await readReferenceEligibility(db);
+  const keyRows: KeyFeeRow[] = eligibleReferences(reference).flatMap(({ input: { key }, eventId }) => key.fees
+    .filter((fee) => fee.canonicalKey !== "unmapped").map((fee) => ({
+      fee_id: fee.id, institution_id: key.institutionId, document_url: key.documentUrl,
+      document_type: key.documentType, content_hash: key.contentHash,
+      canonical_key: fee.canonicalKey, amount: fee.amount, amount_kind: fee.amountKind,
+      source_line: fee.sourceLine, reference_fingerprint: referenceKeyFingerprint(key),
+      reference_fee_fingerprint: referenceFeeFingerprint(key, fee.id), reference_event_id: eventId!,
+    })));
   // Retired cases too: a key fee confirmed again reopens its case rather than leaving it retired.
   const existing = await db<CaseRow[]>`
-    SELECT case_key, status, institution_id, last_checked_at
+    SELECT case_key, status, institution_id, last_checked_at, input
       FROM eval_cases
      WHERE check_name = ${KNOX_MISS_CHECK}
   `;
-  const caseByKey = new Map(existing.map((row) => [row.case_key, row]));
+  const expectedByCase = new Map(keyRows.map((row) => [caseKeyFor(Number(row.fee_id), row.reference_fingerprint), row]));
+  const originIds = existing.map((row) => positiveReferenceEventId(row.input?.reference_event_id)).filter((id): id is number => id != null);
+  const origins = await loadReferenceOrigins(db, originIds);
+  const trustedExisting = existing.filter((row) => {
+    const fee = expectedByCase.get(row.case_key), input = row.input;
+    const originId = positiveReferenceEventId(input?.reference_event_id);
+    const origin = originId == null ? undefined : origins.get(originId);
+    return fee && input && origin && input.kind === "knox_answer_key_read" && input.reference_protocol === reference.protocol
+      && input.reference_key_fingerprint === fee.reference_fingerprint
+      && input.reference_fee_fingerprint === fee.reference_fee_fingerprint
+      && origin.keyFingerprint === fee.reference_fingerprint && origin.institutionId === Number(fee.institution_id)
+      && input.answer_key_fee_id === Number(fee.fee_id) && Number(row.institution_id) === Number(fee.institution_id)
+      && input.institution_id === Number(fee.institution_id) && input.document_url === fee.document_url
+      && input.document_type === fee.document_type && input.canonical_key === fee.canonical_key
+      && input.amount === (fee.amount == null ? null : Number(fee.amount)) && input.amount_kind === fee.amount_kind
+      && input.source_line === fee.source_line;
+  });
+  const caseByKey = new Map(trustedExisting.map((row) => [row.case_key, row]));
+  result.referenceExcludedBanks = reference.cohort.excludedBanks;
+  result.referenceExcludedFees = reference.cohort.excludedFees;
+  result.referenceExcludedCases = existing.length - trustedExisting.length;
   const previous = await inSavepoint(db, (scope) => latestFinishedStep(scope, "deming-knox-misses")).catch(() => null);
 
   const banks = new Map<number, { url: string; type: string; hash: string | null; fees: KeyFee[] }>();
@@ -228,6 +265,8 @@ export async function runKnoxMisses({
     const bank = banks.get(institutionId) ?? { url: row.document_url, type: row.document_type, hash: row.content_hash, fees: [] };
     bank.fees.push({
       feeId: Number(row.fee_id),
+      referenceFingerprint: row.reference_fingerprint,
+      referenceFeeFingerprint: row.reference_fee_fingerprint, referenceEventId: row.reference_event_id,
       institutionId,
       documentUrl: row.document_url,
       documentType: row.document_type,
@@ -240,9 +279,13 @@ export async function runKnoxMisses({
   }
 
   // Retire cases whose key fee is no longer confirmed.
-  const confirmedKeys = new Set(keyRows.map((row) => caseKeyFor(Number(row.fee_id))));
-  const toRetire = existing.filter((row) => row.status !== "retired" && !confirmedKeys.has(row.case_key)).map((row) => row.case_key);
-  const order = rotationOrder([...banks.keys()], existing, previous);
+  const confirmedFeeIds = new Set(reference.keys.flatMap((row) => row.input.key.fees
+    .filter((fee) => fee.canonicalKey !== "unmapped").map((fee) => fee.id)));
+  const toRetire = reference.readError ? [] : existing.filter((row) => {
+    const match = /^answer_key_read:([0-9]+)(?::reference:[a-f0-9]{64})?$/.exec(row.case_key);
+    return row.status !== "retired" && match && !confirmedFeeIds.has(Number(match[1]));
+  }).map((row) => row.case_key);
+  const order = rotationOrder([...banks.keys()], trustedExisting, previous);
 
   const ids = order;
   const documents = ids.length === 0 ? [] : await db<DocumentRow[]>`
@@ -269,7 +312,7 @@ export async function runKnoxMisses({
       continue;
     }
     const bank = banks.get(institutionId)!;
-    const right = rightDocumentIds(bank.url, bank.hash, docsByBank.get(institutionId) ?? []);
+    const right = rightDocumentIds(bank.url, bank.hash, (docsByBank.get(institutionId) ?? []).filter((doc) => doc.contentHash === bank.hash));
     // The newest completed text of the key's document.
     const [row] = right.length === 0 ? [] : await db<TextRow[]>`
       SELECT id, institution_id, source_document_id, text_hash, normalized_text
@@ -285,7 +328,7 @@ export async function runKnoxMisses({
     if (!text) result.banksNoText += 1;
     else result.banksRead += 1;
     for (const { fee, gateKey, verdict } of judgeBank(bank.fees, text)) {
-      const key = caseKeyFor(fee.feeId);
+      const key = caseKeyFor(fee.feeId, fee.referenceFingerprint);
       const prior = caseByKey.get(key);
       if (verdict === "not_scored") {
         // Still replayed, so its check time moves and its bank does not sort first for ever.
@@ -310,6 +353,9 @@ export async function runKnoxMisses({
             input: {
               kind: "knox_answer_key_read",
               answer_key_fee_id: fee.feeId,
+              reference_key_fingerprint: fee.referenceFingerprint,
+              reference_fee_fingerprint: fee.referenceFeeFingerprint,
+              reference_protocol: reference.protocol, reference_event_id: fee.referenceEventId,
               institution_id: fee.institutionId,
               document_url: fee.documentUrl,
               document_type: fee.documentType,
@@ -432,12 +478,16 @@ export function summarizeKnoxMisses(result: KnoxMissesResult): string {
     .join(", ");
   const regressions = result.regressions.length === 0 ? "no regressions" : `${result.regressions.length} REGRESSION${result.regressions.length === 1 ? "" : "S"}`;
   const left = result.banksLeft > 0 ? ` ${result.banksLeft} banks left for tomorrow.` : "";
-  return `Deming replayed the answer key against today's Knox on ${result.banksRead} banks: ${result.feesMissed} of ${result.feesScored} key fees missed (${percent(result.missRate)})${top ? `, most in ${top}` : ""}. ${result.newCases} new missed-fee cases, ${result.activated} now read, ${regressions}${result.retired ? `, ${result.retired} retired` : ""}.${left}`;
+  const excluded = ` ${result.referenceExcludedBanks ?? 0} reference banks and ${result.referenceExcludedCases ?? 0} unbound or incompatible historical cases excluded.`;
+  return `Deming replayed the answer key against today's Knox on ${result.banksRead} banks: ${result.feesMissed} of ${result.feesScored} key fees missed (${percent(result.missRate)})${top ? `, most in ${top}` : ""}. ${result.newCases} new missed-fee cases, ${result.activated} now read, ${regressions}${result.retired ? `, ${result.retired} retired` : ""}.${left}${excluded}`;
 }
 
 export function knoxMissesDetail(result: KnoxMissesResult) {
   return {
     version: result.version,
+    reference_excluded_banks: result.referenceExcludedBanks ?? 0,
+    reference_excluded_fees: result.referenceExcludedFees ?? 0,
+    reference_excluded_cases: result.referenceExcludedCases ?? 0,
     ready: result.ready,
     dry_run: result.dryRun,
     banks_read: result.banksRead,

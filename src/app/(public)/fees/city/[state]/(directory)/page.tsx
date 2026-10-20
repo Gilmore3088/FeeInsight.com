@@ -1,15 +1,40 @@
-export const dynamic = "force-dynamic";
+/**
+ * Regenerated in the background (ISR) at most hourly, and sooner when a takedown invalidates
+ * the public read cache its read carries (#1811). The page reads no session, cookies or search
+ * params; the explorer reads `?city=` in the browser. A render whose city list came back empty
+ * is cached for a minute instead (`shortenPageLife`, as the homepage), so a failed read is retried.
+ */
+export const revalidate = 3600;
+
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { STATE_NAMES } from "@/lib/us-states";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
+import { PAGE_HERO_WRAP, PageHero } from "@/components/public/page-hero";
 import { SITE_URL } from "@/lib/constants";
-import { getCitiesInStateCached } from "@/lib/data-store/public-cached-reads";
+import { getStateLocalEconomyCached, getStateMarketCitiesCached } from "@/lib/data-store/public-cached-reads";
+import { shortenPageLife } from "@/lib/data-store/public-read-cache";
+import { cityKey, correctSpelling } from "@/lib/geo/city-names";
+import { createReadBudget } from "@/lib/read-deadline";
+import { displayCity } from "@/lib/format";
+import { stateMarketMap } from "@/lib/geo/state-market-map";
+import { CitySearch, ExplorerMap, SelectedCity, StateExplorer, type ExplorerCity } from "./state-explorer";
+import { CityList } from "./city-list";
 
 interface PageProps {
   params: Promise<{ state: string }>;
 }
+
+/** Nothing is rendered at build time; each state renders on its first visit, then from cache. */
+export function generateStaticParams() {
+  return [];
+}
+
+/** The local economy block's read: optional, so a slow read leaves the block's unavailable note, not a held page. */
+const ECONOMY_READ_BUDGET_MS = 8_000;
+
+const LINK = "font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink";
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { state } = await params;
@@ -17,14 +42,10 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   if (!stateName) notFound();
 
   return {
-    title: `Bank Fees by City in ${stateName} - Local Fee Comparison`,
-    description: `Compare bank fees by city in ${stateName}. Find banks and credit unions with lower fees in your area. Overdraft fees, monthly charges, and more.`,
-    keywords: [
-      `${stateName} bank fees by city`,
-      `${stateName} banks with lower fees`,
-      `${stateName} bank fee comparison`,
-      `${stateName} credit union fees`,
-    ],
+    title: `Compare Bank and Credit Union Fees in ${stateName}`,
+    // ?city= only changes which city the explorer opens on; one URL per state.
+    alternates: { canonical: `/fees/city/${state.toLowerCase()}` },
+    description: `Compare the published fees of the banks and credit unions with branches in each ${stateName} city: overdraft, monthly maintenance, ATM and more, each with its source.`,
   };
 }
 
@@ -35,7 +56,38 @@ export default async function StateCityDirectory({ params }: PageProps) {
 
   if (!stateName) notFound();
 
-  const cities = await getCitiesInStateCached(stateCode);
+  const budget = createReadBudget(ECONOMY_READ_BUDGET_MS, "State city explorer");
+  const [cities, economy] = await Promise.all([
+    getStateMarketCitiesCached(stateCode),
+    budget.optional(getStateLocalEconomyCached(stateCode, stateName), "local economy", null),
+  ]);
+  if (cities.length === 0 || budget.failed()) await shortenPageLife();
+  // getStateMarketCities folds each city's spellings into one and ranks by institutions with a branch there, most first.
+  const links: ExplorerCity[] = cities.map((c) => ({
+    key: c.city.toLowerCase(),
+    economyKey: cityKey(c.city),
+    // Hyphens kept: WINSTON-SALEM reads "Winston-Salem".
+    name: correctSpelling(displayCity(c.city)),
+    href: `/fees/city/${stateCode.toLowerCase()}/${encodeURIComponent(c.city.toLowerCase())}`,
+    institutions: c.institutions,
+    withFees: c.with_fees,
+  }));
+  // Each city sits at the middle of its branches' recorded coordinates; a city without any is listed but not drawn.
+  const map = links.length
+    ? stateMarketMap(
+        stateCode,
+        cities.flatMap((c) => (c.lat != null && c.lon != null ? [{ key: c.city.toLowerCase(), lat: c.lat, lon: c.lon }] : [])),
+      )
+    : null;
+
+  const crumbs = (
+    <>
+      <Link href="/fees">Fees</Link>
+      <span aria-hidden="true">/</span>
+      <span>{stateName}</span>
+    </>
+  );
+  const title = `Compare bank and credit union fees in ${stateName}`;
 
   return (
     <>
@@ -47,85 +99,47 @@ export default async function StateCityDirectory({ params }: PageProps) {
         ]}
       />
 
-      <div className="max-w-page mx-auto px-6 py-14">
-        <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[12px] text-ink-muted mb-6">
-          <Link href="/fees" className="hover:text-ink transition-colors">Fees</Link>
-          <span className="text-border">/</span>
-          <span className="text-ink-soft">{stateName}</span>
-        </nav>
-
-        <div className="flex items-center gap-2 mb-4">
-          <span className="h-px w-8 bg-brick/40" />
-          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-brick/60">
-            City Directory
-          </span>
-        </div>
-
-        <h1
-          className="font-extrabold text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] text-ink mb-2"
-          style={{ fontFamily: "var(--fi-font-sans)" }}
-        >
-          Bank Fees by City in {stateName}
-        </h1>
-        <p className="text-[14px] text-ink-muted mb-8">
-          {cities.length} cities with fee data from {cities.reduce((s, c) => s + c.with_fees, 0)} institutions
-        </p>
-
-        {cities.length === 0 ? (
-          <p className="text-ink-muted py-12 text-center">
-            No fee data available for {stateName} yet. Check back soon.
-          </p>
-        ) : (
-          <div className="rounded-xl border border-border/80 bg-white/70 backdrop-blur-sm overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm sm:min-w-[520px]">
-                <thead>
-                  <tr className="border-b border-border/60 bg-paper/60">
-                    <th className="px-3 py-2.5 sm:px-4 text-left text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">City</th>
-                    <th className="px-3 py-2.5 sm:px-4 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">Institutions</th>
-                    <th className="px-3 py-2.5 sm:px-4 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">With fees</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/40">
-                  {cities.map((c) => (
-                    <tr key={`${c.city}-${c.state_code}`} className="hover:bg-paper/60 transition-colors">
-                      <td className="px-3 py-2.5 sm:px-4">
-                        <Link
-                          href={`/fees/city/${stateCode.toLowerCase()}/${encodeURIComponent(c.city.toLowerCase())}`}
-                          className="font-medium text-ink hover:text-brick transition-colors"
-                        >
-                          {c.city}
-                        </Link>
-                      </td>
-                      <td className="px-3 py-2.5 sm:px-4 text-right tabular-nums text-ink-muted">
-                        {c.institution_count}
-                      </td>
-                      <td className="px-3 py-2.5 sm:px-4 text-right tabular-nums font-medium text-ink">
-                        {c.with_fees}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+      {links.length > 0 ? (
+        <StateExplorer map={map} cities={links} stateName={stateName} economy={economy}>
+          <PageHero
+            crumbs={crumbs}
+            title={title}
+            lede="Choose a city to explore published fees at institutions with local branches."
+            aside={<SelectedCity />}
+          >
+            <CitySearch />
+          </PageHero>
+          <div className={`${PAGE_HERO_WRAP} pb-10 pt-10 text-left sm:pt-14`}>
+            <div className={map ? "grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-start" : ""}>
+              <CityList cities={links} stateName={stateName} />
+              {map && <ExplorerMap />}
             </div>
+            <p className="mt-6 max-w-[46rem] text-[12px] text-ink-muted">
+              Sources: FDIC Summary of Deposits, NCUA branch records, U.S. Census Bureau outlines. A city is listed once at least
+              one bank or credit union with a branch there has published fees. Spellings of one city in the branch records
+              (Saint, St and St., for example) are counted as one city, and each institution once.
+            </p>
           </div>
-        )}
+        </StateExplorer>
+      ) : (
+        <PageHero
+          crumbs={crumbs}
+          title={title}
+          lede={`No ${stateName} city has an institution with published fees yet.`}
+        />
+      )}
 
-        <div className="mt-6 flex flex-wrap gap-3">
-          <Link
-            href={`/research/state/${stateCode}`}
-            className="rounded-full border border-border px-4 py-1.5 text-[12px] font-medium text-ink-soft hover:border-brick/30 hover:text-brick transition-colors no-underline"
-          >
-            {stateName} Fee Report
-          </Link>
-          <Link
-            href="/fees"
-            className="rounded-full border border-border px-4 py-1.5 text-[12px] font-medium text-ink-soft hover:border-brick/30 hover:text-brick transition-colors no-underline"
-          >
-            Bank Fee Index
-          </Link>
-        </div>
-      </div>
+      <nav aria-label="More fee pages" className={`${PAGE_HERO_WRAP} flex flex-wrap gap-x-6 gap-y-2 border-t border-border pb-16 pt-8 text-[14px]`}>
+        <Link href={`/research/state/${stateCode}`} className={LINK}>
+          {stateName} fee report
+        </Link>
+        <Link href="/institutions" className={LINK}>
+          Search institutions
+        </Link>
+        <Link href="/fees" className={LINK}>
+          Every fee category
+        </Link>
+      </nav>
     </>
   );
 }

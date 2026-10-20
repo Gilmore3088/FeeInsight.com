@@ -5,11 +5,13 @@ import { notFound } from "next/navigation";
 import { hasPermission, requireAuth } from "@/lib/auth";
 import { sql } from "@/lib/data-store/connection";
 import { getHeldFees, type HeldFee } from "@/lib/fee-hold";
+import { canCorrectFees, getInstitutionCorrections, type InstitutionCorrections } from "@/lib/fee-corrections";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { formatAssets } from "@/lib/format";
 import { notOnlineStatus, type NotOnlineStatus } from "@/lib/agents/magellan/escalation";
 import { FeeTable } from "./fee-table";
 import { HeldFeesTable } from "./fee-hold-controls";
+import { CorrectionsPanel } from "./fee-correction-controls";
 import {
   getInstitution,
   getInstitutionFees,
@@ -22,6 +24,8 @@ import {
   type InstitutionFeeScheduleEvidence,
 } from "@/lib/data-store/institution";
 import { InstitutionActions } from "./institution-actions";
+import { WebsiteField } from "./website-field";
+import { NON_RETAIL_INSTITUTIONS } from "@/lib/non-retail";
 import { getInstitutionPeerRanking } from "@/lib/data-store/call-reports";
 import { getFinancialsByInstitution } from "@/lib/data-store/financial";
 import { HeroCards } from "./hero-cards";
@@ -36,7 +40,7 @@ export default async function InstitutionDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const user = await requireAuth("view");
+  const user = await requireAuth("operate");
   const canHold = hasPermission(user, "approve");
   const { id } = await params;
   const institutionId = Number(id);
@@ -54,6 +58,7 @@ export default async function InstitutionDetailPage({
     learnedNotes,
     heldFees,
     paidLadder,
+    corrections,
   ] =
     await Promise.all([
       getInstitution(institutionId),
@@ -72,7 +77,13 @@ export default async function InstitutionDetailPage({
         console.error("[admin] paid search ladder unavailable", { institutionId, error });
         return null;
       }),
+      getInstitutionCorrections(sql, institutionId).catch((error): InstitutionCorrections => {
+        console.error("[admin] fee corrections unavailable", { institutionId, error });
+        return { enabled: false, versions: {}, history: [], conflicts: [] };
+      }),
     ]);
+  const canCorrect = canCorrectFees(user.role) && corrections.enabled;
+  const correctionDocuments = crawlHistory.map((doc) => ({ id: doc.id, url: doc.document_url, crawledAt: doc.crawled_at }));
 
   if (!institution) notFound();
 
@@ -106,6 +117,11 @@ export default async function InstitutionDetailPage({
             .filter(Boolean)
             .join(" / ")}
         </p>
+        {NON_RETAIL_INSTITUTIONS.has(institution.id) && (
+          <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-400">
+            Non-retail: {NON_RETAIL_INSTITUTIONS.get(institution.id)}. Skipped in the top 10 per state count.
+          </p>
+        )}
       </div>
 
       {/* Profile + Actions row */}
@@ -117,18 +133,7 @@ export default async function InstitutionDetailPage({
           </h3>
           <dl className="space-y-2 text-xs">
             <ProfileRow label="Website">
-              {institution.website_url ? (
-                <a
-                  href={institution.website_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-600 dark:text-blue-400 hover:underline break-all"
-                >
-                  {truncateUrl(institution.website_url)}
-                </a>
-              ) : (
-                <span className="text-gray-400">-</span>
-              )}
+              <WebsiteField institutionId={institution.id} websiteUrl={institution.website_url} />
             </ProfileRow>
             <ProfileRow label="Fee Schedule URL">
               {institution.fee_schedule_url ? (
@@ -255,6 +260,23 @@ export default async function InstitutionDetailPage({
         </div>
       )}
 
+      {(corrections.history.length > 0 || corrections.conflicts.length > 0) && (
+        <div className="admin-card overflow-hidden mb-8">
+          <div className="px-4 py-2.5 border-b border-gray-100 dark:border-white/[0.04]">
+            <h2 className="text-[11px] font-bold text-blue-600 uppercase tracking-[0.08em]">
+              Fee Corrections ({corrections.history.length})
+            </h2>
+            <p className="mt-0.5 text-[11px] text-gray-500">
+              Every version is kept. A reversal publishes the earlier value again as a new version.{" "}
+              <Link href={`/admin/corrections?institution=${institutionId}`} className="underline hover:text-gray-900 dark:hover:text-gray-200">
+                Audit history and refresh status
+              </Link>
+            </p>
+          </div>
+          <CorrectionsPanel history={corrections.history} conflicts={corrections.conflicts} canCorrect={canCorrect} />
+        </div>
+      )}
+
       {/* Published Fees */}
       <div className="admin-card overflow-hidden mb-8">
         <div className="px-4 py-2.5 border-b border-gray-100 dark:border-white/[0.04]">
@@ -263,7 +285,14 @@ export default async function InstitutionDetailPage({
           </h2>
         </div>
         {fees.length > 0 ? (
-          <FeeTable fees={fees} institutionName={institution.institution_name} canHold={canHold} />
+          <FeeTable
+            fees={fees}
+            institutionName={institution.institution_name}
+            canHold={canHold}
+            canCorrect={canCorrect}
+            correctionVersions={corrections.versions}
+            documents={correctionDocuments}
+          />
         ) : (
           <div className="p-6 text-xs text-gray-400 text-center">
             No published fees yet. Set a fee schedule URL and run the agentic pipeline.

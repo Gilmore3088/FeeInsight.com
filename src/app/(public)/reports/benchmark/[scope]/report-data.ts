@@ -2,6 +2,7 @@
 import type { IndexEntry } from "@/lib/data-store/fee-index";
 import { HEADLINE_FEE_KEYS } from "@/lib/data-store/market-readiness";
 import { formatAmount } from "@/lib/format";
+import { getDisplayName } from "@/lib/fee-taxonomy";
 import type { Finding } from "../../../research/findings";
 import {
   buildCharterPairs,
@@ -34,25 +35,52 @@ export function buildReportCharterPairs(bank: IndexEntry[], cu: IndexEntry[], ro
   return buildCharterPairs(bank.filter(enough), cu.filter(enough), rows.map((r) => r.fee_category));
 }
 
-/** National findings: the two penalty fees, then the bank vs credit union gap. */
+/** A spread finding needs this many institutions behind the fee, so one small sample can't lead. */
+export const SPREAD_MIN_INSTITUTIONS = 100;
+
+/**
+ * National findings, across fees first: the bank vs credit union gap, then the fee whose
+ * middle half spreads widest around its median, then overdraft. Each says how many
+ * institutions stand behind it, since every fee rests on a different set.
+ */
 export function computeNationalFindings(rows: StateComparison[], charterPairs: CharterPair[]): Finding[] {
-  const findings: Finding[] = [];
-  for (const [key, headline] of [
-    ["overdraft", "The typical overdraft fee"],
-    ["nsf", "The typical NSF fee"],
-  ] as const) {
-    const row = rows.find((r) => r.fee_category === key);
-    if (!row) continue;
+  // The state findings' charter comparison reads the same for the whole country.
+  const findings: Finding[] = computeStateFindings("the U.S.", [], charterPairs);
+
+  // Each finding names a different fee: skip overdraft and NSF (their own finding) and the charter gap's fee.
+  const named = new Set(["overdraft", "nsf", ...findings.map((f) => f.fee_category)]);
+  const spread = rows
+    .filter((r) => !named.has(r.fee_category))
+    .filter((r) => r.institution_count >= SPREAD_MIN_INSTITUTIONS && r.p25_amount != null && r.p25_amount > 0 && r.p75_amount != null && r.median_amount > 0)
+    .map((r) => ({ row: r, width: (r.p75_amount! - r.p25_amount!) / r.median_amount }))
+    .sort((a, b) => b.width - a.width)[0];
+  if (spread && spread.width > 0) {
+    const r = spread.row;
     findings.push({
-      key,
-      figure: formatAmount(row.median_amount),
-      headline,
-      detail: `Median across ${row.institution_count.toLocaleString()} banks and credit unions; the middle half charge ${formatAmount(row.p25_amount)} to ${formatAmount(row.p75_amount)}.`,
+      key: "spread",
+      figure: `${formatAmount(r.p25_amount)} to ${formatAmount(r.p75_amount)}`,
+      headline: `${getDisplayName(r.fee_category)} varies most`,
+      detail: `The middle half of the ${r.institution_count.toLocaleString()} institutions publishing it charge ${formatAmount(r.p25_amount)} to ${formatAmount(r.p75_amount)}, around a median of ${formatAmount(r.median_amount)}.`,
       exhibit: "benchmarks",
+      fee_category: r.fee_category,
     });
   }
-  // The state findings' charter comparison reads the same for the whole country.
-  return [...findings, ...computeStateFindings("the U.S.", [], charterPairs)];
+
+  const overdraft = rows.find((r) => r.fee_category === "overdraft");
+  if (overdraft) {
+    const nsf = rows.find((r) => r.fee_category === "nsf");
+    findings.push({
+      key: "overdraft",
+      figure: formatAmount(overdraft.median_amount),
+      headline: "The typical overdraft fee",
+      detail: `Median across the ${overdraft.institution_count.toLocaleString()} institutions publishing one; the middle half charge ${formatAmount(overdraft.p25_amount)} to ${formatAmount(overdraft.p75_amount)}.${
+        nsf ? ` The NSF median is ${formatAmount(nsf.median_amount)} across ${nsf.institution_count.toLocaleString()}.` : ""
+      }`,
+      exhibit: "benchmarks",
+      fee_category: "overdraft",
+    });
+  }
+  return findings;
 }
 
 /** District findings: the state findings, worded for "the St. Louis district". */

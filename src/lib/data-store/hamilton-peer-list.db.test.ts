@@ -15,7 +15,7 @@ describe.skipIf(!connection)("peer list SQL in isolated PostgreSQL", () => {
     if (!result.criteria) throw new Error(result.problem ?? "No criteria");
     return result.criteria;
   }
-  const query = (c: PeerListCriteria) => getPeerListRows(101, c, "2026-10-10", db as unknown as NonNullable<Parameters<typeof getPeerListRows>[3]>);
+  const query = (c: PeerListCriteria, page?: { offset: number; limit: number }) => getPeerListRows(101, c, "2026-10-10", db as unknown as NonNullable<Parameters<typeof getPeerListRows>[3]>, page);
   beforeAll(async () => {
     if (!connection || !["localhost", "127.0.0.1", "[::1]"].includes(new URL(connection).hostname)) throw new Error("Peer SQL tests require a loopback E2E database; production connections are forbidden");
     db = postgres(connection, { max: 1, ssl: "require" });
@@ -81,9 +81,9 @@ describe.skipIf(!connection)("peer list SQL in isolated PostgreSQL", () => {
     expect(found.totalMatches).toBe(2); expect(found.rows.find(r => r.institutionId === 204)?.totalAssetsUsd).toBeNull();
     expect((await query(criteria("List ten peers"))).rows.some(r => r.institutionId === 204)).toBe(false);
   });
-  it("honors strict lower and upper boundaries", async () => {
+  it("honors strict lower and upper boundaries, largest first", async () => {
     const found = await query(criteria("List credit unions above $5B and under $20B"));
-    expect(found.rows.map(r => r.institutionId)).toEqual([202,203]);
+    expect(found.rows.map(r => r.institutionId)).toEqual([203,202]);
   });
   it("applies state/type filters and returns the full eligible count with a limited page", async () => {
     const found = await query(criteria("List 2 largest credit unions"));
@@ -102,5 +102,18 @@ describe.skipIf(!connection)("peer list SQL in isolated PostgreSQL", () => {
   it("keeps empty results honest rather than dropping constraints", async () => {
     const found = await query(criteria("List banks in California"));
     expect(found).toEqual({ rows: [], totalMatches: 0 });
+  });
+  it("pages past the first rows in the same order, and keeps the count on a page past the end (#977, H02-T08)", async () => {
+    const c = criteria("List all credit unions");
+    const whole = await query(c);
+    expect(whole.totalMatches).toBe(8);
+    const first = await query(c, { offset: 0, limit: 3 });
+    const second = await query(c, { offset: 3, limit: 3 });
+    const last = await query(c, { offset: 6, limit: 3 });
+    expect([...first.rows, ...second.rows, ...last.rows].map(r => r.institutionId)).toEqual(whole.rows.map(r => r.institutionId));
+    expect([first.totalMatches, second.totalMatches, last.totalMatches]).toEqual([8, 8, 8]);
+    expect(last.rows).toHaveLength(2);
+    expect(await query(c, { offset: 50, limit: 50 })).toEqual({ rows: [], totalMatches: 8 });
+    await expect(query(c, { offset: -1, limit: 3 })).rejects.toThrow("Invalid peer list page");
   });
 });

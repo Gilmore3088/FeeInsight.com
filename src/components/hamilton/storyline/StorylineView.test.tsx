@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { StorylineView } from "./StorylineView";
 import { sampleStoryline } from "./test-fixture";
+import { makeStamp } from "@/lib/dataset-stamp";
 
 describe("StorylineView", () => {
   const html = renderToStaticMarkup(<StorylineView story={sampleStoryline()} />);
@@ -49,6 +50,19 @@ describe("StorylineView with Hamilton's memo", () => {
     expect(html).toContain("recurring payroll");
   });
 
+  it("moves sentences no fee record backs into their own labelled list", () => {
+    const reading = "The peer median is $29.50.";
+    const bound = {
+      ...memo,
+      summary: `Your fee is $32. ${reading}`,
+      narrativeBinding: { version: 1 as const, supported: [], interpretation: [reading], omitted: [], limitations: [] },
+    };
+    const html = renderToStaticMarkup(<StorylineView story={sampleStoryline()} memo={{ state: "written", memo: bound }} />);
+    expect(html).toContain("Hamilton&#x27;s reading, not tied to a fee record");
+    expect(html.split(reading).length - 1).toBe(1);
+    expect(html).toContain("Your fee is");
+  });
+
   it("shows a writing state, and one quiet line when no memo is written", () => {
     expect(renderToStaticMarkup(<StorylineView story={sampleStoryline()} memo={{ state: "writing" }} />)).toContain("Hamilton is writing this up");
     const none = renderToStaticMarkup(<StorylineView story={sampleStoryline()} memo={{ state: "none", reason: "Hamilton's daily writing budget is used up." }} />);
@@ -65,5 +79,25 @@ describe("StorylineView sources", () => {
     expect(html).toContain('id="story-source-1"');
     expect(html).toContain('href="#story-source-1"');
     expect(html).not.toContain("rounded border border-warm-200 bg-white px-1.5");
+  });
+});
+
+describe("StorylineView dataset note (#1924 step 3)", () => {
+  const stamp = makeStamp({
+    dataset: "published_fee_catalog", mode: "live", readAt: "2026-10-18T14:10:00Z", runId: null, newestRecordAt: null,
+    methodVersion: 13, counting: "counted_once", filters: [{ key: "state:TX", label: "Institutions in Texas" }],
+  });
+
+  it("shows where the figures came from under them, from the stamps it is given", () => {
+    const html = renderToStaticMarkup(<StorylineView story={sampleStoryline()} stamps={[{ label: "your peer group", stamp }]} />);
+    expect(html).toContain("Published fee schedules, read live 18 Oct 2026 14:10 UTC. Institutions sharing one fee schedule count once.");
+    expect(html).toContain("How these figures were built");
+    expect(html).toContain("Institutions in Texas");
+    expect(html.indexOf("How these figures were built")).toBeLessThan(html.indexOf("Exhibit 1"));
+  });
+
+  it("shows no note without stamps (an older saved answer)", () => {
+    expect(renderToStaticMarkup(<StorylineView story={sampleStoryline()} />)).not.toContain("How these figures were built");
+    expect(renderToStaticMarkup(<StorylineView story={sampleStoryline()} stamps={[]} />)).not.toContain("How these figures were built");
   });
 });

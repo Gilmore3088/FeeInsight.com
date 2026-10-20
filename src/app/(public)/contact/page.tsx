@@ -5,7 +5,7 @@ import { ContactForm, type ContactHeadings } from "./contact-form";
 
 export const metadata: Metadata = {
   title: "Contact",
-  description: `Get in touch with ${SITE_NAME} about a Hamilton demo, Pro seats, the ${REPORT_OFFER.name}, Advisory work, data licensing, or anything else.`,
+  description: `Get in touch with ${SITE_NAME} about a Hamilton demo, Hamilton seats, the ${REPORT_OFFER.name}, data licensing, or anything else.`,
 };
 
 /**
@@ -20,25 +20,22 @@ const HEADINGS: ContactHeadings = {
   },
   general: {
     title: "Get in touch",
-    intro: "Reports, Pro seats, data licensing or anything else. We typically respond within one business day.",
+    intro: "Reports, Hamilton seats, data licensing or anything else. We typically respond within one business day.",
   },
 };
 
-export default async function ContactPage({
-  searchParams,
-}: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
+/** Prerendered once for everyone: the form reads the query in the browser (#1811). */
+export default function ContactPage() {
   return (
     <div className="mx-auto max-w-2xl px-6 py-14">
-      <div className="flex items-center gap-2 mb-4">
+      <div className="flex items-center justify-center gap-2 mb-4 sm:justify-start">
         <span className="h-px w-8 bg-brick/40" />
         <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-brick/60">
           Contact
         </span>
       </div>
 
-      <ContactForm searchParamsPromise={searchParams} headings={HEADINGS} />
+      <ContactForm headings={HEADINGS} />
 
       <div className="mt-10 rounded-xl border border-border bg-paper/50 px-6 py-5">
         <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-ink-muted mb-2">

@@ -6,12 +6,10 @@ import {
   feeOfSentenceTail,
   gluedReadable,
   gluedSentenceSplit,
-  liveFragmentName,
-  liveFragmentShape,
   writeLiveRenames,
-  type LiveFragmentPattern,
   type RetidyRename,
 } from "@/lib/agents/knox/name-retidy";
+import { liveFragmentName, liveFragmentShape, type LiveFragmentPattern } from "@/lib/fee-name-fragments";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
 import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 
@@ -85,6 +83,9 @@ type SqlTag = typeof sql;
  * takedowns; a bare cents figure reads like "$"; a credit beside the same price is the fee; another
  * bank's charge comes down only with no fee word; the count SQL reads no-break spaces as spaces.
  *
+ * v6 round 8 (139153, still v6): a closing "account you have at <bank>" clause renames to its head
+ * at any amount, $0 included (`LIVE_FRAGMENT_OWN_ACCOUNT`, `liveFragmentOwnAccountHead`).
+ *
  * v6 round 7 (#1521, review of bf43365e, still v6 in shadow): only moves takedowns and renames to
  * rereads. An if/when comparative is a threshold only before a money figure or "balance"; the credit
  * guard reads a bare cents price; credit words are whole words and no product noun; a credit after a
@@ -102,10 +103,10 @@ type SqlTag = typeof sql;
  */
 export const LIVE_FRAGMENT_CHECK = "darwin.live_fragment_check";
 /**
- * Default-off takedown switch. It turns on by PR after the dry run over the whole live table
- * (`countLiveFragmentNames`, or a full pass of step reports) has been shown to James by pattern.
+ * Takedown switch, on (James's yes, 2026-10-17, after the whole-table dry run by pattern from
+ * `countLiveFragmentNames`). Set to false and the pass only reports.
  */
-export const FRAGMENT_NAME_TAKEDOWN_LIVE = false;
+export const FRAGMENT_NAME_TAKEDOWN_LIVE = true;
 /** Live fees read per step. A name-only regex read, so a large share; the live table takes about (live fees / 2,000) steps a pass. */
 export const LIVE_FRAGMENT_BATCH = 2_000;
 export const LIVE_FRAGMENT_SAMPLES = 20;
@@ -246,6 +247,15 @@ export const LIVE_FRAGMENT_FEE_NOUN = /\b(?:fees?|charges?|penalt(?:y|ies)|asses
 /** Also after a dash inside the target ("Overdraft Fee - this fee"): the head ran into the sentence. */
 export const LIVE_FRAGMENT_SENTENCE_OPENER = /(?:^|\s[–—-]\s*)(?:also|the|however|please|if|when|this|that|these|a|an)\b/i;
 export const LIVE_FRAGMENT_FEE_HEAD = /\b(?:fees?|charges?)$/i;
+/**
+ * v6 round 8 (139153, still v6): a fee name whose only pronoun is a closing "account you have at
+ * <bank>" clause is no fragment. "Overdraft Protection Automatic Transfer from Another Deposit
+ * Account you have at MSCU1" is listed "Free" on the bank's schedule: a real $0 price (rule 3), so
+ * it renames to the head (group 1) and stays live, at any amount, never coming down. The clause is
+ * the whole rest of the line: an optional "that"/"which", you have/hold/own/maintain, at or with,
+ * then "us" or up to four capitalised words (the bank's name), with an optional footnote digit.
+ */
+export const LIVE_FRAGMENT_OWN_ACCOUNT = /^(.*\b(?:[Aa]ccounts?|[Ll]oans?|[Cc]ards?|[Ll]ine of [Cc]redit))\s+(?:that\s+|which\s+)?[Yy]ou\s+(?:have|hold|own|maintain)\s+(?:at|with)\s+(?:us|[A-Z][A-Za-z&.-]*(?:\s+[A-Z][A-Za-z&.-]*){0,3})\d{0,2}$/;
 /**
  * v4 (#1499): wording that totals several charges ("users may therefore incur $45 in NSF fees",
  * "a total of"): the amount is a sum, never renamed (55708). v5: "may therefore" anywhere, since a
@@ -612,6 +622,24 @@ function num(value: number | string | null | undefined): number | null {
 }
 
 /**
+ * Round 8 (139153): the head a closing "account you have at <bank>" clause leaves
+ * (`LIVE_FRAGMENT_OWN_ACCOUNT`), or null. The head must name a fee, carry no price, waiver or
+ * reduced wording, open on no sentence opener, be no fragment itself, and keep the category guard's
+ * verdict. The amount may be $0 (a fee the schedule lists as free), not unknown.
+ */
+export function liveFragmentOwnAccountHead(name: string, amount: number | null, canonicalFeeKey: string | null = null): string | null {
+  if (amount == null || amount < 0) return null;
+  const match = LIVE_FRAGMENT_OWN_ACCOUNT.exec(name);
+  const head = match?.[1]?.trim();
+  if (!head) return null;
+  if (LIVE_FRAGMENT_WAIVE_WORDING.test(name) || LIVE_FRAGMENT_REDUCED_WORDING.test(name)) return null;
+  if (LIVE_FRAGMENT_PRICE_IN_NAME.test(head) || !LIVE_FRAGMENT_FEE_NOUN.test(head) || LIVE_FRAGMENT_SENTENCE_OPENER.test(head)) return null;
+  if (liveFragmentName(head) != null) return null;
+  if (canonicalFeeKey != null && checkFeeCategory(canonicalFeeKey, name).ok && !checkFeeCategory(canonicalFeeKey, head).ok) return null;
+  return head;
+}
+
+/**
  * Pure (#1443): what the re-check does with one live name, or null when the name carries no live
  * fragment shape. See the module note for the rules.
  */
@@ -650,6 +678,10 @@ export function liveFragmentVerdictDetail(
     return verdict(waived ? { pattern, action: "reread" } : { pattern, action: "exempt", exemptReason: "trailing_range_priced" });
   }
   if (pattern === "plus") return verdict({ pattern, action: "takedown" });
+  // Round 8 (139153): a closing "account you have at <bank>" clause renames to the head at any
+  // amount, $0 included, when the head names a fee and passes the usual target checks.
+  const ownAccount = pattern === "pronoun" ? liveFragmentOwnAccountHead(current, amount, canonicalFeeKey) : null;
+  if (ownAccount) return verdict({ pattern, action: "rename", renameTo: ownAccount, renameVia: "head" });
   // v6 round 4 (#1499): a pronoun or sentence_end line comes down outright only when its amount is
   // $0 or unknown, the amount is a credit or discount, or the line opens on a worked example or
   // another bank's charge (`liveFragmentNotAFee`). Waiver wording alone never takes a priced fee down.
@@ -1334,6 +1366,10 @@ export function liveFragmentCountSql(): string {
   const thresholdEnd = `(name ~* '${postgresPattern(LIVE_FRAGMENT_THRESHOLD_END)}' OR name ~* '${postgresPattern(LIVE_FRAGMENT_EXCESS_END)}' OR (amount >= ${LIVE_FRAGMENT_CONDITION_MAX} AND name ~* '${postgresPattern(LIVE_FRAGMENT_BELOW_END)}'))`;
   const hardGates = `name ~* '${deposit}' OR name ~* '${postgresPattern(LIVE_FRAGMENT_TOTAL_WORDING)}' OR ${capRefused}`
     + `\n           OR (${thresholdEnd} AND NOT exception_ok)`;
+  // Round 8 (139153): a closing "account you have at <bank>" clause renames to its head at any amount.
+  const ownAccountRename = `(pattern = 'pronoun' AND amount >= 0 AND own_account_head IS NOT NULL AND renamable`
+    + ` AND own_account_head !~ '${postgresPattern(LIVE_FRAGMENT_PRICE_IN_NAME)}' AND own_account_head ~* '${postgresPattern(LIVE_FRAGMENT_FEE_NOUN)}'`
+    + ` AND own_account_head !~* '${postgresPattern(LIVE_FRAGMENT_SENTENCE_OPENER)}')`;
   const target = (column: string) => `${column} !~ '${postgresPattern(LIVE_FRAGMENT_PRICE_IN_NAME)}' AND ${column} ~* '${postgresPattern(LIVE_FRAGMENT_FEE_NOUN)}' AND ${column} !~* '${postgresPattern(LIVE_FRAGMENT_SENTENCE_OPENER)}'`;
   return `WITH live AS (
   SELECT fp.fee_published_id, fp.institution_id, fp.canonical_fee_key, fp.amount, fr.source_document_id,
@@ -1383,7 +1419,8 @@ export function liveFragmentCountSql(): string {
          substr(COALESCE(CASE WHEN head_plain IS NULL THEN readable_cap END, readable), length(head) + 1) AS rest,
          COALESCE(tail_phrase <> '' AND tail_phrase !~ '${postgresPattern(re.tail_paren_start)}' AND tail_raw !~* '${postgresPattern(re.tail_person)}' AND tail_phrase !~* '${postgresPattern(re.tail_generic_only)}' AND ${barsOn("tail_phrase")}, false) AS tail_ok,
          upper(left(tail_phrase, 1)) || substr(tail_phrase, 2) AS tail,
-         name !~* '${waive}' AND name !~* '${postgresPattern(LIVE_FRAGMENT_REDUCED_WORDING)}' AS renamable
+         name !~* '${waive}' AND name !~* '${postgresPattern(LIVE_FRAGMENT_REDUCED_WORDING)}' AS renamable,
+         btrim((regexp_match(name, '${postgresPattern(LIVE_FRAGMENT_OWN_ACCOUNT)}'))[1]) AS own_account_head
     FROM split
 ), gated AS (
   SELECT *, ${exception} AS exception_ok
@@ -1403,6 +1440,7 @@ export function liveFragmentCountSql(): string {
   SELECT fee_published_id, institution_id, canonical_fee_key, amount, source_document_id, name, pattern, CASE
     WHEN pattern = 'pronoun' AND outside !~* '${postgresPattern(re.pronoun)}' THEN 'parenthetical'
     WHEN pattern = 'trailing_range' THEN CASE WHEN COALESCE(amount, -1) = 0 THEN 'fragment' WHEN name ~* '${waive}' THEN 'reread' ELSE 'trailing_range_priced' END
+    WHEN ${ownAccountRename} THEN 'rename'
     WHEN pattern = 'plus' OR amount IS NULL OR amount <= 0 OR (${creditIsAmount} AND NOT ${creditHeaded}) OR ${notAFee} THEN 'fragment'
     WHEN ${creditIsAmount} THEN 'reread'
     WHEN price_elsewhere AND NOT hard_refused THEN 'reread'
@@ -1414,7 +1452,7 @@ export function liveFragmentCountSql(): string {
     WHEN takedown_refused AND NOT (${soft}) THEN 'fragment_reread'
     ELSE 'reread'
   END AS first_reason,
-  CASE WHEN head_ok OR exception_ok THEN head WHEN tail_ok THEN tail END AS rename_to
+  CASE WHEN ${ownAccountRename} THEN own_account_head WHEN head_ok OR exception_ok THEN head WHEN tail_ok THEN tail END AS rename_to
   FROM refused
 ), ranked AS (
   SELECT v.*,

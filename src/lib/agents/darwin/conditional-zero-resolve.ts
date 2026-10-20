@@ -1,4 +1,6 @@
 import type { sql } from "@/lib/data-store/connection";
+import { completeAudienceAdmission, prepareVerificationAudience, VerificationAudienceDeferred } from "./verification-audience";
+import { requireInternationalVerification } from "./international-verification";
 import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
 import { isProductPageUrl } from "@/lib/agents/learning/fee-page";
 import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
@@ -11,6 +13,7 @@ import {
   insertVerifiedFee,
   loadSourceTexts,
   rawFeeFingerprint,
+  resolvedRawCategory,
   sourceLineFor,
   type RawFeeRow,
 } from "./verify";
@@ -87,7 +90,7 @@ export function conditionalZeroVerdict(
     && !conditionalZero(0, line, row.fee_name)
     && !ACCOUNT_FEATURE_KEYS.has(row.canonical_fee_key)
     // #1397: free on a premium or private-banking schedule is that tier's perk, not the bank's price.
-    && !tierPerkZero(0, row.fee_name, row.document_url, documentText)
+    && !tierPerkZero(0, row.fee_name, row.document_url, documentText, row.canonical_fee_key)
     && checkFeeCategory(row.canonical_fee_key, row.fee_name).ok;
   return free
     ? { decision: "verified", reason: "conditional_zero_free_on_schedule" }
@@ -95,6 +98,8 @@ export function conditionalZeroVerdict(
 }
 
 export interface ConditionalZeroResolveResult {
+  deferred?: number;
+  deferrals?: Array<{ feeRawId: number; reason: string }>;
   selected: number;
   verdicts: Record<string, number>;
   verified: number;
@@ -160,26 +165,37 @@ export async function runDarwinConditionalZeroResolve(options: {
     return result;
   }
   result.selected = rows.length;
-  for (const row of rows) {
-    const line = sourceLineFor(row, texts, row.canonical_fee_key);
-    const documentText = row.source_document_id == null ? null : texts.get(Number(row.source_document_id)) ?? null;
-    const verdict = conditionalZeroVerdict(row, line, documentText);
-    result.verdicts[verdict.reason] = (result.verdicts[verdict.reason] ?? 0) + 1;
-    if (dryRun) continue;
-    // One row's writes in a savepoint: a failed insert never fails the verify step it runs in.
+  for (const selected of rows) {
+    // The decision and its write share one row savepoint/current source, including $0 paths.
     try {
-      const written = await inSavepoint(options.db, async (scope) => {
+      const written = await inSavepoint(options.db, async scope => {
+        const legacyText = selected.source_document_id == null ? null : texts.get(Number(selected.source_document_id)) ?? null;
+        const admission = dryRun ? null : await prepareVerificationAudience(scope, selected, legacyText);
+        const original = (admission?.row ?? selected) as HeldZeroRow;
+        if (admission) requireInternationalVerification(admission, original.canonical_fee_key, resolvedRawCategory(admission.row));
+        const row: HeldZeroRow = admission?.audience ? { ...original, fee_audience: admission.audience.feeAudience } : original;
+        const documentText = admission ? admission.sourceText : legacyText;
+        const currentTexts = new Map(texts);
+        if (row.source_document_id != null && documentText != null) currentTexts.set(Number(row.source_document_id), documentText);
+        const line = sourceLineFor(row, currentTexts, row.canonical_fee_key);
+        const verdict = conditionalZeroVerdict(row, line, documentText);
+        if (dryRun) {
+          result.verdicts[verdict.reason] = (result.verdicts[verdict.reason] ?? 0) + 1;
+          return null;
+        }
         let feeVerifiedId: number | null = null;
         if (verdict.decision === "verified") {
-          feeVerifiedId = await insertVerifiedFee(scope as SqlTag, {
+          feeVerifiedId = await insertVerifiedFee(scope, {
             runId: options.runId,
             row,
             canonicalFeeKey: row.canonical_fee_key,
             extraFlags: [CONDITIONAL_ZERO_RELEASED_FLAG],
-            sourceText: row.source_document_id == null ? null : texts.get(Number(row.source_document_id)) ?? null,
+            sourceText: documentText,
+            audience: admission!.audience,
+            audienceAdmission: completeAudienceAdmission(admission!, row.canonical_fee_key),
           });
         }
-        await recordAttempt(scope as SqlTag, {
+        await recordAttempt(scope, {
           institutionId: Number(row.institution_id),
           sourceDocumentId: row.source_document_id == null ? null : Number(row.source_document_id),
           stage: "verify",
@@ -203,12 +219,20 @@ export async function runDarwinConditionalZeroResolve(options: {
             source_line: (line ?? excerptOf(row.conditions))?.slice(0, 300),
           },
         });
+        result.verdicts[verdict.reason] = (result.verdicts[verdict.reason] ?? 0) + 1;
         return feeVerifiedId;
       });
       if (written != null) result.verified += 1;
     } catch (error) {
-      console.error("runDarwinConditionalZeroResolve write failed:", error);
+      if (error instanceof VerificationAudienceDeferred) {
+        result.deferred = (result.deferred ?? 0) + 1;
+        result.deferrals ??= [];
+        if (result.deferrals.length < 25) result.deferrals.push({ feeRawId: Number(selected.fee_raw_id), reason: error.reason });
+      } else {
+        console.error("runDarwinConditionalZeroResolve write failed:", error);
+      }
     }
   }
+
   return result;
 }

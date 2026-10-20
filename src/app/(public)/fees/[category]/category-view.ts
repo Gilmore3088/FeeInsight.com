@@ -2,7 +2,7 @@ import type { DimensionBreakdown, FeeCategorySummary, InstitutionPoint } from "@
 import type { ExplorerPoint } from "./fee-explorer";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import { DISTRICT_NAMES, FDIC_TIER_LABELS } from "@/lib/fed-districts";
-import { getDisplayName } from "@/lib/fee-taxonomy";
+import { getDisplayName, sentenceFeeName } from "@/lib/fee-taxonomy";
 import { STATE_NAMES } from "@/lib/us-states";
 import { getSegmentLabel } from "@/app/(public)/institution/[id]/enum-labels";
 
@@ -137,9 +137,21 @@ export function districtHeadline(dots: MarketDot[]): { title: string; detail: st
   const counts = new Map<number, number>();
   for (const d of dots) counts.set(d.median, (counts.get(d.median) ?? 0) + 1);
   const [common, shared] = [...counts].sort((a, b) => b[1] - a[1])[0];
-  const range = `${high.label} is highest at ${money(high.median)}, ${low.label} lowest at ${money(low.median)}.`;
+  // A tied top or bottom names no single district (#1953: "Atlanta is highest at $30" when eight shared it).
+  const highTies = dots.filter((d) => d.median === high.median).length;
+  const lowTies = dots.filter((d) => d.median === low.median).length;
+  const highPart =
+    highTies > 1
+      ? `${highTies} districts share the highest median, ${money(high.median)}`
+      : `${high.label} is highest at ${money(high.median)}`;
+  const lowPart =
+    lowTies > 1 ? `${lowTies} share the lowest, ${money(low.median)}` : `${low.label} lowest at ${money(low.median)}`;
+  const range = `${highPart}; ${lowPart}.`;
   if (shared * 2 > dots.length) {
     return { title: `${money(common)} in ${shared} of ${dots.length} Fed districts`, detail: range };
+  }
+  if (highTies > 1 || lowTies > 1) {
+    return { title: `${money(high.median)} at the highest, ${money(low.median)} at the lowest`, detail: range };
   }
   return { title: `Highest in ${high.label}, lowest in ${low.label}`, detail: range };
 }
@@ -154,15 +166,16 @@ export function charterFinding(dots: MarketDot[], feeName: string): string | nul
   const banks = dots.find((d) => d.key === "Bank");
   const unions = dots.find((d) => d.key === "Credit Union");
   if (!banks || !unions) return null;
-  const fee = feeName.replace(/\s*\([^)]*\)/g, "").toLowerCase();
+  // Mid-sentence, words go lowercase but acronyms keep their case: "NSF / returned item" (#1953).
+  const fee = sentenceFeeName(feeName);
   const money = (n: number) => `$${Number.isInteger(n) ? n : n.toFixed(2)}`;
   const diff = Math.abs(banks.median - unions.median);
-  if (diff === 0) return `Banks and credit unions charge the same median ${fee} fee, ${money(banks.median)}.`;
+  // A median is a calculation, so the sentence never says either group "charges" it.
+  if (diff === 0) return `Banks and credit unions share a median ${fee} fee of ${money(banks.median)}.`;
   const [more, less] = banks.median > unions.median ? [banks, unions] : [unions, banks];
-  return `${more.label} charge a median ${money(more.median)} for ${article(fee)} fee, ${money(diff)} more than ${less.label.toLowerCase()} (${money(less.median)}).`;
+  const name = (d: MarketDot) => (d.key === "Bank" ? "bank" : "credit union");
+  return `The ${name(more)} median ${fee} fee is ${money(more.median)}, ${money(diff)} above the ${name(less)} median of ${money(less.median)}.`;
 }
-
-const article = (word: string) => `${/^[aeiou]/i.test(word) ? "an" : "a"} ${word}`;
 
 /** The family's other fees with a complete national spread, for the related-fees row. */
 export function relatedBands(

@@ -16,9 +16,7 @@ import {
   getCpiContext,
   yearEarlier,
   getFinancialHistory,
-  getFinancialStats,
   getFinancialsByInstitution,
-  getRevenueIndexByDate,
   _dollarOrNull_FOR_TESTING as dollarOrNull,
 } from "./financial";
 import { sql } from "./connection";
@@ -41,7 +39,7 @@ function templateText(strings: unknown): string {
 
 // ── dollarOrNull helper ───────────────────────────────────────────────────────
 
-describe("dollarOrNull (passthrough — DB stores whole dollars since migration 023)", () => {
+describe("dollarOrNull (passthrough — FDIC/NCUA stored thousands)", () => {
   it("passes through non-null values unchanged", () => {
     expect(dollarOrNull(48200000)).toBe(48200000);
   });
@@ -99,7 +97,7 @@ describe("getFinancialsByInstitution - stored financial values", () => {
     expect(result).toHaveLength(1);
     const r = result[0];
 
-    // Dollar columns pass through unchanged (DB stores whole dollars)
+    // Dollar columns pass through unchanged (FDIC/NCUA readers preserve stored thousands)
     expect(r.total_assets).toBe(500000);
     expect(r.total_deposits).toBe(400000);
     expect(r.total_loans).toBe(300000);
@@ -234,43 +232,6 @@ describe("getFinancialsByInstitution - stored financial values", () => {
   });
 });
 
-// ── getRevenueIndexByDate ─────────────────────────────────────────────────────
-
-describe("getRevenueIndexByDate - thousands scaling", () => {
-  beforeEach(() => {
-    resetMock(getMock());
-  });
-
-  it("multiplies avg_service_charge by 1000", async () => {
-    // Mock returns rows with service_charge_income in thousands
-    const dbRows = [
-      { fee_income_ratio: 0.04, service_charge_income: 1200 },
-      { fee_income_ratio: 0.05, service_charge_income: 1800 },
-    ];
-    // First call: query for rows
-    getMock().mockResolvedValueOnce(dbRows);
-    // Second call: max report_date
-    getMock().mockResolvedValueOnce([{ d: "2024-09-30" }]);
-
-    const result = await getRevenueIndexByDate();
-    expect(result).not.toBeNull();
-    // Average of 1200 and 1800 = 1500 (DB stores whole dollars, no multiplication)
-    expect(result!.avg_service_charge).toBe(1500);
-  });
-
-  it("returns null avg_service_charge when no service charges", async () => {
-    const dbRows = [
-      { fee_income_ratio: 0.04, service_charge_income: null },
-    ];
-    getMock().mockResolvedValueOnce(dbRows);
-    getMock().mockResolvedValueOnce([{ d: "2024-09-30" }]);
-
-    const result = await getRevenueIndexByDate();
-    expect(result).not.toBeNull();
-    expect(result!.avg_service_charge).toBeNull();
-  });
-});
-
 describe("capital ratios", () => {
   beforeEach(() => {
     resetMock(getMock());
@@ -300,25 +261,9 @@ describe("source filter (ffiec rows use other units)", () => {
 
   const expectEveryReadFiltered = () => expect(unfilteredFinancialReads(getMock())).toEqual([]);
 
-  it("getFinancialStats counts only fdic and ncua rows", async () => {
-    getMock().mockResolvedValue([{ cnt: 0 }]);
-    await getFinancialStats();
-    expectEveryReadFiltered();
-  });
-
   it("getFinancialsByInstitution reads only fdic and ncua rows", async () => {
     getMock().mockResolvedValue([]);
     await getFinancialsByInstitution(270);
-    expectEveryReadFiltered();
-  });
-
-  it("getRevenueIndexByDate filters the rows and the latest-quarter lookups", async () => {
-    getMock().mockResolvedValueOnce([{ fee_income_ratio: 0.04, service_charge_income: 1 }]);
-    getMock().mockResolvedValueOnce([{ d: "2026-06-30" }]);
-    await getRevenueIndexByDate();
-    getMock().mockResolvedValueOnce([{ fee_income_ratio: 0.04, service_charge_income: 1 }]);
-    await getRevenueIndexByDate("2026-03-31");
-    expect(getMock().mock.calls).toHaveLength(3);
     expectEveryReadFiltered();
   });
 

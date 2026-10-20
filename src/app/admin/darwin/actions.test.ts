@@ -27,6 +27,8 @@ describe("Darwin admin verify run (#1115 step 4)", () => {
     const run = mocks.startAgentRun.mock.calls[0][0];
     expect(run.steps.map((step: { key: string; agent: string }) => `${step.agent}:${step.key}`)).toEqual(["darwin:verify"]);
     expect(run.params).toMatchObject({ verify_limit: 500, source: "admin.darwin_repair" });
+    // A free step, so the provider stop does not refuse it (#1402).
+    expect(mocks.assertAtlasDispatchReady).toHaveBeenCalledWith(["verify"]);
   });
 
   it("refuses a scope outside the runner's options", async () => {

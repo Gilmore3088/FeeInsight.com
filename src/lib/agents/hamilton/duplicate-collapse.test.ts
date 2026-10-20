@@ -5,8 +5,9 @@ import { collapseNearNameDuplicates, collapsePublishedDuplicates, NEAR_NAME_COLL
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
 function createDbMock(rows: Array<Record<string, unknown>>): DbMock {
-  const db = vi.fn(() => Promise.resolve([])) as DbMock;
-  db.unsafe = vi.fn(() => Promise.resolve(rows));
+  const db = vi.fn((strings:TemplateStringsArray) => Promise.resolve(strings.join(" ").includes("UPDATE published_fee_records") ? rows : [])) as DbMock;
+  db.unsafe = vi.fn((query:string) => Promise.resolve(query.startsWith("SELECT fp.fee_published_id, to_jsonb")
+    ? rows.flatMap((r) => r.keeper ? [r,r.keeper] : [r]) : rows));
   return db;
 }
 
@@ -21,6 +22,8 @@ const duplicate = {
   canonical_fee_key: "overdraft",
   fee_name: "Overdraft fee",
   amount: "35.00",
+  published_state:"target",identity_raw_id:null,identity_product:"",
+  keeper:{fee_published_id:777,published_state:"keeper",identity_raw_id:null,identity_product:""},
 };
 
 describe("Hamilton duplicate collapse", () => {
@@ -44,19 +47,21 @@ describe("Hamilton duplicate collapse", () => {
       },
     ]);
     const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
-    expect(query).toContain("UPDATE published_fee_records fp");
+    expect(JSON.stringify(db.mock.calls)).toContain("UPDATE published_fee_records fp");
     expect(query).toContain("rolled_back_at IS NULL");
     expect(query).toContain("PARTITION BY fp.institution_id");
     expect(query).toContain("lower(btrim(fp.fee_name))");
     // A copy with a stated frequency is kept over one without, then the newest.
-    expect(query).toContain("ORDER BY (COALESCE(fp.fee_audience, 'unknown') = 'unknown'), (fp.frequency IS NULL), fp.published_at DESC, fp.fee_published_id DESC");
+    expect(query).toContain("COALESCE(fp.fee_audience, 'unknown')");
+    expect(query).toContain("ORDER BY (fp.frequency IS NULL), fp.published_at DESC, fp.fee_published_id DESC");
+    expect(query).toContain("fp.quarantined_at IS NULL");
     // Frequency is not part of the line: "per item", "per occurrence" and unstated are one fee,
     // while two different stated frequencies keep both rows.
     expect(query).not.toContain("COALESCE(fp.frequency, '')");
     expect(query).toContain("WHEN fp.frequency IN ('per_item', 'per_occurrence', 'per_transaction', 'one_time') THEN 'each'");
     expect(query).toContain("ranked.min_class IS NULL OR ranked.min_class = ranked.max_class");
-    expect(query).toContain("'duplicate of #' || dup.kept_fee_published_id::text");
-    expect(params).toEqual([500, "agentic-run-120"]);
+    expect(JSON.stringify(db.mock.calls)).toContain("rolled_back_reason");
+    expect(params).toEqual([500]);
     expect(JSON.stringify(db.mock.calls)).toContain("hamilton.duplicates_collapsed");
   });
 

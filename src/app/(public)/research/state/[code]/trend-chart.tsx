@@ -73,7 +73,18 @@ function monthYear(date: string): string {
  * Line chart drawn in a stretchable SVG (lines keep a constant stroke) with HTML axis labels,
  * so text stays crisp and readable at every width.
  */
-export function TrendChart({ lines, format, label }: { lines: TrendLine[]; format: (v: number) => string; label: string }) {
+export function TrendChart({
+  lines,
+  format,
+  label,
+  color = PRIMARY,
+}: {
+  lines: TrendLine[];
+  format: (v: number) => string;
+  label: string;
+  /** The primary line's color; brick unless the page saves brick for something else. */
+  color?: string;
+}) {
   const drawn = lines.filter((l) => l.points.length >= 2);
   const primary = drawn.find((l) => l.tone === "primary");
   if (!primary) return null;
@@ -110,7 +121,7 @@ export function TrendChart({ lines, format, label }: { lines: TrendLine[]; forma
             <span key={l.label} className="inline-flex items-center gap-1.5">
               <span
                 className="inline-block h-0 w-4 border-t-2"
-                style={{ borderColor: l.tone === "primary" ? PRIMARY : COMPARE, borderStyle: l.tone === "primary" ? "solid" : "dashed" }}
+                style={{ borderColor: l.tone === "primary" ? color : COMPARE, borderStyle: l.tone === "primary" ? "solid" : "dashed" }}
               />
               {l.label}
             </span>
@@ -138,7 +149,7 @@ export function TrendChart({ lines, format, label }: { lines: TrendLine[]; forma
                 key={l.label}
                 points={l.points.map((p) => `${x(p.date)},${y(p.value)}`).join(" ")}
                 fill="none"
-                stroke={l.tone === "primary" ? PRIMARY : COMPARE}
+                stroke={l.tone === "primary" ? color : COMPARE}
                 strokeWidth={l.tone === "primary" ? 2 : 1.5}
                 strokeDasharray={l.tone === "primary" ? undefined : "4 3"}
                 strokeLinejoin="round"
@@ -148,7 +159,7 @@ export function TrendChart({ lines, format, label }: { lines: TrendLine[]; forma
           </svg>
           <span
             className="absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white"
-            style={{ left: `${x(last.date)}%`, top: `${y(last.value)}%`, background: PRIMARY }}
+            style={{ left: `${x(last.date)}%`, top: `${y(last.value)}%`, background: color }}
             aria-hidden="true"
           />
         </div>

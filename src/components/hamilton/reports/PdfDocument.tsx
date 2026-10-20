@@ -1,4 +1,5 @@
 import { hamiltonIdentityLines, readHamiltonIdentitySnapshot } from "@/lib/hamilton/identity-display";
+import { INTERPRETATION_LABEL } from "@/lib/hamilton/narrative-bound";
 /**
  * PdfDocument — @react-pdf/renderer document component.
  * Server-side ONLY. Never import this in client components.
@@ -9,6 +10,7 @@ import { hamiltonIdentityLines, readHamiltonIdentitySnapshot } from "@/lib/hamil
  */
 import {
   Document,
+  Font,
   Page,
   Text,
   View,
@@ -18,6 +20,13 @@ import type { ReportArtifactMetadata, ReportExhibit, ReportSummaryResponse } fro
 import { HAMILTON_ATTRIBUTION } from "@/lib/constants";
 import { REPORT_SECTION_HEADINGS, evidencePolicyLabel, reportTypeLabel } from "./report-labels";
 import { RD_PDF } from "@/lib/report-design/tokens";
+import { LEGACY_REPORT_CONFIDENCE_FOOTNOTE, displayReportDecision, hasLegacyHighRating } from "@/lib/hamilton/report-answer";
+import { datasetPassage, readStampedFigures } from "@/lib/dataset-note";
+import { SAVED_ANSWER_FULL_LIST, SAVED_DATASET_SOURCE_LABEL } from "@/lib/hamilton/board-brief";
+
+// Words wrap whole, as in AnalysisPdfDocument (the same route loads both): default hyphenation split
+// evidence record IDs mid-way ("fee:pub-lished:502"), so a printed ID no longer matched its record.
+Font.registerHyphenationCallback((word) => [word]);
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
 
@@ -298,6 +307,27 @@ const styles = StyleSheet.create({
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+/** Where a report's reader finds every filter behind its figures: the report's own note on screen. */
+const REPORT_FULL_LIST = "open the report in Hamilton for the full list";
+
+/**
+ * The stamps saved with the report, as the sentences of its "About these figures" passage
+ * (#1924 step 4). Read as saved, never refreshed; null for a report saved without stamps.
+ */
+function aboutTheseFigures(report: ReportSummaryResponse): string[] | null {
+  return datasetPassage(readStampedFigures(report.datasetStamps), report.boardBrief ? SAVED_ANSWER_FULL_LIST : REPORT_FULL_LIST);
+}
+
+/** The appendix passage: prose at the body size, no tile. */
+function PdfAboutTheseFigures({ about }: { about: string[] | null }) {
+  if (!about) return null;
+  return (
+    <View style={styles.section} wrap={false}>
+      <Text style={styles.sectionHeading}>About these figures</Text>
+      <Text style={styles.paragraph}>{about.join(" ")}</Text>
+    </View>
+  );
+}
 
 // ─── PdfDocument Component ────────────────────────────────────────────────────
 
@@ -312,6 +342,7 @@ export function PdfDocument({ report, reportType, artifactMetadata }: PdfDocumen
   const typeLabel = reportTypeLabel(reportType);
   const identity = readHamiltonIdentitySnapshot(report.identityContext);
   const identityLines = identity ? hamiltonIdentityLines(identity) : report.boardBrief ? [] : ["Historical institution, account and peer context: Not recorded"];
+  const about = aboutTheseFigures(report);
   const today = new Date().toLocaleDateString("en-US", {
     year: "numeric",
     month: "long",
@@ -341,7 +372,7 @@ export function PdfDocument({ report, reportType, artifactMetadata }: PdfDocumen
           )}
         </View>
 
-        {report.answer ? <ConsultantPdfBody report={report} /> : <LegacyPdfBody report={report} />}
+        {report.answer ? <ConsultantPdfBody report={report} about={about} /> : <LegacyPdfBody report={report} about={about} />}
 
         {/* Footer */}
         <View style={styles.footer} fixed>
@@ -404,15 +435,17 @@ function PdfParagraphs({ text }: { text: string }) {
 }
 
 /** Answer first, then the evidence, the reasoning, the trade-offs, and the sources. */
-function ConsultantPdfBody({ report }: { report: ReportSummaryResponse }) {
+function ConsultantPdfBody({ report, about }: { report: ReportSummaryResponse; about: string[] | null }) {
   const answer = report.answer;
+  // A board brief also saves its stamps as a sources entry; the passage carries them, so they print once.
+  const sources = (report.sources ?? []).filter((source) => !(about && source.label === SAVED_DATASET_SOURCE_LABEL));
   return (
     <>
       {answer && (
         <View style={styles.section}>
           <Text style={styles.answerLabel}>{answer.goal ? `The answer · Goal: ${answer.goal}` : "The answer"}</Text>
           <Text style={styles.headline}>{answer.headline}</Text>
-          {answer.decisions.map((decision, i) => (
+          {answer.decisions.map(displayReportDecision).map((decision, i) => (
             <View key={i} style={styles.decision} wrap={false}>
               <Text style={styles.decisionNumber}>{i + 1}</Text>
               <View style={styles.decisionBody}>
@@ -426,6 +459,9 @@ function ConsultantPdfBody({ report }: { report: ReportSummaryResponse }) {
               </View>
             </View>
           ))}
+          {hasLegacyHighRating(answer.decisions) ? (
+            <Text style={styles.decisionConfidence}>{LEGACY_REPORT_CONFIDENCE_FOOTNOTE}</Text>
+          ) : null}
         </View>
       )}
 
@@ -443,6 +479,14 @@ function ConsultantPdfBody({ report }: { report: ReportSummaryResponse }) {
       <View style={styles.section}>
         <Text style={styles.sectionHeading}>What Is Behind It</Text>
         <PdfParagraphs text={report.strategicRationale} />
+        {report.boardBrief?.reading?.length ? (
+          <View style={styles.metadataStrip} wrap={false}>
+            <Text style={styles.answerLabel}>{INTERPRETATION_LABEL}</Text>
+            {report.boardBrief.reading.map((sentence, i) => (
+              <Text key={i} style={styles.noteItem}>{"•"} {sentence}</Text>
+            ))}
+          </View>
+        ) : null}
       </View>
 
       <View style={styles.section}>
@@ -452,21 +496,23 @@ function ConsultantPdfBody({ report }: { report: ReportSummaryResponse }) {
           <View style={styles.metadataStrip}>
             <Text style={styles.answerLabel}>{report.boardBrief ? "Further research Hamilton suggested" : "What to watch"}</Text>
             {(report.watchlist ?? []).map((item, i) => (
-              <Text key={i} style={styles.noteItem}>— {item}</Text>
+              <Text key={i} style={styles.noteItem}>{"•"} {item}</Text>
             ))}
           </View>
         )}
       </View>
 
+      <PdfAboutTheseFigures about={about} />
+
       <View style={styles.section}>
         <Text style={styles.sectionHeading}>Method and Sources</Text>
-        {(report.sources ?? []).map((source, i) => (
+        {sources.map((source, i) => (
           <Text key={i} style={styles.noteItem}>
             {source.label} · {source.detail}{source.url ? ` ${source.url}` : ""}
           </Text>
         ))}
         {report.implementationNotes.map((note, i) => (
-          <Text key={`note-${i}`} style={styles.noteItem}>— {note}</Text>
+          <Text key={`note-${i}`} style={styles.noteItem}>{"•"} {note}</Text>
         ))}
       </View>
     </>
@@ -474,7 +520,7 @@ function ConsultantPdfBody({ report }: { report: ReportSummaryResponse }) {
 }
 
 /** Reports written before the answer-first structure keep their original layout. */
-function LegacyPdfBody({ report }: { report: ReportSummaryResponse }) {
+function LegacyPdfBody({ report, about }: { report: ReportSummaryResponse; about: string[] | null }) {
   return (
     <>
         {/* Executive Summary */}
@@ -541,12 +587,13 @@ function LegacyPdfBody({ report }: { report: ReportSummaryResponse }) {
             <Text style={styles.sectionHeading}>{REPORT_SECTION_HEADINGS.implementation}</Text>
             {report.implementationNotes.map((note, i) => (
               <Text key={i} style={styles.noteItem}>
-                — {note}
+                {"•"} {note}
               </Text>
             ))}
           </View>
         )}
 
+        <PdfAboutTheseFigures about={about} />
     </>
   );
 }
