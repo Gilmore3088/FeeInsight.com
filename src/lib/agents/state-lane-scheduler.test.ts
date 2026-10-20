@@ -518,12 +518,24 @@ describe("state lane scheduler", () => {
     expect(call?.slice(1)).toEqual(expect.arrayContaining([REPORT_REQUEST_PRIORITY, NEAR_READY_BANK_PRIORITY, NEAR_READY_GAP]));
   });
 
-  it("gives a state whose report James is waiting to review the report-request weight", async () => {
-    sqlMock.mockImplementation(() => Promise.resolve(Object.assign([], { count: 1 })));
-    await refreshLanePriorities();
-    const call = sqlMock.mock.calls.find((entry) => templateText(entry[0]).includes("SET priority_score"));
-    expect(templateText(call?.[0])).toContain("OR lane.state_code = ANY(");
-    expect(call?.slice(1)).toEqual(expect.arrayContaining([["TN"]]));
+  it.each([
+    { at: "2026-10-19T23:59:59.999Z", states: ["TN"], phase: "through the inclusive UTC end day" },
+    { at: "2026-10-20T00:00:00.000Z", states: [], phase: "after the review boost expires" },
+  ])("binds report-review priority states $phase (#2420)", async ({ at, states }) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(at));
+    try {
+      sqlMock.mockImplementation(() => Promise.resolve(Object.assign([], { count: 1 })));
+      await refreshLanePriorities();
+      const call = sqlMock.mock.calls.find((entry) => templateText(entry[0]).includes("SET priority_score"));
+      expect(templateText(call?.[0])).toContain("OR lane.state_code = ANY(");
+      const reviewBinding = (call![0] as TemplateStringsArray).findIndex((part) => part.endsWith("OR lane.state_code = ANY("));
+      expect(reviewBinding).toBeGreaterThanOrEqual(0);
+      expect(call![reviewBinding + 1]).toEqual(states);
+      expect(call![reviewBinding + 2]).toBe(REPORT_REQUEST_PRIORITY);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("puts states whose market leaders lack headline fees ahead", async () => {
