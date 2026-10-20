@@ -622,7 +622,7 @@ function positionTable(input: CommitteePacketInput, reads: FeeRead[], group: str
     subtitle: feeListNote,
     columns: ["Fee", input.institutionName, "Peer median (N)", "Peers' middle 50%", "Position", "Coverage"],
     rows,
-    note: `Each institution counts once per fee: the median of its published amounts, or the highest tier for overdraft. The median and middle 50% are worked out from the peers' values; no institution necessarily charges them. "${NOT_PLACED}": fewer than ${MIN_PEERS_FOR_POSITION} peers publish the fee, so no median or middle 50% is given. Coverage counts the peers in this packet compared with the same group. Nearest peers by name are in Appendix B.`,
+    note: `Overdraft is compared at its highest tier. For any other fee, a peer that publishes several amounts is compared at the median of those amounts; ${input.institutionName}'s own fee at several amounts is shown as a range and not placed. The median and middle 50% are worked out from the peers' values; no institution necessarily charges them. "${NOT_PLACED}": fewer than ${MIN_PEERS_FOR_POSITION} peers publish the fee, so no median or middle 50% is given. Coverage counts the peers in this packet compared with the same group. Nearest peers by name are in Appendix B.`,
     source: SCHEDULES,
     ownFirst: false,
   };
@@ -982,7 +982,7 @@ function matrixTable(input: CommitteePacketInput, reads: FeeRead[], notes: Footn
       : `${ranked.length} ${ranked.length === 1 ? "peer" : "peers"}, those publishing the most of these fees first; ${input.institutionName} first.`,
     columns: ["Institution", ...input.fees.map((f) => feeName(f.feeCategory)), "Source"],
     rows: [ownRow, ...rows],
-    note: `"${NOT_FOUND}": the fee is not found in that institution's published schedule in the index. It is never read as $0.${reads.some(noSinglePrice) ? " A range means the institution publishes several amounts for the fee, so it has no single price." : ""}`,
+    note: `"${NOT_FOUND}": the fee is not found in that institution's published schedule in the index. It is never read as $0.${reads.some(noSinglePrice) ? ` A range in ${input.institutionName}'s row means its schedule lists several amounts for the fee, so the fee is not placed.` : ""}`,
     source: SCHEDULES,
     ownFirst: true,
   };
@@ -1049,7 +1049,7 @@ function productTable(input: CommitteePacketInput, reads: FeeRead[]): PacketTabl
     subtitle: `Every live row on ${input.institutionName}'s published schedule behind the comparison value.`,
     columns: ["Fee", ownWording ? "Name on the schedule" : "Listed in the index as", "Amount", "Charged", "Conditions", "Source"],
     rows,
-    note: "Where overdraft has several amounts, its highest tier is compared. Any other fee listed at several amounts has no single price and is not placed.",
+    note: "Overdraft is compared at its highest tier. Any other fee listed here at several amounts is shown as a range and not placed.",
     source: SCHEDULES,
     ownFirst: false,
   };
@@ -1296,7 +1296,7 @@ export function buildCommitteePacket(input: CommitteePacketInput): CommitteePack
       input.peerSetLabel
         ? `Peers: the group set in Settings, ${input.peerSetLabel}. A fee that fewer than ${MIN_PEERS_FOR_POSITION} of them publish is compared with a wider group, named in its row.`
         : `Peers: the narrowest default group (state, charter, size and district, then wider) where at least ${MIN_PEERS_FOR_POSITION} other institutions publish each fee, named in its row when it differs.`,
-      "One comparison value per institution: the median of its published amounts for the fee, or the highest tier for overdraft. Fees stated as a rate are not in these tables.",
+      `Overdraft is compared at its highest tier. For any other fee, a peer that publishes several amounts is compared at the median of those amounts; ${input.institutionName}'s own fee at several amounts is shown as a range and not placed. Fees stated as a rate are not in these tables.`,
       "Fees are live published fees, each verified against the institution's own schedule; read on the date at the top.",
       `A median, middle 50% or percentile needs at least ${MIN_PEERS_FOR_POSITION} peers. The middle 50% runs from the 25th to the 75th percentile of the peers' values.`,
       "Benchmark differences selected for review are the fees outside the peers' middle 50% that compare like for like (one published amount, the packet's own peer group), largest percentage gap from the median first. No fee type is weighted above another. The ranking shows unusual prices, not business importance: that depends on how often a fee is charged and waived, which the index does not hold, so the institution sets its own priorities.",

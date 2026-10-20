@@ -279,6 +279,28 @@ describe("buildCommitteePacket: executive brief", () => {
       expect(packet.glance.published).toBe(2);
       expect(packet.glance.placed).toBe(1);
     });
+
+    it("states one rule for several amounts in every note: peers at their median, the bank's own as a range", () => {
+      const notes = [
+        packet.position.table.note,
+        ...packet.appendix.map((t) => t.note),
+        ...packet.method,
+      ].join("\n");
+      expect(notes).not.toMatch(/each institution counts once per fee: the median of its published amounts/i);
+      expect(notes).not.toMatch(/one comparison value per institution: the median/i);
+      expect(packet.position.table.note).toContain(
+        "Overdraft is compared at its highest tier. For any other fee, a peer that publishes several amounts is compared at the median of those amounts; Capital City Bank's own fee at several amounts is shown as a range and not placed.",
+      );
+      expect(packet.method).toContain(
+        "Overdraft is compared at its highest tier. For any other fee, a peer that publishes several amounts is compared at the median of those amounts; Capital City Bank's own fee at several amounts is shown as a range and not placed. Fees stated as a rate are not in these tables.",
+      );
+      expect(packet.appendix.find((t) => t.id === "product_details")?.note).toBe(
+        "Overdraft is compared at its highest tier. Any other fee listed here at several amounts is shown as a range and not placed.",
+      );
+      expect(packet.appendix.find((t) => t.id === "peer_fee_matrix")?.note).toContain(
+        "A range in Capital City Bank's row means its schedule lists several amounts for the fee, so the fee is not placed.",
+      );
+    });
   });
 
   it("drops the watched-fee label when no fees are saved", () => {
