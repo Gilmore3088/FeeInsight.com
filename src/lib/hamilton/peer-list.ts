@@ -418,9 +418,15 @@ function sameInstitutionName(typed: string, name: string): boolean {
   return nameCore(typed).join(" ") === nameCore(name).join(" ");
 }
 
+/** Assets in dollars, shown as "$1.2T", "$48.3B" or "$950M" in every Hamilton answer (#980); missing
+ * assets say so, and a genuine zero stays "$0". */
 export function formatPeerAssets(value: number | null): string {
   if (value === null) return "Not available";
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: Number.isInteger(value) ? 0 : 2 }).format(value);
+  // "$750B", not "$750.0B": a trailing ".0" adds no precision.
+  if (value >= 1e12) return `$${(value / 1e12).toFixed(1).replace(/\.0$/, "")}T`;
+  if (value >= 1e9) return `$${(value / 1e9).toFixed(1).replace(/\.0$/, "")}B`;
+  if (value >= 1e6) return `$${Math.round(value / 1e6)}M`;
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(value);
 }
 
 /**
