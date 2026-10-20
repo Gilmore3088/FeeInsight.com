@@ -11,6 +11,11 @@ vi.mock("./connection", () => {
   };
 });
 
+const readiness = vi.hoisted(() => ({ ready: false }));
+vi.mock("./call-report-quarters", () => ({
+  callReportQuartersReady: vi.fn(async () => readiness.ready),
+}));
+
 import {
   getIndustryHealthMetrics,
   getHealthMetricsByCharter,
@@ -451,5 +456,39 @@ describe("health queries read only fdic and ncua rows", () => {
   ])("%s filters by source", async (_name, run) => {
     await run();
     expect(unfilteredFinancialReads(getMock())).toEqual([]);
+  });
+});
+
+describe("health growth and count readers use the precomputed quarters once they are built", () => {
+  beforeEach(() => {
+    resetMock(getMock());
+    getMock().unsafe.mockResolvedValue([]);
+  });
+  const lastText = () => String(getMock().unsafe.mock.calls.at(-1)?.[0]);
+
+  it.each([
+    ["getDepositGrowthTrend", () => getDepositGrowthTrend()],
+    ["getInstitutionCountTrends", () => getInstitutionCountTrends()],
+  ])("%s reads call_report_quarterly_income when ready and the filings when empty", async (_name, run) => {
+    readiness.ready = true;
+    try {
+      await run();
+    } finally {
+      readiness.ready = false;
+    }
+    expect(lastText()).toContain("FROM call_report_quarterly_income inf");
+    await run();
+    expect(lastText()).toContain("FROM institution_financial_records inf");
+  });
+
+  it("getLoanGrowthTrend reads the filings either way: the summary has no total_loans", async () => {
+    readiness.ready = true;
+    try {
+      await getLoanGrowthTrend();
+    } finally {
+      readiness.ready = false;
+    }
+    expect(lastText()).toContain("FROM institution_financial_records inf");
+    expect(lastText()).toContain("total_loans");
   });
 });

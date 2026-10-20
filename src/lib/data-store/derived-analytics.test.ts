@@ -11,6 +11,11 @@ vi.mock("./connection", () => {
   };
 });
 
+const readiness = vi.hoisted(() => ({ ready: false }));
+vi.mock("./call-report-quarters", () => ({
+  callReportQuartersReady: vi.fn(async () => readiness.ready),
+}));
+
 import {
   getRevenueConcentration,
   getFeeDependencyTrend,
@@ -349,5 +354,32 @@ describe("call-report reads use fdic and ncua rows only", () => {
     await getRevenuePerInstitutionTrend();
     expect(getMock().mock.calls).toHaveLength(3);
     expect(unfilteredFinancialReads(getMock())).toEqual([]);
+  });
+});
+
+describe("getRevenuePerInstitutionTrend reads the precomputed quarters once they are built", () => {
+  beforeEach(() => {
+    resetMock(getMock());
+    getMock().mockResolvedValue([]);
+  });
+
+  const quarterText = () =>
+    getMock().unsafe.mock.calls.map((call: unknown[]) => String(call[0])).join("\n");
+
+  it("reads call_report_quarterly_income and never the filings when the summary is ready", async () => {
+    readiness.ready = true;
+    try {
+      await getRevenuePerInstitutionTrend(4, "ncua");
+    } finally {
+      readiness.ready = false;
+    }
+    expect(quarterText()).toContain("FROM call_report_quarterly_income inf");
+    expect(quarterText()).not.toContain("institution_financial_records");
+  });
+
+  it("falls back to the per-request split while the summary is empty", async () => {
+    await getRevenuePerInstitutionTrend(4, "ncua");
+    expect(quarterText()).toContain("LEFT JOIN institution_financial_records prev");
+    expect(quarterText()).not.toContain("call_report_quarterly_income");
   });
 });
