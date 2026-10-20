@@ -53,3 +53,22 @@ describe("lead-write rate limit", () => {
     expect(issued(1).values).toContain("rate_limited");
   });
 });
+
+describe("public-read rate limit", () => {
+  beforeEach(() => {
+    sqlMock.mockReset();
+    sqlMock.mockResolvedValue([]);
+  });
+
+  it("limits the cohort route with every public JSON read, 300 in 10 minutes", async () => {
+    const cohort = getApiRoutePolicy("api.institutions.cohort");
+    expect(cohort.rateLimitBucket).toBe("public-read");
+    sqlMock.mockResolvedValueOnce([{ attempts: 299 }]);
+    expect(await isRateLimited(cohort, "ip-hash")).toBe(false);
+    sqlMock.mockResolvedValueOnce([{ attempts: 300 }]);
+    expect(await isRateLimited(cohort, "ip-hash")).toBe(true);
+    const count = issued(0);
+    expect(count.values[0]).toEqual(expect.arrayContaining(["api.institutions.cohort", "api.institutions", "api.institutions.evidence"]));
+    expect(count.values.slice(1)).toEqual([10, "ip-hash"]);
+  });
+});
