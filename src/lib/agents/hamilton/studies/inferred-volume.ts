@@ -1,5 +1,6 @@
 import { assetBand, peerGroupLabel, type Charter, type SqlTag } from "./common";
 import { statsRowFilter } from "@/lib/data-store/fee-stats";
+import { previousQuarterEnd } from "@/lib/hamilton/workspace/revenue";
 import { median, midRankPercentile, quartileOf, round } from "./stats";
 import type { Placement, StudyRecord } from "./store";
 
@@ -19,12 +20,17 @@ import type { Placement, StudyRecord } from "./store";
  *                  newest bank quarter count: a bank whose H032 stopped earlier (it fell
  *                  under $1B, merged or closed) would mix years into one peer group.
  *
+ * Either charter's income counts only when it ends within one quarter of that charter's
+ * newest call report filing, as feeRevenueLine does (#2034, #2052): today's fee divided by
+ * an older year's income mixes years. NCUA stopped the lines after 2024, so credit unions
+ * are left out until a current filing carries them, and the findings say so.
+ *
  * Rows keep their study_id; read them through the current study (is_current), since
  * an institution that drops out keeps its older row under the older study.
  */
 
 export const INFERRED_VOLUME_KEY = "inferred_items_paid";
-export const INFERRED_VOLUME_VERSION = 2;
+export const INFERRED_VOLUME_VERSION = 3;
 
 export interface IncomeFeeRow {
   institutionId: number;
@@ -32,6 +38,8 @@ export interface IncomeFeeRow {
   assetsThousands: number | null;
   /** Quarter end, YYYY-MM-DD. Income covers the four quarters ending here. */
   period: string;
+  /** The charter's newest call report quarter end with service charge income, YYYY-MM-DD. */
+  newestFiling: string | null;
   feeCategory: "overdraft" | "nsf" | "overdraft_nsf";
   incomeDollars: number;
   feeLow: number;
@@ -47,6 +55,11 @@ export async function readIncomeAndFees(db: SqlTag): Promise<IncomeFeeRow[]> {
          AND ${db.unsafe(statsRowFilter("f"))}
          AND COALESCE(f.is_fee_cap, false) = false AND COALESCE(f.amount_kind, 'dollar') <> 'rate'
        GROUP BY 1, 2
+    ), newest AS (
+      SELECT source, MAX(report_date) AS filed
+        FROM institution_financial_records
+       WHERE source IN ('ncua', 'fdic') AND institution_id IS NOT NULL AND service_charge_income IS NOT NULL
+       GROUP BY 1
     ), both_fees AS (
       SELECT institution_id, MIN(lo) AS lo, MAX(hi) AS hi FROM fees GROUP BY 1
     ), cu_latest AS (
@@ -81,9 +94,11 @@ export async function readIncomeAndFees(db: SqlTag): Promise<IncomeFeeRow[]> {
          AND f.report_date::date > b.period::date - INTERVAL '1 year' AND f.report_date::date <= b.period::date
        GROUP BY b.institution_id, b.period
     )
-    SELECT institution_id, charter, assets, period, cat, income, lo, hi FROM cu
+    SELECT institution_id, charter, assets, period, (SELECT filed FROM newest WHERE source = 'ncua') AS newest_filing,
+           cat, income, lo, hi FROM cu
     UNION ALL
-    SELECT b.institution_id, b.charter, b.assets, b.period, b.cat, b.income, f.lo, f.hi
+    SELECT b.institution_id, b.charter, b.assets, b.period, (SELECT filed FROM newest WHERE source = 'fdic'),
+           b.cat, b.income, f.lo, f.hi
       FROM bank b JOIN both_fees f ON f.institution_id = b.institution_id
      WHERE b.quarters = 4 AND b.income > 0
   `;
@@ -92,6 +107,7 @@ export async function readIncomeAndFees(db: SqlTag): Promise<IncomeFeeRow[]> {
     charter: r.charter as Charter,
     assetsThousands: r.assets === null || r.assets === undefined ? null : Number(r.assets),
     period: String(r.period).slice(0, 10),
+    newestFiling: r.newest_filing === null || r.newest_filing === undefined ? null : String(r.newest_filing).slice(0, 10),
     feeCategory: r.cat as IncomeFeeRow["feeCategory"],
     incomeDollars: Number(r.income),
     feeLow: Number(r.lo),
@@ -127,14 +143,49 @@ export interface InferredVolumeResult {
   placements: Placement[];
 }
 
-/** Bank rows whose four quarters end at the newest bank quarter; credit union rows as read. */
+/** Income that ends within one quarter of the charter's newest filing; an older year is not current. */
+export function isCurrentIncome(row: Pick<IncomeFeeRow, "period" | "newestFiling">): boolean {
+  return !row.newestFiling || row.period >= previousQuarterEnd(row.newestFiling);
+}
+
+/**
+ * Bank rows whose four quarters end at the newest bank quarter, and rows of either charter
+ * whose income is current against that charter's newest filing.
+ */
 export function currentRows(rows: IncomeFeeRow[]): IncomeFeeRow[] {
   const bankPeriod = rows.filter((r) => r.charter === "bank").map((r) => r.period).sort().at(-1);
-  return rows.filter((r) => r.charter !== "bank" || r.period === bankPeriod);
+  return rows.filter((r) => (r.charter !== "bank" || r.period === bankPeriod) && isCurrentIncome(r));
+}
+
+export interface IncomePeriod {
+  charter: Charter;
+  /** Quarter end of the income used, or null when none was current. */
+  income_period: string | null;
+  newest_filing: string | null;
+  /** Institutions read but left out because their income was older than one quarter before the newest filing. */
+  left_out: number;
+  stale_income_period: string | null;
+}
+
+/** Which income quarter each charter used, and what was left out as stale. */
+export function incomePeriods(all: IncomeFeeRow[], used: IncomeFeeRow[]): IncomePeriod[] {
+  return (["bank", "credit_union"] as const).flatMap((charter) => {
+    const read = all.filter((r) => r.charter === charter);
+    if (read.length === 0) return [];
+    const stale = read.filter((r) => !isCurrentIncome(r));
+    return [{
+      charter,
+      income_period: used.filter((r) => r.charter === charter).map((r) => r.period).sort().at(-1) ?? null,
+      newest_filing: read.map((r) => r.newestFiling).filter((d): d is string => !!d).sort().at(-1) ?? null,
+      left_out: new Set(stale.map((r) => r.institutionId)).size,
+      stale_income_period: stale.map((r) => r.period).sort().at(-1) ?? null,
+    }];
+  });
 }
 
 export function buildInferredVolume(all: IncomeFeeRow[]): InferredVolumeResult {
   const input = currentRows(all);
+  const periodsUsed = incomePeriods(all, input);
   const midpoint = (r: IncomeFeeRow) => (r.incomeDollars / r.feeHigh + r.incomeDollars / r.feeLow) / 2;
   const peerKey = (r: IncomeFeeRow) => `${r.feeCategory}|${r.charter}|${assetBand(r.assetsThousands)}`;
   const groups = new Map<string, IncomeFeeRow[]>();
@@ -198,11 +249,15 @@ export function buildInferredVolume(all: IncomeFeeRow[]): InferredVolumeResult {
     parts.push(`the typical $1B+ bank was paid about ${bank.median_items?.toLocaleString("en-US")} overdraft and NSF items in the four quarters to ${bank.periods.at(-1)} (${bank.institutions} banks)`);
   }
   if (cu && cu.institutions > 0) {
-    parts.push(`the typical credit union about ${cu.median_items?.toLocaleString("en-US")} overdraft items in ${cu.periods.at(-1)?.slice(0, 4)} (${cu.institutions} credit unions)`);
+    parts.push(`the typical credit union about ${cu.median_items?.toLocaleString("en-US")} overdraft items in the year to ${cu.periods.at(-1)} (${cu.institutions} credit unions)`);
   }
-  const headline = parts.length
+  const staleNotes = periodsUsed
+    .filter((p) => p.left_out > 0 && p.income_period === null)
+    .map((p) => `${p.charter === "bank" ? "Banks" : "Credit unions"} are left out: their newest overdraft and NSF income is for the period to ${p.stale_income_period}, more than a quarter before their newest call report (${p.newest_filing}), so it cannot be set against today's fees.`);
+  const lead = parts.length
     ? `Inferred: ${parts.join("; ")}.`
-    : "No institution has both reported overdraft income and a published fee yet.";
+    : "No institution has both current overdraft income and a published fee yet.";
+  const headline = [lead, ...staleNotes].join(" ");
   return {
     rows,
     placements,
@@ -214,7 +269,7 @@ export function buildInferredVolume(all: IncomeFeeRow[]): InferredVolumeResult {
       metric: "inferred_items_paid",
       n: input.length,
       sources: [
-        { name: "NCUA 5300 overdraft and NSF fee income (IS0048, IS0049)", asOf: "2024" },
+        { name: "NCUA 5300 overdraft and NSF fee income (IS0048, IS0049)", asOf: periodsUsed.find((p) => p.charter === "credit_union")?.income_period ?? null },
         { name: "FFIEC call report RIAD H032 (banks over $1B)", asOf: bank?.periods.at(-1) ?? null },
         { name: "Bank Fee Index live published fees (published_fee_catalog)", asOf: null },
       ],
@@ -222,7 +277,8 @@ export function buildInferredVolume(all: IncomeFeeRow[]): InferredVolumeResult {
         headline,
         label: "inferred",
         by_category: summary,
-        method: "Reported income (net of waivers and refunds) divided by the published fee. Range: highest published amount gives the low count, lowest gives the high count. The schedule is current while the income is from the period shown.",
+        income_periods: periodsUsed,
+        method: "Reported income (net of waivers and refunds) divided by the published fee. Range: highest published amount gives the low count, lowest gives the high count. The schedule is current; income counts only when it ends within one quarter of its charter's newest call report filing, and income_periods names the quarter used.",
       },
     },
   };

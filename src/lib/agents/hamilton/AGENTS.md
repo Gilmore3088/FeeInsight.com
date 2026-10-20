@@ -1277,8 +1277,10 @@ institution in it (`src/lib/agents/hamilton/studies`). One run a day
   Cross-sectional only: fee prices are a current snapshot (fee moves over time are artifacts), so
   a result describes how prices differ across institutions, never what a change would do.
 - `inferred_items_paid`: reported overdraft/NSF income divided by the published fee, a range,
-  always labeled inferred. Credit unions 2024 only (NCUA retired the lines); banks once RIAD H032
-  loads ($1B+ banks, overdraft and NSF together).
+  always labeled inferred. Banks once RIAD H032 loads ($1B+ banks, overdraft and NSF together).
+  Income counts only when it ends within one quarter of its charter's newest call report filing
+  (#2052), so credit unions are left out while NCUA's lines stop at 2024; the findings'
+  `income_periods` name the quarter used and what was left out.
 - Nothing from a study is published on the site or sent until James says so.
 - Pro readers see two studies (James, Oct 12, #1082): `fee_dependence` and `inferred_items_paid`,
   each with a note on how it was calculated (`PRO_STUDIES` in `src/lib/hamilton/workspace/studies.ts`).
@@ -1335,7 +1337,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `SOURCE_LINK_DRIFT_VERSION` | `hamilton.source_link_drift` | v1 | `hamilton/source-link.ts` |
 | `FEE_DEPENDENCE_VERSION` | — | v1 | `hamilton/studies/fee-dependence.ts` |
 | `PRICE_STUDY_VERSION` | — | v1 | `hamilton/studies/index.ts` |
-| `INFERRED_VOLUME_VERSION` | — | v2 | `hamilton/studies/inferred-volume.ts` |
+| `INFERRED_VOLUME_VERSION` | — | v3 (income within one quarter of the newest filing, #2052) | `hamilton/studies/inferred-volume.ts` |
 
 The shared figure gate and paid eval use the same explicit monetary-unit normalization
 (`hamilton/monetary-units.ts`): stored thousands/millions/billions become base dollars,
