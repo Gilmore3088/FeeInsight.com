@@ -1992,9 +1992,12 @@ export async function rescorePromotedRates(
        AND fr.outlier_flags ? ${HELD_RECHECK_PROMOTED_FLAG}
        AND fr.outlier_flags ? ${KNOX_RATE_FEE_FLAG}
        AND fr.extraction_confidence = 0.5
+       AND fr.extraction_note LIKE '%excerpt="%'
        AND (${institutionId}::int IS NULL OR fr.institution_id = ${institutionId}::int)
      ORDER BY fr.fee_raw_id
      LIMIT ${limit}
+     -- Lanes run this inside their long extract transaction: one lane's rows are skipped, not waited on.
+     FOR UPDATE SKIP LOCKED
   `;
   const scored = rows.flatMap((row) => {
     const excerpt = heldExcerpt(row.extraction_note);
