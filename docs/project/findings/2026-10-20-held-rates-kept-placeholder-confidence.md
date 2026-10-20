@@ -14,13 +14,16 @@ confidence, so the verified row inherited it. A rate Knox reads directly scores 
 with `confidenceFor`, and 950 such rates are live.
 
 **Fix.** The held-rate promotion sets `extraction_confidence = confidenceFor(excerpt)`, the
-same score a directly read rate gets. Test: `knox/held-rate-confidence.db.test.ts` (fails on
-the old code with 0.5).
+same score a directly read rate gets. The rows already promoted are re-scored by
+`rescorePromotedRates` in Knox's extract step (raw row and verified copy, 500 a step; James
+approved it on Oct 20). Hamilton had refused 1,017 of them at publish rules v3 as "Below publish
+confidence threshold", which counts as decided, so a row refused only for confidence is now
+decided once more when its confidence clears the floor. Up to 1,028 are at institutions that
+already have live fees; Hamilton's other rules still decide each one.
 
-**Not fixed by this change.** The 1,037 rows already promoted keep 0.5 until a typed step
-re-scores them. Up to 1,028 of them are at institutions that already have live fees, and 2
-institutions would newly reach the 3-category floor; Hamilton's other rules still decide each
-row. That re-score changes live data and waits for James's yes.
+**Guard:** `src/lib/agents/knox/held-rate-confidence.db.test.ts`: a promoted rate scores its
+line (fails on the old code with 0.5), and a re-scored rate refused for confidence is decided
+again by Hamilton (fails without the re-selection).
 
 **Lesson (Knox).** When Knox promotes a held line, it re-scores the line as if it had read it
 directly; a placeholder written for the held queue never travels with the fee.

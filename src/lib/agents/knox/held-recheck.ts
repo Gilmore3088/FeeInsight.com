@@ -1959,3 +1959,67 @@ export async function recheckHeldRates(
 
   return { checked: rows.length, promoted, stillHeld: stillHeldIds.length, promotedByCategory, heldReasons, dryRun };
 }
+
+/** Promoted held rates re-scored per extract step (#1055). */
+export const PROMOTED_RATE_RESCORE_LIMIT = 500;
+
+export interface PromotedRateRescoreResult {
+  checked: number;
+  rescored: number;
+  verifiedRescored: number;
+  dryRun: boolean;
+}
+
+/**
+ * Held rates promoted before #1055 kept the held queue's 0.5 placeholder, which Darwin copied, so
+ * Hamilton's 0.8 floor refused all of them (1,037 verified rates at 656 banks, Oct 20). Each gets
+ * the score a directly read rate gets from its own line, on the raw row and its verified copy;
+ * Hamilton then decides it once more. James approved re-scoring them on Oct 20. Finite: a row
+ * leaves the set once re-scored.
+ */
+export async function rescorePromotedRates(
+  db: SqlTag,
+  options: { dryRun?: boolean; institutionId?: number | null; limit?: number } = {},
+): Promise<PromotedRateRescoreResult> {
+  const dryRun = Boolean(options.dryRun);
+  const institutionId = options.institutionId ?? null;
+  const limit = Math.max(1, Math.min(Number(options.limit) || PROMOTED_RATE_RESCORE_LIMIT, PROMOTED_RATE_RESCORE_LIMIT));
+  const rows = await db<Array<{ fee_raw_id: number | string; extraction_note: string | null }>>`
+    SELECT fr.fee_raw_id, fr.extraction_note
+      FROM raw_fee_observations fr
+     WHERE fr.source = 'knox'
+       AND fr.amount_kind = 'percent'
+       AND fr.outlier_flags ? ${HELD_RECHECK_PROMOTED_FLAG}
+       AND fr.outlier_flags ? ${KNOX_RATE_FEE_FLAG}
+       AND fr.extraction_confidence = 0.5
+       AND (${institutionId}::int IS NULL OR fr.institution_id = ${institutionId}::int)
+     ORDER BY fr.fee_raw_id
+     LIMIT ${limit}
+  `;
+  const scored = rows.flatMap((row) => {
+    const excerpt = heldExcerpt(row.extraction_note);
+    return excerpt ? [{ id: Number(row.fee_raw_id), confidence: confidenceFor(excerpt) }] : [];
+  });
+  if (dryRun || scored.length === 0) {
+    return { checked: rows.length, rescored: dryRun ? scored.length : 0, verifiedRescored: 0, dryRun };
+  }
+  const ids = scored.map((row) => row.id);
+  const confidences = scored.map((row) => row.confidence);
+  const raw = await db`
+    UPDATE raw_fee_observations fr
+       SET extraction_confidence = scored.confidence
+      FROM (SELECT unnest(${ids}::bigint[]) AS id, unnest(${confidences}::numeric[]) AS confidence) scored
+     WHERE fr.fee_raw_id = scored.id
+       AND fr.extraction_confidence = 0.5
+    RETURNING fr.fee_raw_id
+  `;
+  const verified = await db`
+    UPDATE verified_fee_observations fv
+       SET extraction_confidence = scored.confidence
+      FROM (SELECT unnest(${ids}::bigint[]) AS id, unnest(${confidences}::numeric[]) AS confidence) scored
+     WHERE fv.fee_raw_id = scored.id
+       AND fv.extraction_confidence = 0.5
+    RETURNING fv.fee_verified_id
+  `;
+  return { checked: rows.length, rescored: raw.length, verifiedRescored: verified.length, dryRun };
+}
