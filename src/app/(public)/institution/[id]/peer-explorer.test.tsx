@@ -113,12 +113,12 @@ describe("PeerExplorerSection", () => {
     expect(window.location.search).toContain("peer=3");
     fireEvent.click(screen.getByRole("tab", { name: "Locations" }));
     expect(within(screen.getByRole("complementary")).getByText("Summit Bank")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Summit Bank, $16.20" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: /^Summit Bank, \$16\.20/ }).getAttribute("aria-pressed")).toBe("true");
     // Everyone else charges less than Summit Bank: the finding names them.
     const finding = screen.getByRole("button", { name: "3 peers charge less" });
     fireEvent.click(finding);
     expect(finding.getAttribute("aria-pressed")).toBe("true");
-    expect(screen.getByRole("button", { name: "Pine State Bank, $14.50" }).style.opacity).toBe("1");
+    expect(screen.getByRole("button", { name: /^Pine State Bank, \$14\.50/ }).style.opacity).toBe("1");
   });
 
   it("previews the set to bring to Hamilton, claiming only that Hamilton opens for the institution", () => {
@@ -420,6 +420,62 @@ describe("PeerExplorerSection", () => {
     it("should_offer_no_banks_only_toggle_when_the_metro_set_holds_no_credit_union", () => {
       renderMetro(metroSets("metro", 14));
       expect(screen.queryByRole("button", { name: "Banks only" })).toBeNull();
+    });
+  });
+
+  describe("Locations: circles sized by the gap to the peer median", () => {
+    const openLocations = (fee = "monthly_maintenance") => {
+      renderSection({ view: "locations", fee });
+      return screen.getByRole("tabpanel");
+    };
+
+    it("should_size_each_circle_by_its_dollar_gap_and_colour_it_by_side", () => {
+      openLocations();
+      // Median $10: Summit $16.20 (+$6.20, the largest), Pine $14.50 (+$4.50), First US $5.90 (-$4.10).
+      const dot = (name: RegExp) => screen.getByRole("button", { name }).querySelector("[data-shape]") as HTMLElement;
+      const summit = dot(/^Summit Bank, \$16\.20, \$6\.20 above the peer median/);
+      const pine = dot(/^Pine State Bank, \$14\.50, \$4\.50 above the peer median/);
+      const firstUs = dot(/^First US Bank, \$5\.90, \$4\.10 below the peer median/);
+      const size = (el: HTMLElement) => parseFloat(el.style.width);
+      expect(size(summit)).toBeGreaterThan(size(pine));
+      expect(size(pine)).toBeGreaterThan(size(firstUs));
+      expect(summit.style.background).toBe(MEDIAN_TONE.above);
+      expect(firstUs.style.background).toBe(MEDIAN_TONE.below);
+      expect(screen.getByText("Circle area shows how far each fee is from the peer median, in dollars.", { exact: false })).toBeTruthy();
+    });
+
+    it("should_draw_a_peer_without_the_fee_as_a_small_hollow_marker_labelled_not_published", () => {
+      openLocations("overdraft");
+      const summit = screen.getByRole("button", { name: "Summit Bank, overdraft not published" });
+      const shape = summit.querySelector("[data-shape]") as HTMLElement;
+      expect(shape.getAttribute("data-shape")).toBe("hollow");
+      expect(shape.style.background).toBe("transparent");
+      expect(screen.getAllByText("Not published").length).toBeGreaterThan(0);
+    });
+
+    it("should_name_the_institution_and_its_fee_on_hover_tap_and_keyboard_focus", () => {
+      openLocations();
+      const pine = screen.getByRole("button", { name: /^Pine State Bank, \$14\.50/ });
+      const readout = (button: HTMLElement) => button.closest("li")?.querySelector("[data-readout]")?.textContent ?? "";
+      fireEvent.mouseEnter(pine);
+      const tip = { textContent: readout(pine) };
+      expect(tip.textContent).toContain("Pine State Bank");
+      expect(tip.textContent).toContain("$14.50");
+      expect(tip.textContent).toContain("$4.50 above the peer median");
+      fireEvent.mouseLeave(pine);
+      const firstUs = within(screen.getByRole("tabpanel")).getByRole("button", { name: /^First US Bank/ });
+      fireEvent.focus(firstUs);
+      expect(readout(firstUs)).toContain("First US Bank");
+    });
+
+    it("should_show_a_size_legend_in_dollars_and_the_colour_pair", () => {
+      openLocations();
+      const legend = screen.getByRole("list", { name: "Locations legend" });
+      expect(within(legend).getByText("$6.20 from the median")).toBeTruthy();
+      expect(within(legend).getByText("$3.10 from the median")).toBeTruthy();
+      expect(within(legend).getByText("Above the median")).toBeTruthy();
+      expect(within(legend).getByText("Below the median")).toBeTruthy();
+      expect(within(legend).getByText("Not published")).toBeTruthy();
     });
   });
 
