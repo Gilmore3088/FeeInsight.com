@@ -76,7 +76,11 @@ const LARGE_BANK_REREAD_ORDER = `CASE WHEN COALESCE(inst.asset_size, 0) >= ${KNO
 // first read) goes before a $10B+ bank's once-per-version repeat. On 2026-10-19 the rules moved
 // v80-v88 in 18 hours and each bump queued the 722 large-bank texts first: 779 of the 854 reads
 // in six hours repeated a v78+ read, 17 reached the stale backlog, and the backlog grew to 12,449
-// pages. 130 of the 198 W43 missing fees Knox never read were on those stale pages.
+// pages. 130 of the 198 W43 missing fees Knox never read were on those stale pages. Used only on
+// the current-copy query (schema flag; it does not check each row's supersession). Unlike the
+// large-bank set, the stale set refills only when KNOX_STALE_READ_BELOW_VERSION is raised, so
+// re-reads of texts already read at v78+ (thin text, rules-recheck misses, twins, repeats) wait
+// only until it drains.
 function staleReadFirstOrder(): string {
   return `NOT EXISTS (
            SELECT 1 FROM pipeline_attempts current_read

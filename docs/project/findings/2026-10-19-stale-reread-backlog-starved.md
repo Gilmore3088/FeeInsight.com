@@ -15,7 +15,10 @@ bank's once-per-version repeat. The PR that adds this finding; tracked as a line
 
 **Lesson:** a queue that re-reads on every version bump needs a guarantee that untouched work
 still drains. When versions move faster than one pass over the priority set, a strict priority
-key starves everything below it.
+key starves everything below it. The fix is itself a strict key, which is safe only because the
+stale set is finite: it refills only when `KNOX_STALE_READ_BELOW_VERSION` is raised. Until it
+drains, re-reads of texts already read at v78+ (thin text, Hamilton rules-recheck misses, v82
+twins, large-bank repeats) wait behind it; watch the rules-recheck re-reads first.
 
 **Guard:** `extract.test.ts`, "reads a stale or unread current copy before a large bank's
 once-per-version repeat", fails if the stale-first key leaves the ORDER BY or drops below the
