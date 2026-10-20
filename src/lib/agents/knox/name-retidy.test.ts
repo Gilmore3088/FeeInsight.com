@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { LiveFeeRow } from "@/lib/agents/hamilton/source-check";
-import { brandCased, capitalisedName, junkStrippedName, pageCompletedName, publishCutName, thresholdFromPage, cellName, dropsCondition, restoredName, restoreOnPage, fontDecodedName, fontMapVerified, headName, isMessyName, spacedControlName, planRetidy, sharedNameFeeIds, accountHeading, neighbourCellName, conditionOnlyName, unligatedName, restoreStrippedAmount, retidiedFeeName, withoutWaiverAdvice, footnoteMarkFreeName, capsCasedName, NAME_RETIDY_STRATEGY } from "@/lib/agents/knox/name-retidy";
+import { brandCased, capitalisedName, junkStrippedName, pageCompletedName, publishCutName, thresholdFromPage, cellName, dropsCondition, restoredName, restoreOnPage, fontDecodedName, fontMapVerified, headName, isMessyName, spacedControlName, planRetidy, sharedNameFeeIds, accountHeading, neighbourCellName, conditionOnlyName, unligatedName, restoreStrippedAmount, retidiedFeeName, withoutWaiverAdvice, footnoteMarkFreeName, markFreeName, descriptionFreeName, capsCasedName, NAME_RETIDY_STRATEGY } from "@/lib/agents/knox/name-retidy";
 
 const fee = (overrides: Partial<LiveFeeRow>): LiveFeeRow => ({
   fee_published_id: 1,
@@ -1167,5 +1167,74 @@ describe("v24: a name that runs on from a row priced in words (#1828)", () => {
     // Live 60770 (doc 18014) and 36649 (doc 2990), Oct 20.
     expect(retidiedFeeName("Check Collection...............................................................Varies | Plastic Card Rush Order", "rush_card")).toBe("Plastic Card Rush Order");
     expect(retidiedFeeName("Check Orders ...............................................................................................Varies | IRA", "ira_termination")).toBeNull();
+  });
+});
+
+describe("name retidy v25: leading marks, every category's marks come due, glued descriptions (#1596, #1917)", () => {
+  it("is version 25 or later", () => {
+    expect(NAME_RETIDY_STRATEGY.version).toBeGreaterThanOrEqual(25);
+  });
+
+  it("takes a standing '^' off the front of a name, never off a footnote's sentence", () => {
+    // Live rows at 1977 (Oct 20), and the fragments that wait for #1443.
+    const cases: Array<[string, string, string | null]> = [
+      ["^ Research Fee", "account_research", "Research Fee"],
+      ["^ Stop Payment Fee (Per item)", "stop_payment", "Stop Payment Fee (Per item)"],
+      ["^ Wire Fee Outbound (Domestic.)", "wire_domestic_outgoing", "Wire Fee Outbound (Domestic.)"],
+      ["^^ If your account balance remains overdrawn for longer than 5 business days, we will charge your account a daily overdr", "continuous_od", null],
+      ["^ excess withdrawal service charge for each debit in excess of 6 per payment cycle", "excess_withdrawal", null],
+      ["^ This fee is charged monthly", "monthly_maintenance", null],
+      ["¹A service charge", "monthly_maintenance", null],
+      ["³ Monthly Dormancy fee if the account exceeds 180 days of inactivity", "dormant_account", null],
+    ];
+    expect(cases.map(([name, key]) => footnoteMarkFreeName(name, key))).toEqual(cases.map(([, , next]) => next));
+  });
+
+  it("takes superscript marks off every category's name (live 76985 'Dormant fee¹')", () => {
+    expect(markFreeName("Dormant fee¹", "dormant_account")).toBe("Dormant fee");
+    expect(markFreeName("Expedited Debit Card Delivery³", "rush_card")).toBe("Expedited Debit Card Delivery");
+    expect(markFreeName("Inactive Account ⁴", "dormant_account")).toBe("Inactive Account");
+  });
+
+  it("cuts First Bank of Pike's glued description cells off the name (66156, 66157, 66149)", () => {
+    expect(descriptionFreeName("Overdraft Fee This fee applies to overdrafts created by check, in person withdrawal, or other electronic means that are", "overdraft")).toBe("Overdraft Fee");
+    expect(descriptionFreeName("Returned Item Fee This fee applies to overdrafts created by check, in person withdrawal, or other electronic means that", "nsf")).toBe("Returned Item Fee");
+    expect(descriptionFreeName("Dormant Account Fee Applies when demand deposit account balance is below $500.00 and the account has no activity for twe", "dormant_account")).toBe("Dormant Account Fee");
+    // Live 42560 and 97164 (Oct 20): the sentence's full stop or colon goes with it.
+    expect(descriptionFreeName("Returned/Non-Sufficient Funds (NSF) fee (per item). This fee applies to", "nsf")).toBe("Returned/Non-Sufficient Funds (NSF) fee (per item)");
+    expect(descriptionFreeName("Dormant Account Fee: Assessed after two years of no activity on a transaction account", "dormant_account")).toBe("Dormant Account Fee");
+  });
+
+  it("leaves names whose words only look like a description", () => {
+    const cases: Array<[string, string]> = [
+      ["Overdraft Fee applies when the item is paid", "overdraft"],
+      ["Charged Off Account Fee", "account_research"],
+      ["Wire Transfer Applied to Loan", "wire_domestic_outgoing"],
+      ["If you overdraw This fee applies to each item", "overdraft"],
+      ["This fee applies to overdrafts", "overdraft"],
+      ["Closing Applies when closed", "early_closure"],
+    ];
+    expect(cases.map(([name, key]) => descriptionFreeName(name, key))).toEqual(cases.map(() => null));
+  });
+
+  it("renames the Pike rows through planRetidy, and leaves one whose cut lands on another live row's name", () => {
+    const page = [{ source_document_id: 7, normalized_text: "Overdraft Fee | This fee applies to overdrafts created by check | $35.00\nReturned Item Fee | $35.00\nDormant Account Fee | $2.00" }];
+    const at = (id: number, name: string, key: string, amount: number) =>
+      fee({ fee_published_id: id, institution_id: 3842, source_document_id: 7, canonical_fee_key: key, fee_name: name, amount });
+    const overdraft = at(66156, "Overdraft Fee This fee applies to overdrafts created by check, in person withdrawal, or other electronic means that are", "overdraft", 35);
+    const dormant = at(66149, "Dormant Account Fee Applies when demand deposit account balance is below $500.00 and the account has no activity for twe", "dormant_account", 2);
+    const twin = at(1, "Dormant Account Fee", "dormant_account", 3);
+    const plan = planRetidy([overdraft, dormant], page, [overdraft, dormant, twin]);
+    expect(plan.renames.map((rename) => [rename.feePublishedId, rename.newName])).toEqual([[66156, "Overdraft Fee"]]);
+    expect(plan.skipped.same_name_live).toBe(1);
+  });
+
+  it("keeps a cut the shared accuracy check would no longer match on the fee's own line (live 66149)", () => {
+    const line = "Dormant Account Fee Applies when demand deposit account balance is below $500.00 and the account has no activity for twelve (12) months; Time and Savings deposit accounts that have no activity for five (5) years. | $2.00 per month";
+    const page = [{ source_document_id: 19560, normalized_text: `Garnishment Fee | $50.00\n\n${line}\n\nGeneral Research | $25.00 per hour` }];
+    const dormant = fee({ fee_published_id: 66149, institution_id: 3842, source_document_id: 19560, canonical_fee_key: "dormant_account", amount: 2, fee_name: "Dormant Account Fee Applies when demand deposit account balance is below $500.00 and the account has no activity for twe" });
+    const plan = planRetidy([dormant], page);
+    expect(plan.renames).toEqual([]);
+    expect(plan.skipped.would_not_trace).toBe(1);
   });
 });
