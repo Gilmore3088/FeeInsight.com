@@ -59,18 +59,46 @@ function headerAt(lines: string[], at: number): { text: string | null; index: nu
   return { text: null, index: -1 };
 }
 
-/** No bounded prefix can certify the absence of another price farther down the same section. */
-function sectionEnd(lines: string[], end: number, heading: number): number | null {
+type HeadingAudience = "consumer" | "business" | null;
+
+function headingAudience(line: string | null): HeadingAudience {
+  if (!line) return null;
+  if (/\b(?:business|commercial)\b/i.test(line)) return "business";
+  return /\b(?:consumer|personal)\b/i.test(line) ? "consumer" : null;
+}
+
+/**
+ * A heading that keeps the audience ("Service Fees", "Other Fees") does not end the reach of a
+ * separate overdraft or item price: it can still price the same accounts. Only a heading for
+ * another audience bounds the contradiction scan.
+ */
+function audienceBoundary(line: string, audience: HeadingAudience): boolean {
+  if (!scopeHeader(line)) return false;
+  const other = headingAudience(line);
+  return other !== null && other !== audience;
+}
+
+/** No bounded prefix can certify the absence of another price farther down the same audience. */
+function sectionEnd(lines: string[], end: number, heading: number, audience: HeadingAudience): number | null {
   for (let i = end + 1; i < lines.length; i++) {
     if (i - heading > MAX_SECTION_LINES) return null;
-    if (scopeHeader(flat(lines[i]))) return i;
+    if (audienceBoundary(flat(lines[i]), audience)) return i;
   }
   return lines.length - heading <= MAX_SECTION_LINES ? lines.length : null;
 }
 
+/** The same audience reaches back past headings that keep it, within the same budget. */
+function sectionStart(lines: string[], at: number, audience: HeadingAudience): number | null {
+  for (let i = at - 1; i >= 0; i--) {
+    if (at - i > MAX_SECTION_LINES) return null;
+    if (audienceBoundary(flat(lines[i]), audience)) return i;
+  }
+  return at <= MAX_SECTION_LINES ? -1 : null;
+}
+
 /** Another separately priced event is contradictory ownership, even at the same dollar value. */
-function separateEvent(lines: string[], start: number, end: number, heading: number, boundary: number): boolean {
-  for (let i = heading + 1; i < boundary; i++) {
+function separateEvent(lines: string[], start: number, end: number, from: number, boundary: number): boolean {
+  for (let i = from + 1; i < boundary; i++) {
     if (i >= start && i <= end) continue;
     for (let last = i; last <= Math.min(i + 2, boundary - 1); last++) {
       if (last >= start && last <= end) break;
@@ -129,8 +157,10 @@ export function paidReturnedUnits(text: string): PaidReturnedUnit[] {
       const amount = Number(price[1].replace(/,/g, ""));
       if (!(amount > 0) || !Number.isFinite(amount)) break;
       const heading = headerAt(lines, at);
-      const boundary = sectionEnd(lines, ownedEnd, heading.index);
-      if (boundary === null || separateEvent(lines, at, end, heading.index, boundary)) break;
+      const ownAudience = headingAudience(heading.text);
+      const from = sectionStart(lines, at, ownAudience);
+      const boundary = sectionEnd(lines, ownedEnd, heading.index, ownAudience);
+      if (from === null || boundary === null || separateEvent(lines, at, end, from, boundary)) break;
       const interveningOwner = lines.slice(heading.index + 1, at).some(line => {
         const text = flat(line);
         return text && !/\$|\b(?:free|no charge)\b/i.test(text);

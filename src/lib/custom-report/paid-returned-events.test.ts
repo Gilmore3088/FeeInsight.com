@@ -61,9 +61,18 @@ describe("complete source-owned paid/returned unit", () => {
   it("checks beyond the previous seventeen-line prefix and proves a section boundary", () => {
     const filler = Array.from({ length: 30 }, (_, index) => `Statement Copy ${index + 1} | $2.00`);
     expect(paidReturnedUnits(source(row, ...filler, "NSF Paid Item Fee | $37.00"))).toEqual([]);
-    expect(paidReturnedUnits(source(row, ...filler, "Miscellaneous Account Fees", "Overdraft Fee | $37.00")))
+    expect(paidReturnedUnits(source(row, ...filler, "Business Checking Fees", "Overdraft Fee | $37.00")))
       .toHaveLength(1);
   });
+
+  it.each(["Service Fees", "Other Fees", "Miscellaneous Account Fees"])
+    ("refuses a separate overdraft price past a %s heading that keeps the audience", heading => {
+      const separate = ["Stop Payment | $30.00", heading, "Overdraft Fee | $35.00"];
+      expect(paidReturnedUnits(source(row, ...separate))).toEqual([]);
+      expect(paidReturnedUnits(source(row, "", heading, "Overdraft Fee | $35.00"))).toEqual([]);
+      expect(paidReturnedUnits(["Account Fee Schedule", heading, "Overdraft Fee | $35.00", "Consumer Checking Fees", row]
+        .join("\n"))).toEqual([]);
+    });
 
   it("does not certify an unexamined oversized section", () => {
     const filler = Array.from({ length: 520 }, (_, index) => `Statement Copy ${index + 1} | $2.00`);
