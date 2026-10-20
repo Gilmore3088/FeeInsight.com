@@ -150,13 +150,13 @@ import { internationalWireEligibility } from "./international-wire-eligibility";
 // v89 (#1102): the held-name rules are on (stop pay, reconveyance, early closure, paper
 // statements, box sizes, IRA close-outs); returned statements stay held (James's v26 call).
 // v90: returned statements file as returned mail (James's decision card, Oct 20, "File them").
-// v91 (#1827): a cell-less price-first list ("$100.00 Safe Deposit Box Drilling/Per Box" / "$14.00 Safe
+// v92 (#1827): a cell-less price-first list ("$100.00 Safe Deposit Box Drilling/Per Box" / "$14.00 Safe
 // Deposit Box 3”x5”x22”/Year") is read one fee per line when it runs two lines or more and no bare
 // price closes it, a range row ("$5-$15 | Levy") never names the row under it, and a heading never
 // takes the price of a price-first line that names its own fee. Before, each box took the next
 // size's price (Colby, doc 37839) and the levy took the garnishment's $20 (doc 2491). The stale-read
 // floor stays at v78; the shared source check (v19) takes the wrong live reads down.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 91 } as const;
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 92 } as const;
 
 export interface SpecialistRun {
   strategy: string;

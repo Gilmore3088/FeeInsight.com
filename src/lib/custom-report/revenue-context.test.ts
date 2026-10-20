@@ -4,7 +4,7 @@ vi.mock("@/lib/data-store/call-reports", () => ({ getInstitutionPeerRanking: vi.
 vi.mock("@/lib/data-store/public-read-cache", () => ({ cachedPublicRead: (_key: string, fn: unknown) => fn }));
 
 import { financialPeerComparison } from "@/lib/data-store/financial-peer-contract";
-import { buildRevenueContext, incomeLabel, quarterLabel } from "./revenue-context";
+import { buildRevenueContext, incomeLabel, quarterLabel, shareLabel } from "./revenue-context";
 
 const comparison = (source: "fdic" | "ncua", count = 900) => financialPeerComparison({ source, reportDate: "2026-06-30", tier: "community", minimumAssetsUsd: 100000000, maximumAssetsUsd: 1000000000, subjectIncluded: true, eligibleCount: count, reportedCount: count, ratioReportedCount: count, minimumMedianCount: 5 });
 const quarter = (q: string, amount: number) => ({ quarter: q, service_charge_income: amount });
@@ -51,5 +51,30 @@ describe("labels", () => {
     expect(quarterLabel("2026-Q2")).toBe("Q2 2026");
     expect(incomeLabel(1180)).toBe("$1.2 million");
     expect(incomeLabel(840)).toBe("$840,000");
+  });
+});
+
+describe("the normalized fee income measure", () => {
+  const midsize = (ratioReportedCount: number) => financialPeerComparison({ source: "fdic", reportDate: "2026-06-30", tier: "midsize", minimumAssetsUsd: 1000000000, maximumAssetsUsd: 10000000000, subjectIncluded: true, eligibleCount: 880, reportedCount: 872, ratioReportedCount, minimumMedianCount: 5 });
+
+  it("reads the share and its median from the one comparison the rank uses, the institution included", () => {
+    const context = buildRevenueContext([quarter("2026-Q2", 5656)], {
+      tier: "midsize", sc_rank: 13, peer_count: 872, peer_median_sc: 449, fee_income_ratio: 0.087089, peer_median_fee_ratio: 0.021662, comparison: midsize(870),
+    });
+    expect(context?.peer).toMatchObject({ tierLabel: "$1B-$10B", charterLabel: "banks", feeShare: 0.087089, peerMedianFeeShare: 0.021662, peerShareCount: 870 });
+    expect(context?.peer?.comparison.subject_included).toBe(true);
+    expect(shareLabel(0.087089)).toBe("8.7%");
+  });
+
+  it("gives no share median when too few in the comparison filed a share", () => {
+    const context = buildRevenueContext([quarter("2026-Q2", 5656)], {
+      tier: "midsize", sc_rank: 13, peer_count: 872, peer_median_sc: 449, fee_income_ratio: 0.087089, peer_median_fee_ratio: 0.02, comparison: midsize(4),
+    });
+    expect(context?.peer).toMatchObject({ feeShare: 0.087089, peerMedianFeeShare: null, peerShareCount: 4 });
+  });
+
+  it("drops a share that is not a fraction (a mis-scaled filing)", () => {
+    const context = buildRevenueContext([quarter("2026-Q2", 300)], { tier: "community", sc_rank: 3, peer_count: 900, peer_median_sc: 250, fee_income_ratio: 87, peer_median_fee_ratio: null, comparison: comparison("fdic") });
+    expect(context?.peer).toMatchObject({ feeShare: null, peerMedianFeeShare: null });
   });
 });

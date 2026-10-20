@@ -587,7 +587,7 @@ describe("a price-first row keeps its own price (#1827)", () => {
     "Contact Us for Details",
   ].join("\n");
 
-  it("v91 reads a cell-less price-first list one fee per line (Colby, doc 37839)", () => {
+  it("v92 reads a cell-less price-first list one fee per line (Colby, doc 37839)", () => {
     const rows = fees(colby);
     expect(amountsOf(rows, "Safe Deposit Box Drilling/Per Box")).toEqual([100]);
     expect(amountsOf(rows, "Safe Deposit Box 3”x5”x22”/Year")).toEqual([14]);
@@ -601,7 +601,7 @@ describe("a price-first row keeps its own price (#1827)", () => {
     expect(amountsOf(headed, "Safe Deposit Box 3”x5”x22”/Year")).toEqual([14]);
   });
 
-  it("v91 keeps a stacked page that a bare price closes read as stacked", () => {
+  it("v92 keeps a stacked page that a bare price closes read as stacked", () => {
     // Every price under the name above it: the last price stands alone on its line.
     const stacked = ["Overdraft Fee", "$30.00 Stop Payment Fee", "$25.00 Returned Deposit Item Fee", "$5.00", "Contact Us"].join("\n");
     // The run rule leaves the table and family passes reading each price under the name above.
@@ -609,7 +609,7 @@ describe("a price-first row keeps its own price (#1827)", () => {
     expect(priceWindows(stacked).some((window) => window.priceFirst)).toBe(false);
   });
 
-  it("v91 never gives a range row's name the price of the row under it (doc 2491)", () => {
+  it("v92 never gives a range row's name the price of the row under it (doc 2491)", () => {
     const doc2491 = [
       "Account Fees",
       "$30 | Overdraft NSF (per item)",

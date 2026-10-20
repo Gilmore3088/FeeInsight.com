@@ -156,4 +156,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-20",
   },
+  {
+    id: "issue-1827-own-row-decides-the-price",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "Verify a price on the fee's own row. When the schedule has a row named as the fee and that row prints another price, the fee does not trace, however well its words match a neighbour's row. A footnote mark or a trailing dash on the name cell does not make it another fee's row.",
+    why: "The shared source check matched \"Overdraft Transfer (per item)\" at $30 against \"$30 | Overdraft NSF (per item)\" while its own row said $3, and a 3 x 5 box against the 5 x 5 row. Darwin verified 16 such misreads that went live.",
+    evidence: { issues: [1827], prs: [2465], files: ["docs/project/findings/2026-10-20-reader-fixes-never-reach-live-fees.md", "src/lib/custom-report/source-check.ts"] },
+    appliesTo: "all",
+    since: "2026-10-20",
+  },
 ];

@@ -659,7 +659,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `INDUSTRY_EVENTS_PARSER_VERSION` | — | v3 (CourtListener fee lawsuits removed; v2 reads H.2 release links when relative) | `magellan/registry/industry-events.ts` |
 | `PAYMENT_NETWORKS_PARSER_VERSION` | — | v1 | `magellan/registry/payment-networks.ts` |
 | `BANK_ZELLE_MATCHER_VERSION` | — | v1 (offers Zelle from each institution's own stored documents, #1875) | `magellan/registry/bank-zelle-match.ts` |
-| `HMDA_PARSER_VERSION` | — | v2 (reads the public LAR's "derived_msa-md" header) | `magellan/registry/hmda.ts` |
+| `HMDA_PARSER_VERSION` | — | v3 (prepared exact identity matching and complete annual writer lock; scheduled version stays2 while ordinary identity writes are held, #2265) | `magellan/registry/hmda.ts` |
 | `HMDA_APOR_PARSER_VERSION` | — | v2 | `magellan/registry/hmda.ts` |
 | `DESIGNATION_LISTS_PARSER_VERSION` | — | v2 (Bank On list removed) | `magellan/registry/designation-lists.ts` |
 | `CRA_PARSER_VERSION` | — | v2 (FFIEC ratings and flat-file URLs; headerless ratings file, ID by regulator; revised 2022-23 files) | `magellan/registry/cra.ts` |
@@ -668,7 +668,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `UBPR_PEER_GROUPS_PARSER_VERSION` | — | v3 (TSV radio name/value and postback handler read from the page, or submit-only without a handler; no guessed target; v2 added Download/page diagnostics, #1806) | `magellan/registry/ubpr-peer-groups.ts` |
 | `CFPB_CARD_AGREEMENTS_PARSER_VERSION` | — | v1 | `magellan/registry/cfpb-card-agreements.ts` |
 | `ENFORCEMENT_MATCHER_VERSION` | — | v3 | `magellan/registry/enforcement.ts` |
-| `FDIC_UNIVERSE_PARSER_VERSION` | — | v2 | `magellan/registry/fdic-universe.ts` |
+| `FDIC_UNIVERSE_PARSER_VERSION` | — | v3 (prepared own-LEI collection; default-off gate holds scheduled version2 and all LEI propagation, #2265; ordinary release waits on durable identity holds #2266) | `magellan/registry/fdic-universe.ts` |
 | `FFIEC_OVERDRAFT_PARSER_VERSION` | — | v2 | `magellan/registry/ffiec-overdraft.ts` |
 | `NCUA_PARSER_VERSION` | — | v3 | `magellan/registry/ncua-financials.ts` |
 | `SEC_LINKS_PARSER_VERSION` | — | v2 | `magellan/registry/sec.ts` |

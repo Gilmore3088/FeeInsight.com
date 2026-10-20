@@ -1,0 +1,842 @@
+{
+  "mode": "review_only",
+  "productionWrites": 0,
+  "approvalRequiredBeforeDeploymentOrExecution": true,
+  "capturedAt": "2026-10-19 14:38:59.378259+00",
+  "estateCapturedAt": "2026-10-19 14:39:32.630644+00",
+  "sourceUrl": "https://api.fdic.gov/banks/institutions?filters=ACTIVE%3A1&fields=CERT%2CNAME%2CFED_RSSD%2CLEI&limit=10000&format=json",
+  "sourceSha256": "8f4a898853932f6ab8dfef8ba1ccb29939c0cc7cfc726c0786a884a9bc26e558",
+  "sourceIndex": {
+    "name": "institutions_20261016090006",
+    "createTimestamp": "2026-10-16T11:58:03Z"
+  },
+  "year": 2025,
+  "cohort": [
+    {
+      "institutionId": 3982,
+      "certificate": "2682",
+      "name": "The First National Bank of Brooksville",
+      "beforeLei": null,
+      "lei": "2549002H3CEW0748X068",
+      "sourceRssd": "798512",
+      "originationRows": 7,
+      "costRows": 3,
+      "states": [
+        "KY"
+      ]
+    },
+    {
+      "institutionId": 3638,
+      "certificate": "17410",
+      "name": "The Bendena State Bank",
+      "beforeLei": null,
+      "lei": "2549003L98A6Z3YX9T46",
+      "sourceRssd": "1008151",
+      "originationRows": 6,
+      "costRows": 4,
+      "states": [
+        "KS",
+        "MO"
+      ]
+    },
+    {
+      "institutionId": 1488,
+      "certificate": "23886",
+      "name": "American Bank, National Association",
+      "beforeLei": null,
+      "lei": "2549006VBLRP288VX853",
+      "sourceRssd": "307361",
+      "originationRows": 22,
+      "costRows": 12,
+      "states": [
+        "AR",
+        "FL",
+        "MO",
+        "TX"
+      ]
+    },
+    {
+      "institutionId": 3674,
+      "certificate": "1730",
+      "name": "Peoples Bank of Greensboro",
+      "beforeLei": null,
+      "lei": "2549009ACXPW8YN9HB36",
+      "sourceRssd": "320034",
+      "originationRows": 7,
+      "costRows": 3,
+      "states": [
+        "AL"
+      ]
+    },
+    {
+      "institutionId": 3567,
+      "certificate": "11466",
+      "name": "HomePride Bank",
+      "beforeLei": null,
+      "lei": "254900ARBVNKXMFFP204",
+      "sourceRssd": "747051",
+      "originationRows": 8,
+      "costRows": 2,
+      "states": [
+        "MO"
+      ]
+    },
+    {
+      "institutionId": 3621,
+      "certificate": "34386",
+      "name": "Spring Valley Bank",
+      "beforeLei": null,
+      "lei": "254900G0ZC4S8EO1W523",
+      "sourceRssd": "2607412",
+      "originationRows": 6,
+      "costRows": 4,
+      "states": [
+        "IN",
+        "KY",
+        "MI",
+        "OH"
+      ]
+    },
+    {
+      "institutionId": 3671,
+      "certificate": "20162",
+      "name": "Ascent Bank",
+      "beforeLei": null,
+      "lei": "254900GRYB79SK58O657",
+      "sourceRssd": "647955",
+      "originationRows": 6,
+      "costRows": 4,
+      "states": [
+        "MT"
+      ]
+    },
+    {
+      "institutionId": 1486,
+      "certificate": "5072",
+      "name": "Range Bank",
+      "beforeLei": null,
+      "lei": "254900HI61SSH8KEBQ58",
+      "sourceRssd": "355559",
+      "originationRows": 9,
+      "costRows": 1,
+      "states": [
+        "MI"
+      ]
+    },
+    {
+      "institutionId": 2658,
+      "certificate": "248",
+      "name": "State Savings Bank",
+      "beforeLei": null,
+      "lei": "254900OZCVAL2OC4DT59",
+      "sourceRssd": "762045",
+      "originationRows": 8,
+      "costRows": 2,
+      "states": [
+        "IA"
+      ]
+    },
+    {
+      "institutionId": 2650,
+      "certificate": "737",
+      "name": "The Apple Creek Banking Company",
+      "beforeLei": null,
+      "lei": "254900SJONZGRA3CJM44",
+      "sourceRssd": "213912",
+      "originationRows": 6,
+      "costRows": 4,
+      "states": [
+        "OH"
+      ]
+    }
+  ],
+  "plan": {
+    "mode": "review_only",
+    "year": 2025,
+    "lenderCap": 25,
+    "aggregateRowCap": 1000,
+    "lenderRows": 10,
+    "aggregateRows": 124,
+    "summary": {
+      "matched": 10,
+      "unmatched": 0,
+      "ambiguous": 0,
+      "reasons": {
+        "exact_lei": 10
+      }
+    },
+    "proposedLenderChanges": 10,
+    "rows": [
+      {
+        "lei": "2549002H3CEW0748X068",
+        "institutionId": 3982,
+        "method": "lei",
+        "candidateIds": [
+          3982
+        ],
+        "evidence": [
+          {
+            "institutionId": 3982,
+            "source": "fdic",
+            "certNumber": "2682",
+            "registrySyncedAt": "2026-10-14T02:22:22.248548+00:00",
+            "linkBasis": null,
+            "linkKey": null,
+            "sourceUrl": null,
+            "checkedAt": null,
+            "kind": "institution_lei",
+            "lei": "2549002H3CEW0748X068",
+            "rssdId": "798512"
+          }
+        ],
+        "canonicalSnapshots": [
+          {
+            "id": 3982,
+            "lei": "2549002H3CEW0748X068",
+            "rssdId": "798512",
+            "source": "fdic",
+            "certNumber": "2682",
+            "registrySyncedAt": "2026-10-14T02:22:22.248548+00:00",
+            "leiLink": null
+          }
+        ],
+        "status": "matched",
+        "reason": "exact_lei",
+        "beforeInstitutionId": null,
+        "beforeMatchMethod": null,
+        "originationRows": 7,
+        "costRows": 3,
+        "states": [
+          "KY"
+        ],
+        "changes": true
+      },
+      {
+        "lei": "2549003L98A6Z3YX9T46",
+        "institutionId": 3638,
+        "method": "lei",
+        "candidateIds": [
+          3638
+        ],
+        "evidence": [
+          {
+            "institutionId": 3638,
+            "source": "fdic",
+            "certNumber": "17410",
+            "registrySyncedAt": "2026-10-14T02:22:22.57622+00:00",
+            "linkBasis": null,
+            "linkKey": null,
+            "sourceUrl": null,
+            "checkedAt": null,
+            "kind": "institution_lei",
+            "lei": "2549003L98A6Z3YX9T46",
+            "rssdId": "1008151"
+          }
+        ],
+        "canonicalSnapshots": [
+          {
+            "id": 3638,
+            "lei": "2549003L98A6Z3YX9T46",
+            "rssdId": "1008151",
+            "source": "fdic",
+            "certNumber": "17410",
+            "registrySyncedAt": "2026-10-14T02:22:22.57622+00:00",
+            "leiLink": null
+          }
+        ],
+        "status": "matched",
+        "reason": "exact_lei",
+        "beforeInstitutionId": null,
+        "beforeMatchMethod": null,
+        "originationRows": 6,
+        "costRows": 4,
+        "states": [
+          "KS",
+          "MO"
+        ],
+        "changes": true
+      },
+      {
+        "lei": "2549006VBLRP288VX853",
+        "institutionId": 1488,
+        "method": "lei",
+        "candidateIds": [
+          1488
+        ],
+        "evidence": [
+          {
+            "institutionId": 1488,
+            "source": "fdic",
+            "certNumber": "23886",
+            "registrySyncedAt": "2026-10-14T02:22:22.57622+00:00",
+            "linkBasis": null,
+            "linkKey": null,
+            "sourceUrl": null,
+            "checkedAt": null,
+            "kind": "institution_lei",
+            "lei": "2549006VBLRP288VX853",
+            "rssdId": "307361"
+          }
+        ],
+        "canonicalSnapshots": [
+          {
+            "id": 1488,
+            "lei": "2549006VBLRP288VX853",
+            "rssdId": "307361",
+            "source": "fdic",
+            "certNumber": "23886",
+            "registrySyncedAt": "2026-10-14T02:22:22.57622+00:00",
+            "leiLink": null
+          }
+        ],
+        "status": "matched",
+        "reason": "exact_lei",
+        "beforeInstitutionId": null,
+        "beforeMatchMethod": null,
+        "originationRows": 22,
+        "costRows": 12,
+        "states": [
+          "AR",
+          "FL",
+          "MO",
+          "TX"
+        ],
+        "changes": true
+      },
+      {
+        "lei": "2549009ACXPW8YN9HB36",
+        "institutionId": 3674,
+        "method": "lei",
+        "candidateIds": [
+          3674
+        ],
+        "evidence": [
+          {
+            "institutionId": 3674,
+            "source": "fdic",
+            "certNumber": "1730",
+            "registrySyncedAt": "2026-10-14T02:22:22.248548+00:00",
+            "linkBasis": null,
+            "linkKey": null,
+            "sourceUrl": null,
+            "checkedAt": null,
+            "kind": "institution_lei",
+            "lei": "2549009ACXPW8YN9HB36",
+            "rssdId": "320034"
+          }
+        ],
+        "canonicalSnapshots": [
+          {
+            "id": 3674,
+            "lei": "2549009ACXPW8YN9HB36",
+            "rssdId": "320034",
+            "source": "fdic",
+            "certNumber": "1730",
+            "registrySyncedAt": "2026-10-14T02:22:22.248548+00:00",
+            "leiLink": null
+          }
+        ],
+        "status": "matched",
+        "reason": "exact_lei",
+        "beforeInstitutionId": null,
+        "beforeMatchMethod": null,
+        "originationRows": 7,
+        "costRows": 3,
+        "states": [
+          "AL"
+        ],
+        "changes": true
+      },
+      {
+        "lei": "254900ARBVNKXMFFP204",
+        "institutionId": 3567,
+        "method": "lei",
+        "candidateIds": [
+          3567
+        ],
+        "evidence": [
+          {
+            "institutionId": 3567,
+            "source": "fdic",
+            "certNumber": "11466",
+            "registrySyncedAt": "2026-10-14T02:22:22.482745+00:00",
+            "linkBasis": null,
+            "linkKey": null,
+            "sourceUrl": null,
+            "checkedAt": null,
+            "kind": "institution_lei",
+            "lei": "254900ARBVNKXMFFP204",
+            "rssdId": "747051"
+          }
+        ],
+        "canonicalSnapshots": [
+          {
+            "id": 3567,
+            "lei": "254900ARBVNKXMFFP204",
+            "rssdId": "747051",
+            "source": "fdic",
+            "certNumber": "11466",
+            "registrySyncedAt": "2026-10-14T02:22:22.482745+00:00",
+            "leiLink": null
+          }
+        ],
+        "status": "matched",
+        "reason": "exact_lei",
+        "beforeInstitutionId": null,
+        "beforeMatchMethod": null,
+        "originationRows": 8,
+        "costRows": 2,
+        "states": [
+          "MO"
+        ],
+        "changes": true
+      },
+      {
+        "lei": "254900G0ZC4S8EO1W523",
+        "institutionId": 3621,
+        "method": "lei",
+        "candidateIds": [
+          3621
+        ],
+        "evidence": [
+          {
+            "institutionId": 3621,
+            "source": "fdic",
+            "certNumber": "34386",
+            "registrySyncedAt": "2026-10-14T02:22:22.666411+00:00",
+            "linkBasis": null,
+            "linkKey": null,
+            "sourceUrl": null,
+            "checkedAt": null,
+            "kind": "institution_lei",
+            "lei": "254900G0ZC4S8EO1W523",
+            "rssdId": "2607412"
+          }
+        ],
+        "canonicalSnapshots": [
+          {
+            "id": 3621,
+            "lei": "254900G0ZC4S8EO1W523",
+            "rssdId": "2607412",
+            "source": "fdic",
+            "certNumber": "34386",
+            "registrySyncedAt": "2026-10-14T02:22:22.666411+00:00",
+            "leiLink": null
+          }
+        ],
+        "status": "matched",
+        "reason": "exact_lei",
+        "beforeInstitutionId": null,
+        "beforeMatchMethod": null,
+        "originationRows": 6,
+        "costRows": 4,
+        "states": [
+          "IN",
+          "KY",
+          "MI",
+          "OH"
+        ],
+        "changes": true
+      },
+      {
+        "lei": "254900GRYB79SK58O657",
+        "institutionId": 3671,
+        "method": "lei",
+        "candidateIds": [
+          3671
+        ],
+        "evidence": [
+          {
+            "institutionId": 3671,
+            "source": "fdic",
+            "certNumber": "20162",
+            "registrySyncedAt": "2026-10-14T02:22:22.57622+00:00",
+            "linkBasis": null,
+            "linkKey": null,
+            "sourceUrl": null,
+            "checkedAt": null,
+            "kind": "institution_lei",
+            "lei": "254900GRYB79SK58O657",
+            "rssdId": "647955"
+          }
+        ],
+        "canonicalSnapshots": [
+          {
+            "id": 3671,
+            "lei": "254900GRYB79SK58O657",
+            "rssdId": "647955",
+            "source": "fdic",
+            "certNumber": "20162",
+            "registrySyncedAt": "2026-10-14T02:22:22.57622+00:00",
+            "leiLink": null
+          }
+        ],
+        "status": "matched",
+        "reason": "exact_lei",
+        "beforeInstitutionId": null,
+        "beforeMatchMethod": null,
+        "originationRows": 6,
+        "costRows": 4,
+        "states": [
+          "MT"
+        ],
+        "changes": true
+      },
+      {
+        "lei": "254900HI61SSH8KEBQ58",
+        "institutionId": 1486,
+        "method": "lei",
+        "candidateIds": [
+          1486
+        ],
+        "evidence": [
+          {
+            "institutionId": 1486,
+            "source": "fdic",
+            "certNumber": "5072",
+            "registrySyncedAt": "2026-10-14T02:22:22.248548+00:00",
+            "linkBasis": null,
+            "linkKey": null,
+            "sourceUrl": null,
+            "checkedAt": null,
+            "kind": "institution_lei",
+            "lei": "254900HI61SSH8KEBQ58",
+            "rssdId": "355559"
+          }
+        ],
+        "canonicalSnapshots": [
+          {
+            "id": 1486,
+            "lei": "254900HI61SSH8KEBQ58",
+            "rssdId": "355559",
+            "source": "fdic",
+            "certNumber": "5072",
+            "registrySyncedAt": "2026-10-14T02:22:22.248548+00:00",
+            "leiLink": null
+          }
+        ],
+        "status": "matched",
+        "reason": "exact_lei",
+        "beforeInstitutionId": null,
+        "beforeMatchMethod": null,
+        "originationRows": 9,
+        "costRows": 1,
+        "states": [
+          "MI"
+        ],
+        "changes": true
+      },
+      {
+        "lei": "254900OZCVAL2OC4DT59",
+        "institutionId": 2658,
+        "method": "lei",
+        "candidateIds": [
+          2658
+        ],
+        "evidence": [
+          {
+            "institutionId": 2658,
+            "source": "fdic",
+            "certNumber": "248",
+            "registrySyncedAt": "2026-10-14T02:22:22.248548+00:00",
+            "linkBasis": null,
+            "linkKey": null,
+            "sourceUrl": null,
+            "checkedAt": null,
+            "kind": "institution_lei",
+            "lei": "254900OZCVAL2OC4DT59",
+            "rssdId": "762045"
+          }
+        ],
+        "canonicalSnapshots": [
+          {
+            "id": 2658,
+            "lei": "254900OZCVAL2OC4DT59",
+            "rssdId": "762045",
+            "source": "fdic",
+            "certNumber": "248",
+            "registrySyncedAt": "2026-10-14T02:22:22.248548+00:00",
+            "leiLink": null
+          }
+        ],
+        "status": "matched",
+        "reason": "exact_lei",
+        "beforeInstitutionId": null,
+        "beforeMatchMethod": null,
+        "originationRows": 8,
+        "costRows": 2,
+        "states": [
+          "IA"
+        ],
+        "changes": true
+      },
+      {
+        "lei": "254900SJONZGRA3CJM44",
+        "institutionId": 2650,
+        "method": "lei",
+        "candidateIds": [
+          2650
+        ],
+        "evidence": [
+          {
+            "institutionId": 2650,
+            "source": "fdic",
+            "certNumber": "737",
+            "registrySyncedAt": "2026-10-14T02:22:22.248548+00:00",
+            "linkBasis": null,
+            "linkKey": null,
+            "sourceUrl": null,
+            "checkedAt": null,
+            "kind": "institution_lei",
+            "lei": "254900SJONZGRA3CJM44",
+            "rssdId": "213912"
+          }
+        ],
+        "canonicalSnapshots": [
+          {
+            "id": 2650,
+            "lei": "254900SJONZGRA3CJM44",
+            "rssdId": "213912",
+            "source": "fdic",
+            "certNumber": "737",
+            "registrySyncedAt": "2026-10-14T02:22:22.248548+00:00",
+            "leiLink": null
+          }
+        ],
+        "status": "matched",
+        "reason": "exact_lei",
+        "beforeInstitutionId": null,
+        "beforeMatchMethod": null,
+        "originationRows": 6,
+        "costRows": 4,
+        "states": [
+          "OH"
+        ],
+        "changes": true
+      }
+    ],
+    "writes": 0
+  },
+  "fixedBounds": {
+    "canonicalRows": 10,
+    "annualLenders": 10,
+    "originationRows": 85,
+    "costRows": 39,
+    "aggregateRows": 124
+  },
+  "scopePolicy": "Exact explicit LEIs across all states; no added rows, widened selection, names, parents, prior-year panel or LAR refetch",
+  "permittedFields": {
+    "institution_sources": [
+      "lei"
+    ],
+    "hmda_lenders": [
+      "institution_id",
+      "match_method",
+      "raw_json.feeinsight_identity"
+    ],
+    "hmda_lender_originations": [
+      "institution_id"
+    ],
+    "hmda_lender_loan_costs": [
+      "institution_id"
+    ]
+  },
+  "preimageFile": "review-snapshot.json",
+  "preimageSha256": "9517fde46a3492f7b6c17b561340f45ef2ec8fd60b54c3bf8ec3c8166285aa4f",
+  "guards": {
+    "institutions": {
+      "rows": 10,
+      "ids": [
+        1486,
+        1488,
+        2650,
+        2658,
+        3567,
+        3621,
+        3638,
+        3671,
+        3674,
+        3982
+      ],
+      "sha256": "efd954824abd25c27065887a8e2e43d79681974e007e4d8b7ad8af901f2f2195"
+    },
+    "lenders": {
+      "rows": 10,
+      "sha256": "144a64fca9bd1e8b0b21da276ef2d9c320af65555bae1b7fc2ec26a5fee8b81c"
+    },
+    "originations": {
+      "rows": 85,
+      "ids": [
+        7850,
+        7851,
+        7852,
+        7853,
+        7854,
+        7855,
+        7856,
+        17557,
+        60298,
+        60299,
+        60300,
+        115753,
+        127592,
+        127593,
+        127594,
+        127595,
+        127596,
+        127597,
+        127598,
+        127599,
+        135414,
+        135415,
+        135416,
+        135417,
+        135418,
+        141042,
+        141043,
+        141044,
+        141045,
+        141046,
+        141047,
+        141048,
+        142002,
+        171227,
+        171228,
+        171229,
+        171230,
+        171231,
+        171232,
+        171233,
+        171234,
+        171235,
+        173648,
+        201637,
+        201638,
+        201639,
+        201640,
+        201641,
+        201642,
+        201643,
+        201644,
+        203213,
+        204737,
+        210576,
+        210577,
+        210578,
+        210579,
+        210580,
+        210581,
+        262600,
+        262601,
+        262602,
+        262603,
+        262604,
+        262605,
+        267504,
+        267505,
+        267506,
+        347317,
+        347318,
+        347319,
+        347320,
+        347321,
+        347322,
+        347323,
+        347324,
+        347325,
+        347326,
+        347327,
+        347328,
+        347329,
+        347330,
+        347331,
+        347332,
+        347333
+      ],
+      "sha256": "df7c89c3ef3016ddbcc9d271df0d0bc8cdd5057163dc4fc7dc0a98a4c4a6978a",
+      "sourceFactsSha256": "0ec7f2e9f883a1fe973a606470a9b190ea91b6ffa79810dd2a7cfbecbbb9b351"
+    },
+    "costs": {
+      "rows": 39,
+      "ids": [
+        3708,
+        3709,
+        3710,
+        8854,
+        34892,
+        34893,
+        34894,
+        57140,
+        62166,
+        62167,
+        64944,
+        64945,
+        64946,
+        66554,
+        66555,
+        66556,
+        66852,
+        79605,
+        80617,
+        89027,
+        89028,
+        89448,
+        89899,
+        91481,
+        91482,
+        91483,
+        91484,
+        112534,
+        112535,
+        112536,
+        112537,
+        114201,
+        144176,
+        144177,
+        144178,
+        144179,
+        144180,
+        144181,
+        144182
+      ],
+      "sha256": "d55d7a0268dd5656a6aa2c620131b0a9265ef82b809d8e52bfab2b7969878a0d",
+      "sourceFactsSha256": "f4109e43054b7066f056abb4ccf0f5d94f9ed34a205f8e7342312ce685ebe2ef"
+    },
+    "encoding": "SHA256 UTF-8 JSON; recursive object keys localeCompare sorted, arrays in snapshot order; original JSON scalar types preserved"
+  },
+  "projectedFullProducer": {
+    "canonicalLeiFills": 2250,
+    "before": {
+      "matched": 0,
+      "unmatched": 4570,
+      "ambiguous": 0,
+      "reasons": {
+        "no_authoritative_identity": 4570
+      }
+    },
+    "after": {
+      "matched": 1759,
+      "unmatched": 2811,
+      "ambiguous": 0,
+      "reasons": {
+        "exact_lei": 1759,
+        "no_authoritative_identity": 2811
+      }
+    }
+  },
+  "actualProductionCoverage": {
+    "annual": {
+      "linked": 0,
+      "lenders": 4570
+    },
+    "originations": {
+      "linked": 0,
+      "originations": 365252
+    },
+    "costs": {
+      "costs": 150391,
+      "linked": 0
+    }
+  },
+  "executionStatus": "Not queued. No matching-only apply operation is enabled. Review scope and deployment behavior before implementing/authorizing ledger execution."
+}

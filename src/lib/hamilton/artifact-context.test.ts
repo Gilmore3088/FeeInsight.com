@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  isSavedArtifactId,
   getHamiltonArtifactContextLookup,
   resolveArtifactContextInstitutionId,
   shouldPersistUrlInstitutionSelection,
@@ -79,6 +80,13 @@ describe("Hamilton artifact context resolution", () => {
     ).toEqual({ kind: "report", artifactId: "report-2" });
   });
 
+  it.each(["scenario", "scenario_id"])("resolves a saved simulation before a conflicting URL subject (%s)", (key) => {
+    expect(getHamiltonArtifactContextLookup({
+      pathname: "/pro/simulate",
+      searchParams: new URLSearchParams({ [key]: "saved-a", instId: "303" }),
+    })).toEqual({ kind: "scenario", artifactId: "saved-a" });
+  });
+
   it("always queries a saved analysis even with conflicting URL institution context", () => {
     expect(
       getHamiltonArtifactContextLookup({
@@ -103,4 +111,21 @@ describe("Hamilton artifact context resolution", () => {
       }),
     ).toEqual({ kind: "analysis", artifactId: "abc-123" });
   });
+});
+
+describe("isSavedArtifactId", () => {
+  it.each([
+    "5d0f3f4e-8a1b-4c2d-9e3f-0a1b2c3d4e5f",
+    "5D0F3F4E-8A1B-4C2D-9E3F-0A1B2C3D4E5F",
+    "00000000-0000-1000-8000-000000000000",
+  ])("accepts the uuid %s", (id) => {
+    expect(isSavedArtifactId(id)).toBe(true);
+  });
+
+  it.each(["", "not-a-uuid", "saved-a", "5d0f3f4e-8a1b-4c2d-9e3f", "5d0f3f4e8a1b4c2d9e3f0a1b2c3d4e5f", " 5d0f3f4e-8a1b-4c2d-9e3f-0a1b2c3d4e5f"])(
+    "rejects %j",
+    (id) => {
+      expect(isSavedArtifactId(id)).toBe(false);
+    },
+  );
 });

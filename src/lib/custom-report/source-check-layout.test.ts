@@ -854,6 +854,65 @@ describe("checkFeeAgainstSource joined prices (Knox v76)", () => {
     expect(checkFeeAgainstSource(waived, "Monthly Maintenance Fee", 6, ".").ok).toBe(true);
   });
 
+  it("takes a row's category word from its own section heading, not from an earlier section (#1835)", () => {
+    // Capital City Bank (institution 323), live fee 69700: agent_source_texts 1418 for source_document_id 13900,
+    // each price printed under its fee's name, so "Wire Transfers" sits six lines above the incoming fee.
+    const page = [
+      "Online Banking Bank-to-Bank (External) Transfers", "Outbound: External Bank-to-Bank Transfer Fee", "$2",
+      "Returned Bank-to-Bank Transfer Fee", "$6",
+      "Wire Transfers", "Outgoing Domestic Fee", "$35", "Outgoing International Fee", "$75",
+      "Incoming Domestic Fee", "$25", "Incoming International Fee", "$25", "Returned Wire Fee", "$25",
+      "Wire Transfer Confirmation Fee", "$5",
+      "Collection Services", "Incoming Domestic Item Fee", "$20", "Incoming International Item Fee", "$20",
+    ].join("\n\n");
+    const report = { sectionHeadingCategory: true };
+    for (const key of [undefined, "wire_domestic_incoming"]) {
+      // The report path (custom-report-market.ts) reads the category word from the section heading.
+      expect(checkFeeAgainstSource(page, "Wire Transfers: Incoming Domestic Fee", 25, "wire", key, report)).toEqual({
+        ok: true,
+        sourceLine: "Incoming Domestic Fee | $25",
+      });
+      // Every other caller keeps main's verdict: the category word must sit in the nearby lines.
+      expect(checkFeeAgainstSource(page, "Wire Transfers: Incoming Domestic Fee", 25, "wire", key)).toEqual({
+        ok: false,
+        reason: "category_not_in_text",
+      });
+    }
+    // A heading further up belongs to an earlier section: a fax fee filed as an ATM fee stays out.
+    const fees = [
+      "ATM Service Charge", "First Bank ATMs | No charge", "All other ATMs | $1.50 per withdrawal and/or per inquiry",
+      "Check Cashing Fee (Customers) | No charge", "(We do not cash checks for non-customers)",
+      "Check Printing | Prices vary", "Faxes – | Outgoing | $4.00 for first page",
+    ].join("\n\n");
+    expect(checkFeeAgainstSource(fees, "ATM Service Charge: Outgoing", 4, "atm", undefined, report)).toEqual({ ok: false, reason: "category_not_in_text" });
+    expect(checkFeeAgainstSource(fees, "ATM Service Charge: Outgoing", 4, "atm")).toEqual({ ok: false, reason: "category_not_in_text" });
+  });
+
+  it("leaves Darwin's verdict on a heading-only row as it is on main (#1835 scoped to the report)", () => {
+    // Darwin (verify.ts, adjudicate.ts, release-held.ts) calls with "." and a canonical key and no
+    // options; the report-only heading rule must not change what it decides.
+    const page = ["Wire Transfers", "Outgoing Domestic Fee", "$35", "Outgoing International Fee", "$75", "Incoming Domestic Fee", "$25"].join("\n\n");
+    const fees = ["ATM Service Charge", "All other ATMs | $1.50 per withdrawal", "Check Printing | Prices vary", "Faxes – | Outgoing | $4.00 for first page"].join("\n\n");
+    for (const [text, name, amount, key] of [
+      [page, "Wire Transfers: Incoming Domestic Fee", 25, "wire_domestic_incoming"],
+      [fees, "ATM Service Charge: Outgoing", 4, "atm_non_network"],
+    ] as const) {
+      const darwin = checkFeeAgainstSource(text, name, amount, ".", key);
+      expect(darwin).toEqual(checkFeeAgainstSource(text, name, amount, ".", key, {}));
+      expect(darwin).toEqual(checkFeeAgainstSource(text, name, amount, ".", key, { sectionHeadingCategory: false }));
+    }
+    // Verdict recorded by running main's source-check.ts on this row: stated either way,
+    // because Darwin's "." category pattern never asks for a category word.
+    expect(checkFeeAgainstSource(page, "Wire Transfers: Incoming Domestic Fee", 25, ".", "wire_domestic_incoming")).toEqual({
+      ok: true,
+      sourceLine: "Incoming Domestic Fee | $25",
+    });
+    expect(checkFeeAgainstSource(fees, "ATM Service Charge: Outgoing", 4, ".", "atm_non_network")).toEqual({
+      ok: true,
+      sourceLine: "Faxes – | Outgoing | $4.00 for first page",
+    });
+  });
+
   it("quotes the fee's own row, not an earlier line at the same price for another fee", () => {
     // Hancock Whitney, live fee 66419: agent_source_texts for source_document_id 19615.
     const page = [
@@ -963,6 +1022,27 @@ describe("a fee never traces to its neighbour's price (#1827)", () => {
     const citadel = ["Mortgage recording fee (varies)", "Mortgage satisfaction fee (varies)", "$1,000.00 Mortgage modification"].join("\n\n");
     expect(checkFeeAgainstSource(citadel, "Mortgage satisfaction fee (varies)", 1000, ".", "other_lending_fee")).toEqual(refused);
     expect(checkFeeAgainstSource(citadel, "Mortgage modification", 1000, ".", "other_lending_fee").ok).toBe(true);
+  });
+
+  it("reads a name cell with a footnote mark or a trailing dash as the fee's own row (review of #2465)", () => {
+    // Eagle Bank, doc 17118, live 56377: Heritage Checking's charge is $8; the $16 row is Liberty Checking's.
+    const eagle = [
+      "CHECKING ACCOUNTS",
+      "Heritage Checking | blank",
+      " Monthly Service Charge* | $8.00",
+      " Per Debit Fee | $0.16",
+      "* The monthly service fee is waived when 5(POS) point of sale transactions are conducted during",
+      "Liberty Checking Account (earning credits offered) | blank",
+      " Monthly Service Charge | $16.00",
+    ].join("\n");
+    expect(ownRowRefusal(eagle, "Monthly Service Charge", 8)).toBeNull();
+    expect(checkFeeAgainstSource(eagle, "Monthly Service Charge", 8, ".", "monthly_maintenance").ok).toBe(true);
+    // FIG Credit Union, doc 34737, live 145890: $3 each after the first two free copies.
+    const fig = ["CHECKING ACCOUNTS", "Copy of a Paid Check | Free", "(first 2 per month)", "Copy of a Paid Check — | $3.00 each", "additional copies"].join("\n");
+    expect(ownRowRefusal(fig, "Copy of a Paid Check", 3)).toBeNull();
+    expect(checkFeeAgainstSource(fig, "Copy of a Paid Check", 3, ".", "check_image").ok).toBe(true);
+    // A marked own row still refuses a neighbour's price.
+    expect(ownRowRefusal("Stop Payment* | $30.00\nWire Transfer | $25.00", "Stop Payment", 25)).not.toBeNull();
   });
 
   it("lets sentences and other accounts' price-first lines decide nothing", () => {

@@ -186,6 +186,40 @@ reads the `hoovie` row once per process (`registryLedgerAgent` in `registry-sche
 the row is missing, or the read fails, runs keep the name `magellan` and record why in
 `params_json.ledger_agent_fallback`.
 
+## Bounded HMDA identity repair (#2264)
+
+`hmda-identity-repair.ts` is one manual-only run-ledger step with a server-owned ten-bank
+manifest. Its admin queue route never executes work, and the ordinary cron drain excludes
+its step key. Preview changes no source data but records its ledger run; apply and rollback
+remain disabled by `HMDA_REPAIR_WRITES_ENABLED`. Both ordinary identity rollout flags and
+`FDIC_IDENTITY_HOLD_WRITES_ENABLED` in `hmda-repair-release.ts` are also false. Do not enable
+those flags as part of the pilot. The #2266 hold schema and collection require separate
+authorization before deployment and broader release.
+
+The repair owns its transaction after the fixed public-source fetch. It checks running admin
+run/step ownership and cancellation state, shares annual lock namespace 2253 with the complete
+normal HMDA database phase, and takes short-wait table locks to protect row sets and ownership.
+All exact before-images and permitted-field-only post-images must match the reviewed hashes.
+The immutable apply/rollback receipt is inserted into `agent_run_events` in that same
+transaction. Retry safety and rollback rely on that receipt and current post-images, never
+only on whether the enclosing step later completed. No request-time DDL.
+
+`institution_identity_holds` is append-only unresolved FDIC conflict evidence, protected
+against update, delete and truncate. A complete raw FDIC universe produces holds for shared
+LEIs, stored/source disagreements and contradictory rows for one certificate before profile
+filtering or chunks. Holds retain all implicated identifiers and first-observation source
+digest/time/run lineage; later clean, missing, failed or older runs never clear them. No
+runtime resolution path exists in this release. Hold writes and own-LEI propagation share a
+transaction, with canonical-table then hold-table locks; the running registry run/step must
+own the write. Every matching path reads global holds unconditionally, including untracked
+and inactive owners, and fails closed on missing schema or corrupt evidence. HMDA and GLEIF
+writers lock canonical institutions, then crosswalks, then holds through decisions and writes.
+GLEIF link writes serialize crosswalk changes; HMDA and entity writes keep them stable with
+shared locks. Held owners remain in uniqueness
+indexes. Family roots, cached member associations and trusted-coverage readers apply the same
+veto. If ordinary HMDA identity writes are off, an affected state transaction refuses to
+propagate a previously stored held identity (#2300).
+
 ## LEI links (#1868)
 
 The `gleif` source's `lei-match-*` partitions (`magellan/registry/gleif-lei-match.ts`) link each

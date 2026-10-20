@@ -15,4 +15,12 @@ describe("FeeRange", () => {
     expect(figure(html)).toBe("$30.00");
     expect(html).toContain('class="you"');
   });
+
+  it("names the dot 'this bank' to screen readers unless told otherwise", () => {
+    expect(renderToStaticMarkup(<FeeRange {...row} value={10} />)).toContain("this bank $10.00");
+    const html = renderToStaticMarkup(<FeeRange {...row} value={10} subjectLabel="your fee" spread={{ min: 0, max: 400 }} />);
+    expect(html).toContain("market $0.00 to $400.00");
+    expect(html).toContain("your fee $10.00");
+    expect(html).not.toContain("this bank");
+  });
 });

@@ -1,6 +1,7 @@
 import { strFromU8, unzipSync } from "fflate";
 import { registryFetch, registryFetchJson, RegistryHttpError, type RegistryFetchOptions } from "./http";
 import { parseCsv } from "./ncua";
+import { normalizeHmdaRssd } from "./hmda-identity";
 
 /**
  * CFPB/FFIEC HMDA public data, aggregated per lender (LEI) per county and metro (MSA/MD) per
@@ -26,6 +27,8 @@ export const HMDA_DATA_BROWSER_BASE = "https://ffiec.cfpb.gov/v2/data-browser-ap
 export const HMDA_SNAPSHOT_BASE = "https://files.ffiec.cfpb.gov/static-data/snapshot";
 /** The Data Browser covers the 2018 and later LAR format. */
 export const HMDA_FIRST_YEAR = 2018;
+/** CFPB discontinued the Reporter Panel after 2023; a current LAR does not imply a panel exists. */
+export const HMDA_LAST_PANEL_YEAR = 2023;
 
 /** States, DC and Puerto Rico, as HMDA's state_code carries them. */
 export const HMDA_STATES = [
@@ -56,13 +59,13 @@ export const HMDA_REQUIRED_FIELDS = ["lei", "county_code", "derived_msa_md", "ac
 export const HMDA_COST_FIELDS = ["total_loan_costs", "origination_charges", "discount_points", "lender_credits"] as const;
 export type HmdaCostField = (typeof HMDA_COST_FIELDS)[number];
 
-/** Panel columns; the respondent RSSD column name is not confirmed, so each candidate is tried in order. */
+/** Verified 2023 public panel headers; alternate RSSD spellings support older stored files. */
 export const HMDA_PANEL_FIELDS = {
   lei: "LEI",
   rssdCandidates: ["ID_RSSD", "RESPONDENT_RSSD", "RSSD_ID", "RSSD"],
   name: "RESPONDENT_NAME",
   parentRssd: "PARENT_RSSD",
-  topHolderRssd: "TOP_HOLDER_RSSD",
+  topHolderRssd: "TOPHOLDER_RSSD",
   agencyCode: "AGENCY_CODE",
   assets: "ASSETS",
   otherLenderCode: "OTHER_LENDER_CODE",
@@ -486,6 +489,8 @@ export interface HmdaPanel {
   rssdField: string | null;
   missingFields: string[];
   duplicateLeis: number;
+  /** Duplicate panel rows without one shared positive respondent RSSD; never choose by row order. */
+  conflictingLeis?: string[];
 }
 
 export function parseHmdaPanel(csvText: string, url: string): HmdaPanel {
@@ -497,15 +502,25 @@ export function parseHmdaPanel(csvText: string, url: string): HmdaPanel {
   const missingFields: string[] = rows.length === 0 ? [] : named.filter((f) => !has(f));
   if (rows.length > 0 && !rssdField) missingFields.push(`one of ${HMDA_PANEL_FIELDS.rssdCandidates.join("/")}`);
   const lenders = new Map<string, HmdaPanelLender>();
+  const conflictingLeis = new Set<string>();
   let duplicateLeis = 0;
   for (const row of rows) {
     const lei = text(row[HMDA_PANEL_FIELDS.lei])?.toUpperCase();
     if (!lei) continue;
-    if (lenders.has(lei)) duplicateLeis += 1;
+    const rssdId = rssdField ? normalizeHmdaRssd(row[rssdField]) : null;
+    const existing = lenders.get(lei);
+    if (existing) {
+      duplicateLeis += 1;
+      if (!existing.rssdId || !rssdId || existing.rssdId !== rssdId || conflictingLeis.has(lei)) {
+        conflictingLeis.add(lei);
+        lenders.set(lei, { ...existing, rssdId: null });
+      }
+      continue;
+    }
     lenders.set(lei, {
       lei,
       respondentName: text(row[HMDA_PANEL_FIELDS.name]),
-      rssdId: rssdField ? text(row[rssdField]) : null,
+      rssdId,
       parentRssd: text(row[HMDA_PANEL_FIELDS.parentRssd]),
       topHolderRssd: text(row[HMDA_PANEL_FIELDS.topHolderRssd]),
       agencyCode: text(row[HMDA_PANEL_FIELDS.agencyCode]),
@@ -514,13 +529,15 @@ export function parseHmdaPanel(csvText: string, url: string): HmdaPanel {
       raw: row,
     });
   }
-  return { url, available: true, note: rows.length === 0 ? "panel file had no rows" : null, lenders, rssdField, missingFields, duplicateLeis };
+  return { url, available: true, note: rows.length === 0 ? "panel file had no rows" : null,
+    lenders, rssdField, missingFields, duplicateLeis, conflictingLeis: [...conflictingLeis].sort() };
 }
 
-/** The year's public panel (LEI -> RSSD and name). A panel that is not published yet is reported, not fatal. */
+/** The year's historical panel. Never substitute an older year's identity or a parent/acquirer. */
 export async function fetchHmdaPanel(year: number, options: RegistryFetchOptions = {}): Promise<HmdaPanel> {
   const url = hmdaPanelUrl(year);
   const unavailable = (note: string): HmdaPanel => ({ url, available: false, note, lenders: new Map(), rssdField: null, missingFields: [], duplicateLeis: 0 });
+  if (year > HMDA_LAST_PANEL_YEAR) return unavailable("Reporter Panel discontinued after 2023; matching requires canonical institution identifiers");
   try {
     const response = await registryFetch(url, options);
     const bytes = new Uint8Array(await response.arrayBuffer());

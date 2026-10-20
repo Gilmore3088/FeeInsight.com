@@ -23,8 +23,16 @@ cell-less list (doc 37839) went live on Oct 18, after #1838, with "3”x5”" at
   size (`sizeMismatch`).
 - `SOURCE_CHECK_STRATEGY` v19 re-checks every institution through the existing source-check pass,
   with the 12-hour second look and takedowns on the ledger.
-- Knox v91 reads cell-less price-first lists and range rows one fee per line (`inPriceFirstListRun`,
+- Knox v92 reads cell-less price-first lists and range rows one fee per line (`inPriceFirstListRun`,
   `layout.ts`).
+- Live effect (real code over the candidates, Oct 20): 16 live fees come down. The own-row rule takes 10:
+  30886, 30894, 51571 and 74628 (doc 2491), 35082, 55923, 120509, 125131, 127247 and 132529. The size
+  rule takes 6: 71346 and 99157 to 99161. Each is a wrong read. A name cell with a footnote mark or a
+  trailing dash ("Monthly Service Charge* | $8.00", "Copy of a Paid Check — | $3.00") is the fee's own
+  row, so Eagle Bank's 56377 and FIG CU's 145890 keep their real prices.
+- Wrong reads that stay live: the levy 141206 (its page's "$5-$15" reads as a tiered fee, which traces),
+  51639 (kept by `readerLostLine`) and 51438 (its two-column line prints the fee's own size). These
+  are on the Knox tracker (#1092).
 **Still open:** reader fixes that change a price still depend on the source-check bump to reach live
 fees. The rules re-check cannot keep up while each Knox version restarts it. On the Knox tracker
 (#1092): re-check live fees from the documents a fix touches, not every document under each new
@@ -32,4 +40,6 @@ signature.
 **Lesson:** a reader fix is not done when new reads are right. Its live re-check has to reach the
 fees the old read already published, and the shared check has to refuse the error on its own.
 
-**Guard:** `src/lib/custom-report/source-check-layout.test.ts` ("a fee never traces to its neighbour's price (#1827)") and `src/lib/agents/knox/specialists.test.ts` ("v91 reads a cell-less price-first list one fee per line")
+**Agent lesson:** knox/issue-1827-each-row-keeps-its-own-price, darwin/issue-1827-own-row-decides-the-price
+
+**Guard:** `src/lib/custom-report/source-check-layout.test.ts` ("a fee never traces to its neighbour's price (#1827)") and `src/lib/agents/knox/specialists.test.ts` ("v92 reads a cell-less price-first list one fee per line")

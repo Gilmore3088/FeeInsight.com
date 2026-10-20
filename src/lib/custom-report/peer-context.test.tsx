@@ -42,7 +42,7 @@ describe("report peer context", () => {
     expect(html).toContain('data-peer-fee="overdraft"');
     expect(html).toContain("$32");
     expect(html).toContain("$30 to $35");
-    expect(html).toContain("640 peers filed");
+    expect(html).toContain("in its FDIC Call Report for Q2 2026. That quarter, 640 peers filed one, not counting Capital City Bank.");
     expect(html).toContain("312");
     expect(html).toContain("5.20%");
     expect(html).toContain("Higher than 71% of peers");

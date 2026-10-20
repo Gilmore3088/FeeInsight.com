@@ -1,4 +1,5 @@
-import { countsAsPersonal, isAudienceUnstated, type FeeAudience, type FeeTreatment } from "@/lib/fee-audience";
+import { isAudienceUnstated, type FeeAudience, type FeeTreatment } from "@/lib/fee-audience";
+import { isBusinessOnlyLink } from "@/lib/agents/magellan/link-coverage";
 import { UnstatedAudienceFootnote, UnstatedAudienceMark } from "@/components/unstated-audience";
 import { FEE_FAMILIES, getFeeFamily } from "@/lib/fee-taxonomy";
 import { notComparableReason } from "@/lib/fee-comparability";
@@ -46,8 +47,27 @@ function AudienceLabel({ fee }: { fee: DisplayFee }) {
   return <span className="block text-xs font-normal text-ink-muted">Fee eliminated</span>;
 }
 
+/**
+ * A fee with no stated audience read from a business-only schedule (its link names a business
+ * schedule, `isBusinessOnlyLink`) is a business fee: the #1058 rule, "unknown counts as personal
+ * unless the schedule is business-only", the same rule the medians use (profile-data.ts).
+ */
+export function fromBusinessSchedule(fee: DisplayFee): boolean {
+  return isAudienceUnstated(fee.feeAudience) && Boolean(fee.sourceUrl && isBusinessOnlyLink(fee.sourceUrl));
+}
+
+/** Listed under Business: labeled business, or unlabeled from a business-only schedule. */
+export function isBusinessFee(fee: DisplayFee): boolean {
+  return fee.feeAudience === "business" || fromBusinessSchedule(fee);
+}
+
+/** The asterisk means "treated as personal", so a fee placed by its business-only schedule has none. */
+function showsUnstatedMark(fee: DisplayFee): boolean {
+  return isAudienceUnstated(fee.feeAudience) && !fromBusinessSchedule(fee);
+}
+
 function AudienceMark({ fee }: { fee: DisplayFee }) {
-  return <UnstatedAudienceMark show={isAudienceUnstated(fee.feeAudience)} />;
+  return <UnstatedAudienceMark show={showsUnstatedMark(fee)} />;
 }
 
 /** "CD/IRA fee", "Card inactivity fee" or a charging-basis reason when the row prices something other than its category's median measures. */
@@ -229,18 +249,18 @@ export function groupFeesByFamily(fees: DisplayFee[]): FeeGroup[] {
   });
 }
 
+/**
+ * A group's state. A live catalog fee carries no chip: the catalog marks every published row
+ * "approved" (published_fee_catalog sets review_status to the constant 'approved'), so a
+ * "Verified" chip told the reader nothing specific (James's viz brief, section 7). Rows still under
+ * review say so.
+ */
 function GroupBadge({ group }: { group: FeeGroup }) {
-  const verified = group.verifiedCount > 0;
-  const className = verified ? "border-border bg-surface-0 text-ink-soft" : "border-brick/30 bg-brick-tint text-ink";
+  if (group.verifiedCount > 0) {
+    return group.provisionalCount > 0 ? <span className="text-[11px] text-ink-muted">{group.provisionalCount} under review</span> : null;
+  }
   return (
-    <span className="inline-flex items-center gap-2">
-      <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px] font-semibold ${className}`}>
-        {verified ? "Verified" : "Under review"}
-      </span>
-      {verified && group.provisionalCount > 0 && (
-        <span className="text-[11px] text-ink-muted">{group.provisionalCount} under review</span>
-      )}
-    </span>
+    <span className="inline-flex items-center rounded-md border border-brick/30 bg-brick-tint px-1.5 py-0.5 text-[11px] font-semibold text-ink">Under review</span>
   );
 }
 
@@ -264,15 +284,16 @@ export interface AudienceSplit {
 }
 
 /**
- * Tabs only when the bank labels at least one fee business: otherwise null and the list shows
- * as one. A fee labeled both sits in both tabs; an unlabeled fee is treated as personal, the
- * same rule as its asterisk. An empty side gets no tab.
+ * Tabs only when at least one fee is a business fee: otherwise null and the list shows as one.
+ * A fee labeled both sits in both tabs. An unlabeled fee is treated as personal, the same rule as
+ * its asterisk, unless it was read from a business-only schedule: then it sits under Business
+ * (#1592). An empty side gets no tab.
  */
 export function splitFeesByAudience(fees: DisplayFee[]): AudienceSplit | null {
-  if (!fees.some((fee) => fee.feeAudience === "business")) return null;
+  if (!fees.some(isBusinessFee)) return null;
   return {
-    personal: fees.filter((fee) => countsAsPersonal(fee.feeAudience)),
-    business: fees.filter((fee) => fee.feeAudience === "business" || fee.feeAudience === "both"),
+    personal: fees.filter((fee) => !isBusinessFee(fee)),
+    business: fees.filter((fee) => isBusinessFee(fee) || fee.feeAudience === "both"),
   };
 }
 
@@ -398,7 +419,7 @@ function FeeList({
           </table>
         </div>
       </div>
-      <UnstatedAudienceFootnote show={fees.some((fee) => isAudienceUnstated(fee.feeAudience))} className="border-t border-surface-200 px-4 py-2" />
+      <UnstatedAudienceFootnote show={fees.some(showsUnstatedMark)} className="border-t border-surface-200 px-4 py-2" />
     </>
   );
 }

@@ -1020,7 +1020,7 @@ export function readUnderHeading(segment: string, heading: string): ExtractedFee
   const wireRow = FEE_FAMILY_HEADING.test(heading) && WIRE_ROW_LABEL.test(label);
   if (!wireRow && (label.replace(/\([^)]*\)/g, " ").match(/\b[A-Z][\w'’&/-]*/g) ?? []).length > 2) return [];
   if (after.includes(CELL_SEPARATOR) && /[a-z]{3,}/i.test(after.slice(after.indexOf(CELL_SEPARATOR)))) return [];
-  // v91 (#1827): a line that opens with its price and names a fee of its own after it ("Safe
+  // v92 (#1827): a line that opens with its price and names a fee of its own after it ("Safe
   // Deposit Box Fees" / "$100.00 Safe Deposit Box Drilling/Per Box") is that fee's row in a
   // price-first list, so the heading never takes its price.
   const namedAfter = label ? null : nameAfterPrice(after.trim().slice(after.trim().match(QUALIFIER)?.[0].length ?? 0));
