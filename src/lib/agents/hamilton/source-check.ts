@@ -258,8 +258,36 @@ export function restorableExcerpt(fee: Pick<LiveFeeRow, "fee_name" | "amount" | 
     const lower = line.toLowerCase();
     const whole = lower.lastIndexOf(name);
     const at = whole >= 0 ? whole : lower.search(new RegExp(`\\b${firstWord}\\b`));
-    return at >= 0 && !PRICE.test(line.slice(0, at));
+    // "$25.00 for Incoming – Foreign Wires / $50.00 for Outgoing" puts each price before "for":
+    // a line that reaches the name through "for" carries the next row's price (pub 90951).
+    return at >= 0 && !PRICE.test(line.slice(0, at)) && !/\bfor\s*$/i.test(line.slice(0, at));
   });
+}
+
+/**
+ * The amount as the document would print it: "$25", "$25.00", "$ 25.00"; cents when it has them.
+ * Never "$25,000" or "$25.50". "$1,000.00" is not found for a $1,000 fee, which refuses the restore.
+ */
+function printedPrice(amount: number): RegExp {
+  const [whole, cents] = amount.toFixed(2).split(".");
+  const tail = cents === "00" ? "(?:\\.00)?" : `\\.${cents}`;
+  return new RegExp(`\\$\\s*${whole}${tail}(?![\\d.,]*\\d)`);
+}
+
+/**
+ * Pure: does the fee's own document still print what the restore claims? The re-read must still
+ * find the name (only `amount_not_the_fee`, never `name_not_in_text`) and print the price
+ * somewhere in it. Lane speed's re-sample of restores (Oct 20) could not prove 8 of 20 from the
+ * bank's document: names missing from the current text, or a run of names with no prices at all.
+ */
+export function restoreStillPrinted(fee: LiveFeeRow, texts: InstitutionText[], reason: string): boolean {
+  if (reason !== "amount_not_the_fee") return false;
+  const ownId = fee.source_document_id == null ? null : Number(fee.source_document_id);
+  const own = texts.find((text) => Number(text.source_document_id) === ownId);
+  if (own == null) return false;
+  const text = (own.normalized_text ?? "").replace(/\s+/g, " ").toLowerCase();
+  const name = fee.fee_name.replace(/\s+/g, " ").trim().toLowerCase();
+  return name.length > 0 && text.includes(name) && printedPrice(Number(fee.amount)).test(own.normalized_text ?? "");
 }
 
 const GLUED_COLUMNS = /\s\|\s|\/.*\/|\s\/$/;
@@ -472,7 +500,7 @@ export async function takeDownUntraceableFees(
     const institutionTexts = textsByInstitution.get(institutionId) ?? [];
     const verdict = traceLiveFee(fee, institutionTexts);
     const readerLost = verdict.kind === "untraceable" && readerLostLine(fee, institutionTexts, verdict.reason);
-    if (readerLost && !(fee.taken_down && !(READER_LOSS_RESTORES_ON && restorableName(fee.fee_name) && restorableExcerpt(fee)))) {
+    if (readerLost && !(fee.taken_down && !(READER_LOSS_RESTORES_ON && restorableName(fee.fee_name) && restorableExcerpt(fee) && restoreStillPrinted(fee, institutionTexts, verdict.reason)))) {
       // The re-read lost the line, not the bank: keep it live (or put it back once restores are on).
       result.readerLost += 1;
       counts.checked += 1;

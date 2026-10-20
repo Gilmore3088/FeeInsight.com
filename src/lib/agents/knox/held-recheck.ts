@@ -648,7 +648,7 @@ export async function setAsideRangeBands(
  *   "No category fits";
  * - the store: with no label, a name that says fee or charge and is live (`published_fee_records`,
  *   flat, not rolled back or quarantined) under exactly one category at `SETTLED_NAME_MIN_BANKS` or
- *   more banks, and no other category, is settled ("Returned Statement Fee" at 3 banks, account research; "Rush Fee" at 6, rush card).
+ *   more banks, and no other category, is settled ("Rush Fee" at 6 banks, rush card).
  *
  * A store decision files only a name that says fee or charge ("Minimum Balance" is a requirement,
  * and a box size's name key is only "x"). A line moves only when its own price is a plain price for

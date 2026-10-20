@@ -127,6 +127,20 @@ extract, verify and publish stages that have an identical twin both before and a
 and last copies stay; rows with no institution stay). Fees and audit records are never in scope. It deletes rows, so the pipeline
 pause holds it.
 
+Legacy event-log partitions (`legacy-event-partitions.ts`, James, Oct 19, 2026): before the row
+trim, every `public.agent_events_YYYY_MM` partition whose whole month ends before the 60-day
+cutoff is dropped whole, which returns its disk (a row delete does not). It is found through
+`pg_inherits`; the default partition, `*_archived` tables, the month the cutoff falls in (its
+old rows stay with the row trim) and current or future months are never selected, and
+`agent_auth_log` is not in scope. Each partition goes in its own committed transaction on a
+connection outside the step's (3 s lock timeout): lock the parent, count, refuse (roll back) if
+any row is newer than the cutoff, record an `atlas.storage.partition_dropped` run event on the
+step, then call `public.drop_expired_legacy_event_partition` (migration 20270110000072), which
+re-checks the scope in the database (direct child, not default or archived, upper bound before
+the cutoff) and detaches and drops it. No DDL lives in `src` (`runtime-ddl-kill`).
+A dry run, or the switch off, only lists and measures them in the step detail
+(`trims[].partitions`). It is a deterministic step, not a provider step.
+
 ### Document vault (`vault-retention.ts`, #1041)
 
 The same step measures the R2 document vault from `source_documents` (one object per distinct

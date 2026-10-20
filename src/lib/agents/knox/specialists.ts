@@ -149,7 +149,8 @@ import { internationalWireEligibility } from "./international-wire-eligibility";
 // prices; the same bounded own-price refusal applies to free, paid and live rechecks.
 // v89 (#1102): the held-name rules are on (stop pay, reconveyance, early closure, paper
 // statements, box sizes, IRA close-outs); returned statements stay held (James's v26 call).
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 89 } as const;
+// v90: returned statements file as returned mail (James's decision card, Oct 20, "File them").
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 90 } as const;
 
 export interface SpecialistRun {
   strategy: string;

@@ -31,6 +31,10 @@
 #                 Fail if docs/project/FINDINGS.md gains an entry dated after 2026-10-09, a findings/ file is misnamed,
 #                 a finding this PR adds or changes has neither a **Guard:** nor an **Agent lesson:** line, or an
 #                 **Agent lesson:** line names a lesson id that does not exist.
+#   migration-lock-kill
+#                 Fail if a migration newer than 20270110000071 locks a busy fee, source or run table
+#                 (ALTER/LOCK/TRUNCATE TABLE, CREATE or DROP INDEX, a catalog view, a trigger, a policy)
+#                 without first setting lock_timeout.
 #   queue-owner-kill
 #                 Fail if a migration creates a *_queue table that src/lib/agents/queue-registry.ts does not list
 #                 (every queue has an owner agent, a size/age query and alarm limits).
@@ -774,6 +778,48 @@ findings_file_kill() {
   echo "findings-file-kill: OK (new and changed findings are one file each in docs/project/findings/ and name their guard or lesson; ${old} older findings name neither)"
 }
 
+migration_lock_kill() {
+  # Migration 20270110000048 queued every read of raw_fee_observations and both catalog views
+  # behind its ALTER until its own `SET lock_timeout = '5s'` cancelled it, while a pipeline step
+  # held the table (2026-10-15-migration-lock-timeout). That timeout is what kept the queue to 5
+  # seconds: a migration that locks a busy table sets lock_timeout before its first locking
+  # statement, so it fails fast and is retried instead of queueing reads without limit (DECISIONS,
+  # Oct 15: no pipeline pause). Files numbered up to $from are applied history and are not re-checked.
+  local from="20270110000071" names busy index_names drop_index="" stmt problems="" file number flat first set_at
+  names='raw_fee_observations|verified_fee_observations|published_fee_records|published_fee_catalog|published_fee_rate_catalog|institution_sources|source_documents|agent_source_texts|agent_runs|agent_run_steps|agent_run_events'
+  busy="(\"?public\"?\\.)?\"?(${names})\"?([^a-z0-9_]|\$)"
+  # One line per file, -- and /* */ comments dropped, lower case, so a statement split over lines still matches.
+  flatten() {
+    sed -E 's/--.*$//' "$1" | tr '\n' ' ' | tr '[:upper:]' '[:lower:]' | tr -s '[:space:]' ' ' \
+      | sed -E 's#/\*([^*]|\*+[^*/])*\*+/# #g'
+  }
+  # Indexes on the busy tables, from every migration, so DROP INDEX on one of them is caught too.
+  index_names=$(for file in supabase/migrations/*.sql; do [[ -f "$file" ]] && flatten "$file"; echo; done \
+    | grep -oE "create (unique )?index (concurrently )?(if not exists )?[a-z0-9_.\"]+ on (only )?${busy}" \
+    | sed -E 's/^create (unique )?index (concurrently )?(if not exists )?([a-z0-9_."]+) on .*/\4/; s/"//g; s/^public\.//' \
+    | sort -u | paste -sd'|' - || true)
+  [[ -n "$index_names" ]] && drop_index="|drop index (concurrently )?(if exists )?(\"?public\"?\\.)?\"?(${index_names})\"?([^a-z0-9_]|\$)"
+  stmt="(^|[^a-z0-9_])((alter table (if exists )?(only )?|lock (table )?(only )?|(create|drop) (or replace )?(materialized )?view (if exists )?|alter (materialized )?view (if exists )?|create (unique )?index [^;]* on (only )?|(create|drop) trigger [^;]* on |(create|alter|drop) policy [^;]* on (only )?|truncate (table )?(only )?([^;]*[ ,])?)${busy}${drop_index})"
+  for file in supabase/migrations/*.sql; do
+    [[ -f "$file" ]] || continue
+    number=$(basename "$file" | cut -d_ -f1)
+    [[ ${#number} -eq 14 && "$number" > "$from" ]] || continue
+    flat=$(flatten "$file")
+    first=$(printf '%s' "$flat" | grep -boE "$stmt" | head -1 | cut -d: -f1 || true)
+    [[ -n "$first" ]] || continue
+    set_at=$(printf '%s' "$flat" | grep -boE 'set (local )?lock_timeout' | head -1 | cut -d: -f1 || true)
+    if [[ -z "$set_at" || "$set_at" -gt "$first" ]]; then
+      problems+="${file}"$'\n'
+    fi
+  done
+  if [[ -n "$problems" ]]; then
+    echo "migration-lock-kill: a migration that locks a busy fee, source or run table sets lock_timeout (e.g. SET lock_timeout = '10s';) before its first locking statement, so it fails fast instead of queueing every read; confirm on prod that it applied (2026-10-15-migration-lock-timeout):" >&2
+    printf '%s' "$problems" >&2
+    exit 1
+  fi
+  echo "migration-lock-kill: OK (migrations after ${from} that lock a busy table set lock_timeout first)"
+}
+
 queue_owner_kill() {
   # Every queue has an owner and an alarm (#1108). A migration that creates a *_queue table must
   # have that table listed in an entry's `tables` in src/lib/agents/queue-registry.ts, which gives
@@ -1007,6 +1053,7 @@ lesson_kill() {
 case "$SUBCOMMAND" in
   lesson-kill) lesson_kill ;;
   queue-owner-kill) queue_owner_kill ;;
+  migration-lock-kill) migration_lock_kill ;;
   sqlite-kill) sqlite_kill ;;
   modal-kill) modal_kill ;;
   legacy-kill) legacy_kill ;;
@@ -1037,12 +1084,12 @@ case "$SUBCOMMAND" in
   api-docs-kill) api_docs_kill ;;
   runtime-ddl-kill) runtime_ddl_kill ;;
   "")
-    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill|findings-file-kill|guide-version-kill|bayes-manifest-kill|api-docs-kill|runtime-ddl-kill|lesson-kill|queue-owner-kill>" >&2
+    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill|findings-file-kill|guide-version-kill|bayes-manifest-kill|api-docs-kill|runtime-ddl-kill|lesson-kill|queue-owner-kill|migration-lock-kill>" >&2
     exit 2
     ;;
   *)
     echo "Unknown subcommand: $SUBCOMMAND" >&2
-    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill|findings-file-kill|guide-version-kill|bayes-manifest-kill|api-docs-kill|runtime-ddl-kill|lesson-kill|queue-owner-kill>" >&2
+    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill|findings-file-kill|guide-version-kill|bayes-manifest-kill|api-docs-kill|runtime-ddl-kill|lesson-kill|queue-owner-kill|migration-lock-kill>" >&2
     exit 2
     ;;
 esac
