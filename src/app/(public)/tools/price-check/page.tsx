@@ -180,14 +180,14 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
             fee is answered, the form folds to one line so the answer leads on a phone. */}
         <section aria-labelledby="pc-heading" className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)] lg:items-end">
           <header className={`mx-auto max-w-xl sm:mx-0 ${PAGE_HEADER}`}>
-            <p className={EYEBROW}>{COPY.eyebrow}</p>
+            <p className={`${EYEBROW} sm:mx-0`}>{COPY.eyebrow}</p>
             <h1
               id="pc-heading"
               className={`mt-2 font-semibold leading-tight tracking-[-0.03em] text-ink ${answered ? "text-[22px] sm:text-[28px]" : "text-[30px] sm:text-[40px]"}`}
             >
               {COPY.title}
             </h1>
-            {!answered && <p className="mt-2 text-[15px] text-ink-muted">{COPY.intro}</p>}
+            {!answered && <p className="mt-2 text-[15px] text-ink-muted sm:mx-0">{COPY.intro}</p>}
           </header>
           {answered && price !== null ? (
             <details className="group rounded-2xl border border-border bg-surface-0 shadow-fi-1">
