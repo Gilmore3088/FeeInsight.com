@@ -366,8 +366,10 @@ export default async function ArticlePage({ params }: PageProps) {
                   href="/reports/sample-competitive-fee-position"
                   className={`${SECONDARY} ${FOCUS}`}
                 >
-                  See the sample {REPORT_OFFER.name}
-                  <ArrowRight className="size-4" aria-hidden="true" />
+                  <span className="[text-wrap:balance]">
+                    See the sample {REPORT_OFFER.name}
+                    <ArrowRight className="ml-2 inline size-4 align-[-3px]" aria-hidden="true" />
+                  </span>
                 </TrackLink>
               ) : (
                 <TrackLink
@@ -376,8 +378,10 @@ export default async function ArticlePage({ params }: PageProps) {
                   href={DEMO_REQUEST_NAV.href}
                   className={`${SECONDARY} ${FOCUS}`}
                 >
-                  {DEMO_REQUEST_NAV.standaloneLabel}
-                  <ArrowRight className="size-4" aria-hidden="true" />
+                  <span className="[text-wrap:balance]">
+                    {DEMO_REQUEST_NAV.standaloneLabel}
+                    <ArrowRight className="ml-2 inline size-4 align-[-3px]" aria-hidden="true" />
+                  </span>
                 </TrackLink>
               )}
             </div>
