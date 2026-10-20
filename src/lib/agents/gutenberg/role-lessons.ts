@@ -236,4 +236,14 @@ export const GUTENBERG_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-15",
   },
+  {
+    id: "product-page-evidence",
+    agent: "gutenberg",
+    stage: "product-page conflict",
+    lesson: "Judge a product page only against schedule lines that can speak for it: the same item word for word, on the same website, priced above $0, and fetched no earlier than the page. Another division's schedule, a \"Free\" benefits list or an older PDF is not evidence against a newer page.",
+    why: "After the same-item rule, a re-sample still found 8 of 20 takedowns wrong and 9 doubtful: Popular's populardirect.com schedule against popularbank.com, a \"Free\" list beside the $15 price, \"Rush Card\" against \"International Rush Card\", and GTE's newer full schedule losing to an older PDF.",
+    evidence: { issues: [978], prs: [2440], files: ["src/lib/agents/hamilton/product-page-conflict.ts"] },
+    appliesTo: ["publish", "publish-index", "publish-context"],
+    since: "2026-10-20",
+  },
 ];
