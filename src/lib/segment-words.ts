@@ -71,3 +71,29 @@ export function shortSegmentLabel(s: SegmentFields): string {
   const where = s.stateCode ? ` in ${STATE_NAMES[s.stateCode] ?? s.stateCode}` : "";
   return s.largest !== null ? `the ${s.largest} largest ${size}${who}${where}` : `${size}${who}${where}`;
 }
+
+/** A label that already carries its own count and article: "the 25 largest banks in Texas". */
+const COUNTED_LABEL = /^the (\d[\d,]*) largest /;
+
+function ownCount(label: string): number | null {
+  const m = label.match(COUNTED_LABEL);
+  return m ? Number(m[1].replace(/,/g, "")) : null;
+}
+
+/**
+ * n members of a group, for a count slot ("of ...", "Only 2 of ...", a sentence start):
+ * "5 $10B+ banks", "5 of the 25 largest banks", or "the 25 largest banks" when n is the whole
+ * group. A label that already says "the N largest" never takes a second bare count (#2028).
+ */
+export function countedGroup(n: number, label: string, word: string = n.toLocaleString("en-US")): string {
+  const total = ownCount(label);
+  if (total === null) return `${word} ${label}`;
+  return n === total ? label : `${word} of ${label}`;
+}
+
+/** The same with "the" in front, for "None of ..." and "The ... that publish": "the 5 $10B+ banks", "the 5 of the 25 largest banks". */
+export function theCountedGroup(n: number, label: string, word: string = n.toLocaleString("en-US")): string {
+  const total = ownCount(label);
+  if (total === null) return `the ${word} ${label}`;
+  return n === total ? label : `the ${word} of ${label}`;
+}

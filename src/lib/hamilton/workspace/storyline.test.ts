@@ -300,6 +300,36 @@ describe("storyline", () => {
     ]);
   });
 
+  it("counts a 'the N largest' segment as 'n of the N largest' in every storyline line (#2028)", () => {
+    const question = "Which credit unions in the top 25 of the $1 billion to $10 billion tier run a fee share below 4%?";
+    const segment = parseSegment(question)!;
+    const members: SegmentMember[] = [10, 0, 36, 35, 38].map((amount, i) => ({
+      institutionId: 300 + i,
+      institutionName: `Big CU ${i + 1}`,
+      amount,
+      stateCode: "NY",
+      sourceDocumentIds: [i],
+      documentUrls: [`https://example.org/cu-${i}.pdf`],
+      publishedAt: "2026-09-20",
+      totalAssets: 9_000_000 - i * 10_000,
+      charterType: "credit_union",
+      dailyCap: null,
+      dailyFeeLimit: null,
+    }));
+    const story = (current: number) => {
+      const seg = buildSegmentResearch({ segment, feeCategory: "overdraft", institutionsInSegment: 25, members, current, ownInSegment: true });
+      return buildFeeAnswer(research({ current, segment: seg }), { focus: "competitors" }).storyline!;
+    };
+    const mid = story(32);
+    expect(mid.exhibits[0].actionTitle).toBe("5 of the 25 largest $1B to $10B credit unions publish an overdraft fee, 1 at $0; the median is $35.");
+    expect(mid.lenses.market[0].text).toMatch(/^2 of 5 of the 25 largest \$1B to \$10B credit unions charge less than your \$32; the lowest/);
+    const archetype = mid.exhibits.find((e) => e.exhibit.kind === "archetype_map");
+    expect(archetype?.actionTitle).toMatch(/^Of 5 of the 25 largest \$1B to \$10B credit unions: /);
+    const low = story(0);
+    expect(low.lenses.market[0].text).toMatch(/^None of the 5 of the 25 largest \$1B to \$10B credit unions charge less than your \$0/);
+    expect(JSON.stringify([mid, low])).not.toMatch(/\d the \d/);
+  });
+
   it("states where the price sits against local competitors without judging it", () => {
     const lowest = buildFeeAnswer({ ...research(), current: 20 }).storyline!.lenses.market.map((f) => f.text);
     expect(lowest[0]).toBe("None of the 3 local competitors charge less than your $20; the highest is Peer 101 ($35).");
