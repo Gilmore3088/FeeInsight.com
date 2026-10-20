@@ -53,11 +53,15 @@ export async function observeReferenceDocument(input: ReferenceInput, options: {
   try { website = new URL(key.websiteUrl ?? ""); target = urlKey(key.documentUrl); }
   catch { incomplete("invalid_reference_url"); return { pages, discovery }; }
   discovery.entryUrls.push(website.href);
-  const queue: Array<{ url: string; official: boolean }> = [{ url: website.href, official: true }, { url: target, official: false }];
+  // A hub is navigation that may lead to a schedule; every other entry could be one.
+  const queue: Array<{ url: string; official: boolean; hub: boolean }> = [
+    { url: website.href, official: true, hub: false }, { url: target, official: false, hub: false }];
   const seen = new Set<string>();
   const officialPaths = new Set<string>([urlKey(website.href)]);
   while (queue.length > 0 && pages.length < MAX_PAGES && !options.signal.aborted) {
-    const next = queue.shift()!;
+    // Fee-schedule-like links are observed before navigation hubs within the page cap.
+    const nextIndex = queue.findIndex((item) => !item.hub);
+    const next = queue.splice(nextIndex >= 0 ? nextIndex : 0, 1)[0];
     const requested = urlKey(next.url);
     if (seen.has(requested)) continue;
     seen.add(requested);
@@ -103,12 +107,13 @@ export async function observeReferenceDocument(input: ReferenceInput, options: {
       for (const candidate of candidates) {
         if (!discovery.candidateUrls.includes(candidate.url)) discovery.candidateUrls.push(candidate.url);
         if (fromOfficial) officialPaths.add(candidate.url);
-        if (!seen.has(candidate.url)) queue.push({ url: candidate.url, official: fromOfficial });
+        if (!seen.has(candidate.url)) queue.push({ url: candidate.url, official: fromOfficial, hub: false });
       }
-      // Same-site hubs are observed too; ignoring a pending hub because of the page limit
-      // is explicitly incomplete evidence. No guessed paths or provider search is used.
+      // Same-site hubs are observed when the page cap allows. A hub left unvisited is not
+      // evidence of a newer schedule (#2466); a fee-schedule-like link left unvisited is.
+      // No guessed paths or provider search is used.
       for (const hub of hubPages(links, website, seen, 160)) {
-        if (!seen.has(hub.url)) queue.push({ url: hub.url, official: fromOfficial && sameSite(new URL(finalUrl), website) });
+        if (!seen.has(hub.url)) queue.push({ url: hub.url, official: fromOfficial && sameSite(new URL(finalUrl), website), hub: true });
       }
       if (fromOfficial && (requested === target || finalUrl === target)) discovery.linkedFromOfficialSite = true;
       if (officialPaths.has(target)) discovery.linkedFromOfficialSite = true;
@@ -119,7 +124,7 @@ export async function observeReferenceDocument(input: ReferenceInput, options: {
         sourceDocumentId: null, sourceTextId: null, textHash: null, status: 0, text: "", links: [] });
     } finally { clearTimeout(timer); }
   }
-  if (queue.some((item) => !seen.has(urlKey(item.url)))) incomplete(options.signal.aborted ? "total_budget" : "page_limit");
+  if (queue.some((item) => !item.hub && !seen.has(urlKey(item.url)))) incomplete(options.signal.aborted ? "total_budget" : "page_limit");
   if (options.signal.aborted) incomplete("total_budget");
   discovery.candidateUrls = [...new Set(discovery.candidateUrls)];
   if (discovery.candidateUrls.length > 160) { discovery.candidateUrls = discovery.candidateUrls.slice(0, 160); incomplete("candidate_limit"); }

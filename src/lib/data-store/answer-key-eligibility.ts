@@ -153,6 +153,8 @@ export function audienceHeading(line: string, audience: "consumer" | "business")
   return new RegExp(`^(?:${words})(?: (?:banking|deposit|account|accounts|service|services|fee|fees|schedule|of|and|&|charges|disclosure|disclosures|listing|for|members)){1,10}$`, "i").test(title)
     && /\b(?:fees?|schedule|charges|accounts?)\b/i.test(title);
 }
+/** A short line that opens with a business audience word ("Business Checking", "Commercial Accounts"). */
+const BUSINESS_SECTION = /^(?:small business|business|commercial|corporate|treasury)\b(?! days?\b)[^$0-9.!?;]{0,60}$/i;
 const LEGACY = /\b(?:closed to new (?:customers|accounts)|no longer (?:available|offered) to open|previously offered (?:accounts|products)|legacy accounts? (?:only|closed))\b/i;
 
 /** A positive audience attestation requires the key's own lines in consumer scope. */
@@ -168,14 +170,21 @@ function consumerFact(key: ReferenceKeySnapshot, page: ReferencePageObservation)
     || /\bBusiness Account Disclosures\b/i.test(text) || businessHeading)) {
     return fact("fail", "business_document");
   }
-  if (!consumerHeading) return fact("unknown", "consumer_scope_unproven");
-  if (isBusinessOnlyLink(page.finalUrl) && !businessHeading) return fact("unknown", "business_url_consumer_scope_conflict");
+  if (consumerHeading && isBusinessOnlyLink(page.finalUrl) && !businessHeading) return fact("unknown", "business_url_consumer_scope_conflict");
   if (key.fees.some((fee) => fee.status === "confirmed" && fee.canonicalKey !== "unmapped" && !fee.sourceLine?.trim())) {
     return fact("unknown", "key_line_scope_missing");
   }
   const observedText = compact(text);
   if (key.fees.some((fee) => fee.canonicalKey !== "unmapped" && !observedText.includes(compact(fee.sourceLine ?? "")))) {
     return fact("unknown", "key_line_not_in_reference");
+  }
+  // Only a combined schedule needs a consumer heading to separate its sections (#2466).
+  // A schedule with no audience heading, no business evidence and every key line present
+  // is the consumer reference; a bare business section label still leaves scope unproven.
+  if (!consumerHeading) {
+    return lines.some((line) => BUSINESS_SECTION.test(line.trim()))
+      ? fact("unknown", "consumer_scope_unproven")
+      : fact("pass", "consumer_reference_lines_no_business_evidence");
   }
   // Combined schedules are eligible only for reference lines in their consumer section.
   // A business heading switches scope; navigation words do not attest either scope.
@@ -218,15 +227,43 @@ function urlKey(value: string): string | null {
   try { const url = new URL(value); url.hash = ""; return url.href; } catch { return null; }
 }
 
+/** HTML only when every signal agrees; PDFs and plain text stay byte-bound. */
+function htmlReference(key: ReferenceKeySnapshot, page: ReferencePageObservation): boolean {
+  return /html/i.test(page.contentType ?? "") && !/pdf/i.test(`${page.contentType} ${key.documentType}`)
+    && !/\.pdf(?:[?#]|$)/i.test(page.finalUrl);
+}
+
+/**
+ * An HTML page's bytes change on every fetch (scripts, tokens, timestamps), so it is bound to
+ * its extracted main text instead (#2466): the key's hash names these bytes or this main text,
+ * or every mapped confirmed key line is in the observed main text.
+ */
+function htmlReferenceBound(key: ReferenceKeySnapshot, keyHash: string | null, page: ReferencePageObservation,
+  sources: ReferenceSourceIdentity[]): boolean {
+  const textHash = page.textHash?.toLowerCase() ?? null;
+  if (keyHash && (keyHash === page.contentHash.toLowerCase() || keyHash === textHash
+    || (textHash && sources.some((source) => source.contentHash?.toLowerCase() === keyHash && source.textHash?.toLowerCase() === textHash)))) {
+    return true;
+  }
+  const mapped = key.fees.filter((fee) => fee.status === "confirmed" && fee.canonicalKey !== "unmapped");
+  const observedText = compact(page.text);
+  return mapped.length > 0 && mapped.every((fee) => !!fee.sourceLine?.trim() && observedText.includes(compact(fee.sourceLine)));
+}
+
 function currentFact(key: ReferenceKeySnapshot, page: ReferencePageObservation | undefined,
   pages: ReferencePageObservation[], discovery: ReferenceDiscoveryEvidence, asOf: string, sources: ReferenceSourceIdentity[]): ReferenceEligibilityFact {
   if (!page || page.status !== 200 || !page.text.trim()) return fact("unknown", "reference_unreadable");
   if (LEGACY.test(page.text)) return fact("fail", "legacy_not_current");
-  if (!key.contentHash || !/^[a-f0-9]{64}$/i.test(key.contentHash)) return fact("unknown", "reference_hash_missing");
-  if (key.contentHash.toLowerCase() !== page.contentHash.toLowerCase()) return fact("unknown", "reference_bytes_changed");
+  const keyHash = key.contentHash && /^[a-f0-9]{64}$/i.test(key.contentHash) ? key.contentHash.toLowerCase() : null;
+  if (!htmlReference(key, page)) {
+    if (!keyHash) return fact("unknown", "reference_hash_missing");
+    if (keyHash !== page.contentHash.toLowerCase()) return fact("unknown", "reference_bytes_changed");
+  } else if (!htmlReferenceBound(key, keyHash, page, sources)) {
+    return fact("unknown", "reference_main_text_changed");
+  }
   // A fresh bounded link observation cannot erase an explicit stored supersession
   // of these exact key bytes. Duplicate pointers or status alone do not prove it.
-  if (sources.some((source) => source.contentHash?.toLowerCase() === key.contentHash!.toLowerCase() && source.supersededById != null)) {
+  if (keyHash && sources.some((source) => source.contentHash?.toLowerCase() === keyHash && source.supersededById != null)) {
     return fact("unknown", "reference_source_superseded");
   }
   const date = effectiveDate(page.text);
