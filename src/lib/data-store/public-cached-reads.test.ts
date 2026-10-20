@@ -1,24 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// A stand-in for Next's data cache that also records whether a cached read started while
-// another cached read was running. Next bypasses an unstable_cache nested inside another one,
-// so a nested read reaches the database on every miss of the outer entry.
-const state = vi.hoisted(() => ({ store: new Map<string, unknown>(), depth: 0, nested: [] as string[] }));
+// A stand-in for Next's data cache that also records whether a cached read started inside
+// another cached read. Next bypasses an unstable_cache nested inside another one, so a nested
+// read reaches the database on every miss of the outer entry. Nesting is tracked per async call
+// chain (AsyncLocalStorage), so two reads running side by side do not count as nested.
+const state = await vi.hoisted(async () => {
+  const { AsyncLocalStorage } = await import("node:async_hooks");
+  return { store: new Map<string, unknown>(), inside: new AsyncLocalStorage<string>(), nested: [] as string[] };
+});
 
 vi.mock("next/cache", () => ({
   unstable_cache: <A extends unknown[], R>(fn: (...args: A) => Promise<R>, keyParts: string[]) =>
     async (...args: A): Promise<R> => {
       const key = JSON.stringify([keyParts, args]);
       if (state.store.has(key)) return state.store.get(key) as R;
-      if (state.depth > 0) state.nested.push(keyParts[1]);
-      state.depth++;
-      try {
-        const value = await fn(...args);
-        state.store.set(key, value);
-        return value;
-      } finally {
-        state.depth--;
-      }
+      if (state.inside.getStore() !== undefined) state.nested.push(keyParts[1]);
+      const value = await state.inside.run(key, () => fn(...args));
+      state.store.set(key, value);
+      return value;
     },
 }));
 
@@ -43,11 +42,11 @@ vi.mock("./peer-fee-rank", async (importOriginal) => ({
   peerRankFromGroupValues: (id: number) => ({ institution_id: id }),
 }));
 
+import { unstable_cache } from "next/cache";
 import { getInstitutionHeadlineCoverageCached, getInstitutionPeerRankCached } from "./public-cached-reads";
 
 beforeEach(() => {
   state.store.clear();
-  state.depth = 0;
   state.nested = [];
   reads.coverage.mockClear();
   reads.peerValues.mockClear();
@@ -69,5 +68,23 @@ describe("institution page peer rank", () => {
     await getInstitutionHeadlineCoverageCached([1, 2]);
     expect(reads.coverage).toHaveBeenCalledTimes(1);
     expect(reads.peerValues).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("the nesting check itself", () => {
+  const tick = () => new Promise((done) => setTimeout(done, 1));
+
+  it("does not count two cached reads running side by side as nested", async () => {
+    const a = unstable_cache(async () => { await tick(); return 1; }, ["test", "side-a"]);
+    const b = unstable_cache(async () => { await tick(); return 2; }, ["test", "side-b"]);
+    await Promise.all([a(), b()]);
+    expect(state.nested).toEqual([]);
+  });
+
+  it("counts a cached read that starts inside another", async () => {
+    const inner = unstable_cache(async () => { await tick(); return 1; }, ["test", "inner"]);
+    const outer = unstable_cache(async () => { await tick(); return inner(); }, ["test", "outer"]);
+    await outer();
+    expect(state.nested).toEqual(["inner"]);
   });
 });

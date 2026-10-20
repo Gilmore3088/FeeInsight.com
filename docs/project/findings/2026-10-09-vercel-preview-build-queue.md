@@ -30,4 +30,4 @@ next merge of `origin/main`.
 Not visible from GitHub: Vercel's own queue, its concurrency setting, and whether "Prioritize
 Production Builds" is on. Those live in the Vercel dashboard.
 
-**Guard:** `src/lib/vercel-config.test.ts:80` (runs `ignoreCommand` in a throwaway repo: a preview push that changes only docs or tests skips; `:89` production always builds)
+**Guard:** `src/lib/vercel-config.test.ts:81` (runs `ignoreCommand` in a throwaway repo: a preview push that changes only docs or tests skips; `:90` production always builds)

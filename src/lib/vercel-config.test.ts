@@ -70,6 +70,7 @@ describe("vercel.json ignoreCommand", () => {
 
   /** The exit code of ignoreCommand after a commit that changes `path`: 0 skips, 1 builds. */
   function exitAfter(path: string, vercelEnv: "preview" | "production"): number | null {
+    if (repo) rmSync(repo, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     repo = mkdtempSync(join(tmpdir(), "vercel-ignore-"));
     git("init", "-q", "-b", "main");
     commit("src/app/page.tsx");

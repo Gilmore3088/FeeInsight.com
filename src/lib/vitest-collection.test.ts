@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { configDefaults } from "vitest/config";
 import { describe, expect, it } from "vitest";
+import vitestConfig from "../../vitest.config";
 
 const root = join(__dirname, "..", "..");
 
@@ -17,6 +18,9 @@ function importsNodeTest(source: string): boolean {
 describe("files Vitest collects (2026-10-09-backlog-node-test-discovery)", () => {
   it("keeps Vitest's default include, which the scan below mirrors", () => {
     expect(configDefaults.include).toEqual(["**/*.{test,spec}.?(c|m)[jt]s?(x)"]);
+    // vitest.config.ts sets no include of its own (or one equal to the default).
+    const include = (vitestConfig as { test?: { include?: string[] } }).test?.include;
+    expect(include ?? configDefaults.include).toEqual(configDefaults.include);
   });
 
   it("collects no node:test suite: a Node-runner check is named *.node-check.mjs", () => {
