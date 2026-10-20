@@ -187,6 +187,12 @@ export function PeerSetManager({
         {workspaceName ? ` Groups you add are shared with everyone on ${workspaceName}'s team.` : ""}
       </p>
 
+      {prefill && !canAdd ? (
+        <p role="status" className="text-sm text-warm-700">
+          {`Viewers can't save peer groups. An owner, admin or analyst on ${workspaceName}'s team can save this one.`}
+        </p>
+      ) : null}
+
       {error && (
         <p role="alert" className="rounded-md border border-terra/40 bg-terra-soft px-3 py-2 text-sm text-terra-text">
           {error}
@@ -347,7 +353,7 @@ function PeerSetForm({
 }) {
   const fieldLabel = "block text-sm font-medium text-warm-800";
   const [mode, setMode] = useState<"filters" | "institutions">(
-    initial?.institution_ids?.length || prefill ? "institutions" : "filters",
+    initial?.institution_ids?.length || (prefill && !prefill.tooLarge) ? "institutions" : "filters",
   );
   const [chosen, setChosen] = useState<{ id: number; name: string }[]>(
     prefill
@@ -389,7 +395,11 @@ function PeerSetForm({
       {researchInstitutionId !== undefined ? <input type="hidden" name="research_institution_id" value={researchInstitutionId ?? ""} /> : null}
       {prefill ? (
         <div role="status" className="rounded-md border border-warm-200 bg-warm-50 px-3 py-2 text-sm text-warm-800">
-          <p>Peers from the link you followed. Nothing is saved until you choose Save this set.</p>
+          <p>
+            {prefill.tooLarge
+              ? `${prefill.name ?? "The set from the link you followed"} is too large to copy as a peer group, so its institutions aren't filled in. Set up a group like it by charter, state and size, or choose up to ${MAX_CHOSEN_PEERS} institutions by name.`
+              : "Peers from the link you followed. Nothing is saved until you choose Save this set."}
+          </p>
           {prefill.fee || prefill.asOf ? (
             <p className="mt-1 text-warm-600">
               {prefill.fee ? `Fee: ${prefill.fee.label}.` : ""}
@@ -404,7 +414,7 @@ function PeerSetForm({
         <input
           name="name"
           maxLength={MAX_PEER_SET_NAME_LENGTH}
-          defaultValue={initial?.name ?? prefill?.name ?? ""}
+          defaultValue={initial?.name ?? (prefill?.tooLarge ? null : prefill?.name) ?? ""}
           className={inputClass}
           placeholder="Leave blank to name this group from your selection"
         />
@@ -590,7 +600,7 @@ function PeerSetForm({
           disabled={isPending}
           className="rounded-md bg-terra px-3.5 py-2 text-sm font-medium text-white hover:bg-terra-dark disabled:opacity-50"
         >
-          {isPending ? "Saving..." : initial ? "Save changes" : prefill ? "Save this set" : "Save peer group"}
+          {isPending ? "Saving..." : initial ? "Save changes" : prefill && !prefill.tooLarge ? "Save this set" : "Save peer group"}
         </button>
         <button
           type="button"

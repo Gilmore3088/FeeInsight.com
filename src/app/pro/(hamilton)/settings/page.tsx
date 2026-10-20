@@ -290,7 +290,7 @@ export default async function SettingsPage({
               user.id,
               selectedInstitution?.id ?? null,
               peerSetWorkspace?.institutionId ?? null,
-              peerSetPrefill ? [peerSetPrefill.peers.map((peer) => peer.id), peerSetPrefill.name, peerSetPrefill.fee?.key, peerSetPrefill.asOf] : null,
+              peerSetPrefill ? [peerSetPrefill.peers.map((peer) => peer.id), peerSetPrefill.name, peerSetPrefill.fee?.key, peerSetPrefill.asOf, peerSetPrefill.tooLarge] : null,
             ])}
             researchInstitutionId={selectedInstitution?.id ?? null}
             initialPeerSets={peerSets}
