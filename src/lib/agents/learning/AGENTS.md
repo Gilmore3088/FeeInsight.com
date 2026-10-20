@@ -154,6 +154,33 @@ Atlas's scoreboard reports **Knox survival**: of Knox fees ever published, the s
 live, overall and per strategy (`detail.knox_survival`). Yield rewards finding more fees;
 survival rewards finding fees that stay right.
 
+## Role lessons (L6, James, 2026-10-20)
+
+The playbook teaches an agent about one institution; role lessons teach it about its job. A lesson
+is one or two plain sentences on how the agent should work differently, taken from an issue whose
+root cause was in that agent.
+
+| Module | Role |
+|---|---|
+| `src/lib/agents/<agent>/role-lessons.ts` | The agent's lessons, as reviewed code: `{ id, agent, stage, lesson, why, evidence: { issues, prs, files }, appliesTo, since }`. `appliesTo` is step keys or `"all"`. Agents: atlas, magellan, hoovie, rosetta, knox, darwin, gutenberg, hamilton, deming. |
+| `lesson-types.ts`, `lesson-registry.ts` | The shared type and `ALL_AGENT_LESSONS`. |
+| `lesson-reader.ts` | `lessonsFor(agent, stepKey)` (newest first) and `lessonsForStep`, which charges `deming-*` steps to Deming and uses `STEP_OWNER` for publish (Gutenberg) and registry (Hoovie) steps. `lessonsForModel` builds the instructions block, at most `PROMPT_LESSON_LIMIT` (10) lessons. |
+| `lesson-sync.ts` | `atlas-lesson-sync`, a deterministic step in Atlas's daily scoreboard run. It upserts each lesson into `agent_lessons` on (agent_name, lesson_name), with `description` = the lesson and `evidence_refs` = `{ source: "repo", stage, why, applies_to, since, issues, prs, files }`. A repo lesson that is gone gets `superseded_by` = its own `lesson_id` (retired, no successor); rows it did not write are never touched; nothing is deleted. An agent with no `agent_registry` row (Deming, which runs as Atlas) is skipped and reported. Step detail: `inserted`, `updated`, `unchanged`, `superseded`, `skipped_agents`, `per_agent`. `readAgentLessons` feeds "What this agent has learned" on each agent page (`src/app/admin/agent-frame.tsx`). |
+
+Where lessons are used:
+- Every step: `finishAgenticStep` records the ids that apply as `detail.lessons_applied` (left out
+  when none apply).
+- Model calls send them as `system` instructions and log their ids in the usage metadata:
+  Magellan `discover-paid` (paid find, link pick, schedule search, website find), Rosetta
+  `read-paid`, Knox `extract-paid`, Darwin `verify-paid` (adjudication and release review), and
+  Hamilton's written answer (`written-answer`). Darwin's per-key review lessons from verdict scoring
+  stay in the review prompt beside them.
+
+The rule: a PR that closes an issue whose root cause is in a pipeline agent adds that agent's lesson
+in the same PR. `scripts/ci-guards.sh lesson-kill` fails a lesson with a missing field, another
+agent's name, a malformed id or date, a reused id, or a file the registry does not import. Every
+lesson must rest on the issue's own text; never invent a number.
+
 ## JSON parameters
 
 `src/lib/data-store/connection.ts` passes JSON text through unchanged

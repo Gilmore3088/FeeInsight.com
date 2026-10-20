@@ -3,6 +3,7 @@ import { prepareVerificationAudience, VerificationAudienceDeferred } from "./ver
 import { requireInternationalVerification } from "./international-verification";
 import { capturePaidSourceInputs, requireCurrentPaidInput, type SelectedPaidInput } from "./paid-input";
 import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
+import { lessonsForModel } from "@/lib/agents/learning/lesson-reader";
 import type { AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import {
@@ -987,6 +988,8 @@ export async function stageDarwinReleaseReview(
     }
     return result;
   };
+  // Darwin's role lessons (learning/lesson-reader.ts), beside the per-key review lessons above.
+  const roleLessons = lessonsForModel("darwin", "verify-paid");
   try {
     for (let start = 0; start < candidates.length; start += RELEASE_REVIEW_FEES_PER_CALL) {
       const batch = candidates.slice(start, start + RELEASE_REVIEW_FEES_PER_CALL);
@@ -1001,10 +1004,11 @@ export async function stageDarwinReleaseReview(
           params: {
             model,
             max_tokens: MAX_OUTPUT_TOKENS,
+            ...(roleLessons.system ? { system: roleLessons.system } : {}),
             messages: [{ role: "user", content: releaseReviewPrompt(batch, batchLessons) }],
           },
           create: options.create,
-          metadata: { fee_raw_ids: batch.map(({ row }) => Number(row.fee_raw_id)) },
+          metadata: { fee_raw_ids: batch.map(({ row }) => Number(row.fee_raw_id)), lessons_applied: roleLessons.lessonIds },
         });
       } catch (error) {
         if (isStopError(error)) {

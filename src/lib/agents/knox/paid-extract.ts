@@ -2,6 +2,7 @@ import { sql } from "@/lib/data-store/connection";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { checkWireClausePrice } from "@/lib/custom-report/wire-clause-prices";
 import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
+import { lessonsForModel } from "@/lib/agents/learning/lesson-reader";
 import type { AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import {
@@ -512,6 +513,8 @@ export async function runKnoxPaidExtract(
   result.results.push(...skipResults);
 
   const model = PAID_PASS_MODELS.extract();
+  // Knox's role lessons ride every paid read as instructions (learning/lesson-reader.ts).
+  const roleLessons = lessonsForModel("knox", "extract-paid");
   for (const row of rows) {
     const startedAt = Date.now();
     const base = {
@@ -533,10 +536,11 @@ export async function runKnoxPaidExtract(
         params: {
           model,
           max_tokens: MAX_OUTPUT_TOKENS,
+          ...(roleLessons.system ? { system: roleLessons.system } : {}),
           messages: [{ role: "user", content: paidExtractPrompt(row.normalized_text) }],
         },
         create: options.create,
-        metadata: { document_text_id: Number(row.document_text_id), text_hash: row.text_hash },
+        metadata: { document_text_id: Number(row.document_text_id), text_hash: row.text_hash, lessons_applied: roleLessons.lessonIds },
       });
     } catch (error) {
       if (isStopError(error)) {

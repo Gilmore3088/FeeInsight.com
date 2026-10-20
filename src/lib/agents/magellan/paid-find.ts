@@ -3,6 +3,7 @@ import { sql } from "@/lib/data-store/connection";
 import { EmergencyStopActiveError } from "@/lib/automation-control";
 import { ProviderBudgetBlockedError } from "@/lib/api-hardening/budget";
 import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
+import { lessonsForModel } from "@/lib/agents/learning/lesson-reader";
 import { classifyFetchFailure, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import {
@@ -452,16 +453,18 @@ export async function runMagellanPaidFind(options: RunMagellanPaidFindOptions): 
     }
 
     try {
+      const roleLessons = lessonsForModel("magellan", "discover-paid");
       const call = await paidModelCall({
         agent: "magellan",
         operation: "paid_find",
         runId: options.runId,
         create: options.create,
-        metadata: { institution_id: institutionId, step_id: options.stepId ?? null },
+        metadata: { institution_id: institutionId, step_id: options.stepId ?? null, lessons_applied: roleLessons.lessonIds },
         params: {
           model,
           max_tokens: MAX_OUTPUT_TOKENS,
           tools: [webSearchToolFor(siteDomains, WEB_SEARCH_MAX_USES)],
+          ...(roleLessons.system ? { system: roleLessons.system } : {}),
           messages: [{ role: "user", content: paidFindPrompt(row, rung, siteDomains) }],
         },
       });
@@ -685,15 +688,17 @@ async function runPick(
 
   if (links && links.length > 0) {
     try {
+      const roleLessons = lessonsForModel("magellan", "discover-paid");
       const call = await paidModelCall({
         agent: "magellan",
         operation: "paid_pick",
         runId: options.runId,
         create: options.create,
-        metadata: { institution_id: institutionId, step_id: options.stepId ?? null, links: links.length },
+        metadata: { institution_id: institutionId, step_id: options.stepId ?? null, links: links.length, lessons_applied: roleLessons.lessonIds },
         params: {
           model: options.model,
           max_tokens: PICK_MAX_OUTPUT_TOKENS,
+          ...(roleLessons.system ? { system: roleLessons.system } : {}),
           messages: [{ role: "user", content: paidPickPrompt(row, links) }],
         },
       });

@@ -3,6 +3,20 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-10-20
+
+**Issues become lessons for the agents, not only checks.** James, 2026-10-20: "I don't want a
+check, I want a lesson for the agents so they get better at their roles. This is the whole point
+of the recursive agent architecture." Until then the pipeline agents learned only per institution
+(the playbook), so a closed issue taught the agent nothing about its role. New rule: a PR that
+closes an issue whose root cause is in a pipeline agent adds a lesson to that agent's
+`src/lib/agents/<agent>/role-lessons.ts` in the same PR. Lessons are reviewed code; Atlas's daily
+`atlas-lesson-sync` step copies them into `agent_lessons` (a lesson removed from the repo is retired,
+never deleted), every step records the lessons that shaped it as `lessons_applied`, model-calling
+steps send them as instructions (at most ten, newest first), and each agent page lists "What this
+agent has learned". `scripts/ci-guards.sh lesson-kill` checks the files. It is in CLAUDE.md "How
+work runs" and AGENTS.md "How work runs".
+
 ## 2026-10-19
 
 **Review findings become checklist lines, not new issues.** James, 2026-10-19 17:01 UTC, on a

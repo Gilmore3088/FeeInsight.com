@@ -1,6 +1,8 @@
 import { sql, withTransaction } from "@/lib/data-store/connection";
 import { feeSourceFetch } from "@/lib/agents/fee-source-fetch";
 import { mapEvent, mapRun, mapStep } from "./run-row-mappers";
+import { lessonIds, lessonsForStep } from "./learning/lesson-reader";
+import { lessonSyncDetail, summarizeLessonSync, syncAgentLessons } from "./learning/lesson-sync";
 import { getExecutionBackend } from "@/lib/execution-backend";
 import { LIVE_AUDIT_STEPS, LIVE_AUDIT_SOURCE, positiveId } from "./deming/live-source-audit";
 import { createLiveAuditDraw } from "@/lib/data-store/live-source-audit";
@@ -2630,6 +2632,11 @@ async function executeAgenticStep(
         detail: { ...cityRepairDetail(result), hand_links: links ? handLinkRepairDetail(links) : { error: linksError } },
       };
     }
+    case "atlas-lesson-sync": {
+      // Copies the repo's role lessons into agent_lessons; writes only that table, never a fee row.
+      const result = await syncAgentLessons({ db: tx, dryRun: run.runKind === "dry_run" });
+      return { status: "completed", summary: summarizeLessonSync(result), detail: lessonSyncDetail(result) };
+    }
     case "atlas-storage-retention": {
       const result = await runStorageRetention({ db: tx, dryRun: run.runKind === "dry_run",context:{runId:run.id,stepId:step.id,stepKey:step.stepKey} });
       // #1870: Hoovie's cold-tier plan on the same connection. Counts only; export is off and nothing prunes.
@@ -3085,6 +3092,19 @@ async function prepareNextAgenticStep(runId: number, { pauseExemptOnly = false, 
 
     return { kind: "ready", prepared: { run, step } };
   });
+}
+
+/**
+ * Records which role lessons shaped a step (`lessons_applied`: ids from the agent's
+ * `role-lessons.ts`), so the run log shows them. A step whose agent has none is unchanged.
+ */
+export function withLessonsApplied(
+  step: Pick<AgentRunStepSnapshot, "agent" | "stepKey">,
+  outcome: AgenticStepExecution,
+): AgenticStepExecution {
+  const applied = lessonIds(lessonsForStep(step.agent, step.stepKey));
+  if (applied.length === 0) return outcome;
+  return { ...outcome, detail: { ...(outcome.detail ?? {}), lessons_applied: applied } };
 }
 
 async function finishAgenticStep(
@@ -4033,7 +4053,7 @@ export async function executeAgentRun(
           isRegistryStepKey(step.stepKey)
             ? await executeAgenticStep(sql, run, step)
             : await withTransaction((tx) => executeAgenticStep(tx, run, step));
-        lastResult = await finishAgenticStep(runId, step, outcome);
+        lastResult = await finishAgenticStep(runId, step, withLessonsApplied(step, outcome));
         executedSteps += 1;
         if (lastResult.terminal) return { ...lastResult, executedSteps };
       } catch (error) {
