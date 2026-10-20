@@ -139,8 +139,8 @@ describe("recordable reference-document decisions (#1862)", () => {
     expect(receipt.facts.consumer).toEqual({ status: "pass", reasons: ["consumer_reference_lines_no_business_evidence"] });
     expect(receipt.status).toBe("eligible");
     expect(decide([page(`${plain}\nFunds are available within two business days`)]).facts.consumer.status).toBe("pass");
-    // A consumer fee line whose price sits on the next line is not a business section label.
-    expect(decide([page(`${plain}\nMerchant Dispute Fee\nTreasury Check Cashing Fee`)]).facts.consumer.status).toBe("pass");
+    // A consumer merchant fee line whose price sits on the next line is not a business label.
+    expect(decide([page(`${plain}\nMerchant Dispute Fee`)]).facts.consumer.status).toBe("pass");
   });
 
   it.each([
@@ -148,6 +148,8 @@ describe("recordable reference-document decisions (#1862)", () => {
     ["a bulleted business label", "Schedule of Fees\nOverdraft fee $25\n• Business Checking\nWire transfer fee $15", "unknown", "consumer_scope_unproven"],
     ["a cash management label", "Schedule of Fees\nOverdraft fee $25\nCash Management Services\nWire transfer fee $15", "unknown", "consumer_scope_unproven"],
     ["a non-personal label", "Schedule of Fees\nOverdraft fee $25\n## Non-Personal Accounts\nWire transfer fee $15", "unknown", "consumer_scope_unproven"],
+    ["a business fees section", "Schedule of Fees\nOverdraft fee $25\nBusiness Checking Fees\nWire transfer fee $15", "unknown", "consumer_scope_unproven"],
+    ["a treasury fees section", "Schedule of Fees\nOverdraft fee $25\nTreasury Management Fees\nWire transfer fee $15", "unknown", "consumer_scope_unproven"],
     ["a spaced non personal label", "Schedule of Fees\nOverdraft fee $25\nNon Personal Accounts\nWire transfer fee $15", "unknown", "consumer_scope_unproven"],
     ["a business-only schedule", "Business Fee Schedule\nOverdraft fee $25\nWire transfer fee $15", "fail", "business_document"],
     ["a business URL", "Schedule of Fees\nOverdraft fee $25\nWire transfer fee $15", "fail", "business_document"],

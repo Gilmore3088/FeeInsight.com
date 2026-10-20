@@ -156,7 +156,7 @@ export function audienceHeading(line: string, audience: "consumer" | "business")
     && /\b(?:fees?|schedule|charges|accounts?)\b/i.test(title);
 }
 /** A short line that opens with a business audience word ("Business Checking", "Commercial Accounts"). */
-const BUSINESS_SECTION = /^(?:small business|business|commercial|corporate|treasury|cash management|account analysis|merchant services|non[- ]?personal|organi[sz]ation(?:al)?)\b(?! days?\b)(?![^$0-9.!?;]*\bfees?\s*$)[^$0-9.!?;]{0,60}$/i;
+const BUSINESS_SECTION = /^(?:small business|business|commercial|corporate|treasury|cash management|account analysis|merchant services|non[- ]?personal|organi[sz]ation(?:al)?)\b(?! days?\b)[^$0-9.!?;]{0,60}$/i;
 /** Leading bullets and markdown markers ("• Business Checking", "## Business") are not part of a label. */
 const businessSectionLine = (line: string): boolean => BUSINESS_SECTION.test(line.trim().replace(/^(?:[-*•·▪◦#>]+\s*|\d+[.)]\s+)+/, ""));
 const LEGACY = /\b(?:closed to new (?:customers|accounts)|no longer (?:available|offered) to open|previously offered (?:accounts|products)|legacy accounts? (?:only|closed))\b/i;
