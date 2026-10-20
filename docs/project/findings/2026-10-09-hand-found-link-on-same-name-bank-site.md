@@ -15,3 +15,5 @@ page on the Massachusetts Cornerstone Bank's site. The 118 entry is removed from
 Institution 595 already holds its own copy of the same PDF (document 12922) and 35 live fees.
 **Lesson:** same-name bank, different domain. A person's check is no proof against a same-name
 bank; the domain rule applies to every link, whoever found it.
+
+**Agent lesson:** magellan/issue-1033

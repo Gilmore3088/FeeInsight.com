@@ -17,3 +17,5 @@ first-institution list still goes ahead of everything else.
 
 **Lesson:** a resumable scan keyed on a version must also order by how recently each item was
 seen. Otherwise, frequent bumps starve the tail.
+
+**Agent lesson:** knox/pr-933-retidy-keeps-conditions
