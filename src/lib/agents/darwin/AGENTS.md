@@ -126,7 +126,8 @@ supply one another's duplicate, refresh or source-applicability witness. Holds a
 correction blockers keep their conservative broader overlap rules.
 
 Extract rules v83, stale-read floor v78, verify rules v3, Darwin batch key v4, publish rules v3,
-refresh-copy v2, current-copy v2 and newer-copy v1 stay settled. No source-check v2 bump,
+refresh-copy v2, current-copy v2 and newer-copy v1 stayed settled in this phase (newer-copy v2 later
+reopened every pair after its own dry run, #2477). No source-check v2 bump,
 fingerprint reopening, broad re-run, historical metadata backfill, recovery or numeric benchmark
 policy is authorized by this code phase. Bayes's `ANCILLARY_PRODUCT_VERSION` no-replay entry
 records the exception; old settled decisions need a separately designed and authorized path.
