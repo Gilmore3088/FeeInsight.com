@@ -24,7 +24,7 @@ export const MAILING_ADDRESS = "";
 /** Every email we send goes out under this display name. */
 export const EMAIL_SENDER_NAME = SITE_NAME;
 export const RESEARCH_IMPRINT = "Fee Insight Research";
-export const HAMILTON_ATTRIBUTION = "Hamilton — Fee Insight";
+export const HAMILTON_ATTRIBUTION = "Hamilton, from Fee Insight";
 /** Credit line returned with every public API response, for partners to display with the data. */
 export const API_ATTRIBUTION = {
   text: `Source: ${PRODUCT_NAME}, ${SITE_DOMAIN}`,
