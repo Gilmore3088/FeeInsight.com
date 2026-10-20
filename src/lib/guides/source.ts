@@ -13,9 +13,10 @@ import { relatedGuides as relatedFromList } from "./index";
  * coordinated one: ship the code, run the migration, seed, and the source flips with no
  * second deploy and no window where `/guides` is empty.
  *
- * Every fallback is silent by design on the read path. A guide page failing to render
- * because the guides table does not exist yet would be a worse outcome than serving the
- * seed content it was going to be seeded with.
+ * A fallback never fails the page: a guide page failing to render because the guides table
+ * does not exist yet would be a worse outcome than serving the seed content it was going to
+ * be seeded with. A failed read is still logged, and `loadGuidesWithSource` reports it, so a
+ * cached page can shorten its life instead of serving the seed list for an hour (#1811).
  */
 
 const SEED_GUIDES: Guide[] = [...CONSUMER_GUIDES, ...PROFESSIONAL_GUIDES];
@@ -24,25 +25,34 @@ const SEED_GUIDES: Guide[] = [...CONSUMER_GUIDES, ...PROFESSIONAL_GUIDES];
 export interface GuideSourceResult {
   guides: Guide[];
   source: "database" | "seed";
+  /** True when the seed serves because the database read failed, not because it is unseeded. */
+  readFailed: boolean;
 }
 
-async function readFromDatabase(): Promise<Guide[] | null> {
+interface DatabaseRead {
+  /** Null when the read failed or the table is empty. */
+  guides: Guide[] | null;
+  failed: boolean;
+}
+
+async function readFromDatabase(): Promise<DatabaseRead> {
   try {
     const { getPublishedGuides } = await import("@/lib/data-store/guides");
     const stored = await getPublishedGuides();
     // An empty table means "migrated but not seeded yet", which is a seed case, not a
     // database case. Serving zero guides would blank the surface.
-    return stored.length > 0 ? stored : null;
-  } catch {
-    return null;
+    return { guides: stored.length > 0 ? stored : null, failed: false };
+  } catch (error) {
+    console.error("[guides] published guides read failed; serving the seed guides", error);
+    return { guides: null, failed: true };
   }
 }
 
 export async function loadGuidesWithSource(): Promise<GuideSourceResult> {
-  const stored = await readFromDatabase();
-  return stored
-    ? { guides: stored, source: "database" }
-    : { guides: SEED_GUIDES, source: "seed" };
+  const { guides, failed } = await readFromDatabase();
+  return guides
+    ? { guides, source: "database", readFailed: false }
+    : { guides: SEED_GUIDES, source: "seed", readFailed: failed };
 }
 
 export async function loadGuides(): Promise<Guide[]> {
@@ -135,7 +145,7 @@ async function guideSlugsForBuild(audience: GuideAudience): Promise<string[]> {
   } catch {
     return [];
   }
-  const stored = await readFromDatabase();
+  const { guides: stored } = await readFromDatabase();
   const source = stored ?? SEED_GUIDES;
   return source.filter((g) => g.audience === audience).map((g) => g.slug);
 }

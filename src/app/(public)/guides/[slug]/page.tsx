@@ -28,7 +28,6 @@ import {
   getAtmNetworkMentionsCached,
   getAtmTwoFeeExampleCached,
   getDailyCapScopeCached,
-  getDataFreshnessCached,
   getFeeCategoryGuideDetailCached,
   getOverdraftComplaintThemesCached,
 } from "@/lib/data-store/public-cached-reads";
@@ -148,13 +147,9 @@ export default async function GuidePage({ params }: PageProps) {
   const needsAtmNetworks = blocks.some((b) => b.type === "network_mentions");
 
   // National medians and counts from the shared public snapshot (same as the fee index).
-  const [{ summary, categories: allSummaries }, freshness, primaryDetail, related, capScope, complaints, atmExample, atmNetworks] =
+  const [{ summary, categories: allSummaries }, primaryDetail, related, capScope, complaints, atmExample, atmNetworks] =
     await Promise.all([
       getPublicSnapshot(),
-      // The shared public cache, as the fee pages read it: a guide rebuilt after a takedown
-      // reuses the reads the first page computed instead of running its own (Oct 9: about
-      // 190 freshness reads an hour against about 8 refreshes).
-      getDataFreshnessCached(),
       getFeeCategoryGuideDetailCached(guide.primaryCategory),
       loadRelatedGuides(guide),
       needsCapScope ? getDailyCapScopeCached().catch(() => null) : null,
@@ -222,7 +217,9 @@ export default async function GuidePage({ params }: PageProps) {
   const primaryName = getDisplayName(guide.primaryCategory);
   // For prose: "overdraft", not "overdraft (od)".
   const primaryNamePlain = sentenceFeeName(primaryName);
-  const crawlDate = formatDate(freshness.last_crawl_at);
+  // When the newest published fee was approved (the snapshot's date, as every public page
+  // shows it); a document crawl publishes nothing, so it never dates the fee data (#1811).
+  const feeDataDate = summary.refreshedOn;
   const reviewDate = formatDate(guide.reviewedAt);
   const plain = (text: string) => resolveTokensToText(text, allSummaries);
 
@@ -334,10 +331,10 @@ export default async function GuidePage({ params }: PageProps) {
               <span>Guide reviewed {reviewDate}</span>
             </>
           )}
-          {crawlDate && (
+          {feeDataDate && (
             <>
               <span className="h-3 w-px bg-border" aria-hidden="true" />
-              <span>Fee data updated {crawlDate}</span>
+              <span>Fee data updated {feeDataDate}</span>
             </>
           )}
           {guide.methodologyHref && (
