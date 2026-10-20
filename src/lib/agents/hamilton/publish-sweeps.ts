@@ -375,7 +375,7 @@ export async function sweepsBeforeGuardRequeue(ctx: MovedSweepContext) {
     institutionId,
   }));
   // A product-page fee the bank's own schedule prices differently: the schedule wins
-  // (James, 2026-10-13). Off until a hand check of 10 conflicts finds 9 right; logs first looks.
+  // (James, 2026-10-13). On since 2026-10-20 after an automatic sample checked clean (`PRODUCT_PAGE_CONFLICT_LIVE`).
   const productPageConflict = await sweep(ctx, "productPageConflict", (): Result<typeof retireProductPageConflicts> => ({
     live: false, conflicts: 0, flagged: 0, cleared: 0, waiting: 0, rolledBack: [], dryRun,
   }), () => retireProductPageConflicts(tx, {

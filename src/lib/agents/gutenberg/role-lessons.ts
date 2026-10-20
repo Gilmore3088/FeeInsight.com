@@ -336,4 +336,14 @@ export const GUTENBERG_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-19",
   },
+  {
+    id: "product-page-schedule-wins",
+    agent: "gutenberg",
+    stage: "product-page conflict",
+    lesson: "When a product page and the bank's general schedule on the same site price the same item differently, and the schedule is not older, publish the schedule's price; a price listed among one account's features is that account's perk, not the bank's price.",
+    why: "After the same-item rules the automatic sample found 2 takedowns: Truliant's $28 overdraft protection against its schedule's $29, and a checking package's $2 cashier's check perk against the general schedule's $3.",
+    evidence: { issues: [978], prs: [2440, 2447], files: ["src/lib/agents/hamilton/product-page-conflict.ts"] },
+    appliesTo: ["publish", "publish-index", "publish-context"],
+    since: "2026-10-20",
+  },
 ];
