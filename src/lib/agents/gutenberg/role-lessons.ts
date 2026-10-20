@@ -346,4 +346,14 @@ export const GUTENBERG_LESSONS: AgentLesson[] = [
     appliesTo: ["publish", "publish-index", "publish-context"],
     since: "2026-10-20",
   },
+  {
+    id: "restore-still-printed",
+    agent: "gutenberg",
+    stage: "source check",
+    lesson: "Put a fee back live only when the bank's current document still finds its name and prints its price; a stored line reached through \"for\" (\"$25.00 for Incoming Wires\") carries the next row's price.",
+    why: "The re-sample of restores after the name-first rule found 8 of 20 that the bank's current document could not prove (names missing, or names with no prices), and one \"$A for X / $B for Y\" table that bound the next row's $50 to the incoming wire.",
+    evidence: { issues: [978], prs: [2443], files: ["src/lib/agents/hamilton/source-check.ts"] },
+    appliesTo: ["publish", "publish-index", "publish-context"],
+    since: "2026-10-20",
+  },
 ];
