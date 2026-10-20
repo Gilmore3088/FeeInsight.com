@@ -45,5 +45,8 @@ describe("Hamilton study fee audience boundaries", () => {
     expect(query).toContain("f.source_document_id IS NOT NULL");
     expect(query).toContain("f.fee_audience IN ('consumer', 'both', 'unknown')");
     expect(query).toContain("f.amount > 0");
+    // #2052: each row carries its charter's newest filing so stale income can be left out.
+    expect(query).toMatch(/MAX\(report_date\)[\s\S]*service_charge_income IS NOT NULL/);
+    expect(query).toContain("newest_filing");
   });
 });
