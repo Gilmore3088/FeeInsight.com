@@ -1,6 +1,6 @@
 import { scopedFeeStatements, type FeeApplicability } from "@/lib/fee-audience";
 import { CELL_SEPARATOR } from "@/lib/agents/rosetta/html-dom";
-import { composableTail, passesDarwinChecks, titleTail } from "@/lib/agents/knox/layout";
+import { composableTail, LEADER_PRICE_WORDS, passesDarwinChecks, titleTail } from "@/lib/agents/knox/layout";
 import type { AccountLineup } from "@/lib/agents/knox/lineup";
 import type { AncillaryProduct } from "@/lib/agents/knox/ancillary-product";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
@@ -914,8 +914,19 @@ export function headingName(rawLine: string): string | null | undefined {
   return plainHeadingName(rawLine);
 }
 
+/**
+ * v93 (#1828): a dot-leader row priced in words (`LEADER_PRICE_WORDS`: "Reconveyance………… Actual
+ * Cost", "Balance transfer…… Varies", "Notary…… N/C") is that fee's own row, never a heading: read
+ * as one, it named the row under it ("Reconveyance .. Actual Cost: Returned payment" at the next
+ * row's $4.95, Oregon Community FCU, doc 19849). When it names a fee of its own it ends the reach of
+ * any heading above it.
+ */
+
 function plainHeadingName(line: string): string | null | undefined {
   if (line.includes("$") || PERCENT_PATTERN.test(line) || /\d/.test(line.replace(/[¹²³⁴⁵⁶⁷⁸⁹⁰]/g, ""))) return undefined;
+  // A row of the heading's own table ("Cashier’s Checks" / "Performance Select Checking ......No
+  // charge") keeps the heading for the rows under it; a row naming a fee of its own ends it.
+  if (LEADER_PRICE_WORDS.test(line)) return classifyPatternKey(normalizeSegment(line.split(/(?:\.\s?){2,}|…/)[0])) ? null : undefined;
   const name = normalizeSegment(line.replace(/[¹²³⁴⁵⁶⁷⁸⁹⁰]/g, ""));
   const words = name.split(" ").filter(Boolean);
   if (words.length === 0 || words.length > MAX_HEADING_WORDS) return undefined;
