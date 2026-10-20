@@ -15,6 +15,10 @@ export const RATE_LIMITS: Record<string, { max: number; windowMinutes: number }>
   "account-password-reset": { max: 5, windowMinutes: 10 },
   // Tracked-link visits: one per browser session, so a person stays far below this.
   "touch-write": { max: 20, windowMinutes: 10 },
+  // Public JSON reads (institution search typeahead, evidence, the profile's cohort list): a
+  // reader typing in a search box makes a few dozen in ten minutes; a scraper walking ids makes
+  // thousands. One count across every route in the bucket.
+  "public-read": { max: 300, windowMinutes: 10 },
 };
 
 export async function isRateLimited(policy: ApiRoutePolicy, subjectKey: string | null): Promise<boolean> {

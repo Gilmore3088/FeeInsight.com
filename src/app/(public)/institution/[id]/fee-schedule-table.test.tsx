@@ -143,6 +143,7 @@ describe("splitFeesByAudience", () => {
   const unknown = fee({ id: "u", feeAudience: "unknown" });
   const business = fee({ id: "b", feeAudience: "business" });
   const both = fee({ id: "x", feeAudience: "both" });
+  const bizSchedule = fee({ id: "s", feeAudience: "unknown", sourceUrl: "https://bank.example/docs/Business-Account-Fee-Schedule.pdf" });
   const ids = (list: DisplayFee[] | undefined) => list?.map((f) => f.id);
 
   it.each([
@@ -151,6 +152,9 @@ describe("splitFeesByAudience", () => {
     ["mixed", [consumer, unknown, business], { personal: ["c", "u"], business: ["b"] }],
     ["business only", [business], { personal: [], business: ["b"] }],
     ["labeled both, with business", [consumer, both, business], { personal: ["c", "x"], business: ["x", "b"] }],
+    // #1592: an unlabeled fee from a business-only schedule sits under Business.
+    ["unlabeled from a business-only schedule", [consumer, bizSchedule], { personal: ["c"], business: ["s"] }],
+    ["unlabeled from a personal schedule", [consumer, unknown], null],
   ] as const)("%s", (_, fees, expected) => {
     const split = splitFeesByAudience([...fees]);
     if (expected === null) expect(split).toBeNull();
@@ -233,6 +237,21 @@ describe("Personal / Business tabs", () => {
     expect(tabForHash("#plans", "personal", lists, ["personal", "business"])).toBeNull();
     expect(tabForHash("#fee-%E0%A4%A", "personal", lists, ["personal", "business"])).toBeNull();
     expect(feeHashCategory("#fee-overdraft")).toBe("overdraft");
+  });
+});
+
+describe("business-only schedule (#1592)", () => {
+  it("lists an unlabeled fee from a business-only schedule under Business, without the treated-as-personal asterisk", () => {
+    const fees = [
+      fee({ id: "p", feeName: "Paid item overdraft", feeCategory: "overdraft", feeAudience: "consumer" }),
+      fee({ id: "s", feeName: "Wire transfer", feeCategory: "wire_domestic_outgoing", amount: 30, feeAudience: "unknown", sourceUrl: "https://bank.example/docs/Business-Account-Fee-Schedule.pdf" }),
+    ];
+    render(<FeeScheduleTable fees={fees} disclosureUrl={null} />);
+    const business = screen.getByRole("tab", { name: "Business" });
+    fireEvent.click(business);
+    const panel = screen.getByRole("tabpanel");
+    expect(within(panel).getAllByText("Wire transfer").length).toBeGreaterThan(0);
+    expect(panel.textContent).not.toMatch(/treated as personal/);
   });
 });
 

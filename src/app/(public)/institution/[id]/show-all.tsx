@@ -11,6 +11,7 @@ export function ShowAll({
   shown,
   initialAll = false,
   aside = null,
+  tabbed = false,
   children,
 }: {
   total: number;
@@ -18,6 +19,11 @@ export function ShowAll({
   initialAll?: boolean;
   /** Sits at the end of the "Show all" row, such as a correction link; shown either way. */
   aside?: React.ReactNode;
+  /**
+   * The list sits in Personal / Business tabs. `total` counts each fee once, while a fee for
+   * both is listed in each tab, so the tabs' rows can add up to more than the total (#1592).
+   */
+  tabbed?: boolean;
   children: React.ReactNode;
 }) {
   const [all, setAll] = useState(initialAll || total <= shown);
@@ -36,7 +42,9 @@ export function ShowAll({
                 Show all {total} fees
               </button>
               <span className="text-[13px] text-ink-muted">
-                Showing {shown} of {total} fees.
+                {tabbed
+                  ? `Showing the first ${shown} in each tab. ${total} fees in all, each counted once; a fee for personal and business accounts is listed in both tabs.`
+                  : `Showing ${shown} of ${total} fees.`}
               </span>
             </div>
           )}

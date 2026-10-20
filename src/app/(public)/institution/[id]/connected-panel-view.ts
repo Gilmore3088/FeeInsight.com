@@ -31,7 +31,7 @@ export interface PanelReported {
   changePct: number | null;
   /** Fee income as a share of revenue in the latest quarter, as a percent value. */
   sharePct: number | null;
-  /** "FDIC call report" or "NCUA 5300 call report". */
+  /** "FDIC call report", "FFIEC call report", "FFIEC and FDIC call reports" or "NCUA 5300 call report". */
   source: string;
   /** "Bank" or "Credit union": the filing entity, never the holding company. */
   entity: string;
@@ -116,10 +116,23 @@ function panelFee(row: CompareRow, stateCode: string | null): PanelFee | null {
   };
 }
 
+/** The bank filing the bars came from; a series that mixes FFIEC and FDIC quarters names both. */
+function bankFilingSource(series: ReadonlyArray<{ reportDate: string; source?: string }>): string {
+  const ffiec = series.some((q) => q.source === "ffiec");
+  const fdic = series.some((q) => q.source !== "ffiec");
+  if (ffiec && fdic) return "FFIEC and FDIC call reports";
+  return ffiec ? "FFIEC call report" : "FDIC call report";
+}
+
 export function buildConnectedPanel(input: {
   institutionId: number;
   institutionName: string;
   insight: HamiltonInsight;
+  /**
+   * Standalone quarters, oldest first, from the page's quarterly ledger. Without it the bars are
+   * worked out from `insight.quarters` (quarterlyServiceCharges).
+   */
+  series?: { reportDate: string; value: number; source?: string }[];
   rows: CompareRow[];
   stateCode: string | null;
   stateName: string | null;
@@ -127,7 +140,7 @@ export function buildConnectedPanel(input: {
 }): ConnectedPanel | null {
   const { insight, institutionName } = input;
   const latestFiling = insight.quarters[0];
-  const series = quarterlyServiceCharges(insight.quarters);
+  const series = input.series ?? quarterlyServiceCharges(insight.quarters);
   if (!latestFiling || series.length === 0) return null;
   const terms = feeIncomeTerms(latestFiling.source);
   const ncua = latestFiling.source === "ncua";
@@ -207,7 +220,7 @@ export function buildConnectedPanel(input: {
       latest,
       changePct,
       sharePct: ownShare,
-      source: ncua ? "NCUA 5300 call report" : "FDIC call report",
+      source: ncua ? "NCUA 5300 call report" : bankFilingSource(series),
       entity: ncua ? "Credit union" : "Bank",
     },
     share,

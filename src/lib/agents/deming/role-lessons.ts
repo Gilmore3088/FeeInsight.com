@@ -17,4 +17,14 @@ export const DEMING_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-19",
   },
+  {
+    id: "issue-2466-reference-binding",
+    agent: "deming",
+    stage: "answer-key eligibility",
+    lesson: "Before trusting a fail-closed measurement gate, count how many real keys it admits; a gate that admits none measures nothing. Bind a reference to what stays stable for its kind (PDF bytes, an HTML page's extracted main text and the key's own lines), ask for a consumer heading only where a schedule has a business section to separate, count discovery incomplete only for an unvisited link that could be a newer fee schedule, and clear a stored hash whenever the reference URL changes.",
+    why: "The first eligibility run admitted 0 of 62 confirmed keys: HTML pages changed bytes on every fetch, schedules with no consumer heading were always unproven, any unvisited navigation hub made discovery incomplete, and a key whose URL was edited kept the old document's hash.",
+    evidence: { issues: [2466], prs: [2468], files: ["docs/project/findings/2026-10-20-answer-key-eligibility-admits-none.md", "src/lib/data-store/answer-key-eligibility.ts"] },
+    appliesTo: "all",
+    since: "2026-10-20",
+  },
 ];

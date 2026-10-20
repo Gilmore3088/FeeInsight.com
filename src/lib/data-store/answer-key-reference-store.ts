@@ -104,7 +104,8 @@ const receiptShape = z.object({
   })).max(6),
   discovery: z.object({ entryUrls: z.array(z.string().max(2_000)).max(6), examinedUrls: z.array(z.string().max(2_000)).max(6),
     candidateUrls: z.array(z.string().max(2_000)).max(160), completeWithinProtocol: z.boolean(),
-    linkedFromOfficialSite: z.boolean(), limitReason: z.string().max(100).nullable() }),
+    linkedFromOfficialSite: z.boolean(), limitReason: z.string().max(100).nullable(),
+    skippedHubCount: z.number().int().nonnegative().optional() }),
 });
 
 interface EventRow { step_valid: boolean; id: number | string; agent_run_id: number | string; detail: unknown; created_at: Date | string }

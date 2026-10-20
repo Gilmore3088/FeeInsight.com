@@ -1,8 +1,8 @@
 # Answer-key reference eligibility (#1862)
 
 Human confirmation, automated document eligibility and the v3 matching algorithm are separate.
-The score step checks whether a confirmed key is supported by the captured bytes of a priced
-consumer schedule, with a recorded official-site path and no unresolved current-schedule conflict.
+The score step checks whether a confirmed key is supported by the captured bytes (PDF/text) or
+main text (HTML) of a priced consumer schedule, with a recorded official-site path and no unresolved current-schedule conflict.
 It never repairs a key or changes confirmation, attribution or expected fees. James's complete
 workflow remains the weekly 50 whole institutions in five packets of ten; no extra checks are added.
 
@@ -16,14 +16,25 @@ six pages per key, eight MiB per response, one million parsed characters, 30 PDF
 raced against the deadline. PDF work uses Rosetta's existing layout reader with bounded inputs,
 not a provider. These are bounded observations, not proof of exhaustive site discovery or a hard
 process-isolation CPU guarantee. Missing/unreadable candidates and hit limits remain unknown.
+Within the page cap, fee-schedule-like links are observed before navigation hubs (Disclosures,
+Forms). Only an unvisited fee-schedule-like link makes discovery incomplete; an unvisited hub
+is not evidence of a newer schedule (#2466). The receipt records how many hubs went unvisited
+(`skippedHubCount`).
 Oldest attempted unknowns rotate behind never-attempted keys.
 
 Protocol 1 receipts record three independent facts (consumer/current/priced), reasons, requested
 and final URLs, byte/text hashes, effective dates when present, HTTP metadata, source/text IDs
 when exactly matched, bounded excerpts and the discovery graph. Consumer support requires each
-mapped confirmed key line in the byte-bound observed document, using whitespace normalization
-only. Combined schedules require those lines in their consumer section; service copy and incidental
-consumer words do not attest a heading. Legacy/closed-to-new products, future-effective key
+mapped confirmed key line in the bound observed document, using whitespace normalization
+only. A PDF or plain-text reference is byte-bound: the key's stored hash must equal the fetched
+bytes. An HTML page's bytes change on every fetch, so an HTML reference is bound to its extracted
+main text: the key's hash names those bytes or that main text, or every mapped confirmed key line
+is in the observed main text, the key has a confirmation date, and the page's effective date, when
+present, is not after it; otherwise it stays unknown (#2466). Combined schedules require those
+lines in their consumer section; service copy and incidental consumer words do not attest a heading.
+A schedule with no consumer heading passes only with no business evidence (business URL/text/heading
+or a business section label, bullets ignored) and every mapped key line present. Protocol 1 receipts
+issued before 2026-10-20 ran under stricter rules that admitted no key. Legacy/closed-to-new products, future-effective key
 documents and priced fees' absence cannot pass. A linked newer applicable schedule fails;
 an unreadable or unclassifiable candidate cannot prove that the old key is current. An explicit
 stored supersession of the exact key bytes remains contradictory authority even when the old
