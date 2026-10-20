@@ -182,9 +182,11 @@ institutions remains the only human launch workflow.
   describing a manual run. The sampled source trace those skills ask for is the fresh audit above.
 - Over the live dollar fees (`published_fee_catalog`) and, apart, the live rate fees
   (`published_fee_rate_catalog`), never pooled: duplicates (rows beyond the first for one fee
-  line: institution, category, amount or rate, name with case and spacing ignored, audience,
-  variant, product and charging-frequency class, the identity Hamilton's duplicate collapse
-  closes; rows that only share institution, category and amount are counted apart as
+  line, the identity Hamilton's duplicate collapse closes: institution, category, variant, product,
+  audience, amount kind, amount or rate with caps and basis, name with case and outer spaces
+  ignored, counted only when the stated frequency classes agree; the step detail says so as
+  `duplicates_identity: "fee_line"`, and change outcomes never compare a data-quality number
+  across identities; rows that only share institution, category and amount are counted apart as
   `same_amount`, not graded, since two products or services at one price are not a duplicate,
   2026-10-20), stale fees (document last fetched or checked over
   `STALE_AFTER_DAYS` 90 days ago, the scoreboard's freshness clock), fees with no category (a

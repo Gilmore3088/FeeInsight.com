@@ -3,6 +3,8 @@ import { FEE_FAMILIES } from "@/lib/fee-taxonomy";
 import { BENCHMARK_SHOW_FROM, COLLAPSE_KEEPS_BELOW } from "@/lib/agents/deming/benchmark-health";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { documentLinkKeySql } from "@/lib/document-link-key";
+import { productKeySql } from "@/lib/fee-product";
+import { frequencyClassSql } from "@/lib/agents/hamilton/duplicate-collapse";
 
 export { documentLinkKey, documentLinkKeySql } from "@/lib/document-link-key";
 
@@ -15,9 +17,10 @@ export { documentLinkKey, documentLinkKeySql } from "@/lib/document-link-key";
  * rate fees (`published_fee_rate_catalog`); a rate is never pooled with a dollar amount
  * (`percent-fees.ts`). Each number names its query (`DATA_QUALITY_QUERIES`).
  *
- *   duplicates     rows beyond the first for the same fee line: institution, category, amount (or
- *                  rate), name (case and spacing ignored), audience, variant, product and charging
- *                  frequency class, the identity Hamilton's duplicate collapse closes. Rows that only
+ *   duplicates     rows beyond the first for the same fee line, the identity Hamilton's duplicate
+ *                  collapse closes (duplicate-collapse.ts): institution, category, variant, product,
+ *                  audience, amount kind, amount or rate with its caps and basis, and name (case and
+ *                  outer spaces ignored), counted only when the stated frequency classes agree. Rows that only
  *                  share an institution, category and amount are counted apart (`sameAmount`),
  *                  not graded: two products or two services at one price are not a duplicate
  *   stale          live fees whose document was last fetched or checked over 90 days ago (the
@@ -45,6 +48,12 @@ export { documentLinkKey, documentLinkKeySql } from "@/lib/document-link-key";
 type SqlTag = typeof sql;
 
 export const DATA_QUALITY_VERSION = 1;
+/**
+ * Which rows the duplicate check counts: "fee_line" is the duplicate collapse's identity (2026-10-20);
+ * steps before it counted any shared institution, category and amount ("shared_amount"). Change
+ * outcomes never compare a data-quality number across the two.
+ */
+export const DUPLICATES_IDENTITY = "fee_line";
 /** A live fee is stale when its document was last fetched or checked longer ago than this. */
 export const STALE_AFTER_DAYS = 90;
 /** A catalog with fewer live fees than this reports its counts but is not graded. */
@@ -282,26 +291,27 @@ export function dataQualitySql(catalog: "published_fee_catalog" | "published_fee
                  PARTITION BY c.institution_id, NULLIF(btrim(c.fee_category), ''), c.${amountColumn}
                  ORDER BY c.fee_published_id
                ) AS same_amount_copy,
-               -- The collapse's identity (duplicate-collapse.ts): per item, per occurrence, per
-               -- transaction and one-time name the same charge.
-               row_number() OVER (
-                 PARTITION BY c.institution_id, NULLIF(btrim(c.fee_category), ''), c.${amountColumn},
-                   regexp_replace(lower(btrim(c.fee_name)), '\\s+', ' ', 'g'), COALESCE(c.fee_audience, 'unknown'),
-                   COALESCE(c.variant_type, ''), COALESCE(c.account_product_type, ''),
-                   CASE WHEN c.frequency IN ('per_item', 'per_occurrence', 'per_transaction', 'one_time') THEN 'each'
-                     ELSE COALESCE(c.frequency, '') END
-                 ORDER BY c.fee_published_id
-               ) AS copy
+               -- The collapse's identity (duplicate-collapse.ts): one fee line, whatever its frequency;
+               -- it counts only when the stated frequency classes agree (checked below).
+               row_number() OVER line AS copy,
+               min(${frequencyClassSql("c.frequency")}) OVER part AS min_class,
+               max(${frequencyClassSql("c.frequency")}) OVER part AS max_class
           FROM ${catalog} c
           LEFT JOIN source_documents sd ON sd.id = c.source_document_id
           LEFT JOIN agent_source_texts ast ON ast.source_document_id = c.source_document_id
+        WINDOW part AS (
+          PARTITION BY c.institution_id, NULLIF(btrim(c.fee_category), ''), COALESCE(c.variant_type, ''),
+            ${productKeySql("c.account_product_type")}, COALESCE(c.fee_audience, 'unknown'), COALESCE(c.amount_kind, 'flat'),
+            c.amount, c.rate_percent, c.rate_min_amount, c.rate_max_amount, COALESCE(c.rate_basis, ''), lower(btrim(c.fee_name))
+        ), line AS (part ORDER BY c.fee_published_id)
       ), keyed AS (
         SELECT live.*, ${documentLinkKeySql("source_url")} AS link_key, ${documentLinkKeySql("document_url")} AS document_key,
                ${documentLinkKeySql("read_url")} AS read_key
           FROM live
       ), flags AS (
         SELECT fee_published_id, institution_id, category, source_document_id,
-               (copy > 1 AND category IS NOT NULL AND value IS NOT NULL) AS duplicate,
+               (copy > 1 AND category IS NOT NULL AND value IS NOT NULL
+                 AND (min_class IS NULL OR min_class = max_class)) AS duplicate,
                (same_amount_copy > 1 AND category IS NOT NULL AND value IS NOT NULL) AS same_amount,
                (evidence_at < NOW() - make_interval(days => $1::int)) AS stale,
                (category IS NULL) AS no_category,
@@ -477,6 +487,7 @@ function catalogDetail(quality: CatalogQuality) {
 export function dataQualityDetail(result: DataQualityResult) {
   return {
     version: result.version,
+    duplicates_identity: DUPLICATES_IDENTITY,
     stale_after_days: STALE_AFTER_DAYS,
     thresholds: DATA_QUALITY_THRESHOLDS,
     failing: result.failing,

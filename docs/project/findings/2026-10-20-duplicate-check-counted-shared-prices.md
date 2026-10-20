@@ -7,9 +7,14 @@ category and amount, whatever the fee. Two products at one price (a checking and
 or two free lines all counted. Hamilton's duplicate collapse already closes the same fee line
 published twice (same name, audience, variant, product and charging frequency) every publish step,
 so the alarm measured shared prices, not duplicate fees.
-**Fix:** the graded check uses the collapse's identity; the old reading is reported beside it as
-`same_amount`, not graded. No fee data changes.
+**Fix:** the graded check uses the collapse's exact identity (its frequency-class rule, product key
+and rate fields); the old reading is reported beside it as `same_amount`, not graded. The step
+detail carries `duplicates_identity: "fee_line"`, and change outcomes treat a different identity as
+a changed series, so #1781's "duplicates fall" entry is not credited with the redefinition. No fee
+data changes.
 **Lesson:** a data-quality check has to use the same identity as the step that repairs the problem,
 or its alarm can never clear.
 **Guard:** `src/lib/agents/deming/data-quality.db.test.ts` ("grades only the same fee line twice,
-and counts a shared category and amount apart").
+and counts a shared category and amount apart", "keeps rate fees with different caps or bases
+apart"), `src/lib/agents/deming/change-outcomes.test.ts` ("does not credit a new duplicate identity
+as fewer duplicates").
