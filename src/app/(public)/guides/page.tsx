@@ -18,7 +18,7 @@ import Link from "next/link";
 import { guideCategories, type Guide } from "@/lib/guides";
 import { loadConsumerGuides, loadProfessionalGuides } from "@/lib/guides/source";
 import type { FeeCategorySummary } from "@/lib/data-store/fees";
-import { getDisplayName } from "@/lib/fee-taxonomy";
+import { getDisplayName, sentenceFeeName } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { SITE_URL } from "@/lib/constants";
@@ -149,7 +149,7 @@ function GuideCard({
                 <UnstatedAudienceMark show={medianHasUnstatedAudience(primary)} />
               </span>
               <span className="text-[11px] text-ink-muted">
-                median {getDisplayName(primary.fee_category).toLowerCase()}
+                median {sentenceFeeName(getDisplayName(primary.fee_category))}
               </span>
             </div>
 
@@ -190,7 +190,7 @@ function GuideCard({
               <UnstatedAudienceMark show={medianHasUnstatedAudience(primary)} />
             </span>
             <span className="text-[10px] text-ink-muted">
-              median {getDisplayName(primary.fee_category).toLowerCase()}
+              median {sentenceFeeName(getDisplayName(primary.fee_category))}
             </span>
           </div>
         )}
