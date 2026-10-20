@@ -1058,7 +1058,7 @@ const spec = {
         operationId: "getRevenueTrend",
         summary: "Market-wide fee revenue by quarter",
         description:
-          `Deposit service-charge income summed from FDIC and NCUA call reports, in thousands of US dollars per quarter, newest first. view=national splits banks and credit unions and adds year-over-year change; view=districts gives one row per Fed district per quarter. ${PAID_ACCESS}.`,
+          `Call-report fee income in thousands of US dollars per quarter, newest first. Without source, the response keeps its original shape: one row per quarter (view=districts: per quarter and Fed district) whose service_charges, institutions, bank_service_charges and credit_union_service_charges are deprecated because they combine FDIC bank deposit service charges with NCUA broader credit-union fee income, two different measures. Use each row's by_regulator array instead, which gives each regulator's own figure, and financial_groups, which dates each regulator by its own newest filing. With source=fdic or source=ncua, data holds only that regulator's rows, each naming its source and measure. ${PAID_ACCESS}.`,
         tags: ["Revenue"],
         parameters: [
           {
@@ -1070,12 +1070,18 @@ const spec = {
             name: "quarters",
             in: "query",
             schema: { type: "integer", default: 8, minimum: 1, maximum: 66 },
-            description: "Quarters to return, back to 2010",
+            description: "Quarters to return per regulator, back to 2010",
+          },
+          {
+            name: "source",
+            in: "query",
+            schema: { type: "string", enum: ["fdic", "ncua"] },
+            description: "One regulator only: data then holds only that regulator's source-qualified rows. Default: the original combined rows, each with by_regulator",
           },
         ],
         responses: {
           "200": {
-            description: "Quarterly service-charge income",
+            description: "Quarterly call-report fee income",
             content: {
               "application/json": {
                 schema: {
@@ -1083,6 +1089,27 @@ const spec = {
                   properties: {
                     view: { type: "string" },
                     units: { type: "string" },
+                    financial_groups: {
+                      type: "array",
+                      description: "One entry per regulator (only the requested one with source), with its measure and its own newest quarter",
+                      items: {
+                        type: "object",
+                        properties: {
+                          source: { type: "string", enum: ["fdic", "ncua"] },
+                          charter_type: { type: "string", enum: ["bank", "credit_union"] },
+                          publisher: { type: "string" },
+                          measure: { type: "string", enum: ["deposit_service_charge_income", "broad_credit_union_fee_income"] },
+                          definition: { type: "string" },
+                          unit: { type: "string", example: "thousands of dollars" },
+                          period_basis: { type: "string", example: "standalone_quarter" },
+                          source_period_basis: { type: "string", enum: ["standalone_quarter", "year_to_date"] },
+                          status: { type: "string", enum: ["reported", "unavailable"] },
+                          latest_quarter: { type: "string", nullable: true, example: "2026-Q1" },
+                          latest_quarter_end: { type: "string", format: "date", nullable: true },
+                          quarters_returned: { type: "integer" },
+                        },
+                      },
+                    },
                     data: {
                       type: "array",
                       items: {
@@ -1090,11 +1117,48 @@ const spec = {
                         properties: {
                           quarter: { type: "string", example: "2026-Q1" },
                           fed_district: { type: "integer", description: "districts view only" },
-                          service_charges: { type: "number" },
-                          bank_service_charges: { type: "number", description: "national view only" },
-                          credit_union_service_charges: { type: "number", description: "national view only" },
-                          institutions: { type: "integer" },
+                          service_charges: {
+                            type: "number",
+                            description: "Thousands of dollars. Without source: deprecated, because it adds FDIC bank deposit service charges to NCUA broader credit-union fee income, two different measures; use by_regulator. With source: that regulator's measure only",
+                          },
+                          bank_service_charges: {
+                            type: "number",
+                            deprecated: true,
+                            description: "Default national view only. Deprecated: FDIC bank deposit service charges, kept for compatibility; use by_regulator",
+                          },
+                          credit_union_service_charges: {
+                            type: "number",
+                            deprecated: true,
+                            description: "Default national view only. Deprecated: NCUA broader credit-union fee income (not deposit service charges alone), kept for compatibility; use by_regulator",
+                          },
+                          institutions: {
+                            type: "integer",
+                            description: "Filers with positive income that quarter. Without source: deprecated, because it counts banks and credit unions together; use by_regulator",
+                          },
                           yoy_change_pct: { type: "number", nullable: true, description: "national view only" },
+                          by_regulator: {
+                            type: "array",
+                            description: "Default response only: each regulator's own figure for this row's quarter (and district). Never add these together",
+                            items: {
+                              type: "object",
+                              properties: {
+                                source: { type: "string", enum: ["fdic", "ncua"] },
+                                charter_type: { type: "string", enum: ["bank", "credit_union"] },
+                                measure: { type: "string", enum: ["deposit_service_charge_income", "broad_credit_union_fee_income"] },
+                                quarter_end: { type: "string", format: "date", nullable: true, example: "2026-03-31" },
+                                service_charges: { type: "number", description: "Thousands of dollars, this regulator's measure only" },
+                                institutions: { type: "integer", description: "This regulator's filers with positive income that quarter" },
+                              },
+                            },
+                          },
+                          source: { type: "string", enum: ["fdic", "ncua"], description: "source requests only" },
+                          charter_type: { type: "string", enum: ["bank", "credit_union"], description: "source requests only" },
+                          measure: {
+                            type: "string",
+                            enum: ["deposit_service_charge_income", "broad_credit_union_fee_income"],
+                            description: "source requests only",
+                          },
+                          quarter_end: { type: "string", format: "date", nullable: true, example: "2026-03-31", description: "source requests only" },
                         },
                       },
                     },

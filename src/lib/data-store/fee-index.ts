@@ -1282,9 +1282,22 @@ export interface PeerFeeRecord {
   fee_audience: "consumer" | "business" | "both" | "unknown";
   source_document_id: number | null;
   document_url: string | null;
+  /** The row's conditions (a waiver, a limit) as a reader sees them; only when asked for (withConditions). */
+  conditions?: string | null;
 }
 
-function peerFeeRecords(rows: Array<{ id?: number | string | null; amount: number | string | null; fee_name?: string | null; frequency?: string | null; fee_audience?: string | null; source_document_id: number | string | null; document_url: string | null }>): PeerFeeRecord[] {
+/** Options for getPeerFeeValues. */
+export interface PeerFeeValueOptions {
+  /**
+   * Read only these institutions' rows. Every value is still built by the same contract; a
+   * caller whose sets are all hand-picked passes their union so the read skips everyone else.
+   */
+  onlyInstitutionIds?: number[];
+  /** Attach each record's conditions (readerFeeConditions), for a page that shows waivers. */
+  withConditions?: boolean;
+}
+
+function peerFeeRecords(rows: Array<{ id?: number | string | null; amount: number | string | null; fee_name?: string | null; frequency?: string | null; fee_audience?: string | null; source_document_id: number | string | null; document_url: string | null; conditions?: string | null }>, withConditions = false): PeerFeeRecord[] {
   const records: PeerFeeRecord[] = [];
   for (const r of rows) {
     const id = Number(r.id);
@@ -1298,6 +1311,7 @@ function peerFeeRecords(rows: Array<{ id?: number | string | null; amount: numbe
       fee_audience: r.fee_audience === "consumer" || r.fee_audience === "business" || r.fee_audience === "both" ? r.fee_audience : "unknown",
       source_document_id: Number.isSafeInteger(doc) && doc > 0 ? doc : null,
       document_url: r.document_url ?? null,
+      ...(withConditions ? { conditions: readerFeeConditions(r.conditions) } : {}),
     });
   }
   return records.sort((a, b) => a.id - b.id);
@@ -1318,20 +1332,23 @@ export async function getPeerFeeValues(
   filterSets: PeerFilterSet[],
   categories: string[],
   excludeInstitutionId?: number,
+  options: PeerFeeValueOptions = {},
 ): Promise<Map<string, PeerFeeValue[]>[]> {
   if (categories.length === 0 || filterSets.length === 0) return filterSets.map(() => new Map());
+  const only = options.onlyInstitutionIds?.filter((id) => Number.isSafeInteger(id) && id > 0);
+  if (only && only.length === 0) return filterSets.map(() => new Map());
   const rows = await sql.unsafe(
     `SELECT ef.id, ef.fee_category, ef.amount, ef.institution_id, ct.institution_name,
             ct.charter_type, ct.asset_size_tier, ct.fed_district, ct.state_code, ct.asset_size,
             ef.source_document_id, ef.document_url, ef.created_at, ef.fee_published_id,
-            ef.fee_name, ef.frequency, ef.fee_audience, ${STATS_SCHEDULE_KEYS}
+            ef.fee_name, ef.frequency, ef.fee_audience${options.withConditions ? ", ef.conditions" : ""}, ${STATS_SCHEDULE_KEYS}
        FROM published_fee_catalog ef
        JOIN institution_sources ct ON ef.institution_id = ct.id
-      WHERE ef.fee_category = ANY($1::text[])
+      WHERE ef.fee_category = ANY($1::text[])${only ? "\n        AND ef.institution_id = ANY($2::bigint[])" : ""}
         AND ef.review_status = 'approved'
         AND ${STATS_ROW_FILTER}
         AND ${activeInstitutionFilter("ct")}`,
-    [categories] as never[],
+    (only ? [categories, only] : [categories]) as never[],
   ) as (PeerRow & {
     id: number | string;
     institution_name: string;
@@ -1342,6 +1359,7 @@ export async function getPeerFeeValues(
     fee_name: string | null;
     frequency: string | null;
     fee_audience: string | null;
+    conditions?: string | null;
     asset_size?: number | string | null;
   })[];
   const peerRows = rows.filter((row) => Number(row.institution_id) !== excludeInstitutionId);
@@ -1378,7 +1396,7 @@ export async function getPeerFeeValues(
           fee_published_ids: feeIdsOf(own),
           document_urls: urls,
           published_at: published,
-          fee_records: peerFeeRecords(own),
+          fee_records: peerFeeRecords(own, options.withConditions),
           ...severalField(category, own, amount),
           ...(countedAs !== undefined && countedAs !== id ? { counted_as: countedAs } : {}),
           ...(row && row.asset_size !== undefined ? { total_assets: row.asset_size === null ? null : Number(row.asset_size) } : {}),
@@ -1627,7 +1645,8 @@ function severalField(
  * Each listed institution's own fees per category, kept apart (src/lib/own-fee.ts): the
  * statistics value, the price its schedule states (null when it states several different
  * fees) and each fee by name. For rows that name an institution; medians and percentiles
- * read `getFeeValuesForInstitutions` (the same `value`).
+ * read `getFeeValuesForInstitutions` (the same `value`). An inactive institution is left out,
+ * as getContractFeeRows leaves it out, so a member shown here is one the answer eval can read.
  */
 export async function getOwnFeesForInstitutions(
   institutionIds: number[],
@@ -1638,10 +1657,12 @@ export async function getOwnFeesForInstitutions(
   const rows = (await sql.unsafe(
     `SELECT ef.institution_id, ef.fee_category, ef.fee_name, ef.amount
        FROM published_fee_catalog ef
+       JOIN institution_sources ct ON ef.institution_id = ct.id
       WHERE ef.institution_id = ANY($1::int[])
         AND ef.fee_category = ANY($2::text[])
         AND ef.review_status = 'approved'
-        AND ${STATS_ROW_FILTER}`,
+        AND ${STATS_ROW_FILTER}
+        AND ${activeInstitutionFilter("ct")}`,
     [institutionIds, categories] as never[],
   )) as { institution_id: number | string; fee_category: string; fee_name: string | null; amount: number | string | null }[];
   for (const category of categories) {

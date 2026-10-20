@@ -98,6 +98,9 @@ export function ConsumerMobileNav() {
                     <Link href="/account" onClick={close} className={DRAWER_LINK}>
                       Account
                     </Link>
+                    <Link href="/account/reports" onClick={close} className={DRAWER_LINK}>
+                      Your reports
+                    </Link>
                     <SignOutForm buttonClassName={`${DRAWER_LINK} w-full text-left`} />
                   </>
                 ) : (
@@ -189,6 +192,9 @@ function ProAccountLinks({ isStaff, onNavigate }: { isStaff: boolean; onNavigate
             Admin
           </Link>
         ) : null}
+        <Link href="/account/reports" onClick={onNavigate} className={DRAWER_LINK}>
+          Your reports
+        </Link>
         <Link href="/account" onClick={onNavigate} className={DRAWER_LINK}>
           Account and billing
         </Link>

@@ -13,6 +13,7 @@ import { revenueLineName } from "./revenue";
 import { MAX_STORY_LINE_WORDS, words } from "./four-roles";
 import { subjectPossessive } from "./subject";
 import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
+import { ownFeeLabel, ownFeeList, type SeveralFees } from "@/lib/own-fee";
 import { feeItem, proseFeeName } from "./names";
 import { annualItemsQuestion, countedPeerAmounts, MIN_PEERS_FOR_POSITION, placeAmong, pricePosition } from "./scenario";
 import { segmentClaims, segmentExhibit, segmentHeadline } from "./segment";
@@ -75,12 +76,22 @@ function feeSource(research: FeeResearch, label = FEE_SOURCE_LABEL): SourceRef {
 
 // ─── Consultant: sourced claims ──────────────────────────────────────────────
 
+/** The bank's own fees when its schedule states several different amounts for this one (#2030). */
+export function ownSeveralFees(research: Pick<FeeResearch, "current" | "ownSeveral">): SeveralFees | null {
+  return research.current === null ? research.ownSeveral ?? null : null;
+}
+
+/** "2 stop payment fees, $20 to $25". */
+function severalFeesPhrase(several: SeveralFees, name: string): string {
+  return `${count(several.fees.length)} ${name} fees, ${ownFeeLabel({ price: null, ...several }, money)}`;
+}
+
 /**
  * Where the bank's own fee stands when it has no row for it (#2035): its schedule, as read,
  * lists none, or no schedule is on file. Neither is a $0 fee. Null when that was not read.
  */
 function missingOwnFee(research: FeeResearch, name: string): { lead: string; fact: Fact } | null {
-  if (research.current !== null || research.ownRows.length > 0 || research.ownSchedule === undefined || ownRate(research) !== null) return null;
+  if (research.current !== null || ownSeveralFees(research) || research.ownRows.length > 0 || research.ownSchedule === undefined || ownRate(research) !== null) return null;
   const schedule = research.ownSchedule;
   const who = subjectPossessive(research);
   if (schedule === null) {
@@ -101,10 +112,13 @@ function missingOwnFee(research: FeeResearch, name: string): { lead: string; fac
 }
 
 function ownFeeClaim(research: FeeResearch, name: string): Fact | null {
-  if (research.current === null) return missingOwnFee(research, name)?.fact ?? null;
+  const several = ownSeveralFees(research);
+  if (research.current === null && !several) return missingOwnFee(research, name)?.fact ?? null;
   const row = research.ownRows[0];
   return {
-    text: `${subjectPossessive(research)} published ${name} fee is ${money(research.current)}.`,
+    text: several
+      ? `${subjectPossessive(research)} published fee schedule states ${severalFeesPhrase(several, name)} (${ownFeeList(several, money)}).`
+      : `${subjectPossessive(research)} published ${name} fee is ${money(research.current!)}.`,
     source: {
       label: `${subjectPossessive(research)} published fee schedule`,
       table: "published_fee_catalog",
@@ -362,6 +376,12 @@ function headline(research: FeeResearch, name: string): string {
     }
     return `${subjectPossessive(research)} ${name} fee is ${money(research.current)}; only ${count(amounts.length)} peers publish one, too few to rank.`;
   }
+  // Several different fees are the bank's own, stated as they are; their median is no price of its own.
+  const several = ownSeveralFees(research);
+  if (several) {
+    const stated = `${subjectPossessive(research)} schedule states ${severalFeesPhrase(several, name)}`;
+    return band ? `${stated}; ${count(band.n)} peers' median is ${money(band.median)}.` : `${stated}, and too few peers publish one to compare.`;
+  }
   // No amount on file means the fee is not in the index, never that the bank charges none.
   const missing = missingOwnFee(research, name);
   if (missing) return band ? `${missing.lead}; ${count(band.n)} peers' median is ${money(band.median)}.` : `${missing.lead}, and too few peers publish one to compare.`;
@@ -385,7 +405,8 @@ export function missingFigure(research: FeeResearch): ClarifyingQuestion | null 
   if (research.current === null && ownRate(research)) {
     return research.provenance.clientFacts.length === 0 ? rateVolumeQuestion(research.feeCategory, research) : null;
   }
-  if (research.current === null) return currentFeeQuestion(research.feeCategory, research);
+  // A schedule that states several fees has them on file; asking what the bank charges would ignore them (#2030).
+  if (research.current === null) return ownSeveralFees(research) ? null : currentFeeQuestion(research.feeCategory, research);
   if (!research.revenueLine && research.provenance.clientFacts.length === 0) return annualItemsQuestion(research.feeCategory, research.subjectName);
   return null;
 }

@@ -54,7 +54,7 @@ const SERVER_INSTRUCTIONS =
   "Look this up fresh for each request that depends on saved context; do not infer it from conversation history or memory. " +
   "Start with get_fee_index for typical fees in a state or nationally, find_institutions to look a bank up by name, state, city or size, " +
   "rank_institutions_by_fee for who charges the most or least for one fee, and get_institution for one institution's fees with source links. " +
-  "get_revenue_trend gives market-wide fee revenue by quarter back to 2010; get_fee_changes lists fee changes detected recently. " +
+  "get_revenue_trend gives call-report fee income by quarter back to 2010, banks (FDIC) and credit unions (NCUA) as separate measures never to be added together. Its combined fields (service_charges, institutions, bank_service_charges, credit_union_service_charges) are deprecated because they mix the two regulators; read by_regulator instead. get_fee_changes lists fee changes detected recently. " +
   "get_branches gives bank and credit union branch addresses with latitude/longitude (good for maps); get_local_market lists who competes in an institution's market with deposit share. " +
   "get_peer_comparison places one institution's dollar fees among its peers (median, middle half, percentile); get_rate_fees lists fees stated as a percentage, which are never mixed into dollar figures. " +
   "There is no full fee history yet, so do not infer fee trends from one snapshot. Credit the data as shown in each result's attribution field.";
@@ -272,18 +272,21 @@ const TOOLS: ToolDefinition[] = [
     name: "get_revenue_trend",
     title: "Fee revenue over time",
     description:
-      "Market-wide deposit service-charge income from FDIC and NCUA call reports, by quarter, newest first, in thousands of US dollars. view=national splits banks vs credit unions with year-over-year change; view=districts gives each Fed district.",
+      "Call-report fee income by quarter, newest first, in thousands of US dollars. FDIC reports bank service charges on deposit accounts; NCUA reports broader credit-union fee income. They are different measures: never add, average or rank them together. " +
+      "Without source, each row's service_charges, institutions, bank_service_charges and credit_union_service_charges are deprecated because they combine the two regulators; read by_regulator, which gives each regulator's own figure, and financial_groups, which dates each regulator by its own newest filing. " +
+      "source=fdic or source=ncua returns only that regulator's rows, each naming its source and measure. view=national gives the country; view=districts gives each Fed district.",
     inputSchema: {
       type: "object",
       properties: {
         view: { type: "string", enum: ["national", "districts"], default: "national" },
         quarters: { type: "integer", minimum: 1, maximum: 66, default: 8 },
+        source: { type: "string", enum: ["fdic", "ncua"] },
       },
       additionalProperties: false,
     },
     endpoint: "revenue",
     toParams: (args) =>
-      compact({ view: optionalString(args, "view"), quarters: optionalNumber(args, "quarters") }),
+      compact({ view: optionalString(args, "view"), quarters: optionalNumber(args, "quarters"), source: optionalString(args, "source") }),
   },
   {
     name: "get_fee_changes",

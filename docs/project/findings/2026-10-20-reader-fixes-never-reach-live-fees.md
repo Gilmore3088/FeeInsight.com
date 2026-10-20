@@ -23,7 +23,7 @@ cell-less list (doc 37839) went live on Oct 18, after #1838, with "3”x5”" at
   size (`sizeMismatch`).
 - `SOURCE_CHECK_STRATEGY` v19 re-checks every institution through the existing source-check pass,
   with the 12-hour second look and takedowns on the ledger.
-- Knox v92 reads cell-less price-first lists and range rows one fee per line (`inPriceFirstListRun`,
+- Knox v94 reads cell-less price-first lists and range rows one fee per line (`inPriceFirstListRun`,
   `layout.ts`).
 - Live effect (real code over the candidates, Oct 20): 16 live fees come down. The own-row rule takes 10:
   30886, 30894, 51571 and 74628 (doc 2491), 35082, 55923, 120509, 125131, 127247 and 132529. The size
@@ -43,4 +43,4 @@ fees the old read already published, and the shared check has to refuse the erro
 
 **Agent lesson:** knox/issue-1827-each-row-keeps-its-own-price, darwin/issue-1827-own-row-decides-the-price
 
-**Guard:** `src/lib/custom-report/source-check-layout.test.ts` ("a fee never traces to its neighbour's price (#1827)") and `src/lib/agents/knox/specialists.test.ts` ("v92 reads a cell-less price-first list one fee per line")
+**Guard:** `src/lib/custom-report/source-check-layout.test.ts` ("a fee never traces to its neighbour's price (#1827)") and `src/lib/agents/knox/specialists.test.ts` ("v94 reads a cell-less price-first list one fee per line")

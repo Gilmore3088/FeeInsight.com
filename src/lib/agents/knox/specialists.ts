@@ -154,13 +154,20 @@ import { belongsToPaidReturnedUnit, paidReturnedUnits } from "@/lib/custom-repor
 // v91 (#1829): a fax-led line ("Fax (Domestic & International)", "Faxes (Domestic only)") reads as
 // document reproduction (`FAX_SERVICE`, fold v19); "domestic" there is where the fax goes, not a
 // wire. The stale-read floor stays at v78; the fold moves the live ones.
-// v92 (#1827): a cell-less price-first list ("$100.00 Safe Deposit Box Drilling/Per Box" / "$14.00 Safe
-// Deposit Box 3”x5”x22”/Year") is read one fee per line when it runs two lines or more and no bare
+// v93 (#1828): a dot-leader row priced in words ("Reconveyance………… Actual Cost", "Check Orders……
+// Prices Vary", "Incoming Wire....... Free") closes its line. It is never a heading or a name for
+// the row under it, in the rules or the family passes, and a name never runs on from it
+// ("Reconveyance .. Actual Cost: Returned payment" was read at the next row's $4.95, Oregon
+// Community FCU, doc 19849; Gunnison's "Wire Fee" $25 never borrows the free incoming wire's
+// direction). Follows #2470's v91; #2465 is v94. The stale-read floor stays at v78; name re-tidy
+// v24 renames the live names it left.
+// v94 (#1827; numbered v92 until #2467 took v93): a cell-less price-first list ("$100.00 Safe
+// Deposit Box Drilling/Per Box" / "$14.00 Safe Deposit Box 3”x5”x22”/Year") is read one fee per line when it runs two lines or more and no bare
 // price closes it, a range row ("$5-$15 | Levy") never names the row under it, and a heading never
 // takes the price of a price-first line that names its own fee. Before, each box took the next
 // size's price (Colby, doc 37839) and the levy took the garnishment's $20 (doc 2491). The stale-read
 // floor stays at v78; the shared source check (v19) takes the wrong live reads down.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 92 } as const;
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 94 } as const;
 
 export interface SpecialistRun {
   strategy: string;

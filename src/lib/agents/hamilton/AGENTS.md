@@ -705,6 +705,11 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     price closes as `superseded by #<id>`.
 31. Source check (`takeDownUntraceableFees`, `source-check.ts`): up to 120 institutions,
     `source_check_untraceable:<reason>`; restores earlier takedowns that now trace, except those on `SOURCE_CHECK_KEPT_DOWN` (each with its issue, logged as `kept_down`; 36542, #1369).
+    It ends `succeeded`, `no_work` (no institution due) or `failed` (#2235). A failed read or
+    write rolls back its savepoint, leaves a `step.warning` event, records no institution as
+    checked, and is kept in the step detail (`source_check_status`, `source_check_failed_phase`,
+    `source_check_error`) and the receipt ("Source check failed (select): ..."). The publish
+    carries on.
 32. Imported twins (`linkImportedFeesToTwins`, `source-check.ts`): an imported live fee with no
     document is pointed at its twin row that has one, up to 100 a step. No rollback. Then the
     source link fill (`fillSourceLinks`, #1342): a live fee with no link takes its own document's
@@ -733,7 +738,7 @@ id>'` and the run's batch id, and their verified row is rejected; a later copy t
 the fee again restores it. Fees still named at a new price stay live: the price change
 belongs to the publish step once Knox reads the newer copy. Each pair is checked once
 (attempt log, stage `publish`, strategy `hamilton.newer_copy_check`, fingerprint
-`v2:<older>:<newer>`; v2 judged every v1 pair again, #2477). The shared learning store skips these takedowns, since the bank
+`v1:<older>:<newer>`). The shared learning store skips these takedowns, since the bank
 changed the page and Knox and Darwin read the older copy correctly.
 `NEWER_COPY_RETIRE_LIVE = false` turns the check into a shadow run that only logs.
 
@@ -783,8 +788,7 @@ flag/count and says the restoration proposals remain pending. Neither a pair dec
 restored lineage/source-check receipt survives rollback; the normal next check can retry the
 still-pending pair. This adds no retry subsystem or historical replay.
 
-v2 (#2477, James 2026-10-20) reopened every v1 pair under these guards; prod dry run: 772 pairs,
-8 fees retired at 2 institutions, 0 restores. Before v2 these fixes kept v1 fingerprints; they applied to pending pairs and future copies,
+These fixes deliberately keep v1 fingerprints. They apply to pending pairs and future copies,
 without reopening settled decisions; unlike the earlier text guards, tightening the witness
 can retire more. Bayes records the explicit no-replay policy in
 `VERSIONS_WITHOUT_REPLAY.NEWER_COPY_STRATEGY`. The historical amount-only exposure is not a
@@ -1278,8 +1282,12 @@ institution in it (`src/lib/agents/hamilton/studies`). One run a day
   Cross-sectional only: fee prices are a current snapshot (fee moves over time are artifacts), so
   a result describes how prices differ across institutions, never what a change would do.
 - `inferred_items_paid`: reported overdraft/NSF income divided by the published fee, a range,
-  always labeled inferred. Credit unions 2024 only (NCUA retired the lines); banks once RIAD H032
-  loads ($1B+ banks, overdraft and NSF together).
+  always labeled inferred. Banks once RIAD H032 loads ($1B+ banks, overdraft and NSF together).
+  Income counts only when it is current against its charter's newest call report filing
+  (#2052): bank income within one quarter of the newest FDIC filing; credit union income
+  (December year to date) when it is the most recent December within four quarters of the
+  newest NCUA filing. Credit unions are left out while NCUA's lines stop at 2024; the findings'
+  `income_periods` name the period used and what was left out.
 - Nothing from a study is published on the site or sent until James says so.
 - Pro readers see two studies (James, Oct 12, #1082): `fee_dependence` and `inferred_items_paid`,
   each with a note on how it was calculated (`PRO_STUDIES` in `src/lib/hamilton/workspace/studies.ts`).
@@ -1327,7 +1335,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `EVAL_VERDICT_VERSION` | — | v8 | `hamilton/eval-verdicts.ts` |
 | `FREQUENCY_FILL_VERSION` | — | v15 | `hamilton/frequency-fill.ts` |
 | `GUARD_REQUEUE_STRATEGY` | `publish.guard_requeue` | v1 | `hamilton/guard-requeue.ts` |
-| `NEWER_COPY_STRATEGY` | `hamilton.newer_copy_check` | v2 (every v1 pair judged again, #2477) | `hamilton/newer-copy-retire.ts` |
+| `NEWER_COPY_STRATEGY` | `hamilton.newer_copy_check` | v1 | `hamilton/newer-copy-retire.ts` |
 | `HAMILTON_PUBLISH_STRATEGY` | `publish.rules` | v3 | `hamilton/publish.ts` |
 | `REFRESH_COPY_STRATEGY` | `hamilton.refresh_copy` | v2 | `hamilton/refresh-copy.ts` |
 | `RULES_RECHECK_STRATEGY` | `hamilton.rules_recheck` | v4 | `hamilton/rules-recheck.ts` |
@@ -1336,7 +1344,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `SOURCE_LINK_DRIFT_VERSION` | `hamilton.source_link_drift` | v1 | `hamilton/source-link.ts` |
 | `FEE_DEPENDENCE_VERSION` | — | v1 | `hamilton/studies/fee-dependence.ts` |
 | `PRICE_STUDY_VERSION` | — | v1 | `hamilton/studies/index.ts` |
-| `INFERRED_VOLUME_VERSION` | — | v2 | `hamilton/studies/inferred-volume.ts` |
+| `INFERRED_VOLUME_VERSION` | — | v4 (income current against the newest filing: banks one quarter, credit union December four quarters, #2052) | `hamilton/studies/inferred-volume.ts` |
 
 The shared figure gate and paid eval use the same explicit monetary-unit normalization
 (`hamilton/monetary-units.ts`): stored thousands/millions/billions become base dollars,

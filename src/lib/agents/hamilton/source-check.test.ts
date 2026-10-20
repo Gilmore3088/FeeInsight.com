@@ -9,6 +9,7 @@ import {
   readerLostLine,
   restorableExcerpt,
   restoreStillPrinted,
+  sourceCheckReceiptNote,
   restorableName,
   importedTwinFingerprint,
   linkImportedFeesToTwins,
@@ -368,6 +369,128 @@ describe("takeDownUntraceableFees", () => {
     const result = await takeDownUntraceableFees(db, { runId: 5, batchId: "b", dryRun: true, stateCode: "TX" });
     expect(result.takedowns).toHaveLength(1);
     expect(calls.some((query) => query.includes("UPDATE"))).toBe(false);
+  });
+
+  // #2235: a failed check must never read as "no institutions were due".
+  function failingDb(failOn: string, due: unknown[] = [{ institution_id: 42, max_fee_id: 9 }]) {
+    const { db: base, calls } = createDb([fee(1, "Overdraft Protection Items - Negative from", "50.01")]);
+    const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const query = strings.join("?");
+      if (query.includes(failOn)) {
+        calls.push(query);
+        return Promise.reject(new Error("statement timeout"));
+      }
+      if (query.includes("MAX(fp.fee_published_id)")) {
+        calls.push(query);
+        return Promise.resolve(due);
+      }
+      return (base as unknown as (s: TemplateStringsArray, ...v: unknown[]) => Promise<unknown>)(strings, ...values);
+    });
+    return { db: db as unknown as Parameters<typeof takeDownUntraceableFees>[0], calls };
+  }
+  const silence = () => vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+  it("reports no work, not a failure, when no institution is due", async () => {
+    const { db, calls } = failingDb("never-matches", []);
+    const result = await takeDownUntraceableFees(db, { runId: 5, batchId: "b", dryRun: false });
+    expect(result.status).toBe("no_work");
+    expect(result.error).toBeUndefined();
+    expect(calls.some((query) => query.includes("'step.warning'"))).toBe(false);
+  });
+
+  it("reports a failed read as failed, with a step warning in the run ledger", async () => {
+    const spy = silence();
+    const { db, calls } = failingDb("FROM agent_source_texts");
+    const result = await takeDownUntraceableFees(db, { runId: 5, stepId: 11, batchId: "b", dryRun: false });
+    spy.mockRestore();
+
+    expect(result.status).toBe("failed");
+    expect(result.failedPhase).toBe("select");
+    expect(result.error).toBe("statement timeout");
+    expect(result.institutionsChecked).toBe(0);
+    expect(calls.some((query) => query.includes("'step.warning'"))).toBe(true);
+    // No fee is touched and no institution is recorded as checked.
+    expect(calls.some((query) => query.includes("UPDATE"))).toBe(false);
+    expect(calls.some((query) => query.includes("INSERT INTO pipeline_attempts"))).toBe(false);
+  });
+
+  it("reports a failed write as failed, with nothing counted as taken down or restored", async () => {
+    const spy = silence();
+    const { db, calls } = failingDb("SET rolled_back_at = NOW()");
+    const result = await takeDownUntraceableFees(db, { runId: 5, stepId: 11, batchId: "b", dryRun: false, stateCode: "TX" });
+    spy.mockRestore();
+
+    expect(result.status).toBe("failed");
+    expect(result.failedPhase).toBe("write");
+    expect(result.error).toBe("statement timeout");
+    expect(result.takedowns).toEqual([]);
+    expect(result.restored).toBe(0);
+    expect(calls.some((query) => query.includes("'step.warning'"))).toBe(true);
+  });
+
+  it("counts nothing as checked after a failed write, since its savepoint rolled back", async () => {
+    const spy = silence();
+    const { db } = failingDb("SET rolled_back_at = NOW()");
+    const result = await takeDownUntraceableFees(db, { runId: 5, stepId: 11, batchId: "b", dryRun: false, stateCode: "TX" });
+    spy.mockRestore();
+
+    expect(result.status).toBe("failed");
+    expect(result.institutionsChecked).toBe(0);
+    expect(result.liveFeesChecked).toBe(0);
+    expect(result.traced).toBe(0);
+    expect(result.relinked).toBe(0);
+    expect(result.flagged).toBe(0);
+    expect(result.awaitingSecondLook).toBe(0);
+    expect(result.cleared).toBe(0);
+    expect(result.readerLost).toBe(0);
+    expect(result.keptDown).toEqual([]);
+  });
+
+  it("reports a completed check as succeeded", async () => {
+    const { db } = createDb([fee(1, "Overdraft Protection Items - Negative from", "50.01")]);
+    const live = await takeDownUntraceableFees(db, { runId: 5, batchId: "b", dryRun: false, stateCode: "TX" });
+    const dry = await takeDownUntraceableFees(db, { runId: 5, batchId: "b", dryRun: true, stateCode: "TX" });
+    expect(live.status).toBe("succeeded");
+    expect(dry.status).toBe("succeeded");
+    expect(live.institutionsChecked).toBe(1);
+    expect(live.liveFeesChecked).toBe(1);
+  });
+});
+
+describe("sourceCheckReceiptNote", () => {
+  const base = {
+    status: "succeeded" as const,
+    institutionsChecked: 1,
+    liveFeesChecked: 3,
+    traced: 3,
+    relinked: 0,
+    takedowns: [],
+    restored: 0,
+    flagged: 0,
+    awaitingSecondLook: 0,
+    cleared: 0,
+    readerLost: 0,
+    keptDown: [],
+  };
+
+  it("says nothing when the check ran and changed nothing", () => {
+    expect(sourceCheckReceiptNote(base, false)).toBe("");
+    expect(sourceCheckReceiptNote({ ...base, status: "no_work", institutionsChecked: 0, liveFeesChecked: 0, traced: 0 }, false)).toBe("");
+    expect(sourceCheckReceiptNote(null, false)).toBe("");
+  });
+
+  it("names a failed check and its phase, so it never reads as a clean one", () => {
+    const note = sourceCheckReceiptNote({ ...base, status: "failed", failedPhase: "select", error: "statement timeout" }, false);
+    expect(note).toBe(" Source check failed (select): statement timeout. No live fee was checked against its schedule this step.");
+    const write = sourceCheckReceiptNote({ ...base, status: "failed", failedPhase: "write", error: "deadlock" }, false);
+    expect(write).toContain("Source check failed (write): deadlock.");
+    expect(write).toContain("nothing was taken down, restored or relinked");
+  });
+
+  it("reports takedowns, relinks and restores", () => {
+    expect(sourceCheckReceiptNote({ ...base, relinked: 2, restored: 1 }, true)).toBe(
+      " Source check: would take down 0 live fee(s) not stated in the bank's stored schedule, relinked 2 to a stored schedule, would restore 1 earlier takedown(s) that now trace.",
+    );
   });
 });
 

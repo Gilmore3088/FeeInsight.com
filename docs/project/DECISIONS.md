@@ -5,11 +5,73 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-20
 
+**A cancelled account keeps read-only access to its own reports.** James, 2026-10-20 (#1999 part
+2, from the #1920 billing-state review): after a subscription ends, the account can still view and
+download the reports it already has, but it cannot start a new report, re-run or regenerate one,
+or edit a saved board brief. Nobody reads another user's report; an admin can read any report job.
+The read rule is `canReadReportJob` and the start rule `reportStartRefusal` in
+`src/lib/report-access.ts`: the legacy job routes (`/api/reports/[id]/status`, `/download`) let
+the owner read with or without a subscription; `/api/reports/generate`, the Pro report actions and
+the board-brief actions refuse a start with a message that points where `premiumGatePath` sends
+the account (/subscribe, /account/billing-issue or /account/team-billing); and
+`/api/pro/report-pdf` still downloads the account's own saved report (answers, the committee packet
+and published reports stay Pro-only). Pro pages still send a lapsed visitor through
+`premiumGatePath`, so the reports are listed outside the Pro shell at `/account/reports`: any
+signed-in account sees only its own completed report jobs and saved Hamilton reports, with download
+links and no start or re-run controls, linked from the billing pages, /subscribe and the account menu.
+
+**Hosted report tokens are rotated and kept out of the repo.** James, 2026-10-20, on #2001 (found
+in the #1922 customer data isolation review; tracker #975): rotate the `/r/<token>` prospect report
+tokens and move them out of the repository. The committed `Reports/studio/hosted-reports.json` is
+deleted. Tokens now come only from the `HOSTED_REPORT_TOKENS` environment variable (a JSON object,
+token to record), compared in constant time; missing or malformed config resolves no token, so
+every link 404s rather than opening. A token must be 32 to 64 hex characters, so none of the old
+16-character tokens resolve once this deploys. James issues new tokens by the steps in
+`docs/runbooks/hosted-report-tokens.md`; no token value goes in a PR, issue or file in the repo.
+
+**A seat member of a lapsed team sees a team-billing page, not /subscribe.** James, 2026-10-20
+(#1999, from the #1920 billing-state review): a seat member whose team owner's payment has lapsed
+(past due beyond the grace window) sees a short page, "Your team's subscription needs attention",
+asking them to contact the owner, named with the team and an email link when known, instead of
+being sent to /subscribe to buy their own. The owner still goes to /account/billing-issue. The page
+is `/account/team-billing`; every Pro gate routes through `premiumGatePath` in
+`src/lib/team-billing.ts`. Part 2 of #1999 was decided the same day (the entry above).
+
+**Paid market-report links are tied to their payment.** James, 2026-10-20 (#2000, found in the
+#1922 isolation review). Every report link sent to a buyer names the paid request (`leads.id`) it
+was issued for, in the signed link, and opens only while that payment is live: paid and not
+refunded (`createPurchaseReportToken` in `src/lib/custom-report/link.ts`, checked by
+`reportLinkOpens` in `link-access.ts`). A refund closes that buyer's link even when another buyer
+of the same bank has paid. Links already sent, one per bank per day, keep working until they
+expire (90 days) under the old rule. No migration: the payment state is the existing `leads`
+columns `paid_at` and `refunded_at`.
+
+**Institution pages with fewer than 5 verified fees stay out of search.** James, 2026-10-20,
+on #1043: keep fee-less and thin institution pages out of search until they have fees, rather
+than index pages that carry only financial data. A page with fewer than
+`MIN_VERIFIED_FEES_FOR_OFFER` (5) verified fees is `noindex, follow` (`institutionProfileMetadata`
+in `src/app/(public)/institution/[id]/profile-page.tsx`) and left out of `src/app/sitemap.ts`; it
+stays reachable by link and joins search on its own once it has the fees. Why: a large share of
+near-empty pages can weigh on how search engines treat the whole site, and #1043 counted 4,687 of
+8,522 active institutions without live fees. No code change was needed;
+`src/app/(public)/institution/[id]/metadata-robots.test.ts` and `src/app/sitemap.test.ts` pin the
+rule. Indexing pages on financial data alone would need a new decision and a minimum-content rule
+in code.
+
+**Previews build only for PRs that change visible files.** James, 2026-10-20: previews build only
+for PRs that change visible files (src/app, src/components, styles, public, build config,
+dependencies); a build failure in a non-visible PR surfaces at the production deploy, which keeps
+the last good version. The allowlist is `isVisiblePath` in `scripts/vercel-ignore-build-lib.mjs`;
+production, a missing merge-base and any error still build. CLAUDE.md's "Vercel builds a preview
+for every PR" line changed to match, with James's approval.
+
 **Newer-copy check v2 reopens every settled pair.** James, 2026-10-20: "complete all steps and
 clean up data". Hamilton's newer-copy check judges every pair it decided under v1 again under the
 current guards (#2477). Prod dry run before merge, read-only: 772 pairs, 8 live fees retired at 2
 institutions, 0 restores; a proposed re-price rule was dropped after it retired 0 in the same dry
-run and review found it could take down prices a page still states. Retired fees keep the existing restore path.
+run and review found it could take down prices a page still states. Retired fees keep the existing restore path. **Reverted the same day before any fee retired:** a hand check
+showed Jeanne D'Arc FCU's current copy is a fee-changes notice page whose full schedule is a linked PDF, and
+two of the six fees v2 would retire there (64221, 93814) are still charged; v1 pairs stay closed again.
 
 **One front door for decisions and lessons.** James, 2026-10-20: "we need one central doc". One
 front door, `docs/project/LESSONS.md`, indexes every decision and lesson: one line per entry here,

@@ -210,6 +210,15 @@ const STATE_BY_NAME = Object.entries(STATE_NAMES)
 // sentence opener before it, or a capitalised word after it, makes it part of a name.
 const NAME_WORD = "(?!(?:The|A|An|And|At|Across|As|But|By|For|In|Its|On|Our|Than|That|This|To|While|With)\\b)[A-Z][\\w&'.-]*";
 const NATIONAL_IN_NAME = new RegExp(`(?:\\b${NAME_WORD}\\s+)+National\\b|\\bNational(?:\\s+(?:of\\s+)?[A-Z][\\w&'.-]*)+`, "g");
+// A title-case statistic ("National Median: $29", "National Overdraft Median", "U.S. National
+// median") is the national index, though its capitalised neighbours look like a bank's name.
+// Lowercasing it first keeps NATIONAL_IN_NAME from blanking it; a word such as Bank in between
+// still makes it a name ("National Bank Median").
+const INSTITUTION_WORD = "(?:Bank|Banks|Bancorp|Trust|Association|Credit|Union|Savings|Financial|Federal)\\b";
+const NATIONAL_STATISTIC = new RegExp(
+  `\\bNational((?:\\s+(?!${INSTITUTION_WORD})[A-Z][\\w&'.-]*)*?\\s+(?:[Mm]edian|[Aa]verage|[Mm]ean|[Ii]ndex|[Bb]enchmark|[Pp]ercentile)s?\\b)`,
+  "g",
+);
 const NATIONAL_SCOPE = /\b(?:national(?:ly)?|nationwide|across the (?:country|nation|u\.?s\.?))\b/i;
 
 /** The groups a sentence names: states, charters, Fed districts, or the nation as a whole. */
@@ -228,7 +237,8 @@ function namedGroups(sentence: string) {
   if (/\bbanks\b/i.test(sentence)) charters.add("bank");
   if (/\bcredit unions\b/i.test(sentence)) charters.add("credit_union");
   const districts = new Set((sentence.match(/\bdistrict\s+(\d{1,2})\b/gi) ?? []).map((m) => m.replace(/\D/g, "")));
-  const national = NATIONAL_SCOPE.test(sentence.replace(NATIONAL_IN_NAME, " "));
+  const unnamed = sentence.replace(NATIONAL_STATISTIC, "national$1").replace(NATIONAL_IN_NAME, " ");
+  const national = NATIONAL_SCOPE.test(unnamed);
   return { states, charters, districts, national };
 }
 

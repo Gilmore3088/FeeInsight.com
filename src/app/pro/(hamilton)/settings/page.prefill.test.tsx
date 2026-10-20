@@ -87,7 +87,7 @@ describe("Settings pre-fills a peer group from a public page's link (#1981)", ()
     expect(section.getByText("Second Credit Union")).toBeInTheDocument();
     expect(section.queryByText(/Institution 99999/)).not.toBeInTheDocument();
     expect(section.getByText("2 of 50 chosen.")).toBeInTheDocument();
-    expect(section.getByText("Fee: Overdraft (OD). Data as of October 17, 2026.")).toBeInTheDocument();
+    expect(section.getByText("Fee: Overdraft. Data as of October 17, 2026.")).toBeInTheDocument();
     expect(peerSection().querySelector<HTMLInputElement>('input[name="name"]')!.value).toBe("Home metro");
     expect(peerSection().querySelector<HTMLInputElement>('input[name="research_institution_id"]')!.value).toBe("323");
     expect(section.getByRole("button", { name: "Save this set" })).toBeEnabled();
@@ -114,6 +114,23 @@ describe("Settings pre-fills a peer group from a public page's link (#1981)", ()
     view.rerender(await SettingsPage({ searchParams: Promise.resolve({ instId: "323" }) }));
     expect(within(peerSection()).queryByRole("button", { name: "Save this set" })).not.toBeInTheDocument();
     expect(prefillLookups()).toEqual([[98, 99]]);
+  });
+
+  it("says a set too large to copy is too large, with no lookup (#1997)", async () => {
+    render(await SettingsPage({ searchParams: Promise.resolve({ instId: "323", name: "Banks in Florida", fee: "wire_intl_outgoing", large: "1" }) }));
+    const section = within(peerSection());
+    expect(section.getByText(/^Banks in Florida is too large to copy as a peer group/)).toBeInTheDocument();
+    expect(section.getByText("Fee: International wire.")).toBeInTheDocument();
+    expect(section.getByRole("button", { name: "Save peer group" })).toBeEnabled();
+    expect(prefillLookups()).toEqual([]);
+    expect(mocks.createPeerSet).not.toHaveBeenCalled();
+  });
+
+  it("keeps a too-large set's flag through sign-in (#1997)", async () => {
+    mocks.user.mockResolvedValue(null);
+    await expect(SettingsPage({ searchParams: Promise.resolve({ instId: "323", name: "Banks in Florida", large: "1" }) })).rejects.toThrow(
+      `REDIRECT:/login?from=${encodeURIComponent("/pro/settings?instId=323&name=Banks+in+Florida&large=1#peer-sets")}`,
+    );
   });
 
   it("caps an oversized peers list at the most a group holds before looking anything up", async () => {

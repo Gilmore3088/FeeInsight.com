@@ -15,7 +15,7 @@ import { plainName, proseFeeName } from "./names";
 import { MIN_PEERS_FOR_POSITION, pricePosition } from "./scenario";
 import { feeScheduleUrls, statedFeeLabel } from "@/lib/own-fee";
 import type { AskSegment, Exhibit, Fact, SegmentMember, SegmentResearch, SourceRef } from "./types";
-import { segmentLabel, shortSegmentLabel } from "@/lib/segment-words";
+import { countedGroup, segmentLabel, shortSegmentLabel, theCountedGroup } from "@/lib/segment-words";
 
 // The wording lives in lib/segment-words.ts so data-store can use it without a Hamilton import (#2007).
 export { segmentLabel, shortSegmentLabel };
@@ -153,7 +153,7 @@ export function buildSegmentResearch(input: {
     input.institutionsInSegment === 0
       ? `No institution in the registry fits ${input.segment.label}.`
       : members.length === 0
-        ? `None of the ${count(input.institutionsInSegment)} ${input.segment.label} publishes ${article(name)} ${name} fee in the index yet.`
+        ? `None of ${theCountedGroup(input.institutionsInSegment, input.segment.label)} publishes ${article(name)} ${name} fee in the index yet.`
         : null;
   const asOf = members.map((m) => m.publishedAt).filter((d): d is string => !!d).sort().pop()?.slice(0, 10) ?? null;
   return {
@@ -200,13 +200,13 @@ export function segmentHeadline(seg: SegmentResearch, feeCategory: string, curre
   if (seg.problem) return seg.problem;
   const n = seg.members.length;
   if (!seg.band) {
-    return `Only ${count(n)} of ${count(seg.institutionsInSegment)} ${shortSegmentLabel(seg.segment)} publish ${article(name)} ${name} fee, too few for a median.`;
+    return `Only ${count(n)} of ${countedGroup(seg.institutionsInSegment, shortSegmentLabel(seg.segment))} publish ${article(name)} ${name} fee, too few for a median.`;
   }
   if (current !== null && seg.ownPosition !== null) {
     const where = seg.ownPosition <= 0 ? "at the bottom" : seg.ownPosition >= 100 ? "at the top" : `at the ${ordinal(seg.ownPosition)} percentile`;
-    return `${subjectPossessive(research)} ${money(current)} ${name} fee is ${where} of ${count(n)} ${shortSegmentLabel(seg.segment)} (median ${money(seg.band.median)}).`;
+    return `${subjectPossessive(research)} ${money(current)} ${name} fee is ${where} of ${countedGroup(n, shortSegmentLabel(seg.segment))} (median ${money(seg.band.median)}).`;
   }
-  return `${count(n)} ${shortSegmentLabel(seg.segment)} publish ${article(name)} ${name} fee; median ${money(seg.band.median)}, middle half ${money(seg.band.p25)} to ${money(seg.band.p75)}.`;
+  return `${capitalize(countedGroup(n, shortSegmentLabel(seg.segment)))} publish ${article(name)} ${name} fee; median ${money(seg.band.median)}, middle half ${money(seg.band.p25)} to ${money(seg.band.p75)}.`;
 }
 
 /** The claims that describe the segment, each with its source. */
@@ -217,7 +217,7 @@ export function segmentClaims(seg: SegmentResearch, feeCategory: string, current
   const out: Fact[] = [];
   const n = seg.members.length;
   out.push({
-    text: `${count(n)} of the ${count(seg.institutionsInSegment)} ${shortSegmentLabel(seg.segment)} publish ${article(name)} ${name} fee in the index.`,
+    text: `${count(n)} of ${theCountedGroup(seg.institutionsInSegment, shortSegmentLabel(seg.segment))} publish ${article(name)} ${name} fee in the index.`,
     source,
     sampleSize: n,
   });

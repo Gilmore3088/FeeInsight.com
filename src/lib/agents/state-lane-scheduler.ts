@@ -14,6 +14,7 @@ import { DARWIN_VERIFY_MAX_LIMIT, darwinDueSql } from "./darwin/verify";
 import { HAMILTON_PUBLISH_MAX_LIMIT } from "./hamilton/publish";
 import { knoxFreeSignature, RULES_RECHECK_STRATEGY } from "./hamilton/rules-recheck";
 import { SOURCE_CHECK_REASON, SOURCE_CHECK_RESTORE_PREFIX, SOURCE_CHECK_STRATEGY } from "./hamilton/source-check";
+import { recordStepWarning } from "./hamilton/step-warning";
 import { FOUND_COOLDOWN_DAYS, MISS_COOLDOWN_DAYS } from "./magellan/cooldowns";
 import { MAGELLAN_STALE_LINK_REFETCH_DAYS } from "./magellan/fetch";
 import { DISCOVERY_METHOD_VERSION } from "./magellan/discovery";
@@ -464,59 +465,74 @@ export async function stateHasDocumentBacklog(stateCode: string): Promise<boolea
 
 /**
  * Live fees Hamilton has not checked yet: an institution not source-checked since its
- * newest live fee, or a live Knox document not re-checked under today's rules. With a
- * state code, true when that state has any; without one, the states that do.
+ * newest live fee, or a live Knox document not re-checked under today's rules. Returns the
+ * given states that have any (with `firstOnly`, at most one row).
+ *
+ * The probes run once per institution and once per document, never once per live fee: the
+ * per-fee form probed `pipeline_attempts` for every live fee and hit the 2-minute statement
+ * timeout on the nationwide read (#2424). The rules re-check fingerprint is one value shared by
+ * every attempt at a version, so its checked documents are read once and anti-joined.
  */
-function uncheckedLiveFeeStates(stateCode: string | null) {
-  return sql<{ state_code: string }[]>`
+function uncheckedLiveFeeStates(stateCodes: readonly string[], firstOnly = false, db: typeof sql = sql) {
+  return db<{ state_code: string }[]>`
     WITH live AS (
-      SELECT fp.institution_id, upper(btrim(inst.state_code)) AS state_code, fr.source,
-             fr.source_document_id, fr.outlier_flags, fp.rolled_back_at,
-             MAX(fp.fee_published_id) OVER (PARTITION BY fp.institution_id) AS max_fee_id
+      SELECT fp.institution_id, upper(btrim(inst.state_code)) AS state_code, fp.fee_published_id,
+             fr.source, fr.source_document_id, fr.outlier_flags, fp.rolled_back_at
         FROM published_fee_records fp
         JOIN institution_sources inst ON inst.id = fp.institution_id
         JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
         JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
        -- Source-check takedowns count too: the source check re-checks and restores them.
        WHERE (fp.rolled_back_at IS NULL OR fp.rolled_back_reason LIKE ${`${SOURCE_CHECK_REASON}:%`})
-         AND (${stateCode}::text IS NULL OR upper(btrim(inst.state_code)) = ${stateCode}::text)
+         AND upper(btrim(inst.state_code)) = ANY(${stateCodes}::text[])
+    ), institutions AS (
+      SELECT live.institution_id, live.state_code, MAX(live.fee_published_id) AS max_fee_id
+        FROM live
+       GROUP BY live.institution_id, live.state_code
+    ), docs AS (
+      SELECT DISTINCT live.institution_id, live.state_code, live.source_document_id
+        FROM live
+       WHERE live.rolled_back_at IS NULL
+         AND live.source = 'knox'
+         AND live.source_document_id IS NOT NULL
+         AND NOT (COALESCE(live.outlier_flags, '[]'::jsonb) ? 'knox_paid_extraction')
+    ), rechecked AS (
+      SELECT DISTINCT pa.institution_id, pa.source_document_id
+        FROM pipeline_attempts pa
+       WHERE pa.input_fingerprint = ${knoxFreeSignature()}
+         AND pa.strategy = ${RULES_RECHECK_STRATEGY.strategy}
+         AND pa.strategy_version = ${RULES_RECHECK_STRATEGY.version}
     )
-    SELECT DISTINCT live.state_code
-      FROM live
+    SELECT institutions.state_code
+      FROM institutions
      WHERE NOT EXISTS (
              SELECT 1 FROM pipeline_attempts pa
-              WHERE pa.input_fingerprint = 'v' || ${SOURCE_CHECK_STRATEGY.version}::text || ':' || live.max_fee_id::text
+              WHERE pa.input_fingerprint = 'v' || ${SOURCE_CHECK_STRATEGY.version}::text || ':' || institutions.max_fee_id::text
                 AND pa.strategy = ${SOURCE_CHECK_STRATEGY.strategy}
-                AND pa.institution_id = live.institution_id
+                AND pa.institution_id = institutions.institution_id
                 AND NOT EXISTS (
                   SELECT 1 FROM pipeline_attempts restore
                    WHERE restore.strategy = ${SOURCE_CHECK_STRATEGY.strategy}
-                     AND restore.institution_id = live.institution_id
+                     AND restore.institution_id = institutions.institution_id
                      AND restore.input_fingerprint LIKE ${`${SOURCE_CHECK_RESTORE_PREFIX}%`}
                      AND restore.id > pa.id
                 )
            )
-        OR (
-          live.rolled_back_at IS NULL
-          AND live.source = 'knox'
-          AND live.source_document_id IS NOT NULL
-          AND NOT (COALESCE(live.outlier_flags, '[]'::jsonb) ? 'knox_paid_extraction')
-          AND NOT EXISTS (
-            SELECT 1 FROM pipeline_attempts pa
-             WHERE pa.input_fingerprint = ${knoxFreeSignature()}
-               AND pa.strategy = ${RULES_RECHECK_STRATEGY.strategy}
-               AND pa.strategy_version = ${RULES_RECHECK_STRATEGY.version}
-               AND pa.institution_id = live.institution_id
-               AND pa.source_document_id = live.source_document_id
-          )
-        )
-     ${stateCode ? sql`LIMIT 1` : sql``}
+    UNION
+    SELECT docs.state_code
+      FROM docs
+     WHERE NOT EXISTS (
+             SELECT 1 FROM rechecked
+              WHERE rechecked.institution_id = docs.institution_id
+                AND rechecked.source_document_id = docs.source_document_id
+           )
+     ${firstOnly ? db`LIMIT 1` : db``}
   `;
 }
 
 export async function stateHasUncheckedLiveFees(stateCode: string): Promise<boolean> {
   try {
-    return (await uncheckedLiveFeeStates(stateCode)).length > 0;
+    return (await uncheckedLiveFeeStates([stateCode], true)).length > 0;
   } catch (error) {
     console.error("stateHasUncheckedLiveFees failed:", error);
     return false;
@@ -587,27 +603,116 @@ export async function wakeLanesAfterRecovery(deploy: string | null = currentDepl
   }
 }
 
+/** States per unchecked-live-fee read, so each read ends well inside the statement timeout (#2424). */
+export const UNCHECKED_WAKE_STATE_BATCH = 8;
+/**
+ * The wake's own time budget when the caller sets no deadline. Each batch's statement timeout is
+ * fitted to what is left of it, so several slow batches can never add up past the route's
+ * maxDuration (PR #2487 review).
+ */
+export const UNCHECKED_WAKE_BUDGET_MS = 120_000;
+/** No batch's statement timeout goes above the database's own 2-minute limit (#2424). */
+export const UNCHECKED_WAKE_STATEMENT_TIMEOUT_MS = 120_000;
+/**
+ * The wake UPDATE touches a few lane rows by key, so it needs seconds, not the read's budget. It
+ * gets its own statement timeout, re-fitted to what the batch has left after the read, and a short
+ * lock timeout so a lane row held by a running pass fails this batch fast instead of waiting
+ * (#2498 review).
+ */
+export const UNCHECKED_WAKE_UPDATE_TIMEOUT_MS = 10_000;
+export const UNCHECKED_WAKE_LOCK_TIMEOUT_MS = 5_000;
+/** Postgres reads a statement_timeout of 0 as "no limit", so a spent budget still sets 1 ms. */
+const MIN_POSTGRES_TIMEOUT_MS = 1;
+
+/** A batch is not started with less than this left: it would only time out. */
+export const UNCHECKED_WAKE_MIN_BATCH_MS = 5_000;
+
+export interface UncheckedLaneWake {
+  woken: number;
+  /** States whose read finished. */
+  checkedStates: number;
+  /** States whose read failed: their lanes were not woken this hour, whatever they hold. */
+  failedStates: string[];
+  /** States never read because the time budget was spent: not checked this run. */
+  skippedStates: string[];
+  /** The first read error, or null when every read finished. Never reported as "nothing due". */
+  error: string | null;
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 /**
  * A rules fix or a new source rule must reach every live fee within hours, not at each
  * state's next monthly pass: wake sleeping lanes whose state has live fees Hamilton has
- * not checked, so their hourly backlog passes run the checks in small batches.
+ * not checked, so their hourly backlog passes run the checks in small batches. Only lanes
+ * that could be woken are read, UNCHECKED_WAKE_STATE_BATCH states at a time, so one slow
+ * batch neither hides the others' wakes nor turns into "woke 0" (#2424).
  */
-export async function wakeLanesWithUncheckedLiveFees(): Promise<number> {
+export async function wakeLanesWithUncheckedLiveFees(
+  { deadlineMs = Date.now() + UNCHECKED_WAKE_BUDGET_MS }: { deadlineMs?: number } = {},
+): Promise<UncheckedLaneWake> {
+  let sleeping: string[];
   try {
-    const states = (await uncheckedLiveFeeStates(null)).map((row) => String(row.state_code));
+    const rows = await sql<{ state_code: string }[]>`
+      SELECT state_code
+        FROM public.agent_state_lanes
+       WHERE next_run_after > NOW() + ${STATE_LANE_BACKLOG_RETRY_MINUTES} * INTERVAL '1 minute'
+       ORDER BY state_code
+    `;
+    sleeping = rows.map((row) => String(row.state_code));
+  } catch (error) {
+    console.error("wakeLanesWithUncheckedLiveFees lane read failed:", error);
+    return { woken: 0, checkedStates: 0, failedStates: [], skippedStates: [], error: errorText(error) };
+  }
+  let woken = 0;
+  const failedStates: string[] = [];
+  let skippedStates: string[] = [];
+  let firstError: string | null = null;
+  for (let index = 0; index < sleeping.length; index += UNCHECKED_WAKE_STATE_BATCH) {
+    const remainingMs = deadlineMs - Date.now();
+    if (remainingMs < UNCHECKED_WAKE_MIN_BATCH_MS) {
+      skippedStates = sleeping.slice(index);
+      break;
+    }
+    const batch = sleeping.slice(index, index + UNCHECKED_WAKE_STATE_BATCH);
+    try {
+      woken += await wakeUncheckedBatch(batch, Math.min(remainingMs, UNCHECKED_WAKE_STATEMENT_TIMEOUT_MS));
+    } catch (error) {
+      console.error(`wakeLanesWithUncheckedLiveFees failed for ${batch.join(", ")}:`, error);
+      failedStates.push(...batch);
+      firstError = firstError ?? errorText(error);
+    }
+  }
+  const checkedStates = sleeping.length - failedStates.length - skippedStates.length;
+  return { woken, checkedStates, failedStates, skippedStates, error: firstError };
+}
+
+/** One batch's read and wake, in one transaction whose statements stop when the budget does. */
+async function wakeUncheckedBatch(batch: readonly string[], timeoutMs: number): Promise<number> {
+  const batchDeadlineMs = Date.now() + timeoutMs;
+  return withTransaction(async (tx) => {
+    await tx`SELECT set_config('statement_timeout', ${String(Math.floor(timeoutMs))}, true)`;
+    const states = (await uncheckedLiveFeeStates(batch, false, tx)).map((row) => String(row.state_code));
     if (states.length === 0) return 0;
-    const woken = await sql`
+    const updateTimeoutMs = Math.max(
+      MIN_POSTGRES_TIMEOUT_MS,
+      Math.floor(Math.min(batchDeadlineMs - Date.now(), UNCHECKED_WAKE_UPDATE_TIMEOUT_MS)),
+    );
+    await tx`
+      SELECT set_config('statement_timeout', ${String(updateTimeoutMs)}, true),
+             set_config('lock_timeout', ${String(UNCHECKED_WAKE_LOCK_TIMEOUT_MS)}, true)
+    `;
+    const updated = await tx`
       UPDATE public.agent_state_lanes
          SET next_run_after = NOW(),
              updated_at = NOW()
        WHERE state_code = ANY(${states}::text[])
          AND next_run_after > NOW() + ${STATE_LANE_BACKLOG_RETRY_MINUTES} * INTERVAL '1 minute'
     `;
-    return woken.count;
-  } catch (error) {
-    console.error("wakeLanesWithUncheckedLiveFees failed:", error);
-    return 0;
-  }
+    return updated.count;
+  });
 }
 
 /**
@@ -1193,11 +1298,26 @@ export async function startStateLaneRun(
 /** Where the hourly lane sync's run comes from (`/api/admin/crew/lane-sync`, its own cron). */
 export const LANE_SYNC_SOURCE = "atlas.lane_sync";
 export const LANE_SYNC_STEP_KEY = "lane-sync";
+/** The `check` on the lane-sync step's warning when the unchecked-live-fee read fails. */
+export const UNCHECKED_WAKE_CHECK = "atlas.lane_sync.unchecked_wake";
+/**
+ * The unchecked-live-fee wake stops starting batches this long after the sync starts. The route's
+ * maxDuration is 300 s; the rest is for the second-look wake, the priority refresh and recording
+ * the step, so a run of slow batches can no longer get the function killed before its warning is
+ * written (PR #2487 review).
+ */
+export const LANE_SYNC_UNCHECKED_DEADLINE_MS = 150_000;
 
 export interface NationwideLaneSyncResult {
   profiles: StateLaneMemorySyncResult;
   /** Lanes woken because their state has live fees Hamilton has not checked. */
   uncheckedWoken: number;
+  /** Why the unchecked-live-fee read failed, or null when every batch read (#2424). */
+  uncheckedError: string | null;
+  /** States whose unchecked-live-fee read failed, so their lanes were not woken. */
+  uncheckedFailedStates: string[];
+  /** States not read because the sync's time budget was spent: not checked this run. */
+  uncheckedSkippedStates: string[];
   /** Lanes woken because a bank has a pending second look since its last fetch. */
   secondLookWoken: number;
   priorities: LanePriorityRefresh;
@@ -1221,18 +1341,46 @@ async function timed<T>(ms: Record<string, number>, key: string, run: () => Prom
  * finding, tick loses budget before steps), so it now runs as the `lane-sync` step of its own hourly run from its own cron route,
  * never inside the tick. Each lane still syncs its own state when it is launched and in its
  * enhance step. A failed priority refresh goes on the newest lane run's ledger (#1264) as well as
- * on this step's detail.
+ * on this step's detail. A failed unchecked-live-fee read leaves a `step.warning` on the sync
+ * step itself (#2424), so a timeout never reads as "nothing due".
  */
-export async function runNationwideLaneSync(): Promise<NationwideLaneSyncResult> {
+export async function runNationwideLaneSync(
+  ledger?: { runId: number; stepId?: number | null },
+): Promise<NationwideLaneSyncResult> {
   const ms: Record<string, number> = {};
+  const deadlineMs = Date.now() + LANE_SYNC_UNCHECKED_DEADLINE_MS;
   const profiles = await timed(ms, "profiles", () => syncStateLaneProfiles(sql));
-  const uncheckedWoken = await timed(ms, "unchecked", () => wakeLanesWithUncheckedLiveFees());
+  const unchecked = await timed(ms, "unchecked", () => wakeLanesWithUncheckedLiveFees({ deadlineMs }));
+  if (unchecked.error && ledger) {
+    const notRead = unchecked.failedStates.length > 0 ? ` for ${unchecked.failedStates.join(", ")}` : "";
+    await recordStepWarning(sql, {
+      runId: ledger.runId,
+      stepId: ledger.stepId,
+      check: UNCHECKED_WAKE_CHECK,
+      what: `Unchecked live fee wake${notRead}`,
+      outcome: "read failed, those lanes were not woken",
+      error: unchecked.error,
+    });
+  }
+  if (unchecked.skippedStates.length > 0 && ledger) {
+    await recordStepWarning(sql, {
+      runId: ledger.runId,
+      stepId: ledger.stepId,
+      check: UNCHECKED_WAKE_CHECK,
+      what: `Unchecked live fee wake for ${unchecked.skippedStates.join(", ")}`,
+      outcome: "not checked this run, those lanes were not woken",
+      error: `time budget of ${LANE_SYNC_UNCHECKED_DEADLINE_MS / 1000} s spent`,
+    });
+  }
   const secondLookWoken = await timed(ms, "second_looks", () => wakeLanesWithPendingSecondLooks());
   const priorities = await timed(ms, "priorities", () => refreshLanePriorities());
   if (priorities.error) await recordLanePriorityRefreshFailure(priorities.error, []);
   return {
     profiles,
-    uncheckedWoken,
+    uncheckedWoken: unchecked.woken,
+    uncheckedError: unchecked.error,
+    uncheckedFailedStates: unchecked.failedStates,
+    uncheckedSkippedStates: unchecked.skippedStates,
     secondLookWoken,
     priorities,
     ms: { profiles: ms.profiles ?? 0, unchecked: ms.unchecked ?? 0, second_looks: ms.second_looks ?? 0, priorities: ms.priorities ?? 0 },

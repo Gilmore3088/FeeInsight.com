@@ -267,6 +267,12 @@ function ReportsCard({
         <Link href="/reports" className="mt-3 inline-block text-[14px] font-medium text-brick hover:underline">
           Get a free report
         </Link>
+        <p className="mt-3 text-[13px] text-ink-muted">
+          Your earlier Hamilton reports are still yours.{" "}
+          <Link href="/account/reports" className="font-medium text-brick hover:underline">
+            View and download them
+          </Link>
+        </p>
         {bought}
       </AccountCard>
     );

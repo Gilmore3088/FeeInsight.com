@@ -16,8 +16,14 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Decisions
 
-182 entries, newest first. The full text, who decided and why are in [DECISIONS.md](DECISIONS.md).
+187 entries, newest first. The full text, who decided and why are in [DECISIONS.md](DECISIONS.md).
 
+- 2026-10-20 — A cancelled account keeps read-only access to its own reports. — [decision](DECISIONS.md#2026-10-20)
+- 2026-10-20 — Hosted report tokens are rotated and kept out of the repo. — [decision](DECISIONS.md#2026-10-20)
+- 2026-10-20 — A seat member of a lapsed team sees a team-billing page, not /subscribe. — [decision](DECISIONS.md#2026-10-20)
+- 2026-10-20 — Paid market-report links are tied to their payment. — [decision](DECISIONS.md#2026-10-20)
+- 2026-10-20 — Institution pages with fewer than 5 verified fees stay out of search. — [decision](DECISIONS.md#2026-10-20)
+- 2026-10-20 — Previews build only for PRs that change visible files. — [decision](DECISIONS.md#2026-10-20)
 - 2026-10-20 — Newer-copy check v2 reopens every settled pair. — [decision](DECISIONS.md#2026-10-20)
 - 2026-10-20 — One front door for decisions and lessons. — [decision](DECISIONS.md#2026-10-20)
 - 2026-10-20 — Legacy event-log partitions are dropped, not trimmed. — [decision](DECISIONS.md#2026-10-20)
@@ -203,7 +209,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-249 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+251 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
 ### Extraction and fee reading (33)
 
@@ -278,8 +284,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A consumer comparison needs the payer checked as well as the category. — [finding](findings/2026-10-09-business-wire-as-consumer-price.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 - 2026-10-09 — Returned bonds and coupons were filed as NSF. — [finding](findings/2026-10-09-bond-return-filed-nsf.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 
-### Verification and publication (44)
+### Verification and publication (45)
 
+- 2026-10-20 — A stored name carries the older copy's text layout; compare it against a newer layout only after undoing what that layout glued (#2477). — [finding](findings/2026-10-20-heading-row-glued-name-false-flag.md) — Guard: `src/lib/agents/hamilton/newer-copy-retire.test.ts`
 - 2026-10-20 — Measure a takedown rule on prod before building it out: the dry run showed the rule reached none of the fees it was meant for (#2477). — [finding](findings/2026-10-20-superseded-copy-fees-stay-live.md) — Guard: `src/lib/agents/hamilton/newer-copy-retire.db.test.ts`
 - 2026-10-20 — A fee found again on a newer document should cite the newer document. — [finding](findings/2026-10-20-live-fees-stay-on-moved-pages.md) — Agent lesson: hamilton/issue-1200-follow-moved-pages
 - 2026-10-20 — Held rates kept Knox's 0.5 placeholder confidence after promotion (#1055). — [finding](findings/2026-10-20-held-rates-kept-placeholder-confidence.md) — Guard: `src/lib/agents/knox/held-rate-confidence.db.test.ts`
@@ -384,20 +391,23 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A public page reads catalog aggregates through `public-cached-reads.ts`, never the uncached data-store functions. — [finding](findings/2026-10-09-guide-pages-skipped-public-cache.md) — Guard: `src/app/(public)/guides/[slug]/page.test.ts:22` (+1 more)
 - 2026-10-09 — Each reference to published_fee_catalog recomputes the whole catalog. — [finding](findings/2026-10-09-catalog-view-recomputed-per-reference.md) — Guard: `src/lib/data-store/search.test.ts:267` (+2 more)
 
-### Migrations, deploys and builds (14)
+### Migrations, deploys and builds (17)
 
+- 2026-10-20 — An ISR page that reads the database gives those reads a deadline during `next build` (`readOnRequest`, 15 s) and renders its short-lived fallback past it, so a busy database never holds a page past Next's 60-second limit. — [finding](findings/2026-10-20-isr-pages-build-time-db-reads.md) — Guard: `src/app/build-time-reads.test.ts` (+1 more)
+- 2026-10-20 — A check whose exit 0 means "skip the build" must default to building; only an explicit skip decision may exit 0. — [finding](findings/2026-10-20-vercel-skip-check-fails-open.md) — Guard: `scripts/vercel-ignore-build.test.ts:158` (+3 more)
+- 2026-10-20 — A page or route that reads the database must not be prerendered at build; render it on request and cache the data, so the database's load never decides whether a deploy succeeds. — [finding](findings/2026-10-20-sitemap-build-time-db-reads.md) — Guard: `src/app/sitemap-cache.test.ts` (+1 more)
 - 2026-10-20 — A migration number is claimed when any open PR uses it, not when it reaches `main`, so check open PRs before taking one. — [finding](findings/2026-10-20-migration-number-collisions-across-open-prs.md) — Guard: Foundation tracker #1048 line "guard for migration numbers claimed by open PRs"; until then, merge `main` and re-run `migration-version-kill`
 - 2026-10-20 — Agents never run deploy-capable `vc`/`vercel` commands and never write a Vercel token to disk. — [finding](findings/2026-10-20-vercel-env-run-deploys.md) — Guard: Foundation tracker #1048 line "ban deploy-capable vercel commands for agents"
-- 2026-10-20 — Whether a preview builds should depend on the PR's own change against its merge-base, not on the last commit. — [finding](findings/2026-10-20-preview-build-queue-from-merge-main-pushes.md) — Guard: Foundation tracker #1048 lines "ignoreCommand diffs against the PR merge-base and skips drafts" and "sitemap rendered on request with caching"
+- 2026-10-20 — Whether a preview builds should depend on the PR's own change against its merge-base, not on the last commit. — [finding](findings/2026-10-20-preview-build-queue-from-merge-main-pushes.md) — Guard: `scripts/vercel-ignore-build.test.ts:233` (+2 more)
 - 2026-10-19 — Schema changes go in `supabase/migrations` with James's approval, never in request code. — [finding](findings/2026-10-19-runtime-schema-ddl.md) — Guard: `scripts/ci-guards.sh runtime-ddl-kill` (+3 more)
 - 2026-10-19 — A required read on a prerendered page failed the deploy. — [finding](findings/2026-10-19-required-read-fails-build.md) — Guard: `src/app/(public)/institutions/directory-deadline.test.tsx:110`
-- 2026-10-17 — Vercel usage: the agents tick is the compute bill. — [finding](findings/2026-10-17-vercel-usage-agents-tick.md) — Guard: `src/lib/vercel-config.test.ts:31` (+1 more)
-- 2026-10-16 — On a page PR, make sure the last commit of each push touches non-test, non-doc code, or check the Vercel comment says "Ready" and not "Ignored" before sending preview links. — [finding](findings/2026-10-16-vercel-skip-last-commit-only.md) — no Guard or Agent lesson named
-- 2026-10-16 — Vercel's preview skip check ran without a git repository and failed every preview. — [finding](findings/2026-10-16-vercel-skip-check-without-git.md) — Guard: `src/lib/vercel-config.test.ts:18` (+3 more)
+- 2026-10-17 — Vercel usage: the agents tick is the compute bill. — [finding](findings/2026-10-17-vercel-usage-agents-tick.md) — Guard: `src/lib/vercel-config.test.ts:32` (+1 more)
+- 2026-10-16 — On a page PR, make sure the last commit of each push touches non-test, non-doc code, or check the Vercel comment says "Ready" and not "Ignored" before sending preview links. — [finding](findings/2026-10-16-vercel-skip-last-commit-only.md) — Guard: `scripts/vercel-ignore-build.test.ts:96`
+- 2026-10-16 — Vercel's preview skip check ran without a git repository and failed every preview. — [finding](findings/2026-10-16-vercel-skip-check-without-git.md) — Guard: `src/lib/vercel-config.test.ts:21` (+3 more)
 - 2026-10-15 — Migration 048 was cancelled by its own 5-second lock timeout, then applied on retry. — [finding](findings/2026-10-15-migration-lock-timeout.md) — Guard: `scripts/ci-guards.sh migration-lock-kill` (+2 more)
 - 2026-10-15 — Brand headings rendered in a system font, not Geist. — [finding](findings/2026-10-15-geist-font-variable-scope.md) — Guard: `src/app/layout-fonts.test.tsx:20` (+2 more)
 - 2026-10-10 — H01 preview build: Google font parser failure. — [finding](findings/2026-10-10-next-font-build-reproduction.md) — Guard: `src/app/layout-fonts.test.tsx:28` (+2 more)
-- 2026-10-09 — Branch preview builds held up the Vercel build queue. — [finding](findings/2026-10-09-vercel-preview-build-queue.md) — Guard: `src/lib/vercel-config.test.ts:81` (+2 more)
+- 2026-10-09 — Branch preview builds held up the Vercel build queue. — [finding](findings/2026-10-09-vercel-preview-build-queue.md) — Guard: `scripts/vercel-ignore-build.test.ts:91` (+1 more)
 - 2026-10-09 — Two PRs merged the same migration number. — [finding](findings/2026-10-09-parallel-migration-numbers.md) — Guard: `scripts/ci-guards.sh migration-version-kill` (+1 more)
 - 2026-10-09 — Every deploy prerendered the ten guides against the production database. — [finding](findings/2026-10-09-builds-prerendered-guides-against-prod.md) — Guard: `src/app/(public)/guides/[slug]/page.test.ts:16` (+1 more)
 
@@ -479,8 +489,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A shared log that every PR appends to at the same spot needs one file per entry. — [finding](findings/2026-10-09-findings-md-merge-conflicts.md) — Guard: `scripts/ci-guards.sh findings-file-kill`
 - 2026-10-09 — Backlog Node checks were accidentally discovered by application Vitest. — [finding](findings/2026-10-09-backlog-node-test-discovery.md) — Guard: `src/lib/vitest-collection.test.ts:26` (+2 more)
 
-### Agent process, learning and measurement (13)
+### Agent process, learning and measurement (14)
 
+- 2026-10-20 — A data-quality check has to use the same identity as the step that repairs the problem, or its alarm can never clear. — [finding](findings/2026-10-20-duplicate-check-counted-shared-prices.md) — Guard: `src/lib/agents/deming/data-quality.db.test.ts`
 - 2026-10-20 — The answer-key eligibility gate admitted none of the 62 confirmed keys. — [finding](findings/2026-10-20-answer-key-eligibility-admits-none.md) — Agent lesson: deming/issue-2466-reference-binding
 - 2026-10-19 — Define the weekly live sampling and repair protocol. — [finding](findings/2026-10-19-weekly-live-accuracy-plan.md) — no Guard or Agent lesson named
 - 2026-10-19 — A learned takedown needs the same fee and original judged text. — [finding](findings/2026-10-19-takedown-lesson-identity.md) — Guard: `src/lib/agents/knox/takedown-lessons.test.ts` (+5 more)

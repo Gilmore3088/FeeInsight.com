@@ -16,6 +16,23 @@ export function computePercentile(sorted: number[], p: number): number {
   return loValue + (idx - lo) * (Number(sorted[hi]) - loValue);
 }
 
+/**
+ * Rounds to cents, half up, on the decimal value: a median of $4.22 and $4.23 is $4.225, which
+ * binary floating point holds as 4.22499..., so plain Math.round(x * 100) / 100 gave $4.22.
+ */
+export function roundCents(x: number): number {
+  return Math.round(Number(`${x.toFixed(6)}e2`)) / 100;
+}
+
+/**
+ * The statistics contract's median of a set of amounts (sorted or not): interpolated between the
+ * middle two for an even count, rounded half a cent up; null for none. `computeStats` uses it.
+ */
+export function medianAmount(amounts: readonly number[]): number | null {
+  const sorted = amounts.map(Number).filter(Number.isFinite).sort((a, b) => a - b);
+  return sorted.length === 0 ? null : roundCents(computePercentile(sorted, 50));
+}
+
 /** Categories whose tiers are compared at the highest (standard) tier, not the median. */
 export const HIGHEST_TIER_CATEGORIES: ReadonlySet<string> = new Set(["overdraft"]);
 

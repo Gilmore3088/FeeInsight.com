@@ -22,7 +22,12 @@ import {
   getFeeShareCohortCached,
   getInstitutionCallItemHistoryCached,
   getInstitutionFinancialHistoryCached,
+  getInstitutionPeerSetsCached,
+  getPeerExplorerSetCached,
+  getMarketPositionCached,
 } from "@/lib/data-store/public-cached-reads";
+import { PeerExplorerSection, peerSetHrefs } from "./peer-explorer-section";
+import { PeerExplorerIsland } from "./peer-explorer-island";
 import { PRODUCT_NAME, SITE_NAME } from "@/lib/constants";
 import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
 import { buildPublicInstitutionProfileLinks } from "@/lib/institution-profile-links";
@@ -41,6 +46,7 @@ import {
 import { ShowAll } from "./show-all";
 import type { IndexEntry } from "@/lib/data-store/fee-index";
 import { FEE_FAMILIES } from "@/lib/fee-taxonomy";
+import { homeMetroHasCreditUnions, isHomeMetroKey } from "@/lib/peer-explorer";
 import { RegistryCards } from "./registry-cards";
 import { assetSizeToDollars, feeIncomeTerms, formatReportQuarter, selectFinancialsByQuarter } from "./financial-units";
 import { buildLedger, connectedPanelSeries } from "./quarterly-ledger";
@@ -157,7 +163,8 @@ export async function institutionProfileMetadata(id: string): Promise<Metadata> 
 
   return {
     // Thin profiles (fewer verified fees than the page's own thin threshold), including those
-    // with financial data but no fees (decision D20), stay reachable but out of the index.
+    // with financial data but no fees (#1043, DECISIONS 2026-10-20), stay reachable but out of
+    // the index.
     robots: verifiedFees.length < MIN_VERIFIED_FEES_FOR_OFFER ? { index: false, follow: true } : undefined,
     alternates: { canonical: `/institution/${instId}` },
     title: buildProfileTitle(inst.institution_name, headline),
@@ -186,7 +193,7 @@ export async function InstitutionProfile({ id, focusFeeCategory }: { id: string;
     catalogVisibleFeeCount === 0 &&
     Boolean(inst.fee_schedule_url || inst.latest_source_status || (inst.latest_extracted_fee_count ?? 0) > 0);
 
-  const [visibleFees, rateFees, evidence, financials] = await Promise.all([
+  const [visibleFees, rateFees, evidence, financials, peerSets] = await Promise.all([
     catalogVisibleFeeCount > 0 ? budget.required(() => getVisibleFeesForPage(instId), "fees") : Promise.resolve([]),
     budget.required(() => getRateFeesForPage(instId), "rate fees"),
     shouldLoadPipelineEvidence
@@ -197,22 +204,36 @@ export async function InstitutionProfile({ id, focusFeeCategory }: { id: string;
       "financial context",
       [],
     ),
+    // The default peer set; another set (?peers=) is read in the browser (peer-explorer-island.tsx).
+    budget.optional(() => getInstitutionPeerSetsCached(instId, null), "peer sets", null),
   ]);
+  const peerExplorerSet = peerSets
+    ? await budget.optional(
+        () => getPeerExplorerSetCached(instId, peerSets.selectedFilters, isHomeMetroKey(peerSets.selected.key)),
+        "peer explorer",
+        null,
+      )
+    : null;
 
   // Call-report history and its asset-size cohort are public filings, read for every visitor
   // through cached reads, for the overview, financial performance and the connected panel (James's
   // brief, Oct 18). Peer ranks, peer medians and the regulatory watch stay Pro, read per request by
   // ProFinancialProfile, never here: this page is cached for every visitor. The branch footprint,
   // complaints, enforcement and holding company are public records every visitor sees.
-  const [financialHistory, callItems, footprint, complaints, holdingCompany, enforcement, regulator] = await Promise.all([
-    budget.optional(() => getInstitutionFinancialHistoryCached(instId), "financial history", []),
-    budget.optional(() => getInstitutionCallItemHistoryCached(instId), "call-report lines", []),
-    budget.optional(() => getBranchFootprint(instId), "branch footprint", null),
-    budget.optional(() => getComplaintTrend(instId), "complaint trend", null),
-    budget.optional(() => getHoldingCompanyProfile(instId), "holding company", null),
-    budget.optional(() => getEnforcementRecord(instId), "enforcement actions", null),
-    budget.optional(() => getRegulatorInfo(instId), "regulator info", null),
-  ]);
+  const [financialHistory, callItems, footprint, complaints, holdingCompany, enforcement, regulator, marketPosition] =
+    await Promise.all([
+      budget.optional(() => getInstitutionFinancialHistoryCached(instId), "financial history", []),
+      budget.optional(() => getInstitutionCallItemHistoryCached(instId), "call-report lines", []),
+      budget.optional(() => getBranchFootprint(instId), "branch footprint", null),
+      budget.optional(() => getComplaintTrend(instId), "complaint trend", null),
+      budget.optional(() => getHoldingCompanyProfile(instId), "holding company", null),
+      budget.optional(() => getEnforcementRecord(instId), "enforcement actions", null),
+      budget.optional(() => getRegulatorInfo(instId), "regulator info", null),
+      // Deposit market share is FDIC Summary of Deposits data: banks only.
+      inst.charter_type === "credit_union"
+        ? Promise.resolve(null)
+        : budget.optional(() => getMarketPositionCached(instId), "market position", null),
+    ]);
 
   const verifiedFees = visibleFees.filter(isVerifiedFee);
   const catalogRows = [...toDisplayFees(visibleFees), ...toRateDisplayFees(rateFees)];
@@ -256,6 +277,11 @@ export async function InstitutionProfile({ id, focusFeeCategory }: { id: string;
   const stateName = stateCode ? STATE_NAMES[stateCode] : null;
 
   const sparse = verifiedFees.length < MIN_VERIFIED_FEES_FOR_OFFER;
+  // The market card's link lands on the explorer's home metro set: its count, or null (no link)
+  // when the page shows no explorer or does not offer that set.
+  const metroOption = !sparse && peerExplorerSet ? peerSets?.options.find((option) => option.key === "metro") : undefined;
+  const metroPeerCount = metroOption ? metroOption.count : null;
+  const metroHasCreditUnions = homeMetroHasCreditUnions(peerSets?.options ?? []);
   const schedule = scheduleState({ publishedFees: verifiedFees.length, hasSchedule: Boolean(inst.fee_schedule_url) });
   const categories = [...new Set(verifiedFees.map((fee) => fee.fee_category).filter((c): c is string => Boolean(c)))];
   const rawRows = compareRows(
@@ -552,6 +578,18 @@ export async function InstitutionProfile({ id, focusFeeCategory }: { id: string;
             </FreeOnly>
           )}
 
+          {/* One peer set the visitor picks, drawn three ways around one shared selection (#peers). */}
+          {!sparse && peerSets && peerExplorerSet && (
+            <PeerExplorerIsland institutionId={instId} defaultSet={peerSets.selected.key}>
+              <PeerExplorerSection
+                sets={peerSets}
+                set={peerExplorerSet}
+                hrefFor={peerSetHrefs(instId, focusFeeCategory)}
+                initial={{}}
+              />
+            </PeerExplorerIsland>
+          )}
+
           {/* Financial performance: any measure by quarter, and the share against its size cohort. */}
           {ledger.quarters.length > 0 && (
             <FinancialPerformanceSection
@@ -619,15 +657,26 @@ export async function InstitutionProfile({ id, focusFeeCategory }: { id: string;
             </ProOnly>
           )}
 
-          {/* 4. Where it operates and its public record: FDIC, NCUA, CFPB and SEC data, for every visitor. */}
-          {(footprint || complaints || enforcement || holdingCompany) && (
+          {/* 4. Where it operates, its deposit market position and its public record: FDIC, NCUA, CFPB
+              and SEC data, for every visitor. The market position card sits under the footprint card. */}
+          {(footprint || complaints || enforcement || holdingCompany || marketPosition) && (
             <section aria-labelledby="record-heading">
               <h2 id="record-heading" className={H2} style={SERIF}>
                 Branches and public record
               </h2>
               <p className={FINDING}>Where {inst.institution_name} operates, and what regulators and customers have on file.</p>
               <div className="mt-6">
-                <RegistryCards footprint={footprint} complaints={complaints} enforcement={enforcement} holdingCompany={holdingCompany} />
+                <RegistryCards
+                  footprint={footprint}
+                  complaints={complaints}
+                  enforcement={enforcement}
+                  holdingCompany={holdingCompany}
+                  market={marketPosition}
+                  institutionId={instId}
+                  institutionName={inst.institution_name}
+                  metroPeerCount={metroPeerCount}
+                  metroHasCreditUnions={metroHasCreditUnions}
+                />
               </div>
             </section>
           )}

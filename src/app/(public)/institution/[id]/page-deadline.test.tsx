@@ -24,6 +24,7 @@ vi.mock("next/navigation", () => ({
   },
 }));
 vi.mock("./profile-serif-font", () => ({ profileSerif: { variable: "serif" } }));
+vi.mock("@/app/landing-serif", () => ({ homeSerif: { variable: "serif" } }));
 vi.mock("@/lib/data-store", () => ({
   getPublicInstitutionById: db.institution,
   getFeesByInstitution: db.fees,
@@ -47,6 +48,9 @@ vi.mock("@/lib/data-store/institution", () => ({ getInstitutionFeeScheduleEviden
 vi.mock("@/lib/data-store/alerts", () => ({ getAlertSubscriptionForInstitution: vi.fn(async () => null) }));
 vi.mock("@/lib/data-store/public-cached-reads", () => ({
   getComparableMarketIndexCached: vi.fn(async () => []),
+  getInstitutionPeerSetsCached: vi.fn(async () => null),
+  getPeerExplorerSetCached: vi.fn(async () => null),
+  getMarketPositionCached: vi.fn(async () => null),
   getInstitutionFinancialHistoryCached: vi.fn(async () => []),
   getInstitutionCallItemHistoryCached: vi.fn(async () => []),
   getFeeShareCohortCached: vi.fn(async () => null),

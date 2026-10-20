@@ -33,6 +33,12 @@ export function NavAccount() {
           </span>
           <span className="hidden lg:inline">Account</span>
         </Link>
+        <Link
+          href="/account/reports"
+          className="hidden text-[13px] font-medium text-ink-muted transition-colors hover:text-ink lg:inline"
+        >
+          Your reports
+        </Link>
         <SignOutForm buttonClassName="text-[13px] font-medium text-ink-muted transition-colors hover:text-ink" />
       </div>
     );
@@ -139,6 +145,9 @@ function ProAccountMenu({ session }: { session: SessionChrome }) {
                 Admin
               </Link>
             ) : null}
+            <Link href="/account/reports" className={MENU_LINK} onClick={() => setOpen(false)}>
+              Your reports
+            </Link>
             <Link href="/account" className={MENU_LINK} onClick={() => setOpen(false)}>
               Account and billing
             </Link>

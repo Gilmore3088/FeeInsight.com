@@ -100,11 +100,12 @@ export const ACCOUNTS: AccessAccount[] = [
  * What the journey sees for one request, after following redirects (3xx and Next's streamed
  * meta refresh) up to five hops:
  * - login: sent to /login. subscribe: sent to /subscribe. billing: sent to /account/billing-issue.
+ *   team_billing: sent to /account/team-billing (a seat whose team owner's payment lapsed, #1999).
  * - denied: 401 or 403. unavailable: 503. error: any other 5xx.
  * - ok: anything else (2xx, or a 4xx such as 400 for the deliberately empty body, 404, 409):
  *   the request got past every access check.
  */
-export type Outcome = "login" | "subscribe" | "billing" | "denied" | "unavailable" | "error" | "ok";
+export type Outcome = "login" | "subscribe" | "billing" | "team_billing" | "denied" | "unavailable" | "error" | "ok";
 
 /** The kinds of gate the routes use. */
 export type GateKind =
@@ -129,6 +130,8 @@ export type GateKind =
   | "session_api"
   /** Account pages: any signed-in account. */
   | "account_page"
+  /** /account/team-billing: renders for a lapsed team's seat; sends everyone else where /pro would. */
+  | "team_billing_page"
   /** The report-job callback: a server secret, never a session. */
   | "internal_secret"
   /** A link whose token is the access: the same answer for every state. */
@@ -153,7 +156,7 @@ const row = (
  */
 export const EXPECTED: Record<Exclude<GateKind, "token_link">, Record<BillingState, Outcome>> = {
   //                         anon      paid  trial  free         grace unknown lapsed     expired      cancelled    seatPaid seatLapsed   analyst admin
-  pro_page:             row("login",  "ok", "ok", "subscribe", "ok", "ok",   "billing", "subscribe", "subscribe", "ok",    "subscribe", "ok",   "ok"),
+  pro_page:             row("login",  "ok", "ok", "subscribe", "ok", "ok",   "billing", "subscribe", "subscribe", "ok",    "team_billing", "ok", "ok"),
   premium_api:          row("denied", "ok", "ok", "denied",    "ok", "ok",   "denied",  "denied",    "denied",    "ok",    "denied",    "ok",   "ok"),
   premium_api_provider_after_gate:
                         row("denied", "unavailable", "unavailable", "denied", "unavailable", "unavailable", "denied", "denied", "denied",
@@ -166,6 +169,7 @@ export const EXPECTED: Record<Exclude<GateKind, "token_link">, Record<BillingSta
   admin_api:            row("denied", "denied", "denied", "denied", "denied", "denied", "denied", "denied", "denied", "denied", "denied", "denied", "ok"),
   session_api:          row("denied", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"),
   account_page:         row("login",  "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"),
+  team_billing_page:    row("login",  "ok", "ok", "subscribe", "ok", "ok",   "billing", "subscribe", "subscribe", "ok",    "ok",        "ok",   "ok"),
   internal_secret:      row("denied", "denied", "denied", "denied", "denied", "denied", "denied", "denied", "denied", "denied", "denied", "denied", "denied"),
   public:               row("ok",     "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"),
 };
@@ -282,6 +286,8 @@ export const ROUTES: RouteEntry[] = [
   { file: "account/page.tsx", kind: "account_page", label: "Account", probes: [get("/account")] },
   { file: "account/welcome/page.tsx", kind: "account_page", label: "Welcome after checkout", probes: [get("/account/welcome")] },
   { file: "account/billing-issue/page.tsx", kind: "account_page", label: "Payment issue (Pro accounts are sent on to Hamilton)", probes: [get("/account/billing-issue")] },
+  { file: "account/team-billing/page.tsx", kind: "team_billing_page", label: "Team subscription needs attention (#1999)", probes: [get("/account/team-billing")] },
+  { file: "account/reports/page.tsx", kind: "account_page", label: "Your reports, read-only for any signed-in account (#1999)", probes: [get("/account/reports")] },
 ];
 
 /** The outcome a probe must get for a state. */

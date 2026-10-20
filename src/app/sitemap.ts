@@ -1,4 +1,5 @@
 import type { MetadataRoute } from "next";
+import { unstable_cache } from "next/cache";
 import { FEE_FAMILIES, publicFeeTypes } from "@/lib/fee-taxonomy";
 import { STATE_CODES } from "@/lib/us-states";
 import {
@@ -18,11 +19,12 @@ import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
 import { MIN_VERIFIED_FEES_FOR_OFFER } from "./(public)/institution/[id]/profile-copy";
 import { SAMPLE_REPORT_HREF } from "./landing-shared";
 
-
-// Serve a cached copy and rebuild it in the background at most once an hour. Rendered per
-// request it took ~6 s (Google Search Console reported "Couldn't fetch").
-export const dynamic = "force-static";
-export const revalidate = 3600;
+// Rendered on request, never at build: prerendering it read the database during `next build`,
+// and a busy database failed whole deployments (findings/2026-10-20-sitemap-build-time-db-reads.md).
+// The finished sitemap is cached for an hour and refreshed in the background, since a full
+// render takes ~6 s (Google Search Console reported "Couldn't fetch" when it ran per request).
+export const dynamic = "force-dynamic";
+const SITEMAP_CACHE_SECONDS = 3600;
 
 const BASE_URL = SITE_URL;
 /** City pages below this many verified institutions are noindexed and left out of the sitemap. */
@@ -34,6 +36,16 @@ const REPORTS_PRIORITY_WHILE_EMPTY = 0.5;
 
 type Entry = MetadataRoute.Sitemap[number];
 type ChangeFrequency = NonNullable<Entry["changeFrequency"]>;
+
+/** Set when a secondary read failed, so the result is served but not cached. */
+type ReadHealth = { degraded: boolean };
+
+/** A sitemap built with a failed read: returned to the caller, never stored in the cache. */
+class PartialSitemap extends Error {
+  constructor(readonly entries: MetadataRoute.Sitemap) {
+    super("partial sitemap is not cached");
+  }
+}
 
 /** `lastModified` is left out when the page has no real change date: "now" on every rebuild teaches crawlers to ignore it. */
 function entry(
@@ -64,7 +76,7 @@ function toDate(value: string | Date | null | undefined, fallback: Date | undefi
 }
 
 /** Published research articles (drafts and archived ones stay out). A failed read lists none. */
-async function loadPublishedArticles(): Promise<Array<{ slug: string; published_at: string | null; updated_at: string | null }>> {
+async function loadPublishedArticles(health: ReadHealth): Promise<Array<{ slug: string; published_at: string | null; updated_at: string | null }>> {
   try {
     const sql = getSql();
     return await sql<Array<{ slug: string; published_at: string | null; updated_at: string | null }>>`
@@ -75,11 +87,12 @@ async function loadPublishedArticles(): Promise<Array<{ slug: string; published_
       LIMIT 500
     `;
   } catch {
+    health.degraded = true;
     return [];
   }
 }
 
-async function loadPublishedReports():Promise<Array<{ slug: string; published_at: string }>> {
+async function loadPublishedReports(health: ReadHealth): Promise<Array<{ slug: string; published_at: string }>> {
   try {
     const sql = getSql();
     return await sql<Array<{ slug: string; published_at: string }>>`
@@ -90,7 +103,7 @@ async function loadPublishedReports():Promise<Array<{ slug: string; published_at
       LIMIT 500
     `;
   } catch {
-    // No published_reports table yet or DB unavailable
+    health.degraded = true;
     return [];
   }
 }
@@ -99,7 +112,7 @@ async function loadPublishedReports():Promise<Array<{ slug: string; published_at
  * Fee categories with at least MIN_INSTITUTIONS_FOR_MEDIAN institutions, from the public
  * snapshot. Null when the counts can't be read, so the caller lists every category as before.
  */
-async function loadIndexableCategories(): Promise<Set<string> | null> {
+async function loadIndexableCategories(health: ReadHealth): Promise<Set<string> | null> {
   try {
     const { categories } = await getPublicSnapshot();
     if (categories.length === 0) return null;
@@ -109,12 +122,13 @@ async function loadIndexableCategories(): Promise<Set<string> | null> {
         .map((c) => c.fee_category),
     );
   } catch {
+    health.degraded = true;
     return null;
   }
 }
 
 /** States with at least MIN_INSTITUTIONS_FOR_MEDIAN institutions with published fees; null when unreadable. */
-async function loadIndexableStates(): Promise<Set<string> | null> {
+async function loadIndexableStates(health: ReadHealth): Promise<Set<string> | null> {
   try {
     const rows = await getStatesWithFeeData();
     if (rows.length === 0) return null;
@@ -122,11 +136,12 @@ async function loadIndexableStates(): Promise<Set<string> | null> {
       rows.filter((r) => r.institution_count >= MIN_INSTITUTIONS_FOR_MEDIAN).map((r) => r.state_code),
     );
   } catch {
+    health.degraded = true;
     return null;
   }
 }
 
-async function loadCityPages(dataUpdated: Date): Promise<Entry[]> {
+async function loadCityPages(dataUpdated: Date, health: ReadHealth): Promise<Entry[]> {
   const listedStates = new Set<string>(STATE_CODES);
   try {
     const cities = (await getTopCitiesByState(MIN_INDEXABLE_CITY_INSTITUTIONS, TOP_CITIES_PER_STATE)).filter((c) =>
@@ -135,10 +150,13 @@ async function loadCityPages(dataUpdated: Date): Promise<Entry[]> {
     // Each city under the address the city layout keeps (#2092): the directory's spelling when the
     // state directory lists it, else the headquarters spelling. Any other spelling would 301. A
     // state whose directory read failed is left out of this build rather than listed under a name
-    // the layout may not keep; the next hourly build lists it.
+    // the layout may not keep; that build is not cached, so the next request lists it.
     const states = [...new Set(cities.map((c) => c.state_code))];
     const directories = new Map(
-      await Promise.all(states.map(async (state) => [state, await getStateMarketCitiesCached(state).catch(() => null)] as const)),
+      await Promise.all(states.map(async (state) => [state, await getStateMarketCitiesCached(state).catch(() => {
+        health.degraded = true;
+        return null;
+      })] as const)),
     );
     const paths = cities.flatMap((c) => {
       const directory = directories.get(c.state_code);
@@ -147,32 +165,33 @@ async function loadCityPages(dataUpdated: Date): Promise<Entry[]> {
     });
     return [...new Set(paths)].map((path) => entry(path, dataUpdated, "weekly", 0.6));
   } catch {
+    health.degraded = true;
     return [];
   }
 }
 
-export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+/**
+ * Builds the sitemap. With `dbAvailable`, a failed institution read throws, so a background
+ * refresh keeps serving the last full cached copy. Without it, only the static and taxonomy URLs
+ * are listed, skipping dozens of reads that would each time out against a down database.
+ */
+async function buildSitemap(dbAvailable: boolean, health: ReadHealth): Promise<MetadataRoute.Sitemap> {
   const now = new Date();
-
-  // If the DB is unreachable at build, emit static + taxonomy URLs only and skip the
-  // remaining per-state/report queries — otherwise one outage means dozens of connect
-  // timeouts that blow the page's render budget.
-  let dbAvailable = true;
   let institutions: Awaited<ReturnType<typeof getInstitutionIdsWithFeeDates>> = [];
   let dataUpdated = now;
-  try {
+  if (dbAvailable) {
     institutions = await getInstitutionIdsWithFeeDates();
-    const freshness = await getDataFreshness().catch(() => null);
+    const freshness = await getDataFreshness().catch(() => {
+      health.degraded = true;
+      return null;
+    });
     dataUpdated = toDate(freshness?.last_fee_extracted_at, now);
-  } catch (error) {
-    // At runtime, fail the background rebuild so the last full cached copy keeps serving
-    // instead of being replaced by a partial sitemap. At build, emit the partial one.
-    if (process.env.NEXT_PHASE !== "phase-production-build") throw error;
-    dbAvailable = false;
+  } else {
+    health.degraded = true;
   }
 
-  const publishedReports = dbAvailable ? await loadPublishedReports() : [];
-  const publishedArticles = dbAvailable ? await loadPublishedArticles() : [];
+  const publishedReports = dbAvailable ? await loadPublishedReports(health) : [];
+  const publishedArticles = dbAvailable ? await loadPublishedArticles(health) : [];
   const reportsPriority =
     publishedReports.length > 0 ? REPORTS_PRIORITY_WITH_CONTENT : REPORTS_PRIORITY_WHILE_EMPTY;
 
@@ -204,12 +223,17 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Category and state pages below the median floor are noindexed (thin), so they stay out
   // of the sitemap. When the counts can't be read, every page is listed as before.
   const [indexableCategories, indexableStates] = dbAvailable
-    ? await Promise.all([loadIndexableCategories(), loadIndexableStates()])
+    ? await Promise.all([loadIndexableCategories(health), loadIndexableStates(health)])
     : [null, null];
 
   // The public site lists the top 50 fee types by institution count (James, Oct 17 2026); with no
   // counts, the tier order decides (`publicFeeTypes`).
-  const publicTypes = dbAvailable ? await getPublicFeeTypes().catch(() => publicFeeTypes([])) : publicFeeTypes([]);
+  const publicTypes = dbAvailable
+    ? await getPublicFeeTypes().catch(() => {
+        health.degraded = true;
+        return publicFeeTypes([]);
+      })
+    : publicFeeTypes([]);
   const categoryPages: Entry[] = Object.values(FEE_FAMILIES)
     .flat()
     .filter((category) => publicTypes.has(category))
@@ -253,7 +277,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     entry(`/fees/city/${code.toLowerCase()}`, dataUpdated, "weekly", 0.7),
   );
 
-  const cityPages = dbAvailable ? await loadCityPages(dataUpdated) : [];
+  const cityPages = dbAvailable ? await loadCityPages(dataUpdated, health) : [];
 
   return dedupeEntries([
     ...staticPages,
@@ -267,4 +291,52 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...stateCityDirPages,
     ...cityPages,
   ]);
+}
+
+/** The cache stores JSON, so dates are stored as the ISO strings the sitemap prints anyway. */
+function withIsoDates(entries: MetadataRoute.Sitemap): MetadataRoute.Sitemap {
+  return entries.map((item) =>
+    item.lastModified instanceof Date ? { ...item, lastModified: item.lastModified.toISOString() } : item,
+  );
+}
+
+/**
+ * The full sitemap, cached for SITEMAP_CACHE_SECONDS. A stale copy is served while it refreshes
+ * in the background, and a failed refresh keeps the last good copy. A build with a failed read
+ * throws PartialSitemap so it is never cached.
+ */
+const cachedFullSitemap = unstable_cache(
+  async () => {
+    const health: ReadHealth = { degraded: false };
+    const entries = withIsoDates(await buildSitemap(true, health));
+    if (health.degraded) throw new PartialSitemap(entries);
+    return entries;
+  },
+  ["sitemap", "v1"],
+  { revalidate: SITEMAP_CACHE_SECONDS },
+);
+
+function isMissingIncrementalCache(error: unknown): boolean {
+  return error instanceof Error && error.message.startsWith("Invariant: incrementalCache missing");
+}
+
+/** No cached copy and the institution read failed: list the URLs that need no database read. */
+async function databaseFreeSitemap(error: unknown): Promise<MetadataRoute.Sitemap> {
+  console.error("sitemap: full build failed; serving the database-free sitemap uncached", error);
+  return buildSitemap(false, { degraded: true });
+}
+
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  try {
+    return await cachedFullSitemap();
+  } catch (error) {
+    if (error instanceof PartialSitemap) return error.entries;
+    if (!isMissingIncrementalCache(error)) return databaseFreeSitemap(error);
+    // Outside a Next request (tests) there is no cache; build directly.
+    try {
+      return await buildSitemap(true, { degraded: false });
+    } catch (directError) {
+      return databaseFreeSitemap(directError);
+    }
+  }
 }

@@ -692,8 +692,12 @@ function fullyTidiedName(name: string, canonicalKey: string): string | null {
  * words' glued numbers and quotes still leave only maintenance and minimum balance names. A rename
  * that lands on a name another live row of the institution's category has, at any price, or that two
  * rows would share ("Wire (MT103)" and "Wire (MT202)"), is left.
+ * v24 (#1828): a row priced in words that a name runs on from ("Check Collection......Varies | Plastic
+ * Card Rush Order", "Reconveyance .. Actual Cost: Returned payment") comes off the front: the name
+ * starts after it (`tidyFeeName`). Dry run on 2026-10-20: 2 live names carry one; 1 takes the rename
+ * (60770), and 36649 ("... Varies | IRA") is left because "IRA" names no fee.
  */
-export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 23 } as const;
+export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 24 } as const;
 export const NAME_RETIDY_KIND = "name_retidied";
 /**
  * Institutions the scan visits first after a version change, then the rest in id order. v9:

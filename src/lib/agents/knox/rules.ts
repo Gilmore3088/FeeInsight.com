@@ -1,6 +1,6 @@
 import { scopedFeeStatements, type FeeApplicability } from "@/lib/fee-audience";
 import { CELL_SEPARATOR } from "@/lib/agents/rosetta/html-dom";
-import { composableTail, nameAfterPrice, passesDarwinChecks, QUALIFIER, titleTail } from "@/lib/agents/knox/layout";
+import { composableTail, LEADER_PRICE_WORDS, nameAfterPrice, passesDarwinChecks, QUALIFIER, titleTail } from "@/lib/agents/knox/layout";
 import type { AccountLineup } from "@/lib/agents/knox/lineup";
 import type { AncillaryProduct } from "@/lib/agents/knox/ancillary-product";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
@@ -914,8 +914,19 @@ export function headingName(rawLine: string): string | null | undefined {
   return plainHeadingName(rawLine);
 }
 
+/**
+ * v93 (#1828): a dot-leader row priced in words (`LEADER_PRICE_WORDS`: "Reconveyance………… Actual
+ * Cost", "Balance transfer…… Varies", "Notary…… N/C") is that fee's own row, never a heading: read
+ * as one, it named the row under it ("Reconveyance .. Actual Cost: Returned payment" at the next
+ * row's $4.95, Oregon Community FCU, doc 19849). When it names a fee of its own it ends the reach of
+ * any heading above it.
+ */
+
 function plainHeadingName(line: string): string | null | undefined {
   if (line.includes("$") || PERCENT_PATTERN.test(line) || /\d/.test(line.replace(/[¹²³⁴⁵⁶⁷⁸⁹⁰]/g, ""))) return undefined;
+  // A row of the heading's own table ("Cashier’s Checks" / "Performance Select Checking ......No
+  // charge") keeps the heading for the rows under it; a row naming a fee of its own ends it.
+  if (LEADER_PRICE_WORDS.test(line)) return classifyPatternKey(normalizeSegment(line.split(/(?:\.\s?){2,}|…/)[0])) ? null : undefined;
   const name = normalizeSegment(line.replace(/[¹²³⁴⁵⁶⁷⁸⁹⁰]/g, ""));
   const words = name.split(" ").filter(Boolean);
   if (words.length === 0 || words.length > MAX_HEADING_WORDS) return undefined;
@@ -1020,7 +1031,7 @@ export function readUnderHeading(segment: string, heading: string): ExtractedFee
   const wireRow = FEE_FAMILY_HEADING.test(heading) && WIRE_ROW_LABEL.test(label);
   if (!wireRow && (label.replace(/\([^)]*\)/g, " ").match(/\b[A-Z][\w'’&/-]*/g) ?? []).length > 2) return [];
   if (after.includes(CELL_SEPARATOR) && /[a-z]{3,}/i.test(after.slice(after.indexOf(CELL_SEPARATOR)))) return [];
-  // v92 (#1827): a line that opens with its price and names a fee of its own after it ("Safe
+  // v94 (#1827): a line that opens with its price and names a fee of its own after it ("Safe
   // Deposit Box Fees" / "$100.00 Safe Deposit Box Drilling/Per Box") is that fee's row in a
   // price-first list, so the heading never takes its price.
   const namedAfter = label ? null : nameAfterPrice(after.trim().slice(after.trim().match(QUALIFIER)?.[0].length ?? 0));

@@ -29,10 +29,31 @@ import { FeeChips, WireDate, WirePager, WireSummary } from "./wire-controls";
 /** The kinds a reader can filter by; press is held, so it has no tab. */
 const SHOWN_KINDS = WIRE_KINDS.filter((k) => k.key !== "press");
 
-/** Why a state's regulator posts are missing, when its regulator's site was struck. */
-function struckRegulatorNote(state: string | undefined): string | null {
-  if (!state || !STRUCK_REGULATOR_STATES.includes(state)) return null;
-  return `${stateName(state)} regulator posts are not shown because the regulator's website terms do not allow commercial use.`;
+/**
+ * The struck-regulator states the current view covers: the chosen state, the reader's watched
+ * states on My states, or every struck state on All states. `watched` is passed only when the
+ * view is My states; My states with nothing watched opens on All states.
+ */
+export function struckStatesInView(params: WireParams, watched: readonly string[] = []): string[] {
+  if (params.state) return STRUCK_REGULATOR_STATES.includes(params.state) ? [params.state] : [];
+  if (params.mine && watched.length > 0) return watched.filter((s) => STRUCK_REGULATOR_STATES.includes(s));
+  return [...STRUCK_REGULATOR_STATES];
+}
+
+/** Why these states' regulator posts are missing, when their regulators' sites were struck. */
+export function struckRegulatorNote(states: readonly string[]): string | null {
+  if (states.length === 0) return null;
+  const names = states.map(stateName);
+  const named = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+  const whose = states.length === 1 ? "the regulator's" : "those regulators'";
+  return `${named} regulator posts are not shown because ${whose} website terms do not allow commercial use.`;
+}
+
+/** Whether every state in the view is struck, so no regulator posts can arrive at all. */
+function everyStateStruck(params: WireParams, watched: readonly string[], struck: readonly string[]): boolean {
+  if (params.state) return struck.length > 0;
+  if (params.mine && watched.length > 0) return struck.length === watched.length;
+  return false;
 }
 
 function stateName(code: string): string {
@@ -250,10 +271,17 @@ function ItemRow({
   );
 }
 
-export function emptyMessage(params: WireParams, where: string, phrase: string): string {
+/** `watched` is the reader's watched states, passed only when the view is My states. */
+export function emptyMessage(params: WireParams, where: string, phrase: string, watched: readonly string[] = []): string {
   const searched = params.q ? ` matching “${params.q}”` : "";
   const bills = "Fee bills come from Open States and are kept only when the bill names a bank or credit union fee; each state's bills are checked once a week.";
-  const news = struckRegulatorNote(params.state) ?? "Regulator posts are read once a day.";
+  const struck = struckStatesInView(params, watched);
+  const note = struckRegulatorNote(struck);
+  const news = !note
+    ? "Regulator posts are read once a day."
+    : everyStateStruck(params, watched, struck)
+      ? note
+      : `${note} Other states' regulator posts are read once a day.`;
   if (params.kind === "bills") return `No fee bills are stored for ${where} ${phrase}${searched}. ${bills}`;
   if (params.kind === "regulators") return `No regulator posts are stored for ${where} ${phrase}${searched}. Only the state banking and credit union regulators' posts about banking are kept. ${news}`;
   if (params.kind === "press") return "Press coverage is paused while we confirm its license.";
@@ -375,6 +403,8 @@ export function StateWire({
 }) {
   const mine = Boolean(params.mine && watch && watch.states.length > 0);
   const where = params.state ? stateName(params.state) : mine ? "your watched states" : "any state";
+  const watchedInView = mine && watch ? watch.states : [];
+  const struckNote = struckRegulatorNote(struckStatesInView(params, watchedInView));
   const noun = params.kind === "bills" ? "fee bills" : params.kind === "regulators" ? "regulator posts" : params.kind === "press" ? "press stories" : "items";
   // Press is held, so a failed press read is not news to the reader.
   const failed = wire.failed.filter((k) => k !== "press");
@@ -426,8 +456,8 @@ export function StateWire({
       <WireSummary params={params} win={win} noun={noun} phrase={phrase} />
       <FeeChips params={params} />
 
-      {params.kind !== "bills" && struckRegulatorNote(params.state) && wire.items.length > 0 ? (
-        <p className="mt-2 text-[11px] text-warm-600">{struckRegulatorNote(params.state)}</p>
+      {params.kind !== "bills" && struckNote && wire.items.length > 0 ? (
+        <p className="mt-2 text-[11px] text-warm-600">{struckNote}</p>
       ) : null}
 
       {failed.length > 0 ? (
@@ -439,7 +469,7 @@ export function StateWire({
       <div className="mt-3">
         {wire.items.length === 0 ? (
           <div className="rounded-xl border border-warm-200 bg-white/70 px-5 py-8 text-center">
-            <p className="mx-auto max-w-lg text-[13px] leading-relaxed text-warm-700">{emptyMessage(params, where, phrase)}</p>
+            <p className="mx-auto max-w-lg text-[13px] leading-relaxed text-warm-700">{emptyMessage(params, where, phrase, watchedInView)}</p>
           </div>
         ) : (
           <ol className="divide-y divide-warm-200/60 overflow-hidden rounded-xl border border-warm-200 bg-white/70">

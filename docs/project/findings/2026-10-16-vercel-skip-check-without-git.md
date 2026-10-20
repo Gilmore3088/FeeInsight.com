@@ -35,4 +35,4 @@ Left as #1634 chose: `HEAD^` compares only a push's last commit, so a `src/` com
 docs commit gets no preview, and `:!src/lib/agents` skips previews for agent code that ships in API
 routes.
 
-**Guard:** `src/lib/vercel-config.test.ts:18` (`.vercelignore` never drops `.git` while `ignoreCommand` runs git; line 13 keeps the command within Vercel's 256 characters)
+**Guard:** `src/lib/vercel-config.test.ts:21` (`.vercelignore` never drops `.git` or `scripts/` while `ignoreCommand` runs git; line 14 keeps the command within Vercel's 256 characters)

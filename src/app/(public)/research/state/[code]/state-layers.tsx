@@ -12,7 +12,7 @@ export function LayerNav({ layers }: { layers: { id: string; label: string; shor
   return (
     <nav
       aria-label="Sections"
-      className="sticky top-[57px] z-30 -mx-4 border-b border-border bg-surface-0/95 px-4 backdrop-blur sm:-mx-6 sm:px-6 print:hidden"
+      className="sticky top-[var(--fi-site-header-h)] z-30 -mx-4 border-b border-border bg-surface-0/95 px-4 backdrop-blur sm:-mx-6 sm:px-6 print:hidden"
     >
       <ol className="flex gap-1 overflow-x-auto py-2 [scrollbar-width:none]">
         {layers.map((l) => (

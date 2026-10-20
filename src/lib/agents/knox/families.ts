@@ -18,6 +18,7 @@ import {
   composableTail,
   inPriceFirstListRun,
   inPriceFirstRun,
+  LEADER_PRICE_WORDS,
   looksLikeHeading,
   nameAfterPrice,
   qualifiesName,
@@ -174,6 +175,16 @@ export function priceWindows(text: string): PriceWindow[] {
     if (windows.length >= MAX_WINDOWS) return;
     const values = valuesIn(line);
     if (values.length === 0) {
+      // v93 (#1828): a row priced in words ("Incoming Wire.......Free", "Reconveyance…… Actual Cost")
+      // closes its own line. It is neither a heading nor a name for the price below, so "Wire
+      // Fee.......$25.00" under Gunnison's free incoming wire never borrows its direction. One that
+      // names a fee of its own ends the reach of the heading above it.
+      if (LEADER_PRICE_WORDS.test(line)) {
+        if (classifyPatternKey(line.split(/(?:\.\s?){2,}|…/)[0])) heading = null;
+        pending = null;
+        feeLine = null;
+        return;
+      }
       // "(for each overdraft item paid)" under "Overdraft Item Fee": the name stays the one above.
       if (!(pending != null && qualifiesName(line))) pending = line.length <= 160 ? line : null;
       // A table row with no price ("Check Printing Fee | Prices vary") is a fee, not a heading.
@@ -219,7 +230,7 @@ export function priceWindows(text: string): PriceWindow[] {
       // A name above that runs on keeps the price ("Inactivity Fee - Savings Account per" / "$5 |
       // Cross-border transaction fee": a two-column page), and so does one over a lone price-first
       // row (`inPriceFirstRun`: "Overdraft Fee" / "$35.00 | Stop Payment Fee").
-      // v92: a cell-less price-first list ("$14.00 Safe Deposit Box 3”x5”x22”/Year") too, in a run.
+      // v94: a cell-less price-first list ("$14.00 Safe Deposit Box 3”x5”x22”/Year") too, in a run.
       const priceFirst = opensLine && values.length === 1 && !value.zero && !(pending != null && runsOn(pending)) &&
         ((line.includes(CELL_SEPARATOR) && (pending == null || !/[a-z]{2,}/i.test(pending) || inPriceFirstRun(lines, lineIndex))) ||
           (!line.includes(CELL_SEPARATOR) && inPriceFirstListRun(lines, lineIndex)) ||
@@ -253,7 +264,7 @@ export function priceWindows(text: string): PriceWindow[] {
       }
     });
     const tail = line.slice(nameStart).trim();
-    // A price-first row's name is its own price's, never the next line's. v92: so is a range row's
+    // A price-first row's name is its own price's, never the next line's. v94: so is a range row's
     // ("$5-$15 | Levy" never names the "$20 | Garnishment" under it).
     pending = !priceFirstLine && !priceFirstRow(line) && /[a-z]/i.test(tail) && tail.length <= 160 ? tail : null;
   });

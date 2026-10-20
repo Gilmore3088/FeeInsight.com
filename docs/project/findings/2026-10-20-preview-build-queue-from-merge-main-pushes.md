@@ -11,10 +11,31 @@ prerendering `/sitemap.xml` on a database timeout.
 merged from `main`. Draft PRs build too. The sitemap is prerendered at build time and reads the
 database, so a busy database fails the build.
 
-**Fix:** Not yet; follow-ups are on #1048.
+The same rule skipped an empty retry commit as "no changes". Vercel marks a skipped build
+"Ignored" and GitHub shows the Vercel check as passing, so PR #1779's failed preview looked green
+after a retry (Oct 20).
+
+**Fix:** `ignoreCommand` runs `scripts/vercel-ignore-build.mjs`. Production always builds. A
+preview is skipped only when the PR's own change against its merge-base with `origin/main` ships
+nothing (docs, tests, agent code, scripts, tooling), or when nothing that ships changed since
+`VERCEL_GIT_PREVIOUS_SHA`, the branch's last successful deployment. A failed build is not a
+successful deployment, so an empty retry after it still sees the failed commit's change and builds.
+Vercel clones one branch shallowly: the script fetches `main` and deepens until it finds the
+merge-base, and builds when it cannot (no remote access, no repository, any error). A merge-main
+push into a PR that changes pages still builds, since the preview has to show main's new code.
+Draft PRs still build: Vercel's ignore step has no draft flag and no GitHub token; that stays on
+#1048. The sitemap was moved to on-request rendering in #2480.
+
+**Update (James, 2026-10-20, DECISIONS.md):** previews build only for PRs that change what someone
+sees. `isVisiblePath` in `scripts/vercel-ignore-build-lib.mjs` is the one allowlist: `src/app/`,
+`src/components/`, `public/`, any `.css`/`.scss`, `next`/`tailwind`/`postcss` config,
+`package.json`, `package-lock.json` and `vercel.json` (tests and `.md` files excluded). Library,
+agent, script, doc, test, migration and CI changes skip the preview; a build failure in such a PR
+surfaces at the production deploy, which keeps the last good version. Production, a missing
+merge-base and any error still build.
 
 **Lesson:** Merge `main` into a branch only when CLAUDE.md says to (a conflict, a dependency, a
-new migration); each merge push costs a full preview build.
+new migration); each merge push into a PR that ships code costs a full preview build.
 
-**Guard:** Foundation tracker #1048 checklist lines "ignoreCommand diffs against the PR
-merge-base and skips drafts" and "sitemap rendered on request with caching".
+**Guard:** `scripts/vercel-ignore-build.test.ts:233` (a merge-main push into a docs-only PR skips;
+`:241` an empty retry after a failed page build builds; `:290` production always builds)

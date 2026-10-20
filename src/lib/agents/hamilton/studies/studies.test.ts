@@ -4,7 +4,7 @@ vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
 
 import { assetBand, quarterLabel, type InstitutionPrice } from "./common";
 import { buildFeeDependence, latestYearOf, withinTrend, type DependenceRow } from "./fee-dependence";
-import { buildInferredVolume, type IncomeFeeRow } from "./inferred-volume";
+import { buildInferredVolume, isCurrentIncome, type IncomeFeeRow } from "./inferred-volume";
 import { runPriceStudy } from "./price-study";
 import { median, midRankPercentile, ols, pricePercentile, quartileOf, ranks, spearman } from "./stats";
 import { sourcesChanged } from "./store";
@@ -135,8 +135,8 @@ describe("fee dependence", () => {
 describe("inferred volume", () => {
   it("divides income by the published fee and labels the range inferred", () => {
     const input: IncomeFeeRow[] = [
-      { institutionId: 1, charter: "credit_union", assetsThousands: 500_000, period: "2024-12-31", feeCategory: "overdraft", incomeDollars: 300_000, feeLow: 25, feeHigh: 30 },
-      { institutionId: 2, charter: "credit_union", assetsThousands: 600_000, period: "2024-12-31", feeCategory: "overdraft", incomeDollars: 150_000, feeLow: 30, feeHigh: 30 },
+      { institutionId: 1, charter: "credit_union", assetsThousands: 500_000, period: "2024-12-31", newestFiling: "2025-03-31", feeCategory: "overdraft", incomeDollars: 300_000, feeLow: 25, feeHigh: 30 },
+      { institutionId: 2, charter: "credit_union", assetsThousands: 600_000, period: "2024-12-31", newestFiling: "2025-03-31", feeCategory: "overdraft", incomeDollars: 150_000, feeLow: 30, feeHigh: 30 },
     ];
     const built = buildInferredVolume(input);
     expect(built.rows[0]).toMatchObject({ itemsLow: 10_000, itemsHigh: 12_000, peerN: 2 });
@@ -147,14 +147,66 @@ describe("inferred volume", () => {
   });
 
   it("keeps only banks whose income window ends at the newest bank quarter", () => {
-    const bank = (id: number, period: string): IncomeFeeRow => ({ institutionId: id, charter: "bank", assetsThousands: 2_000_000, period, feeCategory: "overdraft_nsf", incomeDollars: 1_000_000, feeLow: 25, feeHigh: 35 });
-    const cu: IncomeFeeRow = { institutionId: 9, charter: "credit_union", assetsThousands: 2_000_000, period: "2024-12-31", feeCategory: "overdraft", incomeDollars: 300_000, feeLow: 30, feeHigh: 30 };
+    const bank = (id: number, period: string): IncomeFeeRow => ({ institutionId: id, charter: "bank", assetsThousands: 2_000_000, period, newestFiling: "2026-06-30", feeCategory: "overdraft_nsf", incomeDollars: 1_000_000, feeLow: 25, feeHigh: 35 });
+    const cu: IncomeFeeRow = { institutionId: 9, charter: "credit_union", assetsThousands: 2_000_000, period: "2025-12-31", newestFiling: "2026-03-31", feeCategory: "overdraft", incomeDollars: 300_000, feeLow: 30, feeHigh: 30 };
     const built = buildInferredVolume([bank(1, "2026-06-30"), bank(2, "2026-06-30"), bank(3, "2019-06-30"), cu]);
     expect(built.rows.map((r) => r.institutionId)).toEqual([1, 2, 9]);
     expect(built.rows[0].peerN).toBe(2);
     expect(built.record.asOf).toBe("2026-06-30");
     expect(String(built.record.findings.headline)).toContain("$1B+ bank");
     expect(String(built.record.findings.headline)).toContain("credit union");
+  });
+
+  // #2052: NCUA overdraft/NSF income is on file only through 2024; pairing it with today's fees mixes years.
+  it("should_leave_out_credit_union_income_older_than_one_quarter_before_the_newest_filing", () => {
+    const cu = (id: number, period: string, newestFiling: string): IncomeFeeRow => ({ institutionId: id, charter: "credit_union", assetsThousands: 500_000, period, newestFiling, feeCategory: "overdraft", incomeDollars: 300_000, feeLow: 30, feeHigh: 30 });
+    const bank: IncomeFeeRow = { institutionId: 1, charter: "bank", assetsThousands: 2_000_000, period: "2026-06-30", newestFiling: "2026-06-30", feeCategory: "overdraft_nsf", incomeDollars: 1_000_000, feeLow: 25, feeHigh: 35 };
+    const built = buildInferredVolume([bank, cu(9, "2024-12-31", "2026-06-30"), cu(10, "2024-12-31", "2026-06-30")]);
+    expect(built.rows.map((r) => r.institutionId)).toEqual([1]);
+    expect(built.placements.map((p) => p.institutionId)).toEqual([1]);
+    expect(built.record.findings.income_periods).toEqual([
+      { charter: "bank", income_period: "2026-06-30", newest_filing: "2026-06-30", left_out: 0, stale_income_period: null },
+      { charter: "credit_union", income_period: null, newest_filing: "2026-06-30", left_out: 2, stale_income_period: "2024-12-31" },
+    ]);
+    const headline = String(built.record.findings.headline);
+    expect(headline).toContain("$1B+ bank");
+    expect(headline).toContain("Credit unions are left out");
+    expect(headline).toContain("2024-12-31");
+    expect(headline).not.toContain("typical credit union");
+    expect(built.record.sources.find((s) => s.name.startsWith("NCUA"))?.asOf).toBeNull();
+  });
+
+  it("should_keep_credit_union_income_within_one_quarter_and_name_its_quarter", () => {
+    const cu: IncomeFeeRow = { institutionId: 9, charter: "credit_union", assetsThousands: 500_000, period: "2025-12-31", newestFiling: "2026-03-31", feeCategory: "overdraft", incomeDollars: 300_000, feeLow: 30, feeHigh: 30 };
+    const built = buildInferredVolume([cu]);
+    expect(built.rows.map((r) => r.institutionId)).toEqual([9]);
+    expect(String(built.record.findings.headline)).toContain("in the year to 2025-12-31");
+    expect(built.record.sources.find((s) => s.name.startsWith("NCUA"))?.asOf).toBe("2025-12-31");
+  });
+
+  // NCUA credit union income is December year to date, so mid-year filings never carry a newer one.
+  it("should_keep_december_credit_union_income_within_four_quarters_of_a_mid_year_filing", () => {
+    const cu: IncomeFeeRow = { institutionId: 9, charter: "credit_union", assetsThousands: 500_000, period: "2025-12-31", newestFiling: "2026-06-30", feeCategory: "overdraft", incomeDollars: 300_000, feeLow: 30, feeHigh: 30 };
+    const built = buildInferredVolume([cu]);
+    expect(built.rows.map((r) => r.institutionId)).toEqual([9]);
+    expect(built.record.findings.income_periods).toEqual([
+      { charter: "credit_union", income_period: "2025-12-31", newest_filing: "2026-06-30", left_out: 0, stale_income_period: null },
+    ]);
+    expect(String(built.record.findings.headline)).toContain("in the year to 2025-12-31");
+    expect(isCurrentIncome({ charter: "credit_union", period: "2025-12-31", newestFiling: "2026-09-30" })).toBe(true);
+    expect(isCurrentIncome({ charter: "credit_union", period: "2025-12-31", newestFiling: "2026-12-31" })).toBe(false);
+  });
+
+  it("should_leave_out_december_credit_union_income_more_than_four_quarters_before_the_newest_filing", () => {
+    const cu: IncomeFeeRow = { institutionId: 9, charter: "credit_union", assetsThousands: 500_000, period: "2024-12-31", newestFiling: "2026-06-30", feeCategory: "overdraft", incomeDollars: 300_000, feeLow: 30, feeHigh: 30 };
+    const built = buildInferredVolume([cu]);
+    expect(built.rows).toEqual([]);
+    expect(String(built.record.findings.headline)).toContain("Credit unions are left out");
+  });
+
+  it("should_keep_the_one_quarter_rule_for_bank_income", () => {
+    expect(isCurrentIncome({ charter: "bank", period: "2026-03-31", newestFiling: "2026-06-30" })).toBe(true);
+    expect(isCurrentIncome({ charter: "bank", period: "2025-12-31", newestFiling: "2026-06-30" })).toBe(false);
   });
 });
 

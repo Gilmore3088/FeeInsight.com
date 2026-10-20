@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 import {
   MAX_PEER_SET_INSTITUTIONS,
   formatPrefillDate,
@@ -19,6 +20,7 @@ describe("parsePeerSetPrefillParams: valid links", () => {
       name: "The 25 banks closest in assets",
       fee: "overdraft",
       asOf: "2026-10-17",
+      tooLarge: false,
     });
   });
 
@@ -82,12 +84,13 @@ describe("parsePeerSetPrefillParams: invalid input is dropped, each parameter on
       name: null,
       fee: null,
       asOf: null,
+      tooLarge: false,
     });
   });
 
   it("returns nothing for an empty query", () => {
     const parsed = parse({});
-    expect(parsed).toEqual({ peerIds: [], name: null, fee: null, asOf: null });
+    expect(parsed).toEqual({ peerIds: [], name: null, fee: null, asOf: null, tooLarge: false });
     expect(hasPeerSetPrefill(parsed)).toBe(false);
   });
 });
@@ -111,6 +114,7 @@ describe("parsePeerSetPrefillParams: oversized input", () => {
       name: null,
       fee: null,
       asOf: null,
+      tooLarge: false,
     });
   });
 });
@@ -135,8 +139,9 @@ describe("resolvePeerSetPrefill", () => {
     expect(prefill).toEqual({
       peers: [{ id: 10, name: "Bank 10" }, { id: 11, name: "Bank 11" }],
       name: "Home metro",
-      fee: { key: "overdraft", label: "Overdraft (OD)" },
+      fee: { key: "overdraft", label: "Overdraft" },
       asOf: "2026-10-17",
+      tooLarge: false,
     });
   });
 
@@ -149,6 +154,57 @@ describe("resolvePeerSetPrefill", () => {
 
   it("is null when the lookup fails, so the page still renders", async () => {
     expect(await resolvePeerSetPrefill(parse({ peers: "10" }), async () => { throw new Error("db down"); })).toBeNull();
+  });
+});
+
+describe("a set too large to copy (#1997)", () => {
+  it("reads the link's large flag only when no peers came with it", () => {
+    const parsed = parse({ large: "1", name: "Banks in Florida", fee: "overdraft" });
+    expect(parsed.tooLarge).toBe(true);
+    expect(hasPeerSetPrefill(parsed)).toBe(true);
+    expect(parse({ large: "1", peers: "10" }).tooLarge).toBe(false);
+    expect(parse({ large: "yes" }).tooLarge).toBe(false);
+    expect(parse({ large: ["1"] }).tooLarge).toBe(false);
+  });
+
+  it("keeps the flag through sign-in", () => {
+    expect(peerSetPrefillSearch(parse({ large: "1", name: "Banks in Florida" })).toString()).toBe(
+      "name=Banks+in+Florida&large=1",
+    );
+  });
+
+  it("resolves to the set's name, fee and date with no peers and no lookup", async () => {
+    const lookup = vi.fn(async () => new Map<number, string>());
+    const parsed = parse({ large: "1", name: "Banks in Florida", fee: "wire_intl_outgoing", asof: "2026-10-17" });
+    expect(await resolvePeerSetPrefill(parsed, lookup)).toEqual({
+      peers: [],
+      name: "Banks in Florida",
+      fee: { key: "wire_intl_outgoing", label: "International wire" },
+      asOf: "2026-10-17",
+      tooLarge: true,
+    });
+    expect(lookup).not.toHaveBeenCalled();
+  });
+});
+
+describe("the fee's label (#1997)", () => {
+  const lookup = async (ids: number[]) => new Map(ids.map((id) => [id, `Bank ${id}`]));
+
+  it("uses the public peer explorer's words for the fees it links from", async () => {
+    for (const [fee, label] of [
+      ["overdraft", "Overdraft"],
+      ["wire_intl_outgoing", "International wire"],
+      ["wire_domestic_outgoing", "Domestic wire"],
+      ["atm_non_network", "Out-of-network ATM"],
+      ["monthly_maintenance", "Monthly maintenance"],
+    ]) {
+      expect((await resolvePeerSetPrefill(parse({ peers: "10", fee }), lookup))?.fee).toEqual({ key: fee, label });
+    }
+  });
+
+  it("falls back to the taxonomy's name for any other fee", async () => {
+    const prefill = await resolvePeerSetPrefill(parse({ peers: "10", fee: "nsf" }), lookup);
+    expect(prefill?.fee).toEqual({ key: "nsf", label: DISPLAY_NAMES.nsf });
   });
 });
 

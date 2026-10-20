@@ -22,6 +22,13 @@ export const ZERO_WORD = /^(?:free|none|no charge|n\/c)$/i;
 /** Agreement prose, not a fee name: addressed to the reader or written as a rule. */
 const PROSE = /\b(you|your|we|will|may|must|shall|would|could|should)\b/i;
 const LEADERS = /(?:\.\s?){3,}|…+|_{3,}|…+/g;
+/**
+ * v93 (#1828): a price stated in words at the end of a dot-leader row ("Reconveyance………… Actual
+ * Cost", "Check Orders………… Prices Vary", "Incoming Wire....... Free"). The row is closed: its
+ * name never runs into the next row's.
+ */
+export const LEADER_PRICE_WORDS =
+  /[A-Za-z)]\s*(?:(?:\.\s?){2,}|…+)[\s.…]*(?:free|none|no charge|n\/c|n\/a|waived|included|varies|prices?\s+vary|fees?\s+may\s+vary|actual\s+cost|at\s+cost|cost(?:\s+incurred)?|call(?:\s+for\s+\w+)?)\s*\.?\s*$/i;
 const MAX_NAME_WORDS = 14;
 
 /** A cleaned fee name, or null when the text reads as prose or is too long to be one. */
@@ -139,7 +146,7 @@ export function nameAfterPrice(rest: string): string | null {
 export function priceFirstRow(line: string): boolean {
   if (!line.includes(" | ")) return false;
   const row = line.replace(/^[\s|*_`]+/, "");
-  // v92 (#1827): a range price cell ("$5-$15 | Levy") opens its row as one price does.
+  // v94 (#1827): a range price cell ("$5-$15 | Levy") opens its row as one price does.
   const range = row.match(LEADING_RANGE);
   const lead = range ?? row.match(LEADING_VALUE);
   if (!lead || /^(?:free|none|no charge|n\/c)$/i.test(lead[1]) || (row.match(/\$\s*\d/g) ?? []).length !== (range ? 2 : 1)) return false;
@@ -153,7 +160,7 @@ const LEADING_RANGE = /^\(?\s*(\$\s*\d[\d,]*(?:\.\d{1,2})?\s*[-–]\s*\$\s*\d[\d
 const BARE_PRICE_LINE = /^[\s*_`]*\$\s*\d[\d,]*(?:\.\d{1,2})?[\s*_`]*(?:(?:per|each|a|an)\s+[a-z]+)?[\s*_`]*$/i;
 
 /**
- * v92 (#1827): a list line with no cells that opens with its one price and names its fee after it
+ * v94 (#1827): a list line with no cells that opens with its one price and names its fee after it
  * ("$14.00 Safe Deposit Box 3”x5”x22”/Year"). A dot-leader line ("$10.00 Outgoing Wire .....") is
  * not one: in a dot-leader page the price that opens a line is the line above's.
  */
@@ -177,7 +184,7 @@ export function inPriceFirstRun(lines: readonly string[], index: number): boolea
 }
 
 /**
- * v92 (#1827): a cell-less price-first list ("$100.00 Safe Deposit Box Drilling/Per Box" / "$14.00 Safe
+ * v94 (#1827): a cell-less price-first list ("$100.00 Safe Deposit Box Drilling/Per Box" / "$14.00 Safe
  * Deposit Box 3”x5”x22”/Year" / ...) is read one fee per line, so no box takes the next size's price.
  * It counts only as a run of two such lines or more that a bare price does not close: "Overdraft Fee"
  * / "$30.00 Stop Payment" / "$25.00 Returned Item" / "$5.00" is a stacked page, each price under the
@@ -235,7 +242,13 @@ function trimEnd(name: string): string {
  * (the evidence) are untouched. Returns the input when tidying would leave no usable name.
  */
 export function tidyFeeName(raw: string): string {
-  let cells = raw
+  // v93 (#1828): a cell that is a row priced in words ("Check Orders .. Prices Vary | Duplicate Lien
+  // Release", "Reconveyance .. Actual Cost: Returned payment") is the row before this fee's, so the
+  // name starts after it.
+  const rawCells = raw.split(/\s*\|\s*|(?<=[A-Za-z])\s*:\s+/);
+  const closedRow = rawCells.findLastIndex((cell, index) => index < rawCells.length - 1 && LEADER_PRICE_WORDS.test(cell));
+  const after = closedRow >= 0 ? rawCells.slice(closedRow + 1).join(" | ") : raw;
+  let cells = (/[a-z]{2,}/i.test(after) ? after : raw)
     .replace(LEADERS, " ")
     .replace(/::/g, ":")
     .split(/\s+\|\s+|\s*\|\s*/)

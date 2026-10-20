@@ -22,7 +22,13 @@ describe("brand constants", () => {
 
   it("attributes research and Hamilton to the site brand", () => {
     expect(RESEARCH_IMPRINT).toBe("Fee Insight Research");
-    expect(HAMILTON_ATTRIBUTION).toBe("Hamilton — Fee Insight");
+    expect(HAMILTON_ATTRIBUTION).toBe("Hamilton, from Fee Insight");
+  });
+
+  it("keeps em dashes out of the short brand strings PDFs and reports print", () => {
+    for (const brandString of [SITE_NAME, PRODUCT_NAME, RESEARCH_IMPRINT, HAMILTON_ATTRIBUTION]) {
+      expect(brandString).not.toMatch(/\u2014/);
+    }
   });
 
   it("builds page titles with the site suffix", () => {

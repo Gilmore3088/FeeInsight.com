@@ -2,13 +2,16 @@
  * Hosted Competitive Fee Position reports.
  *
  * The finished reports live as self-contained HTML in Reports/studio/out/<institution_id>.html.
- * A prospect reaches theirs through an unguessable token (Reports/studio/hosted-reports.json),
- * and the anonymized sample lives in Reports/studio/sample/. Both are committed source, read
- * from disk at request time; next.config.ts traces the studio files into the server bundle.
+ * A prospect reaches theirs through an unguessable token. The token map is a secret: it lives
+ * only in the HOSTED_REPORT_TOKENS environment variable (a JSON object, token -> record), never
+ * in the repository (James, 2026-10-20; issue #2001). Unset or unreadable config resolves no
+ * token, so every /r/<token> link 404s rather than opening. The report HTML and the anonymized
+ * sample (Reports/studio/out/, Reports/studio/sample/) are read from disk at request time;
+ * next.config.ts traces them into the server bundle.
  */
+import { createHash, timingSafeEqual } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import hostedReportMap from "../../Reports/studio/hosted-reports.json";
 import { reportRequestHref } from "./report-request-href";
 
 export interface HostedReportEntry {
@@ -27,13 +30,20 @@ export interface HostedReport extends HostedReportEntry {
 export type HostedReportMap = Record<string, HostedReportEntry>;
 
 interface LookupOptions {
-  /** Override the committed token map (tests). */
+  /** Override the HOSTED_REPORT_TOKENS map (tests). */
   map?: HostedReportMap;
   /** Override "today" (tests). */
   now?: Date;
 }
 
-const TOKEN_PATTERN = /^[0-9a-f]{16}$/;
+/** Env var holding the token map as JSON. Set in Vercel; never committed. */
+export const HOSTED_REPORT_TOKENS_ENV = "HOSTED_REPORT_TOKENS";
+
+/**
+ * 32 to 64 lowercase hex characters (`openssl rand -hex 16` or longer). The rotated-out tokens
+ * were 16 characters, so none of them can resolve again even if pasted back into the config.
+ */
+const TOKEN_PATTERN = /^[0-9a-f]{32,64}$/;
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const STUDIO_DIR = path.join(process.cwd(), "Reports", "studio");
 const SAMPLE_FILE = path.join(STUDIO_DIR, "sample", "sample-competitive-fee-position.html");
@@ -78,6 +88,64 @@ export function isHostedReportExpired(entry: HostedReportEntry, now: Date = new 
   return toIsoDate(now) > entry.expires_on;
 }
 
+function isHostedReportEntry(value: unknown): value is HostedReportEntry {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const entry = value as Record<string, unknown>;
+  return (
+    Number.isInteger(entry.institution_id) &&
+    (entry.institution_id as number) > 0 &&
+    typeof entry.institution_name === "string" &&
+    entry.institution_name.trim().length > 0 &&
+    typeof entry.prepared_on === "string" &&
+    ISO_DATE_PATTERN.test(entry.prepared_on) &&
+    typeof entry.expires_on === "string" &&
+    ISO_DATE_PATTERN.test(entry.expires_on)
+  );
+}
+
+/**
+ * Parse the HOSTED_REPORT_TOKENS value. Missing, blank or malformed config yields an empty
+ * map (fail closed); malformed tokens or records are dropped one by one.
+ */
+export function loadHostedReportMap(raw: string | undefined): HostedReportMap {
+  if (!raw || raw.trim() === "") return {};
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    console.error(`[hosted-reports] ${HOSTED_REPORT_TOKENS_ENV} is not valid JSON; no hosted report links resolve.`);
+    return {};
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    console.error(`[hosted-reports] ${HOSTED_REPORT_TOKENS_ENV} must be a JSON object; no hosted report links resolve.`);
+    return {};
+  }
+  const map: HostedReportMap = {};
+  for (const [token, value] of Object.entries(parsed)) {
+    if (!TOKEN_PATTERN.test(token) || !isHostedReportEntry(value)) continue;
+    const { institution_id, institution_name, prepared_on, expires_on } = value;
+    map[token] = { institution_id, institution_name, prepared_on, expires_on };
+  }
+  return map;
+}
+
+function tokenDigest(token: string): Buffer {
+  return createHash("sha256").update(token, "utf8").digest();
+}
+
+/**
+ * Find the entry for a token without an early exit or a string compare that leaks how much of
+ * the token matched: every configured token is compared, as equal-length digests.
+ */
+function findEntryConstantTime(map: HostedReportMap, token: string): HostedReportEntry | null {
+  const candidate = tokenDigest(token);
+  let found: HostedReportEntry | null = null;
+  for (const [known, entry] of Object.entries(map)) {
+    if (timingSafeEqual(candidate, tokenDigest(known))) found = entry;
+  }
+  return found;
+}
+
 /** Resolve a token to its report record; null when unknown, malformed, or expired. */
 export function getHostedReport(token: string, options: LookupOptions = {}): HostedReport | null {
   const lookup = lookupHostedReport(token, options);
@@ -90,8 +158,8 @@ export function lookupHostedReport(
   options: LookupOptions = {},
 ): { state: "ok" | "expired"; report: HostedReport } | { state: "missing" } {
   if (typeof token !== "string" || !TOKEN_PATTERN.test(token)) return { state: "missing" };
-  const map = options.map ?? (hostedReportMap as HostedReportMap);
-  const entry = map[token];
+  const map = options.map ?? loadHostedReportMap(process.env[HOSTED_REPORT_TOKENS_ENV]);
+  const entry = findEntryConstantTime(map, token);
   if (!entry) return { state: "missing" };
   const report = { token, ...entry };
   return { state: isHostedReportExpired(entry, options.now) ? "expired" : "ok", report };

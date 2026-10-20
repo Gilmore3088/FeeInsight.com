@@ -234,6 +234,14 @@ hand-found link or paid-fetched document starts a new run even inside the retry 
   run (`atlas.lane_sync`), started by `/api/admin/crew/lane-sync` at minute 6 of each hour. The tick
   never runs it: inside the first tick of each hour it held that tick's first step back p50 80 s,
   max 200 s (2026-10-18 finding, tick loses budget before steps).
+- The unchecked-live-fee wake reads only sleeping lanes' states, `UNCHECKED_WAKE_STATE_BATCH`
+  states per read, probing `pipeline_attempts` once per institution and once per document. A read
+  that fails (a statement timeout) puts `unchecked_wake_error` and `unchecked_failed_states` on the
+  step and a `step.warning` event on the run; it never reads as "woke 0" (#2424).
+  The wake stops starting batches `LANE_SYNC_UNCHECKED_DEADLINE_MS` (150 s) after the sync
+  starts, each batch's statement timeout fitted to the time left, so slow batches cannot get the
+  300 s route killed before its warning is written. States it never read go on the step as
+  `unchecked_skipped_states` with a `step.warning` that they were not checked this run.
 - Which lane goes next (James, 2026-10-06: schedule by where the work is): the hourly
   nationwide sync sets each lane's `priority_score` (`refreshLanePriorities`) to the number of
   banks in the state with open work or a recent error: due a search, a fee link not fetched

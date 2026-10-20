@@ -1188,30 +1188,49 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
           method="GET"
           path="/revenue"
           summary="Market-wide fee revenue by quarter"
-          description="Deposit service-charge income summed from FDIC and NCUA call reports, in thousands of dollars per quarter, newest first. The national view splits banks and credit unions and adds the change from a year earlier; the districts view gives one row per Fed district."
+          description="Call-report fee income in thousands of dollars per quarter, newest first. FDIC reports banks' service charges on deposit accounts. NCUA reports credit unions' broader fee income. The two measure different things. By default each row keeps its original fields, but service_charges, institutions, bank_service_charges and credit_union_service_charges are deprecated because they mix the two regulators. Read by_regulator instead, which gives each regulator's own figure. Ask for source=fdic or source=ncua to get only that regulator's rows. The districts view gives one row per Fed district per quarter."
           tierNote={API_ACCESS_LABEL}
           params={[
             { name: "view", type: "string", description: '"national" (default) or "districts"' },
             { name: "quarters", type: "integer", description: "Quarters to return, back to 2010 (default: 8, max: 66)" },
+            { name: "source", type: "string", description: '"fdic" (banks) or "ncua" (credit unions): only that regulator\'s rows, each naming its source and measure' },
           ]}
           curlExample={`curl -H "Authorization: Bearer YOUR_API_KEY" \\
   "${BASE}/revenue?quarters=4"`}
           responseFields={[
-            { name: "data[].quarter", type: "string", note: 'e.g. "2026-Q1"' },
-            { name: "data[].service_charges", type: "number", note: "Thousands of dollars" },
-            { name: "data[].yoy_change_pct", type: "number", note: "Change from the same quarter a year earlier (national view)" },
+            { name: "financial_groups[]", type: "object", note: "One per regulator: what it measures, its newest quarter, and whether it reported" },
+            { name: "data[].source", type: "string", note: '"fdic" or "ncua"; compare rows only within one source' },
+            { name: "data[].measure", type: "string", note: '"deposit_service_charge_income" or "broad_credit_union_fee_income"' },
+            { name: "data[].quarter", type: "string", note: 'e.g. "2026-Q1"; quarter_end gives the date' },
+            { name: "data[].service_charges", type: "number", note: "Thousands of dollars, for that source's measure only" },
+            { name: "data[].yoy_change_pct", type: "null", note: "Always null. The set of filers changes from quarter to quarter, so we don't report year-over-year growth" },
           ]}
           responseExample={`{
   "view": "national",
-  "units": "Deposit service-charge income from FDIC and NCUA call reports, in thousands of US dollars per quarter.",
+  "units": "Amounts are in thousands of US dollars per standalone quarter. ...",
+  "financial_groups": [
+    {
+      "source": "fdic",
+      "charter_type": "bank",
+      "measure": "deposit_service_charge_income",
+      "unit": "thousands of dollars",
+      "period_basis": "standalone_quarter",
+      "status": "reported",
+      "latest_quarter": "2026-Q1",
+      "latest_quarter_end": "2026-03-31",
+      "quarters_returned": 4
+    }
+  ],
   "data": [
     {
+      "source": "fdic",
+      "charter_type": "bank",
+      "measure": "deposit_service_charge_income",
       "quarter": "2026-Q1",
-      "service_charges": 1250000,
-      "bank_service_charges": 1000000,
-      "credit_union_service_charges": 250000,
-      "institutions": 8700,
-      "yoy_change_pct": -1.2
+      "quarter_end": "2026-03-31",
+      "service_charges": 1000000,
+      "institutions": 4100,
+      "yoy_change_pct": null
     }
   ],
   "attribution": ${JSON.stringify(API_ATTRIBUTION)}

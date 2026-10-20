@@ -84,11 +84,18 @@ describe("billing-access expected table", () => {
     if (kind === "internal_secret") return "denied";
     if (kind === "staff_api_provider_first") return "unavailable";
     const a = ACCOUNTS.find((x) => x.state === state);
-    const signedOut: Outcome = kind === "pro_page" || kind === "pro_export" || kind === "account_page" ? "login" : "denied";
+    const signedOut: Outcome =
+      kind === "pro_page" || kind === "pro_export" || kind === "account_page" || kind === "team_billing_page" ? "login" : "denied";
     if (!a) return signedOut;
     const staff = a.role === "admin" || a.role === "analyst";
+    // A seat whose workspace owner is past due beyond grace (#1999).
+    const ownerState = a.seatIn ? SEAT_WORKSPACES[a.seatIn].owner : null;
+    const teamLapsed = ACCOUNTS.some((x) => x.state === ownerState && x.lapsed);
+    const withoutPremium: Outcome = a.lapsed ? "billing" : teamLapsed ? "team_billing" : "subscribe";
     switch (kind) {
-      case "pro_page": return a.lapsed ? "billing" : a.premium ? "ok" : "subscribe";
+      case "pro_page": return a.premium && !a.lapsed ? "ok" : withoutPremium;
+      // The team-billing page renders for a lapsed team's seat and sends everyone else on.
+      case "team_billing_page": return a.premium && !a.lapsed ? "ok" : teamLapsed ? "ok" : withoutPremium;
       case "premium_api": case "pro_export": return a.premium ? "ok" : "denied";
       case "premium_api_provider_after_gate": return a.premium ? "unavailable" : "denied";
       case "staff_api": return staff ? "ok" : "denied";
@@ -138,8 +145,8 @@ describe("billing-access route coverage", () => {
       const start = source.indexOf(`export async function ${action.name}(`);
       const next = source.indexOf("\nexport ", start + 1);
       const body = source.slice(start, next === -1 ? undefined : next);
-      // canAccessPremium (directly or via hasProAccess), a staff role check, or a call to an action that has one.
-      const checked = /canAccessPremium\(|hasProAccess\(\)|user\.role !== "admin"|await loadAnalysisRecord\(|await setWatchedState\(/.test(body);
+      // canAccessPremium (directly, via hasProAccess, redirectWithoutPremium or reportStartError), a staff role check, or a call to an action that has one.
+      const checked = /canAccessPremium\(|redirectWithoutPremium\(|reportStartError\(|hasProAccess\(\)|user\.role !== "admin"|await loadAnalysisRecord\(|await setWatchedState\(/.test(body);
       expect(checked, `${action.file}#${action.name} must check access itself: server actions skip the /pro layouts`).toBe(true);
     }
   });

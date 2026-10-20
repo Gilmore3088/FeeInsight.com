@@ -9,6 +9,7 @@
  * are never ranked or picked; nothing here says to raise, lower or drop a fee.
  */
 
+import { medianAmount } from "@/lib/fee-institution-value";
 import { PERCENTILE_METHOD } from "@/lib/percentile";
 import { HISTORICAL_INCOME_CAVEAT } from "./national-income";
 import { revenueLineName } from "./revenue";
@@ -21,9 +22,20 @@ import { feeItem, plainName, proseFeeName } from "./names";
 import { ownRate, ownRateSource, rateRelation, ratesOf } from "./rates";
 import { countedPeerAmounts, MIN_PEERS_FOR_POSITION, placeAmong, pricePosition, spanOf } from "./scenario";
 import { segmentExhibit, shortSegmentLabel } from "./segment";
+import { countedGroup, theCountedGroup } from "@/lib/segment-words";
 import { isFederalRelease, isWireFact } from "./wire";
 import type { ArchetypeKey, KeyFigure, PeerListRow, StoryExhibit, StoryOption, Storyline, StorylineKind } from "./storyline-types";
 import type { Exhibit, Fact, FeeResearch, HamiltonAnswer, PeerValue, SegmentMember, SourceRef } from "./types";
+
+/**
+ * The "typically $X" transfer from savings in the structure line: the statistics contract's median
+ * of the group's priced transfers (#2029), so an even count gives the median the index publishes,
+ * never the upper middle value. A $0 transfer is no fee and is left out (#2035). The answer eval
+ * recomputes it with this function from the members' live values.
+ */
+export function typicalTransfer(amounts: readonly number[]): number | null {
+  return medianAmount(amounts.filter((a) => a > 0));
+}
 
 /** How the question reads, as far as the storyline needs it. */
 export interface StoryIntent {
@@ -211,7 +223,7 @@ function segmentPiece(research: FeeResearch, name: string): Piece | null {
   };
   return {
     key: "segment",
-    actionTitle: `${count(n)} of ${count(seg.institutionsInSegment)} ${shortSegmentLabel(seg.segment)} publish ${article(name)} ${name} fee${zero}${median}.`,
+    actionTitle: `${count(n)} of ${countedGroup(seg.institutionsInSegment, shortSegmentLabel(seg.segment))} publish ${article(name)} ${name} fee${zero}${median}.`,
     exhibit,
     takeaway:
       seg.withDailyCap > 0
@@ -323,7 +335,7 @@ function archetypePiece(research: FeeResearch, name: string): Piece | null {
   const ownGroup = ownKey ? archetypes.find((a) => a.key === ownKey)! : null;
   return {
     key: "archetype",
-    actionTitle: `Of ${count(n)} ${group.label}: ${listParts(
+    actionTitle: `Of ${countedGroup(n, group.label)}: ${listParts(
       [
         [by.zero_od, ARCHETYPE_COUNT_TEXT.zero_od],
         [by.low_capped, ARCHETYPE_COUNT_TEXT.low_capped],
@@ -366,7 +378,7 @@ function structurePiece(research: FeeResearch): Piece | null {
   const shown = [set.rows.find((r) => r.own), ...group.slice(0, MAX_LISTED_ROWS)].filter((r): r is NonNullable<typeof r> => !!r);
   return {
     key: "structure",
-    actionTitle: `Of ${count(group.length)} ${label}: ${count(nsf)} charge an NSF fee, ${count(transfer)} a transfer fee, ${count(cap)} a daily cap.`,
+    actionTitle: `Of ${countedGroup(group.length, label)}: ${count(nsf)} charge an NSF fee, ${count(transfer)} a transfer fee, ${count(cap)} a daily cap.`,
     exhibit: {
       kind: "structure_matrix",
       title: `Overdraft and NSF structure: ${subjectName(research)} and ${label}`,
@@ -411,8 +423,8 @@ function lineupPiece(research: FeeResearch): Piece | null {
         : `${subjectPossessive(research)} lowest monthly fee is ${money(ownLowest)}`;
   const actionTitle =
     group.length >= MIN_PEERS_FOR_POSITION
-      ? `${ownLead}; ${count(withFree)} of ${count(group.length)} ${label} offer a no-fee account.`
-      : `${ownLead}; too few ${label} publish their lineup to compare.`;
+      ? `${ownLead}; ${count(withFree)} of ${countedGroup(group.length, label)} offer a no-fee account.`
+      : `${ownLead}; too few ${label.startsWith("the ") ? `of ${label}` : label} publish their lineup to compare.`;
   const shown = [own, ...group.slice(0, MAX_LISTED_ROWS)];
   return {
     key: "lineup",
@@ -782,6 +794,13 @@ function keyFigures(research: FeeResearch, name: string): KeyFigure[] {
       label: `${subjectPossessive(research)} ${name} fee`,
       source: { label: `${subjectPossessive(research)} published fee schedule`, table: "published_fee_catalog", url: own?.documentUrl ?? own?.sourceUrl ?? undefined, asOf: own?.publishedAt?.slice(0, 10) ?? null },
     });
+  } else if (research.ownSeveral) {
+    // Several different fees in one category: their range, never their median (#2030).
+    out.push({
+      value: ownFeeLabel({ price: null, ...research.ownSeveral }, money),
+      label: `${subjectPossessive(research)} ${name} fees`,
+      source: { label: `${subjectPossessive(research)} published fee schedule`, table: "published_fee_catalog", url: own?.documentUrl ?? own?.sourceUrl ?? undefined, asOf: own?.publishedAt?.slice(0, 10) ?? null },
+    });
   }
   const seg = research.segment;
   if (seg && seg.problem === null && seg.band) {
@@ -920,7 +939,7 @@ function marketLens(research: FeeResearch, name: string): Fact[] {
     const n = group.members.length;
     if (group.members.some(m => m.several)) {
       out.push({
-        text: `In group statistics, ${count(cheaper.length)} of ${count(n)} ${group.label} have values below ${subjectPossessive(research, false)} ${money(current)}; the named rows show their stated prices.`,
+        text: `In group statistics, ${count(cheaper.length)} of ${countedGroup(n, group.label)} have values below ${subjectPossessive(research, false)} ${money(current)}; the named rows show their stated prices.`,
         source: group.source,
         sampleSize: n,
       });
@@ -932,18 +951,18 @@ function marketLens(research: FeeResearch, name: string): Fact[] {
       out.push({
         text: highest
           ? namedWithin(
-              `None of the ${count(n)} ${group.label} charge less than ${subjectPossessive(research, false)} ${money(current)}; the highest is ${plainName(highest.name)} (${money(highest.amount)}).`,
-              `None of the ${count(n)} ${group.label} charge less than ${subjectPossessive(research, false)} ${money(current)}; the highest charges ${money(highest.amount)}.`,
+              `None of ${theCountedGroup(n, group.label)} charge less than ${subjectPossessive(research, false)} ${money(current)}; the highest is ${plainName(highest.name)} (${money(highest.amount)}).`,
+              `None of ${theCountedGroup(n, group.label)} charge less than ${subjectPossessive(research, false)} ${money(current)}; the highest charges ${money(highest.amount)}.`,
             )
           : dearer.length > 0
-            ? `None of the ${count(n)} ${group.label} charge less than ${subjectPossessive(research, false)} ${money(current)}.`
-            : `All ${count(n)} ${group.label} charge the same ${money(current)} ${subjectName(research)} ${research.subjectName ? "does" : "do"}.`,
+            ? `None of ${theCountedGroup(n, group.label)} charge less than ${subjectPossessive(research, false)} ${money(current)}.`
+            : `All ${countedGroup(n, group.label)} charge the same ${money(current)} ${subjectName(research)} ${research.subjectName ? "does" : "do"}.`,
         source: group.source,
         sampleSize: n,
       });
     } else {
       const lowest = cheaper[0].several ? undefined : cheaper[0];
-      const fewer = `${count(cheaper.length)} of ${count(n)} ${group.label} charge less than ${subjectPossessive(research, false)} ${money(current)}`;
+      const fewer = `${count(cheaper.length)} of ${countedGroup(n, group.label)} charge less than ${subjectPossessive(research, false)} ${money(current)}`;
       out.push({
         text: lowest
           ? namedWithin(
@@ -984,10 +1003,9 @@ function marketLens(research: FeeResearch, name: string): Fact[] {
     const ownRow = set.rows.find((r) => r.own);
     // A $0 transfer is no fee, so it is not counted as pricing one (#2035), as in the structure matrix.
     const withTransfer = others.filter((r) => (r.values.od_protection_transfer ?? 0) > 0);
-    if (others.length >= MIN_PEERS_FOR_POSITION && withTransfer.length > 0) {
+    const typical = typicalTransfer(withTransfer.map((r) => r.values.od_protection_transfer));
+    if (others.length >= MIN_PEERS_FOR_POSITION && typical !== null) {
       const ownTransfer = ownRow?.values.od_protection_transfer;
-      const transfers = withTransfer.map((r) => r.values.od_protection_transfer).sort((a, b) => a - b);
-      const typical = transfers[Math.floor(transfers.length / 2)];
       out.push({
         text:
           ownTransfer !== undefined

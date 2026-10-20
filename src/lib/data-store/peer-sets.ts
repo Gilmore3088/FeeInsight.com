@@ -14,10 +14,12 @@
  * - holding company: holding_company_rssd (FDIC registry; banks only).
  * - market: a metro (MSA) by where institutions have branches (peer-markets.ts).
  * - nearest: the N institutions closest in total assets among those that meet every other
- *   dimension and publish at least one approved fee.
+ *   dimension, are not marked inactive and publish at least one approved fee. Its label names
+ *   how many it actually found, which can be fewer than N.
  */
 import { sql } from "./connection";
 import { peerInstitutionIds, type PeerFilterSet } from "./fee-index";
+import { activeInstitutionFilter } from "./fee-stats";
 import { getHomeMarket, getMarketInstitutionIds, type PeerMarket } from "./peer-markets";
 import { ASSET_TIER_RANGES } from "@/lib/hamilton/peer-index";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
@@ -139,8 +141,12 @@ function formatDollars(value: number): string {
   return `$${value.toLocaleString("en-US")}`;
 }
 
-/** A plain-words name for the group, e.g. "Banks with $300M to $1B in assets in Fed district 11 (Dallas)". */
-export function describePeerSet(def: PeerSetDefinition, market: PeerMarket | null = null): string {
+/**
+ * A plain-words name for the group, e.g. "Banks with $300M to $1B in assets in Fed district 11 (Dallas)".
+ * A resolved nearest set passes `memberCount`, so its label names the institutions it holds
+ * rather than the N it asked for.
+ */
+export function describePeerSet(def: PeerSetDefinition, market: PeerMarket | null = null, memberCount?: number): string {
   const ids = peerInstitutionIds(def);
   if (ids && !hasAdvancedDimensions(def)) return `${ids.length} chosen ${ids.length === 1 ? "institution" : "institutions"}`;
   const kind = def.charter_type === "bank"
@@ -148,7 +154,9 @@ export function describePeerSet(def: PeerSetDefinition, market: PeerMarket | nul
     : def.charter_type === "credit_union"
       ? def.cu_charter ? `${def.cu_charter === "federal" ? "Federal" : "State"} credit unions` : "Credit unions"
       : def.cu_charter ? `${def.cu_charter === "federal" ? "Federal" : "State"} credit unions` : "Institutions";
-  const parts = [def.nearest ? `The ${def.nearest} ${kind.toLowerCase()} closest in assets` : kind];
+  const nearestCount = memberCount ?? def.nearest;
+  const nearestKind = nearestCount === 1 ? kind.toLowerCase().replace(/s$/, "") : kind.toLowerCase();
+  const parts = [def.nearest ? `The ${nearestCount} ${nearestKind} closest in assets` : kind];
   if (def.asset_tiers?.length) {
     const ranges = def.asset_tiers.map((tier) => ASSET_TIER_RANGES[tier] ?? tier.replace(/_/g, " "));
     // "under $300M" and "over $250B" read on their own; a "$300M to $1B" range needs "with".
@@ -212,6 +220,7 @@ export async function resolvePeerInstitutionIds(
     const own = Number(subject?.asset_size);
     if (!subject || !Number.isFinite(own) || own <= 0) throw new PeerSetError("This institution has no total assets on record, so nearest cannot be used for it");
     conditions.push("s.asset_size IS NOT NULL");
+    conditions.push(activeInstitutionFilter("s"));
     conditions.push("EXISTS (SELECT 1 FROM published_fee_catalog p WHERE p.institution_id = s.id AND p.review_status = 'approved')");
     params.push(own);
     order = `ABS(s.asset_size - $${params.length}::bigint), s.id`;
@@ -242,7 +251,8 @@ export async function resolvePeerSet(def: PeerSetDefinition, subject: PeerSubjec
     return { definition: def, filters: withoutSubject ? { institutionIds: withoutSubject } : def, label, market };
   }
   const ids = await resolvePeerInstitutionIds(def, subject, loaded?.ids);
-  return { definition: def, filters: ids.length ? { institutionIds: ids } : null, label, market };
+  const resolvedLabel = def.nearest !== undefined ? describePeerSet(def, market, ids.length) : label;
+  return { definition: def, filters: ids.length ? { institutionIds: ids } : null, label: resolvedLabel, market };
 }
 
 /** The columns a peer definition reads from the subject institution, or null when unknown. */

@@ -9,12 +9,13 @@ const mocks = vi.hoisted(() => ({
   renderToBuffer: vi.fn(),
   getActivePeerSet: vi.fn(),
   loadAnswerBrief: vi.fn(),
+  premium: vi.fn(() => true),
 }));
 
 vi.mock("@/lib/hamilton/active-peer-set", () => ({ getActivePeerSet: mocks.getActivePeerSet }));
 vi.mock("@/lib/hamilton/answer-brief", () => ({ loadAnswerBrief: mocks.loadAnswerBrief }));
 vi.mock("@/lib/auth", () => ({ getCurrentUser: mocks.getCurrentUser }));
-vi.mock("@/lib/access", () => ({ canAccessPremium: () => true }));
+vi.mock("@/lib/access", () => ({ canAccessPremium: mocks.premium }));
 vi.mock("@/lib/api-hardening/audit", () => ({
   getRequestSubjectKey: () => "test",
   recordApiRouteAuditEvent: vi.fn().mockResolvedValue(undefined),
@@ -40,6 +41,7 @@ describe("POST /api/pro/report-pdf", () => {
     vi.clearAllMocks();
     mocks.getCurrentUser.mockResolvedValue({ id: 7, role: "premium", subscription_status: "active" });
     mocks.renderToBuffer.mockResolvedValue(Buffer.from("%PDF"));
+    mocks.premium.mockReturnValue(true);
   });
 
   it("refuses client-supplied report content without a record id", async () => {
@@ -81,4 +83,36 @@ describe("POST /api/pro/report-pdf", () => {
     expect(mocks.loadAnswerBrief).not.toHaveBeenCalled();
   });
 
+});
+
+describe("POST /api/pro/report-pdf for a cancelled account (#1999)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getCurrentUser.mockResolvedValue({ id: 7, role: "viewer", subscription_status: "canceled" });
+    mocks.premium.mockReturnValue(false);
+    mocks.renderToBuffer.mockResolvedValue(Buffer.from("%PDF"));
+  });
+
+  it("should_download_own_saved_report_when_subscription_cancelled", async () => {
+    mocks.getHamiltonReportById.mockResolvedValue({ report_json: { title: "Mine" }, report_type: "peer_brief", artifact_metadata: null });
+    const res = await post({ type: "report", reportId: REPORT_ID });
+    expect(res.status).toBe(200);
+    expect(mocks.getHamiltonReportById).toHaveBeenCalledWith(REPORT_ID, 7);
+    expect(mocks.loadPublishedReport).not.toHaveBeenCalled();
+  });
+
+  it("should_deny_another_users_report_when_subscription_cancelled", async () => {
+    mocks.getHamiltonReportById.mockResolvedValue(null);
+    const res = await post({ type: "report", reportId: REPORT_ID });
+    expect(res.status).toBe(403);
+    expect(mocks.loadPublishedReport).not.toHaveBeenCalled();
+    expect(mocks.renderToBuffer).not.toHaveBeenCalled();
+  });
+
+  it("should_deny_answers_and_empty_requests_when_subscription_cancelled", async () => {
+    expect((await post({ type: "analysis", analysisId: REPORT_ID })).status).toBe(403);
+    expect((await post({})).status).toBe(403);
+    expect(mocks.loadAnalysisRecord).not.toHaveBeenCalled();
+    expect(mocks.renderToBuffer).not.toHaveBeenCalled();
+  });
 });

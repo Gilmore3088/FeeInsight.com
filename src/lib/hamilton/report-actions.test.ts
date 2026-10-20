@@ -2,6 +2,7 @@
 import { generateReport, previewReportPeerCoverage, saveLandingResearchReport } from "@/app/pro/(hamilton)/reports/actions";
 import { POST as exportReportPdf } from "@/app/api/pro/report-pdf/route";
 import { NextRequest } from "next/server";
+import { REPORT_START_BLOCKED_MESSAGE } from "@/lib/report-access";
 import { extractText } from "unpdf";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SectionInput } from "@/lib/hamilton/types";
@@ -230,7 +231,7 @@ describe("Hamilton Reports generateReport", () => {
 
     const result = await generateReport(reportParams());
 
-    expect(result).toEqual({ success: false, error: "Pro subscription required" });
+    expect(result).toEqual({ success: false, error: REPORT_START_BLOCKED_MESSAGE });
     expect(mocks.generateSection).not.toHaveBeenCalled();
   });
 

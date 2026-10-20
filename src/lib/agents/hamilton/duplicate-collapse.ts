@@ -12,11 +12,16 @@ type SqlTag = typeof sql;
 export const DUPLICATE_COLLAPSE_LIMIT = 500;
 export const DUPLICATE_COLLAPSE_REASON_PREFIX = "duplicate of #";
 /** SQL form of `frequencyClass` (exact-duplicate.ts); the publish step's check uses that one. */
-const FREQUENCY_CLASS = `CASE
-  WHEN fp.frequency IN ('per_item', 'per_occurrence', 'per_transaction', 'one_time') THEN 'each'
-  WHEN fp.frequency = 'other' THEN NULL
-  ELSE fp.frequency
+/** The collapse's frequency class of `column`; NULL (unstated or "other") matches any stated class. */
+export function frequencyClassSql(column: string): string {
+  return `CASE
+  WHEN ${column} IN ('per_item', 'per_occurrence', 'per_transaction', 'one_time') THEN 'each'
+  WHEN ${column} = 'other' THEN NULL
+  ELSE ${column}
 END`;
+}
+
+const FREQUENCY_CLASS = frequencyClassSql("fp.frequency");
 
 export interface DuplicateCollapse {
   feePublishedId: number;

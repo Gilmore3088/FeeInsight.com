@@ -18,6 +18,7 @@ import { getCurrentUser } from '@/lib/auth';
 import { getSql } from '@/lib/data-store/connection';
 import { generatePresignedUrl } from '@/lib/report-engine/presign';
 import type { ReportJob } from '@/lib/report-engine/types';
+import { canReadReportJob } from '@/lib/report-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,11 +48,9 @@ async function handleGET(
     return NextResponse.json({ error: 'Report job not found' }, { status: 404 });
   }
 
-  // T-13-12: ownership guard — same as status route
-  const isOwner = Number(job.user_id) === Number(user.id);
-  const isAdminViewingCronJob = user.role === 'admin' && job.user_id == null;
-  const isAdmin = user.role === 'admin';
-  if (!isOwner && !isAdminViewingCronJob && !isAdmin) {
+  // T-13-12: ownership guard (#1999): the owner reads their own job with or without a
+  // subscription (read-only access to reports already paid for); an admin reads any job.
+  if (!canReadReportJob(user, job)) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 

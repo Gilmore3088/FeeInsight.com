@@ -1,4 +1,6 @@
-import { describe, expect, it } from "vitest";
+import fs from "node:fs";
+import path from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   extractExecutiveSummary,
   extractPositionMap,
@@ -9,17 +11,18 @@ import {
   lookupHostedReport,
   prepareReportForEmbed,
   prepareReportForPrint,
+  loadHostedReportMap,
   type HostedReportMap,
 } from "./hosted-reports";
 
 const FIXTURE: HostedReportMap = {
-  "0123456789abcdef": {
+  "0123456789abcdef0123456789abcdef": {
     institution_id: 4802,
     institution_name: "Georgia Heritage Federal Credit Union",
     prepared_on: "2026-08-15",
     expires_on: "2026-11-15",
   },
-  "fedcba9876543210": {
+  "fedcba9876543210fedcba9876543210": {
     institution_id: 860,
     institution_name: "Bank of the Pacific",
     prepared_on: "2026-05-01",
@@ -31,22 +34,22 @@ const NOW = new Date("2026-08-17T12:00:00Z");
 
 describe("getHostedReport", () => {
   it("returns null for an unknown token", () => {
-    expect(getHostedReport("ffffffffffffffff", { map: FIXTURE, now: NOW })).toBeNull();
+    expect(getHostedReport("ffffffffffffffffffffffffffffffff", { map: FIXTURE, now: NOW })).toBeNull();
   });
 
   it("returns null for a malformed token without consulting the map", () => {
     expect(getHostedReport("../etc/passwd", { map: FIXTURE, now: NOW })).toBeNull();
     expect(getHostedReport("", { map: FIXTURE, now: NOW })).toBeNull();
-    expect(getHostedReport("0123456789ABCDEF", { map: FIXTURE, now: NOW })).toBeNull();
+    expect(getHostedReport("0123456789ABCDEF0123456789ABCDEF", { map: FIXTURE, now: NOW })).toBeNull();
   });
 
   it("returns null for an expired token", () => {
-    expect(getHostedReport("fedcba9876543210", { map: FIXTURE, now: NOW })).toBeNull();
+    expect(getHostedReport("fedcba9876543210fedcba9876543210", { map: FIXTURE, now: NOW })).toBeNull();
   });
 
   it("returns the record for a known, unexpired token", () => {
-    expect(getHostedReport("0123456789abcdef", { map: FIXTURE, now: NOW })).toEqual({
-      token: "0123456789abcdef",
+    expect(getHostedReport("0123456789abcdef0123456789abcdef", { map: FIXTURE, now: NOW })).toEqual({
+      token: "0123456789abcdef0123456789abcdef",
       institution_id: 4802,
       institution_name: "Georgia Heritage Federal Credit Union",
       prepared_on: "2026-08-15",
@@ -56,16 +59,16 @@ describe("getHostedReport", () => {
 
   it("treats the expiry date itself as still valid", () => {
     const lastDay = new Date("2026-11-15T23:00:00Z");
-    expect(getHostedReport("0123456789abcdef", { map: FIXTURE, now: lastDay })).not.toBeNull();
+    expect(getHostedReport("0123456789abcdef0123456789abcdef", { map: FIXTURE, now: lastDay })).not.toBeNull();
     const dayAfter = new Date("2026-11-16T00:00:00Z");
-    expect(getHostedReport("0123456789abcdef", { map: FIXTURE, now: dayAfter })).toBeNull();
+    expect(getHostedReport("0123456789abcdef0123456789abcdef", { map: FIXTURE, now: dayAfter })).toBeNull();
   });
 });
 
 describe("isHostedReportExpired", () => {
   it("treats a malformed expiry date as expired", () => {
     expect(
-      isHostedReportExpired({ ...FIXTURE["0123456789abcdef"], expires_on: "soon" }, NOW),
+      isHostedReportExpired({ ...FIXTURE["0123456789abcdef0123456789abcdef"], expires_on: "soon" }, NOW),
     ).toBe(true);
   });
 });
@@ -161,17 +164,89 @@ describe("extractPositionMap", () => {
 
 describe("lookupHostedReport", () => {
   it("tells an expired link from an unknown one", () => {
-    expect(lookupHostedReport("fedcba9876543210", { map: FIXTURE, now: NOW })).toMatchObject({
+    expect(lookupHostedReport("fedcba9876543210fedcba9876543210", { map: FIXTURE, now: NOW })).toMatchObject({
       state: "expired",
       report: { institution_id: 860, institution_name: "Bank of the Pacific" },
     });
-    expect(lookupHostedReport("ffffffffffffffff", { map: FIXTURE, now: NOW })).toEqual({ state: "missing" });
-    expect(lookupHostedReport("0123456789abcdef", { map: FIXTURE, now: NOW }).state).toBe("ok");
+    expect(lookupHostedReport("ffffffffffffffffffffffffffffffff", { map: FIXTURE, now: NOW })).toEqual({ state: "missing" });
+    expect(lookupHostedReport("0123456789abcdef0123456789abcdef", { map: FIXTURE, now: NOW }).state).toBe("ok");
   });
 
   it("links to the free request form prefilled for the institution", () => {
-    expect(hostedReportRequestHref(FIXTURE["fedcba9876543210"], "hosted_report_expired")).toBe(
+    expect(hostedReportRequestHref(FIXTURE["fedcba9876543210fedcba9876543210"], "hosted_report_expired")).toBe(
       "/reports?report=institution&institution=860&name=Bank+of+the+Pacific&src=hosted_report_expired#request",
     );
+  });
+});
+
+const ENV_TOKEN = "0123456789abcdef0123456789abcdef";
+const ENV_ENTRY = {
+  institution_id: 4802,
+  institution_name: "Georgia Heritage Federal Credit Union",
+  prepared_on: "2026-08-15",
+  expires_on: "2026-11-15",
+};
+
+describe("loadHostedReportMap (HOSTED_REPORT_TOKENS)", () => {
+  it("returns an empty map when the variable is missing or blank", () => {
+    expect(loadHostedReportMap(undefined)).toEqual({});
+    expect(loadHostedReportMap("   ")).toEqual({});
+  });
+
+  it("returns an empty map when the value is not a JSON object", () => {
+    expect(loadHostedReportMap("{not json")).toEqual({});
+    expect(loadHostedReportMap("[]")).toEqual({});
+    expect(loadHostedReportMap("null")).toEqual({});
+  });
+
+  it("keeps well-formed entries and drops malformed tokens or records", () => {
+    const raw = JSON.stringify({
+      [ENV_TOKEN]: ENV_ENTRY,
+      "22002a7b2f68dbbe": ENV_ENTRY,
+      "ffffffffffffffffffffffffffffffff": { ...ENV_ENTRY, institution_id: "4802" },
+      "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee": { ...ENV_ENTRY, expires_on: undefined },
+    });
+    expect(loadHostedReportMap(raw)).toEqual({ [ENV_TOKEN]: ENV_ENTRY });
+  });
+});
+
+describe("hosted report lookup with the token map read from the environment", () => {
+  const original = process.env.HOSTED_REPORT_TOKENS;
+  afterEach(() => {
+    if (original === undefined) delete process.env.HOSTED_REPORT_TOKENS;
+    else process.env.HOSTED_REPORT_TOKENS = original;
+  });
+
+  it("fails closed when the variable is not set", () => {
+    delete process.env.HOSTED_REPORT_TOKENS;
+    expect(lookupHostedReport(ENV_TOKEN, { now: NOW })).toEqual({ state: "missing" });
+  });
+
+  it("fails closed when the variable is not valid JSON", () => {
+    process.env.HOSTED_REPORT_TOKENS = "{oops";
+    expect(lookupHostedReport(ENV_TOKEN, { now: NOW })).toEqual({ state: "missing" });
+  });
+
+  it("resolves a token configured in the variable", () => {
+    process.env.HOSTED_REPORT_TOKENS = JSON.stringify({ [ENV_TOKEN]: ENV_ENTRY });
+    expect(getHostedReport(ENV_TOKEN, { now: NOW })).toEqual({ token: ENV_TOKEN, ...ENV_ENTRY });
+    expect(getHostedReport("ffffffffffffffffffffffffffffffff", { now: NOW })).toBeNull();
+  });
+
+  it("treats a token one character off as missing", () => {
+    process.env.HOSTED_REPORT_TOKENS = JSON.stringify({ [ENV_TOKEN]: ENV_ENTRY });
+    expect(lookupHostedReport(`${ENV_TOKEN.slice(0, -1)}0`, { now: NOW })).toEqual({
+      state: "missing",
+    });
+  });
+
+  it("never resolves an old 16-character token, even if it is configured", () => {
+    process.env.HOSTED_REPORT_TOKENS = JSON.stringify({ "22002a7b2f68dbbe": ENV_ENTRY });
+    expect(lookupHostedReport("22002a7b2f68dbbe", { now: NOW })).toEqual({ state: "missing" });
+  });
+
+  it("no longer ships a token list inside the repository", () => {
+    const studio = path.join(process.cwd(), "Reports", "studio");
+    expect(fs.existsSync(path.join(studio, "hosted-reports.json"))).toBe(false);
   });
 });

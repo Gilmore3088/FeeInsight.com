@@ -16,7 +16,7 @@ import {
   resolveArtifactContextInstitutionId,
 } from "@/lib/hamilton/artifact-context";
 import { getHamiltonArtifactInstitutionId } from "@/lib/hamilton/artifact-context-store";
-import { subscribeReason } from "@/lib/subscribe-reason";
+import { redirectWithoutPremium } from "@/lib/team-billing";
 import { getActivePeerSet } from "@/lib/hamilton/peer-index";
 import { sanitizeInternalRedirect } from "@/lib/safe-redirect";
 import { sql } from "@/lib/data-store/connection";
@@ -62,7 +62,8 @@ async function HamiltonLayoutInner({
       "/pro/hamilton",
     );
     if (!user) redirect(`/login?from=${encodeURIComponent(returnTo)}`);
-    redirect(`/subscribe?from=${encodeURIComponent(returnTo)}&reason=${subscribeReason(user)}`);
+    // Same targets as the outer /pro layout: billing-issue, team-billing or /subscribe.
+    await redirectWithoutPremium(user, returnTo);
   }
 
   const isAdmin = user.role === "admin" || user.role === "analyst";
@@ -88,10 +89,19 @@ async function HamiltonLayoutInner({
   const artifactLookup = hasResearch ? null : getHamiltonArtifactContextLookup({ pathname, searchParams: requestSearchParams });
   const savedArtifactRequested = artifactLookup?.kind === "analysis" || artifactLookup?.kind === "report"
     || (pathname === "/pro/simulate" && artifactLookup?.kind === "scenario");
+  // null means the artifact is missing or unscoped (its page 404s). A failed read is different:
+  // log it and let it reach the Pro error boundary, rather than open an unscoped shell (#975).
   const artifactInstitutionId = await getHamiltonArtifactInstitutionId({
     userId: user.id,
     lookup: artifactLookup,
-  }).catch(() => null);
+  }).catch((error: unknown) => {
+    console.error(
+      "[hamilton-shell] saved artifact context read failed",
+      { userId: user.id, kind: artifactLookup?.kind, artifactId: artifactLookup?.artifactId, pathname },
+      error,
+    );
+    throw error;
+  });
   const contextInstitutionId = resolveArtifactContextInstitutionId({
     urlInstitutionId: selectedInstId,
     artifactInstitutionId,

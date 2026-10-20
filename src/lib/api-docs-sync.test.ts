@@ -127,4 +127,20 @@ describe("API docs stay in step with the API", () => {
       }
     }
   });
+
+  it("marks the revenue API's combined fields deprecated and documents the per-regulator ones (#2488)", async () => {
+    const spec = await (await GET()).json();
+    const body = spec.paths["/revenue"].get.responses["200"].content["application/json"].schema.properties;
+    const row = body.data.items.properties;
+    for (const field of ["bank_service_charges", "credit_union_service_charges"]) {
+      expect(row[field].deprecated, `${field} should be deprecated`).toBe(true);
+    }
+    for (const field of ["service_charges", "institutions"]) {
+      expect(row[field].description, `${field} should say it combines regulators`).toMatch(/deprecated/i);
+    }
+    expect(Object.keys(row.by_regulator.items.properties)).toEqual(
+      expect.arrayContaining(["source", "measure", "quarter_end", "service_charges", "institutions"]),
+    );
+    expect(body.financial_groups).toBeDefined();
+  });
 });

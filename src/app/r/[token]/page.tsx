@@ -1,6 +1,6 @@
 /**
  * /r/[token] — a prepared Competitive Fee Position Report, hosted for one institution.
- * Token map: Reports/studio/hosted-reports.json; HTML: Reports/studio/out/<id>.html.
+ * Token map: HOSTED_REPORT_TOKENS env var (never in the repo); HTML: Reports/studio/out/<id>.html.
  * Not indexed; unknown tokens 404, expired ones offer a fresh report.
  */
 import type { Metadata } from "next";

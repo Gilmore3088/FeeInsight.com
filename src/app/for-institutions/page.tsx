@@ -3,7 +3,9 @@
  * The page reads no session, cookies or search params: the header's signed-in parts and the
  * report link's query pass-through are client islands. A render with a failed read is cached
  * for one minute instead (`shortenPageLife`, #1572), so a database blip never pins a page
- * with hidden exhibits for the full 15.
+ * with hidden exhibits for the full 15. During `next build` each read gets 15 s and the
+ * page's two reads 30 s together (`readOnRequest`) before it renders as such a render: a busy
+ * database held its build-time reads past Next's 60-second page limit (#1048).
  */
 export const revalidate = 900;
 
@@ -11,7 +13,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { linkPreview } from "@/lib/link-preview";
-import { benchmarkBasis, getPublicSnapshot } from "@/lib/public-stats";
+import { benchmarkBasis, getPublicSnapshot, UNAVAILABLE_PUBLIC_STATS } from "@/lib/public-stats";
 import type { FeeCategorySummary } from "@/lib/data-store/fees";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { PRODUCT_NAME } from "@/lib/constants";
@@ -19,6 +21,7 @@ import { PRO_TIERS, tierPriceLabel } from "@/lib/pro-tiers";
 import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
 import { loadSampleReport } from "@/lib/custom-report/sample-report";
 import { shortenPageLife } from "@/lib/data-store/public-read-cache";
+import { readOnRequest, startBuildBudget } from "@/lib/build-phase";
 import { FeeRange, FeeRangeAxis } from "@/brand/components";
 
 import { ConsumerNav } from "@/components/consumer-nav";
@@ -62,24 +65,34 @@ export const metadata: Metadata = {
  * sample report (Capital City Bank when its market passes) and the cached index reads.
  */
 export default async function ForInstitutionsPage() {
+  const budgetLeft = startBuildBudget();
   // The sample is read once: it is null both when none passes the bar today and on error.
-  const [snapshot, sampleRead] = await Promise.all([
-    getPublicSnapshot(),
-    loadSampleReport().then(
-      (report) => ({ report, failed: false }),
-      (error: unknown) => {
-        console.error("[for-institutions] sample report read failed; sample exhibits hidden", error);
-        return { report: null, failed: true };
-      },
-    ),
-  ]);
+  const [snapshot, sampleRead] = await readOnRequest(
+    () =>
+      Promise.all([
+        getPublicSnapshot(),
+        loadSampleReport().then(
+          (report) => ({ report, failed: false }),
+          (error: unknown) => {
+            console.error("[for-institutions] sample report read failed; sample exhibits hidden", error);
+            return { report: null, failed: true };
+          },
+        ),
+      ]),
+    [{ summary: UNAVAILABLE_PUBLIC_STATS, categories: [] }, { report: null, failed: true }],
+  );
   const heroCategory = snapshot.categories.find((c) => c.fee_category === HERO_CATEGORY) ?? null;
   const liveSample = sampleRead.report;
   const sampleLive = liveSample !== null;
   const board = buildCompetitorBoard(liveSample);
   // The ladder opens on the same lead line as the board, when the index can place it.
+  // During `next build` the ladder gets what is left of the page's budget (BUILD_PAGE_BUDGET_MS).
   const ladderRead = liveSample
-    ? await readSampleLadder(liveSample, snapshot.categories, board?.leadKey ?? null)
+    ? await readOnRequest(
+        () => readSampleLadder(liveSample, snapshot.categories, board?.leadKey ?? null),
+        { ladder: null, failed: true },
+        budgetLeft(),
+      )
     : { ladder: null, failed: false };
   const ladder = ladderRead.ladder;
   const failedRead =

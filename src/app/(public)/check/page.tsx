@@ -30,7 +30,8 @@ import { FeeAlertControl } from "../institution/[id]/fee-alert-control";
 import { getCharterLabel, toTitleCase } from "../institution/[id]/enum-labels";
 import { MIN_VERIFIED_FEES_FOR_OFFER } from "../institution/[id]/profile-copy";
 import { getPublicInstitutionForPage, getVisibleFeesForPage, isVerifiedFee } from "../institution/[id]/profile-data";
-import { loadConsumerGuides } from "@/lib/guides/source";
+import { loadGuidesWithSource } from "@/lib/guides/source";
+import { shortenPageLife } from "@/lib/data-store/public-read-cache";
 import { SourceNote } from "../research/district/[id]/district-hub";
 import { cityPath, dottedCityName, titleCase } from "../fees/city/[state]/[city]/city-lookup";
 import {
@@ -345,13 +346,17 @@ async function CheckAnswer({ id, near, refreshedOn }: { id: number; near: string
   const cityName = inst.city ? titleCase(inst.city) : null;
   // Match the institution profile's consumer fee eligibility on both sides of a comparison.
   // The state population includes banks and credit unions headquartered in that state.
-  const [nationalIndex, stateIndex, guides, local, user] = await Promise.all([
+  const [nationalIndex, stateIndex, guideRead, local, user] = await Promise.all([
     hasFees ? getComparableMarketIndexCached({ kind: "us" }).catch(fallbackTo("national index", [])) : Promise.resolve([]),
     hasFees && stateCode ? getComparableMarketIndexCached({ kind: "state", code: stateCode }).catch(fallbackTo("state index", [])) : Promise.resolve([]),
-    hasFees ? loadConsumerGuides().catch(fallbackTo("guides", [])) : Promise.resolve([]),
+    hasFees ? loadGuidesWithSource() : Promise.resolve(null),
     hasFees ? resolveLocal(near) : Promise.resolve<LocalStatus>({ kind: "none" }),
     getCurrentUser().catch(() => null),
   ]);
+  // A failed guides read serves the seed guides (and logs it); that render is kept for a
+  // minute, not the usual life, so the next one reads the database again (#2491).
+  if (guideRead?.readFailed) await shortenPageLife();
+  const guides = (guideRead?.guides ?? []).filter((g) => g.audience === "consumer");
   const alertSubscription = user
     ? await getAlertSubscriptionForInstitution(user.id, id).catch(fallbackTo("alert subscription", null))
     : null;

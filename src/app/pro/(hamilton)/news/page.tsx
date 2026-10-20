@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
-import { canAccessPremium } from "@/lib/access";
+import { redirectWithoutPremium } from "@/lib/team-billing";
 import {
   getArticles,
   getArticleCount,
@@ -54,7 +54,7 @@ export default async function NewsPage({
 
   const user = await getCurrentUser();
   if (!user) redirect(`/login?from=${encodeURIComponent(returnPath)}`);
-  if (!canAccessPremium(user)) redirect(`/subscribe?from=${encodeURIComponent(returnPath)}`);
+  await redirectWithoutPremium(user, returnPath);
 
   const parsed = parseWireParams(raw, (code) => Boolean(STATE_NAMES[code]));
   const watched = await getWatchedStates(user.id);

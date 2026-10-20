@@ -1,7 +1,10 @@
 import { sql } from "./connection";
 import { activeInstitutionFilter, STATS_ROW_FILTER } from "./fee-stats";
-import { PRIOR_QUARTER_JOIN, QUARTER_SC } from "./call-reports";
 import type { FinancialSource } from "./financial-sources";
+import { callReportQuartersReady } from "./call-report-quarters";
+import {
+  revenuePerInstitutionLegacySql, revenuePerInstitutionSummarySql, type ScopedSource,
+} from "./call-report-derived-sql";
 import { canonicalFinancialSourceSql } from "./financial-peer-contract";
 
 // ── Interfaces ───────────────────────────────────────────────────────────────
@@ -253,22 +256,12 @@ export async function getRevenuePerInstitutionTrend(
 ): Promise<RevenuePerInstitutionTrend> {
   try {
     // Convert NCUA YTD to standalone quarters before any cross-section or trend.
-    const scopedSource = source === "fdic" ? "source = 'fdic'" : source === "ncua" ? "source = 'ncua'" : "source IN ('fdic', 'ncua')";
+    const scopedSource: ScopedSource = source === "fdic" ? "source = 'fdic'" : source === "ncua" ? "source = 'ncua'" : "source IN ('fdic', 'ncua')";
     const boundedQuarters = Number.isFinite(quarters) ? Math.min(40, Math.max(1, Math.trunc(quarters))) : 4;
-    const quarterly = `SELECT inf.institution_id, inf.report_date, inf.source,
-        inf.total_assets, ct.asset_size_tier, ct.charter_type,
-        ${QUARTER_SC} AS quarter_income
-      FROM institution_financial_records inf
-      JOIN institution_sources ct ON ct.id = inf.institution_id
-      ${PRIOR_QUARTER_JOIN}
-      WHERE inf.source IN ('fdic', 'ncua')
-        AND ${canonicalFinancialSourceSql("inf", "ct")}
-        AND inf.${scopedSource}
-        AND inf.report_date IN (
-          SELECT DISTINCT report_date FROM institution_financial_records
-          WHERE source IN ('fdic', 'ncua') AND ${scopedSource}
-          ORDER BY report_date DESC LIMIT ${boundedQuarters}
-        )`;
+    // The summary table holds each filing's standalone quarter; until it is built, recompute.
+    const quarterly = (await callReportQuartersReady(sql as never))
+      ? revenuePerInstitutionSummarySql(scopedSource, boundedQuarters)
+      : revenuePerInstitutionLegacySql(scopedSource, boundedQuarters);
     const tierRows = await sql`
       WITH quarters AS (${sql.unsafe(quarterly)})
       SELECT asset_size_tier as tier, source, report_date,

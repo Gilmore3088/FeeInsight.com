@@ -4,7 +4,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { getCurrentUser } from "@/lib/auth";
-import { canAccessPremium } from "@/lib/access";
+import { redirectWithoutPremium } from "@/lib/team-billing";
 import { resolveHamiltonInstitutionContext } from "@/lib/hamilton/workspace-context";
 import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
 import { getCountyDepositTotals, getInstitutionCounties, getMarketStudyData } from "@/lib/data-store/market-study";
@@ -25,7 +25,7 @@ export default async function MarketStudyPage({
   const params = await searchParams;
   const user = await getCurrentUser();
   if (!user) redirect(`/login?from=${encodeURIComponent("/pro/studies/market")}`);
-  if (!canAccessPremium(user)) redirect("/subscribe?from=/pro/studies/market");
+  await redirectWithoutPremium(user, "/pro/studies/market");
 
   const { institution } = await resolveHamiltonInstitutionContext({ userId: user.id, instId: params.instId, intent: "market-study" });
   if (!institution) {

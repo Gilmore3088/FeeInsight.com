@@ -6,7 +6,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium, isInPaymentGrace, isPaymentLapsed, PAST_DUE_GRACE_DAYS } from "@/lib/access";
 import { ManageBillingButton } from "@/app/account/manage-billing-button";
 import { sanitizeInternalRedirect } from "@/lib/safe-redirect";
-import { subscribeReason } from "@/lib/subscribe-reason";
+import { redirectWithoutPremium } from "@/lib/team-billing";
 import type { Metadata } from "next";
 import { SITE_TITLE_TEMPLATE } from "@/lib/constants";
 
@@ -52,11 +52,7 @@ async function ProLayoutInner({
     redirect(`/login?from=${encodeURIComponent(returnTo)}`);
   }
 
-  if (isPaymentLapsed(user)) {
-    redirect("/account/billing-issue");
-  }
-
-  if (!canAccessPremium(user)) {
+  if (isPaymentLapsed(user) || !canAccessPremium(user)) {
     const headersList = await headers();
     const requestPath =
       headersList.get("x-invoke-path") ||
@@ -64,7 +60,8 @@ async function ProLayoutInner({
       headersList.get("x-pathname") ||
       "/pro";
     const returnTo = sanitizeInternalRedirect(requestPath, "/pro");
-    redirect(`/subscribe?from=${encodeURIComponent(returnTo)}&reason=${subscribeReason(user)}`);
+    // Lapsed owner: /account/billing-issue; seat member of a lapsed team: /account/team-billing.
+    await redirectWithoutPremium(user, returnTo);
   }
 
   // The Hamilton shell renders the admin "Back to Admin" bar; one bar is enough.
