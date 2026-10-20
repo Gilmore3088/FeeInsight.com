@@ -97,6 +97,15 @@ old one, moves the profile's canonical link unless a correction locked it, takes
 pages off `rejected_source_urls` and sets the wrong pages aside there. Step detail `hand_links`.
 On by James's decision (Oct 19, "Do all three"). Add later checks to the list, never edit a past one.
 
+## Role lesson sync (`learning/lesson-sync.ts`)
+
+`atlas-lesson-sync`, before the city repair in the daily scoreboard run, copies every agent's role
+lessons (`src/lib/agents/<agent>/role-lessons.ts`) into `agent_lessons` and retires, never
+deletes, a lesson the repo no longer has. It writes only that table, makes no model call and
+reports new, updated, unchanged and retired counts and any agent skipped for having no
+`agent_registry` row. Atlas's own lessons are in `atlas/role-lessons.ts`; the design is in
+`src/lib/agents/learning/AGENTS.md` ("Role lessons").
+
 ## Storage watch and retention (`storage-retention.ts`)
 
 `atlas-storage-retention`, after the city repair in the daily scoreboard run, records the database

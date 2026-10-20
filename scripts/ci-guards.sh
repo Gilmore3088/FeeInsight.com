@@ -48,6 +48,8 @@
 #                 Fail if a PR changes a Knox, Darwin, Hamilton, Magellan or Rosetta version constant that no Bayes manifest names.
 #   guide-version-kill
 #                 Fail if an agent's rules or reader version constant is not stated, at its current version, in that agent's AGENTS.md.
+#   lesson-kill   Fail if an agent's role lessons (src/lib/agents/<agent>/role-lessons.ts) miss a field, name another
+#                 agent, have a malformed id or date, reuse an id, or are not in the lesson registry.
 
 set -euo pipefail
 
@@ -908,7 +910,57 @@ api_docs_kill() {
   echo "api-docs-kill: OK (API changed and API_VERSION moved)"
 }
 
+lesson_kill() {
+  # Issues become lessons for the agents, not only checks (James, 2026-10-20; DECISIONS). Each
+  # pipeline agent keeps its role lessons in src/lib/agents/<agent>/role-lessons.ts. Every file is
+  # in the registry, every lesson has all its fields, names its own agent, has a well-formed id
+  # and date, and no id is used twice. Reads only the files, so it needs no GitHub access.
+  local registry="src/lib/agents/learning/lesson-registry.ts"
+  local allowed=" atlas magellan hoovie rosetta knox darwin gutenberg hamilton deming "
+  local problems="" ids="" files=0 lessons=0 file agent count field n line dup
+  for file in src/lib/agents/*/role-lessons.ts; do
+    [[ -f "$file" ]] || continue
+    files=$((files + 1))
+    agent=$(basename "$(dirname "$file")")
+    [[ "$allowed" == *" ${agent} "* ]] || problems+="${file}: ${agent} is not a pipeline agent that keeps role lessons"$'\n'
+    grep -q "@/lib/agents/${agent}/role-lessons\"" "$registry" 2>/dev/null || problems+="${file}: not imported in ${registry}"$'\n'
+    count=$(grep -cE '^[[:space:]]+id: "' "$file" || true)
+    lessons=$((lessons + count))
+    for field in agent stage lesson why evidence appliesTo since; do
+      n=$(grep -cE "^[[:space:]]+${field}: " "$file" || true)
+      [[ "$n" == "$count" ]] || problems+="${file}: ${count} lessons but ${n} '${field}:' fields"$'\n'
+    done
+    while IFS= read -r line; do
+      [[ -n "$line" ]] && problems+="${file}: a lesson names another agent (${line## }); it belongs in that agent's role-lessons.ts"$'\n'
+    done < <(grep -E '^[[:space:]]+agent: "' "$file" | grep -vE "agent: \"${agent}\"," | sed -E 's/^[[:space:]]+//' || true)
+    while IFS= read -r line; do
+      [[ -n "$line" ]] && problems+="${file}: empty or malformed ${line}"$'\n'
+    done < <(grep -E '^[[:space:]]+(stage|lesson|why): ""|^[[:space:]]+since: ' "$file" | grep -vE 'since: "[0-9]{4}-[0-9]{2}-[0-9]{2}",' | sed -E 's/^[[:space:]]+//' || true)
+    if [[ "$agent" == "hamilton" ]]; then
+      # Hamilton's lessons go into the instructions for answers customers read, and internal
+      # agent names are never shown to customers.
+      while IFS= read -r line; do
+        [[ -n "$line" ]] && problems+="${file}: a Hamilton lesson names an internal agent (${line## }); describe the behaviour instead"$'\n'
+      done < <(grep -E '^[[:space:]]+lesson: ' "$file" | grep -iE '\b(atlas|magellan|hoovie|rosetta|knox|darwin|gutenberg|deming)\b' | sed -E 's/^[[:space:]]+//' || true)
+    fi
+    while IFS= read -r line; do
+      [[ -z "$line" ]] && continue
+      [[ "$line" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] || problems+="${file}: lesson id '${line}' must be lower-case words joined by hyphens, e.g. issue-2306"$'\n'
+      ids+="${line}"$'\n'
+    done < <(grep -E '^[[:space:]]+id: "' "$file" | sed -E 's/^[[:space:]]+id: "([^"]*)".*/\1/' || true)
+  done
+  dup=$(printf '%s' "$ids" | sort | uniq -d)
+  [[ -n "$dup" ]] && problems+="lesson ids used more than once: $(echo "$dup" | tr '\n' ' ')"$'\n'
+  if [[ -n "$problems" ]]; then
+    echo "lesson-kill: fix the agents' role lessons (src/lib/agents/<agent>/role-lessons.ts):" >&2
+    printf '%s' "$problems" >&2
+    exit 1
+  fi
+  echo "lesson-kill: OK (${lessons} role lessons in ${files} agent files, ids unique)"
+}
+
 case "$SUBCOMMAND" in
+  lesson-kill) lesson_kill ;;
   sqlite-kill) sqlite_kill ;;
   modal-kill) modal_kill ;;
   legacy-kill) legacy_kill ;;
@@ -939,12 +991,12 @@ case "$SUBCOMMAND" in
   api-docs-kill) api_docs_kill ;;
   runtime-ddl-kill) runtime_ddl_kill ;;
   "")
-    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill|findings-file-kill|guide-version-kill|bayes-manifest-kill|api-docs-kill|runtime-ddl-kill>" >&2
+    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill|findings-file-kill|guide-version-kill|bayes-manifest-kill|api-docs-kill|runtime-ddl-kill|lesson-kill>" >&2
     exit 2
     ;;
   *)
     echo "Unknown subcommand: $SUBCOMMAND" >&2
-    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill|findings-file-kill|guide-version-kill|bayes-manifest-kill|api-docs-kill|runtime-ddl-kill>" >&2
+    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill|findings-file-kill|guide-version-kill|bayes-manifest-kill|api-docs-kill|runtime-ddl-kill|lesson-kill>" >&2
     exit 2
     ;;
 esac

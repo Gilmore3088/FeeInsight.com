@@ -146,3 +146,72 @@ describe("runtime-ddl-kill", () => {
     expect(status, output).toBe(0);
   });
 });
+
+/** lesson-kill (DECISIONS 2026-10-20): every agent's role lessons are complete, its own and unique. */
+describe("lesson-kill", () => {
+  const REGISTRY = "src/lib/agents/learning/lesson-registry.ts";
+  const entry = (id: string, agent: string, since = "2026-10-19") => [
+    "  {",
+    `    id: "${id}",`,
+    `    agent: "${agent}",`,
+    '    stage: "extract",',
+    '    lesson: "Read the per-item price.",',
+    '    why: "Totals were read as prices.",',
+    "    evidence: { issues: [1], prs: [], files: [] },",
+    '    appliesTo: "all",',
+    `    since: "${since}",`,
+    "  },",
+  ].join("\n");
+  const file = (...entries: string[]) => `export const LESSONS = [\n${entries.join("\n")}\n];\n`;
+
+  function lessonRepo(files: Record<string, string>, registry = 'import { K } from "@/lib/agents/knox/role-lessons";\nimport { D } from "@/lib/agents/darwin/role-lessons";\n') {
+    repo = mkdtempSync(join(tmpdir(), "lesson-guard-"));
+    write(REGISTRY, registry);
+    for (const [path, text] of Object.entries(files)) write(path, text);
+    const out = spawnSync("bash", [GUARD, "lesson-kill"], { cwd: repo, env, encoding: "utf8" });
+    return { status: out.status, output: `${out.stdout}${out.stderr}` };
+  }
+
+  it("passes complete lessons with unique ids", () => {
+    const { status, output } = lessonRepo({
+      "src/lib/agents/knox/role-lessons.ts": file(entry("issue-1", "knox"), entry("issue-2", "knox")),
+      "src/lib/agents/darwin/role-lessons.ts": file(entry("issue-3", "darwin")),
+    });
+    expect(status, output).toBe(0);
+    expect(output).toContain("3 role lessons in 2 agent files");
+  });
+
+  it("fails a reused id, another agent's lesson, a missing field and a bad date", () => {
+    const missingWhy = entry("issue-4", "knox").replace(/\n {4}why: .*,/, "");
+    const { status, output } = lessonRepo({
+      "src/lib/agents/knox/role-lessons.ts": file(entry("issue-1", "knox"), entry("issue-2", "darwin"), missingWhy, entry("issue-5", "knox", "Oct 19")),
+      "src/lib/agents/darwin/role-lessons.ts": file(entry("issue-1", "darwin")),
+    });
+    expect(status, output).toBe(1);
+    expect(output).toContain("lesson ids used more than once: issue-1");
+    expect(output).toContain('names another agent (agent: "darwin",)');
+    expect(output).toContain("4 lessons but 3 'why:' fields");
+    expect(output).toContain('since: "Oct 19"');
+  });
+
+  it("fails a Hamilton lesson that names an internal agent, since it reaches customer answers", () => {
+    const leaky = entry("issue-6", "hamilton").replace("Read the per-item price.", "Trust what Knox extracted.");
+    const { status, output } = lessonRepo({
+      "src/lib/agents/hamilton/role-lessons.ts": file(leaky, entry("issue-7", "hamilton")),
+    }, 'import { H } from "@/lib/agents/hamilton/role-lessons";\n');
+    expect(status, output).toBe(1);
+    expect(output).toContain("a Hamilton lesson names an internal agent");
+    expect(output).not.toContain("issue-7");
+  });
+
+  it("fails an agent file the registry does not import, and a folder that is not a pipeline agent", () => {
+    const { status, output } = lessonRepo({
+      "src/lib/agents/knox/role-lessons.ts": file(entry("issue-1", "knox")),
+      "src/lib/agents/growth/role-lessons.ts": file(entry("Issue_2", "growth")),
+    }, 'import { K } from "@/lib/agents/knox/role-lessons";\n');
+    expect(status, output).toBe(1);
+    expect(output).toContain("growth is not a pipeline agent");
+    expect(output).toContain("src/lib/agents/growth/role-lessons.ts: not imported");
+    expect(output).toContain("lesson id 'Issue_2'");
+  });
+});

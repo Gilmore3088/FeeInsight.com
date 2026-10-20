@@ -20,7 +20,7 @@ async function isAuthorized(request: NextRequest): Promise<boolean> {
  * 300-second agent tick advances it; this 60-second route performs no step work. Score the
  * pipeline against the hand-checked answer key, let Deming turn confirmed takedowns into
  * regression cases and replay them, audit a fresh seeded sample of live fees, run the daily data-quality checks (#1065) and the public-data source health report (#1866), then snapshot the six scoreboard numbers (which include
- * that score), then restore cut credit union cities (#1213), then measure the database and count
+ * that score), then copy the agents' role lessons into agent_lessons, then restore cut credit union cities (#1213), then measure the database and count
  * (or, once switched on, trim) old log history. Deterministic; no model calls.
  */
 async function handleGET(request: NextRequest) {
@@ -52,6 +52,8 @@ async function handleGET(request: NextRequest) {
       { key: "deming-sunday-maintenance", agent: "atlas", title: "Deming: on Sunday, write James's hour of maintenance tasks" },
       // New live-bank work obeys the pipeline pause and follows every existing exempt measurement.
       { key: "deming-live-source-draw", agent: "atlas", title: "Deming: freeze today's separate live-source diagnostic draw (no network)" },
+      // The agents' role lessons from the repo into agent_lessons (learning/lesson-sync.ts); no fee row.
+      { key: "atlas-lesson-sync", agent: "atlas", title: "Atlas: copy the agents' role lessons from the repo into agent_lessons" },
       // Last: a data repair, so a pipeline pause holds it without holding the measurements above.
       { key: "atlas-city-repair", agent: "atlas", title: "Atlas: restore credit union cities NCUA cut at 15 characters (#1213) and hand-checked fee links (#2022)" },
       // Measures the database every day; its log trims delete only once James switches each on.

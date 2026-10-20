@@ -281,6 +281,14 @@ function narrateFinished(
         ? `Atlas restored ${count(n(detail, "repaired"), "credit union city", "credit union cities")} cut at 15 characters from NCUA's branch file.${linkNote}`
         : `Atlas found ${count(found, "credit union city", "credit union cities")} cut at 15 characters and changed none (${detail.dry_run === true ? "dry run" : "switched off"}).${linkNote}`;
     }
+    case "atlas-lesson-sync": {
+      if (detail.ready === false) return "Atlas could not sync the agents' lessons: agent_lessons is not there.";
+      const retired = Array.isArray(detail.superseded) ? detail.superseded.length : 0;
+      const skipped = Array.isArray(detail.skipped_agents) ? (detail.skipped_agents as Detail[]).filter((entry) => n(entry, "lessons") > 0) : [];
+      const skipNote = skipped.length ? ` Skipped ${skipped.map((entry) => `${n(entry, "lessons")} for ${String(entry.agent)}`).join(", ")} (no registry row).` : "";
+      if (detail.dry_run === true) return `Atlas checked the agents' role lessons (dry run): ${count(retired, "lesson")} would be retired.${skipNote}`;
+      return `Atlas synced the agents' role lessons: ${n(detail, "inserted")} new, ${n(detail, "updated")} updated, ${n(detail, "unchanged")} unchanged, ${retired} retired.${skipNote}`;
+    }
     case "atlas-storage-retention": {
       const size = detail.database_mb == null ? "could not read the database size" : `measured the database at ${count(n(detail, "database_mb"), "MB", "MB")}`;
       const trims = Array.isArray(detail.trims) ? (detail.trims as Detail[]) : [];
@@ -721,6 +729,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "schedule-check": "atlas",
   "atlas-city-repair": "atlas",
   "atlas-storage-retention": "atlas",
+  "atlas-lesson-sync": "atlas",
   "deming-fresh-audit": "atlas",
   "deming-benchmark-health": "atlas",
   "deming-data-quality": "atlas",
