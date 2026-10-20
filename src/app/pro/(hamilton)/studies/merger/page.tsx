@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
-import { canAccessPremium } from "@/lib/access";
+import { redirectWithoutPremium } from "@/lib/team-billing";
 import { resolveHamiltonInstitutionContext } from "@/lib/hamilton/workspace-context";
 import { parseInstitutionId } from "@/lib/hamilton/institution-context";
 import { getMergerCandidates, getMergerScreenData, type MergerCandidate } from "@/lib/data-store/merger-screen";
@@ -68,7 +68,7 @@ export default async function MergerScreenPage({ searchParams }: { searchParams:
     const returnPath = `/pro/studies/merger${query.size ? `?${query}` : ""}`;
     redirect(`/login?from=${encodeURIComponent(returnPath)}`);
   }
-  if (!canAccessPremium(user)) redirect("/subscribe?from=%2Fpro%2Fstudies%2Fmerger");
+  await redirectWithoutPremium(user, "/pro/studies/merger");
 
   // `a` is the subject bank; links that carry the workspace bank use `instId`.
   const { institution, error } = await resolveHamiltonInstitutionContext({

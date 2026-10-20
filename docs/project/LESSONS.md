@@ -18,6 +18,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 185 entries, newest first. The full text, who decided and why are in [DECISIONS.md](DECISIONS.md).
 
+- 2026-10-20 — A seat member of a lapsed team sees a team-billing page, not /subscribe. — [decision](DECISIONS.md#2026-10-20)
 - 2026-10-20 — Paid market-report links are tied to their payment. — [decision](DECISIONS.md#2026-10-20)
 - 2026-10-20 — Institution pages with fewer than 5 verified fees stay out of search. — [decision](DECISIONS.md#2026-10-20)
 - 2026-10-20 — Previews build only for PRs that change visible files. — [decision](DECISIONS.md#2026-10-20)
