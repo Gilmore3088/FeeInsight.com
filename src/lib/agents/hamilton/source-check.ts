@@ -230,7 +230,7 @@ export function readerLostLine(fee: LiveFeeRow, texts: InstitutionText[], reason
 }
 
 /** A price on its own: "$30", "$ 8.00" or a bare "6.25". */
-const PRICE = /\$\s?\d|\b\d+\.\d{2}\b/;
+const PRICE = /\$\s*\d|\b\d+\.\d{2}\b/;
 /** A name that says the fee is free cannot also carry a price ("Notary Fee Free for members" $5). */
 const FREE_WORDS = /\b(?:free|no charge|waived)\b/i;
 
@@ -247,11 +247,17 @@ export function restorableExcerpt(fee: Pick<LiveFeeRow, "fee_name" | "amount" | 
   if (FREE_WORDS.test(fee.fee_name)) return false;
   const excerpt = excerptOf(fee.conditions);
   if (!excerpt) return false;
-  const nameWords = fee.fee_name.toLowerCase().match(/[a-z]{3,}/g);
-  if (!nameWords) return false;
+  const name = fee.fee_name.trim().toLowerCase();
+  const firstWord = name.match(/[a-z]{3,}/)?.[0];
+  if (!firstWord) return false;
   return excerpt.split(/\s+\/\s+/).some((line) => {
     if (!checkFeeAgainstSource(line, fee.fee_name, Number(fee.amount), ".", fee.canonical_fee_key).ok) return false;
-    const at = line.toLowerCase().indexOf(nameWords[0]);
+    // Where the whole name is printed, or else where its first word is as a word: a heading
+    // that repeats the first word ("Wire Transfers $30 Wire Transfer Domestic $15 Wire Transfer
+    // International") must not count as the name, and "card" inside "Discard" is not "Card".
+    const lower = line.toLowerCase();
+    const whole = lower.lastIndexOf(name);
+    const at = whole >= 0 ? whole : lower.search(new RegExp(`\\b${firstWord}\\b`));
     return at >= 0 && !PRICE.test(line.slice(0, at));
   });
 }

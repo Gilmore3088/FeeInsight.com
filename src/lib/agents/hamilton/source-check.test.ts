@@ -108,6 +108,10 @@ describe("restorableExcerpt", () => {
       sampled(14461, "Notary Public Fee: Members", "5", "notary_fee", "$5 Notary Public Fee: Members"),
       sampled(62929, "Return Deposited Items", "6.25", "deposited_item_return", "$6.25 | Return Deposited Items"),
       sampled(20693, "Notary Fee Free for members", "5", "notary_fee", "Notary Fee Free for members $5.00"),
+      // Review probes: a heading repeating the name's first word, a word inside another word, two spaces after "$".
+      sampled(1, "Wire Transfer International", "15", "wire_intl_outgoing", "Wire Transfers $30 Wire Transfer Domestic $15 Wire Transfer International"),
+      sampled(2, "Card Replacement", "25", "card_replacement", "Discard fee $30 Card Replacement | $25 Replace Key"),
+      sampled(3, "Replacement Credit Card Rush", "25", "rush_card", "$  30 Replacement Credit Card Rush | $25 Replace Key"),
     ]) {
       expect(restorableExcerpt(row)).toBe(false);
     }
