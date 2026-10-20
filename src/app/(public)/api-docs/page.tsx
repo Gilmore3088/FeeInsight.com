@@ -4,6 +4,7 @@ import Link from "next/link";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { API_ATTRIBUTION, CONTACT_EMAIL, SITE_URL } from "@/lib/constants";
 import { getPublicStatsSummary } from "@/lib/public-stats";
+import { DEMO } from "./api-docs-example";
 import { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT } from "@/lib/data-store/maturity";
 import { API_MONTHLY_CALLS_LABEL, API_PLANS_LABEL, BURST_CALLS_PER_MINUTE } from "@/lib/api-subscriber-access";
 import { PAST_DUE_GRACE_DAYS } from "@/lib/access";
@@ -694,13 +695,13 @@ export default async function ApiDocsPage() {
     { "dimension_value": "Credit Union", "count": 332, "min_amount": 5, "max_amount": 38, "avg_amount": 29, "median_amount": 30, "p25_amount": 25, "p75_amount": 35 }
   ],
   "by_asset_tier": [
-    { "dimension_value": "community_mid", "count": 200, "min_amount": 5, "max_amount": 40, "avg_amount": 30, "median_amount": 30, "p25_amount": 25, "p75_amount": 35 }
+    { "dimension_value": "community_large", "count": 200, "min_amount": 5, "max_amount": 40, "avg_amount": 30, "median_amount": 30, "p25_amount": 25, "p75_amount": 35 }
   ],
   "by_fed_district": [
-    { "dimension_value": "District 9", "count": 75, "min_amount": 5, "max_amount": 38, "avg_amount": 29, "median_amount": 30, "p25_amount": 25, "p75_amount": 35 }
+    { "dimension_value": "District 6", "count": 75, "min_amount": 5, "max_amount": 38, "avg_amount": 29, "median_amount": 30, "p25_amount": 25, "p75_amount": 35 }
   ],
   "by_state": [
-    { "dimension_value": "MN", "count": 44, "min_amount": 5, "max_amount": 38, "avg_amount": 29, "median_amount": 30, "p25_amount": 25, "p75_amount": 35 }
+    { "dimension_value": "FL", "count": 44, "min_amount": 5, "max_amount": 38, "avg_amount": 29, "median_amount": 30, "p25_amount": 25, "p75_amount": 35 }
   ],
   "attribution": ${JSON.stringify(API_ATTRIBUTION)}
 }`}
@@ -835,15 +836,15 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
   "has_more": false,
   "data": [
     {
-      "id": 2466,
-      "name": "Gateway Bank",
-      "state": "MN",
-      "city": "Mendota Heights",
+      "id": ${DEMO.id},
+      "name": "${DEMO.name}",
+      "state": "${DEMO.state}",
+      "city": "${DEMO.city}",
       "charter_type": "bank",
-      "asset_size": 319549,
-      "asset_tier": "community_mid",
-      "fed_district": 9,
-      "fee_count": 33
+      "asset_size": ${DEMO.assetThousands},
+      "asset_tier": "${DEMO.assetTier}",
+      "fed_district": ${DEMO.fedDistrict},
+      "fee_count": ${DEMO.feeCount}
     }
   ],
   "attribution": ${JSON.stringify(API_ATTRIBUTION)}
@@ -868,7 +869,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
             },
           ]}
           curlExample={`curl -H "Authorization: Bearer YOUR_API_KEY" \\
-  "${BASE}/institutions?id=2466"`}
+  "${BASE}/institutions?id=${DEMO.id}"`}
           responseFields={[
             { name: "fees[]", type: "array", note: "Every published fee for this institution" },
             { name: "fees[].source_url", type: "string", note: "The fee schedule the fee was read from" },
@@ -901,33 +902,33 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
             { name: "rate_fees[].rate_terms", type: "string", note: 'The rate in words, e.g. "3% of the transaction"' },
           ]}
           responseExample={`{
-  "id": 2466,
-  "name": "Gateway Bank",
-  "state": "MN",
-  "city": "Mendota Heights",
+  "id": ${DEMO.id},
+  "name": "${DEMO.name}",
+  "state": "${DEMO.state}",
+  "city": "${DEMO.city}",
   "charter_type": "bank",
-  "asset_size": 319549,
-  "asset_tier": "community_mid",
-  "fed_district": 9,
+  "asset_size": ${DEMO.assetThousands},
+  "asset_tier": "${DEMO.assetTier}",
+  "fed_district": ${DEMO.fedDistrict},
   "fee_count": 2,
   "fees": [
     {
-      "fee_name": "Overdraft Fee",
+      "fee_name": "Overdraft Item Fee",
       "name_is_category_fallback": false,
       "category": "overdraft",
-      "amount": 30.00,
-      "frequency": "per_occurrence",
-      "conditions": "Per item; created by check, in-person withdrawal, or other electronic means",
+      "amount": 35.00,
+      "frequency": "per_item",
+      "conditions": null,
       "review_status": "approved",
       "confidence": 0.99,
       "source_url": "https://example.com/fee-schedule.pdf",
       "published_at": "2026-10-02T14:05:00.000Z"
     },
     {
-      "fee_name": "Account Maintenance",
+      "fee_name": "Paper statements",
       "name_is_category_fallback": false,
-      "category": "monthly_maintenance",
-      "amount": 17.00,
+      "category": "paper_statement",
+      "amount": 2.00,
       "frequency": "monthly",
       "conditions": null,
       "review_status": "approved",
@@ -978,15 +979,15 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
   "data": [
     {
       "fee_id": 501,
-      "institution_id": 2466,
-      "institution_name": "Gateway Bank",
-      "state": "MN",
+      "institution_id": ${DEMO.id},
+      "institution_name": "${DEMO.name}",
+      "state": "${DEMO.state}",
       "charter_type": "bank",
-      "fee_name": "Overdraft Fee",
+      "fee_name": "Overdraft Item Fee",
       "name_is_category_fallback": false,
       "category": "overdraft",
-      "amount": 30.00,
-      "frequency": "per_occurrence",
+      "amount": 35.00,
+      "frequency": "per_item",
       "conditions": null,
       "source_url": "https://example.com/fee-schedule.pdf",
       "published_at": "2026-10-02T14:05:00.000Z"
@@ -1017,7 +1018,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
             { name: "active_peer_set_id", type: "integer | null", note: "The saved active peer set; null when none is active" },
           ]}
           responseExample={`{
-  "institution": { "id": 2466, "name": "Gateway Bank" },
+  "institution": { "id": ${DEMO.id}, "name": "${DEMO.name}" },
   "institution_source": "manual",
   "peer_sets": [
     {
@@ -1029,8 +1030,8 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
       "filters": {
         "charter_type": "bank",
         "asset_tiers": ["community_mid", "community_large"],
-        "fed_districts": [9],
-        "states": ["MN", "WI"]
+        "fed_districts": [${DEMO.fedDistrict}],
+        "states": ["FL", "GA"]
       }
     }
   ],
@@ -1064,15 +1065,15 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
 
 # Choose an authorized saved peer set for one institution
 curl -H "Authorization: Bearer YOUR_API_KEY" \\
-  "${BASE}/peers?institution_id=2466&saved_peer_set_id=31"
+  "${BASE}/peers?institution_id=${DEMO.id}&saved_peer_set_id=31"
 
 # Use only the explicit institution and the default charter/size/district group
 curl -H "Authorization: Bearer YOUR_API_KEY" \\
-  "${BASE}/peers?institution_id=2466&use_saved_context=false"
+  "${BASE}/peers?institution_id=${DEMO.id}&use_saved_context=false"
 
-# Banks with branches in the same metro, $500M to $2B in assets
+# Banks with branches in the same metro, $1B to $10B in assets
 curl -H "Authorization: Bearer YOUR_API_KEY" \\
-  "${BASE}/peers?institution_id=2466&charter=bank&market=same&asset_min=500000000&asset_max=2000000000"`}
+  "${BASE}/peers?institution_id=${DEMO.id}&charter=bank&market=same&asset_min=1000000000&asset_max=10000000000"`}
           responseFields={[
             { name: "context", type: "object", note: "institution_source, peer_source, saved_peer_set_id and saved_peer_set_name explain the applied defaults" },
             { name: "peer_group.label", type: "string", note: "Which institutions were compared" },
@@ -1084,10 +1085,10 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
             { name: "rate_fees[]", type: "array", note: "Fees stated as a percentage, listed apart" },
           ]}
           responseExample={`{
-  "institution": { "id": 2466, "name": "Gateway Bank", "state": "MN", "charter_type": "bank", "asset_tier": "community_mid", "fed_district": 9 },
+  "institution": { "id": ${DEMO.id}, "name": "${DEMO.name}", "state": "${DEMO.state}", "charter_type": "bank", "asset_tier": "${DEMO.assetTier}", "fed_district": ${DEMO.fedDistrict} },
   "peer_group": {
     "basis": "default",
-    "label": "Banks with $300M to $1B in assets in the Minneapolis Fed district",
+    "label": "Banks with $1B to $10B in assets in the Atlanta Fed district",
     "peers_with_fees": 38
   },
   "min_peers": ${MIN_INSTITUTIONS_FOR_MEDIAN},
@@ -1095,18 +1096,18 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
     {
       "category": "overdraft",
       "display_name": "Overdraft (OD)",
-      "amount": 30.00,
-      "amount_low": 30.00,
-      "amount_high": 30.00,
-      "fees": [{ "name": "Overdraft fee", "amount": 30.00 }],
+      "amount": 35.00,
+      "amount_low": 35.00,
+      "amount_high": 35.00,
+      "fees": [{ "name": "Overdraft Item Fee", "amount": 35.00 }],
       "peer_count": 38,
       "peer_median": 30.00,
       "peer_p25": 27.00,
       "peer_p75": 32.00,
-      "peers_lower": 12,
-      "peers_same": 9,
-      "peers_higher": 17,
-      "percentile": 43,
+      "peers_lower": 30,
+      "peers_same": 3,
+      "peers_higher": 5,
+      "percentile": 83,
       "maturity_tier": "strong"
     }
   ],
@@ -1159,8 +1160,8 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
   "data": [
     {
       "id": 9001,
-      "institution_id": 2466,
-      "institution_name": "Gateway Bank",
+      "institution_id": 1,
+      "institution_name": "Example Bank",
       "state": "MN",
       "charter_type": "bank",
       "fee_name": "Foreign Transaction Fee",

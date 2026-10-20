@@ -18,9 +18,10 @@ import { DEMO_REQUEST_NAV, PRIMARY_CTA_NAV, PRO_PLANS_NAV } from "@/components/n
 import { PAGE_CRUMBS, PAGE_HEADER, PAGE_HEADER_BLOCK } from "@/components/public/page-header";
 import { homeSerif } from "@/app/landing-serif";
 import { SERIF, SERIF_HEAD } from "@/app/landing-shared";
-import { PRODUCT_NAME, REPORT_OFFER, RESEARCH_IMPRINT, SITE_NAME, SITE_URL } from "@/lib/constants";
+import { PRODUCT_NAME, REPORT_OFFER, REPORT_PRICE_INLINE, RESEARCH_IMPRINT, SITE_NAME, SITE_URL } from "@/lib/constants";
 import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
 import { linkPreview } from "@/lib/link-preview";
+import { REPORT_REQUEST_HREF } from "@/lib/report-request-href";
 import { renderArticleMarkdown, renderInlineMarkdown } from "@/lib/article-markdown";
 import { SourceNote } from "../../district/[id]/district-hub";
 import { ArticleExhibit } from "./article-exhibits";
@@ -385,6 +386,18 @@ export default async function ArticlePage({ params }: PageProps) {
                 </TrackLink>
               )}
             </div>
+            {/* The paid one-off report stays one quiet line under Hamilton's band (#1935 offer copy). */}
+            <p className="mt-5 text-[14px] leading-relaxed text-ink-soft">
+              Need one report, not a subscription?{" "}
+              <TrackLink
+                event="request_report_click"
+                eventProps={{ placement: "research_article_end", article: slug }}
+                href={REPORT_REQUEST_HREF}
+                className={`${LINK} inline-flex min-h-11 items-center rounded-sm ${FOCUS}`}
+              >
+                Request the {REPORT_OFFER.name}, {REPORT_PRICE_INLINE}
+              </TrackLink>
+            </p>
           </section>
 
           {/* A quiet next step for a reader checking their own bank: text links, no second button. */}

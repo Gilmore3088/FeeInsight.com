@@ -149,6 +149,18 @@ describe("research article page", () => {
     expect(screen.getByRole("link", { name: "Ask for a demo" })).toBeTruthy();
   });
 
+  it("keeps the paid report as one text link to the request form under Hamilton's band", async () => {
+    await renderPage();
+    const band = document.getElementById("hamilton-heading")!.closest("section")!;
+    const report = within(band).getByRole("link", {
+      name: "Request the Competitive Fee Position Report, from $300",
+    });
+    expect(report.getAttribute("href")).toBe("/reports?report=institution#request");
+    const links = within(band).getAllByRole("link").map((link) => link.textContent);
+    expect(links[0]).toBe("See Hamilton plans");
+    expect(links.at(-1)).toBe("Request the Competitive Fee Position Report, from $300");
+  });
+
   it("offers the sample report when it is live", async () => {
     mocks.sample = true;
     await renderPage();
