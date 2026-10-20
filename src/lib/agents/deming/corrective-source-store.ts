@@ -115,21 +115,32 @@ export async function sealCorrectiveSource(tx: Db, input: { correctionId: number
   return sealed.length === 1;
 }
 
-/** This optional observer cannot roll back the already authorized correction. */
+/** `step.warning` check for a corrective snapshot this correction could not seal or mark. */
+export const CAPTURE_CHECK = `${CORRECTIVE_CHECK}.capture`;
+const UNAVAILABLE_MARKER = JSON.stringify({ deming_source_v2: { protocol: 2, state: "unavailable", reason: "snapshot_unavailable" } });
+
+/**
+ * This optional observer cannot roll back the already authorized correction. A seal that throws, or
+ * an unavailable marker that cannot be written, leaves a `step.warning` on the correction's run.
+ */
 export async function captureCorrectiveSource(tx: Db, input: Parameters<typeof sealCorrectiveSource>[1]): Promise<void> {
+  const warn = (what: string, outcome: string, error: unknown) =>
+    recordStepWarning(tx, { runId: input.runId, stepId: input.stepId, check: CAPTURE_CHECK, what, outcome, error });
   try {
     const sealed = await scope(tx, (sp) => sealCorrectiveSource(sp, input));
     if (sealed) return;
-  } catch {
+  } catch (error) {
     // Rollback to the real savepoint has completed before this safe, bounded diagnostic write.
+    await warn(`Corrective source snapshot for correction ${input.correctionId}`, "failed, no snapshot sealed", error);
   }
   try {
     await inSavepoint(tx, async (sp) => {
-      await sp`UPDATE published_fee_corrections SET source_check=source_check || ${JSON.stringify({ deming_source_v2: { protocol: 2, state: "unavailable", reason: "snapshot_unavailable" } })}::jsonb
+      await sp`UPDATE published_fee_corrections SET source_check=source_check || ${UNAVAILABLE_MARKER}::jsonb
         WHERE id=${input.correctionId} AND xmin=pg_current_xact_id()::xid AND NOT(source_check ? 'deming_source_v2')`;
     });
-  } catch {
+  } catch (error) {
     // Missing component is unavailable to every consumer too. Never retry the fee action.
+    await warn(`Corrective source unavailable marker for correction ${input.correctionId}`, "failed, nothing written", error);
   }
 }
 
@@ -416,11 +427,18 @@ export async function runCorrectiveSource({ db, runId, dryRun, promoteLimit = 30
   return result;
 }
 
+/** Reads leave nothing to roll back; enrollment and replay-case savepoints rolled their writes back. */
+const READ_PHASES: ReadonlySet<CorrectivePhase> = new Set(["admission_read", "replay_read", "unavailable_census"]);
+export function warningOutcome(warning: Pick<CorrectiveWarning, "phase" | "timedOut">): string {
+  const failure = warning.timedOut ? "timed out (statement timeout)" : READ_PHASES.has(warning.phase) ? "read failed" : "failed";
+  return READ_PHASES.has(warning.phase) ? failure : `${failure}, nothing written`;
+}
+
 /** One `step.warning` run event per failed phase, so a timeout shows in the run ledger, not only in counts. */
 export async function recordCorrectiveWarnings(db: Db, runId: number, stepId: number, warnings: CorrectiveWarning[]): Promise<void> {
   for (const warning of warnings) {
-    const what = `Corrective source ${warning.phase.replaceAll("_", " ")}${warning.timedOut ? " (statement timeout)" : ""}, ${warning.count} time${warning.count === 1 ? "" : "s"},`;
-    await recordStepWarning(db, { runId, stepId, check: `${CORRECTIVE_CHECK}.${warning.phase}`, what, error: warning.error });
+    const what = `Corrective source ${warning.phase.replaceAll("_", " ")}, ${warning.count} time${warning.count === 1 ? "" : "s"},`;
+    await recordStepWarning(db, { runId, stepId, check: `${CORRECTIVE_CHECK}.${warning.phase}`, what, outcome: warningOutcome(warning), error: warning.error });
   }
 }
 

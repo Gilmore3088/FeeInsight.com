@@ -2,7 +2,7 @@ import postgres from "postgres";
 import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { correctPublishedFee, resetCorrectionsReadyCache } from "@/lib/fee-corrections";
-import { loadCorrectiveCaseCandidates, runCorrectiveSource, persistCorrectiveArtifact, recordCorrectiveWarnings, sealCorrectiveSource } from "./corrective-source-store";
+import { CAPTURE_CHECK, loadCorrectiveCaseCandidates, runCorrectiveSource, persistCorrectiveArtifact, recordCorrectiveWarnings, sealCorrectiveSource } from "./corrective-source-store";
 import { recordAdminFeeRun } from "@/lib/fee-admin-run";
 import { runDemingRegression } from "./regression";
 import { recordFeedback } from "@/lib/agents/learning/feedback";
@@ -210,6 +210,8 @@ describe.skipIf(!connection)("prospective corrective source context in actual Po
       const [fee] = await raw`SELECT amount,rolled_back_at FROM published_fee_records WHERE fee_published_id=${c.result.feePublishedId}`;
       expect(Number(fee.amount)).toBe(35); expect(fee.rolled_back_at).toBeNull();
       expect(await raw`SELECT id FROM agent_run_events WHERE agent_run_id=${c.result.runId} AND event_type='index.refresh'`).toHaveLength(1);
+      expect(await raw`SELECT message FROM agent_run_events WHERE agent_run_id=${c.result.runId} AND event_type='step.warning' AND detail->>'check'=${CAPTURE_CHECK}`)
+        .toEqual([{ message: expect.stringContaining("failed, no snapshot sealed: controlled optional observer failure") }]);
       expect(await correctPublishedFee(db, c.input, { id: 1, name: "James", role: "admin" })).toMatchObject({ ok: true, replay: true });
       expect((await loadCorrectiveCaseCandidates(db)).some((row) => row.id === c!.result.correctionId)).toBe(false);
     } finally {
@@ -503,7 +505,6 @@ describe.skipIf(!connection)("prospective corrective source context in actual Po
         const before = { canonicalFeeKey: "stop_payment", feeName: "Stop Payment Fee", amount: 25, frequency: "per_item", conditions: null };
         const after = { ...before, amount: 35 };
         const ids: number[] = [];
-        const constructionStarted = performance.now();
         // Native synthetic metadata fixtures use the real ledger writer/sealer. They are not
         // 300 production corrections or evidence about label accuracy. The genuine action is above.
         for (let i=0;i<300;i++) {
@@ -526,18 +527,12 @@ describe.skipIf(!connection)("prospective corrective source context in actual Po
           expect(await sealCorrectiveSource(tx,{correctionId:correction,runId:run.runId,stepId:run.stepId,document:{id:DOC,institutionId:INST,astId:Number(ast.id),astInstitutionId:INST,
             status:"completed",documentUrl:"https://fixture.invalid/fees",contentHash:"fixture-byte-edition",sourceHash:"fixture-byte-edition",textHash:digest,normalizedText:body}})).toBe(true);
         }
-        const constructionMs=performance.now()-constructionStarted;
-        console.info("CORRECTIVE_MAX_STAGE",JSON.stringify({phase:"constructed",contexts:300,constructionMs}));
-        const started=performance.now();
         const metadata=await loadCorrectiveCaseCandidates(tx);
-        const metadataMs=performance.now()-started;
-        console.info("CORRECTIVE_MAX_STAGE",JSON.stringify({phase:"metadata_read",rows:metadata.length,metadataMs}));
         expect(metadata.map((m)=>m.id)).toEqual(ids);
         expect(metadataSql).toContain("SELECT id,case_bytes");
         const [explain]=await native.unsafe("EXPLAIN (ANALYZE,BUFFERS,FORMAT JSON) "+metadataSql,metadataParams as never[]);
         const plan=explain["QUERY PLAN"];
         expect(Array.isArray(plan)).toBe(true); expect(plan[0]["Execution Time"]).toBeLessThan(2000);
-        console.info("CORRECTIVE_NATIVE_PLAN",JSON.stringify({executionMs:plan[0]["Execution Time"],planningMs:plan[0]["Planning Time"],plan:plan[0].Plan}));
         expect(JSON.stringify(metadata)).not.toContain("normalizedText");
         expect(Buffer.byteLength(JSON.stringify(metadata))).toBeLessThan(100000);
         const [ar]=await native`INSERT INTO agent_runs(agent_name,run_kind,title,status) VALUES('atlas','workflow','Bounded fixture artifact','running') RETURNING id`;
@@ -562,9 +557,6 @@ describe.skipIf(!connection)("prospective corrective source context in actual Po
         expect(await persistCorrectiveArtifact(tx,Number(ar.id),Number(artifactStep.id),result.artifact)).toMatchObject({state:"stored",cases:result.artifact.caseCount});
         expect(await persistCorrectiveArtifact(tx,Number(ar.id),Number(artifactStep.id),result.artifact)).toMatchObject({state:"stored"});
         expect(await native`SELECT id FROM agent_run_events WHERE agent_run_id=${ar.id} AND event_type='deming.fixture.v2'`).toHaveLength(result.artifact.chunks.length);
-        console.info("CORRECTIVE_NATIVE_MAXIMUM",JSON.stringify({sourceCodepoints:Array.from(body).length,sourceBytes:Buffer.byteLength(body),contexts:metadata.length,
-          metadataBytes:Buffer.byteLength(JSON.stringify(metadata)),constructionMs,metadataMs,promoted:result.promoted,deferred:result.deferred,insertedBytes,
-          statementTimeout:"2000ms",lockTimeout:"100ms"}));
         throw rollback;
       });
     } catch (error) { if(error!==rollback) throw error; }
