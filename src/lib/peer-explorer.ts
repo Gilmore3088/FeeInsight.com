@@ -4,7 +4,7 @@
  * selection. Nothing here reads the database; src/lib/data-store/peer-explorer.ts fills the set.
  */
 import { displayCity, formatFeeAmount } from "@/lib/format";
-import { MAX_CHOSEN_PEERS } from "@/lib/peer-set-dimensions";
+import { MAX_SAVED_PEER_SET_INSTITUTIONS } from "@/lib/hamilton/peer-set-limits";
 import { STATE_NAMES } from "@/lib/us-states";
 
 /** The fees the explorer compares, in the matrix's column order. */
@@ -465,17 +465,36 @@ export function isExplorerView(value: unknown): value is ExplorerView {
 }
 
 /**
- * The Hamilton peer-set page with this set filled in: the subject (instId), the peers by id when
- * Hamilton can hold them (a saved set takes at most MAX_CHOSEN_PEERS), and the set's name.
- * Hamilton routes a visitor who is not signed in itself.
+ * Whether the page's peers are the whole set and fit a saved Hamilton group. A capped set
+ * (`PeerExplorerSet.whole` present) holds only its closest peers, so it never copies, whatever
+ * its count; an uncapped set copies up to the saved-group limit.
  */
-export function hamiltonPeerSetHref(subjectId: number, peerIds: number[], name: string, fee?: ExplorerFeeKey, asOf?: string | null): string {
+function copiesToHamilton(peerCount: number, capped: boolean): boolean {
+  return !capped && peerCount <= MAX_SAVED_PEER_SET_INSTITUTIONS;
+}
+
+/**
+ * The Hamilton peer-set page with this set filled in: the subject (instId), the peers by id when
+ * the set fits a saved group, and the set's name. A set too large to copy is flagged (`large=1`)
+ * so Hamilton can say so rather than open an empty form (#1997). Hamilton routes a visitor who is
+ * not signed in itself. `capped` is true when the page holds only part of the set (`whole` present).
+ */
+export function hamiltonPeerSetHref(
+  subjectId: number,
+  peerIds: number[],
+  name: string,
+  fee?: ExplorerFeeKey,
+  asOf?: string | null,
+  capped = false,
+): string {
   const params = new URLSearchParams({ instId: String(subjectId) });
   const ids = [...new Set(peerIds)].filter((id) => Number.isSafeInteger(id) && id > 0);
-  if (ids.length > 0 && ids.length <= MAX_CHOSEN_PEERS) params.set("peers", ids.join(","));
+  const tooLarge = ids.length > 0 && !copiesToHamilton(ids.length, capped);
+  if (ids.length > 0 && !tooLarge) params.set("peers", ids.join(","));
   if (name) params.set("name", name);
   if (fee) params.set("fee", fee);
   if (asOf && /^\d{4}-\d{2}-\d{2}$/.test(asOf)) params.set("asof", asOf);
+  if (tooLarge) params.set("large", "1");
   return `/pro/settings?${params.toString()}#peer-sets`;
 }
 
