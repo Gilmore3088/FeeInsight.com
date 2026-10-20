@@ -28,8 +28,10 @@ already rejected. Counted read-only on prod.
   crawl moves on from a product page to its "Fees" link.
 - **Redirects are checked.** The finders record where an address redirected to and never accept
   one that lands on a rejected page or on the link a re-search is replacing. Every candidate link
-  (free finders, paid find, schedule search, second document) is now judged by the address it
-  landed on, so "/fee-schedule" redirecting to a checking page is a product page.
+  (free finders, paid find, schedule search, second document) now gets its address and page checks
+  at the address it landed on, so "/fee-schedule" redirecting to a checking page is a product page.
+  The address asked for still counts where it says "PDF" or "fees" (a signed CDN download, a CMS
+  page id). The other-host check (#1033) still reads the address asked for, as before.
 - `discover.hub_pages` and `discover.site_crawl` are now version 2.
 - No stored data changes. The 351 banks already sent back are pending and get the fixed finders
   on their next search.

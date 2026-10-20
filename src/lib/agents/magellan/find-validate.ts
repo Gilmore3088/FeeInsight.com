@@ -79,6 +79,8 @@ export interface FeeCandidate {
   /** The bank's city and FDIC certificate / NCUA charter number. */
   city?: string | null;
   certNumber?: string | number | null;
+  /** The address asked for, when `url` is where it redirected: it may still say "PDF" or "fees". */
+  requestedUrl?: string | null;
 }
 
 export type CandidateVerdict =
@@ -254,7 +256,7 @@ async function checkFeeCandidate(candidate: FeeCandidate, fetchImpl: Fetcher): P
   const finalUrl = response.url && response.url !== candidate.url ? response.url : null;
   if (!finalUrl) return checkResponse(candidate, response);
   // A page is judged where it landed: "/fee-schedule" redirecting to a checking page is a product page (#1051).
-  const landed = { ...candidate, url: finalUrl };
+  const landed = { ...candidate, url: finalUrl, requestedUrl: candidate.url };
   const validation = rejectedAddress(landed) ?? (await checkResponse(landed, response));
   return { ...validation, finalUrl };
 }
@@ -265,7 +267,9 @@ async function checkResponse(candidate: FeeCandidate, response: Response): Promi
   }
 
   const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
-  if (contentType.includes("application/pdf") || (looksLikePdfUrl(candidate.url) && !contentType.includes("text/html"))) {
+  // A ".pdf" link often lands on a signed CDN or download address with no extension.
+  const namedPdf = looksLikePdfUrl(candidate.url) || (candidate.requestedUrl != null && looksLikePdfUrl(candidate.requestedUrl));
+  if (contentType.includes("application/pdf") || (namedPdf && !contentType.includes("text/html"))) {
     return validatePdf(candidate, response);
   }
   if (!contentType.includes("text/html")) {
@@ -320,7 +324,7 @@ function checkFeeHtml(candidate: FeeCandidate, rawBody: string, status: number):
   }
   const accepted =
     page.verdict === "fee_page" ||
-    (keywordMatches >= 2 && urlNamesFeePage(candidate.url)) ||
+    (keywordMatches >= 2 && (urlNamesFeePage(candidate.url) || (candidate.requestedUrl != null && urlNamesFeePage(candidate.requestedUrl) && !looksLikeProductPage(candidate.url)))) ||
     (keywordMatches >= 2 && candidate.score >= 0.88 && page.feeLines >= 1 && !looksLikeProductPage(candidate.url));
   if (accepted) {
     return {

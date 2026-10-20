@@ -503,7 +503,7 @@ function pageIsFeeSchedule(ctx: SearchContext, url: string, html: string): boole
   if (page.verdict !== "fee_page" || (page.rateTerms >= 4 && page.feeLines < 4)) return false;
   const landed = ctx.redirects?.get(urlIdentity(url)) ?? url;
   return checkOpenedFeePage(
-    { url: landed, score: 0, reasons: [], websiteUrl: ctx.site.toString(), institutionName: ctx.institutionName ?? null, nameShared: ctx.nameShared, city: ctx.city ?? null, certNumber: ctx.certNumber ?? null },
+    { url: landed, requestedUrl: landed === url ? null : url, score: 0, reasons: [], websiteUrl: ctx.site.toString(), institutionName: ctx.institutionName ?? null, nameShared: ctx.nameShared, city: ctx.city ?? null, certNumber: ctx.certNumber ?? null },
     html,
   ).ok;
 }
