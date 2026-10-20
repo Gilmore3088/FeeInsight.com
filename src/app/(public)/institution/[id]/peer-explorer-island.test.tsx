@@ -116,4 +116,24 @@ describe("PeerExplorerIsland (#1811: the cached page never reads ?peers=)", () =
     );
     expect(scrolled).not.toHaveBeenCalled();
   });
+
+  it("should_reveal_peers_when_a_link_lands_on_the_default_set", async () => {
+    at("peers=nearest");
+    action.mockResolvedValue(<p>nearest set</p>);
+    const tree = () => (
+      <div id="peers">
+        <PeerExplorerIsland institutionId={323} defaultSet="metro">
+          <p>default set</p>
+        </PeerExplorerIsland>
+      </div>
+    );
+    const { rerender } = render(tree());
+    const scrolled = vi.fn();
+    document.getElementById("peers")!.scrollIntoView = scrolled;
+    at("peers=metro");
+    rerender(tree());
+    await waitFor(() => expect(scrolled).toHaveBeenCalledTimes(1));
+    expect(screen.getByText("default set")).toBeTruthy();
+    expect(window.location.hash).toBe("#peers");
+  });
 });

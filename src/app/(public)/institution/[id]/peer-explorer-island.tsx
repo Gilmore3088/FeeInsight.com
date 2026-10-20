@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import { loadPeerExplorerSection } from "./peer-explorer-actions";
+import { revealPeers } from "./peer-reveal";
 
 /**
  * The peer explorer's query state, read in the browser (#1811). The institution page is cached
@@ -33,18 +34,6 @@ export function PeerExplorerIsland({
 }
 
 const STATE_KEYS = ["peer", "pfee", "pview"] as const;
-
-/**
- * Brings the explorer into view after a link swapped its set, and puts #peers back in the address.
- * A soft navigation to the same cached page can drop the hash and leave the reader at the top
- * (James's Oct 20 review of the "Compare fees with ... local competitors" link), so the scroll is
- * explicit rather than left to the browser.
- */
-export function revealPeers(): void {
-  const url = new URL(window.location.href);
-  if (url.hash !== "#peers") window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}#peers`);
-  document.getElementById("peers")?.scrollIntoView({ block: "start" });
-}
 
 function PeerExplorerFromAddress({
   institutionId,

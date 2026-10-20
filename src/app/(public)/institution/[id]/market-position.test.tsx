@@ -1,6 +1,12 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { useState } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { MarketPositionCard, SUBJECT } from "./market-position";
+
+const push = vi.hoisted(() => vi.fn());
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
+
+import { MarketPositionCard, metroPeersLinkText, SUBJECT } from "./market-position";
+import { followPeerSetLink } from "./peer-reveal";
 import type { MarketPosition, MetroPosition } from "@/lib/data-store/market-position";
 
 function metro(overrides: Partial<MetroPosition>): MetroPosition {
@@ -55,7 +61,7 @@ describe("MarketPositionCard", () => {
     expect(container.textContent).toContain("Source: NCUA branch file, quarter ending June 30, 2026.");
     expect(container.textContent).not.toContain("Showing 3 of");
     expect(container.textContent).toContain("Position over time, 2024 to 2026");
-    expect(screen.getByRole("link", { name: /Compare fees with banks in Tallahassee, FL that publish fees/ })).toHaveAttribute("href", "/institution/323?peers=metro#peers");
+    expect(screen.getByRole("link", { name: /Compare fees with Tallahassee, FL banks in its home-metro peer set/ })).toHaveAttribute("href", "/institution/323?peers=metro#peers");
     expect(container.textContent).not.toMatch(/Frost/);
   });
 
@@ -82,7 +88,7 @@ describe("MarketPositionCard", () => {
     const onSelect = vi.fn();
     const { container } = render(<MarketPositionCard institutionId={323} position={POSITION} institutionName="Subject Bank" selectedCode={23540} onSelect={onSelect} />);
     expect(container.textContent).toContain("Only the 2026 survey has Subject Bank in this metro");
-    expect(screen.getByRole("link", { name: /Compare fees with banks in Tallahassee, FL that publish fees/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Compare fees with Tallahassee, FL banks in its home-metro peer set/ })).toBeInTheDocument();
     // The explorer compares the home metro only, so a non-home chip says so.
     expect(container.textContent).toContain("The fee comparison uses its home metro, Tallahassee, FL.");
     fireEvent.click(screen.getByRole("button", { name: "Tallahassee, FL" }));
@@ -93,7 +99,7 @@ describe("MarketPositionCard", () => {
     window.history.replaceState(null, "", "/institution/323?fee=nsf");
     try {
       render(<MarketPositionCard institutionId={323} position={POSITION} institutionName="Subject Bank" selectedCode={45220} onSelect={() => {}} />);
-      expect(screen.getByRole("link", { name: /Compare fees with banks in Tallahassee, FL that publish fees/ })).toHaveAttribute(
+      expect(screen.getByRole("link", { name: /Compare fees with Tallahassee, FL banks in its home-metro peer set/ })).toHaveAttribute(
         "href",
         "/institution/323?fee=nsf&peers=metro#peers",
       );
@@ -102,11 +108,11 @@ describe("MarketPositionCard", () => {
     }
   });
 
-  it("should_name_the_explorer_count_of_publishing_banks_on_the_link", () => {
+  it("should_name_the_explorer_count_of_the_home_metro_set_on_the_link", () => {
     const { container } = render(
-      <MarketPositionCard institutionId={323} position={POSITION} institutionName="Subject Bank" selectedCode={45220} onSelect={() => {}} metroPeerCount={9} />,
+      <MarketPositionCard institutionId={323} position={POSITION} institutionName="Subject Bank" selectedCode={45220} onSelect={() => {}} metroPeerCount={14} />,
     );
-    const link = screen.getByRole("link", { name: /Compare fees with the 9 banks in Tallahassee, FL that publish fees/ });
+    const link = screen.getByRole("link", { name: /Compare fees with the 14 Tallahassee, FL banks in its home-metro peer set/ });
     expect(link).toBeInTheDocument();
     expect(container.textContent).not.toContain("The fee comparison uses its home metro");
   });
@@ -115,7 +121,7 @@ describe("MarketPositionCard", () => {
     render(<MarketPositionCard institutionId={323} position={POSITION} institutionName="Subject Bank" selectedCode={45220} onSelect={() => {}} metroPeerCount={9} />);
     const link = screen.getByRole("link", { name: /Compare fees/ });
     const tail = link.querySelector(".whitespace-nowrap");
-    expect(tail?.textContent).toBe("fees\u00a0\u2192");
+    expect(tail?.textContent).toBe("set\u00a0\u2192");
   });
 
   it("should_hide_the_link_when_the_metro_set_is_not_offered", () => {
@@ -131,5 +137,76 @@ describe("MarketPositionCard", () => {
     fireEvent.click(chip);
     expect(chip).toHaveAttribute("aria-pressed", "false");
     expect(chip.className).not.toContain("bg-ink");
+  });
+
+  it("should_say_one_bank_in_the_singular", () => {
+    expect(metroPeersLinkText("Tallahassee, FL", 1)).toBe("Compare fees with the 1 Tallahassee, FL bank in its home-metro peer set");
+  });
+});
+
+/** The card with its metro chip state held as RegistryCards holds it. */
+function CardWithChips() {
+  const [code, setCode] = useState<number | null>(45220);
+  return <MarketPositionCard institutionId={323} position={POSITION} institutionName="Subject Bank" selectedCode={code} onSelect={setCode} metroPeerCount={14} />;
+}
+
+describe("the compare link always ends at #peers (James's phone review of #1887)", () => {
+  let scrolled: ReturnType<typeof vi.fn<(arg?: boolean | ScrollIntoViewOptions) => void>>;
+  function renderWithPeers() {
+    const utils = render(
+      <>
+        <CardWithChips />
+        <section id="peers" />
+      </>,
+    );
+    scrolled = vi.fn<(arg?: boolean | ScrollIntoViewOptions) => void>();
+    document.getElementById("peers")!.scrollIntoView = scrolled;
+    return utils;
+  }
+  const link = () => screen.getByRole("link", { name: /Compare fees with the 14/ });
+
+  afterEach(() => {
+    push.mockReset();
+    window.history.replaceState(null, "", "/");
+  });
+
+  it("should_change_the_set_without_a_router_scroll_and_scroll_to_peers_when_the_set_changes", () => {
+    window.history.replaceState(null, "", "/institution/323");
+    renderWithPeers();
+    const notPrevented = fireEvent.click(link());
+    expect(notPrevented).toBe(false);
+    expect(push).toHaveBeenCalledWith("/institution/323?peers=metro#peers", { scroll: false });
+    expect(scrolled).toHaveBeenCalledTimes(1);
+  });
+
+  it("should_reveal_peers_and_restore_the_hash_when_the_set_is_unchanged", () => {
+    window.history.replaceState(null, "", "/institution/323?peers=metro");
+    renderWithPeers();
+    fireEvent.click(link());
+    expect(push).not.toHaveBeenCalled();
+    expect(window.location.hash).toBe("#peers");
+    expect(window.location.search).toBe("?peers=metro");
+    expect(scrolled).toHaveBeenCalledTimes(1);
+  });
+
+  it("should_still_end_at_peers_after_a_metro_chip_change", () => {
+    window.history.replaceState(null, "", "/institution/323");
+    const { container } = renderWithPeers();
+    fireEvent.click(screen.getByRole("button", { name: "Gainesville, FL" }));
+    expect(container.textContent).toContain("The fee comparison uses its home metro, Tallahassee, FL.");
+    fireEvent.click(link());
+    expect(push).toHaveBeenCalledWith("/institution/323?peers=metro#peers", { scroll: false });
+    expect(scrolled).toHaveBeenCalledTimes(1);
+  });
+
+  it("should_leave_a_new_tab_click_to_the_browser", () => {
+    window.history.replaceState(null, "", "/institution/323");
+    renderWithPeers();
+    const preventDefault = vi.fn();
+    const click = { button: 0, metaKey: true, ctrlKey: false, shiftKey: false, altKey: false, defaultPrevented: false, preventDefault };
+    followPeerSetLink(click, "/institution/323?peers=metro#peers", push);
+    expect(preventDefault).not.toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalled();
+    expect(scrolled).not.toHaveBeenCalled();
   });
 });

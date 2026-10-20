@@ -236,8 +236,9 @@ export async function getInstitutionPeerRankCached(institutionId: number): Promi
 // v3: wrapped, so an id with no choices (no such institution) is cached too: the explorer's server
 // action takes any id from the address, and an empty list would otherwise reach the database on
 // every request. A failed read throws and is not cached.
+// v4: a chosen set keeps only the institutions the explorer lists, so its count is the explorer's.
 const getInstitutionPeerChoicesEntryCached = cachedPublicRead(
-  "institution-peer-sets-v3",
+  "institution-peer-sets-v4",
   async (institutionId: number) => ({ choices: await getInstitutionPeerChoices(institutionId) }),
   () => false,
 );

@@ -4,8 +4,10 @@ vi.mock("./connection", () => ({ sql: Object.assign(vi.fn(), { unsafe: vi.fn() }
 vi.mock("./peer-markets", () => ({ getHomeMarket: vi.fn(), getMarketInstitutionIds: vi.fn() }));
 
 import { sql } from "./connection";
-import { getHomeMarket } from "./peer-markets";
+import { getHomeMarket, getMarketInstitutionIds } from "./peer-markets";
 import { describePeerSet } from "./peer-sets";
+import { getPeerExplorerSet } from "./peer-explorer";
+import { pickPeerSet, type PeerRankValue } from "./peer-fee-rank";
 import { getInstitutionPeerChoices, institutionPeerRequest, statePeerDefinitions } from "./public-peer-sets";
 
 const subjectRow = {
@@ -41,5 +43,56 @@ describe("public peer sets", () => {
     expect(labels).toContain("Institutions under $300M in assets in Texas");
     expect(labels).toContain("Banks regulated by the OCC in Texas");
     expect(labels).toContain("Federal credit unions in Texas");
+  });
+
+  it("should_count_the_home_metro_set_as_the_explorer_lists_it", async () => {
+    // Tallahassee: eleven banks with a branch there besides the subject. One is inactive, one
+    // publishes no approved fee and one is never named (Frost), so the explorer lists eight.
+    const banks = [
+      { id: 2, name: "Peer 2", active: true, publishes: true },
+      { id: 3, name: "Closed Bank", active: false, publishes: true },
+      { id: 4, name: "Quiet Bank", active: true, publishes: false },
+      { id: 5, name: "Peer 5", active: true, publishes: true },
+      { id: 7, name: "Frost Bank", active: true, publishes: true },
+      { id: 8, name: "Peer 8", active: true, publishes: true },
+      { id: 9, name: "Peer 9", active: true, publishes: true },
+      ...[10, 11, 12, 13].map((id) => ({ id, name: `Peer ${id}`, active: true, publishes: true })),
+    ];
+    const MEMBER_RULE = "<explorer member rule>";
+    const member = (id: number) => banks.some((b) => b.id === id && b.active && b.publishes);
+    const db = sql as unknown as ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
+    // A fake database applying the explorer's rule wherever a query carries it.
+    db.unsafe.mockImplementation((query: string, params?: unknown[]) => {
+      if (params === undefined) return query.includes("published_fee_catalog") ? MEMBER_RULE : query;
+      const ids = params.find((p): p is number[] => Array.isArray(p) && typeof p[0] === "number");
+      if (query.includes("SELECT s.id FROM institution_sources")) return Promise.resolve(ids ? ids.filter((id) => id !== 323).map((id) => ({ id })) : [{ id: 4 }]);
+      return Promise.resolve([]);
+    });
+    db.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const query = strings.join("?");
+      const ids = (values.find(Array.isArray) as number[] | undefined) ?? [];
+      const ruled = values.includes(MEMBER_RULE);
+      const rows = banks.filter((b) => ids.includes(b.id) && (!ruled || member(b.id)));
+      if (query.includes("s.asset_size, s.city")) {
+        return Promise.resolve([
+          { id: 323, institution_name: "Subject Bank", asset_size: 4_447_362, city: "TALLAHASSEE", state_code: "FL", charter_type: "bank" },
+          ...rows.map((b) => ({ id: b.id, institution_name: b.name, asset_size: 1_000_000, city: "TALLAHASSEE", state_code: "FL", charter_type: "bank" })),
+        ]);
+      }
+      if (query.includes("s.institution_name")) return Promise.resolve(rows.map((b) => ({ id: b.id, institution_name: b.name })));
+      return Promise.resolve([subjectRow]);
+    });
+    vi.mocked(getHomeMarket).mockResolvedValue({ code: 45220, name: "Tallahassee, FL" });
+    vi.mocked(getMarketInstitutionIds).mockResolvedValue({ market: { code: 45220, name: "Tallahassee, FL" }, ids: new Set([323, ...banks.map((b) => b.id)]) });
+
+    const choices = await getInstitutionPeerChoices(323);
+    const all: PeerRankValue[] = [323, ...banks.map((b) => b.id)].map((id) => [id, "overdraft", 30, "bank", "FL", 6, "community_large"]);
+    const sets = pickPeerSet(323, null, choices, all, "metro");
+    const linkCount = sets?.options.find((option) => option.key === "metro")?.count;
+    expect(sets?.selected.key).toBe("metro");
+
+    const explorer = await getPeerExplorerSet(323, sets!.selectedFilters);
+    expect(explorer?.peers.map((peer) => peer.id)).toEqual([2, 5, 8, 9, 10, 11, 12, 13]);
+    expect(linkCount).toBe(explorer?.peers.length);
   });
 });

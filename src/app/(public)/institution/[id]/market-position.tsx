@@ -2,11 +2,13 @@
 
 import Link from "next/link";
 import { Check } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useMemo, useState, useSyncExternalStore } from "react";
 import { formatCompactDollars } from "@/lib/format";
 import { ASSET_BANDS, type HistoryPoint } from "@/lib/market-position";
 import type { MarketPosition, MetroPosition } from "@/lib/data-store/market-position";
 import { MarketProvenance } from "./market-provenance";
+import { followPeerSetLink } from "./peer-reveal";
 import { SERIF } from "./profile-serif";
 
 /*
@@ -139,6 +141,8 @@ function MetroSummary({
 }) {
   const own = metro.subject;
   const fee = useAddressFee();
+  const router = useRouter();
+  const href = metroPeersHref(institutionId, fee);
   return (
     <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <p className="text-[15px] leading-snug text-ink tabular-nums" aria-live="polite">
@@ -153,11 +157,13 @@ function MetroSummary({
       </p>
       {home && metroPeerCount !== null && (
         // The peer explorer reads ?peers= in the browser (the profile is cached), so a soft
-        // navigation to the same cached page switches its set (peer-explorer-island.tsx scrolls
-        // to it). The explorer compares only the home metro, so the link always names it.
+        // navigation to the same cached page switches its set; followPeerSetLink makes it end at
+        // #peers. The explorer compares only the home metro, so the link always names it.
         <div className="shrink-0 sm:max-w-[22rem] sm:text-right">
           <Link
-            href={metroPeersHref(institutionId, fee)}
+            href={href}
+            scroll={false}
+            onClick={(event) => followPeerSetLink(event, href, (url, options) => router.push(url, options))}
             className="inline-flex min-h-11 items-center text-[14px] font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
           >
             <span>
@@ -172,13 +178,13 @@ function MetroSummary({
 }
 
 /**
- * "Compare fees with the 9 banks in Tallahassee, FL that publish fees": the explorer's own count,
- * which differs from the deposit rank's "of 18" (every FDIC-insured institution with offices there).
+ * "Compare fees with the 14 Tallahassee, FL banks in its home-metro peer set": the count the
+ * explorer shows for that set ("14 peers selected"), from the same members (explorerMemberIds).
+ * It differs from the deposit rank's "of 18" (every FDIC-insured institution with offices there).
  */
 export function metroPeersLinkText(homeName: string, count: number | undefined): string {
-  return count !== undefined
-    ? `Compare fees with the ${count.toLocaleString("en-US")} ${count === 1 ? "bank" : "banks"} in ${homeName} that ${count === 1 ? "publishes" : "publish"} fees`
-    : `Compare fees with banks in ${homeName} that publish fees`;
+  if (count === undefined) return `Compare fees with ${homeName} banks in its home-metro peer set`;
+  return `Compare fees with the ${count.toLocaleString("en-US")} ${homeName} ${count === 1 ? "bank" : "banks"} in its home-metro peer set`;
 }
 
 /** The text with its last word and the arrow kept together, so a phone never wraps a lone arrow. */

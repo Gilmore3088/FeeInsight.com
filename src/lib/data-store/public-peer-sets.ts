@@ -3,7 +3,8 @@
  * group is never computed two ways. The pages read a set's values or medians through the
  * fee index; nothing here adds a filter of its own.
  */
-import { getPeerIndexes, type IndexEntry } from "./fee-index";
+import { getPeerIndexes, peerInstitutionIds, type IndexEntry } from "./fee-index";
+import { explorerMemberIds } from "./peer-explorer";
 import type { PeerSetChoice } from "./peer-fee-rank";
 import {
   PeerSetError,
@@ -66,7 +67,26 @@ export async function getInstitutionPeerChoices(institutionId: number): Promise<
       }
     }),
   );
-  return resolved.filter((choice): choice is PeerSetChoice => choice !== null);
+  return keepExplorerMembers(resolved.filter((choice): choice is PeerSetChoice => choice !== null));
+}
+
+/**
+ * A chosen set (nearest, home metro, regulator) keeps only the institutions the peer explorer
+ * lists (explorerMemberIds), so its count is the explorer's. The home metro once counted every
+ * bank with a branch there (17 in Tallahassee) while the explorer showed the 14 that are active
+ * and publish fees (James's Oct 20 review of #1887). A set left with nobody is not offered.
+ * Filter sets (state, district, size) carry no count and pass through unchanged.
+ */
+async function keepExplorerMembers(choices: PeerSetChoice[]): Promise<PeerSetChoice[]> {
+  const chosen = new Set(choices.flatMap((choice) => (choice.filters ? (peerInstitutionIds(choice.filters) ?? []) : [])));
+  if (chosen.size === 0) return choices;
+  const members = await explorerMemberIds([...chosen]);
+  return choices.map((choice) => {
+    const ids = choice.filters ? peerInstitutionIds(choice.filters) : null;
+    if (!ids) return choice;
+    const kept = ids.filter((id) => members.has(id));
+    return { ...choice, filters: kept.length > 0 ? { ...choice.filters, institutionIds: kept } : null };
+  });
 }
 
 const STATE_SIZE_TIERS = ["community_small", "community_mid", "community_large", "regional"] as const;
