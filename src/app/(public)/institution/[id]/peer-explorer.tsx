@@ -33,6 +33,7 @@ import {
   hamiltonPeerSetHref,
   isExplorerFeeKey,
   isExplorerView,
+  isHomeMetroKey,
   landscapeAxes,
   landscapeValue,
   linearScale,
@@ -313,7 +314,7 @@ export function PeerExplorer({
           <ArrowRight aria-hidden="true" className="size-4" />
         </button>
         <p className="text-[13px] text-ink-muted sm:order-last sm:basis-full">Hamilton is the {SITE_NAME} workspace for pricing teams.</p>
-        {setKey === "metro" && (
+        {isHomeMetroKey(setKey) && (
           <HamiltonLink isPro={isPro} href={href} placement="institution_peer_local_competitors">
             Compare local deposit competitors in Hamilton
           </HamiltonLink>

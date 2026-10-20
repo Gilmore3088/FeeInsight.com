@@ -46,6 +46,7 @@ import {
 import { ShowAll } from "./show-all";
 import type { IndexEntry } from "@/lib/data-store/fee-index";
 import { FEE_FAMILIES } from "@/lib/fee-taxonomy";
+import { isHomeMetroKey } from "@/lib/peer-explorer";
 import { RegistryCards } from "./registry-cards";
 import { assetSizeToDollars, feeIncomeTerms, formatReportQuarter, selectFinancialsByQuarter } from "./financial-units";
 import { buildLedger, connectedPanelSeries } from "./quarterly-ledger";
@@ -207,7 +208,7 @@ export async function InstitutionProfile({ id, focusFeeCategory }: { id: string;
   ]);
   const peerExplorerSet = peerSets
     ? await budget.optional(
-        () => getPeerExplorerSetCached(instId, peerSets.selectedFilters, peerSets.selected.key === "metro"),
+        () => getPeerExplorerSetCached(instId, peerSets.selectedFilters, isHomeMetroKey(peerSets.selected.key)),
         "peer explorer",
         null,
       )

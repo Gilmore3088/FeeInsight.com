@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
+const { push } = vi.hoisted(() => ({ push: vi.fn() }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
 vi.mock("@/components/use-session-chrome", () => ({ useSessionChrome: () => null }));
 vi.mock("@/app/landing-serif", () => ({ homeSerif: { variable: "serif-var" } }));
 
@@ -362,6 +363,64 @@ describe("PeerExplorerSection", () => {
     expect(screen.getByText("Actual range: $2.1B to $7.3B")).toBeTruthy();
     // The full source line and the compact one under the snapshot numbers.
     expect(screen.getAllByText(/published fee schedules, as of Oct 17, 2026\./).length).toBe(2);
+  });
+
+  describe("home metro with credit unions", () => {
+    const metroSets = (selectedKey: "metro" | "metro_banks", banksCount = 9): InstitutionPeerSets => ({
+      options: [
+        { key: "nearest", label: "The 25 banks closest in assets", count: 25 },
+        { key: "metro", label: "Banks and credit unions in the Tallahassee, FL metro", count: 14 },
+        { key: "metro_banks", label: "Banks in the Tallahassee, FL metro", count: banksCount },
+      ],
+      selected: {
+        key: selectedKey,
+        label: selectedKey === "metro" ? "Banks and credit unions in the Tallahassee, FL metro" : "Banks in the Tallahassee, FL metro",
+        lines: [],
+      },
+      selectedFilters: { institutionIds: [2, 3, 4] },
+    });
+    const mixed = { ...SET, peers: [...SET.peers.map((peer) => ({ ...peer, charter: "bank" })), { ...inst(9, "Tally Federal CU", 9e8, {}), charter: "credit_union" }] };
+    const renderMetro = (sets: InstitutionPeerSets, set: PeerExplorerSet = mixed) =>
+      render(<PeerExplorerSection sets={sets} set={set} hrefFor={(key) => `/institution/323?peers=${key}#peers`} initial={{}} />);
+
+    it("should_label_the_metro_set_banks_and_credit_unions_and_say_how_credit_unions_are_matched", () => {
+      renderMetro(metroSets("metro"));
+      expect(screen.getByText("Banks and credit unions in the Tallahassee, FL metro")).toBeTruthy();
+      expect(screen.getByText("Banks and credit unions")).toBeTruthy();
+      expect(screen.getByText(/a credit union is counted when it has a branch in one of the metro's cities/)).toBeTruthy();
+      // The banks-only view is a toggle on the Home metro chip, not a chip of its own.
+      expect(screen.queryByRole("link", { name: "Banks in the Tallahassee, FL metro" })).toBeNull();
+      expect(screen.getByRole("link", { name: "Home metro" }).getAttribute("aria-current")).toBe("page");
+      expect(screen.getByRole("button", { name: "Banks only" }).getAttribute("aria-pressed")).toBe("false");
+    });
+
+    it("should_mark_the_banks_only_toggle_pressed_under_the_home_metro_chip", () => {
+      renderMetro(metroSets("metro_banks"), { ...SET, peers: SET.peers.map((peer) => ({ ...peer, charter: "bank" })) });
+      expect(screen.getByText("Banks in the Tallahassee, FL metro")).toBeTruthy();
+      expect(screen.getByRole("link", { name: "Home metro" }).getAttribute("aria-current")).toBe("page");
+      expect(screen.getByRole("button", { name: "Banks only" }).getAttribute("aria-pressed")).toBe("true");
+      expect(screen.getByRole("link", { name: /Compare local deposit competitors/ })).toBeTruthy();
+    });
+
+    it("should_switch_to_banks_only_and_back_through_the_address", () => {
+      window.history.pushState({}, "", "/institution/323#peers");
+      Element.prototype.scrollIntoView = vi.fn();
+      push.mockClear();
+      const { unmount } = renderMetro(metroSets("metro"));
+      fireEvent.click(screen.getByRole("button", { name: "Banks only" }));
+      // The fee the explorer is on rides along, as on every set link.
+      expect(push).toHaveBeenCalledWith(expect.stringMatching(/^\/institution\/323\?peers=metro_banks&pfee=monthly_maintenance#peers$/), { scroll: false });
+      unmount();
+      renderMetro(metroSets("metro_banks"));
+      fireEvent.click(screen.getByRole("button", { name: "Banks only" }));
+      expect(push).toHaveBeenLastCalledWith(expect.stringMatching(/^\/institution\/323\?peers=metro&pfee=monthly_maintenance#peers$/), { scroll: false });
+      window.history.pushState({}, "", "/");
+    });
+
+    it("should_offer_no_banks_only_toggle_when_the_metro_set_holds_no_credit_union", () => {
+      renderMetro(metroSets("metro", 14));
+      expect(screen.queryByRole("button", { name: "Banks only" })).toBeNull();
+    });
   });
 
   it("has short chip names", () => {

@@ -4,6 +4,7 @@ import { computeStats } from "./fees";
 import { getReportRuleCheck, type ReportRuleCheck } from "./market-readiness";
 import { MIN_LOCAL_PEERS_PER_LINE } from "@/lib/custom-report/analysis";
 import { OWN_FEE_COVERAGE, PEER_GROUP_ANCHOR } from "@/lib/hamilton/peer-index";
+import { isPeerSetVariant } from "@/lib/peer-explorer";
 
 /** The fees the free institution page ranks against peers (value funnel A3). */
 export const PEER_RANK_FEE_KEYS = ["overdraft", "monthly_maintenance"] as const;
@@ -304,7 +305,10 @@ export function pickPeerSet(
     .map((choice) => ({ choice, comparison: comparePeerSet(institutionId, choice, all) }))
     .filter(({ comparison }) => isComparable(comparison));
   if (comparable.length === 0) return null;
-  const picked = comparable.find(({ comparison }) => comparison.key === requested) ?? defaultComparable(comparable);
+  // A filter on another set's chip (the home metro's banks only) opens only when asked for.
+  const defaults = comparable.filter(({ choice }) => !isPeerSetVariant(choice.key));
+  const picked =
+    comparable.find(({ comparison }) => comparison.key === requested) ?? defaultComparable(defaults.length > 0 ? defaults : comparable);
   return {
     options: comparable.map(({ choice, comparison: { key, label } }) => {
       const ids = choice.filters?.institutionIds;

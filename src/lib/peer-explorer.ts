@@ -63,6 +63,8 @@ export interface ExplorerInstitution {
   assets: number | null;
   city: string | null;
   state: string | null;
+  /** "bank" or "credit_union" (institution_sources.charter_type); a home metro set holds both. */
+  charter?: string | null;
   fees: Partial<Record<ExplorerFeeKey, ExplorerFee>>;
 }
 
@@ -110,6 +112,8 @@ export interface ExplorerWholeSet {
   states: string[];
   /** Smallest and largest total assets among the peers, in dollars. */
   assets: { min: number; max: number } | null;
+  /** The peers' charters ("bank", "credit_union"), present when the peers carry them. */
+  charters?: string[];
 }
 
 /** At most this many peers reach the page; a larger set ships its closest in assets. */
@@ -128,6 +132,7 @@ export function capPeerExplorerSet(set: PeerExplorerSet, max = PEER_EXPLORER_MAX
   const publish: Partial<Record<ExplorerFeeKey, number>> = {};
   for (const key of EXPLORER_FEE_KEYS) publish[key] = set.peers.filter((peer) => peer.fees[key] !== undefined).length;
   const assets = set.peers.map((peer) => peer.assets).filter((v): v is number => v !== null && v > 0);
+  const charters = charterKinds(set.peers);
   return {
     ...set,
     peers: shown,
@@ -136,6 +141,7 @@ export function capPeerExplorerSet(set: PeerExplorerSet, max = PEER_EXPLORER_MAX
       publish,
       states: [...new Set(set.peers.map((peer) => peer.state).filter((state): state is string => !!state))].sort(),
       assets: assets.length > 0 ? { min: Math.min(...assets), max: Math.max(...assets) } : null,
+      ...(charters.length > 0 ? { charters } : {}),
     },
   };
 }
@@ -150,6 +156,16 @@ export function shownLine(set: PeerExplorerSet): string | null {
 /** Peers publishing a fee across the whole set. */
 export function publishingPeers(set: PeerExplorerSet, key: ExplorerFeeKey): number {
   return set.whole ? (set.whole.publish[key] ?? 0) : set.peers.filter((peer) => peer.fees[key] !== undefined).length;
+}
+
+function charterKinds(peers: ExplorerInstitution[]): string[] {
+  return [...new Set(peers.map((peer) => peer.charter).filter((charter): charter is string => !!charter))].sort();
+}
+
+/** The peers' charters, the whole set's when capped; the subject's own when the peers carry none. */
+function peerCharters(set: PeerExplorerSet): string[] {
+  const kinds = set.whole?.charters ?? charterKinds(set.peers);
+  return kinds.length > 0 ? kinds : set.charterType ? [set.charterType] : [];
 }
 
 function peerStates(set: PeerExplorerSet): string[] {
@@ -303,8 +319,10 @@ const CHARTER_WORDS: Record<string, string> = { bank: "Banks", credit_union: "Cr
  */
 export function whyThesePeers(set: PeerExplorerSet, key?: string): string[] {
   const parts: string[] = [];
-  const kind = set.charterType ? CHARTER_WORDS[set.charterType] : null;
-  if (kind) parts.push(`${kind} only`);
+  const charters = peerCharters(set);
+  const kind = charters.length === 1 ? CHARTER_WORDS[charters[0]] : null;
+  if (charters.length > 1) parts.push("Banks and credit unions");
+  else if (kind) parts.push(`${kind} only`);
   const range = peerAssetRange(set);
   if (range) {
     const low = assetsLabel(range.min);
@@ -487,7 +505,35 @@ export const PEER_SET_PURPOSE_GROUP: Record<string, "Pricing peers" | "Market co
   state: "Pricing peers",
   district: "Pricing peers",
   metro: "Market competitors",
+  metro_banks: "Market competitors",
 };
+
+/**
+ * The home metro's banks-only view (?peers=metro_banks). It is not a chip of its own: it is a
+ * toggle inside the Home metro chip, and the page never opens on it by default.
+ */
+export const BANKS_ONLY_METRO_KEY = "metro_banks";
+
+/** A set offered only as a filter on another set's chip, keyed by that chip. */
+const PEER_SET_VARIANT_OF: Record<string, string> = { [BANKS_ONLY_METRO_KEY]: "metro" };
+
+export function isPeerSetVariant(key: string): boolean {
+  return key in PEER_SET_VARIANT_OF;
+}
+
+/** The chip a set is shown under: its own, or the set it filters. */
+export function peerSetChipKey(key: string): string {
+  return PEER_SET_VARIANT_OF[key] ?? key;
+}
+
+/** The home metro set, with or without its credit unions. */
+export function isHomeMetroKey(key: string): boolean {
+  return peerSetChipKey(key) === "metro";
+}
+
+/** How the home metro set finds its members: banks by branch, credit unions by city. */
+export const HOME_METRO_NOTE =
+  "Banks are counted by their branches in the metro (FDIC Summary of Deposits). Credit unions report no deposits by branch, so a credit union is counted when it has a branch in one of the metro's cities (NCUA branch file).";
 
 /**
  * One line on what the chosen set is for, with its geography made explicit: "Banks of similar
@@ -504,7 +550,8 @@ export function purposeLine(key: string, set: PeerExplorerSet): string {
         : "";
   switch (key) {
     case "metro":
-      return `${kind} with branches in the ${set.market?.name ? `${set.market.name} ` : "home "}metro: the local competitors for deposits and customers. They range from ${assetRangeWords(set)} in assets, so compare prices here, not size.`;
+    case BANKS_ONLY_METRO_KEY:
+      return `${key === "metro" ? "Banks and credit unions" : "Banks"} with branches in the ${set.market?.name ? `${set.market.name} ` : "home "}metro: the local competitors for deposits and customers. They range from ${assetRangeWords(set)} in assets, so compare prices here, not size.`;
     case "nearest":
       return `${kind} of similar size, for comparing published prices.${spread}`;
     case "size":
@@ -675,6 +722,8 @@ export function snapshotPeersNoun(key: string, set: PeerExplorerSet): string {
       return `similar-sized ${kind}`;
     case "metro":
       return "local competitors";
+    case BANKS_ONLY_METRO_KEY:
+      return "local banks";
     case "state":
       return set.subject.state ? `${kind} in ${STATE_NAMES[set.subject.state] ?? set.subject.state}` : `${kind} in its state`;
     case "district":

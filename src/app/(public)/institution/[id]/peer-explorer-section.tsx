@@ -7,16 +7,21 @@ import type { InstitutionPeerSets } from "@/lib/data-store/peer-fee-rank";
 import { MIN_PEERS_FOR_PEER_SET_MEDIAN } from "@/lib/data-store/peer-fee-rank";
 import {
   assetsLabel,
+  BANKS_ONLY_METRO_KEY,
   formatIsoDate,
+  HOME_METRO_NOTE,
+  isHomeMetroKey,
+  isPeerSetVariant,
   PEER_SET_PURPOSE_GROUP,
   PEER_EXPLORER_MAX_SHOWN,
+  peerSetChipKey,
   purposeLine,
   shownLine,
   whyThesePeers,
   type PeerExplorerSet,
 } from "@/lib/peer-explorer";
 import { PeerExplorer } from "./peer-explorer";
-import { PeerSetLinks } from "./peer-set-links";
+import { PeerSetFilterToggle, PeerSetLinks } from "./peer-set-links";
 
 /**
  * The peer-set links: `?peers=key#peers`, keeping the `?fee=` focus when the page has one. The
@@ -67,6 +72,20 @@ export function peerSetChipLabel(option: { key: string; label: string; count?: n
 }
 
 /**
+ * The home metro's "Banks only" toggle: shown on the Home metro chip when the page offers both
+ * views and they differ (the metro has credit unions that publish fees). Pressed on the banks-only
+ * view; a press switches to the other. Null for any other set.
+ */
+export function banksOnlyToggle(sets: InstitutionPeerSets): { pressed: boolean; target: string } | null {
+  if (!isHomeMetroKey(sets.selected.key)) return null;
+  const all = sets.options.find((option) => option.key === "metro");
+  const banks = sets.options.find((option) => option.key === BANKS_ONLY_METRO_KEY);
+  if (!all || !banks || all.count === banks.count) return null;
+  const pressed = sets.selected.key === BANKS_ONLY_METRO_KEY;
+  return { pressed, target: pressed ? "metro" : BANKS_ONLY_METRO_KEY };
+}
+
+/**
  * The institution page's peer explorer (#peers): the institution and its total assets, the peer
  * set picker (?peers=), why these peers belong, then one set drawn three ways (peer-explorer.tsx).
  */
@@ -84,9 +103,12 @@ export function PeerExplorerSection({
   const { selected } = sets;
   // One count for the chip and the title: the peers the set actually holds.
   const count = peerCount(set);
-  const options = sets.options.map((option) =>
-    option.key === selected.key && option.key === "nearest" ? { ...option, count } : option,
-  );
+  // A filter on another chip (the home metro's banks only) is a toggle there, not a chip.
+  const options = sets.options
+    .filter((option) => !isPeerSetVariant(option.key))
+    .map((option) => (option.key === selected.key && option.key === "nearest" ? { ...option, count } : option));
+  const toggle = banksOnlyToggle(sets);
+  const homeMetro = isHomeMetroKey(selected.key);
   const assets = assetsLabel(set.subject.assets);
   const why = whyThesePeers(set, selected.key);
   const title = peerSetTitle(selected, count);
@@ -109,7 +131,7 @@ export function PeerExplorerSection({
       <div className="mt-4">
         <PeerSetLinks
           label="Peer set"
-          current={selected.key}
+          current={peerSetChipKey(selected.key)}
           options={options.map((option) => ({
             key: option.key,
             label: peerSetChipLabel(option),
@@ -124,6 +146,12 @@ export function PeerExplorerSection({
           <span className="min-w-0">{title}</span>
         </p>
         <p className="mt-1 max-w-[68ch] text-[14px] leading-relaxed text-ink-soft">{purpose}</p>
+        {homeMetro && (
+          <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+            {toggle && <PeerSetFilterToggle label="Banks only" pressed={toggle.pressed} href={hrefFor(toggle.target)} />}
+            <p className="max-w-[68ch] text-[12px] leading-relaxed text-ink-muted">{HOME_METRO_NOTE}</p>
+          </div>
+        )}
         {why.length > 0 && (
           <ul className="mt-2 flex flex-wrap gap-1.5" aria-label="Why these peers">
             {why.map((reason) => (
@@ -140,10 +168,13 @@ export function PeerExplorerSection({
       <details className="mt-1 text-[12px] text-ink-muted">
         <summary className="inline-flex min-h-11 cursor-pointer items-center font-medium text-ink">How peers are chosen and counted</summary>
         <ul className="mt-1 list-disc space-y-1 pl-5 text-left">
-          <li>Every set keeps the institution&apos;s own charter: banks against banks, credit unions against credit unions.</li>
+          <li>Every set except Home metro keeps the institution&apos;s own charter: banks against banks, credit unions against credit unions.</li>
           <li>The set shown first is the first in the list with a peer median for each overdraft and monthly maintenance fee this institution publishes. If none has them all, it is the set with the most.</li>
           <li>Closest in assets takes the institutions nearest its total assets among those that publish fees.</li>
-          <li>Home metro counts institutions with a branch in the metro where it has the most branches (FDIC Summary of Deposits, NCUA).</li>
+          <li>
+            Home metro is the metro where it has the most branches. It counts the banks with a branch there (FDIC Summary of Deposits) and the credit
+            unions with a branch in one of the metro&apos;s cities (NCUA). Banks only leaves the credit unions out.
+          </li>
           <li>State and Fed district count institutions headquartered there. Size uses its asset-size band.</li>
           <li>Regulator uses the bank&apos;s primary federal regulator; for a credit union, its federal or state charter.</li>
           <li>A set lists the institutions that publish at least one fee. This institution is not counted in its own set.</li>

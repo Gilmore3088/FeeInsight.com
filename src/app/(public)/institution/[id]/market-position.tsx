@@ -85,7 +85,7 @@ export function MarketPositionCard({
   selectedCode: number | null;
   onSelect: (code: number) => void;
   /**
-   * How many banks the peer explorer's home metro set holds (same charter, publishing fees), so the
+   * How many banks and credit unions the peer explorer's home metro set holds (publishing fees), so the
    * link names the count it lands on. Null when the page does not offer that set: no link then.
    * Undefined when not known: the link names no count.
    */
@@ -179,13 +179,14 @@ function MetroSummary({
 }
 
 /**
- * "Compare fees with the 14 Tallahassee, FL banks in its home-metro peer set": the count the
- * explorer shows for that set ("14 peers selected"), from the same members (explorerMemberIds).
- * It differs from the deposit rank's "of 18" (every FDIC-insured institution with offices there).
+ * "Compare fees with the 23 Tallahassee, FL banks and credit unions in its home-metro peer set":
+ * the count the explorer shows for that set ("23 peers selected"), from the same members
+ * (explorerMemberIds). The home metro set holds credit unions too (James, 2026-10-20), so the
+ * link names both. It differs from the deposit rank's "of 18" (FDIC-insured institutions only).
  */
 export function metroPeersLinkText(homeName: string, count: number | undefined): string {
-  if (count === undefined) return `Compare fees with ${homeName} banks in its home-metro peer set`;
-  return `Compare fees with the ${count.toLocaleString("en-US")} ${homeName} ${count === 1 ? "bank" : "banks"} in its home-metro peer set`;
+  if (count === undefined) return `Compare fees with ${homeName} banks and credit unions in its home-metro peer set`;
+  return `Compare fees with the ${count.toLocaleString("en-US")} ${homeName} ${count === 1 ? "bank or credit union" : "banks and credit unions"} in its home-metro peer set`;
 }
 
 /** The text with its last word and the arrow kept together, so a phone never wraps a lone arrow. */
