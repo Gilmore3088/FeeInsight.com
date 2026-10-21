@@ -702,8 +702,15 @@ function fullyTidiedName(name: string, canonicalKey: string): string | null {
  * standing before a name comes off ("^ Research Fee"), never before a sentence ("^^ If your ...").
  * A description cell glued after the name is cut off (`descriptionFreeName`: "Overdraft Fee This
  * fee applies to overdrafts ...", "Dormant Account Fee Applies when ...", First Bank of Pike).
+ * v26 (#1810): v22 left an all-caps name in caps when it had another flaw, so 32 live names were
+ * still all caps on 2026-10-20. Such a name is now read in title case first and the rest of the tidy
+ * runs on that ("NOTARY FEE9" -> "Notary Fee", `casedCapsName`); a heading cell glued on with ":"
+ * no longer keeps it in caps ("WIRE TRANSFER: DOMESTIC" -> "Wire Transfer: Domestic"); a name whose
+ * tidy would cut its condition takes title case whole. "IS", "ARE", "MET" and "SUB" read as words, not
+ * acronyms. Dry run on 2026-10-21 01:16 UTC: 19 of the 32 renamed; the other 13 are fragments, a
+ * same-price twin, a glued acronym ("SAME-DAYACH") or acronyms only ("CBCU ATM").
  */
-export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 25 } as const;
+export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 26 } as const;
 export const NAME_RETIDY_KIND = "name_retidied";
 /**
  * Institutions the scan visits first after a version change, then the rest in id order. v9:
@@ -726,6 +733,8 @@ export const NAME_RETIDY_FIRST_INSTITUTIONS = [
   68, 229, 745, 1141, 2193, 2341, 2524, 2993, 4818, 6133, 7911, 8221, 8448,
   // v25 (#1596, #1917): First Bank of Pike's glued descriptions and the marked names the v23 pass never reached.
   3842, 227, 1977, 2228, 2612, 2777, 3431, 4589, 5140, 5632, 5649, 5651, 5730, 5994, 7926, 8183, 8347, 8578,
+  // v26 (#1810): the institutions with a live all-caps name on Oct 20.
+  211, 418, 858, 1459, 3383, 3657, 4070, 4551, 5548, 6343, 6685, 7637, 8556, 8638,
 ];
 
 /** A footnote glyph the bank prints after a word ("Charge¹", "Checking†", "accounts) †"); v23: "^", "*" and "∞" too ("Fee^", "check**"). */
@@ -842,6 +851,8 @@ const SHORT_WORDS = new Set([
   "A", "ADD", "ALL", "AN", "AND", "ANY", "APP", "AS", "AT", "BAD", "BAG", "BOX", "BY", "CAR", "DAY", "DUE", "END", "ETC", "EX", "FAX", "FED", "FEE",
   "FOR", "FROM", "GET", "HR", "IF", "IN", "KEY", "LOW", "MAX", "MAY", "MIN", "MO", "NEW", "NO", "NON", "NOT", "OF", "OFF", "ON", "ONE", "OR",
   "OUR", "OUT", "OWN", "PAY", "PER", "RE", "SET", "SR", "TAX", "THE", "TO", "TWO", "UP", "USE", "VIA", "WEB", "YR",
+  // v26 (#1810): verbs and words a condition or a heading spells out ("IS NOT MET", "SUB-ACCOUNT").
+  "ARE", "BE", "CAN", "HAS", "IS", "ITS", "MET", "SUB", "WAS", "YOU",
 ]);
 /** Longer groups that are acronyms ("MMDA", "UTMA"); a credit union's initials end in "CU" or "FCU". */
 const LONG_ACRONYMS = new Set(["MMDA", "UGMA", "UTMA"]);
@@ -849,6 +860,9 @@ const LONG_ACRONYMS = new Set(["MMDA", "UGMA", "UTMA"]);
 const PLURAL_ACRONYMS = new Set(["ATM", "CD", "HSA", "IRA"]);
 /** Joining words that stay lower case inside a name ("Cost of Collection", "Check Cashing for Non-Members"). */
 const SMALL_WORDS = new Set(["a", "an", "and", "as", "at", "by", "for", "from", "in", "of", "on", "or", "per", "the", "to", "via", "with"]);
+
+/** v26: a part of a hyphenated word that runs into an acronym ("SAME-DAYACH" is "Same-Day ACH"). */
+const GLUED_ACRONYM = /-[A-Z]{2,}(?:ACH|ATM|NSF|ODP|PIN)\b/;
 
 function acronym(letters: string): boolean {
   return LONG_ACRONYMS.has(letters) || /^[A-Z]{2,}F?CU$/.test(letters) || (letters.length <= 3 && !SHORT_WORDS.has(letters));
@@ -863,8 +877,22 @@ function acronym(letters: string): boolean {
  * is left for the rest of the tidy.
  */
 export function capsCasedName(name: string): string | null {
+  const cased = casedCapsName(name);
+  // v26: a heading cell glued on with ":" ("WIRE TRANSFER: DOMESTIC") is no reason to stay in caps; the
+  // cased name keeps it, and v10's cell read still decides whether it comes off.
+  return cased == null || isMessyName(cased.split(": ").join(" ")) ? null : cased;
+}
+
+/**
+ * v26 (#1810): an all-caps name in title case whatever its other flaws ("OUTGOING WIRE FEE5" ->
+ * "Outgoing Wire Fee5"), or null when it is not all caps or nothing changes. `planRetidy` runs the
+ * rest of the tidy on this, so a footnote number or a condition comes off a name v22 left in caps.
+ */
+export function casedCapsName(name: string): string | null {
   const current = name.replace(/\s+/g, " ").trim();
   if (/[a-z]/.test(current) || !/[A-Z]{4}/.test(current)) return null;
+  // v26: an acronym glued to the word before it ("SAME-DAYACH") cannot be cased word by word.
+  if (GLUED_ACRONYM.test(current)) return null;
   const cased = current
     .split(" ")
     .map((word, index) => {
@@ -882,8 +910,7 @@ export function capsCasedName(name: string): string | null {
       });
     })
     .join(" ");
-  if (cased === current || isMessyName(cased)) return null;
-  return cased;
+  return cased === current ? null : cased;
 }
 /**
  * v16: a live name that opens in lower case (758 of 67,670 live names on 2026-10-09, Agentic OS's
@@ -1609,6 +1636,35 @@ export function planRetidy(
   }
   const shared = sharedNameFeeIds(liveFees);
   for (const stored of fees) {
+    // v26 (#1810): an all-caps name with another flaw (a footnote number, a heading cell) is read in
+    // title case first, then the rest of the tidy runs on that, under the same checks. When the tidy
+    // would cut a condition the name holds ("MONTHLY SERVICE FEE IF MINIMUM BALANCE IS NOT MET"), the
+    // whole name takes title case below instead; when it finds nothing else, the name goes on as stored.
+    const cased = capsCasedName(stored.fee_name) == null ? casedCapsName(stored.fee_name) : null;
+    let conditionCased: string | null = null;
+    if (cased) {
+      const view = { ...stored, fee_name: cased };
+      const id = Number(stored.fee_published_id);
+      const inner = planRetidy([view], texts, liveFees.map((fee) => (Number(fee.fee_published_id) === id ? view : fee)), logged);
+      const rename = inner.renames[0];
+      if (rename && !isMessyName(rename.newName) && casedCapsName(rename.newName) == null) {
+        if (taken.has(lineKey(stored, rename.newName))) {
+          skipped.same_name_live += 1;
+          continue;
+        }
+        taken.add(lineKey(stored, rename.newName));
+        renames.push({ ...rename, oldName: stored.fee_name });
+        continue;
+      }
+      // A tidy name another live fee has, or one that would not trace or fits another category, is
+      // refused for the stored name too.
+      const refusal = (["same_name_live", "would_not_trace", "category_guard"] as const).find((reason) => inner.skipped[reason] > 0);
+      if (refusal) {
+        skipped[refusal] += 1;
+        continue;
+      }
+      if (inner.skipped.keeps_condition > 0) conditionCased = cased;
+    }
     // v15: a name v14 trimmed past its condition gets the condition back from its logged old name.
     // v16: or a condition publish cut off Knox's name.
     const last = logged.get(Number(stored.fee_published_id)) ?? publishCutName(stored);
@@ -1616,7 +1672,7 @@ export function planRetidy(
     // v23: in every category. v25 (#1917): and a description cell glued after the name comes off.
     const marksOff = markFreeName(stored.fee_name, stored.canonical_fee_key);
     // v22 (#1810): an all-caps name reads in title case, and nothing else changes.
-    const markFree = capsCasedName(marksOff ?? stored.fee_name) ?? marksOff;
+    const markFree = capsCasedName(marksOff ?? stored.fee_name) ?? conditionCased ?? marksOff;
     if (markFree) {
       if (checkFeeCategory(stored.canonical_fee_key, stored.fee_name).ok && !checkFeeCategory(stored.canonical_fee_key, markFree).ok) {
         skipped.category_guard += 1;
@@ -2114,8 +2170,9 @@ export async function retidyLiveFeeNames(
         // category, or a description cell glued after the name.
         footnoteMarkFreeName(fee.fee_name) != null ||
         markFreeName(fee.fee_name, fee.canonical_fee_key) != null ||
-        // v22 (#1810): an all-caps name.
-        capsCasedName(fee.fee_name) != null ||
+        // v22 (#1810): an all-caps name. v26: with another flaw too ("NOTARY FEE9"), which v22's
+        // filter left out because its cased name is still messy.
+        casedCapsName(fee.fee_name) != null ||
         shared.has(Number(fee.fee_published_id)) ||
         logged.get(Number(fee.fee_published_id))?.newName === fee.fee_name ||
         publishCutName(fee) != null,
