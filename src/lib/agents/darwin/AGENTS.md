@@ -960,6 +960,14 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   wording never supplies the unit. Bounds and partial-hour prices stay separate. Unnamed
   callers require compatible readings of every matching fee price. The line switch remains
   off, the check stays v2, and no replay epoch or activation is included in this repair.
+  v3 (#1456, Oct 21: 537 live account_research fees still blank after the line switch): the line
+  rule also reads a bare hour unit after the fee's own price ("$30 hour", "$20.00 hr.", "$25.00 an
+  hour"), "per-hour", a next cell that starts with the unit ("| $20 | Per hour with 1 hour
+  minimum"), a unit glued to the next label ("per hourCheck") and a footnote mark glued to the
+  fee's label ("Account Research2 | $15.00 per hour"). Bounds ("$10.00 1 hr minimum", "hour
+  minimum"), first-hour tiers, "hours of" and part-hour prices ("per ½ hour", "/ 1/2 hour") still
+  never match. Read-only dry run 2026-10-21 01:04 UTC: 59 more fees at 49 institutions (57
+  account_research, 1 garnishment_levy, 1 legal_process; 57 blank, 2 per_item), no v2 set lost.
 - Live non-deposit document re-check (`non-deposit-document-check.ts`, #1442). James's catalog
   review (Oct 15, URL heuristics) found live deposit-fee rows read from brokerage and wealth pages
   (33 rows: Northern Trust wealth, U.S. Bank self-directed investing "Research" $20) and from
@@ -1759,7 +1767,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DARWIN_VERDICT_SCORE_STRATEGY` | `verify.verdict_score` | v2 | `darwin/verdict-score.ts` |
 | `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v5 | `darwin/verified-recheck.ts` |
 | `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v6 | `darwin/live-fragment-check.ts` |
-| `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v2 | `darwin/hourly-frequency-check.ts` |
+| `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v3 | `darwin/hourly-frequency-check.ts` |
 | `NON_DEPOSIT_CHECK_VERSION` | `darwin.non_deposit_document` | v3 | `darwin/non-deposit-document-check.ts` |
 | `LINE_CONFLICT_CHECK_VERSION` | `darwin.line_conflict` | v1 | `darwin/line-conflict-check.ts` |
 | `TRANSLATED_COPY_CHECK_VERSION` | `darwin.translated_copy` | v2 | `darwin/translated-copy-check.ts` |
