@@ -53,7 +53,15 @@ export const HOURLY_CHECK = "darwin.hourly_frequency_check";
  * by `hourlyFromLine` on the line Knox stored (`excerpt="..."`), with the same exemptions. Those
  * are written only with `HOURLY_LINE_LIVE` on; until then a step counts them (`wouldSetFromLine`).
  */
-export const HOURLY_CHECK_VERSION = 2;
+/**
+ * v3 (#1456, Oct 21 read of the 537 live account_research fees still blank after the line switch):
+ * `hourlyFromLine` missed a bare unit after the price ("$30 hour", "$20.00 hr.", "$25.00 an
+ * hour"), a hyphen ("$25.00 per-hour"), a next cell that only starts with the unit ("| $20 | Per
+ * hour with 1 hour minimum"), a unit glued to the next label ("per hourCheck") and a footnote
+ * mark glued to the fee's label ("Account Research2 | $15.00 per hour"). Bounds, first-hour tiers
+ * and part-hour prices still never match.
+ */
+export const HOURLY_CHECK_VERSION = 3;
 /**
  * The switch. It turned on by PR after the dry-run count over the whole live table
  * (`hourlyCountSql`, or the verify step's `hourly_full_count` param) was shown to James: on

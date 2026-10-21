@@ -213,8 +213,8 @@ describe("v2: a fee priced by the hour only on its own line (#1456)", () => {
     { fee_published_id: "205", fee_verified_id: "9205", institution_id: "7", fee_name: "Research", amount: "40", canonical_fee_key: "account_research", frequency: null, source_line: "Research (per hour) | $25.00" },
   ];
 
-  it("is version 2, with the line switch on after James's yes", () => {
-    expect(HOURLY_CHECK_VERSION).toBe(2);
+  it("is version 3 (v2 line rule, v3 unit-wording fix), with the line switch on after James's yes", () => {
+    expect(HOURLY_CHECK_VERSION).toBe(3);
     expect(HOURLY_LINE_LIVE).toBe(true);
   });
 
@@ -323,6 +323,51 @@ describe("own-price hourly attribution (#1456, production source witnesses)", ()
     expect(hourlyFromLine("Research (per hour) | $10 per 15 minutes", 10, "Research")).toBe(false);
     expect(hourlyFromLine("Research (per hour) | $10 | per half hour", 10, "Research")).toBe(false);
     expect(hourlyFromLine("Research fee (1/2-hour minimum charge) | $50 per 1/2 hour", 50, "Research fee")).toBe(false);
+  });
+});
+
+describe("v3: a bare or next-cell hour unit after the fee's own price (#1456)", () => {
+  // Live blank-frequency account_research fees read on 2026-10-21 (published id, stored line).
+  it.each([
+    [20683, "Account Research", 25, "Account Research $25.00 an hour"],
+    [23392, "Account Research (one hour minimum)", 30, "Account Research (one hour minimum) | $30 hour | ATM Deposit Adjustment | $25"],
+    [45629, "Account balancing assistance", 20, "Account balancing assistance......................$20.00 hr."],
+    [89175, "Account research", 25, "Account research | $25.00 hr; $10.00 min"],
+    [109596, "Account Research", 25, "Account Research $ 25.00 | hour"],
+    [72586, "Account Research", 20, "Account Research | $20 | Per hour with 1 hour minimum"],
+    [154057, "Account Research", 15, "Account Research | $15.00 | Per hour (minimum 1 hour)"],
+    [131794, "Research fee", 25, "Research fee $25.00 per-hour"],
+    [32401, "Account Research", 30, "(Created by check, in-person withdrawal, or other electronic means) | Account Research | $30.00 (per-hour)"],
+    [15677, "Research Fee", 25, "Research Fee $25.00 per hourCheck Copy Fees Footnote10"],
+    [86657, "Account Research", 15, "Account Research2 | $15.00 per hour"],
+    [143913, "Research (any account)", 20, "Research6 (any account) | $20.00/hour"],
+  ])("sets %i (%s) hourly from its line", (_id, name, amount, line) => {
+    expect(hourlyFromLine(line, amount, name)).toBe(true);
+    expect(hourlyVerdict(name, "account_research", null, line, amount)).toEqual({ action: "set", basis: "line" });
+  });
+
+  it.each([
+    // A minimum, a first-hour tier or a part of an hour is not a per-hour price.
+    ["Account research", 10, "Account research | $10.00 1 hr minimum"],
+    ["Account Research", 25, "Account Research | $25.00 hour minimum"],
+    ["Account Research", 20, "Account Research $20.00/First Hour"],
+    ["Account research", 10, "Account research | $10.00 first hour, $25.00 per hour thereafter"],
+    ["Account Reconciliation", 10, "Account Reconciliation | $10.00/Half-hour"],
+    ["Checkbook balancing (repeated)", 5, "Checkbook balancing (repeated) | $5.00 (per ½ hour)"],
+    ["Account Reconciliation", 15, "Account Reconciliation | $15/ 1/2 hour"],
+    ["Research Fee (One hour minimum)", 30, "Research Fee (One hour minimum) | $30.00"],
+    // Hours of service, or a later cell that is not only the unit's start, are not a basis.
+    ["Night Drop", 25, "Night Drop | $25.00 | Hours of operation apply"],
+    ["Account Research", 25, "Account Research | $25.00 | Per Account Per Hour"],
+    // Another fee's footnoted label is still another fee's.
+    ["Stop Payment", 30, "Stop Payment2 | $30.00 | Research (per hour) | $25.00"],
+  ])("leaves %s at %d on %j unknown", (name, amount, line) => {
+    expect(hourlyFromLine(line, amount, name)).toBe(false);
+  });
+
+  it("does not take a neighbour's bare hour unit", () => {
+    expect(hourlyFromLine("Stop Payment | $30.00 | Research | $30 hour", 30, "Stop Payment")).toBe(false);
+    expect(hourlyFromLine("Stop Payment | $30.00 | Research | $30 hour", 30, "Research")).toBe(true);
   });
 });
 
