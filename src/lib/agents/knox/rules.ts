@@ -323,6 +323,24 @@ export function foldedCategory(text: string): string | null {
 }
 
 /**
+ * v97 (#1918): a whole name that is a checking account's own fee: one to four words naming the
+ * account, then "Checking (Account) Fee|Charge", an optional "(per month)" and nothing else, with
+ * an optional footnote number glued to the front. A bare "Checking Account Fee" is that fee only
+ * with "(per month)": printed alone it can be an opening fee ("Checking Account Fee - $35.00*"
+ * beside the "Checking Account Monthly Fee", doc 3842). A word that names another fee keeps the name
+ * out ("Inactive Checking Fee", "Excess Transaction Checking Fee").
+ */
+const OTHER_FEE_WORD =
+  /(?:overdraft|nsf|inactiv\w*|dormant|clos\w*|statements?|paper|excess\w*|transactions?|items?|research|transfers?|wires?|atms?|debit|cards?|checks?|returned|stop|minimum|low|balance|refunds?|reopen\w*|early|order\w*|printing|business|commercial)/;
+const ACCOUNT_WORD = String.raw`(?!${OTHER_FEE_WORD.source}\b)[A-Za-z][\w&'’.+-]*\s+`;
+const CHECKING_FEE_WORDS = String.raw`checking(?:\s+account)?\s+(?:fee|charge)`;
+const BY_THE_MONTH = String.raw`\s*\((?:per month|monthly|a month|each month)\)`;
+export const CHECKING_ACCOUNT_FEE_NAME = new RegExp(
+  String.raw`^\W*\d?\s*(?:(?:${ACCOUNT_WORD}){1,4}${CHECKING_FEE_WORDS}(?:${BY_THE_MONTH})?|(?:${ACCOUNT_WORD}){0,4}${CHECKING_FEE_WORDS}${BY_THE_MONTH})\W*$`,
+  "i",
+);
+
+/**
  * First match wins, so the most specific patterns come first and the generic ones
  * (monthly maintenance, minimum balance) last. An overdraft "service charge" is an
  * overdraft fee, not monthly maintenance; a card replacement is not an ATM fee; a stop
@@ -511,6 +529,10 @@ export const FEE_PATTERNS: FeePattern[] = [
     key: "monthly_maintenance",
     pattern: /\b(monthly (service|maintenance)|maintenance (fee|charge)|monthly (fee|charge)|account service (fee|charge)|service charge)\b/i,
   },
+  // v97 (#1918): a fee named for the checking account itself ("MAX Checking Fee (per month)",
+  // "2Platinum Checking Fee", Bellco FCU) is that account's monthly fee. The whole name is the
+  // account and "Checking (Account) Fee"; a waiver clause is cut before this runs.
+  { key: "monthly_maintenance", pattern: CHECKING_ACCOUNT_FEE_NAME },
   { key: "minimum_balance", pattern: /\b(minimum balance|low balance|fall[- ]below)\b.{0,30}\b(fee|charge)\b/i },
   // v14: names the answer keys show Knox held as unclassified. Last, so they only claim
   // lines no rule above recognizes.
@@ -1041,7 +1063,10 @@ export function readUnderHeading(segment: string, heading: string): ExtractedFee
   if (/\b(?:fee|charge)\b/i.test(heading) && /[A-Z]/.test(label)) return [];
   // A label that names a fee of its own ("Picture Check Card:", "Same-Day ACH (per item)") is
   // that fee's row in a column beside the heading, not a row of it.
-  const own = label ? classifyPatternKey(`${label} fee`) ?? classifyPatternKey(label) : null;
+  // v97: an account's name ("Performance Checking", under "Cashier's Checks") stays a row of the
+  // heading; only the name the page prints can make it that account's own fee.
+  const withFee = `${label} fee`;
+  const own = label ? (CHECKING_ACCOUNT_FEE_NAME.test(withFee) ? null : classifyPatternKey(withFee)) ?? classifyPatternKey(label) : null;
   // Named as the table pass names a row under its heading ("Return item: Consumer account").
   const title = heading.replace(/\s*:\s*$/, "");
   return extractFromSegment(`${heading} ${line}`).candidates
@@ -1245,12 +1270,39 @@ export function classifyFeeText(value: string): string | null {
   return key ? CANONICAL_KEY_MAP[key] ?? null : null;
 }
 
+const THOUSANDS_SUFFIX = /^[KkMm]\b/;
+const BRACKETED_WAIVER = /\((?=\s*waiv)[^()|]*\)?/gi;
+
+/** v97 (#1918): "Platinum Checking Fee (waived if $15K in combined balances in | " is "Platinum Checking Fee | ". */
+export function withoutBracketedWaiver(words: string): string {
+  return words.replace(BRACKETED_WAIVER, " ");
+}
+const TABLE_CELL_BREAK = " | ";
+
+/**
+ * v97 (#1918): where a waiver bracketed inside a name's own cell stops covering prices. "Platinum
+ * Checking Fee (waived if $15K in combined balances in | $12.00" (Bellco FCU) prices the fee in the
+ * next cell; the waiver ends with its cell. A waiver that is not bracketed, or not followed by
+ * another cell, covers the rest of the line, as before.
+ */
+export function bracketedWaiverEnd(segment: string, waiverAt: number): number {
+  if (!Number.isFinite(waiverAt)) return Number.POSITIVE_INFINITY;
+  const cellStart = segment.lastIndexOf(TABLE_CELL_BREAK, waiverAt);
+  const open = segment.lastIndexOf("(", waiverAt);
+  if (open < 0 || open < cellStart || segment.slice(open, waiverAt).includes(")")) return Number.POSITIVE_INFINITY;
+  const cellEnd = segment.indexOf(TABLE_CELL_BREAK, waiverAt);
+  return cellEnd < 0 ? Number.POSITIVE_INFINITY : cellEnd;
+}
+
 export function amountsIn(segment: string): AmountMatch[] {
   const matches: AmountMatch[] = [];
   for (const match of segment.matchAll(AMOUNT_PATTERN)) {
     const value = Number(match[1].replace(/,/g, ""));
     if (!Number.isFinite(value)) continue;
     const start = match.index ?? 0;
+    // v97 (#1918): "$15K" or "$1.5M" is a balance in thousands or millions, never a price. Read as
+    // $15, it took the name before it and left Bellco's "Platinum Checking Fee ... | $12.00" unread.
+    if (THOUSANDS_SUFFIX.test(segment.slice(start + match[0].length))) continue;
     matches.push({ value: Math.round(value * 100) / 100, start, end: start + match[0].length });
   }
   return matches;
@@ -2009,10 +2061,16 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
     /^\s*(?:\/?\s*(?:mo|month|monthly|each|ea|item|year|yr|annually|per \w+))?\.?\s*$/i.test(segment.slice(amount.end, labelEnd));
   const inLabel = (amount: AmountMatch) =>
     pricedLater && amount.start < labelEnd && !namesNextFee(amount) && !endsLabel(amount);
-  const feeAmounts = amounts.filter((amount) => amount.start < waiverAt && !inLabel(amount) && !isConditionAmount(segment, amount));
+  const waiverEnd = bracketedWaiverEnd(segment, waiverAt);
+  const beforeOrPastWaiver = (amount: AmountMatch) => amount.start < waiverAt || amount.start >= waiverEnd;
+  const feeAmounts = amounts.filter((amount) => beforeOrPastWaiver(amount) && !inLabel(amount) && !isConditionAmount(segment, amount));
   if (feeAmounts.length === 0) return result;
   const waivable = Number.isFinite(waiverAt);
-  let feeName = usableName(nameFrom(segment.slice(0, feeAmounts[0].start))) ? nameFrom(segment.slice(0, feeAmounts[0].start)) : name;
+  // v97 (#1918): a price past a bracketed waiver is named without that waiver.
+  const ownWords = (from: number, amount: AmountMatch) =>
+    amount.start >= waiverEnd ? withoutBracketedWaiver(segment.slice(from, amount.start)) : segment.slice(from, amount.start);
+  const firstName = nameFrom(ownWords(0, feeAmounts[0]));
+  let feeName = usableName(firstName) ? firstName : name;
   // v68: the free column is not part of the name ("Stop Payment | FREE | $25" is "Stop Payment").
   if (freeColumns && usableName(nameFrom(cells![0]))) feeName = nameFrom(cells![0]);
   // v68: a box size row priced per year ("2×5 | $ 25/Year") is named by its size: the unit
@@ -2133,7 +2191,7 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
     // $15.00 per month Nonsufficient funds | $35.00"), not the next fee's name or period.
     const unitAfterPrevious = index === 0 ? null : segment.slice(feeAmounts[index - 1].end, amount.start).match(PRICE_UNIT_AFTER);
     const ownStart = index === 0 ? 0 : feeAmounts[index - 1].end + (unitAfterPrevious?.[0].length ?? 0);
-    const between = index === 0 ? null : nameFrom(segment.slice(ownStart, amount.start));
+    const between = index === 0 ? null : nameFrom(ownWords(ownStart, amount));
     const ownFrequency = unitAfterPrevious ? detectFrequency(segment.slice(ownStart)) : frequency;
     // v19: "$30.00 - fee assessed for each item paid1 Continuous Overdraft Fee ..... $5.00":
     // the lowercase words finish the earlier price's terms; the title that ends them is the name.

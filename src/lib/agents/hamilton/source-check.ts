@@ -76,7 +76,9 @@ export const SOURCE_CHECK_REASON = "source_check_untraceable";
 // column's price beside the name ("ATM Transactions | $10.00 monthly for average" over "Free | Money
 // Market Checking*") or under the other of two names ("Account Reopen | Member-Requested ATM/Debit"
 // over "$10 | $5") is not the fee's (`refusesOtherColumnPrice`). Follows #2465's v19.
-export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 20 } as const;
+// Version 21 (#1918): "$15K" or "$1.5M" is a balance in thousands or millions, never a price, so it
+// never stands in for a fee's price or takes the fee's name from the price after it.
+export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 21 } as const;
 
 /**
  * An institution is checked again whenever a newer live fee appears, so a fee
