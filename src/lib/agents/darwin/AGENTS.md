@@ -960,6 +960,14 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   wording never supplies the unit. Bounds and partial-hour prices stay separate. Unnamed
   callers require compatible readings of every matching fee price. The line switch remains
   off, the check stays v2, and no replay epoch or activation is included in this repair.
+  v3 (#1456, Oct 21: 537 live account_research fees still blank after the line switch): the line
+  rule also reads a bare hour unit after the fee's own price ("$30 hour", "$20.00 hr.", "$25.00 an
+  hour"), "per-hour", a next cell that starts with the unit ("| $20 | Per hour with 1 hour
+  minimum"), a unit glued to the next label ("per hourCheck") and a footnote mark glued to the
+  fee's label ("Account Research2 | $15.00 per hour"). Bounds ("$10.00 1 hr minimum", "hour
+  minimum"), first-hour tiers, "hours of" and part-hour prices ("per ½ hour", "/ 1/2 hour") still
+  never match. Read-only dry run 2026-10-21 01:04 UTC: 59 more fees at 49 institutions (57
+  account_research, 1 garnishment_levy, 1 legal_process; 57 blank, 2 per_item), no v2 set lost.
 - Live non-deposit document re-check (`non-deposit-document-check.ts`, #1442). James's catalog
   review (Oct 15, URL heuristics) found live deposit-fee rows read from brokerage and wealth pages
   (33 rows: Northern Trust wealth, U.S. Bank self-directed investing "Research" $20) and from
@@ -1073,6 +1081,25 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   M&T 5, FirstBank PR 2) and 92 stay. v2 (review of v1): a fee with no dollar amount (a percent fee)
   never has a twin, and "fondos", "insuficientes" and "cobro" read as Spanish. A fee taken down for
   its twin is not read again if the twin later comes down under another check; restore it by hand.
+- Product-page repeats of a schedule line (`product-page-repeat-check.ts`, v1, #1910, James's
+  live-fee check Oct 18). TD's checking campaign page gave "Paper statements" $3 (fee 64717), live
+  beside the fee schedule's "Paper statement (per statement cycle)" $3. Rosetta typed the page a
+  product page (#2428), but the page-copy collapse pairs copies of one page only and the
+  product-page conflict (#978) clears a product price the schedule prints the same, so nothing
+  closed it. A live dollar fee comes down when its document is a product page (Rosetta's latest
+  `document_kind = 'product_page'`, or the product address rule), the institution has a live fee of
+  the same category, variant and amount from a document that is neither (not a tier's own schedule
+  or a tier-named fee), and the two names name one item (`repeatsScheduleLine`: one's item words
+  cover the other's and the longer adds no word naming another item, such as "official check" or
+  "cashier's check"), with no differing frequency, audience or product. Monthly maintenance and
+  minimum balance are left out (an account's own price). Every verify step reads every candidate (no
+  cursor). `PRODUCT_PAGE_REPEAT_TAKEDOWN_LIVE` on: a match goes through the 12-hour second look
+  (check `darwin.product_page_repeat`) and is archived on its second failure while its twin is
+  still live (rolled back with `product_page_repeat: #<doc> twin #<fee>`, batch
+  `darwin-product-page-repeat-<run>`, the verified row rejected with the `product_page_repeat` flag,
+  never deleted; event `darwin.product_page_repeat_takedown`). Step detail
+  `product_page_repeat_check`. Dry run 2026-10-21 01:06 UTC (prod, read-only): 222 candidates, 89
+  at 72 institutions would come down, 133 stay.
 - Schedule editions (`edition-effective-check.ts`, #1915). Avidia's schedule "Effective December 1,
   2026" went live beside its March 2024 one, so the page showed next year's $35 overdraft. Each
   step reads the edition each document's heading states (`editionStarts` in
@@ -1772,10 +1799,11 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DARWIN_VERDICT_SCORE_STRATEGY` | `verify.verdict_score` | v2 | `darwin/verdict-score.ts` |
 | `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v5 | `darwin/verified-recheck.ts` |
 | `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v6 | `darwin/live-fragment-check.ts` |
-| `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v2 | `darwin/hourly-frequency-check.ts` |
+| `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v3 | `darwin/hourly-frequency-check.ts` |
 | `NON_DEPOSIT_CHECK_VERSION` | `darwin.non_deposit_document` | v3 | `darwin/non-deposit-document-check.ts` |
 | `LINE_CONFLICT_CHECK_VERSION` | `darwin.line_conflict` | v1 | `darwin/line-conflict-check.ts` |
 | `TRANSLATED_COPY_CHECK_VERSION` | `darwin.translated_copy` | v2 | `darwin/translated-copy-check.ts` |
+| `PRODUCT_PAGE_REPEAT_CHECK_VERSION` | `darwin.product_page_repeat` | v1 | `darwin/product-page-repeat-check.ts` |
 | `CANADIAN_DOCUMENT_CHECK_VERSION` | `darwin.canadian_document` | v1 | `darwin/canadian-document-check.ts` |
 | `DOCUMENT_OWNER_STRATEGY` | `verify.document_owner` | v1 | `darwin/document-owner.ts` |
 | `DARWIN_VERIFY_STRATEGY` | `verify.rules` | v3 | `darwin/verify.ts` |

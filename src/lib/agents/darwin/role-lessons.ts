@@ -186,4 +186,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-20",
   },
+  {
+    id: "issue-1456-bare-hour-unit-after-price",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "Read the unit that follows a fee's own price as schedules print it, not only as \"per hour\" or \"/hr\". \"$30 hour\", \"$20.00 hr.\", \"$25.00 an hour\", \"per-hour\" and a next cell that starts \"Per hour ...\" all price the fee by the hour; a footnote digit on the label does not make it another fee's label. A minimum, a first-hour tier or a part of an hour is still not an hourly price.",
+    why: "After the hourly line check went live, 537 account_research fees were still blank on Oct 21; 59 of them printed a whole-hour unit the line rule did not read, so reports showed \"$30 hour\" research as a flat $30.",
+    evidence: { issues: [1456], prs: [2526], files: ["src/lib/fee-frequency.ts", "src/lib/agents/darwin/hourly-frequency-check.ts"] },
+    appliesTo: "all",
+    since: "2026-10-21",
+  },
 ];
