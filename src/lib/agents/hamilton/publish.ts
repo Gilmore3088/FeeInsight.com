@@ -31,6 +31,7 @@ import { PERCENT_FEE_RANGES, isPercentFee, percentFeeAllowed, ratePercentOf, typ
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
 import { confirmFeeChange } from "@/lib/report-assemblers/monthly-pulse";
 import { mayBeSameSchedule } from "@/lib/agents/hamilton/schedule-edition";
+import { selectEditionHolds } from "@/lib/agents/hamilton/edition-hold";
 import { ARTICLE_PAGE_REASON, isArticlePage } from "@/lib/agents/hamilton/article-page";
 import { FREE_READ_PREFIX, isProductPage, productPageTakedownEnabled } from "@/lib/agents/hamilton/product-page";
 import { DARWIN_SCHEDULE_REFILED_FLAG } from "@/lib/agents/darwin/schedule-refile";
@@ -264,6 +265,8 @@ export interface RunHamiltonPublishResult {
   /** Rows not published because their institution is below the fee minimum. */
   heldFees: number;
   heldInstitutions: HeldThinInstitution[];
+  /** #1915: rows held because their schedule is not in effect yet (`edition-hold.ts`). */
+  editionHeldFees?: number;
   dryRun: boolean;
   batchId: string;
   results: HamiltonPublishResult[];
@@ -2240,7 +2243,10 @@ export async function runHamiltonPublish(
   // Held rows are left out of results and the attempt log, so they stay selectable
   // and publish on the run where their institution reaches the minimum.
   const held = new Map<number, HeldThinInstitution>();
+  // #1915: a row from a schedule not in effect yet is held the same way, until its date.
+  const editionHeld = await selectEditionHolds(db, selected);
   const rows = selected.filter((row) => {
+    if (editionHeld.has(Number(row.fee_verified_id))) return false;
     if (minInstitutionFees <= 1) return true;
     const institutionId = Number(row.institution_id);
     const feeCount = depthByInstitution.get(institutionId) ?? 0;
@@ -2715,6 +2721,7 @@ export async function runHamiltonPublish(
     minInstitutionFees,
     heldFees: heldInstitutions.reduce((sum, entry) => sum + entry.heldRows, 0),
     heldInstitutions,
+    editionHeldFees: editionHeld.size,
     dryRun,
     batchId,
     results,

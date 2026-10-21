@@ -1073,6 +1073,19 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   M&T 5, FirstBank PR 2) and 92 stay. v2 (review of v1): a fee with no dollar amount (a percent fee)
   never has a twin, and "fondos", "insuficientes" and "cobro" read as Spanish. A fee taken down for
   its twin is not read again if the twin later comes down under another check; restore it by hand.
+- Schedule editions (`edition-effective-check.ts`, #1915). Avidia's schedule "Effective December 1,
+  2026" went live beside its March 2024 one, so the page showed next year's $35 overdraft. Each
+  step reads the edition each document's heading states (`editionStarts` in
+  `hamilton/schedule-edition.ts`, the stored text's first 400 characters; a privacy banner or
+  "highlighted fees will be effective" is not an edition). A live fee from a schedule not in effect
+  yet is rolled back as `not_yet_effective: <date> #<doc>` (verified row untouched; Hamilton's
+  publish step holds such rows too, `hamilton/edition-hold.ts`). On the date the hold is cleared,
+  and the older edition's line of the same fee (same category, name and audience, a schedule for
+  the same audience first read before the new one took effect) comes down as
+  `older_edition: #<doc> effective <date>`, its verified row rejected with the `older_edition` flag.
+  Step detail `edition_effective_check`, event `darwin.edition_effective_check`. Dry run Oct 20
+  (prod, read-only): 166 live fees on 10 documents at 8 institutions would be held; no older
+  edition retires yet.
 - Canadian bank documents (`canadian-document-check.ts`, #2022, James's "Do all three", Oct 19).
   Natbank (2675), a Florida bank owned by National Bank of Canada, had 12 live fees read from the
   parent's Canadian chequing page and personal fee guide. Every institution here is U.S.-chartered,
@@ -1736,6 +1749,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `AUDIENCE_RELABEL_VERSION` | `darwin.audience_relabel` | v4 | `darwin/audience-relabel.ts` |
 | `DARWIN_ADJUDICATE_STRATEGY` | `verify.adjudicate` | v2 | `darwin/adjudicate.ts` |
 | `DARWIN_CATEGORY_MODEL_STRATEGY` | `verify.category_model` | v1 | `darwin/category-model.ts` |
+| `EDITION_CHECK_VERSION` | `darwin.edition_effective_check` | v1 | `darwin/edition-effective-check.ts` |
 | `DARWIN_PEER_STRATEGY` | `verify.peer_range` | v5 | `darwin/peer-checks.ts` |
 | `DARWIN_SECOND_SOURCE_STRATEGY` | `verify.second_source` | v2 | `darwin/peer-checks.ts` |
 | `DARWIN_RELEASE_STRATEGY` | `verify.release` | v4 | `darwin/release-held.ts` |

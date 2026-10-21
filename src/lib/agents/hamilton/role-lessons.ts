@@ -87,4 +87,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-20",
   },
+  {
+    id: "issue-1915",
+    agent: "hamilton",
+    stage: "publish",
+    lesson: "Before publishing a fee, read the effective date its schedule's heading states; a schedule that takes effect after today is not today's price, so hold its rows until that date and keep the current edition live, then let the new edition replace the old one rather than sit beside it.",
+    why: "Avidia Bank's schedule 'Effective December 1, 2026' was read on Oct 12 and published beside the March 2024 schedule still in force, so the page showed a $35 overdraft and NSF fee while the bank charged $30. On Oct 20, 166 live fees at 8 institutions came from schedules not yet in effect.",
+    evidence: { issues: [1915], prs: [2523], files: ["src/lib/agents/hamilton/edition-hold.ts", "src/lib/agents/darwin/edition-effective-check.ts"] },
+    appliesTo: "all",
+    since: "2026-10-20",
+  },
 ];

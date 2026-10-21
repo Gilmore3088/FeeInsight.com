@@ -33,6 +33,8 @@ function createDbMock(
   movementEvidence: Array<Record<string, unknown>> = [],
   /** What the sweeps' own reads (#1069 step 2) return for the rows about to publish. */
   sweepRows: { otherBank?: unknown[]; unconfirmedHost?: unknown[]; business?: unknown[]; owner?: unknown[] } = {},
+  /** Document text heads the edition hold reads (#1915). */
+  editionHeads: Array<{ source_document_id: number; head: string }> = [],
 ): DbMock {
   let nextPublishedId = 1201;
   const db = vi.fn((strings: TemplateStringsArray, ...params: unknown[]) => {
@@ -64,6 +66,7 @@ function createDbMock(
     if (query.includes("own_label")) return Promise.resolve(sweepRows.unconfirmedHost ?? []);
     if (query.includes("names_own_bank")) return Promise.resolve(sweepRows.otherBank ?? []);
     if (query.includes("named_other_id")) return Promise.resolve(sweepRows.owner ?? []);
+    if (query.includes("left(t.normalized_text")) return Promise.resolve(editionHeads);
     if (query.includes("FROM verified_fee_observations")) return Promise.resolve(rows);
     return Promise.resolve([]);
   });
@@ -283,6 +286,29 @@ describe("Hamilton agentic publish", () => {
     expect(result.results[0]).toMatchObject({ status: "skipped", reason: ARTICLE_PAGE_SKIP_REASON });
   });
 
+  it("holds a row read from a schedule not in effect yet and leaves it selectable (#1915)", async () => {
+    const head = "AVIDIA BANK\nSCHEDULE OF FEES – CONSUMER ACCOUNTS\nEffective December 1, 2099\nATM / DEBIT CARD";
+    const db = createDbMock([verifiedFee], [], undefined, [], {}, [{ source_document_id: 77, head }]);
+
+    const result = await runHamiltonPublish({ runId: 140, db: asPublishDb(db) });
+
+    expect(result.editionHeldFees).toBe(1);
+    expect(result.publishedFees).toBe(0);
+    // Left out of results and the attempt log, like the thin-institution hold.
+    expect(result.results).toEqual([]);
+    expect(writes(db).filter((text) => text.includes("published_fee_records"))).toEqual([]);
+  });
+
+  it("publishes a row of a schedule already in effect", async () => {
+    const head = "AVIDIA BANK\nSCHEDULE OF FEES – PERSONAL ACCOUNTS\nEffective March 1, 2024\nATM / DEBIT CARD";
+    const db = createDbMock([verifiedFee], [], undefined, [], {}, [{ source_document_id: 77, head }]);
+
+    const result = await runHamiltonPublish({ runId: 141, db: asPublishDb(db) });
+
+    expect(result.editionHeldFees).toBe(0);
+    expect(result.publishedFees).toBe(1);
+  });
+
   it("only reports category rejections on a dry run", async () => {
     const db = createDbMock([{ ...verifiedFee, fee_name: "Stop Payment Fee" }]);
 
@@ -443,9 +469,9 @@ describe("Hamilton agentic publish", () => {
 
     expect(result.publishedFees).toBe(1);
     expect(result.results[0]).toMatchObject({ status: "published", feePublishedId: null });
-    // The selection, the depth read, the three sweep-rule reads (#1069 step 2) and the
-    // document-owner verdict read, all SELECTs.
-    expect(db.unsafe.mock.calls.filter(([query]) => /SELECT|WITH/.test(query))).toHaveLength(6);
+    // The selection, the edition-hold read (#1915), the depth read, the three sweep-rule reads
+    // (#1069 step 2) and the document-owner verdict read, all SELECTs.
+    expect(db.unsafe.mock.calls.filter(([query]) => /SELECT|WITH/.test(query))).toHaveLength(7);
     expect(writes(db)).toEqual([]);
   });
 
