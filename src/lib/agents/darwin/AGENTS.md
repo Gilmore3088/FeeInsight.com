@@ -1560,7 +1560,20 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v79 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v79 (Oct 20,
+- The guard is at v80 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v80 (Oct 20,
+  #1912, #1905): a PIN replacement is not the card replacement fee ("Debit card PIN number
+  replacement" $5; "Card/PIN Replacement" still passes); a home equity line's stop payment fails
+  stop payment unless the name also names a checking or other deposit account; a cash advance read
+  from an ATM network table row ("| None | $0.50 | $1.00 plus ATM owner fees") fails; and a $0
+  joined onto a lead-in cut with an ellipsis ("for checks... / $0.00", the first figure of a band
+  list) fails. Read-only dry run (Oct 21 01:17 UTC): 13 live fees at 10 institutions newly fail (9
+  card replacement, 2 stop payment, 1 check cashing, 1 cash advance); none re-files, so the guard
+  catch-up sends them to the second look. A cashier's check priced for non-customers or non-members
+  (unless the name prices members too or the non-member is only the payee) waits on James behind
+  `NON_CUSTOMER_CASHIERS_CHECK_LIVE` (off): the Texas answer keys file it as a cashier's check, and
+  on it takes down 125 more live fees. Check cashing keeps non-customer names: its type is "often
+  applied to non-customers". A bill pay return item stays NSF by name (answer key TID 2419).
+- v79 (Oct 20,
   #1830): bill pay refuses a name whose own source line puts a stop payment just before it, in the
   same cell or the cell before ("Stop Payment (includes ACH, Bill Pay) | $10.00" read as "ACH, Bill
   Pay"). That is the stop payment fee. On Oct 20, 9 live bill pay fees matched; each has a live stop
