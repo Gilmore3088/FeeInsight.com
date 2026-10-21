@@ -387,6 +387,16 @@ export const KNOX_LESSONS: AgentLesson[] = [
     since: "2026-10-20",
   },
   {
+    id: "issue-1918-named-checking-fee",
+    agent: "knox",
+    stage: "extract",
+    lesson: "A fee named for the checking account itself (\"MAX Checking Fee (per month)\", \"Platinum Checking Fee\") is that account's monthly fee. \"$15K\" is a balance, never a $15 price, and a waiver bracketed inside a name's own cell ends with that cell, so the price in the next cell is still the fee's.",
+    why: "Bellco FCU's schedule prints both checking accounts' monthly fees by name; Knox held the $3.95 one as unclassified and dropped the $12 one, so neither went live and the live check found Bellco's monthly fee missing.",
+    evidence: { issues: [1918], prs: [], files: ["src/lib/agents/knox/rules.ts", "src/lib/custom-report/source-check.ts"] },
+    appliesTo: "all",
+    since: "2026-10-21",
+  },
+  {
     id: "issue-1810-marked-account-heading",
     agent: "knox",
     stage: "extract",

@@ -179,7 +179,12 @@ import { belongsToPaidReturnedUnit, paidReturnedUnits } from "@/lib/custom-repor
 // and it stayed live as checking's "Monthly Service Fee" beside the $25 one. A large bank's page is
 // read again once per rules version, so Chase's re-read fills the empty product and the account-type
 // hold is the live re-check. The stale-read floor stays at v78.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 96 } as const;
+// v97 (#1918): a fee named for the checking account itself ("MAX Checking Fee (per month)", "Platinum
+// Checking Fee", Bellco FCU) is that account's monthly fee (`CHECKING_ACCOUNT_FEE_NAME`); "$15K" is a
+// balance, never a $15 price; and a waiver bracketed inside a name's own cell stops at that cell, so
+// the price in the next cell is read. The held-line recheck promotes held lines this files; a page's
+// dropped line returns when the page is read again. The stale-read floor stays at v78.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 97 } as const;
 
 export interface SpecialistRun {
   strategy: string;

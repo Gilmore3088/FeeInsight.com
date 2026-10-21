@@ -283,6 +283,24 @@ fees found (54.7%); 56 of the 59 wrong reads are the right price under another c
 
 ## Rules versions (`extract.rules`)
 
+v97 (Oct 21, #1918): a fee named for the checking account itself is that account's monthly fee
+(`CHECKING_ACCOUNT_FEE_NAME` in `rules.ts`): one to four words naming the account, then "Checking
+(Account) Fee|Charge" and an optional "(per month)", nothing else. A word that names another fee
+(overdraft, inactive, closing, statement, business and others) keeps a name out, and a bare
+"Checking Account Fee" counts only with "(per month)", since printed alone it can be an opening fee
+(doc 3842). Bellco FCU's "MAX Checking Fee (per month) | $3.95" (raw 175797, doc 15817) was held as
+unclassified. Two more fixes on the same page: "$15K" or "$1.5M" is a balance, never a price
+(`amountsIn`; the shared check moves to v21 for the same reason), and a waiver bracketed inside a
+name's own cell stops at that cell (`bracketedWaiverEnd`), so "2Platinum Checking Fee (waived if
+$15K in combined balances in | $12.00" is read as Platinum Checking Fee, $12, instead of dropped.
+A label read under another fee's heading ("Performance Checking" under "Cashier's Checks") is not
+made a monthly fee by adding "fee" to it. Read-only dry run Oct 21 03:53 UTC over the 1,613 held
+unclassified lines on current texts that name checking, a thousands figure or a bracketed waiver:
+72 lines at 35 institutions move to Darwin as monthly maintenance, 0 lose a promotion; all 72
+trace in `checkFeeAgainstSource`; 48 of them at 26 institutions price an amount no live monthly fee
+there has. Bellco's Platinum $12 line was dropped, not held, so it waits for the page to be read
+again. The stale-read floor stays at v78.
+
 v96 (Oct 20, #1810): an account heading with a service or trade mark glued to its last word
 ("Chase SavingsSM", "Chase Private Client CheckingSM 6") reads as the account a monthly fee under it
 belongs to (`headingWithoutMark` in `lineup.ts`); fee lines are still matched as printed. JPMorgan
@@ -1793,7 +1811,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v26 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v96 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v97 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v8 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |
