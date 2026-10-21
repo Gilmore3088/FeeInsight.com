@@ -2,7 +2,8 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
-import { PUBLISH_MIN_ROWS_PER_STEP, ARTICLE_PAGE_RESELECT_SQL, ARTICLE_PAGE_SKIP_REASON, CATALOG_DEPTH_LIVE_SQL, decidePriorFee, HAMILTON_PUBLISH_MIN_INSTITUTION_FEES, HAMILTON_PUBLISH_STRATEGY, linesApartOnPage, listsBothPrices, qualifiedLines, namesShareReading, newerCopyPrintsLine, otherBalanceLine, publishedFeeName, publishNameHold, publishSkipReason, runHamiltonPublish, selectListedFeeLines, sameLineDuplicateOf, sentenceFragmentName, separateLines } from "./publish";
+import { PUBLISH_MIN_ROWS_PER_STEP, ARTICLE_PAGE_RESELECT_SQL, EDITION_HOLD_RESELECT_SQL, ARTICLE_PAGE_SKIP_REASON, CATALOG_DEPTH_LIVE_SQL, decidePriorFee, HAMILTON_PUBLISH_MIN_INSTITUTION_FEES, HAMILTON_PUBLISH_STRATEGY, linesApartOnPage, listsBothPrices, qualifiedLines, namesShareReading, newerCopyPrintsLine, otherBalanceLine, publishedFeeName, publishNameHold, publishSkipReason, runHamiltonPublish, selectListedFeeLines, sameLineDuplicateOf, sentenceFragmentName, separateLines } from "./publish";
+import { NOT_YET_EFFECTIVE_REASON } from "../darwin/edition-effective-check";
 import { feePageKey } from "./page-key";
 import { PUBLISH_REFUSE_SWEEP_RULES_LIVE, publishSweepRefusals } from "./publish-sweep-rules";
 
@@ -1230,6 +1231,19 @@ describe("Hamilton agentic publish", () => {
       const [query] = db.unsafe.mock.calls[0] as [string, unknown[]];
       expect(query).toContain(ARTICLE_PAGE_RESELECT_SQL);
       expect(query).toContain("art_prev.rolled_back_reason LIKE 'article_page:%'");
+    });
+
+    it("selects again a row skipped as identical to a fee Darwin held as not yet in effect (#1915)", async () => {
+      // ONE Credit Union (7174), Oct 11: the current schedule (doc 29000, "Effective November 1, 2024")
+      // was skipped line by line as identical to the 2027 schedule (doc 28999); #2523 held those
+      // and the bank was left with one live fee.
+      const db = learningDb([verifiedFee]);
+
+      await runHamiltonPublish({ runId: 507, db: asPublishDb(db) });
+
+      const [query] = db.unsafe.mock.calls[0] as [string, unknown[]];
+      expect(query).toContain(EDITION_HOLD_RESELECT_SQL);
+      expect(query).toContain(`held_prev.rolled_back_reason LIKE '${NOT_YET_EFFECTIVE_REASON}:%'`);
     });
 
     it("does not log held rows, so they publish once the institution has enough fees", async () => {

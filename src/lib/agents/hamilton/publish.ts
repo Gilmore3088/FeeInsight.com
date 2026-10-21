@@ -506,6 +506,7 @@ function undecidedAtThisVersionSql(params: Array<number | string | number[]>, mi
             AND NOT (pa.outcome = 'unchanged' AND ${OLDER_DOCUMENT_RESELECT_SQL})
             AND NOT (pa.outcome = 'unchanged' AND ${QUALIFIER_RESELECT_SQL})
             AND NOT (pa.outcome = 'unchanged' AND ${ARTICLE_PAGE_RESELECT_SQL})
+            AND NOT (pa.outcome = 'unchanged' AND ${EDITION_HOLD_RESELECT_SQL})
             -- A row refused only for low confidence is decided once more when its confidence
             -- now clears the floor: Knox re-scored 1,017 promoted held rates refused at its
             -- 0.5 placeholder (#1055). A row still below the floor stays decided.
@@ -1319,6 +1320,22 @@ export const ARTICLE_PAGE_RESELECT_SQL = `EXISTS (
                   SELECT 1 FROM published_fee_records art_prev
                    WHERE art_prev.fee_published_id = NULLIF(pa.detail->>'previous_fee_published_id', '')::bigint
                      AND art_prev.rolled_back_reason LIKE '${ARTICLE_PAGE_REASON}:%'
+                )`;
+
+/**
+ * #1915: a row skipped as identical to a live fee that Darwin's edition check later held as not yet
+ * in effect (`not_yet_effective: <date> #<doc>`) is decided again, so the schedule in effect today
+ * carries the fee while the next edition waits. Prod, Oct 21: ONE Credit Union (7174) had 16 lines of
+ * its current schedule (doc 29000, "Effective November 1, 2024") skipped behind the 2027 schedule
+ * (doc 28999); #2523 held those and the bank kept one live fee. A reselected row from a schedule
+ * itself not yet in effect is held by `selectEditionHolds`, so it still waits for its own date.
+ * The literal matches Darwin's `NOT_YET_EFFECTIVE_REASON` (`publish.test.ts`); importing it here
+ * would close an import cycle.
+ */
+export const EDITION_HOLD_RESELECT_SQL = `EXISTS (
+                  SELECT 1 FROM published_fee_records held_prev
+                   WHERE held_prev.fee_published_id = NULLIF(pa.detail->>'previous_fee_published_id', '')::bigint
+                     AND held_prev.rolled_back_reason LIKE 'not_yet_effective:%'
                 )`;
 
 /** A balance-named row skipped as an older document before check 3 is decided again (`newerCopyPrintsLine`). */
