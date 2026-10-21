@@ -392,7 +392,7 @@ export const KNOX_LESSONS: AgentLesson[] = [
     stage: "extract",
     lesson: "File a fee by who pays it and what it buys, not by the nearest keyword. \"Debit card PIN number replacement\" replaces the PIN, not the card; \"Stop payment of Home Equity Line check\" is a loan fee; a credit card cash advance row in an ATM network table prices each network, not the cash advance. A heading that trails off (\"for checks...\") is followed by a band list; its first figure is not a $0 fee.",
     why: "Bank Plus and Navy Federal rows went live under the deposit types their keywords suggested (Oct 18 live check, #1912, #1905). Guard v80 found 13 such live fees.",
-    evidence: { issues: [1912, 1905], prs: [], files: ["src/lib/fee-category-guard.ts"] },
+    evidence: { issues: [1912, 1905], prs: [2528], files: ["src/lib/fee-category-guard.ts"] },
     appliesTo: "all",
     since: "2026-10-20",
   },
