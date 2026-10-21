@@ -512,6 +512,8 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // v78 (Oct 20, #2449): account verification is guarded by name; research and wires re-file, and
     // signature guarantees and other names fail.
     // v79 (Oct 20, #1830): bill pay refuses a name its own line puts under a stop payment.
+    // v80 (Oct 20, #1912, #1905): PIN replacements, home equity stop payments, ATM-table cash
+    // advances and cut-lead-in $0s fail; non-customer cashier's checks wait behind a switch (off).
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",

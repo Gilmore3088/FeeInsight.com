@@ -157,6 +157,37 @@ const CURRENCY_SERVICE = /\bcurrenc(?:y|ies)\b|\bforeign\s+cash\b/i;
  */
 const CREDIT_CARD_ONLY =
   /^(?![\s\S]*(?:debit|\batm\b|\bcheck\s?cards?\b|\bhsa\b|\btravel\s+cards?\b|\bprepaid\b|\bgift\b))(?:[\s\S]*\bcredit(?:\b|(?=cards?\b))(?![-\s]*unions?\b)(?:(?!\b(?:to|back|if|refund)\b)[^.;()$]){0,20}?cards?\b|[\s\S]*\bcards?\b[^.;$]{0,30}\(\s*credit\s*\)|[\s\S]*\btarjetas?\s+de\s+cr[eé]dito\b|(?=[\s\S]*\bcards?\b)[\s\S]*(?:\bheloc\b|\bhome\s+equity\b|\bline\s+of\s+credit\b))/i;
+/**
+ * v80 (#1912): text between "card" and "replace" that may not be a PIN standing on its own. "Debit
+ * card PIN number replacement" $5 (Bank Plus 16535, beside its $10 card replacement) replaces the PIN;
+ * "ATM Card/PIN Replacement" and "Card or PIN" join the PIN to the card and still replace the card.
+ */
+const NOT_A_LONE_PIN = String.raw`(?:(?!\bpins?\b)[^|]|(?<=\b(?:cards?|tarjetas?)\s*(?:\/|or|and|&|,)\s*)pins?\b)`;
+/**
+ * v80 (#1912): the price a non-customer or non-member pays ("Official Cashier Check-Non-Customer" $10,
+ * First Bank of Pike 66152) is not the customer's cashier's check fee. Check cashing keeps such
+ * names: its type is "often applied to non-customers" (fee-definitions.ts).
+ *
+ * Held by `NON_CUSTOMER_CASHIERS_CHECK_LIVE` for James: the Texas answer keys file a non-customer's
+ * cashier's check as `cashiers_check` (TIDs 38, 2412, 2423, 2425), as #1912's reviewer does not, and
+ * the read-only dry run (Oct 21 01:07 UTC) found 125 live fees it would take down. Off, the rule reads
+ * nothing; on, they go to the second look, like the non-customer ATM surcharges (DECISIONS, Oct 17).
+ */
+export const NON_CUSTOMER_CASHIERS_CHECK_LIVE = false;
+const NON_CUSTOMER_PRICE = /\bnon[-\s]?(?:customers?|members?|clients?|account ?holders?|depositors?)\b/i;
+/**
+ * v80: names that keep the customer's price: one that prices members too ("Cashier's Check
+ * (Member/Non-Member)", "Official Checks - Members (after first check daily) or Non-Member"), a
+ * check made out to a non-member ("Teller's Check (payable to non-members)", "Cashier Check to
+ * Non-Member"), and a service closed to them ("Service not available to non-customers").
+ */
+const NON_CUSTOMER_PAYEE_OR_BOTH =
+  /\b(?:members?|customers?|clients?)\b[^|]{0,40}?(?:\/|\bor\b|&)\s*(?:[\w-]+\s+){0,3}non[-\s]?(?:members?|customers?|clients?)\b|\b(?:payable|made|written|issued\s+payable)\s+(?:out\s+)?to\s+(?:an?\s+)?non|\b(?:check|checks|cheque)\s+to\s+(?:an?\s+)?non[-\s]?|\bnot\s+available\s+to\s+non/i;
+/** The non-customer words in a cashier's check name, while the rule is live; null otherwise. Pure. */
+export function nonCustomerCashiersCheck(canonicalFeeKey: string, name: string, live: boolean = NON_CUSTOMER_CASHIERS_CHECK_LIVE): string | null {
+  if (!live || canonicalFeeKey !== "cashiers_check" || NON_CUSTOMER_PAYEE_OR_BOTH.test(name)) return null;
+  return name.match(NON_CUSTOMER_PRICE)?.[0] ?? null;
+}
 /** v74: investigating or tracing a payment ("Online Bill Payment Investigation" $30, 154324) is research, not bill pay. */
 const PAYMENT_INVESTIGATION = /\binvestigat|\bresearch\b|\btrac(?:e|er|ing)\b/i;
 /**
@@ -473,7 +504,10 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // Payments" $20, Community First Guam FCU 327099; "Suspensión de Pago Cheque Oficial", Vapr
     // FCU 262792); a cashier's check named without a stop is not.
     exclude:
-      /(release|(cancel\w*|remov(e|al|ing))\s+(of\s+)?(a\s+|the\s+)?stop|stop\s+payments?\s+(fee\s+)?\(?removal|revoc|prohibited|first business day|discounted fees|perks|monthly service fee|line of credit|heloc|loan|pr[eé]stamo|^(?!.*(\bstop\b|suspensi[oó]n|suspender|detener|parar)).*(cashier|official|oficial))/i,
+      // v80 (#1905): a home equity line's check ("Stop payment of Home Equity Line check" $20, Navy
+      // Federal 122368) is a loan fee, like a HELOC's; one that also names a checking or other
+      // deposit account ("Stop Payment Order - Checking Account / Home Equity Lines of Credit") stays.
+      /(release|(cancel\w*|remov(e|al|ing))\s+(of\s+)?(a\s+|the\s+)?stop|stop\s+payments?\s+(fee\s+)?\(?removal|revoc|prohibited|first business day|discounted fees|perks|monthly service fee|line of credit|heloc|^(?!.*\b(checking|savings|share|deposit)\b).*\b(home\s+equity|equity\s+lines?)\b|loan|pr[eé]stamo|^(?!.*(\bstop\b|suspensi[oó]n|suspender|detener|parar)).*(cashier|official|oficial))/i,
   },
   // v43: guarded so Hamilton reads them for names cut from another fee's note (noteTailOfAnotherFee).
   // v47: a bill payment's stop or cancel is the stop payment fee, and a membership fee is not
@@ -490,6 +524,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   cashiers_check: {
     // v63: "Cheques de gerente" (Puerto Rico FCU 262772), "Cheques oficiales", "Cheques de cajero".
     include: /(cashier|official check|bank check|bank draft|corporate check|treasurer|certified|teller'?s? check|cheques? (de gerente|oficial(es)?|de caja|de cajero|certificados?))/i,
+    // v80 (#1912): what a non-customer pays is read by `nonCustomerCashiersCheck`, held by its switch.
     exclude: /(cop(y|ies)|stop|replace|lost|research|copia|suspensi[oó]n|suspender|detener|parar|no pago|reemplaz|perdid)/i,
   },
   od_protection_transfer: {
@@ -523,7 +558,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // v35: express, priority or two-day delivery of a replacement card is the rush card fee
     // ("Replacement Card - Express Mail" $40, "Debit Card Replacement Priority Delivery" $40).
     exclude: new RegExp(
-      `${CREDIT_CARD_ONLY.source}|(check(?!\\s?card)|statement|key|book|expedit|rush|overnight|gift|${EXPRESS_CARD}|^(?!.*\\b(cards?|tarjetas?)\\b[^|]{0,20}(replace|reemplaz))(?!.*(replace|reemplaz)[^|]{0,20}\\b(cards?|tarjetas?)\\b).*\\bpins?\\b|liabilit|closed account|chequera|llave|estado de cuenta|regalo|expr[eé]s\\b|urgente)`,
+      `${CREDIT_CARD_ONLY.source}|(check(?!\\s?card)|statement|key|book|expedit|rush|overnight|gift|${EXPRESS_CARD}|^(?!.*\\b(cards?|tarjetas?)\\b${NOT_A_LONE_PIN}{0,20}(replace|reemplaz))(?!.*(replace|reemplaz)[^|]{0,20}\\b(cards?|tarjetas?)\\b).*\\bpins?\\b|liabilit|closed account|chequera|llave|estado de cuenta|regalo|expr[eé]s\\b|urgente)`,
       "i",
     ),
   },
@@ -860,7 +895,13 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // before it ("Stop Payment (includes ACH, Bill Pay) | $10.00" read as "ACH, Bill Pay"): it is the stop
 // payment fee. 9 live fees on Oct 20, each with a live stop payment twin at its bank and price, go to
 // the second look and come down. A fax-led line is document reproduction by the fold (v19, #1829).
-export const CATEGORY_GUARD_VERSION = 79;
+// v80 (Oct 20, #1912, #1905): a PIN replacement fails card replacement (`NOT_A_LONE_PIN`), a home
+// equity line's stop payment fails stop payment, a cash advance read from an ATM network table row
+// fails (`cashAdvanceFromAtmTable`), and a $0 joined onto a cut lead-in fails (`bandFloorAsPrice`).
+// Read-only dry run, Oct 21 01:17 UTC: 13 live fees at 10 institutions go to the second look. A
+// non-customer's cashier's check (`nonCustomerCashiersCheck`) waits on James behind
+// `NON_CUSTOMER_CASHIERS_CHECK_LIVE` (off; 125 more live fees when on).
+export const CATEGORY_GUARD_VERSION = 80;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -1119,7 +1160,7 @@ export function checkFeeCategory(
    * `cardProducts: false` reads the fee without the v70 card-product rule (`cardProductMisfile`);
    * `borrowedDirection` overrides `BORROWED_DIRECTION_LIVE` (the dry-run count and tests).
    */
-  options?: { cardProducts?: boolean; borrowedDirection?: boolean },
+  options?: { cardProducts?: boolean; borrowedDirection?: boolean; nonCustomerCashiersCheck?: boolean },
 ): CategoryGuardVerdict {
   const rule = canonicalFeeKey ? CATEGORY_GUARD_RULES[canonicalFeeKey] : undefined;
   if (!canonicalFeeKey) return { ok: true };
@@ -1160,6 +1201,10 @@ export function checkFeeCategory(
       reason: `"${name}" describes a different fee than ${canonicalFeeKey} ("${excluded[0]}")`,
     };
   }
+  const outsider = nonCustomerCashiersCheck(canonicalFeeKey, name, options?.nonCustomerCashiersCheck ?? NON_CUSTOMER_CASHIERS_CHECK_LIVE);
+  if (outsider) {
+    return { ok: false, code: "name_contradicts", reason: `"${name}" is the price non-customers pay ("${outsider}"), not the ${canonicalFeeKey} fee` };
+  }
   const cardProduct = options?.cardProducts === false ? null : cardProductMisfile(canonicalFeeKey, name);
   if (cardProduct) {
     return {
@@ -1191,6 +1236,10 @@ export function checkFeeCategory(
   if (addOnReason) return { ok: false, code: "schedule_contradicts", reason: addOnReason };
   const sustainedReason = sustainedOverdraftOnLine(canonicalFeeKey, context);
   if (sustainedReason) return { ok: false, code: "schedule_contradicts", reason: sustainedReason };
+  const atmTableReason = cashAdvanceFromAtmTable(canonicalFeeKey, context);
+  if (atmTableReason) return { ok: false, code: "schedule_contradicts", reason: atmTableReason };
+  const bandReason = bandFloorAsPrice(context);
+  if (bandReason) return { ok: false, code: "schedule_contradicts", reason: bandReason };
   const slotReason = pairedPriceSlot(canonicalFeeKey, context);
   if (slotReason) return { ok: false, code: "schedule_contradicts", reason: slotReason };
   const ownAtmReason = freeAtOwnAtm(canonicalFeeKey, name, context);
@@ -1451,6 +1500,39 @@ function sustainedOverdraftOnLine(canonicalFeeKey: string, context: CategoryGuar
   return sustained
     ? `the source line charges $${amount.toFixed(2)} for staying overdrawn ("${sustained[0].trim()}"), the continuous overdraft fee, not the per-item overdraft fee`
     : null;
+}
+
+/**
+ * v80 (#1905): a cash advance read from a row of an ATM network table, whose cells price each
+ * network and add the ATM owner's surcharge: "Credit card cash advance§ | None | $0.50 | $1.00 plus
+ * ATM owner fees | Not applicable" (Navy Federal 28173 took the CO-OP column's $0.50; its own column
+ * says "None"). The figure is one network's ATM price, not the institution's cash advance fee. Read
+ * from Knox's excerpt; with no excerpt it does not apply.
+ */
+const ATM_NETWORK_ROW = /\bplus\s+(?:the\s+)?atm\s+(?:owner|operator)(?:'?s)?\s+(?:fees?|surcharges?)\b|\|\s*(?:none|free|no\s+charge)\s*\|[^|]*\$[^|]*\|[^|]*\batm\s+(?:owner|operator)/i;
+
+function cashAdvanceFromAtmTable(canonicalFeeKey: string, context: CategoryGuardContext | undefined): string | null {
+  if (canonicalFeeKey !== "cash_advance") return null;
+  const excerpt = context?.conditions?.match(/\bexcerpt=([\s\S]*)$/)?.[1];
+  const named = excerpt ? plainQuotes(excerpt).match(ATM_NETWORK_ROW) : null;
+  return named ? `the source line is an ATM network table row ("${named[0].trim()}"), so the price is one network's ATM fee, not the cash advance fee` : null;
+}
+
+/**
+ * v80 (#1912): a $0 joined onto a lead-in that trails off ("Non-customer check cashing - for
+ * checks... / $0.00", Bank Plus 91880) is the first figure of the band list that follows ("$0.00 to
+ * $99.99 | $3.00 ... $1,000.00 & over | $20.00"), not the fee. A band that only says which balances
+ * or checks the fee covers ("Check Cashing ($0.00 – $300.00) | N/C", "$0 - $1,500.00 | Monthly
+ * Maintenance Fee ... No Charge") does not count: those fees are free. Read from Knox's excerpt; on
+ * Oct 20 only 91880 among live $0 fees matched.
+ */
+const BAND_FLOOR = /(?:\.\.\.|…)\s*\/\s*\$\s?0(?:\.00)?"?\s*$/;
+
+function bandFloorAsPrice(context: CategoryGuardContext | undefined): string | null {
+  if (context?.amount == null || context.amount === "" || Number(context.amount) !== 0) return null;
+  const excerpt = context.conditions?.match(/\bexcerpt=([\s\S]*)$/)?.[1];
+  const band = excerpt ? plainQuotes(excerpt).match(BAND_FLOOR) : null;
+  return band ? `the $0.00 follows a lead-in cut short on the source line ("${band[0]}"), the first figure of a band list, not the fee` : null;
 }
 
 const NOTE_HEAD_FEES: ReadonlyArray<readonly [RegExp, string]> = [

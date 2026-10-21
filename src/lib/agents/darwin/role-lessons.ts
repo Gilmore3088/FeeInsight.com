@@ -177,6 +177,16 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     since: "2026-10-20",
   },
   {
+    id: "issue-1912-who-pays-and-what-is-replaced",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "Before a fee joins a benchmark, ask what it buys. A PIN replacement is not a card replacement; a home equity line's stop payment is a loan fee; and a cash advance price from an ATM network table is one network's ATM price. A $0 after a lead-in that trails off (\"for checks... / $0.00\") is the first figure of the band list below it.",
+    why: "The Oct 18 live check found Bank Plus's $5 PIN replacement averaged with its $10 card replacement and Navy Federal's HELOC stop payments and CO-OP ATM column price live. The amounts traced to their lines, so the source check passed them; only the category was wrong. Guard v80 found 13 such live fees nationwide.",
+    evidence: { issues: [1912, 1905], prs: [2528], files: ["src/lib/fee-category-guard.ts"] },
+    appliesTo: "all",
+    since: "2026-10-20",
+  },
+  {
     id: "issue-1456-bare-hour-unit-after-price",
     agent: "darwin",
     stage: "verify",
