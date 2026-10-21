@@ -59,6 +59,10 @@ stops a repeat.
 **Knox extract (`extract.rules@1`):**
 - Records its yield against the trailing-median `expected_fee_count`, giving `ok`,
   `low_yield` or `no_candidates`.
+- Only a fee schedule's yield (or a text with no kind yet) sets `expected_fee_count`, and only
+  such a read can be `low_yield` (`measuresFeeCount`, #1094). A product page, Truth in Savings
+  disclosure, agreement or `other` text still logs its attempt, but its few fees are not the
+  bank's fee count.
 - Never re-extracts the same text hash with the same version, including duplicates
   stored under other document ids.
 

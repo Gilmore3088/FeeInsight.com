@@ -62,6 +62,24 @@ export interface AttemptFacts {
    * attempt log already stops a repeat (#1494).
    */
   rememberInputFailure?: boolean;
+  /**
+   * Rosetta's stored kind for the text read (`agent_source_texts.document_kind`). Only a fee
+   * schedule's yield, or a text with no kind yet, joins `recentYields` (`measuresFeeCount`).
+   */
+  documentKind?: string | null;
+}
+
+/**
+ * Pure: does a read of this kind of document measure the bank's fee count? Only its fee schedule
+ * does, or a text with no kind yet (treated as before). A product page quotes two or three fees, a
+ * Truth in Savings disclosure or an agreement a handful, so their yields are not the bank's count:
+ * folded into `expectedFeeCount` they pulled it down until a thin schedule read no longer looked
+ * low (#1094: on 2026-10-21, 402 institutions' recent free-pass median was under half their
+ * schedule-only median). The same test decides which reads can be `low_yield` (Knox
+ * `extractionOutcome`).
+ */
+export function measuresFeeCount(documentKind: string | null | undefined): boolean {
+  return documentKind == null || documentKind === "fee_schedule";
 }
 
 export const DO_NOT_RETRY_LIMIT = 50;
@@ -130,7 +148,7 @@ export function applyAttempt(playbook: Playbook, attempt: AttemptFacts, now: Dat
   const previous = playbook.strategyStats[key];
   const attempts = (previous?.attempts ?? 0) + 1;
   const success = isSuccessOutcome(attempt.outcome);
-  const countsYield = success && attempt.outcome !== "unchanged";
+  const countsYield = success && attempt.outcome !== "unchanged" && measuresFeeCount(attempt.documentKind);
   const recentYields = countsYield
     ? [...(previous?.recentYields ?? []), attempt.yieldCount].slice(-RECENT_YIELD_LIMIT)
     : previous?.recentYields ?? [];

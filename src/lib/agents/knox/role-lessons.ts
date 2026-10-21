@@ -406,4 +406,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-20",
   },
+  {
+    id: "issue-1094-yield-by-document-kind",
+    agent: "knox",
+    stage: "extract",
+    lesson: "Judge a read's yield against what its kind of document holds. Only a fee schedule's count is the bank's fee count; a product page, disclosure or agreement with a few fees is a full read of a short document, not a thin read of the schedule, and must not lower what a schedule read is expected to find.",
+    why: "Knox folded every text's free-pass yield into the bank's expected fee count, so product pages at 2-3 fees dragged it down: on 2026-10-21, 402 institutions' recent median was under half their schedule-only median, and a schedule read missing half its fees no longer looked low_yield.",
+    evidence: { issues: [1094], prs: [], files: ["src/lib/agents/learning/playbook.ts", "src/lib/agents/knox/extract.ts"] },
+    appliesTo: "all",
+    since: "2026-10-21",
+  },
 ];

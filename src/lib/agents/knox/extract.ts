@@ -5,7 +5,7 @@ import { createHash } from "crypto";
 import { sql } from "@/lib/data-store/connection";
 import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
 import { countOutcomes, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
-import { playbookFromRow } from "@/lib/agents/learning/playbook";
+import { measuresFeeCount, playbookFromRow } from "@/lib/agents/learning/playbook";
 import { chooseStrategy } from "@/lib/agents/learning/router";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { confidenceFor, type DroppedLineReason, type ExtractedFeeCandidate, type HeldFeeCandidate } from "@/lib/agents/knox/rules";
@@ -1562,8 +1562,7 @@ function specialistDetail(row: TextArtifactRow, run: SpecialistRun): Record<stri
  */
 export function extractionOutcome(extracted: number, expectedFeeCount: number | null, documentKind: string | null = null): AttemptOutcome {
   if (extracted === 0) return "no_candidates";
-  const judgedAgainstSchedule = documentKind == null || documentKind === "fee_schedule";
-  if (judgedAgainstSchedule && expectedFeeCount != null && expectedFeeCount > 0 && extracted < expectedFeeCount * LOW_YIELD_RATIO) {
+  if (measuresFeeCount(documentKind) &&expectedFeeCount != null && expectedFeeCount > 0 && extracted < expectedFeeCount * LOW_YIELD_RATIO) {
     return "low_yield";
   }
   return "ok";
@@ -1711,6 +1710,8 @@ export async function runKnoxExtract(
         fingerprint: row.text_hash,
         outcome: attemptOutcome,
         yieldCount: candidates.length,
+        // A product page's or disclosure's yield is not the bank's fee count (#1094).
+        documentKind: row.document_kind ?? null,
         costMicrousd: 0,
         durationMs: Date.now() - startedAt,
         runId: options.runId,
@@ -1724,6 +1725,7 @@ export async function runKnoxExtract(
           rules_found: runs.find((entry) => entry.pass === 1)?.found ?? 0,
           specialists: Object.fromEntries(runs.filter((entry) => entry.pass === 2).map((entry) => [entry.strategy, entry.added])),
           expected_fee_count: playbook.expectedFeeCount,
+          document_kind: row.document_kind ?? null,
           layout: layout.signature,
           price_lines: layout.priceLines,
           router: decision.reason,
