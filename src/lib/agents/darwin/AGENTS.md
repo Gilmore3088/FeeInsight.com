@@ -960,6 +960,14 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   wording never supplies the unit. Bounds and partial-hour prices stay separate. Unnamed
   callers require compatible readings of every matching fee price. The line switch remains
   off, the check stays v2, and no replay epoch or activation is included in this repair.
+  v3 (#1456, Oct 21: 537 live account_research fees still blank after the line switch): the line
+  rule also reads a bare hour unit after the fee's own price ("$30 hour", "$20.00 hr.", "$25.00 an
+  hour"), "per-hour", a next cell that starts with the unit ("| $20 | Per hour with 1 hour
+  minimum"), a unit glued to the next label ("per hourCheck") and a footnote mark glued to the
+  fee's label ("Account Research2 | $15.00 per hour"). Bounds ("$10.00 1 hr minimum", "hour
+  minimum"), first-hour tiers, "hours of" and part-hour prices ("per ½ hour", "/ 1/2 hour") still
+  never match. Read-only dry run 2026-10-21 01:04 UTC: 59 more fees at 49 institutions (57
+  account_research, 1 garnishment_levy, 1 legal_process; 57 blank, 2 per_item), no v2 set lost.
 - Live non-deposit document re-check (`non-deposit-document-check.ts`, #1442). James's catalog
   review (Oct 15, URL heuristics) found live deposit-fee rows read from brokerage and wealth pages
   (33 rows: Northern Trust wealth, U.S. Bank self-directed investing "Research" $20) and from
@@ -1073,6 +1081,25 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   M&T 5, FirstBank PR 2) and 92 stay. v2 (review of v1): a fee with no dollar amount (a percent fee)
   never has a twin, and "fondos", "insuficientes" and "cobro" read as Spanish. A fee taken down for
   its twin is not read again if the twin later comes down under another check; restore it by hand.
+- Product-page repeats of a schedule line (`product-page-repeat-check.ts`, v1, #1910, James's
+  live-fee check Oct 18). TD's checking campaign page gave "Paper statements" $3 (fee 64717), live
+  beside the fee schedule's "Paper statement (per statement cycle)" $3. Rosetta typed the page a
+  product page (#2428), but the page-copy collapse pairs copies of one page only and the
+  product-page conflict (#978) clears a product price the schedule prints the same, so nothing
+  closed it. A live dollar fee comes down when its document is a product page (Rosetta's latest
+  `document_kind = 'product_page'`, or the product address rule), the institution has a live fee of
+  the same category, variant and amount from a document that is neither (not a tier's own schedule
+  or a tier-named fee), and the two names name one item (`repeatsScheduleLine`: one's item words
+  cover the other's and the longer adds no word naming another item, such as "official check" or
+  "cashier's check"), with no differing frequency, audience or product. Monthly maintenance and
+  minimum balance are left out (an account's own price). Every verify step reads every candidate (no
+  cursor). `PRODUCT_PAGE_REPEAT_TAKEDOWN_LIVE` on: a match goes through the 12-hour second look
+  (check `darwin.product_page_repeat`) and is archived on its second failure while its twin is
+  still live (rolled back with `product_page_repeat: #<doc> twin #<fee>`, batch
+  `darwin-product-page-repeat-<run>`, the verified row rejected with the `product_page_repeat` flag,
+  never deleted; event `darwin.product_page_repeat_takedown`). Step detail
+  `product_page_repeat_check`. Dry run 2026-10-21 01:06 UTC (prod, read-only): 222 candidates, 89
+  at 72 institutions would come down, 133 stay.
 - Schedule editions (`edition-effective-check.ts`, #1915). Avidia's schedule "Effective December 1,
   2026" went live beside its March 2024 one, so the page showed next year's $35 overdraft. Each
   step reads the edition each document's heading states (`editionStarts` in
@@ -1560,7 +1587,20 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v79 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v79 (Oct 20,
+- The guard is at v80 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v80 (Oct 20,
+  #1912, #1905): a PIN replacement is not the card replacement fee ("Debit card PIN number
+  replacement" $5; "Card/PIN Replacement" still passes); a home equity line's stop payment fails
+  stop payment unless the name also names a checking or other deposit account; a cash advance read
+  from an ATM network table row ("| None | $0.50 | $1.00 plus ATM owner fees") fails; and a $0
+  joined onto a lead-in cut with an ellipsis ("for checks... / $0.00", the first figure of a band
+  list) fails. Read-only dry run (Oct 21 01:17 UTC): 13 live fees at 10 institutions newly fail (9
+  card replacement, 2 stop payment, 1 check cashing, 1 cash advance); none re-files, so the guard
+  catch-up sends them to the second look. A cashier's check priced for non-customers or non-members
+  (unless the name prices members too or the non-member is only the payee) waits on James behind
+  `NON_CUSTOMER_CASHIERS_CHECK_LIVE` (off): the Texas answer keys file it as a cashier's check, and
+  on it takes down 125 more live fees. Check cashing keeps non-customer names: its type is "often
+  applied to non-customers". A bill pay return item stays NSF by name (answer key TID 2419).
+- v79 (Oct 20,
   #1830): bill pay refuses a name whose own source line puts a stop payment just before it, in the
   same cell or the cell before ("Stop Payment (includes ACH, Bill Pay) | $10.00" read as "ACH, Bill
   Pay"). That is the stop payment fee. On Oct 20, 9 live bill pay fees matched; each has a live stop
@@ -1759,10 +1799,11 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DARWIN_VERDICT_SCORE_STRATEGY` | `verify.verdict_score` | v2 | `darwin/verdict-score.ts` |
 | `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v5 | `darwin/verified-recheck.ts` |
 | `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v6 | `darwin/live-fragment-check.ts` |
-| `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v2 | `darwin/hourly-frequency-check.ts` |
+| `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v3 | `darwin/hourly-frequency-check.ts` |
 | `NON_DEPOSIT_CHECK_VERSION` | `darwin.non_deposit_document` | v3 | `darwin/non-deposit-document-check.ts` |
 | `LINE_CONFLICT_CHECK_VERSION` | `darwin.line_conflict` | v1 | `darwin/line-conflict-check.ts` |
 | `TRANSLATED_COPY_CHECK_VERSION` | `darwin.translated_copy` | v2 | `darwin/translated-copy-check.ts` |
+| `PRODUCT_PAGE_REPEAT_CHECK_VERSION` | `darwin.product_page_repeat` | v1 | `darwin/product-page-repeat-check.ts` |
 | `CANADIAN_DOCUMENT_CHECK_VERSION` | `darwin.canadian_document` | v1 | `darwin/canadian-document-check.ts` |
 | `DOCUMENT_OWNER_STRATEGY` | `verify.document_owner` | v1 | `darwin/document-owner.ts` |
 | `DARWIN_VERIFY_STRATEGY` | `verify.rules` | v3 | `darwin/verify.ts` |

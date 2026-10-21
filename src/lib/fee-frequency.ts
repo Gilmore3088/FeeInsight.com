@@ -92,8 +92,10 @@ export function hourlyWording(words: string | null | undefined): boolean {
  * region, even on a single-price line. Without a name, incompatible equal-price readings stay
  * unknown. Bounds are not fee prices, and explicit partial-hour units never become hourly. Pure.
  */
-export function hourlyFromLine(sourceLine: string | null | undefined, amount: number | null, feeName?: string | null): boolean {
-  if (!sourceLine || amount == null) return false;
+export function hourlyFromLine(rawLine: string | null | undefined, amount: number | null, feeName?: string | null): boolean {
+  if (!rawLine || amount == null) return false;
+  // #1456 v3: text capture glues the unit to the next label ("$25.00 per hourCheck Copy Fees").
+  const sourceLine = rawLine.replace(/\b(hours?|hrs?)(?=[A-Z])/g, "$1 ");
   const prices = [...sourceLine.matchAll(PRICE)];
   const feePrices = prices.filter((match) => !hourlyBoundPrice(sourceLine, match));
   const readings: boolean[] = [];
@@ -120,8 +122,8 @@ export function hourlyFromLine(sourceLine: string | null | undefined, amount: nu
     const own = cells[0];
     const unitCell = own.trim() === "" && cells.length > 1 ? cells[1] : own;
     const partial = PARTIAL_HOUR_WORDING.test(ownName) || leadingWording(unitCell, PARTIAL_HOUR_WORDING) != null;
-    const after = leadingWording(own, HOURLY_WORDING) != null;
-    const nextCell = own.trim() === "" && cells.length > 1 && HOURLY_CELL.test(cells[1]);
+    const after = leadingWording(own, HOURLY_WORDING) != null || HOURLY_SUFFIX.test(own);
+    const nextCell = own.trim() === "" && cells.length > 1 && (HOURLY_CELL.test(cells[1]) || HOURLY_SUFFIX.test(cells[1]));
     readings.push(!partial && (hourlyWording(ownName) || after || nextCell));
   }
   // Without a unique named owner, the same price on incompatible rows stays unknown.
@@ -140,11 +142,24 @@ function hourlyBoundPrice(line: string, match: RegExpMatchArray): boolean {
 function hourlyOwnerStart(before: string, feeName: string): number | null {
   const words = feeName.match(/[a-z0-9]+/gi);
   if (!words?.length) return null;
-  const pattern = new RegExp(`(?:^|[^a-z0-9])(${words.join("[^a-z0-9]*")})(?=$|[^a-z0-9])`, "gi");
+  // #1456 v3: a footnote mark glued to the label ("Account Research2 | $15.00 per hour") is not
+  // part of another word, so the label still names its own price; nor is one inside it
+  // ("Research6 (any account)").
+  const footnote = "(?<=[a-z])\\d{1,2}(?=$|[^a-z0-9])";
+  const joiner = `(?:${footnote})?[^a-z0-9]*`;
+  const pattern = new RegExp(`(?:^|[^a-z0-9])(${words.join(joiner)})(${footnote})?(?=$|[^a-z0-9])`, "gi");
   const matches = [...before.matchAll(pattern)];
   const last = matches.at(-1);
-  return last ? (last.index ?? 0) + last[0].length - last[1].length : null;
+  return last ? (last.index ?? 0) + last[0].length - last[1].length - (last[2]?.length ?? 0) : null;
 }
+
+/**
+ * #1456 v3: an hour unit that starts the words after the price, or the next cell, with or without
+ * "per", "a"/"an" or "/": "$30 hour", "$20.00 hr.", "$25.00 an hour", "$25.00 per-hour",
+ * "| $20 | Per hour with 1 hour minimum". A bound ("hour minimum"), "hours of operation" and a
+ * part of an hour ("per ½ hour", "/ 1/2 hour", "/Half-hour") never match.
+ */
+const HOURLY_SUFFIX = /^[\s(*]*(?:an?\s+|per[\s-]+|\/\s*)?(?:hour|hr)s?(?![a-z])(?!\.?\s*(?:min(?:imum)?|max(?:imum)?|of)(?![a-z]))/i;
 
 /** Unit wording must start the price suffix, before another fee's label. */
 function leadingWording(words: string, pattern: RegExp): RegExpExecArray | null {

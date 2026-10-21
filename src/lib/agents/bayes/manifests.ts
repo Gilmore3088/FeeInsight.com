@@ -335,6 +335,7 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v1 (#1909): Darwin re-reads every live fee on a Spanish copy of a schedule each verify step (no
   // cursor; a few hundred rows), so there is no backlog for a replay to count.
   TRANSLATED_COPY_CHECK_VERSION: "Each verify step re-reads every live fee on a Spanish-copy document (no cursor); nothing to replay.",
+  PRODUCT_PAGE_REPEAT_CHECK_VERSION: "First version: each verify step re-reads every live product-page fee with a same-price schedule twin (no cursor); nothing older to replay.",
   // v1 (#1915): schedule editions not yet in effect. Every verify step reads every live fee on a dated document.
   EDITION_CHECK_VERSION: "First version: each verify step re-reads every live or held fee on a document whose heading states an edition (no cursor); nothing older to replay.",
   // v1 (#2022): Canadian bank documents. A full verify step re-reads every live document's text at most hourly.
@@ -511,6 +512,8 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // v78 (Oct 20, #2449): account verification is guarded by name; research and wires re-file, and
     // signature guarantees and other names fail.
     // v79 (Oct 20, #1830): bill pay refuses a name its own line puts under a stop payment.
+    // v80 (Oct 20, #1912, #1905): PIN replacements, home equity stop payments, ATM-table cash
+    // advances and cut-lead-in $0s fail; non-customer cashier's checks wait behind a switch (off).
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",

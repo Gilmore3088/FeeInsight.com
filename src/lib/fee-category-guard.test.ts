@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { amountEnvelopeFor } from "@/lib/agents/darwin/envelopes";
 
-import { borrowedDirection, cardProductMisfile, checkFeeCategory, CLUB_WITHDRAWAL, CLUB_WITHDRAWAL_LIVE, GUARDED_CATEGORIES, refileCategory, refileFromLine } from "./fee-category-guard";
+import { borrowedDirection, cardProductMisfile, checkFeeCategory, CLUB_WITHDRAWAL, CLUB_WITHDRAWAL_LIVE, GUARDED_CATEGORIES, NON_CUSTOMER_CASHIERS_CHECK_LIVE, refileCategory, refileFromLine } from "./fee-category-guard";
 
 describe("checkFeeCategory", () => {
   it("passes keys it does not guard", () => {
@@ -2154,5 +2154,85 @@ describe("guard v79: a stop payment cut to its list is not bill pay (#1830)", ()
     expect(onLine("Bill Pay", 5, "Stop Payment | $30.00 | Bill Pay | $5.00").ok).toBe(true);
     expect(onLine("Expedited Bill Pay", 25, "Bill Pay FREE Expedited Bill Pay $25.00").ok).toBe(true);
     expect(checkFeeCategory("bill_pay", "Bill Pay").ok).toBe(true);
+  });
+});
+
+describe("guard v80: loan, PIN, non-customer, ATM table and band-floor rows (#1912, #1905)", () => {
+  const withLine = (key: string, name: string, amount: number, line: string) =>
+    checkFeeCategory(key, name, { amount, conditions: `knox; excerpt="${line}"` });
+
+  it("refuses a PIN replacement as the card replacement fee", () => {
+    // Bank Plus 16535: "Debit card PIN number replacement | $5.00/card" beside the $10 card replacement.
+    expect(checkFeeCategory("card_replacement", "Debit card PIN number replacement").ok).toBe(false);
+    expect(checkFeeCategory("card_replacement", "PIN Replacement").ok).toBe(false);
+  });
+
+  it("keeps a card replacement that also replaces the PIN", () => {
+    for (const name of ["Debit card replacement", "Debit Card (replacement or PIN)", "ATM Card/PIN Replacement", "Replacement debit card or PIN"]) {
+      expect(checkFeeCategory("card_replacement", name).ok, name).toBe(true);
+    }
+  });
+
+  it("leaves a bill pay return item as NSF by name, as the Texas answer key files it", () => {
+    // TID 2419 keys "Bill Payment Return Item Fee (per presentment) | $30.00" as nsf. Bellco's
+    // "(per item returned by payee)" sits on the next line, outside Knox's excerpt (85460).
+    expect(checkFeeCategory("nsf", "Bill Payment Return Item Fee (per presentment)").ok).toBe(true);
+  });
+
+  const outsider = { nonCustomerCashiersCheck: true };
+
+  it("refuses the price a non-customer pays for a cashier's check, once switched on", () => {
+    // First Bank of Pike 66152: "Official Cashier Check-Non-Customer | $10.00".
+    expect(NON_CUSTOMER_CASHIERS_CHECK_LIVE).toBe(false);
+    expect(checkFeeCategory("cashiers_check", "Official Cashier Check-Non-Customer").ok).toBe(true);
+    expect(checkFeeCategory("cashiers_check", "Official Cashier Check-Non-Customer", undefined, outsider).ok).toBe(false);
+    expect(checkFeeCategory("cashiers_check", "Cashier's Check (non-member)", undefined, outsider).ok).toBe(false);
+    expect(checkFeeCategory("cashiers_check", "Cashier's Check", undefined, outsider).ok).toBe(true);
+    expect(checkFeeCategory("cashiers_check", "Official Check - customer", undefined, outsider).ok).toBe(true);
+  });
+
+  it("keeps a cashier's check that prices members too or is only made out to a non-member", () => {
+    for (const name of [
+      "Cashier’s Check (Member/Non-Member)",
+      "Member or Non-Member Official Check",
+      "Credit Union Official Checks - Members (after first check daily) or Non-Member (each check)",
+      "Teller's Check (payable to non-members)",
+      "Official Checks (Made Payable to Non-Member)",
+      "Cashier Check to Non-Member",
+      "Cashier's Check Fee (Service not available to non-customers)",
+    ]) {
+      expect(checkFeeCategory("cashiers_check", name, undefined, outsider).ok, name).toBe(true);
+    }
+  });
+
+  it("keeps check cashing for non-customers, which is what the type holds", () => {
+    // fee-definitions.ts: "A charge for cashing a check, often applied to non-customers."
+    expect(checkFeeCategory("check_cashing", "Check Cashing (applies to non-customers)", { amount: 5 }).ok).toBe(true);
+  });
+
+  it("refuses a home equity line's stop payment as the deposit stop payment fee", () => {
+    // Navy Federal 122368 and 122369.
+    expect(checkFeeCategory("stop_payment", "Stop payment of Home Equity Line check").ok).toBe(false);
+    expect(checkFeeCategory("stop_payment", "Stop payment of Home Equity Line checks").ok).toBe(false);
+    expect(checkFeeCategory("stop_payment", "Stop Payment (per item)").ok).toBe(true);
+    expect(checkFeeCategory("stop_payment", "Stop Payment Order - Checking Account / Home Equity Lines of Credit").ok).toBe(true);
+  });
+
+  it("refuses a cash advance price read from an ATM network table", () => {
+    // Navy Federal 28173 took the CO-OP column's $0.50; its own column says "None".
+    const line = "Credit card cash advance§ | None | $0.50 | $1.00 plus ATM owner fees | Not applicable | Not applicable";
+    expect(withLine("cash_advance", "Credit card cash advance", 0.5, line).ok).toBe(false);
+    expect(withLine("cash_advance", "Cash Advance", 3, "Cash Advance (teller) | $3.00").ok).toBe(true);
+    expect(checkFeeCategory("cash_advance", "Credit card cash advance").ok).toBe(true);
+  });
+
+  it("refuses a $0 read from the floor of a price band", () => {
+    // Bank Plus 91880: "Non-customer check cashing - for checks... / $0.00 to $99.99 | $3.00 ...".
+    // Knox's stored excerpt for 91880 keeps the cut lead-in and the band's first figure.
+    expect(withLine("check_cashing", "Non-customer check cashing - for checks", 0, "Non-customer check cashing - for checks... / $0.00").ok).toBe(false);
+    expect(withLine("check_cashing", "Check cashing (customers)", 0, "Check cashing (customers) / $0.00").ok).toBe(true);
+    // A band that only says which checks or balances a free fee covers stays (107296, 43270).
+    expect(withLine("check_cashing", "Check Cashing", 0, "Check Cashing ($0.00 – $300.00) | N/C").ok).toBe(true);
+    expect(withLine("monthly_maintenance", "Monthly Maintenance Fee .No Charge", 0, "$0 - $1,500.00 | Monthly Maintenance Fee…...No Charge").ok).toBe(true);
   });
 });
