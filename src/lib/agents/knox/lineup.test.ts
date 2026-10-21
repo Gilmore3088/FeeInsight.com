@@ -11,6 +11,7 @@ import {
   waiverForDisplay,
   withLineupFromText,
 } from "./lineup";
+import type { AccountLineup } from "./lineup";
 import { amountsIn, maintenanceFromAccountRow } from "./rules";
 
 const text = [
@@ -515,5 +516,37 @@ describe("the account a read records (v73, #1100)", () => {
     // The institution's own name.
     const named = withLineupFromText(read("Monthly fee", "Monthly fee $5.00"), "Peoples Savings\nMonthly fee $5.00", { institutionName: "Peoples Savings" });
     expect(named.lineup?.productName ?? null).toBeNull();
+  });
+});
+
+describe("Knox account headings with a glued service mark (v96, #1810)", () => {
+  // JPMorgan Chase's Additional Banking Services and Fees (doc 20723): each account's heading carries
+  // a service mark glued to its last word, so "Chase SavingsSM" read as no account and its $5
+  // savings fee went live as checking's "Monthly Service Fee" beside the $25 one.
+  const page = [
+    "Product Information for Personal Checking Accounts",
+    "Chase Private Client CheckingSM 6",
+    "Monthly Service Fee* | $35",
+    "Product Information for Personal Savings Accounts",
+    "Chase SavingsSM",
+    "Monthly Service Fee* | $5",
+    "Chase Debit Card CoverageSM",
+  ].join("\n");
+  const read = (excerpt: string, amount: number) => ({
+    canonicalHint: "monthly_maintenance",
+    feeName: "Monthly Service Fee",
+    excerpt,
+    amount,
+    lineup: null as AccountLineup | null,
+  });
+
+  it("should_read_the_account_when_its_heading_carries_a_glued_service_mark", () => {
+    expect(withLineupFromText(read("Monthly Service Fee* | $5", 5), page).lineup?.productName).toBe("Chase Savings");
+    expect(withLineupFromText(read("Monthly Service Fee* | $35", 35), page).lineup?.productName).toBe("Chase Private Client Checking");
+  });
+
+  it("should_keep_a_standalone_capital_word_in_the_heading", () => {
+    const plain = "Platinum SM Checking\nMonthly Service Fee* | $12";
+    expect(withLineupFromText(read("Monthly Service Fee* | $12", 12), plain).lineup?.productName).toBe("Platinum SM Checking");
   });
 });

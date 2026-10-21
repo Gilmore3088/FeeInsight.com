@@ -283,6 +283,17 @@ fees found (54.7%); 56 of the 59 wrong reads are the right price under another c
 
 ## Rules versions (`extract.rules`)
 
+v96 (Oct 20, #1810): an account heading with a service or trade mark glued to its last word
+("Chase SavingsSM", "Chase Private Client CheckingSM 6") reads as the account a monthly fee under it
+belongs to (`headingWithoutMark` in `lineup.ts`); fee lines are still matched as printed. JPMorgan
+Chase's $5 Chase Savings fee (live 75909, raw 306706, doc 20723) recorded no account, so the
+account-type hold (#1100) never held it and it showed as a second "Monthly Service Fee" beside the
+$25 one (75906). A read-only dry run on Oct 21 01:07 UTC over the 41 live monthly maintenance rows
+with no account on pages that print such a mark found 1 whose account changes (75909 -> "Chase
+Savings", savings). Chase is a large bank, so its page is read again at v96; the account-type hold's
+live part takes the fee down as held. The $25 row is printed under both Chase Premier Plus Checking
+and Chase Premier Savings, so it stays without an account. The stale-read floor stays at v78.
+
 v95 (Oct 20, #1916; numbered v94 until #2465 took it): a fee never takes the other column's price
 on a two-column page whose fees are printed name / price / note (`refusesOtherColumnPrice`, `src/lib/custom-report/column-pair-prices.ts`,
 in the shared check Knox's self-check runs). A name row with a price-led cell beside it and the
@@ -1517,6 +1528,15 @@ name at any price, and two rows whose marks come off to the same name ("Wire (MT
 Dry run Oct 18 over the 266 live rows of every institution and category with a marked name (186
 marked): 148 renames before the trace guard, 11 left as twins, 105 with no better name, 2 keeping a
 condition.
+v26 (Oct 20, #1810): v22 left a name in caps when it had another flaw, and its messy filter never
+read those, so 32 live names were still all caps on Oct 20. Such a name is read in title case first
+(`casedCapsName`) and the rest of the tidy runs on that, under the same guards ("NOTARY FEE9" ->
+"Notary Fee"); a heading cell glued on with ":" no longer keeps a name in caps ("WIRE TRANSFER:
+DOMESTIC" -> "Wire Transfer: Domestic"); a name whose tidy would cut its condition takes title case
+whole. "IS", "ARE", "MET", "SUB" and a few more read as words, not acronyms; an acronym glued to the
+word before it ("SAME-DAYACH") stays in caps. Dry run Oct 21 01:16 UTC over the 22 institutions with
+an all-caps live name: 19 of the 32 renamed; 13 left (fragments and conditions waiting for #1443 and
+#1521, a same-price twin, "SAME-DAYACH", and "CBCU ATM" / "OPEFCU ATM", which are acronyms only).
 
 `isCutoffName` (publish's `cutoff_name` hold) has a narrow live twin beside it, `liveFragmentName`
 (#1443), built from the same regex pieces: a dangling joining word (lower-case "a/an/the" only;
@@ -1771,9 +1791,9 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_LAYOUT_SIGNATURE_VERSION` | — | v1 | `knox/layout-signature.ts` |
 | `KNOX_LESSONS_VERSION` | — | v3 | `knox/lessons.ts` |
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
-| `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v25 | `knox/name-retidy.ts` |
+| `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v26 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v95 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v96 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v8 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

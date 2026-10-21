@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { LiveFeeRow } from "@/lib/agents/hamilton/source-check";
-import { brandCased, capitalisedName, junkStrippedName, pageCompletedName, publishCutName, thresholdFromPage, cellName, dropsCondition, restoredName, restoreOnPage, fontDecodedName, fontMapVerified, headName, isMessyName, spacedControlName, planRetidy, sharedNameFeeIds, accountHeading, neighbourCellName, conditionOnlyName, unligatedName, restoreStrippedAmount, retidiedFeeName, withoutWaiverAdvice, footnoteMarkFreeName, markFreeName, descriptionFreeName, capsCasedName, NAME_RETIDY_STRATEGY } from "@/lib/agents/knox/name-retidy";
+import { brandCased, capitalisedName, junkStrippedName, pageCompletedName, publishCutName, thresholdFromPage, cellName, dropsCondition, restoredName, restoreOnPage, fontDecodedName, fontMapVerified, headName, isMessyName, spacedControlName, planRetidy, sharedNameFeeIds, accountHeading, neighbourCellName, conditionOnlyName, unligatedName, restoreStrippedAmount, retidiedFeeName, withoutWaiverAdvice, footnoteMarkFreeName, markFreeName, descriptionFreeName, capsCasedName, casedCapsName, NAME_RETIDY_STRATEGY } from "@/lib/agents/knox/name-retidy";
 
 const fee = (overrides: Partial<LiveFeeRow>): LiveFeeRow => ({
   fee_published_id: 1,
@@ -1120,7 +1120,8 @@ describe("capsCasedName (v22, #1810)", () => {
     ["ACCT RESEARCH (MIN. 1 HR.)", "Acct Research (Min. 1 Hr.)"],
     // Nothing to change, or another flaw the rest of the tidy handles first.
     ["CBCU ATM", null],
-    ["WIRE TRANSFER: DOMESTIC", null],
+    // v26: a heading cell glued on with ":" no longer keeps a name in caps.
+    ["WIRE TRANSFER: DOMESTIC", "Wire Transfer: Domestic"],
     ["OUTGOING WIRE FEE5", null],
     ["MONTHLY SERVICE FEE IF MINIMUM BALANCE IS NOT MET", null],
   ];
@@ -1143,6 +1144,47 @@ describe("capsCasedName (v22, #1810)", () => {
     expect(planRetidy([overdraft], page).renames.map((rename) => [rename.oldName, rename.newName])).toEqual([["OVERDRAFT FEE", "Overdraft Fee"]]);
     const twin = fee({ fee_published_id: 12, source_document_id: 1, canonical_fee_key: "overdraft", fee_name: "Overdraft Fee", amount: 34 });
     const plan = planRetidy([overdraft], page, [overdraft, twin]);
+    expect(plan.renames).toEqual([]);
+    expect(plan.skipped.same_name_live).toBe(1);
+  });
+});
+
+describe("name retidy v26: all-caps names with another flaw (#1810)", () => {
+  it("is version 26 or later", () => {
+    expect(NAME_RETIDY_STRATEGY.version).toBeGreaterThanOrEqual(26);
+  });
+
+  it("should_title_case_an_all_caps_name_whatever_its_other_flaws", () => {
+    expect(casedCapsName("NOTARY FEE9")).toBe("Notary Fee9");
+    expect(casedCapsName("MONTHLY SERVICE FEE IF MINIMUM BALANCE IS NOT MET")).toBe("Monthly Service Fee If Minimum Balance Is Not Met");
+    expect(casedCapsName("MONTHLY INACTIVE SUB-ACCOUNT2,4")).toBe("Monthly Inactive Sub-Account2,4");
+    expect(casedCapsName("VALUE, SR VALUE, NOW, SUPER NOW & HSA CHECKING ACCOUNTS: NSF")).toBe("Value, Sr Value, NOW, Super NOW & HSA Checking Accounts: NSF");
+    // Acronyms only, a name already cased, and an acronym glued to its word stay as they are.
+    expect(casedCapsName("CBCU ATM")).toBeNull();
+    expect(casedCapsName("Notary Fee")).toBeNull();
+    expect(casedCapsName("BILL PAY: SAME-DAYACH")).toBeNull();
+  });
+
+  it("should_rename_an_all_caps_name_with_a_footnote_number_to_its_tidy_title_cased_name", () => {
+    // Live 151603 and 151614 at 8638 (doc 36661), Oct 20.
+    const page = [{ source_document_id: 1, normalized_text: "NOTARY FEE9 $10.00\nLEGAL PROCESSING FEE10 $100.00\nATM TRANSACTION8 $2.00" }];
+    const notary = fee({ fee_published_id: 21, source_document_id: 1, canonical_fee_key: "notary_fee", fee_name: "NOTARY FEE9", amount: 10 });
+    const legal = fee({ fee_published_id: 22, source_document_id: 1, canonical_fee_key: "legal_process", fee_name: "LEGAL PROCESSING FEE10", amount: 100 });
+    expect(planRetidy([notary, legal], page).renames.map((rename) => [rename.oldName, rename.newName])).toEqual([
+      ["NOTARY FEE9", "Notary Fee"],
+      ["LEGAL PROCESSING FEE10", "Legal Processing Fee"],
+    ]);
+  });
+
+  it("should_keep_a_condition_whole_and_never_land_on_another_live_fee", () => {
+    // Live 141325 at 418: the tidy would cut the condition, so the whole name takes title case.
+    const page = [{ source_document_id: 1, normalized_text: "MONTHLY SERVICE FEE IF MINIMUM BALANCE IS NOT MET $1.00\nOUTGOING WIRE FEE5 $25.00" }];
+    const monthly = fee({ fee_published_id: 31, source_document_id: 1, canonical_fee_key: "monthly_maintenance", fee_name: "MONTHLY SERVICE FEE IF MINIMUM BALANCE IS NOT MET", amount: 1 });
+    expect(planRetidy([monthly], page).renames.map((rename) => rename.newName)).toEqual(["Monthly Service Fee If Minimum Balance Is Not Met"]);
+    // Live 143013 at 858: another live row is already "Outgoing Wire Fee" at $25.
+    const wire = fee({ fee_published_id: 32, source_document_id: 1, canonical_fee_key: "wire_domestic_outgoing", fee_name: "OUTGOING WIRE FEE5", amount: 25 });
+    const twin = fee({ fee_published_id: 33, source_document_id: 1, canonical_fee_key: "wire_domestic_outgoing", fee_name: "Outgoing Wire Fee", amount: 25 });
+    const plan = planRetidy([wire], page, [wire, twin]);
     expect(plan.renames).toEqual([]);
     expect(plan.skipped.same_name_live).toBe(1);
   });

@@ -173,7 +173,13 @@ import { belongsToPaidReturnedUnit, paidReturnedUnits } from "@/lib/custom-repor
 // Debit" took Account Reopen's $10. The self-check (`checkFeeAgainstSource`, `refusesOtherColumnPrice`)
 // now refuses those reads, so they stay untraced holds. The stale-read floor stays at v78; source
 // check v20 takes the live ones down.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 95 } as const;
+// v96 (#1810): an account heading with a service mark glued to its last word ("Chase SavingsSM",
+// "Chase Private Client CheckingSM 6") reads as the account above a monthly fee (`headingWithoutMark`).
+// Before, Chase's $5 Chase Savings fee recorded no account, so the account-type hold never held it
+// and it stayed live as checking's "Monthly Service Fee" beside the $25 one. A large bank's page is
+// read again once per rules version, so Chase's re-read fills the empty product and the account-type
+// hold is the live re-check. The stale-read floor stays at v78.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 96 } as const;
 
 export interface SpecialistRun {
   strategy: string;

@@ -269,10 +269,22 @@ function feeLineIndex(lines: string[], excerpt: string): number {
   return at;
 }
 
+/**
+ * v96 (#1810): a service or trade mark glued to a heading's last word, and the footnote number after
+ * it, come off before the line is read as a heading ("Chase SavingsSM" -> "Chase Savings", "Chase
+ * Private Client CheckingSM 6" -> "Chase Private Client Checking"). Only a mark glued to a lower-case
+ * letter counts, so a standalone "SM" word stays. Fee lines are matched as printed.
+ */
+const GLUED_HEADING_MARK = /(?<=[a-z])(?:SM|TM|[®™℠])(?:\s*\d{1,2})?\s*$/;
+export function headingWithoutMark(line: string): string {
+  return line.replace(GLUED_HEADING_MARK, "").trim();
+}
+
 function accountBlock(text: string, excerpt: string): AccountBlock | null {
-  const lines = text.split(/\n+/).map(squash).filter(Boolean);
-  const at = feeLineIndex(lines, excerpt);
+  const printed = text.split(/\n+/).map(squash).filter(Boolean);
+  const at = feeLineIndex(printed, excerpt);
   if (at < 0) return null;
+  const lines = printed.map((line, index) => (index === at ? line : headingWithoutMark(line)));
   let heading: string | null = null;
   let headingAt = -1;
   let accountHeading: string | null = null;

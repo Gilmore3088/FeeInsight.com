@@ -386,4 +386,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-20",
   },
+  {
+    id: "issue-1810-marked-account-heading",
+    agent: "knox",
+    stage: "extract",
+    lesson: "An account heading with a service or trade mark glued to its last word (\"Chase SavingsSM\", \"Chase Private Client CheckingSM 6\") still names the account a monthly fee under it belongs to; read it without the mark and its footnote number. A savings account's monthly fee is never checking's.",
+    why: "JPMorgan Chase's $5 Chase Savings fee recorded no account, so it went live as a second checking \"Monthly Service Fee\" beside the $25 one, and the account-type hold never held it.",
+    evidence: { issues: [1810, 1100], prs: [], files: ["src/lib/agents/knox/lineup.ts", "src/lib/agents/hamilton/account-type-hold.ts"] },
+    appliesTo: "all",
+    since: "2026-10-20",
+  },
 ];
