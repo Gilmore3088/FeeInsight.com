@@ -347,6 +347,16 @@ export const GUTENBERG_LESSONS: AgentLesson[] = [
     since: "2026-10-20",
   },
   {
+    id: "issue-1910",
+    agent: "gutenberg",
+    stage: "product-page repeat",
+    lesson: "A product page's fee that names the same item as a live line of the bank's own schedule at the same price is that line again, not a second fee: keep the schedule's line and take the page's copy down.",
+    why: "The product-page conflict cleared any product price the schedule also printed and the page-copy collapse pairs copies of one page only, so TD's campaign-page \"Paper statements\" $3 stayed live beside the schedule's $3 line, and 89 such repeats at 72 institutions with it (dry run, 2026-10-21).",
+    evidence: { issues: [1910], prs: [], files: ["src/lib/agents/darwin/product-page-repeat-check.ts"] },
+    appliesTo: ["publish", "publish-index", "publish-context"],
+    since: "2026-10-20",
+  },
+  {
     id: "restore-still-printed",
     agent: "gutenberg",
     stage: "source check",
