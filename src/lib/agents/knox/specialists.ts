@@ -220,7 +220,15 @@ import { belongsToPaidReturnedUnit, paidReturnedUnits } from "@/lib/custom-repor
 // that heading (`columnHeadingRows`, table pass v9). The table pass read only a line's first pair under
 // the last single-cell heading. Admit-only: the rows come after every row the table pass read, and the
 // self-check traces them on the stored text. The stale-read floor stays at v97. Name re-tidy stays at v26.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 102 } as const;
+// v103: a row printing its sibling names stacked in one cell over as many prices stacked in the next
+// ("Wire Transfer (Within USA) Outgoing Incoming | $20.00 $10.00", State key 9308) reads each variant
+// at its own price (`stackedVariantReads` in rules.ts, `stackedCellVariants`). Only one-word
+// directions, regions or customer types, as many as the prices, in a two-cell row whose price cell
+// holds nothing but the prices. The shared check traces the variant's price on the stored text
+// (`stackedVariantIndex` in source-check.ts, admit-only). The row's old read, which named both
+// directions and failed Darwin's category check, becomes the first variant's. The stale-read floor
+// stays at v97. Name re-tidy stays at v26.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 103 } as const;
 
 export interface SpecialistRun {
   strategy: string;

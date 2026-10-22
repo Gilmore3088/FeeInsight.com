@@ -284,6 +284,35 @@ fees found (54.7%); 56 of the 59 wrong reads are the right price under another c
 
 ## Rules versions (`extract.rules`)
 
+v103 (Oct 22): a PDF row that prints its sibling names stacked in one cell over their prices stacked
+in the next loses its line breaks, so the stored row runs them together ("Wire Transfer (Within USA)
+Outgoing Incoming | $20.00 $10.00", State key 9308). Read as one row, the name carried both
+directions (Darwin refused it at category) and the second price was never read. `stackedVariantReads`
+(`rules.ts`, before any other line rule) reads each variant at the price in the same place when
+`stackedCellVariants` (`src/lib/custom-report/stacked-cell-variants.ts`) finds the shape: a row of
+two cells; the second only prices apart by spaces, with no unit, limit, range or other figure; the
+first a stem and exactly as many one-word variants of one family as there are prices: directions
+(outgoing, incoming, outbound, inbound), regions (domestic, international, foreign) or customer
+types (member, non-member, customer, non-customer). No variant is repeated, the word before the list
+is not of its family, and the stem holds no figure, limit, balance or waiver and does not end on a
+joiner. A direction or region must change the category of every variant; a customer type must keep
+it. Every variant must pass Darwin's checks, or none is read and the row is read as before. The
+shared check traces the variant's own price (`stackedVariantIndex` in `source-check.ts`): the price
+of the one variant the name keeps scores as the first price does. Admit-only there: no price's score
+drops, so a name that traced before still traces. Across every Texas, seven-state and shadow-lab
+text the only change is 9308's wire line: outgoing $20 now named "Wire Transfer (Within USA)
+Outgoing" (it carried both directions and Darwin refused it), and a new incoming $10. Left out:
+stacked rows of different fees ("Cashier's Check For Paying Bills Stop Payment | $2.00 $10.00",
+"Foreign Check Exchange Cash Letter Collection | $10.00 $25.00"), rows whose counts differ (9308's
+box table: 4 sizes, "Lost Key" and "Drilled Box" over 6 prices; its checking accounts and check
+cashing bands), multi-word lists (9308's NSF items, international wires, "US Currency Foreign
+Currency"), a repeated stem ("Rush Order – Overnight FedEx Rush Order – 2 day FedEx Shipping") and
+international variants, which still answer to the #2278 direction review. Shadow lab answer-key
+recall 944 -> 946 of 1,312; false publication 34 / 160, names 313 / 317 and fees outside the keys
+(35) unchanged; ratchet +2, no loss. Seven-state gate 907 -> 909 right (MN 122 -> 124), wrong
+unchanged at 34; Texas 590 / 11 and held out 60 / 4 unchanged. Name re-tidy stays at v26; the
+stale-read floor stays at v97.
+
 v102 (Oct 22): a two-column fee schedule flattened row by row prints two fees on one line, one per
 column, and each column has its own heading. The table pass read a line's first pair only, under
 the last heading printed on a line of its own, so a right-hand direction ("ACCOUNT ASSISTANCE | WIRE
@@ -1909,7 +1938,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v26 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v102 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v103 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v9 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

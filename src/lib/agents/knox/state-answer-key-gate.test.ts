@@ -60,8 +60,12 @@ const FLOORS: Record<string, { right: number; wrong: number }> = {
   // v102 (column headings, Oct 22): a two-column line's bare pair is read under its column's heading:
   // FL 137 -> 140 (key 10193's "Cashier's Check: Customer" $10, key 8085's notary Customer $3 and
   // Non-Customer $5), GA 185 -> 186 (key 1338's branch-assisted domestic wire $35); no wrong read added.
-  CA: { right: 161, wrong: 5 },
-  FL: { right: 140, wrong: 6 },
+  // v103 (stacked cells, Oct 22): a names cell over as many prices reads each variant at its own price:
+  // MN 122 -> 124 (key 9308's wire within the USA, outgoing $20 and incoming $10); no wrong read
+  // added. Every floor and ceiling now equals the real count (NY's right floor and the CA, FL, IL and
+  // NY wrong ceilings had slack from earlier rounds).
+  CA: { right: 161, wrong: 3 },
+  FL: { right: 140, wrong: 5 },
   // v97 (Oct 21): State key 60 (GA, one stored line) is read past its "$35.00/Item" rows: 172 -> 179
   // right. One new wrong read, "Overdraft Protection $35.00/Item" as an overdraft protection
   // transfer (the key files that $35 as overdraft), is refused by Darwin's verify
@@ -69,20 +73,21 @@ const FLOORS: Record<string, { right: number; wrong: number }> = {
   GA: { right: 186, wrong: 10 },
   // 88 since the top-50 fold (Oct 8): a "Travel Card Reload" at $4.95 now files as a gift card
   // at $4.95, the same (category, price) pair as that schedule's gift card, so two right reads count once.
-  IL: { right: 116, wrong: 5 },
+  IL: { right: 116, wrong: 4 },
   MI: { right: 138, wrong: 0 },
   // 96 since collection items got their own type (Oct 8): the key files a "$20.00 for the first
   // item" line under check cashing, and Knox now reads that schedule's "Collection Item" $20
   // as a collection item, so one right read became one wrong one.
-  MN: { right: 122, wrong: 8 },
-  NY: { right: 43, wrong: 5 },
+  MN: { right: 124, wrong: 8 },
+  NY: { right: 44, wrong: 4 },
   // v97: 870 -> 877 right (GA's key 60); wrong 33 -> 34, inside the floor.
   // Guard v81 and the escheat range (Oct 22): returned check deposits and escheat processing fees read
   // as Darwin now verifies them: 877 -> 885 right (GA 180, IL 116, MI 135, MN 121); wrong unchanged at 34.
   // v100: 885 -> 890 right (CA's key 7450, tier columns; see CA); wrong unchanged at 34.
   // v101: 890 -> 903 right (held vocabulary; see CA); wrong unchanged at 34.
   // v102: 903 -> 907 right (column headings; see CA); wrong unchanged at 34.
-  all: { right: 907, wrong: 38 },
+  // v103: 907 -> 909 right (stacked cells; see CA); wrong unchanged at 34, now the ceiling.
+  all: { right: 909, wrong: 34 },
 };
 
 const fixture = JSON.parse(

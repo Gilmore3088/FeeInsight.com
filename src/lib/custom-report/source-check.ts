@@ -22,6 +22,7 @@ import { accountTableRow } from "@/lib/custom-report/account-table";
 import { chargedFeeCountTotal, nsfPolicyPrices } from "./nsf-policy-prices";
 import { capFirstItemPrices, refusesStackedFeePrice, stackedLabelKey } from "./stacked-fee-prices";
 import { checkWireClausePrice } from "./wire-clause-prices";
+import { stackedCellVariants } from "./stacked-cell-variants";
 import { refusesOtherColumnPrice } from "./column-pair-prices";
 const NSF_POLICY_CATEGORIES = new Set(["nsf", "overdraft"]);
 
@@ -715,8 +716,11 @@ function waiverConditionEnd(line: string, tokens: MoneyToken[], from: number, pr
  * words of its own and could never be a fee's price. Pure.
  */
 const SLASH_PRICE_JOIN = /^\s*\/\s*$/;
+/** v103: prices stacked in one cell, apart by spaces only. */
+const STACKED_PRICE_JOIN = /^\s+$/;
 const COLUMN_PRICE_JOIN = /^\s*\|?\s*$/;
 const LINE_VARIANTS = /([A-Za-z][\w'’-]*)\s*\/\s*([A-Za-z][\w'’-]*)(?:\s*\/\s*([A-Za-z][\w'’-]*))?/g;
+const CELL_SEPARATOR_PATTERN = /\s*\|\s*/;
 
 function withJoinedPrices(line: string, prices: MoneyToken[], before: number[], stems: NameStems): number[] {
   const scores = [...before];
@@ -739,6 +743,11 @@ function withJoinedPrices(line: string, prices: MoneyToken[], before: number[], 
       start = end;
       continue;
     }
+    // v103: a names cell stacked over its prices cell ("Wire Transfer (Within USA) Outgoing Incoming |
+    // $20.00 $10.00"): the variant the fee's name keeps scores its own price as the first price
+    // scores. Admit-only: no price's score drops.
+    const stacked = stackedVariantIndex(line, prices, start, words);
+    if (stacked != null) scores[stacked] = Math.max(scores[stacked], before[start]);
     // A box size's row of bare column prices: each price is the size's.
     const size = stems.find((stem) => /^ \d+x\d+ $/.test(stem));
     if (size && start + 1 < prices.length && COLUMN_PRICE_JOIN.test(line.slice(prices[start].end, prices[start + 1].start)) &&
@@ -747,6 +756,31 @@ function withJoinedPrices(line: string, prices: MoneyToken[], before: number[], 
     }
   }
   return scores;
+}
+
+/**
+ * v103 (Knox `stackedVariantReads`): on a row of two cells whose second cell is only prices apart by
+ * spaces, starting at `start`, and whose first cell is a stem and as many sibling variants
+ * (`stackedCellVariants`), the index of the price of the one variant the fee's name keeps. Null when
+ * the row is not that shape or the name keeps no variant, or more than one. Pure.
+ */
+function stackedVariantIndex(line: string, prices: MoneyToken[], start: number, nameWords: ReadonlySet<string>): number | null {
+  if (start !== 0 || prices.length < 2) return null;
+  const cells = line.split(CELL_SEPARATOR_PATTERN);
+  if (cells.length !== 2) return null;
+  const priceCellAt = line.indexOf("|");
+  if (line.slice(priceCellAt + 1, prices[0].start).trim() !== "" || line.slice(prices.at(-1)!.end).trim() !== "") return null;
+  for (let index = 1; index < prices.length; index += 1) {
+    if (!STACKED_PRICE_JOIN.test(line.slice(prices[index - 1].end, prices[index].start))) return null;
+  }
+  const list = stackedCellVariants(cells[0], prices.length);
+  if (!list) return null;
+  const variantWords = list.variants.map((variant) => comparable(variant).replace(/[^a-z0-9' ]/g, " ").split(" ").filter(Boolean));
+  const named = variantWords.map((parts, index) => ({ index, size: parts.length, named: parts.every((part) => nameWords.has(part)) })).filter((variant) => variant.named);
+  // "Non-Member" carries "Member": the name keeps the variant with the most of its words.
+  const most = Math.max(0, ...named.map((variant) => variant.size));
+  const kept = named.filter((variant) => variant.size === most);
+  return kept.length === 1 ? kept[0].index : null;
 }
 
 /**
