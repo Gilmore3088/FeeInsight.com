@@ -45,6 +45,17 @@ describe("tidyFeeName", () => {
     expect(tidyFeeName(raw)).toBe(expected);
   });
 
+  it.each([
+    // Review of f9b4865: the fee's own lowercase words ("per", "of", "for") never end the name.
+    ["If overdrawn Overdraft Fee per Item", "Overdraft Fee per Item"],
+    ["If closed within 90 days Early Closure of Account", "Early Closure of Account"],
+    ["Waived for members under 18 Withdrawal Fee for Excess Withdrawals", "Withdrawal Fee for Excess Withdrawals"],
+    ["If paid Overdraft Fee per Item Paid", "Overdraft Fee per Item Paid"],
+    ["If balance is under $1,500 Monthly Maintenance Fee for Business Checking Account Plus", "Monthly Maintenance Fee for Business Checking Account Plus"],
+  ])("v98: keeps the whole fee name after the condition %j", (raw, expected) => {
+    expect(tidyFeeName(raw)).toBe(expected);
+  });
+
   it("v98: keeps a name whose own words start with a condition word", () => {
     expect(tidyFeeName("Waived Fee Reversal")).toBe("Waived Fee Reversal");
     expect(tidyFeeName("If Paid Overdraft Fee")).toBe("If Paid Overdraft Fee");

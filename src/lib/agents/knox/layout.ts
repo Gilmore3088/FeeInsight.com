@@ -313,14 +313,17 @@ const CONDITION_CLAUSE = /^(?:If|When|Unless|Waived|Except|Excluding)\s+[a-z]/;
 const DURATION_LEAD = /^\d+\s*(?:minutes?|mins?|hours?|hrs?)\s+(?:minimum|maximum|min|max)\b\s+(?=[A-Z])/i;
 /** v98: a lowercase connector and its words ("and minimum ") left from the previous row. */
 const CONNECTOR_LEAD = /^(?:and|or|plus)\s+(?:[a-z][\w'’-]*\s+)*(?=[A-Z])/;
-/** The last lowercase word before a capitalised one: where a glued name starts. */
-const LOWER_THEN_CAPITAL = /\s[a-z][\w'’-]*\s+(?=[A-Z])/g;
-const MAX_TAIL_NAME_WORDS = 6;
+/**
+ * The first lowercase word or figure before a capitalised one: where the glued name starts. The
+ * first, not the last, so the name's own lowercase words ("Overdraft Fee per Item") stay in it.
+ */
+const LOWER_THEN_CAPITAL = /\s(?:[a-z][\w'’-]*|\$?\d[\d,.]*)\s+(?=[A-Z])/;
+const MAX_TAIL_NAME_WORDS = 10;
 
 /**
  * v98: the previous row's condition glued in front of this row's name in a long stored line
  * ("If the balance falls below on any day of the cycle Excess withdrawal", "30 minute minimum Wire
- * transfer outgoing", "and minimum Photocopies"). The name is the capitalised run after it. A name
+ * transfer outgoing", "and minimum Photocopies"). The name starts at its first capitalised word. A name
  * whose own words start with a condition word ("Waived Fee Reversal", "If Paid Overdraft Fee")
  * keeps them: a clause opens on a lowercase word.
  */
@@ -328,10 +331,9 @@ export function withoutLeadingCondition(name: string): string {
   const lead = name.match(DURATION_LEAD) ?? name.match(CONNECTOR_LEAD);
   if (lead) return name.slice(lead[0].length);
   if (!CONDITION_CLAUSE.test(name)) return name;
-  const breaks = [...name.matchAll(LOWER_THEN_CAPITAL)];
-  const last = breaks.at(-1);
-  if (!last || last.index == null) return name;
-  const tail = name.slice(last.index + last[0].length);
+  const first = name.match(LOWER_THEN_CAPITAL);
+  if (!first || first.index == null) return name;
+  const tail = name.slice(first.index + first[0].length);
   return tail.split(/\s+/).length <= MAX_TAIL_NAME_WORDS ? tail : name;
 }
 
