@@ -16,8 +16,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Decisions
 
-188 entries, newest first. The full text, who decided and why are in [DECISIONS.md](DECISIONS.md).
+189 entries, newest first. The full text, who decided and why are in [DECISIONS.md](DECISIONS.md).
 
+- 2026-10-22 — The second wave: Knox reads every stored document once more with today's rules (stale-read floor v78 to v97). — [decision](DECISIONS.md#2026-10-22)
 - 2026-10-21 — Targets of about 90% accuracy and 80% breadth; the shadow lab ratchet lets the pipeline move only one way. — [decision](DECISIONS.md#2026-10-21)
 - 2026-10-20 — A cancelled account keeps read-only access to its own reports. — [decision](DECISIONS.md#2026-10-20)
 - 2026-10-20 — Hosted report tokens are rotated and kept out of the repo. — [decision](DECISIONS.md#2026-10-20)
