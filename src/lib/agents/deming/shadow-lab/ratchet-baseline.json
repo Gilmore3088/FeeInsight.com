@@ -1294,6 +1294,8 @@
   "missed_fees:state:9308|publish|rush_card:5000",
   "missed_fees:state:9308|publish|safe_deposit_box:1800",
   "missed_fees:state:9308|publish|stop_payment:3500",
+  "missed_fees:state:9308|publish|wire_domestic_incoming:1000",
+  "missed_fees:state:9308|publish|wire_domestic_outgoing:2000",
   "missed_fees:texas:2429|publish|card_replacement:500",
   "missed_fees:texas:2429|publish|deposited_item_return:1000",
   "missed_fees:texas:2429|publish|document_reproduction:100",

@@ -12,6 +12,7 @@ export { withDroppedDecimalPoints };
 import { newestColumnText } from "@/lib/fee-change-columns";
 import { feeBullets, withoutFeeBullets } from "@/lib/custom-report/fee-bullets";
 import { isStackedFeeLabel } from "@/lib/custom-report/stacked-fee-prices";
+import { domesticStackedStem, stackedCellVariants } from "@/lib/custom-report/stacked-cell-variants";
 import { domesticWireClausePrices } from "@/lib/custom-report/wire-clause-prices";
 import type { OwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
 
@@ -1869,6 +1870,50 @@ export function labelPriceRow(cells: string[]): boolean {
 }
 
 /** Rules for one line. Exported for tests. */
+/**
+ * v103: a PDF row printing its sibling names stacked in one cell and their prices stacked in the next
+ * ("Wire Transfer (Within USA) Outgoing Incoming | $20.00 $10.00", State key 9308) reads each
+ * variant at the price in the same place: outgoing $20, incoming $10. Read as one row, the name
+ * carried both directions (Darwin refused it at category) and the second price was never read.
+ *
+ * Only the exact shape (`stackedCellVariants`): a row of two cells, the second only `count` prices
+ * apart by spaces (no unit, limit, range or other figure), the first a stem and `count` one-word
+ * variants of one family. A direction or a region must change the fee's category for every variant;
+ * a customer type must keep the fee's category for every variant. Every read must pass Darwin's
+ * checks, or none is made and the row is read as before.
+ *
+ * Review of 74e0df3: a variant's name ("Wire Fee Outgoing") is not printed on the page, so the #2278
+ * scope review (`internationalWireEligibility`) cannot find its row and lets it through as domestic,
+ * even under "INTERNATIONAL WIRE TRANSFERS". So a wire row is split only when its own stem says its
+ * wires are domestic ("Wire Transfer (Within USA)", "Domestic Wire") and names no other region
+ * (`domesticStackedStem`, which `stackedCellVariants` applies for the shared check too), and every
+ * variant files as a domestic wire; otherwise no variant is read. Pure.
+ */
+const STACKED_PRICE = String.raw`\$\s?\d{1,3}(?:,\d{3})*(?:\.\d{2})?`;
+const STACKED_PRICE_CELL = new RegExp(String.raw`^${STACKED_PRICE}(?:\s+${STACKED_PRICE})+$`);
+
+function stackedVariantReads(segment: string, cells: string[] | null, priceCount: number, frequency: string | null): ExtractedFeeCandidate[] | null {
+  if (!cells || cells.length !== 2 || !STACKED_PRICE_CELL.test(cells[1])) return null;
+  const prices = amountsIn(cells[1]);
+  if (prices.length !== priceCount) return null;
+  const list = stackedCellVariants(cells[0], prices.length);
+  if (!list) return null;
+  const reads = list.variants.map((variant, index) => {
+    const feeName = `${list.stem} ${variant}`;
+    const canonicalHint = classifyFeeText(feeName);
+    const amount = prices[index].value;
+    if (!canonicalHint || !usableName(feeName) || amount <= 0 || !passesDarwinChecks(canonicalHint, feeName, amount)) return null;
+    const read: ExtractedFeeCandidate = { feeName, amount, frequency, canonicalHint, confidence: confidenceFor(segment), excerpt: segment, waivable: false };
+    return read;
+  });
+  if (!reads.every((read): read is ExtractedFeeCandidate => read != null)) return null;
+  const wire = reads.some((read) => read.canonicalHint.startsWith("wire_"));
+  if (wire && (!domesticStackedStem(list.stem, list.variants) || reads.some((read) => !read.canonicalHint.startsWith("wire_domestic_")))) return null;
+  const categories = new Set(reads.map((read) => read.canonicalHint));
+  const expected = list.family === "customer" ? 1 : reads.length;
+  return categories.size === expected ? reads : null;
+}
+
 export function extractFromSegment(segment: string): ExtractionRulesResult {
   const result: ExtractionRulesResult = { candidates: [], held: [] };
   if (GENERIC_SCHEDULE_LANGUAGE.test(segment)) return result;
@@ -1877,6 +1922,12 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
   const amounts = amountsIn(segment);
   const frequency = detectFrequency(segment);
   const firstAmount = amounts[0];
+  // v103: a names cell stacked over a prices cell reads one fee per sibling variant (`stackedVariantReads`).
+  const stacked = stackedVariantReads(segment, cells, amounts.length, frequency);
+  if (stacked) {
+    result.candidates.push(...stacked);
+    return result;
+  }
   const prefix = firstAmount ? segment.slice(0, firstAmount.start) : segment;
   const name = usableName(nameFrom(prefix)) ? nameFrom(prefix) : nameFrom(segment);
   // Words after the price belong to the next fee, so they classify a line only when it

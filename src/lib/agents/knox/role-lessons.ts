@@ -446,4 +446,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-22",
   },
+  {
+    id: "stacked-cell-variants",
+    agent: "knox",
+    stage: "extract",
+    lesson: "A PDF row can print its sibling names stacked in one cell and their prices stacked in the next; the stored line runs them together (\"Wire Transfer (Within USA) Outgoing Incoming | $20.00 $10.00\"). Pair the names with the prices in order only when the names cell ends in exactly as many one-word siblings of one family (directions, regions or customer types) as the prices cell holds prices, and the prices cell holds nothing else. A direction or region must change the fee's category for every variant; a customer type must keep it. A variant's name is not printed on the page, so page-level checks that look for its row (the international-wire scope review) cannot see it: split a wire row only when its own stem says its wires are domestic, and refuse a stem that holds a word of the list's family. Never pair when the counts differ, the price cell carries a unit, limit or range, or the names are different fees. The shared check must trace each variant's own price on the stored text.",
+    why: "The shadow lab (Oct 22) counted about 25 answer-key misses on stacked cells, almost all in State key 9308 (St Cloud Financial CU). Read as one row, the wire line's name carried both directions, Darwin refused it at category, and the incoming $10 was never read. Most of the other stacked rows are not sibling lists (\"Cashier's Check For Paying Bills Stop Payment | $2.00 $10.00\") or their counts differ (a box table of 4 sizes and 2 other fees over 6 prices), and pairing them would publish wrong fees, as reviews of #2546, #2547 and #2548 found for looser rules. The first cut of #2549 published international wires as domestic under an \"INTERNATIONAL WIRE TRANSFERS\" heading, because the #2278 scope review found no printed row for a variant's name.",
+    evidence: { issues: [1026], prs: [2549], files: ["src/lib/custom-report/stacked-cell-variants.ts", "src/lib/agents/knox/rules.ts", "src/lib/custom-report/source-check.ts", "src/lib/agents/knox/stacked-cell-variants.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-22",
+  },
 ];
