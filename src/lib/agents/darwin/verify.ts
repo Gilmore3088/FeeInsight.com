@@ -879,7 +879,7 @@ export function verificationReasonCode(
   if (amount === 0) {
     return isExplicitZeroFee(amount, parseFlags(row.outlier_flags), ZERO_FEE_RAW_FLAG) ? null : "invalid_amount";
   }
-  const envelope = darwinEnvelopeFor(canonicalFeeKey, learnedEnvelopes);
+  const envelope = darwinEnvelopeFor(canonicalFeeKey, learnedEnvelopes, row.fee_name);
   if (amount < envelope.min || amount > envelope.max) return "outside_envelope";
   return null;
 }

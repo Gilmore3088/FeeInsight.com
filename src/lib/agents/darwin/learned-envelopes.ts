@@ -1,7 +1,7 @@
 import type { sql } from "@/lib/data-store/connection";
 import { inSavepoint } from "@/lib/agents/savepoint";
 
-import { CATEGORY_AMOUNT_ENVELOPES, DEFAULT_AMOUNT_ENVELOPE, type AmountEnvelope } from "./envelopes";
+import { CATEGORY_AMOUNT_ENVELOPES, DEFAULT_AMOUNT_ENVELOPE, handEnvelopeFor, type AmountEnvelope } from "./envelopes";
 
 type SqlTag = typeof sql;
 
@@ -50,8 +50,9 @@ export type EnvelopeSource = "hand" | "learned" | "default";
 export function darwinEnvelopeFor(
   canonicalFeeKey: string,
   learned: ReadonlyMap<string, LearnedEnvelope>,
+  feeName?: string | null,
 ): AmountEnvelope & { source: EnvelopeSource } {
-  const hand = CATEGORY_AMOUNT_ENVELOPES[canonicalFeeKey];
+  const hand = handEnvelopeFor(canonicalFeeKey, feeName);
   if (hand) return { ...hand, source: "hand" };
   const fromData = learned.get(canonicalFeeKey);
   if (fromData) return { min: fromData.min, max: fromData.max, source: "learned" };

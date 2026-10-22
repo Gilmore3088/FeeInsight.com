@@ -30,6 +30,15 @@ describe("Hamilton outlier rollback", () => {
     expect(parsed.monthly_maintenance).toEqual({ min: 1, max: 50 });
   });
 
+  it("leaves escheat processing inside its own range live, as Darwin verifies it", async () => {
+    const db = createDbMock([]);
+    await rollBackPublishedOutliers(asDb(db), { runId: 1, batchId: "b", dryRun: true });
+    const query = String(db.unsafe.mock.calls[0][0]);
+    expect(query).toContain("fp.canonical_fee_key = 'dormant_account'");
+    expect(query).toContain("fp.fee_name ~* '\\mescheat'");
+    expect(query).toContain("fp.amount BETWEEN 1 AND 150");
+  });
+
   it("explains which side of the range an amount fell on", () => {
     expect(outlierReason("monthly_maintenance", 1500)).toBe(
       "Amount $1,500 is above the monthly_maintenance range ($1-$50)",

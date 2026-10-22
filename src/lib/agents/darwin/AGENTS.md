@@ -1588,7 +1588,18 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v80 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v80 (Oct 20,
+- The guard is at v81 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v81 (Oct 22):
+  "Returned Check Deposit" and "Returned Item Deposit" name a returned deposited item (not one
+  followed by "bag"). It only admits names, so no fee that passes today fails. Found by the shadow
+  lab (#2536), where two answer-key fees ($5, $32) were refused.
+- Escheat processing (Oct 22): a dormant account fee whose own name says escheat is priced as a
+  one-time processing charge, $1 to $150 (`ESCHEAT_ENVELOPE` in `envelopes.ts`), not the $1 to $30
+  monthly dormant range. Darwin's verify, Knox's own check, the release of held rows, Hamilton's
+  publish range and the live outlier rollback all read it, so a fee verified in it is never rolled
+  back for it. The outlier restore is unchanged, so no fee rolled back before is restored by this.
+  Six answer-key escheat fees ($40 to $100) were refused before; a capped monthly dormant fee read
+  at its cap ("$5.00/$60.00") stays outside.
+- v80 (Oct 20,
   #1912, #1905): a PIN replacement is not the card replacement fee ("Debit card PIN number
   replacement" $5; "Card/PIN Replacement" still passes); a home equity line's stop payment fails
   stop payment unless the name also names a checking or other deposit account; a cash advance read

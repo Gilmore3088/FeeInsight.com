@@ -65,13 +65,28 @@ export const CATEGORY_AMOUNT_ENVELOPES: Readonly<Record<string, AmountEnvelope>>
 export const ZERO_FEE_RAW_FLAG = "knox_review:zero";
 export const ZERO_FEE_VERIFIED_FLAG = "zero_fee";
 
-export function amountEnvelopeFor(canonicalFeeKey: string): AmountEnvelope {
-  return CATEGORY_AMOUNT_ENVELOPES[canonicalFeeKey] ?? DEFAULT_AMOUNT_ENVELOPE;
+/**
+ * Escheatment (sending a dormant balance to the state) is filed as a dormant account fee but priced
+ * as a one-time processing charge: $40 to $100 in the shadow lab's answer keys (#2536), above the
+ * monthly dormant ceiling. Only a fee whose own name says escheat gets this range, so a capped
+ * monthly dormant fee read at its cap ("$5.00/$60.00") stays outside.
+ */
+export const ESCHEAT_NAME = /\bescheat/i;
+export const ESCHEAT_ENVELOPE: AmountEnvelope = { min: 1, max: 150 };
+
+/** The hand range for a fee, by its category and, for escheat processing, its own name. */
+export function handEnvelopeFor(canonicalFeeKey: string, feeName?: string | null): AmountEnvelope | undefined {
+  if (canonicalFeeKey === "dormant_account" && feeName && ESCHEAT_NAME.test(feeName)) return ESCHEAT_ENVELOPE;
+  return CATEGORY_AMOUNT_ENVELOPES[canonicalFeeKey];
+}
+
+export function amountEnvelopeFor(canonicalFeeKey: string, feeName?: string | null): AmountEnvelope {
+  return handEnvelopeFor(canonicalFeeKey, feeName) ?? DEFAULT_AMOUNT_ENVELOPE;
 }
 
 /** True when a positive amount sits inside its category's range (inclusive). */
-export function withinAmountEnvelope(canonicalFeeKey: string, amount: number): boolean {
-  const envelope = amountEnvelopeFor(canonicalFeeKey);
+export function withinAmountEnvelope(canonicalFeeKey: string, amount: number, feeName?: string | null): boolean {
+  const envelope = amountEnvelopeFor(canonicalFeeKey, feeName);
   return amount >= envelope.min && amount <= envelope.max;
 }
 
