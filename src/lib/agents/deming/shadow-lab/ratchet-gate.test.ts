@@ -7,7 +7,7 @@ import { assertOfflineEnv } from "./env-guard";
 /**
  * The ratchet gate (`npm run test:quality-gates`): today's pipeline replayed on the frozen cases
  * must still meet every expectation in `ratchet-baseline.json`, and any new one must be locked in.
- * After a change that meets more, refresh the baseline in the same PR:
+ * A missing baseline fails. After a change that meets more, refresh the baseline in the same PR:
  * `SHADOW_LAB_REBASE=1 npx vitest run src/lib/agents/deming/shadow-lab/ratchet-gate.test.ts`.
  * Losing an expectation on purpose needs the same refresh and a reason in the PR.
  */
@@ -44,9 +44,9 @@ describe("shadow lab ratchet gate", () => {
       const manifest = JSON.parse(readFileSync(MANIFEST_PATH, "utf8")) as Record<string, string>;
       const cases = applyManifest(loadScenarios(), manifest);
       const held = heldExpectations(cases, runAll(currentVariant, cases));
-      if (process.env.SHADOW_LAB_REBASE === "1" || !existsSync(BASELINE_PATH)) {
-        writeFileSync(BASELINE_PATH, `${JSON.stringify({ held }, null, 1)}\n`);
-      }
+      if (process.env.SHADOW_LAB_REBASE === "1") writeFileSync(BASELINE_PATH, `${JSON.stringify({ held }, null, 1)}\n`);
+      // A missing baseline fails rather than regenerating, so deleting it can't pass the gate.
+      expect(existsSync(BASELINE_PATH), "ratchet-baseline.json is missing: restore it, or rebuild it with SHADOW_LAB_REBASE=1").toBe(true);
       const baseline = JSON.parse(readFileSync(BASELINE_PATH, "utf8")) as { held: string[] };
       const { regressions, gains } = compareToBaseline(baseline, held);
 
