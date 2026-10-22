@@ -1,4 +1,6 @@
 import { gateReadKey } from "@/lib/agents/knox/answer-key-gate";
+import { publishedFeeName } from "@/lib/agents/hamilton/publish";
+import { nameMatches } from "./names";
 import { SCENARIO_IDS, STAGE_IDS, type CaseTrace, type FeeRef, type ScenarioId, type ShadowCase, type StageFee, type StageId } from "./types";
 
 /**
@@ -8,7 +10,7 @@ import { SCENARIO_IDS, STAGE_IDS, type CaseTrace, type FeeRef, type ScenarioId, 
  */
 
 export type FailureStage = StageId | "passed_every_stage";
-export type FailureKind = "missed" | "false_publication" | "duplicate" | "wrong_document";
+export type FailureKind = "missed" | "false_publication" | "duplicate" | "wrong_document" | "wrong_name";
 
 export interface Failure {
   caseKey: string;
@@ -32,12 +34,23 @@ export interface VariantMetrics {
   duplicatePrevention: { cases: number; correct: number } & Rate;
   sourceAttribution: { published: number; attributed: number } & Rate;
   documentGate: { cases: number; correct: number };
+  /** Published fees with an expected name whose published name matches it (`names.ts`). */
+  names: { expected: number; matched: number } & Rate;
   unexpectedPublications: number;
   failuresByStage: Record<FailureStage, number>;
-  byScenario: Record<ScenarioId, { cases: number; failures: number }>;
+  byScenario: Record<ScenarioId, ScenarioScore>;
   failures: Failure[];
   providerCalls: number;
   costMicrousd: number;
+}
+
+export interface ScenarioScore {
+  cases: number;
+  failures: number;
+  expected: number;
+  found: number;
+  forbidden: number;
+  published: number;
 }
 
 const ratio = (part: number, whole: number): number | null => (whole === 0 ? null : part / whole);
@@ -110,6 +123,11 @@ function whereDuplicate(
   return { kind: "duplicate", stage: extracted >= target.count ? "verify" : "extract" };
 }
 
+/** The name the fee would go live under, as Hamilton's publish step sets it. */
+function publishedName(fee: StageFee): string {
+  return publishedFeeName(fee.feeName ?? "", fee.canonicalFeeKey ?? "");
+}
+
 export function scoreRun(cases: ShadowCase[], traces: CaseTrace[], providerCalls: number): VariantMetrics {
   const byKey = new Map(traces.map((trace) => [trace.caseKey, trace]));
   const failures: Failure[] = [];
@@ -121,15 +139,24 @@ export function scoreRun(cases: ShadowCase[], traces: CaseTrace[], providerCalls
     duplicatePrevention: { cases: 0, correct: 0, rate: null },
     sourceAttribution: { published: 0, attributed: 0, rate: null },
     documentGate: { cases: 0, correct: 0 },
+    names: { expected: 0, matched: 0, rate: null },
     unexpectedPublications: 0,
     failuresByStage: Object.fromEntries([...STAGE_IDS, "passed_every_stage"].map((id) => [id, 0])) as Record<FailureStage, number>,
-    byScenario: Object.fromEntries(SCENARIO_IDS.map((id) => [id, { cases: 0, failures: 0 }])) as VariantMetrics["byScenario"],
+    byScenario: Object.fromEntries(
+      SCENARIO_IDS.map((id) => [id, { cases: 0, failures: 0, expected: 0, found: 0, forbidden: 0, published: 0 }]),
+    ) as VariantMetrics["byScenario"],
     failures,
     providerCalls,
     costMicrousd: 0,
   };
   const fail = (c: ShadowCase, kind: FailureKind, stage: FailureStage, fee: FeeRef, reason: string | null) =>
     failures.push({ caseKey: c.caseKey, scenario: c.scenario, kind, stage, fee, reason });
+  // A fee published at the right price under a name that does not match is a name failure.
+  const scoreName = (c: ShadowCase, ref: FeeRef, expected: string, found: StageFee[]) => {
+    m.names.expected += 1;
+    if (found.some((fee) => nameMatches(expected, publishedName(fee)))) m.names.matched += 1;
+    else fail(c, "wrong_name", "passed_every_stage", ref, publishedName(found[0]));
+  };
 
   for (const c of cases) {
     if (c.status === "corrupt") m.cases.corrupt += 1;
@@ -147,12 +174,17 @@ export function scoreRun(cases: ShadowCase[], traces: CaseTrace[], providerCalls
     if (c.document.text == null) continue;
 
     const answerKey = c.scenario === "missed_fees";
+    const scenario = m.byScenario[c.scenario];
     for (const ref of c.expected.publish) {
       m.recall.expected += 1;
+      scenario.expected += 1;
       if (answerKey) m.answerKeyRecall.expected += 1;
-      if (trace.published.some((fee) => matches(ref, fee))) {
+      const found = trace.published.filter((fee) => matches(ref, fee));
+      if (found.length > 0) {
         m.recall.found += 1;
+        scenario.found += 1;
         if (answerKey) m.answerKeyRecall.found += 1;
+        if (ref.expectedName) scoreName(c, ref, ref.expectedName, found);
       } else {
         const lost = whereMissed(ref, trace);
         fail(c, "missed", lost.stage, ref, lost.reason);
@@ -160,8 +192,10 @@ export function scoreRun(cases: ShadowCase[], traces: CaseTrace[], providerCalls
     }
     for (const ref of c.expected.forbid) {
       m.falsePublication.forbidden += 1;
+      scenario.forbidden += 1;
       if (trace.published.some((fee) => matches(ref, fee))) {
         m.falsePublication.published += 1;
+        scenario.published += 1;
         fail(c, "false_publication", "passed_every_stage", ref, null);
       }
     }
@@ -188,5 +222,6 @@ export function scoreRun(cases: ShadowCase[], traces: CaseTrace[], providerCalls
   m.falsePublication.rate = ratio(m.falsePublication.published, m.falsePublication.forbidden);
   m.duplicatePrevention.rate = ratio(m.duplicatePrevention.correct, m.duplicatePrevention.cases);
   m.sourceAttribution.rate = ratio(m.sourceAttribution.attributed, m.sourceAttribution.published);
+  m.names.rate = ratio(m.names.matched, m.names.expected);
   return m;
 }

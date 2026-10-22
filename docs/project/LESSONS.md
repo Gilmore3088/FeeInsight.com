@@ -16,8 +16,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Decisions
 
-189 entries, newest first. The full text, who decided and why are in [DECISIONS.md](DECISIONS.md).
+190 entries, newest first. The full text, who decided and why are in [DECISIONS.md](DECISIONS.md).
 
+- 2026-10-22 — Data-quality work has an executive owner: its decisions, HOLD-class ones included, proceed after an independent exact-head review and green CI; CLAUDE.md hard limits still apply. — [decision](DECISIONS.md#2026-10-22)
 - 2026-10-22 — The second wave: Knox reads every stored document once more with today's rules (stale-read floor v78 to v97). — [decision](DECISIONS.md#2026-10-22)
 - 2026-10-21 — Targets of about 90% accuracy and 80% breadth; the shadow lab ratchet lets the pipeline move only one way. — [decision](DECISIONS.md#2026-10-21)
 - 2026-10-20 — A cancelled account keeps read-only access to its own reports. — [decision](DECISIONS.md#2026-10-20)
@@ -211,7 +212,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-253 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+254 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
 ### Extraction and fee reading (34)
 
@@ -492,8 +493,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A shared log that every PR appends to at the same spot needs one file per entry. — [finding](findings/2026-10-09-findings-md-merge-conflicts.md) — Guard: `scripts/ci-guards.sh findings-file-kill`
 - 2026-10-09 — Backlog Node checks were accidentally discovered by application Vitest. — [finding](findings/2026-10-09-backlog-node-test-discovery.md) — Guard: `src/lib/vitest-collection.test.ts:26` (+2 more)
 
-### Agent process, learning and measurement (15)
+### Agent process, learning and measurement (16)
 
+- 2026-10-22 — Replay each weekly live audit in the shadow lab: most live errors start at extraction, and wrong names pass every stage. — [finding](findings/2026-10-22-live-audit-replay.md) — Guard: `src/lib/agents/deming/shadow-lab/ratchet-gate.test.ts` (live_audit expectations in `ratchet-baseline.json`)
 - 2026-10-21 — Before fixing a batch of live fees, replay the frozen sources and fix the stage where the failures start. — [finding](findings/2026-10-21-pipeline-shadow-lab-first-run.md) — Guard: `npm run test:shadow-lab`
 - 2026-10-20 — A data-quality check has to use the same identity as the step that repairs the problem, or its alarm can never clear. — [finding](findings/2026-10-20-duplicate-check-counted-shared-prices.md) — Guard: `src/lib/agents/deming/data-quality.db.test.ts`
 - 2026-10-20 — The answer-key eligibility gate admitted none of the 62 confirmed keys. — [finding](findings/2026-10-20-answer-key-eligibility-admits-none.md) — Agent lesson: deming/issue-2466-reference-binding

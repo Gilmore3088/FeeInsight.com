@@ -40,7 +40,7 @@ describe.skipIf(!OUT)("pipeline shadow lab", () => {
     "should_replay_both_variants_identically_with_no_provider_calls",
     async () => {
       assertOfflineEnv();
-      const { applyManifest, freezeManifest, loadScenarios, FIXTURE_PATHS, NOT_REPLAYABLE } = await import("./scenarios");
+      const { applyManifest, freezeManifest, loadScenarios, notReplayable, FIXTURE_PATHS } = await import("./scenarios");
       const { currentVariant, experimentalVariant, selectExperiment } = await import("./variants");
       const { runAll } = await import("./run-case");
       const { compareRuns, comparisonJson } = await import("./compare");
@@ -73,7 +73,7 @@ describe.skipIf(!OUT)("pipeline shadow lab", () => {
           category_guard: `v${CATEGORY_GUARD_VERSION}`,
         },
         fixtures: FIXTURE_PATHS.map((path) => ({ path, sha256: createHash("sha256").update(readFileSync(path)).digest("hex") })),
-        notReplayable: NOT_REPLAYABLE,
+        notReplayable: notReplayable(),
         current: runVariant(currentVariant),
         experimental: { ...runVariant(experimental), config },
       });

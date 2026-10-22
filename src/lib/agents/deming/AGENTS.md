@@ -270,6 +270,29 @@ first stage that got it wrong.
   `SHADOW_LAB_REBASE=1 npx vitest run src/lib/agents/deming/shadow-lab/ratchet-gate.test.ts` in the
   same PR. Losing one on purpose takes the same refresh and a reason in the PR (DECISIONS,
   2026-10-21).
+- The `live_audit` cases replay a weekly live accuracy audit (#2064; W43 in
+  `__fixtures__/live-audit-2026-w43.json`, mapped in `shadow-lab/live-audit.ts`). One case is one
+  saved source text the audit names. Each audit row adds expectations by its verdict:
+  - MATCH: publish at the live category and price, under a name that matches the live name.
+  - BAD_NAME: publish at the live category and price, under the corrected name. A correction that
+    is an instruction ("Name the account") gives no name.
+  - MISSING: publish at the corrected (or audited) category and the schedule's one dollar figure.
+  - WRONG_AMOUNT: forbid the live price and expect the schedule's one figure. When the schedule
+    states the live price, forbid it only without its hourly or half-hour unit. Otherwise the row
+    is a tier or condition error the lab does not score.
+  - WRONG_CATEGORY and NOT_A_FEE: forbid the live category and price, and expect a canonical
+    correction.
+  - A category and price another matched row confirms in the same schedule is never forbidden.
+    STALE_SOURCE, WRONG_DOCUMENT, WRONG_AUDIENCE and CANT_VERIFY rows, rows with no saved text,
+    rates and multi-figure amounts are counted under "Not replayable" by verdict and reason.
+  "Names: published fees whose name matches the schedule" scores the publish-time name
+  (`shadow-lab/names.ts`): at least half the expected name's own words, and no leading cut or
+  condition fragment.
+- To add the next weekly audit: derive a new `__fixtures__/live-audit-<year>-w<week>.json` from
+  the audit CSV by hand, in the same shape: `about` with source, date and per-verdict counts;
+  `documents` with each saved source text; `rows` without notes or local paths. Commit only the
+  JSON, never a script in `scripts/`. Point `live-audit.ts` at it (or read both), refreeze, and
+  lock the gains in with `SHADOW_LAB_REBASE=1`. Check that the baseline diff only adds lines.
 - The `missed_fees` cases read holdout answer keys. Use them to see which stage loses fees. Write
   and test a rule against tuning keys or new fixtures, never against holdout text.
 

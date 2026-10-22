@@ -4,6 +4,7 @@ import { gunzipSync } from "node:zlib";
 import { hashText } from "@/lib/agents/rosetta/read";
 import { gateKeyFor, type AnswerKeyDocument } from "@/lib/agents/knox/answer-key-gate";
 import { W43_HOURLY_LINE_ROWS } from "@/lib/agents/darwin/hourly-frequency-check.fixtures";
+import { LIVE_AUDIT_FIXTURE, liveAuditCases, liveAuditNotReplayable, readLiveAudit } from "./live-audit";
 import { toCents } from "./rows";
 import type { FeeRef, ScenarioId, ShadowCase } from "./types";
 
@@ -19,6 +20,7 @@ const FIXTURES = {
   hourly: "src/lib/agents/darwin/hourly-frequency-check.fixtures.ts",
   texasKeys: "src/lib/agents/knox/__fixtures__/texas-answer-keys.json.gz",
   stateKeys: "src/lib/agents/knox/__fixtures__/state-answer-keys.json.gz",
+  liveAudit: LIVE_AUDIT_FIXTURE,
 } as const;
 
 export const FIXTURE_PATHS: readonly string[] = Object.values(FIXTURES);
@@ -156,9 +158,15 @@ function answerKeyCases(root: string): ShadowCase[] {
 }
 
 export function loadScenarios(root: string = process.cwd()): ShadowCase[] {
-  return [...adversarialCases(root), ...hardDocumentCases(root), ...hourlyCases(), ...answerKeyCases(root)].sort((a, b) =>
+  const live = liveAuditCases(readLiveAudit(root));
+  return [...adversarialCases(root), ...hardDocumentCases(root), ...hourlyCases(), ...answerKeyCases(root), ...live].sort((a, b) =>
     a.caseKey < b.caseKey ? -1 : a.caseKey > b.caseKey ? 1 : 0,
   );
+}
+
+/** Every known failure the lab does not replay: the listed issues and the live audit's unscored rows. */
+export function notReplayable(root: string = process.cwd()): { issue: string; failure: string; reason: string }[] {
+  return [...NOT_REPLAYABLE, ...liveAuditNotReplayable(readLiveAudit(root))];
 }
 
 /** The frozen-input manifest: each case's input hash, so a later run replays the same inputs. */

@@ -133,6 +133,22 @@ describe("shadow lab metrics", () => {
     expect(metrics.answerKeyRecall).toEqual({ expected: 1, found: 0, rate: 0 });
   });
 
+  it("should_score_names_only_on_published_fees_with_an_expected_name", () => {
+    const named: FeeRef = { ...want, expectedName: "Insufficient funds item fee" };
+    const c = makeCase({ publish: [named, { ...want, amountCents: 3500, expectedName: "NSF fee" }] }, { scenario: "live_audit", caseKey: "live_audit:a" });
+    const good = scoreRun([c], [makeTrace(c, {}, [nsf(3000, { feeName: "Insufficient Funds Item" })])], 0);
+    expect(good.names).toEqual({ expected: 1, matched: 1, rate: 1 });
+    const cut = scoreRun([c], [makeTrace(c, {}, [nsf(3000, { feeName: "if insufficient funds" })])], 0);
+    expect(cut.names).toEqual({ expected: 1, matched: 0, rate: 0 });
+    expect(cut.failures.filter((f) => f.kind === "wrong_name")).toMatchObject([{ stage: "passed_every_stage" }]);
+  });
+
+  it("should_score_recall_and_false_publication_per_scenario", () => {
+    const c = makeCase({ publish: [want], forbid: [{ ...want, amountCents: 2500 }] }, { scenario: "live_audit", caseKey: "live_audit:a" });
+    const metrics = scoreRun([c], [makeTrace(c, {}, [nsf(2500)])], 0);
+    expect(metrics.byScenario.live_audit).toEqual({ cases: 1, failures: 2, expected: 1, found: 0, forbidden: 1, published: 1 });
+  });
+
   it("should_not_call_a_coincidental_same_price_read_a_misfile", () => {
     const ref: FeeRef = { canonicalFeeKey: "wire_domestic_outgoing", feeName: null, amountCents: 2500, sourceLine: "Outgoing domestic wire transfer ... $25.00" };
     const c = makeCase({ publish: [ref] });
