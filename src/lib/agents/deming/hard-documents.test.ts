@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import fixture from "./__fixtures__/hard-documents.json";
+import { verifiedRow } from "./shadow-lab/rows";
 import {
   decidePriorFee,
   linesApartOnPage,
@@ -82,29 +83,6 @@ interface HardDocuments {
 
 const hard = fixture as unknown as HardDocuments;
 const PRODUCT_PAGE_SKIP = "Read from a product page's benefits, not a fee schedule";
-
-/** A verified row as the publish step reads it, for one line of a stored document. */
-function verifiedRow(input: { canonical_fee_key: string; fee_name: string; amount: string; source_document_id: number }, extra: Partial<VerifiedFeeRow> = {}): VerifiedFeeRow {
-  return {
-    fee_verified_id: 1,
-    fee_raw_id: 1,
-    institution_id: 1,
-    source_url: "https://bank.example/fees",
-    document_r2_key: null,
-    extraction_confidence: 0.95,
-    canonical_fee_key: input.canonical_fee_key,
-    variant_type: null,
-    outlier_flags: ["agentic_darwin_verified"],
-    verified_by_agent_event_id: "00000000-0000-4000-8000-000000000001",
-    fee_name: input.fee_name,
-    amount: input.amount,
-    frequency: null,
-    raw_agent_event_id: null,
-    source_document_id: input.source_document_id,
-    fee_audience: "unknown",
-    ...extra,
-  };
-}
 
 /** What the publish step decides for `row` beside the live `prior` at the same price on the same page. */
 function samePriceDecision(item: SamePriceCase): string {
