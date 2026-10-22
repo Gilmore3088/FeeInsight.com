@@ -245,6 +245,28 @@ institutions remains the only human launch workflow.
 - The step detail (`review`) is the history: last month is read back from the newest earlier
   ledger row. Read-only, deterministic, no model calls, pause-exempt.
 
+## Shadow lab
+
+`npm run test:shadow-lab` replays frozen source texts from committed fixtures through today's pure
+stages: the document gate, Knox's free read, Darwin's per-row verify checks and Hamilton's publish
+gate. It also replays one experiment (`SHADOW_LAB_EXPERIMENT`, default `hourly-at-verify`; see
+`EXPERIMENTS` in `shadow-lab/variants.ts`) on the same inputs. It writes
+`test-results/shadow-lab/comparison.json` and `report.md`. Each failed expectation is charged to the
+first stage that got it wrong.
+- It runs offline: it stops if `DATABASE_URL` or `E2E_DATABASE_URL` is set, and every
+  `ai-provider` call is refused and counted.
+- It measures and never gates. CI's unit shards run only its fast tests, and no rate has a
+  threshold.
+- No production path changes on its evidence alone: switching an experiment on is its own PR, with
+  Darwin's live re-check and a dry-run count.
+- `shadow-lab/frozen-inputs.json` pins each case's input hash, and a changed input is left out as
+  corrupt. After a deliberate fixture change, refreeze with
+  `SHADOW_LAB_FREEZE=1 npm run test:shadow-lab`.
+- To add a scenario, map a committed fixture to cases in `shadow-lab/scenarios.ts`. Never invent
+  text: a failure with no committed source text goes in `NOT_REPLAYABLE`.
+- The `missed_fees` cases read holdout answer keys. Use them to see which stage loses fees. Write
+  and test a rule against tuning keys or new fixtures, never against holdout text.
+
 ## Boundaries
 
 - Deming never writes fee rows, flags or takedowns. It reads `pipeline_feedback` and the fee tiers.
@@ -266,6 +288,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DATA_QUALITY_VERSION` | — | v1 | `deming/data-quality.ts` |
 | `KNOX_MISSES_VERSION` | — | v1 | `deming/knox-misses.ts` |
 | `MONTHLY_REVIEW_VERSION` | — | v1 | `deming/monthly-review.ts` |
+| `SHADOW_LAB_VERSION` | — | v1 | `deming/shadow-lab/compare.ts` |
 
 ### Prospective corrective source contexts (#2064, protocol 2)
 

@@ -157,6 +157,7 @@ export function renderReport(comparison: Comparison): string {
     "",
     "- The read stage (PDF and HTML to text) is not replayed: the fixtures store text after Rosetta's read.",
     "- No database stage was needed: duplicate prevention is replayed with the pure prior-fee decision.",
+    "- Parts that read the database are not replayed: Darwin's learned envelopes, peer check and same-batch duplicates, and Knox's stored lessons.",
     "- Answer keys may be incomplete, so a published fee not in a key is counted, not called an error.",
     "- Later live sweeps (for example Darwin's hourly pass) are not part of these stages.",
     "",

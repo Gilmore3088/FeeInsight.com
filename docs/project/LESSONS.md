@@ -209,7 +209,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-251 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+252 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
 ### Extraction and fee reading (33)
 
@@ -489,8 +489,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A shared log that every PR appends to at the same spot needs one file per entry. — [finding](findings/2026-10-09-findings-md-merge-conflicts.md) — Guard: `scripts/ci-guards.sh findings-file-kill`
 - 2026-10-09 — Backlog Node checks were accidentally discovered by application Vitest. — [finding](findings/2026-10-09-backlog-node-test-discovery.md) — Guard: `src/lib/vitest-collection.test.ts:26` (+2 more)
 
-### Agent process, learning and measurement (14)
+### Agent process, learning and measurement (15)
 
+- 2026-10-21 — Before fixing a batch of live fees, replay the frozen sources and fix the stage where the failures start. — [finding](findings/2026-10-21-pipeline-shadow-lab-first-run.md) — Guard: `npm run test:shadow-lab`
 - 2026-10-20 — A data-quality check has to use the same identity as the step that repairs the problem, or its alarm can never clear. — [finding](findings/2026-10-20-duplicate-check-counted-shared-prices.md) — Guard: `src/lib/agents/deming/data-quality.db.test.ts`
 - 2026-10-20 — The answer-key eligibility gate admitted none of the 62 confirmed keys. — [finding](findings/2026-10-20-answer-key-eligibility-admits-none.md) — Agent lesson: deming/issue-2466-reference-binding
 - 2026-10-19 — Define the weekly live sampling and repair protocol. — [finding](findings/2026-10-19-weekly-live-accuracy-plan.md) — no Guard or Agent lesson named
