@@ -13,6 +13,7 @@
  * point to.
  */
 
+import { asReadBoxName } from "./box-size-name";
 import { conflictsWithAudienceStatement, feeApplicability, scopedFeeStatements } from "@/lib/fee-audience";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
 import { newestColumnText } from "@/lib/fee-change-columns";
@@ -1305,6 +1306,21 @@ export function checkFeeAgainstSource(
   categoryPattern: string,
   canonicalFeeKey?: string | null,
   options: SourceCheckOptions = {},
+): SourceCheckResult {
+  const result = checkOwnName(rawText, feeName, amount, categoryPattern, canonicalFeeKey, options);
+  // W43 live audit (#2064): Knox names a box row printed as its size alone "Safe Deposit Box <size>"
+  // (`boxSizeNamed`); the row is traced by its own words.
+  const asRead = result.ok ? null : asReadBoxName(feeName);
+  return asRead ? checkOwnName(rawText, asRead, amount, categoryPattern, canonicalFeeKey, options) : result;
+}
+
+function checkOwnName(
+  rawText: string | null | undefined,
+  feeName: string,
+  amount: number,
+  categoryPattern: string,
+  canonicalFeeKey: string | null | undefined,
+  options: SourceCheckOptions,
 ): SourceCheckResult {
   const result = checkFeeAgainstSourceText(rawText, feeName, amount, categoryPattern, canonicalFeeKey, options);
   if (!result.ok || !rawText) return result;

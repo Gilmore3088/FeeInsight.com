@@ -75,7 +75,42 @@ describe("tidyFeeName", () => {
   });
 
   it("keeps the raw name when tidying would leave nothing usable", () => {
-    expect(tidyFeeName("3 x 5")).toBe("3 x 5");
+    expect(tidyFeeName("| $")).toBe("| $");
+  });
+
+  it.each([
+    // v99 (W43 live audit, #2064): a box size read as the whole name, under a box heading the
+    // name never carried, is a safe deposit box's size.
+    ["10x10 Annual Fee", "Safe Deposit Box 10x10 Annual Fee"],
+    ["2x5 Annual Fee", "Safe Deposit Box 2x5 Annual Fee"],
+    ["3 x 5", "Safe Deposit Box 3 x 5"],
+    ["10 x 10", "Safe Deposit Box 10 x 10"],
+    ["10X10", "Safe Deposit Box 10X10"],
+    ["3×10:", "Safe Deposit Box 3×10"],
+    ['Large (10"x10")', 'Safe Deposit Box Large (10"x10")'],
+    ['Small (5"x5")', 'Safe Deposit Box Small (5"x5")'],
+    ["3” x 10” x 22” Box", "Safe Deposit Box 3” x 10” x 22”"],
+    ['Size 2"x5"x21"', 'Safe Deposit Box Size 2"x5"x21"'],
+    ["Box 3x5 Annual Rent", "Safe Deposit Box 3x5 Annual Rent"],
+  ])("v99: names a bare box size as a safe deposit box %j", (raw, expected) => {
+    expect(tidyFeeName(raw)).toBe(expected);
+  });
+
+  it.each([
+    // A name that already says what the box is, or names something besides a size, keeps its words.
+    "Safe Deposit Box 3 x 5",
+    "Safe Deposit Box Rental 2\"x5\"x21\"",
+    "Lock Box 3x5",
+    "Safety Deposit 5x10",
+    "Drilling",
+    "Key Replacement",
+    "Night Deposit Bag 10x12",
+    "Check Printing 2 x 5",
+    "2 – Paper Statement Fee",
+    // A footnote number after the size is Hamilton's to drop (`withoutNeighbourCell`).
+    "3x10” 8",
+  ])("v99: leaves %j as it is", (raw) => {
+    expect(tidyFeeName(raw)).toBe(raw);
   });
 });
 

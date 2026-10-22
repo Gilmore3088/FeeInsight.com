@@ -192,7 +192,12 @@ import { belongsToPaidReturnedUnit, paidReturnedUnits } from "@/lib/custom-repor
 // minimum Photocopies") is dropped (`withoutLeadingCondition` in `tidyFeeName`). Names only: the shadow
 // lab's numbers and the Texas and state gates are unchanged. The stale-read floor stays at v97. Name
 // re-tidy stays at v26 (no fleet-wide live rename without a dry-run count).
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 98 } as const;
+// v99 (W43 live audit, #2064): a box size read as the whole name ("10x10 Annual Fee", "3 x 10",
+// 'Large (10"x10")') is named "Safe Deposit Box <size>" (`boxSizeNamed` in `tidyFeeName`); the shared
+// source check and Hamilton's same-line check read it by the row's own words (`asReadBoxName`).
+// Shadow lab names 287 -> 313 of 317; recall, false publication, Texas and state gates unchanged. The
+// stale-read floor stays at v97. Name re-tidy stays at v26.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 99 } as const;
 
 export interface SpecialistRun {
   strategy: string;

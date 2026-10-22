@@ -406,4 +406,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-20",
   },
+  {
+    id: "issue-2064-box-size-names",
+    agent: "knox",
+    stage: "extract",
+    lesson: "A row that prints only a size under a box heading (\"10x10 Annual Fee\", \"3 x 10\", 'Large (10\"x10\")') is a safe deposit box: name it \"Safe Deposit Box\" and the row's own words. A name that adds words the row does not print must still trace by the row's own words in every check that looks for it on the page.",
+    why: "The W43 live audit's replay found 26 safe deposit boxes live under their size alone; the first fix renamed them but the self-check could not find the new name on the page and lost 30 answer-key fees.",
+    evidence: { issues: [2064], prs: [], files: ["src/lib/custom-report/box-size-name.ts", "src/lib/agents/knox/layout.ts", "src/lib/custom-report/source-check.ts", "src/lib/agents/hamilton/publish.ts"] },
+    appliesTo: "all",
+    since: "2026-10-22",
+  },
 ];

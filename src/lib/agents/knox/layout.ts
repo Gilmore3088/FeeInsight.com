@@ -1,4 +1,5 @@
 import { withinAmountEnvelope } from "@/lib/agents/darwin/envelopes";
+import { boxSizeNamed } from "@/lib/custom-report/box-size-name";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
 import { MAX_REASONABLE_FEE_AMOUNT, nameFrom, stripFootnoteMarks, usableName, VARIES_PRICE } from "@/lib/agents/knox/rules";
 
@@ -240,8 +241,10 @@ function trimEnd(name: string): string {
  * The fee name a reader sees: table separators, dot leaders, bullets and the unit or
  * list-marker fragments of neighbouring cells removed. Category, price and the excerpt
  * (the evidence) are untouched. Returns the input when tidying would leave no usable name.
+ * `nameBoxSize: false` leaves a bare box size as read: name re-tidy (v26) does not rename live
+ * box names without a dry-run count.
  */
-export function tidyFeeName(raw: string): string {
+export function tidyFeeName(raw: string, options: { nameBoxSize?: boolean } = {}): string {
   // v93 (#1828): a cell that is a row priced in words ("Check Orders .. Prices Vary | Duplicate Lien
   // Release", "Reconveyance .. Actual Cost: Returned payment") is the row before this fee's, so the
   // name starts after it.
@@ -304,6 +307,9 @@ export function tidyFeeName(raw: string): string {
   const wrapped = name.match(/^\(([^()]+)\)$/);
   if (wrapped) name = wrapped[1].trim();
   name = withoutLeadingCondition(name);
+  // v99 (W43 live audit, #2064): a box size read as the whole name ("10x10 Annual Fee") is a safe
+  // deposit box's; the box heading above it is not on its line.
+  if (options.nameBoxSize !== false) name = boxSizeNamed(name);
   return usableName(name) ? name : raw.trim();
 }
 

@@ -1320,6 +1320,15 @@ describe("decidePriorFee", () => {
     expect(linesApartOnPage("Check Copy $2.50 Stop Payment $2.00", "Check Copy", "Stop Payment", "2.50")).toBe(false);
   });
 
+  it("finds a box Knox named by its size apart from another line at its price (W43 live audit, #2064)", () => {
+    // Knox v99 names "5x5 Annual Fee: $25.00" "Safe Deposit Box 5x5 Annual Fee"; the page prints the row's own words.
+    const boxes = "Self Storage Lease Boxes 3x5 Annual Fee: $20.00 5x5 Annual Fee: $25.00 Drilling: Actual Cost Key Replacement: $25.00";
+    expect(linesApartOnPage(boxes, "Key Replacement", "Safe Deposit Box 5x5 Annual Fee", "25")).toBe(true);
+    expect(linesApartOnPage(boxes, "Safe Deposit Box 5x5 Annual Fee", "Key Replacement", "25")).toBe(true);
+    // The same box read twice is one line.
+    expect(linesApartOnPage(boxes, "Safe Deposit Box 5x5 Annual Fee", "5x5 Annual Fee", "25")).toBe(false);
+  });
+
   // #1314 dry run (prod pages, read-only, Oct 15): a pass needs a place of one name clear of every
   // place of the other, and a price that is not another field's value.
   it("needs the shorter name printed at the price clear of every place of the longer (#1314)", () => {

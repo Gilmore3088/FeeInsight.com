@@ -24,6 +24,7 @@ import { paidReturnedCandidateProof, PAID_RETURNED_EVENT_FLAG, PAID_RETURNED_ELI
 import { matchOriginalRawSource, withLockedSourcePrefix } from "../darwin/locked-raw-source";
 import { limitGuardVerdict } from "@/lib/agents/hamilton/limit-guard";
 import { repairNameShape, tidyFeeName } from "@/lib/agents/knox/layout";
+import { asReadBoxName } from "@/lib/custom-report/box-size-name";
 import { classifyFeeText, stripFootnoteMarks } from "@/lib/agents/knox/rules";
 import { dropsCondition, isCutoffName, nameBeforeSentenceClauses, retidiedFeeName } from "@/lib/agents/knox/name-retidy";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
@@ -1589,8 +1590,10 @@ function pageReader(
   // first digits of a larger amount ("$10,000" is not $10) (#1314).
   const follows = new RegExp(`^ ((?:(?!of |deposit )[a-z0-9]+ ){0,6}?)${price} (?!\\d{3} )`);
   const page = pageWords(text);
+  // A box Knox named by its size ("Safe Deposit Box 5x5 Annual Fee", v99) is printed as the row's own words.
+  const ownWords = (name: string) => pageWords(asReadBoxName(name) ?? name);
   const printed = (name: string): PagePlace[] => {
-    const words = pageWords(name).trim();
+    const words = ownWords(name).trim();
     if (!words) return [];
     const mark = /[a-z]$/.test(words) ? "(?:\\d{1,2})?" : "";
     const pattern = new RegExp(`(?<= )${escapeRegExp(words)}${mark}(?= )`, "g");
@@ -1603,8 +1606,8 @@ function pageReader(
   // Checking"): a place whose words before the price hold the other name is a heading over that
   // line and does not count.
   const places = (name: string, other?: string) => {
-    const nameWords = pageWords(name);
-    const otherWords = other ? pageWords(other) : null;
+    const nameWords = ownWords(name);
+    const otherWords = other ? ownWords(other) : null;
     const heads = otherWords != null && otherWords.length > nameWords.length && nameWords.trim() !== "" && otherWords.includes(nameWords);
     return printed(name).filter((place) => {
       const match = follows.exec(page.slice(place.end));
