@@ -23,4 +23,11 @@ describe("verifiedFrequency (#1456: hourly read at verify)", () => {
   it("should_keep_the_stated_frequency_when_there_is_no_amount", () => {
     expect(verifiedFrequency("Rate | 1%", null, "per_item", "card_foreign_txn")).toBe("per_item");
   });
+
+  it("should_leave_a_stated_or_printed_period_to_a_person_as_the_live_sweep_does", () => {
+    // hourlyVerdict exempts these (period_word, stated_period); verify does the same.
+    expect(verifiedFrequency("Research | $25.00 per hour, monthly", 25, "monthly", "account_research")).not.toBe("hourly");
+    expect(verifiedFrequency("Safe deposit drilling | $150.00 per hour", 150, "annual", "safe_deposit_box")).not.toBe("hourly");
+    expect(verifiedFrequency("Research | $25.00 per hour", 25, "monthly", "account_research")).not.toBe("hourly");
+  });
 });
