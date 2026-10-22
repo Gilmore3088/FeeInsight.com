@@ -13,6 +13,7 @@
  * point to.
  */
 
+import { asReadBoxName, leadsBoxRow } from "./box-size-name";
 import { conflictsWithAudienceStatement, feeApplicability, scopedFeeStatements } from "@/lib/fee-audience";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
 import { newestColumnText } from "@/lib/fee-change-columns";
@@ -1305,6 +1306,25 @@ export function checkFeeAgainstSource(
   categoryPattern: string,
   canonicalFeeKey?: string | null,
   options: SourceCheckOptions = {},
+): SourceCheckResult {
+  const result = checkOwnName(rawText, feeName, amount, categoryPattern, canonicalFeeKey, options);
+  // W43 live audit (#2064): Knox names a box row printed as its size alone "Safe Deposit Box <size>"
+  // (`boxSizeNamed`); the row is traced by its own words. Only for a fee filed as a safe deposit box
+  // (a null key never borrows the box words: Knox's self-check passes the read's category), and only
+  // on a row that is the size itself, not another product's row printing a size (`leadsBoxRow`).
+  const asRead = result.ok ? null : asReadBoxName(feeName, canonicalFeeKey);
+  if (!asRead) return result;
+  const traced = checkOwnName(rawText, asRead, amount, categoryPattern, canonicalFeeKey, options);
+  return traced.ok && leadsBoxRow(traced.sourceLine, asRead, rawText) ? traced : result;
+}
+
+function checkOwnName(
+  rawText: string | null | undefined,
+  feeName: string,
+  amount: number,
+  categoryPattern: string,
+  canonicalFeeKey: string | null | undefined,
+  options: SourceCheckOptions,
 ): SourceCheckResult {
   const result = checkFeeAgainstSourceText(rawText, feeName, amount, categoryPattern, canonicalFeeKey, options);
   if (!result.ok || !rawText) return result;

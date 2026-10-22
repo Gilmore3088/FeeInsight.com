@@ -3,6 +3,7 @@ import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { passesDarwinChecks, tidyFeeName } from "@/lib/agents/knox/layout";
+import { BOX_CATEGORY } from "@/lib/custom-report/box-size-name";
 import { refileCategory } from "@/lib/fee-category-guard";
 import { foldContext, isRetiredCategory, SUBORDINATION } from "@/lib/fee-fold";
 import { FAMILY_EXPERTS } from "@/lib/agents/knox/families";
@@ -218,7 +219,10 @@ class LineClaims {
 }
 
 function rowNames(row: LiveKnoxRow): string[] {
-  return [...new Set([tidyFeeName(row.raw_fee_name ?? row.fee_name), row.fee_name, row.raw_fee_name ?? ""]
+  const raw = row.raw_fee_name ?? row.fee_name;
+  // Knox v99 names a safe deposit box read as a bare size "Safe Deposit Box <size>".
+  const boxNamed = tidyFeeName(raw, { nameBoxSize: row.canonical_fee_key === BOX_CATEGORY });
+  return [...new Set([tidyFeeName(raw), boxNamed, row.fee_name, row.raw_fee_name ?? ""]
     .filter(Boolean)
     .map((name) => name.toLowerCase()))];
 }
@@ -612,7 +616,7 @@ export async function rollBackUnreproducedFees(
       } else {
         const text = textFor(row);
         // Knox reads names tidied; a row stored under an older untidy name is the same read.
-        const sameRead = readsFrom(text).get(key)?.has(tidyFeeName(row.raw_fee_name ?? row.fee_name).toLowerCase());
+        const sameRead = rowNames(row).some((name) => readsFrom(text).get(key)?.has(name));
         const traced = sameRead ? checkFeeAgainstSource(text.normalized_text, row.fee_name, fee.amount, ".", row.canonical_fee_key) : null;
         if (traced && (traced.ok || traced.reason === "tiered_fee")) {
           fee.restoreReason = "same_read";

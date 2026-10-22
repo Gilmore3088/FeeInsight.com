@@ -284,6 +284,20 @@ fees found (54.7%); 56 of the 59 wrong reads are the right price under another c
 
 ## Rules versions (`extract.rules`)
 
+v99 (Oct 22): a safe deposit box row printed as its size alone, under a box heading the row never
+repeats ("10x10 Annual Fee: $80.00" under "Self Storage Lease Boxes", "3 x 10: $70.00", 'Large
+(10"x10") $75.00'), is named "Safe Deposit Box" and the row's own words (`boxSizeNamed` in
+`custom-report/box-size-name.ts`, run at the end of `tidyFeeName` only for a read filed as
+`safe_deposit_box`). A name with any other word, two sizes, a paper size or a footnote figure is left.
+The shared source check (`checkFeeAgainstSource`) and Hamilton's same-line check (`linesApartOnPage`)
+trace such a name by the row's own words (`asReadBoxName`) only when the fee's key is
+`safe_deposit_box` and the size leads its own row (`leadsBoxRow`), so the self-check, Darwin's verify
+and the publish gate read it as before. Found by the W43 live audit's
+replay (#2064): 26 of the 30 fees that passed every stage under a wrong name. Shadow lab names 287 ->
+313 of 317; recall (924 / 1,312 answer-key fees), false publication (34 / 160) and the Texas and state
+gates unchanged. Hamilton's normalized name reads `tidyFeeName`, so a re-read's box name matches the
+live one named by its size. Name re-tidy stays at v26; the stale-read floor stays at v97.
+
 v98 (Oct 22): the previous row's condition glued in front of a fee's name in a long stored line is
 dropped (`withoutLeadingCondition`, run at the end of `tidyFeeName`). It covers a condition clause
 that opens on a lowercase word ("If the balance falls below on any day of the cycle Excess
@@ -1820,7 +1834,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v26 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v98 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v99 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v8 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

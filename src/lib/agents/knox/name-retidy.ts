@@ -607,7 +607,9 @@ export function retidiedFeeName(name: string, canonicalKey: string): string | nu
 
 function fullyTidiedName(name: string, canonicalKey: string): string | null {
   const current = name.trim();
-  let tidy = tidyFeeName(current);
+  // Knox v99 names a bare box size "Safe Deposit Box <size>"; re-tidy v26 leaves live box names as
+  // they are until a dry-run count of that rename is recorded.
+  let tidy = tidyFeeName(current, { nameBoxSize: false });
   // Joined cells: the cell nearest the price is the fee when it names one on its own
   // ("RESEARCH | Incoming Wire Transfer Fee" is the wire fee, not research).
   if (current.includes("|")) {
