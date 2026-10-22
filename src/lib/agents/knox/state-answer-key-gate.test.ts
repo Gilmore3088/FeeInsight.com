@@ -54,27 +54,31 @@ const FLOORS: Record<string, { right: number; wrong: number }> = {
   // those (Courtesy Pay $30 on "$20 $30 $30 $30 $30") traced only on Knox's split text; the self-check
   // now runs on the unsplit text, where the shared check reads "$20 $30" as a range, and holds it.
   // Darwin's verify refused it already, so it never published.
-  CA: { right: 158, wrong: 5 },
-  FL: { right: 136, wrong: 6 },
+  // v101 (held vocabulary, Oct 22): names read at the key's price but held unclassified get the
+  // category the keys agree on. CA 158 -> 161, FL 136 -> 137, GA 180 -> 185, MI 135 -> 138,
+  // MN 121 -> 122; no state gained a wrong read.
+  CA: { right: 161, wrong: 5 },
+  FL: { right: 137, wrong: 6 },
   // v97 (Oct 21): State key 60 (GA, one stored line) is read past its "$35.00/Item" rows: 172 -> 179
   // right. One new wrong read, "Overdraft Protection $35.00/Item" as an overdraft protection
   // transfer (the key files that $35 as overdraft), is refused by Darwin's verify
   // (category_mismatch) and never publishes; the shadow lab's published fees outside the keys stay 35.
-  GA: { right: 180, wrong: 10 },
+  GA: { right: 185, wrong: 10 },
   // 88 since the top-50 fold (Oct 8): a "Travel Card Reload" at $4.95 now files as a gift card
   // at $4.95, the same (category, price) pair as that schedule's gift card, so two right reads count once.
   IL: { right: 116, wrong: 5 },
-  MI: { right: 135, wrong: 0 },
+  MI: { right: 138, wrong: 0 },
   // 96 since collection items got their own type (Oct 8): the key files a "$20.00 for the first
   // item" line under check cashing, and Knox now reads that schedule's "Collection Item" $20
   // as a collection item, so one right read became one wrong one.
-  MN: { right: 121, wrong: 8 },
+  MN: { right: 122, wrong: 8 },
   NY: { right: 43, wrong: 5 },
   // v97: 870 -> 877 right (GA's key 60); wrong 33 -> 34, inside the floor.
   // Guard v81 and the escheat range (Oct 22): returned check deposits and escheat processing fees read
   // as Darwin now verifies them: 877 -> 885 right (GA 180, IL 116, MI 135, MN 121); wrong unchanged at 34.
   // v100: 885 -> 890 right (CA's key 7450, tier columns; see CA); wrong unchanged at 34.
-  all: { right: 890, wrong: 38 },
+  // v101: 890 -> 903 right (held vocabulary; see CA); wrong unchanged at 34.
+  all: { right: 903, wrong: 38 },
 };
 
 const fixture = JSON.parse(

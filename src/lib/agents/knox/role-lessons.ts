@@ -426,4 +426,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-22",
   },
+  {
+    id: "held-vocabulary-from-misses",
+    agent: "knox",
+    stage: "extract",
+    lesson: "When a row is read at the right price but held unclassified, the gap is the name rule, not the reader: add the general wording (\"bill payer\", \"ACH file\", \"balancing or research\", a bare \"Account Closure\") after every other name rule so it only claims names nothing else files, and leave a wording held when the keys file it under different categories at different banks or only its heading can tell.",
+    why: "The shadow lab (Oct 22) showed 49 answer-key rows across 24 documents read at the key's own price and held unclassified. v101 publishes 13 more answer-key rows; the rest were left held on purpose: printouts the keys file as research at one bank and as copies at another, a \"Monthly Account Maintenance\" that is a gift card's under its heading, bare \"Service Fee\" rows and wire rows named only by their heading.",
+    evidence: { issues: [1026], prs: [], files: ["src/lib/agents/knox/rules.ts", "src/lib/agents/knox/held-vocabulary.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-22",
+  },
 ];
