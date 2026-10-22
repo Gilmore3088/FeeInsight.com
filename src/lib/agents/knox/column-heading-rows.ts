@@ -180,7 +180,10 @@ export function columnHeadingRows(lines: readonly string[]): KnoxTableRow[] {
       if (at === trailing || at === 0) continue;
       const pair = pairs.find((candidate) => candidate.at === at && candidate !== leftPair);
       if (pair) {
-        if (!lend(pair, rightOpen)) rightOpen = null;
+        // Third review: only the first pair after the left column sits in the right column; a further
+        // pair ("Customer | $8.00 | Customer | $3.00 | Customer | $12.00") is a column no heading names.
+        const firstRight = pair === pairs.find((candidate) => candidate !== leftPair);
+        if (!firstRight || !lend(pair, rightOpen)) rightOpen = null;
       } else if (!covered.has(at)) {
         // A right-column cell that is no pair (a sentence, a price note) ends the right heading.
         rightOpen = null;

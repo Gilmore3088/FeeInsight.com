@@ -306,8 +306,9 @@ customers only) - Outgoing" under "Temporary Checks" stays a wire). A price spli
 ("$ | 3.00") is joined. The table pass files the row only when heading and name together name a fee
 and holds a range as a range. Admit-only: the rows come after every row read before, and the
 self-check traces them on the stored text; across every fixture text the only change is four new
-right reads and two new untraced holds (8085's domestic wires under "Domestic" / "International", which the
-shared check cannot trace to a heading on a priced line). Left out: dot-leader two-column lines with
+right reads and two new untraced holds (8085's domestic wires at $15 and $17 under "Domestic", which
+the shared check cannot trace to a heading on a priced line). Only the first pair after the left
+column takes the right heading; a further pair on the line ends it. Left out: dot-leader two-column lines with
 the heading on a priced line (6730, 8240; the shared check holds them), names only a heading can
 classify ("Monthly Statements Cycle" under "Dormant Deposit Accounts", "Mortgage Payoff Processing
 Fee" under "LOAN"), and #2064's box size under "Night Deposit Bags" (a re-file). Shadow lab

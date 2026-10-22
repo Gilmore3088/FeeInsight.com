@@ -302,6 +302,33 @@ describe("Knox v102: the second fee on a line named by its column's heading", ()
       }
     });
 
+    it("should_lend_the_right_heading_only_to_the_first_pair_after_the_left_column", () => {
+      // Third review: two headings over three pairs. A third pair is no column the headings name.
+      const text = [
+        "CASHIER'S CHECKS | MONEY ORDERS",
+        "Customer | $8.00 | Customer | $3.00 | Customer | $12.00",
+        "Non-Customer | $10.00 | Non-Customer | $5.00 | Non-Customer | $15.00",
+      ].join("\n");
+      const table = tableReads(text);
+      // The first line's second pair is read; a third pair shows the page has more columns than its
+      // headings, so the right heading ends there and the next line borrows nothing.
+      expect(table).toContainEqual(["money_order", 3]);
+      expect(table).not.toContainEqual(["money_order", 5]);
+      expect(table).not.toContainEqual(["money_order", 12]);
+      expect(table).not.toContainEqual(["money_order", 15]);
+      const trace = runCase(currentVariant, {
+        caseKey: "column-heading-three-pairs",
+        scenario: "missed_fees",
+        provenance: { fixture: "unit", fixtureCaseKey: "column-heading-three-pairs", textHash: null, issue: "2548" },
+        document: { url: null, text },
+        expected: { publish: [], forbid: [] },
+        status: "ok",
+      });
+      const published = trace.published.map((fee) => [fee.canonicalFeeKey, fee.amountCents]);
+      expect(published).not.toContainEqual(["money_order", 1200]);
+      expect(published).not.toContainEqual(["money_order", 1500]);
+    });
+
     it("should_not_publish_a_second_fee_for_a_price_cell_already_read", () => {
       // Through Knox, Darwin's verify and the publish gate, as the shadow lab runs a case.
       for (const text of [SECTION_BREAK_RIGHT, SECTION_BREAK_LEFT]) {
