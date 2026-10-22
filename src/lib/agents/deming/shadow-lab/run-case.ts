@@ -66,6 +66,7 @@ export function runAll(variant: PipelineVariant, cases: ShadowCase[], clock: Clo
 
 /** A trace without its timings, which vary run to run. */
 export function stripTiming(trace: CaseTrace): Omit<CaseTrace, "durationsMs"> {
-  const { durationsMs: _durations, ...rest } = trace;
-  return rest;
+  const rest: Partial<CaseTrace> = { ...trace };
+  delete rest.durationsMs;
+  return rest as Omit<CaseTrace, "durationsMs">;
 }

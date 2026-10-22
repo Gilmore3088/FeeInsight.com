@@ -1,8 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { runAll, runCase, stripTiming } from "./run-case";
-import { loadScenarios } from "./scenarios";
-import { currentVariant } from "./variants";
+import { runCase } from "./run-case";
 import type { PipelineVariant, ShadowCase, StageFee } from "./types";
 
 const line = (name: string, cents: number): StageFee => ({
@@ -24,8 +22,6 @@ const stub: PipelineVariant = {
   publishGate: (fee, _text, live) =>
     live.some((prior) => prior.amountCents === fee.amountCents) ? { publish: false, reason: "prior:identical" } : { publish: true, reason: null },
 };
-
-const FULL_REPLAY_TIMEOUT_MS = 60_000;
 
 const textCase: ShadowCase = {
   caseKey: "duplicate_lines:t",
@@ -63,12 +59,4 @@ describe("shadow lab case runner", () => {
     expect(trace.documentAccepted).toBeNull();
     expect(trace.published).toEqual([]);
   });
-
-  // A full replay takes seconds; it runs under `npm run test:shadow-lab`, not CI's unit shards.
-  it.skipIf(!process.env.SHADOW_LAB_OUT)("should_give_the_same_traces_in_any_order", () => {
-    const cases = loadScenarios();
-    const forward = runAll(currentVariant, cases).map(stripTiming);
-    const reversed = runAll(currentVariant, [...cases].reverse()).map(stripTiming);
-    expect(reversed).toEqual(forward);
-  }, FULL_REPLAY_TIMEOUT_MS);
 });

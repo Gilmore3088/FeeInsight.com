@@ -76,4 +76,10 @@ describe("shadow lab comparison", () => {
     expect(report).toMatch(/Duplicate prevention \| not measured \| not measured/);
     expect(report).not.toMatch(/Duplicate prevention \| 0\.0%/);
   });
+
+  it("should_count_listed_failures_as_not_replayable_and_show_stage_time", () => {
+    const report = renderReport(compareRuns(input(2)));
+    expect(report).toContain("1 known failure not replayable");
+    expect(report).toMatch(/Execution time: current 16 ms, experimental 16 ms/);
+  });
 });

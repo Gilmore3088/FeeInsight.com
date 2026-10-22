@@ -20,13 +20,14 @@ const FAILURE_STAGES: readonly FailureStage[] = [...STAGE_IDS, "passed_every_sta
 
 /** What a group of failures says, by the stage that let it through and the kind of failure. */
 const REMEDIES: Partial<Record<`${FailureStage}/${FailureKind}`, string>> = {
-  "extract/missed": "Knox never produced these fees from the text. Start with the reader rules for the most common reasons and categories below.",
+  "extract/missed":
+    "Knox did not produce these fees at their category and price. read_other_category means a read at the same price under another category; read_other_amount means the category read at another price; not_read means neither.",
   "verify/missed": "Knox read these fees but verification refused them. Check whether the refusing rules below are too broad for these categories.",
   "publish_gate/missed": "Verified fees held back at publish. The skip reasons below name the gate rule to look at.",
   "passed_every_stage/false_publication": "Known-wrong fees passed every stage: no check catches these shapes yet. The scenario with the most is where a new check belongs.",
   "publish_gate/duplicate": "Same-dollar lines published the wrong number of times. The publish gate's same-line decision is where to look.",
   "verify/duplicate": "Same-dollar lines lost at verification before the publish gate could judge them.",
-  "extract/duplicate": "Same-dollar lines Knox did not read as separate fees.",
+  "extract/duplicate": "Same-dollar lines Knox read more times than the page prints them.",
   "document_gate/wrong_document": "Documents the gate judged wrongly (a product page accepted, or a fee schedule refused).",
 };
 
@@ -46,7 +47,8 @@ function topCounts(values: (string | null)[]): string {
 
 function headline(current: VariantMetrics, experimental: VariantMetrics): string[] {
   const rows: Array<[string, (m: VariantMetrics) => string]> = [
-    ["Recall: expected fees published", (m) => percent(m.recall.found, m.recall.expected)],
+    ["Recall: answer-key fees published", (m) => percent(m.answerKeyRecall.found, m.answerKeyRecall.expected)],
+    ["Recall: all expected fees published (answer keys and category cases)", (m) => percent(m.recall.found, m.recall.expected)],
     ["False publication: known-wrong fees published (lower is better)", (m) => percent(m.falsePublication.published, m.falsePublication.forbidden)],
     ["Duplicate prevention", (m) => percent(m.duplicatePrevention.correct, m.duplicatePrevention.cases)],
     ["Source attribution: published fees traced to a line", (m) => percent(m.sourceAttribution.attributed, m.sourceAttribution.published)],
@@ -118,6 +120,10 @@ function diffs(comparison: Comparison): string[] {
   ];
 }
 
+function totalMs(timing: Comparison["timing"]["current"]): number {
+  return Math.round(Object.values(timing).reduce((sum, stage) => sum + stage.totalMs, 0));
+}
+
 export function renderReport(comparison: Comparison): string {
   const { current, experimental } = comparison.variants;
   const [run, head, wrong, address, differ, notReplayable, limits] = REPORT_SECTIONS;
@@ -128,9 +134,10 @@ export function renderReport(comparison: Comparison): string {
     "",
     `- Lab version ${comparison.labVersion}; stage versions: ${Object.entries(comparison.versions).map(([k, v]) => `${k} ${v}`).join("; ")}.`,
     `- Experiment \`${experimental.config.id}\`: ${experimental.config.description}`,
-    `- Cases: ${current.cases.ok} replayed, ${current.cases.corrupt} corrupt (left out), ${current.cases.notReplayable} not replayable.`,
+    `- Cases: ${current.cases.ok} replayed, ${current.cases.corrupt} corrupt (left out); ${comparison.notReplayable.length} known ${comparison.notReplayable.length === 1 ? "failure" : "failures"} not replayable (listed below).`,
     `- Scenarios: ${comparison.scenarios.map((s) => `${s.id} ${s.cases}`).join(", ")}.`,
     `- Paid provider calls: ${current.providerCalls + experimental.providerCalls}; cost $${((current.costMicrousd + experimental.costMicrousd) / 1e6).toFixed(2)}.`,
+    `- Execution time: current ${totalMs(comparison.timing.current)} ms, experimental ${totalMs(comparison.timing.experimental)} ms (all stages, first run; varies by machine).`,
     `- Reprocessing stability: ${comparison.stability.identical ? "identical" : "NOT identical"} across ${comparison.stability.runs} runs per variant (sha256 ${comparison.stability.sha256.slice(0, 12)}).`,
     "",
     `## ${head}`,
@@ -157,7 +164,8 @@ export function renderReport(comparison: Comparison): string {
     "",
     "- The read stage (PDF and HTML to text) is not replayed: the fixtures store text after Rosetta's read.",
     "- No database stage was needed: duplicate prevention is replayed with the pure prior-fee decision.",
-    "- Parts that read the database are not replayed: Darwin's learned envelopes, peer check and same-batch duplicates, and Knox's stored lessons.",
+    "- Parts that read the database are not replayed: Darwin's audience admission, learned envelopes, peer check and same-batch duplicates, Hamilton's exact-duplicate collapse and twin re-check, and Knox's stored lessons.",
+    "- The document gate replays the URL rule (`isProductPage`) on cases written against it; it is not a held-out measure.",
     "- Answer keys may be incomplete, so a published fee not in a key is counted, not called an error.",
     "- Later live sweeps (for example Darwin's hourly pass) are not part of these stages.",
     "",

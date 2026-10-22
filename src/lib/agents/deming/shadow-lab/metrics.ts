@@ -26,6 +26,8 @@ export interface Rate {
 export interface VariantMetrics {
   cases: { ok: number; corrupt: number; notReplayable: number };
   recall: { expected: number; found: number } & Rate;
+  /** Recall on the answer-key documents alone (`missed_fees`). */
+  answerKeyRecall: { expected: number; found: number } & Rate;
   falsePublication: { forbidden: number; published: number } & Rate;
   duplicatePrevention: { cases: number; correct: number } & Rate;
   sourceAttribution: { published: number; attributed: number } & Rate;
@@ -61,17 +63,32 @@ function whereMissed(ref: FeeRef, trace: CaseTrace): { stage: StageId; reason: s
   const refused = trace.stages.verify.dropped.find((fee) => matches(ref, fee));
   if (refused) return { stage: "verify", reason: refused.reason };
   const held = trace.stages.extract.dropped.find((fee) => matches(ref, fee));
-  return { stage: "extract", reason: held?.reason ?? "not_read" };
+  if (held) return { stage: "extract", reason: held.reason };
+  // Knox read the line but filed it under another category, or read another price for it.
+  const read = trace.stages.extract.passed;
+  if (ref.amountCents != null && read.some((fee) => fee.amountCents === ref.amountCents)) return { stage: "extract", reason: "read_other_category" };
+  if (read.some((fee) => matches({ ...ref, amountCents: null }, fee))) return { stage: "extract", reason: "read_other_amount" };
+  return { stage: "extract", reason: "not_read" };
 }
 
-/** Where a same-dollar group came out wrong; null when the count is right. */
-function whereDuplicate(target: NonNullable<ShadowCase["expected"]["publishCount"]>, trace: CaseTrace): StageId | null {
+/**
+ * Where a same-dollar group came out wrong; null when the count is right. A group Knox never read
+ * is a missed fee, not a duplicate decision.
+ */
+function whereDuplicate(
+  target: NonNullable<ShadowCase["expected"]["publishCount"]>,
+  trace: CaseTrace,
+): { kind: FailureKind; stage: StageId } | null {
   const ref: FeeRef = { canonicalFeeKey: target.canonicalFeeKey, feeName: null, amountCents: target.amountCents };
   const count = (fees: StageFee[]) => fees.filter((fee) => matches(ref, fee)).length;
+  const extracted = count(trace.stages.extract.passed);
+  if (extracted === 0) return { kind: "missed", stage: "extract" };
   const published = count(trace.published);
   if (published === target.count) return null;
-  if (published > target.count || count(trace.stages.verify.passed) >= target.count) return "publish_gate";
-  return count(trace.stages.extract.passed) >= target.count ? "verify" : "extract";
+  // Published fees are a subset of extracted ones, so too many always began with Knox reading too many.
+  if (published > target.count) return { kind: "duplicate", stage: "extract" };
+  if (count(trace.stages.verify.passed) >= target.count) return { kind: "duplicate", stage: "publish_gate" };
+  return { kind: "duplicate", stage: extracted >= target.count ? "verify" : "extract" };
 }
 
 export function scoreRun(cases: ShadowCase[], traces: CaseTrace[], providerCalls: number): VariantMetrics {
@@ -80,6 +97,7 @@ export function scoreRun(cases: ShadowCase[], traces: CaseTrace[], providerCalls
   const m: VariantMetrics = {
     cases: { ok: 0, corrupt: 0, notReplayable: 0 },
     recall: { expected: 0, found: 0, rate: null },
+    answerKeyRecall: { expected: 0, found: 0, rate: null },
     falsePublication: { forbidden: 0, published: 0, rate: null },
     duplicatePrevention: { cases: 0, correct: 0, rate: null },
     sourceAttribution: { published: 0, attributed: 0, rate: null },
@@ -109,10 +127,14 @@ export function scoreRun(cases: ShadowCase[], traces: CaseTrace[], providerCalls
     }
     if (c.document.text == null) continue;
 
+    const answerKey = c.scenario === "missed_fees";
     for (const ref of c.expected.publish) {
       m.recall.expected += 1;
-      if (trace.published.some((fee) => matches(ref, fee))) m.recall.found += 1;
-      else {
+      if (answerKey) m.answerKeyRecall.expected += 1;
+      if (trace.published.some((fee) => matches(ref, fee))) {
+        m.recall.found += 1;
+        if (answerKey) m.answerKeyRecall.found += 1;
+      } else {
         const lost = whereMissed(ref, trace);
         fail(c, "missed", lost.stage, ref, lost.reason);
       }
@@ -126,10 +148,10 @@ export function scoreRun(cases: ShadowCase[], traces: CaseTrace[], providerCalls
     }
     const target = c.expected.publishCount;
     if (target) {
-      m.duplicatePrevention.cases += 1;
-      const stage = whereDuplicate(target, trace);
-      if (stage == null) m.duplicatePrevention.correct += 1;
-      else fail(c, "duplicate", stage, { canonicalFeeKey: target.canonicalFeeKey, feeName: null, amountCents: target.amountCents }, null);
+      const wrong = whereDuplicate(target, trace);
+      if (wrong?.kind !== "missed") m.duplicatePrevention.cases += 1;
+      if (wrong == null) m.duplicatePrevention.correct += 1;
+      else fail(c, wrong.kind, wrong.stage, { canonicalFeeKey: target.canonicalFeeKey, feeName: null, amountCents: target.amountCents }, null);
     }
     if (c.scenario === "missed_fees") {
       m.unexpectedPublications += trace.published.filter((fee) => !c.expected.publish.some((ref) => matches(ref, fee))).length;
@@ -143,6 +165,7 @@ export function scoreRun(cases: ShadowCase[], traces: CaseTrace[], providerCalls
     m.byScenario[failure.scenario].failures += 1;
   }
   m.recall.rate = ratio(m.recall.found, m.recall.expected);
+  m.answerKeyRecall.rate = ratio(m.answerKeyRecall.found, m.answerKeyRecall.expected);
   m.falsePublication.rate = ratio(m.falsePublication.published, m.falsePublication.forbidden);
   m.duplicatePrevention.rate = ratio(m.duplicatePrevention.correct, m.duplicatePrevention.cases);
   m.sourceAttribution.rate = ratio(m.sourceAttribution.attributed, m.sourceAttribution.published);

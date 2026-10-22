@@ -1,4 +1,4 @@
-# 2026-10-21: Most wrong and missing fees start at extraction, and two checks run only as sweeps after publication
+# 2026-10-21: Most missing fees are misfiled at extraction, and two checks run only as sweeps after publication
 
 Replay frozen sources stage by stage before fixing fees one at a time: the stage that fails names
 the process fix.
@@ -11,28 +11,40 @@ identical across three runs per variant. Today's pipeline:
 
 | Measure | Current | `hourly-at-verify` |
 |---|---|---|
-| Recall: answer-key fees published | 69.4% (926/1335) | 69.4% (926/1335) |
+| Recall: answer-key fees published | 68.8% (902/1312) | 68.8% (902/1312) |
 | False publication: known-wrong fees published | 26.8% (34/127) | 19.7% (25/127) |
-| Duplicate prevention | 70.0% (14/20) | 70.0% (14/20) |
-| Source attribution | 99.6% (1211/1216) | 99.6% (1211/1216) |
+| Duplicate prevention | 82.4% (14/17) | 82.4% (14/17) |
+| Source attribution | 99.6% (1210/1215) | 99.6% (1210/1215) |
 | Document gate (URL cases) | 100.0% (24/24) | 100.0% (24/24) |
 
-Each failure is charged to the first stage that got it wrong. Of 449 failures, 373 are at
-extraction (370 missed fees and 3 same-dollar lines not read apart), 25 at verify, 17 at the
-publish gate, and 34 known-wrong fees passed every stage.
-- **Missed fees:** 347 of the 370 extraction misses are lines Knox never read at all; 19 were held
-  untraced and 4 held for eligibility. Eleven of the 40 documents with a miss hold half of them.
-- **Known-wrong fees:** the 34 that passed every stage are 16 not-a-fee readings, 9 hourly charges
-  published as flat, 6 wrong categories and 3 limits.
+Each failure is charged to the first stage that got it wrong. Of 450 failures:
+- **Extraction, 376:** 373 missed fees, and 3 same-dollar lines Knox read more times than the page
+  prints them.
+- **Verify, 25.**
+- **Publish gate, 15.**
+- **Passed every stage, 34:** 16 not-a-fee readings, 9 hourly charges published as flat,
+  6 wrong categories and 3 limits.
 
-**Cause:** Two of today's checks run only on live fees, after publication:
-- Darwin's verify can read an hourly price from the fee's own line (`settledFrequency`'s `hourly`
-  option) but leaves it off; the live hourly sweep sets hourly afterwards (#1456).
-- Hamilton's publish-time limit guard reads only the fee name and amount; "Knox's excerpt is
-  checked by the sweep" (`publish.ts` `publishSkipReason`). So "APPRAISAL | $450.00 & up" passes
-  verify and publish today.
+The 373 extraction misses split three ways:
+- 231 had a Knox read at the same price under another category (some may be common prices that
+  match by chance).
+- 43 had a read in the right category at another price.
+- 73 were not read at all.
+- Of the rest, 19 were held as untraced and 4 held for eligibility. The remaining 3 are
+  same-dollar cases Knox never read.
 
-Recall is lost mostly at extraction, which no downstream check can repair.
+Twelve of the 43 documents with an extraction miss hold half of them.
+
+**Cause:**
+- **Categorisation:** most missing fees are filed under the wrong category at extraction. Reading
+  coverage matters less. No downstream check can repair either.
+- **Checks that run only as sweeps:** two of today's checks run only on live fees, after
+  publication.
+  - Darwin's verify can read an hourly price from the fee's own line (`settledFrequency`'s
+    `hourly` option) but leaves it off; the live hourly sweep sets hourly afterwards (#1456).
+  - Hamilton's publish-time limit guard reads only the fee name and amount; "Knox's excerpt is
+    checked by the sweep" (`publish.ts` `publishSkipReason`). So "APPRAISAL | $450.00 & up" passes
+    verify and publish today.
 
 **Fix:** The lab, in this PR. It changes no production path. Two experiments ran on the same
 frozen inputs:
@@ -41,7 +53,8 @@ frozen inputs:
   fees and lost no recall.
 
 Switching either on in production is a separate PR with Darwin's live re-check and a dry-run count,
-as the Standing rules require.
+as the Standing rules require. The 231 same-price misfilings are the next thing to replay by
+category.
 
 **Lesson:** Before fixing a batch of live fees, replay the frozen sources and fix the stage where
 the failures start. A check that runs only as a sweep on live fees is an output fix. Where a pure

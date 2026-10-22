@@ -101,7 +101,8 @@ export function compareRuns(input: CompareInput): Comparison {
 
 /** The comparison without its timings: equal for equal inputs and code. */
 export function stableJson(comparison: Comparison): string {
-  const { timing: _timing, ...rest } = comparison;
+  const rest: Partial<Comparison> = { ...comparison };
+  delete rest.timing;
   return sortedJson(rest);
 }
 

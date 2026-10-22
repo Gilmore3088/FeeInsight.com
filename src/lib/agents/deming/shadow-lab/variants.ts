@@ -16,6 +16,7 @@ import { perEventFrequency, settledFrequency } from "@/lib/fee-frequency";
 import {
   decidePriorFee,
   HAMILTON_PUBLISH_DEFAULT_MIN_CONFIDENCE,
+  publishedFeeName,
   publishNameHold,
   publishSkipReason,
   sameValueLinesApart,
@@ -165,7 +166,8 @@ function priorRow(fee: StageFee, index: number): PriorPublishedFeeRow {
 function gateFee(config: ExperimentConfig, fee: StageFee, text: string, live: StageFee[]) {
   const key = fee.canonicalFeeKey ?? "";
   const name = fee.feeName ?? "";
-  const category = checkFeeCategory(key, name);
+  // As the publish step calls it (publish.ts): the published name, with the amount.
+  const category = checkFeeCategory(key, publishedFeeName(name, key), { amount: fee.amountCents == null ? null : fee.amountCents / 100 });
   if (!category.ok) return { publish: false, reason: `category_guard:${category.code}` };
   const hold = publishNameHold(name, key, fee.amountCents == null ? null : fee.amountCents / 100);
   if (hold) return { publish: false, reason: `name_hold:${hold.code}` };

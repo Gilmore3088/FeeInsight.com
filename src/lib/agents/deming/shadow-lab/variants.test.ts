@@ -66,4 +66,10 @@ describe("shadow lab variants", () => {
     expect(current.ok && current.fee.frequency).not.toBe("hourly");
     expect(experiment.ok && experiment.fee.frequency).toBe("hourly");
   });
+
+  it("should_run_the_publish_category_guard_as_production_does", () => {
+    const text = "Early withdrawal $25.004: Stop payment order | $25.00";
+    const fee = { canonicalFeeKey: "stop_payment", feeName: "Early withdrawal $25.004: Stop payment order", amountCents: 2500, frequency: null, excerpt: text, reason: null };
+    expect(currentVariant.publishGate(fee, text, [])).toMatchObject({ publish: false, reason: expect.stringMatching(/^category_guard:/) });
+  });
 });

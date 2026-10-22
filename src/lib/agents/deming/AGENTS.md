@@ -253,7 +253,7 @@ gate. It also replays one experiment (`SHADOW_LAB_EXPERIMENT`, default `hourly-a
 `EXPERIMENTS` in `shadow-lab/variants.ts`) on the same inputs. It writes
 `test-results/shadow-lab/comparison.json` and `report.md`. Each failed expectation is charged to the
 first stage that got it wrong.
-- It runs offline: it stops if `DATABASE_URL` or `E2E_DATABASE_URL` is set, and every
+- It runs offline: the replay stops if `DATABASE_URL` or `E2E_DATABASE_URL` is set, and every
   `ai-provider` call is refused and counted.
 - It measures and never gates. CI's unit shards run only its fast tests, and no rate has a
   threshold.

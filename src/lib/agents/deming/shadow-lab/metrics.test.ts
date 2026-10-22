@@ -74,9 +74,10 @@ describe("shadow lab metrics", () => {
     expect(matches({ ...want, frequency: "!hourly" }, nsf(3000, { frequency: "hourly" }))).toBe(false);
   });
 
-  it("should_charge_an_uncollapsed_duplicate_to_the_publish_gate", () => {
-    const c = makeCase({ publishCount: { canonicalFeeKey: "nsf", amountCents: 3000, count: 1 } }, { scenario: "duplicate_lines", caseKey: "duplicate_lines:a" });
-    const metrics = scoreRun([c], [makeTrace(c, {}, [nsf(3000), nsf(3000, { feeName: "NSF fee" })])], 0);
+  it("should_charge_collapsed_distinct_lines_to_the_publish_gate", () => {
+    const c = makeCase({ publishCount: { canonicalFeeKey: "nsf", amountCents: 3000, count: 2 } }, { scenario: "duplicate_lines", caseKey: "duplicate_lines:a" });
+    const read = [nsf(3000), nsf(3000, { feeName: "Returned item" })];
+    const metrics = scoreRun([c], [makeTrace(c, { extract: { passed: read }, verify: { passed: read } }, [read[0]])], 0);
     expect(metrics.duplicatePrevention).toEqual({ cases: 1, correct: 0, rate: 0 });
     expect(metrics.failures).toMatchObject([{ kind: "duplicate", stage: "publish_gate" }]);
   });
@@ -102,5 +103,33 @@ describe("shadow lab metrics", () => {
     const metrics = scoreRun([c], [makeTrace(c, {})], 0);
     expect(metrics.cases).toEqual({ ok: 0, corrupt: 1, notReplayable: 0 });
     expect(metrics.recall.expected).toBe(0);
+  });
+
+  it("should_count_a_duplicate_case_knox_never_read_as_missed", () => {
+    const c = makeCase({ publishCount: { canonicalFeeKey: "nsf", amountCents: 3000, count: 1 } }, { scenario: "duplicate_lines", caseKey: "duplicate_lines:a" });
+    const metrics = scoreRun([c], [makeTrace(c, {})], 0);
+    expect(metrics.duplicatePrevention.cases).toBe(0);
+    expect(metrics.failures).toMatchObject([{ kind: "missed", stage: "extract" }]);
+  });
+
+  it("should_charge_an_over_read_duplicate_to_extract", () => {
+    const c = makeCase({ publishCount: { canonicalFeeKey: "nsf", amountCents: 3000, count: 1 } }, { scenario: "duplicate_lines", caseKey: "duplicate_lines:a" });
+    const read = [nsf(3000), nsf(3000, { feeName: "NSF fee" })];
+    const metrics = scoreRun([c], [makeTrace(c, { extract: { passed: read }, verify: { passed: read } }, read)], 0);
+    expect(metrics.failures).toMatchObject([{ kind: "duplicate", stage: "extract" }]);
+  });
+
+  it("should_say_how_knox_read_a_missed_fee", () => {
+    const c = makeCase({ publish: [want, { canonicalFeeKey: "overdraft", feeName: null, amountCents: 2500 }] });
+    const trace = makeTrace(c, { extract: { passed: [nsf(3500), nsf(2500, { canonicalFeeKey: "stop_payment" })] } });
+    expect(scoreRun([c], [trace], 0).failures.map((f) => f.reason)).toEqual(["read_other_amount", "read_other_category"]);
+  });
+
+  it("should_score_answer_key_recall_apart_from_other_expectations", () => {
+    const key = makeCase({ publish: [want] });
+    const ok = makeCase({ publish: [want] }, { scenario: "wrong_category", caseKey: "wrong_category:a" });
+    const metrics = scoreRun([key, ok], [makeTrace(key, {}), makeTrace(ok, {}, [nsf(3000)])], 0);
+    expect(metrics.recall).toEqual({ expected: 2, found: 1, rate: 0.5 });
+    expect(metrics.answerKeyRecall).toEqual({ expected: 1, found: 0, rate: 0 });
   });
 });
