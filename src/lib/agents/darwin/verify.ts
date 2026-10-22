@@ -837,6 +837,20 @@ export function normalizedAmount(value: number | string | null): number | null {
 const NO_LEARNED_ENVELOPES: ReadonlyMap<string, LearnedEnvelope> = new Map();
 
 /** The first rule a row fails, or null when it can be verified. Exported for tests. */
+/**
+ * The frequency Darwin verifies a fee at, from Knox's excerpt of its own line. Pure.
+ * #1456 (Oct 21): an hourly price on the fee's own line ("$25.00 per hour") is read here, so the fee
+ * is hourly when it publishes; the live hourly re-check (`hourly-frequency-check.ts`) stays as the
+ * safety net for fees published before. Categories never charged by the hour stay as they were.
+ * Measured in the shadow lab (#2536, experiment `hourly-at-verify`): hourly charges published as
+ * flat 9 -> 0 of 27, no fee lost.
+ * #1196: an NSF fee is charged per item; a period on one is a misread, so it is never verified.
+ */
+export function verifiedFrequency(line: string | null, amount: number | null, stated: string | null, canonicalFeeKey: string | null): string | null {
+  const settled = amount == null ? stated : settledFrequency(line, amount, stated, canonicalFeeKey, { hourly: true });
+  return perEventFrequency(canonicalFeeKey, settled, line, amount);
+}
+
 export function verificationReasonCode(
   row: RawFeeRow,
   canonicalFeeKey: string | null,
@@ -1281,12 +1295,7 @@ async function insertCurrentVerifiedFee(db: SqlTag, options: InsertVerifiedFeeOp
   if (options.secondSourceAgrees) flags.push(SECOND_SOURCE_FLAG);
   if (options.extraFlags) flags.push(...options.extraFlags.filter(flag => flag !== PAID_RETURNED_EVENT_FLAG && flag !== PAID_RETURNED_ELIGIBILITY_FLAG));
   const stated = row.frequency ?? null;
-  const line = excerptOf(row.conditions);
-  // #1456: Darwin keeps an hourly frequency Knox stated but does not read one itself; live fees
-  // become hourly through the switched live re-check (hourly-frequency-check.ts).
-  const settled = amount == null ? stated : settledFrequency(line, amount, stated, options.canonicalFeeKey, { hourly: false });
-  // #1196: an NSF fee is charged per item; a period on one is a misread, so it is never verified.
-  const frequency = perEventFrequency(options.canonicalFeeKey, settled, line, amount);
+  const frequency = verifiedFrequency(excerptOf(row.conditions), amount, stated, options.canonicalFeeKey);
   if (frequency !== stated) flags.push(FREQUENCY_SETTLED_FLAG);
   // With no decision the trigger copies the raw row's audience, as before.
   const audience = current.audience;

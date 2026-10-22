@@ -28,8 +28,8 @@ describe("shadow lab variants", () => {
   });
 
   it("should_select_the_default_experiment", () => {
-    expect(selectExperiment({}).id).toBe("hourly-at-verify");
-    expect(() => selectExperiment({ SHADOW_LAB_EXPERIMENT: "nope" })).toThrow(/hourly-at-verify/);
+    expect(selectExperiment({}).id).toBe("excerpt-at-publish");
+    expect(() => selectExperiment({ SHADOW_LAB_EXPERIMENT: "nope" })).toThrow(/excerpt-at-publish/);
   });
 
   it("should_round_money_to_cents", () => {
@@ -58,13 +58,11 @@ describe("shadow lab variants", () => {
     expect(currentVariant.verify(fee, "Stop Payment | $30.00")).toEqual({ ok: false, reason: "not_in_source" });
   });
 
-  it("should_read_hourly_only_in_the_hourly_experiment", () => {
+  it("should_read_hourly_at_verify_as_darwin_does", () => {
     const text = "Account research | $25.00 per hour";
     const fee = { canonicalFeeKey: "account_research", feeName: "Account research", amountCents: 2500, frequency: null, excerpt: text, reason: null };
-    const current = currentVariant.verify(fee, text);
-    const experiment = experimentalVariant(EXPERIMENTS["hourly-at-verify"]).verify(fee, text);
-    expect(current.ok && current.fee.frequency).not.toBe("hourly");
-    expect(experiment.ok && experiment.fee.frequency).toBe("hourly");
+    const verified = currentVariant.verify(fee, text);
+    expect(verified.ok && verified.fee.frequency).toBe("hourly");
   });
 
   it("should_run_the_publish_category_guard_as_production_does", () => {

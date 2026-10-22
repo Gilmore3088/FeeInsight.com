@@ -249,7 +249,7 @@ institutions remains the only human launch workflow.
 
 `npm run test:shadow-lab` replays frozen source texts from committed fixtures through today's pure
 stages: the document gate, Knox's free read, Darwin's per-row verify checks and Hamilton's publish
-gate. It also replays one experiment (`SHADOW_LAB_EXPERIMENT`, default `hourly-at-verify`; see
+gate. It also replays one experiment (`SHADOW_LAB_EXPERIMENT`, default `excerpt-at-publish`; see
 `EXPERIMENTS` in `shadow-lab/variants.ts`) on the same inputs. It writes
 `test-results/shadow-lab/comparison.json` and `report.md`. Each failed expectation is charged to the
 first stage that got it wrong.

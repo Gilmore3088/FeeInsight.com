@@ -6,13 +6,13 @@ import {
   sourceLineFor,
   statedInOwnSource,
   verificationReasonCode,
+  verifiedFrequency,
   type RawFeeRow,
 } from "@/lib/agents/darwin/verify";
 import { tierPerkZero } from "@/lib/agents/darwin/tier-perk";
 import { foldContext } from "@/lib/fee-fold";
 import { isProductPage } from "@/lib/agents/hamilton/product-page";
 import { ZERO_FEE_RAW_FLAG, ZERO_FEE_VERIFIED_FLAG } from "@/lib/agents/darwin/envelopes";
-import { perEventFrequency, settledFrequency } from "@/lib/fee-frequency";
 import {
   decidePriorFee,
   HAMILTON_PUBLISH_DEFAULT_MIN_CONFIDENCE,
@@ -35,8 +35,6 @@ import type { PipelineVariant, ShadowCase, StageFee, StageOutput, VerifyResult }
 export interface ExperimentConfig {
   id: string;
   description: string;
-  /** Darwin's verify reads an hourly price from the fee's own line (`settledFrequency` `hourly`). */
-  hourlyAtVerify: boolean;
   /** The publish row carries Knox's excerpt, so the existing limit guard reads the line too. */
   excerptAtPublish: boolean;
 }
@@ -44,25 +42,16 @@ export interface ExperimentConfig {
 const CURRENT_CONFIG: ExperimentConfig = {
   id: "current",
   description: "Today's free Knox read, Darwin's verify checks and Hamilton's publish gate.",
-  hourlyAtVerify: false,
   excerptAtPublish: false,
 };
 
-export const DEFAULT_EXPERIMENT = "hourly-at-verify";
+export const DEFAULT_EXPERIMENT = "excerpt-at-publish";
 
 export const EXPERIMENTS: Readonly<Record<string, ExperimentConfig>> = {
-  [DEFAULT_EXPERIMENT]: {
-    id: DEFAULT_EXPERIMENT,
-    description:
-      "Darwin's verify reads an hourly price from the fee's own line, instead of leaving it to the live hourly sweep after publication (#1456).",
-    hourlyAtVerify: true,
-    excerptAtPublish: false,
-  },
   "excerpt-at-publish": {
     id: "excerpt-at-publish",
     description:
       "Hamilton's publish-time limit guard reads Knox's excerpt, instead of leaving the excerpt to the live limit sweep after publication.",
-    hourlyAtVerify: false,
     excerptAtPublish: true,
   },
 };
@@ -131,7 +120,7 @@ function rawRow(fee: StageFee): RawFeeRow {
   };
 }
 
-function verifyFee(config: ExperimentConfig, fee: StageFee, text: string): VerifyResult {
+function verifyFee(fee: StageFee, text: string): VerifyResult {
   const key = fee.canonicalFeeKey;
   const name = fee.feeName ?? "";
   if (!key) return { ok: false, reason: "missing_canonical" };
@@ -148,8 +137,7 @@ function verifyFee(config: ExperimentConfig, fee: StageFee, text: string): Verif
   if (post) return { ok: false, reason: post.rule ? `${post.code}:${post.rule}` : post.code };
   if (tierPerkZero(amount, name, REPLAY_URL, text, key)) return { ok: false, reason: "tier_perk_zero" };
   // Darwin settles the frequency it verifies from Knox's own excerpt (insertCurrentVerifiedFee).
-  const settled = settledFrequency(fee.excerpt, amount, fee.frequency ?? null, key, { hourly: config.hourlyAtVerify });
-  return { ok: true, fee: { ...fee, frequency: perEventFrequency(key, settled, fee.excerpt, amount) } };
+  return { ok: true, fee: { ...fee, frequency: verifiedFrequency(fee.excerpt, amount, fee.frequency ?? null, key) } };
 }
 
 function priorRow(fee: StageFee, index: number): PriorPublishedFeeRow {
@@ -201,7 +189,7 @@ function buildVariant(config: ExperimentConfig): PipelineVariant {
       return { accepted: true, reason: null };
     },
     extract: readText,
-    verify: (fee, text) => verifyFee(config, fee, text),
+    verify: verifyFee,
     publishGate: (fee, text, live) => gateFee(config, fee, text, live),
   };
 }

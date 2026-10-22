@@ -36,7 +36,7 @@ function input(ms = 1): CompareInput {
     fixtures: [{ path: "f", sha256: "x" }],
     notReplayable: [{ issue: "#1", failure: "f", reason: "no committed source text" }],
     current: { traces: current, repeats: [current], providerCalls: 0 },
-    experimental: { traces: experimental, repeats: [experimental], providerCalls: 0, config: { id: "e", description: "d", hourlyAtVerify: true, excerptAtPublish: false } },
+    experimental: { traces: experimental, repeats: [experimental], providerCalls: 0, config: { id: "e", description: "d", excerptAtPublish: true } },
   };
 }
 
