@@ -845,6 +845,15 @@ describe("Knox extract.rules", () => {
       expect(read.filter(([, amount]) => amount === 4).map(([, , key]) => key)).toEqual(["cashiers_check"]);
     });
 
+    it("v97: a slash-unit break never glues a condition onto the next fee's name", () => {
+      const pad = " The bank may change these terms at any time and will notify you as required by applicable law and regulation";
+      const hourNum = "Account reconciliation $30.00/hour 1 hour minimum Research $25.00/hour 30 minute minimum Wire transfer outgoing $25.00/Item" + pad + pad;
+      const waived =
+        "Monthly Maintenance Fee $10.00/month Waived with a $1,500 minimum daily balance or $500 in direct deposits Paper Statement Fee $3.00/month Waived for customers age 65 or older" + pad;
+      const names = [...fees(hourNum), ...fees(waived)].map(([name]) => name);
+      expect(names.filter((name) => /^(?:If|Waived|\d+ (?:hour|minute))/i.test(name))).toEqual([]);
+    });
+
     it("v97: a capitalised unit after a leader price closes its row too", () => {
       const oneLine = `Temporary checks ${".".repeat(74)}$.40 Each Cashier’s checks${".".repeat(84)}$4.00 Per Item Money orders${".".repeat(60)}$3.00`;
       expect(fees(oneLine)).toEqual(expect.arrayContaining([["Cashier’s checks", 4, "cashiers_check"], ["Money orders", 3, "money_order"]]));
