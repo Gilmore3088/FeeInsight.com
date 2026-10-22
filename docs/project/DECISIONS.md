@@ -5,6 +5,16 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-22
 
+**Data-quality work has an executive owner.** James, 2026-10-22 ("At this point you are the
+executive owner of this, so you have full control"), delegating ownership of the data-quality work
+(the pipeline agents and fee accuracy) to the session leading it. Data-quality decisions, including
+HOLD-class ones (a rule that holds, rejects or re-files fees), may proceed without a per-decision
+yes from James once an independent reviewer of the exact head finds no blockers and CI is green.
+Each such decision is recorded in the merge receipt with the head SHA and both verdicts. The hard
+limits in `CLAUDE.md` still apply: migrations, production-data mutations, permission or security
+changes, paid-provider activation, outreach, force-pushes and branch deletion still need James's
+yes, and a HOLD-class rule still ships with its Darwin live re-check and dry-run count.
+
 **The second wave: read the old documents again.** James, 2026-10-22 ("Hell yeah, we need to re-read
 the old stuff. Like a second wave"), after Knox v97 (#2538) and the targets of 2026-10-21. Knox's
 stale-read floor (`KNOX_STALE_READ_BELOW_VERSION`) moves from v78 to v97, so every current copy last

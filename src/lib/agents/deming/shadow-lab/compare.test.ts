@@ -77,6 +77,12 @@ describe("shadow lab comparison", () => {
     expect(report).not.toMatch(/Duplicate prevention \| 0\.0%/);
   });
 
+  it("should_report_name_quality_and_per_scenario_recall", () => {
+    const report = renderReport(compareRuns(input()));
+    expect(report).toMatch(/\| Names: published fees whose name matches the schedule \| not measured \| not measured \|/);
+    expect(report).toMatch(/\| Scenario \| Cases \| Current failures \| Experimental failures \| Current recall \| Current false publication \|/);
+  });
+
   it("should_count_listed_failures_as_not_replayable_and_show_stage_time", () => {
     const report = renderReport(compareRuns(input(2)));
     expect(report).toContain("1 known failure not replayable");

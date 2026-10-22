@@ -7,7 +7,8 @@ export type ScenarioId =
   | "duplicate_lines"
   | "hourly_as_flat"
   | "missed_fees"
-  | "wrong_document";
+  | "wrong_document"
+  | "live_audit";
 
 export const SCENARIO_IDS: readonly ScenarioId[] = [
   "limit_as_fee",
@@ -17,6 +18,7 @@ export const SCENARIO_IDS: readonly ScenarioId[] = [
   "hourly_as_flat",
   "missed_fees",
   "wrong_document",
+  "live_audit",
 ];
 
 export type StageId = "document_gate" | "extract" | "verify" | "publish_gate";
@@ -34,6 +36,8 @@ export interface FeeRef {
   frequency?: string | null;
   /** The schedule line the expectation was keyed from, when the fixture keeps one. */
   sourceLine?: string | null;
+  /** The name a reviewer expects the published fee to carry (scored by `names.ts`). */
+  expectedName?: string | null;
 }
 
 export interface ShadowCase {

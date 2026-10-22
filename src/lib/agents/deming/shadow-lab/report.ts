@@ -29,6 +29,8 @@ const REMEDIES: Partial<Record<`${FailureStage}/${FailureKind}`, string>> = {
   "verify/duplicate": "Same-dollar lines lost at verification before the publish gate could judge them.",
   "extract/duplicate": "Same-dollar lines Knox read more times than the page prints them.",
   "document_gate/wrong_document": "Documents the gate judged wrongly (a product page accepted, or a fee schedule refused).",
+  "passed_every_stage/wrong_name":
+    "Fees published at the right category and price under a name that does not match the schedule's (fewer than half its own words, or a leading cut or condition fragment). The reasons are the published names.",
 };
 
 function percent(part: number, whole: number): string {
@@ -48,11 +50,12 @@ function topCounts(values: (string | null)[]): string {
 function headline(current: VariantMetrics, experimental: VariantMetrics): string[] {
   const rows: Array<[string, (m: VariantMetrics) => string]> = [
     ["Recall: answer-key fees published", (m) => percent(m.answerKeyRecall.found, m.answerKeyRecall.expected)],
-    ["Recall: all expected fees published (answer keys and category cases)", (m) => percent(m.recall.found, m.recall.expected)],
+    ["Recall: all expected fees published (answer keys, category cases and the live audit)", (m) => percent(m.recall.found, m.recall.expected)],
     ["False publication: known-wrong fees published (lower is better)", (m) => percent(m.falsePublication.published, m.falsePublication.forbidden)],
     ["Duplicate prevention", (m) => percent(m.duplicatePrevention.correct, m.duplicatePrevention.cases)],
     ["Source attribution: published fees traced to a line", (m) => percent(m.sourceAttribution.attributed, m.sourceAttribution.published)],
     ["Document gate", (m) => percent(m.documentGate.correct, m.documentGate.cases)],
+    ["Names: published fees whose name matches the schedule", (m) => percent(m.names.matched, m.names.expected)],
     ["Published fees not in the answer key", (m) => String(m.unexpectedPublications)],
   ];
   return ["| Measure | Current | Experimental |", "|---|---|---|", ...rows.map(([label, cell]) => `| ${label} | ${cell(current)} | ${cell(experimental)} |`)];
@@ -66,9 +69,12 @@ function whereWrong(current: VariantMetrics, experimental: VariantMetrics): stri
     "|---|---|---|",
     ...FAILURE_STAGES.map((stage) => `| ${stage} | ${current.failuresByStage[stage]} | ${experimental.failuresByStage[stage]} |`),
     "",
-    "| Scenario | Cases | Current failures | Experimental failures |",
-    "|---|---|---|---|",
-    ...SCENARIO_IDS.map((id) => `| ${id} | ${current.byScenario[id].cases} | ${current.byScenario[id].failures} | ${experimental.byScenario[id].failures} |`),
+    "| Scenario | Cases | Current failures | Experimental failures | Current recall | Current false publication |",
+    "|---|---|---|---|---|---|",
+    ...SCENARIO_IDS.map((id) => {
+      const s = current.byScenario[id];
+      return `| ${id} | ${s.cases} | ${s.failures} | ${experimental.byScenario[id].failures} | ${percent(s.found, s.expected)} | ${percent(s.published, s.forbidden)} |`;
+    }),
   ];
 }
 
