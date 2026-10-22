@@ -303,7 +303,42 @@ export function tidyFeeName(raw: string): string {
   // "(Money Order)" alone is the name in parentheses.
   const wrapped = name.match(/^\(([^()]+)\)$/);
   if (wrapped) name = wrapped[1].trim();
+  name = withoutLeadingCondition(name);
   return usableName(name) ? name : raw.trim();
+}
+
+/** v98: a condition clause ("If the balance ...", "Waived for ...") opens on a lowercase word. */
+const CONDITION_CLAUSE = /^(?:If|When|Unless|Waived|Except|Excluding)\s+[a-z]/;
+/** v98: a duration minimum or maximum ("30 minute minimum") is the previous row's condition. */
+const DURATION_LEAD = /^\d+\s*(?:minutes?|mins?|hours?|hrs?)\s+(?:minimum|maximum|min|max)\b\s+(?=[A-Z])/i;
+/** v98: a lowercase connector and its words ("and minimum ") left from the previous row. */
+const CONNECTOR_LEAD = /^(?:and|or|plus)\s+(?:[a-z][\w'’-]*\s+)*(?=[A-Z])/;
+/**
+ * The first lowercase word or figure before a capitalised one: where the glued name starts. The
+ * first, not the last, so the name's own lowercase words ("Overdraft Fee per Item") stay in it. A
+ * figure before a period ("30 Day Inactivity Fee") is the start of the name, not a break.
+ */
+const PERIOD_NAME = String.raw`\d[\d,.]*\s+(?:Days?|Weeks?|Months?|Years?|Hours?|Minutes?)\b`;
+const LOWER_THEN_CAPITAL = new RegExp(
+  String.raw`\s(?:[a-z][\w'’-]*|\$?\d[\d,.]*(?!\s+(?:Days?|Weeks?|Months?|Years?|Hours?|Minutes?)\b))\s+(?=[A-Z]|${PERIOD_NAME})`,
+);
+const MAX_TAIL_NAME_WORDS = 10;
+
+/**
+ * v98: the previous row's condition glued in front of this row's name in a long stored line
+ * ("If the balance falls below on any day of the cycle Excess withdrawal", "30 minute minimum Wire
+ * transfer outgoing", "and minimum Photocopies"). The name starts at its first capitalised word. A name
+ * whose own words start with a condition word ("Waived Fee Reversal", "If Paid Overdraft Fee")
+ * keeps them: a clause opens on a lowercase word.
+ */
+export function withoutLeadingCondition(name: string): string {
+  const lead = name.match(DURATION_LEAD) ?? name.match(CONNECTOR_LEAD);
+  if (lead) return name.slice(lead[0].length);
+  if (!CONDITION_CLAUSE.test(name)) return name;
+  const first = name.match(LOWER_THEN_CAPITAL);
+  if (!first || first.index == null) return name;
+  const tail = name.slice(first.index + first[0].length);
+  return tail.split(/\s+/).length <= MAX_TAIL_NAME_WORDS ? tail : name;
 }
 
 /**
