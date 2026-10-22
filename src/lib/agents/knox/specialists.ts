@@ -28,6 +28,7 @@ import { withoutFeeBullets } from "@/lib/custom-report/fee-bullets";
 import { exclusiveStackedPrices, stackedFeePrices } from "@/lib/custom-report/stacked-fee-prices";
 import { monthlyAccountOwnerReview } from "./monthly-account-owners";
 import { withOwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
+import { withTierColumnRows } from "./tier-columns";
 import { mayHaveSymbolicLesserFee, symbolicLesserOfReview } from "./symbolic-lesser-of";
 import { internationalWireEligibility } from "./international-wire-eligibility";
 import { belongsToPaidReturnedUnit, paidReturnedUnits } from "@/lib/custom-report/paid-returned-events";
@@ -199,7 +200,12 @@ import { belongsToPaidReturnedUnit, paidReturnedUnits } from "@/lib/custom-repor
 // row's own words (`asReadBoxName`, `leadsBoxRow`).
 // Shadow lab names 287 -> 313 of 317; recall, false publication, Texas and state gates unchanged. The
 // stale-read floor stays at v97. Name re-tidy stays at v26.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 99 } as const;
+// v100: a relationship-tier fee table ("PLATINUM GOLD SILVER+ SILVER COLLEGE" over "Stop Payment FREE
+// $25 $25 $25 $25", State key 7450) is read one line per priced tier cell (`withTierColumnRows`).
+// Knox read only a row's first cell, so a row free in its first tier lost the price the other tiers
+// pay. A free cell beside priced ones is a tier perk and gives no $0. Admit-only: a row's first-tier
+// read stays. The stale-read floor stays at v97. Name re-tidy stays at v26.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 100 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -357,7 +363,8 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
   // v62: a fee footnoted as business-only is no specialist's to read (`withoutBusinessOnlyFees`).
   // v63: a safe deposit box size glued after a fee's name starts its own line (`withBoxSizeCellsSplit`).
   // v64: a box table printed sideways, sizes over prices, becomes one line per box (`withSidewaysBoxTable`).
-  const text = withSidewaysBoxTable(withBoxSizeCellsSplit(withoutBusinessOnlyFees(joinLabeledFeeCardText(sourceText))));
+  // v100: a relationship-tier table's row becomes one line per priced tier cell (`withTierColumnRows`).
+  const text = withTierColumnRows(withSidewaysBoxTable(withBoxSizeCellsSplit(withoutBusinessOnlyFees(joinLabeledFeeCardText(sourceText)))));
   const legacyText = withoutFeeBullets(text, recognizedFeeBullets(text));
   const windows = priceWindows(legacyText);
   const stackedPrices = stackedFeePrices(text);

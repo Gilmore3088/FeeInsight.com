@@ -212,10 +212,11 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-255 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+256 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
-### Extraction and fee reading (35)
+### Extraction and fee reading (36)
 
+- 2026-10-22 — A row with one price cell per column is several fees on one line: read each column's price under its header, and treat a free cell beside priced ones as a perk, not a price. — [finding](findings/2026-10-22-tier-column-rows-read-first-cell-only.md) — Agent lesson: knox/tier-column-rows
 - 2026-10-22 — A name that adds words its row does not print must still trace by the row's own words in every check that looks for it on the page. — [finding](findings/2026-10-22-box-sizes-named-by-size-alone.md) — Agent lesson: knox/issue-2064-box-size-names
 - 2026-10-21 — When a reader has a per-document cap, a miss late in a long document is a cap, not a rule; a rules fix reaches most stored texts only through the stale-read floor. — [finding](findings/2026-10-21-flattened-schedules-cut-off.md) — Guard: `src/lib/agents/knox/rules.test.ts` (+1 more)
 - 2026-10-20 — A reader fix must reach the live fees the old read published, and the shared check must refuse a neighbour's price. — [finding](findings/2026-10-20-reader-fixes-never-reach-live-fees.md) — Agent lesson: knox/issue-1827-each-row-keeps-its-own-price
@@ -518,7 +519,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (131 in all).
+counts as of this index (132 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
@@ -526,7 +527,7 @@ counts as of this index (131 in all).
 | magellan | 15 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
 | hoovie | 9 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
 | rosetta | 6 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
-| knox | 34 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
+| knox | 35 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
 | darwin | 15 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 36 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
 | hamilton | 8 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |

@@ -49,7 +49,9 @@ const FLOORS: Record<string, { right: number; wrong: number }> = {
   // v90 (#2454, James chose "File them", Oct 20): returned statements file as returned mail, and the
   // gate scores the keys' "unmapped" returned statement lines there too; from main's reads (GA 171,
   // IL 114, MI 128, MN 119, all 865 / 33) to GA 172, IL 115, MI 130, MN 120, all 870 / 33; no wrong read added.
-  CA: { right: 153, wrong: 5 },
+  // v100: a relationship-tier table's rows are read one line per priced tier cell (State key 7450):
+  // CA 153 -> 159 right, all 885 -> 891; no wrong read added.
+  CA: { right: 159, wrong: 5 },
   FL: { right: 136, wrong: 6 },
   // v97 (Oct 21): State key 60 (GA, one stored line) is read past its "$35.00/Item" rows: 172 -> 179
   // right. One new wrong read, "Overdraft Protection $35.00/Item" as an overdraft protection
@@ -68,7 +70,8 @@ const FLOORS: Record<string, { right: number; wrong: number }> = {
   // v97: 870 -> 877 right (GA's key 60); wrong 33 -> 34, inside the floor.
   // Guard v81 and the escheat range (Oct 22): returned check deposits and escheat processing fees read
   // as Darwin now verifies them: 877 -> 885 right (GA 180, IL 116, MI 135, MN 121); wrong unchanged at 34.
-  all: { right: 885, wrong: 38 },
+  // v100: 885 -> 891 right (CA's key 7450, tier columns); wrong unchanged at 34.
+  all: { right: 891, wrong: 38 },
 };
 
 const fixture = JSON.parse(
