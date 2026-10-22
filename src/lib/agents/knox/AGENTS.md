@@ -284,6 +284,16 @@ fees found (54.7%); 56 of the 59 wrong reads are the right price under another c
 
 ## Rules versions (`extract.rules`)
 
+v98 (Oct 22): the previous row's condition glued in front of a fee's name in a long stored line is
+dropped (`withoutLeadingCondition`, run at the end of `tidyFeeName`). It covers a condition clause
+that opens on a lowercase word ("If the balance falls below on any day of the cycle Excess
+withdrawal", "Waived for customers age 65 or older Paper Statement Fee"), a duration minimum ("30
+minute minimum Wire transfer outgoing") and a lowercase connector ("and minimum Photocopies"). A name
+whose own words start with a condition word keeps them ("Waived Fee Reversal", "If Paid Overdraft
+Fee"). Found by the review of v97 (#2538); main's rules produced the same names. Hamilton's normalized
+name reads `tidyFeeName` too, so a re-read's clean name matches the garbled live one. Name re-tidy
+v27 applies the same tidy to live names, which is held for James. Shadow lab and gates unchanged.
+
 v97 (Oct 21): a schedule flattened to one long stored line is read to its end. A cents-only price and
 the unit after it ("Temporary checks ....$.40 each") close a dot-leader row (`LONG_LINE_BREAK`), so the
 next row ("Cashier’s checks ....$4.00") is not glued to it past the 280-character segment limit and
@@ -1806,9 +1816,9 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_LAYOUT_SIGNATURE_VERSION` | — | v1 | `knox/layout-signature.ts` |
 | `KNOX_LESSONS_VERSION` | — | v3 | `knox/lessons.ts` |
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
-| `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v26 | `knox/name-retidy.ts` |
+| `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v97 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v98 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v8 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

@@ -35,6 +35,22 @@ describe("tidyFeeName", () => {
     expect(tidyFeeName(raw)).toBe(expected);
   });
 
+  it.each([
+    // v98: the previous row's condition, glued in front of the next row's name in a long line.
+    ["If the balance falls below on any day of the cycle Excess withdrawal", "Excess withdrawal"],
+    ["30 minute minimum Wire transfer outgoing", "Wire transfer outgoing"],
+    ["and minimum Photocopies", "Photocopies"],
+    ["Waived for customers age 65 or older Paper Statement Fee", "Paper Statement Fee"],
+  ])("v98: drops a condition glued before the fee's name %j", (raw, expected) => {
+    expect(tidyFeeName(raw)).toBe(expected);
+  });
+
+  it("v98: keeps a name whose own words start with a condition word", () => {
+    expect(tidyFeeName("Waived Fee Reversal")).toBe("Waived Fee Reversal");
+    expect(tidyFeeName("If Paid Overdraft Fee")).toBe("If Paid Overdraft Fee");
+    expect(tidyFeeName("30 Day Inactivity Fee")).toBe("30 Day Inactivity Fee");
+  });
+
   it("leaves clean names and their qualifiers alone", () => {
     expect(tidyFeeName("Stop Payment")).toBe("Stop Payment");
     expect(tidyFeeName("Drill box fee (when keys are lost or stolen)")).toBe("Drill box fee (when keys are lost or stolen)");
