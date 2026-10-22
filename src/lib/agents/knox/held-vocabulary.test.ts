@@ -29,6 +29,14 @@ describe("v101: held names the shadow lab showed Knox reading at the right price
     expect(classifyFeeText("Cash Advantage Checking")).toBeNull();
   });
 
+  it("keeps a cash advanced limit or cap out of cash advance (review of #2547)", () => {
+    expect(hint("Maximum cash advanced per day: $1,000")).toEqual([]);
+    expect(hint("Cash advanced limit $500")).toEqual([]);
+    expect(classifyFeeText("Cash advanced up to $500")).toBeNull();
+    expect(classifyFeeText("Cash advanced limit")).toBeNull();
+    expect(classifyFeeText("Cash advanced per transaction fee")).toBeNull();
+  });
+
   it("reads gift cards sold with other cards as a gift card purchase", () => {
     expect(hint("Gift and Reloadable Travel Cards | $3.00")).toEqual([["gift_card_purchase", 3]]); // tid 11477
     expect(classifyFeeText("Gift & Prepaid Cards")).toBe("gift_card_purchase");
@@ -37,6 +45,10 @@ describe("v101: held names the shadow lab showed Knox reading at the right price
   it("leaves reloadable travel cards alone and a gift of funds unfiled", () => {
     expect(classifyFeeText("Reloadable Travel Cards")).toBeNull();
     expect(classifyFeeText("Gift and Estate Tax Letters")).toBeNull();
+    // Review of #2547: a gift card beside a debit, Visa or credit card names no gift card purchase.
+    expect(classifyFeeText("Gift and Debit Cards")).toBeNull();
+    expect(classifyFeeText("Gift & Visa Cards")).toBeNull();
+    expect(classifyFeeText("Gift or Credit Cards")).toBeNull();
   });
 
   it("leaves a bare monthly account maintenance row held: the name cannot tell an account's from a card's", () => {
@@ -53,6 +65,12 @@ describe("v101: held names the shadow lab showed Knox reading at the right price
   it("keeps a returned ACH file a return and an ACH debit received unfiled", () => {
     expect(classifyFeeText("ACH File Returned")).toBe("ach_return");
     expect(classifyFeeText("ACH Debit Received")).toBeNull();
+    // Review of #2547: receiving, reversing or deleting a file is not sending one.
+    expect(classifyFeeText("ACH File Received")).toBeNull();
+    expect(classifyFeeText("Incoming ACH File")).toBeNull();
+    expect(classifyFeeText("ACH File Reversal")).toBeNull();
+    expect(classifyFeeText("ACH File Delete")).toBeNull();
+    expect(hint("ACH files received after 4:00 PM are processed the next business day; late file fee $25.00")).toEqual([]);
   });
 
   it("reads balancing or research and a records look-up as account research", () => {
@@ -64,6 +82,9 @@ describe("v101: held names the shadow lab showed Knox reading at the right price
   it("keeps a balance look-up and a research note that names no fee out of research", () => {
     expect(classifyFeeText("Balance Look Up")).not.toBe("account_research");
     expect(classifyFeeText("Look Up Your Routing Number")).toBeNull();
+    // Review of #2547: a look-up by phone is usually a balance inquiry.
+    expect(classifyFeeText("Account Look-up via phone")).toBeNull();
+    expect(classifyFeeText("Telephone Account Lookup")).toBeNull();
   });
 
   it("reads a bare account closure row as early closure", () => {

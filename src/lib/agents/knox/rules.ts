@@ -659,9 +659,11 @@ export const HELD_NAME_PATTERNS: FeePattern[] = [
 
 /**
  * v101: names Knox read at the answer key's own price but held unclassified (shadow lab, Oct 22:
- * 46 held answer-key rows across 25 documents, of which these rules take the ones whose category
- * the keys agree on). Tried after every rule above, the held-name rules included, so they only
- * claim names no other rule files: a row filed today keeps its category. Left held on purpose:
+ * 49 held answer-key rows across 24 documents, of which these rules take the ones whose category
+ * the keys agree on). Tried after FEE_PATTERNS, and after the held-name rules when those are on
+ * (`KNOX_HELD_NAME_RULES_LIVE`; under `withHeldNameRules(false)` they are tried right after
+ * FEE_PATTERNS), so they only claim names no other live rule files: a row filed today keeps its
+ * category. Left held on purpose:
  * printouts (the keys file them as research at one bank and as copies at another), a bare
  * "Service Fee" or "Checking Fee" (v78), "Expedited Delivery" (v75), "Skip-a-Loan" (v75), "Title
  * Fee", "Monthly Account Maintenance" (the account's at tid 7450, a gift card's under its heading
@@ -673,19 +675,35 @@ export const HELD_NAME_PATTERNS: FeePattern[] = [
 export const V101_HELD_VOCABULARY: FeePattern[] = [
   // "Bill Payer" (tid 7450), "Automated (Recurring) Loan Transfer • Bill Payer" (tid 9308).
   { key: "bill_pay", pattern: /\bbill[- ]?payers?\b/i },
-  // "Cash Advanced Fee" (tid 3141): the past participle of the cash advance rule's own name.
-  { key: "cash_advance", pattern: /\bcash advanced\b/i },
+  // "Cash Advanced Fee" (tid 3141): the past participle of the cash advance rule's own name, with
+  // its fee word. A limit or cap ("Maximum cash advanced per day: $1,000", "Cash advanced limit
+  // $500", "up to") is an amount, not a fee.
+  {
+    key: "cash_advance",
+    pattern:
+      /^(?![\s\S]*\b(?:limits?|maximum|max|minimum|min|up to|per (?:day|transaction|month)|daily)\b)[\s\S]*\bcash advanced\s+(?:fees?|charges?)\b/i,
+  },
   // Gift cards sold beside other cards ("Gift and Reloadable Travel Cards", tid 11477). Reloadable
-  // or travel cards on their own stay held (v75).
-  { key: "gift_card_purchase", pattern: /\bgift\s*(?:and|&|or|\/)\s*(?:[\w-]+\s+){0,3}cards?\b/i },
+  // or travel cards on their own stay held (v75), and a gift card beside a debit, Visa, credit or
+  // ATM card ("Gift and Debit Cards") names no gift card purchase.
+  {
+    key: "gift_card_purchase",
+    pattern: /\bgift\s*(?:and|&|or|\/)\s*(?:(?!(?:debit|visa|credit|atm|check|master\w*)\b)[\w-]+\s+){0,3}cards?\b/i,
+  },
   // "ACH File Fee (per file)", "ACH Payments - template (per item)" (tid 1338): the business side
-  // of sending ACH. A returned ACH file is a return (an earlier rule).
-  { key: "ach_origination", pattern: /\bACH\b[^|$]{0,25}\b(?:files?|templates?)\b/i },
+  // of sending ACH. A returned ACH file is a return (an earlier rule). A file received, incoming,
+  // reversed or deleted is not one sent, and no key files those, so they stay held.
+  {
+    key: "ach_origination",
+    pattern: /^(?![\s\S]*\b(?:receiv\w*|incoming|inbound|revers\w*|delet\w*)\b)[\s\S]*\bACH\b[^|$]{0,25}\b(?:files?|templates?)\b/i,
+  },
   // "After balancing or research" (tid 5703), "Special Request Look Up" (tid 4677). A balance
-  // look-up is a balance inquiry, not research, and is left out.
+  // look-up, or one by phone ("Account Look-up via phone"), is usually a balance inquiry, not
+  // research, and is left out.
+  { key: "account_research", pattern: /\b(?:balancing|reconcil\w*)\s+(?:or|and|&)\s+research\b|\bresearch\s+(?:or|and|&)\s+balancing\b/i },
   {
     key: "account_research",
-    pattern: /\b(?:balancing|reconcil\w*)\s+(?:or|and|&)\s+research\b|\bresearch\s+(?:or|and|&)\s+balancing\b|\b(?:account|records?|special request)\s+look[- ]?ups?\b/i,
+    pattern: /^(?![\s\S]*\b(?:phone|telephone|balances?|IVR|audio)\b)[\s\S]*\b(?:account|records?|special request)\s+look[- ]?ups?\b/i,
   },
   // A bare "Account Closure" or "Account Closing" row (tid 60, tid 12816, Texas 2429), as v14 files
   // "Account Closing Fee". A loan's or certificate's closure is not one (NOT_AN_ACCOUNT_CLOSURE).

@@ -285,10 +285,12 @@ fees found (54.7%); 56 of the 59 wrong reads are the right price under another c
 ## Rules versions (`extract.rules`)
 
 v101 (Oct 22): names Knox read at the answer key's own price but held unclassified get the category
-the keys agree on (`V101_HELD_VOCABULARY` in `rules.ts`, tried after every other name rule, the
-held-name rules included, so a name another rule files keeps its category): "Bill Payer", "Cash
-Advanced Fee", gift cards sold with other cards ("Gift and Reloadable Travel Cards"), an ACH file or
-template, "balancing or research", an account, records or special-request look-up, a bare "Account
+the keys agree on (`V101_HELD_VOCABULARY` in `rules.ts`, tried after FEE_PATTERNS and, while they
+are on, the held-name rules, so a name another live rule files keeps its category): "Bill Payer", a
+"Cash Advanced Fee" (never a limit, maximum or per-day cap), gift cards sold with other cards ("Gift
+and Reloadable Travel Cards"; not beside a debit, Visa, credit or ATM card), an ACH file or template
+sent (a received, incoming, reversed or deleted file stays held), "balancing or research", an
+account, records or special-request look-up (not by phone or of a balance), a bare "Account
 Closure" or "Account Closing" row (not a loan's or certificate's), a refinance named first with its
 loan or line, and a home equity line's early closure (other lending). A card's or loan's line read as
 monthly maintenance only because of a parenthetical "(EFT Service Charge)" label is read again

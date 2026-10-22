@@ -26,19 +26,22 @@ every other name rule, the held-name rules included, so it only claims names not
 | Wording | Category | Miss it fixes (state key, price) |
 |---|---|---|
 | "bill payer" | bill pay | 7450 $0, 9308 $0 |
-| "cash advanced" | cash advance | 3141 $0 |
-| gift and/or/& ... cards | gift card purchase | 11477 $3 |
-| ACH ... file / template | ACH origination | 1338 $15, 1338 $0.21 |
-| balancing or research; account, records or special-request look-up | account research | 5703 $25, 4677 $10 |
+| "cash advanced fee/charge", with no limit, maximum, "up to" or per-day cap | cash advance | 3141 $0 |
+| gift and/or/& ... cards, with no debit, Visa, credit or ATM card in between | gift card purchase | 11477 $3 |
+| ACH ... file / template, not received, incoming, reversed or deleted | ACH origination | 1338 $15, 1338 $0.21 |
+| balancing or research; account, records or special-request look-up, not by phone or of a balance | account research | 5703 $25, 4677 $10 |
 | a bare "Account Closure" / "Account Closing" row (not a loan's or certificate's) | early closure | 60 $20, 12816 $5 |
 | a refinance named first with its loan or line; a home equity line's early closure | other lending | 8034 $200, 8034 $100 |
 | a parenthetical "(... Service Charge)" label on a card or loan line is read without the label | the name's own rule | 12752 $75 (rush card) |
 
 Each rule has a near miss in `src/lib/agents/knox/held-vocabulary.test.ts` that must stay unfiled or
 keep its own category:
-- "Reloadable Travel Cards".
-- "ACH File Returned" (an ACH return) and "ACH Debit Received".
-- "Balance Look Up".
+- "Maximum cash advanced per day: $1,000", "Cash advanced limit $500", "Cash advanced up to $500".
+- "Reloadable Travel Cards", "Gift and Debit Cards", "Gift & Visa Cards".
+- "ACH File Returned" (an ACH return), "ACH Debit Received", "ACH File Received", "Incoming ACH
+  File", "ACH File Reversal", "ACH File Delete", and "ACH files received after 4:00 PM ...; late
+  file fee $25.00". No key files a reversed or deleted file, so they stay held.
+- "Balance Look Up", "Account Look-up via phone", "Telephone Account Lookup".
 - "Loan Account Closure" and "Certificate Account Closure".
 - "Early Account Closure" (stays a deposit account's early closure).
 - A rate sheet's "Can be used for refinances or purchase loans".
@@ -46,7 +49,12 @@ keep its own category:
 
 The first cut also filed "Monthly Account Maintenance". At State key 3141 that row is a gift card's,
 under its "Gift Card" heading. It scored one new wrong read in the seven-state gate, so the rule was
-dropped.
+dropped. The review of #2547 tightened the cash advance, ACH file, gift card and look-up rules with
+the near misses above; the shadow lab, ratchet and gates did not move.
+
+**Count:** 13 answer-key rows publish at v101. 11 of them are among the 49 rows listed. The other 2
+(12816's "Account Closure" $5 and 8034's refinance $200) were misses the scan's line match did not
+list. Why it missed them was not traced.
 
 **Left held on purpose (38 of the 49 rows; the other 11 are fixed above):**
 - Named only by a heading, or a fragment for a name (18). Examples: "Incoming" and "Outgoing
@@ -70,8 +78,11 @@ Category disagreements such as legal process vs garnishment are a separate item 
 touched.
 
 **Admit-only:** Every Texas, seven-state and shadow-lab text was read before and after the change
-(a scratch comparison, not committed). No read was lost or re-filed. 22 reads were added: the 11
-fixes above, once in the gate's copy of each text and once in the lab's. Some held rows got a
+(a scratch comparison, not committed). No read was lost or re-filed. 22 candidate reads were
+added: 11 per copy of the texts (the gate's copy and the lab's). Of the 13 answer-key
+gains, 10 come from those candidates (8034's two $200 refinance lines meet one key entry). The
+other 3 are $0 rows (3141 cash advance, 7450 and 9308 bill payer) that now carry a category, so they
+publish through Knox's stated-$0 path. Some held rows got a
 category but stay held: $0 bill payer and cash advance rows, Texas 2436's percentage "Refinance
 Current CCU Loan", and one untraced "Account Closure" in the live audit. No dry-run count against
 live stored texts was run (no database access in this session), so how many live held rows v101
