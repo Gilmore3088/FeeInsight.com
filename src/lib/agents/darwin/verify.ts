@@ -24,7 +24,8 @@ import { CATEGORY_GUARD_VERSION, checkFeeCategory, refileCategory, refileFromLin
 import { RETIRED_CATEGORIES } from "@/lib/fee-fold";
 import { RULE_WHY, ruleFor } from "@/lib/agents/hamilton/eval-verdicts";
 import { checkFeeAgainstSource, checkRateAgainstSource, sourceLines } from "@/lib/custom-report/source-check";
-import { perEventFrequency, settledFrequency } from "@/lib/fee-frequency";
+import { frequencyFamily, perEventFrequency, settledFrequency } from "@/lib/fee-frequency";
+import { HOURLY_PERIOD_WORD } from "@/lib/agents/darwin/hourly-frequency-check";
 import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
 import { sourceLinkSkipReason } from "@/lib/agents/hamilton/source-link";
 import { PERCENT_FEE_RANGES, isPercentFee, percentFeeAllowed, ratePercentOf, type RateFields } from "@/lib/percent-fees";
@@ -836,6 +837,23 @@ export function normalizedAmount(value: number | string | null): number | null {
 
 const NO_LEARNED_ENVELOPES: ReadonlyMap<string, LearnedEnvelope> = new Map();
 
+/**
+ * The frequency Darwin verifies a fee at, from Knox's excerpt of its own line. Pure.
+ * #1456 (Oct 21): an hourly price on the fee's own line ("$25.00 per hour") is read here, so the fee
+ * is hourly when it publishes; the live hourly re-check (`hourly-frequency-check.ts`) stays as the
+ * safety net for fees published before. Categories never charged by the hour stay as they were.
+ * Measured in the shadow lab (#2536, experiment `hourly-at-verify`): hourly charges published as
+ * flat 9 -> 0 of 27, no fee lost.
+ * #1196: an NSF fee is charged per item; a period on one is a misread, so it is never verified.
+ */
+export function verifiedFrequency(line: string | null, amount: number | null, stated: string | null, canonicalFeeKey: string | null): string | null {
+  // As the live re-check (`hourlyVerdict`): a stated period, or a period printed on the line, is
+  // left to a person (stated_period, period_word), never turned into hourly.
+  const hourly = (stated == null || frequencyFamily(stated) === "per_item") && !HOURLY_PERIOD_WORD.test(line ?? "");
+  const settled = amount == null ? stated : settledFrequency(line, amount, stated, canonicalFeeKey, { hourly });
+  return perEventFrequency(canonicalFeeKey, settled, line, amount);
+}
+
 /** The first rule a row fails, or null when it can be verified. Exported for tests. */
 export function verificationReasonCode(
   row: RawFeeRow,
@@ -1281,12 +1299,7 @@ async function insertCurrentVerifiedFee(db: SqlTag, options: InsertVerifiedFeeOp
   if (options.secondSourceAgrees) flags.push(SECOND_SOURCE_FLAG);
   if (options.extraFlags) flags.push(...options.extraFlags.filter(flag => flag !== PAID_RETURNED_EVENT_FLAG && flag !== PAID_RETURNED_ELIGIBILITY_FLAG));
   const stated = row.frequency ?? null;
-  const line = excerptOf(row.conditions);
-  // #1456: Darwin keeps an hourly frequency Knox stated but does not read one itself; live fees
-  // become hourly through the switched live re-check (hourly-frequency-check.ts).
-  const settled = amount == null ? stated : settledFrequency(line, amount, stated, options.canonicalFeeKey, { hourly: false });
-  // #1196: an NSF fee is charged per item; a period on one is a misread, so it is never verified.
-  const frequency = perEventFrequency(options.canonicalFeeKey, settled, line, amount);
+  const frequency = verifiedFrequency(excerptOf(row.conditions), amount, stated, options.canonicalFeeKey);
   if (frequency !== stated) flags.push(FREQUENCY_SETTLED_FLAG);
   // With no decision the trigger copies the raw row's audience, as before.
   const audience = current.audience;
