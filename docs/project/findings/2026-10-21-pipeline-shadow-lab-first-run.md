@@ -36,6 +36,8 @@ The 373 extraction misses, by what Knox did with the line:
 
 The split between misfiled and mispriced is a heuristic: it depends on which words count as
 distinctive (a stricter word list gives 185, 63 and 99). "Most are never read" holds either way.
+The split between misfiled and mispriced is a heuristic: it depends on which words count as
+distinctive (a stricter word list gives 185, 63 and 99). "Most are never read" holds either way.
 No single category dominates. The largest are monthly maintenance (12 not read) and deposited item
 return (11 misfiled). Twelve of the 43 documents with an extraction miss hold half of them.
 
