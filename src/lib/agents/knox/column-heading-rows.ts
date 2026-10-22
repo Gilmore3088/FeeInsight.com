@@ -20,7 +20,9 @@ import type { KnoxTableRow } from "@/lib/agents/knox/table-rows";
  *  - a heading cell that ends a line after its last pair ("Incoming | $15.00 | Cashier's Check
  *    with Expedited Shipping"): the right column.
  * The first pair is the left column's only when it opens the line; any other pair is the right's.
- * A heading lasts while its page's lines are priced cell rows, and COLUMN_ROW_LINES lines past them.
+ * A heading lends only to the unbroken run of bare rows directly under it in its column, and for at
+ * most COLUMN_ROW_LINES lines. The first other cell in that column ends it: a row naming its own fee
+ * (whatever its category), a cell that is not a bare name, or a line of words across the page.
  *
  * Only a bare name borrows it: one no rule files alone that, without its notes, is a direction, a
  * customer type or a size (`composableTail`), never only a unit or a sequence ("Each additional",
@@ -150,21 +152,42 @@ export function columnHeadingRows(lines: readonly string[]): KnoxTableRow[] {
       return;
     }
     const pairs = pairsOf(cells);
-    const columns = { left: open(left, index) ? left : null, right: open(right, index) ? right : null };
-    if (pairs[0]?.at !== 0 && headingCell(cells[0])) {
-      // Before a pair, the cell heads the left column's rows; a cell with its own price beside it
-      // ("Temporary Checks | 4 personalized checks for $5.00") is a row, and ends the heading above
-      // unless it is a bare sub-heading ("International | Temporary Check (3 for $1.00)").
-      const nests = needsHeading(cells[0]) != null && columns.left != null;
-      left = pairs[0]?.at === 1 || nests ? leftHeading(cells[0], columns.left, index) : null;
-    }
-    pairs.forEach((pair, order) => {
-      const column = order === 0 && pair.at === 0 ? columns.left : columns.right;
+    let leftOpen = open(left, index) ? left : null;
+    let rightOpen = open(right, index) ? right : null;
+    const lend = (pair: Pair, column: ColumnHeading | null): boolean => {
       const name = column ? needsHeading(pair.name) : null;
-      if (column && name) rows.push({ cells: [name, pair.value], heading: column.heading, layout: "cells", headingNames: true });
-    });
+      if (!column || !name) return false;
+      rows.push({ cells: [name, pair.value], heading: column.heading, layout: "cells", headingNames: true, sourceLine: line });
+      return true;
+    };
+    // Re-review of a5651d2: a heading lends only to the unbroken run of bare rows under it in its
+    // column. Any other cell in that column, a row naming its own fee ("Money Order | $5.00",
+    // "Collection Items | $30.00") or a cell that is not a bare name ("money orders"), ends it.
+    const leftPair = pairs[0]?.at === 0 ? pairs[0] : null;
+    if (leftPair) {
+      if (!lend(leftPair, leftOpen)) leftOpen = null;
+    } else if (headingCell(cells[0]) && (pairs[0]?.at === 1 || (needsHeading(cells[0]) != null && leftOpen != null))) {
+      // A heading cell before a pair heads the left column's rows; a bare direction with no pair
+      // beside it ("International | Temporary Check (3 for $1.00)") is a sub-heading of the one above.
+      leftOpen = leftHeading(cells[0], leftOpen, index);
+    } else {
+      leftOpen = null;
+    }
     const last = pairs[pairs.length - 1];
-    if (last && last.at + 2 === cells.length - 1 && headingCell(cells[cells.length - 1])) right = headingOf(cells[cells.length - 1], index);
+    const trailing = last && last.at + 2 === cells.length - 1 && headingCell(cells[cells.length - 1]) ? cells.length - 1 : -1;
+    const covered = new Set(pairs.flatMap((pair) => [pair.at, pair.at + 1]));
+    for (let at = 1; at < cells.length; at += 1) {
+      if (at === trailing || at === 0) continue;
+      const pair = pairs.find((candidate) => candidate.at === at && candidate !== leftPair);
+      if (pair) {
+        if (!lend(pair, rightOpen)) rightOpen = null;
+      } else if (!covered.has(at)) {
+        // A right-column cell that is no pair (a sentence, a price note) ends the right heading.
+        rightOpen = null;
+      }
+    }
+    left = leftOpen;
+    right = trailing >= 0 ? headingOf(cells[trailing], index) : rightOpen;
     // A priced cell row keeps its page's columns open.
     if (left) left = { ...left, line: index };
     if (right) right = { ...right, line: index };

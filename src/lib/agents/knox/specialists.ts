@@ -371,13 +371,19 @@ function tidyUnmarkedName(name: string, text: string, institutionName: string | 
   return unmarkedName(tidyFeeName(unmarkedName(name, text, institutionName), options), text, institutionName);
 }
 
-/** v102: an earlier read at the same price whose name carries every word of this read's bare cell. */
+/**
+ * v102: an earlier read of the same source line at the same price whose name carries every word of
+ * this read's bare cell. A read of another line never counts: it is another cell.
+ */
 function cellAlreadyRead(read: ExtractedFeeCandidate, prior: readonly ExtractedFeeCandidate[]): boolean {
-  const cell = columnHeadingCell(read);
-  if (cell == null) return false;
-  const cellWords = words(cell).split(" ").filter(Boolean);
+  const mark = columnHeadingCell(read);
+  if (mark == null) return false;
+  const cellWords = words(mark.cell).split(" ").filter(Boolean);
+  const line = mark.line.replace(/\s+/g, " ").trim();
   return prior.some((earlier) => {
     if (earlier.amount !== read.amount) return false;
+    const excerpt = earlier.excerpt.replace(/\s+/g, " ").trim();
+    if (!line || !excerpt || !(line.includes(excerpt) || excerpt.includes(line))) return false;
     const named = new Set(words(earlier.feeName).split(" "));
     return cellWords.every((word) => named.has(word));
   });

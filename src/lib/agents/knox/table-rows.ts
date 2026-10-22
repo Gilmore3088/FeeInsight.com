@@ -56,6 +56,8 @@ export interface KnoxTableRow {
   layout: "cells" | "stacked";
   /** v102: the column heading names this row; `columnHeadingRows` already checked the name needs it. */
   headingNames?: boolean;
+  /** v102: the line a column-heading row was read from. */
+  sourceLine?: string;
 }
 
 const MAX_NAME_LINE_CHARS = 120;
@@ -301,7 +303,7 @@ export function extractFromTableRows(rows: KnoxTableRow[]): ExtractionRulesResul
       excerpt,
       waivable: WAIVER_LANGUAGE.test(`${nameCell} ${valueCell}`),
     };
-    if (row.headingNames) COLUMN_HEADING_CELLS.set(candidate, name);
+    if (row.headingNames) COLUMN_HEADING_CELLS.set(candidate, { cell: name, line: row.sourceLine ?? "" });
     result.candidates.push(candidate);
   }
   return result;
@@ -310,11 +312,17 @@ export function extractFromTableRows(rows: KnoxTableRow[]): ExtractionRulesResul
 /**
  * v102 (review of 081765f): a read named by its column's heading (`columnHeadingRows`) keeps the
  * bare cell it read ("Customer"), so `runFreeSpecialists` can drop it when an earlier read already
- * names that cell at that price ("Money Orders: Customer" $5): one price cell is one fee.
+ * names that cell at that price ("Money Orders: Customer" $5): one price cell is one fee. It keeps
+ * the source line too, since only a read of that same line can have read that cell (re-review of a5651d2).
  */
-const COLUMN_HEADING_CELLS = new WeakMap<ExtractedFeeCandidate, string>();
+export interface ColumnHeadingCell {
+  cell: string;
+  line: string;
+}
 
-export function columnHeadingCell(read: ExtractedFeeCandidate): string | null {
+const COLUMN_HEADING_CELLS = new WeakMap<ExtractedFeeCandidate, ColumnHeadingCell>();
+
+export function columnHeadingCell(read: ExtractedFeeCandidate): ColumnHeadingCell | null {
   return COLUMN_HEADING_CELLS.get(read) ?? null;
 }
 

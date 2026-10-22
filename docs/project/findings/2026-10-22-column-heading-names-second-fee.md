@@ -26,7 +26,9 @@ heading cell was held unclassified.
 - A heading cell that opens a line, before a pair or with none, sets the left column's. A bare
   direction there ("Domestic", "International") is a sub-heading of the left heading above.
 - A heading cell after a line's last pair sets the right column's.
-- A heading lasts while its page's lines are priced cell rows, and 8 lines past them.
+- A heading lends only to the unbroken run of bare rows directly under it in its column, for at
+  most 8 lines. The first other cell in that column ends it: a row naming its own fee, whatever its
+  category, a cell that is not a bare name, or a line of words across the page.
 
 On each line, the first pair belongs to the left column only when it opens the line; any other pair
 is the right column's. A pair gets a row under its column's heading only when its name needs one:
@@ -41,7 +43,7 @@ row the table pass read before.
 
 Admit-only: no read is dropped, held or re-filed. Knox's self-check traces each new read on the
 stored text with the shared check (`checkFeeAgainstSource`). Across every Texas, seven-state and
-shadow-lab text, the only change is four new right reads and four new untraced holds; no other read
+shadow-lab text, the only change is four new right reads and two new untraced holds; no other read
 moved. The first cut lent "Temporary Checks | 4 personalized checks for $5.00" to the rows under it
 ("Wire Transfers (VeraBank customers only) - Outgoing", Texas key 2414), a new wrong read the Texas
 gate caught. Now a name with a service of its own borrows no heading, and a heading cell with its
@@ -62,6 +64,18 @@ fixes followed:
 Both review texts are tests, at the read level and through Knox, Darwin's verify and the publish
 gate (`runCase`). The four gains and the fixture diff are unchanged.
 
+The re-review of a5651d2 found the same kind of error inside a column: a heading carried past a row
+that names its own fee. "Copies | $2.00 | Collection Items | $30.00" then "Research | $20.00 |
+Domestic | $15.00" under WIRE TRANSFERS gave a $15 domestic wire; "Money Order | $5.00" then
+"Non-Customer | $7.00" under "Cashier's Check" gave a $7 cashier's check; so did a lowercase
+"money orders" cell. The rule is now conservative: a heading lends only to the unbroken run of bare
+rows directly under it in its column, and the first other cell in that column ends it. In 1338 the
+self-named "Domestic - Incoming Wire Fee" now ends the WIRE TRANSFERS run, so the table pass no
+longer reads the international $50 under it; that read never published (#2278), so no kept gain is
+lost. `cellAlreadyRead` now compares only reads of the same source line, so a read of another
+line at the same price never drops a fee. All four texts are tests, at the read level and through
+`runCase`. The four gains are unchanged; 8085's untraced wire holds fell from four to two.
+
 Shadow lab, before -> after:
 - Answer-key recall: 940 -> 944 of 1,312 (71.6% -> 72.0%).
 - All-expected recall: 1,302 -> 1,306 of 1,766.
@@ -80,7 +94,7 @@ Left out, each for its own cause:
   Foreign.....$30.00", keys 6730 and 8240). The shared source check takes no heading from a priced
   line, so these reads would only be held untraced. The same holds for 8085's wires under the
   "Domestic" and "International" sub-headings: Knox now reads them, the self-check holds them
-  untraced (4 new holds), and none is published. A fix belongs in the shared check, with its own
+  untraced (2 new holds), and none is published. A fix belongs in the shared check, with its own
   Darwin re-check.
 - 1338's online-banking wires ("Domestic Outgoing (Business Online Banking)"): the category guard
   reads "Online Banking" in the name as another service.

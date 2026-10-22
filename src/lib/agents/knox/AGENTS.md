@@ -293,10 +293,11 @@ over "Customer | $10.00 | ...", key 10193) was never read. `columnHeadingRows`
 (`column-heading-rows.ts`, table pass v9) keeps one heading per column: both cells of a two-heading
 line with no price; a heading cell that opens a line (a bare direction there, "Domestic", is a
 sub-heading of the left heading); a heading cell after a line's last pair (the right column). A
-heading lasts while its page's lines are priced cell rows and 8 lines past them; a line of words
-with no cells ("COLLECTION ITEMS", "Money Orders") or an unpriced cell line that is not two
+heading lends only to the unbroken run of bare rows directly under it in its column (at most 8
+lines): the first other cell in that column, a row naming its own fee or a cell that is not a bare
+name, ends it, and so does a line of words with no cells ("COLLECTION ITEMS", "Money Orders") or an unpriced cell line that is not two
 headings ends both. A column-heading read is dropped when an earlier read at its price already
-names its cell (`cellAlreadyRead`), and "$ | N" joins only a figure with cents. The first pair is
+names its cell on the same source line (`cellAlreadyRead`), and "$ | N" joins only a figure with cents. The first pair is
 the left column's only when it opens the line. A pair gets a row under its column's heading only
 when no rule files its name alone, its name without notes is a direction, customer type or size
 (`composableTail`), it is not only a unit ("Each additional", "Per item") and it names no service of
@@ -305,7 +306,7 @@ customers only) - Outgoing" under "Temporary Checks" stays a wire). A price spli
 ("$ | 3.00") is joined. The table pass files the row only when heading and name together name a fee
 and holds a range as a range. Admit-only: the rows come after every row read before, and the
 self-check traces them on the stored text; across every fixture text the only change is four new
-right reads and four new untraced holds (8085's wires under "Domestic" / "International", which the
+right reads and two new untraced holds (8085's domestic wires under "Domestic" / "International", which the
 shared check cannot trace to a heading on a priced line). Left out: dot-leader two-column lines with
 the heading on a priced line (6730, 8240; the shared check holds them), names only a heading can
 classify ("Monthly Statements Cycle" under "Dormant Deposit Accounts", "Mortgage Payoff Processing

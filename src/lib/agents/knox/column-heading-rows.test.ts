@@ -38,9 +38,9 @@ describe("Knox v102: the second fee on a line named by its column's heading", ()
     expect(found).toContainEqual(["garnishment_levy", 100]);
     expect(found).toContainEqual(["returned_mail", 5]);
     expect(found).toContainEqual(["wire_domestic_incoming", 20]);
-    // The table pass reads the international row too; the international-wire scope check (#2278)
-    // keeps it out, as it does any international read whose own direction it cannot settle.
-    expect(tableReads(text)).toContainEqual(["wire_intl_outgoing", 50]);
+    // "Domestic - Incoming Wire Fee" names its own fee, so it ends the heading's run of bare rows:
+    // the international row under it borrows nothing (base never read it either).
+    expect(tableReads(text)).not.toContainEqual(["wire_intl_outgoing", 50]);
     expect(found).not.toContainEqual(["wire_intl_outgoing", 50]);
   });
 
@@ -225,6 +225,81 @@ describe("Knox v102: the second fee on a line named by its column's heading", ()
       expect(found).toContainEqual(["money_order", 5]);
       expect(found).not.toContainEqual(["cashiers_check", 5]);
       expect(found).not.toContainEqual(["cashiers_check", 7]);
+    });
+
+    // Re-review of a5651d2: a row in the column that names a fee of its own ends the heading's run.
+    const RIGHT_AFTER_OWN_FEE = [
+      "ACCOUNT SERVICES | WIRE TRANSFERS",
+      "Garnishments and Levies | $100.00 | Domestic Outgoing | $25.00",
+      "Copies | $2.00 | Collection Items | $30.00",
+      "Research | $20.00 | Domestic | $15.00",
+    ].join("\n");
+    const RIGHT_AFTER_OWN_FEE_INCOMING = [
+      "ACCOUNT SERVICES | WIRE TRANSFERS",
+      "Garnishments and Levies | $100.00 | Domestic Outgoing | $25.00",
+      "Copies | $2.00 | Escrow Analysis | $30.00",
+      "Research | $20.00 | Incoming | $12.00",
+    ].join("\n");
+    const LEFT_AFTER_OWN_FEE = [
+      "Cashier's Check | Stop Payment | $35.00",
+      "Customer | $10.00 | Internal Transfer | $10.00",
+      "Money Order | $5.00 | Charge Back Check | $25.00",
+      "Non-Customer | $7.00 | Account Research | $20.00",
+    ].join("\n");
+    const LEFT_AFTER_LOWERCASE_CELL = [
+      "Cashier's Check | Stop Payment | $35.00",
+      "Customer | $10.00 | Internal Transfer | $10.00",
+      "money orders | Research | $20.00",
+      "Customer | $4.00 | Charge Back Check | $25.00",
+    ].join("\n");
+
+    it("should_end_a_right_column_heading_at_a_row_that_names_its_own_fee", () => {
+      for (const text of [RIGHT_AFTER_OWN_FEE, RIGHT_AFTER_OWN_FEE_INCOMING]) {
+        const found = reads(text);
+        expect(found).toContainEqual(["wire_domestic_outgoing", 25]);
+        expect(wires(tableReads(text)).filter(([, amount]) => amount !== 25)).toEqual([]);
+      }
+    });
+
+    it("should_end_a_left_column_heading_at_a_row_that_names_its_own_fee", () => {
+      const found = reads(LEFT_AFTER_OWN_FEE);
+      expect(found).toContainEqual(["cashiers_check", 10]);
+      expect(found).not.toContainEqual(["cashiers_check", 7]);
+    });
+
+    it("should_end_a_left_column_heading_at_a_cell_that_is_not_a_bare_name", () => {
+      const found = reads(LEFT_AFTER_LOWERCASE_CELL);
+      expect(found).toContainEqual(["cashiers_check", 10]);
+      expect(found).not.toContainEqual(["cashiers_check", 4]);
+    });
+
+    it("should_keep_a_fee_whose_price_another_line_names_too", () => {
+      // An earlier read at the same price on another line is a different cell.
+      const text = [
+        "Money Order: Customer | $10.00",
+        "Payment Orders | Funds/Transaction Related",
+        "Cashier's Check | Stop Payment | $35.00",
+        "Customer | $10.00 | Internal Transfer | $10.00",
+      ].join("\n");
+      expect(reads(text)).toContainEqual(["cashiers_check", 10]);
+    });
+
+    it("should_not_publish_a_heading_named_fee_past_a_row_with_its_own_fee", () => {
+      for (const text of [RIGHT_AFTER_OWN_FEE, RIGHT_AFTER_OWN_FEE_INCOMING, LEFT_AFTER_OWN_FEE, LEFT_AFTER_LOWERCASE_CELL]) {
+        const trace = runCase(currentVariant, {
+          caseKey: "column-heading-own-fee",
+          scenario: "missed_fees",
+          provenance: { fixture: "unit", fixtureCaseKey: "column-heading-own-fee", textHash: null, issue: "2548" },
+          document: { url: null, text },
+          expected: { publish: [], forbid: [] },
+          status: "ok",
+        });
+        const published = trace.published.map((fee) => [fee.canonicalFeeKey, fee.amountCents]);
+        expect(published).not.toContainEqual(["wire_domestic_outgoing", 1500]);
+        expect(published).not.toContainEqual(["wire_domestic_incoming", 1200]);
+        expect(published).not.toContainEqual(["cashiers_check", 700]);
+        expect(published).not.toContainEqual(["cashiers_check", 400]);
+      }
     });
 
     it("should_not_publish_a_second_fee_for_a_price_cell_already_read", () => {
