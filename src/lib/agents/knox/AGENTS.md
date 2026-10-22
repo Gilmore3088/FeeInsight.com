@@ -293,7 +293,10 @@ over "Customer | $10.00 | ...", key 10193) was never read. `columnHeadingRows`
 (`column-heading-rows.ts`, table pass v9) keeps one heading per column: both cells of a two-heading
 line with no price; a heading cell that opens a line (a bare direction there, "Domestic", is a
 sub-heading of the left heading); a heading cell after a line's last pair (the right column). A
-heading lasts while its page's lines are priced cell rows and 8 lines past them. The first pair is
+heading lasts while its page's lines are priced cell rows and 8 lines past them; a line of words
+with no cells ("COLLECTION ITEMS", "Money Orders") or an unpriced cell line that is not two
+headings ends both. A column-heading read is dropped when an earlier read at its price already
+names its cell (`cellAlreadyRead`), and "$ | N" joins only a figure with cents. The first pair is
 the left column's only when it opens the line. A pair gets a row under its column's heading only
 when no rule files its name alone, its name without notes is a direction, customer type or size
 (`composableTail`), it is not only a unit ("Each additional", "Per item") and it names no service of

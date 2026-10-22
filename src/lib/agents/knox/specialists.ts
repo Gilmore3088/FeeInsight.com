@@ -18,7 +18,7 @@ import { FAMILY_EXPERTS, priceWindows, runFamilyExpert } from "@/lib/agents/knox
 import { newestColumnText } from "@/lib/fee-change-columns";
 import { namesALimit, namesAWorkedExample, passesDarwinChecks, readsAMeasuredAmount, tidyFeeName } from "@/lib/agents/knox/layout";
 import { BOX_CATEGORY } from "@/lib/custom-report/box-size-name";
-import { extractTableCandidates, KNOX_TABLE_STRATEGY } from "@/lib/agents/knox/table-rows";
+import { carryColumnHeadingCell, columnHeadingCell, extractTableCandidates, KNOX_TABLE_STRATEGY } from "@/lib/agents/knox/table-rows";
 import { extractAccountTableCandidates, KNOX_ACCOUNT_TABLE_STRATEGY } from "@/lib/agents/knox/account-table";
 import { checkFeeAgainstSource, joinLabeledFeeCardText } from "@/lib/custom-report/source-check";
 import { rateFeeFromHeld, type RateFeeCandidate } from "@/lib/agents/knox/percent";
@@ -371,6 +371,18 @@ function tidyUnmarkedName(name: string, text: string, institutionName: string | 
   return unmarkedName(tidyFeeName(unmarkedName(name, text, institutionName), options), text, institutionName);
 }
 
+/** v102: an earlier read at the same price whose name carries every word of this read's bare cell. */
+function cellAlreadyRead(read: ExtractedFeeCandidate, prior: readonly ExtractedFeeCandidate[]): boolean {
+  const cell = columnHeadingCell(read);
+  if (cell == null) return false;
+  const cellWords = words(cell).split(" ").filter(Boolean);
+  return prior.some((earlier) => {
+    if (earlier.amount !== read.amount) return false;
+    const named = new Set(words(earlier.feeName).split(" "));
+    return cellWords.every((word) => named.has(word));
+  });
+}
+
 export function runFreeSpecialists(sourceText: string, options: { institutionName?: string | null } = {}): FreeExtractionResult {
   const institutionName = options.institutionName ?? null;
   // Labeled fee cards ("Fee TypeX" / ... / "Fee$5.00") are read as one row, as the shared
@@ -416,12 +428,15 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
     const run = specialist.run();
     // v78 (#1304): no specialist files a bill payment priced under an overdraft or NSF heading on
     // its own line as bill pay (`billPayByHeading`); the table pass named such a cell by its words.
-    const found = { ...run, candidates: run.candidates.map((read) => billPayByHeading(read)).filter((read): read is ExtractedFeeCandidate => read != null) };
+    const found = { ...run, candidates: run.candidates.map((read) => { const next = billPayByHeading(read); return next && carryColumnHeadingCell(read, next); }).filter((read): read is ExtractedFeeCandidate => read != null) };
     for (const [reason, count] of Object.entries(found.dropped ?? {})) countDropped(reason as DroppedLineReason, count);
     let added = 0;
     let selfCheckFailed = 0;
     for (const read of found.candidates) {
       if (candidates.length >= MAX_FEES_PER_DOCUMENT) break;
+      // v102 (review of 081765f): a read named by its column's heading never takes a price cell an
+      // earlier read already names ("Money Orders: Customer" $5 beside "Cashier's Checks: Customer").
+      if (cellAlreadyRead(read, candidates)) continue;
       // v44: a fee with no frequency takes the one its own line states right after its price
       // ("$6.00 each", "| $28.00 | Per request"); Darwin's eval found 48% of live fees blank.
       // v47: the fee's own row wins over a frequency read anywhere on the line, and one read

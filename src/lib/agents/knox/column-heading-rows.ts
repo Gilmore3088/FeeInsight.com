@@ -44,7 +44,8 @@ const UNIT_WORDS = new Set(
 const SUBJECT_WORDS = new Set(["wire", "transfer", "transfers", "cash", "withdrawal", "withdrawals", "account", "accounts"]);
 /** A price split over two cells ("$ | 17.00"). */
 const SPLIT_DOLLAR = /^\$$/;
-const BARE_FIGURE = /^\d[\d,]*(?:\.\d{1,2})?$/;
+/** Only a figure with cents completes it: "$ | 2 | 5.00" (a footnote) or "$ | 1,000" (a count) is no price. */
+const BARE_FIGURE = /^\d{1,3}(?:,\d{3})*\.\d{2}$/;
 
 interface ColumnHeading {
   heading: string;
@@ -135,13 +136,17 @@ export function columnHeadingRows(lines: readonly string[]): KnoxTableRow[] {
   let right: ColumnHeading | null = null;
 
   lines.forEach((line, index) => {
-    if (!line.includes(CELL_SEPARATOR)) return;
+    // Review of 081765f: a line of words with no cells ("COLLECTION ITEMS", "Money Orders", a
+    // sentence) spans the page, so it ends both columns' headings; a bare price line does not.
+    if (!line.includes(CELL_SEPARATOR)) {
+      if (/[a-z]/i.test(line)) left = right = null;
+      return;
+    }
     const cells = cellsOf(line);
     if (!cells.some(hasPrice)) {
-      if (cells.length === 2 && cells.every(headingCell)) {
-        left = headingOf(cells[0], index);
-        right = headingOf(cells[1], index);
-      }
+      const twoHeadings = cells.length === 2 && cells.every(headingCell);
+      left = twoHeadings ? headingOf(cells[0], index) : null;
+      right = twoHeadings ? headingOf(cells[1], index) : null;
       return;
     }
     const pairs = pairsOf(cells);

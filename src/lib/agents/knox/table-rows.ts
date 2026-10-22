@@ -8,6 +8,7 @@ import {
   notAZeroPrice,
   RANGE_JOINER,
   WAIVER_LANGUAGE,
+  type ExtractedFeeCandidate,
   type ExtractionRulesResult,
 } from "@/lib/agents/knox/rules";
 import {
@@ -291,7 +292,7 @@ export function extractFromTableRows(rows: KnoxTableRow[]): ExtractionRulesResul
     }
     if (valueCell.slice(first.end, first.end + 3).includes("%")) continue;
     if (!passesDarwinChecks(hint, feeName, first.value)) continue;
-    result.candidates.push({
+    const candidate: ExtractedFeeCandidate = {
       feeName,
       amount: first.value,
       frequency,
@@ -299,9 +300,29 @@ export function extractFromTableRows(rows: KnoxTableRow[]): ExtractionRulesResul
       confidence: confidenceFor(excerpt),
       excerpt,
       waivable: WAIVER_LANGUAGE.test(`${nameCell} ${valueCell}`),
-    });
+    };
+    if (row.headingNames) COLUMN_HEADING_CELLS.set(candidate, name);
+    result.candidates.push(candidate);
   }
   return result;
+}
+
+/**
+ * v102 (review of 081765f): a read named by its column's heading (`columnHeadingRows`) keeps the
+ * bare cell it read ("Customer"), so `runFreeSpecialists` can drop it when an earlier read already
+ * names that cell at that price ("Money Orders: Customer" $5): one price cell is one fee.
+ */
+const COLUMN_HEADING_CELLS = new WeakMap<ExtractedFeeCandidate, string>();
+
+export function columnHeadingCell(read: ExtractedFeeCandidate): string | null {
+  return COLUMN_HEADING_CELLS.get(read) ?? null;
+}
+
+/** Keeps the mark when a later step copies the read (`billPayByHeading`). */
+export function carryColumnHeadingCell(from: ExtractedFeeCandidate, to: ExtractedFeeCandidate): ExtractedFeeCandidate {
+  const cell = COLUMN_HEADING_CELLS.get(from);
+  if (cell != null && from !== to) COLUMN_HEADING_CELLS.set(to, cell);
+  return to;
 }
 
 export function extractTableCandidates(text: string): ExtractionRulesResult {

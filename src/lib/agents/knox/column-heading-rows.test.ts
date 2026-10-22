@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { runCase } from "@/lib/agents/deming/shadow-lab/run-case";
+import { currentVariant } from "@/lib/agents/deming/shadow-lab/variants";
 import { runFreeSpecialists } from "./specialists";
 import { extractTableCandidates } from "./table-rows";
 
@@ -161,6 +163,13 @@ describe("Knox v102: the second fee on a line named by its column's heading", ()
       expect(reads(text).filter(([key]) => key === "counter_check")).toEqual([]);
     });
 
+    it("should_not_join_a_split_dollar_sign_to_a_footnote_or_a_count", () => {
+      const text = ["WIRE TRANSFER | Notary Services", "Domestic | Customer | $ | 2 | 5.00", "Copies | $2.00 | Non-Customer | $ | 1,000"].join("\n");
+      const notary = tableReads(text).filter(([key]) => key === "notary_fee");
+      expect(notary).not.toContainEqual(["notary_fee", 2]);
+      expect(notary).not.toContainEqual(["notary_fee", 1000]);
+    });
+
     it("should_not_borrow_a_heading_without_one_above", () => {
       const text = ["Customer | $10.00 | Internal Transfer | $10.00", "Non-Customer | $35.00 | Deposit Correction | $5.00"].join("\n");
       expect(tableReads(text).filter(([key]) => key === "cashiers_check")).toEqual([]);
@@ -175,6 +184,65 @@ describe("Knox v102: the second fee on a line named by its column's heading", ()
       const filler = Array.from({ length: 10 }, (_, index) => `Service ${index + 1} note without a price`);
       const text = ["ACCOUNT ASSISTANCE | WIRE TRANSFERS", ...filler, "Copies | $2.00 | Domestic Outgoing | $20.00"].join("\n");
       expect(wires(tableReads(text))).toEqual([]);
+    });
+
+    // Review of 081765f: a section heading on a line of its own ends both columns' headings.
+    const SECTION_BREAK_RIGHT = [
+      "ACCOUNT SERVICES | WIRE TRANSFERS",
+      "Garnishments and Levies | $100.00 | Domestic Outgoing | $25.00",
+      "COLLECTION ITEMS",
+      "Returned item | $30.00 | Domestic | $15.00",
+      "Research per hour | $25.00 | International | $50.00",
+    ].join("\n");
+    const SECTION_BREAK_LEFT = [
+      "Payment Orders | Funds/Transaction Related",
+      "Cashier's Check | Stop Payment | $35.00",
+      "Customer | $10.00 | Internal Transfer | $10.00",
+      "Money Orders",
+      "Customer | $5.00 | Charge Back Check | $25.00",
+      "Non-Customer | $7.00 | Account Research | $20.00",
+    ].join("\n");
+
+    it("should_not_carry_a_right_column_heading_across_a_section_heading_line", () => {
+      const found = reads(SECTION_BREAK_RIGHT);
+      expect(found).toContainEqual(["wire_domestic_outgoing", 25]);
+      expect(found).not.toContainEqual(["wire_domestic_outgoing", 15]);
+      expect(wires(tableReads(SECTION_BREAK_RIGHT)).filter(([, amount]) => amount !== 25)).toEqual([]);
+    });
+
+    it("should_not_carry_a_left_column_heading_across_a_section_heading_line", () => {
+      const found = reads(SECTION_BREAK_LEFT);
+      expect(found).toContainEqual(["cashiers_check", 10]);
+      expect(found).not.toContainEqual(["cashiers_check", 5]);
+      expect(found).not.toContainEqual(["cashiers_check", 7]);
+    });
+
+    it("should_not_read_a_price_cell_an_earlier_read_already_names", () => {
+      // The table pass already reads "Customer | $5.00" under "Money Orders"; the column heading
+      // on the two-heading line below it never makes the same cell a second fee.
+      const text = ["Money Orders", "CASHIER'S CHECKS | WIRE TRANSFERS", "Customer | $5.00", "Non-Customer | $7.00"].join("\n");
+      const found = reads(text);
+      expect(found).toContainEqual(["money_order", 5]);
+      expect(found).not.toContainEqual(["cashiers_check", 5]);
+      expect(found).not.toContainEqual(["cashiers_check", 7]);
+    });
+
+    it("should_not_publish_a_second_fee_for_a_price_cell_already_read", () => {
+      // Through Knox, Darwin's verify and the publish gate, as the shadow lab runs a case.
+      for (const text of [SECTION_BREAK_RIGHT, SECTION_BREAK_LEFT]) {
+        const trace = runCase(currentVariant, {
+          caseKey: "column-heading-section-break",
+          scenario: "missed_fees",
+          provenance: { fixture: "unit", fixtureCaseKey: "column-heading-section-break", textHash: null, issue: "2548" },
+          document: { url: null, text },
+          expected: { publish: [], forbid: [] },
+          status: "ok",
+        });
+        const published = trace.published.map((fee) => [fee.canonicalFeeKey, fee.amountCents]);
+        expect(published).not.toContainEqual(["wire_domestic_outgoing", 1500]);
+        expect(published).not.toContainEqual(["cashiers_check", 500]);
+        expect(published).not.toContainEqual(["cashiers_check", 700]);
+      }
     });
 
     it("should_replace_a_column_heading_with_the_next_heading_line", () => {

@@ -47,6 +47,21 @@ moved. The first cut lent "Temporary Checks | 4 personalized checks for $5.00" t
 gate caught. Now a name with a service of its own borrows no heading, and a heading cell with its
 own price beside it ends the heading above.
 
+The review of 081765f found two more wrong reads that published. A column heading carried across a
+section heading printed on a line of its own: "COLLECTION ITEMS" over "Returned item | $30.00 |
+Domestic | $15.00" gave a $15 domestic wire, and "Money Orders" over "Customer | $5.00" gave a
+cashier's check $5 beside the money order read the table pass already made from that cell. Three
+fixes followed:
+- A line of words with no cells, and a cell line with no price that is not a two-heading line, now
+  end both columns' headings.
+- A column-heading read is dropped when an earlier read at the same price already names its cell
+  (`cellAlreadyRead` in `specialists.ts`). One price cell is one fee.
+- A "$ | N" split price is joined only when N has cents, so a footnote ("$ | 2 | 5.00") or a count
+  ("$ | 1,000") is never a price.
+
+Both review texts are tests, at the read level and through Knox, Darwin's verify and the publish
+gate (`runCase`). The four gains and the fixture diff are unchanged.
+
 Shadow lab, before -> after:
 - Answer-key recall: 940 -> 944 of 1,312 (71.6% -> 72.0%).
 - All-expected recall: 1,302 -> 1,306 of 1,766.
