@@ -1,0 +1,213 @@
+import { runFreeSpecialists } from "@/lib/agents/knox/specialists";
+import { refileCategory, checkFeeCategory } from "@/lib/fee-category-guard";
+import {
+  pendingCategoryLesson,
+  postSourceCheck,
+  sourceLineFor,
+  statedInOwnSource,
+  verificationReasonCode,
+  type RawFeeRow,
+} from "@/lib/agents/darwin/verify";
+import { tierPerkZero } from "@/lib/agents/darwin/tier-perk";
+import { foldContext } from "@/lib/fee-fold";
+import { isProductPage } from "@/lib/agents/hamilton/product-page";
+import { ZERO_FEE_RAW_FLAG, ZERO_FEE_VERIFIED_FLAG } from "@/lib/agents/darwin/envelopes";
+import { perEventFrequency, settledFrequency } from "@/lib/fee-frequency";
+import {
+  decidePriorFee,
+  HAMILTON_PUBLISH_DEFAULT_MIN_CONFIDENCE,
+  publishedFeeName,
+  publishNameHold,
+  publishSkipReason,
+  sameValueLinesApart,
+  type PriorPublishedFeeRow,
+} from "@/lib/agents/hamilton/publish";
+import { toCents, toDollars, verifiedRow } from "./rows";
+import type { PipelineVariant, ShadowCase, StageFee, StageOutput, VerifyResult } from "./types";
+
+/**
+ * The stages wired from today's pure functions: Knox's free read (`runFreeSpecialists`, filed as
+ * Darwin files it), Darwin's per-row verify checks in `runDarwinVerify`'s order, and Hamilton's
+ * publish order (category guard, name hold, skip reason, prior-fee decision). DB-bound parts are
+ * not replayed: learned envelopes, the peer check, same-batch duplicates and Knox's lessons. An
+ * experiment only passes different arguments to the same functions; no production code changes.
+ */
+export interface ExperimentConfig {
+  id: string;
+  description: string;
+  /** Darwin's verify reads an hourly price from the fee's own line (`settledFrequency` `hourly`). */
+  hourlyAtVerify: boolean;
+  /** The publish row carries Knox's excerpt, so the existing limit guard reads the line too. */
+  excerptAtPublish: boolean;
+}
+
+const CURRENT_CONFIG: ExperimentConfig = {
+  id: "current",
+  description: "Today's free Knox read, Darwin's verify checks and Hamilton's publish gate.",
+  hourlyAtVerify: false,
+  excerptAtPublish: false,
+};
+
+export const DEFAULT_EXPERIMENT = "hourly-at-verify";
+
+export const EXPERIMENTS: Readonly<Record<string, ExperimentConfig>> = {
+  [DEFAULT_EXPERIMENT]: {
+    id: DEFAULT_EXPERIMENT,
+    description:
+      "Darwin's verify reads an hourly price from the fee's own line, instead of leaving it to the live hourly sweep after publication (#1456).",
+    hourlyAtVerify: true,
+    excerptAtPublish: false,
+  },
+  "excerpt-at-publish": {
+    id: "excerpt-at-publish",
+    description:
+      "Hamilton's publish-time limit guard reads Knox's excerpt, instead of leaving the excerpt to the live limit sweep after publication.",
+    hourlyAtVerify: false,
+    excerptAtPublish: true,
+  },
+};
+
+export function selectExperiment(env: Readonly<Record<string, string | undefined>> = process.env): ExperimentConfig {
+  const name = env.SHADOW_LAB_EXPERIMENT || DEFAULT_EXPERIMENT;
+  const config = EXPERIMENTS[name];
+  if (!config) {
+    throw new Error(`unknown SHADOW_LAB_EXPERIMENT "${name}"; known: ${Object.keys(EXPERIMENTS).join(", ")}`);
+  }
+  return config;
+}
+
+/** The fixed document id every replayed line shares: one case is one stored document. */
+const REPLAY_DOCUMENT_ID = 1;
+const REPLAY_PUBLISHED_AT = "2026-01-01T00:00:00.000Z";
+const REPLAY_URL = "https://bank.example/fees";
+
+function filedAs(text: string, hint: string, name: string, amount: number): string {
+  return refileCategory(hint, name, foldContext(text, name, amount)) ?? hint;
+}
+
+function readText(text: string): StageOutput {
+  const result = runFreeSpecialists(text);
+  const passed: StageFee[] = result.candidates.map((candidate) => ({
+    canonicalFeeKey: filedAs(text, candidate.canonicalHint, candidate.feeName, candidate.amount),
+    feeName: candidate.feeName,
+    amountCents: toCents(candidate.amount),
+    frequency: candidate.frequency ?? null,
+    excerpt: candidate.excerpt ?? null,
+    reason: null,
+  }));
+  const dropped: StageFee[] = [];
+  for (const held of result.held) {
+    const fee: StageFee = {
+      canonicalFeeKey: held.canonicalHint ? filedAs(text, held.canonicalHint, held.feeName, held.amount ?? 0) : null,
+      feeName: held.feeName,
+      amountCents: toCents(held.amount),
+      frequency: held.frequency ?? null,
+      excerpt: held.excerpt ?? null,
+      reason: null,
+    };
+    // A stated $0 with a category is a fee the free pipe keeps (`reproducibleReads`).
+    if (held.shape === "zero" && fee.canonicalFeeKey) passed.push({ ...fee, amountCents: 0 });
+    else dropped.push({ ...fee, reason: `held:${held.shape}` });
+  }
+  return { passed, dropped };
+}
+
+/** A Knox row as Darwin reads it, for one fee of the replayed document. */
+function rawRow(fee: StageFee): RawFeeRow {
+  return {
+    fee_raw_id: 1,
+    institution_id: 1,
+    source_url: REPLAY_URL,
+    document_url: REPLAY_URL,
+    document_r2_key: null,
+    extraction_confidence: 0.95,
+    fee_name: fee.feeName ?? "",
+    amount: toDollars(fee.amountCents),
+    frequency: fee.frequency ?? null,
+    // Knox marks a stated $0 so Darwin can tell it from a missing price.
+    outlier_flags: fee.amountCents === 0 ? [ZERO_FEE_RAW_FLAG] : [],
+    conditions: `Knox deterministic extraction. excerpt="${fee.excerpt ?? ""}"`,
+    source_document_id: REPLAY_DOCUMENT_ID,
+  };
+}
+
+function verifyFee(config: ExperimentConfig, fee: StageFee, text: string): VerifyResult {
+  const key = fee.canonicalFeeKey;
+  const name = fee.feeName ?? "";
+  if (!key) return { ok: false, reason: "missing_canonical" };
+  const row = rawRow(fee);
+  const amount = fee.amountCents == null ? null : fee.amountCents / 100;
+  const texts = new Map([[REPLAY_DOCUMENT_ID, text]]);
+  const code =
+    verificationReasonCode(row, key) ??
+    (pendingCategoryLesson(key, name) ? "category_lesson_pending" : null) ??
+    (statedInOwnSource(row, texts, key) ? null : "not_in_source");
+  if (code) return { ok: false, reason: code };
+  const line = sourceLineFor(row, texts, key) ?? fee.excerpt;
+  const post = postSourceCheck(key, name, amount, line, text);
+  if (post) return { ok: false, reason: post.rule ? `${post.code}:${post.rule}` : post.code };
+  if (tierPerkZero(amount, name, REPLAY_URL, text, key)) return { ok: false, reason: "tier_perk_zero" };
+  // Darwin settles the frequency it verifies from Knox's own excerpt (insertCurrentVerifiedFee).
+  const settled = settledFrequency(fee.excerpt, amount, fee.frequency ?? null, key, { hourly: config.hourlyAtVerify });
+  return { ok: true, fee: { ...fee, frequency: perEventFrequency(key, settled, fee.excerpt, amount) } };
+}
+
+function priorRow(fee: StageFee, index: number): PriorPublishedFeeRow {
+  return {
+    fee_published_id: index + 1,
+    amount: toDollars(fee.amountCents),
+    fee_name: fee.feeName ?? "",
+    frequency: fee.frequency ?? null,
+    published_at: REPLAY_PUBLISHED_AT,
+    source_document_id: REPLAY_DOCUMENT_ID,
+  } as PriorPublishedFeeRow;
+}
+
+function gateFee(config: ExperimentConfig, fee: StageFee, text: string, live: StageFee[]) {
+  const key = fee.canonicalFeeKey ?? "";
+  const name = fee.feeName ?? "";
+  // As the publish step calls it (publish.ts): the published name, with the amount.
+  const category = checkFeeCategory(key, publishedFeeName(name, key), { amount: fee.amountCents == null ? null : fee.amountCents / 100 });
+  if (!category.ok) return { publish: false, reason: `category_guard:${category.code}` };
+  const hold = publishNameHold(name, key, fee.amountCents == null ? null : fee.amountCents / 100);
+  if (hold) return { publish: false, reason: `name_hold:${hold.code}` };
+  const row = verifiedRow(
+    { canonical_fee_key: key, fee_name: name, amount: toDollars(fee.amountCents) ?? "0.00", source_document_id: REPLAY_DOCUMENT_ID },
+    {
+      frequency: fee.frequency ?? null,
+      // Darwin flags every $0 it verifies, which is what lets a free fee publish.
+      outlier_flags: fee.amountCents === 0 ? ["agentic_darwin_verified", ZERO_FEE_VERIFIED_FLAG] : ["agentic_darwin_verified"],
+      // Not a VerifiedFeeRow column today: the limit guard reads `conditions` when it is present.
+      ...(config.excerptAtPublish ? ({ conditions: `Knox deterministic extraction. excerpt="${fee.excerpt ?? ""}"` } as object) : {}),
+    },
+  );
+  const skip = publishSkipReason(row, HAMILTON_PUBLISH_DEFAULT_MIN_CONFIDENCE);
+  if (skip) return { publish: false, reason: `skip:${skip}` };
+  const sameKey = live.filter((prior) => prior.canonicalFeeKey === key).map(priorRow);
+  const apart = sameValueLinesApart(row, sameKey, text);
+  const decision = decidePriorFee(row, sameKey, (prior) => apart.has(prior));
+  if (decision.kind === "identical" || decision.kind === "older_document") {
+    return { publish: false, reason: `prior:${decision.kind}` };
+  }
+  return { publish: true, reason: null };
+}
+
+function buildVariant(config: ExperimentConfig): PipelineVariant {
+  return {
+    id: config.id,
+    description: config.description,
+    documentGate(c: ShadowCase) {
+      if (c.document.url && isProductPage(c.document.url)) return { accepted: false, reason: "product_page" };
+      return { accepted: true, reason: null };
+    },
+    extract: readText,
+    verify: (fee, text) => verifyFee(config, fee, text),
+    publishGate: (fee, text, live) => gateFee(config, fee, text, live),
+  };
+}
+
+export const currentVariant: PipelineVariant = buildVariant(CURRENT_CONFIG);
+
+export function experimentalVariant(config: ExperimentConfig): PipelineVariant {
+  return buildVariant(config);
+}
