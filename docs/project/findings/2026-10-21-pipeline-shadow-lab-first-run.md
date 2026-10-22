@@ -1,4 +1,4 @@
-# 2026-10-21: Most missing fees are misfiled at extraction, and two checks run only as sweeps after publication
+# 2026-10-21: Most missing fees are lost at extraction, and two checks run only as sweeps after publication
 
 Replay frozen sources stage by stage before fixing fees one at a time: the stage that fails names
 the process fix.
@@ -25,19 +25,21 @@ Each failure is charged to the first stage that got it wrong. Of 450 failures:
 - **Passed every stage, 34:** 16 not-a-fee readings, 9 hourly charges published as flat,
   6 wrong categories and 3 limits.
 
-The 373 extraction misses split three ways:
-- 231 had a Knox read at the same price under another category (some may be common prices that
-  match by chance).
-- 43 had a read in the right category at another price.
-- 73 were not read at all.
-- Of the rest, 19 were held as untraced and 4 held for eligibility. The remaining 3 are
-  same-dollar cases Knox never read.
+The 373 extraction misses, by what Knox did with the line:
+- **164 were not read at all.**
+- **105 were read under another category:** a read at the same price that shares a distinctive
+  word with the answer key's line.
+- **78 were read at another price:** the right category at a different price, or the same price
+  on an unrelated line.
+- **The other 26:** 19 were held as untraced, 4 were held for eligibility, and 3 are same-dollar
+  cases Knox never read.
 
-Twelve of the 43 documents with an extraction miss hold half of them.
+No single category dominates. The largest are monthly maintenance (12 not read) and deposited item
+return (11 misfiled). Twelve of the 43 documents with an extraction miss hold half of them.
 
 **Cause:**
-- **Categorisation:** most missing fees are filed under the wrong category at extraction. Reading
-  coverage matters less. No downstream check can repair either.
+- **Extraction:** most missing fees are lost here, mostly as lines Knox never reads, then as
+  misfiled or mispriced reads. No downstream check can repair either.
 - **Checks that run only as sweeps:** two of today's checks run only on live fees, after
   publication.
   - Darwin's verify can read an hourly price from the fee's own line (`settledFrequency`'s
@@ -53,8 +55,8 @@ frozen inputs:
   fees and lost no recall.
 
 Switching either on in production is a separate PR with Darwin's live re-check and a dry-run count,
-as the Standing rules require. The 231 same-price misfilings are the next thing to replay by
-category.
+as the Standing rules require. The next step is the unread lines, document by document, starting
+with the twelve documents that hold half the misses.
 
 **Lesson:** Before fixing a batch of live fees, replay the frozen sources and fix the stage where
 the failures start. A check that runs only as a sweep on live fees is an output fix. Where a pure

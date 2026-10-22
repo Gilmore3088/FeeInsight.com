@@ -141,10 +141,14 @@ function answerKeyCases(root: string): ShadowCase[] {
     return keys
       .filter((doc) => doc.set === "holdout" && doc.is_fee_schedule !== false)
       .map((doc) => {
-        const scored = new Set(doc.fees.map((item) => gateKeyFor(item, doc.text)).filter((key): key is string => key != null));
-        const publish = [...scored].sort().map((key) => {
+        const lines = new Map<string, string>();
+        for (const item of doc.fees) {
+          const key = gateKeyFor(item, doc.text);
+          if (key != null && !lines.has(key)) lines.set(key, item.source_line ?? "");
+        }
+        const publish = [...lines.keys()].sort().map((key) => {
           const split = key.lastIndexOf(":");
-          return { canonicalFeeKey: key.slice(0, split), feeName: null, amountCents: Number(key.slice(split + 1)) };
+          return { canonicalFeeKey: key.slice(0, split), feeName: null, amountCents: Number(key.slice(split + 1)), sourceLine: lines.get(key) || null };
         });
         return shadowCase("missed_fees", path, `${label}:${doc.tid}`, "missing fees", { url: null, text: doc.text }, { publish });
       });

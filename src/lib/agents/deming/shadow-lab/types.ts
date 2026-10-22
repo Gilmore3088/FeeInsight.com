@@ -32,6 +32,8 @@ export interface FeeRef {
   feeName: string | null;
   amountCents: number | null;
   frequency?: string | null;
+  /** The schedule line the expectation was keyed from, when the fixture keeps one. */
+  sourceLine?: string | null;
 }
 
 export interface ShadowCase {

@@ -56,6 +56,23 @@ export function matches(ref: FeeRef, fee: StageFee): boolean {
   return ref.frequency.startsWith("!") ? fee.frequency !== ref.frequency.slice(1) : fee.frequency === ref.frequency;
 }
 
+/** Words that name no particular fee, so sharing them says nothing about two lines being one. */
+const GENERIC_WORDS = new Set(["fee", "fees", "charge", "charges", "per", "each", "month", "monthly", "item", "service", "the", "and", "for", "account"]);
+
+function distinctiveWords(text: string | null | undefined): Set<string> {
+  return new Set((text ?? "").toLowerCase().match(/[a-z]{3,}/g)?.filter((word) => !GENERIC_WORDS.has(word)) ?? []);
+}
+
+/**
+ * A read at the expected price is the expected line filed elsewhere only when it shares a
+ * distinctive word with that line; without a stored line, the price alone decides.
+ */
+function sameLine(ref: FeeRef, fee: StageFee): boolean {
+  if (!ref.sourceLine) return true;
+  const line = distinctiveWords(ref.sourceLine);
+  return [...distinctiveWords(`${fee.feeName ?? ""} ${fee.excerpt ?? ""}`)].some((word) => line.has(word));
+}
+
 /** Where an expected fee that never published was lost: the latest stage it reached. */
 function whereMissed(ref: FeeRef, trace: CaseTrace): { stage: StageId; reason: string | null } {
   const gated = trace.stages.publish_gate.dropped.find((fee) => matches(ref, fee));
@@ -66,7 +83,9 @@ function whereMissed(ref: FeeRef, trace: CaseTrace): { stage: StageId; reason: s
   if (held) return { stage: "extract", reason: held.reason };
   // Knox read the line but filed it under another category, or read another price for it.
   const read = trace.stages.extract.passed;
-  if (ref.amountCents != null && read.some((fee) => fee.amountCents === ref.amountCents)) return { stage: "extract", reason: "read_other_category" };
+  if (ref.amountCents != null && read.some((fee) => fee.amountCents === ref.amountCents && sameLine(ref, fee))) {
+    return { stage: "extract", reason: "read_other_category" };
+  }
   if (read.some((fee) => matches({ ...ref, amountCents: null }, fee))) return { stage: "extract", reason: "read_other_amount" };
   return { stage: "extract", reason: "not_read" };
 }

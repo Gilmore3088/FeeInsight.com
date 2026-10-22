@@ -132,4 +132,13 @@ describe("shadow lab metrics", () => {
     expect(metrics.recall).toEqual({ expected: 2, found: 1, rate: 0.5 });
     expect(metrics.answerKeyRecall).toEqual({ expected: 1, found: 0, rate: 0 });
   });
+
+  it("should_not_call_a_coincidental_same_price_read_a_misfile", () => {
+    const ref: FeeRef = { canonicalFeeKey: "wire_domestic_outgoing", feeName: null, amountCents: 2500, sourceLine: "Outgoing domestic wire transfer ... $25.00" };
+    const c = makeCase({ publish: [ref] });
+    const coincidence = makeTrace(c, { extract: { passed: [nsf(2500, { canonicalFeeKey: "stop_payment", feeName: "Stop Payment", excerpt: "Stop Payment | $25.00" })] } });
+    const misfiled = makeTrace(c, { extract: { passed: [nsf(2500, { canonicalFeeKey: "wire_intl_outgoing", feeName: "Outgoing Wire", excerpt: "Outgoing domestic wire transfer ... $25.00" })] } });
+    expect(scoreRun([c], [coincidence], 0).failures[0].reason).toBe("not_read");
+    expect(scoreRun([c], [misfiled], 0).failures[0].reason).toBe("read_other_category");
+  });
 });
