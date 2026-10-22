@@ -29,7 +29,7 @@ followed by a first price and a "second column" price that was dropped. The shar
 the same gap: it scored only the first stacked price as the row's, so a variant's own price could
 not trace.
 
-**Fix:** Knox rules v103.
+**Fix:** Knox rules v103 (#2549).
 - `stackedCellVariants` (`src/lib/custom-report/stacked-cell-variants.ts`) finds the shape. It
   needs a stem plus exactly as many one-word variants of one family as there are prices. The
   families are directions (outgoing, incoming, outbound, inbound), regions (domestic,
