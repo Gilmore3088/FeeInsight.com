@@ -57,13 +57,16 @@ const FLOORS: Record<string, { right: number; wrong: number }> = {
   // v101 (held vocabulary, Oct 22): names read at the key's price but held unclassified get the
   // category the keys agree on. CA 158 -> 161, FL 136 -> 137, GA 180 -> 185, MI 135 -> 138,
   // MN 121 -> 122; no state gained a wrong read.
+  // v102 (column headings, Oct 22): a two-column line's bare pair is read under its column's heading:
+  // FL 137 -> 140 (key 10193's "Cashier's Check: Customer" $10, key 8085's notary Customer $3 and
+  // Non-Customer $5), GA 185 -> 186 (key 1338's branch-assisted domestic wire $35); no wrong read added.
   CA: { right: 161, wrong: 5 },
-  FL: { right: 137, wrong: 6 },
+  FL: { right: 140, wrong: 6 },
   // v97 (Oct 21): State key 60 (GA, one stored line) is read past its "$35.00/Item" rows: 172 -> 179
   // right. One new wrong read, "Overdraft Protection $35.00/Item" as an overdraft protection
   // transfer (the key files that $35 as overdraft), is refused by Darwin's verify
   // (category_mismatch) and never publishes; the shadow lab's published fees outside the keys stay 35.
-  GA: { right: 185, wrong: 10 },
+  GA: { right: 186, wrong: 10 },
   // 88 since the top-50 fold (Oct 8): a "Travel Card Reload" at $4.95 now files as a gift card
   // at $4.95, the same (category, price) pair as that schedule's gift card, so two right reads count once.
   IL: { right: 116, wrong: 5 },
@@ -78,7 +81,8 @@ const FLOORS: Record<string, { right: number; wrong: number }> = {
   // as Darwin now verifies them: 877 -> 885 right (GA 180, IL 116, MI 135, MN 121); wrong unchanged at 34.
   // v100: 885 -> 890 right (CA's key 7450, tier columns; see CA); wrong unchanged at 34.
   // v101: 890 -> 903 right (held vocabulary; see CA); wrong unchanged at 34.
-  all: { right: 903, wrong: 38 },
+  // v102: 903 -> 907 right (column headings; see CA); wrong unchanged at 34.
+  all: { right: 907, wrong: 38 },
 };
 
 const fixture = JSON.parse(

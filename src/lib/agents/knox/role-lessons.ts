@@ -436,4 +436,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-22",
   },
+  {
+    id: "column-heading-rows",
+    agent: "knox",
+    stage: "extract",
+    lesson: "A two-column page flattened row by row puts two fees on one line, one per column, and each column keeps its own heading (\"ACCOUNT ASSISTANCE | WIRE TRANSFERS\"). Read every name and price pair on the line, and name a bare pair (a direction, customer type or size) by its own column's heading, never the other column's or one from a section well above. A name with a service of its own, or only a unit (\"Each additional\"), borrows no heading.",
+    why: "The shadow lab (Oct 22) showed right-hand directions and customer types under a column heading never read: State key 1338's \"Domestic Outgoing (branch assisted) | $35.00\" under WIRE TRANSFERS, 10193's \"Customer | $10.00\" under \"Cashier's Check\", 8085's notary Customer and Non-Customer. The table pass read only a line's first pair under the last single-cell heading. The first cut lent \"Temporary Checks\" to \"Wire Transfers (VeraBank customers only) - Outgoing\" (Texas key 2414), a new wrong read the Texas gate caught.",
+    evidence: { issues: [1026], prs: [], files: ["src/lib/agents/knox/column-heading-rows.ts", "src/lib/agents/knox/table-rows.ts", "src/lib/agents/knox/column-heading-rows.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-22",
+  },
 ];

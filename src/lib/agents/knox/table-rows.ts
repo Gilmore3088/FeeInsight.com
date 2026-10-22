@@ -26,6 +26,7 @@ import {
   statesItsPriceVaries,
   ZERO_WORD,
 } from "@/lib/agents/knox/layout";
+import { columnHeadingRows } from "@/lib/agents/knox/column-heading-rows";
 
 /**
  * Knox pass 2a, `extract.table`: pair each table row's fee-name cell with its amount
@@ -43,13 +44,17 @@ import {
 // price-first line under a name that says its price varies, is the row of the name after its price.
 // v8 (#1827): a cell-less price-first list in a run of two lines or more ("$14.00 Safe Deposit Box
 // 3”x5”x22”/Year") is read one fee per line, so no box takes the next size's price.
-export const KNOX_TABLE_STRATEGY = { strategy: "extract.table", version: 8 } as const;
+// v9 (Knox rules v102): on a two-column line, a bare pair its column's heading names is read too
+// (`columnHeadingRows`).
+export const KNOX_TABLE_STRATEGY = { strategy: "extract.table", version: 9 } as const;
 
 export interface KnoxTableRow {
   cells: string[];
   /** The section heading above the row ("Wire Transfers"), when there is one. */
   heading: string | null;
   layout: "cells" | "stacked";
+  /** v102: the column heading names this row; `columnHeadingRows` already checked the name needs it. */
+  headingNames?: boolean;
 }
 
 const MAX_NAME_LINE_CHARS = 120;
@@ -185,7 +190,8 @@ export function tableRowsFromText(text: string): KnoxTableRow[] {
     // non-Wells Fargo ATMs"); only composable row names ever borrow them.
     if (looksLikeHeading(line, 10)) heading = line;
   }
-  return rows;
+  // v102: added after every row read above, so no earlier read changes.
+  return [...rows, ...columnHeadingRows(lines)].slice(0, MAX_ROWS);
 }
 
 /** Prose running on from another column: opens lowercase, or with a footnote number ("1. "). */
@@ -243,7 +249,7 @@ export function extractFromTableRows(rows: KnoxTableRow[]): ExtractionRulesResul
     let hint = classifyFeeText(name);
     let feeName = name;
     const stopPaymentHeading = row.heading != null && classifyFeeText(row.heading) === "stop_payment";
-    if (!hint && row.heading && (composableTail(name) || (stopPaymentHeading && composableTail(name, STOP_PAYMENT_ITEM_WORDS)))) {
+    if (!hint && row.heading && (row.headingNames || composableTail(name) || (stopPaymentHeading && composableTail(name, STOP_PAYMENT_ITEM_WORDS)))) {
       hint = classifyFeeText(`${row.heading} ${name}`);
       feeName = `${row.heading}: ${name}`;
     }

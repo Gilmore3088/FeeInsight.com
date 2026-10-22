@@ -214,7 +214,13 @@ import { belongsToPaidReturnedUnit, paidReturnedUnits } from "@/lib/custom-repor
 // expedited order behind a parenthetical "(EFT Service Charge)" is read without the label. Admit-only:
 // a name another rule files keeps its category. The stale-read floor stays at v97. Name re-tidy
 // stays at v26.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 101 } as const;
+// v102: on a two-column page flattened row by row, a pair whose bare name its column's heading names
+// ("ACCOUNT ASSISTANCE | WIRE TRANSFERS" over "... | $100.00 | Domestic Outgoing (branch assisted) |
+// $35.00"; "Cashier's Check | Stop Payment | $35.00" over "Customer | $10.00 | ...") is read under
+// that heading (`columnHeadingRows`, table pass v9). The table pass read only a line's first pair under
+// the last single-cell heading. Admit-only: the rows come after every row the table pass read, and the
+// self-check traces them on the stored text. The stale-read floor stays at v97. Name re-tidy stays at v26.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 102 } as const;
 
 export interface SpecialistRun {
   strategy: string;
