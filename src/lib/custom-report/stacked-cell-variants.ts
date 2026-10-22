@@ -7,13 +7,15 @@
  * (State key 9308). This reads the names cell as a stem and the trailing list of sibling variants,
  * one word each, all from one family: a direction ("Outgoing Incoming"), a region ("Domestic
  * International") or a customer type ("Member Non-Member"). Knox pairs the variants with the
- * prices in order (`pairedPriceCandidates` in knox/rules.ts) and the shared check traces each
- * variant's price (`withJoinedPrices` in source-check.ts).
+ * prices in order (`stackedVariantReads` in knox/rules.ts) and the shared check traces each
+ * variant's price (`stackedVariantIndex` in source-check.ts).
  *
  * Conservative by design (#2546, #2547, #2548 reviews): the list must be exactly `count` words long,
- * every word one family's, no word repeated, and the word before it not of that family (so the
- * list's length is not a guess); the stem must name something, hold no figure, limit or balance,
- * and not end on a joiner. Null otherwise. Pure.
+ * every word one family's, no word repeated, and no word of the stem of that family (so the list's
+ * length is not a guess, and the stem alone never names a variant: review of 74e0df3, "Foreign Item
+ * Collection Domestic Foreign" let "Foreign Item Collection" trace at the foreign price); the stem
+ * must name something, hold no figure, limit or balance, and not end on a joiner. Null otherwise.
+ * Pure.
  */
 
 export type StackedVariantFamily = "flow" | "region" | "customer";
@@ -48,6 +50,12 @@ function familyOf(word: string): StackedVariantFamily | null {
   return null;
 }
 
+/** The stem's words, a hyphenated word whole and in parts ("Non-Member", "Non", "Member"). */
+function stemWords(stem: string): string[] {
+  const whole = stem.split(/[^A-Za-z-]+/).filter(Boolean);
+  return [...whole, ...whole.flatMap((word) => word.split("-"))].filter(Boolean);
+}
+
 /** The names cell's stem and its `count` trailing sibling variants, or null when it is not that list. */
 export function stackedCellVariants(nameCell: string, count: number): StackedCellVariants | null {
   if (count < MIN_VARIANTS || count > MAX_VARIANTS) return null;
@@ -58,9 +66,8 @@ export function stackedCellVariants(nameCell: string, count: number): StackedCel
   const family = familyOf(variants[0]);
   if (!family || !variants.every((word) => familyOf(word) === family)) return null;
   if (new Set(variants.map((word) => word.toLowerCase())).size !== count) return null;
-  const before = tokens[tokens.length - count - 1];
-  if (familyOf(before) === family) return null;
   const stem = tokens.slice(0, -count).join(" ");
+  if (stemWords(stem).some((word) => familyOf(word) === family)) return null;
   if (!/[a-z]{3,}/i.test(stem) || STEM_REFUSALS.test(stem) || STEM_JOINER.test(stem)) return null;
   return { stem, variants, family };
 }

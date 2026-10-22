@@ -293,10 +293,12 @@ directions (Darwin refused it at category) and the second price was never read. 
 two cells; the second only prices apart by spaces, with no unit, limit, range or other figure; the
 first a stem and exactly as many one-word variants of one family as there are prices: directions
 (outgoing, incoming, outbound, inbound), regions (domestic, international, foreign) or customer
-types (member, non-member, customer, non-customer). No variant is repeated, the word before the list
-is not of its family, and the stem holds no figure, limit, balance or waiver and does not end on a
+types (member, non-member, customer, non-customer). No variant is repeated, no word of the stem is
+of the list's family, and the stem holds no figure, limit, balance or waiver and does not end on a
 joiner. A direction or region must change the category of every variant; a customer type must keep
-it. Every variant must pass Darwin's checks, or none is read and the row is read as before. The
+it. A wire row is split only when its own stem says domestic ("Within USA", "Domestic") and names no
+other region: a variant's name is not printed, so the #2278 scope review cannot find its row, and
+under an international heading it would publish as a domestic wire (review of 74e0df3). Every variant must pass Darwin's checks, or none is read and the row is read as before. The
 shared check traces the variant's own price (`stackedVariantIndex` in `source-check.ts`): the price
 of the one variant the name keeps scores as the first price does. Admit-only there: no price's score
 drops, so a name that traced before still traces. Across every Texas, seven-state and shadow-lab

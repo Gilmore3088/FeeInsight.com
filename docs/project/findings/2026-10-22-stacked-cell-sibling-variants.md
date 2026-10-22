@@ -34,13 +34,14 @@ not trace.
   needs a stem plus exactly as many one-word variants of one family as there are prices. The
   families are directions (outgoing, incoming, outbound, inbound), regions (domestic,
   international, foreign) and customer types (member, non-member, customer, non-customer). No
-  variant may repeat, and the word before the list must not be of that family. The stem must hold
-  no figure, limit, balance or waiver, and must not end on a joiner.
+  variant may repeat, and no word of the stem may be of that family. The stem must hold no figure,
+  limit, balance or waiver, and must not end on a joiner.
 - `stackedVariantReads` (`src/lib/agents/knox/rules.ts`) runs before any other line rule. It reads
   each variant at the price in the same place, but only on a row of two cells whose price cell holds
   nothing but the prices. A direction or region must change the category of every variant, and a
-  customer type must keep it. Every read must pass Darwin's checks, or none is made and the row is
-  read as before.
+  customer type must keep it. A wire row is split only when its own stem says its wires are
+  domestic ("Within USA", "Domestic") and names no other region. Every read must pass Darwin's
+  checks, or none is made and the row is read as before.
 - The shared check traces the variant's own price (`stackedVariantIndex` in `source-check.ts`).
   The price of the one variant the fee's name keeps scores as the first price does. This only
   admits: no price's score drops, so every name that traced before still traces. Knox's self-check
@@ -90,6 +91,25 @@ first price ("... Incoming" at $20). Making it refuse would take fees down and n
 re-check with a dry-run count, which this session could not run (no database access). The stale-read
 floor stays at v97 and name re-tidy at v26. Live documents get v103 on their next read. No count of
 stored texts with this layout has been run.
+
+**Review of 74e0df3.** The review found one blocker. Under "INTERNATIONAL WIRE TRANSFERS",
+"FOREIGN WIRES", "Wire Transfers | International" or "Wire Transfers - International", a stacked
+row "Wire Fee Outgoing Incoming | $45.00 $15.00" published a domestic outgoing wire at $45 and a
+domestic incoming wire at $15. Base refused all four.
+- The cause: a variant's name is not printed on the page, so `sourceOwnedWireScope` found no owner
+  row. The #2278 review (`internationalWireEligibility`) then let the domestic category through as
+  not applicable. Darwin's international verification has the same gap.
+- The fix is in Knox: a wire row is split only when its own stem says domestic. Otherwise no
+  variant is read, and the row reads as base read it.
+- `sourceOwnedWireScope` was not taught the stacked cell. That would change Darwin's re-check of
+  live fees: a live domestic wire whose text has such a row would move from "not applicable" to a
+  hold or an ambiguous owner. This session had no database access to show that it touches no live
+  fee, so that part is left for a PR with a dry-run count.
+- The review also found that a stem holding a word of the list's family let the stem alone trace at
+  a variant's price ("Foreign Item Collection" at $50 on "Foreign Item Collection Domestic Foreign |
+  $25.00 $50.00"). Such a stem is now no list.
+- All five texts are near-miss tests at the read level and through `runCase`, and they fail on
+  74e0df3. Every number above is unchanged by the fix, and the read diff is the same single line.
 
 **Lesson:** A cell of stacked names over a cell of stacked prices is one fee per name only when the
 names are one family of siblings, as many as the prices, and the price cell holds nothing else.

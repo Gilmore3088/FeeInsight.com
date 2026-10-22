@@ -57,13 +57,14 @@ describe("Knox v103: a cell of stacked sibling names over a cell of as many stac
     expect(fees.filter(([, amount]) => amount === 10)).toHaveLength(1);
   });
 
-  it("should_read_each_region_at_its_own_price", () => {
+  it("should_read_no_wire_variant_on_a_row_that_does_not_state_its_wires_are_domestic", () => {
+    // Review of 74e0df3: a stacked wire read's name is not printed on the page, so the #2278 scope
+    // review cannot find its row. A wire row is split only when its own stem says domestic ("Within
+    // USA"); a region list of wires is never split, and the row reads as base read it.
     const found = reads("Wire Transfer Outgoing Domestic International | $25.00 $45.00");
-    expect(found).toContainEqual(["wire_domestic_outgoing", 25]);
-    // The international variant still answers to the #2278 direction review, which this row's
-    // words do not satisfy; it is never filed at the domestic price either.
-    expect(found).not.toContainEqual(["wire_intl_outgoing", 25]);
+    expect(found).not.toContainEqual(["wire_domestic_outgoing", 25]);
     expect(found).not.toContainEqual(["wire_domestic_outgoing", 45]);
+    expect(found).not.toContainEqual(["wire_intl_outgoing", 45]);
   });
 
   it("should_read_each_customer_type_of_one_fee_at_its_own_price", () => {
@@ -77,6 +78,9 @@ describe("Knox v103: a cell of stacked sibling names over a cell of as many stac
     expect(incoming.ok).toBe(true);
     // Admit-only: what the check traced before still traces.
     expect(checkFeeAgainstSource(WIRE_DIRECTIONS, "Wire Transfer (Within USA) Outgoing", 20, ".", "wire_domestic_outgoing").ok).toBe(true);
+    // Review of 74e0df3: a stem with a word of the list's family is no list, so the stem alone never
+    // traces at a variant's price.
+    expect(checkFeeAgainstSource("Foreign Item Collection Domestic Foreign | $25.00 $50.00", "Foreign Item Collection", 50, ".").ok).toBe(false);
     // A name that keeps no variant gets nothing new.
     expect(checkFeeAgainstSource(WIRE_DIRECTIONS, "Wire Transfer (Within USA)", 10, ".", "wire_domestic_outgoing").ok).toBe(false);
   });
@@ -100,6 +104,9 @@ describe("Knox v103: a cell of stacked sibling names over a cell of as many stac
       expect(stackedCellVariants("Wire Transfer Incoming Incoming", 2)).toBeNull();
       // No stem.
       expect(stackedCellVariants("Outgoing Incoming", 2)).toBeNull();
+      // A stem holding a word of the list's family: the stem alone would trace at a variant's price.
+      expect(stackedCellVariants("Foreign Item Collection Domestic Foreign", 2)).toBeNull();
+      expect(stackedCellVariants("Incoming Wire (Domestic) Outgoing Incoming", 2)).toBeNull();
       // Fewer variants than prices.
       expect(stackedCellVariants("Wire Transfer (Within USA) Outgoing Incoming", 3)).toBeNull();
       // A stem with a limit, a balance or a figure in it.
@@ -111,7 +118,7 @@ describe("Knox v103: a cell of stacked sibling names over a cell of as many stac
   });
 
   describe("near misses: stacked prices that are not one price per variant", () => {
-    const NEAR_MISSES: Array<{ text: string; forbid: Read[] }> = [
+    const NEAR_MISSES: Array<{ text: string; forbid: Read[]; published?: Read[] }> = [
       // More prices than variants: a third figure is a cap, a fee of another column or a band.
       { text: "Wire Transfer Outgoing Incoming | $20.00 $10.00 $5.00", forbid: [["wire_domestic_incoming", 10], ["wire_domestic_incoming", 5]] },
       // Fewer prices than variants.
@@ -145,6 +152,24 @@ describe("Knox v103: a cell of stacked sibling names over a cell of as many stac
       },
     ];
 
+    // Review of 74e0df3: international wires under a region heading published as domestic wires.
+    // Knox reads the whole row at its first price, as base did (Darwin refuses that two-direction name);
+    // no variant is read, and nothing publishes as a domestic wire.
+    const INTERNATIONAL_WIRE_READS: Read[] = [["wire_domestic_incoming", 15]];
+    const INTERNATIONAL_WIRE_HEADINGS: Read[] = [["wire_domestic_outgoing", 45], ["wire_domestic_incoming", 15]];
+    NEAR_MISSES.push(
+      { text: "INTERNATIONAL WIRE TRANSFERS\nWire Fee Outgoing Incoming | $45.00 $15.00\nStop Payment | $30.00", forbid: INTERNATIONAL_WIRE_READS, published: INTERNATIONAL_WIRE_HEADINGS },
+      { text: "FOREIGN WIRES\nWire Transfer Outgoing Incoming | $45.00 $15.00", forbid: INTERNATIONAL_WIRE_READS, published: INTERNATIONAL_WIRE_HEADINGS },
+      { text: "Wire Transfers | International\nWire Transfer Outgoing Incoming | $45.00 $15.00", forbid: INTERNATIONAL_WIRE_READS, published: INTERNATIONAL_WIRE_HEADINGS },
+      {
+        text: "Wire Transfers - International\nOutgoing Incoming | $45.00 $15.00\nWire Transfer Outgoing Incoming | $45.00 $15.00",
+        forbid: INTERNATIONAL_WIRE_READS,
+        published: INTERNATIONAL_WIRE_HEADINGS,
+      },
+      // A stem-only name at a variant's price.
+      { text: "Foreign Item Collection Domestic Foreign | $25.00 $50.00", forbid: [["foreign_check", 50], ["collection_item", 50]] },
+    );
+
     it("should_not_read_any_near_miss_as_a_variant_fee", () => {
       for (const { text, forbid } of NEAR_MISSES) {
         const found = reads(text);
@@ -153,9 +178,9 @@ describe("Knox v103: a cell of stacked sibling names over a cell of as many stac
     });
 
     it("should_not_publish_any_near_miss_through_darwin_and_the_publish_gate", () => {
-      for (const { text, forbid } of NEAR_MISSES) {
+      for (const { text, forbid, published: forbidPublished } of NEAR_MISSES) {
         const fees = published(text);
-        for (const read of forbid) expect(fees, text).not.toContainEqual(read);
+        for (const read of forbidPublished ?? forbid) expect(fees, text).not.toContainEqual(read);
       }
     });
   });

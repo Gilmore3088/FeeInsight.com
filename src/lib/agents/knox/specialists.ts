@@ -224,7 +224,7 @@ import { belongsToPaidReturnedUnit, paidReturnedUnits } from "@/lib/custom-repor
 // ("Wire Transfer (Within USA) Outgoing Incoming | $20.00 $10.00", State key 9308) reads each variant
 // at its own price (`stackedVariantReads` in rules.ts, `stackedCellVariants`). Only one-word
 // directions, regions or customer types, as many as the prices, in a two-cell row whose price cell
-// holds nothing but the prices. The shared check traces the variant's price on the stored text
+// holds nothing but the prices; a wire row only when its own stem says domestic. The shared check traces the variant's price on the stored text
 // (`stackedVariantIndex` in source-check.ts, admit-only). The row's old read, which named both
 // directions and failed Darwin's category check, becomes the first variant's. The stale-read floor
 // stays at v97. Name re-tidy stays at v26.
