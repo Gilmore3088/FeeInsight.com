@@ -264,6 +264,12 @@ first stage that got it wrong.
   `SHADOW_LAB_FREEZE=1 npm run test:shadow-lab`.
 - To add a scenario, map a committed fixture to cases in `shadow-lab/scenarios.ts`. Never invent
   text: a failure with no committed source text goes in `NOT_REPLAYABLE`.
+- The ratchet gate (`shadow-lab/ratchet-gate.test.ts`, in `npm run test:quality-gates`) is the
+  one part that blocks. Today's pipeline must still meet every expectation in
+  `shadow-lab/ratchet-baseline.json`. A change that meets more must lock the gain in with
+  `SHADOW_LAB_REBASE=1 npx vitest run src/lib/agents/deming/shadow-lab/ratchet-gate.test.ts` in the
+  same PR. Losing one on purpose takes the same refresh and a reason in the PR (DECISIONS,
+  2026-10-21).
 - The `missed_fees` cases read holdout answer keys. Use them to see which stage loses fees. Write
   and test a rule against tuning keys or new fixtures, never against holdout text.
 
