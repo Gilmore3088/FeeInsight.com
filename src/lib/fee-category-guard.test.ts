@@ -195,6 +195,16 @@ describe("checkFeeCategory", () => {
     expect(refileCategory("deposited_item_return", "ATM/Debit Card Chargeback – Each")).toBe("account_research");
   });
 
+  it("v81: a returned check deposit is a deposited item coming back", () => {
+    // Shadow lab answer keys (#2536): "Returned Check Deposit | $5.00/item", "Returned Check Deposit Fee | $32.00".
+    for (const name of ["Returned Check Deposit", "Returned Check Deposit Fee", "Returned Item Deposit"]) {
+      expect(checkFeeCategory("deposited_item_return", name)).toEqual({ ok: true });
+    }
+    for (const name of ["Returned Check Deposit Bag", "Returned Remote Check Deposit Correction", "Returned item deposit account", "Return check deposit slip"]) {
+      expect(checkFeeCategory("deposited_item_return", name).ok).toBe(false);
+    }
+  });
+
   it("v13 keeps a loan's late fee out of overdraft and an Int'l wire out of domestic wires (live rows, Oct 6)", () => {
     for (const name of ["Late Payment fee (Overdraft L-O-C)", "Overdraft Loan Late Fee (no grace period)"]) {
       expect(checkFeeCategory("overdraft", name).ok).toBe(false);

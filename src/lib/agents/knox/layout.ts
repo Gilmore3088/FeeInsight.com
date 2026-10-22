@@ -464,5 +464,5 @@ export function namesALimit(feeName: string, canonicalKey: string): boolean {
 export function passesDarwinChecks(canonicalKey: string, feeName: string, amount: number): boolean {
   if (!checkFeeCategory(canonicalKey, feeName).ok) return false;
   if (amount === 0) return true;
-  return amount > 0 && amount <= MAX_REASONABLE_FEE_AMOUNT && withinAmountEnvelope(canonicalKey, amount);
+  return amount > 0 && amount <= MAX_REASONABLE_FEE_AMOUNT && withinAmountEnvelope(canonicalKey, amount, feeName);
 }

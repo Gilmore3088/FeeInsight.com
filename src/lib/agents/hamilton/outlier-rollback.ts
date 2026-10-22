@@ -1,6 +1,9 @@
 import { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
-import { amountEnvelopeFor } from "@/lib/agents/darwin/envelopes";
+import { amountEnvelopeFor, ESCHEAT_ENVELOPE } from "@/lib/agents/darwin/envelopes";
+
+/** `ESCHEAT_NAME` as a Postgres regex (word start, any case via ~*). */
+const ESCHEAT_SQL_PATTERN = "\\mescheat";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 
@@ -76,6 +79,12 @@ export async function rollBackPublishedOutliers(
            AND (
              fp.amount < (env.bounds->>'min')::numeric
              OR fp.amount > (env.bounds->>'max')::numeric
+           )
+           -- Escheat processing keeps its own range (\`ESCHEAT_ENVELOPE\`), as Darwin verifies it.
+           AND NOT (
+             fp.canonical_fee_key = 'dormant_account'
+             AND fp.fee_name ~* '${ESCHEAT_SQL_PATTERN}'
+             AND fp.amount BETWEEN ${ESCHEAT_ENVELOPE.min} AND ${ESCHEAT_ENVELOPE.max}
            )
            ${institutionFilter}
          ORDER BY fp.fee_published_id

@@ -592,7 +592,10 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // "Bond/Coupon Returned Item Fee"; Darwin 883's dry read).
     // v68: a returned foreign, Canadian or international check or item ("Foreign Check Return Fee",
     // "Returned Canadian Check"; `FOREIGN_ITEM_RETURN`) is a deposited item coming back too.
-    include: new RegExp(String.raw`${FOREIGN_ITEM_RETURN.source}|` + /(\b(bonds?|coupons?)\b[^|]{0,30}\breturn|\breturn(ed|s)?\b[^|]{0,30}\b(bonds?|coupons?)\b|deposit(ed)? (item|check|draft)|deposit(ed)? return(ed)? (item|check)s?|return(ed)? deposit|deposit return|(cheques?|art[ií]culos?|partidas?) depositad[oa]s? devuelt|dep[oó]sitos? (en|de) cheques? devuelt|devoluci[oó]n de dep[oó]sito|charge[- ]?backs?\b|return(ed)? (item|check)s?\b.{0,20}\bwritten to you|^\s*return(ed)?\s+(check|item)s?(\s+(fee|charge)s?)?\s*:?\s*$)/.source, "i"),
+    include: new RegExp(String.raw`${FOREIGN_ITEM_RETURN.source}|` + /(\b(bonds?|coupons?)\b[^|]{0,30}\breturn|\breturn(ed|s)?\b[^|]{0,30}\b(bonds?|coupons?)\b|deposit(ed)? (item|check|draft)|deposit(ed)? return(ed)? (item|check)s?|return(ed)? deposit|return(ed)? (check|item) deposits?\b(?!\s+(?:bags?|accounts?|slips?)\b)|deposit return|(cheques?|art[ií]culos?|partidas?) depositad[oa]s? devuelt|dep[oó]sitos? (en|de) cheques? devuelt|devoluci[oó]n de dep[oó]sito|charge[- ]?backs?\b|return(ed)? (item|check)s?\b.{0,20}\bwritten to you|^\s*return(ed)?\s+(check|item)s?(\s+(fee|charge)s?)?\s*:?\s*$)/.source, "i"),
+    // v81: "Returned Check Deposit" / "Returned Item Deposit" is a deposited item coming back (shadow
+    // lab answer keys, #2536). The new pattern skips a deposit bag; no exclusion is added, so no fee
+    // that passes today fails.
     // v74: a loan payment (`LOAN_PAYMENT`) is other lending.
     exclude: /(^(?![\s\S]*\bdeposit)[\s\S]*\bloan\s+payments?\b|night|safe|box|unresolved|membership|mobile deposit fee|remote|collection|correction|loan (item|payment)s? charge[- ]?back|charge[- ]?backs? on (a )?loan|unable|(\bcards?\b|visa)[^|]{0,25}charge[- ]?back|charge[- ]?back[^|]{0,25}(\bcards?\b|dispute)|dispute|research)/i,
   },
@@ -901,7 +904,10 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // Read-only dry run, Oct 21 01:17 UTC: 13 live fees at 10 institutions go to the second look. A
 // non-customer's cashier's check (`nonCustomerCashiersCheck`) waits on James behind
 // `NON_CUSTOMER_CASHIERS_CHECK_LIVE` (off; 125 more live fees when on).
-export const CATEGORY_GUARD_VERSION = 80;
+// v81 (Oct 22): "Returned Check Deposit" / "Returned Item Deposit" names a returned deposited item
+// (the shadow lab's answer keys, #2536: $5 and $32 refused before). It only admits names; no fee that
+// passes today fails. Rows rejected as category_mismatch under an older guard are judged once more.
+export const CATEGORY_GUARD_VERSION = 81;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed

@@ -382,7 +382,7 @@ export function publishSkipReason(row: VerifiedFeeRow, minConfidence: number, pr
   else if (amount === 0) {
     // $0 is a real price (a free fee) only when Darwin verified it as one.
     if (!isExplicitZeroFee(amount, flags, ZERO_FEE_VERIFIED_FLAG)) return "Missing or invalid amount";
-  } else if (!withinAmountEnvelope(row.canonical_fee_key, amount)) {
+  } else if (!withinAmountEnvelope(row.canonical_fee_key, amount, row.fee_name)) {
     return "Amount outside the category's plausible range";
   }
   // A transfer or deposit limit read as a price; Knox's excerpt is checked by the sweep.
