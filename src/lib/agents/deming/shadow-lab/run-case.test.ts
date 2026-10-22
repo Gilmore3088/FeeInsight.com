@@ -64,7 +64,8 @@ describe("shadow lab case runner", () => {
     expect(trace.published).toEqual([]);
   });
 
-  it("should_give_the_same_traces_in_any_order", () => {
+  // A full replay takes seconds; it runs under `npm run test:shadow-lab`, not CI's unit shards.
+  it.skipIf(!process.env.SHADOW_LAB_OUT)("should_give_the_same_traces_in_any_order", () => {
     const cases = loadScenarios();
     const forward = runAll(currentVariant, cases).map(stripTiming);
     const reversed = runAll(currentVariant, [...cases].reverse()).map(stripTiming);
