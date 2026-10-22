@@ -229,12 +229,12 @@ import { withoutGluedSentence } from "./glued-sentence-name";
 // (`stackedVariantIndex` in source-check.ts, admit-only). The row's old read, which named both
 // directions and failed Darwin's category check, becomes the first variant's. The stale-read floor
 // stays at v97. Name re-tidy stays at v26.
-// v104: a read name publish would hold as cut off (`isCutoffName`) only because a sentence is glued
-// onto the fee's own words is cut to those words (`withoutGluedSentence`): another column's sentence
-// cell in front ("(Per month some exclusions apply): Cashier’s Check (Per item)"), the row's
-// description after a dash ("Overdraft Fee - An Overdraft Fee may be imposed ..."), or a "<what>
-// will cost" sentence. The cut must name the read's own category, no longer read as cut off and
-// drop no condition (`dropsCondition`). Names only: categories and prices are unchanged. The
+// v104: a read name publish would hold as cut off (`isCutoffName`) only because words that say
+// nothing are glued onto the fee's own is cut to those words (`withoutGluedSentence`): another
+// column's cell in front, or the row's description after a dash, when every word in it is filler or
+// repeats the name (`onlyFillerAndName`); and the subject of a "<what> will cost" sentence. Any
+// other word (audience, tier, region, speed, channel, a figure) keeps the name as read and the fee
+// held, as at v103 (review of 6dd3641). Names only: categories and prices are unchanged. The
 // stale-read floor stays at v97. Name re-tidy stays at v26.
 export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 104 } as const;
 
@@ -471,8 +471,8 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
       // v57: a fee whose own row traces reads its frequency from that row, not from a window
       // that stops at the price ("... four (4) OD fees per day ... | $17.00 | per item" is per item).
       // v74: a footnote number glued to the front of the name comes off (`withoutLeadingFootnoteMark`).
-      // v104: a sentence glued onto the fee's own words (another column's cell in front, the row's
-      // description after a dash, "<what> will cost") comes off when what is left names the fee.
+      // v104: words that say nothing glued onto the fee's own (a filler cell in front, a filler dash
+      // description, "<what> will cost") come off when what is left names the fee.
       const feeName = withoutGluedSentence(tidyUnmarkedName(read.feeName, text, institutionName, read.canonicalHint), read.canonicalHint);
       const ownPrices = exclusiveStackedPrices(text, stackedPrices, feeName).filter(row => row.amount === read.amount);
       if (read.canonicalHint === "overdraft" && ownPrices.length > 0 && ownPrices.every(row => row.annualProgram)) {

@@ -56,15 +56,12 @@ const COST_SENTENCES = [
 const DASH_CONDITION = "ATM Fee - Cash withdrawal at ATMs we do not own or operate $0.50";
 
 describe("Knox v104: a fee name with a sentence glued on is cut to the fee's own words", () => {
-  it("should_drop_a_neighbouring_columns_sentence_cell_glued_in_front", () => {
-    expect(withoutGluedSentence("(Per month some exclusions apply): Cashier’s Check (Per item)", "cashiers_check")).toBe("Cashier’s Check (Per item)");
-    expect(withoutGluedSentence("Company that is part of our Health Savings Program offered: Share-to-Share Overdraft Transfer Fee", "od_protection_transfer")).toBe(
-      "Share-to-Share Overdraft Transfer Fee",
-    );
+  it("should_drop_a_neighbouring_cell_that_holds_only_filler", () => {
+    expect(withoutGluedSentence("(This fee may be charged): Cashier’s Check (Per item)", "cashiers_check")).toBe("Cashier’s Check (Per item)");
   });
 
-  it("should_drop_a_sentence_describing_the_fee_after_a_dash", () => {
-    expect(withoutGluedSentence("Overdraft Fee - An Overdraft Fee may be imposed for transactions made by check", "overdraft")).toBe("Overdraft Fee");
+  it("should_drop_a_dash_description_that_only_restates_the_name", () => {
+    expect(withoutGluedSentence("Overdraft Fee - An Overdraft Fee may be imposed for each item", "overdraft")).toBe("Overdraft Fee");
   });
 
   it("should_name_a_will_cost_sentence_by_its_subject", () => {
@@ -129,16 +126,14 @@ describe("Knox v104: a fee name with a sentence glued on is cut to the fee's own
 });
 
 describe("Knox v104 through Knox, Darwin's verify and the publish gate", () => {
-  it("should_publish_the_right_column_fee_once_its_neighbours_cell_is_dropped", () => {
-    expect(named(LEFT_FOOTNOTE_CELL)).toContainEqual(["cashiers_check", 5, "Cashier’s Check (Per item)"]);
-    expect(trace(LEFT_FOOTNOTE_CELL).published).toContainEqual(["cashiers_check", 5]);
-    expect(named(LEFT_SENTENCE_CELL)).toContainEqual(["od_protection_transfer", 10, "Share-to-Share Overdraft Transfer Fee"]);
-    expect(trace(LEFT_SENTENCE_CELL).published).toContainEqual(["od_protection_transfer", 10]);
-  });
-
-  it("should_publish_a_fee_whose_description_ran_on_after_a_dash", () => {
-    expect(named(DASH_DESCRIPTION)).toContainEqual(["overdraft", 32, "Overdraft Fee"]);
-    expect(trace(DASH_DESCRIPTION).published).toContainEqual(["overdraft", 32]);
+  // Review of 6dd3641: these cells and descriptions carry words of their own ("exclusions", "Health
+  // Savings Program", "by check"), so the positive rule leaves them as base read them: held.
+  it("should_leave_a_cell_or_description_with_words_of_its_own_held_as_at_base", () => {
+    expect(named(LEFT_FOOTNOTE_CELL)).toContainEqual(["cashiers_check", 5, "(Per month some exclusions apply): Cashier’s Check (Per item)"]);
+    expect(trace(LEFT_FOOTNOTE_CELL).published).not.toContainEqual(["cashiers_check", 5]);
+    expect(trace(LEFT_SENTENCE_CELL).published).not.toContainEqual(["od_protection_transfer", 10]);
+    expect(named(DASH_DESCRIPTION)).toContainEqual(["overdraft", 32, "Overdraft Fee - An Overdraft Fee may be imposed for transactions made by check"]);
+    expect(trace(DASH_DESCRIPTION).published).not.toContainEqual(["overdraft", 32]);
   });
 
   it("should_publish_a_fee_stated_as_a_will_cost_sentence", () => {
@@ -160,5 +155,73 @@ describe("Knox v104 through Knox, Darwin's verify and the publish gate", () => {
     expect(
       publishNameHold("ATM Withdrawal Fees, out of Network (Surcharge Fees, fees accessed by other ATM proprietors, may still apply.)", "atm_non_network", 0)?.code,
     ).toBe("cutoff_name");
+  });
+});
+
+// Review of 6dd3641 (#2550): every line below was held at base b845c17 (`cutoff_name`, or Darwin's
+// category check saw the qualifier) and published at 6dd3641 as the general fee once the cut dropped
+// the qualifier. A dropped description may hold only filler and the name's own words.
+const FILLER_ROWS = ["Stop Payment $30.00", "Wire Transfer Outgoing Domestic $25.00", "Paper Statement $3.00"];
+
+/** The names published at `amount` for the line among three filler rows, the filler rows left out. */
+function publishedNamesAt(line: string, amount: number): string[] {
+  const run = runCase(currentVariant, {
+    caseKey: "glued-sentence-name-review",
+    scenario: "missed_fees",
+    provenance: { fixture: "unit", fixtureCaseKey: "glued-sentence-name-review", textHash: null, issue: "1026" },
+    document: { url: null, text: [...FILLER_ROWS, line].join("\n") },
+    expected: { publish: [], forbid: [] },
+    status: "ok",
+  });
+  const fillerNames = new Set(FILLER_ROWS.map((row) => row.replace(/\s*\$.*$/, "")));
+  return run.published
+    .filter((fee) => fee.amountCents === Math.round(amount * 100) && !fillerNames.has(fee.feeName ?? ""))
+    .map((fee) => fee.feeName ?? "");
+}
+
+describe("Knox v104 review: a dropped description never carries a qualifier", () => {
+  const cases: Array<[string, string, number, RegExp]> = [
+    ["rush delivery", "Card Replacement Fee - This fee is charged for rush delivery | $35.00", 35, /rush/i],
+    ["expedited delivery cell", "(Fee applies to expedited delivery) | Card Replacement Fee $35.00", 35, /expedited/i],
+    ["international transfers", "Outgoing Wire Fee - This fee is charged for international transfers | $45.00", 45, /international/i],
+    ["fourth and subsequent items", "Overdraft Fee - This fee is charged for the fourth and subsequent items | $36.00", 36, /subsequent/i],
+    ["repeat overdrafts", "Overdraft Fee - This fee is charged for repeat overdrafts | $36.00", 36, /repeat/i],
+    ["each item over $5", "Overdraft Fee - This fee is charged for each item over $5 | $30.00", 30, /over/i],
+    ["cashier's check to non-members", "Cashier's Check - This fee is charged to non-members | $10.00", 10, /non-?members/i],
+    ["cashier's check to non-customers", "Cashier's Check - This fee is charged to non-customers | $10.00", 10, /non-?customers/i],
+    ["check cashing to non-members", "Check Cashing Fee - This fee is charged to non-members | $10.00", 10, /non-?members/i],
+    ["coin counting to non-members", "Coin Counting - This fee is charged to non-members | $10.00", 10, /non-?members/i],
+    ["non-members cell, cashier's check", "(Fee applies to non-members) | Cashier's Check $10.00", 10, /non-?members/i],
+    ["non-members cell, money order", "(Fee is charged to non-members) | Money Order $5.00", 5, /non-?members/i],
+    ["business accounts cell", "(This fee is charged for business accounts) | Stop Payment Fee $35.00", 35, /business/i],
+    ["business accounts dash", "Stop Payment Fee - This fee is charged for business accounts | $35.00", 35, /business/i],
+    ["foreign item returned", "Returned Deposit Item - Fee is charged for each foreign item returned unpaid | $10.00", 10, /foreign/i],
+    ["waived for Premier members", "Outgoing Wire Fee - This fee is waived for Premier members | $20.00", 20, /premier/i],
+  ];
+  for (const [label, line, amount, qualifier] of cases) {
+    it(`should_not_publish_the_general_fee_without_its_qualifier: ${label}`, () => {
+      for (const name of publishedNamesAt(line, amount)) expect(name).toMatch(qualifier);
+    });
+  }
+
+  it("should_keep_a_description_of_filler_and_the_names_own_words_droppable", () => {
+    expect(withoutGluedSentence("Overdraft Fee - This fee may be charged for each item", "overdraft")).toBe("Overdraft Fee");
+    expect(withoutGluedSentence("Overdraft Fee - An Overdraft Fee may be imposed for transactions made by check", "overdraft")).toBe(
+      "Overdraft Fee - An Overdraft Fee may be imposed for transactions made by check",
+    );
+  });
+
+  it("should_not_cut_another_columns_cell_that_holds_any_content_word", () => {
+    expect(withoutGluedSentence("(This fee is charged for business accounts): Stop Payment Fee", "stop_payment")).toBe(
+      "(This fee is charged for business accounts): Stop Payment Fee",
+    );
+    expect(withoutGluedSentence("(Per month some exclusions apply): Cashier’s Check (Per item)", "cashiers_check")).toBe(
+      "(Per month some exclusions apply): Cashier’s Check (Per item)",
+    );
+  });
+
+  it("should_strip_a_leading_conjunction_from_a_will_cost_subject", () => {
+    expect(withoutGluedSentence("and a cashier's check will cost", "cashiers_check")).toBe("Cashier's check");
+    for (const name of publishedNamesAt("Stop payments are $30 and a cashier's check will cost $8.", 8)) expect(name).not.toMatch(/^(?:and|or)\b/i);
   });
 });
