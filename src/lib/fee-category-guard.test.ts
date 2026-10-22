@@ -200,7 +200,7 @@ describe("checkFeeCategory", () => {
     for (const name of ["Returned Check Deposit", "Returned Check Deposit Fee", "Returned Item Deposit"]) {
       expect(checkFeeCategory("deposited_item_return", name)).toEqual({ ok: true });
     }
-    for (const name of ["Returned Check Deposit Bag", "Returned Remote Check Deposit Correction"]) {
+    for (const name of ["Returned Check Deposit Bag", "Returned Remote Check Deposit Correction", "Returned item deposit account", "Return check deposit slip"]) {
       expect(checkFeeCategory("deposited_item_return", name).ok).toBe(false);
     }
   });
