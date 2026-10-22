@@ -52,7 +52,7 @@ whether lost, stolen, or damaged will be charged a", "ATM Withdrawal Fees, out o
 is right about the name Knox gave it: Knox kept another column's cell, the row's description or the
 sentence's verb. So the input is the thing to fix, not the hold.
 
-**Fix:** Knox rules v104 (this PR, branch `fix/knox-cutoff-name-complete`).
+**Fix:** Knox rules v104 (#2550).
 - `withoutGluedSentence` (`src/lib/agents/knox/glued-sentence-name.ts`) runs on each read's name
   after the name tidy, only when `isCutoffName` fires. It tries three cuts:
   - the last cell, when the cell before it is another column's sentence or a wrapped parenthetical;
