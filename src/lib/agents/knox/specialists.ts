@@ -28,6 +28,7 @@ import { withoutFeeBullets } from "@/lib/custom-report/fee-bullets";
 import { exclusiveStackedPrices, stackedFeePrices } from "@/lib/custom-report/stacked-fee-prices";
 import { monthlyAccountOwnerReview } from "./monthly-account-owners";
 import { withOwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
+import { withTierColumnRows } from "./tier-columns";
 import { mayHaveSymbolicLesserFee, symbolicLesserOfReview } from "./symbolic-lesser-of";
 import { internationalWireEligibility } from "./international-wire-eligibility";
 import { belongsToPaidReturnedUnit, paidReturnedUnits } from "@/lib/custom-report/paid-returned-events";
@@ -199,7 +200,14 @@ import { belongsToPaidReturnedUnit, paidReturnedUnits } from "@/lib/custom-repor
 // row's own words (`asReadBoxName`, `leadsBoxRow`).
 // Shadow lab names 287 -> 313 of 317; recall, false publication, Texas and state gates unchanged. The
 // stale-read floor stays at v97. Name re-tidy stays at v26.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 99 } as const;
+// v100: a relationship-tier fee table ("PLATINUM GOLD SILVER+ SILVER COLLEGE" over "Stop Payment FREE
+// $25 $25 $25 $25", State key 7450) is read one line per priced tier cell (`withTierColumnRows`).
+// Knox read only a row's first cell, so a row free in its first tier lost the price the other tiers
+// pay. A free cell beside priced ones is a tier perk and gives no $0. Only a header with two
+// relationship-tier words arms it, and only for the contiguous table under it. The self-check traces
+// the split reads on the unsplit text. Admit-only: a row's first-tier read stays. The stale-read
+// floor stays at v97. Name re-tidy stays at v26.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 100 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -353,11 +361,16 @@ function tidyUnmarkedName(name: string, text: string, institutionName: string | 
 export function runFreeSpecialists(sourceText: string, options: { institutionName?: string | null } = {}): FreeExtractionResult {
   const institutionName = options.institutionName ?? null;
   // Labeled fee cards ("Fee TypeX" / ... / "Fee$5.00") are read as one row, as the shared
-  // check reads them; the self-check still runs against the stored text.
+  // check reads them. The self-check runs on `checkText`: the stored text with these layout
+  // rewrites (cards, business-only lines, box tables) but not the v100 tier split.
   // v62: a fee footnoted as business-only is no specialist's to read (`withoutBusinessOnlyFees`).
   // v63: a safe deposit box size glued after a fee's name starts its own line (`withBoxSizeCellsSplit`).
   // v64: a box table printed sideways, sizes over prices, becomes one line per box (`withSidewaysBoxTable`).
-  const text = withSidewaysBoxTable(withBoxSizeCellsSplit(withoutBusinessOnlyFees(joinLabeledFeeCardText(sourceText))));
+  // v100: a relationship-tier table's row becomes one line per priced tier cell (`withTierColumnRows`).
+  // The self-check traces every read on the text before that split (`checkText`), so a split read
+  // must be supported by the stored row itself: "Courtesy Pay $20 $30 ..." at $30 is held untraced.
+  const checkText = withSidewaysBoxTable(withBoxSizeCellsSplit(withoutBusinessOnlyFees(joinLabeledFeeCardText(sourceText))));
+  const text = withTierColumnRows(checkText);
   const legacyText = withoutFeeBullets(text, recognizedFeeBullets(text));
   const windows = priceWindows(legacyText);
   const stackedPrices = stackedFeePrices(text);
@@ -429,7 +442,7 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
         }
         continue;
       }
-      const checked = selfCheck(text, feeName, read.amount, read.canonicalHint);
+      const checked = selfCheck(checkText, feeName, read.amount, read.canonicalHint);
       const rowFrequency = checked.row ? frequencyFromLine(checked.row, read.amount) : null;
       const frequency = rowFrequency
         ? settledFrequency(checked.row, read.amount, rowFrequency, read.canonicalHint)
@@ -502,7 +515,7 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
       const foundRow = { ...heldRow, feeName: tidyUnmarkedName(heldRow.feeName, text, institutionName, heldRow.canonicalHint) };
       if (foundRow.shape === "zero" && readsAMeasuredAmount(text, foundRow.feeName, 0)) continue;
       // A $0 row can go live through the rules re-check, so it passes the same self-check.
-      const untracedZero = foundRow.shape === "zero" && !tracesToSource(text, foundRow.feeName, 0);
+      const untracedZero = foundRow.shape === "zero" && !tracesToSource(checkText, foundRow.feeName, 0);
       if (untracedZero) selfCheckFailed += 1;
       const row: HeldFeeCandidate = untracedZero ? { ...foundRow, shape: "untraced" } : foundRow;
       const key = heldKey(row);

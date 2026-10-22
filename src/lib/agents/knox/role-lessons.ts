@@ -416,4 +416,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-22",
   },
+  {
+    id: "tier-column-rows",
+    agent: "knox",
+    stage: "extract",
+    lesson: "In a relationship-tier fee table (a header row naming the tiers, then one price cell per tier on each fee row), read every distinct priced cell of a row, not only the first. A free cell beside priced ones is one tier's perk, never the bank's $0 price; a row free in every tier is one $0 fee.",
+    why: "State key 7450 prints PLATINUM GOLD SILVER+ SILVER COLLEGE over rows like \"Stop Payment FREE $25 $25 $25 $25\". Knox read only the first cell, so every row free for its top tier lost the price the other tiers pay (stop payment, non-network ATM, returned mail, notary) and held an untraced $0 instead.",
+    evidence: { issues: [1026], prs: [], files: ["src/lib/agents/knox/tier-columns.ts", "src/lib/agents/knox/specialists.ts"] },
+    appliesTo: "all",
+    since: "2026-10-22",
+  },
 ];

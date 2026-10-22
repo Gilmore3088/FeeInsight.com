@@ -284,6 +284,22 @@ fees found (54.7%); 56 of the 59 wrong reads are the right price under another c
 
 ## Rules versions (`extract.rules`)
 
+v100 (Oct 22): a relationship-tier fee table, a header row naming 3 to 8 tiers, two of them
+relationship-tier words ("PLATINUM GOLD SILVER+ SILVER COLLEGE"), over the contiguous fee rows that print one price cell per tier ("Stop Payment FREE $25 $25 $25
+$25"), is read one "name | price" line per distinct priced cell (`withTierColumnRows` in
+`tier-columns.ts`, run in `runFreeSpecialists` after the sideways box table). Knox read only a row's
+first cell, so a row free in its top tier lost the price the other tiers pay. A free cell beside
+priced ones gives no $0 (a tier's perk, Darwin's tier-perk rule); a row free in every tier gives one
+$0 line. A row with one price in every tier, allowance cells ('3 Free " $5'), "Varies" and lines with
+no header above them are left as printed. The header covers only its table: section titles and
+rows with a cell per tier; a blank line, a sentence or any other line ends it, and fewer than three
+tier rows split nothing. The self-check traces the split reads on the unsplit text (Courtesy Pay $30
+on "$20 $30 ..." is held untraced). Admit-only: a row's first-tier read stays. Found by
+grouping the shadow lab's extraction misses (State key 7450). Shadow lab answer-key recall 924 -> 927
+of 1,312, live audit 339 / 431 and false publication 34 / 160 unchanged; ratchet +3, no loss.
+Seven-state gate 885 -> 890 right (CA 153 -> 158), wrong unchanged; Texas unchanged. Name re-tidy
+stays at v26; the stale-read floor stays at v97.
+
 v99 (Oct 22): a safe deposit box row printed as its size alone, under a box heading the row never
 repeats ("10x10 Annual Fee: $80.00" under "Self Storage Lease Boxes", "3 x 10: $70.00", 'Large
 (10"x10") $75.00'), is named "Safe Deposit Box" and the row's own words (`boxSizeNamed` in
@@ -1834,7 +1850,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v26 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v99 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v100 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v8 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |
