@@ -284,17 +284,20 @@ fees found (54.7%); 56 of the 59 wrong reads are the right price under another c
 
 ## Rules versions (`extract.rules`)
 
-v100 (Oct 22): a relationship-tier fee table, a header row naming 3 to 8 tiers ("PLATINUM GOLD SILVER+
-SILVER COLLEGE") over fee rows that print one price cell per tier ("Stop Payment FREE $25 $25 $25
+v100 (Oct 22): a relationship-tier fee table, a header row naming 3 to 8 tiers, two of them
+relationship-tier words ("PLATINUM GOLD SILVER+ SILVER COLLEGE"), over the contiguous fee rows that print one price cell per tier ("Stop Payment FREE $25 $25 $25
 $25"), is read one "name | price" line per distinct priced cell (`withTierColumnRows` in
 `tier-columns.ts`, run in `runFreeSpecialists` after the sideways box table). Knox read only a row's
 first cell, so a row free in its top tier lost the price the other tiers pay. A free cell beside
 priced ones gives no $0 (a tier's perk, Darwin's tier-perk rule); a row free in every tier gives one
 $0 line. A row with one price in every tier, allowance cells ('3 Free " $5'), "Varies" and lines with
-no header above them are left as printed. Admit-only: a row's first-tier read stays. Found by
+no header above them are left as printed. The header covers only its table: section titles and
+rows with a cell per tier; a blank line, a sentence or any other line ends it, and fewer than three
+tier rows split nothing. The self-check traces the split reads on the unsplit text (Courtesy Pay $30
+on "$20 $30 ..." is held untraced). Admit-only: a row's first-tier read stays. Found by
 grouping the shadow lab's extraction misses (State key 7450). Shadow lab answer-key recall 924 -> 927
 of 1,312, live audit 339 / 431 and false publication 34 / 160 unchanged; ratchet +3, no loss.
-Seven-state gate 885 -> 891 right (CA 153 -> 159), wrong unchanged; Texas unchanged. Name re-tidy
+Seven-state gate 885 -> 890 right (CA 153 -> 158), wrong unchanged; Texas unchanged. Name re-tidy
 stays at v26; the stale-read floor stays at v97.
 
 v99 (Oct 22): a safe deposit box row printed as its size alone, under a box heading the row never

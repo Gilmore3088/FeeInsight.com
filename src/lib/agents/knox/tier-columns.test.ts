@@ -65,10 +65,74 @@ describe("withTierColumnRows (Knox v100)", () => {
   });
 
   it("should_stop_at_a_header_with_another_number_of_tiers", () => {
-    const text = ["PLATINUM GOLD SILVER", "Stop Payment FREE $25 $25", "BASIC PLUS PREMIER ELITE", "Wire Transfer - Domestic FREE $30 $30"].join("\n");
+    const text = [
+      "PLATINUM GOLD SILVER",
+      "Stop Payment FREE $25 $25",
+      "Copy of Paid Check $2 $2 $2",
+      "Notary FREE $5 $5",
+      "GOLD SILVER BRONZE DIAMOND",
+      "Wire Transfer - Domestic FREE $30 $30",
+    ].join("\n");
     const lines = withTierColumnRows(text).split("\n");
     expect(lines).toContain("Stop Payment | $25");
     expect(lines).toContain("Wire Transfer - Domestic FREE $30 $30");
+  });
+
+  // Review of ad17538: upper-case lines that are not relationship tiers armed the split.
+  it.each([
+    ["PERSONAL BUSINESS COMMERCIAL", "Wire Transfer Outgoing $25 $35 $45"],
+    ["FIRST SECOND THIRD", "Overdraft per item $25 $30 $35"],
+    ["CHECKING SAVINGS MONEY MARKET", "Maintenance fee waived with balance of $10 $1,500 $5,000 $9,000"],
+    ["SAFE DEPOSIT BOX", "ATM Fee Rebate FREE $5 $10"],
+    ["BASIC PLUS PREMIER", "Overdraft Protection Line FREE $500 $500"],
+  ])("should_not_take_%j_for_a_tier_header", (header, row) => {
+    const text = [header, row, "Stop Payment FREE $25 $25", "Copy of Paid Check $2 $2 $2"].join("\n");
+    expect(withTierColumnRows(text)).toBe(text);
+  });
+
+  it("should_disarm_the_header_at_a_blank_line", () => {
+    const text = [
+      "PLATINUM GOLD SILVER",
+      "Stop Payment FREE $25 $25",
+      "Copy of Paid Check $2 $2 $2",
+      "Notary FREE $5 $5",
+      "",
+      "Overdraft per item $25 $30 $35",
+    ].join("\n");
+    const lines = withTierColumnRows(text).split("\n");
+    expect(lines).toContain("Stop Payment | $25");
+    expect(lines).toContain("Overdraft per item $25 $30 $35");
+  });
+
+  it("should_disarm_the_header_at_a_line_that_is_not_a_tier_row_or_a_section_title", () => {
+    const text = [
+      "PLATINUM GOLD SILVER",
+      "Stop Payment FREE $25 $25",
+      "Copy of Paid Check $2 $2 $2",
+      "Notary FREE $5 $5",
+      "Wire transfers are sent the same business day. Outgoing wire $25.00",
+      "Daily Overdraft Cap $100 $150 $200",
+    ].join("\n");
+    expect(withTierColumnRows(text).split("\n")).toContain("Daily Overdraft Cap $100 $150 $200");
+  });
+
+  it("should_keep_the_header_across_a_section_title_inside_its_table", () => {
+    const text = [
+      "PLATINUM GOLD SILVER",
+      "GENERAL FEES",
+      "Stop Payment FREE $25 $25",
+      "Copy of Paid Check $2 $2 $2",
+      "LOAN FEES",
+      "Notary FREE $5 $5",
+    ].join("\n");
+    const lines = withTierColumnRows(text).split("\n");
+    expect(lines).toContain("Stop Payment | $25");
+    expect(lines).toContain("Notary | $5");
+  });
+
+  it("should_not_split_under_a_header_with_fewer_than_three_tier_rows", () => {
+    const text = ["PLATINUM GOLD SILVER", "Stop Payment FREE $25 $25", "Account Research $25.00 per hour"].join("\n");
+    expect(withTierColumnRows(text)).toBe(text);
   });
 });
 
@@ -86,6 +150,14 @@ describe("Knox reads a relationship-tier fee table (v100)", () => {
   it("should_keep_the_first_tier_price_it_read_before", () => {
     expect(priced("overdraft")).toContain(20);
     expect(priced("check_image")).toEqual([2]);
+  });
+
+  // Review of ad17538: the self-check traces a split read on the stored text, not the split text, so
+  // a second price the stored row does not support as that fee's ("$20 $30" reads as a range) is held.
+  it("should_self_check_a_split_read_against_the_stored_text", () => {
+    expect(priced("overdraft")).toEqual([20]);
+    const held = read.held.filter((row) => row.canonicalHint === "overdraft" && row.amount === 30);
+    expect(held.map((row) => row.shape)).toEqual(["untraced"]);
   });
 
   it("should_hold_no_zero_for_a_tier_perk_in_a_priced_row", () => {
