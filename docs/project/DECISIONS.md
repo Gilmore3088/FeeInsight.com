@@ -3,6 +3,32 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-10-21
+
+**Fee quality targets, and a pipeline that only moves one way.** James, 2026-10-21 (session goal,
+after the first shadow lab run, #2536). The targets:
+- **Accuracy:** about 90%, meaning the share of live published fees whose amount and category match
+  the bank's own current schedule (the CLAUDE.md definition). The last measure was 65.2% of 224 on
+  Oct 18 (#1026).
+- **Breadth:** about 80% of a schedule's fees published. The shadow lab's answer-key recall is
+  68.8% (902/1312).
+- **Few takedowns after publication.**
+
+The system runs on its own. It stops bad data before publication, reviews live data, and documents
+failures, successes, improvements and methods. Each round must improve on the last, and a second
+wave applies what was learned to what is already live.
+
+The first mechanism is the shadow lab ratchet (`src/lib/agents/deming/shadow-lab/ratchet-gate.test.ts`,
+in `npm run test:quality-gates`):
+- Every expectation today's pipeline meets on the frozen cases is listed in `ratchet-baseline.json`:
+  a fee published, a wrong fee refused, a same-dollar count, a document judged.
+- A Knox, Darwin or Hamilton change that loses one fails CI.
+- A change that meets a new one locks it in by refreshing the baseline in the same PR, so a gain
+  can't quietly slip back.
+
+The second wave stays Bayes's version-replay manifests: a version bump re-reads what older versions
+processed.
+
 ## 2026-10-20
 
 **A cancelled account keeps read-only access to its own reports.** James, 2026-10-20 (#1999 part
