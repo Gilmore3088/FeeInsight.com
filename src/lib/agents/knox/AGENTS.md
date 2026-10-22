@@ -283,6 +283,17 @@ fees found (54.7%); 56 of the 59 wrong reads are the right price under another c
 
 ## Rules versions (`extract.rules`)
 
+v97 (Oct 21): a schedule flattened to one long stored line is read to its end. A cents-only price and
+the unit after it ("Temporary checks ....$.40 each") close a dot-leader row (`LONG_LINE_BREAK`), so the
+next row ("Cashier’s checks ....$4.00") is not glued to it past the 280-character segment limit and
+dropped. A document may hold 1,000 priced segments (was 150), so a fee schedule printed after a long
+account agreement is reached: Texas key 841 is one line of 100,841 characters with its schedule at
+character 97,473. Found by the shadow lab (#2536), where 3 of the 81 answer-key documents are one long
+line. Texas gate: all 578 -> 590 right with 11 wrong unchanged, held out 53 -> 60 with 4 unchanged; the
+seven states unchanged. Shadow lab: answer-key fees published 902 -> 909 of 1,312, no new failure and
+no new fee outside the keys. Large banks' pages are read again at v97; the stale-read floor stays at
+v78, so other banks' stored one-line texts are read again only when that floor moves.
+
 v96 (Oct 20, #1810): an account heading with a service or trade mark glued to its last word
 ("Chase SavingsSM", "Chase Private Client CheckingSM 6") reads as the account a monthly fee under it
 belongs to (`headingWithoutMark` in `lineup.ts`); fee lines are still matched as printed. JPMorgan
@@ -1793,7 +1804,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v26 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v96 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v97 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v8 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

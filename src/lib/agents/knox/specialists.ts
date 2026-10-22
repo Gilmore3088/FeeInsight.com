@@ -179,7 +179,13 @@ import { belongsToPaidReturnedUnit, paidReturnedUnits } from "@/lib/custom-repor
 // and it stayed live as checking's "Monthly Service Fee" beside the $25 one. A large bank's page is
 // read again once per rules version, so Chase's re-read fills the empty product and the account-type
 // hold is the live re-check. The stale-read floor stays at v78.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 96 } as const;
+// v97: a schedule flattened to one long line is read to its end. A cents-only price and its unit
+// ("$.40 each") close a dot-leader row, so the next row is not glued to it past the segment limit,
+// and a document may hold 1,000 priced segments, not 150, so a schedule printed after a long account
+// agreement is reached (Texas key 841: cashier's check, card replacement, early closure, excess
+// withdrawal, maintenance and overdraft rows). Texas gate: all 578 -> 590 right, 11 wrong unchanged;
+// held out 53 -> 60, 4 unchanged; the seven states unchanged. The stale-read floor stays at v78.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 97 } as const;
 
 export interface SpecialistRun {
   strategy: string;

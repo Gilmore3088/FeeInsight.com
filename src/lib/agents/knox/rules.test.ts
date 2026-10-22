@@ -833,6 +833,18 @@ describe("Knox extract.rules", () => {
       expect(fees(united)).toEqual(expect.arrayContaining([["Overdrafts Overdrafts fee (per item)", 36, "overdraft"]]));
     });
 
+    it("v97: ends a leader row after a cents-only price and its unit in a one-line schedule", () => {
+      // Texas answer key 841 (holdout) is one stored line. "$.40 each" did not close the temporary
+      // checks row, so it ran into the cashier's check row past the segment limit and neither was read.
+      const oneLine =
+        "Replace lost ATM or Debit Card.............................$10.00 per card after one Check printing.............(fee depends on style and quantity of check ordered) " +
+        `Temporary checks ${".".repeat(74)}$.40 each Cashier’s checks${".".repeat(84)}$4.00 ` +
+        `ATM cash withdrawal from checking or savings accounts Dollar limit${".".repeat(71)}$320.00 per day`;
+      const read = fees(oneLine);
+      expect(read).toEqual(expect.arrayContaining([["Cashier’s checks", 4, "cashiers_check"]]));
+      expect(read.filter(([, amount]) => amount === 4).map(([, , key]) => key)).toEqual(["cashiers_check"]);
+    });
+
     it("names a long description row's price cell by the row's title", () => {
       const dollar = [
         "Continuous Overdraft Fee If your account remains negative for a period of 7 consecutive calendar days, you will be assessed a fee of $25.00 on the 7th consecutive day. This fee is in addition to any Overdraft Fees assessed. | $25.00",

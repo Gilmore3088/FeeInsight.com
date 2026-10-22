@@ -209,10 +209,11 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-252 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+253 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
-### Extraction and fee reading (33)
+### Extraction and fee reading (34)
 
+- 2026-10-21 — When a reader has a per-document cap, a miss late in a long document is a cap, not a rule; a rules fix reaches most stored texts only through the stale-read floor. — [finding](findings/2026-10-21-flattened-schedules-cut-off.md) — Guard: `src/lib/agents/knox/rules.test.ts` (+1 more)
 - 2026-10-20 — A reader fix must reach the live fees the old read published, and the shared check must refuse a neighbour's price. — [finding](findings/2026-10-20-reader-fixes-never-reach-live-fees.md) — Agent lesson: knox/issue-1827-each-row-keeps-its-own-price
 - 2026-10-19 — One literal "NSF Paid/Returned" row publishes two events only when the source owns the pair; a separate overdraft or item price for the same audience holds it. — [finding](findings/2026-10-19-compressed-paid-returned-events.md) — Guard: `src/lib/custom-report/paid-returned-events.test.ts` (+2 more)
 - 2026-10-19 — Wrapped fee bullets lost their title or their own price. — [finding](findings/2026-10-19-wrapped-fee-bullets.md) — Agent lesson: knox/pr-2162-wrapped-bullet-unit
