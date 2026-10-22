@@ -284,6 +284,39 @@ fees found (54.7%); 56 of the 59 wrong reads are the right price under another c
 
 ## Rules versions (`extract.rules`)
 
+v102 (Oct 22): a two-column fee schedule flattened row by row prints two fees on one line, one per
+column, and each column has its own heading. The table pass read a line's first pair only, under
+the last heading printed on a line of its own, so a right-hand direction ("ACCOUNT ASSISTANCE | WIRE
+TRANSFERS" over "Garnishments and Levies | $100.00 | Domestic Outgoing (branch assisted) | $35.00",
+State key 1338) or a customer type under a heading cell ("Cashier's Check | Stop Payment | $35.00"
+over "Customer | $10.00 | ...", key 10193) was never read. `columnHeadingRows`
+(`column-heading-rows.ts`, table pass v9) keeps one heading per column: both cells of a two-heading
+line with no price; a heading cell that opens a line (a bare direction there, "Domestic", is a
+sub-heading of the left heading); a heading cell after a line's last pair (the right column). A
+heading lends only to the unbroken run of bare rows directly under it in its column (at most 8
+lines): the first other cell in that column, a row naming its own fee or a cell that is not a bare
+name, ends it, and so does a line of words with no cells ("COLLECTION ITEMS", "Money Orders") or an unpriced cell line that is not two
+headings ends both. A column-heading read is dropped when an earlier read at its price already
+names its cell on the same source line (`cellAlreadyRead`), and "$ | N" joins only a figure with cents. The first pair is
+the left column's only when it opens the line. A pair gets a row under its column's heading only
+when no rule files its name alone, its name without notes is a direction, customer type or size
+(`composableTail`), it is not only a unit ("Each additional", "Per item") and it names no service of
+its own (wire, transfer, cash, withdrawal, account: Texas key 2414's "Wire Transfers (VeraBank
+customers only) - Outgoing" under "Temporary Checks" stays a wire). A price split over two cells
+("$ | 3.00") is joined. The table pass files the row only when heading and name together name a fee
+and holds a range as a range. Admit-only: the rows come after every row read before, and the
+self-check traces them on the stored text; across every fixture text the only change is four new
+right reads and two new untraced holds (8085's domestic wires at $15 and $17 under "Domestic", which
+the shared check cannot trace to a heading on a priced line). Only the first pair after the left
+column takes the right heading; a further pair on the line ends it. Left out: dot-leader two-column lines with
+the heading on a priced line (6730, 8240; the shared check holds them), names only a heading can
+classify ("Monthly Statements Cycle" under "Dormant Deposit Accounts", "Mortgage Payoff Processing
+Fee" under "LOAN"), and #2064's box size under "Night Deposit Bags" (a re-file). Shadow lab
+answer-key recall 940 -> 944 of 1,312; false publication 34 / 160, names 313 / 317 and fees outside
+the keys (35) unchanged; ratchet +4, no loss. Seven-state gate 903 -> 907 right (FL 137 -> 140, GA
+185 -> 186), wrong unchanged at 34; Texas 590 / 11 and held out 60 / 4 unchanged. Name re-tidy stays
+at v26; the stale-read floor stays at v97.
+
 v101 (Oct 22): names Knox read at the answer key's own price but held unclassified get the category
 the keys agree on (`V101_HELD_VOCABULARY` in `rules.ts`, tried after FEE_PATTERNS and, while they
 are on, the held-name rules, so a name another live rule files keeps its category): "Bill Payer", a
@@ -1745,6 +1778,10 @@ only on what the free team could not read.
     name after that price. A bare price still goes to the name above, and so does any price under
     a name that runs on ("Inactivity Fee - Savings Account per"). The family experts' price
     windows (`priceWindows`) follow the same rule (`nameAfterPrice`, `runsOn` in `layout.ts`).
+    v9 (rules v102): on a two-column page flattened row by row, `columnHeadingRows`
+    (`column-heading-rows.ts`) keeps one heading per column and adds a row for a bare pair under
+    its own column's heading ("ACCOUNT ASSISTANCE | WIRE TRANSFERS" over "... | $100.00 |
+    Domestic Outgoing (branch assisted) | $35.00"), after every row read before.
   - `extract.account_table` (`account-table.ts`, #1100 gap 3): an account comparison table's
     monthly fee row, one fee per product column ("Monthly Service Fees | $0 | $5 | $10" under
     "Account | Great Checking | Better Checking | Best Checking"). Each read is named by its
@@ -1872,7 +1909,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v26 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v101 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v102 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
-| `KNOX_TABLE_STRATEGY` | `extract.table` | v8 | `knox/table-rows.ts` |
+| `KNOX_TABLE_STRATEGY` | `extract.table` | v9 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |
