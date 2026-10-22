@@ -49,9 +49,12 @@ import { combineScores, scoreAnswerKeys, type AnswerKeyDocument, type GateScore 
 // v90 (#2454, James chose "File them", Oct 20): returned statements file as returned mail, and the
 // gate scores the keys' "unmapped" returned statement lines there too; all from main's 577 / 11 to
 // 578 / 11 (tid 2436 "Return Statement Processing Fee" is now a right read); held out stayed 53 / 4.
+// v97 (Oct 21): a schedule flattened to one long line is read to its end (cents-only leader prices
+// close their row; 1,000 priced segments per document): all 578 / 11 to 590 / 11, held out 53 / 4 to
+// 60 / 4 (tid 841, one stored line of 100,841 characters).
 const FLOORS = {
-  all: { right: 578, wrong: 11 },
-  holdout: { right: 53, wrong: 4 },
+  all: { right: 590, wrong: 11 },
+  holdout: { right: 60, wrong: 4 },
 };
 
 const fixture = JSON.parse(

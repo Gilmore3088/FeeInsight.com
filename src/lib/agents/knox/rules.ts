@@ -28,7 +28,10 @@ import type { OwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
  * specialists in `table-rows.ts` and `families.ts`.
  */
 
-const MAX_SEGMENTS_PER_DOCUMENT = 150;
+// v97: 1,000, up from 150. A fee schedule printed after a long account agreement (Texas key 841, at
+// character 97,473 of one stored line) was never reached: the agreement's priced sentences used up
+// the cap first. Measured in the shadow lab: 7 more answer-key fees, no new wrong read.
+const MAX_SEGMENTS_PER_DOCUMENT = 1000;
 export const MAX_FEES_PER_DOCUMENT = 75;
 const MAX_HELD_PER_DOCUMENT = 40;
 // v76: unpriced rows ("Bill Payment ..... No Charge", "Check printing | Varies") have caps of their
@@ -838,7 +841,14 @@ function freeCellName(row: string): string | null {
  * after its price ("……$36", "....... $35.00/presentment"), so a one-line PDF schedule
  * keeps each name with its price.
  */
-const LONG_LINE_BREAK = /\s{2,}|(?<![.…])[.;](?![.…])\s+|(?<=(?:\.{3,}|…)\s*\$\s?\d[\d,]*(?:\.\d{2})?(?:\/[a-z]+)?)\s+/;
+// v97: a cents-only price ("$.40") also ends its row, after an "each" or "per <unit>" that follows it
+// ("Temporary checks ....$.40 each Cashier’s checks ....$4.00", Texas key 841).
+// v97: in a long line, a price with a slash unit ("$35.00/Item", "$30.00/Card") ends its row too
+// when the next row follows: a capitalised word or a figure that reaches its own price within 80
+// characters (State key 60: one line of "Name $35.00/Item" rows). A condition ("If the balance...",
+// "Waived with...", "30 minute minimum") never opens a row, so it is never glued onto the next name.
+const LONG_LINE_BREAK =
+  /\s{2,}|(?<![.…])[.;](?![.…])\s+|(?<=(?:\.{3,}|…)\s*\$\s?(?:\d[\d,]*(?:\.\d{2})?|\.\d{2})(?:\/[a-z]+)?(?:\s+(?:[Ee]ach|[Pp]er\s+[A-Za-z]+))?)\s+|(?<=\$\s?\d[\d,]*(?:\.\d{2})?\/[A-Za-z]+)\s+(?=(?!(?:If|When|Unless|Waived|Minimum|Maximum|Plus|Per|Each|After|Up|Over|Limit|Fee|Fees|Charged|Assessed)\b)(?!\d+\s*(?:hours?|hrs?|minutes?|mins?|days?|months?|years?)\b)[A-Z0-9][^$]{0,80}\$)/;
 /** "Overdraft Fee Assessed when ... per day. | $36.00": the title that opens a long description row. */
 const ROW_TITLE = /^((?:[A-Z][\w'’&/-]*\s+){0,5}(?:Fee|Charge)s?)\b/;
 
