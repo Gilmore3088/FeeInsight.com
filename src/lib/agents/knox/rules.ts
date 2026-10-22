@@ -657,6 +657,74 @@ export const HELD_NAME_PATTERNS: FeePattern[] = [
   { key: "ira_distribution", pattern: /\bIRA\b.{0,30}\b(?:withdrawals?|distributions?)\b/i },
 ];
 
+/**
+ * v101: names Knox read at the answer key's own price but held unclassified (shadow lab, Oct 22:
+ * 49 held answer-key rows across 24 documents, of which these rules take the ones whose category
+ * the keys agree on). Tried after FEE_PATTERNS, and after the held-name rules when those are on
+ * (`KNOX_HELD_NAME_RULES_LIVE`; under `withHeldNameRules(false)` they are tried right after
+ * FEE_PATTERNS), so they only claim names no other live rule files: a row filed today keeps its
+ * category. Left held on purpose:
+ * printouts (the keys file them as research at one bank and as copies at another), a bare
+ * "Service Fee" or "Checking Fee" (v78), "Expedited Delivery" (v75), "Skip-a-Loan" (v75), "Title
+ * Fee", "Monthly Account Maintenance" (the account's at tid 7450, a gift card's under its heading
+ * at tid 3141, and the name alone cannot tell them apart), over-limit fees (one key files them as
+ * lending, another leaves them unmapped), UCC
+ * termination (the fold files UCC filings as origination, the key files this one as other
+ * lending), a PIN alone (guard v80) and rows named only by their heading.
+ */
+export const V101_HELD_VOCABULARY: FeePattern[] = [
+  // "Bill Payer" (tid 7450), "Automated (Recurring) Loan Transfer • Bill Payer" (tid 9308).
+  { key: "bill_pay", pattern: /\bbill[- ]?payers?\b/i },
+  // "Cash Advanced Fee" (tid 3141): the past participle of the cash advance rule's own name, with
+  // its fee word. A limit or cap ("Maximum cash advanced per day: $1,000", "Cash advanced limit
+  // $500", "up to") is an amount, not a fee.
+  {
+    key: "cash_advance",
+    pattern:
+      /^(?![\s\S]*\b(?:limits?|maximum|max|minimum|min|up to|per (?:day|transaction|month)|daily)\b)[\s\S]*\bcash advanced\s+(?:fees?|charges?)\b/i,
+  },
+  // Gift cards sold beside other cards ("Gift and Reloadable Travel Cards", tid 11477). Reloadable
+  // or travel cards on their own stay held (v75), and a gift card beside a debit, Visa, credit or
+  // ATM card ("Gift and Debit Cards") names no gift card purchase.
+  {
+    key: "gift_card_purchase",
+    pattern: /\bgift\s*(?:and|&|or|\/)\s*(?:(?!(?:debit|visa|credit|atm|check|master\w*)\b)[\w-]+\s+){0,3}cards?\b/i,
+  },
+  // "ACH File Fee (per file)", "ACH Payments - template (per item)" (tid 1338): the business side
+  // of sending ACH. A returned ACH file is a return (an earlier rule). A file received, incoming,
+  // reversed or deleted is not one sent, and no key files those, so they stay held.
+  {
+    key: "ach_origination",
+    pattern: /^(?![\s\S]*\b(?:receiv\w*|incoming|inbound|revers\w*|delet\w*)\b)[\s\S]*\bACH\b[^|$]{0,25}\b(?:files?|templates?)\b/i,
+  },
+  // "After balancing or research" (tid 5703), "Special Request Look Up" (tid 4677). A balance
+  // look-up, or one by phone ("Account Look-up via phone"), is usually a balance inquiry, not
+  // research, and is left out.
+  { key: "account_research", pattern: /\b(?:balancing|reconcil\w*)\s+(?:or|and|&)\s+research\b|\bresearch\s+(?:or|and|&)\s+balancing\b/i },
+  {
+    key: "account_research",
+    pattern: /^(?![\s\S]*\b(?:phone|telephone|balances?|IVR|audio)\b)[\s\S]*\b(?:account|records?|special request)\s+look[- ]?ups?\b/i,
+  },
+  // A bare "Account Closure" or "Account Closing" row (tid 60, tid 12816, Texas 2429), as v14 files
+  // "Account Closing Fee". A loan's or certificate's closure is not one (NOT_AN_ACCOUNT_CLOSURE).
+  { key: "early_closure", pattern: new RegExp(NOT_AN_ACCOUNT_CLOSURE + String.raw`\W*account\s+clos(?:ure|ing)\W*$`, "i") },
+  // A loan's or line's refinance named first ("Refinance to reduce loan rate"; prose that says a
+  // loan "can be used for refinances" names no fee) and a home equity line's early
+  // closure (tid 8034): the fold files refinance fees as other lending, and the keys file the
+  // line's early closure there too, never as a deposit account's early closure.
+  {
+    key: "other_lending_fee",
+    pattern:
+      /^\W*refinanc\w*\b[^|$]{0,40}\b(?:loans?|lines? of credit|heloc|mortgages?)\b|\bearly\s+(?:closure|closing|close-?out|payoff|termination)\b[^|$]{0,40}\b(?:home equity|heloc|lines? of credit)\b|\b(?:home equity|heloc)\b[^|$]{0,40}\bearly\s+(?:closure|closing|termination)\b/i,
+  },
+];
+
+/**
+ * v101: a charge label in parentheses ("Debit Card or PIN ... Expedited Order (EFT Service
+ * Charge)", tid 12752) made the line read as a card's monthly charge, which is then left unfiled.
+ */
+const SERVICE_CHARGE_LABEL = /\(\s*(?:[\w/&-]+\s+){0,3}service\s+(?:charge|fee)s?\s*\)/gi;
+
 let heldNameRulesOn = KNOX_HELD_NAME_RULES_LIVE;
 
 /** Runs `read` with the held-name rules on or off. Synchronous reads only. */
@@ -1140,6 +1208,7 @@ export function classifyPatternKey(value: string): string | null {
       /\bdomestic\b/i.test(whole) ? match : "international");
   let key = FEE_PATTERNS.find((entry) => entry.pattern.test(text))?.key ??
     (heldNameRulesOn ? HELD_NAME_PATTERNS.find((entry) => entry.pattern.test(text))?.key : null) ??
+    V101_HELD_VOCABULARY.find((entry) => entry.pattern.test(text))?.key ??
     null;
   // v20: "ATM Foreign Transaction Fee" is what a customer pays at another bank's ATM (a
   // "foreign ATM"), not a card's foreign transaction fee; "ATM/Debit Card International/
@@ -1207,7 +1276,11 @@ export function classifyPatternKey(value: string): string | null {
   // What a non-member pays at this bank's own ATM is not a member's out-of-network fee.
   if (key === "atm_non_network" && /\bnon[-\s]?(?:member|customer)s?\b/i.test(text)) return null;
   // A card, loan or service's own monthly charge is not the account's maintenance fee.
-  if (key === "monthly_maintenance" && /\b(cards?|loans?|bill ?pay|EDI|safe deposit|box)\b/i.test(text)) return null;
+  if (key === "monthly_maintenance" && /\b(cards?|loans?|bill ?pay|EDI|safe deposit|box)\b/i.test(text)) {
+    // v101: unless only a parenthetical charge label made it one; the name without it may be filed.
+    const unlabeled = text.replace(SERVICE_CHARGE_LABEL, " ");
+    return unlabeled === text ? null : classifyPatternKey(unlabeled);
+  }
   return key;
 }
 

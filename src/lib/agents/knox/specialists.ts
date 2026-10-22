@@ -207,7 +207,14 @@ import { belongsToPaidReturnedUnit, paidReturnedUnits } from "@/lib/custom-repor
 // relationship-tier words arms it, and only for the contiguous table under it. The self-check traces
 // the split reads on the unsplit text. Admit-only: a row's first-tier read stays. The stale-read
 // floor stays at v97. Name re-tidy stays at v26.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 100 } as const;
+// v101: names Knox read at the key's own price but held unclassified get the category the keys agree
+// on (`V101_HELD_VOCABULARY` in rules.ts, tried after every other name rule): bill payer, cash
+// advanced, gift and other cards, ACH files and templates, balancing or research, records look-ups,
+// a bare account closure, a loan's refinance and a home equity line's early closure. A card's
+// expedited order behind a parenthetical "(EFT Service Charge)" is read without the label. Admit-only:
+// a name another rule files keeps its category. The stale-read floor stays at v97. Name re-tidy
+// stays at v26.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 101 } as const;
 
 export interface SpecialistRun {
   strategy: string;

@@ -284,6 +284,28 @@ fees found (54.7%); 56 of the 59 wrong reads are the right price under another c
 
 ## Rules versions (`extract.rules`)
 
+v101 (Oct 22): names Knox read at the answer key's own price but held unclassified get the category
+the keys agree on (`V101_HELD_VOCABULARY` in `rules.ts`, tried after FEE_PATTERNS and, while they
+are on, the held-name rules, so a name another live rule files keeps its category): "Bill Payer", a
+"Cash Advanced Fee" (never a limit, maximum or per-day cap), gift cards sold with other cards ("Gift
+and Reloadable Travel Cards"; not beside a debit, Visa, credit or ATM card), an ACH file or template
+sent (a received, incoming, reversed or deleted file stays held), "balancing or research", an
+account, records or special-request look-up (not by phone or of a balance), a bare "Account
+Closure" or "Account Closing" row (not a loan's or certificate's), a refinance named first with its
+loan or line, and a home equity line's early closure (other lending). A card's or loan's line read as
+monthly maintenance only because of a parenthetical "(EFT Service Charge)" label is read again
+without the label ("Debit Card or PIN ... Expedited Order", rush card). Left held on purpose: printouts
+(keys disagree between research and copies), "Monthly Account Maintenance" (a gift card's under its
+heading at one bank), over-limit fees, UCC termination, "Title Fee", "Loan Extention", reopened
+accounts (the keys call them early closure, Knox's rule does not), bare "Service Fee", "Checking Fee"
+and "Expedited Delivery", account product names and rows named only by their heading. Admit-only:
+across every fixture text (Texas, seven states and the shadow lab's cases) no read was lost or
+re-filed. Found by listing the shadow lab's held unclassified rows at the key's price (49 answer-key
+rows across 24 documents). Shadow lab answer-key recall 927 -> 940 of 1,312; false publication 34 /
+160, names 313 / 317 and fees outside the keys (35) unchanged; ratchet +13, no loss. Seven-state gate
+890 -> 903 right, wrong unchanged at 34; Texas 590 / 11 and held out 60 / 4 unchanged. Name re-tidy
+stays at v26; the stale-read floor stays at v97.
+
 v100 (Oct 22): a relationship-tier fee table, a header row naming 3 to 8 tiers, two of them
 relationship-tier words ("PLATINUM GOLD SILVER+ SILVER COLLEGE"), over the contiguous fee rows that print one price cell per tier ("Stop Payment FREE $25 $25 $25
 $25"), is read one "name | price" line per distinct priced cell (`withTierColumnRows` in
@@ -1850,7 +1872,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v26 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v100 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v101 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v8 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |
