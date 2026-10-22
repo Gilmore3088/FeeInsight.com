@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { runCase } from "@/lib/agents/deming/shadow-lab/run-case";
 import { currentVariant } from "@/lib/agents/deming/shadow-lab/variants";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
-import { stackedCellVariants } from "@/lib/custom-report/stacked-cell-variants";
+import { domesticStackedStem, stackedCellVariants } from "@/lib/custom-report/stacked-cell-variants";
 import { runFreeSpecialists } from "./specialists";
 
 type Read = [string, number];
@@ -81,6 +81,16 @@ describe("Knox v103: a cell of stacked sibling names over a cell of as many stac
     // Review of 74e0df3: a stem with a word of the list's family is no list, so the stem alone never
     // traces at a variant's price.
     expect(checkFeeAgainstSource("Foreign Item Collection Domestic Foreign | $25.00 $50.00", "Foreign Item Collection", 50, ".").ok).toBe(false);
+    // Review of 4370442: the check takes the same domestic-stem gate as Knox's reads. On a stacked wire
+    // row whose stem does not say domestic, a variant never traces at its stacked price.
+    const intlHeading = "INTERNATIONAL WIRE TRANSFERS\nWire Fee Outgoing Incoming | $45.00 $15.00";
+    expect(checkFeeAgainstSource(intlHeading, "Wire Fee Incoming", 15, ".", "wire_domestic_incoming").ok).toBe(false);
+    const dollars = "Wire Transfer Within US Dollars Outgoing Incoming | $45.00 $15.00";
+    expect(checkFeeAgainstSource(dollars, "Wire Transfer Within US Dollars Incoming", 15, ".", "wire_domestic_incoming").ok).toBe(false);
+    const swift = "Domestic / SWIFT Wire Outgoing Incoming | $45.00 $15.00";
+    expect(checkFeeAgainstSource(swift, "Domestic / SWIFT Wire Incoming", 15, ".", "wire_domestic_incoming").ok).toBe(false);
+    const swiftStem = "Domestic SWIFT Wire Outgoing Incoming | $45.00 $15.00";
+    expect(checkFeeAgainstSource(swiftStem, "Domestic SWIFT Wire Incoming", 15, ".", "wire_domestic_incoming").ok).toBe(false);
     // A name that keeps no variant gets nothing new.
     expect(checkFeeAgainstSource(WIRE_DIRECTIONS, "Wire Transfer (Within USA)", 10, ".", "wire_domestic_outgoing").ok).toBe(false);
   });
@@ -112,6 +122,15 @@ describe("Knox v103: a cell of stacked sibling names over a cell of as many stac
       // A stem with a limit, a balance or a figure in it.
       expect(stackedCellVariants("Daily maximum Member Non-Member", 2)).toBeNull();
       expect(stackedCellVariants("Balances under $500 Member Non-Member", 2)).toBeNull();
+      // A direction list whose stem does not say domestic (review of 74e0df3 and 4370442).
+      expect(stackedCellVariants("Wire Fee Outgoing Incoming", 2)).toBeNull();
+      expect(stackedCellVariants("Wire Transfer Within US Dollars Outgoing Incoming", 2)).toBeNull();
+      expect(stackedCellVariants("Domestic SWIFT Wire Outgoing Incoming", 2)).toBeNull();
+      expect(stackedCellVariants("Wire Transfer Member Non-Member", 2)).toBeNull();
+      expect(domesticStackedStem("Wire Transfer (Within USA)")).toBe(true);
+      expect(domesticStackedStem("Wire Transfer (Within the U.S.)")).toBe(true);
+      expect(domesticStackedStem("Wire Transfer (Within US Dollars)")).toBe(false);
+      expect(domesticStackedStem("Domestic Wire", ["International"])).toBe(false);
       // A stem that ends on a joiner.
       expect(stackedCellVariants("Wire Transfer and Outgoing Incoming", 2)).toBeNull();
     });

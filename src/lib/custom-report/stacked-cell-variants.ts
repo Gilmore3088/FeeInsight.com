@@ -14,8 +14,9 @@
  * every word one family's, no word repeated, and no word of the stem of that family (so the list's
  * length is not a guess, and the stem alone never names a variant: review of 74e0df3, "Foreign Item
  * Collection Domestic Foreign" let "Foreign Item Collection" trace at the foreign price); the stem
- * must name something, hold no figure, limit or balance, and not end on a joiner. Null otherwise.
- * Pure.
+ * must name something, hold no figure, limit or balance, and not end on a joiner. A list of
+ * directions or regions, or of a wire or transfer, must state a domestic stem (`domesticStackedStem`).
+ * Null otherwise. Pure.
  */
 
 export type StackedVariantFamily = "flow" | "region" | "customer";
@@ -56,6 +57,29 @@ function stemWords(stem: string): string[] {
   return [...whole, ...whole.flatMap((word) => word.split("-"))].filter(Boolean);
 }
 
+/**
+ * Review of 74e0df3 and 4370442: a variant's name ("Wire Fee Incoming") is not printed on the page,
+ * so the #2278 scope review (`sourceOwnedWireScope`) cannot find its row and lets a domestic
+ * category through, even under "INTERNATIONAL WIRE TRANSFERS". A list of directions or regions, or
+ * any list whose stem names a wire or transfer, is therefore a list only when its own stem says the
+ * service is domestic ("Wire Transfer (Within USA)", "Domestic Wire") and names no other region or
+ * network; no variant may name another region either. One predicate for Knox's reads and the shared
+ * check, so the two never drift apart.
+ */
+const DOMESTIC_STEM = /\b(?:domestic|within\s+(?:the\s+)?(?:usa\b|u\.s\.a\.?|u\.?s\.?(?![a-z])(?!\s*dollars?\b)|united\s+states\b))/i;
+const OTHER_REGION = /\b(?:international|foreign|intl|int['’]?l|outside|overseas|global|swift|cross[-\s]?border|currenc(?:y|ies))\b/i;
+const NAMES_WIRE = /\b(?:wires?|transfers?)\b/i;
+
+/** The stem states the service is domestic and names no other region or network. */
+export function domesticStackedStem(stem: string, variants: readonly string[] = []): boolean {
+  return DOMESTIC_STEM.test(stem) && !OTHER_REGION.test(stem) && !variants.some((variant) => OTHER_REGION.test(variant));
+}
+
+/** Whether a list needs `domesticStackedStem`: directions, regions, or any wire or transfer row. */
+function needsDomesticStem(stem: string, family: StackedVariantFamily): boolean {
+  return family === "flow" || family === "region" || NAMES_WIRE.test(stem);
+}
+
 /** The names cell's stem and its `count` trailing sibling variants, or null when it is not that list. */
 export function stackedCellVariants(nameCell: string, count: number): StackedCellVariants | null {
   if (count < MIN_VARIANTS || count > MAX_VARIANTS) return null;
@@ -69,5 +93,6 @@ export function stackedCellVariants(nameCell: string, count: number): StackedCel
   const stem = tokens.slice(0, -count).join(" ");
   if (stemWords(stem).some((word) => familyOf(word) === family)) return null;
   if (!/[a-z]{3,}/i.test(stem) || STEM_REFUSALS.test(stem) || STEM_JOINER.test(stem)) return null;
+  if (needsDomesticStem(stem, family) && !domesticStackedStem(stem, variants)) return null;
   return { stem, variants, family };
 }

@@ -111,6 +111,24 @@ domestic incoming wire at $15. Base refused all four.
 - All five texts are near-miss tests at the read level and through `runCase`, and they fail on
   74e0df3. Every number above is unchanged by the fix, and the read diff is the same single line.
 
+**Review of 4370442.** The shared check never got the domestic-stem gate. Under
+"INTERNATIONAL WIRE TRANSFERS", "Wire Fee Incoming" at $15 filed as a domestic incoming wire traced
+on "Wire Fee Outgoing Incoming | $45.00 $15.00". Base refused it (`amount_is_a_threshold`), and
+#2278 found no owner row, so a paid read or another caller would have published it.
+- The gate is now one predicate (`domesticStackedStem`) applied inside `stackedCellVariants`, so
+  Knox's reads and the shared check can never disagree on which rows are lists.
+- A list of directions or regions, or any list whose stem names a wire or transfer, must have a
+  stem that says domestic ("Domestic", "Within USA", "Within the U.S."). The stem must not name
+  another region or network (international, foreign, outside, overseas, SWIFT, cross-border,
+  currency), and no variant may name another region.
+- "Within US Dollars" no longer reads as "within US".
+- There are check-level tests for the international-heading case, "Within US Dollars" and
+  "Domestic / SWIFT", and they fail on 4370442. The numbers and the read diff are unchanged.
+- One case is accepted on purpose: a stacked row whose own stem says "Within USA" under an
+  "INTERNATIONAL WIRE TRANSFERS" heading still reads as domestic wires. Base does the same for the
+  unstacked rows ("Wire Transfer (Within USA) Incoming | $15.00" under that heading publishes as
+  domestic). The row's own words win over a heading.
+
 **Lesson:** A cell of stacked names over a cell of stacked prices is one fee per name only when the
 names are one family of siblings, as many as the prices, and the price cell holds nothing else.
 Otherwise read the row as before.

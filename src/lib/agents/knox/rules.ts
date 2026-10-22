@@ -12,7 +12,7 @@ export { withDroppedDecimalPoints };
 import { newestColumnText } from "@/lib/fee-change-columns";
 import { feeBullets, withoutFeeBullets } from "@/lib/custom-report/fee-bullets";
 import { isStackedFeeLabel } from "@/lib/custom-report/stacked-fee-prices";
-import { stackedCellVariants } from "@/lib/custom-report/stacked-cell-variants";
+import { domesticStackedStem, stackedCellVariants } from "@/lib/custom-report/stacked-cell-variants";
 import { domesticWireClausePrices } from "@/lib/custom-report/wire-clause-prices";
 import type { OwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
 
@@ -1885,11 +1885,10 @@ export function labelPriceRow(cells: string[]): boolean {
  * Review of 74e0df3: a variant's name ("Wire Fee Outgoing") is not printed on the page, so the #2278
  * scope review (`internationalWireEligibility`) cannot find its row and lets it through as domestic,
  * even under "INTERNATIONAL WIRE TRANSFERS". So a wire row is split only when its own stem says its
- * wires are domestic ("Wire Transfer (Within USA)", "Domestic Wire") and names no other region;
- * otherwise no variant is read. Pure.
+ * wires are domestic ("Wire Transfer (Within USA)", "Domestic Wire") and names no other region
+ * (`domesticStackedStem`, which `stackedCellVariants` applies for the shared check too), and every
+ * variant files as a domestic wire; otherwise no variant is read. Pure.
  */
-const DOMESTIC_WIRE_STEM = /\b(?:domestic|within (?:the )?(?:usa|u\.?s\.?(?:a\.?)?|united states))(?![a-z])/i;
-const OTHER_REGION = /\b(?:international|foreign|intl|int['’]?l|outside|overseas|global)\b/i;
 const STACKED_PRICE = String.raw`\$\s?\d{1,3}(?:,\d{3})*(?:\.\d{2})?`;
 const STACKED_PRICE_CELL = new RegExp(String.raw`^${STACKED_PRICE}(?:\s+${STACKED_PRICE})+$`);
 
@@ -1909,8 +1908,7 @@ function stackedVariantReads(segment: string, cells: string[] | null, priceCount
   });
   if (!reads.every((read): read is ExtractedFeeCandidate => read != null)) return null;
   const wire = reads.some((read) => read.canonicalHint.startsWith("wire_"));
-  if (wire && (!DOMESTIC_WIRE_STEM.test(list.stem) || OTHER_REGION.test(list.stem) ||
-    reads.some((read) => !read.canonicalHint.startsWith("wire_domestic_")))) return null;
+  if (wire && (!domesticStackedStem(list.stem, list.variants) || reads.some((read) => !read.canonicalHint.startsWith("wire_domestic_")))) return null;
   const categories = new Set(reads.map((read) => read.canonicalHint));
   const expected = list.family === "customer" ? 1 : reads.length;
   return categories.size === expected ? reads : null;

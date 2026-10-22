@@ -298,7 +298,10 @@ of the list's family, and the stem holds no figure, limit, balance or waiver and
 joiner. A direction or region must change the category of every variant; a customer type must keep
 it. A wire row is split only when its own stem says domestic ("Within USA", "Domestic") and names no
 other region: a variant's name is not printed, so the #2278 scope review cannot find its row, and
-under an international heading it would publish as a domestic wire (review of 74e0df3). Every variant must pass Darwin's checks, or none is read and the row is read as before. The
+under an international heading it would publish as a domestic wire (review of 74e0df3). The gate is
+one predicate (`domesticStackedStem`) inside `stackedCellVariants`, so the shared check applies it
+too (review of 4370442): any direction or region list, or a wire or transfer row, needs a domestic
+stem ("Domestic", "Within USA"; not "Within US Dollars") with no other region, SWIFT or currency. Every variant must pass Darwin's checks, or none is read and the row is read as before. The
 shared check traces the variant's own price (`stackedVariantIndex` in `source-check.ts`): the price
 of the one variant the name keeps scores as the first price does. Admit-only there: no price's score
 drops, so a name that traced before still traces. Across every Texas, seven-state and shadow-lab
