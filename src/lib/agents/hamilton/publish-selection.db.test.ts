@@ -134,6 +134,11 @@ describe.skipIf(!connection)("Hamilton publish selection in actual PostgreSQL", 
     await attempt(tx, institutionId, ids.confidenceCleared, "rejected", { reason: publish.BELOW_CONFIDENCE_REASON });
     await add("confidenceLow", { documentId: docB, name: "Returned Deposit Fee", key: "nsf", amount: 30, createdAt: "2026-10-02T00:00:06Z", confidence: 0.5 });
     await attempt(tx, institutionId, ids.confidenceLow, "rejected", { reason: publish.BELOW_CONFIDENCE_REASON });
+    // #1915: skipped as identical to a next-edition fee Darwin has since held as not yet in effect.
+    await add("heldTwinSource", { documentId: docB, name: "Late Charge", key: "nsf", amount: 30, createdAt: "2026-10-02T00:00:07Z", status: "rejected" });
+    const heldTwin = await published(tx, institutionId, ids.heldTwinSource, "Late Fee", "not_yet_effective: 2027-01-01 #28999");
+    await add("editionTwin", { documentId: docB, name: "Late Fee", key: "nsf", amount: 30, createdAt: "2026-10-02T00:00:08Z" });
+    await attempt(tx, institutionId, ids.editionTwin, "unchanged", { previous_fee_published_id: String(heldTwin) });
 
     // No source document: its own one-row batch, newest.
     await add("noDocument", { documentId: null, name: "Research Fee", key: "research", amount: 25, createdAt: "2026-10-03T00:00:00Z" });
@@ -152,7 +157,7 @@ describe.skipIf(!connection)("Hamilton publish selection in actual PostgreSQL", 
       const fixture = await seed(tx);
       const rows = await select(tx, fixture, 100, true);
       expect(labelled(rows, fixture)).toEqual([
-        "undecided", "freeRead", "olderVersion", "twin", "sameLine", "confidenceCleared", "noDocument",
+        "undecided", "freeRead", "olderVersion", "twin", "sameLine", "confidenceCleared", "editionTwin", "noDocument",
       ]);
       const byLabel = Object.fromEntries(rows.map((row) => [labelled([row], fixture)[0], row]));
       expect(byLabel.twin).toMatchObject({ twin_recheck: true, same_line_reselect: true });
@@ -178,7 +183,7 @@ describe.skipIf(!connection)("Hamilton publish selection in actual PostgreSQL", 
       const fixture = await seed(tx);
       expect(labelled(await select(tx, fixture, 100, false), fixture)).toEqual([
         "undecided", "decidedRejected", "freeRead", "olderVersion",
-        "twin", "sameLine", "sameLineSettled", "confidenceCleared", "confidenceLow", "noDocument",
+        "twin", "sameLine", "sameLineSettled", "confidenceCleared", "confidenceLow", "editionTwin", "noDocument",
       ]);
     });
   });
@@ -188,7 +193,7 @@ describe.skipIf(!connection)("Hamilton publish selection in actual PostgreSQL", 
       const fixture = await seed(tx);
       expect(labelled(await select(tx, fixture, 1, true), fixture)).toEqual(["undecided", "freeRead", "olderVersion"]);
       expect(labelled(await select(tx, fixture, 4, true), fixture)).toEqual([
-        "undecided", "freeRead", "olderVersion", "twin", "sameLine", "confidenceCleared",
+        "undecided", "freeRead", "olderVersion", "twin", "sameLine", "confidenceCleared", "editionTwin",
       ]);
     });
   });
@@ -197,7 +202,7 @@ describe.skipIf(!connection)("Hamilton publish selection in actual PostgreSQL", 
     await rollback(async (tx) => {
       const fixture = await seed(tx);
       expect(await select(tx, fixture, 100, true, 50)).toEqual([]);
-      expect(labelled(await select(tx, fixture, 100, true, 3), fixture)).toHaveLength(7);
+      expect(labelled(await select(tx, fixture, 100, true, 3), fixture)).toHaveLength(8);
     });
   });
 });

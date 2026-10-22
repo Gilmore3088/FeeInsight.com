@@ -97,4 +97,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-20",
   },
+  {
+    id: "issue-1915-edition-hold-twins",
+    agent: "hamilton",
+    stage: "publish",
+    lesson: "A line skipped as identical to a fee that is later taken down for a reason about that fee's document, not the fee, is not settled: when the kept copy is held because its schedule is not yet in effect, decide the skipped line again so the schedule in force today carries the fee.",
+    why: "ONE Credit Union's current schedule (doc 29000, 'Effective November 1, 2024') was skipped line by line as identical to its 2027 schedule (doc 28999) on Oct 11. Once the 2027 rows were held as not yet in effect on Oct 21, the bank had 1 live fee while 16 verified lines of its current schedule sat decided and unpublished.",
+    evidence: { issues: [1915], prs: [], files: ["src/lib/agents/hamilton/publish.ts", "src/lib/agents/hamilton/publish-selection.db.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-21",
+  },
 ];

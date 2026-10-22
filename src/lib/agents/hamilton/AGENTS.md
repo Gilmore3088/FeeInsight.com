@@ -902,6 +902,16 @@ Keesler's /advice/ app fee, Security First's 2022 blog post). A verified row ski
 to a fee this check took down is decided again (`ARTICLE_PAGE_RESELECT_SQL`), so the bank's own
 copy of the fee goes live in its place: TD's $35 overdraft from its overdraft-services page.
 
+**Edition-hold twins (#1915, Oct 21).** A verified row skipped as identical to a live fee that
+Darwin's edition check later held as not yet in effect (`not_yet_effective: <date> #<doc>`) is
+decided again (`EDITION_HOLD_RESELECT_SQL`), so the schedule in force today carries the fee while
+the next edition waits. ONE Credit Union (7174) had 16 lines of its current schedule (doc 29000,
+"Effective November 1, 2024") skipped behind its 2027 schedule (doc 28999) on Oct 11; once #2523
+held the 2027 rows the bank kept one live fee. A reselected row read from a schedule itself not yet
+in effect is held by `selectEditionHolds` and waits for its own date. Dry run on prod, Oct 21
+03:45 UTC: 93 rows at 3 institutions reselected; 18 from documents in effect today (16 at 7174, 2
+product pages at 722), the other 75 read from Dec 2026 schedules and held until then.
+
 **Qualifier pairs, check 4 (#1314, Oct 15).** `linesApartOnPage` keeps two names apart only when the
 shorter one is printed at the price clear of every place of the longer: a shorter name found only
 inside the longer lines ("Funds (NSF)" in "Non-Sufficient Funds (NSF) $25", "Order" under a "Money
