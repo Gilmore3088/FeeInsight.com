@@ -24,7 +24,7 @@ import { paidReturnedCandidateProof, PAID_RETURNED_EVENT_FLAG, PAID_RETURNED_ELI
 import { matchOriginalRawSource, withLockedSourcePrefix } from "../darwin/locked-raw-source";
 import { limitGuardVerdict } from "@/lib/agents/hamilton/limit-guard";
 import { repairNameShape, tidyFeeName } from "@/lib/agents/knox/layout";
-import { asReadBoxName } from "@/lib/custom-report/box-size-name";
+import { asReadBoxName, boxNameRowWords } from "@/lib/custom-report/box-size-name";
 import { classifyFeeText, stripFootnoteMarks } from "@/lib/agents/knox/rules";
 import { dropsCondition, isCutoffName, nameBeforeSentenceClauses, retidiedFeeName } from "@/lib/agents/knox/name-retidy";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
@@ -1048,7 +1048,10 @@ function samePage(row: VerifiedFeeRow, prior: PriorPublishedFeeRow): boolean {
 
 /** Compared as Knox now names it, so a line published under an older untidy name ("Per Item | Stop Payment") is still the same line. */
 export function normalizedFeeName(name: string | null | undefined): string {
-  return (name ? repairNameShape(tidyFeeName(name)) : "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const tidy = name ? repairNameShape(tidyFeeName(name)) : "";
+  // A box Knox v99 named by its size compares as its row's words, so "5x5 Annual Fee" live and
+  // "Safe Deposit Box 5x5 Annual Fee" re-read are one line.
+  return (boxNameRowWords(tidy) ?? tidy).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
 /**
@@ -1515,8 +1518,14 @@ function pageWords(text: string): string {
  * comes only after the other name is a heading over that line ("Stop Payment" above "ACH Stop
  * Payment $35"), so it is not a line of its own.
  */
-export function linesApartOnPage(text: string, rowName: string, priorName: string, amount: number | string | null): boolean {
-  const reader = pageReader(text, amount);
+export function linesApartOnPage(
+  text: string,
+  rowName: string,
+  priorName: string,
+  amount: number | string | null,
+  canonicalKey?: string | null,
+): boolean {
+  const reader = pageReader(text, amount, canonicalKey);
   if (!reader) return false;
   const { printed, places } = reader;
   const a = places(rowName, priorName);
@@ -1541,8 +1550,8 @@ export function linesApartOnPage(text: string, rowName: string, priorName: strin
 }
 
 /** Pure: the page prints this name with this price after it (a place `linesApartOnPage` counts). */
-export function printedAtPrice(text: string, name: string, amount: number | string | null): boolean {
-  return (pageReader(text, amount)?.places(name).length ?? 0) > 0;
+export function printedAtPrice(text: string, name: string, amount: number | string | null, canonicalKey?: string | null): boolean {
+  return (pageReader(text, amount, canonicalKey)?.places(name).length ?? 0) > 0;
 }
 
 /** A schedule heading that names whose accounts it prices ("SCHEDULE OF FEES FOR BUSINESS ACCOUNTS"). */
@@ -1555,8 +1564,13 @@ const SCHEDULE_AUDIENCE_HEADING =
  * 23731 prints "Visa® Gift Cards, each: $4.25." once under "SCHEDULE OF FEES FOR PERSONAL
  * ACCOUNTS" and once under "SCHEDULE OF FEES FOR BUSINESS ACCOUNTS": two fees, not one (#1302).
  */
-export function printedInPersonalAndBusinessSchedules(text: string, names: ReadonlyArray<string>, amount: number | string | null): boolean {
-  const reader = pageReader(text, amount);
+export function printedInPersonalAndBusinessSchedules(
+  text: string,
+  names: ReadonlyArray<string>,
+  amount: number | string | null,
+  canonicalKey?: string | null,
+): boolean {
+  const reader = pageReader(text, amount, canonicalKey);
   if (!reader) return false;
   const page = pageWords(text);
   const headings = [...page.matchAll(SCHEDULE_AUDIENCE_HEADING)].map((match) => ({
@@ -1579,6 +1593,7 @@ type PagePlace = { start: number; end: number };
 function pageReader(
   text: string,
   amount: number | string | null,
+  canonicalKey?: string | null,
 ): { printed: (name: string) => PagePlace[]; places: (name: string, other?: string) => PagePlace[] } | null {
   const value = amount == null ? NaN : Number(amount);
   if (!Number.isFinite(value) || value < 0) return null;
@@ -1590,8 +1605,9 @@ function pageReader(
   // first digits of a larger amount ("$10,000" is not $10) (#1314).
   const follows = new RegExp(`^ ((?:(?!of |deposit )[a-z0-9]+ ){0,6}?)${price} (?!\\d{3} )`);
   const page = pageWords(text);
-  // A box Knox named by its size ("Safe Deposit Box 5x5 Annual Fee", v99) is printed as the row's own words.
-  const ownWords = (name: string) => pageWords(asReadBoxName(name) ?? name);
+  // A safe deposit box Knox named by its size ("Safe Deposit Box 5x5 Annual Fee", v99) is printed as
+  // the row's own words; no other category's name is read that way.
+  const ownWords = (name: string) => pageWords(asReadBoxName(name, canonicalKey) ?? name);
   const printed = (name: string): PagePlace[] => {
     const words = ownWords(name).trim();
     if (!words) return [];
@@ -1672,7 +1688,7 @@ export function sameValueLinesApart(row: VerifiedFeeRow, live: PriorPublishedFee
   const apart = new Set(balanced.filter((prior) => otherBalanceLine(row, prior, text)));
   if (!text) return apart;
   for (const prior of candidates) {
-    if (linesApartOnPage(text, row.fee_name ?? "", prior.fee_name ?? "", row.amount)) apart.add(prior);
+    if (linesApartOnPage(text, row.fee_name ?? "", prior.fee_name ?? "", row.amount, row.canonical_fee_key)) apart.add(prior);
   }
   return apart;
 }

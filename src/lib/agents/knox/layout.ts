@@ -241,8 +241,8 @@ function trimEnd(name: string): string {
  * The fee name a reader sees: table separators, dot leaders, bullets and the unit or
  * list-marker fragments of neighbouring cells removed. Category, price and the excerpt
  * (the evidence) are untouched. Returns the input when tidying would leave no usable name.
- * `nameBoxSize: false` leaves a bare box size as read: name re-tidy (v26) does not rename live
- * box names without a dry-run count.
+ * `nameBoxSize: true` (v99) names a bare box size as a safe deposit box; Knox passes it only for a
+ * read filed as one. Every other caller (name re-tidy v26 included) keeps the size as read.
  */
 export function tidyFeeName(raw: string, options: { nameBoxSize?: boolean } = {}): string {
   // v93 (#1828): a cell that is a row priced in words ("Check Orders .. Prices Vary | Duplicate Lien
@@ -309,7 +309,7 @@ export function tidyFeeName(raw: string, options: { nameBoxSize?: boolean } = {}
   name = withoutLeadingCondition(name);
   // v99 (W43 live audit, #2064): a box size read as the whole name ("10x10 Annual Fee") is a safe
   // deposit box's; the box heading above it is not on its line.
-  if (options.nameBoxSize !== false) name = boxSizeNamed(name);
+  if (options.nameBoxSize === true) name = boxSizeNamed(name);
   return usableName(name) ? name : raw.trim();
 }
 

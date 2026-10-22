@@ -287,10 +287,12 @@ fees found (54.7%); 56 of the 59 wrong reads are the right price under another c
 v99 (Oct 22): a safe deposit box row printed as its size alone, under a box heading the row never
 repeats ("10x10 Annual Fee: $80.00" under "Self Storage Lease Boxes", "3 x 10: $70.00", 'Large
 (10"x10") $75.00'), is named "Safe Deposit Box" and the row's own words (`boxSizeNamed` in
-`custom-report/box-size-name.ts`, run at the end of `tidyFeeName`). A name with any other word, two
-sizes or a footnote figure is left. The shared source check (`checkFeeAgainstSource`) and Hamilton's
-same-line check (`linesApartOnPage`) trace such a name by the row's own words (`asReadBoxName`), so the
-self-check, Darwin's verify and the publish gate read it as before. Found by the W43 live audit's
+`custom-report/box-size-name.ts`, run at the end of `tidyFeeName` only for a read filed as
+`safe_deposit_box`). A name with any other word, two sizes, a paper size or a footnote figure is left.
+The shared source check (`checkFeeAgainstSource`) and Hamilton's same-line check (`linesApartOnPage`)
+trace such a name by the row's own words (`asReadBoxName`) only when the fee's key is
+`safe_deposit_box` and the size leads its own row (`leadsBoxRow`), so the self-check, Darwin's verify
+and the publish gate read it as before. Found by the W43 live audit's
 replay (#2064): 26 of the 30 fees that passed every stage under a wrong name. Shadow lab names 287 ->
 313 of 317; recall (924 / 1,312 answer-key fees), false publication (34 / 160) and the Texas and state
 gates unchanged. Hamilton's normalized name reads `tidyFeeName`, so a re-read's box name matches the

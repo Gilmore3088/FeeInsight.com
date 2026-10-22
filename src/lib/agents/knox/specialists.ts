@@ -17,6 +17,7 @@ import {
 import { FAMILY_EXPERTS, priceWindows, runFamilyExpert } from "@/lib/agents/knox/families";
 import { newestColumnText } from "@/lib/fee-change-columns";
 import { namesALimit, namesAWorkedExample, passesDarwinChecks, readsAMeasuredAmount, tidyFeeName } from "@/lib/agents/knox/layout";
+import { BOX_CATEGORY } from "@/lib/custom-report/box-size-name";
 import { extractTableCandidates, KNOX_TABLE_STRATEGY } from "@/lib/agents/knox/table-rows";
 import { extractAccountTableCandidates, KNOX_ACCOUNT_TABLE_STRATEGY } from "@/lib/agents/knox/account-table";
 import { checkFeeAgainstSource, joinLabeledFeeCardText } from "@/lib/custom-report/source-check";
@@ -193,8 +194,9 @@ import { belongsToPaidReturnedUnit, paidReturnedUnits } from "@/lib/custom-repor
 // lab's numbers and the Texas and state gates are unchanged. The stale-read floor stays at v97. Name
 // re-tidy stays at v26 (no fleet-wide live rename without a dry-run count).
 // v99 (W43 live audit, #2064): a box size read as the whole name ("10x10 Annual Fee", "3 x 10",
-// 'Large (10"x10")') is named "Safe Deposit Box <size>" (`boxSizeNamed` in `tidyFeeName`); the shared
-// source check and Hamilton's same-line check read it by the row's own words (`asReadBoxName`).
+// 'Large (10"x10")') filed as a safe deposit box is named "Safe Deposit Box <size>" (`boxSizeNamed` in
+// `tidyFeeName`); the shared source check and Hamilton's same-line check read a box's name by the
+// row's own words (`asReadBoxName`, `leadsBoxRow`).
 // Shadow lab names 287 -> 313 of 317; recall, false publication, Texas and state gates unchanged. The
 // stale-read floor stays at v97. Name re-tidy stays at v26.
 export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 99 } as const;
@@ -342,8 +344,10 @@ function unmarkedName(name: string, text: string, institutionName: string | null
  * since the tidy can leave one at the front ("each | 8Legal Process Service" is "8Legal ..." once
  * its unit cell goes; doc 20097).
  */
-function tidyUnmarkedName(name: string, text: string, institutionName: string | null): string {
-  return unmarkedName(tidyFeeName(unmarkedName(name, text, institutionName)), text, institutionName);
+function tidyUnmarkedName(name: string, text: string, institutionName: string | null, canonicalHint: string | null): string {
+  // v99: only a read filed as a safe deposit box takes the box's name for a bare size.
+  const options = { nameBoxSize: canonicalHint === BOX_CATEGORY };
+  return unmarkedName(tidyFeeName(unmarkedName(name, text, institutionName), options), text, institutionName);
 }
 
 export function runFreeSpecialists(sourceText: string, options: { institutionName?: string | null } = {}): FreeExtractionResult {
@@ -404,7 +408,7 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
       // v57: a fee whose own row traces reads its frequency from that row, not from a window
       // that stops at the price ("... four (4) OD fees per day ... | $17.00 | per item" is per item).
       // v74: a footnote number glued to the front of the name comes off (`withoutLeadingFootnoteMark`).
-      const feeName = tidyUnmarkedName(read.feeName, text, institutionName);
+      const feeName = tidyUnmarkedName(read.feeName, text, institutionName, read.canonicalHint);
       const ownPrices = exclusiveStackedPrices(text, stackedPrices, feeName).filter(row => row.amount === read.amount);
       if (read.canonicalHint === "overdraft" && ownPrices.length > 0 && ownPrices.every(row => row.annualProgram)) {
         const row: HeldFeeCandidate = {
@@ -495,7 +499,7 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
         if (heldRow.shape === "unclassified") countDropped("unclassified_cap");
         continue;
       }
-      const foundRow = { ...heldRow, feeName: tidyUnmarkedName(heldRow.feeName, text, institutionName) };
+      const foundRow = { ...heldRow, feeName: tidyUnmarkedName(heldRow.feeName, text, institutionName, heldRow.canonicalHint) };
       if (foundRow.shape === "zero" && readsAMeasuredAmount(text, foundRow.feeName, 0)) continue;
       // A $0 row can go live through the rules re-check, so it passes the same self-check.
       const untracedZero = foundRow.shape === "zero" && !tracesToSource(text, foundRow.feeName, 0);

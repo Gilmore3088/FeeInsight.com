@@ -244,7 +244,7 @@ export function nearNameRepeats(rows: NearNameRow[], texts: Map<string, string>)
   }
   for (const group of groups.values()) {
     const text = texts.get(String(group[0].source_document_id)) ?? null;
-    const printed = (row: NearNameRow) => (text ? printedAtPrice(text, row.fee_name ?? "", row.amount) : false);
+    const printed = (row: NearNameRow) => (text ? printedAtPrice(text, row.fee_name ?? "", row.amount, row.canonical_fee_key) : false);
     const rank = (row: NearNameRow) => [
       (row.fee_audience ?? "unknown") === "unknown" ? 1 : 0,
       row.frequency == null ? 1 : 0,
@@ -273,8 +273,8 @@ export function nearNameRepeats(rows: NearNameRow[], texts: Map<string, string>)
         result.noText += 1;
         kept.push(row);
       } else if (
-        linesApartOnPage(text, row.fee_name ?? "", match.fee_name ?? "", row.amount) ||
-        printedInPersonalAndBusinessSchedules(text, [row.fee_name ?? "", match.fee_name ?? ""], row.amount)
+        linesApartOnPage(text, row.fee_name ?? "", match.fee_name ?? "", row.amount, row.canonical_fee_key) ||
+        printedInPersonalAndBusinessSchedules(text, [row.fee_name ?? "", match.fee_name ?? ""], row.amount, row.canonical_fee_key)
       ) {
         result.apartOnPage += 1;
         kept.push(row);

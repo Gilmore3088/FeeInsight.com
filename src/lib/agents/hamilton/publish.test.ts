@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
-import { PUBLISH_MIN_ROWS_PER_STEP, ARTICLE_PAGE_RESELECT_SQL, ARTICLE_PAGE_SKIP_REASON, CATALOG_DEPTH_LIVE_SQL, decidePriorFee, HAMILTON_PUBLISH_MIN_INSTITUTION_FEES, HAMILTON_PUBLISH_STRATEGY, linesApartOnPage, listsBothPrices, qualifiedLines, namesShareReading, newerCopyPrintsLine, otherBalanceLine, publishedFeeName, publishNameHold, publishSkipReason, runHamiltonPublish, selectListedFeeLines, sameLineDuplicateOf, sentenceFragmentName, separateLines } from "./publish";
+import { PUBLISH_MIN_ROWS_PER_STEP, ARTICLE_PAGE_RESELECT_SQL, ARTICLE_PAGE_SKIP_REASON, CATALOG_DEPTH_LIVE_SQL, decidePriorFee, normalizedFeeName, HAMILTON_PUBLISH_MIN_INSTITUTION_FEES, HAMILTON_PUBLISH_STRATEGY, linesApartOnPage, listsBothPrices, qualifiedLines, namesShareReading, newerCopyPrintsLine, otherBalanceLine, publishedFeeName, publishNameHold, publishSkipReason, runHamiltonPublish, selectListedFeeLines, sameLineDuplicateOf, sentenceFragmentName, separateLines } from "./publish";
 import { feePageKey } from "./page-key";
 import { PUBLISH_REFUSE_SWEEP_RULES_LIVE, publishSweepRefusals } from "./publish-sweep-rules";
 
@@ -1323,10 +1323,18 @@ describe("decidePriorFee", () => {
   it("finds a box Knox named by its size apart from another line at its price (W43 live audit, #2064)", () => {
     // Knox v99 names "5x5 Annual Fee: $25.00" "Safe Deposit Box 5x5 Annual Fee"; the page prints the row's own words.
     const boxes = "Self Storage Lease Boxes 3x5 Annual Fee: $20.00 5x5 Annual Fee: $25.00 Drilling: Actual Cost Key Replacement: $25.00";
-    expect(linesApartOnPage(boxes, "Key Replacement", "Safe Deposit Box 5x5 Annual Fee", "25")).toBe(true);
-    expect(linesApartOnPage(boxes, "Safe Deposit Box 5x5 Annual Fee", "Key Replacement", "25")).toBe(true);
+    expect(linesApartOnPage(boxes, "Key Replacement", "Safe Deposit Box 5x5 Annual Fee", "25", "safe_deposit_box")).toBe(true);
+    expect(linesApartOnPage(boxes, "Safe Deposit Box 5x5 Annual Fee", "Key Replacement", "25", "safe_deposit_box")).toBe(true);
     // The same box read twice is one line.
-    expect(linesApartOnPage(boxes, "Safe Deposit Box 5x5 Annual Fee", "5x5 Annual Fee", "25")).toBe(false);
+    expect(linesApartOnPage(boxes, "Safe Deposit Box 5x5 Annual Fee", "5x5 Annual Fee", "25", "safe_deposit_box")).toBe(false);
+    // Review of 3f7803d: only a safe deposit box's name is read by its row's words.
+    expect(linesApartOnPage(boxes, "Key Replacement", "Safe Deposit Box 5x5 Annual Fee", "25", "wire_domestic_outgoing")).toBe(false);
+    expect(linesApartOnPage(boxes, "Key Replacement", "Safe Deposit Box 5x5 Annual Fee", "25")).toBe(false);
+  });
+
+  it("compares a box Knox named by its size with the live line named by its size alone (v99)", () => {
+    expect(normalizedFeeName("Safe Deposit Box 5x5 Annual Fee")).toBe(normalizedFeeName("5x5 Annual Fee"));
+    expect(normalizedFeeName("Safe Deposit Box Drilling")).toBe("safe deposit box drilling");
   });
 
   // #1314 dry run (prod pages, read-only, Oct 15): a pass needs a place of one name clear of every

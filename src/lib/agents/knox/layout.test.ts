@@ -93,8 +93,21 @@ describe("tidyFeeName", () => {
     ['Size 2"x5"x21"', 'Safe Deposit Box Size 2"x5"x21"'],
     ["Box 3x5 Annual Rent", "Safe Deposit Box 3x5 Annual Rent"],
   ])("v99: names a bare box size as a safe deposit box %j", (raw, expected) => {
-    expect(tidyFeeName(raw)).toBe(expected);
+    expect(tidyFeeName(raw, { nameBoxSize: true })).toBe(expected);
   });
+
+  it("v99: renames a bare size only when the caller files the fee as a safe deposit box", () => {
+    // Knox passes `nameBoxSize` from the read's category; every other caller keeps the size as read.
+    expect(tidyFeeName("10x10 Annual Fee")).toBe("10x10 Annual Fee");
+    expect(tidyFeeName("3 x 5")).toBe("3 x 5");
+  });
+
+  it.each(["8.5x11", "Per 8.5x11", "8.5 x 14", "11 x 17", "Standard Fee 8x11"])(
+    "v99: never names a paper size a safe deposit box %j",
+    (raw) => {
+      expect(tidyFeeName(raw, { nameBoxSize: true })).toBe(raw);
+    },
+  );
 
   it.each([
     // A name that already says what the box is, or names something besides a size, keeps its words.
@@ -110,7 +123,7 @@ describe("tidyFeeName", () => {
     // A footnote number after the size is Hamilton's to drop (`withoutNeighbourCell`).
     "3x10” 8",
   ])("v99: leaves %j as it is", (raw) => {
-    expect(tidyFeeName(raw)).toBe(raw);
+    expect(tidyFeeName(raw, { nameBoxSize: true })).toBe(raw);
   });
 });
 
