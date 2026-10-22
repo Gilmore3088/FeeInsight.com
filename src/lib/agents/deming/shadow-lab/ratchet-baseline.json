@@ -204,6 +204,8 @@
   "live_audit:4961-3f230cc9|publish|wire_domestic_outgoing:3000",
   "live_audit:4993-source-1|forbid|account_research:2500",
   "live_audit:4993-source-1|publish|account_verification:1000",
+  "live_audit:4993-source-1|publish|cashiers_check:500",
+  "live_audit:4993-source-1|publish|check_image:500",
   "live_audit:4993-source-1|publish|monthly_maintenance:1500",
   "live_audit:4993-source-1|publish|other_lending_fee:2500",
   "live_audit:4993-source-1|publish|returned_mail:500",

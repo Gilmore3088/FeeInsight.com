@@ -284,6 +284,34 @@ fees found (54.7%); 56 of the 59 wrong reads are the right price under another c
 
 ## Rules versions (`extract.rules`)
 
+v104 (Oct 22): a read whose name `isCutoffName` reads as cut off is held at publish (Hamilton's
+`cutoff_name`) however right its category and price. `withoutGluedSentence` (`glued-sentence-name.ts`,
+after the name tidy) cuts words that say nothing off the fee's own: another column's cell in front
+(a sentence or a wrapped parenthetical), or the row's description after a dash, only when every word
+in it is filler (articles, auxiliaries, joining words, "fee", "charged", "imposed", "apply", "item")
+or one of the kept name's own words (`onlyFillerAndName`); and the subject of a "<what> will cost"
+sentence, without a leading conjunction or determiner (live audit 4993's check copy and cashier's
+check). Any other word keeps the name as read and the fee held, as at v103: an audience
+(non-members, business accounts), a tier (fourth and subsequent, repeat, over $5), a region,
+direction or speed (international, foreign, rush, expedited), a channel (by check), a figure, or a
+word not listed. The cut runs before Darwin's category check, so a dropped qualifier could never be
+seen again: the first cut (6dd3641), barred only by `dropsCondition`, published rush and expedited
+card fees as card_replacement, an international wire as domestic, tier overdrafts, non-member and
+business-account fees as the general fee and a foreign returned item without "foreign" (review of
+6dd3641; each is a `runCase` near miss). The words left must also name the read's own category, pass
+the guard, no longer read as cut off and drop no condition. A complete name whose own parenthetical
+trips the shape ("Notary Service (excluding CU business)", key 7450) is left as read: the fix for
+those is in Hamilton's hold and needs publish.rules v4. `isCutoffName`, its regexes and
+`dropsCondition` moved unchanged to `cutoff-shape.ts` (re-exported by `name-retidy.ts`) so the read
+path need not import the live re-tidy module. Read-and-publish diff against b845c17 over 289
+distinct texts (249 shadow-lab case texts and 40 more Texas and seven-state fixture texts): three
+4993 reads renamed at the same category and price and now published (check copy, cashier's check,
+statement copy); nothing else moved. Shadow lab answer-key recall 946 / 1,312 unchanged, live audit
+339 -> 341 of 431; false publication 34 / 160 and fees outside the keys (35) unchanged; names 313 /
+317 -> 315 / 319; `cutoff_name` holds 18 -> 16; ratchet +2, no loss. Seven-state 909 / 34 and Texas
+590 / 11, held out 60 / 4, unchanged. State keys 3148, 8240 and 11362's overdraft stay held: their
+glued words say something of their own. Name re-tidy stays at v26; the stale-read floor stays at v97.
+
 v103 (Oct 22): a PDF row that prints its sibling names stacked in one cell over their prices stacked
 in the next loses its line breaks, so the stored row runs them together ("Wire Transfer (Within USA)
 Outgoing Incoming | $20.00 $10.00", State key 9308). Read as one row, the name carried both
@@ -1684,8 +1712,8 @@ word before it ("SAME-DAYACH") stays in caps. Dry run Oct 21 01:16 UTC over the 
 an all-caps live name: 19 of the 32 renamed; 13 left (fragments and conditions waiting for #1443 and
 #1521, a same-price twin, "SAME-DAYACH", and "CBCU ATM" / "OPEFCU ATM", which are acronyms only).
 
-`isCutoffName` (publish's `cutoff_name` hold) has a narrow live twin beside it, `liveFragmentName`
-(#1443), built from the same regex pieces: a dangling joining word (lower-case "a/an/the" only;
+`isCutoffName` (publish's `cutoff_name` hold; in `cutoff-shape.ts` since v104, re-exported by
+`name-retidy.ts`) has a narrow live twin, `liveFragmentName` (#1443), built from the same regex pieces: a dangling joining word (lower-case "a/an/the" only;
 not "above" or "each"), a dangling "up to" or "per", "will" or "you", or a leading "+" with no fee
 noun after it. Darwin's live name re-check applies it to live fees (`darwin/live-fragment-check.ts`,
 see Darwin's AGENTS.md). A change to either shape list is checked against both. Since #1443 a
@@ -1943,7 +1971,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v26 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v103 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v104 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v9 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

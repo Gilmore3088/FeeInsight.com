@@ -456,4 +456,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-22",
   },
+  {
+    id: "glued-sentence-name",
+    agent: "knox",
+    stage: "extract",
+    lesson: "A name that reads as cut off (a pronoun, a sentence verb, a dangling word) is held at publish however right its category and price are. Cut words off a name only when they say nothing: a cell in front or a description after a dash may go only if every word in it is filler (articles, auxiliaries, \"fee\", \"charged\", \"imposed\") or repeats the kept name's own words. Any other word keeps the name as read and the fee held: an audience (non-members, business accounts), a tier (fourth and subsequent, repeat, over $5), a region, direction or speed (international, foreign, rush, expedited), a channel (by check), a figure, or a word not on the list. A cut in Knox runs before Darwin's category check, so a dropped qualifier is a qualifier no later stage can see. A \"<what> will cost\" sentence is named by its whole subject, without a leading conjunction or determiner. A complete name whose own parenthetical trips the cut-off shape (\"Notary Service (excluding CU business)\") is not Knox's to cut.",
+    why: "The shadow lab (Oct 22) found 18 expected fees (14 answer-key, 4 live-audit) read at the right category and price but held by Hamilton's `cutoff_name` rule. The first cut of #2550 dropped any glued sentence that left a name of the same category and no `dropsCondition` word, and its review found rush and expedited card fees publishing as card_replacement, an international wire as wire_domestic_outgoing, tier overdrafts (fourth and subsequent, repeat, over $5), non-member and business-account fees as the general fee, and a foreign returned item without \"foreign\"; base held every one. `dropsCondition` was built for re-tidy's small trims and lists none of those words. Under the positive rule only the two \"will cost\" fees of live audit 4993 gain; state keys 3148, 8240 and 11362's overdraft stay held because their glued words say something of their own.",
+    evidence: { issues: [1026, 1443], prs: [2550], files: ["src/lib/agents/knox/glued-sentence-name.ts", "src/lib/agents/knox/cutoff-shape.ts", "src/lib/agents/knox/specialists.ts", "src/lib/agents/knox/glued-sentence-name.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-22",
+  },
 ];
