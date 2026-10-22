@@ -246,10 +246,11 @@ text Knox has read before is picked again when any one of these holds:
 3. Large bank: the bank has $10B or more in assets (`KNOX_REREAD_ASSET_FLOOR`, `asset_size` in
    thousands) and the document is a page's current copy.
 4. Older copy still live: an older copy of this page still carries a live fee.
-5. Stale read: the current copy has no `extract.rules` attempt at v78 or later
+5. Stale read: the current copy has no `extract.rules` attempt at v97 or later
    (`KNOX_STALE_READ_BELOW_VERSION`; v26 until Oct 17, raised with v75 so every current copy read
    by an older version is read once more, and with v76 and v78 the same day so the rest of that
-   re-read reads at the newest rules).
+   re-read reads at the newest rules; raised to v97 on Oct 22 for the second wave, James's decision,
+   so every stored copy is read with everything learned since v78).
 6. Lineup gap: the current copy has a `monthly_maintenance` row with no account name, or with
    neither the balance that avoids it nor its waiver, or (v73) a `minimum_balance` row with no
    account name, or a monthly maintenance or minimum balance row whose stored account names no

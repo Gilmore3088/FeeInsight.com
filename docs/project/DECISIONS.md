@@ -3,6 +3,16 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-10-22
+
+**The second wave: read the old documents again.** James, 2026-10-22 ("Hell yeah, we need to re-read
+the old stuff. Like a second wave"), after Knox v97 (#2538) and the targets of 2026-10-21. Knox's
+stale-read floor (`KNOX_STALE_READ_BELOW_VERSION`) moves from v78 to v97, so every current copy last
+read before v97 is read once more with today's rules. A re-read only adds rows at the extract step's
+own batch size. Wrong live fees come down through the rules re-check each Knox version already
+runs. Applying the 2026-10-21 goal (a second wave applies new lessons to what is live): a later Knox
+improvement that should reach stored documents moves the floor in its own PR.
+
 ## 2026-10-21
 
 **Fee quality targets, and a pipeline that only moves one way.** James, 2026-10-21 (session goal,

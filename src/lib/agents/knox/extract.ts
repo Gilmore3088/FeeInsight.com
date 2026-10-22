@@ -114,8 +114,15 @@ function staleReadFirstOrder(): string {
  * v78 (Knox recall round 3, 17 Oct 2026): raised with the rules for the same reason. On prod at 09:10
  * UTC, 266 text fingerprints had an extract.rules read at v76 or v77; every other one's last read is
  * below v76, so it is already due. This adds the 266 back, and the queue reads each page at v78 once.
+ *
+ * v97 (second wave, James, 22 Oct 2026: "we need to re-read the old stuff"): raised with the rules so
+ * every current copy last read before v97 is read once more with everything learned since v78,
+ * including v97's read of schedules flattened to one line (#2538). As before, a re-read only adds
+ * rows at the extract step's own batch size; wrong live fees come down through the rules re-check
+ * each version already runs. The knox.rules Bayes manifest counts the queue (`countKnoxRereadsDue`);
+ * its size on prod was not counted from this session.
  */
-export const KNOX_STALE_READ_BELOW_VERSION = 78;
+export const KNOX_STALE_READ_BELOW_VERSION = 97;
 /**
  * A current copy with a monthly fee row missing its account name, or both the balance that
  * avoids it and its waiver, last read below this version, is read again once so v49-v51 can
