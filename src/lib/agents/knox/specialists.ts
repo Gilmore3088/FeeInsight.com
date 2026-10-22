@@ -187,7 +187,12 @@ import { belongsToPaidReturnedUnit, paidReturnedUnits } from "@/lib/custom-repor
 // ends its row too (State key 60). Texas gate: all 578 -> 590 right, 11 wrong unchanged; held out
 // 53 -> 60, 4 unchanged. Seven states: 870 -> 877 right; GA 172 -> 179 right and 9 -> 10 wrong, the new
 // wrong read refused by Darwin's verify. The stale-read floor stays at v78.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 97 } as const;
+// v98: the previous row's condition glued in front of a name in a long line ("If the balance falls
+// below on any day of the cycle Excess withdrawal", "30 minute minimum Wire transfer outgoing", "and
+// minimum Photocopies") is dropped (`withoutLeadingCondition` in `tidyFeeName`). Names only: the shadow
+// lab's numbers and the Texas and state gates are unchanged. The stale-read floor stays at v97. Name
+// re-tidy stays at v26 (no fleet-wide live rename without a dry-run count).
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 98 } as const;
 
 export interface SpecialistRun {
   strategy: string;

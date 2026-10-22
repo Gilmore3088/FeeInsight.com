@@ -35,6 +35,35 @@ describe("tidyFeeName", () => {
     expect(tidyFeeName(raw)).toBe(expected);
   });
 
+  it.each([
+    // v98: the previous row's condition, glued in front of the next row's name in a long line.
+    ["If the balance falls below on any day of the cycle Excess withdrawal", "Excess withdrawal"],
+    ["30 minute minimum Wire transfer outgoing", "Wire transfer outgoing"],
+    ["and minimum Photocopies", "Photocopies"],
+    ["Waived for customers age 65 or older Paper Statement Fee", "Paper Statement Fee"],
+  ])("v98: drops a condition glued before the fee's name %j", (raw, expected) => {
+    expect(tidyFeeName(raw)).toBe(expected);
+  });
+
+  it.each([
+    // Review of f9b4865: the fee's own lowercase words ("per", "of", "for") never end the name.
+    ["If overdrawn Overdraft Fee per Item", "Overdraft Fee per Item"],
+    ["If closed within 90 days Early Closure of Account", "Early Closure of Account"],
+    ["Waived for members under 18 Withdrawal Fee for Excess Withdrawals", "Withdrawal Fee for Excess Withdrawals"],
+    ["If paid Overdraft Fee per Item Paid", "Overdraft Fee per Item Paid"],
+    ["If balance is under $1,500 Monthly Maintenance Fee for Business Checking Account Plus", "Monthly Maintenance Fee for Business Checking Account Plus"],
+    ["If paid 30 Day Inactivity Fee", "30 Day Inactivity Fee"],
+    ["If no activity for 12 Months Dormant Fee", "12 Months Dormant Fee"],
+  ])("v98: keeps the whole fee name after the condition %j", (raw, expected) => {
+    expect(tidyFeeName(raw)).toBe(expected);
+  });
+
+  it("v98: keeps a name whose own words start with a condition word", () => {
+    expect(tidyFeeName("Waived Fee Reversal")).toBe("Waived Fee Reversal");
+    expect(tidyFeeName("If Paid Overdraft Fee")).toBe("If Paid Overdraft Fee");
+    expect(tidyFeeName("30 Day Inactivity Fee")).toBe("30 Day Inactivity Fee");
+  });
+
   it("leaves clean names and their qualifiers alone", () => {
     expect(tidyFeeName("Stop Payment")).toBe("Stop Payment");
     expect(tidyFeeName("Drill box fee (when keys are lost or stolen)")).toBe("Drill box fee (when keys are lost or stolen)");
