@@ -292,7 +292,9 @@ minute minimum Wire transfer outgoing") and a lowercase connector ("and minimum 
 whose own words start with a condition word keeps them ("Waived Fee Reversal", "If Paid Overdraft
 Fee"). Found by the review of v97 (#2538); main's rules produced the same names. Hamilton's normalized
 name reads `tidyFeeName` too, so a re-read's clean name matches the garbled live one. Name re-tidy
-v27 applies the same tidy to live names, which is held for James. Shadow lab and gates unchanged.
+stays at v26: no fleet-wide rename of live names until a dry-run count of it is recorded; a bank's
+live names take the tidy when its re-tidy scan runs again on a new publication. Shadow lab and gates
+unchanged.
 
 v97 (Oct 21): a schedule flattened to one long stored line is read to its end. A cents-only price and
 the unit after it ("Temporary checks ....$.40 each") close a dot-leader row (`LONG_LINE_BREAK`), so the
@@ -1816,7 +1818,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_LAYOUT_SIGNATURE_VERSION` | — | v1 | `knox/layout-signature.ts` |
 | `KNOX_LESSONS_VERSION` | — | v3 | `knox/lessons.ts` |
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
-| `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
+| `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v26 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
 | `KNOX_RULES_STRATEGY` | `extract.rules` | v98 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |

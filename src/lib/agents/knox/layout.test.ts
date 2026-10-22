@@ -52,6 +52,8 @@ describe("tidyFeeName", () => {
     ["Waived for members under 18 Withdrawal Fee for Excess Withdrawals", "Withdrawal Fee for Excess Withdrawals"],
     ["If paid Overdraft Fee per Item Paid", "Overdraft Fee per Item Paid"],
     ["If balance is under $1,500 Monthly Maintenance Fee for Business Checking Account Plus", "Monthly Maintenance Fee for Business Checking Account Plus"],
+    ["If paid 30 Day Inactivity Fee", "30 Day Inactivity Fee"],
+    ["If no activity for 12 Months Dormant Fee", "12 Months Dormant Fee"],
   ])("v98: keeps the whole fee name after the condition %j", (raw, expected) => {
     expect(tidyFeeName(raw)).toBe(expected);
   });

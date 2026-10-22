@@ -710,11 +710,7 @@ function fullyTidiedName(name: string, canonicalKey: string): string | null {
  * acronyms. Dry run on 2026-10-21 01:16 UTC: 19 of the 32 renamed; the other 13 are fragments, a
  * same-price twin, a glued acronym ("SAME-DAYACH") or acronyms only ("CBCU ATM").
  */
-// v27 (Oct 22, HOLD for James): live names that carry the previous row's condition in front of the
-// fee's name ("Waived for customers age 65 or older Paper Statement Fee") take the name after it,
-// through `tidyFeeName`'s `withoutLeadingCondition` (Knox rules v98). Live renames: not counted on
-// prod from this session.
-export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 27 } as const;
+export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 26 } as const;
 export const NAME_RETIDY_KIND = "name_retidied";
 /**
  * Institutions the scan visits first after a version change, then the rest in id order. v9:

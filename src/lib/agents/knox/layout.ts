@@ -315,9 +315,13 @@ const DURATION_LEAD = /^\d+\s*(?:minutes?|mins?|hours?|hrs?)\s+(?:minimum|maximu
 const CONNECTOR_LEAD = /^(?:and|or|plus)\s+(?:[a-z][\w'’-]*\s+)*(?=[A-Z])/;
 /**
  * The first lowercase word or figure before a capitalised one: where the glued name starts. The
- * first, not the last, so the name's own lowercase words ("Overdraft Fee per Item") stay in it.
+ * first, not the last, so the name's own lowercase words ("Overdraft Fee per Item") stay in it. A
+ * figure before a period ("30 Day Inactivity Fee") is the start of the name, not a break.
  */
-const LOWER_THEN_CAPITAL = /\s(?:[a-z][\w'’-]*|\$?\d[\d,.]*)\s+(?=[A-Z])/;
+const PERIOD_NAME = String.raw`\d[\d,.]*\s+(?:Days?|Weeks?|Months?|Years?|Hours?|Minutes?)\b`;
+const LOWER_THEN_CAPITAL = new RegExp(
+  String.raw`\s(?:[a-z][\w'’-]*|\$?\d[\d,.]*(?!\s+(?:Days?|Weeks?|Months?|Years?|Hours?|Minutes?)\b))\s+(?=[A-Z]|${PERIOD_NAME})`,
+);
 const MAX_TAIL_NAME_WORDS = 10;
 
 /**
