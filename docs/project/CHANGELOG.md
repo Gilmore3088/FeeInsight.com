@@ -14,7 +14,7 @@ Started 2026-10-05; for anything earlier, see `git log`.
 - **Knox:**
   - v97 reads schedules flattened to one line to their end (#2538).
   - v92 reads rows priced in words (#2467).
-  - v96 reads all-caps names and marked account headings (#2529).
+  - Re-tidy v26 cases all-caps names; rules v96 reads marked account headings (#2529).
   - NSF Paid/Returned pairs (#2476).
   - Never takes a neighbour's or the other column's price (#2465, #2522).
   - Re-tidies marked names (#2524).
@@ -34,15 +34,16 @@ Started 2026-10-05; for anything earlier, see `git log`.
 - Thin institution pages stay out of search (#2517). Freshness and build fixes (#2480, #2491, #2502, #2507).
 
 **Hamilton**
-- Review lines (#2484, #2485, #2486, #2490, #2492, #2493, #2497, #2500, #2501, #2504, #2505, #2506, #2512).
+- Review lines (#2484, #2485, #2486, #2490, #2492, #2493, #2497, #2500, #2501, #2504, #2505,
+  #2506, #2512).
 - Billing and report access (#2518, #2520, #2521). Hosted report tokens from env (#2519).
-- Revenue API v1 restored (#2488, #2499).
+- Revenue API v1 restored (#2488, #2499). PDF attribution without the em dash (#2483).
 
 **Project and tooling**
 - One lessons index (#2471, #2475). Roadmap handoff files reverted (#2472).
 - Vercel preview and build-skip fixes (#2494, #2503, #2508).
 - Precomputed call-report readers (#2514, #2515). Atlas wake budget (#2487, #2498). Hoovie UBPR file (#2474). Foundation fixes (#2511).
-- Merged titled "HOLD for James": search_path pinning (#2513) and redundant index drops (#2516).
+- Migrations: search_path pinning (#2513) and redundant index drops (#2516).
 
 ## 2026-10-20 (from 2026-10-19 20:00 UTC)
 **Accuracy and data quality**
