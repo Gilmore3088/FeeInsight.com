@@ -284,6 +284,29 @@ fees found (54.7%); 56 of the 59 wrong reads are the right price under another c
 
 ## Rules versions (`extract.rules`)
 
+v104 (Oct 22): a read whose name `isCutoffName` reads as cut off is held at publish (Hamilton's
+`cutoff_name`) however right its category and price. When the cut-off words are a sentence glued
+onto the fee's own words, `withoutGluedSentence` (`glued-sentence-name.ts`, after the name tidy)
+reads the fee's words as the name: the last cell when the cell before it is another column's
+sentence or a wrapped parenthetical ("(Per month some exclusions apply): Cashier’s Check (Per
+item)", State key 3148; key 8240's Share-to-Share Overdraft Transfer Fee); the words before a dash
+when the description after it is a sentence with a verb ("Overdraft Fee - An Overdraft Fee may be
+imposed ...", key 11362); the subject of "<what> will cost" (live audit 4993's check copy and
+cashier's check). The words left must name the read's own category on their own, pass the guard,
+no longer read as cut off and drop no condition (`dropsCondition`, re-tidy's v15 bar), so "ATM Fee
+- ... ATMs we do not own or operate", a dormancy definition and the NSF re-presentment clause stay as
+read. A complete name whose own parenthetical trips the shape ("Notary Service (excluding CU
+business)", key 7450) is left as read: the fix for those is in Hamilton's hold and needs
+publish.rules v4. `isCutoffName`, its regexes and `dropsCondition` moved unchanged to
+`cutoff-shape.ts` (re-exported by `name-retidy.ts`) so the read path need not import the live
+re-tidy module. Read-and-publish diff against b845c17 over every Texas, seven-state and shadow-lab
+text: six reads renamed at the same category and price, each now published (3148, 8240, 11362's
+overdraft, 4993's check copy, cashier's check and statement copy); nothing else moved. Shadow lab
+answer-key recall 946 -> 949 of 1,312, live audit 339 -> 341 of 431; false publication 34 / 160 and
+fees outside the keys (35) unchanged; names 313 / 317 -> 315 / 319; `cutoff_name` holds 18 -> 13;
+ratchet +5, no loss. Seven-state 909 / 34 and Texas 590 / 11, held out 60 / 4, unchanged. Name
+re-tidy stays at v26; the stale-read floor stays at v97.
+
 v103 (Oct 22): a PDF row that prints its sibling names stacked in one cell over their prices stacked
 in the next loses its line breaks, so the stored row runs them together ("Wire Transfer (Within USA)
 Outgoing Incoming | $20.00 $10.00", State key 9308). Read as one row, the name carried both
@@ -1684,8 +1707,8 @@ word before it ("SAME-DAYACH") stays in caps. Dry run Oct 21 01:16 UTC over the 
 an all-caps live name: 19 of the 32 renamed; 13 left (fragments and conditions waiting for #1443 and
 #1521, a same-price twin, "SAME-DAYACH", and "CBCU ATM" / "OPEFCU ATM", which are acronyms only).
 
-`isCutoffName` (publish's `cutoff_name` hold) has a narrow live twin beside it, `liveFragmentName`
-(#1443), built from the same regex pieces: a dangling joining word (lower-case "a/an/the" only;
+`isCutoffName` (publish's `cutoff_name` hold; in `cutoff-shape.ts` since v104, re-exported by
+`name-retidy.ts`) has a narrow live twin, `liveFragmentName` (#1443), built from the same regex pieces: a dangling joining word (lower-case "a/an/the" only;
 not "above" or "each"), a dangling "up to" or "per", "will" or "you", or a leading "+" with no fee
 noun after it. Darwin's live name re-check applies it to live fees (`darwin/live-fragment-check.ts`,
 see Darwin's AGENTS.md). A change to either shape list is checked against both. Since #1443 a
@@ -1943,7 +1966,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v26 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v103 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v104 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v9 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

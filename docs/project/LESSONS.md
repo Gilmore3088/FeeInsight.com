@@ -212,10 +212,11 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-259 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+260 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
-### Extraction and fee reading (39)
+### Extraction and fee reading (40)
 
+- 2026-10-22 — When a right read is held because its name reads as a sentence, fix the name Knox gives it, not the hold. Cut the glued sentence only when the words left name the same fee and drop no condition. — [finding](findings/2026-10-22-glued-sentence-names-held-at-publish.md) — Agent lesson: knox/glued-sentence-name
 - 2026-10-22 — A cell of stacked names over a cell of stacked prices is one fee per name only when the names are one family of siblings, as many as the prices, and the price cell holds nothing else; otherwise read it as before. — [finding](findings/2026-10-22-stacked-cell-sibling-variants.md) — Agent lesson: knox/stacked-cell-variants
 - 2026-10-22 — A two-column line is two rows, each under its own column's heading: name a bare pair only by its own column's heading, and only when it is a direction, customer type or size with no service of its own. — [finding](findings/2026-10-22-column-heading-names-second-fee.md) — Agent lesson: knox/column-heading-rows
 - 2026-10-22 — A row read at the right price but held unclassified needs a name rule, not a reader fix: add the general wording last, and leave it held when the keys disagree or only its heading can tell. — [finding](findings/2026-10-22-held-unclassified-at-the-right-price.md) — Agent lesson: knox/held-vocabulary-from-misses
@@ -522,7 +523,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (135 in all).
+counts as of this index (136 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
@@ -530,7 +531,7 @@ counts as of this index (135 in all).
 | magellan | 15 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
 | hoovie | 9 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
 | rosetta | 6 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
-| knox | 38 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
+| knox | 39 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
 | darwin | 15 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 36 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
 | hamilton | 8 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |

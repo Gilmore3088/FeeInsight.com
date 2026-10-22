@@ -32,6 +32,7 @@ import { withTierColumnRows } from "./tier-columns";
 import { mayHaveSymbolicLesserFee, symbolicLesserOfReview } from "./symbolic-lesser-of";
 import { internationalWireEligibility } from "./international-wire-eligibility";
 import { belongsToPaidReturnedUnit, paidReturnedUnits } from "@/lib/custom-report/paid-returned-events";
+import { withoutGluedSentence } from "./glued-sentence-name";
 
 /**
  * Knox's free extraction team, run over one whole document. Pure.
@@ -228,7 +229,14 @@ import { belongsToPaidReturnedUnit, paidReturnedUnits } from "@/lib/custom-repor
 // (`stackedVariantIndex` in source-check.ts, admit-only). The row's old read, which named both
 // directions and failed Darwin's category check, becomes the first variant's. The stale-read floor
 // stays at v97. Name re-tidy stays at v26.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 103 } as const;
+// v104: a read name publish would hold as cut off (`isCutoffName`) only because a sentence is glued
+// onto the fee's own words is cut to those words (`withoutGluedSentence`): another column's sentence
+// cell in front ("(Per month some exclusions apply): Cashier’s Check (Per item)"), the row's
+// description after a dash ("Overdraft Fee - An Overdraft Fee may be imposed ..."), or a "<what>
+// will cost" sentence. The cut must name the read's own category, no longer read as cut off and
+// drop no condition (`dropsCondition`). Names only: categories and prices are unchanged. The
+// stale-read floor stays at v97. Name re-tidy stays at v26.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 104 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -463,7 +471,9 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
       // v57: a fee whose own row traces reads its frequency from that row, not from a window
       // that stops at the price ("... four (4) OD fees per day ... | $17.00 | per item" is per item).
       // v74: a footnote number glued to the front of the name comes off (`withoutLeadingFootnoteMark`).
-      const feeName = tidyUnmarkedName(read.feeName, text, institutionName, read.canonicalHint);
+      // v104: a sentence glued onto the fee's own words (another column's cell in front, the row's
+      // description after a dash, "<what> will cost") comes off when what is left names the fee.
+      const feeName = withoutGluedSentence(tidyUnmarkedName(read.feeName, text, institutionName, read.canonicalHint), read.canonicalHint);
       const ownPrices = exclusiveStackedPrices(text, stackedPrices, feeName).filter(row => row.amount === read.amount);
       if (read.canonicalHint === "overdraft" && ownPrices.length > 0 && ownPrices.every(row => row.annualProgram)) {
         const row: HeldFeeCandidate = {

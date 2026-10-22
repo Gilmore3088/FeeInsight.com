@@ -456,4 +456,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-22",
   },
+  {
+    id: "glued-sentence-name",
+    agent: "knox",
+    stage: "extract",
+    lesson: "A name that reads as cut off (a pronoun, a sentence verb, a dangling word) is held at publish however right its category and price are. When the cut-off words are a sentence glued onto the fee's own words, read the fee's words as the name: drop another column's sentence cell in front (\"(Per month some exclusions apply): Cashier’s Check (Per item)\"), the row's description after a dash when it is a sentence with a verb (\"Overdraft Fee - An Overdraft Fee may be imposed ...\"), and the \"will cost\" of a fee stated as a sentence (\"Copy of a cancelled check will cost\"). The words left must name the read's own category on their own, pass the category guard, no longer read as cut off, and drop no condition (whose ATM it is, a balance, a figure, an account type, a period). A complete name whose own parenthetical trips the cut-off shape (\"Notary Service (excluding CU business)\") is not Knox's to cut: its words are the fee's.",
+    why: "The shadow lab (Oct 22) found 18 expected fees (14 answer-key, 4 live-audit) read at the right category and price but held by Hamilton's `cutoff_name` rule. Five were a sentence glued onto a complete name (state keys 3148, 8240 and 11362's overdraft; live audit 4993's check copy and cashier's check); publish's hold was right about the name, and loosening it would also release the sentence fragments it exists to stop (\"GUASFCU charges a\", \"Any replacement cards whether lost, stolen, or damaged will be charged a\"). Re-tidy v15 had already shown that cutting a dash description can drop the fee's condition (\"ATM Fee - Cash withdrawal at ATMs we do not own or operate\" is not just \"ATM Fee\"), so the same bar applies.",
+    evidence: { issues: [1026, 1443], prs: [], files: ["src/lib/agents/knox/glued-sentence-name.ts", "src/lib/agents/knox/cutoff-shape.ts", "src/lib/agents/knox/specialists.ts", "src/lib/agents/knox/glued-sentence-name.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-22",
+  },
 ];

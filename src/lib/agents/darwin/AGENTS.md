@@ -496,7 +496,7 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   writes, whose `next_after_id` is 0 once a pass reaches the end of the table, so the next step
   starts the next pass. An institution-scoped run reads that bank's live fees and leaves the
   cursor alone; a dry-run run writes nothing. The rule is `liveFragmentName` (Knox's
-  `name-retidy.ts`, beside `isCutoffName`), keyed on the live catalog name `fp.fee_name`, not the
+  `name-retidy.ts`; `isCutoffName` is in `cutoff-shape.ts` since Knox v104), keyed on the live catalog name `fp.fee_name`, not the
   verified name (21 of 29 rows where the two differ were fragments already repaired in the
   catalog). It is the narrow live twin of publish's `cutoff_name` hold, which matched 1,571 live
   fees on Oct 15 with about half real fees in a labelled sample of 155:
