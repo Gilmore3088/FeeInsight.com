@@ -183,8 +183,10 @@ import { belongsToPaidReturnedUnit, paidReturnedUnits } from "@/lib/custom-repor
 // ("$.40 each") close a dot-leader row, so the next row is not glued to it past the segment limit,
 // and a document may hold 1,000 priced segments, not 150, so a schedule printed after a long account
 // agreement is reached (Texas key 841: cashier's check, card replacement, early closure, excess
-// withdrawal, maintenance and overdraft rows). Texas gate: all 578 -> 590 right, 11 wrong unchanged;
-// held out 53 -> 60, 4 unchanged; the seven states unchanged. The stale-read floor stays at v78.
+// withdrawal, maintenance and overdraft rows). In a long line, a price with a slash unit ("$35.00/Item")
+// ends its row too (State key 60). Texas gate: all 578 -> 590 right, 11 wrong unchanged; held out
+// 53 -> 60, 4 unchanged. Seven states: 870 -> 877 right; GA 172 -> 179 right and 9 -> 10 wrong, the new
+// wrong read refused by Darwin's verify. The stale-read floor stays at v78.
 export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 97 } as const;
 
 export interface SpecialistRun {

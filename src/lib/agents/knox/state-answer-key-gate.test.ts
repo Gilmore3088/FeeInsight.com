@@ -51,7 +51,11 @@ const FLOORS: Record<string, { right: number; wrong: number }> = {
   // IL 114, MI 128, MN 119, all 865 / 33) to GA 172, IL 115, MI 130, MN 120, all 870 / 33; no wrong read added.
   CA: { right: 153, wrong: 5 },
   FL: { right: 136, wrong: 6 },
-  GA: { right: 172, wrong: 9 },
+  // v97 (Oct 21): State key 60 (GA, one stored line) is read past its "$35.00/Item" rows: 172 -> 179
+  // right. One new wrong read, "Overdraft Protection $35.00/Item" as an overdraft protection
+  // transfer (the key files that $35 as overdraft), is refused by Darwin's verify
+  // (category_mismatch) and never publishes; the shadow lab's published fees outside the keys stay 35.
+  GA: { right: 179, wrong: 10 },
   // 88 since the top-50 fold (Oct 8): a "Travel Card Reload" at $4.95 now files as a gift card
   // at $4.95, the same (category, price) pair as that schedule's gift card, so two right reads count once.
   IL: { right: 115, wrong: 5 },
@@ -61,7 +65,8 @@ const FLOORS: Record<string, { right: number; wrong: number }> = {
   // as a collection item, so one right read became one wrong one.
   MN: { right: 120, wrong: 8 },
   NY: { right: 43, wrong: 5 },
-  all: { right: 870, wrong: 38 },
+  // v97: 870 -> 877 right (GA's key 60); wrong 33 -> 34, inside the floor.
+  all: { right: 877, wrong: 38 },
 };
 
 const fixture = JSON.parse(

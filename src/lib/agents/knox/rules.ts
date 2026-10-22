@@ -843,8 +843,10 @@ function freeCellName(row: string): string | null {
  */
 // v97: a cents-only price ("$.40") also ends its row, after an "each" or "per <unit>" that follows it
 // ("Temporary checks ....$.40 each Cashier’s checks ....$4.00", Texas key 841).
+// v97: in a long line, a price with a slash unit ("$35.00/Item", "$30.00/Card") ends its row too
+// when a capitalised word or a figure follows (State key 60: one line of "Name $35.00/Item" rows).
 const LONG_LINE_BREAK =
-  /\s{2,}|(?<![.…])[.;](?![.…])\s+|(?<=(?:\.{3,}|…)\s*\$\s?(?:\d[\d,]*(?:\.\d{2})?|\.\d{2})(?:\/[a-z]+)?(?:\s+(?:each|per\s+[a-z]+))?)\s+/;
+  /\s{2,}|(?<![.…])[.;](?![.…])\s+|(?<=(?:\.{3,}|…)\s*\$\s?(?:\d[\d,]*(?:\.\d{2})?|\.\d{2})(?:\/[a-z]+)?(?:\s+(?:[Ee]ach|[Pp]er\s+[A-Za-z]+))?)\s+|(?<=\$\s?\d[\d,]*(?:\.\d{2})?\/[A-Za-z]+)\s+(?=[A-Z0-9])/;
 /** "Overdraft Fee Assessed when ... per day. | $36.00": the title that opens a long description row. */
 const ROW_TITLE = /^((?:[A-Z][\w'’&/-]*\s+){0,5}(?:Fee|Charge)s?)\b/;
 

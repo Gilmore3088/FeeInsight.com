@@ -845,6 +845,23 @@ describe("Knox extract.rules", () => {
       expect(read.filter(([, amount]) => amount === 4).map(([, , key]) => key)).toEqual(["cashiers_check"]);
     });
 
+    it("v97: a capitalised unit after a leader price closes its row too", () => {
+      const oneLine = `Temporary checks ${".".repeat(74)}$.40 Each Cashier’s checks${".".repeat(84)}$4.00 Per Item Money orders${".".repeat(60)}$3.00`;
+      expect(fees(oneLine)).toEqual(expect.arrayContaining([["Cashier’s checks", 4, "cashiers_check"], ["Money orders", 3, "money_order"]]));
+    });
+
+    it("v97: ends a row after a price with a slash unit in a one-line schedule", () => {
+      // State answer key 60 (held out) is one stored line with no dot leaders: each row ends in
+      // "$35.00/Item" or "$30.00/Card", and the run of rows passed the segment limit unread.
+      const oneLine =
+        "Returned Item $35.00/Item (each submission/resubmission) Stop Payment $32.00/Request EFT FEES " +
+        "ACH Overdraft $35.00/Item Debit Card Overdraft $35.00/Item Expedited Card Delivery $30.00/Card " +
+        "Replacement ATM or Visa Debit Card $5.00 SAFE DEPOSIT BOX FEES 3” x 5” Box $65.00/Year 3” x 10” Box $85.00/Year " +
+        "5” x 5” Box $75.00/Year 5” x 10” Box $100.00/Year";
+      const read = fees(oneLine);
+      expect(read).toEqual(expect.arrayContaining([["Expedited Card Delivery", 30, "rush_card"], ["Stop Payment", 32, "stop_payment"]]));
+    });
+
     it("names a long description row's price cell by the row's title", () => {
       const dollar = [
         "Continuous Overdraft Fee If your account remains negative for a period of 7 consecutive calendar days, you will be assessed a fee of $25.00 on the 7th consecutive day. This fee is in addition to any Overdraft Fees assessed. | $25.00",

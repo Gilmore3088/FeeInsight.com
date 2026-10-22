@@ -288,10 +288,13 @@ the unit after it ("Temporary checks ....$.40 each") close a dot-leader row (`LO
 next row ("Cashier’s checks ....$4.00") is not glued to it past the 280-character segment limit and
 dropped. A document may hold 1,000 priced segments (was 150), so a fee schedule printed after a long
 account agreement is reached: Texas key 841 is one line of 100,841 characters with its schedule at
-character 97,473. Found by the shadow lab (#2536), where 3 of the 81 answer-key documents are one long
-line. Texas gate: all 578 -> 590 right with 11 wrong unchanged, held out 53 -> 60 with 4 unchanged; the
-seven states unchanged. Shadow lab: answer-key fees published 902 -> 909 of 1,312, no new failure and
-no new fee outside the keys. Large banks' pages are read again at v97; the stale-read floor stays at
+character 97,473. In a long line, a price with a slash unit ("$35.00/Item", "$30.00/Card") ends its row
+when a capitalised word or a figure follows (State key 60, one line of "Name $35.00/Item" rows). Found by the shadow lab (#2536), where 3 of the 81 answer-key documents are one long
+line. Texas gate: all 578 -> 590 right with 11 wrong unchanged, held out 53 -> 60 with 4 unchanged.
+Seven states: 870 -> 877 right. GA's wrong count is 9 -> 10: "Overdraft Protection $35.00/Item" reads as an
+overdraft protection transfer the key files as overdraft, and Darwin's verify refuses it
+(category_mismatch), so it never publishes. Shadow lab: answer-key fees published 902 -> 916 of 1,312,
+no new failure and no new fee outside the keys. Large banks' pages are read again at v97; the stale-read floor stays at
 v78, so other banks' stored one-line texts are read again only when that floor moves.
 
 v96 (Oct 20, #1810): an account heading with a service or trade mark glued to its last word

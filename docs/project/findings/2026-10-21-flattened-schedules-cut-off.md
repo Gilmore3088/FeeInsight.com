@@ -15,17 +15,23 @@ were never read.
 - The long-line splitter (`LONG_LINE_BREAK`) closes a dot-leader row only after a price with a
   leading digit. "Temporary checks ....$.40 each" did not close, so it ran into "Cashier’s
   checks ....$4.00" past the 280-character segment limit, and both were dropped.
+- It also never closes a row at a price with a slash unit. State key 60 is one line of
+  "ATM Overdraft $35.00/Item One-time Debit Overdraft $35.00/Item ..." rows, so they ran together
+  past the limit too.
 
-**Fix:** Knox rules v97 (this PR) raises the cap to 1,000 and closes a row after a cents-only price
-and its "each" / "per <unit>". Results:
+**Fix:** Knox rules v97 (this PR) raises the cap to 1,000. In a long line, it closes a row after a
+cents-only price and its "each" / "per <unit>", and after a slash-unit price followed by a capital
+or a figure. Results:
 - Texas gate: 578 -> 590 right, 11 wrong unchanged. Held out: 53 -> 60, 4 wrong unchanged.
-- Seven-state gate: unchanged.
-- Shadow lab: 902 -> 909 of 1,312 answer-key fees published, with no new failure and no new fee
+- Seven-state gate: 870 -> 877 right. GA's one added wrong read is refused by Darwin's verify.
+- Shadow lab: 902 -> 916 of 1,312 answer-key fees published, with no new failure and no new fee
   outside the keys.
 
-A large bank's page is read again at each rules version. Every other bank's stored text is read
-again only below the stale-read floor (v78), so this fix reaches other banks' stored one-line texts
-only when that floor moves. That is a separate decision, because it re-reads every older text.
+A large bank's page is read again at each rules version. Other banks' stored texts are read again
+when their last read is below the stale-read floor (v78), or through the narrower paths in Knox's due
+query: missing fees at the rules recheck, an older copy still carrying live fees, or thin text. So
+this fix reaches most other banks' stored one-line texts only when that floor moves. That is a
+separate decision, because it re-reads every older text.
 
 **Lesson:** When a reader has a per-document cap, a miss late in a long document is a cap, not a
 rule. Check where the schedule starts before writing a rule for its rows. A rules fix reaches stored
