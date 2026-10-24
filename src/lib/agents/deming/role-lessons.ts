@@ -37,4 +37,14 @@ export const DEMING_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-24",
   },
+  {
+    id: "issue-1048-page-by-key",
+    agent: "deming",
+    stage: "regression replay",
+    lesson: "Page a work list by the last key of each window, never by an OFFSET counted across statements, whenever the run or another run changes the column the list is ordered by. Pass a timestamp key back as text and cast it in SQL, so it keeps Postgres's microseconds, and drop a case seen twice.",
+    why: "Corrective replay listed due cases 50 at a time with OFFSET over last_checked_at; a run that rechecked cases moved them to the end, so the next window skipped as many unseen cases as had moved. Passing the key as a timestamptz parameter would have cut it to milliseconds and repeated tied cases.",
+    evidence: { issues: [1048], prs: [2414], files: ["src/lib/agents/deming/corrective-source-store.ts", "src/lib/agents/deming/corrective-source.db.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-24",
+  },
 ];

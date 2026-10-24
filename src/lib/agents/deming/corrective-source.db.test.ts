@@ -2,7 +2,7 @@ import postgres from "postgres";
 import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { correctPublishedFee, resetCorrectionsReadyCache } from "@/lib/fee-corrections";
-import { CAPTURE_CHECK, loadCorrectiveCaseCandidates, runCorrectiveSource, persistCorrectiveArtifact, recordCorrectiveWarnings, sealCorrectiveSource } from "./corrective-source-store";
+import { CAPTURE_CHECK, correctiveMemberWindow, type CorrectiveMemberKey, loadCorrectiveCaseCandidates, runCorrectiveSource, persistCorrectiveArtifact, recordCorrectiveWarnings, sealCorrectiveSource } from "./corrective-source-store";
 import { recordAdminFeeRun } from "@/lib/fee-admin-run";
 import { runDemingRegression } from "./regression";
 import { recordFeedback } from "@/lib/agents/learning/feedback";
@@ -563,4 +563,55 @@ describe.skipIf(!connection)("prospective corrective source context in actual Po
     finally { await removeCorrection(template); }
   },60000);
 
+});
+
+// #2414 review: replay pages member cases by key, not OFFSET. A case rechecked between two windows
+// moves to the end of the order; with OFFSET counted across statements the next window then
+// skipped as many unseen cases as had moved. Keys keep Postgres's microseconds through the page.
+describe.skipIf(!connection)("corrective replay member paging in actual PostgreSQL", () => {
+  let raw: postgres.Sql;
+  const PREFIX = "corrective:paging-";
+  beforeAll(async () => { raw = postgres(connection!, { max: 1, onnotice: () => {} }); });
+  afterAll(async () => { await raw`DELETE FROM eval_cases WHERE case_key LIKE ${`${PREFIX}%`}`; await raw.end(); });
+
+  it("sees every member once in order when keys tie to the microsecond, and none is skipped when earlier ones are rechecked mid-page", async () => {
+    await raw`DELETE FROM eval_cases WHERE case_key LIKE ${`${PREFIX}%`}`;
+    const tied = "2026-10-01 12:00:00.123456+00";
+    const rows = await raw`INSERT INTO eval_cases(case_key,dataset,status,agent,check_name,error_class,severity,input,expected,label_provenance,last_checked_at)
+      SELECT ${PREFIX}||g::text||':source_snapshot_v2','regression','active','hamilton',${correctivePolicy.CORRECTIVE_CHECK},'unknown','major','{}'::jsonb,'{}'::jsonb,'human',
+        CASE WHEN g<=30 THEN NULL ELSE ${tied}::timestamptz END
+      FROM generate_series(1,130) g RETURNING id`;
+    const all = new Set(rows.map((r) => String(r.id)));
+    const ours = (window: CorrectiveMemberKey[]) => window.filter((key) => all.has(key.id));
+
+    const ordered: string[] = [];
+    let after: CorrectiveMemberKey = { ts: null, id: "0" };
+    // 130 members fit in 3 windows of 50; a cursor that stalls fails here instead of timing out.
+    for (let pages = 0; ; pages++) {
+      expect(pages).toBeLessThan(10);
+      const window = await correctiveMemberWindow(raw as never, after);
+      if (window.length === 0) break;
+      ordered.push(...ours(window).map((key) => key.id));
+      after = window.at(-1)!;
+    }
+    expect(ordered).toHaveLength(130);
+    expect(new Set(ordered).size).toBe(130);
+
+    const seen = new Set<string>();
+    after = { ts: null, id: "0" };
+    let first = true;
+    for (let pages = 0; ; pages++) {
+      expect(pages).toBeLessThan(10);
+      const window = await correctiveMemberWindow(raw as never, after);
+      if (window.length === 0) break;
+      for (const key of ours(window)) seen.add(key.id);
+      if (first) {
+        // Another run rechecks the first window's cases before this run reads the next window.
+        await raw`UPDATE eval_cases SET last_checked_at=NOW() WHERE id = ANY(${window.map((key) => key.id)}::bigint[])`;
+        first = false;
+      }
+      after = window.at(-1)!;
+    }
+    expect([...all].filter((id) => !seen.has(id))).toEqual([]);
+  });
 });
