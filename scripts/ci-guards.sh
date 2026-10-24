@@ -788,13 +788,15 @@ migration_lock_kill() {
   # seconds: a migration that locks a busy table sets lock_timeout before its first locking
   # statement, so it fails fast and is retried instead of queueing reads without limit (DECISIONS,
   # Oct 15: no pipeline pause). Files numbered up to $from are applied history and are not re-checked.
-  local from="20270110000071" names busy index_names drop_index="" stmt problems="" file number flat first set_at
+  local from="20270110000071" names busy index_names drop_index="" stmt timeout problems="" file number flat first set_at
   names='raw_fee_observations|verified_fee_observations|published_fee_records|published_fee_catalog|published_fee_rate_catalog|institution_sources|source_documents|agent_source_texts|agent_runs|agent_run_steps|agent_run_events'
   busy="(\"?public\"?\\.)?\"?(${names})\"?([^a-z0-9_]|\$)"
-  # One line per file, -- and /* */ comments dropped, lower case, so a statement split over lines still matches.
+  # One line per file, lower case, -- and /* */ comments dropped, so a statement split over lines
+  # still matches. One pass reads quotes and both comment kinds in order, so `--` inside a block
+  # comment or a string, and `/*` after `--`, are read as Postgres reads them (block comments nest).
   flatten() {
-    sed -E 's/--.*$//' "$1" | tr '\n' ' ' | tr '[:upper:]' '[:lower:]' | tr -s '[:space:]' ' ' \
-      | sed -E 's#/\*([^*]|\*+[^*/])*\*+/# #g'
+    perl -0777 -pe 's{(\x27[^\x27]*\x27)|--[^\n]*|(?<c>/\*(?:[^/*]++|/(?!\*)|\*(?!/)|(?&c))*+\*/)}{defined $1 ? $1 : " "}ge' "$1" \
+      | tr '\n' ' ' | tr '[:upper:]' '[:lower:]' | tr -s '[:space:]' ' '
   }
   # Indexes on the busy tables, from every migration, so DROP INDEX on one of them is caught too.
   index_names=$(for file in supabase/migrations/*.sql; do [[ -f "$file" ]] && flatten "$file"; echo; done \
@@ -802,7 +804,12 @@ migration_lock_kill() {
     | sed -E 's/^create (unique )?index (concurrently )?(if not exists )?([a-z0-9_."]+) on .*/\4/; s/"//g; s/^public\.//' \
     | sort -u | paste -sd'|' - || true)
   [[ -n "$index_names" ]] && drop_index="|drop index (concurrently )?(if exists )?(\"?public\"?\\.)?\"?(${index_names})\"?([^a-z0-9_]|\$)"
-  stmt="(^|[^a-z0-9_])((alter table (if exists )?(only )?|lock (table )?(only )?|(create|drop) (or replace )?(materialized )?view (if exists )?|alter (materialized )?view (if exists )?|create (unique )?index [^;]* on (only )?|(create|drop) trigger [^;]* on |(create|alter|drop) policy [^;]* on (only )?|truncate (table )?(only )?([^;]*[ ,])?)${busy}${drop_index})"
+  # A foreign key to a busy table (REFERENCES) takes a SHARE ROW EXCLUSIVE lock on it, and DROP
+  # TABLE an ACCESS EXCLUSIVE one, so both count as locking statements.
+  stmt="(^|[^a-z0-9_])((alter table (if exists )?(only )?|lock (table )?(only )?|(create|drop) (or replace )?(materialized )?view (if exists )?|alter (materialized )?view (if exists )?|create (unique )?index [^;]* on (only )?|(create|drop) trigger [^;]* on |(create|alter|drop) policy [^;]* on (only )?|truncate (table )?(only )?([^;]*[ ,])?|drop table (if exists )?([^;]*[ ,])?|references )${busy}${drop_index})"
+  # A top-level SET (not RESET, not a function's SET clause) or set_config(), also from a DO block,
+  # to a value above zero.
+  timeout="((^ ?|; ?)set (local )?lock_timeout ?(=|to) ?|(^ ?|; ?|begin )(select|perform) set_config ?\\( ?'lock_timeout' ?, ?)'?0*([1-9]|\\.0*[1-9])"
   for file in supabase/migrations/*.sql; do
     [[ -f "$file" ]] || continue
     number=$(basename "$file" | cut -d_ -f1)
@@ -810,7 +817,7 @@ migration_lock_kill() {
     flat=$(flatten "$file")
     first=$(printf '%s' "$flat" | grep -boE "$stmt" | head -1 | cut -d: -f1 || true)
     [[ -n "$first" ]] || continue
-    set_at=$(printf '%s' "$flat" | grep -boE 'set (local )?lock_timeout' | head -1 | cut -d: -f1 || true)
+    set_at=$(printf '%s' "$flat" | grep -boE "$timeout" | head -1 | cut -d: -f1 || true)
     if [[ -z "$set_at" || "$set_at" -gt "$first" ]]; then
       problems+="${file}"$'\n'
     fi

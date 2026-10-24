@@ -456,4 +456,35 @@ describe("migration-lock-kill", () => {
     });
     expect(early.status, early.output).toBe(0);
   });
+
+  it("fails a foreign key to a busy table or DROP TABLE of one, and reads comments and strings as Postgres does", () => {
+    const { status, output } = lockRepo({
+      "20270110000072_fk.sql": "CREATE TABLE public.notes (id bigint, run_id bigint REFERENCES public.agent_runs(id));\n",
+      "20270110000073_add_fk.sql": "ALTER TABLE public.notes ADD CONSTRAINT notes_doc_fk FOREIGN KEY (doc_id)\n  REFERENCES \"source_documents\" (id);\n",
+      "20270110000074_drop.sql": "DROP TABLE IF EXISTS public.old_notes, public.agent_run_events;\n",
+      "20270110000075_comment_dash.sql": "/* x -- y */ ALTER TABLE raw_fee_observations ADD COLUMN z int;\n",
+      "20270110000076_string_dash.sql": "COMMENT ON TABLE public.notes IS 'a -- b'; ALTER TABLE agent_runs ADD COLUMN z int;\n",
+      "20270110000077_quiet.sql": "CREATE TABLE public.notes2 (id bigint REFERENCES public.state_notes(id));\n/* outer /* inner */ ALTER TABLE agent_runs ADD COLUMN q int; */\n",
+    });
+    expect(status, output).toBe(1);
+    for (const name of ["072_fk", "073_add_fk", "074_drop", "075_comment_dash", "076_string_dash"]) {
+      expect(output).toContain(`20270110000${name}.sql`);
+    }
+    expect(output).not.toContain("077_quiet");
+  });
+
+  it("counts a top-level SET or set_config to a value above zero, not RESET, zero or a function's SET clause", () => {
+    const { status, output } = lockRepo({
+      "20270110000072_reset.sql": "RESET lock_timeout;\nALTER TABLE agent_runs ADD COLUMN a int;\n",
+      "20270110000073_zero.sql": "SET lock_timeout = 0;\nALTER TABLE agent_runs ADD COLUMN b int;\n",
+      "20270110000074_fn_clause.sql": "CREATE FUNCTION f() RETURNS void LANGUAGE sql SET lock_timeout = '5s' AS $$ select 1 $$;\nALTER TABLE agent_runs ADD COLUMN c int;\n",
+      "20270110000075_set_config.sql": "SELECT set_config('lock_timeout', '5s', true);\nALTER TABLE agent_runs ADD COLUMN d int;\n",
+      "20270110000076_set_to.sql": "BEGIN;\nSET LOCAL lock_timeout TO '10s';\nALTER TABLE agent_runs ADD COLUMN e int;\nCOMMIT;\n",
+      "20270110000077_fn_body.sql": "CREATE FUNCTION g() RETURNS void LANGUAGE plpgsql AS $$ begin set lock_timeout = '5s'; end $$;\nALTER TABLE agent_runs ADD COLUMN f int;\n",
+      "20270110000078_do_block.sql": "DO $$ BEGIN PERFORM set_config('lock_timeout', '0.5s', true); END $$;\nALTER TABLE agent_runs ADD COLUMN g int;\n",
+    });
+    expect(status, output).toBe(1);
+    for (const name of ["072_reset", "073_zero", "074_fn_clause", "077_fn_body"]) expect(output).toContain(`20270110000${name}.sql`);
+    for (const name of ["075_set_config", "076_set_to", "078_do_block"]) expect(output).not.toContain(name);
+  });
 });
