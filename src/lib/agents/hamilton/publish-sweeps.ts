@@ -246,6 +246,7 @@ export async function sweepsBeforeGuardRequeue(ctx: MovedSweepContext) {
   // wording places them in, before any sweep judges them by category (fee-fold.ts).
   const taxonomyFold = await sweep(ctx, "taxonomyFold", () => emptyTaxonomyFold(dryRun), () => foldRetiredCategories(tx, {
     runId,
+    stepId: ctx.stepId,
     dryRun,
     institutionId,
     researchSplitFullCount: ctx.researchSplitFullCount,
@@ -312,7 +313,7 @@ export async function sweepsBeforeGuardRequeue(ctx: MovedSweepContext) {
   // unpublished copies of those reads rejected, before this step publishes anything.
   const handAmounts = await sweep(ctx, "handAmounts", (): Result<typeof applyHandAmountCorrections> => ({
     dryRun, corrected: [], skipped: [], rejectedTwins: [], skippedTwins: [],
-  }), () => applyHandAmountCorrections(tx, { runId, dryRun }));
+  }), () => applyHandAmountCorrections(tx, { runId, stepId: ctx.stepId, dryRun }));
   // #1196: five live cut-name rows that repeat a clean live row come down; the clean row stays.
   const cutNameDuplicates = await sweep(ctx, "cutNameDuplicates", (): Result<typeof applyCutNameDuplicates> => ({
     dryRun, takenDown: [], skipped: [], error: null,
@@ -417,7 +418,7 @@ export async function sweepsBeforeGuardRequeue(ctx: MovedSweepContext) {
 function emptyTaxonomyFold(dryRun: boolean): Result<typeof foldRetiredCategories> {
   return {
     scanned: 0, moved: 0, movedLive: 0, byRoute: {}, noHomeFlagged: 0, noHomeWaiting: 0, noHomeRolledBack: 0, noHomeHeld: 0,
-    unplacedVerified: 0, feedbackRows: 0, handRefiled: 0, handFlagsCleared: 0, dryRun, rulesVersion: 0, noHomeSample: [],
+    unplacedVerified: 0, feedbackRows: 0, handRefiled: 0, handSkipped: [], handFlagsCleared: 0, dryRun, rulesVersion: 0, noHomeSample: [],
     pendingResearchSplit: null,
   };
 }

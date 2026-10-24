@@ -1,10 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { passesDarwinChecks } from "@/lib/agents/knox/layout";
 import { RESEARCH_SPLIT_LIVE, RETIRED_CATEGORY_KEYS, researchSplitTarget } from "@/lib/fee-fold";
 
-import { HAND_REFILES, handFixedPassing, planHandRefiles, previewResearchSplit } from "./taxonomy-fold";
+import { HAND_REFILES, foldRetiredCategories, handFixedPassing, handRefileSkips, planHandRefiles, previewResearchSplit } from "./taxonomy-fold";
 
 /** The schedule lines each hand re-file was read from (copied data: the banks' own text). */
 const PAGE_LINES: Record<number, string> = {
@@ -445,3 +445,64 @@ describe("#1746: the footnote cut's leftovers (Oct 17)", () => {
   });
 });
 
+
+describe("#1749: a hand re-file applies only while the live name is the one listed", () => {
+  const listed = { ...liveRow(98236, "continuous_od", "35.00", "OverDraft Fee (PAID ITEM) Standard/Extended OD Privilege Program"), fee_verified_id: 111608, institution_id: 7239, source_document_id: 3516 };
+  const renamed = { ...listed, fee_name: "Overdraft Fee (paid item, per item)" };
+
+  it("never moves a fee whose name changed since it was listed, and reports the skip", () => {
+    expect(planHandRefiles([listed]).map((move) => move.refile.feePublishedId)).toEqual([98236]);
+    expect(handRefileSkips([listed])).toEqual([]);
+    // A newer, better name is never overwritten by the listed one.
+    expect(planHandRefiles([renamed])).toEqual([]);
+    expect(handRefileSkips([renamed])).toEqual([{ feePublishedId: 98236, reason: "changed since listed", liveName: "Overdraft Fee (paid item, per item)" }]);
+    // Already reading the listed new name: the category move still applies, nothing is overwritten.
+    expect(planHandRefiles([{ ...listed, fee_name: "OverDraft Fee (PAID ITEM)" }]).map((move) => move.refile.feePublishedId)).toEqual([98236]);
+    // Done, or at another price: neither moved nor reported.
+    expect(handRefileSkips([{ ...renamed, canonical_fee_key: "overdraft" }, { ...renamed, amount: "30.00" }])).toEqual([]);
+  });
+
+  it("a rename in place whose old name no longer matches is skipped and reported, not silent", () => {
+    const row = { ...liveRow(83792, "rush_card", "30.00", "Expedited card delivery"), fee_verified_id: 93010, institution_id: 7859, source_document_id: 13272 };
+    expect(planHandRefiles([row])).toEqual([]);
+    expect(handRefileSkips([row]).map((skip) => skip.feePublishedId)).toEqual([83792]);
+    expect(handRefileSkips([{ ...row, fee_name: "Expedited card delivery (domestic)" }])).toEqual([]);
+  });
+
+  function fakeDb(handRows: unknown[]) {
+    const calls: Array<{ text: string; values: unknown[] }> = [];
+    const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = strings.join(" ");
+      calls.push({ text, values });
+      if (text.includes("WHERE fp.fee_published_id = ANY(") && text.includes("fp.canonical_fee_key, fp.fee_name, fp.amount")) return Promise.resolve(handRows);
+      if (text.includes("UPDATE published_fee_records fp") && text.includes("v.new_name")) {
+        return Promise.resolve((values[0] as number[]).map((id) => ({ fee_published_id: id })));
+      }
+      return Promise.resolve([]);
+    });
+    return { db, calls };
+  }
+
+  it("the hand re-file event and the skip warning both carry the publish step they ran in", async () => {
+    const moved = fakeDb([listed]);
+    const result = await foldRetiredCategories(moved.db as never, { runId: 7962, stepId: 43463, dryRun: false });
+    expect(result.handRefiled).toBe(1);
+    const event = moved.calls.find((call) => call.text.includes("INSERT INTO agent_run_events") && call.values.includes("hamilton.taxonomy_fold.hand_refile"));
+    expect(event?.text).toContain("step_id");
+    expect(event?.values.slice(0, 2)).toEqual([7962, 43463]);
+
+    const skipped = fakeDb([renamed]);
+    const left = await foldRetiredCategories(skipped.db as never, { runId: 7962, stepId: 43463, dryRun: false });
+    expect(left.handRefiled).toBe(0);
+    expect(left.handSkipped.map((skip) => skip.feePublishedId)).toEqual([98236]);
+    expect(skipped.calls.some((call) => call.text.includes("UPDATE published_fee_records fp") && call.text.includes("v.new_name"))).toBe(false);
+    const warning = skipped.calls.find((call) => call.text.includes("'step.warning'"));
+    expect(warning?.values.slice(0, 2)).toEqual([7962, 43463]);
+    expect(String(warning?.values[2])).toContain("98236");
+
+    // A dry run reports the skip in its result and writes no warning.
+    const dry = fakeDb([renamed]);
+    expect((await foldRetiredCategories(dry.db as never, { runId: 7962, stepId: 43463, dryRun: true })).handSkipped).toHaveLength(1);
+    expect(dry.calls.some((call) => /INSERT|UPDATE/.test(call.text))).toBe(false);
+  });
+});

@@ -1159,10 +1159,14 @@ charges.
 `HAND_REFILES` in the same file re-files or renames listed live fees in place (James approved
 each batch: #1299, #1304, #1196). A row moves only while it is still under its listed category
 at its listed price, and a rename is done once the live name reads as listed, so a re-run
-changes nothing. An in-place rename that carries an `oldName` runs only while the live name is
-exactly that old name, so it runs once and never replaces a better name a later read or retidy
-gave the fee. Each move writes a `pipeline_feedback` row with the old and new name, and the
-run gets one `hamilton.taxonomy_fold.hand_refile` event naming every row and its after-state.
+changes nothing. Any entry that carries an `oldName`, a category re-file as well as a rename in
+place, runs only while the live name is exactly that old name (or already the listed new one), so
+it runs once and never replaces a better name a later read or retidy gave the fee (#1749). A row
+skipped that way is listed in the step's `handSkipped` and in one `step.warning` event. Each move
+writes a `pipeline_feedback` row with the old and new name, and the run gets one
+`hamilton.taxonomy_fold.hand_refile` event, carrying the publish step's id, naming every row and
+its after-state. An institution-scoped publish re-files only that institution's listed rows, so
+its re-files can land one step after the unscoped hand takedowns.
 
 ## Source Link Repair
 

@@ -194,7 +194,7 @@ describe("hand amount corrections (#1334)", () => {
       if (text.includes("SET review_status = 'rejected'")) return Promise.resolve((values[2] as number[]).map((id) => ({ fee_verified_id: id })));
       return Promise.resolve([]);
     });
-    const result = await applyHandAmountCorrections(db as never, { runId: 7, dryRun: false });
+    const result = await applyHandAmountCorrections(db as never, { runId: 7, stepId: 43508, dryRun: false });
     expect(result.corrected).toHaveLength(15);
     expect(result.rejectedTwins).toEqual([113133, 112658, 157467, 125738, 66392, 167844, 102462, 188270, 188271, 188272, 188273, 188274, 188724, 188725]);
     const verifiedUpdates = calls.filter((call) => call.text.includes("UPDATE verified_fee_observations") && call.text.includes("SET amount"));
@@ -214,7 +214,11 @@ describe("hand amount corrections (#1334)", () => {
     expect(written.find((row) => row.dedupe_key === `${HAND_AMOUNT_CHECK}:twin:188270`)?.evidence).toMatchObject({ issue: 1827, flag: "hand_rejected:next_line_price_twin" });
     expect(written.find((row) => row.dedupe_key === `${HAND_AMOUNT_CHECK}:twin:188724`)?.evidence).toMatchObject({ issue: 1828, flag: "hand_rejected:heading_join_twin" });
     expect(written.find((row) => row.dedupe_key === `${HAND_AMOUNT_CHECK}:twin:66392`)?.evidence).toMatchObject({ issue: 1360, flag: "hand_rejected:optional_overdraft_plan_twin" });
-    expect(calls.filter((call) => call.text.includes("INSERT INTO agent_run_events"))).toHaveLength(1);
+    const events = calls.filter((call) => call.text.includes("INSERT INTO agent_run_events"));
+    expect(events).toHaveLength(1);
+    // The event names the publish step it ran in (#1749).
+    expect(events[0].text).toContain("step_id");
+    expect(events[0].values.slice(0, 2)).toEqual([7, 43508]);
   });
 
   it("a dry run plans the same and writes nothing", async () => {
