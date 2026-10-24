@@ -488,3 +488,67 @@ describe("migration-lock-kill", () => {
     for (const name of ["075_set_config", "076_set_to", "078_do_block"]) expect(output).not.toContain(name);
   });
 });
+
+/** migration-claim-kill (#1048): two open PRs must not add the same migration number. */
+describe("migration-claim-kill", () => {
+  // A stand-in gh on PATH: the open-PR list and each PR's added migrations come from the case.
+  function claimRepo(pr: string, open: string[] | null, added: Record<string, string[]>) {
+    repo = mkdtempSync(join(tmpdir(), "claim-guard-"));
+    const answers = Object.entries(added).map(([n, files]) => `*"pulls/${n}/files"*) printf '%s\\n' ${files.map((f) => `'${f}'`).join(" ")} ;;`);
+    write(
+      "bin/gh",
+      [
+        "#!/usr/bin/env bash",
+        'case "$*" in',
+        open === null ? '  *"pulls?state=open"*) exit 1 ;;' : `  *"pulls?state=open"*) printf '%s\\n' ${open.join(" ")} ;;`,
+        ...answers.map((line) => `  ${line}`),
+        '  *"pulls/"*"/files"*) ;;',
+        "  *) exit 1 ;;",
+        "esac",
+        "",
+      ].join("\n"),
+    );
+    execFileSync("chmod", ["+x", join(repo, "bin/gh")]);
+    const out = spawnSync("bash", [GUARD, "migration-claim-kill"], {
+      cwd: repo,
+      env: { ...env, PATH: `${join(repo, "bin")}:${process.env.PATH}`, PR_NUMBER: pr, GITHUB_REPOSITORY: "o/r" },
+      encoding: "utf8",
+    });
+    return { status: out.status, output: `${out.stdout}${out.stderr}` };
+  }
+
+  it("fails when an earlier open PR adds the same number, and names it", () => {
+    const { status, output } = claimRepo("20", ["12", "20", "25"], {
+      "12": ["supabase/migrations/20270110000080_other.sql"],
+      "20": ["supabase/migrations/20270110000080_mine.sql"],
+    });
+    expect(status, output).toBe(1);
+    expect(output).toContain("20270110000080: also added by open PR #12");
+  });
+
+  it("passes when only a later PR claims the number, or the numbers differ", () => {
+    const later = claimRepo("12", ["12", "20"], {
+      "12": ["supabase/migrations/20270110000080_mine.sql"],
+      "20": ["supabase/migrations/20270110000080_later.sql"],
+    });
+    expect(later.status, later.output).toBe(0);
+    rmSync(repo, { recursive: true, force: true });
+    const differ = claimRepo("20", ["12", "20"], {
+      "12": ["supabase/migrations/20270110000080_other.sql"],
+      "20": ["supabase/migrations/20270110000081_mine.sql"],
+    });
+    expect(differ.status, differ.output).toBe(0);
+    expect(differ.output).toContain("1 checked");
+  });
+
+  it("skips with a note outside a pull request run or when GitHub does not answer", () => {
+    repo = mkdtempSync(join(tmpdir(), "claim-guard-"));
+    const outside = spawnSync("bash", [GUARD, "migration-claim-kill"], { cwd: repo, env: { ...env, PR_NUMBER: "" }, encoding: "utf8" });
+    expect(outside.status).toBe(0);
+    expect(outside.stdout).toContain("skipped");
+    rmSync(repo, { recursive: true, force: true });
+    const failing = claimRepo("20", null, { "20": ["supabase/migrations/20270110000080_mine.sql"] });
+    expect(failing.status, failing.output).toBe(0);
+    expect(failing.output).toContain("could not list open PRs");
+  });
+});

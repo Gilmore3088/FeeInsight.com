@@ -35,6 +35,9 @@
 #                 Fail if a migration newer than 20270110000071 locks a busy fee, source or run table
 #                 (ALTER/LOCK/TRUNCATE TABLE, CREATE or DROP INDEX, a catalog view, a trigger, a policy)
 #                 without first setting lock_timeout.
+#   migration-claim-kill
+#                 On a pull request run, fail if an open PR opened before this one adds a migration with the same
+#                 number (asks GitHub; passes with a note when it cannot).
 #   queue-owner-kill
 #                 Fail if a migration creates a *_queue table that src/lib/agents/queue-registry.ts does not list
 #                 (every queue has an owner agent, a size/age query and alarm limits).
@@ -692,6 +695,54 @@ runtime_ddl_kill() {
   echo "runtime-ddl-kill: OK (no runtime DDL in src)"
 }
 
+migration_claim_kill() {
+  # migration-version-kill sees only this branch, so two open PRs can each add the same next
+  # number and both pass; 068 and 070-074 collided that way across seven PRs in Oct 2026, and the
+  # second to merge stops Supabase's deploy (Foundation tracker #1048). On a pull request run this
+  # asks GitHub which migration numbers the open PRs opened before this one add, and fails when
+  # this PR adds one of them. The earlier PR keeps the number; this one renumbers above both.
+  # Needs PR_NUMBER, GITHUB_REPOSITORY and a gh with GH_TOKEN; without them, or when GitHub does
+  # not answer, it says so and passes, since main's own copy is still checked by migration-version-kill.
+  local pr="${PR_NUMBER:-}" repo="${GITHUB_REPOSITORY:-}" mine other n file number clashes="" checked=0
+  if [[ -z "$pr" || -z "$repo" ]] || ! command -v gh >/dev/null 2>&1; then
+    echo "migration-claim-kill: OK (not a pull request run with gh; skipped)"
+    return 0
+  fi
+  added_migrations() {
+    gh api --paginate "repos/${repo}/pulls/$1/files?per_page=100" \
+      --jq '.[] | select(.status == "added") | .filename | select(test("^supabase/migrations/[^/]+[.]sql$"))'
+  }
+  if ! mine=$(added_migrations "$pr"); then
+    echo "migration-claim-kill: OK (could not read this PR's files from GitHub; skipped)"
+    return 0
+  fi
+  if [[ -z "$mine" ]]; then
+    echo "migration-claim-kill: OK (this PR adds no migration)"
+    return 0
+  fi
+  if ! other=$(gh api --paginate "repos/${repo}/pulls?state=open&per_page=100" --jq '.[].number'); then
+    echo "migration-claim-kill: OK (could not list open PRs from GitHub; skipped)"
+    return 0
+  fi
+  for n in $other; do
+    [[ "$n" =~ ^[0-9]+$ && "$n" -lt "$pr" ]] || continue
+    checked=$((checked + 1))
+    while read -r file; do
+      [[ -n "$file" ]] || continue
+      number=$(basename "$file" | cut -d_ -f1)
+      if printf '%s\n' "$mine" | sed 's|.*/||' | cut -d_ -f1 | grep -qxF "$number"; then
+        clashes+="${number}: also added by open PR #${n} (${file})"$'\n'
+      fi
+    done < <(added_migrations "$n" || true)
+  done
+  if [[ -n "$clashes" ]]; then
+    echo "migration-claim-kill: an earlier open PR already adds this migration number; renumber this PR's file one above the highest number on main and in open PRs:" >&2
+    printf '%s' "$clashes" >&2
+    exit 1
+  fi
+  echo "migration-claim-kill: OK (no earlier open PR adds this PR's migration numbers; ${checked} checked)"
+}
+
 migration_version_kill() {
   # Supabase records each migration by the number before the first underscore and applies
   # files in number order. Two files with one number, or a file numbered below what prod has
@@ -1146,17 +1197,18 @@ case "$SUBCOMMAND" in
   plausible-kill) plausible_kill ;;
   financial-source-kill) financial_source_kill ;;
   migration-version-kill) migration_version_kill ;;
+  migration-claim-kill) migration_claim_kill ;;
   guide-version-kill) guide_version_kill ;;
   bayes-manifest-kill) bayes_manifest_kill ;;
   api-docs-kill) api_docs_kill ;;
   runtime-ddl-kill) runtime_ddl_kill ;;
   "")
-    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill|findings-file-kill|guide-version-kill|bayes-manifest-kill|api-docs-kill|runtime-ddl-kill|lesson-kill|queue-owner-kill|migration-lock-kill|lessons-index-kill>" >&2
+    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill|findings-file-kill|guide-version-kill|bayes-manifest-kill|api-docs-kill|runtime-ddl-kill|lesson-kill|queue-owner-kill|migration-lock-kill|lessons-index-kill|migration-claim-kill>" >&2
     exit 2
     ;;
   *)
     echo "Unknown subcommand: $SUBCOMMAND" >&2
-    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill|findings-file-kill|guide-version-kill|bayes-manifest-kill|api-docs-kill|runtime-ddl-kill|lesson-kill|queue-owner-kill|migration-lock-kill|lessons-index-kill>" >&2
+    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill|findings-file-kill|guide-version-kill|bayes-manifest-kill|api-docs-kill|runtime-ddl-kill|lesson-kill|queue-owner-kill|migration-lock-kill|lessons-index-kill|migration-claim-kill>" >&2
     exit 2
     ;;
 esac
