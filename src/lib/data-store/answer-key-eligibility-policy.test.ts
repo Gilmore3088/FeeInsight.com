@@ -172,6 +172,23 @@ describe("recordable reference-document decisions (#1862)", () => {
     expect(decide([document]).facts.priced.status).toBe("fail");
   });
 
+  it("matches a key line copied from a stored table to the bank's own cells and entities (#2466)", () => {
+    const cells = "Consumer Fee Schedule\nEffective July 15, 2024\nNSF Fee\n$25.00 per item\nCashier&#8217;s checks .......... $4.00\nReplacement of ATM or VISA&reg;\n$5.00";
+    const snapshot = key(page(cells));
+    snapshot.fees = [
+      { ...snapshot.fees[0], id: 1, canonicalKey: "nsf", sourceLine: "| NSF Fee | $25.00 per item |" },
+      { ...snapshot.fees[0], id: 2, canonicalKey: "cashiers_check", amount: 4, sourceLine: "Cashier’s checks.......$4.00" },
+      { ...snapshot.fees[0], id: 3, canonicalKey: "card_replacement", amount: 5, sourceLine: "Replacement of ATM or VISA® | $5.00" },
+    ];
+    expect(decide([page(cells)], snapshot).facts.consumer).toEqual({ status: "pass", reasons: ["consumer_reference_lines"] });
+    // Words and prices still match character for character.
+    const changed = cells.replace("$25.00 per item", "$35.00 per item");
+    expect(decide([page(changed)], snapshot).facts.consumer).toEqual({ status: "unknown", reasons: ["key_line_not_in_reference"] });
+    // A line of separators only is no reference line.
+    snapshot.fees[0] = { ...snapshot.fees[0], sourceLine: " | | " };
+    expect(decide([page(cells)], snapshot).facts.consumer).toEqual({ status: "unknown", reasons: ["key_line_scope_missing"] });
+  });
+
   it("does not approve a consumer-only document that lacks the exact confirmed reference line", () => {
     const snapshot = key();
     snapshot.fees[0].sourceLine = "A different institution's overdraft fee $25";
