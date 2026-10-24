@@ -54,7 +54,7 @@ export async function extractPdfDocumentText(bytes: Uint8Array, options: {
         const layouts = pages.map(layoutPageResult);
         const pageTexts = layouts.map((page) => page.text);
         const text = pageTexts.join("\n\n");
-        const readerAgreement = compareReadings(pageTexts, pages.map(streamPageText));
+        const readerAgreement = { ...compareReadings(pageTexts, pages.map(streamPageText)), textHash: textSha256(text) };
         return { text, totalPages, pages: pageTexts, readerAgreement, stackedGeometry: {
           sourceHash: createHash("sha256").update(bytes).digest("hex"),
           textHash: textSha256(text),

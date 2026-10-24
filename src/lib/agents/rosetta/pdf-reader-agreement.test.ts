@@ -23,6 +23,14 @@ describe("Rosetta read.pdf_reader_agreement", () => {
     expect(pairs.get("overdraft fee")).toBeUndefined();
   });
 
+  it("pairs the first row under a heading and reads a price past $999 whole", () => {
+    const pairs = readerPairs("Personal Accounts\nMonthly Fee\n$10.00\nStop Payment\n$30.00\nMinimum Balance $1500.00");
+    expect(pairs.get("monthly fee")?.prices).toEqual([10]);
+    expect(pairs.get("stop payment")?.prices).toEqual([30]);
+    // $1,500 is a balance, not a fee price, so the name has no pair.
+    expect(pairs.get("minimum balance")).toBeUndefined();
+  });
+
   it("does not pair a column of names with the prices drawn after it", () => {
     const pairs = readerPairs("Overdraft fee\nStop payment\nReturned item\n$35.00\n$30.00\n$25.00");
     expect(pairs.get("stop payment")).toBeUndefined();
@@ -44,12 +52,13 @@ describe("Rosetta read.pdf_reader_agreement", () => {
     for (let page = 1; page <= pdf.numPages; page += 1) {
       streams.push(streamPageText((await (await pdf.getPage(page)).getTextContent()).items.filter((item) => "str" in item)));
     }
-    // The stored text is one document; compare it with every page's drawing order at once.
-    const result = compareReadings([stored], [streams.join("\n")]);
+    // Page by page, as extractPdfDocumentText compares them.
+    const result = compareReadings(stored.split("\n\n"), streams);
     const byLabel = Object.fromEntries(result.disagreements.map((entry) => [entry.label, entry]));
     expect(byLabel["Account Reconciliation"]).toMatchObject({ layout: [15], stream: [35] });
     expect(byLabel["Wire Transfer Outgoing"]).toMatchObject({ layout: [35], stream: [30] });
     expect(byLabel["ATM/Debit Card Replacement"]).toMatchObject({ layout: [30], stream: [15] });
+    expect(result.disagreements.every((entry) => entry.page === 2)).toBe(true);
     expect(pages?.length).toBe(streams.length);
   });
 

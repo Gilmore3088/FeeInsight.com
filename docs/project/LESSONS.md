@@ -524,7 +524,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (137 in all).
+counts as of this index (151 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
@@ -532,11 +532,11 @@ counts as of this index (137 in all).
 | magellan | 15 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
 | hoovie | 9 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
 | rosetta | 7 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
-| knox | 39 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
-| darwin | 15 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
-| gutenberg | 36 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
-| hamilton | 8 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
-| deming | 1 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
+| knox | 46 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
+| darwin | 19 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
+| gutenberg | 37 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
+| hamilton | 9 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
+| deming | 2 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
 
 ## Before 2026-10-10
 

@@ -14,17 +14,21 @@ fee on it. Bellco's wire rows (#1918, `pdf_layout` row grouping) are another cas
 
 **Evidence the second reading works:** a plain text tool (pypdf, which ScrapeGraphAI uses for
 PDFs) read the same bytes in the PDF's drawing order and paired all three fees correctly. pdf.js
-gives the same drawing order with the line ends the file marks, so Rosetta needs no new
-dependency.
+gives the same drawing order, with line ends (`hasEOL`) it sets where the text position jumps, so
+Rosetta needs no new dependency. The two readings both rest on pdf.js's text items, so they are
+different readers rather than wholly independent ones.
 
 **Fix:** `read.pdf_reader_agreement` v1 (`src/lib/agents/rosetta/pdf-reader-agreement.ts`).
 `extractPdfDocumentText` builds each page's drawing-order text from the items it already has and
-compares the fee pairs of the two readings: a name paired with a price on its own line, or a name
-line directly above a price line (never inside a run of bare names, which is a label column whose
-prices are drawn later). Amounts of $1,000 and up (balances, deposit minimums) and lines that open
+compares the fee pairs of the two readings, page by page: a name paired with a price on its own
+line, or a name line directly above a price line (not when the name sits in a run of bare names
+and a run of prices follows, which is a label column whose prices are drawn later; a heading over a
+list does not stop its first row). Amounts of $1,000 and up (balances, deposit minimums) and lines that open
 in lower case (a wrapped sentence) are left out. A name both readings pair with no price in common
 is a disagreement. Rosetta records the receipt on the read attempt as `detail.pdf_reader_agreement`
-(`compared`, `disagreementCount`, up to 10 samples with the page and both prices).
+(`compared`, `disagreementCount`, up to 10 samples with the page and both prices, and the hash of
+the text compared). It is recorded only when the PDF layout reader's text is the text this read
+stores: not after OCR, not for a linked PDF, and not when the read keeps an earlier text.
 
 **What it does not do:** it never changes the stored text, a reader version or a fee, and it does
 not decide which reading is right. Holding or re-reading a flagged document is a later step, once
@@ -33,7 +37,7 @@ the receipts give a count of how many documents disagree.
 **Measured locally (2026-10-24):** the stored pre-v5 Oakwood text against its PDF's drawing order
 gives exactly the three moved prices. Today's reading of 9 bank PDFs (Oakwood, Northern Trust,
 First United, SchoolsFirst, two U.S. Bank, TowneBank, Alliant, Beacon) gives 0 disagreements over
-143 compared names. That is not a false-alarm rate for the whole vault; the receipts on live reads
+145 compared names. That is not a false-alarm rate for the whole vault; the receipts on live reads
 will give one.
 
 **Guard:** `src/lib/agents/rosetta/pdf-reader-agreement.test.ts`. Agent lesson:

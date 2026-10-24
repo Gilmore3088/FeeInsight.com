@@ -9,13 +9,16 @@
  * "Account Reconciliation | • $15.00 per wire" and its outgoing wire at $35 an hour (#2219).
  *
  * The second reading is the PDF's own drawing order: pdf.js items in content-stream order, with
- * the line breaks the file itself marks. It uses no positions, so it does not share the layout
- * reader's mistakes (a plain text tool, pypdf, read Oakwood's pairs correctly this way). Drawing
+ * the line ends pdf.js marks (`hasEOL`, set where the text position jumps). It never regroups items
+ * by baseline or column, so it does not share the layout reader's mistakes (a plain text tool,
+ * pypdf, read Oakwood's pairs correctly this way). The two are different readers, not wholly
+ * independent ones: both rest on pdf.js's text items. Drawing
  * order has its own failure, a table drawn column by column puts every name before every price,
  * so this module pairs a name with a price only where the reading leaves no doubt:
  *   - a line that holds a name and then a price ("Stop Payment Fee | $35.00"), or
- *   - a name line directly followed by a price line, where the line before the name is not
- *     itself a bare name (a run of names is a column of labels whose prices come later).
+ *   - a name line directly followed by a price line, unless the name sits in a run of bare names
+ *     and a run of prices follows (a column of labels whose prices are drawn after it). A heading
+ *     over a list does not stop its first row pairing.
  * A name both readings pair, with no price in common, is a disagreement: one of the two
  * readings has moved a price. The check does not decide which; it records the pairs so the
  * page can be looked at, and it never changes the stored text.
@@ -34,7 +37,7 @@ const MAX_FEE_PRICE = 1000;
 /** At most this many disagreements are kept on the receipt; the count is always exact. */
 const MAX_SAMPLES = 10;
 
-const MONEY = /\$\s?(\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?|\.\d{1,2})/;
+const MONEY = /\$\s?((?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?|\.\d{1,2})/;
 const MONEY_ALL = new RegExp(MONEY.source, "g");
 const CELL = /\s\|\s/;
 /** Bullets, dashes and cell separators at the start of a price line. */
@@ -57,6 +60,8 @@ export interface ReaderDisagreement {
 
 export interface PdfReaderAgreement {
   version: number;
+  /** sha256 of the layout text compared, so a reader can tell which stored text the receipt describes. */
+  textHash?: string;
   /** Names both readings paired with a price. */
   compared: number;
   disagreementCount: number;
@@ -131,7 +136,9 @@ export function readerPairs(text: string): Map<string, ReaderPair> {
     if (!bareName(line)) return;
     const next = lines[index + 1];
     const previous = lines[index - 1];
-    if (next && priceLine(next) && !(previous && bareName(previous))) add(line, prices(next.split(CELL)[0]));
+    const afterNext = lines[index + 2];
+    const labelColumn = previous !== undefined && bareName(previous) && afterNext !== undefined && priceLine(afterNext);
+    if (next && priceLine(next) && !labelColumn) add(line, prices(next.split(CELL)[0]));
   });
   return pairs;
 }

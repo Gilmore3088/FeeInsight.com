@@ -870,7 +870,10 @@ async function readCandidate(
         && extracted.stackedGeometry.sourceHash === base.sourceHash) {
         base.stackedGeometry = { ...extracted.stackedGeometry, textHash: textSha256(normalizedText) };
       }
-      if (extracted.readerAgreement) base.readerAgreement = extracted.readerAgreement;
+      // Like the geometry proof, the receipt only describes the text it was computed on.
+      if (extracted.readerAgreement?.textHash === textSha256(extracted.text)) {
+        base.readerAgreement = { ...extracted.readerAgreement, textHash: textSha256(normalizedText) };
+      }
       return finishRead(normalizedText, "pdf_text", tableRowsFromText(pageTexts, "pdf_layout"));
     }
 
@@ -2208,7 +2211,8 @@ async function settleReadInScope(
         persisted_text_id: repairProof && !keepEarlierText ? repairProof.artifactId : undefined,
         persisted_text_hash: repairProof && !keepEarlierText ? result.textHash : undefined,
         pdf_stacked_acceptance: repairProof && !keepEarlierText ? (repairProof.lossless ? "lossless_geometry" : "ordinary_survival") : undefined,
-        pdf_reader_agreement: result.reader === PRIMARY_READERS.pdf ? result.readerAgreement : undefined,
+        // Only for text this read stores: a kept earlier text was not the one compared.
+        pdf_reader_agreement: result.reader === PRIMARY_READERS.pdf && !keepEarlierText ? result.readerAgreement : undefined,
         reread: result.reread,
         escalation: result.escalation ?? null,
         page_check: result.pageCheck,
