@@ -1,10 +1,13 @@
 import { createHash } from "node:crypto";
 import { layoutPageResult, type PdfTextItem } from "./pdf-layout";
+import { compareReadings, streamPageText, type PdfReaderAgreement } from "./pdf-reader-agreement";
 import { textSha256, type StackedGeometryReceipt } from "./pdf-repair-survival";
 
 export interface PdfTextExtraction {
   text: string; totalPages: number; pages?: string[];
   stackedGeometry?: StackedGeometryReceipt;
+  /** The layout reading's fee pairs against the PDF's drawing order (#2219). */
+  readerAgreement?: PdfReaderAgreement;
 }
 
 /** Rosetta's existing complete-document layout reader, also used for reference checks. */
@@ -51,7 +54,8 @@ export async function extractPdfDocumentText(bytes: Uint8Array, options: {
         const layouts = pages.map(layoutPageResult);
         const pageTexts = layouts.map((page) => page.text);
         const text = pageTexts.join("\n\n");
-        return { text, totalPages, pages: pageTexts, stackedGeometry: {
+        const readerAgreement = { ...compareReadings(pageTexts, pages.map(streamPageText)), textHash: textSha256(text) };
+        return { text, totalPages, pages: pageTexts, readerAgreement, stackedGeometry: {
           sourceHash: createHash("sha256").update(bytes).digest("hex"),
           textHash: textSha256(text),
           stackedPages: layouts.flatMap((page, index) => page.stackedColumns ? [index + 1] : []),

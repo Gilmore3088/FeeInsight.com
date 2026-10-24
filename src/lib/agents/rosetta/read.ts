@@ -74,6 +74,7 @@ import { atomicTextWrite, captureNormalizedWitness, normalizedWitnessSchemaReady
 import { PDF_LAYOUT_VERSION } from "@/lib/agents/rosetta/pdf-layout";
 import { extractPdfDocumentText as extractPdfText, type PdfTextExtraction } from "./pdf-document-text";
 import { losslessStackedRecovery, textSha256, type StackedGeometryReceipt } from "./pdf-repair-survival";
+import type { PdfReaderAgreement } from "./pdf-reader-agreement";
 import { PDF_PROSE_REREAD_VERSION, PDF_STACKED_REPAIR_VERSION } from "./reader-versions";
 import { pdfStackedRepairDueSql, PDF_STACKED_REPAIR_MAX_PER_RUN, PDF_STACKED_REPAIR_STRATEGY } from "./pdf-stacked-repair";
 import {
@@ -199,6 +200,8 @@ export interface ReadResult {
   escalation?: { to: string; used: boolean } | null;
   /** Intrinsic geometry proof, bound to the actual vault bytes and normalized output. */
   stackedGeometry?: StackedGeometryReceipt;
+  /** The stored PDF reading's fee pairs against the PDF's drawing order; recorded, never acted on (#2219). */
+  readerAgreement?: PdfReaderAgreement;
   witnessRetention?: WitnessRetention;
   repairSettlement?: { accepted: boolean; reason: string; artifactId?: number; textHash?: string };
   durationMs: number;
@@ -866,6 +869,10 @@ async function readCandidate(
       if (extracted.stackedGeometry?.textHash === textSha256(extracted.text)
         && extracted.stackedGeometry.sourceHash === base.sourceHash) {
         base.stackedGeometry = { ...extracted.stackedGeometry, textHash: textSha256(normalizedText) };
+      }
+      // Like the geometry proof, the receipt only describes the text it was computed on.
+      if (extracted.readerAgreement?.textHash === textSha256(extracted.text)) {
+        base.readerAgreement = { ...extracted.readerAgreement, textHash: textSha256(normalizedText) };
       }
       return finishRead(normalizedText, "pdf_text", tableRowsFromText(pageTexts, "pdf_layout"));
     }
@@ -2204,6 +2211,8 @@ async function settleReadInScope(
         persisted_text_id: repairProof && !keepEarlierText ? repairProof.artifactId : undefined,
         persisted_text_hash: repairProof && !keepEarlierText ? result.textHash : undefined,
         pdf_stacked_acceptance: repairProof && !keepEarlierText ? (repairProof.lossless ? "lossless_geometry" : "ordinary_survival") : undefined,
+        // Only for text this read stores: a kept earlier text was not the one compared.
+        pdf_reader_agreement: result.reader === PRIMARY_READERS.pdf && !keepEarlierText ? result.readerAgreement : undefined,
         reread: result.reread,
         escalation: result.escalation ?? null,
         page_check: result.pageCheck,
