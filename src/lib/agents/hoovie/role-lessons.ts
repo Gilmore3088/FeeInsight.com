@@ -95,4 +95,14 @@ export const HOOVIE_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-18",
   },
+  {
+    id: "issue-2233",
+    agent: "hoovie",
+    stage: "registry load",
+    lesson: "A manual refresh of a public source queues that source's registry run, the same loader the schedule runs, with its partition receipt and run-ledger step. A page or button never fetches and writes a source's rows itself.",
+    why: "The Regulatory Wire's Refresh fetched the regulator RSS feeds and inserted reg_articles directly, beside the scheduled reg-news loader, so manual loads left no run, step or partition receipt and skipped the pause controls.",
+    evidence: { issues: [2233], prs: [], files: ["src/app/pro/(hamilton)/news/actions.ts", "src/lib/agents/magellan/registry/reg-news.ts"] },
+    appliesTo: "all",
+    since: "2026-10-24",
+  },
 ];
