@@ -341,6 +341,8 @@ async function loadDue(db: Db, limit: number): Promise<Array<{ case_id: number; 
       seen.add(id);
       found.push(row);
     }
+    // A cursor that did not move would list the same window forever; stop instead.
+    if (page.last.ts === after.ts && page.last.id === after.id) break;
     after = { ts: page.last.ts, id: page.last.id };
     if (page.scanned < WINDOW_ROWS) break;
   }

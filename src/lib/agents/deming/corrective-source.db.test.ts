@@ -586,7 +586,9 @@ describe.skipIf(!connection)("corrective replay member paging in actual PostgreS
 
     const ordered: string[] = [];
     let after: CorrectiveMemberKey = { ts: null, id: "0" };
-    for (;;) {
+    // 130 members fit in 3 windows of 50; a cursor that stalls fails here instead of timing out.
+    for (let pages = 0; ; pages++) {
+      expect(pages).toBeLessThan(10);
       const window = await correctiveMemberWindow(raw as never, after);
       if (window.length === 0) break;
       ordered.push(...ours(window).map((key) => key.id));
@@ -598,7 +600,8 @@ describe.skipIf(!connection)("corrective replay member paging in actual PostgreS
     const seen = new Set<string>();
     after = { ts: null, id: "0" };
     let first = true;
-    for (;;) {
+    for (let pages = 0; ; pages++) {
+      expect(pages).toBeLessThan(10);
       const window = await correctiveMemberWindow(raw as never, after);
       if (window.length === 0) break;
       for (const key of ours(window)) seen.add(key.id);
