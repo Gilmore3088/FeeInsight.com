@@ -66,4 +66,14 @@ export const ROSETTA_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-20",
   },
+  {
+    id: "pdf-second-reading",
+    agent: "rosetta",
+    stage: "read",
+    lesson: "Never trust one reading of a PDF's layout on its own: read it a second, independent way (the file's own drawing order) and record every fee name the two readings pair with different prices, so a page shape no layout rule knows yet is caught before its fees go live.",
+    why: "Oakwood's two stacked fee lists were read across the page, so three fees took another column's price and the outgoing wire went live at $35 instead of $30 (#2219). The layout reader was the only reading, so nothing disagreed with it; the PDF's drawing order paired all three correctly.",
+    evidence: { issues: [2219, 1918], prs: [], files: ["docs/project/findings/2026-10-24-pdf-second-reader.md", "src/lib/agents/rosetta/pdf-reader-agreement.ts"] },
+    appliesTo: "all",
+    since: "2026-10-24",
+  },
 ];

@@ -43,6 +43,8 @@ export interface PdfTextItem {
   transform: number[];
   width: number;
   height: number;
+  /** pdf.js marks the last item of a line the file itself ends (`pdf-reader-agreement.ts`). */
+  hasEOL?: boolean;
 }
 
 /** A gap wider than this many font heights is a column break, not a word space. */
