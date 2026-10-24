@@ -5,6 +5,7 @@ import { passesDarwinChecks } from "@/lib/agents/knox/layout";
 import { feedbackSchemaReady, recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { secondLook } from "@/lib/agents/hamilton/second-look";
 import { RULES_RECHECK_CHECK } from "@/lib/agents/hamilton/rules-recheck";
+import { recordStepWarning } from "@/lib/agents/hamilton/step-warning";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
 import {
@@ -399,9 +400,10 @@ export interface HandRefile {
   /**
    * The bad name the fee still carries. When set, the fee is also fixed if another check has
    * already moved it under `to` with that name (96164: the guard's own hand re-file moves it to
-   * atm_non_network without renaming it). A rename in place (`from` == `to`) with an `oldName`
-   * runs only while the live name is still exactly that, so it runs once and never replaces a
-   * better name a later read or retidy gave the fee (#1459 review).
+   * atm_non_network without renaming it). An entry with an `oldName`, a rename in place
+   * (`from` == `to`) or a category re-file, runs only while the live name is still exactly that
+   * (or already the listed `name`), so it runs once and never replaces a better name a later read
+   * or retidy gave the fee (#1459 review, #1749). A changed name is reported by `handRefileSkips`.
    */
   oldName?: string;
   why: string;
@@ -813,10 +815,11 @@ export function planHandRefiles(
     if (!refile || amount == null || Math.abs(amount - refile.amount) >= 0.005) continue;
     const movedUnfixed = refile.oldName != null && row.canonical_fee_key === refile.to && (row.fee_name ?? "") === refile.oldName;
     if (row.canonical_fee_key !== refile.from && !movedUnfixed) continue;
-    // A rename in place (from == to) is done once the live name reads as listed, and, when the
-    // entry names the old name, never touches a fee whose name has changed since.
+    // A rename in place (from == to) is done once the live name reads as listed.
     if (refile.from === refile.to && (row.fee_name ?? "").trim() === refile.name) continue;
-    if (refile.from === refile.to && refile.oldName != null && (row.fee_name ?? "") !== refile.oldName) continue;
+    // An entry that names the old name never touches a fee whose name has changed since, so a
+    // newer, better name is never overwritten by the listed one (#1749).
+    if (nameChangedSinceListed(row, refile)) continue;
     if (!passesDarwinChecks(refile.to, refile.name, amount)) continue;
     moves.push({
       refile,
@@ -828,6 +831,32 @@ export function planHandRefiles(
     });
   }
   return moves;
+}
+
+/** The live name is neither the listed old name nor the listed new one. */
+function nameChangedSinceListed(row: HandRow, refile: HandRefile): boolean {
+  const name = row.fee_name ?? "";
+  return refile.oldName != null && name !== refile.oldName && name.trim() !== refile.name;
+}
+
+/**
+ * Listed fees left alone because their name changed since they were listed: still live, at the
+ * listed price and under the category the entry moves them from. Pure; each skip is reported in
+ * the step's detail and as a `step.warning`, the way hand takedowns report "changed since listed".
+ */
+export function handRefileSkips(
+  rows: HandRow[],
+  refiles: readonly HandRefile[] = HAND_REFILES,
+): Array<{ feePublishedId: number; reason: string; liveName: string }> {
+  const skipped: Array<{ feePublishedId: number; reason: string; liveName: string }> = [];
+  for (const row of rows) {
+    const refile = refiles.find((entry) => entry.feePublishedId === Number(row.fee_published_id));
+    const amount = amountOf(row.amount);
+    if (!refile || amount == null || Math.abs(amount - refile.amount) >= 0.005) continue;
+    if (row.canonical_fee_key !== refile.from || !nameChangedSinceListed(row, refile)) continue;
+    skipped.push({ feePublishedId: refile.feePublishedId, reason: "changed since listed", liveName: row.fee_name ?? "" });
+  }
+  return skipped;
 }
 
 /**
@@ -864,7 +893,7 @@ async function selectHandRows(db: SqlTag, institutionId?: number): Promise<HandR
   `;
 }
 
-async function applyHandMoves(db: SqlTag, moves: HandMove[], runId: number): Promise<number> {
+async function applyHandMoves(db: SqlTag, moves: HandMove[], runId: number, stepId: number | null): Promise<number> {
   if (moves.length === 0) return 0;
   const updated = await db<{ fee_published_id: number | string }[]>`
     UPDATE published_fee_records fp
@@ -891,9 +920,9 @@ async function applyHandMoves(db: SqlTag, moves: HandMove[], runId: number): Pro
   if (await feedbackSchemaReady(db)) await recordFeedback(db, applied.map((move) => handFeedback(move, runId)));
   // One event per run that names every row moved and its after-state (#1196).
   await db`
-    INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
+    INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
     VALUES (
-      ${runId}, ${`${TAXONOMY_FOLD_CHECK}.hand_refile`}, 'completed',
+      ${runId}, ${stepId}, ${`${TAXONOMY_FOLD_CHECK}.hand_refile`}, 'completed',
       ${`Re-filed or renamed ${applied.length} live fee(s) by hand (HAND_REFILES)`},
       ${JSON.stringify({
         refiled: applied.map((move) => ({
@@ -971,6 +1000,8 @@ export interface TaxonomyFoldResult {
   feedbackRows: number;
   /** Live fees re-filed by hand (`HAND_REFILES`); a dry run counts those it would move. */
   handRefiled: number;
+  /** Listed hand re-files left alone because the live name changed since listing (`handRefileSkips`). */
+  handSkipped: Array<{ feePublishedId: number; reason: string; liveName: string }>;
   /** Hand-fixed fees whose rules re-check pending takedown was cleared (`handFixedPassing`). */
   handFlagsCleared: number;
   dryRun: boolean;
@@ -987,7 +1018,7 @@ export interface TaxonomyFoldResult {
 /** Runs the fold. A dry run reports what it would move and take down and writes nothing. */
 export async function foldRetiredCategories(
   db: SqlTag,
-  options: { runId: number; dryRun: boolean; institutionId?: number; researchSplitFullCount?: boolean },
+  options: { runId: number; stepId?: number | null; dryRun: boolean; institutionId?: number; researchSplitFullCount?: boolean },
 ): Promise<TaxonomyFoldResult> {
   const base: TaxonomyFoldResult = {
     scanned: 0,
@@ -1001,6 +1032,7 @@ export async function foldRetiredCategories(
     unplacedVerified: 0,
     feedbackRows: 0,
     handRefiled: 0,
+    handSkipped: [],
     handFlagsCleared: 0,
     dryRun: options.dryRun,
     rulesVersion: FOLD_RULES_VERSION,
@@ -1011,6 +1043,7 @@ export async function foldRetiredCategories(
   try {
     const handRows = await inSavepoint(db, (scope) => selectHandRows(scope, options.institutionId));
     handMoves = planHandRefiles(handRows);
+    base.handSkipped = handRefileSkips(handRows);
   } catch (error) {
     console.error("taxonomy fold hand re-file read failed:", error);
   }
@@ -1034,8 +1067,18 @@ export async function foldRetiredCategories(
   }
   if (options.dryRun) base.handRefiled = handMoves.length;
   else if (handMoves.length > 0) {
-    base.handRefiled = await inSavepoint(db, (scope) => applyHandMoves(scope, handMoves, options.runId));
+    base.handRefiled = await inSavepoint(db, (scope) => applyHandMoves(scope, handMoves, options.runId, options.stepId ?? null));
     if (base.handRefiled > 0) invalidatePublicReadCache();
+  }
+  if (!options.dryRun && base.handSkipped.length > 0) {
+    await recordStepWarning(db, {
+      runId: options.runId,
+      stepId: options.stepId,
+      check: TAXONOMY_FOLD_CHECK,
+      what: "Hand re-files",
+      outcome: `left ${base.handSkipped.length} listed fee(s) alone`,
+      error: `changed since listed: ${base.handSkipped.map((skip) => `${skip.feePublishedId} now "${skip.liveName}"`).join("; ")}`,
+    });
   }
   try {
     const handRows = await inSavepoint(db, (scope) => selectHandRows(scope, options.institutionId));
