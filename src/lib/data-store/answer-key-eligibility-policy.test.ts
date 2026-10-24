@@ -184,6 +184,9 @@ describe("recordable reference-document decisions (#1862)", () => {
     // Words and prices still match character for character.
     const changed = cells.replace("$25.00 per item", "$35.00 per item");
     expect(decide([page(changed)], snapshot).facts.consumer).toEqual({ status: "unknown", reasons: ["key_line_not_in_reference"] });
+    // Digits split across cells never join into the key's price.
+    const split = cells.replace("$25.00 per item", "$2\n5.00 per item");
+    expect(decide([page(split)], snapshot).facts.consumer).toEqual({ status: "unknown", reasons: ["key_line_not_in_reference"] });
     // A line of separators only is no reference line.
     snapshot.fees[0] = { ...snapshot.fees[0], sourceLine: " | | " };
     expect(decide([page(cells)], snapshot).facts.consumer).toEqual({ status: "unknown", reasons: ["key_line_scope_missing"] });

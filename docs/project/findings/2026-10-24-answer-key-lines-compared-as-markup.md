@@ -13,7 +13,8 @@ Same words and prices, so the key was refused only because of the formatting.
 **Fix:** the eligibility comparison (`compact` in `src/lib/data-store/answer-key-eligibility.ts`)
 decodes HTML entities, drops cell separators, dot leaders, bullets and all whitespace, and unifies
 curly quotes and dashes on both sides. Every remaining character must still match in order: a
-different price or word still fails, and a line of separators only counts as missing.
+different price or word still fails, digits split by a break or separator never join into another
+number ("$2" then "5 or more" is not "$25"), and a line of separators only counts as missing.
 **Measured:** against each key's stored source text (a proxy; live pages cannot be fetched from the
 build container), matching lines rose from 1,079 to 1,334 of 1,449, and keys with every line present
 from 24 to 27 of 41. The real effect is the eligible count on the next score run.

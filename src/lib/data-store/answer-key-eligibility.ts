@@ -151,7 +151,8 @@ const NAMED_ENTITIES: Record<string, string> = {
  * Key lines and page text are compared as fee content only (#2466): HTML entities decoded, table
  * cell separators, dot leaders, bullets and all whitespace dropped, curly quotes and dashes unified.
  * A key line copied from a stored table ("NSF Fee | $25.00 per item") is the same words and prices
- * as the bank's own cells; nothing is fuzzy and every character of the content must still match.
+ * as the bank's own cells; nothing is fuzzy, every character of the content must still match, and
+ * digits split by a break or separator never join into another number.
  */
 const codePoint = (value: number, entity: string): string => (value > 0 && value <= 0x10ffff ? String.fromCodePoint(value) : entity);
 const compact = (text: string): string => text
@@ -161,6 +162,8 @@ const compact = (text: string): string => text
   .replace(/[‘’`´]/g, "'").replace(/[“”]/g, '"').replace(/[‐-―−]/g, "-")
   .replace(/\.(?:\s*\.){2,}|…/g, " ")
   .replace(/[|│┃•·▪◦]/g, " ")
+  // A break between two digits stays a break, so "$2" then "5 or more" never reads as "$25".
+  .replace(/(\d)\s+(?=\d)/g, "$1\u0000")
   .replace(/\s+/g, "");
 const CONSUMER = /\b(?:consumer|personal|individual|retail)\b/i;
 export function audienceHeading(line: string, audience: "consumer" | "business"): boolean {
