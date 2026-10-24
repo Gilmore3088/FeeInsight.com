@@ -78,6 +78,15 @@ jobs:
       - run: npm ci
       - name: Guard retired execution surfaces
         run: npm run guard:legacy
+      # guard:legacy sees only this branch; this asks GitHub whether an earlier open PR already adds
+      # the same migration number (#1048). It reads public PR data and passes with a note if GitHub
+      # does not answer.
+      - name: Migration numbers no earlier open PR claims
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: bash scripts/ci-guards.sh migration-claim-kill
       - name: Typecheck
         run: npx tsc --noEmit
       - name: Lint
