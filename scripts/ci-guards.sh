@@ -700,10 +700,12 @@ migration_claim_kill() {
   # number and both pass; 068 and 070-074 collided that way across seven PRs in Oct 2026, and the
   # second to merge stops Supabase's deploy (Foundation tracker #1048). On a pull request run this
   # asks GitHub which migration numbers the open PRs opened before this one add, and fails when
-  # this PR adds one of them. The earlier PR keeps the number; this one renumbers above both.
+  # this PR adds one of them. The earlier PR keeps the number; this one renumbers above both. An
+  # earlier PR that takes a number after a later one went green is caught by migration-version-kill
+  # once either merges, since the other must merge main before it merges.
   # Needs PR_NUMBER, GITHUB_REPOSITORY and a gh with GH_TOKEN; without them, or when GitHub does
   # not answer, it says so and passes, since main's own copy is still checked by migration-version-kill.
-  local pr="${PR_NUMBER:-}" repo="${GITHUB_REPOSITORY:-}" mine other n file number clashes="" checked=0
+  local pr="${PR_NUMBER:-}" repo="${GITHUB_REPOSITORY:-}" mine other theirs n file number clashes="" unread="" checked=0
   if [[ -z "$pr" || -z "$repo" ]] || ! command -v gh >/dev/null 2>&1; then
     echo "migration-claim-kill: OK (not a pull request run with gh; skipped)"
     return 0
@@ -726,6 +728,10 @@ migration_claim_kill() {
   fi
   for n in $other; do
     [[ "$n" =~ ^[0-9]+$ && "$n" -lt "$pr" ]] || continue
+    if ! theirs=$(added_migrations "$n"); then
+      unread+=" #${n}"
+      continue
+    fi
     checked=$((checked + 1))
     while read -r file; do
       [[ -n "$file" ]] || continue
@@ -733,14 +739,14 @@ migration_claim_kill() {
       if printf '%s\n' "$mine" | sed 's|.*/||' | cut -d_ -f1 | grep -qxF "$number"; then
         clashes+="${number}: also added by open PR #${n} (${file})"$'\n'
       fi
-    done < <(added_migrations "$n" || true)
+    done <<< "$theirs"
   done
   if [[ -n "$clashes" ]]; then
-    echo "migration-claim-kill: an earlier open PR already adds this migration number; renumber this PR's file one above the highest number on main and in open PRs:" >&2
+    echo "migration-claim-kill: an earlier open PR already adds this migration number; renumber this PR's file above every number on main and in open PRs:" >&2
     printf '%s' "$clashes" >&2
     exit 1
   fi
-  echo "migration-claim-kill: OK (no earlier open PR adds this PR's migration numbers; ${checked} checked)"
+  echo "migration-claim-kill: OK (no earlier open PR adds this PR's migration numbers; ${checked} checked${unread:+; could not read${unread}})"
 }
 
 migration_version_kill() {

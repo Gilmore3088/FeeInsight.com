@@ -492,7 +492,7 @@ describe("migration-lock-kill", () => {
 /** migration-claim-kill (#1048): two open PRs must not add the same migration number. */
 describe("migration-claim-kill", () => {
   // A stand-in gh on PATH: the open-PR list and each PR's added migrations come from the case.
-  function claimRepo(pr: string, open: string[] | null, added: Record<string, string[]>) {
+  function claimRepo(pr: string, open: string[] | null, added: Record<string, string[]>, failing: string[] = []) {
     repo = mkdtempSync(join(tmpdir(), "claim-guard-"));
     const answers = Object.entries(added).map(([n, files]) => `*"pulls/${n}/files"*) printf '%s\\n' ${files.map((f) => `'${f}'`).join(" ")} ;;`);
     write(
@@ -501,6 +501,7 @@ describe("migration-claim-kill", () => {
         "#!/usr/bin/env bash",
         'case "$*" in',
         open === null ? '  *"pulls?state=open"*) exit 1 ;;' : `  *"pulls?state=open"*) printf '%s\\n' ${open.join(" ")} ;;`,
+        ...failing.map((n) => `  *"pulls/${n}/files"*) exit 1 ;;`),
         ...answers.map((line) => `  ${line}`),
         '  *"pulls/"*"/files"*) ;;',
         "  *) exit 1 ;;",
@@ -550,5 +551,13 @@ describe("migration-claim-kill", () => {
     const failing = claimRepo("20", null, { "20": ["supabase/migrations/20270110000080_mine.sql"] });
     expect(failing.status, failing.output).toBe(0);
     expect(failing.output).toContain("could not list open PRs");
+    rmSync(repo, { recursive: true, force: true });
+    // PR 11's files call fails (the stand-in has no answer for it): counted as unread, not checked.
+    const partial = claimRepo("20", ["11", "12", "20"], {
+      "12": ["supabase/migrations/20270110000079_other.sql"],
+      "20": ["supabase/migrations/20270110000080_mine.sql"],
+    }, ["11"]);
+    expect(partial.status, partial.output).toBe(0);
+    expect(partial.output).toContain("1 checked; could not read #11");
   });
 });
