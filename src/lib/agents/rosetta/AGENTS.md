@@ -101,6 +101,23 @@ Rosetta owns source text normalization.
   on older schemas, then uses the owner's exact query with LIMIT 1/EXISTS; Bayes
   and daily health (`stackedPdfRepairsDue`) use its full count. Reading a better text
   does not itself retire previously verified or published wrong fees.
+- Layout recheck (#2219, `layout-recheck.ts`, `LAYOUT_RECHECK_VERSION` v1) is a record-only
+  measurement in every real read step, after the ordinary reads. It takes up to
+  `LAYOUT_RECHECK_PER_RUN` (3) completed `read.pdf_layout` texts last read below
+  `PDF_LAYOUT_VERSION` (highest `detail.pdf_layout` on the text's `read.pdf_layout` attempts for
+  its institution and source hash, 1 when absent) that are the current copy (not superseded or a
+  duplicate, content-addressed vault key matching the source hash) and carry live published fees,
+  most live fees first, scoped like the other selections. It reads the exact vault bytes through
+  the shared byte loader (never a download; mismatched or missing bytes record an `unavailable`
+  receipt and nothing else), reads them with the current PDF reader and `normalizeWhitespace`, and
+  runs Darwin's live re-check of the shared source check (`statedInOwnSource`) on the stored and
+  the new text for every live fee: `supported_both`, `lost`, `gained` or `unsupported_both`. One
+  `rosetta.layout_recheck` event per document holds the counts, `text_changed`, the
+  reader-agreement disagreement count and up to 20 fee examples; a receipt for that text hash at
+  the current layout and protocol takes the text out of the sample. It writes no stored text,
+  attempt, playbook or fee row, so it never makes a text due for a re-read. Without a configured
+  vault it does not run; a failure is on the step result (`layoutRecheckError`) and never stops
+  the step.
 - No bank is lost to its document's format. Readers escalate within the same document,
   free first, and every try is a `pipeline_attempts` row (stage `read`, own strategy,
   version, outcome, cost):
@@ -365,6 +382,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `PDF_PROSE_REREAD_VERSION` | — | v4 | `rosetta/reader-versions.ts` |
 | `PDF_STACKED_REPAIR_VERSION` | `read.pdf_layout` scoped check | v1 | `rosetta/reader-versions.ts` |
 | `PDF_READER_AGREEMENT_VERSION` | `read.pdf_reader_agreement` record-only receipt | v1 | `rosetta/reader-versions.ts` |
+| `LAYOUT_RECHECK_VERSION` | `rosetta.layout_recheck` record-only event | v1 | `rosetta/reader-versions.ts` |
 | `ROSETTA_READ_VERSION` | — | v3 | `rosetta/reader-versions.ts` |
 | `ROSETTA_DOCUMENT_ACCESS_VERSION` | `read.document_access` | v1 | `rosetta/read.ts` |
 | `REOPEN_VERSION` | — | v1 | `rosetta/read.ts` |
