@@ -401,7 +401,7 @@ export const ACTIONS: ActionEntry[] = [
   notSent("monitor/actions.ts", "removeFromWatchlist", "writes; checks canAccessPremium"),
   notSent("news/watch-actions.ts", "setWatchedState", "writes; checks canAccessPremium"),
   notSent("news/watch-actions.ts", "watchStateFormAction", "writes; checks canAccessPremium"),
-  notSent("news/actions.ts", "refreshFeeds", "fetches outside news feeds; admin or analyst only"),
+  notSent("news/actions.ts", "refreshFeeds", "queues a registry run; admin or analyst only"),
   notSent("view-as-actions.ts", "setViewAsCustomer", "sets a cookie; admin or analyst only"),
 ];
 

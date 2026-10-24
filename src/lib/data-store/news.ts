@@ -1,6 +1,6 @@
 import { likePattern } from "@/lib/regulatory/wire";
 import { feeTypeSql, type FeeType } from "@/lib/regulatory/wire-fee-types";
-import { sql, withTransaction } from "./connection";
+import { sql } from "./connection";
 
 // ---------------------------------------------------------------------------
 // Schema
@@ -213,28 +213,4 @@ export async function getTopicCounts(since?: string, q?: string, fee?: FeeType):
 /** Federal releases per agency in the window (and matching the search, when given). */
 export async function getSourceCounts(since?: string, q?: string, fee?: FeeType): Promise<Record<string, number>> {
   return countBy("source", since, q, fee);
-}
-
-// ---------------------------------------------------------------------------
-// Write: store articles (dedup on guid)
-// ---------------------------------------------------------------------------
-
-export async function storeArticles(
-  articles: { guid: string; source: string; title: string; link: string; published_at: string | null }[]
-): Promise<number> {
-  if (articles.length === 0) return 0;
-
-  let inserted = 0;
-  await withTransaction(async (tx) => {
-    for (const a of articles) {
-      const topic = classify(a.title);
-      const result = await tx`
-        INSERT INTO reg_articles (guid, source, title, link, topic, published_at)
-        VALUES (${a.guid}, ${a.source}, ${a.title}, ${a.link}, ${topic}, ${a.published_at})
-        ON CONFLICT (guid) DO NOTHING
-      `;
-      if (result.count > 0) inserted++;
-    }
-  });
-  return inserted;
 }
