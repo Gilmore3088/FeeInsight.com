@@ -400,9 +400,10 @@ export interface HandRefile {
   /**
    * The bad name the fee still carries. When set, the fee is also fixed if another check has
    * already moved it under `to` with that name (96164: the guard's own hand re-file moves it to
-   * atm_non_network without renaming it). A rename in place (`from` == `to`) with an `oldName`
-   * runs only while the live name is still exactly that, so it runs once and never replaces a
-   * better name a later read or retidy gave the fee (#1459 review).
+   * atm_non_network without renaming it). An entry with an `oldName`, a rename in place
+   * (`from` == `to`) or a category re-file, runs only while the live name is still exactly that
+   * (or already the listed `name`), so it runs once and never replaces a better name a later read
+   * or retidy gave the fee (#1459 review, #1749). A changed name is reported by `handRefileSkips`.
    */
   oldName?: string;
   why: string;

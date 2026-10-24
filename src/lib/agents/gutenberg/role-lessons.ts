@@ -380,7 +380,7 @@ export const GUTENBERG_LESSONS: AgentLesson[] = [
     id: "issue-1749",
     agent: "gutenberg",
     stage: "hand fixes",
-    lesson: "A listed hand fix applies only while the live row still reads exactly as it was listed (name, category and price). When anything has changed since, leave the row alone and write a step.warning naming it, linked to the step it ran in, so the ledger shows the skip.",
+    lesson: "A listed hand fix that names the fee's old name applies only while the live name is still that old name, whatever else the fix changes. When the name has changed since, leave the row alone and write a step.warning naming it, linked to the step it ran in, so the ledger shows the skip.",
     why: "Category re-files checked the listed old name only for renames in place, so a re-file would overwrite a newer, better name with the listed one. Skipped renames left no record, and the re-file and amount-correction events carried no step id.",
     evidence: { issues: [1749], prs: [], files: ["src/lib/agents/hamilton/taxonomy-fold.ts", "src/lib/agents/hamilton/hand-amount-corrections.ts"] },
     appliesTo: ["publish-sweeps"],
