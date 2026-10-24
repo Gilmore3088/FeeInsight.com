@@ -27,4 +27,14 @@ export const DEMING_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-20",
   },
+  {
+    id: "issue-2466-line-content-match",
+    agent: "deming",
+    stage: "answer-key eligibility",
+    lesson: "Compare a reference line to a document as fee content, the words and prices, never as the markup either side was stored in. Decode HTML entities and drop table cell separators, dot leaders, bullets and whitespace on both sides before the exact match, and treat a line that is only separators as missing.",
+    why: "After the first eligibility fix, 44 of 62 keys still failed because key lines copied from stored table text carried '|' separators, pages wrote apostrophes and registered marks as HTML entities, and dot leaders differed, so the same words and prices never matched.",
+    evidence: { issues: [2466], prs: [2552], files: ["docs/project/findings/2026-10-24-answer-key-lines-compared-as-markup.md", "src/lib/data-store/answer-key-eligibility.ts"] },
+    appliesTo: "all",
+    since: "2026-10-24",
+  },
 ];
