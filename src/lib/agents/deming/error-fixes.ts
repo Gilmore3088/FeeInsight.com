@@ -157,7 +157,10 @@ async function namedRows(db: SqlTag, entry: ErrorFixEntry, limit: number, waitin
          AND again.strategy = ${KNOX_RULES_STRATEGY.strategy}::text
          AND again.strategy_version >= ${entry.knox_version}::int
          AND again.created_at > f.created_at
-         AND (f.source_document_id IS NULL OR again.source_document_id = f.source_document_id)
+         -- The error's own document, or any once a newer copy has replaced it (the re-run reads that).
+         AND (f.source_document_id IS NULL OR again.source_document_id = f.source_document_id
+              OR EXISTS (SELECT 1 FROM source_documents old
+                          WHERE old.id = f.source_document_id AND old.superseded_by_id IS NOT NULL))
     )`;
   const stillWrong = db`
     EXISTS (
@@ -171,9 +174,9 @@ async function namedRows(db: SqlTag, entry: ErrorFixEntry, limit: number, waitin
       FROM pipeline_feedback f
      WHERE f.signal = 'wrong'
        AND f.about_stage = ${entry.stage}::text
-       -- Through the merge day (UTC): an error recorded after the deploy is judged only after an
-       -- extract at the fixed version that follows it, so naming it is safe.
-       AND f.created_at < (${entry.merged_on}::date + 1)::timestamp AT TIME ZONE 'UTC'
+       -- Before the merge day (UTC): an error filed after the fixed rules already read its text could
+       -- never see a later read of that unchanged text, and its bank would be asked for daily.
+       AND f.created_at < ${entry.merged_on}::date::timestamp AT TIME ZONE 'UTC'
        AND f.fee_published_id IS NOT NULL
        AND f.institution_id IS NOT NULL
        AND f.check_name = ANY(${[...ERROR_FIX_CHECKS]}::text[])
