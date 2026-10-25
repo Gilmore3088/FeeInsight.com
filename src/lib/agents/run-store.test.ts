@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { refreshPageClassifier } from "@/lib/agents/magellan/page-classifier";
+import { runStatedDatePass } from "@/lib/agents/magellan/stated-date";
 
 type TxMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -364,6 +365,7 @@ describe("agentic run store", () => {
       retryAfter: 4,
       failures: 0,
       attemptedUrls: 21,
+      statedDateRefusals: [],
       limit: 10,
       dryRun: false,
       results: [],
@@ -582,6 +584,18 @@ describe("agentic run store", () => {
     expect(combinedSql).toContain("step.finished");
     expect(combinedSql).toContain("run.completed");
     expect(combinedSql).not.toContain("ops_jobs");
+  });
+
+  it("records the stated-date pass's error in the discover step's detail instead of null (#2615 review)", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    vi.mocked(runStatedDatePass).mockRejectedValueOnce(new Error("statement timeout"));
+    const discoverRunRow = { ...runRow, progress_total: 1 };
+    installSqlMocks({ finalRun: discoverRunRow, finalSteps: queuedStepRows.slice(0, 1) });
+    installTxMocks(queuedStepRows.slice(0, 1), discoverRunRow);
+    await expect(executeAgentRun(101)).resolves.toMatchObject({ status: "completed", executedSteps: 1 });
+    const finished = txMock.mock.calls.filter((call) => templateText(call[0]).includes("INSERT INTO agent_run_events") && templateText(call[0]).includes("'step.finished'"));
+    const detail = JSON.parse(String(finished[0].at(-1)));
+    expect(detail).toMatchObject({ stated_dates: { error: "statement timeout" }, stated_date_refusals: 0, stated_date_refusal_samples: [] });
   });
 
   it("runs Magellan fetch through the agentic worker instead of measuring only", async () => {

@@ -509,12 +509,14 @@ async function executeAgenticStep(
       // Each document's own stated date, kept apart from when it was read; a schedule dated more
       // than two years ago goes to this step's freshness search (#1878, magellan/stated-date.ts).
       // Waits for its columns (schema_ready false until the migration runs). Never fails the step.
-      let statedDates: StatedDatePassResult | null = null;
+      // A pass that throws leaves its error in the step detail, so a broken pass is visible.
+      let statedDates: StatedDatePassResult | { error: string } | null = null;
       if (step.stepKey === "discover") {
         try {
           statedDates = await runStatedDatePass(sql, { runId: run.id, stepId: step.id, dryRun: run.runKind === "dry_run" });
         } catch (error) {
           console.error("Stated date pass failed:", error);
+          statedDates = { error: error instanceof Error ? error.message : String(error) };
         }
       }
       const discovery = await runMagellanDiscovery({
@@ -569,6 +571,9 @@ async function executeAgenticStep(
           kept_refused_answers: discovery.keptRefusedAnswers?.kept ?? 0,
           kept_refused_answer_samples: discovery.keptRefusedAnswers?.samples ?? [],
           search_miss_lessons: discovery.searchMisses,
+          // Freshness finds that kept the link: the page found states no date later than the old one's.
+          stated_date_refusals: discovery.statedDateRefusals.length,
+          stated_date_refusal_samples: discovery.statedDateRefusals.slice(0, 10),
           discovery_limit: discovery.limit,
           dry_run: discovery.dryRun,
           recheck,

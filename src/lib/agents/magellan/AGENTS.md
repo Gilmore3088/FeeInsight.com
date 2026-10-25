@@ -489,9 +489,13 @@ up to `STATED_DATES_PER_STEP` (200) documents not yet dated at `STATED_DATE_VERS
 `STATED_DATE_SCAN_CHARS` characters of their newest completed text (Hamilton's `EDITION_SCAN_CHARS`,
 8,000). The stated date is the latest "Effective ..." date, read by Hamilton's own readers so there
 is one rule (the later of `effectiveDate()` and `editionStarts()`, which also reads a schedule's
-edition line past a web page's menu), or "Revised / Rev. / Updated ..." date found there; with neither, the latest year 2000-2029 in the address (stored as
-1 January, old only once the whole year is); otherwise none. The latest date wins, so the rule
-can call an old schedule current, never the reverse. It is written to
+edition line past a web page's menu), a "Revised / Rev. / Updated ..." date, or a currency line
+("As of January 1, 2026" heading the schedule, "current / accurate as of ...", "Disclosure Date:
+..."), whichever is latest. An "effective" that dates rates ("Rates effective September 1, 2024")
+is masked first and never dates the schedule. Only when the text states no date at all is the
+latest year 2000-2029 in the address used (stored as 1 January, old only once the whole year is);
+an upload folder's year says when the file went up, not what it prices. Otherwise none. The latest
+date wins, so the rule can call an old schedule current, never the reverse. It is written to
 `source_documents.stated_date`, `stated_date_basis` (`effective_statement`, `printed_date`,
 `url_year`, `none`) and `stated_date_version`, and one `magellan.stated_dates` run event records
 the counts and up to 10 stale samples with the words the date was read from (step detail
@@ -499,7 +503,11 @@ the counts and up to 10 stale samples with the words the date was read from (ste
 
 A bank whose link's own document (its last main fetch, or the current copy of the link's page,
 never a companion) states a date more than `STALE_STATED_MONTHS` (24) ago is picked once by the
-freshness search (stale reason "schedule dated YYYY-MM-DD (basis)"). The pass and the search both
+freshness search (stale reason "schedule dated YYYY-MM-DD (basis)"). Such a search replaces the
+link only when the page it finds states a later date by the same reader (`statedDateReplaces`): a
+page that states no date, or an older or equal one, leaves the link as it is, and the refusal is
+kept on the attempt (`detail.stated_date_check`) and counted in the step detail
+(`stated_date_refusals`). The pass and the search both
 wait for the columns (migration `20270110000077`, `statedDateColumnsReady`): until then the pass
 reads and writes nothing (`schema_ready: false`) and the search leaves out its stated-date arm.
 

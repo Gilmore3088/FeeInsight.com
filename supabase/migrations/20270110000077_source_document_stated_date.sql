@@ -5,8 +5,9 @@
 -- fee PDF named "...-2022.pdf" fetched yesterday looked current. These three columns hold the
 -- date the document states, read from its stored text by Magellan's stated-date pass
 -- (src/lib/agents/magellan/stated-date.ts):
---   * stated_date: the latest date its opening text states (effective or revised), else the
---     year its address names (stored as 1 January); NULL when it states none or is not read yet.
+--   * stated_date: the latest date its opening text states (effective, revised or "as of"), else,
+--     only when the text states no date, the year its address names (stored as 1 January); NULL
+--     when it states none or is not read yet.
 --   * stated_date_basis: where that date came from.
 --   * stated_date_version: the reader version that set them; NULL means not read yet.
 --
@@ -26,7 +27,7 @@ ALTER TABLE public.source_documents
   ADD COLUMN IF NOT EXISTS stated_date_version integer;
 
 COMMENT ON COLUMN public.source_documents.stated_date IS
-  'The date the document states (latest effective or revised date in its opening text, else the year its address names as 1 January); NULL when none or not read. Not the fetch date.';
+  'The date the document states (latest effective, revised or "as of" date in its opening text, else, only when the text states no date, the year its address names as 1 January); NULL when none or not read. Not the fetch date.';
 COMMENT ON COLUMN public.source_documents.stated_date_basis IS
   'Where stated_date came from: effective_statement, printed_date, url_year or none.';
 COMMENT ON COLUMN public.source_documents.stated_date_version IS

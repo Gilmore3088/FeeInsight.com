@@ -10,6 +10,7 @@ import {
   STATED_DATE_SCAN_CHARS,
   STATED_DATE_VERSION,
   staleBefore,
+  statedDateReplaces,
   urlYear,
 } from "./stated-date";
 
@@ -91,6 +92,103 @@ describe("readStatedDate", () => {
     expect(STATED_DATE_SCAN_CHARS).toBe(EDITION_SCAN_CHARS);
     const text = `${"x".repeat(STATED_DATE_SCAN_CHARS)} Effective January 1, 2020`;
     expect(readStatedDate(text, null, NOW).date).toBeNull();
+  });
+});
+
+describe("readStatedDate on current schedules the first reader called old (#2615 review, prod excerpts)", () => {
+  it("reads 'As of' heading a schedule, not the upload folder's year (doc 2282)", () => {
+    const text = "Fee Schedule\nAs of January 1, 2026\nAccount Fees | Safe Deposit Box Fees\nChecks .......... Varies";
+    expect(readStatedDate(text, "https://www.unclecu.org/wp-content/uploads/2017/08/feeschedule.pdf", NOW)).toEqual({
+      date: "2026-01-01",
+      basis: "printed_date",
+      evidence: "As of January 1, 2026",
+    });
+  });
+
+  it("reads 'current as of' when a two-column PDF puts the date on the next line (docs 2307, 15227)", () => {
+    const text = "Personal Account\nThe following list of fees is current as of\nSchedule of Fees | September 17, 2026. All fees subject to change.\nGENERAL FEES";
+    const stated = readStatedDate(text, "https://www.usccreditunion.org/wp-content/uploads/2023/01/fees.pdf", NOW);
+    expect(stated).toMatchObject({ date: "2026-09-17", basis: "printed_date" });
+    expect(isStaleStatedDate(stated, NOW)).toBe(false);
+  });
+
+  it("reads 'accurate as of' (docs 12171, 31941)", () => {
+    for (const [day, iso] of [["October 05, 2026", "2026-10-05"], ["October 12, 2026", "2026-10-12"]]) {
+      const text = `TRUTH IN SAVINGS\nThe rates and fees contained in this Disclosure are accurate as of ${day}. If you have any questions`;
+      expect(readStatedDate(text, "https://www.hebfcu.org/wp-content/uploads/2022/03/TISA.pdf", NOW)).toMatchObject({ date: iso, basis: "printed_date" });
+    }
+  });
+
+  it("takes 'FEES CURRENT AS OF' over a rate's effective date (docs 2797, 14512, 27687)", () => {
+    const text = "Rates & Fees\nRates effective September 1, 2024\nShare Savings | 0.10%\nFEES CURRENT AS OF: August 3, 2026 AND SUBJECT TO CHANGE\nOverdraft $30.00";
+    expect(readStatedDate(text, "https://www.riegelfcu.org/home/ratesfees/fee", NOW)).toEqual({
+      date: "2026-08-03",
+      basis: "printed_date",
+      evidence: "CURRENT AS OF: August 3, 2026",
+    });
+  });
+
+  it("takes the latest of 'updated 06/2024' and 'current as of 02/27/2026' (doc 32498)", () => {
+    const text =
+      "FSB Personal Misc Fees/Rate Chart | updated 06/2024\nAccount Activity Copy | $3.00 each\n" +
+      "Interest Rates and Annual Percentage Yields are current as of 02/27/2026.\nFees may reduce earnings";
+    expect(readStatedDate(text, "https://www.myfsbonline.com/assets/files/aC9Ij8HH", NOW)).toMatchObject({ date: "2026-02-27", basis: "printed_date" });
+  });
+
+  it("still calls a schedule old that states only an old date ('Updated January 2019' footer)", () => {
+    const stated = readStatedDate("Overdraft $30.00\nWire $25.00\nUpdated January 2019", "https://bank.example/uploads/2025/01/fees.pdf", NOW);
+    expect(stated).toMatchObject({ date: "2019-01-01", basis: "printed_date" });
+    expect(isStaleStatedDate(stated, NOW)).toBe(true);
+  });
+
+  it("does not read a rate's effective date as the schedule's, nor the address once the text states one", () => {
+    for (const text of [
+      "Rates effective September 1, 2024\nOverdraft $30",
+      "Dividend rates are effective 9/1/2024\nOverdraft $30",
+      "APY effective September 1, 2024\nOverdraft $30",
+    ]) {
+      expect(readStatedDate(text, "https://bank.example/uploads/2019/fees.pdf", NOW)).toEqual({ date: null, basis: "none", evidence: null });
+    }
+    // Fees named beside rates keep the date the schedule's.
+    expect(readStatedDate("Fees and rates effective March 1, 2022", null, NOW)).toMatchObject({ date: "2022-03-01", basis: "effective_statement" });
+  });
+
+  it("does not read an 'as of' inside a sentence about something else", () => {
+    expect(readStatedDate("Accounts opened as of May 1, 2015 keep free checking.\nOverdraft $30", null, NOW).date).toBeNull();
+    // A line-start "As of" that opens a sentence about one product (doc 31175).
+    expect(readStatedDate("Conditions of Account:\nAs of April 1, 2014, new Silver accounts are not offered.", null, NOW).date).toBeNull();
+  });
+
+  it("reads 'As of: June 1 st, 2026' heading a schedule (doc 16616)", () => {
+    expect(readStatedDate("SERVICE CHARGES AND FEES\nAs of: June 1 st, 2026\nOverdraft $30", null, NOW)).toMatchObject({ date: "2026-06-01", basis: "printed_date" });
+  });
+});
+
+describe("statedDateReplaces", () => {
+  const old = { oldDate: "2022-01-01", oldBasis: "effective_statement" };
+  it("replaces only with a page that states a later date", () => {
+    expect(statedDateReplaces({ ...old, candidateUrl: "https://b.example/fees-2026", candidateText: "FEE SCHEDULE\nEffective March 1, 2026", now: NOW })).toMatchObject({
+      replaces: true,
+      candidate_date: "2026-03-01",
+    });
+  });
+
+  it("keeps the link when the page states no date, an older one or the same", () => {
+    for (const text of ["Overdraft $30\nWire $25", "FEE SCHEDULE\nEffective June 1, 2020", "FEE SCHEDULE\nEffective January 1, 2022"]) {
+      const check = statedDateReplaces({ ...old, candidateUrl: "https://b.example/other", candidateText: text, now: NOW });
+      expect(check.replaces).toBe(false);
+      expect(check.reason).toMatch(/^kept the link/);
+    }
+  });
+
+  it("never counts the candidate's address year as its date", () => {
+    expect(statedDateReplaces({ ...old, candidateUrl: "https://b.example/uploads/2026/fees.pdf", candidateText: "Overdraft $30", now: NOW }).replaces).toBe(false);
+  });
+
+  it("counts an old address year to its last day", () => {
+    const fromYear = { oldDate: "2021-01-01", oldBasis: "url_year" };
+    expect(statedDateReplaces({ ...fromYear, candidateUrl: null, candidateText: "Revised 06/2021", now: NOW }).replaces).toBe(false);
+    expect(statedDateReplaces({ ...fromYear, candidateUrl: null, candidateText: "Revised 01/2022", now: NOW }).replaces).toBe(true);
   });
 });
 
