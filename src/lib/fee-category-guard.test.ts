@@ -336,6 +336,43 @@ describe("checkFeeCategory", () => {
     }
   });
 
+  it("ties the key-deposit exemptions to the key or the night deposit noun (v82, #1662)", () => {
+    // Kept by v66's unanchored "service"/"monthly" match; each is a key deposit, so each is refused.
+    for (const name of [
+      // A section header Knox carries into the name (live rows 14439, 104888 show the shape).
+      "Night Depository Services: Key Deposit",
+      // "monthly" sits in an unrelated clause.
+      "Night Depository Key Deposit (refundable; service fee billed monthly)",
+      "Night deposit key deposit; customer service hours apply",
+      // "Serviced" is not "service", and the accounts it names are not the service.
+      "Key Deposit (Night Depository) - Serviced Accounts",
+      // The service noun runs straight into the item: the key deposit is what is priced.
+      "Night Deposit Service Key Deposit",
+      // Borderline, refused: "Monthly" qualifies nothing priced here (no monthly fee or charge); the
+      // item is still the key deposit.
+      "Monthly Night Deposit Key Deposit",
+      // Borderline, refused: "Annual Rental" names which customers pay the deposit, not an annual or
+      // rental fee; the item is still the key deposit.
+      "Night Deposit Key Deposit - Annual Rental Customers",
+    ]) {
+      expect(checkFeeCategory("night_deposit", name).ok, name).toBe(false);
+    }
+    for (const name of [
+      // Borderline, kept: the price names replacement keys ("replacement keys $25"), and a replaced
+      // key stays night deposit under option A.
+      "Night Depository Key Deposit - replacement keys $25",
+      // Live 74024 stays, as at #1640's head: the deposit row also prices a lost key.
+      "Night Deposit Key Deposit/Lost",
+      // The service or a periodic fee that names a key deposit is still the service.
+      "Night Depository Service Monthly Fee (key deposit $10)",
+      "Night Drop Service (key deposit required)",
+      "Night Depository - Annual (key deposit refundable)",
+      "Night Deposit Fee per month, key deposit $5",
+    ]) {
+      expect(checkFeeCategory("night_deposit", name), name).toEqual({ ok: true });
+    }
+  });
+
   it("keeps other banks' customers at our ATMs out of non-network ATM fees (live rows, Oct 6)", () => {
     for (const name of [
       "Non-Member ATM Transaction Fee",
