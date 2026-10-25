@@ -6,8 +6,10 @@ import {
   downloadButtonName,
   fetchFfiecCallBulk,
   formatFfiecPage,
+  parsePorTimestamp,
   periodOptionValue,
   readFfiecOverdraft,
+  readFfiecPor,
   readFormState,
   readScheduleRiOverdraft,
 } from "./ffiec";
@@ -57,6 +59,46 @@ describe("readFfiecOverdraft", () => {
       }
     }
     expect((await readFfiecOverdraft(zip)).rows).toHaveLength(2);
+  });
+});
+
+describe("readFfiecPor (#1925)", () => {
+  // The bulk zip's panel-of-reporters file: one header row, one row per bank. Column order and
+  // values here are illustrative; the reader finds the columns by name.
+  const POR = [
+    '"IDRSSD"\t"FDIC Certificate Number"\t"Financial Institution Name"\t"Financial Institution Filing Type"\t"Last Date/Time Submission Updated On"',
+    '"852218"\t"628"\t"BANK A"\t"031"\t"2026-08-14T10:02:31"',
+    '"451965"\t"3511"\t"BANK B"\t"041"\t"1/20/2026 3:05:00 PM"',
+    '"12311"\t"100"\t"BANK C"\t"051"\t""',
+    '"99"\t"7"\t"BANK D"\t"051"\t"n/a"',
+    "",
+  ].join("\n");
+
+  it("reads each bank's last-updated time from the POR file, as US Eastern clock time", () => {
+    const out = readFfiecPor({
+      "FFIEC CDR Call Schedule RI 06302026.txt": strToU8(RI),
+      "FFIEC CDR Call Bulk POR 06302026.txt": strToU8(POR),
+    });
+    expect(out).toMatchObject({ file: "FFIEC CDR Call Bulk POR 06302026.txt", column: "Last Date/Time Submission Updated On", unreadable: 1 });
+    expect(out.rows).toEqual([
+      // August: EDT, UTC-4.
+      { rssd: "852218", lastUpdated: "2026-08-14T10:02:31", epochSeconds: Date.parse("2026-08-14T14:02:31Z") / 1000 },
+      // January: EST, UTC-5.
+      { rssd: "451965", lastUpdated: "1/20/2026 3:05:00 PM", epochSeconds: Date.parse("2026-01-20T20:05:00Z") / 1000 },
+    ]);
+  });
+
+  it("reports a missing file or column instead of guessing", () => {
+    expect(readFfiecPor({ "FFIEC CDR Call Schedule RI 06302026.txt": strToU8(RI) })).toEqual({ file: null, column: null, rows: [], unreadable: 0 });
+    expect(readFfiecPor({ "FFIEC CDR Call Bulk POR 06302026.txt": strToU8("IDRSSD\n1\n") })).toMatchObject({ column: null, rows: [] });
+  });
+
+  it("parses stated zones and refuses impossible dates", () => {
+    expect(parsePorTimestamp("2026-03-01T12:00:00Z")).toBe(Date.parse("2026-03-01T12:00:00Z") / 1000);
+    expect(parsePorTimestamp("2026-03-01 12:00:00+01:00")).toBe(Date.parse("2026-03-01T11:00:00Z") / 1000);
+    expect(parsePorTimestamp("12/31/2025 12:00:00 AM")).toBe(Date.parse("2025-12-31T05:00:00Z") / 1000);
+    expect(parsePorTimestamp("2026-02-30T10:00:00")).toBeNull();
+    expect(parsePorTimestamp("13:00 yesterday")).toBeNull();
   });
 });
 

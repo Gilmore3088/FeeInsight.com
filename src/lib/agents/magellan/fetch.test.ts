@@ -1,7 +1,7 @@
 import { createHash } from "crypto";
 import { describe, expect, it, vi } from "vitest";
 
-import { fetchAndRecordLink, MAGELLAN_FETCH_STRATEGY, MAGELLAN_STALE_LINK_REFETCH_DAYS, redirectedToHomepage, runMagellanFetch, sendsValidators, withRequestedUrl } from "./fetch";
+import { fetchAndRecordLink, MAGELLAN_FETCH_STRATEGY, MAGELLAN_STALE_LINK_REFETCH_DAYS, redirectedToHomepage, runMagellanFetch, sendsValidators, withoutArticleRemembered, withRequestedUrl } from "./fetch";
 
 type DbMock = ReturnType<typeof vi.fn>;
 
@@ -63,6 +63,53 @@ describe("Magellan agentic fetch", () => {
     expect(withRequestedUrl(variant, 7024, variant.fee_schedule_url)).toBe(variant);
     const port = { ...row, id: 4527, fee_schedule_url: "https://www.newcenturyfcu.org:443/images/pdfs/fee-schedule.pdf", profile_canonical_source_url: "https://www.newcenturyfcu.org/images/pdfs/fee-schedule.pdf" };
     expect(withRequestedUrl(port, 4527, port.fee_schedule_url)).toBe(port);
+  });
+
+  // Prod, read-only, Oct 25 (#1774): SchoolsFirst FCU's profile remembered its advice article
+  // after publish had refused its fees, so the plain fetch asked for it on Oct 18 and 19.
+  const SCHOOLSFIRST = {
+    id: 6741,
+    institution_name: "SchoolsFirst Federal Credit Union",
+    fee_schedule_url: "https://online.schoolsfirstfcu.org/membershipapplication/fees",
+    asset_size: "1000",
+    last_crawl_at: null,
+    consecutive_failures: 0,
+    profile_canonical_source_url: "https://www.schoolsfirstfcu.org/advice/financial-wellness/saving/dont-get-stung-by-banking-fees/",
+    profile_locked_by_correction: false,
+  };
+
+  it("fetches the saved fee link, not a remembered article page (#1774)", async () => {
+    const row = SCHOOLSFIRST as Parameters<typeof withoutArticleRemembered>[0];
+    expect(withoutArticleRemembered(row)).toEqual({ ...row, profile_canonical_source_url: null });
+    const db = createDbMock([SCHOOLSFIRST]);
+    const fetchImpl = vi.fn().mockResolvedValueOnce(response("<p>Overdraft fee $22.00</p>", "text/html"));
+    await runMagellanFetch({ runId: 9100, institutionId: 6741, db: asFetchDb(db), fetchImpl });
+    expect(fetchImpl.mock.calls[0][0]).toBe(SCHOOLSFIRST.fee_schedule_url);
+    const select = db.mock.calls.find((call) => templateText(call[0]).includes("FROM institution_sources inst"));
+    expect(templateText(select?.[0])).toContain("profile.locked_by_correction AS profile_locked_by_correction");
+  });
+
+  it("keeps a remembered page that is no article, one a correction locked, or when the saved link is an article too", () => {
+    const row = SCHOOLSFIRST as Parameters<typeof withoutArticleRemembered>[0];
+    // A person's correction keeps its address.
+    const locked = { ...row, profile_locked_by_correction: true };
+    expect(withoutArticleRemembered(locked)).toBe(locked);
+    // Texas Capital's old services-fees page is no article.
+    const texas = TEXAS_CAPITAL as Parameters<typeof withoutArticleRemembered>[0];
+    expect(withoutArticleRemembered(texas)).toBe(texas);
+    // Nelnet Bank's saved link is the same learning-center page: discovery's upgrade search owns it.
+    const nelnet = {
+      ...row, id: 594,
+      fee_schedule_url: "https://www.nelnetbank.com/learning-center/grad-plus-vs-private-grad-loans",
+      profile_canonical_source_url: "https://www.nelnetbank.com/learning-center/grad-plus-vs-private-grad-loans?print=1",
+    };
+    expect(withoutArticleRemembered(nelnet)).toBe(nelnet);
+    // A fee schedule filed in an articles folder is no article (MTC Federal CU).
+    const mtc = { ...row, profile_canonical_source_url: "https://www.mtcfederal.com/articles/schedule-of-fees/" };
+    expect(withoutArticleRemembered(mtc)).toBe(mtc);
+    // No remembered address, nothing to set aside.
+    const none = { ...row, profile_canonical_source_url: null };
+    expect(withoutArticleRemembered(none)).toBe(none);
   });
 
   it("fetches a source document and writes crawl result plus target health", async () => {

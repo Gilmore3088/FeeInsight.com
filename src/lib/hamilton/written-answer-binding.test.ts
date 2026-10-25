@@ -14,6 +14,9 @@ import {
   bindingLeavesNothing,
   boundFallbackLead,
   readNarrativeBinding,
+  readSentNarrativeBinding,
+  readerNarrativeBinding,
+  sentenceMatchKey,
   withoutOmitted,
   writtenAnswerFeeEvidence,
 } from "./written-answer-binding";
@@ -171,5 +174,128 @@ describe("applying a binding to the answer view", () => {
     expect(readNarrativeBinding({ ...binding, version: 2 })).toBeNull();
     expect(readNarrativeBinding({ ...binding, interpretation: [1] })).toBeNull();
     expect(readNarrativeBinding({ ...binding, omitted: [{ text: "x", reason: "made_up" }] })).toBeNull();
+  });
+});
+
+describe("readerNarrativeBinding (#1077 follow-up)", () => {
+  const binding = {
+    version: 1 as const,
+    supported: [{ text: "Bank A charges $10.", factIds: ["fee:published:1"] }, { text: "Bank A's fee is cheap.", factIds: [] }],
+    interpretation: ["Bank B sits near the median.", "Peers will follow Bank A."],
+    omitted: [{ text: "Bank A charges $35.", reason: "wrong_institution" as const }, { text: "Bank B charges $9.", reason: "wrong_institution" as const }],
+    limitations: [INTERPRETATION_LIMITATION],
+    readingBasis: [{ text: "Bank B sits near the median.", basis: "index median" }, { text: "Peers will follow Bank A.", basis: "index median" }],
+  };
+
+  it("keeps each left-out sentence's reason and the count, never its text", () => {
+    const reader = readerNarrativeBinding(binding);
+    expect(reader.omitted).toEqual([{ reason: "wrong_institution" }, { reason: "wrong_institution" }]);
+    expect(JSON.stringify(reader)).not.toContain("$35");
+    expect(JSON.stringify(reader)).not.toContain("$9.");
+    expect(reader.supported).toEqual(binding.supported);
+    expect(reader.limitations).toEqual(binding.limitations);
+  });
+
+  it("drops the sentences the gate cut from the supported, reading and basis lists, and leaves the saved binding whole", () => {
+    const reader = readerNarrativeBinding(binding, [" Bank A's fee is cheap. ", "Peers will follow Bank A."]);
+    expect(reader.supported.map((s) => s.text)).toEqual(["Bank A charges $10."]);
+    expect(reader.interpretation).toEqual(["Bank B sits near the median."]);
+    expect(reader.readingBasis).toEqual([{ text: "Bank B sits near the median.", basis: "index median" }]);
+    expect(binding.omitted[0].text).toBe("Bank A charges $35.");
+    expect(binding.supported).toHaveLength(2);
+  });
+
+  it("matches a cut across both splitters' marker handling, and keeps the binding's key order", () => {
+    expect(sentenceMatchKey("> Bank A's fee is cheap.")).toBe("Bank A's fee is cheap.");
+    expect(sentenceMatchKey(" - > Bank A's fee is cheap. ")).toBe("Bank A's fee is cheap.");
+    expect(sentenceMatchKey("Bank A's fee is -5% lower.")).toBe("Bank A's fee is -5% lower.");
+    const reader = readerNarrativeBinding(binding, ["> Bank A's fee is cheap."]);
+    expect(reader.supported.map((s) => s.text)).toEqual(["Bank A charges $10."]);
+    expect(Object.keys(reader)).toEqual(Object.keys(binding));
+  });
+
+  it("reads back on the screen with readSentNarrativeBinding: reasons and count stay, and an empty text drops nothing", () => {
+    const sent = readSentNarrativeBinding(JSON.parse(JSON.stringify(readerNarrativeBinding(binding))));
+    expect(readNarrativeBinding(readerNarrativeBinding(binding))).toBeNull();
+    expect(sent?.omitted).toEqual([{ text: "", reason: "wrong_institution" }, { text: "", reason: "wrong_institution" }]);
+    expect(sent?.interpretation).toEqual(binding.interpretation);
+    expect(readSentNarrativeBinding(binding)).toEqual(readNarrativeBinding(binding));
+    expect(readSentNarrativeBinding({ ...binding, omitted: [{ reason: "made_up" }] })).toBeNull();
+    // The shown text keeps its blank lines and paragraphs: an empty left-out text matches no line.
+    const sections = { hamiltonView: "Bank A charges $10.\n\nBank B sits near the median.", whatThisMeans: "", whyItMatters: [] };
+    const bound = applyNarrativeBinding(sections, sent);
+    expect(bound.sections.hamiltonView).toBe("Bank A charges $10.\n");
+    expect(withoutOmitted(sections, sent)).toEqual(sections);
+  });
+});
+
+describe("local competitors in a written answer (#1077, Cycle A defect 2)", () => {
+  // Invented: Capital City Bank (9101) has two overdraft lines, $37 and $35; its competitor Rival Bank (9142) $35.
+  const SUBJECT = profile(9101, "Capital City Bank", [
+    overdraft(11, 37),
+    overdraft(12, 35, { fee_name: "Overdraft, second item of the day" }),
+  ]);
+  const SUBJECT_37 = profile(9101, "Capital City Bank", [overdraft(11, 37)]);
+  // The getLocalCompetitors output shape (research/tool-local-competitors.ts).
+  const LOCAL = {
+    institution: "Capital City Bank",
+    institution_id: 9101,
+    your_fees: { overdraft: 37 },
+    market: "Capital City, ZZ area (2 counties)",
+    market_basis: "branch_counties",
+    county_fips: [99001, 99003],
+    sod_year: 2025,
+    source: "FDIC Summary of Deposits 2025; verified published fee amounts",
+    competitors: [{
+      institution_id: 9142, name: "Rival Bank, N.A.", fees: { overdraft: 35 }, fee_basis: { overdraft: "max" },
+      document_url: "https://fixture.invalid/9142.pdf", document_date: "2026-09-30",
+    }],
+  };
+  const TWO = "Capital City Bank charges $37 for an overdraft. Rival Bank charges $35 for an overdraft.";
+
+  it("learns each competitor's name by id, and makes no fee record of its aggregate price", () => {
+    const found = writtenAnswerFeeEvidence([SUBJECT, LOCAL])!;
+    expect(found.names.get(9142)).toBe("Rival Bank");
+    expect(found.names.get(9101)).toBe("Capital City Bank");
+    expect(found.evidence.facts.map((fact) => fact.id)).toEqual(["fee:published:11", "fee:published:12"]);
+    // The local read alone holds no fee record, so it makes no binding, as before.
+    expect(writtenAnswerFeeEvidence([LOCAL])).toBeNull();
+    expect(bind(TWO, [LOCAL])).toBeNull();
+  });
+
+  it("leaves out a competitor's price that only the subject's same-value record would support", () => {
+    const binding = bind(TWO, [SUBJECT, LOCAL])!;
+    expect(binding.supported).toEqual([{ text: "Capital City Bank charges $37 for an overdraft.", factIds: ["fee:published:11"] }]);
+    expect(binding.omitted).toEqual([{ text: "Rival Bank charges $35 for an overdraft.", reason: "wrong_institution" }]);
+    expect(binding.limitations).toContain(CONTRADICTED_LIMITATION);
+  });
+
+  it("shows a competitor's price as Hamilton's reading when no record holds that value", () => {
+    const binding = bind(TWO, [SUBJECT_37, LOCAL])!;
+    expect(binding.supported).toEqual([{ text: "Capital City Bank charges $37 for an overdraft.", factIds: ["fee:published:11"] }]);
+    expect(binding.interpretation).toEqual(["Rival Bank charges $35 for an overdraft."]);
+    expect(binding.omitted).toEqual([]);
+  });
+
+  it("a competitor whose name holds the subject's name is still the competitor", () => {
+    // Invented: "Capital City Bank of Texas" contains "Capital City Bank".
+    const longer = { ...LOCAL, competitors: [{ ...LOCAL.competitors[0], name: "Capital City Bank of Texas" }] };
+    const text = "Capital City Bank charges $37 for an overdraft. Capital City Bank of Texas charges $35 for an overdraft.";
+    const binding = bind(text, [SUBJECT, longer])!;
+    expect(binding.supported).toEqual([{ text: "Capital City Bank charges $37 for an overdraft.", factIds: ["fee:published:11"] }]);
+    expect(binding.omitted).toEqual([{ text: "Capital City Bank of Texas charges $35 for an overdraft.", reason: "wrong_institution" }]);
+  });
+
+  it("control: the subject's own fee still binds to its record", () => {
+    const binding = bind("Capital City Bank charges $35 for an overdraft on a second item.", [SUBJECT, LOCAL])!;
+    expect(binding.supported).toEqual([{ text: "Capital City Bank charges $35 for an overdraft on a second item.", factIds: ["fee:published:12"] }]);
+    expect(binding.omitted).toEqual([]);
+  });
+
+  it("control: a sentence naming no institution binds exactly as without the local read", () => {
+    for (const text of ["The overdraft fee is $35.", "An overdraft costs $37, and a second one $35."]) {
+      expect(bind(text, [SUBJECT, LOCAL]), text).toEqual(bind(text, [SUBJECT]));
+    }
+    expect(bind("The overdraft fee is $35.", [SUBJECT, LOCAL])!.supported).toEqual([{ text: "The overdraft fee is $35.", factIds: ["fee:published:12"] }]);
   });
 });

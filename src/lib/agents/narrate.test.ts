@@ -178,6 +178,21 @@ describe("narrateStepFinished", () => {
       .toBe("Had nothing new to publish across all states.");
   });
 
+  it("never narrates a failed or empty filings check as clean (T3, #1925)", () => {
+    const totals = { compared: 10122, matched: 10077, explained: 29, unexplained: 16 };
+    expect(narrateStepFinished("deming-filings-reconcile", { totals, bank: { error: null }, credit_union: { error: null } }))
+      .toBe("Deming reconciled shown financials with the stored filings: 10077 of 10122 figures match, 29 differ for a known reason, ALARM: 16 figures unexplained.");
+    const empty = { compared: 0, matched: 0, explained: 0, unexplained: 0 };
+    expect(narrateStepFinished("deming-filings-reconcile", { totals: empty, bank: { error: "timeout" }, credit_union: { error: "timeout" } }))
+      .toBe("ALARM: Deming compared no shown financials with the stored filings; it could not read banks or credit unions.");
+    expect(narrateStepFinished("deming-filings-reconcile", { totals: empty, bank: { error: null }, credit_union: { error: null } }))
+      .toBe("ALARM: Deming compared no shown financials with the stored filings.");
+    expect(narrateStepFinished("deming-filings-reconcile", { totals: { compared: 2378, matched: 2378, explained: 0, unexplained: 0 }, bank: { error: "timeout" }, credit_union: { error: null } }))
+      .toContain("ALARM: Deming could not read banks for the filings check");
+    expect(narrateStepFinished("deming-filings-reconcile", { totals, version_skew: { unexplained: 12 }, bank: { error: null }, credit_union: { error: null } }))
+      .toBe("Deming reconciled shown financials with the stored filings: 10077 of 10122 figures match, 29 differ for a known reason, ALARM: 16 figures unexplained, 12 of them where BankFind and FFIEC hold different versions of the filing.");
+  });
+
   it("stays quiet for bookkeeping steps and unknown keys", () => {
     expect(narrateStepFinished("public-cluster", {}, "GA")).toBeNull();
     expect(narrateStepFinished("mystery", {}, "GA")).toBeNull();

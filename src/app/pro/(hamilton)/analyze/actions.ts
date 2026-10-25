@@ -11,7 +11,7 @@ import { collectFeeRefs } from "@/lib/saved-output-corrections";
 import { recordSavedOutputFeeRefs } from "@/lib/data-store/saved-output-fee-refs";
 import type { AnalyzeResponse } from "@/lib/hamilton/types";
 import { recentQuestions, type RecentQuestion, type SavedAnalysisRow } from "@/lib/hamilton/recent-analyses";
-import { readSavedAnalysisRecord, withoutSavedClaims, type LoadedAnalysisRecord } from "@/lib/hamilton/saved-analysis-record";
+import { fallbackSaveSections, readSavedAnalysisRecord, withoutSavedClaims, type LoadedAnalysisRecord } from "@/lib/hamilton/saved-analysis-record";
 
 export type { LoadedAnalysisRecord } from "@/lib/hamilton/saved-analysis-record";
 
@@ -36,7 +36,7 @@ export async function saveAnalysis(params: {
   // Derive title: use explicit title, or first 60 chars of the prompt
   const title =
     params.title?.trim() ||
-    params.responseJson.title ||
+    (typeof params.responseJson?.title === "string" ? params.responseJson.title : "") ||
     params.prompt.slice(0, 60).trim() + (params.prompt.length > 60 ? "…" : "");
   // Server actions receive caller-controlled values even when TypeScript declares a string.
   // A malformed explicit subject must not become an unscoped saved artifact.
@@ -57,12 +57,11 @@ export async function saveAnalysis(params: {
     // captures membership at SAVE time, never treats browser metadata as authority,
     // and does not silently substitute today's peer baseline for the original one.
     const account = await loadHamiltonAccountContext(user);
-    // Saved claims come only from the server's own save (#1077 step 6); a report reads them as
-    // what the answer's records support, so a browser copy is never kept.
-    const { claims: _browserClaims, ...browserResponse } = params.responseJson;
-    void _browserClaims;
+    // Only the answer's prose is kept from the browser. Its binding, verdict, claims, memo,
+    // storyline, evidence bundle and dataset stamps come only from the server's own save (#1077),
+    // since reports and briefs trust them; this save's verdict is the server's "not checked".
     const responseJson: AnalyzeResponse = {
-      ...browserResponse,
+      ...fallbackSaveSections(params.responseJson),
       identityContext: accountIdentitySnapshot(institution?.id ?? null, account, {
         researchInstitutionName: institution?.institution_name ?? null,
         researchSelectionSource: "Captured at save; generation-time account and peer context unavailable",

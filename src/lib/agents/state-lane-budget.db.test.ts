@@ -52,7 +52,7 @@ vi.mock("@/lib/agents/magellan/fetch", async (original) => ({
   runMagellanFetch: fixture.free,
 }));
 vi.mock("@/lib/agents/magellan/address-variant-fetch", () => ({ runAddressVariantFetch: async () => null }));
-vi.mock("@/lib/agents/magellan/saved-link-fetch", () => ({ runSavedLinkFetch: async () => null }));
+vi.mock("@/lib/agents/magellan/saved-link-fetch", () => ({ SAVED_LINK_BUDGET_MS: 45_000, runSavedLinkFetch: async () => null }));
 vi.mock("@/lib/agents/magellan/live-source-refetch", () => ({ runLiveSourceRefetch: async () => null }));
 
 import { executeQueuedAgentRuns, startAgentRun } from "./run-store";

@@ -911,6 +911,20 @@ Keesler's /advice/ app fee, Security First's 2022 blog post). A verified row ski
 to a fee this check took down is decided again (`ARTICLE_PAGE_RESELECT_SQL`), so the bank's own
 copy of the fee goes live in its place: TD's $35 overdraft from its overdraft-services page.
 
+**Edition-hold twins (#1915, Oct 21).** A verified row skipped as identical to a live fee that
+Darwin's edition check later held as not yet in effect (`not_yet_effective: <date> #<doc>`) is
+decided again (`EDITION_HOLD_RESELECT_SQL`), so the schedule in force today carries the fee while
+the next edition waits. ONE Credit Union (7174) had 16 lines of its current schedule (doc 29000,
+"Effective November 1, 2024") skipped behind its 2027 schedule (doc 28999) on Oct 11; once #2523
+held the 2027 rows the bank kept one live fee. A reselected row read from a schedule itself not yet
+in effect is held by `selectEditionHolds` and waits for its own date. Only a schedule's line is
+decided again: a line read from a product page (Rosetta's kind `product_page` or a product-area
+address, `productPageUrlSql`) prices one account and stays decided, so Security Federal's Money
+Market "Paper statements available for $3 per month" (docs 25730/25731) does not go live as the
+bank's paper statement fee. Dry run on prod, Oct 25: 91 rows at 3 institutions reselected; 16 from
+a document in effect today (7174, doc 29000), the other 75 read from Dec 1, 2026 schedules and held
+until then (5297 docs 16640/23342; 722 docs 316/16682).
+
 **Qualifier pairs, check 4 (#1314, Oct 15).** `linesApartOnPage` keeps two names apart only when the
 shorter one is printed at the price clear of every place of the longer: a shorter name found only
 inside the longer lines ("Funds (NSF)" in "Non-Sufficient Funds (NSF) $25", "Order" under a "Money
@@ -1352,7 +1366,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `HAMILTON_PUBLISH_STRATEGY` | `publish.rules` | v3 | `hamilton/publish.ts` |
 | `REFRESH_COPY_STRATEGY` | `hamilton.refresh_copy` | v2 | `hamilton/refresh-copy.ts` |
 | `RULES_RECHECK_STRATEGY` | `hamilton.rules_recheck` | v4 | `hamilton/rules-recheck.ts` |
-| `SOURCE_CHECK_STRATEGY` | `hamilton.source_check` | v23 | `hamilton/source-check.ts` |
+| `SOURCE_CHECK_STRATEGY` | `hamilton.source_check` | v25 | `hamilton/source-check.ts` |
 | `SOURCE_LINK_VERSION` | `hamilton.source_link` | v2 | `hamilton/source-link.ts` |
 | `SOURCE_LINK_DRIFT_VERSION` | `hamilton.source_link_drift` | v1 | `hamilton/source-link.ts` |
 | `FEE_DEPENDENCE_VERSION` | — | v1 | `hamilton/studies/fee-dependence.ts` |

@@ -284,6 +284,77 @@ fees found (54.7%); 56 of the 59 wrong reads are the right price under another c
 
 ## Rules versions (`extract.rules`)
 
+v111 (Oct 25, #1916): a late charge printed in a safe deposit box section is the box's late rent
+charge, whichever specialist read it (`boxSectionLateFeeRead`, `boxSectionLateFee` in
+`src/lib/custom-report/box-section-late-fee.ts`). The section is read upward from the fee's own
+line: the box heading itself ("Safe Deposit Box Fees", "page | Safe Deposit Box 30 Day"), reached
+through box rows only (sizes, keys, drilling, locks, rent). Any other row or heading ("LOAN FEES",
+"Credit Card Fees") and any line naming a loan or card stops it; a name naming a loan, card or
+credit, or the box itself, is not read here. v78's `boxLateFee` read the section only from the rules
+pass's previous read or its segment heading, so Advia FCU's two-column box late fee (doc 32751,
+live 142240) and 36 more live box late fees were still read as `late_payment`. The shared check
+refuses such a fee filed as `late_payment` (`category_not_in_text`), so the self-check, Darwin's
+verify and Hamilton's source check v25 agree; the live ones are not taken down but re-filed in place
+by the category guard v87 (`box_section`, `withBoxSection`). Read-only dry run, Oct 25: 111 live
+late_payment fees at 110 institutions are box late fees (each read on its stored line); 99 re-file to
+`safe_deposit_box` with their own name and price, and 12 copies of a live box late fee (11 beside a
+live twin, 1 a second copy at its bank) come down. Today's rules read all 111 lines as the box's, so a
+later re-read dedupes against the re-filed fee. The stale-read floor stays at v97.
+v110 (Oct 25, #1918): a fee named for the checking account itself is that account's monthly fee
+(`CHECKING_ACCOUNT_FEE_NAME`, `src/lib/checking-fee-name.ts`, shared with Darwin's category guard
+v86 so the two cannot drift): one to four words naming the account, then "Checking (Account)
+Fee|Charge" and an optional "(per month)", nothing else. A word that names another fee (overdraft,
+inactive, closing, statement, replacement, late, lost, withdrawal, deposit, counter, collection,
+foreign, unclaimed and others), an opening, setup or reopening charge ("New Checking Account Fee",
+"Re-open Checking Fee"), a business account (business, commercial, corporate, non-profit, analysis,
+merchant, professional, ag, farm, IOLTA, trust, estate) or a period other than the month keeps a
+name out, and a bare
+"Checking Account Fee" counts only with "(per month)", since printed alone it can be an opening fee
+(doc 3842). Bellco FCU's "MAX Checking Fee (per month) | $3.95" (raw 175797, doc 15817) was held as
+unclassified. Two more fixes on the same page: "$15K" or "$1.5M" is a balance, never a price
+(`amountsIn`; the shared check moves to v24 for the same reason), and a waiver bracketed inside a
+name's own cell stops at that cell (`bracketedWaiverEnd`), so "2Platinum Checking Fee (waived if
+$15K in combined balances in | $12.00" is read as Platinum Checking Fee, $12, instead of dropped.
+A label read under another fee's heading ("Performance Checking" under "Cashier's Checks") is not
+made a monthly fee by adding "fee" to it. Ambiguous lines stay held (James's condition on #2532): a
+checking-named fee whose price is activity-triggered, tiered, a percentage, a second price, an
+opening charge, charged only "if" or "when" something happens ("$4.95 if standard features are not
+chosen"), a closure or initial-deposit charge, or priced per year, quarter, item or debit
+(`checkingNamePriceAmbiguous`, at first read and on recheck), or whose page prints the
+same name at another price (`checkingNameHeld`). The held-line recheck now re-reads only lines on
+their page's current copy (no `superseded_by_id`, no `duplicate_of_id`), for every category. Read-only
+dry run Oct 25 over the 2,079 held lines on current texts that name checking, a thousands figure or a
+bracketed waiver, against v109 on the same rows: the rules promote 74 more lines (0 lose a
+promotion); the current-copy gate keeps 30 of them held and the ambiguity holds 5 more (with the
+review of #2618: First Federal's two conditional $4.95 lines, raw 166502 and 655353), so 39 lines at
+29 institutions go to Darwin as monthly maintenance. All 39 trace in `checkFeeAgainstSource` on their
+stored text and pass Darwin's guard v86 and `verificationReasonCode` (guard v85 refused all of them).
+Five institutions have one fee promoted from two copies; Hamilton's publish keeps one live
+(`decidePriorFee` "identical", or the exact-duplicate gate). Bellco's
+Platinum $12 line was dropped, not held, so it waits for the page to be read again. The stale-read
+floor stays at v97. Name re-tidy stays at v27.
+
+v109 (Oct 25, #1828): a bare "Returned payment" row ("Returned
+payment", "Returned Payment Fee", "RETURNED PAYMENT") under a loan section's title is the loan's
+returned payment fee, read as `other_lending_fee` at its own plain price under its own printed
+name (`loanReturnedPaymentRows`, `loan-section-rows.ts`). On its own the name says no loan and no
+fee word, so the row was dropped: Oregon Community FCU prints "Returned payment…… $4.95" under
+"Loan fees", "Personal Credit Line fees" and "Home Equity Line of Credit and Loan fees" (docs
+13272, 19849, 21634) and none was read. The nearest title in the row's own column decides (a
+line's first cell is the left column, any later cell the right; a full-width title heads the left
+and ends the right's). A title is a short cell with no figure or leader that ends in "fees",
+"charges", "services", "cards" or "accounts", is in capitals, or names loans alone, and never a
+cell with a price or a sentence beside it ("LATE PAYMENT | $20.00", "First Mortgage Fees | Call for
+current schedule."). A short heading that names a card or deposit product ("Visa", "Debit Cards",
+"Share Account") is a non-loan title, so "Loans … Visa … Returned Payment Fee $25.00" (institution
+6794) stays unread; a lone title right under two columns side by side heads neither column
+(institution 4410's flattened page). Under a credit card, checking or other title the row stays as
+before, and a cap ("Up to $25"), a sentence or a choice ("$15 or the minimum payment") is never
+read this way. Adds reads only. Dry run (read-only, Oct 25, the rules run on windows around the
+stored texts' bare returned payment rows; a window count, so it may be low): new reads at 12
+institutions. Oregon's (7859) matches live 83794; the other 11 have no returned payment fee live
+(431, 622, 5888, 5943, 6705, 6833, 7174, 7209, 7607, 8078, 8533). No live fee changes.
+
 v104 (Oct 22): a read whose name `isCutoffName` reads as cut off is held at publish (Hamilton's
 `cutoff_name`) however right its category and price. `withoutGluedSentence` (`glued-sentence-name.ts`,
 after the name tidy) cuts words that say nothing off the fee's own: another column's cell in front
@@ -1711,6 +1782,14 @@ whole. "IS", "ARE", "MET", "SUB" and a few more read as words, not acronyms; an 
 word before it ("SAME-DAYACH") stays in caps. Dry run Oct 21 01:16 UTC over the 22 institutions with
 an all-caps live name: 19 of the 32 renamed; 13 left (fragments and conditions waiting for #1443 and
 #1521, a same-price twin, "SAME-DAYACH", and "CBCU ATM" / "OPEFCU ATM", which are acronyms only).
+v27 (Oct 25, #1810): v22's all-caps test wanted a run of four capitals, so a name made only of short
+groups stayed in caps ("NSF FEE", "FAX FEE", "FAX OUT", "FED EX FEE", "ATM WD FEE", "NSF FEE1"). Such
+a name now counts as all caps when one of its groups is a plain three-letter word from v22's word
+list, "NON" left out (`SHOUTED_SHORT_WORDS`); the due query matches the same words. A name of acronyms
+only ("NSF ACH", "CD ROM", "NCB ATM", "NON CO OP ATM") stays as printed. The rename is a change of case
+under the v22/v26 guards; nothing is held, re-filed or taken down. Read-only count Oct 25: 14 live
+names at 13 institutions match, every one printed so on its own page and none with a same-name live
+row in its category; 13 should be renamed, and "FAX IN" waits because "Fax in" ends on a joining word.
 
 `isCutoffName` (publish's `cutoff_name` hold; in `cutoff-shape.ts` since v104, re-exported by
 `name-retidy.ts`) has a narrow live twin, `liveFragmentName` (#1443), built from the same regex pieces: a dangling joining word (lower-case "a/an/the" only;
@@ -1922,7 +2001,7 @@ rows, so it is not a full correction-population count or historical recovery aut
 - Do not use provisional rows for verified benchmark scoring.
 - Do not file a book transfer (to another account at the same bank: "Book Transfer", "transferencia
   contable") as a domestic wire, or a cash advance priced "for Non <bank> ATMs" (a wrapped ATM cell's
-  middle line) as a cash advance. Darwin's category guard refuses both since v84 (#1912), at verify and
+  middle line) as a cash advance. Darwin's category guard refuses both since v88 (#1912), at verify and
   on live fees; Knox's rules and paid reader should not produce them.
 
 ## Daily health check (contract)
@@ -1973,9 +2052,9 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_LAYOUT_SIGNATURE_VERSION` | — | v1 | `knox/layout-signature.ts` |
 | `KNOX_LESSONS_VERSION` | — | v4 | `knox/lessons.ts` |
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
-| `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v26 | `knox/name-retidy.ts` |
+| `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v108 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v111 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v10 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

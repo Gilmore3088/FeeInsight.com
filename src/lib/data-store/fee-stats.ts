@@ -37,12 +37,14 @@
  *    paying late is a service charge, not the box's rent, and stays out of the rent's medians,
  *    ranges and counts (safeDepositServiceSql). It stays on the bank's own page, marked as not
  *    compared, by the same name rule (fee-comparability.ts).
- * 9. One charging basis per category (#1901): a dormant, minimum balance or monthly maintenance
- *    row stated as quarterly, annual, daily, hourly or one-time, and a safe deposit box or IRA
- *    administration row stated as monthly, quarterly, daily, hourly or one-time, prices a
- *    different period than the category's median and stays out of its medians, ranges and
- *    counts (basisMismatchSql). Per item, other and blank frequencies stay. The bank's own page
- *    keeps the row, marked as not compared (fee-comparability.ts basisMismatchReason).
+ * 9. One charging basis per category (#1901): every category has one basis (fee-comparability.ts
+ *    CATEGORY_BASIS: monthly, annual or daily for the period categories, per event for every
+ *    other). A row whose stated frequency contradicts it (a quarterly dormant fee, a bill pay
+ *    fee per payment against the monthly subscription, a monthly or daily price in a per-event
+ *    category such as a $5 a day overdraft transfer) stays out of the category's
+ *    medians, ranges and counts (basisMismatchSql), so no benchmark pools two bases. Blank and
+ *    other frequencies stay. The bank's own page and Hamilton's report comparison leave the
+ *    same rows out of the subject's value (basisMismatchReason).
  * 10. Literal special units (#2248): known hourly, page, document, image, statement, half-hour,
  *    quarter-hour and minute prices stay visible with their literal amounts and conditions, but
  *    leave pooled category comparisons until same-unit cohorts exist. The finite SQL predicate
@@ -89,8 +91,11 @@ export const COUNT_SHARED_SCHEDULE_ONCE: boolean = true;
  * inactive (activeInstitutionFilter), the rule every public count already uses.
  * 17/18 (#2248): explicitly hourly, page, document, image, statement and partial-hour prices
  * remain visible evidence but leave category comparisons whose charging units are mixed.
+ * 19/20 (#1901): the basis rule covers every category, not five: a monthly, quarterly, annual or
+ * daily price leaves a per-event category's median, and returned mail, bill pay, paper statement,
+ * continuous overdraft and the daily overdraft cap get their own period basis.
  */
-export const STATS_METHOD_VERSION = COUNT_SHARED_SCHEDULE_ONCE ? 17 : 18;
+export const STATS_METHOD_VERSION = COUNT_SHARED_SCHEDULE_ONCE ? 19 : 20;
 
 /** SQL predicate: the row's source address names a business-only schedule (rule 6). */
 export function businessSourceSql(alias: string): string {
@@ -157,7 +162,7 @@ export const STATS_POPULATION_FILTERS: ReadonlyArray<PopulationFilter & { sqlMar
   },
   {
     key: "one_charging_basis",
-    label: "Where a fee is usually charged on one schedule (for example monthly), the same fee charged over a different period left out",
+    label: "Each fee compared on one charging basis (monthly, yearly, daily or each time it is charged); the same fee stated on a different basis left out",
     sqlMarker: ".fee_category IN (",
   },
   {

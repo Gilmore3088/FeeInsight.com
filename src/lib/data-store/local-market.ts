@@ -37,6 +37,16 @@ export interface LocalMarket {
   competitors: LocalMarketCompetitorRow[];
 }
 
+/**
+ * How `getLocalMarketCompetitors` computes a competitor's amount for a category from its catalog
+ * rows: the highest overdraft tier ("max", `MAX(amount)`), else their median ("median",
+ * `PERCENTILE_CONT(0.5)`). Either is an aggregate of the rows, never one fee record. Keep in step
+ * with the CASE in the query below.
+ */
+export function competitorAmountBasis(category: string): "max" | "median" {
+  return category === "overdraft" ? "max" : "median";
+}
+
 const SOD_THOUSANDS = 1_000;
 const MAX_MARKET_COUNTIES = 3;
 

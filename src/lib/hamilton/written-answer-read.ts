@@ -135,7 +135,11 @@ export interface WrittenAnswerToolResult {
 }
 
 export type WrittenAnswerResult =
-  | { status: "written"; text: string; toolResults: WrittenAnswerToolResult[]; check: AnswerEvidenceCheck }
+  | {
+    status: "written"; text: string; toolResults: WrittenAnswerToolResult[]; check: AnswerEvidenceCheck;
+    /** The briefing evidence the prompt carried, so the eval's output gate reads what the route's does. */
+    briefingEvidence?: HamiltonBriefingEvidence[];
+  }
   | { status: "unavailable"; reason: string };
 
 /** One written answer as a buffered call: what the Analyze screen streams, for the eval. */
@@ -204,7 +208,7 @@ export const writeWrittenAnswer: WrittenAnswerWriter = async ({ institutionId, i
     const text = (result.generated.text ?? "").trim();
     if (!text) return { status: "unavailable", reason: "Hamilton wrote no answer within its steps." };
     const toolResults = (result.generated.steps ?? []).flatMap((step) => step.toolResults.map((r) => ({ toolName: r.toolName, input: r.input, output: r.output })));
-    return { status: "written", text, toolResults, check: writtenAnswerCheck(text, toolResults.map((r) => r.output), question,
+    return { status: "written", text, toolResults, briefingEvidence: prompt.briefingEvidence, check: writtenAnswerCheck(text, toolResults.map((r) => r.output), question,
       { briefingEvidence: prompt.briefingEvidence, toolResults, institutionId }) };
   } catch (error) {
     if (isProviderLimitError(error)) return { status: "unavailable", reason: HAMILTON_PAUSED_MESSAGE };
