@@ -712,7 +712,9 @@ async function handlePOST(request: Request) {
           // A held answer waits for the gate. The result's stream replays from its start, so
           // an answer that passes still reaches the reader whole.
           const heldVerdict = holdsAnswers ? await verdict : null;
-          if (holdsAnswers && providerFailed) {
+          // With the gate deciding, an answer it never read also fails closed, even if the failure
+          // flag was not set (review of 21105873c).
+          if (holdsAnswers && (providerFailed || (enforceGate && !heldVerdict))) {
             // V5 T6 fault injection: the provider erred, timed out or stopped short, so the gate
             // never ran. Fail closed: none of the unverified draft is sent, only a plain line.
             // The failure is already on the ledger (flushProviderFailure, ai_api_usage_events).
