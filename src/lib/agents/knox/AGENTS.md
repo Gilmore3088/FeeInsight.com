@@ -292,7 +292,7 @@ fee"; read from the cut words "overdrafts an NSF fee" it was nsf only while a PD
 overdraft and nsf, and never to nsf when the words before say the bank paid or honored the item or
 name an overdraft program (`PAID_WORD`, `PAID_ITEM`, `PAID_AND_RETURNED_ITEM`, Courtesy Pay, Bounce,
 Privilege): "NSF items paid: an NSF fee of" and "Courtesy Pay overdrafts an NSF fee of" stay
-overdraft (v19, v42, v43), "Overdraft items returned an NSF fee of" is nsf. Any other disagreement keeps the read's category and name, because the words
+overdraft (v19, v42, v43), as do "Overdrafts we choose to pay", "honored" and "covered by us" (`BANK_PAYS`); "Overdraft items returned an NSF fee of" and "Overdrafts we do not pay an NSF fee of" are nsf, and an NSF item returned stays nsf whatever the phrase (`ITEM_RETURNED`). Any other disagreement keeps the read's category and name, because the words
 before are then the more specific fee ("For incoming international wires, an incoming wire fee of"
 stays an international wire; deposited item returns, garnishments and subpoena copies stay as read).
 The read also stays when the phrase is generic ("a monthly fee of", "a service charge of", "an

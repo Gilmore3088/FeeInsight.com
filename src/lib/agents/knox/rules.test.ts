@@ -1940,8 +1940,24 @@ describe("Knox v114: a sentence's priced noun phrase names and files its fee", (
     expect(fee?.feeName).toBe(nameFrom(line.slice(0, line.indexOf("$"))));
   });
 
-  it("re-files overdraft items the bank returns as the NSF fee", () => {
+  // Round-3 review of #2637: an overdraft the bank pays, honors or covers (N3), and an NSF item it
+  // returns (N4), keep their read.
+  it.each([
+    ["Overdrafts we pay an NSF fee of $30", "overdraft"],
+    ["Overdrafts we choose to pay an NSF fee of $30", "overdraft"],
+    ["Overdrafts honored an NSF fee of $30", "overdraft"],
+    ["Overdrafts covered by us an NSF fee of $30", "overdraft"],
+    ["NSF items when returned an overdraft fee of $30", "nsf"],
+  ] as const)("keeps %s as read", (line, category) => {
+    const [fee] = extractCandidatesFromText(line).candidates;
+    expect(fee?.canonicalHint).toBe(category);
+    expect(fee?.feeName).toBe(nameFrom(line.slice(0, line.indexOf("$"))));
+  });
+
+  it("re-files overdraft items the bank returns or does not pay as the NSF fee", () => {
     expect(reads("Overdraft items returned an NSF fee of $30")).toEqual([["NSF fee", 30, "nsf"]]);
+    expect(reads("Overdrafts we do not pay an NSF fee of $30")).toEqual([["NSF fee", 30, "nsf"]]);
+    expect(reads("Overdrafts we don't pay an NSF fee of $30")).toEqual([["NSF fee", 30, "nsf"]]);
   });
 
   it("keeps a family qualifier in the name when the phrase agrees with the read", () => {

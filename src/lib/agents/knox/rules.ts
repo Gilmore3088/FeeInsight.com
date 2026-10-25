@@ -1214,6 +1214,12 @@ const PAID_WORD = /\bpaid\b/i;
  * "Insufficient Funds Charge (Paid)", "Paid nonsufficient funds (NSF)", "NSF Share Draft (Honored)").
  */
 const PAID_ITEM = /\b(?:items?|checks?)\s*[-–:]?\s*paid\b|\bpaid\s+(?:items?|checks?|non[-\s]?sufficient|insufficient|NSF)\b|\bpaid\s+(?:[\w&]+\s+){1,3}NSF\s+items?\b|\(\s*(?:paid|honou?red)\s*\)/i;
+/** v19/v22: an item the bank returns unpaid, so the NSF fee. */
+const ITEM_RETURNED = /\b(?:return(?:ed)?|unpaid)\b/i;
+/** v114: the bank pays or honors the overdraft ("Overdrafts we choose to pay", "honored", "covered by us"). */
+const BANK_PAYS = /\bwe\s+(?:\w+\s+){0,2}pay\b|\bhonou?red\b|\bcovered\s+by\s+us\b/i;
+/** v114: unless it says it does not ("Overdrafts we do not pay"). */
+const BANK_DOES_NOT_PAY = /\b(?:not|never)\s+pay\b|n['’]t\s+pay\b/i;
 /** v114: an overdraft program's own words (Courtesy Pay, Bounce Protection, Overdraft Privilege). */
 const OVERDRAFT_PROGRAM = /\b(?:courtesy|privilege|bounce)/i;
 /** v78 (#1304): words that make a charge the overdraft (courtesy pay) fee or the NSF fee. */
@@ -1365,7 +1371,7 @@ export function classifyPatternKey(value: string): string | null {
   if (
     key === "nsf" &&
     PAID_ITEM.test(text) &&
-    !/\b(?:return(?:ed)?|unpaid)\b/i.test(text)
+    !ITEM_RETURNED.test(text)
   ) {
     return "overdraft";
   }
@@ -1891,13 +1897,15 @@ const FAMILY_QUALIFIER =
 const PHRASE_REFILES = new Set(["nsf>overdraft", "overdraft>nsf"]);
 /**
  * v114: overdraft words before an "an NSF fee of" phrase that still make the price the overdraft
- * fee: an item the bank paid or honored (`PAID_WORD`, `PAID_ITEM`: "NSF items paid: an NSF fee of",
- * "Overdrafts paid or returned an NSF fee of"), or an overdraft program ("Courtesy Pay overdrafts",
+ * fee: an item the bank paid or honored (`PAID_WORD`, `PAID_ITEM`, `BANK_PAYS`: "NSF items paid: an
+ * NSF fee of", "Overdrafts paid or returned an NSF fee of", "Overdrafts we choose to pay an NSF fee
+ * of", but not "Overdrafts we do not pay"), or an overdraft program ("Courtesy Pay overdrafts",
  * "Overdraft privilege items"). Only a paid item's or program's NSF wording stays overdraft;
  * "overdrafts an NSF fee of" and "Overdraft items returned an NSF fee of" are the NSF fee.
  */
 function paidOverdraftWords(words: string): boolean {
-  return PAID_WORD.test(words) || PAID_ITEM.test(words) || PAID_AND_RETURNED_ITEM.test(words) || OVERDRAFT_PROGRAM.test(words);
+  return PAID_WORD.test(words) || PAID_ITEM.test(words) || PAID_AND_RETURNED_ITEM.test(words) || OVERDRAFT_PROGRAM.test(words) ||
+    (BANK_PAYS.test(words) && !BANK_DOES_NOT_PAY.test(words));
 }
 
 /**
@@ -1929,6 +1937,8 @@ export function pricedNounPhrase(words: string, amount: number, readHint: string
   const hint = classifyFeeText(name);
   if (!hint || (hint !== readHint && !PHRASE_REFILES.has(`${readHint}>${hint}`))) return null;
   if (readHint === "overdraft" && hint === "nsf" && paidOverdraftWords(before)) return null;
+  // An NSF item the bank returns is the NSF fee whatever the phrase says (v19, v22).
+  if (readHint === "nsf" && hint === "overdraft" && ITEM_RETURNED.test(before)) return null;
   if (!usableName(name) || !passesDarwinChecks(hint, name, amount)) return null;
   return { name: FAMILY_QUALIFIER.test(before) || dropsCondition(cell, name, hint) ? null : name, hint };
 }
