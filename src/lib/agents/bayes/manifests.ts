@@ -267,14 +267,15 @@ export function rosettaReaderManifests(versions: RosettaVersions): ReplayManifes
     {
       ...reader("read", "read.page_check", versions.read, "Texts read from PDFs, HTML, plain text and Word files by an older reader."),
       unit: "current-copy document text",
-      // #2069: every older-reader current copy is replayed once per version, a few a read step.
+      // #2069 ("Re-read all", James, 25 Oct): every older-reader current copy, OCR and JavaScript
+      // fallback texts included, is replayed once per version, a few a read step.
       count: async (db): Promise<ReplayCount> => {
         const { countReaderReplaysDue } = await import("@/lib/agents/rosetta/read");
         const { countReaderReplaysDone, READER_REPLAY_PER_RUN } = await import("@/lib/agents/rosetta/reader-replay");
         const queued = await countReaderReplaysDue(db);
         const { done, textChanged } = await countReaderReplaysDone(db);
         return { affected: queued + done, done, queued, exclusions: {},
-          note: `Queued is the read step's own replay selection (current copies whose text an older primary or the legacy reader wrote), read at most ${READER_REPLAY_PER_RUN} a step. Done counts rosetta.reader_replay receipts at this version; ${textChanged} stored a new text, which Knox re-extracts and Darwin re-checks. A replay keeps the earlier text unless the new one lists at least as many fees. Thin texts the ordinary re-read settled count as neither.` };
+          note: `Queued is the read step's own replay selection (current copies whose text an older version of its reader wrote: a primary or the legacy reader, free OCR or the JavaScript fallback; the paid pass is not replayed), read at most ${READER_REPLAY_PER_RUN} a step. Done counts rosetta.reader_replay receipts at this version; ${textChanged} stored a new text, which Knox re-extracts and Darwin re-checks. A replay keeps the earlier text unless the new one lists at least as many fees. Thin texts the ordinary re-read settled count as neither.` };
       },
       notCounted: undefined,
     },
@@ -355,7 +356,8 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v2 (#1910): the name cover reads NSF/insufficient, OD/overdraft and a paid NSF item/overdraft as one item.
   PRODUCT_PAGE_REPEAT_CHECK_VERSION: "Each verify step re-reads every live product-page fee with a same-price schedule twin (no cursor), so version 2's wider name cover reaches every live fee on the next step; nothing older to replay.",
   // v1 (#1915): schedule editions not yet in effect. Every verify step reads every live fee on a dated document.
-  EDITION_CHECK_VERSION: "First version: each verify step re-reads every live or held fee on a document whose heading states an edition (no cursor); nothing older to replay.",
+  // v2 (T1): an edition line past a web page's menu, counted only until EDITION_LATE_HEADING_LIVE.
+  EDITION_CHECK_VERSION: "Each verify step re-reads every live or held fee on a document whose heading or late edition line states an edition (no cursor); nothing older to replay.",
   // v1 (#2022): Canadian bank documents. A full verify step re-reads every live document's text at most hourly.
   CANADIAN_DOCUMENT_CHECK_VERSION: "First version: a verify step re-reads every live fee's document text (no cursor, at most hourly); nothing older to replay.",
   // v8 (#1112): new no-fee, discount, allowance and loan-amount name rules. Each step's eval-verdict
@@ -536,6 +538,8 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // v82 (Oct 25, #1662): the night deposit key-deposit exemptions are tied to the key or the noun.
     // v83 (Oct 25, #1690): the non-network ATM fee refuses research, photo, negative-share and
     // additional-card names.
+    // v84 (Oct 25, #1788): a generic monthly charge under another service's heading or cell fails
+    // monthly maintenance (Positive Pay, ACH, bill pay, cards, paper statements).
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",

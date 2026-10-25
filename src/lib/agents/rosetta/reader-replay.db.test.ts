@@ -7,7 +7,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { JSON_TEXT_PASSTHROUGH, NUMERIC_AS_NUMBER, TEXT_WITHOUT_NUL } from "@/lib/data-store/connection";
 import { rosettaReadCandidatesQuery } from "./read";
 import { READER_REPLAY_EVENT } from "./reader-replay";
-import { ROSETTA_READ_VERSION } from "./reader-versions";
+import { OCR_STRATEGY } from "./ocr";
+import { ROSETTA_OCR_VERSION, ROSETTA_READ_VERSION } from "./reader-versions";
 
 const connection = process.env.E2E_DATABASE_URL;
 const INST = 20690001, DOC = 20690101, RUN = 20690201;
@@ -85,6 +86,25 @@ describe.skipIf(!connection)("Rosetta replays older-reader documents on a reader
     await raw`INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
               VALUES (${RUN}, ${READER_REPLAY_EVENT}, 'skipped', 'fixture',
                       ${raw.json({ source_document_id: DOC, source_hash: HASH, reader_version: ROSETTA_READ_VERSION })})`;
+    expect(await selected("only")).toEqual([]);
+  });
+
+  it("replays a copy whose link has a newer download, since its fees are still live", async () => {
+    await raw`INSERT INTO source_documents (id, institution_id, status, document_url, content_hash, crawled_at)
+              VALUES (${DOC + 1}, ${INST}, 'success', 'https://bank2069.test/fees-new.pdf', 'hash-2069-new', '2026-10-03T00:00:00Z')`;
+    expect(await selected("exclude")).not.toContain(DOC);
+    expect(await selected("only")).toContain(DOC);
+  });
+
+  it("replays an OCR text below the OCR version until an OCR read or receipt at that version", async () => {
+    await readAt(ROSETTA_READ_VERSION, "scanned_pdf");
+    await raw`UPDATE agent_source_texts SET reader = ${OCR_STRATEGY} WHERE source_document_id = ${DOC}`;
+    await raw`INSERT INTO pipeline_attempts (institution_id, source_document_id, stage, strategy, strategy_version, input_fingerprint, outcome)
+              VALUES (${INST}, ${DOC}, 'read', ${OCR_STRATEGY}, ${ROSETTA_OCR_VERSION - 1}, ${HASH}, 'ok')`;
+    expect(await selected("only")).toEqual([DOC]);
+    await raw`INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
+              VALUES (${RUN}, ${READER_REPLAY_EVENT}, 'skipped', 'fixture',
+                      ${raw.json({ source_document_id: DOC, source_hash: HASH, reader_version: ROSETTA_READ_VERSION, ocr_version: ROSETTA_OCR_VERSION })})`;
     expect(await selected("only")).toEqual([]);
   });
 

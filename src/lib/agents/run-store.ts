@@ -102,6 +102,7 @@ import { documentOwnerDetail } from "@/lib/agents/darwin/document-owner";
 import { findingsDetail as releaseRepairFindingsDetail, releaseRepairDetail, runReleaseRepairStep } from "@/lib/agents/darwin/release-repair";
 import { AUDIENCE_RELABEL_VERSION, dryRunFullTotals, runAudienceRelabel, type AudienceRelabelMode } from "@/lib/agents/darwin/audience-relabel";
 import { runDailyBrief } from "@/lib/agents/daily-brief";
+import { hamiltonHealthDetail } from "@/lib/hamilton/health-check";
 import { runSundayMaintenance, summarizeSundayMaintenance } from "@/lib/agents/deming/sunday-maintenance";
 import { MONTHLY_REVIEW_VERSION, runMonthlyReview, summarizeMonthlyReview } from "@/lib/agents/deming/monthly-review";
 import { runFeeAlertDispatch, summarizeFeeAlertDispatch } from "@/lib/agents/fee-alerts";
@@ -1083,9 +1084,13 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId: numericRunParam(params, ["institution_id"]),
       });
-      const editionNote = editions.holds + editions.restores + editions.takeovers > 0
-        ? ` Schedule editions: ${editions.holds.toLocaleString()} live fee(s) from schedules not in effect yet, ${editions.restores.toLocaleString()} now in effect, ${editions.takeovers.toLocaleString()} older-edition line(s) (${editions.live && !editions.dryRun ? `${editions.held.length.toLocaleString()} held, ${editions.restored.length.toLocaleString()} restored, ${editions.retired.length.toLocaleString()} retired` : "dry run or switch off: nothing written"}).`
+      // T1: what an edition line past a page's menu would add while EDITION_LATE_HEADING_LIVE is off.
+      const lateEditionNote = editions.lateHeadingWouldHold > 0
+        ? ` Edition lines past the menu (switch off, nothing written): ${editions.lateHeadingWouldHold.toLocaleString()} more live fee(s) would come down.`
         : "";
+      const editionNote = lateEditionNote + (editions.holds + editions.restores + editions.takeovers > 0
+        ? ` Schedule editions: ${editions.holds.toLocaleString()} live fee(s) from schedules not in effect yet, ${editions.restores.toLocaleString()} now in effect, ${editions.takeovers.toLocaleString()} older-edition line(s) (${editions.live && !editions.dryRun ? `${editions.held.length.toLocaleString()} held, ${editions.restored.length.toLocaleString()} restored, ${editions.retired.length.toLocaleString()} retired` : "dry run or switch off: nothing written"}).`
+        : "");
       // #1909: fees read from a bank's Spanish copy of a schedule whose English line is live
       // (translated-copy-check.ts); a report only on a dry run or with its switch off.
       const translatedCopy = await recheckTranslatedCopies(tx, {
@@ -1898,6 +1903,7 @@ async function executeAgenticStep(
           category_guard_failing: categoryGuard.failingFees,
           category_guard_live_refiled: categoryGuard.liveRefiledFees,
           category_guard_version: categoryGuard.guardVersion,
+          category_guard_heading_read_failed: categoryGuard.headingReadFailed,
           // v70: live card-product misfiles held live while CARD_PRODUCT_TAKEDOWN_LIVE is off (0 while on).
           category_guard_card_product_pending: categoryGuard.cardProductPending,
           category_guard_card_product_samples: categoryGuard.cardProductPendingSamples.slice(0, 10),
@@ -2267,6 +2273,8 @@ async function executeAgenticStep(
           live_refiled_fees: guard.liveRefiledFees,
           card_product_pending: guard.cardProductPending,
           card_product_pending_samples: guard.cardProductPendingSamples,
+          // v84: the heading read failed, so generic monthly charges were judged by name and line only.
+          heading_read_failed: guard.headingReadFailed,
           category_guard_limit: guard.limit,
           rollback_batch_id: guard.rollbackBatchId,
           guard_version: guard.guardVersion,
@@ -2499,6 +2507,8 @@ async function executeAgenticStep(
           lines: result.brief.lines,
           needs_you: result.brief.needsYou?.map((item) => ({ id: item.id, severity: item.severity, title: item.title })) ?? null,
           funnel: result.funnel,
+          // Hamilton's health check (#1921): each probe's verdict, so a failure is on the run too.
+          hamilton_health: result.hamilton ? hamiltonHealthDetail(result.hamilton) : { error: result.hamiltonError },
         },
       };
     }

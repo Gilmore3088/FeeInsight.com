@@ -5,8 +5,10 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import { rosettaReadCandidatesQuery, runRosettaRead } from "./read";
-import { READER_REPLAY_EVENT, READER_REPLAY_PER_RUN, READER_REPLAY_READERS, readerReplayDueSql, recordReaderReplay } from "./reader-replay";
-import { ROSETTA_READ_VERSION } from "./reader-versions";
+import { JS_FALLBACK_STRATEGY } from "./js-fallback";
+import { OCR_STRATEGY } from "./ocr";
+import { READER_REPLAY_EVENT, READER_REPLAY_OWN_VERSIONS, READER_REPLAY_PER_RUN, READER_REPLAY_READERS, readerReplayDueSql, recordReaderReplay } from "./reader-replay";
+import { ROSETTA_JS_FALLBACK_VERSION, ROSETTA_OCR_VERSION, ROSETTA_READ_VERSION } from "./reader-versions";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn>; begin?: unknown };
 
@@ -37,6 +39,7 @@ describe("reader replay selection", () => {
     expect(params).toContainEqual(READER_REPLAY_READERS);
     expect(params).toContain(READER_REPLAY_EVENT);
     expect(params).toContain(ROSETTA_READ_VERSION);
+    expect(params).toContainEqual(READER_REPLAY_OWN_VERSIONS.map(({ reader }) => reader));
   });
 
   it("selects nothing in its lane without the current-copy columns", () => {
@@ -52,6 +55,38 @@ describe("reader replay selection", () => {
     expect(due).toContain("replayed.event_type = $3");
     expect(due).toContain("(replayed.detail->>'reader_version')::int >= $2::int");
     expect(due).toContain("t.reader IS NULL OR t.reader = ANY($1::text[])");
+  });
+
+  it("re-reads all: OCR and JavaScript-fallback texts below their own versions are due too, the paid pass never", () => {
+    expect(READER_REPLAY_OWN_VERSIONS).toEqual([
+      { reader: OCR_STRATEGY, version: ROSETTA_OCR_VERSION, receiptKey: "ocr_version" },
+      { reader: JS_FALLBACK_STRATEGY, version: ROSETTA_JS_FALLBACK_VERSION, receiptKey: "js_fallback_version" },
+    ]);
+    const due = readerReplayDueSql("t", { readers: "$1", version: "$2", event: "$3" }, "TRUE");
+    expect(due).toContain(`t.reader = '${OCR_STRATEGY}'`);
+    expect(due).toContain(`own_read.strategy_version >= ${ROSETTA_OCR_VERSION}`);
+    expect(due).toContain(`(replayed.detail->>'ocr_version')::int >= ${ROSETTA_OCR_VERSION}::int`);
+    expect(due).toContain(`t.reader = '${JS_FALLBACK_STRATEGY}'`);
+    expect(due).toContain(`(replayed.detail->>'js_fallback_version')::int >= ${ROSETTA_JS_FALLBACK_VERSION}::int`);
+    expect(due).not.toContain("read.paid_transcribe");
+    expect(READER_REPLAY_READERS).not.toContain("read.paid_transcribe");
+  });
+
+  it("lets an OCR or fallback replay past its bytes' scanned_pdf or js_required primary read", () => {
+    const { query } = select("only");
+    const failedRead = query.slice(query.indexOf("OR NOT EXISTS (\n           SELECT 1\n             FROM pipeline_attempts pa") - 400);
+    expect(failedRead.slice(0, 400)).toContain("replay_text");
+  });
+
+  it("lets a replay through the current-copy rule when its link has a newer download", () => {
+    const { query } = select("only");
+    const newer = query.slice(query.indexOf("FROM source_documents newer"));
+    const guard = newer.slice(0, newer.indexOf("OR profile.read_strategy IS NULL"));
+    expect(guard).toContain("SELECT 1 FROM agent_source_texts replay_text");
+    // The ordinary selection keeps the rule as it was.
+    const ordinary = select("exclude").query;
+    const ordinaryNewer = ordinary.slice(ordinary.indexOf("FROM source_documents newer"));
+    expect(ordinaryNewer.slice(0, ordinaryNewer.indexOf("OR profile.read_strategy IS NULL"))).not.toContain("replay_text");
   });
 });
 
@@ -73,7 +108,7 @@ describe("recordReaderReplay", () => {
     const insert = calls.find((call) => call.sql.includes("INSERT INTO agent_run_events"))!;
     expect(insert.values[2]).toBe(READER_REPLAY_EVENT);
     expect(JSON.parse(String(insert.values[5]))).toMatchObject({
-      reader_version: ROSETTA_READ_VERSION, from_reader: null, from_reader_version: 2, source_document_id: 7,
+      reader_version: ROSETTA_READ_VERSION, ocr_version: ROSETTA_OCR_VERSION, js_fallback_version: ROSETTA_JS_FALLBACK_VERSION, from_reader: null, from_reader_version: 2, source_document_id: 7,
       source_hash: "bytes", old_text_hash: "old", new_text_hash: "new", text_changed: true,
     });
   });

@@ -7,8 +7,12 @@ import {
   SAFE_DEPOSIT_SERVICE_REASON,
   SAFE_DEPOSIT_SERVICE_SQL,
   basisMismatchReason,
+  basisMismatchSql,
+  categoryBasis,
+  contradictingFrequencies,
   notComparableReason,
 } from "./fee-comparability";
+import { FEE_FAMILIES } from "./fee-taxonomy";
 
 describe("notComparableReason: card inactivity under an account-dormancy category", () => {
   it("keeps a card's inactivity fee out of the dormant-account median, by name", () => {
@@ -97,10 +101,45 @@ describe("charging basis (#1901)", () => {
     expect(basisMismatchReason("ira_administration", " Quarterly ")).toBe("Quarterly charge, not annual");
   });
 
-  it("leaves categories without a basis alone", () => {
-    expect(basisMismatchReason("paper_statement", "quarterly")).toBeNull();
-    expect(basisMismatchReason("overdraft", "daily")).toBeNull();
+  it("gives every category one basis: a period category's or per event", () => {
+    const taxonomy = Object.values(FEE_FAMILIES).flat();
+    for (const category of Object.keys(CATEGORY_BASIS)) expect(taxonomy, category).toContain(category);
+    expect(categoryBasis("overdraft")).toBe("per_event");
+    expect(categoryBasis("a_new_category")).toBe("per_event");
+    expect(categoryBasis("paper_statement")).toBe("monthly");
+    expect(categoryBasis("continuous_od")).toBe("daily");
+  });
+
+  it("leaves a stated period out of a per-event category's median", () => {
+    expect(basisMismatchReason("overdraft", "daily")).toBe("Daily charge, not per item");
+    expect(basisMismatchReason("od_protection_transfer", "daily")).toBe("Daily charge, not per item");
+    expect(basisMismatchReason("document_reproduction", "monthly")).toBe("Monthly charge, not per item");
+    expect(basisMismatchReason("cashiers_check", "annual")).toBe("Annual charge, not per item");
+    for (const frequency of ["per_item", "per_occurrence", "per_transaction", "one_time", "other", null]) {
+      expect(basisMismatchReason("early_closure", frequency), String(frequency)).toBeNull();
+    }
+    // Hourly and other literal units are the special-unit rule's (fee-unit.ts), with its own reason.
+    expect(basisMismatchReason("account_research", "hourly")).toBeNull();
     expect(basisMismatchReason(null, "quarterly")).toBeNull();
+  });
+
+  it("reads paper statements as monthly, keeping a per-item reading of \"$5 each\"", () => {
+    expect(basisMismatchReason("paper_statement", "quarterly")).toBe("Quarterly charge, not monthly");
+    expect(basisMismatchReason("paper_statement", "per_item")).toBeNull();
+    expect(basisMismatchReason("safe_deposit_box", "per_item")).toBeNull();
+  });
+
+  it("splits returned mail and bill pay by basis: a per-event price leaves their monthly median", () => {
+    expect(basisMismatchReason("returned_mail", "per_item")).toBe("Per-item charge, not monthly");
+    expect(basisMismatchReason("bill_pay", "per_transaction")).toBe("Per-transaction charge, not monthly");
+    expect(basisMismatchReason("bill_pay", "one_time")).toBe("One-time charge, not monthly");
+    expect(basisMismatchReason("returned_mail", "monthly")).toBeNull();
+    expect(basisMismatchReason("returned_mail", null)).toBeNull();
+  });
+
+  it("reads continuous overdraft as a daily price, so a one-time sustained overdraft fee leaves it", () => {
+    expect(basisMismatchReason("continuous_od", "one_time")).toBe("One-time charge, not daily");
+    expect(basisMismatchReason("continuous_od", "daily")).toBeNull();
   });
 
   it("never lists a category's own basis as a contradiction", () => {
@@ -108,5 +147,28 @@ describe("charging basis (#1901)", () => {
       expect(CONTRADICTING_FREQUENCIES[basis], category).not.toContain(basis);
       expect(basisMismatchReason(category, basis), category).toBeNull();
     }
+  });
+
+  it("SQL and client rules agree on every category and frequency", () => {
+    // Evaluate basisMismatchSql's arms by reading them back: each is a category list (IN or NOT IN)
+    // and a frequency list. The SQL must flag exactly the rows basisMismatchReason flags.
+    const sql = basisMismatchSql("c");
+    const arms = [...sql.matchAll(/\(c\.fee_category (NOT )?IN \(([^)]*)\) AND lower\(btrim\(c\.frequency, [^)]*\)\) IN \(([^)]*)\)\)/g)].map((m) => ({
+      negated: Boolean(m[1]),
+      categories: m[2].split(", ").map((v) => v.replace(/'/g, "")),
+      frequencies: m[3].split(", ").map((v) => v.replace(/'/g, "")),
+    }));
+    expect(arms.length).toBeGreaterThan(1);
+    const flagged = (category: string, frequency: string) =>
+      arms.some((arm) => arm.categories.includes(category) !== arm.negated && arm.frequencies.includes(frequency));
+    const frequencies = ["monthly", "quarterly", "annual", "daily", "hourly", "one_time", "per_item", "per_occurrence", "per_transaction", "other"];
+    for (const category of [...Object.values(FEE_FAMILIES).flat(), "a_new_category"]) {
+      for (const frequency of frequencies) {
+        expect(flagged(category, frequency), `${category} ${frequency}`).toBe(basisMismatchReason(category, frequency) !== null);
+        expect(contradictingFrequencies(category).includes(frequency)).toBe(basisMismatchReason(category, frequency) !== null);
+      }
+    }
+    expect(sql.startsWith("COALESCE(")).toBe(true);
+    expect(sql.endsWith(", false)")).toBe(true);
   });
 });

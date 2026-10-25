@@ -80,7 +80,7 @@ import type { PdfReaderAgreement } from "./pdf-reader-agreement";
 import { PDF_PROSE_REREAD_VERSION, PDF_STACKED_REPAIR_VERSION } from "./reader-versions";
 import { pdfStackedRepairDueSql, PDF_STACKED_REPAIR_MAX_PER_RUN, PDF_STACKED_REPAIR_STRATEGY } from "./pdf-stacked-repair";
 import { emptyLayoutRecheckResult, runLayoutRecheck, type LayoutRecheckResult } from "./layout-recheck";
-import { READER_REPLAY_EVENT, READER_REPLAY_PER_RUN, READER_REPLAY_READERS, readerReplayDueSql, recordReaderReplay } from "./reader-replay";
+import { READER_REPLAY_EVENT, READER_REPLAY_OWN_VERSIONS, READER_REPLAY_PER_RUN, READER_REPLAY_READERS, readerReplayDueSql, recordReaderReplay } from "./reader-replay";
 import {
   documentKindColumnsReady,
   ROSETTA_TABLE_ROWS_VERSION,
@@ -1117,14 +1117,17 @@ export function rosettaReadCandidatesQuery(
                      AND current_read.outcome = ANY(${settledParam}::text[])
                 )`;
     const notSettledByCurrentReader = notSettledBy("adt");
-    // Reader replay (reader-replay.ts, #2069): every current copy whose text an older primary
-    // reader wrote gets one read per reader version, whatever its fee count, in its own bounded
-    // lane. Needs the current-copy columns; the ordinary selection leaves these to that lane.
+    // Reader replay (reader-replay.ts, #2069, "Re-read all", James 25 Oct; live, no switch):
+    // every current copy whose text an older version of its reader wrote (primary, legacy, free
+    // OCR or the JavaScript fallback) gets one read per reader version, whatever its fee count, in
+    // its own bounded lane. 25 Oct: 375 documents at 374 banks, 5,526 live fees (reader-replay.ts). Needs the current-copy columns; the ordinary selection leaves these to that lane.
     if (currentCopy && readerReplay !== "exclude") {
       params.push(READER_REPLAY_READERS);
       const replayReadersParam = `$${params.length}`;
       params.push(READER_REPLAY_EVENT);
       const replayEventParam = `$${params.length}`;
+      params.push(READER_REPLAY_OWN_VERSIONS.map(({ reader }) => reader));
+      const ownReadersParam = `$${params.length}`;
       const replayParams = { readers: replayReadersParam, version: versionParam, event: replayEventParam };
       const currentText = (alias: string) => `${alias}.source_document_id = cr.id
                 AND ${alias}.source_hash IS NOT DISTINCT FROM cr.content_hash
@@ -1143,12 +1146,20 @@ export function rosettaReadCandidatesQuery(
              ${replayTextColumn("normalized_text")} AS reader_replay_text,
              ${replayTextColumn("text_hash")} AS reader_replay_text_hash,
              ${replayTextColumn("reader")} AS reader_replay_reader,
-             (SELECT MAX(${readerVersion("old_read")}) FROM pipeline_attempts old_read
+             CASE WHEN ${replayTextColumn("reader")} = ANY(${ownReadersParam}::text[])
+               -- OCR and the JavaScript fallback: the newest version of that reader on these bytes.
+               THEN (SELECT MAX(own_read.strategy_version) FROM pipeline_attempts own_read
+                      WHERE own_read.stage = 'read'
+                        AND own_read.strategy = ${replayTextColumn("reader")}
+                        AND own_read.institution_id = cr.institution_id
+                        AND own_read.input_fingerprint = cr.content_hash)
+               ELSE (SELECT MAX(${readerVersion("old_read")}) FROM pipeline_attempts old_read
                WHERE old_read.stage = 'read'
                  AND old_read.strategy <> ALL(${auxiliaryParam}::text[])
                  AND old_read.institution_id = cr.institution_id
                  AND old_read.input_fingerprint = cr.content_hash
-                 AND old_read.outcome = ANY(${settledParam}::text[])) AS reader_replay_from_version`;
+                 AND old_read.outcome = ANY(${settledParam}::text[]))
+             END AS reader_replay_from_version`;
     }
     // A scan or JavaScript page an older reader gave up on gets one read with the
     // current reader, which escalates to free OCR or the JavaScript fallbacks.
@@ -1462,7 +1473,9 @@ export function rosettaReadCandidatesQuery(
                 AND stuck.created_at > NOW() - make_interval(days => ${stuckDaysParam}::int)
            ) >= ${stuckMaxParam}::int
          )`);
-    filters.push(`AND (${ocrRetryDocument} OR NOT EXISTS (
+    // A replay passes too: an OCR or JavaScript-fallback text sits on bytes whose current primary
+    // read ended scanned_pdf or js_required, and the replay escalates past that inside the read.
+    filters.push(`AND (${ocrRetryDocument} OR ${readerReplayDue} OR NOT EXISTS (
            SELECT 1
              FROM pipeline_attempts pa
             WHERE pa.stage = 'read'
@@ -1529,6 +1542,9 @@ export function rosettaReadCandidatesQuery(
                 )
            )
            OR ${reopenedPage}
+           -- Re-read all (James, Oct 25, #2069): an older-reader copy that still carries the
+           -- bank's fees is replayed even when a newer download exists for its link.
+           OR ${readerReplayDue}
          )
          AND (
            ${companionPage}

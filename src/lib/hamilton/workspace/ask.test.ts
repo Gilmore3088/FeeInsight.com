@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { RESEARCH_SPLIT_LIVE } from "@/lib/fee-fold";
 import {
+  ANSWERABLE,
   buildAskResponse,
   feeCategoriesIn,
   buildOpinion,
@@ -175,6 +176,80 @@ describe("a question that names no fee (#1077)", () => {
     expect(feeCategoriesIn("Which banks have both verified NSF and monthly maintenance rows?").sort()).toEqual(["monthly_maintenance", "nsf"]);
     expect(feeCategoriesIn("talk to me about all 10B and up instititions for od fees")).toEqual(["overdraft"]);
     expect(feeCategoriesIn("talk to me about all institutison above 10billion")).toEqual([]);
+  });
+});
+
+describe("no answer about a different subject, even with an overdraft decision open (#1077)", () => {
+  // The issue's three real Pro questions, each once answered with overdraft or "Which fee?".
+  const issueQuestions = [
+    "talk to me about $5B and up in florida. fee pricing, revenue, complaints",
+    "Which credit unions in the top 25 of the $1 billion to $10 billion tier run a fee share below 4%?",
+    "What are 1b - <10b institutions doing around service fee income",
+  ];
+  // Off-topic questions Hamilton holds no data for.
+  const offTopic = [
+    "What's the weather in Tampa this week?",
+    "Who is the CEO of the largest bank in Texas?",
+    "What is our net interest margin compared to peers?",
+    "How many CFPB complaints did Florida banks get last year?",
+    "talk to me about all institutison above 10billion",
+  ];
+  // Answered for the carried fee or a fee the question names, as the page would load it.
+  const respond = (question: string) => {
+    const intent = parseAsk(question, "overdraft");
+    const research = intent.feeCategory ? overdraftResearch({ feeCategory: intent.feeCategory }) : null;
+    return { intent, response: buildAskResponse({ question, intent, research, memory: [] }) };
+  };
+
+  it.each([...issueQuestions, ...offTopic])("%s", (question) => {
+    expect(feeCategoriesIn(question)).toEqual([]);
+    const { intent, response } = respond(question);
+    expect(intent.feeCategory).toBeNull();
+    expect(response.pageChange).toEqual({ screen: "none" });
+    // Says plainly it can't answer and what it can; never asks which fee, never names one.
+    expect(response.shortAnswer).toMatch(/^Hamilton can't answer that from the data it holds/);
+    expect(response.shortAnswer).toContain(ANSWERABLE);
+    expect(`${response.shortAnswer} ${response.question?.prompt ?? ""}`).not.toMatch(/which fee|overdraft|nsf/i);
+  });
+
+  it("says why an income question can't be answered, and names the segment it read", () => {
+    expect(respond(issueQuestions[2]).response.shortAnswer).toContain("it has no filed fee income to compare");
+    expect(respond(issueQuestions[1]).response.shortAnswer).toContain("it has no filed fee income to compare");
+    const segment = respond("talk to me about all institutison above 10billion");
+    expect(segment.response.shortAnswer).toContain(`It read a question about ${segment.intent.segment!.label}, but not one about a fee or fee income.`);
+  });
+
+  it("answers the fee a question names, not the open decision's", () => {
+    const { intent, response } = respond("How does our NSF fee compare with banks over $10 billion?");
+    expect(intent.feeCategory).toBe("nsf");
+    expect(response.pageChange).toMatchObject({ feeCategory: "nsf" });
+  });
+
+  it("keeps no fee for an income question that asks what to do but doesn't point at the fee", () => {
+    for (const question of [
+      "What should we do about our falling fee income?",
+      "Should we worry about our service charge revenue?",
+      "How does our fee income compare with banks like ours?",
+      "What is driving this drop in fee income?",
+    ]) {
+      expect(parseAsk(question, "overdraft").feeCategory).toBeNull();
+    }
+  });
+
+  it("keeps the open decision's fee for a follow-up on that fee", () => {
+    for (const question of [
+      "What if we charged $30?",
+      "Why?",
+      "How does that compare nationally?",
+      "What would $20 do to our fee income?",
+      // Points at the fee or asks what to do, so income or revenue in the question doesn't change the subject.
+      "How would that affect our revenue?",
+      "What does that do to revenue?",
+      "Should we raise it, given our fee income?",
+      "What would you recommend?",
+    ]) {
+      expect(parseAsk(question, "overdraft").feeCategory).toBe("overdraft");
+    }
   });
 });
 

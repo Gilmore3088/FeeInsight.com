@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { judgeEditions, NOT_YET_EFFECTIVE_REASON, type EditionRow } from "./edition-effective-check";
+import { judgeEditions, lateHeadingOnly, NOT_YET_EFFECTIVE_REASON, withDocumentHeads, type EditionRow } from "./edition-effective-check";
 import { editionHolds } from "@/lib/agents/hamilton/edition-hold";
 import { editionStarts, editionTakesOver, notYetEffective } from "@/lib/agents/hamilton/schedule-edition";
 
@@ -80,6 +80,41 @@ describe("Darwin's edition re-check (#1915)", () => {
   it("leaves another line of the fee alone", () => {
     const found = judgeEditions([AVIDIA[0], { ...AVIDIA[1], fee_name: "Stop Payment", canonical_fee_key: "stop_payment" }], "2026-12-01");
     expect(found.takeovers).toEqual([]);
+  });
+});
+
+describe("an edition line past the menu in Darwin's re-check (T1)", () => {
+  // Allentown FCU (5481): its fall newsletter (doc 36178) prints next year's schedule under its menu.
+  const menu = "About\n\nMembership\n\nBecome a Member\n\nMember Services\n\n".repeat(8);
+  const newsletter = `${menu}FEE SCHEDULE\n\nEffective January 1st, 2027\n\nSHARE ACCOUNT FEES\n\nMonthly Service Charge | NONE`;
+  const rows = [
+    row({ fee_published_id: 149487, fee_verified_id: 181770, institution_id: 5481, fee_name: "Monthly Service Charge", amount: 0,
+      canonical_fee_key: "monthly_maintenance", source_document_id: 36178, document_url: "https://www.allentownfcu.com/fall-2026-newsletter/",
+      head: newsletter, first_read: "2026-10-20" }),
+    // Its second fee row on the same document comes without the text (sent once per document).
+    row({ fee_published_id: 149488, fee_verified_id: 181771, institution_id: 5481, fee_name: "NSF Item", amount: 30,
+      canonical_fee_key: "nsf", source_document_id: 36178, document_url: "https://www.allentownfcu.com/fall-2026-newsletter/",
+      head: null, first_read: "2026-10-20" }),
+  ];
+
+  it("copies each document's text onto its rows", () => {
+    expect(withDocumentHeads(rows).map((r) => r.head === newsletter)).toEqual([true, true]);
+  });
+
+  it("holds the page's fees with the switch on (James, Oct 25), and only counts them with it off", () => {
+    const full = withDocumentHeads(rows);
+    expect(judgeEditions(full, "2026-10-25").holds.map((fee) => fee.feePublishedId)).toEqual([149487, 149488]);
+    const found = judgeEditions(full, "2026-10-25", false);
+    expect(found.holds).toEqual([]);
+    const shadow = judgeEditions(full, "2026-10-25", true);
+    expect(lateHeadingOnly(found, shadow).map((fee) => [fee.feePublishedId, fee.reason])).toEqual([
+      [149487, `${NOT_YET_EFFECTIVE_REASON}: 2027-01-01 #36178`],
+      [149488, `${NOT_YET_EFFECTIVE_REASON}: 2027-01-01 #36178`],
+    ]);
+  });
+
+  it("adds nothing for Avidia, whose heading already states its edition", () => {
+    expect(lateHeadingOnly(judgeEditions(AVIDIA, "2026-10-20"), judgeEditions(AVIDIA, "2026-10-20", true))).toEqual([]);
   });
 });
 

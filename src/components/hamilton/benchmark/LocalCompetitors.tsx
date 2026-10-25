@@ -20,13 +20,12 @@ function heading(category: string): string {
   return n.charAt(0).toUpperCase() + n.slice(1);
 }
 
-/** The bank's fees most competitors publish, leaving out those peers charge on mixed bases. */
-export function competitorColumns(market: BriefingLocalMarket, notCompared: readonly string[] = []): string[] {
+/** The bank's fees most competitors publish. */
+export function competitorColumns(market: BriefingLocalMarket): string[] {
   const own = market.rows.find((r) => r.own);
   if (!own) return [];
   const others = market.rows.filter((r) => !r.own);
   return Object.keys(own.values)
-    .filter((c) => !notCompared.includes(c))
     .map((c) => ({ c, n: others.filter((r) => r.values[c] != null).length }))
     .filter((x) => x.n >= MIN_PUBLISHING)
     .sort((a, b) => b.n - a.n || a.c.localeCompare(b.c))
@@ -34,14 +33,8 @@ export function competitorColumns(market: BriefingLocalMarket, notCompared: read
     .map((x) => x.c);
 }
 
-export function LocalCompetitors({
-  market,
-  notCompared = [],
-}: {
-  market: BriefingLocalMarket;
-  notCompared?: readonly string[];
-}) {
-  const columns = competitorColumns(market, notCompared);
+export function LocalCompetitors({ market }: { market: BriefingLocalMarket }) {
+  const columns = competitorColumns(market);
   if (columns.length === 0) return null;
   const showDeposits = market.rows.some((r) => !r.own && r.marketDeposits != null);
   const places = market.info.places.join("; ");

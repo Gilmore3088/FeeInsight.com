@@ -88,23 +88,27 @@ Rosetta owns source text normalization.
   reversal does not withdraw the error, which costs at most one read per version. Magellan's side already
   holds: a `DISCOVERY_METHOD_VERSION` bump re-searches every bank whose last search missed,
   and a wrong-document error re-searches its bank through the stale-link search (#2055).
-- Reader replay (#2069, `reader-replay.ts`): when `ROSETTA_READ_VERSION` moves, every current
-  copy (not superseded or a duplicate, the bank's newest in its stream) whose completed text an
-  older primary reader (`read.pdf_layout`, `read.html_dom`, `read.plain_text`, `read.docx_text`)
-  or the legacy reader (no `reader`) wrote is read once more, however many fees it has. It is due
-  while no settled read of its bytes at the current version exists and no `rosetta.reader_replay`
+- Reader replay (#2069, `reader-replay.ts`; "Re-read all", James, 25 Oct; live, no switch):
+  when a reader's version moves, every current copy (not superseded or a duplicate) whose
+  completed text an older version of that reader wrote is read once more, however many fees it
+  has: a primary reader (`read.pdf_layout`, `read.html_dom`, `read.plain_text`,
+  `read.docx_text`) or the legacy reader (no `reader`) below `ROSETTA_READ_VERSION`, free OCR
+  below `ROSETTA_OCR_VERSION`, the JavaScript fallback below `ROSETTA_JS_FALLBACK_VERSION`. A copy
+  whose link has a newer download is still replayed, since its fees are live. It is due while
+  its reader has no read of its bytes at the current version and no `rosetta.reader_replay`
   event at that version names it. It runs in its own lane, at most `READER_REPLAY_PER_RUN` (4)
   a read step, beside the stacked repair; the ordinary selection leaves these documents to it.
   The stored text is the text to beat (the lost-text rule): the new text replaces it only when
   it lists at least as many fees, and a failed or wrong-document replay keeps it and never goes
   back to Magellan or the paid finder. Every replay writes one `rosetta.reader_replay` event
-  (old and new text hash, `text_changed`, the read's outcome, the reader version it came from),
-  whatever the outcome, so a document is replayed once per version. A PDF replayed is laid out
-  by the current `PDF_LAYOUT_VERSION`. Step detail: `reader_replayed`,
-  `reader_replay_text_changed`; Bayes's `rosetta.read` manifest counts queued and done. A
-  changed text gets a new hash, so Knox re-extracts it and Darwin re-checks its fees. OCR, the
-  JavaScript fallbacks and the paid pass keep their own versions and are not replayed here.
-  On 25 Oct 190 current copies at 190 banks were due (all legacy texts, 3,586 live fees).
+  (old and new text hash, `text_changed`, the read's outcome, the reader versions), whatever the
+  outcome, so a document is replayed once per version. A replay is an ordinary read: a PDF is
+  laid out by the current `PDF_LAYOUT_VERSION`, a scan escalates to OCR and a script-built page
+  to the JavaScript fallback. Step detail: `reader_replayed`, `reader_replay_text_changed`;
+  Bayes's `rosetta.read` manifest counts queued and done. A changed text gets a new hash, so
+  Knox re-extracts it and Darwin re-checks its fees. The paid pass is not replayed (a paid call).
+  On 25 Oct 375 current copies at 374 banks were due, with 5,526 live fees (277 legacy texts,
+  67 JavaScript-fallback, 31 OCR).
 - Scoped layout 5 repairs (#2219) keep the global reader 3 and prose-layout 4 replay floors
   settled (`PDF_PROSE_REREAD_VERSION`). `PDF_STACKED_REPAIR_VERSION` v1 makes only current
   completed PDF-layout texts with at least three crossed bullet-price cells and three
