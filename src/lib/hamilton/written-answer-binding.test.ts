@@ -14,6 +14,7 @@ import {
   bindingLeavesNothing,
   boundFallbackLead,
   readNarrativeBinding,
+  readSentNarrativeBinding,
   readerNarrativeBinding,
   sentenceMatchKey,
   withoutOmitted,
@@ -211,5 +212,19 @@ describe("readerNarrativeBinding (#1077 follow-up)", () => {
     const reader = readerNarrativeBinding(binding, ["> Bank A's fee is cheap."]);
     expect(reader.supported.map((s) => s.text)).toEqual(["Bank A charges $10."]);
     expect(Object.keys(reader)).toEqual(Object.keys(binding));
+  });
+
+  it("reads back on the screen with readSentNarrativeBinding: reasons and count stay, and an empty text drops nothing", () => {
+    const sent = readSentNarrativeBinding(JSON.parse(JSON.stringify(readerNarrativeBinding(binding))));
+    expect(readNarrativeBinding(readerNarrativeBinding(binding))).toBeNull();
+    expect(sent?.omitted).toEqual([{ text: "", reason: "wrong_institution" }, { text: "", reason: "wrong_institution" }]);
+    expect(sent?.interpretation).toEqual(binding.interpretation);
+    expect(readSentNarrativeBinding(binding)).toEqual(readNarrativeBinding(binding));
+    expect(readSentNarrativeBinding({ ...binding, omitted: [{ reason: "made_up" }] })).toBeNull();
+    // The shown text keeps its blank lines and paragraphs: an empty left-out text matches no line.
+    const sections = { hamiltonView: "Bank A charges $10.\n\nBank B sits near the median.", whatThisMeans: "", whyItMatters: [] };
+    const bound = applyNarrativeBinding(sections, sent);
+    expect(bound.sections.hamiltonView).toBe("Bank A charges $10.\n");
+    expect(withoutOmitted(sections, sent)).toEqual(sections);
   });
 });

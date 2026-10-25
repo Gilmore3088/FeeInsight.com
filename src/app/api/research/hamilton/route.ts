@@ -8,6 +8,7 @@ import {
   createUIMessageStream,
   createUIMessageStreamResponse,
   type UIMessage,
+  type UIMessageChunk,
 } from "ai";
 import {
   guardProviderCall,
@@ -59,7 +60,7 @@ import { writtenAnswerStepSystemPrompt, type AnswerToolEvidence } from "@/lib/ha
 import { shadowGate, type GateShadowRepair, type ShadowPath, type TodayDecision } from "@/lib/hamilton/output-gate-shadow";
 import { scheduleGateShadow } from "@/lib/hamilton/output-gate-shadow-store";
 import { gateAnswer, type GateInput } from "@/lib/hamilton/output-gate";
-import { isGateRepairEnabled, repairTimeBudgetMs, runGatedAnswer, settleGatedDraft } from "@/lib/hamilton/output-gate-repair";
+import { bindingAnswerView, isGateRepairEnabled, repairTimeBudgetMs, runGatedAnswer, settleGatedDraft } from "@/lib/hamilton/output-gate-repair";
 
 /** research_usage agent id for a gate rewrite; the "hamilton" prefix counts it in the Pro quota (quota.ts). */
 const GATE_REPAIR_USAGE_AGENT_ID = "hamilton-repair";
@@ -80,6 +81,33 @@ interface AnswerVerdict {
   held: boolean;
   /** The sentence binding (#981, H06-T06); sent on its own metadata key, not with the verdict. */
   binding?: NarrativeBinding | null;
+  /**
+   * A held answer whose binding left sentences out: the text the reader is shown in place of the
+   * replayed draft, without those sentences (#1077 follow-up). Unset when nothing was left out.
+   */
+  shownText?: string;
+}
+
+const STREAM_TEXT_CHUNKS = new Set(["text-start", "text-delta", "text-end", "reasoning-start", "reasoning-delta", "reasoning-end"]);
+
+/**
+ * The replayed answer stream with its draft text taken out and `shownText` written in its place,
+ * just before the finish chunk. Tool parts, steps and the finish stay as the provider sent them, so
+ * the screen's figure check and the completion check read the same stream. The draft's reasoning
+ * goes too: it can hold the left-out sentences. With no finish chunk nothing is written.
+ */
+function withShownText(stream: ReadableStream<UIMessageChunk>, shownText: string): ReadableStream<UIMessageChunk> {
+  return stream.pipeThrough(new TransformStream<UIMessageChunk, UIMessageChunk>({
+    transform(part, controller) {
+      if (STREAM_TEXT_CHUNKS.has(part.type)) return;
+      if (part.type === "finish") {
+        controller.enqueue({ type: "text-start", id: "answer" });
+        controller.enqueue({ type: "text-delta", id: "answer", delta: shownText });
+        controller.enqueue({ type: "text-end", id: "answer" });
+      }
+      controller.enqueue(part);
+    },
+  }));
 }
 
 async function handlePOST(request: Request) {
@@ -534,8 +562,21 @@ async function handlePOST(request: Request) {
             // Each sentence bound to the fee records and filings the tools returned (#981 H06-T06,
             // #1077). An answer with nothing left once the contradicted sentences go is held like a failing one.
             const binding = writtenAnswerBinding(text, toolOutputs, questionOnly(lastUserText), { toolResults: reads, institutionId, accountInstitutionId: homeId ?? null });
-            const held = holdsAnswers && (!check.passed || bindingLeavesNothing(parseAnalyzeResponse(text), binding));
-            resolveVerdict({ passed: check.passed, held, binding });
+            let held = holdsAnswers && (!check.passed || bindingLeavesNothing(parseAnalyzeResponse(text), binding));
+            // A held answer whose binding left sentences out is shown without them: the browser never
+            // gets their text (#1077 follow-up). A view that cannot be built safely holds the answer,
+            // so it is not saved as shown. The saved row keeps the full text and binding, as before.
+            let shownText: string | undefined;
+            if (holdsAnswers && !held && binding && binding.omitted.length > 0) {
+              const view = bindingAnswerView(text, check, binding);
+              if (view.text === null) {
+                held = true;
+                console.warn("[hamilton] written answer held: its left-out sentences could not be cut", view.heldBy);
+              } else {
+                shownText = view.text;
+              }
+            }
+            resolveVerdict({ passed: check.passed, held, binding, ...(shownText !== undefined ? { shownText } : {}) });
             today = held ? "held" : binding && binding.omitted.length > 0 ? "shown_partial" : "shown";
             const response = {
               // The claims ride with the binding (#1077 step 6): nothing on the screen reads them.
@@ -651,21 +692,26 @@ async function handlePOST(request: Request) {
             // A provider refusal happens inside the stream, past the catch below: send the
             // reader the paused line for a usage/billing limit, never the provider's text.
             // A held answer's binding is known before its text replays, so it rides on the start
-            // and a left-out sentence never shows while the text arrives. It keeps the left-out
-            // sentences' text on purpose: the replayed text still holds them, and the screen
-            // hides them by that text (readerNarrativeBinding is for the buffered JSON only).
-            const startBinding = heldVerdict?.binding ?? null;
-            writer.merge(requireCompletedProviderUIStream(result.toUIMessageStream({
+            // and a left-out sentence never shows while the text arrives. It is the reader binding
+            // (#1077 follow-up): a left-out sentence keeps its reason, never its text, and when any
+            // was left out the draft's text is replaced by the shown text, which no longer holds it.
+            const startBinding = heldVerdict?.binding ? readerNarrativeBinding(heldVerdict.binding) : null;
+            const replay = result.toUIMessageStream({
               onError: (error) => (isProviderLimitError(error) ? HAMILTON_PAUSED_MESSAGE : "Hamilton couldn't finish this answer."),
               ...(startBinding
                 ? { messageMetadata: ({ part }: { part: { type: string } }) => (part.type === "start" ? { narrativeBinding: startBinding } : undefined) }
                 : {}),
-            })));
+            });
+            const shownText = heldVerdict?.shownText;
+            writer.merge(requireCompletedProviderUIStream(shownText !== undefined ? withShownText(replay, shownText) : replay));
           }
           const id = await savedId;
           const verdictNow = heldVerdict ?? (await verdict);
           const answerEvidence = verdictNow ? { passed: verdictNow.passed, held: verdictNow.held } : null;
-          const narrativeBinding = verdictNow && !verdictNow.held ? verdictNow.binding ?? null : null;
+          const sentBinding = verdictNow && !verdictNow.held ? verdictNow.binding ?? null : null;
+          // A stream that is not held has already sent the draft text whole, so the screen needs the
+          // full binding to hide its left-out sentences; a held one sends the reader binding.
+          const narrativeBinding = sentBinding && heldVerdict ? readerNarrativeBinding(sentBinding) : sentBinding;
           writer.write({
             type: "message-metadata",
             messageMetadata: {
