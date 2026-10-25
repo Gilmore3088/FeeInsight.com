@@ -222,7 +222,7 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     stage: "classify",
     lesson: "An exemption word in a category refusal counts only where it qualifies the fee itself: tie it to the noun or fee phrase it belongs to (\"night depository service\", \"annual fee\", \"lost key\") with word boundaries, never anywhere in the name. A carried-in section header (\"Services:\") or an unrelated clause (\"service fee billed monthly\") must not keep a fee the rule refuses.",
     why: "The night deposit key-deposit refusal exempted service, monthly, annual, rental, lost and replaced anywhere in the name with no word boundaries, so \"Night Depository Services: Key Deposit\" and \"Key Deposit (Night Depository) - Serviced Accounts\" stayed filed as the night deposit service.",
-    evidence: { issues: [1662], prs: [], files: ["src/lib/fee-category-guard.ts"] },
+    evidence: { issues: [1662], prs: [2592], files: ["src/lib/fee-category-guard.ts"] },
     appliesTo: "all",
     since: "2026-10-25",
   },
