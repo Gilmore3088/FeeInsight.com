@@ -113,15 +113,7 @@ describe.skipIf(!connection)("admin fee corrections in isolated PostgreSQL", () 
       VALUES ('hamilton', 'state_agent', 'H03 test reread', 'running') RETURNING id`;
     rereadRunId = Number(rereadRun.id);
     // Re-runnable on a local database: remove this test's own rows (and only those) first.
-    await raw`DELETE FROM published_fee_correction_conflicts WHERE institution_id = ${INST}`;
-    await raw`DELETE FROM published_fee_corrections WHERE institution_id = ${INST}`;
-    await raw`DELETE FROM pipeline_feedback WHERE institution_id = ${INST}`;
-    await raw`DELETE FROM published_fee_records WHERE institution_id = ${INST}`;
-    await raw`DELETE FROM verified_fee_observations WHERE institution_id = ${INST}`;
-    await raw`DELETE FROM raw_fee_observations WHERE institution_id = ${INST}`;
-    await raw`DELETE FROM agent_source_texts WHERE institution_id = ${INST}`;
-    await raw`DELETE FROM source_documents WHERE institution_id = ${INST}`;
-    await raw`DELETE FROM institution_sources WHERE id = ${INST}`;
+    await removeOwnRows();
     await raw`INSERT INTO institution_sources (id, institution_name, charter_type, source, state_code) VALUES (${INST}, 'H03 Test Bank', 'bank', 'fdic', 'TX')`;
     await raw`INSERT INTO source_documents (id, institution_id, status, document_url, content_hash, crawled_at)
               VALUES (${DOC_OLD}, ${INST}, 'success', 'https://bank.test/fees', 'hash-old', '2026-09-01T00:00:00Z'),
@@ -136,7 +128,22 @@ describe.skipIf(!connection)("admin fee corrections in isolated PostgreSQL", () 
     await seedFee("Wire Transfer", "wire_domestic_outgoing", 25, DOC_OLD);
   });
 
+  // Also removed after the suite: other suites on the same database count live verified fees
+  // (Darwin's older-live recheck reads every one), so this bank's fees must not outlive it.
+  async function removeOwnRows() {
+    await raw`DELETE FROM published_fee_correction_conflicts WHERE institution_id = ${INST}`;
+    await raw`DELETE FROM published_fee_corrections WHERE institution_id = ${INST}`;
+    await raw`DELETE FROM pipeline_feedback WHERE institution_id = ${INST}`;
+    await raw`DELETE FROM published_fee_records WHERE institution_id = ${INST}`;
+    await raw`DELETE FROM verified_fee_observations WHERE institution_id = ${INST}`;
+    await raw`DELETE FROM raw_fee_observations WHERE institution_id = ${INST}`;
+    await raw`DELETE FROM agent_source_texts WHERE institution_id = ${INST}`;
+    await raw`DELETE FROM source_documents WHERE institution_id = ${INST}`;
+    await raw`DELETE FROM institution_sources WHERE id = ${INST}`;
+  }
+
   afterAll(async () => {
+    if (raw) await removeOwnRows();
     if (raw) await raw.end();
     if (rawPool) await rawPool.end();
   });
@@ -553,8 +560,5 @@ describe.skipIf(!connection)("admin fee corrections in isolated PostgreSQL", () 
     const reversed = await reverseFeeCorrection(db, { feePublishedId: result.feePublishedId, expectedVersion: 1,
       idempotencyKey: "db-test-losttext-reverse-000001", reason: "Restore the fee as it was read" }, admin);
     expect(reversed.ok).toBe(true);
-    // Leave the fee held, as the national index test left it: this suite keeps its rows, and other
-    // suites on the same database count live fees.
-    if (reversed.ok) expect(await holdPublishedFee(db as never, reversed.feePublishedId, "Back as it was", { id: 1, name: "James" })).toMatchObject({ ok: true });
   });
 });
