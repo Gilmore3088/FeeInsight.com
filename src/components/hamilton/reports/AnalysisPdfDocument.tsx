@@ -283,16 +283,17 @@ export function evidenceRecordSection(analysis: AnalyzeResponse): { rows: Eviden
       notes: evidenceRecordNotes(record),
     };
   }
+  // Read from the saved claims: the PDF route loads the whole saved answer on the server.
   const written = writtenAnswerSources(analysis);
-  if (!written.length) return null;
+  if (!written.lines.length) return null;
   return {
-    rows: written.map((source) => ({
+    rows: written.lines.map((source) => ({
       id: source.id,
       label: `${source.figure} · ${source.institution}`,
-      value: source.unit ? recordedValue(source.value, source.unit) : "Not recorded",
-      note: [source.detail, source.complete ? null : "Source not fully traceable"].filter(Boolean).join(" · "),
+      value: recordedValue(source.value, source.unit),
+      note: [source.detail, source.complete ? null : "Value not in the saved record"].filter(Boolean).join(" · "),
     })),
-    notes: [RECORDS_SAVED_NOTE, WRITTEN_SOURCES_NOTE, ...(written.some((s) => !s.complete) ? ["Records marked \"Source not fully traceable\" or \"Inputs incomplete\" could not be traced in full."] : [])],
+    notes: [RECORDS_SAVED_NOTE, WRITTEN_SOURCES_NOTE],
   };
 }
 

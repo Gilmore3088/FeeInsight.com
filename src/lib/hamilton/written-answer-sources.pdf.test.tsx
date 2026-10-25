@@ -10,12 +10,12 @@ import { renderToBuffer, type DocumentProps } from "@react-pdf/renderer";
 import { extractText } from "unpdf";
 import { describe, expect, it } from "vitest";
 import { AnalysisPdfDocument, evidenceRecordSection } from "@/components/hamilton/reports/AnalysisPdfDocument";
-import { boardBriefFromAnalysis, evidenceRecordsExhibit, WRITTEN_SOURCES_NOTE, writtenAnswerSources } from "./board-brief";
+import { boardBriefFromAnalysis, evidenceRecordsExhibit, NO_WRITTEN_SOURCES, WRITTEN_SOURCES_NOTE, writtenAnswerSources } from "./board-brief";
 import { INTERPRETATION_LIMITATION, NARRATIVE_BINDING_VERSION, type NarrativeBinding } from "./narrative-bound";
 import { filingFactId } from "./claim-evidence";
-import { buildFeeResearchEvidence, HAMILTON_EVIDENCE_CONTRACT_VERSION, type HamiltonEvidenceBundle, type HamiltonEvidenceFact } from "./evidence-contract";
+import { buildFeeResearchEvidence, HAMILTON_EVIDENCE_CONTRACT_VERSION, type HamiltonDerivedFact, type HamiltonEvidenceBundle, type HamiltonEvidenceFact } from "./evidence-contract";
 import { savedClaimsFrom } from "./saved-claims";
-import { fallbackSaveSections } from "./saved-analysis-record";
+import { fallbackSaveSections, withoutSavedClaims } from "./saved-analysis-record";
 import { buildFeeAnswer } from "./workspace/answer";
 import { storylineAnalysis } from "./workspace/analysis-record";
 import { overdraftResearch } from "./workspace/test-fixtures";
@@ -76,7 +76,8 @@ describe("a written answer's sources in the PDF and the board brief", () => {
   it("lists the fee record and the filing behind its supported sentences, and nothing for reading or left-out sentences", async () => {
     const answer = writtenAnswer(bound);
     const sources = writtenAnswerSources(answer);
-    expect(sources).toEqual([
+    expect(sources.everyFigureSourced).toBe(true);
+    expect(sources.lines).toEqual([
       { id: "fee:published:9", figure: "Overdraft (OD)", institution: "Research Bank", value: 37, unit: "usd", complete: true,
         detail: "Published fee catalog · record fee:published:9 · date not recorded" },
       { id: filingId, figure: "Service charge income", institution: "Research Bank", value: 1_100_000, unit: "usd", complete: true,
@@ -113,7 +114,7 @@ describe("a written answer's sources in the PDF and the board brief", () => {
 
   it("gives a reading-only answer no source line", async () => {
     const answer = writtenAnswer(readingOnly);
-    expect(writtenAnswerSources(answer)).toEqual([]);
+    expect(writtenAnswerSources(answer).lines).toEqual([]);
     expect(evidenceRecordSection(answer)).toBeNull();
     expect(await pdfText(answer)).not.toContain("Evidence Record");
     const brief = boardBriefFromAnalysis(answer, "a1", edits);
@@ -125,7 +126,7 @@ describe("a written answer's sources in the PDF and the board brief", () => {
     const failed = writtenAnswer(bound, { answerEvidence: { passed: false, problems: ["Untraced figure"] } });
     const fallback = fallbackSaveSections(writtenAnswer(bound));
     for (const answer of [failed, fallback]) {
-      expect(writtenAnswerSources(answer)).toEqual([]);
+      expect(writtenAnswerSources(answer).lines).toEqual([]);
       expect(evidenceRecordSection(answer)).toBeNull();
       const brief = boardBriefFromAnalysis(answer, "a1", edits);
       expect(brief.exhibits?.some((e) => e.id === "evidence_records")).toBe(false);
@@ -136,12 +137,58 @@ describe("a written answer's sources in the PDF and the board brief", () => {
   it("leaves the storyline path's saved record as it was", () => {
     const research = overdraftResearch();
     const frozen = storylineAnalysis(buildFeeAnswer(research).storyline!, "test", buildFeeResearchEvidence(research), identityContext);
-    expect(writtenAnswerSources(frozen)).toEqual([]);
+    expect(writtenAnswerSources(frozen).lines).toEqual([]);
     const section = evidenceRecordSection(frozen);
     expect(section?.rows.map((row) => row.id)).toEqual([...frozen.factEvidence!.facts, ...frozen.factEvidence!.derivations].map((f) => f.id));
     expect(section?.notes).not.toContain(WRITTEN_SOURCES_NOTE);
     expect(section?.notes).toContain("Each figure matches the bank document Hamilton had stored at the time. It was not re-checked against the bank's current schedule, and the sentences around the figures were not checked one by one.");
     const records = boardBriefFromAnalysis(frozen, "a1", edits).exhibits?.find((e) => e.id === "evidence_records");
     expect(records).toEqual(evidenceRecordsExhibit(frozen));
+  });
+
+  it("gives an answer without readable claims no source line: a browser save from before #2609 kept a binding, no verdict and no claims", () => {
+    // Before #2609 the browser fallback save stored the browser-sent binding as it was.
+    const legacyBrowserSave = writtenAnswer(bound, { answerEvidence: undefined, claims: undefined });
+    expect(writtenAnswerSources(legacyBrowserSave)).toEqual(NO_WRITTEN_SOURCES);
+    expect(evidenceRecordSection(legacyBrowserSave)).toBeNull();
+    const brief = boardBriefFromAnalysis(legacyBrowserSave, "a1", edits);
+    expect(brief.exhibits?.some((e) => e.id === "evidence_records")).toBe(false);
+    expect(brief.recommendation).toContain("saved without a source for each individual figure");
+  });
+
+  it("prints a line only for a fact the saved claims hold, and keeps the no-source limit unless every figure has one", () => {
+    // The filing fact was not saved with the claims (past the bound, say): its sentence has no line.
+    const partial = writtenAnswer(bound, { claims: savedClaimsFrom(bound, [bundle([feeFact])]) ?? undefined });
+    const sources = writtenAnswerSources(partial);
+    expect(sources.lines.map((line) => line.id)).toEqual([feeFact.id]);
+    expect(sources.everyFigureSourced).toBe(false);
+    expect(boardBriefFromAnalysis(partial, "a1", edits).recommendation).toContain("saved without a source for each individual figure");
+  });
+
+  it("names a peer median as the peer median, with no record or reporting date", () => {
+    const peerMedianId = "derived:peer_median:2945:overdraft";
+    const peerMedian: HamiltonDerivedFact = {
+      id: peerMedianId, kind: "derived",
+      scope: { institutionId: null, feeCategory: "overdraft", product: null, reportingDate: null, effectiveDate: null, accountApplicability: "consumer" },
+      value: 30, unit: "usd", currency: "USD", status: "derived",
+      derivation: { kind: "peer_median", inputFactIds: [], denominatorFactId: null, formula: "median of published peer amounts", rounding: "the nearest cent" },
+    };
+    const medianBinding: NarrativeBinding = { ...bound, supported: [{ text: "Peers charge a median $30.", factIds: [peerMedianId] }] };
+    const answer = writtenAnswer(medianBinding, { claims: savedClaimsFrom(medianBinding, [{ ...bundle([]), derivations: [peerMedian] }]) ?? undefined });
+    const [line] = writtenAnswerSources(answer).lines;
+    expect(line).toMatchObject({ figure: "Overdraft (OD), calculated", institution: "Peer median", value: 30, detail: "Calculated by Hamilton", complete: true });
+    expect(line.detail).not.toMatch(/record|reporting date/);
+  });
+
+  it("builds the browser preview from the server's lines, since the answer it gets has no claims", () => {
+    const answer = writtenAnswer(bound);
+    const lines = writtenAnswerSources(answer);
+    const browserAnswer = withoutSavedClaims(answer);
+    expect(browserAnswer).not.toHaveProperty("claims");
+    // The lines are plain data: they survive the trip to a client component unchanged.
+    expect(JSON.parse(JSON.stringify(lines))).toEqual(lines);
+    expect(boardBriefFromAnalysis(browserAnswer, "a1", edits, lines)).toEqual(boardBriefFromAnalysis(answer, "a1", edits));
+    // Without the lines, an answer stripped of its claims has none.
+    expect(boardBriefFromAnalysis(browserAnswer, "a1", edits).exhibits?.some((e) => e.id === "evidence_records")).toBe(false);
   });
 });

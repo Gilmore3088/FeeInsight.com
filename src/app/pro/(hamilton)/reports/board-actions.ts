@@ -5,7 +5,9 @@ import { redirectWithoutPremium } from "@/lib/team-billing";
 import { sql } from "@/lib/data-store/connection";
 import { getHamiltonReportById, saveHamiltonReport } from "@/lib/hamilton/pro-tables";
 import { readSavedOutputFeeRefs } from "@/lib/data-store/saved-output-fee-refs";
-import { loadAnalysisRecord } from "../analyze/actions";
+// Server side, claims included (same user and access scope as loadAnalysisRecord): the brief's source lines
+// are built from them here; only the saved brief, never the claims, goes back to the browser.
+import { readSavedAnalysisRecord } from "@/lib/hamilton/saved-analysis-record";
 import { boardBriefFromAnalysis, editBoardBrief, type BoardBriefEdits } from "@/lib/hamilton/board-brief";
 import { recordProRequest } from "@/lib/agents/run-store";
 import { redirect } from "next/navigation";
@@ -35,7 +37,7 @@ export async function saveBoardBrief(input: { analysisId?: string; reportId?: st
       return { success: true, reportId: input.reportId };
     }
     if (!input.analysisId) return { success: false, error: "Choose a saved answer first." };
-    const saved = await loadAnalysisRecord(input.analysisId);
+    const saved = await readSavedAnalysisRecord(input.analysisId);
     if (!saved) return { success: false, error: "Saved analysis not found." };
     const report = boardBriefFromAnalysis(saved.responseJson, saved.id, input.edits);
     // H03-T09: the brief reuses the answer's findings, so it carries the fee rows the answer recorded.
