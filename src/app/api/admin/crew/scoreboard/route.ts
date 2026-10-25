@@ -47,6 +47,7 @@ async function handleGET(request: NextRequest) {
       { key: "deming-playbook-check", agent: "atlas", title: "Deming: check each institution's playbook for contradictions (read-only)" },
       { key: "deming-data-quality", agent: "atlas", title: "Deming: check live fees for duplicates, stale evidence, missing categories and sources, and category shares (read-only)" },
       { key: "deming-source-health", agent: "atlas", title: "Deming: report each public-data source as fresh, stale, empty, failed or skipped (read-only)" },
+      { key: "deming-filings-reconcile", agent: "atlas", title: "Deming: reconcile shown bank and credit union financials with the stored call report filings (read-only)" },
       { key: "scoreboard-snapshot", agent: "atlas", title: "Record the daily scoreboard" },
       { key: "deming-change-outcomes", agent: "atlas", title: "Deming: check whether each change moved the number it named, a week on" },
       { key: "deming-error-fix-recheck", agent: "atlas", title: "Deming: re-check each error a process fix named, once its bank has been re-run (#2058)" },

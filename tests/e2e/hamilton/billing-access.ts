@@ -223,6 +223,7 @@ export const ROUTES: RouteEntry[] = [
   page("pro/(hamilton)/categories/page.tsx", "/pro/categories", "Fee categories"),
   page("pro/(hamilton)/data/page.tsx", "/pro/data", "Data"),
   page("pro/(hamilton)/districts/page.tsx", "/pro/districts", "Districts"),
+  page("pro/(hamilton)/financials/page.tsx", "/pro/financials", "Financial performance"),
   page("pro/(hamilton)/intelligence/page.tsx", "/pro/intelligence", "Intelligence"),
   page("pro/(hamilton)/market/page.tsx", "/pro/market", "Market"),
   page("pro/(hamilton)/monitor/page.tsx", "/pro/monitor", "Monitor"),

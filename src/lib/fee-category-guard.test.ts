@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { amountEnvelopeFor } from "@/lib/agents/darwin/envelopes";
 
-import { borrowedDirection, cardProductMisfile, checkFeeCategory, CLUB_WITHDRAWAL, CLUB_WITHDRAWAL_LIVE, GUARDED_CATEGORIES, NON_CUSTOMER_CASHIERS_CHECK_LIVE, refileCategory, refileFromLine } from "./fee-category-guard";
+import { borrowedDirection, cardProductMisfile, checkFeeCategory, CLUB_WITHDRAWAL, CLUB_WITHDRAWAL_LIVE, genericMonthlyCharge, GUARDED_CATEGORIES, headingAboveExcerpt, NON_CUSTOMER_CASHIERS_CHECK_LIVE, refileCategory, refileFromLine, withHeadingAbove } from "./fee-category-guard";
 
 describe("checkFeeCategory", () => {
   it("passes keys it does not guard", () => {
@@ -1126,6 +1126,68 @@ describe("monthly maintenance add-ons (v59)", () => {
     "Benefits Plus Checking Monthly service charge",
   ])("keeps an account's own fee: %s", (name) => {
     expect(checkFeeCategory("monthly_maintenance", name)).toEqual({ ok: true });
+  });
+});
+
+describe("refundable key deposits filed as a safe deposit box fee (v85, #1831)", () => {
+  // Live names (read-only, prod, Oct 25), each a key deposit on its bank's own stored schedule.
+  it.each([
+    "Safety Deposit Box Key Deposit at Account Opening (per key)", // Central Bank 152139, $5
+    "Key Deposit", // Valley Strong 154788, "| **$20** | Key Deposit |"
+    "Safe Deposit Box Key Deposit",
+    "Key Deposit (refundable)",
+    "Key Deposit (Refunded with return of both keys)",
+    "Key Deposit – Refunded if Both Keys Returned",
+    "Key Deposit, 2 keys, refundable",
+    "Refundable Key Deposit",
+    "Safe Deposit Refundable Key Deposit Fee",
+    "Safe Deposit Box Keys (Refundable)",
+    "Required Key Deposit (each box)",
+    "Box Size Initial key deposit",
+    "Safe Deposit Box Key Deposit for Loss",
+    "Key Deposit/Setup",
+    "Safe Deposit Box Security Deposit",
+    // A "Rental" header before the key deposit is not the rental fee ("Safe Deposit Box Rental** -
+    // Key Deposit | $10.00").
+    "Safe Deposit Box Rental - Key Deposit",
+    "Overdraft protection per transfer: Safe deposit box: key deposit per box",
+  ])("refuses %s", (name) => {
+    const verdict = checkFeeCategory("safe_deposit_box", name);
+    expect(verdict.ok, name).toBe(false);
+    if (!verdict.ok) expect(verdict.code).toBe("name_contradicts");
+    // No type holds a key deposit, so it is not re-filed.
+    expect(refileCategory("safe_deposit_box", name)).toBe("safe_deposit_box");
+  });
+
+  it.each([
+    // Lost, replaced and duplicate keys are real box fees (the issue's change 2).
+    "Key Replacement",
+    "Lost Key",
+    "Safe Deposit Box Duplicate Key",
+    "Lost Key - One of the two keys issued for the safe deposit box is lost and is replaced",
+    "Duplicate Key for Safe Deposit Box",
+    "Key Deposit/Lost Key",
+    "Key Deposit / Replacement",
+    // Drilling: the price on each schedule is the drilling price ("$200 / $150 / $50", "$150.00 $10.00 per key").
+    "Box Drilling / Lost Keys / Key Deposit",
+    "Safe deposit box - Drilling fee - Key deposit",
+    // The box's own rental fee ("Annual Rental Fees *(Key Deposit) | $25.00", the 3x5 rent).
+    "Annual Rental Fees (Key Deposit)",
+    // A deposit the bank keeps, and lock work, are charges for the box (#2603 review).
+    "Key Deposit (non-refundable)",
+    "Non-refundable key deposit",
+    "Forfeited Key Deposit",
+    "Lock Change / Key Deposit",
+    "Re-keying / Key Deposit",
+    "Change of Lock Fee / Key Deposit",
+    // Late fees and other box fees.
+    "Safety Deposit Box Late Payment Fee",
+    "Safe Deposit Box Closed with only 1 key",
+    // "Non-refundable" is not a refund.
+    "Safe Deposit Non-Refundable Set-up Fee",
+    "Safe Deposit Box Rental Rent is paid annually in advance; Non-refundable on early box closure",
+  ])("keeps %s", (name) => {
+    expect(checkFeeCategory("safe_deposit_box", name), name).toEqual({ ok: true });
   });
 });
 
@@ -2338,5 +2400,107 @@ describe("guard v83: other card and ATM services filed as the non-network ATM fe
     expect(atm("Other ATM Locations: (Additional Withdrawals)", 1.5).ok).toBe(true);
     expect(atm("Additional charge per transaction if ATM transaction is done outside our no-surcharge ATM network", 2).ok).toBe(true);
     expect(atm("Foreign ATM Withdrawal", 2).ok).toBe(true);
+  });
+});
+
+describe("guard v84: another service's monthly charge filed as monthly maintenance (#1788)", () => {
+  const note = (excerpt: string) => `Knox deterministic extraction. canonical_hint=monthly_maintenance; excerpt="${excerpt}"`;
+  const mm = (name: string, amount: number, excerpt: string, heading_above?: string | null) =>
+    checkFeeCategory("monthly_maintenance", name, { amount, conditions: note(excerpt), heading_above });
+
+  // Florida Capital Bank, doc 16648 (56683, 56684).
+  const floridaCapital = [
+    "Overdraft transfer service charge | $5 per transfer",
+    "Continuous overdraft service charge (daily) | $7 continuous",
+    "POSITIVE PAY for ACH and Checks",
+    "Service charge for one up to five accounts | $25 per month",
+    "Service charge for six or more accounts | $5 per month per account",
+    "RESEARCH",
+  ].join("\n");
+  // TD Bank, doc 37065 (152525): Knox's excerpt starts after the row's own label.
+  const td = [
+    "Checks | Free standard checks or discounted select styles | Free standard checks for customers aged 60+",
+    "",
+    "Paper statements",
+    "",
+    "Paper statements | $3 monthly fee | Free for customers aged 60+, otherwise $3 monthly fee | $1 monthly fee",
+  ].join("\n");
+
+  it("reads the heading above a Positive Pay row, past its sibling row (56683, 56684)", () => {
+    const six = note("Service charge for six or more accounts | $5 per month per account");
+    expect(headingAboveExcerpt(floridaCapital, six)).toBe("POSITIVE PAY for ACH and Checks");
+    const name = "Service charge for six or more accounts";
+    expect(checkFeeCategory("monthly_maintenance", name, withHeadingAbove("monthly_maintenance", name, { amount: 5, conditions: six }, floridaCapital)))
+      .toMatchObject({ ok: false, code: "schedule_contradicts" });
+    const one = note("Service charge for one up to five accounts | $25 per month");
+    const first = "Service charge for one up to five accounts";
+    expect(checkFeeCategory("monthly_maintenance", first, withHeadingAbove("monthly_maintenance", first, { amount: 25, conditions: one }, floridaCapital)).ok).toBe(false);
+    // Without the stored text the name alone still passes, as before v84.
+    expect(checkFeeCategory("monthly_maintenance", name, { amount: 5, conditions: six }).ok).toBe(true);
+  });
+
+  it("reads TD's paper statement heading over a row whose excerpt starts mid-line (152525)", () => {
+    const conditions = note("$3 monthly fee | Free for customers aged 60+, otherwise $3 monthly fee | $1 monthly fee");
+    expect(headingAboveExcerpt(td, conditions)).toBe("Paper statements");
+    expect(checkFeeCategory("monthly_maintenance", "Monthly fee", withHeadingAbove("monthly_maintenance", "Monthly fee", { amount: 3, conditions }, td)).ok).toBe(false);
+  });
+
+  it("reads no heading when the fee's line is printed more than once (#2601 review)", () => {
+    const twice = ["Personal Checking", "Monthly fee | $5.00", "", "POSITIVE PAY", "Monthly fee | $5.00"].join("\n");
+    const conditions = note("Monthly fee | $5.00");
+    expect(headingAboveExcerpt(twice, conditions)).toBeNull();
+    expect(checkFeeCategory("monthly_maintenance", "Monthly fee", withHeadingAbove("monthly_maintenance", "Monthly fee", { amount: 5, conditions }, twice)).ok).toBe(true);
+    // Printed twice, each time under a card heading (123617): the card heading is read.
+    const cards = ["Fee Schedule for ATM/Check Card", "Monthly Fee | None", "", "ATM Cards", "Monthly Fee | None"].join("\n");
+    expect(headingAboveExcerpt(cards, note("Monthly Fee | None"))).toBe("Fee Schedule for ATM/Check Card");
+  });
+
+  it("refuses a generic monthly charge priced in another service's row (20609, 152527)", () => {
+    expect(mm("Monthly fee", 5, "Lifestyle Benefits | $5 monthly fee | $5 monthly fee | $5 monthly fee | included").ok).toBe(false);
+    expect(mm("Service Charge", 4, "Paper Statements | Available / $4 Service Charge | Available / $4 Service Charge | No").ok).toBe(false);
+  });
+
+  it.each([
+    ["Positive Pay", "Monthly fee", 49, "Monthly fee | $49.00"],
+    ["ACH Origination", "Monthly Fee", 35, "$35 Monthly Fee, plus"],
+    ["ATM / Debit Card Fees", "Monthly Service Fee", 1, "Monthly Service Fee | $1.00"],
+    ["Visa® Gift Card", "Monthly service fee", 2.5, "$2.50 monthly service fee"],
+    ["- **Positive Pay**", "Monthly Maintenance", 40, "- Monthly Maintenance $40"],
+    ["INTERNET BILL PAYMENT", "Monthly Fee", 0, "Monthly Fee ........ None"],
+  ])("refuses a generic monthly charge under %s", (heading, name, amount, excerpt) => {
+    expect(mm(name, amount, excerpt, heading)).toMatchObject({ ok: false, code: "schedule_contradicts" });
+  });
+
+  it("keeps a fee whose own line says how to avoid it (104536 under \"Debit Card Purchases\"; 89494)", () => {
+    expect(mm("Monthly maintenance fee", 5, "In order to avoid the $5 monthly maintenance fee, your 10 debit card purchases must settle", "Debit Card Purchases").ok).toBe(true);
+    expect(mm("Quarterly service charge", 3, "$3 quarterly service charge if balance falls below $100", "Online banking").ok).toBe(true);
+  });
+
+  it("reads no heading inside a product page's feature list (87492)", () => {
+    const page = ["SNB Checking", "No minimum to open", "ATM debit card", "Online banking", "Online bill pay", "$5.00 Service Charge per statement cycle"].join("\n");
+    expect(headingAboveExcerpt(page, note("$5.00 Service Charge per statement cycle"))).toBeNull();
+  });
+
+  it("keeps a heading that is a feature, not a service, and a name that says more", () => {
+    expect(mm("Monthly service fee", 7.5, "Monthly service fee of $7.50", "Business debit card included").ok).toBe(true);
+    expect(mm("Monthly fee", 5, "Monthly fee | $5.00", "Card Management in our mobile banking app").ok).toBe(true);
+    expect(mm("Monthly fee", 5, "Monthly fee | $5.00", "Basic Checking").ok).toBe(true);
+    expect(mm("Perks Checking Monthly service charge", 7.5, "Perks Checking $7.50 per month", "Positive Pay").ok).toBe(true);
+    expect(mm("Monthly fee", 5, "Basic Checking | $5 monthly fee").ok).toBe(true);
+  });
+
+  it("knows a generic monthly charge by its name only", () => {
+    expect(genericMonthlyCharge("monthly_maintenance", "Service charge for six or more accounts")).toBe(true);
+    expect(genericMonthlyCharge("monthly_maintenance", "› Monthly fee")).toBe(true);
+    expect(genericMonthlyCharge("monthly_maintenance", "Monthly Service Fee (per account number)")).toBe(true);
+    expect(genericMonthlyCharge("monthly_maintenance", "Basic Checking Monthly service charge")).toBe(false);
+    expect(genericMonthlyCharge("monthly_maintenance", "Fee")).toBe(false);
+    expect(genericMonthlyCharge("overdraft", "Service charge")).toBe(false);
+  });
+
+  it("leaves the context alone without a text or for any other fee", () => {
+    const context = { amount: 5, conditions: note("Monthly fee | $5.00") };
+    expect(withHeadingAbove("monthly_maintenance", "Monthly fee", context, null)).toBe(context);
+    expect(withHeadingAbove("overdraft", "Overdraft fee", context, "Positive Pay\nMonthly fee | $5.00")).toBe(context);
   });
 });

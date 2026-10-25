@@ -616,6 +616,8 @@ export const HAND_REFILES: readonly HandRefile[] = [
   { feePublishedId: 61871, from: "bill_pay", amount: 2.99, to: "bill_pay", name: "Bill Pay Gift Check",
     oldName: "Returned Wire Fee Varies Bill Pay Gift Check ………………………………",
     why: "#1512, inst 6940, doc 18323: \"Returned Wire Fee Varies Bill Pay Gift Check ……… $2.99\"; the returned wire fee \"Varies\", the $2.99 is the gift check" },
+  // Guard v85 (#1831) refuses this name (a refundable key deposit is not a box fee), so the rename no
+  // longer applies; the live row, renamed on Oct 16, goes to the second look with the other key deposits.
   { feePublishedId: 73876, from: "safe_deposit_box", amount: 10, to: "safe_deposit_box", name: "Key Deposit Fee",
     oldName: "Change of Lock Fee: Current locksmith charges Drilling of Box Fee: Current locksmith charges Key Deposit Fee",
     why: "#1512, inst 8567, doc 13490: \"• Change of Lock Fee: Current locksmith charges • Drilling of Box Fee: Current locksmith charges • Key Deposit Fee: $10.00\"; only the key deposit is $10" },

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { judgeEditions, NOT_YET_EFFECTIVE_REASON, type EditionRow } from "./edition-effective-check";
+import { judgeEditions, lateHeadingOnly, NOT_YET_EFFECTIVE_REASON, withDocumentHeads, type EditionRow } from "./edition-effective-check";
 import { editionHolds } from "@/lib/agents/hamilton/edition-hold";
 import { editionStarts, editionTakesOver, notYetEffective } from "@/lib/agents/hamilton/schedule-edition";
 
@@ -83,11 +83,82 @@ describe("Darwin's edition re-check (#1915)", () => {
   });
 });
 
+describe("an edition line past the menu in Darwin's re-check (T1)", () => {
+  // Allentown FCU (5481): its fall newsletter (doc 36178) prints next year's schedule under its menu.
+  const menu = "About\n\nMembership\n\nBecome a Member\n\nMember Services\n\n".repeat(8);
+  const newsletter = `${menu}FEE SCHEDULE\n\nEffective January 1st, 2027\n\nSHARE ACCOUNT FEES\n\nMonthly Service Charge | NONE`;
+  const rows = [
+    row({ fee_published_id: 149487, fee_verified_id: 181770, institution_id: 5481, fee_name: "Monthly Service Charge", amount: 0,
+      canonical_fee_key: "monthly_maintenance", source_document_id: 36178, document_url: "https://www.allentownfcu.com/fall-2026-newsletter/",
+      head: newsletter, first_read: "2026-10-20" }),
+    // Its second fee row on the same document comes without the text (sent once per document).
+    row({ fee_published_id: 149488, fee_verified_id: 181771, institution_id: 5481, fee_name: "NSF Item", amount: 30,
+      canonical_fee_key: "nsf", source_document_id: 36178, document_url: "https://www.allentownfcu.com/fall-2026-newsletter/",
+      head: null, first_read: "2026-10-20" }),
+  ];
+
+  it("copies each document's text onto its rows", () => {
+    expect(withDocumentHeads(rows).map((r) => r.head === newsletter)).toEqual([true, true]);
+  });
+
+  it("holds the page's fees with the switch on (James, Oct 25), and only counts them with it off", () => {
+    const full = withDocumentHeads(rows);
+    expect(judgeEditions(full, "2026-10-25").holds.map((fee) => fee.feePublishedId)).toEqual([149487, 149488]);
+    const found = judgeEditions(full, "2026-10-25", false);
+    expect(found.holds).toEqual([]);
+    const shadow = judgeEditions(full, "2026-10-25", true);
+    expect(lateHeadingOnly(found, shadow).map((fee) => [fee.feePublishedId, fee.reason])).toEqual([
+      [149487, `${NOT_YET_EFFECTIVE_REASON}: 2027-01-01 #36178`],
+      [149488, `${NOT_YET_EFFECTIVE_REASON}: 2027-01-01 #36178`],
+    ]);
+  });
+
+  it("adds nothing for Avidia, whose heading already states its edition", () => {
+    expect(lateHeadingOnly(judgeEditions(AVIDIA, "2026-10-20"), judgeEditions(AVIDIA, "2026-10-20", true))).toEqual([]);
+  });
+});
+
 describe("Hamilton's publish hold (#1915)", () => {
   it("holds rows read from a schedule not in effect yet, by verified id", () => {
     const heads = new Map([["253", CURRENT_HEAD], ["31094", NEXT_HEAD]]);
     const rows = [{ fee_verified_id: 11, source_document_id: 253 }, { fee_verified_id: 12, source_document_id: 31094 }, { fee_verified_id: 13, source_document_id: null }];
     expect([...editionHolds(rows, heads, "2026-10-20")]).toEqual([[12, "2026-12-01"]]);
     expect(editionHolds(rows, heads, "2026-12-01").size).toBe(0);
+  });
+});
+
+describe("ONE Credit Union's current schedule beside its 2027 one (#1915, PR #2531)", () => {
+  // Prod, Oct 25: stored text heads, verbatim. Doc 29000 is in effect; doc 28999 starts Jan 1, 2027.
+  const CURRENT_URL = "https://irp.cdn-website.com/69136b4b/files/uploaded/fee-schedule-new-optimized.pdf";
+  const NEXT_URL = "https://irp.cdn-website.com/69136b4b/files/uploaded/Fee+Schedule+1_1_2027.pdf";
+  const CURRENT_TEXT = "FEE SCHEDULE\nONE\nEffective November 1, 2024\nNon-Sufficient Funds - | Late Payment Fee (14 or more days) | $30.00\n";
+  const NEXT_TEXT = "FEE SCHEDULE\nEffective January 1, 2027\nGENERAL ACCOUNT FEES | LOAN SERVICING FEES\nNon-Sufficient Funds - | Late Payment Fee (14 or more days) | $30.00\n";
+  // A reselected current-schedule line (doc 29000), live once published, and its held 2027 copy (fixture ids).
+  const reselected = row({
+    fee_published_id: 1, fee_verified_id: 11, institution_id: 7174, fee_name: "Late Payment Fee (14 or more days)",
+    amount: 30, canonical_fee_key: "late_payment", fee_audience: "unknown", source_document_id: 29000,
+    document_url: CURRENT_URL, head: CURRENT_TEXT, first_read: "2026-10-11",
+  });
+  const held = { ...reselected, fee_published_id: 2, fee_verified_id: 12, source_document_id: 28999, document_url: NEXT_URL, head: NEXT_TEXT, live: false };
+
+  it("publish holds the 2027 line until January 1 and never the current one", () => {
+    const heads = new Map([["29000", CURRENT_TEXT], ["28999", NEXT_TEXT]]);
+    const rows = [{ fee_verified_id: 11, source_document_id: 29000 }, { fee_verified_id: 12, source_document_id: 28999 }];
+    expect([...editionHolds(rows, heads, "2026-10-25")]).toEqual([[12, "2027-01-01"]]);
+    expect([...editionHolds(rows, heads, "2026-12-31")]).toEqual([[12, "2027-01-01"]]);
+    expect(editionHolds(rows, heads, "2027-01-01").size).toBe(0);
+  });
+
+  it("keeps the 2027 copy held and the current line live through December 31", () => {
+    const found = judgeEditions([reselected, held], "2026-12-31");
+    expect(found.holds).toEqual([]);
+    expect(found.restores).toEqual([]);
+    expect(found.takeovers).toEqual([]);
+  });
+
+  it("on January 1 restores the 2027 copy and retires the current line, so the fee is never live twice", () => {
+    const found = judgeEditions([reselected, held], "2027-01-01");
+    expect(found.restores.map((fee) => fee.feePublishedId)).toEqual([2]);
+    expect(found.takeovers.map((fee) => [fee.feePublishedId, fee.reason])).toEqual([[1, "older_edition: #28999 effective 2027-01-01"]]);
   });
 });
