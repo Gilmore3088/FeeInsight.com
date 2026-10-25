@@ -81,7 +81,7 @@ export function BoardBriefEditor({ analysis, analysisId, initialReport, reportId
     </div></header>
     {error ? <p role="alert" className="rounded-md border border-[var(--fi-brick)] p-3 text-sm text-[var(--fi-brick)]">{error}</p> : null}
     <p role="status" className="text-xs text-[var(--fi-muted)]">{dirty ? "Unsaved changes. Save before you download the PDF." : "Saved. The PDF uses this version."}</p>
-    <div className="grid items-start gap-6 lg:grid-cols-[260px_minmax(0,1fr)]"><section className="intelligence-panel flex flex-col gap-5" aria-label="Edit board brief">
+    <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[260px_minmax(0,1fr)]"><section className="intelligence-panel flex flex-col gap-5" aria-label="Edit board brief">
       <h2 className="!text-base">Report details</h2><label className="text-sm">Title<input className="mt-2 w-full rounded-md border border-[var(--fi-control-border)] p-2" value={title} maxLength={200} disabled={busy} onChange={e => setTitle(e.target.value)} /></label>
       <label className="text-sm">Team note<textarea className="mt-2 w-full rounded-md border border-[var(--fi-control-border)] p-2" rows={6} value={teamNote} maxLength={5000} disabled={busy} onChange={e => setTeamNote(e.target.value)} /><span className="mt-1 block text-xs text-[var(--fi-muted)]">Shown as your note, kept apart from Hamilton’s findings.</span></label>
       {!initialReport ? <label className="text-sm"><input type="checkbox" checked={includeEvidence} disabled={busy} onChange={e => setIncludeEvidence(e.target.checked)} /> Include the evidence table from the answer</label> : null}

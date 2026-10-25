@@ -134,7 +134,7 @@ export function positionFinding(input: PeerFindingInput): RebuiltFinding {
   const own = input.own;
   const peer = input.peer;
   const count = peer?.institution_count ?? 0;
-  const method = `${input.institutionName}'s published ${fee} fee placed against the median and middle half (25th to 75th percentile) of the published ${fee} fees of the institutions in the peer group (${input.peerLabel}), one value per institution.`;
+  const method = `${input.institutionName}'s published ${fee} fee placed against the median and middle half (25th to 75th percentile) of the published ${fee} fees of the institutions in the peer group (${input.peerLabel}), one value per institution. The group can include ${input.institutionName} itself.`;
   if (!own) {
     return {
       title: `${fee}: no published fee found`,
@@ -170,7 +170,7 @@ export function testFinding(input: PeerFindingInput & { proposedFee: number | nu
   const peer = input.peer;
   const count = peer?.institution_count ?? 0;
   const current = input.own?.price ?? null;
-  const method = `The fee you entered in Test for ${fee}, placed against the median and middle half (25th to 75th percentile) of the published ${fee} fees of the institutions in the peer group (${input.peerLabel}), one value per institution.`;
+  const method = `The fee you entered in Test for ${fee}, placed against the median and middle half (25th to 75th percentile) of the published ${fee} fees of the institutions in the peer group (${input.peerLabel}), one value per institution. The group can include ${input.institutionName} itself.`;
   const chart = input.proposedFee === null ? null : chartFor(input, "Tested", input.proposedFee, current);
   const currentWords = current === null ? "no single current published fee" : `a current published fee of ${formatAmount(current)}`;
   const title = input.proposedFee === null
