@@ -32,19 +32,36 @@ James's 2026-10-15 budget, so a week gives about 35 paid shadows across four sur
   `replay_key`.
 - Caps: each sample is reserved by a `paid_replay.sample_reserved` run event under the batch's
   advisory lock, outside the step's transaction. The reservation is decided on a fresh read of the
-  batch's reservations and its estimated spend (`ai_api_usage_events.estimated_cost_microusd` for
-  the batch's subject keys and runs, any status), then inserted by a conditional insert that refuses
-  a sample key already reserved, a path at its share, and the 201st sample. A sample is refused when
-  spend + the unspent ceiling of each sample in flight (reserved, not marked
-  `paid_replay.sample_done`, under 15 minutes old) + its own ceiling would pass $40. Ceilings:
-  written answer $0.90, report $0.50, memo $0.30, Simulate $0.10, or a path's costliest finished
-  sample when higher. Before reserving, the path's own budget line is checked
-  (`assertProviderBudgetAllowed`), so a spent daily line does not use up the batch's samples.
-- Trigger: the hourly gate replay route (`53 * * * *`) runs the free replay first; once today's free
-  plan is complete it continues the paid batch instead, and `?paid=1` (cron secret or an admin)
-  runs it at once. Once the batch is complete (200 samples, every path at its share, no sample that
-  fits the spend cap with nothing in flight, or no question left), the step records
-  `complete: true` and no run starts again. A run left queued runs first.
+  batch's reservations and usage rows (`ai_api_usage_events` for the batch's subject keys and runs),
+  then inserted by a conditional insert that refuses a sample key already reserved, a path at its
+  share, and the 201st sample; a refused insert is decided again so the caller gets the real reason
+  (`path_full`, `count_cap`, `spend_cap`, `in_flight`). It refuses a ninth sample in flight across
+  every run (reserved, not marked `paid_replay.sample_done`, under 15 minutes old), and a sample
+  whose ceiling would take the batch's charge past $40.
+- The charge (`batchCharge`, review of 938daa70a): a sample counts its recorded
+  `estimated_cost_microusd` only when it is finished and every one of its usage rows is `completed`
+  with a cost. Any other sample counts `max(recorded, ceiling)`: one still running or killed, one
+  whose call failed or was aborted with unknown usage (`recordProviderUsage` writes a NULL cost
+  then), and one with no usage row because the usage insert failed. Rows on a batch run with no
+  sample's subject key count as recorded.
+- Ceilings are each path's worst case from its own limits, priced for the configured model
+  (`estimateAnthropicCostMicrousd`, never below the Opus 5.5 floor): written answer 4 steps x 16,000
+  output tokens (the Pro agent's `maxSteps`/`maxTokens`) plus 60,000 input a step, $2.24; report 2 x
+  8,000 output plus 30,000 input, $0.56; memo 2 x 4,000 plus 20,000, $0.32; Simulate 1 x 4,000 plus
+  10,000, $0.12. A path's costliest clean sample raises its ceiling. Before reserving, the path's own
+  budget line is checked (`assertProviderBudgetAllowed`), so a spent daily line does not use up the
+  batch's samples.
+- A failed free read (`answer(..., { strict: true })`, which throws on a fee-research error instead
+  of answering with none; the daily eval's call is unchanged) or a report's reads that throw or pass
+  60 s keep the question for a later run; it is passed over for good only after failing in three
+  runs. Only a clean "nothing to write up" passes a question over at once.
+- Trigger: `GET /api/admin/crew/gate-replay?paid=1` (cron secret or an admin) runs a paid run at
+  once, whatever the free plan's state, keyed by the minute. While a batch run is running (touched in
+  the last 6 minutes) it returns that run and starts nothing, and a queued one runs first, so it is
+  safe to call every few minutes. The hourly gate replay call (`53 * * * *`) runs the free replay
+  first and continues the paid batch once today's free plan is complete. Once the batch is complete
+  (200 samples, every path at its share, no sample that fits the spend cap with nothing in flight,
+  or no question left), the step records `complete: true` and no run starts again.
 - Ledger: each run is a `hamilton.paid_gate_replay` run with one step whose summary gives samples
   reserved by path, estimated spend of $40, this run's samples scored as the daily eval scores
   them, and the batch's shadows by surface (validated/partial/held, agreement, top codes).
@@ -55,10 +72,15 @@ James's 2026-10-15 budget, so a week gives about 35 paid shadows across four sur
 - Expected spend: the daily eval's last 30 days averaged $0.217 a written answer, $0.081 a memo,
   $0.040 a Simulate read and $0.156 a report page, so the full mix is about $31; the cap is $40.
   The spend is the ledger's estimate, not the provider's bill.
-- Throughput: a run starts no sample after 100 s, four at a time, so about 4 to 10 samples a run;
-  with the free replay taking its hours first, the batch takes about one to two days. Each path's
-  own budget line (daily caps on `api.research.hamilton` and the others) can slow it further; a
-  refused line is skipped for that run and tried again the next.
+- Throughput: a run writes six at a time and starts no sample after 100 s (a written answer
+  started then stops by 180 s more, inside the 300 s function), so roughly 10 to 20 samples a run.
+  Called with `?paid=1` every 2 to 3 minutes, a new run starts as each one finishes (about every
+  5 minutes), so the batch should take an hour or two. Each path's own budget line (daily caps on
+  `api.research.hamilton` and the others) can slow it; a refused line is skipped for that run and
+  tried again the next.
+- The worst-case ceilings are far above the daily eval's real costs, so near the end the cap stops
+  a written answer once the charge passes $37.76; cheaper paths may still fill. A killed sample
+  keeps its full ceiling for good.
 - A usage row lost after a real call is not seen by the spend check (as in the daily eval); the
   ceilings and the 200-sample cap still bound it. A killed function's reservation counts for good.
 - A question a path cannot write up (no storyline, no peer band, no report) is passed over for
@@ -66,6 +88,9 @@ James's 2026-10-15 budget, so a week gives about 35 paid shadows across four sur
 - While the provider stop is on, each hourly paid run is blocked at launch and leaves a blocked run
   in the ledger.
 
-**Guard:** `src/lib/hamilton/paid-gate-replay.test.ts` (caps by count and by cost, in-flight
-ceilings, reservation idempotency, never runs once complete, budget-line refusal, origin
-separation, the daily eval unchanged), `src/app/api/admin/crew/gate-replay/route.test.ts`.
+**Guard:** `src/lib/hamilton/paid-gate-replay.test.ts` (caps by count and by cost, a failed,
+NULL-cost or unrecorded sample keeps its ceiling, the batch-wide in-flight cap, the real refusal
+reason, worst-case ceilings, reservation idempotency, never runs once complete, budget-line refusal,
+failed reads kept, origin separation, the daily eval unchanged),
+`src/app/api/admin/crew/gate-replay/route.test.ts` (no stacked runs, `?paid=1` independent of the
+free plan).

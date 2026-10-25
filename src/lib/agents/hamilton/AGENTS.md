@@ -190,10 +190,12 @@ Hamilton supports the decision; it does not make it.
   the quality bar over a spread seeded by the batch id) through the paid eval's own paths, in the
   mix 100 written answers, 50 memos, 25 Simulate reads, 25 report pages, and records each shadow
   with `origin: "replay_paid"`. Every sample is reserved before its first call
-  (`paid_replay.sample_reserved`, under the batch's advisory lock) and refused past 200 samples or
-  when the batch's estimated spend plus the ceilings of samples in flight and the next one would
-  pass $40. The hourly gate replay route runs it once the day's free plan is complete, or
-  `?paid=1` at once; once the batch is complete or capped, no run starts again. A new batch needs a
+  (`paid_replay.sample_reserved`, under the batch's advisory lock) and refused past 200 samples,
+  past 8 in flight across every run, or when the batch's charge plus the next sample's worst-case
+  ceiling would pass $40; the charge counts a sample's recorded cost only when it finished and every
+  usage row completed with a cost, else its full ceiling. `?paid=1` runs it at once (returning a
+  running batch run rather than starting another), and the hourly gate replay call continues it once
+  the day's free plan is complete; once the batch is complete or capped, no run starts again. A new batch needs a
   new `PAID_REPLAY_BATCH_ID` and James's yes.
 - The paid answer eval (`hamilton/paid-answer-eval.ts`, provider step `hamilton-paid-answer-eval`,
   cron once a day, `/api/admin/crew/answer-eval-paid`, #1079) writes at most five memos a day

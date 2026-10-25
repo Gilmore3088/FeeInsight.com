@@ -25,14 +25,19 @@
  * call still passes its own path's budget line. Each sample is reserved before its first model call
  * by one `paid_replay.sample_reserved` run event, written by a conditional insert under the batch's
  * advisory lock, outside the step's transaction: it refuses a sample key already reserved, a path
- * at its share, the 200th-plus sample, and a sample whose ceiling estimate would take the spend
- * (`ai_api_usage_events.estimated_cost_microusd` for the batch's subject keys and runs) plus the
- * ceilings of samples still in flight past $40. A blocked call, a lost usage row or a killed
- * function still leaves the reservation, so retried or concurrent runs never pass either cap.
+ * at its share, the 201st sample, a ninth sample in flight across every run, and a sample whose
+ * worst-case ceiling would take the batch's charge past $40. The charge (`batchCharge`) counts a
+ * sample at its recorded cost (`ai_api_usage_events.estimated_cost_microusd`) only when it is
+ * finished and every usage row completed with a cost; any other sample (running, killed, a failed
+ * or aborted call with unknown usage, a lost usage row) counts its full ceiling. A blocked call, a
+ * lost usage row or a killed function still leaves the reservation, so retried or concurrent runs
+ * never pass either cap.
  * Server only.
  */
 
 import { sql } from "@/lib/data-store/connection";
+import { getHamiltonModel } from "@/lib/ai-provider";
+import { estimateAnthropicCostMicrousd } from "@/lib/ai-provider-usage";
 import type { SqlTag } from "@/lib/agents/hamilton/studies/common";
 import {
   liveCatalogReader, liveFilingReader, type FilingReader, type LiveReader,
@@ -61,21 +66,35 @@ export const PAID_REPLAY_SOURCE = "hamilton.paid_gate_replay";
 export const PAID_REPLAY_STEP_KEY = "hamilton-paid-gate-replay";
 /** The run event that reserves one sample; both caps count these. */
 export const PAID_REPLAY_RESERVATION = "paid_replay.sample_reserved";
-/** The run event that marks a reserved sample's calls finished, so its ceiling no longer holds spend. */
+/** The run event that marks a reserved sample's calls finished; a finished sample is charged its recorded cost only when every usage row is clean. */
 export const PAID_REPLAY_DONE = "paid_replay.sample_done";
 /** Samples in the whole batch, at most. */
 export const PAID_REPLAY_MAX_SAMPLES = 200;
 /** Estimated spend of the whole batch, at most: $40. */
 export const PAID_REPLAY_MAX_COST_MICROUSD = 40_000_000;
+/** Samples reserved and not finished, across every run of the batch, at most. */
+export const PAID_REPLAY_MAX_IN_FLIGHT = 8;
 /** Each path's share of the batch. */
 export const PAID_REPLAY_MIX: Record<PaidPath, number> = { written_answer: 100, memo: 50, simulate: 25, report: 25 };
 /**
- * The most one sample is assumed to cost before it starts, from each path's calls at the Hamilton
- * model's price ($4 in, $20 out per million tokens): a written answer up to four tool steps, a memo
- * and a report page up to two calls each, a Simulate read one. A path's costliest sample so far
- * replaces its figure when it is higher.
+ * The worst case of one sample's calls, from each path's own limits (review of 938daa70a): output at
+ * every call's `max_tokens` (thinking counts toward it) and an input estimate per call.
+ * - written answer: the Pro agent's 4 steps x 16,000 output tokens (research/agents.ts), 60,000 input a step;
+ * - memo: 2 attempts x 4,000 (memo.ts MAX_ATTEMPTS, MAX_TOKENS), 20,000 input each;
+ * - Simulate read: 1 call x 4,000 (SIMULATE_MAX_TOKENS), 10,000 input;
+ * - report page: the draft and its figure-check redraft, 2 x 8,000 (generate.ts), 30,000 input each.
  */
-export const PAID_REPLAY_CEILING_MICROUSD: Record<PaidPath, number> = { written_answer: 900_000, memo: 300_000, simulate: 100_000, report: 500_000 };
+export const PAID_REPLAY_WORST_CASE: Record<PaidPath, { calls: number; inputTokens: number; outputTokens: number }> = {
+  written_answer: { calls: 4, inputTokens: 60_000, outputTokens: 16_000 },
+  memo: { calls: 2, inputTokens: 20_000, outputTokens: 4_000 },
+  simulate: { calls: 1, inputTokens: 10_000, outputTokens: 4_000 },
+  report: { calls: 2, inputTokens: 30_000, outputTokens: 8_000 },
+};
+/**
+ * The ceiling floor of one sample: its worst case at the Hamilton model's list price ($4 in, $20 out
+ * per million tokens). Priced again at run time for the model actually configured, whichever is higher.
+ */
+export const PAID_REPLAY_CEILING_MICROUSD: Record<PaidPath, number> = { written_answer: 2_240_000, memo: 320_000, simulate: 120_000, report: 560_000 };
 /** Each path's provider-usage operation, apart from the daily eval's. */
 export const PAID_REPLAY_OPERATIONS: Record<PaidPath, string> = {
   memo: "storyline_memo_replay", simulate: "simulate_fee_change_replay", written_answer: "written_answer_replay", report: "report_answer_replay",
@@ -86,19 +105,23 @@ const PATH_ROUTE: Record<PaidPath, string> = {
 };
 /** Every batch sample's subject key starts with this. */
 export const PAID_REPLAY_SUBJECT_PREFIX = `hamilton-replay-paid:${PAID_REPLAY_BATCH_ID}:`;
-/** A reservation with no done mark after this long was killed: its usage rows, if any, are already written. */
+/** A reservation with no done mark after this long was killed; it no longer counts in flight, but keeps its full ceiling. */
 const IN_FLIGHT_MINUTES = 15;
 /** Institutions per charter and asset tier in the plan, as the free replay. */
 const PER_GROUP = 2;
 /** Questions in the plan, at most. */
 const PLAN_CAP = 400;
-/** Samples written at once. */
-const CONCURRENCY = 4;
+/** Samples written at once by one run; the batch-wide in-flight cap holds above it. */
+const CONCURRENCY = 6;
 /** No sample starts after this point of the run, so its calls (a written answer stops at 180 s) fit the 300 s function. */
 const START_WINDOW_MS = 100_000;
-/** Free-engine errors in one run before it stops starting samples. */
-const MAX_ENGINE_ERRORS = 5;
-/** A report's reads may take this long before the sample is passed over. */
+/** Free-read errors on one path in one run before that path is left for the next run. */
+const MAX_PATH_ERRORS = 3;
+/** Free-read errors in one run before it stops starting samples. */
+const MAX_ENGINE_ERRORS = 8;
+/** Runs a question may fail its free reads in before it is passed over for good. */
+const MAX_ERROR_RUNS = 3;
+/** A report's reads may take this long before the try counts as an error. */
 const REPORT_PREP_MS = 60_000;
 
 export interface PaidReplayReservation {
@@ -113,17 +136,27 @@ export interface PaidReplayState {
   reservations: PaidReplayReservation[];
   /** Path-and-question keys earlier runs passed over (nothing to write up), from their steps' detail. */
   settled: Set<string>;
+  /** Path-and-question keys whose free reads failed, with how many earlier runs they failed in. */
+  errored: Map<string, number>;
   /** True once a finished batch step said so. */
   complete: boolean;
 }
 
-/** The batch's estimated spend: in all, and per subject key (one per sample). */
-export interface PaidReplaySpend {
-  total: number;
-  bySubject: Map<string, number>;
+/** One subject's usage rows: their recorded cost, how many there are, and how many are clean (completed, with a cost). */
+export interface SubjectUsage {
+  microusd: number;
+  rows: number;
+  clean: number;
 }
 
-export type ReserveOutcome = { reserved: true } | { reserved: false; reason: "duplicate" | "path_full" | "count_cap" | "cost_cap" };
+/** The batch's usage as recorded: in all, and per subject key (one per sample; `run:<id>` for rows with none). */
+export interface PaidReplaySpend {
+  total: number;
+  bySubject: Map<string, SubjectUsage>;
+}
+
+export type ReserveRefusal = "duplicate" | "path_full" | "count_cap" | "spend_cap" | "in_flight";
+export type ReserveOutcome = { reserved: true } | { reserved: false; reason: ReserveRefusal };
 
 export function sampleKeyFor(path: PaidPath, item: Pick<ReplayItem, "key">): string {
   return `${path}|${item.key}`;
@@ -133,35 +166,80 @@ export function subjectKeyFor(sampleKey: string): string {
   return `${PAID_REPLAY_SUBJECT_PREFIX}${sampleKey}`;
 }
 
-/** Each path's ceiling: its static figure, or its costliest sample so far when that is higher. */
-export function pathCeilings(state: Pick<PaidReplayState, "reservations">, spend: PaidReplaySpend): Record<PaidPath, number> {
-  const ceilings = { ...PAID_REPLAY_CEILING_MICROUSD };
+/** Each path's worst case priced for the models configured now, never below the floor. */
+export function baseCeilings(models: { hamilton: string; pro: string } = configuredModels()): Record<PaidPath, number> {
+  const out = { ...PAID_REPLAY_CEILING_MICROUSD };
+  for (const path of PAID_PATHS) {
+    const w = PAID_REPLAY_WORST_CASE[path];
+    const priced = estimateAnthropicCostMicrousd(path === "written_answer" ? models.pro : models.hamilton, {
+      inputTokens: w.calls * w.inputTokens, outputTokens: w.calls * w.outputTokens,
+    });
+    if (priced !== null && priced > out[path]) out[path] = priced;
+  }
+  return out;
+}
+
+function configuredModels(): { hamilton: string; pro: string } {
+  const hamilton = getHamiltonModel();
+  // The Pro agent's model (research/agents.ts): BFI_MODEL_PRO, else Hamilton's.
+  return { hamilton, pro: process.env.BFI_MODEL_PRO || hamilton };
+}
+
+/** A finished sample whose every usage row is completed and costed: the only kind charged its recorded cost alone. */
+function cleanSample(r: PaidReplayReservation, spend: PaidReplaySpend): boolean {
+  const usage = spend.bySubject.get(subjectKeyFor(r.sampleKey));
+  return r.done && !!usage && usage.rows > 0 && usage.clean === usage.rows;
+}
+
+/** Each path's ceiling: its worst case, or its costliest clean sample so far when that is higher. */
+export function pathCeilings(state: Pick<PaidReplayState, "reservations">, spend: PaidReplaySpend, base: Record<PaidPath, number> = baseCeilings()): Record<PaidPath, number> {
+  const ceilings = { ...base };
   for (const r of state.reservations) {
-    const cost = spend.bySubject.get(subjectKeyFor(r.sampleKey)) ?? 0;
-    if (r.done && cost > ceilings[r.path]) ceilings[r.path] = cost;
+    const cost = spend.bySubject.get(subjectKeyFor(r.sampleKey))?.microusd ?? 0;
+    if (cleanSample(r, spend) && cost > ceilings[r.path]) ceilings[r.path] = cost;
   }
   return ceilings;
 }
 
-/** Reservations still holding spend: not marked done and younger than a killed function's. */
+/**
+ * What the batch is charged against the cap (review of 938daa70a): a sample is charged its recorded
+ * cost only when it is finished and every one of its usage rows completed with a cost. Any other
+ * sample (still running, killed, a failed or aborted call whose usage is unknown, a NULL-cost row, or
+ * no usage row at all because the usage insert failed) is charged its full ceiling, or its recorded
+ * cost when that is higher. Usage rows on a batch run with no sample's subject key are added as recorded.
+ */
+export function batchCharge(state: Pick<PaidReplayState, "reservations">, spend: PaidReplaySpend, ceilings: Record<PaidPath, number>): number {
+  let total = 0;
+  const subjects = new Set<string>();
+  for (const r of state.reservations) {
+    const subject = subjectKeyFor(r.sampleKey);
+    subjects.add(subject);
+    const recorded = spend.bySubject.get(subject)?.microusd ?? 0;
+    total += cleanSample(r, spend) ? recorded : Math.max(recorded, ceilings[r.path]);
+  }
+  for (const [subject, usage] of spend.bySubject) if (!subjects.has(subject)) total += usage.microusd;
+  return total;
+}
+
+/** Reservations not finished and younger than a killed function's: the samples writing now. */
 export function inFlight(state: Pick<PaidReplayState, "reservations">, now: Date): PaidReplayReservation[] {
   const cutoff = now.getTime() - IN_FLIGHT_MINUTES * 60_000;
   return state.reservations.filter((r) => !r.done && Date.parse(r.createdAt) >= cutoff);
 }
 
 /**
- * Whether one more sample on `path` fits both caps and its share: the decision the reservation
- * makes under the batch's lock. The spend check holds the ceiling of every sample still in flight,
- * so concurrent runs never start more than the cap can pay for.
+ * Whether one more sample on `path` fits: the decision the reservation makes under the batch's lock.
+ * It refuses a key already reserved, the 201st sample, a path at its share, a ninth sample in flight
+ * across every run, and a sample whose ceiling would take the batch's charge (batchCharge: every
+ * unfinished or unclean sample at its full ceiling) past $40.
  */
-export function reservationDecision(state: Pick<PaidReplayState, "reservations">, spend: PaidReplaySpend, path: PaidPath, sampleKey: string, now: Date): ReserveOutcome {
+export function reservationDecision(state: Pick<PaidReplayState, "reservations">, spend: PaidReplaySpend, path: PaidPath, sampleKey: string, now: Date, base?: Record<PaidPath, number>): ReserveOutcome {
   if (state.reservations.some((r) => r.sampleKey === sampleKey)) return { reserved: false, reason: "duplicate" };
   if (state.reservations.length >= PAID_REPLAY_MAX_SAMPLES) return { reserved: false, reason: "count_cap" };
   if (state.reservations.filter((r) => r.path === path).length >= PAID_REPLAY_MIX[path]) return { reserved: false, reason: "path_full" };
-  const ceilings = pathCeilings(state, spend);
-  // A sample in flight may already have spent some of its ceiling: hold whichever is larger.
-  const held = inFlight(state, now).reduce((sum, r) => sum + Math.max(0, ceilings[r.path] - (spend.bySubject.get(subjectKeyFor(r.sampleKey)) ?? 0)), 0);
-  if (spend.total + held + ceilings[path] > PAID_REPLAY_MAX_COST_MICROUSD) return { reserved: false, reason: "cost_cap" };
+  if (inFlight(state, now).length >= PAID_REPLAY_MAX_IN_FLIGHT) return { reserved: false, reason: "in_flight" };
+  const ceilings = pathCeilings(state, spend, base);
+  if (batchCharge(state, spend, ceilings) + ceilings[path] > PAID_REPLAY_MAX_COST_MICROUSD) return { reserved: false, reason: "spend_cap" };
   return { reserved: true };
 }
 
@@ -194,35 +272,41 @@ async function readReservations(db: SqlTag): Promise<PaidReplayReservation[]> {
     }));
 }
 
-/** The batch's state in the ledger: its reservations, the questions passed over, and whether it is complete. */
+/** The batch's state in the ledger: its reservations, the questions passed over or failing, and whether it is complete. */
 export async function readPaidReplayState(db: SqlTag): Promise<PaidReplayState> {
   const reservations = await readReservations(db);
   const rows = await db`
-    SELECT e.detail->'settledKeys' AS keys, e.detail->>'complete' AS complete
+    SELECT e.detail->'settledKeys' AS keys, e.detail->'erroredKeys' AS errored, e.detail->>'complete' AS complete
       FROM agent_run_events e
       JOIN agent_runs r ON r.id = e.agent_run_id
      WHERE r.params_json->>'source' = ${PAID_REPLAY_SOURCE}
        AND e.event_type = 'step.finished'
        AND e.detail->>'batchId' = ${PAID_REPLAY_BATCH_ID}
        AND e.created_at >= ${PAID_REPLAY_BATCH_START}::timestamptz
-  ` as unknown as Array<{ keys: unknown; complete: string | null }>;
+  ` as unknown as Array<{ keys: unknown; errored: unknown; complete: string | null }>;
   const settled = new Set<string>();
+  const errored = new Map<string, number>();
   let complete = false;
   for (const row of rows) {
     if (row.complete === "true") complete = true;
     if (Array.isArray(row.keys)) for (const key of row.keys) if (typeof key === "string") settled.add(key);
+    if (Array.isArray(row.errored)) for (const key of new Set(row.errored)) if (typeof key === "string") errored.set(key, (errored.get(key) ?? 0) + 1);
   }
-  return { reservations, settled, complete };
+  return { reservations, settled, errored, complete };
 }
 
 /**
- * The batch's estimated spend: every usage row with a batch subject key, or on a run that reserved a
- * batch sample, whatever its status (an estimate on a failed call counts too, so the cap errs high).
+ * The batch's usage rows: every row with a batch subject key, or on a run that reserved a batch
+ * sample, whatever its status, with how many of each subject's rows are clean (completed with a
+ * cost). A failed call with unknown usage records a NULL cost, which counts $0 here; batchCharge,
+ * not this sum, is what the cap reads.
  */
 export async function readPaidReplaySpend(db: SqlTag): Promise<PaidReplaySpend> {
   const rows = await db`
     SELECT COALESCE(subject_key, 'run:' || agent_run_id::text) AS subject,
-           COALESCE(SUM(COALESCE(estimated_cost_microusd, 0)), 0)::bigint AS microusd
+           COALESCE(SUM(COALESCE(estimated_cost_microusd, 0)), 0)::bigint AS microusd,
+           COUNT(*)::int AS rows,
+           COUNT(*) FILTER (WHERE status = 'completed' AND estimated_cost_microusd IS NOT NULL)::int AS clean
       FROM public.ai_api_usage_events
      WHERE created_at >= ${PAID_REPLAY_BATCH_START}::timestamptz
        AND (subject_key LIKE ${`${PAID_REPLAY_SUBJECT_PREFIX}%`}
@@ -232,12 +316,12 @@ export async function readPaidReplaySpend(db: SqlTag): Promise<PaidReplaySpend> 
                  AND detail->>'batch_id' = ${PAID_REPLAY_BATCH_ID}
                  AND created_at >= ${PAID_REPLAY_BATCH_START}::timestamptz))
      GROUP BY 1
-  ` as unknown as Array<{ subject: string; microusd: number | string }>;
-  const bySubject = new Map<string, number>();
+  ` as unknown as Array<{ subject: string; microusd: number | string; rows: number | string; clean: number | string }>;
+  const bySubject = new Map<string, SubjectUsage>();
   let total = 0;
   for (const row of rows) {
     const microusd = Number(row.microusd ?? 0);
-    bySubject.set(row.subject, microusd);
+    bySubject.set(row.subject, { microusd, rows: Number(row.rows ?? 0), clean: Number(row.clean ?? 0) });
     total += microusd;
   }
   return { total, bySubject };
@@ -245,25 +329,26 @@ export async function readPaidReplaySpend(db: SqlTag): Promise<PaidReplaySpend> 
 
 /**
  * Reserves one sample before any model call, under the batch's lock: the caps are decided on a
- * fresh read of the reservations and the spend, then the insert itself refuses a duplicate key, a
+ * fresh read of the reservations and the usage, then the insert itself refuses a duplicate key, a
  * full path or the 201st sample, so a reservation never passes them even if the read was stale.
- * Its own short transaction, never the step's, so a killed function keeps it.
+ * A refused insert is decided again on a fresh read, so the caller gets the real reason. Its own
+ * short transaction, never the step's, so a killed function keeps it.
  */
 export async function reservePaidReplaySample(
   db: SqlTag,
-  input: { runId: number; path: PaidPath; sampleKey: string; now: Date },
+  input: { runId: number; path: PaidPath; sampleKey: string; now: Date; base?: Record<PaidPath, number> },
 ): Promise<ReserveOutcome> {
   return underBatchLock(db, async (tx) => {
     const reservations = await readReservations(tx);
     const spend = await readPaidReplaySpend(tx);
-    const decision = reservationDecision({ reservations }, spend, input.path, input.sampleKey, input.now);
+    const decision = reservationDecision({ reservations }, spend, input.path, input.sampleKey, input.now, input.base);
     if (!decision.reserved) return decision;
     const subjectKey = subjectKeyFor(input.sampleKey);
     const rows = await tx`
       INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
       SELECT ${input.runId}, NULL, ${PAID_REPLAY_RESERVATION}, 'info',
              ${`Reserved paid replay sample ${subjectKey}.`},
-             ${JSON.stringify({ batch_id: PAID_REPLAY_BATCH_ID, sample_key: input.sampleKey, subject_key: subjectKey, path: input.path, spent_microusd: spend.total })}::jsonb
+             ${JSON.stringify({ batch_id: PAID_REPLAY_BATCH_ID, sample_key: input.sampleKey, subject_key: subjectKey, path: input.path, recorded_microusd: spend.total })}::jsonb
        WHERE NOT EXISTS (SELECT 1 FROM agent_run_events
                           WHERE event_type = ${PAID_REPLAY_RESERVATION}
                             AND detail->>'batch_id' = ${PAID_REPLAY_BATCH_ID}
@@ -277,11 +362,13 @@ export async function reservePaidReplaySample(
                  AND detail->>'batch_id' = ${PAID_REPLAY_BATCH_ID}) < ${PAID_REPLAY_MAX_SAMPLES}
       RETURNING id
     `;
-    return (rows as unknown as unknown[]).length > 0 ? { reserved: true } : { reserved: false, reason: "duplicate" };
+    if ((rows as unknown as unknown[]).length > 0) return { reserved: true };
+    const again = reservationDecision({ reservations: await readReservations(tx) }, await readPaidReplaySpend(tx), input.path, input.sampleKey, input.now, input.base);
+    return again.reserved ? { reserved: false, reason: "duplicate" } : again;
   });
 }
 
-/** Marks a reserved sample's calls finished; a lost mark only holds its ceiling until IN_FLIGHT_MINUTES pass. */
+/** Marks a reserved sample's calls finished. A lost mark leaves it charged its full ceiling for good. */
 async function markSampleDone(db: SqlTag, input: { runId: number; path: PaidPath; sampleKey: string; status: string }): Promise<void> {
   await db`
     INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
@@ -294,6 +381,23 @@ async function markSampleDone(db: SqlTag, input: { runId: number; path: PaidPath
 export async function paidReplayBatchComplete(db: SqlTag = sql): Promise<boolean> {
   const state = await readPaidReplayState(db);
   return state.complete || state.reservations.length >= PAID_REPLAY_MAX_SAMPLES;
+}
+
+/** A running batch run touched within this long is live; an older one was killed and the reaper will re-queue it. */
+const ACTIVE_RUN_MINUTES = 6;
+
+/** The batch's queued run, or its live running one, so the route never stacks runs; null when there is none. */
+export async function activePaidReplayRun(db: SqlTag = sql): Promise<{ id: number; status: "queued" | "running" } | null> {
+  const rows = await db`
+    SELECT id, status
+      FROM agent_runs
+     WHERE params_json->>'source' = ${PAID_REPLAY_SOURCE}
+       AND (status = 'queued'
+            OR (status = 'running' AND updated_at >= NOW() - make_interval(mins => ${ACTIVE_RUN_MINUTES})))
+     ORDER BY (status = 'running') DESC, id ASC
+     LIMIT 1
+  ` as unknown as Array<{ id: number | string; status: "queued" | "running" }>;
+  return rows[0] ? { id: Number(rows[0].id), status: rows[0].status } : null;
 }
 
 /** One surface's shadow counts in the batch. */
@@ -325,22 +429,26 @@ export function countBySurface(records: readonly GateShadowRecord[]): Partial<Re
 
 export interface PaidReplaySummary {
   batchId: string;
-  caps: { samples: number; costMicrousd: number; mix: Record<PaidPath, number> };
+  caps: { samples: number; costMicrousd: number; inFlight: number; mix: Record<PaidPath, number> };
   /** Samples reserved in the whole batch, in all and by path, after this run. */
   reserved: { total: number; byPath: Record<PaidPath, number> };
   /** Reserved before this run. */
   reservedBefore: number;
-  /** The batch's estimated spend after this run, in micro-dollars. */
+  /** The batch's usage as recorded after this run, in micro-dollars (a failed call with unknown usage counts $0 here). */
   spentMicrousd: number;
+  /** What the cap reads (batchCharge): every unfinished or unclean sample at its full ceiling. */
+  chargedMicrousd: number;
   /** This run's samples, scored as the daily eval scores them. */
   paths: PaidPathSummary[];
   results: PaidSampleResult[];
   /** Why this run started no more samples. */
   stopped: string | null;
-  /** Paths whose budget line refused this run, with its message. */
+  /** Paths this run left for the next one (a budget line refused, or their free reads kept failing), with why. */
   blocked: Partial<Record<PaidPath, string>>;
   /** Path-and-question keys this run passed over (nothing to write up), so later runs skip them. */
   settledKeys: string[];
+  /** Path-and-question keys whose free reads failed this run; tried again until they fail in MAX_ERROR_RUNS runs. */
+  erroredKeys: string[];
   /** True once the batch is over for good: no later run starts a sample. */
   complete: boolean;
   /** Why the batch is complete. */
@@ -363,7 +471,9 @@ const budgetPreflight: PathPreflight = async (path, agentRunId) => {
 export interface PaidReplayDeps {
   pickProQuestions: (db: SqlTag, limit: number) => Promise<ProQuestion[]>;
   pickInstitutions: (db: SqlTag, perGroup: number, seed: string) => Promise<EvalInstitution[]>;
+  /** The free answer; it must throw on a failed read, never hand back an empty answer for one. */
   answer: (institutionId: number, question: string, research: Map<string, Promise<FeeResearch | null>>) => Promise<Answered>;
+  /** Null when the Reports screen would write no report; throws on a failed read. */
   prepareReport: (institutionId: number, institutionName: string, now: Date) => Promise<PreparedReportAnswer | null>;
   /** The memo's and Simulate read's client; the default builds them through ai-provider.ts. */
   client?: MemoClient;
@@ -376,12 +486,15 @@ export interface PaidReplayDeps {
   /** The batch's shadows so far, for the summary. */
   batchShadows: () => Promise<GateShadowRecord[]>;
   preflight: PathPreflight;
+  /** Each path's worst-case ceiling; the default prices the configured models. */
+  ceilings: () => Record<PaidPath, number>;
 }
 
 const defaultDeps = (): PaidReplayDeps => ({
   pickProQuestions: (db, limit) => pickProQuestions(db, limit),
   pickInstitutions: (db, perGroup, seed) => pickEvalInstitutions(db, perGroup, seed),
-  answer: engineAnswer,
+  // Strict: a failed fee-research read throws, so the question is kept for a later run (the daily eval's answer is unchanged).
+  answer: (institutionId, question, research) => engineAnswer(institutionId, question, research, { strict: true }),
   prepareReport: prepareReportAnswer,
   written: writeWrittenAnswer,
   writeReport: writeReportAnswer,
@@ -391,6 +504,7 @@ const defaultDeps = (): PaidReplayDeps => ({
   recordShadow: async (record, context) => (await import("./output-gate-shadow-store")).recordGateShadow(record, context),
   batchShadows: async () => (await import("./output-gate-shadow-store")).gateShadowRecordsSince("replay_paid", PAID_REPLAY_BATCH_START).then((rows) => rows.map((r) => r.record)),
   preflight: budgetPreflight,
+  ceilings: () => baseCeilings(),
 });
 
 /** Each path walks the plan from its own offset, so the paths write up different questions first. */
@@ -411,8 +525,8 @@ type Prepared = {
 
 /**
  * One run of the batch: reads the ledger, stops at once when the batch is over, else writes up
- * samples a few at a time, the path furthest behind its share first, until the start window
- * closes, a cap refuses, or the plan runs out.
+ * samples six at a time, the path furthest behind its share first, until the start window closes,
+ * a cap refuses, or the plan runs out.
  */
 export async function runPaidGateReplay({
   db = sql,
@@ -429,9 +543,11 @@ export async function runPaidGateReplay({
 }): Promise<PaidReplaySummary> {
   const deps = { ...defaultDeps(), ...overrides };
   const started = Date.now();
+  const base = deps.ceilings();
   const before = await readPaidReplayState(db);
   const blocked: Partial<Record<PaidPath, string>> = {};
   const settledKeys: string[] = [];
+  const erroredKeys: string[] = [];
   const results: PaidSampleResult[] = [];
   let stopped: string | null = null;
 
@@ -446,15 +562,17 @@ export async function runPaidGateReplay({
       });
     return {
       batchId: PAID_REPLAY_BATCH_ID,
-      caps: { samples: PAID_REPLAY_MAX_SAMPLES, costMicrousd: PAID_REPLAY_MAX_COST_MICROUSD, mix: PAID_REPLAY_MIX },
+      caps: { samples: PAID_REPLAY_MAX_SAMPLES, costMicrousd: PAID_REPLAY_MAX_COST_MICROUSD, inFlight: PAID_REPLAY_MAX_IN_FLIGHT, mix: PAID_REPLAY_MIX },
       reserved: { total: after.reservations.length, byPath: byPathCounts(after.reservations) },
       reservedBefore: before.reservations.length,
       spentMicrousd: spend.total,
+      chargedMicrousd: batchCharge(after, spend, pathCeilings(after, spend, base)),
       paths: PAID_PATHS.map((p) => summarizePaid(results.filter((r) => r.path === p), p)),
       results,
       stopped,
       blocked,
       settledKeys,
+      erroredKeys,
       complete,
       completeReason,
       shadows,
@@ -471,17 +589,21 @@ export async function runPaidGateReplay({
   const institutions = await deps.pickInstitutions(db, PER_GROUP, PAID_REPLAY_BATCH_ID);
   const plan = planGateReplay(PAID_REPLAY_BATCH_ID, pro, institutions, PLAN_CAP);
 
-  const taken = new Set([...before.reservations.map((r) => r.sampleKey), ...before.settled]);
+  // A question whose free reads failed in MAX_ERROR_RUNS runs is passed over for good; one that failed fewer goes last.
+  const gaveUp = [...before.errored].filter(([, runs]) => runs >= MAX_ERROR_RUNS).map(([key]) => key);
+  const taken = new Set([...before.reservations.map((r) => r.sampleKey), ...before.settled, ...gaveUp]);
   const queues = Object.fromEntries(PAID_PATHS.map((path) => {
     const start = Math.floor(plan.length * PATH_OFFSET[path]);
-    const ordered = [...plan.slice(start), ...plan.slice(0, start)];
-    return [path, ordered.filter((item) => !taken.has(sampleKeyFor(path, item)))];
+    const ordered = [...plan.slice(start), ...plan.slice(0, start)].filter((item) => !taken.has(sampleKeyFor(path, item)));
+    const failedBefore = (item: ReplayItem) => before.errored.has(sampleKeyFor(path, item));
+    return [path, [...ordered.filter((i) => !failedBefore(i)), ...ordered.filter(failedBefore)]];
   })) as Record<PaidPath, ReplayItem[]>;
   const counts = byPathCounts(before.reservations);
   const full = new Set<PaidPath>(PAID_PATHS.filter((p) => counts[p] >= PAID_REPLAY_MIX[p]));
   // Paths whose next sample's ceiling would pass the spend cap this run; a cheaper path may still fit.
   const overCost = new Set<PaidPath>();
   let countCapped = false;
+  let inFlightCapped = false;
   const research = new Map<number, Map<string, Promise<FeeResearch | null>>>();
 
   /** The path furthest behind its share that can still take a sample this run. */
@@ -491,8 +613,9 @@ export async function runPaidGateReplay({
     return [...open].sort((a, b) => counts[a] / PAID_REPLAY_MIX[a] - counts[b] / PAID_REPLAY_MIX[b] || PAID_PATHS.indexOf(a) - PAID_PATHS.indexOf(b))[0];
   };
 
-  /** Free reads that threw this run; a question that threw is kept for a later run, never passed over. */
+  /** Free reads that threw (or a report's reads that timed out) this run, in all and by path. */
   let engineErrors = 0;
+  const pathErrors = { memo: 0, simulate: 0, written_answer: 0, report: 0 } as Record<PaidPath, number>;
   const prepare = async (path: PaidPath, item: ReplayItem): Promise<Prepared | null | "error"> => {
     if (!research.has(item.institutionId)) research.set(item.institutionId, new Map());
     let answered: Answered;
@@ -510,11 +633,13 @@ export async function runPaidGateReplay({
       return input ? { candidate, answered: withResearch, simulate: input } : null;
     }
     if (path === "report") {
+      // A failed or slow read is an error, kept for a later run; only a clean "no report" passes the question over.
       let timer: ReturnType<typeof setTimeout> | undefined;
       const report = await Promise.race([
-        deps.prepareReport(item.institutionId, withResearch.research.institutionName, now()).catch(() => null),
-        new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), REPORT_PREP_MS); }),
+        deps.prepareReport(item.institutionId, withResearch.research.institutionName, now()).catch(() => "error" as const),
+        new Promise<"error">((resolve) => { timer = setTimeout(() => resolve("error"), REPORT_PREP_MS); }),
       ]).finally(() => clearTimeout(timer));
+      if (report === "error") return "error";
       return report ? { candidate, answered: withResearch, report } : null;
     }
     return { candidate, answered: withResearch };
@@ -524,29 +649,34 @@ export async function runPaidGateReplay({
     const subjectKey = subjectKeyFor(sampleKey);
     const tag: SampleTag = { origin: "replay_paid", operation: PAID_REPLAY_OPERATIONS[path], shadowKey: subjectKey };
     const { candidate, answered } = prepared;
-    const base = { subjectKey, agentRunId, recordShadow: deps.recordShadow, tag };
-    if (path === "simulate" && prepared.simulate) return simulateUp(candidate, answered, prepared.simulate, deps.live, { ...base, client: deps.client });
-    if (path === "written_answer") return writtenUp(candidate, answered, deps.live, { ...base, written: deps.written, filings: deps.filings });
-    if (path === "report" && prepared.report) return reportUp(candidate, prepared.report, { ...base, writeReport: deps.writeReport, comparison: deps.comparison });
-    return writeUp(candidate, answered, deps.live, { ...base, client: deps.client });
+    const shared = { subjectKey, agentRunId, recordShadow: deps.recordShadow, tag };
+    if (path === "simulate" && prepared.simulate) return simulateUp(candidate, answered, prepared.simulate, deps.live, { ...shared, client: deps.client });
+    if (path === "written_answer") return writtenUp(candidate, answered, deps.live, { ...shared, written: deps.written, filings: deps.filings });
+    if (path === "report" && prepared.report) return reportUp(candidate, prepared.report, { ...shared, writeReport: deps.writeReport, comparison: deps.comparison });
+    return writeUp(candidate, answered, deps.live, { ...shared, client: deps.client });
+  };
+
+  const windowClosed = () => {
+    if (Date.now() - started <= startWindowMs) return false;
+    stopped ??= "Stopped at the start window; the next run continues.";
+    return true;
   };
 
   const worker = async () => {
     for (;;) {
-      if (countCapped) return;
-      if (Date.now() - started > startWindowMs) {
-        stopped ??= "Stopped at the start window; the next run continues.";
-        return;
-      }
+      if (countCapped || inFlightCapped || windowClosed()) return;
       const path = nextPath();
       if (!path) return;
       const item = queues[path].shift()!;
       const sampleKey = sampleKeyFor(path, item);
       const prepared = await prepare(path, item);
       if (prepared === "error") {
-        // A database or engine fault must not pass the plan over and end the batch early.
-        if (++engineErrors >= MAX_ENGINE_ERRORS) {
-          stopped ??= `Stopped after ${engineErrors} free-engine errors; the next run tries again.`;
+        // A database or engine fault must not pass the question over and end the batch early.
+        erroredKeys.push(sampleKey);
+        engineErrors += 1;
+        if (++pathErrors[path] >= MAX_PATH_ERRORS) blocked[path] ??= `${pathErrors[path]} free reads failed this run`;
+        if (engineErrors >= MAX_ENGINE_ERRORS) {
+          stopped ??= `Stopped after ${engineErrors} free-read errors; the next run tries again.`;
           return;
         }
         continue;
@@ -561,15 +691,13 @@ export async function runPaidGateReplay({
         blocked[path] ??= refusal;
         continue;
       }
-      if (Date.now() - started > startWindowMs) {
-        stopped ??= "Stopped at the start window; the next run continues.";
-        return;
-      }
-      const outcome = await reservePaidReplaySample(db, { runId: agentRunId, path, sampleKey, now: now() });
+      if (windowClosed()) return;
+      const outcome = await reservePaidReplaySample(db, { runId: agentRunId, path, sampleKey, now: now(), base });
       if (!outcome.reserved) {
         if (outcome.reason === "path_full") full.add(path);
         else if (outcome.reason === "count_cap") countCapped = true;
-        else if (outcome.reason === "cost_cap") overCost.add(path);
+        else if (outcome.reason === "spend_cap") overCost.add(path);
+        else if (outcome.reason === "in_flight") inFlightCapped = true;
         continue;
       }
       counts[path] += 1;
@@ -579,6 +707,7 @@ export async function runPaidGateReplay({
         failures: [`error: ${error instanceof Error ? error.message : String(error)}`], correctness: null, figures: 0,
       }));
       results.push(result);
+      // Marking done releases nothing by itself: the sample is charged its recorded cost only if every usage row is clean.
       await markSampleDone(db, { runId: agentRunId, path, sampleKey, status: result.status }).catch((error) => {
         console.error("[hamilton] a paid replay sample could not be marked done", error);
       });
@@ -586,22 +715,24 @@ export async function runPaidGateReplay({
   };
   await Promise.all(Array.from({ length: CONCURRENCY }, worker));
 
-  if (overCost.size) stopped ??= `The next ${[...overCost].join(", ")} sample's ceiling would take the batch past $40.`;
+  if (overCost.size) stopped ??= `The next ${[...overCost].join(", ")} sample's ceiling would take the batch past $${PAID_REPLAY_MAX_COST_MICROUSD / 1e6}.`;
   if (countCapped) stopped ??= `The batch's ${PAID_REPLAY_MAX_SAMPLES} samples are reserved.`;
-  if (Object.keys(blocked).length) stopped ??= "A budget line refused; the next run tries again.";
+  if (inFlightCapped) stopped ??= `${PAID_REPLAY_MAX_IN_FLIGHT} samples are already in flight; the next run continues.`;
+  if (Object.keys(blocked).length) stopped ??= "A path was left for the next run (a budget line refused, or its free reads failed).";
 
-  // Over for good: every sample reserved, every path at its share or out of questions, or no
-  // sample left that fits the spend cap with nothing in flight.
+  // Over for good: every sample reserved, every path at its share, no sample left that fits the
+  // spend cap with nothing in flight, or no question left on any unfinished path.
   const after = await readPaidReplayState(db);
   const spend = await readPaidReplaySpend(db);
   const afterCounts = byPathCounts(after.reservations);
   const unfinished = PAID_PATHS.filter((p) => afterCounts[p] < PAID_REPLAY_MIX[p]);
-  const ceilings = pathCeilings(after, spend);
+  const ceilings = pathCeilings(after, spend, base);
+  const charged = batchCharge(after, spend, ceilings);
   const nothingInFlight = inFlight(after, now()).length === 0;
-  const noneFits = unfinished.every((p) => spend.total + ceilings[p] > PAID_REPLAY_MAX_COST_MICROUSD);
-  // The plan is spent only when this run stopped for no other reason and no unfinished path has a question left:
-  // a question taken off a queue but neither reserved nor passed over (a budget refusal, the start window) is tried again.
-  const planSpent = stopped === null && unfinished.every((p) => queues[p].length === 0);
+  const noneFits = unfinished.every((p) => charged + ceilings[p] > PAID_REPLAY_MAX_COST_MICROUSD);
+  // The plan is spent only when this run stopped for no other reason, no question failed its reads,
+  // and no unfinished path has a question left.
+  const planSpent = stopped === null && erroredKeys.length === 0 && unfinished.every((p) => queues[p].length === 0);
   const completeReason: PaidReplaySummary["completeReason"] =
     after.reservations.length >= PAID_REPLAY_MAX_SAMPLES || unfinished.length === 0 ? "samples"
       : nothingInFlight && noneFits ? "cost"
@@ -623,7 +754,7 @@ export function paidReplaySummaryLine(s: PaidReplaySummary): string {
       `${SURFACE_NAMES[surface as GateSurface] ?? surface} ${c!.validated}/${c!.ready_partial}/${c!.held} of ${c!.total}, agrees ${c!.agree}, disagrees ${c!.disagree}${c!.topCodes.length ? ` (top: ${c!.topCodes.slice(0, 3).map((t) => `${t.code.replace(/_/g, " ")} ${t.count}`).join(", ")})` : ""}`).join("; ")
     : null;
   const parts = [
-    `Paid gate replay batch ${s.batchId}: ${s.reserved.total} of ${s.caps.samples} samples reserved (${reserved}); ${usd(s.spentMicrousd)} of ${usd(s.caps.costMicrousd)} estimated spend.`,
+    `Paid gate replay batch ${s.batchId}: ${s.reserved.total} of ${s.caps.samples} samples reserved (${reserved}); ${usd(s.chargedMicrousd)} of ${usd(s.caps.costMicrousd)} charged against the cap (${usd(s.spentMicrousd)} recorded; unfinished or unclean samples count their full ceiling).`,
     `This run wrote ${s.results.length} sample${s.results.length === 1 ? "" : "s"}${ran ? ` (${ran})` : ""}${s.settledKeys.length ? `, passed over ${s.settledKeys.length} with nothing to write up` : ""}.`,
     surfaces === null ? "The batch's shadow counts could not be read." : surfaces ? `Shadow gate by surface (validated/partial/held): ${surfaces}.` : "No shadow recorded yet.",
     Object.keys(s.blocked).length ? `Budget refused: ${Object.entries(s.blocked).map(([p, why]) => `${NAMES[p as PaidPath]} (${why})`).join("; ")}.` : "",

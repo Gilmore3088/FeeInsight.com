@@ -282,8 +282,10 @@ function narrateFinished(
     }
     case "hamilton-paid-gate-replay": {
       const reserved = (detail.reserved ?? null) as Detail | null;
-      if (!reserved) return "Wrote paid samples for the gate replay batch.";
-      return `Paid gate replay batch: ${n(reserved, "total")} of 200 samples reserved, $${(n(detail, "spentMicrousd") / 1e6).toFixed(2)} of $40.00 spent${detail.complete === true ? "; the batch is complete" : ""}.`;
+      const caps = (detail.caps ?? null) as Detail | null;
+      if (!reserved || !caps) return "Wrote paid samples for the gate replay batch.";
+      const usd = (key: string, from: Detail) => `$${(n(from, key) / 1e6).toFixed(2)}`;
+      return `Paid gate replay batch: ${n(reserved, "total")} of ${n(caps, "samples")} samples reserved, ${usd("chargedMicrousd", detail)} of ${usd("costMicrousd", caps)} charged against the cap${detail.complete === true ? "; the batch is complete" : ""}.`;
     }
     case "hamilton-paid-answer-eval": {
       if (typeof detail.note === "string") return detail.note;

@@ -4,7 +4,7 @@ import { getCurrentUser, hasPermission } from "@/lib/auth";
 import { matchesConfiguredCronSecret } from "@/lib/cron-secret";
 import { executeAgentRun, oldestQueuedRunBySource, startAgentRun } from "@/lib/agents/run-store";
 import { GATE_REPLAY_SOURCE, GATE_REPLAY_STEP_KEY, gateReplayCompleteToday } from "@/lib/hamilton/gate-replay";
-import { PAID_REPLAY_BATCH_ID, PAID_REPLAY_SOURCE, PAID_REPLAY_STEP_KEY, paidReplayBatchComplete } from "@/lib/hamilton/paid-gate-replay";
+import { activePaidReplayRun, PAID_REPLAY_BATCH_ID, PAID_REPLAY_SOURCE, PAID_REPLAY_STEP_KEY, paidReplayBatchComplete } from "@/lib/hamilton/paid-gate-replay";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -21,20 +21,26 @@ const fromSchedule = (request: NextRequest) => matchesConfiguredCronSecret(reque
 
 /**
  * One run of the one-off paid replay batch (paid-gate-replay.ts), or none once the batch is
- * complete or capped. A run left queued runs first. Keyed by the hour from the schedule and by the
- * minute on demand; the batch's reservations hold its caps whatever runs at once.
+ * complete or capped. Never two at once: a run left queued runs first, and while a batch run is
+ * running this returns it and starts nothing, so calling `?paid=1` every few minutes is safe.
+ * Keyed by the minute on demand (`?paid=1`) and by the hour from the hourly call; the batch's reservations (and
+ * its batch-wide in-flight cap) hold its caps whatever runs at once.
  */
-async function runPaidBatch(request: NextRequest, now: Date) {
-  const waiting = await oldestQueuedRunBySource(PAID_REPLAY_SOURCE);
-  if (waiting != null) {
-    const result = await executeAgentRun(waiting, { maxSteps: 1 });
-    return NextResponse.json({ ok: true, paid: true, runId: waiting, reused: true, result });
+async function runPaidBatch(request: NextRequest, now: Date, onDemand: boolean) {
+  const active = await activePaidReplayRun();
+  if (active?.status === "running") {
+    return NextResponse.json({ ok: true, paid: true, runId: active.id, reused: true, active: true, message: "A paid replay run is already running; nothing new was started." });
+  }
+  if (active?.status === "queued") {
+    const result = await executeAgentRun(active.id, { maxSteps: 1 });
+    return NextResponse.json({ ok: true, paid: true, runId: active.id, reused: true, result });
   }
   if (await paidReplayBatchComplete()) {
     return NextResponse.json({ ok: true, paid: true, done: true, message: `The paid gate replay batch ${PAID_REPLAY_BATCH_ID} is complete.` });
   }
   const triggerSource = fromSchedule(request);
-  const stamp = now.toISOString().slice(0, triggerSource === "schedule" ? 13 : 16);
+  // On demand (?paid=1, with the cron secret or an admin) a new run may start every minute; the hourly call keys by the hour.
+  const stamp = now.toISOString().slice(0, onDemand ? 16 : 13);
   const started = await startAgentRun({
     agent: "hamilton",
     kind: "workflow",
@@ -67,7 +73,7 @@ async function handleGET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const now = new Date();
-  if (request.nextUrl.searchParams.get("paid") === "1") return runPaidBatch(request, now);
+  if (request.nextUrl.searchParams.get("paid") === "1") return runPaidBatch(request, now, true);
   // The tick never starts this step (run-store TICK_EXCLUDED_STEP_KEYS): a run left queued runs here first.
   const waiting = await oldestQueuedRunBySource(GATE_REPLAY_SOURCE);
   if (waiting != null) {
@@ -77,7 +83,7 @@ async function handleGET(request: NextRequest) {
   const day = now.toISOString().slice(0, 10);
   if (await gateReplayCompleteToday(day)) {
     // The free plan is done for today: the hour goes to the paid batch while it is unfinished.
-    if (!(await paidReplayBatchComplete())) return runPaidBatch(request, now);
+    if (!(await paidReplayBatchComplete())) return runPaidBatch(request, now, false);
     return NextResponse.json({ ok: true, done: true, message: `Today's gate replay (${day}) is complete.` });
   }
   const stamp = now.toISOString().slice(0, 13);
