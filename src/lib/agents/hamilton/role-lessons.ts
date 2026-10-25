@@ -356,4 +356,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: ["written-answer"],
     since: "2026-10-25",
   },
+  {
+    id: "issue-1896-empty-group-caption",
+    agent: "hamilton",
+    stage: "written answer",
+    lesson: "When a chart's group has no institution publishing the fee, say so in words and draw no bars; never compute a caption figure (a tallest bar, a median, a price) from an empty list.",
+    why: "Try a price's price chart printed 'the tallest bar is 1 at $-1' for a group with no published amounts, because the caption looked up the tallest of an all-zero list and got position -1.",
+    evidence: { issues: [1896], prs: [], files: ["src/components/hamilton/memo/memo.tsx", "src/components/hamilton/memo/memo-charts.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];
