@@ -1,4 +1,4 @@
-import { Suspense } from "react";
+import { cache, Suspense } from "react";
 import { unstable_cache, unstable_noStore } from "next/cache";
 import Link from "next/link";
 import { fetchHomeBriefingSignals, type HomeBriefingSignals } from "@/lib/hamilton/home-data";
@@ -31,18 +31,19 @@ const getCachedBriefing = unstable_cache(
   async (institutionId: number, peerSet: EnginePeerOptions["peerSet"]) => ({
     briefing: await getWorkspaceBriefing(institutionId, new Date(), { peerSet }),
   }),
-  ["hamilton-this-month-briefing-v5"],
+  // v6: briefings carry stateFeeChanges (#1891).
+  ["hamilton-this-month-briefing-v6"],
   { revalidate: 3600 },
 );
 
 async function loadBriefing(
-  user: User | null,
+  userId: number | null,
   selectedInstitutionId: string | null,
 ): Promise<{ briefing: Briefing | null; unavailable: boolean }> {
   const institutionId = parseInstitutionId(selectedInstitutionId);
   if (!institutionId) return { briefing: null, unavailable: false };
   try {
-    const active = user ? await getActivePeerSet({ userId: user.id, institutionId }).catch(() => null) : null;
+    const active = userId ? await getActivePeerSet({ userId, institutionId }).catch(() => null) : null;
     const peerSet = active ? { filters: active.filters, label: active.label } : null;
     const result = await getCachedBriefing(institutionId, peerSet);
     if (result.briefing && result.briefing.institutionId !== institutionId) {
@@ -54,6 +55,13 @@ async function loadBriefing(
   }
 }
 
+/**
+ * One briefing read per request, shared by the command center and the briefing below it (#1891), so
+ * a cold cache never builds the engine's briefing twice at once. Keyed on primitives, as React's
+ * cache compares arguments by identity.
+ */
+export const loadBriefingOnce = cache(loadBriefing);
+
 const BRIEFING_METHOD = [
   ...STANDARD_METHOD,
   `What stands out: the research institution's fees in the top or bottom ${POSITION_EXTREME_PCT}% of their peer group (overdraft first when it is one), institutions in its state that changed a matching fee in the last ${COMPETITOR_MOVE_WINDOW_DAYS} days, and any move of ${REVENUE_SHIFT_PCT}% or more in its service charge income, most unusual first, at most three.`,
@@ -64,10 +72,13 @@ function ChangesSkeleton() {
   return <div className="skeleton rounded-lg" style={{ minHeight: "3rem" }} />;
 }
 
+/** One read of the quarterly comparison per request, shared with the command center (#1891). */
+export const getQuarterlyChangesOnce = cache(getQuarterlyChanges);
+
 /** The briefing against last quarter's stored copy (#1083); nothing when none is stored. */
 async function QuarterlyChangesFor({ institutionId, pagePeerLabel }: { institutionId: number; pagePeerLabel: string }) {
   unstable_noStore();
-  return <QuarterlyChanges changes={await getQuarterlyChanges(institutionId)} pagePeerLabel={pagePeerLabel} />;
+  return <QuarterlyChanges changes={await getQuarterlyChangesOnce(institutionId)} pagePeerLabel={pagePeerLabel} />;
 }
 
 /** Signals and alerts are fresh on every load (never cached). */
@@ -134,14 +145,17 @@ async function resolveResearchInstitution(
  */
 export async function InstitutionBriefing({
   searchParams,
+  headless = false,
 }: {
   searchParams: Promise<{ instId?: string; intent?: string; research?: string }>;
+  /** Under the command center (#1891), which already names the institution and its month at a glance. */
+  headless?: boolean;
 }) {
   const params = await searchParams;
   const user = await getCurrentUser().catch(() => null);
   const { institution, error: contextError } = await resolveResearchInstitution(user, params);
   const selectedInstitutionId = institution ? String(institution.id) : null;
-  const { briefing, unavailable } = await loadBriefing(user, selectedInstitutionId);
+  const { briefing, unavailable } = await loadBriefingOnce(user?.id ?? null, selectedInstitutionId);
   const items = buildAttentionItems(briefing);
   const overview = briefing ? buildBriefingOverview(briefing, briefing.stateCode ?? null) : null;
   const month = new Date().toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
@@ -151,7 +165,7 @@ export async function InstitutionBriefing({
 
   return (
     <MemoPage>
-      <MemoHeader
+      {headless ? null : <MemoHeader
         kicker={`This month · ${month}`}
         title={institution?.name ?? "Monthly briefing"}
         dek={
@@ -161,9 +175,9 @@ export async function InstitutionBriefing({
               ? `Research institution: ${institution.name}.`
               : "Choose an institution and Hamilton reads its published fees against its market every month."
         }
-      />
+      />}
 
-      {briefing && overview ? (
+      {briefing && overview && !headless ? (
         <ThisMonthOverview
           institutionName={briefing.institutionName}
           peerLabel={briefing.peerLabel}

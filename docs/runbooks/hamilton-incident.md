@@ -68,8 +68,58 @@ James is the only person who emails customers. A session never sends customer em
 
 Every number in the notice needs a source, as on the site. If the start time is not known, say so.
 
+## Rolling back a Hamilton release (V5 T6)
+
+Pick the first step that contains the problem. Steps 1 and 2 change no data; none of them
+deletes a saved answer, report, peer group or watch.
+
+1. **Code, at once: promote the last good deployment.** Vercel, project feeinsight, Deployments.
+   Find the production deployment built from the commit before the bad merge (`git log --oneline
+   origin/main` names it), open its menu and choose "Promote to Production". Check `/pro/analyze`
+   and `/pro/reports` signed in as a Pro account. This needs no PR and is undone the same way.
+2. **Switch the feature off, where it has a switch.**
+   - Written answers or reports misbehaving: turn the `global` provider stop on in `/admin`
+     (automation control). Ask and reports then refuse with one plain line ("Hamilton's AI is
+     paused right now while spending is checked...") and record the refusal as `blocked` on the
+     provider ledger (`ai_api_usage_events`); peer lists, fee lookups and every screen keep working.
+   - Gate repair and partial answers (`HAMILTON_GATE_REPAIR`): off unless the Vercel environment
+     variable is `true`, `1` or `on`. Unset it and redeploy; today's gates decide again
+     (`route.gate-repair.test.ts`, "with HAMILTON_GATE_REPAIR off").
+   - The saved peer group on every screen (#1893): a bank turns it off itself by choosing
+     "Automatic peers" under "Peer group for all charts" in Settings; every chart then uses the
+     default groups again and the
+     group is kept (`customer-isolation.db.test.ts`, "rollback switch"). There is no global switch.
+   - Financial performance (#1892), the morning health check (#1921): no switch. Use step 1 or 3.
+3. **Then revert on `main`.** One revert PR per bad PR, newest first, never a force-push:
+   `git fetch origin main && git checkout -B revert-<pr> origin/main && git revert <merge sha>`,
+   run `npx tsc --noEmit -p .`, `npm run guard:legacy` and the affected tests, open the PR, check
+   its Vercel preview, merge with the usual receipt. None of the V5 PRs below added a migration,
+   so a revert changes code only; data they wrote stays (saved peer groups, health-check steps).
+4. **Data is never rolled back by a revert.** A wrong published fee is held on its admin row; a
+   migration is undone only by a forward-fix migration with James's yes (CLAUDE.md, Migrations).
+
+### Rehearsal, 2026-10-25
+
+Run on a detached copy of `origin/main` at `41b41ade7`, unwinding the merged V5 PRs newest first
+with local commits only (nothing pushed). The receipt with each command and its output is
+`/mnt/project-files/hamilton-v5/t6-release/receipts.md`.
+
+| PR | What | Revert |
+|---|---|---|
+| #2631 | Saved peer group on every screen, Peer group page | Applies cleanly |
+| #2617 | Credit union quarters split on filed dollars | Applies cleanly |
+| #2611 | Financial performance page | Conflicts in `.github/workflows/test.yml` (its test path in the E2E list) and `role-lessons.ts`: resolve by hand, dropping the test path and the lesson |
+| #2624 | Filings reconcile names refiled call reports | Conflicts with later data-quality commits in 13 files: not revert-safe on its own; use step 1, then a forward fix |
+| #2608 | Daily filings reconcile (T3) | Conflicts with #2624's follow-ups in 6 files: same as #2624 |
+| #2602 | Morning health check | Applies, keeping main's role lessons text |
+
+No unwind touched `supabase/migrations`; the unwound tree type-checks. So a bad Hamilton screen
+release (#2631, #2617, #2602) reverts cleanly, #2611 needs two hand edits, and the two filings
+reconcile PRs are rolled back by promoting a deployment, not by revert.
+
 ## Not covered yet
 
-- The rollback rehearsal on a preview (#1921's last item) has not been run.
+- The rehearsal above ran locally, not on a Vercel preview, and no deployment was promoted: a
+  promote changes production, which is James's call.
 - The health check runs once a day, with the brief. A more frequent check or a page would need a
   new cron entry, which is James's call.

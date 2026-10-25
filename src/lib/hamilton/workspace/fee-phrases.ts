@@ -13,14 +13,15 @@ const FEE_SYNONYMS: Record<string, string[]> = {
   continuous_od: ["continuous overdraft", "extended overdraft", "sustained overdraft", "daily overdraft"],
   od_protection_transfer: ["overdraft protection transfer", "overdraft transfer", "od transfer", "od protection"],
   monthly_maintenance: ["monthly maintenance", "maintenance fee", "monthly service fee", "monthly fee"],
-  atm_non_network: ["atm fee", "atm", "out-of-network atm", "foreign atm", "non-network atm"],
-  wire_domestic_outgoing: ["wire", "wire fee", "outgoing wire", "domestic wire"],
-  wire_domestic_incoming: ["incoming wire"],
-  wire_intl_outgoing: ["international wire", "foreign wire"],
-  stop_payment: ["stop payment"],
+  atm_non_network: ["atm fee", "atm fees", "atm", "out-of-network atm", "foreign atm", "non-network atm"],
+  wire_domestic_outgoing: ["wire", "wires", "wire fee", "wire fees", "outgoing wire", "outgoing wires", "domestic wire", "domestic wires"],
+  wire_domestic_incoming: ["incoming wire", "incoming wires"],
+  wire_intl_outgoing: ["international wire", "international wires", "foreign wire", "foreign wires"],
+  stop_payment: ["stop payment", "stop payments", "stop-payment"],
+  card_replacement: ["replacement card", "card replacement", "lost card", "replacement debit card"],
   card_foreign_txn: ["foreign transaction", "international atm", "atm abroad"],
   cashiers_check: ["cashier's check", "cashiers check", "official check"],
-  paper_statement: ["paper statement"],
+  paper_statement: ["paper statement", "paper statements", "statement fee", "statement fees"],
 };
 
 // Excess withdrawals and returned mail (#1398) get their own phrases only once the research split

@@ -15,6 +15,8 @@
 import { subjectPossessive, subjectName } from "./subject";
 import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
 import { FEE_PHRASES } from "./fee-phrases";
+import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
+import { STATE_NAMES } from "@/lib/us-states";
 import { buildFeeAnswer, type ExhibitFocus } from "./answer";
 import { feeItem, proseFeeName } from "./names";
 import { annualItemsQuestion, buildScenario, countedPeerAmounts, MIN_PEERS_FOR_POSITION, placeAmong, waiverRateQuestion } from "./scenario";
@@ -24,6 +26,7 @@ import { asksAboutStructure } from "./storyline";
 import { asksWholeSchedule } from "./schedule";
 import { asksIncome, asksIncomeWhy } from "./why";
 import type {
+  AskFeeSource,
   AskObjective,
   AskSegment,
   AskResponse,
@@ -77,7 +80,10 @@ export interface AskIntent {
   regulation?: boolean;
   /** The question asks for a list ("list peers' overdraft fees"), so the answer is the named rows (#2033). */
   list?: boolean;
+  /** Where the fee came from (#1895), so the answer can show the context it used. */
+  feeFrom?: AskFeeSource;
 }
+
 
 /** Dollar amounts a question names: "$25", "$32.50", "25 dollars". */
 export function pricesIn(question: string): number[] {
@@ -154,12 +160,155 @@ function questionFee(question: string, carriedCategory: string | null, tested: n
   return OPINION.test(question) || REFERS_BACK.test(question) ? carriedCategory : null;
 }
 
-export function parseAsk(question: string, carriedCategory: string | null = null): AskIntent {
+/**
+ * A question that sets the page's fee aside: it asks about every fee, the fee schedule, all of
+ * the subject's prices, or fee income, so the fee of the page Ask was opened from is not put in
+ * its place (#1895, #1077).
+ */
+const SETS_PAGE_FEE_ASIDE =
+  /\b(?:every|all(?: of)?(?: our| my| the)?|each|whole|entire|overall)\b(?! (?:peer|competitor))[^.?!]{0,30}\bfees?\b|\bfee schedule\b|\bschedules?\b|\b(?:our|my) (?:prices|pricing)\b|\b(?:which|what) (?:of )?(?:our|my) fees\b|\b(?:our|my) fees\b/i;
+
+/** Words that carry no subject of their own: who is asking, about whom, and how the question is put. */
+const FUNCTION_WORDS = new Set(
+  ("how do does did is are was were be been am what whats which where wheres if we us our ours i me my it its " +
+    "they them their theirs the a an to of for with on in at by than and or about too so should would could can " +
+    "will there this that these those s now today currently still really just me show list name other " +
+    "institutions institution banks bank unions union group state states others similar").split(" "),
+);
+
+/** Words that ask how a price compares or sits: what a reader asks on a fee's own page. */
+const PRICE_POSITION_WORDS = new Set(
+  ("compare compares compared comparing comparison stand stands rank ranks ranked ranking sit sits stack stacks up " +
+    "position positioned place placed peer peers competitor competitors market local nearby national nationally " +
+    "median benchmark benchmarks vs versus against high higher highest low lower lowest more less most least " +
+    "cheap cheaper cheapest expensive fee fees charge charges charged charging price priced pricing cost costs " +
+    "raise raised raising cut cutting drop dropped increase decrease change went go competitive right above below " +
+    "much percentile").split(" "),
+);
+
+/** Words an institution's name follows: "with Navy Federal", "than Chase", "against Chime". */
+const NAME_LEADS = new Set("with than against vs versus".split(" "));
+
+/**
+ * Products, services and payment apps a reader may write with a capital: never an institution's
+ * name, so "with Zelle" or "against Venmo" keeps no page fee.
+ */
+const PRODUCT_WORDS = new Set(
+  ("zelle venmo paypal cashapp cash app apple google pay checking savings deposit deposits treasury management " +
+    "wealth business banking mortgage mortgages loan loans lending card cards cd cds heloc helocs interchange " +
+    "credit debit wire wires atm atms").split(" "),
+);
+
+/** All-capitals words that are a measure or product, not an institution ("with ROA", "against CD"). */
+const MEASURE_CAPS = new Set(
+  ("roa roe roaa roae apy apr nim nii eps cd atm heloc ira ach nsf od cpi gdp ytd yoy qoq mom ly ttm " +
+    "er cir opex fdic ncua cfpb occ frb fed ffiec").split(" "),
+);
+
+/** Capitalized words after with, than or against that are not an institution ("versus Inflation"). */
+const NOT_NAMES = new Set("inflation last next year years month quarter history budget plan target goal brokerage".split(" "));
+
+/** Whether a word can be part of an institution's name: "Navy", "USAA", "U.S" (as in U.S. Bank), "Credit" before "Union". */
+function nameWord(word: string, next: string | undefined): boolean {
+  if (/^[A-Z](?:\.[A-Z])+$/.test(word)) return true;
+  if (!/^[A-Z][A-Za-z&-]*$/.test(word) || /^[A-Z]{2,}s$/.test(word)) return false;
+  const lower = word.toLowerCase();
+  if (/^[A-Z]{2,}$/.test(word)) return !MEASURE_CAPS.has(lower);
+  if (lower === "credit") return /^unions?$/i.test(next ?? "");
+  return !PRODUCT_WORDS.has(lower) && !NOT_NAMES.has(lower);
+}
+
+/** Lowercase state names, each as its words, for "in Florida" and "in New York". */
+const STATE_WORDS: string[][] = Object.values(STATE_NAMES).map((name) => name.toLowerCase().split(/\s+/));
+
+/** How many words from `i` spell a state name, or 0. */
+function stateNameAt(words: readonly string[], i: number): number {
+  for (const parts of STATE_WORDS) {
+    if (parts.every((part, k) => words[i + k]?.toLowerCase() === part)) return parts.length;
+  }
+  return 0;
+}
+
+/**
+ * The fee of the page Ask was opened from (#1895), for a question that names no fee and asks only
+ * how a price compares or sits: "how do we compare with peers?", "is $35 too high?", "how do we
+ * compare with Navy Federal?" asked from the overdraft page. Every content word must be a price,
+ * position or comparison word, a word for the subject, a number, a state after "in", or an
+ * institution's name after "with", "than", "against", "vs" or "versus". Any other word ("CD
+ * pricing", "mortgages", "interchange", "credit line", "in Checking", "with Zelle") keeps no page
+ * fee, so Ask reads the question as it would with no page at all, and says plainly what it can't
+ * answer (#1077).
+ */
+export function pageFeeFor(question: string, pageFee: string | null, tested: readonly number[] = []): string | null {
+  if (!pageFee || !Object.hasOwn(DISPLAY_NAMES, pageFee)) return null;
+  if (matchFeeCategory(question)) return null;
+  if (asksIncome(question) || asksIncomeWhy(question) || SETS_PAGE_FEE_ASIDE.test(question)) return null;
+  const words = (question.replace(/[’`]/g, "'").match(/\$?[A-Za-z0-9.,']+/g) ?? [])
+    .map((raw) => raw.replace(/'s?$|'/g, "").replace(/[.,]+$/, ""))
+    .filter(Boolean);
+  let asksPrice = tested.length > 0;
+  // Whether the word before was taken as part of an institution's name.
+  let inName = false;
+  for (let i = 0; i < words.length; i += 1) {
+    const word = words[i];
+    const lower = word.toLowerCase();
+    const before = i > 0 ? words[i - 1].toLowerCase() : "";
+    const continuesName = inName;
+    inName = false;
+    if (/^\$?[\d.,]+[kKmMbB]?$/.test(word)) continue;
+    // A state after "in" ("in Florida", "in New York"); any other capitalized word after "in"
+    // ("in Checking", "in Wealth") is a product line, not a place.
+    if (before === "in") {
+      // "in DC", "in TX": a state's two-letter code, written in capitals.
+      if (/^[A-Z]{2}$/.test(word.replace(/\./g, "")) && Object.hasOwn(STATE_NAMES, word.replace(/\./g, ""))) continue;
+      const span = stateNameAt(words, i);
+      if (span > 0) {
+        i += span - 1;
+        continue;
+      }
+    }
+    // "in line with peers": "line" only after "in", never a credit line.
+    if (lower === "line" && before === "in") {
+      asksPrice = true;
+      continue;
+    }
+    // An institution's name: a capitalized word right after with, than, against, vs or versus, and
+    // the capitalized words that run on from it ("with Navy Federal Credit Union"). Never a
+    // product or app ("with Zelle"), an all-capitals word ("CD", "ROA") or one with a plural s
+    // ("CDs", "HELOCs").
+    if ((NAME_LEADS.has(before) || continuesName) && nameWord(word, words[i + 1])) {
+      inName = true;
+      continue;
+    }
+    // "of" inside a name: "Bank of America", "Credit Union of Texas".
+    if (continuesName && lower === "of" && nameWord(words[i + 1] ?? "", words[i + 2])) {
+      inName = true;
+      continue;
+    }
+    // "credit" only in "credit union(s)", never a credit line or credit card.
+    if (lower === "credit" && /^unions?$/i.test(words[i + 1] ?? "")) continue;
+    if (PRICE_POSITION_WORDS.has(lower)) {
+      asksPrice = true;
+      continue;
+    }
+    if (FUNCTION_WORDS.has(lower)) continue;
+    return null;
+  }
+  return asksPrice ? pageFee : null;
+}
+
+export function parseAsk(question: string, carriedCategory: string | null = null, pageFee: string | null = null): AskIntent {
   const segment = parseSegment(question);
   // Asset sizes ("$10B") are not prices.
   const tested = segment ? pricesIn(question.replace(SEGMENT_AMOUNTS, " ")) : pricesIn(question);
+  const carried = questionFee(question, carriedCategory, tested);
+  // A price tested from a fee's page ("what if we charged $30?") is about that fee too, after the
+  // same checks: a price on every fee or on fee income is not.
+  const fromPage = carried ? null : pageFeeFor(question, pageFee, tested);
+  const feeCategory = carried ?? fromPage;
   return {
-    feeCategory: questionFee(question, carriedCategory, tested),
+    feeCategory,
+    ...(feeCategory ? { feeFrom: matchFeeCategory(question) ? "question" as const : carried ? "conversation" as const : "page" as const } : {}),
     segment,
     tested,
     wantsOpinion: OPINION.test(question),
@@ -168,7 +317,7 @@ export function parseAsk(question: string, carriedCategory: string | null = null
     regulation: REGULATION_QUESTION.test(question),
     // A question that also asks what to do ("which banks charge more, and should we raise ours?")
     // gets the decision, and one about every fee ("list all our fees vs peers") the schedule overview.
-    list: LIST_QUESTION.test(question) && !OPINION.test(question) && (matchFeeCategory(question) !== null || !asksWholeSchedule(question)),
+    list: LIST_QUESTION.test(question) && !OPINION.test(question) && (matchFeeCategory(question) !== null || fromPage !== null || !asksWholeSchedule(question)),
   };
 }
 
