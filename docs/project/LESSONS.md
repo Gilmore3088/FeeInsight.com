@@ -212,10 +212,11 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-260 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+261 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
-### Extraction and fee reading (41)
+### Extraction and fee reading (42)
 
+- 2026-10-25 — A better reader does not fix the texts it never re-reads; before re-reading thousands of stored documents, measure on a small sample what the current reader would change for their live fees, record-only. — [finding](findings/2026-10-25-pdf-texts-read-by-old-layout.md) — Guard: `src/lib/agents/rosetta/layout-recheck.test.ts`
 - 2026-10-24 — Read every PDF a second, independent way and compare which price each fee name gets; a layout mistake no detector knows yet shows up as a name the two readings price differently. — [finding](findings/2026-10-24-pdf-second-reader.md) — Agent lesson: rosetta/pdf-second-reading
 - 2026-10-22 — When a right read is held because its name reads as a sentence, fix the name Knox gives it, not the hold. Cut glued words only when every one is filler or the name's own: a cut in Knox hides a qualifier from every later check. — [finding](findings/2026-10-22-glued-sentence-names-held-at-publish.md) — Agent lesson: knox/glued-sentence-name
 - 2026-10-22 — A cell of stacked names over a cell of stacked prices is one fee per name only when the names are one family of siblings, as many as the prices, and the price cell holds nothing else; otherwise read it as before. — [finding](findings/2026-10-22-stacked-cell-sibling-variants.md) — Agent lesson: knox/stacked-cell-variants

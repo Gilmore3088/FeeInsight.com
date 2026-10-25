@@ -77,6 +77,7 @@ import { losslessStackedRecovery, textSha256, type StackedGeometryReceipt } from
 import type { PdfReaderAgreement } from "./pdf-reader-agreement";
 import { PDF_PROSE_REREAD_VERSION, PDF_STACKED_REPAIR_VERSION } from "./reader-versions";
 import { pdfStackedRepairDueSql, PDF_STACKED_REPAIR_MAX_PER_RUN, PDF_STACKED_REPAIR_STRATEGY } from "./pdf-stacked-repair";
+import { emptyLayoutRecheckResult, runLayoutRecheck, type LayoutRecheckResult } from "./layout-recheck";
 import {
   documentKindColumnsReady,
   ROSETTA_TABLE_ROWS_VERSION,
@@ -220,6 +221,8 @@ export interface RunRosettaReadOptions {
   vault?: DocumentVault;
   /** Free OCR for scans; defaults to tesseract.js. Closed by the caller that created it. */
   scannedPdfReader?: ScannedPdfReader;
+  /** Record-only layout rechecks per step (layout-recheck.ts); defaults to LAYOUT_RECHECK_PER_RUN. */
+  layoutRecheckPerRun?: number;
   /** Scans OCR'd per run at most; more are deferred to the next run. */
   ocrDocumentsPerRun?: number;
 }
@@ -269,6 +272,16 @@ export interface RunRosettaReadResult {
   /** Batches of reads reviewed this step (batch-review.ts): each one's error rate and misses by kind. */
   batchReviews: BatchReviewResult["batches"];
   batchReviewError: string | null;
+  /**
+   * Record-only layout rechecks (#2219, layout-recheck.ts): older-layout texts read again from the
+   * vault, compared on their live fees, one receipt each; nothing else is written.
+   */
+  layoutRechecked: number;
+  layoutRecheckNotCompared: number;
+  layoutRecheckTextChanged: number;
+  layoutRecheckLost: number;
+  layoutRecheckGained: number;
+  layoutRecheckError: string | null;
   /** Institutions whose learned format was filled in from an earlier text. */
   formatsBackfilled: number;
   /** Stored texts given a document kind this step (#1094 backfill). */
@@ -2518,6 +2531,29 @@ export async function runRosettaRead(
     if (ownsOcr) await ocr?.close().catch((error) => console.error("Rosetta OCR worker did not stop cleanly:", error));
   }
 
+  // #2219: a measured dry run of the current layout on older-layout texts. Record-only; a failure
+  // never stops the step, its error is on the result. Inside a caller's transaction it runs in a
+  // savepoint, so a failed recheck statement cannot abort the rest of the step.
+  let layoutRecheckError: string | null = null;
+  const recheck = (scope: SqlTag) => runLayoutRecheck(scope, {
+    runId: options.runId,
+    stepId: options.stepId ?? null,
+    institutionId: options.institutionId,
+    stateCode: options.stateCode,
+    limit: options.layoutRecheckPerRun,
+    vault,
+    pdfTextExtractor,
+  });
+  const recheckSavepoint = (db as unknown as {
+    savepoint?: (work: (scope: SqlTag) => Promise<LayoutRecheckResult>) => Promise<LayoutRecheckResult>;
+  }).savepoint;
+  const layoutRecheck: LayoutRecheckResult = learning && vaultSchema && currentCopy && textColumns
+    ? await (recheckSavepoint ? recheckSavepoint.call(db, recheck) : recheck(db)).catch((error: unknown) => {
+        layoutRecheckError = error instanceof Error ? error.message : String(error);
+        return emptyLayoutRecheckResult();
+      })
+    : emptyLayoutRecheckResult();
+
   const triage = vaultSchema
     ? await triageEarlierTexts(db, {
         runId: options.runId,
@@ -2568,6 +2604,12 @@ export async function runRosettaRead(
     readerEscalationsUsed: results.filter((result) => result.escalation?.used).length,
     batchReviews: batchReview.batches,
     batchReviewError,
+    layoutRechecked: layoutRecheck.rechecked,
+    layoutRecheckNotCompared: layoutRecheck.notCompared,
+    layoutRecheckTextChanged: layoutRecheck.textChanged,
+    layoutRecheckLost: layoutRecheck.lost,
+    layoutRecheckGained: layoutRecheck.gained,
+    layoutRecheckError,
     formatsBackfilled: formats.updated,
     documentKindsBackfilled: kinds.classified,
     chars: results.reduce((total, result) => total + result.charCount, 0),

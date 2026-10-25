@@ -18,3 +18,5 @@ export const ROSETTA_OCR_VERSION = 2;
 export const ROSETTA_JS_FALLBACK_VERSION = 3;
 export const ROSETTA_TABLE_ROWS_VERSION = 1;
 export const PDF_READER_AGREEMENT_VERSION = 1;
+/** Record-only layout recheck receipts (#2219, layout-recheck.ts); never reopens a document. */
+export const LAYOUT_RECHECK_VERSION = 1;
