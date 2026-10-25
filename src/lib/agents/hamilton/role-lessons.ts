@@ -93,7 +93,7 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     stage: "publish",
     lesson: "Before bringing a taken-down fee back live, count every copy of it that is held, not only the live ones: a twin the account type hold took down (`account_type_hold:`) is the same fee still being there, so a restore beside it waits rather than putting a second copy live.",
     why: "The category guard's restore checked only live rows for an existing copy, so a monthly fee re-filed beside a copy the account type hold had taken down could come back live until the hold's next run. #1671 had already fixed the same gap in the business-schedule, cross-page and same-line restores; none were affected on prod on Oct 16 or Oct 25.",
-    evidence: { issues: [1675], prs: [], files: ["src/lib/agents/hamilton/category-guard.ts", "src/lib/agents/hamilton/category-guard-restore.db.test.ts"] },
+    evidence: { issues: [1675], prs: [2593], files: ["src/lib/agents/hamilton/category-guard.ts", "src/lib/agents/hamilton/category-guard-restore.db.test.ts"] },
     appliesTo: "all",
     since: "2026-10-25",
   },
