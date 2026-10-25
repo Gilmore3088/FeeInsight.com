@@ -30,7 +30,9 @@ describe("writtenAnswerResponse", () => {
     const response = writtenAnswerResponse(text, [{ fee: 35, peer_median: 29 }]);
     expect(response.hamiltonView).toContain("$35");
     expect(response.whatThisMeans).toBe("You charge more than most peers.");
-    expect(response.title.length).toBeGreaterThan(0);
+    // No binding supports the lead's figures, so the title is the question (#1077 defect 8).
+    expect(response.title).toBe("");
+    expect(writtenAnswerResponse(text, [{ fee: 35, peer_median: 29 }], undefined, null, null, "What is my OD fee?").title).toBe("What is my OD fee?");
     expect(response.confidence.level).toBe("medium");
     expect(response.confidence.basis.join(" ")).toContain("Numerical consistency only");
   });

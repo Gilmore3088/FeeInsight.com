@@ -491,6 +491,7 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v23 (#1479): a name | description | price row stays one fee's row; same fingerprint path.
   // v24 (#1918): "$15K" or "$1.5M" is a balance, never a price; same fingerprint path.
   // v25 (#1916): a late charge in a safe deposit box section is not a late payment; same fingerprint path.
+  // v26 (#2070): a fee whose every row at its price is for a discontinued account is refused; same fingerprint path.
   SOURCE_CHECK_STRATEGY: "Its fingerprint carries the version, so each publish step's batch re-checks every institution not yet checked at the new version; nothing to replay.",
   // v3 (#1810): headings over an opening deposit, "Interest Checking" and numbered accounts name a fee.
   // v4 (#1917): a fused breadcrumb or menu is no heading, and a comparison table's header row stops
@@ -553,6 +554,10 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // v86 (Oct 25, #1918): monthly maintenance admits a checking account's own named fee (Knox's pattern).
     // v87 (Oct 25, #1916): a late payment printed in a safe deposit box section re-files live to
     // safe_deposit_box (99 of 111 on the Oct 25 dry run; 12 duplicates of a live box late fee come down).
+    // v88 (Oct 25, #1912): book transfers fail the domestic wire categories, and a cash advance priced
+    // at another bank's ATMs fails cash advance.
+    // v89 (Oct 25, #1877): overdraft admits a credit union's "Draft Protection Fee" (Knox v112's pattern);
+    // names only, so no live fee changes on the Oct 25 dry run.
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",
