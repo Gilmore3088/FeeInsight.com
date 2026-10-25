@@ -33,6 +33,7 @@ import { mayHaveSymbolicLesserFee, symbolicLesserOfReview } from "./symbolic-les
 import { internationalWireEligibility } from "./international-wire-eligibility";
 import { belongsToPaidReturnedUnit, paidReturnedUnits } from "@/lib/custom-report/paid-returned-events";
 import { withoutGluedSentence } from "./glued-sentence-name";
+import { withGluedFootnotePrices } from "@/lib/custom-report/glued-footnote-price";
 
 /**
  * Knox's free extraction team, run over one whole document. Pure.
@@ -240,7 +241,11 @@ import { withoutGluedSentence } from "./glued-sentence-name";
 // activity……$5", United Bank) is not paired with the next cell's price (table pass v10), and the
 // shared check refuses that pairing too (`namesItsClosedFreeRow`, source check v21). Removes reads only.
 // The stale-read floor stays at v97. Name re-tidy stays at v26.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 105 } as const;
+// v106 (#1946): a footnote glued to a $0 price ("$0³ or $10" stored as "$03 or $10", North State
+// Bank; "$01", Penn Community Bank) is read as $0, never as the footnote's number
+// (`withGluedFootnotePrices`), and the shared check reads the same text (source check v22), so the
+// $3 read is refused wherever it is made. The stale-read floor stays at v97. Name re-tidy stays at v26.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 106 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -420,7 +425,8 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
   // v100: a relationship-tier table's row becomes one line per priced tier cell (`withTierColumnRows`).
   // The self-check traces every read on the text before that split (`checkText`), so a split read
   // must be supported by the stored row itself: "Courtesy Pay $20 $30 ..." at $30 is held untraced.
-  const checkText = withSidewaysBoxTable(withBoxSizeCellsSplit(withoutBusinessOnlyFees(joinLabeledFeeCardText(sourceText))));
+  // v106: "$03" is a $0 price with its footnote glued on (`withGluedFootnotePrices`, #1946).
+  const checkText = withSidewaysBoxTable(withBoxSizeCellsSplit(withoutBusinessOnlyFees(joinLabeledFeeCardText(withGluedFootnotePrices(sourceText)))));
   const text = withTierColumnRows(checkText);
   const legacyText = withoutFeeBullets(text, recognizedFeeBullets(text));
   const windows = priceWindows(legacyText);

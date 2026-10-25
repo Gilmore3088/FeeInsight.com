@@ -24,6 +24,7 @@ import { capFirstItemPrices, refusesStackedFeePrice, stackedLabelKey } from "./s
 import { checkWireClausePrice } from "./wire-clause-prices";
 import { stackedCellVariants } from "./stacked-cell-variants";
 import { refusesOtherColumnPrice } from "./column-pair-prices";
+import { withGluedFootnotePrices } from "./glued-footnote-price";
 const NSF_POLICY_CATEGORIES = new Set(["nsf", "overdraft"]);
 
 export type SourceCheckFailure =
@@ -1155,7 +1156,8 @@ let lastDroppedPointText = "";
 
 function droppedPointText(text: string): string {
   if (text !== lastRawText) {
-    lastDroppedPointText = withDroppedDecimalPoints(text);
+    // #1946: "$03" is a $0 price with its footnote glued on (`withGluedFootnotePrices`).
+    lastDroppedPointText = withGluedFootnotePrices(withDroppedDecimalPoints(text));
     lastRawText = text;
   }
   return lastDroppedPointText;
