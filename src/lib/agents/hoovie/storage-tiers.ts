@@ -1,5 +1,5 @@
 import { callItemFactsRelation } from "@/lib/data-store/call-item-storage";
-import { CALL_PERIOD_PRUNE_LIVE, CALL_PERIOD_RESTORE_TARGET, pruneCallPeriod, restoreCallPeriod } from "./call-period-prune";
+import { CALL_PERIOD_PRUNE_LIVE, CALL_PERIOD_PRUNE_MANIFEST, CALL_PERIOD_RESTORE_TARGET, pruneCallPeriod, restoreCallPeriod } from "./call-period-prune";
 import type { sql } from "@/lib/data-store/connection";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { STORAGE_STEP_KEY } from "@/lib/agents/atlas/storage-retention";
@@ -385,10 +385,12 @@ export async function runColdTier(
     }
   }
   if (!options.dryRun && (options.pruneLive ?? CALL_PERIOD_PRUNE_LIVE) && result.indexReady) {
-    const next = result.tables.flatMap((t) => t.cold).find((p) => p.file === "verified");
+    const next = result.tables.flatMap((t) => t.cold).find((p) => p.file === "verified"
+      && CALL_PERIOD_PRUNE_MANIFEST.some((m) => m.source === p.source && m.period === p.period));
     if (next && (next.source === "ffiec" || next.source === "ncua")) {
       try {
-        const receipt = await inSavepoint(db, (scope) => pruneCallPeriod(scope, store, { source: next.source as "ffiec" | "ncua", period: next.period }));
+        const expected = CALL_PERIOD_PRUNE_MANIFEST.find((m) => m.source === next.source && m.period === next.period)!;
+        const receipt = await inSavepoint(db, (scope) => pruneCallPeriod(scope, store, { source: next.source as "ffiec" | "ncua", period: next.period, expected }));
         result.pruned = [{ source: next.source, period: next.period, ...receipt }];
       } catch (error) { result.error = `Archive prune held: ${message(error)}`; }
     }
@@ -403,6 +405,7 @@ export function coldTierDetail(result: ColdTierResult): Record<string, unknown> 
     index_ready: result.indexReady,
     prune: CALL_PERIOD_PRUNE_LIVE ? "enabled" : "implemented; off pending reviewed rollout",
     pruned: result.pruned ?? [],
+    prune_manifest: CALL_PERIOD_PRUNE_MANIFEST,
     restored: result.restored ?? null,
     counts: result.counts,
     tables: result.tables.map((t) => ({

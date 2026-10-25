@@ -25,6 +25,20 @@ Project `rmhwbbjjctzfaqjyhomu`; measured October 25. Occupied database: 16,216,6
 
 Do not add dictionary, HMDA and archival savings without accounting for overlap, indexes, free pages and the actual period population. Deletions/updates primarily make pages reusable; they do not automatically reduce provisioned disk charges. Do not run VACUUM FULL, REINDEX, drop indexes or resize compute/disk as part of this rollout.
 
+## Proposed prune manifest (inactive)
+
+Fresh read-only counts on October 25; all four dates are older than the twelve-quarter hot window. The server-owned `CALL_PERIOD_PRUNE_MANIFEST` pins these exact counts. Any count or source-content change holds removal; future periods are not authorized by enabling the switch.
+
+| Source | Period | Archived rows | Financial rows proposed for removal | POR witnesses retained hot |
+|---|---|---:|---:|---:|
+| FFIEC | 2023-03-31 | 133,446 | 125,076 | 8,370 |
+| FFIEC | 2023-06-30 | 133,550 | 125,176 | 8,374 |
+| NCUA | 2023-03-31 | 595,408 | 595,408 | 0 |
+| NCUA | 2023-06-30 | 595,816 | 595,816 | 0 |
+| Total | | 1,458,220 | 1,441,476 | 16,744 |
+
+At the measured table-average size this is roughly 0.5–0.7 GiB of reusable Postgres capacity, not a guarantee of physical or billed disk shrink. Exact file bytes and current before/after measurements are recorded during the approved rollout. Copies are uploaded and verified before any removal; the original file is retained for rollback.
+
 ## Review and rollout
 
 1. Run guards, typecheck, lint, full unit suite, agent suite and isolated PostgreSQL integration tests. Review the exact diff against current main. Keep this migration-dependent PR unmerged until the schema rollout is approved.
@@ -42,4 +56,4 @@ Archived files remain the historical read authority. `restoreCallPeriod` and the
 
 ## Validation record
 
-Validated against main base `f9aadb79` on October 25: full suite 1,324 files / 17,754 passing tests (90 files skipped, 12 expected failures); agent suite 68 files / 1,892 passing tests; isolated PostgreSQL 2 files / 10 passing tests; typecheck and guards passed; lint had zero errors and 76 existing warnings. The real-Postgres suite covers dictionary/fact equality, unchanged writes, metadata expansion, archive atomicity, refusal after source changes, no resurrection, retained POR identity and fee-query parity. Pure tests cover the HMDA codec and same-step attempt scope. Production queries used for this work were read-only; no production migration, conversion, upload, deletion, index change or billing change has been performed.
+Validated against main base `f9aadb79` on October 25: full suite 1,324 files / 17,754 passing tests (90 files skipped, 12 expected failures); agent suite 68 files / 1,892 passing tests; isolated PostgreSQL 2 files / 11 passing tests; typecheck and guards passed; lint had zero errors and 76 existing warnings. The real-Postgres suite covers dictionary/fact equality, unchanged writes, metadata expansion, archive atomicity, refusal after source changes, no resurrection, retained POR identity and fee-query parity. Pure tests cover the HMDA codec and same-step attempt scope. Production queries used for this work were read-only; no production migration, conversion, upload, deletion, index change or billing change has been performed.

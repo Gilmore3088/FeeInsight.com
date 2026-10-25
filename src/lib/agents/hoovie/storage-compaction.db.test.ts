@@ -132,6 +132,15 @@ describe.skipIf(!url)("public-data compaction and atomic archive", () => {
     expect(await upsert([{...metadata[0],value:"102"}])).toBe(1);
     expect(await upsert()).toBe(0);
   });
+  it("rolls back removal if actual counts differ from the approved manifest", async () => {
+    await seedHistory();
+    await db.begin((tx) => exportCallPeriod(tx as unknown as Parameters<typeof exportCallPeriod>[0],store,{source:"ffiec",period:old,avgRowBytes:400}));
+    await expect(db.begin((tx) => pruneCallPeriod(tx as unknown as Parameters<typeof pruneCallPeriod>[0],store,{
+      source:"ffiec",period:old,expected:{archiveRows:1,pruneRows:2,retainedIdentityRows:0},
+    }))).rejects.toThrow("reviewed prune/identity");
+    expect(await db.unsafe(`SELECT id FROM ${schema}.institution_call_report_items WHERE report_date=$1::date`,[old])).toHaveLength(1);
+    expect((await db.unsafe(`SELECT pruned_at FROM ${schema}.public_data_cold_files`))[0].pruned_at).toBeNull();
+  });
   it("restores the original financial ids, exact values and microsecond timestamps atomically", async () => {
     await seedHistory();
     await db.unsafe(`UPDATE ${schema}.institution_call_report_items SET fetched_at='2020-04-01T12:34:56.123456Z' WHERE report_date=$1::date`,[old]);

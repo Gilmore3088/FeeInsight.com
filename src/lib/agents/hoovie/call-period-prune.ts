@@ -7,6 +7,13 @@ import { FFIEC_FILING_METADATA_KEYS } from "@/lib/regulatory/ffiec-call-items";
 /** One whole period is atomic: a partial deletion would make historical aggregates incomplete. */
 export const MAX_PRUNE_ROWS = 750_000;
 export const CALL_PERIOD_PRUNE_LIVE = false;
+/** Proposed October 25 scope, inactive until approved. Future periods require another reviewed entry. */
+export const CALL_PERIOD_PRUNE_MANIFEST = [
+  { source: "ffiec", period: "2023-03-31", archiveRows: 133446, pruneRows: 125076, retainedIdentityRows: 8370 },
+  { source: "ffiec", period: "2023-06-30", archiveRows: 133550, pruneRows: 125176, retainedIdentityRows: 8374 },
+  { source: "ncua", period: "2023-03-31", archiveRows: 595408, pruneRows: 595408, retainedIdentityRows: 0 },
+  { source: "ncua", period: "2023-06-30", archiveRows: 595816, pruneRows: 595816, retainedIdentityRows: 0 },
+] as const;
 /** A reviewed rollback target, never populated from a customer request. Clear after its receipt. */
 export const CALL_PERIOD_RESTORE_TARGET: { source: "ffiec" | "ncua"; period: string } | null = null;
 type Db = typeof sql;
@@ -17,6 +24,7 @@ type Db = typeof sql;
  */
 export async function pruneCallPeriod(db: Db, store: ColdStore, args: {
   source: "ffiec" | "ncua"; period: string;
+  expected?: { archiveRows: number; pruneRows: number; retainedIdentityRows: number };
 }): Promise<{ deleted: number; status: "pruned" | "already_pruned" }> {
   if (typeof (db as unknown as { savepoint?: unknown }).savepoint !== "function") throw new Error("Pruning requires a run-ledger transaction");
   if (!store.configured) throw new Error("Archive storage is not configured");
@@ -40,10 +48,16 @@ export async function pruneCallPeriod(db: Db, store: ColdStore, args: {
     return { deleted: 0, status: "already_pruned" };
   }
   const rows = Number(file.row_count);
+  if (args.expected && rows !== args.expected.archiveRows) throw new Error("Archive count differs from the reviewed manifest");
   if (!Number.isSafeInteger(rows) || rows < 1 || rows > MAX_PRUNE_ROWS) throw new Error("Archive row count exceeds the atomic prune budget");
   const [coverage] = await db<{ newer: number }[]>`
-    SELECT count(DISTINCT report_date)::int AS newer FROM institution_call_report_items
-     WHERE source=${args.source} AND report_date>${args.period}::date
+    WITH RECURSIVE recent AS (
+      SELECT max(report_date) AS report_date,1 AS n FROM institution_call_report_items WHERE source=${args.source}
+      UNION ALL
+      SELECT (SELECT max(i.report_date) FROM institution_call_report_items i
+        WHERE i.source=${args.source} AND i.report_date<recent.report_date),recent.n+1
+        FROM recent WHERE recent.report_date IS NOT NULL AND recent.n<12
+    ) SELECT count(*)::int AS newer FROM recent WHERE report_date>${args.period}::date
   `;
   if (Number(coverage?.newer ?? 0) < 12) throw new Error("Keep at least twelve newer quarters in Postgres");
   decodeColdFile(await store.get(file.object_key), { expected: { sha256: file.sha256, rowCount: rows }, lineFilter: () => false });
@@ -68,6 +82,9 @@ export async function pruneCallPeriod(db: Db, store: ColdStore, args: {
     WHERE source=${args.source} AND report_date=${args.period}::date`;
   const deletedCount=Number(deleted?.n);
   if (deletedCount + Number(kept?.n) !== rows) throw new Error("Prune count mismatch; roll back this transaction");
+  if(args.expected && (deletedCount!==args.expected.pruneRows || Number(kept?.n)!==args.expected.retainedIdentityRows)) {
+    throw new Error("Current period differs from the reviewed prune/identity counts; roll back");
+  }
   await db`UPDATE public_data_cold_files SET pruned_at=now() WHERE id=${file.id}`;
   // The caller's step.finished event and this index change commit with the deletion.
   return { deleted: deletedCount, status: "pruned" };
