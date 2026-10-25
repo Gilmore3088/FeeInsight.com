@@ -272,10 +272,21 @@ export function replayOutcome(
   return { status: status === "active" ? "active" : "candidate", regression: status === "active" };
 }
 
-/** Pure: one takedown frozen as fee fields, replayed by its check name (#2064). A restored fee retires it. */
+/**
+ * Pure: one takedown frozen as fee fields, replayed by its check name (#2064). `fee_live` means the
+ * fee is live again in the category it was taken down from (a re-file elsewhere proves the
+ * takedown right). Hamilton's category guard restores every takedown today's guard passes, so a
+ * restored fee is not by itself a later check finding the takedown wrong: when an active case's
+ * rule no longer catches it, the restore is the regression and is reported, and the case stays
+ * active until a person retires it. A restored fee the rule still catches was brought back by
+ * another check (a second look), so its case retires as before.
+ */
 export function replayFieldCase(row: { status: string; check_name: string | null; input: CaseInput; fee_live: boolean }) {
   const replay = replayCase(row.input, row.check_name);
-  return { replay, restored: row.fee_live, outcome: replayOutcome(row.status, replay?.caught ?? null, row.fee_live) };
+  const caught = replay?.caught ?? null;
+  const ruleLetItBack = row.fee_live && caught === false && row.status === "active";
+  const restored = row.fee_live && !ruleLetItBack;
+  return { replay, restored, outcome: ruleLetItBack ? { status: "active" as const, regression: true } : replayOutcome(row.status, caught, restored) };
 }
 
 export async function runDemingRegression({
@@ -358,6 +369,7 @@ export async function runDemingRegression({
            EXISTS (
              SELECT 1 FROM published_fee_records fp
               WHERE fp.fee_published_id = c.fee_published_id AND fp.rolled_back_at IS NULL
+                AND fp.canonical_fee_key IS NOT DISTINCT FROM c.input->>'canonical_fee_key'
            ) AS fee_live
       FROM eval_cases c
      WHERE c.status IN ('active', 'candidate')

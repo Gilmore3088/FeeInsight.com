@@ -134,8 +134,14 @@ describe("replayFieldCase", () => {
   it("activates an old takedown the guard still catches", () => {
     expect(replayFieldCase({ ...categoryCase, fee_live: false })).toMatchObject({ restored: false, outcome: { status: "active", regression: false } });
   });
-  it("retires a takedown case whose fee came back", () => {
+  it("retires a takedown case whose fee another check brought back while the guard still catches it", () => {
     expect(replayFieldCase({ ...categoryCase, fee_live: true })).toMatchObject({ restored: true, outcome: { status: "retired" } });
+  });
+  it("reports a regression, not a retirement, when the guard stopped catching an active case and the fee came back (review of #2064)", () => {
+    const fine = { ...categoryCase, status: "active", input: { ...categoryCase.input, fee_name: "Stop Payment Fee" } };
+    expect(replayFieldCase({ ...fine, fee_live: true })).toMatchObject({ restored: false, outcome: { status: "active", regression: true } });
+    // A candidate the guard never caught retires when its fee comes back.
+    expect(replayFieldCase({ ...fine, status: "candidate", fee_live: true }).outcome.status).toBe("retired");
   });
   it("flags an active case the guard no longer catches", () => {
     const fine = { ...categoryCase, status: "active", input: { ...categoryCase.input, fee_name: "Stop Payment Fee" } };
