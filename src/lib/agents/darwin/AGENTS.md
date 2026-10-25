@@ -1090,7 +1090,7 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   M&T 5, FirstBank PR 2) and 92 stay. v2 (review of v1): a fee with no dollar amount (a percent fee)
   never has a twin, and "fondos", "insuficientes" and "cobro" read as Spanish. A fee taken down for
   its twin is not read again if the twin later comes down under another check; restore it by hand.
-- Product-page repeats of a schedule line (`product-page-repeat-check.ts`, v1, #1910, James's
+- Product-page repeats of a schedule line (`product-page-repeat-check.ts`, v2, #1910, James's
   live-fee check Oct 18). TD's checking campaign page gave "Paper statements" $3 (fee 64717), live
   beside the fee schedule's "Paper statement (per statement cycle)" $3. Rosetta typed the page a
   product page (#2428), but the page-copy collapse pairs copies of one page only and the
@@ -1108,7 +1108,15 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   `darwin-product-page-repeat-<run>`, the verified row rejected with the `product_page_repeat` flag,
   never deleted; event `darwin.product_page_repeat_takedown`). Step detail
   `product_page_repeat_check`. Dry run 2026-10-21 01:06 UTC (prod, read-only): 222 candidates, 89
-  at 72 institutions would come down, 133 stay.
+  at 72 institutions would come down, 133 stay. v2 (#1910, Amarillo National): the name cover reads
+  the bank's shorthand as one item (`ITEM_SYNONYMS`): NSF, insufficient and non-sufficient funds are
+  one word, OD is overdraft, and a paid NSF item ("Paid NSF Item", "Paid Nonsufficient Funds") is
+  the overdraft; "one" is filler. Version 1 compared the words literally, so Amarillo's "NSF
+  charges" and "One overdraft (OD) fee" stayed live beside the schedule's "Insufficient Item
+  Charge" and "Paid NSF Item" at $19. Dry run 2026-10-25 (prod, read-only): 148 candidates; v1
+  matches 2, v2 adds 5 (105411, 105412, 49815, 110285, 142887 at institutions 156, 6110, 8577, 321),
+  each one and its twin found on their own stored text by `checkFeeAgainstSource`, so the switch
+  stays on.
 - Schedule editions (`edition-effective-check.ts`, #1915). Avidia's schedule "Effective December 1,
   2026" went live beside its March 2024 one, so the page showed next year's $35 overdraft. Each
   step reads the edition each document's heading states (`editionStarts` in
@@ -1842,7 +1850,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `NON_DEPOSIT_CHECK_VERSION` | `darwin.non_deposit_document` | v3 | `darwin/non-deposit-document-check.ts` |
 | `LINE_CONFLICT_CHECK_VERSION` | `darwin.line_conflict` | v1 | `darwin/line-conflict-check.ts` |
 | `TRANSLATED_COPY_CHECK_VERSION` | `darwin.translated_copy` | v2 | `darwin/translated-copy-check.ts` |
-| `PRODUCT_PAGE_REPEAT_CHECK_VERSION` | `darwin.product_page_repeat` | v1 | `darwin/product-page-repeat-check.ts` |
+| `PRODUCT_PAGE_REPEAT_CHECK_VERSION` | `darwin.product_page_repeat` | v2 | `darwin/product-page-repeat-check.ts` |
 | `CANADIAN_DOCUMENT_CHECK_VERSION` | `darwin.canadian_document` | v1 | `darwin/canadian-document-check.ts` |
 | `DOCUMENT_OWNER_STRATEGY` | `verify.document_owner` | v1 | `darwin/document-owner.ts` |
 | `DARWIN_VERIFY_STRATEGY` | `verify.rules` | v3 | `darwin/verify.ts` |
