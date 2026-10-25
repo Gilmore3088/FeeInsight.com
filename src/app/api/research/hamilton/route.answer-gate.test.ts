@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   deferAfter: false,
   held: { message: null as string | null },
   gateThrows: false,
+  claimsThrow: false,
 }));
 vi.mock("@/lib/hamilton/answer-save", async () => {
   const actual = await vi.importActual<typeof import("@/lib/hamilton/answer-save")>("@/lib/hamilton/answer-save");
@@ -20,6 +21,10 @@ vi.mock("@/lib/hamilton/answer-save", async () => {
       if (mocks.gateThrows) throw new Error("synthetic gate failure");
       mocks.check(...args);
       return actual.writtenAnswerCheck(...args);
+    },
+    writtenAnswerClaims: (...args: Parameters<typeof actual.writtenAnswerClaims>) => {
+      if (mocks.claimsThrow) throw new Error("synthetic claims failure");
+      return actual.writtenAnswerClaims(...args);
     },
   };
 });
@@ -115,6 +120,7 @@ beforeEach(() => {
   mocks.shadow.mockReset().mockImplementation(() => new Promise(() => {}));
   mocks.afterTasks = [];
   mocks.deferAfter = false;
+  mocks.claimsThrow = false;
 });
 
 describe("written answer evidence gate", () => {
@@ -324,6 +330,20 @@ describe("written answer sentence binding (#981, H06-T06)", () => {
     expect(saved.claims.claims.at(-1)).toEqual({ text: "Synthetic Bank A charges $35 for an overdraft.", outcome: "omitted", factIds: [], reason: "wrong_institution" });
     expect(saved.claims.facts).toContainEqual(expect.objectContaining({ id: "fee:published:1", value: 10, unit: "usd" }));
     expect(metadata()).not.toHaveProperty("claims");
+  });
+
+  it("still saves the answer, with its binding and without claims, when the claims build throws (PR #2583 review)", async () => {
+    mocks.claimsThrow = true;
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    answersFrom(BOUND, [PROFILE, OTHER, TOOL_OUTPUT]);
+    await POST(request());
+    expect(mocks.save).toHaveBeenCalledTimes(1);
+    const saved = mocks.save.mock.calls[0][0].response;
+    expect(saved).not.toHaveProperty("claims");
+    expect(saved.narrativeBinding.omitted).toHaveLength(1);
+    expect(metadata()).toMatchObject({ answerEvidence: { passed: true, held: false } });
+    expect(logged.mock.calls.some(([line]) => String(line).includes("saved claims could not be built"))).toBe(true);
+    logged.mockRestore();
   });
 
   it("makes no binding when the tools returned no fee record, so the answer saves as before", async () => {

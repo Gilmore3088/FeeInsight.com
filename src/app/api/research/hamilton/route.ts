@@ -532,8 +532,15 @@ async function handlePOST(request: Request) {
             today = held ? "held" : binding && binding.omitted.length > 0 ? "shown_partial" : "shown";
             const response = {
               // The claims ride with the binding (#1077 step 6): nothing on the screen reads them.
-              ...writtenAnswerResponse(text, toolOutputs, check, binding,
-                writtenAnswerClaims(binding, toolOutputs, { toolResults: reads, institutionId })),
+              // A claims build that throws never stops the save: the answer saves without them.
+              ...writtenAnswerResponse(text, toolOutputs, check, binding, (() => {
+                try {
+                  return writtenAnswerClaims(binding, toolOutputs, { toolResults: reads, institutionId });
+                } catch (error) {
+                  console.error("[hamilton] the saved claims could not be built; saving the answer without them", error);
+                  return null;
+                }
+              })()),
               // Historical reference metadata only; never a future access grant.
               identityContext,
             };

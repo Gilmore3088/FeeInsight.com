@@ -125,6 +125,22 @@ describe("a saved answer as a report finding (#1899, #1077 step 6)", () => {
     expect(savedAnswerFinding({ ...answer, claims: stricter }).detail).toBe(qualitative);
   });
 
+  it("never prints a sentence the binding left out or read, even when the saved claims are empty or stale (PR #2583 review)", () => {
+    const { answer } = financialAnswer();
+    // Still-saved prose with the left-out sentence in it, and an empty v1 claims record.
+    const stale = { ...answer, hamiltonView: `${supported} ${swapped} ${reading}` };
+    const empty = { version: 1, bindingVersion: 1, claims: [], facts: [], factsTruncated: false, corrections: [] } as AnalyzeResponse["claims"];
+    const finding = savedAnswerFinding({ ...stale, claims: empty });
+    expect(finding.detail).not.toContain("$2.3 million");
+    expect(finding.detail).not.toContain(reading);
+    expect(finding.detail).toBe(`${supported} ${qualitative}`);
+    expect(finding.reading).toEqual([reading]);
+    // A stale record that calls the left-out sentence supported loses to the binding too.
+    const claims = answer.claims!;
+    const wrong = { ...claims, claims: claims.claims.map((c) => (c.text === swapped ? { text: c.text, outcome: "supported" as const, factIds: [] } : c)) };
+    expect(savedAnswerFinding({ ...stale, claims: wrong }).detail).not.toContain("$2.3 million");
+  });
+
   it("keeps an answer saved before the binding as saved", () => {
     const { answer } = financialAnswer();
     const finding = savedAnswerFinding({ ...answer, claims: undefined, narrativeBinding: undefined });

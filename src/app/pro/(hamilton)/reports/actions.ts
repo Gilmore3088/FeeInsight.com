@@ -9,7 +9,7 @@ import { reportStartError } from "@/lib/report-access";
 import { loadHamiltonAccountContext } from "@/lib/hamilton/account-context-store";
 import { accountIdentitySnapshot } from "@/lib/hamilton/account-context";
 import { readHamiltonIdentitySnapshot } from "@/lib/hamilton/identity-display";
-import { loadAnalysisRecord } from "@/app/pro/(hamilton)/analyze/actions";
+import { readSavedAnalysisRecord } from "@/lib/hamilton/saved-analysis-record";
 import { getFeesByInstitution, getInstitutionById } from "@/lib/data-store";
 import { sql } from "@/lib/data-store/connection";
 import { getCategoryChargeBases } from "@/lib/data-store/fee-index";
@@ -157,7 +157,8 @@ export async function previewReportPeerCoverage(
 async function authenticatedReportFindings(raw: unknown, institutionId: string | null): Promise<ReportBasketItem[]> {
   const findings = await Promise.all(sanitizeBasketItems(raw).map(async (item): Promise<ReportBasketItem | null> => {
     if (item.source === "Ask" && item.savedAnalysisId) {
-      const saved = await loadAnalysisRecord(item.savedAnalysisId);
+      // The server-only read: the saved claims are kept here (never in what a browser receives).
+      const saved = await readSavedAnalysisRecord(item.savedAnalysisId);
       if (!saved || typeof saved.responseJson.hamiltonView !== "string") return null;
       // An answer that failed the evidence gate when it was saved is not a finding to restate.
       if (saved.responseJson.answerEvidence?.passed === false) return null;

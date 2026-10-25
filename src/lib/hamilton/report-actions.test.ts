@@ -45,6 +45,11 @@ vi.mock("@/lib/api-hardening/audit", () => ({
   getRequestSubjectKey: () => "test",
   recordApiRouteAuditEvent: async () => undefined,
 }));
+// The report basket reads saved answers through the server-only loader, claims included (#1077 step 6).
+vi.mock("@/lib/hamilton/saved-analysis-record", async (original) => ({
+  ...await original<typeof import("@/lib/hamilton/saved-analysis-record")>(),
+  readSavedAnalysisRecord: mocks.loadAnalysisRecord,
+}));
 vi.mock("@/app/pro/(hamilton)/analyze/actions", () => ({ loadAnalysisRecord: mocks.loadAnalysisRecord }));
 
 vi.mock("@/lib/hamilton/landing-geographic-research", () => ({ loadLandingGeographicResearch: mocks.landingResearch }));

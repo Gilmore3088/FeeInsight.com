@@ -29,12 +29,21 @@ gate's rules, so the gate ships in shadow for reports.
   it back into a binding so every reader applies one rule.
 - `answer-save.ts` / the route: `writtenAnswerClaims` builds the claims from the same fee records and
   claim facts as the binding, and `writtenAnswerResponse` saves them as `claims` in `response_json`
-  beside `narrativeBinding`. No migration (jsonb). The claims are not sent to the browser and
-  nothing on the Analyze screen reads them. The browser fallback save (`saveAnalysis`) drops any
-  `claims` the browser sent: only the server's own save writes them.
+  beside `narrativeBinding`. No migration (jsonb). The streamed answer's metadata does not carry
+  them. A first version still let them reach the browser when a saved answer was reopened: the
+  "use server" loaders `loadAnalysisRecord` / `loadAnalysis` returned the whole `response_json`,
+  and the Analyze page and the board-brief editor pass it to client components (PR #2583 review).
+  Now the full read lives in `src/lib/hamilton/saved-analysis-record.ts` (`readSavedAnalysisRecord`,
+  not a "use server" module, so not callable from the browser), which only the report basket uses;
+  the two loaders and both client props drop `claims` (`withoutSavedClaims`). Nothing on the
+  Analyze screen reads them. The browser fallback save (`saveAnalysis`) drops any `claims` the
+  browser sent: only the server's own save writes them. If the claims build throws, the answer is
+  still saved, without them, and the error is logged.
 - `report-saved-finding.ts` / `reports/actions.ts`: `authenticatedReportFindings` reads a saved
   answer through `savedAnswerFinding`: the saved claims decide (an answer saved before them is
-  read through its binding the same way; one saved before the binding keeps its text). The basket
+  read through its binding the same way; one saved before the binding keeps its text). When both
+  exist, a sentence either one leaves out or reads as Hamilton's reading is never a finding, so an
+  empty or stale claims record cannot print a left-out sentence. The basket
   item carries `savedClaims` and `reading` server side; `sanitizeBasketItems` never takes them from
   the browser. The finding's `detail` and the model's reader-findings context are byte for byte
   what they were.
@@ -67,4 +76,7 @@ report": supported financial sentence only, swapped bank never printed, reading 
 switch on and never in the model's context, one shadow run per kept section),
 `src/lib/hamilton/bound-export.pdf.test.tsx` (the financial claim prints the same on the report
 screen and in its PDF, the reading under its label), `route.answer-gate.test.ts` (claims saved with
-the binding, not sent to the browser) and `analyze-actions.test.ts` (browser claims dropped).
+the binding, not in the stream's metadata; a claims build that throws still saves the answer),
+`analyze-actions.test.ts` (browser claims dropped on save; `loadAnalysisRecord` and `loadAnalysis`
+return no claims while `readSavedAnalysisRecord` keeps them), and the page tests
+`analyze/page.test.tsx` and `reports/page.saved-claims.test.tsx` (no claims in either client prop).
