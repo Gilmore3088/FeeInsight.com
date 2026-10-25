@@ -104,6 +104,9 @@ describe("decideReread (pure)", () => {
       evidence: { request: "reread_source_line", fee_name: feeName, kept_live: true, reason: "deming audit: trailing_cut_word", audited_on: "2026-10-24" },
     });
     expect(deming("Paper statement fee for the").kind).toBe("reread");
+    // The resolution records the check that asked, not always Darwin's.
+    expect(requestOf({ ...PAPER, request_check: "deming.name_quality" }).requestCheck).toBe("deming.name_quality");
+    expect(requestOf(PAPER).requestCheck).toBe("darwin.live_fragment_check");
     expect(decideReread(deming("Paper statement fee for the"), PAPER_TEXT, readOf(PAPER_TEXT))).toMatchObject({ outcome: "renamed", newName: "Paper statement fee for the life of the account" });
     expect(decideReread(deming("Paper statement fee for the life of the account"), PAPER_TEXT, readOf(PAPER_TEXT)).outcome).toBe("same_name");
   });

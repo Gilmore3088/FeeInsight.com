@@ -1335,16 +1335,24 @@ async function selectStaleCandidates(
                   AND f.institution_id = due.id
                   AND f.source_url = due.fee_schedule_url
              ) AS confirmed_at,
-             -- Deming's daily audit found a live fee of this bank came from the wrong document
-             -- (another bank's, an unconfirmed host, an article or a product page; #2055). Matched
-             -- by bank, not by link: the miss names the stored document's address, which is the
-             -- address after any redirect or a companion document's own, so it rarely equals the
-             -- link, and the wrong-document misses are mostly exactly those redirects.
+             -- Deming's daily audit found a fee read from this link came from the wrong document
+             -- (another bank's, an unconfirmed host or an article; #2055). The miss names the
+             -- stored document's address, which is the address after any redirect, so it is
+             -- matched to the link or to the address the link's own last fetch landed on
+             -- (profile.canonical_source_url; a companion document's fetch never sets it), so a
+             -- miss on a companion or an old document never replaces a good link. Only a fee
+             -- still live counts, and only when the finding was first made (created_at): the
+             -- audit upserts a re-drawn fee's row, which must not search the link again.
              (
-               SELECT max(f.updated_at) FROM pipeline_feedback f
+               SELECT max(f.created_at) FROM pipeline_feedback f
+                 JOIN published_fee_records fp
+                   ON fp.fee_published_id = f.fee_published_id
+                  AND fp.rolled_back_at IS NULL
+                  AND fp.quarantined_at IS NULL
                 WHERE f.kind = ${AUDIT_FEEDBACK_KIND}
                   AND f.about_stage = 'discover'
                   AND f.institution_id = due.id
+                  AND f.source_url IN (due.fee_schedule_url, due.profile_canonical_source_url)
              ) AS audit_at
         FROM due
     ), judged AS (
@@ -1362,7 +1370,7 @@ async function selectStaleCandidates(
     stale_reason:
       wrong_at != null
         ? audit_at != null && (confirmed_at == null || new Date(audit_at).getTime() >= new Date(confirmed_at).getTime())
-          ? "Deming's audit found a fee of this bank came from the wrong document"
+          ? "Deming's audit found fees read from it came from the wrong document"
           : "fees read from it were confirmed wrong on a second look"
         : effective_year != null
           ? `effective ${effective_year}`

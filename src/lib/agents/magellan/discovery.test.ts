@@ -1191,11 +1191,13 @@ describe("Magellan agentic discovery", () => {
       expect(result.results.map((row) => Number(row.institutionId))).toContain(78);
       const call = db.mock.calls.find((c) => templateText(c[0]).includes("stale-link freshness search"))!;
       expect(templateText(call[0])).toContain("f.about_stage = 'discover'");
-      // By bank, not by link: Deming's miss names the stored document's address (after redirects).
+      // The link or the address its own last fetch landed on (after redirects); a live fee; once per finding.
       const auditQuery = templateText(call[0]).split("AS confirmed_at")[1].split("AS audit_at")[0];
-      expect(auditQuery).not.toContain("source_url");
+      expect(auditQuery).toContain("f.source_url IN (due.fee_schedule_url, due.profile_canonical_source_url)");
+      expect(auditQuery).toContain("fp.rolled_back_at IS NULL");
+      expect(auditQuery).toContain("max(f.created_at)");
       expect(call.slice(1)).toContain("audit_miss");
-      expect(attempts(db).some((attempt) => attempt.detail.stale_reason === "Deming's audit found a fee of this bank came from the wrong document")).toBe(true);
+      expect(attempts(db).some((attempt) => attempt.detail.stale_reason === "Deming's audit found fees read from it came from the wrong document")).toBe(true);
     });
 
     it("replaces an out-of-date link with the bank's current schedule, without keeping the old one", async () => {
