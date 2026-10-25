@@ -169,7 +169,7 @@ function evaluate(input: GateInput): Evaluated {
 }
 
 /** Sentences a text-level problem can be pinned to, so it can be cut instead of holding the answer. */
-function sentencesFor(code: GateFailureCode, sentences: readonly string[]): string[] {
+export function sentencesFor(code: GateFailureCode, sentences: readonly string[]): string[] {
   switch (code) {
     case "advice": return sentences.filter((s) => findUnrequestedAdvice(s) !== null);
     case "internal_name": return sentences.filter((s) => PIPELINE_TERMS.test(s));

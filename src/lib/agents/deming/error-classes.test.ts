@@ -79,6 +79,16 @@ describe("error classes (#2063)", () => {
     expect(summarizeErrorClasses(live)).toContain("into 1 class across banks");
   });
 
+  it("names an amount class by its layout and says whether today's check already blocks it (#2067)", () => {
+    const [cls] = summarizeRows([{ ...row("extract", "wrong_amount", "amount:footnote_glued_price", 3), passes_today: 2 }]).classes;
+    expect(cls).toMatchObject({ owner: "knox", passesToday: 2 });
+    expect(patternLabel(cls.pattern)).toMatch(/footnote mark glued/);
+    expect(classRecord(cls).body).toMatch(/still passes 2 of 3 rows.*write the extraction rule/);
+    const [blocked] = summarizeRows([{ ...row("extract", "wrong_amount", "amount:price_before_label", 4), passes_today: 0 }]).classes;
+    expect(classRecord(blocked).body).toMatch(/refuses all 4 rows/);
+    expect(classRecord(summarizeRows([row("extract", "wrong_amount", "category:nsf", 2)]).classes[0]).body).not.toMatch(/source check/);
+  });
+
   it("gives the brief one line: the classes, none, or unavailable", () => {
     expect(errorClassLines(undefined)).toEqual([]);
     expect(errorClassLines(null)).toEqual(["Error classes this week: unavailable today."]);
