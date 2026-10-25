@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { overdraftResearch } from "./workspace/test-fixtures";
-import type { DecisionEvent, DecisionRecord, MemoryFact } from "./workspace/types";
+import type { AskResponse, DecisionEvent, DecisionRecord, MemoryFact } from "./workspace/types";
 
 const identityStore = vi.hoisted(() => ({
   memberships: vi.fn(),
@@ -388,5 +388,26 @@ describe("a reply to Hamilton's own price question (#1077)", () => {
       const { intent } = await resolveAskIntent(1, reply, {}, "Capital City Bank", "overdraft", "overdraft");
       expect(intent.feeCategory).toBe("overdraft");
     }
+  });
+});
+
+describe("the context an answer used (#1895)", () => {
+  it("answers a question from a fee's page for that fee and says so on the answer", async () => {
+    const result = await answerAsk(user, { institutionId: "1", question: "How do we compare with peers?", contextFee: "overdraft" });
+    expect(result.status).toBe(200);
+    const body = result.body as AskResponse;
+    expect(body.answer?.feeCategory).toBe("overdraft");
+    expect(body.contextUsed).toEqual({
+      subject: { name: "Example Valley Credit Union", from: "url" },
+      peers: { label: "Credit unions, $300M to $1B in assets, Tennessee", n: expect.any(Number), asOf: "2026-09-30" },
+      fee: { category: "overdraft", from: "page" },
+    });
+  });
+
+  it("keeps the fee the question names over the page's, and ignores a page fee that is not a fee", async () => {
+    const named = await answerAsk(user, { institutionId: "1", question: "How does our NSF fee compare?", contextFee: "overdraft" });
+    expect((named.body as AskResponse).contextUsed?.fee).toEqual({ category: "nsf", from: "question" });
+    const bogus = await answerAsk(user, { institutionId: "1", question: "How does our overdraft fee compare?", contextFee: "../x" });
+    expect((bogus.body as AskResponse).contextUsed?.fee).toEqual({ category: "overdraft", from: "question" });
   });
 });

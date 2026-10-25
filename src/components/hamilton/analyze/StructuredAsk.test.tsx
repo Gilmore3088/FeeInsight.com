@@ -79,7 +79,7 @@ describe("StructuredAsk", () => {
     mockFetch(withStoryline, { status: "withheld", reason: "A figure could not be traced, so the memo is held back." });
     render(<StructuredAsk question="q" institutionId="8109" modelHrefFor={() => "/"} />);
     await screen.findByText("A figure could not be traced, so the memo is held back.");
-    expect(screen.getByText("The answer")).toBeTruthy();
+    expect(screen.getByText("Summary")).toBeTruthy();
   });
 
   it("keeps the storyline and shows the paused line when the provider's usage limit is reached", async () => {
@@ -87,7 +87,7 @@ describe("StructuredAsk", () => {
     mockFetch(withStoryline, { status: "unavailable", reason: HAMILTON_PAUSED_MESSAGE });
     render(<StructuredAsk question="q" institutionId="8109" modelHrefFor={() => "/"} />);
     await screen.findByText(HAMILTON_PAUSED_MESSAGE);
-    expect(screen.getByText("The answer")).toBeTruthy();
+    expect(screen.getByText("Summary")).toBeTruthy();
   });
 
   it("hands a question with no storyline back to the page, and asks for no memo", async () => {

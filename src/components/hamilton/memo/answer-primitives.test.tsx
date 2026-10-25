@@ -51,8 +51,8 @@ describe("shared answer primitives", () => {
     const lead = renderToStaticMarkup(<AnswerLead>x</AnswerLead>);
     for (const html of [memo, story, lead]) expect(html).toContain(`class="mt-1 ${ANSWER_TYPE.lead}"`);
     expect(research).toContain(`class="${ANSWER_TYPE.lead}"`);
-    expect(memo).toContain(">The answer<");
-    expect(story).toContain(">The answer<");
+    expect(memo).toContain(">Summary<");
+    expect(story).toContain(">Summary<");
   });
 
   it("draws key figures as one tile strip, long figures one size down", () => {

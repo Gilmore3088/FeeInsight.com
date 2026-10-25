@@ -8,7 +8,7 @@ describe("StorylineView", () => {
   const html = renderToStaticMarkup(<StorylineView story={sampleStoryline()} />);
 
   it("leads with the governing thought and key figures", () => {
-    expect(html).toContain("The answer");
+    expect(html).toContain("Summary");
     expect(html).toContain("one of 6 without a daily cap");
     expect(html).toContain("12 of 18");
   });
@@ -75,10 +75,28 @@ describe("StorylineView sources", () => {
   const html = renderToStaticMarkup(<StorylineView story={sampleStoryline()} />);
 
   it("cites sources as numbered notes listed once at the foot, not a chip on every line", () => {
-    expect(html).toContain("Sources");
+    expect(html).toContain("Evidence");
     expect(html).toContain('id="story-source-1"');
     expect(html).toContain('href="#story-source-1"');
     expect(html).not.toContain("rounded border border-warm-200 bg-white px-1.5");
+  });
+});
+
+describe("StorylineView standard blocks (#1895)", () => {
+  const html = renderToStaticMarkup(
+    <StorylineView story={sampleStoryline()} limitations={["One value per institution: the median of its published amounts."]} nextSteps={<a href="/pro/research?fee=overdraft">Compare peers</a>} />,
+  );
+
+  it("reads Summary, Key figures, Charts, Evidence, Limitations and Next steps in that order", () => {
+    const at = ["Summary", "Key figures", "Charts", "Evidence", "Limitations", "Next steps"].map((title) => html.indexOf(`>${title}<`));
+    expect(at.every((i) => i >= 0)).toBe(true);
+    expect([...at].sort((a, b) => a - b)).toEqual(at);
+  });
+
+  it("puts what would change the answer and the method's assumptions under Limitations, where Review assumptions points", () => {
+    expect(html).toContain('id="answer-limitations"');
+    expect(html.indexOf("What would change this")).toBeGreaterThan(html.indexOf(">Limitations<"));
+    expect(html).toContain("One value per institution: the median of its published amounts.");
   });
 });
 

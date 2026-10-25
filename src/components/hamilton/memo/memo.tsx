@@ -22,7 +22,7 @@ export const SERIF = { fontFamily: "var(--fi-font-sans)" } as const;
  * comparison, a storyline and a reopened answer set the same fact the same way.
  */
 export const ANSWER_TYPE = {
-  /** Small capitals over a block: "The answer", "Exhibit 1". */
+  /** Small capitals over a block: "Summary", "Exhibit 1". */
   kicker: "text-xs font-semibold uppercase tracking-[0.12em] text-terra-text",
   /** The governing thought: the one sentence that answers the question. */
   lead: "text-[1.375rem] leading-snug text-warm-900 sm:text-2xl",
@@ -43,11 +43,11 @@ export function figureSize(value: string): string {
   return value.length > 8 ? "text-xl" : "text-2xl";
 }
 
-/** "The answer" over its governing thought, the same on every answer branch. */
+/** "Summary" over its governing thought, the first of the standard result blocks (#1895), the same on every answer branch. */
 export function AnswerLead({ children, after }: { children: ReactNode; after?: ReactNode }) {
   return (
     <div className="border-l-2 border-terra pl-5">
-      <p className={ANSWER_TYPE.kicker}>The answer</p>
+      <p className={ANSWER_TYPE.kicker}>Summary</p>
       <p className={`mt-1 ${ANSWER_TYPE.lead}`} style={SERIF}>
         {children}
       </p>

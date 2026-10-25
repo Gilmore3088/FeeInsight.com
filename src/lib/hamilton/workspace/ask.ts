@@ -25,6 +25,7 @@ import { asksAboutStructure } from "./storyline";
 import { asksWholeSchedule } from "./schedule";
 import { asksIncome, asksIncomeWhy } from "./why";
 import type {
+  AskFeeSource,
   AskObjective,
   AskSegment,
   AskResponse,
@@ -115,7 +116,10 @@ export interface AskIntent {
   regulation?: boolean;
   /** The question asks for a list ("list peers' overdraft fees"), so the answer is the named rows (#2033). */
   list?: boolean;
+  /** Where the fee came from (#1895), so the answer can show the context it used. */
+  feeFrom?: AskFeeSource;
 }
+
 
 /** Dollar amounts a question names: "$25", "$32.50", "25 dollars". */
 export function pricesIn(question: string): number[] {
@@ -192,12 +196,41 @@ function questionFee(question: string, carriedCategory: string | null, tested: n
   return OPINION.test(question) || REFERS_BACK.test(question) ? carriedCategory : null;
 }
 
-export function parseAsk(question: string, carriedCategory: string | null = null): AskIntent {
+/**
+ * A question that sets the page's fee aside: it asks about every fee, the fee schedule, or fee
+ * income, so the fee of the page Ask was opened from is not put in its place (#1895, #1077).
+ */
+const SETS_PAGE_FEE_ASIDE =
+  /\b(?:every|all(?: of)?(?: our| my| the)?|each|whole|entire|overall)\b(?! (?:peer|competitor))[^.?!]{0,30}\bfees?\b|\bfee schedule\b|\b(?:all|every) (?:our|my) (?:prices|pricing)\b|\b(?:which|what) (?:of )?(?:our|my) fees\b|\b(?:our|my) fees\b/i;
+
+/** A question about how a fee compares or is priced: what a reader asks on a fee's own page. */
+const ASKS_ABOUT_PAGE_FEE =
+  /\b(?:compar\w*|peers?|competitors?|median|position|stand|rank\w*|market|charg\w*|pric\w*|nationally|national|benchmark\w*|versus|vs\.?|against|higher|lower|cheaper|more expensive)\b/i;
+
+/**
+ * The fee of the page Ask was opened from (#1895), for a question that names no fee and asks how
+ * a fee compares or is priced ("how do we compare with peers?" asked from the overdraft page). The
+ * reader never has to name the fee again. A question about every fee, fee income or anything else
+ * keeps no page fee, so Ask still says plainly what it cannot answer (#1077).
+ */
+export function pageFeeFor(question: string, pageFee: string | null): string | null {
+  if (!pageFee || !DISPLAY_NAMES[pageFee]) return null;
+  if (matchFeeCategory(question)) return null;
+  if (asksIncome(question) || asksIncomeWhy(question) || SETS_PAGE_FEE_ASIDE.test(question)) return null;
+  return ASKS_ABOUT_PAGE_FEE.test(question) ? pageFee : null;
+}
+
+export function parseAsk(question: string, carriedCategory: string | null = null, pageFee: string | null = null): AskIntent {
   const segment = parseSegment(question);
   // Asset sizes ("$10B") are not prices.
   const tested = segment ? pricesIn(question.replace(SEGMENT_AMOUNTS, " ")) : pricesIn(question);
+  const carried = questionFee(question, carriedCategory, tested);
+  // A price tested from a fee's page ("what if we charged $30?") is about that fee too.
+  const fromPage = carried ? null : pageFeeFor(question, pageFee) ?? (tested.length > 0 && pageFee && DISPLAY_NAMES[pageFee] ? pageFee : null);
+  const feeCategory = carried ?? fromPage;
   return {
-    feeCategory: questionFee(question, carriedCategory, tested),
+    feeCategory,
+    ...(feeCategory ? { feeFrom: matchFeeCategory(question) ? "question" as const : carried ? "conversation" as const : "page" as const } : {}),
     segment,
     tested,
     wantsOpinion: OPINION.test(question),
@@ -206,7 +239,7 @@ export function parseAsk(question: string, carriedCategory: string | null = null
     regulation: REGULATION_QUESTION.test(question),
     // A question that also asks what to do ("which banks charge more, and should we raise ours?")
     // gets the decision, and one about every fee ("list all our fees vs peers") the schedule overview.
-    list: LIST_QUESTION.test(question) && !OPINION.test(question) && (matchFeeCategory(question) !== null || !asksWholeSchedule(question)),
+    list: LIST_QUESTION.test(question) && !OPINION.test(question) && (matchFeeCategory(question) !== null || fromPage !== null || !asksWholeSchedule(question)),
   };
 }
 

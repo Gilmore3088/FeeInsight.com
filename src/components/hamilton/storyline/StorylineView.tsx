@@ -19,6 +19,7 @@ import { splitIntoSentences } from "@/lib/hamilton/citation-gate";
 import type { Storyline } from "./types";
 import { DatasetNote } from "@/components/hamilton/DatasetNote";
 import type { StampedFigure } from "@/lib/dataset-note";
+import { blockAnchor, blockTitle } from "@/lib/hamilton/workspace/workbench";
 
 /** Hamilton's written memo over the storyline: still being written, written, or not written and why. */
 export type MemoState =
@@ -114,8 +115,9 @@ function MemoNote({ text, size = "base" }: { text: string; size?: "base" | "lead
 function SourceList({ notes }: { notes: SourceNotes }) {
   if (notes.list.length === 0) return null;
   return (
-    <section className="border-t border-warm-200 pt-4">
-      <h3 className="mb-2 text-sm font-medium text-warm-700">Sources</h3>
+    <section id={blockAnchor("evidence")} className="border-t border-warm-300 pt-6">
+      <Kicker>{blockTitle("evidence")}</Kicker>
+      <p className="mb-2 text-sm text-warm-700">The sources behind each numbered note above.</p>
       <ol className="grid gap-x-6 gap-y-1 text-[13px] leading-snug text-warm-600 sm:grid-cols-2">
         {notes.list.map((s, i) => {
           // One sample size reads as n=; several different ones would only clutter the note.
@@ -149,9 +151,16 @@ function withoutInterpretation(text: string, reading: ReadonlySet<string>): stri
   return splitIntoSentences(text).map((s) => s.text).filter((t) => !reading.has(t.trim())).join(" ");
 }
 
-export function StorylineView({ story, nextSteps, memo, identityContext, stamps }: {
+/**
+ * Every answer reads in the same blocks (#1895): Summary, Key figures, Charts, Evidence,
+ * Limitations and Next steps; the page shows the context the answer used above them. Hamilton's commentary,
+ * the two readings, and the options sit between the charts and the evidence they rest on.
+ */
+export function StorylineView({ story, nextSteps, memo, identityContext, stamps, limitations = [] }: {
   story: Storyline;
   nextSteps?: ReactNode;
+  /** The method's assumptions and limits, shown with what would change the conclusion. */
+  limitations?: readonly string[];
   memo?: MemoState;
   identityContext?: HamiltonIdentitySnapshot | null;
   /** The stamps of the reads behind the figures (#1924): the answer's own, or a saved answer's as saved. */
@@ -187,7 +196,8 @@ export function StorylineView({ story, nextSteps, memo, identityContext, stamps 
       </AnswerLead>
 
       {figures.length > 0 || (stamps && stamps.length > 0) ? (
-        <div className="flex flex-col gap-3">
+        <section aria-labelledby={blockAnchor("key_figures")} className="flex flex-col gap-3">
+          <h3 id={blockAnchor("key_figures")} className={ANSWER_TYPE.kicker}>{blockTitle("key_figures")}</h3>
           <KeyFigures
             figures={figures.map((f) => ({
               value: f.value,
@@ -202,7 +212,7 @@ export function StorylineView({ story, nextSteps, memo, identityContext, stamps 
           />
           {/* Where the medians and counts came from (#1924); nothing without a stamp. */}
           <DatasetNote figures={stamps ?? []} />
-        </div>
+        </section>
       ) : null}
 
       {story.situation.length > 0 || story.complication.length > 0 ? (
@@ -218,9 +228,14 @@ export function StorylineView({ story, nextSteps, memo, identityContext, stamps 
         </div>
       ) : null}
 
-      {story.exhibits.map((item, i) => (
-        <StoryExhibitView key={item.id} item={item} number={item.number ?? i + 1} researchInstitutionName={identityContext?.researchInstitutionName} />
-      ))}
+      {story.exhibits.length > 0 ? (
+        <section aria-labelledby={blockAnchor("charts")} className="flex flex-col gap-10 border-t border-warm-300 pt-6">
+          <h3 id={blockAnchor("charts")} className={ANSWER_TYPE.kicker}>{blockTitle("charts")}</h3>
+          {story.exhibits.map((item, i) => (
+            <StoryExhibitView key={item.id} item={item} number={item.number ?? i + 1} researchInstitutionName={identityContext?.researchInstitutionName} />
+          ))}
+        </section>
+      ) : null}
 
       {/* The figures and exhibits lead; Hamilton's written reading of them follows. */}
       {written ? (
@@ -279,16 +294,36 @@ export function StorylineView({ story, nextSteps, memo, identityContext, stamps 
         </section>
       ) : null}
 
-      {story.watch.length > 0 ? (
-        <section className="border-t border-warm-300 pt-6">
-          <Kicker>What would change this</Kicker>
-          <FactList facts={story.watch} notes={notes} />
+      <SourceList notes={notes} />
+
+      {story.watch.length > 0 || limitations.length > 0 ? (
+        <section id={blockAnchor("limitations")} className="flex scroll-mt-24 flex-col gap-4 border-t border-warm-300 pt-6">
+          <Kicker>{blockTitle("limitations")}</Kicker>
+          {story.watch.length > 0 ? (
+            <div>
+              <h4 className="mb-2 text-sm font-medium text-warm-700">What would change this</h4>
+              <FactList facts={story.watch} notes={notes} />
+            </div>
+          ) : null}
+          {limitations.length > 0 ? (
+            <div>
+              <h4 className="mb-2 text-sm font-medium text-warm-700">Method and assumptions</h4>
+              <ul className="flex max-w-[65ch] list-disc flex-col gap-1.5 pl-5 text-sm leading-relaxed text-warm-800">
+                {limitations.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </section>
       ) : null}
 
-      {nextSteps ? <div className="flex flex-wrap gap-2">{nextSteps}</div> : null}
-
-      <SourceList notes={notes} />
+      {nextSteps ? (
+        <section aria-labelledby={blockAnchor("next_steps")} className="border-t border-warm-300 pt-6">
+          <h3 id={blockAnchor("next_steps")} className={`mb-3 ${ANSWER_TYPE.section}`} style={SERIF}>{blockTitle("next_steps")}</h3>
+          <div className="flex flex-wrap gap-2">{nextSteps}</div>
+        </section>
+      ) : null}
     </article>
   );
 }

@@ -29,6 +29,7 @@ import type { ClarifyingQuestion } from "@/lib/hamilton/workspace/types";
 import { HAMILTON_PAUSED_MESSAGE, isHamiltonPausedText } from "@/lib/hamilton/provider-paused";
 import { STANDARD_METHOD, type AuditTrail } from "@/lib/hamilton/audit-trail";
 import { getDisplayName } from "@/lib/fee-taxonomy";
+import { standardNextSteps } from "@/lib/hamilton/workspace/workbench";
 import { marketBriefHref, parseMarketQuestion } from "@/lib/hamilton/market-question";
 import { isPeerListContinuationQuestion } from "@/lib/hamilton/peer-list";
 import type { HamiltonSelectedInstitutionContext } from "@/lib/hamilton/institution-context";
@@ -195,6 +196,11 @@ interface AnalyzeWorkspaceProps {
   initialConversation?: HamiltonConversationState | null;
   /** A visible line when the conversation's institution differs from the one asked for. */
   subjectNotice?: { text: string; href?: string; linkLabel?: string } | null;
+  /**
+   * The fee of the page Ask was opened from (#1895). Shown before the first question and sent with
+   * every one, so "how do we compare with peers?" asked from a fee's page is about that fee.
+   */
+  contextFee?: string | null;
   /** Stores the conversation (server actions); without them it lives only on this screen. */
   startConversationAction?: () => Promise<{ id: string } | { error: string }>;
   recordConversationAction?: (conversationId: string, state: unknown) => Promise<{ ok: boolean }>;
@@ -353,6 +359,7 @@ function AnalyzeConversationWorkspace({
   subjectNotice = null,
   startConversationAction,
   recordConversationAction,
+  contextFee = null,
 }: AnalyzeWorkspaceProps) {
   // The focus lens still shapes the prompt from deep links; there are no lens tabs on screen.
   const focus = useRef<AnalysisFocus>(focusForIntent(initialIntent));
@@ -839,6 +846,8 @@ function AnalyzeConversationWorkspace({
   currentLeadRef.current = view.lead || storyLead || null;
   // A reopened storyline answer is shown with its charts, as it was first answered.
   const reopenedStory = conversation === 0 && !askedQuestion && initialAnalysis?.storyline ? initialAnalysis.storyline : null;
+  // The fee a reopened answer is about, for its next steps: the one its question named, else its lead's.
+  const reopenedStoryFee = reopenedStory ? matchFeeCategory(initialAnalysisPrompt ?? "") ?? inferFeeCategory(reopenedStory.governingThought) : null;
   const proseActive = isLoading || Boolean(shown && view.lead);
   const showProgress = Boolean(askedQuestion) && (engineBusy || (isLoading && !(shown && view.lead)));
   const longQuestion = (askedQuestion ?? initialAnalysisPrompt ?? "").length > 120;
@@ -1095,6 +1104,12 @@ function AnalyzeConversationWorkspace({
             <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-[var(--fi-muted)]">
               <Landmark aria-hidden className="h-4 w-4" />
               <span>{instName ? `Researching ${instName}` : "No institution selected"}</span>
+              {contextFee ? (
+                <>
+                  <span aria-hidden className="text-[var(--fi-border)]">|</span>
+                  <span>{getDisplayName(contextFee)}, from the page you came from</span>
+                </>
+              ) : null}
               <span aria-hidden className="text-[var(--fi-border)]">|</span>
               <a href={hrefWithInstitutionContext("/pro/settings", instId)} className="font-medium text-[var(--fi-ink)] underline">
                 {instName ? "Change institution" : "Choose an institution"}
@@ -1159,7 +1174,15 @@ function AnalyzeConversationWorkspace({
           // The stamps saved with the answer (#1924), never a fresh read; none on older answers.
           stamps={readStampedFigures(initialAnalysis?.datasetStamps)}
           memo={initialAnalysis?.memo ? { state: "written", memo: initialAnalysis.memo } : undefined}
-          nextSteps={initialAnalysisId && !readOnlyReason ? <><LinkButton href={`/pro/reports?from_analysis=${encodeURIComponent(initialAnalysisId)}`}>Build board brief</LinkButton><DownloadAnswerPdf analysisId={initialAnalysisId} /></> : null}
+          nextSteps={initialAnalysisId && !readOnlyReason ? <>
+            {standardNextSteps({
+              feeCategory: reopenedStoryFee,
+              savedAnalysisId: initialAnalysisId,
+              researchHref: reopenedStoryFee ? hrefWithInstitutionContext(`/pro/research?fee=${encodeURIComponent(reopenedStoryFee)}`, instId) : null,
+              simulateHref: reopenedStoryFee ? hrefWithInstitutionContext(`/pro/simulate?fee=${encodeURIComponent(reopenedStoryFee)}`, instId) : null,
+            }).map((step) => <LinkButton key={step.key} href={step.href} primary={step.primary}>{step.label}</LinkButton>)}
+            <DownloadAnswerPdf analysisId={initialAnalysisId} />
+          </> : null}
         />
       ) : null}
 
@@ -1187,6 +1210,7 @@ function AnalyzeConversationWorkspace({
           modelHrefFor={(fee, tested) => hrefWithInstitutionContext(`/pro/simulate?fee=${encodeURIComponent(fee)}&prices=${tested}`, instId)}
           researchHrefFor={(fee) => hrefWithInstitutionContext(`/pro/research?fee=${encodeURIComponent(fee)}`, instId)}
           onNoStoryline={answerInProse}
+          contextFee={contextFee}
         />
         </div>
       ) : null}

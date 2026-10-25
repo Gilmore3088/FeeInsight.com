@@ -217,4 +217,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-1895-inherit-and-show-context",
+    agent: "hamilton",
+    stage: "written answer",
+    lesson: "Take the institution, peers and fee from where the reader came from, show on the answer which ones it used and where each came from, and never ask the reader to restate them. Lay every result out in the same blocks: summary, key figures, charts, evidence, limitations and next steps. A page's fee answers only a question about how a fee compares or is priced; a question about every fee, fee income or something else keeps no fee and gets the plain can't-answer reply.",
+    why: "Ask answers read as chat replies, and a reader who opened Ask from a fee's own page and asked how they compare with peers was asked which fee they meant, or given an overview of every fee, though Hamilton already knew the fee.",
+    evidence: { issues: [1895], prs: [], files: ["src/lib/hamilton/workspace/workbench.ts", "src/lib/hamilton/workspace/ask.ts", "src/components/hamilton/storyline/StorylineView.tsx", "src/components/hamilton/analyze/ContextUsed.tsx"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];

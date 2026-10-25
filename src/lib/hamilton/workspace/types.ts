@@ -30,7 +30,7 @@ export interface SourceRef {
 }
 
 /** Bump when any builder's math or wording changes, so a saved output names the engine that made it. */
-export const WORKSPACE_ENGINE_VERSION = "1.20.1";
+export const WORKSPACE_ENGINE_VERSION = "1.21.0";
 
 /** A figure the bank gave Hamilton, with who gave it and when. */
 export interface ClientFactRef {
@@ -754,6 +754,26 @@ export interface AskResponse {
   savedAnalysisId?: string;
   /** For a question about every fee: each fee against its peer median, furthest first. */
   positions?: SchedulePosition[];
+  /** The institution, peers and fee this answer used, and where each came from (#1895). */
+  contextUsed?: AskContextUsed;
+}
+
+/**
+ * Where an answer's fee came from (#1895): the question named it, the conversation carried it
+ * (a follow-up or a reply to Hamilton's own question), the page Ask was opened from set it, or
+ * Hamilton took the fee furthest from its peer median for a question about every fee or income.
+ */
+export type AskFeeSource = "question" | "conversation" | "page" | "furthest";
+
+/**
+ * The context an Ask answer used (#1895), shown on the answer so the reader sees what Hamilton
+ * took as given and never has to restate it. Built on the server from the same reads as the answer.
+ */
+export interface AskContextUsed {
+  subject: { name: string; from: string | null };
+  /** The peer group behind the answer's comparisons; n counts the peers that publish the fee. */
+  peers: { label: string; n: number | null; asOf: string | null } | null;
+  fee: { category: string; from: AskFeeSource } | null;
 }
 
 export interface SchedulePosition {

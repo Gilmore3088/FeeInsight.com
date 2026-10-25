@@ -68,7 +68,7 @@ describe("lookup: the fact and its source first", () => {
     const answer = buildFeeAnswer(overdraftResearch());
     mockAsk({ kind: "research", shortAnswer: answer.headline, pageChange: { screen: "research", feeCategory: "overdraft" }, answer: { ...answer, storyline: undefined }, identityContext });
     const { container } = render(<StructuredAsk question="How does our overdraft fee compare?" institutionId="8109" modelHrefFor={() => "/"} />);
-    const headline = await screen.findByText("The answer");
+    const headline = await screen.findByText("Summary");
     const exhibit = screen.getByText(/Exhibit 1/);
     const takeaways = screen.getByText("What the data says");
     const identity = screen.getByText("Institution and peer group behind this answer");

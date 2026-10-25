@@ -26,6 +26,8 @@ import { matchFeeCategory } from "@/lib/hamilton/workspace/ask";
 import type { LocalMarketAnswer } from "@/lib/hamilton/local-market-answer";
 import { hamiltonIdentityLines, readHamiltonIdentitySnapshot } from "@/lib/hamilton/identity-display";
 import { readStampedFigures } from "@/lib/dataset-note";
+import { answerLimitations, standardNextSteps } from "@/lib/hamilton/workspace/workbench";
+import { ContextUsed } from "./ContextUsed";
 
 /** The engine answered on its own (an answer, every fee's position, or sourced findings), so no written answer is needed. */
 export function engineAnswered(res: AskResponse): boolean {
@@ -45,6 +47,8 @@ type AskBody = {
   /** The saved analysis the Ask filed; the memo is added to that row. */
   savedAnalysisId?: string;
   answer?: { fieldKey: string; value: string | number };
+  /** The fee of the page Ask was opened from (#1895). */
+  contextFee?: string;
 };
 
 /** The local market for a competitors-and-locations question; null when none is on file. */
@@ -341,6 +345,7 @@ function StructuredAskConversation({
   onLead,
   onEngineRows,
   proseShown = false,
+  contextFee = null,
 }: {
   /** The question just asked; a new value asks again. */
   question: string | null;
@@ -377,6 +382,8 @@ function StructuredAskConversation({
   onEngineRows?: (hasRows: boolean) => void;
   /** True while the page shows a written answer with its own lead, so this one adds no second intro. */
   proseShown?: boolean;
+  /** The fee of the page Ask was opened from (#1895): a question that names none is about it. */
+  contextFee?: string | null;
 }) {
   const [response, setResponse] = useState<AskResponse | null>(null);
   // A competitors-and-locations question is answered with the market itself (no fee to chart).
@@ -423,7 +430,7 @@ function StructuredAskConversation({
       const controller = new AbortController();
       inFlight.current = controller;
       try {
-        const res = await postAsk({ ...body, institutionId, decisionId: decisionId.current }, controller.signal);
+        const res = await postAsk({ ...body, institutionId, decisionId: decisionId.current, ...(contextFee ? { contextFee } : {}) }, controller.signal);
         if (!active.current || generation !== requestGeneration.current) return null;
         if (res.decisionId) decisionId.current = res.decisionId;
         onAnsweredRef.current?.({
@@ -441,7 +448,7 @@ function StructuredAskConversation({
         if (active.current && generation === requestGeneration.current) setBusy(false);
       }
     },
-    [institutionId],
+    [institutionId, contextFee],
   );
 
   // A storyline answer gets Hamilton's memo; anything else (bar a clarifying question) is
@@ -460,7 +467,7 @@ function StructuredAskConversation({
         }
         memoFor.current = asked;
         setMemo({ state: "writing" });
-        void postMemo({ institutionId, question: asked, decisionId: decisionId.current, savedAnalysisId: res.savedAnalysisId }).then((m) => {
+        void postMemo({ institutionId, question: asked, decisionId: decisionId.current, savedAnalysisId: res.savedAnalysisId, ...(contextFee ? { contextFee } : {}) }).then((m) => {
           if (active.current && memoFor.current === asked) setMemo(m);
         });
         return;
@@ -478,7 +485,7 @@ function StructuredAskConversation({
       onEngineRows?.(Boolean(res?.scenario || res?.segment));
       onNoStoryline?.(asked);
     },
-    [institutionId, onNoStoryline, onStoryline, onLead, onEngineRows],
+    [institutionId, contextFee, onNoStoryline, onStoryline, onLead, onEngineRows],
   );
 
   useEffect(() => {
@@ -615,8 +622,23 @@ function StructuredAskConversation({
     !(q && lead === q.prompt.trim()) &&
     !(response.kind === "opinion" && response.opinion) &&
     (Boolean(response.positions?.length) || !response.answer);
+  // The standard next steps (#1895), each carrying the answer's institution and fee.
+  const nextStepLinks = response.answer && researchHrefFor ? (
+    <>
+      {standardNextSteps({
+        feeCategory: response.answer.feeCategory,
+        savedAnalysisId: response.savedAnalysisId ?? null,
+        researchHref: researchHrefFor(response.answer.feeCategory),
+        simulateHref: researchHrefFor(response.answer.feeCategory).replace("/pro/research", "/pro/simulate"),
+      }).map((step) => (
+        <LinkButton key={step.key} href={step.href} primary={step.primary}>{step.label}</LinkButton>
+      ))}
+      {response.savedAnalysisId ? <DownloadAnswerPdf analysisId={response.savedAnalysisId} memoWriting={memo?.state === "writing"} /> : null}
+    </>
+  ) : null;
   return (
     <div className="flex flex-col gap-5">
+      {response.contextUsed && !proseShown ? <ContextUsed context={response.contextUsed} /> : null}
       {showLead ? (
         <p className="max-w-[68ch] text-xl leading-snug text-warm-900 sm:text-2xl [font-variant-numeric:tabular-nums]" style={SERIF}>
           {response.shortAnswer}
@@ -629,33 +651,14 @@ function StructuredAskConversation({
           identityContext={response.identityContext}
           stamps={readStampedFigures(response.answer.provenance?.stamps)}
           memo={memo}
-          nextSteps={
-            researchHrefFor ? (
-              <>
-                <LinkButton href={researchHrefFor(response.answer.feeCategory)}>Every market layer</LinkButton>
-                <LinkButton href={researchHrefFor(response.answer.feeCategory).replace("/pro/research", "/pro/simulate")} primary>
-                  Try a price
-                </LinkButton>
-                {response.savedAnalysisId ? <><LinkButton href={`/pro/reports?from_analysis=${encodeURIComponent(response.savedAnalysisId)}`}>Build board brief</LinkButton><DownloadAnswerPdf analysisId={response.savedAnalysisId} memoWriting={memo?.state === "writing"} /></> : null}
-              </>
-            ) : null
-          }
+          limitations={answerLimitations({ provenance: response.answer.provenance, scenario: response.scenario })}
+          nextSteps={nextStepLinks}
         />
       ) : response.answer ? (
         <AnswerMemo
           answer={{ ...response.answer, question: null }}
           stamps={readStampedFigures(response.answer.provenance?.stamps)}
-          nextSteps={
-            researchHrefFor ? (
-              <>
-                <LinkButton href={researchHrefFor(response.answer.feeCategory)}>Every market layer</LinkButton>
-                <LinkButton href={researchHrefFor(response.answer.feeCategory).replace("/pro/research", "/pro/simulate")} primary>
-                  Try a price
-                </LinkButton>
-                {response.savedAnalysisId ? <><LinkButton href={`/pro/reports?from_analysis=${encodeURIComponent(response.savedAnalysisId)}`}>Build board brief</LinkButton><DownloadAnswerPdf analysisId={response.savedAnalysisId} memoWriting={memo?.state === "writing"} /></> : null}
-              </>
-            ) : null
-          }
+          nextSteps={nextStepLinks}
         />
       ) : null}
       {!response.answer && !response.positions?.length && response.facts && response.facts.length > 0 ? <FactList facts={response.facts} /> : null}
