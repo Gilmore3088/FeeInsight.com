@@ -27,6 +27,7 @@ import { refusesOtherColumnPrice } from "./column-pair-prices";
 import { boxSectionLateFee } from "./box-section-late-fee";
 import { withGluedFootnotePrices } from "./glued-footnote-price";
 import { discontinuedRow } from "./discontinued-rows";
+import { networkColumnRow } from "./network-column-rows";
 const NSF_POLICY_CATEGORIES = new Set(["nsf", "overdraft"]);
 
 export type SourceCheckFailure =
@@ -1565,6 +1566,14 @@ function checkFeeAgainstSourceText(
     if (row && checkFeeCategory("monthly_maintenance", feeName).ok && feeApplicability(feeName, row, amount).feeAudience !== "business") {
       return { ok: true, sourceLine: row };
     }
+  }
+  // #1905: a use of another network's ATM in an ATM network table, read at the non-network column's
+  // price and named by its row and that column ("Share withdrawal at Non-Navy Federal/Non-CO-OP
+  // Network ATM" $1.00, Navy Federal). Only the name the table itself composes passes, only at that
+  // column's price, and only as the non-network ATM fee (`networkColumnReads`). Admit-only.
+  if (first && !first.ok && (canonicalFeeKey == null || canonicalFeeKey === "atm_non_network")) {
+    const row = networkColumnRow(text, feeName, amount);
+    if (row) return { ok: true, sourceLine: row };
   }
   return first ?? { ok: false, reason: "no_source_text" };
 }

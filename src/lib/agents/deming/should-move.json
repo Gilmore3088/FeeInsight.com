@@ -1,7 +1,6 @@
 {
   "about": "One entry per merged PR that names a scorecard number it should move (#1106). Add your PR's entry in the same PR. metric: a pipeline_scoreboard_snapshots column (coverage_rate, depth_live_institutions, ...) or a path into its detail (detail.goal.accuracy.accuracy, detail.goal.wrongAfterPublish.rate, detail.goal.liveInstitutions.live). direction: up or down. min_change: the smallest change that counts (same unit as the metric), optional.",
   "entries": [
-    { "pr": 2632, "issue": 2598, "metric": "detail.goal.wrongAfterPublish.rate", "direction": "down", "note": "After authorized deployment, refuse damaged PDF words or numbers before extraction. No immediate live fee repair or quantified accuracy gain is claimed; staged transcription and per-fee reconciliation remain separate." },
     { "pr": 1150, "issue": 1053, "metric": "detail.goal.accuracy.accuracy", "direction": "up", "min_change": 0.005, "note": "Product pages rejected as a bank's fee schedule" },
     { "pr": 1151, "issue": 1033, "metric": "detail.goal.wrongAfterPublish.rate", "direction": "down", "min_change": 0.001, "note": "Wrong-host and non-fee documents stopped at the link check" },
     { "pr": 1148, "issue": 1093, "metric": "detail.goal.liveInstitutions.live", "direction": "up", "min_change": 1, "note": "Free-pass fees a re-read retired go back to Darwin" },
@@ -44,6 +43,7 @@
     { "pr": 1836, "issue": 1827, "metric": "detail.goal.accuracy.accuracy", "direction": "up", "min_change": 0.0001, "note": "Valley Strong's 5 live box rents, each read at the next row's price, corrected in place to their printed $45, $55, $80, $100 and $120" },
     { "pr": 1841, "issue": 1828, "metric": "detail.goal.accuracy.accuracy", "direction": "up", "min_change": 0.0001, "note": "Oregon Community FCU's $4.95 returned payment, read into the CUDL late fee across a two-column table, re-filed by hand from late payment to other lending" },
     { "pr": 2126, "issue": 2123, "metric": "detail.goal.coverageCells.institutionsShort", "direction": "down", "min_change": 1, "note": "Knox v82: a combined Overdraft/NSF line's twin is stored as its own fee (raw key gains line_share), and pages with a combined row and no twin are read again" },
+    { "pr": 2632, "issue": 2598, "metric": "detail.goal.wrongAfterPublish.rate", "direction": "down", "note": "After authorized deployment, refuse damaged PDF words or numbers before extraction. No immediate live fee repair or quantified accuracy gain is claimed; staged transcription and per-fee reconciliation remain separate." },
     { "pr": 2438, "issue": 1051, "metric": "detail.goal.liveInstitutions.live", "direction": "up", "min_change": 1, "note": "Magellan hub and crawl finders judge an opened page by the candidate check and every page by where it landed: product pages and redirects to rejected pages are no longer accepted as schedules (523 of 526 thin-bank finds in a week were such pages)" }
   ]
 }

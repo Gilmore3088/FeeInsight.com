@@ -316,4 +316,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-1905-late-charge-bound-is-no-fee",
+    agent: "darwin",
+    stage: "classify",
+    lesson: "A late_payment fee whose name is the cap or floor of a late charge (\"Maximum late charge\", \"Minimum Late Fee\", \"...; maximum late charge of\") is a bound on a percentage charge, not the late fee: its amount traces to the page, so the source check passes it, but the late fee is the percentage. Keep it out of late_payment, and re-check live ones with the same name pattern Knox now refuses.",
+    why: "Five such fees were live on Oct 25 at three institutions (Navy Federal's mortgage cap and floor, a $10 floor beside \"5% of Payment Amount\" and a $0.50 floor beside \"5% of payment due\"), pulling late-fee medians toward the bounds (#1905). Darwin's late-charge-bound check lists them; its switch is on since the five were read against each bank's text and found correct (sampled-clean rule).",
+    evidence: { issues: [1905], prs: [], files: ["src/lib/agents/darwin/late-charge-bound-check.ts", "src/lib/late-charge-bound.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];

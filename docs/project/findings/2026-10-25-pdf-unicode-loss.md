@@ -275,7 +275,7 @@ an authorized ledger run. Production persistence still needs the transactional
 source/text compare-and-swap and persisted-witness binding already required by the
 repair procedure; no production recovery integration is claimed here.
 
-On the final integration with main `a4c0eed`, the Rosetta directory passed 23 files /
+After integration with main `a4c0eed`, the Rosetta directory passed 23 files /
 279 tests (8 native database files / 108 tests were gated locally). The final
 three Unicode files passed 22 tests, including real rendering/local OCR after a
 text parse, cancellation during OCR, stale/mismatched lineage and refusal of
