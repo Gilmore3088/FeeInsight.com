@@ -216,4 +216,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-1831-a-refundable-deposit-is-not-a-fee",
+    agent: "darwin",
+    stage: "classify",
+    lesson: "A deposit the customer gets back (a refundable key deposit or a box's security deposit, \"refunded upon returning both keys\") is not the category's charge: refuse it under the safe deposit box, as under the night deposit. Keep the real charges that sit beside it on the same line: a lost, replaced or duplicate key, drilling and the box's annual or rental fee. Read \"Rental - Key Deposit\" as a header over the deposit, not as the rental fee.",
+    why: "The safe deposit box rule had no key-deposit refusal, so 108 refundable key and security deposits at 107 institutions (Central Bank's \"Safety Deposit Box Key Deposit at Account Opening (per key)\" $5 among them) were published as box fees, while guard v66 already refused the same line under the night deposit.",
+    evidence: { issues: [1831], prs: [], files: ["src/lib/fee-category-guard.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];
