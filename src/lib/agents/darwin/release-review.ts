@@ -101,6 +101,10 @@ type SqlTag = typeof sql;
 // #1196 (2026-10-13, no version change): a name opening on cut cents ("00 Monthly fee") or a
 // row-number cell ("14 | INSUFFICIENT FUNDS") is a `name_fragment` too. The check is free and
 // only holds more, so already-reviewed fees are not sent back to the paid review for it.
+// #1443 (Knox v107, no version change): Knox's `isCutoffName` no longer reads a verb, pronoun or
+// "if"/"when" inside a closed parenthetical that ends the name as a sentence ("ACH Return Item (fee
+// is per item)"), so such a name is no `name_fragment`. The check only holds less; fees it held
+// before are not sent back to the paid review for it.
 export const DARWIN_RELEASE_REVIEW_STRATEGY = {
   strategy: "verify.release_review",
   version: 17,
