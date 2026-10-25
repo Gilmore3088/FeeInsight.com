@@ -26,7 +26,7 @@ const ask = savedAnswerEvidence({
   evidence: { metrics: [{ label: "Overdraft fee", value: "$35" }, { label: "Peer overdraft median", value: "$41" }] },
 }, "2026-10-20T09:00:00.000Z");
 const [askFinding] = reportAddedFindings([{
-  id: "ask-1", source: "Ask", title: "Overdraft at Lakeshore", detail: askSentence, institutionId: "9701001", evidence: ask,
+  id: "ask-1", source: "Ask", title: "Overdraft at Lakeshore", detail: askSentence, institutionId: "9701001", feeCategory: null, addedAt: "2026-10-25T14:00:00.000Z", evidence: ask,
   savedClaims: {
     version: SAVED_CLAIMS_VERSION, bindingVersion: NARRATIVE_BINDING_VERSION,
     claims: [{ text: askSentence, outcome: "supported", factIds: [factId] }],
