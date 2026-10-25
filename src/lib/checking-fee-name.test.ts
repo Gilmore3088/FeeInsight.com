@@ -165,6 +165,12 @@ describe("a checking account's own named fee passes Darwin's category guard (#19
     "Gold Checking Fee (when opened)",
     "Gold Checking Fee (every 6 months)",
     "Gold Checking Fee (per 12 months)",
+    "Gold Checking Fee (each 6 months)",
+    "Gold Checking Fee (6 months)",
+    "Gold Checking Fee (NSF, if returned)",
+    "Gold Checking Fee (if overdrawn)",
+    "Gold Checking Fee (with overdraft protection)",
+    "Gold Checking Fee (overdraft",
   ];
 
   it("should_neither_file_nor_admit_opening_business_or_other_fee_names", () => {
@@ -176,9 +182,10 @@ describe("a checking account's own named fee passes Darwin's category guard (#19
   });
 
   it("should_read_a_waiver_note_as_the_waiver_not_another_fee", () => {
-    const name = "Platinum Checking Fee (waived with $500 minimum balance)";
-    expect(namedForCheckingAccount(name)).toBe(true);
-    expect(checkFeeCategory("monthly_maintenance", name).ok).toBe(true);
+    for (const name of ["Platinum Checking Fee (waived with $500 minimum balance)", "Gold Checking Fee (waived first 6 months)"]) {
+      expect([name, namedForCheckingAccount(name)]).toEqual([name, true]);
+      expect([name, checkFeeCategory("monthly_maintenance", name).ok]).toEqual([name, true]);
+    }
   });
 
   it("should_still_admit_account_names_that_only_resemble_those_words", () => {

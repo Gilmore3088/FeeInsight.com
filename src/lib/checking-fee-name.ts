@@ -57,7 +57,7 @@ export const CHECKING_ACCOUNT_FEE_NAME = new RegExp(
  * price is not the account's monthly fee.
  */
 export const NON_MONTHLY_PERIOD =
-  /\b(?:per|a|each|every)\s+(?:year|yr|annum|quarter|qtr|item|debit|check|transaction|withdrawal|deposit|day|week)s?\b|\/\s*(?:year|yr|quarter|qtr|item|debit|check|day|week)\b|\b(?:annual(?:ly)?|yearly|quarterly|semi-?annual(?:ly)?|bi-?annual(?:ly)?|weekly|daily)\b|\b(?:every|per)\s+(?:\d+|two|three|four|six|twelve|other)\s+months?\b|\bat\s+(?:account\s+)?opening\b|\bwhen\s+(?:the\s+account\s+is\s+)?opened\b/i;
+  /\b(?:per|a|each|every)\s+(?:year|yr|annum|quarter|qtr|item|debit|check|transaction|withdrawal|deposit|day|week)s?\b|\/\s*(?:year|yr|quarter|qtr|item|debit|check|day|week)\b|\b(?:annual(?:ly)?|yearly|quarterly|semi-?annual(?:ly)?|bi-?annual(?:ly)?|weekly|daily)\b|\b(?:every|per|each)\s+(?:\d+|two|three|four|six|twelve|other)\s+months?\b|\(\s*(?:\d+|two|three|four|six|twelve)\s+months\s*\)|\bat\s+(?:account\s+)?opening\b|\bwhen\s+(?:the\s+account\s+is\s+)?opened\b/i;
 
 /** The name without a bracketed note, footnote marks and leaders, as the name rules read it. */
 export function checkingNameCore(name: string): string {
@@ -85,9 +85,10 @@ const NOTE_OTHER_FEE = new RegExp(String.raw`\b(?:${OTHER_FEE_WORD.source})\b`, 
  * it is read here, or a misfiled extraction would pass the guard under monthly maintenance.
  */
 function noteNamesAnotherFee(feeName: string): boolean {
-  return (feeName.match(/\(([^()]*)\)/g) ?? [])
-    .map((note) => note.slice(1, -1))
-    // A waiver note names what avoids the fee ("(waived with $500 minimum balance)"), not another fee.
-    .filter((note) => !/\b(?:waiv\w*|avoid\w*|free|no\s+(?:fee|charge)|if|with|unless)\b/i.test(note))
+  return (feeName.match(/\([^()]*\)?/g) ?? [])
+    .map((note) => note.replace(/^\(|\)$/g, ""))
+    // A waiver note names what avoids the fee ("(waived with $500 minimum balance)"), not another
+    // fee. A bare "if" or "with" is not a waiver: "(NSF, if returned)", "(with overdraft protection)".
+    .filter((note) => !/\b(?:waiv\w*|avoid\w*|free|no\s+(?:fee|charge))\b/i.test(note))
     .some((note) => NOTE_OTHER_FEE.test(note));
 }
