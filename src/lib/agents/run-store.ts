@@ -1927,6 +1927,7 @@ async function executeAgenticStep(
           category_guard_live_refiled: categoryGuard.liveRefiledFees,
           category_guard_version: categoryGuard.guardVersion,
           category_guard_heading_read_failed: categoryGuard.headingReadFailed,
+          category_guard_box_section_read_failed: categoryGuard.boxSectionReadFailed,
           // v70: live card-product misfiles held live while CARD_PRODUCT_TAKEDOWN_LIVE is off (0 while on).
           category_guard_card_product_pending: categoryGuard.cardProductPending,
           category_guard_card_product_samples: categoryGuard.cardProductPendingSamples.slice(0, 10),
@@ -2298,6 +2299,8 @@ async function executeAgenticStep(
           card_product_pending_samples: guard.cardProductPendingSamples,
           // v84: the heading read failed, so generic monthly charges were judged by name and line only.
           heading_read_failed: guard.headingReadFailed,
+          // v87: the box section read failed, so late payments were judged by name and line only.
+          box_section_read_failed: guard.boxSectionReadFailed,
           category_guard_limit: guard.limit,
           rollback_batch_id: guard.rollbackBatchId,
           guard_version: guard.guardVersion,

@@ -433,6 +433,7 @@
   "missed_fees:state:10193|publish|paper_statement:695",
   "missed_fees:state:10193|publish|returned_mail:2000",
   "missed_fees:state:10193|publish|rush_card:6000",
+  "missed_fees:state:10193|publish|safe_deposit_box:1000",
   "missed_fees:state:10193|publish|safe_deposit_box:10500",
   "missed_fees:state:10193|publish|safe_deposit_box:15500",
   "missed_fees:state:10193|publish|safe_deposit_box:20000",
