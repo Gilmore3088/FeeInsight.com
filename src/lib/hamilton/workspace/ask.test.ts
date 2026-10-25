@@ -225,6 +225,17 @@ describe("no answer about a different subject, even with an overdraft decision o
     expect(response.pageChange).toMatchObject({ feeCategory: "nsf" });
   });
 
+  it("keeps no fee for an income question that asks what to do but doesn't point at the fee", () => {
+    for (const question of [
+      "What should we do about our falling fee income?",
+      "Should we worry about our service charge revenue?",
+      "How does our fee income compare with banks like ours?",
+      "What is driving this drop in fee income?",
+    ]) {
+      expect(parseAsk(question, "overdraft").feeCategory).toBeNull();
+    }
+  });
+
   it("keeps the open decision's fee for a follow-up on that fee", () => {
     for (const question of [
       "What if we charged $30?",

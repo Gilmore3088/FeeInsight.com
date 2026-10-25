@@ -168,10 +168,11 @@ export function asksOtherSubject(question: string): boolean {
 const REFERS_BACK = /\b(?:it|its|ours|same|what about|how about|and for|why|(?:this|that|these|those)(?! (?:week|month|year|quarter|morning|afternoon|evening)\b))\b/i;
 
 /**
- * The part of REFERS_BACK that names the fee itself ("it", "that", "the same"), so it holds even in a
- * question about income: "how would that affect our revenue?" is still about the fee on screen.
+ * Words that can only point at the fee on screen ("it", "that", "the same"), so they hold even in a
+ * question about income: "how would that affect our revenue?" is still about the fee. "Ours", "this"
+ * and asking what to do don't: "what should we do about our falling fee income?" is about income.
  */
-const POINTS_AT_FEE = /\b(?:it|its|ours|same|(?:this|that|these|those)(?! (?:week|month|year|quarter|morning|afternoon|evening)\b))\b/i;
+const POINTS_AT_FEE = /\b(?:it|its|same|that(?! (?:week|month|year|quarter|morning|afternoon|evening)\b))\b/i;
 
 /**
  * The fee a question is about: the one it names, else the open decision's fee (`carriedCategory`)
@@ -186,10 +187,9 @@ function questionFee(question: string, carriedCategory: string | null, tested: n
   if (!carriedCategory) return null;
   if (tested.length > 0) return carriedCategory;
   if (asksWholeSchedule(question)) return null;
-  // A follow-up that asks what to do or points at the fee keeps it, even when it asks about income.
-  if (OPINION.test(question) || POINTS_AT_FEE.test(question)) return carriedCategory;
-  if (asksOtherSubject(question)) return null;
-  return REFERS_BACK.test(question) ? carriedCategory : null;
+  // A question about income keeps the fee only when it points at it ("how would that affect revenue?").
+  if (asksOtherSubject(question)) return POINTS_AT_FEE.test(question) ? carriedCategory : null;
+  return OPINION.test(question) || REFERS_BACK.test(question) ? carriedCategory : null;
 }
 
 export function parseAsk(question: string, carriedCategory: string | null = null): AskIntent {
