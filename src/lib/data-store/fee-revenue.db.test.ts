@@ -145,7 +145,7 @@ describe.skipIf(!connection)("fee-revenue eligibility and source parity in isola
     ["ncua", "credit_union", 0], ["fdic", "bank", 100],
   ] as const)("compares %s filed income without fee schedules while preserving correlation eligibility (#2332)", async (source, charter, offset) => {
     const id = (index: number) => offset + index;
-    for (let index = 1; index <= 6; index++) {
+    for (let index = 1; index <= 11; index++) {
       await institution(id(index), charter, source, "2026-06-30", index === 2 ? (source === "ncua" ? 100 : 0) : index * 100);
     }
     // The subject has no fee rows. Other valid peers have zero, one, two or three categories.
@@ -153,23 +153,23 @@ describe.skipIf(!connection)("fee-revenue eligibility and source parity in isola
     await fee(id(3), "overdraft", 20);
     await fee(id(3), "nsf", 10);
     await threeFees(id(4));
-    await institution(id(7), charter, source, "2026-03-31", 900);
-    await institution(id(8), charter, source === "ncua" ? "fdic" : "ncua");
-    await institution(id(9), "unknown", source);
+    await institution(id(12), charter, source, "2026-03-31", 900);
+    await institution(id(13), charter, source === "ncua" ? "fdic" : "ncua");
+    await institution(id(14), "unknown", source);
     // A newer noncanonical filing must not displace the subject's canonical June quarter.
     await db`INSERT INTO institution_financial_records VALUES
       (${id(1)}, ${source === "ncua" ? "fdic" : "ncua"}, '2026-09-30', 99999999, 999999)`;
     // Do not fall back to an older complete quarter when the latest canonical income is missing.
-    await institution(id(11), charter, source);
-    await db`INSERT INTO institution_financial_records VALUES (${id(11)}, ${source}, '2026-09-30', 20000000, NULL)`;
+    await institution(id(16), charter, source);
+    await db`INSERT INTO institution_financial_records VALUES (${id(16)}, ${source}, '2026-09-30', 20000000, NULL)`;
     if (source === "ncua") {
-      await institution(id(10), charter, source);
-      await db`DELETE FROM pg_temp.institution_financial_records WHERE institution_id = ${id(10)} AND report_date = '2026-03-31'`;
-      await threeFees(id(10)); // More price coverage cannot replace the missing prior YTD.
+      await institution(id(15), charter, source);
+      await db`DELETE FROM pg_temp.institution_financial_records WHERE institution_id = ${id(15)} AND report_date = '2026-03-31'`;
+      await threeFees(id(15)); // More price coverage cannot replace the missing prior YTD.
     }
 
     const financials = await getFiledFeeIncomeData(source);
-    expect(financials.map((row) => row.institution_id).sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6, 7].map(id));
+    expect(financials.map((row) => row.institution_id).sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(id));
     expect(financials.find((row) => row.institution_id === id(1))).toMatchObject({
       financial_source: source, charter_type: charter, report_date: "2026-06-30",
       total_assets: 20_000_000, service_charge_income: source === "ncua" ? 0 : 100,
@@ -180,12 +180,12 @@ describe.skipIf(!connection)("fee-revenue eligibility and source parity in isola
     expect(financials.every((row) => !("avg_fee" in row) && !("fee_count" in row))).toBe(true);
     const comparable = feeIncomeAgainstPeers(financials, id(1), { states: ["VA"], charterType: charter, assetTiers: ["regional"], fedDistricts: [5] });
     expect(comparable).toMatchObject({
-      peer_count: 5, quarter: "2026-06-30",
-      peer_median_service_charge_income: source === "ncua" ? 300 : 400,
-      comparison: { sample_size: 5, subject_included: false, population_basis: "filed_financials", fee_schedule_coverage_required: false },
+      peer_count: 10, quarter: "2026-06-30",
+      peer_median_service_charge_income: source === "ncua" ? 550 : 650,
+      comparison: { sample_size: 10, subject_included: false, population_basis: "filed_financials", fee_schedule_coverage_required: false },
     });
-    const thin = feeIncomeAgainstPeers(financials, id(1), { institutionIds: [2, 3, 4, 5].map(id) });
-    expect(thin).toMatchObject({ peer_count: 4, peer_median_service_charge_income: null, peer_median_income_per_10k_assets: null });
+    const thin = feeIncomeAgainstPeers(financials, id(1), { institutionIds: [2, 3, 4, 5, 6, 7, 8, 9, 10].map(id) });
+    expect(thin).toMatchObject({ peer_count: 9, peer_median_service_charge_income: null, peer_median_income_per_10k_assets: null });
     // The three actual price/income correlations retain their three-category gate unchanged.
     expect((await getFeeRevenueData(source)).map((row) => Number(row.institution_id))).toEqual([id(4)]);
     expect(await getTierFeeRevenueSummary(source)).toEqual([expect.objectContaining({ institution_count: 1 })]);
@@ -296,12 +296,12 @@ describe.skipIf(!connection)("fee-revenue eligibility and source parity in isola
     // Official NCUA March/June 2026 ACCT_131, rounded to the core reader's $000 storage:
     // https://ncua.gov/files/publications/analysis/call-report-data-2026-03.zip
     // https://ncua.gov/files/publications/analysis/call-report-data-2026-06.zip
-    // Zero schedule rows and the five peers below are synthetic test conditions, not live coverage.
+    // Zero schedule rows and the ten peers below are synthetic test conditions, not live coverage.
     await institution(4382, "credit_union", "ncua", "2026-06-30", 57_262);
     await db`UPDATE pg_temp.institution_sources SET institution_name = 'Pentagon Federal Credit Union' WHERE id = 4382`;
     await db`UPDATE pg_temp.institution_financial_records SET total_assets = 29196093 WHERE institution_id = 4382 AND report_date = '2026-06-30'`;
     await db`UPDATE pg_temp.institution_financial_records SET service_charge_income = 27230, total_assets = 29396724 WHERE institution_id = 4382 AND report_date = '2026-03-31'`;
-    for (let id = 1; id <= 5; id++) await institution(id, "credit_union", "ncua", "2026-06-30", 250 + id * 100);
+    for (let id = 1; id <= 10; id++) await institution(id, "credit_union", "ncua", "2026-06-30", 250 + id * 100);
 
     expect(await getFeeRevenueData("ncua")).toEqual([]);
     const result = feeIncomeAgainstPeers(await getFiledFeeIncomeData("ncua"), 4382, {
@@ -309,7 +309,7 @@ describe.skipIf(!connection)("fee-revenue eligibility and source parity in isola
     });
     expect(result).toMatchObject({
       quarter: "2026-06-30", subject: { institution_id: 4382, service_charge_income: 30_032, income_per_10k_assets: 10.29 },
-      peer_count: 5, peer_median_service_charge_income: 450,
+      peer_count: 10, peer_median_service_charge_income: 700,
       comparison: { financial_source: "ncua", population_basis: "filed_financials", subject_included: false, fee_schedule_coverage_required: false },
     });
     const question = "How much fee income did PenFed report for Q2 2026?";
@@ -321,34 +321,34 @@ describe.skipIf(!connection)("fee-revenue eligibility and source parity in isola
   it.each([
     ["ncua", "credit_union"], ["fdic", "bank"],
   ] as const)("keeps the selected inactive %s filing but excludes inactive comparison peers (#2397)", async (source, charter) => {
-    for (let id = 1; id <= 7; id++) {
-      await institution(id, charter, source, "2026-06-30", id === 1 ? 1000 : id === 7 ? 999999 : id * 100);
+    for (let id = 1; id <= 12; id++) {
+      await institution(id, charter, source, "2026-06-30", id === 1 ? 1000 : id === 12 ? 999999 : id * 100);
       await threeFees(id);
     }
-    await db`UPDATE pg_temp.institution_sources SET regulatory_status = 'inactive' WHERE id IN (1, 7)`;
+    await db`UPDATE pg_temp.institution_sources SET regulatory_status = 'inactive' WHERE id IN (1, 12)`;
     await db`UPDATE pg_temp.institution_sources SET regulatory_status = 'active' WHERE id = 6`;
     const financials = await getFiledFeeIncomeData(source);
-    expect(financials).toHaveLength(7); // Own filings remain readable, including closed institutions.
+    expect(financials).toHaveLength(12); // Own filings remain readable, including closed institutions.
     expect(financials.find((row) => row.institution_id === 1)).toMatchObject({ regulatory_status: "inactive" });
     expect(financials.find((row) => row.institution_id === 2)).toMatchObject({ regulatory_status: null });
     const result = feeIncomeAgainstPeers(financials, 1, {});
     expect(result).toMatchObject({
       subject: { institution_id: 1, regulatory_status: "inactive", service_charge_income: source === "ncua" ? 900 : 1000 },
-      peer_count: 5, peer_median_service_charge_income: source === "ncua" ? 300 : 400,
-      comparison: { sample_size: 5, status_basis: "current_registry_status", inactive_peers_excluded: true, subject_included: false },
+      peer_count: 10, peer_median_service_charge_income: source === "ncua" ? 550 : 650,
+      comparison: { sample_size: 10, status_basis: "current_registry_status", inactive_peers_excluded: true, subject_included: false },
     });
-    expect("peers" in result && result.peers.map((row) => row.institution_id)).toEqual([2, 3, 4, 5, 6]);
+    expect("peers" in result && result.peers.map((row) => row.institution_id)).toEqual([2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
     // The merged price/income readers retain their existing active-institution SQL rule.
-    expect((await getFeeRevenueData(source)).map((row) => Number(row.institution_id)).sort((a, b) => a - b)).toEqual([2, 3, 4, 5, 6]);
-    expect(await getTierFeeRevenueSummary(source)).toEqual([expect.objectContaining({ institution_count: 5 })]);
-    expect(await getCharterFeeRevenueSummary(source)).toEqual([expect.objectContaining({ institution_count: 5 })]);
+    expect((await getFeeRevenueData(source)).map((row) => Number(row.institution_id)).sort((a, b) => a - b)).toEqual([2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+    expect(await getTierFeeRevenueSummary(source)).toEqual([expect.objectContaining({ institution_count: 10 })]);
+    expect(await getCharterFeeRevenueSummary(source)).toEqual([expect.objectContaining({ institution_count: 10 })]);
 
     await db`UPDATE pg_temp.institution_sources SET regulatory_status = 'inactive' WHERE id = 6`;
     const thin = feeIncomeAgainstPeers(await getFiledFeeIncomeData(source), 1, {});
     expect(thin).toMatchObject({
-      subject: { institution_id: 1, regulatory_status: "inactive" }, peer_count: 4,
+      subject: { institution_id: 1, regulatory_status: "inactive" }, peer_count: 9,
       peer_median_service_charge_income: null, peer_median_income_per_10k_assets: null,
-      comparison: { sample_size: 4 },
+      comparison: { sample_size: 9 },
     });
   });
 });

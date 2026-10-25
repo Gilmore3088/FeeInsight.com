@@ -13,8 +13,8 @@ import type { SelectedInstitutionFeeDelta } from "./report-evidence";
 import { statedFeeText, type SeveralFees } from "@/lib/own-fee";
 import type { ReportExhibit, ReportSource } from "./types";
 
-/** A local median needs at least this many competitors publishing the fee. */
-export const MIN_LOCAL_COMPETITORS_FOR_MEDIAN = 3;
+/** A local median needs at least this many competitors publishing the fee (James, 2026-10-25). */
+export const MIN_LOCAL_COMPETITORS_FOR_MEDIAN = 5;
 const MAX_EXHIBIT_FEES = 6;
 const NAMED_COMPETITORS_PER_FEE = 3;
 const MIN_GAP_TO_SIZE = 0.5;

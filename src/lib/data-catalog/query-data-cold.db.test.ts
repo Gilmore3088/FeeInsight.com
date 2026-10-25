@@ -34,6 +34,7 @@ import { ColdFileWriter } from "@/lib/agents/hoovie/cold-files";
 import { CALL_ITEM_COLUMNS } from "@/lib/agents/hoovie/storage-tiers";
 import { writtenAnswerCheck } from "@/lib/hamilton/answer-save";
 import { queryData } from "./query-data";
+import { ROLLUP_MIN_INSTITUTIONS } from "./roll-ups";
 
 const connection = process.env.E2E_DATABASE_URL;
 const itemKey = "service_charges_deposits_ytd";
@@ -67,10 +68,10 @@ describe.skipIf(!connection)("canonical cold call-report reads in isolated Postg
   });
 
   async function seed(hot: "ffiec" | "ncua", cold: "ffiec" | "ncua") {
-    context.members = [1, 2, 3, 4, 5, 11, 12, 13, 14, 15];
+    context.members = Array.from({ length: 20 }, (_, i) => i + 1);
     const hotCharter = hot === "ffiec" ? "bank" : "credit_union";
     const coldCharter = cold === "ffiec" ? "bank" : "credit_union";
-    for (let id = 1; id <= 5; id++) {
+    for (let id = 1; id <= 10; id++) {
       await db`INSERT INTO institution_sources (id, charter_type) VALUES (${id}, ${hotCharter}), (${id + 10}, ${coldCharter})`;
       await db`INSERT INTO institution_call_report_items VALUES (${id}, ${hot}, ${period}, 'TEST', ${itemKey}, 'Fee income', 'RI', 1000, 'dollars', 'ytd', 'https://hot.test', '2026-10-19')`;
     }
@@ -80,7 +81,7 @@ describe.skipIf(!connection)("canonical cold call-report reads in isolated Postg
       item_description: "Fee income", schedule: "RI", unit: "dollars", period_basis: "ytd",
       source_url: "https://cold.test", fetched_at: "2026-10-19", agent_run_id: null };
     writer.push([
-      ...Array.from({ length: 5 }, (_, i) => ({ ...base, id: String(i + 1), institution_id: String(i + 11), value: "200" })),
+      ...Array.from({ length: 10 }, (_, i) => ({ ...base, id: String(i + 1), institution_id: String(i + 11), value: "200" })),
       // Valid archive integrity does not make these wrong-charter/unknown/missing IDs eligible.
       ...[1, 21, 22].map((id) => ({ ...base, id: String(id + 20), institution_id: String(id), value: "999999" })),
     ]);
@@ -96,11 +97,11 @@ describe.skipIf(!connection)("canonical cold call-report reads in isolated Postg
     await seed(hot, cold);
     const result = await queryData({ measure, scope: { kind: "national" } });
     expect(result).toMatchObject({ ok: true, rows: [
-      expect.objectContaining({ period, sources: hot, median: 1000, institution_count: 5 }),
-      expect.objectContaining({ period, sources: cold, median: 200, institution_count: 5 }),
+      expect.objectContaining({ period, sources: hot, median: 1000, institution_count: 10 }),
+      expect.objectContaining({ period, sources: cold, median: 200, institution_count: 10 }),
     ] });
     if (result.ok) expect(result.peer_comparison?.cohort_history.periods.map((row) => [row.source, row.reporting_institution_ids, row.reporter_ids_complete])).toEqual([
-      [hot, [1, 2, 3, 4, 5], true], [cold, [11, 12, 13, 14, 15], true],
+      [hot, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], true], [cold, [11, 12, 13, 14, 15, 16, 17, 18, 19, 20], true],
     ]);
   });
 
@@ -120,10 +121,10 @@ describe.skipIf(!connection)("canonical cold call-report reads in isolated Postg
     const result = await queryData({ measure, scope: { kind: "peer_set", id: String(subjectId), peer: { states: ["VA"] } } });
     expect(result).toMatchObject({ ok: true, peer_comparison: {
       subject_institution_id: subjectId, subject_in_requested_cohort: subjectId !== 99,
-      definition: { states: ["VA"] }, member_count: 10,
+      definition: { states: ["VA"] }, member_count: 20,
     }, rows: [
-      expect.objectContaining({ period, sources: "ncua", subject_included: subjectId === 1, reported_count: 5, minimum_median_count: 5 }),
-      expect.objectContaining({ period, sources: "ffiec", subject_included: subjectId === 11, reported_count: 5, minimum_median_count: 5 }),
+      expect.objectContaining({ period, sources: "ncua", subject_included: subjectId === 1, reported_count: 10, minimum_median_count: ROLLUP_MIN_INSTITUTIONS }),
+      expect.objectContaining({ period, sources: "ffiec", subject_included: subjectId === 11, reported_count: 10, minimum_median_count: ROLLUP_MIN_INSTITUTIONS }),
     ] });
   });
 
@@ -133,25 +134,26 @@ describe.skipIf(!connection)("canonical cold call-report reads in isolated Postg
     expect(await queryData({ measure, scope: { kind: "peer_set", id: "1", peer: { states: ["VA"] } } })).toMatchObject({ ok: true,
       peer_comparison: { subject_in_requested_cohort: true, subject_institution_id: 1 },
       rows: [
-        expect.objectContaining({ sources: "ncua", subject_included: false, reported_count: 4, median: null }),
-        expect.objectContaining({ sources: "ffiec", subject_included: false, reported_count: 5, median: 200 }),
+        expect.objectContaining({ sources: "ncua", subject_included: false, reported_count: 9, median: null }),
+        expect.objectContaining({ sources: "ffiec", subject_included: false, reported_count: 10, median: 200 }),
       ],
     });
   });
 
   it("describes a changing hot/cold historical cohort without dropping an inactive predecessor or creating pro forma growth", async () => {
-    context.members = [1, 2, 3, 4, 5, 6, 7];
+    context.members = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
     for (const id of context.members) {
       await db`INSERT INTO institution_sources (id, charter_type, source, cert_number, ncua_charter_id, institution_name, regulatory_status, closed_date)
         VALUES (${id}, 'credit_union', 'ncua', ${String(100 + id)}, ${String(100 + id)}, ${`Current name ${id}`}, ${id === 1 ? "inactive" : "active"}, ${id === 1 ? "2026-01-01" : null}::date)`;
     }
     // A bank with the same numeric cert must not contaminate the NCUA lifecycle references.
     await db`INSERT INTO institution_sources (id, charter_type, source, cert_number) VALUES (99, 'bank', 'fdic', '102')`;
-    for (const id of [2, 3, 4, 5, 6, 7]) {
-      await db`INSERT INTO institution_call_report_items VALUES (${id}, 'ncua', '2026-06-30', 'ACCT_131', 'acct_131', 'FEE INCOME', 'IS', ${id === 7 ? 0 : id * 100}, 'dollars', 'ytd', 'https://ncua.gov/new', '2026-10-19')`;
+    // 2026: members 2 to 12, the newest at $0 (median $600); 2025: members 1 to 11 at $100 to $1,100 (median $600).
+    for (const id of [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]) {
+      await db`INSERT INTO institution_call_report_items VALUES (${id}, 'ncua', '2026-06-30', 'ACCT_131', 'acct_131', 'FEE INCOME', 'IS', ${id === 12 ? 0 : id * 100}, 'dollars', 'ytd', 'https://ncua.gov/new', '2026-10-19')`;
     }
     const writer = new ColdFileWriter(CALL_ITEM_COLUMNS);
-    writer.push([1, 2, 3, 4, 5, 6].map((id) => ({ id: String(id), institution_id: String(id), source: "ncua", report_date: "2025-06-30",
+    writer.push([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map((id) => ({ id: String(id), institution_id: String(id), source: "ncua", report_date: "2025-06-30",
       item_code: "ACCT_131", item_key: "acct_131", item_description: "FEE INCOME", schedule: "IS", value: String(id * 100),
       unit: "dollars", period_basis: "ytd", source_url: "https://ncua.gov/old", fetched_at: "2026-10-19", agent_run_id: null })));
     const file = writer.finish(); context.files.set("historical", file.bytes);
@@ -169,15 +171,15 @@ describe.skipIf(!connection)("canonical cold call-report reads in isolated Postg
     const request = { measure: "call:acct_131", scope: { kind: "peer_set", id: "1", peer: { states: ["VA"] } }, period: { from: "2025", to: "2026" } };
     const result = await queryData(request);
     expect(result).toMatchObject({ ok: true, rows: [
-      expect.objectContaining({ period: "2026-06-30", median: 350, reported_count: 6, subject_included: false }),
-      expect.objectContaining({ period: "2025-06-30", median: 350, reported_count: 6, subject_included: true }),
+      expect.objectContaining({ period: "2026-06-30", median: 600, reported_count: 11, subject_included: false }),
+      expect.objectContaining({ period: "2025-06-30", median: 600, reported_count: 11, subject_included: true }),
     ] });
     if (!result.ok) throw new Error(result.reason);
     const history = result.peer_comparison!.cohort_history;
-    expect(history.periods.map((row) => row.reporting_institution_ids)).toEqual([[2, 3, 4, 5, 6, 7], [1, 2, 3, 4, 5, 6]]);
+    expect(history.periods.map((row) => row.reporting_institution_ids)).toEqual([[2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]]);
     expect(history.charter_refs.find((row) => row.institution_id === 1)).toMatchObject({ current_regulatory_status: "inactive", cert_number: "101", identity_state: "resolved" });
     expect(history.charter_refs_complete).toBe(true);
-    expect(history.membership_changes).toEqual([expect.objectContaining({ common_ids: [2, 3, 4, 5, 6], added_ids: [7], dropped_ids: [1], complete: true })]);
+    expect(history.membership_changes).toEqual([expect.objectContaining({ common_ids: [2, 3, 4, 5, 6, 7, 8, 9, 10, 11], added_ids: [12], dropped_ids: [1], complete: true })]);
     expect(history.lifecycle).toMatchObject({ read_status: "complete", coverage: "not_established", window_start: "2025-01-01", window_end: "2026-06-30" });
     expect(history.lifecycle.events.map((row) => row.event_key)).toEqual(["completed-reference", "vote", "early-ytd-window"]);
     expect(history.lifecycle.events[1]).toMatchObject({ certainty: "proposal_not_completion", date_basis: "member_vote" });
@@ -186,15 +188,15 @@ describe.skipIf(!connection)("canonical cold call-report reads in isolated Postg
     expect(result.rows.every((row) => Object.values(row).every((value) => value === null || ["number", "string", "boolean"].includes(typeof value)))).toBe(true);
     const reads = [{ toolName: "queryData", input: request, output: result }];
     const check = (text: string) => writtenAnswerCheck(text, [result], "Compare this credit union and its peers over time", { institutionId: 1, toolResults: reads });
-    expect(check("The June 2026 peer median NCUA broad fee income was $350 year-to-date. The June 2025 peer median was $350 year-to-date.").passed).toBe(true);
+    expect(check("The June 2026 peer median NCUA broad fee income was $600 year-to-date. The June 2025 peer median was $600 year-to-date.").passed).toBe(true);
     expect(check("These are separate dated cross-sections. Peer growth cannot be established without membership and merger treatment.").passed).toBe(true);
     for (const text of [
       "The peer income benchmark grew over the year.",
       "The same-charter cohort grew faster than the institution.",
       "The reporting population is unchanged.",
       "Matching charter IDs proves merger-adjusted growth.",
-      "The peer median standalone Q2 2026 broad fee income was $350.",
-      "FDIC reports the June 2026 peer median bank deposit-account service charges as $350 year-to-date.",
+      "The peer median standalone Q2 2026 broad fee income was $600.",
+      "FDIC reports the June 2026 peer median bank deposit-account service charges as $600 year-to-date.",
     ]) expect(check(text).passed, text).toBe(false);
   });
 

@@ -635,9 +635,6 @@ export function inText(name: string): string {
   return name.split(" ").map((w) => (/^[A-Z]{2,}$/.test(w) ? w : w.toLowerCase())).join(" ");
 }
 
-/** Fewer peers than this and one peer's change can move the median; said beside the finding. */
-const THIN_PEERS = 8;
-
 function severalAmounts(r: FeeRead): boolean {
   return r.amounts.length > 1 && Math.abs(Math.min(...r.amounts) - Math.max(...r.amounts)) >= SAME;
 }
@@ -661,7 +658,6 @@ function caveatsOf(r: FeeRead, group: string): string[] {
   return [
     ...(severalAmounts(r) ? [`The schedule lists ${r.amounts.length} amounts (${span(Math.min(...r.amounts), Math.max(...r.amounts))}); the comparison uses ${packetMoney(r.fee.current as number)}; another product's amount would change the position.`] : []),
     ...(r.widened ? [`Compared with ${r.fee.peerLabel}, because fewer than ${MIN_PEERS_FOR_POSITION} of ${group} publish it.`] : []),
-    ...(r.n < THIN_PEERS ? [`Only ${r.n} peers publish it, so one peer's change can move the median.`] : []),
   ];
 }
 

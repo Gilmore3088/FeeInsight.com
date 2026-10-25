@@ -298,7 +298,7 @@ export async function runFreshAudit({
 }
 
 /** Hamilton's own host reads, scoped to the sample, and the second looks already open on it. */
-async function readEvidence(db: SqlTag, feeIds: number[]): Promise<FreshAuditEvidence> {
+export async function readEvidence(db: SqlTag, feeIds: number[]): Promise<FreshAuditEvidence> {
   if (feeIds.length === 0) return NO_EVIDENCE;
   type HostRow = { fee_published_id: number | string; names_own_bank: boolean | string | null };
   const ownBank = (row: HostRow) => row.names_own_bank === true || row.names_own_bank === "t" || row.names_own_bank === "true";

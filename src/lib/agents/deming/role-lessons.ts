@@ -57,4 +57,14 @@ export const DEMING_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-24",
   },
+  {
+    id: "issue-2058-close-the-error-loop",
+    agent: "deming",
+    stage: "error loop",
+    lesson: "A process fix is done only when the errors it was written for are gone, not when it merges. Have the fix name its error rows, re-run just the banks behind them through the fixed step, and re-check each fee with the same checks the daily audit uses once a completed run has read the bank again after both the fix and the error. Close a row only on evidence that the re-run produced a right fee (the named fee, or one the re-run extracted in its place, now matches the bank's document), never because the wrong fee is down or because some other fee in its category passes, and only when the check that raised it is one you re-run: a fee that still passes checks that never looked at its error proves nothing. Count a bank as re-run only when the fixed step really ran again on it (a new Knox rules version, not merely a completed run). Keep a row with no stored text open, record a row still wrong once and judge it again daily, and never let a fix's stubborn rows crowd out the rest of its list.",
+    why: "A Knox rules bump re-checked every document and the change check read one number a week later, but nothing re-ran the institutions behind a given error after its fix or checked that the specific error was gone, so fixes were assumed to work.",
+    evidence: { issues: [2058], prs: [2561], files: ["src/lib/agents/deming/error-fixes.ts", "src/lib/agents/deming/error-fixes.json", "src/lib/agents/atlas/priority-institutions.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];

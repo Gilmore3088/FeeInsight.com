@@ -55,7 +55,15 @@ export interface HamiltonFactScope {
    * the current fee and is never compared. Absent means current, as every fee was read before.
    */
   productStatus?: HamiltonProductStatus;
+  /** Measure key for a non-fee figure ("service_charge_income", "call:acct_131"); absent on fee rows, whose feeCategory carries it. */
+  metric?: string | null;
+  /** How a filing figure's period is counted; absent on fee rows. */
+  periodBasis?: HamiltonPeriodBasis | null;
+  /** The group a peer or market statistic is taken over; absent for one institution's own figure. */
+  cohortKey?: string | null;
 }
+
+export type HamiltonPeriodBasis = "as_published" | "point_in_time" | "ytd" | "standalone_quarter";
 
 export type HamiltonProductStatus = "current" | "discontinued";
 
@@ -72,7 +80,13 @@ export interface HamiltonFactSource {
   lastCheckedAt?: string | null;
   location?: string | null;
   verificationEventId: string | null;
+  /** Natural key for a row the tool returns with no numeric id (a filing row); the fact ID itself. */
+  recordKey?: string | null;
+  /** Which validity rule applies to the fact. Absent means "fee_record", the only class before claim facts. */
+  evidenceClass?: HamiltonEvidenceClass;
 }
+
+export type HamiltonEvidenceClass = "fee_record" | "filing" | "filing_statistic" | "index_statistic";
 
 export interface HamiltonEvidenceFact {
   id: string;
@@ -92,7 +106,9 @@ export type HamiltonDerivationKind =
   | "difference"
   | "percent_change"
   | "institution_value"
-  | "peer_median";
+  | "peer_median"
+  | "ytd_to_quarter"
+  | "ratio";
 
 export interface HamiltonDerivedFact {
   id: string;
@@ -179,6 +195,10 @@ export interface HamiltonClaimBinding {
   accountApplicability?: Exclude<HamiltonAccountApplicability, "unknown" | "both">;
   /** A claim is about the current fee unless it says otherwise; a discontinued fee binds only a claim that says "discontinued". */
   productStatus?: HamiltonProductStatus;
+  /** The measure the claim states (a filing figure's metric); checked only when the claim states it. */
+  metric?: string | null;
+  periodBasis?: HamiltonPeriodBasis | null;
+  cohortKey?: string | null;
 }
 
 /**
@@ -360,6 +380,10 @@ export function claimBindingMatches(
   // Unknown is never a match for a stated figure; a genuine $0 is.
   if (claim.value !== undefined && (typeof fact.value !== "number" || !Number.isFinite(fact.value)
     || Math.abs(fact.value - claim.value) > 0.005)) return false;
+  // A filing figure's measure, period basis and peer group, each only when the claim states it (#1077).
+  if (claim.metric !== undefined && (fact.scope.metric ?? null) !== claim.metric) return false;
+  if (claim.periodBasis !== undefined && (fact.scope.periodBasis ?? null) !== claim.periodBasis) return false;
+  if (claim.cohortKey !== undefined && (fact.scope.cohortKey ?? null) !== claim.cohortKey) return false;
   // A fee from a discontinued account's table is never the current fee (#1880).
   if ((fact.scope.productStatus ?? "current") !== (claim.productStatus ?? "current")) return false;
   return true;

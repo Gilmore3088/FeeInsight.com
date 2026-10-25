@@ -88,7 +88,13 @@ describe("admin fee hold", () => {
     expect(amount.row.about_stage).toBe("extract");
     expect(amount.row.evidence.wrong_document_url).toBeUndefined();
     expect(amount.lookedUp).toBe(false);
-    expect((await logged("text_lost")).row.about_stage).toBe("read");
+    expect(wrong.row.source_document_id).toBeNull();
+    // A lost text names the document whose text lost the fee as the row's own document, so a
+    // Rosetta reader version bump reads it again (#2059).
+    const lost = await logged("text_lost");
+    expect(lost.row).toMatchObject({ about_stage: "read", source_document_id: 77 });
+    expect(lost.row.evidence.wrong_document_id).toBeUndefined();
+    expect(amount.row.source_document_id).toBeNull();
     expect((await logged("verify_missed")).row.about_stage).toBe("verify");
     // No answer is "not sure", filed against publishing as before.
     expect((await logged()).row).toMatchObject({ about_stage: "publish", evidence: { cause: "not_sure" } });

@@ -3,6 +3,9 @@ import type { HamiltonBriefingEvidence } from "./institution-briefing";
 import { profileQuarterCalculations, type ProfileQuarterCalculation } from "./profile-quarter-evidence";
 import { filedPeerIncomeEvidenceResult } from "./filed-peer-evidence";
 import { callPeerHistoryEvidence } from "./call-peer-history-evidence";
+import { claimEvidenceFacts } from "./claim-evidence";
+import type { HamiltonEvidenceBundle } from "./evidence-contract";
+import { writtenAnswerFeeEvidence } from "./written-answer-binding";
 
 /** Server-observed tool reads, never calculations supplied by a model or browser. */
 export interface AnswerToolEvidence {
@@ -73,6 +76,27 @@ function withoutEmbeddedDerivations(value: unknown, depth = 0): unknown {
 
 function ncuaReads(reads: readonly AnswerToolEvidence[]) {
   return reads.filter((read) => read.toolName === "queryData");
+}
+
+/** A written answer's one evidence build: the figure check's DATA, the fee records the binding reads, and the claim facts. */
+export interface WrittenAnswerEvidenceBuild {
+  /** Exactly what writtenAnswerEvidence returns. */
+  data: unknown;
+  /** The fee records and institution names the sentence binding reads (writtenAnswerFeeEvidence); null when there is none. */
+  fees: ReturnType<typeof writtenAnswerFeeEvidence>;
+  /** Filing and filed-peer facts with IDs (claim-evidence.ts); the sentence binding reads the same facts (writtenAnswerBinding, #1077 step 2). */
+  claims: HamiltonEvidenceBundle;
+}
+
+export function writtenAnswerEvidenceBuild(
+  toolOutputs: readonly unknown[],
+  context: WrittenAnswerEvidenceContext = {},
+): WrittenAnswerEvidenceBuild {
+  return {
+    data: writtenAnswerEvidence(toolOutputs, context),
+    fees: writtenAnswerFeeEvidence(toolOutputs),
+    claims: claimEvidenceFacts(context.toolResults ?? [], context.institutionId ?? null),
+  };
 }
 
 /** The same dated facts in the prompt, plus derivations recomputed from the actual reads. */

@@ -27,6 +27,7 @@ import { getContractFeeRows, getFeeValuesForInstitutions } from "@/lib/data-stor
 import { countedAmounts, summarizeFees, valuePerInstitution, type StatsInputRow } from "@/lib/data-store/fee-stats";
 import { extractFigures } from "./figure-check";
 import { ARCHETYPE_RULE_PATTERN, typicalTransfer } from "./workspace/storyline";
+import { MIN_PEERS_FOR_POSITION } from "./workspace/scenario";
 import type { ScheduleOverview } from "./workspace/schedule";
 import type { AskResponse, Fact, FeeResearch, PeerValue } from "./workspace/types";
 
@@ -37,8 +38,8 @@ const TRANSFER_CATEGORY = "od_protection_transfer";
 const CENT = 0.0051;
 /** Untied figures listed per answer; the count beyond is summarized. */
 const MAX_LISTED = 6;
-/** The contract's minimum sample for a median (MIN_INSTITUTIONS_FOR_MEDIAN). */
-const MIN_FOR_MEDIAN = 5;
+/** Hamilton's minimum sample for a peer median (MIN_PEERS_FOR_POSITION). */
+const MIN_FOR_MEDIAN = MIN_PEERS_FOR_POSITION;
 
 /** Live values the answer is checked against, for the fees it covers. */
 export interface LiveFeeValues {

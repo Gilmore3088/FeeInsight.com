@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { annualServiceCharges, buildFeeImpacts, buildLocalComparisons, buildReportExhibits, cheapestRank, peerBand } from "./report-exhibits";
+import { annualServiceCharges, buildFeeImpacts, buildLocalComparisons, buildReportExhibits, cheapestRank, MIN_LOCAL_COMPETITORS_FOR_MEDIAN, peerBand } from "./report-exhibits";
 import { checkNarrativeFigures } from "./figure-check";
 import type { SelectedInstitutionFeeDelta } from "./report-evidence";
 import type { LocalMarket } from "@/lib/data-store/local-market";
@@ -43,22 +43,22 @@ function market(fees: Array<Record<string, number>>): LocalMarket {
 }
 
 describe("buildLocalComparisons", () => {
-  it("gives a local median only with at least three competitors publishing the fee", () => {
+  it(`gives a local median only with at least ${MIN_LOCAL_COMPETITORS_FOR_MEDIAN} competitors publishing the fee`, () => {
     const rows = buildLocalComparisons(
       [delta("nsf", 25, 30), delta("overdraft", 30, 32)],
-      market([{ nsf: 30, overdraft: 35 }, { nsf: 32 }, { nsf: 28, overdraft: 33 }]),
+      market([{ nsf: 30, overdraft: 35 }, { nsf: 32 }, { nsf: 28, overdraft: 33 }, { nsf: 26, overdraft: 37 }, { nsf: 34, overdraft: 31 }]),
     );
     const nsf = rows.find((row) => row.fee_category === "nsf");
     const overdraft = rows.find((row) => row.fee_category === "overdraft");
-    expect(nsf).toMatchObject({ local_median: 30, local_competitor_count: 3, position_vs_local: "below" });
-    expect(overdraft).toMatchObject({ local_median: null, local_competitor_count: 2, position_vs_local: null });
+    expect(nsf).toMatchObject({ local_median: 30, local_competitor_count: 5, position_vs_local: "below" });
+    expect(overdraft).toMatchObject({ local_median: null, local_competitor_count: 4, position_vs_local: null });
   });
 });
 
 describe("buildFeeImpacts", () => {
   it("sizes each gap per 1,000 charges against the local median when there is one, and states it as a share of income", () => {
     const deltas = [delta("nsf", 25, 30), delta("overdraft", 30, 32)];
-    const local = buildLocalComparisons(deltas, market([{ nsf: 30 }, { nsf: 32 }, { nsf: 28 }]));
+    const local = buildLocalComparisons(deltas, market([{ nsf: 30 }, { nsf: 32 }, { nsf: 28 }, { nsf: 26 }, { nsf: 34 }]));
     const impacts = buildFeeImpacts(deltas, local, { year: 2025, amount: 1_000_000, source: "fdic" });
     expect(impacts).toEqual([
       expect.objectContaining({ fee_category: "nsf", reference: "local median", gap_amount: 5, income_per_1000_amount: 5000, share_of_service_charges_pct: 0.5 }),
@@ -72,10 +72,10 @@ describe("buildFeeImpacts", () => {
 describe("price-move scenarios", () => {
   it("ranks the fee among local competitors before and after moving to the reference price", () => {
     const deltas = [delta("nsf", 36, 30)];
-    const local = buildLocalComparisons(deltas, market([{ nsf: 30 }, { nsf: 32 }, { nsf: 28 }, { nsf: 35 }]));
+    const local = buildLocalComparisons(deltas, market([{ nsf: 30 }, { nsf: 32 }, { nsf: 28 }, { nsf: 35 }, { nsf: 31 }]));
     const [impact] = buildFeeImpacts(deltas, local, null);
-    // Local median of 28, 30, 32, 35 is 31; today 36 is the most expensive of 5.
-    expect(impact).toMatchObject({ reference_amount: 31, local_rank_today: 5, local_rank_at_reference: 3, local_field_size: 5 });
+    // Local median of 28, 30, 31, 32, 35 is 31; today 36 is the most expensive of 6.
+    expect(impact).toMatchObject({ reference_amount: 31, local_rank_today: 6, local_rank_at_reference: 3, local_field_size: 6 });
   });
 
   it("places amounts in peer bands, falling back to above/below the median without quartiles", () => {
@@ -138,12 +138,12 @@ describe("annualServiceCharges", () => {
 
 describe("named local competitors with several fees (#1931)", () => {
   it("names a competitor's stated price, or its range with each fee, and keeps the local median per institution", () => {
-    const m = market([{ garnishment: 100 }, { garnishment: 162.5 }, { garnishment: 120 }]);
+    const m = market([{ garnishment: 100 }, { garnishment: 162.5 }, { garnishment: 120 }, { garnishment: 110 }, { garnishment: 140 }]);
     m.competitors[1].several = { garnishment: { low: 150, high: 175, fees: [{ name: "Levy", amount: 150 }, { name: "Garnishment", amount: 175 }] } };
     const [row] = buildLocalComparisons([delta("garnishment", 125, 110)], m);
     // Group statistics: one value per institution, unchanged.
     expect(row.local_median).toBe(120);
-    expect(row.local_amounts).toEqual([100, 120, 162.5]);
+    expect(row.local_amounts).toEqual([100, 110, 120, 140, 162.5]);
     const { exhibits } = buildReportExhibits({ institutionName: "Subject", deltas: [delta("garnishment", 125, 110)], peerLabel: "peers", market: m, serviceCharges: null });
     const cell = exhibits.find((e) => e.id === "local_market")!.rows[0][4];
     expect(cell).toBe("Bank 1 $100.00; Bank 2 $150.00 to $175.00 (Levy $150.00; Garnishment $175.00); Bank 3 $120.00");

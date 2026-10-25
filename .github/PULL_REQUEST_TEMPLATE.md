@@ -10,6 +10,12 @@ Name it in `src/lib/agents/deming/should-move.json` in this PR too: Deming's dai
 `deming-change-outcomes` step records the number when it first sees the entry and checks it 7 days
 later (moved as expected, no change, or the wrong way; #1106).
 
+**Fixes errors:** an extract fix also names the error rows it fixes in
+`src/lib/agents/deming/error-fixes.json` (the merge day, the Knox rules version it bumps to, and the
+`pipeline_feedback` kinds, checks or ids raised by a check the re-check re-runs). After merge, those banks are re-run and Deming's daily
+`deming-error-fix-recheck` step closes each error whose fee now matches the bank's document and
+reports the rest (#2058). Other PRs write "none".
+
 ## Verification
 - Commands run and their results (`npm run guard:legacy`, tests, typecheck, lint).
 - What was not tested.

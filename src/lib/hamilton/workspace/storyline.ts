@@ -20,7 +20,7 @@ import { formatRatePercent } from "@/lib/percent-fees";
 import { MAX_NOTE_WORDS, MAX_STORY_LINE_WORDS, words } from "./four-roles";
 import { feeItem, plainName, proseFeeName } from "./names";
 import { ownRate, ownRateSource, rateRelation, ratesOf } from "./rates";
-import { countedPeerAmounts, MIN_PEERS_FOR_POSITION, placeAmong, pricePosition, spanOf } from "./scenario";
+import { countedPeerAmounts, LOCAL_COMPETITORS_GROUP, MIN_PEERS_FOR_POSITION, minPeersForGroup, placeAmong, pricePosition, spanOf } from "./scenario";
 import { segmentExhibit, shortSegmentLabel } from "./segment";
 import { countedGroup, theCountedGroup } from "@/lib/segment-words";
 import { isFederalRelease, isWireFact } from "./wire";
@@ -368,7 +368,7 @@ function structurePiece(research: FeeResearch): Piece | null {
   const set = research.structure;
   if (!set) return null;
   const group = set.rows.filter((r) => !r.own);
-  if (group.length < MIN_PEERS_FOR_POSITION) return null;
+  if (group.length < minPeersForGroup(set.groupLabel)) return null;
   // A $0 on the schedule is no fee: only a charge above $0 counts as charging one (#2035).
   const has = (category: string) => group.filter((r) => (r.values[category] ?? 0) > 0 || (r.several?.[category]?.high ?? 0) > 0).length;
   const nsf = has("nsf");
@@ -422,7 +422,7 @@ function lineupPiece(research: FeeResearch): Piece | null {
         ? `${subjectPossessive(research)} schedule shows ${count(ownSummary.accounts)} ${ownSummary.accounts === 1 ? "account" : "accounts"}`
         : `${subjectPossessive(research)} lowest monthly fee is ${money(ownLowest)}`;
   const actionTitle =
-    group.length >= MIN_PEERS_FOR_POSITION
+    group.length >= minPeersForGroup(set.groupLabel)
       ? `${ownLead}; ${count(withFree)} of ${countedGroup(group.length, label)} offer a no-fee account.`
       : `${ownLead}; too few ${label.startsWith("the ") ? `of ${label}` : label} publish their lineup to compare.`;
   const shown = [own, ...group.slice(0, MAX_LISTED_ROWS)];
@@ -882,7 +882,7 @@ function customerGroup(research: FeeResearch): { label: string; members: { name:
   const local = research.localCompetitors ?? [];
   if (local.length > 0) {
     return {
-      label: "local competitors",
+      label: LOCAL_COMPETITORS_GROUP,
       members: local.map((p) => ({ name: p.institutionName, amount: p.amount, several: p.several })),
       source: research.localMarket?.source ?? feeSource(research),
     };
@@ -1004,7 +1004,7 @@ function marketLens(research: FeeResearch, name: string): Fact[] {
     // A $0 transfer is no fee, so it is not counted as pricing one (#2035), as in the structure matrix.
     const withTransfer = others.filter((r) => (r.values.od_protection_transfer ?? 0) > 0);
     const typical = typicalTransfer(withTransfer.map((r) => r.values.od_protection_transfer));
-    if (others.length >= MIN_PEERS_FOR_POSITION && typical !== null) {
+    if (others.length >= minPeersForGroup(set.groupLabel) && typical !== null) {
       const ownTransfer = ownRow?.values.od_protection_transfer;
       out.push({
         text:

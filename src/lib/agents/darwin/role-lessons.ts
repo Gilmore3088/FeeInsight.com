@@ -196,4 +196,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-21",
   },
+  {
+    id: "issue-2477-closed-row-owns-no-later-price",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "A fee whose own name says it is free (\"ATM Transactions FREE\", read from a dot-leader row the free word closes) is not priced: a dollar amount on it is the next column's price. Refuse it. Keep reading a priced fee when words after the free word set its terms (\"Free, $2 for non-members\") or the next row only sets its tier or audience (\"| Each Additional ... $3.00\"); those prices are the same fee's.",
+    why: "The shared check traced United Bank's \"ATM Transactions FREE\" at $5 because the name's words sat before the line's only price, so Darwin verified a free fee at another column's price and it went live.",
+    evidence: { issues: [2477], prs: [], files: ["src/lib/custom-report/source-check.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];

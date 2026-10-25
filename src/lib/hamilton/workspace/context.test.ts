@@ -1,18 +1,30 @@
 import { describe, expect, it } from "vitest";
 import { feeRegulatoryNews, feeRules, marketLayer, ruleChangeObservations } from "./context";
+import { MIN_LOCAL_PEERS_FOR_POSITION, MIN_PEERS_FOR_POSITION } from "./scenario";
 
 describe("marketLayer", () => {
-  it("gives percentiles and the bank's position when at least five institutions publish the fee", () => {
-    const layer = marketLayer("national", "National", [25, 30, 32, 35, 35, 36], 35, ["2026-09-01T00:00:00Z", "2026-10-01T00:00:00Z"]);
-    expect(layer).toMatchObject({ scope: "national", n: 6, p25: 30.5, median: 33.5, p75: 35, asOf: "2026-10-01" });
-    expect(layer.position).toBe(67);
-    expect(layer.amounts).toEqual([25, 30, 32, 35, 35, 36]);
-    expect(layer.bands.reduce((n, b) => n + b.count, 0)).toBe(6);
+  it(`gives percentiles and the bank's position when at least ${MIN_PEERS_FOR_POSITION} institutions publish the fee`, () => {
+    const layer = marketLayer("national", "National", [25, 28, 30, 30, 32, 35, 35, 36, 38, 40], 35, ["2026-09-01T00:00:00Z", "2026-10-01T00:00:00Z"]);
+    expect(layer).toMatchObject({ scope: "national", n: 10, p25: 30, median: 33.5, p75: 35.75, asOf: "2026-10-01" });
+    // 5 below, 2 at $35: (5 + 2 / 2) / 10 = 60%.
+    expect(layer.position).toBe(60);
+    expect(layer.amounts).toEqual([25, 28, 30, 30, 32, 35, 35, 36, 38, 40]);
+    expect(layer.bands.reduce((n, b) => n + b.count, 0)).toBe(10);
   });
 
   it("keeps a thin layer but leaves its percentiles empty", () => {
     const layer = marketLayer("state", "Vermont", [30, 32], 30);
     expect(layer).toMatchObject({ n: 2, p25: null, median: null, p75: null, position: null });
+    const nine = marketLayer("state", "Vermont", [20, 22, 24, 26, 28, 30, 32, 34, 36], 30);
+    expect(nine).toMatchObject({ n: MIN_PEERS_FOR_POSITION - 1, p25: null, median: null, p75: null, position: null });
+  });
+
+  it(`places the bank among local competitors from ${MIN_LOCAL_PEERS_FOR_POSITION}, not ${MIN_PEERS_FOR_POSITION}`, () => {
+    const local = marketLayer("local", "Flora, IL area", [25, 30, 32, 35, 36], 32);
+    // 2 below, 1 at $32: (2 + 1 / 2) / 5 = 50%.
+    expect(local).toMatchObject({ n: 5, p25: 30, median: 32, p75: 35, position: 50 });
+    const thin = marketLayer("local", "Flora, IL area", [25, 30, 32, 35], 32);
+    expect(thin).toMatchObject({ n: MIN_LOCAL_PEERS_FOR_POSITION - 1, p25: null, median: null, p75: null, position: null });
   });
 });
 

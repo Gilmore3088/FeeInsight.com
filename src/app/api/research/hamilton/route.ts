@@ -311,13 +311,14 @@ async function handlePOST(request: Request) {
       }
 
       // The same evidence gate a memo passes, against the tool outputs the model saw (#981).
+      const bufferedReads = (result.steps ?? []).flatMap((step) => step.toolResults.map((toolResult) => ({
+        toolName: toolResult.toolName, input: toolResult.input, output: toolResult.output,
+      })));
       const evidence = writtenAnswerCheck(
         result.text ?? "",
         (result.steps ?? []).flatMap((step) => step.toolResults.map((toolResult) => toolResult.output)),
         questionOnly(lastUserText),
-        { briefingEvidence, toolResults: (result.steps ?? []).flatMap((step) => step.toolResults.map((toolResult) => ({
-          toolName: toolResult.toolName, input: toolResult.input, output: toolResult.output,
-        }))), institutionId },
+        { briefingEvidence, toolResults: bufferedReads, institutionId },
       );
       if (!evidence.passed) {
         return Response.json(
@@ -330,6 +331,7 @@ async function handlePOST(request: Request) {
         result.text ?? "",
         (result.steps ?? []).flatMap((step) => step.toolResults.map((toolResult) => toolResult.output)),
         questionOnly(lastUserText),
+        { toolResults: bufferedReads, institutionId, accountInstitutionId: homeId ?? null },
       );
       if (binding && binding.omitted.length > 0) {
         return Response.json(
@@ -391,14 +393,13 @@ async function handlePOST(request: Request) {
           // resolve (a promise keeps its first value), so the reader is never left waiting and
           // the usage below is still recorded.
           try {
-            const check = writtenAnswerCheck(text, toolOutputs, questionOnly(lastUserText), {
-              briefingEvidence, toolResults: steps.flatMap((step) => step.toolResults.map((toolResult) => ({
-                toolName: toolResult.toolName, input: toolResult.input, output: toolResult.output,
-              }))), institutionId,
-            });
-            // Each sentence bound to the fee records the tools returned (#981, H06-T06). An answer
-            // with nothing left once the contradicted sentences go is held like a failing one.
-            const binding = writtenAnswerBinding(text, toolOutputs, questionOnly(lastUserText));
+            const reads = steps.flatMap((step) => step.toolResults.map((toolResult) => ({
+              toolName: toolResult.toolName, input: toolResult.input, output: toolResult.output,
+            })));
+            const check = writtenAnswerCheck(text, toolOutputs, questionOnly(lastUserText), { briefingEvidence, toolResults: reads, institutionId });
+            // Each sentence bound to the fee records and filings the tools returned (#981 H06-T06,
+            // #1077). An answer with nothing left once the contradicted sentences go is held like a failing one.
+            const binding = writtenAnswerBinding(text, toolOutputs, questionOnly(lastUserText), { toolResults: reads, institutionId, accountInstitutionId: homeId ?? null });
             const held = holdsAnswers && (!check.passed || bindingLeavesNothing(parseAnalyzeResponse(text), binding));
             resolveVerdict({ passed: check.passed, held, binding });
             const response = {

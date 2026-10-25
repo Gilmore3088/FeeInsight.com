@@ -342,6 +342,102 @@ describe("Hamilton Reports generateReport", () => {
     expect(result.report.identityContext?.accountInstitutionName).toBe("Space Coast CU");
   });
 
+  describe("a saved answer with a sentence binding (#1899)", () => {
+    // Synthetic answer, as saved: the left-out sentence is already gone from the prose, the reading is inline.
+    const supported = "Research CU charges $35 for an overdraft.";
+    const qualitative = "That is the highest in its group.";
+    const reading = "Peers sit near $30.";
+    const left = "Research CU charges $10 for an NSF item.";
+    const boundAnswer = (extra: Record<string, unknown> = {}) => ({
+      institutionId: "2945",
+      responseJson: {
+        title: "Overdraft at Research CU",
+        hamiltonView: `${supported} ${reading}`,
+        whatThisMeans: `${qualitative} ${left}`,
+        narrativeBinding: {
+          version: 1,
+          supported: [{ text: supported, factIds: ["fee:published:9"] }, { text: qualitative, factIds: [] }],
+          interpretation: [reading],
+          omitted: [{ text: left, reason: "wrong_institution" }],
+          limitations: [],
+        },
+        answerEvidence: { passed: true, problems: [] },
+        ...extra,
+      },
+    });
+    const addSaved = () => generateReport({ ...reportParams(), addedFindings: [{ id: "answer-b", source: "Ask", title: "Overdraft", detail: "Browser text", institutionId: "2945", savedAnalysisId: "11111111-2222-3333-4444-555555555555" }] });
+    const summaryContext = () => mocks.generateSection.mock.calls.map(([input]) => input as SectionInput).find((input) => input.type === "executive_summary")?.context ?? "";
+
+    beforeEach(() => {
+      mocks.getFeesByInstitution.mockResolvedValue([{ fee_name: "Domestic wire", fee_category: "wire_transfer", amount: 35, review_status: "pending" }]);
+    });
+
+    it("states only the supported sentences as the finding", async () => {
+      mocks.loadAnalysisRecord.mockResolvedValue(boundAnswer());
+      const result = await addSaved();
+      if (!result.success) throw new Error(result.error);
+      expect(result.report.addedFindings?.[0].detail).toBe(`${supported} ${qualitative}`);
+    });
+
+    it("keeps Hamilton's reading out of the finding and the summary's reader findings", async () => {
+      mocks.loadAnalysisRecord.mockResolvedValue(boundAnswer());
+      const result = await addSaved();
+      if (!result.success) throw new Error(result.error);
+      expect(result.report.addedFindings?.[0].detail).not.toContain(reading);
+      expect(summaryContext()).toContain(supported);
+      expect(summaryContext()).not.toContain(reading);
+    });
+
+    it("never carries a left-out sentence, even one still in the saved prose", async () => {
+      mocks.loadAnalysisRecord.mockResolvedValue(boundAnswer());
+      const result = await addSaved();
+      if (!result.success) throw new Error(result.error);
+      expect(JSON.stringify(result.report)).not.toContain("$10 for an NSF");
+      expect(summaryContext()).not.toContain("$10 for an NSF");
+    });
+
+    it("does not add an answer with no supported sentence left", async () => {
+      mocks.loadAnalysisRecord.mockResolvedValue(boundAnswer({
+        hamiltonView: reading,
+        whatThisMeans: "",
+        narrativeBinding: { version: 1, supported: [], interpretation: [reading], omitted: [], limitations: [] },
+      }));
+      const result = await addSaved();
+      if (!result.success) throw new Error(result.error);
+      expect(result.report.addedFindings).toBeUndefined();
+      expect(summaryContext()).not.toContain("Overdraft at Research CU");
+    });
+
+    it("does not add an answer whose saved evidence verdict failed", async () => {
+      mocks.loadAnalysisRecord.mockResolvedValue(boundAnswer({ answerEvidence: { passed: false, problems: ["unbound figure"] } }));
+      const result = await addSaved();
+      if (!result.success) throw new Error(result.error);
+      expect(result.report.addedFindings).toBeUndefined();
+      expect(summaryContext()).not.toContain(supported);
+    });
+
+    it("keeps an answer saved before the binding as saved", async () => {
+      mocks.loadAnalysisRecord.mockResolvedValue(boundAnswer({ narrativeBinding: undefined, answerEvidence: undefined }));
+      const result = await addSaved();
+      if (!result.success) throw new Error(result.error);
+      expect(result.report.addedFindings?.[0].detail).toBe(`${supported} ${reading} ${qualitative} ${left}`);
+    });
+  });
+
+  it("keeps the reader's added findings out of the DATA a section's figures are checked against", async () => {
+    mocks.getFeesByInstitution.mockResolvedValue([{ fee_name: "Domestic wire", fee_category: "wire_transfer", amount: 35, review_status: "pending" }]);
+    // A Position item is browser text: nothing on the server re-reads its $99.
+    const result = await generateReport({ ...reportParams(), addedFindings: [{ id: "position-a", source: "Position", title: "Overdraft peers", detail: "Peers charge $99 for an overdraft.", institutionId: "2945" }] });
+    expect(result.success).toBe(true);
+    const summary = mocks.generateSection.mock.calls.map(([input]) => input as SectionInput).find((input) => input.type === "executive_summary");
+    expect(summary?.data).not.toHaveProperty("findings_added_by_reader");
+    expect(JSON.stringify(summary?.data)).not.toContain("$99");
+    expect(summary?.context).toContain("READER FINDINGS");
+    expect(summary?.context).toContain("Peers charge $99 for an overdraft.");
+    const { checkNarrativeFigures } = await vi.importActual<typeof import("./figure-check")>("./figure-check");
+    expect(checkNarrativeFigures("Peers charge $99 for an overdraft.", summary?.data).unmatched).toEqual(["$99"]);
+  });
+
   it("normalizes transient saved-artifact source before persisting a new report", async () => {
 
     const result = await generateReport({
@@ -594,6 +690,8 @@ describe("Hamilton Reports generateReport", () => {
         { institution_id: 1, institution_name: "First  Flora Bank", charter_type: "bank", market_deposits: 1, fees: { wire_transfer: 25 }, document_url: "https://a.example/fees", document_date: "2026-09-01" },
         { institution_id: 2, institution_name: "Clay County Bank", charter_type: "bank", market_deposits: 1, fees: { wire_transfer: 30 }, document_url: null, document_date: null },
         { institution_id: 3, institution_name: "Prairie Trust", charter_type: "bank", market_deposits: 1, fees: { wire_transfer: 40 }, document_url: null, document_date: null },
+        { institution_id: 4, institution_name: "Wabash Savings", charter_type: "bank", market_deposits: 1, fees: { wire_transfer: 28 }, document_url: null, document_date: null },
+        { institution_id: 5, institution_name: "Louisville State Bank", charter_type: "bank", market_deposits: 1, fees: { wire_transfer: 35 }, document_url: null, document_date: null },
       ],
     });
     mocks.getLocalFeeMoves.mockResolvedValue([
@@ -604,7 +702,7 @@ describe("Hamilton Reports generateReport", () => {
         input.type === "executive_summary"
           ? [
               "HEADLINE: Hamilton Federal Credit Union charges $35 for a domestic wire, $5 above the local median.",
-              "DECISION: Lower the domestic wire fee to $30 || WHY: Clay County Bank charges $30, the local median; the row is provisional. || CONFIDENCE: Medium - 3 local competitors, provisional row",
+              "DECISION: Lower the domestic wire fee to $30 || WHY: Clay County Bank charges $30, the local median; the row is provisional. || CONFIDENCE: Medium - 5 local competitors, provisional row",
             ].join("\n")
           : input.type === "recommendation"
             ? "Clay County Bank already charges $30, so business customers will notice. The row is provisional.\n\nWATCH: Prairie Trust's wire price"
@@ -628,7 +726,7 @@ describe("Hamilton Reports generateReport", () => {
           action: "Lower the domestic wire fee to $30",
           why: "Clay County Bank charges $30, the local median; the row is provisional.",
           confidence: "Medium",
-          confidenceReason: "3 local competitors, provisional row",
+          confidenceReason: "5 local competitors, provisional row",
         },
       ],
     });
