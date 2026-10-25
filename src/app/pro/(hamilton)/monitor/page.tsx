@@ -65,7 +65,7 @@ export default async function MonitorPage({
       <MemoHeader
         kicker={selectedInstitution ? `What changed · ${selectedInstitution.name}` : "What changed"}
         title="Alerts and watches"
-        dek="Fee moves at the institutions you watch, as they reach the index."
+        dek="Fee changes at the institutions you watch and your local competitors, each checked against the price we had on file."
         actions={<LinkButton href={refreshHref}>Refresh</LinkButton>}
       />
 

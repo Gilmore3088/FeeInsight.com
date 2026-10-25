@@ -1985,7 +1985,7 @@ describe("Knox v114: a sentence's priced noun phrase names and files its fee", (
   });
 });
 
-describe("v115 (#1947): a price its own line makes the paper statement charge is the paper statement fee", () => {
+describe("v116 (#1947): a price its own line makes the paper statement charge is the paper statement fee", () => {
   const reads = (line: string) => extractCandidatesFromText(line).candidates.map((c) => [c.canonicalHint, c.amount, c.feeName]);
 
   it("files the live maintenance misreads as paper statement fees", () => {

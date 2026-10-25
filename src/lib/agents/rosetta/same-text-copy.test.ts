@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  glyphBlindSameTextCopyOf,
   reopenSameTextCopies,
   SAME_TEXT_COPY_EVENT,
   SAME_TEXT_COPY_REOPEN_LIVE,
   SAME_TEXT_COPY_SAMPLE,
   SAME_TEXT_COPY_STRATEGY,
   sameTextCopyOf,
+  sameTextGlyphBlind,
   sameTextKnoxCopyIdSql,
   sameTextKnoxCopySql,
 } from "./same-text-copy";
@@ -135,5 +137,55 @@ describe("same page, same text, same verdict (#2477)", () => {
     const db = createDb([]);
     await expect(reopenSameTextCopies(db as unknown as Db, { runId: 9, live: true })).resolves.toEqual({ live: true, candidates: 0, reopened: 0, sample: [] });
     expect(calls(db).some((call) => call.text.includes("INSERT"))).toBe(false);
+  });
+
+  describe("an older copy whose stored text still carries the glyphs a new read restores (#2598)", () => {
+    const older = "Wire Interna\uFFFDonal Transfer $70\uFFFD00\nOverdra\uFFFD Fee $30.00\nZelle\uFFFD transfers \uFB01nancial";
+    const repaired = "Wire International Transfer $70.00\nOverdraft Fee $30.00\nZelle\u00AE transfers financial";
+
+    it("is the same text once the glyphs are set aside", () => {
+      expect(sameTextGlyphBlind(older, repaired)).toBe(true);
+      // A glyph left as it was, or a dot-leader run, still matches.
+      expect(sameTextGlyphBlind("Fee \uFFFD\uFFFD\uFFFD\uFFFD $5", "Fee \uFFFD\uFFFD\uFFFD\uFFFD $5")).toBe(true);
+      expect(sameTextGlyphBlind("Paid Check/Dra\uFFFD Photocopy", "Paid Check/Draft Photocopy")).toBe(true);
+    });
+
+    it("is different text when anything but a glyph changed", () => {
+      expect(sameTextGlyphBlind(older, repaired.replace("$30.00", "$35.00"))).toBe(false);
+      expect(sameTextGlyphBlind(older, `${repaired}\nNew fee $5`)).toBe(false);
+      expect(sameTextGlyphBlind(older, repaired.slice(1))).toBe(false);
+      // More letters than a glyph can stand for.
+      expect(sameTextGlyphBlind("Overdra\uFFFD Fee", "Overdraftxyz Fee")).toBe(false);
+      // A glyph never hides a different amount (#2649 review).
+      expect(sameTextGlyphBlind("Fee \uFFFD5.00 each", "Fee $15.00 each")).toBe(false);
+      expect(sameTextGlyphBlind("Fee $25\uFFFD", "Fee $250")).toBe(false);
+      expect(sameTextGlyphBlind("Fee $1\uFFFD00", "Fee $1500")).toBe(false);
+      expect(sameTextGlyphBlind("Fee $1\uFFFD00", "Fee $1,00")).toBe(false);
+      expect(sameTextGlyphBlind("\uFFFD", "$5")).toBe(false);
+      // Only the decimal repair itself puts "." in a slot, keeping every digit.
+      expect(sameTextGlyphBlind("Fee $1\uFFFD00 each", "Fee $1.00 each")).toBe(true);
+      expect(sameTextGlyphBlind("Fee $1\uFFFD\uFFFD00 each", "Fee $1.00 each")).toBe(false);
+      // An older text with no glyph is compared exactly.
+      expect(sameTextGlyphBlind("Overdraft Fee $30", "Overdraft Fee $35")).toBe(false);
+    });
+
+    it("names the newest older copy with Knox rows whose text matches glyph-blind", async () => {
+      const db = vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+        void values;
+        return strings.join("?").includes("normalized_text ~")
+          ? [{ id: 27710, normalized_text: "Another page" }, { id: 27706, normalized_text: older }]
+          : [];
+      });
+      await expect(glyphBlindSameTextCopyOf(db as unknown as Db, { institutionId: 42, sourceDocumentId: 36634, text: repaired })).resolves.toBe(27706);
+      const call = (db.mock.calls[0][0] as unknown as string[]).join("?");
+      expect(call).toContain("older.superseded_by_id = ?");
+      expect(call).toContain("older_fr.outlier_flags ? 'needs_darwin_verification'");
+      expect(db.mock.calls[0].slice(1)).toEqual(expect.arrayContaining([36634, 42]));
+
+      await expect(glyphBlindSameTextCopyOf(db as unknown as Db, { institutionId: 42, sourceDocumentId: 36634, text: "Changed page" })).resolves.toBeNull();
+      const none = vi.fn();
+      await expect(glyphBlindSameTextCopyOf(none as unknown as Db, { institutionId: 42, sourceDocumentId: 36634, text: null })).resolves.toBeNull();
+      expect(none).not.toHaveBeenCalled();
+    });
   });
 });

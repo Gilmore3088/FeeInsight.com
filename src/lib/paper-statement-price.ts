@@ -5,7 +5,7 @@
  * monthly fee of") and filed it as the account's monthly maintenance fee: TD's "Paper statements:
  * $3 monthly fee", "Service charge | $3.00 paper statement fee each statement cycle", "A $2 paper
  * statement fee applies if you are not enrolled in eStatements", "*A monthly fee of $3 applies if you
- * choose to receive paper statements". Knox's rules (v115) and the category guard (v91) read the
+ * choose to receive paper statements". Knox's rules (v116) and the category guard (v92) read the
  * line with this one function, so the two never drift.
  *
  * The price is the paper statement charge when, on its own line:

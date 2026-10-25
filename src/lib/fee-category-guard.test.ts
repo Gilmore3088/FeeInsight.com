@@ -2729,7 +2729,7 @@ describe("guard v90: a return charge in a collection section, and a box-named la
   });
 });
 
-describe("guard v91: a maintenance fee its own line prices as the paper statement charge (#1947)", () => {
+describe("guard v92: a maintenance fee its own line prices as the paper statement charge (#1947)", () => {
   const line = (excerpt: string, amount: number): CategoryGuardContext => ({ amount, conditions: `Knox deterministic extraction. canonical_hint=monthly_maintenance; excerpt="${excerpt}"` });
   // Live monthly maintenance fees (Oct 25), each borne out by its bank's stored text.
   const paper: Array<[number, string, number, string]> = [

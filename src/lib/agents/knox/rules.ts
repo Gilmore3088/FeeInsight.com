@@ -2119,8 +2119,8 @@ function stackedVariantReads(segment: string, cells: string[] | null, priceCount
 }
 
 /**
- * v115 (#1947): a read filed as the account's monthly maintenance fee whose own line prices it as the
- * paper statement charge (`paperStatementPriceOnLine`, the matcher the category guard v91 uses) is the
+ * v116 (#1947): a read filed as the account's monthly maintenance fee whose own line prices it as the
+ * paper statement charge (`paperStatementPriceOnLine`, the matcher the category guard v92 uses) is the
  * paper statement fee, named so: "Service charge | $3.00 paper statement fee each statement cycle"
  * (129872), "A $2 paper statement fee applies if you are not enrolled in eStatements" (107916), "*A
  * monthly fee of $3 applies if you choose to receive paper statements" (128394), "Paper (mailed)
