@@ -1190,6 +1190,44 @@ describe("name retidy v26: all-caps names with another flaw (#1810)", () => {
   });
 });
 
+describe("name retidy v27: all-caps names made of short groups (#1810)", () => {
+  it("is version 27 or later", () => {
+    expect(NAME_RETIDY_STRATEGY.version).toBeGreaterThanOrEqual(27);
+  });
+
+  it("should_title_case_a_short_all_caps_name_with_a_plain_word", () => {
+    // Live on 2026-10-25: 5712 "NSF FEE", 3292 "FAX OUT", 1972 "FED EX FEE", 858 "ATM WD FEE", 5552 "FAX".
+    expect(capsCasedName("NSF FEE")).toBe("NSF Fee");
+    expect(capsCasedName("FAX FEE")).toBe("Fax Fee");
+    // "Fax In" ends on a joining word, which the cut-off test reads as a cut name, so it waits.
+    expect(casedCapsName("FAX IN")).toBe("Fax in");
+    expect(capsCasedName("FAX IN")).toBeNull();
+    expect(capsCasedName("FAX OUT")).toBe("Fax Out");
+    expect(capsCasedName("FED EX FEE")).toBe("Fed Ex Fee");
+    expect(capsCasedName("ATM WD FEE")).toBe("ATM WD Fee");
+    expect(capsCasedName("FAX")).toBe("Fax");
+    // A footnote number is left for the rest of the tidy.
+    expect(capsCasedName("NSF FEE1")).toBeNull();
+    expect(casedCapsName("NSF FEE1")).toBe("NSF Fee1");
+  });
+
+  it("should_leave_a_name_of_acronyms_only", () => {
+    for (const name of ["NSF", "ATM", "NSF ACH", "ACH NSF", "ATM/POS NSF", "CD ROM", "NCB ATM", "NON CO OP ATM", "NSF, RTN, ATM", "NSF/ODP", "ATM W/D"]) {
+      expect(casedCapsName(name)).toBeNull();
+    }
+  });
+
+  it("should_rename_a_short_all_caps_fee_its_page_prints", () => {
+    const page = [{ source_document_id: 1, normalized_text: "NSF FEE $25.00\nNSF FEE1 $35.00\nFAX OUT $1.00" }];
+    const nsf = fee({ fee_published_id: 41, source_document_id: 1, canonical_fee_key: "nsf", fee_name: "NSF FEE", amount: 25 });
+    const fax = fee({ fee_published_id: 42, source_document_id: 1, canonical_fee_key: "document_reproduction", fee_name: "FAX OUT", amount: 1 });
+    expect(planRetidy([nsf, fax], page).renames.map((rename) => [rename.oldName, rename.newName])).toEqual([
+      ["NSF FEE", "NSF Fee"],
+      ["FAX OUT", "Fax Out"],
+    ]);
+  });
+});
+
 describe("brandCased (v20)", () => {
   it("keeps a real lower-case brand prefix the stored name holds", () => {
     expect(brandCased("MyChance Checking fee", "2A myChance Checking fee")).toBe("myChance Checking fee");
