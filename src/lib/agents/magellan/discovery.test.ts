@@ -1223,7 +1223,7 @@ describe("Magellan agentic discovery", () => {
       const db = staleDb();
       const fetchImpl = site({
         "https://oldbank.example/": () => response('<a href="/disclosures/fee-schedule">Fee Schedule</a>'),
-        "https://oldbank.example/disclosures/fee-schedule": () => response(FEE_TABLE),
+        "https://oldbank.example/disclosures/fee-schedule": () => response(`<p>Effective March 1, 2026</p>${FEE_TABLE}`),
       });
 
       const result = await runMagellanDiscovery({ runId: 122, db: asDiscoveryDb(db), fetchImpl, politeDelayMs: 0 });
@@ -1252,6 +1252,194 @@ describe("Magellan agentic discovery", () => {
       expect(texts.some((text) => text.includes("UPDATE institution_sources"))).toBe(false);
       expect(attempts(db).length).toBeGreaterThan(0);
       expect(attempts(db).every((attempt) => attempt.detail.freshness_search === FRESHNESS_SEARCH_VERSION)).toBe(true);
+    });
+
+    it("searches behind a link whose document states a date over two years old, once its columns exist (#1878)", async () => {
+      const datedBank = { ...staleBank, url_year: null, effective_year: null, stated_date: "2023-07-01", stated_date_basis: "effective_statement", stated_stale: true, searched_at: null };
+      const db = createDbMock([], learningHandler((text) => {
+        if (text.includes("information_schema.columns") && text.includes("stated_date_version")) return [{ ready: true }];
+        return text.includes("stale-link freshness search") ? [datedBank] : undefined;
+      }));
+      const result = await runMagellanDiscovery({ runId: 128, dryRun: false, db: asDiscoveryDb(db), fetchImpl: site({}), politeDelayMs: 0 });
+      expect(result.results.map((row) => Number(row.institutionId))).toContain(78);
+      const texts = db.mock.calls.map((c) => templateText(c[0]));
+      expect(texts.find((text) => text.includes("stale-link freshness search"))).toMatch(/stated_stale AND searched_at IS NULL/);
+      // The arm reads the link's own current document, never a companion.
+      const arm = texts.find((text) => text.includes("FROM source_documents stated_doc"))!;
+      expect(arm).toContain("stated_doc.companion_source_id IS NULL");
+      expect(arm).toContain("stated_doc.id = profile.last_successful_source_document_id");
+      expect(texts.some((text) => text.includes("stated_doc.stated_date_version ="))).toBe(true);
+      expect(attempts(db).some((attempt) => attempt.detail.stale_reason === "schedule dated 2023-07-01 (effective_statement)")).toBe(true);
+    });
+
+    describe("a search the stated date started replaces the link only with a later-dated page (#2615 review)", () => {
+      const datedBank = { ...staleBank, url_year: null, effective_year: null, stated_date: "2022-01-01", stated_date_basis: "effective_statement", stated_stale: true, searched_at: null };
+      const datedDb = () =>
+        createDbMock([], learningHandler((text) => {
+          if (text.includes("information_schema.columns") && text.includes("stated_date_version")) return [{ ready: true }];
+          return text.includes("stale-link freshness search") ? [datedBank] : undefined;
+        }));
+      const siteWith = (page: string) =>
+        site({
+          "https://oldbank.example/": () => response('<a href="/disclosures/fee-schedule">Fee Schedule</a>'),
+          "https://oldbank.example/disclosures/fee-schedule": () => response(page),
+        });
+      const updates = (db: DbMock) => db.mock.calls.map((call) => templateText(call[0])).filter((text) => text.includes("UPDATE institution_sources"));
+
+      it("replaces it with a page that states a later date", async () => {
+        const db = datedDb();
+        const result = await runMagellanDiscovery({ runId: 140, db: asDiscoveryDb(db), fetchImpl: siteWith(`<p>Effective March 1, 2026</p>${FEE_TABLE}`), politeDelayMs: 0 });
+        expect(result.results[0]).toMatchObject({ outcome: "discovered", url: "https://oldbank.example/disclosures/fee-schedule" });
+        expect(updates(db).length).toBeGreaterThan(0);
+        expect(result.statedDateRefusals).toEqual([]);
+        expect(attempts(db).at(-1)!.detail.stated_date_check).toMatchObject({ replaces: true, old_date: "2022-01-01", candidate_date: "2026-03-01" });
+      });
+
+      it("keeps the link when the page found states no date, and records why", async () => {
+        const db = datedDb();
+        const result = await runMagellanDiscovery({ runId: 141, db: asDiscoveryDb(db), fetchImpl: siteWith(FEE_TABLE), politeDelayMs: 0 });
+        expect(result.results[0]).toMatchObject({ outcome: "discovered" });
+        expect(updates(db)).toEqual([]);
+        expect(result.statedDateRefusals).toEqual([
+          expect.objectContaining({ institution_id: 78, replaces: false, candidate_date: null, stale_link: "https://oldbank.example/docs/2021-fee-schedule.pdf" }),
+        ]);
+        expect(attempts(db).at(-1)!.detail.stated_date_check).toMatchObject({ replaces: false, reason: expect.stringMatching(/states no date/) });
+      });
+
+      it("keeps the link when the page found is dated no later than the old one", async () => {
+        const db = datedDb();
+        const result = await runMagellanDiscovery({ runId: 142, db: asDiscoveryDb(db), fetchImpl: siteWith(`<p>Effective June 1, 2020</p>${FEE_TABLE}`), politeDelayMs: 0 });
+        expect(updates(db)).toEqual([]);
+        expect(result.statedDateRefusals[0]).toMatchObject({ replaces: false, candidate_date: "2020-06-01" });
+      });
+
+      it("holds a search the address year started to a page dated after that year, and lets an undated page replace it", async () => {
+        // Only an address year is known: an undated page replaces the link as before the guard.
+        const db = staleDb();
+        const undated = await runMagellanDiscovery({ runId: 143, db: asDiscoveryDb(db), fetchImpl: siteWith(FEE_TABLE), politeDelayMs: 0 });
+        expect(updates(db).length).toBeGreaterThan(0);
+        expect(undated.statedDateRefusals).toEqual([]);
+        expect(attempts(db).at(-1)!.detail.stated_date_check).toMatchObject({ replaces: true, old_date: "2021-01-01", old_basis: "url_year", candidate_date: null });
+        const older = staleDb();
+        const olderResult = await runMagellanDiscovery({ runId: 150, db: asDiscoveryDb(older), fetchImpl: siteWith(`<p>Effective March 1, 2019</p>${FEE_TABLE}`), politeDelayMs: 0 });
+        expect(updates(older)).toEqual([]);
+        expect(olderResult.statedDateRefusals[0]).toMatchObject({ replaces: false, old_basis: "url_year", candidate_date: "2019-03-01" });
+        const sameYear = await runMagellanDiscovery({ runId: 144, db: asDiscoveryDb(staleDb()), fetchImpl: siteWith(`<p>Effective June 1, 2021</p>${FEE_TABLE}`), politeDelayMs: 0 });
+        expect(sameYear.statedDateRefusals[0]).toMatchObject({ replaces: false, candidate_date: "2021-06-01" });
+        const later = staleDb();
+        const laterResult = await runMagellanDiscovery({ runId: 145, db: asDiscoveryDb(later), fetchImpl: siteWith(`<p>Effective January 1, 2022</p>${FEE_TABLE}`), politeDelayMs: 0 });
+        expect(laterResult.statedDateRefusals).toEqual([]);
+        expect(updates(later).length).toBeGreaterThan(0);
+      });
+
+      it("holds a search an effective year started to a page dated after that year", async () => {
+        const effectiveBank = { ...staleBank, url_year: null, effective_year: 2022, searched_at: null };
+        const db = createDbMock([], learningHandler((text) => (text.includes("stale-link freshness search") ? [effectiveBank] : undefined)));
+        const result = await runMagellanDiscovery({ runId: 146, db: asDiscoveryDb(db), fetchImpl: siteWith(`<p>Effective June 1, 2022</p>${FEE_TABLE}`), politeDelayMs: 0 });
+        expect(updates(db)).toEqual([]);
+        expect(result.statedDateRefusals[0]).toMatchObject({ old_date: "2022-01-01", old_basis: "effective_year", candidate_date: "2022-06-01" });
+      });
+
+      it("lets an undated page replace a link the older arm's effective year sent", async () => {
+        const effectiveBank = { ...staleBank, url_year: null, effective_year: 2022, searched_at: null };
+        const db = createDbMock([], learningHandler((text) => (text.includes("stale-link freshness search") ? [effectiveBank] : undefined)));
+        const result = await runMagellanDiscovery({ runId: 151, db: asDiscoveryDb(db), fetchImpl: siteWith(FEE_TABLE), politeDelayMs: 0 });
+        expect(updates(db).length).toBeGreaterThan(0);
+        expect(result.statedDateRefusals).toEqual([]);
+      });
+
+      it("keeps hebfcu's link: its address names 2022 but its text says October 12, 2026 (institution 6072)", async () => {
+        const hebfcu = {
+          ...bank(6072, "https://www.hebfcu.org", {
+            fee_schedule_url: "https://www.hebfcu.org/wp-content/uploads/2022/03/TISA.pdf",
+            profile_canonical_source_url: "https://www.hebfcu.org/wp-content/uploads/2022/03/TISA.pdf",
+          }),
+          url_year: 2022,
+          effective_year: null,
+          stated_date: "2026-10-12",
+          stated_date_basis: "printed_date",
+          stated_stale: false,
+          searched_at: null,
+        };
+        const db = createDbMock([], learningHandler((text) => {
+          if (text.includes("information_schema.columns") && text.includes("stated_date_version")) return [{ ready: true }];
+          return text.includes("stale-link freshness search") ? [hebfcu] : undefined;
+        }));
+        const fetchImpl = site({
+          "https://www.hebfcu.org/": () => response('<a href="/disclosures/fee-schedule">Fee Schedule</a>'),
+          "https://www.hebfcu.org/disclosures/fee-schedule": () => response(`<p>Effective March 1, 2026</p>${FEE_TABLE}`),
+        });
+        const result = await runMagellanDiscovery({ runId: 147, db: asDiscoveryDb(db), fetchImpl, politeDelayMs: 0 });
+        expect(result.results[0]).toMatchObject({ outcome: "discovered", url: "https://www.hebfcu.org/disclosures/fee-schedule" });
+        expect(updates(db)).toEqual([]);
+        expect(result.statedDateRefusals).toEqual([
+          expect.objectContaining({
+            institution_id: 6072,
+            replaces: false,
+            old_date: "2026-10-12",
+            old_basis: "printed_date",
+            candidate_date: "2026-03-01",
+            stale_link: "https://www.hebfcu.org/wp-content/uploads/2022/03/TISA.pdf",
+          }),
+        ]);
+        const attempt = attempts(db).at(-1)!;
+        expect(attempt.detail.stale_reason).toBe("address names 2022");
+        expect(attempt.detail.stated_date_check).toMatchObject({ replaces: false, old_date: "2026-10-12" });
+        // The arm reads the latest date the link's document states, stale or not.
+        const query = db.mock.calls.map((c) => templateText(c[0])).find((text) => text.includes("FROM source_documents stated_doc"))!;
+        expect(query).toContain("AS stated_stale");
+        expect(query).toContain("AND stated_doc.stated_date IS NOT NULL");
+      });
+
+      it("keeps hebfcu's link against an undated page too: its date is printed on the document (institution 6072)", async () => {
+        const hebfcu = {
+          ...bank(6072, "https://www.hebfcu.org", {
+            fee_schedule_url: "https://www.hebfcu.org/wp-content/uploads/2022/03/TISA.pdf",
+            profile_canonical_source_url: "https://www.hebfcu.org/wp-content/uploads/2022/03/TISA.pdf",
+          }),
+          url_year: 2022,
+          effective_year: null,
+          stated_date: "2026-10-12",
+          stated_date_basis: "printed_date",
+          stated_stale: false,
+          searched_at: null,
+        };
+        const db = createDbMock([], learningHandler((text) => {
+          if (text.includes("information_schema.columns") && text.includes("stated_date_version")) return [{ ready: true }];
+          return text.includes("stale-link freshness search") ? [hebfcu] : undefined;
+        }));
+        const fetchImpl = site({
+          "https://www.hebfcu.org/": () => response('<a href="/disclosures/fee-schedule">Fee Schedule</a>'),
+          "https://www.hebfcu.org/disclosures/fee-schedule": () => response(FEE_TABLE),
+        });
+        const result = await runMagellanDiscovery({ runId: 152, db: asDiscoveryDb(db), fetchImpl, politeDelayMs: 0 });
+        expect(updates(db)).toEqual([]);
+        expect(result.statedDateRefusals).toEqual([expect.objectContaining({ institution_id: 6072, replaces: false, old_basis: "printed_date", candidate_date: null })]);
+      });
+
+      it("does not hold a page rates are stamped with today's date over a stated-date search", async () => {
+        const db = datedDb();
+        const result = await runMagellanDiscovery({ runId: 148, db: asDiscoveryDb(db), fetchImpl: siteWith(`<p>Rates current as of October 24, 2026</p>${FEE_TABLE}`), politeDelayMs: 0 });
+        expect(updates(db)).toEqual([]);
+        expect(result.statedDateRefusals[0]).toMatchObject({ replaces: false, candidate_date: null });
+      });
+
+      it("does not hold a wrong-document search to a date", async () => {
+        const wrongBank = { ...staleBank, url_year: 2021, effective_year: null, wrong_at: "2026-10-07T05:00:00Z", confirmed_at: "2026-10-07T05:00:00Z", searched_at: null };
+        const db = createDbMock([], learningHandler((text) => (text.includes("stale-link freshness search") ? [wrongBank] : undefined)));
+        const result = await runMagellanDiscovery({ runId: 149, db: asDiscoveryDb(db), fetchImpl: siteWith(FEE_TABLE), politeDelayMs: 0 });
+        expect(updates(db).length).toBeGreaterThan(0);
+        expect(result.statedDateRefusals).toEqual([]);
+        expect(attempts(db).every((attempt) => attempt.detail.stated_date_check === undefined)).toBe(true);
+      });
+    });
+
+    it("leaves the stated-date arm out before its columns exist", async () => {
+      const db = staleDb();
+      await runMagellanDiscovery({ runId: 129, dryRun: false, db: asDiscoveryDb(db), fetchImpl: site({}), politeDelayMs: 0 });
+      const texts = db.mock.calls.map((c) => templateText(c[0]));
+      expect(texts.some((text) => text.includes("FROM source_documents stated_doc"))).toBe(false);
+      expect(texts.some((text) => text.includes("NULL::date AS stated_date"))).toBe(true);
     });
   });
 
