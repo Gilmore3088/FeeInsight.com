@@ -486,4 +486,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-1946-glued-footnote-is-not-a-price",
+    agent: "knox",
+    stage: "extract",
+    lesson: "A superscript footnote loses its formatting in stored text and lands glued to the price before it: \"$0³ or $10\" becomes \"$03 or $10\". No schedule prints a whole-dollar price with a leading zero, so read \"$0\" followed by one or two digits (no cents, no comma) as a $0 price with its footnote, never as the footnote's number. A zero-padded price whose point was dropped (\"$ 050 00\") is a real price and stays.",
+    why: "North State Bank's monthly fee went live at $3 from \"$0³ or $10\", and Penn Community Bank's network ATM fee at $1 from \"$0¹\"; three banks were taken down by hand before the layout was named, and the shared check traced each one to the footnote.",
+    evidence: { issues: [1946, 2067], prs: [2584], files: ["src/lib/custom-report/glued-footnote-price.ts", "src/lib/agents/knox/specialists.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];
