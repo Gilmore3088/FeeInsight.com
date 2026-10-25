@@ -1827,5 +1827,5 @@ fails a PR that changes one of these constants without updating its line here (#
 | `CANADIAN_DOCUMENT_CHECK_VERSION` | `darwin.canadian_document` | v1 | `darwin/canadian-document-check.ts` |
 | `DOCUMENT_OWNER_STRATEGY` | `verify.document_owner` | v1 | `darwin/document-owner.ts` |
 | `DARWIN_VERIFY_STRATEGY` | `verify.rules` | v3 | `darwin/verify.ts` |
-| `DARWIN_SOURCE_CHECK_VERSION` | — | v2 | `darwin/verify.ts` |
+| `DARWIN_SOURCE_CHECK_VERSION` | — | v3 | `darwin/verify.ts` |
 | `DARWIN_BATCH_KEY_VERSION` | — | v4 | `darwin/verify.ts` |
