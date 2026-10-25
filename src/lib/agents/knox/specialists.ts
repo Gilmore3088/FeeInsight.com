@@ -1,6 +1,7 @@
 import { feeApplicability } from "@/lib/fee-audience";
 import {
   billPayByHeading,
+  checkingNamePriceAmbiguous,
   extractCandidatesFromText,
   recognizedFeeBullets,
   isUnpricedHeldShape,
@@ -266,7 +267,14 @@ import { withGluedFootnotePrices } from "@/lib/custom-report/glued-footnote-pric
 // checking or other title it stays as before; a short product heading ("Visa") is such a title, and a
 // lone title under two side-by-side columns heads neither. Adds reads only. The stale-read floor stays at
 // v97. Name re-tidy stays at v27.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 109 } as const;
+// v110 (#1918): a fee named for the checking account itself ("MAX Checking Fee (per month)", "Platinum
+// Checking Fee", Bellco FCU) is that account's monthly fee (`CHECKING_ACCOUNT_FEE_NAME`); "$15K" is a
+// balance, never a $15 price; and a waiver bracketed inside a name's own cell stops at that cell, so
+// the price in the next cell is read. An ambiguous checking-named price (activity-triggered, tiered,
+// a percentage, a second price, an opening charge) is held (`checkingNamePriceAmbiguous`). The
+// held-line recheck promotes held lines this files, only from a page's current copy; a page's dropped
+// line returns when the page is read again. The stale-read floor stays at v97. Name re-tidy stays at v27.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 110 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -679,6 +687,16 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
     held.push({ shape: "eligibility", feeName: read.feeName, amount: read.amount, amountMax: null,
       percent: null, frequency: read.frequency, canonicalHint: read.canonicalHint,
       excerpt: formula.ownText, ownedPolicy: true, lineShare: read.lineShare });
+  }
+  // v110 (#1918): a checking account's named fee printed with a condition, a band, a percentage, a
+  // second price or an opening charge is held for review, not sent to Darwin as a monthly fee.
+  for (let at = candidates.length - 1; at >= 0; at--) {
+    const read = candidates[at];
+    if (read.canonicalHint !== "monthly_maintenance" || !checkingNamePriceAmbiguous(read.excerpt, read.feeName, read.amount)) continue;
+    candidates.splice(at, 1);
+    held.push({ shape: "eligibility", feeName: read.feeName, amount: read.amount, amountMax: null,
+      percent: null, frequency: read.frequency, canonicalHint: read.canonicalHint, excerpt: read.excerpt,
+      ownedPolicy: true, lineShare: read.lineShare });
   }
   const monthlyOwnerReview = monthlyAccountOwnerReview(text, institutionName);
   for (const candidate of candidates) {

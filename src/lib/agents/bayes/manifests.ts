@@ -471,6 +471,7 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // not yet checked at v18.
   // v20 (#1916): a fee never takes the other column's price on a two-column page; same fingerprint path.
   // v23 (#1479): a name | description | price row stays one fee's row; same fingerprint path.
+  // v24 (#1918): "$15K" or "$1.5M" is a balance, never a price; same fingerprint path.
   SOURCE_CHECK_STRATEGY: "Its fingerprint carries the version, so each publish step's batch re-checks every institution not yet checked at the new version; nothing to replay.",
   // v3 (#1810): headings over an opening deposit, "Interest Checking" and numbered accounts name a fee.
   ACCOUNT_NAME_STRATEGY: "Its fingerprint carries the version, so each publish step's batch (40 institutions) re-reads every institution with a generic monthly name not yet read at v3; nothing to replay.",
