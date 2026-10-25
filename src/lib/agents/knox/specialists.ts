@@ -263,8 +263,9 @@ import { withGluedFootnotePrices } from "@/lib/custom-report/glued-footnote-pric
 // (`loanReturnedPaymentRows`, `loan-section-rows.ts`). Before this the row named no category and
 // said no fee word, so it was dropped (Oregon Community FCU's "Returned payment…… $4.95", docs
 // 13272, 19849, 21634). The nearest title in the row's own column decides: under a credit card,
-// checking or other title it stays as before. Adds reads only. The stale-read floor stays at v97.
-// Name re-tidy stays at v26.
+// checking or other title it stays as before; a short product heading ("Visa") is such a title, and a
+// lone title under two side-by-side columns heads neither. Adds reads only. The stale-read floor stays at
+// v97. Name re-tidy stays at v27.
 export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 109 } as const;
 
 export interface SpecialistRun {

@@ -785,6 +785,30 @@ describe("v109: a returned payment row under a loan section's title is the loan'
     expect(returned(secured)).toEqual([]);
   });
 
+  it("stops a loan title at a short product heading and at a lone title under two columns (texts 1382, 26312)", () => {
+    // Institution 6794: "Loans", its rows, then "Visa" and the card's own returned payment fee.
+    const cesfcu = ["Loans", "Loan Application Fee $25.00", "Loan Skip A Payment $25.00", "Visa", "Visa Application Fee $25.00", "Card Replacement Fee $15.00", "Returned Payment Fee $25.00"].join("\n");
+    expect(returned(cesfcu)).toEqual([]);
+    expect(returned(cesfcu.replace("Visa\n", "Visa Platinum Credit Card Fees\n"))).toEqual([]);
+    // Institution 4410: a flattened two-column page. "Secured Loan" under two columns heads neither, and
+    // "First Mortgage Fees" with a sentence beside it is a row, not a title.
+    const flattened = [
+      "ATM / Debit Cards | - Quick Loan | $50",
+      "Card Replacement Fee | $15 ea. | - | $125",
+      "Secured Loan",
+      "Foreign Transaction Fee | 1% of the transaction",
+      "First Mortgage Fees | Call for current schedule.",
+      "Emergency Replacement Fee | $40",
+      "Late Payment | $30",
+      "ATM Withdrawals",
+      "Returned Payment | $25",
+    ].join("\n");
+    expect(returned(flattened)).toEqual([]);
+    // A loans title right after a one-column table with a unit cell still heads its rows (text 2847).
+    const loans = ["Out-of-Network ATM Usage Fee | $2.50 | Per transaction", "Loans", "Late Payment | Up to $25", "Collection Fee | $25 | Per item", "Returned Payment | $25 | Per item"].join("\n");
+    expect(returned(loans)).toEqual([["Returned Payment", 25, "other_lending_fee"]]);
+  });
+
   it("never reads a cap or a choice of prices this way", () => {
     expect(loanReturnedPaymentRows(["Loan Services", "Returned Payment Fee | Up to $35.00"])).toEqual([]);
     expect(loanReturnedPaymentRows(["Personal Loans", "Returned Payment Fee: $15.00 or the amount of the required minimum payment, whichever is less"])).toEqual([]);

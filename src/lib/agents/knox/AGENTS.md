@@ -294,11 +294,16 @@ fee word, so the row was dropped: Oregon Community FCU prints "Returned payment�
 line's first cell is the left column, any later cell the right; a full-width title heads the left
 and ends the right's). A title is a short cell with no figure or leader that ends in "fees",
 "charges", "services", "cards" or "accounts", is in capitals, or names loans alone, and never a
-cell with a price beside it ("LATE PAYMENT | $20.00"). Under a credit card, checking or other title
-the row stays as before, and a cap ("Up to $25"), a sentence or a choice ("$15 or the minimum
-payment") is never read this way. Adds reads only. Dry run (read-only, Oct 25, windows of the 415
-bare returned payment rows in 354 stored texts): new reads at 6 banks, 5 with no returned payment
-fee live (6833, 5888, 622, 431, 7209); Oregon's matches live 83794. No live fee changes.
+cell with a price or a sentence beside it ("LATE PAYMENT | $20.00", "First Mortgage Fees | Call for
+current schedule."). A short heading that names a card or deposit product ("Visa", "Debit Cards",
+"Share Account") is a non-loan title, so "Loans … Visa … Returned Payment Fee $25.00" (institution
+6794) stays unread; a lone title right under two columns side by side heads neither column
+(institution 4410's flattened page). Under a credit card, checking or other title the row stays as
+before, and a cap ("Up to $25"), a sentence or a choice ("$15 or the minimum payment") is never
+read this way. Adds reads only. Dry run (read-only, Oct 25, the rules run on windows around the
+stored texts' bare returned payment rows; a window count, so it may be low): new reads at 12
+institutions. Oregon's (7859) matches live 83794; the other 11 have no returned payment fee live
+(431, 622, 5888, 5943, 6705, 6833, 7174, 7209, 7607, 8078, 8533). No live fee changes.
 
 v104 (Oct 22): a read whose name `isCutoffName` reads as cut off is held at publish (Hamilton's
 `cutoff_name`) however right its category and price. `withoutGluedSentence` (`glued-sentence-name.ts`,
