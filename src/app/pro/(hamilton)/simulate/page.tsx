@@ -8,16 +8,19 @@ import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
 import { isSavedArtifactId, resolveArtifactContextInstitutionId } from "@/lib/hamilton/artifact-context";
 import { layerDates, loadFeeWorkspace } from "@/lib/hamilton/fee-workspace-data";
 import { buildAuditTrail } from "@/lib/hamilton/audit-trail";
-import { belowPeerMinimum, defaultLayer, parseLayer } from "@/lib/hamilton/research-layers";
+import { belowPeerMinimum, defaultLayer, parseLayer, thinLayerText } from "@/lib/hamilton/research-layers";
 import { feeIncomeAssumptions, modelScenario } from "@/lib/hamilton/fee-scenario";
 import { buildImplementationPlan } from "@/lib/hamilton/implementation-plan";
 import { defaultPrices, parseCount, parsePercent, parsePrices } from "@/lib/hamilton/model-params";
 import { getHamiltonScenarioById } from "@/lib/hamilton/pro-tables";
 import { buildFeeAnswer } from "@/lib/hamilton/workspace/answer";
+import { proseFeeName } from "@/lib/hamilton/workspace/names";
 import { institutionFactsFrom } from "@/lib/hamilton/workspace/ask";
 import { getMemoryFacts } from "@/lib/data-store/hamilton-workspace";
 import { ExhibitView } from "@/components/hamilton/memo/exhibit-view";
 import { PositionCheckPanel } from "@/components/hamilton/PositionCheckPanel";
+import { AddToReportButton } from "@/components/hamilton/basket/AddToReportButton";
+import { basketItemId } from "@/lib/hamilton/report-basket";
 import { checkPosition, parseProposedFee } from "@/lib/hamilton/position-check";
 import { DatasetNote } from "@/components/hamilton/DatasetNote";
 import {
@@ -119,6 +122,8 @@ export default async function ModelPage({ searchParams }: PageProps) {
   const instId = inst ? String(inst.id) : null;
   const layerKey = params.layer ? parseLayer(params.layer) : defaultLayer(ws.layers);
   const layer = ws.layers.find((l) => l.key === layerKey) ?? ws.layers[ws.layers.length - 1];
+  // A thin layer's note and named institutions, worked out once.
+  const thinText = thinLayerText(layer, fmtMoney);
 
   const current = ws.ownAmount;
   // Figures typed here win; otherwise the ones the bank saved (an answer or an upload).
@@ -222,7 +227,7 @@ export default async function ModelPage({ searchParams }: PageProps) {
     <MemoPage>
       <MemoHeader
         kicker={`Try a price · ${ws.feeName}`}
-        title={`Test any ${ws.feeName.toLowerCase()} price side by side`}
+        title={`Test any ${proseFeeName(ws.fee)} price side by side`}
         dek={
           current != null
             ? `Today ${inst?.name ?? "your institution"} charges ${fmtMoney(current)}. See where each price would sit against published fees. Fee income appears only when you add your own yearly volume.`
@@ -290,6 +295,17 @@ export default async function ModelPage({ searchParams }: PageProps) {
       </form>
 
       <MemoSection title="Side by side" note={`Against ${layer.label.toLowerCase() === "national" ? "every institution nationally" : layer.label}: ${layer.scope} (${layer.n}).`}>
+        {/* Too few for a median (5 local, 10 elsewhere): the count and, where the engine lists them, the names stand in. */}
+        {thinText ? (
+          <div className="flex flex-col gap-1 text-sm text-warm-800">
+            <p>{thinText.note}</p>
+            {thinText.names ? (
+              <p>
+                <span className="font-medium text-warm-900">Each institution, lowest price first:</span> {thinText.names}.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
         <div className="flex flex-col gap-6 rounded-lg border border-warm-300 bg-warm-50 p-5">
           <PriceStrip
             amounts={layer.amounts}
@@ -418,6 +434,22 @@ export default async function ModelPage({ searchParams }: PageProps) {
         invalid={Boolean(params.check) && proposed === null}
         unavailable={membersComplete ? null : "Peer list not available for this group, so a proposed fee cannot be placed by name. Choose another comparison below."}
       />
+      {positionCheck && proposed !== null && instId ? (
+        // #1899: the report re-reads the peers on the server and prints this as the reader's own test.
+        <div className="-mt-4 flex justify-end">
+          <AddToReportButton
+            item={{
+              id: basketItemId("Test", instId, ws.fee, proposed),
+              source: "Test",
+              title: `${ws.feeName}: test of ${fmtMoney(proposed)}`,
+              detail: "",
+              feeCategory: ws.fee,
+              institutionId: instId,
+              proposedFee: proposed,
+            }}
+          />
+        </div>
+      ) : null}
 
       <AuditPanel trail={trail} downloadHref={csvHref} />
 

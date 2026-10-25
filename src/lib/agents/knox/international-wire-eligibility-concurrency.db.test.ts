@@ -5,8 +5,9 @@ import { createHash } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { RawFeeRow } from "../darwin/verify";
 
-// The custom types every connection here is opened with (connection.ts); a bare `postgres.Sql` is `Sql<{}>`, which TypeScript may refuse a typed connection.
-type PgTypes = { numeric: number; json: unknown; text: string };
+// Handles opened with the app client's custom types; a bare postgres.Sql is Sql<{}> (#2657).
+type TypedSql = postgres.Sql<{ numeric: number; json: unknown; text: string }>;
+
 
 const connection = process.env.E2E_DATABASE_URL;
 type Db = typeof import("@/lib/data-store/connection").sql;
@@ -22,9 +23,9 @@ function deferred<T>() {
 }
 
 describe.skipIf(!connection)("International applicability hold and Darwin concurrency (#2278)", () => {
-  let observer: postgres.Sql<PgTypes>;
-  let firstConnection: postgres.Sql<PgTypes>;
-  let secondConnection: postgres.Sql<PgTypes>;
+  let observer: TypedSql;
+  let firstConnection: TypedSql;
+  let secondConnection: TypedSql;
   let appSql: Db;
   let extract: typeof import("./extract");
   let darwin: typeof import("../darwin/verify");
@@ -111,7 +112,7 @@ describe.skipIf(!connection)("International applicability hold and Darwin concur
     return darwin.insertVerifiedFee(tx, { runId: fixture.runId, row, canonicalFeeKey, sourceText: TEXT });
   };
 
-  async function attemptVerify(client: postgres.Sql<PgTypes>, fixture: Fixture, legacy = false, canonicalFeeKey = "wire_intl_outgoing") {
+  async function attemptVerify(client: TypedSql, fixture: Fixture, legacy = false, canonicalFeeKey = "wire_intl_outgoing") {
     return client.begin(tx => verify(tx as unknown as Db, fixture, legacy, canonicalFeeKey))
       .then(id => ({ kind: "completed" as const, id }), error => {
         if ((error as Error)?.constructor?.name === "VerificationAudienceDeferred") return { kind: "deferred" as const };

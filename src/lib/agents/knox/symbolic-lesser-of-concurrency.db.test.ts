@@ -5,9 +5,6 @@ import { createHash } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { RawFeeRow } from "../darwin/verify";
 
-// The custom types every connection here is opened with (connection.ts); a bare `postgres.Sql` is `Sql<{}>`, which TypeScript may refuse a typed connection.
-type PgTypes = { numeric: number; json: unknown; text: string };
-
 const connection = process.env.E2E_DATABASE_URL;
 type Db = typeof import("@/lib/data-store/connection").sql;
 const SOURCE_URL = "https://example.invalid/symbolic-lesser-concurrency-fees";
@@ -21,10 +18,13 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+// The handles carry the app client's custom types; a bare postgres.Sql is Sql<{}> (#2657).
+type TypedSql = postgres.Sql<{ numeric: number; json: unknown; text: string }>;
+
 describe.skipIf(!connection)("Symbolic lesser-of hold and Darwin concurrency (#2335)", () => {
-  let observer: postgres.Sql<PgTypes>;
-  let firstConnection: postgres.Sql<PgTypes>;
-  let secondConnection: postgres.Sql<PgTypes>;
+  let observer: TypedSql;
+  let firstConnection: TypedSql;
+  let secondConnection: TypedSql;
   let appSql: Db;
   let extract: typeof import("./extract");
   let darwin: typeof import("../darwin/verify");

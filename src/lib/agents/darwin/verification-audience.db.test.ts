@@ -9,8 +9,9 @@ import {
   } from "./verification-audience";
 import type { RawFeeRow } from "./verify";
 
-// The custom types every connection here is opened with (connection.ts); a bare `postgres.Sql` is `Sql<{}>`, which TypeScript may refuse a typed connection.
-type PgTypes = { numeric: number; json: unknown; text: string };
+// Handles opened with the app client's custom types; a bare postgres.Sql is Sql<{}> (#2657).
+type TypedSql = postgres.Sql<{ numeric: number; json: unknown; text: string }>;
+
 
 vi.mock("@/lib/agents/fee-source-fetch", async original => ({
   ...await original<typeof import("@/lib/agents/fee-source-fetch")>(),
@@ -23,7 +24,7 @@ const hash = (text: string) => createHash("sha256").update(text).digest("hex");
 const own = "Check Images\n• $10.00 (Consumer Only) per statement";
 
 describe.skipIf(!connection)("prospective own-price audience admission in real PostgreSQL (#2342)", () => {
-  let db: postgres.Sql<PgTypes>;
+  let db: TypedSql;
   let appSql: Db;
   let verify: typeof import("./verify");
   let release: typeof import("./release-held");

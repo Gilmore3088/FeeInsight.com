@@ -4,8 +4,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { JSON_TEXT_PASSTHROUGH, NUMERIC_AS_NUMBER, TEXT_WITHOUT_NUL } from "@/lib/data-store/connection";
 import { dropExpiredLegacyPartitions, PARTITION_DROPPED_EVENT, retentionCutoff } from "./legacy-event-partitions";
 
-// The custom types every connection here is opened with (connection.ts); a bare `postgres.Sql` is `Sql<{}>`, which TypeScript may refuse a typed connection.
-type PgTypes = { numeric: number; json: unknown; text: string };
+// Handles opened with the app client's custom types; a bare postgres.Sql is Sql<{}> (#2657).
+type TypedSql = postgres.Sql<{ numeric: number; json: unknown; text: string }>;
+
 
 const connection = process.env.E2E_DATABASE_URL;
 type Db = Parameters<typeof dropExpiredLegacyPartitions>[0]["db"];
@@ -16,14 +17,14 @@ const NOW = new Date("2026-10-19T08:00:00Z");
 const MONTHS = ["2026_04", "2026_05", "2026_06", "2026_07", "2026_08", "2026_09", "2026_10", "2026_11"];
 const context = { runId: 1, stepId: 10, stepKey: "atlas-storage-retention" };
 
-async function children(db: postgres.Sql<PgTypes>): Promise<string[]> {
+async function children(db: TypedSql): Promise<string[]> {
   const rows = await db<{ relname: string }[]>`
     SELECT c.relname FROM pg_inherits i JOIN pg_class c ON c.oid = i.inhrelid
      WHERE i.inhparent = to_regclass('public.agent_events') ORDER BY c.relname`;
   return rows.map((row) => row.relname);
 }
 
-const call = (db: postgres.Sql<PgTypes>, partition: string, cutoff: string) =>
+const call = (db: TypedSql, partition: string, cutoff: string) =>
   db`SELECT public.drop_expired_legacy_event_partition(${partition}::regclass, ${cutoff}::timestamptz)`;
 
 describe.skipIf(!connection)("legacy event-log partition drop in isolated PostgreSQL", () => {

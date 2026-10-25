@@ -11,17 +11,16 @@ import { validCorrectiveReceipt, fixtureArtifact, evidenceHash, encodedBytes, ty
 import * as correctivePolicy from "./corrective-source";
 import { JSON_TEXT_PASSTHROUGH, NUMERIC_AS_NUMBER, TEXT_WITHOUT_NUL } from "@/lib/data-store/connection";
 
-// The custom types every connection here is opened with (connection.ts); a bare `postgres.Sql` is `Sql<{}>`, which TypeScript may refuse a typed connection.
-type PgTypes = { numeric: number; json: unknown; text: string };
-
 const connection = process.env.E2E_DATABASE_URL;
 const INST = 20640001, DOC = 20640101;
 const EVENT = "00000000-0000-4000-8000-000020640001";
 const TEXT = "OTHER SERVICES\nWire Transfer | $25.00\nStop Payment Fee | $35.00";
 type Db = Parameters<typeof correctPublishedFee>[0];
+// The handle carries the app client's custom types; a bare postgres.Sql is Sql<{}> (#2657).
+type TypedSql = postgres.Sql<{ numeric: number; json: unknown; text: string }>;
 
 describe.skipIf(!connection)("prospective corrective source context in actual PostgreSQL", () => {
-  let raw: postgres.Sql<PgTypes>, db: Db, oldId: number, correctionId: number, originRunId: number;
+  let raw: TypedSql, db: Db, oldId: number, correctionId: number, originRunId: number;
   let metadataSql=""; let metadataParams:unknown[]=[];
   async function anotherCorrection(key: string = randomUUID(), evidenceDoc = DOC) {
     const event = randomUUID();
