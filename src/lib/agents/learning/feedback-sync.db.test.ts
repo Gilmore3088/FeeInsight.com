@@ -14,7 +14,8 @@ const DOC = 20164802;
 const EVENT = "00000000-0000-4000-8000-000016480001";
 type Db = Parameters<typeof syncPipelineFeedback>[0];
 type Raw = postgres.Sql<{ numeric: number; json: unknown; text: string }>;
-type Tx = postgres.TransactionSql<{ numeric: number; json: unknown; text: string }>;
+// postgres.js omits the tag call signature from TransactionSql, so a transaction is typed as the pool.
+type Tx = Raw;
 
 class Rollback extends Error {}
 
@@ -35,7 +36,7 @@ describe.skipIf(!connection)("feedback sync takedown cycles in isolated PostgreS
   /** Runs `work` in a transaction and always rolls it back. */
   async function rolledBack(work: (tx: Tx) => Promise<void>) {
     await raw.begin(async (tx) => {
-      await work(tx);
+      await work(tx as unknown as Tx);
       throw new Rollback();
     }).catch((error) => {
       if (!(error instanceof Rollback)) throw error;
