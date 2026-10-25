@@ -52,8 +52,18 @@ texts, 1,096 are restored and 34 stay (scan noise, web addresses, words outside 
 current copies at 100 institutions (121 with U+FFFD, 52 with only a U+FB00-U+FB06 ligature), 172
 of them in the vault: free reads, no provider spend.
 
+**With #2477's same-text rule (merged first):** older copies of a page are never read again, so
+their stored text keeps the glyphs a new read of the page now restores, and the new copy's text
+hash no longer equals the older copy's. Without a fix, the next copy of such a page would lose the
+rule and be rejected by the product-page check. A read now also matches an older Knox copy
+glyph-blind when the exact hash finds none (`sameTextGlyphBlind` in
+`src/lib/agents/rosetta/same-text-copy.ts`). Glyph-lane re-reads of completed texts were already
+safe: their earlier text is kept on a rejection and the bank is not sent back. Prod, 25 Oct
+(read-only): 21 current copies at 20 banks have a same-text older Knox copy whose text carries
+U+FFFD or a ligature, 7 of them `wrong_document`.
+
 **Not yet known:** whether the old garbled live rows fold into the new correctly named ones or
 are taken down by Darwin's live re-check when the excerpt no longer matches the new text. That is
 measured after the wave.
 
-**Guard:** `src/lib/agents/rosetta/glyph-repair.test.ts`, `src/lib/agents/rosetta/read.test.ts`
+**Guard:** `src/lib/agents/rosetta/glyph-repair.test.ts`, `src/lib/agents/rosetta/same-text-copy.test.ts`, `src/lib/agents/rosetta/read.test.ts`

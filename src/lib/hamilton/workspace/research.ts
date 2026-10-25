@@ -935,6 +935,40 @@ export async function getEngineFeePeers(
   };
 }
 
+/** The one peer group's values for each fee asked about, for the fee position fingerprint (#1894). */
+export interface EnginePeerGroupRead {
+  institutionName: string;
+  /** The group's name: the saved peer set's when there is one. */
+  peerLabel: string;
+  /** True when the group is the saved peer set from Settings. */
+  saved: boolean;
+  fees: { feeCategory: string; peers: PeerValue[] }[];
+}
+
+/**
+ * The same group every screen uses (#1893): the saved peer set first, else the default group,
+ * with each fee's peer values. Only the peer read; no financials, wire or local market.
+ * Deterministic, no provider calls.
+ */
+export async function getEnginePeerGroup(
+  institutionId: number,
+  categories: string[],
+  options: EnginePeerOptions = {},
+): Promise<EnginePeerGroupRead | null> {
+  if (categories.length === 0) return null;
+  const base = await loadBase(institutionId, categories, options);
+  if (!base) return null;
+  return {
+    institutionName: base.institutionName,
+    peerLabel: base.peerLabel,
+    saved: [...base.peers.values()].some((p) => p.saved),
+    fees: categories.map((feeCategory) => ({
+      feeCategory,
+      peers: (base.peers.get(feeCategory)?.values ?? []).map(toPeerValue),
+    })),
+  };
+}
+
 export async function getWorkspaceBriefing(
   institutionId: number,
   now = new Date(),

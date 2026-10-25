@@ -274,6 +274,12 @@ function narrateFinished(
       const tied = correctness ? ` ${n(correctness, "correct")} of ${n(correctness, "checked")} checked tie to the live catalog.` : "";
       return `Asked Hamilton ${count(n(detail, "answers"), "question")} for ${count(n(detail, "institutions"), "institution")}; ${n(detail, "passed")} answers met the bar.${tied}`;
     }
+    case "hamilton-gate-replay": {
+      const today = (detail.today ?? null) as Detail | null;
+      const status = (today?.byStatus ?? null) as Detail | null;
+      if (!today || !status) return "Replayed real questions through the one output gate.";
+      return `Replayed ${count(n(today, "total"), "answer")} through the one output gate today: ${n(status, "validated")} validated, ${n(status, "ready_partial")} partial, ${n(status, "held")} held.`;
+    }
     case "hamilton-paid-answer-eval": {
       if (typeof detail.note === "string") return detail.note;
       const memo = (Array.isArray(detail.paths) ? detail.paths[0] : null) as Detail | null;
@@ -798,6 +804,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "scoreboard-snapshot": "atlas",
   "hamilton-answer-eval": "hamilton",
   "hamilton-paid-answer-eval": "hamilton",
+  "hamilton-gate-replay": "hamilton",
   "study-fee-dependence": "hamilton",
   "study-local-income": "hamilton",
   "study-concentration": "hamilton",

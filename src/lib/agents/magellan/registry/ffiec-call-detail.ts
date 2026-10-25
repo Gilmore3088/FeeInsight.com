@@ -1,7 +1,8 @@
 import { sql } from "@/lib/data-store/connection";
-import { FFIEC_BULK_URL, FFIEC_POR_FILE, fetchFfiecCallBulk, readFfiecPor, schedulePattern, type FfiecPorRead } from "@/lib/regulatory/ffiec";
+import { FFIEC_BULK_URL, FFIEC_POR_FILE, NO_FFIEC_POR, fetchFfiecCallBulk, readFfiecPor, schedulePattern, type FfiecPorRead } from "@/lib/regulatory/ffiec";
 import {
   FFIEC_CALL_ITEM_SCHEDULES,
+  porCertItemValues,
   porItemValues,
   readFfiecCallItems,
   type FfiecColumnCheck,
@@ -11,6 +12,7 @@ import type { RegistryFetchOptions } from "@/lib/regulatory/http";
 import { parseQuarterKey, quarterEndDate, type Quarter } from "@/lib/regulatory/quarters";
 import { ffiecOverdraftPartitions, ffiecRefreshHours } from "./ffiec-overdraft";
 import { checkValues, flaggedOnly } from "@/lib/regulatory/data-checks";
+import { markFdicQuarterForPorCerts } from "./fdic-financials";
 import { recordRegistryPartition, type RegistryDb } from "./partitions";
 
 /**
@@ -28,10 +30,17 @@ import { recordRegistryPartition, type RegistryDb } from "./partitions";
  * `POR_LAST_UPDATED`, epoch seconds), so Deming's filings reconcile can tell which feed holds the
  * newer version of a refiled report. It is not a financial line: it is left out of the line
  * counts and value checks, and readers that sum or serve lines never see it.
+ *
+ * v6 (#2625) also stores the POR file's "FDIC Certificate Number" per bank and quarter
+ * (`filing_fdic_cert`, code `POR_FDIC_CERT`): the certificate that filed as that RSSD that
+ * quarter. The FDIC BankFind loader reads it to attach a quarter filed under a predecessor's
+ * certificate to the bank, not to the small charter that holds today's certificate. When a quarter
+ * shows a bank whose filing certificate differs from today's, the FDIC partition for that quarter
+ * is made due so BankFind re-files it, whichever loader ran first (`markFdicQuarterForPorCerts`).
  */
 
 export const FFIEC_CALL_DETAIL_SOURCE = "ffiec-call-detail";
-export const FFIEC_CALL_DETAIL_PARSER_VERSION = 5;
+export const FFIEC_CALL_DETAIL_PARSER_VERSION = 6;
 const EMPTY_RETRY_HOURS = 24;
 const WRITE_CHUNK = 5_000;
 
@@ -148,8 +157,9 @@ export async function runRegistryFfiecCallDetail(options: RegistryFfiecCallDetai
     ? Object.fromEntries(Object.entries(download.files).filter(([name]) => !FFIEC_POR_FILE.test(name)))
     : null;
   const parsed = scheduleFiles ? readFfiecCallItems(scheduleFiles) : null;
-  const por: FfiecPorRead = download.files ? readFfiecPor(download.files) : { file: null, column: null, rows: [], unreadable: 0 };
+  const por: FfiecPorRead = download.files ? readFfiecPor(download.files) : NO_FFIEC_POR;
   const filingTimes = porItemValues(por);
+  const filingCerts = porCertItemValues(por);
   const loadedLines = [...new Set((parsed?.columns ?? []).filter((c) => c.status === "loaded").map((c) => c.key))];
   // A line with an RCFD/RCON pair counts as missing only when neither code loaded.
   const missingLines = (parsed?.columns ?? []).filter((c) => c.status !== "loaded" && !loadedLines.includes(c.key));
@@ -192,7 +202,15 @@ export async function runRegistryFfiecCallDetail(options: RegistryFfiecCallDetai
     missing_lines: missingLines,
     columns: parsed?.columns ?? [],
     charge_off_parts_over_total: base.chargeOffPartsOverTotal,
-    por: { file: por.file, column: por.column, banks: por.rows.length, unreadable: por.unreadable },
+    por: {
+      file: por.file,
+      column: por.column,
+      banks: por.rows.length,
+      unreadable: por.unreadable,
+      cert_column: por.certColumn,
+      cert_banks: por.certs.length,
+      cert_unreadable: por.certUnreadable,
+    },
   };
   if (emptyReason !== null) {
     await recordRegistryPartition(db, {
@@ -211,6 +229,8 @@ export async function runRegistryFfiecCallDetail(options: RegistryFfiecCallDetai
   const matched = base.matchedBanks;
   const writtenRows = await writeValues(db, quarter, values, options.runId ?? null);
   const filingTimeRows = filingTimes.length > 0 ? await writeValues(db, quarter, filingTimes, options.runId ?? null) : 0;
+  const filingCertRows = filingCerts.length > 0 ? await writeValues(db, quarter, filingCerts, options.runId ?? null) : 0;
+  const fdicQuarterMarked = filingCerts.length > 0 ? await markFdicQuarterForPorCerts(db, options.partitionKey, reportDate) : null;
   await recordRegistryPartition(db, {
     source: FFIEC_CALL_DETAIL_SOURCE,
     partitionKey: options.partitionKey,
@@ -229,6 +249,11 @@ export async function runRegistryFfiecCallDetail(options: RegistryFfiecCallDetai
       values: values.length,
       written_rows: writtenRows,
       filing_time_rows: filingTimeRows,
+      filing_cert_rows: filingCertRows,
+      // Banks whose filing certificate this quarter is not today's, and whether that made the
+      // FDIC quarter due again (#2625).
+      por_cert_splits: fdicQuarterMarked?.splits ?? null,
+      fdic_quarter_marked_due: fdicQuarterMarked?.marked ?? false,
     },
   });
   return { ...base, writtenRows };

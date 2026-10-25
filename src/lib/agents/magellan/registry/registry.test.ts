@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { fdicRefreshHours, runRegistryFdicFinancials } from "./fdic-financials";
+import {
+  assignFdicRows,
+  fdicRefreshHours,
+  markFdicQuarterForPorCerts,
+  porCertConflicts,
+  porCertSplits,
+  runRegistryFdicFinancials,
+} from "./fdic-financials";
 import { runRegistryFdicUniverse } from "./fdic-universe";
 import type { RegistryDb } from "./partitions";
 
@@ -38,7 +45,7 @@ describe("registry FDIC financials worker", () => {
 
   it("upserts one quarter and records the partition with lineage", async () => {
     const { db, statements } = createDb([
-      ["COUNT(DISTINCT cert_number)", () => [{ matched: 1 }]],
+      ["FROM institution_sources", () => [{ institution_id: 1, cert_number: "628" }]],
       ["jsonb_to_recordset", () => [{ matched: 1, unmatched: 1 }]],
     ]);
     const fetchImpl = vi.fn().mockResolvedValue(
@@ -90,7 +97,7 @@ describe("registry FDIC financials worker", () => {
   });
 
   it("writes nothing on a dry run", async () => {
-    const { db, statements } = createDb([["COUNT(DISTINCT cert_number)", () => [{ matched: 1 }]]]);
+    const { db, statements } = createDb([["FROM institution_sources", () => [{ institution_id: 1, cert_number: "628" }]]]);
     const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ meta: { total: 1 }, data: [{ data: record }] }));
 
     const result = await runRegistryFdicFinancials({
@@ -100,8 +107,8 @@ describe("registry FDIC financials worker", () => {
       fetchOptions: { fetchImpl, backoffMs: 0 },
     });
 
-    expect(result.dryRun).toBe(true);
-    expect(statements.every((s) => s.text.includes("SELECT COUNT"))).toBe(true);
+    expect(result).toMatchObject({ dryRun: true, matchedRows: 1 });
+    expect(statements.every((s) => /^\s*SELECT/.test(s.text))).toBe(true);
   });
 
   it("refreshes recent quarters weekly and history rarely", () => {
@@ -114,6 +121,126 @@ describe("registry FDIC financials worker", () => {
   it("rejects an invalid partition key", async () => {
     const { db } = createDb([]);
     await expect(runRegistryFdicFinancials({ partitionKey: "latest", db })).rejects.toThrow("Invalid FDIC quarter");
+  });
+});
+
+describe("registry FDIC financials: a quarter goes to the certificate that filed it (#2625)", () => {
+  // Emigrant Bank (institution 254): today's certificate 57083 was Plus International Bank's until
+  // the 2023-10-01 merger; the bank's own history was filed under the old Emigrant certificate
+  // 12054, which no institution holds today. BankFind 2023-09-30 assets ($K): 57083 47,834;
+  // 12054 6,412,660. Kendall Bank (institution 2923): today's 8110, predecessor 16471 until
+  // 2025-01-31; 2024-12-31 assets 49,970 under 8110 and 159,171 under 16471.
+  const page = (rows: Array<Record<string, unknown>>) =>
+    vi.fn().mockResolvedValue(jsonResponse({ meta: { total: rows.length }, data: rows.map((data) => ({ data })) }));
+  const emigrant = [{ CERT: 57083, ASSET: 47834 }, { CERT: 12054, ASSET: 6412660 }];
+  const sources = (rows: Array<[number, string]>) => () => rows.map(([institution_id, cert_number]) => ({ institution_id, cert_number }));
+  const rowFor = (rows: Array<Record<string, unknown>>, cert: string) => rows.find((r) => r.cert === cert)!;
+
+  it("attaches the predecessor certificate's quarter to the bank and keeps the small charter's own quarter unmatched", async () => {
+    const { db, statements } = createDb([
+      ["FROM institution_call_report_items", () => [{ institution_id: 254, filing_cert: "12054", current_cert: "57083" }]],
+      ["FROM institution_sources", sources([[254, "57083"]])],
+      ["jsonb_to_recordset", () => [{ matched: 1, unmatched: 1 }]],
+    ]);
+    const result = await runRegistryFdicFinancials({ partitionKey: "2023Q3", db, fetchOptions: { fetchImpl: page(emigrant), backoffMs: 0 } });
+
+    expect(result).toMatchObject({ reportDate: "2023-09-30", matchedRows: 1, unmatchedRows: 1, porAttachedRows: 1, porDetachedRows: 1, porCertSplits: 1 });
+    const porRead = statements.find((s) => s.text.includes("FROM institution_call_report_items"))!;
+    expect(porRead.values).toEqual(["filing_fdic_cert", "2023-09-30"]);
+    const upsert = statements.find((s) => s.text.includes("jsonb_to_recordset"))!;
+    const rows = payloadOf(upsert.values);
+    expect(rowFor(rows, "12054")).toMatchObject({
+      institution_id: 254,
+      attached_via: "ffiec_por_cert",
+      total_assets: 6412660,
+      remove_stale_for: null,
+      raw_json: { CERT: 12054, attached_via: "ffiec_por_cert", filing_cert: "12054", current_cert: "57083" },
+    });
+    // The small charter's own filing: not the bank's, and nothing to delete since the bank's row is
+    // replaced by the predecessor's in the same load.
+    expect(rowFor(rows, "57083")).toMatchObject({
+      institution_id: null,
+      attached_via: null,
+      total_assets: 47834,
+      remove_stale_for: null,
+      raw_json: { detached_via: "ffiec_por_cert", cert_matches_institution: 254, institution_filing_cert: "12054" },
+    });
+    expect(upsert.text).toContain("ON CONFLICT (institution_id, report_date, source) DO UPDATE");
+    expect(upsert.text).toMatch(/claimed AS \(\s*-- The unmatched copy/);
+    const partition = statements.find((s) => s.text.includes("INSERT INTO registry_ingest_partitions"))!;
+    const detail = JSON.parse(partition.values.find((v) => typeof v === "string" && v.startsWith("{")) as string);
+    expect(detail).toMatchObject({ parser_version: 2, por: { banks: 1, cert_splits: 1, attached: 1, detached: 1, conflicts: 0 } });
+  });
+
+  it("removes the bank's stale row under today's certificate when the predecessor's quarter is not in the load", async () => {
+    const { db, statements } = createDb([
+      ["FROM institution_call_report_items", () => [{ institution_id: 2923, filing_cert: "16471", current_cert: "8110" }]],
+      ["FROM institution_sources", sources([[2923, "8110"]])],
+    ]);
+    await runRegistryFdicFinancials({ partitionKey: "2024Q4", db, fetchOptions: { fetchImpl: page([{ CERT: 8110, ASSET: 49970 }]), backoffMs: 0 } });
+    const rows = payloadOf(statements.find((s) => s.text.includes("jsonb_to_recordset"))!.values);
+    expect(rows).toEqual([expect.objectContaining({ cert: "8110", institution_id: null, remove_stale_for: 2923, total_assets: 49970 })]);
+  });
+
+  it("gives Kendall's 2024-12-31 quarter to the bank from the certificate that filed it", async () => {
+    const { db, statements } = createDb([
+      ["FROM institution_call_report_items", () => [{ institution_id: 2923, filing_cert: "16471", current_cert: "8110" }]],
+      ["FROM institution_sources", sources([[2923, "8110"]])],
+    ]);
+    const result = await runRegistryFdicFinancials({
+      partitionKey: "2024Q4",
+      db,
+      fetchOptions: { fetchImpl: page([{ CERT: 8110, ASSET: 49970 }, { CERT: 16471, ASSET: 159171 }]), backoffMs: 0 },
+    });
+    expect(result).toMatchObject({ porAttachedRows: 1, porDetachedRows: 1 });
+    const rows = payloadOf(statements.find((s) => s.text.includes("jsonb_to_recordset"))!.values);
+    expect(rowFor(rows, "16471")).toMatchObject({ institution_id: 2923, total_assets: 159171 });
+    expect(rowFor(rows, "8110")).toMatchObject({ institution_id: null, remove_stale_for: null });
+  });
+
+  it("attaches by today's certificate, unmarked, when no POR certificate is stored for the quarter", async () => {
+    const { db, statements } = createDb([["FROM institution_sources", sources([[254, "57083"]])]]);
+    const result = await runRegistryFdicFinancials({ partitionKey: "2023Q3", db, fetchOptions: { fetchImpl: page(emigrant), backoffMs: 0 } });
+    expect(result).toMatchObject({ matchedRows: 1, unmatchedRows: 1, porAttachedRows: 0, porDetachedRows: 0, porCertSplits: 0 });
+    const rows = payloadOf(statements.find((s) => s.text.includes("jsonb_to_recordset"))!.values);
+    expect(rowFor(rows, "57083")).toMatchObject({ institution_id: 254, attached_via: "cert", remove_stale_for: null, raw_json: { CERT: 57083, ASSET: 47834 } });
+    expect(rowFor(rows, "12054")).toMatchObject({ institution_id: null, attached_via: null, raw_json: { CERT: 12054, ASSET: 6412660 } });
+  });
+
+  it("ignores a POR certificate another institution holds today, or two institutions share", () => {
+    const byCert = new Map([["57083", 254], ["12054", 900]]);
+    // POR names 12054 for 254, but institution 900 holds 12054 today: our link disagrees with POR.
+    const held = assignFdicRows(["57083", "12054"], byCert, [{ institution_id: 254, filing_cert: "12054", current_cert: "57083" }]);
+    expect(held.get("57083")).toMatchObject({ institutionId: 254, via: "cert", detachedFrom: null });
+    expect(held.get("12054")).toMatchObject({ institutionId: 900, via: "cert" });
+    expect(porCertConflicts(byCert, [{ institution_id: 254, filing_cert: "12054", current_cert: "57083" }])).toEqual(new Set([254]));
+    const shared = assignFdicRows(["16471"], new Map([["8110", 2923], ["9000", 31]]), [
+      { institution_id: 2923, filing_cert: "16471", current_cert: "8110" },
+      { institution_id: 31, filing_cert: "16471", current_cert: "9000" },
+    ]);
+    expect(shared.get("16471")).toMatchObject({ institutionId: null, via: null });
+    // A POR row matching today's certificate changes nothing; leading zeros are read as filed.
+    const same = assignFdicRows(["057083"], new Map([["57083", 254]]), [{ institution_id: 254, filing_cert: "57083", current_cert: "57083" }]);
+    expect(same.get("057083")).toMatchObject({ institutionId: 254, via: "cert" });
+  });
+
+  it("makes the FDIC quarter due when the FFIEC POR shows a bank filing under a certificate that is not today's", async () => {
+    const split = createDb([
+      ["FROM institution_call_report_items", () => [
+        { institution_id: 254, filing_cert: "12054", current_cert: "57083" },
+        { institution_id: 5, filing_cert: "6548", current_cert: "6548" },
+      ]],
+      ["UPDATE registry_ingest_partitions", () => [{}]],
+    ]);
+    expect(await markFdicQuarterForPorCerts(split.db, "2023Q3", "2023-09-30")).toEqual({ splits: 1, marked: true });
+    const update = split.statements.find((s) => s.text.includes("UPDATE registry_ingest_partitions"))!;
+    expect(update.values).toEqual(["fdic-financials", "2023Q3", 1]);
+    expect(update.text).toContain("detail->'por'->>'cert_splits'");
+
+    const none = createDb([["FROM institution_call_report_items", () => [{ institution_id: 5, filing_cert: "6548", current_cert: "6548" }]]]);
+    expect(await markFdicQuarterForPorCerts(none.db, "2023Q3", "2023-09-30")).toEqual({ splits: 0, marked: false });
+    expect(none.statements.some((s) => s.text.includes("UPDATE"))).toBe(false);
+    expect(porCertSplits([{ institution_id: 254, filing_cert: "12054", current_cert: "57083" }])).toBe(1);
   });
 });
 
