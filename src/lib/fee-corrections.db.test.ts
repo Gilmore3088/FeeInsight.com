@@ -15,7 +15,7 @@ import {
   resetCorrectionsReadyCache,
   reverseFeeCorrection,
 } from "./fee-corrections";
-import { holdPublishedFee } from "./fee-hold";
+import { holdPublishedFee, releasePublishedFee } from "./fee-hold";
 import { fillBlankFrequencies } from "@/lib/agents/hamilton/frequency-fill";
 import { readerFeeConditions } from "./fee-conditions";
 
@@ -172,9 +172,10 @@ describe.skipIf(!connection)("admin fee corrections in isolated PostgreSQL", () 
     expect(Number(version.amount)).toBe(35);
     expect((version.source_check as { ok: boolean }).ok).toBe(true);
 
-    const feedback = await raw`SELECT kind, signal, agent_run_id FROM pipeline_feedback WHERE check_name = 'admin.fee_correction' AND fee_published_id = ${wrongFeeId}`;
+    const feedback = await raw`SELECT kind, signal, agent_run_id, about_stage, source_url, evidence->>'cause' AS cause FROM pipeline_feedback WHERE check_name = 'admin.fee_correction' AND fee_published_id = ${wrongFeeId}`;
     expect(feedback).toHaveLength(1);
-    expect(feedback[0]).toMatchObject({ kind: "admin_correction", signal: "wrong" });
+    // No cause sent, and only the amount changed on the same document: filed against extract (#2057).
+    expect(feedback[0]).toMatchObject({ kind: "admin_correction", signal: "wrong", about_stage: "extract", cause: "wrong_amount", source_url: null });
     expect(Number(feedback[0].agent_run_id)).toBe(result.runId);
     const [run] = await raw`SELECT run_kind, status, trigger_source FROM agent_runs WHERE id = ${result.runId}`;
     expect(run).toMatchObject({ run_kind: "manual_repair", status: "completed", trigger_source: "admin" });
@@ -346,6 +347,40 @@ describe.skipIf(!connection)("admin fee corrections in isolated PostgreSQL", () 
     expect((await dismissCorrectionConflict(db, Number(open.id), "Misread", analyst)).ok).toBe(false);
     expect((await dismissCorrectionConflict(db, Number(open.id), "Knox misread the new table", admin)).ok).toBe(true);
     expect((await dismissCorrectionConflict(db, Number(open.id), "Again", admin)).ok).toBe(false);
+  });
+
+  it("should_name_the_current_correction_s_document_when_a_corrected_fee_is_held_as_a_wrong_document_(#2057)", async () => {
+    // A correction version keeps the pipeline's lineage (the old document); its value came from
+    // the document the current correction cites, which is the one a wrong-document finding names.
+    const [current] = await raw`SELECT id, fee_published_id, source_document_id FROM published_fee_corrections WHERE fee_chain_id = ${wrongFeeId} AND status = 'current'`;
+    const correctedId = Number(current.fee_published_id);
+    await raw`UPDATE published_fee_corrections SET source_document_id = ${DOC_NEW} WHERE id = ${current.id}`;
+    try {
+      const held = await holdPublishedFee(db as never, correctedId, "Read from the wrong page", { id: 1, name: "James" }, "wrong_document");
+      expect(held).toMatchObject({ ok: true });
+      const [row] = await raw`SELECT about_stage, evidence->>'wrong_document_id' AS doc, evidence->>'wrong_document_url' AS url
+                                FROM pipeline_feedback WHERE kind = 'admin_hold' AND fee_published_id = ${correctedId} ORDER BY id DESC LIMIT 1`;
+      expect(row).toMatchObject({ about_stage: "discover", doc: String(DOC_NEW), url: "https://bank.test/fees-2027" });
+      expect(await releasePublishedFee(db as never, correctedId, { id: 1, name: "James" })).toMatchObject({ ok: true });
+    } finally {
+      await raw`UPDATE published_fee_corrections SET source_document_id = ${current.source_document_id} WHERE id = ${current.id}`;
+    }
+  });
+
+  it("should_refuse_a_wrong_document_cause_that_cites_the_fee_s_own_document_(#2057)", async () => {
+    const result = await correctPublishedFee(db, correction({
+      feePublishedId: overdraftFeeId,
+      idempotencyKey: "db-test-correct-wrongdoc",
+      canonicalFeeKey: "overdraft",
+      feeName: "Overdraft Fee",
+      amount: "31.00",
+      sourceDocumentId: DOC_OLD,
+      sourceExcerpt: "Overdraft Fee | $30.00 per item",
+      cause: "wrong_document",
+    }), admin);
+    expect(result).toMatchObject({ ok: false, code: "invalid", errors: { cause: expect.stringContaining("came from") } });
+    const feedback = await raw`SELECT 1 FROM pipeline_feedback WHERE kind = 'admin_correction' AND fee_published_id = ${overdraftFeeId}`;
+    expect(feedback).toHaveLength(0);
   });
 
   it("should_rebuild_the_national_index_when_a_fee_is_held", async () => {

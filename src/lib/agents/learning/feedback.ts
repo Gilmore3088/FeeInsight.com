@@ -57,8 +57,11 @@ export type FeedbackStage = (typeof FEEDBACK_STAGES)[number];
  *     source line again, #1499; also written by Deming for each daily-audit bad-name miss,
  *     `deming/audit-misses.ts`, #2055). Knox settles each one per rules version with
  *     knox_reread_resolved (`knox/reread-feedback.ts`, weight 0, #1511)
- *   Operator actions (human, `fee-hold.ts`, `fee-corrections.ts`, #978): admin_hold, admin_release,
- *     admin_correction, admin_correction_reversed
+ *   Operator actions (human, `fee-hold.ts`, `fee-corrections.ts`, #978; a hold or correction is filed
+ *     against the stage its cause names, `fee-error-cause.ts`, #2057; a wrong document carries
+ *     evidence wrong_document_id and wrong_document_url, read by Magellan's stale-link search; no
+ *     agent reads the other stages yet): admin_hold, admin_release, admin_correction,
+ *     admin_correction_reversed
  */
 /**
  * A business-schedule takedown brought back for want of a consumer fee (weight 0, a record,

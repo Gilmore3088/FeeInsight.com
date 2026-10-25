@@ -6,11 +6,16 @@
  * quarantine set by an agent. Every hold and release is logged in `pipeline_feedback`, recorded
  * as a completed Hamilton run, and rebuilds the national index (`fee_index_cache`) straight away
  * (James, 2026-10-16), so Hamilton's national figures drop or regain the fee at once.
+ *
+ * A hold names its cause (`fee-error-cause.ts`, #2057): the hold's feedback row is filed against
+ * the stage that made the mistake (a wrong document against discover, which Magellan's stale-link
+ * search reads), not always against publishing. A release is filed against publishing.
  */
 
 import type { sql as Sql } from "@/lib/data-store/connection";
 import { recordFeedback } from "@/lib/agents/learning/feedback";
 import { rebuildIndexAfterAdminAction, recordAdminFeeRun } from "@/lib/fee-admin-run";
+import { feeErrorStage, wrongDocument, type FeeErrorCause } from "@/lib/fee-error-cause";
 
 import {
   ADMIN_HOLD_PREFIX,
@@ -32,6 +37,7 @@ interface FeeRow {
   canonical_fee_key: string;
   amount: number | string | null;
   fee_name: string;
+  lineage_ref: number | string | null;
 }
 
 async function logHoldEvent(
@@ -40,7 +46,25 @@ async function logHoldEvent(
   action: "hold" | "release",
   actor: FeeHoldActor,
   reason: string | null,
+  cause: FeeErrorCause | null,
 ): Promise<{ indexRefreshed: boolean; runId: number }> {
+  // A wrong document names the document the fee was read from, for Magellan's link search.
+  let wrong: ReturnType<typeof wrongDocument> = {};
+  // A correction version keeps the pipeline's lineage, so its value's document is the current
+  // correction's cited one.
+  if (action === "hold" && cause === "wrong_document") {
+    const [doc] = await tx<Array<{ id: number | string; document_url: string | null }>>`
+      SELECT sd.id, sd.document_url
+        FROM source_documents sd
+       WHERE sd.id = COALESCE(
+               (SELECT cur.source_document_id FROM published_fee_corrections cur
+                 WHERE cur.fee_published_id = ${row.fee_published_id} AND cur.status = 'current' LIMIT 1),
+               (SELECT fr.source_document_id FROM verified_fee_observations fv
+                  JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+                 WHERE fv.fee_verified_id = ${row.lineage_ref}))
+    `;
+    if (doc) wrong = wrongDocument(doc.id, doc.document_url);
+  }
   const at = new Date().toISOString();
   const run = await recordAdminFeeRun(tx, {
     action,
@@ -51,7 +75,7 @@ async function logHoldEvent(
     detail: { fee_published_id: Number(row.fee_published_id), reason },
   });
   await recordFeedback(tx, [{
-    aboutStage: "publish",
+    aboutStage: action === "hold" && cause ? feeErrorStage(cause) : "publish",
     signal: action === "hold" ? "wrong" : "restored",
     kind: action === "hold" ? "admin_hold" : "admin_release",
     reportedBy: "human",
@@ -60,7 +84,7 @@ async function logHoldEvent(
     feePublishedId: Number(row.fee_published_id),
     canonicalFeeKey: row.canonical_fee_key,
     amount: row.amount == null ? null : Number(row.amount),
-    evidence: { action, actor_id: actor.id, actor: actor.name, reason, fee_name: row.fee_name, at },
+    evidence: { action, actor_id: actor.id, actor: actor.name, reason, ...(cause ? { cause } : {}), ...wrong, fee_name: row.fee_name, at },
     runId: run.runId,
     dedupeKey: `${FEE_HOLD_CHECK}:${row.fee_published_id}:${action}:${at}`,
   }]);
@@ -77,6 +101,7 @@ export async function holdPublishedFee(
   feePublishedId: number,
   reason: string,
   actor: FeeHoldActor,
+  cause: FeeErrorCause = "not_sure",
 ): Promise<FeeHoldResult> {
   return db.begin(async (scope) => {
     const tx = scope as unknown as SqlTag;
@@ -87,11 +112,11 @@ export async function holdPublishedFee(
        WHERE fee_published_id = ${feePublishedId}
          AND rolled_back_at IS NULL
          AND quarantined_at IS NULL
-      RETURNING fee_published_id, institution_id, canonical_fee_key, amount, fee_name
+      RETURNING fee_published_id, institution_id, canonical_fee_key, amount, fee_name, lineage_ref
     `;
     const row = rows[0];
     if (!row) return { ok: false, error: "That fee is not live, or it is already held." } as const;
-    const logged = await logHoldEvent(tx, row, "hold", actor, reason);
+    const logged = await logHoldEvent(tx, row, "hold", actor, reason, cause);
     return { ok: true, feePublishedId, institutionId: Number(row.institution_id), ...logged } as const;
   }) as Promise<FeeHoldResult>;
 }
@@ -114,11 +139,11 @@ export async function releasePublishedFee(
          AND fp.quarantined_at IS NOT NULL
          AND left(fp.quarantine_reason, ${ADMIN_HOLD_PREFIX.length}) = ${ADMIN_HOLD_PREFIX}
       RETURNING fp.fee_published_id, fp.institution_id, fp.canonical_fee_key, fp.amount, fp.fee_name,
-                before.quarantine_reason
+                fp.lineage_ref, before.quarantine_reason
     `;
     const row = rows[0];
     if (!row) return { ok: false, error: "That fee is not on an admin hold." } as const;
-    const logged = await logHoldEvent(tx, row, "release", actor, readHoldReason(row.quarantine_reason));
+    const logged = await logHoldEvent(tx, row, "release", actor, readHoldReason(row.quarantine_reason), null);
     return { ok: true, feePublishedId, institutionId: Number(row.institution_id), ...logged } as const;
   }) as Promise<FeeHoldResult>;
 }

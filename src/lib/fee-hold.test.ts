@@ -69,6 +69,31 @@ describe("admin fee hold", () => {
     });
   });
 
+  it("should_file_the_hold_against_the_stage_its_cause_names_with_the_wrong_document_(#2057)", async () => {
+    const withLineage = { ...liveRow, lineage_ref: 501 };
+    const logged = async (cause?: Parameters<typeof holdPublishedFee>[4]) => {
+      const { db, calls } = createDb((query) =>
+        query.includes("UPDATE published_fee_records") ? [withLineage]
+          : query.includes("FROM verified_fee_observations") ? [{ id: 77, document_url: "https://bank.example/fees.pdf" }]
+            : [{ id: 1 }]);
+      await holdPublishedFee(db, 117687, "Another bank's schedule", actor, cause);
+      const log = calls.find((call) => call.query.includes("INSERT INTO pipeline_feedback"));
+      return { row: JSON.parse(String(log?.values[0]))[0], lookedUp: calls.some((call) => call.query.includes("FROM verified_fee_observations")) };
+    };
+    // A wrong document goes to discover and names the document the fee was read from, which
+    // Magellan's stale-link search matches to the bank's link.
+    const wrong = await logged("wrong_document");
+    expect(wrong.row).toMatchObject({ about_stage: "discover", evidence: { cause: "wrong_document", wrong_document_id: 77, wrong_document_url: "https://bank.example/fees.pdf" } });
+    const amount = await logged("wrong_amount");
+    expect(amount.row.about_stage).toBe("extract");
+    expect(amount.row.evidence.wrong_document_url).toBeUndefined();
+    expect(amount.lookedUp).toBe(false);
+    expect((await logged("text_lost")).row.about_stage).toBe("read");
+    expect((await logged("verify_missed")).row.about_stage).toBe("verify");
+    // No answer is "not sure", filed against publishing as before.
+    expect((await logged()).row).toMatchObject({ about_stage: "publish", evidence: { cause: "not_sure" } });
+  });
+
   it("should_refuse_a_fee_that_is_not_live_or_already_held_and_write_nothing_else", async () => {
     const { db, calls } = createDb(() => []);
     const result = await holdPublishedFee(db, 117687, "Wrong category", actor);

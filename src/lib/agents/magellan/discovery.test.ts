@@ -14,6 +14,7 @@ import {
   RESUME_FIRST_PER_STEP,
   RESUME_MAX_TICKS,
   runMagellanDiscovery,
+  staleWrongReason,
   wrongDocumentAddresses,
   type DiscoveryResume,
   UPGRADE_SEARCH_VERSION,
@@ -1206,6 +1207,14 @@ describe("Magellan agentic discovery", () => {
       // Only the page's current copy: a miss on a superseded copy or a companion never counts.
       expect(auditQuery).toContain("sd.superseded_by_id IS NULL");
       expect(auditQuery).toContain("sd.companion_source_id IS NULL");
+      // An admin's hold or correction that names a wrong document is read the same way (#2057).
+      const handQuery = templateText(call[0]).split(") audit ON TRUE")[1].split(") hand ON TRUE")[0];
+      expect(handQuery).toContain("f.kind IN ('admin_hold', 'admin_correction')");
+      expect(handQuery).toContain("f.about_stage = 'discover'");
+      expect(handQuery).toContain("f.evidence->>'wrong_document_url' = due.main_document_url AND due.main_document_url = due.profile_canonical_source_url");
+      // Only the page's current copy, and a release or reversal withdraws the finding.
+      expect(handQuery).toContain("sd.superseded_by_id IS NULL AND sd.companion_source_id IS NULL");
+      expect(handQuery).toContain("undo.kind IN ('admin_release', 'admin_correction_reversed')");
       expect(call.slice(1)).toContain("audit_miss");
       expect(attempts(db).some((attempt) => attempt.detail.stale_reason === "Deming's audit found fees read from it came from the wrong document")).toBe(true);
     });
@@ -1472,5 +1481,15 @@ describe("wrongDocumentAddresses (#2055)", () => {
     expect(wrongDocumentAddresses(["https://bank.test/fees.pdf", "https://bank.test/fees.pdf"])).toEqual(["https://bank.test/fees.pdf"]);
     expect(wrongDocumentAddresses(["https://bank.test/fees.pdf", null, " ", "https://other.test/x"])).toEqual(["https://bank.test/fees.pdf", "https://other.test/x"]);
     expect(wrongDocumentAddresses(null)).toEqual([]);
+  });
+});
+
+describe("staleWrongReason (#2055, #2057)", () => {
+  it("names the newest finding that the link gives wrong fees", () => {
+    const at = (day: number) => `2026-10-${String(day).padStart(2, "0")}T00:00:00Z`;
+    expect(staleWrongReason({ confirmed_at: at(20), audit_at: null, hand_at: null })).toBe("fees read from it were confirmed wrong on a second look");
+    expect(staleWrongReason({ confirmed_at: at(20), audit_at: at(21), hand_at: null })).toBe("Deming's audit found fees read from it came from the wrong document");
+    expect(staleWrongReason({ confirmed_at: at(22), audit_at: at(21), hand_at: null })).toBe("fees read from it were confirmed wrong on a second look");
+    expect(staleWrongReason({ confirmed_at: null, audit_at: at(21), hand_at: at(23) })).toBe("an admin named a wrong document as the cause of a fee read from it");
   });
 });

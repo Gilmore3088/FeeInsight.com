@@ -5,6 +5,7 @@
 
 import { FEE_FAMILIES, getDisplayName } from "@/lib/fee-taxonomy";
 import { SPECIAL_UNIT_FREQUENCIES } from "@/lib/fee-unit";
+import { isFeeErrorCause, type FeeErrorCause } from "@/lib/fee-error-cause";
 
 export const FEE_CORRECTION_CHECK = "admin.fee_correction";
 /** Marks the quarantine on a published row a correction replaced. Not an admin hold. */
@@ -66,6 +67,8 @@ export interface FeeCorrectionInput {
   sourceExcerpt: string;
   sourceLocation: string;
   reason: string;
+  /** What caused the error (#2057); null when the form sent none, and the service suggests one. */
+  cause: FeeErrorCause | null;
 }
 
 export interface FeeReversalInput {
@@ -140,11 +143,14 @@ export function validateCorrectionInput(raw: Record<string, unknown>): Validated
   if (sourceLocation.length < MIN_LOCATION || sourceLocation.length > MAX_LOCATION) {
     errors.sourceLocation = "Say where it sits in the document (page, section or row).";
   }
+  const causeText = oneLine(raw.cause);
+  if (causeText !== "" && !isFeeErrorCause(causeText)) errors.cause = "Choose what caused the error.";
   if (Object.keys(errors).length > 0) return { ok: false, errors };
   return {
     ok: true,
     value: {
       ...base,
+      cause: isFeeErrorCause(causeText) ? causeText : null,
       canonicalFeeKey,
       feeName,
       amount: amount as number,

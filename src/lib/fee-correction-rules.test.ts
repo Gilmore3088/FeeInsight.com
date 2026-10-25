@@ -43,6 +43,16 @@ describe("fee correction rules (H03, #978)", () => {
     expect(parsed.value).toMatchObject({ feePublishedId: 117687, amount: 35, sourceDocumentId: 21164, frequency: "per_item", conditions: null });
   });
 
+  it("should_take_a_listed_cause_leave_a_missing_one_to_the_service_and_refuse_any_other_(#2057)", () => {
+    const withCause = validateCorrectionInput({ ...good, cause: "wrong_document" });
+    expect(withCause.ok && withCause.value.cause).toBe("wrong_document");
+    const without = validateCorrectionInput(good);
+    expect(without.ok && without.value.cause).toBeNull();
+    const bad = validateCorrectionInput({ ...good, cause: "publish" });
+    expect(bad.ok).toBe(false);
+    if (!bad.ok) expect(bad.errors.cause).toBe("Choose what caused the error.");
+  });
+
   it("should_require_source_document_excerpt_location_and_reason", () => {
     const parsed = validateCorrectionInput({ ...good, sourceDocumentId: "", sourceExcerpt: " ", sourceLocation: "", reason: "no" });
     expect(parsed.ok).toBe(false);

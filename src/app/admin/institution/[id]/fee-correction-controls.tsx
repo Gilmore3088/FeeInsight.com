@@ -15,6 +15,7 @@ import {
   type FeeCorrectionVersion,
   type FeeValues,
 } from "@/lib/fee-correction-rules";
+import { FEE_ERROR_CAUSES, FEE_ERROR_CAUSE_LABELS, citesAnotherAddress, suggestCorrectionCause, type FeeErrorCause } from "@/lib/fee-error-cause";
 
 export interface CorrectableFee {
   id: number;
@@ -71,6 +72,8 @@ function initialForm(f: CorrectableFee) {
     sourceExcerpt: "",
     sourceLocation: "",
     reason: "",
+    /** Empty until the operator picks one; until then the form shows the suggested cause. */
+    cause: "",
   };
 }
 
@@ -190,6 +193,19 @@ export function CorrectFeeButton({
     conditions: form.conditions.trim() || null,
   };
 
+  const suggestedCause = suggestCorrectionCause({
+    beforeCategory: before.canonicalFeeKey || null,
+    afterCategory: after.canonicalFeeKey || null,
+    beforeAmount: before.amount,
+    afterAmount: after.amount,
+  });
+  const cause: FeeErrorCause = (form.cause as FeeErrorCause) || suggestedCause;
+  // A hint only: another address may mean the wrong page, which only the operator can say.
+  const otherAddress = citesAnotherAddress(
+    documents.find((doc) => doc.id === fee.sourceDocumentId)?.url ?? null,
+    documents.find((doc) => String(doc.id) === form.sourceDocumentId)?.url ?? null,
+  );
+
   function review() {
     const missing: Partial<Record<string, string>> = {};
     if (!form.sourceDocumentId) missing.sourceDocumentId = "Choose the source document.";
@@ -206,7 +222,7 @@ export function CorrectFeeButton({
 
   function submit() {
     startTransition(async () => {
-      const result = await correctFee({ ...form, feePublishedId: fee.id, expectedVersion, idempotencyKey: key });
+      const result = await correctFee({ ...form, cause, feePublishedId: fee.id, expectedVersion, idempotencyKey: key });
       if (!result.ok) {
         setError(result.error);
         if (result.errors) {
@@ -316,6 +332,18 @@ export function CorrectFeeButton({
                 onChange={(e) => set("reason", e.target.value)}
               />
               <FieldError message={errors.reason} />
+              <label className={LABEL} htmlFor={`${titleId}-cause`}>What went wrong</label>
+              <select id={`${titleId}-cause`} className={INPUT} value={form.cause} onChange={(e) => set("cause", e.target.value)}>
+                <option value="">Suggested: {FEE_ERROR_CAUSE_LABELS[suggestedCause]}</option>
+                {FEE_ERROR_CAUSES.map((value) => (
+                  <option key={value} value={value}>{FEE_ERROR_CAUSE_LABELS[value]}</option>
+                ))}
+              </select>
+              <p className="mt-0.5 text-[11px] text-gray-500">
+                {form.cause ? "" : "Suggested from what you changed. "}This sends the error back to the step that made it, so that step learns from it.
+                {otherAddress && !form.cause ? " You cited a different page: choose Wrong document only if the fee was read from the wrong page." : ""}
+              </p>
+              <FieldError message={errors.cause} />
               {error && <p className="mt-2 text-xs text-red-600" role="alert">{error}</p>}
               <div className="mt-4 flex justify-end gap-2">
                 <button type="button" className={BUTTON} onClick={close}>Cancel</button>
@@ -328,6 +356,7 @@ export function CorrectFeeButton({
               <p className="mt-3 text-xs text-gray-600 dark:text-gray-400">
                 Source: document #{form.sourceDocumentId}, {form.sourceLocation}
               </p>
+              <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">What went wrong: {FEE_ERROR_CAUSE_LABELS[cause]}</p>
               <blockquote className="mt-1 border-l-2 border-gray-300 pl-2 text-xs text-gray-700 dark:border-white/[0.2] dark:text-gray-300">
                 {form.sourceExcerpt}
               </blockquote>

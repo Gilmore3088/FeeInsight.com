@@ -11,6 +11,11 @@
  * be in that document's stored text, and the shared source check (`checkFeeAgainstSource`) and the
  * category guard must pass on it.
  *
+ * A correction names its cause (`fee-error-cause.ts`, #2057), suggested from what it changes when
+ * the form sends none: its feedback row is filed against the stage that made the mistake (a wrong
+ * document against discover, which Magellan's stale-link search reads), not always against
+ * publishing. A reversal is filed against publishing.
+ *
  * Publishing (`correctionBlockFor`, called by Hamilton's `insertPublishedFee`) never republishes a
  * corrected line from the old or the same source, and records a newer source that disagrees as a
  * conflict for an admin to review.
@@ -25,6 +30,7 @@ import { rebuildIndexAfterAdminAction, recordAdminFeeRun } from "@/lib/fee-admin
 import { correctionsReady } from "./fee-correction-guard";
 import { captureCorrectiveSource } from "@/lib/agents/deming/corrective-source-store";
 import type { CorrectiveDocument } from "@/lib/agents/deming/corrective-source";
+import { feeErrorStage, suggestCorrectionCause, wrongDocument, type FeeErrorCause } from "@/lib/fee-error-cause";
 
 import {
   CORRECTION_BATCH_PREFIX,
@@ -62,6 +68,13 @@ interface LiveFeeRow {
   fee_treatment: string | null;
   conditions: string | null;
   lineage_source_document_id: number | string | null;
+  /**
+   * The document the live value was read from, and its address: the current correction's cited
+   * document when the row is a correction version (which keeps the pipeline's lineage), otherwise
+   * the pipeline's own.
+   */
+  live_document_id: number | string | null;
+  live_document_url: string | null;
 }
 
 interface CurrentVersionRow {
@@ -102,10 +115,15 @@ async function lockLiveFee(tx: SqlTag, feePublishedId: number): Promise<LiveFeeR
   const rows = await tx<LiveFeeRow[]>`
     SELECT fp.fee_published_id, fp.institution_id, fp.canonical_fee_key, fp.fee_name, fp.amount,
            fp.frequency, fp.variant_type, fp.fee_audience, fp.amount_kind, fp.fee_treatment,
-           fr.conditions, fr.source_document_id AS lineage_source_document_id
+           fr.conditions, fr.source_document_id AS lineage_source_document_id,
+           live_doc.id AS live_document_id, live_doc.document_url AS live_document_url
       FROM published_fee_records fp
       LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
       LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+      LEFT JOIN source_documents live_doc ON live_doc.id = COALESCE(
+        (SELECT cur.source_document_id FROM published_fee_corrections cur
+          WHERE cur.fee_published_id = fp.fee_published_id AND cur.status = 'current' LIMIT 1),
+        fr.source_document_id)
      WHERE fp.fee_published_id = ${feePublishedId}
        AND fp.rolled_back_at IS NULL
        AND fp.quarantined_at IS NULL
@@ -275,6 +293,8 @@ interface WriteVersion {
   after: { canonicalFeeKey: string; feeName: string; amount: number; frequency: string | null; conditions: string | null };
   evidence: (Evidence & { excerpt: string; location: string }) | null;
   reversedToDocumentId: number | null;
+  /** The stage the error came from (#2057); null for a reversal, filed against publishing. */
+  cause: FeeErrorCause | null;
 }
 
 async function writeVersion(tx: SqlTag, w: WriteVersion): Promise<FeeCorrectionResult> {
@@ -340,7 +360,7 @@ async function writeVersion(tx: SqlTag, w: WriteVersion): Promise<FeeCorrectionR
   }
   const at = new Date().toISOString();
   await recordFeedback(tx, [{
-    aboutStage: "publish",
+    aboutStage: w.cause ? feeErrorStage(w.cause) : "publish",
     signal: w.action === "correct" ? "wrong" : "restored",
     kind: w.action === "correct" ? "admin_correction" : "admin_correction_reversed",
     reportedBy: "human",
@@ -359,6 +379,8 @@ async function writeVersion(tx: SqlTag, w: WriteVersion): Promise<FeeCorrectionR
       actor_id: w.actor.id,
       actor: w.actor.name,
       reason: w.reason,
+      ...(w.cause ? { cause: w.cause } : {}),
+      ...(w.cause === "wrong_document" ? wrongDocument(w.live.live_document_id, w.live.live_document_url) : {}),
       before: w.before,
       after: w.after,
       source_excerpt: w.evidence?.excerpt ?? null,
@@ -450,6 +472,12 @@ export async function correctPublishedFee(
     if (sameFeeValues(before, after)) return { ok: false, code: "invalid", error: "Nothing changed: the values are the ones already live." };
     const treatment = treatmentConflict(live.fee_treatment, input.amount);
     if (treatment) return { ok: false, code: "invalid", error: treatment, errors: { amount: treatment } };
+    // The right value read from the fee's own document cannot make that document the wrong one,
+    // and the finding would send the bank's link to be searched again.
+    if (input.cause === "wrong_document" && live.live_document_id != null && input.sourceDocumentId === Number(live.live_document_id)) {
+      const error = "You cited the document this fee came from, so it is not the wrong document. Choose another cause.";
+      return { ok: false, code: "invalid", error, errors: { cause: error } };
+    }
     const checked = await checkEvidence(tx, Number(live.institution_id), input);
     if (!checked.ok) return { ok: false, code: "evidence", error: checked.error, errors: { [checked.field]: checked.error } };
     return writeVersion(tx, {
@@ -463,6 +491,12 @@ export async function correctPublishedFee(
       after,
       evidence: { ...checked.evidence, excerpt: input.sourceExcerpt, location: input.sourceLocation },
       reversedToDocumentId: null,
+      cause: input.cause ?? suggestCorrectionCause({
+        beforeCategory: before.canonicalFeeKey,
+        afterCategory: after.canonicalFeeKey,
+        beforeAmount: before.amount,
+        afterAmount: after.amount,
+      }),
     });
   });
 }
@@ -507,6 +541,7 @@ export async function reverseFeeCorrection(
       after,
       evidence: null,
       reversedToDocumentId,
+      cause: null,
     });
   });
 }
