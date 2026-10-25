@@ -111,7 +111,8 @@ export function buildBriefingOverview(
   const banded = briefing.positions.filter((p) => p.band);
   const higher = banded.filter((p) => p.current > p.band!.p75).length;
   const lower = banded.filter((p) => p.current < p.band!.p25).length;
-  const feesChangedNearby = briefing.observations.filter((o) => o.kind === "competitor_move").length;
+  // The full count when the briefing has it (#1891): the observations keep only the top few.
+  const feesChangedNearby = briefing.stateFeeChanges ?? briefing.observations.filter((o) => o.kind === "competitor_move").length;
   const fin = briefing.institutionFinancials;
   return {
     feesCompared: banded.length,

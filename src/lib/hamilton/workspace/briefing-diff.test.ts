@@ -189,6 +189,19 @@ describe("own fee changes are data updates unless confirmed (#1891, V5 P5)", () 
       { feeCategory: "overdraft", oldAmount: 30, newAmount: 33, changedAt: "2026-09-01" },
     ]);
     expect(backwards.changes[0].kind).toBe("own_record");
+    // Two confirmed steps that do not meet ($30 to $33, then $34 to $36) are no chain.
+    const gap = withConfirmedPriceChanges(moved(), [
+      { feeCategory: "overdraft", oldAmount: 30, newAmount: 33, changedAt: "2026-08-01" },
+      { feeCategory: "overdraft", oldAmount: 34, newAmount: 36, changedAt: "2026-09-01" },
+    ]);
+    expect(gap.changes[0].kind).toBe("own_record");
+    // A chain through the new figure and back again is read to its newest step.
+    const through = withConfirmedPriceChanges(moved(), [
+      { feeCategory: "overdraft", oldAmount: 30, newAmount: 36, changedAt: "2026-08-01" },
+      { feeCategory: "overdraft", oldAmount: 36, newAmount: 40, changedAt: "2026-08-15" },
+      { feeCategory: "overdraft", oldAmount: 40, newAmount: 36, changedAt: "2026-09-01" },
+    ]);
+    expect(through.changes[0].kind).toBe("own_price");
   });
 
   it("confirms nothing with no confirmed changes", () => {

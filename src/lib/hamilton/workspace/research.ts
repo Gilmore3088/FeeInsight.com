@@ -1001,10 +1001,11 @@ export async function getWorkspaceBriefing(
   const bankCategories = base.ownCategories;
   const rules = ruleChangeObservations(articles, bankCategories);
   const studies = studyObservations(studyRows, base.institutionName);
+  const moves = competitorMoveObservations(changes, bankCategories, base.stateCode ?? "the institution's state");
   const observations = withStudyPlace(
     rankObservations([
       ...marketPositionObservations(positions, base.institutionName),
-      ...competitorMoveObservations(changes, bankCategories, base.stateCode ?? "the institution's state"),
+      ...moves,
       ...(shift ? [shift] : []),
       ...rules,
       ...studies,
@@ -1017,6 +1018,8 @@ export async function getWorkspaceBriefing(
     institutionName: base.institutionName,
     stateCode: base.stateCode,
     observations,
+    // Counted before the observations are capped, so a market line never undercounts (#1891).
+    stateFeeChanges: moves.length,
     institutionFinancials: financials,
     localMarket: briefingLocalMarket(base, market),
     overdraftIncome: base.ownCategories.has("overdraft") ? feeRevenueLine(financialRows, "overdraft", base.charterType) : null,

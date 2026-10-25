@@ -101,7 +101,7 @@ describe("getQuarterlyChanges (#1083)", () => {
     expect(changes?.kind === "diff" && changes.diff.changes[0].text).toBe(
       "Overdraft: the figure on file moved from $30.00 to $35.00. No price change is confirmed on its schedules, so this is shown as an update to our data, not as a price change.",
     );
-    expect(mocks.confirmed).toHaveBeenCalledWith("2026-10-07T15:07:00Z", "TX");
+    expect(mocks.confirmed).toHaveBeenCalledWith("2026-10-07T15:07:00Z", null, 1);
   });
 
   it("calls a moved own fee a price change only when the institution's confirmed change bears it out (#1891)", async () => {

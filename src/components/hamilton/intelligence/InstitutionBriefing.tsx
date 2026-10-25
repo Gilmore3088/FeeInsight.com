@@ -31,18 +31,19 @@ const getCachedBriefing = unstable_cache(
   async (institutionId: number, peerSet: EnginePeerOptions["peerSet"]) => ({
     briefing: await getWorkspaceBriefing(institutionId, new Date(), { peerSet }),
   }),
-  ["hamilton-this-month-briefing-v5"],
+  // v6: briefings carry stateFeeChanges (#1891).
+  ["hamilton-this-month-briefing-v6"],
   { revalidate: 3600 },
 );
 
-export async function loadBriefing(
-  user: User | null,
+async function loadBriefing(
+  userId: number | null,
   selectedInstitutionId: string | null,
 ): Promise<{ briefing: Briefing | null; unavailable: boolean }> {
   const institutionId = parseInstitutionId(selectedInstitutionId);
   if (!institutionId) return { briefing: null, unavailable: false };
   try {
-    const active = user ? await getActivePeerSet({ userId: user.id, institutionId }).catch(() => null) : null;
+    const active = userId ? await getActivePeerSet({ userId, institutionId }).catch(() => null) : null;
     const peerSet = active ? { filters: active.filters, label: active.label } : null;
     const result = await getCachedBriefing(institutionId, peerSet);
     if (result.briefing && result.briefing.institutionId !== institutionId) {
@@ -53,6 +54,13 @@ export async function loadBriefing(
     return { briefing: null, unavailable: true };
   }
 }
+
+/**
+ * One briefing read per request, shared by the command center and the briefing below it (#1891), so
+ * a cold cache never builds the engine's briefing twice at once. Keyed on primitives, as React's
+ * cache compares arguments by identity.
+ */
+export const loadBriefingOnce = cache(loadBriefing);
 
 const BRIEFING_METHOD = [
   ...STANDARD_METHOD,
@@ -147,7 +155,7 @@ export async function InstitutionBriefing({
   const user = await getCurrentUser().catch(() => null);
   const { institution, error: contextError } = await resolveResearchInstitution(user, params);
   const selectedInstitutionId = institution ? String(institution.id) : null;
-  const { briefing, unavailable } = await loadBriefing(user, selectedInstitutionId);
+  const { briefing, unavailable } = await loadBriefingOnce(user?.id ?? null, selectedInstitutionId);
   const items = buildAttentionItems(briefing);
   const overview = briefing ? buildBriefingOverview(briefing, briefing.stateCode ?? null) : null;
   const month = new Date().toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });

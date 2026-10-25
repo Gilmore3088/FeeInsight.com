@@ -6,7 +6,7 @@ import { readFinancialPerformance } from "@/lib/hamilton/financial-performance-r
 import { COMPETITOR_MOVE_WINDOW_DAYS } from "@/lib/hamilton/workspace/research";
 import { STATE_NAMES } from "@/lib/us-states";
 import { MemoHeader, SERIF } from "@/components/hamilton/memo/memo";
-import { getQuarterlyChangesOnce, loadBriefing } from "./InstitutionBriefing";
+import { getQuarterlyChangesOnce, loadBriefingOnce } from "./InstitutionBriefing";
 
 /** One question and its answer: a row of the command center, never a card on its own. */
 export function CommandCenterRow({ answer }: { answer: CommandCenterAnswer }) {
@@ -45,7 +45,7 @@ export function CommandCenterRow({ answer }: { answer: CommandCenterAnswer }) {
 export async function CommandCenter({ institution }: { institution: { id: number; name: string; stateCode: string | null } }) {
   const user = await getCurrentUser().catch(() => null);
   const [{ briefing }, financials, changes] = await Promise.all([
-    loadBriefing(user, String(institution.id)),
+    loadBriefingOnce(user?.id ?? null, String(institution.id)),
     readFinancialPerformance(institution.id).then((r) => r.view).catch(() => null),
     getQuarterlyChangesOnce(institution.id).catch(() => null),
   ]);

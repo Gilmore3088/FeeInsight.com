@@ -180,11 +180,39 @@ describe("buildCommandCenter (#1891)", () => {
     expect(market.lines[1]).toBe("No regulator release bearing on its fees is flagged in this month's briefing; the Regulatory Wire lists every recent item.");
   });
 
+  it("counts every confirmed state change, not only the ones the briefing kept among its top items", () => {
+    const market = byKey(
+      buildCommandCenter(
+        input({
+          briefing: briefing({
+            stateFeeChanges: 7,
+            observations: [observation("competitor_move", "Maple Test Bank changed its overdraft fee", "overdraft")],
+          }),
+        }),
+      ),
+      "market",
+    );
+    expect(market.lines[0]).toBe(
+      "7 fees Harbor Ridge Test Bank publishes changed at an institution in Ohio in the last 180 days, each confirmed on that institution's schedules.",
+    );
+    const none = byKey(buildCommandCenter(input({ briefing: briefing({ stateFeeChanges: 0 }) })), "market");
+    expect(none.lines[0]).toBe("No institution in Ohio has a confirmed change in the last 180 days to a fee Harbor Ridge Test Bank publishes.");
+  });
+
+  it("on a copy built before the full count, says only what the briefing's kept items show", () => {
+    const market = byKey(buildCommandCenter(input()), "market");
+    expect(market.lines[0]).toBe(
+      "This month's briefing flags no confirmed change in Ohio to a fee Harbor Ridge Test Bank publishes; Alerts and watches lists every one.",
+    );
+    expect(market.lines.join(" ")).not.toMatch(/^No institution/);
+  });
+
   it("reports confirmed state moves and the first rule item, with their period", () => {
     const market = byKey(
       buildCommandCenter(
         input({
           briefing: briefing({
+            stateFeeChanges: 1,
             observations: [
               observation("competitor_move", "Maple Test Bank changed its overdraft fee", "overdraft"),
               observation("rule_change", "The CFPB published a rule on overdraft fees on Sep 30, 2026."),
@@ -201,13 +229,14 @@ describe("buildCommandCenter (#1891)", () => {
     expect(market.source).toBe("Fee changes confirmed on published schedules, Ohio, last 180 days to Oct 20, 2026.");
   });
 
-  it("points to the briefing's first item and always offers the quarter's brief", () => {
+  it("points to the items listed below without repeating them, and always offers the quarter's brief", () => {
     const next = byKey(
       buildCommandCenter(input({ briefing: briefing({ observations: [observation("market_position", "Its overdraft fee is in the top 10% of peers", "overdraft")] }) })),
       "next",
     );
-    expect(next.lines[0]).toMatch(/overdraft fee is in the top 10% of peers/);
-    expect(next.links.map((l) => l.label)).toEqual(["Research this fee", "Build this quarter's brief"]);
+    expect(next.lines).toEqual(['1 item in this month\'s briefing stands out for a closer look, listed below under "What stands out this month".']);
+    expect(next.lines.join(" ")).not.toMatch(/top 10% of peers/);
+    expect(next.links.map((l) => l.label)).toEqual(["Build this quarter's brief"]);
     const quiet = byKey(buildCommandCenter(input()), "next");
     expect(quiet.lines[0]).toBe("Nothing in this month's briefing stands out for a closer look.");
     expect(quiet.links.map((l) => l.label)).toEqual(["Build this quarter's brief"]);

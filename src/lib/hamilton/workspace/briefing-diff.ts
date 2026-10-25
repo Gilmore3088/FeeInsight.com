@@ -120,21 +120,47 @@ function dayText(iso: string): string {
 
 /**
  * Pure: an `own_record` change becomes a price change only when confirmed changes for the same fee
- * start at the old figure and end at the new one (one change, or a chain of them between the two
- * copies). Everything else stays a data update, so a corrected reading never reads as a price move.
+ * connect step to step, in date order, from the old figure to the new one: one change, or a chain in
+ * which each change starts at the price the one before it ended at. Anything else stays a data
+ * update, so a corrected reading never reads as a price move.
  */
+export function confirmedChain(
+  confirmed: readonly ConfirmedOwnChange[],
+  feeCategory: string,
+  from: number,
+  to: number,
+): ConfirmedOwnChange[] | null {
+  const steps = confirmed
+    .filter((c) => c.feeCategory === feeCategory)
+    .sort((a, b) => a.changedAt.localeCompare(b.changedAt));
+  // The newest confirmed change must end at the new figure: a later change elsewhere means the
+  // figure on file is not where the schedules left the price.
+  const last = steps[steps.length - 1];
+  if (!last || !same(last.newAmount, to)) return null;
+  // Depth-first over date-ordered steps: each next step starts where the one before ended, and the
+  // chain must finish on that newest change.
+  const walk = (at: number, after: number, path: ConfirmedOwnChange[]): ConfirmedOwnChange[] | null => {
+    if (path.length > 0 && path[path.length - 1] === last) return path;
+    for (let i = after; i < steps.length; i += 1) {
+      if (!same(steps[i].oldAmount, at)) continue;
+      const found = walk(steps[i].newAmount, i + 1, [...path, steps[i]]);
+      if (found) return found;
+    }
+    return null;
+  };
+  return walk(from, 0, []);
+}
+
+/** Pure: the diff, with each `own_record` change that `confirmedChain` bears out made a price change. */
 export function withConfirmedPriceChanges(diff: BriefingDiff, confirmed: readonly ConfirmedOwnChange[]): BriefingDiff {
   return {
     ...diff,
     changes: diff.changes.map((change) => {
       if (change.kind !== "own_record" || !change.amounts || !change.feeCategory) return change;
       const { from, to } = change.amounts;
-      const forFee = confirmed.filter((c) => c.feeCategory === change.feeCategory);
-      const start = forFee.find((c) => same(c.oldAmount, from));
-      const end = forFee
-        .filter((c) => same(c.newAmount, to))
-        .sort((a, b) => b.changedAt.localeCompare(a.changedAt))[0];
-      if (!start || !end || start.changedAt > end.changedAt) return change;
+      const chain = confirmedChain(confirmed, change.feeCategory, from, to);
+      if (!chain) return change;
+      const end = chain[chain.length - 1];
       return {
         ...change,
         kind: "own_price" as const,

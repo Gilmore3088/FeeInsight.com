@@ -190,6 +190,12 @@ export interface Briefing {
   /** The bank's state, the scope of the competitor changes it watches. */
   stateCode?: string | null;
   observations: Observation[];
+  /**
+   * Fees the bank publishes that an institution in its state changed in the window, confirmed on that
+   * institution's schedules: all of them, not only those kept among `observations`. Absent on copies
+   * built before #1891.
+   */
+  stateFeeChanges?: number;
   /** The bank's own reported fee income; null when no filing is on file. */
   institutionFinancials: InstitutionFinancials | null;
   /** National deposit service charge income, newest quarter; null when none is on file. */

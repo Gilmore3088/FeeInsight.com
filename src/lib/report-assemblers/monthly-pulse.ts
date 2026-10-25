@@ -166,6 +166,8 @@ const CHANGES_SQL = `
            COALESCE(c.changed_at, c.detected_at) AS changed_at
       FROM fee_change_records c
      WHERE COALESCE(c.changed_at, c.detected_at) >= $1
+       -- One institution's changes only, when $3 names one (the quarterly briefing comparison, #1891).
+       AND ($3::bigint IS NULL OR c.institution_id = $3::bigint)
        AND c.change_type IN ('increase', 'increased', 'decrease', 'decreased')
        -- One schedule against an older copy of itself (hamilton/change-pairing.ts).
        AND c.like_for_like IS TRUE
@@ -239,9 +241,10 @@ export const PULSE_COVERAGE_SQL = `
 export async function loadConfirmedFeeChanges(
   windowStartIso: string,
   stateCode: string | null = null,
+  institutionId: number | null = null,
 ): Promise<{ changes: PulseChange[]; recorded: number }> {
   const sql = getSql();
-  const recorded = (await sql.unsafe(CHANGES_SQL, [windowStartIso, stateCode])) as unknown as RecordedChangeRow[];
+  const recorded = (await sql.unsafe(CHANGES_SQL, [windowStartIso, stateCode, institutionId])) as unknown as RecordedChangeRow[];
   const changes = recorded.map(confirmFeeChange).filter((c): c is PulseChange => c !== null);
   return { changes, recorded: recorded.length };
 }
@@ -251,7 +254,7 @@ export async function assembleMonthlyPulse(now = new Date()): Promise<MonthlyPul
   const executedAt = now.toISOString();
   const windowStart = new Date(now.getTime() - PULSE_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
-  const recorded = (await sql.unsafe(CHANGES_SQL, [windowStart, null])) as unknown as RecordedChangeRow[];
+  const recorded = (await sql.unsafe(CHANGES_SQL, [windowStart, null, null])) as unknown as RecordedChangeRow[];
   const coverageRows = (await sql.unsafe(PULSE_COVERAGE_SQL, [windowStart])) as unknown as PulseCoverage[];
 
   const changes = recorded

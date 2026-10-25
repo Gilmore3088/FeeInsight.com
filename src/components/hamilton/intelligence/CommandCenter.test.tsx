@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 vi.mock("@/lib/auth", () => ({ getCurrentUser: vi.fn() }));
 vi.mock("@/lib/hamilton/financial-performance-read", () => ({ readFinancialPerformance: vi.fn() }));
-vi.mock("./InstitutionBriefing", () => ({ getQuarterlyChangesOnce: vi.fn(), loadBriefing: vi.fn() }));
+vi.mock("./InstitutionBriefing", () => ({ getQuarterlyChangesOnce: vi.fn(), loadBriefingOnce: vi.fn() }));
 vi.mock("@/lib/hamilton/workspace/research", () => ({ COMPETITOR_MOVE_WINDOW_DAYS: 180 }));
 
 import { CommandCenterRow } from "./CommandCenter";

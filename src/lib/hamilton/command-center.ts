@@ -7,7 +7,7 @@
  *   2. What changed?               filed quarter moves, own fee changes -> /pro/financials, /pro/monitor
  *   3. How does it compare?        fees against peers, local names     -> /pro/peers, /pro/research
  *   4. Market and regulation       confirmed state moves, rule items   -> /pro/monitor, /pro/news
- *   5. What to look at next        the briefing's first item, a brief  -> /pro/research, /pro/reports
+ *   5. What to look at next        a pointer to the items below    -> /pro/reports
  *
  * Pure and deterministic: no model call, no read. Rules it keeps:
  *   - an own fee figure that moved is a price change only when `withConfirmedPriceChanges` made it
@@ -202,14 +202,25 @@ function market(input: CommandCenterInput, link: (href: string) => string): Comm
   const { briefing, stateLabel, windowDays, institution } = input;
   const place = stateLabel ?? "its state";
   const lines: string[] = [];
-  const moves = briefing?.observations.filter((o) => o.kind === "competitor_move") ?? [];
   const rules = briefing?.observations.filter((o) => o.kind === "rule_change") ?? [];
   if (briefing) {
-    lines.push(
-      moves.length === 0
-        ? `No institution in ${place} has a confirmed change in the last ${windowDays} days to a fee ${institution.name} publishes.`
-        : `${plural(moves.length, "fee", "fees")} ${institution.name} publishes changed at an institution in ${place} in the last ${windowDays} days, each confirmed on that institution's schedules.`,
-    );
+    const counted = briefing.stateFeeChanges;
+    if (counted !== undefined) {
+      // Every confirmed change in the state, counted before the briefing kept its top items.
+      lines.push(
+        counted === 0
+          ? `No institution in ${place} has a confirmed change in the last ${windowDays} days to a fee ${institution.name} publishes.`
+          : `${plural(counted, "fee", "fees")} ${institution.name} publishes changed at an institution in ${place} in the last ${windowDays} days, each confirmed on that institution's schedules.`,
+      );
+    } else {
+      // A copy built before the full count: say only what its kept items show.
+      const kept = briefing.observations.filter((o) => o.kind === "competitor_move").length;
+      lines.push(
+        kept === 0
+          ? `This month's briefing flags no confirmed change in ${place} to a fee ${institution.name} publishes; Alerts and watches lists every one.`
+          : `This month's briefing flags ${plural(kept, "fee", "fees")} ${institution.name} publishes that changed at an institution in ${place}, each confirmed on that institution's schedules.`,
+      );
+    }
     lines.push(
       rules.length > 0
         ? rules[0].headline
@@ -231,15 +242,18 @@ function market(input: CommandCenterInput, link: (href: string) => string): Comm
 }
 
 function next(input: CommandCenterInput, link: (href: string) => string): CommandCenterAnswer {
-  const [first] = buildAttentionItems(input.briefing, { limit: 1 });
-  const links: CommandCenterLink[] = [];
-  if (first?.feeCategory) links.push({ label: "Research this fee", href: link(`/pro/research?fee=${encodeURIComponent(first.feeCategory)}`) });
-  links.push({ label: "Build this quarter's brief", href: link("/pro/reports?intent=executive-briefing") });
+  // Points to the items listed just below rather than repeating the first of them.
+  const items = buildAttentionItems(input.briefing);
+  const links: CommandCenterLink[] = [{ label: "Build this quarter's brief", href: link("/pro/reports?intent=executive-briefing") }];
   return {
     key: "next",
     question: "What to look at next",
-    lines: [first ? first.headline : "Nothing in this month's briefing stands out for a closer look."],
-    source: first && input.briefing ? `This month's briefing, read ${dayText(input.briefing.generatedAt)}.` : null,
+    lines: [
+      items.length > 0
+        ? `${plural(items.length, "item", "items")} in this month's briefing ${items.length === 1 ? "stands" : "stand"} out for a closer look, listed below under "What stands out this month".`
+        : "Nothing in this month's briefing stands out for a closer look.",
+    ],
+    source: null,
     links,
   };
 }
