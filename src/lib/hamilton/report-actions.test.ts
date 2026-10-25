@@ -1048,6 +1048,23 @@ describe("durable report runs and fault handling (#1921)", () => {
     expect(mocks.generateSection).toHaveBeenCalledTimes(4);
   });
 
+  it("writes a section saved with the gate off again once the gate decides (review of #2647)", async () => {
+    mocks.openReportRun.mockResolvedValue({ kind: "opened", run: handle() });
+    await generateReport(reportParams());
+    const [, answerKey, answerCheckpoint] = mocks.saveReportSection.mock.calls[0];
+    mocks.generateSection.mockClear();
+    vi.stubEnv("HAMILTON_ANSWER_GATE_ENFORCE", "on");
+    try {
+      mocks.openReportRun.mockResolvedValue({ kind: "resumed", run: handle({ resumed: true, checkpoints: new Map([[answerKey, answerCheckpoint]]) }) });
+      await generateReport(reportParams());
+      // The answer and its partner review are written again, then the two later sections: none is reused.
+      expect(mocks.generateSection).toHaveBeenCalledTimes(4);
+      expect(mocks.completeReportRun.mock.calls.at(-1)?.[2]).toMatchObject({ reused_sections: [] });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("tells a second request the report is still being written, with no model call", async () => {
     mocks.openReportRun.mockResolvedValue({ kind: "busy", runId: 41 });
     const result = await generateReport(reportParams());

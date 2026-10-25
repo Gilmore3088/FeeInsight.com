@@ -213,7 +213,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-314 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+319 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
 ### Extraction and fee reading (49)
 
@@ -280,8 +280,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A provider refusal inside a streamed response never reaches the route's catch; map it in the stream's `onError`. — [finding](findings/2026-10-09-provider-limit-blank-answers.md) — Guard: `src/lib/ai-provider.test.ts` (+2 more)
 - 2026-10-09 — The Console usage limit did not trip the provider stop, and the verdict score starved. — [finding](findings/2026-10-09-api-usage-limit-did-not-trip-provider-stop.md) — Guard: `src/lib/ai-provider-usage.test.ts` (+1 more)
 
-### Categorisation and audience (23)
+### Categorisation and audience (24)
 
+- 2026-10-25 — A price its own line makes the paper statement charge ("$3.00 paper statement fee", "applies if you choose to receive paper statements") is the paper statement fee, never the account's monthly maintenance fee, however generic the words around it; a price for paper holders beside an electronic price stays maintenance. — [finding](findings/2026-10-25-paper-statement-price-filed-as-maintenance.md) — Guard: `src/lib/paper-statement-price.test.ts`, guard v92 tests; Agent lesson: knox/issue-1947-paper-statement-price-is-not-maintenance
 - 2026-10-25 — A price stated as "a/an <X> fee of $N" is the <X> fee: an NSF fee cut from overdraft words is the NSF fee, named by the phrase; outside that pair the words before are the more specific fee (an international wire, a deposited item return) and keep the read, as they do for a generic phrase ("a monthly fee of"). — [finding](findings/2026-10-25-cut-sentence-names-the-category.md) — Agent lesson: knox/priced-noun-phrase-names-the-fee; Guard: `src/lib/agents/knox/rules.test.ts`
 - 2026-10-25 — A fee's section heading, and what its name names, decide its category: a return charge under a foreign check or collection heading is not NSF, and a box-named late fee is the box's. — [finding](findings/2026-10-25-section-heading-and-destination-decide-category.md) — Guard: `collection-section-return.test.ts`, guard v90 tests; Agent lesson: `darwin/issue-1912-section-and-name-decide-category`, `knox/issue-1912-heading-decides-a-plain-return`
 - 2026-10-19 — Applicability needs both the final existing decision and positive current source facts; an early negative-key exit cannot certify that no affected facts exist. — [finding](findings/2026-10-19-stale-nonwire-international-verification.md) — Guard: Preserve the full Family PDF OLD-red and green pure controls, actual common...
@@ -306,9 +307,10 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A consumer comparison needs the payer checked as well as the category. — [finding](findings/2026-10-09-business-wire-as-consumer-price.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 - 2026-10-09 — Returned bonds and coupons were filed as NSF. — [finding](findings/2026-10-09-bond-return-filed-nsf.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 
-### Verification and publication (50)
+### Verification and publication (51)
 
 - 2026-10-25 — An institution's value rests on its general price when it also states a named account's exception price in the category; the exception stays listed as that account's own fee, and with no general price the named prices count (#1911). — [finding](findings/2026-10-25-product-exceptions-pool-general-price.md) — Agent lesson: hamilton/issue-1911-general-over-product-exception; Guard: `src/lib/data-store/fee-stats.test.ts`, `src/lib/data-store/product-exception-value.db.test.ts`
+- 2026-10-25 — Keep live only the latest edition of a schedule in force today, dated by its own text whatever its address or read date; take an older line down only where the newer edition states the fee, and never pair one product's schedule with the bank's (#1945). — [finding](findings/2026-10-25-older-edition-left-live-beside-dated-edition.md) — Agent lesson: darwin/issue-1945-latest-edition-in-force; Guard: `src/lib/agents/darwin/dated-edition.test.ts`
 - 2026-10-25 — A price for people who are not the bank's customers is another party's price, not a condition on the customer's $0, even when it names the bank ("$5.00 charge for non-F&M customers"); run an older-live re-check over every older live row and read each failure against the bank's text before it goes on. — [finding](findings/2026-10-25-named-bank-non-customer-price.md) — Agent lesson: darwin/issue-1568-named-bank-non-customer-price; Guard: `src/lib/agents/darwin/verify.test.ts`, `src/lib/agents/darwin/verified-recheck.db.test.ts`
 - 2026-10-25 — A line skipped as identical to a fee later held as not yet in effect is decided again so today's schedule carries the fee, but only a schedule's line: a product page prices one account (#1915). — [finding](findings/2026-10-25-skipped-lines-behind-held-edition.md) — Agent lesson: hamilton/issue-1915-edition-hold-twins; Guard: `src/lib/agents/hamilton/publish-selection.db.test.ts`
 - 2026-10-25 — A web page's first lines are often its menu, so a schedule's own edition line can sit further down; read it there only with guards, since most pages that date a future edition past the menu are current pages announcing the next one (T1). — [finding](findings/2026-10-25-edition-line-past-the-menu.md) — Agent lesson: hamilton/t1-edition-line-past-menu; Guard: `src/lib/agents/hamilton/schedule-edition-late.test.ts`
@@ -469,8 +471,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — Sign out on the account page and admin used Server Actions that a redeploy breaks. — [finding](findings/2026-10-09-sign-out-server-action.md) — Guard: `src/app/api/auth/logout/route.test.ts:30`
 - 2026-10-09 — A refunded report kept its paid status and its private link. — [finding](findings/2026-10-09-report-refund-not-handled.md) — Guard: `src/lib/stripe-webhook.test.ts` (+1 more)
 
-### Hamilton workspace (40)
+### Hamilton workspace (41)
 
+- 2026-10-25 — Counts from a paid path come from one bounded batch, not a bigger schedule: the paid gate replay batch writes about 200 real questions through the written answer, memo, Simulate and report paths with shadow origin `replay_paid`, each sample reserved under the batch lock before its first call and refused past 200 samples or $40 estimated spend, and stops for good once complete (James approved 2026-10-25). — [finding](findings/2026-10-25-paid-gate-replay-batch.md) — Guard: `src/lib/hamilton/paid-gate-replay.test.ts`, `src/app/api/admin/crew/gate-replay/route.test.ts`
 - 2026-10-25 — A figure the model may state needs a fact with the identity of what it is computed from: each profile trend quarter is now a filing fact keyed as its filed quarter, and a fee-income change is a derivation from two of them naming both, so the binder holds the wrong bank, quarter, span or direction and a change across a missing filing quarter; the golden set names a persona for every case, adds the V5 kinds, and its replay fails CI on any miss. — [finding](findings/2026-10-25-income-trend-facts.md) — Guard: `src/lib/hamilton/income-trend-claims.test.ts`, `src/lib/hamilton/claim-gate-replay.test.ts` (+2 more)
 - 2026-10-25 — A price read later is not a later price: a change counts only when the new price's schedule (its own edition line, `editionStarts`) is not an older edition than the one on file and is not our corrected reading of the same document, and every competitor alert keeps what we knew before and when. — [finding](findings/2026-10-25-late-older-schedule-change.md) — Guard: `src/lib/report-assemblers/monthly-pulse.test.ts`, `src/lib/hamilton/competitor-alerts.test.ts`; Agent lesson: hamilton/issue-1898
 - 2026-10-25 — A gate that only watches cannot be turned on until every path has a place to act on it: one switch, `HAMILTON_ANSWER_GATE_ENFORCE`, off by default and never calling the gate on the request path while off, now lets the one output gate hold answers on every surface its shadow covers, and never show one with an untraced figure. — [finding](findings/2026-10-25-answer-gate-enforce-switch.md) — Guard: `src/lib/hamilton/output-gate-enforce.test.ts`, `src/app/api/research/hamilton/route.answer-gate-enforce.test.ts`
@@ -575,7 +578,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (231 in all).
+counts as of this index (236 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
@@ -583,10 +586,10 @@ counts as of this index (231 in all).
 | magellan | 20 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
 | hoovie | 10 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
 | rosetta | 11 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
-| knox | 63 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
-| darwin | 33 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
+| knox | 64 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
+| darwin | 34 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 40 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
-| hamilton | 33 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
+| hamilton | 36 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
 | deming | 14 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
 
 ## Before 2026-10-10

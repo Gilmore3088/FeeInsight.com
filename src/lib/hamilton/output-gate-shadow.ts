@@ -30,11 +30,12 @@ export type ShadowPath = "written_streaming" | "written_buffered" | "memo" | "si
 
 /**
  * Whose answer the shadow ran on: a reader's (the live routes), the daily paid eval's sample, the
- * golden replay, or the daily gate replay (gate-replay.ts: real questions re-answered by today's free
- * engine). Kept apart in every count, so replayed and synthetic answers never stand in for readers'.
+ * golden replay, the daily gate replay (gate-replay.ts: real questions re-answered by today's free
+ * engine), or the one-off paid replay batch (paid-gate-replay.ts: real questions written up by the
+ * paid paths). Kept apart in every count, so replayed and synthetic answers never stand in for readers'.
  */
-export type ShadowOrigin = "reader" | "paid_eval" | "golden" | "replay";
-export const SHADOW_ORIGINS: readonly ShadowOrigin[] = ["reader", "paid_eval", "golden", "replay"];
+export type ShadowOrigin = "reader" | "paid_eval" | "golden" | "replay" | "replay_paid";
+export const SHADOW_ORIGINS: readonly ShadowOrigin[] = ["reader", "paid_eval", "golden", "replay", "replay_paid"];
 
 /** Where a shadow ran, as its record keeps it; `origin` defaults to "reader". */
 export interface ShadowContext {

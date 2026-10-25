@@ -380,7 +380,8 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   PRODUCT_PAGE_REPEAT_CHECK_VERSION: "Each verify step re-reads every live product-page fee with a same-price schedule twin (no cursor), so version 2's wider name cover reaches every live fee on the next step; nothing older to replay.",
   // v1 (#1915): schedule editions not yet in effect. Every verify step reads every live fee on a dated document.
   // v2 (T1): an edition line past a web page's menu, counted only until EDITION_LATE_HEADING_LIVE.
-  EDITION_CHECK_VERSION: "Each verify step re-reads every live or held fee on a document whose heading or late edition line states an edition (no cursor); nothing older to replay.",
+  // v3 (#1945): a later dated edition of the same schedule takes over, read from every text-dated document each step.
+  EDITION_CHECK_VERSION: "Each verify step re-reads every live or held fee on a document whose heading or late edition line states an edition, and every verified row on a document whose text states its date (no cursor); nothing older to replay.",
   // v1 (#2022): Canadian bank documents. A full verify step re-reads every live document's text at most hourly.
   CANADIAN_DOCUMENT_CHECK_VERSION: "First version: a verify step re-reads every live fee's document text (no cursor, at most hourly); nothing older to replay.",
   // v1 (#1905): a late charge's cap or floor read as the late fee. On (LATE_CHARGE_BOUND_TAKEDOWN_LIVE), sampled clean 5 of 5.
@@ -591,6 +592,8 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // re-files from late_payment to safe_deposit_box (2 move in place; 6 go to the second look).
     // v91 (Oct 25, #1905): the non-network ATM fee admits a share withdrawal at another network's ATM
     // (Knox v115's network table read); names only, 0 live and 0 raw rows on the Oct 25 dry run.
+    // v92 (Oct 25, #1947): a monthly maintenance fee its own line prices as the paper statement charge
+    // re-files to paper_statement (5 move in place; 14 beside a live twin go to the second look).
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",

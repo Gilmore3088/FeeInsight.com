@@ -1144,6 +1144,25 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   `late_heading_would_hold` and holds nothing on that account). Each document's text comes once per read, up to 8,000 characters only
   where a late edition line can be (`editionWindowSql`). Dry run Oct 25: 0 holds today; 1 more with
   the switch on (fee 149487, Allentown FCU's 2027 newsletter schedule, doc 36178).
+  v3 (#1945, `dated-edition.ts`): for one institution, audience and fee, at most one edition is
+  live, the latest one in force today, whatever its address and whenever it was first read. Each
+  document is dated by the date its own text states, as Magellan stores it
+  (`source_documents.stated_date`, basis `effective_statement` or `printed_date`, never the
+  address's year). The older document's line comes down as `older_edition: #<doc> dated <date>`
+  (verified row rejected with the `older_edition` flag) when the newer date is later and in force,
+  both addresses name the same audience, neither names one account or product (`namesOneProduct`:
+  checking, savings, money market, HSA, premium, ... or a product-area address), the two share at
+  least half of the larger one's fee names and at least 3, and the newer document states the same
+  line (category, `normalizedFeeName`, audience or an unknown one), live or skipped at publish as
+  identical to this very line. Hamilton then decides that skipped copy again
+  (`OLDER_EDITION_RESELECT_SQL`), so the fee stays live from the current schedule. A line only the
+  older edition lists (renamed, dropped or unread) stays live. Cedar Falls (7833): its 2026
+  schedule states no "Effective" heading and was read after it took effect, so 21 lines of its 2024
+  schedule stayed live. Dry run Oct 25 (prod, read-only, 701 of about 9,150 cited documents dated
+  so far): 35 live fees at 4 institutions retire, each stated again on the newer schedule's own
+  text, 5 of them at a changed price the older line kept live beside the new one; Cedar's 12 come
+  once Magellan dates its two documents. Switch `DATED_EDITION_TAKEOVER_LIVE` (on by the
+  sampled-clean rule); step detail `would_retire_dated_edition`, `dated_edition_samples`.
 - Canadian bank documents (`canadian-document-check.ts`, #2022, James's "Do all three", Oct 19).
   Natbank (2675), a Florida bank owned by National Bank of Canada, had 12 live fees read from the
   parent's Canadian chequing page and personal fee guide. Every institution here is U.S.-chartered,
@@ -1647,11 +1666,22 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v91 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v91 (Oct 25, #1905):
+- The guard is at v92 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v91 (Oct 25, #1905):
   the network ATM rule's savings/share-withdrawal exclusion no longer refuses a share withdrawal
   priced at another network's ATM ("Share withdrawal at Non-Navy Federal/Non-CO-OP Network ATM",
   Knox v115's network table read); the savings withdrawal limit stays out. Dry run: 0 live and 0
   raw rows carry the wording.
+- v92 (Oct 25, #1947): a
+  monthly maintenance fee whose own source line prices it as the paper statement charge
+  (`paperStatementPriceOnLine` in `src/lib/paper-statement-price.ts`, shared with Knox v117: "Service
+  charge | $3.00 paper statement fee each statement cycle", "A $2 paper statement fee applies", "*A
+  monthly fee of $3 applies if you choose to receive paper statements", TD's "Paper statements: $3
+  monthly fee") fails monthly maintenance and re-files to paper_statement, here in verify and on
+  Hamilton's live guard; paper_statement admits its generic name on that line. The account's own price
+  for paper holders beside an electronic price ("$4 for paper statement or $3 for estatement", "$7 with
+  paper statement") stays. Read-only dry run (Oct 25): 19 live fees fail; 5 move in place (95610,
+  126632, 128394, 128395, 138716), 14 sit beside a live paper statement fee at the same price and go to
+  the second look; 1 earlier takedown (14316) can come back as a paper statement fee.
 - v90 (Oct 25, #1912): a plain
   return charge ("Returned Check Fee", "Return Items") its stored text prints under a foreign check or
   collection heading (`withCollectionSection` / `collectionSectionReturn`: U.S. Bank 75929 under "Foreign
@@ -1968,7 +1998,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `AUDIENCE_RELABEL_VERSION` | `darwin.audience_relabel` | v4 | `darwin/audience-relabel.ts` |
 | `DARWIN_ADJUDICATE_STRATEGY` | `verify.adjudicate` | v2 | `darwin/adjudicate.ts` |
 | `DARWIN_CATEGORY_MODEL_STRATEGY` | `verify.category_model` | v1 | `darwin/category-model.ts` |
-| `EDITION_CHECK_VERSION` | `darwin.edition_effective_check` | v2 | `darwin/edition-effective-check.ts` |
+| `EDITION_CHECK_VERSION` | `darwin.edition_effective_check` | v3 | `darwin/edition-effective-check.ts` |
 | `DARWIN_PEER_STRATEGY` | `verify.peer_range` | v5 | `darwin/peer-checks.ts` |
 | `DARWIN_SECOND_SOURCE_STRATEGY` | `verify.second_source` | v2 | `darwin/peer-checks.ts` |
 | `DARWIN_RELEASE_STRATEGY` | `verify.release` | v4 | `darwin/release-held.ts` |

@@ -184,6 +184,21 @@ Hamilton supports the decision; it does not make it.
   Ask engine and the one output gate, and records each verdict as a shadow with `origin: "replay"`,
   apart from readers'. Runs pick up where the last stopped; none starts once the day is complete.
   No model calls; it covers the free Ask path only.
+- The paid gate replay batch (`hamilton/paid-gate-replay.ts`, provider step
+  `hamilton-paid-gate-replay`, #1077) is one batch, never a schedule: James approved about 200
+  samples, about $35, on 2026-10-25. It writes up the gate replay's plan (Pro questions first, then
+  the quality bar over a spread seeded by the batch id) through the paid eval's own paths, in the
+  mix 100 written answers, 50 memos, 25 Simulate reads, 25 report pages, and records each shadow
+  with `origin: "replay_paid"`. Every sample is reserved before its first call
+  (`paid_replay.sample_reserved`, under the batch's advisory lock) and refused past 200 samples,
+  past 8 in flight across every run, or when the batch's charge plus the next sample's worst-case
+  ceiling would pass $40; the charge counts a sample's recorded cost only when it finished and every
+  usage row completed with a cost, else its full ceiling. `?paid=1` runs it at once (returning a
+  running batch run rather than starting another), and the hourly gate replay call continues it once
+  the day's free plan is complete; once the batch is complete or capped, no run starts again. A new batch needs a
+  new `PAID_REPLAY_BATCH_ID` and James's yes. Its calls are budgeted and recorded as agent
+  `hamilton_replay` with no route (`agent:hamilton_replay`, $40, migration 20270110000078), never
+  on the live readers' route lines or `agent:hamilton`.
 - The paid answer eval (`hamilton/paid-answer-eval.ts`, provider step `hamilton-paid-answer-eval`,
   cron once a day, `/api/admin/crew/answer-eval-paid`, #1079) writes at most five memos a day
   (James, 2026-10-15) over free answers that carry a storyline: Pro readers' questions first, then
@@ -935,6 +950,14 @@ Market "Paper statements available for $3 per month" (docs 25730/25731) does not
 bank's paper statement fee. Dry run on prod, Oct 25: 91 rows at 3 institutions reselected; 16 from
 a document in effect today (7174, doc 29000), the other 75 read from Dec 1, 2026 schedules and held
 until then (5297 docs 16640/23342; 722 docs 316/16682).
+
+**Older-edition twins (#1945, Oct 25).** A verified row skipped as identical to a live line that
+Darwin's edition check later retired for this row's own document (`older_edition: #<this doc> ...`,
+the newer edition taking it over, `darwin/dated-edition.ts`) is decided again
+(`OLDER_EDITION_RESELECT_SQL`), so the fee goes live from the current schedule. Cedar Falls (7833)
+had 15 lines of its 2026 schedule (doc 31873) skipped behind its 2024 lines (doc 2671) on Oct 13. A
+row of any other document skipped behind the same line, such as another copy of the retired edition,
+stays decided.
 
 **Qualifier pairs, check 4 (#1314, Oct 15).** `linesApartOnPage` keeps two names apart only when the
 shorter one is printed at the price clear of every place of the longer: a shorter name found only

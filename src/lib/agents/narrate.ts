@@ -280,6 +280,13 @@ function narrateFinished(
       if (!today || !status) return "Replayed real questions through the one output gate.";
       return `Replayed ${count(n(today, "total"), "answer")} through the one output gate today: ${n(status, "validated")} validated, ${n(status, "ready_partial")} partial, ${n(status, "held")} held.`;
     }
+    case "hamilton-paid-gate-replay": {
+      const reserved = (detail.reserved ?? null) as Detail | null;
+      const caps = (detail.caps ?? null) as Detail | null;
+      if (!reserved || !caps) return "Wrote paid samples for the gate replay batch.";
+      const usd = (key: string, from: Detail) => `$${(n(from, key) / 1e6).toFixed(2)}`;
+      return `Paid gate replay batch: ${n(reserved, "total")} of ${n(caps, "samples")} samples reserved, ${usd("chargedMicrousd", detail)} of ${usd("costMicrousd", caps)} charged against the cap${detail.complete === true ? "; the batch is complete" : ""}.`;
+    }
     case "hamilton-paid-answer-eval": {
       if (typeof detail.note === "string") return detail.note;
       const memo = (Array.isArray(detail.paths) ? detail.paths[0] : null) as Detail | null;
@@ -805,6 +812,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "hamilton-answer-eval": "hamilton",
   "hamilton-paid-answer-eval": "hamilton",
   "hamilton-gate-replay": "hamilton",
+  "hamilton-paid-gate-replay": "hamilton",
   "study-fee-dependence": "hamilton",
   "study-local-income": "hamilton",
   "study-concentration": "hamilton",

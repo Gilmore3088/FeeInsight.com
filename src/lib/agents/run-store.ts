@@ -438,6 +438,13 @@ async function executeAgenticStep(
     return { status: "completed", summary: gateReplaySummaryLine(result), detail: { ...result } };
   }
 
+  // Hamilton's one-off paid gate replay batch (#1077): a provider step, capped at 200 samples and $40 for the batch.
+  if (step.stepKey === "hamilton-paid-gate-replay") {
+    const { runPaidGateReplay, paidReplaySummaryLine } = await import("@/lib/hamilton/paid-gate-replay");
+    const result = await runPaidGateReplay({ agentRunId: run.id });
+    return { status: "completed", summary: paidReplaySummaryLine(result), detail: { ...result } };
+  }
+
   // Hamilton's paid answer eval (#1079): a provider step, capped at five paid samples a day.
   if (step.stepKey === "hamilton-paid-answer-eval") {
     const { runPaidAnswerEval, shadowCountsLine } = await import("@/lib/hamilton/paid-answer-eval");
@@ -1123,8 +1130,9 @@ async function executeAgenticStep(
       const lateEditionNote = editions.lateHeadingWouldHold > 0
         ? ` Edition lines past the menu (switch off, nothing written): ${editions.lateHeadingWouldHold.toLocaleString()} more live fee(s) would come down.`
         : "";
-      const editionNote = lateEditionNote + (editions.holds + editions.restores + editions.takeovers > 0
-        ? ` Schedule editions: ${editions.holds.toLocaleString()} live fee(s) from schedules not in effect yet, ${editions.restores.toLocaleString()} now in effect, ${editions.takeovers.toLocaleString()} older-edition line(s) (${editions.live && !editions.dryRun ? `${editions.held.length.toLocaleString()} held, ${editions.restored.length.toLocaleString()} restored, ${editions.retired.length.toLocaleString()} retired` : "dry run or switch off: nothing written"}).`
+      const datedEditions = editions.datedTakeovers ?? 0;
+      const editionNote = lateEditionNote + (editions.holds + editions.restores + editions.takeovers + datedEditions > 0
+        ? ` Schedule editions: ${editions.holds.toLocaleString()} live fee(s) from schedules not in effect yet, ${editions.restores.toLocaleString()} now in effect, ${(editions.takeovers + datedEditions).toLocaleString()} older-edition line(s), ${datedEditions.toLocaleString()} of them by a later dated edition (${editions.live && !editions.dryRun ? `${editions.held.length.toLocaleString()} held, ${editions.restored.length.toLocaleString()} restored, ${editions.retired.length.toLocaleString()} retired` : "dry run or switch off: nothing written"}).`
         : "");
       // #1909: fees read from a bank's Spanish copy of a schedule whose English line is live
       // (translated-copy-check.ts); a report only on a dry run or with its switch off.
@@ -3863,6 +3871,8 @@ const STEP_EXPECTED_MS: Record<string, number> = {
   "hamilton-paid-answer-eval": 280_000,
   // The gate replay stops starting answers at 200 s (gate-replay.ts BUDGET_MS); its slowest batch may run past it.
   "hamilton-gate-replay": 280_000,
+  // The paid replay batch starts no sample after 100 s; a written answer started then stops by 180 s more.
+  "hamilton-paid-gate-replay": 290_000,
   // The hourly nationwide lane sync (state-lane-scheduler runNationwideLaneSync), run from its own
   // route, never the tick. Measured inside the tick over the 24 hours to 23:55 UTC 2026-10-18:
   // the first tick of each hour started its first step p50 80 s, p90 171 s, max 200 s in.
@@ -3887,7 +3897,7 @@ const STEP_EXPECTED_MS: Record<string, number> = {
  * from `/api/admin/crew/lane-sync`. The bounded HMDA identity repair requires an explicit
  * admin advance of its reviewed configuration, so the tick never starts it either.
  */
-export const TICK_EXCLUDED_STEP_KEYS = ["hamilton-answer-eval", "hamilton-paid-answer-eval", "hamilton-gate-replay", "lane-sync", HMDA_IDENTITY_REPAIR_STEP_KEY] as const;
+export const TICK_EXCLUDED_STEP_KEYS = ["hamilton-answer-eval", "hamilton-paid-answer-eval", "hamilton-gate-replay", "hamilton-paid-gate-replay", "lane-sync", HMDA_IDENTITY_REPAIR_STEP_KEY] as const;
 /** Steps not listed above: most run in seconds, so this keeps an unknown long one safe. */
 const DEFAULT_STEP_EXPECTED_MS = 120_000;
 /**

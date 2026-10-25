@@ -337,7 +337,15 @@ import { namesLateChargeBound } from "@/lib/late-charge-bound";
 // card's purchase, issue or reload row stays, and so does a price labelled only by audience, unit
 // or purchase ("Members | $3"). Removes reads only. The stale-read floor stays at v97.
 // Name re-tidy stays at v27.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 116 } as const;
+// v117 (#1947): a read filed as monthly maintenance whose own line prices it as the paper statement
+// charge (`paperStatementRead` in rules.ts, `paperStatementPriceOnLine`, shared with category guard
+// v92) is the paper statement fee: "Service charge | $3.00 paper statement fee each statement cycle",
+// "A $2 paper statement fee applies", "*A monthly fee of $3 applies if you choose to receive paper
+// statements", "Paper (mailed) Statement Fee **** | $2.00 Monthly Fee". The account's own price for
+// paper holders beside an electronic price ("$4 for paper statement or $3 for estatement", "$7 with
+// paper statement") stays maintenance. Oct 25 dry run: 19 live maintenance fees match, each checked on
+// its bank's stored text. The stale-read floor stays at v97. Name re-tidy stays at v27.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 117 } as const;
 
 export interface SpecialistRun {
   strategy: string;

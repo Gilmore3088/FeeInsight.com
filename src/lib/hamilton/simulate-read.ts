@@ -11,7 +11,7 @@
 import { withRawProviderResponseOperation } from "@/lib/ai-response-budget";
 
 import { getAnthropicMessagesClient, extractAnthropicText, getHamiltonModel, hasAnthropicApiKey, isProviderLimitError } from "@/lib/ai-provider";
-import { trackAnthropicRequest, assertCompletedAnthropicTextResponse, incompleteProviderResponse } from "@/lib/ai-provider-usage";
+import { trackAnthropicRequest, assertCompletedAnthropicTextResponse, incompleteProviderResponse, ledgerFields, type ProviderLedger } from "@/lib/ai-provider-usage";
 import { checkAnswerEvidence, type AnswerEvidenceCheck } from "./answer-gate";
 import type { MemoClient, MemoTracking } from "./memo";
 import { HAMILTON_PAUSED_MESSAGE } from "./provider-paused";
@@ -197,9 +197,8 @@ function anthropicSimulateClient(institutionId: number | null, tracking?: MemoTr
       const response = await trackAnthropicRequest(
         {
           model,
-          agent: "hamilton",
+          ...ledgerFields(tracking?.ledger, { agent: "hamilton", routeId: SIMULATE_ROUTE_ID }),
           operation: tracking?.operation ?? "simulate_fee_change",
-          routeId: SIMULATE_ROUTE_ID,
           ...(tracking?.subjectKey ? { subjectKey: tracking.subjectKey } : {}),
           ...(tracking?.agentRunId ? { agentRunId: tracking.agentRunId } : {}),
           metadata: { institution_id: institutionId },

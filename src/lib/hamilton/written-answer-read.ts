@@ -11,7 +11,7 @@ import { assertCompletedProviderFinish, withProviderResponseOperation } from "@/
 
 import { generateText, convertToModelMessages, stepCountIs, type UIMessage } from "ai";
 import { getAnthropicLanguageModel, hasAnthropicApiKey, isProviderLimitError } from "@/lib/ai-provider";
-import { trackAnthropicRequest, observedProviderUsage } from "@/lib/ai-provider-usage";
+import { trackAnthropicRequest, observedProviderUsage, ledgerFields, type ProviderLedger } from "@/lib/ai-provider-usage";
 import { getHamilton, buildAnalyzeModeSuffix, buildMonitorModeSuffix, buildSavedPeerSetPrompt, type AgentConfig } from "@/lib/research/agents";
 import { detectSkill, buildSkillInjection, buildSkillExecution, isSkillOptIn, findOfferedSkill } from "@/lib/research/skills";
 import { cacheLatestMessage, cachedSystem, trackerUsage } from "@/lib/research/tool-output";
@@ -147,7 +147,8 @@ export type WrittenAnswerWriter = (input: {
   institutionId: number;
   institutionName: string;
   question: string;
-  tracking: { operation: string; subjectKey: string; agentRunId?: number };
+  /** `ledger` books the call under another agent and route (the paid replay batch); absent, the route's own. */
+  tracking: { operation: string; subjectKey: string; agentRunId?: number; ledger?: ProviderLedger };
 }) => Promise<WrittenAnswerResult>;
 
 /** The model call's own cap, so a slow answer leaves the eval's 300 s function time to finish. */
@@ -179,9 +180,8 @@ export const writeWrittenAnswer: WrittenAnswerWriter = async ({ institutionId, i
     const result = await trackAnthropicRequest(
       {
         model: agent.model,
-        agent: "hamilton",
+        ...ledgerFields(tracking.ledger, { agent: "hamilton", routeId: WRITTEN_ANSWER_ROUTE_ID }),
         operation: tracking.operation,
-        routeId: WRITTEN_ANSWER_ROUTE_ID,
         subjectKey: tracking.subjectKey,
         ...(tracking.agentRunId ? { agentRunId: tracking.agentRunId } : {}),
         metadata: { institution_id: institutionId },

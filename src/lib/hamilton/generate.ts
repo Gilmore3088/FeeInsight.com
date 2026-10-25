@@ -11,7 +11,7 @@ import {
   getHamiltonModel,
   type Anthropic,
 } from "@/lib/ai-provider";
-import { trackAnthropicRequest, assertCompletedAnthropicTextResponse, observedProviderUsage, type ProviderUsage } from "@/lib/ai-provider-usage";
+import { trackAnthropicRequest, assertCompletedAnthropicTextResponse, observedProviderUsage, ledgerFields, type ProviderLedger, type ProviderUsage } from "@/lib/ai-provider-usage";
 import { HAMILTON_VOICE } from "./voice";
 import { MalformedProviderOutputError } from "./task-faults";
 import {
@@ -80,6 +80,8 @@ export interface SectionTracking {
   onProviderResponse?: (usage: ProviderUsage | undefined, model: string) => void;
   /** The report's research and account institutions, for the shadow output gate's account rule (#1077 step 6). */
   gateIdentity?: GateIdentity;
+  /** Books the section's calls under another agent and route (the paid replay batch); absent, the report route's own. */
+  ledger?: ProviderLedger;
 }
 
 export async function generateSection(input: SectionInput, tracking: SectionTracking = {}): Promise<SectionOutput> {
@@ -90,9 +92,8 @@ export async function generateSection(input: SectionInput, tracking: SectionTrac
     response = await trackAnthropicRequest(
       {
         model: MODEL,
-        agent: "hamilton",
+        ...ledgerFields(tracking.ledger, { agent: "hamilton", routeId: "api.reports.generate" }),
         operation: tracking.operation ?? "generate_report_section",
-        routeId: "api.reports.generate",
         ...(tracking.subjectKey ? { subjectKey: tracking.subjectKey } : {}),
         ...(tracking.agentRunId ? { agentRunId: tracking.agentRunId } : {}),
       },
