@@ -284,6 +284,20 @@ fees found (54.7%); 56 of the 59 wrong reads are the right price under another c
 
 ## Rules versions (`extract.rules`)
 
+v110 (Oct 25, #1916): a late charge printed in a safe deposit box section is the box's late rent
+charge, whichever specialist read it (`boxSectionLateFeeRead`, `boxSectionLateFee` in
+`src/lib/custom-report/box-section-late-fee.ts`). The section is read upward from the fee's own
+line: the box heading itself ("Safe Deposit Box Fees", "page | Safe Deposit Box 30 Day"), reached
+through box rows only (sizes, keys, drilling, locks, rent). Any other row or heading ("LOAN FEES",
+"Credit Card Fees") and any line naming a loan or card stops it; a name naming a loan, card or
+credit, or the box itself, is not read here. v78's `boxLateFee` read the section only from the rules
+pass's previous read or its segment heading, so Advia FCU's two-column box late fee (doc 32751,
+live 142240) and 36 more live box late fees were still read as `late_payment`. The shared check
+refuses such a fee filed as `late_payment` (`category_not_in_text`), so the self-check, Darwin's
+verify and Hamilton's source check v24 agree. Read-only dry run, Oct 25: 111 live late_payment fees
+at 110 institutions come down (each read on its stored line); today's rules read all 111 lines as
+the box's. The stale-read floor stays at v97.
+
 v109 (Oct 25, #1828): a bare "Returned payment" row ("Returned
 payment", "Returned Payment Fee", "RETURNED PAYMENT") under a loan section's title is the loan's
 returned payment fee, read as `other_lending_fee` at its own plain price under its own printed
@@ -2000,7 +2014,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v109 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v110 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v10 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

@@ -13,6 +13,7 @@ import { newestColumnText } from "@/lib/fee-change-columns";
 import { feeBullets, withoutFeeBullets } from "@/lib/custom-report/fee-bullets";
 import { isStackedFeeLabel } from "@/lib/custom-report/stacked-fee-prices";
 import { loanReturnedPaymentRows } from "@/lib/agents/knox/loan-section-rows";
+import { boxSectionLateFee } from "@/lib/custom-report/box-section-late-fee";
 import { domesticStackedStem, stackedCellVariants } from "@/lib/custom-report/stacked-cell-variants";
 import { domesticWireClausePrices } from "@/lib/custom-report/wire-clause-prices";
 import type { OwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
@@ -1188,6 +1189,21 @@ const BARE_LATE_FEE = /^\W*late\s+(?:payment|fee|charge)s?(?:\s+(?:fee|charge))?
 export function boxLateFee(candidate: ExtractedFeeCandidate, previousKind: string | null): ExtractedFeeCandidate {
   if (candidate.canonicalHint !== "late_payment" || previousKind !== "safe_deposit_box" || !BARE_LATE_FEE.test(candidate.feeName)) return candidate;
   // The name stays the page's own, so the self-check still traces it to its row.
+  return passesDarwinChecks("safe_deposit_box", candidate.feeName, candidate.amount) ? { ...candidate, canonicalHint: "safe_deposit_box" } : candidate;
+}
+
+/**
+ * v110 (#1916): a late charge printed in a safe deposit box section is the box's, whichever
+ * specialist read it and whatever came before it. `boxLateFee` above reads the section from the read
+ * just before and from the segment's heading in the rules pass only, so the box heading above a
+ * two-column row ("page | Safe Deposit Box 30 Day" over "Courtesy Pay Coverage | Late Payment (by
+ * credit union | $10", Advia FCU), a box row Knox read as no fee, a later specialist's read or a name
+ * with words after the late fee ("Late Payment after 30 days (per month)") left it a late payment.
+ * Here the section is read on the page (`boxSectionLateFee`, shared with the source check, which
+ * refuses such a read filed as late_payment). The name stays the page's own.
+ */
+export function boxSectionLateFeeRead(candidate: ExtractedFeeCandidate, text: string): ExtractedFeeCandidate {
+  if (candidate.canonicalHint !== "late_payment" || !boxSectionLateFee(text, candidate.feeName, candidate.amount)) return candidate;
   return passesDarwinChecks("safe_deposit_box", candidate.feeName, candidate.amount) ? { ...candidate, canonicalHint: "safe_deposit_box" } : candidate;
 }
 

@@ -1,6 +1,7 @@
 import { feeApplicability } from "@/lib/fee-audience";
 import {
   billPayByHeading,
+  boxSectionLateFeeRead,
   extractCandidatesFromText,
   recognizedFeeBullets,
   isUnpricedHeldShape,
@@ -266,7 +267,15 @@ import { withGluedFootnotePrices } from "@/lib/custom-report/glued-footnote-pric
 // checking or other title it stays as before; a short product heading ("Visa") is such a title, and a
 // lone title under two side-by-side columns heads neither. Adds reads only. The stale-read floor stays at
 // v97. Name re-tidy stays at v27.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 109 } as const;
+// v110 (#1916): a late charge printed in a safe deposit box section is the box's, whichever
+// specialist read it (`boxSectionLateFeeRead`, `boxSectionLateFee` in
+// `src/lib/custom-report/box-section-late-fee.ts`). v78's `boxLateFee` read the section only from the
+// rules pass's previous read or its segment heading, so Advia FCU's two-column "page | Safe Deposit
+// Box 30 Day" / "Courtesy Pay Coverage | Late Payment (by credit union | $10" and 36 more live box
+// late fees were still read as a loan's late payment today. The shared check refuses such a fee filed
+// as late_payment, so the self-check, Darwin's verify and source check v24 agree. The stale-read
+// floor stays at v97. Name re-tidy stays at v27.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 110 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -481,7 +490,9 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
     const run = specialist.run();
     // v78 (#1304): no specialist files a bill payment priced under an overdraft or NSF heading on
     // its own line as bill pay (`billPayByHeading`); the table pass named such a cell by its words.
-    const found = { ...run, candidates: run.candidates.map((read) => { const next = billPayByHeading(read); return next && carryColumnHeadingCell(read, next); }).filter((read): read is ExtractedFeeCandidate => read != null) };
+    // v110 (#1916): every specialist's late fee printed in a safe deposit box section is the box's
+    // (`boxSectionLateFeeRead`), read on the self-check's text.
+    const found = { ...run, candidates: run.candidates.map((read) => { const next = billPayByHeading(read); return next && carryColumnHeadingCell(read, next); }).filter((read): read is ExtractedFeeCandidate => read != null).map((read) => boxSectionLateFeeRead(read, checkText)) };
     for (const [reason, count] of Object.entries(found.dropped ?? {})) countDropped(reason as DroppedLineReason, count);
     let added = 0;
     let selfCheckFailed = 0;

@@ -86,7 +86,12 @@ export const SOURCE_CHECK_REASON = "source_check_untraceable";
 // payment is made after the grace period. | $20.00") stays one fee's row, so its description is no
 // second name and the fee keeps its own price; a price under its name with the balance that waives it
 // ("$3.00 if balance falls below $100 minimum") is that name's price. Dry run: no live fee comes down.
-export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 23 } as const;
+// Version 24 (#1916): a bare late charge printed in a safe deposit box section ("Safe Deposit Box
+// Fees" / "Late Payment (per month) | $10.00", U.S. Bank; "page | Safe Deposit Box 30 Day" over
+// "Courtesy Pay Coverage | Late Payment (by credit union | $10", Advia FCU) is the box's late rent
+// charge, so filed as late_payment it no longer traces (`boxSectionLateFee`, category_not_in_text).
+// Read-only dry run, Oct 25: 111 live late_payment fees at 110 institutions come down; the PR lists them.
+export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 24 } as const;
 
 /**
  * An institution is checked again whenever a newer live fee appears, so a fee
