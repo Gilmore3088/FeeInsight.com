@@ -436,8 +436,10 @@ function regridRows(lines: string[]): string[] {
       i += 1;
       continue;
     }
-    // A name | description | price row is one fee (#1479): neither rewrite below splits it.
-    const described = cells.length === 3 && isDescriptionCell(cells[1]);
+    // A name | description | price row is one fee (#1479): neither rewrite below splits it. A next
+    // row that opens with a price is the wrapped layout, so a sentence-cased second name ("Returned
+    // item fee for each item presented.") still splits there.
+    const described = cells.length === 3 && isDescriptionCell(cells[1]) && !PRICE_ONLY_CELL.test(next[0]);
     if (
       cells.length === 3 &&
       !described &&
@@ -1259,8 +1261,12 @@ interface PricedRow {
   priced: boolean;
 }
 
-/** One line read as a table or list row: its name cells and the prices its price cells state. */
-function pricedRow(line: string): PricedRow {
+/**
+ * One line read as a table or list row: its name cells and the prices its price cells state.
+ * `wrapsBelow` is true when the next line opens with a price (the wrapped layout `regridRows`
+ * splits), so a sentence-cased middle cell there is another fee's name, not a description.
+ */
+function pricedRow(line: string, wrapsBelow = false): PricedRow {
   const cells = line.split("|").map((cell) => cell.trim()).filter((cell) => cell.length > 0 && cell !== "**");
   if (cells.length === 1) {
     const lead = cells[0].match(PRICE_THEN_NAME);
@@ -1273,7 +1279,7 @@ function pricedRow(line: string): PricedRow {
   const priceCells = cells.filter((cell) => ROW_PRICE_CELL.test(cell));
   // #1479: a description cell ("Membership Fee | One-time fee required to establish membership. |
   // $1.00") is not a second name, so the row is the fee's own row and keeps its own price.
-  const names = cells.filter((cell, i) => !ROW_PRICE_CELL.test(cell) && !(i > 0 && cells.length === 3 && isDescriptionCell(cell)))
+  const names = cells.filter((cell, i) => !ROW_PRICE_CELL.test(cell) && !(!wrapsBelow && i > 0 && cells.length === 3 && isDescriptionCell(cell)))
     .map(rowName).filter(Boolean);
   const prices = priceCells.flatMap((cell) => {
     const money = moneyTokens(cell).map((token) => token.value);
@@ -1310,7 +1316,8 @@ export function ownRowRefusal(text: string, feeName: string, amount: number): st
     if (!index.names[i].includes(own)) continue;
     const line = index.lines[i];
     const cells = line.split("|").map((cell) => cell.trim()).filter((cell) => cell.length > 0 && cell !== "**");
-    const row = pricedRow(line);
+    const below = index.lines[i + 1]?.split("|").map((cell) => cell.trim()).find((cell) => cell.length > 0);
+    const row = pricedRow(line, below !== undefined && PRICE_ONLY_CELL.test(below));
     // Only a table row (two cells or more) or a name line whose price "varies" is a row here: a
     // sentence or a price-first line ("$5 monthly service fee", "Monthly service fee of $6.99 with
     // direct deposit") belongs to whatever account it describes, so it decides nothing.

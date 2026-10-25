@@ -91,6 +91,15 @@ describe("a name | description | price row stays whole (#1479, Vickswood 518640)
     expect(checkFeeAgainstSource(wrapped, "Returned Check", 30, ".").ok).toBe(true);
     expect(checkFeeAgainstSource(wrapped, "Returned Check", 20, ".").ok).toBe(false);
   });
+
+  it("splits the wrapped layout even when the second name reads like a sentence", () => {
+    const wrapped = "Stop Payment | Returned item fee for each item presented. | $30\n$25 | (online)";
+    expect(checkFeeAgainstSource(wrapped, "Stop Payment", 25, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(wrapped, "Stop Payment", 30, ".").ok).toBe(false);
+    const statement = "Returned check | Copy of statement per page. | $20\n$30 | (Business accounts)";
+    expect(checkFeeAgainstSource(statement, "Returned check", 30, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(statement, "Returned check", 20, ".").ok).toBe(false);
+  });
 });
 
 describe("a price under its name with the balance that waives it (#1479, Ixonia 664957)", () => {
