@@ -56,19 +56,22 @@ const LABEL_BEFORE = new RegExp(String.raw`(?:^|[|•·:;.]\s*|^\W*)${PAPER}\s+$
 /** The account's own price for paper holders beside an electronic price ("$4 for paper statement or $3 for estatement"). */
 const ELECTRONIC_ALTERNATIVE = /^[^|$]{0,60}\b(?:or|;|,)\s*\$\s?\d[\d.,]*\s+(?:with|for|if)\s+(?:an?\s+)?(?:e-?statements?|electronic|online|paperless)/i;
 
-const ELECTRONIC_WORD = String.raw`(?:e-?\s?statements?|estmts?|electronic(?:\s+statements?)?|online\s+statements?|paperless)`;
-const ELECTRONIC = new RegExp(String.raw`\b${ELECTRONIC_WORD}`, "i");
+const ELECTRONIC_WORD = String.raw`(?:e-?\s?statements?|estmts?|electronic\s+statements?|online\s+statements?|paperless)`;
+/** "no fee with eStatements", "$0 for paperless": a free electronic price, not sign-up copy ("Sign up for free eStatements"). */
 const ELECTRONIC_FREE = new RegExp(
-  String.raw`\b(?:no\s+(?:fee|charge)|free|\$\s?0(?:\.00)?\b)[^|$]{0,30}\b${ELECTRONIC_WORD}|\b${ELECTRONIC_WORD}[^|$]{0,30}\b(?:no\s+(?:fee|charge)|free|\$\s?0(?:\.00)?\b)`,
+  String.raw`(?:\bno\s+(?:fee|charge)|\bfree|\$\s?0(?:\.00)?(?![.\d]))\s+(?:with|for|if)\s+(?:[a-z]+\s+){0,3}${ELECTRONIC_WORD}`,
+  "i",
+);
+/** Another price right beside an electronic word in the same cell ("E-Statement: $3", "$10 if enrolled in eStatements"). */
+const ELECTRONIC_PRICE = new RegExp(
+  String.raw`\b${ELECTRONIC_WORD}[^|$]{0,25}\$\s?\d|\$\s?\d[\d.,]*[^|$]{0,40}\b${ELECTRONIC_WORD}`,
   "i",
 );
 
-/** The line prices an electronic alternative anywhere beside this price: the account's tiered fee, not a paper charge. */
+/** The line prices an electronic alternative beside this price: the account's tiered fee, not a paper charge. */
 function tieredBesideElectronic(text: string, priceStart: number, priceEnd: number): boolean {
-  if (!ELECTRONIC.test(text)) return false;
-  if (ELECTRONIC_FREE.test(text)) return true;
-  const rest = `${text.slice(0, priceStart)} ${text.slice(priceEnd)}`;
-  return /\$\s?\d/.test(rest);
+  const rest = `${text.slice(0, priceStart)}#${text.slice(priceEnd)}`;
+  return ELECTRONIC_FREE.test(rest) || ELECTRONIC_PRICE.test(rest);
 }
 
 function priceOnLine(amount: number): RegExp {

@@ -24,6 +24,12 @@ describe("paperStatementPriceOnLine (#1947)", () => {
     ["Monthly Service Fees | $5.00 fee per cycle period for requested paper statement | $10.00 if balance falls below $5,000", 5], // 85521
     ["Monthly Service Fees | None | $5 per paper statement if not enrolled in eStatements within 30 days of account opening** | $6 if $300 minimum balance", 5], // 147192
     ["A $6.00 monthly paper statement service charge will apply when not enrolled.", 6], // 14316 (taken down)
+    // Sign-up copy and unrelated prices beside it (re-review of #2655).
+    ["A $3 monthly fee applies if you choose to receive paper statements. Sign up for free eStatements.", 3],
+    ["Paper statements: $3 monthly fee (eStatements are free)", 3],
+    ["*A monthly fee of $3 applies if you choose to receive paper statements. Electronic transfers $1 each", 3],
+    ["Paper (mailed) Statement Fee | $2.00 Monthly Fee | E-Statement Fee | $0", 2],
+    ["$2 paper statement fee; eStatements are free", 2],
   ])("%s ($%s) is the paper statement charge", (line, amount) => {
     expect(paperStatementPriceOnLine(line, amount)).not.toBeNull();
   });
