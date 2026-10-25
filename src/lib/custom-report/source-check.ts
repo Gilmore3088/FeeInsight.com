@@ -26,6 +26,7 @@ import { stackedCellVariants } from "./stacked-cell-variants";
 import { refusesOtherColumnPrice } from "./column-pair-prices";
 import { boxSectionLateFee } from "./box-section-late-fee";
 import { withGluedFootnotePrices } from "./glued-footnote-price";
+import { discontinuedRow } from "./discontinued-rows";
 const NSF_POLICY_CATEGORIES = new Set(["nsf", "overdraft"]);
 
 export type SourceCheckFailure =
@@ -35,7 +36,9 @@ export type SourceCheckFailure =
   | "priced_per_amount"
   | "amount_is_a_threshold"
   | "tiered_fee"
-  | "category_not_in_text";
+  | "category_not_in_text"
+  /** #2070: the fee's own row prices an account the bank no longer offers (`discontinuedRow`). */
+  | "discontinued_account";
 
 export type SourceCheckResult = {
   ok: true;
@@ -1393,15 +1396,26 @@ export function checkFeeAgainstSource(
   // "Late Payment (per month) | $10.00") is the box's late rent charge, not a loan's late payment.
   // Only for a fee filed as late_payment; Knox files the read as the box's (`boxSectionLateFeeRead`).
   if (canonicalFeeKey === "late_payment" && boxSectionLateFee(rawText, feeName, amount)) return { ok: false, reason: "category_not_in_text" };
-  const result = checkOwnName(rawText, feeName, amount, categoryPattern, canonicalFeeKey, options);
+  const result = withoutDiscontinuedRow(rawText, feeName, amount, checkOwnName(rawText, feeName, amount, categoryPattern, canonicalFeeKey, options));
   // W43 live audit (#2064): Knox names a box row printed as its size alone "Safe Deposit Box <size>"
   // (`boxSizeNamed`); the row is traced by its own words. Only for a fee filed as a safe deposit box
   // (a null key never borrows the box words: Knox's self-check passes the read's category), and only
   // on a row that is the size itself, not another product's row printing a size (`leadsBoxRow`).
   const asRead = result.ok ? null : asReadBoxName(feeName, canonicalFeeKey);
   if (!asRead) return result;
-  const traced = checkOwnName(rawText, asRead, amount, categoryPattern, canonicalFeeKey, options);
+  const traced = withoutDiscontinuedRow(rawText, asRead, amount, checkOwnName(rawText, asRead, amount, categoryPattern, canonicalFeeKey, options));
   return traced.ok && leadsBoxRow(traced.sourceLine, asRead, rawText) ? traced : result;
+}
+
+/**
+ * #2070: a fee that traces (or traces to a balance band) is still refused when every row naming it at
+ * its amount prices an account the bank no longer offers: the marker on the fee's own row ("$5.00 (this
+ * account no longer offered)") or a legacy section heading over it ("Legacy Accounts"). Knox's
+ * self-check, Darwin and Hamilton's re-check accept only `ok` or `tiered_fee`, so this reason refuses.
+ */
+function withoutDiscontinuedRow(rawText: string | null | undefined, feeName: string, amount: number, result: SourceCheckResult): SourceCheckResult {
+  if (!result.ok && result.reason !== "tiered_fee") return result;
+  return discontinuedRow(rawText, feeName, amount) ? { ok: false, reason: "discontinued_account" } : result;
 }
 
 /**
@@ -1581,6 +1595,8 @@ function checkAgainstLines(
     amount_is_a_threshold: 4,
     tiered_fee: 5,
     category_not_in_text: 6,
+    // Set only after a fee traces (`withoutDiscontinuedRow`), never by the line scan.
+    discontinued_account: 7,
   };
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];

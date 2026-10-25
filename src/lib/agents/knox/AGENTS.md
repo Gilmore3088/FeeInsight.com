@@ -284,6 +284,15 @@ fees found (54.7%); 56 of the 59 wrong reads are the right price under another c
 
 ## Rules versions (`extract.rules`)
 
+v112 (Oct 25, #1877): a credit union's "Draft Protection Fee" (share-draft wording) is filed as
+the overdraft fee (`DRAFT_PROTECTION_FEE` in `fee-fold.ts`, shared with guard v89). Abbey FCU's "Draft Protection Fee (Paid) per presentment * $30.00" and Members
+Choice's "Draft Protection Fee * | $30.00 per Presentment" were set aside with no category, so Abbey's
+"Overdraft at teller window" line was its only live overdraft fee and Members Choice had none. A
+channel-specific overdraft (teller, ATM, debit card, in-person) stays overdraft. "Over Draft
+Protection" and a draft protection transfer, sweep, line, loan or plan are not matched. The held
+recheck re-reads set-aside lines on the version bump. On Oct 25 the wording matched 4 raw rows at 2
+institutions, none live. Categories only; the stale-read floor stays at v97 and name re-tidy at v27.
+
 v111 (Oct 25, #1916): a late charge printed in a safe deposit box section is the box's late rent
 charge, whichever specialist read it (`boxSectionLateFeeRead`, `boxSectionLateFee` in
 `src/lib/custom-report/box-section-late-fee.ts`). The section is read upward from the fee's own
@@ -1999,6 +2008,10 @@ rows, so it is not a full correction-population count or historical recovery aut
 - Do not write `verified_fee_observations` or `published_fee_records`.
 - Do not mark data as verified or public-ready.
 - Do not use provisional rows for verified benchmark scoring.
+- Do not file a book transfer (to another account at the same bank: "Book Transfer", "transferencia
+  contable") as a domestic wire, or a cash advance priced "for Non <bank> ATMs" (a wrapped ATM cell's
+  middle line) as a cash advance. Darwin's category guard refuses both since v88 (#1912), at verify and
+  on live fees; Knox's rules and paid reader should not produce them.
 
 ## Daily health check (contract)
 
@@ -2050,7 +2063,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v111 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v113 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v10 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |
