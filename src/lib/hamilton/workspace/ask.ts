@@ -210,7 +210,7 @@ const FUNCTION_WORDS = new Set(
   ("how do does did is are was were be been am what whats which where wheres if we us our ours i me my it its " +
     "they them their theirs the a an to of for with on in at by than and or about too so should would could can " +
     "will there this that these those s now today currently still really just me show list name other " +
-    "institutions institution banks bank credit unions union group").split(" "),
+    "institutions institution banks bank credit unions union group state states others similar").split(" "),
 );
 
 /** Words that ask how a price compares or sits: what a reader asks on a fee's own page. */
@@ -219,14 +219,18 @@ const PRICE_POSITION_WORDS = new Set(
     "position positioned place placed peer peers competitor competitors market local nearby national nationally " +
     "median benchmark benchmarks vs versus against high higher highest low lower lowest more less most least " +
     "cheap cheaper cheapest expensive fee fees charge charges charged charging price priced pricing cost costs " +
-    "raise raised raising cut cutting drop dropped increase decrease change went go").split(" "),
+    "raise raised raising cut cutting drop dropped increase decrease change went go competitive right above below " +
+    "line much percentile").split(" "),
 );
+
+/** Words a name follows: "with Navy Federal", "than Chase", "in Florida". */
+const NAME_LEADS = new Set("with than against vs versus in".split(" "));
 
 /**
  * The fee of the page Ask was opened from (#1895), for a question that names no fee and asks only
  * how a price compares or sits: "how do we compare with peers?", "is $35 too high?", "how do we
  * compare with Navy Federal?" asked from the overdraft page. Every content word must be a price,
- * position or comparison word, a word for the subject, a number, or an institution's name; any
+ * position or comparison word, a word for the subject, a number, or a name after "with", "than", "in"; any
  * other word ("CD pricing", "mortgages", "interchange", "deposit rates") keeps no page fee, so Ask
  * reads the question as it would with no page at all, and says plainly what it can't answer (#1077).
  */
@@ -236,18 +240,31 @@ export function pageFeeFor(question: string, pageFee: string | null, tested: rea
   if (asksIncome(question) || asksIncomeWhy(question) || SETS_PAGE_FEE_ASIDE.test(question)) return null;
   const words = question.replace(/[’`]/g, "'").match(/\$?[A-Za-z0-9.,']+/g) ?? [];
   let asksPrice = tested.length > 0;
-  for (const [index, raw] of words.entries()) {
+  // The word before, and whether it was taken as part of a name.
+  let previous = "";
+  let inName = false;
+  for (const raw of words) {
     const word = raw.replace(/'s?$|'/g, "").replace(/[.,]+$/, "");
-    if (!word || /^\$?[\d.,]+[kKmMbB]?$/.test(word)) continue;
+    if (!word) continue;
     const lower = word.toLowerCase();
+    const after = previous;
+    const continuesName = inName;
+    previous = lower;
+    inName = false;
+    if (/^\$?[\d.,]+[kKmMbB]?$/.test(word)) continue;
+    // An institution's or market's name, only right after "with", "than", "against", "vs", "versus"
+    // or "in", and the capitalized words that run on from it: "with Navy Federal Credit Union",
+    // "than Chase", "in Florida". A capitalized product ("on Zelle", "our Checking") is not a name,
+    // nor is an all-capitals word ("CD", "ROA").
+    if ((NAME_LEADS.has(after) || continuesName) && /^[A-Z][A-Za-z&-]*$/.test(word) && !/^[A-Z]{2,}$/.test(word)) {
+      inName = true;
+      continue;
+    }
     if (PRICE_POSITION_WORDS.has(lower)) {
       asksPrice = true;
       continue;
     }
     if (FUNCTION_WORDS.has(lower)) continue;
-    // An institution's name ("Navy Federal"): a capitalized word after the first. An all-capitals
-    // word ("CD", "ROA") is a product or measure, not a name.
-    if (index > 0 && /^[A-Z][a-z][A-Za-z&-]*$/.test(word)) continue;
     return null;
   }
   return asksPrice ? pageFee : null;
