@@ -31,13 +31,14 @@ const s = StyleSheet.create({
 
 const fee = (n: number): string => formatFeeAmount(n) ?? `$${n}`;
 
-function Legend({ items }: { items: { label: string; mark: "dot" | "band" | "tick" | "bar" | "line" | "accentLine" }[] }) {
+function Legend({ items }: { items: { label: string; mark: "dot" | "ring" | "band" | "tick" | "bar" | "line" | "accentLine" }[] }) {
   return (
     <View style={s.legend}>
       {items.map((it) => (
         <View key={it.label} style={s.legendItem}>
           <Svg width={14} height={8}>
             {it.mark === "dot" ? <Circle cx={7} cy={4} r={3.2} fill={C.accent} /> : null}
+            {it.mark === "ring" ? <Circle cx={7} cy={4} r={3} fill={C.paper} stroke={C.muted} strokeWidth={1.2} /> : null}
             {it.mark === "band" ? <Rect x={0} y={1} width={14} height={6} fill={C.band} /> : null}
             {it.mark === "tick" ? <Line x1={7} y1={0} x2={7} y2={8} stroke={C.ink} strokeWidth={1.2} /> : null}
             {it.mark === "bar" ? <Rect x={2} y={0} width={10} height={8} fill={C.bar} /> : null}
@@ -58,18 +59,26 @@ export function FeeRangeChart({
   positions,
   bands,
   institutionName = "Research institution",
+  rings,
+  ringLabel = "Current fee",
 }: {
   institutionName?: string;
   positions: SchedulePosition[];
   bands: Record<string, { p25: number; median: number; p75: number }>;
+  /** Optional hollow ring per fee category, e.g. the current fee beside a tested one (#1899). */
+  rings?: Record<string, number>;
+  ringLabel?: string;
 }) {
+  const hasRing = positions.some((p) => typeof rings?.[p.feeCategory] === "number");
   return (
     <View>
-      <Legend items={[{ label: `${institutionName} fee`, mark: "dot" }, { label: "Peer median", mark: "tick" }, { label: "Middle half of peers", mark: "band" }]} />
+      <Legend items={[{ label: `${institutionName} fee`, mark: "dot" }, ...(hasRing ? [{ label: ringLabel, mark: "ring" as const }] : []), { label: "Peer median", mark: "tick" }, { label: "Middle half of peers", mark: "band" }]} />
       {positions.map((p) => {
         const b = bands[p.feeCategory] ?? { p25: p.peerMedian, median: p.peerMedian, p75: p.peerMedian };
-        const lo = Math.min(b.p25, p.current, b.median);
-        const hi = Math.max(b.p75, p.current, b.median);
+        const ring = rings?.[p.feeCategory];
+        const ringValues = typeof ring === "number" ? [ring] : [];
+        const lo = Math.min(b.p25, p.current, b.median, ...ringValues);
+        const hi = Math.max(b.p75, p.current, b.median, ...ringValues);
         const pad = (hi - lo) * 0.15 || Math.max(hi * 0.2, 1);
         const min = Math.max(0, lo - pad);
         const max = hi + pad;
@@ -81,6 +90,7 @@ export function FeeRangeChart({
               <Line x1={4} y1={8} x2={TRACK - 4} y2={8} stroke={C.rule} strokeWidth={1} />
               <Rect x={x(b.p25)} y={3} width={Math.max(2, x(b.p75) - x(b.p25))} height={10} fill={C.band} />
               <Line x1={x(b.median)} y1={1} x2={x(b.median)} y2={15} stroke={C.ink} strokeWidth={1.2} />
+              {typeof ring === "number" ? <Circle cx={x(ring)} cy={8} r={4} fill={C.paper} stroke={C.muted} strokeWidth={1.4} /> : null}
               <Circle cx={x(p.current)} cy={8} r={4} fill={C.accent} />
             </Svg>
             <Text style={s.rowValue}>

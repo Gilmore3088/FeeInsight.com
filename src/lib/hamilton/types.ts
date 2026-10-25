@@ -330,6 +330,10 @@ export interface ReportSummaryResponse {
     reading?: string[];
     /** The finding's chart, sources, method, dates and limits, built on the server (#1899); absent on reports made before it. */
     evidence?: import("./report-finding-evidence").AddedFindingEvidence;
+    /** A saved answer's supported sentences and the facts they cite, bounded (#1077 defect 7); absent on older reports and Position/Test findings. */
+    claims?: import("./report-finding-claims").ReportFindingClaims;
+    /** The carried facts' source lines, worded on the server; absent with no carried fact. */
+    sources?: import("./report-finding-claims").ReportFindingSource[];
   }>;
   exportControls: {
     pdfEnabled: boolean;

@@ -6,12 +6,15 @@ import { FileText, Download, Save } from "lucide-react";
 import { previewBoardBriefFindings, saveBoardBrief } from "@/app/pro/(hamilton)/reports/board-actions";
 import { useReportBasket } from "@/components/hamilton/basket/AddToReportButton";
 import { basketItemsFor } from "@/lib/hamilton/report-basket";
-import { boardBriefFromAnalysis, editBoardBrief } from "@/lib/hamilton/board-brief";
+import { boardBriefFromAnalysis, editBoardBrief, NO_WRITTEN_SOURCES, type WrittenAnswerSources } from "@/lib/hamilton/board-brief";
 import type { AnalyzeResponse, ReportSummaryResponse, ReportArtifactMetadata } from "@/lib/hamilton/types";
 import { ReportOutput } from "./ReportOutput";
 
-export function BoardBriefEditor({ analysis, analysisId, initialReport, reportId, metadata }: {
-  analysis?: AnalyzeResponse; analysisId?: string; initialReport?: ReportSummaryResponse; reportId?: string; metadata?: ReportArtifactMetadata;
+export function BoardBriefEditor({ analysis, analysisId, writtenSources, initialReport, reportId, metadata }: {
+  analysis?: AnalyzeResponse; analysisId?: string;
+  /** A written answer's source lines, built on the server from its saved claims, which never reach the browser. */
+  writtenSources?: WrittenAnswerSources;
+  initialReport?: ReportSummaryResponse; reportId?: string; metadata?: ReportArtifactMetadata;
 }) {
   const router = useRouter();
   const [title, setTitle] = useState(initialReport?.title ?? analysis?.title ?? "Board brief");
@@ -48,7 +51,7 @@ export function BoardBriefEditor({ analysis, analysisId, initialReport, reportId
   const fingerprint = JSON.stringify([title, teamNote, includeEvidence]);
   const dirty = savedFingerprint !== fingerprint;
   const edits = { title, teamNote, includeEvidence };
-  const built = initialReport ? editBoardBrief(initialReport, edits) : analysis && analysisId ? boardBriefFromAnalysis(analysis, analysisId, edits) : null;
+  const built = initialReport ? editBoardBrief(initialReport, edits) : analysis && analysisId ? boardBriefFromAnalysis(analysis, analysisId, edits, writtenSources ?? NO_WRITTEN_SOURCES) : null;
   const shownFindings = !initialReport && included.length && preview?.key === includedKey ? preview.findings : [];
   const report = built && shownFindings.length ? { ...built, addedFindings: shownFindings } : built;
   async function save() {

@@ -60,6 +60,7 @@ export const FEEDBACK_KINDS = {
   not_a_fee: { readStages: EXTRACT, readers: [FEEDBACK_SYNC], unreadChecks: [DARWIN_VERIFY, "hamilton.hand_takedown", "hamilton.eval_verdict"] },
   threshold: { readStages: EXTRACT, readers: [FEEDBACK_SYNC] },
   priced_per_amount: { readStages: EXTRACT, readers: [FEEDBACK_SYNC] },
+  discontinued_account: { readStages: EXTRACT, readers: [FEEDBACK_SYNC], note: "#2070: a fee priced for an account the bank no longer offers. Knox learns the class from the shared check itself (`discontinuedRow`, rules v113), not from these rows; no Knox file reads takedown rows by kind yet (#2062)." },
   not_on_schedule: { readStages: EXTRACT, readers: ["src/lib/agents/darwin/release-held.ts", FEEDBACK_SYNC], unreadChecks: [DARWIN_VERIFY, "hamilton.product_page", "hamilton.hand_takedown"] },
   unreproduced: { readStages: EXTRACT, readers: [FEEDBACK_SYNC] },
   outside_range: { readStages: EXTRACT, readers: [FEEDBACK_SYNC], unreadChecks: [DARWIN_VERIFY] },

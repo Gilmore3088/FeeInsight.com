@@ -365,6 +365,13 @@ describe("queryData: call-report lines", () => {
     expect(calls).toHaveLength(0);
   });
 
+  it("refuses the certificate a filing was filed under, which is filing metadata, not a figure (#2625)", async () => {
+    for (const scope of [{ kind: "institution" as const, id: "254" }, { kind: "national" as const }]) {
+      expect(await queryData({ measure: "call:filing_fdic_cert", scope })).toMatchObject({ ok: false, reason: expect.stringContaining("certificate it was filed under") });
+    }
+    expect(calls).toHaveLength(0);
+  });
+
   it("keeps dated reporting identities in nested metadata while statistic rows remain scalar", async () => {
     nextRows = [
       { period: "2026-06-30", unit: "USD", median: 350, p25: 225, p75: 475, institution_count: 11,

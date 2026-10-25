@@ -215,7 +215,6 @@ const page = (file: string, path: string, label: string): RouteEntry => ({ file,
 export const ROUTES: RouteEntry[] = [
   // Hamilton pages.
   page("pro/page.tsx", "/pro", "Hamilton entry (redirects to /pro/hamilton)"),
-  page("pro/peers/page.tsx", "/pro/peers", "Old peers address (redirects to Settings)"),
   page("pro/reports/new/page.tsx", "/pro/reports/new", "Old new-report address (redirects to Reports)"),
   page("pro/(hamilton)/hamilton/page.tsx", "/pro/hamilton", "Hamilton home"),
   page("pro/(hamilton)/analyze/page.tsx", "/pro/analyze", "Ask (analyze)"),
@@ -226,6 +225,7 @@ export const ROUTES: RouteEntry[] = [
   page("pro/(hamilton)/financials/page.tsx", "/pro/financials", "Financial performance"),
   page("pro/(hamilton)/intelligence/page.tsx", "/pro/intelligence", "Intelligence"),
   page("pro/(hamilton)/market/page.tsx", "/pro/market", "Market"),
+  page("pro/(hamilton)/peers/page.tsx", "/pro/peers", "Peer group"),
   page("pro/(hamilton)/monitor/page.tsx", "/pro/monitor", "Monitor"),
   page("pro/(hamilton)/monitor/deliverable/page.tsx", "/pro/monitor/deliverable", "Monitor deliverable"),
   page("pro/(hamilton)/news/page.tsx", "/pro/news", "News"),

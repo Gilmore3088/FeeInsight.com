@@ -11,6 +11,7 @@
  */
 
 import { getInstitutionById } from "@/lib/data-store";
+import { DISPLAY_NAMES, FEE_FAMILIES } from "@/lib/fee-taxonomy";
 import { getInstitutionOwnFees, type IndexEntry } from "@/lib/data-store/fee-index";
 import { resolveHamiltonPeerIndex } from "./peer-index";
 import type { InstitutionOwnFee } from "@/lib/own-fee";
@@ -19,7 +20,13 @@ import { basketItemsFor, sanitizeBasketItems, type ReportBasketItem } from "./re
 import { positionFinding, savedAnswerEvidence, testFinding } from "./report-finding-evidence";
 import { savedAnswerFinding } from "./report-saved-finding";
 import { readSavedAnalysisRecord } from "./saved-analysis-record";
-import type { ReportSummaryResponse } from "./types";
+
+const TAXONOMY_CATEGORIES = new Set([...Object.values(FEE_FAMILIES).flat(), ...Object.keys(DISPLAY_NAMES)]);
+
+/** A fee category the taxonomy names: the only kind a Position or Test finding may carry into a report. */
+export function isTaxonomyCategory(category: string): boolean {
+  return TAXONOMY_CATEGORIES.has(category);
+}
 
 export interface ReportFindingPeers {
   /** The report's peer index, one entry per fee category. */
@@ -97,15 +104,18 @@ async function withPeerFindings(
   const peerItems = items.filter((item) => item.source !== "Ask");
   if (!peerItems.length) return items;
   if (id === null || !peers?.institutionName) return items.filter((item) => item.source === "Ask");
-  const categories = [...new Set(peerItems.map((item) => item.feeCategory).filter((c): c is string => Boolean(c)))];
+  const byCategory = new Map(peers.entries.map((entry) => [entry.fee_category, entry]));
+  // A category the browser sent becomes a title, so it must be a taxonomy category the report's
+  // peer read holds; any other string (a slug of words, a figure) never reaches the report.
+  const readable = (category: string | null): category is string => Boolean(category) && isTaxonomyCategory(category as string) && byCategory.has(category as string);
+  const categories = [...new Set(peerItems.map((item) => item.feeCategory).filter(readable))];
   const load = options.loadOwnFees ?? getInstitutionOwnFees;
   const ownFees = categories.length ? await load(id, categories) : new Map<string, InstitutionOwnFee>();
   const readAt = (options.now ?? new Date()).toISOString();
-  const byCategory = new Map(peers.entries.map((entry) => [entry.fee_category, entry]));
   const institutionName = peers.institutionName;
   return items.flatMap((item): ReportBasketItem[] => {
     if (item.source === "Ask") return [item];
-    if (!item.feeCategory) return [];
+    if (!readable(item.feeCategory)) return [];
     const input = {
       feeCategory: item.feeCategory,
       institutionName,
@@ -144,14 +154,4 @@ async function defaultPeers(institutionId: number, userId: number | string): Pro
   if (!institution) return null;
   const index = await resolveHamiltonPeerIndex({ selectedInstitution: institution, institutionId, userId });
   return { entries: index.entries, label: index.label, institutionName: institution.institution_name };
-}
-
-/** The findings as a report stores them; a saved answer's reading only with the switch on. */
-export function reportAddedFindings(items: readonly ReportBasketItem[], printReading: boolean): NonNullable<ReportSummaryResponse["addedFindings"]> {
-  return items.map((f) => ({
-    source: f.source, title: f.title, detail: f.detail,
-    ...(printReading && f.reading?.length ? { reading: [...f.reading] } : {}),
-    ...(f.identityContext ? { identityContext: f.identityContext } : {}),
-    ...(f.evidence ? { evidence: f.evidence } : {}),
-  }));
 }

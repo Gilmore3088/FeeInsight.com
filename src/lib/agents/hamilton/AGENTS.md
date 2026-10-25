@@ -178,6 +178,12 @@ Hamilton supports the decision; it does not make it.
   engine. `detail.pro` counts how many meet the bar and how many Hamilton still asks back on,
   and lists every one that falls short. A replayed answer about a fee the question did not
   ask about fails as "answers a different subject" (`offSubjectFailure`). Questions stay in our own database only.
+- The gate replay (`hamilton/gate-replay.ts`, deterministic step `hamilton-gate-replay`, cron
+  hourly, `/api/admin/crew/gate-replay`, #1077) puts every Pro question on record and the quality
+  bar for two institutions per charter and asset tier (up to 400 answers a day) through the free
+  Ask engine and the one output gate, and records each verdict as a shadow with `origin: "replay"`,
+  apart from readers'. Runs pick up where the last stopped; none starts once the day is complete.
+  No model calls; it covers the free Ask path only.
 - The paid answer eval (`hamilton/paid-answer-eval.ts`, provider step `hamilton-paid-answer-eval`,
   cron once a day, `/api/admin/crew/answer-eval-paid`, #1079) writes at most five memos a day
   (James, 2026-10-15) over free answers that carry a storyline: Pro readers' questions first, then
@@ -1371,7 +1377,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `HAMILTON_PUBLISH_STRATEGY` | `publish.rules` | v3 | `hamilton/publish.ts` |
 | `REFRESH_COPY_STRATEGY` | `hamilton.refresh_copy` | v2 | `hamilton/refresh-copy.ts` |
 | `RULES_RECHECK_STRATEGY` | `hamilton.rules_recheck` | v4 | `hamilton/rules-recheck.ts` |
-| `SOURCE_CHECK_STRATEGY` | `hamilton.source_check` | v25 | `hamilton/source-check.ts` |
+| `SOURCE_CHECK_STRATEGY` | `hamilton.source_check` | v26 | `hamilton/source-check.ts` |
 | `SOURCE_LINK_VERSION` | `hamilton.source_link` | v2 | `hamilton/source-link.ts` |
 | `SOURCE_LINK_DRIFT_VERSION` | `hamilton.source_link_drift` | v1 | `hamilton/source-link.ts` |
 | `FEE_DEPENDENCE_VERSION` | — | v1 | `hamilton/studies/fee-dependence.ts` |

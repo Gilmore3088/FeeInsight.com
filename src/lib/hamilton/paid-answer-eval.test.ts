@@ -410,6 +410,13 @@ it("uses the same scaled dollar contract in the eval while excluding nonmonetary
   ])).toEqual([1234000,2000000,3000000000,1234000,1000000000,311051000]);
 });
 
+it("reads a public-data result cut by characters, whose `_shortened` note is a string (research/tool-output.ts)", () => {
+  const text = JSON.stringify({ rows: [{ value: 2, unit: "millions_dollars" }] });
+  expect(toolMoneyFigures([
+    { toolName: "queryData", input: { measure: "area:income" }, output: { _shortened: "Result cut to 4000 characters.", text } },
+  ])).toEqual([2000000]);
+});
+
 describe("the written sample reads the claims (#1077 claim contract step 7)", () => {
   const BANK = 1001;
   const filingId = `filing:fdic:${BANK}:2026-06-30:service_charge_income:standalone_quarter`;

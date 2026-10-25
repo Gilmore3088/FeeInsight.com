@@ -7,7 +7,8 @@ vi.mock("@/lib/data-store/fee-index", () => ({ getInstitutionOwnFees: mocks.getI
 vi.mock("@/lib/data-store", () => ({ getInstitutionById: vi.fn() }));
 vi.mock("./peer-index", () => ({ resolveHamiltonPeerIndex: vi.fn() }));
 
-import { authenticatedReportFindings, boardBriefFindings, reportAddedFindings } from "./report-findings";
+import { authenticatedReportFindings, boardBriefFindings } from "./report-findings";
+import { reportAddedFindings } from "./report-finding-claims";
 
 const SAVED = "11111111-2222-3333-4444-555555555555";
 const OTHER = "22222222-3333-4444-5555-666666666666";
@@ -67,6 +68,17 @@ describe("added findings as a report reads them (#1899)", () => {
       { id: "y", source: "Position", title: "No category", detail: "", institutionId: "9701001" },
     ], "9701001", peers, { now });
     expect(found).toEqual([]);
+  });
+
+  it("leaves out a category the taxonomy does not name, or the report's peer read does not hold, so its words never reach the report", async () => {
+    const found = await authenticatedReportFindings([
+      { id: "slug", source: "Position", title: "x", detail: "", feeCategory: "peers_charge_99_for_overdraft", institutionId: "9701001" },
+      { id: "test", source: "Test", title: "x", detail: "", feeCategory: "peers_charge_99_for_overdraft", institutionId: "9701001", proposedFee: 99 },
+      // A real category the peer read has no entry for.
+      { id: "wire", source: "Position", title: "x", detail: "", feeCategory: "wire_domestic_outgoing", institutionId: "9701001" },
+    ], "9701001", peers, { now });
+    expect(found).toEqual([]);
+    expect(mocks.getInstitutionOwnFees).not.toHaveBeenCalled();
   });
 
   it("a board brief leaves out its own answer and re-reads Test findings against the institution's peers", async () => {

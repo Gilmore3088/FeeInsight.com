@@ -43,7 +43,10 @@ async function seed(tx:Tx,state:State):Promise<Fixture> {
   }
   return {agentEventId:String(event.event_id),runId,stepId:Number(step.id),institutionId:Number(inst.id),docId:Number(doc.id),textId:Number(source.id),rawId:Number(raw.fee_raw_id),verifiedId:Number(verified.fee_verified_id),publishedId};
 }
-const check = (tx:Tx,f:Fixture) => recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId});
+// The settlement tests read their own fixture only. Since Oct 25 the older-live read is on by default
+// and takes every live row in the shared database, so they keep it off; its own tests below turn it on.
+const SETTLEMENT_ONLY = { olderLive: false } as const;
+const check = (tx:Tx,f:Fixture) => recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,...SETTLEMENT_ONLY});
 async function rollback(state:State,work:(tx:Tx,f:Fixture)=>Promise<void>) {
   const stop=new Error("rollback recheck fixture");
   await transaction(async tx=>{const f=await seed(tx,state);await work(tx,f);throw stop;}).catch(error=>{if(error!==stop)throw error;});
@@ -196,7 +199,7 @@ suite("Darwin recheck committed settlement (#2072)",()=>{
   });
   it("a native required-source SELECT failure stays unresolved rather than completing its selected fee",async()=>{
     await rollback("restore",async(tx,f)=>{
-      const result=await recheckVerifiedFees(failSelectedSql(tx,"FROM agent_source_texts t JOIN source_documents"),{runId:f.runId,stepId:f.stepId});
+      const result=await recheckVerifiedFees(failSelectedSql(tx,"FROM agent_source_texts t JOIN source_documents"),{runId:f.runId,stepId:f.stepId,...SETTLEMENT_ONLY});
       expect(result.execution).toMatchObject({state:"partial",selected:1,assessed:0,settled:0,unresolved:1,eventId:expect.any(Number),phases:{source:"unavailable"}});
       expect(result.restored).toEqual([]);expect(await attemptCount(tx,f)).toBe(0);
       expect((await tx`SELECT review_status FROM verified_fee_observations WHERE fee_verified_id=${f.verifiedId}`)[0].review_status).toBe("rejected");
@@ -204,7 +207,7 @@ suite("Darwin recheck committed settlement (#2072)",()=>{
   });
   it("a native due-selector error leaves a partial batch while its actual primary restoration commits",async()=>{
     await rollback("restore",async(tx,f)=>{
-      const result=await recheckVerifiedFees(failSelectedSql(tx,"JOIN published_fee_records p ON p.fee_published_id = f.fee_published_id"),{runId:f.runId,stepId:f.stepId});
+      const result=await recheckVerifiedFees(failSelectedSql(tx,"JOIN published_fee_records p ON p.fee_published_id = f.fee_published_id"),{runId:f.runId,stepId:f.stepId,secondLooks:false,...SETTLEMENT_ONLY});
       expect(result.execution).toMatchObject({state:"partial",selected:1,assessed:1,settled:1,unresolved:0,eventId:expect.any(Number),phases:{primary:"complete",due:"unavailable",dueShadow:"partial"}});
       expect(result.restored).toEqual([f.verifiedId]);expect(await attemptCount(tx,f)).toBe(1);
       expect(result.dueSecondLooks).toHaveProperty("error");
@@ -257,7 +260,7 @@ suite("Darwin recheck committed settlement (#2072)",()=>{
             await db!`UPDATE verified_fee_observations SET fee_raw_id=${raw.fee_raw_id} WHERE fee_verified_id=${f.verifiedId}`;
           }
         });
-        const result=await recheckVerifiedFees(guarded,{runId:f.runId,stepId:f.stepId});
+        const result=await recheckVerifiedFees(guarded,{runId:f.runId,stepId:f.stepId,...SETTLEMENT_ONLY});
         expect(result.restored).toEqual([]);expect(result.execution).toMatchObject({unresolved:1,settled:0});expect(await attemptCount(tx,f)).toBe(0);
       });
     });
@@ -285,7 +288,7 @@ suite("Darwin recheck committed settlement (#2072)",()=>{
             await db!`UPDATE published_fee_records SET lineage_ref=${replacement.fee_verified_id} WHERE fee_published_id=${f.publishedId}`;
           }
         });
-        const result=await recheckVerifiedFees(guarded,{runId:f.runId,stepId:f.stepId});
+        const result=await recheckVerifiedFees(guarded,{runId:f.runId,stepId:f.stepId,...SETTLEMENT_ONLY});
         expect(result.execution).toMatchObject({state:"partial",unresolved:1,settled:0});expect(result.takenDown).toEqual([]);expect(await attemptCount(tx,f)).toBe(0);
         const [current]=await tx`SELECT lineage_ref,quarantined_at,rolled_back_at,rolled_back_reason FROM published_fee_records WHERE fee_published_id=${f.publishedId}`;
         if(kind==="held") expect(current.quarantined_at).not.toBe(null);
@@ -327,7 +330,7 @@ suite("Darwin recheck committed settlement (#2072)",()=>{
       await tx`UPDATE published_fee_records SET fee_name='Bill Pay',canonical_fee_key='bill_pay' WHERE fee_published_id=${f.publishedId}`;
       await tx`UPDATE agent_source_texts SET normalized_text=${text},text_hash=${hash(text)} WHERE id=${f.textId}`;
       await tx`INSERT INTO pipeline_attempts (institution_id,stage,strategy,strategy_version,input_fingerprint,outcome,yield_count,cost_microusd,agent_run_id,detail) VALUES (${f.institutionId},'verify','verify.recheck',5,${`verified:${f.verifiedId}`},'evidence_mismatch',0,0,${f.runId},'{}'::jsonb)`;
-      const result=await check(tx,f);expect(result.secondLookOtherCode).toBe(1);expect(result.takenDown).toEqual([]);expect(await attemptCount(tx,f)).toBe(1);
+      const result=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,secondLooks:false,...SETTLEMENT_ONLY});expect(result.secondLookOtherCode).toBe(1);expect(result.takenDown).toEqual([]);expect(await attemptCount(tx,f)).toBe(1);
       expect((await tx`SELECT kind FROM pipeline_feedback WHERE dedupe_key=${secondLookDedupeKey(DARWIN_RECHECK_CHECK,f.publishedId!)}`)[0].kind).toBe("takedown_pending");
     });
   });
@@ -368,13 +371,13 @@ suite("Darwin recheck committed settlement (#2072)",()=>{
     });
   });
 
-  it.each([0,1])("keeps older-live off with explicit run modulo4=%s cadence disposition",async modulo=>{
+  it.each([0,1])("with older-live off, explicit run modulo4=%s cadence disposition",async modulo=>{
     runCounter+=(modulo-runCounter%4+4)%4;
     await rollback("live",async(tx,f)=>{
       await onlyFixtureLive(tx,f);
       await tx`DELETE FROM pipeline_feedback WHERE fee_published_id=${f.publishedId}`;
       await tx`UPDATE pipeline_attempts SET strategy_version=2 WHERE agent_run_id=${f.runId} AND strategy='verify.rules'`;
-      const result=await check(tx,f);expect(result.execution?.selected).toBe(0);expect(result.takenDown).toEqual([]);expect(await attemptCount(tx,f)).toBe(0);
+      const result=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,olderLive:false});expect(result.execution?.selected).toBe(0);expect(result.takenDown).toEqual([]);expect(await attemptCount(tx,f)).toBe(0);
       expect(result.execution?.phases.olderShadow).toBe(modulo===0?"reported_unknown":"cadence_skip");
       if(modulo===0) expect(result.olderLive).toMatchObject({read:1,wouldFail:{tier_perk_zero:1}}); else expect(result.olderLive).toBeUndefined();
     });
@@ -382,7 +385,7 @@ suite("Darwin recheck committed settlement (#2072)",()=>{
   it("all-codes-off due path reports legacy would outcomes but never archives or changes attempts",async()=>{
     await rollback("live",async(tx,f)=>{
       await tx`INSERT INTO pipeline_attempts (institution_id,stage,strategy,strategy_version,input_fingerprint,outcome,yield_count,cost_microusd,agent_run_id,detail) VALUES (${f.institutionId},'verify','verify.recheck',5,${`verified:${f.verifiedId}`},'evidence_mismatch',0,0,${f.runId},'{}'::jsonb)`;
-      const result=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,secondLookCodes:[]});
+      const result=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,secondLooks:false,secondLookCodes:[],...SETTLEMENT_ONLY});
       expect(result.execution).toMatchObject({selected:0,phases:{due:"not_run",dueShadow:"reported_unknown"}});
       expect(result.dueSecondLooks).toMatchObject({due:1,wouldConfirm:{tier_perk_zero:1}});expect(result.takenDown).toEqual([]);expect(await attemptCount(tx,f)).toBe(1);
     });
@@ -397,16 +400,25 @@ suite("Darwin recheck committed settlement (#2072)",()=>{
       expect(result.flagged).toBe(1);expect(result.takenDown).toEqual([]);expect(result.olderLive).toBeUndefined();expect(await attemptCount(tx,f)).toBe(1);
     });
   });
+  it("by default (Oct 25 switch-on) an older live row gets its first look only, flagged and not archived",async()=>{
+    await rollback("live",async(tx,f)=>{
+      await onlyFixtureLive(tx,f);
+      await tx`DELETE FROM pipeline_feedback WHERE fee_published_id=${f.publishedId}`;
+      await tx`UPDATE pipeline_attempts SET strategy_version=2 WHERE agent_run_id=${f.runId} AND strategy='verify.rules'`;
+      const result=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId});
+      expect(result.flagged).toBe(1);expect(result.takenDown).toEqual([]);expect(result.olderLive).toBeUndefined();expect(result.dueSecondLooks).toBeUndefined();expect(await attemptCount(tx,f)).toBe(1);
+    });
+  });
   it("existing explicit full-second-look option keeps the normal confirmation gate",async()=>{
     await rollback("live",async(tx,f)=>{
-      const result=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,secondLooks:true});
+      const result=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,secondLooks:true,...SETTLEMENT_ONLY});
       expect(result.takenDown).toEqual([f.publishedId]);expect(result.dueSecondLooks).toBeUndefined();
     });
   });
   it("the existing explicit same-step option archives without manufacturing a second-look confirmation",async()=>{
     await rollback("live",async(tx,f)=>{
       await tx`DELETE FROM pipeline_feedback WHERE fee_published_id=${f.publishedId}`;
-      const result=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,sameStepTakedown:true});
+      const result=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,sameStepTakedown:true,...SETTLEMENT_ONLY});
       expect(result.takenDown).toEqual([f.publishedId]);expect(result.flagged).toBe(0);expect(result.waiting).toBe(0);expect(await attemptCount(tx,f)).toBe(1);
       expect((await tx`SELECT count(*)::int AS n FROM pipeline_feedback WHERE fee_published_id=${f.publishedId}`)[0].n).toBe(0);
       const [event]=await tx`SELECT detail FROM agent_run_events WHERE id=${result.execution!.eventId!}`;

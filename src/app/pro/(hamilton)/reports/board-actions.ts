@@ -5,10 +5,13 @@ import { redirectWithoutPremium } from "@/lib/team-billing";
 import { sql } from "@/lib/data-store/connection";
 import { getHamiltonReportById, saveHamiltonReport } from "@/lib/hamilton/pro-tables";
 import { readSavedOutputFeeRefs } from "@/lib/data-store/saved-output-fee-refs";
-import { loadAnalysisRecord } from "../analyze/actions";
+// Server side, claims included (same user and access scope as loadAnalysisRecord): the brief's source lines
+// are built from them here; only the saved brief, never the claims, goes back to the browser.
+import { readSavedAnalysisRecord } from "@/lib/hamilton/saved-analysis-record";
 import { boardBriefFromAnalysis, editBoardBrief, type BoardBriefEdits } from "@/lib/hamilton/board-brief";
 import { recordProRequest } from "@/lib/agents/run-store";
-import { boardBriefFindings, reportAddedFindings } from "@/lib/hamilton/report-findings";
+import { boardBriefFindings } from "@/lib/hamilton/report-findings";
+import { reportAddedFindings } from "@/lib/hamilton/report-finding-claims";
 import { reportFindingReadingEnabled } from "@/lib/hamilton/report-saved-finding";
 import { canAccessPremium } from "@/lib/access";
 import type { ReportSummaryResponse } from "@/lib/hamilton/types";
@@ -39,7 +42,7 @@ export async function saveBoardBrief(input: { analysisId?: string; reportId?: st
       return { success: true, reportId: input.reportId };
     }
     if (!input.analysisId) return { success: false, error: "Choose a saved answer first." };
-    const saved = await loadAnalysisRecord(input.analysisId);
+    const saved = await readSavedAnalysisRecord(input.analysisId);
     if (!saved) return { success: false, error: "Saved analysis not found." };
     const report = boardBriefFromAnalysis(saved.responseJson, saved.id, input.edits);
     // #1899: the findings the reader added, re-read on the server with their chart, sources, method, dates and limits.
@@ -64,7 +67,7 @@ export async function previewBoardBriefFindings(input: { analysisId: string; add
   const user = await getCurrentUser();
   if (!user || !canAccessPremium(user) || typeof input?.analysisId !== "string") return [];
   try {
-    const saved = await loadAnalysisRecord(input.analysisId);
+    const saved = await readSavedAnalysisRecord(input.analysisId);
     if (!saved) return [];
     const findings = await boardBriefFindings(input.addedFindings, { analysisId: saved.id, institutionId: saved.institutionId, userId: user.id });
     return reportAddedFindings(findings, reportFindingReadingEnabled());

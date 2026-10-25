@@ -1067,13 +1067,16 @@ describe("conditionalZero on run-on lines (#1571, live rows read on prod Oct 16)
     [56935, "Notary", notaryLeader],
     [85792, "Night Depository", "Night Depository FREE Copy of Transaction $15.00"],
     [95011, "Coin Machine (Member)", "Account Reconcilement $15.00 per hour Coin Machine (Member) NONE"],
+    // Oct 25 older-live dry run: the $5 is the price for customers of other banks, not a condition on
+    // this bank's customer's $0 (bank's own text, institution 2279). Was held as conditional on Oct 16.
+    [13219, "Notary Fee", "Checking Non-Sufficient Funds (NSF) &amp; Overdraft (OD)* ................. $30.00 | Notary Fee ($5.00 charge for non-F&amp;M customers) ....................No Charge"],
+    [13219, "Notary Fee", "Checking Non-Sufficient Funds (NSF) & Overdraft (OD)* ................. $30.00 | Notary Fee ($5.00 charge for non-F&M customers) ....................No Charge"],
   ];
   // A $0 whose own row prices it under a condition still fails.
   const conditional: Array<[number, string, string]> = [
     [10808, "Service charge (NOW Account, minimum daily balance $1,000)", "balance of $1,000 (per statement cycle) . . . . ... No Charge"],
     [11756, "Express Checking Monthly Fee", "Express Checking Monthly Fee: $0 with e-Statements and Direct Deposit. With e-Statements OR Direct Deposit – $5. Without e-Statements &amp; Direct Deposit – $10."],
     [11772, "1st Checking Monthly Fee", "Star Checking Monthly Fee: $5 with either e-Statements or Direct Deposit. Without e-Statements or Direct Deposit – $10. 1st Checking Monthly Fee: $0 with e-Statements. Without e-Statements – $5."],
-    [13219, "Notary Fee", "Checking Non-Sufficient Funds (NSF) &amp; Overdraft (OD)* ................. $30.00 | Notary Fee ($5.00 charge for non-F&amp;M customers) ....................No Charge"],
     [61335, "Standard Checking Monthly Fee - Balance over", "Standard Checking Monthly Fee - Balance over $250 | FREE"],
     [68893, "Courtesy Pay fees are", "Courtesy pay that covers purchases when you have an oops moment and overdraw. No fee for transactions $15 and under!**"],
     [49541, "Copy of Statement: Online", "Copy of Statement: Online-FREE; In Branch | $3.00 Each | Transcripts at Branch"],
@@ -1176,6 +1179,28 @@ describe("conditionalZero on run-on lines (#1571, live rows read on prod Oct 16)
     expect(conditionalZero(0, line, name)).toBe(false);
   });
   it.each(conditional)("%i stays conditional", (_id, name, line) => {
+    expect(conditionalZero(0, line, name)).toBe(true);
+  });
+  // Oct 25: a bank named between "non-" and its customers marks another party's price; a condition
+  // word or a lower-case word in that place is still this customer's condition.
+  it.each([
+    ["Notary Fee", "Notary Fee ($5.00 charge for non-F&M customers) No Charge"],
+    ["Notary Fee", "Notary Fee No Charge; $10 for non-Citizens customers"],
+    ["Cashier's Check", "Cashier's Check FREE | Non-FNB members $7.50"],
+  ])("%s: a named bank's non-customer price is not a condition: %s", (name, line) => {
+    expect(conditionalZero(0, line, name)).toBe(false);
+  });
+  it.each([
+    ["Monthly Service Fee", "Monthly Service Fee FREE; $5 for non-eStatement customers"],
+    ["Monthly Service Fee", "Monthly Service Fee FREE; $5 for non-Premium customers"],
+    ["Monthly Service Fee", "Monthly Service Fee FREE; $5 for non-paperless customers"],
+    ["Monthly Service Fee", "Monthly Service Fee FREE; $5 for non-Direct Deposit customers"],
+    ["Monthly Service Fee", "Monthly Service Fee FREE; $5 for non-qualifying members"],
+    ["Monthly Service Fee", "Monthly Service Fee FREE; $5 for Non-Paperless Customers"],
+    ["Monthly Service Fee", "Monthly Service Fee FREE; $5 for non-VIP members"],
+    ["Monthly Service Fee", "Monthly Service Fee FREE; $5 for Non-Checking Customers"],
+    ["ATM Withdrawal", "ATM Withdrawal FREE; non-Kasasa account holders $2.00"],
+  ])("%s: a condition in the non-customer place stays conditional: %s", (name, line) => {
     expect(conditionalZero(0, line, name)).toBe(true);
   });
 });

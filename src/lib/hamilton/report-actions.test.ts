@@ -492,16 +492,29 @@ describe("Hamilton Reports generateReport", () => {
     it("states the financial sentence only when supported; with the switch off (default) nothing else changes", async () => {
       const result = await addSaved();
       if (!result.success) throw new Error(result.error);
+      const ownId = filingFactId("fdic", 2945, "2026-06-30", "service_charge_income", "standalone_quarter");
       const { evidence, ...finding } = result.report.addedFindings?.[0] ?? { evidence: undefined };
-      expect(finding).toEqual({ source: "Ask", title: "Service charge income at Research CU", detail: supported, identityContext: undefined });
+      // #1077 defect 7: the finding keeps its checked claims and their source line in report_json.
+      expect(finding).toEqual({
+        source: "Ask", title: "Service charge income at Research CU", detail: supported, identityContext: undefined,
+        claims: { supported: [{ text: supported, factIds: [ownId] }], facts: [expect.objectContaining({ id: ownId, value: 1_100_000, unit: "usd" })], factsTruncated: false },
+        sources: [expect.objectContaining({ id: ownId, value: "$1,100,000" })],
+      });
       // #1899: the saved answer's method, dates and limits ride with it, read from the saved record.
       expect(evidence).toMatchObject({ method: SAVED_ANSWER_METHOD, chart: null });
       expect(JSON.stringify(result.report)).not.toContain("$2.3 million");
       expect(JSON.stringify(result.report)).not.toContain(reading);
-      // The model's context is the same supported prose as before step 6: no claims, no reading.
+      // The model's context is the supported prose: no claims, no reading.
       expect(summaryContext()).toContain(supported);
       expect(summaryContext()).not.toContain(reading);
       expect(summaryContext()).not.toContain("factIds");
+      // The section's figure check traces the restated figure to the finding's carried fact, not to pooled data.
+      const summary = mocks.generateSection.mock.calls.map(([input]) => input as SectionInput).find((input) => input.type === "executive_summary");
+      const { checkNarrativeFigures } = await vi.importActual<typeof import("./figure-check")>("./figure-check");
+      expect(checkNarrativeFigures(supported, summary?.data).unmatched).toEqual([]);
+      const { reader_finding_facts: _facts, ...pooled } = summary?.data as Record<string, unknown>;
+      void _facts;
+      expect(checkNarrativeFigures(supported, pooled).unmatched).toEqual(["$1.1 million"]);
     });
 
     it("with the switch on, prints the reading apart under its label, never as the finding or in the model's context", async () => {
@@ -543,6 +556,13 @@ describe("Hamilton Reports generateReport", () => {
     expect(finding.evidence?.sources[0].label).toBe("Bank Fee Index published fee catalog");
     expect(finding.evidence?.limitations.length).toBeGreaterThan(0);
     expect(mocks.getInstitutionOwnFees).toHaveBeenCalledWith(2945, ["overdraft"]);
+    // #1077 defect 7 still holds untraced figures, but the server-rebuilt figures trace to the server's own read,
+    // so the model sees them; the browser's figures never reach the section or its data.
+    expect(summary?.context).toContain("Overdraft (OD): $34.00 against a peer group median of $30.00");
+    expect(summary?.context).toContain("$4.00 (13%) above the median of 80 institutions in the peer group");
+    const { checkNarrativeFigures } = await vi.importActual<typeof import("./figure-check")>("./figure-check");
+    expect(checkNarrativeFigures(finding.title, summary?.data).unmatched).toEqual([]);
+    expect(checkNarrativeFigures("Peers charge $99 for an overdraft.", summary?.data).unmatched).toEqual(["$99"]);
   });
 
   it("normalizes transient saved-artifact source before persisting a new report", async () => {

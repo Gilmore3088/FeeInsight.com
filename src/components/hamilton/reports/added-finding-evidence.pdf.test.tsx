@@ -29,7 +29,8 @@ const report: ReportSummaryResponse = {
   addedFindings: [
     { source: "Position", title: position.title, detail: position.detail, evidence: position.evidence },
     { source: "Test", title: tested.title, detail: tested.detail, evidence: tested.evidence },
-    { source: "Ask", title: "Overdraft at Lakeshore", detail: "Lakeshore charges $32.", evidence: ask },
+    { source: "Ask", title: "Overdraft at Lakeshore", detail: "Lakeshore charges $32.", evidence: ask,
+      sources: [{ id: "fee-1", label: "Overdraft fee", value: "$32", note: "Lakeshore Test Credit Union fee schedule, read Oct 20, 2026" }] },
   ],
   exportControls: { pdfEnabled: true, shareEnabled: false },
 };
@@ -49,6 +50,11 @@ describe("an added finding's chart, sources, method, dates and limits reach the 
     expect(text).toContain("Overdraft fee: $32");
     expect(text).toContain("Answer saved Oct 20, 2026.");
     expect(text).not.toMatch(/—/);
+    // The Test chart draws the current fee as a ring; only that chart has one.
+    expect(text.match(/Current fee/g)).toHaveLength(1);
+    // One Sources block per finding: the saved answer's record lines replace the generic line, printed once.
+    expect(text.match(/Overdraft fee: \$32 \(Lakeshore Test Credit Union fee schedule, read Oct 20, 2026\)/g)).toHaveLength(1);
+    expect(text).not.toContain("Records behind this finding");
   }, 30000);
 
   it("shows the same fields on screen in site tokens", () => {
@@ -60,5 +66,7 @@ describe("an added finding's chart, sources, method, dates and limits reach the 
     const findings = html.slice(html.indexOf("Findings you added"), html.indexOf("What is behind it"));
     expect(findings).toContain("Method: </span>");
     expect(findings).not.toContain("--hamilton-");
+    expect(findings.match(/Lakeshore Test Credit Union fee schedule, read Oct 20, 2026/g)).toHaveLength(1);
+    expect(findings).not.toContain("Records behind this finding");
   });
 });

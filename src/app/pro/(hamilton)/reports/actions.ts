@@ -24,7 +24,8 @@ import { buildReportPeerCoveragePreview, type ReportPeerCoveragePreview } from "
 import { parseAnswerSection, parseTradeoffSection } from "@/lib/hamilton/report-answer";
 import { validateHamiltonReportArtifact } from "@/lib/hamilton/report-quality";
 import { reportFindingReadingEnabled } from "@/lib/hamilton/report-saved-finding";
-import { authenticatedReportFindings, reportAddedFindings } from "@/lib/hamilton/report-findings";
+import { authenticatedReportFindings } from "@/lib/hamilton/report-findings";
+import { reportAddedFindings } from "@/lib/hamilton/report-finding-claims";
 import { scheduleGateShadow } from "@/lib/hamilton/output-gate-shadow-store";
 import { resolveHamiltonPeerIndex } from "@/lib/hamilton/peer-index";
 import { completeHamiltonRefreshJobsForInstitution } from "@/lib/hamilton/refresh-jobs";
@@ -455,6 +456,7 @@ export async function generateReport(
     if (addedFindings.length > 0) {
       // A saved answer's reading prints under its label only with the switch on (off by default).
       const printReading = reportFindingReadingEnabled();
+      // A saved answer carries its checked claims and their sources (#1077 defect 7); every finding its evidence (#1899).
       report.addedFindings = reportAddedFindings(addedFindings, printReading);
     }
     const artifactQuality = validateHamiltonReportArtifact({

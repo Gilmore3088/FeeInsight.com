@@ -9,6 +9,7 @@ import {
   readAddedFindingEvidence,
   type FindingRangeChart,
 } from "@/lib/hamilton/report-finding-evidence";
+import type { ReportFindingSource } from "@/lib/hamilton/report-finding-claims";
 
 /** One scale for the chart: every mark, padded so none sits on the edge. */
 function scale(chart: FindingRangeChart): (value: number) => number {
@@ -39,7 +40,7 @@ function FindingRange({ chart }: { chart: FindingRangeChart }) {
   );
 }
 
-export function AddedFindingEvidenceBlock({ value }: { value: unknown }) {
+export function AddedFindingEvidenceBlock({ value, claimSources }: { value: unknown; claimSources?: ReportFindingSource[] }) {
   const evidence = readAddedFindingEvidence(value);
   if (!evidence) return null;
   const { chart } = evidence;
@@ -66,7 +67,9 @@ export function AddedFindingEvidenceBlock({ value }: { value: unknown }) {
       <div>
         <p className="font-semibold text-warm-800">{FINDING_EVIDENCE_LABELS.sources}</p>
         <ul className="mt-1 space-y-0.5">
-          {evidence.sources.map((s, i) => <li key={i}>{s.label}: {s.detail}</li>)}
+          {claimSources?.length
+            ? claimSources.map((source) => <li key={source.id}>{source.label}: {source.value} ({source.note})</li>)
+            : evidence.sources.map((s, i) => <li key={i}>{s.label}: {s.detail}</li>)}
         </ul>
       </div>
       <p><span className="font-semibold text-warm-800">{FINDING_EVIDENCE_LABELS.dates}: </span>{evidence.dates}</p>
