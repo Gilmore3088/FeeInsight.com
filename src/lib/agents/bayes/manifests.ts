@@ -526,6 +526,7 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // additional-card names.
     // v84 (Oct 25, #1788): a generic monthly charge under another service's heading or cell fails
     // monthly maintenance (Positive Pay, ACH, bill pay, cards, paper statements).
+    // v85 (Oct 25, #1831): a refundable safe deposit box key or security deposit fails the box rule.
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",
