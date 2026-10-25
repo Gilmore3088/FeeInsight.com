@@ -527,6 +527,11 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
       // v104: words that say nothing glued onto the fee's own (a filler cell in front, a filler dash
       // description, "<what> will cost") come off when what is left names the fee.
       const feeName = withoutGluedSentence(tidyUnmarkedName(read.feeName, text, institutionName, read.canonicalHint), read.canonicalHint);
+      // v111 (review of #2622): the tidied name is the one the self-check traces, so a late fee whose
+      // name tidying changed is read for its box section again under that name.
+      if (feeName !== read.feeName && read.canonicalHint === "late_payment") {
+        read.canonicalHint = boxSectionLateFeeRead({ ...read, feeName }, checkText).canonicalHint;
+      }
       const ownPrices = exclusiveStackedPrices(text, stackedPrices, feeName).filter(row => row.amount === read.amount);
       if (read.canonicalHint === "overdraft" && ownPrices.length > 0 && ownPrices.every(row => row.annualProgram)) {
         const row: HeldFeeCandidate = {

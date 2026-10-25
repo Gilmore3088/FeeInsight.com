@@ -70,6 +70,18 @@ describe("a late charge in a safe deposit box section is the box's (#1916)", () 
     expect(boxSectionLateFee(usBank, "Stop Payment", 35)).toBe(false);
   });
 
+  it("reads only an unpriced line as the box heading, the box's own column, and stops at a card row (review of #2622)", () => {
+    // A priced box row in a miscellaneous list is a row, not the heading: the walk stops at Research.
+    expect(boxSectionLateFee("Miscellaneous Fees\nResearch | $25/hr\nSafe Deposit Box Key Replacement | $25\nLate Charge | $15", "Late Charge", 15)).toBe(false);
+    // The box heading of the left column does not claim the right column's late fee.
+    expect(boxSectionLateFee("Safe Deposit Box | Other Services\n3x5 | $30 | Notary | $5\nDrilling | $150 | Late Payment | $15", "Late Payment", 15)).toBe(false);
+    // A card's lock or key card row is not a box row.
+    expect(boxSectionLateFee("Safe Deposit Box\nCard Lock | $0\nLate Fee | $10", "Late Fee", 10)).toBe(false);
+    expect(boxSectionLateFee("Safe Deposit Box\nKey Card replacement | $5\nLate Fee | $10", "Late Fee", 10)).toBe(false);
+    // Box rows under an unpriced box heading still reach it.
+    expect(boxSectionLateFee("Safe Deposit Boxes\n3x5 | $25\nKey Replacement | $25\nLate Fee | $29", "Late Fee", 29)).toBe(true);
+  });
+
   it("decides by the line that prints the fee's price when the name prints twice", () => {
     // Live 122579 (institution 6757): the box's $10 late fee and a Visa card's $20 one.
     const twice = ["Safe Deposit Boxes", "Box Size | Fee", "3\" x 5\" | $20", "Lost key & drill lock fee | $100", "Late Payment Fee | $10",

@@ -518,6 +518,11 @@ interface LiveRefile extends Restore {
 
 /** Guard v87 (#1916): a live box fee named as a late charge, in TS and Postgres. */
 export const BOX_LATE_NAME_PATTERN = String.raw`\mlate\M`;
+/**
+ * Guard v87 (review of #2622): only a text that names the box can print a box section
+ * (`BOX_HEADING` in box-section-late-fee.ts), so only those texts are read for late payments.
+ */
+export const BOX_TEXT_PATTERN = String.raw`safe(ty)?[\s-]*deposit|\msdb\M|\msafe\s+box`;
 const BOX_LATE_NAME = /\blate\b/i;
 
 /** Pure: a refile moves a late payment to the safe deposit box (guard v87). */
@@ -543,7 +548,7 @@ async function withBoxSections<T extends Pick<LivePublishedRow, "source_document
   if (needing.length === 0) return rows;
   let texts: Map<number, string>;
   try {
-    texts = await ownStoredTexts(db, needing.map((row) => row.source_document_id));
+    texts = await ownStoredTexts(db, needing.map((row) => row.source_document_id), BOX_TEXT_PATTERN);
   } catch (error) {
     console.error("category guard box section read failed:", error);
     return null;
@@ -708,16 +713,24 @@ async function applyLiveRefiles(
 }
 
 /** The newest completed stored text of each document. */
-async function ownStoredTexts(db: SqlTag, documentIds: Array<number | string | null>): Promise<Map<number, string>> {
+async function ownStoredTexts(
+  db: SqlTag,
+  documentIds: Array<number | string | null>,
+  textPattern?: string,
+): Promise<Map<number, string>> {
   const ids = [...new Set(documentIds.filter((id): id is number | string => id != null).map(Number))];
   if (ids.length === 0) return new Map();
+  // A text that cannot hold what the caller looks for is not fetched (its own newest text only).
   const rows = await inSavepoint(db, (scope) => scope<{ source_document_id: number | string; normalized_text: string }[]>`
-    SELECT DISTINCT ON (source_document_id) source_document_id, normalized_text
-      FROM agent_source_texts
-     WHERE source_document_id = ANY(${ids}::bigint[])
-       AND status = 'completed'
-       AND normalized_text IS NOT NULL
-     ORDER BY source_document_id, id DESC
+    SELECT source_document_id, normalized_text FROM (
+      SELECT DISTINCT ON (source_document_id) source_document_id, normalized_text
+        FROM agent_source_texts
+       WHERE source_document_id = ANY(${ids}::bigint[])
+         AND status = 'completed'
+         AND normalized_text IS NOT NULL
+       ORDER BY source_document_id, id DESC
+    ) newest
+     WHERE ${textPattern ?? null}::text IS NULL OR newest.normalized_text ~* ${textPattern ?? null}::text
   `);
   return new Map(rows.map((row) => [Number(row.source_document_id), row.normalized_text]));
 }
