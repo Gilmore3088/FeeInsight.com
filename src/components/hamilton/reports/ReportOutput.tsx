@@ -126,6 +126,9 @@ function AddedFindings({ report }: { report: ReportSummaryResponse }) {
                 {finding.detail}
               </p>
             )}
+            {finding.reading?.length ? (
+              <div className="mt-2"><InterpretationBox sentences={finding.reading} /></div>
+            ) : null}
             <p className="mt-1 text-xs text-warm-600">From {finding.source}</p>
             {hamiltonIdentityLines(readHamiltonIdentitySnapshot(finding.identityContext)).map((line) => <p key={line} className="mt-1 text-xs text-warm-600">{line}</p>)}
           </li>

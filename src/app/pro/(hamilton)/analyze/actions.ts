@@ -70,8 +70,12 @@ export async function saveAnalysis(params: {
     // captures membership at SAVE time, never treats browser metadata as authority,
     // and does not silently substitute today's peer baseline for the original one.
     const account = await loadHamiltonAccountContext(user);
+    // Saved claims come only from the server's own save (#1077 step 6); a report reads them as
+    // what the answer's records support, so a browser copy is never kept.
+    const { claims: _browserClaims, ...browserResponse } = params.responseJson;
+    void _browserClaims;
     const responseJson: AnalyzeResponse = {
-      ...params.responseJson,
+      ...browserResponse,
       identityContext: accountIdentitySnapshot(institution?.id ?? null, account, {
         researchInstitutionName: institution?.institution_name ?? null,
         researchSelectionSource: "Captured at save; generation-time account and peer context unavailable",

@@ -394,6 +394,10 @@ describe("generateVerifiedSection", () => {
     expect(mockCreate).toHaveBeenCalledTimes(2);
     expect(mockCreate.mock.calls[1][0].messages[0].content).toContain("FIGURE CHECK FAILED");
     expect(result).toMatchObject({ status: "needs_review", unmatched: ["$42"] });
+    // #1077 step 6: the one output gate's shadow on the returned draft, beside the figure check's
+    // hold, computed only when the caller asks and with no provider call of its own.
+    expect(result.gateShadow?.()).toMatchObject({ surface: "report_section", path: "report_section", today: "held", unified: "held" });
+    expect(mockCreate).toHaveBeenCalledTimes(2);
   });
 
   it("passes after a corrected retry", async () => {

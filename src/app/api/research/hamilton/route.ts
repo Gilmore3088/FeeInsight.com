@@ -43,7 +43,7 @@ import {
 import { getRequestSubjectKey } from "@/lib/api-hardening/audit";
 import { trackFirstHamiltonUse } from "@/lib/analytics-server";
 import { cacheLatestMessage, cachedSystem, ledgerUsage, trackerUsage } from "@/lib/research/tool-output";
-import { SAVED_ANALYSIS_ID_KEY, questionOnly, writtenAnswerBinding, writtenAnswerCheck, writtenAnswerResponse } from "@/lib/hamilton/answer-save";
+import { SAVED_ANALYSIS_ID_KEY, questionOnly, writtenAnswerBinding, writtenAnswerCheck, writtenAnswerClaims, writtenAnswerResponse } from "@/lib/hamilton/answer-save";
 import { bindingLeavesNothing } from "@/lib/hamilton/written-answer-binding";
 import type { NarrativeBinding } from "@/lib/hamilton/narrative-bound";
 import { parseAnalyzeResponse } from "@/components/hamilton/analyze/parse-response";
@@ -531,7 +531,9 @@ async function handlePOST(request: Request) {
             resolveVerdict({ passed: check.passed, held, binding });
             today = held ? "held" : binding && binding.omitted.length > 0 ? "shown_partial" : "shown";
             const response = {
-              ...writtenAnswerResponse(text, toolOutputs, check, binding),
+              // The claims ride with the binding (#1077 step 6): nothing on the screen reads them.
+              ...writtenAnswerResponse(text, toolOutputs, check, binding,
+                writtenAnswerClaims(binding, toolOutputs, { toolResults: reads, institutionId })),
               // Historical reference metadata only; never a future access grant.
               identityContext,
             };

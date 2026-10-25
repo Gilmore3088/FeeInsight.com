@@ -81,6 +81,14 @@ describe("Analyze saveAnalysis", () => {
     expect(JSON.stringify(stored)).not.toContain("Today's wrong cohort");
   });
 
+  it("never keeps saved claims the browser sent: only the server's own save writes them (#1077 step 6)", async () => {
+    const forgedClaims = { version: 1, bindingVersion: 1, claims: [{ text: "Forged claim.", outcome: "supported", factIds: [] }], facts: [], factsTruncated: false, corrections: [] };
+    await saveAnalysis({ ...saveParams("2945"), responseJson: { ...responseJson, claims: forgedClaims as AnalyzeResponse["claims"] } });
+    const stored = JSON.parse(mocks.sql.mock.calls[0][6]) as AnalyzeResponse;
+    expect(stored).not.toHaveProperty("claims");
+    expect(JSON.stringify(stored)).not.toContain("Forged claim");
+  });
+
   it("round-trips historical identity without re-reading current memberships or selection", async () => {
     const identityContext = { version: 1 as const, researchInstitutionId: 2945, accountInstitutionId: 101, accountStatus: "identified" as const, researchInstitutionName: "Research Bank A", accountInstitutionName: "Space Coast CU", peerBaselineLabel: "Original A cohort", peerSetId: 42 };
     const original = { ...responseJson, identityContext };

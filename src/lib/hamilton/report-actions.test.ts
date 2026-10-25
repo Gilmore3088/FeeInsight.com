@@ -4,8 +4,12 @@ import { POST as exportReportPdf } from "@/app/api/pro/report-pdf/route";
 import { NextRequest } from "next/server";
 import { REPORT_START_BLOCKED_MESSAGE } from "@/lib/report-access";
 import { extractText } from "unpdf";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SectionInput } from "@/lib/hamilton/types";
+import { filingFactId } from "@/lib/hamilton/claim-evidence";
+import { HAMILTON_EVIDENCE_CONTRACT_VERSION, type HamiltonEvidenceBundle, type HamiltonEvidenceFact } from "@/lib/hamilton/evidence-contract";
+import { bindNarrative } from "@/lib/hamilton/narrative-bound";
+import { savedClaimsFrom } from "@/lib/hamilton/saved-claims";
 import type { SectionTracking } from "@/lib/hamilton/generate";
 
 const mocks = vi.hoisted(() => ({
@@ -33,6 +37,7 @@ const mocks = vi.hoisted(() => ({
   getLocalMarketCompetitors: vi.fn(),
   getInstitutionComplaintYears: vi.fn(),
   sql: Object.assign(vi.fn(), { json: vi.fn((value: unknown) => ({ json: value })) }),
+  state: { gateShadow: false },
 }));
 
 vi.mock("@/lib/hamilton/account-context-store", () => ({ loadHamiltonAccountContext: mocks.loadHamiltonAccountContext }));
@@ -93,14 +98,20 @@ vi.mock("@/lib/research/history", () => ({
 vi.mock("@/lib/hamilton/generate", async () => {
   // Real figure check over the mocked section text, as generateVerifiedSection does.
   const { checkNarrativeFigures } = await vi.importActual<typeof import("./figure-check")>("./figure-check");
+  const { reportSectionGateShadow } = await vi.importActual<typeof import("./generate")>("./generate");
   return {
     generateVerifiedSection: async (input: SectionInput, tracking: SectionTracking = {}) => {
       const section = await mocks.generateSection(input);
       tracking.onProviderResponse?.(section.usage, section.model);
       const check = checkNarrativeFigures(section.narrative, input.data);
+      // The real shadow thunk, only for the tests that look at it.
+      const gateShadow = mocks.state.gateShadow
+        ? () => reportSectionGateShadow(section.narrative, input.data, check.unmatched.length > 0 ? "held" : "shown",
+          { researchInstitutionId: null, accountInstitutionId: null, ...tracking.gateIdentity })
+        : undefined;
       return check.unmatched.length > 0
-        ? { status: "needs_review", section, unmatched: check.unmatched, citation: {} }
-        : { status: "ok", section, figuresChecked: check.checked, citation: {} };
+        ? { status: "needs_review", section, unmatched: check.unmatched, citation: {}, gateShadow }
+        : { status: "ok", section, figuresChecked: check.checked, citation: {}, gateShadow };
     },
   };
 });
@@ -421,6 +432,81 @@ describe("Hamilton Reports generateReport", () => {
       const result = await addSaved();
       if (!result.success) throw new Error(result.error);
       expect(result.report.addedFindings?.[0].detail).toBe(`${supported} ${reading} ${qualitative} ${left}`);
+    });
+  });
+
+  describe("a saved financial answer's claims travel to the report (#1077 step 6)", () => {
+    // Synthetic: Research CU (2945) and Bank B (9002) filings; not a claim about any real institution.
+    const supported = "Research CU's service charge income was $1.1 million in Q2 2026.";
+    const swapped = "Research CU's service charge income was $2.3 million in Q2 2026.";
+    const reading = "Peers sit near $30.";
+    const filing = (institutionId: number, value: number): HamiltonEvidenceFact => {
+      const id = filingFactId("fdic", institutionId, "2026-06-30", "service_charge_income", "standalone_quarter");
+      return {
+        id, kind: "observed",
+        scope: { institutionId, feeCategory: null, product: null, reportingDate: "2026-06-30", effectiveDate: null, accountApplicability: "unknown", metric: "service_charge_income", periodBasis: "standalone_quarter", cohortKey: null },
+        value, unit: "usd", currency: "USD", frequency: null, conditions: null, status: "published",
+        source: { label: "FDIC call report", table: "institution_financial_records", recordId: null, recordKey: id, evidenceClass: "filing", sourceDocumentIds: [], urls: [], asOf: "2026-06-30", verificationEventId: null },
+      };
+    };
+    const evidence: HamiltonEvidenceBundle = { version: HAMILTON_EVIDENCE_CONTRACT_VERSION, generatedAt: new Date(0).toISOString(), facts: [filing(2945, 1_100_000), filing(9002, 2_300_000)], derivations: [], limitations: [] };
+    const savedFinancial = () => {
+      const binding = bindNarrative({ text: `${supported} ${swapped} ${reading}`, evidence, names: new Map([[2945, "Research CU"], [9002, "Bank B"]]), researchInstitutionId: 2945 });
+      return {
+        institutionId: "2945",
+        responseJson: {
+          title: "Service charge income at Research CU",
+          hamiltonView: `${supported} ${reading}`,
+          whatThisMeans: "",
+          answerEvidence: { passed: true, problems: [] },
+          narrativeBinding: binding,
+          claims: savedClaimsFrom(binding, [evidence]),
+        },
+      };
+    };
+    const addSaved = () => generateReport({ ...reportParams(), addedFindings: [{ id: "answer-f", source: "Ask", title: "Income", detail: "Browser text", institutionId: "2945", savedAnalysisId: "11111111-2222-3333-4444-555555555555" }] });
+    const summaryContext = () => mocks.generateSection.mock.calls.map(([input]) => input as SectionInput).find((input) => input.type === "executive_summary")?.context ?? "";
+
+    beforeEach(() => {
+      mocks.getFeesByInstitution.mockResolvedValue([{ fee_name: "Domestic wire", fee_category: "wire_transfer", amount: 35, review_status: "pending" }]);
+      mocks.loadAnalysisRecord.mockResolvedValue(savedFinancial());
+    });
+    afterEach(() => {
+      vi.unstubAllEnvs();
+      mocks.state.gateShadow = false;
+    });
+
+    it("states the financial sentence only when supported; with the switch off (default) nothing else changes", async () => {
+      const result = await addSaved();
+      if (!result.success) throw new Error(result.error);
+      expect(result.report.addedFindings?.[0]).toEqual({ source: "Ask", title: "Service charge income at Research CU", detail: supported, identityContext: undefined });
+      expect(JSON.stringify(result.report)).not.toContain("$2.3 million");
+      expect(JSON.stringify(result.report)).not.toContain(reading);
+      // The model's context is the same supported prose as before step 6: no claims, no reading.
+      expect(summaryContext()).toContain(supported);
+      expect(summaryContext()).not.toContain(reading);
+      expect(summaryContext()).not.toContain("factIds");
+    });
+
+    it("with the switch on, prints the reading apart under its label, never as the finding or in the model's context", async () => {
+      vi.stubEnv("HAMILTON_REPORT_FINDING_READING", "on");
+      const result = await addSaved();
+      if (!result.success) throw new Error(result.error);
+      expect(result.report.addedFindings?.[0]).toMatchObject({ detail: supported, reading: [reading] });
+      expect(JSON.stringify(result.report)).not.toContain("$2.3 million");
+      expect(summaryContext()).not.toContain(reading);
+    });
+
+    it("records the one output gate's shadow for each section the report kept, as its own run, and decides nothing", async () => {
+      mocks.state.gateShadow = true;
+      const result = await addSaved();
+      if (!result.success) throw new Error(result.error);
+      await vi.waitFor(() => {
+        const shadows = mocks.recordProRequest.mock.calls.filter(([run]) => run.operation === "answer_gate_shadow");
+        expect(shadows).toHaveLength(3);
+        for (const [run] of shadows) expect(run.detail.gate_shadow).toMatchObject({ surface: "report_section", path: "report_section", today: "shown" });
+      });
+      expect(mocks.recordProRequest).toHaveBeenCalledWith(expect.objectContaining({ operation: "report", status: "completed" }));
     });
   });
 
