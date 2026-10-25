@@ -1152,6 +1152,24 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   matches 2, v2 adds 5 (105411, 105412, 49815, 110285, 142887 at institutions 156, 6110, 8577, 321),
   each one and its twin found on their own stored text by `checkFeeAgainstSource`, so the switch
   stays on.
+- Same-line copies beside their older line's replacement (`same-line-replacement-check.ts`, v1,
+  #1673). Hamilton's same-line restore v1 brought a copy back once its older line was down, though
+  that line had often come down for a newer line of the same fee (`refreshed by #`, `duplicate of
+  #`), so the copy went live beside it: 15109 "for each check requested for stop payment." $19.95
+  beside 141864 "Stop Payment Fee - Check". The restore now follows the replacement (Hamilton v2).
+  This re-check reads every live fee whose `hamilton.same_line_duplicate` second look is
+  `takedown_confirmed`, follows its older line's chain with the restore's own rule
+  (`sameLineReplacementSql`, live and unquarantined only; a held replacement is the hold's to
+  judge), and matches it when the replacement has its institution, category and dollar amount,
+  the names name one item (`repeatsScheduleLine`), the variants agree and the frequencies do not
+  differ. `SAME_LINE_REPLACEMENT_TAKEDOWN_LIVE` is off: the step reports only (step detail
+  `same_line_replacement_check`). Switched on, a match goes through the 12-hour second look (check
+  `darwin.same_line_replacement`) and is archived on its second failure while its replacement is
+  live (rolled back as `same_line_duplicate: live fee #<replacement>`, batch
+  `darwin-same-line-replacement-<run>`, the verified row rejected with the `same_line_duplicate`
+  flag, never deleted; event `darwin.same_line_replacement_takedown`), so Hamilton's restore brings
+  it back if that line goes. Dry run 2026-10-25 22:14 UTC (prod, read-only): 17 candidates, 8 at 5
+  institutions would come down (15109, 66618, 104751, 104866, 105031 to 105034), 9 stay.
 - Schedule editions (`edition-effective-check.ts`, #1915). Avidia's schedule "Effective December 1,
   2026" went live beside its March 2024 one, so the page showed next year's $35 overdraft. Each
   step reads the edition each document's heading states (`editionStarts` in
@@ -2043,6 +2061,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINE_CONFLICT_CHECK_VERSION` | `darwin.line_conflict` | v1 | `darwin/line-conflict-check.ts` |
 | `TRANSLATED_COPY_CHECK_VERSION` | `darwin.translated_copy` | v2 | `darwin/translated-copy-check.ts` |
 | `PRODUCT_PAGE_REPEAT_CHECK_VERSION` | `darwin.product_page_repeat` | v2 | `darwin/product-page-repeat-check.ts` |
+| `SAME_LINE_REPLACEMENT_CHECK_VERSION` | `darwin.same_line_replacement` | v1 | `darwin/same-line-replacement-check.ts` |
 | `CANADIAN_DOCUMENT_CHECK_VERSION` | `darwin.canadian_document` | v1 | `darwin/canadian-document-check.ts` |
 | `LATE_CHARGE_BOUND_CHECK_VERSION` | `darwin.late_charge_bound` | v1 | `darwin/late-charge-bound-check.ts` |
 | `CARD_PROGRAM_SECTION_CHECK_VERSION` | `darwin.card_program_section` | v1 | `darwin/card-program-section-check.ts` |
