@@ -56,6 +56,10 @@ describe.skipIf(!connection)("Rosetta replays older-reader documents on a reader
     await raw`INSERT INTO agent_source_texts (source_document_id, institution_id, status, normalized_text, text_hash, source_hash, reader, document_type, updated_at)
               VALUES (${DOC}, ${INST}, 'completed', ${TEXT}, 'text-hash-2069', ${HASH}, 'read.pdf_layout', 'pdf', '2026-10-02T00:00:00Z')`;
     await raw`INSERT INTO agent_runs (id, agent_name, run_kind, title, status) VALUES (${RUN}, 'rosetta', 'state_agent', 'Replay fixture', 'running')`;
+    // Knox sent Darwin six fees from it, so the thin re-read (under 5) leaves it alone.
+    await raw`INSERT INTO raw_fee_observations (institution_id, source_document_id, agent_event_id, fee_name, outlier_flags)
+              SELECT ${INST}, ${DOC}, gen_random_uuid(), 'Service fee ' || n, '["needs_darwin_verification"]'::jsonb
+                FROM generate_series(1, 6) AS n`;
     await readAt(ROSETTA_READ_VERSION - 1);
   });
 
