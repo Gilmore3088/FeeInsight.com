@@ -2,8 +2,8 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
-import { PUBLISH_MIN_ROWS_PER_STEP, ARTICLE_PAGE_RESELECT_SQL, EDITION_HOLD_RESELECT_SQL, ARTICLE_PAGE_SKIP_REASON, CATALOG_DEPTH_LIVE_SQL, decidePriorFee, normalizedFeeName, HAMILTON_PUBLISH_MIN_INSTITUTION_FEES, HAMILTON_PUBLISH_STRATEGY, linesApartOnPage, listsBothPrices, qualifiedLines, namesShareReading, newerCopyPrintsLine, otherBalanceLine, publishedFeeName, publishNameHold, publishSkipReason, runHamiltonPublish, selectListedFeeLines, sameLineDuplicateOf, sentenceFragmentName, separateLines } from "./publish";
-import { NOT_YET_EFFECTIVE_REASON } from "../darwin/edition-effective-check";
+import { PUBLISH_MIN_ROWS_PER_STEP, ARTICLE_PAGE_RESELECT_SQL, EDITION_HOLD_RESELECT_SQL, OLDER_EDITION_RESELECT_SQL,ARTICLE_PAGE_SKIP_REASON, CATALOG_DEPTH_LIVE_SQL, decidePriorFee, normalizedFeeName, HAMILTON_PUBLISH_MIN_INSTITUTION_FEES, HAMILTON_PUBLISH_STRATEGY, linesApartOnPage, listsBothPrices, qualifiedLines, namesShareReading, newerCopyPrintsLine, otherBalanceLine, publishedFeeName, publishNameHold, publishSkipReason, runHamiltonPublish, selectListedFeeLines, sameLineDuplicateOf, sentenceFragmentName, separateLines } from "./publish";
+import { NOT_YET_EFFECTIVE_REASON, OLDER_EDITION_REASON } from "../darwin/edition-effective-check";
 import { productPageUrlSql } from "@/lib/agents/learning/fee-page";
 import { feePageKey } from "./page-key";
 import { PUBLISH_REFUSE_SWEEP_RULES_LIVE, publishSweepRefusals } from "./publish-sweep-rules";
@@ -1250,6 +1250,18 @@ describe("Hamilton agentic publish", () => {
       expect(query).toContain(`held_prev.rolled_back_reason LIKE '${NOT_YET_EFFECTIVE_REASON}:%'`);
       // A product page's line stays decided (Security Federal's Money Market paper statement, docs 25730/25731).
       expect(query).toContain(`held_kind.document_kind = 'product_page' OR ${productPageUrlSql("held_sd.document_url")}`);
+    });
+
+    it("selects again a newer edition's row skipped behind a line Darwin retired for that edition (#1945)", async () => {
+      // Cedar Falls (7833), Oct 13: 15 lines of its 2026 schedule (doc 31873) were skipped as identical
+      // to its 2024 lines (doc 2671). Only a row of the document the retirement names is decided again.
+      const db = learningDb([verifiedFee]);
+
+      await runHamiltonPublish({ runId: 508, db: asPublishDb(db) });
+
+      const [query] = db.unsafe.mock.calls[0] as [string, unknown[]];
+      expect(query).toContain(OLDER_EDITION_RESELECT_SQL);
+      expect(query).toContain(`oe_prev.rolled_back_reason LIKE '${OLDER_EDITION_REASON}: #' || fr.source_document_id::text || ' %'`);
     });
 
     it("does not log held rows, so they publish once the institution has enough fees", async () => {

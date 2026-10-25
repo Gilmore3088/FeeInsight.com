@@ -139,6 +139,15 @@ describe.skipIf(!connection)("Hamilton publish selection in actual PostgreSQL", 
     const heldTwin = await published(tx, institutionId, ids.heldTwinSource, "Late Fee", "not_yet_effective: 2027-01-01 #28999");
     await add("editionTwin", { documentId: docB, name: "Late Fee", key: "nsf", amount: 30, createdAt: "2026-10-02T00:00:08Z" });
     await attempt(tx, institutionId, ids.editionTwin, "unchanged", { previous_fee_published_id: String(heldTwin) });
+    // #1945: skipped as identical to an older edition's line Darwin retired for document B, the newer
+    // edition (Cedar Falls' 2026 lines behind its 2024 ones). A copy of another document skipped behind
+    // the same line stays decided.
+    await add("olderEditionSource", { documentId: docA, name: "Wire Fee Outgoing", key: "nsf", amount: 30, createdAt: "2026-10-01T00:00:08Z", status: "rejected" });
+    const retired = await published(tx, institutionId, ids.olderEditionSource, "Wire Fee Outgoing", `older_edition: #${docB} dated 2026-03-01`);
+    await add("olderEditionOtherCopy", { documentId: docA, name: "Wire Fee Outgoing", key: "nsf", amount: 30, createdAt: "2026-10-01T00:00:09Z" });
+    await attempt(tx, institutionId, ids.olderEditionOtherCopy, "unchanged", { previous_fee_published_id: String(retired) });
+    await add("olderEditionTwin", { documentId: docB, name: "Wire Fee Outgoing", key: "nsf", amount: 30, createdAt: "2026-10-02T00:00:08.500Z" });
+    await attempt(tx, institutionId, ids.olderEditionTwin, "unchanged", { previous_fee_published_id: String(retired) });
     // The same skip on a product page stays decided: it prices one account (Security Federal's
     // Money Market "Paper statements available for $3 per month", docs 25730/25731).
     const productPage = await document(tx, institutionId, "https://select.example/personal/savings/money-market-account", "2026-10-02", null);
@@ -162,7 +171,7 @@ describe.skipIf(!connection)("Hamilton publish selection in actual PostgreSQL", 
       const fixture = await seed(tx);
       const rows = await select(tx, fixture, 100, true);
       expect(labelled(rows, fixture)).toEqual([
-        "undecided", "freeRead", "olderVersion", "twin", "sameLine", "confidenceCleared", "editionTwin", "noDocument",
+        "undecided", "freeRead", "olderVersion", "twin", "sameLine", "confidenceCleared", "editionTwin", "olderEditionTwin", "noDocument",
       ]);
       const byLabel = Object.fromEntries(rows.map((row) => [labelled([row], fixture)[0], row]));
       expect(byLabel.twin).toMatchObject({ twin_recheck: true, same_line_reselect: true });
@@ -187,8 +196,8 @@ describe.skipIf(!connection)("Hamilton publish selection in actual PostgreSQL", 
     await rollback(async (tx) => {
       const fixture = await seed(tx);
       expect(labelled(await select(tx, fixture, 100, false), fixture)).toEqual([
-        "undecided", "decidedRejected", "freeRead", "olderVersion",
-        "twin", "sameLine", "sameLineSettled", "confidenceCleared", "confidenceLow", "editionTwin", "productPageEditionTwin", "noDocument",
+        "undecided", "decidedRejected", "freeRead", "olderVersion", "olderEditionOtherCopy",
+        "twin", "sameLine", "sameLineSettled", "confidenceCleared", "confidenceLow", "editionTwin", "olderEditionTwin", "productPageEditionTwin", "noDocument",
       ]);
     });
   });
@@ -198,7 +207,7 @@ describe.skipIf(!connection)("Hamilton publish selection in actual PostgreSQL", 
       const fixture = await seed(tx);
       expect(labelled(await select(tx, fixture, 1, true), fixture)).toEqual(["undecided", "freeRead", "olderVersion"]);
       expect(labelled(await select(tx, fixture, 4, true), fixture)).toEqual([
-        "undecided", "freeRead", "olderVersion", "twin", "sameLine", "confidenceCleared", "editionTwin",
+        "undecided", "freeRead", "olderVersion", "twin", "sameLine", "confidenceCleared", "editionTwin", "olderEditionTwin",
       ]);
     });
   });
@@ -207,7 +216,7 @@ describe.skipIf(!connection)("Hamilton publish selection in actual PostgreSQL", 
     await rollback(async (tx) => {
       const fixture = await seed(tx);
       expect(await select(tx, fixture, 100, true, 50)).toEqual([]);
-      expect(labelled(await select(tx, fixture, 100, true, 3), fixture)).toHaveLength(8);
+      expect(labelled(await select(tx, fixture, 100, true, 3), fixture)).toHaveLength(9);
     });
   });
 });

@@ -7,6 +7,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const DARWIN_LESSONS: AgentLesson[] = [
   {
+    id: "issue-1945-latest-edition-in-force",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "When two documents of one bank are editions of the same schedule, date each by the date its own text states and keep live only the latest edition in force today, whatever its address and whenever it was read; take down the older line only where the newer edition states the same fee, and never pair one account's or product's schedule with the bank's.",
+    why: "The edition re-check retired an older edition only when the newer one stated an \"Effective\" heading and was read before that date, so Cedar Falls' 2026 schedule (\"Revised 03/2026\", read seven months after it took effect) left 21 lines of its 2024 schedule live and cited; the Oct 25 dry run found 35 such older lines at 4 more banks, 5 of them at a price the newer schedule had changed.",
+    evidence: { issues: [1945], prs: [], files: ["src/lib/agents/darwin/dated-edition.ts", "src/lib/agents/darwin/edition-effective-check.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
+  {
     id: "issue-1910-bank-shorthand-is-one-item",
     agent: "darwin",
     stage: "verify",

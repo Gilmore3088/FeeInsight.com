@@ -350,14 +350,22 @@ export function notYetEffective(text: string | null | undefined, today: string, 
   return starts != null && starts > today ? starts : null;
 }
 
+/** The audience an edition's address names: "ScheduleofFeesPersonal-2024-1.pdf" names its audience once its words are split. */
+export function editionAudience(url: string): ScheduleAudience {
+  return scheduleAudience(url.replace(/([a-z])([A-Z])/g, "$1-$2"));
+}
+
 /**
  * On its effective date an announced edition takes over: the older edition's line of the same fee
  * comes down. True when `newer` is a later edition than `older` for the same audience, both headings
  * state their edition, the newer one was first read before it took effect (`newerFirstRead`, so it
  * is an edition announced ahead, the #1915 case) and it is in effect by `today`. Two copies of one
  * page, or two undated schedules, are left to the page-copy collapse and the same-page supersede.
- * An older edition left live beside one first read after it took effect is #1911's, not this rule's:
- * on prod (Oct 20) that wider pairing also paired one bank's schedules for two products (PNC).
+ * An older edition left live beside one first read after it took effect, or beside one whose
+ * heading states no "Effective" date, is Darwin's dated-edition rule's (`darwin/dated-edition.ts`,
+ * #1945): it dates each document by the date its own text states and pairs only two documents that
+ * are one schedule, since on prod (Oct 20) a wider pairing here also paired one bank's schedules for
+ * two products (PNC).
  */
 export function editionTakesOver(input: {
   olderUrl: string | null | undefined;
@@ -371,9 +379,7 @@ export function editionTakesOver(input: {
   lateHeading?: boolean;
 }): boolean {
   if (!input.olderUrl || !input.newerUrl || !input.newerFirstRead) return false;
-  // "ScheduleofFeesPersonal-2024-1.pdf" names its audience once its words are split.
-  const audience = (url: string) => scheduleAudience(url.replace(/([a-z])([A-Z])/g, "$1-$2"));
-  if (audience(input.olderUrl) !== audience(input.newerUrl)) return false;
+  if (editionAudience(input.olderUrl) !== editionAudience(input.newerUrl)) return false;
   const late = input.lateHeading ?? EDITION_LATE_HEADING_LIVE;
   const older = editionStarts(input.olderText, late);
   const newer = editionStarts(input.newerText, late);

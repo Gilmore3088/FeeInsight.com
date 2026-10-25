@@ -936,6 +936,14 @@ bank's paper statement fee. Dry run on prod, Oct 25: 91 rows at 3 institutions r
 a document in effect today (7174, doc 29000), the other 75 read from Dec 1, 2026 schedules and held
 until then (5297 docs 16640/23342; 722 docs 316/16682).
 
+**Older-edition twins (#1945, Oct 25).** A verified row skipped as identical to a live line that
+Darwin's edition check later retired for this row's own document (`older_edition: #<this doc> ...`,
+the newer edition taking it over, `darwin/dated-edition.ts`) is decided again
+(`OLDER_EDITION_RESELECT_SQL`), so the fee goes live from the current schedule. Cedar Falls (7833)
+had 15 lines of its 2026 schedule (doc 31873) skipped behind its 2024 lines (doc 2671) on Oct 13. A
+row of any other document skipped behind the same line, such as another copy of the retired edition,
+stays decided.
+
 **Qualifier pairs, check 4 (#1314, Oct 15).** `linesApartOnPage` keeps two names apart only when the
 shorter one is printed at the price clear of every place of the longer: a shorter name found only
 inside the longer lines ("Funds (NSF)" in "Non-Sufficient Funds (NSF) $25", "Order" under a "Money
