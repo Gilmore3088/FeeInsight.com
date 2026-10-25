@@ -186,4 +186,14 @@ export const MAGELLAN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-1925-keep-filing-version-time",
+    agent: "magellan",
+    stage: "registry load",
+    lesson: "When a regulator's file says when each filing was last submitted or amended, keep that time with the lines loaded from it, so a later check can tell which copy of a refiled report we hold. Store it apart from the figures, under its own key, and keep it out of every sum, roll-up, value check and served measure.",
+    why: "The FFIEC call-detail loader kept only the schedule files from the bulk zip and dropped its POR file, which carries each bank's \"Last Date/Time Submission Updated On\". When BankFind and the stored FFIEC lines disagreed for refiled quarters at three banks, nothing could say which feed held the newer report.",
+    evidence: { issues: [1925], prs: [], files: ["docs/project/findings/2026-10-25-feeds-hold-different-filing-versions.md", "src/lib/agents/magellan/registry/ffiec-call-detail.ts", "src/lib/regulatory/ffiec.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];
