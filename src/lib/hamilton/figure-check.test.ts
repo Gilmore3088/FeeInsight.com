@@ -257,3 +257,29 @@ describe("derived dollar ratios retain their denominator", () => {
     expect(checkNarrativeFigures("The gap was $2,487.", { ...data, price: { amount: 10, unit: "USD" } }, options).unmatched).toEqual(["$2,487"]);
   });
 });
+
+describe("checkNarrativeFigures: fee maps keyed by category (T5, #1726)", () => {
+  // The local competitor read's shape: prices keyed by fee category alone.
+  const local = {
+    institution: "Harbor Point Bank", institution_id: 9101, your_fees: { overdraft: 30 },
+    competitors: [{ institution_id: 9131, name: "Synthetic Competitor One", fees: { overdraft: 25, nsf: 27 } }],
+  };
+
+  it("traces a price stated from your_fees or a competitor's fees", () => {
+    expect(checkNarrativeFigures("Harbor Point Bank charges $30; its competitor charges $25 and $27 for NSF.", local).unmatched).toEqual([]);
+  });
+
+  it("still never traces an id or count inside a fee map", () => {
+    expect(checkNarrativeFigures("A fee of $9131.", local).unmatched).toEqual(["$9131"]);
+    expect(checkNarrativeFigures("It charges $4.", { fees: { overdraft_count: 4 } }).unmatched).toEqual(["$4"]);
+  });
+
+  it("reads only plain-object maps under your_fees or competitors[].fees, never items of an array named fees", () => {
+    const rows = { fees: [{ institutionId: 4821, sourceDocumentId: 99123, amount: 30 }] };
+    expect(checkNarrativeFigures("A fee of $4821.", rows).unmatched).toEqual(["$4821"]);
+    expect(checkNarrativeFigures("A fee of $30.", rows).unmatched).toEqual([]);
+    expect(checkNarrativeFigures("A fee of $5.", { your_fees: { "2024": 5 } }).unmatched).toEqual(["$5"]);
+    // A `fees` map outside a competitors array is not the local read's.
+    expect(checkNarrativeFigures("A fee of $6.", { fees: { overdraft: 6 } }).unmatched).toEqual(["$6"]);
+  });
+});

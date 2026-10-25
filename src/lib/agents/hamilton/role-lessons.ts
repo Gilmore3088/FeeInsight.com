@@ -237,4 +237,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-1726-golden-acceptance",
+    agent: "hamilton",
+    stage: "analysis",
+    lesson: "State a median or quartile only when the group behind it has 10 or more institutions, or 5 or more local competitors; below that, name the peers and their prices. Never name an internal system in customer text, and judge any change to the answer gate against the persona golden set before relying on live counts.",
+    why: "Replaying 46 synthetic persona, adversarial and account answers through the one output gate on Oct 25 found that a median from 6 index institutions or 3 local competitors passed both gates, that four internal system names were not on the internal-name list, and that every local competitor price was untraceable, so correct local comparisons were held.",
+    evidence: { issues: [1726, 982, 1077], prs: [], files: ["src/lib/hamilton/persona-golden-set.ts", "src/lib/hamilton/output-gate.ts", "src/lib/hamilton/figure-check.ts", "src/lib/hamilton/workspace/four-roles.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];
