@@ -37,7 +37,8 @@ import type { AnswerToolEvidence } from "./written-answer-evidence";
 
 export const OUTPUT_GATE_VERSION = 1 as const;
 
-export type GateSurface = "written_answer" | "memo" | "report_section" | "simulate";
+/** `ask` is the free Ask bar's storyline, gated only by the replay (gate-replay.ts): the live Ask bar shows it with no gate. */
+export type GateSurface = "written_answer" | "memo" | "report_section" | "simulate" | "ask";
 
 /** What the answer was written from. Tool reads are server-observed, never browser text. */
 export type GateEvidence =

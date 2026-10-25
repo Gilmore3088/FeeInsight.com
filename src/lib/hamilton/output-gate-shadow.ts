@@ -25,15 +25,16 @@ export type ShadowDisagreement =
   /** Both show it, but one cuts sentences and the other does not. */
   | "partial_differs";
 
-/** Which caller ran the shadow: the written-answer route's two paths, the Ask memo, Simulate, a report section (#1077 step 6). */
-export type ShadowPath = "written_streaming" | "written_buffered" | "memo" | "simulate_stream" | "simulate_read" | "report_section" | "golden_replay";
+/** Which caller ran the shadow: the written-answer route's two paths, the Ask memo, Simulate, a report section (#1077 step 6), the replays. */
+export type ShadowPath = "written_streaming" | "written_buffered" | "memo" | "simulate_stream" | "simulate_read" | "report_section" | "golden_replay" | "ask_replay";
 
 /**
- * Whose answer the shadow ran on: a reader's (the live routes), the daily paid eval's sample, or the
- * golden replay. Kept apart in every count, so synthetic answers never stand in for readers'.
+ * Whose answer the shadow ran on: a reader's (the live routes), the daily paid eval's sample, the
+ * golden replay, or the daily gate replay (gate-replay.ts: real questions re-answered by today's free
+ * engine). Kept apart in every count, so replayed and synthetic answers never stand in for readers'.
  */
-export type ShadowOrigin = "reader" | "paid_eval" | "golden";
-export const SHADOW_ORIGINS: readonly ShadowOrigin[] = ["reader", "paid_eval", "golden"];
+export type ShadowOrigin = "reader" | "paid_eval" | "golden" | "replay";
+export const SHADOW_ORIGINS: readonly ShadowOrigin[] = ["reader", "paid_eval", "golden", "replay"];
 
 /** Where a shadow ran, as its record keeps it; `origin` defaults to "reader". */
 export interface ShadowContext {
