@@ -264,7 +264,21 @@ export function rosettaReaderManifests(versions: RosettaVersions): ReplayManifes
     notCounted: ROSETTA_NOT_COUNTED,
   });
   return [
-    reader("read", "read.page_check", versions.read, "Texts read from PDFs, HTML, plain text and Word files by an older reader."),
+    {
+      ...reader("read", "read.page_check", versions.read, "Texts read from PDFs, HTML, plain text and Word files by an older reader."),
+      unit: "current-copy document text",
+      // #2069 ("Re-read all", James, 25 Oct): every older-reader current copy, OCR and JavaScript
+      // fallback texts included, is replayed once per version, a few a read step.
+      count: async (db): Promise<ReplayCount> => {
+        const { countReaderReplaysDue } = await import("@/lib/agents/rosetta/read");
+        const { countReaderReplaysDone, READER_REPLAY_PER_RUN } = await import("@/lib/agents/rosetta/reader-replay");
+        const queued = await countReaderReplaysDue(db);
+        const { done, textChanged } = await countReaderReplaysDone(db);
+        return { affected: queued + done, done, queued, exclusions: {},
+          note: `Queued is the read step's own replay selection (current copies whose text an older version of its reader wrote: a primary or the legacy reader, free OCR or the JavaScript fallback; the paid pass is not replayed), read at most ${READER_REPLAY_PER_RUN} a step. Done counts rosetta.reader_replay receipts at this version; ${textChanged} stored a new text, which Knox re-extracts and Darwin re-checks. A replay keeps the earlier text unless the new one lists at least as many fees. A replay whose bytes are a known failure for its reader is settled without a read and counts as done; a scan deferred past a run's OCR allowance stays queued. Thin texts the ordinary re-read settled count as neither.` };
+      },
+      notCounted: undefined,
+    },
     reader("pdf_layout", "read.pdf_layout", versions.pdfLayout, "PDF texts laid out by an older column and row layout."),
     reader("ocr", "read.ocr_tesseract", versions.ocr, "Scanned PDFs read by an older OCR pass."),
     reader("js_fallback", "read.js_fallback", versions.jsFallback, "JavaScript-built pages read by an older browser fallback."),

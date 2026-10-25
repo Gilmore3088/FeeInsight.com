@@ -52,8 +52,9 @@ import type { AnswerToolEvidence } from "./written-answer-evidence";
  * .7: a fifth group, wrong fee category (#1077 follow-up): three cases and two controls; earlier cases unchanged.
  * .8: review of .7: seven more wrong-fee-category controls (correct sentences the first rule cut); earlier cases unchanged.
  * .9: review of .8: five sibling-fee swaps (overdraft and NSF, maintenance and paper statement, cashier's check and stop payment, wire direction) must hold; earlier cases unchanged.
+ * .10: a local competitor named from the getLocalCompetitors read (Cycle A defect 2): one swapped-bank case and two controls; earlier cases unchanged.
  */
-export const CLAIM_GOLDEN_SET_VERSION = "2026-10-25.9";
+export const CLAIM_GOLDEN_SET_VERSION = "2026-10-25.10";
 
 /** Who has checked these cases. Nobody has: change only with a link to an actual review record. */
 export const CLAIM_GOLDEN_REVIEW = {
@@ -305,6 +306,27 @@ const A_TWO_FEES_BUNDLE =bundle(bundleFee(1, BANK_A, 10, "2026-06-30"),
 const B_FEES = feeProfile(BANK_B, [B_OVERDRAFT_35]);
 const W = "written_answer" as const;
 
+/** Bank A's two overdraft lines: $37, and $35 for a second item the same day. */
+const A_TWO_OVERDRAFTS = feeProfile(BANK_A, [
+  { recordId: 13, category: "overdraft", name: "Overdraft", amount: 37 },
+  { recordId: 14, category: "overdraft", name: "Overdraft, second item of the day", amount: 35 },
+]);
+/**
+ * Bank A's local competitor read, in the shape getLocalCompetitors returns
+ * (research/tool-local-competitors.ts): Bank B is its competitor at a $35 overdraft, the highest
+ * tier of Bank B's rows, an aggregate with no record id.
+ */
+const A_LOCAL_COMPETITORS: AnswerToolEvidence = {
+  toolName: "getLocalCompetitors", input: { institution_id: BANK_A },
+  output: {
+    institution: "Bank A", institution_id: BANK_A, your_fees: { overdraft: 37 },
+    market: "Synthetic City, FL area (2 counties)", market_basis: "branch_counties", county_fips: [12001, 12003], sod_year: 2025,
+    source: "FDIC Summary of Deposits 2025; verified published fee amounts",
+    competitors: [{ institution_id: BANK_B, name: "Bank B", fees: { overdraft: 35 }, fee_basis: { overdraft: "max" },
+      document_url: `https://fixture.invalid/${BANK_B}/fees.pdf`, document_date: "2026-09-30" }],
+  },
+};
+
 export const CLAIM_GOLDEN_CASES: readonly ClaimGoldenCase[] = [
   // Wrong premise: the question states something the data contradicts or does not hold.
   { id: "wp-fee-restated", group: "wrong_premise", control: false, surface: W, reads: [A_FEES], institutionId: BANK_A,
@@ -467,6 +489,22 @@ export const CLAIM_GOLDEN_CASES: readonly ClaimGoldenCase[] = [
     description: "control: \"our data\" is Hamilton's, not the reader's bank, so the research subject's own quarter stands",
     text: "Based on our data, fee income was $1.4 million in Q2 2026.",
     expect: { status: "shown", problems: [], binding: { supported: 1, interpretation: 0, omitted: [], factIds: ["filing:ncua:9001:2026-03-31:service_charge_income:ytd", "filing:ncua:9001:2026-06-30:service_charge_income:ytd", "ncua-profile:9001:service_charge_income:2026-06-30:ytd_to_quarter"] } },
+    target: { status: "validated", reasons: [] }, todayWrong: false },
+  // A local competitor named from the getLocalCompetitors read (#1077, Cycle A defect 2).
+  { id: "sb-competitor-carried", group: "swapped_bank", control: false, surface: W, reads: [A_TWO_OVERDRAFTS, A_LOCAL_COMPETITORS], institutionId: BANK_A,
+    description: "a competitor's $35 overdraft (an aggregate from the local read) after a sentence about Bank A, which has a $35 overdraft line of its own",
+    text: "Bank A charges $37 for an overdraft. Bank B charges $35 for an overdraft.",
+    expect: { status: "shown", problems: [], binding: { supported: 1, interpretation: 0, omitted: ["wrong_institution"], factIds: ["fee:published:13"] } },
+    target: { status: "ready_partial", reasons: ["wrong_institution"] }, todayWrong: false },
+  { id: "sb-competitor-own-control", group: "swapped_bank", control: true, surface: W, reads: [A_TWO_OVERDRAFTS, A_LOCAL_COMPETITORS], institutionId: BANK_A,
+    description: "control: Bank A's own $37 overdraft, with the local competitor read beside its profile",
+    text: "Bank A charges $37 for an overdraft.",
+    expect: { status: "shown", problems: [], binding: { supported: 1, interpretation: 0, omitted: [], factIds: ["fee:published:13"] } },
+    target: { status: "validated", reasons: [] }, todayWrong: false },
+  { id: "sb-competitor-unnamed-control", group: "swapped_bank", control: true, surface: W, reads: [A_TWO_OVERDRAFTS, A_LOCAL_COMPETITORS], institutionId: BANK_A,
+    description: "control: a sentence naming no institution binds on value, fee and the subject's records, as before",
+    text: "The overdraft fee for a second item the same day is $35.",
+    expect: { status: "shown", problems: [], binding: { supported: 1, interpretation: 0, omitted: [], factIds: ["fee:published:14"] } },
     target: { status: "validated", reasons: [] }, todayWrong: false },
 
   // Wrong fee category: one fee's price stated as another fee's (#1077 follow-up, Cycle A trace).
