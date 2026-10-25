@@ -19,6 +19,7 @@ import {
   COMPETITOR_CHANGE_SIGNAL,
   competitorAlertDedupeKey,
   planCompetitorAlerts,
+  recheckReason,
   runCompetitorAlerts,
   summarizeCompetitorAlerts,
   type CompetitorChangeRow,
@@ -99,6 +100,45 @@ describe("planCompetitorAlerts", () => {
     expect(plan).toMatchObject({ alerts: [], notConfirmed: 2 });
   });
 
+  it("never alerts on an older schedule found late or a corrected reading (#1898)", () => {
+    // Lone Star's 2023 schedule found after its 2026 one was live: not a cut from $35 to $30.
+    const late = change({
+      old_amount: "35.00",
+      new_amount: "30.00",
+      old_document_text: "Fee Schedule Effective March 1, 2026\nOverdraft fee $35.00\nStop payment $25.00",
+      new_document_text: "Fee Schedule Effective January 1, 2023\nOverdraft fee $30.00\nStop payment $25.00",
+    });
+    const corrected = change({ change_id: 502, old_document_id: 41, new_document_id: 41 });
+    // Alerts alone also hold an undated new schedule against a dated old one.
+    const undated = change({ change_id: 503, old_document_text: "Fee Schedule Effective March 1, 2026\nOverdraft fee $30.00\nStop payment $25.00" });
+    const plan = planCompetitorAlerts({ bankId: 1, bankName: "Home Bank", ownFees: {}, changes: [late, corrected, undated], alreadyAlerted: new Set() });
+    expect(plan).toMatchObject({ alerts: [], notConfirmed: 3, held: { older_edition: 1, correction: 1, edition_unknown: 1 } });
+  });
+
+  it("carries its baseline: the price on file before and what replaced it, with schedules and dates", () => {
+    const plan = planCompetitorAlerts({
+      bankId: 1,
+      bankName: "Home Bank",
+      ownFees: {},
+      changes: [
+        change({
+          old_source_url: "https://lonestar.example/fees-2025.pdf",
+          source_url: "https://lonestar.example/fees-2026.pdf",
+          old_document_text: "Fee Schedule Effective January 1, 2025\nOverdraft fee $30.00\nStop payment $25.00",
+          new_document_text: "Fee Schedule Effective October 1, 2026\nOverdraft fee $35.00\nStop payment $25.00",
+          old_read_at: new Date("2026-10-02T14:00:00Z"),
+          new_read_at: "2026-10-06T09:30:00Z",
+        }),
+      ],
+      alreadyAlerted: new Set(),
+    });
+    expect(plan.alerts[0].baseline).toEqual({
+      before: { amount: 30, scheduleUrl: "https://lonestar.example/fees-2025.pdf", edition: "2025-01-01", readOn: "2026-10-02" },
+      after: { amount: 35, scheduleUrl: "https://lonestar.example/fees-2026.pdf", edition: "2026-10-01", readOn: "2026-10-06" },
+    });
+    expect(recheckReason(change())).toBeNull();
+  });
+
   it("says when the bank has no published fee to compare", () => {
     const plan = planCompetitorAlerts({ bankId: 1, bankName: "Home Bank", ownFees: {}, changes: [change()], alreadyAlerted: new Set() });
     expect(plan.alerts[0].body).toContain("Home Bank has no published overdraft fee on file.");
@@ -111,9 +151,11 @@ describe("runCompetitorAlerts", () => {
     changes = [change()],
     alerted = [] as string[],
     stale = [] as Array<{ id: string; reason: string }>,
+    live = [] as Array<{ id: string; change_id: string }>,
   } = {}) {
     mocks.sql.mockImplementation((strings: TemplateStringsArray) => {
       const text = strings.join("?");
+      if (text.includes("s.source_json -> 'withdrawn_at' IS NULL")) return Promise.resolve(live);
       if (text.includes("NOT (s.source_json ? 'withdrawn_at')")) return Promise.resolve(stale);
       if (text.includes("FROM institution_workspace_memberships")) return Promise.resolve(banks);
       if (text.includes("FROM published_fee_catalog")) return Promise.resolve([{ fee_category: "overdraft", amount: "32.00" }]);
@@ -147,6 +189,10 @@ describe("runCompetitorAlerts", () => {
     const [input] = mocks.recordHamiltonMonitorSignal.mock.calls[0];
     expect(input).toMatchObject({ institutionId: 1, signalType: COMPETITOR_CHANGE_SIGNAL });
     expect(input.sourceJson).toMatchObject({ dedupe_key: "competitor_change:1:501", competitor_institution_id: 9 });
+    expect(input.sourceJson.baseline).toEqual({
+      before: { amount: 30, schedule_url: null, edition: null, read_on: null },
+      after: { amount: 35, schedule_url: "https://lonestar.example/fees", edition: null, read_on: null },
+    });
     const inserts = mocks.sql.mock.calls.filter((c) => (c[0] as TemplateStringsArray).join("?").includes("INSERT INTO hamilton_priority_alerts"));
     expect(inserts).toHaveLength(1);
     expect(summarizeCompetitorAlerts(result)).toContain("Raised 1 alert(s)");
@@ -196,6 +242,31 @@ describe("runCompetitorAlerts", () => {
     const texts = mocks.sql.mock.calls.map((c) => (c[0] as TemplateStringsArray).join("?"));
     expect(texts.some((t) => t.includes("UPDATE"))).toBe(false);
     expect(summarizeCompetitorAlerts(result)).toContain("Would withdraw 1");
+  });
+
+  it("withdraws an earlier alert whose change the rule now holds as an older schedule found late (#1898)", async () => {
+    const late = change({
+      change_id: 777,
+      old_amount: "35.00",
+      new_amount: "30.00",
+      old_document_text: "Effective March 1, 2026\nOverdraft fee $35.00\nStop payment $25.00",
+      new_document_text: "Effective January 1, 2023\nOverdraft fee $30.00\nStop payment $25.00",
+    });
+    const standing = change({ change_id: 778 });
+    install({
+      banks: [],
+      changes: [late, standing],
+      live: [
+        { id: "00000000-0000-0000-0000-000000000077", change_id: "777" },
+        { id: "00000000-0000-0000-0000-000000000078", change_id: "778" },
+      ],
+    });
+    const result = await runCompetitorAlerts();
+    expect(result.withdrawn).toBe(1);
+    const update = mocks.sql.mock.calls.find((c) => (c[0] as TemplateStringsArray).join("?").includes("UPDATE hamilton_signals"))!;
+    expect(JSON.parse(String(update[1]))).toEqual([{ id: "00000000-0000-0000-0000-000000000077", reason: "an older schedule found late" }]);
+    const lookup = mocks.sql.mock.calls.find((c) => (c[0] as TemplateStringsArray).join("?").includes("FROM fee_change_records"))!;
+    expect(lookup).toContainEqual([777, 778]);
   });
 
   it("says plainly when no institution has a workspace", async () => {

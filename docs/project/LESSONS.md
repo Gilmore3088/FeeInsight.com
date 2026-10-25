@@ -213,10 +213,11 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-307 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+309 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
-### Extraction and fee reading (46)
+### Extraction and fee reading (47)
 
+- 2026-10-25 — An ATM network table prices each row once per column: read the non-network column's price by row and column, never a row's first price; a late charge's cap or floor bounds a percentage charge and is not the late fee (#1905). — [finding](findings/2026-10-25-atm-network-table-and-late-charge-bounds.md) — Agent lesson: knox/issue-1905-network-table-columns, darwin/issue-1905-late-charge-bound-is-no-fee; Guard: `src/lib/agents/knox/network-column-table.test.ts`
 - 2026-10-25 — Judge a page, not a copy: a newer copy of a page that holds exactly the text of an older copy Knox already read gets that copy's verdict, or the page's current copy is rejected while its fees stay live on a superseded copy nothing checks. — [finding](findings/2026-10-25-same-text-newer-copy-rejected.md) — Agent lesson: rosetta/issue-2477-same-text-same-verdict; Guard: `src/lib/agents/rosetta/same-text-copy.test.ts`
 - 2026-10-25 — A reader upgrade must reach every current document an older version of that reader wrote, not only the ones that look broken: queue them all at a bounded pace, read each once per version, keep the old text unless the new one lists at least as many fees, and count how many texts changed. — [finding](findings/2026-10-25-reader-upgrade-reaches-thin-texts-only.md) — Agent lesson: rosetta/issue-2069-reader-upgrade-reaches-every-text
 - 2026-10-25 — A line held on an older copy of a page is history, not a fee: a held line goes to Darwin only from its page's current copy, a name rule that admits new lines keeps the ambiguous ones held, and Darwin's category guard admits the same names from the same pattern (#1918). — [finding](findings/2026-10-25-held-recheck-promotes-older-copies.md) — Agent lesson: knox/issue-1918-named-checking-fee, darwin/issue-1918-guard-reads-knoxs-name-pattern; Guard: `src/lib/agents/knox/checking-fee-name.test.ts`, `src/lib/checking-fee-name.test.ts`
@@ -464,8 +465,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — Sign out on the account page and admin used Server Actions that a redeploy breaks. — [finding](findings/2026-10-09-sign-out-server-action.md) — Guard: `src/app/api/auth/logout/route.test.ts:30`
 - 2026-10-09 — A refunded report kept its paid status and its private link. — [finding](findings/2026-10-09-report-refund-not-handled.md) — Guard: `src/lib/stripe-webhook.test.ts` (+1 more)
 
-### Hamilton workspace (37)
+### Hamilton workspace (38)
 
+- 2026-10-25 — A price read later is not a later price: a change counts only when the new price's schedule (its own edition line, `editionStarts`) is not an older edition than the one on file and is not our corrected reading of the same document, and every competitor alert keeps what we knew before and when. — [finding](findings/2026-10-25-late-older-schedule-change.md) — Guard: `src/lib/report-assemblers/monthly-pulse.test.ts`, `src/lib/hamilton/competitor-alerts.test.ts`; Agent lesson: hamilton/issue-1898
 - 2026-10-25 — A decision that waits on shadow counts should not wait on live traffic when the engine can be replayed for free: the gate replay puts every Pro question on record and the quality bar for a seeded spread of institutions (up to 400 a day) through the free Ask engine and the one output gate, recorded as shadows with `origin: "replay"`, kept apart from readers'. — [finding](findings/2026-10-25-gate-replay-counts.md) — Guard: `src/lib/hamilton/gate-replay.test.ts`, `src/app/api/admin/crew/gate-replay/route.test.ts`
 - 2026-10-25 — A checked answer stays checked only while its claims travel with it: a saved answer's report finding now carries its supported sentences, cited facts and source lines into `report_json`, and the answer section holds any finding figure that neither those facts nor its own data support. — [finding](findings/2026-10-25-report-finding-claims.md) — Guard: `src/lib/hamilton/report-finding-claims.test.ts`, `src/lib/hamilton/report-actions.test.ts`
 - 2026-10-25 — Shrink what an answer does not rest on first: tool-output compaction now trims a profile's fee rows to their record, amount, category and name, drops conditions and halves its other lists (keeping five quarters of filing history) before any fee row, keeps spotlight and core fee types when rows must go, never cuts a profile to text, and marks `_fee_rows_complete` so saved fee refs survive a trim. — [finding](findings/2026-10-25-compaction-keeps-records.md) — Guard: `src/lib/research/tool-output.test.ts`, `src/lib/saved-output-corrections.test.ts`
@@ -567,7 +569,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (216 in all).
+counts as of this index (220 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
@@ -575,10 +577,10 @@ counts as of this index (216 in all).
 | magellan | 20 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
 | hoovie | 10 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
 | rosetta | 10 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
-| knox | 61 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
-| darwin | 31 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
+| knox | 62 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
+| darwin | 32 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 40 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
-| hamilton | 23 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
+| hamilton | 26 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
 | deming | 14 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
 
 ## Before 2026-10-10
