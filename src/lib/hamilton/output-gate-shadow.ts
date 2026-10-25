@@ -44,9 +44,12 @@ export interface GateShadowRecord {
   /** True when any failure is a stated cause (today's cause problem lines or the cause rule's shadow input). */
   cause: boolean;
   corrections: number;
-  /** Set when the unified gate threw: today's decision stands and nothing else is known. */
+  /** `GATE_SHADOW_ERROR` when the unified gate threw: today's decision stands and nothing else is known. */
   error?: string;
 }
+
+/** The one error code a shadow record carries when the unified gate threw. */
+export const GATE_SHADOW_ERROR = "gate_threw";
 
 /** The disagreement between today's decision and the unified status, or null when they agree. */
 export function shadowDisagreement(today: TodayDecision, unified: GateStatus): ShadowDisagreement | null {
@@ -85,11 +88,12 @@ export function gateShadowRecord(verdict: GateVerdict, today: TodayDecision, con
 export function shadowGate(input: GateInput, today: TodayDecision, context: { path: ShadowPath; mode?: string | null }): GateShadowRecord {
   try {
     return gateShadowRecord(gateAnswer(input), today, context);
-  } catch (error) {
+  } catch {
+    // A fixed code, never the error's message: the record carries no answer text or internals.
     return {
       version: OUTPUT_GATE_VERSION, surface: input.surface, path: context.path, mode: context.mode ?? null, today,
       unified: "held", agrees: false, disagreement: null, codes: [], critical: [], cause: false, corrections: 0,
-      error: error instanceof Error ? error.message : String(error),
+      error: GATE_SHADOW_ERROR,
     };
   }
 }

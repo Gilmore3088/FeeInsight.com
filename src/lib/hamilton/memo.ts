@@ -21,6 +21,7 @@ import { HAMILTON_VOICE } from "./voice";
 import type { Storyline, StorylineMemo, StorylineMemoResult } from "./workspace/storyline-types";
 import type { HamiltonIdentitySnapshot } from "./account-context";
 import { shadowGate, type GateShadowRecord, type TodayDecision } from "./output-gate-shadow";
+import type { GateInput } from "./output-gate";
 
 /**
  * Room for the JSON memo with headroom: at 1,800 both attempts of a live overdraft memo
@@ -271,28 +272,32 @@ export function memoOwnProblems(draft: MemoDraft, payload: unknown): { factIds: 
 }
 
 /**
- * The one output gate's shadow verdict on a memo draft (#1077 step 4): the gate over the memo's
- * text, its DATA and its fact bundle, plus the memo's own checks, beside today's decision.
+ * The one output gate's input for a memo draft (#1077 step 4), with exactly today's memo inputs:
+ * the check over the whole memo with no question (`checkAnswerEvidence(all, payload)`), the binding
+ * over its prose with the question and no account or research institution (`memoBinding`), and the
+ * memo's own checks as surface rules. The memo's own rule already covers the account institution,
+ * so the gate's account rule is left out (no account name) rather than counted twice.
  */
-export function memoGateShadow(draft: MemoDraft, payload: unknown, question: string | undefined, today: TodayDecision): GateShadowRecord {
+export function memoGateInput(draft: MemoDraft, payload: unknown, question: string | undefined): GateInput {
   const own = memoOwnProblems(draft, payload);
   const evidence = (payload as { fact_evidence?: HamiltonEvidenceBundle } | null)?.fact_evidence ?? null;
   const identity = (payload as { identityContext?: HamiltonIdentitySnapshot } | null)?.identityContext;
   const names = new Map<number, string>();
   if (identity?.researchInstitutionId && identity.researchInstitutionName) names.set(identity.researchInstitutionId, identity.researchInstitutionName);
-  return shadowGate({
+  return {
     surface: "memo",
     text: [draft.summary, draft.board, draft.market, ...draft.questions].join("\n"),
     bindText: [draft.summary, draft.board, draft.market].join("\n"),
-    evidence: { kind: "data", data: payload, bundle: evidence, names },
-    identity: {
-      researchInstitutionId: identity?.researchInstitutionId ?? null,
-      accountInstitutionId: identity?.accountInstitutionId ?? null,
-      accountInstitutionName: identity?.accountInstitutionName ?? null,
-    },
+    evidence: { kind: "data", data: payload, bundle: evidence, names, checkQuestion: false, bindIdentity: false },
+    identity: { researchInstitutionId: identity?.researchInstitutionId ?? null, accountInstitutionId: identity?.accountInstitutionId ?? null },
     question,
     extra: [...own.factIds, ...own.rest],
-  }, today, { path: "memo" });
+  };
+}
+
+/** The one output gate's shadow verdict on a memo draft, beside today's decision. */
+export function memoGateShadow(draft: MemoDraft, payload: unknown, question: string | undefined, today: TodayDecision): GateShadowRecord {
+  return shadowGate(memoGateInput(draft, payload, question), today, { path: "memo" });
 }
 
 export interface MemoClient {
@@ -349,8 +354,11 @@ export async function writeStorylineMemo(
     /** Filled with every model call the memo makes, retries included. */
     usage?: MemoUsage;
     tracking?: MemoTracking;
-    /** Given the one output gate's shadow verdict on the draft the decision rests on (#1077 step 4). */
-    onGateShadow?: (record: GateShadowRecord) => void;
+    /**
+     * Given a thunk for the one output gate's shadow verdict on the draft the decision rests on
+     * (#1077 step 4). Its inputs are captured now; the caller runs it after the response.
+     */
+    onGateShadow?: (compute: () => GateShadowRecord) => void;
   } = {},
 ): Promise<StorylineMemoResult> {
   if (!options.client && !hasAnthropicApiKey("hamilton")) {
@@ -399,7 +407,8 @@ export async function writeStorylineMemo(
     // The one output gate in shadow (#1077 step 4): recorded by the caller beside this decision, never deciding.
     // Only the decision a reader sees counts: a passing draft, or the last draft before the memo is withheld.
     if (options.onGateShadow && (problems.length === 0 || attempt === MAX_ATTEMPTS)) {
-      options.onGateShadow(memoGateShadow(draft, payload, question, problems.length === 0 ? "shown" : "held"));
+      const today: TodayDecision = problems.length === 0 ? "shown" : "held";
+      options.onGateShadow(() => memoGateShadow(draft, payload, question, today));
     }
     if (problems.length === 0) {
       const memo: StorylineMemo = {

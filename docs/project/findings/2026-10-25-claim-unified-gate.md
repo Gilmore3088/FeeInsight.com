@@ -27,12 +27,20 @@ would change.
 - `output-gate-shadow.ts`: `shadowGate` never throws; the record keeps codes and counts, never
   the answer's text. `tallyGateShadow` counts agreements and each disagreement (`unified_holds`,
   `unified_shows`, `partial_differs`) per surface and path.
-- Recorded in the run ledger, no migration: a written answer (streaming, every mode, and buffered)
-  gets a `pro.answer_gate_shadow` run; the Ask memo and the Simulate stream add `gate_shadow` to
-  the `pro_request` run they already write. `countGateShadowDisagreements(days)`
-  (`output-gate-shadow-store.ts`) reads them back.
+- Recorded in the run ledger, no migration: each verdict is its own `pro.answer_gate_shadow` run
+  (written answer streaming in every mode and buffered, the Ask memo, the Simulate stream; the
+  Simulate read hands its caller a thunk). `scheduleGateShadow` computes and writes it after the
+  response with Next's `after()`, from inputs captured before it: nothing on the response path
+  awaits it, and `streamText`'s `onFinish` (inside the stream's flush) no longer holds the stream
+  open. `countGateShadowDisagreements(days)` (`output-gate-shadow-store.ts`) reads them back.
 - `memo.ts`: `memoOwnProblems` splits out the memo-only checks, with `memoProblems` unchanged in
-  output and order.
+  output and order. `memoGateInput` gives the gate exactly today's memo inputs (check with no
+  question, binding with no account or research institution), so the tally compares like with
+  like; the memo's account rule is counted once, as its own rule.
+
+**Review of PR #2577:** a first version awaited the shadow write before each buffered response and
+at the end of `onFinish`, and gave the memo shadow a question and both institutions that today's
+memo gate does not use. Both fixed as above; a shadow error is now the fixed code `gate_threw`.
 
 **Golden set replay (`claim-gate-replay.ts`, set 2026-10-25.6):** the unified gate meets the
 target on 28 of 28 and validates all 9 controls. It agrees with today on 25. It holds 3 answers
@@ -48,6 +56,8 @@ a cut sentence should become `ready_partial` rather than a hold is James's decis
 
 **Guard:** `src/lib/hamilton/output-gate.test.ts` (same evidence as today's checks; partial and
 cut; untraced figures critical; account identity; shadow records, tally and read-back; memo and
-Simulate shadows; golden replay counts) and `src/app/api/research/hamilton/route.answer-gate.test.ts`
-(an admin chat with no mode is gated in shadow only; streaming and buffered give the same verdict;
-a shadow that fails changes nothing).
+Simulate shadows; the memo's check and binding equal today's on every memo golden case; golden
+replay counts) and `src/app/api/research/hamilton/route.answer-gate.test.ts` (an admin chat with no
+mode is gated in shadow only; streaming and buffered give the same verdict; a shadow that fails
+changes nothing; both paths answer while the ledger write never settles; the shadow is computed
+after the response from inputs captured before it).

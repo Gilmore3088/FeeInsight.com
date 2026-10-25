@@ -201,19 +201,21 @@ describe("H01 Structured Ask identity acceptance", () => {
     ]);
   });
 
-  it("records the one output gate's shadow verdict in the memo's run, beside today's decision (#1077 step 4)", async () => {
+  it("records the one output gate's shadow verdict as its own run, scheduled after the memo's (#1077 step 4)", async () => {
     const { recordProRequest } = await import("@/lib/agents/run-store");
     vi.mocked(recordProRequest).mockClear();
     const shadow = { version: 1, surface: "memo", path: "memo", mode: null, today: "held", unified: "held", agrees: true,
       disagreement: null, codes: ["untraced_figure"], critical: ["untraced_figure"], cause: false, corrections: 0 } as const;
     vi.mocked(writeStorylineMemo).mockImplementationOnce(async (_story, _question, options) => {
-      options!.onGateShadow!({ ...shadow, codes: [...shadow.codes], critical: [...shadow.critical] });
+      options!.onGateShadow!(() => ({ ...shadow, codes: [...shadow.codes], critical: [...shadow.critical] }));
       return { status: "withheld", reason: "checks", problems: [] };
     });
     await answerAsk(user, { institutionId: "1", question: "overdraft?" });
     await answerAskMemo(user, { institutionId: "1", question: "overdraft?", savedAnalysisId: "a1" });
-    const memoRun = vi.mocked(recordProRequest).mock.calls.map(([input]) => input).find((input) => input.operation === "ask_memo");
-    expect(memoRun?.detail).toMatchObject({ memo_status: "withheld", gate_shadow: shadow });
+    const runs = vi.mocked(recordProRequest).mock.calls.map(([input]) => input);
+    expect(runs.find((input) => input.operation === "ask_memo")?.detail).not.toHaveProperty("gate_shadow");
+    await vi.waitFor(() => expect(runs.concat(vi.mocked(recordProRequest).mock.calls.map(([input]) => input))
+      .find((input) => input.operation === "answer_gate_shadow")).toMatchObject({ userId: 7, detail: { gate_shadow: shadow, research_institution_id: 1 } }));
   });
 
   it("logs no usage when the memo made no model call", async () => {

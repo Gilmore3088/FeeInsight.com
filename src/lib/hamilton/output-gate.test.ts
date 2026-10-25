@@ -8,14 +8,15 @@ vi.mock("@/lib/ai-provider", async (importOriginal) => ({
   hasAnthropicApiKey: () => false,
 }));
 
+import { checkAnswerEvidence } from "./answer-gate";
 import { writtenAnswerBinding, writtenAnswerCheck } from "./answer-save";
 import { CLAIM_GOLDEN_CASES, type ClaimGoldenCase } from "./claim-golden-set";
 import { replayClaimGoldenGate } from "./claim-gate-replay";
-import { writeStorylineMemo, type MemoClient } from "./memo";
+import { memoBinding, memoGateInput, memoProblems, writeStorylineMemo, type MemoClient } from "./memo";
 import { gateAnswer, type GateInput } from "./output-gate";
 import { causeLines } from "./output-gate-signals";
-import { gateShadowRecord, readGateShadowRecord, shadowDisagreement, shadowGate, tallyGateShadow, type GateShadowRecord } from "./output-gate-shadow";
-import { simulateGateShadow, simulatePrompts } from "./simulate-read";
+import { GATE_SHADOW_ERROR, gateShadowRecord, readGateShadowRecord, shadowDisagreement, shadowGate, tallyGateShadow, type GateShadowRecord } from "./output-gate-shadow";
+import { simulateGateShadow, simulatePrompts, writeSimulateRead } from "./simulate-read";
 import { buildFeeAnswer } from "./workspace/answer";
 import { overdraftResearch } from "./workspace/test-fixtures";
 
@@ -100,7 +101,8 @@ describe("the gate in shadow", () => {
     const record = shadowGate({ surface: "memo", text: null as unknown as string, evidence: { kind: "data", data: {} },
       identity: { researchInstitutionId: null, accountInstitutionId: null } }, "shown", { path: "memo" });
     expect(record).toMatchObject({ today: "shown", agrees: false, disagreement: null });
-    expect(record.error).toBeTruthy();
+    // A fixed code, never the thrown message.
+    expect(record.error).toBe(GATE_SHADOW_ERROR);
   });
 
   it("keeps failure codes, never the answer's text, and reads back from the ledger", () => {
@@ -133,14 +135,53 @@ describe("the gate in shadow", () => {
       .toMatchObject({ surface: "simulate", unified: "validated", agrees: true });
   });
 
-  it("hands the memo's caller one shadow record for the draft the decision rests on", async () => {
+  it("hands the memo's caller one shadow thunk for the draft the decision rests on, computed only when run", async () => {
     const storyline = buildFeeAnswer(overdraftResearch(), { story: { wantsDecision: true } }).storyline!;
     const reply = JSON.stringify({ summary: "The overdraft fee is $412 per item.", board: "Board line.", market: "Market line.", questions: ["What is at stake?"] });
     const client: MemoClient = { create: async () => reply };
-    const records: GateShadowRecord[] = [];
-    const result = await writeStorylineMemo(storyline, "q", { client, onGateShadow: (record) => records.push(record) });
+    const thunks: Array<() => GateShadowRecord> = [];
+    const result = await writeStorylineMemo(storyline, "q", { client, onGateShadow: (compute) => thunks.push(compute) });
     expect(result.status).toBe("withheld");
-    expect(records).toEqual([expect.objectContaining({ surface: "memo", path: "memo", today: "held", unified: "held", agrees: true })]);
+    expect(thunks).toHaveLength(1);
+    expect(thunks[0]()).toEqual(expect.objectContaining({ surface: "memo", path: "memo", today: "held", unified: "held", agrees: true }));
+  });
+
+  it("hands a Simulate read's caller a shadow thunk instead of computing it before returning", async () => {
+    const thunks: Array<() => GateShadowRecord> = [];
+    const client: MemoClient = { create: async () => "At $30.00 the tested price sits above the $27.00 median." };
+    const result = await writeSimulateRead({ feeCategory: "overdraft", currentFee: 25, proposedFee: 30,
+      distribution: { p25_amount: 20, median_amount: 27, p75_amount: 32, institution_count: 40 } }, { client, onGateShadow: (compute) => thunks.push(compute) });
+    expect(result.status).toBe("written");
+    expect(result).not.toHaveProperty("gateShadow");
+    expect(thunks[0]()).toMatchObject({ surface: "simulate", path: "simulate_read", today: "shown", unified: "validated" });
+  });
+});
+
+describe("the memo surface reads exactly today's memo inputs", () => {
+  type Bundle = Extract<ClaimGoldenCase, { surface: "evidence_bundle" }>;
+  const bundles = CLAIM_GOLDEN_CASES.filter((c): c is Bundle => c.surface === "evidence_bundle");
+  const identity = { version: 1 as const, researchInstitutionId: 9001, accountInstitutionId: 9002, accountStatus: "linked" as const,
+    researchInstitutionName: "Bank A", accountInstitutionName: "Bank B" };
+
+  it("gives the same check and binding as memoProblems on every memo golden case", () => {
+    expect(bundles.length).toBeGreaterThan(0);
+    for (const c of bundles) {
+      const draft = { summary: c.text, board: "", market: "", questions: [] as string[] };
+      const payload = { fact_evidence: c.bundle, identityContext: identity };
+      const verdict = gateAnswer(memoGateInput(draft, payload, c.question));
+      const all = [draft.summary, draft.board, draft.market, ...draft.questions].join("\n");
+      expect(verdict.check, c.id).toEqual(checkAnswerEvidence(all, payload));
+      expect(verdict.binding, c.id).toEqual(memoBinding(draft, payload, c.question));
+      expect(verdict.binding, c.id).toEqual(memoProblems(draft, payload, c.question).binding);
+    }
+  });
+
+  it("counts the memo's account-institution rule once, as its own surface rule", () => {
+    const draft = { summary: "Bank B is not in this storyline.", board: "", market: "", questions: [] as string[] };
+    const payload = { fact_evidence: bundles[0].bundle, identityContext: identity };
+    const verdict = gateAnswer(memoGateInput(draft, payload, undefined));
+    expect(verdict.failures.filter((f) => f.code === "account_identity")).toEqual([]);
+    expect(verdict.failures.filter((f) => f.code === "surface_rule" && f.message.includes("Bank B"))).toHaveLength(1);
   });
 });
 

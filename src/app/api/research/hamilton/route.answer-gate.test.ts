@@ -7,7 +7,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  stream: vi.fn(), generate: vi.fn(), briefing: vi.fn(), check: vi.fn(), save: vi.fn(), write: vi.fn(), merge: vi.fn(), usage: vi.fn(), shadow: vi.fn(),
+  stream: vi.fn(), generate: vi.fn(), briefing: vi.fn(), check: vi.fn(), save: vi.fn(), write: vi.fn(), merge: vi.fn(), usage: vi.fn(), shadow: vi.fn(), afterTasks: [] as Array<() => unknown>,
+  deferAfter: false,
   held: { message: null as string | null },
   gateThrows: false,
 }));
@@ -22,7 +23,9 @@ vi.mock("@/lib/hamilton/answer-save", async () => {
     },
   };
 });
-vi.mock("@/lib/hamilton/output-gate-shadow-store", () => ({ recordWrittenAnswerShadow: mocks.shadow, GATE_SHADOW_DETAIL_KEY: "gate_shadow" }));
+// The real shadow store, over a ledger write that never settles: a response that waited on it would never resolve.
+vi.mock("@/lib/agents/run-store", () => ({ recordProRequest: mocks.shadow }));
+vi.mock("next/server", () => ({ after: (task: () => unknown) => { if (mocks.deferAfter) mocks.afterTasks.push(task); else void task(); } }));
 vi.mock("@/lib/api-hardening/route-wrapper", () => ({ withApiRoutePolicy: (_id: string, _method: string, handler: unknown) => handler }));
 vi.mock("@/lib/api-hardening/audit", () => ({ getRequestSubjectKey: () => "synthetic-user" }));
 vi.mock("@/lib/auth", () => ({ getCurrentUser: async () => ({ id: 7, role: "premium" }) }));
@@ -109,7 +112,9 @@ beforeEach(() => {
   mocks.save.mockReset().mockResolvedValue("saved-1");
   mocks.write.mockReset();
   mocks.merge.mockReset();
-  mocks.shadow.mockReset().mockResolvedValue(null);
+  mocks.shadow.mockReset().mockImplementation(() => new Promise(() => {}));
+  mocks.afterTasks = [];
+  mocks.deferAfter = false;
 });
 
 describe("written answer evidence gate", () => {
@@ -343,7 +348,7 @@ describe("written answer sentence binding (#981, H06-T06)", () => {
 });
 
 describe("the one output gate in shadow (#1077, claim contract step 4)", () => {
-  const shadowRecords = () => mocks.shadow.mock.calls.map(([record]) => record);
+  const shadowRecords = () => mocks.shadow.mock.calls.map(([input]) => input.detail.gate_shadow);
   const noMode = (text = "How does our overdraft fee compare?") => new Request("https://example.test/api/research/hamilton", {
     method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ messages: [{ role: "user", parts: [{ type: "text", text }] }], institutionId: 202 }),
@@ -355,7 +360,7 @@ describe("the one output gate in shadow (#1077, claim contract step 4)", () => {
     await POST(request());
     expect(shadowRecords()).toEqual([expect.objectContaining({ surface: "written_answer", path: "written_streaming", mode: "analyze",
       today: "shown", unified: "validated", agrees: true, disagreement: null })]);
-    expect(mocks.shadow.mock.calls[0][1]).toEqual({ userId: 7, researchInstitutionId: 202 });
+    expect(mocks.shadow.mock.calls[0][0]).toMatchObject({ operation: "answer_gate_shadow", userId: 7, detail: { research_institution_id: 202 } });
     expect(mocks.merge).toHaveBeenCalledTimes(1);
     expect(metadata()).toMatchObject({ savedAnalysisId: "saved-1", answerEvidence: { passed: true, held: false } });
   });
@@ -399,6 +404,29 @@ describe("the one output gate in shadow (#1077, claim contract step 4)", () => {
     await POST(request());
     expect(mocks.merge).not.toHaveBeenCalled();
     expect(metadata()).toEqual(expect.objectContaining({ answerEvidence: { passed: false, held: true } }));
-    expect(shadowRecords()).toEqual([expect.objectContaining({ today: "held", error: "synthetic gate failure" })]);
+    expect(shadowRecords()).toEqual([expect.objectContaining({ today: "held", error: "gate_threw" })]);
+  });
+
+  it("answers while the shadow write is still pending, on the streaming and the buffered path", async () => {
+    answers(PASSING);
+    const streamed = await POST(request());
+    expect(streamed.status).toBe(200);
+    mocks.generate.mockResolvedValueOnce({ text: PASSING, finishReason: "stop", steps: [{ toolResults: [{ output: TOOL_OUTPUT }] }], totalUsage: {} });
+    const buffered = await POST(new Request("https://example.test/api/research/hamilton", { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ messages: [{ role: "user", parts: [{ type: "text", text: "How does our overdraft fee compare?" }] }], mode: "analyze", institutionId: 202, gate_citations: true }) }));
+    expect(buffered.status).toBe(200);
+    // Both writes started and neither has settled (the mock never resolves), yet both responses are back.
+    expect(mocks.shadow).toHaveBeenCalledTimes(2);
+  });
+
+  it("computes the shadow after the response, from inputs captured before it", async () => {
+    mocks.deferAfter = true;
+    answers(PASSING);
+    await POST(request());
+    expect(mocks.shadow).not.toHaveBeenCalled();
+    expect(mocks.afterTasks).toHaveLength(1);
+    for (const task of mocks.afterTasks) void task();
+    await vi.waitFor(() => expect(mocks.shadow).toHaveBeenCalledTimes(1));
+    expect(shadowRecords()).toEqual([expect.objectContaining({ path: "written_streaming", today: "shown", unified: "validated" })]);
   });
 });

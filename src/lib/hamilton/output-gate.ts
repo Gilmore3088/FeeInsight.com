@@ -42,7 +42,13 @@ export type GateSurface = "written_answer" | "memo" | "report_section" | "simula
 /** What the answer was written from. Tool reads are server-observed, never browser text. */
 export type GateEvidence =
   | { kind: "tool_reads"; toolOutputs: readonly unknown[]; reads: readonly AnswerToolEvidence[]; briefingEvidence?: readonly HamiltonBriefingEvidence[] }
-  | { kind: "data"; data: unknown; bundle?: HamiltonEvidenceBundle | null; names?: ReadonlyMap<number, string> };
+  | {
+    kind: "data"; data: unknown; bundle?: HamiltonEvidenceBundle | null; names?: ReadonlyMap<number, string>;
+    /** False when the surface's check takes no question today (the memo's `checkAnswerEvidence(all, payload)`). */
+    checkQuestion?: boolean;
+    /** False when the surface's binding takes no account or research institution today (`memoBinding`). */
+    bindIdentity?: boolean;
+  };
 
 export interface GateIdentity {
   researchInstitutionId: number | null;
@@ -152,10 +158,11 @@ function evaluate(input: GateInput): Evaluated {
     ]);
     return { check, binding, shown: writtenAnswerProse(withoutOmitted(sections, binding)), factInstitutions };
   }
-  const check = checkAnswerEvidence(input.text, evidence.data, { question });
+  // A surface that runs today's checks with fewer inputs (the memo) says so, so the shadow compares like with like.
+  const check = checkAnswerEvidence(input.text, evidence.data, evidence.checkQuestion === false ? {} : { question });
   const binding = evidence.bundle
     ? bindNarrative({ text: input.bindText ?? input.text, evidence: evidence.bundle, names: evidence.names, question,
-      accountInstitutionId: identity.accountInstitutionId, researchInstitutionId: identity.researchInstitutionId })
+      ...(evidence.bindIdentity === false ? {} : { accountInstitutionId: identity.accountInstitutionId, researchInstitutionId: identity.researchInstitutionId }) })
     : null;
   const omitted = new Set((binding?.omitted ?? []).map((o) => o.text.trim()));
   return { check, binding, shown: withoutSentences(input.text, omitted), factInstitutions: institutionIdsOf(evidence.bundle) };

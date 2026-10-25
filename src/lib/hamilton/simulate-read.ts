@@ -103,13 +103,17 @@ What would this price mean competitively, and what question does it put to manag
 }
 
 export type SimulateReadResult =
-  | { status: "written"; text: string; check: AnswerEvidenceCheck; gateShadow: GateShadowRecord }
+  | { status: "written"; text: string; check: AnswerEvidenceCheck }
   | { status: "unavailable"; reason: string };
 
 /** The read as one buffered call, checked with the shared evidence gate. Used by the eval. */
 export async function writeSimulateRead(
   input: SimulateInput,
-  options: { client?: MemoClient; model?: string; institutionId?: number | null; tracking?: MemoTracking } = {},
+  options: {
+    client?: MemoClient; model?: string; institutionId?: number | null; tracking?: MemoTracking;
+    /** Given a thunk for the one output gate's shadow verdict on the read (#1077 step 4). */
+    onGateShadow?: (compute: () => GateShadowRecord) => void;
+  } = {},
 ): Promise<SimulateReadResult> {
   if (!options.client && !hasAnthropicApiKey("hamilton")) return { status: "unavailable", reason: "Hamilton's writer is not configured." };
   const model = options.model ?? getHamiltonModel();
@@ -131,7 +135,14 @@ export async function writeSimulateRead(
     return { status: "unavailable", reason: /budget|usage limit/i.test(message) ? "Hamilton's writing budget for today is used up." : "Hamilton's writer could not be reached." };
   }
   const check = checkAnswerEvidence(text, prompts.data);
-  return { status: "written", text, check, gateShadow: simulateGateShadow(text, prompts.data, check.passed ? "shown" : "held", "simulate_read") };
+  // The one output gate in shadow (#1077 step 4): handed over as a thunk with its inputs captured,
+  // so the caller computes and records it after its own work, never before returning.
+  if (options.onGateShadow) {
+    const today: TodayDecision = check.passed ? "shown" : "held";
+    const data = prompts.data;
+    options.onGateShadow(() => simulateGateShadow(text, data, today, "simulate_read"));
+  }
+  return { status: "written", text, check };
 }
 
 /** The one output gate's shadow verdict on a Simulate read (#1077 step 4): its text against the numbers the model was given. */

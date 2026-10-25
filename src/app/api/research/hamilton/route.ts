@@ -57,7 +57,8 @@ import { accountIdentitySnapshot } from "@/lib/hamilton/account-context";
 import { getInstitutionById } from "@/lib/data-store";
 import { writtenAnswerStepSystemPrompt, type AnswerToolEvidence } from "@/lib/hamilton/written-answer-evidence";
 import { shadowGate, type ShadowPath, type TodayDecision } from "@/lib/hamilton/output-gate-shadow";
-import { recordWrittenAnswerShadow } from "@/lib/hamilton/output-gate-shadow-store";
+import { scheduleGateShadow } from "@/lib/hamilton/output-gate-shadow-store";
+import type { GateInput } from "@/lib/hamilton/output-gate";
 
 export const maxDuration = 300;
 
@@ -222,20 +223,23 @@ async function handlePOST(request: Request) {
 
   // The one output gate in shadow (#1077, claim contract step 4): it runs for every mode, the admin
   // chats' included, and is recorded beside what today's gates decided. It never decides itself:
-  // `today` is the decision already made, and a shadow that fails changes nothing.
-  const shadowWrittenAnswer = async (text: string, reads: readonly AnswerToolEvidence[], today: TodayDecision, path: ShadowPath) => {
-    if (!text.trim()) return;
+  // `today` is the decision already made, and a shadow that fails changes nothing. It is computed
+  // and written after the response (scheduleGateShadow): nothing here awaits it. Every input is
+  // captured now, since `identityContext` changes later.
+  const shadowWrittenAnswer = (text: string, reads: readonly AnswerToolEvidence[], today: TodayDecision, path: ShadowPath): void => {
     try {
-      const record = shadowGate({
+      if (!text.trim()) return;
+      const input: GateInput = {
         surface: "written_answer",
         text,
         evidence: { kind: "tool_reads", toolOutputs: reads.map((read) => read.output), reads, briefingEvidence },
         identity: { researchInstitutionId: institutionId, accountInstitutionId: homeId ?? null, accountInstitutionName: identityContext.accountInstitutionName ?? null },
         question: questionOnly(lastUserText),
-      }, today, { path, mode: mode ?? null });
-      await recordWrittenAnswerShadow(record, { userId: user.id, researchInstitutionId: institutionId });
+      };
+      const context = { path, mode: mode ?? null };
+      scheduleGateShadow(() => shadowGate(input, today, context), { userId: user.id, researchInstitutionId: institutionId });
     } catch (error) {
-      console.error("[hamilton] the shadow output gate could not be recorded", error);
+      console.error("[hamilton] the shadow output gate could not be scheduled", error);
     }
   };
 
@@ -322,7 +326,7 @@ async function handlePOST(request: Request) {
       })));
       const gate = evaluateCitationDensity(result.text ?? "");
       if (gate.status === "refused") {
-        await shadowWrittenAnswer(result.text ?? "", bufferedReads, "held", "written_buffered");
+        shadowWrittenAnswer(result.text ?? "", bufferedReads, "held", "written_buffered");
         return Response.json(
           {
             status: "refused",
@@ -343,7 +347,7 @@ async function handlePOST(request: Request) {
         { briefingEvidence, toolResults: bufferedReads, institutionId },
       );
       if (!evidence.passed) {
-        await shadowWrittenAnswer(result.text ?? "", bufferedReads, "held", "written_buffered");
+        shadowWrittenAnswer(result.text ?? "", bufferedReads, "held", "written_buffered");
         return Response.json(
           { status: "refused", reason: "evidence_check_failed", problems: evidence.problems, metrics: gate.metrics },
           { status: 200 },
@@ -357,7 +361,7 @@ async function handlePOST(request: Request) {
         { toolResults: bufferedReads, institutionId, accountInstitutionId: homeId ?? null },
       );
       if (binding && binding.omitted.length > 0) {
-        await shadowWrittenAnswer(result.text ?? "", bufferedReads, "held", "written_buffered");
+        shadowWrittenAnswer(result.text ?? "", bufferedReads, "held", "written_buffered");
         return Response.json(
           {
             status: "refused",
@@ -369,7 +373,7 @@ async function handlePOST(request: Request) {
         );
       }
 
-      await shadowWrittenAnswer(result.text ?? "", bufferedReads, "shown", "written_buffered");
+      shadowWrittenAnswer(result.text ?? "", bufferedReads, "shown", "written_buffered");
       return Response.json({
         status: "ok",
         text: result.text,
@@ -497,8 +501,8 @@ async function handlePOST(request: Request) {
         } catch {
           // Non-critical — don't fail the response
         }
-        // After the verdict, the save and the usage, so the shadow never delays or changes them.
-        await shadowWrittenAnswer(text, reads, today, "written_streaming");
+        // Scheduled, not awaited: onFinish runs inside the stream's flush, so awaiting here would hold the stream open.
+        shadowWrittenAnswer(text, reads, today, "written_streaming");
       },
       onAbort: async () => {
         resolveVerdict(null); resolveSaved(null);
