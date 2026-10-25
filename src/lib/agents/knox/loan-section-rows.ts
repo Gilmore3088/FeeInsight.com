@@ -40,10 +40,10 @@ const LOANS_ALONE = /^(?:[A-Z][\w&/-]*\s+){0,3}loans?\s*:?\s*$/i;
 const CAPS_TITLE = /^[A-Z][A-Z&/,'’ -]+:?$/;
 /**
  * A short heading that names a card or deposit product ("Visa", "Credit Card", "Debit Cards",
- * "Share Account"): another section, so a loan title above it stops counting. Institution 6794
+ * "Share Account", "VISA® Credit Card"): another section, so a loan title above it stops counting. Institution 6794
  * prints "Loans", its rows, then "Visa" and the card's "Returned Payment Fee $25.00".
  */
-const PRODUCT_TITLE = /^(?:[A-Z][\w&'’/-]*\s+){0,3}?(?:visa|mastercard|master card|credit cards?|debit cards?|atm(?:\s*\/\s*debit)? cards?|cards?|checking|savings|shares?|share accounts?|certificates?|ira|deposits?)(?:\s+[A-Z][\w&'’/-]*){0,2}\s*:?$/i;
+const PRODUCT_TITLE = /^(?:[A-Z][\w&'’/®™-]*\s+){0,3}?(?:visa|mastercard|master card|credit cards?|debit cards?|atm(?:\s*\/\s*debit)? cards?|cards?|checking|savings|shares?|share accounts?|certificates?|ira|deposits?)[®™]?(?:\s+[A-Z][\w&'’/®™-]*){0,2}\s*:?$/i;
 const MAX_PRODUCT_TITLE_WORDS = 5;
 /** A bare returned payment name ("Returned payment", "Returned Payments", "Returned payment fee"). */
 const BARE_RETURNED_PAYMENT = /^(returned payments?(?:\s+(?:fee|charge)s?)?)\s*:?\s*(?:(?:\.\s?){2,}|…|-{2,})?[-.…\s]*(.*)$/i;

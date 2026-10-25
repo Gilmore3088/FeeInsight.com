@@ -790,6 +790,8 @@ describe("v109: a returned payment row under a loan section's title is the loan'
     const cesfcu = ["Loans", "Loan Application Fee $25.00", "Loan Skip A Payment $25.00", "Visa", "Visa Application Fee $25.00", "Card Replacement Fee $15.00", "Returned Payment Fee $25.00"].join("\n");
     expect(returned(cesfcu)).toEqual([]);
     expect(returned(cesfcu.replace("Visa\n", "Visa Platinum Credit Card Fees\n"))).toEqual([]);
+    expect(returned(cesfcu.replace("Visa\n", "VISA® Credit Card\n"))).toEqual([]);
+    expect(returned(cesfcu.replace("Visa\n", "Credit Card\n"))).toEqual([]);
     // Institution 4410: a flattened two-column page. "Secured Loan" under two columns heads neither, and
     // "First Mortgage Fees" with a sentence beside it is a row, not a title.
     const flattened = [
