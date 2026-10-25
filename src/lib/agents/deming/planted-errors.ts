@@ -1,6 +1,7 @@
 import { FEEDBACK_KINDS, feedbackRowRead, type FeedbackKindEntry } from "@/lib/agents/learning/feedback-kinds";
 import type { FeedbackRow, FeedbackStage } from "@/lib/agents/learning/feedback";
-import { takedownFeedback } from "@/lib/agents/learning/feedback-sync";
+import { takedownFeedback, takedownSynced } from "@/lib/agents/learning/feedback-sync";
+import { takedownCheck } from "@/lib/agents/learning/feedback";
 import { CONFIRMED_KIND, secondLookDedupeKey } from "@/lib/agents/hamilton/second-look";
 import { LIMIT_GUARD_CHECK, limitGuardReason, limitGuardVerdict } from "@/lib/agents/hamilton/limit-guard";
 import { BUSINESS_FOOTNOTE_REASON, BUSINESS_SCHEDULE_CHECK, footnoteMarksBusiness } from "@/lib/agents/hamilton/business-schedule";
@@ -84,8 +85,9 @@ function texts(text: string): InstitutionText[] {
   return [{ source_document_id: DOCUMENT, normalized_text: text }];
 }
 
-/** Hamilton's takedown of a fee for `reason`, as the takedown sync reads it back. */
-function takedown(id: number, reason: string, fee: { canonical_fee_key: string; fee_name: string; amount: number }) {
+/** Hamilton's takedown of a fee for `reason`, as the takedown sync reads it back: none for a reason it skips. */
+function takedown(id: number, reason: string, fee: { canonical_fee_key: string; fee_name: string; amount: number }): FeedbackRow[] {
+  if (!takedownSynced(reason)) return [];
   return takedownFeedback({
     fee_published_id: id, institution_id: INSTITUTION, source_document_id: DOCUMENT, source_url: SCHEDULE_URL, fee_raw_id: id,
     fee_verified_id: id, source: "knox", outlier_flags: [], rolled_back_reason: reason, verify_attempt_id: null, verify_version: null, ...fee,
@@ -162,10 +164,10 @@ export const PLANTED_ERRORS: PlantedError[] = [
       scoreFreshAudit([liveFee(911, { document_url: "https://bank.example/blog/what-is-overdraft" })], new Map([[INSTITUTION, texts("Overdraft Fee $35.00")]])).misses,
       "2026-10-20", null,
     )),
-    reader: { file: "src/lib/agents/magellan/discovery.ts", picksOut: "AUDIT_FEEDBACK_KIND" },
+    reader: { file: "src/lib/agents/magellan/discovery.ts", picksOut: "WHERE f.kind = ${AUDIT_FEEDBACK_KIND}" },
     // The reader is the re-run: Magellan's stale-link search reads the discover miss and searches
     // the bank's link again (#2558).
-    rerun: (source) => Boolean(source("src/lib/agents/magellan/discovery.ts")?.includes("AUDIT_FEEDBACK_KIND")),
+    rerun: (source) => Boolean(source("src/lib/agents/magellan/discovery.ts")?.includes("WHERE f.kind = ${AUDIT_FEEDBACK_KIND}")),
     recheck: null,
   },
   {
@@ -192,7 +194,8 @@ export const PLANTED_ERRORS: PlantedError[] = [
     record: (reason) => [...rows(takedown(921, reason, LIMIT_PLANTED)), confirmed(LIMIT_GUARD_CHECK, 921)],
     // Knox's takedown lessons act on the limit guard's confirmed takedowns and skip every other producer.
     reader: { file: "src/lib/agents/knox/takedown-lessons.ts", picksOut: `row.check_name!=="${LIMIT_GUARD_CHECK}"` },
-    rerun: () => errorFixCanName("extract", LIMIT_GUARD_CHECK),
+    // The error loop matches rows by the check name they carry; the sync names a limit takedown by its reason.
+    rerun: () => errorFixCanName("extract", takedownCheck(limitGuardReason(limitGuardVerdict(LIMIT_PLANTED)!))),
     recheck: { planted: () => limitGuardVerdict(LIMIT_PLANTED) != null, corrected: () => limitGuardVerdict(LIMIT_CORRECTED) == null },
   },
   {
@@ -202,7 +205,8 @@ export const PLANTED_ERRORS: PlantedError[] = [
     stage: "extract",
     detect: () => { const verdict = checkFeeCategory(CATEGORY_PLANTED.canonical_fee_key, CATEGORY_PLANTED.fee_name); return verdict.ok ? null : `category_guard:${verdict.code}: ${verdict.reason}`; },
     record: (reason) => rows(takedown(901, reason, { canonical_fee_key: "stop_payment", fee_name: CATEGORY_PLANTED.fee_name, amount: 25 })),
-    reader: { file: "src/lib/agents/knox/lessons.ts", picksOut: "wrong_category" },
+    // Read at extract; a lesson forms once the same name is also seen right at enough banks (`lessonsFrom`).
+    reader: { file: "src/lib/agents/knox/lessons.ts", picksOut: "f.kind IN ('wrong_category'" },
     rerun: () => errorFixCanName("extract", "hamilton.category_guard"),
     recheck: {
       planted: () => errorFixJudges(CATEGORY_PLANTED, CATEGORY_TEXT, "hamilton.category_guard") === "still_wrong",
@@ -266,7 +270,9 @@ export const KNOWN_GAPS: Record<string, Partial<Record<LoopLink, number>>> = {
   limit_as_fee: { rerun: 2058 },
   // Knox's takedown lessons load the business-schedule second look but learn only from the limit
   // guard's (`takedown-lessons.ts` skips other producers as unsupported).
-  wrong_audience: { read: 2062, rerun: 2058, fixed: 2058 },
+  // The takedown sync skips business-schedule reasons (a whole business document is Magellan's
+  // lesson), so a business-only footnote on a mixed schedule leaves no row naming extract.
+  wrong_audience: { recorded: 2062, read: 2062, rerun: 2058, fixed: 2058 },
   // Duplicates teach Knox nothing: only the takedown sync's restore detection reads them.
   duplicate: { read: 2062, rerun: 2058, fixed: 2058 },
   // A missed fee is a Deming test case, not a feedback row, so Knox never learns from it.

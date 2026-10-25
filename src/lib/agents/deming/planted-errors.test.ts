@@ -50,13 +50,13 @@ describe("the error loop, planted end to end (#2065)", () => {
     }
     // Lower this when a gap closes; it never goes up without a new class.
     const missing = Object.values(KNOWN_GAPS).reduce((sum, gaps) => sum + Object.keys(gaps).length, 0);
-    expect(missing).toBe(11);
+    expect(missing).toBe(12);
   });
 
   it("fails a link when its reader stops naming the rows it reads", () => {
     const category = PLANTED_ERRORS.find((planted) => planted.key === "wrong_category")!;
     const walk = walkLoop(category, (file) => (file.endsWith("knox/lessons.ts") ? "export const nothing = 1;" : source(file)));
     expect(walk.links.read).toBe(false);
-    expect(walk.why.read).toContain("never names wrong_category");
+    expect(walk.why.read).toContain("never names f.kind IN");
   });
 });
