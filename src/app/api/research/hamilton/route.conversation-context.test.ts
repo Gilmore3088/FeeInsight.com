@@ -6,6 +6,7 @@
 
 import { describe, it, expect, vi, beforeEach, beforeAll } from "vitest";
 
+vi.mock("@/lib/hamilton/output-gate-shadow-store", () => ({ recordWrittenAnswerShadow: async () => null, GATE_SHADOW_DETAIL_KEY: "gate_shadow" }));
 vi.mock("@/lib/hamilton/institution-membership", () => ({
   getUserInstitutionMemberships: async () => [],
 }));

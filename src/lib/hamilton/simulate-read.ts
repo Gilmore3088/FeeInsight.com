@@ -16,6 +16,7 @@ import { checkAnswerEvidence, type AnswerEvidenceCheck } from "./answer-gate";
 import type { MemoClient, MemoTracking } from "./memo";
 import { HAMILTON_PAUSED_MESSAGE } from "./provider-paused";
 import { HAMILTON_SYSTEM_PROMPT } from "./voice";
+import { shadowGate, type GateShadowRecord, type ShadowPath, type TodayDecision } from "./output-gate-shadow";
 
 export const SIMULATE_ROUTE_ID = "api.hamilton.simulate";
 /** The live route's output cap; thinking counts toward it. */
@@ -102,7 +103,7 @@ What would this price mean competitively, and what question does it put to manag
 }
 
 export type SimulateReadResult =
-  | { status: "written"; text: string; check: AnswerEvidenceCheck }
+  | { status: "written"; text: string; check: AnswerEvidenceCheck; gateShadow: GateShadowRecord }
   | { status: "unavailable"; reason: string };
 
 /** The read as one buffered call, checked with the shared evidence gate. Used by the eval. */
@@ -129,7 +130,14 @@ export async function writeSimulateRead(
     const message = error instanceof Error ? error.message : String(error);
     return { status: "unavailable", reason: /budget|usage limit/i.test(message) ? "Hamilton's writing budget for today is used up." : "Hamilton's writer could not be reached." };
   }
-  return { status: "written", text, check: checkAnswerEvidence(text, prompts.data) };
+  const check = checkAnswerEvidence(text, prompts.data);
+  return { status: "written", text, check, gateShadow: simulateGateShadow(text, prompts.data, check.passed ? "shown" : "held", "simulate_read") };
+}
+
+/** The one output gate's shadow verdict on a Simulate read (#1077 step 4): its text against the numbers the model was given. */
+export function simulateGateShadow(text: string, data: SimulatePrompts["data"], today: TodayDecision, path: ShadowPath): GateShadowRecord {
+  return shadowGate({ surface: "simulate", text, evidence: { kind: "data", data },
+    identity: { researchInstitutionId: null, accountInstitutionId: null } }, today, { path });
 }
 
 function anthropicSimulateClient(institutionId: number | null, tracking?: MemoTracking): MemoClient {

@@ -6,6 +6,8 @@
  */
 
 import { recordProRequest } from "@/lib/agents/run-store";
+import type { GateShadowRecord } from "./output-gate-shadow";
+import { GATE_SHADOW_DETAIL_KEY } from "./output-gate-shadow-store";
 import {
   addDecisionEvents,
   findOrOpenDecision,
@@ -638,7 +640,10 @@ export async function answerAskMemo(user: Asker, body: AskBody): Promise<AskMemo
   if (storyline.kind === "list") return { status: 200, body: { status: "unavailable", reason: "A list needs no write-up." } };
 
   const usage: MemoUsage = { calls: 0, inputTokens: 0, outputTokens: 0 };
-  const result = await writeStorylineMemo(storyline, question, { institutionId, identityContext: identity, factEvidence, usage });
+  // The one output gate in shadow (#1077 step 4): recorded in this memo's run below, never deciding.
+  const gateShadow: { record: GateShadowRecord | null } = { record: null };
+  const result = await writeStorylineMemo(storyline, question, { institutionId, identityContext: identity, factEvidence, usage,
+    onGateShadow: (record) => { gateShadow.record = record; } });
   await recordMemoUsage(user.id, usage);
   let memoSaved = false;
   if (result.status === "written" && savedId && savedResponse) {
@@ -668,6 +673,7 @@ export async function answerAskMemo(user: Asker, body: AskBody): Promise<AskMemo
       saved_analysis_id: savedId,
       memo_saved: memoSaved,
       withheld_problems: result.status === "withheld" ? (result.problems ?? []) : null,
+      ...(gateShadow.record ? { [GATE_SHADOW_DETAIL_KEY]: gateShadow.record } : {}),
     },
   });
   return { status: 200, body: result.status === "withheld" ? { status: "withheld", reason: result.reason } : result };

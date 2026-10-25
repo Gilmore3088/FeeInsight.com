@@ -36,7 +36,8 @@ import { getDistributionForCategory } from "@/app/pro/(hamilton)/simulate/action
 import { canSimulate } from "@/lib/hamilton/confidence";
 import { getInstitutionById } from "@/lib/data-store";
 import { getRequestSubjectKey } from "@/lib/api-hardening/audit";
-import { SIMULATE_MAX_TOKENS, SIMULATE_ROUTE_ID, simulatePrompts } from "@/lib/hamilton/simulate-read";
+import { SIMULATE_MAX_TOKENS, SIMULATE_ROUTE_ID, simulatePrompts, simulateGateShadow } from "@/lib/hamilton/simulate-read";
+import { GATE_SHADOW_DETAIL_KEY } from "@/lib/hamilton/output-gate-shadow-store";
 
 export const maxDuration = 120;
 
@@ -97,7 +98,7 @@ async function handlePOST(request: Request) {
     : null;
 
   // One prompt for the live read and the paid answer eval (#1079).
-  const { system: systemPrompt, user: userPrompt } = simulatePrompts({
+  const { system: systemPrompt, user: userPrompt, data: promptData } = simulatePrompts({
     feeCategory,
     currentFee,
     proposedFee,
@@ -155,7 +156,7 @@ async function handlePOST(request: Request) {
     prompt: userPrompt,
     // Opus 5.5 always thinks first; thinking counts toward this cap.
     maxOutputTokens: SIMULATE_MAX_TOKENS,
-    onFinish: async ({ totalUsage, finishReason }) => {
+    onFinish: async ({ totalUsage, finishReason, text }) => {
       if (providerFailed) { await failProvider(terminalFailure, observedProviderUsage(totalUsage)); return; }
       try { scope.assertHealthy(); assertCompletedProviderFinish(finishReason); }
       catch (error) { await failProvider(error, observedProviderUsage(totalUsage)); return; }
@@ -183,7 +184,11 @@ async function handlePOST(request: Request) {
         summary: `Interpreted a ${feeCategory} change from $${currentFee.toFixed(2)} to $${proposedFee.toFixed(2)}.`,
         userId: user.id,
         institutionId,
-        detail: { model: HAMILTON_MODEL, input_tokens: inputTokens, output_tokens: outputTokens, cost_cents: costCents },
+        detail: {
+          model: HAMILTON_MODEL, input_tokens: inputTokens, output_tokens: outputTokens, cost_cents: costCents,
+          // The one output gate in shadow (#1077 step 4): this stream has no gate today, so it is shown ungated.
+          ...simulateShadowDetail(text, promptData),
+        },
       });
     },
     onAbort: async () => { scope.abort("cancelled"); await failProvider(scope.error); },
@@ -200,6 +205,16 @@ async function handlePOST(request: Request) {
     if (providerFailed) throw scope.error ?? terminalFailure;
   });
   } catch (error) { await failProvider(error); await flushProviderFailure(); throw error; }
+}
+
+/** The shadow record for the run's params; a shadow that cannot run is left out, never failing the record. */
+function simulateShadowDetail(text: unknown, data: ReturnType<typeof simulatePrompts>["data"]): Record<string, unknown> {
+  if (typeof text !== "string" || !text.trim()) return {};
+  try {
+    return { [GATE_SHADOW_DETAIL_KEY]: simulateGateShadow(text, data, "shown_ungated", "simulate_stream") };
+  } catch {
+    return {};
+  }
 }
 
 export const POST = withApiRoutePolicy("api.hamilton.simulate", "POST", handlePOST);

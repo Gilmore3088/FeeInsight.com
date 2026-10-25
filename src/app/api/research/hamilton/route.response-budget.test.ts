@@ -8,6 +8,7 @@ import { z } from "zod";
 
 // Actual route, SDK, factory and usage INSERT builder; only auth/data/tool effects and fetch are fixtures.
 const mocks = vi.hoisted(() => ({ sql: vi.fn(), log: vi.fn(), save: vi.fn(), stop: vi.fn(), execute: vi.fn(), clientSave: vi.fn(), options: [] as Array<{ onFinish?: ChatInit<UIMessage>["onFinish"] }>, withTool: false }));
+vi.mock("@/lib/hamilton/output-gate-shadow-store", () => ({ recordWrittenAnswerShadow: async () => null, GATE_SHADOW_DETAIL_KEY: "gate_shadow" }));
 vi.mock("@ai-sdk/react", async () => ({
   ...(await vi.importActual<typeof import("@ai-sdk/react")>("@ai-sdk/react")),
   useChat: (options: { onFinish?: ChatInit<UIMessage>["onFinish"] }) => {

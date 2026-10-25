@@ -7,7 +7,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  stream: vi.fn(), generate: vi.fn(), briefing: vi.fn(), check: vi.fn(), save: vi.fn(), write: vi.fn(), merge: vi.fn(), usage: vi.fn(),
+  stream: vi.fn(), generate: vi.fn(), briefing: vi.fn(), check: vi.fn(), save: vi.fn(), write: vi.fn(), merge: vi.fn(), usage: vi.fn(), shadow: vi.fn(),
   held: { message: null as string | null },
   gateThrows: false,
 }));
@@ -22,6 +22,7 @@ vi.mock("@/lib/hamilton/answer-save", async () => {
     },
   };
 });
+vi.mock("@/lib/hamilton/output-gate-shadow-store", () => ({ recordWrittenAnswerShadow: mocks.shadow, GATE_SHADOW_DETAIL_KEY: "gate_shadow" }));
 vi.mock("@/lib/api-hardening/route-wrapper", () => ({ withApiRoutePolicy: (_id: string, _method: string, handler: unknown) => handler }));
 vi.mock("@/lib/api-hardening/audit", () => ({ getRequestSubjectKey: () => "synthetic-user" }));
 vi.mock("@/lib/auth", () => ({ getCurrentUser: async () => ({ id: 7, role: "premium" }) }));
@@ -108,6 +109,7 @@ beforeEach(() => {
   mocks.save.mockReset().mockResolvedValue("saved-1");
   mocks.write.mockReset();
   mocks.merge.mockReset();
+  mocks.shadow.mockReset().mockResolvedValue(null);
 });
 
 describe("written answer evidence gate", () => {
@@ -337,5 +339,66 @@ describe("written answer sentence binding (#981, H06-T06)", () => {
     expect(mocks.save).not.toHaveBeenCalled();
     expect(metadata()).toEqual(expect.objectContaining({ answerEvidence: { passed: true, held: true } }));
     expect(metadata()).not.toHaveProperty("narrativeBinding");
+  });
+});
+
+describe("the one output gate in shadow (#1077, claim contract step 4)", () => {
+  const shadowRecords = () => mocks.shadow.mock.calls.map(([record]) => record);
+  const noMode = (text = "How does our overdraft fee compare?") => new Request("https://example.test/api/research/hamilton", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ messages: [{ role: "user", parts: [{ type: "text", text }] }], institutionId: 202 }),
+  });
+
+  it("records the unified verdict beside today's on an Analyze answer, and changes nothing the reader gets", async () => {
+    mocks.held.message = "Synthetic held line.";
+    answers(PASSING);
+    await POST(request());
+    expect(shadowRecords()).toEqual([expect.objectContaining({ surface: "written_answer", path: "written_streaming", mode: "analyze",
+      today: "shown", unified: "validated", agrees: true, disagreement: null })]);
+    expect(mocks.shadow.mock.calls[0][1]).toEqual({ userId: 7, researchInstitutionId: 202 });
+    expect(mocks.merge).toHaveBeenCalledTimes(1);
+    expect(metadata()).toMatchObject({ savedAnalysisId: "saved-1", answerEvidence: { passed: true, held: false } });
+  });
+
+  it("gates an admin chat that sends no mode, in shadow only: the answer still streams ungated and unsaved", async () => {
+    mocks.held.message = "Synthetic held line.";
+    answers(UNTRACED);
+    await POST(noMode());
+    expect(mocks.merge).toHaveBeenCalledTimes(1);
+    expect(mocks.save).not.toHaveBeenCalled();
+    expect(metadata()).not.toHaveProperty("answerEvidence");
+    const [record] = shadowRecords();
+    expect(record).toMatchObject({ mode: null, today: "shown_ungated", unified: "held", agrees: false, disagreement: "unified_holds" });
+    expect(record.critical).toContain("untraced_figure");
+  });
+
+  it("counts a held Analyze answer the unified gate also holds as agreement", async () => {
+    mocks.held.message = "Synthetic held line.";
+    answers(UNTRACED);
+    await POST(request());
+    expect(shadowRecords()).toEqual([expect.objectContaining({ today: "held", unified: "held", agrees: true })]);
+  });
+
+  it("gives the streaming and the buffered path the same verdict for the same steps", async () => {
+    const text = "## Evidence\n" + Array.from({ length: 5 }, () => "The overdraft fee of $35 sits above the peer median of $29 per the fee schedule.").join("\n");
+    answers(text);
+    await POST(request());
+    mocks.generate.mockResolvedValueOnce({ text, finishReason: "stop", steps: [{ toolResults: [{ output: TOOL_OUTPUT }] }], totalUsage: {} });
+    await POST(new Request("https://example.test/api/research/hamilton", { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ messages: [{ role: "user", parts: [{ type: "text", text: "How does our overdraft fee compare?" }] }], mode: "analyze", institutionId: 202, gate_citations: true }) }));
+    const [streaming, buffered] = shadowRecords();
+    expect(streaming.path).toBe("written_streaming");
+    expect(buffered.path).toBe("written_buffered");
+    expect({ unified: buffered.unified, codes: buffered.codes }).toEqual({ unified: streaming.unified, codes: streaming.codes });
+  });
+
+  it("records a shadow that could not run without changing today's hold", async () => {
+    mocks.held.message = "Synthetic held line.";
+    mocks.gateThrows = true;
+    answers(PASSING);
+    await POST(request());
+    expect(mocks.merge).not.toHaveBeenCalled();
+    expect(metadata()).toEqual(expect.objectContaining({ answerEvidence: { passed: false, held: true } }));
+    expect(shadowRecords()).toEqual([expect.objectContaining({ today: "held", error: "synthetic gate failure" })]);
   });
 });
