@@ -141,6 +141,12 @@ describe("writtenAnswerFeeRefs", () => {
     expect(writtenAnswerFeeRefs([own, peer], 9001, [{ ...cutProfile, identity: { id: 9002 } }])).toEqual([own, peer]);
     expect(writtenAnswerFeeRefs([own, peer], 9001, [{ _shortened: "rows kept 50 of 100", rows: [] }])).toEqual([own, peer]);
   });
+  it("should_keep_refs_when_compaction_trimmed_the_subjects_profile_but_kept_every_fee_row", () => {
+    const trimmed = { _shortened: "Fee rows trimmed. Every fee row is kept.", _fee_rows_complete: true, identity: { id: 9001 }, fees: { verified: [], provisional: [] } };
+    expect(writtenAnswerFeeRefs([own, peer], 9001, [trimmed])).toEqual([own, peer]);
+    // The marker counts only on a profile; a plain-text cut still saves none.
+    expect(writtenAnswerFeeRefs([own, peer], 9001, [{ _shortened: "Result cut to 12000 characters.", _fee_rows_complete: true, text: "…" }])).toEqual([]);
+  });
   it("should_keep_refs_when_the_answer_has_no_subject", () => {
     expect(writtenAnswerFeeRefs([peer], null)).toEqual([peer]);
   });

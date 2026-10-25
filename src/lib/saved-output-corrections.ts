@@ -54,17 +54,21 @@ function hashOf(value: unknown): string | null {
 /**
  * The fee refs a written answer saves. A correction matches an output with refs by its fee rows
  * only, and one with none by its institution. So the refs are saved only when they hold the
- * research subject's own rows and its profile came back whole; otherwise (it read only a peer's
+ * research subject's own rows and its profile kept every fee row; otherwise (it read only a peer's
  * profile, the subject's prices came from an aggregate such as `getLocalCompetitors`, or tool-output
- * compaction cut its rows) none are saved and the answer keeps its match on the subject. With no
- * subject there is no institution match to keep. Pure.
+ * compaction dropped some of its fee rows) none are saved and the answer keeps its match on the
+ * subject. A profile compaction shortened but marked `_fee_rows_complete` (fields or other lists
+ * trimmed, no fee row dropped) still counts as whole. With no subject there is no institution
+ * match to keep. Pure.
  */
 export function writtenAnswerFeeRefs(refs: SavedFeeRef[], subjectId: number | null, toolOutputs: readonly unknown[] = []): SavedFeeRef[] {
   if (subjectId == null) return refs;
   if (!refs.some((ref) => ref.institutionId === subjectId)) return [];
   const cut = toolOutputs.some((output) => {
     if (!output || typeof output !== "object" || !("_shortened" in output)) return false;
-    const cutOutput = output as { identity?: { id?: unknown }; text?: unknown };
+    const cutOutput = output as { identity?: { id?: unknown }; text?: unknown; _fee_rows_complete?: unknown };
+    // Compaction trimmed the profile's fields or other lists but kept every fee row (#1077, defect 9).
+    if (cutOutput.identity && cutOutput._fee_rows_complete === true) return false;
     // A result cut to plain text no longer says whose rows it held; a cut list is not a profile.
     if (typeof cutOutput.text === "string" && !cutOutput.identity) return true;
     return Number(cutOutput.identity?.id) === subjectId;

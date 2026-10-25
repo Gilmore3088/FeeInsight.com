@@ -42,7 +42,7 @@ function storedBriefing(stopPayment: number, generatedAt: string) {
     positions: [row("nsf", "NSF", 27), row("overdraft", "Overdraft", 27), row("stop_payment", "Stop Payment", stopPayment)],
     peerLabel: "Credit unions in FL, GA and AL",
     generatedAt,
-    provenance: { engineVersion: "1.21.0", generatedAt, dataAsOf: {}, sources: [], assumptions: [], clientFacts: [] },
+    provenance: { engineVersion: "1.22.0", generatedAt, dataAsOf: {}, sources: [], assumptions: [], clientFacts: [] },
   };
 }
 
@@ -82,7 +82,7 @@ async function seed(db: FixtureDb): Promise<void> {
     ["2026-Q4", 25, "2026-10-05T12:00:00Z"],
   ] as const) {
     await db`INSERT INTO hamilton_briefing_snapshots (institution_id, quarter, engine_version, briefing)
-             VALUES (${HOME.id}, ${quarter}, '1.21.0', ${db.json(storedBriefing(stopPayment, generatedAt))})`;
+             VALUES (${HOME.id}, ${quarter}, '1.22.0', ${db.json(storedBriefing(stopPayment, generatedAt))})`;
   }
 }
 

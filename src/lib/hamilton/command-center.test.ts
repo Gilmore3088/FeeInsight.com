@@ -34,7 +34,7 @@ function briefing(overrides: Partial<Briefing> = {}): Briefing {
     ],
     peerLabel: "Ohio banks, $1B to $10B",
     generatedAt: "2026-10-20T12:00:00Z",
-    provenance: { engineVersion: "1.21.0", generatedAt: "2026-10-20T12:00:00Z", dataAsOf: {}, sources: [], assumptions: [], clientFacts: [] },
+    provenance: { engineVersion: "1.22.0", generatedAt: "2026-10-20T12:00:00Z", dataAsOf: {}, sources: [], assumptions: [], clientFacts: [] },
     ...overrides,
   };
 }

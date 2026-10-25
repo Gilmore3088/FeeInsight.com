@@ -1613,7 +1613,36 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v87 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v87 (Oct 25, #1916): a late
+- The guard is at v90 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v90 (Oct 25, #1912): a plain
+  return charge ("Returned Check Fee", "Return Items") its stored text prints under a foreign check or
+  collection heading (`withCollectionSection` / `collectionSectionReturn`: U.S. Bank 75929 under "Foreign
+  Check Collection (incoming/outgoing)" after "Tracer Fee | $50.00"; BankUnited 56558 and 109208 under
+  "COLLECTIONS" and "FOREIGN CHECK CLEARING") is a deposited item coming back unpaid: it fails NSF and
+  re-files to deposited_item_return, here in verify and on Hamilton's live guard. The walk up from the
+  fee's line passes only collection rows; an NSF, overdraft or other heading, a sentence or another
+  fee's row stops it, so a flat-list returned item stays NSF. A late charge named for the safe deposit
+  box (`SAFE_DEPOSIT_BOX_NAME`: "Safety Deposit Box-Late Fee", "SDB Late Payment") fails late_payment and
+  re-files to safe_deposit_box. Read-only dry run (Oct 25): 8 live fees change; 2 move in place (75929,
+  159317) and 6 go to the second look (56558 and 109208 beside live twin 157215; 152482, 153210, 155092
+  beside their own live box late copies; 36020 at $1, under the box type's $5 floor).
+- v89 (Oct 25, #1877): the overdraft rule accepts a credit union's "Draft
+  Protection Fee" (`DRAFT_PROTECTION_FEE`, shared with Knox v112), Abbey FCU's own paid-overdraft line,
+  which was set aside, so its "Overdraft at teller window" line stood in as its overdraft fee. A
+  channel-specific overdraft (teller, ATM, debit card, in-person) stays overdraft, as about 300 live
+  rows are; the institution value is its highest overdraft amount (DECISIONS, tiered overdraft). It
+  only admits names: the read-only dry run (Oct 25) found 1 live fee with the wording, already
+  overdraft and unchanged, and 0 live fees held, re-filed or taken down.
+- v88 (Oct 25, #1912): a book
+  transfer to another account at the same bank (`BOOK_TRANSFER`: "Book Transfer", Spanish
+  "transferencia contable") fails both domestic wire categories; a price that only says it also covers
+  book transfers ("incluidas las transferencias contables") stays. A cash advance whose own line prices
+  it at another bank's ATMs (`cashAdvanceAtOtherAtm`: "Cash Advance or | $3.00 for Non M&T Bank ATMs",
+  read from Knox's excerpt) fails cash advance: it is the non-network ATM fee cut from a wrapped cell.
+  Read-only dry run, Oct 25: 5 live fees fail and none re-files (M&T 145046 and 68601; IBC's "Outgoing
+  Wire Transfer within IBC (Book Transfer)" $10, 26125, 35171, 121267, beside IBC's $35 outgoing wire).
+  `checkFeeAgainstSource` traces all three sampled amounts to their own lines, so the price is right and
+  the category is wrong. The guard catch-up takes the 5 to the second look.
+- v87 (Oct 25, #1916): a late
   payment its stored text prints in a safe deposit box section (`box_section`, read by `withBoxSection`
   with `boxSectionLateFee`, the detector Knox v111 and source check v25 share) is the box's late rent
   charge: it fails `late_payment` and re-files to `safe_deposit_box` (`refileFromLine`). Hamilton's live

@@ -20,7 +20,7 @@ import { countOutcomes, type AttemptOutcome } from "@/lib/agents/learning/outcom
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { WHOLE_DOCUMENT_BATCH } from "@/lib/agents/document-batch";
 import { currentCopySchemaReady } from "@/lib/agents/magellan/current-copy";
-import { CATEGORY_GUARD_VERSION, checkFeeCategory, refileCategory, refileFromLine, withHeadingAbove } from "@/lib/fee-category-guard";
+import { CATEGORY_GUARD_VERSION, checkFeeCategory, refileCategory, refileFromLine, withCollectionSection, withHeadingAbove } from "@/lib/fee-category-guard";
 import { RETIRED_CATEGORIES } from "@/lib/fee-fold";
 import { RULE_WHY, ruleFor } from "@/lib/agents/hamilton/eval-verdicts";
 import { checkFeeAgainstSource, checkRateAgainstSource, sourceLines } from "@/lib/custom-report/source-check";
@@ -1716,7 +1716,9 @@ export async function runDarwinVerify(
         const row: RawFeeRow = audience ? { ...admittedRaw, fee_audience: audience.feeAudience } : admittedRaw;
         const rowSourceTexts = new Map(sourceTexts);
         if (row.source_document_id != null && sourceText != null) rowSourceTexts.set(Number(row.source_document_id), sourceText);
-        const canonicalFeeKey = categoryOf(row);
+        // Guard v90 (#1912): a return charge its stored text prints in a foreign check or collection
+        // section is filed as a returned deposited item, not NSF.
+        const canonicalFeeKey = categoryOf(withCollectionSection(canonicalHintFrom(row), row.fee_name, row, sourceText));
         if (admission) requireInternationalVerification(admission, canonicalFeeKey, categoryOf(admission.row));
         if (admission) requirePaidReturnedVerification(admission, canonicalFeeKey);
         // Guard v84 (#1788): a generic monthly charge is read under the heading its stored text prints above it.
