@@ -28,6 +28,7 @@ vi.mock("@/lib/data-store", () => ({ getInstitutionById: vi.fn().mockResolvedVal
 vi.mock("@react-pdf/renderer", () => ({ renderToBuffer: mocks.renderToBuffer }));
 vi.mock("@/components/hamilton/reports/PdfDocument", () => ({ PdfDocument: () => null }));
 vi.mock("@/components/hamilton/reports/AnalysisPdfDocument", () => ({ AnalysisPdfDocument: () => null }));
+vi.mock("@/components/hamilton/reports/MonthlyBriefingPdf", () => ({ MonthlyBriefingPdf: function MonthlyBriefingPdf() { return null; } }));
 
 import { POST } from "./route";
 import { writtenAnswerSources } from "@/lib/hamilton/board-brief";
@@ -67,6 +68,17 @@ describe("POST /api/pro/report-pdf", () => {
     const res = await post({ type: "report", reportId: REPORT_ID, report: { title: "Injected" } });
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toBe("application/pdf");
+  });
+
+  it("prints a saved monthly briefing in its own layout, named for its month (#1897)", async () => {
+    const briefing = { month: "2026-10", sections: [] };
+    mocks.getHamiltonReportById.mockResolvedValue({ report_json: { title: "October briefing", monthlyBriefing: briefing }, report_type: "monthly_briefing", artifact_metadata: null });
+    const res = await post({ type: "report", reportId: REPORT_ID });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Disposition")).toBe('attachment; filename="monthly-briefing-2026-10.pdf"');
+    const element = mocks.renderToBuffer.mock.calls[0][0] as { type: { name: string }; props: { title: string; briefing: unknown } };
+    expect(element.type.name).toBe("MonthlyBriefingPdf");
+    expect(element.props).toMatchObject({ title: "October briefing", briefing });
   });
 
   it("loads analyses by id and scopes them to the user", async () => {

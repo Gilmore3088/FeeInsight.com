@@ -55,9 +55,9 @@ describe("Darwin recheck policy and unsupported contexts",()=>{
   const base:Parameters<typeof recheckAssessment>[0]={...verifiedRow,fee_verified_id:1,fee_raw_id:2,canonical_fee_key:"bill_pay",verified_amount:0,amount:0,fee_name:"Bill Pay",outlier_flags:[],conditions:null,fee_published_id:null,
     selected_verified:"selected-v",selected_raw:"selected-r",selected_published:null,selected_feedback:null};
   const assess=(changes:Partial<typeof base>,text=TEXT)=>recheckAssessment({...base,...changes},new Map([[55,text]]));
-  it("keeps settled versions, default-off switches and narrow live reason unchanged",()=>{
+  it("keeps settled versions and switches (older-live and second look on since Oct 25's sampled-clean dry run)",()=>{
     expect(DARWIN_RECHECK_STRATEGY).toEqual({strategy:"verify.recheck",version:5});
-    expect(DARWIN_RECHECK_SAME_STEP_TAKEDOWN).toBe(false);expect(DARWIN_RECHECK_OLDER_LIVE).toBe(false);expect(DARWIN_RECHECK_SECOND_LOOK_LIVE).toBe(false);
+    expect(DARWIN_RECHECK_SAME_STEP_TAKEDOWN).toBe(false);expect(DARWIN_RECHECK_OLDER_LIVE).toBe(true);expect(DARWIN_RECHECK_SECOND_LOOK_LIVE).toBe(true);
     expect(DARWIN_RECHECK_SECOND_LOOK_LIVE_CODES).toEqual(["tier_perk_zero"]);
   });
   it("preserves conditional-zero, retired-category and ordinary paid decisions",()=>{

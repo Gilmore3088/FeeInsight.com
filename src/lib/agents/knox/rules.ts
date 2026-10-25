@@ -7,6 +7,7 @@ import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { CHECKING_ACCOUNT_FEE_NAME, checkingNameCore, namedForCheckingAccount, NON_MONTHLY_PERIOD } from "@/lib/checking-fee-name";
 import { ATM_ADJUSTMENT, CHECKBOOK_RECONCILIATION, CROSS_BORDER_BUNDLE, DRAFT_PROTECTION_FEE, FAX_SERVICE, PER_PAGE_COPY, researchSplitTarget } from "@/lib/fee-fold";
 import { joinWrappedLeaderNames, parenBalance, stripPriceFootnoteMarks, withDroppedDecimalPoints } from "@/lib/custom-report/source-check";
+import { dropsCondition, FEE_OF_SENTENCE } from "@/lib/agents/knox/cutoff-shape";
 
 // Shared with the source check since #1334; Knox's tests and callers keep importing it from here.
 export { withDroppedDecimalPoints };
@@ -1206,6 +1207,21 @@ export function readUnderHeading(segment: string, heading: string): ExtractedFee
     );
 }
 
+/** v22: "paid" anywhere in the text: "Overdrafts Returned" is the NSF fee only without it. */
+const PAID_WORD = /\bpaid\b/i;
+/**
+ * v19/v34/v42: an insufficient-funds item the bank pays ("Insufficient Funds Fee – Item Paid",
+ * "Insufficient Funds Charge (Paid)", "Paid nonsufficient funds (NSF)", "NSF Share Draft (Honored)").
+ */
+const PAID_ITEM = /\b(?:items?|checks?)\s*[-–:]?\s*paid\b|\bpaid\s+(?:items?|checks?|non[-\s]?sufficient|insufficient|NSF)\b|\bpaid\s+(?:[\w&]+\s+){1,3}NSF\s+items?\b|\(\s*(?:paid|honou?red)\s*\)/i;
+/** v19/v22: an item the bank returns unpaid, so the NSF fee. */
+const ITEM_RETURNED = /\b(?:return(?:ed)?|unpaid)\b/i;
+/** v114: the bank pays or honors the overdraft ("Overdrafts we choose to pay", "honored", "covered by us"). */
+const BANK_PAYS = /\bwe\s+(?:\w+\s+){0,2}pay\b|\bhonou?red\b|\bcovered\s+by\s+us\b/i;
+/** v114: unless it says it does not ("Overdrafts we do not pay"). */
+const BANK_DOES_NOT_PAY = /\b(?:not|never)\s+pay\b|n['’]t\s+pay\b/i;
+/** v114: an overdraft program's own words (Courtesy Pay, Bounce Protection, Overdraft Privilege). */
+const OVERDRAFT_PROGRAM = /\b(?:courtesy|privilege|bounce)/i;
 /** v78 (#1304): words that make a charge the overdraft (courtesy pay) fee or the NSF fee. */
 const OVERDRAFT_WORDS = /courtesy\s*pay|\boverdraft|\bpaid\s+nsf\b|\bbounce/i;
 const NSF_WORDS = /\bnsf\b|\b(?:in|non[-\s]?)sufficient\b/i;
@@ -1343,7 +1359,7 @@ export function classifyPatternKey(value: string): string | null {
     key = "nsf";
   }
   // v22: "Overdrafts Returned" is an item the bank returns unpaid, so an NSF fee.
-  if (key === "overdraft" && /\boverdrafts?\s+returned\b/i.test(text) && !/\bpaid\b/i.test(text)) return "nsf";
+  if (key === "overdraft" && /\boverdrafts?\s+returned\b/i.test(text) && !PAID_WORD.test(text)) return "nsf";
   // v43: one price for the paid and the returned item ("NSF Paid Item Fee/Returned Item Fee
   // (items over $10)", Pinnacle Bank Wyoming) is the overdraft price too, like "NSF/Overdraft".
   if (key === "nsf" && PAID_AND_RETURNED_ITEM.test(text)) return "overdraft";
@@ -1354,8 +1370,8 @@ export function classifyPatternKey(value: string): string | null {
   // (Bluestone FCU) are items the bank pays, as are "Paid Consumer & Business NSF Items" (NIH FCU).
   if (
     key === "nsf" &&
-    /\b(?:items?|checks?)\s*[-–:]?\s*paid\b|\bpaid\s+(?:items?|checks?|non[-\s]?sufficient|insufficient|NSF)\b|\bpaid\s+(?:[\w&]+\s+){1,3}NSF\s+items?\b|\(\s*(?:paid|honou?red)\s*\)/i.test(text) &&
-    !/\b(?:return(?:ed)?|unpaid)\b/i.test(text)
+    PAID_ITEM.test(text) &&
+    !ITEM_RETURNED.test(text)
   ) {
     return "overdraft";
   }
@@ -1857,6 +1873,76 @@ export function qualifiedByClause(segment: string, firstAmount: AmountMatch, nam
 const CHARGE_A_FEE_OF = /\b(?:we|you|customers?|members?)\b[^.;|]{0,30}?\b(?:charge|charged|assess|assessed|impose|pay)\b[^.;|]{0,12}?\b(?:an?|the)\s+(?:(?:one[-\s]time|per[-\s]item|flat)\s+)?(?:fee|charge)\s+of(?:\s+up\s+to)?\s*$/i;
 /** v40: "We may charge you a Paid Item Fee of", "you will be charged a Return Item Fee of". */
 const CHARGE_A_NAMED_FEE_OF = /\b(?:[Ww]e|[Yy]ou)\b[^.;|]{0,30}?\b(?:charge|charged|assess|assessed|impose)\b[^.;|]{0,12}?\b(?:an?|the)\s+((?:[A-Z][\w'’/-]*\s+){1,4}(?:Fee|Charge))\s+of(?:\s+up\s+to)?\s*$/;
+/** v114: words that name a fee of their own, before a sentence's priced noun phrase. */
+const NAMES_A_FEE = /\b(?:fees?|charges?)\b/i;
+/**
+ * v114: a phrase that says only how often or what kind of charge it is ("a monthly fee of", "a
+ * service charge of", "an inactivity fee of"): the words before it say what it is for ("Paper
+ * statements will have a monthly fee of", "If you are enrolled in Bill Pay and do not use it ... an
+ * inactivity fee of"), so the read keeps them.
+ */
+const GENERIC_PRICED_PHRASE =
+  /^(?:(?:monthly|annual|yearly|quarterly|weekly|daily|service|charge|maintenance|account|inactivity|handling|processing|flat|one[-\s]time|low|modest|small|nominal|minimal|cycle|additional)\s+)*(?:fee|charge)$/i;
+
+/**
+ * v114: words before a priced phrase that say which kind of the phrase's fee it is: a wire's
+ * region or direction ("For incoming international wires, an incoming wire fee of"), a deposited
+ * item ("Deposited items returned unpaid ... a returned item fee of"), legal process ("Garnishments
+ * and levies: a legal processing fee of", "Subpoenas/Summons A Copy Fee of"), an audience or a
+ * product. Cutting them would drop the distinction, so the name keeps them.
+ */
+const FAMILY_QUALIFIER =
+  /\b(?:international|int'?l|foreign|abroad|domestic|incoming|outgoing|deposit\w*|garnish\w*|lev(?:y|ies)|subpoena\w*|summons|business|commercial|personal|consumer|non[-\s]?(?:members?|customers?)|online|phone|same[-\s]?day|money\s+market|youth|student|senior|loans?|mortgages?|heloc|ira|club)\b/i;
+/** v114: the one pair a sentence's priced phrase re-files: an NSF fee cut from overdraft words, or the reverse. */
+const PHRASE_REFILES = new Set(["nsf>overdraft", "overdraft>nsf"]);
+/**
+ * v114: overdraft words before an "an NSF fee of" phrase that still make the price the overdraft
+ * fee: an item the bank paid or honored (`PAID_WORD`, `PAID_ITEM`, `BANK_PAYS`: "NSF items paid: an
+ * NSF fee of", "Overdrafts paid or returned an NSF fee of", "Overdrafts we choose to pay an NSF fee
+ * of", but not "Overdrafts we do not pay"), or an overdraft program ("Courtesy Pay overdrafts",
+ * "Overdraft privilege items"). Only a paid item's or program's NSF wording stays overdraft;
+ * "overdrafts an NSF fee of" and "Overdraft items returned an NSF fee of" are the NSF fee.
+ */
+function paidOverdraftWords(words: string): boolean {
+  return PAID_WORD.test(words) || PAID_ITEM.test(words) || PAID_AND_RETURNED_ITEM.test(words) || OVERDRAFT_PROGRAM.test(words) ||
+    (BANK_PAYS.test(words) && !BANK_DOES_NOT_PAY.test(words));
+}
+
+/**
+ * v114: "... is not sufficient to cover overdrafts an NSF fee of $30.00 per item may also apply"
+ * (Reliance State Bank, live fee 140283) prices the fee the sentence names right before the price,
+ * the NSF fee (`FEE_OF_SENTENCE`, the noun phrase name re-tidy already names such a sentence by).
+ * Classifying the cut words ("overdrafts an NSF fee") filed the price by their first fee word: nsf
+ * only while a PDF glyph garbled "Overdrafts", overdraft once the glyph reads.
+ * - The phrase re-files the read only between overdraft and nsf (`PHRASE_REFILES`), and never an
+ *   item the bank paid or an overdraft program's NSF wording to nsf (`paidOverdraftWords`). Any other
+ *   disagreement keeps the read's category and name: the words before are then usually the more
+ *   specific fee ("For incoming international wires, an incoming wire fee of" stays international).
+ * - When the categories agree, or after an overdraft/nsf re-file, the name is the phrase ("NSF fee")
+ *   unless the words cut before it carry a condition (`dropsCondition`) or a family qualifier
+ *   (`FAMILY_QUALIFIER`: "Subpoenas/Summons A Copy Fee of" keeps its name).
+ * Only the price's own cell is read, only a line some rule already reads as a fee (`readHint`; a held
+ * "you will be required to pay an early closure fee of $750 plus any mortgage ..." stays held), and
+ * only when the phrase is not generic and the words before it name no fee of their own. A combined
+ * "NSF/Overdraft Fee (per item)" has no such phrase and stays overdraft (v16, v82). Pure.
+ */
+export function pricedNounPhrase(words: string, amount: number, readHint: string): { name: string | null; hint: string } | null {
+  const cell = (words.split(CELL_SEPARATOR).at(-1) ?? "").replace(/\s+/g, " ").trim();
+  const match = cell.match(FEE_OF_SENTENCE);
+  const before = match ? cell.slice(0, match.index) : "";
+  if (!match || NAMES_A_FEE.test(before)) return null;
+  const phrase = match[1].trim();
+  if (GENERIC_PRICED_PHRASE.test(phrase)) return null;
+  const name = `${phrase.charAt(0).toUpperCase()}${phrase.slice(1)}`;
+  const hint = classifyFeeText(name);
+  if (!hint || (hint !== readHint && !PHRASE_REFILES.has(`${readHint}>${hint}`))) return null;
+  if (readHint === "overdraft" && hint === "nsf" && paidOverdraftWords(before)) return null;
+  // An NSF item the bank returns is the NSF fee whatever the phrase says (v19, v22).
+  if (readHint === "nsf" && hint === "overdraft" && ITEM_RETURNED.test(before)) return null;
+  if (!usableName(name) || !passesDarwinChecks(hint, name, amount)) return null;
+  return { name: FAMILY_QUALIFIER.test(before) || dropsCondition(cell, name, hint) ? null : name, hint };
+}
+
 /** "You can only be assessed one overdraft fee per day". */
 const ONE_PER_DAY = /\b(?:only|no more than|maximum of|limit of|up to)\s+(?:be\s+(?:assessed|charged)\s+)?one\b[^.;|]{0,30}?\bper\s+(?:business\s+)?day\b/i;
 
@@ -2312,6 +2398,12 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
       feeName = tail;
       hint = tailHint;
     }
+  }
+  // v114: "... to cover overdrafts an NSF fee of $30.00 per item" is the NSF fee, named "NSF fee".
+  const priced = hint ? pricedNounPhrase(ownWords(0, feeAmounts[0]), feeAmounts[0].value, hint) : null;
+  if (priced) {
+    feeName = priced.name ?? feeName;
+    hint = priced.hint;
   }
 
   // v34: "We've lowered Overdraft Paid Item fees from $38 to $30" (Pinnacle): a change the
