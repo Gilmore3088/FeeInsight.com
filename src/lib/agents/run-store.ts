@@ -428,6 +428,13 @@ async function executeAgenticStep(
     };
   }
 
+  // The one output gate replayed on real questions through the free Ask engine (#1077): no model calls.
+  if (step.stepKey === "hamilton-gate-replay") {
+    const { runGateReplay, gateReplaySummaryLine } = await import("@/lib/hamilton/gate-replay");
+    const result = await runGateReplay();
+    return { status: "completed", summary: gateReplaySummaryLine(result), detail: { ...result } };
+  }
+
   // Hamilton's paid answer eval (#1079): a provider step, capped at five paid samples a day.
   if (step.stepKey === "hamilton-paid-answer-eval") {
     const { runPaidAnswerEval, shadowCountsLine } = await import("@/lib/hamilton/paid-answer-eval");
@@ -816,6 +823,8 @@ async function executeAgenticStep(
           reopened_links_restored: read.reopenedLinksRestored,
           reopened_unreadable_pdfs: read.reopenedUnreadablePdfs,
           thin_copies_set_aside: read.thinCopiesSetAside,
+          same_text_copies_kept: read.sameTextCopiesKept,
+          same_text_copy_reopen: read.sameTextCopyReopen,
           text_survival_refreshed: read.textSurvivalRefreshed,
           texts_held_up: read.textsHeldUp,
           texts_lost_fees: read.textsLostFees,
@@ -3813,6 +3822,8 @@ const STEP_EXPECTED_MS: Record<string, number> = {
   "hamilton-answer-eval": 400_000,
   // Up to five memos at once, each up to two 90 s model calls, after the free answers.
   "hamilton-paid-answer-eval": 280_000,
+  // The gate replay stops starting answers at 200 s (gate-replay.ts BUDGET_MS); its slowest batch may run past it.
+  "hamilton-gate-replay": 280_000,
   // The hourly nationwide lane sync (state-lane-scheduler runNationwideLaneSync), run from its own
   // route, never the tick. Measured inside the tick over the 24 hours to 23:55 UTC 2026-10-18:
   // the first tick of each hour started its first step p50 80 s, p90 171 s, max 200 s in.
@@ -3837,7 +3848,7 @@ const STEP_EXPECTED_MS: Record<string, number> = {
  * from `/api/admin/crew/lane-sync`. The bounded HMDA identity repair requires an explicit
  * admin advance of its reviewed configuration, so the tick never starts it either.
  */
-export const TICK_EXCLUDED_STEP_KEYS = ["hamilton-answer-eval", "hamilton-paid-answer-eval", "lane-sync", HMDA_IDENTITY_REPAIR_STEP_KEY] as const;
+export const TICK_EXCLUDED_STEP_KEYS = ["hamilton-answer-eval", "hamilton-paid-answer-eval", "hamilton-gate-replay", "lane-sync", HMDA_IDENTITY_REPAIR_STEP_KEY] as const;
 /** Steps not listed above: most run in seconds, so this keeps an unknown long one safe. */
 const DEFAULT_STEP_EXPECTED_MS = 120_000;
 /**

@@ -52,7 +52,7 @@ function money(value: number): string {
   return `${value < 0 ? "-" : ""}$${amount}`;
 }
 
-function recordValue(value: number | string | null, unit: SavedEvidenceFactRow["unit"]): string {
+export function recordValue(value: number | string | null, unit: SavedEvidenceFactRow["unit"]): string {
   if (value === null) return "Not recorded";
   if (typeof value === "string") return value;
   if (unit === "usd") return money(value);
@@ -148,7 +148,8 @@ function metricWords(metric: string): string {
 const isPeerMedian = (fact: SavedClaimFact) =>
   fact.kind === "derived" && (fact.id.startsWith("derived:peer_median:") || /^stat:.*:median$/.test(fact.id));
 
-function writtenSourceLine(fact: SavedClaimFact, names: ReadonlyMap<number, string>): WrittenAnswerSource {
+/** One source line for a saved claim fact; also the report finding's (report-finding-claims.ts). */
+export function writtenSourceLine(fact: SavedClaimFact, names: ReadonlyMap<number, string>): WrittenAnswerSource {
   const { id } = fact;
   const filing = /^filing:(fdic|ncua):/.exec(id);
   const institution = isPeerMedian(fact) ? "Peer median"

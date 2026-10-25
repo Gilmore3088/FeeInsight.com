@@ -213,10 +213,11 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-300 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+306 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
-### Extraction and fee reading (45)
+### Extraction and fee reading (46)
 
+- 2026-10-25 — Judge a page, not a copy: a newer copy of a page that holds exactly the text of an older copy Knox already read gets that copy's verdict, or the page's current copy is rejected while its fees stay live on a superseded copy nothing checks. — [finding](findings/2026-10-25-same-text-newer-copy-rejected.md) — Agent lesson: rosetta/issue-2477-same-text-same-verdict; Guard: `src/lib/agents/rosetta/same-text-copy.test.ts`
 - 2026-10-25 — A reader upgrade must reach every current document an older version of that reader wrote, not only the ones that look broken: queue them all at a bounded pace, read each once per version, keep the old text unless the new one lists at least as many fees, and count how many texts changed. — [finding](findings/2026-10-25-reader-upgrade-reaches-thin-texts-only.md) — Agent lesson: rosetta/issue-2069-reader-upgrade-reaches-every-text
 - 2026-10-25 — A line held on an older copy of a page is history, not a fee: a held line goes to Darwin only from its page's current copy, a name rule that admits new lines keeps the ambiguous ones held, and Darwin's category guard admits the same names from the same pattern (#1918). — [finding](findings/2026-10-25-held-recheck-promotes-older-copies.md) — Agent lesson: knox/issue-1918-named-checking-fee, darwin/issue-1918-guard-reads-knoxs-name-pattern; Guard: `src/lib/agents/knox/checking-fee-name.test.ts`, `src/lib/checking-fee-name.test.ts`
 - 2026-10-25 — A dot-leader row that ends in its own price word ("…FREE") is finished; on a two-column page the next cell's price is the other column's fee, so neither the reader nor the check may give it to the closed row's name. — [finding](findings/2026-10-25-free-row-takes-next-column-price.md) — Agent lesson: knox/issue-2477-free-word-closes-the-row, darwin/issue-2477-closed-row-owns-no-later-price
@@ -301,8 +302,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A consumer comparison needs the payer checked as well as the category. — [finding](findings/2026-10-09-business-wire-as-consumer-price.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 - 2026-10-09 — Returned bonds and coupons were filed as NSF. — [finding](findings/2026-10-09-bond-return-filed-nsf.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 
-### Verification and publication (48)
+### Verification and publication (49)
 
+- 2026-10-25 — A price for people who are not the bank's customers is another party's price, not a condition on the customer's $0, even when it names the bank ("$5.00 charge for non-F&M customers"); run an older-live re-check over every older live row and read each failure against the bank's text before it goes on. — [finding](findings/2026-10-25-named-bank-non-customer-price.md) — Agent lesson: darwin/issue-1568-named-bank-non-customer-price; Guard: `src/lib/agents/darwin/verify.test.ts`, `src/lib/agents/darwin/verified-recheck.db.test.ts`
 - 2026-10-25 — A line skipped as identical to a fee later held as not yet in effect is decided again so today's schedule carries the fee, but only a schedule's line: a product page prices one account (#1915). — [finding](findings/2026-10-25-skipped-lines-behind-held-edition.md) — Agent lesson: hamilton/issue-1915-edition-hold-twins; Guard: `src/lib/agents/hamilton/publish-selection.db.test.ts`
 - 2026-10-25 — A web page's first lines are often its menu, so a schedule's own edition line can sit further down; read it there only with guards, since most pages that date a future edition past the menu are current pages announcing the next one (T1). — [finding](findings/2026-10-25-edition-line-past-the-menu.md) — Agent lesson: hamilton/t1-edition-line-past-menu; Guard: `src/lib/agents/hamilton/schedule-edition-late.test.ts`
 - 2026-10-25 — A benchmark compares one charging basis per category; give every category a basis and have the medians and the subject's own value read that one rule, never a second data-driven measure in one surface (#1901). — [finding](findings/2026-10-25-benchmarks-pool-charging-bases.md) — Agent lesson: darwin/issue-1901-one-basis-per-benchmark
@@ -461,8 +463,10 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — Sign out on the account page and admin used Server Actions that a redeploy breaks. — [finding](findings/2026-10-09-sign-out-server-action.md) — Guard: `src/app/api/auth/logout/route.test.ts:30`
 - 2026-10-09 — A refunded report kept its paid status and its private link. — [finding](findings/2026-10-09-report-refund-not-handled.md) — Guard: `src/lib/stripe-webhook.test.ts` (+1 more)
 
-### Hamilton workspace (35)
+### Hamilton workspace (37)
 
+- 2026-10-25 — A decision that waits on shadow counts should not wait on live traffic when the engine can be replayed for free: the gate replay puts every Pro question on record and the quality bar for a seeded spread of institutions (up to 400 a day) through the free Ask engine and the one output gate, recorded as shadows with `origin: "replay"`, kept apart from readers'. — [finding](findings/2026-10-25-gate-replay-counts.md) — Guard: `src/lib/hamilton/gate-replay.test.ts`, `src/app/api/admin/crew/gate-replay/route.test.ts`
+- 2026-10-25 — A checked answer stays checked only while its claims travel with it: a saved answer's report finding now carries its supported sentences, cited facts and source lines into `report_json`, and the answer section holds any finding figure that neither those facts nor its own data support. — [finding](findings/2026-10-25-report-finding-claims.md) — Guard: `src/lib/hamilton/report-finding-claims.test.ts`, `src/lib/hamilton/report-actions.test.ts`
 - 2026-10-25 — Shrink what an answer does not rest on first: tool-output compaction now trims a profile's fee rows to their record, amount, category and name, drops conditions and halves its other lists (keeping five quarters of filing history) before any fee row, keeps spotlight and core fee types when rows must go, never cuts a profile to text, and marks `_fee_rows_complete` so saved fee refs survive a trim. — [finding](findings/2026-10-25-compaction-keeps-records.md) — Guard: `src/lib/research/tool-output.test.ts`, `src/lib/saved-output-corrections.test.ts`
 - 2026-10-25 — A save that a re-check or correction reads keeps the identity the evidence carried, not only the value: saved claim facts now keep their source table, record, document ids, URL, content hash and verification event (bounded), a calculated fact its input ids, and the 40-fact bound keeps every supported sentence's first fact first. — [finding](findings/2026-10-25-saved-claims-document-identity.md) — Guard: `src/lib/hamilton/claim-report-carry.test.ts`, `src/lib/hamilton/written-answer-sources.pdf.test.tsx`
 - 2026-10-25 — A saved title is a headline with no label, so it comes only from a sentence the binding supports or one that states no figure, else the question; a browser-sent title with a figure is replaced by the prompt. — [finding](findings/2026-10-25-saved-title-reading.md) — Guard: `src/lib/hamilton/saved-title.test.ts`, `src/app/pro/(hamilton)/analyze/actions.h01-guards.test.ts`
@@ -536,8 +540,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A shared log that every PR appends to at the same spot needs one file per entry. — [finding](findings/2026-10-09-findings-md-merge-conflicts.md) — Guard: `scripts/ci-guards.sh findings-file-kill`
 - 2026-10-09 — Backlog Node checks were accidentally discovered by application Vitest. — [finding](findings/2026-10-09-backlog-node-test-discovery.md) — Guard: `src/lib/vitest-collection.test.ts:26` (+2 more)
 
-### Agent process, learning and measurement (17)
+### Agent process, learning and measurement (18)
 
+- 2026-10-25 — A retrieval add-on is judged only by its lift on a holdout of human-confirmed current schedules; the first metadata and full-text ranker showed none over today's page choice, so no embeddings. — [finding](findings/2026-10-25-retrieval-pilot-no-holdout-lift.md) — Guard: `src/lib/agents/deming/shadow-lab/retrieval-pilot.test.ts`; Agent lesson: deming/o2-retrieval-holdout-before-embeddings
 - 2026-10-24 — Answer-key lines were compared to the bank's page as markup (table bars, HTML codes, dot leaders), so the same words and prices never matched. — [finding](findings/2026-10-24-answer-key-lines-compared-as-markup.md) — Agent lesson: deming/issue-2466-line-content-match
 - 2026-10-22 — Replay each weekly live audit in the shadow lab: most live errors start at extraction, and wrong names pass every stage. — [finding](findings/2026-10-22-live-audit-replay.md) — Guard: `src/lib/agents/deming/shadow-lab/ratchet-gate.test.ts` (live_audit expectations in `ratchet-baseline.json`)
 - 2026-10-21 — Before fixing a batch of live fees, replay the frozen sources and fix the stage where the failures start. — [finding](findings/2026-10-21-pipeline-shadow-lab-first-run.md) — Guard: `npm run test:shadow-lab`
@@ -561,19 +566,19 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (211 in all).
+counts as of this index (215 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
 | atlas | 7 | [`src/lib/agents/atlas/role-lessons.ts`](../../src/lib/agents/atlas/role-lessons.ts) |
 | magellan | 20 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
 | hoovie | 10 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
-| rosetta | 9 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
+| rosetta | 10 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
 | knox | 60 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
-| darwin | 30 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
+| darwin | 31 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 40 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
-| hamilton | 22 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
-| deming | 13 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
+| hamilton | 23 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
+| deming | 14 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
 
 ## Before 2026-10-10
 

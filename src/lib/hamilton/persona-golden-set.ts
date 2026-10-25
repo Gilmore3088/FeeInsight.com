@@ -697,7 +697,7 @@ export function personaLegacyDecision(c: Exclude<PersonaGoldenCase, { surface: "
 }
 
 const SHADOW_PATH: Record<GateSurface, ShadowPath> = {
-  written_answer: "written_streaming", memo: "memo", report_section: "report_section", simulate: "simulate_read",
+  written_answer: "written_streaming", memo: "memo", report_section: "report_section", simulate: "simulate_read", ask: "ask_replay",
 };
 
 function agreementOf(legacy: TodayDecision, unified: GateStatus): PersonaReplayResult["agreement"] {

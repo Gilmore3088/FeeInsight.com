@@ -306,4 +306,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-1568-named-bank-non-customer-price",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "A price for people who are not the bank's customers is another party's price, not a condition on the customer's $0, however the bank writes them: \"non-members\", \"non-customers\", or with its own name between (\"$5.00 charge for non-F&M customers ... No Charge\"). Read the word between \"non-\" and \"customers\" before calling the $0 conditional: a capitalised bank name marks an outsider's price, while a condition word there (\"non-eStatement customers\", \"non-Premium\", \"non-qualifying\") is still this customer's condition. Before an older-live re-check goes on, run it over every older live row and read each failure against the bank's text.",
+    why: "The conditional-$0 rule only knew \"non-customers\" spelled out, so F&M Bank's (institution 2279) live Notary Fee $0 (published 13219) read as conditional, and an Oct 16 test pinned that wrong reading. The Oct 25 dry run of DARWIN_RECHECK_OLDER_LIVE over all 3,266 older live rows found it as one of 5 failures; the other 4 were real conditional $0s and still fail.",
+    evidence: { issues: [1568, 1397], prs: [], files: ["src/lib/agents/darwin/verify.ts", "src/lib/agents/darwin/verified-recheck.ts", "docs/project/findings/2026-10-25-named-bank-non-customer-price.md"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];

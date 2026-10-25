@@ -406,27 +406,31 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   once per recheck version and the pass never starves the batch. Never a hand UPDATE.
   Live fees verified under an older `verify.rules` version were never selected, so a rule added
   here never reached them (#1568: 15 live tier-perk $0s stayed up after version 3).
-  `DARWIN_RECHECK_OLDER_LIVE` (default off) adds them: on, each step also reads up to half its
+  `DARWIN_RECHECK_OLDER_LIVE` adds them (on since 2026-10-25 under the sampled-clean rule, DECISIONS
+  2026-10-20: a dry run over all 3,266 older live rows failed 4, all `conditional_zero` and all right
+  on the bank's own text, after the named-bank non-customer fix): on, each step also reads up to half its
   limit of those live rows, newest first, and they fail or pass like any other row. Off, every
   fourth run reads a sample of 200 of them (in id order up from a random id, wrapping round to the
   lowest ids), runs the same checks and writes nothing: step detail `recheck.olderLive` gives `read`,
   `wouldFail` by reason code and 20 samples. That is a per-step sample; the whole backlog's count
-  is a separate read-only query. It turns on by PR once James approves that count by reason.
+  is a separate read-only query.
   The 12-hour path never reached its second look: a row is read once per recheck version, so a
   live row flagged `takedown_pending` was never read again (Frost's 14 premium-schedule $0s,
-  flagged `tier_perk_zero` on 2026-10-15 08:35, #1397). `DARWIN_RECHECK_SECOND_LOOK_LIVE` (default
-  off) gives each due first look its second read: on, each step re-reads up to 100 live rows whose
+  flagged `tier_perk_zero` on 2026-10-15 08:35, #1397). `DARWIN_RECHECK_SECOND_LOOK_LIVE` (on
+  since 2026-10-25 with the older-live switch; no flag on a live fee was due then) gives each due
+  first look its second read: on, each step re-reads up to 100 live rows whose
   `darwin.verified_recheck` flag is at least 12 hours old, oldest first, and the shared second look
   archives the ones still failing and clears the rest. Off, step detail `recheck.dueSecondLooks`
   gives `due`, `wouldConfirm` by reason code, `wouldClear` and 20 samples, and nothing is written.
-  It turns on by PR once James approves the count of due flags. It is still off for every code but
-  one: `DARWIN_RECHECK_SECOND_LOOK_LIVE_CODES` (`["tier_perk_zero"]`, James's yes 2026-10-16 03:37
+  Before it went on, only one code had its second read:
+  `DARWIN_RECHECK_SECOND_LOOK_LIVE_CODES` (`["tier_perk_zero"]`, James's yes 2026-10-16 03:37
   UTC; 15 live due flags then, 14 on one large bank's premium-account schedule and 1 "Premier
-  Checking" $0 that v4 now passes) gives only those codes' due first looks their second read. Such
+  Checking" $0 that v4 now passes) gave only those codes' due first looks their second read, and
+  does again with the switch off. Such
   a row is archived only when it fails again under a switched-on code, cleared when it passes, and
   left flagged when it now fails under another code (step detail `recheck.secondLookOtherCode`);
   `recheck.dueSecondLooks` keeps reporting every other code (conditional_zero, name_rule and the
-  rest). Roll back by emptying the list. `DARWIN_RECHECK_OLDER_LIVE` only
+  rest). Roll back by turning the switch off, then emptying the list. `DARWIN_RECHECK_OLDER_LIVE` only
   flags; without this switch its first looks would never be confirmed, so it turns on with or after
   this one.
 - `verify.document_owner` (`document-owner.ts`, version 1, 2026-10-15, #1455) ends every learning
