@@ -552,7 +552,7 @@ export const KNOX_LESSONS: AgentLesson[] = [
     stage: "extract",
     lesson: "A late fee's section says whose it is. A bare \"Late Payment\" or \"Late Fee\" printed under a safe deposit box heading, or among the box's sizes, keys and drilling rows, is the box's late rent charge, not a loan's late payment: file it under the box. Read the section on the page, upward from the fee's own line to the heading, on either column of a two-column page, not from the fee read just before it; and stop at any other heading or row, so a loan's late fee printed after a box table under \"Loan Fees\" stays a late payment.",
     why: "Advia FCU's \"Safe Deposit Box 30 Day\" late fee wraps over two columns, so its name line reads \"Courtesy Pay Coverage | Late Payment (by credit union | $10\" and went live as a loan late payment beside the box's own row. Knox's box check looked only at the read just before (here Courtesy Pay) or the segment's heading, and only in one pass: on Oct 25, 111 live late payment fees at 110 institutions were box late fees on their own pages, 37 of them still read that way by that day's rules.",
-    evidence: { issues: [1916], prs: [], files: ["src/lib/custom-report/box-section-late-fee.ts", "src/lib/agents/knox/rules.ts", "src/lib/agents/knox/specialists.ts", "src/lib/custom-report/source-check.ts"] },
+    evidence: { issues: [1916], prs: [2622], files: ["src/lib/custom-report/box-section-late-fee.ts", "src/lib/agents/knox/rules.ts", "src/lib/agents/knox/specialists.ts", "src/lib/custom-report/source-check.ts"] },
     appliesTo: "all",
     since: "2026-10-25",
   },
