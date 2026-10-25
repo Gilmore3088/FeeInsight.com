@@ -55,6 +55,8 @@ export interface FeeInstance {
   /** Statistics rule 7 (fee-stats.ts): the row's schedule keys and holding company. */
   schedule_keys?: string[] | null;
   schedule_group?: string | null;
+  /** Statistics rule 11 (fee-stats.ts): priced for one named product as an exception. */
+  product_exception?: boolean | null;
 }
 
 /** A fee row without statistics rule 7's schedule fields (see getFeeCategoryDetail). */
@@ -363,6 +365,7 @@ export async function getFeeCategoryDetail(category: string): Promise<{
       institution_id: f.institution_id,
       schedule_keys: f.schedule_keys,
       schedule_group: f.schedule_group,
+      product_exception: f.product_exception,
     }));
 
   const by_fed_district_real = buildBreakdown(districtRows.map((row) => ({ ...row, fee_category: category })), (row) => `District ${Number(row.fed_district)}`);
@@ -552,6 +555,8 @@ export interface IndexRow {
   /** Rule 7 (fee-stats.ts): the schedule the row was read from, so sibling charters count once. */
   schedule_keys?: string[] | null;
   schedule_group?: string | null;
+  /** Rule 11 (fee-stats.ts): priced for one named product as an exception to the general price. */
+  product_exception?: boolean | null;
 }
 
 /**
@@ -579,6 +584,7 @@ export async function getIndexRows(category: string): Promise<IndexRow[]> {
     state_code: r.state_code == null ? null : String(r.state_code),
     schedule_keys: Array.isArray(r.schedule_keys) ? (r.schedule_keys as unknown[]).map(String) : null,
     schedule_group: r.schedule_group == null ? null : String(r.schedule_group),
+    product_exception: r.product_exception === true,
   }));
 }
 

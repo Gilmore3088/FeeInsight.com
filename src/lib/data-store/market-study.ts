@@ -1,5 +1,5 @@
 import { sql } from "./connection";
-import { HIGHEST_TIER_CATEGORIES, STATS_ROW_FILTER } from "./fee-stats";
+import { HIGHEST_TIER_CATEGORIES, STATS_ROW_FILTER, institutionValueSql } from "./fee-stats";
 import { feeScheduleUrls, ownFeeFromRows, severalFeesOf, type SeveralFees } from "@/lib/own-fee";
 
 /**
@@ -103,7 +103,7 @@ export interface MarketStudyRows {
   /** Deposits per institution (or negative certificate) SHARE_LOOKBACK_YEARS before, in thousands. */
   earlier: { key: unknown; deposits: unknown }[];
   subjectBranches: { cert: number; branch_name: string | null; city: string | null; county_fips: unknown; latitude: unknown; longitude: unknown; deposits: unknown }[];
-  fees: { institution_id: number; fee_category: string; amount: unknown; lines?: { fee_name: string | null; amount: unknown; document_url?: string | null }[] }[];
+  fees: { institution_id: number; fee_category: string; amount: unknown; lines?: { fee_name: string | null; amount: unknown; document_url?: string | null; account_product_type?: string | null }[] }[];
   demographics: { geo_id: string; geo_name: string; median_household_income: unknown; total_population: unknown; poverty_count: unknown; year: number }[];
 }
 
@@ -152,9 +152,9 @@ export async function getMarketStudyData(institutionId: number, countyFips: stri
   const [feeRows, demoRows] = await Promise.all([
     sql<MarketStudyRows["fees"]>`
       SELECT ef.institution_id, ef.fee_category,
-             CASE WHEN ef.fee_category = 'overdraft' THEN MAX(ef.amount)
-                  ELSE percentile_cont(0.5) WITHIN GROUP (ORDER BY ef.amount) END AS amount,
-             jsonb_agg(jsonb_build_object('fee_name', ef.fee_name, 'amount', ef.amount, 'document_url', ef.document_url)) AS lines
+             ${sql.unsafe(institutionValueSql("ef"))} AS amount,
+             jsonb_agg(jsonb_build_object('fee_name', ef.fee_name, 'amount', ef.amount, 'document_url', ef.document_url,
+                                          'account_product_type', ef.account_product_type)) AS lines
         FROM published_fee_catalog ef
        WHERE ef.institution_id = ANY(${feeIds}::bigint[]) AND ef.fee_category = ANY(${categories}::text[])
          AND ef.amount IS NOT NULL AND ef.amount >= 0
