@@ -67,8 +67,8 @@ describe("amount error layouts (#2067)", () => {
     expect(passesTodaysCheck({ text: PRICE_FIRST_PIPES, fee_name: "Domestic Outgoing Wire Transfer Fee", amount: 50, canonical_fee_key: null })).toBe(false);
     // A tiered fee traces, as in Knox's self-check: a balance band is not counted as refused.
     expect(passesTodaysCheck({ text: "Monthly Service Fee | Balance under $1,500 | $10.00", fee_name: "Monthly Service Fee", amount: 10, canonical_fee_key: null })).toBe(true);
-    // A gap, not a wish: today's check still lets a glued footnote ("$01") pass as $1 (#1946).
-    expect(passesTodaysCheck({ text: "Network ATM transactions | $0\nOther network ATM transactions | $01\nOnline Bill Pay | $0", fee_name: "Other network ATM transactions", amount: 1, canonical_fee_key: null })).toBe(true);
+    // Today's check reads a glued footnote ("$01") as a $0 price, so the $1 read no longer passes (#1946).
+    expect(passesTodaysCheck({ text: "Network ATM transactions | $0\nOther network ATM transactions | $01\nOnline Bill Pay | $0", fee_name: "Other network ATM transactions", amount: 1, canonical_fee_key: null })).toBe(false);
     expect(passesTodaysCheck({ text: null, fee_name: "Wire", amount: 10, canonical_fee_key: null })).toBe(false);
   });
 });
