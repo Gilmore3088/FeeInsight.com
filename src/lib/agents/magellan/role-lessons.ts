@@ -7,6 +7,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const MAGELLAN_LESSONS: AgentLesson[] = [
   {
+    id: "issue-1677-charge-the-step-that-erred",
+    agent: "magellan",
+    stage: "discover",
+    lesson: "A fee read correctly from the wrong page (a business, brokerage or payroll card page, or another bank's) is a wrong document found, Magellan's miss: its lesson is a wrong_document judgement at discover, never a wrong read charged to Knox.",
+    why: "Hand takedowns wrote every lesson at extract, so #1671's four business-page fees, read correctly, taught Knox wrong_category lessons and taught Magellan nothing; the same held for U.S. Bank's brokerage page, Texas Capital's closed-accounts page, SchoolsFirst's payroll card terms and Natbank's Canadian pages.",
+    evidence: { issues: [1677], prs: [], files: ["src/lib/agents/hamilton/hand-takedowns.ts", "src/lib/agents/hamilton/business-schedule.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
+  {
     id: "issue-1051",
     agent: "magellan",
     stage: "discover",

@@ -21,8 +21,9 @@ type SqlTag = typeof sql;
  * same institution, category, name and price). Its verified row is rejected too, so no later
  * publish brings it back. Archived, never deleted: `rolled_back_reason` is the entry's reason
  * (`source_mismatch: #1496`); clearing `rolled_back_at` (and the verified row's status) restores
- * it. Each takedown records the row in `pipeline_feedback`, and the run gets one event naming every
- * row. Running it again changes nothing: a row already down is skipped. Add later rows below as
+ * it. Each takedown records the row in `pipeline_feedback`, charged to Knox's read (extract) unless
+ * the entry's `lesson` or `HAND_TAKEDOWN_LESSON_OVERRIDES` names the document (discover, #1677), and
+ * the run gets one event naming every row. Running it again changes nothing: a row already down is skipped. Add later rows below as
  * one entry each, never edit a past one. A failed read or write never fails the publish: it is
  * kept in the result (`error`) and as a `step.warning` run event, so the run ledger shows it.
  */
@@ -52,6 +53,68 @@ export interface HandTakedown {
    * land in one step.
    */
   requiresLive?: { feePublishedId: number; amount: number; feeName: string };
+  /**
+   * Whose output was wrong, so the lesson reaches the step that erred (#1677). Left out, the lesson
+   * is Knox's read: stage extract, the entry's `kind`. A fee read correctly from the wrong page (a
+   * business, brokerage or payroll card page, another bank's page) is Magellan's: stage discover,
+   * `wrong_document`, as `business-schedule.ts` writes it.
+   */
+  lesson?: HandTakedownLesson;
+}
+
+/** The stage and kind a hand takedown's `pipeline_feedback` row is charged to (#1677). */
+export type HandTakedownLesson =
+  | { aboutStage: "extract"; kind: HandTakedown["kind"] }
+  | { aboutStage: "discover"; kind: "wrong_document" };
+
+/** A fee read correctly from a page that is not the bank's consumer fee schedule: Magellan's miss. */
+export const WRONG_DOCUMENT_LESSON: HandTakedownLesson = { aboutStage: "discover", kind: "wrong_document" };
+
+/**
+ * Lessons for entries listed before an entry could name its own (#1677). Entries are never edited,
+ * so a past entry whose own evidence says the document was wrong is charged here instead: every
+ * entry of `issue`, or only `feePublishedIds` when given. A new entry sets `lesson` itself.
+ *
+ * Every entry below had come down before this list was written, so it rewrites no recorded row: a
+ * row is written only when its fee comes down, which happens again only if the fee is brought back
+ * and still reads as listed. Then the row upserts on the same `dedupe_key`, so there is never a
+ * second lesson for one fee. Append-only, like the entries.
+ */
+export interface HandTakedownLessonOverride {
+  issue: number;
+  feePublishedIds?: readonly number[];
+  lesson: HandTakedownLesson;
+  /** Why the document, not the read, was wrong, from the entries' own evidence. */
+  why: string;
+}
+
+export const HAND_TAKEDOWN_LESSON_OVERRIDES: readonly HandTakedownLessonOverride[] = [
+  { issue: 1671, lesson: WRONG_DOCUMENT_LESSON,
+    why: "Business pages (FFL's business flyer, Legacy Bank's and Fifth District's business checking pages): Knox read each price right; the page was a business one, Magellan's step, as business-schedule.ts charges it." },
+  { issue: 1659, feePublishedIds: [104565, 104566], lesson: WRONG_DOCUMENT_LESSON,
+    why: "U.S. Bank's brokerage fees page (doc 34203) is not a deposit schedule; its returned check and stop payment were read as printed." },
+  { issue: 1880, lesson: WRONG_DOCUMENT_LESSON,
+    why: "Texas Capital's services-fees page prices accounts closed to new customers in 2023; the current schedule is a PDF that was not found (#1881)." },
+  { issue: 1908, lesson: WRONG_DOCUMENT_LESSON,
+    why: "SchoolsFirst's payroll card disclosure (doc 24009) is a card program's terms, not the credit union's deposit schedule." },
+  { issue: 2018, feePublishedIds: [154075, 154076, 154101], lesson: WRONG_DOCUMENT_LESSON,
+    why: "Natbank's doc 37789 is National Bank of Canada's nbc.ca business page, another bank's." },
+  { issue: 2022, lesson: WRONG_DOCUMENT_LESSON,
+    why: "Natbank's docs 26833 and 26834 are National Bank of Canada's nbc.ca chequing page and fee guide, another bank's." },
+];
+
+/**
+ * The stage and kind an entry's lesson is charged to: its own `lesson`, else a matching override,
+ * else Knox's read (extract, the entry's `kind`), which every entry before #1677 recorded.
+ */
+export function handTakedownLesson(
+  entry: HandTakedown,
+  overrides: readonly HandTakedownLessonOverride[] = HAND_TAKEDOWN_LESSON_OVERRIDES,
+): HandTakedownLesson {
+  if (entry.lesson) return entry.lesson;
+  const override = overrides.find((item) => item.issue === entry.issue &&
+    (item.feePublishedIds == null || item.feePublishedIds.includes(entry.feePublishedId)));
+  return override?.lesson ?? { aboutStage: "extract", kind: entry.kind };
 }
 
 /**
@@ -957,9 +1020,11 @@ export async function applyHandTakedowns(
   options: {
     runId: number; stepId?: number | null; batchId: string; dryRun: boolean;
     list?: readonly HandTakedown[]; waiting?: readonly HandWaitingRejection[]; returnsLive?: boolean;
+    lessonOverrides?: readonly HandTakedownLessonOverride[];
   },
 ): Promise<HandTakedownResult> {
   const list = options.list ?? HAND_TAKEDOWNS;
+  const lessonOverrides = options.lessonOverrides ?? HAND_TAKEDOWN_LESSON_OVERRIDES;
   const waiting = options.waiting ?? HAND_WAITING_REJECTIONS;
   const returnsLive = options.returnsLive ?? HAND_TAKEDOWN_RETURNS_LIVE;
   const result: HandTakedownResult = { dryRun: options.dryRun, takenDown: [], skipped: [], waitingRejected: [], returns: [], returnsLive, error: null };
@@ -1075,10 +1140,13 @@ export async function applyHandTakedowns(
       }
       const feedback: FeedbackRow[] = result.takenDown.map((item) => {
         const entry = list.find((candidate) => candidate.feePublishedId === item.feePublishedId)!;
+        // Charged to the step that erred (#1677): Knox's read by default, Magellan's document when
+        // the page was wrong. One dedupe key per fee either way, so a fee is never recorded twice.
+        const lesson = handTakedownLesson(entry, lessonOverrides);
         return {
-          aboutStage: "extract" as const,
+          aboutStage: lesson.aboutStage,
           signal: "wrong" as const,
-          kind: entry.kind,
+          kind: lesson.kind,
           reportedBy: "gutenberg" as const,
           checkName: HAND_TAKEDOWN_CHECK,
           institutionId: entry.institutionId,
