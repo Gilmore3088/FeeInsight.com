@@ -9,6 +9,8 @@ import { getFeeTier } from "@/lib/fee-taxonomy";
  * Results above this size have their longest lists shortened, with a note saying so.
  */
 export const TOOL_RESULT_MAX_CHARS = 12_000;
+/** Quarters of a profile's filing history kept before any fee row is dropped: enough for a year-over-year change. */
+export const HISTORY_FLOOR = 5;
 
 type Json = unknown;
 
@@ -151,12 +153,15 @@ export function compactToolResult(result: Json, maxChars = TOOL_RESULT_MAX_CHARS
   const original = new Map<string, number>();
   for (const list of lists) original.set(list.path, list.get().length);
 
-  const largestOf = (candidates: ListRef[]): ListRef | null => {
+  // A filing history keeps enough quarters for a year-over-year change before any fee row goes.
+  const floorOf = (list: ListRef) =>
+    profileFees !== null && (list.path === "financials.records" || list.path === "revenue_trend" || list.path.endsWith(".revenue_trend")) ? HISTORY_FLOOR : 1;
+  const largestOf = (candidates: ListRef[], floor: (list: ListRef) => number = () => 1): ListRef | null => {
     let largest: ListRef | null = null;
     let largestSize = 0;
     for (const list of candidates) {
       const rows = list.get();
-      if (rows.length < 2) continue;
+      if (rows.length < 2 || rows.length <= floor(list)) continue;
       const size = JSON.stringify(rows).length;
       if (size > largestSize) {
         largest = list;
@@ -165,19 +170,25 @@ export function compactToolResult(result: Json, maxChars = TOOL_RESULT_MAX_CHARS
     }
     return largest;
   };
+  let conditionsTried = false;
   let conditionsDropped = false;
   for (let guard = 0; guard < 200 && JSON.stringify(root.value).length > maxChars; guard++) {
-    // A profile's fee rows are the last list cut: every other list goes down to one row first,
-    // then the rows' conditions go, and only then are rows dropped.
-    let largest = largestOf(lists.filter((list) => !isFeeList(list)));
-    if (!largest && profileFees && !conditionsDropped) {
+    // A profile is shrunk in this order: the rows' conditions go; every other list goes down to its
+    // floor (a filing history keeps HISTORY_FLOOR quarters, anything else one row); then fee rows
+    // are dropped, spotlight and core fee types kept first; only then does a filing history go
+    // below its floor.
+    if (profileFees && !conditionsTried) {
+      conditionsTried = true;
       conditionsDropped = dropConditions(profileFees);
       if (conditionsDropped) continue;
     }
-    largest ??= largestOf(lists.filter(isFeeList));
+    const others = lists.filter((list) => !isFeeList(list));
+    const largest = largestOf(others, floorOf) ?? largestOf(lists.filter(isFeeList)) ?? largestOf(others);
     if (!largest) break;
     const rows = largest.get();
-    largest.set(isFeeList(largest) ? keepProfileRows(rows) : rows.slice(0, Math.ceil(rows.length / 2)));
+    largest.set(isFeeList(largest)
+      ? keepProfileRows(rows)
+      : rows.slice(0, Math.max(Math.ceil(rows.length / 2), Math.min(floorOf(largest), rows.length - 1))));
   }
 
   const cut = (list: ListRef) => list.get().length < (original.get(list.path) ?? 0);
@@ -189,7 +200,7 @@ export function compactToolResult(result: Json, maxChars = TOOL_RESULT_MAX_CHARS
   if (profileFees) {
     const rowsComplete = !lists.some((list) => isFeeList(list) && cut(list));
     const parts = [
-      ...(trimmed ? [`Fee rows trimmed to their record, amount, category and name${typeof profileFees.shared_source_url === "string" ? "; the source URL every row shares is fees.shared_source_url" : ""}.`] : []),
+      ...(trimmed ? [`Fee rows trimmed to their record, document, name, category, amount, frequency, status and short conditions${typeof profileFees.shared_source_url === "string" ? "; the source URL every row shares is fees.shared_source_url" : ""}.`] : []),
       ...(conditionsDropped ? ["Fee conditions left out; read them from the fee schedule if the answer depends on them."] : []),
       ...(shortened.length > 0 ? [`Lists shortened to fit: ${shortened.join("; ")}.`] : []),
       rowsComplete ? "Every fee row is kept." : "Say so if the answer depends on the fee rows left out.",

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cacheLatestMessage, cachedSystem, compactToolResult, ledgerUsage, TOOL_RESULT_MAX_CHARS, withCompactResults } from "./tool-output";
+import { cacheLatestMessage, cachedSystem, compactToolResult, HISTORY_FLOOR, ledgerUsage, TOOL_RESULT_MAX_CHARS, withCompactResults } from "./tool-output";
 import { writtenAnswerFeeEvidence } from "@/lib/hamilton/written-answer-binding";
 import { collectFeeRefs, writtenAnswerFeeRefs } from "@/lib/saved-output-corrections";
 import type { LanguageModelUsage, ModelMessage } from "ai";
@@ -86,7 +86,8 @@ describe("compactToolResult on an institution profile (#1077, Cycle A defect 9)"
   const factUrls = (output: unknown) => (writtenAnswerFeeEvidence([output])?.evidence.facts ?? []).map((fact) => fact.source.urls);
 
   it("keeps every fee row's record when trimming fields is enough, and marks the rows complete", () => {
-    const profile = capitalCityProfile();
+    // Fee rows only: the filing history keeps its own floor (next tests).
+    const { financials: _financials, revenue_trend: _trend, ...profile } = capitalCityProfile();
     expect(JSON.stringify(profile).length).toBeGreaterThan(TOOL_RESULT_MAX_CHARS);
     const out = compactToolResult(profile) as ReturnType<typeof capitalCityProfile> & { _shortened: string; _fee_rows_complete?: boolean };
     expect(JSON.stringify(out).length).toBeLessThanOrEqual(TOOL_RESULT_MAX_CHARS + 600);
@@ -108,8 +109,9 @@ describe("compactToolResult on an institution profile (#1077, Cycle A defect 9)"
     const out = compactToolResult(profile, 5_000) as ReturnType<typeof capitalCityProfile> & { _shortened: string; _fee_rows_complete?: boolean };
     expect(out.fees.verified.length).toBeLessThan(60);
     expect(out.fees.verified.some((row) => row.fee_category === "overdraft")).toBe(true);
-    expect(out.revenue_trend).toHaveLength(1);
-    expect(out.financials.records).toHaveLength(1);
+    // A filing history keeps a year-over-year window before any fee row is dropped.
+    expect(out.revenue_trend).toHaveLength(HISTORY_FLOOR);
+    expect(out.financials.records).toHaveLength(HISTORY_FLOOR);
     expect(out.fees.verified.every((row) => !("conditions" in row))).toBe(true);
     expect(out._fee_rows_complete).toBeUndefined();
     expect(out._shortened).toContain("fees.verified:");
@@ -120,6 +122,17 @@ describe("compactToolResult on an institution profile (#1077, Cycle A defect 9)"
     expect(factIds(out)).toContain("fee:published:" + profile.fees.verified.find((row) => row.fee_category === "overdraft")!.record_id);
     // Rows were dropped, so the subject keeps its institution match instead of partial refs.
     expect(writtenAnswerFeeRefs(collectFeeRefs(out), 5501, [out])).toEqual([]);
+  });
+
+  it("keeps the whole filing history when dropping conditions is enough (review of #2635)", () => {
+    const base = capitalCityProfile();
+    const profile = { ...base, fees: { verified: base.fees.verified.slice(0, 40), provisional: [] as typeof base.fees.verified } };
+    expect(JSON.stringify(profile).length).toBeGreaterThan(TOOL_RESULT_MAX_CHARS);
+    const out = compactToolResult(profile) as ReturnType<typeof capitalCityProfile> & { _fee_rows_complete?: boolean };
+    expect(out.fees.verified).toHaveLength(40);
+    expect(out.financials.records).toHaveLength(8);
+    expect(out.revenue_trend).toHaveLength(8);
+    expect(out._fee_rows_complete).toBe(true);
   });
 
   it("never cuts a profile to plain text", () => {

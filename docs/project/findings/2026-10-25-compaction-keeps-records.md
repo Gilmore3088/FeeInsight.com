@@ -25,10 +25,13 @@ carries `_shortened`, so every cut also cost correction tracking.
 `compactToolResult` now, in order: (1) trims every fee row to the fields the binding, gate and ref
 collector read (`fee_name`, `fee_category`, `amount`, `frequency`, `status`, `record_id`,
 `source_document_id`, `source_url`, `pipeline_stage`, and conditions up to 160 characters), and
-moves a source URL every row shares to `fees.shared_source_url`; (2) halves the profile's other
-lists (revenue trend, financial records, peer lists) down to one row each; (3) drops the rows'
-conditions; (4) only then drops fee rows, keeping spotlight and core fee types (`getFeeTier`)
-first, in their original order. A profile is never cut to plain text. When no fee row was dropped
+moves a source URL every row shares to `fees.shared_source_url`; (2) drops the rows'
+conditions; (3) halves the profile's other lists down to a floor: the filing history
+(`financials.records`, `revenue_trend`) keeps `HISTORY_FLOOR` (5) quarters, enough for a
+year-over-year change, and any other list one row; (4) then drops fee rows, keeping spotlight and
+core fee types (`getFeeTier`) first, in their original order; (5) only then takes the filing
+history below its floor. (Review of #2635: an earlier order cut the history to one quarter before
+any fee row, so a trend question at a bank with many fees lost its prior quarters.) A profile is never cut to plain text. When no fee row was dropped
 the result carries `_fee_rows_complete: true`, and `writtenAnswerFeeRefs` saves the subject's refs
 for it. The binding (`profileFact` in `src/lib/hamilton/written-answer-binding.ts`) reads
 `fees.shared_source_url` when a row has no URL of its own, so a surviving row has the same fact id
