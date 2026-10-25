@@ -75,6 +75,8 @@ export interface FeeIncomeAssumptionInput {
   waiverRate: number | null;
   /** Where the bank's figures came from: typed on the page or saved in My bank and data. */
   figuresFrom: "typed" | "saved";
+  /** Where the waived share came from, when it differs from the volume's source. */
+  waiverFrom?: "typed" | "saved";
 }
 
 const money = (n: number) =>
@@ -88,7 +90,8 @@ export function feeIncomeAssumptions(input: FeeIncomeAssumptionInput): string[] 
   const paid = input.paidItems != null && input.paidItems > 0 ? input.paidItems : null;
   if (paid == null) return [];
   const fee = input.feeName.toLowerCase();
-  const where = input.figuresFrom === "saved" ? "saved in My bank and data" : "entered on this page";
+  const whereOf = (from: "typed" | "saved") => (from === "saved" ? "saved in My bank and data" : "entered on this page");
+  const where = whereOf(input.figuresFrom);
   const waiver = input.waiverRate != null ? Math.min(Math.max(input.waiverRate, 0), 1) : null;
   return [
     input.current != null
@@ -98,7 +101,7 @@ export function feeIncomeAssumptions(input: FeeIncomeAssumptionInput): string[] 
         : `Starting price: $0, because no ${fee} fee is published for you.`,
     `Items charged a year: ${paid.toLocaleString("en-US")}, before waivers, your figure ${where}.`,
     waiver != null
-      ? `Share waived or refunded: ${Math.round(waiver * 1000) / 10}%, your figure ${where}.`
+      ? `Share waived or refunded: ${Math.round(waiver * 1000) / 10}%, your figure ${whereOf(input.waiverFrom ?? input.figuresFrom)}.`
       : "Share waived or refunded: none, because no share was entered.",
     "The same number of items is charged at every price tested. How customers respond to a price change is not estimated.",
     "The waived or refunded share stays the same at every price tested.",

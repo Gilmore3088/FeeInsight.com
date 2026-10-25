@@ -48,6 +48,12 @@ describe("feeIncomeAssumptions (#1896)", () => {
     expect(a).toContain("not a prediction");
   });
 
+  it("names each figure's own source when the volume is typed and the waived share is saved", () => {
+    const lines = feeIncomeAssumptions({ ...base, waiverFrom: "saved" });
+    expect(lines.find((l) => l.startsWith("Items charged"))).toContain("entered on this page");
+    expect(lines.find((l) => l.startsWith("Share waived"))).toContain("saved in My bank and data");
+  });
+
   it("names a missing waiver share, a missing published price and saved figures plainly", () => {
     const a = feeIncomeAssumptions({ ...base, waiverRate: null, current: null, figuresFrom: "saved" }).join(" ");
     expect(a).toContain("Share waived or refunded: none, because no share was entered.");

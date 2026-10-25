@@ -173,6 +173,7 @@ export default async function ModelPage({ searchParams }: PageProps) {
     paidItems,
     waiverRate,
     figuresFrom: parseCount(params.paid) != null ? "typed" : "saved",
+    waiverFrom: parsePercent(params.waiver) != null ? "typed" : "saved",
   });
   const trail = buildAuditTrail({
     feeName: ws.feeName,
