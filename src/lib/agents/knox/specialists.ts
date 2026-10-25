@@ -39,6 +39,7 @@ import { withoutGluedSentence } from "./glued-sentence-name";
 import { withGluedFootnotePrices } from "@/lib/custom-report/glued-footnote-price";
 import { networkColumnReads, withoutNetworkTableRows } from "@/lib/custom-report/network-column-rows";
 import { namesLateChargeBound } from "@/lib/late-charge-bound";
+import { rateFloorOf } from "@/lib/rate-floor";
 
 /**
  * Knox's free extraction team, run over one whole document. Pure.
@@ -345,7 +346,16 @@ import { namesLateChargeBound } from "@/lib/late-charge-bound";
 // paper holders beside an electronic price ("$4 for paper statement or $3 for estatement", "$7 with
 // paper statement") stays maintenance. Oct 25 dry run: 19 live maintenance fees match, each checked on
 // its bank's stored text. The stale-read floor stays at v97. Name re-tidy stays at v27.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 117 } as const;
+// v118 (#1615): a price its own line makes the floor of a percentage charge ("Cash Advance | Either
+// $5.00 or 3% of the amount of each cash advance, whichever is greater", "Greater of $10 or 5% of
+// Scheduled Pmt", "Merchant Check Cashing (Greater of 10% of Item or $10)") is not a flat fee
+// (`rateFloorOf` in `src/lib/rate-floor.ts`, shared with Darwin's rate floor re-check). It is held as
+// the percentage, so the rate pass files the rate fee with the floor as its rate_min_amount where the
+// category publishes rates (`rateFeeFromHeld` now reads a "$Y or X%" floor or cap stated before the
+// rate) and keeps it held elsewhere. Another fee's floor on the same line, a lesser-of cap and a figure
+// not joined to the rate by "or" keep the read. Removes flat reads only. The stale-read floor stays at
+// v97. Name re-tidy stays at v27.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 118 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -645,6 +655,31 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
       // v115 (#1905): a late charge's cap or floor ("maximum late charge of $30 in WV", "Minimum Late
       // Fee $10" beside "5% of Payment Amount") bounds a percentage charge; it is no late fee.
       if (namesLateChargeBound(candidate.feeName)) continue;
+      // v118 (#1615): a price its own line makes the floor of a percentage charge ("$5.00 or 3% of
+      // each cash advance, whichever is greater", "Greater of 10% of Item or $10") is the least the
+      // charge can be, not its price. It is held as the percentage, so the rate pass below files the
+      // rate fee with this floor as its rate_min_amount (or keeps it held), never a flat fee.
+      const floorLine = [candidate.excerpt, checked.row]
+        .find((line): line is string => !!line && rateFloorOf(line, candidate.amount, candidate.feeName) !== null);
+      const floor = floorLine ? rateFloorOf(floorLine, candidate.amount, candidate.feeName) : null;
+      if (floorLine && floor) {
+        const row: HeldFeeCandidate = {
+          shape: "percentage",
+          feeName: candidate.feeName,
+          amount: null,
+          amountMax: null,
+          percent: floor.ratePercent,
+          frequency: candidate.frequency,
+          canonicalHint: candidate.canonicalHint,
+          excerpt: floorLine,
+        };
+        const key = heldKey(row);
+        if (!seenHeld.has(key) && held.filter(prior => !unpricedHalf(prior)).length < MAX_HELD_PER_DOCUMENT) {
+          seenHeld.add(key);
+          held.push(row);
+        }
+        continue;
+      }
       // v32: a name that closes a parenthesis it never opened ("SCCU for using a non-SCCU
       // ATM) | $60") is the end of the line above, and the price is another column's.
       if (closesUnopenedParen(candidate.feeName)) continue;
