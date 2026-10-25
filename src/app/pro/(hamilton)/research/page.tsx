@@ -156,7 +156,7 @@ export default async function ResearchPage({ searchParams }: PageProps) {
 
   const modelHref = hrefWithInstitutionContext(`/pro/simulate?fee=${encodeURIComponent(ws.fee)}`, instId);
   const askHref = hrefWithInstitutionContext(
-    `/pro/analyze?q=${encodeURIComponent(`What should I know about our ${ws.feeName.toLowerCase()} fee against ${layer.label}?`)}&send=1`,
+    `/pro/analyze?q=${encodeURIComponent(`What should I know about our ${ws.feeName.toLowerCase()} fee against ${layer.label}?`)}&send=1&fee=${encodeURIComponent(ws.fee)}`,
     instId,
   );
   const own = research?.institutionFinancials ?? null;
