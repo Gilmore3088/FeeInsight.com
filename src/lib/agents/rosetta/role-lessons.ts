@@ -70,7 +70,7 @@ export const ROSETTA_LESSONS: AgentLesson[] = [
     id: "issue-2059-reader-fix-rereads-its-errors",
     agent: "rosetta",
     stage: "read",
-    lesson: "When you change how you read documents, read again the documents whose text is known to be wrong, not only the ones you read next: a reader version bump must reopen every text with a read error recorded about it, once per version until the text actually changes (key the error to the text's hash, not to when the text was last written, since a re-read that writes the same text is not a fix), and keep the old text unless the new one lists at least as many fees.",
+    lesson: "When you change how you read documents, read again the documents whose text a person found lost a fee, not only the ones you read next: a reader version bump must reopen every text with an operator's lost-text finding, once per version until the text actually changes (key the error to the text's hash, not to when the text was last written, since a re-read that writes the same text is not a fix), and keep the old text unless the new one lists at least as many fees. Keep a zero-fee text out of that rule, so a wrong page found on re-read still goes back for a new link.",
     why: "A ROSETTA_READ_VERSION bump re-read only thin, empty and unreadable texts. A text an operator held because its text lost a fee, or that text survival or a batch review marked wrong, kept its old reading after a reader fix, so the fix reached only documents fetched afterwards (#2059). Holds for a lost text did not even name the document.",
     evidence: { issues: [2059], prs: [2565], files: ["src/lib/agents/rosetta/read.ts", "src/lib/fee-hold.ts", "src/lib/fee-corrections.ts"] },
     appliesTo: "all",

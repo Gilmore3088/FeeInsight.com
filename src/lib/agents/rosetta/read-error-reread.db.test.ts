@@ -39,10 +39,10 @@ describe.skipIf(!connection)("Rosetta re-reads a document with a read error on a
               VALUES (${INST}, ${DOC}, 'read', 'read.pdf_layout', ${version}, ${HASH}, 'ok')`;
   }
 
-  async function readError(createdAt: string, textHash?: string) {
+  async function readError(createdAt: string, textHash?: string, check = "admin.fee_hold", kind = "admin_hold") {
     const evidence = textHash ? { text_hash: textHash } : {};
     await raw`INSERT INTO pipeline_feedback (about_stage, signal, kind, reported_by, check_name, institution_id, source_document_id, dedupe_key, created_at, evidence)
-              VALUES ('read', 'wrong', 'admin_hold', 'human', 'admin.fee_hold', ${INST}, ${DOC}, ${`test2059:${createdAt}`}, ${createdAt}, ${raw.json(evidence)})`;
+              VALUES ('read', 'wrong', ${kind}, 'human', ${check}, ${INST}, ${DOC}, ${`test2059:${check}:${createdAt}`}, ${createdAt}, ${raw.json(evidence)})`;
   }
 
   beforeAll(async () => {
@@ -104,6 +104,11 @@ describe.skipIf(!connection)("Rosetta re-reads a document with a read error on a
     expect(await selected()).toEqual([DOC]);
     await raw`UPDATE pipeline_feedback SET evidence = ${raw.json({ lost_text_document_id: DOC + 1, text_hash: TEXT_HASH })}, source_document_id = ${DOC}
                WHERE dedupe_key = 'test2059:correction'`;
+    expect(await selected()).toEqual([]);
+  });
+
+  it("leaves a batch-review miss to its own branches, so a zero-fee wrong page still goes back to Magellan", async () => {
+    await readError("2026-10-05T00:00:00Z", TEXT_HASH, "rosetta.batch_review", "no_fees_found");
     expect(await selected()).toEqual([]);
   });
 

@@ -73,9 +73,10 @@ Rosetta owns source text normalization.
   the current reader, so an institution whose flattened table gave up one fee gets its
   whole schedule. Texts with more Knox fees are left alone, and a failed re-read keeps
   the earlier text.
-- A completed text with a read error recorded after it was written (a `pipeline_feedback`
-  row about `read`, signal wrong, weight above 0, naming its document: a hold or correction
-  whose cause is a lost text, a text-survival or batch-review miss) is also read once more
+- A completed text with an operator's lost-text finding (a hold or correction whose cause is
+  a lost text: a `pipeline_feedback` row about `read`, signal wrong, weight above 0; text-survival
+  and batch-review misses keep their own branches, so a zero-fee wrong page still goes back to
+  Magellan) is also read once more
   when `ROSETTA_READ_VERSION` moves, however many fees it has (#2059). A reader fix then
   reaches the documents it was written for, not only those read afterwards. The new text
   replaces it only when it lists at least as many fees (the lost-text rule). A hold or
