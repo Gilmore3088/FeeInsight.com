@@ -493,7 +493,10 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v25 (#1916): a late charge in a safe deposit box section is not a late payment; same fingerprint path.
   SOURCE_CHECK_STRATEGY: "Its fingerprint carries the version, so each publish step's batch re-checks every institution not yet checked at the new version; nothing to replay.",
   // v3 (#1810): headings over an opening deposit, "Interest Checking" and numbered accounts name a fee.
-  ACCOUNT_NAME_STRATEGY: "Its fingerprint carries the version, so each publish step's batch (40 institutions) re-reads every institution with a generic monthly name not yet read at v3; nothing to replay.",
+  // v4 (#1917): a fused breadcrumb or menu is no heading, and a comparison table's header row stops
+  // the search. Names given before from a heading v4 refuses (3 live on Oct 25) are set back by the
+  // step itself, across every institution, before it names again.
+  ACCOUNT_NAME_STRATEGY: "Its fingerprint carries the version, so each publish step's batch (40 institutions) re-reads every institution with a generic monthly name not yet read at v4; earlier names from a refused heading are set back by the step; nothing to replay.",
   STATE_LISTS_PARSER_VERSION: "New sources (depositories, non-bank lenders, Urban debt held until its license is confirmed); no older rows to replay.",
 };
 
