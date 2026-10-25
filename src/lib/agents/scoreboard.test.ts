@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
 
-import { PRICED_LINE_PATTERN, summarizeScoreboard, type ScoreboardSnapshotResult } from "./scoreboard";
+import { PRICED_LINE_PATTERN, readScoreboardNumbers, summarizeScoreboard, type ScoreboardSnapshotResult } from "./scoreboard";
+import { GLYPH_REPAIR_STRATEGY } from "./rosetta/glyph-repair";
 
 const NUMBERS: ScoreboardSnapshotResult["numbers"] = {
   coverage: { rate: 0.4123, numerator: 4123, denominator: 10000 },
@@ -21,6 +22,21 @@ const NUMBERS: ScoreboardSnapshotResult["numbers"] = {
 };
 
 describe("scoreboard", () => {
+  it("counts a glyph-lane read once: its read.glyph_repair receipt is not a right-document check (#2598)", async () => {
+    const calls: Array<{ text: string; values: unknown[] }> = [];
+    const db = Object.assign(
+      vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+        calls.push({ text: strings.join("$"), values });
+        return [{ learning_schema_ready: true }];
+      }),
+      { unsafe: vi.fn(async () => []), begin: vi.fn(async (work: (scope: unknown) => unknown) => work(db)) },
+    );
+    await readScoreboardNumbers(db as never).catch(() => undefined);
+    const rightDocument = calls.find((call) => call.text.includes("outcome IN ('ok', 'ok_partial', 'wrong_document')"));
+    expect(rightDocument?.text).toContain("strategy <> $");
+    expect(rightDocument?.values).toContain(GLYPH_REPAIR_STRATEGY);
+  });
+
   it("matches priced lines the same way as the fee-page check", () => {
     const pattern = new RegExp(PRICED_LINE_PATTERN);
     expect(pattern.test("Overdraft $32.00")).toBe(true);

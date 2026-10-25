@@ -10,6 +10,7 @@ import { thinRereadKindSql } from "./thin-document";
 import { KNOX_RULES_STRATEGY } from "./knox/specialists";
 import { REREAD_MAX_KNOX_FEES, ROSETTA_READ_VERSION, pdfStackedRepairsPendingQuery } from "./rosetta/read";
 import { pdfStackedRepairSchemaReady, PDF_STACKED_REPAIR_STRATEGY } from "./rosetta/pdf-stacked-repair";
+import { GLYPH_REPAIR_STRATEGY } from "./rosetta/glyph-repair";
 import { DARWIN_VERIFY_MAX_LIMIT, darwinDueSql } from "./darwin/verify";
 import { HAMILTON_PUBLISH_MAX_LIMIT } from "./hamilton/publish";
 import { knoxFreeSignature, RULES_RECHECK_STRATEGY } from "./hamilton/rules-recheck";
@@ -376,6 +377,8 @@ export async function stateHasDocumentBacklog(stateCode: string): Promise<boolea
                  SELECT 1 FROM pipeline_attempts pa
                   WHERE pa.stage = 'read'
                     AND pa.strategy <> ${PDF_STACKED_REPAIR_STRATEGY}
+                    -- A glyph receipt is not a read, whatever GLYPH_REPAIR_VERSION reaches (#2598).
+                    AND pa.strategy <> ${GLYPH_REPAIR_STRATEGY}
                     AND pa.institution_id = adt.institution_id
                     AND pa.input_fingerprint = adt.source_hash
                     AND pa.strategy_version >= ${ROSETTA_READ_VERSION}

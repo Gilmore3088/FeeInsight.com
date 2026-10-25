@@ -79,7 +79,7 @@ import { extractPdfDocumentText as extractPdfText, type PdfTextExtraction } from
 import { losslessStackedRecovery, textSha256, type StackedGeometryReceipt } from "./pdf-repair-survival";
 import type { PdfReaderAgreement } from "./pdf-reader-agreement";
 import { GLYPH_REPAIR_VERSION, PDF_PROSE_REREAD_VERSION, PDF_STACKED_REPAIR_VERSION } from "./reader-versions";
-import { decodeTextBytes, expandUnicodeLigatures, GLYPH_REPAIR_DUE_PATTERN } from "./glyph-repair";
+import { decodeTextBytes, expandUnicodeLigatures, GLYPH_REPAIR_DUE_PATTERN, GLYPH_REPAIR_STRATEGY } from "./glyph-repair";
 import { pdfStackedRepairDueSql, PDF_STACKED_REPAIR_MAX_PER_RUN, PDF_STACKED_REPAIR_STRATEGY } from "./pdf-stacked-repair";
 import { emptyLayoutRecheckResult, runLayoutRecheck, type LayoutRecheckResult } from "./layout-recheck";
 import { READER_REPLAY_EVENT, READER_REPLAY_OWN_VERSIONS, READER_REPLAY_PER_RUN, READER_REPLAY_READERS, readerReplayDueSql, recordReaderReplay } from "./reader-replay";
@@ -413,7 +413,7 @@ export const ROSETTA_REOPEN_LIMIT = 100;
 /** Strategies that run beside or after the first reader; they never settle a read. */
 export const AUXILIARY_READ_STRATEGIES = [
   PAGE_CHECK_STRATEGY,
-  "read.glyph_repair",
+  GLYPH_REPAIR_STRATEGY,
   REOPEN_STRATEGY,
   PDF_STACKED_REPAIR_STRATEGY,
   TABLE_ROWS_STRATEGY,
@@ -453,7 +453,7 @@ export const GLYPH_REPAIR_READERS: string[] = ["read.pdf_layout", "read.html_dom
  * that never reaches a glyph-repair reader still settles the text (#2649 review). Auxiliary: it
  * never settles an ordinary read and never enters the bank's playbook.
  */
-export const GLYPH_REPAIR_STRATEGY = "read.glyph_repair";
+export { GLYPH_REPAIR_STRATEGY };
 /** Receipt outcomes that may pass on a retry; after this many tries the text is settled anyway. */
 export const GLYPH_REPAIR_RETRY_OUTCOMES: AttemptOutcome[] = ["timeout", "network_error", "http_429", "http_5xx", "budget_blocked"];
 export const GLYPH_REPAIR_MAX_TRIES = 3;

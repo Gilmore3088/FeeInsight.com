@@ -36,6 +36,12 @@ export { GLYPH_REPAIR_VERSION };
 
 export const REPLACEMENT_CHARACTER = "\uFFFD";
 
+/**
+ * The glyph lane's receipt strategy (read.ts, `recordGlyphRepairReceipt`): not a read. Health
+ * counts, lane schedules and a link's last read leave it out, so a lane read is counted once.
+ */
+export const GLYPH_REPAIR_STRATEGY = "read.glyph_repair";
+
 /** A stored text carrying either glyph is due for one read with the current repair. */
 export const GLYPH_REPAIR_DUE_PATTERN = "[\uFFFD\uFB00-\uFB06]";
 

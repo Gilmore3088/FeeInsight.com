@@ -4,6 +4,7 @@ import { eligibleReferences, readReferenceEligibility, type ReferenceEligibility
 import type { ReferenceScoreCohort } from "@/lib/data-store/answer-key-eligibility";
 import { learningSchemaReady } from "@/lib/agents/learning/attempts";
 import { inSavepoint } from "@/lib/agents/savepoint";
+import { GLYPH_REPAIR_STRATEGY } from "@/lib/agents/rosetta/glyph-repair";
 import { readAgentHealth, summarizeAgentHealth, type AgentHealthReport } from "@/lib/agents/agent-health";
 import { getMarketReadiness, summarizeReportReady, type ReportReadyCount } from "@/lib/data-store/market-readiness";
 import { readHistoricalLiveSourceAudit } from "@/lib/data-store/live-source-audit-read";
@@ -106,6 +107,8 @@ async function readRightDocument(db: SqlTag): Promise<ScoreboardNumbers["rightDo
            COUNT(*)::int AS checked
       FROM pipeline_attempts
      WHERE stage = 'read'
+       -- The glyph lane's receipt repeats a read already counted (#2598).
+       AND strategy <> ${GLYPH_REPAIR_STRATEGY}
        AND outcome IN ('ok', 'ok_partial', 'wrong_document')
        AND created_at >= NOW() - make_interval(days => ${RIGHT_DOCUMENT_WINDOW_DAYS}::int)
   `;

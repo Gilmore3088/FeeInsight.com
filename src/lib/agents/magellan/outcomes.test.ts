@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { GLYPH_REPAIR_STRATEGY } from "@/lib/agents/rosetta/glyph-repair";
 
 import {
   judgeLink,
@@ -164,6 +165,14 @@ describe("Magellan outcome ledger", () => {
     const dry = fakeDb([link()]);
     expect(await recordLinkOutcomes(dry.db as never, { runId: 5, now: NOW, dryRun: true })).toMatchObject({ judged: { good: 1 }, written: 0 });
     expect(dry.statements.some((text) => text.includes("INSERT INTO pipeline_feedback"))).toBe(false);
+  });
+
+  it("takes a link's last read from the real read, not the glyph lane's receipt (#2598)", async () => {
+    const { db } = fakeDb([]);
+    await recordLinkOutcomes(db as never, { runId: 5, now: NOW });
+    const call = db.mock.calls.find((entry) => (entry[0] as unknown as string[]).join("?").includes("WITH banks AS"))!;
+    expect((call[0] as unknown as string[]).join("?")).toContain("FILTER (WHERE pa.stage = 'read' AND pa.strategy <> ?))[1] AS last_read");
+    expect(call.slice(1)).toContain(GLYPH_REPAIR_STRATEGY);
   });
 
   it("never throws into the discovery step", async () => {

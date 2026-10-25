@@ -1,6 +1,7 @@
 import type { sql } from "@/lib/data-store/connection";
 import { feedbackSchemaReady, recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { inSavepoint } from "@/lib/agents/savepoint";
+import { GLYPH_REPAIR_STRATEGY } from "@/lib/agents/rosetta/glyph-repair";
 
 import { isBusinessOnlyLink } from "./link-coverage";
 
@@ -232,7 +233,8 @@ export async function recordLinkOutcomes(
       ),
       reads AS (
         SELECT docs.institution_id, docs.url,
-               (array_agg(pa.outcome ORDER BY pa.id DESC) FILTER (WHERE pa.stage = 'read'))[1] AS last_read,
+               -- The glyph lane's receipt follows the real read and is not one (#2598).
+               (array_agg(pa.outcome ORDER BY pa.id DESC) FILTER (WHERE pa.stage = 'read' AND pa.strategy <> ${GLYPH_REPAIR_STRATEGY}))[1] AS last_read,
                max(pa.created_at) FILTER (WHERE pa.stage = 'extract') AS last_extract_at
           FROM docs
           JOIN pipeline_attempts pa
