@@ -96,7 +96,7 @@ export function matchFeeCategory(question: string): string | null {
 }
 
 // "What should I know about ..." asks for facts, not a decision.
-const OPINION = /what would you do|what do you (recommend|suggest|advise)|\bshould (we|i)\b(?! (know|be aware|understand|note|keep in mind|watch))|your (opinion|recommendation|advice|view)|which (price|option|scenario|one) (is|was|would be) best|best (price|option)/i;
+const OPINION = /what would you do|what (?:do|would) you (recommend|suggest|advise)|\bshould (we|i)\b(?! (know|be aware|understand|note|keep in mind|watch))|your (opinion|recommendation|advice|view)|which (price|option|scenario|one) (is|was|would be) best|best (price|option)/i;
 const COMPETITORS = /competitor|competition|compet(e|ing)|local|nearby|down the street|who charges|in (our|my) market/i;
 const TREND = /trend|over time|history|historical|income|revenue|earn/i;
 const ELIMINATE = /\b(eliminat\w*|remov\w*|get rid of|scrap\w*|drop(ping)? (it|the fee)|go to (zero|\$0)|no fee|free)\b/i;

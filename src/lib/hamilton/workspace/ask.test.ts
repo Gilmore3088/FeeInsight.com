@@ -246,6 +246,7 @@ describe("no answer about a different subject, even with an overdraft decision o
       "How would that affect our revenue?",
       "What does that do to revenue?",
       "Should we raise it, given our fee income?",
+      "What would you recommend?",
     ]) {
       expect(parseAsk(question, "overdraft").feeCategory).toBe("overdraft");
     }
