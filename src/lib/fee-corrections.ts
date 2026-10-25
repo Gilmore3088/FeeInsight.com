@@ -68,8 +68,13 @@ interface LiveFeeRow {
   fee_treatment: string | null;
   conditions: string | null;
   lineage_source_document_id: number | string | null;
-  /** The address of the document the live fee was read from. */
-  lineage_document_url: string | null;
+  /**
+   * The document the live value was read from, and its address: the current correction's cited
+   * document when the row is a correction version (which keeps the pipeline's lineage), otherwise
+   * the pipeline's own.
+   */
+  live_document_id: number | string | null;
+  live_document_url: string | null;
 }
 
 interface CurrentVersionRow {
@@ -111,10 +116,14 @@ async function lockLiveFee(tx: SqlTag, feePublishedId: number): Promise<LiveFeeR
     SELECT fp.fee_published_id, fp.institution_id, fp.canonical_fee_key, fp.fee_name, fp.amount,
            fp.frequency, fp.variant_type, fp.fee_audience, fp.amount_kind, fp.fee_treatment,
            fr.conditions, fr.source_document_id AS lineage_source_document_id,
-           (SELECT sd.document_url FROM source_documents sd WHERE sd.id = fr.source_document_id) AS lineage_document_url
+           live_doc.id AS live_document_id, live_doc.document_url AS live_document_url
       FROM published_fee_records fp
       LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
       LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+      LEFT JOIN source_documents live_doc ON live_doc.id = COALESCE(
+        (SELECT cur.source_document_id FROM published_fee_corrections cur
+          WHERE cur.fee_published_id = fp.fee_published_id AND cur.status = 'current' LIMIT 1),
+        fr.source_document_id)
      WHERE fp.fee_published_id = ${feePublishedId}
        AND fp.rolled_back_at IS NULL
        AND fp.quarantined_at IS NULL
@@ -371,7 +380,7 @@ async function writeVersion(tx: SqlTag, w: WriteVersion): Promise<FeeCorrectionR
       actor: w.actor.name,
       reason: w.reason,
       ...(w.cause ? { cause: w.cause } : {}),
-      ...(w.cause === "wrong_document" ? wrongDocument(w.live.lineage_source_document_id, w.live.lineage_document_url) : {}),
+      ...(w.cause === "wrong_document" ? wrongDocument(w.live.live_document_id, w.live.live_document_url) : {}),
       before: w.before,
       after: w.after,
       source_excerpt: w.evidence?.excerpt ?? null,

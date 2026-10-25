@@ -50,13 +50,18 @@ async function logHoldEvent(
 ): Promise<{ indexRefreshed: boolean; runId: number }> {
   // A wrong document names the document the fee was read from, for Magellan's link search.
   let wrong: ReturnType<typeof wrongDocument> = {};
-  if (action === "hold" && cause === "wrong_document" && row.lineage_ref != null) {
+  // A correction version keeps the pipeline's lineage, so its value's document is the current
+  // correction's cited one.
+  if (action === "hold" && cause === "wrong_document") {
     const [doc] = await tx<Array<{ id: number | string; document_url: string | null }>>`
       SELECT sd.id, sd.document_url
-        FROM verified_fee_observations fv
-        JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
-        JOIN source_documents sd ON sd.id = fr.source_document_id
-       WHERE fv.fee_verified_id = ${row.lineage_ref}
+        FROM source_documents sd
+       WHERE sd.id = COALESCE(
+               (SELECT cur.source_document_id FROM published_fee_corrections cur
+                 WHERE cur.fee_published_id = ${row.fee_published_id} AND cur.status = 'current' LIMIT 1),
+               (SELECT fr.source_document_id FROM verified_fee_observations fv
+                  JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+                 WHERE fv.fee_verified_id = ${row.lineage_ref}))
     `;
     if (doc) wrong = wrongDocument(doc.id, doc.document_url);
   }
