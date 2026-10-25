@@ -448,8 +448,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — Sign out on the account page and admin used Server Actions that a redeploy breaks. — [finding](findings/2026-10-09-sign-out-server-action.md) — Guard: `src/app/api/auth/logout/route.test.ts:30`
 - 2026-10-09 — A refunded report kept its paid status and its private link. — [finding](findings/2026-10-09-report-refund-not-handled.md) — Guard: `src/lib/stripe-webhook.test.ts` (+1 more)
 
-### Hamilton workspace (16)
+### Hamilton workspace (17)
 
+- 2026-10-25 — Before changing a check, record what it does today on cases built to break it and mark the ones it gets wrong (10 of 25 for Hamilton's answer checks). — [finding](findings/2026-10-25-claim-golden-set.md) — Guard: `src/lib/hamilton/claim-golden-set.test.ts` (recorded outcomes, held-out check)
 - 2026-10-25 — Reuse a saved answer through its sentence binding and evidence verdict, never as its raw prose. — [finding](findings/2026-10-25-saved-answer-binding-in-reports.md) — Guard: `src/lib/hamilton/report-actions.test.ts`
 - 2026-10-25 — The data a figure check traces figures to holds only what the server read itself; a reader's note or earlier model prose goes to the model as context, never into that data. — [finding](findings/2026-10-25-hamilton-question-trace.md) — Guard: `src/lib/hamilton/report-actions.test.ts` (reader findings stay out of DATA)
 - 2026-10-19 — Saved simulations could borrow another institution's context. — [finding](findings/2026-10-19-hamilton-saved-scenario-identity.md) — Guard: `src/app/pro/(hamilton)/simulate/page.test.tsx` (+2 more)
