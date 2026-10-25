@@ -131,6 +131,17 @@ describe("bindNarrative (#981, H06-T06)", () => {
     ]);
   });
 
+  it("a superseded record: a later-dated record of the same fee replaces it, so it binds only under its own year (V5 T5)", () => {
+    const old = fee(8, A, 15, "2024-06-30");
+    const evidence = bundle([A10, old], []);
+    const outcome = (text: string) => bindNarrative({ text, evidence, names });
+    expect(outcome("Bank A charges $15.").omitted).toEqual([{ text: "Bank A charges $15.", reason: "wrong_period" }]);
+    expect(outcome("In 2026 Bank A charges $15.").omitted).toEqual([{ text: "In 2026 Bank A charges $15.", reason: "wrong_period" }]);
+    expect(outcome("In 2024 Bank A charged $15.").supported).toEqual([{ text: "In 2024 Bank A charged $15.", factIds: [old.id] }]);
+    expect(outcome("Bank A charges $10.").supported).toEqual([{ text: "Bank A charges $10.", factIds: [A10.id] }]);
+    expect(outcome("Bank A charges $10.").limitations.some((line) => line.startsWith("Sources disagree"))).toBe(false);
+  });
+
   it("conflicting sources: neither value is stated as fact, and the limit names both", () => {
     const second = fee(8, A, 15, "2026-06-30");
     const result = bindNarrative({ text: "Bank A charges $15.", evidence: bundle([A10, second], []), names });

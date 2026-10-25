@@ -284,6 +284,52 @@ fees found (54.7%); 56 of the 59 wrong reads are the right price under another c
 
 ## Rules versions (`extract.rules`)
 
+v117 (Oct 25, #1947): a read filed as the account's monthly maintenance fee whose own line prices it
+as the paper statement charge is the paper statement fee, named "Paper statement fee" unless its name
+already says so (`paperStatementRead` in `rules.ts`, reading the line with `paperStatementPriceOnLine`
+in `src/lib/paper-statement-price.ts`, the matcher category guard v92 uses). The words right after the
+price name a paper statement fee or a charge per or for each paper statement ("Service charge | $3.00
+paper statement fee each statement cycle", "$3.50 charge for each original paper statement", "$5 per
+paper statement", "$1.00 per month (paper statement)"), charge it only for receiving paper ("*A monthly
+fee of $3 applies if you choose to receive paper statements", "may be charged to accounts receiving a
+paper statement"), or the label right before it is a paper statement fee's ("Paper (mailed) Statement
+Fee **** | $2.00 Monthly Fee"). The account's own price for paper holders beside an electronic price
+("$4 for paper statement or $3 for estatement", "$7 with paper statement; $5 with electronic
+statement", "w/Paper Statement") stays maintenance: "with" and a bare "for" never count. Oct 25 dry run:
+19 live maintenance fees match (14 beside a live paper statement fee at the same price), each borne
+out by its bank's stored text.
+
+v116 (Oct 25, #1908, #1905): the price rows of a prepaid, payroll, gift or travel card section of a
+general schedule are the card program's, not the account's, so they are left out of the text before
+any specialist reads it (`withoutCardProgramSections` in `src/lib/custom-report/card-program-section.ts`,
+shared with Darwin's `card-program-section-check.ts`). A row is in such a section when the first
+non-row line above it, within 20 non-empty lines, is a card program heading: short, no "|", not
+bulleted, names a prepaid, payroll, gift or travel card, names no debit card, deposit account, credit
+card or business, holds no row value ("varies", "see", "free", "no") and does not end in a singular
+fee word; a bare price under it (a stacked label) or a priced card row above it (a wrapped row)
+makes it no heading. A row that names an account or a deposit service (dormant account, wire,
+collection, closure, stop payment, overdraft, check, share, draft, payment, package, perks, loan...)
+stays, and so does a card's purchase, issue or reload row, a row naming the card itself, or a row
+labelled only by audience, unit or purchase ("Members | $3", "Per card $2.50", "Initial: $12.00").
+On the latest copies of the documents behind live fees it leaves out only card program rows
+(regression fixtures from 11 review documents in `__fixtures__/card-program-section-docs.ts`). Navy Federal's "Lost/Stolen Card" $5 and GO Prepaid ATM $1 rows were read as
+the account's on every re-read (#1905). Removes reads only; the stale-read floor stays at v97 and
+name re-tidy at v27.
+
+v115 (Oct 25, #1905): an ATM network table (one column per network, priced row by row) is read by
+its columns (`networkColumnReads` in `src/lib/custom-report/network-column-rows.ts`, shared with the
+source check). Each machine-use row (withdrawal, transfer, inquiry, balance) is read at the price
+that opens the one non-network column ("Non-Navy Federal/Non-CO-OP Network ATM", "Non-Owned ATM")
+and named by the row and that column; the table's rows are blanked for every other reader, so no
+row takes another column's price (Navy Federal's "Credit card cash advance" at the CO-OP column's
+$0.50, its "Returned Check Deposits" from the CO-OP cell). A credit card's cash advance, a rejected
+or invalid attempt and a purchase give no read. Also, a late charge's cap or floor ("maximum late
+charge of", "Minimum Late Fee") is no late fee (`namesLateChargeBound`, `src/lib/late-charge-bound.ts`;
+Darwin's `late-charge-bound-check.ts` re-checks live ones and takes them down). On Oct 25 network
+headers matched only Navy Federal (docs 15428, 26712, 39026) and R-G FCU (15582, 35833); 4 live
+fees are re-read under new names or not at all, each still traced by the source check, so none comes
+down. The stale-read floor stays at v97.
+
 v114 (Oct 25): a sentence's priced noun phrase, "a/an <X> fee of $N", names and files the price
 (`pricedNounPhrase` in `rules.ts`, reusing `FEE_OF_SENTENCE`). Reliance State Bank's "... to cover
 overdrafts an NSF fee of $30.00 per item may also apply" (live fee 140283) is the NSF fee, named "NSF
@@ -302,20 +348,6 @@ combined "NSF/Overdraft Fee" stays overdraft (v16, v82). Oct 25 dry run over 972
 take the phrase's name (30 differ from the live name), none changes category; with the glyph
 repaired, only Reliance moves, overdraft to nsf, its live category. The stale-read floor stays at v97
 and name re-tidy at v27.
-
-v115 (Oct 25, #1905): an ATM network table (one column per network, priced row by row) is read by
-its columns (`networkColumnReads` in `src/lib/custom-report/network-column-rows.ts`, shared with the
-source check). Each machine-use row (withdrawal, transfer, inquiry, balance) is read at the price
-that opens the one non-network column ("Non-Navy Federal/Non-CO-OP Network ATM", "Non-Owned ATM")
-and named by the row and that column; the table's rows are blanked for every other reader, so no
-row takes another column's price (Navy Federal's "Credit card cash advance" at the CO-OP column's
-$0.50, its "Returned Check Deposits" from the CO-OP cell). A credit card's cash advance, a rejected
-or invalid attempt and a purchase give no read. Also, a late charge's cap or floor ("maximum late
-charge of", "Minimum Late Fee") is no late fee (`namesLateChargeBound`, `src/lib/late-charge-bound.ts`;
-Darwin's `late-charge-bound-check.ts` re-checks live ones and takes them down). On Oct 25 network
-headers matched only Navy Federal (docs 15428, 26712, 39026) and R-G FCU (15582, 35833); 4 live
-fees are re-read under new names or not at all, each still traced by the source check, so none comes
-down. The stale-read floor stays at v97.
 
 v112 (Oct 25, #1877): a credit union's "Draft Protection Fee" (share-draft wording) is filed as
 the overdraft fee (`DRAFT_PROTECTION_FEE` in `fee-fold.ts`, shared with guard v89). Abbey FCU's "Draft Protection Fee (Paid) per presentment * $30.00" and Members
@@ -2096,7 +2128,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v115 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v117 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v10 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

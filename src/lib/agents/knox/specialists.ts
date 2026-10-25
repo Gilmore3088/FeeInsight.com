@@ -28,6 +28,7 @@ import { contextFees, NO_LONGER_CHARGED } from "@/lib/agents/knox/context-names"
 import { frequencyFromLine, settledFrequency } from "@/lib/fee-frequency";
 import { withoutFeeBullets } from "@/lib/custom-report/fee-bullets";
 import { exclusiveStackedPrices, stackedFeePrices } from "@/lib/custom-report/stacked-fee-prices";
+import { withoutCardProgramSections } from "@/lib/custom-report/card-program-section";
 import { monthlyAccountOwnerReview } from "./monthly-account-owners";
 import { withOwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
 import { withTierColumnRows } from "./tier-columns";
@@ -327,7 +328,24 @@ import { namesLateChargeBound } from "@/lib/late-charge-bound";
 // "Minimum Late Fee $10" beside "5% of Payment Amount") is no late fee (`namesLateChargeBound`):
 // Darwin's late charge bound re-check (switch on) takes down the 5 live ones. The stale-read floor stays at
 // v97. Name re-tidy stays at v27.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 115 } as const;
+// v116 (#1908, #1905): the price rows of a prepaid, payroll, gift or travel card section of a
+// general schedule are the card program's, not the account's, so they are left out of the text
+// before any specialist reads it (`withoutCardProgramSections`, shared with Darwin's live re-check
+// `darwin/card-program-section-check.ts`). Navy Federal's "Prepaid and Gift Cards" / "GO Prepaid
+// Cards" rows ("Lost/Stolen Card" $5, "Visa/PLUS Network ATM ... cash withdrawal" $1) were read as the
+// account's card replacement and ATM fees on every re-read and taken down by hand three times. A
+// card's purchase, issue or reload row stays, and so does a price labelled only by audience, unit
+// or purchase ("Members | $3"). Removes reads only. The stale-read floor stays at v97.
+// Name re-tidy stays at v27.
+// v117 (#1947): a read filed as monthly maintenance whose own line prices it as the paper statement
+// charge (`paperStatementRead` in rules.ts, `paperStatementPriceOnLine`, shared with category guard
+// v92) is the paper statement fee: "Service charge | $3.00 paper statement fee each statement cycle",
+// "A $2 paper statement fee applies", "*A monthly fee of $3 applies if you choose to receive paper
+// statements", "Paper (mailed) Statement Fee **** | $2.00 Monthly Fee". The account's own price for
+// paper holders beside an electronic price ("$4 for paper statement or $3 for estatement", "$7 with
+// paper statement") stays maintenance. Oct 25 dry run: 19 live maintenance fees match, each checked on
+// its bank's stored text. The stale-read floor stays at v97. Name re-tidy stays at v27.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 117 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -528,7 +546,8 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
   // The self-check traces every read on the text before that split (`checkText`), so a split read
   // must be supported by the stored row itself: "Courtesy Pay $20 $30 ..." at $30 is held untraced.
   // v106: "$03" is a $0 price with its footnote glued on (`withGluedFootnotePrices`, #1946).
-  const checkText = withSidewaysBoxTable(withBoxSizeCellsSplit(withoutBusinessOnlyFees(joinLabeledFeeCardText(withGluedFootnotePrices(sourceText)))));
+  // v116: a card program section's price rows are no specialist's to read (`withoutCardProgramSections`).
+  const checkText = withSidewaysBoxTable(withBoxSizeCellsSplit(withoutBusinessOnlyFees(joinLabeledFeeCardText(withGluedFootnotePrices(withoutCardProgramSections(sourceText))))));
   // v115 (#1905): an ATM network table's rows are read only by their non-network column
   // (`withNetworkColumnFees`); no other reader sees them, so none takes another column's price.
   const text = withoutNetworkTableRows(withTierColumnRows(checkText));

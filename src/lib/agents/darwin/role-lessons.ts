@@ -336,4 +336,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-1908-card-program-section-recheck",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "Re-check live fees against the section they were printed in, not only the document's address: a fee on the bank's own fee schedule can still be a prepaid, payroll, gift or travel card's fee when it sits under that card's heading. Take one down only when every line that prints its name at its price sits in such a section, keep the card's purchase and reload prices, and read the stored text with the same shared rule the extractor uses (card-program-section.ts), so a re-read cannot bring the fee back and the re-check cannot disagree with the reader.",
+    why: "Navy Federal's GO Prepaid and Visa Gift Card rows came back live after each re-read of its fees page and needed three hand takedowns (#1905); the address-only card_program_document re-check could not see a section inside a general schedule.",
+    evidence: { issues: [1908, 1905], prs: [], files: ["src/lib/agents/darwin/card-program-section-check.ts", "src/lib/custom-report/card-program-section.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];

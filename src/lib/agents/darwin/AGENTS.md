@@ -1073,7 +1073,8 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   `card_program_document`, `card_program_documents`, `card_program_institutions`,
   `kept_card_purchase`, `card_program_switch_live` and `samples_card_program_document`. Magellan's
   companion filter skips these documents too. A card program's section inside one fee page (Navy
-  Federal's "GO Prepaid Cards", #1905) has no address of its own and is not caught here.
+  Federal's "GO Prepaid Cards", #1905) has no address of its own and is not caught here; the
+  card program section re-check below reads it.
 - Spanish copies of an English schedule (`translated-copy-check.ts`, #1909, James's live-fee check
   Oct 18). M&T publishes its checking fee guide in English and Spanish, both were read, and "Cargo
   por sobregiro" $15 sat beside "Overdraft Fee" $15. A live fee comes down only when its document's
@@ -1187,6 +1188,24 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   `late_charge_bound: <name>` (verified row rejected with the `late_charge_bound` flag). Step
   detail `late_charge_bound_check`. Dry run Oct 25: 5 live fees at 3 institutions (15729, 154636,
   154637 at 4956; 79880 at 5338; 124614 at 6789).
+- Card program sections of a general schedule (`card-program-section-check.ts`, #1908, #1905). Navy
+  Federal's fees page prints "Prepaid and Gift Cards" / "GO Prepaid Cards" sections after its deposit
+  fees, and their "Lost/Stolen Card" $5 and Visa/PLUS ATM $1 rows went live as the account's fees on
+  every re-read (three hand takedowns). A live dollar fee comes down when every line of its document's
+  latest stored text that prints its name at its price sits in such a section (`cardProgramSectionFee`
+  in `src/lib/custom-report/card-program-section.ts`, the same rule Knox v116 applies before reading),
+  except the card's purchase and reload prices (`CARD_PROGRAM_KEEP_KEYS`). Only documents whose text
+  names a card program (`CARD_PROGRAM_TEXT_SQL`, a plain alternation) are read, at most hourly, newest
+  text first, at most 2,000 documents (the step detail says `truncated` when it hits the limit; the
+  read took about 6 s for all 1,985 such documents on Oct 25); an institution-scoped run always reads
+  and does not restart the clock. The switch is the code constant
+  `CARD_PROGRAM_SECTION_TAKEDOWN_LIVE`, on since 2026-10-25 with James's yes (all 12 dry-run fees were
+  read against the bank text and are the card's); on, a match goes through the 12-hour second look
+  (`darwin.card_program_section`) and is archived with `card_program_section: #<doc>` (batch
+  `darwin-card-program-section-<run>`, verified row rejected with the `card_program_section` flag;
+  event `darwin.card_program_section_takedown`). Step detail `card_program_section_check`. Dry run
+  (prod, read-only, Oct 25, `cardProgramSectionFeesSql`): 12 live fees on 9 documents at 9
+  institutions; 35 purchase or reload prices in such sections stay.
 - One printed line, two reads (`line-conflict-check.ts`, #1440). James's catalog review (Oct 15)
   found live fees sharing institution, name, amount and source address under two categories (1st
   Summit's "Prepaid Card" $5 as document reproduction and gift card purchase) or one category with
@@ -1647,11 +1666,22 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v91 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v91 (Oct 25, #1905):
+- The guard is at v92 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v91 (Oct 25, #1905):
   the network ATM rule's savings/share-withdrawal exclusion no longer refuses a share withdrawal
   priced at another network's ATM ("Share withdrawal at Non-Navy Federal/Non-CO-OP Network ATM",
   Knox v115's network table read); the savings withdrawal limit stays out. Dry run: 0 live and 0
   raw rows carry the wording.
+- v92 (Oct 25, #1947): a
+  monthly maintenance fee whose own source line prices it as the paper statement charge
+  (`paperStatementPriceOnLine` in `src/lib/paper-statement-price.ts`, shared with Knox v117: "Service
+  charge | $3.00 paper statement fee each statement cycle", "A $2 paper statement fee applies", "*A
+  monthly fee of $3 applies if you choose to receive paper statements", TD's "Paper statements: $3
+  monthly fee") fails monthly maintenance and re-files to paper_statement, here in verify and on
+  Hamilton's live guard; paper_statement admits its generic name on that line. The account's own price
+  for paper holders beside an electronic price ("$4 for paper statement or $3 for estatement", "$7 with
+  paper statement") stays. Read-only dry run (Oct 25): 19 live fees fail; 5 move in place (95610,
+  126632, 128394, 128395, 138716), 14 sit beside a live paper statement fee at the same price and go to
+  the second look; 1 earlier takedown (14316) can come back as a paper statement fee.
 - v90 (Oct 25, #1912): a plain
   return charge ("Returned Check Fee", "Return Items") its stored text prints under a foreign check or
   collection heading (`withCollectionSection` / `collectionSectionReturn`: U.S. Bank 75929 under "Foreign
@@ -1985,6 +2015,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `PRODUCT_PAGE_REPEAT_CHECK_VERSION` | `darwin.product_page_repeat` | v2 | `darwin/product-page-repeat-check.ts` |
 | `CANADIAN_DOCUMENT_CHECK_VERSION` | `darwin.canadian_document` | v1 | `darwin/canadian-document-check.ts` |
 | `LATE_CHARGE_BOUND_CHECK_VERSION` | `darwin.late_charge_bound` | v1 | `darwin/late-charge-bound-check.ts` |
+| `CARD_PROGRAM_SECTION_CHECK_VERSION` | `darwin.card_program_section` | v1 | `darwin/card-program-section-check.ts` |
 | `DOCUMENT_OWNER_STRATEGY` | `verify.document_owner` | v1 | `darwin/document-owner.ts` |
 | `DARWIN_VERIFY_STRATEGY` | `verify.rules` | v3 | `darwin/verify.ts` |
 | `DARWIN_SOURCE_CHECK_VERSION` | — | v3 | `darwin/verify.ts` |

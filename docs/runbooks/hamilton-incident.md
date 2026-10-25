@@ -68,6 +68,58 @@ James is the only person who emails customers. A session never sends customer em
 
 Every number in the notice needs a source, as on the site. If the start time is not known, say so.
 
+## Spend caps, faults and report runs (V5 O1)
+
+Every Hamilton request that makes paid model calls runs as one task
+(`src/lib/hamilton/task-budget.ts`). Before each call, after the `global` provider stop, the
+credit circuit and the `api_budget_policies` caps (all unchanged), it checks:
+
+| Task | Calls | Tokens (in + out + cache write) | Cost |
+|---|---|---|---|
+| Ask (written answer, memo) | 6 | 400,000 | $2.00 |
+| Report | 16 | 400,000 | $4.00 |
+| Simulate | 3 | 60,000 | $0.50 |
+| Chat | 2 | 250,000 | $1.50 |
+| Briefing (no paid call yet) | 3 | 120,000 | $1.00 |
+| One reader, per UTC day, all tasks | 120 | 3,000,000 | $10.00 |
+
+The caps are code constants (no environment variable, no table row). They sit above the largest
+single calls in `ai_api_usage_events` for the 60 days to 2026-10-25 (written answer $0.67 and 148k
+tokens, report section $0.18 and 23k tokens, chat $0.39), and the reader's day sits below
+`agent:hamilton`'s $20 daily policy. A refused call writes a `blocked` row in
+`ai_api_usage_events` (metadata `budget_reason_code`, `hamilton_budget_scope`,
+`hamilton_budget_measure`) and, for a
+report, a `budget.blocked` event on its run. The reader sees a plain line ("Hamilton stopped this
+request because it reached the limit for a single request..." or "You've reached today's limit
+for Hamilton's written work..."). If the day's usage cannot be read, the call is refused.
+
+**Faults** (`src/lib/hamilton/task-faults.ts`): a provider error, a timeout or an unusable reply
+is retried once; a reply too large to read, a usage or billing limit, a budget cap, the provider
+stop and an unfinished reply are never retried. Each report section keeps its own fault. A section
+that still fails ends its run `failed`, with the fault kind on the step (`section.failed` event)
+and on the run.
+
+**Report runs** (`src/lib/hamilton/report-run.ts`): each Pro report is one `pro_request` run at
+stage `pro.report`, with a step per section and a save step. A finished section is saved on its
+step before the next starts; a request inside the lease (5.5 minutes, renewed at each section) is
+told the report is still being written. The report's id is fixed when the run opens, so a replay
+never saves a second copy, and the report row is written only after every section passed. A
+failed run's finished sections carry into a new run of the same request for an hour.
+
+If the request is killed (a deploy, a timeout, a closed tab), its run and its current step are
+left `running`. Once the lease lapses, `sweepInterruptedReportRuns` closes them without waiting for
+the reader: the step it was on is marked `failed` ("Interrupted: ..."), later steps `skipped`, and
+the run `failed` (`run.interrupted` event, `closed_by_sweep` in its params), or `completed` when
+the report had already been saved, in which case the next request for it gets that report back
+once. The sweep runs on every agents tick (the stale-step reaper), on every pipeline health read
+(`/api/admin/job-health`) and before every report opens, so an interrupted report never counts as
+a stale running step. If a checkpoint write fails mid-report, the report is still written and
+saved under the run's id, and the run is still closed (`checkpoints_degraded` in its detail).
+
+To check a stuck or failed report: in the admin run ledger, open the reader's `pro.report` run.
+Its steps show which section stopped and why; its events show `section.saved`, `section.failed`,
+`budget.blocked`, `run.interrupted`, `run.resumed`.
+
 ## Rolling back a Hamilton release (V5 T6)
 
 Pick the first step that contains the problem. Steps 1 and 2 change no data; none of them
@@ -98,6 +150,22 @@ deletes a saved answer, report, peer group or watch.
 4. **Data is never rolled back by a revert.** A wrong published fee is held on its admin row; a
    migration is undone only by a forward-fix migration with James's yes (CLAUDE.md, Migrations).
 
+### Switches and their proof
+
+| Switch | Off (unset) means | Proof |
+|---|---|---|
+| `global` provider stop (`/admin`) | Paid calls refused; deterministic answers keep working | `task-budget.test.ts`: the stop is checked first and no task check runs |
+| `HAMILTON_GATE_REPAIR` | No repair call; the first draft and its verdict stand | `rollback-rehearsal.test.ts`, `output-gate-repair.test.ts` |
+| `HAMILTON_REPORT_FINDING_READING` | A saved answer's reading is not printed in reports | `rollback-rehearsal.test.ts`, `report-actions.test.ts` |
+| `HAMILTON_MODEL` | The default model in `ai-provider.ts` | `rollback-rehearsal.test.ts` |
+
+Turning a switch off is a Vercel environment change plus a redeploy (James's call). The spend caps,
+fault handling and report runs (V5 O1) have no switch and no migration: roll them back with steps 1
+and 3 above.
+Code outside a task, or a report with no run ledger, behaves as before O1 (both tested in
+`rollback-rehearsal.test.ts`). Rehearsed by tests on 2026-10-25 (local, synthetic data) and on
+Vercel previews the same day (below).
+
 ### Rehearsal, 2026-10-25
 
 Run on a detached copy of `origin/main` at `41b41ade7`, unwinding the merged V5 PRs newest first
@@ -117,9 +185,30 @@ No unwind touched `supabase/migrations`; the unwound tree type-checks. So a bad 
 release (#2631, #2617, #2602) reverts cleanly, #2611 needs two hand edits, and the two filings
 reconcile PRs are rolled back by promoting a deployment, not by revert.
 
+### Preview rehearsal, 2026-10-25 20:29 to 20:35 UTC
+
+Nothing was promoted. The receipt is `/mnt/project-files/hamilton-v5/rollback-preview/receipts.md`,
+summarised on #1921 (issuecomment-6402906130).
+
+- **Step 1 target:** the rollback candidate `dpl_4ihEM6s3kRWCPjY8cPqSxBxiiHz8` (main `06ff84a4b`,
+  #2651) still serves at its own URL. `/api/health` returns 200 `ok`, and `/pro/analyze` returns the
+  sign-in page from that deployment.
+- **Step 3 build:** main before #2660 (`b896375d3`, the tree a revert of #2660 leaves) built as
+  preview `dpl_LyySkE79vrbj3Aqeexj2LmZg4r5z`, READY about 4.5 minutes after the build started.
+  `/api/health` returns 200 `ok`, and `/pro/reports` returns the sign-in page.
+- **Reverts on `fac4b3ec5` (local):** reverting #2660, #2659, #2658, #2656, #2654, #2652 and
+  #2651 newest first applies cleanly; #2650 conflicts only in `docs/project/LESSONS.md`. The unwound tree
+  type-checks, and no file under `supabase/` is touched.
+- **Before promoting, check the target is READY.** Six production builds of `main` in a row
+  (#2652, #2649, #2654, #2656, #2658, #2659) ended in ERROR, so production stayed on #2651 until
+  #2660 built. The #2659 build failed its type check on a database test's postgres handle type (fixed
+  in #2661, #2657); the deployment ids are in the receipt. A merge is live only when its production
+  deployment is READY.
+
 ## Not covered yet
 
-- The rehearsal above ran locally, not on a Vercel preview, and no deployment was promoted: a
-  promote changes production, which is James's call.
+- No deployment has been promoted: a promote changes production, which is James's call.
+- Signed-in Pro screens were not opened on the rehearsal previews, since that needs a Pro
+  account's password.
 - The health check runs once a day, with the brief. A more frequent check or a page would need a
   new cron entry, which is James's call.

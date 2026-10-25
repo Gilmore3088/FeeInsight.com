@@ -14,10 +14,18 @@ describe("board brief reuses frozen analysis", () => {
     const report = boardBriefFromAnalysis(frozen, "saved-original", edits);
     expect(report.identityContext).toEqual(frozen.identityContext);
     expect(report.boardBrief?.factEvidence).toEqual(frozen.factEvidence);
-    expect(report.exhibits?.[0].rows).toEqual(frozen.evidence.metrics.map(m => [m.label, m.value, m.note ?? ""]));
+    // #1899: the appendix keeps only the answer's figure lines that trace to a record saved with it.
+    expect(report.exhibits?.[0].rows).toEqual([["Your overdraft fee", "$32", "Your published fee schedule"]]);
     expect(report.executiveSummary).toEqual([frozen.hamiltonView]);
     expect(report.implementationNotes).toContain("Team note (user-authored): Discuss waivers with the team.");
     expect(report.sources?.every(s => s.detail.startsWith("As of "))).toBe(true);
+  });
+  it("drops a saved figure line no record supports from the evidence appendix (#1899)", () => {
+    const metrics = [...frozen.evidence.metrics, { label: "Peer median", value: "$41" }, { label: "Your overdraft fee", value: "$32 vs 41" }, { label: "Your overdraft fee", value: "USD 41 / $32" }];
+    const report = boardBriefFromAnalysis({ ...frozen, evidence: { ...frozen.evidence, metrics } }, "saved-original", edits);
+    const appendix = report.exhibits?.find(e => e.id === "statistical_appendix");
+    expect(appendix?.rows).toEqual([["Your overdraft fee", "$32", "Your published fee schedule"]]);
+    expect(JSON.stringify(appendix)).not.toContain("41");
   });
   it("edits team text without changing the original findings, sources or institution", () => {
     const report = boardBriefFromAnalysis(frozen, "saved-original", edits);
