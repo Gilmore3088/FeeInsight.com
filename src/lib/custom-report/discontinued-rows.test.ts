@@ -96,6 +96,101 @@ describe("discontinuedRow (#2070)", () => {
   });
 });
 
+// Trimmed copies of stored texts from the production dry run of the first cut (#2070).
+describe("production layouts (#2070 dry run)", () => {
+  it("never lets another column's legacy heading mark a two-column row (fee 134036)", () => {
+    const text = [
+      "Replacement of Card………………………………………... $10",
+      "ATM Networks non-AFCU, Non CO-OP Locations………. $2/ withdrawal | Retired Accounts (no longer available on new memberships) – Monthly Service Fees",
+      "Overdraft Fee/Non-Sufficient Funds (NSF) Fee………….. $29/ occurrence",
+      "Machine owner may charge additional transaction fees | $0.75/ inquiry | Premium Checking - waived with a $5,000+ daily balance or | $10.95/ month",
+    ].join("\n");
+    expect(discontinuedRow(text, "ATM Networks non-AFCU, Non CO-OP Locations", 2)).toBeNull();
+    expect(checkFeeAgainstSource(text, "ATM Networks non-AFCU, Non CO-OP Locations", 2, ".").ok).toBe(true);
+  });
+
+  it("never lets another column's note mark a row (fee 43281)", () => {
+    const text = [
+      "Annual Fee …………........…............................................. $15 | Small; zipper ……………..…..……….……..…………........…....……. $5",
+      "Applies only to certain accounts no longer offered | Cashier’s Check .......…….......….…..…….......Account Holder $5",
+      "CURRENCY SERVICES | Non-Account Holder $10",
+    ].join("\n");
+    expect(discontinuedRow(text, "Cashier’s Check Account Holder", 5)).toBeNull();
+  });
+
+  it("reads a row priced in cents as a row, never as a legacy heading (fee 97344)", () => {
+    const text = [
+      "ADDITIONAL BUSINESS ACCOUNT FEES",
+      "Checking Transactions",
+      "Select | 50 free per month 50¢ each additional",
+      "Advantage Plus | 300 free per month 30¢ each additional",
+      "Discontinued Accounts | 5¢ per check deposit with Business Checking & Interest Checking",
+      "Paper Statement | $4 Advantage & Advantage Plus Checking",
+    ].join("\n");
+    expect(discontinuedRow(text, "Paper Statement", 4)).toBeNull();
+  });
+
+  it("reads the product's own opening clause on a long sentence row (fee 55903)", () => {
+    const text = [
+      "CHECKING AND MONEY MARKET SAVINGS ACCOUNTS",
+      "",
+      "Rewards Checking PLUS (Account no longer offered; fees apply to existing grandfathered accounts.) – A $1,000 minimum daily balance or $1,000 minimum monthly direct deposit or electronic deposit is required to avoid a monthly minimum balance fee of $7. Minimum balance fee will be waived if a total of $1,000 in electronic deposits is made to your Rewards Checking PLUS during the month. Rewards Checking PLUS account holders can waive one NSF fee, overdraft fee, or minimum balance fee per calendar year.",
+      "",
+      "Advantages Money Market Savings™ (high-yield savings) – A $2,500 minimum daily balance is required to avoid a monthly minimum balance fee of $10.",
+    ].join("\n");
+    expect(discontinuedRow(text, "Monthly minimum balance fee", 7)).toMatchObject({ why: "row_marker" });
+    expect(discontinuedRow(text, "Monthly minimum balance fee", 10)).toBeNull();
+  });
+
+  it("never pairs a labelled row below with the name above it (fee 28896)", () => {
+    const text = [
+      "CHECKING ACCOUNT FEES",
+      "Courtesy Pay Fee | $35 per incident",
+      "Loss of One (1) Key | $25 | $25",
+      "Benefits Checking1 | $7 per month",
+      "",
+      "GRANDFATHERED ACCOUNTS AND FEES",
+      "Courtesy Pay Fee | $25 for Elevated Checking",
+      "Elevated Checking | $7 per month",
+    ].join("\n");
+    expect(discontinuedRow(text, "Courtesy Pay Fee", 25)).toMatchObject({ why: "legacy_section" });
+    expect(discontinuedRow(text, "Elevated Checking Monthly service charge", 7)).toMatchObject({ why: "legacy_section" });
+    expect(discontinuedRow(text, "Courtesy Pay Fee", 35)).toBeNull();
+  });
+
+  it("ends a legacy section at a notes block (fee 149341)", () => {
+    const text = [
+      "GRANDFATHERED CHECKING ACCOUNTS",
+      "(EXISTING ACCOUNTS ONLY; NO LONGER OFFERED",
+      "FOR NEW ACCOUNTS)",
+      "Basic Checking - 75",
+      "(monthly fee, if balance falls below $300.00) ................................. $4.00",
+      "PLEASE NOTE",
+      "1 Required notice under Unclaimed Property Law to members advising",
+      "5 The monthly fee will be waived for those who have been members",
+      "Kings Federal Credit Union",
+      "Wire Transfer, Outgoing Domestic ................................................ $20.00 | Federally Insured | NMLS #810650",
+    ].join("\n");
+    expect(discontinuedRow(text, "Wire Transfer, Outgoing Domestic", 20)).toBeNull();
+    // The heading wraps over three lines; its bracketed lines are read with it.
+    expect(discontinuedRow(text, "monthly fee", 4)).toMatchObject({ why: "legacy_section" });
+  });
+
+  it("reads bare decimal cells as rows, not headings, above a fee (fees 94354, 47559)", () => {
+    const text = [
+      "The following accounts are no longer offered but will continue to be served to",
+      "Monthly Activity Fees | Statements on CD: Image statements which include checks written and",
+      "Safe Deposit Boxes",
+      "Approximate Size | Annual fee",
+      "5” x 3” | 30.00",
+      "10” x 10” | 120.00",
+      "Drilling Safe Deposit Box:$300.00 Replacement of Lost Key: $25.00",
+    ].join("\n");
+    expect(discontinuedRow(text, "Drilling Safe Deposit Box", 300)).toBeNull();
+    expect(discontinuedRow(text, "Replacement of Lost Key", 25)).toBeNull();
+  });
+});
+
 describe("the shared check refuses a discontinued account's row (#2070)", () => {
   const text = "Fee Schedule\nStop Payment | $30.00\nMonthly Service Charge (80 Suffix) daily balance below $500 | $5.00 (this account no longer offered)\n\nLegacy Accounts\nGold Checking\nPaper Statement Fee | $4.00\nMonthly Fee | Balance under $1,500 | $10.00";
 

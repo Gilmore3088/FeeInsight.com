@@ -11,8 +11,9 @@
  * one giant line, so a whole-document match would be wrong. A fee's row is discontinued only when:
  *
  *   (a) the marker sits on the fee's own row: in the cell that names the fee or prints its price (a
- *       footnote cell of another column, "| 10. Account type no longer offered.", is not the row's),
- *       and on a long line only in the sentence by the fee's name or just after its price; or
+ *       footnote cell or another column's heading or note beside it, "| 10. Account type no longer
+ *       offered.", "$2/ withdrawal | Retired Accounts (...)", is not the row's), and on a long line only
+ *       in the sentence that prices the fee or just after its price; or
  *   (b) the row sits under a short heading line (no price) that names a legacy section ("Legacy
  *       Accounts", "Discontinued Accounts", "Grandfathered Checking Account Types:", "Accounts No
  *       Longer Offered") until a blank line or the next section heading, or under a product heading
@@ -53,10 +54,16 @@ const LEGACY_SECTION = /^(?:legacy|discontinued|retired|grandfathered)\b[^$]{0,4
 /** A section heading that carries the marker itself: "Accounts No Longer Offered", "Previously Offered Products". */
 const MARKED_SECTION = /^(?:the following\s+)?(?:(?:checking|savings|deposit|personal)\s+)?(?:accounts|account types|products|previously offered)\b/i;
 /** A heading that opens another section, which ends a legacy section above it. */
-const SECTION_WORDS = /\b(?:fees|charges|services|schedule|accounts|account types|products|miscellaneous|other|general)\b/i;
+// A notes block ("PLEASE NOTE", "Disclosures:") closes the section above it too.
+const SECTION_WORDS = /\b(?:fees|charges|services|schedule|accounts|account types|products|miscellaneous|other|general|notes?|disclosures?|footnotes?)\b/i;
 /** A footnote or note opening a cell or line ("10. Account type ...", "* This account ...", "(2) ..."). */
-const FOOTNOTE_START = /^\s*(?:\d{1,2}[.)]\s|\(\d{1,2}\)|[*†‡§¹²³⁴⁵⁶⁷⁸⁹]|notes?\b|footnote)/i;
+const FOOTNOTE_MARK = /^\s*(?:\d{1,2}[.)]\s|\(\d{1,2}\)|[*†‡§¹²³⁴⁵⁶⁷⁸⁹]|notes?\b|footnote)/i;
+/** A numbered footnote without a point: "1 Required notice under ...", "5 The monthly fee ...". */
+const FOOTNOTE_NUMBER = /^\s*\d{1,2}\s+[A-Z][a-z]/;
+const footnoteStart = (text: string): boolean => FOOTNOTE_MARK.test(text) || FOOTNOTE_NUMBER.test(text);
 const MONEY = /\$\s*(\d{1,3}(?:,\d{3})+|\d+)?(?:\.(\d{1,2}))?(?![\d,])/g;
+/** Any price, for telling a heading from a row: "$5", "5¢", "40¢ per strap", or a bare "30.00" cell. */
+const ANY_PRICE = /\$\s*\.?\d|\d\s*¢|(?<![\d.,])\d{1,3}(?:,\d{3})*\.\d{2}(?![\d])/;
 const FREE = /\b(?:free|no charge|no fee|n\/c|none|waived)\b/gi;
 const STOP_WORDS = new Set(["fee", "fees", "charge", "charges", "the", "and", "for", "per", "each", "with", "from", "item", "items"]);
 /** A line longer than this is read near the fee only, never whole. */
@@ -64,6 +71,8 @@ const LONG_LINE = 300;
 /** On a long line, how far before the price the fee's name may sit. */
 const NAME_WINDOW = 200;
 const HEADING_MAX = 120;
+/** How far before the price the sentence that prices the fee may begin. */
+const SENTENCE_LEAD = 400;
 /** A word every marker and legacy heading holds. */
 const ANY_MARKER_WORD = /no longer|previously offered|closed to new|grandfathered|legacy|discontinued|retired/i;
 const LOOKBACK_LINES = 60;
@@ -103,8 +112,16 @@ function amountAt(line: string, amount: number): number[] {
 }
 
 function hasPrice(line: string): boolean {
-  return [...line.matchAll(MONEY)].some((match) => match[1] != null || match[2] != null);
+  return ANY_PRICE.test(line);
 }
+
+/** The count of dollar prices on a line. */
+function dollarPrices(line: string): number {
+  return [...line.matchAll(MONEY)].filter((match) => match[1] != null || match[2] != null).length;
+}
+
+/** A line that opens with its price ("$50.00", "Free", "- $5 each"), not with a label of its own. */
+const PRICE_FIRST = /^\s*[-–:•*~]?\s*(?:\$|\d|free\b|no charge|no fee|n\/c|none\b|waived|per\b|each\b)/i;
 
 /** The " | " cells of a text, each with its start offset. */
 function cells(text: string): Array<{ text: string; start: number }> {
@@ -137,7 +154,7 @@ function nameAnchor(text: string, words: string[]): number {
 
 /** A short cell is read whole; a longer one only in the sentence by the fee's name or price. */
 function cellMarked(cell: string, words: string[], amount: number): boolean {
-  if (FOOTNOTE_START.test(cell)) return false;
+  if (footnoteStart(cell)) return false;
   if (cell.trim().length <= HEADING_MAX) return hasDiscontinuedMarker(cell);
   const anchors = [...amountAt(cell, amount), nameAnchor(cell, words)].filter((at) => at >= 0);
   return anchors.some((at) => hasDiscontinuedMarker(sentenceAround(cell, at)));
@@ -154,14 +171,24 @@ const AFTER_PRICE = /^\$?\s*[\d,]*(?:\.\d{1,2})?\s*(?:(?:per|each|a|\/)\s*[a-z]+
  */
 function rowMarked(line: string, at: number, words: string[], amount: number): boolean {
   const parts = cells(line);
-  if (line.length <= LONG_LINE && [...line.matchAll(MONEY)].filter((match) => match[1] != null || match[2] != null).length <= 1) {
-    return parts.some((cell) => (hasAnyNameWord(cell.text, words) || amountAt(cell.text, amount).length > 0 || parts.length <= 3) && cellMarked(cell.text, words, amount));
+  if (line.length <= LONG_LINE && dollarPrices(line) <= 1) {
+    // Another column's heading or note beside the row ("$2/ withdrawal | Retired Accounts (...) –
+    // Monthly Service Fees", "Applies only to certain accounts no longer offered | Cashier's Check $5")
+    // is not the row's: only a cell that prints the amount or names the fee speaks for it.
+    return parts.some((cell) => (amountAt(cell.text, amount).length > 0 || namesFee(cell.text, words)) && cellMarked(cell.text, words, amount));
   }
   const index = parts.findIndex((cell, i) => at >= cell.start && (i === parts.length - 1 || at < parts[i + 1].start));
   const priceCell = parts[index];
   const offset = at - priceCell.start;
   const after = priceCell.text.slice(offset).match(AFTER_PRICE);
   if (after && hasDiscontinuedMarker(after[1] ?? after[2] ?? "")) return true;
+  // The sentence that prices the fee, from its start up to the price, when it names the fee: "Rewards
+  // Checking PLUS (Account no longer offered; ...) – A $1,000 minimum daily balance ... is required to
+  // avoid a monthly minimum balance fee of $7."
+  const sentence = sentenceAround(priceCell.text, offset);
+  const sentenceStart = priceCell.text.indexOf(sentence);
+  const lead = sentenceStart >= 0 && sentenceStart <= offset ? priceCell.text.slice(sentenceStart, offset) : "";
+  if (lead.length <= SENTENCE_LEAD && !footnoteStart(lead) && namesFee(lead, words) && hasDiscontinuedMarker(lead)) return true;
   const sincePrice = (text: string) => {
     const prices = [...text.matchAll(MONEY)].filter((match) => match[1] != null || match[2] != null);
     const last = prices.pop();
@@ -169,25 +196,41 @@ function rowMarked(line: string, at: number, words: string[], amount: number): b
   };
   const own = sincePrice(priceCell.text.slice(0, offset));
   const nameText = hasAnyNameWord(own, words) ? own : sincePrice(parts[index - 1]?.text ?? "");
-  if (!nameText || FOOTNOTE_START.test(nameText) || !hasAnyNameWord(nameText, words)) return false;
+  if (!nameText || footnoteStart(nameText) || !hasAnyNameWord(nameText, words)) return false;
   return hasDiscontinuedMarker(sentenceAround(nameText, Math.max(0, nameAnchor(nameText, words))));
 }
 
 function headingLine(line: string): boolean {
   const trimmed = line.trim();
-  return trimmed.length > 0 && trimmed.length <= HEADING_MAX && !hasPrice(trimmed) && !FOOTNOTE_START.test(trimmed) && !/\.\s*$/.test(trimmed);
+  return trimmed.length > 0 && trimmed.length <= HEADING_MAX && !hasPrice(trimmed) && !footnoteStart(trimmed) && !/\.\s*$/.test(trimmed);
+}
+
+/** Opening brackets less closing ones. */
+function parenBalance(text: string): number {
+  return (text.match(/\(/g) ?? []).length - (text.match(/\)/g) ?? []).length;
+}
+
+/** A legacy heading is a line of its own: "Discontinued Accounts | 5¢ per check deposit ..." is a row. */
+function singleCell(line: string): boolean {
+  return !line.includes("|");
 }
 
 /** (b) the nearest heading above the row opens a legacy section, or is a product heading carrying the marker. */
 function legacyHeadingAbove(lines: string[], rowIndex: number): string | null {
   let passedHeading = false;
   for (let j = rowIndex - 1; j >= 0 && j >= rowIndex - LOOKBACK_LINES; j -= 1) {
-    const line = lines[j].trim();
+    let line = lines[j].trim();
     if (line === "") return null;
     if (!headingLine(line)) continue;
+    // A heading wrapped over lines, or annotated in brackets under it ("GRANDFATHERED CHECKING
+    // ACCOUNTS" / "(EXISTING ACCOUNTS ONLY; NO LONGER OFFERED" / "FOR NEW ACCOUNTS)"), is one heading.
+    while (j > 0 && (parenBalance(line) < 0 || line.startsWith("(")) && headingLine(lines[j - 1])) {
+      j -= 1;
+      line = `${lines[j].trim()} ${line}`;
+    }
     const title = line.replace(/^[#\s]+/, "").replace(/:$/, "");
-    if (LEGACY_SECTION.test(title) || (MARKED_SECTION.test(title) && hasDiscontinuedMarker(title))) return line;
-    if (!passedHeading && hasDiscontinuedMarker(title)) return line;
+    if (singleCell(title) && (LEGACY_SECTION.test(title) || (MARKED_SECTION.test(title) && hasDiscontinuedMarker(title)))) return line;
+    if (!passedHeading && singleCell(title) && hasDiscontinuedMarker(title)) return line;
     if (SECTION_WORDS.test(title)) return null;
     passedHeading = true;
   }
@@ -211,7 +254,8 @@ export function discontinuedRow(text: string | null | undefined, feeName: string
     if (prices.length === 0) continue;
     if (line.length <= LONG_LINE) {
       // A price printed under its name ("Overnight Courier Service" / "$50.00") is that name's row.
-      const below = !namesFee(line, words) && i > 0 && line.trim().length <= 60 && namesFee(lines[i - 1], words);
+      // A line below with its own label ("Loss of One (1) Key | $25 | $25") is its own row, not the price of the line above.
+      const below = !namesFee(line, words) && i > 0 && line.trim().length <= 60 && PRICE_FIRST.test(line) && namesFee(lines[i - 1], words);
       if (!below && !namesFee(line, words)) continue;
       const row = below ? `${lines[i - 1]} | ${line}` : line;
       const rowStart = below ? i - 1 : i;
