@@ -57,12 +57,16 @@ describe("persona golden set (T5, #982, #1726)", () => {
       expect(`${name} checked the fee.`, name).toMatch(PIPELINE_TERMS);
     }
     // Deming and Bayes only as a system: a town, an institution and a rule of probability pass.
-    for (const text of ["Deming reconciled the filings.", "The Deming audit flagged it.", "Bayes replay counted it.", "The Bayes ledger shows it.", "Deming checked it.", "Deming verified it.", "Deming found it.", "Deming reviewed it.", "Deming held it.", "Deming's audit shows it.", "Deming's daily replay counted it.", "According to Deming, it holds.", "The fee holds, according to Deming."]) {
+    for (const text of ["Deming reconciled the filings.", "The Deming audit flagged it.", "Bayes replay counted it.", "The Bayes ledger shows it.", "Deming checked it.", "Deming verified it.", "Deming found it.", "Deming reviewed it.", "Deming held it.", "Deming's audit shows it.", "Deming's daily replay counted it.", "According to Deming, it holds.", "The fee holds, according to Deming.",
+      "Deming checked the fee.", "Deming's review shows it.", "According to Deming, the fee is live.", "Bayes found it.", "Deming says the fee is live.", "Deming confirmed it.", "Deming's numbers show it."]) {
       expect(text, text).toMatch(PIPELINE_TERMS);
     }
     for (const text of ["Deming Schools Employees Federal Credit Union charges $25.", "Its branch in Deming, NM charges $30.",
       "By Bayes' rule the estimate holds.", "A Bayesian reading of the fee.",
-      "Deming's branch charges $30.", "Deming's check shows it.", "According to Deming Schools Employees FCU, the fee is $25.", "According to Deming, NM records, the fee is $25.", "A Deming check for $30 bounced."]) {
+      "Deming's branch charges $30.", "Deming's check shows it.", "According to Deming Schools Employees FCU, the fee is $25.", "According to Deming, NM records, the fee is $25.", "A Deming check for $30 bounced.",
+      // Deming the town (fourth review): a place word before or after it.
+      "Its branches in Deming held $120 million in deposits.", "Banks in Deming recorded deposit growth.", "The bank of Deming found new customers.",
+      "Deming's deposit records show $40 million.", "Deming's two branch records show the same fee.", "Deming County banks reviewed the fee."]) {
       expect(text, text).not.toMatch(PIPELINE_TERMS);
     }
   });

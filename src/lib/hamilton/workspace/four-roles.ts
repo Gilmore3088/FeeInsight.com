@@ -68,12 +68,17 @@ export function findUnrequestedAdvice(text: string): RegExpMatchArray | null {
  * ("Deming's audit", "Deming's daily replay"), or as a source that ends the phrase ("according to
  * Deming, ..."). A bare "check" is a bank check, so "A Deming check for $30 bounced", "Deming's branch
  * charges $30", "According to Deming Schools Employees FCU, ...", "Bayes' rule" and "Deming, NM" pass.
+ * Deming the town is never the system: a place word before it ("in Deming", "the bank of Deming") or
+ * after it ("Deming County", "Deming branches") skips it, so "Banks in Deming recorded deposit growth"
+ * and "Deming's deposit records show ..." pass.
  */
+const SYSTEM_NAME = String.raw`(?<!\b(?:in|of|at|near|from|around)\s+)\b(?:Deming|Bayes)(?!,?\s+(?:NM|N\.M\.|New\s+Mexico|county|branch(?:es)?|city)\b)`;
 export const PIPELINE_TERMS = new RegExp([
   String.raw`\b(Knox|Darwin|Rosetta|Magellan|Atlas|Gutenberg|Hoovie|pipeline|agent run)\b`,
-  String.raw`\b(?:Deming|Bayes)\s+(?:agent|audit|pipeline|job|run|step|check[-\s]run|ledger|replay|tooling|reconcil\w+|flagged|loaded|marked|recorded|counted|re-?checked|checked|verified|found|reviewed|held)\b`,
-  // "Deming's audit", "Deming's daily replay", "Bayes's ledger": the system as an actor.
-  String.raw`\b(?:Deming|Bayes)'s\s+(?:[a-z-]+\s+){0,2}?(?:agent|audit|review|ledger|replay|pipeline|job|run|step|tooling|check[-\s]run|reconciliation|verification|findings?|records?|snapshot)\b`,
+  String.raw`${SYSTEM_NAME}\s+(?:agent|audit|pipeline|job|run|step|check[-\s]run|ledger|replay|tooling|reconcil\w+|flagged|loaded|marked|recorded|counted|re-?checked|checked|verified|found|reviewed|held|says|said|confirmed)\b`,
+  // "Deming's audit", "Deming's daily replay", "Bayes's ledger": the system as an actor. A place
+  // word after the possessive ("Deming's branch review", "Deming's deposit ...") is the town's.
+  String.raw`${SYSTEM_NAME}'s(?!\s+(?:[a-z-]+\s+)?(?:branch(?:es)?|county|city|deposits?)\b)\s+(?:[a-z-]+\s+){0,2}?(?:agent|audit|review|ledger|replay|pipeline|job|run|step|tooling|check[-\s]run|reconciliation|verification|findings?|numbers|snapshot)\b`,
   // "according to Deming, ..." or "... according to Deming.": a source, not "Deming Schools ..." or "Deming, NM".
   String.raw`\baccording\s+to\s+(?:Deming|Bayes)(?=\s*(?:,(?!\s*(?:NM|N\.M\.|New\s+Mexico)\b)|[.;:)!?]|$))`,
   String.raw`\b[a-z0-9]+_[a-z0-9_]+\b`,

@@ -36,7 +36,8 @@ import type { HamiltonBriefingEvidence } from "./institution-briefing";
 /** .2: review of PR #2642: six correct answers the first gate fixes held (Deming as a name and a town; local sentences). */
 /** .3: second review (v5-t5b): thin local medians the rule missed, Deming and Bayes phrasings, and their controls. */
 /** .4: third review: well-covered fees named in other words or an earlier sentence, loose "typical", and real "Deming" text. */
-export const PERSONA_GOLDEN_SET_VERSION = "2026-10-25.4";
+/** .5: fourth review: Deming the town, with a place word before or after it. */
+export const PERSONA_GOLDEN_SET_VERSION = "2026-10-25.5";
 
 export type Persona = "ceo" | "cfo" | "retail_product_manager" | "board" | "analyst";
 export const PERSONAS: readonly Persona[] = ["ceo", "cfo", "retail_product_manager", "board", "analyst"];
@@ -473,6 +474,18 @@ export const PERSONA_GOLDEN_CASES: readonly PersonaGoldenCase[] = [
     question: "What happens when a check bounces at the Deming branch?",
     text: "A Deming check for $30 bounced.",
     expect: "validated" },
+  // Fourth review: Deming the town, with a place word before or after it.
+  ...([
+    ["ceo-deming-town-held", "\"in Deming\" before a verb", "Its branches in Deming held the overdraft fee at $30."],
+    ["ceo-deming-town-recorded", "\"Banks in Deming\" before a verb", "Banks in Deming recorded deposit growth."],
+    ["ceo-deming-town-found", "\"the bank of Deming\" before a verb", "The bank of Deming found new customers."],
+    ["ceo-deming-town-deposit-records", "the town's deposit records", "Deming's deposit records show Harbor Point Bank's $30 overdraft fee."],
+    ["ceo-deming-town-branch-records", "the town's branch records", "Deming's two branch records show the same $30 overdraft fee."],
+  ] as const).map(([id, description, text]): PersonaGoldenCase => ({
+    id, group: "persona", persona: "ceo", ...harbor([HARBOR_PROFILE]),
+    description: `Deming the town, not the system: ${description}`,
+    question: "How is Harbor Point Bank doing in Deming?", text, expect: "validated",
+  })),
   { id: "rpm-national-beside-local", group: "persona", persona: "retail_product_manager", ...harbor([HARBOR_PROFILE, NATIONAL_2750, COMPETITORS_THREE]),
     description: "the national median beside three local competitors' own prices",
     question: "How do we compare nationally and locally on overdraft?",
