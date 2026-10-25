@@ -73,7 +73,7 @@ export async function UpgradeGate({
   const moreCount = count && count > 0 ? Math.min(count, summary.categories) : 0;
   if (compact) {
     return (
-      <div className="text-center py-6 px-4 border-t border-border bg-gradient-to-r from-paper to-white">
+      <div data-upgrade-gate="" className="text-center py-6 px-4 border-t border-border bg-gradient-to-r from-paper to-white">
         <div className="text-sm text-ink-muted">
           {moreCount ? `${moreCount} more available` : message || "Premium feature"}
           {" "}with {PRO_LABEL}
@@ -91,7 +91,8 @@ export async function UpgradeGate({
   }
 
   return (
-    <div className="bg-surface-0 border border-border rounded-xl p-6 text-center">
+    // data-upgrade-gate: the billing-access journey (tests/e2e/hamilton) reads it to tell a locked page from an open one.
+    <div data-upgrade-gate="" className="bg-surface-0 border border-border rounded-xl p-6 text-center">
       <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-brick-tint mb-3">
         <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5 text-brick" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
           <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />

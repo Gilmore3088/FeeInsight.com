@@ -78,7 +78,10 @@ import { createPurchaseReportToken, createReportToken, verifyReportToken } from 
 import { reportLinkOpens } from "@/lib/custom-report/link-access";
 import { getPaidReports } from "@/app/account/account-data";
 import { getHamiltonReportById, getHamiltonScenarioById, getRecentHamiltonReports, saveHamiltonReport } from "./pro-tables";
-import { appendMessage, createConversation, listConversations, loadConversationHistory } from "./chat-memory";
+import {
+  appendMessage, createConversation, listConversations, loadConversationHistory, loadConversationState,
+  loadConversationStateForSavedAnswer, saveConversationState,
+} from "./chat-memory";
 import { getHamiltonWorkspaceContext, resolveHamiltonInstitutionContext, setHamiltonWorkspaceContext } from "./workspace-context";
 import { getActiveInstitutionMembership, getUserInstitutionMemberships, revokeInstitutionWorkspaceMembership } from "./institution-membership";
 import { fetchMonitorPageData } from "./monitor-data";
@@ -90,6 +93,12 @@ import { saveBoardBrief } from "@/app/pro/(hamilton)/reports/board-actions";
 import { listScenarios } from "@/app/pro/(hamilton)/simulate/actions";
 import { removeFromWatchlist } from "@/app/pro/(hamilton)/monitor/actions";
 import { createPeerSet, grantWorkspaceAccess, revokeWorkspaceAccess, revokeWorkspaceInvitation } from "@/app/pro/(hamilton)/settings/actions";
+import { recordAnalyzeConversationAction, startAnalyzeConversationAction } from "@/app/pro/(hamilton)/analyze/conversation-actions";
+import { setWatchedState } from "@/app/pro/(hamilton)/news/watch-actions";
+import { getWatchedStates } from "@/lib/data-store/wire-watch";
+import { getActivePeerSet, resolveHamiltonPeerIndex } from "./peer-index";
+import { HAMILTON_EXPORT_DAILY_FILES, HAMILTON_EXPORT_MAX_ROWS, checkExportAllowance, recordExport } from "./export-limits";
+import { conversationReducer, emptyConversation, serializeConversationState } from "./conversation-state";
 import { POST as reportPdf } from "@/app/api/pro/report-pdf/route";
 import { GET as reportStatus } from "@/app/api/reports/[id]/status/route";
 import { GET as reportDownload } from "@/app/api/reports/[id]/download/route";
@@ -112,6 +121,7 @@ const MIGRATIONS = [
   "20270110000003_lead_report_payment.sql",
   "20270110000021_saved_peer_sets_custom_peers.sql",
   "20270110000039_lead_report_refund.sql",
+  "20270110000035_reg_wire_watched_states.sql",
 ];
 const ALERT_FUNCTIONS = "20260813062152_physical_institution_data_contracts.sql";
 
@@ -153,6 +163,8 @@ describe.skipIf(!env.url)("Hamilton customer data isolation in isolated PostgreS
     for (const table of ["hamilton_decisions", "hamilton_institution_memory", "hamilton_uploads", "institution_fee_alert_subscriptions", "report_jobs", "hamilton_workspace_contexts"]) {
       await db.unsafe(`DELETE FROM ${table} WHERE user_id::text = ANY($1::text[])`, [users]);
     }
+    await db`DELETE FROM reg_wire_watched_states WHERE user_id = ANY(${USERS}::bigint[])`;
+    await db`DELETE FROM api_route_audit_events WHERE user_id = ANY(${USERS}::int[])`;
     await db`DELETE FROM saved_peer_sets WHERE created_by = ANY(${users}::text[]) OR institution_id = ANY(${INSTITUTIONS}::int[])`;
     await db`DELETE FROM institution_workspace_invitations WHERE institution_id = ANY(${INSTITUTIONS}::bigint[])`;
     await db`DELETE FROM institution_workspace_memberships WHERE institution_id = ANY(${INSTITUTIONS}::bigint[]) OR user_id = ANY(${USERS}::bigint[])`;
@@ -484,6 +496,96 @@ describe.skipIf(!env.url)("Hamilton customer data isolation in isolated PostgreS
       // A bank nobody paid for: no lead row, so nothing marks it revoked.
       expect(await isReportRevoked(Z)).toBe(false);
       await db`UPDATE users SET subscription_status = 'active' WHERE id = ${A}`;
+    });
+  });
+
+  // V5 T6 (#1872 release proof): watches, Ask history through the browser's own actions, the
+  // active peer group every chart and CSV export follows, and ids guessed one by one.
+  describe("watches, Ask history, active peer group and guessed ids (V5 T6)", () => {
+    it("B sees none of A's watched states, and B's unwatch leaves A's watch alone", async () => {
+      as(A);
+      expect(await setWatchedState(form({ state: "KS", watch: "1" }))).toEqual({ ok: true, watching: true });
+      as(B);
+      expect(await getWatchedStates(B)).toEqual([]);
+      expect(await setWatchedState(form({ state: "KS", watch: "0" }))).toEqual({ ok: true, watching: false });
+      expect((await getWatchedStates(A)).map((w) => w.stateCode)).toEqual(["KS"]);
+    });
+
+    it("B can neither read nor write A's Ask history, even holding A's conversation id", async () => {
+      const subject = { institutionId: String(X), institutionName: "Synthetic Isolation Bank X" };
+      const answered = [
+        { type: "ask", question: "Bank X private overdraft question" },
+        { type: "answered", turnId: "t1", route: "written", lead: "Bank X private lead", savedAnalysisId: ids.analysis },
+      ].reduce((st, a) => conversationReducer(st, a as never), emptyConversation(subject));
+      as(A);
+      const started = await startAnalyzeConversationAction();
+      if (!("id" in started)) throw new Error("A could not start a conversation");
+      expect(await recordAnalyzeConversationAction(started.id, serializeConversationState(answered))).toEqual({ ok: true });
+      as(B);
+      const hijack = conversationReducer(answered, { type: "ask", question: "B's planted question", previousLead: "x" } as never);
+      expect(await recordAnalyzeConversationAction(started.id, serializeConversationState(hijack))).toEqual({ ok: false });
+      expect(await saveConversationState(started.id, B, serializeConversationState(hijack))).toBe(false);
+      expect(await loadConversationState(started.id, B)).toBeNull();
+      expect(await loadConversationStateForSavedAnswer(ids.analysis, B)).toBeNull();
+      expect((await listConversations(B)).map((c) => c.id)).not.toContain(started.id);
+      expect((await loadConversationState(started.id, A))?.turns.map((t) => t.question)).toEqual(["Bank X private overdraft question"]);
+    });
+
+    it("B researching A's bank gets none of A's peer groups as the active group or by naming its id", async () => {
+      expect(await getActivePeerSet({ userId: B, institutionId: X })).toBeNull();
+      expect((await getActivePeerSet({ userId: A, institutionId: X }))?.id).toBe(peer.teamX);
+      for (const id of [peer.teamX, peer.personalA, peer.teamXByD]) {
+        const resolved = await resolveHamiltonPeerIndex({ userId: B, peerSetId: String(id), institutionId: X });
+        expect(resolved.peerSetId).not.toBe(String(id));
+        expect(resolved.label).not.toMatch(/cohort/i);
+        // A found-but-sparse group is named in fallbackReason; B's never names A's.
+        expect(resolved.fallbackReason ?? "").not.toMatch(/cohort/i);
+      }
+      // Positive control: the same call as A does open A's group (named, since the fixture has no fees).
+      const own = await resolveHamiltonPeerIndex({ userId: A, peerSetId: String(peer.personalA), institutionId: X });
+      expect(own.fallbackReason ?? "").toContain("A's private cohort");
+    });
+
+    it("guessing every peer group id in turn opens only B's own", async () => {
+      const [{ max }] = await db`SELECT COALESCE(MAX(id), 0)::int AS max FROM saved_peer_sets`;
+      const opened: number[] = [];
+      for (let id = 1; id <= max + 3; id += 1) {
+        const found = await getSavedPeerSetById(id, String(B));
+        if (found) opened.push(found.id);
+      }
+      const own = await db`SELECT id::int AS id FROM saved_peer_sets WHERE created_by = ${String(B)} AND institution_id IS NULL ORDER BY id`;
+      expect(opened.sort((a, b) => a - b)).toEqual(own.map((r) => r.id));
+      expect(opened).not.toContain(peer.teamX);
+      expect(opened).not.toContain(peer.personalA);
+    });
+
+    it("rollback switch: with no group picked for all charts, A's screens use the default groups again (#1893 off)", async () => {
+      const on = await resolveHamiltonPeerIndex({ userId: A, institutionId: X });
+      // On: A's team group applies first (named in the fallback, since the fixture holds no fees).
+      expect(on.fallbackReason ?? "").toContain("Bank X team cohort");
+      await db`UPDATE saved_peer_sets SET is_default = false WHERE id = ${peer.teamX}`;
+      try {
+        expect(await getActivePeerSet({ userId: A, institutionId: X })).toBeNull();
+        const off = await resolveHamiltonPeerIndex({ userId: A, institutionId: X });
+        expect(off.source).not.toBe("saved-peer-set");
+        expect(off.fallbackReason ?? "").not.toMatch(/cohort/i);
+        // The group itself is kept: switching back on needs no rebuild.
+        expect((await getSavedPeerSets(String(A), X)).map((s) => s.id)).toContain(peer.teamX);
+      } finally {
+        await db`UPDATE saved_peer_sets SET is_default = true WHERE id = ${peer.teamX}`;
+      }
+    });
+
+    it("the daily data-file limit counts each account's own files: A at the limit leaves B free", async () => {
+      const request = new Request("http://localhost/pro/research/peers?fee=overdraft&layer=national");
+      for (let i = 0; i < HAMILTON_EXPORT_DAILY_FILES; i += 1) {
+        await recordExport({ userId: A, request, status: 200, rows: HAMILTON_EXPORT_MAX_ROWS, truncated: true });
+      }
+      expect(await checkExportAllowance(A)).toEqual({ allowed: false, reason: "limit", used: HAMILTON_EXPORT_DAILY_FILES });
+      expect(await checkExportAllowance(B)).toEqual({ allowed: true, used: 0 });
+      // A refused file is recorded but does not count toward the limit.
+      await recordExport({ userId: B, request, status: 429, rows: 0, truncated: false, reason: "export_limit" });
+      expect(await checkExportAllowance(B)).toEqual({ allowed: true, used: 0 });
     });
   });
 });

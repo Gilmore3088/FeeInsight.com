@@ -117,6 +117,7 @@ vi.mock("@/lib/hamilton/active-peer-set", () => ({
 }));
 
 import { getCurrentUser } from "@/lib/auth";
+import { HAMILTON_STOPPED_MESSAGE } from "@/lib/hamilton/provider-paused";
 
 // ─── Test-local helper ────────────────────────────────────────────────────────
 
@@ -325,7 +326,7 @@ describe("POST /api/research/hamilton — citation gate", () => {
 
     expect(res.status).toBe(423);
     const body = await res.json();
-    expect(body.error).toContain("Provider circuit is open");
+    expect(body).toEqual({ error: HAMILTON_STOPPED_MESSAGE, code: "provider_stopped" });
     expect(generateTextMock).not.toHaveBeenCalled();
   });
 
@@ -344,6 +345,6 @@ describe("POST /api/research/hamilton — citation gate", () => {
 
     expect(res.status).toBe(423);
     const body = await res.json();
-    expect(body.error).toContain("Provider circuit is open");
+    expect(body).toEqual({ error: HAMILTON_STOPPED_MESSAGE, code: "provider_stopped" });
   });
 });

@@ -227,4 +227,23 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-1872-release-proof",
+    agent: "hamilton",
+    stage: "written answer",
+    lesson: "When the provider fails, times out or is stopped, show none of the unfinished draft: say plainly that the answer could not be finished, and never repeat an internal reason such as a breaker or budget note. Cite only sources whose terms allow commercial display; a source struck or held for its terms is never quoted, even when its rows are still stored. A data file is a check of what the screen showed, capped in rows, never a copy of the database.",
+    why: "The V5 release proof found that a streamed Ask answer whose provider erred, timed out or stopped short still sent its unverified draft text before the error, that a provider stop showed the reader its internal reason, and that the peer comparison file had no row cap, so the nation-wide layer of every fee could be downloaded in full.",
+    evidence: {
+      issues: [1872, 1921],
+      prs: [],
+      files: [
+        "src/app/api/research/hamilton/route.ts",
+        "src/lib/hamilton/export-limits.ts",
+        "src/lib/hamilton/data-rights.test.ts",
+        "src/lib/data-store/struck-sources.ts",
+      ],
+    },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];

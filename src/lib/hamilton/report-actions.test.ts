@@ -11,6 +11,9 @@ import { HAMILTON_EVIDENCE_CONTRACT_VERSION, type HamiltonEvidenceBundle, type H
 import { bindNarrative } from "@/lib/hamilton/narrative-bound";
 import { savedClaimsFrom } from "@/lib/hamilton/saved-claims";
 import type { SectionTracking } from "@/lib/hamilton/generate";
+import { EmergencyStopActiveError } from "@/lib/automation-control";
+import { ProviderCircuitOpenError } from "@/lib/ai-provider-usage";
+import { HAMILTON_STOPPED_MESSAGE } from "@/lib/hamilton/provider-paused";
 
 const mocks = vi.hoisted(() => ({
   getCurrentUser: vi.fn(),
@@ -703,6 +706,40 @@ describe("Hamilton Reports generateReport", () => {
 
     expect(result).toMatchObject({ success: false, error: expect.stringContaining("50 Hamilton AI requests") });
     expect(mocks.generateSection).not.toHaveBeenCalled();
+  });
+
+  describe("fault injection: the report fails closed, says so plainly and records the failure (V5 T6)", () => {
+    const wire = [{ fee_name: "Domestic wire", fee_category: "wire_transfer", amount: 35, frequency: "per wire", review_status: "pending", extraction_confidence: 0.76, source_url: "https://example.com/fees" }];
+    const failedLedger = () => mocks.recordProRequest.mock.calls.map((call) => call[0]).filter((row: { status?: string }) => row.status === "failed");
+
+    it.each([
+      ["the provider stop", () => new EmergencyStopActiveError({ enabled: false, reason: "Synthetic admin note" } as never, "hamilton report")],
+      ["the spend breaker", () => new ProviderCircuitOpenError("Provider circuit is open: synthetic credit-balance failure on hamilton.report")],
+    ])("%s: no retry, nothing saved, no internal reason shown", async (_label, makeError) => {
+      mocks.getFeesByInstitution.mockResolvedValue(wire);
+      mocks.generateSection.mockRejectedValue(makeError());
+
+      const result = await generateReport(reportParams());
+
+      expect(result).toEqual({ success: false, error: HAMILTON_STOPPED_MESSAGE });
+      expect(mocks.generateSection).toHaveBeenCalledOnce();
+      expect(mocks.saveHamiltonReport).not.toHaveBeenCalled();
+      expect(failedLedger()).toHaveLength(1);
+    });
+
+    it("a provider timeout: one retry, then a plain line, nothing saved, the failure on the ledger", async () => {
+      mocks.getFeesByInstitution.mockResolvedValue(wire);
+      mocks.generateSection.mockRejectedValue(new Error("The operation was aborted due to timeout"));
+
+      const result = await generateReport(reportParams());
+
+      expect(result.success).toBe(false);
+      expect((result as { error: string }).error).toMatch(/^Hamilton couldn't write the .+ section right now\. Please try again in a minute\.$/);
+      expect((result as { error: string }).error).not.toContain("timeout");
+      expect(mocks.generateSection).toHaveBeenCalledTimes(2);
+      expect(mocks.saveHamiltonReport).not.toHaveBeenCalled();
+      expect(failedLedger()).toHaveLength(1);
+    });
   });
 
   it("refuses to save a report whose narrative states figures the data does not support", async () => {

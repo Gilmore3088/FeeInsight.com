@@ -20,7 +20,8 @@ import { recordProRequest } from "@/lib/agents/run-store";
 import { logUsage } from "@/lib/research/history";
 import { estimateAnthropicCostMicrousd, incompleteProviderResponse, type ProviderUsage } from "@/lib/ai-provider-usage";
 import { getHamiltonModel, isProviderLimitError } from "@/lib/ai-provider";
-import { HAMILTON_PAUSED_MESSAGE } from "@/lib/hamilton/provider-paused";
+import { HAMILTON_PAUSED_MESSAGE, HAMILTON_STOPPED_MESSAGE } from "@/lib/hamilton/provider-paused";
+import { isProviderStopError } from "@/lib/hamilton/provider-stop";
 import type { SectionInput } from "@/lib/hamilton/types";
 import { buildReportPeerCoveragePreview, type ReportPeerCoveragePreview } from "@/lib/hamilton/report-evidence";
 import { parseAnswerSection, parseTradeoffSection } from "@/lib/hamilton/report-answer";
@@ -340,6 +341,8 @@ export async function generateReport(
     recordPaidFailure = (summary) => recordReportOutcome("failed", summary, verifiedSections);
     // A usage or billing limit at the provider: no retry, and the reader is told it is paused.
     let providerPaused = false;
+    // The provider stop, spend breaker or budget (V5 T6): no retry, a plain line, nothing saved.
+    let providerStopped = false;
     const generateWithRetry = async (input: SectionInput): Promise<VerifiedSectionOutput | null> => {
       try {
         return await generateVerifiedSection(input, tracking);
@@ -348,12 +351,17 @@ export async function generateReport(
           providerPaused = true;
           return null;
         }
+        if (isProviderStopError(firstError)) {
+          providerStopped = true;
+          return null;
+        }
         // A successful HTTP response with unfinished generation is not a transport hiccup.
         if (incompleteProviderResponse(firstError)) return null;
         try {
           return await generateVerifiedSection(input, tracking);
         } catch (retryError) {
           providerPaused ||= isProviderLimitError(retryError);
+          providerStopped ||= isProviderStopError(retryError);
           return null;
         }
       }
@@ -362,7 +370,9 @@ export async function generateReport(
       success: false,
       error: providerPaused
         ? HAMILTON_PAUSED_MESSAGE
-        : `Hamilton couldn't write the ${input.title} section right now. Please try again in a minute.`,
+        : providerStopped
+          ? HAMILTON_STOPPED_MESSAGE
+          : `Hamilton couldn't write the ${input.title} section right now. Please try again in a minute.`,
     });
 
     // The answer page comes first; the other two sections explain and stress-test
@@ -564,6 +574,7 @@ export async function generateReport(
   } catch (err) {
     await recordPaidFailure?.("Report generation or saving failed. Report was not completed.").catch(() => {});
     if (isProviderLimitError(err)) return { success: false, error: HAMILTON_PAUSED_MESSAGE };
+    if (isProviderStopError(err)) return { success: false, error: HAMILTON_STOPPED_MESSAGE };
     const message = err instanceof Error ? err.message : String(err);
     return { success: false, error: `Report generation failed: ${message}` };
   }

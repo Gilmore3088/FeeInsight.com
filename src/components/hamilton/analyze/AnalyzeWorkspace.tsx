@@ -26,7 +26,7 @@ import {
 } from "@/lib/hamilton/conversation-state";
 import { matchFeeCategory } from "@/lib/hamilton/workspace/ask";
 import type { ClarifyingQuestion } from "@/lib/hamilton/workspace/types";
-import { HAMILTON_PAUSED_MESSAGE, isHamiltonPausedText } from "@/lib/hamilton/provider-paused";
+import { HAMILTON_PAUSED_MESSAGE, HAMILTON_STOPPED_MESSAGE, isHamiltonPausedText } from "@/lib/hamilton/provider-paused";
 import { STANDARD_METHOD, type AuditTrail } from "@/lib/hamilton/audit-trail";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { marketBriefHref, parseMarketQuestion } from "@/lib/hamilton/market-question";
@@ -119,9 +119,7 @@ export function askErrorMessage(error: Error | undefined): string {
   if (/Hamilton AI requests for today/.test(text)) return text;
   // The provider's usage or billing limit (sent by the route as the paused line).
   if (isHamiltonPausedText(text) || /usage limit|credit balance is too low/i.test(text)) return HAMILTON_PAUSED_MESSAGE;
-  if (/Emergency stop|budget|circuit/i.test(text)) {
-    return "Hamilton's AI is paused right now while spending is checked, so it can't answer. Everything else on Fee Insight still works.";
-  }
+  if (text.includes(HAMILTON_STOPPED_MESSAGE) || /Emergency stop|budget|circuit/i.test(text)) return HAMILTON_STOPPED_MESSAGE;
   return "Hamilton couldn't finish this answer. Your question is back in the box below.";
 }
 

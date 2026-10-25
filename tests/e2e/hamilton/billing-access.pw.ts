@@ -2,7 +2,7 @@
  * #1920 (go-live gate G10): one journey, every billing state, every Hamilton page and route.
  *
  * Seeds one synthetic account per billing state (billing-access.ts ACCOUNTS) into the local
- * fixture database, gives each a session, and sends every probe in ROUTES over real HTTP to the
+ * fixture database, gives each a session, and sends every probe in ALL_ROUTES over real HTTP to the
  * production build serve.mjs starts: src/proxy.ts, the /pro layouts and each route's own check
  * all run as they do in production. Redirects are followed (3xx and Next's streamed meta
  * refresh) until the request lands on /login, /subscribe, /account/billing-issue or an answer.
@@ -18,7 +18,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "playwright/test";
 import {
-  ACCESS_ID_MAX, ACCESS_ID_MIN, ACCOUNTS, ACTIONS, ACTION_TOKENS, BILLING_STATES, EXPECTED, ROUTES, SEAT_WORKSPACES, TOKENS,
+  ACCESS_ID_MAX, ACCESS_ID_MIN, ACCOUNTS, ACTIONS, ACTION_TOKENS, ALL_ROUTES, BILLING_STATES, EXPECTED, SEAT_WORKSPACES, TOKENS,
   expectedOutcome, isRefusedActionResult, ownAnalysisId, ownScenarioId, reportLinkToken, signedSessionCookie,
   type ActionEntry, type BillingState, type Outcome, type Probe, type RouteEntry,
 } from "./billing-access";
@@ -166,7 +166,11 @@ async function send(probe: Probe, state: BillingState): Promise<Cell> {
       const meta = META_REDIRECT.exec(text);
       if (meta) next = meta[1].replace(/&amp;/g, "&");
     }
-    if (!next) return { outcome: outcomeFor(response.status), status: response.status, finalPath: url.pathname };
+    if (!next) {
+      // A premium section that rendered its upgrade gate instead of the data (V5 T6).
+      const locked = probe.lockedMarker !== undefined && response.status === 200 && text.includes(probe.lockedMarker);
+      return { outcome: locked ? "locked" : outcomeFor(response.status), status: response.status, finalPath: url.pathname };
+    }
     url = new URL(next, url);
     const gate = gateFor(url.pathname);
     if (gate) return { outcome: gate, status: response.status, finalPath: url.pathname };
@@ -243,7 +247,7 @@ test.afterAll(() => {
   for (const state of BILLING_STATES) {
     if (existsSync(cellsFile(state))) byState.set(state, JSON.parse(readFileSync(cellsFile(state), "utf8")));
   }
-  for (const entry of ROUTES) {
+  for (const entry of ALL_ROUTES) {
     for (const probe of entry.probes) {
       json[probeKey(probe)] = {};
       const row = BILLING_STATES.map((state) => {
@@ -276,7 +280,7 @@ test.afterAll(() => {
 for (const state of BILLING_STATES) {
   test(`G10 #1920: ${state} reaches exactly what its billing state allows`, async () => {
     test.setTimeout(900_000);
-    const jobs: Array<{ entry: RouteEntry; probe: Probe }> = ROUTES.flatMap((entry) => entry.probes.map((probe) => ({ entry, probe })));
+    const jobs: Array<{ entry: RouteEntry; probe: Probe }> = ALL_ROUTES.flatMap((entry) => entry.probes.map((probe) => ({ entry, probe })));
     const cells: Record<string, Cell> = {};
     await pool(jobs, 4, async ({ probe }) => {
       cells[probeKey(probe)] = await send(probe, state);

@@ -104,8 +104,10 @@ export const ACCOUNTS: AccessAccount[] = [
  * - denied: 401 or 403. unavailable: 503. error: any other 5xx.
  * - ok: anything else (2xx, or a 4xx such as 400 for the deliberately empty body, 404, 409):
  *   the request got past every access check.
+ * - locked: a 200 page that rendered the upgrade gate (`data-upgrade-gate`, src/components/upgrade-gate.tsx)
+ *   in place of its premium section. Only probes with `lockedMarker` read it.
  */
-export type Outcome = "login" | "subscribe" | "billing" | "team_billing" | "denied" | "unavailable" | "error" | "ok";
+export type Outcome = "login" | "subscribe" | "billing" | "team_billing" | "denied" | "unavailable" | "error" | "ok" | "locked";
 
 /** The kinds of gate the routes use. */
 export type GateKind =
@@ -136,6 +138,11 @@ export type GateKind =
   | "internal_secret"
   /** A link whose token is the access: the same answer for every state. */
   | "token_link"
+  /**
+   * A public page outside the Hamilton folders whose premium section only Hamilton access opens
+   * (V5 T6): it renders for everyone, and everyone without access gets the upgrade gate instead.
+   */
+  | "premium_section"
   /** Open to everyone. */
   | "public";
 
@@ -171,6 +178,7 @@ export const EXPECTED: Record<Exclude<GateKind, "token_link">, Record<BillingSta
   account_page:         row("login",  "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"),
   team_billing_page:    row("login",  "ok", "ok", "subscribe", "ok", "ok",   "billing", "subscribe", "subscribe", "ok",    "ok",        "ok",   "ok"),
   internal_secret:      row("denied", "denied", "denied", "denied", "denied", "denied", "denied", "denied", "denied", "denied", "denied", "denied", "denied"),
+  premium_section:      row("locked", "ok", "ok", "locked",    "ok", "ok",   "locked",  "locked",    "locked",    "ok",    "locked",    "ok",   "ok"),
   public:               row("ok",     "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"),
 };
 
@@ -190,6 +198,8 @@ export interface Probe {
   contentType?: string;
   /** token_link only: the status every state must get. */
   status?: number;
+  /** premium_section only: a 200 whose HTML contains this is "locked" rather than "ok". */
+  lockedMarker?: string;
   note?: string;
 }
 
@@ -290,6 +300,35 @@ export const ROUTES: RouteEntry[] = [
   { file: "account/team-billing/page.tsx", kind: "team_billing_page", label: "Team subscription needs attention (#1999)", probes: [get("/account/team-billing")] },
   { file: "account/reports/page.tsx", kind: "account_page", label: "Your reports, read-only for any signed-in account (#1999)", probes: [get("/account/reports")] },
 ];
+
+/** The upgrade gate's own attribute (src/components/upgrade-gate.tsx). */
+export const UPGRADE_GATE_MARKER = "data-upgrade-gate";
+
+/**
+ * Pages outside HAMILTON_ROUTE_ROOTS that check canAccessPremium (V5 T6). Each is either probed
+ * here (its premium section must be locked for every state without Hamilton access) or listed in
+ * PREMIUM_CHECK_EXEMPT with the reason it is not a premium section. billing-access.test.ts fails
+ * on a page that is in neither.
+ */
+const section = (file: string, path: string, label: string): RouteEntry => ({
+  file, kind: "premium_section", label, probes: [get(path, { lockedMarker: UPGRADE_GATE_MARKER })],
+});
+export const PREMIUM_SECTION_PAGES: RouteEntry[] = [
+  section("(public)/research/market-concentration/page.tsx", "/research/market-concentration", "Market concentration research"),
+  section("(public)/research/fee-revenue-analysis/page.tsx", "/research/fee-revenue-analysis", "Fee-to-revenue research"),
+  section("(public)/guides/pro/[slug]/page.tsx", "/guides/pro/building-a-peer-set", "Professional guide"),
+];
+
+/** Pages outside the Hamilton folders that call canAccessPremium for a reason other than a premium section. */
+export const PREMIUM_CHECK_EXEMPT: Record<string, string> = {
+  "subscribe/page.tsx": "routes a paying account on to Hamilton; shows no premium data",
+  "workspace-invite/page.tsx": "accepting an invitation; grants a seat, shows no premium data",
+  "(public)/fees/[category]/page.tsx":
+    "the asset-size and state breakdown and per-institution tier/state are Pro only; explorerPoints(points, isPro) is unit-tested in category-view.test.ts",
+};
+
+/** Every probed entry: the Hamilton folders plus the premium sections outside them. */
+export const ALL_ROUTES: RouteEntry[] = [...ROUTES, ...PREMIUM_SECTION_PAGES];
 
 /** The outcome a probe must get for a state. */
 export function expectedOutcome(entry: RouteEntry, probe: Probe, state: BillingState): Outcome {
