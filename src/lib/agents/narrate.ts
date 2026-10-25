@@ -349,6 +349,11 @@ function narrateFinished(
       const urgent = n(counts, "failed") + n(counts, "empty");
       return `Deming checked the public-data sources: ${n(counts, "fresh")} fresh, ${n(counts, "stale")} stale, ${n(counts, "skipped")} skipped, ${urgent === 0 ? "none failed or empty" : `ALARM: ${count(urgent, "source")} failed or empty`}.`;
     }
+    case "deming-filings-reconcile": {
+      const totals = (detail.totals ?? {}) as Detail;
+      const unexplained = n(totals, "unexplained");
+      return `Deming reconciled shown financials with the stored filings: ${n(totals, "matched")} of ${n(totals, "compared")} figures match, ${n(totals, "explained")} differ for a known reason, ${unexplained === 0 ? "none unexplained" : `ALARM: ${count(unexplained, "figure")} unexplained`}.`;
+    }
     case "deming-knox-misses": {
       if (detail.ready === false) return "Deming could not replay Knox's answer-key misses: the case store or the answer key is not there.";
       const regressions = Array.isArray(detail.regressions) ? detail.regressions.length : 0;
@@ -775,6 +780,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "deming-benchmark-health": "atlas",
   "deming-data-quality": "atlas",
   "deming-source-health": "atlas",
+  "deming-filings-reconcile": "atlas",
   "deming-knox-misses": "atlas",
   "deming-playbook-check": "atlas",
   "deming-change-outcomes": "atlas",

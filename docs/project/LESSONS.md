@@ -213,7 +213,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-284 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+286 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
 ### Extraction and fee reading (43)
 
@@ -370,8 +370,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A blank HTML page from a bank that blocks our fetcher is a wall, not a script page. — [finding](findings/2026-10-09-hand-found-bot-challenge-read-as-js.md) — Agent lesson: magellan/pr-850-held-means-readable
 - 2026-10-09 — Two fee links our fetcher can't open but a Mac can. — [finding](findings/2026-10-09-fetcher-refused-where-a-browser-is-not.md) — Agent lesson: magellan/pr-1293-plain-fetch-outcome
 
-### Public and regulatory data (11)
+### Public and regulatory data (12)
 
+- 2026-10-25 — A one-off audit says nothing about next quarter's load: shown financials are now reconciled with the stored FFIEC and NCUA filing lines every day, with known causes counted apart (T3, #1925). — [finding](findings/2026-10-25-financials-reconciled-once-not-daily.md) — Guard: `src/lib/agents/deming/filings-reconcile.test.ts`
 - 2026-10-25 — A bank's year-to-date line cannot be differenced into quarters without knowing about mergers and mid-year restarts; where BankFind's merger-adjusted quarter disagrees, show it (#2025). — [finding](findings/2026-10-25-bank-quarters-differenced-across-mergers.md) — Guard: `src/app/(public)/institution/[id]/quarterly-ledger.test.ts`
 - 2026-10-20 — When a publisher's page answers silently with itself, try the other formats and products it offers: the format may be withdrawn (FFIEC serves the single-period UBPR file only as XBRL, #2473). — [finding](findings/2026-10-20-ffiec-ubpr-single-period-xbrl-only.md) — Guard: `src/lib/agents/magellan/registry/ubpr-peer-groups.test.ts` (+1 more)
 - 2026-10-19 — NCUA credit union mergers never loaded: both addresses were dead. — [finding](findings/2026-10-19-ncua-merger-list-dead.md) — Guard: `src/lib/agents/magellan/registry/industry-events.test.ts`

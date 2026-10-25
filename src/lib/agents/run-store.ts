@@ -121,6 +121,7 @@ import { benchmarkHealthDetail, runBenchmarkHealth, summarizeBenchmarkHealth } f
 import { playbookContradictionsDetail, runPlaybookContradictions, summarizePlaybookContradictions } from "@/lib/agents/deming/playbook-contradictions";
 import { dataQualityDetail, runDataQuality, summarizeDataQuality } from "@/lib/agents/deming/data-quality";
 import { readSourceHealth, sourceHealthDetail, summarizeSourceHealth } from "@/lib/agents/hoovie/source-health";
+import { filingsReconcileDetail, runFilingsReconcile, summarizeFilingsReconcile } from "@/lib/agents/deming/filings-reconcile";
 import { knoxMissesDetail, runKnoxMisses, summarizeKnoxMisses } from "@/lib/agents/deming/knox-misses";
 import { runBayesLedger, summarizeBayesLedger, BAYES_LEDGER_VERSION } from "@/lib/agents/bayes/ledger";
 import { runScheduleCheck, summarizeScheduleCheck, SCHEDULE_CHECK_VERSION } from "@/lib/agents/atlas/schedule-check";
@@ -2750,6 +2751,12 @@ async function executeAgenticStep(
       // completeness, #2228) and one over Atlas's newest table sizes.
       const report = await readSourceHealth({ db: tx });
       return { status: "completed", summary: summarizeSourceHealth(report), detail: sourceHealthDetail(report) };
+    }
+    case "deming-filings-reconcile": {
+      // Read-only (#1925, T3): shown bank and credit-union figures against the stored filing lines,
+      // for a daily draw of institutions over the newest 12 quarters, under a 20 s statement timeout.
+      const report = await runFilingsReconcile({ db: tx, now: new Date() });
+      return { status: "completed", summary: summarizeFilingsReconcile(report), detail: filingsReconcileDetail(report) };
     }
     case "deming-knox-misses": {
       // #1099: writes only eval_cases (new missed-fee cases and each case's replay); never a fee row.
