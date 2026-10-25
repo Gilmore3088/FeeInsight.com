@@ -212,7 +212,7 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     stage: "verify",
     lesson: "Read a name | description | price row as one fee's row: a sentence describing the fee (it ends with a full stop and is mostly lower-case words) is not a second fee's name, so never split the name off its own price. Read a price printed under its name with the balance that waives it (\"$3.00 if balance falls below $100 minimum\") as that name's price, and the balance as a threshold. A price from another row still never traces.",
     why: "The shared check split Vickswood's \"Late Payment Fee | Fee assessed when a loan payment is made after the grace period. | $20.00\" into a bare name and a priced description, and dropped Ixonia's \"$3.00 if balance falls below $100 minimum\" for being 41 characters long, so Darwin rejected both real fees as not in their own schedules.",
-    evidence: { issues: [1479], prs: [], files: ["src/lib/custom-report/source-check.ts"] },
+    evidence: { issues: [1479], prs: [2590], files: ["src/lib/custom-report/source-check.ts"] },
     appliesTo: "all",
     since: "2026-10-25",
   },
