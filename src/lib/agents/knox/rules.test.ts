@@ -1870,3 +1870,44 @@ describe("Knox v112 (#1877): draft protection fee", () => {
     expect(classifyFeeText(fee?.canonicalHint ?? "") ?? fee?.canonicalHint).toBe("overdraft");
   });
 });
+
+describe("Knox v114: a sentence's priced noun phrase names and files its fee", () => {
+  const GLYPH = "�";
+  // Reliance State Bank (live fee 140283): the PDF text garbles the "ft" of "overdrafts" today; the
+  // Rosetta glyph repair reads it. Either way the price is the NSF fee's.
+  const reliance = (overdrafts: string) =>
+    `${overdrafts} (if transfer amount is not sufficient to cover\nGarnishment/Levy........................... Fees Vary Per Type | ${overdrafts} an NSF fee of $30.00 per item may also\napply)`;
+  const reads = (text: string) =>
+    extractCandidatesFromText(text).candidates.map((fee) => [fee.feeName, fee.amount, fee.canonicalHint]);
+
+  it("files Reliance's cut sentence as the NSF fee, glyph garbled or repaired", () => {
+    expect(reads(reliance(`overdra${GLYPH}s`))).toEqual([["NSF fee", 30, "nsf"]]);
+    expect(reads(reliance("overdrafts"))).toEqual([["NSF fee", 30, "nsf"]]);
+    expect(reads("Overdrafts an NSF fee of $30.00 per item may also apply")).toEqual([["NSF fee", 30, "nsf"]]);
+    const specialists = runFreeSpecialists(reliance("overdrafts")).candidates.filter((fee) => fee.amount === 30);
+    expect(specialists.map((fee) => [fee.feeName, fee.canonicalHint])).toEqual([["NSF fee", "nsf"]]);
+  });
+
+  it("keeps a combined NSF/Overdraft fee and a plain overdraft fee as overdraft", () => {
+    expect(reads("• NSF/Overdraft Fee (per item) | $30.00")).toEqual([["NSF/Overdraft Fee (per item)", 30, "overdraft"]]);
+    expect(reads("Overdraft fee $30")).toEqual([["Overdraft fee", 30, "overdraft"]]);
+  });
+
+  it("files a sentence whose priced phrase is the overdraft fee as overdraft", () => {
+    expect(reads("To cover NSF items an overdraft fee of $30.00 per item may apply")).toEqual([["Overdraft fee", 30, "overdraft"]]);
+    // Cutting the words before the phrase would drop the condition, so the name stays as read.
+    expect(reads("If your account is overdrawn by more than $5 an overdraft fee of $30.00 per item may apply")).toEqual([["an overdraft fee of", 30, "overdraft"]]);
+  });
+
+  it("keeps the words before a phrase that only says how often or what kind of charge it is", () => {
+    // Live rows 100616 and 107052 (Oct 25 dry run): the words before say what the charge is for.
+    expect(reads("Paper statements will have a monthly fee of $5.00")).toEqual([["Paper statements will have a monthly fee of", 5, "paper_statement"]]);
+    const [billPay] = extractCandidatesFromText("If you are enrolled in Bill Pay and do not use it for a period of 90 consecutive days, an inactivity fee of $5.00 per month").candidates;
+    expect(billPay?.canonicalHint).toBe("bill_pay");
+  });
+
+  it("leaves a phrase after words that name a fee of their own as read", () => {
+    const [fee] = extractCandidatesFromText("Overdraft Transfer Fee - a transfer fee of $5.00 per transfer").candidates;
+    expect(fee?.feeName).not.toBe("Transfer fee");
+  });
+});

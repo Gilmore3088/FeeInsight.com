@@ -7,6 +7,7 @@ import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { CHECKING_ACCOUNT_FEE_NAME, checkingNameCore, namedForCheckingAccount, NON_MONTHLY_PERIOD } from "@/lib/checking-fee-name";
 import { ATM_ADJUSTMENT, CHECKBOOK_RECONCILIATION, CROSS_BORDER_BUNDLE, DRAFT_PROTECTION_FEE, FAX_SERVICE, PER_PAGE_COPY, researchSplitTarget } from "@/lib/fee-fold";
 import { joinWrappedLeaderNames, parenBalance, stripPriceFootnoteMarks, withDroppedDecimalPoints } from "@/lib/custom-report/source-check";
+import { dropsCondition, FEE_OF_SENTENCE } from "@/lib/agents/knox/cutoff-shape";
 
 // Shared with the source check since #1334; Knox's tests and callers keep importing it from here.
 export { withDroppedDecimalPoints };
@@ -1857,6 +1858,43 @@ export function qualifiedByClause(segment: string, firstAmount: AmountMatch, nam
 const CHARGE_A_FEE_OF = /\b(?:we|you|customers?|members?)\b[^.;|]{0,30}?\b(?:charge|charged|assess|assessed|impose|pay)\b[^.;|]{0,12}?\b(?:an?|the)\s+(?:(?:one[-\s]time|per[-\s]item|flat)\s+)?(?:fee|charge)\s+of(?:\s+up\s+to)?\s*$/i;
 /** v40: "We may charge you a Paid Item Fee of", "you will be charged a Return Item Fee of". */
 const CHARGE_A_NAMED_FEE_OF = /\b(?:[Ww]e|[Yy]ou)\b[^.;|]{0,30}?\b(?:charge|charged|assess|assessed|impose)\b[^.;|]{0,12}?\b(?:an?|the)\s+((?:[A-Z][\w'’/-]*\s+){1,4}(?:Fee|Charge))\s+of(?:\s+up\s+to)?\s*$/;
+/** v114: words that name a fee of their own, before a sentence's priced noun phrase. */
+const NAMES_A_FEE = /\b(?:fees?|charges?)\b/i;
+/**
+ * v114: a phrase that says only how often or what kind of charge it is ("a monthly fee of", "a
+ * service charge of", "an inactivity fee of"): the words before it say what it is for ("Paper
+ * statements will have a monthly fee of", "If you are enrolled in Bill Pay and do not use it ... an
+ * inactivity fee of"), so the read keeps them.
+ */
+const GENERIC_PRICED_PHRASE =
+  /^(?:(?:monthly|annual|yearly|quarterly|weekly|daily|service|charge|maintenance|account|inactivity|handling|processing|flat|one[-\s]time|low|modest|small|nominal|minimal|cycle|additional)\s+)*(?:fee|charge)$/i;
+
+/**
+ * v114: "... is not sufficient to cover overdrafts an NSF fee of $30.00 per item may also apply"
+ * (Reliance State Bank, live fee 140283) prices the fee the sentence names right before the price,
+ * the NSF fee (`FEE_OF_SENTENCE`, the noun phrase name re-tidy already names such a sentence by).
+ * Classifying the cut words ("overdrafts an NSF fee") filed the price by their first fee word: nsf
+ * only while a PDF glyph garbled "Overdrafts", overdraft once the glyph reads. The category is the
+ * phrase's; the name is the phrase ("NSF fee") unless cutting the words before it drops a condition
+ * (`dropsCondition`: "If your account is overdrawn by more than $5 an overdraft fee of" keeps its
+ * name). Only the price's own cell is read, only a line some rule already reads as a fee (a held
+ * "you will be required to pay an early closure fee of $750 plus any mortgage ..." stays held), and
+ * only when the words before the phrase name no fee of their own ("Overdraft Transfer Fee - a
+ * transfer fee of" keeps its read). A combined "NSF/Overdraft Fee (per item)" has no such phrase and
+ * stays overdraft (v16, v82). Pure.
+ */
+export function pricedNounPhrase(words: string, amount: number): { name: string | null; hint: string } | null {
+  const cell = (words.split(CELL_SEPARATOR).at(-1) ?? "").replace(/\s+/g, " ").trim();
+  const match = cell.match(FEE_OF_SENTENCE);
+  if (!match || NAMES_A_FEE.test(cell.slice(0, match.index))) return null;
+  const phrase = match[1].trim();
+  if (GENERIC_PRICED_PHRASE.test(phrase)) return null;
+  const name = `${phrase.charAt(0).toUpperCase()}${phrase.slice(1)}`;
+  const hint = classifyFeeText(name);
+  if (!hint || !usableName(name) || !passesDarwinChecks(hint, name, amount)) return null;
+  return { name: dropsCondition(cell, name, hint) ? null : name, hint };
+}
+
 /** "You can only be assessed one overdraft fee per day". */
 const ONE_PER_DAY = /\b(?:only|no more than|maximum of|limit of|up to)\s+(?:be\s+(?:assessed|charged)\s+)?one\b[^.;|]{0,30}?\bper\s+(?:business\s+)?day\b/i;
 
@@ -2312,6 +2350,12 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
       feeName = tail;
       hint = tailHint;
     }
+  }
+  // v114: "... to cover overdrafts an NSF fee of $30.00 per item" is the NSF fee, named "NSF fee".
+  const priced = hint ? pricedNounPhrase(ownWords(0, feeAmounts[0]), feeAmounts[0].value) : null;
+  if (priced) {
+    feeName = priced.name ?? feeName;
+    hint = priced.hint;
   }
 
   // v34: "We've lowered Overdraft Paid Item fees from $38 to $30" (Pinnacle): a change the

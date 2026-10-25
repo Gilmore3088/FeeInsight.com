@@ -299,7 +299,17 @@ import { withGluedFootnotePrices } from "@/lib/custom-report/glued-footnote-pric
 // Accounts", "Retired Accounts (no longer available on new memberships)") (`discontinuedRow`, source
 // check v26), so the self-check holds it as untraced. Removes reads only. The stale-read floor stays
 // at v97. Name re-tidy stays at v27.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 113 } as const;
+// v114: a sentence's priced noun phrase ("... to cover overdrafts an NSF fee of $30.00 per item",
+// Reliance State Bank, live fee 140283) names and files the price (`pricedNounPhrase` in rules.ts,
+// reusing `FEE_OF_SENTENCE`). The cut words "overdrafts an NSF fee" filed it by their first fee word:
+// nsf only while a PDF glyph garbled "Overdrafts", overdraft once Rosetta's glyph repair reads it. A
+// generic phrase ("a monthly fee of", "a service charge of"), words before it that name a fee, a cut
+// that drops a condition, or a line no rule reads as a fee keep the read as before; a combined
+// "NSF/Overdraft Fee" stays overdraft. Oct 25 dry run over 972 live fees whose line or name has the
+// phrase: 222 rules reads come out with the phrase's name (32 differ from the live name), 2 change
+// category, both to the live fee's own; with the glyph repaired, Reliance is a third. The stale-read
+// floor stays at v97. Name re-tidy stays at v27.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 114 } as const;
 
 export interface SpecialistRun {
   strategy: string;

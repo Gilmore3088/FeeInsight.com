@@ -596,4 +596,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "priced-noun-phrase-names-the-fee",
+    agent: "knox",
+    stage: "extract",
+    lesson: "When a sentence states a price as \"a/an <X> fee of $N\" (\"... to cover overdrafts an NSF fee of $30.00 per item may also apply\"), the price is the <X> fee: name it by that noun phrase (\"NSF fee\") and file it by that phrase's category, never by the first fee word in the words cut before it (\"overdrafts\"). The words before keep the read only when the phrase is generic (\"a monthly fee of\", \"a service charge of\", \"an inactivity fee of\" say how often or what kind, and the words before say what for), when those words name a fee of their own, or when cutting them would drop a condition (then keep the name, not the category). A combined \"NSF/Overdraft Fee\" names no such phrase and stays overdraft.",
+    why: "Reliance State Bank's live fee 140283 was named \"Overdra�s an NSF fee\" and read as nsf only because a PDF glyph garbled \"Overdrafts\"; once Rosetta's glyph repair reads the word, the cut name classifies as overdraft and the $30 NSF fee would be filed as the overdraft fee. The category came from the sentence fragment, not from the phrase that priced it.",
+    evidence: { issues: [1100], prs: [], files: ["src/lib/agents/knox/rules.ts", "src/lib/agents/knox/cutoff-shape.ts", "src/lib/agents/knox/specialists.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];
