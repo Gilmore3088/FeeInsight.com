@@ -323,6 +323,10 @@ export function rosettaReaderManifests(versions: RosettaVersions): ReplayManifes
  * in a manifest above.
  */
 export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
+  // #2477: a receipt strategy for a status-only reopen, not a selector that replays work.
+  SAME_TEXT_COPY_STRATEGY: "v1 names the receipt `read.same_text_copy` that reopenSameTextCopies writes when it sets a wrong_document current copy to completed because an older copy of the same page holds the same text and Knox rows. The backlog pass is off (SAME_TEXT_COPY_REOPEN_LIVE false) and only counts and samples: 714 current copies at 641 banks on 2026-10-25. Nothing is replayed by the version; reopened texts reach Knox's ordinary selection, and no fee row or provider work is touched here.",
+  // #2625: recorded on each fdic-financials partition, deliberately not a registry replay selector.
+  FDIC_FINANCIALS_PARSER_VERSION: "v2 attaches a BankFind quarter to the bank by the certificate the FFIEC POR file says filed as its RSSD that quarter. Only quarters with stored POR certificates (2023 Q1 on) can change, and the FFIEC call-detail loader (v6) makes each such fdic-financials quarter due again when its POR shows a bank filing under a certificate that is not today's. Registering this version in REGISTRY_PARSER_VERSIONS would reload every quarter back to 2010 for no change, so there is no separate replay to count. No fee row or provider work is touched.",
   // #2052: a study method version, not a fee selector.
   INFERRED_VOLUME_VERSION: "v4 counts overdraft/NSF income only when current against its charter's newest call report filing: bank income within one quarter, credit union December year-to-date income within four quarters. The study rebuilds itself on its next daily step under the new method version; no fee row, raw/verified/published tier or provider work is touched or replayed.",
   PAID_RETURNED_EVENT_VERSION: "v1 is prospective source-owned paired-action proof and fresh raw lineage only. Existing same-unit, judged and held histories cannot be bypassed by projected names or line_share; mixed/unknown scope stays eligibility-held. Extract88/stale78/lineup73/twin82/verify3/source-check2/recheck5/publish3 remain settled. No selector, global category-guard version, historical replay, recovery, provider or source work is queued.",
@@ -558,6 +562,9 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // at another bank's ATMs fails cash advance.
     // v89 (Oct 25, #1877): overdraft admits a credit union's "Draft Protection Fee" (Knox v112's pattern);
     // names only, so no live fee changes on the Oct 25 dry run.
+    // v90 (Oct 25, #1912): a plain return charge printed in a foreign check or collection section
+    // re-files from NSF to deposited_item_return, and a late charge named for the safe deposit box
+    // re-files from late_payment to safe_deposit_box (2 move in place; 6 go to the second look).
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",

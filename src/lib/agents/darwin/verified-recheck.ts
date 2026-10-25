@@ -60,8 +60,12 @@ export const RECHECK_REJECTED_FLAG_PREFIX = "darwin_recheck";
  * sample of those rows and reports what the recheck would do (`olderLive`), writing nothing; on,
  * they join the recheck and fail or pass like any other row. It turns on by PR once James approves
  * the dry-run count by reason.
+ * On 2026-10-25 by the sampled-clean rule: a dry run of all 3,266 older live rows against their stored
+ * texts fails 4, all `conditional_zero`, each read against the bank's own text and right (a $0 only
+ * with e-Statements, direct deposit or a balance). A fifth, a Notary Fee $0 beside a non-customer
+ * price ("$5.00 charge for non-F&M customers"), was the rule's error and passes now.
  */
-export const DARWIN_RECHECK_OLDER_LIVE = false;
+export const DARWIN_RECHECK_OLDER_LIVE = true;
 /** Older live rows read per step for the shadow report, on every `OLDER_LIVE_SHADOW_EVERY`th run. */
 export const OLDER_LIVE_SHADOW_LIMIT = 200;
 export const OLDER_LIVE_SHADOW_EVERY = 4;
@@ -73,8 +77,10 @@ export const OLDER_LIVE_SHADOW_EVERY = 4;
  * `SECOND_LOOK_DUE_LIMIT` live rows whose first look is due, and the shared second look confirms
  * (archives) or clears each. Off, it reports what that would do (`dueSecondLooks`) and writes
  * nothing. It turns on by PR once James approves the count of due flags.
+ * On 2026-10-25 with `DARWIN_RECHECK_OLDER_LIVE`: no flag was due on a live fee (all 48 pending flags
+ * sit on fees already down), so it reaches only the 4 older rows above, 12 hours after their first look.
  */
-export const DARWIN_RECHECK_SECOND_LOOK_LIVE = false;
+export const DARWIN_RECHECK_SECOND_LOOK_LIVE = true;
 /**
  * The narrow switch-on (James, 2026-10-16 03:37 UTC, "2-4' yes"): with
  * `DARWIN_RECHECK_SECOND_LOOK_LIVE` still off, only first looks flagged under these reason codes get

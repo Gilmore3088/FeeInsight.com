@@ -61,6 +61,7 @@ vi.mock("@/lib/agents/run-store", async (importOriginal) => ({
 vi.mock("@react-pdf/renderer", () => ({ renderToBuffer: vi.fn(async () => Buffer.from("%PDF-synthetic")) }));
 vi.mock("@/components/hamilton/reports/PdfDocument", () => ({ PdfDocument: () => null }));
 vi.mock("@/components/hamilton/reports/AnalysisPdfDocument", () => ({ AnalysisPdfDocument: () => null }));
+vi.mock("@/components/hamilton/reports/MonthlyBriefingPdf", () => ({ MonthlyBriefingPdf: () => null }));
 
 import { sql } from "@/lib/data-store/connection";
 import {
