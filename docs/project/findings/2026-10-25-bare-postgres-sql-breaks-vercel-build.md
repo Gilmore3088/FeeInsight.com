@@ -2,8 +2,8 @@
 
 **Found:** 2026-10-25, Hamilton V5 merges (#2657).
 
-**What happened:** production deployments of `main` for #2652, #2654, #2656, #2658 and #2659 all
-ended in ERROR at "Failed to type check", so production stayed on #2651 (`06ff84a4b`) until #2660's
+**What happened:** production deployments of `main` for #2652, #2649, #2654, #2656, #2658 and #2659
+all ended in ERROR at "Failed to type check", so production stayed on #2651 (`06ff84a4b`) until #2660's
 build passed. Branch previews failed the same way. GitHub's `checks` job (tsc) passed on every one
 of those commits. The errors were in two Knox database tests none of those PRs touched
 (`paid-returned-events.db.test.ts`, `symbolic-lesser-of-concurrency.db.test.ts`): `Sql<{ numeric;

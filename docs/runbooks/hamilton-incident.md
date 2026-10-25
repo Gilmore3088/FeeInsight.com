@@ -188,7 +188,7 @@ reconcile PRs are rolled back by promoting a deployment, not by revert.
 ### Preview rehearsal, 2026-10-25 20:29 to 20:35 UTC
 
 Nothing was promoted. The receipt is `/mnt/project-files/hamilton-v5/rollback-preview/receipts.md`,
-recorded on #1921.
+summarised on #1921 (issuecomment-6402906130).
 
 - **Step 1 target:** the rollback candidate `dpl_4ihEM6s3kRWCPjY8cPqSxBxiiHz8` (main `06ff84a4b`,
   #2651) still serves at its own URL. `/api/health` returns 200 `ok`, and `/pro/analyze` returns the
@@ -196,12 +196,14 @@ recorded on #1921.
 - **Step 3 build:** main before #2660 (`b896375d3`, the tree a revert of #2660 leaves) built as
   preview `dpl_LyySkE79vrbj3Aqeexj2LmZg4r5z`, READY about 4.5 minutes after the build started.
   `/api/health` returns 200 `ok`, and `/pro/reports` returns the sign-in page.
-- **Reverts on `fac4b3ec5`:** reverting #2660, #2659, #2658, #2656, #2654, #2652 and #2651 newest
+- **Reverts on `fac4b3ec5` (local):** reverting #2660, #2659, #2658, #2656, #2654, #2652 and #2651 newest
   first applies cleanly; #2650 conflicts only in `docs/project/LESSONS.md`. The unwound tree
   type-checks, and no file under `supabase/` is touched.
-- **Before promoting, check the target is READY.** Five production builds of `main` (#2652 to
-  #2659) failed the type check at random, so production stayed on #2651 until #2660 built (fixed
-  in #2661, #2657). A merge is live only when its production deployment is READY.
+- **Before promoting, check the target is READY.** Six production builds of `main` in a row
+  (#2652, #2649, #2654, #2656, #2658, #2659) ended in ERROR, so production stayed on #2651 until
+  #2660 built. The #2659 build failed its type check on a database test's postgres handle type (fixed
+  in #2661, #2657); the deployment ids are in the receipt. A merge is live only when its production
+  deployment is READY.
 
 ## Not covered yet
 
