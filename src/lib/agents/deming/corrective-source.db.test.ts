@@ -18,7 +18,7 @@ const TEXT = "OTHER SERVICES\nWire Transfer | $25.00\nStop Payment Fee | $35.00"
 type Db = Parameters<typeof correctPublishedFee>[0];
 
 describe.skipIf(!connection)("prospective corrective source context in actual PostgreSQL", () => {
-  let raw: postgres.Sql, db: Db, oldId: number, correctionId: number, originRunId: number;
+  let raw: postgres.Sql<any>, db: Db, oldId: number, correctionId: number, originRunId: number;
   let metadataSql=""; let metadataParams:unknown[]=[];
   async function anotherCorrection(key: string = randomUUID(), evidenceDoc = DOC) {
     const event = randomUUID();
@@ -569,7 +569,7 @@ describe.skipIf(!connection)("prospective corrective source context in actual Po
 // moves to the end of the order; with OFFSET counted across statements the next window then
 // skipped as many unseen cases as had moved. Keys keep Postgres's microseconds through the page.
 describe.skipIf(!connection)("corrective replay member paging in actual PostgreSQL", () => {
-  let raw: postgres.Sql;
+  let raw: postgres.Sql<any>;
   const PREFIX = "corrective:paging-";
   beforeAll(async () => { raw = postgres(connection!, { max: 1, onnotice: () => {} }); });
   afterAll(async () => { await raw`DELETE FROM eval_cases WHERE case_key LIKE ${`${PREFIX}%`}`; await raw.end(); });

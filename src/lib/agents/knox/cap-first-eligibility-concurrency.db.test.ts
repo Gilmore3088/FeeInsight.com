@@ -19,9 +19,9 @@ function deferred<T>() {
 }
 
 describe.skipIf(!connection)("Cap applicability hold and Darwin concurrency (#2304)", () => {
-  let observer: postgres.Sql;
-  let firstConnection: postgres.Sql;
-  let secondConnection: postgres.Sql;
+  let observer: postgres.Sql<any>;
+  let firstConnection: postgres.Sql<any>;
+  let secondConnection: postgres.Sql<any>;
   let appSql: Db;
   let extract: typeof import("./extract");
   let darwin: typeof import("../darwin/verify");

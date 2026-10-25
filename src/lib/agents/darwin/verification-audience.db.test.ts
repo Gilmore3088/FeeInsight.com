@@ -20,7 +20,7 @@ const hash = (text: string) => createHash("sha256").update(text).digest("hex");
 const own = "Check Images\n• $10.00 (Consumer Only) per statement";
 
 describe.skipIf(!connection)("prospective own-price audience admission in real PostgreSQL (#2342)", () => {
-  let db: postgres.Sql;
+  let db: postgres.Sql<any>;
   let appSql: Db;
   let verify: typeof import("./verify");
   let release: typeof import("./release-held");

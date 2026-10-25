@@ -40,7 +40,7 @@ function intercept(tx: Db, before: (sql: string) => Promise<void>): Db {
 }
 
 describe.skipIf(!connection)("Prospective owned paid/returned events in actual PostgreSQL (#1918)", () => {
-  let db: postgres.Sql, competitor: postgres.Sql, observer: postgres.Sql, appSql: Db;
+  let db: postgres.Sql<any>, competitor: postgres.Sql<any>, observer: postgres.Sql<any>, appSql: Db;
   let extract: typeof import("./extract");
   let darwin: typeof import("../darwin/verify");
   let publish: typeof import("../hamilton/publish");

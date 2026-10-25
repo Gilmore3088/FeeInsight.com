@@ -19,9 +19,9 @@ function deferred<T>() {
 }
 
 describe.skipIf(!connection)("International applicability hold and Darwin concurrency (#2278)", () => {
-  let observer: postgres.Sql;
-  let firstConnection: postgres.Sql;
-  let secondConnection: postgres.Sql;
+  let observer: postgres.Sql<any>;
+  let firstConnection: postgres.Sql<any>;
+  let secondConnection: postgres.Sql<any>;
   let appSql: Db;
   let extract: typeof import("./extract");
   let darwin: typeof import("../darwin/verify");
@@ -108,7 +108,7 @@ describe.skipIf(!connection)("International applicability hold and Darwin concur
     return darwin.insertVerifiedFee(tx, { runId: fixture.runId, row, canonicalFeeKey, sourceText: TEXT });
   };
 
-  async function attemptVerify(client: postgres.Sql, fixture: Fixture, legacy = false, canonicalFeeKey = "wire_intl_outgoing") {
+  async function attemptVerify(client: postgres.Sql<any>, fixture: Fixture, legacy = false, canonicalFeeKey = "wire_intl_outgoing") {
     return client.begin(tx => verify(tx as unknown as Db, fixture, legacy, canonicalFeeKey))
       .then(id => ({ kind: "completed" as const, id }), error => {
         if ((error as Error)?.constructor?.name === "VerificationAudienceDeferred") return { kind: "deferred" as const };
