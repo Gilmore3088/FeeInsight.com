@@ -597,7 +597,9 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     edition of`).
 14. Category guard (`category-guard.ts`): a name that contradicts its category, up to 100 a
     step, batch `category-guard-run-<run id>`, `category_guard:<code>: <reason>`; it also
-    re-files a live fee under the type its name names.
+    re-files a live fee under the type its name names. Its restore brings back a takedown
+    today's guard passes and that traces on its own stored text, unless the same fee is already
+    live; a twin held as `account_type_hold:%` counts as present too (#1675).
 15. Guard requeue (`guard-requeue.ts`): a verified row the guard rejected at publish and never
     published is re-read once per guard version; one today's guard passes goes back to
     verified (flag `category_guard_requeued:g<version>`). No rollback.

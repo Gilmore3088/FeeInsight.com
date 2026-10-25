@@ -1596,7 +1596,14 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v81 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v81 (Oct 22):
+- The guard is at v82 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v82 (Oct 25,
+  #1662): the night deposit key-deposit refusal keeps a name only when its lost, replaced, service,
+  monthly, annual or rental word sits on the key or the night deposit noun
+  (`NIGHT_DEPOSIT_KEY_DEPOSIT_EXEMPT`), with word boundaries; a "Services:" header or an unrelated
+  "service fee billed monthly" clause no longer keeps a key deposit filed as the service. Its live
+  re-check is the guard catch-up; the read-only dry run (Oct 25) found no live fee that changes
+  verdict (142 live night deposit names that name a key, all unchanged).
+- v81 (Oct 22):
   "Returned Check Deposit" and "Returned Item Deposit" name a returned deposited item (not one
   followed by "bag"). It only admits names, so no fee that passes today fails. Found by the shadow
   lab (#2536), where two answer-key fees ($5, $32) were refused.
