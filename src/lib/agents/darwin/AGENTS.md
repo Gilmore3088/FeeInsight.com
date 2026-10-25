@@ -922,6 +922,14 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
     head and stays live. On prod (2026-10-17) the clause matches 2 live fees: 139153 (a takedown
     before) and 93520 "Overdraft Protection transfer to another deposit account you have at Cross
     Bank" $10. The count SQL mirrors the rule (`own_account_head`).
+  v7 (#1521, `LIVE_FRAGMENT_STRATEGY` v7). A name cut before its noun, after a preposition, a count
+  and an audience word ("of 3 personal", "after 5 business"; `DANGLING_AUDIENCE` in
+  `fee-name-fragments.ts`), is a `sentence_end`. Neither shape read it, so the public page alone
+  hid it (#1180). Knox's `isCutoffName` (v108) reads the same shape, so publish holds new ones. Dry
+  run 2026-10-25 over 88,108 live fees: 2 change verdict, both from no match to `reread` (kept live,
+  Knox asked to re-read the line): 75914 "Counter Check: A blank page of 3 personal" $3 and 74142
+  "Overdraft - Non-consumer - Continuous Overdraft Charge. Daily fee after 5 business" $10. No
+  takedown, no rename. The count SQL reads it as `sentence_end_audience`.
 - Live hourly re-check (`hourly-frequency-check.ts`, #1456). About 802 live fees say in their name
   that they are priced by the hour ("Research Fee $25/hour", "Subpoena Fee - Per Hour") but carried
   no frequency or a per-item one, so a report read the price as a flat charge. `hourly` shows as "per
@@ -1817,7 +1825,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DARWIN_SCHEDULE_REFILE_STRATEGY` | `verify.schedule_refile` | v1 | `darwin/schedule-refile.ts` |
 | `DARWIN_VERDICT_SCORE_STRATEGY` | `verify.verdict_score` | v2 | `darwin/verdict-score.ts` |
 | `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v5 | `darwin/verified-recheck.ts` |
-| `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v6 | `darwin/live-fragment-check.ts` |
+| `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v7 | `darwin/live-fragment-check.ts` |
 | `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v3 | `darwin/hourly-frequency-check.ts` |
 | `NON_DEPOSIT_CHECK_VERSION` | `darwin.non_deposit_document` | v3 | `darwin/non-deposit-document-check.ts` |
 | `LINE_CONFLICT_CHECK_VERSION` | `darwin.line_conflict` | v1 | `darwin/line-conflict-check.ts` |

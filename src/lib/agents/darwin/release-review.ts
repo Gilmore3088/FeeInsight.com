@@ -105,6 +105,9 @@ type SqlTag = typeof sql;
 // "if"/"when" inside a closed parenthetical that ends the name as a sentence ("ACH Return Item (fee
 // is per item)"), so such a name is no `name_fragment`. The check only holds less; fees it held
 // before are not sent back to the paid review for it.
+// #1521 (Knox v108, no version change): a name cut before its noun after a count and an audience
+// word ("Counter Check: A blank page of 3 personal") is a `name_fragment` too. The check only holds
+// more, so already-reviewed fees are not sent back to the paid review for it.
 export const DARWIN_RELEASE_REVIEW_STRATEGY = {
   strategy: "verify.release_review",
   version: 17,
