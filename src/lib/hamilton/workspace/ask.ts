@@ -15,6 +15,7 @@
 import { subjectPossessive, subjectName } from "./subject";
 import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
 import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
+import { STATE_NAMES } from "@/lib/us-states";
 import { RESEARCH_SPLIT_LIVE } from "@/lib/fee-fold";
 import { buildFeeAnswer, type ExhibitFocus } from "./answer";
 import { feeItem, proseFeeName } from "./names";
@@ -210,7 +211,7 @@ const FUNCTION_WORDS = new Set(
   ("how do does did is are was were be been am what whats which where wheres if we us our ours i me my it its " +
     "they them their theirs the a an to of for with on in at by than and or about too so should would could can " +
     "will there this that these those s now today currently still really just me show list name other " +
-    "institutions institution banks bank credit unions union group state states others similar").split(" "),
+    "institutions institution banks bank unions union group state states others similar").split(" "),
 );
 
 /** Words that ask how a price compares or sits: what a reader asks on a fee's own page. */
@@ -220,43 +221,86 @@ const PRICE_POSITION_WORDS = new Set(
     "median benchmark benchmarks vs versus against high higher highest low lower lowest more less most least " +
     "cheap cheaper cheapest expensive fee fees charge charges charged charging price priced pricing cost costs " +
     "raise raised raising cut cutting drop dropped increase decrease change went go competitive right above below " +
-    "line much percentile").split(" "),
+    "much percentile").split(" "),
 );
 
-/** Words a name follows: "with Navy Federal", "than Chase", "in Florida". */
-const NAME_LEADS = new Set("with than against vs versus in".split(" "));
+/** Words an institution's name follows: "with Navy Federal", "than Chase", "against Chime". */
+const NAME_LEADS = new Set("with than against vs versus".split(" "));
+
+/**
+ * Products, services and payment apps a reader may write with a capital: never an institution's
+ * name, so "with Zelle" or "against Venmo" keeps no page fee.
+ */
+const PRODUCT_WORDS = new Set(
+  ("zelle venmo paypal cashapp cash app apple google pay checking savings deposit deposits treasury management " +
+    "wealth business banking mortgage mortgages loan loans lending card cards cd cds heloc helocs interchange " +
+    "credit debit wire wires atm atms").split(" "),
+);
+
+/** Lowercase state names, each as its words, for "in Florida" and "in New York". */
+const STATE_WORDS: string[][] = Object.values(STATE_NAMES).map((name) => name.toLowerCase().split(/\s+/));
+
+/** How many words from `i` spell a state name, or 0. */
+function stateNameAt(words: readonly string[], i: number): number {
+  for (const parts of STATE_WORDS) {
+    if (parts.every((part, k) => words[i + k]?.toLowerCase() === part)) return parts.length;
+  }
+  return 0;
+}
 
 /**
  * The fee of the page Ask was opened from (#1895), for a question that names no fee and asks only
  * how a price compares or sits: "how do we compare with peers?", "is $35 too high?", "how do we
  * compare with Navy Federal?" asked from the overdraft page. Every content word must be a price,
- * position or comparison word, a word for the subject, a number, or a name after "with", "than", "in"; any
- * other word ("CD pricing", "mortgages", "interchange", "deposit rates") keeps no page fee, so Ask
- * reads the question as it would with no page at all, and says plainly what it can't answer (#1077).
+ * position or comparison word, a word for the subject, a number, a state after "in", or an
+ * institution's name after "with", "than", "against", "vs" or "versus". Any other word ("CD
+ * pricing", "mortgages", "interchange", "credit line", "in Checking", "with Zelle") keeps no page
+ * fee, so Ask reads the question as it would with no page at all, and says plainly what it can't
+ * answer (#1077).
  */
 export function pageFeeFor(question: string, pageFee: string | null, tested: readonly number[] = []): string | null {
   if (!pageFee || !Object.hasOwn(DISPLAY_NAMES, pageFee)) return null;
   if (matchFeeCategory(question)) return null;
   if (asksIncome(question) || asksIncomeWhy(question) || SETS_PAGE_FEE_ASIDE.test(question)) return null;
-  const words = question.replace(/[’`]/g, "'").match(/\$?[A-Za-z0-9.,']+/g) ?? [];
+  const words = (question.replace(/[’`]/g, "'").match(/\$?[A-Za-z0-9.,']+/g) ?? [])
+    .map((raw) => raw.replace(/'s?$|'/g, "").replace(/[.,]+$/, ""))
+    .filter(Boolean);
   let asksPrice = tested.length > 0;
-  // The word before, and whether it was taken as part of a name.
-  let previous = "";
+  // Whether the word before was taken as part of an institution's name.
   let inName = false;
-  for (const raw of words) {
-    const word = raw.replace(/'s?$|'/g, "").replace(/[.,]+$/, "");
-    if (!word) continue;
+  for (let i = 0; i < words.length; i += 1) {
+    const word = words[i];
     const lower = word.toLowerCase();
-    const after = previous;
+    const before = i > 0 ? words[i - 1].toLowerCase() : "";
     const continuesName = inName;
-    previous = lower;
     inName = false;
     if (/^\$?[\d.,]+[kKmMbB]?$/.test(word)) continue;
-    // An institution's or market's name, only right after "with", "than", "against", "vs", "versus"
-    // or "in", and the capitalized words that run on from it: "with Navy Federal Credit Union",
-    // "than Chase", "in Florida". A capitalized product ("on Zelle", "our Checking") is not a name,
-    // nor is an all-capitals word ("CD", "ROA").
-    if ((NAME_LEADS.has(after) || continuesName) && /^[A-Z][A-Za-z&-]*$/.test(word) && !/^[A-Z]{2,}$/.test(word)) {
+    // A state after "in" ("in Florida", "in New York"); any other capitalized word after "in"
+    // ("in Checking", "in Wealth") is a product line, not a place.
+    if (before === "in") {
+      const span = stateNameAt(words, i);
+      if (span > 0) {
+        i += span - 1;
+        continue;
+      }
+    }
+    // "in line with peers": "line" only after "in", never a credit line.
+    if (lower === "line" && before === "in") {
+      asksPrice = true;
+      continue;
+    }
+    // "credit" only in "credit union(s)", never a credit line or credit card.
+    if (lower === "credit" && /^unions?$/i.test(words[i + 1] ?? "")) continue;
+    // An institution's name: a capitalized word right after with, than, against, vs or versus, and
+    // the capitalized words that run on from it ("with Navy Federal Credit Union"). Never a
+    // product or app ("with Zelle"), an all-capitals word ("CD", "ROA") or one with a plural s
+    // ("CDs", "HELOCs").
+    if (
+      (NAME_LEADS.has(before) || continuesName) &&
+      /^[A-Z][A-Za-z&-]*$/.test(word) &&
+      !/^[A-Z]{2,}s?$/.test(word) &&
+      !PRODUCT_WORDS.has(lower)
+    ) {
       inName = true;
       continue;
     }
