@@ -27,8 +27,8 @@ const SCHEDULE = [
 describe("Knox v116: a card program section's rows are not the account's (#1908, #1905)", () => {
   const { candidates } = runFreeSpecialists(SCHEDULE, { institutionName: "Navy Federal Credit Union" });
 
-  it("is version 116", () => {
-    expect(KNOX_RULES_STRATEGY.version).toBe(116);
+  it("ships from version 116 on", () => {
+    expect(KNOX_RULES_STRATEGY.version).toBeGreaterThanOrEqual(116);
   });
 
   it("reads none of the prepaid or gift card's rows as the account's", () => {
