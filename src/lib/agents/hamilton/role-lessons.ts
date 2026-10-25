@@ -153,7 +153,7 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     stage: "publish",
     lesson: "Before a live fee's name takes a heading from its page, check that the heading names one account: a web page's breadcrumb or menu, its links run together with no spaces, names none, and a price in a comparison table belongs to its column's account, never to a line above the table. A name given from a heading that today's rule refuses is set back to the name first read from the page.",
     why: "Account names v1 took First Bank of Pike's breadcrumb \"HomePersonal BankingAccountsPersonal Checking\" as the account above a comparison table, so its Secure Checking $7 fee went live as \"HomePersonal BankingAccountsPersonal Checking Monthly Service Charge\"; the furniture check matched whole words only, and fused links hid them. The same happened at Liberty National Bank (140140) and to a fused menu line (137749). Knox's raw and verified names were clean.",
-    evidence: { issues: [1917], prs: [], files: ["src/lib/fee-account-heading.ts", "src/lib/agents/hamilton/account-names.ts"] },
+    evidence: { issues: [1917], prs: [2626], files: ["src/lib/fee-account-heading.ts", "src/lib/agents/hamilton/account-names.ts"] },
     appliesTo: "all",
     since: "2026-10-25",
   },
