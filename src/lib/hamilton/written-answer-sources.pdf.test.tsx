@@ -79,7 +79,7 @@ describe("a written answer's sources in the PDF and the board brief", () => {
     expect(sources.everyFigureSourced).toBe(true);
     expect(sources.lines).toEqual([
       { id: "fee:published:9", figure: "Overdraft (OD)", institution: "Research Bank", value: 37, unit: "usd", complete: true,
-        detail: "Published fee catalog · record fee:published:9 · date not recorded" },
+        detail: "Published fee catalog · record fee:published:9 · source document 77 · date not recorded" },
       { id: filingId, figure: "Service charge income", institution: "Research Bank", value: 1_100_000, unit: "usd", complete: true,
         detail: `FDIC call report · record ${filingId} · reporting date Jun 30, 2026 · quarter` },
     ]);
@@ -88,9 +88,9 @@ describe("a written answer's sources in the PDF and the board brief", () => {
     const section = evidenceRecordSection(answer);
     expect(section?.rows.map((row) => [row.label, row.value])).toEqual([["Overdraft (OD) · Research Bank", "$37"], ["Service charge income · Research Bank", "$1,100,000"]]);
     expect(section?.notes).toContain(WRITTEN_SOURCES_NOTE);
-    // A URL or document the claims do not hold is never printed.
+    // The schedule's document id comes from the saved claims (#1077 defect 6); its URL is not printed.
     expect(JSON.stringify(section)).not.toContain("example.test");
-    expect(JSON.stringify(section)).not.toMatch(/document 77/);
+    expect(JSON.stringify(section)).toMatch(/source document 77/);
 
     const text = await pdfText(answer);
     expect(text).toContain("Evidence Record");
@@ -102,7 +102,7 @@ describe("a written answer's sources in the PDF and the board brief", () => {
     const brief = boardBriefFromAnalysis(answer, "a1", edits);
     const records = brief.exhibits?.find((e) => e.id === "evidence_records");
     expect(records?.rows).toEqual([
-      ["Overdraft (OD), Research Bank", "$37", "Published fee catalog · record fee:published:9 · date not recorded", "Matches the saved record"],
+      ["Overdraft (OD), Research Bank", "$37", "Published fee catalog · record fee:published:9 · source document 77 · date not recorded", "Matches the saved record"],
       ["Service charge income, Research Bank", "$1,100,000", `FDIC call report · record ${filingId} · reporting date Jun 30, 2026 · quarter`, "Matches the saved record"],
     ]);
     expect(records?.note).toBe(WRITTEN_SOURCES_NOTE);
@@ -111,6 +111,13 @@ describe("a written answer's sources in the PDF and the board brief", () => {
     expect(JSON.stringify(brief.exhibits)).not.toContain(reading);
     expect(JSON.stringify(brief.exhibits)).not.toContain("stop payment");
   }, 20000);
+
+  it("prints no document for claims saved before they kept the source", () => {
+    const answer = writtenAnswer(bound);
+    const legacy = { ...answer.claims!, facts: answer.claims!.facts.map(({ source: _source, ...fact }) => fact) };
+    const [line] = writtenAnswerSources({ ...answer, claims: JSON.parse(JSON.stringify(legacy)) }).lines;
+    expect(line.detail).toBe("Published fee catalog · record fee:published:9 · date not recorded");
+  });
 
   it("gives a reading-only answer no source line", async () => {
     const answer = writtenAnswer(readingOnly);

@@ -164,8 +164,32 @@ export const FFIEC_CALL_ITEM_SCHEDULES = [...new Set(FFIEC_CALL_ITEMS.map((item)
  */
 export const FFIEC_FILING_UPDATED_KEY = "filing_last_updated";
 export const FFIEC_FILING_UPDATED_CODE = "POR_LAST_UPDATED";
+/**
+ * Not a financial line either: the FDIC certificate the bank (IDRSSD) filed that quarter's report
+ * under (the POR file's "FDIC Certificate Number"), stored as `count` with schedule `POR` (#2625).
+ * When a bank merges into a different charter, today's certificate can belong to the small charter
+ * while the RSSD carries the bigger predecessor; this row says which certificate's BankFind quarter
+ * is the bank's own. Read it only by this key.
+ */
+export const FFIEC_FILING_CERT_KEY = "filing_fdic_cert";
+export const FFIEC_FILING_CERT_CODE = "POR_FDIC_CERT";
 /** Item keys in institution_call_report_items that describe a filing, not a figure in it. */
-export const FFIEC_FILING_METADATA_KEYS: ReadonlySet<string> = new Set([FFIEC_FILING_UPDATED_KEY]);
+export const FFIEC_FILING_METADATA_KEYS: ReadonlySet<string> = new Set([FFIEC_FILING_UPDATED_KEY, FFIEC_FILING_CERT_KEY]);
+
+/** One item row per bank in the POR file with an FDIC certificate: the certificate it filed under. */
+export function porCertItemValues(por: { certColumn: string | null; certs: readonly { rssd: string; cert: string }[] }): FfiecItemValue[] {
+  if (!por.certColumn) return [];
+  return por.certs.map((row) => ({
+    rssd: row.rssd,
+    key: FFIEC_FILING_CERT_KEY,
+    code: FFIEC_FILING_CERT_CODE,
+    description: `${por.certColumn} (the certificate this report was filed under)`,
+    schedule: "POR",
+    unit: "count" as const,
+    basis: "point_in_time" as const,
+    value: Number(row.cert),
+  }));
+}
 
 /** One item row per bank in the POR file: its last-updated time as epoch seconds. */
 export function porItemValues(por: { column: string | null; rows: readonly { rssd: string; epochSeconds: number }[] }): FfiecItemValue[] {

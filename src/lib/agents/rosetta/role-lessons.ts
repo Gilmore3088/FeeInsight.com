@@ -87,6 +87,16 @@ export const ROSETTA_LESSONS: AgentLesson[] = [
     since: "2026-10-25",
   },
   {
+    id: "issue-2477-same-text-same-verdict",
+    agent: "rosetta",
+    stage: "fee-page check",
+    lesson: "Judge a page, not a copy: when a newer copy of a page holds exactly the text of an older copy Knox already read, give it that copy's verdict. Sparing \"a text Knox already pulled fees from\" by document alone rejects the page's current copy while its fees stay live on a superseded copy nothing checks.",
+    why: "The product-page rule rejected newer copies whose bytes changed and whose text did not, while their identical older copies stayed readable because Knox had read them. Knox never read the current copies, so 441 live fees at 186 banks stayed on superseded copies with no current-copy row to move to (Oct 25 prod read, #2477).",
+    evidence: { issues: [2477, 1053], prs: [], files: ["src/lib/agents/rosetta/same-text-copy.ts", "docs/project/findings/2026-10-25-same-text-newer-copy-rejected.md"] },
+    appliesTo: ["read"],
+    since: "2026-10-25",
+  },
+  {
     id: "pdf-second-reading",
     agent: "rosetta",
     stage: "read",

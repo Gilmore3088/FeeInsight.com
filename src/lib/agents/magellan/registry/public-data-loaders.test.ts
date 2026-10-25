@@ -84,10 +84,64 @@ describe("registry ffiec-call-detail", () => {
       period_basis: "point_in_time",
     }]);
     const detail = partitionDetail(statements);
-    expect(detail.por).toEqual({ file: "FFIEC CDR Call Bulk POR 06302026.txt", column: "Last Date/Time Submission Updated On", banks: 1, unreadable: 0 });
+    expect(detail.por).toEqual({
+      file: "FFIEC CDR Call Bulk POR 06302026.txt", column: "Last Date/Time Submission Updated On", banks: 1, unreadable: 0,
+      cert_column: null, cert_banks: 0, cert_unreadable: 0,
+    });
     expect(detail.schedule_files).toEqual(["FFIEC CDR Call Schedule RI 06302026.txt"]);
     // Value checks see only the financial lines.
     expect(JSON.stringify(detail.value_checks)).not.toContain("filing_last_updated");
+  });
+
+  it("stores the certificate each bank filed under and makes the FDIC quarter due when it is not today's (#2625)", async () => {
+    const withCert = zipSync({
+      "FFIEC CDR Call Schedule RI 09302023.txt": strToU8('"IDRSSD"\t"RIADH033"\n""\t"CONSUMER ACCOUNT PERIODIC MAINTENANCE CHARGES"\n"137915"\t"700"\n'),
+      "FFIEC CDR Call Bulk POR 09302023.txt": strToU8(
+        '"IDRSSD"\t"FDIC Certificate Number"\t"Last Date/Time Submission Updated On"\n"137915"\t"12054"\t"2023-10-30T09:00:00"\n',
+      ),
+    });
+    const page = `<input name="__VIEWSTATE" value="v" /><input name="__VIEWSTATEGENERATOR" value="g" />
+      <select name="ctl00$MainContentHolder$DatesDropDownList"><option value="1">09/30/2023</option></select>`;
+    let calls = 0;
+    const fetchImpl = vi.fn(async () => {
+      calls += 1;
+      if (calls < 5) return new Response(page, { status: 200, headers: { "content-type": "text/html" } });
+      return new Response(withCert as unknown as BodyInit, { status: 200, headers: { "content-type": "application/octet-stream" } });
+    }) as unknown as typeof fetch;
+    const statements: Array<{ text: string; values: unknown[] }> = [];
+    const db = vi.fn((strings: unknown, ...values: unknown[]) => {
+      if (!Array.isArray(strings) || !("raw" in (strings as object))) return strings;
+      const text = (strings as string[]).join(" ");
+      statements.push({ text, values });
+      if (text.includes("COUNT(DISTINCT rssd_id)")) return Promise.resolve([{ matched: 1 }]);
+      if (text.includes("INSERT INTO institution_call_report_items")) return Promise.resolve([{}]);
+      // Emigrant (254): POR says RSSD 137915 filed under 12054; today's certificate is 57083.
+      if (text.includes("FROM institution_call_report_items")) return Promise.resolve([{ institution_id: 254, filing_cert: "12054", current_cert: "57083" }]);
+      if (text.includes("UPDATE registry_ingest_partitions")) return Promise.resolve([{}]);
+      return Promise.resolve([]);
+    }) as unknown as RegistryDb;
+
+    await runRegistryFfiecCallDetail({ partitionKey: "2023Q3", db, fetchOptions: { fetchImpl } });
+    const payloads = statements
+      .filter((s) => s.text.includes("INSERT INTO institution_call_report_items"))
+      .map((s) => JSON.parse(s.values.find((v) => typeof v === "string" && v.startsWith("[")) as string) as Array<Record<string, unknown>>);
+    expect(payloads.map((p) => p[0].item_key)).toEqual(["consumer_maintenance_charges_ytd", "filing_last_updated", "filing_fdic_cert"]);
+    expect(payloads[2]).toEqual([{
+      rssd: "137915",
+      item_key: "filing_fdic_cert",
+      item_code: "POR_FDIC_CERT",
+      item_description: "FDIC Certificate Number (the certificate this report was filed under)",
+      schedule: "POR",
+      value: 12054,
+      unit: "count",
+      period_basis: "point_in_time",
+    }]);
+    const update = statements.find((s) => s.text.includes("UPDATE registry_ingest_partitions"))!;
+    expect(update.values).toEqual(["fdic-financials", "2023Q3", 1]);
+    const detail = partitionDetail(statements);
+    expect(detail).toMatchObject({ parser_version: 6, filing_cert_rows: 1, por_cert_splits: 1, fdic_quarter_marked_due: true });
+    expect(detail.por).toMatchObject({ cert_column: "FDIC Certificate Number", cert_banks: 1, cert_unreadable: 0 });
+    expect(JSON.stringify(detail.value_checks)).not.toContain("filing_fdic_cert");
   });
 });
 

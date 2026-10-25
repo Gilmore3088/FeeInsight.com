@@ -66,12 +66,14 @@ function record(value: unknown): Record<string, unknown> | null {
 const positiveInt = (value: unknown): number | null =>
   typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : null;
 
-function profileFact(institutionId: number, fee: Record<string, unknown>, index: number): HamiltonEvidenceFact | null {
+function profileFact(institutionId: number, fee: Record<string, unknown>, index: number, sharedSourceUrl: unknown = null): HamiltonEvidenceFact | null {
   const amount = fee.amount;
   if (typeof amount !== "number" || !Number.isFinite(amount) || amount < 0) return null;
   const recordId = positiveInt(fee.record_id);
   const documentId = positiveInt(fee.source_document_id);
   const text = (key: string) => (typeof fee[key] === "string" && (fee[key] as string).trim() ? (fee[key] as string) : null);
+  // Tool-output compaction moves a source URL every row shares to `fees.shared_source_url` (#1077, defect 9).
+  const url = text("source_url") ?? (typeof sharedSourceUrl === "string" && sharedSourceUrl.trim() ? sharedSourceUrl : null);
   return {
     id: recordId !== null ? `fee:published:${recordId}` : `fee:profile:${institutionId}:${index}`,
     kind: "observed",
@@ -96,7 +98,7 @@ function profileFact(institutionId: number, fee: Record<string, unknown>, index:
       table: "published_fee_catalog",
       recordId,
       sourceDocumentIds: documentId !== null ? [documentId] : [],
-      urls: text("source_url") ? [text("source_url") as string] : [],
+      urls: url ? [url] : [],
       asOf: null,
       verificationEventId: null,
     },
@@ -146,7 +148,7 @@ function feeFactsAndNames(toolOutputs: readonly unknown[]): { facts: HamiltonEvi
       const rows = [...(Array.isArray(fees.verified) ? fees.verified : []), ...(Array.isArray(fees.provisional) ? fees.provisional : [])];
       rows.forEach((row, index) => {
         const fee = record(row);
-        const fact = fee ? profileFact(profileId, fee, index) : null;
+        const fact = fee ? profileFact(profileId, fee, index, fees.shared_source_url) : null;
         if (fact && !facts.has(fact.id)) facts.set(fact.id, fact);
       });
       return;
@@ -356,6 +358,43 @@ export function indexBasisFor(sentence: string, stats: readonly IndexStatistic[]
     if (!lines.includes(line)) lines.push(line);
   }
   return lines.length > 0 ? `Basis: ${lines.join("; ")}.` : null;
+}
+
+/**
+ * The index statistics a sentence states: each dollar figure that is a statistic the tools returned,
+ * by the same fit the basis line uses (fee, statistic word, amount and group). The one output gate
+ * reads their institution counts against the peer minimum (#1726, T5).
+ */
+export function indexStatisticsStated(sentence: string, stats: readonly IndexStatistic[]): IndexStatistic[] {
+  if (stats.length === 0) return [];
+  const named = namedGroups(sentence);
+  return extractFigures(sentence).flatMap((figure) => {
+    if (figure.kind !== "usd") return [];
+    const match = statisticFor(sentence, figure, stats, named);
+    return match ? [match] : [];
+  });
+}
+
+/**
+ * How many local competitors state a price for each fee category, per local competitor read
+ * (getLocalCompetitors' `competitors[].fees`). Empty when the tools made no such read.
+ */
+export function localCompetitorPriceCounts(toolOutputs: readonly unknown[]): Array<Map<string, number>> {
+  const out: Array<Map<string, number>> = [];
+  for (const output of toolOutputs) {
+    const obj = record(output);
+    if (!obj || !Array.isArray(obj.competitors) || !record(obj.your_fees)) continue;
+    // The subject's own categories count from zero, so a fee no competitor states reads as none.
+    const counts = new Map<string, number>(Object.keys(record(obj.your_fees) ?? {}).map((category) => [category, 0]));
+    for (const item of obj.competitors) {
+      const fees = record(record(item)?.fees);
+      for (const [category, amount] of Object.entries(fees ?? {})) {
+        if (typeof amount === "number" && Number.isFinite(amount)) counts.set(category, (counts.get(category) ?? 0) + 1);
+      }
+    }
+    out.push(counts);
+  }
+  return out;
 }
 
 export interface BindWrittenAnswerInput {

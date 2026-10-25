@@ -12,10 +12,13 @@ import { bindNarrative } from "@/lib/hamilton/narrative-bound";
 import { savedClaimsFrom } from "@/lib/hamilton/saved-claims";
 import type { SectionTracking } from "@/lib/hamilton/generate";
 import { REPORT_RUN_BUSY_MESSAGE, ReportRunLeaseLostError } from "@/lib/hamilton/report-run";
-import { HAMILTON_TASK_CAP_MESSAGE, HamiltonTaskBudgetError } from "@/lib/hamilton/task-budget";
+import { HAMILTON_READER_DAILY_CAP_MESSAGE, HAMILTON_TASK_CAP_MESSAGE, HamiltonTaskBudgetError } from "@/lib/hamilton/task-budget";
+import { ProviderBudgetBlockedError } from "@/lib/api-hardening/budget";
 import { MalformedProviderOutputError } from "@/lib/hamilton/task-faults";
 import { IncompleteProviderResponseError, ProviderResponseBudgetError } from "@/lib/ai-response-budget";
-import { HAMILTON_PAUSED_MESSAGE } from "@/lib/hamilton/provider-paused";
+import { EmergencyStopActiveError } from "@/lib/automation-control";
+import { ProviderCircuitOpenError } from "@/lib/ai-provider-usage";
+import { HAMILTON_PAUSED_MESSAGE, HAMILTON_STOPPED_MESSAGE } from "@/lib/hamilton/provider-paused";
 
 const mocks = vi.hoisted(() => ({
   getCurrentUser: vi.fn(),
@@ -509,13 +512,26 @@ describe("Hamilton Reports generateReport", () => {
     it("states the financial sentence only when supported; with the switch off (default) nothing else changes", async () => {
       const result = await addSaved();
       if (!result.success) throw new Error(result.error);
-      expect(result.report.addedFindings?.[0]).toEqual({ source: "Ask", title: "Service charge income at Research CU", detail: supported, identityContext: undefined });
+      const ownId = filingFactId("fdic", 2945, "2026-06-30", "service_charge_income", "standalone_quarter");
+      // #1077 defect 7: the finding keeps its checked claims and their source line in report_json.
+      expect(result.report.addedFindings?.[0]).toEqual({
+        source: "Ask", title: "Service charge income at Research CU", detail: supported, identityContext: undefined,
+        claims: { supported: [{ text: supported, factIds: [ownId] }], facts: [expect.objectContaining({ id: ownId, value: 1_100_000, unit: "usd" })], factsTruncated: false },
+        sources: [expect.objectContaining({ id: ownId, value: "$1,100,000" })],
+      });
       expect(JSON.stringify(result.report)).not.toContain("$2.3 million");
       expect(JSON.stringify(result.report)).not.toContain(reading);
-      // The model's context is the same supported prose as before step 6: no claims, no reading.
+      // The model's context is the supported prose: no claims, no reading.
       expect(summaryContext()).toContain(supported);
       expect(summaryContext()).not.toContain(reading);
       expect(summaryContext()).not.toContain("factIds");
+      // The section's figure check traces the restated figure to the finding's carried fact, not to pooled data.
+      const summary = mocks.generateSection.mock.calls.map(([input]) => input as SectionInput).find((input) => input.type === "executive_summary");
+      const { checkNarrativeFigures } = await vi.importActual<typeof import("./figure-check")>("./figure-check");
+      expect(checkNarrativeFigures(supported, summary?.data).unmatched).toEqual([]);
+      const { reader_finding_facts: _facts, ...pooled } = summary?.data as Record<string, unknown>;
+      void _facts;
+      expect(checkNarrativeFigures(supported, pooled).unmatched).toEqual(["$1.1 million"]);
     });
 
     it("with the switch on, prints the reading apart under its label, never as the finding or in the model's context", async () => {
@@ -549,7 +565,10 @@ describe("Hamilton Reports generateReport", () => {
     expect(summary?.data).not.toHaveProperty("findings_added_by_reader");
     expect(JSON.stringify(summary?.data)).not.toContain("$99");
     expect(summary?.context).toContain("READER FINDINGS");
-    expect(summary?.context).toContain("Peers charge $99 for an overdraft.");
+    // #1077 defect 7: the untraced figure is held before the model sees it (fail closed).
+    expect(summary?.context).toContain("Peers charge [figure held: not traced to a record] for an overdraft.");
+    expect(summary?.context).not.toContain("$99");
+    expect(summary?.data).not.toHaveProperty("reader_finding_facts");
     const { checkNarrativeFigures } = await vi.importActual<typeof import("./figure-check")>("./figure-check");
     expect(checkNarrativeFigures("Peers charge $99 for an overdraft.", summary?.data).unmatched).toEqual(["$99"]);
   });
@@ -728,6 +747,59 @@ describe("Hamilton Reports generateReport", () => {
 
     expect(result).toMatchObject({ success: false, error: expect.stringContaining("50 Hamilton AI requests") });
     expect(mocks.generateSection).not.toHaveBeenCalled();
+  });
+
+  describe("fault injection: the report fails closed, says so plainly and records the failure (V5 T6)", () => {
+    const wire = [{ fee_name: "Domestic wire", fee_category: "wire_transfer", amount: 35, frequency: "per wire", review_status: "pending", extraction_confidence: 0.76, source_url: "https://example.com/fees" }];
+    const failedLedger = () => mocks.recordProRequest.mock.calls.map((call) => call[0]).filter((row: { status?: string }) => row.status === "failed");
+
+    it.each([
+      ["the provider stop", () => new EmergencyStopActiveError({ enabled: false, reason: "Synthetic admin note" } as never, "hamilton report")],
+      ["the spend breaker", () => new ProviderCircuitOpenError("Provider circuit is open: synthetic credit-balance failure on hamilton.report")],
+    ])("%s: no retry, nothing saved, no internal reason shown", async (_label, makeError) => {
+      mocks.getFeesByInstitution.mockResolvedValue(wire);
+      mocks.generateSection.mockRejectedValue(makeError());
+
+      const result = await generateReport(reportParams());
+
+      expect(result).toEqual({ success: false, error: HAMILTON_STOPPED_MESSAGE });
+      expect(mocks.generateSection).toHaveBeenCalledOnce();
+      expect(mocks.saveHamiltonReport).not.toHaveBeenCalled();
+      expect(failedLedger()).toHaveLength(1);
+    });
+
+    it("a Hamilton daily cap keeps its own line, not the stop line (#1921)", async () => {
+      mocks.getFeesByInstitution.mockResolvedValue(wire);
+      mocks.generateSection.mockRejectedValue(new HamiltonTaskBudgetError("reader_daily", "costMicrousd", 10_000_000, 10_000_000, "report"));
+
+      const result = await generateReport(reportParams());
+
+      expect(result).toEqual({ success: false, error: HAMILTON_READER_DAILY_CAP_MESSAGE });
+      expect(mocks.generateSection).toHaveBeenCalledOnce();
+      expect(mocks.saveHamiltonReport).not.toHaveBeenCalled();
+    });
+
+    it("a provider budget block reads as stopped, never with its internal reason", async () => {
+      mocks.getFeesByInstitution.mockResolvedValue(wire);
+      mocks.generateSection.mockRejectedValue(new ProviderBudgetBlockedError("budget_daily_exhausted", "Daily cap route:api.reports.generate"));
+
+      expect(await generateReport(reportParams())).toEqual({ success: false, error: HAMILTON_STOPPED_MESSAGE });
+      expect(mocks.generateSection).toHaveBeenCalledOnce();
+    });
+
+    it("a provider timeout: one retry, then a plain line, nothing saved, the failure on the ledger", async () => {
+      mocks.getFeesByInstitution.mockResolvedValue(wire);
+      mocks.generateSection.mockRejectedValue(new Error("The operation was aborted due to timeout"));
+
+      const result = await generateReport(reportParams());
+
+      expect(result.success).toBe(false);
+      expect((result as { error: string }).error).toMatch(/^Hamilton couldn't write the .+ section right now\. Please try again in a minute\.$/);
+      expect((result as { error: string }).error).not.toContain("timeout");
+      expect(mocks.generateSection).toHaveBeenCalledTimes(2);
+      expect(mocks.saveHamiltonReport).not.toHaveBeenCalled();
+      expect(failedLedger()).toHaveLength(1);
+    });
   });
 
   it("refuses to save a report whose narrative states figures the data does not support", async () => {

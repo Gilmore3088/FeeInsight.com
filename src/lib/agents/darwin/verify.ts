@@ -20,7 +20,7 @@ import { countOutcomes, type AttemptOutcome } from "@/lib/agents/learning/outcom
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { WHOLE_DOCUMENT_BATCH } from "@/lib/agents/document-batch";
 import { currentCopySchemaReady } from "@/lib/agents/magellan/current-copy";
-import { CATEGORY_GUARD_VERSION, checkFeeCategory, refileCategory, refileFromLine, withHeadingAbove } from "@/lib/fee-category-guard";
+import { CATEGORY_GUARD_VERSION, checkFeeCategory, refileCategory, refileFromLine, withCollectionSection, withHeadingAbove } from "@/lib/fee-category-guard";
 import { RETIRED_CATEGORIES } from "@/lib/fee-fold";
 import { RULE_WHY, ruleFor } from "@/lib/agents/hamilton/eval-verdicts";
 import { checkFeeAgainstSource, checkRateAgainstSource, sourceLines } from "@/lib/custom-report/source-check";
@@ -181,6 +181,21 @@ const NON_CUSTOMER = "non-?\\s?(?:members?|customers?|clients?|account\\s?holder
 // "$5 - Non-Members", "Non-members $5", "$10 for non-customers": the other party's price, never this
 // customer's condition (UAT, 2026-10-09: Notary Fee "$0 - Members $5 - Non-Members" is a free fee).
 const NON_CUSTOMER_PRICE = new RegExp(`\\$\\s*\\d[\\d,]*(?:\\.\\d{1,2})?[^$|]{0,25}?${NON_CUSTOMER}|${NON_CUSTOMER}[^$|]{0,25}?\\$\\s*\\d[\\d,]*(?:\\.\\d{1,2})?`, "gi");
+// "$5.00 charge for non-F&M customers", "Non-Citizens members $10": the bank named between "non-" and
+// its customers. Only a capitalised name that is no condition word counts (`namedNonCustomer`), so
+// "$5 for non-eStatement customers" stays a condition on the $0 (2026-10-25, live Notary Fee 13219).
+const NAMED_NON_CUSTOMER = "\\bnon[-\\s]\\s?([\\w&;.'’]{1,15})\\s+(?:members?|customers?|clients?|account\\s?holders?)\\b";
+const NAMED_NON_CUSTOMER_PRICE = new RegExp(`\\$\\s*\\d[\\d,]*(?:\\.\\d{1,2})?[^$|]{0,25}?${NAMED_NON_CUSTOMER}|${NAMED_NON_CUSTOMER}[^$|]{0,25}?\\$\\s*\\d[\\d,]*(?:\\.\\d{1,2})?`, "gi");
+// Capitalised words that name a product, tier or network rather than a bank ("Non-Paperless",
+// "non-VIP members", "non-Kasasa account holders"): still this customer's condition.
+const NAMED_PRODUCT_WORDS = /^(?:paperless|e-?statements?|checking|savings|payroll|direct|vip|elite|preferred|rewards?|select|prime|plus|signature|kasasa|allpoint|moneypass|co-?op|cirrus|star|pulse|visa|mastercard|debit|credit|atm|loan|mortgage|employee|staff|owner|resident|local|student|senior)$/i;
+/** Drops a price for the customers of no bank but the one named ("non-F&M customers"); keeps a condition's. Pure. */
+function withoutNamedNonCustomerPrice(text: string): string {
+  return text.replace(NAMED_NON_CUSTOMER_PRICE, (match, before: string | undefined, after: string | undefined) => {
+    const name = before ?? after ?? "";
+    return /^[A-Z]/.test(name) && !CONDITION_WORDS.test(name) && !NAMED_PRODUCT_WORDS.test(name) ? " " : match;
+  });
+}
 // "$1 minimum opening requirement", "Minimum deposit to open: $25", "$50 minimum to open": the deposit
 // that opens the account, not a price the fee falls back to.
 const OPENING_DEPOSIT = /\$\s*\d[\d,]*(?:\.\d{1,2})?\s*(?:minimum\s+)?(?:opening|to\s+open|deposit\s+to\s+open)(?!\s*:)|(?:minimum\s+(?:deposit\s+)?to\s+open|minimum\s+opening\s+(?:deposit|balance|requirement)|opening\s+(?:deposit|requirement))[^$|]{0,20}?\$\s*\d[\d,]*(?:\.\d{1,2})?/gi;
@@ -612,7 +627,8 @@ function ownClause(cell: string, tokens: string[]): string {
  * conditions (UAT 7/10 takedown check, 2026-10-09): a neighbour's price in the same table row,
  * comma list or dot-leader run ("Monthly Maintenance | Free | Assisted Phone Transactions* | $3");
  * the other columns of a comparison table ("Monthly fee | $0 | $5* | $0"); a non-member or
- * non-customer price ("$0 - Members $5 - Non-Members"); another label in the same cell ("Monthly
+ * non-customer price ("$0 - Members $5 - Non-Members", "Notary Fee ($5.00 charge for non-F&M
+ * customers) ... No Charge"); another label in the same cell ("Monthly
  * Service Charge: FREE Minimum Balance: $1.00 | Monthly Balance Fee: $7.50"); and the deposit that
  * opens the account ("No monthly service fee and just $1 minimum opening requirement"). Pure.
  */
@@ -628,8 +644,8 @@ export function conditionalZero(
   if (scopedFeeStatements(line ?? "").some((fee) =>
     fee.amount === 0 && fee.feeTreatment === "eliminated" && fee.feeName.toLowerCase() === feeName?.toLowerCase())) return false;
   const segment = line ? ownSegment(line, feeName, context.documentText ?? null) : "";
-  const text = otherWireSide(`${segment} ${feeName ?? ""}`, context.canonicalFeeKey)
-    .replace(NON_CUSTOMER_PRICE, " ").replace(OPENING_DEPOSIT, " ");
+  const text = withoutNamedNonCustomerPrice(otherWireSide(`${segment} ${feeName ?? ""}`, context.canonicalFeeKey)
+    .replace(NON_CUSTOMER_PRICE, " ")).replace(OPENING_DEPOSIT, " ");
   return [...text.matchAll(NONZERO_DOLLAR)].some((match) => Number(match[1].replace(/,/g, "")) > 0);
 }
 
@@ -1716,7 +1732,9 @@ export async function runDarwinVerify(
         const row: RawFeeRow = audience ? { ...admittedRaw, fee_audience: audience.feeAudience } : admittedRaw;
         const rowSourceTexts = new Map(sourceTexts);
         if (row.source_document_id != null && sourceText != null) rowSourceTexts.set(Number(row.source_document_id), sourceText);
-        const canonicalFeeKey = categoryOf(row);
+        // Guard v90 (#1912): a return charge its stored text prints in a foreign check or collection
+        // section is filed as a returned deposited item, not NSF.
+        const canonicalFeeKey = categoryOf(withCollectionSection(canonicalHintFrom(row), row.fee_name, row, sourceText));
         if (admission) requireInternationalVerification(admission, canonicalFeeKey, categoryOf(admission.row));
         if (admission) requirePaidReturnedVerification(admission, canonicalFeeKey);
         // Guard v84 (#1788): a generic monthly charge is read under the heading its stored text prints above it.

@@ -585,7 +585,7 @@ export function PositionShift({
           <div key={r.label} className="grid items-center gap-x-4 gap-y-1 sm:grid-cols-[11rem_1fr_12rem]">
             <span className="text-sm text-warm-900">
               {r.label} <span className="text-warm-600">({r.n})</span>
-              <span className="block text-xs text-warm-600">Middle {fmtMoney(r.median)}</span>
+              {r.median != null ? <span className="block text-xs text-warm-600">Middle {fmtMoney(r.median)}</span> : null}
             </span>
             <span className="relative h-6">
               <span className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-warm-200" />

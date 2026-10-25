@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describePosition, layersFromEngine, parseLayer } from "./research-layers";
+import { belowPeerMinimum, describePosition, layersFromEngine, parseLayer } from "./research-layers";
 import { plainFeeName } from "./briefing-observations";
 import type { MarketLayer } from "./workspace/types";
 
@@ -68,5 +68,17 @@ describe("layersFromEngine", () => {
 describe("plainFeeName", () => {
   it("strips the abbreviation from display names", () => {
     expect(plainFeeName("Overdraft (OD)")).toBe("Overdraft");
+  });
+});
+
+describe("belowPeerMinimum", () => {
+  it("needs 10 institutions for every layer but the local market, which needs 5", () => {
+    for (const key of ["state", "district", "peers", "national"] as const) {
+      expect(belowPeerMinimum({ key, n: 9 })).toBe(true);
+      expect(belowPeerMinimum({ key, n: 5 })).toBe(true);
+      expect(belowPeerMinimum({ key, n: 10 })).toBe(false);
+    }
+    expect(belowPeerMinimum({ key: "local", n: 4 })).toBe(true);
+    expect(belowPeerMinimum({ key: "local", n: 5 })).toBe(false);
   });
 });

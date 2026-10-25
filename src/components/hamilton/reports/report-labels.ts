@@ -3,6 +3,7 @@ import type { ReportArtifactMetadata } from "@/lib/hamilton/types";
 /** Reader-facing names for every report type, including the four templates. */
 export const REPORT_TYPE_LABELS: Record<string, string> = {
   board_brief: "Board brief",
+  monthly_briefing: "Monthly briefing",
   committee_packet: "Pricing committee brief",
   quarterly_strategy: "Quarterly Strategy Report",
   peer_brief: "Peer Brief",
@@ -43,3 +44,6 @@ export const REPORT_SECTION_HEADINGS = {
   position: "For management to weigh",
   implementation: "If management makes a change",
 } as const;
+
+/** Over a saved answer's source lines under a report finding (#1077 defect 7), on screen and in the PDF. */
+export const REPORT_FINDING_SOURCES_LABEL = "Records behind this finding, as saved with the answer";

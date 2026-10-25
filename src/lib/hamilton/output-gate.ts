@@ -27,17 +27,28 @@ import { bindNarrative, type NarrativeBinding, type OmitReason } from "./narrati
 import { causeLines, causeShadowInput, PREMISE_REASONS } from "./output-gate-signals";
 import { PIPELINE_TERMS, findUnrequestedAdvice } from "./workspace/four-roles";
 import {
+  indexStatisticsStated,
+  localCompetitorPriceCounts,
   withoutOmitted,
   withoutSentences,
   writtenAnswerFeeEvidence,
+  writtenAnswerIndexStats,
   writtenAnswerProse,
   type WrittenAnswerSections,
 } from "./written-answer-binding";
+import { MIN_LOCAL_PEERS_FOR_POSITION, MIN_PEERS_FOR_POSITION } from "./workspace/scenario";
+import { proseFeeName } from "./workspace/names";
+import { extractFigures } from "./figure-check";
 import type { AnswerToolEvidence } from "./written-answer-evidence";
 
-export const OUTPUT_GATE_VERSION = 1 as const;
+/** 2: the `thin_peer_group` failure code (T5, #1726). A version 1 record is still read (output-gate-shadow.ts). */
+export const OUTPUT_GATE_VERSION = 2 as const;
+/** Every version a stored shadow record may carry. */
+export const OUTPUT_GATE_VERSIONS = [1, 2] as const;
+export type OutputGateVersion = (typeof OUTPUT_GATE_VERSIONS)[number];
 
-export type GateSurface = "written_answer" | "memo" | "report_section" | "simulate";
+/** `ask` is the free Ask bar's storyline, gated only by the replay (gate-replay.ts): the live Ask bar shows it with no gate. */
+export type GateSurface = "written_answer" | "memo" | "report_section" | "simulate" | "ask";
 
 /** What the answer was written from. Tool reads are server-observed, never browser text. */
 export type GateEvidence =
@@ -89,6 +100,7 @@ export type GateFailureCode =
   | "causal_unsupported"
   | "account_identity"
   | "surface_rule"
+  | "thin_peer_group"
   | "nothing_left";
 
 export interface GateFailure {
@@ -97,7 +109,7 @@ export interface GateFailure {
   message: string;
   critical: boolean;
   /** Which check found it: the shared evidence gate, the binding, the cause rule (shadow input) or the identity rule. */
-  source: "check" | "binding" | "cause" | "identity" | "surface" | "status";
+  source: "check" | "binding" | "cause" | "identity" | "surface" | "peers" | "status";
   /** The sentences a non-critical failure cuts from the view. */
   sentences?: string[];
 }
@@ -189,6 +201,64 @@ function checkCode(problem: string, figureProblem: boolean, cause: ReadonlySet<s
   return "interpretation_rule";
 }
 
+const MEDIAN_WORDS = /\b(?:median|midpoint)\b/gi;
+const LOCAL_WORD = /\b(?:local|competitors?|competitor's|competitors')\b/i;
+/** How far a median word may sit before the dollar figure it names, and a local word before the median word. */
+const MEDIAN_REACH = 90;
+const LOCAL_LEAD = 40;
+
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+/** The fee categories a span names, each on word boundaries ("transfer" never names NSF). */
+function categoriesNamed(span: string, categories: Iterable<string>): string[] {
+  return [...categories].filter((category) => [proseFeeName(category), category.replace(/_/g, " ")]
+    .some((name) => name.trim() && new RegExp(`\\b${escapeRegExp(name.trim())}\\b`, "i").test(span)));
+}
+
+/**
+ * Sentences that state a peer figure over too few institutions (#1726, T5; house rule: a median
+ * only at 10 or more peers, 5 or more local competitors, otherwise name the peers). Read from a
+ * written answer's own tool reads, for a surface with none it finds nothing:
+ * - an index statistic (searchIndex, searchFees) the sentence states whose institution count is
+ *   under 10;
+ * - a dollar figure the sentence calls the local competitors' median: a median word names the first
+ *   dollar figure after it, a local word sits between them or just before the median word, the
+ *   figure is no index statistic the reads hold, and fewer than five competitors state the fee the
+ *   span names. A competitor's own price, or a national median beside the local prices, is not one.
+ */
+export function thinPeerSentences(input: GateInput, sentences: readonly string[]): Array<{ sentence: string; count: number; minimum: number }> {
+  if (input.evidence.kind !== "tool_reads") return [];
+  const outputs = input.evidence.toolOutputs;
+  const stats = writtenAnswerIndexStats(outputs);
+  const local = localCompetitorPriceCounts(outputs);
+  const out: Array<{ sentence: string; count: number; minimum: number }> = [];
+  for (const sentence of sentences) {
+    const thinStat = indexStatisticsStated(sentence, stats).find((stat) => stat.institutionCount < MIN_PEERS_FOR_POSITION);
+    if (thinStat) {
+      out.push({ sentence, count: thinStat.institutionCount, minimum: MIN_PEERS_FOR_POSITION });
+      continue;
+    }
+    if (local.length === 0) continue;
+    const figures = extractFigures(sentence).filter((figure) => figure.kind === "usd");
+    const thin = [...sentence.matchAll(MEDIAN_WORDS)].flatMap((word) => {
+      const start = word.index ?? 0;
+      const end = start + word[0].length;
+      const figure = figures.find((f) => f.index >= end);
+      if (!figure || figure.index - end > MEDIAN_REACH) return [];
+      // A figure that is an index statistic the tools returned is the index's median, not the competitors'.
+      if (stats.some((stat) => Math.abs(stat.value - figure.value) <= Math.max(figure.tolerance, 0.005))) return [];
+      if (!LOCAL_WORD.test(sentence.slice(Math.max(0, start - LOCAL_LEAD), figure.index))) return [];
+      const span = sentence.slice(start, figure.index);
+      return local.flatMap((counts) => {
+        const named = categoriesNamed(span, counts.keys());
+        return (named.length > 0 ? named : categoriesNamed(sentence, counts.keys()))
+          .map((category) => counts.get(category) ?? 0).filter((count) => count < MIN_LOCAL_PEERS_FOR_POSITION);
+      });
+    });
+    if (thin.length > 0) out.push({ sentence, count: Math.min(...thin), minimum: MIN_LOCAL_PEERS_FOR_POSITION });
+  }
+  return out;
+}
+
 /** The one output gate. */
 export function gateAnswer(input: GateInput): GateVerdict {
   const { check, binding, shown, factInstitutions } = evaluate(input);
@@ -230,6 +300,12 @@ export function gateAnswer(input: GateInput): GateVerdict {
   }
 
   for (const problem of input.extra ?? []) failures.push({ code: "surface_rule", message: problem, critical: true, source: "surface" });
+
+  // 5. The peer minimum (#1726, T5): a peer figure over too few institutions is cut, never shown.
+  for (const thin of thinPeerSentences(input, shownSentences)) {
+    failures.push({ code: "thin_peer_group", critical: false, source: "peers", sentences: [thin.sentence],
+      message: `A peer figure over ${thin.count} institution${thin.count === 1 ? "" : "s"} is stated as a benchmark; it needs ${thin.minimum} or more. Name the peers and their prices instead.` });
+  }
 
   const cut = new Set(failures.flatMap((f) => f.sentences ?? []));
   const left = shownSentences.filter((s) => !cut.has(s));

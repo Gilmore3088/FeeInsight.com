@@ -1,6 +1,6 @@
 import { ProviderResponseOperation, AI_PROVIDER_TIMEOUT_MS, assertCompletedProviderFinish, withProviderResponseOperation, requireCompletedProviderUIStream } from "@/lib/ai-response-budget";
 import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
-import { withHamiltonTask } from "@/lib/hamilton/task-budget";
+import { HamiltonTaskBudgetError, withHamiltonTask } from "@/lib/hamilton/task-budget";
 import {
   streamText,
   generateText,
@@ -27,7 +27,7 @@ import {
   isProviderLimitError,
   MISSING_ANTHROPIC_API_KEY_MESSAGE,
 } from "@/lib/ai-provider";
-import { HAMILTON_PAUSED_MESSAGE } from "@/lib/hamilton/provider-paused";
+import { HAMILTON_PAUSED_MESSAGE, HAMILTON_STOPPED_MESSAGE, UNFINISHED_ANSWER_MESSAGE } from "@/lib/hamilton/provider-paused";
 import { viewAsCustomerFromCookieHeader } from "@/lib/hamilton/view-as";
 import { getHamilton, savedPeerSetUsed, type AnswerStep, type HamiltonRole } from "@/lib/research/agents";
 import { getActivePeerSet } from "@/lib/hamilton/active-peer-set";
@@ -678,7 +678,14 @@ async function handlePOST(request: Request) {
           // A held answer waits for the gate. The result's stream replays from its start, so
           // an answer that passes still reaches the reader whole.
           const heldVerdict = holdsAnswers ? await verdict : null;
-          if (heldVerdict?.held && HELD_ANSWER_MESSAGE !== null) {
+          if (holdsAnswers && providerFailed) {
+            // V5 T6 fault injection: the provider erred, timed out or stopped short, so the gate
+            // never ran. Fail closed: none of the unverified draft is sent, only a plain line.
+            // The failure is already on the ledger (flushProviderFailure, ai_api_usage_events).
+            const failure = responseOperation?.error ?? terminalFailure;
+            writer.write({ type: "start" });
+            writer.write({ type: "error", errorText: isProviderLimitError(failure) ? HAMILTON_PAUSED_MESSAGE : UNFINISHED_ANSWER_MESSAGE });
+          } else if (heldVerdict?.held && HELD_ANSWER_MESSAGE !== null) {
             writer.write({ type: "start" });
             writer.write({ type: "text-start", id: "held" });
             writer.write({ type: "text-delta", id: "held", delta: HELD_ANSWER_MESSAGE });
@@ -692,7 +699,7 @@ async function handlePOST(request: Request) {
             // was left out the draft's text is replaced by the shown text, which no longer holds it.
             const startBinding = heldVerdict?.binding ? readerNarrativeBinding(heldVerdict.binding) : null;
             const replay = result.toUIMessageStream({
-              onError: (error) => (isProviderLimitError(error) ? HAMILTON_PAUSED_MESSAGE : "Hamilton couldn't finish this answer."),
+              onError: (error) => (isProviderLimitError(error) ? HAMILTON_PAUSED_MESSAGE : UNFINISHED_ANSWER_MESSAGE),
               ...(startBinding
                 ? { messageMetadata: ({ part }: { part: { type: string } }) => (part.type === "start" ? { narrativeBinding: startBinding } : undefined) }
                 : {}),
@@ -730,12 +737,20 @@ async function handlePOST(request: Request) {
       return Response.json({ error: HAMILTON_PAUSED_MESSAGE, code: "provider_paused" }, { status: 503 });
     }
 
+    // A Hamilton task or daily cap is a ProviderBudgetBlockedError too, but the reader gets its own
+    // plain line (what was capped and when it resets), not the stop line (#1921, task-budget.ts).
+    if (err instanceof HamiltonTaskBudgetError) {
+      return Response.json({ error: err.message, code: "hamilton_budget_cap" }, { status: 429 });
+    }
+
     if (
       err instanceof ProviderCircuitOpenError
       || err instanceof ProviderBudgetBlockedError
       || message.includes("Emergency stop")
     ) {
-      return Response.json({ error: message }, { status: 423 });
+      // V5 T6: the stop's internal reason (provider, admin note, breaker detail) stays on the
+      // ledger (guardProviderCall records it as blocked); the reader gets one plain line.
+      return Response.json({ error: HAMILTON_STOPPED_MESSAGE, code: "provider_stopped" }, { status: 423 });
     }
 
     if (message.includes("authentication") || message.includes("API key")) {

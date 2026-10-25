@@ -5,7 +5,7 @@ vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn(async () => []) }));
 import { EmergencyStopActiveError } from "@/lib/automation-control";
 import { IncompleteProviderResponseError, ProviderResponseBudgetError } from "@/lib/ai-response-budget";
 import { ProviderBudgetBlockedError } from "@/lib/api-hardening/budget";
-import { HAMILTON_PAUSED_MESSAGE } from "./provider-paused";
+import { HAMILTON_PAUSED_MESSAGE, HAMILTON_STOPPED_MESSAGE } from "./provider-paused";
 import { HAMILTON_READER_DAILY_CAP_MESSAGE, HamiltonTaskBudgetError } from "./task-budget";
 import { classifyHamiltonFault, HAMILTON_RETRY_POLICY, MalformedProviderOutputError, runWithHamiltonRetry } from "./task-faults";
 
@@ -51,6 +51,8 @@ describe("Hamilton task faults (#1921)", () => {
   it("gives readers plain messages that name no internal step", () => {
     expect(classifyHamiltonFault(new HamiltonTaskBudgetError("reader_daily", "calls", 1, 1, "ask")).readerMessage).toBe(HAMILTON_READER_DAILY_CAP_MESSAGE);
     expect(classifyHamiltonFault(Object.assign(new Error("usage limit"), { status: 400 })).readerMessage).toBe(HAMILTON_PAUSED_MESSAGE);
+    expect(classifyHamiltonFault(new ProviderBudgetBlockedError("budget_daily_exhausted", "Daily cap route:x")).readerMessage).toBe(HAMILTON_STOPPED_MESSAGE);
+    expect(classifyHamiltonFault(new EmergencyStopActiveError({ enabled: false, reason: "note", changedBy: "x", changedAt: "", revision: 1 }, "hamilton")).readerMessage).toBe(HAMILTON_STOPPED_MESSAGE);
     for (const error of [new Error("x"), new ProviderResponseBudgetError("deadline"), new MalformedProviderOutputError("y")]) {
       const message = classifyHamiltonFault(error).readerMessage;
       expect(message).not.toMatch(/Knox|Darwin|Magellan|Rosetta|Atlas|Gutenberg|Hoovie|Deming|\u2014/);

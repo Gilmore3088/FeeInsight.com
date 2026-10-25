@@ -392,6 +392,12 @@ export async function readFfiecOverdraft(zip: Uint8Array): Promise<FfiecOverdraf
 export const FFIEC_POR_FILE = /Call Bulk POR\s*\d{8}\.txt$/i;
 /** The POR column, matched loosely: FFIEC has written it with and without the slash and "On". */
 const POR_LAST_UPDATED = /^LAST\s+DATE\s*\/?\s*TIME\s+SUBMISSION\s+UPDATED/i;
+/**
+ * The POR file's "FDIC Certificate Number" column, matched loosely ("FDIC Cert Number", "FDIC
+ * Certificate No."). It says which FDIC certificate filed as that IDRSSD in that quarter, which is
+ * how a bank that merged into a different charter keeps its own history (#2625).
+ */
+const POR_FDIC_CERT = /^FDIC\s+CERT(?:IFICATE)?\.?\s*(?:NUMBER|NUM|NO\.?|#)?$/i;
 
 export interface FfiecPorRow {
   rssd: string;
@@ -408,7 +414,21 @@ export interface FfiecPorRead {
   rows: FfiecPorRow[];
   /** Non-blank cells that could not be read as a date and time. */
   unreadable: number;
+  /** The FDIC certificate column header as filed, or null when the file or column is missing (#2625). */
+  certColumn: string | null;
+  /** Banks with an FDIC certificate in that column; a blank or 0 (no FDIC certificate) is left out. */
+  certs: FfiecPorCertRow[];
+  /** Non-blank certificate cells that are not a whole number: refused, never guessed. */
+  certUnreadable: number;
 }
+
+export interface FfiecPorCertRow {
+  rssd: string;
+  /** The FDIC certificate the bank filed that quarter's report under, without leading zeros. */
+  cert: string;
+}
+
+export const NO_FFIEC_POR: FfiecPorRead = { file: null, column: null, rows: [], unreadable: 0, certColumn: null, certs: [], certUnreadable: 0 };
 
 /** Offset of US Eastern from UTC, in ms, at a UTC instant (-4h in summer, -5h in winter). */
 function easternOffsetMs(utcMs: number): number {
@@ -460,30 +480,48 @@ export function parsePorTimestamp(raw: string): number | null {
   return Math.floor(utc / 1000);
 }
 
-/** The POR file's last-updated time per bank. Blank cells are left out; unreadable ones counted. */
+/**
+ * The POR file's last-updated time and FDIC certificate per bank. Blank cells are left out;
+ * unreadable ones are counted, never guessed. Each column is read on its own, so a file missing
+ * one still gives the other.
+ */
 export function readFfiecPor(files: Record<string, Uint8Array>): FfiecPorRead {
   const name = Object.keys(files).sort().find((n) => FFIEC_POR_FILE.test(n)) ?? null;
-  if (!name) return { file: null, column: null, rows: [], unreadable: 0 };
+  if (!name) return { ...NO_FFIEC_POR };
   const lines = strFromU8(files[name], true).split(/\r?\n/);
   const header = cells(lines[0] ?? "");
   const rssdAt = header.findIndex((h) => h.toUpperCase() === "IDRSSD");
+  if (rssdAt < 0) return { ...NO_FFIEC_POR, file: name };
   const at = header.findIndex((h) => POR_LAST_UPDATED.test(h));
-  if (rssdAt < 0 || at < 0) return { file: name, column: null, rows: [], unreadable: 0 };
+  const certAt = header.findIndex((h) => POR_FDIC_CERT.test(h));
   const rows = new Map<string, FfiecPorRow>();
+  const certs = new Map<string, FfiecPorCertRow>();
   let unreadable = 0;
+  let certUnreadable = 0;
   for (const line of lines.slice(1)) {
     const row = cells(line);
     const rssd = row[rssdAt];
     // A second header row (descriptions), if FFIEC ever adds one, has no numeric IDRSSD.
     if (!rssd || !/^\d+$/.test(rssd)) continue;
-    const raw = row[at] ?? "";
-    if (raw === "") continue;
-    const epochSeconds = parsePorTimestamp(raw);
-    if (epochSeconds === null) {
-      unreadable += 1;
-      continue;
+    const raw = at >= 0 ? (row[at] ?? "") : "";
+    if (raw !== "") {
+      const epochSeconds = parsePorTimestamp(raw);
+      if (epochSeconds === null) unreadable += 1;
+      else rows.set(rssd, { rssd, lastUpdated: raw, epochSeconds });
     }
-    rows.set(rssd, { rssd, lastUpdated: raw, epochSeconds });
+    const certRaw = certAt >= 0 ? (row[certAt] ?? "") : "";
+    if (certRaw !== "") {
+      if (!/^\d+$/.test(certRaw)) certUnreadable += 1;
+      else if (Number(certRaw) > 0) certs.set(rssd, { rssd, cert: String(Number(certRaw)) });
+    }
   }
-  return { file: name, column: header[at], rows: [...rows.values()], unreadable };
+  return {
+    file: name,
+    column: at >= 0 ? header[at] : null,
+    rows: [...rows.values()],
+    unreadable,
+    certColumn: certAt >= 0 ? header[certAt] : null,
+    certs: [...certs.values()],
+    certUnreadable,
+  };
 }

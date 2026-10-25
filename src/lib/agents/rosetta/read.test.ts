@@ -695,6 +695,55 @@ describe("Rosetta agentic read", () => {
       expect(result.results[0].pageCheck).toMatchObject({ verdict: "fee_page" });
     });
 
+    describe("a newer copy of a page with the same text as an older copy Knox read (#2477)", () => {
+      const productCandidate = { ...htmlCandidate, source_document_id: 36634, document_url: "https://testbank.example/personal/checking" };
+      // An account page quoting two fees: the product-page rule (#1053) rejects it as the bank's fee link.
+      const productPage = "<h1>Everyday Checking</h1><p>Monthly service fee $10</p><p>Overdraft fee $30</p><p>Open an account today</p>";
+
+      function withOlderCopy(db: DbMock, olderId: number | null): DbMock {
+        const base = db.getMockImplementation()! as (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown>;
+        db.mockImplementation(((strings: TemplateStringsArray, ...values: unknown[]) =>
+          templateText(strings).includes("ORDER BY older.id DESC")
+            ? Promise.resolve(olderId == null ? [] : [{ id: olderId }])
+            : base(strings, ...values)) as never);
+        return db;
+      }
+
+      it("keeps it readable, as the older copy is, and does not send the bank back", async () => {
+        const db = withOlderCopy(vaultDb([productCandidate]), 27706);
+        const fetchImpl = vi.fn().mockResolvedValueOnce(response(productPage));
+
+        const result = await runRosettaRead({ runId: 611, db: asReadDb(db), fetchImpl, vault: fakeVault(new Uint8Array()) });
+
+        expect(result).toMatchObject({ completed: 1, wrongDocuments: 0, sentBackToMagellan: 0, sameTextCopiesKept: 1 });
+        expect(result.results[0]).toMatchObject({ status: "completed", error: null, sameTextCopyOf: 27706 });
+        // The page check's own verdict is kept on the record.
+        expect(result.results[0].pageCheck).toMatchObject({ verdict: "wrong_document", productPage: true });
+        const probe = db.mock.calls.find((call) => templateText(call[0]).includes("ORDER BY older.id DESC"))!;
+        expect(probe).toEqual(expect.arrayContaining([36634, 42, result.results[0].textHash]));
+        const sqlText = db.mock.calls.map((call) => templateText(call[0])).join("\n");
+        expect(sqlText).not.toContain("SET fee_schedule_url = NULL");
+      });
+
+      it("still rejects the same page when no older copy holds its text with Knox fees", async () => {
+        const db = withOlderCopy(vaultDb([productCandidate]), null);
+        const fetchImpl = vi.fn().mockResolvedValueOnce(response(productPage));
+
+        const result = await runRosettaRead({ runId: 612, db: asReadDb(db), fetchImpl, vault: fakeVault(new Uint8Array()) });
+
+        expect(result).toMatchObject({ completed: 0, wrongDocuments: 1, sentBackToMagellan: 1, sameTextCopiesKept: 0 });
+        expect(result.results[0].sameTextCopyOf).toBeUndefined();
+      });
+
+      it("spares an earlier text in triage when an older copy of its page holds it with Knox fees", async () => {
+        const db = vaultDb([], []);
+        await runRosettaRead({ runId: 613, db: asReadDb(db), fetchImpl: vi.fn(), vault: fakeVault(new Uint8Array()) });
+        const triage = String(db.unsafe.mock.calls.find((call) => String(call[0]).includes("has_knox_fees"))?.[0]);
+        expect(triage).toContain("older.superseded_by_id = adt.source_document_id");
+        expect(triage).toContain("older_text.text_hash = adt.text_hash");
+      });
+    });
+
     it("marks a homepage as wrong_document and sends the bank back to Magellan", async () => {
       const db = vaultDb([htmlCandidate]);
       const fetchImpl = vi.fn().mockResolvedValueOnce(response("<p>Welcome to Test Bank</p><p>Fee Schedule | Privacy</p>"));

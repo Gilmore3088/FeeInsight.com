@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defaultPrices, filedVolumeEstimate, parseCount, parsePercent, parsePrices } from "./model-params";
+import { defaultPrices, parseCount, parsePercent, parsePrices } from "./model-params";
 
 describe("model params", () => {
   it("reads prices loosely and caps them", () => {
@@ -21,16 +21,9 @@ describe("model params", () => {
   });
 });
 
-describe("filedVolumeEstimate", () => {
-  it("divides a single-fee filed line by today's price", () => {
-    expect(filedVolumeEstimate({ annualIncome: 19_464_000 }, 30)).toBe(649_000);
-    expect(filedVolumeEstimate({ annualIncome: 9_000 }, 30)).toBe(300);
-  });
-
-  it("gives nothing for a combined line, no price or no income", () => {
-    expect(filedVolumeEstimate({ annualIncome: 19_464_000, combinedWith: "NSF" }, 30)).toBeNull();
-    expect(filedVolumeEstimate({ annualIncome: 19_464_000 }, 0)).toBeNull();
-    expect(filedVolumeEstimate({ annualIncome: 0 }, 30)).toBeNull();
-    expect(filedVolumeEstimate(null, 30)).toBeNull();
+describe("no volume estimate (#1896)", () => {
+  it("offers no estimate of items a year; fee income comes only from the bank's own figures", async () => {
+    const mod = await import("./model-params");
+    expect(Object.keys(mod)).not.toContain("filedVolumeEstimate");
   });
 });

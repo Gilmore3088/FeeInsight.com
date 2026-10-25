@@ -397,7 +397,8 @@ function publicDataDollars(output: unknown): number[] {
       return [];
     }
   }
-  if (parsed && typeof parsed === "object" && (parsed as { _shortened?: unknown })._shortened === true) {
+  // A result cut by characters is `{ _shortened: "<note>", text }` (research/tool-output.ts): the note is a string, never true.
+  if (parsed && typeof parsed === "object" && "_shortened" in parsed && typeof (parsed as { text?: unknown }).text === "string") {
     try {
       parsed = JSON.parse(String((parsed as { text?: unknown }).text ?? ""));
     } catch { return []; }

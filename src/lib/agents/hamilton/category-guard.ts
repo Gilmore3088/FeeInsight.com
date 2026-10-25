@@ -11,6 +11,7 @@ import {
   withHeadingAbove,
   BOX_LATE_TARGET,
   withBoxSection,
+  withCollectionSection,
   type CategoryGuardCode,
 } from "@/lib/fee-category-guard";
 import { isRetiredCategory, splitLiveCategory, FOLD_RULES_VERSION } from "@/lib/fee-fold";
@@ -121,6 +122,11 @@ export interface RunHamiltonCategoryGuardResult {
    * judged them by name and line only (nothing re-filed or came down for it).
    */
   boxSectionReadFailed: boolean;
+  /**
+   * v90: the stored-text read for NSF fees' collection sections failed, so this step judged them by
+   * name and line only (nothing re-filed or came down for it).
+   */
+  collectionSectionReadFailed: boolean;
   limit: number;
   dryRun: boolean;
   rollbackBatchId: string;
@@ -253,7 +259,12 @@ export async function runHamiltonCategoryGuard(
   // Guard v87 (#1916): a late payment is judged with its stored text's section, so a box late fee
   // re-files in place. A failed text read judges by name and line only, as before v87.
   const sectioned = await withBoxSections(db, headed);
-  const rows = sectioned ?? headed;
+  const boxed = sectioned ?? headed;
+  // Guard v90 (#1912): an NSF fee is judged with its stored text's section, so a return charge printed
+  // under a foreign check or collection heading re-files in place. A failed text read judges by name
+  // and line only, as before v90.
+  const collected = await withCollectionSections(db, boxed);
+  const rows = collected ?? boxed;
 
   const failures: CategoryGuardFailure[] = [];
   const passing: number[] = [];
@@ -369,6 +380,7 @@ export async function runHamiltonCategoryGuard(
     cardProductPending: pending.length,
     headingReadFailed: headedRows === null,
     boxSectionReadFailed: sectioned === null,
+    collectionSectionReadFailed: collected === null,
     cardProductPendingSamples: pending.slice(0, 50),
     limit,
     dryRun,
@@ -533,6 +545,37 @@ export function movesBoxLateFee(restore: Restore): boolean {
 /** The late-box flag per move, as text (see `excessFlags`). */
 export function lateBoxFlags(unique: LiveRefile[]): string[] {
   return unique.map((restore) => (restore.lateBox ? "true" : "false"));
+}
+
+/**
+ * Guard v90 (#1912): only a text that names a collection or foreign check can print a collection
+ * section (`COLLECTION_HEADING` in collection-section-return.ts), so only those texts are read for NSF
+ * fees, and only for a plain return name (`collectionSectionReturn` reads no other).
+ */
+export const COLLECTION_TEXT_PATTERN = String.raw`collection|foreign\s+(check|item|draft)|check\s+clearing`;
+const RETURN_NAME_PATTERN = /^\W*return(?:ed)?\s+(?:checks?|items?)\b/i;
+
+/**
+ * Guard v90 (#1912): the rows with `collection_section` read from their stored text, for NSF fees
+ * with a plain return name only (`withCollectionSection`); only those rows' documents are read. Null
+ * when the read fails, so the caller judges by name and line only, as before v90.
+ */
+async function withCollectionSections<T extends Pick<LivePublishedRow, "source_document_id" | "canonical_fee_key" | "fee_name" | "amount">>(
+  db: SqlTag,
+  rows: T[],
+): Promise<T[] | null> {
+  const needing = rows.filter((row) => row.canonical_fee_key === "nsf" && row.source_document_id != null && RETURN_NAME_PATTERN.test(row.fee_name ?? ""));
+  if (needing.length === 0) return rows;
+  let texts: Map<number, string>;
+  try {
+    texts = await ownStoredTexts(db, needing.map((row) => row.source_document_id), COLLECTION_TEXT_PATTERN);
+  } catch (error) {
+    console.error("category guard collection section read failed:", error);
+    return null;
+  }
+  return rows.map((row) =>
+    row.source_document_id == null ? row : withCollectionSection(row.canonical_fee_key, row.fee_name, row, texts.get(Number(row.source_document_id))),
+  );
 }
 
 /**
@@ -814,7 +857,10 @@ export async function restorePassingTakedowns(
   // down, so a box late fee's twin never comes back as a late payment.
   const sectioned = await withBoxSections(db, headed);
   if (!sectioned) return none;
-  const candidates = sectioned.flatMap((row) => {
+  // Guard v90 (#1912): an NSF takedown is judged with its collection section, as the live check took it down.
+  const collected = await withCollectionSections(db, sectioned);
+  if (!collected) return none;
+  const candidates = collected.flatMap((row) => {
     const to = restoreTarget(row);
     return to ? [{ row, to }] : [];
   });

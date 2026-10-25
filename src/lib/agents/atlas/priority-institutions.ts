@@ -254,8 +254,50 @@ export const PRIORITY_INSTITUTION_REQUESTS: readonly PriorityInstitutionRequest[
     [6788, "Building Trades Federal Credit Union"],
     [7096, "City & County Federal Credit Union"],
     [7503, "Northwoods Federal Credit Union"],
-    [8078, "Superior Choice Federal Credit Union"],
+    // Superior Choice FCU (8078) moved to the dated 2026-10-25 request below.
   ] as const).map(([institutionId, institutionName]) => ({ institutionId, institutionName, reason: REPORT_GAP_MISREAD })),
+  // Today's merged fee fixes wait on state lanes that reach these banks in hours to days (2026-10-25):
+  // One Credit Union of NY's held current edition (#2614), Virginia State University FCU's fee the
+  // v24 source check takes down, and the 38 lines Knox's held-line re-check promotes at v111+ (#2618).
+  // A read-now run fetches, reads, extracts, verifies and publishes each bank under today's rules.
+  ...([
+    [7174, "One Credit Union of Ny"],
+    [4727, "Virginia State University Federal Credit Union"],
+    [4698, "Penn East Federal Credit Union"],
+    [4716, "National Police Federal Credit Union"],
+    [4821, "Generations Community Federal Credit Union"],
+    [5114, "Acadian Federal Credit Union"],
+    [5148, "Summit Federal Credit Union"],
+    [5383, "Neighbors Federal Credit Union"],
+    [5412, "Marisol Federal Credit Union"],
+    [5503, "Altamaha Federal Credit Union"],
+    [5532, "Fitzsimons Federal Credit Union"],
+    [5536, "Air Academy Federal Credit Union"],
+    [5553, "Utah Community Federal Credit Union"],
+    [5641, "Family Trust Federal Credit Union"],
+    [6017, "Regional Federal Credit Union"],
+    [6083, "Novo Federal Credit Union"],
+    [6151, "L.A. Healthcare Federal Credit Union"],
+    [6234, "Honda Federal Credit Union"],
+    [6776, "Affinity Plus Federal Credit Union"],
+    [7413, "Diversified Members Federal Credit Union"],
+    [7454, "North Star Community Federal Credit Union"],
+    [8041, "Beacon Credit Union, Incorporated"],
+    [8078, "Superior Choice Federal Credit Union"],
+    [8083, "Fort Community Federal Credit Union"],
+    [8113, "Priority Federal Credit Union"],
+    [8392, "Qualstar Federal Credit Union"],
+    [8479, "Bellco Federal Credit Union"],
+    [8553, "Alabama One Federal Credit Union"],
+    [8654, "Space Age Federal Credit Union"],
+    [8731, "Abri Federal Credit Union"],
+  ] as const).map(([institutionId, institutionName]) => ({
+    institutionId,
+    institutionName,
+    reason: "Today's merged fee fixes reach this bank's live fees",
+    requestedAt: "2026-10-25T16:30:00Z",
+    minExtractVersion: 113,
+  })),
 ];
 
 export type PriorityTier = "hand_found" | "paid_fetched" | "requested" | "overdraft_gap" | "pro_institution";

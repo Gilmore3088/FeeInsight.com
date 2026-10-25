@@ -84,6 +84,9 @@ export function extractFigures(text: string): NarrativeFigure[] {
 const MONEY_KEY = /amount|median|mean|avg|average|p\d\d|min|max|fee|price|cost|charge|income|revenue|deposit|asset|delta|cap|total|value/i;
 const RATE_KEY = /pct|percent|ratio|rate|share|roa|roe|margin|yield|change|growth|delta/i;
 const NOT_A_FIGURE = /(^|_)(id|ids|count|counts|year|quarter|district|rank|version|step|limit)$/i;
+/** A fee category slug as a fee map's key ("overdraft", "wire_domestic_outgoing"); never a year or a number. */
+const FEE_CATEGORY_KEY = /^[a-z][a-z0-9_]*$/i;
+const plainObject = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 const assetIntensityUnit = (unit: unknown) => typeof unit === "string" && /^USD income per 10,?000 USD assets$/i.test(unit.trim());
 
 interface PayloadNumber {
@@ -104,6 +107,10 @@ interface PayloadNumber {
 /** Every finite number in the payload with the key it sits under (numeric strings included). */
 export function collectPayloadNumbers(data: unknown): PayloadNumber[] {
   const found: PayloadNumber[] = [];
+  // The local competitor read's fee maps keyed by category: a plain object under `your_fees`, or
+  // under `fees` in an item of a `competitors` array (T5, #1726). An array named `fees` is not one.
+  const competitorItems = new WeakSet<object>();
+  const feeMaps = new WeakSet<object>();
   const visit = (value: unknown, key: string, unit: unknown = undefined, depth = 0,
     ncuaFinancial = false, implicitArithmeticAllowed = true, denominatorUnit?: NarrativeFigure["denominatorUnit"], explicitDollarField = false) => {
     if (found.length >= MAX_PAYLOAD_NUMBERS || depth > 12) return;
@@ -133,6 +140,7 @@ export function collectPayloadNumbers(data: unknown): PayloadNumber[] {
     } else if (Array.isArray(value)) {
       for (const item of value) {
         if (found.length >= MAX_PAYLOAD_NUMBERS) break;
+        if (key === "competitors" && plainObject(item)) competitorItems.add(item);
         visit(item, key, unit, depth + 1, ncuaFinancial, implicitArithmeticAllowed, denominatorUnit);
       }
     } else if (value && typeof value === "object") {
@@ -148,10 +156,15 @@ export function collectPayloadNumbers(data: unknown): PayloadNumber[] {
         ? record.denominator_unit : denominatorUnit;
       const fieldUnits = record.field_units && typeof record.field_units === "object" && !Array.isArray(record.field_units)
         ? record.field_units as Record<string, unknown> : {};
+      // A fee map's prices sit under keys that name only the fee, so each keeps the map's money key.
+      const feeMap = feeMaps.has(record);
       for (const [childKey, child] of Object.entries(record)) {
         if (found.length >= MAX_PAYLOAD_NUMBERS) break;
+        if (plainObject(child) && (childKey === "your_fees" || (childKey === "fees" && competitorItems.has(record)))) feeMaps.add(child);
         const fieldUnit = typeof fieldUnits[childKey] === "string" ? fieldUnits[childKey] : undefined;
-        visit(child, childKey, fieldUnit ?? own, depth + 1, ownNcua, ownArithmetic, ownDenominator,
+        const priceKey = feeMap && numericPayloadValue(child) !== null && FEE_CATEGORY_KEY.test(childKey) && !NOT_A_FIGURE.test(childKey)
+          ? `${key}.${childKey}` : childKey;
+        visit(child, priceKey, fieldUnit ?? own, depth + 1, ownNcua, ownArithmetic, ownDenominator,
           fieldUnit !== undefined && (dollarUnitScale(fieldUnit) !== null || assetIntensityUnit(fieldUnit)));
       }
     }

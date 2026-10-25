@@ -57,7 +57,7 @@ export interface EvalResult {
 }
 
 /** Every line of the storyline the reader sees: its framing, both lenses, the exhibits and what to watch. */
-function storylineText(response: AskResponse): string[] {
+export function storylineText(response: AskResponse): string[] {
   const story = response.answer?.storyline;
   if (!story) return [];
   return [

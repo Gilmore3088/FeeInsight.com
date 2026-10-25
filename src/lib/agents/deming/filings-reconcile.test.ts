@@ -13,6 +13,7 @@ import {
   compareBanks,
   compareCreditUnions,
   filingsReconcileDetail,
+  mergerDates,
   previousQuarterEnd,
   shownBankDates,
   quarterEnds,
@@ -72,6 +73,39 @@ describe("compareBanks", () => {
     expect(out.tallies.serviceCharges).toMatchObject({ compared: 1, matched: 0, explained: 1, unexplained: 0 });
     expect(out.mismatches).toEqual([
       { charter: "bank", institutionId: 5, reportDate: "2023-06-30", metric: "serviceCharges", shown: 266_655_000, filed: 294_262_000, cls: "merger_quarter", explained: true },
+    ]);
+  });
+
+  it("labels a merger into a different charter (713 and 510 on one date) as a merger quarter (#2625)", () => {
+    // Kendall Bank (institution 2923, cert 8110): 713 on offices 5, 6, 7, 510 and 520 on office 0,
+    // all 2025-01-31, as stored in institution_structure_events. Office events alone, or a 713
+    // without the 510, are not a merger date.
+    const events = [
+      { institution_id: 2923, change_code: "713", effective_date: "2025-01-31", office_number: "5" },
+      { institution_id: 2923, change_code: "713", effective_date: "2025-01-31", office_number: "6" },
+      { institution_id: 2923, change_code: "510", effective_date: "2025-01-31", office_number: "0" },
+      { institution_id: 2923, change_code: "520", effective_date: "2025-01-31", office_number: "0" },
+      { institution_id: 254, change_code: "713", effective_date: "2024-05-01", office_number: "3" },
+      { institution_id: 7, change_code: "810", effective_date: "2024-02-01", office_number: null },
+      { institution_id: 8, change_code: "810", effective_date: "2024-02-01", office_number: "4" },
+    ];
+    expect(mergerDates(events)).toEqual([
+      { institution_id: 7, effective_date: "2024-02-01" },
+      { institution_id: 2923, effective_date: "2025-01-31" },
+    ]);
+    // In the merger quarter the survivor's year to date carries the predecessor's January, which
+    // BankFind's quarter takes out: explained as a merger quarter, not left unexplained.
+    const out = compareBanks(
+      [record(2923, "2025-03-31", { service_charge_income: 60, total_assets: 210_000 })],
+      [
+        ffiec(2923, "2025-03-31", "service_charges_deposits_ytd", "RIAD4080", 75),
+        ffiec(2923, "2025-03-31", "total_assets", "RCON2170", 210_000),
+      ],
+      mergerDates(events),
+      ["2025-03-31"],
+    );
+    expect(out.mismatches).toEqual([
+      { charter: "bank", institutionId: 2923, reportDate: "2025-03-31", metric: "serviceCharges", shown: 60_000, filed: 75_000, cls: "merger_quarter", explained: true },
     ]);
   });
 
@@ -374,7 +408,7 @@ describe("runFilingsReconcile", () => {
         ffiec(5, "2023-03-31", "service_charges_deposits_ytd", "RIAD4080", 240_341),
         ffiec(5, "2023-06-30", "service_charges_deposits_ytd", "RIAD4080", 534_603),
       ]],
-      [/institution_structure_events/, () => [{ institution_id: 5, effective_date: "2023-05-26" }]],
+      [/institution_structure_events/, () => [{ institution_id: 5, change_code: "810", effective_date: "2023-05-26", office_number: null }]],
     ]);
     const report = await runFilingsReconcile({ db, now: new Date("2026-10-25T06:00:00Z"), sampleSize: 3 });
     expect(report.seed).toBe("2026-10-25");

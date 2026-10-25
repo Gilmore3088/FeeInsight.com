@@ -89,8 +89,33 @@ describe("readFfiecPor (#1925)", () => {
   });
 
   it("reports a missing file or column instead of guessing", () => {
-    expect(readFfiecPor({ "FFIEC CDR Call Schedule RI 06302026.txt": strToU8(RI) })).toEqual({ file: null, column: null, rows: [], unreadable: 0 });
-    expect(readFfiecPor({ "FFIEC CDR Call Bulk POR 06302026.txt": strToU8("IDRSSD\n1\n") })).toMatchObject({ column: null, rows: [] });
+    expect(readFfiecPor({ "FFIEC CDR Call Schedule RI 06302026.txt": strToU8(RI) })).toEqual({
+      file: null, column: null, rows: [], unreadable: 0, certColumn: null, certs: [], certUnreadable: 0,
+    });
+    expect(readFfiecPor({ "FFIEC CDR Call Bulk POR 06302026.txt": strToU8("IDRSSD\n1\n") })).toMatchObject({ column: null, rows: [], certColumn: null, certs: [] });
+  });
+
+  it("reads the FDIC certificate each RSSD filed under that quarter, refusing what is not a whole number (#2625)", () => {
+    // Emigrant Bank, 2023-09-30: RSSD 137915 filed under the old Emigrant certificate 12054; the
+    // charter that holds today's certificate 57083 filed as its own RSSD (the RSSD here is
+    // illustrative). A savings bank with no FDIC certificate files 0.
+    const por = [
+      '"IDRSSD"\t"FDIC Certificate Number"\t"Financial Institution Name"\t"Last Date/Time Submission Updated On"',
+      '"137915"\t"12054"\t"EMIGRANT BANK"\t"2023-10-30T09:00:00"',
+      '"5551212"\t"057083"\t"PLUS INTERNATIONAL BANK"\t"2023-10-27T11:00:00"',
+      '"777"\t"0"\t"NO CERT"\t"2023-10-27T11:00:00"',
+      '"778"\t"12A54"\t"GARBLED"\t"2023-10-27T11:00:00"',
+      '"779"\t""\t"BLANK"\t"2023-10-27T11:00:00"',
+      "",
+    ].join("\n");
+    const out = readFfiecPor({ "FFIEC CDR Call Bulk POR 09302023.txt": strToU8(por) });
+    expect(out).toMatchObject({ certColumn: "FDIC Certificate Number", certUnreadable: 1, unreadable: 0 });
+    expect(out.certs).toEqual([{ rssd: "137915", cert: "12054" }, { rssd: "5551212", cert: "57083" }]);
+    expect(out.rows).toHaveLength(5);
+    // The certificate column is read even when the last-updated column is missing, and a loose
+    // header ("FDIC Cert No.") matches.
+    const noTime = readFfiecPor({ "FFIEC CDR Call Bulk POR 12312024.txt": strToU8('"IDRSSD"\t"FDIC Cert No."\n"366854"\t"16471"\n') });
+    expect(noTime).toMatchObject({ column: null, rows: [], certColumn: "FDIC Cert No.", certs: [{ rssd: "366854", cert: "16471" }] });
   });
 
   it("parses stated zones and refuses impossible dates", () => {

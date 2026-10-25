@@ -196,4 +196,14 @@ export const MAGELLAN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-2625-identifier-is-todays-not-historys",
+    agent: "magellan",
+    stage: "registry load",
+    lesson: "A regulator identifier is today's, not history's: when a bank merges into a different charter, the FDIC cert and the Fed RSSD can come from different predecessors. Attach past filings by the cert that filed as that RSSD that quarter (FFIEC POR), not by today's cert.",
+    why: "Emigrant Bank (254) and Kendall Bank (2923) merged into smaller charters whose certificates they now hold. The BankFind loader attached the small charters' own pre-merger quarters to them by today's certificate (Emigrant 2023-09-30 assets $47,834K against the bank's $6,412,660K under predecessor cert 12054; Kendall 2024-12-31 $49,970K against $159,171K under 16471), while the FFIEC loader, by RSSD, carried the real history, so Hamilton's trends and the public page showed different banks.",
+    evidence: { issues: [2625], prs: [], files: ["docs/project/findings/2026-10-25-merger-into-other-charter-splits-history.md", "src/lib/agents/magellan/registry/fdic-financials.ts", "src/lib/agents/magellan/registry/ffiec-call-detail.ts", "src/lib/regulatory/ffiec.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];

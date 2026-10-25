@@ -3,7 +3,7 @@ import { inSavepoint } from "@/lib/agents/savepoint";
 import { FFIEC_FILING_UPDATED_KEY } from "@/lib/regulatory/ffiec-call-items";
 
 /**
- * Filings reconciliation (#1925, Hamilton V5 T3), `FILINGS_RECONCILE_VERSION` v2. Read-only.
+ * Filings reconciliation (#1925, Hamilton V5 T3), `FILINGS_RECONCILE_VERSION` v3. Read-only.
  *
  * Every figure the institution page and Hamilton show for a bank or credit union is read from
  * `institution_financial_records` (FDIC BankFind quarters; NCUA 5300 year to date). The filed line
@@ -48,11 +48,15 @@ import { FFIEC_FILING_UPDATED_KEY } from "@/lib/regulatory/ffiec-call-items";
  * that prior quarter is itself reported as a mismatch. A negative differenced line is not counted
  * as explained when the prior quarter differs between the feeds, since then it is not a restarted
  * year to date but the other version's prior quarter.
+ *
+ * v3 (#2625): a merger quarter is also one in which the bank's structure history shows offices
+ * coming over in a merger (code 713) on the same date as a main-office change (510), the way a bank
+ * that merged into a different, smaller charter shows on the surviving certificate (`mergerDates`).
  */
 
 type SqlTag = typeof sql;
 
-export const FILINGS_RECONCILE_VERSION = 2;
+export const FILINGS_RECONCILE_VERSION = 3;
 export const RECONCILE_QUARTERS = 12;
 export const RECONCILE_SAMPLE_PER_CHARTER = 150;
 export const RECONCILE_TIMEOUT_MS = 20_000;
@@ -571,14 +575,44 @@ async function readItems(db: SqlTag, itemSource: "ffiec" | "ncua", ids: number[]
   `;
 }
 
+export interface StructureEventRow {
+  institution_id: number | string;
+  change_code: string;
+  effective_date: string;
+  office_number: string | null;
+}
+
+/**
+ * Merger dates from FDIC structure history. Code 810 on the institution itself (no office): it
+ * absorbed another as survivor. Codes 713 and 510 on one date (#2625): offices came over in a
+ * merger (713) the same day the main office changed (510), which is how a bank that merged into a
+ * different, smaller charter shows on the surviving certificate (Emigrant 2023-10-01, Kendall
+ * 2025-01-31). Those events carry office numbers, so they are matched with any office.
+ */
+export function mergerDates(events: readonly StructureEventRow[]): MergerRow[] {
+  const out = new Map<string, MergerRow>();
+  const codesOn = new Map<string, Set<string>>();
+  for (const e of events) {
+    const k = `${Number(e.institution_id)}|${e.effective_date}`;
+    if (e.change_code === "810" && e.office_number === null) out.set(k, { institution_id: Number(e.institution_id), effective_date: e.effective_date });
+    codesOn.set(k, (codesOn.get(k) ?? new Set()).add(e.change_code));
+  }
+  for (const [k, codes] of codesOn) {
+    if (!codes.has("713") || !codes.has("510") || out.has(k)) continue;
+    const [id, date] = k.split("|");
+    out.set(k, { institution_id: Number(id), effective_date: date });
+  }
+  return [...out.values()];
+}
+
 async function readMergers(db: SqlTag, ids: number[], from: string, to: string): Promise<MergerRow[]> {
-  // FDIC history code 810: the institution absorbed another (participated in a merger as survivor).
-  return db<MergerRow[]>`
-    SELECT institution_id::int AS institution_id, effective_date::text AS effective_date
+  const events = await db<StructureEventRow[]>`
+    SELECT institution_id::int AS institution_id, change_code, effective_date::text AS effective_date, office_number
       FROM institution_structure_events
-     WHERE institution_id = ANY(${ids}::bigint[]) AND change_code = '810' AND office_number IS NULL
+     WHERE institution_id = ANY(${ids}::bigint[]) AND change_code IN ('810', '713', '510')
        AND effective_date > ${from}::date AND effective_date <= ${to}::date
   `;
+  return mergerDates(events);
 }
 
 /** Shown bank rows from Q1 of the first date's year, so a shown year to date can be summed. */

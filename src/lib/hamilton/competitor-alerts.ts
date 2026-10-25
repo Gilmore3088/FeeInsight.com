@@ -6,7 +6,13 @@ import { HEADLINE_FEE_KEYS } from "@/lib/data-store/market-readiness";
 import { FEE_MOVES_TRACKED_SINCE, getLocalMarketCompetitors } from "@/lib/data-store/local-market";
 import { SECOND_LOOK_MIN_MINUTES } from "@/lib/agents/hamilton/second-look";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
-import { confirmFeeChange, type RecordedChangeRow } from "@/lib/report-assemblers/monthly-pulse";
+import { editionStarts } from "@/lib/agents/hamilton/schedule-edition";
+import {
+  judgeFeeChange,
+  type FeeChangeHold,
+  type PulseChange,
+  type RecordedChangeRow,
+} from "@/lib/report-assemblers/monthly-pulse";
 
 /**
  * In-app competitor change alerts for institution workspaces (the institution product).
@@ -19,12 +25,23 @@ import { confirmFeeChange, type RecordedChangeRow } from "@/lib/report-assembler
  *   - it is at least 12 hours old (`SECOND_LOOK_MIN_MINUTES`) and the new price has no
  *     pending takedown (`pipeline_feedback` kind `takedown_pending`), so it has had its
  *     second look;
- *   - `confirmFeeChange`, the rule Hamilton and the Monthly Pulse share, bears it out
- *     against the two schedule copies.
- * Nothing is emailed. Each bank sees each change once (dedupe key in the signal).
+ *   - `judgeFeeChange`, the rule Hamilton and the Monthly Pulse share, bears it out
+ *     against the two schedule copies. It never counts our corrected reading of one document,
+ *     or an older schedule found late, as the bank changing its price (#1898).
+ * Each alert carries its baseline (#1898): the price we had on file before, from which
+ * schedule and edition and since when, beside the new price and when we first read it, so the
+ * subscriber sees what we knew and when. An alert whose change later fails the rule is
+ * withdrawn, not deleted. Nothing is emailed. Each bank sees each change once (dedupe key in
+ * the signal).
  */
 
 export const COMPETITOR_CHANGE_SIGNAL = "hamilton_competitor_fee_change";
+/**
+ * An alert tells a subscriber a competitor moved a price, so it also holds a change whose new
+ * schedule states no edition against a dated old one (`edition_unknown`). The Monthly Pulse and
+ * the fee alert emails do not, so a bank that moves to an undated web page keeps its real changes.
+ */
+const ALERT_RULE = { holdUndatedEdition: true } as const;
 /**
  * Space Coast CU, the demo institution. While no institution has an active workspace, the
  * scheduled competitor-alert and briefing runs also record a dry-run preview for it, so the
@@ -42,6 +59,25 @@ export interface CompetitorChangeRow extends RecordedChangeRow {
   change_id: number | string;
   competitor_id: number | string;
   new_fee_published_id: number | string;
+  /** When the old price went live in the index: what we knew, and since when. */
+  old_read_at?: string | Date | null;
+  /** When the new price went live in the index. */
+  new_read_at?: string | Date | null;
+}
+
+/** One side of an alert's baseline: a price, the schedule it was read from, and when. */
+export interface BaselineSide {
+  amount: number;
+  scheduleUrl: string | null;
+  /** The edition date the schedule states (YYYY-MM-DD), or null when it states none. */
+  edition: string | null;
+  /** The day this price went live in the index (YYYY-MM-DD), or null when unknown. */
+  readOn: string | null;
+}
+
+export interface CompetitorBaseline {
+  before: BaselineSide;
+  after: BaselineSide;
 }
 
 export interface CompetitorAlert {
@@ -59,6 +95,7 @@ export interface CompetitorAlert {
   dedupeKey: string;
   title: string;
   body: string;
+  baseline: CompetitorBaseline;
 }
 
 export function competitorAlertDedupeKey(bankId: number, changeId: number): string {
@@ -79,14 +116,39 @@ function cleanName(name: string): string {
   return name.replace(/\s+/g, " ").trim();
 }
 
+function day(value: string | Date | null | undefined): string | null {
+  if (value == null || value === "") return null;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
+}
+
+/** Pure: what we had on file before the change and what replaced it, with sources and dates. */
+export function buildCompetitorBaseline(row: CompetitorChangeRow, change: PulseChange): CompetitorBaseline {
+  return {
+    before: {
+      amount: change.old_amount,
+      scheduleUrl: row.old_source_url ?? null,
+      edition: editionStarts(row.old_document_text),
+      readOn: day(row.old_read_at),
+    },
+    after: {
+      amount: change.new_amount,
+      scheduleUrl: row.source_url ?? null,
+      edition: editionStarts(row.new_document_text),
+      readOn: day(row.new_read_at),
+    },
+  };
+}
+
 /** Pure: the alert one bank should see for one confirmed competitor change. */
 export function buildCompetitorAlert(input: {
   bankId: number;
   bankName: string;
   ownAmount: number | null;
-  change: NonNullable<ReturnType<typeof confirmFeeChange>>;
+  change: PulseChange;
   changeId: number;
   competitorId: number;
+  baseline: CompetitorBaseline;
 }): CompetitorAlert {
   const { change } = input;
   const fee = feeLabel(change.display_name);
@@ -117,12 +179,14 @@ export function buildCompetitorAlert(input: {
     dedupeKey: competitorAlertDedupeKey(input.bankId, input.changeId),
     title,
     body,
+    baseline: input.baseline,
   };
 }
 
 /**
  * Pure: alerts for one bank from its competitors' recorded changes. Drops changes that
- * `confirmFeeChange` does not bear out and ones the bank was already shown.
+ * `judgeFeeChange` does not bear out and ones the bank was already shown; `held` counts the
+ * ones dropped because they are a correction or an older schedule found late.
  */
 export function planCompetitorAlerts(input: {
   bankId: number;
@@ -130,21 +194,24 @@ export function planCompetitorAlerts(input: {
   ownFees: Record<string, number>;
   changes: CompetitorChangeRow[];
   alreadyAlerted: Set<string>;
-}): { alerts: CompetitorAlert[]; notConfirmed: number; alreadyShown: number } {
+}): { alerts: CompetitorAlert[]; notConfirmed: number; alreadyShown: number; held: HeldCounts } {
   const alerts: CompetitorAlert[] = [];
   let notConfirmed = 0;
   let alreadyShown = 0;
+  const held = emptyHeld();
   for (const row of input.changes) {
     const changeId = Number(row.change_id);
     if (input.alreadyAlerted.has(competitorAlertDedupeKey(input.bankId, changeId))) {
       alreadyShown += 1;
       continue;
     }
-    const change = confirmFeeChange(row);
-    if (!change) {
+    const verdict = judgeFeeChange(row, ALERT_RULE);
+    if (!verdict.change) {
       notConfirmed += 1;
+      if (verdict.hold !== "not_confirmed") held[verdict.hold] += 1;
       continue;
     }
+    const change = verdict.change;
     alerts.push(
       buildCompetitorAlert({
         bankId: input.bankId,
@@ -153,10 +220,31 @@ export function planCompetitorAlerts(input: {
         change,
         changeId,
         competitorId: Number(row.competitor_id),
+        baseline: buildCompetitorBaseline(row, change),
       }),
     );
   }
-  return { alerts, notConfirmed, alreadyShown };
+  return { alerts, notConfirmed, alreadyShown, held };
+}
+
+/** Changes held because of what we knew and when, by reason (`FeeChangeHold`). */
+export type HeldCounts = Record<Exclude<FeeChangeHold, "not_confirmed">, number>;
+
+function emptyHeld(): HeldCounts {
+  return { correction: 0, older_edition: 0, edition_unknown: 0 };
+}
+
+const HOLD_REASON: Record<Exclude<FeeChangeHold, "not_confirmed">, string> = {
+  correction: "a corrected reading of the same schedule",
+  older_edition: "an older schedule found late",
+  edition_unknown: "new schedule states no edition date",
+};
+
+/** Pure: why an alert's change no longer stands under the change rule, or null when it does. */
+export function recheckReason(row: CompetitorChangeRow): string | null {
+  const verdict = judgeFeeChange(row, ALERT_RULE);
+  if (verdict.change) return null;
+  return verdict.hold === "not_confirmed" ? "schedules no longer bear out the change" : HOLD_REASON[verdict.hold];
 }
 
 // ---------------------------------------------------------------------------
@@ -205,10 +293,18 @@ async function loadOwnFees(institutionId: number): Promise<Record<string, number
   return Object.fromEntries(rows.map((row) => [row.fee_category, Number(row.amount)]));
 }
 
-/** Recorded dollar changes by these competitors that are past their second look. */
-async function loadAgedChanges(competitorIds: number[], categories: string[], now: Date): Promise<CompetitorChangeRow[]> {
-  if (competitorIds.length === 0) return [];
-  const agedBefore = new Date(now.getTime() - SECOND_LOOK_MIN_MINUTES * 60_000).toISOString();
+/**
+ * Recorded dollar changes with both schedules' texts: by these competitors and past their second
+ * look, or (`changeIds`) the changes behind alerts already raised, to re-check them.
+ */
+async function loadChanges(
+  filter: { competitorIds: number[]; categories: string[]; agedBefore: string } | { changeIds: number[] },
+): Promise<CompetitorChangeRow[]> {
+  const byIds = "changeIds" in filter ? filter.changeIds : null;
+  const competitorIds = "competitorIds" in filter ? filter.competitorIds : [];
+  const categories = "categories" in filter ? filter.categories : [];
+  const agedBefore = "agedBefore" in filter ? filter.agedBefore : null;
+  if ((byIds ?? competitorIds).length === 0) return [];
   return sql<CompetitorChangeRow[]>`
     SELECT c.id AS change_id, c.institution_id AS competitor_id,
            i.institution_name, i.state_code, i.charter_type,
@@ -217,6 +313,8 @@ async function loadAgedChanges(competitorIds: number[], categories: string[], no
            c.new_amount, COALESCE(c.changed_at, c.detected_at) AS changed_at,
            n.fee_published_id AS new_fee_published_id, n.fee_name, n.source_url,
            o.fee_name AS old_fee_name, o.source_url AS old_source_url,
+           n.source_document_id AS new_document_id, o.source_document_id AS old_document_id,
+           n.published_at AS new_read_at, o.published_at AS old_read_at,
            (SELECT t.normalized_text FROM agent_source_texts t
              WHERE t.source_document_id = o.source_document_id AND t.status = 'completed'
              ORDER BY t.id DESC LIMIT 1) AS old_document_text,
@@ -226,7 +324,7 @@ async function loadAgedChanges(competitorIds: number[], categories: string[], no
       FROM fee_change_records c
       JOIN institution_sources i ON i.id = c.institution_id
       JOIN LATERAL (
-        SELECT fp.fee_published_id, fp.fee_name, fp.source_url, fr.source_document_id
+        SELECT fp.fee_published_id, fp.fee_name, fp.source_url, fp.published_at, fr.source_document_id
           FROM published_fee_records fp
           JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
           JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
@@ -237,16 +335,20 @@ async function loadAgedChanges(competitorIds: number[], categories: string[], no
            AND fv.outlier_flags::text LIKE '%agentic_darwin_verified%'
       ) n ON TRUE
       LEFT JOIN LATERAL (
-        SELECT fp.fee_name, fp.source_url, fr.source_document_id
+        SELECT fp.fee_name, fp.source_url, fp.published_at, fr.source_document_id
           FROM published_fee_records fp
           JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
           JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
          WHERE fp.fee_published_id = c.previous_fee_published_id
       ) o ON TRUE
-     WHERE c.institution_id = ANY(${competitorIds}::bigint[])
-       AND COALESCE(c.canonical_fee_key, c.fee_category) = ANY(${categories}::text[])
-       AND c.detected_at >= ${FEE_MOVES_TRACKED_SINCE}::timestamptz
-       AND c.detected_at <= ${agedBefore}::timestamptz
+     WHERE (
+             (${byIds}::bigint[] IS NOT NULL AND c.id = ANY(${byIds}::bigint[]))
+          OR (${byIds}::bigint[] IS NULL
+              AND c.institution_id = ANY(${competitorIds}::bigint[])
+              AND COALESCE(c.canonical_fee_key, c.fee_category) = ANY(${categories}::text[])
+              AND c.detected_at >= ${FEE_MOVES_TRACKED_SINCE}::timestamptz
+              AND c.detected_at <= ${agedBefore}::timestamptz)
+           )
        -- One schedule against an older copy of itself (hamilton/change-pairing.ts).
        AND c.like_for_like IS TRUE
        AND ${sql.unsafe(consumerPriceMoveSql("c"))}
@@ -257,6 +359,12 @@ async function loadAgedChanges(competitorIds: number[], categories: string[], no
        )
      ORDER BY c.detected_at
   `;
+}
+
+/** Recorded dollar changes by these competitors that are past their second look. */
+function loadAgedChanges(competitorIds: number[], categories: string[], now: Date): Promise<CompetitorChangeRow[]> {
+  const agedBefore = new Date(now.getTime() - SECOND_LOOK_MIN_MINUTES * 60_000).toISOString();
+  return loadChanges({ competitorIds, categories, agedBefore });
 }
 
 async function loadAlreadyAlerted(bankId: number): Promise<Set<string>> {
@@ -289,6 +397,21 @@ async function raiseAlert(alert: CompetitorAlert, memberUserIds: number[]): Prom
       new_amount: alert.newAmount,
       own_amount: alert.ownAmount,
       schedule_url: alert.scheduleUrl,
+      // What we knew and when (#1898): the price on file before, and what replaced it.
+      baseline: {
+        before: {
+          amount: alert.baseline.before.amount,
+          schedule_url: alert.baseline.before.scheduleUrl,
+          edition: alert.baseline.before.edition,
+          read_on: alert.baseline.before.readOn,
+        },
+        after: {
+          amount: alert.baseline.after.amount,
+          schedule_url: alert.baseline.after.scheduleUrl,
+          edition: alert.baseline.after.edition,
+          read_on: alert.baseline.after.readOn,
+        },
+      },
       evidence_policy: "verified-only",
       provider_call_queued: false,
     },
@@ -340,6 +463,26 @@ async function withdrawStaleAlerts(dryRun: boolean, institutionId: number | null
          OR EXISTS (SELECT 1 FROM pipeline_feedback pf WHERE pf.fee_published_id = n.fee_published_id AND pf.kind = 'takedown_pending')
        )
   `;
+  // The rest still stand in the tables; re-check them against today's change rule (#1898), so an
+  // alert raised before the rule, on an older schedule found late or a corrected reading, is
+  // taken back too.
+  const staleIds = new Set(stale.map((row) => row.id));
+  const live = await sql<{ id: string; change_id: number | string | null }[]>`
+    SELECT s.id::text AS id, s.source_json ->> 'fee_change_record_id' AS change_id
+      FROM hamilton_signals s
+     WHERE s.signal_type = ${COMPETITOR_CHANGE_SIGNAL}
+       AND s.source_json -> 'withdrawn_at' IS NULL
+       AND (${institutionId}::text IS NULL OR s.institution_id = ${institutionId}::text)
+  `;
+  const recheck = live.filter((row) => row.change_id != null && !staleIds.has(row.id));
+  if (recheck.length > 0) {
+    const rows = await loadChanges({ changeIds: [...new Set(recheck.map((row) => Number(row.change_id)))] });
+    const reasons = new Map(rows.map((row) => [Number(row.change_id), recheckReason(row)]));
+    for (const signal of recheck) {
+      const reason = reasons.get(Number(signal.change_id));
+      if (reason) stale.push({ id: signal.id, reason });
+    }
+  }
   if (dryRun || stale.length === 0) return stale.length;
   const updates = JSON.stringify(stale.map((row) => ({ id: row.id, reason: row.reason })));
   await sql`
@@ -366,6 +509,8 @@ export interface CompetitorAlertsResult {
   /** Recorded changes past their second look at those competitors. */
   agedChanges: number;
   notConfirmed: number;
+  /** Of those, held as a corrected reading or an older schedule found late (#1898). */
+  held: HeldCounts;
   alreadyShown: number;
   alerts: number;
   /** Member alerts written (alerts x members). */
@@ -387,6 +532,7 @@ export async function runCompetitorAlerts({
     competitorsChecked: 0,
     agedChanges: 0,
     notConfirmed: 0,
+    held: emptyHeld(),
     alreadyShown: 0,
     alerts: 0,
     memberAlerts: 0,
@@ -429,6 +575,7 @@ export async function runCompetitorAlerts({
       alreadyAlerted,
     });
     result.notConfirmed += plan.notConfirmed;
+    for (const key of Object.keys(plan.held) as Array<keyof HeldCounts>) result.held[key] += plan.held[key];
     result.alreadyShown += plan.alreadyShown;
 
     for (const alert of plan.alerts) {
@@ -454,9 +601,13 @@ export function summarizeCompetitorAlerts(result: CompetitorAlertsResult): strin
     : "";
   if (result.banks === 0) return `${lead}No institution has an active workspace, so there are no competitor alerts to raise.${withdrawn}`;
   const raised = result.dryRun ? "Would raise" : "Raised";
+  const held = result.held.correction + result.held.older_edition + result.held.edition_unknown;
+  const heldLine = held > 0
+    ? ` (${result.held.older_edition} older schedule(s) found late, ${result.held.correction} corrected reading(s), ${result.held.edition_unknown} new schedule(s) with no edition date)`
+    : "";
   return (
     `${lead}Checked ${result.competitorsChecked} local competitor(s) for ${result.banksWithMarket} of ${result.banks} institution(s); ` +
-    `${result.agedChanges} recorded change(s) were past their 12-hour second look, ${result.notConfirmed} did not hold up against the schedules, ` +
+    `${result.agedChanges} recorded change(s) were past their 12-hour second look, ${result.notConfirmed} did not hold up against the schedules${heldLine}, ` +
     `${result.alreadyShown} were already shown. ${raised} ${result.alerts} alert(s).${withdrawn}`
   );
 }

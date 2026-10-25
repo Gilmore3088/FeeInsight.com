@@ -303,6 +303,8 @@ export interface ReportSummaryResponse {
     /** Sentences printed only under "Hamilton's reading, not tied to a fee record" (#981 H06-T08); absent on briefs made before it. */
     reading?: string[];
   };
+  /** A monthly institution briefing (#1897): six fixed sections, each figure with its source and period. */
+  monthlyBriefing?: import("./monthly-briefing").MonthlyBriefing;
   title: string;
   /** Historical reference identity captured on the authenticated generation request. */
   identityContext?: HamiltonIdentitySnapshot;
@@ -328,6 +330,10 @@ export interface ReportSummaryResponse {
     source: "Position" | "Ask" | "Test"; title: string; detail: string; identityContext?: HamiltonIdentitySnapshot;
     /** A saved answer's sentences that are Hamilton's reading, printed under `INTERPRETATION_LABEL` (#1077 step 6; only with HAMILTON_REPORT_FINDING_READING on). */
     reading?: string[];
+    /** A saved answer's supported sentences and the facts they cite, bounded (#1077 defect 7); absent on older reports and Position/Test findings. */
+    claims?: import("./report-finding-claims").ReportFindingClaims;
+    /** The carried facts' source lines, worded on the server; absent with no carried fact. */
+    sources?: import("./report-finding-claims").ReportFindingSource[];
   }>;
   exportControls: {
     pdfEnabled: boolean;

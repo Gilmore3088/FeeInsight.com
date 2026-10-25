@@ -9,17 +9,30 @@
  * binding does not. Pure: no reads, no model calls.
  *
  * A fact is stored with its value and dates, not only its ID: a filing's natural key keeps its ID
- * when the filing is revised (design, Risks), so a re-check must compare the value.
+ * when the filing is revised (design, Risks), so a re-check must compare the value. An observed
+ * fact also keeps the source identity its evidence carried (table, record, document ids, URL,
+ * content hash, verification event), and a calculated one its input fact ids, so a re-check, the
+ * sources section or a correction can tell which schedule version was read without joining
+ * today's catalog (#1077, Cycle A trace defect 6). Those fields are optional: claims saved before
+ * them read back without them.
  */
 
-import type { HamiltonEvidenceBundle, HamiltonFactUnit, HamiltonPeriodBasis } from "./evidence-contract";
+import type { HamiltonEvidenceBundle, HamiltonEvidenceClass, HamiltonFactUnit, HamiltonPeriodBasis } from "./evidence-contract";
 import { NARRATIVE_BINDING_VERSION, type NarrativeBinding, type OmitReason } from "./narrative-bound";
 import { isOmitReason } from "./written-answer-binding";
 
 export const SAVED_CLAIMS_VERSION = 1 as const;
 
-/** The most facts one saved answer keeps, as the written calculation ledger is bounded (40). */
+/**
+ * The most facts one saved answer keeps, as the written calculation ledger is bounded (40). Cited
+ * facts are taken one per supported sentence in turn, so every sentence keeps its first fact before
+ * any keeps a second; inputs of cited calculated facts fill what is left.
+ */
 export const SAVED_CLAIM_MAX_FACTS = 40;
+/** The most source document ids, and calculated-fact input ids, one saved fact keeps. */
+export const SAVED_CLAIM_MAX_IDS = 8;
+/** The longest saved URL, hash, date or key; a longer one is not saved. */
+const SAVED_CLAIM_MAX_TEXT = 512;
 
 export type SavedClaimOutcome = "supported" | "reading" | "omitted";
 
@@ -45,6 +58,27 @@ export interface SavedClaimFact {
   reportingDate: string | null;
   periodBasis: HamiltonPeriodBasis | null;
   asOf: string | null;
+  /** Where an observed fact was read; absent on a calculated fact and on claims saved before #1077 defect 6. */
+  source?: SavedClaimFactSource;
+  /** The facts a calculated fact was made from, at most `SAVED_CLAIM_MAX_IDS`; absent on an observed one. */
+  inputFactIds?: string[];
+}
+
+/** An observed fact's source identity as its evidence carried it. Empty values are left out. */
+export interface SavedClaimFactSource {
+  table: string | null;
+  recordId: number | string | null;
+  recordKey?: string;
+  evidenceClass?: HamiltonEvidenceClass;
+  /** At most `SAVED_CLAIM_MAX_IDS`; `sourceDocumentIdsTruncated` says when more were carried. */
+  sourceDocumentIds: number[];
+  sourceDocumentIdsTruncated?: true;
+  /** The first source URL. */
+  url?: string;
+  documentContentHash?: string;
+  retrievedAt?: string;
+  lastCheckedAt?: string;
+  verificationEventId?: string;
 }
 
 export interface SavedClaimSet {
@@ -52,12 +86,42 @@ export interface SavedClaimSet {
   /** The binding version the outcomes come from. */
   bindingVersion: typeof NARRATIVE_BINDING_VERSION;
   claims: SavedClaim[];
-  /** The facts the supported claims cite, at most `SAVED_CLAIM_MAX_FACTS`. */
+  /**
+   * The facts the supported claims cite, then the inputs of cited calculated facts, at most
+   * `SAVED_CLAIM_MAX_FACTS` in all (see `factsToSave` for the order).
+   */
   facts: SavedClaimFact[];
-  /** True when a cited fact was left out of `facts` by the bound. */
+  /** True when a cited fact was left out of `facts` by the bound; an input left out does not count. */
   factsTruncated: boolean;
   /** The binding's correction lines for a premise the records contradict. */
   corrections: string[];
+}
+
+const savedText = (value: unknown): string | undefined =>
+  typeof value === "string" && value.length > 0 && value.length <= SAVED_CLAIM_MAX_TEXT ? value : undefined;
+const documentId = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+const EVIDENCE_CLASSES: readonly string[] = ["fee_record", "filing", "filing_statistic", "index_statistic"];
+
+/** A source identity with its bounds applied; also how a saved one is read back, so both agree. */
+function boundedSource(raw: Record<string, unknown>): SavedClaimFactSource {
+  const ids = Array.isArray(raw.sourceDocumentIds) ? raw.sourceDocumentIds.filter(documentId) : [];
+  const recordId = raw.recordId;
+  const optional = {
+    recordKey: savedText(raw.recordKey),
+    evidenceClass: typeof raw.evidenceClass === "string" && EVIDENCE_CLASSES.includes(raw.evidenceClass) ? raw.evidenceClass as HamiltonEvidenceClass : undefined,
+    sourceDocumentIdsTruncated: ids.length > SAVED_CLAIM_MAX_IDS || raw.sourceDocumentIdsTruncated === true ? (true as const) : undefined,
+    url: savedText(Array.isArray(raw.urls) ? raw.urls[0] : raw.url),
+    documentContentHash: savedText(raw.documentContentHash),
+    retrievedAt: savedText(raw.retrievedAt),
+    lastCheckedAt: savedText(raw.lastCheckedAt),
+    verificationEventId: savedText(raw.verificationEventId),
+  };
+  return {
+    table: savedText(raw.table) ?? null,
+    recordId: (typeof recordId === "number" && Number.isFinite(recordId)) ? recordId : savedText(recordId) ?? null,
+    sourceDocumentIds: ids.slice(0, SAVED_CLAIM_MAX_IDS),
+    ...Object.fromEntries(Object.entries(optional).filter(([, v]) => v !== undefined)),
+  };
 }
 
 function savedFact(fact: HamiltonEvidenceBundle["facts"][number] | HamiltonEvidenceBundle["derivations"][number]): SavedClaimFact {
@@ -72,7 +136,35 @@ function savedFact(fact: HamiltonEvidenceBundle["facts"][number] | HamiltonEvide
     reportingDate: fact.scope.reportingDate,
     periodBasis: fact.scope.periodBasis ?? null,
     asOf: fact.kind === "observed" ? fact.source.asOf : null,
+    ...(fact.kind === "observed"
+      ? { source: boundedSource(fact.source as unknown as Record<string, unknown>) }
+      : { inputFactIds: [...new Set(fact.derivation.inputFactIds)].slice(0, SAVED_CLAIM_MAX_IDS) }),
   };
+}
+
+/**
+ * The fact ids to save, in order: each supported sentence's first cited fact, then each one's
+ * second, and so on, so a sentence late in a long answer is not the one the bound drops; then the
+ * inputs of the cited calculated facts, while there is room. Only ids the evidence holds count.
+ */
+function factsToSave(binding: NarrativeBinding, byId: ReadonlyMap<string, SavedClaimFact>): { ids: string[]; truncated: boolean } {
+  const lists = binding.supported.map((s) => s.factIds.filter((id) => byId.has(id)));
+  const cited: string[] = [];
+  const seen = new Set<string>();
+  for (let round = 0; lists.some((list) => list.length > round); round++) {
+    for (const list of lists) {
+      const id = list[round];
+      if (id !== undefined && !seen.has(id)) { seen.add(id); cited.push(id); }
+    }
+  }
+  const ids = cited.slice(0, SAVED_CLAIM_MAX_FACTS);
+  for (const id of [...ids]) {
+    for (const input of byId.get(id)?.inputFactIds ?? []) {
+      if (ids.length >= SAVED_CLAIM_MAX_FACTS) break;
+      if (byId.has(input) && !ids.includes(input)) ids.push(input);
+    }
+  }
+  return { ids, truncated: cited.length > SAVED_CLAIM_MAX_FACTS };
 }
 
 /**
@@ -94,13 +186,13 @@ export function savedClaimsFrom(binding: NarrativeBinding | null | undefined, ev
   for (const bundle of evidence) {
     for (const fact of [...(bundle?.facts ?? []), ...(bundle?.derivations ?? [])]) if (!byId.has(fact.id)) byId.set(fact.id, savedFact(fact));
   }
-  const cited = [...new Set(binding.supported.flatMap((s) => s.factIds))].filter((id) => byId.has(id));
+  const saved = factsToSave(binding, byId);
   return {
     version: SAVED_CLAIMS_VERSION,
     bindingVersion: NARRATIVE_BINDING_VERSION,
     claims,
-    facts: cited.slice(0, SAVED_CLAIM_MAX_FACTS).map((id) => byId.get(id) as SavedClaimFact),
-    factsTruncated: cited.length > SAVED_CLAIM_MAX_FACTS,
+    facts: saved.ids.map((id) => byId.get(id) as SavedClaimFact),
+    factsTruncated: saved.truncated,
     corrections: [...(binding.corrections ?? [])],
   };
 }
@@ -137,6 +229,9 @@ export function readSavedClaims(value: unknown): SavedClaimSet | null {
       id: f.id, kind: f.kind, value: typeof f.value === "string" ? f.value : num(f.value), unit: f.unit as HamiltonFactUnit,
       institutionId: num(f.institutionId), feeCategory: str(f.feeCategory), metric: str(f.metric), reportingDate: str(f.reportingDate),
       periodBasis: str(f.periodBasis) as HamiltonPeriodBasis | null, asOf: str(f.asOf),
+      // Absent on claims saved before #1077 defect 6; a malformed source reads as none, not as a bad set.
+      ...(f.kind === "observed" && record(f.source) ? { source: boundedSource(record(f.source) as Record<string, unknown>) } : {}),
+      ...(f.kind === "derived" && strings(f.inputFactIds) ? { inputFactIds: f.inputFactIds.slice(0, SAVED_CLAIM_MAX_IDS) } : {}),
     });
   }
   return { version: SAVED_CLAIMS_VERSION, bindingVersion: NARRATIVE_BINDING_VERSION, claims, facts, factsTruncated: obj.factsTruncated === true, corrections: [...obj.corrections] };

@@ -22,7 +22,7 @@ import { EmergencyStopActiveError } from "@/lib/automation-control";
 import { IncompleteProviderResponseError, ProviderResponseBudgetError } from "@/lib/ai-response-budget";
 import { ProviderBudgetBlockedError } from "@/lib/api-hardening/budget";
 import { isProviderLimitError } from "@/lib/ai-provider";
-import { HAMILTON_PAUSED_MESSAGE } from "./provider-paused";
+import { HAMILTON_PAUSED_MESSAGE, HAMILTON_STOPPED_MESSAGE } from "./provider-paused";
 import { HamiltonTaskBudgetError } from "./task-budget";
 
 export type HamiltonFaultKind =
@@ -95,10 +95,12 @@ export function classifyHamiltonFault(error: unknown): HamiltonFault {
   const fault = (kind: HamiltonFaultKind, readerMessage: string): HamiltonFault =>
     ({ kind, retryable: HAMILTON_RETRY_POLICY[kind] > 0, readerMessage, detail });
   const budget = links.find((link): link is HamiltonTaskBudgetError => link instanceof HamiltonTaskBudgetError);
+  // A Hamilton task or daily cap keeps its own line (#1921). The provider stop, the spend breaker and
+  // the provider budget read as stopped, never with their internal reason (V5 T6, provider-stop.ts).
   if (budget) return fault("budget", budget.message);
-  if (links.some((link) => link instanceof EmergencyStopActiveError)) return fault("stopped", HAMILTON_PAUSED_MESSAGE);
+  if (links.some((link) => link instanceof EmergencyStopActiveError)) return fault("stopped", HAMILTON_STOPPED_MESSAGE);
   if (links.some((link) => link instanceof ProviderBudgetBlockedError || (link instanceof Error && link.name === "ProviderCircuitOpenError"))) {
-    return fault("budget", HAMILTON_PAUSED_MESSAGE);
+    return fault("budget", HAMILTON_STOPPED_MESSAGE);
   }
   if (links.some((link) => isProviderLimitError(link))) return fault("provider_paused", HAMILTON_PAUSED_MESSAGE);
   const responseBudget = links.find((link): link is ProviderResponseBudgetError => link instanceof ProviderResponseBudgetError);
