@@ -27,6 +27,7 @@ import { parseAnswerSection, parseTradeoffSection } from "@/lib/hamilton/report-
 import { validateHamiltonReportArtifact } from "@/lib/hamilton/report-quality";
 import { basketItemsFor, sanitizeBasketItems, type ReportBasketItem } from "@/lib/hamilton/report-basket";
 import { reportFindingReadingEnabled, savedAnswerFinding } from "@/lib/hamilton/report-saved-finding";
+import { reportAddedFindings } from "@/lib/hamilton/report-finding-claims";
 import { scheduleGateShadow } from "@/lib/hamilton/output-gate-shadow-store";
 import { resolveHamiltonPeerIndex } from "@/lib/hamilton/peer-index";
 import { completeHamiltonRefreshJobsForInstitution } from "@/lib/hamilton/refresh-jobs";
@@ -154,7 +155,7 @@ export async function previewReportPeerCoverage(
 async function authenticatedReportFindings(raw: unknown, institutionId: string | null): Promise<ReportBasketItem[]> {
   const findings = await Promise.all(sanitizeBasketItems(raw).map(async (item): Promise<ReportBasketItem | null> => {
     if (item.source === "Ask" && item.savedAnalysisId) {
-      // The server-only read: the saved claims are kept here (never in what a browser receives).
+      // The server-only read: claims come only from the saved record, never from what the browser sent.
       const saved = await readSavedAnalysisRecord(item.savedAnalysisId);
       if (!saved || typeof saved.responseJson.hamiltonView !== "string") return null;
       // An answer that failed the evidence gate when it was saved is not a finding to restate.
@@ -493,11 +494,8 @@ export async function generateReport(
     if (addedFindings.length > 0) {
       // A saved answer's reading prints under its label only with the switch on (off by default).
       const printReading = reportFindingReadingEnabled();
-      report.addedFindings = addedFindings.map((f) => ({
-        source: f.source, title: f.title, detail: f.detail,
-        ...(printReading && f.reading?.length ? { reading: [...f.reading] } : {}),
-        ...(f.identityContext ? { identityContext: f.identityContext } : {}),
-      }));
+      // A saved answer's finding carries its checked claims and their sources (#1077 defect 7).
+      report.addedFindings = reportAddedFindings(addedFindings, printReading);
     }
     const artifactQuality = validateHamiltonReportArtifact({
       report,

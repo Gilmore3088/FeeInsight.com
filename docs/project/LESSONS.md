@@ -213,7 +213,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-303 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+305 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
 ### Extraction and fee reading (45)
 
@@ -462,8 +462,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — Sign out on the account page and admin used Server Actions that a redeploy breaks. — [finding](findings/2026-10-09-sign-out-server-action.md) — Guard: `src/app/api/auth/logout/route.test.ts:30`
 - 2026-10-09 — A refunded report kept its paid status and its private link. — [finding](findings/2026-10-09-report-refund-not-handled.md) — Guard: `src/lib/stripe-webhook.test.ts` (+1 more)
 
-### Hamilton workspace (35)
+### Hamilton workspace (36)
 
+- 2026-10-25 — A checked answer stays checked only while its claims travel with it: a saved answer's report finding now carries its supported sentences, cited facts and source lines into `report_json`, and the answer section holds any finding figure that neither those facts nor its own data support. — [finding](findings/2026-10-25-report-finding-claims.md) — Guard: `src/lib/hamilton/report-finding-claims.test.ts`, `src/lib/hamilton/report-actions.test.ts`
 - 2026-10-25 — Shrink what an answer does not rest on first: tool-output compaction now trims a profile's fee rows to their record, amount, category and name, drops conditions and halves its other lists (keeping five quarters of filing history) before any fee row, keeps spotlight and core fee types when rows must go, never cuts a profile to text, and marks `_fee_rows_complete` so saved fee refs survive a trim. — [finding](findings/2026-10-25-compaction-keeps-records.md) — Guard: `src/lib/research/tool-output.test.ts`, `src/lib/saved-output-corrections.test.ts`
 - 2026-10-25 — A save that a re-check or correction reads keeps the identity the evidence carried, not only the value: saved claim facts now keep their source table, record, document ids, URL, content hash and verification event (bounded), a calculated fact its input ids, and the 40-fact bound keeps every supported sentence's first fact first. — [finding](findings/2026-10-25-saved-claims-document-identity.md) — Guard: `src/lib/hamilton/claim-report-carry.test.ts`, `src/lib/hamilton/written-answer-sources.pdf.test.tsx`
 - 2026-10-25 — A saved title is a headline with no label, so it comes only from a sentence the binding supports or one that states no figure, else the question; a browser-sent title with a figure is replaced by the prompt. — [finding](findings/2026-10-25-saved-title-reading.md) — Guard: `src/lib/hamilton/saved-title.test.ts`, `src/app/pro/(hamilton)/analyze/actions.h01-guards.test.ts`
@@ -537,8 +538,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A shared log that every PR appends to at the same spot needs one file per entry. — [finding](findings/2026-10-09-findings-md-merge-conflicts.md) — Guard: `scripts/ci-guards.sh findings-file-kill`
 - 2026-10-09 — Backlog Node checks were accidentally discovered by application Vitest. — [finding](findings/2026-10-09-backlog-node-test-discovery.md) — Guard: `src/lib/vitest-collection.test.ts:26` (+2 more)
 
-### Agent process, learning and measurement (17)
+### Agent process, learning and measurement (18)
 
+- 2026-10-25 — A retrieval add-on is judged only by its lift on a holdout of human-confirmed current schedules; the first metadata and full-text ranker showed none over today's page choice, so no embeddings. — [finding](findings/2026-10-25-retrieval-pilot-no-holdout-lift.md) — Guard: `src/lib/agents/deming/shadow-lab/retrieval-pilot.test.ts`; Agent lesson: deming/o2-retrieval-holdout-before-embeddings
 - 2026-10-24 — Answer-key lines were compared to the bank's page as markup (table bars, HTML codes, dot leaders), so the same words and prices never matched. — [finding](findings/2026-10-24-answer-key-lines-compared-as-markup.md) — Agent lesson: deming/issue-2466-line-content-match
 - 2026-10-22 — Replay each weekly live audit in the shadow lab: most live errors start at extraction, and wrong names pass every stage. — [finding](findings/2026-10-22-live-audit-replay.md) — Guard: `src/lib/agents/deming/shadow-lab/ratchet-gate.test.ts` (live_audit expectations in `ratchet-baseline.json`)
 - 2026-10-21 — Before fixing a batch of live fees, replay the frozen sources and fix the stage where the failures start. — [finding](findings/2026-10-21-pipeline-shadow-lab-first-run.md) — Guard: `npm run test:shadow-lab`
@@ -562,7 +564,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (213 in all).
+counts as of this index (214 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
@@ -574,7 +576,7 @@ counts as of this index (213 in all).
 | darwin | 30 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 40 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
 | hamilton | 23 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
-| deming | 13 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
+| deming | 14 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
 
 ## Before 2026-10-10
 
