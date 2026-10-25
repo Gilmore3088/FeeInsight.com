@@ -45,9 +45,8 @@ import { getRequestSubjectKey } from "@/lib/api-hardening/audit";
 import { trackFirstHamiltonUse } from "@/lib/analytics-server";
 import { cacheLatestMessage, cachedSystem, ledgerUsage, trackerUsage } from "@/lib/research/tool-output";
 import { SAVED_ANALYSIS_ID_KEY, questionOnly, writtenAnswerBinding, writtenAnswerCheck, writtenAnswerClaims, writtenAnswerResponse } from "@/lib/hamilton/answer-save";
-import { bindingLeavesNothing, readerNarrativeBinding } from "@/lib/hamilton/written-answer-binding";
+import { readerNarrativeBinding } from "@/lib/hamilton/written-answer-binding";
 import type { NarrativeBinding } from "@/lib/hamilton/narrative-bound";
-import { parseAnalyzeResponse } from "@/components/hamilton/analyze/parse-response";
 import { messageBoundsError } from "@/lib/hamilton/conversation-context";
 import { HELD_ANSWER_MESSAGE } from "@/lib/hamilton/answer-gate";
 import { insertSavedAnalysis } from "@/lib/data-store/hamilton-analyses";
@@ -60,7 +59,8 @@ import { writtenAnswerStepSystemPrompt, type AnswerToolEvidence } from "@/lib/ha
 import { shadowGate, type GateShadowRepair, type ShadowPath, type TodayDecision } from "@/lib/hamilton/output-gate-shadow";
 import { scheduleGateShadow } from "@/lib/hamilton/output-gate-shadow-store";
 import { gateAnswer, type GateInput } from "@/lib/hamilton/output-gate";
-import { bindingAnswerView, isGateRepairEnabled, repairTimeBudgetMs, runGatedAnswer, settleGatedDraft } from "@/lib/hamilton/output-gate-repair";
+import { isGateRepairEnabled, repairTimeBudgetMs, runGatedAnswer, settleGatedDraft } from "@/lib/hamilton/output-gate-repair";
+import { analyzeAnswerDecision } from "@/lib/hamilton/analyze-answer-decision";
 
 /** research_usage agent id for a gate rewrite; the "hamilton" prefix counts it in the Pro quota (quota.ts). */
 const GATE_REPAIR_USAGE_AGENT_ID = "hamilton-repair";
@@ -562,22 +562,15 @@ async function handlePOST(request: Request) {
             // Each sentence bound to the fee records and filings the tools returned (#981 H06-T06,
             // #1077). An answer with nothing left once the contradicted sentences go is held like a failing one.
             const binding = writtenAnswerBinding(text, toolOutputs, questionOnly(lastUserText), { toolResults: reads, institutionId, accountInstitutionId: homeId ?? null });
-            let held = holdsAnswers && (!check.passed || bindingLeavesNothing(parseAnalyzeResponse(text), binding));
             // A held answer whose binding left sentences out is shown without them: the browser never
             // gets their text (#1077 follow-up). A view that cannot be built safely holds the answer,
             // so it is not saved as shown. The saved row keeps the full text and binding, as before.
-            let shownText: string | undefined;
-            if (holdsAnswers && !held && binding && binding.omitted.length > 0) {
-              const view = bindingAnswerView(text, check, binding);
-              if (view.text === null) {
-                held = true;
-                console.warn("[hamilton] written answer held: its left-out sentences could not be cut", view.heldBy);
-              } else {
-                shownText = view.text;
-              }
-            }
+            // One rule with the paid eval's shadow record (analyzeAnswerDecision).
+            const decision = analyzeAnswerDecision(text, check, binding, holdsAnswers);
+            const { held, shownText } = decision;
+            if (decision.viewFailed) console.warn("[hamilton] written answer held: its left-out sentences could not be cut", decision.heldBy);
             resolveVerdict({ passed: check.passed, held, binding, ...(shownText !== undefined ? { shownText } : {}) });
-            today = held ? "held" : binding && binding.omitted.length > 0 ? "shown_partial" : "shown";
+            today = decision.today;
             const response = {
               // The claims ride with the binding (#1077 step 6): nothing on the screen reads them.
               // A claims build that throws never stops the save: the answer saves without them.
