@@ -84,7 +84,7 @@ export interface WrittenAnswerEvidenceBuild {
   data: unknown;
   /** The fee records and institution names the sentence binding reads (writtenAnswerFeeEvidence); null when there is none. */
   fees: ReturnType<typeof writtenAnswerFeeEvidence>;
-  /** Filing and filed-peer facts with IDs (claim-evidence.ts). Nothing reads them yet (claim contract step 2, #1077). */
+  /** Filing and filed-peer facts with IDs (claim-evidence.ts); the sentence binding reads the same facts (writtenAnswerBinding, #1077 step 2). */
   claims: HamiltonEvidenceBundle;
 }
 

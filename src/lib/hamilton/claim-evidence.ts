@@ -2,8 +2,9 @@
  * Fact IDs for the filing and filed-peer figures a written answer reads (claim contract step 1,
  * #1077). Each adapter reads only server-observed tool reads and keeps the validation the
  * existing reader already does (profile-quarter-evidence, answer-derivations, filed-peer-evidence),
- * so no new trust is granted. Nothing binds a sentence to these facts yet: `claimBindingMatches`
- * and `bindNarrative` still see fee records only (step 2).
+ * so no new trust is granted. A written answer's sentence binding reads them (step 2,
+ * `writtenAnswerBinding`): a filing figure is supported only by a fact of the institution, metric,
+ * period and period basis the sentence states.
  *
  * A filing row has no numeric id in the tool output, so its ID is a natural key that names its
  * period basis: an NCUA profile row is year to date and the filed peer view's row for the same
@@ -63,9 +64,13 @@ function filingFact(input: {
   };
 }
 
+/** The period basis each source's profile definition must state: NCUA files year to date, the FDIC by quarter. */
+const PROFILE_PERIOD_BASIS = { ncua: "year_to_date", fdic: "standalone_quarter" } as const;
+
 /** getInstitution's `financials` rows, validated as profileQuarterCalculations reads them. */
 function profileFilingFacts(reads: readonly AnswerToolEvidence[]): HamiltonEvidenceFact[] {
   const facts: HamiltonEvidenceFact[] = [];
+  const conflicting = new Set<string>();
   for (const read of reads.slice(-40)) {
     if (read.toolName !== "getInstitution") continue;
     const id = record(read.input)?.id;
@@ -74,25 +79,34 @@ function profileFilingFacts(reads: readonly AnswerToolEvidence[]): HamiltonEvide
     const financials = record(output?.financials);
     const definition = record(financials?.definition);
     const source = financialSourceForCharter(identity?.charter_type);
-    if (!positiveId(id) || identity?.id !== id || !source || definition?.source !== source || !Array.isArray(financials?.records)
-      || definition.measure !== financialMeasureDefinition(source).measure || typeof definition.publisher !== "string") continue;
-    const basis: HamiltonPeriodBasis | null = definition.period_basis === "year_to_date" ? "ytd" : definition.period_basis === "standalone_quarter" ? "standalone_quarter" : null;
-    if (!basis) continue;
+    if (!positiveId(id) || identity?.id !== id || !source || definition?.source !== source || !Array.isArray(financials?.records)) continue;
+    // The definition must be the source's own: measure, publisher, unit and the period basis its filings use.
+    const expected = financialMeasureDefinition(source);
+    if (definition.measure !== expected.measure || definition.unit !== expected.unit || definition.publisher !== expected.publisher
+      || definition.period_basis !== PROFILE_PERIOD_BASIS[source]) continue;
+    const basis: HamiltonPeriodBasis = source === "ncua" ? "ytd" : "standalone_quarter";
     for (const raw of [financials.latest, ...financials.records.slice(0, 8)]) {
       const row = record(raw);
       if (row?.institution_id !== id || row.source !== source || !quarterEnd(row.report_date)) continue;
+      const fieldUnits = record(row.field_units);
       for (const { field, unit, balance } of PROFILE_FIELDS) {
         const value = row[field];
-        if (typeof value !== "number" || !Number.isFinite(value)) continue;
-        const stated = record(row.field_units)?.[field] ?? row.unit ?? row.units ?? financials.units;
+        if (value === null || value === undefined) continue;
+        // A unit counts only where it is stated: an explicit null never falls through to the response's units.
+        const stated = fieldUnits && Object.hasOwn(fieldUnits, field) ? fieldUnits[field]
+          : Object.hasOwn(row, "unit") ? row.unit : Object.hasOwn(row, "units") ? row.units : financials.units;
         const scale = unit === "ratio" ? (percentageUnitScale(stated) === 100 ? 1 : null) : dollarUnitScale(stated);
-        if (scale === null || (unit === "usd" && value < 0)) continue;
+        // A value or unit that cannot be read makes the whole date conflicting, as profileQuarterCalculations does.
+        if (typeof value !== "number" || !Number.isFinite(value) || scale === null || (unit === "usd" && value < 0)) {
+          conflicting.add(`${id}:${row.report_date}`);
+          continue;
+        }
         facts.push(filingFact({ source, institutionId: id, reportDate: row.report_date, metric: field, basis: balance ? "point_in_time" : basis,
-          value: value * scale, unit, label: definition.publisher, table: "institution_financial_records" }));
+          value: value * scale, unit, label: expected.publisher, table: "institution_financial_records" }));
       }
     }
   }
-  return facts;
+  return facts.filter((fact) => !conflicting.has(`${fact.scope.institutionId}:${fact.scope.reportingDate}`));
 }
 
 /** queryData institution reads of the curated NCUA call lines, validated by the NCUA ledger's own reader. */

@@ -195,7 +195,7 @@ export interface HamiltonClaimBinding {
   accountApplicability?: Exclude<HamiltonAccountApplicability, "unknown" | "both">;
   /** A claim is about the current fee unless it says otherwise; a discontinued fee binds only a claim that says "discontinued". */
   productStatus?: HamiltonProductStatus;
-  /** Not yet matched by claimBindingMatches (claim contract step 2, #1077). */
+  /** The measure the claim states (a filing figure's metric); checked only when the claim states it. */
   metric?: string | null;
   periodBasis?: HamiltonPeriodBasis | null;
   cohortKey?: string | null;
@@ -380,6 +380,10 @@ export function claimBindingMatches(
   // Unknown is never a match for a stated figure; a genuine $0 is.
   if (claim.value !== undefined && (typeof fact.value !== "number" || !Number.isFinite(fact.value)
     || Math.abs(fact.value - claim.value) > 0.005)) return false;
+  // A filing figure's measure, period basis and peer group, each only when the claim states it (#1077).
+  if (claim.metric !== undefined && (fact.scope.metric ?? null) !== claim.metric) return false;
+  if (claim.periodBasis !== undefined && (fact.scope.periodBasis ?? null) !== claim.periodBasis) return false;
+  if (claim.cohortKey !== undefined && (fact.scope.cohortKey ?? null) !== claim.cohortKey) return false;
   // A fee from a discontinued account's table is never the current fee (#1880).
   if ((fact.scope.productStatus ?? "current") !== (claim.productStatus ?? "current")) return false;
   return true;
