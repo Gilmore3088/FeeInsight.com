@@ -48,6 +48,9 @@ async function rollback(state:State,work:(tx:Tx,f:Fixture)=>Promise<void>) {
   const stop=new Error("rollback recheck fixture");
   await transaction(async tx=>{const f=await seed(tx,state);await work(tx,f);throw stop;}).catch(error=>{if(error!==stop)throw error;});
 }
+// The older-live read takes every live row in the database, so a fee another suite left live on the
+// shared database would count; inside the rolled-back fixture, hold every other live fee.
+async function onlyFixtureLive(tx:Tx,f:Fixture) { await tx`UPDATE published_fee_records SET quarantined_at=NOW(),quarantine_reason='recheck fixture isolation' WHERE institution_id<>${f.institutionId} AND rolled_back_at IS NULL AND quarantined_at IS NULL`; }
 async function attemptCount(tx:Tx,f:Fixture) { return Number((await tx`SELECT count(*)::int AS n FROM pipeline_attempts WHERE agent_run_id=${f.runId} AND strategy='verify.recheck'`)[0].n); }
 async function failWrite(tx:Tx,table:string,condition:string,mode:"skip"|"throw"="skip") {
   const suffix=randomUUID().replaceAll("-","");
@@ -368,6 +371,7 @@ suite("Darwin recheck committed settlement (#2072)",()=>{
   it.each([0,1])("keeps older-live off with explicit run modulo4=%s cadence disposition",async modulo=>{
     runCounter+=(modulo-runCounter%4+4)%4;
     await rollback("live",async(tx,f)=>{
+      await onlyFixtureLive(tx,f);
       await tx`DELETE FROM pipeline_feedback WHERE fee_published_id=${f.publishedId}`;
       await tx`UPDATE pipeline_attempts SET strategy_version=2 WHERE agent_run_id=${f.runId} AND strategy='verify.rules'`;
       const result=await check(tx,f);expect(result.execution?.selected).toBe(0);expect(result.takenDown).toEqual([]);expect(await attemptCount(tx,f)).toBe(0);
@@ -386,6 +390,7 @@ suite("Darwin recheck committed settlement (#2072)",()=>{
 
   it("explicit older-live option preserves the bounded first-flag path without changing its default",async()=>{
     await rollback("live",async(tx,f)=>{
+      await onlyFixtureLive(tx,f);
       await tx`DELETE FROM pipeline_feedback WHERE fee_published_id=${f.publishedId}`;
       await tx`UPDATE pipeline_attempts SET strategy_version=2 WHERE agent_run_id=${f.runId} AND strategy='verify.rules'`;
       const result=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,olderLive:true});

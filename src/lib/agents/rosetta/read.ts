@@ -72,6 +72,8 @@ import {
 } from "@/lib/agents/rosetta/ocr";
 import { atomicTextWrite, captureNormalizedWitness, normalizedWitnessSchemaReady, preserveStatusChange, type WitnessRetention, type TextArtifactSnapshot } from "./normalized-witness";
 import { PDF_LAYOUT_VERSION } from "@/lib/agents/rosetta/pdf-layout";
+import { FEE_HOLD_CHECK } from "@/lib/fee-hold-rules";
+import { FEE_CORRECTION_CHECK } from "@/lib/fee-correction-rules";
 import { extractPdfDocumentText as extractPdfText, type PdfTextExtraction } from "./pdf-document-text";
 import { losslessStackedRecovery, textSha256, type StackedGeometryReceipt } from "./pdf-repair-survival";
 import type { PdfReaderAgreement } from "./pdf-reader-agreement";
@@ -1183,8 +1185,35 @@ export function rosettaReadCandidatesQuery(
                 AND ${alias}.char_count > ${flatMinParam}::int
                 AND strpos(${alias}.normalized_text, chr(10)) = 0
               )`;
+      // An operator's lost-text finding on a document's current text (a hold or correction whose
+      // cause is a lost text, #2059): a reader version bump gives it one read with the current
+      // reader, so a reader fix reaches the documents it was written for, not only those read
+      // afterwards. Text-survival and batch-review misses have their own branches below; a batch
+      // row about a zero-fee text must not keep that text when the new reader finds it is the
+      // wrong document. A finding that names the text's hash stays open until the text changes, so
+      // a re-read that writes the same text keeps it for the next bump; one without a hash is about
+      // the text written before it, and any rewrite settles it. A correction names the lost text's
+      // document in its evidence, since its own document is the cited one.
+      params.push([FEE_HOLD_CHECK, FEE_CORRECTION_CHECK]);
+      const operatorChecksParam = `$${params.length}`;
+      const readErrorOnText = (alias: string, text: string) => `EXISTS (
+                SELECT 1 FROM pipeline_feedback ${alias}
+                 WHERE ${alias}.check_name = ANY(${operatorChecksParam}::text[])
+                   AND (${alias}.evidence->>'lost_text_document_id' = ${text}.source_document_id::text
+                        OR (NOT ${alias}.evidence ? 'lost_text_document_id' AND ${alias}.source_document_id = ${text}.source_document_id))
+                   AND ${alias}.about_stage = 'read'
+                   AND ${alias}.signal = 'wrong'
+                   AND ${alias}.weight > 0
+                   AND (${alias}.evidence->>'text_hash' = ${text}.text_hash
+                        OR (${alias}.evidence->>'text_hash' IS NULL AND ${alias}.created_at >= ${text}.updated_at))
+              )`;
       lostTextRereadable = `(
               (${flatLegacyText("adt")} AND ${notSettledByCurrentReader})
+              OR (
+                adt.status = 'completed'
+                AND ${readErrorOnText("read_error", "adt")}
+                AND ${notSettledByCurrentReader}
+              )
               OR (
                 adt.status = 'completed'
                 AND EXISTS (
@@ -1245,6 +1274,15 @@ export function rosettaReadCandidatesQuery(
                   WHERE adt.source_document_id = cr.id
                     AND adt.source_hash IS NOT DISTINCT FROM cr.content_hash
                     AND ${flatLegacyText("adt")}
+                  LIMIT 1
+               ),
+               -- A text with a read error is kept unless the new reader's text lists as many fees.
+               (
+                 SELECT adt.normalized_text FROM agent_source_texts adt
+                  WHERE adt.source_document_id = cr.id
+                    AND adt.source_hash IS NOT DISTINCT FROM cr.content_hash
+                    AND adt.status = 'completed'
+                    AND ${readErrorOnText("kept_error", "adt")}
                   LIMIT 1
                )
              ) AS last_lost_text,
