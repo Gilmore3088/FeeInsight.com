@@ -67,4 +67,14 @@ export const DEMING_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-2062-every-error-has-a-reader",
+    agent: "deming",
+    stage: "learning audit",
+    lesson: "An error row teaches nothing until some agent's next step selects it. Register every feedback kind with the code that reads it, or say plainly that nobody does yet and which agent should; make the kind type the registry's keys, so a writer cannot record a new kind without naming its reader, and never let the list of unread kinds grow. Count the unread error rows older than 48 hours by kind and stage in the morning brief every day, zero included, so the debt is seen and shrinks.",
+    why: "Many pipeline_feedback kinds were written that no code read (audit misses, admin holds and corrections, Darwin's verify rejects, frequency fixes, business schedules), 1,422 wrong rows by 2026-10-16, and nothing noticed when a kind went unread, so the same errors repeated.",
+    evidence: { issues: [2062], prs: [2574], files: ["src/lib/agents/learning/feedback-kinds.ts", "src/lib/agents/learning/unread-feedback.ts", "src/lib/agents/daily-brief.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];
