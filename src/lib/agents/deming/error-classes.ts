@@ -157,8 +157,10 @@ export async function readErrorClasses(db: SqlTag = sql, windowDays = ERROR_CLAS
        AND f.kind = ANY(${[...AMOUNT_ERROR_KINDS]}::text[])
        AND f.fee_published_id IS NOT NULL
      ORDER BY f.id DESC
-     LIMIT ${AMOUNT_ROW_LIMIT}
+     LIMIT ${AMOUNT_ROW_LIMIT + 1}
   `;
+  const limitHit = amountRows.length > AMOUNT_ROW_LIMIT;
+  if (limitHit) amountRows.length = AMOUNT_ROW_LIMIT;
   // Each document's text once, however many of the week's rows it holds.
   const documentIds = [...new Set(amountRows.map((row) => row.document_id).filter((id) => id !== null).map(Number))];
   const texts = new Map<number, string>();
@@ -170,7 +172,7 @@ export async function readErrorClasses(db: SqlTag = sql, windowDays = ERROR_CLAS
   }
   const withText: AmountErrorRow[] = amountRows.map(({ document_id, ...row }) => ({ ...row, text: document_id === null ? null : texts.get(Number(document_id)) ?? null }));
   const summary = summarizeRows([...rows, ...amountClassRows(withText, EXAMPLES)], windowDays);
-  return amountRows.length >= AMOUNT_ROW_LIMIT ? { ...summary, amountRowLimitHit: true } : summary;
+  return limitHit ? { ...summary, amountRowLimitHit: true } : summary;
 }
 
 /** Pure: rows into classes and the one-bank count. */

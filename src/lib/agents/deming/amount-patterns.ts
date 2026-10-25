@@ -57,7 +57,9 @@ const CAP_BEFORE = /\b(?:up to|(?:maximum|minimum|max\.?|min\.?)(?:\s+[a-z]+){0,
 const GLUED_FOOTNOTE = /\$0(\d)(?![\d.,])/g;
 const FREE = /\b(?:no (?:fee|charge)|free|waived|n\/a)\b/i;
 
-const lineWords = (value: string) => value.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+/** Lowercase words with a plural "s" dropped, so "Overdraft Fee" names "Overdraft Fees $30". */
+const lineWords = (value: string) => value.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim()
+  .split(" ").map((word) => (word.length > 3 && word.endsWith("s") && !word.endsWith("ss") ? word.slice(0, -1) : word)).join(" ");
 
 function prices(line: string): number[] {
   return [...line.matchAll(PRICE)].map((match) => Number(match[0].replace(/[$,\s]/g, ""))).filter((value) => Number.isFinite(value));

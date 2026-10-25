@@ -43,6 +43,8 @@ describe("amount error layouts (#2067)", () => {
     expect(amountLayout("Wire Fee", 25, null)).toBe("no_document");
     // Names match whole words: "Wire" is not "Wireless banking".
     expect(amountLayout("Wire", 25, "Wireless banking $25 setup\nStatement copy $5")).toBe("name_not_in_text");
+    // A singular name still names its plural line.
+    expect(amountLayout("Stop Payment", 30, "Stop Payments $35 each\nCashier's Check $10")).not.toBe("name_not_in_text");
   });
 
   it("groups rows by kind and layout across banks, leaves unnamed layouts unpatterned, and counts rows today's check still passes", () => {
