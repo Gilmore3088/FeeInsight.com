@@ -37,7 +37,6 @@ vi.mock("@/lib/data-store/connection", () => {
 const { activeInstitutionFilter } = await import("./fee-stats");
 const { getFeeCategoryDetail } = await import("./fees");
 const {
-  getCategoryChargeBases,
   getComparableMarketIndex,
   getContractFeeRows,
   getDistrictMedianByCategory,
@@ -109,7 +108,6 @@ describe("remaining public readers take the active-institution rule (#2149)", ()
     ["getSegmentFeeValues (Hamilton segments)", () =>
       getSegmentFeeValues({ minAssets: null, maxAssets: null, charterType: null, stateCode: "TX", largest: null }, "overdraft", "nsf")],
     ["getContractFeeRows (Hamilton research)", () => getContractFeeRows({ categories: ["overdraft"] })],
-    ["getCategoryChargeBases (Pro report charge basis)", () => getCategoryChargeBases()],
     ["loadNationalUnstatedAudienceCounts (/fees audience-not-stated note)", () => getNationalUnstatedAudienceCountsCached()],
     ["getStateStats", () => getStateStats("TX")],
     ["getDistrictStats", () => getDistrictStats(11)],

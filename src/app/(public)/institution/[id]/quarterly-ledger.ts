@@ -16,6 +16,13 @@ import { formatReportQuarter } from "./financial-units";
  * - Otherwise its FDIC BankFind row (institution_financial_records, source fdic), whose income
  *   fields are already one quarter (ISERCHGQ, NIMQ, NONIIQ, NETINCQ). Net income and ROA always
  *   come from here, as the FFIEC lines read for the page carry neither.
+ *   Where a quarter has both and its FFIEC-differenced income (service charges or revenue)
+ *   disagrees with BankFind's quarter, both income lines come from BankFind (#2025). Differencing
+ *   the survivor's year-to-date line cannot see a merger: in the quarter a bank absorbs another, its
+ *   year to date carries the absorbed bank's earlier quarters, which BankFind's quarter takes out
+ *   (U.S. Bank 2023-Q2, MUFG Union Bank's Q1 $27,607K; Horicon Bank 2023-Q3, Cornerstone
+ *   Community Bank's first half $31K). It also cannot see a year to date that restarts mid-year,
+ *   which differencing turns into a negative quarter.
  * - A credit union's NCUA 5300 row (source ncua), year to date, made standalone here.
  * Rows written before the registry's corrected income mapping carry no net income; their income
  * lines are left empty rather than drawn wrong (the same rule as financial-history.ts).
@@ -208,6 +215,32 @@ function ffiecQuarters(items: CallItemHistoryRow[]): { byDate: Map<string, Ffiec
   return { byDate, codes };
 }
 
+/** Two copies of one quarter's income agree within $1K or 0.05%, whichever is larger (dollars). */
+export function sameQuarterFigure(a: number, b: number): boolean {
+  return Math.abs(a - b) <= Math.max(THOUSANDS, Math.abs(b) * 0.0005);
+}
+
+const FLOW_METRICS = ["serviceCharges", "revenue"] as const;
+
+/**
+ * True when a bank quarter's FFIEC-differenced income disagrees with its FDIC BankFind quarter.
+ * BankFind's quarter is the standalone figure (merger-adjusted, and right across a mid-year
+ * restart of the year to date), so the ledger then takes both income lines from it.
+ */
+type QuarterIncome = { serviceCharges: number | null; revenue: number | null };
+
+export function differencedIncomeDisagrees(
+  ffiec: QuarterIncome | undefined,
+  rec: (QuarterIncome & { source: "fdic" | "ncua" }) | undefined,
+): boolean {
+  if (!ffiec || !rec || rec.source !== "fdic") return false;
+  return FLOW_METRICS.some((metric) => {
+    const fv = ffiec[metric];
+    const rv = rec[metric];
+    return finite(fv) && finite(rv) && !sameQuarterFigure(fv, rv);
+  });
+}
+
 export function buildLedger(records: InstitutionFinancialHistoryRow[], items: CallItemHistoryRow[]): Ledger {
   const fromRecords = recordQuarters(records);
   const ffiec = ffiecQuarters(items);
@@ -219,9 +252,13 @@ export function buildLedger(records: InstitutionFinancialHistoryRow[], items: Ca
     const rec = fromRecords.get(date);
     const f = ffiec.byDate.get(date);
     const values: Partial<Record<LedgerMetric, LedgerValue>> = {};
+    const incomeFromFdic = differencedIncomeDisagrees(f, rec);
     const pick = (metric: "assets" | "deposits" | "revenue" | "serviceCharges") => {
       const fv = f?.[metric];
-      if (finite(fv)) values[metric] = { value: fv, source: "ffiec" };
+      const rv = rec?.[metric];
+      if (incomeFromFdic && (metric === "revenue" || metric === "serviceCharges") && rec && finite(rv)) {
+        values[metric] = { value: rv, source: rec.source };
+      } else if (finite(fv)) values[metric] = { value: fv, source: "ffiec" };
       else if (rec && finite(rec[metric])) values[metric] = { value: rec[metric] as number, source: rec.source };
     };
     pick("assets");

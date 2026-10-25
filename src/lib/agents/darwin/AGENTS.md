@@ -1613,7 +1613,15 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v84 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v84 (Oct 25, #1788): a monthly
+- The guard is at v85 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v85 (Oct 25, #1831): a refundable safe deposit box key deposit or the
+  box's security deposit (`SAFE_DEPOSIT_KEY_DEPOSIT`) fails the safe deposit box rule, as v66 does for
+  the night deposit. A lost, replaced or duplicate key, drilling, a lock change or re-key, a
+  non-refundable or forfeited deposit and the box's annual or rental fee stay
+  (`SAFE_DEPOSIT_KEY_DEPOSIT_EXEMPT`, each word on its noun); a "Rental - Key Deposit" header
+  does not. No type holds a key deposit, so the live ones go to the second look and come down. Its
+  live re-check is the guard catch-up; the read-only dry run (Oct 25) counted 110 live fees at 109
+  institutions, each a key or security deposit on its own stored schedule.
+- v84 (Oct 25, #1788): a monthly
   maintenance fee named only as a monthly fee or service charge (`genericMonthlyCharge`: "Monthly
   fee", "Service charge for six or more accounts") fails when the cell before its name on its own
   line, or the heading its stored text prints above it, names another service: Positive Pay, ACH,

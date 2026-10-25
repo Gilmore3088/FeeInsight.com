@@ -16,7 +16,6 @@
  */
 
 import { getFeesByInstitution } from "@/lib/data-store";
-import { getCategoryChargeBases } from "@/lib/data-store/fee-index";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { isProviderLimitError } from "@/lib/ai-provider";
 import { generateVerifiedSection, type SectionTracking } from "./generate";
@@ -122,15 +121,13 @@ export type ComparisonReader = (prepared: PreparedReportAnswer) => Promise<Selec
 /** The same reads and reduction as `assembleReportInputs`: the bank's visible fees against the same peer index. */
 export const liveReportComparison: ComparisonReader = async (prepared) => {
   try {
-    const [fees, chargeBases, peerIndex] = await Promise.all([
+    const [fees, peerIndex] = await Promise.all([
       getFeesByInstitution(prepared.institutionId),
-      getCategoryChargeBases().catch(() => null),
       resolveHamiltonPeerIndex({ userId: null, peerSetId: null, selectedInstitution: prepared.selectedInstitution, approvedOnly: true, minUsableCategories: 3 }),
     ]);
     return compareSelectedInstitutionFees({
       selectedFees: fees.filter((fee) => fee.review_status !== "rejected"),
       indexEntries: peerIndex.entries,
-      chargeBases,
       evidencePolicy: prepared.evidencePolicy,
     }).deltas;
   } catch {
