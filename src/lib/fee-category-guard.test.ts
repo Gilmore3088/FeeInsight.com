@@ -2340,3 +2340,43 @@ describe("guard v83: other card and ATM services filed as the non-network ATM fe
     expect(atm("Foreign ATM Withdrawal", 2).ok).toBe(true);
   });
 });
+
+describe("guard v84: book transfers and cash advances priced at another bank's ATMs (#1912)", () => {
+  const withLine = (key: string, name: string, amount: number, line: string) =>
+    checkFeeCategory(key, name, { amount, conditions: `knox; excerpt="${line}"` });
+
+  it("refuses a book transfer as a domestic wire (M&T 145046, IBC 26125)", () => {
+    const mt = "Transferencia bancaria saliente a una cuenta en M&T (transferencia contable)";
+    expect(checkFeeCategory("wire_domestic_outgoing", mt, { amount: 16 })).toMatchObject({ ok: false, code: "name_contradicts" });
+    expect(refileCategory("wire_domestic_outgoing", mt)).toBe("wire_domestic_outgoing");
+    expect(checkFeeCategory("wire_domestic_outgoing", "Outgoing Wire Transfer within IBC (Book Transfer)", { amount: 10 }).ok).toBe(false);
+    expect(checkFeeCategory("wire_domestic_outgoing", "Book-Entry Transfer Wire to another member", { amount: 5 }).ok).toBe(false);
+    expect(checkFeeCategory("wire_domestic_incoming", "Incoming Wire - Book Transfer", { amount: 5 }).ok).toBe(false);
+  });
+
+  it("keeps a wire that only says it also covers book transfers, and real domestic wires", () => {
+    expect(checkFeeCategory("wire_domestic_incoming", "Transferencia bancaria recibida, incluidas las transferencias contables", { amount: 16 }).ok).toBe(true);
+    expect(checkFeeCategory("wire_domestic_incoming", "Incoming wire (includes book transfers)", { amount: 15 }).ok).toBe(true);
+    expect(checkFeeCategory("wire_domestic_outgoing", "Transferencia bancaria nacional saliente a una cuenta que no sea de M&T", { amount: 32 }).ok).toBe(true);
+    expect(checkFeeCategory("wire_domestic_outgoing", "Outgoing Wire Transfer within USA by IBC Representative", { amount: 35 }).ok).toBe(true);
+    expect(checkFeeCategory("wire_domestic_outgoing", "Outgoing Domestic Wire (bookkeeping review included)", { amount: 30 }).ok).toBe(true);
+  });
+
+  it("refuses a cash advance whose own price is for another bank's ATMs (M&T 68601)", () => {
+    expect(withLine("cash_advance", "Cash Advance", 3, "Cash Advance or | $3.00 for Non M&T Bank ATMs located in the United States.")).toMatchObject({
+      ok: false,
+      code: "schedule_contradicts",
+    });
+    expect(withLine("cash_advance", "Cash Advance Fee", 2, "Cash Advance Fee | $2.00 at foreign ATMs").ok).toBe(false);
+  });
+
+  it("keeps cash advances whose line names an ATM without pricing another bank's machine (live rows, Oct 25)", () => {
+    // 137072, 159253, 95562, 139406, 137906, 68600: live cash advances whose line names an ATM.
+    expect(withLine("cash_advance", "cash advance fee on credit cards at foreign ATMs", 1, "$1.00 cash advance fee on credit cards at foreign ATMs.").ok).toBe(true);
+    expect(withLine("cash_advance", "Cash Advance Fee", 15, "Cash Advance Fee | $15.00 at counter; $0 at ATM").ok).toBe(true);
+    expect(withLine("cash_advance", "Cash Advance Fee", 0.75, "- Cash Advance Fee | $0.75 for each ATM transaction").ok).toBe(true);
+    expect(withLine("cash_advance", "Cash advance fee (ATM)", 10, "(a) a cash advance fee FINANCE CHARGE equal to $10.00 for each such advance obtained at an Automated Teller Machine (ATM);").ok).toBe(true);
+    expect(withLine("cash_advance", "Non-Member Cash Advance", 10, "*Fee is Charged Per Withdrawal After 4 Non-MECU ATM Withdrawals | Non-Member Cash Advance…...………………………..….$10.00").ok).toBe(true);
+    expect(withLine("cash_advance", "Cash Advance", 3.5, "for more information | Cash Advance | $3.50 For each cash advance made using an M&T Debit Card without the use of a PIN").ok).toBe(true);
+  });
+});

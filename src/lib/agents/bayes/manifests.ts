@@ -522,6 +522,8 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // v82 (Oct 25, #1662): the night deposit key-deposit exemptions are tied to the key or the noun.
     // v83 (Oct 25, #1690): the non-network ATM fee refuses research, photo, negative-share and
     // additional-card names.
+    // v84 (Oct 25, #1912): book transfers fail the domestic wire categories, and a cash advance priced
+    // at another bank's ATMs fails cash advance.
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",

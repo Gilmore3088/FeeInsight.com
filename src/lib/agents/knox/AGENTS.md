@@ -1920,6 +1920,10 @@ rows, so it is not a full correction-population count or historical recovery aut
 - Do not write `verified_fee_observations` or `published_fee_records`.
 - Do not mark data as verified or public-ready.
 - Do not use provisional rows for verified benchmark scoring.
+- Do not file a book transfer (to another account at the same bank: "Book Transfer", "transferencia
+  contable") as a domestic wire, or a cash advance priced "for Non <bank> ATMs" (a wrapped ATM cell's
+  middle line) as a cash advance. Darwin's category guard refuses both since v84 (#1912), at verify and
+  on live fees; Knox's rules and paid reader should not produce them.
 
 ## Daily health check (contract)
 
