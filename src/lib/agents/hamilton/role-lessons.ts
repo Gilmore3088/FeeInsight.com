@@ -138,6 +138,16 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     since: "2026-10-25",
   },
   {
+    id: "issue-1916-refile-a-live-fee-in-place",
+    agent: "hamilton",
+    stage: "publish",
+    lesson: "When a new rule finds live fees filed under the wrong type and the bank's own line supports the right one, move them there in place with their own name and price; take a fee down only when it is a copy of one already live there. A takedown that waits for a re-read loses a true fee until that re-read comes, and a re-read may never be scheduled.",
+    why: "The first fix for Advia FCU's box late fee refused it as a late payment in the shared source check, which would have taken 111 true safe deposit box late fees at 110 institutions off live pages; the category guard's live re-file moves 99 of them, and only the 12 that duplicate a live box late fee come down.",
+    evidence: { issues: [1916], prs: [2622], files: ["src/lib/fee-category-guard.ts", "src/lib/agents/hamilton/category-guard.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
+  {
     id: "peer-minimum-5-local-10-everywhere",
     agent: "hamilton",
     stage: "analysis",
