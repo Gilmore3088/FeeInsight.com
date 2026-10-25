@@ -13,11 +13,26 @@ const BANKS = [20630001, 20630002, 20630003];
 const DOC = 20630101;
 // A category no other suite uses, so its counts are this suite's alone.
 const KEY = "test_2063_category";
+const EVENT = "00000000-0000-4000-8000-000020630001";
+// Price-first rows: Knox paired each box with the next row's price (#2067).
+const PRICE_FIRST = "Safe Deposit Box Annual Rental\n$14.00 Box 2063 Small/Year\n$19.00 Box 2063 Medium/Year\n$21.00 Box 2063 Large/Year";
 type Db = Parameters<typeof readErrorClasses>[0];
 
 describe.skipIf(!connection)("error classes in isolated PostgreSQL (#2063)", () => {
   let raw: postgres.Sql<{ numeric: number; json: unknown; text: string }>;
   let n = 0;
+  let nextRaw = 20630200;
+
+  async function liveFee(institution: number, name: string, amount: number): Promise<number> {
+    const rawId = nextRaw++;
+    await raw`INSERT INTO raw_fee_observations (fee_raw_id, institution_id, source_document_id, agent_event_id, fee_name, amount, frequency, source)
+              VALUES (${rawId}, ${institution}, ${DOC}, ${EVENT}, ${name}, ${amount}, 'annual', 'knox')`;
+    const [verified] = await raw`INSERT INTO verified_fee_observations (fee_raw_id, institution_id, canonical_fee_key, verified_by_agent_event_id, fee_name, amount, frequency, review_status)
+              VALUES (${rawId}, ${institution}, 'safe_deposit_box', ${EVENT}, ${name}, ${amount}, 'annual', 'verified') RETURNING fee_verified_id`;
+    const [published] = await raw`INSERT INTO published_fee_records (lineage_ref, institution_id, canonical_fee_key, published_by_adversarial_event_id, fee_name, amount, frequency, batch_id, source_url)
+              VALUES (${verified.fee_verified_id}, ${institution}, 'safe_deposit_box', ${EVENT}, ${name}, ${amount}, 'annual', 'agentic-run-2067', 'https://bank2063.test/fees') RETURNING fee_published_id`;
+    return Number(published.fee_published_id);
+  }
 
   async function feedback(stage: string, kind: string, institution: number, extra: {
     feePublishedId?: number | null; reportedBy?: string; weight?: number; daysAgo?: number; signal?: string; key?: string | null; documentId?: number;
@@ -32,6 +47,9 @@ describe.skipIf(!connection)("error classes in isolated PostgreSQL (#2063)", () 
 
   async function clean() {
     await raw`DELETE FROM pipeline_feedback WHERE institution_id = ANY(${BANKS})`;
+    await raw`DELETE FROM published_fee_records WHERE institution_id = ANY(${BANKS})`;
+    await raw`DELETE FROM verified_fee_observations WHERE institution_id = ANY(${BANKS})`;
+    await raw`DELETE FROM raw_fee_observations WHERE institution_id = ANY(${BANKS})`;
     await raw`DELETE FROM agent_source_texts WHERE source_document_id = ${DOC}`;
     await raw`DELETE FROM source_documents WHERE id = ${DOC}`;
     await raw`DELETE FROM institution_sources WHERE id = ANY(${BANKS})`;
@@ -49,7 +67,7 @@ describe.skipIf(!connection)("error classes in isolated PostgreSQL (#2063)", () 
     await raw`INSERT INTO source_documents (id, institution_id, status, document_url, content_hash, crawled_at)
               VALUES (${DOC}, ${BANKS[0]}, 'success', 'https://bank2063.test/fees.pdf', 'hash-2063', NOW())`;
     await raw`INSERT INTO agent_source_texts (source_document_id, institution_id, status, normalized_text, text_hash, source_hash, reader, document_type, document_kind)
-              VALUES (${DOC}, ${BANKS[0]}, 'completed', 'Fee schedule', 'text-2063', 'hash-2063', 'read.test_2063', 'pdf', 'product_page')`;
+              VALUES (${DOC}, ${BANKS[0]}, 'completed', ${PRICE_FIRST}, 'text-2063', 'hash-2063', 'read.test_2063', 'pdf', 'product_page')`;
   });
 
   afterAll(async () => {
@@ -92,5 +110,18 @@ describe.skipIf(!connection)("error classes in isolated PostgreSQL (#2063)", () 
     expect(extract.exampleInstitutions).toEqual(BANKS);
     expect(extract.fees).toBe(4);
     expect(summary.oneBankPatterns).toBeGreaterThanOrEqual(1);
+  });
+
+  it("groups live wrong amounts by the layout around the fee, read from the document Knox used, and counts rows today's check passes (#2067)", async () => {
+    // The feedback rows name no document; the layout comes from the live fee's raw row.
+    for (const [bank, name, amount] of [[BANKS[0], "Box 2063 Small/Year", 19], [BANKS[1], "Box 2063 Medium/Year", 21], [BANKS[1], "Box 2063 Small/Year", 14]] as const) {
+      await feedback("extract", "wrong_amount", bank, { feePublishedId: await liveFee(bank, name, amount), key: null });
+    }
+    const summary = await readErrorClasses(raw as unknown as Db);
+    const cls = summary.classes.find((item) => item.key === "extract:wrong_amount:amount:price_before_label" && item.exampleInstitutions.some((id) => BANKS.includes(id)));
+    expect(cls).toMatchObject({ owner: "knox", passesToday: 0 });
+    expect(cls!.exampleInstitutions).toEqual(expect.arrayContaining([BANKS[0], BANKS[1]]));
+    // The row with the line's own price is no named layout, and never pools into the category grouping.
+    expect(summary.classes.some((item) => item.pattern === "category:safe_deposit_box" && item.exampleInstitutions.some((id) => BANKS.includes(id)))).toBe(false);
   });
 });

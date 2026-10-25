@@ -476,4 +476,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-2067-amount-errors-are-layouts",
+    agent: "knox",
+    stage: "extract",
+    lesson: "A wrong amount is a layout error, not one bank's fee. When an amount is taken down, ask which layout put that number next to that name: a price-first row paired with the row below, an opening deposit or minimum balance beside an account's name, a cap or \"up to\" figure, a figure inside the name, a footnote number glued to a $0 price, a price from the next line, or a second column. Deming groups the week's amount errors by layout and re-checks them with today's source check; a layout at two or more banks that the check still passes is the next rule to write, so every new bank with that layout is read right the first time.",
+    why: "A confirmed amount takedown held only that bank's exact name and price, so each new bank with the same layout repeated the error until someone wrote a rule. Grouped on 2026-10-25, the week's amount errors fell into a few layouts, and one, a footnote mark glued to a $0 price (\"$03\" read as $3, #1946), reached three banks and still passed today's check.",
+    evidence: { issues: [2067, 1946], prs: [2582], files: ["src/lib/agents/deming/amount-patterns.ts", "src/lib/agents/deming/error-classes.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];
