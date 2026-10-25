@@ -523,6 +523,8 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // v82 (Oct 25, #1662): the night deposit key-deposit exemptions are tied to the key or the noun.
     // v83 (Oct 25, #1690): the non-network ATM fee refuses research, photo, negative-share and
     // additional-card names.
+    // v84 (Oct 25, #1788): a generic monthly charge under another service's heading or cell fails
+    // monthly maintenance (Positive Pay, ACH, bill pay, cards, paper statements).
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",
