@@ -592,7 +592,7 @@ export const KNOX_LESSONS: AgentLesson[] = [
     stage: "extract",
     lesson: "A schedule keeps rows for accounts the bank no longer opens, for the customers who still hold them. A row whose own cells say so (\"$5.00 (this account no longer offered)\", \"Rewards Checking PLUS (Account no longer offered; fees apply to existing grandfathered accounts.)\") or that sits under a legacy heading (\"Legacy Accounts\", \"Retired Accounts (no longer available on new memberships)\", \"Grandfathered Checking Account Types:\") until a blank line or the next section is not a current fee: do not read it as one. Only the fee's own row or section decides: a footnote cell of another column (\"10. Account type no longer offered.\"), a remark elsewhere on a long one-line page, or a bare \"no longer available\" (\"check deposits are no longer available at PNC ATMs\") says nothing about the fee, and a fee also printed in a current row stays current.",
     why: "Fees for discontinued accounts went live as if any customer could pay them (Texas Capital's table for accounts \"previously offered and no longer available to open\", a KS bank's \"80 Suffix\" service charge) and only hand takedowns caught them; the self-check traced each one because nothing in the shared check read the row's account status.",
-    evidence: { issues: [2070], prs: [], files: ["src/lib/custom-report/discontinued-rows.ts", "src/lib/custom-report/source-check.ts", "src/lib/agents/knox/specialists.ts"] },
+    evidence: { issues: [2070], prs: [2634], files: ["src/lib/custom-report/discontinued-rows.ts", "src/lib/custom-report/source-check.ts", "src/lib/agents/knox/specialists.ts"] },
     appliesTo: "all",
     since: "2026-10-25",
   },
