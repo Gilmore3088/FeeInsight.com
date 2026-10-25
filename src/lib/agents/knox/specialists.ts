@@ -271,7 +271,10 @@ import { withGluedFootnotePrices } from "@/lib/custom-report/glued-footnote-pric
 // Checking Fee", Bellco FCU) is that account's monthly fee (`CHECKING_ACCOUNT_FEE_NAME`); "$15K" is a
 // balance, never a $15 price; and a waiver bracketed inside a name's own cell stops at that cell, so
 // the price in the next cell is read. An ambiguous checking-named price (activity-triggered, tiered,
-// a percentage, a second price, an opening charge) is held (`checkingNamePriceAmbiguous`). The
+// a percentage, a second price, an opening charge, an "if"/"when" condition, a closure or initial
+// deposit, a price per year, quarter, item or debit) is held (`checkingNamePriceAmbiguous`). The name
+// pattern is shared with Darwin's category guard (`@/lib/checking-fee-name`) and keeps out opening,
+// setup and reopening charges, business accounts and other fees' words (review of #2618). The
 // held-line recheck promotes held lines this files, only from a page's current copy; a page's dropped
 // line returns when the page is read again. The stale-read floor stays at v97. Name re-tidy stays at v27.
 export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 110 } as const;

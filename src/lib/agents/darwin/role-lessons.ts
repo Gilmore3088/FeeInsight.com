@@ -267,6 +267,16 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     since: "2026-10-25",
   },
   {
+    id: "issue-1918-guard-reads-knoxs-name-pattern",
+    agent: "darwin",
+    stage: "classify",
+    lesson: "When Knox learns to file a new name shape under a category, the category guard must admit the same shape in the same change, read from one shared pattern (src/lib/checking-fee-name.ts for a checking account's own named fee), never a copy. Before admitting it, keep out what only resembles it: opening, setup and reopening charges, business accounts, other fees' words and a period other than the month. Then count what the guard bump changes live and what Darwin re-judges.",
+    why: "Knox v110 filed \"MAX Checking Fee (per month)\" and 40 more held checking-named lines as monthly maintenance, but the guard's include list took only maintenance, monthly service, service charge or monthly fee, so Darwin would have refused all of them (name_unsupported) and Bellco FCU's $3.95 would never publish. The review of #2618 caught it before merge.",
+    evidence: { issues: [1918], prs: [2618], files: ["src/lib/checking-fee-name.ts", "src/lib/fee-category-guard.ts", "src/lib/agents/darwin/verify.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
+  {
     id: "issue-1901-one-basis-per-benchmark",
     agent: "darwin",
     stage: "verify",

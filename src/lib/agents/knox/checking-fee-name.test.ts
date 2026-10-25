@@ -157,3 +157,73 @@ describe("a fee named for the checking account itself (#1918)", () => {
     expect(recategorizeHeld(row)?.canonicalHint).toBe("monthly_maintenance");
   });
 });
+
+// #1918, review of #2618 (Knox v110): what the checking-name rule must not file, and the prices it must hold.
+describe("a checking-named fee that is not a flat monthly fee (#1918 review)", () => {
+  const held = (excerpt: string, amount: string, name: string) => ({
+    fee_raw_id: 1,
+    amount,
+    fee_name: name,
+    conditions: `Knox held for review (unclassified) from Rosetta artifact #1. canonical_hint=none; text_hash=x; excerpt="${excerpt}"`,
+  });
+
+  it("should_not_file_opening_setup_or_reopening_charges_as_monthly_maintenance", () => {
+    for (const name of [
+      "New Checking Account Fee", "Open Checking Account Fee", "Opening Checking Account Fee",
+      "Account Opening Checking Fee", "Setup Checking Fee", "Set-up Checking Fee", "Re-open Checking Fee",
+    ]) {
+      expect([name, classifyFeeText(name)]).not.toEqual([name, "monthly_maintenance"]);
+    }
+    // Read from a line, the opening charge is not a monthly fee either.
+    const monthly = (line: string) =>
+      runFreeSpecialists(line, {}).candidates.filter((fee) => fee.canonicalHint === "monthly_maintenance").map((fee) => fee.amount);
+    expect(monthly("New Checking Account Fee | $10.00")).toEqual([]);
+    expect(monthly("Re-open Checking Fee | $25.00")).toEqual([]);
+  });
+
+  it("should_not_file_business_accounts_or_other_fees_as_monthly_maintenance", () => {
+    for (const name of [
+      "Corporate Checking Fee", "Non-Profit Checking Fee", "Nonprofit Checking Fee", "Analysis Checking Fee",
+      "Merchant Checking Fee", "Professional Checking Fee", "Ag Checking Fee", "Farm Checking Fee",
+      "IOLTA Checking Fee", "Trust Checking Fee", "Estate Checking Fee",
+      "Replacement Checking Fee", "Late Checking Fee", "Lost Checking Fee", "Bounce Checking Fee",
+      "Withdrawal Checking Fee", "Deposit Checking Fee", "Counter Checking Fee", "Collection Checking Fee",
+      "Foreign Checking Fee", "Unclaimed Checking Fee",
+    ]) {
+      expect([name, classifyFeeText(name)]).not.toEqual([name, "monthly_maintenance"]);
+    }
+  });
+
+  it("should_hold_a_checking_fee_priced_per_year_quarter_item_or_debit", () => {
+    expect(checkingNamePriceAmbiguous("Gold Checking Fee | $25.00 per year", "Gold Checking Fee", 25)).toBe(true);
+    expect(checkingNamePriceAmbiguous("Gold Checking Fee | $25.00 annually", "Gold Checking Fee", 25)).toBe(true);
+    expect(checkingNamePriceAmbiguous("Gold Checking Fee | $15.00 per quarter", "Gold Checking Fee", 15)).toBe(true);
+    expect(checkingNamePriceAmbiguous("Gold Checking Fee | $0.25 per item", "Gold Checking Fee", 0.25)).toBe(true);
+    expect(checkingNamePriceAmbiguous("Gold Checking Fee | $0.50 per debit", "Gold Checking Fee", 0.5)).toBe(true);
+    expect(checkingNamePriceAmbiguous("Gold Checking Fee (per year) | $25.00", "Gold Checking Fee (per year)", 25)).toBe(true);
+    // A monthly price stays a monthly fee.
+    expect(checkingNamePriceAmbiguous("Gold Checking Fee | $12.00 per month", "Gold Checking Fee", 12)).toBe(false);
+    expect(checkingNamePriceAmbiguous("Gold Checking Fee | $12.00/mo.", "Gold Checking Fee", 12)).toBe(false);
+  });
+
+  it("should_hold_a_closure_or_initial_deposit_price", () => {
+    expect(checkingNamePriceAmbiguous("Gold Checking Fee | $25.00 if account is closed within 90 days", "Gold Checking Fee", 25)).toBe(true);
+    expect(checkingNamePriceAmbiguous("Gold Checking Fee | $25.00 when closed within 180 days of opening", "Gold Checking Fee", 25)).toBe(true);
+    expect(checkingNamePriceAmbiguous("Gold Checking Fee | $50.00 initial deposit", "Gold Checking Fee", 50)).toBe(true);
+  });
+
+  it("should_hold_a_price_charged_only_if_features_are_not_chosen", () => {
+    // First Federal's two current copies (docs 6800 and 30291, raw 166502 and 655353): the $4.95 is
+    // charged only if the standard features are not chosen; the page prints no period for it.
+    expect(checkingNamePriceAmbiguous("E-Z Checking Fee | $4.95 if standard features are not chosen. Standard Features: Debit Card, Access*Online, E Statements", "E-Z Checking Fee", 4.95)).toBe(true);
+    // The stored line of doc 6800 is cut before "not chosen"; the "if" clause alone makes it conditional.
+    expect(checkingNamePriceAmbiguous("EZ Checking Fee $4.95 if standard features are", "EZ Checking Fee", 4.95)).toBe(true);
+    expect(checkingNamePriceAmbiguous("Gold Checking Fee | $5.00 per month if eStatements are not selected", "Gold Checking Fee", 5)).toBe(true);
+    const ez = held("EZ Checking Fee $4.95 if standard features are", "4.95", "EZ Checking Fee");
+    expect(checkingNameHeld(ez, recategorizeHeld(ez)!)).toBe(true);
+    const ez2 = held("E-Z Checking Fee | $4.95 if standard features are not chosen. Standard Features: Debit Card, Access*Online, E Statements", "4.95", "E-Z Checking Fee");
+    expect(checkingNameHeld(ez2, recategorizeHeld(ez2)!)).toBe(true);
+    // Another fee's "if" after the price is not this price's condition.
+    expect(checkingNamePriceAmbiguous("Rise Checking Fee $6.00 Low balance Fee – if the balance is | $5.00", "Rise Checking Fee", 6)).toBe(false);
+  });
+});

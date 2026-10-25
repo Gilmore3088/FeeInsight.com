@@ -4,6 +4,7 @@ import { composableTail, LEADER_PRICE_WORDS, nameAfterPrice, passesDarwinChecks,
 import type { AccountLineup } from "@/lib/agents/knox/lineup";
 import type { AncillaryProduct } from "@/lib/agents/knox/ancillary-product";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
+import { CHECKING_ACCOUNT_FEE_NAME, checkingNameCore, namedForCheckingAccount, NON_MONTHLY_PERIOD } from "@/lib/checking-fee-name";
 import { ATM_ADJUSTMENT, CHECKBOOK_RECONCILIATION, CROSS_BORDER_BUNDLE, FAX_SERVICE, PER_PAGE_COPY, researchSplitTarget } from "@/lib/fee-fold";
 import { joinWrappedLeaderNames, parenBalance, stripPriceFootnoteMarks, withDroppedDecimalPoints } from "@/lib/custom-report/source-check";
 
@@ -327,23 +328,9 @@ export function foldedCategory(text: string): string | null {
   return FOLDED_PATTERNS.find((entry) => entry.pattern.test(text))?.key ?? null;
 }
 
-/**
- * v110 (#1918): a whole name that is a checking account's own fee: one to four words naming the
- * account, then "Checking (Account) Fee|Charge", an optional "(per month)" and nothing else, with
- * an optional footnote number glued to the front. A bare "Checking Account Fee" is that fee only
- * with "(per month)": printed alone it can be an opening fee ("Checking Account Fee - $35.00*"
- * beside the "Checking Account Monthly Fee", doc 3842). A word that names another fee keeps the name
- * out ("Inactive Checking Fee", "Excess Transaction Checking Fee").
- */
-const OTHER_FEE_WORD =
-  /(?:overdraft|nsf|inactiv\w*|dormant|clos\w*|statements?|paper|excess\w*|transactions?|items?|research|transfers?|wires?|atms?|debit|cards?|checks?|returned|stop|minimum|low|balance|refunds?|reopen\w*|early|order\w*|printing|business|commercial)/;
-const ACCOUNT_WORD = String.raw`(?!${OTHER_FEE_WORD.source}\b)[A-Za-z][\w&'’.+-]*\s+`;
-const CHECKING_FEE_WORDS = String.raw`checking(?:\s+account)?\s+(?:fee|charge)`;
-const BY_THE_MONTH = String.raw`\s*\((?:per month|monthly|a month|each month)\)`;
-export const CHECKING_ACCOUNT_FEE_NAME = new RegExp(
-  String.raw`^\W*\d?\s*(?:(?:${ACCOUNT_WORD}){1,4}${CHECKING_FEE_WORDS}(?:${BY_THE_MONTH})?|(?:${ACCOUNT_WORD}){0,4}${CHECKING_FEE_WORDS}${BY_THE_MONTH})\W*$`,
-  "i",
-);
+// v110 (#1918): the checking-name pattern is shared with the category guard (`@/lib/checking-fee-name`),
+// so Knox never files a name Darwin's guard refuses. The review of #2618 tightened it there.
+export { CHECKING_ACCOUNT_FEE_NAME, namedForCheckingAccount };
 
 /**
  * v110 (#1918): the words around a checking account's named fee that make its price something
@@ -354,22 +341,14 @@ export const CHECKING_ACCOUNT_FEE_NAME = new RegExp(
  * under $15K | $12.00"). James's condition on #2532: an ambiguous line stays held.
  */
 const AMBIGUOUS_PRICE_CLAUSE =
-  /\bif\b[^|$]{0,60}\b(?:exceed\w*|more than|over|greater than|above)\s+\$?\d|%|\bor\s+\$\s*\d|\b(?:to open|open(?:ing)?\s+(?:deposit|fee|charge)|one[- ]time|set[- ]?up)\b/i;
+  /\bif\b[^|$]{0,60}\b(?:exceed\w*|more than|over|greater than|above)\s+\$?\d|%|\bor\s+\$\s*\d|\b(?:to open|open(?:ing)?\s+(?:deposit|fee|charge)|one[- ]time|set[- ]?up)\b|\bclosed?\s+within\b|\binitial\s+deposit\b|\bif\b[^|$]{0,80}\bnot\s+(?:chosen|selected|elected|used|enrolled|met)\b/i;
+/**
+ * v110 (#1918, review of #2618): a price charged only if or when something happens ("EZ Checking Fee $4.95 if
+ * standard features are not chosen", docs 6800 and 30291; "$25.00 if the account is closed within
+ * 90 days") is a conditional charge, not the account's flat monthly fee.
+ */
+const CONDITIONAL_PRICE = /^\W{0,4}(?:only\s+)?(?:if|when|whenever)\b/i;
 const MONEY_AT = /\$\s*(\d[\d,]*(?:\.\d{1,2})?)(?![\d,]*\d)/g;
-
-/** The name without a bracketed waiver, footnote marks and leaders, as the name rules read it. */
-function checkingNameCore(name: string): string {
-  return name
-    .replace(/\((?!\s*(?:per month|monthly|a month|each month)\s*\))[^()]*\)?/gi, " ")
-    .replace(/[.…_]{2,}.*$/, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-/** v110 (#1918): the name, read as the name rules read it, is a checking account's own fee (`CHECKING_ACCOUNT_FEE_NAME`). */
-export function namedForCheckingAccount(feeName: string): boolean {
-  return CHECKING_ACCOUNT_FEE_NAME.test(checkingNameCore(feeName));
-}
 
 /**
  * v110 (#1918): true when a fee filed as monthly maintenance only because it is named for the
@@ -379,7 +358,9 @@ export function namedForCheckingAccount(feeName: string): boolean {
  */
 export function checkingNamePriceAmbiguous(excerpt: string | null | undefined, feeName: string, amount: number): boolean {
   const core = checkingNameCore(feeName);
-  if (!excerpt || !namedForCheckingAccount(feeName)) return false;
+  if (!excerpt || !CHECKING_ACCOUNT_FEE_NAME.test(core)) return false;
+  // v110 (review of #2618): a period other than the month in the name ("Gold Checking Fee (per year)") is not the monthly fee.
+  if (!namedForCheckingAccount(feeName)) return true;
   // A band or percentage carried in the name itself ("Gold Checking Fee (under $2,500)") is a tier.
   if (/\$\s*\d|%/.test(feeName.replace(/\((?:[^()]*\bwaiv)[^()]*\)?/gi, " "))) return true;
   const lower = excerpt.toLowerCase();
@@ -397,7 +378,10 @@ export function checkingNamePriceAmbiguous(excerpt: string | null | undefined, f
     // What the name's cell prints before its price: a band or a percentage there is a tier.
     const between = nameAt >= 0 ? excerpt.slice(nameAt, priceAt) : "";
     const tierBefore = /\$\s*\d|%|\b(?:under|over|below|above|less than|more than)\s+\$?\d/i.test(between.replace(/\((?:[^()]*\bwaiv)[^()]*\)?/gi, " "));
-    return tierBefore || AMBIGUOUS_PRICE_CLAUSE.test(clause);
+    // v110 (review of #2618): a price per year, quarter, item or debit, a closure or initial-deposit
+    // charge, or a price charged only if or when something happens is not a flat monthly fee.
+    const otherPeriod = NON_MONTHLY_PERIOD.test(clause) || NON_MONTHLY_PERIOD.test(between);
+    return tierBefore || otherPeriod || CONDITIONAL_PRICE.test(clause) || AMBIGUOUS_PRICE_CLAUSE.test(clause);
   }
   return false;
 }
