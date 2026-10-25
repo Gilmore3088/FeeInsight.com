@@ -144,7 +144,7 @@ describe.skipIf(!connection)("Hamilton publish selection in actual PostgreSQL", 
     // the same line stays decided.
     await add("olderEditionSource", { documentId: docA, name: "Wire Fee Outgoing", key: "nsf", amount: 30, createdAt: "2026-10-01T00:00:08Z", status: "rejected" });
     const retired = await published(tx, institutionId, ids.olderEditionSource, "Wire Fee Outgoing", `older_edition: #${docB} dated 2026-03-01`);
-    await add("olderEditionOtherCopy", { documentId: docA, name: "Wire Fee Outgoing", key: "nsf", amount: 30, createdAt: "2026-10-01T00:00:09Z" });
+    await add("olderEditionOtherCopy", { documentId: docA, name: "Outgoing Wire Fee", key: "nsf", amount: 30, createdAt: "2026-10-01T00:00:09Z" });
     await attempt(tx, institutionId, ids.olderEditionOtherCopy, "unchanged", { previous_fee_published_id: String(retired) });
     await add("olderEditionTwin", { documentId: docB, name: "Wire Fee Outgoing", key: "nsf", amount: 30, createdAt: "2026-10-02T00:00:08.500Z" });
     await attempt(tx, institutionId, ids.olderEditionTwin, "unchanged", { previous_fee_published_id: String(retired) });
