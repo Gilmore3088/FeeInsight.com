@@ -117,4 +117,14 @@ export const DEMING_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-1925-filing-version-skew",
+    agent: "deming",
+    stage: "filings reconcile",
+    lesson: "When two feeds of the same filing disagree, first ask whether they hold different versions of it, and say which feed holds the newer one from the filing's own last-updated time against when the other feed was fetched. Count that as explained only while the newer feed is ahead by less than the other's normal lag; after that it is a real disagreement with its cause named. Compare years to date before quarters: a quarter whose year to date agrees but whose prior quarter differs is that prior difference carried forward, not a new one, and a negative differenced figure is not a restarted year to date when the prior quarter itself differs between the feeds.",
+    why: "The daily filings reconcile left 16 figures unexplained at three banks, all quarters where BankFind and the FFIEC bulk file held different versions of a refiled call report, and it could not say which feed was newer because the loader dropped the POR file's last-updated time. One bank's following quarter was counted as a second mismatch though its year to date agreed, and another bank's next quarter was hidden as a restarted year to date.",
+    evidence: { issues: [1925], prs: [], files: ["docs/project/findings/2026-10-25-feeds-hold-different-filing-versions.md", "src/lib/agents/deming/filings-reconcile.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];

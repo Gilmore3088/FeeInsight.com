@@ -154,6 +154,34 @@ export const FFIEC_CALL_ITEMS: readonly FfiecItemDefinition[] = [
 
 export const FFIEC_CALL_ITEM_SCHEDULES = [...new Set(FFIEC_CALL_ITEMS.map((item) => item.schedule))];
 
+/**
+ * Not a financial line: when the bank's report for the quarter was last submitted or amended at
+ * the CDR (the bulk zip's POR file, "Last Date/Time Submission Updated On"), stored beside the
+ * lines so a reader can tell which version of a report the stored lines are (#1925). The value is
+ * epoch seconds (UTC); the table's unit check allows only thousands, dollars or count, so it is
+ * stored as `count` with schedule `POR`. Never sum it, roll it up or serve it as a figure: read it
+ * only by this key. It is kept out of FFIEC_CALL_ITEMS, so nothing that lists the lines finds it.
+ */
+export const FFIEC_FILING_UPDATED_KEY = "filing_last_updated";
+export const FFIEC_FILING_UPDATED_CODE = "POR_LAST_UPDATED";
+/** Item keys in institution_call_report_items that describe a filing, not a figure in it. */
+export const FFIEC_FILING_METADATA_KEYS: ReadonlySet<string> = new Set([FFIEC_FILING_UPDATED_KEY]);
+
+/** One item row per bank in the POR file: its last-updated time as epoch seconds. */
+export function porItemValues(por: { column: string | null; rows: readonly { rssd: string; epochSeconds: number }[] }): FfiecItemValue[] {
+  if (!por.column) return [];
+  return por.rows.map((row) => ({
+    rssd: row.rssd,
+    key: FFIEC_FILING_UPDATED_KEY,
+    code: FFIEC_FILING_UPDATED_CODE,
+    description: `${por.column} (epoch seconds, UTC)`,
+    schedule: "POR",
+    unit: "count" as const,
+    basis: "point_in_time" as const,
+    value: row.epochSeconds,
+  }));
+}
+
 export type FfiecColumnStatus = "loaded" | "not_in_file" | "description_mismatch" | "no_description" | "ambiguous";
 
 export interface FfiecColumnCheck {

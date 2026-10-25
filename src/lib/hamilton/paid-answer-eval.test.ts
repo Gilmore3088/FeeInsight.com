@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { buildAskResponse, parseAsk } from "./workspace/ask";
 import { overdraftResearch } from "./workspace/test-fixtures";
-import type { LiveReader } from "./answer-correctness";
+import { financialMeasureDefinition } from "@/lib/data-store/financial-peer-contract";
+import type { FilingReader, LiveReader } from "./answer-correctness";
 import type { MemoClient } from "./memo";
 import type { WrittenAnswerWriter } from "./written-answer-read";
 import type { PreparedReportAnswer, ReportAnswerWriter } from "./report-answer-read";
@@ -18,7 +19,10 @@ vi.mock("./answer-eval", async (importOriginal) => ({ ...(await importOriginal<t
 // No report unless a test hands one in: the real preparation reads the database.
 vi.mock("./report-answer-read", async (importOriginal) => ({ ...(await importOriginal<typeof import("./report-answer-read")>()), prepareReportAnswer: async () => null }));
 
-const { orderCandidates, paidSamplesToday, reserveSample, runPaidAnswerEval, simulateInputFor, toolMoneyFigures, PAID_EVAL_RESERVATION } = await import("./paid-answer-eval");
+const { orderCandidates, paidSamplesToday, reserveSample, runPaidAnswerEval, shadowCountsLine, simulateInputFor, toolMoneyFigures, PAID_EVAL_RESERVATION } = await import("./paid-answer-eval");
+const { tallyGateShadow } = await import("./output-gate-shadow");
+const { reportSectionGateShadow } = await import("./generate");
+type GateShadowRecord = import("./output-gate-shadow").GateShadowRecord;
 
 const now = new Date("2026-10-16T15:17:00Z");
 const question = "How does our overdraft fee compare?";
@@ -404,4 +408,190 @@ it("uses the same scaled dollar contract in the eval while excluding nonmonetary
     {toolName:"getInstitution",output:{financials:{units:"dollar amounts in thousands; fee_income_ratio is a fraction (0.068 = 6.8%)",
       latest:{service_charge_income:311051,fee_income_ratio:0.068}}}},
   ])).toEqual([1234000,2000000,3000000000,1234000,1000000000,311051000]);
+});
+
+describe("the written sample reads the claims (#1077 claim contract step 7)", () => {
+  const BANK = 1001;
+  const filingId = `filing:fdic:${BANK}:2026-06-30:service_charge_income:standalone_quarter`;
+  /** A bank's getInstitution read with two filed quarters, in thousands, as the tool returns them. */
+  const bankRead = {
+    toolName: "getInstitution",
+    input: { id: BANK },
+    output: {
+      identity: { id: BANK, name: `Bank ${BANK}`, charter_type: "bank" },
+      fees: { verified: [], provisional: [] },
+      financials: {
+        units: "dollar amounts in thousands; fee_income_ratio is a fraction (0.068 = 6.8%)",
+        definition: { ...financialMeasureDefinition("fdic"), period_basis: "standalone_quarter" },
+        latest: null,
+        records: [["2026-06-30", 1100], ["2026-03-31", 1000]].map(([report_date, income]) => ({
+          institution_id: BANK, report_date, source: "fdic", service_charge_income: income, total_assets: 400_000, total_deposits: 350_000,
+          total_revenue: Number(income) * 10, fee_income_ratio: 0.1, field_units: { fee_income_ratio: "fraction" },
+        })),
+      },
+    },
+  };
+  const filingText = `Bank ${BANK}'s service charge income was $1.1 million in Q2 2026.`;
+  /** A fake filing reader: `value` for every key (null: no row), counting its calls. */
+  const filingReader = (value: number | null): FilingReader & { keys: string[][] } => {
+    const keys: string[][] = [];
+    return Object.assign(async (asked: Parameters<FilingReader>[0]) => {
+      keys.push(asked.map((k) => k.id));
+      return new Map(asked.map((k) => [k.id, value]));
+    }, { keys });
+  };
+  const run = (filings: FilingReader, written = writtenWriter(filingText, [bankRead]), client = memoClient("Your overdraft fee is $32.")) =>
+    runPaidAnswerEval({ db: db(0).db, now, client, live, agentRunId: 77, written, filings, recordShadow: async () => null });
+
+  it("passes a supported filing claim whose live row is unchanged, with the gate's verdict on the sample", async () => {
+    evalMocks.answer.mockImplementation(async (id: number) => answered(id));
+    const reader = filingReader(1_100_000);
+    const written = writtenWriter(filingText, [bankRead]);
+    const client = memoClient("Your overdraft fee is $32.");
+    const result = await run(reader, written, client);
+    const sample = result.results.find((r) => r.path === "written_answer")!;
+    expect(reader.keys).toEqual([[filingId]]);
+    expect(sample).toMatchObject({ status: "written", correctness: [], filings: 1, gate: { status: "validated", critical: [], checkPassed: true } });
+    expect(result.paths[2]).toMatchObject({ answers: 1, passed: 1, correctness: { checked: 1, correct: 1 } });
+    // No provider call is added: one written answer, three memos and one Simulate read, as before.
+    expect(written.calls).toBe(1);
+    expect(client.calls).toBe(3);
+    expect(client.simulateCalls).toBe(1);
+  });
+
+  it("fails correctness for a supported filing claim whose live value has changed", async () => {
+    evalMocks.answer.mockImplementation(async (id: number) => answered(id));
+    const result = await run(filingReader(1_250_000));
+    const sample = result.results.find((r) => r.path === "written_answer")!;
+    expect(sample.status).toBe("written");
+    expect(sample.correctness).toEqual([`filing claim "${filingText}": the answer uses $1,100,000 for service_charge_income for 2026-06-30 (standalone quarter), the live filing has $1,250,000`]);
+    expect(result.paths[2]).toMatchObject({ passed: 1, correctness: { checked: 1, correct: 0 } });
+  });
+
+  it("fails correctness when the filing row is missing on re-read, and leaves it unchecked when the re-read cannot run", async () => {
+    evalMocks.answer.mockImplementation(async (id: number) => answered(id));
+    const missing = await run(filingReader(null));
+    expect(missing.results.find((r) => r.path === "written_answer")!.correctness).toEqual([expect.stringMatching(/the live filing has no row for it$/)]);
+    expect(missing.paths[2]).toMatchObject({ correctness: { checked: 1, correct: 0 } });
+    const failed = await run(async () => null);
+    expect(failed.results.find((r) => r.path === "written_answer")!.correctness).toBeNull();
+    expect(failed.paths[2]).toMatchObject({ passed: 1, correctness: { checked: 0 } });
+  });
+
+  it("scores form with the gate's verdict: a held answer fails form, and is not re-read or tied", async () => {
+    evalMocks.answer.mockImplementation(async (id: number) => answered(id));
+    const reader = filingReader(1_100_000);
+    // Another bank's filing stated as the reader's own: today's evidence check passes it (the figure is in the reads), the gate holds it.
+    const otherRead = { ...bankRead, input: { id: 2002 }, output: { ...bankRead.output, identity: { id: 2002, name: "Bank 2002", charter_type: "bank" },
+      financials: { ...bankRead.output.financials, records: bankRead.output.financials.records.map((r) => ({ ...r, institution_id: 2002 })) } } };
+    const result = await run(reader, writtenWriter("Your service charge income was $1.1 million in Q2 2026.", [otherRead]));
+    const sample = result.results.find((r) => r.path === "written_answer")!;
+    expect(sample.gate).toMatchObject({ status: "held", critical: ["account_as_subject", "nothing_left"], checkPassed: true });
+    expect(sample).toMatchObject({ status: "withheld", correctness: null });
+    expect(sample.failures.length).toBeGreaterThan(0);
+    expect(reader.keys).toEqual([]);
+    expect(result.paths[2]).toMatchObject({ answers: 1, passed: 0 });
+  });
+
+  it("records the written answer's shadow with the route's decision: held when its check passes but the binding leaves nothing", async () => {
+    evalMocks.answer.mockImplementation(async (id: number) => answered(id));
+    const otherRead = { ...bankRead, input: { id: 2002 }, output: { ...bankRead.output, identity: { id: 2002, name: "Bank 2002", charter_type: "bank" },
+      financials: { ...bankRead.output.financials, records: bankRead.output.financials.records.map((r) => ({ ...r, institution_id: 2002 })) } } };
+    const records: Array<{ record: { surface: string; origin: string; today: string; path: string; unified: string } }> = [];
+    const recordShadow = async (record: (typeof records)[number]["record"]) => { records.push({ record }); };
+    await runPaidAnswerEval({ db: db(0).db, now, client: memoClient("Your overdraft fee is $32."), live, agentRunId: 77,
+      written: writtenWriter("Your service charge income was $1.1 million in Q2 2026.", [otherRead]), filings: filingReader(1_100_000), recordShadow, countShadows: async () => { throw new Error("unused"); } });
+    expect(records.filter((r) => r.record.surface === "written_answer").map((r) => r.record))
+      .toEqual([expect.objectContaining({ origin: "paid_eval", path: "written_streaming", today: "held", unified: "held" })]);
+    // A filing the binding supports is shown whole.
+    records.length = 0;
+    await runPaidAnswerEval({ db: db(0).db, now, client: memoClient("Your overdraft fee is $32."), live, agentRunId: 77,
+      written: writtenWriter(filingText, [bankRead]), filings: filingReader(1_100_000), recordShadow, countShadows: async () => { throw new Error("unused"); } });
+    expect(records.filter((r) => r.record.surface === "written_answer").map((r) => r.record))
+      .toEqual([expect.objectContaining({ origin: "paid_eval", today: "shown", unified: "validated" })]);
+  });
+
+  it("records the Simulate read's shadow verdict as its own run, without changing its score", async () => {
+    evalMocks.answer.mockImplementation(async (id: number) => answered(id));
+    const records: Array<{ record: GateShadowRecord; context: unknown }> = [];
+    const result = await runPaidAnswerEval({ db: db(0).db, now, client: memoClient("Your overdraft fee is $32."), live, agentRunId: 77, written: writtenWriter(),
+      recordShadow: async (record, context) => { records.push({ record, context }); } });
+    expect(records.filter((r) => r.record.surface === "simulate")).toEqual([
+      { record: expect.objectContaining({ surface: "simulate", path: "simulate_read", origin: "paid_eval" }), context: { userId: null, researchInstitutionId: 1001 } },
+    ]);
+    const failing = await runPaidAnswerEval({ db: db(0).db, now, client: memoClient("Your overdraft fee is $32."), live, agentRunId: 77, written: writtenWriter(),
+      recordShadow: async () => { throw new Error("ledger down"); } });
+    expect(failing.paths[1]).toMatchObject(result.paths[1]);
+  });
+});
+
+describe("every paid sample feeds the shadow gate, counted apart from readers (#1077 follow-up)", () => {
+  const prepared: PreparedReportAnswer = {
+    institutionId: 1001, institutionName: "Bank 1001", input: { type: "executive_summary", title: "The Answer", data: {} },
+    deltas: [], competitorNames: [], selectedInstitution: null, evidencePolicy: "provisional-first",
+  };
+  /** A report writer that hands back the section's shadow, built with the identity the eval passed. */
+  const reportWriter = () => {
+    const seen: Array<Parameters<ReportAnswerWriter>[1]> = [];
+    const write: ReportAnswerWriter = async (_prepared, tracking) => {
+      seen.push(tracking);
+      const narrative = "HEADLINE: Bank 1001's overdraft fee sits near peers.";
+      return { status: "written", narrative, passed: true, problems: [], gateShadow: () => reportSectionGateShadow(narrative, {}, "shown", tracking.gateIdentity!) };
+    };
+    return Object.assign(write, { seen });
+  };
+  const run = async (written: WrittenAnswerWriter, extra: Partial<Parameters<typeof runPaidAnswerEval>[0]> = {}) => {
+    const records: Array<{ record: GateShadowRecord; context: unknown }> = [];
+    const report = reportWriter();
+    const result = await runPaidAnswerEval({
+      db: db(0).db, now, client: memoClient("Your overdraft fee is $32."), live, agentRunId: 77, written,
+      prepareReport: async () => prepared, writeReport: report, comparison: async () => [],
+      recordShadow: async (record, context) => { records.push({ record, context }); },
+      countShadows: async () => tallyGateShadow(records.map((r) => r.record)),
+      ...extra,
+    });
+    return { result, records, report };
+  };
+
+  it("records exactly one paid_eval shadow per sample: each memo, the written answer and the report section", async () => {
+    evalMocks.answer.mockImplementation(async (id: number) => answered(id));
+    const { result, records, report } = await run(writtenWriter());
+    // Five samples: Simulate, the written answer, the report, and two memos.
+    expect(result.results.map((r) => r.path).sort()).toEqual(["memo", "memo", "report", "simulate", "written_answer"]);
+    expect(records.every((r) => r.record.origin === "paid_eval")).toBe(true);
+    const bySurface = (surface: string) => records.filter((r) => r.record.surface === surface);
+    expect(bySurface("memo")).toHaveLength(2);
+    expect(bySurface("memo").map((r) => r.record.path)).toEqual(["memo", "memo"]);
+    expect(bySurface("written_answer")).toEqual([
+      { record: expect.objectContaining({ path: "written_streaming", mode: "analyze", today: "shown" }), context: { userId: null, researchInstitutionId: 1001 } },
+    ]);
+    expect(bySurface("report_section")).toEqual([
+      { record: expect.objectContaining({ path: "report_section", today: "shown" }), context: { userId: null, researchInstitutionId: 1001 } },
+    ]);
+    expect(bySurface("simulate")).toHaveLength(1);
+    // The report is written with the sampled institution as both the reader's own and the subject.
+    expect(report.seen[0].gateIdentity).toEqual({ researchInstitutionId: 1001, accountInstitutionId: 1001, accountInstitutionName: "Bank 1001" });
+    // The memos' shadow follows the memo's own decision.
+    expect(bySurface("memo").map((r) => r.record.today)).toEqual(result.results.filter((r) => r.path === "memo").map((r) => (r.status === "written" ? "shown" : "held")));
+  });
+
+  it("puts the last week's shadow counts in the summary, readers apart from the eval", async () => {
+    evalMocks.answer.mockImplementation(async (id: number) => answered(id));
+    const readerRecord = { version: 1 as const, origin: "reader" as const, surface: "written_answer" as const, path: "written_streaming" as const, mode: "analyze",
+      today: "shown" as const, unified: "held" as const, agrees: false, disagreement: "unified_holds" as const, codes: [], critical: [], cause: false, corrections: 0 };
+    const days: number[] = [];
+    const records: GateShadowRecord[] = [];
+    const { result } = await run(writtenWriter(), {
+      recordShadow: async (record) => { records.push(record); },
+      countShadows: async (d) => { days.push(d); return tallyGateShadow([readerRecord, ...records]); },
+    });
+    expect(days).toEqual([7]);
+    expect(result.shadow).toMatchObject({ days: 7, reader: { total: 1, disagree: 1, unifiedHolds: 1 }, paid_eval: { total: records.length } });
+    expect(shadowCountsLine(result.shadow)).toContain(`reader answers 1 (1 disagree: 1 the unified gate would hold`);
+    expect(shadowCountsLine(result.shadow)).toContain(`paid eval samples ${records.length} (`);
+    // A count that cannot be read never fails the run.
+    const failed = await run(writtenWriter(), { countShadows: async () => { throw new Error("db down"); } });
+    expect(failed.result.shadow).toBeNull();
+    expect(shadowCountsLine(null)).toBe(" Shadow gate counts could not be read.");
+  });
 });

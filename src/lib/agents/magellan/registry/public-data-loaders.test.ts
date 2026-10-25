@@ -59,6 +59,36 @@ describe("registry ffiec-call-detail", () => {
     expect(detail.missing_lines).toContainEqual(expect.objectContaining({ code: "RIADH034", status: "description_mismatch", description: "WRONG" }));
     expect(detail.missing_lines).toContainEqual(expect.objectContaining({ code: "RIAD4635", status: "not_in_file" }));
   });
+
+  it("stores each bank's POR last-updated time as its own item row, apart from the lines (#1925)", async () => {
+    const withPor = zipSync({
+      "FFIEC CDR Call Schedule RI 06302026.txt": strToU8('"IDRSSD"\t"RIADH033"\n""\t"CONSUMER ACCOUNT PERIODIC MAINTENANCE CHARGES"\n"852218"\t"700"\n'),
+      "FFIEC CDR Call Bulk POR 06302026.txt": strToU8('"IDRSSD"\t"Financial Institution Name"\t"Last Date/Time Submission Updated On"\n"852218"\t"BANK A"\t"2026-08-14T10:02:31"\n'),
+    });
+    const { db, statements } = createDb();
+    const r = await runRegistryFfiecCallDetail({ partitionKey: "2026Q2", db, fetchOptions: { fetchImpl: ffiecFetch(withPor) } });
+    expect(r).toMatchObject({ values: 1, filingTimes: 1, loadedLines: ["consumer_maintenance_charges_ytd"] });
+    const payloads = statements
+      .filter((s) => s.text.includes("INSERT INTO institution_call_report_items"))
+      .map((s) => JSON.parse(s.values.find((v) => typeof v === "string" && v.startsWith("[")) as string) as Array<Record<string, unknown>>);
+    expect(payloads).toHaveLength(2);
+    expect(payloads[0].map((row) => row.item_key)).toEqual(["consumer_maintenance_charges_ytd"]);
+    expect(payloads[1]).toEqual([{
+      rssd: "852218",
+      item_key: "filing_last_updated",
+      item_code: "POR_LAST_UPDATED",
+      item_description: "Last Date/Time Submission Updated On (epoch seconds, UTC)",
+      schedule: "POR",
+      value: Date.parse("2026-08-14T14:02:31Z") / 1000,
+      unit: "count",
+      period_basis: "point_in_time",
+    }]);
+    const detail = partitionDetail(statements);
+    expect(detail.por).toEqual({ file: "FFIEC CDR Call Bulk POR 06302026.txt", column: "Last Date/Time Submission Updated On", banks: 1, unreadable: 0 });
+    expect(detail.schedule_files).toEqual(["FFIEC CDR Call Schedule RI 06302026.txt"]);
+    // Value checks see only the financial lines.
+    expect(JSON.stringify(detail.value_checks)).not.toContain("filing_last_updated");
+  });
 });
 
 describe("registry ncua-extras", () => {

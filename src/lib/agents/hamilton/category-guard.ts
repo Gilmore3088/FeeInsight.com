@@ -3,10 +3,14 @@ import {
   CARD_PRODUCT_TAKEDOWN_LIVE,
   checkFeeCategory,
   CATEGORY_GUARD_VERSION,
+  genericMonthlyCharge,
   GUARDED_CATEGORIES,
   PLAIN_RETURNED_ITEM,
   refileCategory,
   refileFromLine,
+  withHeadingAbove,
+  BOX_LATE_TARGET,
+  withBoxSection,
   type CategoryGuardCode,
 } from "@/lib/fee-category-guard";
 import { isRetiredCategory, splitLiveCategory, FOLD_RULES_VERSION } from "@/lib/fee-fold";
@@ -106,6 +110,17 @@ export interface RunHamiltonCategoryGuardResult {
    */
   cardProductPending: number;
   cardProductPendingSamples: CardProductPendingFee[];
+  /**
+   * v84: the stored-text read for generic monthly charges' headings failed, so this step judged them
+   * by name and line only. Recorded in the step detail so a catch-up run that took nothing down for
+   * this reason shows it.
+   */
+  headingReadFailed: boolean;
+  /**
+   * v87: the stored-text read for late payments' safe deposit box sections failed, so this step
+   * judged them by name and line only (nothing re-filed or came down for it).
+   */
+  boxSectionReadFailed: boolean;
   limit: number;
   dryRun: boolean;
   rollbackBatchId: string;
@@ -230,7 +245,15 @@ export async function runHamiltonCategoryGuard(
   const limit = boundedLimit(options.limit);
   const dryRun = Boolean(options.dryRun);
   const rollbackBatchId = `category-guard-run-${options.runId}`;
-  const rows = await selectLiveGuardedFees(db, options.institutionId);
+  const selected = await selectLiveGuardedFees(db, options.institutionId);
+  // Guard v84 (#1788): generic monthly charges are judged under the heading printed above them. A
+  // failed text read judges them by name and line only, as before v84, so nothing comes down for it.
+  const headedRows = await withHeadingsAbove(db, selected);
+  const headed = headedRows ?? selected;
+  // Guard v87 (#1916): a late payment is judged with its stored text's section, so a box late fee
+  // re-files in place. A failed text read judges by name and line only, as before v87.
+  const sectioned = await withBoxSections(db, headed);
+  const rows = sectioned ?? headed;
 
   const failures: CategoryGuardFailure[] = [];
   const passing: number[] = [];
@@ -344,6 +367,8 @@ export async function runHamiltonCategoryGuard(
     refiledFees: restore.refiled,
     liveRefiledFees: refiled.size,
     cardProductPending: pending.length,
+    headingReadFailed: headedRows === null,
+    boxSectionReadFailed: sectioned === null,
     cardProductPendingSamples: pending.slice(0, 50),
     limit,
     dryRun,
@@ -483,6 +508,54 @@ const nameKey = (name: string | null | undefined) => (name ?? "").trim().toLower
 interface LiveRefile extends Restore {
   /** The fee being moved is an excess activity fee, by its name or its own source line. */
   excess: boolean;
+  /**
+   * Guard v87 (#1916): a late payment moving to safe_deposit_box. Its twin there is the bank's live
+   * box late fee at that price (same name, or a late word), never a box size, key or drilling fee
+   * that happens to share the price (Advia's $10 key replacement, 139816, beside its $10 late fee).
+   */
+  lateBox: boolean;
+}
+
+/** Guard v87 (#1916): a live box fee named as a late charge, in TS and Postgres. */
+export const BOX_LATE_NAME_PATTERN = String.raw`\mlate\M`;
+/**
+ * Guard v87 (review of #2622): only a text that names the box can print a box section
+ * (`BOX_HEADING` in box-section-late-fee.ts), so only those texts are read for late payments.
+ */
+export const BOX_TEXT_PATTERN = String.raw`safe(ty)?[\s-]*deposit|\msdb\M|\msafe\s+box`;
+const BOX_LATE_NAME = /\blate\b/i;
+
+/** Pure: a refile moves a late payment to the safe deposit box (guard v87). */
+export function movesBoxLateFee(restore: Restore): boolean {
+  return restore.row.canonical_fee_key === "late_payment" && restore.to === BOX_LATE_TARGET;
+}
+
+/** The late-box flag per move, as text (see `excessFlags`). */
+export function lateBoxFlags(unique: LiveRefile[]): string[] {
+  return unique.map((restore) => (restore.lateBox ? "true" : "false"));
+}
+
+/**
+ * Guard v87 (#1916): the rows with `box_section` read from their stored text, for late payments only
+ * (`withBoxSection`); only those rows' documents are read. Null when the read fails, so the caller
+ * judges by name and line only, as before v87, and nothing moves or comes down for it.
+ */
+async function withBoxSections<T extends Pick<LivePublishedRow, "source_document_id" | "canonical_fee_key" | "fee_name" | "amount">>(
+  db: SqlTag,
+  rows: T[],
+): Promise<T[] | null> {
+  const needing = rows.filter((row) => row.canonical_fee_key === "late_payment" && row.source_document_id != null);
+  if (needing.length === 0) return rows;
+  let texts: Map<number, string>;
+  try {
+    texts = await ownStoredTexts(db, needing.map((row) => row.source_document_id), BOX_TEXT_PATTERN);
+  } catch (error) {
+    console.error("category guard box section read failed:", error);
+    return null;
+  }
+  return rows.map((row) =>
+    row.source_document_id == null ? row : withBoxSection(row.canonical_fee_key, row.fee_name, row, texts.get(Number(row.source_document_id))),
+  );
 }
 
 /** Pure: whether a refile moves an excess activity fee. */
@@ -500,14 +573,18 @@ export function movesExcessActivityFee(restore: Restore): boolean {
 export function uniqueRefiles(refiles: Restore[]): LiveRefile[] {
   const kept: LiveRefile[] = [];
   for (const restore of refiles) {
-    const candidate = { ...restore, excess: movesExcessActivityFee(restore) };
+    const candidate = { ...restore, excess: movesExcessActivityFee(restore), lateBox: movesBoxLateFee(restore) };
     const same = kept.some((other) =>
       String(other.row.institution_id) === String(candidate.row.institution_id) &&
       other.to === candidate.to &&
       normalizedAmount(other.row.amount) === normalizedAmount(candidate.row.amount) &&
       (!(other.excess || candidate.excess) ||
         nameKey(other.row.fee_name) === nameKey(candidate.row.fee_name) ||
-        (other.excess && candidate.excess)));
+        (other.excess && candidate.excess)) &&
+      // Guard v87: a box late fee is one fee only with another box late fee (or the same name).
+      (!(other.lateBox || candidate.lateBox) ||
+        nameKey(other.row.fee_name) === nameKey(candidate.row.fee_name) ||
+        (BOX_LATE_NAME.test(other.row.fee_name) && BOX_LATE_NAME.test(candidate.row.fee_name))));
     if (!same) kept.push(candidate);
   }
   return kept;
@@ -550,7 +627,8 @@ async function wouldRefile(db: SqlTag, unique: LiveRefile[]): Promise<Set<number
         JOIN unnest(${unique.map((restore) => Number(restore.row.fee_published_id))}::bigint[],
                     ${unique.map((restore) => restore.row.canonical_fee_key)}::text[],
                     ${unique.map((restore) => restore.to)}::text[],
-                    ${excessFlags(unique)}::text[]::boolean[]) AS v(fee_published_id, from_key, to_key, excess)
+                    ${excessFlags(unique)}::text[]::boolean[],
+                    ${lateBoxFlags(unique)}::text[]::boolean[]) AS v(fee_published_id, from_key, to_key, excess, late_box)
           ON fp.fee_published_id = v.fee_published_id
        WHERE fp.canonical_fee_key = v.from_key
          AND fp.rolled_back_at IS NULL
@@ -563,6 +641,9 @@ async function wouldRefile(db: SqlTag, unique: LiveRefile[]): Promise<Set<number
               AND (NOT v.excess
                    OR lower(btrim(live.fee_name)) = lower(btrim(fp.fee_name))
                    OR live.fee_name ~* ${EXCESS_ACTIVITY_NAME_PATTERN})
+              AND (NOT v.late_box
+                   OR lower(btrim(live.fee_name)) = lower(btrim(fp.fee_name))
+                   OR live.fee_name ~* ${BOX_LATE_NAME_PATTERN})
          )
     `);
     return new Set(rows.map((row) => Number(row.fee_published_id)));
@@ -585,7 +666,8 @@ async function applyLiveRefiles(
           FROM unnest(${unique.map((restore) => Number(restore.row.fee_published_id))}::bigint[],
                       ${unique.map((restore) => restore.row.canonical_fee_key)}::text[],
                       ${unique.map((restore) => restore.to)}::text[],
-                      ${excessFlags(unique)}::text[]::boolean[]) AS v(fee_published_id, from_key, to_key, excess)
+                      ${excessFlags(unique)}::text[]::boolean[],
+                      ${lateBoxFlags(unique)}::text[]::boolean[]) AS v(fee_published_id, from_key, to_key, excess, late_box)
          WHERE fp.fee_published_id = v.fee_published_id
            AND fp.canonical_fee_key = v.from_key
            AND fp.rolled_back_at IS NULL
@@ -598,6 +680,9 @@ async function applyLiveRefiles(
                 AND (NOT v.excess
                      OR lower(btrim(live.fee_name)) = lower(btrim(fp.fee_name))
                      OR live.fee_name ~* ${EXCESS_ACTIVITY_NAME_PATTERN})
+                AND (NOT v.late_box
+                     OR lower(btrim(live.fee_name)) = lower(btrim(fp.fee_name))
+                     OR live.fee_name ~* ${BOX_LATE_NAME_PATTERN})
            )
         RETURNING fp.fee_published_id, fp.lineage_ref, fp.canonical_fee_key
       `;
@@ -628,18 +713,48 @@ async function applyLiveRefiles(
 }
 
 /** The newest completed stored text of each document. */
-async function ownStoredTexts(db: SqlTag, documentIds: Array<number | string | null>): Promise<Map<number, string>> {
+async function ownStoredTexts(
+  db: SqlTag,
+  documentIds: Array<number | string | null>,
+  textPattern?: string,
+): Promise<Map<number, string>> {
   const ids = [...new Set(documentIds.filter((id): id is number | string => id != null).map(Number))];
   if (ids.length === 0) return new Map();
+  // A text that cannot hold what the caller looks for is not fetched (its own newest text only).
   const rows = await inSavepoint(db, (scope) => scope<{ source_document_id: number | string; normalized_text: string }[]>`
-    SELECT DISTINCT ON (source_document_id) source_document_id, normalized_text
-      FROM agent_source_texts
-     WHERE source_document_id = ANY(${ids}::bigint[])
-       AND status = 'completed'
-       AND normalized_text IS NOT NULL
-     ORDER BY source_document_id, id DESC
+    SELECT source_document_id, normalized_text FROM (
+      SELECT DISTINCT ON (source_document_id) source_document_id, normalized_text
+        FROM agent_source_texts
+       WHERE source_document_id = ANY(${ids}::bigint[])
+         AND status = 'completed'
+         AND normalized_text IS NOT NULL
+       ORDER BY source_document_id, id DESC
+    ) newest
+     WHERE ${textPattern ?? null}::text IS NULL OR newest.normalized_text ~* ${textPattern ?? null}::text
   `);
   return new Map(rows.map((row) => [Number(row.source_document_id), row.normalized_text]));
+}
+
+/**
+ * Guard v84 (#1788): the rows with `heading_above` read from their stored text, for generic monthly
+ * charges only (`withHeadingAbove`); only those rows' documents are read. Null when the read fails.
+ */
+async function withHeadingsAbove<T extends Pick<LivePublishedRow, "source_document_id" | "canonical_fee_key" | "fee_name" | "conditions">>(
+  db: SqlTag,
+  rows: T[],
+): Promise<T[] | null> {
+  const needing = rows.filter((row) => genericMonthlyCharge(row.canonical_fee_key, row.fee_name));
+  if (needing.length === 0) return rows;
+  let texts: Map<number, string>;
+  try {
+    texts = await ownStoredTexts(db, needing.map((row) => row.source_document_id));
+  } catch (error) {
+    console.error("category guard heading read failed:", error);
+    return null;
+  }
+  return rows.map((row) =>
+    row.source_document_id == null ? row : withHeadingAbove(row.canonical_fee_key, row.fee_name, row, texts.get(Number(row.source_document_id))),
+  );
 }
 
 /** Pure: does a takedown trace, at its price and under the type it comes back as, on its own stored text? */
@@ -692,7 +807,14 @@ export async function restorePassingTakedowns(
     console.error("category guard restore read failed:", error);
     return none;
   }
-  const candidates = rows.flatMap((row) => {
+  // Guard v84 (#1788): a takedown is judged with the heading above it, as the live check took it down.
+  const headed = await withHeadingsAbove(db, rows);
+  if (!headed) return none;
+  // Guard v87 (#1916): a late payment takedown is judged with its section, as the live check took it
+  // down, so a box late fee's twin never comes back as a late payment.
+  const sectioned = await withBoxSections(db, headed);
+  if (!sectioned) return none;
+  const candidates = sectioned.flatMap((row) => {
     const to = restoreTarget(row);
     return to ? [{ row, to }] : [];
   });

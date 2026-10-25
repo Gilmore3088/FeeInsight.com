@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { affectedSavedOutputsLabel, collectFeeRefs, MAX_SAVED_FEE_REFS, savedOutputNotice } from "./saved-output-corrections";
+import { affectedSavedOutputsLabel, collectFeeRefs, MAX_SAVED_FEE_REFS, savedOutputNotice, writtenAnswerFeeRefs } from "./saved-output-corrections";
 
 // H03-T09 (#978): a saved output made before a fee change keeps its figures and says so.
 
@@ -94,9 +94,54 @@ describe("collectFeeRefs", () => {
     expect(collectFeeRefs(many)).toHaveLength(MAX_SAVED_FEE_REFS);
   });
 
+  it("should_collect_profile_catalog_rows_by_record_id_and_skip_preview_rows_and_competitor_prices", () => {
+    // getInstitution's profile shape (src/lib/research/tools.ts): snake_case record and document ids.
+    const profile = {
+      identity: { id: 7, name: "Synthetic Bank" },
+      fees: {
+        verified: [{ fee_name: "Overdraft", amount: 35, status: "verified", record_id: 401, source_document_id: 905 }],
+        provisional: [
+          { fee_name: "Stop payment", amount: 30, status: "provisional", record_id: "402", source_document_id: null },
+          // Pipeline previews: no catalog row behind them, even if an id were present.
+          { fee_name: "Wire", amount: 25, status: "provisional", pipeline_stage: "verified_unpublished" },
+          { fee_name: "Paper", amount: 2, status: "provisional", pipeline_stage: "raw_unverified", record_id: 403 },
+        ],
+      },
+    };
+    const competitors = { institution: "Synthetic Bank", your_fees: { overdraft: 35 }, competitors: [{ name: "Other Bank", fees: { overdraft: 30 } }] };
+    expect(collectFeeRefs([profile, competitors])).toEqual([
+      { feePublishedId: 401, institutionId: 7, sourceDocumentId: 905, sourceContentHash: null },
+      { feePublishedId: 402, institutionId: 7, sourceDocumentId: null, sourceContentHash: null },
+    ]);
+    // A profile of preview rows only, and a competitor read alone, record nothing.
+    expect(collectFeeRefs({ identity: { id: 7 }, fees: { verified: [], provisional: [profile.fees.provisional[2]] } }, competitors)).toEqual([]);
+  });
+
   it("should_not_loop_on_a_value_that_refers_to_itself", () => {
     const loop: Record<string, unknown> = { ownRows: [{ id: 5 }], institutionId: 3 };
     loop.self = loop;
     expect(collectFeeRefs(loop).map((ref) => ref.feePublishedId)).toEqual([5]);
+  });
+});
+
+describe("writtenAnswerFeeRefs", () => {
+  const own = { feePublishedId: 1, institutionId: 9001, sourceDocumentId: 101, sourceContentHash: null };
+  const peer = { feePublishedId: 2, institutionId: 9002, sourceDocumentId: 102, sourceContentHash: null };
+  it("should_keep_refs_that_include_a_row_of_the_research_subject", () => {
+    expect(writtenAnswerFeeRefs([own, peer], 9001)).toEqual([own, peer]);
+  });
+  it("should_save_none_when_no_ref_is_the_subjects_so_the_institution_match_stays", () => {
+    expect(writtenAnswerFeeRefs([peer], 9001)).toEqual([]);
+  });
+  it("should_save_none_when_the_subjects_profile_was_cut_by_compaction_so_the_institution_match_stays", () => {
+    const cutProfile = { _shortened: "fees.verified kept 20 of 40 rows", identity: { id: 9001 }, fees: { verified: [], provisional: [] } };
+    expect(writtenAnswerFeeRefs([own, peer], 9001, [cutProfile])).toEqual([]);
+    expect(writtenAnswerFeeRefs([own, peer], 9001, [{ _shortened: "Result cut to 12000 characters.", text: "…" }])).toEqual([]);
+    // A peer's cut profile leaves the subject's rows whole.
+    expect(writtenAnswerFeeRefs([own, peer], 9001, [{ ...cutProfile, identity: { id: 9002 } }])).toEqual([own, peer]);
+    expect(writtenAnswerFeeRefs([own, peer], 9001, [{ _shortened: "rows kept 50 of 100", rows: [] }])).toEqual([own, peer]);
+  });
+  it("should_keep_refs_when_the_answer_has_no_subject", () => {
+    expect(writtenAnswerFeeRefs([peer], null)).toEqual([peer]);
   });
 });

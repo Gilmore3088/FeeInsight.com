@@ -399,7 +399,7 @@ export async function sweepsBeforeGuardRequeue(ctx: MovedSweepContext) {
   // a guard change takes effect without anyone starting the repair run by hand.
   const categoryGuard = await sweep(ctx, "categoryGuard", (): Result<typeof runHamiltonCategoryGuard> => ({
     scannedFees: 0, failingFees: 0, rolledBackFees: 0, rejectedVerifiedFees: 0, flaggedFees: 0, awaitingSecondLook: 0,
-    confirmedFeeIds: [], restoredFees: 0, refiledFees: 0, liveRefiledFees: 0, cardProductPending: 0, cardProductPendingSamples: [],
+    confirmedFeeIds: [], restoredFees: 0, refiledFees: 0, liveRefiledFees: 0, cardProductPending: 0, cardProductPendingSamples: [], headingReadFailed: false, boxSectionReadFailed: false,
     limit: ctx.categoryGuardLimit, dryRun, rollbackBatchId: batchId(ctx), guardVersion: 0, byCode: {}, byCategory: {}, failures: [],
   }), () => runHamiltonCategoryGuard({
     runId,
@@ -512,7 +512,7 @@ export async function sweepsBeforeRows(ctx: MovedSweepContext) {
   // A live fee named only "Monthly Service Fee" takes the account heading above it in its
   // schedule ("Chase Total Checking Monthly Service Fee"); the old name stays in pipeline_feedback.
   const accountNames = await sweep(ctx, "accountNames", (): Result<typeof nameLiveFeesByAccount> => ({
-    dryRun, institutionsChecked: 0, genericFees: 0, renames: [], skipped: {} as Result<typeof nameLiveFeesByAccount>["skipped"],
+    dryRun, institutionsChecked: 0, genericFees: 0, reverts: [], renames: [], skipped: {} as Result<typeof nameLiveFeesByAccount>["skipped"],
   }), () => nameLiveFeesByAccount(tx, {
     runId,
     dryRun,
@@ -669,6 +669,7 @@ export function movedSweepCounts(r: MovedSweepResults, ran: (key: MovedPublishSw
     nameRetidy: r.nameRetidy.renames.length,
     extractionNotes: r.extractionNotes.moved,
     accountNames: r.accountNames.renames.length,
+    "accountNames.reverted": r.accountNames.reverts?.length ?? 0,
     lineupCorrect: r.lineupCorrect.corrected.length,
     restoreRecheck: r.restoreRecheck.rolledBack.length,
     "restoreRecheck.flagged": r.restoreRecheck.flagged,

@@ -8,7 +8,7 @@ import { tool } from "ai";
 import { z } from "zod";
 import { getInstitutionById } from "@/lib/data-store";
 import { getInstitutionOwnFees } from "@/lib/data-store/fee-index";
-import { getLocalMarketCompetitors } from "@/lib/data-store/local-market";
+import { competitorAmountBasis, getLocalMarketCompetitors } from "@/lib/data-store/local-market";
 import { selectMarketStated } from "@/lib/hamilton/local-market-request";
 import { severalFeesOf, type SeveralFees } from "@/lib/own-fee";
 
@@ -41,7 +41,7 @@ async function subjectFees(institutionId: number): Promise<{ fees: Record<string
 
 export const getLocalCompetitors = tool({
   description:
-    "Name an institution's local competitors (institutions with branches in the counties holding most of its deposits, from the FDIC Summary of Deposits) with their published fee amounts beside the institution's own: your_fees holds its stated prices and your_several_fees a category it states several different amounts for (their range and each fee by name). For competitors, fees holds each stated price, and a fee a competitor states several different amounts for is in several_fees (their range and each fee by name), not in fees. Use it whenever the user asks how an institution compares locally, in its county or market, or against named competitors.",
+    "Name an institution's local competitors (institutions with branches in the counties holding most of its deposits, from the FDIC Summary of Deposits) with their published fee amounts beside the institution's own: your_fees holds its stated prices and your_several_fees a category it states several different amounts for (their range and each fee by name). For competitors, fees holds each stated price, and a fee a competitor states several different amounts for is in several_fees (their range and each fee by name), not in fees. Each competitor carries its institution_id, and fee_basis says how each amount in its fees was computed from its published rows: \"max\" (the highest overdraft tier) or \"median\". These are aggregates, not single fee records. Use it whenever the user asks how an institution compares locally, in its county or market, or against named competitors.",
   inputSchema: z.object({
     institution_id: z.number().int().positive().describe("The institution's id"),
   }),
@@ -61,21 +61,31 @@ export const getLocalCompetitors = tool({
       categories: [...Object.keys(own.fees), ...Object.keys(own.several)],
     });
     if (!market) {
-      return { institution: institution.institution_name, ...yourFees, message: "No local market could be located for this institution." };
+      return { institution: institution.institution_name, institution_id, ...yourFees, message: "No local market could be located for this institution." };
     }
     return {
+      // Ids as well as names, so the written answer's binding knows whose fee a sentence states (#1077).
       institution: institution.institution_name,
+      institution_id,
       ...yourFees,
       market: market.label,
+      market_basis: market.basis,
+      county_fips: market.county_fips,
+      sod_year: market.sod_year,
       source: `FDIC Summary of Deposits ${market.sod_year}; verified published fee amounts`,
       // fees: each stated price. several_fees: a fee the competitor states several different
       // amounts for, as its range and each fee by name; their median is no price of its own (#1931).
       competitors: market.competitors.map((c) => {
         const stated = selectMarketStated(c.fees, c.several, Object.keys(c.fees));
         return {
+          institution_id: c.institution_id,
           name: c.institution_name.replace(/\s+/g, " ").trim(),
           fees: stated.fees,
+          // Each amount is the highest overdraft tier or a median of the competitor's rows, never one fee record.
+          fee_basis: Object.fromEntries(Object.keys(stated.fees).map((category) => [category, competitorAmountBasis(category)])),
           ...(Object.keys(stated.several).length > 0 ? { several_fees: stated.several } : {}),
+          document_url: c.document_url,
+          document_date: c.document_date,
         };
       }),
     };

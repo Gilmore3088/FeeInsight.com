@@ -32,9 +32,18 @@ type SqlTag = typeof sql;
  * v3 (#1810): v2 named 130 fees; 1,510 of 1,902 generic names it read found no heading. Headings
  * followed by their opening deposit ("Now Checking" / "$1,000.00 opening deposit required") now
  * trace, and "Interest Checking", "Club 2 Checking" and "Money Market Checking" read as accounts.
+ *
+ * v4 (#1917): a web page's breadcrumb or menu, its links printed with no space between them
+ * ("HomePersonal BankingAccountsPersonal Checking"), is no account heading, and the search for a
+ * heading stops at a comparison table's header row ("Secure Checking | Secure Checking Plus |
+ * Senior Checking"): the price's column names its account, so Knox's recorded account is used. A
+ * live name an earlier version gave from a heading today's rule no longer reads as an account is
+ * set back to the name Knox read (`name_account_removed`), so the next pass can name it again.
+ * Dry run on prod, Oct 25: 3 of the 558 names still live go back (66144, 140140, 137749).
  */
-export const ACCOUNT_NAME_STRATEGY = { strategy: "hamilton.account_names", version: 3 } as const;
+export const ACCOUNT_NAME_STRATEGY = { strategy: "hamilton.account_names", version: 4 } as const;
 export const ACCOUNT_NAME_KIND = "name_account_added";
+export const ACCOUNT_NAME_REMOVED_KIND = "name_account_removed";
 export const ACCOUNT_NAME_INSTITUTION_LIMIT = 40;
 
 /** Postgres twin of `GENERIC_ACCOUNT_FEE_NAME`, so the due query finds the same names. */
@@ -181,16 +190,65 @@ export function planAccountNames(fees: AccountNameFee[], texts: InstitutionText[
   return { renames, skipped };
 }
 
+/** A live name an earlier version gave, as its `name_account_added` row recorded it. */
+export interface AddedAccountName {
+  fee_published_id: number | string;
+  institution_id: number | string;
+  source_document_id: number | string | null;
+  canonical_fee_key: string | null;
+  amount: number | string | null;
+  old_name: string | null;
+  new_name: string | null;
+  heading: string | null;
+}
+
+export interface AccountNameRevert {
+  feePublishedId: number;
+  institutionId: number;
+  sourceDocumentId: number | null;
+  canonicalFeeKey: string | null;
+  amount: number | null;
+  /** The live name being taken back. */
+  addedName: string;
+  /** The name Knox read, which the fee gets back. */
+  restoredName: string;
+  heading: string;
+}
+
+/**
+ * Pure (v4, #1917): the added names whose heading today's rule no longer reads as an account
+ * ("HomePersonal BankingAccountsPersonal Checking"). Only a name still live as it was given, with
+ * the old name on record, goes back.
+ */
+export function planAccountNameReverts(rows: AddedAccountName[]): AccountNameRevert[] {
+  return rows.flatMap((row) => {
+    if (!row.heading || !row.old_name?.trim() || !row.new_name || accountHeading(row.heading) !== null) return [];
+    return [{
+      feePublishedId: Number(row.fee_published_id),
+      institutionId: Number(row.institution_id),
+      sourceDocumentId: row.source_document_id == null ? null : Number(row.source_document_id),
+      canonicalFeeKey: row.canonical_fee_key,
+      amount: row.amount == null ? null : Number(row.amount),
+      addedName: row.new_name,
+      restoredName: row.old_name,
+      heading: row.heading,
+    }];
+  });
+}
+
 export interface AccountNameResult extends AccountNamePlan {
   dryRun: boolean;
   institutionsChecked: number;
   genericFees: number;
+  /** v4: earlier names set back because their heading is no account. */
+  reverts: AccountNameRevert[];
 }
 
 const EMPTY: AccountNameResult = {
   dryRun: false,
   institutionsChecked: 0,
   genericFees: 0,
+  reverts: [],
   renames: [],
   skipped: { no_heading: 0, would_not_trace: 0, category_guard: 0, same_name_live: 0 },
 };
@@ -200,17 +258,108 @@ export function accountNameFingerprint(maxLiveFeeId: number | string): string {
   return `v${ACCOUNT_NAME_STRATEGY.version}:${maxLiveFeeId}`;
 }
 
+/**
+ * v4 (#1917): sets back the live names an earlier version gave from a heading that is no account.
+ * Runs before the naming pass, so a fee set back is named again from its column or recorded
+ * account in the same step. Each one is a weight-0 `name_account_removed` row holding both names.
+ */
+export async function revertAccountNames(
+  db: SqlTag,
+  options: { runId: number; dryRun: boolean; institutionId?: number },
+): Promise<AccountNameRevert[]> {
+  let reverts: AccountNameRevert[];
+  try {
+    const added = await inSavepoint(db, (scope) => scope<AddedAccountName[]>`
+      SELECT pf.fee_published_id, pf.institution_id, pf.source_document_id, pf.canonical_fee_key, pf.amount,
+             pf.evidence->>'old_name' AS old_name, pf.evidence->>'new_name' AS new_name, pf.evidence->>'heading' AS heading
+        FROM pipeline_feedback pf
+        JOIN published_fee_records fp ON fp.fee_published_id = pf.fee_published_id
+       WHERE pf.kind = ${ACCOUNT_NAME_KIND}
+         AND fp.rolled_back_at IS NULL
+         AND fp.fee_name = pf.evidence->>'new_name'
+         AND (${options.institutionId ?? null}::bigint IS NULL OR pf.institution_id = ${options.institutionId ?? null}::bigint)
+    `);
+    reverts = planAccountNameReverts(added);
+  } catch (error) {
+    // A failed check must never block publishing.
+    console.error("revertAccountNames select failed:", error);
+    return [];
+  }
+  if (options.dryRun || reverts.length === 0) return reverts;
+  try {
+    await inSavepoint(db, async (scope) => {
+      await recordFeedback(
+        scope,
+        reverts.map((revert) => ({
+          aboutStage: "publish",
+          aboutStrategy: ACCOUNT_NAME_STRATEGY.strategy,
+          aboutVersion: ACCOUNT_NAME_STRATEGY.version,
+          signal: "wrong",
+          kind: ACCOUNT_NAME_REMOVED_KIND,
+          reportedBy: "hamilton",
+          checkName: ACCOUNT_NAME_STRATEGY.strategy,
+          institutionId: revert.institutionId,
+          sourceDocumentId: revert.sourceDocumentId,
+          feePublishedId: revert.feePublishedId,
+          canonicalFeeKey: revert.canonicalFeeKey,
+          amount: revert.amount,
+          // Housekeeping on Hamilton's own rename, not a judgement on Knox's read.
+          weight: 0,
+          evidence: { removed_name: revert.addedName, restored_name: revert.restoredName, heading: revert.heading },
+          runId: options.runId,
+          dedupeKey: `${ACCOUNT_NAME_STRATEGY.strategy}:removed:v${ACCOUNT_NAME_STRATEGY.version}:pub:${revert.feePublishedId}`,
+        })),
+      );
+      await scope`
+        UPDATE published_fee_records fp
+           SET fee_name = revert.restored_name
+          FROM unnest(
+                 ${reverts.map((revert) => revert.feePublishedId)}::bigint[],
+                 ${reverts.map((revert) => revert.addedName)}::text[],
+                 ${reverts.map((revert) => revert.restoredName)}::text[]
+               ) AS revert(fee_published_id, added_name, restored_name)
+         WHERE fp.fee_published_id = revert.fee_published_id
+           AND fp.rolled_back_at IS NULL
+           AND fp.fee_name = revert.added_name
+      `;
+      await scope`
+        INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
+        VALUES (
+          ${options.runId}, ${`${ACCOUNT_NAME_STRATEGY.strategy}.revert`}, 'completed',
+          ${`Set ${reverts.length} live name(s) back to the name Knox read: their account heading is no account (a breadcrumb or menu)`},
+          ${JSON.stringify({
+            version: ACCOUNT_NAME_STRATEGY.version,
+            reverted: reverts.length,
+            samples: reverts.slice(0, 20).map((revert) => ({
+              fee_published_id: revert.feePublishedId,
+              removed_name: revert.addedName,
+              restored_name: revert.restoredName,
+            })),
+          })}::jsonb
+        )
+      `;
+    });
+  } catch (error) {
+    console.error("revertAccountNames write failed:", error);
+    return [];
+  }
+  invalidatePublicReadCache();
+  return reverts;
+}
+
 /** Gives generic live monthly-fee names their account, a batch of institutions per publish step. */
 export async function nameLiveFeesByAccount(
   db: SqlTag,
   options: { runId: number; dryRun: boolean; institutionId?: number; institutionLimit?: number },
 ): Promise<AccountNameResult> {
   const limit = options.institutionLimit ?? ACCOUNT_NAME_INSTITUTION_LIMIT;
+  // v4 (#1917): earlier names from a heading that is no account go back first.
+  const reverts = await revertAccountNames(db, options);
   let fingerprints: Map<number, string>;
   let liveFees: AccountNameFee[];
   let texts: Array<InstitutionText & { institution_id: number | string }>;
   try {
-    if (!(await inSavepoint(db, (scope) => feedbackSchemaReady(scope)))) return { ...EMPTY, dryRun: options.dryRun };
+    if (!(await inSavepoint(db, (scope) => feedbackSchemaReady(scope)))) return { ...EMPTY, dryRun: options.dryRun, reverts };
     const due = await inSavepoint(db, (scope) => scope<{ institution_id: number | string; max_fee_id: number | string }[]>`
       SELECT live.institution_id, live.max_fee_id
         FROM (
@@ -232,7 +381,7 @@ export async function nameLiveFeesByAccount(
        ORDER BY live.institution_id
        LIMIT ${limit}
     `);
-    if (due.length === 0) return { ...EMPTY, dryRun: options.dryRun };
+    if (due.length === 0) return { ...EMPTY, dryRun: options.dryRun, reverts };
     fingerprints = new Map(due.map((row) => [Number(row.institution_id), accountNameFingerprint(row.max_fee_id)]));
     const ids = [...fingerprints.keys()];
     liveFees = await inSavepoint(db, (scope) => scope<AccountNameFee[]>`
@@ -256,10 +405,10 @@ export async function nameLiveFeesByAccount(
   } catch (error) {
     // A failed rename must never block publishing.
     console.error("nameLiveFeesByAccount select failed:", error);
-    return { ...EMPTY, dryRun: options.dryRun };
+    return { ...EMPTY, dryRun: options.dryRun, reverts };
   }
 
-  const result: AccountNameResult = { ...EMPTY, dryRun: options.dryRun, institutionsChecked: fingerprints.size, renames: [], skipped: { ...EMPTY.skipped } };
+  const result: AccountNameResult = { ...EMPTY, dryRun: options.dryRun, institutionsChecked: fingerprints.size, reverts, renames: [], skipped: { ...EMPTY.skipped } };
   const perInstitution = new Map<number, { generic: number; renamed: number }>();
   for (const institutionId of fingerprints.keys()) {
     const fees = liveFees.filter((fee) => Number(fee.institution_id) === institutionId);

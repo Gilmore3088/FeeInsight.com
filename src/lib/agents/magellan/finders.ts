@@ -188,6 +188,8 @@ export interface FoundDocument {
   documentType: "html" | "pdf" | null;
   confidence: number;
   reason: string;
+  /** The text the fee-page check read, when it read one (the freshness search reads its stated date, #1878). */
+  text?: string | null;
 }
 
 export interface FinderResult {
@@ -395,7 +397,7 @@ async function politePause(ctx: SearchContext): Promise<void> {
 }
 
 function foundFrom(candidate: LinkCandidate, validation: CandidateValidation): FoundDocument {
-  return { url: candidate.url, documentType: validation.documentType, confidence: validation.confidence, reason: validation.reason };
+  return { url: candidate.url, documentType: validation.documentType, confidence: validation.confidence, reason: validation.reason, text: validation.scoringText ?? null };
 }
 
 /**
@@ -496,16 +498,17 @@ function acceptableAddress(ctx: SearchContext, url: string): boolean {
  * candidate link (`checkOpenedFeePage`, #1051): a product page quoting a few fees is followed
  * for its links, never accepted.
  */
-function pageIsFeeSchedule(ctx: SearchContext, url: string, html: string): boolean {
-  if (!acceptableAddress(ctx, url)) return false;
+function pageIsFeeSchedule(ctx: SearchContext, url: string, html: string): { text: string | null } | null {
+  if (!acceptableAddress(ctx, url)) return null;
   // A cheap pre-filter on the whole HTML; the candidate check below is what decides.
   const page = scoreFeePage(htmlToScoringText(html));
-  if (page.verdict !== "fee_page" || (page.rateTerms >= 4 && page.feeLines < 4)) return false;
+  if (page.verdict !== "fee_page" || (page.rateTerms >= 4 && page.feeLines < 4)) return null;
   const landed = ctx.redirects?.get(urlIdentity(url)) ?? url;
-  return checkOpenedFeePage(
+  const validation = checkOpenedFeePage(
     { url: landed, requestedUrl: landed === url ? null : url, score: 0, reasons: [], websiteUrl: ctx.site.toString(), institutionName: ctx.institutionName ?? null, nameShared: ctx.nameShared, city: ctx.city ?? null, certNumber: ctx.certNumber ?? null },
     html,
-  ).ok;
+  );
+  return validation.ok ? { text: validation.scoringText ?? null } : null;
 }
 
 function pathCandidates(ctx: SearchContext, paths: string[], source: LinkSource): LinkCandidate[] {
@@ -758,13 +761,15 @@ export async function findViaHubPages(ctx: SearchContext): Promise<FinderResult>
     const html = await openPage(ctx, result, hub.url, entry);
     if (html == null) continue;
     // The hub itself may be the fee page.
-    if (pageIsFeeSchedule(ctx, hub.url, html)) {
+    const hubPage = pageIsFeeSchedule(ctx, hub.url, html);
+    if (hubPage) {
       entry.verdict = "accepted_html";
       result.found = {
         url: hub.url,
         documentType: "html",
         confidence: 0.86,
         reason: `Fee page found one click from the homepage (${hub.label || hub.url})`,
+        text: hubPage.text,
       };
       return result;
     }
@@ -851,9 +856,10 @@ export async function findBySiteCrawl(ctx: SearchContext): Promise<FinderResult>
     result.trail.push(entry);
     const html = await openPage(ctx, result, next.link.url, entry);
     if (html == null) continue;
-    if (pageIsFeeSchedule(ctx, next.link.url, html)) {
+    const crawledPage = pageIsFeeSchedule(ctx, next.link.url, html);
+    if (crawledPage) {
       entry.verdict = "accepted_html";
-      result.found = { url: next.link.url, documentType: "html", confidence: 0.84, reason: `Fee page found by crawling the site (depth ${next.depth})` };
+      result.found = { url: next.link.url, documentType: "html", confidence: 0.84, reason: `Fee page found by crawling the site (depth ${next.depth})`, text: crawledPage.text };
       return result;
     }
     const links = pageLinks(html, ctx.site);

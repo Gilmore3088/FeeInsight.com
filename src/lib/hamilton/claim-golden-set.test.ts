@@ -26,9 +26,9 @@ describe("Hamilton claim golden set: today's behaviour, recorded (#1077, step 0)
     });
   }
 
-  it("covers the four groups the design names, each with a control, under distinct ids", () => {
+  it("covers the four groups the design names and the wrong-fee-category group, each with a control, under distinct ids", () => {
     const groups = new Set(CLAIM_GOLDEN_CASES.map((c) => c.group));
-    expect([...groups].sort()).toEqual(["causation", "swapped_bank", "wrong_period_claim", "wrong_premise"]);
+    expect([...groups].sort()).toEqual(["causation", "swapped_bank", "wrong_fee_category", "wrong_period_claim", "wrong_premise"]);
     for (const group of groups) expect(CLAIM_GOLDEN_CASES.some((c) => c.group === group && c.control), group).toBe(true);
     expect(new Set(CLAIM_GOLDEN_CASES.map((c) => c.id)).size).toBe(CLAIM_GOLDEN_CASES.length);
   });
@@ -43,7 +43,7 @@ describe("Hamilton claim golden set: today's behaviour, recorded (#1077, step 0)
       else expect(c.target.reasons.length, c.id).toBeGreaterThan(0);
     }
     expect(run.todayWrong).toBe(3);
-    expect(run.total).toBe(28);
+    expect(run.total).toBe(48);
   });
 
   it("closes the asked-figure hole and records the causal hole as a shadow line (step 3)", () => {
@@ -60,7 +60,7 @@ describe("Hamilton claim golden set: today's behaviour, recorded (#1077, step 0)
 
   it("says plainly that no person has reviewed it, and is held out", () => {
     expect(run.version).toBe(CLAIM_GOLDEN_SET_VERSION);
-    expect(CLAIM_GOLDEN_SET_VERSION).toBe("2026-10-25.6");
+    expect(CLAIM_GOLDEN_SET_VERSION).toBe("2026-10-25.10");
     expect(CLAIM_GOLDEN_REVIEW.status).toBe("unreviewed");
     expect(CLAIM_GOLDEN_REVIEW.record).toBeNull();
     expect(CLAIM_GOLDEN_REVIEW.note).toMatch(/No person has reviewed these cases/);

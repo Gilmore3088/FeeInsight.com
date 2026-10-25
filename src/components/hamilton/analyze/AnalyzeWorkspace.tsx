@@ -41,7 +41,7 @@ import { readStampedFigures } from "@/lib/dataset-note";
 import { ANSWER_TYPE, AuditPanel, Callout, InterpretationBox, LinkButton, MemoHeader, MemoPage, MemoSection, More, SERIF, SectionHeading } from "@/components/hamilton/memo/memo";
 import type { NarrativeBinding } from "@/lib/hamilton/narrative-bound";
 import { proseFeeName } from "@/lib/hamilton/workspace/names";
-import { applyNarrativeBinding, boundFallbackLead, readNarrativeBinding, withoutOmitted } from "@/lib/hamilton/written-answer-binding";
+import { applyNarrativeBinding, boundFallbackLead, readNarrativeBinding, readSentNarrativeBinding, withoutOmitted } from "@/lib/hamilton/written-answer-binding";
 
 type MessagePart = { type: string; text?: string; output?: unknown };
 
@@ -457,7 +457,7 @@ function AnalyzeConversationWorkspace({
       const parsed = parseAnalyzeResponse(content);
       const parts = message.parts as ReadonlyArray<MessagePart>;
       const check = checkMessageFigures(parts);
-      const sentBinding = readNarrativeBinding((message.metadata as { narrativeBinding?: unknown } | undefined)?.narrativeBinding);
+      const sentBinding = readSentNarrativeBinding((message.metadata as { narrativeBinding?: unknown } | undefined)?.narrativeBinding);
       setFigureCheck(check);
       setBinding(sentBinding);
       setLookups(lookupsUsed(parts));
@@ -801,7 +801,7 @@ function AnalyzeConversationWorkspace({
   // A finished answer carries its binding in state; a held answer's arrives with its first chunk.
   const activeBinding = parsedResponse
     ? binding
-    : readNarrativeBinding((lastMessage?.metadata as { narrativeBinding?: unknown } | undefined)?.narrativeBinding);
+    : readSentNarrativeBinding((lastMessage?.metadata as { narrativeBinding?: unknown } | undefined)?.narrativeBinding);
   // Left-out sentences never show; Hamilton's reading shows only under its own label.
   const bound = rawShown ? applyNarrativeBinding(rawShown, activeBinding) : null;
   const shown = bound ? bound.sections : null;

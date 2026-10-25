@@ -1,6 +1,6 @@
 import type { sql } from "@/lib/data-store/connection";
 import { inSavepoint } from "@/lib/agents/savepoint";
-import { EDITION_HEAD_CHARS, isoDay, notYetEffective } from "@/lib/agents/hamilton/schedule-edition";
+import { editionWindowSql, isoDay, notYetEffective } from "@/lib/agents/hamilton/schedule-edition";
 
 type SqlTag = typeof sql;
 
@@ -35,13 +35,15 @@ export async function selectEditionHolds(db: SqlTag, rows: EditionHoldRow[], now
   const documentIds = [...new Set(rows.map((row) => row.source_document_id).filter((id) => id != null).map(Number))];
   if (documentIds.length === 0) return new Map();
   try {
+    // The heading, or the late edition window `lateEdition` reads (`editionWindowSql`), so the
+    // publish hold and Darwin's re-check judge the same text.
     const heads = await inSavepoint(db, (scope) => scope.unsafe<{ source_document_id: number | string; head: string | null }[]>(
-      `SELECT DISTINCT ON (t.source_document_id) t.source_document_id, left(t.normalized_text, $2::int) AS head
+      `SELECT DISTINCT ON (t.source_document_id) t.source_document_id, ${editionWindowSql("t.normalized_text", isoDay(now))} AS head
          FROM agent_source_texts t
         WHERE t.status = 'completed'
           AND t.source_document_id = ANY($1::bigint[])
         ORDER BY t.source_document_id, t.id DESC`,
-      [documentIds, EDITION_HEAD_CHARS],
+      [documentIds],
     ));
     if (!Array.isArray(heads)) return new Map();
     return editionHolds(rows, new Map(heads.map((row) => [String(row.source_document_id), row.head ?? ""])), isoDay(now));
