@@ -102,7 +102,7 @@ function profileFact(institutionId: number, fee: Record<string, unknown>, index:
  * The fee records and institution names in a written answer's tool outputs. Null when the outputs
  * hold no fee amount at all.
  */
-export function writtenAnswerEvidence(toolOutputs: readonly unknown[]): { evidence: HamiltonEvidenceBundle; names: Map<number, string> } | null {
+export function writtenAnswerFeeEvidence(toolOutputs: readonly unknown[]): { evidence: HamiltonEvidenceBundle; names: Map<number, string> } | null {
   const facts = new Map<string, HamiltonEvidenceFact>();
   const names = new Map<number, string>();
   const name = (id: number | null, value: unknown) => {
@@ -336,7 +336,7 @@ export function indexBasisFor(sentence: string, stats: readonly IndexStatistic[]
 
 /** The binding for a written answer, or null when its tool outputs hold no fee record. */
 export function bindWrittenAnswer(input: { sections: WrittenAnswerSections; toolOutputs: readonly unknown[]; question?: string }): NarrativeBinding | null {
-  const found = writtenAnswerEvidence(input.toolOutputs);
+  const found = writtenAnswerFeeEvidence(input.toolOutputs);
   if (!found) return null;
   const text = writtenAnswerProse(input.sections);
   if (!text.trim()) return null;

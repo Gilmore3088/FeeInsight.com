@@ -15,7 +15,7 @@ import {
   boundFallbackLead,
   readNarrativeBinding,
   withoutOmitted,
-  writtenAnswerEvidence,
+  writtenAnswerFeeEvidence,
 } from "./written-answer-binding";
 
 // Invented institutions and fees (H06-AC1): Bank A charges $10 for an overdraft, Bank B $35.
@@ -48,7 +48,7 @@ const bind = (text: string, toolOutputs: unknown[] = TOOLS, question?: string) =
 
 describe("written answer evidence (#981, H06-T06)", () => {
   it("reads each profile fee as a published record with its row and schedule, and names its bank", () => {
-    const found = writtenAnswerEvidence(TOOLS)!;
+    const found = writtenAnswerFeeEvidence(TOOLS)!;
     expect(found.evidence.facts.map((fact) => [fact.id, fact.scope.institutionId, fact.value, fact.source.sourceDocumentIds])).toEqual([
       ["fee:published:1", 9001, 10, [101]],
       ["fee:published:2", 9002, 35, [102]],
@@ -59,7 +59,7 @@ describe("written answer evidence (#981, H06-T06)", () => {
   });
 
   it("makes no binding when the tools returned no fee record, so the answer shows as before", () => {
-    expect(writtenAnswerEvidence([NATIONAL])).toBeNull();
+    expect(writtenAnswerFeeEvidence([NATIONAL])).toBeNull();
     expect(bind("The national median overdraft fee is $29.", [NATIONAL])).toBeNull();
   });
 });

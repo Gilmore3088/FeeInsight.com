@@ -55,7 +55,15 @@ export interface HamiltonFactScope {
    * the current fee and is never compared. Absent means current, as every fee was read before.
    */
   productStatus?: HamiltonProductStatus;
+  /** Measure key for a non-fee figure ("service_charge_income", "call:acct_131"); absent on fee rows, whose feeCategory carries it. */
+  metric?: string | null;
+  /** How a filing figure's period is counted; absent on fee rows. */
+  periodBasis?: HamiltonPeriodBasis | null;
+  /** The group a peer or market statistic is taken over; absent for one institution's own figure. */
+  cohortKey?: string | null;
 }
+
+export type HamiltonPeriodBasis = "as_published" | "point_in_time" | "ytd" | "standalone_quarter";
 
 export type HamiltonProductStatus = "current" | "discontinued";
 
@@ -72,7 +80,13 @@ export interface HamiltonFactSource {
   lastCheckedAt?: string | null;
   location?: string | null;
   verificationEventId: string | null;
+  /** Natural key for a row the tool returns with no numeric id (a filing row); the fact ID itself. */
+  recordKey?: string | null;
+  /** Which validity rule applies to the fact. Absent means "fee_record", the only class before claim facts. */
+  evidenceClass?: HamiltonEvidenceClass;
 }
+
+export type HamiltonEvidenceClass = "fee_record" | "filing" | "filing_statistic" | "index_statistic";
 
 export interface HamiltonEvidenceFact {
   id: string;
@@ -92,7 +106,9 @@ export type HamiltonDerivationKind =
   | "difference"
   | "percent_change"
   | "institution_value"
-  | "peer_median";
+  | "peer_median"
+  | "ytd_to_quarter"
+  | "ratio";
 
 export interface HamiltonDerivedFact {
   id: string;
@@ -179,6 +195,10 @@ export interface HamiltonClaimBinding {
   accountApplicability?: Exclude<HamiltonAccountApplicability, "unknown" | "both">;
   /** A claim is about the current fee unless it says otherwise; a discontinued fee binds only a claim that says "discontinued". */
   productStatus?: HamiltonProductStatus;
+  /** Not yet matched by claimBindingMatches (claim contract step 2, #1077). */
+  metric?: string | null;
+  periodBasis?: HamiltonPeriodBasis | null;
+  cohortKey?: string | null;
 }
 
 /**
