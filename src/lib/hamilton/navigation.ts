@@ -25,6 +25,8 @@
  *   - 2026-10-19 James's redesign review (#2044): eight areas become five. Your institution joins
  *     Research and Saved analyses joins Try a price, each as a sub-tab (HAMILTON_WORKSPACE_SUBNAV);
  *     Monitor becomes "Alerts and watches", a secondary link beside Settings.
+ *   - 2026-10-25 #1891 (James's Oct 18 audit, V5 plan P5): the landing is the institution's
+ *     command center, so "Overview" is named "Command center"; the national market stays under Research.
  */
 
 /** Base path for Hamilton screens. Change here if route group structure changes in Phase 40. */
@@ -44,7 +46,7 @@ export const HAMILTON_NAV = [
  * Wire and the reference pages, so those paths light it up.
  */
 export const HAMILTON_WORKSPACE_NAV = [
-  { label: "Overview",       href: `${HAMILTON_BASE}/hamilton`,     icon: "ChartNoAxesColumnIncreasing" },
+  { label: "Command center", href: `${HAMILTON_BASE}/hamilton`,     icon: "ChartNoAxesColumnIncreasing" },
   { label: "Research",       href: `${HAMILTON_BASE}/intelligence`, icon: "Search" },
   { label: "Ask Hamilton",   href: `${HAMILTON_BASE}/analyze`,      icon: "MessageCircle" },
   { label: "Try a price",    href: `${HAMILTON_BASE}/simulate`,     icon: "Calculator" },

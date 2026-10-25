@@ -2,6 +2,7 @@ import type { sql } from "@/lib/data-store/connection";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { preserveStatusChange } from "./normalized-witness";
+import { expandUnicodeLigatures, GLYPH_REPAIR_DUE_PATTERN, REPLACEMENT_CHARACTER } from "./glyph-repair";
 
 type SqlTag = typeof sql;
 
@@ -97,6 +98,91 @@ export async function sameTextCopyOf(
      LIMIT 1
   `;
   return row?.id == null ? null : Number(row.id);
+}
+
+/** Letters one unknown glyph can stand for once restored ("ffi", the longest ligature). */
+export const MAX_LETTERS_PER_GLYPH = 3;
+/** Older copies with unknown glyphs compared glyph-blind per read (the newest first). */
+export const GLYPH_BLIND_OLDER_COPIES = 3;
+
+/** Characters a glyph slot never stands for: a glyph must not hide a different amount (#2649 review). */
+const AMOUNT_CHARACTERS = /[\d$.,]/;
+
+/**
+ * True when `newerText` is `olderText` read again with its unknown glyphs restored (#2598):
+ * every character of the older text other than U+FFFD is in the newer text, in order, and only
+ * where the older text has a run of n glyphs may the newer text hold up to 3n other characters
+ * (a ligature's letters, a Latin-1 character, or the glyph left as it was). A slot never holds a
+ * digit, "$", "." or ",", so a glyph cannot hide a different amount; the one exception is the
+ * decimal repair itself, a single glyph between a digit and exactly two digits read as ".", which
+ * keeps every digit. Unicode ligatures are compared as their letters, as the readers now write
+ * them. Conservative: each piece is taken at its first fit, so a doubtful alignment reads as
+ * different text.
+ */
+export function sameTextGlyphBlind(olderText: string, newerText: string): boolean {
+  const older = expandUnicodeLigatures(olderText);
+  if (older === newerText) return true;
+  if (!older.includes(REPLACEMENT_CHARACTER)) return false;
+  const pieces = older.split(/(\uFFFD+)/);
+  let position = 0;
+  let slack = 0;
+  for (let index = 0; index < pieces.length; index += 1) {
+    const piece = pieces[index];
+    if (piece.startsWith(REPLACEMENT_CHARACTER)) {
+      slack = piece.length * MAX_LETTERS_PER_GLYPH;
+      continue;
+    }
+    if (piece.length === 0) continue;
+    const decimalSlot = slack === MAX_LETTERS_PER_GLYPH
+      && /\d$/.test(pieces[index - 2] ?? "")
+      && /^\d{2}(?!\d)/.test(piece);
+    let found = -1;
+    for (let at = position; at <= position + slack && at + piece.length <= newerText.length; at += 1) {
+      const held = newerText.slice(position, at);
+      if (AMOUNT_CHARACTERS.test(held) && !(decimalSlot && held === ".")) break;
+      if (newerText.startsWith(piece, at)) {
+        found = at;
+        break;
+      }
+    }
+    if (found < 0) return false;
+    position = found + piece.length;
+    slack = 0;
+  }
+  const tail = newerText.slice(position);
+  return tail.length <= slack && !AMOUNT_CHARACTERS.test(tail);
+}
+
+/**
+ * At read time, when no older copy has the new read's exact text: the newest older copy of this
+ * page with Knox rows whose stored text carries an unknown glyph and is the new text read before
+ * glyph repair (`sameTextGlyphBlind`). Older copies are never read again, so their stored text
+ * keeps the glyphs a new read of the page now restores, and without this a page whose text did
+ * not change would lose the rule once its next copy is read (#2598 with #2477).
+ */
+export async function glyphBlindSameTextCopyOf(
+  db: SqlTag,
+  input: { institutionId: number; sourceDocumentId: number; text: string | null },
+): Promise<number | null> {
+  if (!input.text) return null;
+  const rows = await db<Array<{ id: number | string; normalized_text: string }>>`
+    SELECT older.id, older_text.normalized_text
+      FROM agent_source_texts older_text
+      JOIN source_documents older ON older.id = older_text.source_document_id
+     WHERE older.superseded_by_id = ${input.sourceDocumentId}
+       AND older.institution_id = ${input.institutionId}
+       AND older_text.normalized_text ~ ${GLYPH_REPAIR_DUE_PATTERN}
+       AND EXISTS (
+         SELECT 1 FROM raw_fee_observations older_fr
+          WHERE older_fr.source = 'knox'
+            AND older_fr.source_document_id = older.id
+            AND older_fr.outlier_flags ? 'needs_darwin_verification'
+       )
+     ORDER BY older.id DESC
+     LIMIT ${GLYPH_BLIND_OLDER_COPIES}
+  `;
+  const match = rows.find((row) => sameTextGlyphBlind(row.normalized_text, input.text!));
+  return match == null ? null : Number(match.id);
 }
 
 export interface SameTextCopy {

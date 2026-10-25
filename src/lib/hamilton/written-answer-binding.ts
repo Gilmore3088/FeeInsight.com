@@ -376,23 +376,23 @@ export function indexStatisticsStated(sentence: string, stats: readonly IndexSta
 }
 
 /**
- * How many local competitors state a price for each fee category, per local competitor read
+ * The prices local competitors state for each fee category, one entry per competitor, per local competitor read
  * (getLocalCompetitors' `competitors[].fees`). Empty when the tools made no such read.
  */
-export function localCompetitorPriceCounts(toolOutputs: readonly unknown[]): Array<Map<string, number>> {
-  const out: Array<Map<string, number>> = [];
+export function localCompetitorPrices(toolOutputs: readonly unknown[]): Array<Map<string, number[]>> {
+  const out: Array<Map<string, number[]>> = [];
   for (const output of toolOutputs) {
     const obj = record(output);
     if (!obj || !Array.isArray(obj.competitors) || !record(obj.your_fees)) continue;
-    // The subject's own categories count from zero, so a fee no competitor states reads as none.
-    const counts = new Map<string, number>(Object.keys(record(obj.your_fees) ?? {}).map((category) => [category, 0]));
+    // The subject's own categories start empty, so a fee no competitor states reads as none.
+    const prices = new Map<string, number[]>(Object.keys(record(obj.your_fees) ?? {}).map((category) => [category, []]));
     for (const item of obj.competitors) {
       const fees = record(record(item)?.fees);
       for (const [category, amount] of Object.entries(fees ?? {})) {
-        if (typeof amount === "number" && Number.isFinite(amount)) counts.set(category, (counts.get(category) ?? 0) + 1);
+        if (typeof amount === "number" && Number.isFinite(amount)) prices.set(category, [...(prices.get(category) ?? []), amount]);
       }
     }
-    out.push(counts);
+    out.push(prices);
   }
   return out;
 }
