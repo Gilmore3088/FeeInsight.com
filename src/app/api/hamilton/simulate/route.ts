@@ -36,7 +36,8 @@ import { getDistributionForCategory } from "@/app/pro/(hamilton)/simulate/action
 import { canSimulate } from "@/lib/hamilton/confidence";
 import { getInstitutionById } from "@/lib/data-store";
 import { getRequestSubjectKey } from "@/lib/api-hardening/audit";
-import { SIMULATE_MAX_TOKENS, SIMULATE_ROUTE_ID, simulatePrompts } from "@/lib/hamilton/simulate-read";
+import { SIMULATE_MAX_TOKENS, SIMULATE_ROUTE_ID, simulatePrompts, simulateGateShadow } from "@/lib/hamilton/simulate-read";
+import { scheduleGateShadow } from "@/lib/hamilton/output-gate-shadow-store";
 
 export const maxDuration = 120;
 
@@ -97,7 +98,7 @@ async function handlePOST(request: Request) {
     : null;
 
   // One prompt for the live read and the paid answer eval (#1079).
-  const { system: systemPrompt, user: userPrompt } = simulatePrompts({
+  const { system: systemPrompt, user: userPrompt, data: promptData } = simulatePrompts({
     feeCategory,
     currentFee,
     proposedFee,
@@ -155,7 +156,7 @@ async function handlePOST(request: Request) {
     prompt: userPrompt,
     // Opus 5.5 always thinks first; thinking counts toward this cap.
     maxOutputTokens: SIMULATE_MAX_TOKENS,
-    onFinish: async ({ totalUsage, finishReason }) => {
+    onFinish: async ({ totalUsage, finishReason, text }) => {
       if (providerFailed) { await failProvider(terminalFailure, observedProviderUsage(totalUsage)); return; }
       try { scope.assertHealthy(); assertCompletedProviderFinish(finishReason); }
       catch (error) { await failProvider(error, observedProviderUsage(totalUsage)); return; }
@@ -185,6 +186,13 @@ async function handlePOST(request: Request) {
         institutionId,
         detail: { model: HAMILTON_MODEL, input_tokens: inputTokens, output_tokens: outputTokens, cost_cents: costCents },
       });
+      // The one output gate in shadow (#1077 step 4): this stream has no gate today, so it is shown
+      // ungated. Computed and recorded after the response; nothing here waits on it.
+      if (typeof text === "string" && text.trim()) {
+        const shadowText = text;
+        scheduleGateShadow(() => simulateGateShadow(shadowText, promptData, "shown_ungated", "simulate_stream"),
+          { userId: user.id, researchInstitutionId: institutionId && /^\d+$/.test(institutionId) ? Number(institutionId) : null });
+      }
     },
     onAbort: async () => { scope.abort("cancelled"); await failProvider(scope.error); },
     onError: async ({ error }) => { await failProvider(error); },

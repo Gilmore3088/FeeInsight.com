@@ -7,6 +7,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const MAGELLAN_LESSONS: AgentLesson[] = [
   {
+    id: "issue-1677-charge-the-step-that-erred",
+    agent: "magellan",
+    stage: "discover",
+    lesson: "A fee read correctly from the wrong page (a business, brokerage or payroll card page, or another bank's) is a wrong document found, Magellan's miss: its lesson is a wrong_document judgement at discover, never a wrong read charged to Knox.",
+    why: "Hand takedowns wrote every lesson at extract, so #1671's four business-page fees, read correctly, taught Knox wrong_category lessons and taught Magellan nothing; the same held for U.S. Bank's brokerage page, Texas Capital's closed-accounts page, SchoolsFirst's payroll card terms and Natbank's Canadian pages.",
+    evidence: { issues: [1677], prs: [2588], files: ["src/lib/agents/hamilton/hand-takedowns.ts", "src/lib/agents/hamilton/business-schedule.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
+  {
     id: "issue-1051",
     agent: "magellan",
     stage: "discover",
@@ -155,5 +165,15 @@ export const MAGELLAN_LESSONS: AgentLesson[] = [
     evidence: { issues: [1200], prs: [2460], files: ["docs/project/findings/2026-10-20-live-fee-pages-never-refetched.md", "src/lib/agents/magellan/live-source-refetch.ts"] },
     appliesTo: "all",
     since: "2026-10-20",
+  },
+  {
+    id: "issue-1774-article-never-a-source",
+    agent: "magellan",
+    stage: "discover",
+    lesson: "Never store, keep or fetch an article, blog, post, story, learning or advice page, or a dated blog path, as a bank's fee source, by the one article rule (`isArticleLink`), however its link text names an account: refuse it as a companion, retire a companion stored before, and when the remembered fetch address is such a page but the saved fee link is not, fetch the saved link instead unless a person's correction locked the address.",
+    why: "The companion finder judged links by their words, so TD's /learning/ article on types of checking accounts, Keesler's /resources/advice/ app article and Security First's 2022 blog post were stored as account pages and their national or third-party figures went live as the banks' own (7 fees at 6 banks on Oct 17). After publish refused them, the finder stored Security First's blog post again on Oct 18 and the plain fetch kept asking for SchoolsFirst's remembered advice article, so 15 article companions on 8 institution records (TD has two) stayed stored and Knox and Darwin read and verified their fees again.",
+    evidence: { issues: [1774], prs: [2596], files: ["docs/project/findings/2026-10-17-article-sources.md", "src/lib/agents/magellan/second-document.ts", "src/lib/agents/magellan/companion-fetch.ts", "src/lib/agents/magellan/fetch.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
   },
 ];

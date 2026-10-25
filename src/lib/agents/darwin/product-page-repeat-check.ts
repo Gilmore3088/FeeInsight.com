@@ -48,9 +48,18 @@ type SqlTag = typeof sql;
  * category; 89 at 72 institutions repeat the schedule's line and would come down (paper statement
  * 26, overdraft 18, stop payment 6, cashier's check 5), TD's 64717 among them, and 133 stay.
  * `checkFeeAgainstSource` passes 88 of the 89 twins that stay live on their own documents.
+ *
+ * Version 2 (#1910, Amarillo National): the name cover reads the bank's shorthand as one item
+ * (`ITEM_SYNONYMS`: NSF / insufficient / non-sufficient funds, OD / overdraft, a paid NSF item /
+ * overdraft). Dry run, prod read-only, 2026-10-25: 148 live product-page fees have a same-price
+ * schedule fee in their category; version 1 matches 2 (5412's two safe deposit box sizes) and
+ * version 2 adds 5: 105411 "NSF charges" (twin 143718) and 105412 "One overdraft (OD) fee" (twin
+ * 143720) at Amarillo National (156), 49815 (6110, twin 142290), 110285 (8577, twin 106219) and
+ * 142887 (321, twin 60215). `checkFeeAgainstSource` finds each of the five and each twin on its own
+ * stored text, the same fee at the same price, so the switch stays on.
  */
 export const PRODUCT_PAGE_REPEAT_CHECK = "darwin.product_page_repeat";
-export const PRODUCT_PAGE_REPEAT_CHECK_VERSION = 1;
+export const PRODUCT_PAGE_REPEAT_CHECK_VERSION = 2;
 /** The switch: on takes matches down after the second look; off only reports. */
 export const PRODUCT_PAGE_REPEAT_TAKEDOWN_LIVE = true;
 export const PRODUCT_PAGE_REPEAT_REASON = "product_page_repeat";
@@ -119,7 +128,26 @@ export interface ProductPageRepeatResult extends ProductPageRepeatFindings {
   takenDown: number[];
 }
 
-const NAME_FILLER = new Set(["a", "an", "the", "fee", "fees", "charge", "charges", "each", "per", "item", "items", "of", "for", "and", "or", "to", "on", "in"]);
+const NAME_FILLER = new Set(["a", "an", "the", "one", "fee", "fees", "charge", "charges", "each", "per", "item", "items", "of", "for", "and", "or", "to", "on", "in"]);
+
+/**
+ * One item, said several ways (version 2, #1910). Amarillo National (156) kept "NSF charges" from
+ * its cash-back page beside the schedule's "Insufficient Item Charge", and "One overdraft (OD) fee"
+ * from its overdraft page beside the schedule's "Paid NSF Item", all $19: the item words differed
+ * only by the bank's own shorthand, so the version 1 cover missed them. "NSF", "insufficient
+ * funds" and "non-sufficient funds" are one word here, "OD" is "overdraft", and an NSF item the
+ * bank paid ("Paid NSF Item", "Paid Nonsufficient Funds") is an overdraft, the schedule's own
+ * term for it. Category, variant, amount, frequency, audience and product still have to agree.
+ */
+const ITEM_SYNONYMS: Array<[RegExp, string]> = [
+  [/\b(?:non[-\s]?sufficient|insufficient)(?:\s+funds?)?\b|\bnsf\b/g, " nsf "],
+  [/\bo\/?d\b/g, " overdraft "],
+  [/\bpaid\s+nsf\b/g, " overdraft "],
+];
+
+function foldSynonyms(text: string): string {
+  return ITEM_SYNONYMS.reduce((current, [pattern, word]) => current.replace(pattern, word), text);
+}
 
 function singular(word: string): string {
   if (word.length > 4 && word.endsWith("ies")) return `${word.slice(0, -3)}y`;
@@ -127,12 +155,10 @@ function singular(word: string): string {
   return word;
 }
 
-/** A fee name's item words: lower case, punctuation, filler words and plurals set aside. */
+/** A fee name's item words: lower case, punctuation, filler words, plurals and synonyms set aside. */
 function itemWords(name: string | null | undefined): Set<string> {
   return new Set(
-    (name ?? "")
-      .toLowerCase()
-      .replace(/[’']s\b/g, "")
+    foldSynonyms((name ?? "").toLowerCase().replace(/[’']s\b/g, ""))
       .split(/[^a-z0-9]+/)
       .filter((word) => word && !NAME_FILLER.has(word))
       .map(singular),

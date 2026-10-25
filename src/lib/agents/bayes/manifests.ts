@@ -316,6 +316,8 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   HMDA_PARSER_VERSION: "Implementation v3 is prepared, but the default-off ordinary identity gate leaves HMDA_SCHEDULED_PARSER_VERSION at2. Registry replay counts use that effective scheduled selector; the explicit ten-bank repair is manual-only and creates no automatic replay. Any ordinary activation requires separate review, including #2266.",
   FDIC_UNIVERSE_PARSER_VERSION: "Implementation v3 is prepared, but own-LEI propagation is default off and FDIC_UNIVERSE_SCHEDULED_PARSER_VERSION stays2. Registry replay counts use the effective scheduled selector. Enabling broader source identity writes is a separate reviewed release; the ten-bank repair does not authorize it.",
   PDF_PROSE_REREAD_VERSION: "Frozen layout4 prose retry floor. Stacked layout5 has a separate measured current-copy witness and pdf_stacked@1 persisted-artifact check; changing PDF_LAYOUT_VERSION does not reopen every settled prose document.",
+  // #2068: lessons apply when Knox reads a text, so they reach old texts only on a re-read.
+  KNOX_LESSONS_VERSION: "v4 adds name-family category lessons, applied only when the exact name has none. Lessons are read at each extract step and act on texts Knox reads; old texts are read again only when KNOX_RULES_STRATEGY moves, and the knox.rules manifest counts that replay. Dry run 2026-10-25: 7 live fees (balance inquiries filed as network ATM fees) would be re-filed when their banks are next read, each still checked by Darwin.",
   // #2186: prospective hard-hold proof cannot be fabricated for historical confirmations.
   TAKEDOWN_LESSONS_VERSION: "v2 restricts newly inserted learned holds to complete supported fee identity and a limit-guard witness captured before judgement, retained in confirmation, and current at insertion. Missing/unsupported/contended proof leaves new candidates for ordinary Darwin. Existing raw rows/holds and extract83/stale78/verify3/batch4/publish3/refresh2/current-copy2/newer-copy1 fingerprints stay settled; no historical release, replay or provider work is queued.",
   // #1911 code phase: evidence format, not a new extraction selector or recovery authorization.
@@ -337,7 +339,8 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v1 (#1909): Darwin re-reads every live fee on a Spanish copy of a schedule each verify step (no
   // cursor; a few hundred rows), so there is no backlog for a replay to count.
   TRANSLATED_COPY_CHECK_VERSION: "Each verify step re-reads every live fee on a Spanish-copy document (no cursor); nothing to replay.",
-  PRODUCT_PAGE_REPEAT_CHECK_VERSION: "First version: each verify step re-reads every live product-page fee with a same-price schedule twin (no cursor); nothing older to replay.",
+  // v2 (#1910): the name cover reads NSF/insufficient, OD/overdraft and a paid NSF item/overdraft as one item.
+  PRODUCT_PAGE_REPEAT_CHECK_VERSION: "Each verify step re-reads every live product-page fee with a same-price schedule twin (no cursor), so version 2's wider name cover reaches every live fee on the next step; nothing older to replay.",
   // v1 (#1915): schedule editions not yet in effect. Every verify step reads every live fee on a dated document.
   // v2 (T1): an edition line past a web page's menu, counted only until EDITION_LATE_HEADING_LIVE.
   EDITION_CHECK_VERSION: "Each verify step re-reads every live or held fee on a document whose heading or late edition line states an edition (no cursor); nothing older to replay.",
@@ -467,6 +470,7 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // is in each institution's check fingerprint, so every publish step's batch re-checks institutions
   // not yet checked at v18.
   // v20 (#1916): a fee never takes the other column's price on a two-column page; same fingerprint path.
+  // v23 (#1479): a name | description | price row stays one fee's row; same fingerprint path.
   SOURCE_CHECK_STRATEGY: "Its fingerprint carries the version, so each publish step's batch re-checks every institution not yet checked at the new version; nothing to replay.",
   // v3 (#1810): headings over an opening deposit, "Interest Checking" and numbered accounts name a fee.
   ACCOUNT_NAME_STRATEGY: "Its fingerprint carries the version, so each publish step's batch (40 institutions) re-reads every institution with a generic monthly name not yet read at v3; nothing to replay.",
@@ -517,6 +521,9 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // v79 (Oct 20, #1830): bill pay refuses a name its own line puts under a stop payment.
     // v80 (Oct 20, #1912, #1905): PIN replacements, home equity stop payments, ATM-table cash
     // advances and cut-lead-in $0s fail; non-customer cashier's checks wait behind a switch (off).
+    // v82 (Oct 25, #1662): the night deposit key-deposit exemptions are tied to the key or the noun.
+    // v83 (Oct 25, #1690): the non-network ATM fee refuses research, photo, negative-share and
+    // additional-card names.
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",
@@ -559,6 +566,9 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
       count: countNameRetidy,
     },
     ...rosettaReaderManifests(rosetta),
+    // DARWIN_SOURCE_CHECK_VERSION (v3, #1479) needs no manifest of its own: darwinDueSql re-selects each
+    // `not_in_source` rejection stamped with an older source-check version, so ordinary verify batches
+    // decide those rows again (1,966 rows at 740 banks on Oct 25, read-only count).
     {
       key: "darwin.verify_rules",
       owner: "darwin",

@@ -213,7 +213,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-277 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+282 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
 ### Extraction and fee reading (43)
 
@@ -452,8 +452,13 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — Sign out on the account page and admin used Server Actions that a redeploy breaks. — [finding](findings/2026-10-09-sign-out-server-action.md) — Guard: `src/app/api/auth/logout/route.test.ts:30`
 - 2026-10-09 — A refunded report kept its paid status and its private link. — [finding](findings/2026-10-09-report-refund-not-handled.md) — Guard: `src/lib/stripe-webhook.test.ts` (+1 more)
 
-### Hamilton workspace (19)
+### Hamilton workspace (24)
 
+- 2026-10-25 — An eval scores what the reader gets only with the gate that decides it, and a supported filing claim is tied to its live row, not accepted as the tools read it. — [finding](findings/2026-10-25-claim-eval-reads.md) — Guard: `src/lib/hamilton/answer-correctness-filings.test.ts`, `src/lib/data-store/filing-reread.test.ts`, `src/lib/hamilton/paid-answer-eval.test.ts`
+- 2026-10-25 — When a checked answer is reused, save what the check decided (each sentence's outcome and its facts' values, versioned) and have the next surface read that record, never the prose. — [finding](findings/2026-10-25-claim-report-carry.md) — Guard: `src/lib/hamilton/claim-report-carry.test.ts`, `src/lib/hamilton/report-actions.test.ts`, `src/lib/hamilton/bound-export.pdf.test.tsx`
+- 2026-10-25 — A rewrite of a failing answer is a paid call and a partial answer changes what a reader sees: build both behind one default-off switch and count each rewrite in the quota. — [finding](findings/2026-10-25-claim-repair-partial.md) — Guard: `src/lib/hamilton/output-gate-repair.test.ts`, `src/app/api/research/hamilton/route.gate-repair.test.ts`
+- 2026-10-25 — Run one gate beside the gates it replaces on every path, recording both decisions in the run ledger, so switching it on is a choice about counted disagreements. — [finding](findings/2026-10-25-claim-unified-gate.md) — Guard: `src/lib/hamilton/output-gate.test.ts`, `src/app/api/research/hamilton/route.answer-gate.test.ts`
+- 2026-10-25 — A figure the question asserts as an institution's own fee, or a change it states, needs a record; a question, comparison or threshold is not a premise, and a rule that could hold more answers ships in shadow first. — [finding](findings/2026-10-25-claim-premise-causation.md) — Guard: `src/lib/hamilton/claim-premise-causation.test.ts`, `src/lib/hamilton/claim-golden-set.test.ts`
 - 2026-10-25 — A filing figure is supported only by a fact of the institution, metric, quarter and period basis the sentence states; a sentence whose owner or metric is unknown binds nothing. — [finding](findings/2026-10-25-claim-sentence-binding.md) — Guard: `src/lib/hamilton/claim-sentence-binding.test.ts`, `src/lib/hamilton/claim-golden-set.test.ts`
 - 2026-10-25 — Give a filing figure a fact ID only through the validator that already reads it, with its period basis in the ID. — [finding](findings/2026-10-25-claim-fact-ids.md) — Guard: `src/lib/hamilton/claim-evidence.test.ts`
 - 2026-10-25 — Before changing a check, record what it does today on cases built to break it and mark the ones it gets wrong (10 of 25 for Hamilton's answer checks). — [finding](findings/2026-10-25-claim-golden-set.md) — Guard: `src/lib/hamilton/claim-golden-set.test.ts` (recorded outcomes, held-out check)
@@ -536,19 +541,19 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (165 in all).
+counts as of this index (186 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
 | atlas | 7 | [`src/lib/agents/atlas/role-lessons.ts`](../../src/lib/agents/atlas/role-lessons.ts) |
-| magellan | 15 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
+| magellan | 17 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
 | hoovie | 10 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
 | rosetta | 8 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
-| knox | 47 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
-| darwin | 20 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
-| gutenberg | 39 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
-| hamilton | 12 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
-| deming | 7 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
+| knox | 54 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
+| darwin | 24 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
+| gutenberg | 40 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
+| hamilton | 15 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
+| deming | 11 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
 
 ## Before 2026-10-10
 

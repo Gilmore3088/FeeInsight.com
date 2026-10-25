@@ -120,6 +120,11 @@ describe("filing figures bind to the institution, metric, quarter and basis the 
     const evidence = bundle([A_Q2, B_Q2]);
     expect(reasons(bind("Your service charge income was $2.3 million in Q2 2026.", evidence, { accountInstitutionId: BANK_A }))).toEqual(["account_as_subject"]);
     expect(bind("Your service charge income was $1.1 million in Q2 2026.", evidence, { accountInstitutionId: BANK_A }).supported[0].factIds).toEqual([A_Q2.id]);
+    // Peers, members or branches named in the sentence never hide the reader's own figure (PR #2572 re-review).
+    for (const text of ["Your service charge income was $2.3 million in Q2 2026, above your peers.",
+      "Your members paid $2.3 million in service charges in Q2 2026.", "Your branches earned $2.3 million in service charge income in Q2 2026."]) {
+      expect(reasons(bind(text, evidence, { accountInstitutionId: BANK_A, researchInstitutionId: BANK_B })), text).toEqual(["account_as_subject"]);
+    }
     expect(bind("Your service charge income was $2.3 million in Q2 2026.", evidence).interpretation).toHaveLength(1);
     // A sentence naming nobody is about the research subject, and binds nothing when there is none.
     expect(reasons(bind("Service charge income was $2.3 million in Q2 2026.", evidence, { researchInstitutionId: BANK_A }))).toEqual(["wrong_institution"]);

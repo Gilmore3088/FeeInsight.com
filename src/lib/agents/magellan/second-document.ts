@@ -14,6 +14,7 @@ import {
   DOCUMENT_YEAR_SQL,
   FEE_NAMED_LINK_SQL,
   HIDDEN_BELOW_CATEGORIES,
+  isArticleLink,
   isForeignHostLink,
   LARGE_BANK_ASSETS,
   OVERDRAFT_PRICE_SQL,
@@ -198,6 +199,11 @@ export function classifyCompanionLink(link: PageLink, site: URL, foundOn: string
   }
   // Another country's bank of the same name (southeastbank.com.bd) is never a companion.
   if (isForeignHostLink(link.url, site.toString())) return null;
+  // An article, blog, learning or advice page is never a companion (#1774, the one article rule
+  // `isArticleLink`): its link text names an account ("How To Choose Between A Time Deposit Or
+  // Money Market Account", "/2022/01/..."; TD's "/learning/.../types-of-checking-accounts"), so it
+  // passed as an account page, and its national or third-party figures went live as the bank's.
+  if (isArticleLink(link.url)) return null;
   const source: LinkSource = "homepage_link";
   const strong = STRONG_FEE_DOCUMENT.exec(lower);
   const medium = MEDIUM_FEE_DOCUMENT.exec(lower);
@@ -294,7 +300,7 @@ export function disclosureIndexDocuments(pageUrl: string, links: PageLink[], sit
   if (documents.length < INDEX_MIN_DOCUMENT_LINKS) return [];
   return documents
     .filter((link) => !exclude.has(urlIdentity(link.url)))
-    .filter((link) => !excludedLink(linkText(link)) && !nonDepositDiscoveryLink(link) && !isForeignHostLink(link.url, site.toString()))
+    .filter((link) => !excludedLink(linkText(link)) && !nonDepositDiscoveryLink(link) && !isForeignHostLink(link.url, site.toString()) && !isArticleLink(link.url))
     // Named fee documents and agreements are candidates through classifyCompanionLink already.
     .filter((link) => classifyCompanionLink(link, site) == null)
     .map((link): CompanionCandidate => ({

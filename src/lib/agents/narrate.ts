@@ -371,6 +371,10 @@ function narrateFinished(
       if (n(detail, "entries") === 0) return "No process fix names the errors it fixes yet.";
       return `Re-checked the errors ${count(n(detail, "entries"), "process fix", "process fixes")} named: ${n(detail, "closed")} closed, ${n(detail, "still_wrong")} still wrong after a re-run, ${n(detail, "not_reproduced")} taken down with no right fee in their place, ${n(detail, "waiting")} waiting for a re-run, ${n(detail, "unknown")} not judged.`;
     }
+    case "deming-error-classes": {
+      if (detail.confirmed_rows == null) return "Could not group the week's errors into classes.";
+      return `Grouped ${count(n(detail, "confirmed_rows"), "confirmed error row")} into ${count(n(detail, "classes"), "class", "classes")} seen at two or more banks; ${n(detail, "one_bank_patterns")} patterns were seen at one bank only.`;
+    }
     case "deming-monthly-review": {
       if (detail.ran === false) return "Not the 1st of the month: no monthly agent review this time.";
       const alarms = Array.isArray(detail.alarms) ? detail.alarms.length : 0;
@@ -775,6 +779,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "deming-playbook-check": "atlas",
   "deming-change-outcomes": "atlas",
   "deming-error-fix-recheck": "atlas",
+  "deming-error-classes": "atlas",
   "deming-monthly-review": "atlas",
   "deming-sunday-maintenance": "atlas",
   "deming-regression": "atlas",

@@ -50,6 +50,7 @@ async function handleGET(request: NextRequest) {
       { key: "scoreboard-snapshot", agent: "atlas", title: "Record the daily scoreboard" },
       { key: "deming-change-outcomes", agent: "atlas", title: "Deming: check whether each change moved the number it named, a week on" },
       { key: "deming-error-fix-recheck", agent: "atlas", title: "Deming: re-check each error a process fix named, once its bank has been re-run (#2058)" },
+      { key: "deming-error-classes", agent: "atlas", title: "Deming: group the week's confirmed errors by step and pattern, one record per class (#2063)" },
       // On the 1st of the month (UTC) only: each agent's 2026-10-12 review measures, re-read (#1107).
       { key: "deming-monthly-review", agent: "atlas", title: "Deming: on the 1st of the month, re-read each agent's review measures (read-only)" },
       { key: "deming-sunday-maintenance", agent: "atlas", title: "Deming: on Sunday, write James's hour of maintenance tasks" },

@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { knoxStrategyFromFlags, lastPerDedupeKey, recordFeedback, takedownCheck, takedownKind } from "./feedback";
-import { relabelPerFeeTakedowns, syncPipelineFeedback, takedownFeedback } from "./feedback-sync";
+import { relabelPerFeeTakedowns, syncPipelineFeedback, takedownFeedback, takedownSynced, TAKEDOWN_SYNC_SKIPS } from "./feedback-sync";
 
 import * as referenceStore from "@/lib/data-store/answer-key-reference-store";
+import { feedbackRowRead } from "./feedback-kinds";
 import { referenceKeyFingerprint } from "@/lib/data-store/answer-key-eligibility";
 import { fixtureEligibility, fixtureReference } from "@/lib/data-store/__fixtures__/answer-key-reference";
 afterEach(() => vi.restoreAllMocks());
@@ -95,6 +96,15 @@ describe("shared learning store", () => {
     const dry = mockDb([["check_name ~", [{ id: 5, reason: "refreshed by #69017" }]]]);
     expect(await relabelPerFeeTakedowns(dry.db, { limit: 100, dryRun: true })).toBe(1);
     expect(dry.calls.some((call) => call.query.includes("UPDATE"))).toBe(false);
+  });
+
+  it("keys a later takedown cycle of the same fee by when it was taken down (#1648)", () => {
+    expect(takedownFeedback({ ...takedown, prior_takedown: false, rolled_back_ms: 1791000000000 }, 1).map((row) => row.dedupeKey))
+      .toEqual(["hamilton.takedown:pub:77:extract", "hamilton.takedown:pub:77:verify"]);
+    const later = takedownFeedback({ ...takedown, prior_takedown: true, rolled_back_ms: "1791000000000" }, 1).map((row) => row.dedupeKey);
+    expect(later).toEqual(["hamilton.takedown:pub:77:at:1791000000000:extract", "hamilton.takedown:pub:77:at:1791000000000:verify"]);
+    // Readers match takedown extract rows by this shape (unread-feedback.ts, feedbackRowRead).
+    expect(feedbackRowRead({ kind: "wrong_amount", about_stage: "extract", check_name: "hamilton.source_check", dedupe_key: later[0] })).toBe(true);
   });
 
   it("charges a takedown to Knox's read and to the Darwin attempt that approved it", () => {
@@ -222,6 +232,16 @@ describe("shared learning store", () => {
     await syncPipelineFeedback(db, { runId: 7, dryRun: true });
     expect(calls.find((call) => call.query.includes("FROM published_fee_records fp"))?.query).toContain("NOT LIKE 'account_type_hold:%'");
     expect(calls.find((call) => call.query.includes("hamilton.restore:pub:"))?.query).toContain("f.kind <> 'account_type_hold'");
+  });
+
+  it("skips exactly the takedown reasons it names (TAKEDOWN_SYNC_SKIPS)", async () => {
+    const { db, calls } = mockDb([["to_regclass('public.pipeline_feedback')", [{ ready: true }]]]);
+    await syncPipelineFeedback(db, { runId: 7, dryRun: true });
+    const query = calls.find((call) => call.query.includes("FROM published_fee_records fp"))?.query ?? "";
+    const skipped = [...query.matchAll(/rolled_back_reason NOT LIKE '([a-z_]+):%'/g)].map((match) => match[1]);
+    expect(skipped).toEqual([...TAKEDOWN_SYNC_SKIPS]);
+    expect(takedownSynced("business_schedule: business-only footnote")).toBe(false);
+    expect(takedownSynced("category_guard:name_contradicts: x")).toBe(true);
   });
 
   it("only reads in a dry run", async () => {

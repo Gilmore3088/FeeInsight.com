@@ -39,9 +39,20 @@ type SqlTag = typeof sql;
  * category kinds are read. `unreproduced` (a newer rules version disagreeing with an
  * older one), `not_on_schedule`, `wrong_amount` and `threshold` say nothing about a
  * category and are often restored, so Knox does not learn from them.
+ *
+ * v4, name families (#2068): an exact name learns only from banks that print it the same
+ * way, so "Balance Inquiries" and "Balance Inquiry Fee" each waited for their own two banks.
+ * A name's family is its words with plural "s", fee words and joining words dropped, in
+ * sorted order (`lessonFamily`): "Balance Inquiry Fee" and "Balance Inquiries" are both
+ * "balance inquiry". Families of two words or more learn globally under the same rule as
+ * names (two banks each way, nothing on the other side), and apply only when the exact name
+ * has no lesson. A one-word family ("annual", "additional") is too broad to learn from.
  */
 
-export const KNOX_LESSONS_VERSION = 3;
+export const KNOX_LESSONS_VERSION = 4;
+/** Words a name family leaves out: they say a price is charged, not what for. */
+export const FAMILY_FILLER_WORDS = ["fee", "charge", "cost", "per", "item", "each", "the", "a", "an", "of", "for", "to", "on", "and", "or", "service", "by", "with"] as const;
+const FAMILY_PREFIX = "family:";
 /** `wrongKey` of a person's label, which applies whatever category the rules chose. */
 export const LABEL_WRONG_KEY = "*";
 export const LESSON_MIN_BANKS = 2;
@@ -63,6 +74,27 @@ export type KnoxLessons = Map<string, KnoxLesson>;
 /** The store's name key: letters only, lowercase, single spaces. Same as the SQL below. */
 export function lessonName(feeName: string): string {
   return feeName.toLowerCase().replace(/[^a-z ]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * A name's family (#2068): the store's name key with each word's plural made singular ("ies"
+ * to "y" in words of five letters or more, else a final "s" in words of four or more, not "ss"), filler words left out, and the rest sorted and
+ * deduplicated. Same as `familySql`. An empty string when nothing is left.
+ */
+export function lessonFamily(name: string): string {
+  const words = lessonName(name).split(" ").filter(Boolean)
+    .map((word) => (word.length > 4 && word.endsWith("ies") ? `${word.slice(0, -3)}y` : word.length > 3 && word.endsWith("s") && !word.endsWith("ss") ? word.slice(0, -1) : word))
+    .filter((word) => !(FAMILY_FILLER_WORDS as readonly string[]).includes(word));
+  return [...new Set(words)].sort().join(" ");
+}
+
+/** `lessonFamily` in SQL, over a column already in the store's name key form. */
+function familySql(column: string): string {
+  if (!/^[a-z_][a-z0-9_.]*$/.test(column)) throw new Error("Invalid internal column");
+  const fillers = FAMILY_FILLER_WORDS.map((word) => `'${word}'`).join(",");
+  return `array_to_string(ARRAY(SELECT DISTINCT s FROM (SELECT CASE WHEN length(w) > 4 AND w ~ 'ies$' THEN left(w, -3) || 'y'
+                                                WHEN length(w) > 3 AND w ~ 's$' AND w !~ 'ss$' THEN left(w, -1) ELSE w END AS s
+            FROM unnest(string_to_array(${column}, ' ')) AS w) q WHERE s <> '' AND s NOT IN (${fillers}) ORDER BY s), ' ')`;
 }
 
 function lessonKey(name: string, wrongKey: string, institutionId?: number | null): string {
@@ -117,6 +149,23 @@ export async function loadKnoxLessons(db: SqlTag): Promise<KnoxLessons> {
              AND rs.fee_raw_id IS NULL
           UNION ALL
           SELECT name, canonical_fee_key, 'right', institution_id FROM restored
+        ), families AS MATERIALIZED (
+          SELECT name, ${scope.unsafe(familySql("name"))} AS family FROM (SELECT DISTINCT name FROM judged WHERE name <> '') d
+        ), family_tally AS (
+          SELECT fm.family AS name, j.fee_key,
+                 count(DISTINCT j.institution_id) FILTER (WHERE j.signal = 'wrong') AS wrong_banks,
+                 count(DISTINCT j.institution_id) FILTER (WHERE j.signal = 'right') AS right_banks
+            FROM judged j JOIN families fm ON fm.name = j.name
+           WHERE fm.family LIKE '% %'
+           GROUP BY fm.family, j.fee_key
+        ), family_sides AS (
+          SELECT name,
+                 array_agg(fee_key ORDER BY fee_key) FILTER (WHERE wrong_banks >= ${LESSON_MIN_BANKS} AND right_banks = 0) AS wrong_keys,
+                 array_agg(wrong_banks ORDER BY fee_key) FILTER (WHERE wrong_banks >= ${LESSON_MIN_BANKS} AND right_banks = 0) AS wrong_counts,
+                 array_agg(fee_key ORDER BY fee_key) FILTER (WHERE right_banks >= ${LESSON_MIN_BANKS} AND wrong_banks = 0) AS right_keys,
+                 array_agg(right_banks ORDER BY fee_key) FILTER (WHERE right_banks >= ${LESSON_MIN_BANKS} AND wrong_banks = 0) AS right_counts
+            FROM family_tally
+           GROUP BY name
         ), tally AS (
           SELECT name, fee_key,
                  count(DISTINCT institution_id) FILTER (WHERE signal = 'wrong') AS wrong_banks,
@@ -153,6 +202,14 @@ export async function loadKnoxLessons(db: SqlTag): Promise<KnoxLessons> {
         (SELECT NULL::bigint AS institution_id, s.name, w.fee_key AS wrong_key, r.fee_key AS right_key,
                 w.banks AS wrong_banks, r.banks AS right_banks
           FROM global_sides s,
+               unnest(s.wrong_keys, s.wrong_counts) AS w(fee_key, banks),
+               unnest(s.right_keys, s.right_counts) AS r(fee_key, banks)
+         ORDER BY w.banks DESC
+         LIMIT ${LESSON_LIMIT})
+        UNION ALL
+        (SELECT NULL::bigint AS institution_id, ${FAMILY_PREFIX}::text || s.name, w.fee_key AS wrong_key, r.fee_key AS right_key,
+                w.banks AS wrong_banks, r.banks AS right_banks
+          FROM family_sides s,
                unnest(s.wrong_keys, s.wrong_counts) AS w(fee_key, banks),
                unnest(s.right_keys, s.right_counts) AS r(fee_key, banks)
          ORDER BY w.banks DESC
@@ -195,7 +252,7 @@ export interface LessonApplied {
 
 /**
  * Re-files a fee whose exact name the store says Knox keeps putting in the wrong
- * category: at this bank first, then anywhere.
+ * category: at this bank first, then anywhere, then by its name's family (v4).
  */
 export function applyKnoxLesson(
   candidate: ExtractedFeeCandidate,
@@ -209,10 +266,18 @@ export function applyKnoxLesson(
   // A label that agrees with the rules keeps the global lessons from moving the fee.
   const lesson =
     bankLesson ??
-    (label ? (label.rightKey !== candidate.canonicalHint ? label : undefined) : lessons.get(lessonKey(name, candidate.canonicalHint)));
+    (label
+      ? (label.rightKey !== candidate.canonicalHint ? label : undefined)
+      : lessons.get(lessonKey(name, candidate.canonicalHint)) ?? familyLesson(candidate, lessons));
   if (!lesson) return { candidate, lessonFlag: null };
   return {
     candidate: { ...candidate, canonicalHint: lesson.rightKey },
     lessonFlag: `knox_lesson:${candidate.canonicalHint}->${lesson.rightKey}`,
   };
+}
+
+/** The family lesson for a fee whose exact name has none (v4); none for a one-word family. */
+function familyLesson(candidate: ExtractedFeeCandidate, lessons: KnoxLessons): KnoxLesson | undefined {
+  const family = lessonFamily(candidate.feeName);
+  return family.includes(" ") ? lessons.get(lessonKey(`${FAMILY_PREFIX}${family}`, candidate.canonicalHint)) : undefined;
 }

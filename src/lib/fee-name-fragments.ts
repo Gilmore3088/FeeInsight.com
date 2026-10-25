@@ -44,6 +44,7 @@ export const endsIn = (words: readonly string[], flags = "i") => new RegExp(Stri
  *   and "the" count only in lower case, so "N/A" never fires; "above" ("... not listed above") and
  *   "each" ("Loan Application, each") are real fees and are left out.
  * - `trailing_range`: a dangling "up to" or "per"; never "each".
+ *   #1521: also a name cut before its noun, after a count and an audience word (`DANGLING_AUDIENCE`).
  * - `pronoun`: "will" or "you" (a sentence); not "my", "our", "your", "we" or "i", which name
  *   products ("my Value Checking", "Save Your Way", "i.e.").
  * - `plus`: a leading "+" with no fee noun after it; "+Returned Item Fee" is a list bullet.
@@ -55,6 +56,14 @@ export const LIVE_SENTENCE_END = endsIn(SENTENCE_END_WORDS.filter((word) => !["a
 /** Case-sensitive: "N/A" ends in a capital A and never reads as a dangling article. */
 export const LIVE_SENTENCE_END_ARTICLE = endsIn(["a", "an", "the"], "");
 export const LIVE_PRONOUN = wordsIn(PRONOUN_WORDS.filter((word) => word === "will" || word === "you"));
+/**
+ * #1521: a name that stops on an audience adjective right after a preposition and a count ("of 3",
+ * "after 5", "for each") has lost the noun it described: "Counter Check: A blank page of 3
+ * personal" (checks, 75914), "Daily fee after 5 business" (days, 74142). A `sentence_end`: the line
+ * was cut before its last word. A name whose audience is its own label ("Monthly Service Fee -
+ * Business", "Small Business", "Tier 2 Business") does not match. Knox's `isCutoffName` reads it too.
+ */
+export const DANGLING_AUDIENCE = /\b(?:of|after|within|for|per|up to|over)\s+(?:\d+|each)\s+(?:personal|business|consumer|commercial)\s*$/i;
 /**
  * #1443 switch-on prerequisites: a balanced parenthetical ("Stop Payment (per item, if you request
  * it)") qualifies the fee; a pronoun inside one is not a sentence. Only `pronoun` can sit inside one:
@@ -71,7 +80,7 @@ export function liveFragmentShape(name: string | null | undefined): LiveFragment
   if (!current) return null;
   if (/^\+/.test(current) && !FEE_NOUN.test(current.replace(/^\++\s*/, ""))) return "plus";
   if (LIVE_TRAILING_RANGE.test(current)) return "trailing_range";
-  if (LIVE_SENTENCE_END.test(current) || LIVE_SENTENCE_END_ARTICLE.test(current)) return "sentence_end";
+  if (LIVE_SENTENCE_END.test(current) || LIVE_SENTENCE_END_ARTICLE.test(current) || DANGLING_AUDIENCE.test(current)) return "sentence_end";
   if (LIVE_PRONOUN.test(current)) return "pronoun";
   return null;
 }
