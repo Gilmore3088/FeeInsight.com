@@ -27,7 +27,7 @@ import { detectFormat, documentTypeForFormat } from "@/lib/agents/learning/forma
 import { classifyFetchFailure, countOutcomes, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { runCompanionFetch, type RunCompanionFetchResult } from "./companion-fetch";
 import { addOperatorSchedules, OPERATOR_SCHEDULE_STRATEGY, OPERATOR_SCHEDULES, type OperatorScheduleResult } from "./operator-schedules";
-import { isErrorPageLink } from "./link-coverage";
+import { isArticleLink, isErrorPageLink } from "./link-coverage";
 import { normalizeDocumentUrl } from "@/lib/agents/answer-key-score";
 
 type SqlTag = typeof sql;
@@ -69,6 +69,8 @@ export interface FetchCandidateRow {
   profile_canonical_source_url?: string | null;
   profile_last_source_hash?: string | null;
   profile_last_document_id?: number | string | null;
+  /** A person's correction pinned the profile's remembered address. */
+  profile_locked_by_correction?: boolean | null;
 }
 
 /** The last stored copy of an institution's fee document, for conditional requests. */
@@ -447,7 +449,8 @@ async function selectCandidates(
              inst.consecutive_failures,
              profile.canonical_source_url AS profile_canonical_source_url,
              profile.last_source_hash AS profile_last_source_hash,
-             profile.last_successful_source_document_id AS profile_last_document_id
+             profile.last_successful_source_document_id AS profile_last_document_id,
+             profile.locked_by_correction AS profile_locked_by_correction
         FROM institution_sources inst
         LEFT JOIN institution_source_profiles profile
           ON profile.institution_id = inst.id
@@ -469,7 +472,8 @@ async function selectCandidates(
            inst.consecutive_failures,
            profile.canonical_source_url AS profile_canonical_source_url,
            profile.last_source_hash AS profile_last_source_hash,
-           profile.last_successful_source_document_id AS profile_last_document_id
+           profile.last_successful_source_document_id AS profile_last_document_id,
+           profile.locked_by_correction AS profile_locked_by_correction
       FROM institution_sources inst
       LEFT JOIN institution_source_profiles profile
         ON profile.institution_id = inst.id
@@ -1007,6 +1011,25 @@ export function withRequestedUrl(row: FetchCandidateRow, institutionId?: number,
   return { ...row, profile_canonical_source_url: null };
 }
 
+/**
+ * Pure: the candidate without a remembered address that is an article, blog, learning or advice
+ * page (#1774, Magellan's one article rule `isArticleLink`) when the saved fee link is not one.
+ * Every successful read remembers the page it read, so once an article was read as the bank's
+ * main page the plain fetch asked for it every month instead of the saved link: SchoolsFirst
+ * FCU's "/advice/.../dont-get-stung-by-banking-fees/" was fetched on Oct 18 and 19 after
+ * publish had refused its fees, and Knox and Darwin read and verified its $22 and $2 again. The
+ * saved link is fetched instead, and its successful fetch replaces the remembered address. A
+ * person's correction keeps its address; a saved link that is itself an article is left to
+ * discovery's upgrade search, which looks for the real schedule and keeps the link meanwhile.
+ */
+export function withoutArticleRemembered(row: FetchCandidateRow): FetchCandidateRow {
+  if (row.profile_locked_by_correction === true) return row;
+  const remembered = normalizeHttpUrl(row.profile_canonical_source_url ?? null);
+  const saved = normalizeHttpUrl(row.fee_schedule_url);
+  if (!remembered || !saved || !isArticleLink(remembered) || isArticleLink(saved)) return row;
+  return { ...row, profile_canonical_source_url: null };
+}
+
 /** Same host (without `www.`) and path (without a trailing slash); scheme, port and query aside. */
 export function samePage(a: string, b: string): boolean {
   const key = (value: string) => {
@@ -1032,7 +1055,7 @@ export async function runMagellanFetch(
   const results: FetchResult[] = [];
   let supersededCopies = 0;
   for (const candidate of rows) {
-    const row = withRequestedUrl(candidate, options.institutionId, options.requestedUrl);
+    const row = withRequestedUrl(withoutArticleRemembered(candidate), options.institutionId, options.requestedUrl);
     const fetched = await fetchAndRecordLink(db, row, fetchImpl, {
       learning,
       vaultSchema,

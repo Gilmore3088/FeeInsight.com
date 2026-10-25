@@ -638,3 +638,39 @@ describe("brokerage, wealth and loan pages are not deposit fee documents (#1442)
     expect(isNonDepositLink("Fee Schedule", "https://bank.example/fee-schedule")).toBe(false);
   });
 });
+
+describe("article, learning and advice pages are never companions (#1774)", () => {
+  // Links the companion finder stored as account pages on prod (read-only, Oct 25); each one's
+  // link text names an account, and each one's figures were national or a third party's.
+  const at = (url: string, label: string) => classifyCompanionLink({ url, label }, new URL(new URL(url).origin));
+
+  it("refuses the stored article pages by their address", () => {
+    expect(at("https://www.td.com/us/en/personal-banking/learning/money-management/types-of-checking-accounts", "checking account")).toBeNull();
+    expect(at("https://www.td.com/us/en/personal-banking/learning/money-management/open-a-checking-account-online", "opening a checking account")).toBeNull();
+    expect(at("https://security1stbank.com/2022/01/how-to-choose-between-a-time-deposit-or-money-market-account/?_rt=M3wxfGZlZSBzY2hlZHVsZXwxNzkyMzE4OTUw&", "How To Choose Between A Time Deposit Or Money Market Account")).toBeNull();
+    expect(at("https://www.idahofirstbank.com/post/top-5-checking-account-myths/", "Top 5 Checking Account Myths")).toBeNull();
+    expect(at("https://www.ally.com/stories/save/open-checking-and-savings-accounts/?CP=LP241201", "Open Checking And Savings Accounts")).toBeNull();
+    expect(at("https://www.forbrightbank.com/stories/banking-101/no-fees-growth-savings/", "How No Fees Can Supercharge Your Savings")).toBeNull();
+  });
+
+  it("still takes the same banks' own account pages and fee documents", () => {
+    expect(at("https://security1stbank.com/personal-banking/personal-money-market-accounts/", "Personal Money Market Accounts")?.kind).toBe("account_page");
+    expect(at("https://www.td.com/us/en/personal-banking/checking-accounts", "Checking accounts")?.kind).toBe("account_page");
+    expect(at("https://www.bank.example/education-center/fee-schedule", "Fee Schedule")?.kind).toBe("fee_document");
+    expect(at("https://www.unitedone.example/learn/resources/fee-schedule", "Fee Schedule")?.kind).toBe("fee_document");
+  });
+
+  it("drops an article from a disclosures index's documents", () => {
+    const site = new URL("https://bank.example");
+    const links = [
+      { url: "https://bank.example/blog/2023/documents/checking-tips.html", label: "Download" },
+      { url: "https://bank.example/documents/consumer-information.pdf", label: "Download" },
+      { url: "https://bank.example/documents/important-information.pdf", label: "Download" },
+    ];
+    const found = disclosureIndexDocuments("https://bank.example/agreements-and-disclosures", links, site, new Set());
+    expect(found.map((candidate) => candidate.url)).toEqual([
+      "https://bank.example/documents/consumer-information.pdf",
+      "https://bank.example/documents/important-information.pdf",
+    ]);
+  });
+});
