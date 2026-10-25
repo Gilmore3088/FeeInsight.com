@@ -337,8 +337,9 @@ interface DiscoveryCandidateRow {
   /**
    * Set on every freshness search without a wrong-document finding (#1878, #2615 review): the old
    * document's stated date and its basis when one is known, else the year the older arm read
-   * (`effective_year` or `url_year`, YYYY-01-01, counted to 31 December). A page found replaces the
-   * link only when it states a later date (`statedDateReplaces`).
+   * (`effective_year` or `url_year`, YYYY-01-01, counted to 31 December). A page found that states
+   * a date replaces the link only when that date is later; an undated page is refused only when
+   * the old date is one the old document's text states (`statedDateReplaces`).
    */
   stale_stated_date?: string | null;
   stale_stated_basis?: FreshnessBasis | null;
@@ -495,7 +496,8 @@ export interface RunMagellanDiscoveryResult {
   searchMisses: number;
   /**
    * Freshness searches without a wrong-document finding that found a page but kept the link,
-   * because the page states no later date than the old document (#2615 review). Each is also on
+   * because the page states an earlier or equal date, or states none while the old document's
+   * text states one (#2615 review). Each is also on
    * the bank's attempt (`stated_date_check`).
    */
   statedDateRefusals: StatedDateRefusal[];
@@ -1314,8 +1316,9 @@ export function wrongDocumentAddresses(urls: ReadonlyArray<string | null | undef
 /**
  * Banks whose fee link looks out of date (see FRESHNESS_SEARCH_VERSION), not yet searched
  * for a newer schedule at this version. Their link is kept unless a different page
- * passes the fee-page check and, without a wrong-document finding, states a later date than
- * the old document (`freshnessOldDate`, `statedDateReplaces`; #2615 review).
+ * passes the fee-page check and, without a wrong-document finding, states no date earlier than or
+ * equal to the old document's, nor leaves out a date the old text states (`freshnessOldDate`,
+ * `statedDateReplaces`; #2615 review).
  */
 async function selectStaleCandidates(
   db: SqlTag,
@@ -1510,8 +1513,8 @@ async function selectStaleCandidates(
      LIMIT ${limit}
   `;
   return rows.map(({ stated_date, stated_date_basis, stated_stale, effective_year, url_year, wrong_at, confirmed_at, audit_at, audit_urls, hand_at, hand_urls, ...row }) => {
-    // Every search without a wrong-document finding is held to a later-dated page
-    // (statedDateReplaces): a wrong document is replaced whatever its date.
+    // Every search without a wrong-document finding is held to the old date (statedDateReplaces):
+    // a wrong document is replaced whatever its date.
     const oldDate = wrong_at == null ? freshnessOldDate({ stated_date, stated_date_basis, effective_year, url_year }) : null;
     return {
       ...row,
@@ -1967,7 +1970,7 @@ export async function runMagellanDiscovery(
   // With the companion search on, banks stop early enough to leave it its reserve.
   const { stepDeadline, lastBankStart, bankDeadline } = discoveryTimeBudget(Date.now(), wantSecondDocuments);
   const results: CandidateDiscoveryResult[] = [];
-  // Freshness finds that kept the link because the page found states no later date.
+  // Freshness finds that kept the link because the page found is not known to be newer.
   const statedDateRefusals: StatedDateRefusal[] = [];
   const sharedNames = await loadSharedNameIds(db, rows, dryRun ? undefined : { runId: options.runId, stepId: options.stepId ?? null });
   for (const row of rows) {
@@ -2003,7 +2006,8 @@ export async function runMagellanDiscovery(
         urlIdentity(result.url) !== urlIdentity(row.fee_schedule_url),
     );
     // A freshness search without a wrong-document finding replaces the link only with a page that
-    // states a later date than the old document (or the year the older arm read) (#2615 review).
+    // states a later date than the old document (or the year the older arm read), or states none
+    // while the old date is not one the old document's text states (#2615 review).
     if (upgraded && row.freshness && row.stale_stated_date) {
       const check = statedDateReplaces({
         oldDate: row.stale_stated_date,

@@ -2,7 +2,8 @@
 
 **Lesson:** When Magellan reads a document, record the date the document states, not just when it
 was fetched. A schedule dated more than two years ago goes back to discovery to look for a newer
-one, and its link is replaced only by a page that states a later date. A recent fetch of an old
+one, and its link is replaced only by a page that states a later date (or, when the old date is
+not printed in the old document's text, by a page that states none). A recent fetch of an old
 schedule does not make its prices current; a rate's effective date or an upload folder's year does
 not make a current schedule old.
 
@@ -96,6 +97,17 @@ picks documents from `source_documents` and the fee tier tables, looking up cite
 banks with a document still to date (prod EXPLAIN: 0.1 s for ~480 such documents, 0.9 s while all
 ~25,000 are), and counts live fees in the catalog only for the 200 picked (0.8 s, only on a step
 that picked some).
+
+**Third review fix (same PR, Oct 25):** the guard above refused every undated page, which main
+did not: on main the older arm replaced such links, and prod shows 218 age-triggered freshness v2
+replacements, 32 of the 62 with stored text stating no date. A bank refused once is not searched
+again until `FRESHNESS_SEARCH_VERSION` changes, so about half of those replacements would have been
+lost. An undated page is now refused only when the old date comes from the old document's text
+(`effective_statement` or `printed_date`): there we know the old page states a date the new one
+lacks (hebfcu.org, institution 6072, "accurate as of October 12, 2026"). When the old date is only
+an address year (`url_year`, from the stated-date pass or the older arm) or the older arm's
+`effective_year` (before migration 077 runs), an undated page replaces the link as on main. A page
+that states a date must still state a later one in every case.
 
 **Not yet done:** the public pages do not show "schedule dated 2022, read Oct 2026" yet. That
 belongs to the Page templates lane and needs the columns filled first. A rate's "effective" date is no longer read as the page's date, but a currency line about rates

@@ -192,6 +192,35 @@ describe("statedDateReplaces", () => {
   });
 });
 
+describe("statedDateReplaces: an undated page (#2615 review)", () => {
+  const undated = "FEE SCHEDULE\nOverdraft $30\nWire $25";
+
+  it("replaces a link dated only by its address year or the older arm's effective year, as before the guard", () => {
+    for (const oldBasis of ["url_year", "effective_year"]) {
+      const check = statedDateReplaces({ oldDate: "2021-01-01", oldBasis, candidateUrl: "https://b.example/fees", candidateText: undated, now: NOW });
+      expect(check, oldBasis).toMatchObject({ replaces: true, candidate_date: null, old_basis: oldBasis });
+      expect(check.reason, oldBasis).toMatch(/states no date/);
+    }
+  });
+
+  it("keeps a link whose old document's text states a date", () => {
+    for (const oldBasis of ["effective_statement", "printed_date"]) {
+      const check = statedDateReplaces({ oldDate: "2022-01-01", oldBasis, candidateUrl: "https://b.example/fees", candidateText: undated, now: NOW });
+      expect(check, oldBasis).toMatchObject({ replaces: false, candidate_date: null });
+      expect(check.reason, oldBasis).toMatch(/^kept the link: .*states no date/);
+    }
+  });
+
+  it("still holds a dated page to a later date when the old date is only an address year", () => {
+    const check = statedDateReplaces({ oldDate: "2021-01-01", oldBasis: "url_year", candidateUrl: null, candidateText: "FEE SCHEDULE\nEffective March 1, 2019", now: NOW });
+    expect(check).toMatchObject({ replaces: false, candidate_date: "2019-03-01" });
+  });
+
+  it("keeps hebfcu's link against an undated page: October 12, 2026 is printed on its document (institution 6072)", () => {
+    expect(statedDateReplaces({ oldDate: "2026-10-12", oldBasis: "printed_date", candidateUrl: "https://www.hebfcu.org/fee-schedule", candidateText: undated, now: NOW }).replaces).toBe(false);
+  });
+});
+
 describe("statedDateReplaces: the older freshness arm and rate lines (#2615 review)", () => {
   it("holds a link the older arm sent by its year to a page dated after that year", () => {
     const fromEffectiveYear = { oldDate: "2022-01-01", oldBasis: "effective_year" };

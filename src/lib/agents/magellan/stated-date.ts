@@ -13,8 +13,8 @@ type SqlTag = typeof sql;
  * (`source_documents.stated_date`, `stated_date_basis`, `stated_date_version`; migration
  * 20270110000077) and marks a schedule dated more than `STALE_STATED_MONTHS` ago for the
  * freshness search (`discovery.ts`, `selectStaleCandidates`), which looks for a newer schedule
- * and replaces the bank's link only when a different page passes the fee-page check and states a
- * later date (`statedDateReplaces`).
+ * and replaces the bank's link only when a different page passes the fee-page check and does not
+ * state an earlier or equal date, nor leave out a date the old text states (`statedDateReplaces`).
  *
  * Deterministic, no provider. The date is the latest one the opening `STATED_DATE_SCAN_CHARS`
  * characters state:
@@ -39,8 +39,9 @@ type SqlTag = typeof sql;
  * The latest date wins, so a schedule that announces a later change or prints a later revision
  * counts as newer: the rule can call a schedule current that is old, never the reverse.
  *
- * The freshness search uses the same reader on the page it would put in place of an old one, and
- * replaces the link only when that page states a later date (`statedDateReplaces`).
+ * The freshness search uses the same reader on the page it would put in place of an old one: a
+ * page that states a date replaces the link only when it is later; an undated page is refused only
+ * when the old document's text states a date (`statedDateReplaces`).
  *
  * Before the migration is applied the columns do not exist: `statedDateColumnsReady` is false, the
  * pass reads and writes nothing (`schema_ready: false` in the step detail) and the freshness search
@@ -289,8 +290,11 @@ function lastDayOf(stated: { date: string | null; basis: string | null }): strin
   return stated.basis === "url_year" || stated.basis === "effective_year" ? `${stated.date.slice(0, 4)}-12-31` : stated.date;
 }
 
+/** Bases of a date the old document's own text states: only these refuse an undated page found to replace it. */
+export const TEXT_STATED_BASES: ReadonlySet<string> = new Set<StatedDateBasis>(["effective_statement", "printed_date"]);
+
 export interface StatedDateReplacement {
-  /** True when the candidate page states a date later than the old document's. */
+  /** True when the candidate page states a later date, or states none and the old date is not text-stated. */
   replaces: boolean;
   old_date: string;
   old_basis: string | null;
@@ -303,11 +307,19 @@ export interface StatedDateReplacement {
 
 /**
  * Whether a page the freshness search found may replace a link the search was sent to for its age
- * (#2615 review): only when the page's own text states a later date than the old document. The old
- * date is the document's stated date when one is known, else the year the older arm read, counted
- * to 31 December. A page that states no date is not known to be newer, so the link stays; the
- * candidate's address year is not read (it says when a file was put up, not what it prices), nor
- * a dated line about rates ("Rates current as of October 24, 2026": `skipRateLines`). Pure.
+ * (#2615 review). The old date is the document's stated date when one is known, else the year the
+ * older arm read, counted to 31 December.
+ *   - A page that states a date replaces the link only when that date is later than the old one,
+ *     whatever the old date came from.
+ *   - A page that states no date is refused only when the old document's own text states one
+ *     (`effective_statement` or `printed_date`, `TEXT_STATED_BASES`): a dated schedule is not given
+ *     up for an undated page (institution 6072). When the old date is only a year from the address
+ *     (`url_year`) or the older arm's `effective_year`, nothing says the old page states a date the
+ *     new one lacks, so an undated page replaces the link as it did before the guard (#2615 review:
+ *     32 of the 62 age-triggered freshness v2 replacements with stored text state no date).
+ * The candidate's address year is never read (it says when a file was put up, not what it
+ * prices), nor a dated line about rates ("Rates current as of October 24, 2026": `skipRateLines`).
+ * Pure.
  */
 export function statedDateReplaces(input: {
   oldDate: string;
@@ -327,7 +339,10 @@ export function statedDateReplaces(input: {
     candidate_evidence: candidate.evidence,
   };
   if (!candidate.date) {
-    return { ...base, replaces: false, reason: `kept the link: the page found states no date, so it is not known to be newer than ${base.old_date}` };
+    if (TEXT_STATED_BASES.has(input.oldBasis ?? "")) {
+      return { ...base, replaces: false, reason: `kept the link: the page found states no date, so it is not known to be newer than ${base.old_date}, which the old document states` };
+    }
+    return { ...base, replaces: true, reason: `the page found states no date and the old date ${base.old_date} (${input.oldBasis ?? "unknown"}) is not one the old document states` };
   }
   if (candidate.date <= oldLast) {
     return { ...base, replaces: false, reason: `kept the link: the page found is dated ${candidate.date}, not later than ${base.old_date}` };

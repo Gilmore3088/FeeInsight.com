@@ -232,8 +232,9 @@ and `detail.method_version`).
   A bank whose link's document states a date more than 24 months old (`stated-date.ts`, below)
   is picked too, once at this version.
   A different page that passes the fee-page check replaces the link (the old one is not
-  kept); the same page or a miss changes nothing. Without a wrong-document finding the page
-  must also state a later date than the old document (`freshnessOldDate`,
+  kept); the same page or a miss changes nothing. Without a wrong-document finding a page
+  that states a date must state a later one than the old document, and an undated page is
+  refused when the old document's text states a date (`freshnessOldDate`,
   `statedDateReplaces`, below); a wrong-document search is not held to a date.
 - URLs in `institution_source_profiles.rejected_source_urls` (one entry per URL) are
   not proposed again for that bank for 90 days (`REJECTED_URL_TTL_DAYS`), count against
@@ -506,16 +507,21 @@ the counts and up to 10 stale samples with the words the date was read from (ste
 A bank whose link's own document (its last main fetch, or the current copy of the link's page,
 never a companion) states a latest date more than `STALE_STATED_MONTHS` (24) ago is picked once by
 the freshness search (stale reason "schedule dated YYYY-MM-DD (basis)"). Every freshness search
-without a wrong-document finding, whichever arm picked it, replaces the link only when the page it
-finds states a later date by the same reader (`statedDateReplaces`) than the old document's stated
-date, or, when none is known, than the year the older arm read (its "Effective" year or address
-year, counted to 31 December; `freshnessOldDate`). hebfcu.org's link
+without a wrong-document finding, whichever arm picked it, is held to the old date
+(`statedDateReplaces`): the old document's stated date, or, when none is known, the year the older
+arm read (its "Effective" year or address year, counted to 31 December; `freshnessOldDate`). A page
+found that states a date (by the same reader) replaces the link only when that date is later. A page
+that states no date is refused only when the old date comes from the old document's text
+(`effective_statement` or `printed_date`, `TEXT_STATED_BASES`); when it is only an address year or
+the older arm's effective year, an undated page replaces the link as it did before the guard (about
+half of the age-triggered freshness v2 replacements with stored text state no date). hebfcu.org's link
 `/wp-content/uploads/2022/03/TISA.pdf` names 2022 but says "accurate as of October 12, 2026", so a
 page found must state a date after that. On the page found, a dated line whose sentence names rates
 (rates, APY, dividends, interest, yields) and not fees or a schedule does not count
 (`skipRateLines`): "Rates current as of October 24, 2026" says when rates were set. Stored
 documents are dated without that rule (doc 32498's only current line is about its rates). A page
-that states no date, or an older or equal one, leaves the link as it is, and the refusal is kept on
+that states an older or equal date, or no date against a text-stated old date, leaves the link as
+it is, and the refusal is kept on
 the attempt (`detail.stated_date_check`) and counted in the step detail (`stated_date_refusals`).
 A wrong-document search is not held to a date. The pass picks its documents from
 `source_documents` and the fee tier tables (cited first, looked up only for banks with a document
