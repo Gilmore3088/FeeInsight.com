@@ -14,7 +14,7 @@ only the next fee's words, or in a footnote. Knox v114 (#2637) leaves a generic 
 on purpose, and the category guard read only the name (and, since v84, a service cell or heading
 before a bare "Monthly fee"), so nothing read the words right after the price.
 **Fix:** one matcher, `paperStatementPriceOnLine` (`src/lib/paper-statement-price.ts`), reads the
-fee's own line at its price. Knox rules v116 (`paperStatementRead`) files such a read as the paper
+fee's own line at its price. Knox rules v117 (`paperStatementRead`) files such a read as the paper
 statement fee. Category guard v92 fails a live or new maintenance fee whose line prices it so and
 re-files it to paper_statement, in Darwin's verify and on Hamilton's live guard (which re-checks every
 live fee on the version bump); paper_statement admits its generic name on that line. A fee beside a

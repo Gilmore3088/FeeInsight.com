@@ -1116,7 +1116,7 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // the wording, so no fee is held, re-filed or taken down.
 // v92 (Oct 25, #1947): a monthly maintenance fee whose own source line prices it as the paper
 // statement charge (`paperStatementOnLine`, read with `paperStatementPriceOnLine`, the matcher Knox
-// v116 files with: "Service charge | $3.00 paper statement fee each statement cycle", "A $2 paper
+// v117 files with: "Service charge | $3.00 paper statement fee each statement cycle", "A $2 paper
 // statement fee applies", "*A monthly fee of $3 applies if you choose to receive paper statements",
 // TD's "Paper statements: $3 monthly fee") fails monthly maintenance and re-files to paper_statement
 // (`refileFromLine`), which admits its generic name on that line. The account's own price for paper

@@ -1073,7 +1073,8 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   `card_program_document`, `card_program_documents`, `card_program_institutions`,
   `kept_card_purchase`, `card_program_switch_live` and `samples_card_program_document`. Magellan's
   companion filter skips these documents too. A card program's section inside one fee page (Navy
-  Federal's "GO Prepaid Cards", #1905) has no address of its own and is not caught here.
+  Federal's "GO Prepaid Cards", #1905) has no address of its own and is not caught here; the
+  card program section re-check below reads it.
 - Spanish copies of an English schedule (`translated-copy-check.ts`, #1909, James's live-fee check
   Oct 18). M&T publishes its checking fee guide in English and Spanish, both were read, and "Cargo
   por sobregiro" $15 sat beside "Overdraft Fee" $15. A live fee comes down only when its document's
@@ -1168,6 +1169,24 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   `late_charge_bound: <name>` (verified row rejected with the `late_charge_bound` flag). Step
   detail `late_charge_bound_check`. Dry run Oct 25: 5 live fees at 3 institutions (15729, 154636,
   154637 at 4956; 79880 at 5338; 124614 at 6789).
+- Card program sections of a general schedule (`card-program-section-check.ts`, #1908, #1905). Navy
+  Federal's fees page prints "Prepaid and Gift Cards" / "GO Prepaid Cards" sections after its deposit
+  fees, and their "Lost/Stolen Card" $5 and Visa/PLUS ATM $1 rows went live as the account's fees on
+  every re-read (three hand takedowns). A live dollar fee comes down when every line of its document's
+  latest stored text that prints its name at its price sits in such a section (`cardProgramSectionFee`
+  in `src/lib/custom-report/card-program-section.ts`, the same rule Knox v116 applies before reading),
+  except the card's purchase and reload prices (`CARD_PROGRAM_KEEP_KEYS`). Only documents whose text
+  names a card program (`CARD_PROGRAM_TEXT_SQL`, a plain alternation) are read, at most hourly, newest
+  text first, at most 2,000 documents (the step detail says `truncated` when it hits the limit; the
+  read took about 6 s for all 1,985 such documents on Oct 25); an institution-scoped run always reads
+  and does not restart the clock. The switch is the code constant
+  `CARD_PROGRAM_SECTION_TAKEDOWN_LIVE`, on since 2026-10-25 with James's yes (all 12 dry-run fees were
+  read against the bank text and are the card's); on, a match goes through the 12-hour second look
+  (`darwin.card_program_section`) and is archived with `card_program_section: #<doc>` (batch
+  `darwin-card-program-section-<run>`, verified row rejected with the `card_program_section` flag;
+  event `darwin.card_program_section_takedown`). Step detail `card_program_section_check`. Dry run
+  (prod, read-only, Oct 25, `cardProgramSectionFeesSql`): 12 live fees on 9 documents at 9
+  institutions; 35 purchase or reload prices in such sections stay.
 - One printed line, two reads (`line-conflict-check.ts`, #1440). James's catalog review (Oct 15)
   found live fees sharing institution, name, amount and source address under two categories (1st
   Summit's "Prepaid Card" $5 as document reproduction and gift card purchase) or one category with
@@ -1635,7 +1654,7 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   raw rows carry the wording.
 - v92 (Oct 25, #1947): a
   monthly maintenance fee whose own source line prices it as the paper statement charge
-  (`paperStatementPriceOnLine` in `src/lib/paper-statement-price.ts`, shared with Knox v116: "Service
+  (`paperStatementPriceOnLine` in `src/lib/paper-statement-price.ts`, shared with Knox v117: "Service
   charge | $3.00 paper statement fee each statement cycle", "A $2 paper statement fee applies", "*A
   monthly fee of $3 applies if you choose to receive paper statements", TD's "Paper statements: $3
   monthly fee") fails monthly maintenance and re-files to paper_statement, here in verify and on
@@ -1977,6 +1996,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `PRODUCT_PAGE_REPEAT_CHECK_VERSION` | `darwin.product_page_repeat` | v2 | `darwin/product-page-repeat-check.ts` |
 | `CANADIAN_DOCUMENT_CHECK_VERSION` | `darwin.canadian_document` | v1 | `darwin/canadian-document-check.ts` |
 | `LATE_CHARGE_BOUND_CHECK_VERSION` | `darwin.late_charge_bound` | v1 | `darwin/late-charge-bound-check.ts` |
+| `CARD_PROGRAM_SECTION_CHECK_VERSION` | `darwin.card_program_section` | v1 | `darwin/card-program-section-check.ts` |
 | `DOCUMENT_OWNER_STRATEGY` | `verify.document_owner` | v1 | `darwin/document-owner.ts` |
 | `DARWIN_VERIFY_STRATEGY` | `verify.rules` | v3 | `darwin/verify.ts` |
 | `DARWIN_SOURCE_CHECK_VERSION` | — | v3 | `darwin/verify.ts` |

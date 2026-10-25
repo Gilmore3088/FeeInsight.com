@@ -24,6 +24,12 @@
  * `wrong_institution`, another quarter's `wrong_period`, a year-to-date total stated as a quarter
  * (or the reverse) `wrong_basis`, and another institution's figure stated as "your" own
  * `account_as_subject`. A sentence that does not name the figure's metric does not bind to it.
+ * A filed fee-income change (a percent change between two filed standalone quarters,
+ * claim-evidence.ts; #1077 defect 10) binds only where the sentence states the span it is over
+ * (a year: "over four quarters", "from a year earlier", "Q2 2025 to Q2 2026"; a quarter: "from the
+ * prior quarter") and its direction, for the institution and quarter it is: another span or
+ * quarter is `wrong_period`, the other direction `wrong_direction`. A change that names no quarter
+ * is the latest one; an older quarter's change at that value is `wrong_period`.
  *
  * The reader's question is checked too (#1077, claim contract step 3). A figure a question
  * sentence asserts as a named institution's own fee ("Bank A raised its fee to $35", "its $5 paper
@@ -335,6 +341,30 @@ const YEAR_EARLIER = /\b(?:a|one)\s+year\s+(?:earlier|ago|before)\b|\bsame\s+qua
 /** A running total: "total", "brings/bringing ... to", "in all". Not a year-to-date word (YTD_WORDS); its basis is unknown. */
 const RUNNING_TOTAL = /\btotals?\b|\b(?:brings?|bringing|brought)\b.{0,60}\bto\b|\bin all\b/i;
 
+/** A change stated over a year, or over one quarter, beside YEAR_EARLIER and PRIOR_QUARTER. */
+const YEAR_SPAN = /\byear[- ](?:over|on)[- ]year\b|\byoy\b|\b(?:four|4)[- ]quarters?\b|\b(?:twelve|12)[- ]months?\b|\bfrom (?:a|one|the prior|the previous|last) year\b/i;
+const QUARTER_SPAN = /\bquarter[- ](?:over|on)[- ]quarter\b|\bqoq\b|\bsequential(?:ly)?\b|\blinked[- ]quarter\b/i;
+/** The span words a direction reader must not take for "over" or "up": masked before it reads. */
+const SPAN_PHRASE = /\b(?:year|quarter)[- ](?:over|on)[- ](?:year|quarter)\b|\b(?:over|across|during)\s+(?:the\s+)?(?:last\s+|past\s+|prior\s+|previous\s+|trailing\s+)?(?:four|4|twelve|12|one|a)[- ]?(?:quarters?|months?|year)\b/gi;
+
+/** How many quarters back a "2026-Q2" quarter is from another. */
+function quartersBetween(from: string, to: string): number {
+  const index = (q: string) => Number(q.slice(0, 4)) * 4 + Number(q.slice(6));
+  return index(to) - index(from);
+}
+
+/**
+ * The span a change in the clause is over, in quarters: the two quarters it names, else a year or
+ * one quarter by its words; null when it says neither, or both.
+ */
+function statedSpan(clause: string, quarters: readonly string[]): number | null {
+  if (quarters.length === 2) return Math.abs(quartersBetween(quarters[0], quarters[1]));
+  if (quarters.length > 2) return null;
+  const year = YEAR_EARLIER.test(clause) || YEAR_SPAN.test(clause);
+  const quarter = PRIOR_QUARTER.test(clause) || QUARTER_SPAN.test(clause);
+  return year === quarter ? null : year ? 4 : 1;
+}
+
 function shiftQuarter(quarter: string, back: number): string {
   const index = Number(quarter.slice(0, 4)) * 4 + Number(quarter.slice(6)) - 1 - back;
   return `${Math.floor(index / 4)}-Q${(index % 4) + 1}`;
@@ -409,12 +439,18 @@ function periodOf(fact: EvidenceRecord): string | null {
   return fact.scope.reportingDate;
 }
 
-/** Same institution, fee, product, frequency and unit, different values from different documents. */
+/** One fee's key: institution, fee, product, frequency and unit. */
+const feeKey = (fact: HamiltonEvidenceFact) => [fact.scope.institutionId, fact.scope.feeCategory, fact.scope.product?.trim().toLowerCase(),
+  normalizeFrequency(fact.frequency), fact.unit].join("|");
+
+/**
+ * Same fee and reporting period, different values from different documents. Records of one fee
+ * for different periods are not a conflict: the later one supersedes the earlier (`supersededFees`).
+ */
 function conflictGroups(facts: HamiltonEvidenceFact[]): Map<string, HamiltonEvidenceFact[]> {
   const groups = new Map<string, HamiltonEvidenceFact[]>();
   for (const fact of facts) {
-    const key = [fact.scope.institutionId, fact.scope.feeCategory, fact.scope.product?.trim().toLowerCase(),
-      normalizeFrequency(fact.frequency), fact.unit].join("|");
+    const key = `${feeKey(fact)}|${periodOf(fact) ?? ""}`;
     groups.set(key, [...(groups.get(key) ?? []), fact]);
   }
   const conflicts = new Map<string, HamiltonEvidenceFact[]>();
@@ -424,6 +460,18 @@ function conflictGroups(facts: HamiltonEvidenceFact[]): Map<string, HamiltonEvid
     if (values.size > 1 && documents.size > 1) conflicts.set(key, members);
   }
   return conflicts;
+}
+
+/** Dated fee records a later-dated record of the same fee replaces: history, never the current fee. */
+function supersededFees(facts: readonly HamiltonEvidenceFact[]): Set<string> {
+  const latest = new Map<string, string>();
+  const dated = facts.filter((fact) => !claimRecord(fact) && periodOf(fact) !== null);
+  for (const fact of dated) {
+    const key = feeKey(fact);
+    const date = periodOf(fact) as string;
+    if (!latest.has(key) || date > (latest.get(key) as string)) latest.set(key, date);
+  }
+  return new Set(dated.filter((fact) => (periodOf(fact) as string) < (latest.get(feeKey(fact)) as string)).map((fact) => fact.id));
 }
 
 function money(value: number): string {
@@ -478,6 +526,7 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
   const validDerivations = derivations.filter((derived) => derivationHolds(derived, byId));
   const conflicts = conflictGroups(validFacts);
   const conflicted = new Set([...conflicts.values()].flat().map((fact) => fact.id));
+  const superseded = supersededFees(validFacts);
   const asked = input.question ? extractFigures(input.question) : [];
   const hasEvidence = validFacts.length + validDerivations.length + unsourcedFacts.length > 0;
 
@@ -619,6 +668,69 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
       return null;
     };
 
+    /**
+     * Whether a filed fee-income change fits the figure's clause, once claimFit has checked its
+     * institution, metric, quarter and basis: the span the clause states must be the change's
+     * (its two inputs' quarters), any quarter it names one of those two, and its direction the
+     * change's sign. A clause that states no span or no direction binds nothing ("skip"); one that
+     * names no period is the latest change of that span for that institution.
+     */
+    const changeQuarters = (derived: HamiltonDerivedFact) => {
+      const [current, baseline] = derived.derivation.inputFactIds.map((id) => byId.get(id));
+      const to = current ? quarterOf(current) : null;
+      const from = baseline ? quarterOf(baseline) : null;
+      return to && from ? { to, from, span: quartersBetween(from, to) } : null;
+    };
+    const changeFit = (derived: HamiltonDerivedFact, figure: NarrativeFigure): OmitReason | "skip" | null => {
+      const owner = derived.scope.institutionId;
+      const quartersOf = changeQuarters(derived);
+      if (!metricNamed(text, derived.scope.metric as string) || owner === null || claimSubjects === null || !quartersOf) return "skip";
+      if (claimSubjects.length > 0 && !claimSubjects.includes(owner)) return personal ? "account_as_subject" : "wrong_institution";
+      const { to, from, span } = quartersOf;
+      const clause = clauses[figures.indexOf(figure)] ?? text;
+      const clauseYears = [...clause.matchAll(YEAR)].map((m) => m[1]);
+      const named = statedQuarters(clause, clauseYears.length > 0 ? clauseYears : years);
+      if (statedBasis(clause) === "ytd") return "wrong_basis";
+      const stated = statedSpan(clause, named);
+      if (stated === null) return "skip";
+      // "Q2 2026 from a year earlier" names the change's own quarter; any other quarter, or another span, is another change.
+      if (stated !== span || named.some((quarter) => quarter !== to && quarter !== from) || (named.length > 0 && !named.includes(to))) return "wrong_period";
+      const statedYears = clauseYears.length > 0 ? clauseYears : years;
+      if (named.length === 0 && statedYears.length > 0 && !statedYears.includes(to.slice(0, 4))) return "wrong_period";
+      if (named.length === 0 && statedYears.length === 0) {
+        // No period named: the latest change over that span for that institution is the one meant.
+        const later = validDerivations.some((other) => other.derivation.kind === "percent_change" && other.id !== derived.id
+          && other.scope.institutionId === owner && other.scope.metric === derived.scope.metric
+          && changeQuarters(other)?.span === span && String(other.scope.reportingDate) > String(derived.scope.reportingDate));
+        if (later) return "wrong_period";
+      }
+      const sign = Math.sign(derived.value as number);
+      // "over four quarters" and "year over year" name the span, not a rise.
+      const direction = directionNear(text.replace(SPAN_PHRASE, (m) => " ".repeat(m.length)), figure);
+      if (sign !== 0 && direction !== 0 && direction !== sign) return "wrong_direction";
+      return sign !== 0 && direction === 0 ? "skip" : null;
+    };
+
+    /**
+     * True when the clause states a fee-income change over a span (a year, a quarter) for one
+     * institution whose filed standalone quarters include the quarter it is for (the one it names,
+     * else the latest) but not the baseline: a missing filing quarter, over which no change is
+     * derived. A change taken over a longer span is never that span's change.
+     */
+    const baselineMissing = (figure: NarrativeFigure): boolean => {
+      if (claimSubjects?.length !== 1 || !metricNamed(text, "service_charge_income")) return false;
+      const owner = claimSubjects[0];
+      const clause = clauses[figures.indexOf(figure)] ?? text;
+      const clauseYears = [...clause.matchAll(YEAR)].map((m) => m[1]);
+      const named = statedQuarters(clause, clauseYears.length > 0 ? clauseYears : years).sort();
+      const span = statedSpan(clause, named);
+      if (span === null) return false;
+      const filed = new Set(validFacts.filter((fact) => claimRecord(fact) && fact.scope.institutionId === owner
+        && fact.scope.metric === "service_charge_income" && fact.scope.periodBasis === "standalone_quarter").map(quarterOf));
+      const current = named.at(-1) ?? [...filed].filter((q): q is string => q !== null).sort().at(-1);
+      return !!current && filed.has(current) && !filed.has(shiftQuarter(current, span));
+    };
+
     const outcome = (figure: NarrativeFigure): FigureOutcome => {
       const tolerance = Math.max(figure.tolerance, 0.005);
       const unit = figure.kind === "usd" ? "usd" : "percent";
@@ -667,23 +779,31 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
         const factPeriod = inPeriod(fact);
         if (factPeriod === "no") { contradict("wrong_period"); continue; }
         if (factPeriod === "unknown") continue;
+        // A superseded price binds only where the sentence names its year; with none it is stated as the current fee.
+        if (superseded.has(fact.id) && years.length === 0) { contradict("wrong_period"); continue; }
         if (conflicted.has(fact.id)) { contradict("conflicting_sources"); continue; }
         ids.push(fact.id);
       }
       for (const derived of validDerivations.filter(sameValue)) {
-        if (derived.unit !== unit) { if (derived.unit === "percent") contradict("wrong_unit"); continue; }
+        if (derived.unit !== unit) {
+          // A filing change or ratio at a fee's dollar value is a coincidence unless the sentence names its metric.
+          if (derived.unit === "percent" && (!claimRecord(derived) || metricNamed(text, derived.scope.metric as string))) contradict("wrong_unit");
+          continue;
+        }
         if (!claimBindingMatches({ ...derived, value: Math.abs(derived.value as number) }, { unit, value: figure.value })) continue;
         const kind = derived.derivation.kind;
         if (claimRecord(derived)) {
+          // A filed change states a span, not a quarter, so it is fitted on its own terms.
           // A filed peer median names a group, not an institution; a quarter or ratio is its institution's own figure.
-          const fit = claimFit(derived, kind === "peer_median" ? null : derived.scope.institutionId, figure);
+          const fit = kind === "percent_change" ? changeFit(derived, figure)
+            : claimFit(derived, kind === "peer_median" ? null : derived.scope.institutionId, figure);
           if (fit === "skip") continue;
           if (fit) { contradict(fit, true); continue; }
           if (kind === "peer_median") {
             const named = medianNear(text, figure);
             if (named === "mean") continue;
             if (named === "other") { contradict("median_as_fee", true); continue; }
-          } else if (kind !== "ytd_to_quarter" && kind !== "ratio") continue;
+          } else if (kind !== "ytd_to_quarter" && kind !== "ratio" && kind !== "percent_change") continue;
           ids.push(derived.id, ...derived.derivation.inputFactIds);
           continue;
         }
@@ -723,6 +843,8 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
         if (sign !== 0 && stated === 0) continue;
         ids.push(derived.id, ...derived.derivation.inputFactIds);
       }
+      // A fee-income change over a span whose baseline quarter has no filing (#1077 defect 10): no such change exists.
+      if (ids.length === 0 && unit === "percent" && !found.reason && baselineMissing(figure)) contradict("wrong_period", true);
       if (ids.length > 0) return { kind: "bound", ids };
       if (premise) {
         // Quoted back, supposed, a group's figure, or about someone else: restated as before. Otherwise a record must hold it.

@@ -627,6 +627,16 @@ export const KNOX_LESSONS: AgentLesson[] = [
     since: "2026-10-25",
   },
   {
+    id: "issue-1908-card-program-sections-are-not-account-fees",
+    agent: "knox",
+    stage: "extract",
+    lesson: "A general fee schedule often ends with a prepaid, payroll, gift or travel card section (\"Prepaid and Gift Cards\", \"GO Prepaid Cards\", \"Gift Card Fees\", \"VISA Prepaid Reloadable Card Account Fees and Charges\"). Its rows (inactivity, monthly maintenance, ATM withdrawal, lost or stolen card, overnight delivery) are the card program's fees, not the deposit account's: do not file them under the account's categories. Read the heading above a row until the next heading, prose line or unpriced row; a heading that names a debit card, checking, savings, a credit card or a business is not a card program's, a bulleted line or a row label (\"Visa Gift Card Fee\", \"Reloadable cards Separate schedule Varies\") is not a heading, and a row that names an account or deposit service stays the account's even under a card heading (two-column PDFs interleave). Keep the card's purchase, issue or reload price; it is a real fee in its own category.",
+    why: "Navy Federal's lost-card $5 and GO Prepaid ATM $1 rows were read as the account's card replacement and non-network ATM fees on every re-read of its fees page and taken down by hand three times (#1905, Oct 18, 20 and 21). The document-level rule caught SchoolsFirst's payroll card disclosure by its address (#1908) but no rule read a section inside the bank's own schedule; on Oct 25, 12 more live fees at 9 institutions sat in such sections.",
+    evidence: { issues: [1908, 1905], prs: [], files: ["src/lib/custom-report/card-program-section.ts", "src/lib/agents/knox/specialists.ts", "src/lib/agents/darwin/card-program-section-check.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
+  {
     id: "issue-1947-paper-statement-price-is-not-maintenance",
     agent: "knox",
     stage: "extract",
