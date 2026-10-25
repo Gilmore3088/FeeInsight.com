@@ -93,7 +93,7 @@ export const DEMING_LESSONS: AgentLesson[] = [
     stage: "regression replay",
     lesson: "When a check gets a replayer, replay every case it already confirmed, not only the new ones. A frozen snapshot that holds the fields the check reads (category, name, amount, conditions) is replayable by its check name without rewriting it; a catch that needed context the snapshot never froze stays a candidate, never a pass. Keep audit-only labels out of the replay until a person or a takedown confirms them.",
     why: "The category guard's 1,347 confirmed takedowns were stored as unreplayable cases because the guard had no replayer, so a guard change could let those fees back with no regression alarm; 611 of the 876 stored cases replay as caught from their frozen fields alone.",
-    evidence: { issues: [2064], prs: [0], files: ["src/lib/agents/deming/checkers.ts", "src/lib/agents/deming/regression.ts"] },
+    evidence: { issues: [2064], prs: [2578], files: ["src/lib/agents/deming/checkers.ts", "src/lib/agents/deming/regression.ts"] },
     appliesTo: "all",
     since: "2026-10-25",
   },
