@@ -13,6 +13,7 @@
  */
 
 import { checkNarrativeFigures, extractFigures } from "./figure-check";
+import { numericPayloadValue } from "./monetary-units";
 import { recordValue, writtenSourceLine } from "./board-brief";
 import type { HamiltonIdentitySnapshot } from "./account-context";
 import type { ReportBasketItem } from "./report-basket";
@@ -85,12 +86,16 @@ export function reportFindingSources(claims: ReportFindingClaims | null, identit
  * number (no implicit differences), so a figure traces only to a fact as saved.
  */
 export function findingFactsData(claims: ReportFindingClaims | null): { numeric_arithmetic_allowed: false; facts: Array<Record<string, unknown>> } | null {
-  const facts = (claims?.facts ?? []).filter((fact) => typeof fact.value === "number");
+  // A value saved as a numeric string ("35.00") still counts.
+  const facts = (claims?.facts ?? []).flatMap((fact) => {
+    const value = numericPayloadValue(fact.value);
+    return value == null ? [] : [{ fact, value }];
+  });
   if (!facts.length) return null;
   return {
     numeric_arithmetic_allowed: false,
-    facts: facts.map((fact) => ({
-      fact_id: fact.id, value: fact.value, unit: fact.unit,
+    facts: facts.map(({ fact, value }) => ({
+      fact_id: fact.id, value, unit: fact.unit,
       fee_category: fact.feeCategory, metric: fact.metric, reporting_date: fact.reportingDate,
     })),
   };
@@ -103,7 +108,7 @@ export function findingFactsData(claims: ReportFindingClaims | null): { numeric_
 export function holdUntracedFindingFigures(text: string, claims: ReportFindingClaims | null, sectionData: unknown): { text: string; held: string[] } {
   if (!text) return { text, held: [] };
   const own = findingFactsData(claims);
-  const unmatched = new Set(checkNarrativeFigures(text, own ? [sectionData, own] : [sectionData]).unmatched);
+  const unmatched = new Set(checkNarrativeFigures(text, own ? [own, sectionData] : [sectionData]).unmatched);
   if (!unmatched.size) return { text, held: [] };
   let out = text;
   const figures = extractFigures(text).filter((f) => unmatched.has(f.raw)).sort((a, b) => b.index - a.index);

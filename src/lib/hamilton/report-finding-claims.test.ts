@@ -120,6 +120,14 @@ describe("the answer section's check on a finding's figure fails closed (#1077 d
     expect(checkNarrativeFigures(narrative, sectionData).unmatched).toEqual(["$1.1 million"]);
   });
 
+  it("keeps a finding's carried facts ahead of a large section payload, so the number cap never drops them (review of #2640)", () => {
+    // 1,200 numbers that cannot make $1.1 million: the figure check reads at most 1,000.
+    const big = { ...sectionData, rows: Array.from({ length: 1_200 }, (_, i) => ({ id: 7_000_000 + i * 13 })) };
+    const { context } = readerFindingsSection([askFinding()], big);
+    expect(context).toContain(supported);
+    expect(context).toBe(readerFindingsSection([askFinding()], sectionData).context);
+  });
+
   it("holds a finding figure that neither its carried facts nor the section's data support", () => {
     const { context, data } = readerFindingsSection([positionFinding("Research CU charges $35 for an overdraft; peers sit at $30.")], sectionData);
     expect(context).not.toContain("$35");

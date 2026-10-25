@@ -479,7 +479,8 @@ export async function assembleReportInputs(input: {
     {
       type: "executive_summary",
       title: "The Answer",
-      data: readerFindings.data ? { ...summaryData, reader_finding_facts: readerFindings.data } : summaryData,
+      // The carried facts come first, so the figure check's number cap never drops them.
+      data: readerFindings.data ? { reader_finding_facts: readerFindings.data, ...summaryData } : summaryData,
       context: withTone(
         withExpertRules(
           buildExecutiveSummaryContext(params, institutionName, period) + readerFindings.context,

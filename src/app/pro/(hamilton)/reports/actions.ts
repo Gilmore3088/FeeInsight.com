@@ -155,7 +155,7 @@ export async function previewReportPeerCoverage(
 async function authenticatedReportFindings(raw: unknown, institutionId: string | null): Promise<ReportBasketItem[]> {
   const findings = await Promise.all(sanitizeBasketItems(raw).map(async (item): Promise<ReportBasketItem | null> => {
     if (item.source === "Ask" && item.savedAnalysisId) {
-      // The server-only read: the saved claims are kept here (never in what a browser receives).
+      // The server-only read: claims come only from the saved record, never from what the browser sent.
       const saved = await readSavedAnalysisRecord(item.savedAnalysisId);
       if (!saved || typeof saved.responseJson.hamiltonView !== "string") return null;
       // An answer that failed the evidence gate when it was saved is not a finding to restate.
