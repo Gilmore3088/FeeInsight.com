@@ -4,7 +4,7 @@
  * the real UI message stream helpers; only the provider's `streamText` is a fake.
  */
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   stream: vi.fn(), briefing: vi.fn(), save: vi.fn(), usage: vi.fn(),
@@ -228,5 +228,25 @@ describe("unchanged streams", () => {
     expect(textOf(chunks)).toBe(BOUND);
     expect(finalMetadata(chunks)).not.toHaveProperty("narrativeBinding");
     expect(mocks.save).not.toHaveBeenCalled();
+  });
+});
+
+describe("with HAMILTON_ANSWER_GATE_ENFORCE on (#1077 T4), the real gate", () => {
+  beforeEach(() => { vi.stubEnv("HAMILTON_ANSWER_GATE_ENFORCE", "true"); });
+  afterEach(() => { vi.unstubAllEnvs(); });
+
+  it("still shows a left-out answer in part, never the left-out sentence", async () => {
+    answers(BOUND);
+    const { raw, chunks } = await sse(await POST(request()));
+    expect(raw).not.toContain(LEFT_OUT);
+    expect(textOf(chunks)).toContain(KEPT);
+    expect(mocks.save).toHaveBeenCalledTimes(1);
+  });
+
+  it("holds the admin chat's draft, which streamed whole before, rather than send its left-out sentence", async () => {
+    answers(BOUND);
+    const { raw, chunks } = await sse(await POST(request(null)));
+    expect(raw).not.toContain(LEFT_OUT);
+    expect(textOf(chunks)).toBe("Synthetic held line.");
   });
 });

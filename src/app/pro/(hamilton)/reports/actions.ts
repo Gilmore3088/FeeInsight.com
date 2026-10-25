@@ -12,6 +12,7 @@ import { getFeesByInstitution, getInstitutionById } from "@/lib/data-store";
 import { sql } from "@/lib/data-store/connection";
 import { getInstitutionFeeScheduleEvidence } from "@/lib/data-store/institution";
 import { generateVerifiedSection, type SectionTracking, type VerifiedSectionOutput } from "@/lib/hamilton/generate";
+import { SECTION_GATE_HELD } from "@/lib/hamilton/output-gate-enforce";
 import { bindHamiltonTaskReader, bindHamiltonTaskRun, currentHamiltonTask, HamiltonTaskBudgetError, hamiltonTaskBudgetDetail, runHamiltonTask } from "@/lib/hamilton/task-budget";
 import { runWithHamiltonRetry, type HamiltonFault } from "@/lib/hamilton/task-faults";
 import {
@@ -497,14 +498,20 @@ async function writeReport(params: GenerateReportParams): Promise<GenerateReport
     // Every $ and % in the narrative must trace to the data the model was given.
     const unverified = verifiedSections.flatMap((result) => (result.status === "needs_review" ? result.unmatched : []));
     if (unverified.length > 0) {
+      // A section the one output gate held (HAMILTON_ANSWER_GATE_ENFORCE on) names no figure: it is
+      // recorded as a reason, never as an unverified figure.
+      const figures = unverified.filter((line) => line !== SECTION_GATE_HELD);
+      const gateHeldSections = verifiedSections.filter((result) => result.status === "needs_review" && result.unmatched.includes(SECTION_GATE_HELD)).length;
       await recordReportOutcome("failed", "Report not saved: figures could not be traced to the data.", verifiedSections, {
-        unverified_figures: [...new Set(unverified)],
+        unverified_figures: [...new Set(figures)],
+        ...(gateHeldSections > 0 ? { held_by: "one_output_gate", gate_held_sections: gateHeldSections } : {}),
       });
       return {
         success: false,
-        error:
-          `Hamilton could not verify ${unverified.length === 1 ? "this figure" : "these figures"} against the report data: ` +
-          `${[...new Set(unverified)].join(", ")}. The report was not saved; please try again.`,
+        error: figures.length === 0
+          ? "Hamilton could not verify a statement in this report against the report data. The report was not saved; please try again."
+          : `Hamilton could not verify ${figures.length === 1 ? "this figure" : "these figures"} against the report data: ` +
+            `${[...new Set(figures)].join(", ")}. The report was not saved; please try again.`,
       };
     }
     const [summarySection, strategicSection, recommendationSection] = verifiedSections.map((result) => result.section);
