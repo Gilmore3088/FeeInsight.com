@@ -245,7 +245,14 @@ import { withGluedFootnotePrices } from "@/lib/custom-report/glued-footnote-pric
 // Bank; "$01", Penn Community Bank) is read as $0, never as the footnote's number
 // (`withGluedFootnotePrices`), and the shared check reads the same text (source check v22), so the
 // $3 read is refused wherever it is made. The stale-read floor stays at v97. Name re-tidy stays at v26.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 106 } as const;
+// v107 (#1443): `isCutoffName` reads its sentence shapes (a verb, a pronoun, an "if"/"when" clause)
+// without the closed parentheticals that end the name (`withoutClosedQualifiers`), so "ACH Return
+// Item (fee is per item)" and "Notary fee (this service is for members only)" are full names, not
+// cut off. An unclosed "(", a parenthetical opening the name, and one with words after it still
+// count. v104's glued-sentence cut now runs on fewer names (only ones still cut off), and publish's
+// `cutoff_name` hold, Darwin's release review and Deming's name check read the same function. The
+// stale-read floor stays at v97. Name re-tidy stays at v26.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 107 } as const;
 
 export interface SpecialistRun {
   strategy: string;

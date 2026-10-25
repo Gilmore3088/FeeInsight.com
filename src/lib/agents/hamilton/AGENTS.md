@@ -555,7 +555,11 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     with the entry's reason (`source_mismatch: #<issue>`, or `duplicate of #<kept id> (#<issue>)`
     for a second read of one printed fee); its verified row is rejected
     (`hand_rejected:hand_takedown`), a feedback row and one run event name it, and a ledger line
-    goes on #1026. The same file's `HAND_AUDIENCE_FIXES` (#1302) sets a listed live fee's
+    goes on #1026. The feedback row is charged to the step that erred (#1677): Knox's read
+    (extract, the entry's kind) by default, or Magellan's document (discover, `wrong_document`)
+    when the entry's `lesson` says the page was wrong (a business, brokerage or payroll card page,
+    another bank's); past entries are charged through the append-only
+    `HAND_TAKEDOWN_LESSON_OVERRIDES`, never by editing them. The same file's `HAND_AUDIENCE_FIXES` (#1302) sets a listed live fee's
     audience from its bank's own text while it still reads as listed (verified row, institution,
     category, name, price, old audience): the verified row takes it with `darwin:hand_fix`
     evidence, which the audience trigger keeps, the live row is touched to inherit it, and the
@@ -1345,7 +1349,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `HAMILTON_PUBLISH_STRATEGY` | `publish.rules` | v3 | `hamilton/publish.ts` |
 | `REFRESH_COPY_STRATEGY` | `hamilton.refresh_copy` | v2 | `hamilton/refresh-copy.ts` |
 | `RULES_RECHECK_STRATEGY` | `hamilton.rules_recheck` | v4 | `hamilton/rules-recheck.ts` |
-| `SOURCE_CHECK_STRATEGY` | `hamilton.source_check` | v22 | `hamilton/source-check.ts` |
+| `SOURCE_CHECK_STRATEGY` | `hamilton.source_check` | v23 | `hamilton/source-check.ts` |
 | `SOURCE_LINK_VERSION` | `hamilton.source_link` | v2 | `hamilton/source-link.ts` |
 | `SOURCE_LINK_DRIFT_VERSION` | `hamilton.source_link_drift` | v1 | `hamilton/source-link.ts` |
 | `FEE_DEPENDENCE_VERSION` | — | v1 | `hamilton/studies/fee-dependence.ts` |
