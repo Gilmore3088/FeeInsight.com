@@ -16,8 +16,8 @@ row, so U.S. Bank's ATM value was $2.75 ($2.50 Safe Debit + $3.00 general) and i
 $3.325 ($1.65 + $5.00), prices no customer is charged.
 
 **Cause:** the per-institution reducer (`valuePerInstitution`, `institutionValue`) and its SQL
-copies (`CASE WHEN overdraft THEN MAX ELSE percentile_cont END` in market-study, state-visuals,
-local-market and Hamilton's studies) had no notion of applicability. Product metadata alone does
+copies (`CASE WHEN overdraft THEN MAX ELSE percentile_cont END`, written out by hand in about
+fifteen readers) had no notion of applicability. Product metadata alone does
 not choose a benchmark policy (#1911 body).
 
 **Fix:**
@@ -27,16 +27,28 @@ not choose a benchmark policy (#1911 body).
 - `statisticsRows` (`src/lib/fee-institution-value.ts`): general rows when any, else all rows.
 - Statistics rule 11 (`fee-stats.ts`): `valuePerInstitution` and `summarizeRates` apply it;
   `STATS_SCHEDULE_KEYS` selects `product_exception` for every reader whose rows reach
-  `summarizeFees`; `institutionValueSql` is the one SQL aggregate (general rows through `FILTER`,
-  `COALESCE` back to all rows) that market-study, state-visuals, local-market and Hamilton's study
-  prices now use. `STATS_METHOD_VERSION` 19 -> 21 so cached figures recompute.
+  `summarizeFees`, and the content, press and benchmark-health readers that call
+  `valuePerInstitution` on their own rows (bernays, od-by-state, market-spread, end-check,
+  benchmark-health, market-snapshot) select it or the product too. `STATS_METHOD_VERSION` 19 -> 21
+  so cached figures recompute.
+- `institutionValueSql` (general rows through `FILTER`, `COALESCE` back to all rows) replaces every
+  hand-written per-institution `CASE WHEN overdraft THEN MAX ELSE PERCENTILE_CONT` outside Darwin:
+  market-study, state-visuals, local-market, geographic (city pages), fees (cheapest and most
+  expensive), search (directory fee focus), alerts, fee-revenue, fee-alerts, pro-digest,
+  competitor-alerts and Hamilton's study prices (`PRICE_STUDY_VERSION` 1 -> 2 so stored studies
+  rebuild). The only per-institution aggregates left as they were are Darwin's peer envelopes
+  (`darwin/peer-checks.ts`, `darwin/learned-envelopes.ts`) and the state peer levels they read
+  (`state-expert/memory.ts`): they decide which fees verify, and a change there would need its own
+  Darwin dry run. Row-pooled admin medians (`admin-queries.ts`) are not per-institution values.
 - The institution page's headline value, `getInstitutionOwnFees`, `getOwnFeesForInstitutions` and
   `getFeeValuesForInstitutions` follow the rule. Exception rows stay listed, named with their product
   ("Personal money order (Safe Debit Account)", `own-fee.ts` `ownFeeName`).
-- Darwin's peer envelopes (`darwin/peer-checks.ts`, `darwin/learned-envelopes.ts`,
-  `state-expert/memory.ts` state peer levels) are unchanged: they decide which fees verify, and a
-  change there would need its own Darwin dry run. This change moves statistics only; no fee is held,
-  re-filed or taken down, so there is no Darwin re-check.
+- The paid report follows it: `custom-report-market.ts` selects each record's product and flag and
+  rebuilds a multi-record amount from the general records; `buildAmountEvidence` does the same and
+  keeps the exception record listed, and the analysis export marks it "priced for <account> only".
+  Hamilton's report comparison (`report-evidence.ts`) and the merger screen's fee rows do the same.
+- This change moves statistics only; no fee is held, re-filed or taken down, so there is no Darwin
+  re-check.
 
 **Live effect (read-only, 2026-10-25, `published_fee_catalog` under `statsRowFilter` and active
 institutions):** 57,987 institution/category values; 17 hold an exception row (17 rows); 1 also
@@ -52,4 +64,5 @@ price, or an unlabeled second account. Today one live value depends on that judg
 **Agent lesson:** hamilton/issue-1911-general-over-product-exception
 
 **Guard:** `src/lib/data-store/fee-stats.test.ts` ("general price over product exceptions"),
-`src/lib/data-store/product-exception-value.db.test.ts` (SQL and TypeScript agree)
+`src/lib/data-store/product-exception-value.db.test.ts` (SQL and TypeScript agree),
+`src/lib/custom-report/evidence.test.ts` ("named account exceptions in the report")

@@ -105,7 +105,7 @@ export function primaryAncillaryProduct(text: string, institutionName?: string |
 export function withAncillaryProduct<T extends { feeName: string; canonicalHint: string; amount?: number | null }>(
   candidate: T, text: string, institutionName?: string | null,
 ): T & { ancillaryProduct?: AncillaryProduct } {
-  if (ACCOUNT_PRICED_CATEGORIES.has(candidate.canonicalHint) ||candidate.amount == null || !(candidate.amount > 0)) return candidate;
+  if (ACCOUNT_PRICED_CATEGORIES.has(candidate.canonicalHint) || candidate.amount == null || !(candidate.amount > 0)) return candidate;
   const owner = primaryAncillaryProduct(text, institutionName);
   if (!owner) return candidate;
   const witness = checkFeeAgainstSource(owner.block, candidate.feeName, candidate.amount, ".", candidate.canonicalHint);

@@ -1,5 +1,5 @@
 import { sql } from "./connection";
-import { COUNT_SHARED_SCHEDULE_ONCE, STATS_ROW_FILTER, STATS_SCHEDULE_KEYS, activeInstitutionFilter, countedValuePerInstitution, summarizeFeesBy, type StatsInputRow } from "./fee-stats";
+import { COUNT_SHARED_SCHEDULE_ONCE, STATS_ROW_FILTER, STATS_SCHEDULE_KEYS, activeInstitutionFilter, countedValuePerInstitution, institutionValueSql, summarizeFeesBy, type StatsInputRow } from "./fee-stats";
 import { consumerPriceMoveSql } from "./consumer-price-moves";
 import type { FeeReview } from "./types";
 import { institutionDisplayName } from "@/lib/institution-display-name";
@@ -213,8 +213,7 @@ export async function getCheapestAndMostExpensive(
     sql`
       WITH per_institution AS (
         SELECT MIN(ef.id) AS id, ef.institution_id, ct.institution_name,
-               CASE WHEN ${category} = 'overdraft' THEN MAX(ef.amount)
-                    ELSE PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ef.amount) END AS amount
+               ${sql.unsafe(institutionValueSql("ef"))} AS amount
         FROM published_fee_catalog ef
         JOIN institution_sources ct ON ef.institution_id = ct.id
         WHERE ef.fee_category = ${category}
@@ -223,7 +222,7 @@ export async function getCheapestAndMostExpensive(
           AND ef.amount >= 0
           AND ${sql.unsafe(STATS_ROW_FILTER)}
           AND ${sql.unsafe(activeInstitutionFilter("ct"))}
-        GROUP BY ef.institution_id, ct.institution_name
+        GROUP BY ef.institution_id, ct.institution_name, ef.fee_category
       )
       SELECT id, institution_id, institution_name, amount
       FROM per_institution
@@ -233,8 +232,7 @@ export async function getCheapestAndMostExpensive(
     sql`
       WITH per_institution AS (
         SELECT MIN(ef.id) AS id, ef.institution_id, ct.institution_name,
-               CASE WHEN ${category} = 'overdraft' THEN MAX(ef.amount)
-                    ELSE PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ef.amount) END AS amount
+               ${sql.unsafe(institutionValueSql("ef"))} AS amount
         FROM published_fee_catalog ef
         JOIN institution_sources ct ON ef.institution_id = ct.id
         WHERE ef.fee_category = ${category}
@@ -243,7 +241,7 @@ export async function getCheapestAndMostExpensive(
           AND ef.amount >= 0
           AND ${sql.unsafe(STATS_ROW_FILTER)}
           AND ${sql.unsafe(activeInstitutionFilter("ct"))}
-        GROUP BY ef.institution_id, ct.institution_name
+        GROUP BY ef.institution_id, ct.institution_name, ef.fee_category
       )
       SELECT id, institution_id, institution_name, amount
       FROM per_institution

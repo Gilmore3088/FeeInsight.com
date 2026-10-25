@@ -4,6 +4,8 @@ import { institutionValue, MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/
 import { isBusinessOnlyLink } from "@/lib/agents/magellan/link-coverage";
 import { basisMismatchReason } from "@/lib/fee-comparability";
 import { isSpecialUnitFrequency, specialUnitReason } from "@/lib/fee-unit";
+import { statisticsRows } from "@/lib/fee-institution-value";
+import { isProductException } from "@/lib/fee-product";
 
 export interface SelectedInstitutionFeeDelta {
   fee_name: string;
@@ -61,6 +63,8 @@ export interface UnlikeFeeComparison {
 interface SelectedInstitutionFeeInput {
   fee_name: string;
   fee_category?: string | null;
+  /** The account the fee is priced for, when the schedule names one (fee-stats.ts rule 11). */
+  account_product_type?: string | null;
   amount: number | null;
   frequency?: string | null;
   review_status: string;
@@ -89,6 +93,7 @@ type SelectedFeeComparisonParams = {
     | "extraction_confidence"
     | "source_url"
     | "frequency"
+    | "account_product_type"
   >[];
   indexEntries: Pick<
     IndexEntry,
@@ -238,7 +243,9 @@ function collapseToCategoryValues<T extends SelectedInstitutionFeeInput>(fees: T
   for (const group of byCategory.values()) {
     const approved = group.filter((fee) => fee.review_status === "approved");
     const used = approved.length > 0 ? approved : group;
-    const amounts = used.map((fee) => toNumber(fee.amount) as number);
+    // Rule 11 (#1911): a named account's exception price beside a general price leaves the value.
+    const amounts = statisticsRows(used, (fee) => isProductException(fee.fee_category, fee.account_product_type))
+      .map((fee) => toNumber(fee.amount) as number);
     const first = used[0];
     const confidences = used.map((fee) => toNumber(fee.extraction_confidence)).filter((c): c is number => c !== null);
     collapsed.push({
@@ -263,6 +270,7 @@ export function buildReportPeerCoveragePreview(params: {
     | "extraction_confidence"
     | "source_url"
     | "frequency"
+    | "account_product_type"
   >[];
   indexEntries: Pick<
     IndexEntry,
