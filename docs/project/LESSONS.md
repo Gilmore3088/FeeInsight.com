@@ -448,8 +448,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — Sign out on the account page and admin used Server Actions that a redeploy breaks. — [finding](findings/2026-10-09-sign-out-server-action.md) — Guard: `src/app/api/auth/logout/route.test.ts:30`
 - 2026-10-09 — A refunded report kept its paid status and its private link. — [finding](findings/2026-10-09-report-refund-not-handled.md) — Guard: `src/lib/stripe-webhook.test.ts` (+1 more)
 
-### Hamilton workspace (19)
+### Hamilton workspace (20)
 
+- 2026-10-25 — A figure or change the question states as fact needs a record like any other; a cause stated with a material claim is unsupported whatever data the answer holds. — [finding](findings/2026-10-25-claim-premise-causation.md) — Guard: `src/lib/hamilton/claim-premise-causation.test.ts`, `src/lib/hamilton/claim-golden-set.test.ts`
 - 2026-10-25 — A filing figure is supported only by a fact of the institution, metric, quarter and period basis the sentence states; a sentence whose owner or metric is unknown binds nothing. — [finding](findings/2026-10-25-claim-sentence-binding.md) — Guard: `src/lib/hamilton/claim-sentence-binding.test.ts`, `src/lib/hamilton/claim-golden-set.test.ts`
 - 2026-10-25 — Give a filing figure a fact ID only through the validator that already reads it, with its period basis in the ID. — [finding](findings/2026-10-25-claim-fact-ids.md) — Guard: `src/lib/hamilton/claim-evidence.test.ts`
 - 2026-10-25 — Before changing a check, record what it does today on cases built to break it and mark the ones it gets wrong (10 of 25 for Hamilton's answer checks). — [finding](findings/2026-10-25-claim-golden-set.md) — Guard: `src/lib/hamilton/claim-golden-set.test.ts` (recorded outcomes, held-out check)

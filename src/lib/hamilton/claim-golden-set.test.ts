@@ -42,23 +42,23 @@ describe("Hamilton claim golden set: today's behaviour, recorded (#1077, step 0)
       if (c.control) expect(c.target, c.id).toEqual({ status: "validated", reasons: [] });
       else expect(c.target.reasons.length, c.id).toBeGreaterThan(0);
     }
-    expect(run.todayWrong).toBe(7);
+    expect(run.todayWrong).toBe(0);
     expect(run.total).toBe(28);
   });
 
-  it("measures the two holes the design names", () => {
-    // A figure the question names passes unchecked (figure-check.ts, narrative-bound.ts "asked").
-    const asked = CLAIM_GOLDEN_CASES.filter((c) => c.holes?.includes("asked_figure_passes")).map((c) => c.id);
-    expect(asked).toEqual(["wp-fee-restated", "wp-nonexistent-fee"]);
-    // The same pricing-cause words are held with NCUA data and shown without it (answer-interpretations.ts).
+  it("closes the two holes the design names (step 3)", () => {
+    // A figure the question states is no longer supported unchecked: a contradicting record omits it.
+    expect(runClaimGoldenCase(byId("wp-fee-restated")).actual.binding?.omitted).toEqual(["premise_contradicted"]);
+    expect(runClaimGoldenCase(byId("wp-nonexistent-fee")).actual.binding?.omitted).toEqual(["premise_unsupported"]);
+    // The same pricing-cause words are held with NCUA data and without it (answer-interpretations.ts).
     expect(runClaimGoldenCase(byId("ca-financial-pricing")).actual.status).toBe("held");
-    expect(runClaimGoldenCase(byId("ca-fee-only-pricing")).actual.status).toBe("shown");
-    expect(byId("ca-fee-only-pricing").holes).toEqual(["causal_check_needs_ncua"]);
+    expect(runClaimGoldenCase(byId("ca-fee-only-pricing")).actual.status).toBe("held");
+    expect(CLAIM_GOLDEN_CASES.filter((c) => c.holes?.length)).toEqual([]);
   });
 
   it("says plainly that no person has reviewed it, and is held out", () => {
     expect(run.version).toBe(CLAIM_GOLDEN_SET_VERSION);
-    expect(CLAIM_GOLDEN_SET_VERSION).toBe("2026-10-25.3");
+    expect(CLAIM_GOLDEN_SET_VERSION).toBe("2026-10-25.4");
     expect(CLAIM_GOLDEN_REVIEW.status).toBe("unreviewed");
     expect(CLAIM_GOLDEN_REVIEW.record).toBeNull();
     expect(CLAIM_GOLDEN_REVIEW.note).toMatch(/No person has reviewed these cases/);
@@ -83,7 +83,7 @@ describe("Hamilton claim golden set: today's behaviour, recorded (#1077, step 0)
   });
 
   it("fails a case whose recorded outcome is wrong, so the runner can't pass everything", () => {
-    const shown = byId("wp-fee-restated");
+    const shown = byId("wp-fee-corrected");
     expect(runClaimGoldenCase({ ...shown, expect: { ...shown.expect, status: "held" } } as ClaimGoldenCase).pass).toBe(false);
     const held = byId("sb-fee");
     expect(runClaimGoldenCase({ ...held, expect: { ...held.expect, binding: { supported: 0, interpretation: 0, omitted: ["wrong_period"], factIds: [] } } } as ClaimGoldenCase).pass).toBe(false);

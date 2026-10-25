@@ -25,11 +25,21 @@
  * (or the reverse) `wrong_basis`, and another institution's figure stated as "your" own
  * `account_as_subject`. A sentence that does not name the figure's metric does not bind to it.
  *
+ * The reader's question is checked too (#1077, claim contract step 3). A figure the question
+ * states as fact counts only when a record supports it: a sentence that repeats it is left out as
+ * `premise_contradicted` when a record of the same institution and fee says otherwise (a plain
+ * correction line then names both figures), and as `premise_unsupported` when that institution's
+ * records were read and none holds it. A question that says a fee income fell or rose is checked
+ * against the filed quarters, and a question about a narrower income line the filings do not
+ * separate (overdraft revenue) cannot be answered with the broad total. A figure in a question
+ * that only supposes ("what if", "would") may still be restated, as before.
+ *
  * Missing, unavailable and conflicting evidence each add one plain limitation line. No line here
  * invents a figure, and none tells the bank what to do with a fee. Source text (fee names,
  * conditions, document text) is data: it is never read as an instruction and never copied into a
  * limitation line. Deterministic and pure: no model call, no read, no write.
  */
+import { historicalAssertionWithdrawn, refuses } from "./answer-interpretations";
 import { splitIntoSentences } from "./citation-gate";
 import { proseFeeName } from "./workspace/names";
 import {
@@ -60,6 +70,8 @@ export const CONTRADICTED_LIMITATION =
   "Some sentences were left out because a figure in them did not match its fee record.";
 export const FILING_CONTRADICTED_LIMITATION =
   "Some sentences were left out because a figure in them did not match its filing for that institution, quarter or period.";
+export const PREMISE_LIMITATION =
+  "Some sentences were left out because they repeated something from the question that Hamilton's records contradict or do not hold.";
 
 export type OmitReason =
   | "advice"
@@ -75,7 +87,11 @@ export type OmitReason =
   /** A year-to-date filing total stated as a quarter, or a quarter as year to date. */
   | "wrong_basis"
   /** Another institution's filing figure stated as the reader's own ("your"). */
-  | "account_as_subject";
+  | "account_as_subject"
+  /** A figure or change the question states, repeated as fact, that a record of the same institution and fee or measure contradicts. */
+  | "premise_contradicted"
+  /** A figure or measure the question states, repeated as fact, that the records read for that institution do not hold. */
+  | "premise_unsupported";
 
 export interface BoundSentence {
   text: string;
@@ -95,6 +111,12 @@ export interface NarrativeBinding {
    * figure comes from.
    */
   readingBasis?: Array<{ text: string; basis: string }>;
+  /**
+   * Plain lines that correct something the question states and the records contradict, written
+   * from the records (claim contract step 3). Each is also the first of the limitations, so the
+   * screen shows it today.
+   */
+  corrections?: string[];
 }
 
 export interface BindNarrativeInput {
@@ -294,6 +316,8 @@ function statedBasis(text: string): "ytd" | "standalone_quarter" | null {
 /** A period named relative to the sentence's own quarter: "the prior quarter" is one back, "a year earlier" four. */
 const PRIOR_QUARTER = /\b(?:prior|previous|preceding|last)\s+quarter\b|\bquarter\s+before\b/i;
 const YEAR_EARLIER = /\b(?:a|one)\s+year\s+(?:earlier|ago|before)\b|\bsame\s+quarter\s+(?:of\s+)?(?:last|a|the\s+prior|the\s+previous|the\s+preceding)\s+year\b|\b(?:prior|previous)[- ]year\b|\byear[- ](?:earlier|ago)\b/i;
+/** A running total: "total", "brings/bringing ... to", "in all". Not a year-to-date word (YTD_WORDS); its basis is unknown. */
+const RUNNING_TOTAL = /\btotals?\b|\b(?:brings?|bringing|brought)\b.{0,60}\bto\b|\bin all\b/i;
 
 function shiftQuarter(quarter: string, back: number): string {
   const index = Number(quarter.slice(0, 4)) * 4 + Number(quarter.slice(6)) - 1 - back;
@@ -416,6 +440,7 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
   const filingOmitted = new Set<number>();
   const account = input.accountInstitutionId ?? null;
   const research = input.researchInstitutionId ?? null;
+  const premises = questionPremises({ question: input.question, names, validFacts, validDerivations, account, research });
 
   let carried: number[] = [];
   for (const { text } of splitIntoSentences(input.text)) {
@@ -434,6 +459,11 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
     }
     if (findUnrequestedAdvice(text.replace(/"[^"]*"/g, ""))) {
       binding.omitted.push({ text, reason: "advice" });
+      continue;
+    }
+    const premiseReason = hasEvidence ? restatesPremise(text, claimSubjects, premises) : null;
+    if (premiseReason) {
+      binding.omitted.push({ text, reason: premiseReason });
       continue;
     }
     const figures = extractFigures(text);
@@ -462,6 +492,9 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
         // basis is unknown and it binds nothing.
         const others = new Set(clauseBases.filter((b): b is "ytd" | "standalone_quarter" => b !== null));
         if (others.size > 1) return null;
+        // A running total ("bringing its total to $2.6 million", "in all") may be on another basis
+        // than the clause before it, so its basis is unknown and it binds nothing (fails closed).
+        if (RUNNING_TOTAL.test(clause)) return null;
         basis = others.size === 1 ? [...others][0] : null;
       }
       const back = PRIOR_QUARTER.test(clause) ? 1 : YEAR_EARLIER.test(clause) ? 4 : 0;
@@ -503,7 +536,9 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
     const outcome = (figure: NarrativeFigure): FigureOutcome => {
       const tolerance = Math.max(figure.tolerance, 0.005);
       const unit = figure.kind === "usd" ? "usd" : "percent";
-      if (asked.some((q) => q.kind === figure.kind && Math.abs(q.value - figure.value) <= tolerance)) return { kind: "asked" };
+      // A figure from a question that only supposes may be restated; one the question states as fact needs a record.
+      const askedHit = asked.some((q) => q.kind === figure.kind && Math.abs(q.value - figure.value) <= tolerance);
+      if (askedHit && !premises.assertive) return { kind: "asked" };
       const sameValue = (record: EvidenceRecord) =>
         typeof record.value === "number" && Math.abs(Math.abs(record.value) - figure.value) <= tolerance;
       // "yes" when the sentence names no year or the record's own; "no" when the record has another;
@@ -597,6 +632,17 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
         ids.push(derived.id, ...derived.derivation.inputFactIds);
       }
       if (ids.length > 0) return { kind: "bound", ids };
+      if (askedHit) {
+        // Quoted back, supposed, or a group's figure: restated as before. Otherwise a record must hold it.
+        if (SENTENCE_SUPPOSES.test(text) || ATTRIBUTED_TO_QUESTION.test(text) || groupWordNear(text, figure)) return { kind: "asked" };
+        const owners = claimSubjects ?? [];
+        if (premises.figures.some((p) => p.kind === figure.kind && Math.abs(p.value - figure.value) <= tolerance
+          && (owners.length === 0 || owners.includes(p.subject)))) return { kind: "contradicted", reason: "premise_contradicted", filing: false };
+        if (found.reason) return { kind: "contradicted", reason: found.reason, filing: found.filing };
+        if (unsourcedFacts.some((fact) => sameValue(fact) && fact.unit === unit)) return { kind: "unsourced" };
+        if (owners.some((id) => premises.readInstitutions.has(id))) return { kind: "contradicted", reason: "premise_unsupported", filing: false };
+        return { kind: "unmatched" };
+      }
       if (found.reason) return { kind: "contradicted", reason: found.reason, filing: found.filing };
       if (unsourcedFacts.some((fact) => sameValue(fact) && fact.unit === unit)) return { kind: "unsourced" };
       return { kind: "unmatched" };
@@ -632,14 +678,186 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
   }
 
   if (binding.omitted.some((o) => o.reason === "median_as_fee")) limitations.push(MEDIAN_AS_FEE_LIMITATION);
-  const contradictedBy = (filing: boolean) => binding.omitted.some((o, index) => filingOmitted.has(index) === filing
+  const premiseReason = (reason: OmitReason) => reason === "premise_contradicted" || reason === "premise_unsupported";
+  if (binding.omitted.some((o) => premiseReason(o.reason))) limitations.push(PREMISE_LIMITATION);
+  const contradictedBy = (filing: boolean) => binding.omitted.some((o, index) => filingOmitted.has(index) === filing && !premiseReason(o.reason)
     && o.reason !== "advice" && o.reason !== "instruction_text" && o.reason !== "no_evidence" && o.reason !== "conflicting_sources" && o.reason !== "median_as_fee");
   if (contradictedBy(false)) limitations.push(CONTRADICTED_LIMITATION);
   if (contradictedBy(true)) limitations.push(FILING_CONTRADICTED_LIMITATION);
   limitations.push(...conflictLines.values());
   if (binding.interpretation.length > 0) limitations.push(INTERPRETATION_LIMITATION);
-  binding.limitations = [...new Set(limitations)];
+  binding.limitations = [...new Set([...premises.corrections, ...limitations])];
+  if (premises.corrections.length > 0) binding.corrections = premises.corrections;
   return binding;
+}
+
+// --- The question's premises (#1077, claim contract step 3) ---
+
+/** A question that only supposes or plans: its figures may be restated as the scenario. */
+const QUESTION_SUPPOSES = /\b(?:if|would|could|should|might|suppose|supposing|hypothetical(?:ly)?|scenario|what happens|plan(?:s|ned|ning)?|consider(?:s|ed|ing)?|propos(?:e|ed|es|ing|al)|want(?:s|ed)? to|thinking|simulat\w*|were to)\b/i;
+/** A sentence that supposes rather than states. */
+const SENTENCE_SUPPOSES = /\b(?:if|would|suppose|supposing|hypothetical(?:ly)?|scenario|were to)\b/i;
+/** A sentence that quotes the question back or sets its figure aside ("the question gives $35", "$10 rather than $35"). */
+const ATTRIBUTED_TO_QUESTION = /\bquestion\b|\byou\s+(?:gave|give|said|say|mention(?:ed)?|cited?|quoted?|asked about|stated?)\b|\brather than\b|\binstead of\b|\bnot\s+\$/i;
+/** A group's figure (a median, a market average), not one institution's own. */
+const GROUP_WORD = /\b(?:median|average|mean|market|peers?|industry|national|typical|competitors?|benchmark|index)\b/i;
+const DOWN_CHANGE = /\b(?:fall|falls|fell|fallen|falling|drop(?:s|ped|ping)?|declin(?:e|es|ed|ing)|decreas(?:e|es|ed|ing)|shr[iau]nk(?:s|ing)?|went down|gone down)\b/i;
+const UP_CHANGE = /\b(?:rise|rises|rose|risen|rising|grow|grows|grew|grown|growing|increas(?:e|es|ed|ing)|jump(?:s|ed|ing)?|climb(?:s|ed|ing)?|went up|gone up)\b/i;
+const NEGATED_CHANGE = /\b(?:not|never|no|n't)\s+(?:\w+\s+){0,2}(?:fall|fell|fallen|drop\w*|declin\w*|decreas\w*|shr[iau]nk\w*|rise|rose|risen|grow|grew|grown|increas\w*|jump\w*|climb\w*)\b/i;
+const CHANGE_TOPIC = /\b(?:income|revenue|fell|fall|rose|rise|change[ds]?|overdraft|direction)\b/i;
+const FEE_INCOME_METRICS = ["service_charge_income", "call:acct_131"] as const;
+const ORDINAL_NAME = ["first", "second", "third", "fourth"];
+
+function groupWordNear(text: string, figure: NarrativeFigure): boolean {
+  return GROUP_WORD.test(text.slice(Math.max(0, figure.index - 20), figure.index + figure.raw.length + 20));
+}
+
+function priorQuarter(quarter: string): string {
+  const year = Number(quarter.slice(0, 4));
+  const q = Number(quarter.slice(6));
+  return q === 1 ? `${year - 1}-Q4` : `${year}-Q${q - 1}`;
+}
+
+function quarterSpan(from: string, to: string): string {
+  const name = (quarter: string) => ORDINAL_NAME[Number(quarter.slice(6)) - 1];
+  return from.slice(0, 4) === to.slice(0, 4)
+    ? `from the ${name(from)} to the ${name(to)} quarter of ${to.slice(0, 4)}`
+    : `from the ${name(from)} quarter of ${from.slice(0, 4)} to the ${name(to)} quarter of ${to.slice(0, 4)}`;
+}
+
+interface QuestionPremises {
+  /** True when the question states something as fact; false when it only supposes, or there is none. */
+  assertive: boolean;
+  /** Fee figures the question gives for an institution whose record of that fee says otherwise. */
+  figures: Array<{ kind: NarrativeFigure["kind"]; value: number; subject: number }>;
+  /** A change in fee income the question states and the filed quarters contradict. */
+  direction: { subject: number; stated: 1 | -1 } | null;
+  /** A narrower income line the question asks about and the filings read do not report separately. */
+  absentIncome: boolean;
+  /** Institutions with at least one validated record or derivation in this answer's evidence. */
+  readInstitutions: Set<number>;
+  corrections: string[];
+}
+
+/**
+ * What the question states as fact, checked against the validated records (design 2.2 (4)): a fee
+ * figure for an institution and fee that its record contradicts, a fee-income change the filed
+ * standalone quarters run the other way, and a narrower income line no filing separates. Each
+ * contradiction gets one plain correction line written from the records. A question that only
+ * supposes states no premise.
+ */
+function questionPremises(input: {
+  question: string | undefined;
+  names: ReadonlyMap<number, string>;
+  validFacts: readonly HamiltonEvidenceFact[];
+  validDerivations: readonly HamiltonDerivedFact[];
+  account: number | null;
+  research: number | null;
+}): QuestionPremises {
+  const readInstitutions = new Set<number>();
+  for (const record of [...input.validFacts, ...input.validDerivations]) {
+    if (record.scope.institutionId !== null) readInstitutions.add(record.scope.institutionId);
+  }
+  const out: QuestionPremises = { assertive: false, figures: [], direction: null, absentIncome: false, readInstitutions, corrections: [] };
+  const question = input.question?.trim();
+  if (!question || QUESTION_SUPPOSES.test(question)) return out;
+  out.assertive = true;
+  const who = (id: number) => input.names.get(id) ?? "the institution";
+  const feeFacts = input.validFacts.filter((fact) => !claimRecord(fact) && fact.unit === "usd" && fact.scope.feeCategory);
+
+  let carried: number[] = [];
+  for (const sentence of question.split(/(?<=[.!?])\s+/)) {
+    const named = namedIn(sentence, input.names);
+    if (named.length > 0) carried = named;
+    const subject = named[0] ?? carried[0] ?? (PERSONAL.test(sentence) ? input.account : input.research);
+    if (subject === null || subject === undefined) continue;
+    const lower = sentence.toLowerCase();
+
+    // A fee figure the question gives for the subject, against the subject's record of that fee.
+    for (const figure of extractFigures(sentence)) {
+      if (figure.kind !== "usd" || figure.denominatorUnit || groupWordNear(sentence, figure)) continue;
+      const records = feeFacts.filter((fact) => fact.scope.institutionId === subject
+        && (lower.includes(proseFeeName(fact.scope.feeCategory as string).toLowerCase())
+          || (!!fact.scope.product?.trim() && lower.includes(fact.scope.product.trim().toLowerCase()))));
+      const tolerance = Math.max(figure.tolerance, 0.005);
+      if (records.length === 0 || records.some((fact) => Math.abs((fact.value as number) - figure.value) <= tolerance)) continue;
+      out.figures.push({ kind: figure.kind, value: figure.value, subject });
+      const values = [...new Set(records.map((fact) => fact.value as number))].sort((a, b) => a - b).map(money);
+      const fee = proseFeeName(records[0].scope.feeCategory as string);
+      out.corrections.push(`The question gives ${figure.raw} for ${who(subject)}'s ${fee} fee; Hamilton's fee record shows ${values.join(" and ")}.`);
+    }
+
+    // A change in fee income the question states, against the subject's filed standalone quarters.
+    const down = DOWN_CHANGE.test(sentence);
+    const up = UP_CHANGE.test(sentence);
+    if (!out.direction && down !== up && !NEGATED_CHANGE.test(sentence) && metricNamed(sentence, "service_charge_income")) {
+      const stated: 1 | -1 = up ? 1 : -1;
+      const years = [...sentence.matchAll(YEAR)].map((m) => m[1]);
+      const asked = statedQuarters(sentence, years);
+      const found = new Set<string>();
+      for (const metric of FEE_INCOME_METRICS) {
+        const quarters = new Map<string, number | null>();
+        const add = (record: EvidenceRecord) => {
+          const quarter = quarterOf(record);
+          if (!quarter || typeof record.value !== "number") return;
+          const prior = quarters.get(quarter);
+          quarters.set(quarter, prior === undefined || prior === record.value ? record.value : null);
+        };
+        for (const fact of input.validFacts) {
+          if (fact.scope.institutionId !== subject || fact.scope.metric !== metric || fact.unit !== "usd") continue;
+          if (fact.scope.periodBasis === "standalone_quarter" || (fact.scope.periodBasis === "ytd" && quarterOf(fact)?.endsWith("Q1"))) add(fact);
+        }
+        for (const derived of input.validDerivations) {
+          if (derived.derivation.kind === "ytd_to_quarter" && derived.scope.institutionId === subject && derived.scope.metric === metric) add(derived);
+        }
+        const known = [...quarters.keys()].filter((quarter) => years.length === 0 || years.includes(quarter.slice(0, 4))).sort();
+        const to = asked.length === 1 ? asked[0] : asked.length === 0 ? known.at(-1) : undefined;
+        if (!to) continue;
+        const from = priorQuarter(to);
+        const now = quarters.get(to);
+        const before = quarters.get(from);
+        if (typeof now !== "number" || typeof before !== "number" || now === before) continue;
+        found.add(`${Math.sign(now - before)}|${from}|${to}`);
+      }
+      // Every filed measure must agree before the question is called wrong.
+      const [only] = found;
+      if (found.size === 1 && Number(only.split("|")[0]) !== stated) {
+        const [, from, to] = only.split("|");
+        out.direction = { subject, stated };
+        out.corrections.push(`The question says ${who(subject)}'s fee income ${stated < 0 ? "fell" : "rose"}; its filings show it ${stated < 0 ? "rose" : "fell"} ${quarterSpan(from, to)}.`);
+      }
+    }
+
+    // A narrower income line (overdraft revenue) when the filings read report only broader totals.
+    const narrow = sentence.match(NARROW_INCOME);
+    if (narrow && !out.absentIncome && [...input.validFacts, ...input.validDerivations].some(claimRecord)) {
+      out.absentIncome = true;
+      out.corrections.push(`The question asks about ${narrow[0].toLowerCase()}; the filings read for this answer do not report it separately.`);
+    }
+  }
+  return out;
+}
+
+/**
+ * Whether a sentence repeats, as fact, a fee-income change the filings contradict
+ * (`premise_contradicted`) or a figure or change in an income line they do not separate
+ * (`premise_unsupported`). A sentence that negates, withdraws, supposes or quotes the question
+ * back does not.
+ */
+function restatesPremise(text: string, owners: number[] | null, premises: QuestionPremises): OmitReason | null {
+  if (!premises.assertive || (!premises.direction && !premises.absentIncome)) return null;
+  if (SENTENCE_SUPPOSES.test(text) || ATTRIBUTED_TO_QUESTION.test(text) || NEGATED_CHANGE.test(text) || refuses(text, CHANGE_TOPIC)) return null;
+  const withdrawn = (pattern: RegExp) => {
+    const match = text.match(pattern);
+    return match !== null && historicalAssertionWithdrawn(text, match);
+  };
+  if (premises.direction && owners?.includes(premises.direction.subject) && metricNamed(text, "service_charge_income")) {
+    const pattern = premises.direction.stated < 0 ? DOWN_CHANGE : UP_CHANGE;
+    if (pattern.test(text) && !withdrawn(pattern)) return "premise_contradicted";
+  }
+  if (premises.absentIncome && NARROW_INCOME.test(text)
+    && (extractFigures(text).length > 0 || DOWN_CHANGE.test(text) || UP_CHANGE.test(text)) && !withdrawn(NARROW_INCOME)) return "premise_unsupported";
+  return null;
 }
 
 /** The narrative a reader may see as Hamilton's finding: the supported sentences, in order. */

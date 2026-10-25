@@ -46,8 +46,9 @@ import type { AnswerToolEvidence } from "./written-answer-evidence";
 /**
  * .2: step 2 (claim sentence binding) recorded its outcomes; the cases and targets are unchanged.
  * .3: three controls from the PR #2571 review (mixed basis, prior quarter, "our data").
+ * .4: step 3 (premise and causation) recorded its outcomes; the cases and targets are unchanged.
  */
-export const CLAIM_GOLDEN_SET_VERSION = "2026-10-25.3";
+export const CLAIM_GOLDEN_SET_VERSION = "2026-10-25.4";
 
 /** Who has checked these cases. Nobody has: change only with a link to an actual review record. */
 export const CLAIM_GOLDEN_REVIEW = {
@@ -93,13 +94,13 @@ export type ClaimGoldenReason =
 
 /** Where today's code lets the case through. Each is one root cause a later step closes. */
 export type ClaimGoldenHole =
-  /** A figure the reader's question names passes unchecked (checkNarrativeFigures' asked figures; bindNarrative's "asked" outcome). Design step 3. */
+  /** A figure the reader's question names passes unchecked (checkNarrativeFigures' asked figures; bindNarrative's "asked" outcome). Closed at the sentence binding by design step 3 (premise and causation). */
   | "asked_figure_passes"
-  /** The causal checks run only with NCUA or filed-peer data (checkAnswerInterpretations' early return; historicalPeerProblems' guard). Design step 3. */
+  /** The causal checks run only with NCUA or filed-peer data (checkAnswerInterpretations' early return; historicalPeerProblems' guard). Closed by design step 3. */
   | "causal_check_needs_ncua"
-  /** The causal patterns know size and pricing or market causes only; "because" and "due to" with any other cause pass. Design step 3. */
+  /** The causal patterns know size and pricing or market causes only; "because" and "due to" with any other cause pass. Closed by design step 3. */
   | "causal_words_narrow"
-  /** The question's direction ("why did X fall") or metric is never compared with the data. Design step 3. */
+  /** The question's direction ("why did X fall") or metric is never compared with the data. Closed for fee income by design step 3. */
   | "premise_not_checked"
   /** A filing figure has no fact record, so nothing ties it to its institution, metric or role, and a written answer with no fee row gets no binding. Closed by design step 2 (claim sentence binding). */
   | "filing_figure_unbound"
@@ -272,9 +273,8 @@ export const CLAIM_GOLDEN_CASES: readonly ClaimGoldenCase[] = [
     description: "the question's $35 is restated as Bank A's fee, though Bank A's record says $10",
     question: "Bank A raised overdraft to $35. Where does that put it against peers?",
     text: "Bank A's $35 overdraft fee is above the peer median.",
-    expect: { status: "shown", problems: [], binding: { supported: 1, interpretation: 0, omitted: [], factIds: [] } },
-    target: { status: "held", reasons: ["premise_contradicted"] }, todayWrong: true, holes: ["asked_figure_passes"],
-    todayWrongReason: "shown as a supported sentence: the question's $35 counts as traced, and Bank A's $10 record is never compared with it" },
+    expect: { status: "held", problems: [], binding: { supported: 0, interpretation: 0, omitted: ["premise_contradicted"], factIds: [] } },
+    target: { status: "held", reasons: ["premise_contradicted"] }, todayWrong: false },
   { id: "wp-fee-corrected", group: "wrong_premise", control: true, surface: W, reads: [A_FEES], institutionId: BANK_A,
     description: "control: the answer corrects the question's $35 with Bank A's $10 record",
     question: "Bank A raised overdraft to $35. Where does that put it against peers?",
@@ -285,28 +285,26 @@ export const CLAIM_GOLDEN_CASES: readonly ClaimGoldenCase[] = [
     description: "the question says fee income fell; the filings show the second quarter rose, and the answer agrees with the question and gives a cause",
     question: "Why did Bank A's fee income fall in Q2 2026?",
     text: "Bank A's fee income fell in the second quarter of 2026 because members moved to accounts with fewer fees.",
-    expect: { status: "held", problems: ["The question asks for standalone-quarter fee income."], binding: { supported: 1, interpretation: 0, omitted: [], factIds: [] } },
+    expect: { status: "held", problems: ["The question asks for standalone-quarter fee income.", "This answer states a cause that the data does not show."], binding: { supported: 0, interpretation: 0, omitted: ["premise_contradicted"], factIds: [] } },
     target: { status: "held", reasons: ["premise_contradicted", "causal_unsupported"] }, todayWrong: false },
   { id: "wp-direction-no-quarter", group: "wrong_premise", control: false, surface: W, reads: [A_NCUA_RISE], institutionId: BANK_A,
     description: "the same wrong direction and cause, with no quarter named in the question",
     question: "Why did Bank A's fee income fall this year?",
     text: "Bank A's fee income fell this year because members moved to accounts with fewer fees.",
-    expect: { status: "shown", problems: [], binding: { supported: 1, interpretation: 0, omitted: [], factIds: [] } },
-    target: { status: "held", reasons: ["premise_contradicted", "causal_unsupported"] }, todayWrong: true, holes: ["premise_not_checked", "causal_words_narrow"],
-    todayWrongReason: "shown: nothing compares \"fell\" with the rising quarters, and \"because\" is not a causal word the checks know" },
+    expect: { status: "held", problems: ["This answer states a cause that the data does not show."], binding: { supported: 0, interpretation: 0, omitted: ["premise_contradicted"], factIds: [] } },
+    target: { status: "held", reasons: ["premise_contradicted", "causal_unsupported"] }, todayWrong: false },
   { id: "wp-metric-absent", group: "wrong_premise", control: false, surface: W, reads: [A_NCUA_RISE], institutionId: BANK_A,
     description: "the question asks about overdraft revenue, which the broad NCUA fee income does not separate; the answer states a change in it",
     question: "Why did Bank A's overdraft revenue fall?",
     text: "Bank A's overdraft revenue fell 8% in the second quarter of 2026.",
-    expect: { status: "held", problems: ["These figures are not in DATA: 8%."], binding: { supported: 0, interpretation: 1, omitted: [], factIds: [] } },
+    expect: { status: "held", problems: ["These figures are not in DATA: 8%."], binding: { supported: 0, interpretation: 0, omitted: ["premise_unsupported"], factIds: [] } },
     target: { status: "held", reasons: ["premise_unsupported"] }, todayWrong: false },
   { id: "wp-metric-absent-traced", group: "wrong_premise", control: false, surface: W, reads: [A_NCUA_RISE], institutionId: BANK_A,
     description: "the broad quarter total ($1.4 million) is stated as overdraft revenue",
     question: "Why did Bank A's overdraft revenue fall?",
     text: "Bank A's overdraft revenue was $1.4 million in the second quarter of 2026.",
-    expect: { status: "shown", problems: [], binding: { supported: 0, interpretation: 1, omitted: [], factIds: [] } },
-    target: { status: "held", reasons: ["premise_unsupported"] }, todayWrong: true, holes: ["premise_not_checked"],
-    todayWrongReason: "shown as Hamilton's reading: the broad quarter total no longer binds as overdraft revenue, but nothing yet holds an answer to a question whose metric the data does not hold" },
+    expect: { status: "held", problems: [], binding: { supported: 0, interpretation: 0, omitted: ["premise_unsupported"], factIds: [] } },
+    target: { status: "held", reasons: ["premise_unsupported"] }, todayWrong: false },
   { id: "wp-metric-absent-control", group: "wrong_premise", control: true, surface: W, reads: [A_NCUA_RISE], institutionId: BANK_A,
     description: "control: the answer says plainly the data cannot answer the question",
     question: "Why did Bank A's overdraft revenue fall?",
@@ -317,23 +315,20 @@ export const CLAIM_GOLDEN_CASES: readonly ClaimGoldenCase[] = [
     description: "the question names a $5 paper statement fee Bank A has no record of; the answer states it as Bank A's fee",
     question: "What does Bank A charge for its $5 paper statement fee?",
     text: "Bank A charges $5 for paper statements.",
-    expect: { status: "shown", problems: [], binding: { supported: 1, interpretation: 0, omitted: [], factIds: [] } },
-    target: { status: "held", reasons: ["premise_unsupported"] }, todayWrong: true, holes: ["asked_figure_passes"],
-    todayWrongReason: "shown as a supported sentence with no record: the question's $5 counts as traced" },
+    expect: { status: "held", problems: [], binding: { supported: 0, interpretation: 0, omitted: ["premise_unsupported"], factIds: [] } },
+    target: { status: "held", reasons: ["premise_unsupported"] }, todayWrong: false },
 
   // Causation: causal language with no causal evidence.
   { id: "ca-fee-only", group: "causation", control: false, surface: W, reads: [A_FEES, B_FEES], institutionId: BANK_A,
     description: "a fee-only answer gives a cause for a $25 gap",
     text: "Bank A's overdraft fee is $25 lower because it competes with Bank B.",
-    expect: { status: "shown", problems: [], binding: { supported: 0, interpretation: 1, omitted: [], factIds: [] } },
-    target: { status: "held", reasons: ["causal_unsupported"] }, todayWrong: true, holes: ["causal_check_needs_ncua", "causal_words_narrow"],
-    todayWrongReason: "shown as Hamilton's reading: no causal check runs on a fee-only answer, and \"because it competes\" matches none of its patterns" },
+    expect: { status: "held", problems: ["This answer states a cause that the data does not show."], binding: { supported: 0, interpretation: 1, omitted: [], factIds: [] } },
+    target: { status: "held", reasons: ["causal_unsupported"] }, todayWrong: false },
   { id: "ca-fee-only-pricing", group: "causation", control: false, surface: W, reads: [A_FEES, B_FEES], institutionId: BANK_A,
     description: "a fee-only answer gives a pricing cause in the words the NCUA causal check already catches",
     text: "Bank A's overdraft fee is $25 lower because pricing in its market drives it down.",
-    expect: { status: "shown", problems: [], binding: { supported: 0, interpretation: 1, omitted: [], factIds: [] } },
-    target: { status: "held", reasons: ["causal_unsupported"] }, todayWrong: true, holes: ["causal_check_needs_ncua"],
-    todayWrongReason: "shown as Hamilton's reading: the pricing-cause check that holds ca-financial-pricing does not run without NCUA or filed-peer data" },
+    expect: { status: "held", problems: ["Observed totals and peer correlations do not establish a pricing or market cause"], binding: { supported: 0, interpretation: 1, omitted: [], factIds: [] } },
+    target: { status: "held", reasons: ["causal_unsupported"] }, todayWrong: false },
   { id: "ca-financial-pricing", group: "causation", control: false, surface: W, reads: [A_NCUA_NSF], institutionId: BANK_A,
     description: "the same pricing-cause words with NCUA filings in the reads",
     text: "Bank A's fee income rose to $1.4 million in the second quarter of 2026 because pricing in its market drove it up.",
@@ -342,14 +337,13 @@ export const CLAIM_GOLDEN_CASES: readonly ClaimGoldenCase[] = [
   { id: "ca-financial", group: "causation", control: false, surface: W, reads: [A_NCUA_NSF], institutionId: BANK_A,
     description: "a quarter's fee income rise is put down to the NSF fee, with NCUA filings and an NSF fee record in the reads",
     text: "Bank A's fee income rose 12% in the second quarter of 2026 due to the higher NSF fee.",
-    expect: { status: "held", problems: ["These figures are not in DATA: 12%."], binding: { supported: 0, interpretation: 1, omitted: [], factIds: [] } },
+    expect: { status: "held", problems: ["These figures are not in DATA: 12%.", "This answer states a cause that the data does not show."], binding: { supported: 0, interpretation: 1, omitted: [], factIds: [] } },
     target: { status: "held", reasons: ["causal_unsupported"] }, todayWrong: false },
   { id: "ca-financial-traced", group: "causation", control: false, surface: W, reads: [A_NCUA_NSF], institutionId: BANK_A,
     description: "the same cause, stated with the quarter's traced dollar figure",
     text: "Bank A's fee income rose to $1.4 million in the second quarter of 2026 due to its $35 NSF fee.",
-    expect: { status: "shown", problems: [], binding: { supported: 0, interpretation: 1, omitted: [], factIds: [] } },
-    target: { status: "held", reasons: ["causal_unsupported"] }, todayWrong: true, holes: ["causal_words_narrow"],
-    todayWrongReason: "shown as Hamilton's reading: \"due to its $35 NSF fee\" matches none of the causal patterns, even with NCUA data" },
+    expect: { status: "held", problems: ["This answer states a cause that the data does not show."], binding: { supported: 0, interpretation: 1, omitted: [], factIds: [] } },
+    target: { status: "held", reasons: ["causal_unsupported"] }, todayWrong: false },
   { id: "ca-withdrawn", group: "causation", control: true, surface: W, reads: [A_NCUA_NSF], institutionId: BANK_A,
     description: "control: the rise is stated and the cause is withdrawn",
     text: "Bank A's fee income rose to $1.4 million in the second quarter of 2026; these figures do not establish why.",
