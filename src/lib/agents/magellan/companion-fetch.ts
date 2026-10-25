@@ -225,8 +225,9 @@ export async function reviewStoredCompanions(
     // Magellan's one article rule (`isArticleLink`, #1774): the companion finder now refuses these
     // links, and the ones it stored before are retired here. TD's "/learning/.../types-of-checking-
     // accounts" and Keesler's "/resources/advice/3-apps-to-scare-up-savings" were stored as
-    // account pages and their "$35 is common" and app-fee figures went live as the bank's.
-    if (isArticleLink(row.url)) {
+    // account pages and their "$35 is common" and app-fee figures went live as the bank's. A page a
+    // person gave stays, as the plain fetch keeps a person's locked correction.
+    if (!HAND_GIVEN_STRATEGIES.has(row.found_by_strategy ?? "") && isArticleLink(row.url)) {
       await db`
         UPDATE institution_additional_sources
            SET status = 'rejected',

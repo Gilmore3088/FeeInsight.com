@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { ARTICLE_COMPANION_REASON, COMPANION_FETCH_STRATEGY, reviewStoredCompanions, runCompanionFetch } from "./companion-fetch";
+import { isArticleLink } from "./link-coverage";
 
 type DbMock = ReturnType<typeof vi.fn>;
 
@@ -204,12 +205,17 @@ describe("Magellan companion fetch", () => {
       stored(1964, "https://www.schoolsfirstfcu.org/globalassets/pdf/disclosures/mk360-fees.pdf", null),
       stored(990, "https://www.unitedone.example/learn/resources/avoid-fees", "Avoid Fees"),
       stored(991, "https://www.bank.example/education-center/service-fees", "Service Fees"),
+      // Kept: an article link a person gave, as the plain fetch keeps a person's locked correction.
+      { ...stored(992, "https://www.bank.example/learning/money-management/types-of-checking-accounts", null), found_by_strategy: "supply.hand_supplied" },
+      { ...stored(993, "https://www.bank.example/stories/spend/what-is-overdraft-protection/", null), found_by_strategy: "discover.operator_schedule" },
     ];
     const db = createDb(rows);
 
     const review = await reviewStoredCompanions(asDb(db), { stateCode: "NJ", institutionId: null });
 
     expect(review.retired.map((page) => page.companionId)).toEqual([854, 476, 10202, 888, 1390]);
+    // The two hand-given links are articles by the rule; only who gave them keeps them.
+    expect(rows.filter((row) => row.id === 992 || row.id === 993).every((row) => isArticleLink(row.url))).toBe(true);
     const reasons = db.mock.calls
       .filter((call) => templateText(call[0]).includes("SET status = 'rejected'") && !templateText(call[0]).includes("institution_sources other"))
       .map((call) => call[1]);
