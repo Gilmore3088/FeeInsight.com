@@ -498,6 +498,22 @@ describe("getInstitutionRevenueTrend", () => {
     expect(result[0].yoy_change_pct).toBeCloseTo(10, 1);
   });
 
+  it("gives no YoY change across a missing filing quarter, never a two-year change as one (#1077 defect 10)", async () => {
+    // 2025-Q2 is missing: 2024-Q2 is the next older Q2 row, two years back.
+    getMock().unsafe = vi.fn().mockResolvedValue([
+      { quarter: "2026-Q2", service_charge_income: "1365", fee_income_ratio: null },
+      { quarter: "2026-Q1", service_charge_income: "1400", fee_income_ratio: null },
+      { quarter: "2025-Q4", service_charge_income: "1450", fee_income_ratio: null },
+      { quarter: "2025-Q3", service_charge_income: "1480", fee_income_ratio: null },
+      { quarter: "2025-Q1", service_charge_income: "1490", fee_income_ratio: null },
+      { quarter: "2024-Q2", service_charge_income: "1500", fee_income_ratio: null },
+    ]);
+
+    const result = await getInstitutionRevenueTrend(42, 8);
+    expect(result[0].yoy_change_pct).toBeNull();
+    expect(result[1].yoy_change_pct).toBeCloseTo(-6, 1);
+  });
+
   it("returns null YoY when no prior year quarter available", async () => {
     getMock().unsafe = vi.fn().mockResolvedValue([
       { quarter: "2024-Q4", service_charge_income: "200000", fee_income_ratio: "11.0" },
