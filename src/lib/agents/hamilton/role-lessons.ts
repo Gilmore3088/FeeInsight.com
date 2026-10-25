@@ -167,4 +167,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-1892",
+    agent: "hamilton",
+    stage: "analysis",
+    lesson: "When you show an institution's filed income over time, show each quarter alone and keep the filed year-to-date total in its own labelled column; when the previous quarter's filing is missing, leave that quarter empty rather than showing a year-to-date total as one quarter. Give every quarter its evidence: the filing entity, quarter end, report variables and the calculation, checked against the filing.",
+    why: "Hamilton had no view of a subscriber's own filed quarters against peers, so a chief financial officer could not trace a quarterly figure back to its call report, and credit union 5300 income is filed year to date, which reads as up to four times the quarter when taken as one.",
+    evidence: { issues: [1892], prs: [], files: ["src/lib/hamilton/financial-quarters.ts", "src/lib/data-store/institution-financial-quarters.ts", "src/app/pro/(hamilton)/financials/page.tsx"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];
