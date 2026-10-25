@@ -2,6 +2,7 @@ import { sql } from "@/lib/data-store/connection";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { getDisplayName } from "@/lib/fee-taxonomy";
+import { AMOUNT_ERROR_KINDS, AMOUNT_LAYOUT_LABEL, amountClassRows, type AmountErrorRow, type AmountLayout } from "./amount-patterns";
 
 type SqlTag = typeof sql;
 
@@ -20,6 +21,9 @@ type SqlTag = typeof sql;
  *   fee-level rows      the fee category (`canonical_fee_key`) the error repeats in
  *   document-level rows the document kind Rosetta stored (`agent_source_texts.document_kind`), or
  *                       for a read error the reader and document type (the layout)
+ *   live wrong amounts  extract-stage amount errors on a live fee (`AMOUNT_ERROR_KINDS`) group by
+ *                       the text layout around the fee (`amount-patterns.ts`, #2067), not by
+ *                       category, and count how many rows today's source check still passes
  *
  * A class needs errors at two or more banks and a shared pattern; a pattern seen at one bank, or a
  * row with no pattern at all, is counted, not listed. Each class names its owner (the agent that
@@ -38,6 +42,8 @@ export const ERROR_CLASS_MIN_BANKS = 2;
 /** Classes written and listed per run, largest first. */
 export const ERROR_CLASS_LIMIT = 100;
 const EXAMPLES = 5;
+/** Live amount errors read with their document per run; a week holds a few dozen. */
+const AMOUNT_ROW_LIMIT = 500;
 
 export type ErrorClassStage = "discover" | "fetch" | "read" | "extract" | "verify" | "publish";
 
@@ -55,7 +61,7 @@ export interface ErrorClass {
   key: string;
   stage: ErrorClassStage;
   kind: string;
-  /** What the errors share: `category:<key>`, `document:<kind>` or `layout:<reader>/<type>`. */
+  /** What the errors share: `category:<key>`, `document:<kind>`, `layout:<reader>/<type>` or `amount:<layout>`. */
   pattern: string;
   owner: string;
   banks: number;
@@ -65,6 +71,8 @@ export interface ErrorClass {
   exampleInstitutions: number[];
   exampleFees: number[];
   exampleFeedback: number[];
+  /** Amount classes only: rows today's source check still passes, so no rule blocks the layout yet. */
+  passesToday?: number;
 }
 
 export interface ErrorClassSummary {
@@ -74,6 +82,8 @@ export interface ErrorClassSummary {
   oneBankPatterns: number;
   /** Rows with no category, layout or document kind to group by. */
   unpatternedRows: number;
+  /** Set when the week held more live amount errors than one run reads (`AMOUNT_ROW_LIMIT`). */
+  amountRowLimitHit?: boolean;
   classes: ErrorClass[];
 }
 
@@ -88,6 +98,7 @@ interface ClassRow {
   institutions: Array<number | string> | null;
   fee_ids: Array<number | string> | null;
   feedback_ids: Array<number | string> | null;
+  passes_today?: number;
 }
 
 /** The read: confirmed errors, their pattern, grouped. Exported for the DB test. */
@@ -113,6 +124,7 @@ export async function readErrorClasses(db: SqlTag = sql, windowDays = ERROR_CLAS
          AND f.signal IN ('wrong', 'missed')
          AND f.weight > 0
          AND (f.fee_published_id IS NOT NULL OR f.reported_by = 'human')
+         AND NOT (f.about_stage = 'extract' AND f.kind = ANY(${[...AMOUNT_ERROR_KINDS]}::text[]) AND f.fee_published_id IS NOT NULL)
     )
     SELECT about_stage, kind, pattern,
            COUNT(DISTINCT institution_id)::int AS banks,
@@ -126,7 +138,41 @@ export async function readErrorClasses(db: SqlTag = sql, windowDays = ERROR_CLAS
      GROUP BY about_stage, kind, pattern
      ORDER BY banks DESC, rows DESC, about_stage, kind, pattern
   `;
-  return summarizeRows(rows, windowDays);
+  // The fee's document: the row's own, else the one Knox read the live fee from. A hand amount
+  // correction rewrote the live row, so its row's evidence holds the read that was wrong.
+  const amountRows = await db<Array<Omit<AmountErrorRow, "text"> & { document_id: number | string | null }>>`
+    SELECT f.id AS feedback_id, f.kind, f.check_name, f.institution_id, f.fee_published_id,
+           COALESCE(f.evidence->>'old_name', fp.fee_name) AS fee_name,
+           CASE WHEN f.evidence->>'old_amount' ~ '^[0-9]+([.][0-9]+)?$' THEN (f.evidence->>'old_amount')::numeric ELSE fp.amount END AS amount,
+           COALESCE(f.canonical_fee_key, fp.canonical_fee_key) AS canonical_fee_key,
+           COALESCE(f.source_document_id, fr.source_document_id) AS document_id
+      FROM pipeline_feedback f
+      LEFT JOIN published_fee_records fp ON fp.fee_published_id = f.fee_published_id
+      LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+      LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+     WHERE f.created_at >= NOW() - make_interval(days => ${windowDays}::int)
+       AND f.signal IN ('wrong', 'missed')
+       AND f.weight > 0
+       AND f.about_stage = 'extract'
+       AND f.kind = ANY(${[...AMOUNT_ERROR_KINDS]}::text[])
+       AND f.fee_published_id IS NOT NULL
+     ORDER BY f.id DESC
+     LIMIT ${AMOUNT_ROW_LIMIT + 1}
+  `;
+  const limitHit = amountRows.length > AMOUNT_ROW_LIMIT;
+  if (limitHit) amountRows.length = AMOUNT_ROW_LIMIT;
+  // Each document's text once, however many of the week's rows it holds.
+  const documentIds = [...new Set(amountRows.map((row) => row.document_id).filter((id) => id !== null).map(Number))];
+  const texts = new Map<number, string>();
+  if (documentIds.length > 0) {
+    const read = await db<Array<{ source_document_id: number | string; normalized_text: string | null }>>`
+      SELECT source_document_id, normalized_text FROM agent_source_texts WHERE source_document_id = ANY(${documentIds}::bigint[])
+    `;
+    for (const text of read) if (text.normalized_text) texts.set(Number(text.source_document_id), text.normalized_text);
+  }
+  const withText: AmountErrorRow[] = amountRows.map(({ document_id, ...row }) => ({ ...row, text: document_id === null ? null : texts.get(Number(document_id)) ?? null }));
+  const summary = summarizeRows([...rows, ...amountClassRows(withText, EXAMPLES)], windowDays);
+  return limitHit ? { ...summary, amountRowLimitHit: true } : summary;
 }
 
 /** Pure: rows into classes and the one-bank count. */
@@ -159,6 +205,7 @@ export function summarizeRows(rows: ClassRow[], windowDays = ERROR_CLASS_WINDOW_
       exampleInstitutions: (row.institutions ?? []).map(Number),
       exampleFees: (row.fee_ids ?? []).map(Number),
       exampleFeedback: (row.feedback_ids ?? []).map(Number),
+      ...(row.passes_today === undefined ? {} : { passesToday: row.passes_today }),
     });
   }
   classes.sort((a, b) => b.banks - a.banks || b.rows - a.rows || a.key.localeCompare(b.key));
@@ -172,6 +219,7 @@ export function patternLabel(pattern: string): string {
   if (type === "category") return `${getDisplayName(value)} fees`;
   if (type === "document") return `${value.replaceAll("_", " ")} documents`;
   if (type === "layout") return `documents read by ${value}`;
+  if (type === "amount") return AMOUNT_LAYOUT_LABEL[value as AmountLayout] ?? `amounts laid out as ${value}`;
   return "no shared pattern";
 }
 
@@ -187,6 +235,11 @@ export function classRecord(cls: ErrorClass, windowDays = ERROR_CLASS_WINDOW_DAY
     `- Pattern: \`${cls.pattern}\``,
     `- Reach: ${cls.banks} banks, ${cls.fees} live fees, ${cls.rows} error rows`,
     `- Examples: institutions ${cls.exampleInstitutions.join(", ") || "none"}; fees ${cls.exampleFees.join(", ") || "none"}; feedback rows ${cls.exampleFeedback.join(", ") || "none"}`,
+    ...(cls.passesToday === undefined ? [] : [
+      cls.passesToday > 0
+        ? `- Today's source check still passes ${cls.passesToday} of ${cls.rows} rows, so Knox would keep this layout's wrong amount at a new bank: write the extraction rule, with its Darwin dry-run count (2026-10-15).`
+        : `- Today's shared source check refuses all ${cls.rows} rows, so wherever it runs (Knox's self-check, Darwin, Hamilton) this layout's wrong amount no longer traces; re-run the banks behind it.`,
+    ]),
     "",
     `Fix the ${cls.stage} step so the whole class is fixed, re-run the banks behind it, and add a ${cls.owner} lesson (#2054). Name the rows in \`error-fixes.json\` so Deming re-checks them after the fix (#2058).`,
   ].join("\n");
@@ -243,6 +296,7 @@ export async function runErrorClasses({
         example_institutions: cls.exampleInstitutions,
         example_fees: cls.exampleFees,
         example_feedback: cls.exampleFeedback,
+        ...(cls.passesToday === undefined ? {} : { passes_today: cls.passesToday }),
         github_title: record.title,
         github_body: record.body,
       },
@@ -276,11 +330,13 @@ export function errorClassesDetail(result: ErrorClassesResult) {
     confirmed_rows: summary?.confirmedRows ?? null,
     one_bank_patterns: summary?.oneBankPatterns ?? null,
     unpatterned_rows: summary?.unpatternedRows ?? null,
+    amount_row_limit_hit: summary?.amountRowLimitHit ?? false,
     classes: summary?.classes.length ?? null,
     written: result.written,
     skipped: result.skipped,
     top: (summary?.classes ?? []).slice(0, 25).map((cls) => ({
       key: cls.key, owner: cls.owner, banks: cls.banks, fees: cls.fees, rows: cls.rows,
+      ...(cls.passesToday === undefined ? {} : { passes_today: cls.passesToday }),
     })),
   };
 }
