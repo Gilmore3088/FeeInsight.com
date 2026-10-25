@@ -359,8 +359,9 @@ async function writeVersion(tx: SqlTag, w: WriteVersion): Promise<FeeCorrectionR
     `;
   }
   const at = new Date().toISOString();
-  // A lost text names the live document whose text lost the fee, not the document the corrected
-  // value was read from, so Rosetta reads that one again on its next reader version (#2059).
+  // A lost text names the live document whose text lost the fee in its evidence, so Rosetta reads
+  // that one again on its next reader version (#2059). The row's own document stays the cited one,
+  // which Deming's corrective-source snapshot requires.
   const lostTextDocumentId = w.action === "correct" && w.cause === "text_lost" && w.live.live_document_id != null ? Number(w.live.live_document_id) : null;
   const lostText = await lostTextEvidence(tx, lostTextDocumentId);
   await recordFeedback(tx, [{
@@ -370,7 +371,7 @@ async function writeVersion(tx: SqlTag, w: WriteVersion): Promise<FeeCorrectionR
     reportedBy: "human",
     checkName: FEE_CORRECTION_CHECK,
     institutionId,
-    sourceDocumentId: lostTextDocumentId ?? sourceDocumentId ?? null,
+    sourceDocumentId: sourceDocumentId ?? null,
     feePublishedId: oldId,
     canonicalFeeKey: w.before.canonicalFeeKey,
     amount: w.before.amount,
@@ -385,7 +386,7 @@ async function writeVersion(tx: SqlTag, w: WriteVersion): Promise<FeeCorrectionR
       reason: w.reason,
       ...(w.cause ? { cause: w.cause } : {}),
       ...(w.cause === "wrong_document" ? wrongDocument(w.live.live_document_id, w.live.live_document_url) : {}),
-      ...(lostTextDocumentId != null ? { ...lostText, evidence_document_id: sourceDocumentId ?? null } : {}),
+      ...(lostTextDocumentId != null ? { ...lostText, lost_text_document_id: lostTextDocumentId } : {}),
       before: w.before,
       after: w.after,
       source_excerpt: w.evidence?.excerpt ?? null,

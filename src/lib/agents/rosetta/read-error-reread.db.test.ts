@@ -96,6 +96,17 @@ describe.skipIf(!connection)("Rosetta re-reads a document with a read error on a
     expect(await selected()).toEqual([]);
   });
 
+  it("matches a correction by the lost text's document in its evidence, not by the document it cites", async () => {
+    // A correction's own document is the one its new value came from.
+    await raw`INSERT INTO pipeline_feedback (about_stage, signal, kind, reported_by, check_name, institution_id, source_document_id, dedupe_key, created_at, evidence)
+              VALUES ('read', 'wrong', 'admin_correction', 'human', 'admin.fee_correction', ${INST}, NULL, 'test2059:correction', '2026-10-05T00:00:00Z',
+                      ${raw.json({ lost_text_document_id: DOC, text_hash: TEXT_HASH })})`;
+    expect(await selected()).toEqual([DOC]);
+    await raw`UPDATE pipeline_feedback SET evidence = ${raw.json({ lost_text_document_id: DOC + 1, text_hash: TEXT_HASH })}, source_document_id = ${DOC}
+               WHERE dedupe_key = 'test2059:correction'`;
+    expect(await selected()).toEqual([]);
+  });
+
   it("ignores an error recorded before the current text was written, which was about an earlier text", async () => {
     await readError("2026-09-20T00:00:00Z");
     expect(await selected()).toEqual([]);

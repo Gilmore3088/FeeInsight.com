@@ -1188,10 +1188,13 @@ export function rosettaReadCandidatesQuery(
       // one read with the current reader, so a reader fix reaches the documents it was written
       // for, not only those read afterwards. An error that names the text's hash stays open until
       // the text changes, so a re-read that writes the same text keeps it for the next bump; one
-      // without a hash is about the text written before it, and any rewrite settles it.
+      // without a hash is about the text written before it, and any rewrite settles it. A correction
+      // names the lost text's document in its evidence, since its own document is the cited one.
       const readErrorOnText = (alias: string, text: string) => `EXISTS (
                 SELECT 1 FROM pipeline_feedback ${alias}
-                 WHERE ${alias}.source_document_id = ${text}.source_document_id
+                 WHERE (CASE WHEN ${alias}.evidence ? 'lost_text_document_id'
+                             THEN ${alias}.evidence->>'lost_text_document_id' = ${text}.source_document_id::text
+                             ELSE ${alias}.source_document_id = ${text}.source_document_id END)
                    AND ${alias}.about_stage = 'read'
                    AND ${alias}.signal = 'wrong'
                    AND ${alias}.weight > 0

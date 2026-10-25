@@ -541,9 +541,15 @@ describe.skipIf(!connection)("admin fee corrections in isolated PostgreSQL", () 
     }), admin);
     expect(result).toMatchObject({ ok: true });
     if (!result.ok) return;
-    const [corrected] = await raw`SELECT about_stage, source_document_id::int AS source_document_id, evidence->>'text_hash' AS hash, evidence->>'evidence_document_id' AS cited
+    // The row keeps the cited document as its own, which Deming's corrective-source snapshot needs.
+    const [corrected] = await raw`SELECT about_stage, source_document_id::int AS source_document_id, evidence->>'text_hash' AS hash,
+                                         (evidence->>'lost_text_document_id')::int AS lost
                                     FROM pipeline_feedback WHERE kind = 'admin_correction' AND fee_published_id = ${overdraftFeeId} ORDER BY id DESC LIMIT 1`;
-    expect(corrected).toMatchObject({ about_stage: "read", source_document_id: DOC_OLD, hash: "hash-2059-old", cited: String(DOC_NEW) });
+    expect(corrected).toMatchObject({ about_stage: "read", source_document_id: DOC_NEW, hash: "hash-2059-old", lost: DOC_OLD });
+    // Deming's snapshot origin requires the feedback row's document to be the correction's own
+    // (corrective-source.ts validOrigin); this fixture's texts are not sealable, so check the pair.
+    const [cited] = await raw`SELECT source_document_id::int AS source_document_id FROM published_fee_corrections WHERE id = ${result.correctionId}`;
+    expect(cited.source_document_id).toBe(corrected.source_document_id);
     const reversed = await reverseFeeCorrection(db, { feePublishedId: result.feePublishedId, expectedVersion: 1,
       idempotencyKey: "db-test-losttext-reverse-000001", reason: "Restore the fee as it was read" }, admin);
     expect(reversed.ok).toBe(true);
