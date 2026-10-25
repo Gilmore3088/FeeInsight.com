@@ -15,3 +15,4 @@ serving the last good deploy, but nothing new could ship.
 **Fix:** each of the 9 files declares `type PgTypes = { numeric: number; json: unknown; text: string }`
 and types its connections and connection parameters `postgres.Sql<PgTypes>`; a connection opened
 without the custom types stays a bare `postgres.Sql`. Shipped in #2653.
+**Guard:** the `npx tsc --noEmit` step in `.github/workflows/test.yml` and Vercel's `next build` type check, both over the `*.db.test.ts` files.
