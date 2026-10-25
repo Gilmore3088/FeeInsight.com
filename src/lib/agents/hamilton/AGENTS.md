@@ -694,7 +694,12 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     account reads as an account name, is printed in the fee's own schedule and is on no other
     generic fee of that schedule (`evidence.heading_from` says which). v3: a heading followed by its
     opening deposit traces (source check v18), and "Interest Checking", "Club 2 Checking" and
-    "Money Market Checking" read as accounts.
+    "Money Market Checking" read as accounts. v4 (#1917): a breadcrumb or menu printed with no
+    spaces between its links ("HomePersonal BankingAccountsPersonal Checking") is no account, and
+    the heading search stops at a comparison table's header row, so the price's column (Knox's
+    recorded account) names it. A live name an earlier version gave from a heading today's rule
+    refuses is set back to Knox's name first (`name_account_removed` row); Oct 25 dry run: 3 of
+    558 live added names (66144, 140140, 137749).
 26. Lineup correct (`correctStoredLineups`, `knox/lineup-correct.ts`): lineup values stored
     before Knox v55 that came from a neighbouring account are corrected from the stored text,
     up to 200 documents a step (`lineup_corrected` feedback row). No rollback.
@@ -1357,7 +1362,7 @@ fails a PR that changes one of these constants without updating its line here (#
 
 | Constant | Strategy | Version | File |
 |---|---|---|---|
-| `ACCOUNT_NAME_STRATEGY` | `hamilton.account_names` | v3 | `hamilton/account-names.ts` |
+| `ACCOUNT_NAME_STRATEGY` | `hamilton.account_names` | v4 | `hamilton/account-names.ts` |
 | `CURRENT_COPY_STRATEGY` | `hamilton.current_copy_check` | v2 | `hamilton/current-copy.ts` |
 | `EVAL_VERDICT_VERSION` | — | v8 | `hamilton/eval-verdicts.ts` |
 | `FREQUENCY_FILL_VERSION` | — | v15 | `hamilton/frequency-fill.ts` |
@@ -1366,7 +1371,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `HAMILTON_PUBLISH_STRATEGY` | `publish.rules` | v3 | `hamilton/publish.ts` |
 | `REFRESH_COPY_STRATEGY` | `hamilton.refresh_copy` | v2 | `hamilton/refresh-copy.ts` |
 | `RULES_RECHECK_STRATEGY` | `hamilton.rules_recheck` | v4 | `hamilton/rules-recheck.ts` |
-| `SOURCE_CHECK_STRATEGY` | `hamilton.source_check` | v24 | `hamilton/source-check.ts` |
+| `SOURCE_CHECK_STRATEGY` | `hamilton.source_check` | v25 | `hamilton/source-check.ts` |
 | `SOURCE_LINK_VERSION` | `hamilton.source_link` | v2 | `hamilton/source-link.ts` |
 | `SOURCE_LINK_DRIFT_VERSION` | `hamilton.source_link_drift` | v1 | `hamilton/source-link.ts` |
 | `FEE_DEPENDENCE_VERSION` | — | v1 | `hamilton/studies/fee-dependence.ts` |

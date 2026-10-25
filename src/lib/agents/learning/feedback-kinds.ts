@@ -85,6 +85,7 @@ export const FEEDBACK_KINDS = {
   account_type_hold_released: { record: "A guard-refused row the account type hold put back to verified, held (#1680); not a category verdict, and with no published fee release review never reads it." },
   category_fold: { record: "Hamilton's taxonomy fold logs each fee it moved." },
   name_account_added: { record: "Hamilton's account names log each name it added." },
+  name_account_removed: { record: "Hamilton's account names log each name set back because its heading was no account, a breadcrumb or menu (account-names.ts v4, #1917)." },
   rule_revised: { record: "Hamilton's eval verdicts log a revised rule." },
   lineup_corrected: { record: "Knox's lineup correction logs each fee it moved." },
   knox_reread_resolved: { record: "Knox settles each re-read request per rules version (reread-feedback.ts)." },

@@ -24,6 +24,7 @@ import { capFirstItemPrices, refusesStackedFeePrice, stackedLabelKey } from "./s
 import { checkWireClausePrice } from "./wire-clause-prices";
 import { stackedCellVariants } from "./stacked-cell-variants";
 import { refusesOtherColumnPrice } from "./column-pair-prices";
+import { boxSectionLateFee } from "./box-section-late-fee";
 import { withGluedFootnotePrices } from "./glued-footnote-price";
 const NSF_POLICY_CATEGORIES = new Set(["nsf", "overdraft"]);
 
@@ -1388,6 +1389,10 @@ export function checkFeeAgainstSource(
   // #1946: every refusal below reads a footnote glued to a $0 price ("$01") as $0, as the main path does.
   const rawText = sourceText ? withGluedFootnotePrices(sourceText) : sourceText;
   if (namesItsClosedFreeRow(rawText, feeName, amount)) return { ok: false, reason: "amount_not_the_fee" };
+  // #1916: a bare late charge printed in a safe deposit box section ("Safe Deposit Box Fees" /
+  // "Late Payment (per month) | $10.00") is the box's late rent charge, not a loan's late payment.
+  // Only for a fee filed as late_payment; Knox files the read as the box's (`boxSectionLateFeeRead`).
+  if (canonicalFeeKey === "late_payment" && boxSectionLateFee(rawText, feeName, amount)) return { ok: false, reason: "category_not_in_text" };
   const result = checkOwnName(rawText, feeName, amount, categoryPattern, canonicalFeeKey, options);
   // W43 live audit (#2064): Knox names a box row printed as its size alone "Safe Deposit Box <size>"
   // (`boxSizeNamed`); the row is traced by its own words. Only for a fee filed as a safe deposit box
