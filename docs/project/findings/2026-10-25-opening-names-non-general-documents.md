@@ -43,8 +43,10 @@ alone decides nothing: youth pages often carry the general schedule.
 - Darwin's live re-check `darwin.non_deposit_document` v4:
   - It reads each live fee's document opening (newest completed `agent_source_texts`).
   - New rules: `loan_titled_document` and `youth_account_document`. Each is counted on its own
-    behind `OPENING_DOCUMENT_TAKEDOWN_LIVE`, off until James's yes on the count.
-  - Hamilton's publish gate asks the same reason with the same switch.
+    behind `OPENING_DOCUMENT_TAKEDOWN_LIVE`, which ships off. Every one of the 18 matched
+    documents' stored openings was checked and none is a general schedule, so the sample is clean
+    for turning it on (DECISIONS 2026-10-20).
+  - Hamilton's publish gate and its depth count ask the same reason with the same switch.
 
 **Dry run (prod, read-only, Oct 25):**
 - The opening rules match 48 live fees on 18 documents at 16 institutions:
@@ -54,8 +56,13 @@ alone decides nothing: youth pages often carry the general schedule.
 - Before v4, the re-check matched none of the 48.
 - None of the 18 documents has an address-named kind.
 
+**Guard:** `src/lib/non-deposit-document.test.ts`, `src/lib/agents/darwin/non-deposit-document-check.test.ts`, `src/lib/agents/hamilton/publish.opening-switch.test.ts`
+
+**Agent lesson:** magellan/issue-1944-opening-names-the-document
+
 **Not done here:**
 - Arbor has no other live NSF fee. Taking the Volt fees down leaves a gap until Magellan finds its
-  current general schedule.
-- Hamilton's depth query does not yet read the opening. This is harmless while the sub-switch is
-  off.
+  current general schedule (a wrong price is worse than a missing one).
+- Two card disclosures the opening misses: Elca's (document 33235) breaks its title over four
+  lines, and Greater Valley's (35811) opens with a bare "Visa® Disclosure". Their 7 fees stay
+  live.

@@ -721,7 +721,10 @@ async function institutionFeeDepth(
              NULL::text AS amount_kind,
              NULL::numeric AS rate_percent,
              NULL::numeric AS extraction_confidence,
-             '[]'::jsonb AS outlier_flags
+             '[]'::jsonb AS outlier_flags,
+             NULL::bigint AS source_document_id,
+             NULL::text AS document_url,
+             NULL::text AS document_opening
         FROM published_fee_records fp
        WHERE fp.institution_id = ANY($1::bigint[])
          AND ${CATALOG_DEPTH_LIVE_SQL("fp")}
@@ -737,9 +740,20 @@ async function institutionFeeDepth(
              fv.amount_kind,
              fv.rate_percent,
              fv.extraction_confidence,
-             fv.outlier_flags
+             fv.outlier_flags,
+             -- The non-deposit gate's inputs, as the publish select reads them (#1944): a pending
+             -- row from a loan or youth document does not count toward depth.
+             fr.source_document_id,
+             sd.document_url,
+             (SELECT left(op_ast.normalized_text, ${OPENING_SCAN_CHARS})
+                FROM agent_source_texts op_ast
+               WHERE op_ast.source_document_id = fr.source_document_id
+                 AND op_ast.status = 'completed'
+               ORDER BY op_ast.id DESC
+               LIMIT 1) AS document_opening
         FROM verified_fee_observations fv
         JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+        LEFT JOIN source_documents sd ON sd.id = fr.source_document_id
        WHERE fv.institution_id = ANY($1::bigint[])
          AND fv.review_status IN ('verified', 'approved')
          AND fv.outlier_flags ? 'agentic_darwin_verified'

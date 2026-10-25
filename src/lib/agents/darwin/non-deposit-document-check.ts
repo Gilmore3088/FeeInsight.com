@@ -132,9 +132,12 @@ export const BROKERAGE_DOCUMENT_TAKEDOWN_LIVE = true;
 export const CARD_PROGRAM_TAKEDOWN_LIVE = true;
 /**
  * The sub-switch for the v4 opening rules (`loan_titled_document`, `youth_account_document`,
- * #1944). It acts only with `NON_DEPOSIT_DOCUMENT_TAKEDOWN_LIVE`. Off: the step and Hamilton's
- * publish gate count these fees and leave them as they are, until James says yes on the dry-run
- * count (prod, read-only, Oct 25: see the #1944 PR). Turn it on by setting it to true.
+ * #1944). It acts only with `NON_DEPOSIT_DOCUMENT_TAKEDOWN_LIVE`. Off: the step, Hamilton's
+ * publish gate and its depth count count these fees and leave them as they are. The dry run
+ * (prod, read-only, Oct 25) matched 48 live fees on 18 documents at 16 institutions, and every one
+ * of the 18 stored openings was checked against the bank's own text: 16 loan, card, HELOC or MLA
+ * disclosures and 2 youth account documents, none a general schedule (sampled clean, DECISIONS
+ * 2026-10-20). Turning it on takes those fees down; set it to true once that is confirmed.
  */
 export const OPENING_DOCUMENT_TAKEDOWN_LIVE = false;
 /** On a card program's document, the card's own purchase and reload prices stay live (they are real fees in those categories). */

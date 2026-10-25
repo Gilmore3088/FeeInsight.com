@@ -1094,8 +1094,9 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   Savings"), a credit union named for students and a youth heading past the third line do not
   count. The address never gives the youth kind: GTE Financial's `/go-student-checking` page carried
   27 live general fees. Both rules act only with `OPENING_DOCUMENT_TAKEDOWN_LIVE` (off: counted,
-  left as they are, until James's yes on the count) and Hamilton's publish gate asks the same rule
-  with the row's document opening. Dry run (prod, read-only, Oct 25, `openingDocumentFeesSql()`):
+  left as they are; all 18 matched documents' stored openings were checked and none is a general
+  schedule, so the sample is clean for turning it on) and Hamilton's publish gate and depth count
+  ask the same rule with the row's document opening. Dry run (prod, read-only, Oct 25, `openingDocumentFeesSql()`):
   48 live fees on 18 documents at 16 institutions, 41 `loan_titled_document` (16 documents) and 7
   `youth_account_document` (2 documents); none of the 18 had an address kind. Step detail adds
   `opening_document`, `opening_documents`, `opening_institutions`, `opening_switch_live` and

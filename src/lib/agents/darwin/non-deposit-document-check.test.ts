@@ -366,7 +366,7 @@ describe("v4 rules: documents that open as a loan disclosure or a youth account'
     { fee_published_id: "301", fee_verified_id: "9304", institution_id: "6", fee_name: "Overdraft", amount: "35", canonical_fee_key: "overdraft", source_document_id: "74", document_url: "https://www.example.com/personal/Schedule-of-Fees-Personal-Checking.pdf", document_opening: GENERAL_OPENING },
   ];
 
-  it("ships with the opening sub-switch off until James's yes on the count", () => {
+  it("ships with the opening sub-switch off until the takedown is confirmed", () => {
     expect(OPENING_DOCUMENT_TAKEDOWN_LIVE).toBe(false);
   });
 

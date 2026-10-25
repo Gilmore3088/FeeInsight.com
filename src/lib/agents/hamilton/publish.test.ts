@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { PUBLISH_MIN_ROWS_PER_STEP, ARTICLE_PAGE_RESELECT_SQL, EDITION_HOLD_RESELECT_SQL, ARTICLE_PAGE_SKIP_REASON, CATALOG_DEPTH_LIVE_SQL, decidePriorFee, normalizedFeeName, HAMILTON_PUBLISH_MIN_INSTITUTION_FEES, HAMILTON_PUBLISH_STRATEGY, linesApartOnPage, listsBothPrices, qualifiedLines, namesShareReading, newerCopyPrintsLine, otherBalanceLine, publishedFeeName, publishNameHold, publishSkipReason, runHamiltonPublish, selectListedFeeLines, sameLineDuplicateOf, sentenceFragmentName, separateLines } from "./publish";
 import { NOT_YET_EFFECTIVE_REASON } from "../darwin/edition-effective-check";
+import { OPENING_DOCUMENT_TAKEDOWN_LIVE, nonDepositTakedownReason } from "../darwin/non-deposit-document-check";
 import { productPageUrlSql } from "@/lib/agents/learning/fee-page";
 import { feePageKey } from "./page-key";
 import { PUBLISH_REFUSE_SWEEP_RULES_LIVE, publishSweepRefusals } from "./publish-sweep-rules";
@@ -837,6 +838,46 @@ describe("Hamilton agentic publish", () => {
     expect(publishSkipReason({ ...verifiedFee, document_url: "https://www.example-bank.com/docs/fee-schedule.pdf" }, 0.85, true) ?? "").not.toMatch(
       /Darwin's re-check/,
     );
+  });
+
+  describe("a document that opens as a loan disclosure or a youth account's (#1944)", () => {
+    const TD_FIT = "https://www.td.com/content/dam/tdb/document/pdf/personal-banking/td-fit-account-guide-acc-en.pdf";
+    const TD_FIT_OPENING = "TD Fit Personal Unsecured Consumer Loan Disclosure\nAn ideal option if you are looking to consolidate high interest credit card debt.";
+    const loanRow = (canonical_fee_key: string) => ({
+      ...verifiedFee, canonical_fee_key, fee_name: "Monthly fee", amount: "5.00", source_document_id: 33822, document_url: TD_FIT, document_opening: TD_FIT_OPENING,
+    });
+
+    // Both tests follow `OPENING_DOCUMENT_TAKEDOWN_LIVE`: off, the gate counts and lets them by.
+    const on = OPENING_DOCUMENT_TAKEDOWN_LIVE;
+
+    it("refuses a deposit-category fee read from it once the sub-switch is on, and only with the opening", () => {
+      expect(publishSkipReason(loanRow("monthly_maintenance"), 0.85, true)).toBe(
+        on ? "Refused at publish, Darwin's re-check would take it down: loan_titled_document: loan #33822" : null,
+      );
+      expect(nonDepositTakedownReason({ documentUrl: TD_FIT, sourceDocumentId: 33822, canonicalFeeKey: "monthly_maintenance", feeName: "Monthly fee", documentOpening: TD_FIT_OPENING }, { live: true, openingLive: true })).toBe(
+        "loan_titled_document: loan #33822",
+      );
+      expect(publishSkipReason({ ...loanRow("monthly_maintenance"), document_opening: "Personal Fee Schedule\nChecks" }, 0.85, true) ?? "").not.toMatch(/Darwin's re-check/);
+    });
+
+    it("does not count its pending rows toward the institution's depth once the sub-switch is on", async () => {
+      const general = (canonical_fee_key: string) => ({ depth_source: "pending", ...verifiedFee, canonical_fee_key });
+      const pendingOnLoan = (canonical_fee_key: string) => ({ depth_source: "pending", ...loanRow(canonical_fee_key) });
+      // Three fee types, two of them only from the loan disclosure: below the depth minimum.
+      const shallow = createDbMock([verifiedFee], [], [general("overdraft"), pendingOnLoan("monthly_maintenance"), pendingOnLoan("nsf")]);
+      const deep = createDbMock([verifiedFee], [], [general("overdraft"), general("monthly_maintenance"), general("nsf")]);
+
+      const held = await runHamiltonPublish({ runId: 1944, db: asPublishDb(shallow) });
+      const published = await runHamiltonPublish({ runId: 1945, db: asPublishDb(deep) });
+
+      expect(HAMILTON_PUBLISH_MIN_INSTITUTION_FEES).toBe(3);
+      expect(held.publishedFees).toBe(on ? 0 : 1);
+      expect(published.publishedFees).toBe(1);
+      const depthQuery = String((shallow.unsafe.mock.calls.find((call) => String(call[0]).includes("institution_fee_depth")) as [string, unknown[]])[0]);
+      expect(depthQuery).toContain("LEFT JOIN source_documents sd ON sd.id = fr.source_document_id");
+      expect(depthQuery).toContain("AS document_opening");
+      expect(depthQuery).toContain("op_ast.status = 'completed'");
+    });
   });
 
   it("skips rows below the publish confidence threshold", async () => {
