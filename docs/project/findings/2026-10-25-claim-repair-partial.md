@@ -30,6 +30,14 @@ only wires it into the buffered path. The streaming branch is a spike (below), n
   The review of PR #2580 found the first version cut the raw text by exact match, so a backticked
   word, a bold-led bullet or a reworded figure kept a cut sentence on screen while the reply said
   `ready_partial`.
+- When the binding left any sentence out (wrong institution, contradicted premise, wrong period or
+  basis, a median stated as a fee, and the rest), the partial view drops Evidence and Explore
+  Further entirely. The binding reads only the prose, so the same claim repeated in an Evidence row
+  or a follow-up question would otherwise show (the re-review's reproductions with `sb-fee` and
+  `wp-fee-restated`). The simpler rule was picked because it is easy to prove: those sections
+  never show beside a left-out claim. Evidence notes are rejoined with ", ", not a dash.
+- A rewrite whose own view fails closed falls back to a showable partial first draft, as a
+  rewrite that fails citation density does.
 - The rewrite gets only the time left under the route's `maxDuration` less a 15 s margin
   (`repairTimeBudgetMs`); with under 20 s left it is not started.
 - When the chosen rewrite fails the citation-density check but the first draft passed it, was
@@ -82,7 +90,8 @@ or quote after the space, so the binding never sees the restated premise and the
 fails twice partial; untraced held; no rewrite without quota, on a provider stop or when not
 repairable; the view over parsed sections: a backticked advice sentence, a bold-led bullet, a
 failing line also in Evidence or Explore Further, a premise_contradicted sentence in bold or
-backticks, a cut it cannot find; the time budget; the density fallback; feedback holds no case
+backticks, a cut it cannot find, a left-out claim repeated in Evidence or Explore Further; the time
+budget; the density and fail-closed fallbacks; feedback holds no case
 text and never quotes an instruction) and `src/app/api/research/hamilton/route.gate-repair.test.ts`
 (switch off: today's refusal, one call; switch on: two calls recorded and a `hamilton-repair` quota
 row, partial shows only the supported sentence, critical held, a provider stop on either call makes

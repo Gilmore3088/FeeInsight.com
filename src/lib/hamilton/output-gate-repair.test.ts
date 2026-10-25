@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { CLAIM_GOLDEN_CASES, heldOutLeaks, type ClaimGoldenCase } from "./claim-golden-set";
-import { gateAnswer, type GateInput } from "./output-gate";
+import { gateAnswer, type GateInput, type GateVerdict } from "./output-gate";
 import {
   GATE_REPAIR_SWITCH,
   INSTRUCTION_TEXT_FEEDBACK,
@@ -214,6 +214,60 @@ describe("gatedAnswerView over a written answer's parsed sections", () => {
     }
   });
 
+  describe("a claim the binding left out, repeated where the binding does not read (re-review of PR #2580)", () => {
+    type Written = Extract<ClaimGoldenCase, { surface: "written_answer" }>;
+    const golden = (id: string) => CLAIM_GOLDEN_CASES.find((x): x is Written => x.surface === "written_answer" && x.id === id)!;
+    const gateGolden = (c: Written, text: string) => gateAnswer({ surface: "written_answer", text, question: c.question,
+      evidence: { kind: "tool_reads", toolOutputs: c.reads.map((r) => r.output), reads: c.reads },
+      identity: { researchInstitutionId: c.institutionId, accountInstitutionId: null } });
+    const sb = golden("sb-fee");
+    const PROSE = "Bank B charges $35 for overdraft. Bank A charges $35 for overdraft.";
+
+    it("(1) sb-fee: drops an Evidence row that repeats the left-out claim", () => {
+      const text = `## Hamilton's View\n${PROSE}\n\n## Evidence\n- **Bank A overdraft fee:** $35`;
+      const verdict = gateGolden(sb, text);
+      expect(verdict.status).toBe("ready_partial");
+      expect(verdict.binding?.omitted.map((o) => o.reason)).toEqual(["wrong_institution"]);
+      const view = gatedAnswerView(text, verdict);
+      expect(view).toMatchObject({ status: "ready_partial", leftOut: 1, text: "## Hamilton's View\nBank B charges $35 for overdraft." });
+      expect(view.text).not.toContain("Bank A");
+    });
+
+    it("(2) sb-fee: drops an Explore Further question that repeats the left-out claim", () => {
+      const text = `## Hamilton's View\n${PROSE}\n\n## Explore Further\n- Why does Bank A charge $35 for overdraft?`;
+      const verdict = gateGolden(sb, text);
+      expect(verdict.status).toBe("ready_partial");
+      const view = gatedAnswerView(text, verdict);
+      expect(view).toMatchObject({ status: "ready_partial", text: "## Hamilton's View\nBank B charges $35 for overdraft." });
+      expect(view.text).not.toContain("Bank A");
+    });
+
+    it("(3) wp-fee-restated: drops an Evidence row that restates the contradicted premise", () => {
+      const restated = golden("wp-fee-restated");
+      const corrected = golden("wp-fee-corrected");
+      const text = `## Hamilton's View\n${corrected.text} ${restated.text}\n\n## Evidence\n- **Bank A overdraft fee:** $35, above the peer median`;
+      const verdict = gateGolden(restated, text);
+      expect(verdict.status).toBe("ready_partial");
+      expect(verdict.binding?.omitted.map((o) => o.reason)).toContain("premise_contradicted");
+      const view = gatedAnswerView(text, verdict);
+      expect(view).toMatchObject({ status: "ready_partial", text: `## Hamilton's View\n${corrected.text}` });
+      expect(view.text).not.toContain("above the peer median");
+    });
+
+    it("keeps Evidence and Explore Further when the binding left nothing out", () => {
+      // No fee record in these reads, so there is no binding: only the advice check cuts.
+      const text = `## Hamilton's View\n${VIEW} The bank should lower the fee to match its peers.\n\n## Evidence\n- **Overdraft fee:** $35 — from the published schedule\n\n## Explore Further\n- How does the fee compare with its peers?`;
+      const verdict = writtenGate(text);
+      expect(verdict.status).toBe("ready_partial");
+      expect(verdict.binding?.omitted ?? []).toEqual([]);
+      const view = gatedAnswerView(text, verdict);
+      expect(view.status).toBe("ready_partial");
+      expect(view.text).toContain("## Evidence\n- **Overdraft fee:** $35, from the published schedule");
+      expect(view.text).toContain("## Explore Further\n- How does the fee compare with its peers?");
+      expect(view.text).not.toContain("—");
+    });
+  });
+
   it("holds rather than claim a cut it could not make", () => {
     const text = `## Hamilton's View\n${VIEW}`;
     const verdict = writtenGate(text);
@@ -234,6 +288,19 @@ describe("the rewrite's time budget", () => {
 describe("settleGatedDraft (citation density on the rewrite)", () => {
   const ok = { status: "ok" };
   const refused = { status: "refused" };
+
+  it("keeps a showable partial first draft when the chosen rewrite's own view fails closed", async () => {
+    const first = gate({ text: WITH_ADVICE });
+    expect(first.status).toBe("ready_partial");
+    // A rewrite the gate scores better (no failures) whose view cannot find the sentence its binding left out.
+    const unshowable = { ...gate({ text: PASSING }), status: "ready_partial" as const, failures: [],
+      binding: { ...(first.binding ?? {}), omitted: [{ text: "A sentence the rewrite does not hold.", reason: "wrong_institution" }] } } as unknown as GateVerdict;
+    const gated = await runGatedAnswer({ draft: { text: WITH_ADVICE }, gate: (d) => (d.text === WITH_ADVICE ? first : unshowable),
+      repair: async () => ({ text: PASSING }), allowRepair: () => true });
+    expect(gated.repair).toBe("used");
+    expect(gatedAnswerView(gated.draft.text, gated.verdict).text).toBeNull();
+    expect(settleGatedDraft(gated, ok, () => ok)).toMatchObject({ chosen: "first", view: { status: "ready_partial", text: PASSING } });
+  });
 
   it("keeps a showable partial first draft when the chosen rewrite fails citation density", async () => {
     const gated = await runGatedAnswer({ draft: { text: WITH_ADVICE }, gate, repair: async () => ({ text: PASSING }), allowRepair: () => true });

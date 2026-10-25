@@ -11,7 +11,9 @@
  * `validated`; when `ready_partial`, the answer rebuilt from the same parsed sections the gate
  * binds, without the sentences it cut or the binding left out; nothing when `held`. It fails
  * closed: a cut it cannot find, a cut sentence still present, or a failing line in a section the
- * gate does not cut (Evidence, Explore Further) holds the answer.
+ * gate does not cut (Evidence, Explore Further) holds the answer. When the binding left any
+ * sentence out, Evidence and Explore Further are dropped from the view, since the binding never
+ * reads them and a left-out claim could be repeated there.
  *
  * Everything that changes what a reader is shown, or adds a provider call, sits behind one
  * switch, `HAMILTON_GATE_REPAIR`, off unless set to "true", "1" or "on". While it is off,
@@ -201,7 +203,7 @@ export function renderSections(parsed: ParsedResponse, headed: boolean): string 
   if (parsed.whyItMatters.length) blocks.push(`## Why It Matters\n${parsed.whyItMatters.map((item) => `- ${item}`).join("\n")}`);
   if (parsed.evidence.length) {
     blocks.push(`## Evidence\n${parsed.evidence.map((row) => {
-      const value = `${row.value}${row.note ? ` — ${row.note}` : ""}`;
+      const value = `${row.value}${row.note ? `, ${row.note}` : ""}`;
       return row.label ? `- **${row.label}:** ${value}` : `- ${value}`;
     }).join("\n")}`);
   }
@@ -243,7 +245,10 @@ export function gatedAnswerView(text: string, verdict: GateVerdict): GatedAnswer
       if (!failure.sentences?.length) continue;
       if (sentencesFor(failure.code, lines).length > 0) return heldView("failure_outside_prose");
     }
-    const kept = sectionsWithout(parsed, cut);
+    // The binding reads only the prose, so a claim it left out may be repeated in Evidence or
+    // Explore Further, which it never reads. Fail closed: with any left-out sentence, neither shows.
+    const leftOutByBinding = (verdict.binding?.omitted.length ?? 0) > 0;
+    const kept = leftOutByBinding ? { ...sectionsWithout(parsed, cut), evidence: [], exploreFurther: [] } : sectionsWithout(parsed, cut);
     before = proseSentences(parsed);
     after = proseSentences(kept);
     shown = renderSections(kept, headed);
@@ -279,8 +284,8 @@ export interface SettledDraft<T extends { text: string }> {
 /**
  * The draft to answer with, after the citation-density gate (citation-gate.ts) reads a rewrite.
  * The first draft already passed it (the route refuses before any rewrite otherwise). When the
- * rewrite fails it, the first draft is kept if it was `ready_partial` and its view still shows;
- * otherwise the rewrite is refused, with its own density result.
+ * rewrite fails it, or the rewrite's view fails closed, the first draft is kept if it was
+ * `ready_partial` and its view still shows; otherwise the rewrite is refused, with its own density result.
  */
 export function settleGatedDraft<T extends { text: string }, D extends { status: string }>(
   gated: GatedAnswer<T>, firstDensity: D, density: (text: string) => D,
@@ -291,7 +296,9 @@ export function settleGatedDraft<T extends { text: string }, D extends { status:
   }
   const rewriteDensity = density(gated.draft.text);
   const view = gatedAnswerView(gated.draft.text, gated.verdict);
-  if (rewriteDensity.status === "refused" && firstDensity.status !== "refused" && gated.first.status === "ready_partial") {
+  // A rewrite that cannot be shown (it fails citation density, or its view fails closed) falls back to a showable partial first draft.
+  const rewriteUnusable = rewriteDensity.status === "refused" || view.text === null;
+  if (rewriteUnusable && firstDensity.status !== "refused" && gated.first.status === "ready_partial") {
     const fallback = firstView();
     if (fallback.text !== null) {
       return { text: gated.firstDraft.text, verdict: gated.first, view: fallback, chosen: "first", density: firstDensity, draft: gated.firstDraft };
