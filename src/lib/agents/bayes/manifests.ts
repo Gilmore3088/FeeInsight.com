@@ -323,6 +323,8 @@ export function rosettaReaderManifests(versions: RosettaVersions): ReplayManifes
  * in a manifest above.
  */
 export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
+  // #2625: recorded on each fdic-financials partition, deliberately not a registry replay selector.
+  FDIC_FINANCIALS_PARSER_VERSION: "v2 attaches a BankFind quarter to the bank by the certificate the FFIEC POR file says filed as its RSSD that quarter. Only quarters with stored POR certificates (2023 Q1 on) can change, and the FFIEC call-detail loader (v6) makes each such fdic-financials quarter due again when its POR shows a bank filing under a certificate that is not today's. Registering this version in REGISTRY_PARSER_VERSIONS would reload every quarter back to 2010 for no change, so there is no separate replay to count. No fee row or provider work is touched.",
   // #2052: a study method version, not a fee selector.
   INFERRED_VOLUME_VERSION: "v4 counts overdraft/NSF income only when current against its charter's newest call report filing: bank income within one quarter, credit union December year-to-date income within four quarters. The study rebuilds itself on its next daily step under the new method version; no fee row, raw/verified/published tier or provider work is touched or replayed.",
   PAID_RETURNED_EVENT_VERSION: "v1 is prospective source-owned paired-action proof and fresh raw lineage only. Existing same-unit, judged and held histories cannot be bypassed by projected names or line_share; mixed/unknown scope stays eligibility-held. Extract88/stale78/lineup73/twin82/verify3/source-check2/recheck5/publish3 remain settled. No selector, global category-guard version, historical replay, recovery, provider or source work is queued.",
@@ -491,6 +493,7 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v23 (#1479): a name | description | price row stays one fee's row; same fingerprint path.
   // v24 (#1918): "$15K" or "$1.5M" is a balance, never a price; same fingerprint path.
   // v25 (#1916): a late charge in a safe deposit box section is not a late payment; same fingerprint path.
+  // v26 (#2070): a fee whose every row at its price is for a discontinued account is refused; same fingerprint path.
   SOURCE_CHECK_STRATEGY: "Its fingerprint carries the version, so each publish step's batch re-checks every institution not yet checked at the new version; nothing to replay.",
   // v3 (#1810): headings over an opening deposit, "Interest Checking" and numbered accounts name a fee.
   // v4 (#1917): a fused breadcrumb or menu is no heading, and a comparison table's header row stops
@@ -553,6 +556,10 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // v86 (Oct 25, #1918): monthly maintenance admits a checking account's own named fee (Knox's pattern).
     // v87 (Oct 25, #1916): a late payment printed in a safe deposit box section re-files live to
     // safe_deposit_box (99 of 111 on the Oct 25 dry run; 12 duplicates of a live box late fee come down).
+    // v88 (Oct 25, #1912): book transfers fail the domestic wire categories, and a cash advance priced
+    // at another bank's ATMs fails cash advance.
+    // v89 (Oct 25, #1877): overdraft admits a credit union's "Draft Protection Fee" (Knox v112's pattern);
+    // names only, so no live fee changes on the Oct 25 dry run.
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",

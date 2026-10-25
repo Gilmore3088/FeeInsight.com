@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ user: vi.fn(), analysis: vi.fn(), report: vi.fn(), save: vi.fn(), sql: vi.fn(), run: vi.fn(), load: vi.fn(), input: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ getCurrentUser: mocks.user }));
-vi.mock("../analyze/actions", () => ({ loadAnalysisRecord: mocks.analysis }));
+// The server read is mocked, the loaders above it are real: a save that strips the claims on the way would be caught.
+vi.mock("@/lib/hamilton/saved-analysis-record", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/hamilton/saved-analysis-record")>()), readSavedAnalysisRecord: mocks.analysis }));
 vi.mock("@/lib/hamilton/pro-tables", () => ({ getHamiltonReportById: mocks.report, saveHamiltonReport: mocks.save }));
 vi.mock("@/lib/data-store/connection", () => ({ sql: mocks.sql }));
 vi.mock("@/lib/agents/run-store", () => ({ recordProRequest: mocks.run }));
@@ -12,6 +13,8 @@ import { createMarketBoardBrief, saveBoardBrief } from "./board-actions";
 import { encodeLandingResearch } from "@/lib/hamilton/landing-research-handoff";
 import { boardBriefFromAnalysis } from "@/lib/hamilton/board-brief";
 import { REPORT_START_BLOCKED_MESSAGE } from "@/lib/report-access";
+import { NARRATIVE_BINDING_VERSION } from "@/lib/hamilton/narrative-bound";
+import { SAVED_CLAIMS_VERSION } from "@/lib/hamilton/saved-claims";
 const edits = { title: "Board review", teamNote: "Our note", includeEvidence: true };
 const response = { title: "Saved answer", confidence: { level: "medium" as const, basis: ["Limited"] }, hamiltonView: "Original answer", whatThisMeans: "Original context", whyItMatters: [], evidence: { metrics: [{ label: "Fee", value: "$0.00", note: "Published schedule · 2026-06-30" }] }, exploreFurther: ["Inspect terms"] };
 beforeEach(() => { vi.clearAllMocks(); mocks.user.mockResolvedValue({ id: 7, role: "user", subscription_status: "active", subscription_tier: "pro" }); mocks.save.mockResolvedValue("report-id"); mocks.run.mockResolvedValue(undefined); });
@@ -37,6 +40,22 @@ describe("private board brief writes", () => {
     expect(await saveBoardBrief({ analysisId: "original", edits })).toEqual({ success: true, reportId: "report-id" });
     expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ userId: 7, institutionId: "2", reportType: "board_brief", evidencePolicy: "source-diligence", reportJson: expect.objectContaining({ executiveSummary: ["Original answer"] }) }));
     expect(mocks.run).toHaveBeenCalledWith(expect.objectContaining({ detail: expect.objectContaining({ provider_call_queued: false, analysis_id: "original" }) }));
+  });
+  it("lists a written answer's sources from the claims saved with it, and saves no claims in the brief (#1077, Cycle A defect 5)", async () => {
+    // Synthetic saved answer: one supported fee sentence and the claim fact it cites.
+    const factId = "fee:published:9";
+    const sentence = "Research Bank charges $37 for an overdraft.";
+    const written = { ...response, hamiltonView: sentence, answerEvidence: { passed: true, problems: [] },
+      narrativeBinding: { version: NARRATIVE_BINDING_VERSION, supported: [{ text: sentence, factIds: [factId] }], interpretation: [], omitted: [], limitations: [] },
+      claims: { version: SAVED_CLAIMS_VERSION, bindingVersion: NARRATIVE_BINDING_VERSION, claims: [{ text: sentence, outcome: "supported" as const, factIds: [factId] }],
+        facts: [{ id: factId, kind: "observed" as const, value: 37, unit: "usd" as const, institutionId: 2, feeCategory: "overdraft", metric: null, reportingDate: null, periodBasis: null, asOf: null }],
+        factsTruncated: false, corrections: [] } };
+    mocks.analysis.mockResolvedValue({ id: "original", institutionId: "2", responseJson: written });
+    expect(await saveBoardBrief({ analysisId: "original", edits })).toEqual({ success: true, reportId: "report-id" });
+    const saved = mocks.save.mock.calls[0][0].reportJson;
+    const records = saved.exhibits.find((e: { id: string }) => e.id === "evidence_records");
+    expect(records?.rows).toEqual([["Overdraft (OD), Institution 2", "$37", "Published fee catalog · record fee:published:9 · date not recorded", "Matches the saved record"]]);
+    expect(JSON.stringify(saved)).not.toContain("\"claims\"");
   });
   it("rejects another user's report before the UPDATE", async () => {
     mocks.report.mockResolvedValue(null);
