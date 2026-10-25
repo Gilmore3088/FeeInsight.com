@@ -127,7 +127,8 @@ export default async function PlanPage({ searchParams }: PageProps) {
       <PositionShift
         fromLabel={`${fmtMoney(from)} today`}
         toLabel={`${fmtMoney(to)}`}
-        rows={layerRows.map(({ layer, now, after }) => ({ label: layer.label, n: layer.n, median: layer.median, from: now, to: after }))}
+        // A middle price only for a group large enough to publish one (#1896).
+        rows={layerRows.map(({ layer, now, after }) => ({ label: layer.label, n: layer.n, median: layer.thin ? null : layer.median, from: now, to: after }))}
       />
       <DatasetNote figures={stampedLayers} />
     </>

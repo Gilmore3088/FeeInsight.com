@@ -1,10 +1,13 @@
 /**
- * Price scenarios for one fee: where a tested amount would sit among peers, and what it does to
- * fee income. Neutral by design: it reports consequences and never picks an option.
+ * Price scenarios for one fee: where a tested amount would sit among peers, and, only when the
+ * bank supplies its own volumes, the arithmetic on fee income. Neutral by design: it reports
+ * consequences and never picks an option.
  *
  * Evidence levels:
- *  - "market": position only, from peers' published fees. No dollar total.
- *  - "institution": totals from figures the bank entered (paid items, waiver rate).
+ *  - "market": position only, from peers' published fees. No fee income figure of any kind, not
+ *    even per 1,000 items, because that needs a volume the bank never gave (#1896).
+ *  - "institution": fee income arithmetic from figures the bank entered (paid items, waiver rate).
+ *    It is arithmetic on the bank's figures with every assumption stated, never a forecast.
  */
 
 export type EvidenceLevel = "market" | "institution";
@@ -23,8 +26,6 @@ export interface ScenarioResult {
   peersMore: number;
   peersSame: number;
   peersLess: number;
-  /** Change in fee income per 1,000 paid items a year, before waivers. */
-  per1000Delta: number;
   /** Yearly change in fee income from the bank's own figures; null without them. */
   annualDelta: number | null;
   evidence: EvidenceLevel;
@@ -59,10 +60,51 @@ export function modelScenario(
     peersMore: pos.more,
     peersSame: pos.same,
     peersLess: pos.less,
-    per1000Delta: Math.round(perItem * 1000),
     annualDelta: paid == null ? null : Math.round(perItem * paid * (1 - waiver)),
     evidence: paid == null ? "market" : "institution",
   };
+}
+
+export interface FeeIncomeAssumptionInput {
+  feeName: string;
+  /** Today's published price, or null when the bank has none (each change is then from $0). */
+  current: number | null;
+  /** Several published amounts for this fee, when the schedule lists more than one. */
+  ownSeveral?: string | null;
+  paidItems: number | null;
+  waiverRate: number | null;
+  /** Where the bank's figures came from: typed on the page or saved in My bank and data. */
+  figuresFrom: "typed" | "saved";
+}
+
+const money = (n: number) =>
+  `$${n.toLocaleString("en-US", { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 })}`;
+
+/**
+ * Every assumption behind the fee income figure, in plain sentences (#1896). Empty when the bank
+ * has not supplied its yearly volume, because then no fee income figure is shown at all.
+ */
+export function feeIncomeAssumptions(input: FeeIncomeAssumptionInput): string[] {
+  const paid = input.paidItems != null && input.paidItems > 0 ? input.paidItems : null;
+  if (paid == null) return [];
+  const fee = input.feeName.toLowerCase();
+  const where = input.figuresFrom === "saved" ? "saved in My bank and data" : "entered on this page";
+  const waiver = input.waiverRate != null ? Math.min(Math.max(input.waiverRate, 0), 1) : null;
+  return [
+    input.current != null
+      ? `Starting price: ${money(input.current)}, your published ${fee} fee.`
+      : input.ownSeveral
+        ? `Starting price: $0, because your schedule lists several ${fee} fees (${input.ownSeveral}).`
+        : `Starting price: $0, because no ${fee} fee is published for you.`,
+    `Items charged a year: ${paid.toLocaleString("en-US")}, before waivers, your figure ${where}.`,
+    waiver != null
+      ? `Share waived or refunded: ${Math.round(waiver * 1000) / 10}%, your figure ${where}.`
+      : "Share waived or refunded: none, because no share was entered.",
+    "The same number of items is charged at every price tested. How customers respond to a price change is not estimated.",
+    "The waived or refunded share stays the same at every price tested.",
+    "Calculation: change per item, times items charged a year, times the share not waived. The result is a yearly change in fee income before tax and before any other cost.",
+    "This is arithmetic on your own figures, not a prediction of fee income.",
+  ];
 }
 
 /** Peer counts in plain-language price bands for the distribution exhibit. */
