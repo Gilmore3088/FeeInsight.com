@@ -8,6 +8,7 @@ import { CHECKING_ACCOUNT_FEE_NAME, checkingNameCore, namedForCheckingAccount, N
 import { ATM_ADJUSTMENT, CHECKBOOK_RECONCILIATION, CROSS_BORDER_BUNDLE, DRAFT_PROTECTION_FEE, FAX_SERVICE, PER_PAGE_COPY, researchSplitTarget } from "@/lib/fee-fold";
 import { joinWrappedLeaderNames, parenBalance, stripPriceFootnoteMarks, withDroppedDecimalPoints } from "@/lib/custom-report/source-check";
 import { dropsCondition, FEE_OF_SENTENCE } from "@/lib/agents/knox/cutoff-shape";
+import { paperStatementPriceOnLine } from "@/lib/paper-statement-price";
 
 // Shared with the source check since #1334; Knox's tests and callers keep importing it from here.
 export { withDroppedDecimalPoints };
@@ -2117,7 +2118,33 @@ function stackedVariantReads(segment: string, cells: string[] | null, priceCount
   return categories.size === expected ? reads : null;
 }
 
+/**
+ * v115 (#1947): a read filed as the account's monthly maintenance fee whose own line prices it as the
+ * paper statement charge (`paperStatementPriceOnLine`, the matcher the category guard v91 uses) is the
+ * paper statement fee, named so: "Service charge | $3.00 paper statement fee each statement cycle"
+ * (129872), "A $2 paper statement fee applies if you are not enrolled in eStatements" (107916), "*A
+ * monthly fee of $3 applies if you choose to receive paper statements" (128394), "Paper (mailed)
+ * Statement Fee **** | $2.00 Monthly Fee" (126632). The account's price for paper holders beside an
+ * electronic one ("$4 for paper statement or $3 for estatement") stays maintenance.
+ */
+export function paperStatementRead(candidate: ExtractedFeeCandidate, segment: string): ExtractedFeeCandidate {
+  if (candidate.canonicalHint !== "monthly_maintenance" || !paperStatementPriceOnLine(segment, candidate.amount)) return candidate;
+  const feeName = PAPER_STATEMENT_NAME.test(candidate.feeName) ? candidate.feeName : "Paper statement fee";
+  if (!passesDarwinChecks("paper_statement", feeName, candidate.amount)) return candidate;
+  // The account lineup belongs to a maintenance read only.
+  return { ...candidate, lineup: undefined, canonicalHint: "paper_statement", feeName };
+}
+
+/** A read already named for its paper statement ("Paper statements", "Paper (mailed) Statement Fee"). */
+const PAPER_STATEMENT_NAME = /\b(?:paper|printed|mailed)\b[^|]{0,12}\bstatements?\b/i;
+
 export function extractFromSegment(segment: string): ExtractionRulesResult {
+  const result = readSegment(segment);
+  if (!result.candidates.some((candidate) => candidate.canonicalHint === "monthly_maintenance")) return result;
+  return { ...result, candidates: result.candidates.map((candidate) => paperStatementRead(candidate, segment)) };
+}
+
+function readSegment(segment: string): ExtractionRulesResult {
   const result: ExtractionRulesResult = { candidates: [], held: [] };
   if (GENERIC_SCHEDULE_LANGUAGE.test(segment)) return result;
 

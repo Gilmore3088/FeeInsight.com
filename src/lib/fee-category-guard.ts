@@ -21,6 +21,7 @@
 import { boxSectionLateFee } from "@/lib/custom-report/box-section-late-fee";
 import { collectionSectionReturn } from "@/lib/custom-report/collection-section-return";
 import { namedForCheckingAccount } from "@/lib/checking-fee-name";
+import { paperStatementPriceOnLine } from "@/lib/paper-statement-price";
 import { ATM_ABROAD, COLLECTION_ITEM, DRAFT_PROTECTION_FEE, foldRetiredCategory, FOREIGN_DEPOSIT_RETURN, FOREIGN_ITEM_RETURN, INCOMING_WIRE, INTERNATIONAL_ATM, IRA_CLOSING, ITEM_COPY, RESEARCH_SPLIT_LIVE, SKIP_A_PAY, SUSTAINED_OVERDRAFT } from "@/lib/fee-fold";
 
 export type CategoryGuardCode = "name_contradicts" | "name_unsupported" | "rate_as_amount" | "schedule_contradicts" | "amount_implausible";
@@ -1105,7 +1106,16 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // (159317 re-files in place; 152482, 153210 and 155092 each have their own live box late twin, and
 // 36020's $1 is below the box type's $5 floor, so those 4 go to the second look). None of the 2,975
 // live domestic outgoing wires changes: the book transfer refusal shipped in v88.
-export const CATEGORY_GUARD_VERSION = 90;
+// v91 (Oct 25, #1947): a monthly maintenance fee whose own source line prices it as the paper
+// statement charge (`paperStatementOnLine`, read with `paperStatementPriceOnLine`, the matcher Knox
+// v115 files with: "Service charge | $3.00 paper statement fee each statement cycle", "A $2 paper
+// statement fee applies", "*A monthly fee of $3 applies if you choose to receive paper statements",
+// TD's "Paper statements: $3 monthly fee") fails monthly maintenance and re-files to paper_statement
+// (`refileFromLine`), which admits its generic name on that line. The account's own price for paper
+// holders beside an electronic price ("$4 for paper statement or $3 for estatement", "$7 with paper
+// statement") stays. Where the bank already has a live paper statement fee at that price, the copy is
+// not moved and goes to the second look. Dry-run count in the PR.
+export const CATEGORY_GUARD_VERSION = 91;
 
 /** v87 (#1916): where a late charge printed in a safe deposit box section is filed. */
 export const BOX_LATE_TARGET = "safe_deposit_box";
@@ -1475,7 +1485,8 @@ export function checkFeeCategory(
     };
   }
   if (!rule.include.test(name) && !(canonicalFeeKey === "excess_withdrawal" && GENERIC_SERVICE_CHARGE.test(name) && savingsOverLimitLine(name, context)) &&
-      !(canonicalFeeKey === "monthly_maintenance" && namedForCheckingAccount(name))) {
+      !(canonicalFeeKey === "monthly_maintenance" && namedForCheckingAccount(name)) &&
+      !(canonicalFeeKey === "paper_statement" && paperStatementOnLine(context))) {
     return {
       ok: false,
       code: "name_unsupported",
@@ -1494,6 +1505,10 @@ export function checkFeeCategory(
   if (billPayReason) return { ok: false, code: billPayReason.code, reason: billPayReason.reason };
   const activityReason = activityChargeOnLine(canonicalFeeKey, context);
   if (activityReason) return { ok: false, code: "schedule_contradicts", reason: activityReason.reason };
+  const paper = canonicalFeeKey === "monthly_maintenance" ? paperStatementOnLine(context) : null;
+  if (paper) {
+    return { ok: false, code: "schedule_contradicts", reason: `the source line prices "${name}" as the paper statement charge ("${paper}"), not the account's monthly maintenance fee` };
+  }
   if (canonicalFeeKey === "late_payment" && context?.box_section === true) {
     return { ok: false, code: "schedule_contradicts", reason: boxSectionReason(name) };
   }
@@ -1699,6 +1714,17 @@ function activityChargeOnLine(canonicalFeeKey: string, context: CategoryGuardCon
 }
 
 /**
+ * v91 (#1947): the words on the fee's own source line (`excerpt=` in its conditions) that price its
+ * amount as the paper statement charge (`paperStatementPriceOnLine`), or null. With no excerpt it
+ * does not apply.
+ */
+function paperStatementOnLine(context: CategoryGuardContext | undefined): string | null {
+  const excerpt = context?.conditions?.match(/\bexcerpt=([\s\S]*)$/)?.[1];
+  if (!excerpt) return null;
+  return paperStatementPriceOnLine(plainQuotes(excerpt).replace(/^["\s]+|["\s]+$/g, ""), context?.amount);
+}
+
+/**
  * The category a fee's own source line places it in, when that differs from the one it was filed
  * under; null otherwise. v62: a monthly maintenance row the line charges per withdrawal, debit or
  * transaction over a limit is the excess activity fee, filed under account research by the top-50
@@ -1721,6 +1747,10 @@ export function refileFromLine(
   }
   // v90 (#1912): a return charge its stored text prints in a collection section is a returned deposited item.
   if (collectionReturn(canonicalFeeKey, feeName ?? "", context)) return COLLECTION_RETURN_TARGET;
+  // v91 (#1947): a monthly maintenance row its own line prices as the paper statement charge.
+  if (canonicalFeeKey === "monthly_maintenance" && paperStatementOnLine(context)) {
+    return checkFeeCategory("paper_statement", feeName, context).ok ? "paper_statement" : null;
+  }
   // v72 (#1788): an overdraft row whose own line charges it for staying overdrawn is the continuous
   // overdraft fee.
   if (sustainedOverdraftOnLine(canonicalFeeKey, context)) {

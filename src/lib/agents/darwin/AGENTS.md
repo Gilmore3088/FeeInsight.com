@@ -1617,7 +1617,18 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v90 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v90 (Oct 25, #1912): a plain
+- The guard is at v91 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v91 (Oct 25, #1947): a
+  monthly maintenance fee whose own source line prices it as the paper statement charge
+  (`paperStatementPriceOnLine` in `src/lib/paper-statement-price.ts`, shared with Knox v115: "Service
+  charge | $3.00 paper statement fee each statement cycle", "A $2 paper statement fee applies", "*A
+  monthly fee of $3 applies if you choose to receive paper statements", TD's "Paper statements: $3
+  monthly fee") fails monthly maintenance and re-files to paper_statement, here in verify and on
+  Hamilton's live guard; paper_statement admits its generic name on that line. The account's own price
+  for paper holders beside an electronic price ("$4 for paper statement or $3 for estatement", "$7 with
+  paper statement") stays. Read-only dry run (Oct 25): 19 live fees fail; 5 move in place (95610,
+  126632, 128394, 128395, 138716), 14 sit beside a live paper statement fee at the same price and go to
+  the second look; 1 earlier takedown (14316) can come back as a paper statement fee.
+- v90 (Oct 25, #1912): a plain
   return charge ("Returned Check Fee", "Return Items") its stored text prints under a foreign check or
   collection heading (`withCollectionSection` / `collectionSectionReturn`: U.S. Bank 75929 under "Foreign
   Check Collection (incoming/outgoing)" after "Tracer Fee | $50.00"; BankUnited 56558 and 109208 under

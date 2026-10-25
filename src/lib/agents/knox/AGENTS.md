@@ -284,6 +284,21 @@ fees found (54.7%); 56 of the 59 wrong reads are the right price under another c
 
 ## Rules versions (`extract.rules`)
 
+v115 (Oct 25, #1947): a read filed as the account's monthly maintenance fee whose own line prices it
+as the paper statement charge is the paper statement fee, named "Paper statement fee" unless its name
+already says so (`paperStatementRead` in `rules.ts`, reading the line with `paperStatementPriceOnLine`
+in `src/lib/paper-statement-price.ts`, the matcher category guard v91 uses). The words right after the
+price name a paper statement fee or a charge per or for each paper statement ("Service charge | $3.00
+paper statement fee each statement cycle", "$3.50 charge for each original paper statement", "$5 per
+paper statement", "$1.00 per month (paper statement)"), charge it only for receiving paper ("*A monthly
+fee of $3 applies if you choose to receive paper statements", "may be charged to accounts receiving a
+paper statement"), or the label right before it is a paper statement fee's ("Paper (mailed) Statement
+Fee **** | $2.00 Monthly Fee"). The account's own price for paper holders beside an electronic price
+("$4 for paper statement or $3 for estatement", "$7 with paper statement; $5 with electronic
+statement", "w/Paper Statement") stays maintenance: "with" and a bare "for" never count. Oct 25 dry run:
+19 live maintenance fees match (14 beside a live paper statement fee at the same price), each borne
+out by its bank's stored text.
+
 v114 (Oct 25): a sentence's priced noun phrase, "a/an <X> fee of $N", names and files the price
 (`pricedNounPhrase` in `rules.ts`, reusing `FEE_OF_SENTENCE`). Reliance State Bank's "... to cover
 overdrafts an NSF fee of $30.00 per item may also apply" (live fee 140283) is the NSF fee, named "NSF
@@ -2082,7 +2097,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v114 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v115 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v10 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

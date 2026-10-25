@@ -1984,3 +1984,30 @@ describe("Knox v114: a sentence's priced noun phrase names and files its fee", (
     expect(fee?.feeName).not.toBe("Transfer fee");
   });
 });
+
+describe("v115 (#1947): a price its own line makes the paper statement charge is the paper statement fee", () => {
+  const reads = (line: string) => extractCandidatesFromText(line).candidates.map((c) => [c.canonicalHint, c.amount, c.feeName]);
+
+  it("files the live maintenance misreads as paper statement fees", () => {
+    // Each line is a live fee's stored line (Oct 25); the read was monthly_maintenance before v115.
+    expect(reads("Service charge | $3.00 paper statement fee each statement cycle that you receive printed statements by mail")).toEqual([["paper_statement", 3, "Paper statement fee"]]);
+    expect(reads("No. Scott Credit Union checking accounts do not charge a monthly maintenance fee. A $2 paper statement fee applies if you are not enrolled in eStatements.")).toEqual([["paper_statement", 2, "Paper statement fee"]]);
+    expect(reads("*A monthly fee of $3 applies if you choose to receive paper statements.")).toEqual([["paper_statement", 3, "Paper statement fee"]]);
+    expect(reads("**A monthly fee of $5.00 may be charged to accounts receiving a paper statement.")).toEqual([["paper_statement", 5, "Paper statement fee"]]);
+    expect(reads("Paper (mailed) Statement Fee **** | $2.00 Monthly Fee")).toEqual([["paper_statement", 2, "Paper statement fee"]]);
+    expect(reads("Prime Checking Account | $1.00 per month (paper statement)")).toEqual([["paper_statement", 1, "Paper statement fee"]]);
+    expect(reads("Monthly Service Charge / $3 monthly service charge for paper statements")).toEqual([["paper_statement", 3, "Paper statement fee"]]);
+    // TD's line (#1947) already read as paper statements; it keeps its own name.
+    expect(reads("Paper statements: $3 monthly fee")).toEqual([["paper_statement", 3, "Paper statements"]]);
+  });
+
+  it("reads only the price the paper words follow, and keeps the account's price beside it", () => {
+    const both = reads("*$5 monthly service charge when balance falls below $300. $2 paper statement fee.");
+    expect(both.find(([, amount]) => amount === 2)?.[0]).toBe("paper_statement");
+    expect(both.find(([, amount]) => amount === 5)?.[0]).toBe("monthly_maintenance");
+    expect(reads("Checking Monthly fee $4 for paper statement or $3 for estatement")).toEqual([["monthly_maintenance", 4, "Checking Monthly fee"]]);
+    expect(reads("Monthly service charge is $12 with online banking and eStatements or $14 with paper statements")[0]?.[0]).toBe("monthly_maintenance");
+    expect(reads("Monthly Service Charge $7 with paper statement; $5 with electronic statement")[0]).toEqual(["monthly_maintenance", 7, "Monthly Service Charge"]);
+    expect(reads("Monthly fee: $15")).toEqual([["monthly_maintenance", 15, "Monthly fee"]]);
+  });
+});

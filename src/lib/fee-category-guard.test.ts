@@ -2728,3 +2728,48 @@ describe("guard v90: a return charge in a collection section, and a box-named la
     }
   });
 });
+
+describe("guard v91: a maintenance fee its own line prices as the paper statement charge (#1947)", () => {
+  const line = (excerpt: string, amount: number): CategoryGuardContext => ({ amount, conditions: `Knox deterministic extraction. canonical_hint=monthly_maintenance; excerpt="${excerpt}"` });
+  // Live monthly maintenance fees (Oct 25), each borne out by its bank's stored text.
+  const paper: Array<[number, string, number, string]> = [
+    [129872, "Service charge", 3, "Service charge | $3.00 paper statement fee each statement cycle that you receive printed statements by mail"],
+    [107916, "No. Scott Credit Union checking accounts do not charge a monthly maintenance fee. A", 2, "No. Scott Credit Union checking accounts do not charge a monthly maintenance fee. A $2 paper statement fee applies if you are not enrolled in eStatements."],
+    [128394, "Monthly fee", 3, "*A monthly fee of $3 applies if you choose to receive paper statements."],
+    [126632, "Monthly Fee", 2, "Paper (mailed) Statement Fee **** | $2.00 Monthly Fee"],
+    [138716, "Prime Checking Account Monthly service charge", 1, "Prime Checking Account | $1.00 per month (paper statement)"],
+    [62259, "In addition to the monthly maintenance fee, the Credit Union assesses a", 3.5, "In addition to the monthly maintenance fee, the Credit Union assesses a $3.50 charge for each original paper statement printed and mailed per statement cycle unless your specific a"],
+  ];
+
+  it("fails monthly maintenance and re-files to paper_statement under its own name", () => {
+    for (const [id, name, amount, excerpt] of paper) {
+      const context = line(excerpt, amount);
+      const verdict = checkFeeCategory("monthly_maintenance", name, context);
+      expect(verdict.ok, String(id)).toBe(false);
+      if (!verdict.ok) expect(verdict.code, String(id)).toBe("schedule_contradicts");
+      expect(refileFromLine("monthly_maintenance", name, context), String(id)).toBe("paper_statement");
+      expect(checkFeeCategory("paper_statement", name, context).ok, String(id)).toBe(true);
+    }
+  });
+
+  it("keeps the account's own price for paper holders, another price on the line, and fees with no excerpt", () => {
+    const kept: Array<[string, number, string]> = [
+      ["Checking Monthly fee", 4, "Checking Monthly fee $4 for paper statement or $3 for estatement"],
+      ["Monthly Service Charge", 7, "Monthly Service Charge $7 with paper statement; $5 with electronic statement"],
+      ["Service Charge", 20, "Service Charge / $20 Monthly Service Charge w/Paper Statement"],
+      ["Maintenance Fee", 7, "Maintenance Fee | $7 per month with eStatements4 Paper statements available for an additional $3 per month"],
+      ["FirstLink Basic monthly fee", 3, "There is a $3.00 monthly fee for FirstLink Basic if the daily balance falls below $100 or you opt for paper statements."],
+      ["People's Choice Checking Monthly service charge", 10, "Monthly service charge is $10 with online banking and eStatements or $12 with paper statements"],
+    ];
+    for (const [name, amount, excerpt] of kept) {
+      expect(checkFeeCategory("monthly_maintenance", name, line(excerpt, amount)).ok, excerpt).toBe(true);
+      expect(refileFromLine("monthly_maintenance", name, line(excerpt, amount)), excerpt).toBeNull();
+    }
+    expect(checkFeeCategory("monthly_maintenance", "Monthly fee", { amount: 3 }).ok).toBe(true);
+  });
+
+  it("admits a generic name as paper_statement only on a paper line", () => {
+    expect(checkFeeCategory("paper_statement", "Monthly fee", { amount: 5 }).ok).toBe(false);
+    expect(checkFeeCategory("paper_statement", "Monthly fee", line("Monthly fee: $5", 5)).ok).toBe(false);
+  });
+});

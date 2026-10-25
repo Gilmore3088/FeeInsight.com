@@ -616,4 +616,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-1947-paper-statement-price-is-not-maintenance",
+    agent: "knox",
+    stage: "extract",
+    lesson: "When the words on a price's own line make it the charge for paper statements, file it as the paper statement fee, never as the account's monthly maintenance fee, however generic the words around it (\"Monthly fee\", \"Service charge\", \"A monthly fee of\"): the words right after the price name a paper statement fee or a charge per or for each paper statement (\"$3.00 paper statement fee each statement cycle\", \"$5 per paper statement\", \"$1.00 per month (paper statement)\"), say it applies only to those who receive paper statements (\"A monthly fee of $3 applies if you choose to receive paper statements\"), or the label right before it is a paper statement fee's (\"Paper (mailed) Statement Fee | $2.00 Monthly Fee\"). The account's own price for paper holders beside an electronic price (\"$4 for paper statement or $3 for estatement\", \"$7 with paper statement; $5 with electronic statement\") stays the maintenance fee.",
+    why: "TD Bank's \"Paper statements: $3 monthly fee\" went live as a $3 monthly maintenance fee beside its own live paper statement row (#1947), and 19 more live maintenance fees were paper statement charges, 14 of them counted twice beside the bank's live paper statement fee at the same price.",
+    evidence: { issues: [1947], prs: [], files: ["src/lib/paper-statement-price.ts", "src/lib/agents/knox/rules.ts", "src/lib/fee-category-guard.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];
