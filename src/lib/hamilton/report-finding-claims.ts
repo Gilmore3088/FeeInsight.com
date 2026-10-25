@@ -102,6 +102,21 @@ export function findingFactsData(claims: ReportFindingClaims | null): { numeric_
 }
 
 /**
+ * A saved answer's "Figures as saved" (#1899), kept only when every $ or % figure in the line traces
+ * to the finding's carried facts. The answer's metrics are the model's own parsed figures and were
+ * never checked against a record, so a line with no figure, or one no fact supports, is dropped;
+ * with no carried facts, none is kept.
+ */
+export function tracedSavedFigures<F extends { label: string; value: string; note?: string }>(figures: readonly F[], claims: ReportFindingClaims | null): F[] {
+  const own = findingFactsData(claims);
+  if (!own) return [];
+  return figures.filter((f) => {
+    const text = [f.label, f.value, f.note].filter(Boolean).join(" ");
+    return extractFigures(f.value).length > 0 && checkNarrativeFigures(text, own).unmatched.length === 0;
+  });
+}
+
+/**
  * The text with every figure that neither the finding's carried facts nor the section's DATA
  * supports replaced by `HELD_FINDING_FIGURE`, and the figures held.
  */
@@ -187,7 +202,8 @@ export function reportAddedFindings(findings: readonly ReportBasketItem[], print
       ...(f.identityContext ? { identityContext: f.identityContext } : {}),
       ...(claims ? { claims } : {}),
       ...(sources.length ? { sources } : {}),
-      ...(f.evidence ? { evidence: f.evidence } : {}),
+      // An Ask finding prints only the saved figures its records support; Position and Test figures are the server's own read.
+      ...(f.evidence ? { evidence: f.source === "Ask" ? { ...f.evidence, figures: tracedSavedFigures(f.evidence.figures, claims) } : f.evidence } : {}),
     };
   });
 }
