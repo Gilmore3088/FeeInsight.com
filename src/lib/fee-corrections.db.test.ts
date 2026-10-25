@@ -553,5 +553,8 @@ describe.skipIf(!connection)("admin fee corrections in isolated PostgreSQL", () 
     const reversed = await reverseFeeCorrection(db, { feePublishedId: result.feePublishedId, expectedVersion: 1,
       idempotencyKey: "db-test-losttext-reverse-000001", reason: "Restore the fee as it was read" }, admin);
     expect(reversed.ok).toBe(true);
+    // Leave the fee held, as the national index test left it: this suite keeps its rows, and other
+    // suites on the same database count live fees.
+    if (reversed.ok) expect(await holdPublishedFee(db as never, reversed.feePublishedId, "Back as it was", { id: 1, name: "James" })).toMatchObject({ ok: true });
   });
 });
