@@ -130,6 +130,10 @@ Writers use `recordFeedback` (`feedback.ts`) and check `feedbackSchemaReady` fir
 Dedupe keys in use:
 - `hamilton.takedown:pub:<id>:extract` and `:verify`: a live fee Hamilton took down,
   charged both to the Knox strategy that read it and to the Darwin attempt that approved it.
+  A later takedown of the same fee (after a restore) adds `hamilton.takedown:pub:<id>:at:<epoch ms>:extract`
+  and `:verify`, keyed by its `rolled_back_at`; the sync skips a fee only when a takedown row was
+  written after its last restore, and an account type hold's row never counts (#1648). Readers
+  match `hamilton.takedown:pub:%:extract`, which both shapes satisfy.
 - `hamilton.restore:pub:<id>`: that takedown is live again. A later takedown and restore of the same fee adds `hamilton.restore:pub:<id>:run:<run>`.
 - `darwin.verify:raw:<fee_raw_id>`: a Darwin `category_mismatch` reject, written by the sync below.
 - `darwin.verify:decision:raw:<fee_raw_id>`: every other Darwin decision on a Knox read,

@@ -36,8 +36,11 @@ institutions remains the only human launch workflow.
   (`golden`, `adversarial`, `regression`, `holdout`, `fresh_audit`). Today only `regression` is
   written. A case's `input` is frozen at insert and never rewritten; cases are never deleted.
 - `severity.ts`: the critical / major / minor / info scale. An unknown check is `major`.
-- `checkers.ts`: pure offline checkers. Runtime generic replay admits `hamilton.limit_guard`;
-  a legacy `source_check` body remains historical and unavailable. The prospective source-bound
+- `checkers.ts`: pure offline checkers. Runtime generic replay admits `hamilton.limit_guard` and
+  `hamilton.category_guard` (#2064); a takedown frozen as `unreplayable` before its check had a
+  replayer replays by its check name from the fee's frozen category, name, amount and conditions,
+  without the schedule's NSF price, so a catch that needed it stays a candidate. A legacy
+  `source_check` body remains historical and unavailable. The prospective source-bound
   corrective protocol below has its own paired replay; other error families are not counted as
   evaluated merely because a checker name exists.
 - `regression.ts`: the `deming-regression` step in Atlas's daily scoreboard run
@@ -104,6 +107,45 @@ institutions remains the only human launch workflow.
     (stage extract).
   The step's detail reports both counts (`audit_misses`), and either write that fails is reported
   there without stopping the audit.
+
+## Error classes (#2063)
+
+- `error-classes.ts`: the `deming-error-classes` step in Atlas's daily scoreboard run, after the
+  error loop. It groups the last 7 days of confirmed errors (a `wrong` or `missed` row with weight
+  about a fee that went live, or recorded by a person; Deming's own audit misses count) by stage,
+  kind and pattern: the fee category for a fee-level row, the reader and document type for a read
+  error, else the document kind. A pattern at two or more banks is a class, owned by the agent that
+  runs its stage; rows with no pattern are counted, never a class. Each class keeps one weight-0
+  `error_class` ledger row, opened the first day it is seen and updated with each later day's
+  counts, date, examples and a GitHub-ready title and body. The morning brief lists the largest classes, so the data lane works classes, not fees.
+- Live wrong amounts at extract (#2067; `amount-patterns.ts`) group by the text layout around the
+  fee, not its category: price-first rows paired with the wrong row, an opening deposit read as the
+  fee, a cap or minimum, a figure in the name, a footnote glued to a $0 price, a price from the
+  next line, several columns. Each row is re-checked with today's shared `checkFeeAgainstSource`
+  (a `tiered_fee` verdict traces, as in Knox's self-check): a class it refuses no longer traces
+  wherever the check runs; a class it still passes (`passes_today`) is the next extraction rule to
+  write, with its Darwin dry-run count. A hand amount correction's row is judged at its old read.
+
+## Weekly live-check gaps (#2066)
+
+- `scripts/live-batch-gaps.mjs` (read-only audit) traces every miss of James's weekly live check to
+  the step that caused it and tags it: caught and routed to that step's agent (an error row on the
+  fee that the agent reads, per `learning/feedback-kinds.ts`), caught but not routed, not caught (a
+  gap; every missing fee is one), or unresolved. It prints one read-only SELECT for the production
+  SQL tool, then tags the results file from its output. The gap count goes beside accuracy on the
+  weekly scorecard; a miss whose class has no planted case gets one. 2026-W43: 445 of 532 misses
+  not caught, 56 caught but not routed, 11 routed, 20 unresolved.
+
+## Planted error loop (#2065)
+
+- `planted-errors.ts` and its test plant one of each error class the 2026-10-19 learning audit
+  named (wrong document, lost text, a limit read as a fee, the wrong category, the wrong audience,
+  a duplicate, a missed fee) and walk each through the loop with the real code: detected by the
+  check that runs on live fees, recorded at the stage that caused it, read by a registered reader
+  file of the owning agent that names the rows, re-run through the owning step, and judged fixed
+  by the daily re-check. A link the loop lacks is listed in `KNOWN_GAPS` with the issue that owns
+  it; CI fails on an unlisted broken link and on a listed gap that now holds. Each new error class
+  gets a planted case. Pure, no database.
 
 ## Did the change work (#1106)
 
@@ -328,10 +370,11 @@ fails a PR that changes one of these constants without updating its line here (#
 | Constant | Strategy | Version | File |
 |---|---|---|---|
 | `ACCURACY_REPORTING_VERSION` | — | v1 | `deming/accuracy-measure.ts` |
-| `FRESH_AUDIT_VERSION` | — | v7 | `deming/fresh-audit.ts` |
+| `FRESH_AUDIT_VERSION` | — | v9 | `deming/fresh-audit.ts` |
 | `DEMING_REGRESSION_VERSION` | — | v1 | `deming/regression.ts` |
 | `BENCHMARK_HEALTH_VERSION` | — | v1 | `deming/benchmark-health.ts` |
 | `PLAYBOOK_CHECK_VERSION` | — | v1 | `deming/playbook-contradictions.ts` |
+| `AMOUNT_PATTERN_VERSION` | — | v1 | `deming/amount-patterns.ts` |
 | `DATA_QUALITY_VERSION` | — | v1 | `deming/data-quality.ts` |
 | `KNOX_MISSES_VERSION` | — | v1 | `deming/knox-misses.ts` |
 | `MONTHLY_REVIEW_VERSION` | — | v1 | `deming/monthly-review.ts` |

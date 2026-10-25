@@ -11,7 +11,7 @@
 
 import { checkNarrativeFigures, type FigureCheckOptions, type FigureCheckResult } from "./figure-check";
 import { PIPELINE_TERMS, findUnrequestedAdvice } from "./workspace/four-roles";
-import { checkAnswerInterpretations } from "./answer-interpretations";
+import { causalClaimProblems, checkAnswerInterpretations } from "./answer-interpretations";
 
 /** Price position is "lower" or "higher", never "cheapest". */
 export const CHEAP_WORDING = /\bcheap(?:er|est)?\b/i;
@@ -21,6 +21,11 @@ export interface AnswerEvidenceCheck {
   /** One line per failure, written so it can be fed back to the model. Empty when it passes. */
   problems: string[];
   figureCheck: FigureCheckResult;
+  /**
+   * Shadow lines (#1077, claim contract step 3): what the broad causal rule would flag. Recorded
+   * with the verdict so step 4 can measure it; never a failure. Absent when it flags nothing.
+   */
+  shadowProblems?: string[];
 }
 
 /**
@@ -38,7 +43,8 @@ export function checkAnswerEvidence(text: string, data: unknown, options: Figure
   const cheap = text.match(CHEAP_WORDING);
   if (cheap) problems.push(`"${cheap[0]}" is not house wording. Say "lower" or "higher" price.`);
   problems.push(...checkAnswerInterpretations(text, data, options.question));
-  return { passed: problems.length === 0, problems, figureCheck };
+  const shadowProblems = causalClaimProblems(text).filter((line) => !problems.includes(line));
+  return { passed: problems.length === 0, problems, figureCheck, ...(shadowProblems.length > 0 ? { shadowProblems } : {}) };
 }
 
 /**
@@ -55,8 +61,10 @@ export const HELD_ANSWER_MESSAGE: string | null =
 export interface SavedAnswerEvidence {
   passed: boolean;
   problems: string[];
+  /** The shadow lines that did not decide the verdict (AnswerEvidenceCheck.shadowProblems). */
+  shadowProblems?: string[];
 }
 
 export function savedAnswerEvidence(check: AnswerEvidenceCheck): SavedAnswerEvidence {
-  return { passed: check.passed, problems: check.problems };
+  return { passed: check.passed, problems: check.problems, ...(check.shadowProblems?.length ? { shadowProblems: check.shadowProblems } : {}) };
 }

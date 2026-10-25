@@ -79,7 +79,14 @@ export const SOURCE_CHECK_REASON = "source_check_untraceable";
 // Version 21 (#2477): a dot-leader row closed by its own free word ("ATM Transactions……FREE |
 // activity……$5", United Bank) ends there, so its name never owns the next column's price
 // (`namesItsClosedFreeRow`).
-export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 21 } as const;
+// Version 22 (#1946): a footnote glued to a $0 price ("$03 or $10" for "$0³ or $10") is a $0 price
+// (`withGluedFootnotePrices`), so a fee read at the footnote's number no longer traces. The bump
+// re-checks every institution; the PR gives the dry-run count of live fees it takes down.
+// Version 23 (#1479): a name | description | price row ("Late Payment Fee | Fee assessed when a loan
+// payment is made after the grace period. | $20.00") stays one fee's row, so its description is no
+// second name and the fee keeps its own price; a price under its name with the balance that waives it
+// ("$3.00 if balance falls below $100 minimum") is that name's price. Dry run: no live fee comes down.
+export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 23 } as const;
 
 /**
  * An institution is checked again whenever a newer live fee appears, so a fee

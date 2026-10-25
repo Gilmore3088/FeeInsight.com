@@ -68,6 +68,7 @@ import { recordLinkOutcomes } from "@/lib/agents/magellan/outcomes";
 import { recordAuditMisses } from "@/lib/agents/deming/audit-misses";
 import { runChangeOutcomes, summarizeChangeOutcomes } from "@/lib/agents/deming/change-outcomes";
 import { errorFixDetail, runErrorFixRecheck, summarizeErrorFixRecheck } from "@/lib/agents/deming/error-fixes";
+import { errorClassesDetail, runErrorClasses, summarizeErrorClasses } from "@/lib/agents/deming/error-classes";
 import { refreshPageClassifier } from "@/lib/agents/magellan/page-classifier";
 import { isRegistryStepKey, runRegistryStep } from "@/lib/agents/magellan/registry";
 import {
@@ -2696,6 +2697,11 @@ async function executeAgenticStep(
       const result = await runErrorFixRecheck({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
       return { status: "completed", summary: summarizeErrorFixRecheck(result), detail: errorFixDetail(result) };
     }
+    case "deming-error-classes": {
+      // #2063: the week's confirmed errors grouped by step and pattern, one ledger row per class.
+      const result = await runErrorClasses({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
+      return { status: "completed", summary: summarizeErrorClasses(result), detail: errorClassesDetail(result) };
+    }
     case "deming-monthly-review": {
       // #1107: on the 1st of the month (UTC) only. Read-only: each measure is one SELECT in its own
       // savepoint; a failed read is stored as unknown. The ledger row is its only write.
@@ -4789,7 +4795,8 @@ export async function startAgentRun(input: StartAgentRunInput, transaction?: typ
   return created;
 }
 
-export type ProRequestOperation = "report" | "thesis" | "simulate_interpretation" | "ask" | "upload" | "decision" | "ask_memo";
+/** `answer_gate_shadow`: the one output gate's shadow verdict on a written answer (#1077 step 4, output-gate-shadow-store.ts). */
+export type ProRequestOperation = "report" | "thesis" | "simulate_interpretation" | "ask" | "upload" | "decision" | "ask_memo" | "answer_gate_shadow";
 
 export interface RecordProRequestInput {
   operation: ProRequestOperation;

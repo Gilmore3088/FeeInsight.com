@@ -1,3 +1,4 @@
+import type { RegisteredFeedbackKind } from "./feedback-kinds";
 import type { sql } from "@/lib/data-store/connection";
 
 import { ATTEMPT_STAGES } from "./outcomes";
@@ -34,12 +35,15 @@ export const FEEDBACK_STAGES = [...ATTEMPT_STAGES, "marketing"] as const;
 export type FeedbackStage = (typeof FEEDBACK_STAGES)[number];
 
 /**
- * Known kinds. Writers may add new ones; keep them snake_case and list them here.
+ * Known kinds. Writers may add new ones: keep them snake_case, list them here, and register each
+ * with its readers in `feedback-kinds.ts` (#2062).
  *   Fee level: wrong_category, wrong_amount, not_a_fee, threshold, not_on_schedule,
  *     unreproduced, outside_range, off_taxonomy, duplicate, answer_key,
  *     restored_after_takedown, darwin_verified, missing_lineage
  *   Restore records (weight 0, Hamilton): business_schedule_restored (a business-schedule
- *     takedown brought back for want of a consumer fee, `hamilton/business-schedule.ts`, #1671)
+ *     takedown brought back for want of a consumer fee, `hamilton/business-schedule.ts`, #1671),
+ *     account_type_hold_released (a guard-refused row the account type hold put back to verified,
+ *     held, `hamilton/account-type-hold.ts`, #1680)
  *   Audience records (weight 0, the old value kept for a rollback): audience_relabeled
  *     (`darwin/audience-relabel.ts`), audience_hand_fixed (`hamilton/hand-takedowns.ts`, #1302)
  *   Link level (Magellan): produced_live_fees, thin_link, wrong_document, dead_link,
@@ -73,28 +77,19 @@ export type FeedbackStage = (typeof FEEDBACK_STAGES)[number];
  */
 export const BUSINESS_SCHEDULE_RESTORED_KIND = "business_schedule_restored";
 
-export type FeedbackKind =
-  | "wrong_category"
-  | "wrong_amount"
-  | "not_a_fee"
-  | "threshold"
-  | "not_on_schedule"
-  | "unreproduced"
-  | "outside_range"
-  | "off_taxonomy"
-  | "duplicate"
-  | "refreshed"
-  | "answer_key"
-  | "restored_after_takedown"
-  | "darwin_verified"
-  | "missing_lineage"
-  | "produced_live_fees"
-  | "thin_link"
-  | "wrong_document"
-  | "dead_link"
-  | "text_held_up"
-  | "text_lost_fees"
-  | (string & {});
+/**
+ * A row the category guard refused only for its account words, put back to verified (held, never
+ * published) by the account type hold because it passes every check with those words set aside
+ * (weight 0, a record, `hamilton/account-type-hold.ts`, #1680). Signal `restored`, never `wrong`:
+ * the hold judged the refusal wrong, not the fee's category. It carries no `fee_published_id`.
+ */
+export const ACCOUNT_TYPE_HOLD_RELEASED_KIND = "account_type_hold_released";
+
+/**
+ * A kind registered in `feedback-kinds.ts` with the code that reads it (#2062). Recording a kind
+ * not listed there fails the type check: list it with its readers, or say why no agent reads it.
+ */
+export type FeedbackKind = RegisteredFeedbackKind;
 
 export interface FeedbackRow {
   /** Stage and strategy that produced the output being judged. */
@@ -265,7 +260,9 @@ export function takedownKind(reason: string): FeedbackKind {
     if (detail === "category_not_in_text") return "wrong_category";
     return "not_on_schedule";
   }
-  return group.replace(/[^a-z0-9]+/gi, "_").toLowerCase();
+  // Any other takedown reason becomes its own kind, unregistered on purpose: the morning brief
+  // counts its verify rows as unread, and the restore detection reads its extract rows (#2062).
+  return group.replace(/[^a-z0-9]+/gi, "_").toLowerCase() as FeedbackKind;
 }
 
 /** The Hamilton check behind a takedown reason. */

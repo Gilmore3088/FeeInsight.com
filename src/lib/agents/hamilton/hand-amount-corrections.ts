@@ -457,7 +457,7 @@ export async function applyHandAmountCorrections(
           return {
             aboutStage: "extract" as const,
             signal: "wrong" as const,
-            kind: "wrong_amount",
+            kind: "wrong_amount" as const,
             reportedBy: "gutenberg" as const,
             checkName: HAND_AMOUNT_CHECK,
             institutionId: entry.institutionId,
@@ -476,7 +476,7 @@ export async function applyHandAmountCorrections(
           return {
             aboutStage: "extract" as const,
             signal: "wrong" as const,
-            kind: "wrong_amount",
+            kind: "wrong_amount" as const,
             reportedBy: "gutenberg" as const,
             checkName: HAND_AMOUNT_CHECK,
             sourceDocumentId: twin.sourceDocumentId,

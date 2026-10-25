@@ -197,7 +197,7 @@ export async function secondLook<T extends SecondLookCandidate>(
   });
   const writes: FeedbackRow[] = [
     // A first look is a suspicion, not proof: weight 0 keeps it out of learned counts.
-    ...plan.flagged.flatMap((fee) => {
+    ...plan.flagged.flatMap((fee): FeedbackRow[] => {
       const evidence = { flag_run_id: runId, flagged_at: now.toISOString(), reason: fee.reason };
       return [
         { ...base(fee), signal: "wrong" as const, kind: PENDING_KIND, weight: 0, evidence },
@@ -205,7 +205,7 @@ export async function secondLook<T extends SecondLookCandidate>(
         { ...base(fee), signal: "wrong" as const, kind: FLAG_RECORDED_KIND, weight: 0, evidence, dedupeKey: secondLookEventKey(check, fee.feePublishedId, "flag", runId) },
       ];
     }),
-    ...plan.confirmed.flatMap(({ candidate, first }) => {
+    ...plan.confirmed.flatMap(({ candidate, first }): FeedbackRow[] => {
       const selected = readTakedownWitness(candidate.takedownWitness);
       const witness = selected && selected.check === check && selected.judgeRunId === runId && selected.publishedId === candidate.feePublishedId
         && selected.identity.institutionId === candidate.institutionId
@@ -226,7 +226,7 @@ export async function secondLook<T extends SecondLookCandidate>(
         { ...base(candidate), signal: "wrong" as const, kind: FLAG_CONFIRMED_KIND, weight: 0, evidence, dedupeKey: secondLookEventKey(check, candidate.feePublishedId, "confirmed", runId) },
       ];
     }),
-    ...cleared.flatMap((id) => {
+    ...cleared.flatMap((id): FeedbackRow[] => {
       const first = pending.get(id)!;
       const row = {
         aboutStage: "publish" as const,

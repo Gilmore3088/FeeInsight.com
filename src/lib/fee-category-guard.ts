@@ -229,8 +229,15 @@ const CARD_SERVICE_ELSEWHERE = String.raw`\bbill payer\b|\baccount clos\w*`;
  * balance_inquiry is retired and folds into this type (v25). v71: verifying an ATM transaction
  * ("Verification of ATM Transaction" $3, 96092) is research. A denied ATM transaction ("ATM
  * Denials", 12 live rows) is left for James: it may be the network ATM fee for a failed attempt.
+ * v83 (#1690, held by Darwin's peer check): research or an investigation that lists ATM items
+ * ("Account Investigation - Share / ATM / ACH (per item after 60 days)" $10, raw 750417) and ATM
+ * photos ("ATM Photos at Credit Union" $10, raw 790236) are account research (`ATM_RESEARCH`); a
+ * transaction that overdraws a share ("ATM Negative Share Transaction" $10, raw 790212) is a
+ * negative balance; and an additional card ("Additional ATM/Debit Card" $10, raw 750400; "ATM/Debit:
+ * Each Additional Card") prices the card. "Each additional ATM withdrawal" names no card and stays.
  */
-const NOT_ATM_USE = String.raw`\bdisput\w*|\b(?:photo ?)?cop(?:y|ies)\b|\bnegative\s+balance\b|\btreasurer|\bcashier|\bofficial\s+checks?\b|\btemporary\s+checks?\b|\bcut[- ]?off\s+times?\b|\blost\b|\bstolen\b|\b(?:un)?block(?:ed)?\s+cards?\b|\breplac|\bverification of\b`;
+const ATM_RESEARCH = String.raw`\binvestigat\w*|\bresearch\w*|\bphotos?\b(?!\s*(?:id|identification)\b)`;
+const NOT_ATM_USE = String.raw`${ATM_RESEARCH}|\bnegative\s+(?:share|savings|account)\b|\badditional\s+(?:(?:atm|debit|visa|check|mastercard)\s*\/?\s*)*cards?\b(?!\s*-?\s*holders?\b)|\bdisput\w*|\b(?:photo ?)?cop(?:y|ies)\b|\bnegative\s+balance\b|\btreasurer|\bcashier|\bofficial\s+checks?\b|\btemporary\s+checks?\b|\bcut[- ]?off\s+times?\b|\blost\b|\bstolen\b|\b(?:un)?block(?:ed)?\s+cards?\b|\breplac|\bverification of\b`;
 
 /**
  * v70 (#1765, card-product misfiles; #1690): a fee for the card itself is not a fee for using another
@@ -353,6 +360,35 @@ export function borrowedDirection(
   if (WIRE_ROW_KEYS.has(canonicalFeeKey) && words.some((word) => WIRE_ROW_WORD.test(word))) return null;
   return words.length > 0 && words.length <= 5 && words.every((word) => DIRECTION_ROW_WORDS.has(word)) ? row : null;
 }
+
+/**
+ * v82 (#1662): what keeps a night deposit name that mentions a key deposit filed as the service.
+ * v66 exempted lost, replac, service, per month, monthly, annual and rental anywhere in the name,
+ * unanchored, so "Night Depository Services: Key Deposit" (a section header Knox carried in),
+ * "... (refundable; service fee billed monthly)" and "... - Serviced Accounts" passed. Each word now
+ * has to sit on what it qualifies, with word boundaries:
+ * - a lost or replaced key: "lost" or "replac..." within a few words of "key";
+ * - the service itself: "night deposit(ory) service(s)" or "night drop service", not a header
+ *   ("Services:", "Services -") and not running straight into "Key" ("Night Deposit Service Key
+ *   Deposit", where the key deposit is the item);
+ * - a periodic fee: "monthly/annual/yearly fee or charge", "fee/charge per month/monthly/annually";
+ * - the depository's rental or period: "night depository rental", "night deposit, annual".
+ */
+const NIGHT_DEPOSIT_NOUN = String.raw`(?:night\s+deposit(?:ory)?(?:\s+box)?|night\s+drop|depository|drop\s+box)`;
+const NIGHT_DEPOSIT_KEY_DEPOSIT_EXEMPT = new RegExp(
+  [
+    String.raw`\b(?:lost|replac\w*)\b[^|]{0,15}\bkeys?\b`,
+    String.raw`\bkeys?\b[^|]{0,15}\b(?:lost|replac\w*)\b`,
+    String.raw`\b(?:night\s+deposit(?:ory)?|depository|night\s+drop)\s+services?\b(?!\s*[:\-–—|/,]|\s+keys?\b)`,
+    String.raw`\b(?:monthly|annual|yearly)\s+(?:fee|charge|service\s+charge)\b`,
+    String.raw`\b(?:fee|charge)\s+(?:per\s+month|per\s+year|monthly|annually|yearly)\b`,
+    String.raw`\b${NIGHT_DEPOSIT_NOUN}\s+(?:rental|rent)\b`,
+    String.raw`\b(?:monthly|annual|yearly)\s+${NIGHT_DEPOSIT_NOUN}\s+(?:fee|charge)\b`,
+    String.raw`\$\s*\d[\d.,]*\s*\/\s*(?:mo|month|yr|year)\b`,
+    String.raw`\b${NIGHT_DEPOSIT_NOUN}[\s,:-]*(?:per\s+month|monthly|annual(?:ly)?|per\s+year|yearly)\b`,
+  ].join("|"),
+  "i",
+);
 
 export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   monthly_maintenance: {
@@ -706,7 +742,11 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // Depository Key Deposit", "Night Deposit Box Key (Refundable Deposit)", "Deposit for Receptacle
     // Key") is a key charge, not the service. A lost or replaced key stays the night deposit fee, and so
     // does a service, monthly, annual or rental line that names a key deposit (as for bags).
-    exclude: /(^(?!.*(lost|replac|per month|monthly|annual|rental)).*(\bbags?\b|zipper|pouch|wrapper|strap)|^(?!.*(lost|replac|service|per month|monthly|annual|rental)).*(\bkeys?\b[^|]{0,30}?\b(deposit|refundable)\b|\bdeposit for\b[^|]{0,30}\bkeys?\b|\bsecurity deposit\b[^|]{0,30}\bkeys?\b))/i,
+    // v82 (#1662): those exemptions are tied to the key or the night deposit noun
+    // (`NIGHT_DEPOSIT_KEY_DEPOSIT_EXEMPT`), so a section header ("Night Depository Services: Key
+    // Deposit") or an unrelated clause ("service fee billed monthly", "customer service hours")
+    // no longer lets a key deposit through.
+    exclude: new RegExp(String.raw`(^(?!.*(lost|replac|per month|monthly|annual|rental)).*(\bbags?\b|zipper|pouch|wrapper|strap)|^(?!.*(?:${NIGHT_DEPOSIT_KEY_DEPOSIT_EXEMPT.source})).*(\bkeys?\b[^|]{0,30}?\b(deposit|refundable)\b|\bdeposit for\b[^|]{0,30}\bkeys?\b|\bsecurity deposit\b[^|]{0,30}\bkeys?\b))`, "i"),
   },
   // v60: a night deposit bag, its key or a bag bundle is not a safe deposit box fee (UAT 104666,
   // "Deposit Bags & Night Deposit Drop Box: Disposable 9" x 12" bundle" $15; 6/6 on source, Oct 9).
@@ -907,7 +947,16 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // v81 (Oct 22): "Returned Check Deposit" / "Returned Item Deposit" names a returned deposited item
 // (the shadow lab's answer keys, #2536: $5 and $32 refused before). It only admits names; no fee that
 // passes today fails. Rows rejected as category_mismatch under an older guard are judged once more.
-export const CATEGORY_GUARD_VERSION = 81;
+// v82 (Oct 25, #1662): the night deposit key-deposit refusal's exemptions are tied to the key or the
+// night deposit noun (`NIGHT_DEPOSIT_KEY_DEPOSIT_EXEMPT`), with word boundaries, so a "Services:"
+// header or an unrelated "service"/"monthly" clause no longer keeps a key deposit filed as the
+// service. Read-only dry run (Oct 25): none of the 142 live night deposit names that name a key
+// changes verdict; the guard catch-up re-checks every live fee once.
+// v83 (Oct 25, #1690): the non-network ATM fee refuses research, investigation and photo names
+// (re-filed to account research on Darwin's path), an ATM transaction that overdraws a share, and an
+// additional card (`NOT_ATM_USE`). Read-only dry run, Oct 25: 4 of 2,290 live atm_non_network fees
+// fail and go to the second look; the live sweep's restore list is unchanged.
+export const CATEGORY_GUARD_VERSION = 83;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -987,6 +1036,11 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
   // v69: an ATM dispute or a copy of a card sale is research.
   // v71: verifying an ATM transaction is research too (96092, #1773).
   { from: "atm_non_network", to: "account_research", when: /\bdisput|\b(?:photo ?)?cop(?:y|ies) of\b|\bverification of\b/i },
+  // v83 (#1690): an investigation or research listing ATM items, and ATM photos, are research too.
+  // A card's own research or film fee ("ATM Card Research/Film Fee" $75, Rally FCU, keyed as the
+  // retired card dispute type) is not re-filed: the fold gives a card dispute without a dispute word
+  // no home (`card_dispute` in fee-fold.ts), so it fails and is not read.
+  { from: "atm_non_network", to: "account_research", when: new RegExp(ATM_RESEARCH, "i"), unless: /\bcards?\b/i },
   // v70: an ATM-named bill payer service is bill pay, and a card charge on closing the account early
   // is an early closure (`CARD_SERVICE_ELSEWHERE`).
   { from: "atm_non_network", to: "bill_pay", when: /\bbill payer\b/i },

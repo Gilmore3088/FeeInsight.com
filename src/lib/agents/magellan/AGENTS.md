@@ -192,6 +192,20 @@ and `detail.method_version`).
   A link on another kind of site (`isOtherSiteLink`: a government page, a broker's disclosures,
   a car-price site) is searched the same way and never kept as a companion, unless that host
   is the bank's own website (GSA FCU on gsafcu.gsa.gov).
+- Article pages are never a source (#1774, the one article rule `isArticleLink`). The companion
+  finder (`classifyCompanionLink`, and a disclosures index's documents) refuses an article,
+  blog, post, story, learning or advice page, or a dated blog path, however its link text names an
+  account: TD's "/learning/.../types-of-checking-accounts", Keesler's "/resources/advice/..." and
+  Security First's "/2022/01/how-to-choose-between-a-time-deposit-or-money-market-account/" had
+  been stored as account pages, and the last one again on Oct 18, after publish refused its fees.
+  The stored-companion review retires the ones stored before (`ARTICLE_COMPANION_REASON`, under
+  `not_consumer_fee_page`, so Hamilton's companion retire takes down any live fee read from one;
+  prod, Oct 25: 15 such companions on 8 institution records, TD on two, no live fee). The plain fetch sets aside a
+  remembered address that is an article when the saved fee link is not one
+  (`withoutArticleRemembered`), unless a person's correction locked it: a read remembers the page
+  it read, so SchoolsFirst FCU's advice article was fetched on Oct 18 and 19 instead of its saved
+  link. A saved link that is itself an article (Nelnet Bank, Fidelity, KEMBA on Oct 25) is left to
+  the upgrade search above.
 - Restored fee pages (`restore-fee-page.ts`, `RESTORE_FEE_PAGE_VERSION`): a bank whose page
   named as the fee schedule (`namesFeeSchedulePage`) was set aside by Rosetta for reading no
   amounts or needing JavaScript, and whose link is now a weaker page (not fee-named, not a

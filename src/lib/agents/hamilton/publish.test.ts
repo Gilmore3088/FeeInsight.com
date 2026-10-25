@@ -178,8 +178,11 @@ describe("Hamilton agentic publish", () => {
     expect(publishedFeeName("Stop Payment, all items including ACH and bill pay", "stop_payment")).toBe("Stop Payment");
     expect(publishNameHold("Legal Process Fee, per occurrence, or such lesser rate as may be set by law", "legal_process", 125)).toBeNull();
     expect(publishedFeeName("Legal Process Fee, per occurrence, or such lesser rate as may be set by law", "legal_process")).toBe("Legal Process Fee, per occurrence");
-    // Any other clause may be the fee's condition, and a line cut mid-sentence has no name: both stay held.
-    expect(publishNameHold("ATM Withdrawal Fees, out of Network (Surcharge Fees, fees accessed by other ATM proprietors, may still apply.)", "atm_non_network", 0)?.code).toBe("cutoff_name");
+    // Any other clause may be the fee's condition, so it is never cut off; a line cut mid-sentence has no name and stays held.
+    // #1443: a closed parenthetical ending the name qualifies it, so this name is no longer cut off and publishes whole.
+    const atmName = "ATM Withdrawal Fees, out of Network (Surcharge Fees, fees accessed by other ATM proprietors, may still apply.)";
+    expect(publishNameHold(atmName, "atm_non_network", 0)).toBeNull();
+    expect(publishedFeeName(atmName, "atm_non_network")).toBe(atmName);
     expect(publishNameHold("Any replacement cards whether lost, stolen, or damaged will be charged a", "card_replacement", 5)?.code).toBe("cutoff_name");
     expect(publishedFeeName("Wire Transfer Outgoing, including international", "wire_domestic_outgoing")).not.toBe("Wire Transfer Outgoing");
     // The same price in the name as the amount is only glue: the name is cut before it and the fee publishes.

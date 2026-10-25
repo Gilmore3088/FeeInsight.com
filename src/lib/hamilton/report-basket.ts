@@ -1,4 +1,5 @@
 import type { HamiltonIdentitySnapshot } from "./account-context";
+import type { SavedClaimSet } from "./saved-claims";
 import { readHamiltonIdentitySnapshot } from "./identity-display";
 /**
  * The report basket: findings and tests a user adds from Position, Ask and
@@ -20,6 +21,13 @@ export interface ReportBasketItem {
   /** Original server-saved answer to revalidate when a report is generated. */
   savedAnalysisId?: string | null;
   identityContext?: HamiltonIdentitySnapshot;
+  /**
+   * Server only, set when a saved Ask answer is re-read for a report (#1077 step 6, #1899): its
+   * saved claims, else its binding read as claims. `sanitizeBasketItems` never takes it from the browser.
+   */
+  savedClaims?: SavedClaimSet;
+  /** Server only: the saved answer's sentences that are Hamilton's reading, from `savedClaims`. */
+  reading?: string[];
 }
 
 export const REPORT_BASKET_KEY = "hamilton-report-basket-v1";

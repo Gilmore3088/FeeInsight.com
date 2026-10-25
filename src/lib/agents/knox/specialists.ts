@@ -33,6 +33,7 @@ import { mayHaveSymbolicLesserFee, symbolicLesserOfReview } from "./symbolic-les
 import { internationalWireEligibility } from "./international-wire-eligibility";
 import { belongsToPaidReturnedUnit, paidReturnedUnits } from "@/lib/custom-report/paid-returned-events";
 import { withoutGluedSentence } from "./glued-sentence-name";
+import { withGluedFootnotePrices } from "@/lib/custom-report/glued-footnote-price";
 
 /**
  * Knox's free extraction team, run over one whole document. Pure.
@@ -240,7 +241,32 @@ import { withoutGluedSentence } from "./glued-sentence-name";
 // activity……$5", United Bank) is not paired with the next cell's price (table pass v10), and the
 // shared check refuses that pairing too (`namesItsClosedFreeRow`, source check v21). Removes reads only.
 // The stale-read floor stays at v97. Name re-tidy stays at v26.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 105 } as const;
+// v106 (#1946): a footnote glued to a $0 price ("$0³ or $10" stored as "$03 or $10", North State
+// Bank; "$01", Penn Community Bank) is read as $0, never as the footnote's number
+// (`withGluedFootnotePrices`), and the shared check reads the same text (source check v22), so the
+// $3 read is refused wherever it is made. The stale-read floor stays at v97. Name re-tidy stays at v26.
+// v107 (#1443): `isCutoffName` reads its sentence shapes (a verb, a pronoun, an "if"/"when" clause)
+// without the closed parentheticals that end the name (`withoutClosedQualifiers`), so "ACH Return
+// Item (fee is per item)" and "Notary fee (this service is for members only)" are full names, not
+// cut off. An unclosed "(", a parenthetical opening the name, and one with words after it still
+// count. v104's glued-sentence cut now runs on fewer names (only ones still cut off), and publish's
+// `cutoff_name` hold, Darwin's release review and Deming's name check read the same function. The
+// stale-read floor stays at v97. Name re-tidy stays at v26.
+// v108 (#1521): `isCutoffName` also reads a name cut before its noun, after a count and an audience
+// word ("Counter Check: A blank page of 3 personal", "Daily fee after 5 business"), as cut off
+// (`DANGLING_AUDIENCE`, shared with Darwin's live fragment check). Publish's `cutoff_name` hold,
+// Darwin's release review and Deming's name check read the same function. On 2026-10-25 it matched
+// 2 live fees, 3 verified and 3 raw rows. The stale-read floor stays at v97. Name re-tidy stays at v26.
+// v109 (#1828): a bare "Returned payment" row under a loan section's
+// title ("Loan fees", "Personal Credit Line fees", "Consumer Loans", "LOANS") is the loan's returned
+// payment fee, read as `other_lending_fee` at its own plain price under its own printed name
+// (`loanReturnedPaymentRows`, `loan-section-rows.ts`). Before this the row named no category and
+// said no fee word, so it was dropped (Oregon Community FCU's "Returned payment…… $4.95", docs
+// 13272, 19849, 21634). The nearest title in the row's own column decides: under a credit card,
+// checking or other title it stays as before; a short product heading ("Visa") is such a title, and a
+// lone title under two side-by-side columns heads neither. Adds reads only. The stale-read floor stays at
+// v97. Name re-tidy stays at v27.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 109 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -420,7 +446,8 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
   // v100: a relationship-tier table's row becomes one line per priced tier cell (`withTierColumnRows`).
   // The self-check traces every read on the text before that split (`checkText`), so a split read
   // must be supported by the stored row itself: "Courtesy Pay $20 $30 ..." at $30 is held untraced.
-  const checkText = withSidewaysBoxTable(withBoxSizeCellsSplit(withoutBusinessOnlyFees(joinLabeledFeeCardText(sourceText))));
+  // v106: "$03" is a $0 price with its footnote glued on (`withGluedFootnotePrices`, #1946).
+  const checkText = withSidewaysBoxTable(withBoxSizeCellsSplit(withoutBusinessOnlyFees(joinLabeledFeeCardText(withGluedFootnotePrices(sourceText)))));
   const text = withTierColumnRows(checkText);
   const legacyText = withoutFeeBullets(text, recognizedFeeBullets(text));
   const windows = priceWindows(legacyText);

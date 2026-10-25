@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   user: vi.fn(), members: vi.fn(), generate: vi.fn(), stream: vi.fn(), save: vi.fn(),
   briefing: vi.fn(), guard: vi.fn(), metadata: vi.fn(), peerSet: vi.fn(),
 }));
+vi.mock("@/lib/hamilton/output-gate-shadow-store", () => ({ scheduleGateShadow: () => {}, GATE_SHADOW_DETAIL_KEY: "gate_shadow" }));
 vi.mock("@/lib/api-hardening/route-wrapper", () => ({ withApiRoutePolicy: (_id: string, _method: string, handler: unknown) => handler }));
 vi.mock("@/lib/api-hardening/audit", () => ({ getRequestSubjectKey: () => "synthetic-user" }));
 vi.mock("@/lib/auth", () => ({ getCurrentUser: mocks.user }));
@@ -45,6 +46,7 @@ vi.mock("@/lib/hamilton/answer-save", () => ({
   SAVED_ANALYSIS_ID_KEY: "savedAnalysisId", questionOnly: (text: string) => text,
   writtenAnswerCheck: () => ({ passed: true, problems: [], figureCheck: { checked: 0, unmatched: [] } }),
   writtenAnswerBinding: () => null,
+  writtenAnswerClaims: () => null,
   writtenAnswerResponse: (text: string) => ({ title: "Test answer", hamiltonView: text, confidence: { level: "medium", basis: [] }, whatThisMeans: "", whyItMatters: [], evidence: { metrics: [] }, exploreFurther: [] }),
 }));
 vi.mock("ai", () => ({

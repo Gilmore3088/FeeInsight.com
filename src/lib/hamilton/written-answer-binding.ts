@@ -385,8 +385,13 @@ export function bindWrittenAnswer(input: BindWrittenAnswerInput): NarrativeBindi
 const OMIT_REASONS = new Set<OmitReason>([
   "advice", "instruction_text", "no_evidence", "wrong_institution", "gap_as_fee",
   "wrong_direction", "wrong_period", "wrong_unit", "conflicting_sources", "median_as_fee",
-  "wrong_basis", "account_as_subject",
+  "wrong_basis", "account_as_subject", "premise_contradicted", "premise_unsupported",
 ]);
+
+/** True for an omit reason a saved binding or saved claims may carry. */
+export function isOmitReason(value: unknown): value is OmitReason {
+  return typeof value === "string" && OMIT_REASONS.has(value as OmitReason);
+}
 
 const strings = (value: unknown): value is string[] => Array.isArray(value) && value.every((item) => typeof item === "string");
 
@@ -409,6 +414,7 @@ export function readNarrativeBinding(value: unknown): NarrativeBinding | null {
     omitted: omitted.map((o) => ({ text: o!.text as string, reason: o!.reason as OmitReason })),
     limitations: obj.limitations,
     ...(basis.length > 0 ? { readingBasis: basis.map((b) => ({ text: b.text as string, basis: b.basis as string })) } : {}),
+    ...(strings(obj.corrections) && obj.corrections.length > 0 ? { corrections: obj.corrections } : {}),
   };
 }
 

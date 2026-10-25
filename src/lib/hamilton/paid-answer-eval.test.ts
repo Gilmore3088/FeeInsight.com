@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { buildAskResponse, parseAsk } from "./workspace/ask";
 import { overdraftResearch } from "./workspace/test-fixtures";
-import type { LiveReader } from "./answer-correctness";
+import { financialMeasureDefinition } from "@/lib/data-store/financial-peer-contract";
+import type { FilingReader, LiveReader } from "./answer-correctness";
 import type { MemoClient } from "./memo";
 import type { WrittenAnswerWriter } from "./written-answer-read";
 import type { PreparedReportAnswer, ReportAnswerWriter } from "./report-answer-read";
@@ -404,4 +405,99 @@ it("uses the same scaled dollar contract in the eval while excluding nonmonetary
     {toolName:"getInstitution",output:{financials:{units:"dollar amounts in thousands; fee_income_ratio is a fraction (0.068 = 6.8%)",
       latest:{service_charge_income:311051,fee_income_ratio:0.068}}}},
   ])).toEqual([1234000,2000000,3000000000,1234000,1000000000,311051000]);
+});
+
+describe("the written sample reads the claims (#1077 claim contract step 7)", () => {
+  const BANK = 1001;
+  const filingId = `filing:fdic:${BANK}:2026-06-30:service_charge_income:standalone_quarter`;
+  /** A bank's getInstitution read with two filed quarters, in thousands, as the tool returns them. */
+  const bankRead = {
+    toolName: "getInstitution",
+    input: { id: BANK },
+    output: {
+      identity: { id: BANK, name: `Bank ${BANK}`, charter_type: "bank" },
+      fees: { verified: [], provisional: [] },
+      financials: {
+        units: "dollar amounts in thousands; fee_income_ratio is a fraction (0.068 = 6.8%)",
+        definition: { ...financialMeasureDefinition("fdic"), period_basis: "standalone_quarter" },
+        latest: null,
+        records: [["2026-06-30", 1100], ["2026-03-31", 1000]].map(([report_date, income]) => ({
+          institution_id: BANK, report_date, source: "fdic", service_charge_income: income, total_assets: 400_000, total_deposits: 350_000,
+          total_revenue: Number(income) * 10, fee_income_ratio: 0.1, field_units: { fee_income_ratio: "fraction" },
+        })),
+      },
+    },
+  };
+  const filingText = `Bank ${BANK}'s service charge income was $1.1 million in Q2 2026.`;
+  /** A fake filing reader: `value` for every key (null: no row), counting its calls. */
+  const filingReader = (value: number | null): FilingReader & { keys: string[][] } => {
+    const keys: string[][] = [];
+    return Object.assign(async (asked: Parameters<FilingReader>[0]) => {
+      keys.push(asked.map((k) => k.id));
+      return new Map(asked.map((k) => [k.id, value]));
+    }, { keys });
+  };
+  const run = (filings: FilingReader, written = writtenWriter(filingText, [bankRead]), client = memoClient("Your overdraft fee is $32.")) =>
+    runPaidAnswerEval({ db: db(0).db, now, client, live, agentRunId: 77, written, filings, recordShadow: async () => null });
+
+  it("passes a supported filing claim whose live row is unchanged, with the gate's verdict on the sample", async () => {
+    evalMocks.answer.mockImplementation(async (id: number) => answered(id));
+    const reader = filingReader(1_100_000);
+    const written = writtenWriter(filingText, [bankRead]);
+    const client = memoClient("Your overdraft fee is $32.");
+    const result = await run(reader, written, client);
+    const sample = result.results.find((r) => r.path === "written_answer")!;
+    expect(reader.keys).toEqual([[filingId]]);
+    expect(sample).toMatchObject({ status: "written", correctness: [], filings: 1, gate: { status: "validated", critical: [], checkPassed: true } });
+    expect(result.paths[2]).toMatchObject({ answers: 1, passed: 1, correctness: { checked: 1, correct: 1 } });
+    // No provider call is added: one written answer, three memos and one Simulate read, as before.
+    expect(written.calls).toBe(1);
+    expect(client.calls).toBe(3);
+    expect(client.simulateCalls).toBe(1);
+  });
+
+  it("fails correctness for a supported filing claim whose live value has changed", async () => {
+    evalMocks.answer.mockImplementation(async (id: number) => answered(id));
+    const result = await run(filingReader(1_250_000));
+    const sample = result.results.find((r) => r.path === "written_answer")!;
+    expect(sample.status).toBe("written");
+    expect(sample.correctness).toEqual([`filing claim "${filingText}": the answer uses $1,100,000 for service_charge_income for 2026-06-30 (standalone quarter), the live filing has $1,250,000`]);
+    expect(result.paths[2]).toMatchObject({ passed: 1, correctness: { checked: 1, correct: 0 } });
+  });
+
+  it("fails correctness when the filing row is missing on re-read, and leaves it unchecked when the re-read cannot run", async () => {
+    evalMocks.answer.mockImplementation(async (id: number) => answered(id));
+    const missing = await run(filingReader(null));
+    expect(missing.results.find((r) => r.path === "written_answer")!.correctness).toEqual([expect.stringMatching(/the live filing has no row for it$/)]);
+    expect(missing.paths[2]).toMatchObject({ correctness: { checked: 1, correct: 0 } });
+    const failed = await run(async () => null);
+    expect(failed.results.find((r) => r.path === "written_answer")!.correctness).toBeNull();
+    expect(failed.paths[2]).toMatchObject({ passed: 1, correctness: { checked: 0 } });
+  });
+
+  it("scores form with the gate's verdict: a held answer fails form, and is not re-read or tied", async () => {
+    evalMocks.answer.mockImplementation(async (id: number) => answered(id));
+    const reader = filingReader(1_100_000);
+    // Another bank's filing stated as the reader's own: today's evidence check passes it (the figure is in the reads), the gate holds it.
+    const otherRead = { ...bankRead, input: { id: 2002 }, output: { ...bankRead.output, identity: { id: 2002, name: "Bank 2002", charter_type: "bank" },
+      financials: { ...bankRead.output.financials, records: bankRead.output.financials.records.map((r) => ({ ...r, institution_id: 2002 })) } } };
+    const result = await run(reader, writtenWriter("Your service charge income was $1.1 million in Q2 2026.", [otherRead]));
+    const sample = result.results.find((r) => r.path === "written_answer")!;
+    expect(sample.gate).toMatchObject({ status: "held", critical: ["account_as_subject", "nothing_left"], checkPassed: true });
+    expect(sample).toMatchObject({ status: "withheld", correctness: null });
+    expect(sample.failures.length).toBeGreaterThan(0);
+    expect(reader.keys).toEqual([]);
+    expect(result.paths[2]).toMatchObject({ answers: 1, passed: 0 });
+  });
+
+  it("records the Simulate read's shadow verdict as its own run, without changing its score", async () => {
+    evalMocks.answer.mockImplementation(async (id: number) => answered(id));
+    const records: Array<{ record: unknown; context: unknown }> = [];
+    const result = await runPaidAnswerEval({ db: db(0).db, now, client: memoClient("Your overdraft fee is $32."), live, agentRunId: 77, written: writtenWriter(),
+      recordShadow: async (record, context) => { records.push({ record, context }); } });
+    expect(records).toEqual([{ record: expect.objectContaining({ surface: "simulate", path: "simulate_read" }), context: { userId: null, researchInstitutionId: 1001 } }]);
+    const failing = await runPaidAnswerEval({ db: db(0).db, now, client: memoClient("Your overdraft fee is $32."), live, agentRunId: 77, written: writtenWriter(),
+      recordShadow: async () => { throw new Error("ledger down"); } });
+    expect(failing.paths[1]).toMatchObject(result.paths[1]);
+  });
 });
