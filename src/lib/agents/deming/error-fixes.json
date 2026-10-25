@@ -1,0 +1,4 @@
+{
+  "about": "One entry per merged process-fix PR that names the error rows it fixes (#2058). Add your PR's entry in the same PR. stage: the step the PR fixed (read, extract, verify or publish; a wrong document re-runs through Magellan's link search, #2055). merged_on: the day the PR merges (ISO date); only errors recorded before it are named. Name the rows by pipeline_feedback kind (kinds), check_name (checks) or id (feedback_ids); at least one. Every named row is a wrong judgement of a published fee about that stage. After merge, Atlas re-runs each named row's institution through the direct path, and Deming's daily error-fix re-check closes the rows whose fee now matches the bank's document and reports the rest.",
+  "entries": []
+}

@@ -108,6 +108,13 @@ institutions remains the only human launch workflow.
 ## Did the change work (#1106)
 
 - `change-outcomes.ts`: the `deming-change-outcomes` step, last in Atlas's daily scoreboard run.
+- `error-fixes.ts`: the error loop (#2058). A process-fix PR names the error rows it fixes in
+  `error-fixes.json` (stage, merge day, `pipeline_feedback` kinds, checks or ids). Atlas's direct
+  path re-runs each named row's bank once, as a request dated the merge day; the
+  `deming-error-fix-recheck` step, after the change check, judges each row whose bank a completed
+  run has read again with the fresh audit's checks and writes a weight-0 ledger row:
+  `error_fix_closed` (now matches, or no longer published) or `error_fix_still_wrong` (once; it is
+  judged again daily). A row with no stored text stays open.
 - `sunday-maintenance.ts`: the `deming-sunday-maintenance` step, after it in the same run, Sundays (UTC) only: James's hour of tasks (labels, data decisions, last week's "no change" and "wrong way" PRs to explain or revert, answer-key banks), the week in numbers with the change hit rate, and anything stuck (#1104, #1106). It emails only while `SUNDAY_EMAIL_LIVE=true`; otherwise the run records the email it would send.
   Each PR that names a "Should move" number adds an entry to `should-move.json` (PR number, issue,
   `metric`: a `pipeline_scoreboard_snapshots` column or a `detail.` path such as

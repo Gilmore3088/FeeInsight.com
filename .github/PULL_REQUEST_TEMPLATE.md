@@ -10,6 +10,12 @@ Name it in `src/lib/agents/deming/should-move.json` in this PR too: Deming's dai
 `deming-change-outcomes` step records the number when it first sees the entry and checks it 7 days
 later (moved as expected, no change, or the wrong way; #1106).
 
+**Fixes errors:** a process fix also names the error rows it fixes in
+`src/lib/agents/deming/error-fixes.json` (the stage it fixed, the merge day, and the
+`pipeline_feedback` kinds, checks or ids). After merge, those banks are re-run and Deming's daily
+`deming-error-fix-recheck` step closes each error whose fee now matches the bank's document and
+reports the rest (#2058). Other PRs write "none".
+
 ## Verification
 - Commands run and their results (`npm run guard:legacy`, tests, typecheck, lint).
 - What was not tested.
