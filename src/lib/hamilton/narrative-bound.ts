@@ -553,6 +553,9 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
         return years.includes(period.slice(0, 4)) ? "yes" : "no";
       };
 
+      // A fee record stated as "your" fee is the reader's own institution's, as a filing figure is;
+      // with the account unknown it matches any institution, as before.
+      const feeSubjects: number[] = personal && claimSubjects !== null ? claimSubjects : subjects;
       const ids: string[] = [];
       const found: { reason: OmitReason | null; filing: boolean } = { reason: null, filing: false };
       const contradict = (reason: OmitReason, filing = false) => {
@@ -572,8 +575,8 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
           ids.push(fact.id);
           continue;
         }
-        const subject = subjects.length === 0 ? undefined : fact.scope.institutionId;
-        if (subject !== undefined && !subjects.includes(subject as number)) { contradict("wrong_institution"); continue; }
+        const subject = feeSubjects.length === 0 ? undefined : fact.scope.institutionId;
+        if (subject !== undefined && !feeSubjects.includes(subject as number)) { contradict(personal ? "account_as_subject" : "wrong_institution"); continue; }
         if (!claimBindingMatches(fact, { unit, value: figure.value })) continue;
         const factPeriod = inPeriod(fact);
         if (factPeriod === "no") { contradict("wrong_period"); continue; }
@@ -612,7 +615,7 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
         }
         if (kind === "institution_value") {
           const owner = derived.scope.institutionId;
-          if (subjects.length > 0 && owner !== null && !subjects.includes(owner)) { contradict("wrong_institution"); continue; }
+          if (feeSubjects.length > 0 && owner !== null && !feeSubjects.includes(owner)) { contradict(personal ? "account_as_subject" : "wrong_institution"); continue; }
           ids.push(derived.id, ...derived.derivation.inputFactIds);
           continue;
         }

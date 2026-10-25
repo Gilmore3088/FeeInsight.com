@@ -172,6 +172,18 @@ describe("question figures that are not premises (PR #2572 review)", () => {
       expect(bind("Bank A's $30 overdraft fee ranks high.", question, record).omitted.map((o) => o.reason), question).toEqual(["premise_contradicted"]);
     }
   });
+
+  it("never binds the reader's own stated fee to another bank's record (PR #2572 re-review)", () => {
+    const binding = bindNarrative({
+      text: "Your $35 overdraft fee is the highest we track.", evidence: FEES, names,
+      question: "Our overdraft fee is $35. How do we compare?", accountInstitutionId: BANK_A,
+    });
+    expect(binding.supported).toEqual([]);
+    expect(binding.omitted).toHaveLength(1);
+    // Bank A's own $10 still binds as "your" fee; with the account unknown, "your" matches any record as before.
+    expect(bindNarrative({ text: "Your $10 overdraft fee is among the lowest we track.", evidence: FEES, names, accountInstitutionId: BANK_A }).supported).toHaveLength(1);
+    expect(bindNarrative({ text: "Your $35 overdraft fee is the highest we track.", evidence: FEES, names, accountInstitutionId: BANK_A }).omitted.map((o) => o.reason)).toEqual(["account_as_subject"]);
+  });
 });
 
 describe("causal claims on every answer: shadow only (#1077, claim contract step 3)", () => {
