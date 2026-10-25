@@ -1411,9 +1411,10 @@ async function selectStaleCandidates(
              )
         ) audit ON TRUE
         -- An admin held or corrected a fee read from this link and named a wrong document as the
-        -- cause (#2057), matched to the link the same way. A person's judgement, so the copy and
-        -- the fee's state are not asked: the fee is held or replaced by then, and each hold or
-        -- correction is its own row (created_at).
+        -- cause (#2057), matched to the link the same way (the main document only while the
+        -- remembered address agrees). A person's judgement, so the copy and the fee's state are not
+        -- asked: the fee is held or replaced by then, and each hold or correction is its own row
+        -- (created_at), so a search runs once per person's finding.
         LEFT JOIN LATERAL (
           SELECT max(f.created_at) AS hand_at, array_agg(DISTINCT f.source_url) AS hand_urls
             FROM pipeline_feedback f
@@ -1422,7 +1423,10 @@ async function selectStaleCandidates(
              AND f.about_stage = 'discover'
              AND f.signal = 'wrong'
              AND f.institution_id = due.id
-             AND f.source_url IN (due.fee_schedule_url, due.main_document_url)
+             AND (
+               f.source_url = due.fee_schedule_url
+               OR (f.source_url = due.main_document_url AND due.main_document_url = due.profile_canonical_source_url)
+             )
         ) hand ON TRUE
     ), judged AS (
       SELECT marked.*, GREATEST(confirmed_at, audit_at, hand_at) AS wrong_at FROM marked
