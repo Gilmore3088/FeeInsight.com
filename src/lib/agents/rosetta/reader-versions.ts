@@ -9,7 +9,9 @@
  *   ROSETTA_TABLE_ROWS_VERSION   table-rows.ts
  *   PDF_READER_AGREEMENT_VERSION pdf-reader-agreement.ts
  */
-export const ROSETTA_READ_VERSION = 3;
+// v4 refuses lost letters/numbers in PDF Unicode maps (#2598). A version change
+// also activates the existing all-primary-reader replay lane; deploy separately.
+export const ROSETTA_READ_VERSION = 4;
 export const PDF_LAYOUT_VERSION = 5;
 /** Existing prose rereads stay settled; the new detector has its own due witness. */
 export const PDF_PROSE_REREAD_VERSION = 4;

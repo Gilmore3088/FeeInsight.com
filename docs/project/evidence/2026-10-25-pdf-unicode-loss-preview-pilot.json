@@ -1,0 +1,1559 @@
+{
+  "issue": 2598,
+  "scope": "Executed offline pilot on three exact captured source hashes. No production write, replay, reader receipt or live fee correction. Partial letter proposals require manual review; all three full-document previews remain incomplete.",
+  "environment": {
+    "node": "v24.22.1",
+    "unpdf": "1.4.0",
+    "canvas": "0.1.100",
+    "tesseract": "7.0.0",
+    "englishData": "1.0.0"
+  },
+  "matching": "240/300 dpi are two render scales of the same Tesseract engine, not independent engines. Confidence scores are heuristics, not calibrated probabilities. Only exact known-letter-compatible words inside the original text cell qualify; no dictionary or price edit.",
+  "documents": [
+    {
+      "sourceDocumentId": 2240,
+      "sourceTextId": 7808,
+      "incumbentObservedAt": "2026-10-25 17:34:07.893521+00",
+      "incumbentSourceSha256": "6c4b4f78f87f271a384e8dc7ea5cff595028696d0d8d9057399f0e15b24396f9",
+      "incumbentTextSha256": "aaa3b0b3d2a4bfddc218b04f83c8ca24d9e6161c5cf2707df3c253854c314c92",
+      "incumbentText": "Fee Schedule: Effective May 1, 2020\nChecking Accounts & Money Market Accounts | Other Services\nOverdra� Fee from Savings** + | $10\nInac�ve Account Fee | $5/month\nNon-Sufficient Funds/Courtesy Pay Fee ++ | $35/item | (a�er one year)*\nStop Payment Fee: | $25 | Deposited Item Return Fee | $20/item\nOne Item or Series of Items\nAccount Reconcilia�on Fee | $25/hour\nCheck Prin�ng | Price varies\nAccount Research Fee | $25/hour\nSheet of Temporary Checks | $5\nTeller printout of Account History | $2/page\nCopy of Check by Fax or Mail | $7\n(Free through Home Banking)\n(free through Home Banking)\nSavings & Money Market Accounts | Complete Statement Copy | $5/statement\n(Free through Home Banking)\nExcessive Withdrawal Fee | FREE\nCashier’s Check Fee+ | $5/check\n(if more than six preauthorized or\nautoma�c transfers per month) | Cashier’s Check Stop Payment Fee | $25/check\nDebit Card & ATM Services | Non-member Cashing a | $10/check\nAll MSDFCU Owned ATM Withdrawals: | FREE | MSDFCU Check Fee\nNon-MSDFCU Owned ATM Withdrawals: | $1.50 | \nMoney Order Fee | $5/money order\nFree up to 5/month; over 5 withdrawals: +\nBad Address Fee | $5/month\nCard Replacement Fee | $7/card\n(Debit/Credit Card/ATM ) | Account Closing Fee | $25\nATM Deposits & Transfers | FREE | (if within 6 months of opening)\nIRA Outgoing Transfer Fee+ | $15\nReturn of ATM Deposit | $20/deposit\nInsufficient Balances for Transac�ons | $35/item | Foreign Interna�onal Checks Deposited | $10/item\nCourtesy Pay Fee | $35/item | (excluding Canadian)\nOverdra� Fee from Savings** + | $10/transfer | Levy/Writ/Garnishment Fee | $75\nACH/Electronic Services (Bill Pay/Mobile Deposit/BillMatrix) | Escheat Processing Fee | $75\nStop Payment/Revoca�on Fee: One Item | $25 | Federal Express Overnight Charge | $20\nor Series of Items | Visa Gi� Cards+ | $2.50/card\nNon-Sufficient Funds/Return Item/ | $35/item | Reloadable Prepaid Visa Cards | $5.00/card\nCourtesy Pay Fee | (generic, travel & student) | $2.00/reload\nOverdra� Fee+ | $10/transfer\nInterna�onal ATM / POS | 2%\nWire Transfers: Incoming+ | $15/transfer\nTransac�on Fee\nOutgoing, domes�c + | $20/transfer\nOutgoing, interna�onal + | $40/transfer\nBill Payment Research Fee | FREE | *Waived if member has at least $500 on deposit, an ac�ve loan or\nSame Day Bill Pay (SDBP) | $9.95 | cer�ficate of deposit, or is under the age of 18.\nOvernight Bill Payment | $14.95\n**Fee applies when an overdra� is created by check, in-person\nCopy of Check (Bill Pay) by Fax or Mail | $7 | withdrawal, ATM withdrawal, or other electronic means.\nAccount to Account (A2A) | $3.00 / FREE\nOutbound /Inbound | † Waived for My Advantage members. (Standard checks free only.)\nBillMatrix Pay by Phone and | $5.00\nNon-Registered User Convenience Fee | †† NSF/Courtesy Pay fee is $25 for My Advantage.\n05/01/2020",
+      "diagnosticPartialIncumbentText": "Fee Schedule: Effective May 1, 2020\nChecking Accounts & Money Market Accounts | Other Services\nOverdra� Fee from Savings** + | $10\nInac�ve Account Fee | $5/month\nNon-Sufficient Funds/Courtesy Pay Fee ++ | $35/item | (a�er one year)*\nStop Payment Fee: | $25 | Deposited Item Return Fee | $20/item\nOne Item or Series of Items\nAccount Reconcilia�on Fee | $25/hour\nCheck Prin�ng | Price varies\nAccount Research Fee | $25/hour\nSheet of Temporary Checks | $5\nTeller printout of Account History | $2/page\nCopy of Check by Fax or Mail | $7\n(Free through Home Banking)\n(free through Home Banking)\nSavings & Money Market Accounts | Complete Statement Copy | $5/statement\n(Free through Home Banking)\nExcessive Withdrawal Fee | FREE\nCashier’s Check Fee+ | $5/check\n(if more than six preauthorized or\nautoma�c transfers per month) | Cashier’s Check Stop Payment Fee | $25/check\nDebit Card & ATM Services | Non-member Cashing a | $10/check\nAll MSDFCU Owned ATM Withdrawals: | FREE | MSDFCU Check Fee\nNon-MSDFCU Owned ATM Withdrawals: | $1.50 | \nMoney Order Fee | $5/money order\nFree up to 5/month; over 5 withdrawals: +\nBad Address Fee | $5/month\nCard Replacement Fee | $7/card\n(Debit/Credit Card/ATM ) | Account Closing Fee | $25\nATM Deposits & Transfers | FREE | (if within 6 months of opening)\nIRA Outgoing Transfer Fee+ | $15\nReturn of ATM Deposit | $20/deposit\nInsufficient Balances for Transac�ons | $35/item | Foreign Interna�onal Checks Deposited | $10/item\nCourtesy Pay Fee | $35/item | (excluding Canadian)\nOverdra� Fee from Savings** + | $10/transfer | Levy/Writ/Garnishment Fee | $75\nACH/Electronic Services (Bill Pay/Mobile Deposit/BillMatrix) | Escheat Processing Fee | $75\nStop Payment/Revoca�on Fee: One Item | $25 | Federal Express Overnight Charge | $20\nor Series of Items | Visa Gi� Cards+ | $2.50/card\nNon-Sufficient Funds/Return Item/ | $35/item | Reloadable Prepaid Visa Cards | $5.00/card\nCourtesy Pay Fee | (generic, travel & student) | $2.00/reload\nOverdra� Fee+ | $10/transfer\nInterna�onal ATM / POS | 2%\nWire Transfers: Incoming+ | $15/transfer\nTransac�on Fee\nOutgoing, domes�c + | $20/transfer\nOutgoing, interna�onal + | $40/transfer\nBill Payment Research Fee | FREE | *Waived if member has at least $500 on deposit, an active loan or\nSame Day Bill Pay (SDBP) | $9.95 | certificate of deposit, or is under the age of 18.\nOvernight Bill Payment | $14.95\n**Fee applies when an overdra� is created by check, in-person\nCopy of Check (Bill Pay) by Fax or Mail | $7 | withdrawal, ATM withdrawal, or other electronic means.\nAccount to Account (A2A) | $3.00 / FREE\nOutbound /Inbound | † Waived for My Advantage members. (Standard checks free only.)\nBillMatrix Pay by Phone and | $5.00\nNon-Registered User Convenience Fee | †† NSF/Courtesy Pay fee is $25 for My Advantage.\n05/01/2020",
+      "diagnosticPartialIncumbentSha256": "58d9f2cab9f3c29126c08ff16466ca1f8383d0b53c0742773fbc7f28e9b784c5",
+      "preview": {
+        "method": "full_page_letter_witness_v1",
+        "disposition": "review_required",
+        "sourceSha256": "6c4b4f78f87f271a384e8dc7ea5cff595028696d0d8d9057399f0e15b24396f9",
+        "localModelSha256": "45b4cb346724ac1774f1c36f42f182b887bcdb28ebe63e6fff90ac41f3fcff91",
+        "originalText": "Fee Schedule: Effective May 1, 2020\nChecking Accounts & Money Market Accounts | Other Services\nOverdra� Fee from Savings** +  | $10\nInac�ve Account Fee | $5/month\nNon-Sufficient Funds/Courtesy Pay Fee ++  | $35/item | (a�er one year)*\nStop Payment Fee: | $25 | Deposited Item Return Fee  | $20/item\nOne Item or Series of Items\nAccount Reconcilia�on Fee  | $25/hour\nCheck Prin�ng  | Price varies\nAccount Research Fee  | $25/hour\nSheet of Temporary Checks  | $5\nTeller printout of Account History | $2/page\nCopy of Check by Fax or Mail | $7\n(Free through Home Banking)\n(free through Home Banking)\nSavings & Money Market Accounts | Complete Statement Copy | $5/statement\n(Free through Home Banking)\nExcessive Withdrawal Fee | FREE\nCashier’s Check Fee+  | $5/check\n(if more than six preauthorized or\nautoma�c transfers per month) | Cashier’s Check Stop Payment Fee  | $25/check\nDebit Card & ATM Services | Non-member Cashing a | $10/check\nAll MSDFCU Owned ATM Withdrawals: | FREE | MSDFCU Check Fee\nNon-MSDFCU Owned ATM Withdrawals: | $1.50 | \nMoney Order Fee | $5/money order\nFree up to 5/month; over 5 withdrawals: +\nBad Address Fee  | $5/month\nCard Replacement Fee | $7/card\n(Debit/Credit Card/ATM ) | Account Closing Fee | $25\nATM Deposits & Transfers  | FREE | (if within 6 months of opening)\nIRA Outgoing Transfer Fee+  | $15\nReturn of ATM Deposit  | $20/deposit\nInsufficient Balances for Transac�ons  | $35/item | Foreign Interna�onal Checks Deposited | $10/item\nCourtesy Pay Fee  | $35/item | (excluding Canadian)\nOverdra� Fee from Savings** +  | $10/transfer | Levy/Writ/Garnishment Fee  | $75\nACH/Electronic Services (Bill Pay/Mobile Deposit/BillMatrix) | Escheat Processing Fee  | $75\nStop Payment/Revoca�on Fee: One Item | $25 | Federal Express Overnight Charge  | $20\nor Series of Items | Visa Gi� Cards+  | $2.50/card\nNon-Sufficient Funds/Return Item/ | $35/item | Reloadable Prepaid Visa Cards | $5.00/card\nCourtesy Pay Fee | (generic, travel & student) | $2.00/reload\nOverdra� Fee+  | $10/transfer\nInterna�onal ATM / POS | 2%\nWire Transfers: Incoming+ | $15/transfer\nTransac�on Fee\nOutgoing, domes�c + | $20/transfer\nOutgoing, interna�onal + | $40/transfer\nBill Payment Research Fee  | FREE | *Waived if member has at least $500 on deposit, an ac�ve loan or\nSame Day Bill Pay (SDBP)  | $9.95 | cer�ficate of deposit, or is under the age of 18.\nOvernight Bill Payment  | $14.95\n**Fee applies when an overdra� is created by check, in-person\nCopy of Check (Bill Pay) by Fax or Mail  | $7 | withdrawal, ATM withdrawal, or other electronic means.\nAccount to Account (A2A) | $3.00 / FREE\nOutbound /Inbound | † Waived for My Advantage members. (Standard checks free only.)\nBillMatrix Pay by Phone and | $5.00\nNon-Registered User Convenience Fee | †† NSF/Courtesy Pay fee is $25 for My Advantage.\n05/01/2020",
+        "originalTextSha256": "9b352822deb7c7c999cbba81b52efa2c61b607e377b964ca8c1286c87bd8a600",
+        "proposedText": "Fee Schedule: Effective May 1, 2020\nChecking Accounts & Money Market Accounts | Other Services\nOverdra� Fee from Savings** +  | $10\nInac�ve Account Fee | $5/month\nNon-Sufficient Funds/Courtesy Pay Fee ++  | $35/item | (a�er one year)*\nStop Payment Fee: | $25 | Deposited Item Return Fee  | $20/item\nOne Item or Series of Items\nAccount Reconcilia�on Fee  | $25/hour\nCheck Prin�ng  | Price varies\nAccount Research Fee  | $25/hour\nSheet of Temporary Checks  | $5\nTeller printout of Account History | $2/page\nCopy of Check by Fax or Mail | $7\n(Free through Home Banking)\n(free through Home Banking)\nSavings & Money Market Accounts | Complete Statement Copy | $5/statement\n(Free through Home Banking)\nExcessive Withdrawal Fee | FREE\nCashier’s Check Fee+  | $5/check\n(if more than six preauthorized or\nautoma�c transfers per month) | Cashier’s Check Stop Payment Fee  | $25/check\nDebit Card & ATM Services | Non-member Cashing a | $10/check\nAll MSDFCU Owned ATM Withdrawals: | FREE | MSDFCU Check Fee\nNon-MSDFCU Owned ATM Withdrawals: | $1.50 | \nMoney Order Fee | $5/money order\nFree up to 5/month; over 5 withdrawals: +\nBad Address Fee  | $5/month\nCard Replacement Fee | $7/card\n(Debit/Credit Card/ATM ) | Account Closing Fee | $25\nATM Deposits & Transfers  | FREE | (if within 6 months of opening)\nIRA Outgoing Transfer Fee+  | $15\nReturn of ATM Deposit  | $20/deposit\nInsufficient Balances for Transac�ons  | $35/item | Foreign Interna�onal Checks Deposited | $10/item\nCourtesy Pay Fee  | $35/item | (excluding Canadian)\nOverdra� Fee from Savings** +  | $10/transfer | Levy/Writ/Garnishment Fee  | $75\nACH/Electronic Services (Bill Pay/Mobile Deposit/BillMatrix) | Escheat Processing Fee  | $75\nStop Payment/Revoca�on Fee: One Item | $25 | Federal Express Overnight Charge  | $20\nor Series of Items | Visa Gi� Cards+  | $2.50/card\nNon-Sufficient Funds/Return Item/ | $35/item | Reloadable Prepaid Visa Cards | $5.00/card\nCourtesy Pay Fee | (generic, travel & student) | $2.00/reload\nOverdra� Fee+  | $10/transfer\nInterna�onal ATM / POS | 2%\nWire Transfers: Incoming+ | $15/transfer\nTransac�on Fee\nOutgoing, domes�c + | $20/transfer\nOutgoing, interna�onal + | $40/transfer\nBill Payment Research Fee  | FREE | *Waived if member has at least $500 on deposit, an active loan or\nSame Day Bill Pay (SDBP)  | $9.95 | certificate of deposit, or is under the age of 18.\nOvernight Bill Payment  | $14.95\n**Fee applies when an overdra� is created by check, in-person\nCopy of Check (Bill Pay) by Fax or Mail  | $7 | withdrawal, ATM withdrawal, or other electronic means.\nAccount to Account (A2A) | $3.00 / FREE\nOutbound /Inbound | † Waived for My Advantage members. (Standard checks free only.)\nBillMatrix Pay by Phone and | $5.00\nNon-Registered User Convenience Fee | †† NSF/Courtesy Pay fee is $25 for My Advantage.\n05/01/2020",
+        "proposedTextSha256": "d59a423d8a411877254aee00b34e8293e6f5ff20ea5efd4c5c0cb1a7ba7e373a",
+        "complete": false,
+        "pages": [
+          {
+            "page": 1,
+            "repairs": [
+              {
+                "from": "ac�ve",
+                "to": "active",
+                "occurrences": 1,
+                "confidence": [
+                  96,
+                  95
+                ]
+              },
+              {
+                "from": "cer�ficate",
+                "to": "certificate",
+                "occurrences": 1,
+                "confidence": [
+                  96,
+                  96
+                ]
+              }
+            ],
+            "unresolved": [
+              "Overdra�",
+              "Inac�ve",
+              "a�er",
+              "Reconcilia�on",
+              "Prin�ng",
+              "automa�c",
+              "Transac�ons",
+              "Interna�onal",
+              "Revoca�on",
+              "Gi�",
+              "Transac�on",
+              "domes�c",
+              "interna�onal",
+              "overdra�"
+            ],
+            "renderings": [
+              {
+                "dpi": 240,
+                "width": 2040,
+                "height": 2640,
+                "graySha256": "7badc0118409bf6dfe36fd8333ed5437ebe07087b8d901ff3f0e2a5a0a1c3732"
+              },
+              {
+                "dpi": 300,
+                "width": 2550,
+                "height": 3301,
+                "graySha256": "59753c5bdb46e3b17dc98b9ae0d691b426c6dd8f40193c71192b1da586d07c79"
+              }
+            ]
+          }
+        ],
+        "incumbent": {
+          "beforeSha256": "aaa3b0b3d2a4bfddc218b04f83c8ca24d9e6161c5cf2707df3c253854c314c92",
+          "proposedSha256": null,
+          "proposedText": null
+        }
+      },
+      "feeBaselineSnapshot": "2026-10-25 16:08:43.006861+00",
+      "feeBaselineCount": 23,
+      "diagnosticSupportedBefore": 23,
+      "diagnosticSupportedAfter": 23,
+      "diagnosticSupportRegressions": 0,
+      "fees": [
+        {
+          "publishedId": 57558,
+          "beforeName": "Non-Sufficient Funds/Courtesy Pay Fee ++",
+          "letterPreviewName": "Non-Sufficient Funds/Courtesy Pay Fee ++",
+          "amount": "35.00",
+          "oldCategory": "overdraft",
+          "categorySuggestedByExistingGuard": "overdraft",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": "Non-Sufficient Funds/Courtesy Pay Fee ++ | $35/item | (a�er one year)*"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": "Non-Sufficient Funds/Courtesy Pay Fee ++ | $35/item | (a�er one year)*"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 57559,
+          "beforeName": "Stop Payment Fee",
+          "letterPreviewName": "Stop Payment Fee",
+          "amount": "25.00",
+          "oldCategory": "stop_payment",
+          "categorySuggestedByExistingGuard": "stop_payment",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": "Stop Payment Fee: | $25 | Deposited Item Return Fee | $20/item"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": "Stop Payment Fee: | $25 | Deposited Item Return Fee | $20/item"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 57560,
+          "beforeName": "Deposited Item Return Fee",
+          "letterPreviewName": "Deposited Item Return Fee",
+          "amount": "20.00",
+          "oldCategory": "deposited_item_return",
+          "categorySuggestedByExistingGuard": "deposited_item_return",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": "Stop Payment Fee: | $25 | Deposited Item Return Fee | $20/item"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": "Stop Payment Fee: | $25 | Deposited Item Return Fee | $20/item"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 57561,
+          "beforeName": "Account Research Fee",
+          "letterPreviewName": "Account Research Fee",
+          "amount": "25.00",
+          "oldCategory": "account_research",
+          "categorySuggestedByExistingGuard": "account_research",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": "Account Research Fee | $25/hour"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": "Account Research Fee | $25/hour"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 57563,
+          "beforeName": "Copy of Check by Fax or Mail",
+          "letterPreviewName": "Copy of Check by Fax or Mail",
+          "amount": "7.00",
+          "oldCategory": "check_image",
+          "categorySuggestedByExistingGuard": "check_image",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": "Copy of Check by Fax or Mail | $7"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": "Copy of Check by Fax or Mail | $7"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 57564,
+          "beforeName": "Complete Statement Copy",
+          "letterPreviewName": "Complete Statement Copy",
+          "amount": "5.00",
+          "oldCategory": "document_reproduction",
+          "categorySuggestedByExistingGuard": "document_reproduction",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": "Savings & Money Market Accounts | Complete Statement Copy | $5/statement"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": "Savings & Money Market Accounts | Complete Statement Copy | $5/statement"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 57565,
+          "beforeName": "Cashier’s Check Fee+",
+          "letterPreviewName": "Cashier’s Check Fee+",
+          "amount": "5.00",
+          "oldCategory": "cashiers_check",
+          "categorySuggestedByExistingGuard": "cashiers_check",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": "Cashier’s Check Fee+ | $5/check"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": "Cashier’s Check Fee+ | $5/check"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 57566,
+          "beforeName": "Non-MSDFCU Owned ATM Withdrawals",
+          "letterPreviewName": "Non-MSDFCU Owned ATM Withdrawals",
+          "amount": "1.50",
+          "oldCategory": "atm_non_network",
+          "categorySuggestedByExistingGuard": "atm_non_network",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": "Non-MSDFCU Owned ATM Withdrawals: | $1.50 | "
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": "Non-MSDFCU Owned ATM Withdrawals: | $1.50 | "
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 57567,
+          "beforeName": "Money Order Fee",
+          "letterPreviewName": "Money Order Fee",
+          "amount": "5.00",
+          "oldCategory": "money_order",
+          "categorySuggestedByExistingGuard": "money_order",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": "Money Order Fee | $5/money order"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": "Money Order Fee | $5/money order"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 57568,
+          "beforeName": "Bad Address Fee",
+          "letterPreviewName": "Bad Address Fee",
+          "amount": "5.00",
+          "oldCategory": "returned_mail",
+          "categorySuggestedByExistingGuard": "returned_mail",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": "Bad Address Fee | $5/month"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": "Bad Address Fee | $5/month"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 57569,
+          "beforeName": "Card Replacement Fee",
+          "letterPreviewName": "Card Replacement Fee",
+          "amount": "7.00",
+          "oldCategory": "card_replacement",
+          "categorySuggestedByExistingGuard": "card_replacement",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": "Card Replacement Fee | $7/card"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": "Card Replacement Fee | $7/card"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 57570,
+          "beforeName": "IRA Outgoing Transfer Fee+",
+          "letterPreviewName": "IRA Outgoing Transfer Fee+",
+          "amount": "15.00",
+          "oldCategory": "ira_termination",
+          "categorySuggestedByExistingGuard": "ira_termination",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": "IRA Outgoing Transfer Fee+ | $15"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": "IRA Outgoing Transfer Fee+ | $15"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 57571,
+          "beforeName": "Levy/Writ/Garnishment Fee",
+          "letterPreviewName": "Levy/Writ/Garnishment Fee",
+          "amount": "75.00",
+          "oldCategory": "garnishment_levy",
+          "categorySuggestedByExistingGuard": "garnishment_levy",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": "Overdra� Fee from Savings** + | $10/transfer | Levy/Writ/Garnishment Fee | $75"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": "Overdra� Fee from Savings** + | $10/transfer | Levy/Writ/Garnishment Fee | $75"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 57573,
+          "beforeName": "Non-Sufficient Funds/Return Item/",
+          "letterPreviewName": "Non-Sufficient Funds/Return Item/",
+          "amount": "35.00",
+          "oldCategory": "nsf",
+          "categorySuggestedByExistingGuard": "nsf",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": "Non-Sufficient Funds/Return Item/ | $35/item | Reloadable Prepaid Visa Cards | $5.00/card"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": "Non-Sufficient Funds/Return Item/ | $35/item | Reloadable Prepaid Visa Cards | $5.00/card"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 57574,
+          "beforeName": "Wire Transfers: Incoming+",
+          "letterPreviewName": "Wire Transfers: Incoming+",
+          "amount": "15.00",
+          "oldCategory": "wire_domestic_incoming",
+          "categorySuggestedByExistingGuard": "wire_domestic_incoming",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": "Wire Transfers: Incoming+ | $15/transfer"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": "Wire Transfers: Incoming+ | $15/transfer"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 57575,
+          "beforeName": "Same Day Bill Pay (SDBP)",
+          "letterPreviewName": "Same Day Bill Pay (SDBP)",
+          "amount": "9.95",
+          "oldCategory": "bill_pay",
+          "categorySuggestedByExistingGuard": "bill_pay",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": "Same Day Bill Pay (SDBP) | $9.95 | cer�ficate of deposit, or is under the age of 18."
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": "Same Day Bill Pay (SDBP) | $9.95 | certificate of deposit, or is under the age of 18."
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 57576,
+          "beforeName": "Overnight Bill Payment",
+          "letterPreviewName": "Overnight Bill Payment",
+          "amount": "14.95",
+          "oldCategory": "bill_pay",
+          "categorySuggestedByExistingGuard": "bill_pay",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": "Overnight Bill Payment | $14.95"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": "Overnight Bill Payment | $14.95"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 57577,
+          "beforeName": "Non-Registered User Convenience Fee | †† NSF/Courtesy Pay fee is",
+          "letterPreviewName": "Non-Registered User Convenience Fee | †† NSF/Courtesy Pay fee is",
+          "amount": "25.00",
+          "oldCategory": "overdraft",
+          "categorySuggestedByExistingGuard": "overdraft",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": "Non-Registered User Convenience Fee | †† NSF/Courtesy Pay fee is $25 for My Advantage."
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": "Non-Registered User Convenience Fee | †† NSF/Courtesy Pay fee is $25 for My Advantage."
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 57578,
+          "beforeName": "Fax or Mail",
+          "letterPreviewName": "Fax or Mail",
+          "amount": "7.00",
+          "oldCategory": "document_reproduction",
+          "categorySuggestedByExistingGuard": "document_reproduction",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": "Copy of Check by Fax or Mail | $7"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": "Copy of Check by Fax or Mail | $7"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 62779,
+          "beforeName": "Account Closing Fee",
+          "letterPreviewName": "Account Closing Fee",
+          "amount": "25.00",
+          "oldCategory": "early_closure",
+          "categorySuggestedByExistingGuard": "early_closure",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": "(Debit/Credit Card/ATM ) | Account Closing Fee | $25"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": "(Debit/Credit Card/ATM ) | Account Closing Fee | $25"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 90497,
+          "beforeName": "Excessive Withdrawal Fee",
+          "letterPreviewName": "Excessive Withdrawal Fee",
+          "amount": "0.00",
+          "oldCategory": "excess_withdrawal",
+          "categorySuggestedByExistingGuard": "excess_withdrawal",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": "Excessive Withdrawal Fee | FREE"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": "Excessive Withdrawal Fee | FREE"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 144304,
+          "beforeName": "automa�c transfers per month | Cashier’s Check Stop Payment Fee",
+          "letterPreviewName": "automa�c transfers per month | Cashier’s Check Stop Payment Fee",
+          "amount": "25.00",
+          "oldCategory": "stop_payment",
+          "categorySuggestedByExistingGuard": "stop_payment",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": "automa�c transfers per month) | Cashier’s Check Stop Payment Fee | $25/check"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": "automa�c transfers per month) | Cashier’s Check Stop Payment Fee | $25/check"
+          },
+          "containsReplacement": true,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 144305,
+          "beforeName": "Account Reconcilia�on Fee",
+          "letterPreviewName": "Account Reconcilia�on Fee",
+          "amount": "25.00",
+          "oldCategory": "account_research",
+          "categorySuggestedByExistingGuard": "account_research",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": "Account Reconcilia�on Fee | $25/hour"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": "Account Reconcilia�on Fee | $25/hour"
+          },
+          "containsReplacement": true,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        }
+      ],
+      "sourceUrl": "https://www.msdfcu.org/docs/default-source/agreements-and-disclosures/fee-schedule.pdf?sfvrsn=c6a0d7c6_1"
+    },
+    {
+      "sourceDocumentId": 28625,
+      "sourceTextId": 26035,
+      "incumbentObservedAt": "2026-10-25 17:34:07.893521+00",
+      "incumbentSourceSha256": "4fd20c8a4ab2b42695cf2858220fbf445dd54b3c65acef9d65710110ceb36a9e",
+      "incumbentTextSha256": "78f076a075d5275eaa93d81d97395fa735d205970f811d548369ad77006c0796",
+      "incumbentText": "SCHEDULE OF FEES\nMarch 31st 2025\nWe are pleased to provide you with this statement of fees to show the compe��veness of our fee structure.\nThis statement is part of the contract for your account with us. For other terms and condi�ons of your\naccount, please see our Truth in Savings Disclosure along with our Membership Agreement and Account\nTerms. We may change this statement of fees without no�ce or as otherwise provided by law.\nMaintaining membership at GASCU requires a $5 minimum savings share balance.\nCHECKING ACCOUNTS\nFree Checking\n No monthly service charge\n No minimum balance or direct deposit requirements\n Fee-free transac�ons at GASCU or CO-OP Network ATMs\n Check prin�ng (standard or personalized) ..........………………………………………. Fee varies\n Temporary checks (per page of 4) ........................................................................ $2.00\nATM TRANSACTIONS\n ATM transac�ons at GASCU or CO-OP Network ATMs .......................................... Free\n GASCU member transac�on at non GASCU or non-Co-Op Network ATM............ $1.00\nOTHER FEES AND CHARGES\n Cashier's check ..................................................………….…………………………………... $5.00\n Coin deposit or exchange for cash (no charge to minors) ........................................ 2%\n Courtesy pay (per item) ...................................................................................... $10.00\n Dormant account .................................................................................................. $5.00\n Foreign item sent for collec�on ................................................................... min $40.00\n Account Maintenance (a�er 12 months of inac�vity) .................................... $4.00 mo.\n Legal process fee (levy, garnishment, judgement).….......................................... $25.00\n Non-member check cashing fee .......................................... the greater of 1% or $5.00\n Notary for non-GASCU documents (per signature) ............................................ $15.00\n NSF item (non-sufficient funds) .......................................................................... $10.00\n Overdra� transfer ................................................................................................. $1.00\n Returned deposit, cashed check or loan payment .............................................. $10.00\n Stop payments ($1.00 online) .............................................................................. $10.00\n Wire transfer - Incoming ...................................................................................... $15.00\n Wire transfer - Outgoing (domes�c only) ............................................................ $20.00\nMust qualify for credit\nunion membership",
+      "diagnosticPartialIncumbentText": "SCHEDULE OF FEES\nMarch 31st 2025\nWe are pleased to provide you with this statement of fees to show the competitiveness of our fee structure.\nThis statement is part of the contract for your account with us. For other terms and conditions of your\naccount, please see our Truth in Savings Disclosure along with our Membership Agreement and Account\nTerms. We may change this statement of fees without notice or as otherwise provided by law.\nMaintaining membership at GASCU requires a $5 minimum savings share balance.\nCHECKING ACCOUNTS\nFree Checking\n No monthly service charge\n No minimum balance or direct deposit requirements\n Fee-free transactions at GASCU or CO-OP Network ATMs\n Check printing (standard or personalized) ..........………………………………………. Fee varies\n Temporary checks (per page of 4) ........................................................................ $2.00\nATM TRANSACTIONS\n ATM transactions at GASCU or CO-OP Network ATMs .......................................... Free\n GASCU member transaction at non GASCU or non-Co-Op Network ATM............ $1.00\nOTHER FEES AND CHARGES\n Cashier's check ..................................................………….…………………………………... $5.00\n Coin deposit or exchange for cash (no charge to minors) ........................................ 2%\n Courtesy pay (per item) ...................................................................................... $10.00\n Dormant account .................................................................................................. $5.00\n Foreign item sent for collection ................................................................... min $40.00\n Account Maintenance (after 12 months of inactivity) .................................... $4.00 mo.\n Legal process fee (levy, garnishment, judgement).….......................................... $25.00\n Non-member check cashing fee .......................................... the greater of 1% or $5.00\n Notary for non-GASCU documents (per signature) ............................................ $15.00\n NSF item (non-sufficient funds) .......................................................................... $10.00\n Overdra� transfer ................................................................................................. $1.00\n Returned deposit, cashed check or loan payment .............................................. $10.00\n Stop payments ($1.00 online) .............................................................................. $10.00\n Wire transfer - Incoming ...................................................................................... $15.00\n Wire transfer - Outgoing (domestic only) ............................................................ $20.00\nMust qualify for credit\nunion membership",
+      "diagnosticPartialIncumbentSha256": "ab1a89f936142640368e3ad144442a3b2f70c0f778e4b92c8bdde94dd652696e",
+      "preview": {
+        "method": "full_page_letter_witness_v1",
+        "disposition": "review_required",
+        "sourceSha256": "4fd20c8a4ab2b42695cf2858220fbf445dd54b3c65acef9d65710110ceb36a9e",
+        "localModelSha256": "45b4cb346724ac1774f1c36f42f182b887bcdb28ebe63e6fff90ac41f3fcff91",
+        "originalText": "SCHEDULE OF FEES\nMarch 31st 2025\nWe are pleased to provide you with this statement of fees to show the compe��veness of our fee structure.\nThis statement is part of the contract for your account with us. For other terms and condi�ons of your\naccount, please see our Truth in Savings Disclosure along with our Membership Agreement and Account\nTerms. We may change this statement of fees without no�ce or as otherwise provided by law.\nMaintaining membership at GASCU requires a $5 minimum savings share balance.\nCHECKING ACCOUNTS\nFree Checking\n No monthly service charge\n No minimum balance or direct deposit requirements\n Fee-free transac�ons at GASCU or CO-OP Network ATMs\n Check prin�ng (standard or personalized) ..........………………………………………. Fee varies\n Temporary checks (per page of 4) ........................................................................ $2.00\nATM TRANSACTIONS\n ATM transac�ons at GASCU or CO-OP Network ATMs .......................................... Free\n GASCU member transac�on at non GASCU or non-Co-Op Network ATM............ $1.00\nOTHER FEES AND CHARGES\n Cashier's check ..................................................………….…………………………………... $5.00\n Coin deposit or exchange for cash (no charge to minors) ........................................ 2%\n Courtesy pay (per item) ...................................................................................... $10.00\n Dormant account .................................................................................................. $5.00\n Foreign item sent for collec�on ................................................................... min $40.00\n Account Maintenance (a�er 12 months of inac�vity) .................................... $4.00 mo.\n Legal process fee (levy, garnishment, judgement).….......................................... $25.00\n Non-member check cashing fee .......................................... the greater of 1% or $5.00\n Notary for non-GASCU documents (per signature) ............................................ $15.00\n NSF item (non-sufficient funds) .......................................................................... $10.00\n Overdra� transfer ................................................................................................. $1.00\n Returned deposit, cashed check or loan payment .............................................. $10.00\n Stop payments ($1.00 online) .............................................................................. $10.00\n Wire transfer - Incoming ...................................................................................... $15.00\n Wire transfer - Outgoing (domes�c only) ............................................................ $20.00\nMust qualify for credit\nunion membership",
+        "originalTextSha256": "78f076a075d5275eaa93d81d97395fa735d205970f811d548369ad77006c0796",
+        "proposedText": "SCHEDULE OF FEES\nMarch 31st 2025\nWe are pleased to provide you with this statement of fees to show the competitiveness of our fee structure.\nThis statement is part of the contract for your account with us. For other terms and conditions of your\naccount, please see our Truth in Savings Disclosure along with our Membership Agreement and Account\nTerms. We may change this statement of fees without notice or as otherwise provided by law.\nMaintaining membership at GASCU requires a $5 minimum savings share balance.\nCHECKING ACCOUNTS\nFree Checking\n No monthly service charge\n No minimum balance or direct deposit requirements\n Fee-free transactions at GASCU or CO-OP Network ATMs\n Check printing (standard or personalized) ..........………………………………………. Fee varies\n Temporary checks (per page of 4) ........................................................................ $2.00\nATM TRANSACTIONS\n ATM transactions at GASCU or CO-OP Network ATMs .......................................... Free\n GASCU member transaction at non GASCU or non-Co-Op Network ATM............ $1.00\nOTHER FEES AND CHARGES\n Cashier's check ..................................................………….…………………………………... $5.00\n Coin deposit or exchange for cash (no charge to minors) ........................................ 2%\n Courtesy pay (per item) ...................................................................................... $10.00\n Dormant account .................................................................................................. $5.00\n Foreign item sent for collection ................................................................... min $40.00\n Account Maintenance (after 12 months of inactivity) .................................... $4.00 mo.\n Legal process fee (levy, garnishment, judgement).….......................................... $25.00\n Non-member check cashing fee .......................................... the greater of 1% or $5.00\n Notary for non-GASCU documents (per signature) ............................................ $15.00\n NSF item (non-sufficient funds) .......................................................................... $10.00\n Overdra� transfer ................................................................................................. $1.00\n Returned deposit, cashed check or loan payment .............................................. $10.00\n Stop payments ($1.00 online) .............................................................................. $10.00\n Wire transfer - Incoming ...................................................................................... $15.00\n Wire transfer - Outgoing (domestic only) ............................................................ $20.00\nMust qualify for credit\nunion membership",
+        "proposedTextSha256": "ab1a89f936142640368e3ad144442a3b2f70c0f778e4b92c8bdde94dd652696e",
+        "complete": false,
+        "pages": [
+          {
+            "page": 1,
+            "repairs": [
+              {
+                "from": "compe��veness",
+                "to": "competitiveness",
+                "occurrences": 1,
+                "confidence": [
+                  96,
+                  95
+                ]
+              },
+              {
+                "from": "condi�ons",
+                "to": "conditions",
+                "occurrences": 1,
+                "confidence": [
+                  95,
+                  96
+                ]
+              },
+              {
+                "from": "no�ce",
+                "to": "notice",
+                "occurrences": 1,
+                "confidence": [
+                  96,
+                  96
+                ]
+              },
+              {
+                "from": "transac�ons",
+                "to": "transactions",
+                "occurrences": 2,
+                "confidence": [
+                  96,
+                  95
+                ]
+              },
+              {
+                "from": "prin�ng",
+                "to": "printing",
+                "occurrences": 1,
+                "confidence": [
+                  96,
+                  96
+                ]
+              },
+              {
+                "from": "transac�on",
+                "to": "transaction",
+                "occurrences": 1,
+                "confidence": [
+                  96,
+                  96
+                ]
+              },
+              {
+                "from": "collec�on",
+                "to": "collection",
+                "occurrences": 1,
+                "confidence": [
+                  91,
+                  93
+                ]
+              },
+              {
+                "from": "a�er",
+                "to": "after",
+                "occurrences": 1,
+                "confidence": [
+                  96,
+                  96
+                ]
+              },
+              {
+                "from": "inac�vity",
+                "to": "inactivity",
+                "occurrences": 1,
+                "confidence": [
+                  93,
+                  93
+                ]
+              },
+              {
+                "from": "domes�c",
+                "to": "domestic",
+                "occurrences": 1,
+                "confidence": [
+                  94,
+                  95
+                ]
+              }
+            ],
+            "unresolved": [
+              "Overdra�"
+            ],
+            "renderings": [
+              {
+                "dpi": 240,
+                "width": 2040,
+                "height": 2640,
+                "graySha256": "f08f557e4eee24257664c7f865ac569aa9345e31c409b472acf041daa0065d51"
+              },
+              {
+                "dpi": 300,
+                "width": 2550,
+                "height": 3301,
+                "graySha256": "de50f87dfce6d087a9be7e065182cffd8860f8c325c510feadd6e9a72bd6faa6"
+              }
+            ]
+          }
+        ],
+        "incumbent": {
+          "beforeSha256": "78f076a075d5275eaa93d81d97395fa735d205970f811d548369ad77006c0796",
+          "proposedSha256": null,
+          "proposedText": null
+        }
+      },
+      "feeBaselineSnapshot": "2026-10-25 16:08:43.006861+00",
+      "feeBaselineCount": 11,
+      "diagnosticSupportedBefore": 11,
+      "diagnosticSupportedAfter": 11,
+      "diagnosticSupportRegressions": 0,
+      "fees": [
+        {
+          "publishedId": 133130,
+          "beforeName": "Temporary checks (per page of 4)",
+          "letterPreviewName": "Temporary checks (per page of 4)",
+          "amount": "2.00",
+          "oldCategory": "counter_check",
+          "categorySuggestedByExistingGuard": "counter_check",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": " Temporary checks (per page of 4) ........................................................................ $2.00"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": " Temporary checks (per page of 4) ........................................................................ $2.00"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 133131,
+          "beforeName": " GASCU member transac�on at non GASCU or non-Co-Op Network ATM",
+          "letterPreviewName": " GASCU member transaction at non GASCU or non-Co-Op Network ATM",
+          "amount": "1.00",
+          "oldCategory": "atm_non_network",
+          "categorySuggestedByExistingGuard": "atm_non_network",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": " GASCU member transac�on at non GASCU or non-Co-Op Network ATM............ $1.00"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": " GASCU member transaction at non GASCU or non-Co-Op Network ATM............ $1.00"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 133132,
+          "beforeName": "Cashier's check",
+          "letterPreviewName": "Cashier's check",
+          "amount": "5.00",
+          "oldCategory": "cashiers_check",
+          "categorySuggestedByExistingGuard": "cashiers_check",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": " Cashier's check ..................................................………….…………………………………... $5.00"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": " Cashier's check ..................................................………….…………………………………... $5.00"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 133133,
+          "beforeName": "Courtesy pay (per item)",
+          "letterPreviewName": "Courtesy pay (per item)",
+          "amount": "10.00",
+          "oldCategory": "overdraft",
+          "categorySuggestedByExistingGuard": "overdraft",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": " Courtesy pay (per item) ...................................................................................... $10.00"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": " Courtesy pay (per item) ...................................................................................... $10.00"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 133134,
+          "beforeName": "Dormant account",
+          "letterPreviewName": "Dormant account",
+          "amount": "5.00",
+          "oldCategory": "dormant_account",
+          "categorySuggestedByExistingGuard": "dormant_account",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": " Dormant account .................................................................................................. $5.00"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": " Dormant account .................................................................................................. $5.00"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 133135,
+          "beforeName": "Legal process fee (levy, garnishment, judgement)",
+          "letterPreviewName": "Legal process fee (levy, garnishment, judgement)",
+          "amount": "25.00",
+          "oldCategory": "garnishment_levy",
+          "categorySuggestedByExistingGuard": "garnishment_levy",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": " Legal process fee (levy, garnishment, judgement).….......................................... $25.00"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": " Legal process fee (levy, garnishment, judgement).….......................................... $25.00"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 133136,
+          "beforeName": "Notary for non-GASCU documents (per signature)",
+          "letterPreviewName": "Notary for non-GASCU documents (per signature)",
+          "amount": "15.00",
+          "oldCategory": "notary_fee",
+          "categorySuggestedByExistingGuard": "notary_fee",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": " Notary for non-GASCU documents (per signature) ............................................ $15.00"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": " Notary for non-GASCU documents (per signature) ............................................ $15.00"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 133137,
+          "beforeName": "NSF item (non-sufficient funds)",
+          "letterPreviewName": "NSF item (non-sufficient funds)",
+          "amount": "10.00",
+          "oldCategory": "nsf",
+          "categorySuggestedByExistingGuard": "nsf",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": " NSF item (non-sufficient funds) .......................................................................... $10.00"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": " NSF item (non-sufficient funds) .......................................................................... $10.00"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 133138,
+          "beforeName": "Returned deposit, cashed check or loan payment",
+          "letterPreviewName": "Returned deposit, cashed check or loan payment",
+          "amount": "10.00",
+          "oldCategory": "deposited_item_return",
+          "categorySuggestedByExistingGuard": "deposited_item_return",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": " Returned deposit, cashed check or loan payment .............................................. $10.00"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": " Returned deposit, cashed check or loan payment .............................................. $10.00"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 133139,
+          "beforeName": "Wire transfer - Incoming",
+          "letterPreviewName": "Wire transfer - Incoming",
+          "amount": "15.00",
+          "oldCategory": "wire_domestic_incoming",
+          "categorySuggestedByExistingGuard": "wire_domestic_incoming",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": " Wire transfer - Incoming ...................................................................................... $15.00"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": " Wire transfer - Incoming ...................................................................................... $15.00"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 133140,
+          "beforeName": " Wire transfer - Outgoing (domes�c only)",
+          "letterPreviewName": " Wire transfer - Outgoing (domestic only)",
+          "amount": "20.00",
+          "oldCategory": "wire_domestic_outgoing",
+          "categorySuggestedByExistingGuard": "wire_domestic_outgoing",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": " Wire transfer - Outgoing (domes�c only) ............................................................ $20.00"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": " Wire transfer - Outgoing (domestic only) ............................................................ $20.00"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        }
+      ],
+      "sourceUrl": "https://gascu.org/wp-content/uploads/2025/12/Schedule-of-Fees-2025-01-20.pdf"
+    },
+    {
+      "sourceDocumentId": 31383,
+      "sourceTextId": 29159,
+      "incumbentObservedAt": "2026-10-25 17:34:07.893521+00",
+      "incumbentSourceSha256": "e1468b1d3f3eacf88e447b1089a901d8531d10bdb925a105b914b86d8e712617",
+      "incumbentTextSha256": "ae2e1178d71a66828364cea5b050864d6ee9cb75a9bc4a2d2e4708d5e2ccb4f7",
+      "incumbentText": "Story City • Garner\nFee Schedule | September 1, 2024\nAccount Closure ..................................................$25.00 | Online Bill Pay Service ............................................ Free\nIf closed within 6 months of opening | .................... $41.00\n..................... $25.00* | ........................ $25.00\nPer hour, $12.50 minimum | Stop Payment Item Fee................................ $32.00*\nAccount Watch Request.................................... $35.00* | Photocopy ...............................................................$ .25\nReturned Deposited Item Fee .............................$5.00*\nCashiers Check ...................................................$8.00\nSafe Deposit Box Annual Rent\nCheck Copy ....................................................... $3.00* | Small Box 3” X 5”........................................... $20.00\nCheck Orders ................................................. Prices Vary | Medium Box 3” X 10” ................................... $40.00\nDebit Card ............................................................... Free | Large Box 5” x 10” ........................................ $54.00\nDamaged Replacement Card ....................... $10.00* | Extra Large Box 10” X 10” ............................. $80.00\nLost Replacement Card ................................ $20.00* | No insurance coverage is provided on box\nDeposit Bag Locked (2 Keys) ............................. $20.00* | contents by the FDIC or the Bank\nDeposit Bag Zipped ..............................................$5.00* | ...................... $20.00\nDeposit Book (Non-encoded) ........................... $13.00* | Safe Deposit Box - Drilling .................................. At Cost\nDormant Account Fee per Month .................... $10.00* | .................................$3.00*\nStop Payment Item Fee..................................... $25.00*\nChecking/Savings no ac�vity within 18 months | Transfer Fee - per occurrence ..............................$5.00*\nFax per page .......................................................... $1.00\nAutoma�c to maintain a minimum balance or prevent\nForeign Currency Order ...................... $10.00 Plus Cost1\noverdra�s (if transfer amount is not sufficient to cover\nGarnishment/Levy........................... Fees Vary Per Type | overdra�s an NSF fee of $30.00 per item may also\napply)\n....................................................... $3.00 | Undeliverable Mail ............................................$10.00*\nPer household, per month | Per statement\nCredit Monitoring ............................................ $9.00 | Wire Transfer Fees\nPer person, per month (includes restora�on) | Wire Transfer - Incoming .............................. $15.00*\nMedallion Signature Guarantee ........... $20.00 Plus Cost2 | Wire Transfer - Outgoing .............................. $20.00*\nCustomers only | ...................... $15.00*\n...................... $50.00*\nNight Deposit Replacement Key ......................... $10.00\nWire Transfer - Remote Outgoing ................ $40.00*\nWire Interna�onal Transfer-Remote Outgoing ..$70.00*\nPAID or RETURNED\nPRESENTED ITEM FEE, even if it is a re-presentment of\ncreated by check, in-person withdrawal, ATM withdrawal,\nor other electronic means.\n................................. $30.00\nPer presentment\nReturned NSF Item Fee .................................. $30.00\nPer presentment\nDaily Maximum Fee per Account ................ $150.00\n1 RSB will purchase foreign currencies for you through our correspondent bank at the bank’s exchange rate\nand pass on that bank’s charge for the service plus our $10.00 fee.\n2 RSB will facilitate the Medallion Signature Guarentee through our correspondent bank at that bank’s fee\nand pass on that fee for the service plus our $20.00 fee.\n* Certain Fees may be subject to Sales Tax\n606 Broad St., PO Box 278, Story City, IA 50248606 Broad Street, PO Box 278, Story City, IA 50248 Ph. 515-733-4396 Ph. 515-733-4396 • PO Box 129, Garner, IA 50438 Ph. 515-923-3072\n175 E. 3rd St., PO Box 129, Garner, IA 50438100 E. Main St., PO Box 278, Klemme, IA 50449 Ph. 641-923-2801 Ph. 641-587-2202 | Member FDIC • www.RSBiowa.comwww.RSBiowa.com",
+      "diagnosticPartialIncumbentText": "Story City • Garner\nFee Schedule | September 1, 2024\nAccount Closure ..................................................$25.00 | Online Bill Pay Service ............................................ Free\nIf closed within 6 months of opening | .................... $41.00\n..................... $25.00* | ........................ $25.00\nPer hour, $12.50 minimum | Stop Payment Item Fee................................ $32.00*\nAccount Watch Request.................................... $35.00* | Photocopy ...............................................................$ .25\nReturned Deposited Item Fee .............................$5.00*\nCashiers Check ...................................................$8.00\nSafe Deposit Box Annual Rent\nCheck Copy ....................................................... $3.00* | Small Box 3” X 5”........................................... $20.00\nCheck Orders ................................................. Prices Vary | Medium Box 3” X 10” ................................... $40.00\nDebit Card ............................................................... Free | Large Box 5” x 10” ........................................ $54.00\nDamaged Replacement Card ....................... $10.00* | Extra Large Box 10” X 10” ............................. $80.00\nLost Replacement Card ................................ $20.00* | No insurance coverage is provided on box\nDeposit Bag Locked (2 Keys) ............................. $20.00* | contents by the FDIC or the Bank\nDeposit Bag Zipped ..............................................$5.00* | ...................... $20.00\nDeposit Book (Non-encoded) ........................... $13.00* | Safe Deposit Box - Drilling .................................. At Cost\nDormant Account Fee per Month .................... $10.00* | .................................$3.00*\nStop Payment Item Fee..................................... $25.00*\nChecking/Savings no activity within 18 months | Transfer Fee - per occurrence ..............................$5.00*\nFax per page .......................................................... $1.00\nAutoma�c to maintain a minimum balance or prevent\nForeign Currency Order ...................... $10.00 Plus Cost1\noverdrafts (if transfer amount is not sufficient to cover\nGarnishment/Levy........................... Fees Vary Per Type | overdrafts an NSF fee of $30.00 per item may also\napply)\n....................................................... $3.00 | Undeliverable Mail ............................................$10.00*\nPer household, per month | Per statement\nCredit Monitoring ............................................ $9.00 | Wire Transfer Fees\nPer person, per month (includes restoration) | Wire Transfer - Incoming .............................. $15.00*\nMedallion Signature Guarantee ........... $20.00 Plus Cost2 | Wire Transfer - Outgoing .............................. $20.00*\nCustomers only | ...................... $15.00*\n...................... $50.00*\nNight Deposit Replacement Key ......................... $10.00\nWire Transfer - Remote Outgoing ................ $40.00*\nWire International Transfer-Remote Outgoing ..$70.00*\nPAID or RETURNED\nPRESENTED ITEM FEE, even if it is a re-presentment of\ncreated by check, in-person withdrawal, ATM withdrawal,\nor other electronic means.\n................................. $30.00\nPer presentment\nReturned NSF Item Fee .................................. $30.00\nPer presentment\nDaily Maximum Fee per Account ................ $150.00\n1 RSB will purchase foreign currencies for you through our correspondent bank at the bank’s exchange rate\nand pass on that bank’s charge for the service plus our $10.00 fee.\n2 RSB will facilitate the Medallion Signature Guarentee through our correspondent bank at that bank’s fee\nand pass on that fee for the service plus our $20.00 fee.\n* Certain Fees may be subject to Sales Tax\n606 Broad St., PO Box 278, Story City, IA 50248606 Broad Street, PO Box 278, Story City, IA 50248 Ph. 515-733-4396 Ph. 515-733-4396 • PO Box 129, Garner, IA 50438 Ph. 515-923-3072\n175 E. 3rd St., PO Box 129, Garner, IA 50438100 E. Main St., PO Box 278, Klemme, IA 50449 Ph. 641-923-2801 Ph. 641-587-2202 | Member FDIC • www.RSBiowa.comwww.RSBiowa.com",
+      "diagnosticPartialIncumbentSha256": "9836905ea1c507342377e07ea70d9bd6660ec6af3bfb0194e4f7fa8632308fbc",
+      "preview": {
+        "method": "full_page_letter_witness_v1",
+        "disposition": "review_required",
+        "sourceSha256": "e1468b1d3f3eacf88e447b1089a901d8531d10bdb925a105b914b86d8e712617",
+        "localModelSha256": "45b4cb346724ac1774f1c36f42f182b887bcdb28ebe63e6fff90ac41f3fcff91",
+        "originalText": "Story City • Garner\nFee Schedule | September 1, 2024\nAccount Closure ..................................................$25.00 | Online Bill Pay Service ............................................ Free\nIf closed within 6 months of opening | .................... $41.00\n..................... $25.00* | ........................ $25.00\nPer hour, $12.50 minimum | Stop Payment Item Fee................................ $32.00*\nAccount Watch Request.................................... $35.00* | Photocopy ...............................................................$ .25\nReturned Deposited Item Fee .............................$5.00*\nCashiers Check ...................................................$8.00\nSafe Deposit Box Annual Rent\nCheck Copy ....................................................... $3.00* | Small Box 3” X 5”........................................... $20.00\nCheck Orders ................................................. Prices Vary | Medium Box 3” X 10” ................................... $40.00\nDebit Card ............................................................... Free | Large Box 5” x 10” ........................................ $54.00\nDamaged Replacement Card ....................... $10.00* | Extra Large Box 10” X 10” ............................. $80.00\nLost Replacement Card ................................ $20.00* | No insurance coverage is provided on box\nDeposit Bag Locked (2 Keys) ............................. $20.00* | contents by the FDIC or the Bank\nDeposit Bag Zipped ..............................................$5.00* | ...................... $20.00\nDeposit Book (Non-encoded) ........................... $13.00* | Safe Deposit Box - Drilling .................................. At Cost\nDormant Account Fee per Month .................... $10.00* | .................................$3.00*\nStop Payment Item Fee..................................... $25.00*\nChecking/Savings no ac�vity within 18 months | Transfer Fee - per occurrence ..............................$5.00*\nFax per page .......................................................... $1.00\nAutoma�c to maintain a minimum balance or prevent\nForeign Currency Order ...................... $10.00 Plus Cost1\noverdra�s (if transfer amount is not sufficient to cover\nGarnishment/Levy........................... Fees Vary Per Type | overdra�s an NSF fee of $30.00 per item may also\napply)\n....................................................... $3.00 | Undeliverable Mail ............................................$10.00*\nPer household, per month | Per statement\nCredit Monitoring ............................................ $9.00 | Wire Transfer Fees\nPer person, per month (includes restora�on) | Wire Transfer - Incoming .............................. $15.00*\nMedallion Signature Guarantee ........... $20.00 Plus Cost2 | Wire Transfer - Outgoing .............................. $20.00*\nCustomers only | ...................... $15.00*\n...................... $50.00*\nNight Deposit Replacement Key ......................... $10.00\nWire Transfer - Remote Outgoing ................ $40.00*\nWire Interna�onal Transfer-Remote Outgoing ..$70.00*\nPAID or RETURNED\nPRESENTED ITEM FEE, even if it is a re-presentment of\ncreated by check, in-person withdrawal, ATM withdrawal,\nor other electronic means.\n................................. $30.00\nPer presentment\nReturned NSF Item Fee .................................. $30.00\nPer presentment\nDaily Maximum Fee per Account ................ $150.00\n1 RSB will purchase foreign currencies for you through our correspondent bank at the bank’s exchange rate\nand pass on that bank’s charge for the service plus our $10.00 fee.\n2 RSB will facilitate the Medallion Signature Guarentee through our correspondent bank at that bank’s fee\nand pass on that fee for the service plus our $20.00 fee.\n* Certain Fees may be subject to Sales Tax\n606 Broad St., PO Box 278, Story City, IA 50248606 Broad Street, PO Box 278, Story City, IA 50248 Ph. 515-733-4396 Ph. 515-733-4396 • PO Box 129, Garner, IA 50438 Ph. 515-923-3072\n175 E. 3rd St., PO Box 129, Garner, IA 50438100 E. Main St., PO Box 278, Klemme, IA 50449 Ph. 641-923-2801 Ph. 641-587-2202   | Member FDIC • www.RSBiowa.comwww.RSBiowa.com",
+        "originalTextSha256": "23443fe230d3468d97afb98e56889bf69f68226b5a277145821b8e25bca7c03b",
+        "proposedText": "Story City • Garner\nFee Schedule | September 1, 2024\nAccount Closure ..................................................$25.00 | Online Bill Pay Service ............................................ Free\nIf closed within 6 months of opening | .................... $41.00\n..................... $25.00* | ........................ $25.00\nPer hour, $12.50 minimum | Stop Payment Item Fee................................ $32.00*\nAccount Watch Request.................................... $35.00* | Photocopy ...............................................................$ .25\nReturned Deposited Item Fee .............................$5.00*\nCashiers Check ...................................................$8.00\nSafe Deposit Box Annual Rent\nCheck Copy ....................................................... $3.00* | Small Box 3” X 5”........................................... $20.00\nCheck Orders ................................................. Prices Vary | Medium Box 3” X 10” ................................... $40.00\nDebit Card ............................................................... Free | Large Box 5” x 10” ........................................ $54.00\nDamaged Replacement Card ....................... $10.00* | Extra Large Box 10” X 10” ............................. $80.00\nLost Replacement Card ................................ $20.00* | No insurance coverage is provided on box\nDeposit Bag Locked (2 Keys) ............................. $20.00* | contents by the FDIC or the Bank\nDeposit Bag Zipped ..............................................$5.00* | ...................... $20.00\nDeposit Book (Non-encoded) ........................... $13.00* | Safe Deposit Box - Drilling .................................. At Cost\nDormant Account Fee per Month .................... $10.00* | .................................$3.00*\nStop Payment Item Fee..................................... $25.00*\nChecking/Savings no activity within 18 months | Transfer Fee - per occurrence ..............................$5.00*\nFax per page .......................................................... $1.00\nAutoma�c to maintain a minimum balance or prevent\nForeign Currency Order ...................... $10.00 Plus Cost1\noverdrafts (if transfer amount is not sufficient to cover\nGarnishment/Levy........................... Fees Vary Per Type | overdrafts an NSF fee of $30.00 per item may also\napply)\n....................................................... $3.00 | Undeliverable Mail ............................................$10.00*\nPer household, per month | Per statement\nCredit Monitoring ............................................ $9.00 | Wire Transfer Fees\nPer person, per month (includes restoration) | Wire Transfer - Incoming .............................. $15.00*\nMedallion Signature Guarantee ........... $20.00 Plus Cost2 | Wire Transfer - Outgoing .............................. $20.00*\nCustomers only | ...................... $15.00*\n...................... $50.00*\nNight Deposit Replacement Key ......................... $10.00\nWire Transfer - Remote Outgoing ................ $40.00*\nWire International Transfer-Remote Outgoing ..$70.00*\nPAID or RETURNED\nPRESENTED ITEM FEE, even if it is a re-presentment of\ncreated by check, in-person withdrawal, ATM withdrawal,\nor other electronic means.\n................................. $30.00\nPer presentment\nReturned NSF Item Fee .................................. $30.00\nPer presentment\nDaily Maximum Fee per Account ................ $150.00\n1 RSB will purchase foreign currencies for you through our correspondent bank at the bank’s exchange rate\nand pass on that bank’s charge for the service plus our $10.00 fee.\n2 RSB will facilitate the Medallion Signature Guarentee through our correspondent bank at that bank’s fee\nand pass on that fee for the service plus our $20.00 fee.\n* Certain Fees may be subject to Sales Tax\n606 Broad St., PO Box 278, Story City, IA 50248606 Broad Street, PO Box 278, Story City, IA 50248 Ph. 515-733-4396 Ph. 515-733-4396 • PO Box 129, Garner, IA 50438 Ph. 515-923-3072\n175 E. 3rd St., PO Box 129, Garner, IA 50438100 E. Main St., PO Box 278, Klemme, IA 50449 Ph. 641-923-2801 Ph. 641-587-2202   | Member FDIC • www.RSBiowa.comwww.RSBiowa.com",
+        "proposedTextSha256": "cb1e2d00c83caf6de1ef3080b747041cbbe0c5687c1925bb176a802e1e0441ef",
+        "complete": false,
+        "pages": [
+          {
+            "page": 1,
+            "repairs": [
+              {
+                "from": "ac�vity",
+                "to": "activity",
+                "occurrences": 1,
+                "confidence": [
+                  90,
+                  96
+                ]
+              },
+              {
+                "from": "overdra�s",
+                "to": "overdrafts",
+                "occurrences": 2,
+                "confidence": [
+                  96,
+                  95
+                ]
+              },
+              {
+                "from": "restora�on",
+                "to": "restoration",
+                "occurrences": 1,
+                "confidence": [
+                  96,
+                  94
+                ]
+              },
+              {
+                "from": "Interna�onal",
+                "to": "International",
+                "occurrences": 1,
+                "confidence": [
+                  93,
+                  93
+                ]
+              }
+            ],
+            "unresolved": [
+              "Automa�c"
+            ],
+            "renderings": [
+              {
+                "dpi": 240,
+                "width": 2040,
+                "height": 2640,
+                "graySha256": "6141a2ad11664798fa2a9ab81258323d0927dee965ef171f337d8ba7833aa72d"
+              },
+              {
+                "dpi": 300,
+                "width": 2550,
+                "height": 3301,
+                "graySha256": "83785d3a67433865f21852e9d51377cd5369fd8cf6f992e18a11bda63702a0cb"
+              }
+            ]
+          }
+        ],
+        "incumbent": {
+          "beforeSha256": "ae2e1178d71a66828364cea5b050864d6ee9cb75a9bc4a2d2e4708d5e2ccb4f7",
+          "proposedSha256": null,
+          "proposedText": null
+        }
+      },
+      "feeBaselineSnapshot": "2026-10-25 16:08:43.006861+00",
+      "feeBaselineCount": 23,
+      "diagnosticSupportedBefore": 23,
+      "diagnosticSupportedAfter": 23,
+      "diagnosticSupportRegressions": 0,
+      "fees": [
+        {
+          "publishedId": 140270,
+          "beforeName": "If closed within 6 months of opening",
+          "letterPreviewName": "If closed within 6 months of opening",
+          "amount": "41.00",
+          "oldCategory": "early_closure",
+          "categorySuggestedByExistingGuard": "early_closure",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": "If closed within 6 months of opening | .................... $41.00"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": "If closed within 6 months of opening | .................... $41.00"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 140271,
+          "beforeName": "Stop Payment Item Fee",
+          "letterPreviewName": "Stop Payment Item Fee",
+          "amount": "32.00",
+          "oldCategory": "stop_payment",
+          "categorySuggestedByExistingGuard": "stop_payment",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": "Per hour, $12.50 minimum | Stop Payment Item Fee................................ $32.00*"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": "Per hour, $12.50 minimum | Stop Payment Item Fee................................ $32.00*"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 140272,
+          "beforeName": "Returned Deposited Item Fee",
+          "letterPreviewName": "Returned Deposited Item Fee",
+          "amount": "5.00",
+          "oldCategory": "deposited_item_return",
+          "categorySuggestedByExistingGuard": "deposited_item_return",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": "Returned Deposited Item Fee .............................$5.00*"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": "Returned Deposited Item Fee .............................$5.00*"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 140273,
+          "beforeName": "Cashiers Check",
+          "letterPreviewName": "Cashiers Check",
+          "amount": "8.00",
+          "oldCategory": "cashiers_check",
+          "categorySuggestedByExistingGuard": "cashiers_check",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": "Cashiers Check ...................................................$8.00"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": "Cashiers Check ...................................................$8.00"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 140274,
+          "beforeName": "Check Copy",
+          "letterPreviewName": "Check Copy",
+          "amount": "3.00",
+          "oldCategory": "check_image",
+          "categorySuggestedByExistingGuard": "check_image",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": "Check Copy ....................................................... $3.00* | Small Box 3” X 5”........................................... $20.00"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": "Check Copy ....................................................... $3.00* | Small Box 3” X 5”........................................... $20.00"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 140275,
+          "beforeName": "Small Box 3” X 5”",
+          "letterPreviewName": "Small Box 3” X 5”",
+          "amount": "20.00",
+          "oldCategory": "safe_deposit_box",
+          "categorySuggestedByExistingGuard": "safe_deposit_box",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": "Check Copy ....................................................... $3.00* | Small Box 3” X 5”........................................... $20.00"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": "Check Copy ....................................................... $3.00* | Small Box 3” X 5”........................................... $20.00"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 140276,
+          "beforeName": "Check Orders Prices Vary: Medium Box 3” X 10”",
+          "letterPreviewName": "Check Orders Prices Vary: Medium Box 3” X 10”",
+          "amount": "40.00",
+          "oldCategory": "safe_deposit_box",
+          "categorySuggestedByExistingGuard": "safe_deposit_box",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": "Check Orders ................................................. Prices Vary | Medium Box 3” X 10” ................................... $40.00"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": "Check Orders ................................................. Prices Vary | Medium Box 3” X 10” ................................... $40.00"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 140277,
+          "beforeName": "Damaged Replacement Card",
+          "letterPreviewName": "Damaged Replacement Card",
+          "amount": "10.00",
+          "oldCategory": "card_replacement",
+          "categorySuggestedByExistingGuard": "card_replacement",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": "Damaged Replacement Card ....................... $10.00* | Extra Large Box 10” X 10” ............................. $80.00"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": "Damaged Replacement Card ....................... $10.00* | Extra Large Box 10” X 10” ............................. $80.00"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 140278,
+          "beforeName": "Extra Large Box 10” X 10”",
+          "letterPreviewName": "Extra Large Box 10” X 10”",
+          "amount": "80.00",
+          "oldCategory": "safe_deposit_box",
+          "categorySuggestedByExistingGuard": "safe_deposit_box",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": "Damaged Replacement Card ....................... $10.00* | Extra Large Box 10” X 10” ............................. $80.00"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": "Damaged Replacement Card ....................... $10.00* | Extra Large Box 10” X 10” ............................. $80.00"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 140279,
+          "beforeName": "Lost Replacement Card",
+          "letterPreviewName": "Lost Replacement Card",
+          "amount": "20.00",
+          "oldCategory": "card_replacement",
+          "categorySuggestedByExistingGuard": "card_replacement",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": "Lost Replacement Card ................................ $20.00* | No insurance coverage is provided on box"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": "Lost Replacement Card ................................ $20.00* | No insurance coverage is provided on box"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 140280,
+          "beforeName": "Dormant Account Fee per Month",
+          "letterPreviewName": "Dormant Account Fee per Month",
+          "amount": "10.00",
+          "oldCategory": "dormant_account",
+          "categorySuggestedByExistingGuard": "dormant_account",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": "Dormant Account Fee per Month .................... $10.00* | .................................$3.00*"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": "Dormant Account Fee per Month .................... $10.00* | .................................$3.00*"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 140281,
+          "beforeName": "Stop Payment Item Fee",
+          "letterPreviewName": "Stop Payment Item Fee",
+          "amount": "25.00",
+          "oldCategory": "stop_payment",
+          "categorySuggestedByExistingGuard": "stop_payment",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": "Stop Payment Item Fee..................................... $25.00*"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": "Stop Payment Item Fee..................................... $25.00*"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 140282,
+          "beforeName": "Fax per page",
+          "letterPreviewName": "Fax per page",
+          "amount": "1.00",
+          "oldCategory": "document_reproduction",
+          "categorySuggestedByExistingGuard": "document_reproduction",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": "Fax per page .......................................................... $1.00"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": "Fax per page .......................................................... $1.00"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 140283,
+          "beforeName": "Overdra�s an NSF fee",
+          "letterPreviewName": "Overdra�s an NSF fee",
+          "amount": "30.00",
+          "oldCategory": "nsf",
+          "categorySuggestedByExistingGuard": "nsf",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": "Garnishment/Levy........................... Fees Vary Per Type | overdra�s an NSF fee of $30.00 per item may also"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": "Garnishment/Levy........................... Fees Vary Per Type | overdrafts an NSF fee of $30.00 per item may also"
+          },
+          "containsReplacement": true,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 140284,
+          "beforeName": "Night Deposit Replacement Key",
+          "letterPreviewName": "Night Deposit Replacement Key",
+          "amount": "10.00",
+          "oldCategory": "night_deposit",
+          "categorySuggestedByExistingGuard": "night_deposit",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": "Night Deposit Replacement Key ......................... $10.00"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": "Night Deposit Replacement Key ......................... $10.00"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 140285,
+          "beforeName": "Wire Transfer - Remote Outgoing",
+          "letterPreviewName": "Wire Transfer - Remote Outgoing",
+          "amount": "40.00",
+          "oldCategory": "wire_domestic_outgoing",
+          "categorySuggestedByExistingGuard": "wire_domestic_outgoing",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": "Wire Transfer - Remote Outgoing ................ $40.00*"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": "Wire Transfer - Remote Outgoing ................ $40.00*"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 140286,
+          "beforeName": "Wire Interna�onal Transfer-Remote Outgoing",
+          "letterPreviewName": "Wire International Transfer-Remote Outgoing",
+          "amount": "70.00",
+          "oldCategory": "wire_domestic_outgoing",
+          "categorySuggestedByExistingGuard": "wire_intl_outgoing",
+          "oldCategoryFitsLetterPreview": {
+            "ok": false,
+            "code": "name_contradicts",
+            "reason": "\"Wire International Transfer-Remote Outgoing\" describes a different fee than wire_domestic_outgoing (\"International\")"
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": "Wire Interna�onal Transfer-Remote Outgoing ..$70.00*"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": "Wire International Transfer-Remote Outgoing ..$70.00*"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 140287,
+          "beforeName": "Returned NSF Item Fee",
+          "letterPreviewName": "Returned NSF Item Fee",
+          "amount": "30.00",
+          "oldCategory": "nsf",
+          "categorySuggestedByExistingGuard": "nsf",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": "Returned NSF Item Fee .................................. $30.00"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": "Returned NSF Item Fee .................................. $30.00"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 140288,
+          "beforeName": "Wire Transfer - Outgoing",
+          "letterPreviewName": "Wire Transfer - Outgoing",
+          "amount": "20.00",
+          "oldCategory": "wire_domestic_outgoing",
+          "categorySuggestedByExistingGuard": "wire_domestic_outgoing",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": "Medallion Signature Guarantee ........... $20.00 Plus Cost2 | Wire Transfer - Outgoing .............................. $20.00*"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": "Medallion Signature Guarantee ........... $20.00 Plus Cost2 | Wire Transfer - Outgoing .............................. $20.00*"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 140289,
+          "beforeName": "Undeliverable Mail",
+          "letterPreviewName": "Undeliverable Mail",
+          "amount": "10.00",
+          "oldCategory": "returned_mail",
+          "categorySuggestedByExistingGuard": "returned_mail",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": "....................................................... $3.00 | Undeliverable Mail ............................................$10.00*"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": "....................................................... $3.00 | Undeliverable Mail ............................................$10.00*"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 140290,
+          "beforeName": "Photocopy",
+          "letterPreviewName": "Photocopy",
+          "amount": "0.25",
+          "oldCategory": "document_reproduction",
+          "categorySuggestedByExistingGuard": "document_reproduction",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": "Account Watch Request.................................... $35.00* | Photocopy ...............................................................$ .25"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": "Account Watch Request.................................... $35.00* | Photocopy ...............................................................$ .25"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 140291,
+          "beforeName": "Large Box 5” x 10”",
+          "letterPreviewName": "Large Box 5” x 10”",
+          "amount": "54.00",
+          "oldCategory": "safe_deposit_box",
+          "categorySuggestedByExistingGuard": "safe_deposit_box",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": "Debit Card ............................................................... Free | Large Box 5” x 10” ........................................ $54.00"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": "Debit Card ............................................................... Free | Large Box 5” x 10” ........................................ $54.00"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        },
+        {
+          "publishedId": 157989,
+          "beforeName": "Online Bill Pay Service",
+          "letterPreviewName": "Online Bill Pay Service",
+          "amount": "0.00",
+          "oldCategory": "bill_pay",
+          "categorySuggestedByExistingGuard": "bill_pay",
+          "oldCategoryFitsLetterPreview": {
+            "ok": true
+          },
+          "beforePriceAndName": {
+            "ok": true,
+            "sourceLine": "Account Closure ..................................................$25.00 | Online Bill Pay Service ............................................ Free"
+          },
+          "letterPreviewPriceAndName": {
+            "ok": true,
+            "sourceLine": "Account Closure ..................................................$25.00 | Online Bill Pay Service ............................................ Free"
+          },
+          "containsReplacement": false,
+          "scope": "Diagnostic checks only; not a visual fee, unit, audience, waiver, current-effectiveness or publishing verdict."
+        }
+      ],
+      "sourceUrl": "https://www.rsbiowa.com/media/cms/Fee_Schedule_9_1_2024_81F44B6C0C382.pdf"
+    }
+  ],
+  "totalFeeBaseline": 57,
+  "totalDiagnosticSupportRegressions": 0,
+  "productionReady": false,
+  "requires": [
+    "Finish and review transcription of unresolved words from exact original page renderings.",
+    "Reconcile each valid baseline fee, price, unit, audience, waiver, condition and category; account explicitly for incorrect rows.",
+    "Recheck current source effectiveness, hashes and live identities in the authorized ledger run.",
+    "Persist using a source/text compare-and-swap and existing normalized witness transaction; source recovery alone must not retire valid fees.",
+    "Re-extract, verify and review category changes; explicitly retire old wrong published identities only with authorized publication repair."
+  ],
+  "code_evidence": {
+    "preview_module_blob": "53b50a4fe371f1459ecfc22c0e085c2190e92d16",
+    "word_matcher_blob": "edc445ebb1306b9e9a654d1a517f61588bb1e8c6",
+    "fee_check_main_commit": "5aa41e3ccaaec780bfb977938502a5c408c8139b"
+  }
+}

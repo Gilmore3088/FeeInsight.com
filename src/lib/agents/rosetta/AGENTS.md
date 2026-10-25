@@ -68,11 +68,24 @@ Rosetta owns source text normalization.
   `docx.ts`): a paragraph per line, a tab as a cell break, a table row per line. A
   legacy binary .doc stays `unsupported_format`. Knox pairs fees and amounts per line,
   so keep that contract.
-- Global reader changes bump `ROSETTA_READ_VERSION`. Completed texts from an older
-  version with fewer than `REREAD_MAX_KNOX_FEES` (5) Knox fees are read once more with
-  the current reader, so an institution whose flattened table gave up one fee gets its
-  whole schedule. Texts with more Knox fees are left alone, and a failed re-read keeps
-  the earlier text.
+- Global reader changes bump `ROSETTA_READ_VERSION`. The bounded reader-replay lane
+  below now reaches completed older-reader texts regardless of their fee count (#2069);
+  the earlier thin-text rule is no longer the only path. Failed replays keep the earlier text.
+- Reader v4 refuses U+FFFD touching a Unicode letter or number in PDF text (#2598),
+  including words split across PDF items. A PDF's own ToUnicode map may already be
+  broken; layout and stream readers share that map and agreement is not proof of
+  intact words. Never replace U+FFFD by "ti": the same document can use it for "ft".
+  `PdfTextIntegrityError` becomes `needs_ocr` / `parse_error` with an explicit full-page
+  visual-transcription requirement. The image-only scan reader cannot recover these
+  text glyphs and is not called. New documents expose no completed corrupt text;
+  rereads/replays keep the incumbent and live fees. A reader bump does not repair
+  old live names or categories. Its deployment/replay and any later data repair need
+  separate review; see the #2598 finding's staged reconciliation procedure.
+  `pdf-unicode-preview.ts` and `scripts/rosetta-unicode-preview.ts` are offline review
+  tools only: render glyph outlines at two scales with local OCR, fill only witnessed
+  missing internal letters, preserve the incumbent's known text/layout, and refuse a
+  complete proposal while any word remains damaged. They write local review JSON,
+  not source texts, reader/replay receipts or fees; no production lane invokes them.
 - A completed text with an operator's lost-text finding (a hold or correction whose cause is
   a lost text: a `pipeline_feedback` row about `read`, signal wrong, weight above 0; text-survival
   and batch-review misses keep their own branches, so a zero-fee wrong page still goes back to
@@ -109,7 +122,7 @@ Rosetta owns source text normalization.
   Knox re-extracts it and Darwin re-checks its fees. The paid pass is not replayed (a paid call).
   On 25 Oct 375 current copies at 374 banks were due, with 5,526 live fees (277 legacy texts,
   67 JavaScript-fallback, 31 OCR).
-- Scoped layout 5 repairs (#2219) keep the global reader 3 and prose-layout 4 replay floors
+- Scoped layout 5 repairs (#2219) did not bump the global reader and keep the prose-layout 4 replay floor
   settled (`PDF_PROSE_REREAD_VERSION`). `PDF_STACKED_REPAIR_VERSION` v1 makes only current
   completed PDF-layout texts with at least three crossed bullet-price cells and three
   standalone bullet-price lines due for a free geometry check. The complete owner query
@@ -160,7 +173,7 @@ Rosetta owns source text normalization.
 
   | Pass | Strategy | Reads | Version const |
   | --- | --- | --- | --- |
-  | 1 | `read.html_dom`, `read.pdf_layout`, `read.plain_text` | static HTML, text PDFs, text | `ROSETTA_READ_VERSION` (3) |
+  | 1 | `read.html_dom`, `read.pdf_layout`, `read.plain_text` | static HTML, text PDFs, text | `ROSETTA_READ_VERSION` (4) |
   | 2 | `read.table_rows` | cells of HTML tables, PDF/OCR layout columns | `ROSETTA_TABLE_ROWS_VERSION` |
   | 2 | `read.ocr_tesseract` (`ocr.ts`) | scans up to `OCR_MAX_PAGES` (10) pages | `ROSETTA_OCR_VERSION` |
   | 2 | `read.js_fallback` (`js-fallback.ts`) | JavaScript-built pages | `ROSETTA_JS_FALLBACK_VERSION` |
@@ -425,7 +438,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `PDF_STACKED_REPAIR_VERSION` | `read.pdf_layout` scoped check | v1 | `rosetta/reader-versions.ts` |
 | `PDF_READER_AGREEMENT_VERSION` | `read.pdf_reader_agreement` record-only receipt | v1 | `rosetta/reader-versions.ts` |
 | `LAYOUT_RECHECK_VERSION` | `rosetta.layout_recheck` record-only event | v1 | `rosetta/reader-versions.ts` |
-| `ROSETTA_READ_VERSION` | primary readers; replayed to every older-reader current copy (`rosetta.reader_replay`, #2069) | v3 | `rosetta/reader-versions.ts` |
+| `ROSETTA_READ_VERSION` | primary readers; replayed to every older-reader current copy (`rosetta.reader_replay`, #2069) | v4 | `rosetta/reader-versions.ts` |
 | `ROSETTA_DOCUMENT_ACCESS_VERSION` | `read.document_access` | v1 | `rosetta/read.ts` |
 | `REOPEN_VERSION` | — | v1 | `rosetta/read.ts` |
 | `SAME_TEXT_COPY_STRATEGY` | `read.same_text_copy` | v1 | `rosetta/same-text-copy.ts` |

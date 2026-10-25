@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { ReadResult } from "./read";
 import type { WitnessRequest } from "./normalized-witness";
+import { ROSETTA_READ_VERSION } from "./reader-versions";
 const connection = process.env.E2E_DATABASE_URL;
 const migration = readFileSync(join(__dirname, "../../../../supabase/migrations/20270110000067_normalized_source_text_witnesses.sql"), "utf8");
 const textA = "Fee Schedule\nWire transfer $25.00 per item unless waived";
@@ -454,7 +455,7 @@ describe.skipIf(!connection)("private exact normalized witnesses", () => {
    VALUES (${fixture.institutionId},${fixture.documentId},'needs_ocr','pdf',${sourceHash},${textA},${witness.exactTextHash(textA)}) RETURNING *
   `;
     await db `INSERT INTO pipeline_attempts(institution_id,source_document_id,stage,strategy,strategy_version,input_fingerprint,outcome)
-   VALUES(${fixture.institutionId},${fixture.documentId},'read','read.pdf_layout',3,${sourceHash},'scanned_pdf')`;
+   VALUES(${fixture.institutionId},${fixture.documentId},'read','read.pdf_layout',${ROSETTA_READ_VERSION},${sourceHash},'scanned_pdf')`;
     const paidCall = vi.fn(async () => ({ message: { content: [{ type: "text", text: textB }], stop_reason: "end_turn" }, costMicrousd: 0 }));
     vi.doMock("@/lib/agents/paid-pass", async () => ({ ...await vi.importActual("@/lib/agents/paid-pass"), paidModelCall: paidCall }));
     try {

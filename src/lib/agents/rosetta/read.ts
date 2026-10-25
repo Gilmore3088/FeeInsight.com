@@ -76,6 +76,7 @@ import { PDF_LAYOUT_VERSION } from "@/lib/agents/rosetta/pdf-layout";
 import { FEE_HOLD_CHECK } from "@/lib/fee-hold-rules";
 import { FEE_CORRECTION_CHECK } from "@/lib/fee-correction-rules";
 import { extractPdfDocumentText as extractPdfText, type PdfTextExtraction } from "./pdf-document-text";
+import { assertPdfTextIntegrity, PdfTextIntegrityError } from "./pdf-text-integrity";
 import { losslessStackedRecovery, textSha256, type StackedGeometryReceipt } from "./pdf-repair-survival";
 import type { PdfReaderAgreement } from "./pdf-reader-agreement";
 import { PDF_PROSE_REREAD_VERSION, PDF_STACKED_REPAIR_VERSION } from "./reader-versions";
@@ -717,6 +718,7 @@ async function tryJsFallback(
     try {
       if (format === "pdf") {
         const extracted = await ctx.pdfTextExtractor(loaded.bytes);
+        assertPdfTextIntegrity(extracted.text);
         const text = normalizeWhitespace(extracted.text);
         if (!isLikelyScannedPdf(text, extracted.totalPages)) {
           const rows = rowsInText(tableRowsFromText((extracted.pages ?? [extracted.text]).map(normalizeWhitespace), "pdf_layout"), text);
@@ -893,7 +895,14 @@ async function readCandidate(
     let extracted: PdfTextExtraction;
     try {
       extracted = await ctx.pdfTextExtractor(bytes);
+      // Injected/alternate parsers must meet the same boundary as the shared parser.
+      assertPdfTextIntegrity(extracted.text);
     } catch (error) {
+      if (error instanceof PdfTextIntegrityError) {
+        // This is a readable page with a broken text map, not a bad source link or
+        // an image scan. Do not OCR a logo, guess letters, or send it to Magellan.
+        return finish({ status: "needs_ocr", error: error.message, attemptOutcome: "parse_error", format: "pdf_text" });
+      }
       return finish({
         status: "failed",
         error: `PDF text extraction failed: ${errorMessage(error)}`,
