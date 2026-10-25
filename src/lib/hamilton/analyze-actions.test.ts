@@ -1,4 +1,5 @@
-import { saveAnalysis, loadAnalysisRecord } from "@/app/pro/(hamilton)/analyze/actions";
+import { saveAnalysis, loadAnalysis, loadAnalysisRecord } from "@/app/pro/(hamilton)/analyze/actions";
+import { readSavedAnalysisRecord } from "@/lib/hamilton/saved-analysis-record";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AnalyzeResponse } from "@/lib/hamilton/types";
 
@@ -81,6 +82,14 @@ describe("Analyze saveAnalysis", () => {
     expect(JSON.stringify(stored)).not.toContain("Today's wrong cohort");
   });
 
+  it("never keeps saved claims the browser sent: only the server's own save writes them (#1077 step 6)", async () => {
+    const forgedClaims = { version: 1, bindingVersion: 1, claims: [{ text: "Forged claim.", outcome: "supported", factIds: [] }], facts: [], factsTruncated: false, corrections: [] };
+    await saveAnalysis({ ...saveParams("2945"), responseJson: { ...responseJson, claims: forgedClaims as AnalyzeResponse["claims"] } });
+    const stored = JSON.parse(mocks.sql.mock.calls[0][6]) as AnalyzeResponse;
+    expect(stored).not.toHaveProperty("claims");
+    expect(JSON.stringify(stored)).not.toContain("Forged claim");
+  });
+
   it("round-trips historical identity without re-reading current memberships or selection", async () => {
     const identityContext = { version: 1 as const, researchInstitutionId: 2945, accountInstitutionId: 101, accountStatus: "identified" as const, researchInstitutionName: "Research Bank A", accountInstitutionName: "Space Coast CU", peerBaselineLabel: "Original A cohort", peerSetId: 42 };
     const original = { ...responseJson, identityContext };
@@ -92,6 +101,20 @@ describe("Analyze saveAnalysis", () => {
     expect(mocks.loadHamiltonAccountContext).not.toHaveBeenCalled();
     expect(mocks.getInstitutionById).not.toHaveBeenCalled();
     expect(mocks.sql.mock.calls[0]).toContain(7);
+  });
+
+  it("drops the saved claims from every reopened answer a browser receives, while the server-only read keeps them (PR #2583 review)", async () => {
+    const claims = { version: 1, bindingVersion: 1, claims: [{ text: "The $35 wire fee is provisional.", outcome: "supported", factIds: ["fee:published:9"] }], facts: [], factsTruncated: false, corrections: [] };
+    const stored = { ...responseJson, claims };
+    mocks.sql.mockResolvedValue([{ id: "saved-a", response_json: JSON.stringify(stored), institution_id: "2945", prompt: "Q", analysis_focus: "Fees" }]);
+    const id = "00000000-0000-0000-0000-000000000001";
+    const record = await loadAnalysisRecord(id);
+    expect(record?.responseJson).toEqual(responseJson);
+    expect(record?.responseJson).not.toHaveProperty("claims");
+    const answer = await loadAnalysis(id);
+    expect(answer).toEqual(responseJson);
+    expect(JSON.stringify(answer)).not.toContain("fee:published:9");
+    expect((await readSavedAnalysisRecord(id))?.responseJson.claims).toEqual(claims);
   });
 
   it("loads saved analysis metadata with a canonical institution fallback", async () => {
