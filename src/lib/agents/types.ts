@@ -138,6 +138,7 @@ export const PAUSE_EXEMPT_STEP_KEYS: readonly string[] = [
   "deming-error-fix-recheck",
   "deming-error-classes",
   "deming-data-quality",
+  "deming-filings-reconcile",
   "deming-fresh-audit",
   "deming-knox-misses",
   "deming-monthly-review",

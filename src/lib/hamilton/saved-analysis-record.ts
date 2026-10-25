@@ -43,6 +43,41 @@ export function withoutSavedClaims<T extends AnalyzeResponse>(response: T): T {
   return rest as T;
 }
 
+/** The verdict a browser fallback save carries: the server never checked the answer, so it never passes. */
+export const FALLBACK_SAVE_UNCHECKED = "Saved from the browser: the server did not check this answer against its records.";
+
+const textOf = (value: unknown): string => (typeof value === "string" ? value : "");
+const textsOf = (value: unknown): string[] => (Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : []);
+
+/**
+ * What the browser fallback save (`saveAnalysis`) keeps of a browser-sent answer: its title,
+ * sections and confidence level (never above medium), as the reader saw them, plus the server's own
+ * "not checked" verdict. Everything that says what the records support (`narrativeBinding`,
+ * `answerEvidence`, `claims`, `memo`, `storyline`, `factEvidence`, `datasetStamps`,
+ * `engineVersion`, any other key) is server-derived and is dropped, since a browser could forge it
+ * (#1077 follow-up). A report then skips the answer (failed verdict); an export prints it as an
+ * answer with no binding, with nothing marked as supported.
+ */
+export function fallbackSaveSections(response: unknown): AnalyzeResponse {
+  const raw = (response && typeof response === "object" ? response : {}) as Partial<AnalyzeResponse>;
+  const metrics = Array.isArray(raw.evidence?.metrics) ? raw.evidence.metrics : [];
+  return {
+    title: textOf(raw.title),
+    // A browser cannot claim high confidence, or say why, for an answer the server never checked.
+    confidence: { level: raw.confidence?.level === "low" ? "low" : "medium", basis: [FALLBACK_SAVE_UNCHECKED] },
+    hamiltonView: textOf(raw.hamiltonView),
+    whatThisMeans: textOf(raw.whatThisMeans),
+    whyItMatters: textsOf(raw.whyItMatters),
+    evidence: {
+      metrics: metrics
+        .filter((m) => m && typeof m === "object" && typeof m.label === "string" && typeof m.value === "string")
+        .map((m) => ({ label: m.label, value: m.value, ...(typeof m.note === "string" ? { note: m.note } : {}) })),
+    },
+    exploreFurther: textsOf(raw.exploreFurther),
+    answerEvidence: { passed: false, problems: [FALLBACK_SAVE_UNCHECKED] },
+  };
+}
+
 /** One saved answer of the current user, whole (saved claims included). Server code only. */
 export async function readSavedAnalysisRecord(id: string): Promise<LoadedAnalysisRecord | null> {
   const user = await getCurrentUser();

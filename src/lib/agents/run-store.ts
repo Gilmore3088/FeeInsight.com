@@ -61,7 +61,7 @@ import { refreshFeeIndexCache } from "@/lib/data-store/fee-index";
 import { runMagellanDiscovery } from "@/lib/agents/magellan/discovery";
 import { runMagellanFetch } from "@/lib/agents/magellan/fetch";
 import { runAddressVariantFetch, type RunAddressVariantFetchResult } from "@/lib/agents/magellan/address-variant-fetch";
-import { runSavedLinkFetch, type RunSavedLinkFetchResult } from "@/lib/agents/magellan/saved-link-fetch";
+import { SAVED_LINK_BUDGET_MS, runSavedLinkFetch, type RunSavedLinkFetchResult } from "@/lib/agents/magellan/saved-link-fetch";
 import { runLiveSourceRefetch, type RunLiveSourceRefetchResult } from "@/lib/agents/magellan/live-source-refetch";
 import { reviewLinkBatches } from "@/lib/agents/magellan/batch-review";
 import { recordLinkOutcomes } from "@/lib/agents/magellan/outcomes";
@@ -121,6 +121,7 @@ import { benchmarkHealthDetail, runBenchmarkHealth, summarizeBenchmarkHealth } f
 import { playbookContradictionsDetail, runPlaybookContradictions, summarizePlaybookContradictions } from "@/lib/agents/deming/playbook-contradictions";
 import { dataQualityDetail, runDataQuality, summarizeDataQuality } from "@/lib/agents/deming/data-quality";
 import { readSourceHealth, sourceHealthDetail, summarizeSourceHealth } from "@/lib/agents/hoovie/source-health";
+import { filingsReconcileDetail, runFilingsReconcile, summarizeFilingsReconcile } from "@/lib/agents/deming/filings-reconcile";
 import { knoxMissesDetail, runKnoxMisses, summarizeKnoxMisses } from "@/lib/agents/deming/knox-misses";
 import { runBayesLedger, summarizeBayesLedger, BAYES_LEDGER_VERSION } from "@/lib/agents/bayes/ledger";
 import { runScheduleCheck, summarizeScheduleCheck, SCHEDULE_CHECK_VERSION } from "@/lib/agents/atlas/schedule-check";
@@ -572,6 +573,8 @@ async function executeAgenticStep(
       };
     }
     case "fetch": {
+      // The saved-link pass's budget counts from the step's start, not its own (#1881 review).
+      const fetchStepStartedAt = Date.now();
       const recheck = laneRecheckParam(params);
       const fetched = await runMagellanFetch({
         runId: run.id,
@@ -609,6 +612,7 @@ async function executeAgenticStep(
             fetchImpl: feeSourceFetch,
             runId: run.id,
             stepId: step.id,
+            deadline: fetchStepStartedAt + SAVED_LINK_BUDGET_MS,
             institutionId: numericRunParam(params, ["institution_id"]) ?? null,
           });
         } catch (error) {
@@ -2752,6 +2756,12 @@ async function executeAgenticStep(
       // completeness, #2228) and one over Atlas's newest table sizes.
       const report = await readSourceHealth({ db: tx });
       return { status: "completed", summary: summarizeSourceHealth(report), detail: sourceHealthDetail(report) };
+    }
+    case "deming-filings-reconcile": {
+      // Read-only (#1925, T3): shown bank and credit-union figures against the stored filing lines,
+      // for a daily draw of institutions over the newest 12 quarters, under a 20 s statement timeout.
+      const report = await runFilingsReconcile({ db: tx, now: new Date() });
+      return { status: "completed", summary: summarizeFilingsReconcile(report), detail: filingsReconcileDetail(report) };
     }
     case "deming-knox-misses": {
       // #1099: writes only eval_cases (new missed-fee cases and each case's replay); never a fee row.

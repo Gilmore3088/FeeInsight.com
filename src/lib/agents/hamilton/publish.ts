@@ -35,6 +35,7 @@ import { mayBeSameSchedule } from "@/lib/agents/hamilton/schedule-edition";
 import { selectEditionHolds } from "@/lib/agents/hamilton/edition-hold";
 import { ARTICLE_PAGE_REASON, isArticlePage } from "@/lib/agents/hamilton/article-page";
 import { FREE_READ_PREFIX, isProductPage, productPageTakedownEnabled } from "@/lib/agents/hamilton/product-page";
+import { productPageUrlSql } from "@/lib/agents/learning/fee-page";
 import { DARWIN_SCHEDULE_REFILED_FLAG } from "@/lib/agents/darwin/schedule-refile";
 import { priceInName, RULE_WHY, ruleFor } from "@/lib/agents/hamilton/eval-verdicts";
 import { feeKey, reproducibleFees, RULES_RECHECK_REASON } from "@/lib/agents/hamilton/rules-recheck";
@@ -507,6 +508,7 @@ function undecidedAtThisVersionSql(params: Array<number | string | number[]>, mi
             AND NOT (pa.outcome = 'unchanged' AND ${OLDER_DOCUMENT_RESELECT_SQL})
             AND NOT (pa.outcome = 'unchanged' AND ${QUALIFIER_RESELECT_SQL})
             AND NOT (pa.outcome = 'unchanged' AND ${ARTICLE_PAGE_RESELECT_SQL})
+            AND NOT (pa.outcome = 'unchanged' AND ${EDITION_HOLD_RESELECT_SQL})
             -- A row refused only for low confidence is decided once more when its confidence
             -- now clears the floor: Knox re-scored 1,017 promoted held rates refused at its
             -- 0.5 placeholder (#1055). A row still below the floor stays decided.
@@ -1324,6 +1326,38 @@ export const ARTICLE_PAGE_RESELECT_SQL = `EXISTS (
                    WHERE art_prev.fee_published_id = NULLIF(pa.detail->>'previous_fee_published_id', '')::bigint
                      AND art_prev.rolled_back_reason LIKE '${ARTICLE_PAGE_REASON}:%'
                 )`;
+
+/**
+ * #1915: a row skipped as identical to a live fee that Darwin's edition check later held as not yet
+ * in effect (`not_yet_effective: <date> #<doc>`) is decided again, so the schedule in effect today
+ * carries the fee while the next edition waits. Prod, Oct 21: ONE Credit Union (7174) had 16 lines of
+ * its current schedule (doc 29000, "Effective November 1, 2024") skipped behind the 2027 schedule
+ * (doc 28999); #2523 held those and the bank kept one live fee. A reselected row from a schedule
+ * itself not yet in effect is held by `selectEditionHolds`, so it still waits for its own date.
+ * The literal matches Darwin's `NOT_YET_EFFECTIVE_REASON` (`publish.test.ts`); importing it here
+ * would close an import cycle.
+ *
+ * Only a line of a schedule stands in for the held schedule line. A line read from a product page
+ * (Rosetta's latest kind `product_page`, or a product-area address, `productPageUrlSql`, the rule
+ * Darwin's product-page repeat check uses) stays decided: it prices one account, and the read carries
+ * no product. Security Federal (722), Oct 25: "Paper statements available for $3 per month" is the
+ * Money Market account's price on docs 25730/25731 (the same page prices Regular savings statements
+ * at $1.00 a month), skipped behind the Dec 1, 2026 schedule's "Paper statements (per account, per
+ * month)" $3; re-decided, it would have gone live as the bank's paper statement fee.
+ */
+export const EDITION_HOLD_RESELECT_SQL = `(EXISTS (
+                  SELECT 1 FROM published_fee_records held_prev
+                   WHERE held_prev.fee_published_id = NULLIF(pa.detail->>'previous_fee_published_id', '')::bigint
+                     AND held_prev.rolled_back_reason LIKE 'not_yet_effective:%'
+                ) AND NOT EXISTS (
+                  SELECT 1 FROM source_documents held_sd
+                    LEFT JOIN LATERAL (
+                      SELECT held_ast.document_kind FROM agent_source_texts held_ast
+                       WHERE held_ast.source_document_id = held_sd.id ORDER BY held_ast.id DESC LIMIT 1
+                    ) held_kind ON TRUE
+                   WHERE held_sd.id = fr.source_document_id
+                     AND (held_kind.document_kind = 'product_page' OR ${productPageUrlSql("held_sd.document_url")})
+                ))`;
 
 /** A balance-named row skipped as an older document before check 3 is decided again (`newerCopyPrintsLine`). */
 const OLDER_DOCUMENT_RESELECT_SQL = `(COALESCE((pa.detail->>'same_line_check')::int, 0) < 3
