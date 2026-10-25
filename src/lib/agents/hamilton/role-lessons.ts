@@ -123,7 +123,7 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     stage: "publish",
     lesson: "When a publish check writes feedback, label each action by what it judged: a takedown is a wrong row in its kind, but a release that undoes an earlier refusal is a restore with its own record kind, never the takedown's wrong label reused for convenience.",
     why: "The account type hold wrote its releases (guard-refused rows put back to verified because they pass without their account words) with the same signal wrong and kind wrong_category as its takedowns, so 5 release rows on Oct 16 read as wrong-category verdicts to any reader keyed on kind or signal.",
-    evidence: { issues: [1680], prs: [], files: ["src/lib/agents/hamilton/account-type-hold.ts", "src/lib/agents/learning/feedback-kinds.ts"] },
+    evidence: { issues: [1680], prs: [2594], files: ["src/lib/agents/hamilton/account-type-hold.ts", "src/lib/agents/learning/feedback-kinds.ts"] },
     appliesTo: "all",
     since: "2026-10-25",
   },
