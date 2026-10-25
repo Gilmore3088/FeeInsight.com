@@ -84,6 +84,24 @@ function withTone(context: string, tone: ReportNarrativeTone | undefined, goal?:
   return parts.filter(Boolean).join("\n\n").trim();
 }
 
+/**
+ * The reader's added findings, for the summary to address. They ride in CONTEXT, never in DATA:
+ * DATA is what the figure check traces a section's figures to, and a finding's words are earlier
+ * model prose or text the browser sent (Position and Test items are not re-read on the server), so
+ * a figure the report restates from one must also be in the server's own data to pass.
+ */
+export function readerFindingsContext(findings: readonly ReportBasketItem[]): string {
+  if (findings.length === 0) return "";
+  const listed = findings.map((f) => ({ from: f.source, finding: f.title, detail: f.detail }));
+  return [
+    "",
+    "",
+    "READER FINDINGS (the reader added these from their own analysis; they are not evidence):",
+    JSON.stringify(listed, null, 2),
+    "Address each one in the summary. State a figure from them only when the same figure is in DATA; otherwise describe the finding without it.",
+  ].join("\n");
+}
+
 const TEMPLATE_TITLES: Record<ReportTemplateType, string> = {
   peer_benchmarking: "Peer Benchmarking Report",
   regional_landscape: "Regional Fee Landscape",
@@ -470,7 +488,6 @@ export async function assembleReportInputs(input: {
         state_peers: statePeers,
         exhibits: exhibitData,
         focus_category: params.focusCategory ?? null,
-        findings_added_by_reader: addedFindings.map((f) => ({ from: f.source, finding: f.title, detail: f.detail })),
         categories: topCategories.map((c) => ({
           fee_category: c.fee_category,
           median_amount: c.median_amount,
@@ -482,10 +499,7 @@ export async function assembleReportInputs(input: {
       },
       context: withTone(
         withExpertRules(
-          buildExecutiveSummaryContext(params, institutionName, period) +
-            (addedFindings.length > 0
-              ? "\n\nThe reader added the findings in findings_added_by_reader from their own analysis. Address each one in the summary, using only figures present in DATA."
-              : ""),
+          buildExecutiveSummaryContext(params, institutionName, period) + readerFindingsContext(addedFindings),
         ),
         params.narrativeTone,
         params.clientGoal,

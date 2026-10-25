@@ -7,6 +7,7 @@
 
 import { extractFigures, tierBoundsAsSize } from "./figure-check";
 import { financialSourceForCharter, validFinancialPeerComparison } from "@/lib/data-store/financial-peer-contract";
+import { MIN_PEERS_FOR_POSITION } from "./workspace/scenario";
 
 export const HAMILTON_INTERPRETATION_INSTRUCTION = `
 SOURCE MEANING:
@@ -302,11 +303,11 @@ function districtSizeSupported(clause: string, evidence: Evidence): boolean {
   const claimed = claimedPeriods(clause);
   if (claimed.length > 1 || claimed.includes("unresolved-month")) return false;
   return evidence.peerCoverage.some((coverage) => {
-    if (coverage.districts.length !== 1 || coverage.districts[0] !== districts[0] || coverage.count >= 5) return false;
+    if (coverage.districts.length !== 1 || coverage.districts[0] !== districts[0] || coverage.count >= MIN_PEERS_FOR_POSITION) return false;
     // A group with many members and few reported figures supports a limited
     // filing sample, rather than a claim that the group itself is too small.
     const sampleClaim = /\b(?:reported|filing|filed|usable|filers?|sample)\b/i.test(clause);
-    if (!sampleClaim && (coverage.memberCount === null || coverage.memberCount >= 5)) return false;
+    if (!sampleClaim && (coverage.memberCount === null || coverage.memberCount >= MIN_PEERS_FOR_POSITION)) return false;
     const baseline = evidence.peerCoverage.filter((other) => other.districts.length === 0 && other.fingerprint === coverage.fingerprint);
     const latest = baseline.map((other) => other.period).sort().at(-1);
     return latest !== undefined && (claimed.length === 1 ? coverage.period.startsWith(claimed[0]) : coverage.period === latest);
@@ -637,7 +638,7 @@ export function checkAnswerInterpretations(text: string, data: unknown, question
       && !reportedLineSupports(clause, evidence, ["overdraft_payer_count"], "count", false)) {
       problems.add("The supplied NCUA measures do not report overdraft payer counts. Do not infer members paying fees from account counts, schedule prices or aggregate income.");
     }
-    const districtTooSmall = /\bdistrict\s+\d{1,2}\b.{0,100}\b(?:too (?:small|few)|insufficient|not enough|fewer than (?:5|five)|below (?:5|five))\b/i;
+    const districtTooSmall = /\bdistrict\s+\d{1,2}\b.{0,100}\b(?:too (?:small|few)|insufficient|not enough|fewer than (?:5|five|10|ten)|below (?:5|five|10|ten))\b/i;
     const districtClaim = clause.match(districtTooSmall);
     if (districtClaim && !explicitlyWithdrawn(clause, districtClaim) && !districtSizeSupported(clause, evidence)) {
       problems.add("A nationwide peer read does not establish that an unqueried district group is too small. Query the same group with that district filter, or say its coverage has not been checked.");

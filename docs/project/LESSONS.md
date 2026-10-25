@@ -16,8 +16,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Decisions
 
-190 entries, newest first. The full text, who decided and why are in [DECISIONS.md](DECISIONS.md).
+191 entries, newest first. The full text, who decided and why are in [DECISIONS.md](DECISIONS.md).
 
+- 2026-10-25 — Hamilton's peer minimum: a median needs 5 local competitors, or 10 peers for any other group. — [decision](DECISIONS.md#2026-10-25) — `MIN_PEERS_FOR_POSITION` and its tests
 - 2026-10-22 — Data-quality work has an executive owner: its decisions, HOLD-class ones included, proceed after an independent exact-head review and green CI; CLAUDE.md hard limits still apply. — [decision](DECISIONS.md#2026-10-22)
 - 2026-10-22 — The second wave: Knox reads every stored document once more with today's rules (stale-read floor v78 to v97). — [decision](DECISIONS.md#2026-10-22)
 - 2026-10-21 — Targets of about 90% accuracy and 80% breadth; the shadow lab ratchet lets the pipeline move only one way. — [decision](DECISIONS.md#2026-10-21)
@@ -212,10 +213,11 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-261 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+262 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
-### Extraction and fee reading (42)
+### Extraction and fee reading (43)
 
+- 2026-10-25 — A dot-leader row that ends in its own price word ("…FREE") is finished; on a two-column page the next cell's price is the other column's fee, so neither the reader nor the check may give it to the closed row's name. — [finding](findings/2026-10-25-free-row-takes-next-column-price.md) — Agent lesson: knox/issue-2477-free-word-closes-the-row, darwin/issue-2477-closed-row-owns-no-later-price
 - 2026-10-25 — A better reader does not fix the texts it never re-reads; before re-reading thousands of stored documents, measure on a small sample what the current reader would change for their live fees, record-only. — [finding](findings/2026-10-25-pdf-texts-read-by-old-layout.md) — Guard: `src/lib/agents/rosetta/layout-recheck.test.ts`
 - 2026-10-24 — Read every PDF a second, independent way and compare which price each fee name gets; a layout mistake no detector knows yet shows up as a name the two readings price differently. — [finding](findings/2026-10-24-pdf-second-reader.md) — Agent lesson: rosetta/pdf-second-reading
 - 2026-10-22 — When a right read is held because its name reads as a sentence, fix the name Knox gives it, not the hold. Cut glued words only when every one is filler or the name's own: a cut in Knox hides a qualifier from every later check. — [finding](findings/2026-10-22-glued-sentence-names-held-at-publish.md) — Agent lesson: knox/glued-sentence-name
@@ -448,8 +450,13 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — Sign out on the account page and admin used Server Actions that a redeploy breaks. — [finding](findings/2026-10-09-sign-out-server-action.md) — Guard: `src/app/api/auth/logout/route.test.ts:30`
 - 2026-10-09 — A refunded report kept its paid status and its private link. — [finding](findings/2026-10-09-report-refund-not-handled.md) — Guard: `src/lib/stripe-webhook.test.ts` (+1 more)
 
-### Hamilton workspace (14)
+### Hamilton workspace (19)
 
+- 2026-10-25 — A filing figure is supported only by a fact of the institution, metric, quarter and period basis the sentence states; a sentence whose owner or metric is unknown binds nothing. — [finding](findings/2026-10-25-claim-sentence-binding.md) — Guard: `src/lib/hamilton/claim-sentence-binding.test.ts`, `src/lib/hamilton/claim-golden-set.test.ts`
+- 2026-10-25 — Give a filing figure a fact ID only through the validator that already reads it, with its period basis in the ID. — [finding](findings/2026-10-25-claim-fact-ids.md) — Guard: `src/lib/hamilton/claim-evidence.test.ts`
+- 2026-10-25 — Before changing a check, record what it does today on cases built to break it and mark the ones it gets wrong (10 of 25 for Hamilton's answer checks). — [finding](findings/2026-10-25-claim-golden-set.md) — Guard: `src/lib/hamilton/claim-golden-set.test.ts` (recorded outcomes, held-out check)
+- 2026-10-25 — Reuse a saved answer through its sentence binding and evidence verdict, never as its raw prose. — [finding](findings/2026-10-25-saved-answer-binding-in-reports.md) — Guard: `src/lib/hamilton/report-actions.test.ts`
+- 2026-10-25 — The data a figure check traces figures to holds only what the server read itself; a reader's note or earlier model prose goes to the model as context, never into that data. — [finding](findings/2026-10-25-hamilton-question-trace.md) — Guard: `src/lib/hamilton/report-actions.test.ts` (reader findings stay out of DATA)
 - 2026-10-19 — Saved simulations could borrow another institution's context. — [finding](findings/2026-10-19-hamilton-saved-scenario-identity.md) — Guard: `src/app/pro/(hamilton)/simulate/page.test.tsx` (+2 more)
 - 2026-10-17 — Run the journey before calling any Hamilton change done. — [finding](findings/2026-10-17-hamilton-release-runbook.md) — no Guard or Agent lesson named
 - 2026-10-17 — An answer branch draws its lead, figures, section headings, exhibits and sourced findings through the shared primitives below, never with local text classes. — [finding](findings/2026-10-17-hamilton-presentation-contract.md) — Guard: `src/components/hamilton/memo/answer-primitives.test.tsx:47`
@@ -484,8 +491,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — When an agent writes a link into a draft, check that the route exists on main. — [finding](findings/2026-10-09-outreach-snapshot-links-404.md) — Guard: `src/lib/agents/growth/norman.test.ts`
 - 2026-10-09 — An outgoing side effect needs its own record in Postgres; don't rely on a provider's read API that needs broader credentials than sending. — [finding](findings/2026-10-09-no-sent-email-log.md) — Guard: `src/lib/email/resend.test.ts` (+1 more)
 
-### CI, tests, tooling and PR workflow (14)
+### CI, tests, tooling and PR workflow (15)
 
+- 2026-10-25 — Every DB suite on the shared e2e database removes its own rows when it ends, and a suite that counts rows across the whole database isolates its fixture in its rolled-back transaction; vitest's file order is not the CLI order. — [finding](findings/2026-10-25-shared-test-database-leftover-fees.md) — Guard: `src/lib/agents/darwin/verified-recheck.db.test.ts`
 - 2026-10-20 — Parallel agents write PR bodies to a unique `mktemp` file and re-read the body after every edit. — [finding](findings/2026-10-20-shared-scratch-file-overwrote-pr-body.md) — Guard: Foundation tracker #1048 line "agents use mktemp for PR bodies and verify the body after edit"
 - 2026-10-20 — A push that drops scope while reconciling with `main` updates the PR title and body in the same push. — [finding](findings/2026-10-20-pr-descriptions-stale-after-reconcile.md) — Guard: the independent review of the exact head checks that the body matches the diff
 - 2026-10-20 — A caught error is recorded where people look (a step warning or a logged error), never turned silently into an empty result. — [finding](findings/2026-10-20-swallowed-errors-hid-failures.md) — Guard: the `step.warning` added in #2414, and the #975 line for the `layout.tsx:94` lookup

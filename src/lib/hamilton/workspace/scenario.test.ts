@@ -84,8 +84,9 @@ describe("buildScenario", () => {
 
 describe("placing a price in words (Space Coast review, 2026-10-15)", () => {
   it("says below or above all peers instead of a 0th or 100th percentile", () => {
-    expect(placeAmong(pricePosition(5, [25, 25, 25, 25, 25])!, 5)).toBe("below all 5 peers");
-    expect(placeAmong(pricePosition(40, [25, 25, 25, 25, 25])!, 5)).toBe("above all 5 peers");
+    const tenAt25 = Array.from({ length: 10 }, () => 25);
+    expect(placeAmong(pricePosition(5, tenAt25)!, 10)).toBe("below all 10 peers");
+    expect(placeAmong(pricePosition(40, tenAt25)!, 10)).toBe("above all 10 peers");
     expect(placeAmong(40, 14)).toBe("at the 40th percentile of 14 peers");
     expect(placeAmong(40, 14, true)).toBe("at the 40th percentile");
     // Past 100 peers a rounded 0 no longer means every peer.

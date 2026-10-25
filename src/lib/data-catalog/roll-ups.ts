@@ -13,8 +13,11 @@ import { MAX_COHORT_REPORTERS } from "./call-cohort-history";
  * figure shows no median (null, never zero) and says why.
  */
 
-/** Fewest institutions behind a median, the same floor the fee index and the national report use. */
-export const ROLLUP_MIN_INSTITUTIONS = 5;
+/**
+ * Fewest institutions behind a median. Only Hamilton's queryData tool reads these roll-ups, so it
+ * follows Hamilton's peer minimum of 10 (James, 2026-10-25), not the public index's 5.
+ */
+export const ROLLUP_MIN_INSTITUTIONS = 10;
 
 /** Area levels a peer's headquarters can be read at, finest first. */
 const HQ_LEVELS: readonly AreaGeoType[] = ["county", "metro", "state"];

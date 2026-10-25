@@ -17,6 +17,7 @@ import {
   inPriceFirstListRun,
   inPriceFirstRun,
   STOP_PAYMENT_ITEM_WORDS,
+  LEADER_PRICE_WORDS,
   LEADING_VALUE,
   looksLikeHeading,
   nameAfterPrice,
@@ -28,6 +29,7 @@ import {
   ZERO_WORD,
 } from "@/lib/agents/knox/layout";
 import { columnHeadingRows } from "@/lib/agents/knox/column-heading-rows";
+import { FREE_ROW_CONTINUES } from "@/lib/custom-report/source-check";
 
 /**
  * Knox pass 2a, `extract.table`: pair each table row's fee-name cell with its amount
@@ -47,7 +49,9 @@ import { columnHeadingRows } from "@/lib/agents/knox/column-heading-rows";
 // 3”x5”x22”/Year") is read one fee per line, so no box takes the next size's price.
 // v9 (Knox rules v102): on a two-column line, a bare pair its column's heading names is read too
 // (`columnHeadingRows`).
-export const KNOX_TABLE_STRATEGY = { strategy: "extract.table", version: 9 } as const;
+// v10 (Knox rules v105, #2477): a name cell a free word closes ("ATM Transactions……FREE") never takes
+// the next column's price.
+export const KNOX_TABLE_STRATEGY = { strategy: "extract.table", version: 10 } as const;
 
 export interface KnoxTableRow {
   cells: string[];
@@ -242,6 +246,11 @@ export function extractFromTableRows(rows: KnoxTableRow[]): ExtractionRulesResul
     // ("NSF Fee | 5" X 10" X 22" box ..... $50.00").
     if (/[a-z]/i.test(valueLead) && classifyFeeText(valueLead)) continue;
     const nameCell = row.cells[nameIndex];
+    // v10 (#2477): a dot-leader name cell closed by its own free word ("ATM Transactions……FREE |
+    // activity……$5") is a row of its own; the next cell's price is another column's.
+    // A next cell that only sets the free row's tier or audience ("FREE | Each Additional …. $3")
+    // continues the same fee, as the shared check reads it.
+    if (LEADER_PRICE_WORDS.test(nameCell.trim()) && !FREE_ROW_CONTINUES.test(row.cells[nameIndex + 1] ?? "")) continue;
     const valueCell = row.cells[valueIndex];
     const name = cleanFeeName(nameCell);
     if (!name || /\b(no (?:[a-z]+ ){0,2}(?:fee|charge)s?|not charged|without charge)\b/i.test(name)) continue;

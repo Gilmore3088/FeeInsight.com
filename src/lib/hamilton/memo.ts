@@ -191,6 +191,8 @@ const OMIT_FEEDBACK: Record<string, string> = {
   wrong_unit: "states a rate fee as a dollar amount",
   conflicting_sources: "picks one of two sources that disagree; say that they disagree instead",
   instruction_text: "repeats instruction-like text from a source",
+  wrong_basis: "states a year-to-date filing total as a quarter, or a quarter as year to date; say which the figure is",
+  account_as_subject: "states another institution's filed figure as the reader's own; name the institution it belongs to",
 };
 
 /**

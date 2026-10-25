@@ -67,6 +67,7 @@ import { reviewLinkBatches } from "@/lib/agents/magellan/batch-review";
 import { recordLinkOutcomes } from "@/lib/agents/magellan/outcomes";
 import { recordAuditMisses } from "@/lib/agents/deming/audit-misses";
 import { runChangeOutcomes, summarizeChangeOutcomes } from "@/lib/agents/deming/change-outcomes";
+import { errorFixDetail, runErrorFixRecheck, summarizeErrorFixRecheck } from "@/lib/agents/deming/error-fixes";
 import { refreshPageClassifier } from "@/lib/agents/magellan/page-classifier";
 import { isRegistryStepKey, runRegistryStep } from "@/lib/agents/magellan/registry";
 import {
@@ -2686,6 +2687,11 @@ async function executeAgenticStep(
         summary: summarizeChangeOutcomes(result),
         detail: { ready: result.ready, entries: result.entries, started: result.started, pending: result.pending, judged: result.judged, hit_rate: result.hitRate },
       };
+    }
+    case "deming-error-fix-recheck": {
+      // #2058: the errors each process fix named, re-checked once their bank was re-run.
+      const result = await runErrorFixRecheck({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
+      return { status: "completed", summary: summarizeErrorFixRecheck(result), detail: errorFixDetail(result) };
     }
     case "deming-monthly-review": {
       // #1107: on the 1st of the month (UTC) only. Read-only: each measure is one SELECT in its own

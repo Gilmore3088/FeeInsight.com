@@ -108,6 +108,24 @@ institutions remains the only human launch workflow.
 ## Did the change work (#1106)
 
 - `change-outcomes.ts`: the `deming-change-outcomes` step, last in Atlas's daily scoreboard run.
+- `error-fixes.ts`: the error loop (#2058). A process-fix PR names the error rows it fixes in
+  `error-fixes.json` (stage, merge day, the Knox rules version that carries the fix, and
+  `pipeline_feedback` kinds, checks or ids). Only extract fixes for now: Knox reads a stored text
+  again only when its rules version moves, and Rosetta reads unchanged bytes once, so read, verify
+  and publish fixes need their own re-run first (follow-ups on #2058). Only rows raised by a check
+  the fresh audit re-runs (`ERROR_FIX_CHECKS`) are named, so a fee still carrying the error fails
+  that same check. Atlas's direct path re-runs each named row's active bank once, as a request
+  dated the merge day; the `deming-error-fix-recheck` step, after the change check, judges each row
+  whose bank a completed run has extracted again at that version and writes a weight-0 ledger row:
+  `error_fix_closed` (the fee now matches) or `error_fix_still_wrong` (once; it is judged again
+  daily). The re-run must have extracted the error's own document when the row names one. Once the
+  named fee is down (a takedown names a fee already down), only a live fee in its category that the
+  re-run extracted after the error, from that document, is judged: a fee live all along proves
+  nothing, and a fee taken down with nothing extracted in its place is `not_reproduced`, open, never
+  closed. A row with no stored text, a named fee still live as a rate, or one with no category
+  stays open. Atlas's fix request ends only on an extract at the entry's Knox version
+  (`minExtractVersion`). A completed run is not proof its output went live (verify or publish may
+  have stopped at a limit); the re-check judges the live catalog, so such a row stays open.
 - `sunday-maintenance.ts`: the `deming-sunday-maintenance` step, after it in the same run, Sundays (UTC) only: James's hour of tasks (labels, data decisions, last week's "no change" and "wrong way" PRs to explain or revert, answer-key banks), the week in numbers with the change hit rate, and anything stuck (#1104, #1106). It emails only while `SUNDAY_EMAIL_LIVE=true`; otherwise the run records the email it would send.
   Each PR that names a "Should move" number adds an entry to `should-move.json` (PR number, issue,
   `metric`: a `pipeline_scoreboard_snapshots` column or a `detail.` path such as

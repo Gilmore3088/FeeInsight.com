@@ -22,11 +22,12 @@ import { logUsage } from "@/lib/research/history";
 import { estimateAnthropicCostMicrousd, incompleteProviderResponse, type ProviderUsage } from "@/lib/ai-provider-usage";
 import { getHamiltonModel, isProviderLimitError } from "@/lib/ai-provider";
 import { HAMILTON_PAUSED_MESSAGE } from "@/lib/hamilton/provider-paused";
-import type { SectionInput } from "@/lib/hamilton/types";
+import type { AnalyzeResponse, SectionInput } from "@/lib/hamilton/types";
 import { buildReportPeerCoveragePreview, type ReportPeerCoveragePreview } from "@/lib/hamilton/report-evidence";
 import { parseAnswerSection, parseTradeoffSection } from "@/lib/hamilton/report-answer";
 import { validateHamiltonReportArtifact } from "@/lib/hamilton/report-quality";
 import { basketItemsFor, sanitizeBasketItems } from "@/lib/hamilton/report-basket";
+import { applyNarrativeBinding, savedAnswerBinding } from "@/lib/hamilton/written-answer-binding";
 import { resolveHamiltonPeerIndex } from "@/lib/hamilton/peer-index";
 import { completeHamiltonRefreshJobsForInstitution } from "@/lib/hamilton/refresh-jobs";
 import {
@@ -146,19 +147,36 @@ export async function previewReportPeerCoverage(
 
 
 
+/**
+ * A saved answer's finding text: its view, then what it means. For a bound answer only the
+ * supported sentences stay; Hamilton's reading and the sentences its records contradict are left
+ * out, so a report never states either as a finding (#1899). An answer saved before the binding
+ * keeps its text as saved.
+ */
+function savedAnswerFindingDetail(answer: AnalyzeResponse): string {
+  const sections = { hamiltonView: answer.hamiltonView, whatThisMeans: answer.whatThisMeans ?? "", whyItMatters: [] };
+  const bound = applyNarrativeBinding(sections, savedAnswerBinding(answer)).sections;
+  return [bound.hamiltonView, bound.whatThisMeans].map((part) => part.trim()).filter(Boolean).join(" ");
+}
+
 /** Resolve saved Ask references with numeric-user scoping before using their historical identity. */
 async function authenticatedReportFindings(raw: unknown, institutionId: string | null) {
   const findings = await Promise.all(sanitizeBasketItems(raw).map(async (item) => {
     if (item.source === "Ask" && item.savedAnalysisId) {
       const saved = await loadAnalysisRecord(item.savedAnalysisId);
       if (!saved || typeof saved.responseJson.hamiltonView !== "string") return null;
+      // An answer that failed the evidence gate when it was saved is not a finding to restate.
+      if (saved.responseJson.answerEvidence?.passed === false) return null;
+      const detail = savedAnswerFindingDetail(saved.responseJson);
+      // No supported sentence left: the title alone is model prose with nothing behind it.
+      if (!detail) return null;
       const identity = readHamiltonIdentitySnapshot(saved.responseJson.identityContext);
       return {
         ...item,
         // A saved-answer reference authenticates its original content as well as
         // its identity; browser edits cannot relabel another institution's answer.
         title: saved.responseJson.title,
-        detail: [saved.responseJson.hamiltonView, saved.responseJson.whatThisMeans].filter(Boolean).join(" "),
+        detail,
         institutionId: saved.institutionId,
         ...(identity ? { identityContext: identity } : { identityContext: undefined }),
       };
