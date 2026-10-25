@@ -1606,8 +1606,9 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
 - The guard is at v85 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v85 (Oct 25, #1831): a refundable safe deposit box key deposit or the
   box's security deposit (`SAFE_DEPOSIT_KEY_DEPOSIT`) fails the safe deposit box rule, as v66 does for
-  the night deposit. A lost, replaced or duplicate key, drilling and the box's annual or rental fee
-  stay (`SAFE_DEPOSIT_KEY_DEPOSIT_EXEMPT`, each word on its noun); a "Rental - Key Deposit" header
+  the night deposit. A lost, replaced or duplicate key, drilling, a lock change or re-key, a
+  non-refundable or forfeited deposit and the box's annual or rental fee stay
+  (`SAFE_DEPOSIT_KEY_DEPOSIT_EXEMPT`, each word on its noun); a "Rental - Key Deposit" header
   does not. No type holds a key deposit, so the live ones go to the second look and come down. Its
   live re-check is the guard catch-up; the read-only dry run (Oct 25) counted 110 live fees at 109
   institutions, each a key or security deposit on its own stored schedule.

@@ -1179,6 +1179,7 @@ describe("refundable key deposits filed as a safe deposit box fee (v85, #1831)",
     "Forfeited Key Deposit",
     "Lock Change / Key Deposit",
     "Re-keying / Key Deposit",
+    "Change of Lock Fee / Key Deposit",
     // Late fees and other box fees.
     "Safety Deposit Box Late Payment Fee",
     "Safe Deposit Box Closed with only 1 key",

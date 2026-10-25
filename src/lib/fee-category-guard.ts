@@ -437,6 +437,7 @@ const SAFE_DEPOSIT_KEY_DEPOSIT_EXEMPT = new RegExp(
     String.raw`\bnon-?\s?refundable\b`,
     String.raw`\bforfeit\w*`,
     String.raw`\block\s+(?:change|replacement)\b`,
+    String.raw`\bchange\s+of\s+locks?\b`,
     String.raw`\bre-?key\w*`,
   ].join("|"),
   "i",
