@@ -1,6 +1,8 @@
 import { feeApplicability, scopedFeeStatements } from "@/lib/fee-audience";
 import { sql } from "@/lib/data-store/connection";
 import {
+  checkingNamePriceAmbiguous,
+  namedForCheckingAccount,
   classifyFeeText,
   confidenceFor,
   extractFromSegment,
@@ -184,6 +186,23 @@ export function promotedName(row: HeldRow, candidate: ExtractedFeeCandidate): st
   return name && classifyFeeText(name) === candidate.canonicalHint ? name : candidate.feeName;
 }
 
+/**
+ * v110 (#1918): a held line filed as monthly maintenance only because it is named for the checking
+ * account itself stays held when it is ambiguous (James's condition on #2532): its price is
+ * conditional, tiered, a percentage, a second price or an opening charge
+ * (`checkingNamePriceAmbiguous`), or the same page prints the same name at another price, so the
+ * name alone does not say which account the price is for.
+ */
+export function checkingNameHeld(
+  row: HeldRow & { name_has_other_price?: boolean | null },
+  candidate: ExtractedFeeCandidate,
+): boolean {
+  if (candidate.canonicalHint !== "monthly_maintenance") return false;
+  const name = promotedName(row, candidate);
+  if (checkingNamePriceAmbiguous(candidate.excerpt, name, candidate.amount)) return true;
+  return row.name_has_other_price === true && namedForCheckingAccount(name);
+}
+
 export async function recheckHeldRows(
   db: SqlTag,
   options: {
@@ -199,11 +218,28 @@ export async function recheckHeldRows(
   const recheckFlag = heldRecheckFlag();
   const institutionId = options.institutionId ?? null;
   const stateCode = options.stateCode?.trim().toUpperCase() || null;
-  const rows = await db<HeldRow[]>`
+  const rows = await db<Array<HeldRow & { name_has_other_price?: boolean | null }>>`
     SELECT fr.fee_raw_id, fr.amount, COALESCE(fr.extraction_note, fr.conditions) AS conditions, fr.institution_id, fr.source_document_id,
-           fr.fee_name, fr.outlier_flags
+           fr.fee_name, fr.outlier_flags,
+           -- v110 (#1918): the same page prints this name at another price ("$5.00 monthly Hometown
+           -- Checking fee" and "$3.00 monthly Hometown Checking fee", two accounts on one page).
+           EXISTS (
+             SELECT 1 FROM raw_fee_observations sib
+              WHERE sib.source = 'knox'
+                AND sib.source_document_id = fr.source_document_id
+                AND sib.fee_raw_id <> fr.fee_raw_id
+                AND lower(btrim(sib.fee_name)) = lower(btrim(fr.fee_name))
+                AND sib.amount IS DISTINCT FROM fr.amount
+           ) AS name_has_other_price
       FROM raw_fee_observations fr
       JOIN institution_sources inst ON inst.id = fr.institution_id
+      -- v110 (#1918): only a line on its page's current copy goes to Darwin. A line read from an
+      -- older copy (superseded) or a duplicate copy stays held: the current copy's own read is the
+      -- fee, and an older edition's price may no longer be charged (James's condition on #2532).
+      JOIN source_documents sd ON sd.id = fr.source_document_id
+                              AND sd.status = 'success'
+                              AND sd.duplicate_of_id IS NULL
+                              AND sd.superseded_by_id IS NULL
      WHERE fr.source = 'knox'
        AND (fr.outlier_flags ? 'knox_review:unclassified'
             OR (fr.outlier_flags ? 'knox_review:range' AND COALESCE(fr.extraction_note, fr.conditions) ~* ${CHANGED_PRICE_RANGE_SQL}))
@@ -233,7 +269,8 @@ export async function recheckHeldRows(
   for (const row of rows) {
     const versions = versionsChecked(row);
     const candidate = recategorizeHeld(row);
-    if (!candidate || ownFeeUnit(candidate.excerpt, promotedName(row, candidate), candidate.amount, candidate.canonicalHint)) {
+    if (!candidate || ownFeeUnit(candidate.excerpt, promotedName(row, candidate), candidate.amount, candidate.canonicalHint) ||
+        checkingNameHeld(row, candidate)) {
       stillHeldIds.push(Number(row.fee_raw_id));
       const setAside = versions.length >= HELD_SET_ASIDE_AFTER_VERSIONS;
       if (setAside && !flagList(row.outlier_flags).includes(HELD_SET_ASIDE_FLAG)) setAsideIds.push(Number(row.fee_raw_id));

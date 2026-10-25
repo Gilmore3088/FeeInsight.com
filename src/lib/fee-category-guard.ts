@@ -18,6 +18,7 @@
  * The one exception is a dollar amount in a category that is usually a rate (below).
  */
 
+import { namedForCheckingAccount } from "@/lib/checking-fee-name";
 import { ATM_ABROAD, COLLECTION_ITEM, foldRetiredCategory, FOREIGN_DEPOSIT_RETURN, FOREIGN_ITEM_RETURN, INCOMING_WIRE, INTERNATIONAL_ATM, IRA_CLOSING, ITEM_COPY, RESEARCH_SPLIT_LIVE, SKIP_A_PAY, SUSTAINED_OVERDRAFT } from "@/lib/fee-fold";
 
 export type CategoryGuardCode = "name_contradicts" | "name_unsupported" | "rate_as_amount" | "schedule_contradicts" | "amount_implausible";
@@ -1030,7 +1031,14 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // deposit; a lost, replaced or duplicate key, drilling and the box's annual or rental fee stay
 // (`SAFE_DEPOSIT_KEY_DEPOSIT_EXEMPT`). No type holds a key deposit, so the live ones go to the second
 // look and come down. Dry-run count in the PR.
-export const CATEGORY_GUARD_VERSION = 85;
+// v86 (Oct 25, #1918): monthly maintenance also admits a checking account's own named fee ("MAX
+// Checking Fee (per month)", "Jumpstart Checking Account Fee", Bellco FCU's $3.95), read by the
+// pattern Knox files it with (`namedForCheckingAccount`, `@/lib/checking-fee-name`), so the two never
+// drift. The pattern keeps out opening, setup and reopening charges, business accounts, other fees'
+// words and a period other than the month. It only admits names; no fee that passes today fails.
+// Read-only dry run (Oct 25): only a name containing "checking (account) fee|charge" can change
+// verdict; of the 38 live fees and 2 guard takedowns with one, none changes verdict, re-file or restore.
+export const CATEGORY_GUARD_VERSION = 86;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -1347,7 +1355,8 @@ export function checkFeeCategory(
       reason: `${CARD_PRODUCT_REASON}: "${name}" prices the card itself, not ${canonicalFeeKey} ("${cardProduct}")`,
     };
   }
-  if (!rule.include.test(name) && !(canonicalFeeKey === "excess_withdrawal" && GENERIC_SERVICE_CHARGE.test(name) && savingsOverLimitLine(name, context))) {
+  if (!rule.include.test(name) && !(canonicalFeeKey === "excess_withdrawal" && GENERIC_SERVICE_CHARGE.test(name) && savingsOverLimitLine(name, context)) &&
+      !(canonicalFeeKey === "monthly_maintenance" && namedForCheckingAccount(name))) {
     return {
       ok: false,
       code: "name_unsupported",

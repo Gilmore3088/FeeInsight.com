@@ -215,8 +215,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 289 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
-### Extraction and fee reading (43)
+### Extraction and fee reading (44)
 
+- 2026-10-25 — A line held on an older copy of a page is history, not a fee: a held line goes to Darwin only from its page's current copy, a name rule that admits new lines keeps the ambiguous ones held, and Darwin's category guard admits the same names from the same pattern (#1918). — [finding](findings/2026-10-25-held-recheck-promotes-older-copies.md) — Agent lesson: knox/issue-1918-named-checking-fee, darwin/issue-1918-guard-reads-knoxs-name-pattern; Guard: `src/lib/agents/knox/checking-fee-name.test.ts`, `src/lib/checking-fee-name.test.ts`
 - 2026-10-25 — A dot-leader row that ends in its own price word ("…FREE") is finished; on a two-column page the next cell's price is the other column's fee, so neither the reader nor the check may give it to the closed row's name. — [finding](findings/2026-10-25-free-row-takes-next-column-price.md) — Agent lesson: knox/issue-2477-free-word-closes-the-row, darwin/issue-2477-closed-row-owns-no-later-price
 - 2026-10-25 — A better reader does not fix the texts it never re-reads; before re-reading thousands of stored documents, measure on a small sample what the current reader would change for their live fees, record-only. — [finding](findings/2026-10-25-pdf-texts-read-by-old-layout.md) — Guard: `src/lib/agents/rosetta/layout-recheck.test.ts`
 - 2026-10-24 — Read every PDF a second, independent way and compare which price each fee name gets; a layout mistake no detector knows yet shows up as a name the two readings price differently. — [finding](findings/2026-10-24-pdf-second-reader.md) — Agent lesson: rosetta/pdf-second-reading
@@ -558,8 +559,8 @@ counts as of this index (194 in all).
 | magellan | 18 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
 | hoovie | 10 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
 | rosetta | 8 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
-| knox | 54 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
-| darwin | 27 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
+| knox | 55 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
+| darwin | 28 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 40 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
 | hamilton | 19 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
 | deming | 11 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
