@@ -345,7 +345,7 @@ export function headlineSentence(view: FinancialPerformanceView): string | null 
   if (latest.fee.yoyPct !== null) sentence += `, ${signedPct(latest.fee.yoyPct)} on ${quarterLabel(yearEarlier(latest.reportDate))}`;
   sentence += ".";
   if (latest.fee.peerMedian !== null) {
-    sentence += ` The peer median was ${filedThousandsText(latest.fee.peerMedian)} across ${latest.fee.peers} peers.`;
+    sentence += ` The peer group median was ${filedThousandsText(latest.fee.peerMedian)} across ${latest.fee.peers} institutions.`;
   }
   return sentence;
 }

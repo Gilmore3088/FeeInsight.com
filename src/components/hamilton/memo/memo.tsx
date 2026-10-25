@@ -678,7 +678,8 @@ export function QuarterLines({
         ))}
         {quarters.map((q, i) => (
           <text key={q} x={x(i)} y={H - 6} textAnchor="middle" className="fill-warm-600 text-[11px]">
-            {i === 0 || i === quarters.length - 1 || q.endsWith("Q1") ? q.replace("-", " ") : q.slice(5)}
+            {/* The year shows on the first quarter, each Q1 and the last, unless the last sits right after a Q1 that already shows it. */}
+            {i === 0 || q.endsWith("Q1") || (i === quarters.length - 1 && !quarters[i - 1]?.endsWith("Q1")) ? q.replace("-", " ") : q.slice(5)}
           </text>
         ))}
         {series.map((s) => {

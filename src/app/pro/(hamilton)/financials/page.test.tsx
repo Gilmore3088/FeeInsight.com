@@ -68,8 +68,8 @@ describe("/pro/financials (#1892)", () => {
 
   it("shows the peer median only where 10 peers report", async () => {
     const { text } = await render();
-    expect(text).toContain("$140 thousand (10 peers)");
-    expect(text).toContain("Too few peers (9)");
+    expect(text).toContain("$140 thousand10 in peer group");
+    expect(text).toContain("Too few in peer group (9)");
   });
 
   it("opens the chosen quarter's evidence with its variables and calculation", async () => {
@@ -82,9 +82,41 @@ describe("/pro/financials (#1892)", () => {
     expect(text).toContain("less ACCT_131 year to date at Mar 31, 2026");
   });
 
+  it("keeps the researched institution in each quarter's evidence link", async () => {
+    const { markup } = await render({ instId: "9" });
+    expect(markup).toContain('href="/pro/financials?instId=9&amp;quarter=2026-06-30#evidence-2026-06-30"');
+  });
+
   it("uses no em dashes and names no internal agents", async () => {
     const { text } = await render({ quarter: "2026-06-30" });
     expect(text).not.toMatch(/\u2014/);
     expect(text).not.toMatch(/\b(Knox|Darwin|Magellan|Rosetta|Gutenberg|Hoovie|Atlas)\b/);
+  });
+
+  it("reads stored values as thousands of dollars: a bank's 2,640 is $2.6 million, not $2,640", async () => {
+    state.institution = { id: 7, name: "Sample Bank", charterType: "bank", assetTierLabel: null };
+    // FDIC BankFind states ISERCHGQ, DEP and ASSET in thousands; the importer stores them unchanged.
+    state.rows = [{
+      recordId: 1, reportDate: "2026-06-30", source: "fdic", institutionName: "Sample Bank", certNumber: "12345",
+      feeIncome: 2_640, totalDeposits: 1_845_300, totalAssets: 2_310_000,
+      rawFeeIncome: 2_640, rawDeposits: 1_845_300, rawAssets: 2_310_000, sourceUrl: null, retrievedAt: "2026-08-20",
+    } satisfies FiledQuarterRow];
+    state.peers = [];
+    const { text } = await render({ quarter: "2026-06-30" });
+    expect(text).toContain("$2.6 million");
+    expect(text).toContain("$1.85 billion");
+    expect(text).toContain("$2.31 billion");
+    expect(text).toContain("2,640 thousand dollars");
+    expect(text).not.toMatch(/\$2,640(?! thousand)/);
+  });
+
+  it("reads a credit union's whole-dollar filing against its stored thousands", async () => {
+    // NCUA files ACCT_131 in dollars; the importer stores Math.round(dollars / 1000).
+    state.rows = [{ ...ncua("2026-03-31", 3_512, 1), rawFeeIncome: 3_512_449 }];
+    state.peers = [];
+    const { text } = await render({ quarter: "2026-03-31" });
+    expect(text).toContain("$3.5 million");
+    expect(text).toContain("3,512,449 dollars");
+    expect(text).toContain("Matches the filing");
   });
 });

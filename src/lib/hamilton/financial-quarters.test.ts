@@ -143,7 +143,7 @@ describe("financial performance view (#1892)", () => {
     const rows = quarterEnds(2025, 6).map((d, i) => fdicRow(d, 1000 + i * 100, i + 1));
     const view = buildFinancialPerformance(rows, [peers("2026-06-30", 12, 1200)])!;
     expect(headlineSentence(view)).toBe(
-      "Deposit service charges in Q2 2026 were $1.5 million, up 36.4% on Q2 2025. The peer median was $1.2 million across 12 peers.",
+      "Deposit service charges in Q2 2026 were $1.5 million, up 36.4% on Q2 2025. The peer group median was $1.2 million across 12 institutions.",
     );
     expect(headlineSentence(view)).not.toMatch(/\u2014/);
   });

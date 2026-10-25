@@ -32,9 +32,16 @@ function money(value: number | null): string {
   return value === null ? "n/a" : filedThousandsText(value);
 }
 
-function peerText(cell: MeasureCell): string {
-  if (cell.peerMedian !== null) return `${filedThousandsText(cell.peerMedian)} (${cell.peers} peers)`;
-  return cell.peers > 0 ? `Too few peers (${cell.peers})` : "No peers reported";
+function PeerCell({ cell }: { cell: MeasureCell }) {
+  if (cell.peerMedian !== null) {
+    return (
+      <>
+        {filedThousandsText(cell.peerMedian)}
+        <span className="block text-xs text-warm-600">{cell.peers} in peer group</span>
+      </>
+    );
+  }
+  return <span className="text-warm-700">{cell.peers > 0 ? `Too few in peer group (${cell.peers})` : "No peer group filings"}</span>;
 }
 
 const CHECK_TEXT: Record<FiledVariable["check"], string> = {
@@ -119,10 +126,18 @@ function Evidence({ quarter, open }: { quarter: FinancialQuarter; open: boolean 
   );
 }
 
-function QuarterTable({ view, selected }: { view: FinancialPerformanceView; selected: string | null }) {
+/** A quarter's evidence link keeps the institution being researched. */
+function quarterHref(reportDate: string, instId: string | null): string {
+  const query = new URLSearchParams();
+  if (instId) query.set("instId", instId);
+  query.set("quarter", reportDate);
+  return `${PATH}?${query.toString()}#evidence-${reportDate}`;
+}
+
+function QuarterTable({ view, selected, instId }: { view: FinancialPerformanceView; selected: string | null; instId: string | null }) {
   const ncua = view.source === "ncua";
   const th = "px-3 py-2 font-medium";
-  const td = "px-3 py-2";
+  const td = "whitespace-nowrap px-3 py-2";
   return (
     <div className="overflow-x-auto rounded-lg border border-warm-300">
       <table className="w-full min-w-[56rem] text-left text-sm">
@@ -134,7 +149,7 @@ function QuarterTable({ view, selected }: { view: FinancialPerformanceView; sele
             {ncua ? <th scope="col" className={th}>Fee income, year to date as filed</th> : null}
             <th scope="col" className={th}>vs prior quarter</th>
             <th scope="col" className={th}>vs year earlier</th>
-            <th scope="col" className={th}>Peer median, quarter</th>
+            <th scope="col" className={th}>Peer group median, quarter</th>
             <th scope="col" className={th}>Deposits at quarter end</th>
             <th scope="col" className={th}>Deposits vs year earlier</th>
             <th scope="col" className={th}>Assets at quarter end</th>
@@ -144,7 +159,7 @@ function QuarterTable({ view, selected }: { view: FinancialPerformanceView; sele
           {view.quarters.map((q) => (
             <tr key={q.reportDate} className={selected === q.reportDate ? "bg-terra-soft" : undefined}>
               <th scope="row" className={`${td} font-medium`}>
-                <Link href={`${PATH}?quarter=${q.reportDate}#evidence-${q.reportDate}`} className="text-terra-text underline">
+                <Link href={quarterHref(q.reportDate, instId)} className="whitespace-nowrap text-terra-text underline">
                   {q.label}
                 </Link>
               </th>
@@ -152,7 +167,7 @@ function QuarterTable({ view, selected }: { view: FinancialPerformanceView; sele
               {ncua ? <td className={td}>{money(q.fee.yearToDate)}</td> : null}
               <td className={td}>{pct(q.fee.qoqPct)}</td>
               <td className={td}>{pct(q.fee.yoyPct)}</td>
-              <td className={td}>{peerText(q.fee)}</td>
+              <td className={td}><PeerCell cell={q.fee} /></td>
               <td className={td}>{money(q.deposits.value)}</td>
               <td className={td}>{pct(q.deposits.yoyPct)}</td>
               <td className={td}>{money(q.assets.value)}</td>
@@ -212,7 +227,7 @@ export default async function FinancialsPage({
       <MemoHeader
         kicker={institution.name}
         title="Financial performance"
-        dek={`${ncua ? "Fee income" : "Deposit service charges"}, deposits and assets from ${view.quarters.length} filed quarters, with the peer median for each quarter.`}
+        dek={`${ncua ? "Fee income" : "Deposit service charges"}, deposits and assets from ${view.quarters.length} filed quarters, with your peer group median for each quarter.`}
       />
 
       <MemoSection title="Latest quarter">
@@ -221,9 +236,9 @@ export default async function FinancialsPage({
           <Figure label={`${ncua ? "Fee income" : "Service charges"}, ${latest.label}`} value={money(latest.fee.value)} />
           <Figure label="vs year earlier" value={pct(latest.fee.yoyPct)} />
           <Figure
-            label="Peer median"
+            label="Peer group median"
             value={money(latest.fee.peerMedian)}
-            note={latest.fee.peerMedian === null ? `Shown when at least ${FINANCIAL_PEER_MINIMUM} peers report` : `${latest.fee.peers} peers`}
+            note={latest.fee.peerMedian === null ? `Shown when at least ${FINANCIAL_PEER_MINIMUM} in the peer group report` : `${latest.fee.peers} in peer group`}
           />
           <Figure label={`Deposits, ${latest.label}`} value={money(latest.deposits.value)} />
         </div>
@@ -231,22 +246,27 @@ export default async function FinancialsPage({
 
       <MemoSection
         title={`${ncua ? "Fee income" : "Service charges"} by quarter`}
-        note="Each quarter alone, beside the peer median for the same quarter. A gap means the quarter could not be shown."
+        note="Each quarter alone, beside the peer group median for the same quarter. A quarter with no point could not be shown."
       >
-        <QuarterLines
-          quarters={oldestFirst.map((q) => q.key)}
-          series={[
-            { label: institution.name, values: oldestFirst.map((q) => q.fee.value), own: true },
-            { label: "Peer median", values: oldestFirst.map((q) => q.fee.peerMedian) },
-          ]}
-        />
+        {/* Kept legible on a phone: the chart scrolls inside its box rather than shrinking its labels. */}
+        <div className="overflow-x-auto">
+          <div className="min-w-[36rem]">
+            <QuarterLines
+              quarters={oldestFirst.map((q) => q.key)}
+              series={[
+                { label: institution.name, values: oldestFirst.map((q) => q.fee.value), own: true },
+                { label: "Peer group median", values: oldestFirst.map((q) => q.fee.peerMedian) },
+              ]}
+            />
+          </div>
+        </div>
       </MemoSection>
 
       <MemoSection
         title="Quarter by quarter"
         note="Open a quarter to see the filing, its report variables and the calculation."
       >
-        <QuarterTable view={view} selected={selected} />
+        <QuarterTable view={view} selected={selected} instId={params.instId ?? null} />
         <ul className="flex flex-col gap-1 text-xs leading-relaxed text-warm-700">
           {ncua ? (
             <li>
@@ -259,9 +279,9 @@ export default async function FinancialsPage({
           )}
           <li>Deposits and assets are balances at quarter end. Dollar figures are filed in thousands.</li>
           <li>
-            Peers are other {kind}{tier} that filed for the same quarter. A peer median shows only when at
-            least {FINANCIAL_PEER_MINIMUM} peers report the figure.
-            {peerReadFailed ? " Peer figures could not be read just now." : ""}
+            Your peer group is the other {kind}{tier} that filed for the same quarter. Its median shows only
+            when at least {FINANCIAL_PEER_MINIMUM} of them report the figure.
+            {peerReadFailed ? " Peer group figures could not be read just now." : ""}
           </li>
           {view.short ? (
             <li>
