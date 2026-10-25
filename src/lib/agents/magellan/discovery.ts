@@ -314,10 +314,7 @@ interface DiscoveryCandidateRow {
   freshness?: boolean;
   /** Why the link looks out of date ("effective 2021", "address names 2022"). */
   stale_reason?: string | null;
-  /**
-   * Addresses a wrong-document finding named (the document the link's own last fetch stored, and
-   * the address Magellan remembers for the link): the search must not find them again (#2055).
-   */
+  /** Addresses a wrong-document finding named: the search must not find them again (#2055). */
   freshness_exclude?: string[];
   /** `detail.resume` of the bank's last search, when it was cut short by time. */
   discovery_resume?: unknown;
@@ -1264,13 +1261,12 @@ async function selectBusinessCandidates(db: SqlTag, limit: number, stateCode: st
   return rows.map((row) => ({ ...row, business: true }));
 }
 
-
 /**
- * The addresses a wrong-document finding rules out of the new search, beside the link itself: the
- * document the link's last fetch stored and the address remembered for the link. Pure.
+ * The addresses a wrong-document finding named, which the new search rules out beside the link
+ * itself: each distinct, non-empty one. Pure.
  */
-export function wrongDocumentAddresses(mainDocumentUrl: string | null | undefined, rememberedUrl: string | null | undefined): string[] {
-  return [...new Set([mainDocumentUrl, rememberedUrl].filter((url): url is string => typeof url === "string" && url.trim() !== ""))];
+export function wrongDocumentAddresses(urls: ReadonlyArray<string | null | undefined> | null | undefined): string[] {
+  return [...new Set((urls ?? []).filter((url): url is string => typeof url === "string" && url.trim() !== ""))];
 }
 
 /**
@@ -1289,7 +1285,7 @@ async function selectStaleCandidates(
   const marker = JSON.stringify({ freshness_search: FRESHNESS_SEARCH_VERSION });
   const staleYear = now.getUTCFullYear() - STALE_AFTER_YEARS;
   const rows = await db<
-    Array<DiscoveryCandidateRow & { effective_year: number | null; url_year: number | null; wrong_at: string | Date | null; confirmed_at: string | Date | null; audit_at: string | Date | null; main_document_url: string | null; searched_at: string | Date | null }>
+    Array<DiscoveryCandidateRow & { effective_year: number | null; url_year: number | null; wrong_at: string | Date | null; confirmed_at: string | Date | null; audit_at: string | Date | null; audit_urls: Array<string | null> | null; main_document_url: string | null; searched_at: string | Date | null }>
   >`
     -- stale-link freshness search
     WITH due AS (
@@ -1355,27 +1351,35 @@ async function selectStaleCandidates(
                   AND f.institution_id = due.id
                   AND f.source_url = due.fee_schedule_url
              ) AS confirmed_at,
-             -- Deming's daily audit found a fee read from this link came from the wrong document
-             -- (another bank's, an unconfirmed host or an article; #2055). The miss names the
-             -- stored document's address, which is the address after any redirect, so it is
-             -- matched to the link or to the document the link's own last fetch stored
-             -- (main_document_url; not profile.canonical_source_url, which a read of a side copy
-             -- of an old page can also set), so a miss on a companion, a side copy or an old
-             -- document never replaces a good link. Only a fee still live counts, and only when
-             -- the finding was first made (created_at): the audit upserts a re-drawn fee's row,
-             -- which must not search the link again.
-             (
-               SELECT max(f.created_at) FROM pipeline_feedback f
-                 JOIN published_fee_records fp
-                   ON fp.fee_published_id = f.fee_published_id
-                  AND fp.rolled_back_at IS NULL
-                  AND fp.quarantined_at IS NULL
-                WHERE f.kind = ${AUDIT_FEEDBACK_KIND}
-                  AND f.about_stage = 'discover'
-                  AND f.institution_id = due.id
-                  AND f.source_url IN (due.fee_schedule_url, due.main_document_url)
-             ) AS audit_at
+             audit.audit_at,
+             audit.audit_urls
         FROM due
+        -- Deming's daily audit found a live fee read from this link came from the wrong document
+        -- (another bank's, an unconfirmed host or an article; #2055). The miss names the stored
+        -- document's address, the address after any redirect, so it is matched to the link or to
+        -- the document the link's own last fetch stored (main_document_url; not
+        -- profile.canonical_source_url, which a read of a side copy of an old page can also set),
+        -- and only when that document is the page's current copy (not superseded by a newer
+        -- fetch, not a companion page): a miss on an old copy, a companion or a side copy never
+        -- replaces a good link. Only a fee still live counts, and only when the finding was first
+        -- made (created_at): the audit upserts a re-drawn fee's row, which must not search the
+        -- link again. audit_urls are the addresses those misses named; the search rules them out.
+        LEFT JOIN LATERAL (
+          SELECT max(f.created_at) AS audit_at, array_agg(DISTINCT f.source_url) AS audit_urls
+            FROM pipeline_feedback f
+            JOIN published_fee_records fp
+              ON fp.fee_published_id = f.fee_published_id
+             AND fp.rolled_back_at IS NULL
+             AND fp.quarantined_at IS NULL
+            JOIN source_documents sd
+              ON sd.id = f.source_document_id
+             AND sd.superseded_by_id IS NULL
+             AND sd.companion_source_id IS NULL
+           WHERE f.kind = ${AUDIT_FEEDBACK_KIND}
+             AND f.about_stage = 'discover'
+             AND f.institution_id = due.id
+             AND f.source_url IN (due.fee_schedule_url, due.main_document_url)
+        ) audit ON TRUE
     ), judged AS (
       SELECT marked.*, GREATEST(confirmed_at, audit_at) AS wrong_at FROM marked
     )
@@ -1385,11 +1389,11 @@ async function selectStaleCandidates(
      ORDER BY (wrong_at IS NOT NULL) DESC, asset_size DESC NULLS LAST, id ASC
      LIMIT ${limit}
   `;
-  return rows.map(({ effective_year, url_year, wrong_at, confirmed_at, audit_at, main_document_url, ...row }) => ({
+  return rows.map(({ effective_year, url_year, wrong_at, confirmed_at, audit_at, audit_urls, ...row }) => ({
     ...row,
     freshness: true,
-    // A wrong-document finding rules out the address it named, not only the link (#2055).
-    ...(audit_at != null ? { freshness_exclude: wrongDocumentAddresses(main_document_url, row.profile_canonical_source_url) } : {}),
+    // A wrong-document finding rules out the addresses it named, not only the link (#2055).
+    ...(audit_at != null ? { freshness_exclude: wrongDocumentAddresses(audit_urls) } : {}),
     stale_reason:
       wrong_at != null
         ? audit_at != null && (confirmed_at == null || new Date(audit_at).getTime() >= new Date(confirmed_at).getTime())

@@ -1193,12 +1193,15 @@ describe("Magellan agentic discovery", () => {
       const call = db.mock.calls.find((c) => templateText(c[0]).includes("stale-link freshness search"))!;
       expect(templateText(call[0])).toContain("f.about_stage = 'discover'");
       // The link or the document its own last fetch stored (after redirects); a live fee; once per finding.
-      const auditQuery = templateText(call[0]).split("AS confirmed_at")[1].split("AS audit_at")[0];
+      const auditQuery = templateText(call[0]).split("LEFT JOIN LATERAL")[1].split(") audit ON TRUE")[0];
       expect(auditQuery).toContain("f.source_url IN (due.fee_schedule_url, due.main_document_url)");
       // The main fetch's document, never the remembered address a side copy's read can set.
       expect(templateText(call[0])).toContain("WHERE doc.id = profile.last_successful_source_document_id");
       expect(auditQuery).toContain("fp.rolled_back_at IS NULL");
       expect(auditQuery).toContain("max(f.created_at)");
+      // Only the page's current copy: a miss on a superseded copy or a companion never counts.
+      expect(auditQuery).toContain("sd.superseded_by_id IS NULL");
+      expect(auditQuery).toContain("sd.companion_source_id IS NULL");
       expect(call.slice(1)).toContain("audit_miss");
       expect(attempts(db).some((attempt) => attempt.detail.stale_reason === "Deming's audit found fees read from it came from the wrong document")).toBe(true);
     });
@@ -1461,9 +1464,9 @@ describe("finderOrderFromHints", () => {
 });
 
 describe("wrongDocumentAddresses (#2055)", () => {
-  it("rules out the stored document and the remembered address a wrong-document finding named", () => {
-    expect(wrongDocumentAddresses("https://bank.test/fees.pdf", "https://bank.test/fees.pdf")).toEqual(["https://bank.test/fees.pdf"]);
-    expect(wrongDocumentAddresses("https://bank.test/fees.pdf", "https://other.test/x")).toEqual(["https://bank.test/fees.pdf", "https://other.test/x"]);
-    expect(wrongDocumentAddresses(null, " ")).toEqual([]);
+  it("rules out only the addresses the findings named, once each", () => {
+    expect(wrongDocumentAddresses(["https://bank.test/fees.pdf", "https://bank.test/fees.pdf"])).toEqual(["https://bank.test/fees.pdf"]);
+    expect(wrongDocumentAddresses(["https://bank.test/fees.pdf", null, " ", "https://other.test/x"])).toEqual(["https://bank.test/fees.pdf", "https://other.test/x"]);
+    expect(wrongDocumentAddresses(null)).toEqual([]);
   });
 });
