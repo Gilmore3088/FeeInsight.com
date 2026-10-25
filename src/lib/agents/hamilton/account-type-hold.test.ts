@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { ACCOUNT_TYPE_CHECKED_FLAG, applyAccountTypeHold, passesWithoutAccountWords, planHolds, splitUntyped, type HoldRow } from "./account-type-hold";
+import { ACCOUNT_TYPE_CHECKED_FLAG, applyAccountTypeHold, feedbackRow, passesWithoutAccountWords, planHolds, splitUntyped, type HoldRow } from "./account-type-hold";
+import { feedbackRowRead, FEEDBACK_KINDS } from "@/lib/agents/learning/feedback-kinds";
 import { publishSkipReason } from "./publish";
 
 const LIVE: HoldRow[] = [
@@ -111,6 +112,34 @@ describe("account type hold (#1100 gap 1)", () => {
     expect(result.error).toBe("boom");
     expect(result.heldLive).toEqual([]);
     expect(calls.some((text) => text.includes("'step.warning'"))).toBe(true);
+  });
+
+  it("labels a release a restore record, never the takedown's wrong category (#1680)", async () => {
+    const hold = planHolds([{ fee_published_id: null, fee_verified_id: 4436, institution_id: 954, fee_name: "Monthly Account Fee - Business Advantage Checking", product_name: null, amount: "20.00" }]).typed[0];
+    const live = feedbackRow({ ...hold, feePublishedId: 12138 }, "live", 1);
+    const released = feedbackRow(hold, "restored", 1);
+    expect([live.signal, live.kind, live.aboutStage]).toEqual(["wrong", "wrong_category", "publish"]);
+    expect([released.signal, released.kind, released.aboutStage, released.weight]).toEqual(["restored", "account_type_hold_released", "publish", 0]);
+    // Same stage as before, so the shared upsert (which keeps about_stage) never leaves a stale stage.
+    expect(released.dedupeKey).toBe("hamilton.account_type_hold:restored:4436");
+    expect("record" in FEEDBACK_KINDS.account_type_hold_released).toBe(true);
+    expect(feedbackRowRead({ kind: released.kind, about_stage: released.aboutStage, check_name: released.checkName ?? null })).toBe(true);
+
+    // Through the step: a refused row that passes without its account words goes back to verified
+    // and its feedback row is a restore.
+    const text = "Business Checking Accounts\nMonthly Account Fee - Business Advantage Checking | $20.00\nStop payment | $30.00";
+    const refused: HoldRow[] = [{ fee_verified_id: 4436, institution_id: 954, fee_name: "Monthly Account Fee - Business Advantage Checking", product_name: null, amount: "20.00", source_document_id: 362, normalized_text: text }];
+    const calls: Array<{ text: string; values: unknown[] }> = [];
+    const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const sqlText = strings.join("?");
+      calls.push({ text: sqlText, values });
+      return Promise.resolve(sqlText.includes("fv.review_status = 'rejected'") ? refused : []);
+    }) as unknown as Parameters<typeof applyAccountTypeHold>[0];
+    const result = await applyAccountTypeHold(db, { runId: 7, batchId: "agentic-run-7", dryRun: false });
+    expect(result.restoredHeld.map((row) => row.feeVerifiedId)).toEqual([4436]);
+    const insert = calls.find((call) => call.text.includes("INSERT INTO pipeline_feedback"))!;
+    const rows = JSON.parse(insert.values.find((value) => typeof value === "string" && value.startsWith("[")) as string) as Array<Record<string, unknown>>;
+    expect(rows.map((row) => [row.signal, row.kind, row.dedupe_key])).toEqual([["restored", "account_type_hold_released", "hamilton.account_type_hold:restored:4436"]]);
   });
 
   it("names #1100 in the rollback reason", async () => {
