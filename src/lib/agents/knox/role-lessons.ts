@@ -606,4 +606,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-1905-network-table-columns",
+    agent: "knox",
+    stage: "extract",
+    lesson: "An ATM table with one column per network (\"Transaction Type | Navy Federal ATM | CO-OP ATM Network | Non-Navy Federal/Non-CO-OP Network ATM | ...\") prices each row once per column. The fee for using another bank's ATM is the price in the one column for ATMs the bank does not own: read each withdrawal, transfer or inquiry row there and name it by the row and that column. Never take a row's first price whatever its column, never read a credit card's cash advance as an account fee, and do not drop a row because its name carries a limit (\"Share withdrawal $1,000 maximum per 24 hours\"). A late charge's cap or floor (\"maximum late charge of $30\", \"Minimum Late Fee $10\" beside \"5% of Payment Amount\") bounds a percentage charge and is not the late fee.",
+    why: "Navy Federal's network table was read cell by cell: \"Credit card cash advance\" went live as a $0.50 cash advance from the CO-OP column, a returned deposit was read from the CO-OP cell, and the $1 share withdrawal at other networks' ATMs, the account's real network fee, was never read. Its mortgage late-charge sentence went live as three late fees ($30, $30, $10), and the same bound shape was live at two more institutions (#1905).",
+    evidence: { issues: [1905], prs: [], files: ["src/lib/custom-report/network-column-rows.ts", "src/lib/late-charge-bound.ts", "src/lib/agents/knox/specialists.ts", "src/lib/agents/knox/network-column-table.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];

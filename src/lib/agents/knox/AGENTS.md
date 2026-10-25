@@ -284,6 +284,20 @@ fees found (54.7%); 56 of the 59 wrong reads are the right price under another c
 
 ## Rules versions (`extract.rules`)
 
+v114 (Oct 25, #1905): an ATM network table (one column per network, priced row by row) is read by
+its columns (`networkColumnReads` in `src/lib/custom-report/network-column-rows.ts`, shared with the
+source check). Each machine-use row (withdrawal, transfer, inquiry, balance) is read at the price
+that opens the one non-network column ("Non-Navy Federal/Non-CO-OP Network ATM", "Non-Owned ATM")
+and named by the row and that column; the table's rows are blanked for every other reader, so no
+row takes another column's price (Navy Federal's "Credit card cash advance" at the CO-OP column's
+$0.50, its "Returned Check Deposits" from the CO-OP cell). A credit card's cash advance, a rejected
+or invalid attempt and a purchase give no read. Also, a late charge's cap or floor ("maximum late
+charge of", "Minimum Late Fee") is no late fee (`namesLateChargeBound`, `src/lib/late-charge-bound.ts`;
+Darwin's `late-charge-bound-check.ts` re-checks live ones and takes them down). On Oct 25 network
+headers matched only Navy Federal (docs 15428, 26712, 39026) and R-G FCU (15582, 35833); 4 live
+fees are re-read under new names or not at all, each still traced by the source check, so none comes
+down. The stale-read floor stays at v97.
+
 v112 (Oct 25, #1877): a credit union's "Draft Protection Fee" (share-draft wording) is filed as
 the overdraft fee (`DRAFT_PROTECTION_FEE` in `fee-fold.ts`, shared with guard v89). Abbey FCU's "Draft Protection Fee (Paid) per presentment * $30.00" and Members
 Choice's "Draft Protection Fee * | $30.00 per Presentment" were set aside with no category, so Abbey's
@@ -2063,7 +2077,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v113 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v114 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v10 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

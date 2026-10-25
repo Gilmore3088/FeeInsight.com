@@ -1157,6 +1157,17 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   `canadian_document` flag; event `darwin.canadian_document_takedown`). Step detail
   `canadian_document_check`. Dry run Oct 19: 12 fees on docs 26833 and 26834, all Natbank; the same
   12 are #2022 hand takedowns, and Atlas points Natbank's registry at its U.S. accounts page.
+- A late charge's cap or floor (`late-charge-bound-check.ts`, #1905). A loan schedule states its
+  late charge as a share of the payment with a cap or floor ("5% of the principal and interest ...;
+  maximum late charge of $30", "Minimum Late Fee $10" beside "5% of Payment Amount"). The cap or
+  floor is a bound on a percentage charge, not the late fee, and Knox v114 no longer reads one
+  (`namesLateChargeBound`, `src/lib/late-charge-bound.ts`). Each verify step reads every live
+  `late_payment` fee whose name's last clause is the bound (`LATE_CHARGE_BOUND_SQL`). The switch
+  (`LATE_CHARGE_BOUND_TAKEDOWN_LIVE`) is on, under the sampled-clean rule (DECISIONS, 2026-10-20):
+  all 5 dry-run fees were read against each bank's text and are correct takedowns. A match goes through the 12-hour second look (`darwin.late_charge_bound`) and is archived with
+  `late_charge_bound: <name>` (verified row rejected with the `late_charge_bound` flag). Step
+  detail `late_charge_bound_check`. Dry run Oct 25: 5 live fees at 3 institutions (15729, 154636,
+  154637 at 4956; 79880 at 5338; 124614 at 6789).
 - One printed line, two reads (`line-conflict-check.ts`, #1440). James's catalog review (Oct 15)
   found live fees sharing institution, name, amount and source address under two categories (1st
   Summit's "Prepaid Card" $5 as document reproduction and gift card purchase) or one category with
@@ -1617,7 +1628,12 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v90 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v90 (Oct 25, #1912): a plain
+- The guard is at v91 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v91 (Oct 25, #1905):
+  the network ATM rule's savings/share-withdrawal exclusion no longer refuses a share withdrawal
+  priced at another network's ATM ("Share withdrawal at Non-Navy Federal/Non-CO-OP Network ATM",
+  Knox v114's network table read); the savings withdrawal limit stays out. Dry run: 0 live and 0
+  raw rows carry the wording.
+- v90 (Oct 25, #1912): a plain
   return charge ("Returned Check Fee", "Return Items") its stored text prints under a foreign check or
   collection heading (`withCollectionSection` / `collectionSectionReturn`: U.S. Bank 75929 under "Foreign
   Check Collection (incoming/outgoing)" after "Tracer Fee | $50.00"; BankUnited 56558 and 109208 under
@@ -1949,6 +1965,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `TRANSLATED_COPY_CHECK_VERSION` | `darwin.translated_copy` | v2 | `darwin/translated-copy-check.ts` |
 | `PRODUCT_PAGE_REPEAT_CHECK_VERSION` | `darwin.product_page_repeat` | v2 | `darwin/product-page-repeat-check.ts` |
 | `CANADIAN_DOCUMENT_CHECK_VERSION` | `darwin.canadian_document` | v1 | `darwin/canadian-document-check.ts` |
+| `LATE_CHARGE_BOUND_CHECK_VERSION` | `darwin.late_charge_bound` | v1 | `darwin/late-charge-bound-check.ts` |
 | `DOCUMENT_OWNER_STRATEGY` | `verify.document_owner` | v1 | `darwin/document-owner.ts` |
 | `DARWIN_VERIFY_STRATEGY` | `verify.rules` | v3 | `darwin/verify.ts` |
 | `DARWIN_SOURCE_CHECK_VERSION` | — | v3 | `darwin/verify.ts` |
