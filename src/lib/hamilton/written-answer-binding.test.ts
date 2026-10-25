@@ -14,6 +14,7 @@ import {
   bindingLeavesNothing,
   boundFallbackLead,
   readNarrativeBinding,
+  readerNarrativeBinding,
   withoutOmitted,
   writtenAnswerFeeEvidence,
 } from "./written-answer-binding";
@@ -171,5 +172,34 @@ describe("applying a binding to the answer view", () => {
     expect(readNarrativeBinding({ ...binding, version: 2 })).toBeNull();
     expect(readNarrativeBinding({ ...binding, interpretation: [1] })).toBeNull();
     expect(readNarrativeBinding({ ...binding, omitted: [{ text: "x", reason: "made_up" }] })).toBeNull();
+  });
+});
+
+describe("readerNarrativeBinding (#1077 follow-up)", () => {
+  const binding = {
+    version: 1 as const,
+    supported: [{ text: "Bank A charges $10.", factIds: ["fee:published:1"] }, { text: "Bank A's fee is cheap.", factIds: [] }],
+    interpretation: ["Bank B sits near the median.", "Peers will follow Bank A."],
+    omitted: [{ text: "Bank A charges $35.", reason: "wrong_institution" as const }, { text: "Bank B charges $9.", reason: "wrong_institution" as const }],
+    limitations: [INTERPRETATION_LIMITATION],
+    readingBasis: [{ text: "Bank B sits near the median.", basis: "index median" }, { text: "Peers will follow Bank A.", basis: "index median" }],
+  };
+
+  it("keeps each left-out sentence's reason and the count, never its text", () => {
+    const reader = readerNarrativeBinding(binding);
+    expect(reader.omitted).toEqual([{ reason: "wrong_institution" }, { reason: "wrong_institution" }]);
+    expect(JSON.stringify(reader)).not.toContain("$35");
+    expect(JSON.stringify(reader)).not.toContain("$9.");
+    expect(reader.supported).toEqual(binding.supported);
+    expect(reader.limitations).toEqual(binding.limitations);
+  });
+
+  it("drops the sentences the gate cut from the supported, reading and basis lists, and leaves the saved binding whole", () => {
+    const reader = readerNarrativeBinding(binding, [" Bank A's fee is cheap. ", "Peers will follow Bank A."]);
+    expect(reader.supported.map((s) => s.text)).toEqual(["Bank A charges $10."]);
+    expect(reader.interpretation).toEqual(["Bank B sits near the median."]);
+    expect(reader.readingBasis).toEqual([{ text: "Bank B sits near the median.", basis: "index median" }]);
+    expect(binding.omitted[0].text).toBe("Bank A charges $35.");
+    expect(binding.supported).toHaveLength(2);
   });
 });

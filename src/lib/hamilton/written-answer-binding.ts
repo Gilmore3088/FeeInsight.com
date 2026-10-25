@@ -418,6 +418,32 @@ export function readNarrativeBinding(value: unknown): NarrativeBinding | null {
   };
 }
 
+/** A binding as a buffered reader-facing response sends it: each left-out sentence by its reason only. */
+export interface ReaderNarrativeBinding extends Omit<NarrativeBinding, "omitted"> {
+  omitted: Array<{ reason: OmitReason }>;
+}
+
+/**
+ * The binding a buffered JSON response may carry (#1077 follow-up). It never holds the text of a
+ * sentence the reader's view left out: the binding's omitted sentences keep their reason and their
+ * count but lose their text, and a sentence the gate cut from the view (`cut`) is dropped from the
+ * supported, reading and basis lists. The saved row keeps the full binding (reports read it
+ * server side). The streamed answer still sends the full binding: its replayed text holds the
+ * left-out sentences and the screen needs their text to hide them.
+ */
+export function readerNarrativeBinding(binding: NarrativeBinding, cut: Iterable<string> = []): ReaderNarrativeBinding {
+  const drop = trimmedSet([...cut]);
+  const kept = (text: string) => !drop.has(text.trim());
+  const { omitted, readingBasis, ...rest } = binding;
+  return {
+    ...rest,
+    supported: binding.supported.filter((s) => kept(s.text)),
+    interpretation: binding.interpretation.filter(kept),
+    omitted: omitted.map((o) => ({ reason: o.reason })),
+    ...(readingBasis ? { readingBasis: readingBasis.filter((b) => kept(b.text)) } : {}),
+  };
+}
+
 const LIST_MARKER = /^(\s*(?:[-*+]|\d+\.)\s+|\s*>\s*)/;
 
 /**
