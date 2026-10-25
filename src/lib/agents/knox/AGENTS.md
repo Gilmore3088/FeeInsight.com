@@ -284,6 +284,40 @@ fees found (54.7%); 56 of the 59 wrong reads are the right price under another c
 
 ## Rules versions (`extract.rules`)
 
+v110 (Oct 25, #1918): a fee named for the checking account itself is that account's monthly fee
+(`CHECKING_ACCOUNT_FEE_NAME`, `src/lib/checking-fee-name.ts`, shared with Darwin's category guard
+v86 so the two cannot drift): one to four words naming the account, then "Checking (Account)
+Fee|Charge" and an optional "(per month)", nothing else. A word that names another fee (overdraft,
+inactive, closing, statement, replacement, late, lost, withdrawal, deposit, counter, collection,
+foreign, unclaimed and others), an opening, setup or reopening charge ("New Checking Account Fee",
+"Re-open Checking Fee"), a business account (business, commercial, corporate, non-profit, analysis,
+merchant, professional, ag, farm, IOLTA, trust, estate) or a period other than the month keeps a
+name out, and a bare
+"Checking Account Fee" counts only with "(per month)", since printed alone it can be an opening fee
+(doc 3842). Bellco FCU's "MAX Checking Fee (per month) | $3.95" (raw 175797, doc 15817) was held as
+unclassified. Two more fixes on the same page: "$15K" or "$1.5M" is a balance, never a price
+(`amountsIn`; the shared check moves to v24 for the same reason), and a waiver bracketed inside a
+name's own cell stops at that cell (`bracketedWaiverEnd`), so "2Platinum Checking Fee (waived if
+$15K in combined balances in | $12.00" is read as Platinum Checking Fee, $12, instead of dropped.
+A label read under another fee's heading ("Performance Checking" under "Cashier's Checks") is not
+made a monthly fee by adding "fee" to it. Ambiguous lines stay held (James's condition on #2532): a
+checking-named fee whose price is activity-triggered, tiered, a percentage, a second price, an
+opening charge, charged only "if" or "when" something happens ("$4.95 if standard features are not
+chosen"), a closure or initial-deposit charge, or priced per year, quarter, item or debit
+(`checkingNamePriceAmbiguous`, at first read and on recheck), or whose page prints the
+same name at another price (`checkingNameHeld`). The held-line recheck now re-reads only lines on
+their page's current copy (no `superseded_by_id`, no `duplicate_of_id`), for every category. Read-only
+dry run Oct 25 over the 2,079 held lines on current texts that name checking, a thousands figure or a
+bracketed waiver, against v109 on the same rows: the rules promote 74 more lines (0 lose a
+promotion); the current-copy gate keeps 30 of them held and the ambiguity holds 5 more (with the
+review of #2618: First Federal's two conditional $4.95 lines, raw 166502 and 655353), so 39 lines at
+29 institutions go to Darwin as monthly maintenance. All 39 trace in `checkFeeAgainstSource` on their
+stored text and pass Darwin's guard v86 and `verificationReasonCode` (guard v85 refused all of them).
+Five institutions have one fee promoted from two copies; Hamilton's publish keeps one live
+(`decidePriorFee` "identical", or the exact-duplicate gate). Bellco's
+Platinum $12 line was dropped, not held, so it waits for the page to be read again. The stale-read
+floor stays at v97. Name re-tidy stays at v27.
+
 v109 (Oct 25, #1828): a bare "Returned payment" row ("Returned
 payment", "Returned Payment Fee", "RETURNED PAYMENT") under a loan section's title is the loan's
 returned payment fee, read as `other_lending_fee` at its own plain price under its own printed
@@ -2000,7 +2034,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v109 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v110 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v10 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

@@ -204,7 +204,7 @@ describe("H01 Structured Ask identity acceptance", () => {
   it("records the one output gate's shadow verdict as its own run, scheduled after the memo's (#1077 step 4)", async () => {
     const { recordProRequest } = await import("@/lib/agents/run-store");
     vi.mocked(recordProRequest).mockClear();
-    const shadow = { version: 1, surface: "memo", path: "memo", mode: null, today: "held", unified: "held", agrees: true,
+    const shadow = { version: 1, origin: "reader", surface: "memo", path: "memo", mode: null, today: "held", unified: "held", agrees: true,
       disagreement: null, codes: ["untraced_figure"], critical: ["untraced_figure"], cause: false, corrections: 0 } as const;
     vi.mocked(writeStorylineMemo).mockImplementationOnce(async (_story, _question, options) => {
       options!.onGateShadow!(() => ({ ...shadow, codes: [...shadow.codes], critical: [...shadow.critical] }));

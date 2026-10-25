@@ -18,7 +18,7 @@
 import { getFeesByInstitution } from "@/lib/data-store";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { isProviderLimitError } from "@/lib/ai-provider";
-import { generateVerifiedSection, type SectionTracking } from "./generate";
+import { generateVerifiedSection, type SectionGateShadow, type SectionTracking } from "./generate";
 import { reviewAnswerPage } from "./partner-review";
 import { HAMILTON_PAUSED_MESSAGE } from "./provider-paused";
 import { extractFigures, type NarrativeFigure } from "./figure-check";
@@ -88,6 +88,8 @@ export type ReportAnswerResult =
       passed: boolean;
       /** Untraced figures and partner-review problems; empty when passed. */
       problems: string[];
+      /** The one output gate's shadow verdict on the section as returned (#1077), for the caller to record. */
+      gateShadow?: SectionGateShadow;
     }
   | { status: "unavailable"; reason: string };
 
@@ -105,7 +107,7 @@ export const writeReportAnswer: ReportAnswerWriter = async (prepared, tracking) 
     });
     const untraced = result.status === "needs_review" ? [`figures not in the report data: ${result.unmatched.join(", ")}`] : [];
     const problems = [...untraced, ...review];
-    return { status: "written", narrative: result.section.narrative, passed: problems.length === 0, problems };
+    return { status: "written", narrative: result.section.narrative, passed: problems.length === 0, problems, ...(result.gateShadow ? { gateShadow: result.gateShadow } : {}) };
   } catch (error) {
     if (isProviderLimitError(error) || isProviderLimitError((error as { cause?: unknown })?.cause)) {
       return { status: "unavailable", reason: HAMILTON_PAUSED_MESSAGE };

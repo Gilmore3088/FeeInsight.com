@@ -28,8 +28,24 @@ export type ShadowDisagreement =
 /** Which caller ran the shadow: the written-answer route's two paths, the Ask memo, Simulate, a report section (#1077 step 6). */
 export type ShadowPath = "written_streaming" | "written_buffered" | "memo" | "simulate_stream" | "simulate_read" | "report_section" | "golden_replay";
 
+/**
+ * Whose answer the shadow ran on: a reader's (the live routes), the daily paid eval's sample, or the
+ * golden replay. Kept apart in every count, so synthetic answers never stand in for readers'.
+ */
+export type ShadowOrigin = "reader" | "paid_eval" | "golden";
+export const SHADOW_ORIGINS: readonly ShadowOrigin[] = ["reader", "paid_eval", "golden"];
+
+/** Where a shadow ran, as its record keeps it; `origin` defaults to "reader". */
+export interface ShadowContext {
+  path: ShadowPath;
+  mode?: string | null;
+  origin?: ShadowOrigin;
+}
+
 export interface GateShadowRecord {
   version: typeof OUTPUT_GATE_VERSION;
+  /** Whose answer it was; a record written before this field reads as "reader". */
+  origin: ShadowOrigin;
   surface: GateVerdict["surface"];
   path: ShadowPath;
   /** The request's mode string; null when the caller sent none (the admin chats). */
@@ -71,11 +87,12 @@ export function shadowDisagreement(today: TodayDecision, unified: GateStatus): S
   return todayPartial !== (unified === "ready_partial") ? "partial_differs" : null;
 }
 
-export function gateShadowRecord(verdict: GateVerdict, today: TodayDecision, context: { path: ShadowPath; mode?: string | null }): GateShadowRecord {
+export function gateShadowRecord(verdict: GateVerdict, today: TodayDecision, context: ShadowContext): GateShadowRecord {
   const disagreement = shadowDisagreement(today, verdict.status);
   const critical = verdict.failures.filter((f) => f.critical).map((f) => f.code);
   return {
     version: OUTPUT_GATE_VERSION,
+    origin: context.origin ?? "reader",
     surface: verdict.surface,
     path: context.path,
     mode: context.mode ?? null,
@@ -94,20 +111,21 @@ export function gateShadowRecord(verdict: GateVerdict, today: TodayDecision, con
  * Runs the unified gate in shadow and returns its record. Never throws: a gate error becomes a
  * record with `error` set, so a shadow can never change what today's gates decided.
  */
-export function shadowGate(input: GateInput, today: TodayDecision, context: { path: ShadowPath; mode?: string | null }): GateShadowRecord {
+export function shadowGate(input: GateInput, today: TodayDecision, context: ShadowContext): GateShadowRecord {
   try {
     return gateShadowRecord(gateAnswer(input), today, context);
   } catch {
     // A fixed code, never the error's message: the record carries no answer text or internals.
     return {
-      version: OUTPUT_GATE_VERSION, surface: input.surface, path: context.path, mode: context.mode ?? null, today,
+      version: OUTPUT_GATE_VERSION, origin: context.origin ?? "reader", surface: input.surface, path: context.path, mode: context.mode ?? null, today,
       unified: "held", agrees: false, disagreement: null, codes: [], critical: [], cause: false, corrections: 0,
       error: GATE_SHADOW_ERROR,
     };
   }
 }
 
-export interface GateShadowTally {
+/** One set of shadow counts (`tallyGateShadow`, overall and per origin). */
+export interface GateShadowCounts {
   total: number;
   agree: number;
   disagree: number;
@@ -125,9 +143,24 @@ export interface GateShadowTally {
   byPath: Record<string, { total: number; disagree: number; unifiedHolds: number; unifiedShows: number }>;
 }
 
-/** Counts shadow records: the numbers a later step reads before it switches the gate on. */
+export interface GateShadowTally extends GateShadowCounts {
+  /** The same counts for each origin alone: readers' answers, the paid eval's samples, the golden replay. */
+  byOrigin: Record<ShadowOrigin, GateShadowCounts>;
+}
+
+/**
+ * Counts shadow records: the numbers a later step reads before it switches the gate on. The
+ * overall counts span every origin; `byOrigin` keeps readers' answers apart from eval samples.
+ */
 export function tallyGateShadow(records: readonly GateShadowRecord[]): GateShadowTally {
-  const tally: GateShadowTally = {
+  const byOrigin = Object.fromEntries(
+    SHADOW_ORIGINS.map((origin) => [origin, countShadows(records.filter((r) => (r.origin ?? "reader") === origin))]),
+  ) as Record<ShadowOrigin, GateShadowCounts>;
+  return { ...countShadows(records), byOrigin };
+}
+
+function countShadows(records: readonly GateShadowRecord[]): GateShadowCounts {
+  const tally: GateShadowCounts = {
     total: 0, agree: 0, disagree: 0, errors: 0,
     byDisagreement: { unified_holds: 0, unified_shows: 0, partial_differs: 0 },
     byStatus: { validated: 0, ready_partial: 0, held: 0 },
@@ -175,8 +208,10 @@ export function readGateShadowRecord(value: unknown): GateShadowRecord | null {
   const codes = Array.isArray(obj.codes) ? obj.codes.filter((c): c is GateFailureCode => typeof c === "string") : [];
   const critical = Array.isArray(obj.critical) ? obj.critical.filter((c): c is GateFailureCode => typeof c === "string") : [];
   const disagreement = shadowDisagreement(obj.today as TodayDecision, obj.unified as GateStatus);
+  // A record written before origins were kept is a reader's: only the live routes recorded then.
+  const origin: ShadowOrigin = typeof obj.origin === "string" && (SHADOW_ORIGINS as readonly string[]).includes(obj.origin) ? obj.origin as ShadowOrigin : "reader";
   return {
-    version: OUTPUT_GATE_VERSION, surface: obj.surface as GateShadowRecord["surface"], path: obj.path as ShadowPath,
+    version: OUTPUT_GATE_VERSION, origin, surface: obj.surface as GateShadowRecord["surface"], path: obj.path as ShadowPath,
     mode: typeof obj.mode === "string" ? obj.mode : null, today: obj.today as TodayDecision, unified: obj.unified as GateStatus,
     agrees: typeof obj.error === "string" ? false : disagreement === null, disagreement: typeof obj.error === "string" ? null : disagreement,
     codes, critical, cause: obj.cause === true, corrections: typeof obj.corrections === "number" ? obj.corrections : 0,

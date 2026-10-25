@@ -430,7 +430,7 @@ async function executeAgenticStep(
 
   // Hamilton's paid answer eval (#1079): a provider step, capped at five paid samples a day.
   if (step.stepKey === "hamilton-paid-answer-eval") {
-    const { runPaidAnswerEval } = await import("@/lib/hamilton/paid-answer-eval");
+    const { runPaidAnswerEval, shadowCountsLine } = await import("@/lib/hamilton/paid-answer-eval");
     const result = await runPaidAnswerEval({ agentRunId: run.id });
     const memo = result.paths[0];
     const names: Record<string, string> = { simulate: "Simulate", written_answer: "Written answer", report: "Report answer page" };
@@ -440,7 +440,8 @@ async function executeAgenticStep(
       .join("");
     return {
       status: "completed",
-      summary: result.note ?? `Wrote ${memo.passed} of ${memo.answers} paid memos (cap ${result.cap} a day, ${result.usedBefore} used before); ${memo.correctness.correct} of ${memo.correctness.checked} checked tie to the live catalog.${simulateLine}`,
+      // The shadow gate's last-week counts ride on every run, readers' answers apart from the eval's (#1077).
+      summary: `${result.note ?? `Wrote ${memo.passed} of ${memo.answers} paid memos (cap ${result.cap} a day, ${result.usedBefore} used before); ${memo.correctness.correct} of ${memo.correctness.checked} checked tie to the live catalog.${simulateLine}`}${shadowCountsLine(result.shadow)}`,
       detail: { ...result },
     };
   }

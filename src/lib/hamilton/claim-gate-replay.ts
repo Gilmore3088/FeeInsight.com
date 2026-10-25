@@ -70,7 +70,7 @@ export function replayClaimGoldenCase(c: ClaimGoldenCase): { result: ClaimGateRe
   const verdict = gateAnswer(input);
   const withoutCause = gateAnswer({ ...input, cause: "off" });
   const today = todayDecisionFor(c);
-  const record = gateShadowRecord(verdict, today, { path: "golden_replay" });
+  const record = gateShadowRecord(verdict, today, { path: "golden_replay", origin: "golden" });
   const flagged = verdict.failures.some((f) => f.code === "causal_unsupported");
   const cause: ClaimGateReplayResult["cause"] = !flagged ? "none"
     : verdict.status === "held" && withoutCause.status !== "held" ? "holds"
