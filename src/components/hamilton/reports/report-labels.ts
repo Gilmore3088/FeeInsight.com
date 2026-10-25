@@ -44,3 +44,6 @@ export const REPORT_SECTION_HEADINGS = {
   position: "For management to weigh",
   implementation: "If management makes a change",
 } as const;
+
+/** Over a saved answer's source lines under a report finding (#1077 defect 7), on screen and in the PDF. */
+export const REPORT_FINDING_SOURCES_LABEL = "Records behind this finding, as saved with the answer";

@@ -596,4 +596,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-1912-heading-decides-a-plain-return",
+    agent: "knox",
+    stage: "extract",
+    lesson: "A bare return charge (\"Returned Check Fee\", \"Return Items\") takes its category from the section it is printed in, not from its words alone: under a foreign check or collection heading it is the returned deposited item (deposited_item_return), and only in the overdraft and NSF section, or in a flat list of account fees, is it the NSF fee. A late fee whose name names the safe deposit box is the box's fee (safe_deposit_box), never the lending late payment. When the heading is not in the excerpt, keep the heading line in the provenance so the guard can read it.",
+    why: "Knox filed U.S. Bank's foreign check collection return (75929) and BankUnited's two collection returns (56558, 109208) as NSF and five safe deposit box late fees as late_payment by their names; the category guard (v90) now refuses them, but each was first published under the wrong category.",
+    evidence: { issues: [1912], prs: [], files: ["src/lib/fee-category-guard.ts", "src/lib/custom-report/collection-section-return.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];
