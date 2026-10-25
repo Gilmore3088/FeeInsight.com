@@ -7,7 +7,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
 import { layerDates, loadFeeWorkspace } from "@/lib/hamilton/fee-workspace-data";
 import { buildAuditTrail } from "@/lib/hamilton/audit-trail";
-import { defaultLayer, describePosition, parseLayer, type LayerSummary } from "@/lib/hamilton/research-layers";
+import { defaultLayer, describePosition, parseLayer, thinLayerText, type LayerSummary } from "@/lib/hamilton/research-layers";
 import { buildImplementationPlan } from "@/lib/hamilton/implementation-plan";
 import { FilingExhibits } from "./filing-exhibits";
 import { getInstitutionComplaintProfile } from "@/lib/data-store/complaints";
@@ -29,6 +29,7 @@ import {
   fmtMoney,
 } from "@/components/hamilton/memo/memo";
 import { buildFeeAnswer } from "@/lib/hamilton/workspace/answer";
+import { proseFeeName } from "@/lib/hamilton/workspace/names";
 import { AnswerView } from "@/components/hamilton/memo/exhibit-view";
 import { LayerTabs } from "@/components/hamilton/memo/LayerTabs";
 import { DatasetNote } from "@/components/hamilton/DatasetNote";
@@ -91,6 +92,8 @@ function RuleList({ rules }: { rules: RuleRow[] }) {
 
 function LayerExhibit({ layer, ownAmount, feeName }: { layer: LayerSummary; ownAmount: number | null; feeName: string }) {
   const position = describePosition(layer, ownAmount);
+  const thinText = thinLayerText(layer, fmtMoney);
+  const names = thinText?.names ?? null;
   return (
     <Exhibit
       number={1}
@@ -103,11 +106,23 @@ function LayerExhibit({ layer, ownAmount, feeName }: { layer: LayerSummary; ownA
         <div className="grid gap-6 lg:grid-cols-[1fr_15rem]">
           <DistributionBars amounts={layer.amounts} own={ownAmount} />
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-1">
-            <Figure label="Middle (median)" value={fmtMoney(layer.median)} note={layer.thin ? "Few institutions; read with care" : `${layer.n} institutions`} />
-            <Figure label="Middle half" value={`${fmtMoney(layer.p25)} to ${fmtMoney(layer.p75)}`} />
+            {layer.thin ? (
+              // Too few for a median (5 local, 10 elsewhere): the count, a plain note and, where the engine lists them, every institution by name.
+              <Figure label="Institutions" value={layer.n.toLocaleString("en-US")} note={thinText?.note} />
+            ) : (
+              <>
+                <Figure label="Middle (median)" value={fmtMoney(layer.median)} note={`${layer.n} institutions`} />
+                <Figure label="Middle half" value={`${fmtMoney(layer.p25)} to ${fmtMoney(layer.p75)}`} />
+              </>
+            )}
             <Figure label="Charge nothing" value={`${layer.zeroCount} of ${layer.n}`} />
             {position ? <Figure label="Against you" value={<span className="text-lg">{position}</span>} /> : null}
           </div>
+          {names ? (
+            <p className="text-sm text-warm-800 lg:col-span-2">
+              <span className="font-medium text-warm-900">Each institution, lowest price first:</span> {names}.
+            </p>
+          ) : null}
         </div>
       )}
     </Exhibit>
@@ -189,7 +204,7 @@ export default async function ResearchPage({ searchParams }: PageProps) {
     <MemoPage>
       <MemoHeader
         kicker={`My fees · ${ws.feeName}`}
-        title={inst ? `Where ${inst.name} sits on ${ws.feeName.toLowerCase()}` : `${ws.feeName} across the market`}
+        title={inst ? `Where ${inst.name} sits on ${proseFeeName(ws.fee)}` : `${ws.feeName} across the market`}
         dek={
           inst
             ? ws.ownAmount != null
@@ -250,7 +265,8 @@ export default async function ResearchPage({ searchParams }: PageProps) {
           tabs={ws.layers.map((l) => ({
             key: l.key,
             label: l.label,
-            meta: l.median != null ? fmtMoney(l.median) : "—",
+            // A tab shows a median only where the layer has one; a thin layer shows its count.
+            meta: l.median != null ? fmtMoney(l.median) : l.n > 0 ? `${l.n}, no median` : "None",
             href: researchHref({ fee: ws.fee, layer: l.key }, instId),
             panel: (
               <div className="flex flex-col gap-4">
