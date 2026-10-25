@@ -120,6 +120,24 @@ describe("an edition line past the menu (lateEdition)", () => {
     }
   });
 
+  it("does not date a page by one section's 'Fees Effective …' or an end date (third review of #2573)", () => {
+    const pages = [
+      `${MENU}Fee Schedule\n\nNSF | $30\n\nOverdraft Fees\nFees Effective January 1, 2027\nWe will no longer charge for overdrafts under $50.`,
+      `${MENU}Fee Schedule\n\nNSF | $30\n\nIRA Fees\n\nFees effective January 1, 2027\n\nIRA closing | $25`,
+      `${MENU}Member Fees\nFees effective January 1, 2027\nNSF | $35`,
+      `${MENU}Visa Platinum\n\nAPR 12.9%\n\nFees Effective January 1, 2027\n\nLate payment | $25`,
+      `${MENU}Checking\n\nService Charges Effective January 1, 2027\n\nMonthly | $5`,
+      `${MENU}Fee Schedule\nEffective through December 31, 2026\nNSF | $30`,
+      `${MENU}Fee Schedule\nEffective January 1, 2027\nUntil then, the fees below remain in effect.`,
+      `${MENU}Pending Fee Schedule\nEffective January 1, 2027\nNSF | $35`,
+      `${MENU}Next Year's Fee Schedule\nEffective January 1, 2027\nNSF | $35`,
+    ];
+    for (const page of pages) {
+      expect(lateEdition(page)).toBeNull();
+      expect(notYetEffective(page, TODAY, true)).toBeNull();
+    }
+  });
+
   it("still reads a whole schedule's own edition line", () => {
     expect(lateEdition(`${MENU}CONSUMER SCHEDULE OF FEES AND CHARGES\nEffective January 1, 2027\nNSF | $35`)).toBe("2027-01-01");
     expect(lateEdition(`${MENU}Business Fee Schedule - Effective December 1, 2026\nNSF | $35`)).toBe("2026-12-01");

@@ -74,13 +74,18 @@ more: a table with a "Current Fee" column beside "Fees Effective January 1, 2027
 ("Fee Updates", "Fee Waivers", "No More Overdraft Fees") and one section's date ("Overdraft Fees" /
 "Effective …", "Wire transfer fees effective …:"). So the reader now takes only the whole
 schedule's name, not any line with a fee word. None of these is in prod's texts today; each is
-refused and tested. The same review timed Darwin's read at 20.7 s against
+refused and tested. A third review found the bare "Fees Effective …" line under a section heading
+("Overdraft Fees", "IRA Fees", "Checking"); that line now counts only under a priced row or a whole
+schedule title, and "Effective through …", "remain in effect" and "Pending"/"Next Year's" titles
+are refused too. The same review timed Darwin's read at 20.7 s against
 main's 7.8 s (a per-fee join carrying the 8,000-character text and a costly fee-word prefilter);
 the rework ran in 5.6 s on prod (EXPLAIN ANALYZE, Oct 25), reading 28,930 live or held fees on
 2,011 dated documents. The tighter reader only refuses more lines, so the switch-on dry run stays
 at most the one Allentown hold, which the guard test still reads.
 
-**Not fixed here:** sections with their own editions in one document (38132, 30611, MECU 37380;
+**Not fixed here:** a page with a dated future edition beside an undated current one ("NSF | $30 …
+Fees effective January 1, 2027 … NSF | $35") cannot be told apart from doc 38132's footer by the
+text alone; the dry run before the switch goes on must list such pages. Also not fixed: sections with their own editions in one document (38132, 30611, MECU 37380;
 40 live fees sit on those three) need a rule that dates the section a fee was read from.
 
 **Agent lesson:** hamilton/t1-edition-line-past-menu

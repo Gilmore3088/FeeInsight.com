@@ -250,7 +250,7 @@ const CONTENTS_LEADER = /\.{3,}|…/;
  * "2027 Updated Fee Schedule" in a newsletter (Wyrope, doc 36403), "Important Changes Effective …".
  */
 const ANNOUNCES =
-  /\b(?:new|updat\w*|upcoming|coming|soon|chang\w*|revis\w*|amend\w*|adjust\w*|waiv\w*|eliminat\w*|no more|no longer|increas\w*|decreas\w*|reduc\w*|lower\w*|propos\w*|notices?|pdf|download|link)\b/i;
+  /\b(?:new|updat\w*|upcoming|coming|soon|chang\w*|revis\w*|amend\w*|adjust\w*|waiv\w*|eliminat\w*|no more|no longer|increas\w*|decreas\w*|reduc\w*|lower\w*|propos\w*|pending|future|next year'?s?|notices?|pdf|download|link)\b/i;
 /**
  * What may follow the date on an edition line: nothing, closing punctuation, or a footnote mark
  * ("Fees Effective 1/1/2027 * Fee will be assessed …", doc 38132). A line that goes on is a
@@ -264,7 +264,7 @@ const ENDS_AT_DATE = /^\s*(?:[*†‡]|[.,;)\]]*\s*$)/;
  * effect through November 30, 2026"; BayPort's table header is "Fee - Current".
  */
 const CURRENT_PRICES =
-  /\bfees?\s*[-–:|]\s*current\b|\bcurrent\s+(?:consumer\s+|business\s+|personal\s+)?(?:fees?|fee schedule|schedule of fees|prices?)\b|\bfees?\s+today\b|\bin effect (?:through|until)\b/i;
+  /\bfees?\s*[-–:|]\s*current\b|\bcurrent\s+(?:consumer\s+|business\s+|personal\s+)?(?:fees?|fee schedule|schedule of fees|prices?)\b|\bfees?\s+today\b|\bcurrent schedule\b|\bin effect (?:through|until|now)\b|\bremains? in effect\b/i;
 const TITLE_MAX_CHARS = 80;
 
 /**
@@ -291,13 +291,21 @@ export function lateEdition(text: string | null | undefined): string | null {
     const title = above >= 0 ? lines[above].trim() : "";
     // A notice or announcement title above makes the line part of it ("Notice to Members").
     if (ANNOUNCES.test(title)) continue;
-    const underTitle = title.length > 0 && title.length <= TITLE_MAX_CHARS && WHOLE_SCHEDULE.test(title) && !PRICED.test(title);
+    const shortHeading = title.length > 0 && title.length <= TITLE_MAX_CHARS && !PRICED.test(title);
+    const underTitle = shortHeading && WHOLE_SCHEDULE.test(title);
+    // Under another heading ("Overdraft Fees", "IRA Fees", "Checking"), "Fees Effective …" dates
+    // that section. Doc 38132's line sits under a priced row, not a heading, and still counts.
+    const underOtherHeading = shortHeading && !underTitle;
     for (const m of line.matchAll(/effective/gi)) {
       const at = m.index ?? 0;
       const before = line.slice(0, at);
       if (ANNOUNCES.test(before)) continue;
-      if (!SCHEDULE_NAME_ONLY.test(before) && !(underTitle && before.trim() === "")) continue;
+      // "Business Fee Schedule - Effective …" names itself; a bare "Fees" or "Service Charges" needs no other heading above it.
+      const named = SCHEDULE_NAME_ONLY.test(before) && (/\bfee schedule\b|\bschedule of\b/i.test(before) || !underOtherHeading);
+      if (!named && !(underTitle && before.trim() === "")) continue;
       const after = line.slice(at + "effective".length);
+      // "Effective through December 31, 2026" ends an edition; it does not start one.
+      if (/^\s*(?:through|thru|until|till)\b/i.test(after)) continue;
       const dated = DATE_AFTER_EFFECTIVE.exec(after);
       if (dated && !ENDS_AT_DATE.test(after.slice(dated[0].length))) continue;
       const found = editionAt(line, at);
