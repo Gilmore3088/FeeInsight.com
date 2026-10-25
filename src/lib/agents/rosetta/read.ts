@@ -2532,18 +2532,23 @@ export async function runRosettaRead(
   }
 
   // #2219: a measured dry run of the current layout on older-layout texts. Record-only; a failure
-  // never stops the step, its error is on the result.
+  // never stops the step, its error is on the result. Inside a caller's transaction it runs in a
+  // savepoint, so a failed recheck statement cannot abort the rest of the step.
   let layoutRecheckError: string | null = null;
+  const recheck = (scope: SqlTag) => runLayoutRecheck(scope, {
+    runId: options.runId,
+    stepId: options.stepId ?? null,
+    institutionId: options.institutionId,
+    stateCode: options.stateCode,
+    limit: options.layoutRecheckPerRun,
+    vault,
+    pdfTextExtractor,
+  });
+  const recheckSavepoint = (db as unknown as {
+    savepoint?: (work: (scope: SqlTag) => Promise<LayoutRecheckResult>) => Promise<LayoutRecheckResult>;
+  }).savepoint;
   const layoutRecheck: LayoutRecheckResult = learning && vaultSchema && currentCopy && textColumns
-    ? await runLayoutRecheck(db, {
-        runId: options.runId,
-        stepId: options.stepId ?? null,
-        institutionId: options.institutionId,
-        stateCode: options.stateCode,
-        limit: options.layoutRecheckPerRun,
-        vault,
-        pdfTextExtractor,
-      }).catch((error: unknown) => {
+    ? await (recheckSavepoint ? recheckSavepoint.call(db, recheck) : recheck(db)).catch((error: unknown) => {
         layoutRecheckError = error instanceof Error ? error.message : String(error);
         return emptyLayoutRecheckResult();
       })
