@@ -59,47 +59,27 @@ function pricesAfter(line: string, at: number): number[] {
 }
 
 /** A card's own row ("Card Lock", "Key Card replacement"): not a box row, whatever its words. */
-const CARD_ROW = /\b(?:debit|atm|key|check|gift|prepaid)\s+cards?\b|\bcards?\s+(?:lock|replace\w*|reissue\w*)\b/i;
-/** A price printed on a line. */
-const PRICE = /\$\s?\d/;
-
-/** The cells of a line as Rosetta prints them ("a | b | $10"). */
-function cellsOf(line: string): string[] {
-  return line.split("|").map((cell) => cell.trim());
-}
+const CARD_ROW = /\bkey\s+cards?\b|\bcards?\s+(?:lock|replace\w*|reissue\w*)\b/i;
 
 /**
- * The cell of `line` that heads the box section: one naming the box with no price of its own, in
- * the cell or the next one ("Safe Deposit Boxes | Collection-Foreign | $70.00" heads its left column;
- * "Safe Deposit Box Key Replacement | $25" is a priced row). -1 when none does.
+ * True when the walk up from line `index` reaches the box heading through box rows only. The first
+ * line naming the box ends the walk, priced or not and in whichever column: on the 410 live late
+ * payments whose texts name a box (Oct 25), a stricter heading (unpriced, in the fee's own column)
+ * dropped 18 real box late fees and released no loan or card fee: extracted columns are too uneven to
+ * compare, and a box's drilling or key row often stands in for its heading. All 93 it kept sit under
+ * an unpriced box heading in their own column. A card's lock or key card row on the way up (review of
+ * #2622) ends the walk.
  */
-function boxHeadingCell(line: string): number {
-  const cells = cellsOf(line);
-  return cells.findIndex((cell, at) => BOX_HEADING.test(cell) && !PRICE.test(cell) && !PRICE.test(cells[at + 1] ?? ""));
-}
-
-/**
- * True when the walk up from line `index` reaches the box heading through box rows only. The
- * heading is a cell that names the box with no price of its own (`boxHeadingCell`); a priced line
- * that names it ("Safe Deposit Box Key Replacement | $25") is a box row, so the walk goes on. On a
- * page printed in columns (a heading line with more than one cell), the late fee must sit in the box
- * heading's own column, so the box column's heading does not claim the other column's late fee.
- */
-function underBoxHeading(lines: string[], index: number, nameAt: number): boolean {
+function underBoxHeading(lines: string[], index: number): boolean {
   const own = lines[index];
   if (LENDING_LINE.test(own)) return false;
-  const ownCell = own.slice(0, nameAt).split("|").length - 1;
   for (let i = index - 1, seen = 0; i >= 0 && seen < BOX_SECTION_REACH_LINES; i -= 1) {
     const line = lines[i].trim();
     if (!line) continue;
     seen += 1;
-    if (LENDING_LINE.test(line) || CARD_ROW.test(line)) return false;
-    const headingCell = boxHeadingCell(line);
-    if (headingCell >= 0) {
-      if (cellsOf(line).filter((cell) => cell.length > 0).length < 2) return true;
-      return headingCell === ownCell;
-    }
-    if (!BOX_ROW.test(line) && !BOX_HEADING.test(line)) return false;
+    if (LENDING_LINE.test(line)) return false;
+    if (BOX_HEADING.test(line)) return true;
+    if (CARD_ROW.test(line) || !BOX_ROW.test(line)) return false;
   }
   return false;
 }
@@ -114,14 +94,14 @@ export function boxSectionLateFee(text: string | null | undefined, feeName: stri
   const pattern = namePattern(feeName);
   if (!pattern) return false;
   const lines = text.split("\n");
-  const found: Array<{ index: number; at: number; priced: boolean }> = [];
+  const found: Array<{ index: number; priced: boolean }> = [];
   for (const [index, line] of lines.entries()) {
     const match = pattern.exec(line);
     if (!match) continue;
     const priced = amount != null && pricesAfter(line, match.index).some((price) => Math.abs(price - amount) < 0.005);
-    found.push({ index, at: match.index, priced });
+    found.push({ index, priced });
   }
   const priced = found.filter((row) => row.priced);
   const rows = priced.length > 0 ? priced : found;
-  return rows.length > 0 && rows.every((row) => underBoxHeading(lines, row.index, row.at));
+  return rows.length > 0 && rows.every((row) => underBoxHeading(lines, row.index));
 }
