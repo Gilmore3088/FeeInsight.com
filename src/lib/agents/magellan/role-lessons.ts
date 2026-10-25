@@ -12,7 +12,7 @@ export const MAGELLAN_LESSONS: AgentLesson[] = [
     stage: "discover",
     lesson: "A fetch date says when a page was asked for, not how old the schedule is: record the date the document itself states (effective or revised date, else the year its address names) apart from when it was read, and send a main link whose schedule is dated more than two years ago back to discovery for a newer one.",
     why: "source_documents kept only fetch dates, so a fee PDF named 2022 and fetched in October looked current on /fees (James's Oct 18 audit). On Oct 25, 1,227 of 8,418 documents behind live fees stated a date before 2024-10-25, carrying 16,774 live fees at 903 banks.",
-    evidence: { issues: [1878], prs: [], files: ["src/lib/agents/magellan/stated-date.ts", "src/lib/agents/magellan/discovery.ts", "docs/project/findings/2026-10-25-read-date-is-not-schedule-date.md"] },
+    evidence: { issues: [1878], prs: [2615], files: ["src/lib/agents/magellan/stated-date.ts", "src/lib/agents/magellan/discovery.ts", "docs/project/findings/2026-10-25-read-date-is-not-schedule-date.md"] },
     appliesTo: ["discover"],
     since: "2026-10-25",
   },
