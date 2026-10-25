@@ -7,6 +7,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const MAGELLAN_LESSONS: AgentLesson[] = [
   {
+    id: "issue-1455-whose-website-is-it",
+    agent: "magellan",
+    stage: "discover",
+    lesson: "A stored website is a claim, not a fact: when another active institution outside the holding company stores the same website host, open the homepage and ask whose it is before searching it. The homepage must name this institution (its distinctive name words plus its city or charter number); when it names exactly one other institution that way and not this one, the website is the other institution's: do not search it, do not count its host as this institution's own, and send the institution to the website search. Same-holding-company sites and a host that spells the institution's own or its holding company's name (a renamed bank's new domain, \"vallant.bank\" for Pinnacle Bank held by Vallant Financial) are its own.",
+    why: "The registry seed stored other institutions' websites for 5756 Bluegrass Community FCU (ukcreditunion.org), 4884 Metrowest Community FCU (stmaryscu.org) and 1903 First National Bank, Oldham SD (firstnationalbanks.bank, First National Bank, Fort Pierre's). Every finder trusted the website, and the other-bank check let the documents through because the host was this bank's own website too, so the other institution's schedules went live (52 fees, #1455) until Darwin's document-owner check took them down; the websites stayed wrong and the finders kept finding the same documents (Oct 5-18).",
+    evidence: { issues: [1455], prs: [], files: ["src/lib/agents/magellan/website-owner.ts", "src/lib/agents/magellan/other-bank-host.ts", "src/lib/agents/magellan/website-find.ts", "docs/project/findings/2026-10-25-website-is-another-institutions.md"] },
+    appliesTo: ["discover"],
+    since: "2026-10-25",
+  },
+  {
     id: "issue-1944-opening-names-the-document",
     agent: "magellan",
     stage: "discover",

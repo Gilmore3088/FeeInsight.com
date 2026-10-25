@@ -7,7 +7,7 @@ import { companionStreamsReady } from "@/lib/agents/companion-streams";
 import { brokerageLinkText, documentOpeningKind, nonDepositDocumentKind } from "@/lib/non-deposit-document";
 
 import { fetchWithTimeout, looksLikePdfUrl, mainContentText, MAX_PDF_CHECK_BYTES, pdfCheckText, validateFeeCandidate } from "./find-validate";
-import { loadSharedNameIds } from "./other-bank-host";
+import { loadSharedNameIds, websiteOwnedElsewhereSql } from "./other-bank-host";
 import {
   BUSINESS_PATH_SQL,
   CONSUMER_PATH_SQL,
@@ -617,6 +617,8 @@ async function selectThinBanks(
        WHERE COALESCE(inst.status, 'active') = 'active'
          AND (${stateCode}::text IS NULL OR upper(btrim(inst.state_code)) = ${stateCode})
          AND inst.website_url IS NOT NULL AND btrim(inst.website_url) <> ''
+         -- Not a website judged another institution's (#1455, website-owner.ts).
+         AND NOT ${websiteOwnedElsewhereSql(db)}
          AND inst.fee_schedule_url IS NOT NULL AND btrim(inst.fee_schedule_url) <> ''
          AND inst.id <> ALL(${excludeIds}::bigint[])
          AND (NOT ${leaderOnly}::boolean OR inst.id = ANY(${leaderIds}::bigint[]))
