@@ -247,4 +247,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-1897",
+    agent: "hamilton",
+    stage: "analysis",
+    lesson: "In a recurring briefing, put every figure in its section's table with its source and its period, and write the section's sentences only from those figures: a gap or a share worked out from two figures gets its own row saying how it was worked out. Counts of rows are written as words, and a figure Hamilton cannot source is named as missing, never filled in. The subscriber may rewrite the words, but the figures and sources stay as built and an edited section is marked as the team's.",
+    why: "Subscribers had no monthly deliverable to bring back to their bank, and a briefing they edit and forward to management must still show where each number came from and for which period, or the edited copy reads as Hamilton's unsourced claim.",
+    evidence: { issues: [1897], prs: [], files: ["src/lib/hamilton/monthly-briefing.ts", "src/lib/hamilton/monthly-briefing-read.ts", "src/app/pro/(hamilton)/reports/monthly/page.tsx"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];
