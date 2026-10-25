@@ -15,6 +15,7 @@ import {
   boundFallbackLead,
   readNarrativeBinding,
   readerNarrativeBinding,
+  sentenceMatchKey,
   withoutOmitted,
   writtenAnswerFeeEvidence,
 } from "./written-answer-binding";
@@ -201,5 +202,14 @@ describe("readerNarrativeBinding (#1077 follow-up)", () => {
     expect(reader.readingBasis).toEqual([{ text: "Bank B sits near the median.", basis: "index median" }]);
     expect(binding.omitted[0].text).toBe("Bank A charges $35.");
     expect(binding.supported).toHaveLength(2);
+  });
+
+  it("matches a cut across both splitters' marker handling, and keeps the binding's key order", () => {
+    expect(sentenceMatchKey("> Bank A's fee is cheap.")).toBe("Bank A's fee is cheap.");
+    expect(sentenceMatchKey(" - > Bank A's fee is cheap. ")).toBe("Bank A's fee is cheap.");
+    expect(sentenceMatchKey("Bank A's fee is -5% lower.")).toBe("Bank A's fee is -5% lower.");
+    const reader = readerNarrativeBinding(binding, ["> Bank A's fee is cheap."]);
+    expect(reader.supported.map((s) => s.text)).toEqual(["Bank A charges $10."]);
+    expect(Object.keys(reader)).toEqual(Object.keys(binding));
   });
 });

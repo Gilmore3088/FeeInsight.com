@@ -76,6 +76,7 @@ vi.mock("ai", () => ({
   createUIMessageStream: ({ execute }: { execute: (input: unknown) => Promise<void> }) => execute({ writer: { merge: mocks.merge, write: mocks.write } }),
   createUIMessageStreamResponse: async ({ stream }: { stream: Promise<void> }) => { await stream; return new Response("synthetic stream"); },
 }));
+import { writtenAnswerBinding } from "@/lib/hamilton/answer-save";
 import { POST } from "./route";
 
 // Invented banks: the profile lookup returns Synthetic Bank A's $10 overdraft fee as a catalog row.
@@ -88,7 +89,8 @@ const TOOL_OUTPUT = { fee: 35, peer_median: 29 };
 const KEPT = "Synthetic Bank A charges $10 for an overdraft.";
 const LEFT_OUT = "Synthetic Bank A charges $35 for an overdraft.";
 const BOUND = `## Hamilton's View\n${KEPT} ${LEFT_OUT}\n\nSynthetic Bank B charges $35, near the $29 peer median.`;
-const ONLY_LEFT_OUT = `## Hamilton's View\n${LEFT_OUT}`;
+const CHEAP = "Synthetic Bank A's overdraft fee is cheap.";
+const ONLY_LEFT_OUT =`## Hamilton's View\n${LEFT_OUT}`;
 const OUTPUTS = [PROFILE, OTHER, TOOL_OUTPUT];
 const QUESTION = "How does our overdraft fee compare?";
 
@@ -128,6 +130,26 @@ describe("buffered written answer with HAMILTON_GATE_REPAIR on", () => {
     expect(JSON.stringify(body)).not.toContain(LEFT_OUT);
   });
 
+  it("ok, ready_partial: a sentence the gate cut (house wording) is not in the binding's supported or reading lists", async () => {
+    const text = `## Hamilton's View\n${KEPT} ${CHEAP}`;
+    mocks.generate.mockResolvedValueOnce(draft(text)).mockResolvedValueOnce(rewrite(text));
+    const body = await (await POST(buffered())).json();
+    expect(body).toMatchObject({ status: "ok", gate: { status: "ready_partial", leftOut: 1 } });
+    expect(body.text).not.toContain("cheap");
+    expect(body.narrativeBinding.supported.map((s: { text: string }) => s.text)).toEqual([KEPT]);
+    expect(JSON.stringify(body)).not.toContain(CHEAP);
+  });
+
+  it("ok, ready_partial: a cut sentence on a `- >` line is matched across both splitters and left out of the binding", async () => {
+    const text = `## Hamilton's View\n${KEPT}\n- > ${CHEAP}`;
+    mocks.generate.mockResolvedValueOnce(draft(text)).mockResolvedValueOnce(rewrite(text));
+    const body = await (await POST(buffered())).json();
+    expect(body).toMatchObject({ status: "ok", gate: { status: "ready_partial", leftOut: 1 } });
+    expect(body.narrativeBinding.supported.map((s: { text: string }) => s.text)).toEqual([KEPT]);
+    expect(body.narrativeBinding.interpretation).toEqual([]);
+    expect(JSON.stringify(body)).not.toContain(CHEAP);
+  });
+
   it("refused: names a left-out sentence by its reason, never quotes it", async () => {
     mocks.generate.mockResolvedValueOnce(draft(ONLY_LEFT_OUT)).mockResolvedValueOnce(rewrite(ONLY_LEFT_OUT));
     const body = await (await POST(buffered())).json();
@@ -147,12 +169,18 @@ describe("buffered written answer with HAMILTON_GATE_REPAIR off (the default)", 
     expect(mocks.generate).toHaveBeenCalledTimes(1);
   });
 
-  it("ok with a binding that left nothing out: text and binding as before", async () => {
+  it("ok with a binding that left nothing out: the reply is byte for byte main's, keys in the binding's order", async () => {
     const text = `## Hamilton's View\n${KEPT}`;
     mocks.generate.mockResolvedValueOnce(draft(text));
-    const body = await (await POST(buffered())).json();
-    expect(body).toMatchObject({ status: "ok", text });
-    expect(body.narrativeBinding).toMatchObject({ omitted: [], supported: [{ text: KEPT, factIds: ["fee:published:1"] }] });
+    const raw = await (await POST(buffered())).text();
+    const body = JSON.parse(raw);
+    // Main's shape: the full binding, as writtenAnswerBinding returns it.
+    const mainBinding = writtenAnswerBinding(text, OUTPUTS, QUESTION,
+      { toolResults: OUTPUTS.map((output) => ({ toolName: "getInstitution", input: {}, output })), institutionId: 202, accountInstitutionId: null });
+    expect(mainBinding?.omitted).toEqual([]);
+    expect(body).toEqual({ status: "ok", text, metrics: { chars: text.length }, identityContext: body.identityContext, narrativeBinding: mainBinding });
+    expect(JSON.stringify(body.narrativeBinding)).toBe(JSON.stringify(mainBinding));
+    expect(Object.keys(body.narrativeBinding).indexOf("omitted")).toBeLessThan(Object.keys(body.narrativeBinding).indexOf("limitations"));
   });
 });
 

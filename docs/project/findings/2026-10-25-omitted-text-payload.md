@@ -5,10 +5,12 @@ it on screen: send the reason and the count, and keep the text only where it is 
 server side. A payload nobody renders today is still a payload the next caller renders.
 
 **Guard:** `src/app/api/research/hamilton/route.omitted-payload.test.ts` (switch on: an ok
-`ready_partial` reply whose binding keeps `omitted[].reason` but no text, and a refused reply that
-names a left-out sentence by its reason; switch off: the refused reply the same way, an ok reply
-unchanged; the streamed answer unchanged, switch on and off) and
-`src/lib/hamilton/written-answer-binding.test.ts` (`readerNarrativeBinding`).
+`ready_partial` reply whose binding keeps `omitted[].reason` but no text; a house-wording sentence
+the gate cut, plain and on a `- >` line, absent from `supported`; a refused reply that names a
+left-out sentence by its reason; switch off: the refused reply the same way, an ok reply equal byte
+for byte to main's binding; the streamed answer unchanged, switch on and off) and
+`src/lib/hamilton/written-answer-binding.test.ts` (`readerNarrativeBinding`, `sentenceMatchKey`,
+key order).
 
 **What happened (#1077, claim contract step 5 review):** with `HAMILTON_GATE_REPAIR` on, the
 buffered `gate_citations` path in `src/app/api/research/hamilton/route.ts` can answer
@@ -25,8 +27,21 @@ buffered reply sends: each omitted sentence becomes `{ reason }` (so reasons and
 and any sentence the gate cut is dropped from the supported, reading and basis lists. Both buffered
 `ok` replies send it; both refused replies name a binding sentence as `Left out (<reason>).`. The
 saved row and the run ledger are unchanged: saved answers keep the full binding, since reports read
-it server side. Switch off, an `ok` reply only ever carried a binding with nothing omitted, so its
-JSON is unchanged; the refused reply's `problems` line loses its quote, which no screen shows.
+it server side. `readNarrativeBinding` cannot read the reader binding back (an omitted entry with no
+text is malformed to it), so it is for JSON replies only.
+
+A cut is matched to a binding sentence by one shared key, `sentenceMatchKey`, applied to both
+sides. The two splitters disagree on markers: the gate's (`gateSentences`, `output-gate.ts`) strips
+a list marker or a blockquote marker, the binding's (`splitIntoSentences`, `citation-gate.ts`)
+strips a list marker and then a blockquote marker. On a `- > ...` line the gate's sentence keeps
+`> ` and the binding's does not, so the first version of this fix, which compared trimmed text,
+kept a cut sentence in `supported` (the PR #2604 review's reproduction). The key strips every
+leading list and blockquote marker.
+
+The reader binding keeps the binding's own key order (`omitted` before `limitations`), so with
+nothing omitted or cut it serialises byte for byte as before. Switch off, an `ok` reply only ever
+carried a binding with nothing omitted, so its JSON is unchanged; the refused reply's `problems`
+line loses its quote, which no screen shows.
 
 **The streamed answer is not changed, on purpose.** Its start chunk and final metadata already send
 the full binding, `omitted[].text` included, to the browser today. Stripping that text alone would
