@@ -1,6 +1,8 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
-import { heldByCardProductSwitch, movesExcessActivityFee, restoreTarget, runHamiltonCategoryGuard, tracesOnOwnText, uniqueRefiles } from "./category-guard";
+import { heldByCardProductSwitch, lateBoxFlags, movesBoxLateFee, movesExcessActivityFee, restoreTarget, runHamiltonCategoryGuard, tracesOnOwnText, uniqueRefiles } from "./category-guard";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
 
 function templateText(strings: unknown): string {
@@ -404,5 +406,63 @@ describe("guard v70: card-product takedowns wait on CARD_PRODUCT_TAKEDOWN_LIVE",
     expect(restoreTarget({ ...base, canonical_fee_key: "late_payment", fee_name: "Skip-A-Pay Fee", amount: "25.00" })).toBe("other_lending_fee");
     expect(restoreTarget({ ...base, canonical_fee_key: "loan_origination", fee_name: "Loan Extension (Skip-A-Pay)", amount: "25.00" })).toBe("other_lending_fee");
     expect(restoreTarget({ ...base, canonical_fee_key: "atm_non_network", fee_name: "Account Closure ATM/Debit Card - if account closed within 12 months", amount: "10.00" })).toBe("early_closure");
+  });
+});
+
+describe("guard v85: a live box late fee re-files in place to safe_deposit_box (#1916)", () => {
+  const advia = readFileSync(join(process.cwd(), "src/lib/custom-report/__fixtures__/advia-two-column-source.txt"), "utf8");
+  const fee = (id: number, inst: number, doc: number, name: string, amount: string, key = "late_payment") => ({
+    fee_published_id: id, lineage_ref: id + 100000, institution_id: inst, source_document_id: doc,
+    canonical_fee_key: key, fee_name: name, amount, conditions: null, document_nsf_amount: null,
+  });
+  const loanText = "LOAN FEES\nLate Payment Fee | $25.00";
+
+  it("moves Advia's box late fee (142240) with its own name and price, and leaves a loan's late fee", async () => {
+    const box = fee(142240, 7288, 32751, "Late Payment (by credit union", "10.00");
+    const loan = fee(500, 7288, 9, "Late Payment Fee", "25.00");
+    const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = templateText(strings);
+      if (text.includes("to_regclass('public.pipeline_feedback')")) return Promise.resolve([{ ready: true }]);
+      if (text.includes("FROM agent_source_texts")) {
+        return Promise.resolve([{ source_document_id: 32751, normalized_text: advia }, { source_document_id: 9, normalized_text: loanText }]);
+      }
+      if (text.includes("UPDATE published_fee_records") && text.includes("v.from_key")) {
+        return Promise.resolve((values[0] as number[]).map((id, i) => ({ fee_published_id: id, lineage_ref: id + 100000, canonical_fee_key: (values[2] as string[])[i] })));
+      }
+      if (text.includes("rolled_back_at IS NOT NULL")) return Promise.resolve([]);
+      if (text.includes("FROM published_fee_records")) return Promise.resolve([box, loan]);
+      return Promise.resolve([]);
+    });
+    const result = await runHamiltonCategoryGuard({ runId: 85, db: db as unknown as GuardDb });
+    expect(result).toMatchObject({ liveRefiledFees: 1, failingFees: 0, boxSectionReadFailed: false });
+    const move = db.mock.calls.find((call) => templateText(call[0]).includes("v.from_key") && templateText(call[0]).includes("UPDATE"));
+    expect([move?.[1], move?.[2], move?.[3], move?.[5]]).toEqual([[142240], ["late_payment"], ["safe_deposit_box"], ["true"]]);
+    // Its twin is a live box fee at that price with its name or a late word; Advia's $10 key is not.
+    expect(templateText(move?.[0])).toContain("AND (NOT v.late_box");
+  });
+
+  it("judges by name and line only when the stored text cannot be read", async () => {
+    const box = fee(142240, 7288, 32751, "Late Payment (by credit union", "10.00");
+    const db = vi.fn((strings: TemplateStringsArray) => {
+      const text = templateText(strings);
+      if (text.includes("FROM agent_source_texts")) return Promise.reject(new Error("timeout"));
+      if (text.includes("rolled_back_at IS NOT NULL")) return Promise.resolve([]);
+      if (text.includes("FROM published_fee_records")) return Promise.resolve([box]);
+      return Promise.resolve([]);
+    });
+    const result = await runHamiltonCategoryGuard({ runId: 86, db: db as unknown as GuardDb });
+    expect(result).toMatchObject({ liveRefiledFees: 0, failingFees: 0, boxSectionReadFailed: true });
+  });
+
+  it("keeps one box late fee per bank and price, but not a box key fee at that price", () => {
+    const late = { row: fee(9785, 593, 1, "Late Fee: Late Payment Charge", "25.00"), to: "safe_deposit_box" };
+    const copy = { row: fee(35992, 593, 2, "Late Fee: Late Payment Charge", "25.00"), to: "safe_deposit_box" };
+    const key = { row: fee(77, 593, 1, "Replacement Key", "25.00", "card_replacement"), to: "safe_deposit_box" };
+    expect(movesBoxLateFee(late)).toBe(true);
+    expect(movesBoxLateFee(key)).toBe(false);
+    expect(uniqueRefiles([late, copy]).map((r) => r.row.fee_published_id)).toEqual([9785]);
+    const kept = uniqueRefiles([late, key]);
+    expect(kept.map((r) => r.row.fee_published_id)).toEqual([9785, 77]);
+    expect(lateBoxFlags(kept)).toEqual(["true", "false"]);
   });
 });

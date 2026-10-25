@@ -18,6 +18,7 @@
  * The one exception is a dollar amount in a category that is usually a rate (below).
  */
 
+import { boxSectionLateFee } from "@/lib/custom-report/box-section-late-fee";
 import { ATM_ABROAD, COLLECTION_ITEM, foldRetiredCategory, FOREIGN_DEPOSIT_RETURN, FOREIGN_ITEM_RETURN, INCOMING_WIRE, INTERNATIONAL_ATM, IRA_CLOSING, ITEM_COPY, RESEARCH_SPLIT_LIVE, SKIP_A_PAY, SUSTAINED_OVERDRAFT } from "@/lib/fee-fold";
 
 export type CategoryGuardCode = "name_contradicts" | "name_unsupported" | "rate_as_amount" | "schedule_contradicts" | "amount_implausible";
@@ -33,6 +34,11 @@ export interface CategoryGuardContext {
    * (`headingAboveExcerpt`), when the caller read it. Read only for a generic monthly charge.
    */
   heading_above?: string | null;
+  /**
+   * v85 (#1916): the fee's stored text prints it in a safe deposit box section (`boxSectionLateFee`),
+   * when the caller read it (`withBoxSection`). Read only for a late payment.
+   */
+  box_section?: boolean | null;
 }
 
 export type CategoryGuardVerdict =
@@ -971,7 +977,40 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // read under a heading only when every place's heading names another service. Read-only dry run,
 // Oct 25: 23 of the 1,951 live generic monthly charges fail, each read on its stored text; Darwin's verify and
 // Hamilton's live guard (with its takedown restore) read the heading from the stored text.
-export const CATEGORY_GUARD_VERSION = 84;
+// v85 (Oct 25, #1916): a late payment its stored text prints in a safe deposit box
+// section (`box_section`, read by `withBoxSection` with `boxSectionLateFee`: "Safe Deposit Box Fees" /
+// "Late Payment (per month) | $10.00", U.S. Bank 75926; "page | Safe Deposit Box 30 Day" over
+// "Courtesy Pay Coverage | Late Payment (by credit union | $10", Advia FCU 142240) is the box's late
+// rent charge: it fails late_payment and re-files to safe_deposit_box (`refileFromLine`), in place on
+// Hamilton's live guard with its own name and price. Where the bank already has a live box late fee
+// at that price (or a second copy moves in the same sweep), the copy is not moved and goes to the second
+// look. Read-only dry run, Oct 25: of 410 live late_payment fees whose text names a safe deposit box,
+// 299 pass; 111 at 110 institutions fail, 99 re-file in place, 11 have a live box late fee twin (142240
+// beside 139815, ...) and 1 is the second copy at its bank (35992 beside 9785): those 12 come down.
+export const CATEGORY_GUARD_VERSION = 85;
+
+/** v85 (#1916): where a late charge printed in a safe deposit box section is filed. */
+export const BOX_LATE_TARGET = "safe_deposit_box";
+
+function boxSectionReason(name: string): string {
+  return `"${name}" is printed in a safe deposit box section of its schedule: the box's late rent charge, not a loan's late payment`;
+}
+
+/**
+ * v85 (#1916): the guard context with `box_section` read from the fee's stored text, for a late
+ * payment only (every other fee is returned as it is, so no text is needed for it). Hamilton's live
+ * guard and its takedown restore call it with each such fee's stored text.
+ */
+export function withBoxSection<T extends CategoryGuardContext>(
+  canonicalFeeKey: string | null | undefined,
+  feeName: string | null | undefined,
+  context: T,
+  text: string | null | undefined,
+): T {
+  if (canonicalFeeKey !== "late_payment" || !text || !feeName) return context;
+  const amount = context.amount == null || context.amount === "" ? null : Number(context.amount);
+  return { ...context, box_section: boxSectionLateFee(text, feeName, amount != null && Number.isFinite(amount) ? amount : null) };
+}
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -1307,6 +1346,9 @@ export function checkFeeCategory(
   if (billPayReason) return { ok: false, code: billPayReason.code, reason: billPayReason.reason };
   const activityReason = activityChargeOnLine(canonicalFeeKey, context);
   if (activityReason) return { ok: false, code: "schedule_contradicts", reason: activityReason.reason };
+  if (canonicalFeeKey === "late_payment" && context?.box_section === true) {
+    return { ok: false, code: "schedule_contradicts", reason: boxSectionReason(name) };
+  }
   const addOnReason = addOnOnLine(canonicalFeeKey, context);
   if (addOnReason) return { ok: false, code: "schedule_contradicts", reason: addOnReason };
   const serviceReason = otherServiceMonthlyCharge(canonicalFeeKey, name, context);
@@ -1522,6 +1564,10 @@ export function refileFromLine(
   live: boolean = RESEARCH_SPLIT_LIVE,
 ): string | null {
   if (!canonicalFeeKey) return null;
+  // v85 (#1916): a late charge its stored text prints in a safe deposit box section is the box's.
+  if (canonicalFeeKey === "late_payment" && context?.box_section === true) {
+    return checkFeeCategory(BOX_LATE_TARGET, feeName, context).ok ? BOX_LATE_TARGET : null;
+  }
   // v72 (#1788): an overdraft row whose own line charges it for staying overdrawn is the continuous
   // overdraft fee.
   if (sustainedOverdraftOnLine(canonicalFeeKey, context)) {

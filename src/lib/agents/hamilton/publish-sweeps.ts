@@ -399,7 +399,7 @@ export async function sweepsBeforeGuardRequeue(ctx: MovedSweepContext) {
   // a guard change takes effect without anyone starting the repair run by hand.
   const categoryGuard = await sweep(ctx, "categoryGuard", (): Result<typeof runHamiltonCategoryGuard> => ({
     scannedFees: 0, failingFees: 0, rolledBackFees: 0, rejectedVerifiedFees: 0, flaggedFees: 0, awaitingSecondLook: 0,
-    confirmedFeeIds: [], restoredFees: 0, refiledFees: 0, liveRefiledFees: 0, cardProductPending: 0, cardProductPendingSamples: [], headingReadFailed: false,
+    confirmedFeeIds: [], restoredFees: 0, refiledFees: 0, liveRefiledFees: 0, cardProductPending: 0, cardProductPendingSamples: [], headingReadFailed: false, boxSectionReadFailed: false,
     limit: ctx.categoryGuardLimit, dryRun, rollbackBatchId: batchId(ctx), guardVersion: 0, byCode: {}, byCategory: {}, failures: [],
   }), () => runHamiltonCategoryGuard({
     runId,

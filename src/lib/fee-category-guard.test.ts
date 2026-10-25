@@ -1,8 +1,10 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { amountEnvelopeFor } from "@/lib/agents/darwin/envelopes";
 
-import { borrowedDirection, cardProductMisfile, checkFeeCategory, CLUB_WITHDRAWAL, CLUB_WITHDRAWAL_LIVE, genericMonthlyCharge, GUARDED_CATEGORIES, headingAboveExcerpt, NON_CUSTOMER_CASHIERS_CHECK_LIVE, refileCategory, refileFromLine, withHeadingAbove } from "./fee-category-guard";
+import { BOX_LATE_TARGET, borrowedDirection, cardProductMisfile, checkFeeCategory, CLUB_WITHDRAWAL, CLUB_WITHDRAWAL_LIVE, genericMonthlyCharge, GUARDED_CATEGORIES, headingAboveExcerpt, NON_CUSTOMER_CASHIERS_CHECK_LIVE, refileCategory, refileFromLine, withBoxSection, withHeadingAbove, type CategoryGuardContext } from "./fee-category-guard";
 
 describe("checkFeeCategory", () => {
   it("passes keys it does not guard", () => {
@@ -2440,5 +2442,38 @@ describe("guard v84: another service's monthly charge filed as monthly maintenan
     const context = { amount: 5, conditions: note("Monthly fee | $5.00") };
     expect(withHeadingAbove("monthly_maintenance", "Monthly fee", context, null)).toBe(context);
     expect(withHeadingAbove("overdraft", "Overdraft fee", context, "Positive Pay\nMonthly fee | $5.00")).toBe(context);
+  });
+});
+
+describe("guard v85: a late charge in a safe deposit box section is the box's (#1916)", () => {
+  // Advia FCU doc 32751 (live 142240): "page | Safe Deposit Box 30 Day" over
+  // "Courtesy Pay Coverage | Late Payment (by credit union | $10".
+  const advia = readFileSync(join(process.cwd(), "src/lib/custom-report/__fixtures__/advia-two-column-source.txt"), "utf8");
+  const name = "Late Payment (by credit union";
+
+  it("reads the section from the stored text and re-files the fee to the box", () => {
+    const context = withBoxSection<CategoryGuardContext>("late_payment", name, { amount: "10.00", conditions: null }, advia);
+    expect(context.box_section).toBe(true);
+    const verdict = checkFeeCategory("late_payment", name, context);
+    expect(verdict).toMatchObject({ ok: false, code: "schedule_contradicts" });
+    expect(refileFromLine("late_payment", name, context)).toBe(BOX_LATE_TARGET);
+    expect(checkFeeCategory(BOX_LATE_TARGET, name, context).ok).toBe(true);
+  });
+
+  it("keeps a loan's late fee printed after the box table a late payment", () => {
+    const text = ["SAFE DEPOSIT BOX FEES", "Drilling Charge | $300.00", "Late Payment after 30 days | $20.00", "LOAN FEES", "Late Payment Fee | $25.00"].join("\n");
+    const loan = withBoxSection<CategoryGuardContext>("late_payment", "Late Payment Fee", { amount: 25 }, text);
+    expect(loan.box_section).toBe(false);
+    expect(checkFeeCategory("late_payment", "Late Payment Fee", loan).ok).toBe(true);
+    expect(refileFromLine("late_payment", "Late Payment Fee", loan)).toBeNull();
+    const box = withBoxSection("late_payment", "Late Payment after 30 days", { amount: 20 }, text);
+    expect(refileFromLine("late_payment", "Late Payment after 30 days", box)).toBe(BOX_LATE_TARGET);
+  });
+
+  it("reads nothing without the stored text or for another type, as before v85", () => {
+    const context = { amount: 10, conditions: null };
+    expect(withBoxSection("late_payment", name, context, null)).toBe(context);
+    expect(withBoxSection("stop_payment", "Stop Payment", context, advia)).toBe(context);
+    expect(checkFeeCategory("late_payment", name, context).ok).toBe(true);
   });
 });

@@ -526,6 +526,8 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // additional-card names.
     // v84 (Oct 25, #1788): a generic monthly charge under another service's heading or cell fails
     // monthly maintenance (Positive Pay, ACH, bill pay, cards, paper statements).
+    // v85 (Oct 25, #1916): a late payment printed in a safe deposit box section re-files live to
+    // safe_deposit_box (99 of 111 on the Oct 25 dry run; 12 duplicates of a live box late fee come down).
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",
