@@ -66,12 +66,14 @@ function record(value: unknown): Record<string, unknown> | null {
 const positiveInt = (value: unknown): number | null =>
   typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : null;
 
-function profileFact(institutionId: number, fee: Record<string, unknown>, index: number): HamiltonEvidenceFact | null {
+function profileFact(institutionId: number, fee: Record<string, unknown>, index: number, sharedSourceUrl: unknown = null): HamiltonEvidenceFact | null {
   const amount = fee.amount;
   if (typeof amount !== "number" || !Number.isFinite(amount) || amount < 0) return null;
   const recordId = positiveInt(fee.record_id);
   const documentId = positiveInt(fee.source_document_id);
   const text = (key: string) => (typeof fee[key] === "string" && (fee[key] as string).trim() ? (fee[key] as string) : null);
+  // Tool-output compaction moves a source URL every row shares to `fees.shared_source_url` (#1077, defect 9).
+  const url = text("source_url") ?? (typeof sharedSourceUrl === "string" && sharedSourceUrl.trim() ? sharedSourceUrl : null);
   return {
     id: recordId !== null ? `fee:published:${recordId}` : `fee:profile:${institutionId}:${index}`,
     kind: "observed",
@@ -96,7 +98,7 @@ function profileFact(institutionId: number, fee: Record<string, unknown>, index:
       table: "published_fee_catalog",
       recordId,
       sourceDocumentIds: documentId !== null ? [documentId] : [],
-      urls: text("source_url") ? [text("source_url") as string] : [],
+      urls: url ? [url] : [],
       asOf: null,
       verificationEventId: null,
     },
@@ -146,7 +148,7 @@ function feeFactsAndNames(toolOutputs: readonly unknown[]): { facts: HamiltonEvi
       const rows = [...(Array.isArray(fees.verified) ? fees.verified : []), ...(Array.isArray(fees.provisional) ? fees.provisional : [])];
       rows.forEach((row, index) => {
         const fee = record(row);
-        const fact = fee ? profileFact(profileId, fee, index) : null;
+        const fact = fee ? profileFact(profileId, fee, index, fees.shared_source_url) : null;
         if (fact && !facts.has(fact.id)) facts.set(fact.id, fact);
       });
       return;

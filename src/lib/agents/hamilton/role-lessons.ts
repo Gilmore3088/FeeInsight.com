@@ -228,6 +228,16 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     since: "2026-10-25",
   },
   {
+    id: "issue-1896",
+    agent: "hamilton",
+    stage: "analysis",
+    lesson: "When a reader tests a price, place it among peers' published fees and show no fee income figure until the bank supplies its own yearly volume; never stand in an estimate, a per 1,000 items figure or a volume derived from a filing. When the bank's figures are there, list every assumption beside the result and call it arithmetic on their figures, never a forecast.",
+    why: "James's Hamilton audit (Oct 18) found Try a price could read as a revenue forecast: it showed fee income per 1,000 items before the bank gave any volume and offered a volume worked out from the call report's income line, neither of which the bank supplied.",
+    evidence: { issues: [1896], prs: [], files: ["src/lib/hamilton/fee-scenario.ts", "src/app/pro/(hamilton)/simulate/page.tsx"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
+  {
     id: "issue-1726-golden-acceptance",
     agent: "hamilton",
     stage: "analysis",

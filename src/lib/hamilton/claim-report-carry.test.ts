@@ -6,12 +6,12 @@
  */
 import { describe, expect, it } from "vitest";
 import { filingFactId } from "./claim-evidence";
-import { HAMILTON_EVIDENCE_CONTRACT_VERSION, type HamiltonEvidenceBundle, type HamiltonEvidenceFact } from "./evidence-contract";
+import { HAMILTON_EVIDENCE_CONTRACT_VERSION, type HamiltonDerivedFact, type HamiltonEvidenceBundle, type HamiltonEvidenceFact } from "./evidence-contract";
 import { reportSectionGateShadow } from "./generate";
 import { bindNarrative, type NarrativeBinding } from "./narrative-bound";
 import { readGateShadowRecord } from "./output-gate-shadow";
 import { reportFindingReadingEnabled, savedAnswerFinding } from "./report-saved-finding";
-import { bindingFromClaims, readSavedClaims, SAVED_CLAIM_MAX_FACTS, savedClaimsFrom } from "./saved-claims";
+import { bindingFromClaims, readSavedClaims, SAVED_CLAIM_MAX_FACTS, SAVED_CLAIM_MAX_IDS, savedClaimsFrom } from "./saved-claims";
 import type { AnalyzeResponse } from "./types";
 
 const RESEARCH = 2945;
@@ -71,7 +71,8 @@ describe("saved claims (#1077 step 6)", () => {
     expect(claims.claims.find((c) => c.text === reading)?.outcome).toBe("reading");
     // Only cited facts are kept, with value and dates: Bank B's filing is not cited by a supported sentence.
     expect(claims.facts).toEqual([{ id: OWN.id, kind: "observed", value: 1_100_000, unit: "usd", institutionId: RESEARCH, feeCategory: null,
-      metric: "service_charge_income", reportingDate: "2026-06-30", periodBasis: "standalone_quarter", asOf: "2026-06-30" }]);
+      metric: "service_charge_income", reportingDate: "2026-06-30", periodBasis: "standalone_quarter", asOf: "2026-06-30",
+      source: { table: "institution_financial_records", recordId: null, recordKey: OWN.id, evidenceClass: "filing", sourceDocumentIds: [] } }]);
     expect(readSavedClaims(JSON.parse(JSON.stringify(claims)))).toEqual(claims);
     // The claims describe the binding they came from.
     const back = bindingFromClaims(claims);
@@ -95,6 +96,67 @@ describe("saved claims (#1077 step 6)", () => {
     const set = savedClaimsFrom(binding, [{ ...evidence, facts }])!;
     expect(set.facts).toHaveLength(SAVED_CLAIM_MAX_FACTS);
     expect(set.factsTruncated).toBe(true);
+  });
+
+  it("keep every supported sentence's first fact before any sentence's second, so the bound never drops a late sentence's only fact", () => {
+    const many = Array.from({ length: SAVED_CLAIM_MAX_FACTS + 5 }, (_, i) => ({ ...OWN, id: `${OWN.id}:${i}` }));
+    const late = { ...OTHER, id: `${OTHER.id}:late` };
+    const binding: NarrativeBinding = { version: 1, interpretation: [], omitted: [], limitations: [],
+      supported: [{ text: supported, factIds: many.map((f) => f.id) }, { text: "Bank B's was $2.3 million.", factIds: [late.id] }] };
+    const set = savedClaimsFrom(binding, [{ ...evidence, facts: [...many, late] }])!;
+    expect(set.facts).toHaveLength(SAVED_CLAIM_MAX_FACTS);
+    expect(set.facts.map((f) => f.id).slice(0, 2)).toEqual([many[0].id, late.id]);
+    expect(set.factsTruncated).toBe(true);
+  });
+});
+
+describe("saved claim facts keep their source identity (#1077, Cycle A trace defect 6)", () => {
+  const fee: HamiltonEvidenceFact = {
+    id: "fee:published:9", kind: "observed",
+    scope: { institutionId: RESEARCH, feeCategory: "overdraft", product: "Overdraft fee", reportingDate: null, effectiveDate: null, accountApplicability: "unknown" },
+    value: 37, unit: "usd", currency: "USD", frequency: "per item", conditions: null, status: "published",
+    source: { label: "Published fee catalog", table: "published_fee_catalog", recordId: 9,
+      sourceDocumentIds: Array.from({ length: SAVED_CLAIM_MAX_IDS + 3 }, (_, i) => 77 + i),
+      urls: ["https://example.test/schedule-2026.pdf", "https://example.test/other.pdf"], asOf: "2026-09-01",
+      documentContentHash: "sha256:abc123", retrievedAt: "2026-09-02T10:00:00Z", lastCheckedAt: null, verificationEventId: "evt-5" },
+  };
+  const median: HamiltonDerivedFact = {
+    id: "derived:peer_median:2945:overdraft", kind: "derived",
+    scope: { institutionId: null, feeCategory: "overdraft", product: null, reportingDate: null, effectiveDate: null, accountApplicability: "consumer" },
+    value: 30, unit: "usd", currency: "USD", status: "derived",
+    derivation: { kind: "peer_median", inputFactIds: [fee.id, "fee:published:404"], denominatorFactId: null, formula: "median of published peer amounts", rounding: "the nearest cent" },
+  };
+  const bundle: HamiltonEvidenceBundle = { version: HAMILTON_EVIDENCE_CONTRACT_VERSION, generatedAt: new Date(0).toISOString(), facts: [fee], derivations: [median], limitations: [] };
+  const binding: NarrativeBinding = { version: 1, interpretation: [], omitted: [], limitations: [],
+    supported: [{ text: "Peers charge a median $30.", factIds: [median.id] }] };
+
+  it("save the record, document ids (bounded), first URL, content hash and verification event of an observed fact", () => {
+    const set = savedClaimsFrom({ ...binding, supported: [{ text: "Research CU charges $37.", factIds: [fee.id] }] }, [bundle])!;
+    expect(set.facts[0].source).toEqual({
+      table: "published_fee_catalog", recordId: 9, sourceDocumentIds: Array.from({ length: SAVED_CLAIM_MAX_IDS }, (_, i) => 77 + i),
+      sourceDocumentIdsTruncated: true, url: "https://example.test/schedule-2026.pdf", documentContentHash: "sha256:abc123",
+      retrievedAt: "2026-09-02T10:00:00Z", verificationEventId: "evt-5" });
+    expect(readSavedClaims(JSON.parse(JSON.stringify(set)))).toEqual(set);
+  });
+
+  it("save a calculated fact's input ids, and its inputs the evidence holds after the cited facts", () => {
+    const set = savedClaimsFrom(binding, [bundle])!;
+    expect(set.facts.map((f) => f.id)).toEqual([median.id, fee.id]);
+    expect(set.facts[0]).toMatchObject({ inputFactIds: [fee.id, "fee:published:404"] });
+    expect(set.facts[0]).not.toHaveProperty("source");
+    expect(set.facts[1].source?.sourceDocumentIds[0]).toBe(77);
+    expect(set.factsTruncated).toBe(false);
+    expect(readSavedClaims(JSON.parse(JSON.stringify(set)))).toEqual(set);
+  });
+
+  it("read claims saved before the source fields, and a malformed source, without them", () => {
+    const set = savedClaimsFrom(binding, [bundle])!;
+    const legacy = JSON.parse(JSON.stringify({ ...set, facts: set.facts.map(({ source: _s, inputFactIds: _i, ...fact }) => fact) }));
+    const read = readSavedClaims(legacy)!;
+    expect(read.facts).toHaveLength(2);
+    expect(read.facts.every((f) => !("source" in f) && !("inputFactIds" in f))).toBe(true);
+    const odd = readSavedClaims({ ...legacy, facts: [{ ...legacy.facts[1], source: { sourceDocumentIds: ["x", -1, 5], url: 4, table: "t".repeat(600) } }] })!;
+    expect(odd.facts[0].source).toEqual({ table: null, recordId: null, sourceDocumentIds: [5] });
   });
 });
 

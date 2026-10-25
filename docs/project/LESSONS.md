@@ -213,7 +213,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-296 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+300 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
 ### Extraction and fee reading (45)
 
@@ -276,8 +276,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A provider refusal inside a streamed response never reaches the route's catch; map it in the stream's `onError`. — [finding](findings/2026-10-09-provider-limit-blank-answers.md) — Guard: `src/lib/ai-provider.test.ts` (+2 more)
 - 2026-10-09 — The Console usage limit did not trip the provider stop, and the verdict score starved. — [finding](findings/2026-10-09-api-usage-limit-did-not-trip-provider-stop.md) — Guard: `src/lib/ai-provider-usage.test.ts` (+1 more)
 
-### Categorisation and audience (21)
+### Categorisation and audience (22)
 
+- 2026-10-25 — A fee's section heading, and what its name names, decide its category: a return charge under a foreign check or collection heading is not NSF, and a box-named late fee is the box's. — [finding](findings/2026-10-25-section-heading-and-destination-decide-category.md) — Guard: `collection-section-return.test.ts`, guard v90 tests; Agent lesson: `darwin/issue-1912-section-and-name-decide-category`, `knox/issue-1912-heading-decides-a-plain-return`
 - 2026-10-19 — Applicability needs both the final existing decision and positive current source facts; an early negative-key exit cannot certify that no affected facts exist. — [finding](findings/2026-10-19-stale-nonwire-international-verification.md) — Guard: Preserve the full Family PDF OLD-red and green pure controls, actual common...
 - 2026-10-19 — An exclusive audience on the fee's own price clause (#2342). — [finding](findings/2026-10-19-own-price-audience.md) — Guard: `own-price-audience.test.ts` (+2 more)
 - 2026-10-19 — Re-extract the actual policy unit, retain every qualifying scope clause, and inspect downstream price selection before making a restricted price eligible. — [finding](findings/2026-10-19-nsf-policy-price-scope.md) — Guard: `nsf-policy-prices.test.ts` (+5 more)
@@ -374,8 +375,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A blank HTML page from a bank that blocks our fetcher is a wall, not a script page. — [finding](findings/2026-10-09-hand-found-bot-challenge-read-as-js.md) — Agent lesson: magellan/pr-850-held-means-readable
 - 2026-10-09 — Two fee links our fetcher can't open but a Mac can. — [finding](findings/2026-10-09-fetcher-refused-where-a-browser-is-not.md) — Agent lesson: magellan/pr-1293-plain-fetch-outcome
 
-### Public and regulatory data (13)
+### Public and regulatory data (14)
 
+- 2026-10-25 — A regulator identifier is today's, not history's: when a bank merges into a different charter, the FDIC cert and the Fed RSSD can come from different predecessors; attach past filings by the cert that filed as that RSSD that quarter (FFIEC POR), not by today's cert (#2625). — [finding](findings/2026-10-25-merger-into-other-charter-splits-history.md) — Agent lesson: magellan/issue-2625-identifier-is-todays-not-historys (+1 more)
 - 2026-10-25 — When two feeds of the same filing disagree, first ask whether they hold different versions of it, and keep the filing's own last-updated time so the check can say which feed is newer; compare years to date before quarters (#1925). — [finding](findings/2026-10-25-feeds-hold-different-filing-versions.md) — Agent lesson: deming/issue-1925-filing-version-skew (+1 more)
 - 2026-10-25 — A one-off audit says nothing about next quarter's load: shown financials are now reconciled with the stored FFIEC and NCUA filing lines every day, with known causes counted apart (T3, #1925). — [finding](findings/2026-10-25-financials-reconciled-once-not-daily.md) — Guard: `src/lib/agents/deming/filings-reconcile.test.ts`
 - 2026-10-25 — A bank's year-to-date line cannot be differenced into quarters without knowing about mergers and mid-year restarts; where BankFind's merger-adjusted quarter disagrees, show it (#2025). — [finding](findings/2026-10-25-bank-quarters-differenced-across-mergers.md) — Guard: `src/app/(public)/institution/[id]/quarterly-ledger.test.ts`
@@ -459,8 +461,10 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — Sign out on the account page and admin used Server Actions that a redeploy breaks. — [finding](findings/2026-10-09-sign-out-server-action.md) — Guard: `src/app/api/auth/logout/route.test.ts:30`
 - 2026-10-09 — A refunded report kept its paid status and its private link. — [finding](findings/2026-10-09-report-refund-not-handled.md) — Guard: `src/lib/stripe-webhook.test.ts` (+1 more)
 
-### Hamilton workspace (33)
+### Hamilton workspace (35)
 
+- 2026-10-25 — Shrink what an answer does not rest on first: tool-output compaction now trims a profile's fee rows to their record, amount, category and name, drops conditions and halves its other lists (keeping five quarters of filing history) before any fee row, keeps spotlight and core fee types when rows must go, never cuts a profile to text, and marks `_fee_rows_complete` so saved fee refs survive a trim. — [finding](findings/2026-10-25-compaction-keeps-records.md) — Guard: `src/lib/research/tool-output.test.ts`, `src/lib/saved-output-corrections.test.ts`
+- 2026-10-25 — A save that a re-check or correction reads keeps the identity the evidence carried, not only the value: saved claim facts now keep their source table, record, document ids, URL, content hash and verification event (bounded), a calculated fact its input ids, and the 40-fact bound keeps every supported sentence's first fact first. — [finding](findings/2026-10-25-saved-claims-document-identity.md) — Guard: `src/lib/hamilton/claim-report-carry.test.ts`, `src/lib/hamilton/written-answer-sources.pdf.test.tsx`
 - 2026-10-25 — A saved title is a headline with no label, so it comes only from a sentence the binding supports or one that states no figure, else the question; a browser-sent title with a figure is replaced by the prompt. — [finding](findings/2026-10-25-saved-title-reading.md) — Guard: `src/lib/hamilton/saved-title.test.ts`, `src/app/pro/(hamilton)/analyze/actions.h01-guards.test.ts`
 - 2026-10-25 — An export that prints where a figure came from reads every record the save keeps: a written answer's PDF and board brief now list the record or filing behind each supported sentence, from its binding's fact ids and saved claims, and none for a reading, a left-out sentence or a failed-verdict answer. — [finding](findings/2026-10-25-written-answer-sources.md) — Guard: `src/lib/hamilton/written-answer-sources.pdf.test.tsx`
 - 2026-10-25 — A saved output is found by a fee correction only through the shapes its ref collector knows: when a read gains a new record shape, teach the collector too, and record every row the reads returned, as a storyline does. — [finding](findings/2026-10-25-written-answer-fee-refs.md) — Guard: `src/lib/saved-output-corrections.test.ts`, `src/app/api/research/hamilton/route.answer-gate.test.ts`
@@ -557,19 +561,19 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (206 in all).
+counts as of this index (211 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
 | atlas | 7 | [`src/lib/agents/atlas/role-lessons.ts`](../../src/lib/agents/atlas/role-lessons.ts) |
-| magellan | 19 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
+| magellan | 20 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
 | hoovie | 10 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
 | rosetta | 9 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
-| knox | 59 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
-| darwin | 29 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
+| knox | 60 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
+| darwin | 30 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 40 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
-| hamilton | 21 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
-| deming | 12 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
+| hamilton | 22 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
+| deming | 13 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
 
 ## Before 2026-10-10
 

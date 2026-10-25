@@ -628,7 +628,7 @@ items wait.
 | Step | Partition | Writes |
 | --- | --- | --- |
 | `registry-fdic-universe` | `current` (weekly) | `institution_sources`: identity, holding company, regulator; adds charters, marks closed/merged inactive |
-| `registry-fdic-financials` | quarter `2026Q2` | `institution_financial_records` (`fdic`, thousands, quarterly) |
+| `registry-fdic-financials` | quarter `2026Q2` | `institution_financial_records` (`fdic`, thousands, quarterly); a quarter attaches by the certificate the stored FFIEC POR row (`filing_fdic_cert`) says filed as the bank's RSSD, so a predecessor charter's quarter is the bank's and the small surviving charter's own quarter stays unmatched (`raw_json.attached_via` / `detached_via` = `ffiec_por_cert`); by today's certificate where no POR row is stored (#2625) |
 | `registry-ncua-financials` | quarter | `institution_financial_records` (`ncua`, thousands, income YTD); newest quarter also syncs the credit-union universe |
 | `registry-fdic-sod` | year | `institution_branch_deposits` |
 | `registry-ncua-branches` | newest quarter only | `credit_union_branches` (NCUA branch file: addresses, no coordinates or deposits) |
@@ -699,7 +699,8 @@ fails a PR that changes one of these constants without updating its line here (#
 | `CENSUS_ACS_PARSER_VERSION` | — | v3 | `magellan/registry/census-acs.ts` |
 | `CFPB_PARSER_VERSION` | — | v5 | `magellan/registry/cfpb.ts` |
 | `FDIC_HISTORY_PARSER_VERSION` | — | v1 | `magellan/registry/fdic-history.ts` |
-| `FFIEC_CALL_DETAIL_PARSER_VERSION` | — | v5 (also stores each bank's POR "Last Date/Time Submission Updated On" as item `filing_last_updated`, epoch seconds, kept out of the lines, #1925; v4 adds deposit interest expense, cost lines, total deposits and assets; v3 reads RC-O account-size labels as filed; v2 matches the bulk file's abbreviated descriptions; reads split "(1 of 2)" schedules) | `magellan/registry/ffiec-call-detail.ts` |
+| `FDIC_FINANCIALS_PARSER_VERSION` | — | v2 (attaches a BankFind quarter by the certificate the FFIEC POR file says filed as the bank's RSSD that quarter, so a bank that merged into a different charter keeps its own history; recorded on each partition, not a replay selector: the FFIEC loader makes affected quarters due, #2625) | `magellan/registry/fdic-financials.ts` |
+| `FFIEC_CALL_DETAIL_PARSER_VERSION` | — | v6 (also stores each bank's POR "FDIC Certificate Number" as item `filing_fdic_cert` and makes the FDIC quarter due when a bank filed under a certificate that is not today's, #2625; v5 also stores each bank's POR "Last Date/Time Submission Updated On" as item `filing_last_updated`, epoch seconds, kept out of the lines, #1925; v4 adds deposit interest expense, cost lines, total deposits and assets; v3 reads RC-O account-size labels as filed; v2 matches the bulk file's abbreviated descriptions; reads split "(1 of 2)" schedules) | `magellan/registry/ffiec-call-detail.ts` |
 | `NCUA_EXTRAS_PARSER_VERSION` | — | v3 (adds dividend expense and share mix; v2 reads AcctDesc.txt, not the trade-names file) | `magellan/registry/ncua-extras.ts` |
 | `FED_INDICATORS_PARSER_VERSION` | — | v2 (each indicator from BLS, BEA or the Fed Board, not FRED; 2026-10-18) | `magellan/registry/fed.ts` (registry-fred) |
 | `ECONOMY_PARSER_VERSION` | — | v1 | `magellan/registry/economy.ts` (13 economy sources; remittances, branch tracts and BEA have their own) |
