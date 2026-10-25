@@ -52,6 +52,8 @@ hides them by matching the binding's `omitted[].text` (`applyNarrativeBinding` i
 needs the server to write the shown text in place of the replay, which is the streaming spike in
 `2026-10-25-claim-repair-partial.md`; until then the browser gets the left-out sentences in both the
 text and the binding, and a non-held stream (no mode) streams them before any verdict.
+(Update: the held streamed Analyze answer is fixed in `2026-10-25-streamed-omitted-text.md`; a
+stream that is not held is still as described here.)
 
 **Provider calls:** none added. **Golden set:** unchanged.
 
