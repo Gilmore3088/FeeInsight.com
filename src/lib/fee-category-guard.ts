@@ -229,8 +229,15 @@ const CARD_SERVICE_ELSEWHERE = String.raw`\bbill payer\b|\baccount clos\w*`;
  * balance_inquiry is retired and folds into this type (v25). v71: verifying an ATM transaction
  * ("Verification of ATM Transaction" $3, 96092) is research. A denied ATM transaction ("ATM
  * Denials", 12 live rows) is left for James: it may be the network ATM fee for a failed attempt.
+ * v83 (#1690, held by Darwin's peer check): research or an investigation that lists ATM items
+ * ("Account Investigation - Share / ATM / ACH (per item after 60 days)" $10, raw 750417) and ATM
+ * photos ("ATM Photos at Credit Union" $10, raw 790236) are account research (`ATM_RESEARCH`); a
+ * transaction that overdraws a share ("ATM Negative Share Transaction" $10, raw 790212) is a
+ * negative balance; and an additional card ("Additional ATM/Debit Card" $10, raw 750400; "ATM/Debit:
+ * Each Additional Card") prices the card. "Each additional ATM withdrawal" names no card and stays.
  */
-const NOT_ATM_USE = String.raw`\bdisput\w*|\b(?:photo ?)?cop(?:y|ies)\b|\bnegative\s+balance\b|\btreasurer|\bcashier|\bofficial\s+checks?\b|\btemporary\s+checks?\b|\bcut[- ]?off\s+times?\b|\blost\b|\bstolen\b|\b(?:un)?block(?:ed)?\s+cards?\b|\breplac|\bverification of\b`;
+const ATM_RESEARCH = String.raw`\binvestigat\w*|\bresearch\w*|\bphotos?\b`;
+const NOT_ATM_USE = String.raw`${ATM_RESEARCH}|\bnegative\s+(?:share|savings|account)\b|\badditional\s+(?:(?:atm|debit|visa|check|mastercard)\s*\/?\s*)*cards?\b|\bdisput\w*|\b(?:photo ?)?cop(?:y|ies)\b|\bnegative\s+balance\b|\btreasurer|\bcashier|\bofficial\s+checks?\b|\btemporary\s+checks?\b|\bcut[- ]?off\s+times?\b|\blost\b|\bstolen\b|\b(?:un)?block(?:ed)?\s+cards?\b|\breplac|\bverification of\b`;
 
 /**
  * v70 (#1765, card-product misfiles; #1690): a fee for the card itself is not a fee for using another
@@ -907,7 +914,12 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // v81 (Oct 22): "Returned Check Deposit" / "Returned Item Deposit" names a returned deposited item
 // (the shadow lab's answer keys, #2536: $5 and $32 refused before). It only admits names; no fee that
 // passes today fails. Rows rejected as category_mismatch under an older guard are judged once more.
-export const CATEGORY_GUARD_VERSION = 81;
+// v82 is #1662's.
+// v83 (Oct 25, #1690): the non-network ATM fee refuses research, investigation and photo names
+// (re-filed to account research on Darwin's path), an ATM transaction that overdraws a share, and an
+// additional card (`NOT_ATM_USE`). Read-only dry run, Oct 25: 4 of 2,290 live atm_non_network fees
+// fail and go to the second look; the live sweep's restore list is unchanged.
+export const CATEGORY_GUARD_VERSION = 83;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -987,6 +999,11 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
   // v69: an ATM dispute or a copy of a card sale is research.
   // v71: verifying an ATM transaction is research too (96092, #1773).
   { from: "atm_non_network", to: "account_research", when: /\bdisput|\b(?:photo ?)?cop(?:y|ies) of\b|\bverification of\b/i },
+  // v83 (#1690): an investigation or research listing ATM items, and ATM photos, are research too.
+  // A card's own research or film fee ("ATM Card Research/Film Fee" $75, Rally FCU, keyed as the
+  // retired card dispute type) is not re-filed: the fold gives a card dispute without a dispute word
+  // no home (`card_dispute` in fee-fold.ts), so it fails and is not read.
+  { from: "atm_non_network", to: "account_research", when: new RegExp(ATM_RESEARCH, "i"), unless: /\bcards?\b/i },
   // v70: an ATM-named bill payer service is bill pay, and a card charge on closing the account early
   // is an early closure (`CARD_SERVICE_ELSEWHERE`).
   { from: "atm_non_network", to: "bill_pay", when: /\bbill payer\b/i },

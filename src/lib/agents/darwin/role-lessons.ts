@@ -206,4 +206,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-1690-atm-word-is-not-atm-use",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "A name that says ATM is the non-network ATM fee only when it prices using another network's machine. An investigation or research that lists ATM items, ATM photos, an ATM transaction that overdraws a share, and an additional ATM/debit card are other fees: research goes to account research, the rest are refused. When a peer check holds an outlier, read its category before its price.",
+    why: "Darwin's peer check held six $10 atm_non_network fees as price outliers (Oct 16); every one was filed in the wrong category because the guard passed any name with ATM in it. Guard v83 found 4 more live (two additional cards, a negative share transaction, a checking account's photo benefit read as a $5 fee).",
+    evidence: { issues: [1690], prs: [], files: ["src/lib/fee-category-guard.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];

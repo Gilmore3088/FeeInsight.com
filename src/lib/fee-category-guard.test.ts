@@ -2246,3 +2246,46 @@ describe("guard v80: loan, PIN, non-customer, ATM table and band-floor rows (#19
     expect(withLine("monthly_maintenance", "Monthly Maintenance Fee .No Charge", 0, "$0 - $1,500.00 | Monthly Maintenance Fee…...No Charge").ok).toBe(true);
   });
 });
+
+describe("guard v83: other card and ATM services filed as the non-network ATM fee (#1690)", () => {
+  const atm = (name: string, amount: number = 10) => checkFeeCategory("atm_non_network", name, { amount });
+
+  it("re-files an account investigation listing ATM items to account research (raw 750417)", () => {
+    const name = "Account Investigation - Share / ATM / ACH (per item after 60 days)";
+    expect(atm(name)).toMatchObject({ ok: false, code: "name_contradicts" });
+    expect(refileCategory("atm_non_network", name)).toBe("account_research");
+  });
+
+  it("re-files ATM photos to account research (raw 790236)", () => {
+    expect(atm("ATM Photos at Credit Union").ok).toBe(false);
+    expect(refileCategory("atm_non_network", "ATM Photos at Credit Union")).toBe("account_research");
+    expect(atm("ATM Research Fee").ok).toBe(false);
+  });
+
+  it("refuses a card's research or film fee without re-filing it (the retired card dispute type)", () => {
+    expect(atm("ATM Card Research/Film Fee", 75).ok).toBe(false);
+    expect(refileCategory("atm_non_network", "ATM Card Research/Film Fee")).toBe("atm_non_network");
+  });
+
+  it("refuses an ATM transaction that overdraws a share (raw 790212)", () => {
+    expect(atm("ATM Negative Share Transaction")).toMatchObject({ ok: false, code: "name_contradicts" });
+    expect(refileCategory("atm_non_network", "ATM Negative Share Transaction")).toBe("atm_non_network");
+  });
+
+  it("refuses an additional card (raw 750400; live 82585, 100991)", () => {
+    expect(atm("Additional ATM/Debit Card").ok).toBe(false);
+    expect(atm("ATM/Debit: Each Additional Card", 5).ok).toBe(false);
+  });
+
+  it("still refuses card issuance (raw 691530, v70)", () => {
+    expect(atm("Card Services ATM Card Issuance Service Charge: Charges").ok).toBe(false);
+  });
+
+  it("keeps additional ATM transactions and withdrawals, which name no card", () => {
+    expect(atm("Each additional ATM transaction over six (6) per month", 2).ok).toBe(true);
+    expect(atm("ATM withdrawals per month, each additional withdrawal", 1).ok).toBe(true);
+    expect(atm("Other ATM Locations: (Additional Withdrawals)", 1.5).ok).toBe(true);
+    expect(atm("Additional charge per transaction if ATM transaction is done outside our no-surcharge ATM network", 2).ok).toBe(true);
+    expect(atm("Foreign ATM Withdrawal", 2).ok).toBe(true);
+  });
+});
