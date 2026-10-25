@@ -119,6 +119,17 @@ institutions remains the only human launch workflow.
   `error_class` ledger row, opened the first day it is seen and updated with each later day's
   counts, date, examples and a GitHub-ready title and body. The morning brief lists the largest classes, so the data lane works classes, not fees.
 
+## Planted error loop (#2065)
+
+- `planted-errors.ts` and its test plant one of each error class the 2026-10-19 learning audit
+  named (wrong document, lost text, a limit read as a fee, the wrong category, the wrong audience,
+  a duplicate, a missed fee) and walk each through the loop with the real code: detected by the
+  check that runs on live fees, recorded at the stage that caused it, read by a registered reader
+  file of the owning agent that names the rows, re-run through the owning step, and judged fixed
+  by the daily re-check. A link the loop lacks is listed in `KNOWN_GAPS` with the issue that owns
+  it; CI fails on an unlisted broken link and on a listed gap that now holds. Each new error class
+  gets a planted case. Pure, no database.
+
 ## Did the change work (#1106)
 
 - `change-outcomes.ts`: the `deming-change-outcomes` step, last in Atlas's daily scoreboard run.

@@ -97,4 +97,14 @@ export const DEMING_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-2065-plant-errors-walk-the-loop",
+    agent: "deming",
+    stage: "loop proof",
+    lesson: "Prove the error loop by planting each error class and walking it through every link with the real code: the live check detects it, the row it writes names the stage that caused it, a file of the owning agent reads that row, a fix to that step reaches the bank again, and the daily re-check tells the corrected fee from the planted one. List every link that does not hold with the issue that owns it, and make the list fail when a gap closes, so the gap count only goes down. Never call a loop closed from reading the code.",
+    why: "James asked how we know no gaps are left, and reading the code could not say. Planting the seven audit classes found eleven missing links: only the wrong category and lost text close end to end; duplicates and missed fees teach Knox nothing, and no daily re-check confirms a wrong document, the wrong audience or a duplicate is gone after a fix.",
+    evidence: { issues: [2065], prs: [2579], files: ["src/lib/agents/deming/planted-errors.ts", "src/lib/agents/deming/planted-errors.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];
