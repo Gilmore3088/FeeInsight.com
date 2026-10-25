@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
 
 import { PUBLISHER_STEP_KEYS } from "@/lib/agents/gutenberg/names";
+import { GLYPH_REPAIR_STRATEGY } from "./rosetta/glyph-repair";
 
 import {
   atlasRules,
@@ -18,6 +19,7 @@ import {
   readHamiltonNumbers,
   readHoovieNumbers,
   readMagellanNumbers,
+  readRosettaNumbers,
   summarizeAgentHealth,
   type HealthNumbers,
 } from "./agent-health";
@@ -141,6 +143,21 @@ describe("agent health", () => {
     expect(hoovieRules({ stepsCompleted: 12, stepsFailed: 1, spendUsd: 0 })).toEqual([
       expect.objectContaining({ key: "no_failed_steps", ok: false, detail: "1 failed of 13" }),
     ]);
+  });
+
+  it("counts Rosetta's reads without the glyph lane's receipts, so a lane read counts once (#2598)", async () => {
+    const calls: Array<{ text: string; values: unknown[] }> = [];
+    const db = Object.assign(
+      vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+        calls.push({ text: strings.join("$"), values });
+        return [{ steps_completed: 0, steps_failed: 0, spend_microusd: 0 }];
+      }),
+      { unsafe: vi.fn(async () => []) },
+    );
+    await readRosettaNumbers(db as never).catch(() => undefined);
+    const reads = calls.find((call) => call.text.includes("AS read_ok"));
+    expect(reads?.text).toContain("strategy <> $");
+    expect(reads?.values).toContain(GLYPH_REPAIR_STRATEGY);
   });
 
   it("breaks Gutenberg's rule when it spends on a model", () => {

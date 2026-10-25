@@ -267,4 +267,33 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-1872-release-proof",
+    agent: "hamilton",
+    stage: "written answer",
+    lesson: "When the provider fails, times out or is stopped, show none of the unfinished draft: say plainly that the answer could not be finished, and never repeat an internal reason such as a breaker or budget note. Cite only sources whose terms allow commercial display; a source struck or held for its terms is never quoted, even when its rows are still stored. A data file is a check of what the screen showed, capped in rows, never a copy of the database.",
+    why: "The V5 release proof found that a streamed Ask answer whose provider erred, timed out or stopped short still sent its unverified draft text before the error, that a provider stop showed the reader its internal reason, and that the peer comparison file had no row cap, so the nation-wide layer of every fee could be downloaded in full.",
+    evidence: {
+      issues: [1872, 1921],
+      prs: [],
+      files: [
+        "src/app/api/research/hamilton/route.ts",
+        "src/lib/hamilton/export-limits.ts",
+        "src/lib/hamilton/data-rights.test.ts",
+        "src/lib/data-store/struck-sources.ts",
+      ],
+    },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
+  {
+    id: "issue-1891",
+    agent: "hamilton",
+    stage: "analysis",
+    lesson: "When you tell a reader what changed at their own institution, call a moved fee a price change only when the change is confirmed against both copies of its published schedule. A figure that moved between two stored copies without that confirmation, or a fee that appeared in or left our data, is an update to our data and is worded and counted as one, never as the bank's price move.",
+    why: "The landing page's quarterly comparison set two stored briefings side by side and wrote 'its published price moved' for any own fee whose figure differed, so a corrected reading of a schedule would have read to a chief executive as their bank changing its price.",
+    evidence: { issues: [1891], prs: [], files: ["src/lib/hamilton/workspace/briefing-diff.ts", "src/lib/hamilton/briefing-snapshots.ts", "src/lib/hamilton/command-center.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];
