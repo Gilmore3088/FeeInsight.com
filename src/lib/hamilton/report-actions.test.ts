@@ -342,6 +342,20 @@ describe("Hamilton Reports generateReport", () => {
     expect(result.report.identityContext?.accountInstitutionName).toBe("Space Coast CU");
   });
 
+  it("keeps the reader's added findings out of the DATA a section's figures are checked against", async () => {
+    mocks.getFeesByInstitution.mockResolvedValue([{ fee_name: "Domestic wire", fee_category: "wire_transfer", amount: 35, review_status: "pending" }]);
+    // A Position item is browser text: nothing on the server re-reads its $99.
+    const result = await generateReport({ ...reportParams(), addedFindings: [{ id: "position-a", source: "Position", title: "Overdraft peers", detail: "Peers charge $99 for an overdraft.", institutionId: "2945" }] });
+    expect(result.success).toBe(true);
+    const summary = mocks.generateSection.mock.calls.map(([input]) => input as SectionInput).find((input) => input.type === "executive_summary");
+    expect(summary?.data).not.toHaveProperty("findings_added_by_reader");
+    expect(JSON.stringify(summary?.data)).not.toContain("$99");
+    expect(summary?.context).toContain("READER FINDINGS");
+    expect(summary?.context).toContain("Peers charge $99 for an overdraft.");
+    const { checkNarrativeFigures } = await vi.importActual<typeof import("./figure-check")>("./figure-check");
+    expect(checkNarrativeFigures("Peers charge $99 for an overdraft.", summary?.data).unmatched).toEqual(["$99"]);
+  });
+
   it("normalizes transient saved-artifact source before persisting a new report", async () => {
 
     const result = await generateReport({

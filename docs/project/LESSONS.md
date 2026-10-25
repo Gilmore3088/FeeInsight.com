@@ -448,8 +448,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — Sign out on the account page and admin used Server Actions that a redeploy breaks. — [finding](findings/2026-10-09-sign-out-server-action.md) — Guard: `src/app/api/auth/logout/route.test.ts:30`
 - 2026-10-09 — A refunded report kept its paid status and its private link. — [finding](findings/2026-10-09-report-refund-not-handled.md) — Guard: `src/lib/stripe-webhook.test.ts` (+1 more)
 
-### Hamilton workspace (14)
+### Hamilton workspace (15)
 
+- 2026-10-25 — The data a figure check traces figures to holds only what the server read itself; a reader's note or earlier model prose goes to the model as context, never into that data. — [finding](findings/2026-10-25-hamilton-question-trace.md) — Guard: `src/lib/hamilton/report-actions.test.ts` (reader findings stay out of DATA)
 - 2026-10-19 — Saved simulations could borrow another institution's context. — [finding](findings/2026-10-19-hamilton-saved-scenario-identity.md) — Guard: `src/app/pro/(hamilton)/simulate/page.test.tsx` (+2 more)
 - 2026-10-17 — Run the journey before calling any Hamilton change done. — [finding](findings/2026-10-17-hamilton-release-runbook.md) — no Guard or Agent lesson named
 - 2026-10-17 — An answer branch draws its lead, figures, section headings, exhibits and sourced findings through the shared primitives below, never with local text classes. — [finding](findings/2026-10-17-hamilton-presentation-contract.md) — Guard: `src/components/hamilton/memo/answer-primitives.test.tsx:47`
