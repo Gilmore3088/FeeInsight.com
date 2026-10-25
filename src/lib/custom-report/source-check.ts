@@ -1366,7 +1366,7 @@ function namesItsClosedFreeRow(rawText: string | null | undefined, feeName: stri
   const named = feeName.match(NAME_CLOSED_FREE);
   const words = named?.[1].match(/[a-z0-9']+/gi);
   if (!named || !words || words.length === 0) return false;
-  const leader = "\\s*(?:(?:\\.\\s?){2,}|…+)[\\s.…]*";
+  const leader = "\\s*(?=\\.\\s?\\.|…)[\\s.…]+";
   const escaped = words.map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
   const row = new RegExp(`(?<![a-z0-9])${escaped.join("[^a-z0-9$|]+")}${leader}${named[2].replace("/", "\\/")}(?![a-z])`, "gi");
   return [...rawText.matchAll(row)].some((match) => {
@@ -1383,7 +1383,7 @@ const ROW_ENDS_AT_FREE = /^[ \t*†‡\d]*(?:\||\n|$|[A-Z][^$|\n]*?(?:(?:\.\s?){
  * same fee: its price is that fee's.
  */
 export const FREE_ROW_CONTINUES =
-  /^[\s*†‡\d|(]*(?:each|additional|add'?l|after|over|thereafter|then|per|excess|more than|beyond|subsequent|others?|all others|otherwise|within|prior to|before|less than|under|below|with|without|standard|second|third|\d+(?:st|nd|rd|th)|\d+ or more|\d+\+|non[\s-]?(?:customers?|members?|account\s?holders?|depositors?))(?![a-z])/i;
+  /^[\s*†‡\d|(\-–•·]*(?:each|additional|add'?l|after|over|thereafter|then|per|excess|more than|beyond|subsequent|others?|all others|otherwise|within|prior to|before|less than|under|below|with|without|standard|second|third|for|if|members?|business|\d+(?:st|nd|rd|th)|\d+ or more|\d+\+|non[\s-]?(?:customers?|members?|clients?|relationship|account\s?holders?|depositors?))(?![a-z])/i;
 
 function checkOwnName(
   rawText: string | null | undefined,

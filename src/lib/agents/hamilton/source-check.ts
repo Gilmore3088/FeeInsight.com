@@ -78,7 +78,7 @@ export const SOURCE_CHECK_REASON = "source_check_untraceable";
 // over "$10 | $5") is not the fee's (`refusesOtherColumnPrice`). Follows #2465's v19.
 // Version 21 (#2477): a dot-leader row closed by its own free word ("ATM Transactions……FREE |
 // activity……$5", United Bank) ends there, so its name never owns the next column's price
-// (`leaderFreeRowEnds`).
+// (`namesItsClosedFreeRow`).
 export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 21 } as const;
 
 /**

@@ -119,8 +119,20 @@ describe("a free word in the name that is not a closed leader row (#2477)", () =
     ["Excessive Withdrawals (first 6) .......... FREE | Each Additional .......... $3.00", "Excessive Withdrawals (first 6) FREE", 3],
     ["Notary Service ........ Free | All Others ........ $5.00", "Notary Service Free", 5],
     ["Early Closure ........ None | Within 90 days of opening ........ $25.00", "Early Closure None", 25],
+    ["Coin Counting ...... Free | for non-members ...... $5.00", "Coin Counting Free", 5],
+    ["Notary ...... Free | Non-Clients ...... $5.00", "Notary Free", 5],
+    ["Excessive Withdrawal ...... FREE | - Each additional ...... $3.00", "Excessive Withdrawal FREE", 3],
   ])("%s", (line, name, amount) => {
     const result = checkFeeAgainstSource(line, name, amount, ".", null);
     expect(result.ok ? null : result.reason).not.toBe("amount_not_the_fee");
+  });
+});
+
+describe("a long dot leader stays fast (#2477 review)", () => {
+  it("checks a 20,000-dot leader quickly", () => {
+    const line = `Monthly Fee ${".".repeat(20_000)} FREE | Wire ...... $20.00`;
+    const started = Date.now();
+    expect(checkFeeAgainstSource(line, "Monthly Fee FREE", 20, ".", null).ok).toBe(false);
+    expect(Date.now() - started).toBeLessThan(200);
   });
 });
