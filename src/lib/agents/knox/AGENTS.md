@@ -1727,6 +1727,14 @@ whole. "IS", "ARE", "MET", "SUB" and a few more read as words, not acronyms; an 
 word before it ("SAME-DAYACH") stays in caps. Dry run Oct 21 01:16 UTC over the 22 institutions with
 an all-caps live name: 19 of the 32 renamed; 13 left (fragments and conditions waiting for #1443 and
 #1521, a same-price twin, "SAME-DAYACH", and "CBCU ATM" / "OPEFCU ATM", which are acronyms only).
+v27 (Oct 25, #1810): v22's all-caps test wanted a run of four capitals, so a name made only of short
+groups stayed in caps ("NSF FEE", "FAX FEE", "FAX OUT", "FED EX FEE", "ATM WD FEE", "NSF FEE1"). Such
+a name now counts as all caps when one of its groups is a plain three-letter word from v22's word
+list, "NON" left out (`SHOUTED_SHORT_WORDS`); the due query matches the same words. A name of acronyms
+only ("NSF ACH", "CD ROM", "NCB ATM", "NON CO OP ATM") stays as printed. The rename is a change of case
+under the v22/v26 guards; nothing is held, re-filed or taken down. Read-only count Oct 25: 14 live
+names at 13 institutions match, every one printed so on its own page and none with a same-name live
+row in its category; 13 should be renamed, and "FAX IN" waits because "Fax in" ends on a joining word.
 
 `isCutoffName` (publish's `cutoff_name` hold; in `cutoff-shape.ts` since v104, re-exported by
 `name-retidy.ts`) has a narrow live twin, `liveFragmentName` (#1443), built from the same regex pieces: a dangling joining word (lower-case "a/an/the" only;
@@ -1985,7 +1993,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_LAYOUT_SIGNATURE_VERSION` | — | v1 | `knox/layout-signature.ts` |
 | `KNOX_LESSONS_VERSION` | — | v4 | `knox/lessons.ts` |
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
-| `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v26 | `knox/name-retidy.ts` |
+| `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
 | `KNOX_RULES_STRATEGY` | `extract.rules` | v109 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |

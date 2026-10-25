@@ -536,4 +536,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-1810-short-all-caps-names",
+    agent: "knox",
+    stage: "name retidy",
+    lesson: "A name is shouted in capitals whatever the length of its words. \"NSF FEE\", \"FAX OUT\", \"FED EX FEE\" and \"ATM WD FEE\" are all-caps names, not acronyms: when any group is a plain word (\"FEE\", \"FAX\", \"OUT\"), read the name in title case and keep only the real acronyms in capitals (\"NSF Fee\", \"ATM WD Fee\"). A name of acronyms only (\"NSF ACH\", \"CD ROM\", \"NCB ATM\") stays as printed. Do not judge all caps by word length alone.",
+    why: "The all-caps test wanted a run of four capitals, so names built only of short words stayed in caps on live pages after two passes that cased the longer ones. On 2026-10-25, 14 live names at 13 institutions were still all caps for that reason; every one is printed that way on its own page.",
+    evidence: { issues: [1810], prs: [2597], files: ["src/lib/agents/knox/name-retidy.ts", "src/lib/agents/knox/name-retidy.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];
