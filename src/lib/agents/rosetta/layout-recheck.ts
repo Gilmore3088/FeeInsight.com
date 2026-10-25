@@ -4,7 +4,7 @@
  *
  * Stored `read.pdf_layout` texts are re-read only in narrow cases (the prose interleave witness,
  * the stacked-repair witness), so thousands of texts still carry an older layout's reading. Before
- * anyone re-reads them, each read step takes up to `LAYOUT_RECHECK_PER_RUN` of them (most live fees
+ * anyone re-reads them, each read step takes up to `LAYOUT_RECHECK_PER_RUN` of them (newest texts
  * first), reads the exact vault bytes again with the current layout, and runs the one shared
  * source check on both texts for every live fee on that document. One `agent_run_events` row per
  * document is the whole output: no stored text, attempt, playbook or fee row is written, so this
@@ -108,8 +108,9 @@ export function emptyLayoutRecheckResult(): LayoutRecheckResult {
  * least one live published fee and no receipt for this text hash at this layout and protocol.
  * Each stage is materialized so the costly ones run on the survivors of the cheap ones: the
  * receipt set (event_type index) once, the text/document join (primary keys), the per-text read
- * layout version (pipeline_attempts input_fingerprint index), and only then the live-fee count,
- * walked from live published rows of the remaining institutions (no raw source_document_id index).
+ * layout version (pipeline_attempts input_fingerprint index). Newest texts go first and the
+ * live-fee count runs per text (raw institution index, then primary keys) only until the batch
+ * is full: ranking every older text by live fees took about 20s on prod (Oct 25), this about 3s.
  */
 export function layoutRecheckQuery(
   limit: number,
@@ -169,29 +170,28 @@ export function layoutRecheckQuery(
                AND pa.institution_id = t.institution_id
           ) read_layout
          WHERE read_layout.version < $3
-      ),
-      live AS MATERIALIZED (
-        SELECT r.source_document_id, COUNT(*)::int AS live_fees
-          FROM published_fee_records p
-          JOIN verified_fee_observations v ON v.fee_verified_id = p.lineage_ref
-          JOIN raw_fee_observations r ON r.fee_raw_id = v.fee_raw_id
-         WHERE p.rolled_back_at IS NULL AND p.quarantined_at IS NULL
-           AND p.institution_id IN (SELECT institution_id FROM below)
-           AND r.source_document_id IN (SELECT source_document_id FROM below)
-         GROUP BY r.source_document_id
+         ORDER BY t.id DESC
       ),
       picked AS (
         SELECT b.id AS source_text_id, b.source_document_id, b.institution_id, b.source_hash, b.text_hash,
                b.read_layout_version, live.live_fees, b.document_url, b.document_r2_key, b.content_type
-          FROM below b
-          JOIN live ON live.source_document_id = b.source_document_id
-         ORDER BY live.live_fees DESC, b.id DESC
+          FROM below b -- newest first; no outer sort, so the LIMIT stops the per-text counts early
+          CROSS JOIN LATERAL (
+            SELECT COUNT(*)::int AS live_fees
+              FROM raw_fee_observations r
+              JOIN verified_fee_observations v ON v.fee_raw_id = r.fee_raw_id
+              JOIN published_fee_records p ON p.lineage_ref = v.fee_verified_id
+             WHERE r.institution_id = b.institution_id
+               AND r.source_document_id = b.source_document_id
+               AND p.rolled_back_at IS NULL AND p.quarantined_at IS NULL
+          ) live
+         WHERE live.live_fees > 0
          LIMIT $1
       )
       SELECT picked.*, adt.normalized_text
         FROM picked
         JOIN agent_source_texts adt ON adt.id = picked.source_text_id AND adt.text_hash = picked.text_hash
-       ORDER BY picked.live_fees DESC, picked.source_text_id DESC
+       ORDER BY picked.source_text_id DESC
     `,
     params,
   };

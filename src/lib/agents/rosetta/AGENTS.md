@@ -107,7 +107,7 @@ Rosetta owns source text normalization.
   `PDF_LAYOUT_VERSION` (highest `detail.pdf_layout` on the text's `read.pdf_layout` attempts for
   its institution and source hash, 1 when absent) that are the current copy (not superseded or a
   duplicate, content-addressed vault key matching the source hash) and carry live published fees,
-  most live fees first, scoped like the other selections. It reads the exact vault bytes through
+  newest texts first, scoped like the other selections. It reads the exact vault bytes through
   the shared byte loader (never a download; mismatched or missing bytes record an `unavailable`
   receipt and nothing else), reads them with the current PDF reader and `normalizeWhitespace`, and
   runs Darwin's live re-check of the shared source check (`statedInOwnSource`) on the stored and

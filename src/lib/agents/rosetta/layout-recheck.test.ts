@@ -88,7 +88,7 @@ describe("layout recheck selection", () => {
     expect(query).toMatch(/rc\.source_text_id = adt\.id::text AND rc\.text_hash = adt\.text_hash/);
   });
 
-  it("keeps current copies with vault bytes below the current layout and ranks by live fees", () => {
+  it("keeps current copies with vault bytes below the current layout and takes the newest texts that still carry live fees", () => {
     const { query } = layoutRecheckQuery(3);
     expect(query).toContain("cr.superseded_by_id IS NULL AND cr.duplicate_of_id IS NULL");
     expect(query).toContain("cr.document_r2_key = left(cr.content_hash, 2) || '/' || cr.content_hash");
@@ -96,7 +96,9 @@ describe("layout recheck selection", () => {
     expect(query).toMatch(/COALESCE\(MAX\(COALESCE\(\(pa\.detail->>'pdf_layout'\)::int, 1\)\), 1\)/);
     expect(query).toContain("WHERE read_layout.version < $3");
     expect(query).toContain("p.rolled_back_at IS NULL AND p.quarantined_at IS NULL");
-    expect(query).toContain("ORDER BY live.live_fees DESC");
+    expect(query).toContain("WHERE live.live_fees > 0");
+    expect(query).toContain("ORDER BY t.id DESC");
+    expect(query).not.toMatch(/live_fees > 0\s+ORDER BY/);
   });
 
   it("scopes to the run's institution or state like the other read selections", () => {

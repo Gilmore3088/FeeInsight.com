@@ -21,7 +21,7 @@ shape no witness detects keeps its older reading indefinitely.
 **Fix:** a record-only measurement, `LAYOUT_RECHECK_VERSION` v1
 (`src/lib/agents/rosetta/layout-recheck.ts`), run inside every real Rosetta read step after the
 ordinary reads. It takes up to `LAYOUT_RECHECK_PER_RUN` (3) current-copy, vault-backed texts read
-below the current layout that carry live fees, most live fees first, reads the exact vault bytes
+below the current layout that carry live fees, newest texts first, reads the exact vault bytes
 again (the shared loader and its byte-identity check; never a download), and runs Darwin's live
 re-check of the shared `checkFeeAgainstSource` (`statedInOwnSource`, category pattern ".", the
 refiled canonical key) on the old and the new text for every live fee. Each fee is
