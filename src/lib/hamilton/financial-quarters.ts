@@ -242,6 +242,16 @@ function feeForQuarter(row: FiledQuarterRow, filings: Map<string, FiledQuarterRo
       heldReason: "Held back: the previous quarter's stored figure does not match its filing.",
     };
   }
+  // Split on the filed dollars when both filings carry them, so two rounded totals don't add a $1k error.
+  if (row.rawFeeIncome !== null && prior.rawFeeIncome !== null) {
+    const dollars = row.rawFeeIncome - prior.rawFeeIncome;
+    const usd = (n: number) => `${n < 0 ? "-" : ""}$${Math.abs(n).toLocaleString("en-US")}`;
+    return {
+      quarter: Math.round(dollars / 1000) || 0,
+      calculation: `${code} year to date at ${dayText(row.reportDate)} (${usd(row.rawFeeIncome)}) less ${code} year to date at ${dayText(priorDate)} (${usd(prior.rawFeeIncome)}) = ${usd(dollars)} for the quarter.`,
+      heldReason: null,
+    };
+  }
   const quarter = row.feeIncome - prior.feeIncome;
   return {
     quarter,
