@@ -213,7 +213,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-287 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+289 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
 ### Extraction and fee reading (43)
 
@@ -298,8 +298,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A consumer comparison needs the payer checked as well as the category. — [finding](findings/2026-10-09-business-wire-as-consumer-price.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 - 2026-10-09 — Returned bonds and coupons were filed as NSF. — [finding](findings/2026-10-09-bond-return-filed-nsf.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 
-### Verification and publication (47)
+### Verification and publication (48)
 
+- 2026-10-25 — A line skipped as identical to a fee later held as not yet in effect is decided again so today's schedule carries the fee, but only a schedule's line: a product page prices one account (#1915). — [finding](findings/2026-10-25-skipped-lines-behind-held-edition.md) — Agent lesson: hamilton/issue-1915-edition-hold-twins; Guard: `src/lib/agents/hamilton/publish-selection.db.test.ts`
 - 2026-10-25 — A web page's first lines are often its menu, so a schedule's own edition line can sit further down; read it there only with guards, since most pages that date a future edition past the menu are current pages announcing the next one (T1). — [finding](findings/2026-10-25-edition-line-past-the-menu.md) — Agent lesson: hamilton/t1-edition-line-past-menu; Guard: `src/lib/agents/hamilton/schedule-edition-late.test.ts`
 - 2026-10-25 — A benchmark compares one charging basis per category; give every category a basis and have the medians and the subject's own value read that one rule, never a second data-driven measure in one surface (#1901). — [finding](findings/2026-10-25-benchmarks-pool-charging-bases.md) — Agent lesson: darwin/issue-1901-one-basis-per-benchmark
 - 2026-10-20 — A stored name carries the older copy's text layout; compare it against a newer layout only after undoing what that layout glued (#2477). — [finding](findings/2026-10-20-heading-row-glued-name-false-flag.md) — Guard: `src/lib/agents/hamilton/newer-copy-retire.test.ts`
@@ -455,8 +456,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — Sign out on the account page and admin used Server Actions that a redeploy breaks. — [finding](findings/2026-10-09-sign-out-server-action.md) — Guard: `src/app/api/auth/logout/route.test.ts:30`
 - 2026-10-09 — A refunded report kept its paid status and its private link. — [finding](findings/2026-10-09-report-refund-not-handled.md) — Guard: `src/lib/stripe-webhook.test.ts` (+1 more)
 
-### Hamilton workspace (27)
+### Hamilton workspace (28)
 
+- 2026-10-25 — When a figure's clause names a fee, a record of another fee at the same price (not a sub-type in `FEE_SUB_TYPES`, not the wire direction named) no longer supports it; a clause that names no fee, or a record with no category, still binds on value and institution alone. — [finding](findings/2026-10-25-fee-binding-category.md) — Guard: `src/lib/hamilton/narrative-bound.test.ts`, `src/lib/hamilton/claim-golden-set.ts`
 - 2026-10-25 — A screen that hides text by matching it has still been sent that text: when the verdict comes before the reader sees anything, the server writes the shown text and a binding that matches it. — [finding](findings/2026-10-25-streamed-omitted-text.md) — Guard: `src/app/api/research/hamilton/route.streamed-omitted.test.ts`, `src/app/api/research/hamilton/route.omitted-payload.test.ts`, `src/lib/hamilton/written-answer-binding.test.ts`
 - 2026-10-25 — A save that takes an answer from the browser keeps only its prose; the binding, verdict and other evidence fields come only from the server, and a browser save gets a "not checked" verdict so readers fail closed. — [finding](findings/2026-10-25-fallback-save-trust.md) — Guard: `src/lib/hamilton/analyze-actions.test.ts`
 - 2026-10-25 — When a view leaves a sentence out, the reply leaves out its text too: send the reason and the count, and keep the text only where it is saved and read server side. — [finding](findings/2026-10-25-omitted-text-payload.md) — Guard: `src/app/api/research/hamilton/route.omitted-payload.test.ts`, `src/lib/hamilton/written-answer-binding.test.ts`
@@ -547,7 +549,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (190 in all).
+counts as of this index (194 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
@@ -556,9 +558,9 @@ counts as of this index (190 in all).
 | hoovie | 10 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
 | rosetta | 8 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
 | knox | 54 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
-| darwin | 26 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
+| darwin | 27 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 40 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
-| hamilton | 16 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
+| hamilton | 19 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
 | deming | 11 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
 
 ## Before 2026-10-10

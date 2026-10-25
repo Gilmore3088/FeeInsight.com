@@ -385,7 +385,7 @@ export function bindWrittenAnswer(input: BindWrittenAnswerInput): NarrativeBindi
 const OMIT_REASONS = new Set<OmitReason>([
   "advice", "instruction_text", "no_evidence", "wrong_institution", "gap_as_fee",
   "wrong_direction", "wrong_period", "wrong_unit", "conflicting_sources", "median_as_fee",
-  "wrong_basis", "account_as_subject", "premise_contradicted", "premise_unsupported",
+  "wrong_basis", "account_as_subject", "premise_contradicted", "premise_unsupported", "wrong_category",
 ]);
 
 /** True for an omit reason a saved binding or saved claims may carry. */
