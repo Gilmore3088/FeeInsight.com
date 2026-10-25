@@ -1,7 +1,8 @@
 -- The one-off paid gate replay batch gets its own provider budget (#1077).
 --
 -- James approved one batch of about 200 paid samples, about $35, on 2026-10-25 (decision card
--- 16:12 UTC; "I approve the update that would run paid models", 17:30 UTC). The batch
+-- 16:12 UTC; "I approve the update that would run paid models", 17:30 UTC), and approved this
+-- separate budget line on a decision card at 21:03 UTC. The batch
 -- (src/lib/hamilton/paid-gate-replay.ts) logs and budgets its calls as agent `hamilton_replay`, with
 -- no route id, so it checks only `global:provider:default` and this row. It never uses the live
 -- Pro readers' route lines ($5 a day each) or `agent:hamilton`, and they never stall it. It still
