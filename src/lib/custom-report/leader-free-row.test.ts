@@ -32,3 +32,25 @@ describe("a dot-leader row closed by its free word keeps its own price (#2477)",
     expect(checkFeeAgainstSource(line, "Stop Payment", 30, ".", "stop_payment").ok).toBe(true);
   });
 });
+
+// Live fees whose price is right while the stored name glued the closed row onto it (dry run, Oct 25):
+// the name's words after the free word still own the price.
+describe("a name glued across the closed row keeps its own price (#2477 dry run)", () => {
+  it.each([
+    ["Copy of cashier check ………… N/C | Levy request ....................... $ 75.00 one time", "Copy of cashier check ………… N/C | Levy request", 75, "garnishment_levy"],
+    ["Sub-Savings minimum deposit ........................................ NONE | Rush Card Orders ........................................................... $75.00", "Sub-Savings minimum deposit ........................................ NONE | Rush Card Orders", 75, "rush_card"],
+    ["Person to Person Transfer (P2P) ...................... Free Stop Payment (per item) .............................. $30.00", "Person to Person Transfer (P2P) Free Stop Payment (per item)", 30, "stop_payment"],
+    ["Incoming Wire Fee………………………………………………………...………...None | Money Order Fee………………...……………………………………………….....$1.00", "Incoming Wire Fee………………………………………………………...………...None | Money Order Fee………………...………………………………………………", 1, "money_order"],
+    ["Transaction Fee for Purchase……………………………… None | Late Payment Fee…………………………………… $10", "Transaction Fee for Purchase None: Late Payment Fee", 10, "late_payment"],
+  ])("%s", (line, name, amount, key) => {
+    expect(checkFeeAgainstSource(line, name, amount, ".", key).ok).toBe(true);
+  });
+
+  it.each([
+    ["Online Bill Pay ............................................................................FREE | Incoming ............................................................................ $5/item", "Online Bill Pay FREE", 5, "bill_pay"],
+    ["Monthly Fee .............................................................................................. FREE | Transfer/Rollover (outgoing) .................................................................. $ 20.00", "Monthly Fee FREE", 20, "monthly_maintenance"],
+    ["Monthly Maintenance Fee………………………..………….……………………FREE | Express Delivery for Replacement Card1………………………………….$25.00", "Monthly Maintenance Fee .. . FREE", 25, "monthly_maintenance"],
+  ])("refuses the free fee at the other column's price: %s", (line, name, amount, key) => {
+    expect(checkFeeAgainstSource(line, name, amount, ".", key).ok).toBe(false);
+  });
+});

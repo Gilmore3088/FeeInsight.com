@@ -14,6 +14,6 @@ own price word; the `$5` ends the right column's "Savings accounts after 24 mont
   (`leaderFreeRowEnds`); its own free price and a fee named after the closed row still trace.
 - Live re-check: `SOURCE_CHECK_STRATEGY` v21 re-checks every institution through Hamilton's source-check
   pass and its 12-hour second look.
-**Scope:** the layout appears in 113 stored texts at 96 banks (read-only prefilter, Oct 25).
+**Scope:** the layout appears in 113 stored texts at 96 banks (read-only prefilter, Oct 25). Of their 561 live fees whose price sits on such a line, the old and new check differ on 4, each a free fee live at the other column's price (97116, 31813, 36500, 76922). Five fees whose stored name glued both rows but whose price is right keep tracing (tests).
 **Agent lesson:** knox/issue-2477-free-word-closes-the-row
 **Agent lesson:** darwin/issue-2477-closed-row-owns-no-later-price

@@ -597,8 +597,12 @@ function namesFee(line: string, stems: NameStems, atLeast?: number): boolean {
  * the fee at all is `namesFee`, which reads whole words.
  */
 function nearNameCount(text: string, stems: string[]): number {
+  return nearNameStems(text, stems).length;
+}
+
+function nearNameStems(text: string, stems: string[]): string[] {
   const haystack = ` ${comparable(text)} `;
-  return stems.filter((stem) => haystack.includes(stem)).length;
+  return stems.filter((stem) => haystack.includes(stem));
 }
 
 function stemCount(text: string, stems: NameStems): number {
@@ -643,14 +647,18 @@ function statesAmount(line: string, amount: number, stems: NameStems): SourceChe
   // not the fee's price when the row prints another; alone ("5 free, $2.00 each additional") it is.
   const base = noted.filter((t) => !ADD_ON_RATE.test(line.slice(t.end)));
   const prices = base.length > 0 ? base : noted;
-  // A priced fee's words stop at a row its own free word closed (`leaderFreeRowEnds`): a name the
-  // closed row states better than the words after it is that row's, not this price's.
+  // A priced fee's words stop at a row its own free word closed (`leaderFreeRowEnds`): the price
+  // after it is the fee's only when the words after the free word name something of the fee that
+  // the closed row does not ("Incoming Wire ... Free | Outgoing Wire ... $25" is Outgoing's $25; a
+  // name glued across both rows, "Copy of cashier check ... N/C | Levy request", keeps the levy's).
   const closedEnds = amount > 0 ? leaderFreeRowEnds(line) : [];
   const nearPrice = (price: MoneyToken, i: number) => {
     const from = i === 0 ? 0 : prices[i - 1].end;
     const closed = Math.max(from, ...closedEnds.filter((end) => end <= price.start));
-    const open = nearNameCount(line.slice(closed, price.start), stems);
-    return closed > from && nearNameCount(line.slice(from, closed), stems) > open ? 0 : open;
+    const open = nearNameStems(line.slice(closed, price.start), stems);
+    if (closed === from) return open.length;
+    const shut = new Set(nearNameStems(line.slice(from, closed), stems));
+    return open.some((stem) => !shut.has(stem)) ? open.length : 0;
   };
   const before = withJoinedPrices(line, prices, prices.map(nearPrice), stems);
   const after = prices.map((price, i) => nearNameCount(line.slice(price.end, prices[i + 1]?.start ?? line.length), stems));
