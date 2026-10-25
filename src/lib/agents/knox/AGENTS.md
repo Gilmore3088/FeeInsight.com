@@ -1967,11 +1967,11 @@ fails a PR that changes one of these constants without updating its line here (#
 | `HELD_RATE_RECHECK_VERSION` | — | v2 | `knox/held-recheck.ts` |
 | `NAME_FILE_KEY_VERSION` | — | v2 | `knox/held-recheck.ts` |
 | `KNOX_LAYOUT_SIGNATURE_VERSION` | — | v1 | `knox/layout-signature.ts` |
-| `KNOX_LESSONS_VERSION` | — | v3 | `knox/lessons.ts` |
+| `KNOX_LESSONS_VERSION` | — | v4 | `knox/lessons.ts` |
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v26 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v106 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v107 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v10 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

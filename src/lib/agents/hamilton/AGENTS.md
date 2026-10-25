@@ -555,7 +555,11 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     with the entry's reason (`source_mismatch: #<issue>`, or `duplicate of #<kept id> (#<issue>)`
     for a second read of one printed fee); its verified row is rejected
     (`hand_rejected:hand_takedown`), a feedback row and one run event name it, and a ledger line
-    goes on #1026. The same file's `HAND_AUDIENCE_FIXES` (#1302) sets a listed live fee's
+    goes on #1026. The feedback row is charged to the step that erred (#1677): Knox's read
+    (extract, the entry's kind) by default, or Magellan's document (discover, `wrong_document`)
+    when the entry's `lesson` says the page was wrong (a business, brokerage or payroll card page,
+    another bank's); past entries are charged through the append-only
+    `HAND_TAKEDOWN_LESSON_OVERRIDES`, never by editing them. The same file's `HAND_AUDIENCE_FIXES` (#1302) sets a listed live fee's
     audience from its bank's own text while it still reads as listed (verified row, institution,
     category, name, price, old audience): the verified row takes it with `darwin:hand_fix`
     evidence, which the audience trigger keeps, the live row is touched to inherit it, and the
