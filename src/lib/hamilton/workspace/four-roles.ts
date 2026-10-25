@@ -64,11 +64,15 @@ export function findUnrequestedAdvice(text: string): RegExpMatchArray | null {
  * missing until the T5 golden set (#1726) showed answers naming them passed. Deming and Bayes are
  * also a town, an institution's name ("Deming Schools Employees Federal Credit Union") and a rule of
  * probability, so they count only as a system: followed by a system word or verb ("Deming audit",
- * "Deming reconciled the filings").
+ * "Deming reconciled the filings", "Deming checked"), in the possessive ("Deming's check"), or as a
+ * source ("according to Deming"). "Bayes' rule" and "Deming, NM" pass.
  */
 export const PIPELINE_TERMS = new RegExp([
   String.raw`\b(Knox|Darwin|Rosetta|Magellan|Atlas|Gutenberg|Hoovie|pipeline|agent run)\b`,
-  String.raw`\b(?:Deming|Bayes)\s+(?:agent|audit|pipeline|job|run|step|check|ledger|replay|tooling|reconcil\w+|flagged|loaded|marked|recorded|counted|re-?checked)\b`,
+  String.raw`\b(?:Deming|Bayes)\s+(?:agent|audit|pipeline|job|run|step|check|ledger|replay|tooling|reconcil\w+|flagged|loaded|marked|recorded|counted|re-?checked|checked|verified|found|reviewed|held)\b`,
+  // "Deming's check", "Bayes's ledger", "according to Deming": the system as an actor or a source.
+  String.raw`\b(?:Deming|Bayes)'s\b`,
+  String.raw`\baccording\s+to\s+(?:Deming|Bayes)\b`,
   String.raw`\b[a-z0-9]+_[a-z0-9_]+\b`,
 ].join("|"), "i");
 
