@@ -143,8 +143,10 @@ describe.skipIf(!connection)("admin fee corrections in isolated PostgreSQL", () 
   }
 
   afterAll(async () => {
-    if (raw) await removeOwnRows();
-    if (raw) await raw.end();
+    if (raw) {
+      await removeOwnRows();
+      await raw.end();
+    }
     if (rawPool) await rawPool.end();
   });
 
