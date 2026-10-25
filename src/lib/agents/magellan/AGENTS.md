@@ -486,9 +486,10 @@ A fetch date says when Magellan asked for a page, not how old the schedule is (#
 named 2022 and fetched in October looked current on /fees. At the start of each `discover` step,
 up to `STATED_DATES_PER_STEP` (200) documents not yet dated at `STATED_DATE_VERSION` are dated
 (documents live fees cite first, then other current copies, newest first) from the first
-`STATED_DATE_SCAN_CHARS` (12,000) characters of their newest completed text. The stated date is the
-latest "Effective ..." date (the shapes of Hamilton's `effectiveDate()`) or "Revised / Rev. /
-Updated ..." date found there; with neither, the latest year 2000-2029 in the address (stored as
+`STATED_DATE_SCAN_CHARS` characters of their newest completed text (Hamilton's `EDITION_SCAN_CHARS`,
+8,000). The stated date is the latest "Effective ..." date, read by Hamilton's own readers so there
+is one rule (the later of `effectiveDate()` and `editionStarts()`, which also reads a schedule's
+edition line past a web page's menu), or "Revised / Rev. / Updated ..." date found there; with neither, the latest year 2000-2029 in the address (stored as
 1 January, old only once the whole year is); otherwise none. The latest date wins, so the rule
 can call an old schedule current, never the reverse. It is written to
 `source_documents.stated_date`, `stated_date_basis` (`effective_statement`, `printed_date`,

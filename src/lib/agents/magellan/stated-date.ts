@@ -1,4 +1,5 @@
 import type { sql } from "@/lib/data-store/connection";
+import { EDITION_SCAN_CHARS, editionStarts, effectiveDate } from "@/lib/agents/hamilton/schedule-edition";
 
 type SqlTag = typeof sql;
 
@@ -16,8 +17,11 @@ type SqlTag = typeof sql;
  *
  * Deterministic, no provider. The date is the latest one the opening `STATED_DATE_SCAN_CHARS`
  * characters state:
- *   - `effective_statement`: an "Effective ..." date, read the way Hamilton's `effectiveDate()`
- *     reads it (`hamilton/schedule-edition.ts`), with each match's words kept as evidence;
+ *   - `effective_statement`: an "Effective ..." date, read by Hamilton's own readers in
+ *     `hamilton/schedule-edition.ts`, so there is one rule: the latest `effectiveDate()` anywhere in
+ *     the window, or the edition `editionStarts()` reads (the heading, then the schedule's own
+ *     edition line past a web page's menu, #2573/#2605), whichever is later; the words around that
+ *     "effective" are kept as evidence;
  *   - `printed_date`: a "Revised ...", "Rev. ..." or "Updated ..." date printed on it;
  *   - `url_year`: without either, the latest year 2000-2029 its address names (only the year is
  *     known, stored as 1 January; it counts as old only once the whole year is);
@@ -30,8 +34,8 @@ type SqlTag = typeof sql;
  * leaves out its stated-date arm, so either can merge and run first.
  */
 export const STATED_DATE_VERSION = 1;
-/** How much of each stored text is read for its date. */
-export const STATED_DATE_SCAN_CHARS = 12_000;
+/** How much of each stored text is read for its date: as far as Hamilton reads an edition line. */
+export const STATED_DATE_SCAN_CHARS = EDITION_SCAN_CHARS;
 /** A schedule dated longer ago than this is sent to the freshness search. */
 export const STALE_STATED_MONTHS = 24;
 /** Documents dated per discover step. */
@@ -64,10 +68,6 @@ function monthOf(word: string | undefined): number {
   return word ? MONTHS.indexOf(word.slice(0, 3).toLowerCase()) + 1 : 0;
 }
 
-/** The same "Effective ..." shapes as `effectiveDate()`; `(?!\d)` keeps "20225" from reading as 2022. */
-const EFFECTIVE =
-  /effective[^.\n]{0,24}?(?:([a-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})|(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4}))(?!\d)/gi;
-
 /** "Revised 03/2021", "Rev. 1/15/2022", "Updated: January 2023", "Last updated March 3, 2024". */
 const PRINTED =
   /\b(?:revised|rev\.|updated)\s*(?:on|date)?\s*:?\s*(?:([a-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})|(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})|(\d{1,2})[/.-](\d{4})|([a-z]{3,9})\.?,?\s+(\d{4}))(?!\d)/gi;
@@ -84,13 +84,28 @@ function evidenceOf(match: string): string {
   return match.replace(/\s+/g, " ").trim().slice(0, 120);
 }
 
-function effectiveDates(head: string): Found[] {
-  const found: Found[] = [];
-  for (const m of head.matchAll(EFFECTIVE)) {
-    const date = m[1] ? calendarDate(Number(m[3]), monthOf(m[1]), Number(m[2])) : calendarDate(Number(m[6]), Number(m[4]), Number(m[5]));
-    if (date) found.push({ date, evidence: evidenceOf(m[0]) });
+/** A YYYY-MM-DD string that is a real calendar day ("2023-02-31" is not). */
+function realDay(iso: string | null): string | null {
+  if (!iso) return null;
+  const [year, month, day] = iso.split("-").map(Number);
+  return calendarDate(year, month, day) === iso ? iso : null;
+}
+
+/** The words of the first "effective" in `head` that dates `date` (it was read by Hamilton's readers). */
+function effectiveEvidence(head: string, date: string): string {
+  for (const m of head.matchAll(/effective/gi)) {
+    const words = head.slice(m.index ?? 0, (m.index ?? 0) + 80).split(/\n|\.\s/)[0];
+    if (effectiveDate(words) === date || editionStarts(words, false) === date) return evidenceOf(words);
   }
-  return found;
+  return `Effective ${date}`;
+}
+
+/** The latest "Effective ..." date, by Hamilton's `effectiveDate()` and `editionStarts()`; null when none. */
+function effectiveStatement(head: string): Found | null {
+  const dates = [effectiveDate(head), editionStarts(head)].map(realDay).filter((d): d is string => d != null);
+  if (dates.length === 0) return null;
+  const date = dates.sort().at(-1)!;
+  return { date, evidence: effectiveEvidence(head, date) };
 }
 
 function printedDates(head: string): Found[] {
@@ -126,7 +141,7 @@ function latest(found: Found[]): Found | null {
 /** The date a document states (see the file comment). Pure. */
 export function readStatedDate(text: string | null | undefined, url: string | null | undefined, now = new Date()): StatedDate {
   const head = (text ?? "").slice(0, STATED_DATE_SCAN_CHARS);
-  const effective = latest(effectiveDates(head));
+  const effective = effectiveStatement(head);
   const printed = latest(printedDates(head));
   if (effective && (!printed || effective.date >= printed.date)) {
     return { date: effective.date, basis: "effective_statement", evidence: effective.evidence };

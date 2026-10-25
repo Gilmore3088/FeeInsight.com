@@ -22,9 +22,10 @@ and nobody could count, show or act on the stale ones.
   `url_year`, `none`) and `stated_date_version`. It adds columns only and changes no data.
 - Magellan's stated-date pass (`magellan/stated-date.ts`, `STATED_DATE_VERSION` v1) runs at the
   start of each `discover` step. Each step dates up to 200 documents, those live fees cite first,
-  reading the first 12,000 characters of the newest completed text. The stated date is the latest
-  "Effective ..." date (the same shapes as `effectiveDate()`) or "Revised/Rev./Updated" date found
-  there. With neither, it falls back to the latest year in the address. The step writes the three
+  reading the first 8,000 characters of the newest completed text (Hamilton's `EDITION_SCAN_CHARS`).
+  The stated date is the latest "Effective ..." date, read by Hamilton's own readers rather than a
+  copy (the later of `effectiveDate()` and `editionStarts()`, which reads the edition line past a
+  web page's menu), or "Revised/Rev./Updated" date found there. With neither, it falls back to the latest year in the address. The step writes the three
   columns and one `magellan.stated_dates` run event with stale samples and their evidence words.
 - The freshness search picks up a bank once at version 2 when the link's own document (its last
   main fetch, or the current copy of the link's page, never a companion) states a date more than

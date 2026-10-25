@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { effectiveDate } from "@/lib/agents/hamilton/schedule-edition";
+import { EDITION_HEAD_CHARS, EDITION_SCAN_CHARS, editionStarts, effectiveDate } from "@/lib/agents/hamilton/schedule-edition";
 import {
   calendarDate,
   isStaleStatedDate,
@@ -37,6 +37,23 @@ describe("readStatedDate", () => {
     }
   });
 
+  it("reads a schedule's edition line past a web page's menu, as Hamilton's editionStarts() does", () => {
+    const menu = "Home | Personal | Business | Loans | About | Contact\n".repeat(Math.ceil(EDITION_HEAD_CHARS / 50) + 1);
+    const text = `${menu}FEE SCHEDULE\nEffective 1 March 2022\nOverdraft $30.00`;
+    // effectiveDate() does not read "1 March 2022"; the edition reader does, past the menu.
+    expect(effectiveDate(text)).toBeNull();
+    expect(editionStarts(text)).toBe("2022-03-01");
+    expect(readStatedDate(text, null, NOW)).toEqual({ date: "2022-03-01", basis: "effective_statement", evidence: "Effective 1 March 2022" });
+  });
+
+  it("keeps the later of the edition and a change the schedule announces", () => {
+    expect(readStatedDate("SCHEDULE OF FEES\nEffective March 1, 2024. Changes effective December 1, 2026: wire $30.", null, NOW)).toEqual({
+      date: "2026-12-01",
+      basis: "effective_statement",
+      evidence: "effective December 1, 2026: wire $30.",
+    });
+  });
+
   it("takes the latest date, so a later change or revision makes the schedule newer", () => {
     expect(readStatedDate("Effective January 1, 2021\nOverdraft $30\nRevised 03/2025", null, NOW)).toMatchObject({
       date: "2025-03-01",
@@ -70,7 +87,8 @@ describe("readStatedDate", () => {
     expect(readStatedDate("effective for accounts opened 12 2019", null, NOW).date).toBeNull();
   });
 
-  it("reads only the opening STATED_DATE_SCAN_CHARS characters", () => {
+  it("reads only the opening STATED_DATE_SCAN_CHARS characters, as far as Hamilton reads an edition line", () => {
+    expect(STATED_DATE_SCAN_CHARS).toBe(EDITION_SCAN_CHARS);
     const text = `${"x".repeat(STATED_DATE_SCAN_CHARS)} Effective January 1, 2020`;
     expect(readStatedDate(text, null, NOW).date).toBeNull();
   });
