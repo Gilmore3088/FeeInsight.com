@@ -132,9 +132,9 @@ describe("change helpers", () => {
 
     expect(html).toContain("What we knew and when");
     expect(html).toContain('href="https://lonestar.example/fees-2025.pdf"');
-    expect(html).toContain("Effective Jan 1, 2025");
+    expect(html).toContain("Jan 1, 2025");
     expect(html).toContain("Oct 2, 2026");
-    expect(html).toContain("No date stated");
+    expect(html).toContain("Not dated");
     expect(html).toContain("A schedule older than the one we had, or a correction to our own reading, is never reported as a change.");
     expect(html).not.toMatch(/\u2014|Knox|Darwin|Magellan|Rosetta/);
   });

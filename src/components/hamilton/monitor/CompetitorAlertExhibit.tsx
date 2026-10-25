@@ -29,15 +29,14 @@ function formatDate(value: string | null): string | null {
 }
 
 function BaselineRow({ label, side }: { label: string; side: BaselineSideDetail }) {
-  const edition = formatDate(side.edition);
-  const schedule = edition ? `Effective ${edition}` : "No date stated";
+  const schedule = formatDate(side.edition) ?? "Not dated";
   return (
     <tr>
-      <th scope="row">{label}</th>
+      <td>{label}</td>
       <td className="num">{money(side.amount)}</td>
       <td>
         {side.scheduleUrl ? (
-          <a href={side.scheduleUrl} rel="noopener noreferrer" target="_blank">
+          <a href={side.scheduleUrl} rel="noopener noreferrer" target="_blank" style={{ textDecoration: "underline" }}>
             {schedule}
           </a>
         ) : (
@@ -109,19 +108,17 @@ export function CompetitorAlertExhibit({
         {detail.baseline ? (
           <div className="rd-table-wrap">
             <table className="rd-table" aria-label={`What we knew and when: ${competitor}`}>
-              <caption className="rd-sub" style={{ captionSide: "top", textAlign: "left" }}>
+              <caption style={{ captionSide: "top", textAlign: "left", fontWeight: 600, fontSize: "0.95em", padding: "1.25rem 0 0.25rem" }}>
                 What we knew and when
               </caption>
               <thead>
                 <tr>
-                  <th scope="col">
-                    <span className="sr-only">Reading</span>
-                  </th>
+                  <th scope="col">{competitor}</th>
                   <th scope="col" className="num">
                     Price
                   </th>
-                  <th scope="col">Schedule</th>
-                  <th scope="col">In our records</th>
+                  <th scope="col">Schedule dated</th>
+                  <th scope="col">On file from</th>
                 </tr>
               </thead>
               <tbody>
