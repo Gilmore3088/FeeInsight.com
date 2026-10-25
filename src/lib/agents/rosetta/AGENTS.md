@@ -110,13 +110,13 @@ Rosetta owns source text normalization.
   newest texts first, scoped like the other selections. It reads the exact vault bytes through
   the shared byte loader (never a download; mismatched or missing bytes record an `unavailable`
   receipt and nothing else), reads them with the current PDF reader and `normalizeWhitespace`, and
-  runs Darwin's live re-check of the shared source check (`statedInOwnSource`) on the stored and
+  runs Darwin's source predicate over the shared source check (`statedInOwnSource`) on the stored and
   the new text for every live fee: `supported_both`, `lost`, `gained` or `unsupported_both`. One
   `rosetta.layout_recheck` event per document holds the counts, `text_changed`, the
   reader-agreement disagreement count and up to 20 fee examples; a receipt for that text hash at
   the current layout and protocol takes the text out of the sample. It writes no stored text,
   attempt, playbook or fee row, so it never makes a text due for a re-read. Without a configured
-  vault it does not run; a failure is on the step result (`layoutRecheckError`) and never stops
+  vault it does not run; a failure is in the read step's detail (`layout_recheck_error`) and never stops
   the step.
 - No bank is lost to its document's format. Readers escalate within the same document,
   free first, and every try is a `pipeline_attempts` row (stage `read`, own strategy,

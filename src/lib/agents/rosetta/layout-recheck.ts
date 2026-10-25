@@ -169,7 +169,7 @@ export function layoutRecheckQuery(
                AND pa.stage = 'read'
                AND pa.institution_id = t.institution_id
           ) read_layout
-         WHERE read_layout.version < $3
+         WHERE read_layout.version < $3::int
          ORDER BY t.id DESC
       ),
       picked AS (
@@ -213,9 +213,10 @@ async function liveFees(db: SqlTag, row: LayoutRecheckCandidate): Promise<Layout
 }
 
 /**
- * Darwin's live re-check of one fee against one text: the shared `checkFeeAgainstSource` through
- * `statedInOwnSource` (category pattern ".", the refiled canonical key, the verified amount),
- * exactly as `darwin/verified-recheck.ts` reads a live fee. Pure.
+ * Whether one text supports one live fee: the shared `checkFeeAgainstSource` through Darwin's
+ * `statedInOwnSource` (category pattern ".", the refiled canonical key, the verified amount).
+ * Close to Darwin's verify call, not identical to `verified-recheck.ts` (which uses the raw amount
+ * and no tiered or rate fees); both texts go through this same predicate, so old vs new is fair. Pure.
  */
 export function feeSupportedBy(text: string, fee: LayoutRecheckFeeRow): boolean {
   const canonicalFeeKey = refileCategory(fee.canonical_fee_key, fee.fee_name) ?? fee.canonical_fee_key;

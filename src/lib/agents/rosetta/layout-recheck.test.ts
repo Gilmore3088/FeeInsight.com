@@ -94,7 +94,8 @@ describe("layout recheck selection", () => {
     expect(query).toContain("cr.document_r2_key = left(cr.content_hash, 2) || '/' || cr.content_hash");
     expect(query).toContain("cr.content_hash = adt.source_hash");
     expect(query).toMatch(/COALESCE\(MAX\(COALESCE\(\(pa\.detail->>'pdf_layout'\)::int, 1\)\), 1\)/);
-    expect(query).toContain("WHERE read_layout.version < $3");
+    // $3 is also compared as text in the receipt CTE, so its integer use needs its own cast.
+    expect(query).toContain("WHERE read_layout.version < $3::int");
     expect(query).toContain("p.rolled_back_at IS NULL AND p.quarantined_at IS NULL");
     expect(query).toContain("WHERE live.live_fees > 0");
     expect(query).toContain("ORDER BY t.id DESC");
