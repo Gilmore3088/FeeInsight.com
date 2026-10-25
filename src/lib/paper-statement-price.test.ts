@@ -53,6 +53,12 @@ describe("paperStatementPriceOnLine (#1947)", () => {
     ["eStyle Account Monthly Service Charge: $5.00 | Paper Statement Fee:", 5],
     ["Accounts not maintaining a $250 balance will be assessed a monthly service fee of either $2.50 with eStatements or $5.00 with paper statements", 5],
     ["Paper statements: $3 monthly fee", 0],
+    // An electronic price before the paper price, or worded another way (review of #2655).
+    ["Monthly Maintenance Fee | E-Statement: $3 | Paper Statement: $5", 5],
+    ["Monthly fee: eStatements: $3; Paper Statements: $5", 5],
+    ["$12 if you receive paper statements or $10 if enrolled in eStatements", 12],
+    ["$15 monthly fee for customers receiving paper statements and $12 for customers enrolled in eStatements", 15],
+    ["$10 monthly fee if you receive paper statements; no fee with eStatements", 10],
   ])("%s ($%s) is not", (line, amount) => {
     expect(paperStatementPriceOnLine(line, amount)).toBeNull();
   });

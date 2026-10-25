@@ -329,7 +329,7 @@ import { namesLateChargeBound } from "@/lib/late-charge-bound";
 // v97. Name re-tidy stays at v27.
 // v116 (#1947): a read filed as monthly maintenance whose own line prices it as the paper statement
 // charge (`paperStatementRead` in rules.ts, `paperStatementPriceOnLine`, shared with category guard
-// v91) is the paper statement fee: "Service charge | $3.00 paper statement fee each statement cycle",
+// v92) is the paper statement fee: "Service charge | $3.00 paper statement fee each statement cycle",
 // "A $2 paper statement fee applies", "*A monthly fee of $3 applies if you choose to receive paper
 // statements", "Paper (mailed) Statement Fee **** | $2.00 Monthly Fee". The account's own price for
 // paper holders beside an electronic price ("$4 for paper statement or $3 for estatement", "$7 with

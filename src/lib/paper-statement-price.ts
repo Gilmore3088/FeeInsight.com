@@ -21,8 +21,10 @@
  *
  * It is not when the price is the account's own fee for paper holders beside an electronic price
  * ("$4 for paper statement or $3 for estatement", "$7 with paper statement; $5 with electronic
- * statement"): "with" and a bare "for" never count, and a line that prices an e-statement
- * alternative right after the price is the account's tiered fee.
+ * statement"): "with" and a bare "for" never count, and a line that also prices an e-statement
+ * alternative, before or after the price and however it is worded ("E-Statement: $3 | Paper
+ * Statement: $5", "$12 if you receive paper statements or $10 if enrolled in eStatements", "no fee
+ * with eStatements"), is the account's tiered fee.
  */
 
 const PAPER = String.raw`(?:paper|printed|mailed)(?:\s*\(\s*mailed\s*\))?(?:,?\s+(?:paper|mailed|printed))?`;
@@ -54,10 +56,26 @@ const LABEL_BEFORE = new RegExp(String.raw`(?:^|[|•·:;.]\s*|^\W*)${PAPER}\s+$
 /** The account's own price for paper holders beside an electronic price ("$4 for paper statement or $3 for estatement"). */
 const ELECTRONIC_ALTERNATIVE = /^[^|$]{0,60}\b(?:or|;|,)\s*\$\s?\d[\d.,]*\s+(?:with|for|if)\s+(?:an?\s+)?(?:e-?statements?|electronic|online|paperless)/i;
 
+const ELECTRONIC_WORD = String.raw`(?:e-?\s?statements?|estmts?|electronic(?:\s+statements?)?|online\s+statements?|paperless)`;
+const ELECTRONIC = new RegExp(String.raw`\b${ELECTRONIC_WORD}`, "i");
+const ELECTRONIC_FREE = new RegExp(
+  String.raw`\b(?:no\s+(?:fee|charge)|free|\$\s?0(?:\.00)?\b)[^|$]{0,30}\b${ELECTRONIC_WORD}|\b${ELECTRONIC_WORD}[^|$]{0,30}\b(?:no\s+(?:fee|charge)|free|\$\s?0(?:\.00)?\b)`,
+  "i",
+);
+
+/** The line prices an electronic alternative anywhere beside this price: the account's tiered fee, not a paper charge. */
+function tieredBesideElectronic(text: string, priceStart: number, priceEnd: number): boolean {
+  if (!ELECTRONIC.test(text)) return false;
+  if (ELECTRONIC_FREE.test(text)) return true;
+  const rest = `${text.slice(0, priceStart)} ${text.slice(priceEnd)}`;
+  return /\$\s?\d/.test(rest);
+}
+
 function priceOnLine(amount: number): RegExp {
   const whole = Math.trunc(amount);
   const cents = Math.round((amount - whole) * 100);
-  const centsPart = cents === 0 ? String.raw`(?:\.00)?` : String.raw`\.${String(cents).padStart(2, "0")}`;
+  const centsPart =
+    cents === 0 ? String.raw`(?:\.00)?` : cents % 10 === 0 ? String.raw`\.${cents / 10}0?` : String.raw`\.${String(cents).padStart(2, "0")}`;
   return new RegExp(String.raw`\$\s?${whole === 0 ? "0?" : whole}${centsPart}(?![\d,]|\.\d)`, "g");
 }
 
@@ -80,7 +98,12 @@ export function paperStatementPriceOnLine(line: string | null | undefined, amoun
     const tail = text.slice(match.index + match[0].length);
     if (ELECTRONIC_ALTERNATIVE.test(tail)) continue;
     const ownTail = tail.split(/\$|\|/)[0];
-    const after = ownTail.match(NAMED_AFTER) ?? ownTail.match(ONLY_FOR_PAPER_AFTER);
+    const named = ownTail.match(NAMED_AFTER);
+    if (named) return `${match[0]}${named[0]}`.trim();
+    // Charged only for paper, or under a paper label: the account's tiered fee when the line also
+    // prices an electronic alternative. A price named the paper statement fee stays that fee.
+    if (tieredBesideElectronic(text, match.index, match.index + match[0].length)) continue;
+    const after = ownTail.match(ONLY_FOR_PAPER_AFTER);
     if (after) return `${match[0]}${after[0]}`.trim();
     // The label is the price's own cell before it, or the cell before when the price opens its cell.
     const cells = text.slice(0, match.index).split("|");

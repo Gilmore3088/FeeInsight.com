@@ -1989,7 +1989,7 @@ describe("v116 (#1947): a price its own line makes the paper statement charge is
   const reads = (line: string) => extractCandidatesFromText(line).candidates.map((c) => [c.canonicalHint, c.amount, c.feeName]);
 
   it("files the live maintenance misreads as paper statement fees", () => {
-    // Each line is a live fee's stored line (Oct 25); the read was monthly_maintenance before v115.
+    // Each line is a live fee's stored line (Oct 25); the read was monthly_maintenance before v116.
     expect(reads("Service charge | $3.00 paper statement fee each statement cycle that you receive printed statements by mail")).toEqual([["paper_statement", 3, "Paper statement fee"]]);
     expect(reads("No. Scott Credit Union checking accounts do not charge a monthly maintenance fee. A $2 paper statement fee applies if you are not enrolled in eStatements.")).toEqual([["paper_statement", 2, "Paper statement fee"]]);
     expect(reads("*A monthly fee of $3 applies if you choose to receive paper statements.")).toEqual([["paper_statement", 3, "Paper statement fee"]]);
