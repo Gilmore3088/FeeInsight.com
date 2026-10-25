@@ -14,10 +14,19 @@
  *    live-recomputed value from (1) and (2), or the gap between two of them, within the rounding
  *    the figure is printed at, or a price the question itself named.
  *
+ * 4. Filings (written answers, #1077 claim contract step 7): every filing figure the sentence
+ *    binding supports (a `filing:` fact, or a derived quarter or peer median whose input filings
+ *    are named) is re-read live from its filing row (`readFilingValues`, data-store/filing-reread.ts).
+ *    A changed value fails, and so does a row no longer on file; a re-read that cannot run leaves
+ *    the answer unchecked.
+ *
  * Limits, stated so the rate is read for what it is: percentages and counts in the text are not
- * yet checked; sentences sourced to other tables (call reports, fee changes, complaints) are out
- * of scope; and the whole-schedule overview's peer medians are accepted as printed, because the
- * overview does not carry its peer members (the bank's own value on each line is re-read live).
+ * yet checked; other-source money the written answer's tools read that no supported filing claim
+ * names (national data, fee changes, complaints, a filing sentence the binding left as Hamilton's
+ * reading) is still accepted as stated; a filed peer median whose peer list was shortened names no
+ * input rows, so only its stated value is known; and the whole-schedule overview's peer medians are
+ * accepted as printed, because the overview does not carry its peer members (the bank's own value
+ * on each line is re-read live).
  * The overdraft pricing groups' rules ("$15.01 to $30") are fixed definitions and are skipped.
  * The structure set's transfer from savings is a different fee from the one asked about, so its
  * members' values and the "typically $X" line recompute from their own live rows (#2029).
@@ -30,6 +39,9 @@ import { ARCHETYPE_RULE_PATTERN, typicalTransfer } from "./workspace/storyline";
 import { MIN_PEERS_FOR_POSITION } from "./workspace/scenario";
 import type { ScheduleOverview } from "./workspace/schedule";
 import type { AskResponse, Fact, FeeResearch, PeerValue } from "./workspace/types";
+import { readFilingValues, type FilingRereadKey, type FilingRereadTable } from "@/lib/data-store/filing-reread";
+import type { HamiltonEvidenceBundle, HamiltonEvidenceFact } from "./evidence-contract";
+import type { NarrativeBinding } from "./narrative-bound";
 
 const FEE_TABLE = "published_fee_catalog";
 /** The structure line's lower-cost path: "N of M in the group price a transfer from savings, typically $X". */
@@ -55,11 +67,85 @@ export interface LiveFeeValues {
 }
 
 export interface CorrectnessResult {
-  /** False when the answer cites no catalog figure and is built on no fee research, or the catalog could not be read. */
+  /** False when the answer cites no catalog figure and is built on no fee research, or the catalog (or a filing re-read) could not be read. */
   checked: boolean;
   /** Catalog-sourced dollar figures checked in the text. */
   figures: number;
+  /** Supported filing claims re-read live (written answers only). */
+  filings?: number;
   failures: string[];
+}
+
+/** One supported filing claim: a sentence the binding supports and a filing fact it rests on. */
+export interface FilingClaim {
+  sentence: string;
+  /** The filing fact's value as the answer's tools read it, in its own unit. */
+  value: number;
+  unit: HamiltonEvidenceFact["unit"];
+  key: FilingRereadKey;
+}
+
+/** Live filing values for the claims' keys, or null when they could not be read. */
+export type FilingReader = (keys: FilingRereadKey[]) => Promise<Map<string, number | null> | null>;
+
+const REREAD_TABLES = new Set<FilingRereadTable>(["institution_financial_records", "institution_call_report_items"]);
+
+function filingKey(fact: HamiltonEvidenceFact): FilingRereadKey | null {
+  const { scope, source } = fact;
+  const origin = fact.id.split(":")[1];
+  const basis = scope.periodBasis;
+  if (source.evidenceClass !== "filing" || !REREAD_TABLES.has(source.table as FilingRereadTable)) return null;
+  if ((origin !== "fdic" && origin !== "ncua") || typeof scope.institutionId !== "number" || !scope.reportingDate || !scope.metric) return null;
+  if (basis !== "ytd" && basis !== "standalone_quarter" && basis !== "point_in_time") return null;
+  return { id: fact.id, table: source.table as FilingRereadTable, source: origin, institutionId: scope.institutionId, reportDate: scope.reportingDate, metric: scope.metric, basis };
+}
+
+/**
+ * The filing claims a binding supports: each supported sentence's `filing:` facts, and the input
+ * filings of each derived fact it cites (a profile quarter, a filed peer median with its peers named).
+ */
+export function supportedFilingClaims(binding: NarrativeBinding | null, bundle: HamiltonEvidenceBundle | null): FilingClaim[] {
+  if (!binding || !bundle) return [];
+  const facts = new Map(bundle.facts.map((f) => [f.id, f]));
+  const derived = new Map(bundle.derivations.map((d) => [d.id, d]));
+  const out: FilingClaim[] = [];
+  for (const sentence of binding.supported) {
+    const seen = new Set<string>();
+    const ids = sentence.factIds.flatMap((id) => (derived.has(id) ? derived.get(id)!.derivation.inputFactIds : [id]));
+    for (const id of ids) {
+      const fact = facts.get(id);
+      const key = fact ? filingKey(fact) : null;
+      if (!fact || !key || seen.has(id) || typeof fact.value !== "number" || !Number.isFinite(fact.value)) continue;
+      seen.add(id);
+      out.push({ sentence: sentence.text, value: fact.value, unit: fact.unit, key });
+    }
+  }
+  return out;
+}
+
+/** Live filing reads for the eval: one database read per call (data-store/filing-reread.ts); null when it fails. */
+export function liveFilingReader(): FilingReader {
+  return (keys) => readFilingValues(keys).catch(() => null);
+}
+
+const filingFigure = (value: number, unit: FilingClaim["unit"]) =>
+  unit === "usd" ? `$${Math.round(value).toLocaleString("en-US")}` : String(value);
+const sameFiling = (stated: number, live: number, unit: FilingClaim["unit"]) =>
+  Math.abs(stated - live) <= (unit === "usd" ? 0.5 : 1e-9 * Math.max(1, Math.abs(live)));
+const snippet = (text: string) => (text.length > 80 ? `${text.slice(0, 80)}…` : text);
+
+/** Step 4: each supported filing claim against its live row; failures in place, the number re-read returned. */
+function reconcileFilings(claims: readonly FilingClaim[], live: ReadonlyMap<string, number | null>, failures: string[]): number {
+  for (const claim of claims) {
+    const value = live.get(claim.key.id);
+    const what = `${claim.key.metric} for ${claim.key.reportDate} (${claim.key.basis.replace(/_/g, " ")})`;
+    if (value === null || value === undefined) {
+      failures.push(`filing claim "${snippet(claim.sentence)}": the answer uses ${filingFigure(claim.value, claim.unit)} for ${what}, and the live filing has no row for it`);
+    } else if (!sameFiling(claim.value, value, claim.unit)) {
+      failures.push(`filing claim "${snippet(claim.sentence)}": the answer uses ${filingFigure(claim.value, claim.unit)} for ${what}, the live filing has ${filingFigure(value, claim.unit)}`);
+    }
+  }
+  return claims.length;
 }
 
 const money = (n: number) => `$${Number.isInteger(n) ? n : n.toFixed(2)}`;
@@ -174,11 +260,23 @@ export function reconcileSimulateText(input: ReconcileInput & { text: string; re
  * recomputed statistic or a gap between two for the asked fee, or one of `extra` (money the answer's
  * tools read from sources other than the fee catalog). The free answer's research only names the
  * fee and members to recompute; its own stale values are that answer's failures, not this one's.
+ *
+ * `filings` (#1077 step 7): the supported filing claims and their live re-read. A claim whose live
+ * value differs, or whose row is gone, fails, even though its figure is in `extra` (the tools did
+ * read it). When there are claims and `live` is null (the re-read failed), the answer is unchecked.
  */
-export function reconcileWrittenText(input: ReconcileInput & { text: string; extra?: number[] }): CorrectnessResult {
+export function reconcileWrittenText(input: ReconcileInput & {
+  text: string; extra?: number[];
+  filings?: { claims: readonly FilingClaim[]; live: ReadonlyMap<string, number | null> | null };
+}): CorrectnessResult {
   const base = reconcileValues(input, catalogFacts(input.response));
   if (!base) return { checked: false, figures: 0, failures: [] };
-  return tieText(input.text, base.anchors, [...base.singles, ...(input.extra ?? [])], []);
+  const claims = input.filings?.claims ?? [];
+  if (claims.length > 0 && !input.filings?.live) return { checked: false, figures: 0, failures: [] };
+  const failures: string[] = [];
+  const filings = claims.length > 0 ? reconcileFilings(claims, input.filings!.live!, failures) : 0;
+  const tied = tieText(input.text, base.anchors, [...base.singles, ...(input.extra ?? [])], failures);
+  return input.filings ? { ...tied, filings } : tied;
 }
 
 /** Dollar figures the answer states from sources other than the fee catalog, accepted as printed. */

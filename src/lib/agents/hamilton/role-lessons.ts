@@ -137,4 +137,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-1077-never-answer-another-subject",
+    agent: "hamilton",
+    stage: "written answer",
+    lesson: "Answer the question asked or say plainly that it can't be answered from the data held, and what can be. Never put another subject in its place: a question that names no fee is never answered with the open decision's fee or a default fee unless it follows up that fee (tests a price, asks what to do, or points back at it), and a question about fee income, fee share or a market is never asked 'which fee?'.",
+    why: "Of 22 real Pro questions replayed, 8 met the quality bar. A question about $5B-and-up Florida institutions' pricing, revenue and complaints, and another about credit unions with a fee share below 4%, were both answered with the reader's overdraft fee, and a question about service fee income was asked back 'Which fee do you want to look at?'. Ask fell back to a fee when it did not recognise the subject.",
+    evidence: { issues: [1077], prs: [], files: ["src/lib/hamilton/workspace/ask.ts", "src/lib/hamilton/workspace/ask.test.ts", "src/lib/hamilton/answer-eval.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];
