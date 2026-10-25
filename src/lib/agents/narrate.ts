@@ -352,6 +352,10 @@ function narrateFinished(
     case "deming-filings-reconcile": {
       const totals = (detail.totals ?? {}) as Detail;
       const unexplained = n(totals, "unexplained");
+      const unread = [["bank", "banks"], ["credit_union", "credit unions"]]
+        .filter(([key]) => typeof ((detail[key] ?? {}) as Detail).error === "string").map(([, label]) => label);
+      if (n(totals, "compared") === 0) return `ALARM: Deming compared no shown financials with the stored filings${unread.length ? `; it could not read ${unread.join(" or ")}` : ""}.`;
+      if (unread.length) return `ALARM: Deming could not read ${unread.join(" or ")} for the filings check; of the rest, ${n(totals, "matched")} of ${n(totals, "compared")} figures match, ${unexplained === 0 ? "none unexplained" : `${count(unexplained, "figure")} unexplained`}.`;
       return `Deming reconciled shown financials with the stored filings: ${n(totals, "matched")} of ${n(totals, "compared")} figures match, ${n(totals, "explained")} differ for a known reason, ${unexplained === 0 ? "none unexplained" : `ALARM: ${count(unexplained, "figure")} unexplained`}.`;
     }
     case "deming-knox-misses": {
