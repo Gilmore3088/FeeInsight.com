@@ -127,4 +127,14 @@ export const DEMING_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-2625-merger-into-other-charter",
+    agent: "deming",
+    stage: "filings reconcile",
+    lesson: "A merger does not always show as the survivor's 810 event. When a bank merges into a different, smaller charter, the surviving certificate shows offices acquired in a merger (713) on the same date as a main-office change (510); read that pair as a merger date too, and look at office-level events, not only institution-level ones.",
+    why: "Emigrant Bank (2023-10-01) and Kendall Bank (2025-01-31) merged into smaller charters. Their structure history has 713 and 510 events on the merger date, all with office numbers, and no 810 with no office, so the filings reconcile found no merger and flagged the two banks' differences as identity suspects with no label.",
+    evidence: { issues: [2625], prs: [], files: ["docs/project/findings/2026-10-25-merger-into-other-charter-splits-history.md", "src/lib/agents/deming/filings-reconcile.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];
