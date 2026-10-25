@@ -4,7 +4,7 @@
  * readers are stubbed with an invented bank.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { writtenAnswerEvidence } from "@/lib/hamilton/written-answer-binding";
+import { writtenAnswerFeeEvidence } from "@/lib/hamilton/written-answer-binding";
 import { writtenAnswerCheck } from "@/lib/hamilton/answer-save";
 import { financialPeerComparison } from "@/lib/data-store/financial-peer-contract";
 
@@ -41,7 +41,7 @@ describe("getInstitution fee rows", () => {
     const fees = (output as { fees: { verified: Array<Record<string, unknown>>; provisional: Array<Record<string, unknown>> } }).fees;
     expect(fees.verified[0]).toMatchObject({ record_id: 41, source_document_id: 141, amount: 10 });
     expect(fees.provisional[0]).toMatchObject({ record_id: 42, source_document_id: null });
-    const facts = writtenAnswerEvidence([output])!.evidence.facts;
+    const facts = writtenAnswerFeeEvidence([output])!.evidence.facts;
     expect(facts.map((fact) => [fact.id, fact.status, fact.source.sourceDocumentIds])).toEqual([
       ["fee:published:41", "published", [141]],
       ["fee:published:42", "provisional", []],
