@@ -7,6 +7,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const DARWIN_LESSONS: AgentLesson[] = [
   {
+    id: "issue-1910-bank-shorthand-is-one-item",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "When two fee names are compared to decide whether they are one item, read the bank's shorthand as the words it stands for: NSF, insufficient funds and non-sufficient funds are one item, OD is overdraft, and an NSF item the bank paid is its overdraft.",
+    why: "The product-page repeat check compared item words literally, so Amarillo National's \"NSF charges\" and \"One overdraft (OD) fee\" product-page lines stayed live beside the schedule's \"Insufficient Item Charge\" and \"Paid NSF Item\" at the same $19, five live rows for one charge (dry run 2026-10-25: 5 such repeats at 4 institutions).",
+    evidence: { issues: [1910], prs: [], files: ["src/lib/agents/darwin/product-page-repeat-check.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
+  {
     id: "issue-2342",
     agent: "darwin",
     stage: "verify",
