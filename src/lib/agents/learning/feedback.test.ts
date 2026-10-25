@@ -4,6 +4,7 @@ import { knoxStrategyFromFlags, lastPerDedupeKey, recordFeedback, takedownCheck,
 import { relabelPerFeeTakedowns, syncPipelineFeedback, takedownFeedback, takedownSynced, TAKEDOWN_SYNC_SKIPS } from "./feedback-sync";
 
 import * as referenceStore from "@/lib/data-store/answer-key-reference-store";
+import { feedbackRowRead } from "./feedback-kinds";
 import { referenceKeyFingerprint } from "@/lib/data-store/answer-key-eligibility";
 import { fixtureEligibility, fixtureReference } from "@/lib/data-store/__fixtures__/answer-key-reference";
 afterEach(() => vi.restoreAllMocks());
@@ -95,6 +96,15 @@ describe("shared learning store", () => {
     const dry = mockDb([["check_name ~", [{ id: 5, reason: "refreshed by #69017" }]]]);
     expect(await relabelPerFeeTakedowns(dry.db, { limit: 100, dryRun: true })).toBe(1);
     expect(dry.calls.some((call) => call.query.includes("UPDATE"))).toBe(false);
+  });
+
+  it("keys a later takedown cycle of the same fee by when it was taken down (#1648)", () => {
+    expect(takedownFeedback({ ...takedown, prior_takedown: false, rolled_back_ms: 1791000000000 }, 1).map((row) => row.dedupeKey))
+      .toEqual(["hamilton.takedown:pub:77:extract", "hamilton.takedown:pub:77:verify"]);
+    const later = takedownFeedback({ ...takedown, prior_takedown: true, rolled_back_ms: "1791000000000" }, 1).map((row) => row.dedupeKey);
+    expect(later).toEqual(["hamilton.takedown:pub:77:at:1791000000000:extract", "hamilton.takedown:pub:77:at:1791000000000:verify"]);
+    // Readers match takedown extract rows by this shape (unread-feedback.ts, feedbackRowRead).
+    expect(feedbackRowRead({ kind: "wrong_amount", about_stage: "extract", check_name: "hamilton.source_check", dedupe_key: later[0] })).toBe(true);
   });
 
   it("charges a takedown to Knox's read and to the Darwin attempt that approved it", () => {

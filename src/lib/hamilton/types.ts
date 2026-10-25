@@ -225,6 +225,12 @@ export interface AnalyzeResponse {
    */
   narrativeBinding?: import("./narrative-bound").NarrativeBinding;
   /**
+   * A written answer's claims (#1077 step 6, #1899), saved by the server with the binding: each
+   * sentence's outcome and the facts a supported sentence cites, with their values. Absent on
+   * answers saved before them and on any saved from the browser; read with `readSavedClaims`.
+   */
+  claims?: import("./saved-claims").SavedClaimSet;
+  /**
    * The dataset stamps of the reads behind the answer's medians, percentiles and counts, frozen
    * when it was saved (#1924). Reopening shows these, never a fresh read. Absent on answers saved
    * before them, which then show no note.
@@ -318,7 +324,11 @@ export interface ReportSummaryResponse {
   recommendation: string;
   implementationNotes: string[];
   /** Findings and tests the reader added to the report basket, shown as written */
-  addedFindings?: Array<{ source: "Position" | "Ask" | "Test"; title: string; detail: string; identityContext?: HamiltonIdentitySnapshot }>;
+  addedFindings?: Array<{
+    source: "Position" | "Ask" | "Test"; title: string; detail: string; identityContext?: HamiltonIdentitySnapshot;
+    /** A saved answer's sentences that are Hamilton's reading, printed under `INTERPRETATION_LABEL` (#1077 step 6; only with HAMILTON_REPORT_FINDING_READING on). */
+    reading?: string[];
+  }>;
   exportControls: {
     pdfEnabled: boolean;
     shareEnabled: boolean;
