@@ -44,7 +44,7 @@ import { getRequestSubjectKey } from "@/lib/api-hardening/audit";
 import { trackFirstHamiltonUse } from "@/lib/analytics-server";
 import { cacheLatestMessage, cachedSystem, ledgerUsage, trackerUsage } from "@/lib/research/tool-output";
 import { SAVED_ANALYSIS_ID_KEY, questionOnly, writtenAnswerBinding, writtenAnswerCheck, writtenAnswerClaims, writtenAnswerResponse } from "@/lib/hamilton/answer-save";
-import { bindingLeavesNothing } from "@/lib/hamilton/written-answer-binding";
+import { bindingLeavesNothing, readerNarrativeBinding } from "@/lib/hamilton/written-answer-binding";
 import type { NarrativeBinding } from "@/lib/hamilton/narrative-bound";
 import { parseAnalyzeResponse } from "@/components/hamilton/analyze/parse-response";
 import { messageBoundsError } from "@/lib/hamilton/conversation-context";
@@ -420,7 +420,10 @@ async function handlePOST(request: Request) {
         if (view.text === null) {
           shadowWrittenAnswer(settled.text, bufferedReads, "held", "written_buffered", ledgerRepair);
           return Response.json(
-            { status: "refused", reason: "evidence_check_failed", problems: settled.verdict.failures.map((f) => f.message), metrics: density.metrics, gate: repairNote },
+            // A left-out sentence is named by its reason, never quoted: a refused reply carries no answer text.
+            { status: "refused", reason: "evidence_check_failed",
+              problems: settled.verdict.failures.map((f) => (f.source === "binding" ? `Left out (${f.code}).` : f.message)),
+              metrics: density.metrics, gate: repairNote },
             { status: 200 },
           );
         }
@@ -431,7 +434,10 @@ async function handlePOST(request: Request) {
           metrics: density.metrics,
           identityContext: identityFor(result.steps),
           gate: { ...repairNote, lead: view.lead, corrections: view.corrections, leftOut: view.leftOut },
-          ...(settled.verdict.binding ? { narrativeBinding: settled.verdict.binding } : {}),
+          // The binding without the text of any sentence the view left out (reasons and counts stay).
+          ...(settled.verdict.binding
+            ? { narrativeBinding: readerNarrativeBinding(settled.verdict.binding, settled.verdict.failures.flatMap((f) => f.sentences ?? [])) }
+            : {}),
         });
       }
 
@@ -462,7 +468,8 @@ async function handlePOST(request: Request) {
           {
             status: "refused",
             reason: "evidence_check_failed",
-            problems: binding.omitted.map((omitted) => `Left out (${omitted.reason}): "${omitted.text}"`),
+            // Named by reason, never quoted (#1077 follow-up): a refused reply carries no answer text.
+            problems: binding.omitted.map((omitted) => `Left out (${omitted.reason}).`),
             metrics: gate.metrics,
           },
           { status: 200 },
@@ -475,7 +482,7 @@ async function handlePOST(request: Request) {
         text: result.text,
         metrics: gate.metrics,
         identityContext: identityFor(result.steps),
-        ...(binding ? { narrativeBinding: binding } : {}),
+        ...(binding ? { narrativeBinding: readerNarrativeBinding(binding) } : {}),
       });
     }
 
@@ -644,7 +651,9 @@ async function handlePOST(request: Request) {
             // A provider refusal happens inside the stream, past the catch below: send the
             // reader the paused line for a usage/billing limit, never the provider's text.
             // A held answer's binding is known before its text replays, so it rides on the start
-            // and a left-out sentence never shows while the text arrives.
+            // and a left-out sentence never shows while the text arrives. It keeps the left-out
+            // sentences' text on purpose: the replayed text still holds them, and the screen
+            // hides them by that text (readerNarrativeBinding is for the buffered JSON only).
             const startBinding = heldVerdict?.binding ?? null;
             writer.merge(requireCompletedProviderUIStream(result.toUIMessageStream({
               onError: (error) => (isProviderLimitError(error) ? HAMILTON_PAUSED_MESSAGE : "Hamilton couldn't finish this answer."),
