@@ -18,7 +18,7 @@ const TEXT = "OTHER SERVICES\nWire Transfer | $25.00\nStop Payment Fee | $35.00"
 type Db = Parameters<typeof correctPublishedFee>[0];
 
 describe.skipIf(!connection)("prospective corrective source context in actual PostgreSQL", () => {
-  let raw: postgres.Sql<{ numeric: number; json: unknown; text: string }>, db: Db, oldId: number, correctionId: number, originRunId: number;
+  let raw: postgres.Sql, db: Db, oldId: number, correctionId: number, originRunId: number;
   let metadataSql=""; let metadataParams:unknown[]=[];
   async function anotherCorrection(key: string = randomUUID(), evidenceDoc = DOC) {
     const event = randomUUID();

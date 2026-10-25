@@ -19,9 +19,9 @@ function deferred<T>() {
 }
 
 describe.skipIf(!connection)("Monthly hold and Darwin concurrency (#2259)", () => {
-  let observer: postgres.Sql<{ numeric: number; json: unknown; text: string }>;
-  let firstConnection: postgres.Sql<{ numeric: number; json: unknown; text: string }>;
-  let secondConnection: postgres.Sql<{ numeric: number; json: unknown; text: string }>;
+  let observer: postgres.Sql;
+  let firstConnection: postgres.Sql;
+  let secondConnection: postgres.Sql;
   let appSql: Db;
   let extract: typeof import("./extract");
   let darwin: typeof import("../darwin/verify");

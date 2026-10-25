@@ -19,9 +19,9 @@ function deferred<T>() {
 }
 
 describe.skipIf(!connection)("Symbolic lesser-of hold and Darwin concurrency (#2335)", () => {
-  let observer: postgres.Sql<{ numeric: number; json: unknown; text: string }>;
-  let firstConnection: postgres.Sql<{ numeric: number; json: unknown; text: string }>;
-  let secondConnection: postgres.Sql<{ numeric: number; json: unknown; text: string }>;
+  let observer: postgres.Sql;
+  let firstConnection: postgres.Sql;
+  let secondConnection: postgres.Sql;
   let appSql: Db;
   let extract: typeof import("./extract");
   let darwin: typeof import("../darwin/verify");
