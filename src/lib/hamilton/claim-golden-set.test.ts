@@ -60,7 +60,7 @@ describe("Hamilton claim golden set: today's behaviour, recorded (#1077, step 0)
 
   it("says plainly that no person has reviewed it, and is held out", () => {
     expect(run.version).toBe(CLAIM_GOLDEN_SET_VERSION);
-    expect(CLAIM_GOLDEN_SET_VERSION).toBe("2026-10-25.5");
+    expect(CLAIM_GOLDEN_SET_VERSION).toBe("2026-10-25.6");
     expect(CLAIM_GOLDEN_REVIEW.status).toBe("unreviewed");
     expect(CLAIM_GOLDEN_REVIEW.record).toBeNull();
     expect(CLAIM_GOLDEN_REVIEW.note).toMatch(/No person has reviewed these cases/);
@@ -75,7 +75,7 @@ describe("Hamilton claim golden set: today's behaviour, recorded (#1077, step 0)
   });
 
   it("uses synthetic institutions and fixture URLs only", () => {
-    const allowed = new Set([9001, 9002, 9011, 9012, 9013, 9014, 9015]);
+    const allowed = new Set([9001, 9002, ...Array.from({ length: 10 }, (_, i) => 9011 + i)]);
     for (const c of CLAIM_GOLDEN_CASES) {
       const json = JSON.stringify(c.surface === "written_answer" ? c.reads : c.bundle);
       for (const match of json.matchAll(/"(?:id|institution_id|institutionId)":(\d+)/g)) expect(allowed.has(Number(match[1])), `${c.id}: ${match[0]}`).toBe(true);

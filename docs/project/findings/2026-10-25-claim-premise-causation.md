@@ -43,9 +43,12 @@ pricing causes, so "because it competes" or "due to its $35 NSF fee" passed.
   ("bringing its total to", "in all") gets an unknown basis and binds nothing, rather than
   inheriting the quarter basis and being omitted as `wrong_basis`.
 
-**Golden set (`claim-golden-set.ts` 2026-10-25.5):** wrong today 7 of 28 before step 3, 3 of 28
+**Golden set (`claim-golden-set.ts` 2026-10-25.5, then .6):** wrong today 7 of 28 before step 3, 3 of 28
 after. The premise cases are closed. `ca-fee-only`, `ca-fee-only-pricing` and `ca-financial-traced`
-are still shown, each with its shadow line recorded (`expect.shadow`). Every control passes.
+are still shown, each with its shadow line recorded (`expect.shadow`). Every control passes. Version 2026-10-25.6 grows the filed peer fixture to ten peers, the median
+minimum since #2568, with no peer's own figure equal to the median, so `sb-median-as-subject` and
+its asked variant are now held as `median_as_fee`, the reason they target, instead of
+`wrong_institution` from a peer whose own quarter equalled the median.
 
 **Where the design differs from the code:**
 - The design narrows the asked-figure rule in `figure-check.ts` too. The number check holds no

@@ -24,7 +24,7 @@
  * prompt tuning").
  *
  * Every institution, figure and fixture.invalid URL here is invented: Bank A (9001) and Bank B
- * (9002), as in the regression set, plus five synthetic filed peers (9011 to 9015). The design's
+ * (9002), as in the regression set, plus ten synthetic filed peers (9011 to 9020). The design's
  * 8109 (account) and 9101 (research subject) are played by Bank A and Bank B. The results say how
  * the checks behave on these cases, never how accurate the live data is.
  */
@@ -49,7 +49,7 @@ import type { AnswerToolEvidence } from "./written-answer-evidence";
  * .4: step 3 (premise and causation) recorded its outcomes; the cases and targets are unchanged.
  * .5: PR #2572 review: premises only where the question asserts its figure; the broad causal rule is a shadow line.
  */
-export const CLAIM_GOLDEN_SET_VERSION = "2026-10-25.5";
+export const CLAIM_GOLDEN_SET_VERSION = "2026-10-25.6";
 
 /** Who has checked these cases. Nobody has: change only with a link to an actual review record. */
 export const CLAIM_GOLDEN_REVIEW = {
@@ -224,13 +224,20 @@ function fdicProfile(id: number, quarters: Record<string, number>): AnswerToolEv
   };
 }
 
-/** Bank A's filed fee income against five synthetic NCUA peers for Q2 2026 (median $300,000). */
+/**
+ * Synthetic filed peers' Q2 2026 service charge income (thousands): ten, the peer minimum for a
+ * median (#2568), whose median is $300,000 while no peer's own figure is.
+ */
+const FILED_PEER_INCOME = [100, 150, 200, 250, 280, 320, 350, 400, 450, 500];
+const FILED_PEERS = FILED_PEER_INCOME.map((_, index) => 9011 + index);
+
+/** Bank A's filed fee income against ten synthetic NCUA peers for Q2 2026 (median $300,000). */
 function filedPeerRead(): AnswerToolEvidence {
-  const rows: FiledFeeIncome[] = [BANK_A, 9011, 9012, 9013, 9014, 9015].map((institutionId, index) => ({
+  const rows: FiledFeeIncome[] = [BANK_A, ...FILED_PEERS].map((institutionId, index) => ({
     institution_id: institutionId, institution_name: institutionId === BANK_A ? "Bank A" : `Synthetic Peer ${index}`,
     charter_type: "credit_union", financial_source: "ncua", report_date: "2026-06-30", state_code: "FL",
     asset_size_tier: "community_mid", fed_district: 6, total_assets: 900_000,
-    service_charge_income: institutionId === BANK_A ? 1400 : index * 100, fee_income_ratio: institutionId === BANK_A ? 15.56 : index * 1.1,
+    service_charge_income: institutionId === BANK_A ? 1400 : FILED_PEER_INCOME[index - 1], fee_income_ratio: institutionId === BANK_A ? 15.56 : index * 1.1,
   }));
   return {
     toolName: "queryFeeRevenueCorrelation",
@@ -415,14 +422,13 @@ export const CLAIM_GOLDEN_CASES: readonly ClaimGoldenCase[] = [
   { id: "sb-median-as-subject", group: "swapped_bank", control: false, surface: W, reads: [filedPeerRead()], institutionId: BANK_A,
     description: "the filed peer median ($300,000) stated as Bank A's own Q2 2026 fee income",
     text: "Bank A's Q2 2026 broad fee income was $300,000.",
-    expect: { status: "held", problems: [], binding: { supported: 0, interpretation: 0, omitted: ["wrong_institution"], factIds: [] } },
-    // Held for another reason than the target names: peer 9013's own $300,000 quarter equals the median and is checked first.
+    expect: { status: "held", problems: [], binding: { supported: 0, interpretation: 0, omitted: ["median_as_fee"], factIds: [] } },
     target: { status: "held", reasons: ["median_as_fee"] }, todayWrong: false },
   { id: "sb-median-as-subject-asked", group: "swapped_bank", control: false, surface: W, reads: [filedPeerRead()], institutionId: BANK_A,
     description: "the same swap, when the question asks for the Q2 2026 peer comparison",
     question: "How does Bank A's fee income compare with its peers for Q2 2026?",
     text: "Bank A's Q2 2026 broad fee income was $300,000.",
-    expect: { status: "held", problems: ["The question asks for standalone-quarter fee income."], binding: { supported: 0, interpretation: 0, omitted: ["wrong_institution"], factIds: [] } },
+    expect: { status: "held", problems: ["The question asks for standalone-quarter fee income."], binding: { supported: 0, interpretation: 0, omitted: ["median_as_fee"], factIds: [] } },
     target: { status: "held", reasons: ["median_as_fee"] }, todayWrong: false },
   { id: "sb-control", group: "swapped_bank", control: true, surface: W, reads: [A_FDIC, B_FDIC], institutionId: BANK_A,
     description: "control: Bank A's own $1.1 million figure about Bank A",
