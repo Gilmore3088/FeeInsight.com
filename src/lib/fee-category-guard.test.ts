@@ -2600,6 +2600,7 @@ describe("guard v89 (#1877): draft protection and channel overdrafts", () => {
   it("accepts a credit union's paid draft protection fee as the overdraft fee", () => {
     expect(checkFeeCategory("overdraft", "Draft Protection Fee (Paid) per presentment")).toEqual({ ok: true });
     expect(checkFeeCategory("overdraft", "Draft Protection Fee")).toEqual({ ok: true });
+    expect(checkFeeCategory("overdraft", "Draft Protection Fee per share draft paid")).toEqual({ ok: true });
   });
 
   it("keeps a channel-specific overdraft (teller window, over the counter, ATM) in overdraft", () => {
@@ -2613,7 +2614,7 @@ describe("guard v89 (#1877): draft protection and channel overdrafts", () => {
   });
 
   it("does not take a draft protection transfer or line, or the over-draft protection program", () => {
-    for (const name of ["Draft Protection Transfer from Savings", "Draft Protection Line of Credit", "Over-Draft Protection"]) {
+    for (const name of ["Draft Protection Transfer from Savings", "Draft Protection Line of Credit", "Over-Draft Protection", "Draft Protection Fee - each savings advance", "Draft Protection - Savings", "Draft Protection Advance", "Courtesy Draft Protection Opt-In", "Draft Protection Program Enrollment", "Draft Protection Fee (per item transferred)"]) {
       expect(checkFeeCategory("overdraft", name).ok).toBe(false);
     }
   });

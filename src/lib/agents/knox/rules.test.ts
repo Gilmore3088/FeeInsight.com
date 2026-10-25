@@ -1855,6 +1855,10 @@ describe("Knox v112 (#1877): draft protection fee", () => {
     expect(classifyFeeText("Draft Protection Transfer from Savings")).not.toBe("overdraft");
     expect(classifyFeeText("Draft Protection Line of Credit")).not.toBe("overdraft");
     expect(classifyFeeText("Over-Draft Protection")).not.toBe("overdraft");
+    for (const name of ["Draft Protection Fee - each savings advance", "Draft Protection - Savings", "Draft Protection Advance", "Courtesy Draft Protection Opt-In", "Draft Protection Fee (per item transferred)"]) {
+      expect(classifyFeeText(name), name).not.toBe("overdraft");
+    }
+    expect(classifyFeeText("Draft Protection Fee per share draft paid")).toBe("overdraft");
   });
 
   it("reads Abbey FCU's schedule lines with their prices", () => {

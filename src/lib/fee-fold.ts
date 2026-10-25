@@ -293,10 +293,12 @@ export const ATM_ABROAD = new RegExp(
  * FCU; "Draft Protection Fee * | $30.00 per Presentment", Members Choice, whose footnote charges it
  * "for handling each overdraft ... that is paid"). "Over Draft Protection"/"Over-Draft Protection"
  * (the overdraft protection program) and a draft protection transfer, sweep, line, loan or plan are
- * not matched. Knox files it as overdraft and the guard accepts the name for overdraft.
+ * not matched, nor an advance from savings or shares (a transfer by another name) or the program's
+ * opt-in or enrolment; a "share draft" is the credit union's check, so it does not count as shares.
+ * Knox files it as overdraft and the guard accepts the name for overdraft.
  */
 export const DRAFT_PROTECTION_FEE =
-  /(?<!\bover[\s-]*)(?<![\w-])draft\s+protection\b(?![^|]{0,40}\b(?:transfers?|xfers?|sweeps?|from\s+(?:savings|shares?|loans?)|lines?|loans?|LOC|credit|plans?|limits?)\b)/i;
+  /(?<!\bover[\s-]*)(?<![\w-])draft\s+protection\b(?![^|]{0,40}\b(?:transfer\w*|xfers?|sweeps?|advances?|savings|shares?(?!\s+drafts?)|lines?|loans?|LOC|credit|plans?|limits?|opt[\s-]*in|enrol\w*)\b)/i;
 
 /**
  * Guard v72 (#1788): an overdraft charged for staying overdrawn for days ("7 Day Overdraft Processing
