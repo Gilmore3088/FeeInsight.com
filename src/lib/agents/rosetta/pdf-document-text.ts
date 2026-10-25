@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { layoutPageResult, type PdfTextItem } from "./pdf-layout";
 import { compareReadings, streamPageText, type PdfReaderAgreement } from "./pdf-reader-agreement";
 import { textSha256, type StackedGeometryReceipt } from "./pdf-repair-survival";
+import { repairUnmappedGlyphs } from "./glyph-repair";
 
 export interface PdfTextExtraction {
   text: string; totalPages: number; pages?: string[];
@@ -52,9 +53,14 @@ export async function extractPdfDocumentText(bytes: Uint8Array, options: {
           pages.push(items);
         }
         const layouts = pages.map(layoutPageResult);
-        const pageTexts = layouts.map((page) => page.text);
+        // A glyph the PDF's own map leaves unknown is restored where unambiguous (#2598), in
+        // both readings, so the reader-agreement receipt compares like with like.
+        const rawPages = layouts.map((page) => page.text);
+        const rawDocument = rawPages.join("\n\n");
+        const pageTexts = rawPages.map((page) => repairUnmappedGlyphs(page, rawDocument).text);
+        const streamTexts = pages.map((items) => repairUnmappedGlyphs(streamPageText(items), rawDocument).text);
         const text = pageTexts.join("\n\n");
-        const readerAgreement = { ...compareReadings(pageTexts, pages.map(streamPageText)), textHash: textSha256(text) };
+        const readerAgreement = { ...compareReadings(pageTexts, streamTexts), textHash: textSha256(text) };
         return { text, totalPages, pages: pageTexts, readerAgreement, stackedGeometry: {
           sourceHash: createHash("sha256").update(bytes).digest("hex"),
           textHash: textSha256(text),

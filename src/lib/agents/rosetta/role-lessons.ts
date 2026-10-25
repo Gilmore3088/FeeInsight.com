@@ -86,4 +86,14 @@ export const ROSETTA_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-24",
   },
+  {
+    id: "issue-2598-unknown-glyphs",
+    agent: "rosetta",
+    stage: "read",
+    lesson: "Never store U+FFFD as if it were text. Decode a page's bytes in its own charset when they are not UTF-8, so no byte is lost. When a PDF's own map leaves a glyph unknown, restore it only where one reading is possible: a word that only one ligature spelling makes a known word, or a dollar amount's decimal point. Leave every other glyph as it is, and read the stored texts that still carry it once more when the repair improves.",
+    why: "Word's PDF export maps its ti, ft and ff ligature glyphs to U+FFFD, so 'Wire Interna\uFFFDonal Transfer' $70 (140286) went live as a domestic wire, and '$14\uFFFD95' was read as $14. Rosetta also decoded Latin-1 pages as UTF-8. On Oct 25, 193 completed texts (121 current copies at 70 institutions) and 73 live fees carried the glyph.",
+    evidence: { issues: [2598], prs: [], files: ["docs/project/findings/2026-10-25-unknown-glyphs-in-stored-text.md", "src/lib/agents/rosetta/glyph-repair.ts"] },
+    appliesTo: ["read"],
+    since: "2026-10-25",
+  },
 ];

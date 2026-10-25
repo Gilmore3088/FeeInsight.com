@@ -68,6 +68,25 @@ Rosetta owns source text normalization.
   `docx.ts`): a paragraph per line, a tab as a cell break, a table row per line. A
   legacy binary .doc stays `unsupported_format`. Knox pairs fees and amounts per line,
   so keep that contract.
+- Glyph repair (#2598, `glyph-repair.ts`, `GLYPH_REPAIR_VERSION` v1). U+FFFD is never passed on
+  as text where the letters can be known. HTML and plain text keep valid UTF-8; bytes that are not
+  UTF-8 are read in their declared charset (header or meta tag) or as Windows-1252, so a Latin-1
+  page's "Zelle(R)" is not stored as "Zelle" plus U+FFFD. U+FB00-U+FB06 ligatures are written as
+  their letters. A PDF whose ToUnicode map sends a glyph to U+FFFD (Word's ti, ft, tt, ff, fi
+  ligatures) has no letters to decode, so the PDF reader restores a glyph, in both readings of each
+  page, only where one reading is possible: a dollar amount's glyph before exactly two digits is
+  "."; a word with one or two glyphs is restored when exactly one ligature spelling
+  (`LIGATURE_CANDIDATES`; a lone "f" only before i or l) is a known word (`FEE_TEXT_LIGATURE_WORDS`
+  or a word the same document prints in clear); a glyph ending a word only when the letters
+  before it are not a word the document prints on its own and not "an", "of", "so" or "the".
+  Runs (dot leaders), lone glyphs (bullets) and words with no single reading stay. A completed
+  `read.pdf_layout`, `read.html_dom`, `read.plain_text` or `read.js_fallback` text that still
+  carries U+FFFD or a ligature is read once per glyph-repair version: the read attempt records
+  `detail.glyph_repair`, and only a settled outcome at the current version takes the text out
+  (`GLYPH_REPAIR_READERS`, `GLYPH_REPAIR_DUE_PATTERN`). Oct 25: 173 current copies at 100
+  institutions (121 with U+FFFD, 52 with only a ligature; 1 not in the vault). Bayes counts them
+  (`rosetta.glyph_repair`, `countGlyphRepairs`). Knox then reads each changed text; Rosetta
+  changes no fee row.
 - Global reader changes bump `ROSETTA_READ_VERSION`. Completed texts from an older
   version with fewer than `REREAD_MAX_KNOX_FEES` (5) Knox fees are read once more with
   the current reader, so an institution whose flattened table gave up one fee gets its
@@ -398,6 +417,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `PDF_STACKED_REPAIR_VERSION` | `read.pdf_layout` scoped check | v1 | `rosetta/reader-versions.ts` |
 | `PDF_READER_AGREEMENT_VERSION` | `read.pdf_reader_agreement` record-only receipt | v1 | `rosetta/reader-versions.ts` |
 | `LAYOUT_RECHECK_VERSION` | `rosetta.layout_recheck` record-only event | v1 | `rosetta/reader-versions.ts` |
+| `GLYPH_REPAIR_VERSION` | glyph repair re-read (`detail.glyph_repair`) | v1 | `rosetta/reader-versions.ts` |
 | `ROSETTA_READ_VERSION` | — | v3 | `rosetta/reader-versions.ts` |
 | `ROSETTA_DOCUMENT_ACCESS_VERSION` | `read.document_access` | v1 | `rosetta/read.ts` |
 | `REOPEN_VERSION` | — | v1 | `rosetta/read.ts` |

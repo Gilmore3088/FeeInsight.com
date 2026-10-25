@@ -77,7 +77,8 @@ import { FEE_CORRECTION_CHECK } from "@/lib/fee-correction-rules";
 import { extractPdfDocumentText as extractPdfText, type PdfTextExtraction } from "./pdf-document-text";
 import { losslessStackedRecovery, textSha256, type StackedGeometryReceipt } from "./pdf-repair-survival";
 import type { PdfReaderAgreement } from "./pdf-reader-agreement";
-import { PDF_PROSE_REREAD_VERSION, PDF_STACKED_REPAIR_VERSION } from "./reader-versions";
+import { GLYPH_REPAIR_VERSION, PDF_PROSE_REREAD_VERSION, PDF_STACKED_REPAIR_VERSION } from "./reader-versions";
+import { decodeTextBytes, expandUnicodeLigatures, GLYPH_REPAIR_DUE_PATTERN } from "./glyph-repair";
 import { pdfStackedRepairDueSql, PDF_STACKED_REPAIR_MAX_PER_RUN, PDF_STACKED_REPAIR_STRATEGY } from "./pdf-stacked-repair";
 import { emptyLayoutRecheckResult, runLayoutRecheck, type LayoutRecheckResult } from "./layout-recheck";
 import {
@@ -411,6 +412,14 @@ export const REREAD_MAX_KNOX_FEES = THIN_DOCUMENT_MAX_FEES;
 export const INTERLEAVED_PROSE_CELLS = 25;
 export const INTERLEAVED_PROSE_CELL_PATTERN = String.raw`[a-z,;] \| [a-z]`;
 /**
+ * Readers whose text goes through glyph repair or charset-aware decoding (glyph-repair.ts):
+ * their completed texts with U+FFFD or a Unicode ligature are read once per GLYPH_REPAIR_VERSION.
+ * On prod (25 Oct) 173 current copies were due (121 with U+FFFD). A PDF read again is also laid
+ * out by the current layout, so the new text replaces the old one only when it lists at least as
+ * many fees (the lost-text rule, `last_lost_text`).
+ */
+export const GLYPH_REPAIR_READERS: string[] = ["read.pdf_layout", "read.html_dom", "read.plain_text", "read.js_fallback"];
+/**
  * The first PDF reader (no `reader` recorded) ran a document's text onto one line. Knox
  * splits a line only at wide gaps and sentence ends, so a schedule longer than this ran
  * together and its rules found nothing ("Overdraft fee $35.00/transaction paid up to three
@@ -709,7 +718,7 @@ async function tryJsFallback(
           read = { ...ocr.read, sourceUrl: loaded.finalUrl };
         }
       } else if (format === "html") {
-        const extracted = extractHtmlText(new TextDecoder("utf-8").decode(loaded.bytes));
+        const extracted = extractHtmlText(expandUnicodeLigatures(decodeTextBytes(loaded.bytes, loaded.contentType)));
         read = { text: extracted.text, rows: rowsInText(extracted.rows, extracted.text), reader: "read.html_dom", sourceUrl: loaded.finalUrl };
       }
     } catch (error) {
@@ -936,7 +945,8 @@ async function readCandidate(
     return finishRead(normalizedText, "docx", extracted.rows);
   }
 
-  const raw = new TextDecoder("utf-8").decode(bytes);
+  // A page served in Latin-1 is read in Latin-1, so "Zelle\u00AE" never becomes U+FFFD (#2598).
+  const raw = expandUnicodeLigatures(decodeTextBytes(bytes, base.contentType));
   let normalizedText: string;
   let rows: SourceTableRow[] = [];
   if (format === "html") {
@@ -1085,6 +1095,31 @@ export function rosettaReadCandidatesQuery(
     const interleavedPatternParam = `$${params.length}`;
     params.push(INTERLEAVED_PROSE_CELLS);
     const interleavedMinParam = `$${params.length}`;
+    // A completed text still carrying a glyph its reader could not name (U+FFFD) or a Unicode
+    // ligature gets one read per glyph-repair version (glyph-repair.ts, #2598).
+    params.push(GLYPH_REPAIR_DUE_PATTERN);
+    const glyphPatternParam = `$${params.length}`;
+    params.push(GLYPH_REPAIR_VERSION);
+    const glyphVersionParam = `$${params.length}`;
+    params.push(GLYPH_REPAIR_READERS);
+    const glyphReadersParam = `$${params.length}`;
+    const glyphRepairDue = (alias: string) => `(
+                ${alias}.status = 'completed'
+                AND ${alias}.reader = ANY(${glyphReadersParam}::text[])
+                -- CASE keeps the text scan behind the cheap checks.
+                AND CASE
+                  WHEN ${alias}.normalized_text !~ ${glyphPatternParam} THEN FALSE
+                  WHEN EXISTS (
+                    SELECT 1 FROM pipeline_attempts glyph_read
+                     WHERE glyph_read.stage = 'read'
+                       AND glyph_read.institution_id = ${alias}.institution_id
+                       AND glyph_read.input_fingerprint = ${alias}.source_hash
+                       AND COALESCE((glyph_read.detail->>'glyph_repair')::int, 0) >= ${glyphVersionParam}
+                       AND glyph_read.outcome = ANY(${settledParam}::text[])
+                  ) THEN FALSE
+                  ELSE TRUE
+                END
+              )`;
     // Page checks, table rows, OCR, fallbacks and the paid pass never settle a read.
     params.push(AUXILIARY_READ_STRATEGIES);
     const auxiliaryParam = `$${params.length}`;
@@ -1284,6 +1319,15 @@ export function rosettaReadCandidatesQuery(
                     AND adt.status = 'completed'
                     AND ${readErrorOnText("kept_error", "adt")}
                   LIMIT 1
+               ),
+               -- So is a text read again for glyph repair (#2598): the current reader also lays the
+               -- PDF out again, and a re-read never trades a text for a thinner one.
+               (
+                 SELECT adt.normalized_text FROM agent_source_texts adt
+                  WHERE adt.source_document_id = cr.id
+                    AND adt.source_hash IS NOT DISTINCT FROM cr.content_hash
+                    AND ${glyphRepairDue("adt")}
+                  LIMIT 1
                )
              ) AS last_lost_text,
              (
@@ -1342,6 +1386,7 @@ export function rosettaReadCandidatesQuery(
                   ELSE (SELECT COUNT(*) FROM regexp_matches(adt.normalized_text, ${interleavedPatternParam}, 'g')) >= ${interleavedMinParam}
                 END
               )
+              OR ${glyphRepairDue("adt")}
               OR (
                 adt.status = 'completed'
                 AND ${feesSentToDarwinSql("adt.source_document_id")} < ${rereadMaxParam}
@@ -1515,6 +1560,39 @@ export function pdfStackedRepairsDueQuery(stateCode?: string): { query: string; 
 export function pdfStackedRepairsPendingQuery(stateCode: string): { query: string; params: Array<number | string | string[]> } {
   const selection = rosettaReadCandidatesQuery(1, true, undefined, stateCode, true, true, true, true, "only");
   return { query: `SELECT EXISTS (${selection.query}) AS repair_due`, params: selection.params };
+}
+
+/**
+ * Glyph-repair re-reads on current copies (not superseded or a duplicate): `queued` texts still
+ * carry U+FFFD or a ligature with no settled read at the current version, `done` texts have one.
+ * Read-only, for Bayes's ledger; the read step's own selection also requires the bank's newest
+ * document, so `queued` can run slightly above what it will read.
+ */
+export async function countGlyphRepairs(db: SqlTag): Promise<{ queued: number; done: number }> {
+  const [row] = await db.unsafe<Array<{ queued: number | string; done: number | string }>>(`
+    SELECT COUNT(*) FILTER (WHERE NOT repaired AND due) AS queued,
+           COUNT(*) FILTER (WHERE repaired) AS done
+      FROM (
+        SELECT adt.normalized_text ~ $1 AS due,
+               EXISTS (
+                 SELECT 1 FROM pipeline_attempts glyph_read
+                  WHERE glyph_read.stage = 'read'
+                    AND glyph_read.institution_id = adt.institution_id
+                    AND glyph_read.input_fingerprint = adt.source_hash
+                    AND COALESCE((glyph_read.detail->>'glyph_repair')::int, 0) >= $2
+                    AND glyph_read.outcome = ANY($3::text[])
+               ) AS repaired
+          FROM agent_source_texts adt
+          JOIN source_documents doc ON doc.id = adt.source_document_id
+           AND adt.source_hash IS NOT DISTINCT FROM doc.content_hash
+         WHERE adt.status = 'completed'
+           AND adt.reader = ANY($4::text[])
+           AND doc.status = 'success'
+           AND doc.superseded_by_id IS NULL AND doc.duplicate_of_id IS NULL
+      ) texts
+     WHERE due OR repaired
+  `, [GLYPH_REPAIR_DUE_PATTERN, GLYPH_REPAIR_VERSION, [...PERMANENT_OUTCOMES, ...SETTLED_READ_OUTCOMES], GLYPH_REPAIR_READERS]);
+  return { queued: Number(row?.queued ?? 0), done: Number(row?.done ?? 0) };
 }
 
 export async function countPdfStackedRepairsDue(db: SqlTag): Promise<number> {
@@ -2257,6 +2335,7 @@ async function settleReadInScope(
         reader_version: ROSETTA_READ_VERSION,
         witness_retention: result.witnessRetention,
         pdf_layout: result.reader === PRIMARY_READERS.pdf ? PDF_LAYOUT_VERSION : undefined,
+        glyph_repair: result.reader != null && GLYPH_REPAIR_READERS.includes(result.reader) ? GLYPH_REPAIR_VERSION : undefined,
         pdf_stacked_requested: row.pdf_stacked_repair_due ? PDF_STACKED_REPAIR_VERSION : undefined,
         pdf_stacked: repairProof && !keepEarlierText ? PDF_STACKED_REPAIR_VERSION : undefined,
         persisted_text_id: repairProof && !keepEarlierText ? repairProof.artifactId : undefined,

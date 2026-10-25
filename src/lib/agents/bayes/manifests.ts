@@ -230,6 +230,7 @@ export interface RosettaVersions {
   jsFallback: number;
   tableRows: number;
   pdfStackedRepair: number;
+  glyphRepair: number;
 }
 
 async function loadRosettaVersions(): Promise<RosettaVersions> {
@@ -241,6 +242,7 @@ async function loadRosettaVersions(): Promise<RosettaVersions> {
     jsFallback: versions.ROSETTA_JS_FALLBACK_VERSION,
     tableRows: versions.ROSETTA_TABLE_ROWS_VERSION,
     pdfStackedRepair: versions.PDF_STACKED_REPAIR_VERSION,
+    glyphRepair: versions.GLYPH_REPAIR_VERSION,
   };
 }
 
@@ -269,6 +271,21 @@ export function rosettaReaderManifests(versions: RosettaVersions): ReplayManifes
     reader("ocr", "read.ocr_tesseract", versions.ocr, "Scanned PDFs read by an older OCR pass."),
     reader("js_fallback", "read.js_fallback", versions.jsFallback, "JavaScript-built pages read by an older browser fallback."),
     reader("table_rows", "read.table_rows", versions.tableRows, "Fee tables split into rows by an older table reader."),
+    // GLYPH_REPAIR_VERSION (#2598): completed texts still carrying U+FFFD or a Unicode ligature,
+    // read once per version. Dry run 2026-10-25: 173 current copies at 100 institutions.
+    {
+      key: "rosetta.glyph_repair",
+      owner: "rosetta", stage: "read", strategy: "read.glyph_repair",
+      version: versions.glyphRepair,
+      unit: "current-copy text",
+      affects: "Completed PDF, HTML and plain texts with a glyph their reader could not name (U+FFFD) or a Unicode ligature, read once more with glyph repair and charset-aware decoding. Knox reads each changed text; no fee row is changed by the read.",
+      count: async (db): Promise<ReplayCount> => {
+        const { countGlyphRepairs } = await import("@/lib/agents/rosetta/read");
+        const { queued, done } = await countGlyphRepairs(db);
+        return { affected: queued + done, done, queued, exclusions: {},
+          note: "Current copies (not superseded or a duplicate). A text whose glyphs have no single reading keeps them and counts as done once read at this version." };
+      },
+    },
     {
       key: "rosetta.pdf_stacked_repair",
       owner: "rosetta", stage: "read", strategy: "read.pdf_layout",
