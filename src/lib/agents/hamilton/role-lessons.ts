@@ -168,6 +168,16 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     since: "2026-10-25",
   },
   {
+    id: "issue-1915-edition-hold-twins",
+    agent: "hamilton",
+    stage: "publish",
+    lesson: "A line skipped as identical to a fee that is later taken down for a reason about that fee's document, not the fee, is not settled: when the kept copy is held because its schedule is not yet in effect, decide the skipped line again so the schedule in force today carries the fee. Only a schedule's line stands in for it: a product page's line prices one account, so it stays decided.",
+    why: "ONE Credit Union's current schedule (doc 29000, 'Effective November 1, 2024') was skipped line by line as identical to its 2027 schedule (doc 28999) on Oct 11. Once the 2027 rows were held as not yet in effect on Oct 21, the bank had 1 live fee while 16 verified lines of its current schedule sat decided and unpublished. The first version also re-decided Security Federal's Money Market page line 'Paper statements available for $3 per month' (docs 25730/25731), which would have gone live as the bank's paper statement fee though the same page prices Regular savings statements at $1.00 a month.",
+    evidence: { issues: [1915], prs: [2531], files: ["src/lib/agents/hamilton/publish.ts", "src/lib/agents/hamilton/publish-selection.db.test.ts", "docs/project/findings/2026-10-25-skipped-lines-behind-held-edition.md"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
+  {
     id: "issue-1892",
     agent: "hamilton",
     stage: "analysis",
