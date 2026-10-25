@@ -1194,7 +1194,11 @@ describe("Magellan agentic discovery", () => {
       expect(templateText(call[0])).toContain("f.about_stage = 'discover'");
       // The link or the document its own last fetch stored (after redirects); a live fee; once per finding.
       const auditQuery = templateText(call[0]).split("LEFT JOIN LATERAL")[1].split(") audit ON TRUE")[0];
-      expect(auditQuery).toContain("f.source_url IN (due.fee_schedule_url, due.main_document_url)");
+      expect(auditQuery).toContain("f.source_url = due.fee_schedule_url");
+      // The main document stands for the link only while the remembered address agrees (not
+      // right after a search replaced the link), and each document is searched behind once.
+      expect(auditQuery).toContain("f.source_url = due.main_document_url AND due.main_document_url = due.profile_canonical_source_url");
+      expect(auditQuery).toContain("pa.created_at > sd.crawled_at");
       // The main fetch's document, never the remembered address a side copy's read can set.
       expect(templateText(call[0])).toContain("WHERE doc.id = profile.last_successful_source_document_id");
       expect(auditQuery).toContain("fp.rolled_back_at IS NULL");

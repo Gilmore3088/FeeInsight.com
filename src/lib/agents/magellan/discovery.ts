@@ -1361,9 +1361,11 @@ async function selectStaleCandidates(
         -- profile.canonical_source_url, which a read of a side copy of an old page can also set),
         -- and only when that document is the page's current copy (not superseded by a newer
         -- fetch, not a companion page): a miss on an old copy, a companion or a side copy never
-        -- replaces a good link. Only a fee still live counts, and only when the finding was first
-        -- made (created_at): the audit upserts a re-drawn fee's row, which must not search the
-        -- link again. audit_urls are the addresses those misses named; the search rules them out.
+        -- replaces a good link. Only a fee still live counts, only when the finding was first made
+        -- (created_at: the audit upserts a re-drawn fee's row), and only once per document. The
+        -- main-document arm holds only while the remembered address is that document's, so a
+        -- link just replaced is not searched again on the old link's misses. audit_urls are the
+        -- addresses those misses named; the search rules them out.
         LEFT JOIN LATERAL (
           SELECT max(f.created_at) AS audit_at, array_agg(DISTINCT f.source_url) AS audit_urls
             FROM pipeline_feedback f
@@ -1378,7 +1380,22 @@ async function selectStaleCandidates(
            WHERE f.kind = ${AUDIT_FEEDBACK_KIND}
              AND f.about_stage = 'discover'
              AND f.institution_id = due.id
-             AND f.source_url IN (due.fee_schedule_url, due.main_document_url)
+             AND (
+               f.source_url = due.fee_schedule_url
+               -- The main document stands for the link only while the remembered address agrees:
+               -- a search that replaces the link sets that address to the new link at once, but
+               -- the main document stays the old link's until the new one's first fetch.
+               OR (f.source_url = due.main_document_url AND due.main_document_url = due.profile_canonical_source_url)
+             )
+             -- One search per document: a miss on a document already searched behind (stored
+             -- before the last search) is the same finding, whichever fee the audit drew.
+             AND NOT EXISTS (
+               SELECT 1 FROM pipeline_attempts pa
+                WHERE pa.institution_id = due.id
+                  AND pa.stage = 'discover'
+                  AND pa.detail @> ${marker}::jsonb
+                  AND pa.created_at > sd.crawled_at
+             )
         ) audit ON TRUE
     ), judged AS (
       SELECT marked.*, GREATEST(confirmed_at, audit_at) AS wrong_at FROM marked

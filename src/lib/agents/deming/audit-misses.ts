@@ -35,7 +35,7 @@ type SqlTag = typeof sql;
  *    A miss Magellan owns (stage discover) is picked up by Magellan's stale-link search, which
  *    reads these rows when the miss's document came from the bank's link (or is the document the
  *    link's last fetch stored) and is the page's current copy, and the fee is still live; it
- *    searches the link again once per finding, ruling out the addresses the misses named
+ *    searches the link again once per document, ruling out the addresses the misses named
  *    (`magellan/discovery.ts`).
  *
  * A miss Hamilton's second look already holds (`pending`) is skipped: it is not a new finding.
