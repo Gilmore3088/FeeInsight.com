@@ -212,6 +212,14 @@ describe("a checking-named fee that is not a flat monthly fee (#1918 review)", (
     expect(checkingNamePriceAmbiguous("Gold Checking Fee | $50.00 initial deposit", "Gold Checking Fee", 50)).toBe(true);
   });
 
+  it("should_hold_a_price_every_few_months_or_at_opening", () => {
+    // Review of #2618: neither wording names the month.
+    expect(checkingNamePriceAmbiguous("Gold Checking Fee | $10.00 every six months", "Gold Checking Fee", 10)).toBe(true);
+    expect(checkingNamePriceAmbiguous("Gold Checking Fee | $10.00 at account opening", "Gold Checking Fee", 10)).toBe(true);
+    expect(checkingNamePriceAmbiguous("Gold Checking Fee | $10.00 semi-annually", "Gold Checking Fee", 10)).toBe(true);
+    expect(checkingNamePriceAmbiguous("Gold Checking Fee | $10.00 every month", "Gold Checking Fee", 10)).toBe(false);
+  });
+
   it("should_hold_a_price_charged_only_if_features_are_not_chosen", () => {
     // First Federal's two current copies (docs 6800 and 30291, raw 166502 and 655353): the $4.95 is
     // charged only if the standard features are not chosen; the page prints no period for it.

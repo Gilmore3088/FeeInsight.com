@@ -125,6 +125,46 @@ describe("a checking account's own named fee passes Darwin's category guard (#19
     "Gold Checking Fee (per year)",
     "Gold Checking Fee (quarterly)",
     "Gold Checking Fee per item",
+    // Review of #2618: overdrawn, courtesy, charge-off, check cashing, one-time and reactivation
+    // charges, dormancy synonyms, more business accounts, and notes that name another fee.
+    "Courtesy Checking Fee",
+    "Overdrawn Checking Account Fee",
+    "Uncollected Funds Checking Fee",
+    "Charge Off Checking Fee",
+    "Charged-Off Checking Fee",
+    "Cash Checking Fee",
+    "Payroll Checking Fee",
+    "Line of Credit to Checking Fee",
+    "One-Time Checking Fee",
+    "Enrollment Checking Fee",
+    "Startup Checking Fee",
+    "Activation Checking Fee",
+    "Application Checking Fee",
+    "Membership Checking Fee",
+    "Reactivation Checking Fee",
+    "Restart Checking Fee",
+    "Cancellation Checking Fee",
+    "Idle Checking Fee",
+    "Abandoned Checking Fee",
+    "Additional Checking Fee",
+    "Tiered Rate Checking Fee",
+    "Agricultural Checking Fee",
+    "Not-for-Profit Checking Fee",
+    "Church Checking Fee",
+    "Municipal Checking Fee",
+    "Public Funds Checking Fee",
+    "Sole Proprietor Checking Fee",
+    "LLC Checking Fee",
+    "Organization and Special Checking Account Fee",
+    "Gold Checking Fee (overdraft)",
+    "Gold Checking Fee (NSF)",
+    "Gold Checking Fee (replacement card)",
+    "Gold Checking Fee (non-profit)",
+    "Gold Checking Fee (one-time)",
+    "Gold Checking Fee (at opening)",
+    "Gold Checking Fee (when opened)",
+    "Gold Checking Fee (every 6 months)",
+    "Gold Checking Fee (per 12 months)",
   ];
 
   it("should_neither_file_nor_admit_opening_business_or_other_fee_names", () => {
@@ -135,9 +175,15 @@ describe("a checking account's own named fee passes Darwin's category guard (#19
     }
   });
 
+  it("should_read_a_waiver_note_as_the_waiver_not_another_fee", () => {
+    const name = "Platinum Checking Fee (waived with $500 minimum balance)";
+    expect(namedForCheckingAccount(name)).toBe(true);
+    expect(checkFeeCategory("monthly_maintenance", name).ok).toBe(true);
+  });
+
   it("should_still_admit_account_names_that_only_resemble_those_words", () => {
     // "New" names an account unless it opens one; "Opportunity" is not "opening".
-    for (const name of ["New Horizons Checking Fee", "Opportunity Checking Fee", "Second Chance Checking Fee (per month)", "Budget Checking Fee"]) {
+    for (const name of ["New Horizons Checking Fee", "Opportunity Checking Fee", "Second Chance Checking Fee (per month)", "Budget Checking Fee", "Fresh Start Checking Fee"]) {
       expect([name, CHECKING_ACCOUNT_FEE_NAME.test(name)]).toEqual([name, true]);
       expect([name, checkFeeCategory("monthly_maintenance", name).ok]).toEqual([name, true]);
     }
