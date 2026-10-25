@@ -816,6 +816,8 @@ async function executeAgenticStep(
           reopened_links_restored: read.reopenedLinksRestored,
           reopened_unreadable_pdfs: read.reopenedUnreadablePdfs,
           thin_copies_set_aside: read.thinCopiesSetAside,
+          same_text_copies_kept: read.sameTextCopiesKept,
+          same_text_copy_reopen: read.sameTextCopyReopen,
           text_survival_refreshed: read.textSurvivalRefreshed,
           texts_held_up: read.textsHeldUp,
           texts_lost_fees: read.textsLostFees,

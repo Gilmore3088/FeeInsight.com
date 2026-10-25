@@ -212,6 +212,12 @@ Rosetta owns source text normalization.
     companion account page, as a schedule: a product address listing fewer than 10 fee lines
     and no schedule title is `wrong_document`, and the bank goes back to Magellan (#1053).
     The backlog triage re-checks stored texts under v2; a text Knox pulled fees from is kept.
+    Same page, same text, same verdict (#2477, `rosetta/same-text-copy.ts`): a newer copy of a page
+    whose text is exactly an older copy's that Knox pulled fees from is kept readable at read time
+    and in triage (attempt detail `same_text_copy_of`; step detail `same_text_copies_kept`), and the
+    bank is not sent back. Copies rejected before the rule are counted and sampled each read step
+    (`rosetta.same_text_copies`, step detail `same_text_copy_reopen`) and reopened only once
+    `SAME_TEXT_COPY_REOPEN_LIVE` is true (off; 714 copies at 641 banks on Oct 25).
   - Every text Rosetta stores gets its document kind (#1094, `learning/document-kind.ts`,
     `DOCUMENT_KIND_VERSION`): `fee_schedule`, `truth_in_savings`, `account_agreement`,
     `product_page` or `other`. The kind is decided from the content, free and with no model call,
@@ -422,5 +428,6 @@ fails a PR that changes one of these constants without updating its line here (#
 | `ROSETTA_READ_VERSION` | primary readers; replayed to every older-reader current copy (`rosetta.reader_replay`, #2069) | v3 | `rosetta/reader-versions.ts` |
 | `ROSETTA_DOCUMENT_ACCESS_VERSION` | `read.document_access` | v1 | `rosetta/read.ts` |
 | `REOPEN_VERSION` | — | v1 | `rosetta/read.ts` |
+| `SAME_TEXT_COPY_STRATEGY` | `read.same_text_copy` | v1 | `rosetta/same-text-copy.ts` |
 | `ROSETTA_TABLE_ROWS_VERSION` | — | v1 | `rosetta/reader-versions.ts` |
 | `TEXT_SURVIVAL_VERSION` | — | v1 | `rosetta/text-survival.ts` |
