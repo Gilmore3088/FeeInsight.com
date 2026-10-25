@@ -1315,6 +1315,8 @@ async function executeAgenticStep(
       });
     }
     case "publish":
+    // No code creates these two keys since #1074; they run the same step so one already queued
+    // under them still publishes.
     case "publish-index":
     case "publish-context": {
       // Lanes run side by side, and the outlier and duplicate sweeps below touch every

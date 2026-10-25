@@ -386,4 +386,14 @@ export const GUTENBERG_LESSONS: AgentLesson[] = [
     appliesTo: ["publish-sweeps"],
     since: "2026-10-24",
   },
+  {
+    id: "one-publish-step-key",
+    agent: "gutenberg",
+    stage: "publish",
+    lesson: "Queue publishing under the one step key, publish. The publish-index and publish-context keys run the same code, so a run queued under them splits the step history and its failure counts without doing anything different.",
+    why: "The Oct 12 publishing review found three keys for one step, with publish-index still offered to the research tool that queues pipeline runs.",
+    evidence: { issues: [1074], prs: [], files: ["src/lib/research/tools-internal.ts", "src/lib/agents/run-store.ts"] },
+    appliesTo: ["publish", "publish-index", "publish-context"],
+    since: "2026-10-25",
+  },
 ];
