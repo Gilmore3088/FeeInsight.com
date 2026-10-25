@@ -468,6 +468,7 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // is in each institution's check fingerprint, so every publish step's batch re-checks institutions
   // not yet checked at v18.
   // v20 (#1916): a fee never takes the other column's price on a two-column page; same fingerprint path.
+  // v23 (#1479): a name | description | price row stays one fee's row; same fingerprint path.
   SOURCE_CHECK_STRATEGY: "Its fingerprint carries the version, so each publish step's batch re-checks every institution not yet checked at the new version; nothing to replay.",
   // v3 (#1810): headings over an opening deposit, "Interest Checking" and numbered accounts name a fee.
   ACCOUNT_NAME_STRATEGY: "Its fingerprint carries the version, so each publish step's batch (40 institutions) re-reads every institution with a generic monthly name not yet read at v3; nothing to replay.",
@@ -560,6 +561,9 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
       count: countNameRetidy,
     },
     ...rosettaReaderManifests(rosetta),
+    // DARWIN_SOURCE_CHECK_VERSION (v3, #1479) needs no manifest of its own: darwinDueSql re-selects each
+    // `not_in_source` rejection stamped with an older source-check version, so ordinary verify batches
+    // decide those rows again (1,966 rows at 740 banks on Oct 25, read-only count).
     {
       key: "darwin.verify_rules",
       owner: "darwin",

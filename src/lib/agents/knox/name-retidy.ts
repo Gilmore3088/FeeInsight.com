@@ -12,6 +12,7 @@ import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { runFreeSpecialists } from "@/lib/agents/knox/specialists";
 import { classifyFeeText } from "@/lib/agents/knox/rules";
 import {
+  DANGLING_AUDIENCE,
   FEE_NOUN,
   LIVE_PRONOUN,
   LIVE_SENTENCE_END,
@@ -395,6 +396,7 @@ export const LIVE_FRAGMENT_REGEXES = {
   trailing_range: LIVE_TRAILING_RANGE,
   sentence_end: LIVE_SENTENCE_END,
   sentence_end_article: LIVE_SENTENCE_END_ARTICLE,
+  sentence_end_audience: DANGLING_AUDIENCE,
   pronoun: LIVE_PRONOUN,
   parenthetical: PARENTHETICAL,
   glued_cont_mark: GLUED_CONT_MARK,

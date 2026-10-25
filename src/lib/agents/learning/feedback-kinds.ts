@@ -141,7 +141,7 @@ export const FEEDBACK_KINDS = {
   dead_link: { readers: MAGELLAN_LINK_READERS },
   business_schedule: { readers: MAGELLAN_LINK_READERS },
   confirmed_wrong_fees: { readers: [...MAGELLAN_LINK_READERS, MAGELLAN_DISCOVERY] },
-  wrong_document: { readers: MAGELLAN_LINK_READERS, unreadChecks: ["hamilton.other_bank_document", "hamilton.unconfirmed_document_host", "hamilton.article_page", "hamilton.business_schedule"], note: "Magellan reads its own link-yield rows; Hamilton's wrong-document takedowns reach it only as audit misses." },
+  wrong_document: { readers: MAGELLAN_LINK_READERS, unreadChecks: ["hamilton.other_bank_document", "hamilton.unconfirmed_document_host", "hamilton.article_page", "hamilton.business_schedule", "hamilton.hand_takedown"], note: "Magellan reads its own link-yield rows; Hamilton's wrong-document takedowns (hand takedowns too, #1677) reach it only as audit misses." },
   batch_review: { readers: ["src/lib/agents/magellan/batch-review.ts"] },
   search_miss: { unread: "Magellan's search misses are recorded but its finders do not read them." },
 

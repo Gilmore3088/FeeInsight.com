@@ -98,6 +98,14 @@ const PRICE_THEN_SENTENCE = /^\s*\$\s?\d[\d,]*(?:\.\d{2})?\s*(?:(?:per\s+|\/\s*)
 /** A price that opens a sentence about what it is charged for ("$30 for each check, automatic bill payment, ..."). */
 const PRICE_FOR_EACH = /^\s*\$\s?\d[\d,]*(?:\.\d{2})?\s+for\s+(?:each|every)\s+[a-z]/i;
 /**
+ * #1479: a price and the balance that waives it, and nothing else ("$3.00 if balance falls below
+ * $100 minimum", Ixonia Bank's savings table flattened one cell per line). The same line at 40
+ * characters or fewer ("$3.00 if balance below $100 minimum") was already read as the price under
+ * the name; only its length kept the longer wording out. The balance is a threshold, never the price.
+ */
+const PRICE_IF_BALANCE_BELOW =
+  /^\s*\$\s?\d[\d,]*(?:\.\d{2})?\s*(?:(?:per\s+|\/\s*)[a-z]+|each)?\s*,?\s+if\s+(?:the\s+|your\s+)?(?:(?:daily|average|minimum|account|ledger|collected)\s+){0,2}balance\s+(?:falls|drops|goes|is)\s+below\s+(?:the\s+|a\s+)?\$\s?\d[\d,]*(?:\.\d{2})?(?:\s+(?:minimum|min\.?))?(?:\s+balance)?\s*\.?\s*$/i;
+/**
  * A description under a fee's name that ends on the label the bank's statement shows ("If RCB pays an
  * item when your account does not have enough money ... (Fee shown as Overdraft Fee)", River City
  * Bank 268). It carries no price, so the price line under it is the fee's.
@@ -381,6 +389,23 @@ const PRICE_OR_FREE_CELL = /^(?:\$\s?\d[\d,]*(?:\.\d{2})?|free|no charge|none|n\
 const SECOND_COLUMN_NAME = /^[A-Z]\S*\s+\S+/;
 
 /**
+ * #1479: a description cell between a fee's name and its price ("Late Payment Fee | Fee assessed when
+ * a loan payment is made after the grace period. | $20.00", Vickswood FCU) is a sentence about the
+ * fee, not a second column's fee name: it ends with a full stop, runs to five words or more, and most
+ * of its words after the first are lower case. A fee name ("Monthly Statement – Electronic",
+ * "Withdrawals at Allpoint & Presto! ATMs") is none of these, so such a row stays whole.
+ */
+const DESCRIPTION_MIN_WORDS = 5;
+function isDescriptionCell(cell: string): boolean {
+  const text = cell.trim();
+  if (!/[a-z]\.$/.test(text)) return false;
+  const words = text.split(/\s+/);
+  if (words.length < DESCRIPTION_MIN_WORDS) return false;
+  const rest = words.slice(1).filter((word) => /^[A-Za-z]/.test(word));
+  return rest.filter((word) => /^[a-z]/.test(word)).length * 2 > rest.length;
+}
+
+/**
  * Two table layouts that print a fee's price on a different row than its name are rewritten
  * to one fee per row, so no other fee's price sits on the name's row:
  * - a size grid: box sizes closing one row ("... | 3x5 | 5x5 | 10x10") and their prices
@@ -411,8 +436,13 @@ function regridRows(lines: string[]): string[] {
       i += 1;
       continue;
     }
+    // A name | description | price row is one fee (#1479): neither rewrite below splits it. A next
+    // row that opens with a price is the wrapped layout, so a sentence-cased second name ("Returned
+    // item fee for each item presented.") still splits there.
+    const described = cells.length === 3 && isDescriptionCell(cells[1]) && !PRICE_ONLY_CELL.test(next[0]);
     if (
       cells.length === 3 &&
+      !described &&
       NAME_CELL.test(cells[0]) &&
       NAME_CELL.test(cells[1]) &&
       PRICE_ONLY_CELL.test(cells[2]) &&
@@ -426,7 +456,7 @@ function regridRows(lines: string[]): string[] {
     }
     // Two columns' names on one row and one price ("Stop Payment | Monthly Statement – Electronic |
     // Free"): the price is the second name's; the first name's price is printed under it.
-    if (cells.length === 3 && NAME_CELL.test(cells[0]) && NAME_CELL.test(cells[1]) && SECOND_COLUMN_NAME.test(cells[1]) && PRICE_OR_FREE_CELL.test(cells[2])) {
+    if (cells.length === 3 && !described && NAME_CELL.test(cells[0]) && NAME_CELL.test(cells[1]) && SECOND_COLUMN_NAME.test(cells[1]) && PRICE_OR_FREE_CELL.test(cells[2])) {
       out.push(cells[0], `${cells[1]} | ${cells[2]}`);
       continue;
     }
@@ -866,6 +896,7 @@ function feeRow(lines: string[], index: number): string {
         // "$30 for each ..." sentence under a bare name is not read as that name's price.
         (PRICE_FOR_EACH.test(next) && lines.slice(index + 1, index + 1 + k).some((line) => FEE_SHOWN_AS_LINE.test(line))) ||
         PRICE_THEN_DASH_NOTE.test(next) ||
+        PRICE_IF_BALANCE_BELOW.test(next) ||
         ((next.length <= PRICE_BELOW_MAX_LENGTH || PRICE_THEN_NOTE.test(next) || PRICE_THEN_PAREN_NOTE.test(next)) &&
           PRICE_LINE.test(next) &&
           (moneyTokens(next).length > 0 || ZERO_WORDS.test(next)))),
@@ -1230,8 +1261,12 @@ interface PricedRow {
   priced: boolean;
 }
 
-/** One line read as a table or list row: its name cells and the prices its price cells state. */
-function pricedRow(line: string): PricedRow {
+/**
+ * One line read as a table or list row: its name cells and the prices its price cells state.
+ * `wrapsBelow` is true when the next non-blank line opens with a price (the wrapped layout `regridRows`
+ * splits), so a sentence-cased middle cell there is another fee's name, not a description.
+ */
+function pricedRow(line: string, wrapsBelow = false): PricedRow {
   const cells = line.split("|").map((cell) => cell.trim()).filter((cell) => cell.length > 0 && cell !== "**");
   if (cells.length === 1) {
     const lead = cells[0].match(PRICE_THEN_NAME);
@@ -1242,7 +1277,10 @@ function pricedRow(line: string): PricedRow {
     if (lead) return { names: [rowName(lead[2])], prices: moneyTokens(lead[1]).map((token) => token.value), priced: false };
   }
   const priceCells = cells.filter((cell) => ROW_PRICE_CELL.test(cell));
-  const names = cells.filter((cell) => !ROW_PRICE_CELL.test(cell)).map(rowName).filter(Boolean);
+  // #1479: a description cell ("Membership Fee | One-time fee required to establish membership. |
+  // $1.00") is not a second name, so the row is the fee's own row and keeps its own price.
+  const names = cells.filter((cell, i) => !ROW_PRICE_CELL.test(cell) && !(!wrapsBelow && i > 0 && cells.length === 3 && isDescriptionCell(cell)))
+    .map(rowName).filter(Boolean);
   const prices = priceCells.flatMap((cell) => {
     const money = moneyTokens(cell).map((token) => token.value);
     return money.length > 0 ? money : /\b(?:free|none|no charge|n\/c|waived)\b/i.test(cell) ? [0] : [];
@@ -1278,7 +1316,10 @@ export function ownRowRefusal(text: string, feeName: string, amount: number): st
     if (!index.names[i].includes(own)) continue;
     const line = index.lines[i];
     const cells = line.split("|").map((cell) => cell.trim()).filter((cell) => cell.length > 0 && cell !== "**");
-    const row = pricedRow(line);
+    // The next non-blank line: `regridRows` reads lines with the blank ones dropped.
+    const below = index.lines.slice(i + 1).find((next) => next.trim().length > 0)
+      ?.split("|").map((cell) => cell.trim()).find((cell) => cell.length > 0);
+    const row = pricedRow(line, below !== undefined && PRICE_ONLY_CELL.test(below));
     // Only a table row (two cells or more) or a name line whose price "varies" is a row here: a
     // sentence or a price-first line ("$5 monthly service fee", "Monthly service fee of $6.99 with
     // direct deposit") belongs to whatever account it describes, so it decides nothing.
