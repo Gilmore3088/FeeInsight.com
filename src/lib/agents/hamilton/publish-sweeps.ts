@@ -512,7 +512,7 @@ export async function sweepsBeforeRows(ctx: MovedSweepContext) {
   // A live fee named only "Monthly Service Fee" takes the account heading above it in its
   // schedule ("Chase Total Checking Monthly Service Fee"); the old name stays in pipeline_feedback.
   const accountNames = await sweep(ctx, "accountNames", (): Result<typeof nameLiveFeesByAccount> => ({
-    dryRun, institutionsChecked: 0, genericFees: 0, renames: [], skipped: {} as Result<typeof nameLiveFeesByAccount>["skipped"],
+    dryRun, institutionsChecked: 0, genericFees: 0, reverts: [], renames: [], skipped: {} as Result<typeof nameLiveFeesByAccount>["skipped"],
   }), () => nameLiveFeesByAccount(tx, {
     runId,
     dryRun,
@@ -669,6 +669,7 @@ export function movedSweepCounts(r: MovedSweepResults, ran: (key: MovedPublishSw
     nameRetidy: r.nameRetidy.renames.length,
     extractionNotes: r.extractionNotes.moved,
     accountNames: r.accountNames.renames.length,
+    "accountNames.reverted": r.accountNames.reverts?.length ?? 0,
     lineupCorrect: r.lineupCorrect.corrected.length,
     restoreRecheck: r.restoreRecheck.rolledBack.length,
     "restoreRecheck.flagged": r.restoreRecheck.flagged,
