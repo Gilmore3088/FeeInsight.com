@@ -1073,7 +1073,8 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   `card_program_document`, `card_program_documents`, `card_program_institutions`,
   `kept_card_purchase`, `card_program_switch_live` and `samples_card_program_document`. Magellan's
   companion filter skips these documents too. A card program's section inside one fee page (Navy
-  Federal's "GO Prepaid Cards", #1905) has no address of its own and is not caught here.
+  Federal's "GO Prepaid Cards", #1905) has no address of its own and is not caught here; the
+  card program section re-check below reads it.
   v4 (#1944, James's live-fee check round 2, Oct 18): the document's own opening, the first three
   lines of its newest completed stored text (`documentOpeningKind` in
   `src/lib/non-deposit-document.ts`, read once per document in each batch), not only its address.
@@ -1170,6 +1171,25 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   `late_heading_would_hold` and holds nothing on that account). Each document's text comes once per read, up to 8,000 characters only
   where a late edition line can be (`editionWindowSql`). Dry run Oct 25: 0 holds today; 1 more with
   the switch on (fee 149487, Allentown FCU's 2027 newsletter schedule, doc 36178).
+  v3 (#1945, `dated-edition.ts`): for one institution, audience and fee, at most one edition is
+  live, the latest one in force today, whatever its address and whenever it was first read. Each
+  document is dated by the date its own text states, as Magellan stores it
+  (`source_documents.stated_date`, basis `effective_statement` or `printed_date`, never the
+  address's year). The older document's line comes down as `older_edition: #<doc> dated <date>`
+  (verified row rejected with the `older_edition` flag) when the newer date is later and in force,
+  both addresses name the same audience, neither names one account or product (`namesOneProduct`:
+  checking, savings, money market, HSA, premium, ... or a product-area address), the two share at
+  least half of the larger one's fee names and at least 3, and the newer document states the same
+  line (category, `normalizedFeeName`, audience or an unknown one), live or skipped at publish as
+  identical to this very line. Hamilton then decides that skipped copy again
+  (`OLDER_EDITION_RESELECT_SQL`), so the fee stays live from the current schedule. A line only the
+  older edition lists (renamed, dropped or unread) stays live. Cedar Falls (7833): its 2026
+  schedule states no "Effective" heading and was read after it took effect, so 21 lines of its 2024
+  schedule stayed live. Dry run Oct 25 (prod, read-only, 701 of about 9,150 cited documents dated
+  so far): 35 live fees at 4 institutions retire, each stated again on the newer schedule's own
+  text, 5 of them at a changed price the older line kept live beside the new one; Cedar's 12 come
+  once Magellan dates its two documents. Switch `DATED_EDITION_TAKEOVER_LIVE` (on by the
+  sampled-clean rule); step detail `would_retire_dated_edition`, `dated_edition_samples`.
 - Canadian bank documents (`canadian-document-check.ts`, #2022, James's "Do all three", Oct 19).
   Natbank (2675), a Florida bank owned by National Bank of Canada, had 12 live fees read from the
   parent's Canadian chequing page and personal fee guide. Every institution here is U.S.-chartered,
@@ -1184,6 +1204,35 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   `canadian_document` flag; event `darwin.canadian_document_takedown`). Step detail
   `canadian_document_check`. Dry run Oct 19: 12 fees on docs 26833 and 26834, all Natbank; the same
   12 are #2022 hand takedowns, and Atlas points Natbank's registry at its U.S. accounts page.
+- A late charge's cap or floor (`late-charge-bound-check.ts`, #1905). A loan schedule states its
+  late charge as a share of the payment with a cap or floor ("5% of the principal and interest ...;
+  maximum late charge of $30", "Minimum Late Fee $10" beside "5% of Payment Amount"). The cap or
+  floor is a bound on a percentage charge, not the late fee, and Knox v115 no longer reads one
+  (`namesLateChargeBound`, `src/lib/late-charge-bound.ts`). Each verify step reads every live
+  `late_payment` fee whose name's last clause is the bound (`LATE_CHARGE_BOUND_SQL`). The switch
+  (`LATE_CHARGE_BOUND_TAKEDOWN_LIVE`) is on, under the sampled-clean rule (DECISIONS, 2026-10-20):
+  all 5 dry-run fees were read against each bank's text and are correct takedowns. A match goes through the 12-hour second look (`darwin.late_charge_bound`) and is archived with
+  `late_charge_bound: <name>` (verified row rejected with the `late_charge_bound` flag). Step
+  detail `late_charge_bound_check`. Dry run Oct 25: 5 live fees at 3 institutions (15729, 154636,
+  154637 at 4956; 79880 at 5338; 124614 at 6789).
+- Card program sections of a general schedule (`card-program-section-check.ts`, #1908, #1905). Navy
+  Federal's fees page prints "Prepaid and Gift Cards" / "GO Prepaid Cards" sections after its deposit
+  fees, and their "Lost/Stolen Card" $5 and Visa/PLUS ATM $1 rows went live as the account's fees on
+  every re-read (three hand takedowns). A live dollar fee comes down when every line of its document's
+  latest stored text that prints its name at its price sits in such a section (`cardProgramSectionFee`
+  in `src/lib/custom-report/card-program-section.ts`, the same rule Knox v116 applies before reading),
+  except the card's purchase and reload prices (`CARD_PROGRAM_KEEP_KEYS`). Only documents whose text
+  names a card program (`CARD_PROGRAM_TEXT_SQL`, a plain alternation) are read, at most hourly, newest
+  text first, at most 2,000 documents (the step detail says `truncated` when it hits the limit; the
+  read took about 6 s for all 1,985 such documents on Oct 25); an institution-scoped run always reads
+  and does not restart the clock. The switch is the code constant
+  `CARD_PROGRAM_SECTION_TAKEDOWN_LIVE`, on since 2026-10-25 with James's yes (all 12 dry-run fees were
+  read against the bank text and are the card's); on, a match goes through the 12-hour second look
+  (`darwin.card_program_section`) and is archived with `card_program_section: #<doc>` (batch
+  `darwin-card-program-section-<run>`, verified row rejected with the `card_program_section` flag;
+  event `darwin.card_program_section_takedown`). Step detail `card_program_section_check`. Dry run
+  (prod, read-only, Oct 25, `cardProgramSectionFeesSql`): 12 live fees on 9 documents at 9
+  institutions; 35 purchase or reload prices in such sections stay.
 - One printed line, two reads (`line-conflict-check.ts`, #1440). James's catalog review (Oct 15)
   found live fees sharing institution, name, amount and source address under two categories (1st
   Summit's "Prepaid Card" $5 as document reproduction and gift card purchase) or one category with
@@ -1644,7 +1693,23 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v90 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v90 (Oct 25, #1912): a plain
+- The guard is at v92 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v91 (Oct 25, #1905):
+  the network ATM rule's savings/share-withdrawal exclusion no longer refuses a share withdrawal
+  priced at another network's ATM ("Share withdrawal at Non-Navy Federal/Non-CO-OP Network ATM",
+  Knox v115's network table read); the savings withdrawal limit stays out. Dry run: 0 live and 0
+  raw rows carry the wording.
+- v92 (Oct 25, #1947): a
+  monthly maintenance fee whose own source line prices it as the paper statement charge
+  (`paperStatementPriceOnLine` in `src/lib/paper-statement-price.ts`, shared with Knox v117: "Service
+  charge | $3.00 paper statement fee each statement cycle", "A $2 paper statement fee applies", "*A
+  monthly fee of $3 applies if you choose to receive paper statements", TD's "Paper statements: $3
+  monthly fee") fails monthly maintenance and re-files to paper_statement, here in verify and on
+  Hamilton's live guard; paper_statement admits its generic name on that line. The account's own price
+  for paper holders beside an electronic price ("$4 for paper statement or $3 for estatement", "$7 with
+  paper statement") stays. Read-only dry run (Oct 25): 19 live fees fail; 5 move in place (95610,
+  126632, 128394, 128395, 138716), 14 sit beside a live paper statement fee at the same price and go to
+  the second look; 1 earlier takedown (14316) can come back as a paper statement fee.
+- v90 (Oct 25, #1912): a plain
   return charge ("Returned Check Fee", "Return Items") its stored text prints under a foreign check or
   collection heading (`withCollectionSection` / `collectionSectionReturn`: U.S. Bank 75929 under "Foreign
   Check Collection (incoming/outgoing)" after "Tracer Fee | $50.00"; BankUnited 56558 and 109208 under
@@ -1960,7 +2025,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `AUDIENCE_RELABEL_VERSION` | `darwin.audience_relabel` | v4 | `darwin/audience-relabel.ts` |
 | `DARWIN_ADJUDICATE_STRATEGY` | `verify.adjudicate` | v2 | `darwin/adjudicate.ts` |
 | `DARWIN_CATEGORY_MODEL_STRATEGY` | `verify.category_model` | v1 | `darwin/category-model.ts` |
-| `EDITION_CHECK_VERSION` | `darwin.edition_effective_check` | v2 | `darwin/edition-effective-check.ts` |
+| `EDITION_CHECK_VERSION` | `darwin.edition_effective_check` | v3 | `darwin/edition-effective-check.ts` |
 | `DARWIN_PEER_STRATEGY` | `verify.peer_range` | v5 | `darwin/peer-checks.ts` |
 | `DARWIN_SECOND_SOURCE_STRATEGY` | `verify.second_source` | v2 | `darwin/peer-checks.ts` |
 | `DARWIN_RELEASE_STRATEGY` | `verify.release` | v4 | `darwin/release-held.ts` |
@@ -1976,6 +2041,8 @@ fails a PR that changes one of these constants without updating its line here (#
 | `TRANSLATED_COPY_CHECK_VERSION` | `darwin.translated_copy` | v2 | `darwin/translated-copy-check.ts` |
 | `PRODUCT_PAGE_REPEAT_CHECK_VERSION` | `darwin.product_page_repeat` | v2 | `darwin/product-page-repeat-check.ts` |
 | `CANADIAN_DOCUMENT_CHECK_VERSION` | `darwin.canadian_document` | v1 | `darwin/canadian-document-check.ts` |
+| `LATE_CHARGE_BOUND_CHECK_VERSION` | `darwin.late_charge_bound` | v1 | `darwin/late-charge-bound-check.ts` |
+| `CARD_PROGRAM_SECTION_CHECK_VERSION` | `darwin.card_program_section` | v1 | `darwin/card-program-section-check.ts` |
 | `DOCUMENT_OWNER_STRATEGY` | `verify.document_owner` | v1 | `darwin/document-owner.ts` |
 | `DARWIN_VERIFY_STRATEGY` | `verify.rules` | v3 | `darwin/verify.ts` |
 | `DARWIN_SOURCE_CHECK_VERSION` | — | v3 | `darwin/verify.ts` |

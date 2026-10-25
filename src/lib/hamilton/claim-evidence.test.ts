@@ -109,7 +109,9 @@ describe("claim fact IDs for filings and filed peers (#1077 step 1)", () => {
     expect(facts.get(ytdIncome(BANK_B, "2026-06-30"))).toMatchObject({ value: 900_000, scope: { institutionId: BANK_B } });
     expect(facts.get(ytdIncome(BANK_A, "2026-06-30"))?.value).toBe(2_600_000);
     // Bank B as one of Bank A's filed peers keeps its own ID and its own quarter.
-    expect(facts.get(quarterIncome(BANK_B, "2026-06-30"))).toMatchObject({ value: 100_000, scope: { institutionId: BANK_B } });
+    expect(byId([profileA(), peerRead()]).get(quarterIncome(BANK_B, "2026-06-30"))).toMatchObject({ value: 100_000, scope: { institutionId: BANK_B } });
+    // Bank B's own profile trend gives that quarter as $400,000: one ID with two values is no fact.
+    expect(facts.has(quarterIncome(BANK_B, "2026-06-30"))).toBe(false);
     // A profile read for Bank A that returns Bank B's rows gives no fact to either bank.
     const swapped = byId([profileRead(BANK_A, [["2026-06-30", 900], ["2026-03-31", 500]], [["2026-Q2", 400]], BANK_B)]);
     expect(swapped.size).toBe(0);
@@ -177,7 +179,9 @@ describe("profile filings read as profileQuarterCalculations reads them (#1077 s
     change(read.output as Output);
     return read;
   };
-  const profileFacts = (read: AnswerToolEvidence) => [...byId([read]).keys()].filter((id) => id.startsWith(`filing:ncua:${BANK_A}:`));
+  // The trend's standalone quarters are read under the trend's own definition (tested below), so they are left out here.
+  const profileFacts = (read: AnswerToolEvidence) => [...byId([read]).keys()]
+    .filter((id) => id.startsWith(`filing:ncua:${BANK_A}:`) && !id.endsWith(":service_charge_income:standalone_quarter"));
 
   it("gives no fact when the definition's unit, publisher or period basis is not the source's own", () => {
     expect(profileFacts(profileA())).not.toHaveLength(0);

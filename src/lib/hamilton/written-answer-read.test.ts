@@ -18,8 +18,10 @@ vi.mock("@/lib/ai-provider", () => ({
   hasAnthropicApiKey: mocks.hasKey,
   isProviderLimitError: (error: unknown) => error instanceof Error && error.message === "provider limit",
 }));
-vi.mock("@/lib/ai-provider-usage", async () => ({
-  observedProviderUsage: (await vi.importActual<typeof import("@/lib/ai-provider-usage")>("@/lib/ai-provider-usage")).observedProviderUsage, trackAnthropicRequest: mocks.track }));
+vi.mock("@/lib/ai-provider-usage", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/ai-provider-usage")>("@/lib/ai-provider-usage");
+  return { observedProviderUsage: actual.observedProviderUsage, ledgerFields: actual.ledgerFields, trackAnthropicRequest: mocks.track };
+});
 vi.mock("@/lib/research/agents", () => ({
   getHamilton: async () => ({ systemPrompt: "Hamilton.", model: "test-model", tools: { t: {} }, maxTokens: 900, maxSteps: 4 }),
   buildAnalyzeModeSuffix: (focus: string) => ` ANALYZE ${focus}.`,

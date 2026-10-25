@@ -19,6 +19,7 @@ import {
 } from "./evidence-export";
 import type { SourceRef } from "./workspace/types";
 import { exportedAnswer, savedAnswerBinding } from "./written-answer-binding";
+import { tracedFigureLines } from "./traced-figures";
 import { bindingFromClaims, readSavedClaims, type SavedClaimFact } from "./saved-claims";
 import { financialMeasureDefinition } from "@/lib/data-store/financial-peer-contract";
 import type { HamiltonFactUnit, HamiltonPeriodBasis } from "./evidence-contract";
@@ -281,6 +282,10 @@ export function boardBriefFromAnalysis(analysis: AnalyzeResponse & { factEvidenc
   // The answer as the screen shows it (#981 H06-T08): left-out sentences stay out and Hamilton's
   // reading is printed apart, under its label, never inline with the findings.
   const shown = exportedAnswer(analysis);
+  // #1899: the answer's parsed metrics are the model's own figures; the appendix keeps a line only
+  // when its figures trace to a record saved with the answer (its claim facts or fact evidence).
+  const savedRecords = [...written.lines, ...(analysis.factEvidence?.facts ?? []), ...(analysis.factEvidence?.derivations ?? [])];
+  const tracedMetrics = edits.includeEvidence ? tracedFigureLines(analysis.evidence?.metrics ?? [], savedRecords) : [];
   // A reading sentence whose figure is an index statistic keeps its basis line, as on screen.
   const reading = shown.reading.map((sentence) => {
     const basis = shown.readingBasis[sentence.trim()];
@@ -301,7 +306,7 @@ export function boardBriefFromAnalysis(analysis: AnalyzeResponse & { factEvidenc
     recommendation: limits.length ? limits.join("\n\n") : "Hamilton recorded no limits for this answer.",
     implementationNotes: ["Built from a saved Hamilton answer. Figures are as first saved and were not refreshed.", ...(edits.teamNote.trim() ? [`Team note (user-authored): ${edits.teamNote.trim().slice(0,5000)}`] : [])],
     exhibits: [
-      ...(edits.includeEvidence && analysis.evidence.metrics.length ? [{ id: "statistical_appendix" as const, title: "Evidence from the saved answer", subtitle: "Original values and source notes; not refreshed", columns: ["Measure", "Value", "Source / note"], rows: analysis.evidence.metrics.map(m => [m.label, m.value, m.note ?? ""]), note: "Values as first saved with the answer." }] : []),
+      ...(tracedMetrics.length ? [{ id: "statistical_appendix" as const, title: "Evidence from the saved answer", subtitle: "Original values and source notes; not refreshed", columns: ["Measure", "Value", "Source / note"], rows: tracedMetrics.map(m => [m.label, m.value, m.note ?? ""]), note: "Values as first saved with the answer." }] : []),
       ...(records ? [records] : []),
     ],
     sources: [

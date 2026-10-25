@@ -10,6 +10,8 @@ import {
   isoDay,
   notYetEffective,
 } from "@/lib/agents/hamilton/schedule-edition";
+import { statedDateColumnsReady } from "@/lib/agents/magellan/stated-date";
+import { DATED_EDITION_TAKEOVER_LIVE, datedEditionRowsSql, judgeDatedEditions } from "@/lib/agents/darwin/dated-edition";
 
 type SqlTag = typeof sql;
 
@@ -33,11 +35,21 @@ type SqlTag = typeof sql;
  *   institution, category, name and audience, a schedule for the same audience on another document)
  *   comes down as `older_edition: #<doc> effective <date>`, its verified row rejected with the
  *   `older_edition` flag so publish does not bring it back. The two never sit side by side.
+ * - dated takeover (v3, #1945, `dated-edition.ts`): a later edition of the same schedule, dated by
+ *   the date its own text states (Magellan's `source_documents.stated_date`) and in force today,
+ *   takes over the older edition's line of the same fee whatever its address and whenever it was
+ *   read, as `older_edition: #<doc> dated <date>`. Cedar Falls' 2026 schedule had no "Effective"
+ *   heading and was read after it took effect, so its 2024 lines stayed live and cited.
  *
  * Nothing is deleted. A dry run, or the switch off, reports and writes nothing.
  */
 export const EDITION_CHECK = "darwin.edition_effective_check";
-export const EDITION_CHECK_VERSION = 2;
+/**
+ * v3 (#1945): also the dated-edition rule (`dated-edition.ts`): a later edition of the same
+ * schedule, dated by its own text and in force today, takes over the older edition's line of the
+ * same fee whatever its address and whenever it was read (`DATED_EDITION_TAKEOVER_LIVE`).
+ */
+export const EDITION_CHECK_VERSION = 3;
 export const EDITION_CHECK_LIVE = true;
 export const NOT_YET_EFFECTIVE_REASON = "not_yet_effective";
 export const OLDER_EDITION_REASON = "older_edition";
@@ -231,6 +243,11 @@ export interface EditionCheckResult {
   /** While that switch is off: live fees a late edition line would also hold or retire. Nothing is written for them. */
   lateHeadingWouldHold: number;
   lateHeadingSamples: EditionAction[];
+  /** #1945: whether the dated-edition rule writes (`DATED_EDITION_TAKEOVER_LIVE`). */
+  datedLive: boolean;
+  /** Live older-edition lines a later dated edition of the same schedule takes over (`judgeDatedEditions`); null when not read. */
+  datedTakeovers: number | null;
+  datedSamples: EditionAction[];
 }
 
 /** One step's re-check (see the module note). Never throws: a failed read checks nothing, a failed write changes nothing. */
@@ -244,6 +261,7 @@ export async function recheckScheduleEditions(
     live, dryRun: options.dryRun, today, checked: 0, holds: 0, restores: 0, takeovers: 0, institutions: [],
     held: [], restored: [], retired: [], samples: [],
     lateHeadingLive: EDITION_LATE_HEADING_LIVE, lateHeadingWouldHold: 0, lateHeadingSamples: [],
+    datedLive: DATED_EDITION_TAKEOVER_LIVE, datedTakeovers: null, datedSamples: [],
   };
   let rows: EditionRow[];
   try {
@@ -261,14 +279,22 @@ export async function recheckScheduleEditions(
     lateHeadingWouldHold: lateOnly.length,
     lateHeadingSamples: lateOnly.slice(0, EDITION_CHECK_SAMPLES),
   });
+  // #1945: a later dated edition of the same schedule takes over the older edition's line.
+  const dated = await readDatedTakeovers(db, found, { institutionId: options.institutionId, today });
+  if (dated) {
+    result.datedTakeovers = dated.length;
+    result.datedSamples = dated.slice(0, EDITION_CHECK_SAMPLES);
+    result.institutions = [...new Set([...result.institutions, ...dated.map((fee) => fee.institutionId)])].sort((a, b) => a - b);
+  }
   if (!live || options.dryRun) return result;
+  const retire = [...found.takeovers, ...(DATED_EDITION_TAKEOVER_LIVE && dated ? dated : [])];
   const batchId = `darwin-edition-${options.runId}`;
   try {
     await inSavepoint(db, async (scope) => {
       result.held = await rollBack(scope, batchId, found.holds);
       result.restored = await restore(scope, found.restores);
-      result.retired = await rollBack(scope, batchId, found.takeovers);
-      const rejected = found.takeovers.filter((fee) => result.retired.includes(fee.feePublishedId) && fee.feeVerifiedId != null);
+      result.retired = await rollBack(scope, batchId, retire);
+      const rejected = retire.filter((fee) => result.retired.includes(fee.feePublishedId) && fee.feeVerifiedId != null);
       if (rejected.length > 0) {
         await scope`
           UPDATE verified_fee_observations fv
@@ -296,6 +322,27 @@ export async function recheckScheduleEditions(
   }
   if (result.held.length + result.restored.length + result.retired.length > 0) invalidatePublicReadCache();
   return result;
+}
+
+/**
+ * Read-only: the dated-edition takeovers (`judgeDatedEditions`), leaving out fees the heading rule
+ * already holds, restores or retires this step. Null when Magellan's stated-date columns are not
+ * there yet or the read fails (it then changes nothing).
+ */
+async function readDatedTakeovers(
+  db: SqlTag,
+  found: EditionFindings,
+  options: { institutionId?: number; today: string },
+): Promise<EditionAction[] | null> {
+  try {
+    if (!(await statedDateColumnsReady(db))) return null;
+    const rows = await inSavepoint(db, (scope) => datedEditionRowsSql(scope, options));
+    const skip = new Set([...found.holds, ...found.restores, ...found.takeovers].map((fee) => fee.feePublishedId));
+    return judgeDatedEditions(rows, options.today, skip);
+  } catch (error) {
+    console.warn("[darwin] dated edition read failed", error instanceof Error ? error.message : error);
+    return null;
+  }
 }
 
 async function rollBack(db: SqlTag, batchId: string, fees: EditionAction[]): Promise<number[]> {
@@ -349,5 +396,8 @@ export function editionCheckDetail(result: EditionCheckResult) {
     late_heading_live: result.lateHeadingLive,
     late_heading_would_hold: result.lateHeadingWouldHold,
     late_heading_samples: result.lateHeadingSamples,
+    dated_edition_live: result.datedLive,
+    would_retire_dated_edition: result.datedTakeovers,
+    dated_edition_samples: result.datedSamples,
   };
 }

@@ -134,7 +134,7 @@ export const FEE_LAST_SEGMENT = "(?:^|/)(?:[^/]* )?(?:fees?|charges?|schedule|pr
  * it is asked only after those (or when a deposit word would otherwise make the document null),
  * so `/credit-cards/travel-card/` stays a loan page (review of #1914).
  */
-const CARD_PROGRAM_WORDS = "(?:pre ?paid(?! (?:finance|interest|charges?|points?|items?|escrow|mortgage|expenses?|taxes|insurance))|payroll cards?|gift ?cards?|gift and travel cards?|travel cards?|travel ?money|reloadable(?: [a-z]+)? cards?)";
+export const CARD_PROGRAM_WORDS = "(?:pre ?paid(?! (?:finance|interest|charges?|points?|items?|escrow|mortgage|expenses?|taxes|insurance))|payroll cards?|gift ?cards?|gift and travel cards?|travel cards?|travel ?money|reloadable(?: [a-z]+)? cards?)";
 export const CARD_PROGRAM_LAST_SEGMENT = `(?:^|/)(?:[^/]* )?${CARD_PROGRAM_WORDS}(?: [^/]*)?/$`;
 /**
  * A general schedule that only mentions a card program after its own fee words

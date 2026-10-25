@@ -1,4 +1,5 @@
 import { sql, withTransaction } from "@/lib/data-store/connection";
+import { sweepInterruptedReportRuns } from "@/lib/hamilton/report-run";
 import { feeSourceFetch } from "@/lib/agents/fee-source-fetch";
 import { mapEvent, mapRun, mapStep } from "./run-row-mappers";
 import { lessonIds, lessonsForStep } from "./learning/lesson-reader";
@@ -98,6 +99,8 @@ import { recheckTranslatedCopies, translatedCopyDetail } from "@/lib/agents/darw
 import { productPageRepeatDetail, recheckProductPageRepeats } from "@/lib/agents/darwin/product-page-repeat-check";
 import { editionCheckDetail, recheckScheduleEditions } from "@/lib/agents/darwin/edition-effective-check";
 import { canadianDocumentDetail, recheckCanadianDocuments } from "@/lib/agents/darwin/canadian-document-check";
+import { lateChargeBoundDetail, recheckLateChargeBounds } from "@/lib/agents/darwin/late-charge-bound-check";
+import { cardProgramSectionDetail, recheckCardProgramSections } from "@/lib/agents/darwin/card-program-section-check";
 import { lineConflictDetail, recheckLineConflicts } from "@/lib/agents/darwin/line-conflict-check";
 import { documentOwnerDetail } from "@/lib/agents/darwin/document-owner";
 import { findingsDetail as releaseRepairFindingsDetail, releaseRepairDetail, runReleaseRepairStep } from "@/lib/agents/darwin/release-repair";
@@ -433,6 +436,13 @@ async function executeAgenticStep(
     const { runGateReplay, gateReplaySummaryLine } = await import("@/lib/hamilton/gate-replay");
     const result = await runGateReplay();
     return { status: "completed", summary: gateReplaySummaryLine(result), detail: { ...result } };
+  }
+
+  // Hamilton's one-off paid gate replay batch (#1077): a provider step, capped at 200 samples and $40 for the batch.
+  if (step.stepKey === "hamilton-paid-gate-replay") {
+    const { runPaidGateReplay, paidReplaySummaryLine } = await import("@/lib/hamilton/paid-gate-replay");
+    const result = await runPaidGateReplay({ agentRunId: run.id });
+    return { status: "completed", summary: paidReplaySummaryLine(result), detail: { ...result } };
   }
 
   // Hamilton's paid answer eval (#1079): a provider step, capped at five paid samples a day.
@@ -1120,8 +1130,9 @@ async function executeAgenticStep(
       const lateEditionNote = editions.lateHeadingWouldHold > 0
         ? ` Edition lines past the menu (switch off, nothing written): ${editions.lateHeadingWouldHold.toLocaleString()} more live fee(s) would come down.`
         : "";
-      const editionNote = lateEditionNote + (editions.holds + editions.restores + editions.takeovers > 0
-        ? ` Schedule editions: ${editions.holds.toLocaleString()} live fee(s) from schedules not in effect yet, ${editions.restores.toLocaleString()} now in effect, ${editions.takeovers.toLocaleString()} older-edition line(s) (${editions.live && !editions.dryRun ? `${editions.held.length.toLocaleString()} held, ${editions.restored.length.toLocaleString()} restored, ${editions.retired.length.toLocaleString()} retired` : "dry run or switch off: nothing written"}).`
+      const datedEditions = editions.datedTakeovers ?? 0;
+      const editionNote = lateEditionNote + (editions.holds + editions.restores + editions.takeovers + datedEditions > 0
+        ? ` Schedule editions: ${editions.holds.toLocaleString()} live fee(s) from schedules not in effect yet, ${editions.restores.toLocaleString()} now in effect, ${(editions.takeovers + datedEditions).toLocaleString()} older-edition line(s), ${datedEditions.toLocaleString()} of them by a later dated edition (${editions.live && !editions.dryRun ? `${editions.held.length.toLocaleString()} held, ${editions.restored.length.toLocaleString()} restored, ${editions.retired.length.toLocaleString()} retired` : "dry run or switch off: nothing written"}).`
         : "");
       // #1909: fees read from a bank's Spanish copy of a schedule whose English line is live
       // (translated-copy-check.ts); a report only on a dry run or with its switch off.
@@ -1149,11 +1160,34 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId: numericRunParam(params, ["institution_id"]),
       });
+      // #1905: live late fees that are a late charge's cap or floor (late-charge-bound-check.ts);
+      // a report only on a dry run or with its switch off.
+      const lateChargeBound = await recheckLateChargeBounds(tx, {
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+      });
+      const lateChargeBoundNote = lateChargeBound.matched > 0
+        ? ` Late charge bound re-check: ${lateChargeBound.matched.toLocaleString()} live late fee(s) at ${lateChargeBound.institutions.toLocaleString()} institution(s) are a late charge's cap or floor (${lateChargeBound.live && !lateChargeBound.dryRun ? `${lateChargeBound.flagged.toLocaleString()} flagged, ${lateChargeBound.takenDown.length.toLocaleString()} archived` : lateChargeBound.dryRun ? "dry run: would take down, nothing written" : "switch off: would take down, nothing written"}).`
+        : "";
       const canadianDocumentNote = canadianDocument.matched > 0
         ? ` Canadian document re-check: ${canadianDocument.matched.toLocaleString()} live fee(s) on ${canadianDocument.documents.toLocaleString()} Canadian bank document(s) (${canadianDocument.live && !canadianDocument.dryRun ? `${canadianDocument.flagged.toLocaleString()} flagged, ${canadianDocument.takenDown.length.toLocaleString()} archived` : canadianDocument.dryRun ? "dry run: would take down, nothing written" : "switch off: would take down, nothing written"}).`
         : "";
       const translatedCopyNote = translatedCopy.matched > 0
         ? ` Spanish copy re-check: ${translatedCopy.matched.toLocaleString()} of ${translatedCopy.checked.toLocaleString()} live fee(s) on Spanish copies of a schedule have an English twin at the same price (${translatedCopy.live && !translatedCopy.dryRun ? `${translatedCopy.flagged.toLocaleString()} flagged, ${translatedCopy.takenDown.length.toLocaleString()} archived` : translatedCopy.dryRun ? "dry run: would take down, nothing written" : "switch off: would take down, nothing written"}); ${(translatedCopy.keptSpanishOnly + translatedCopy.keptEnglishName).toLocaleString()} stay.`
+        : "";
+      // #1908/#1905: fees printed in a prepaid, payroll, gift or travel card section of a general
+      // schedule (card-program-section-check.ts), at most hourly; takes them down through the second
+      // look while its code switch CARD_PROGRAM_SECTION_TAKEDOWN_LIVE is on (a report only when off).
+      const cardProgramSection = await recheckCardProgramSections(tx, {
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+      });
+      const cardProgramSectionNote = cardProgramSection.matched > 0
+        ? ` Card program section re-check: ${cardProgramSection.matched.toLocaleString()} live fee(s) on ${cardProgramSection.documents.toLocaleString()} document(s) are printed in a prepaid, payroll, gift or travel card section (${cardProgramSection.live && !cardProgramSection.dryRun ? `${cardProgramSection.flagged.toLocaleString()} flagged, ${cardProgramSection.takenDown.length.toLocaleString()} archived` : cardProgramSection.dryRun ? "dry run: would take down, nothing written" : "switch off: would take down, nothing written"}).`
         : "";
       // #1440: one printed line live under two categories or two frequencies; Darwin keeps one
       // reading (line-conflict-check.ts). Every conflicting line each step; a report only while its
@@ -1213,7 +1247,7 @@ async function executeAgenticStep(
         : "";
       return {
         status: "completed",
-        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${verification.deferredRawFees ? ` ${verification.deferredRawFees.toLocaleString()} row(s) deferred without a verification decision because current source/raw admission remains unresolved.` : ""}${recheckReceiptNote(recheck)}${release.deferred ? ` ${release.deferred.toLocaleString()} held fee(s) deferred without a release decision.` : ""}${conditionalZero.selected > 0 ? ` Settled ${(conditionalZero.selected - (conditionalZero.deferred ?? 0)).toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).${conditionalZero.deferred ? ` ${conditionalZero.deferred.toLocaleString()} conditional-$0 hold(s) deferred without a decision.` : ""}` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${verification.categoryChange && verification.categoryChange.takeoverProof.rows > 0 ? ` ${verification.categoryChange.takeoverProof.rows.toLocaleString()} row(s) a re-read took over under a new category ${verification.categoryChange.takeoverProof.live ? "(judged again)" : "(take-over proof switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${hourlyNote}${hourlyFullNote}${nonDepositNote}${nonDepositFullNote}${translatedCopyNote}${productPageRepeatNote}${editionNote}${canadianDocumentNote}${lineConflictNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}`,
+        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${verification.deferredRawFees ? ` ${verification.deferredRawFees.toLocaleString()} row(s) deferred without a verification decision because current source/raw admission remains unresolved.` : ""}${recheckReceiptNote(recheck)}${release.deferred ? ` ${release.deferred.toLocaleString()} held fee(s) deferred without a release decision.` : ""}${conditionalZero.selected > 0 ? ` Settled ${(conditionalZero.selected - (conditionalZero.deferred ?? 0)).toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).${conditionalZero.deferred ? ` ${conditionalZero.deferred.toLocaleString()} conditional-$0 hold(s) deferred without a decision.` : ""}` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${verification.categoryChange && verification.categoryChange.takeoverProof.rows > 0 ? ` ${verification.categoryChange.takeoverProof.rows.toLocaleString()} row(s) a re-read took over under a new category ${verification.categoryChange.takeoverProof.live ? "(judged again)" : "(take-over proof switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${hourlyNote}${hourlyFullNote}${nonDepositNote}${nonDepositFullNote}${translatedCopyNote}${productPageRepeatNote}${editionNote}${canadianDocumentNote}${lateChargeBoundNote}${cardProgramSectionNote}${lineConflictNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}`,
         detail: {
           selected_raw_fees: verification.selectedRawFees,
           processed_raw_fees: verification.processedRawFees,
@@ -1249,6 +1283,8 @@ async function executeAgenticStep(
           product_page_repeat_check: productPageRepeatDetail(productPageRepeat),
           edition_effective_check: editionCheckDetail(editions),
           canadian_document_check: canadianDocumentDetail(canadianDocument),
+          late_charge_bound_check: lateChargeBoundDetail(lateChargeBound),
+          card_program_section_check: cardProgramSectionDetail(cardProgramSection),
           line_conflict_check: lineConflictDetail(lineConflict),
           ...(nonDepositFull ? { non_deposit_document_full_count: nonDepositFindingsDetail(nonDepositFull) } : {}),
           release_repair: releaseRepair ? releaseRepairDetail(releaseRepair) : { error: releaseRepairError },
@@ -3578,6 +3614,8 @@ export interface ReapStaleAgentStepsResult {
   requeued: Array<{ runId: number; stepId: number; stepKey: string; attempt: number }>;
   dead: Array<{ runId: number; stepId: number; stepKey: string; attempts: number }>;
   orphanRunsRequeued: number[];
+  /** Pro report runs a killed request left running, closed once their lease lapsed (#1921). */
+  reportRunsClosed?: number[];
 }
 
 export { MAX_STEP_ATTEMPTS, STALE_RUNNING_STEP_MINUTES };
@@ -3699,6 +3737,15 @@ export async function reapStaleAgentSteps({
          ${JSON.stringify({ reaper: true })}::jsonb)
     `;
     result.orphanRunsRequeued.push(runId);
+  }
+
+  // Pro report runs (pro_request, which the queries above never requeue) a killed request left
+  // running: their open steps and the run are closed once the lease lapses, whatever the scope or
+  // pause, since this is cleanup of a reader's request, not pipeline work (#1921, report-run.ts).
+  try {
+    result.reportRunsClosed = await sweepInterruptedReportRuns();
+  } catch (error) {
+    console.error("[reaper] interrupted report-run sweep failed", error instanceof Error ? error.message : String(error));
   }
 
   return result;
@@ -3824,6 +3871,8 @@ const STEP_EXPECTED_MS: Record<string, number> = {
   "hamilton-paid-answer-eval": 280_000,
   // The gate replay stops starting answers at 200 s (gate-replay.ts BUDGET_MS); its slowest batch may run past it.
   "hamilton-gate-replay": 280_000,
+  // The paid replay batch starts no sample after 100 s; a written answer started then stops by 180 s more.
+  "hamilton-paid-gate-replay": 290_000,
   // The hourly nationwide lane sync (state-lane-scheduler runNationwideLaneSync), run from its own
   // route, never the tick. Measured inside the tick over the 24 hours to 23:55 UTC 2026-10-18:
   // the first tick of each hour started its first step p50 80 s, p90 171 s, max 200 s in.
@@ -3848,7 +3897,7 @@ const STEP_EXPECTED_MS: Record<string, number> = {
  * from `/api/admin/crew/lane-sync`. The bounded HMDA identity repair requires an explicit
  * admin advance of its reviewed configuration, so the tick never starts it either.
  */
-export const TICK_EXCLUDED_STEP_KEYS = ["hamilton-answer-eval", "hamilton-paid-answer-eval", "hamilton-gate-replay", "lane-sync", HMDA_IDENTITY_REPAIR_STEP_KEY] as const;
+export const TICK_EXCLUDED_STEP_KEYS = ["hamilton-answer-eval", "hamilton-paid-answer-eval", "hamilton-gate-replay", "hamilton-paid-gate-replay", "lane-sync", HMDA_IDENTITY_REPAIR_STEP_KEY] as const;
 /** Steps not listed above: most run in seconds, so this keeps an unknown long one safe. */
 const DEFAULT_STEP_EXPECTED_MS = 120_000;
 /**

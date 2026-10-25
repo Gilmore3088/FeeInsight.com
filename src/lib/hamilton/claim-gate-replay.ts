@@ -17,13 +17,17 @@ import { gateShadowRecord, tallyGateShadow, type GateShadowRecord, type GateShad
 export interface ClaimGateReplayResult {
   id: string;
   group: ClaimGoldenCase["group"];
+  persona: ClaimGoldenCase["persona"];
   control: boolean;
   target: ClaimGoldenCase["target"]["status"];
   today: TodayDecision;
   unified: GateStatus;
   codes: GateFailureCode[];
   disagreement: GateShadowRecord["disagreement"];
-  /** The unified gate holds exactly when the target holds. */
+  /**
+   * The unified gate's status is the target's: a held case held, a partial one partial, a control
+   * validated (claim-gate-replay.test.ts fails the build on any miss).
+   */
   meetsTarget: boolean;
   /** What the cause rule changes: "holds" when the answer is held only with it, "cuts" when it alone makes the answer partial. */
   cause: "holds" | "cuts" | "flags" | "none";
@@ -32,8 +36,10 @@ export interface ClaimGateReplayResult {
 export interface ClaimGateReplay {
   version: string;
   total: number;
-  /** Cases where the unified gate holds exactly when the target does. */
+  /** Cases whose unified status is the target's. */
   meetsTarget: number;
+  /** The cases that miss their target, by id: empty, or the replay test fails. */
+  misses: string[];
   /** Controls the unified gate validates. */
   controlsValidated: number;
   controls: number;
@@ -78,9 +84,9 @@ export function replayClaimGoldenCase(c: ClaimGoldenCase): { result: ClaimGateRe
   return {
     record,
     result: {
-      id: c.id, group: c.group, control: c.control, target: c.target.status, today, unified: verdict.status,
+      id: c.id, group: c.group, persona: c.persona, control: c.control, target: c.target.status, today, unified: verdict.status,
       codes: record.codes, disagreement: record.disagreement,
-      meetsTarget: (verdict.status === "held") === (c.target.status === "held"), cause,
+      meetsTarget: verdict.status === c.target.status, cause,
     },
   };
 }
@@ -94,6 +100,7 @@ export function replayClaimGoldenGate(cases: readonly ClaimGoldenCase[] = CLAIM_
     version: CLAIM_GOLDEN_SET_VERSION,
     total: results.length,
     meetsTarget: results.filter((r) => r.meetsTarget).length,
+    misses: results.filter((r) => !r.meetsTarget).map((r) => r.id),
     controlsValidated: controls.filter((r) => r.unified === "validated").length,
     controls: controls.length,
     cause: {

@@ -9,7 +9,9 @@
  * A filing row has no numeric id in the tool output, so its ID is a natural key that names its
  * period basis: an NCUA profile row is year to date and the filed peer view's row for the same
  * quarter is a standalone quarter, so the two never share an ID. Two reads giving one ID different
- * values give no fact for that ID, and nothing derived from it. Pure: no read, no model call.
+ * values give no fact for that ID, and nothing derived from it. The profile's revenue trend gives
+ * standalone quarters under the same key as the filed peer view's, and a fee-income change is
+ * derived from two of them (Cycle A defect 10). Pure: no read, no model call.
  */
 import { financialMeasureDefinition, financialSourceForCharter } from "@/lib/data-store/financial-peer-contract";
 import { ncuaFilingInputs } from "./answer-derivations";
@@ -109,6 +111,117 @@ function profileFilingFacts(reads: readonly AnswerToolEvidence[]): HamiltonEvide
   return facts.filter((fact) => !conflicting.has(`${fact.scope.institutionId}:${fact.scope.reportingDate}`));
 }
 
+const TREND_QUARTER = /^(20\d{2})-?Q([1-4])$/;
+const QUARTER_ENDS = ["03-31", "06-30", "09-30", "12-31"] as const;
+
+/**
+ * getInstitution's `revenue_trend` quarters (#1077, Cycle A defect 10): each a standalone quarter
+ * of the profile's own measure, owned by the profile's institution (the rows carry no id of their
+ * own) and keyed as the filed peer view keys a standalone quarter, so the same quarter read twice
+ * is one fact and two values for it are none. The definition must be the source's own, stating a
+ * standalone-quarter basis; each row must state its own source and unit. The tool's
+ * `yoy_change_pct` is never a fact: the change is derived from two of these quarters
+ * (`trendChangeDerivations`), so it names both inputs.
+ */
+function trendFilingFacts(reads: readonly AnswerToolEvidence[]): HamiltonEvidenceFact[] {
+  const facts: HamiltonEvidenceFact[] = [];
+  const conflicting = new Set<string>();
+  for (const read of reads.slice(-40)) {
+    if (read.toolName !== "getInstitution") continue;
+    const id = record(read.input)?.id;
+    const output = record(read.output);
+    const identity = record(output?.identity);
+    const definition = record(output?.revenue_trend_definition);
+    const source = financialSourceForCharter(identity?.charter_type);
+    if (!positiveId(id) || identity?.id !== id || !source || definition?.source !== source || !Array.isArray(output?.revenue_trend)) continue;
+    const expected = financialMeasureDefinition(source);
+    if (definition.measure !== expected.measure || definition.unit !== expected.unit || definition.publisher !== expected.publisher
+      || definition.charter_type !== expected.charter_type || definition.period_basis !== "standalone_quarter") continue;
+    // The trend rows carry no id; a read whose filed rows name another institution is not trusted for them either.
+    const financials = record(output.financials);
+    const filed = [financials?.latest, ...(Array.isArray(financials?.records) ? financials.records : [])].map(record).filter((row) => row !== null);
+    if (filed.some((row) => row.institution_id !== id)) continue;
+    for (const raw of output.revenue_trend.slice(0, 8)) {
+      const row = record(raw);
+      const match = typeof row?.quarter === "string" ? TREND_QUARTER.exec(row.quarter) : null;
+      if (!row || !match || row.source !== source) continue;
+      const reportDate = `${match[1]}-${QUARTER_ENDS[Number(match[2]) - 1]}`;
+      const fieldUnits = record(row.field_units);
+      // The row's own unit only: the trend's definition is a sibling, not the row.
+      const stated = fieldUnits && Object.hasOwn(fieldUnits, "service_charge_income") ? fieldUnits.service_charge_income
+        : Object.hasOwn(row, "unit") ? row.unit : row.units;
+      const scale = dollarUnitScale(stated);
+      const value = row.service_charge_income;
+      if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || scale === null) {
+        conflicting.add(`${id}:${reportDate}`);
+        continue;
+      }
+      facts.push(filingFact({ source, institutionId: id, reportDate, metric: "service_charge_income", basis: "standalone_quarter",
+        value: value * scale, unit: "usd", label: expected.publisher, table: "institution_financial_records" }));
+    }
+  }
+  return facts.filter((fact) => !conflicting.has(`${fact.scope.institutionId}:${fact.scope.reportingDate}`));
+}
+
+/** The quarter end `back` quarters before a quarter end. */
+function quarterEndBefore(date: string, back: number): string {
+  const index = Number(date.slice(0, 4)) * 4 + QUARTER_ENDS.indexOf(date.slice(5) as (typeof QUARTER_ENDS)[number]) - back;
+  return `${Math.floor(index / 4)}-${QUARTER_ENDS[index % 4]}`;
+}
+
+/** The comparisons a change is derived for, as the NCUA ledger derives them (answer-derivations.ts), in quarters back. */
+const TREND_COMPARISONS = [["year_over_year", 4], ["quarter_over_quarter", 1]] as const;
+
+/**
+ * The percent change in an institution's standalone-quarter fee income against the same quarter a
+ * year earlier and against the quarter before: two filed quarters of the same institution, source
+ * and metric, both named as inputs (current first, baseline second, the order derivationHolds
+ * recomputes in). Only the exact baseline quarter counts: with that filing missing there is no
+ * change, never one taken over a longer span. Rounded to one decimal, as the tool and the evidence
+ * contract round a change.
+ */
+function trendChangeDerivations(facts: ReadonlyMap<string, HamiltonEvidenceFact>): HamiltonDerivedFact[] {
+  const out: HamiltonDerivedFact[] = [];
+  for (const current of facts.values()) {
+    const { institutionId, reportingDate, metric, periodBasis } = current.scope;
+    const source = current.id.split(":")[1];
+    if (current.source.evidenceClass !== "filing" || metric !== "service_charge_income" || periodBasis !== "standalone_quarter"
+      || current.unit !== "usd" || typeof current.value !== "number" || institutionId === null || !quarterEnd(reportingDate)
+      || (source !== "fdic" && source !== "ncua")) continue;
+    for (const [comparison, back] of TREND_COMPARISONS) {
+      const prior = facts.get(filingFactId(source, institutionId, quarterEndBefore(reportingDate, back), metric, "standalone_quarter"));
+      if (!prior || typeof prior.value !== "number" || prior.value <= 0) continue;
+      const pct = Math.round(((current.value - prior.value) / prior.value) * 1000) / 10;
+      if (!Number.isFinite(pct)) continue;
+      out.push({
+        id: `change:${source}:${institutionId}:${reportingDate}:${metric}:standalone_quarter:${comparison}`, kind: "derived",
+        scope: { institutionId, feeCategory: null, product: null, reportingDate, effectiveDate: null,
+          accountApplicability: "unknown", metric, periodBasis: "standalone_quarter", cohortKey: null },
+        value: pct, unit: "percent", currency: null, status: "derived",
+        derivation: { kind: "percent_change", inputFactIds: [current.id, prior.id], denominatorFactId: prior.id,
+          formula: "(current - prior) / prior * 100", rounding: "one decimal percentage point" },
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * An NCUA standalone quarter must be its year-to-date filing less the prior quarter's (Q1 as
+ * filed) wherever both are read; one that is not names no fact, as profileQuarterCalculations
+ * drops a trend row that disagrees with the totals.
+ */
+function quarterDisagreesWithYtd(fact: HamiltonEvidenceFact, facts: ReadonlyMap<string, HamiltonEvidenceFact>): boolean {
+  const { institutionId, reportingDate, metric, periodBasis } = fact.scope;
+  if (!fact.id.startsWith("filing:ncua:") || metric !== "service_charge_income" || periodBasis !== "standalone_quarter"
+    || institutionId === null || !quarterEnd(reportingDate) || typeof fact.value !== "number") return false;
+  const ytd = facts.get(filingFactId("ncua", institutionId, reportingDate, metric, "ytd"))?.value;
+  if (typeof ytd !== "number") return false;
+  if (reportingDate.endsWith("03-31")) return Math.abs(ytd - fact.value) > 0.5;
+  const before = facts.get(filingFactId("ncua", institutionId, quarterEndBefore(reportingDate, 1), metric, "ytd"))?.value;
+  return typeof before === "number" && Math.abs(ytd - before - fact.value) > 0.5;
+}
+
 /** queryData institution reads of the curated NCUA call lines, validated by the NCUA ledger's own reader. */
 function callItemFacts(reads: readonly AnswerToolEvidence[]): HamiltonEvidenceFact[] {
   return ncuaFilingInputs(reads.filter((read) => read.toolName === "queryData")).map((input) => filingFact({
@@ -156,13 +269,14 @@ export function claimEvidenceFacts(reads: readonly AnswerToolEvidence[], institu
   const peers = filedPeerFacts(reads, institutionId);
   const facts = new Map<string, HamiltonEvidenceFact>();
   const conflicts = new Set<string>();
-  for (const fact of [...profileFilingFacts(reads), ...callItemFacts(reads), ...peers.facts]) {
+  for (const fact of [...profileFilingFacts(reads), ...trendFilingFacts(reads), ...callItemFacts(reads), ...peers.facts]) {
     const previous = facts.get(fact.id);
     if (!previous) facts.set(fact.id, fact);
     else if (previous.value !== fact.value || previous.unit !== fact.unit) conflicts.add(fact.id);
   }
+  for (const fact of facts.values()) if (quarterDisagreesWithYtd(fact, facts)) conflicts.add(fact.id);
   for (const id of conflicts) facts.delete(id);
-  const derivations: HamiltonDerivedFact[] = [...peers.derivations];
+  const derivations: HamiltonDerivedFact[] = [...peers.derivations, ...trendChangeDerivations(facts)];
   for (const calculation of profileQuarterCalculations(reads)) {
     const inputIds = calculation.inputs.map((input) => filingFactId("ncua", input.institution_id, input.report_date, "service_charge_income", "ytd"));
     // The profile's quarter is derived from the same rows; it stands only while both rows do, at the same values.

@@ -1,4 +1,5 @@
 import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
+import { bindHamiltonTaskReader, withHamiltonTask } from "@/lib/hamilton/task-budget";
 /**
  * POST /api/hamilton/ask/memo
  *
@@ -24,6 +25,8 @@ async function handlePOST(request: Request) {
   if (!user || !canAccessPremium(user)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  // The memo's model call counts toward this reader's daily cap (#1921).
+  bindHamiltonTaskReader(user.id);
   let body: AskBody;
   try {
     body = (await request.json()) as AskBody;
@@ -50,4 +53,5 @@ async function handlePOST(request: Request) {
   }
 }
 
-export const POST = withApiRoutePolicy("api.hamilton.ask.memo", "POST", handlePOST);
+// Each request is one Hamilton task, capped per task and per reader day (#1921, task-budget.ts).
+export const POST = withApiRoutePolicy("api.hamilton.ask.memo", "POST", withHamiltonTask("ask", handlePOST));
