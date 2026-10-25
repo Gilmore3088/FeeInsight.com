@@ -453,8 +453,6 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 ### Hamilton workspace (24)
 
 - 2026-10-25 — An eval scores what the reader gets only with the gate that decides it, and a supported filing claim is tied to its live row, not accepted as the tools read it. — [finding](findings/2026-10-25-claim-eval-reads.md) — Guard: `src/lib/hamilton/answer-correctness-filings.test.ts`, `src/lib/data-store/filing-reread.test.ts`, `src/lib/hamilton/paid-answer-eval.test.ts`
-### Hamilton workspace (24)
-
 - 2026-10-25 — When a checked answer is reused, save what the check decided (each sentence's outcome and its facts' values, versioned) and have the next surface read that record, never the prose. — [finding](findings/2026-10-25-claim-report-carry.md) — Guard: `src/lib/hamilton/claim-report-carry.test.ts`, `src/lib/hamilton/report-actions.test.ts`, `src/lib/hamilton/bound-export.pdf.test.tsx`
 - 2026-10-25 — A rewrite of a failing answer is a paid call and a partial answer changes what a reader sees: build both behind one default-off switch and count each rewrite in the quota. — [finding](findings/2026-10-25-claim-repair-partial.md) — Guard: `src/lib/hamilton/output-gate-repair.test.ts`, `src/app/api/research/hamilton/route.gate-repair.test.ts`
 - 2026-10-25 — Run one gate beside the gates it replaces on every path, recording both decisions in the run ledger, so switching it on is a choice about counted disagreements. — [finding](findings/2026-10-25-claim-unified-gate.md) — Guard: `src/lib/hamilton/output-gate.test.ts`, `src/app/api/research/hamilton/route.answer-gate.test.ts`
