@@ -93,8 +93,10 @@ const DISCOVERY_METHOD = "magellan_agentic_discovery";
  * in a row run last, and links to another country's schedule are refused (7 Oct 2026).
  * 6: guessed paths honor learning memory for the same homepage and applicable paths;
  * an absent guessed address is a miss, while transient requests remain retryable.
+ * 7: a candidate whose own opening names it a loan, card or line-of-credit disclosure, or a
+ * youth, teen or student account's schedule, is refused (`openingRejection`, #1944).
  */
-export const DISCOVERY_METHOD_VERSION = 6;
+export const DISCOVERY_METHOD_VERSION = 7;
 /** The website repair, logged as its own attempt when it changes the stored address. */
 export const WEBSITE_REPAIR_STRATEGY = { strategy: "discover.website_repair", version: 1 } as const;
 /**

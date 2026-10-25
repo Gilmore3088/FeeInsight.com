@@ -1075,6 +1075,36 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   companion filter skips these documents too. A card program's section inside one fee page (Navy
   Federal's "GO Prepaid Cards", #1905) has no address of its own and is not caught here; the
   card program section re-check below reads it.
+  v4 (#1944, James's live-fee check round 2, Oct 18): the document's own opening, the first three
+  lines of its newest completed stored text (`documentOpeningKind` in
+  `src/lib/non-deposit-document.ts`, read once per document in each batch), not only its address.
+  `loan_titled_document`: a document that opens as a loan, card, HELOC or line-of-credit disclosure
+  or agreement ("TD Fit Personal Unsecured Consumer Loan Disclosure" at
+  `td-fit-account-guide-acc-en.pdf`, whose "Monthly fee" $0 and "NSF payment fee" $0 were live under
+  deposit categories; "IMPORTANT CREDIT CARD DISCLOSURES"; "VISA CREDIT CARD / AGREEMENT AND
+  DISCLOSURE STATEMENT" read across two lines). On a document the address names no kind, every fee
+  on it comes down; on one the address already calls a loan page, lending fees keep
+  `lending_category` and only the deposit-category fees v2 kept move here. An overdraft line of
+  credit agreement, a business card agreement, a menu's "Loan Application" and a general schedule
+  with a loan section do not count. `youth_account_document`: a document that opens as a youth,
+  teen, student or minor account's schedule or addendum ("Youth Member Fee Schedule (ages 13-17)";
+  Arbor Financial's Volt addendum, "The following additional disclosures apply to the Volt Teen
+  Banking & Volt Banking accounts", whose NSF "FREE*" means members 9-18 cannot overdraw, beside
+  "(regularly $35)"); every fee on it, when the address names no other kind. A general schedule
+  that lists a student account among others, a negated mention ("does not apply to Youth
+  Savings"), a credit union named for students and a youth heading past the third line do not
+  count. The address never gives the youth kind: GTE Financial's `/go-student-checking` page carried
+  27 live general fees. Both rules act only with `OPENING_DOCUMENT_TAKEDOWN_LIVE` (off: counted,
+  left as they are; all 17 matched documents' stored openings were checked and none is a general
+  schedule, so the sample is clean for turning it on) and Hamilton's publish gate and depth count
+  ask the same rule with the row's document opening. Dry run (prod, read-only, Oct 25, `openingDocumentFeesSql()`):
+  48 live fees on 17 documents at 15 institutions, 41 `loan_titled_document` (15 documents) and 7
+  `youth_account_document` (2 documents); none of the 17 had an address kind. A loan phrase after
+  "your", "the" or a like word is a sentence, not a title, and an opening that names a general
+  schedule is never a loan document (review of #2671; doc 18797's "governed by the credit card
+  Agreement" dropped out). Step detail adds
+  `opening_document`, `opening_documents`, `opening_institutions`, `opening_switch_live` and
+  `samples_opening_document`; each sample carries `opening`.
 - Spanish copies of an English schedule (`translated-copy-check.ts`, #1909, James's live-fee check
   Oct 18). M&T publishes its checking fee guide in English and Spanish, both were read, and "Cargo
   por sobregiro" $15 sat beside "Overdraft Fee" $15. A live fee comes down only when its document's
@@ -2009,7 +2039,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v5 | `darwin/verified-recheck.ts` |
 | `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v7 | `darwin/live-fragment-check.ts` |
 | `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v3 | `darwin/hourly-frequency-check.ts` |
-| `NON_DEPOSIT_CHECK_VERSION` | `darwin.non_deposit_document` | v3 | `darwin/non-deposit-document-check.ts` |
+| `NON_DEPOSIT_CHECK_VERSION` | `darwin.non_deposit_document` | v4 | `darwin/non-deposit-document-check.ts` |
 | `LINE_CONFLICT_CHECK_VERSION` | `darwin.line_conflict` | v1 | `darwin/line-conflict-check.ts` |
 | `TRANSLATED_COPY_CHECK_VERSION` | `darwin.translated_copy` | v2 | `darwin/translated-copy-check.ts` |
 | `PRODUCT_PAGE_REPEAT_CHECK_VERSION` | `darwin.product_page_repeat` | v2 | `darwin/product-page-repeat-check.ts` |
