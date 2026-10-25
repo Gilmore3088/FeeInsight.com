@@ -12,17 +12,21 @@ type SqlTag = typeof sql;
  *
  * A confirmed error is a `wrong` or `missed` `pipeline_feedback` row with weight from the last
  * seven days that is about a fee that went live, or was recorded by a person (a hold, a
- * correction). Pre-publish rejects that never reached a customer are the owning agent's own
- * batch signal, not a confirmed error. Rows group by stage, kind and pattern:
+ * correction). That includes Deming's own audit misses (a live fee checked against the bank's
+ * document), which count at their lower weight's word: evidence, enough to group. Pre-publish
+ * rejects that never reached a customer, and a missed fee with no live fee or person behind it, are
+ * the owning agent's own batch signal, not a confirmed error. Rows group by stage, kind and pattern:
  *
- *   fee-level rows      the fee category (`canonical_fee_key`), the name family the error repeats in
+ *   fee-level rows      the fee category (`canonical_fee_key`) the error repeats in
  *   document-level rows the document kind Rosetta stored (`agent_source_texts.document_kind`), or
  *                       for a read error the reader and document type (the layout)
  *
- * A class needs errors at two or more banks; a pattern seen at one bank is counted, not listed.
- * Each class names its owner (the agent that runs the stage) and becomes one weight-0 ledger row
- * per class per week (`error_class`, `deming.error_classes`), upserted daily with its counts and a
- * GitHub-ready title and body, so the same class keeps one record however often it is seen.
+ * A class needs errors at two or more banks and a shared pattern; a pattern seen at one bank, or a
+ * row with no pattern at all, is counted, not listed. Each class names its owner (the agent that
+ * runs the stage) and keeps one weight-0 ledger row (`error_class`, `deming.error_classes`), opened
+ * the first day it is seen and updated each day it is seen again with that day's counts, its date
+ * and a GitHub-ready title and body. A class not seen again keeps its last date, which says how old
+ * its counts are.
  * Read-only apart from that ledger; no model calls.
  */
 
@@ -68,6 +72,8 @@ export interface ErrorClassSummary {
   confirmedRows: number;
   /** Patterns seen at only one bank. */
   oneBankPatterns: number;
+  /** Rows with no category, layout or document kind to group by. */
+  unpatternedRows: number;
   classes: ErrorClass[];
 }
 
@@ -128,8 +134,13 @@ export function summarizeRows(rows: ClassRow[], windowDays = ERROR_CLASS_WINDOW_
   const classes: ErrorClass[] = [];
   let confirmedRows = 0;
   let oneBankPatterns = 0;
+  let unpatternedRows = 0;
   for (const row of rows) {
     confirmedRows += Number(row.rows);
+    if (row.pattern === "unknown") {
+      unpatternedRows += Number(row.rows);
+      continue;
+    }
     if (Number(row.banks) < ERROR_CLASS_MIN_BANKS) {
       oneBankPatterns += 1;
       continue;
@@ -151,7 +162,7 @@ export function summarizeRows(rows: ClassRow[], windowDays = ERROR_CLASS_WINDOW_
     });
   }
   classes.sort((a, b) => b.banks - a.banks || b.rows - a.rows || a.key.localeCompare(b.key));
-  return { windowDays, confirmedRows, oneBankPatterns, classes: classes.slice(0, ERROR_CLASS_LIMIT) };
+  return { windowDays, confirmedRows, oneBankPatterns, unpatternedRows, classes: classes.slice(0, ERROR_CLASS_LIMIT) };
 }
 
 /** Pure: the pattern in words. */
@@ -164,12 +175,6 @@ export function patternLabel(pattern: string): string {
   return "no shared pattern";
 }
 
-/** Pure: the Monday (UTC) of the week a day falls in, which keys a class's record for that week. */
-export function weekOf(now: Date): string {
-  const day = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  day.setUTCDate(day.getUTCDate() - ((day.getUTCDay() + 6) % 7));
-  return day.toISOString().slice(0, 10);
-}
 
 /** Pure: a record ready to paste into a GitHub issue for the class. */
 export function classRecord(cls: ErrorClass, windowDays = ERROR_CLASS_WINDOW_DAYS): { title: string; body: string } {
@@ -190,7 +195,8 @@ export function classRecord(cls: ErrorClass, windowDays = ERROR_CLASS_WINDOW_DAY
 
 export interface ErrorClassesResult {
   summary: ErrorClassSummary | null;
-  week: string;
+  /** The UTC day the counts are for. */
+  asOf: string;
   written: number;
   skipped: string[];
 }
@@ -201,8 +207,8 @@ export async function runErrorClasses({
   dryRun = false,
   now = new Date(),
 }: { db?: SqlTag; runId?: number | null; dryRun?: boolean; now?: Date } = {}): Promise<ErrorClassesResult> {
-  const week = weekOf(now);
-  const result: ErrorClassesResult = { summary: null, week, written: 0, skipped: [] };
+  const asOf = now.toISOString().slice(0, 10);
+  const result: ErrorClassesResult = { summary: null, asOf, written: 0, skipped: [] };
   try {
     result.summary = await inSavepoint(db, (scope) => readErrorClasses(scope));
   } catch (error) {
@@ -224,7 +230,8 @@ export async function runErrorClasses({
       weight: 0,
       runId,
       evidence: {
-        week,
+        as_of: asOf,
+        window_days: result.summary!.windowDays,
         class_key: cls.key,
         error_kind: cls.kind,
         pattern: cls.pattern,
@@ -239,7 +246,7 @@ export async function runErrorClasses({
         github_title: record.title,
         github_body: record.body,
       },
-      dedupeKey: `${ERROR_CLASS_CHECK}:${week}:${cls.key}`,
+      dedupeKey: `${ERROR_CLASS_CHECK}:${cls.key}`,
     };
   });
   if (ledger.length > 0) {
@@ -264,10 +271,11 @@ export function summarizeErrorClasses(result: ErrorClassesResult): string {
 export function errorClassesDetail(result: ErrorClassesResult) {
   const summary = result.summary;
   return {
-    week: result.week,
+    as_of: result.asOf,
     window_days: summary?.windowDays ?? ERROR_CLASS_WINDOW_DAYS,
     confirmed_rows: summary?.confirmedRows ?? null,
     one_bank_patterns: summary?.oneBankPatterns ?? null,
+    unpatterned_rows: summary?.unpatternedRows ?? null,
     classes: summary?.classes.length ?? null,
     written: result.written,
     skipped: result.skipped,

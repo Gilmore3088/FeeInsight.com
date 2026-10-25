@@ -9,7 +9,6 @@ import {
   runErrorClasses,
   summarizeErrorClasses,
   summarizeRows,
-  weekOf,
   ERROR_CLASS_CHECK,
   ERROR_CLASS_KIND,
 } from "./error-classes";
@@ -34,12 +33,13 @@ describe("error classes (#2063)", () => {
     ]);
   });
 
-  it("writes the pattern in words and keys a class's record to its week", () => {
+  it("writes the pattern in words, and leaves rows with no pattern out of the classes", () => {
     expect(patternLabel("category:early_closure")).toMatch(/fees$/);
     expect(patternLabel("document:product_page")).toBe("product page documents");
     expect(patternLabel("layout:read.pdf_layout/pdf")).toBe("documents read by read.pdf_layout/pdf");
-    expect(weekOf(new Date("2026-10-25T04:00:00Z"))).toBe("2026-10-19"); // a Sunday
-    expect(weekOf(new Date("2026-10-19T00:00:00Z"))).toBe("2026-10-19"); // its Monday
+    const summary = summarizeRows([row("extract", "wrong_amount", "unknown", 40), row("extract", "wrong_amount", "category:nsf", 2)]);
+    expect(summary.classes.map((cls) => cls.pattern)).toEqual(["category:nsf"]);
+    expect(summary.unpatternedRows).toBe(40);
   });
 
   it("gives each class a GitHub-ready record that sends the fix to its step", () => {
@@ -51,7 +51,7 @@ describe("error classes (#2063)", () => {
     expect(record.body).toContain("error-fixes.json");
   });
 
-  it("upserts one weight-0 ledger row per class per week, and writes nothing on a dry run", async () => {
+  it("keeps one weight-0 ledger row per class, updated with the day's counts, and writes nothing on a dry run", async () => {
     const reads = [row("extract", "wrong_category", "category:bill_pay", 32, 33)];
     const calls: string[] = [];
     const tag = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
@@ -62,8 +62,8 @@ describe("error classes (#2063)", () => {
         const written = JSON.parse(String(values[0]));
         expect(written).toHaveLength(1);
         expect(written[0]).toMatchObject({ kind: ERROR_CLASS_KIND, check_name: ERROR_CLASS_CHECK, weight: 0, about_stage: "extract", reported_by: "deming",
-          dedupe_key: `${ERROR_CLASS_CHECK}:2026-10-19:extract:wrong_category:category:bill_pay` });
-        expect(written[0].evidence).toMatchObject({ owner: "knox", banks: 32, rows: 33, week: "2026-10-19" });
+          dedupe_key: `${ERROR_CLASS_CHECK}:extract:wrong_category:category:bill_pay` });
+        expect(written[0].evidence).toMatchObject({ owner: "knox", banks: 32, rows: 33, as_of: "2026-10-25", window_days: 7 });
         expect(written[0].evidence.github_body).toContain("knox");
         return Promise.resolve([{ id: 1 }]);
       }

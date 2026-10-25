@@ -109,11 +109,12 @@ institutions remains the only human launch workflow.
 
 - `error-classes.ts`: the `deming-error-classes` step in Atlas's daily scoreboard run, after the
   error loop. It groups the last 7 days of confirmed errors (a `wrong` or `missed` row with weight
-  about a fee that went live, or recorded by a person) by stage, kind and pattern: the fee category
-  for a fee-level row, the reader and document type for a read error, else the document kind. A
-  pattern at two or more banks is a class, owned by the agent that runs its stage; each class is one
-  weight-0 `error_class` ledger row per week with its counts, examples and a GitHub-ready title and
-  body. The morning brief lists the largest classes, so the data lane works classes, not fees.
+  about a fee that went live, or recorded by a person; Deming's own audit misses count) by stage,
+  kind and pattern: the fee category for a fee-level row, the reader and document type for a read
+  error, else the document kind. A pattern at two or more banks is a class, owned by the agent that
+  runs its stage; rows with no pattern are counted, never a class. Each class keeps one weight-0
+  `error_class` ledger row, opened the first day it is seen and updated with each later day's
+  counts, date, examples and a GitHub-ready title and body. The morning brief lists the largest classes, so the data lane works classes, not fees.
 
 ## Did the change work (#1106)
 
