@@ -31,8 +31,10 @@ import { memoGateInput, memoProblems } from "./memo";
 import { gateAnswer, gateSentences, type GateFailureCode, type GateInput, type GateStatus, type GateSurface } from "./output-gate";
 import { shadowGate, type GateShadowRecord, type ShadowPath, type TodayDecision } from "./output-gate-shadow";
 import type { AnswerToolEvidence } from "./written-answer-evidence";
+import type { HamiltonBriefingEvidence } from "./institution-briefing";
 
-export const PERSONA_GOLDEN_SET_VERSION = "2026-10-25.1";
+/** .2: review of PR #2642: six correct answers the first gate fixes held (Deming as a name and a town; local sentences). */
+export const PERSONA_GOLDEN_SET_VERSION = "2026-10-25.2";
 
 export type Persona = "ceo" | "cfo" | "retail_product_manager" | "board" | "analyst";
 export const PERSONAS: readonly Persona[] = ["ceo", "cfo", "retail_product_manager", "board", "analyst"];
@@ -55,10 +57,13 @@ export const HARBOR = 9101;
 export const LAKESHORE = 9102;
 /** Another tenant's bank: a different customer's institution. */
 export const CYPRESS = 9103;
+/** An institution whose name holds an internal system's name (review of PR #2642); the fixture's id and fee are invented. */
+export const DEMING_SCHOOLS = 9104;
 export const PERSONA_GOLDEN_NAMES: ReadonlyMap<number, string> = new Map([
   [HARBOR, "Harbor Point Bank"],
   [LAKESHORE, "Lakeshore Community Credit Union"],
   [CYPRESS, "Cypress Ridge Bank"],
+  [DEMING_SCHOOLS, "Deming Schools Employees Federal Credit Union"],
 ]);
 const nameOf = (id: number) => PERSONA_GOLDEN_NAMES.get(id) ?? `Synthetic Institution ${id}`;
 
@@ -235,7 +240,11 @@ interface CaseBase {
 type MemoDraftShape = Parameters<typeof memoProblems>[0];
 
 export type PersonaGoldenCase = CaseBase & (
-  | { surface: "written_answer"; text: string; reads: AnswerToolEvidence[]; researchId: number; accountId: number | null }
+  | {
+    surface: "written_answer"; text: string; reads: AnswerToolEvidence[]; researchId: number; accountId: number | null;
+    /** The research subject's briefing evidence, which the route passes to the check and the gate; none when absent. */
+    briefingEvidence?: HamiltonBriefingEvidence[];
+  }
   | { surface: "memo"; draft: MemoDraftShape; payload: ReturnType<typeof memoPayload> }
   | { surface: "report_section" | "simulate"; text: string; data: Record<string, unknown>; researchId: number | null; accountId: number | null }
   | { surface: "access"; reader: User | null }
@@ -269,6 +278,17 @@ const COMPETITORS_THREE = localCompetitors(HARBOR, { overdraft: 30 }, [
   { id: 9132, name: "Synthetic Competitor Two", fees: { overdraft: 33 } },
   { id: 9133, name: "Synthetic Competitor Three", fees: { overdraft: 36 } },
 ]);
+/** The national index at $27.50 across 2,000 institutions, read beside the three local competitors. */
+const NATIONAL_2750 = indexRead(null, [{ category: "overdraft", median: 27.5, p25: 24, p75: 33, count: 2000 }]);
+/** Five competitors state an outgoing wire price; only two state an NSF price. */
+const COMPETITORS_WIRE = localCompetitors(HARBOR, { wire_domestic_outgoing: 25, nsf: 28 }, [
+  { id: 9131, name: "Synthetic Competitor One", fees: { wire_domestic_outgoing: 20, nsf: 27 } },
+  { id: 9132, name: "Synthetic Competitor Two", fees: { wire_domestic_outgoing: 22, nsf: 30 } },
+  { id: 9133, name: "Synthetic Competitor Three", fees: { wire_domestic_outgoing: 25 } },
+  { id: 9134, name: "Synthetic Competitor Four", fees: { wire_domestic_outgoing: 28 } },
+  { id: 9135, name: "Synthetic Competitor Five", fees: { wire_domestic_outgoing: 30 } },
+]);
+const DEMING_SCHOOLS_PROFILE = feeProfile(DEMING_SCHOOLS, [{ recordId: 41, category: "overdraft", name: "Overdraft", amount: 25 }]);
 /** Lakeshore: Q1 2026 quarter $1.2 million, Q2 2026 quarter $1.4 million ($2.6 million year to date). */
 const LAKESHORE_NCUA = ncuaProfile(LAKESHORE, { "2026-03-31": 1200, "2026-06-30": 2600 }, { "2026-Q1": 1200, "2026-Q2": 1400 });
 /** Harbor Point: FDIC Q2 2026 deposit service charges of $1.1 million, with its fee schedule. */
@@ -393,6 +413,38 @@ export const PERSONA_GOLDEN_CASES: readonly PersonaGoldenCase[] = [
     description: "a method note with \"because\" and no figure",
     question: "How is the quarter computed?",
     text: "Because NCUA filings report totals for the year so far, each quarter here is the difference between two filings.",
+    expect: "validated" },
+
+  // --- Correct answers the first version of the gate fixes held (review of PR #2642): each must pass ---
+  { id: "analyst-deming-schools", group: "persona", persona: "analyst", surface: W, reads: [DEMING_SCHOOLS_PROFILE], researchId: DEMING_SCHOOLS, accountId: HARBOR,
+    description: "an institution whose name holds an internal system's name",
+    question: "What does Deming Schools Employees FCU charge for an overdraft?",
+    text: "Deming Schools Employees Federal Credit Union charges $25 for an overdraft.",
+    expect: "validated" },
+  { id: "ceo-deming-city", group: "persona", persona: "ceo", ...harbor([HARBOR_PROFILE]),
+    description: "a town that shares an internal system's name",
+    question: "Is our overdraft fee the same at every branch?",
+    text: "Harbor Point Bank's branch in Deming, NM charges the same $30 overdraft fee.",
+    expect: "validated" },
+  { id: "rpm-national-beside-local", group: "persona", persona: "retail_product_manager", ...harbor([HARBOR_PROFILE, NATIONAL_2750, COMPETITORS_THREE]),
+    description: "the national median beside three local competitors' own prices",
+    question: "How do we compare nationally and locally on overdraft?",
+    text: "The national median overdraft fee is $27.50, and its three local competitors charge $25, $33 and $36.",
+    expect: "validated" },
+  { id: "rpm-national-then-market", group: "persona", persona: "retail_product_manager", ...harbor([HARBOR_PROFILE, NATIONAL_2750, COMPETITORS_THREE]),
+    description: "the national median with its count, then the local range",
+    question: "Is our overdraft fee high?",
+    text: "Harbor Point Bank's $30 overdraft fee is above the national median of $27.50 across 2,000 institutions, a market where competitors charge $25 to $36.",
+    expect: "validated" },
+  { id: "rpm-typical-local", group: "persona", persona: "retail_product_manager", ...harbor([HARBOR_PROFILE, COMPETITORS_THREE]),
+    description: "\"typical\" with each local competitor's price named",
+    question: "Is our overdraft fee in line locally?",
+    text: "Its $30 overdraft fee is typical of what local competitors charge: $25, $33 and $36.",
+    expect: "validated" },
+  { id: "rpm-wire-transfer", group: "persona", persona: "retail_product_manager", ...harbor([COMPETITORS_WIRE]),
+    description: "a five-competitor wire median; \"transfer\" must not read as NSF, which only two state",
+    question: "What do local competitors charge to send a wire?",
+    text: "The median outgoing wire transfer fee among Harbor Point Bank's five local competitors is $25.",
     expect: "validated" },
 
   // --- Adversarial: each must be held ---
@@ -547,7 +599,7 @@ export function personaGateInput(c: Exclude<PersonaGoldenCase, { surface: "acces
     // As the Analyze route builds it (route.ts, shadowWrittenAnswer).
     return {
       surface: "written_answer", text: c.text, question: c.question,
-      evidence: { kind: "tool_reads", toolOutputs: c.reads.map((read) => read.output), reads: c.reads },
+      evidence: { kind: "tool_reads", toolOutputs: c.reads.map((read) => read.output), reads: c.reads, briefingEvidence: c.briefingEvidence ?? [] },
       identity: { researchInstitutionId: c.researchId, accountInstitutionId: c.accountId,
         accountInstitutionName: c.accountId !== null ? nameOf(c.accountId) : null },
     };
@@ -562,7 +614,8 @@ export function personaGateInput(c: Exclude<PersonaGoldenCase, { surface: "acces
 export function personaLegacyDecision(c: Exclude<PersonaGoldenCase, { surface: "access" }>): TodayDecision {
   if (c.surface === "written_answer") {
     const outputs = c.reads.map((read) => read.output);
-    const check = writtenAnswerCheck(c.text, outputs, c.question, { toolResults: c.reads, institutionId: c.researchId });
+    // The route's check takes the subject's briefing evidence too (route.ts onFinish).
+    const check = writtenAnswerCheck(c.text, outputs, c.question, { briefingEvidence: c.briefingEvidence ?? [], toolResults: c.reads, institutionId: c.researchId });
     const binding = writtenAnswerBinding(c.text, outputs, c.question, { toolResults: c.reads, institutionId: c.researchId, accountInstitutionId: c.accountId });
     return analyzeAnswerDecision(c.text, check, binding, HELD_ANSWER_MESSAGE !== null).today;
   }

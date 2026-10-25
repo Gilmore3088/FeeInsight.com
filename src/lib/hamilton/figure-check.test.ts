@@ -273,4 +273,13 @@ describe("checkNarrativeFigures: fee maps keyed by category (T5, #1726)", () => 
     expect(checkNarrativeFigures("A fee of $9131.", local).unmatched).toEqual(["$9131"]);
     expect(checkNarrativeFigures("It charges $4.", { fees: { overdraft_count: 4 } }).unmatched).toEqual(["$4"]);
   });
+
+  it("reads only plain-object maps under your_fees or competitors[].fees, never items of an array named fees", () => {
+    const rows = { fees: [{ institutionId: 4821, sourceDocumentId: 99123, amount: 30 }] };
+    expect(checkNarrativeFigures("A fee of $4821.", rows).unmatched).toEqual(["$4821"]);
+    expect(checkNarrativeFigures("A fee of $30.", rows).unmatched).toEqual([]);
+    expect(checkNarrativeFigures("A fee of $5.", { your_fees: { "2024": 5 } }).unmatched).toEqual(["$5"]);
+    // A `fees` map outside a competitors array is not the local read's.
+    expect(checkNarrativeFigures("A fee of $6.", { fees: { overdraft: 6 } }).unmatched).toEqual(["$6"]);
+  });
 });

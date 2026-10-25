@@ -61,9 +61,16 @@ export function findUnrequestedAdvice(text: string): RegExpMatchArray | null {
 /**
  * Internal names a bank reader should never see: every crew agent's name (crew-members.ts, plus the
  * replay tooling), and any snake_case table or column name. Gutenberg, Hoovie, Deming and Bayes were
- * missing until the T5 golden set (#1726) showed answers naming them passed.
+ * missing until the T5 golden set (#1726) showed answers naming them passed. Deming and Bayes are
+ * also a town, an institution's name ("Deming Schools Employees Federal Credit Union") and a rule of
+ * probability, so they count only as a system: followed by a system word or verb ("Deming audit",
+ * "Deming reconciled the filings").
  */
-export const PIPELINE_TERMS = /\b(Knox|Darwin|Rosetta|Magellan|Atlas|Gutenberg|Hoovie|Deming|Bayes|pipeline|agent run)\b|\b[a-z0-9]+_[a-z0-9_]+\b/i;
+export const PIPELINE_TERMS = new RegExp([
+  String.raw`\b(Knox|Darwin|Rosetta|Magellan|Atlas|Gutenberg|Hoovie|pipeline|agent run)\b`,
+  String.raw`\b(?:Deming|Bayes)\s+(?:agent|audit|pipeline|job|run|step|check|ledger|replay|tooling|reconcil\w+|flagged|loaded|marked|recorded|counted|re-?checked)\b`,
+  String.raw`\b[a-z0-9]+_[a-z0-9_]+\b`,
+].join("|"), "i");
 
 /** "$209400", "$2,640,000" (a total over $1 million belongs in words), "2.38%". */
 const UNFORMATTED_UNITS = [

@@ -110,7 +110,10 @@ describe("the gate in shadow", () => {
     const record = gateShadowRecord(gateAnswer(writtenInput(c)), "held", { path: "written_streaming", mode: "analyze" });
     expect(JSON.stringify(record)).not.toContain(c.text);
     expect(readGateShadowRecord(JSON.parse(JSON.stringify(record)))).toEqual(record);
-    expect(readGateShadowRecord({ ...record, version: 2 })).toBeNull();
+    expect(record.version).toBe(2);
+    // A record from before the version 2 bump (thin_peer_group) still reads back, under its own version.
+    expect(readGateShadowRecord({ ...record, version: 1 })).toEqual({ ...record, version: 1 });
+    expect(readGateShadowRecord({ ...record, version: 3 })).toBeNull();
     expect(readGateShadowRecord("nope")).toBeNull();
   });
 

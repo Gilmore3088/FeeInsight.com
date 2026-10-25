@@ -53,10 +53,17 @@ describe("persona golden set (T5, #982, #1726)", () => {
   });
 
   it("names every internal agent in customer text as an internal name", () => {
-    for (const name of ["Knox", "Darwin", "Rosetta", "Magellan", "Atlas", "Gutenberg", "Hoovie", "Deming", "Bayes"]) {
+    for (const name of ["Knox", "Darwin", "Rosetta", "Magellan", "Atlas", "Gutenberg", "Hoovie"]) {
       expect(`${name} checked the fee.`, name).toMatch(PIPELINE_TERMS);
     }
-    expect("A Bayesian reading of the fee.").not.toMatch(PIPELINE_TERMS);
+    // Deming and Bayes only as a system: a town, an institution and a rule of probability pass.
+    for (const text of ["Deming reconciled the filings.", "The Deming audit flagged it.", "Bayes replay counted it.", "The Bayes ledger shows it."]) {
+      expect(text, text).toMatch(PIPELINE_TERMS);
+    }
+    for (const text of ["Deming Schools Employees Federal Credit Union charges $25.", "Its branch in Deming, NM charges $30.",
+      "By Bayes' rule the estimate holds.", "A Bayesian reading of the fee."]) {
+      expect(text, text).not.toMatch(PIPELINE_TERMS);
+    }
   });
 
   it("keeps its texts out of every prompt, knowledge and repair file (held out)", () => {
