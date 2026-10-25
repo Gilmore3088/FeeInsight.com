@@ -1,4 +1,4 @@
-import type { NonDepositDocumentKind } from "./non-deposit-document";
+import type { DocumentOpeningKind, NonDepositDocumentKind } from "./non-deposit-document";
 
 /**
  * Document addresses and what `nonDepositDocumentKind` must say about each (#1442). The test runs
@@ -118,4 +118,40 @@ export const NON_DEPOSIT_URL_FIXTURES: Array<{ url: string; kind: NonDepositDocu
   { url: "https://www.example.com/personal/fees-and-gift-cards/", kind: null, why: "fee words before the card" },
   { url: "https://www.example.com/docs/membership-fee-schedule-prepaid.pdf", kind: null, why: "a membership schedule" },
   { url: "https://www.example.com/docs/prepaid-items.pdf", kind: null, why: "prepaid items outside a loan section" },
+];
+
+/**
+ * Document openings and what `documentOpeningKind` must say about each (#1944). The loan and youth
+ * openings are the first lines of live documents' stored texts (prod, read-only, Oct 25); the
+ * near-misses are the general schedules and pages the rule must leave alone, most of them live too.
+ * The test runs them through the JS rule; the same list was run through `documentOpeningKindSql`
+ * on prod (a read-only VALUES query, Oct 25) for parity.
+ */
+export const OPENING_FIXTURES: Array<{ text: string; kind: DocumentOpeningKind | null; why: string }> = [
+  // The issue's documents.
+  { text: "TD Fit Personal Unsecured Consumer Loan Disclosure\nAn ideal option if you are looking to consolidate high interest credit card debt, take a vacation, or make\nhome improvements.", kind: "loan", why: "TD Fit loan disclosure, doc 33822" },
+  { text: "ACCOUNT-SPECIFIC DISCLOSURES\nThe following additional disclosures apply to the Volt Teen Banking & Volt Banking accounts:\nVOLT BANKING SAVINGS", kind: "youth_account", why: "Arbor Financial's Volt addendum, doc 2241" },
+  // Other live documents of the class.
+  { text: "Youth Member Fee Schedule (ages 13-17) (effective 04/01/2026) All fees are subject to change\nDeposit Accounts | Fee Details/services\nACH/Check NSF | $12.00 per item", kind: "youth_account", why: "a youth fee schedule, doc 33234" },
+  { text: "Members Preferred Credit Union\nIMPORTANT CREDIT CARD DISCLOSURES\nThe following disclosure represents important details concerning your credit card.", kind: "loan", why: "card disclosure on line 2, doc 20814" },
+  { text: "VISA® CREDIT CARD\nAGREEMENT AND DISCLOSURE STATEMENT\nIn this VISA CREDIT CARD AGREEMENT AND DISCLOSURE STATEMENT, the words YOU, YOUR and YOURS mean each", kind: "loan", why: "a title over two lines, doc 35339" },
+  { text: "*00000000000000000000000101202200000000000*\nHOME EQUITY LINE OF CREDIT APPLICATION DISCLOSURE\nLea County State Bank", kind: "loan", why: "HELOC application disclosure, doc 35285" },
+  { text: "CREDIT CARD LINE OF CREDIT AGREEMENT AND DISCLOSURE STATEMENT\nThe purpose of this Agreement is to establish the terms and conditions of a Credit Card Line of", kind: "loan", why: "card line of credit agreement, doc 2222" },
+  { text: "Student Loan Disclosure\nRepayment terms", kind: "loan", why: "loan is asked before youth" },
+  { text: "  \n\nTeen Checking Addendum\nThe fees below apply to Teen Checking.", kind: "youth_account", why: "leading blank lines are skipped" },
+  // Near-misses: general schedules, menus and passing mentions.
+  { text: "FEE SCHEDULE\nThis disclosure contains information about terms, fees, and interest rates for some of the accounts we offer.\nThe following fees apply to Regular Checking, Club Checking, Student Checking (Regular checking account with no monthly flat service", kind: null, why: "a general schedule listing a student account among others, doc 36205" },
+  { text: "Consumer Fee Schedule\nMonthly service charge fee does not apply to Youth Savings accounts\nOverdraft | $30", kind: null, why: "a negated youth mention" },
+  { text: "MEMBER ACCOUNTS TRUTH-IN-SAVINGS DISCLOSURES Except as specifically described, the following\ndisclosures apply to all accounts: 1. Rate Information.", kind: null, why: "disclosures that apply to all accounts, doc 3615" },
+  { text: "Hoyas Bank Here.\nGeorgetown University Alumni and Student Federal Credit Union\nTruth in Savings Disclosure and Fee Schedule", kind: null, why: "a credit union named for students, doc 24481" },
+  { text: "OVERDRAFT LINE OF CREDIT AGREEMENT\nPolish-American Federal Credit Union 2889 East Maple Road Troy, MI 48083", kind: null, why: "an overdraft line of credit is the deposit side's, doc 31819" },
+  { text: "Platinum Rewards\nBusiness Visa Credit Card Agreement\nEffective 2/1/2011", kind: null, why: "a business card agreement stays out of scope, doc 2035" },
+  { text: "Become a Member\nLoan Application\nOnline Banking", kind: null, why: "a menu's loan application link, doc 39364" },
+  { text: "Fee Schedule\nEffective as of 4/1/2026 | VISA CREDIT CARDS\nSavings | $5", kind: null, why: "a general schedule with a card section, doc 17160" },
+  { text: "SCHEDULE OF FEES AND CHARGES\nGENERAL ACCOUNT FEES | LOAN ACCOUNT FEES", kind: null, why: "a general schedule with a loan section, doc 16925" },
+  { text: "Supplemental Terms and Conditions for LCCU Visa Debit, Cash,\nYouth Debit, Tita Debit and HSA Cards (Consumer Accounts)\n(\"Supplement\")", kind: null, why: "debit card terms naming a youth card, doc 36491" },
+  { text: "Skip to main content\nFind a Car\nYouth Accounts\nLocations & Hours", kind: null, why: "a menu's youth accounts link, doc 36315" },
+  { text: "Personal Account Fee Schedule\nEffective May 1, 2026\nCHECKING ACCOUNTS\nYouth Checking Fee Schedule", kind: null, why: "a youth heading past the third line" },
+  { text: "Youth Savings | $5.00 fee schedule", kind: null, why: "a priced line is never a title" },
+  { text: "", kind: null, why: "no text" },
 ];

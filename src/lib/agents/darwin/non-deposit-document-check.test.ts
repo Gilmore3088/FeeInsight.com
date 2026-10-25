@@ -7,7 +7,10 @@ import {
   NON_DEPOSIT_CHECK,
   NON_DEPOSIT_DOCUMENT_TAKEDOWN_LIVE,
   NON_DEPOSIT_CHECK_VERSION,
+  OPENING_DOCUMENT_TAKEDOWN_LIVE,
+  documentScope,
   findNonDepositFees,
+  openingDocumentFeesSql,
   hasLendingWording,
   hasRatePageLendingWording,
   isLendingCategory,
@@ -51,7 +54,7 @@ describe("Darwin live non-deposit document re-check (#1442)", () => {
   it("ships with all three switches on (James, 2026-10-16; card programs 2026-10-18)", () => {
     expect(NON_DEPOSIT_DOCUMENT_TAKEDOWN_LIVE).toBe(true);
     expect(BROKERAGE_DOCUMENT_TAKEDOWN_LIVE).toBe(true);
-    expect(NON_DEPOSIT_CHECK_VERSION).toBe(3);
+    expect(NON_DEPOSIT_CHECK_VERSION).toBe(4);
     expect(CARD_PROGRAM_TAKEDOWN_LIVE).toBe(true);
     expect(NON_DEPOSIT_BATCH).toBe(2_000);
   });
@@ -140,10 +143,10 @@ describe("Darwin live non-deposit document re-check (#1442)", () => {
 
   it("gives step detail with the switch state and samples", () => {
     const detail = nonDepositDetail({
-      ...findNonDepositFees(ROWS), live: false, brokerageLive: false, cardProgramLive: false, dryRun: false, afterId: 0, nextAfterId: 0, flagged: 0, waiting: 0, cleared: 0, takenDown: [],
+      ...findNonDepositFees(ROWS), live: false, brokerageLive: false, cardProgramLive: false, openingLive: false, dryRun: false, afterId: 0, nextAfterId: 0, flagged: 0, waiting: 0, cleared: 0, takenDown: [],
     });
     expect(detail).toMatchObject({
-      check: "darwin.non_deposit_document", version: 3, switch_live: false, brokerage_switch_live: false, would_take_down: 2, brokerage_document: 1,
+      check: "darwin.non_deposit_document", version: 4, switch_live: false, brokerage_switch_live: false, would_take_down: 2, brokerage_document: 1,
       kept_deposit_category: 1, kept_generic_on_rate_page: 0, on_matched_document: 4, taken_down: 0,
       by_rule: { lending_category: 2, lending_wording_on_loan_document: 0, brokerage_document: 1, card_program_document: 0 },
     });
@@ -178,7 +181,7 @@ describe("v2 rules: lending wording on loan documents, brokerage documents, gene
   });
 
   it("counts each rule on its own, and only the main rules in matched", () => {
-    expect(found.byRule).toEqual({ lending_category: 8, lending_wording_on_loan_document: 11, brokerage_document: 7, card_program_document: 0 });
+    expect(found.byRule).toEqual({ lending_category: 8, lending_wording_on_loan_document: 11, brokerage_document: 7, card_program_document: 0, loan_titled_document: 0, youth_account_document: 0 });
     expect(found.matched).toBe(19);
     expect(found.brokerageDocument).toBe(7);
     expect(found.keptGenericOnRatePage).toBe(2);
@@ -347,5 +350,83 @@ describe("v3 rule: fees on prepaid, payroll and gift card documents (#1908)", ()
     expect(sql).toContain("WHEN j.kind = 'card_program' AND COALESCE(l.canonical_fee_key IN ('gift_card_purchase', 'prepaid_card_reload'), false) THEN 'kept_card_purchase'");
     expect(sql).toContain("AS card_program_document,");
     expect(nonDepositFeeVerdictsSql({ verdicts: ["card_program_document"] })).toContain("WHERE v.verdict IN ('card_program_document')");
+  });
+});
+
+describe("v4 rules: documents that open as a loan disclosure or a youth account's (#1944)", () => {
+  const TD_FIT = "https://www.td.com/content/dam/tdb/document/pdf/personal-banking/td-fit-account-guide-acc-en.pdf";
+  const VOLT = "https://www.arborfcu.org/hubfs/Documents/Volt%20Disclosures%204.pdf";
+  const TD_FIT_OPENING = "TD Fit Personal Unsecured Consumer Loan Disclosure\nThis disclosure describes your TD Fit loan.";
+  const VOLT_OPENING = "ACCOUNT-SPECIFIC DISCLOSURES\nThe following additional disclosures apply to the Volt Teen Banking & Volt Banking accounts:";
+  const GENERAL_OPENING = "Schedule of Fees and Charges\nEffective January 1, 2026\nOverdraft fee $35.00";
+  const OPENING_ROWS = [
+    { fee_published_id: "142944", fee_verified_id: "9301", institution_id: "12", fee_name: "Monthly fee", amount: "0", canonical_fee_key: "monthly_maintenance", source_document_id: "33822", document_url: TD_FIT, document_opening: TD_FIT_OPENING },
+    { fee_published_id: "142945", fee_verified_id: "9302", institution_id: "12", fee_name: "Non-sufficient funds (NSF) payment fee", amount: "0", canonical_fee_key: "nsf", source_document_id: "33822", document_url: TD_FIT, document_opening: TD_FIT_OPENING },
+    { fee_published_id: "115697", fee_verified_id: "9303", institution_id: "7322", fee_name: "NSF Check, ACH Item, or Debit Card", amount: "0", canonical_fee_key: "nsf", source_document_id: "2241", document_url: VOLT, document_opening: VOLT_OPENING },
+    { fee_published_id: "301", fee_verified_id: "9304", institution_id: "6", fee_name: "Overdraft", amount: "35", canonical_fee_key: "overdraft", source_document_id: "74", document_url: "https://www.example.com/personal/Schedule-of-Fees-Personal-Checking.pdf", document_opening: GENERAL_OPENING },
+  ];
+
+  it("ships with the opening sub-switch off until James's yes on the count", () => {
+    expect(OPENING_DOCUMENT_TAKEDOWN_LIVE).toBe(false);
+  });
+
+  it("reads the kind from the opening only when the address names none", () => {
+    expect(documentScope(TD_FIT, TD_FIT_OPENING)).toEqual({ kind: "loan", ratePage: false, opening: "loan", fromAddress: false });
+    expect(documentScope(VOLT, VOLT_OPENING)).toEqual({ kind: "youth_account", ratePage: false, opening: "youth_account", fromAddress: false });
+    expect(documentScope(TD_FIT, null)).toBeNull();
+    expect(documentScope(TD_FIT, GENERAL_OPENING)).toBeNull();
+    expect(documentScope("https://www.example.com/loans/rates", TD_FIT_OPENING)).toMatchObject({ kind: "loan", fromAddress: true, opening: "loan" });
+  });
+
+  it("takes every fee on such a document, including deposit categories", () => {
+    expect(nonDepositVerdict("loan", false, "nsf", "NSF payment fee", "loan", false)).toBe("loan_titled_document");
+    expect(nonDepositVerdict("youth_account", false, "nsf", "NSF Check")).toBe("youth_account_document");
+    // An address-named loan document that also opens as one: deposit-category fees come down too.
+    expect(nonDepositVerdict("loan", false, "stop_payment", "Stop payment", "loan", true)).toBe("loan_titled_document");
+    // Without an opening the v3 verdicts are unchanged.
+    expect(nonDepositVerdict("loan", false, "stop_payment", "Stop payment")).toBe("kept_deposit_category");
+    expect(nonDepositVerdict("loan", false, "late_payment", "Late fee")).toBe("lending_category");
+  });
+
+  it("counts them on their own, outside matched, and leaves a general schedule alone", () => {
+    const found = findNonDepositFees(OPENING_ROWS);
+    expect(found.matched).toBe(0);
+    expect(found.byRule.loan_titled_document).toBe(2);
+    expect(found.byRule.youth_account_document).toBe(1);
+    expect(found.openingDocument).toBe(3);
+    expect(found.openingDocuments).toBe(2);
+    expect(found.openingInstitutions).toBe(2);
+    expect(found.openingMatches.map((fee) => fee.reason)).toEqual(["youth_account_document: youth_account #2241", "loan_titled_document: loan #33822", "loan_titled_document: loan #33822"]);
+    expect(found.passing).toEqual([301]);
+    // The same rows without their opening: nothing matches (the miss #1944 reported).
+    const before = findNonDepositFees(OPENING_ROWS.map((row) => ({ ...row, document_opening: null })));
+    expect(before.openingDocument).toBe(0);
+    expect(before.matched).toBe(0);
+    expect(before.passing).toEqual([301, 115697, 142944, 142945]);
+  });
+
+  it("leaves them live while the sub-switch is off, at publish and on the re-check", async () => {
+    const fee = { documentUrl: TD_FIT, sourceDocumentId: 33822, canonicalFeeKey: "nsf", feeName: "Non-sufficient funds (NSF) payment fee", documentOpening: TD_FIT_OPENING };
+    expect(nonDepositTakedownReason(fee)).toBeNull();
+    expect(nonDepositTakedownReason(fee, { live: true, openingLive: false })).toBeNull();
+    expect(nonDepositTakedownReason(fee, { live: false, openingLive: true })).toBeNull();
+    expect(nonDepositTakedownReason(fee, { live: true, openingLive: true })).toBe("loan_titled_document: loan #33822");
+    expect(nonDepositTakedownReason({ ...fee, documentOpening: null }, { live: true, openingLive: true })).toBeNull();
+
+    const db = dbFor(OPENING_ROWS);
+    const result = await recheckNonDepositDocuments(asDb(db), { runId: 7, dryRun: false, live: true, brokerageLive: true, cardProgramLive: true, openingLive: false, institutionId: 12 });
+    expect(result.openingDocument).toBe(3);
+    expect(result.takenDown).toEqual([]);
+    expect(texts(db).some((text) => text.includes("UPDATE published_fee_records"))).toBe(false);
+    expect(texts(db).some((text) => text.includes("FROM published_fee_records") && text.includes("agent_source_texts"))).toBe(true);
+    expect(nonDepositDetail(result)).toMatchObject({ opening_switch_live: false });
+  });
+
+  it("keeps the dry-run SQL read-only, on completed stored texts", () => {
+    const sql = openingDocumentFeesSql();
+    expect(sql).toContain("agent_source_texts");
+    expect(sql).toContain("ast.status = 'completed'");
+    expect(sql).not.toContain("extracted_fees");
+    expect(sql).not.toMatch(/\b(?:UPDATE|INSERT|DELETE)\b/);
   });
 });

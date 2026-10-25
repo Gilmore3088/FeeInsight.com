@@ -5,6 +5,15 @@ import {
   brokerageLinkText,
   DEPOSIT_TOKEN,
   documentHostLabel,
+  documentOpeningKind,
+  documentOpeningKindSql,
+  LOAN_OPENING,
+  NOT_LOAN_OPENING,
+  NOT_YOUTH_OPENING,
+  openingLines,
+  openingWords,
+  YOUTH_OPENING_SUBJECT,
+  YOUTH_OPENING_TITLE,
   documentPathSegments,
   documentPathSegmentsSql,
   documentTitleSegment,
@@ -14,7 +23,7 @@ import {
   ratePageDocument,
   ratePageSql,
 } from "./non-deposit-document";
-import { NON_DEPOSIT_URL_FIXTURES } from "./non-deposit-document.fixtures";
+import { NON_DEPOSIT_URL_FIXTURES, OPENING_FIXTURES } from "./non-deposit-document.fixtures";
 
 describe("nonDepositDocumentKind (#1442)", () => {
   it.each(NON_DEPOSIT_URL_FIXTURES)("$url -> $kind ($why)", ({ url, kind }) => {
@@ -63,6 +72,34 @@ describe("nonDepositDocumentKind (#1442)", () => {
     expect(`${path}${kind}`).not.toMatch(/\\[bsdw]/);
     // The apostrophe class is doubled inside the literal.
     expect(path).toContain("'[''’]'");
+  });
+});
+
+describe("documentOpeningKind (#1944)", () => {
+  it.each(OPENING_FIXTURES)("$why -> $kind", ({ text, kind }) => {
+    expect(documentOpeningKind(text)).toBe(kind);
+  });
+
+  it("reads only the first lines, and cuts each to words with list punctuation kept", () => {
+    expect(openingLines("\n  A\n\n B \nC\nD")).toEqual(["A", "B", "C"]);
+    expect(openingWords("Volt Teen Banking & Volt Banking accounts:")).toBe(" volt teen banking volt banking accounts , ");
+    expect(documentOpeningKind(`${"x".repeat(2_100)}\nTD Fit Personal Unsecured Consumer Loan Disclosure`)).toBeNull();
+  });
+
+  it("never names a youth account from the address: such pages often carry the whole schedule", () => {
+    expect(nonDepositDocumentKind("https://www.gtefinancial.org/products/go-student-checking")).toBeNull();
+    expect(nonDepositDocumentKind("https://cdn.example.com/x_Youth%20Fee%20Schedule_April%202026.pdf")).toBeNull();
+  });
+
+  it("builds one Postgres subquery with the same patterns and no JS-only escapes", () => {
+    const sql = documentOpeningKindSql("t.normalized_text");
+    expect(sql).toContain(`'${LOAN_OPENING}'`);
+    expect(sql).toContain(`'${NOT_LOAN_OPENING}'`);
+    expect(sql).toContain(`'${YOUTH_OPENING_TITLE}'`);
+    expect(sql).toContain(`'${YOUTH_OPENING_SUBJECT}'`);
+    expect(sql).toContain(`'${NOT_YOUTH_OPENING}'`);
+    expect(sql).toContain("left(COALESCE(t.normalized_text, ''), 2000)");
+    expect(sql).not.toMatch(/\\[bsdw]/);
   });
 });
 

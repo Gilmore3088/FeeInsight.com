@@ -4,7 +4,7 @@ import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { classifyFetchFailure, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { htmlToScoringText, scoreFeePage } from "@/lib/agents/learning/fee-page";
 import { companionStreamsReady } from "@/lib/agents/companion-streams";
-import { brokerageLinkText, nonDepositDocumentKind } from "@/lib/non-deposit-document";
+import { brokerageLinkText, documentOpeningKind, nonDepositDocumentKind } from "@/lib/non-deposit-document";
 
 import { fetchWithTimeout, looksLikePdfUrl, MAX_PDF_CHECK_BYTES, pdfCheckText, validateFeeCandidate } from "./find-validate";
 import { loadSharedNameIds } from "./other-bank-host";
@@ -60,8 +60,11 @@ type Fetcher = typeof fetch;
 /**
  * 4: a disclosures or agreements page (the bank's fee link or a hub page) has the documents
  * it links to checked, whatever their link text says (#1051, Jonesboro State Bank).
+ * 5: a fee document or agreement whose own opening names it a loan, card or line-of-credit
+ * disclosure, or a youth, teen or student account's schedule, is never kept (#1944: TD Fit's
+ * consumer loan disclosure and Arbor Financial's Volt teen addendum went live as general prices).
  */
-export const SECOND_DOCUMENT_FINDER = { strategy: "discover.second_document", version: 4 } as const;
+export const SECOND_DOCUMENT_FINDER = { strategy: "discover.second_document", version: 5 } as const;
 /** One `pipeline_attempts` row per site-search query, so each query's hit rate is visible. */
 export const SITE_SEARCH_STRATEGY = { strategy: "discover.site_search", version: 2 } as const;
 /** Live banks with fewer published fee categories than this are searched. */
@@ -464,6 +467,18 @@ export async function agreementListsFees(url: string, fetchImpl: Fetcher): Promi
     verdict: "accepted_agreement",
     reason: `Agreement lists ${feeLines} fee line${feeLines === 1 ? "" : "s"}`,
   });
+  // A loan or card agreement, or a youth account's terms, whatever its link said (#1944).
+  const notGeneral = (documentType: "html" | "pdf", text: string): AgreementCheck | null => {
+    const opening = documentOpeningKind(text);
+    if (!opening) return null;
+    return {
+      ok: false,
+      documentType,
+      feeLines: 0,
+      verdict: opening === "loan" ? "loan_document" : "youth_account_document",
+      reason: opening === "loan" ? "Agreement opens as a loan, card or line-of-credit disclosure" : "Agreement opens as a youth, teen or student account's terms",
+    };
+  };
   if (contentType.includes("application/pdf") || (looksLikePdfUrl(url) && !contentType.includes("text/html"))) {
     const tooLarge: AgreementCheck = { ok: false, documentType: "pdf", feeLines: 0, verdict: "too_large", reason: "Agreement PDF too large to check" };
     if (Number(response.headers.get("content-length") ?? 0) > MAX_PDF_CHECK_BYTES) {
@@ -474,13 +489,18 @@ export async function agreementListsFees(url: string, fetchImpl: Fetcher): Promi
     if (bytes.byteLength > MAX_PDF_CHECK_BYTES) return tooLarge;
     const text = await pdfCheckText(bytes, AGREEMENT_PDF_PAGES);
     if (!text) return { ok: false, documentType: "pdf", feeLines: 0, verdict: "unreadable_pdf", reason: "Agreement PDF has no readable text" };
+    const refused = notGeneral("pdf", text);
+    if (refused) return refused;
     const page = scoreFeePage(text);
     return page.feeLines >= AGREEMENT_MIN_FEE_LINES ? kept("pdf", page.feeLines) : noFee("pdf", page.feeLines);
   }
   if (!contentType.includes("text/html")) {
     return { ok: false, documentType: null, feeLines: 0, verdict: "unsupported_type", reason: `Unsupported content type ${contentType || "unknown"}` };
   }
-  const check = accountPageListsFees(await response.text(), url, AGREEMENT_MIN_FEE_LINES);
+  const html = await response.text();
+  const refused = notGeneral("html", htmlToScoringText(html));
+  if (refused) return refused;
+  const check = accountPageListsFees(html, url, AGREEMENT_MIN_FEE_LINES);
   return check.ok ? kept("html", check.feeLines) : noFee("html", check.feeLines);
 }
 

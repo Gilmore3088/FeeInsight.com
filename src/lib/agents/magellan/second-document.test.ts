@@ -272,7 +272,7 @@ describe("Magellan site search for fee schedules and agreements", () => {
 
     const result = await runSecondDocumentFind({ db: asDb(db), fetchImpl, runId: 7, deadline: Date.now() + 60_000, learning: true, searchRotation: 0 });
 
-    expect(SECOND_DOCUMENT_FINDER.version).toBe(4);
+    expect(SECOND_DOCUMENT_FINDER.version).toBe(5);
     expect(result).toMatchObject({ status: "ran", checked: 1, found: 1 });
     expect(result.results[0].pages).toEqual([
       expect.objectContaining({

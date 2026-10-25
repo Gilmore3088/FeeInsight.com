@@ -41,6 +41,7 @@ import { priceInName, RULE_WHY, ruleFor } from "@/lib/agents/hamilton/eval-verdi
 import { feeKey, reproducibleFees, RULES_RECHECK_REASON } from "@/lib/agents/hamilton/rules-recheck";
 import { closedInstitutionSql } from "@/lib/agents/hamilton/closed-institution";
 import { nonDepositTakedownReason } from "@/lib/agents/darwin/non-deposit-document-check";
+import { OPENING_SCAN_CHARS } from "@/lib/non-deposit-document";
 import {
   collapseKeepOrder,
   collapseLineKey,
@@ -155,6 +156,11 @@ export interface VerifiedFeeRow extends RateFields {
   same_line_reselect?: boolean | null;
   /** True when Knox's free-fee reader read this row (product-page.ts). */
   free_read?: boolean | null;
+  /**
+   * The start of the row's document's newest completed stored text (#1944): what the document's
+   * own opening says it is, for the non-deposit gate (`nonDepositTakedownReason`).
+   */
+  document_opening?: string | null;
 }
 
 export interface PriorPublishedFeeRow extends RateFields, Partial<Omit<PublishedIdentity, "fee_published_id">> {
@@ -360,12 +366,14 @@ export function publishSkipReason(row: VerifiedFeeRow, minConfidence: number, pr
   if (isArticlePage(row.source_url) || isArticlePage(row.document_url)) return ARTICLE_PAGE_SKIP_REASON;
   // A lending fee on a loan, rate, card or brokerage page: Darwin's live re-check would take it
   // down (`non-deposit-document-check.ts`), so it is refused before it is live (takedowns at the
-  // source, 2026-10-17). Same rule, reason and switches.
+  // source, 2026-10-17). Same rule, reason and switches; with its document's opening (#1944), a
+  // document that opens as a loan disclosure or a youth account's schedule too.
   const nonDeposit = nonDepositTakedownReason({
     documentUrl: row.document_url,
     sourceDocumentId: row.source_document_id,
     canonicalFeeKey: row.canonical_fee_key,
     feeName: publishedFeeName(row.fee_name, row.canonical_fee_key),
+    documentOpening: row.document_opening,
   });
   if (nonDeposit) return `${NON_DEPOSIT_PUBLISH_REASON_PREFIX}${nonDeposit}`;
   // A $0 benefit bullet on a product page, once James turns the check on (product-page.ts).
@@ -634,6 +642,13 @@ export async function selectVerifiedFees(
              sd.crawled_at AS document_crawled_at,
              sd.companion_source_id::text AS document_stream,
              sd.document_url,
+             -- #1944: the document's opening, for the non-deposit gate (newest completed text).
+             (SELECT left(op_ast.normalized_text, ${OPENING_SCAN_CHARS})
+                FROM agent_source_texts op_ast
+               WHERE op_ast.source_document_id = fr.source_document_id
+                 AND op_ast.status = 'completed'
+               ORDER BY op_ast.id DESC
+               LIMIT 1) AS document_opening,
              inst.institution_name,
              EXISTS (
                SELECT 1

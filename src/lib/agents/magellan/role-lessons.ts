@@ -7,6 +7,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const MAGELLAN_LESSONS: AgentLesson[] = [
   {
+    id: "issue-1944-opening-names-the-document",
+    agent: "magellan",
+    stage: "discover",
+    lesson: "Read what a document says it is before taking it as the schedule or a companion: when its first lines title it a loan, card or line-of-credit disclosure (\"TD Fit Personal Unsecured Consumer Loan Disclosure\") or say it applies to youth, teen or student accounts (\"disclosures apply to the Volt Teen Banking & Volt Banking accounts\"), it is not the institution's general personal schedule, whatever its address says, even when it lists fees by deposit names (NSF, monthly fee). A youth word in the address alone does not decide it: youth pages often carry the general schedule.",
+    why: "The companion finder and the fee-page check judged a document by its address and fee lines, and the shared classifier read only the address, so TD's td-fit-account-guide PDF (a loan disclosure) and Arbor Financial's Volt teen disclosures set live $0 NSF and $0 monthly fees the institutions' own schedules do not charge (#1944). On Oct 25, 48 live fees on 18 such documents at 16 institutions had passed every check.",
+    evidence: { issues: [1944], prs: [], files: ["src/lib/non-deposit-document.ts", "src/lib/agents/magellan/find-validate.ts", "src/lib/agents/magellan/second-document.ts", "docs/project/findings/2026-10-25-opening-names-non-general-documents.md"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
+  {
     id: "issue-1878-stated-date-not-read-date",
     agent: "magellan",
     stage: "discover",
