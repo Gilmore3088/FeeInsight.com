@@ -20,7 +20,7 @@
  * Report status: 'generated' (user-created, private) | 'published' (BFI-authored, public to all pro users)
  */
 
-import { sql } from "@/lib/data-store/connection";
+import { sql, withTransaction } from "@/lib/data-store/connection";
 import { trackFirstHamiltonUse } from "@/lib/analytics-server";
 import type { ReportArtifactMetadata, ReportSummaryResponse } from "@/lib/hamilton/types";
 import type { HamiltonEvidencePolicy } from "@/lib/hamilton/request-contract";
@@ -225,55 +225,70 @@ export async function saveHamiltonReport(params: {
 
 /** The idempotent save: one row per run-chosen id, written once however often the run replays. */
 async function saveHamiltonReportOnce(params: Parameters<typeof saveHamiltonReport>[0] & { reportId: string }): Promise<string> {
-  const rows = await sql`
-    INSERT INTO hamilton_reports
-      (
-        id,
-        user_id,
-        institution_id,
-        report_type,
-        report_json,
-        scenario_id,
-        evidence_policy,
-        peer_set_id,
-        peer_baseline_source,
-        peer_baseline_label,
-        peer_fallback_reason,
-        selected_source,
-        selected_source_label,
-        selected_verified_fee_count,
-        selected_provisional_fee_count,
-        selected_fee_delta_count,
-        status
-      )
-    VALUES
-      (
-        ${params.reportId}::uuid,
-        ${params.userId},
-        ${params.institutionId},
-        ${params.reportType},
-        ${JSON.stringify(params.reportJson)},
-        ${params.scenarioId ?? null},
-        ${params.evidencePolicy ?? "provisional-first"},
-        ${params.peerSetId ?? null},
-        ${params.peerBaselineSource ?? null},
-        ${params.peerBaselineLabel ?? null},
-        ${params.peerFallbackReason ?? null},
-        ${params.selectedSource ?? "manual"},
-        ${params.selectedSourceLabel ?? null},
-        ${params.selectedVerifiedFeeCount ?? 0},
-        ${params.selectedProvisionalFeeCount ?? 0},
-        ${params.selectedFeeDeltaCount ?? 0},
-        'generated'
-      )
-    ON CONFLICT (id) DO NOTHING
-    RETURNING id
-  `;
-  // Already saved by an earlier attempt of the same run: its fee refs and first use were recorded then.
-  if (rows.length === 0) return params.reportId;
-  await recordSavedOutputFeeRefs(sql, "report", String(rows[0].id), params.feeRefs ?? collectFeeRefs(params.reportJson));
+  // The row and its fee refs commit together: a crash between them would leave a saved report
+  // whose replay (ON CONFLICT below) skips the refs for good.
+  const inserted = await withTransaction(async (tx) => {
+    const rows = await tx`
+      INSERT INTO hamilton_reports
+        (
+          id,
+          user_id,
+          institution_id,
+          report_type,
+          report_json,
+          scenario_id,
+          evidence_policy,
+          peer_set_id,
+          peer_baseline_source,
+          peer_baseline_label,
+          peer_fallback_reason,
+          selected_source,
+          selected_source_label,
+          selected_verified_fee_count,
+          selected_provisional_fee_count,
+          selected_fee_delta_count,
+          status
+        )
+      VALUES
+        (
+          ${params.reportId}::uuid,
+          ${params.userId},
+          ${params.institutionId},
+          ${params.reportType},
+          ${JSON.stringify(params.reportJson)},
+          ${params.scenarioId ?? null},
+          ${params.evidencePolicy ?? "provisional-first"},
+          ${params.peerSetId ?? null},
+          ${params.peerBaselineSource ?? null},
+          ${params.peerBaselineLabel ?? null},
+          ${params.peerFallbackReason ?? null},
+          ${params.selectedSource ?? "manual"},
+          ${params.selectedSourceLabel ?? null},
+          ${params.selectedVerifiedFeeCount ?? 0},
+          ${params.selectedProvisionalFeeCount ?? 0},
+          ${params.selectedFeeDeltaCount ?? 0},
+          'generated'
+        )
+      ON CONFLICT (id) DO NOTHING
+      RETURNING id
+    `;
+    // Already saved by an earlier attempt of the same run: its fee refs and first use were recorded then.
+    if (rows.length === 0) return null;
+    const id = String(rows[0].id);
+    // Still best effort, as for every saved output: a refs failure rolls back to the savepoint only,
+    // so the report row stands. recordSavedOutputFeeRefs logs and returns false instead of throwing,
+    // so false is raised here to undo any partial write inside the savepoint.
+    const savepoint = (tx as unknown as { savepoint: (cb: (sp: typeof sql) => Promise<void>) => Promise<void> }).savepoint;
+    await savepoint.call(tx, async (sp) => {
+      if (!(await recordSavedOutputFeeRefs(sp, "report", id, params.feeRefs ?? collectFeeRefs(params.reportJson)))) {
+        throw new Error("fee refs not recorded");
+      }
+    }).catch(() => undefined);
+    return id;
+  });
+  if (inserted === null) return params.reportId;
   await trackFirstHamiltonUse(params.userId, "report");
-  return rows[0].id as string;
+  return inserted;
 }
 
 /**

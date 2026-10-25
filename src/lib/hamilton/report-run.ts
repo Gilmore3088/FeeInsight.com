@@ -39,10 +39,16 @@
  */
 
 import { createHash, randomUUID } from "node:crypto";
-import { sql } from "@/lib/data-store/connection";
+import { sql, withTransaction } from "@/lib/data-store/connection";
 import type { HamiltonFault } from "./task-faults";
 
 type SqlTag = typeof sql;
+
+/** One transaction on `db`: the app's client through withTransaction, or a test's own client. */
+function inTransaction<T>(db: SqlTag, work: (tx: SqlTag) => Promise<T>): Promise<T> {
+  if (db === sql) return withTransaction(work);
+  return (db as unknown as { begin: (cb: (tx: unknown) => Promise<T>) => Promise<T> }).begin((tx) => work(tx as SqlTag));
+}
 
 /** Longer than the report page's maxDuration (300s), so a live request is never taken over. */
 export const REPORT_RUN_LEASE_MS = 330_000;
@@ -226,19 +232,24 @@ export async function sweepInterruptedReportRuns(db: SqlTag = sql, now: Date = n
     const saved = reportId ? (await db`SELECT 1 FROM hamilton_reports WHERE id = ${reportId}::uuid LIMIT 1`).length > 0 : false;
     const status = saved ? "completed" : "failed";
     const message = saved ? INTERRUPTED_SAVED_RUN_MESSAGE : INTERRUPTED_RUN_MESSAGE;
-    const updated = await db`
-      UPDATE agent_runs
-         SET status = ${status}, summary = ${message}, error_summary = ${saved ? null : message},
-             params_json = params_json || ${JSON.stringify({ closed_by_sweep: true })}::jsonb,
-             completed_at = NOW(), updated_at = NOW()
-       WHERE id = ${runId} AND status = 'running'
-         AND COALESCE((params_json->>'lease_until')::timestamptz, updated_at + make_interval(secs => ${leaseSeconds})) < ${nowIso}::timestamptz
-       RETURNING id
-    `;
-    if (updated.length === 0) continue;
-    await closeOpenSteps(db, runId, saved);
-    await event(db, runId, null, "run.interrupted", status, message, { closed_by_sweep: true, report_saved: saved });
-    closed.push(runId);
+    // The run, its open steps and the event commit together: a crash part-way can never leave a
+    // closed run with a step still running (nothing would sweep it again).
+    const swept = await inTransaction(db, async (tx) => {
+      const updated = await tx`
+        UPDATE agent_runs
+           SET status = ${status}, summary = ${message}, error_summary = ${saved ? null : message},
+               params_json = params_json || ${JSON.stringify({ closed_by_sweep: true })}::jsonb,
+               completed_at = NOW(), updated_at = NOW()
+         WHERE id = ${runId} AND status = 'running'
+           AND COALESCE((params_json->>'lease_until')::timestamptz, updated_at + make_interval(secs => ${leaseSeconds})) < ${nowIso}::timestamptz
+         RETURNING id
+      `;
+      if (updated.length === 0) return false;
+      await closeOpenSteps(tx, runId, saved);
+      await event(tx, runId, null, "run.interrupted", status, message, { closed_by_sweep: true, report_saved: saved });
+      return true;
+    });
+    if (swept) closed.push(runId);
   }
   return closed;
 }
@@ -360,6 +371,9 @@ export async function openReportRun(input: OpenReportRunInput): Promise<ReportRu
     }
 
     // An active run already holds the key: take it over only when its lease has lapsed.
+    // Kept as a fallback to the sweep above, which normally closes a lapsed run before the insert:
+    // the sweep is best effort (its error is logged, not raised), takes at most 50 runs per pass, and
+    // can race this request; without this path such a run would hold the key and block the reader.
     const [active] = await db`
       SELECT id FROM agent_runs
        WHERE idempotency_key = ${input.taskKey} AND status IN ('queued', 'running', 'cancel_requested')

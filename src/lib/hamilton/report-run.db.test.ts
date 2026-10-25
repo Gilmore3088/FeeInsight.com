@@ -218,13 +218,19 @@ describe.skipIf(!connection || process.env.DATABASE_URL !== connection)("idempot
     const db = postgres(connection!, { max: 1, ssl: "require" });
     const reportId = "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff";
     try {
+      await db`DELETE FROM hamilton_saved_output_fee_refs WHERE output_kind = 'report' AND output_id = ${reportId}`;
       await db`DELETE FROM hamilton_reports WHERE id = ${reportId}::uuid`;
-      const input = { userId: USER, institutionId: "101", reportType: "peer_benchmark", reportJson: { title: "Synthetic" } as never, reportId };
+      const feeRefs = [{ feePublishedId: 990001, institutionId: 101, sourceDocumentId: null, sourceContentHash: null }];
+      const input = { userId: USER, institutionId: "101", reportType: "peer_benchmark", reportJson: { title: "Synthetic" } as never, reportId, feeRefs };
       expect(await saveHamiltonReport(input)).toBe(reportId);
-      expect(await saveHamiltonReport({ ...input, reportJson: { title: "Replay" } as never })).toBe(reportId);
+      expect(await saveHamiltonReport({ ...input, reportJson: { title: "Replay" } as never, feeRefs: [] })).toBe(reportId);
       const rows = await db`SELECT report_json->>'title' AS title FROM hamilton_reports WHERE id = ${reportId}::uuid`;
       expect(rows.map((row) => row.title)).toEqual(["Synthetic"]);
+      // The row's fee refs were committed with it, in the same transaction, and a replay left them as they were.
+      const refs = await db`SELECT fee_published_ids FROM hamilton_saved_output_fee_refs WHERE output_kind = 'report' AND output_id = ${reportId}`;
+      expect(refs.map((row) => (row.fee_published_ids as Array<number | string>).map(Number))).toEqual([[990001]]);
     } finally {
+      await db`DELETE FROM hamilton_saved_output_fee_refs WHERE output_kind = 'report' AND output_id = ${reportId}`;
       await db`DELETE FROM hamilton_reports WHERE id = ${reportId}::uuid`;
       await db.end();
     }
