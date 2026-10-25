@@ -252,7 +252,12 @@ import { withGluedFootnotePrices } from "@/lib/custom-report/glued-footnote-pric
 // count. v104's glued-sentence cut now runs on fewer names (only ones still cut off), and publish's
 // `cutoff_name` hold, Darwin's release review and Deming's name check read the same function. The
 // stale-read floor stays at v97. Name re-tidy stays at v26.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 107 } as const;
+// v108 (#1521): `isCutoffName` also reads a name cut before its noun, after a count and an audience
+// word ("Counter Check: A blank page of 3 personal", "Daily fee after 5 business"), as cut off
+// (`DANGLING_AUDIENCE`, shared with Darwin's live fragment check). Publish's `cutoff_name` hold,
+// Darwin's release review and Deming's name check read the same function. On 2026-10-25 it matched
+// 2 live fees, 3 verified and 3 raw rows. The stale-read floor stays at v97. Name re-tidy stays at v26.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 108 } as const;
 
 export interface SpecialistRun {
   strategy: string;
