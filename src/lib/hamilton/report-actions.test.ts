@@ -342,6 +342,88 @@ describe("Hamilton Reports generateReport", () => {
     expect(result.report.identityContext?.accountInstitutionName).toBe("Space Coast CU");
   });
 
+  describe("a saved answer with a sentence binding (#1899)", () => {
+    // Synthetic answer, as saved: the left-out sentence is already gone from the prose, the reading is inline.
+    const supported = "Research CU charges $35 for an overdraft.";
+    const qualitative = "That is the highest in its group.";
+    const reading = "Peers sit near $30.";
+    const left = "Research CU charges $10 for an NSF item.";
+    const boundAnswer = (extra: Record<string, unknown> = {}) => ({
+      institutionId: "2945",
+      responseJson: {
+        title: "Overdraft at Research CU",
+        hamiltonView: `${supported} ${reading}`,
+        whatThisMeans: `${qualitative} ${left}`,
+        narrativeBinding: {
+          version: 1,
+          supported: [{ text: supported, factIds: ["fee:published:9"] }, { text: qualitative, factIds: [] }],
+          interpretation: [reading],
+          omitted: [{ text: left, reason: "wrong_institution" }],
+          limitations: [],
+        },
+        answerEvidence: { passed: true, problems: [] },
+        ...extra,
+      },
+    });
+    const addSaved = () => generateReport({ ...reportParams(), addedFindings: [{ id: "answer-b", source: "Ask", title: "Overdraft", detail: "Browser text", institutionId: "2945", savedAnalysisId: "11111111-2222-3333-4444-555555555555" }] });
+    const summaryContext = () => mocks.generateSection.mock.calls.map(([input]) => input as SectionInput).find((input) => input.type === "executive_summary")?.context ?? "";
+
+    beforeEach(() => {
+      mocks.getFeesByInstitution.mockResolvedValue([{ fee_name: "Domestic wire", fee_category: "wire_transfer", amount: 35, review_status: "pending" }]);
+    });
+
+    it("states only the supported sentences as the finding", async () => {
+      mocks.loadAnalysisRecord.mockResolvedValue(boundAnswer());
+      const result = await addSaved();
+      if (!result.success) throw new Error(result.error);
+      expect(result.report.addedFindings?.[0].detail).toBe(`${supported} ${qualitative}`);
+    });
+
+    it("keeps Hamilton's reading out of the finding and the summary's reader findings", async () => {
+      mocks.loadAnalysisRecord.mockResolvedValue(boundAnswer());
+      const result = await addSaved();
+      if (!result.success) throw new Error(result.error);
+      expect(result.report.addedFindings?.[0].detail).not.toContain(reading);
+      expect(summaryContext()).toContain(supported);
+      expect(summaryContext()).not.toContain(reading);
+    });
+
+    it("never carries a left-out sentence, even one still in the saved prose", async () => {
+      mocks.loadAnalysisRecord.mockResolvedValue(boundAnswer());
+      const result = await addSaved();
+      if (!result.success) throw new Error(result.error);
+      expect(JSON.stringify(result.report)).not.toContain("$10 for an NSF");
+      expect(summaryContext()).not.toContain("$10 for an NSF");
+    });
+
+    it("does not add an answer with no supported sentence left", async () => {
+      mocks.loadAnalysisRecord.mockResolvedValue(boundAnswer({
+        hamiltonView: reading,
+        whatThisMeans: "",
+        narrativeBinding: { version: 1, supported: [], interpretation: [reading], omitted: [], limitations: [] },
+      }));
+      const result = await addSaved();
+      if (!result.success) throw new Error(result.error);
+      expect(result.report.addedFindings).toBeUndefined();
+      expect(summaryContext()).not.toContain("Overdraft at Research CU");
+    });
+
+    it("does not add an answer whose saved evidence verdict failed", async () => {
+      mocks.loadAnalysisRecord.mockResolvedValue(boundAnswer({ answerEvidence: { passed: false, problems: ["unbound figure"] } }));
+      const result = await addSaved();
+      if (!result.success) throw new Error(result.error);
+      expect(result.report.addedFindings).toBeUndefined();
+      expect(summaryContext()).not.toContain(supported);
+    });
+
+    it("keeps an answer saved before the binding as saved", async () => {
+      mocks.loadAnalysisRecord.mockResolvedValue(boundAnswer({ narrativeBinding: undefined, answerEvidence: undefined }));
+      const result = await addSaved();
+      if (!result.success) throw new Error(result.error);
+      expect(result.report.addedFindings?.[0].detail).toBe(`${supported} ${reading} ${qualitative} ${left}`);
+    });
+  });
+
   it("keeps the reader's added findings out of the DATA a section's figures are checked against", async () => {
     mocks.getFeesByInstitution.mockResolvedValue([{ fee_name: "Domestic wire", fee_category: "wire_transfer", amount: 35, review_status: "pending" }]);
     // A Position item is browser text: nothing on the server re-reads its $99.
