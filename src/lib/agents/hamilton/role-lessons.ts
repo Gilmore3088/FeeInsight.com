@@ -107,4 +107,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "t1-edition-line-past-menu",
+    agent: "hamilton",
+    stage: "publish",
+    lesson: "A web page's first lines are often its menu, so look for a schedule's own edition line further down: a schedule title with 'Effective <date>' under it, or 'Fees Effective <date>'. Date the page by it only when nothing says its prices are current ('Fee - Current', 'in effect through'), the line is not an announcement of a new or updated schedule, a table of contents entry or one fee's own change date, and every such line on the page agrees; a page that dates two editions is two schedules, not one future one.",
+    why: "The edition reader looked only at the first 400 characters, so a schedule posted as a web page behind a menu was never dated. On Oct 25, 472 documents behind 6,225 live fees had a schedule-named edition line past that point. Most pages that dated a future edition there were still current: MCCU and BayPort announce next year's schedule above today's prices, Wyrope previews it in a newsletter, Minnwest dates one section in its contents, and doc 38132 dates its consumer and business fees differently. Read naively, any future date past the menu would have held 182 live fees on 13 documents; read with the guards, one fee (Allentown FCU's 2027 newsletter schedule) is not yet in effect. The other 181 are left alone by design: current prices, an announcement, a contents entry, an unrelated notice, a heading that already states the current edition, or two editions on one page (doc 38132's 2027 consumer section waits for a rule that dates sections, not pages).",
+    evidence: { issues: [1915, 1026], prs: [], files: ["src/lib/agents/hamilton/schedule-edition.ts", "src/lib/agents/darwin/edition-effective-check.ts", "src/lib/agents/hamilton/schedule-edition-late.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];

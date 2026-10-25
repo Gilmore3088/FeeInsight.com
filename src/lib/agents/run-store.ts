@@ -1080,9 +1080,13 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId: numericRunParam(params, ["institution_id"]),
       });
-      const editionNote = editions.holds + editions.restores + editions.takeovers > 0
-        ? ` Schedule editions: ${editions.holds.toLocaleString()} live fee(s) from schedules not in effect yet, ${editions.restores.toLocaleString()} now in effect, ${editions.takeovers.toLocaleString()} older-edition line(s) (${editions.live && !editions.dryRun ? `${editions.held.length.toLocaleString()} held, ${editions.restored.length.toLocaleString()} restored, ${editions.retired.length.toLocaleString()} retired` : "dry run or switch off: nothing written"}).`
+      // T1: what an edition line past a page's menu would add while EDITION_LATE_HEADING_LIVE is off.
+      const lateEditionNote = editions.lateHeadingWouldHold > 0
+        ? ` Edition lines past the menu (switch off, nothing written): ${editions.lateHeadingWouldHold.toLocaleString()} more live fee(s) would come down.`
         : "";
+      const editionNote = lateEditionNote + (editions.holds + editions.restores + editions.takeovers > 0
+        ? ` Schedule editions: ${editions.holds.toLocaleString()} live fee(s) from schedules not in effect yet, ${editions.restores.toLocaleString()} now in effect, ${editions.takeovers.toLocaleString()} older-edition line(s) (${editions.live && !editions.dryRun ? `${editions.held.length.toLocaleString()} held, ${editions.restored.length.toLocaleString()} restored, ${editions.retired.length.toLocaleString()} retired` : "dry run or switch off: nothing written"}).`
+        : "");
       // #1909: fees read from a bank's Spanish copy of a schedule whose English line is live
       // (translated-copy-check.ts); a report only on a dry run or with its switch off.
       const translatedCopy = await recheckTranslatedCopies(tx, {

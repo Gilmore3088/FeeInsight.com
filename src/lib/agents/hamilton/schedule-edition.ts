@@ -172,28 +172,130 @@ function sentenceAfter(after: string): string {
 }
 
 /**
+ * What one "effective" at `at` in `text` says: its date, "immediately", null when no date follows,
+ * or "skip" when the sentence dates something other than this schedule.
+ */
+function editionAt(text: string, at: number): string | null {
+  if (NOT_THE_EDITION.test(text.slice(Math.max(0, at - 60), at + 60))) return SKIP;
+  const before = sentenceBefore(text, at);
+  if (ANOTHER_DOCUMENT.test(before)) return SKIP;
+  if (ANNOUNCED_ELSEWHERE.test(before) && !THIS_SCHEDULE.test(before)) return SKIP;
+  const after = text.slice(at + "effective".length);
+  if (/^\s*immediately\b/i.test(after)) return IMMEDIATELY;
+  const date = dateAfterEffective(after);
+  if (date && NOT_ABOUT_FEES.test(sentenceAfter(after))) return SKIP;
+  return date;
+}
+const SKIP = "skip";
+const IMMEDIATELY = "immediately";
+
+/**
  * The edition a schedule's heading states, YYYY-MM-DD; null when none. It is the first "effective"
  * there that dates this schedule: a later "changes effective December 1, 2026" after "Effective
  * March 1, 2024" is a change the schedule announces, not its edition, and "effective immediately"
  * means it is in force now. A change notice headed "Changes effective December 1, 2026" is dated
  * by that heading. Mentions that date another document or only marked fees are skipped.
+ *
+ * With `lateHeading` (T1, `EDITION_LATE_HEADING_LIVE`), a heading that states no edition is followed
+ * by the schedule's own title or edition line further down (`lateEdition`): a web page's first
+ * `EDITION_HEAD_CHARS` characters are often its menu.
  */
-export function editionStarts(text: string | null | undefined): string | null {
+export function editionStarts(text: string | null | undefined, lateHeading = EDITION_LATE_HEADING_LIVE): string | null {
   if (!text) return null;
   const head = text.slice(0, EDITION_HEAD_CHARS);
   for (const m of head.matchAll(/effective/gi)) {
-    const at = m.index ?? 0;
-    if (NOT_THE_EDITION.test(head.slice(Math.max(0, at - 60), at + 60))) continue;
-    const before = sentenceBefore(head, at);
-    if (ANOTHER_DOCUMENT.test(before)) continue;
-    if (ANNOUNCED_ELSEWHERE.test(before) && !THIS_SCHEDULE.test(before)) continue;
-    const after = head.slice(at + m[0].length);
-    if (/^\s*immediately\b/i.test(after)) return null;
-    const date = dateAfterEffective(after);
-    if (date && NOT_ABOUT_FEES.test(sentenceAfter(after))) continue;
-    if (date) return date;
+    const found = editionAt(head, m.index ?? 0);
+    if (found === IMMEDIATELY) return null;
+    if (found && found !== SKIP) return found;
   }
-  return null;
+  return lateHeading ? lateEdition(text) : null;
+}
+
+/**
+ * How far into a stored text `lateEdition` reads. On prod (Oct 25, read-only) the deepest late
+ * edition line found sat at character 5,832 (doc 36178).
+ */
+export const EDITION_SCAN_CHARS = 8000;
+
+/**
+ * T1 (Hamilton V5 plan, current-schedule checks): read a schedule's own edition line past the menu.
+ * Off until James approves the dry-run holds (finding 2026-10-25-edition-line-past-the-menu). While
+ * off, Darwin's edition re-check reports what it would hold (`late_heading_would_hold`) and holds
+ * nothing on that account; Hamilton's publish hold reads the heading only.
+ */
+export const EDITION_LATE_HEADING_LIVE = false;
+
+/** A title or edition line names the schedule. SQL mirror: `editionWindowSql`. */
+const SCHEDULE_WORD = /\b(?:schedule|fees|charges)\b/i;
+/** A price on the line makes it a fee line ("Account Research - Effective 11/1/26 | $25.00 per hour"). */
+const PRICED = /\$\s?\d/;
+/** A table of contents entry dates a section, not the document ("Schedule of Fees and Services Effective 11.01.2026 ……44"). */
+const CONTENTS_LEADER = /\.{3,}|…/;
+/**
+ * Words that announce an edition the page links to or previews rather than one it is: "New Fee
+ * Schedule effective November 1, 2026." above a "Fee - Current" table (BayPort, doc 37226),
+ * "2027 Updated Fee Schedule" in a newsletter (Wyrope, doc 36403), "Important Changes Effective …".
+ */
+const ANNOUNCES = /\b(?:new|updated?|upcoming|changes?|changing|revised|revisions?|amended|proposed)\b/i;
+/**
+ * A page that says its prices are the current ones is in effect whatever else it dates: MCCU (doc
+ * 38397) links its December 1, 2026 schedule above "Current Consumer Fees are listed below and in
+ * effect through November 30, 2026"; BayPort's table header is "Fee - Current".
+ */
+const CURRENT_PRICES =
+  /\bfees?\s*[-–:|]\s*current\b|\bcurrent\s+(?:consumer\s+|business\s+|personal\s+)?(?:fees|fee schedule|schedule of fees|prices)\b|\bin effect (?:through|until)\b/i;
+const TITLE_MAX_CHARS = 80;
+
+/**
+ * Pure: the edition a schedule states on its own title or edition line after its first
+ * `EDITION_HEAD_CHARS` characters, up to `EDITION_SCAN_CHARS`; null when none or unclear. A line
+ * counts when it has "effective <date>", no price and no table-of-contents leader, and either names
+ * the schedule before "effective" ("Fees Effective 1/1/2027", doc 38132) or is only the edition
+ * right under a short schedule title ("FEE SCHEDULE" / "Effective January 1st, 2027", doc 36178;
+ * at most one blank line between). The heading's filters apply (another document, marked fees,
+ * privacy, branch hours) and announcement words skip a line. Null when the page calls its prices
+ * current, or when its edition lines disagree: a page that dates two editions is not judged here.
+ */
+export function lateEdition(text: string | null | undefined): string | null {
+  if (!text || text.length <= EDITION_HEAD_CHARS) return null;
+  const window = text.slice(0, EDITION_SCAN_CHARS);
+  if (CURRENT_PRICES.test(window)) return null;
+  const lines = window.slice(EDITION_HEAD_CHARS).split("\n");
+  const dates = new Set<string>();
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (!/effective/i.test(line) || PRICED.test(line) || CONTENTS_LEADER.test(line)) continue;
+    let above = i - 1;
+    if (above >= 0 && lines[above].trim() === "") above -= 1;
+    const title = above >= 0 ? lines[above].trim() : "";
+    const underTitle =
+      title.length > 0 && title.length <= TITLE_MAX_CHARS && SCHEDULE_WORD.test(title) && !PRICED.test(title) && !ANNOUNCES.test(title);
+    for (const m of line.matchAll(/effective/gi)) {
+      const at = m.index ?? 0;
+      const before = line.slice(0, at);
+      if (ANNOUNCES.test(before)) continue;
+      if (!SCHEDULE_WORD.test(before) && !(underTitle && before.trim() === "")) continue;
+      const found = editionAt(line, at);
+      if (found === IMMEDIATELY) return null;
+      if (found && found !== SKIP) dates.add(found);
+    }
+  }
+  return dates.size === 1 ? [...dates][0] : null;
+}
+
+/**
+ * SQL: the part of a stored text column an edition reader needs. The heading alone, unless the rest
+ * of the window has a schedule word before an "effective" dated in `today`'s year or the next two
+ * (on the same line or the line below); only those texts can have a late edition line that holds or
+ * restores a fee, so only they carry `EDITION_SCAN_CHARS` characters. On prod (Oct 25) that was 472
+ * of the 9,118 documents live fees cite, 2.7 MB. `column` is a trusted column name, never user text.
+ */
+export function editionWindowSql(column: string, today: string): string {
+  const year = Number(today.slice(0, 4));
+  const years = [year, year + 1, year + 2];
+  const dated = `effective[^\\n$]{0,40}(?:${years.join("|")}|[/.-](?:${years.map((y) => String(y).slice(2)).join("|")})\\M)`;
+  const late = `(?:schedule|fees|charges)[^\\n$]{0,60}(?:\\n[ \\t]*\\n?[ \\t]*)?${dated}`;
+  return `CASE WHEN substr(${column}, ${EDITION_HEAD_CHARS + 1}, ${EDITION_SCAN_CHARS - EDITION_HEAD_CHARS}) ~* '${late}' THEN left(${column}, ${EDITION_SCAN_CHARS}) ELSE left(${column}, ${EDITION_HEAD_CHARS}) END`;
 }
 
 /** The calendar day of `now` in UTC, YYYY-MM-DD. */
@@ -207,8 +309,8 @@ export function isoDay(now: Date): string {
  * whose heading states no edition. Its prices are not charged yet, so its rows stay out of the live
  * catalog until that day, when this returns null and they publish.
  */
-export function notYetEffective(text: string | null | undefined, today: string): string | null {
-  const starts = editionStarts(text);
+export function notYetEffective(text: string | null | undefined, today: string, lateHeading = EDITION_LATE_HEADING_LIVE): string | null {
+  const starts = editionStarts(text, lateHeading);
   return starts != null && starts > today ? starts : null;
 }
 
@@ -229,12 +331,15 @@ export function editionTakesOver(input: {
   /** The day the newer document was first read, YYYY-MM-DD. */
   newerFirstRead: string | null | undefined;
   today: string;
+  /** Read an edition line past the menu too (`lateEdition`); defaults to `EDITION_LATE_HEADING_LIVE`. */
+  lateHeading?: boolean;
 }): boolean {
   if (!input.olderUrl || !input.newerUrl || !input.newerFirstRead) return false;
   // "ScheduleofFeesPersonal-2024-1.pdf" names its audience once its words are split.
   const audience = (url: string) => scheduleAudience(url.replace(/([a-z])([A-Z])/g, "$1-$2"));
   if (audience(input.olderUrl) !== audience(input.newerUrl)) return false;
-  const older = editionStarts(input.olderText);
-  const newer = editionStarts(input.newerText);
+  const late = input.lateHeading ?? EDITION_LATE_HEADING_LIVE;
+  const older = editionStarts(input.olderText, late);
+  const newer = editionStarts(input.newerText, late);
   return older != null && newer != null && older < newer && input.newerFirstRead < newer && newer <= input.today;
 }
