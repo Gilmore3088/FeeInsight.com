@@ -26,10 +26,11 @@ export async function readUnreadFeedback(db: SqlTag = sql): Promise<UnreadFeedba
     await tx`SELECT set_config('statement_timeout', '20000', true)`;
     return tx<Array<{ kind: string; about_stage: string; rows: number | string }>>`
       WITH partial AS (
-        SELECT kind, NULLIF(stages, '') AS stages, NULLIF(checks, '') AS checks
+        SELECT kind, NULLIF(stages, '') AS stages, NULLIF(checks, '') AS checks, NULLIF(any_stage_checks, '') AS any_stage_checks
           FROM unnest(${partial.map((item) => item.kind)}::text[],
                       ${partial.map((item) => (item.stages ?? []).join(","))}::text[],
-                      ${partial.map((item) => item.checks.join(","))}::text[]) AS p(kind, stages, checks)
+                      ${partial.map((item) => item.checks.join(","))}::text[],
+                      ${partial.map((item) => item.anyStageChecks.join(","))}::text[]) AS p(kind, stages, checks, any_stage_checks)
       )
       SELECT f.kind, f.about_stage, COUNT(*)::int AS rows
         FROM pipeline_feedback f
@@ -43,8 +44,10 @@ export async function readUnreadFeedback(db: SqlTag = sql): Promise<UnreadFeedba
            -- A kind outside the registry, except the takedown sync's extract rows (restore detection).
            OR (f.kind <> ALL(${registered}::text[]) AND COALESCE(f.dedupe_key, '') NOT LIKE 'hamilton.takedown:pub:%:extract')
            OR (p.kind IS NOT NULL AND (
-                (p.stages IS NOT NULL AND f.about_stage <> ALL(string_to_array(p.stages, ',')))
-                OR (p.checks IS NOT NULL AND f.check_name = ANY(string_to_array(p.checks, ',')))
+                (p.checks IS NOT NULL AND f.check_name = ANY(string_to_array(p.checks, ',')))
+                OR (p.stages IS NOT NULL AND f.about_stage <> ALL(string_to_array(p.stages, ','))
+                    AND NOT (p.any_stage_checks IS NOT NULL
+                             AND split_part(COALESCE(f.check_name, ''), ':', 1) = ANY(string_to_array(p.any_stage_checks, ','))))
               ))
          )
        GROUP BY f.kind, f.about_stage
@@ -55,9 +58,11 @@ export async function readUnreadFeedback(db: SqlTag = sql): Promise<UnreadFeedba
   return { total: byKind.reduce((sum, row) => sum + row.rows, 0), byKind };
 }
 
-/** Pure: the brief's line. Always one line, so a day with none reads as zero, not as missing. */
+/** Pure: the brief's line. Always one line, so a day with none reads as zero and a failed count
+ * says so, not as missing. Undefined means the brief did not ask. */
 export function unreadFeedbackLines(summary: UnreadFeedbackSummary | null | undefined, shown = 5): string[] {
-  if (!summary) return [];
+  if (summary === undefined) return [];
+  if (summary === null) return ["Error rows no agent reads: count unavailable today."];
   const window = `last ${UNREAD_FEEDBACK_WINDOW_DAYS} days, older than ${UNREAD_FEEDBACK_MIN_AGE_HOURS} hours`;
   if (summary.total === 0) return [`Error rows no agent reads (${window}): none.`];
   const top = summary.byKind.slice(0, shown).map((row) => `${row.kind} at ${row.stage} ${row.rows.toLocaleString("en-US")}`);

@@ -8,7 +8,7 @@ import { FEEDBACK_KINDS, feedbackRowRead, unreadFeedbackPredicate, type Feedback
 import { takedownKind } from "./feedback";
 import { unreadFeedbackLines } from "./unread-feedback";
 
-const UNREAD_KINDS_CEILING = 19;
+const UNREAD_KINDS_CEILING = 17;
 const entries = Object.entries(FEEDBACK_KINDS) as Array<[string, FeedbackKindEntry]>;
 
 describe("every feedback kind names its reader (#2062)", () => {
@@ -46,6 +46,13 @@ describe("every feedback kind names its reader (#2062)", () => {
     expect(feedbackRowRead({ kind: "audit_miss", about_stage: "extract", check_name: "hamilton.source_check" })).toBe(false);
     expect(feedbackRowRead({ kind: "wrong_document", about_stage: "discover", check_name: "magellan.link_yield" })).toBe(true);
     expect(feedbackRowRead({ kind: "wrong_document", about_stage: "discover", check_name: "hamilton.article_page" })).toBe(false);
+    // A takedown's verify row is read by nobody when the sync is the kind's only reader (#2062 review).
+    expect(feedbackRowRead({ kind: "wrong_amount", about_stage: "verify", check_name: "hamilton.source_check", dedupe_key: "hamilton.takedown:pub:9:verify" })).toBe(false);
+    expect(feedbackRowRead({ kind: "wrong_amount", about_stage: "extract", check_name: "hamilton.source_check", dedupe_key: "hamilton.takedown:pub:9:extract" })).toBe(true);
+    // Release review reads the category guard's rows at any stage; Knox reads only extract.
+    expect(feedbackRowRead({ kind: "wrong_category", about_stage: "verify", check_name: "hamilton.category_guard:v2" })).toBe(true);
+    expect(feedbackRowRead({ kind: "wrong_category", about_stage: "verify", check_name: "hamilton.source_check" })).toBe(false);
+    expect(feedbackRowRead({ kind: "wrong_category", about_stage: "publish", check_name: "hamilton.account_type_hold" })).toBe(false);
     // The takedown sync's open-ended kinds: its restore detection reads the extract rows only.
     expect(feedbackRowRead({ kind: "product_page", about_stage: "extract", check_name: "hamilton.product_page", dedupe_key: "hamilton.takedown:pub:9:extract" })).toBe(true);
     expect(feedbackRowRead({ kind: "product_page", about_stage: "verify", check_name: "hamilton.product_page", dedupe_key: "hamilton.takedown:pub:9:verify" })).toBe(false);
@@ -54,12 +61,13 @@ describe("every feedback kind names its reader (#2062)", () => {
   it("splits the registry for the brief's query the same way", () => {
     const { unreadKinds, partial, registered } = unreadFeedbackPredicate();
     expect(unreadKinds).toContain("search_miss");
-    expect(partial).toContainEqual({ kind: "audit_miss", stages: ["discover"], checks: [] });
+    expect(partial).toContainEqual({ kind: "audit_miss", stages: ["discover"], checks: [], anyStageChecks: [] });
     expect(new Set(registered)).toEqual(new Set(Object.keys(FEEDBACK_KINDS)));
   });
 
   it("always gives the brief one line, zero included", () => {
-    expect(unreadFeedbackLines(null)).toEqual([]);
+    expect(unreadFeedbackLines(undefined)).toEqual([]);
+    expect(unreadFeedbackLines(null)).toEqual(["Error rows no agent reads: count unavailable today."]);
     expect(unreadFeedbackLines({ total: 0, byKind: [] })[0]).toContain(": none.");
     const line = unreadFeedbackLines({ total: 1500, byKind: [{ kind: "audit_miss", stage: "extract", rows: 1200 }, { kind: "search_miss", stage: "discover", rows: 300 }] }, 1)[0];
     expect(line).toBe("Error rows no agent reads (last 30 days, older than 48 hours): 1,500: audit_miss at extract 1,200, and 1 more kinds.");

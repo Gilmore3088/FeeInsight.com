@@ -13,9 +13,11 @@
  * - `record`: a weight-0 record by design (an audit trail, a rollback value, a cursor), read by
  *   its writer or an admin page, not a lesson for any agent.
  *
- * A kind written outside this list (the takedown sync's open-ended fallback, `takedownKind`, or
- * hand-run SQL) is counted as unread by the brief, except the takedown sync's extract rows, which
- * its restore detection reads (`feedback-sync.ts`).
+ * The takedown sync writes each takedown twice, at extract and at verify (`feedback-sync.ts`); its
+ * restore detection reads only the extract row. So a kind the sync is the only reader of is read
+ * only at extract, and its verify row is unread. A kind written outside this list (the sync's
+ * open-ended fallback, `takedownKind`, or hand-run SQL) is counted as unread by the brief, except
+ * the sync's extract rows.
  */
 
 type Reader = {
@@ -24,6 +26,9 @@ type Reader = {
   readStages?: readonly string[];
   /** Rows from these checks are not read. */
   unreadChecks?: readonly string[];
+  /** Rows from these checks are read at any stage, `readStages` aside. A check name matches on
+   * its part before the first ":", as the readers match it. */
+  anyStageChecks?: readonly string[];
   note?: string;
 };
 type Unread = { unread: string };
@@ -45,20 +50,22 @@ const ROSETTA_READ_LESSONS = [ROSETTA_READ, "src/lib/agents/rosetta/paid-read.ts
 const ROSETTA_BATCH_READERS = [...ROSETTA_READ_LESSONS, "src/lib/agents/goal-scorecard.ts"] as const;
 /** Fee-level verdicts recorded by Darwin's verify that only Magellan's batch review counts. */
 const DARWIN_VERIFY = "darwin.verify";
+/** The stage of the takedown sync's row that its restore detection reads. */
+const EXTRACT = ["extract"] as const;
 
 export const FEEDBACK_KINDS = {
   // Fee level.
-  wrong_category: { readers: [KNOX_LESSONS, LABEL_QUEUE, RELEASE_REVIEW], unreadChecks: ["hamilton.account_type_hold"], note: "Knox's lessons read extract rows; the account-type hold files at publish." },
-  wrong_amount: { readers: [FEEDBACK_SYNC], unreadChecks: [DARWIN_VERIFY, "hamilton.hand_takedown", "hamilton.eval_verdict", "hamilton.hand_amount_correction"], note: "Only the takedown sync's restore detection reads it; Knox learns no amount lesson (#2067)." },
-  not_a_fee: { readers: [FEEDBACK_SYNC], unreadChecks: [DARWIN_VERIFY, "hamilton.hand_takedown", "hamilton.eval_verdict"] },
-  threshold: { readers: [FEEDBACK_SYNC] },
-  priced_per_amount: { readers: [FEEDBACK_SYNC] },
-  not_on_schedule: { readers: ["src/lib/agents/darwin/release-held.ts", FEEDBACK_SYNC], unreadChecks: [DARWIN_VERIFY, "hamilton.product_page", "hamilton.hand_takedown"] },
-  unreproduced: { readers: [FEEDBACK_SYNC] },
-  outside_range: { readers: [FEEDBACK_SYNC], unreadChecks: [DARWIN_VERIFY] },
-  off_taxonomy: { readers: [FEEDBACK_SYNC, RELEASE_REVIEW], unreadChecks: [DARWIN_VERIFY] },
-  duplicate: { readers: [FEEDBACK_SYNC], unreadChecks: ["hamilton.hand_takedown", "hamilton.cut_name_duplicate"] },
-  refreshed: { readers: [FEEDBACK_SYNC] },
+  wrong_category: { readers: [KNOX_LESSONS, LABEL_QUEUE, RELEASE_REVIEW], readStages: EXTRACT, anyStageChecks: ["hamilton.category_guard"], unreadChecks: ["hamilton.account_type_hold"], note: "Knox's lessons read extract rows; release review reads the category guard's rows at any stage; the account-type hold files at publish." },
+  wrong_amount: { readStages: EXTRACT, readers: [FEEDBACK_SYNC], unreadChecks: [DARWIN_VERIFY, "hamilton.hand_takedown", "hamilton.eval_verdict", "hamilton.hand_amount_correction"], note: "Only the takedown sync's restore detection reads it; Knox learns no amount lesson (#2067)." },
+  not_a_fee: { readStages: EXTRACT, readers: [FEEDBACK_SYNC], unreadChecks: [DARWIN_VERIFY, "hamilton.hand_takedown", "hamilton.eval_verdict"] },
+  threshold: { readStages: EXTRACT, readers: [FEEDBACK_SYNC] },
+  priced_per_amount: { readStages: EXTRACT, readers: [FEEDBACK_SYNC] },
+  not_on_schedule: { readStages: EXTRACT, readers: ["src/lib/agents/darwin/release-held.ts", FEEDBACK_SYNC], unreadChecks: [DARWIN_VERIFY, "hamilton.product_page", "hamilton.hand_takedown"] },
+  unreproduced: { readStages: EXTRACT, readers: [FEEDBACK_SYNC] },
+  outside_range: { readStages: EXTRACT, readers: [FEEDBACK_SYNC], unreadChecks: [DARWIN_VERIFY] },
+  off_taxonomy: { readers: [FEEDBACK_SYNC, RELEASE_REVIEW], readStages: EXTRACT, anyStageChecks: ["hamilton.category_outside_taxonomy"], unreadChecks: [DARWIN_VERIFY] },
+  duplicate: { readStages: EXTRACT, readers: [FEEDBACK_SYNC], unreadChecks: ["hamilton.hand_takedown", "hamilton.cut_name_duplicate"] },
+  refreshed: { readStages: EXTRACT, readers: [FEEDBACK_SYNC] },
   answer_key: { readers: ["src/lib/agents/darwin/category-model.ts", KNOX_LESSONS, LABEL_QUEUE] },
   restored_after_takedown: { readers: [KNOX_LESSONS, LABEL_QUEUE, "src/lib/agents/knox/calibration.ts", RELEASE_REVIEW] },
   darwin_verified: { readers: [KNOX_LESSONS, LABEL_QUEUE, "src/lib/agents/magellan/batch-review.ts"] },
@@ -163,21 +170,23 @@ export function feedbackRowRead(row: { kind: string; about_stage: string; check_
   if (!known) return /^hamilton\.takedown:pub:.*:extract$/.test(row.dedupe_key ?? "");
   if ("record" in known) return true;
   if ("unread" in known) return false;
-  if (known.readStages && !known.readStages.includes(row.about_stage)) return false;
   if (known.unreadChecks && row.check_name != null && known.unreadChecks.includes(row.check_name)) return false;
+  const check = row.check_name?.split(":")[0];
+  if (known.anyStageChecks && check != null && known.anyStageChecks.includes(check)) return true;
+  if (known.readStages && !known.readStages.includes(row.about_stage)) return false;
   return true;
 }
 
 /** SQL-side split of the same rule, for the brief's count: kinds read whole, and the rest. */
 export function unreadFeedbackPredicate() {
   const unreadKinds: string[] = [];
-  const partial: Array<{ kind: string; stages: string[] | null; checks: string[] }> = [];
+  const partial: Array<{ kind: string; stages: string[] | null; checks: string[]; anyStageChecks: string[] }> = [];
   const records: string[] = [];
   const read: string[] = [];
   for (const [kind, value] of Object.entries(FEEDBACK_KINDS) as Array<[string, FeedbackKindEntry]>) {
     if ("record" in value) records.push(kind);
     else if ("unread" in value) unreadKinds.push(kind);
-    else if (value.readStages || value.unreadChecks) partial.push({ kind, stages: value.readStages ? [...value.readStages] : null, checks: value.unreadChecks ? [...value.unreadChecks] : [] });
+    else if (value.readStages || value.unreadChecks) partial.push({ kind, stages: value.readStages ? [...value.readStages] : null, checks: value.unreadChecks ? [...value.unreadChecks] : [], anyStageChecks: value.anyStageChecks ? [...value.anyStageChecks] : [] });
     else read.push(kind);
   }
   return { unreadKinds, partial, registered: [...records, ...unreadKinds, ...read, ...partial.map((item) => item.kind)] };

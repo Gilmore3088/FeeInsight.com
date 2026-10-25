@@ -54,8 +54,15 @@ describe.skipIf(!connection)("unread error rows in isolated PostgreSQL (#2062)",
     await row("product_page", "verify", "hamilton.product_page", 72, { dedupe: "hamilton.takedown:pub:20620001:verify" });
     await row("product_page", "extract", "hamilton.product_page", 72, { dedupe: "hamilton.takedown:pub:20620001:extract" });
     await row("restored_after_takedown", "extract", "hamilton.restore", 72); // read
+    await row("wrong_amount", "verify", "hamilton.source_check", 72, { dedupe: "hamilton.takedown:pub:20620002:verify" }); // only the extract row is read
+    await row("wrong_amount", "extract", "hamilton.source_check", 72, { dedupe: "hamilton.takedown:pub:20620002:extract" });
+    await row("wrong_category", "verify", "hamilton.category_guard", 72, { dedupe: "hamilton.takedown:pub:20620003:verify" }); // release review reads it
+    await row("wrong_category", "verify", "hamilton.source_check", 72, { dedupe: "hamilton.takedown:pub:20620004:verify" });
     const after = await readUnreadFeedback(raw as unknown as Db);
-    expect(after.total - before.total).toBe(4);
+    expect(after.total - before.total).toBe(6);
+    expect(count(after, "wrong_amount", "verify") - count(before, "wrong_amount", "verify")).toBe(1);
+    expect(count(after, "wrong_amount", "extract") - count(before, "wrong_amount", "extract")).toBe(0);
+    expect(count(after, "wrong_category", "verify") - count(before, "wrong_category", "verify")).toBe(1);
     expect(count(after, "search_miss", "discover") - count(before, "search_miss", "discover")).toBe(1);
     expect(count(after, "audit_miss", "extract") - count(before, "audit_miss", "extract")).toBe(1);
     expect(count(after, "audit_miss", "discover") - count(before, "audit_miss", "discover")).toBe(0);
