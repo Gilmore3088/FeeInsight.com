@@ -161,7 +161,7 @@ function pct1(value: number): string {
 
 /** Row counts in words, so the only numerals in the text are figures from the tables. */
 function countWord(n: number): string {
-  return ["none", "one", "two", "three", "four", "five"][n] ?? String(n);
+  return ["none", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"][n] ?? String(n);
 }
 
 function capital(text: string): string {
@@ -442,7 +442,8 @@ function management(fin: FinancialFacts, comp: CompetitionFacts, reg: Built): Bu
     draft.push("How do the CFPB complaint figures under Regulation compare with the complaints your own team logged?");
   }
   if (draft.length === 0) {
-    draft.push(`No fee sits ${CONSIDERATION_GAP_PCT}% or more from its peer median and no change in fee income of ${CONSIDERATION_INCOME_PCT}% or more was filed. Add the points your team wants management to weigh this month.`);
+    // No numerals: the thresholds are Hamilton's own cut-offs, not sourced figures.
+    draft.push("No fee sits far from its peer median and no large change in fee income was filed. Add the points your team wants management to weigh this month.");
   }
   return { draft, rows, gaps: [] };
 }

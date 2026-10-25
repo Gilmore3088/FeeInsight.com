@@ -8,6 +8,7 @@ import {
   isSectionEdited,
   monthlyBriefingEditsError,
   monthlyBriefingReport,
+  type MonthlyBriefing,
   type MonthlyBriefingInput,
 } from "./monthly-briefing";
 import type { EconomicBackdrop, Fact } from "./workspace/types";
@@ -73,9 +74,31 @@ function input(overrides: Partial<MonthlyBriefingInput> = {}): MonthlyBriefingIn
   };
 }
 
-/** Every number written in a section's words, as it appears. */
+/** Every number written in some words, as a whole token: "$1.9", "5.8%", "2026", "42". */
 function numbersIn(text: string): string[] {
   return text.match(/\$?\d[\d,]*(?:\.\d+)?%?/g) ?? [];
+}
+
+/**
+ * The rule: every number in a section's words is a whole token of one of its rows' values, or of a
+ * row's period (quarters and dates sit there), or the peer count its source names ("42
+ * institutions", "12 banks"). Two exemptions, each on purpose:
+ * - the peer group's name, which the resolver writes and can hold a numeral ("Fed district 6"):
+ *   it names the group, it is not a figure;
+ * - quoted text (the Beige Book and the FOMC), a dated, sourced quotation in the source's own words
+ *   whose row carries the source and date.
+ */
+function expectNumbersSourced(b: MonthlyBriefing): void {
+  for (const section of b.sections) {
+    const allowed = new Set(section.rows.flatMap((r) => [
+      ...numbersIn(r.value ?? ""),
+      ...numbersIn(r.period),
+      ...[...r.source.matchAll(/\b(\d+) (?:institutions|banks|credit unions)\b/g)].map((m) => m[1]),
+    ]));
+    let words = section.draft.replace(/"[^"]*"/g, " ");
+    if (b.peerGroupLabel) words = words.split(b.peerGroupLabel).join(" ");
+    for (const n of numbersIn(words)) expect(allowed.has(n), `${section.id} says ${n}; allowed ${[...allowed].join(", ")}`).toBe(true);
+  }
 }
 
 describe("buildMonthlyBriefing (#1897)", () => {
@@ -97,13 +120,22 @@ describe("buildMonthlyBriefing (#1897)", () => {
   });
 
   it("writes no number that is not in its section's figures", () => {
-    for (const section of briefing.sections) {
-      const shown = section.rows.flatMap((r) => [r.label, r.value ?? "", r.period, r.source]).join(" ");
-      for (const n of numbersIn(section.draft)) {
-        // Years, quarters and peer counts sit in the period or source columns.
-        expect(shown, `${section.id} says ${n}`).toContain(n.replace(/^\$/, "").replace(/%$/, ""));
-      }
-    }
+    expectNumbersSourced(briefing);
+  });
+
+  it("keeps the rule with six regulation items and with no management question", () => {
+    const six = Array.from({ length: 6 }, (_, i): Fact => ({ text: `Rule item ${String.fromCharCode(65 + i)} applies to overdraft.`, source: { label: `Rule source ${String.fromCharCode(65 + i)}`, asOf: null } }));
+    const quiet = buildMonthlyBriefing(input({
+      regulation: six,
+      financial: { ...view, quarters: [quarter("2026-06-30", "Q2 2026", 1_862, 1.2, 1_510, 12)] },
+      competition: { ...input().competition!, fees: [{ feeCategory: "nsf", own: 30, ownAsOf: null, ownUrl: null, peerMedian: 30, peerCount: 40 }] },
+    }));
+    expect(quiet.sections.find((s) => s.id === "regulation")!.text).toMatch(/^Six sourced items/);
+    expect(quiet.sections.find((s) => s.id === "summary")!.text).toContain("Regulation lists six sourced items");
+    const management = quiet.sections.find((s) => s.id === "management")!;
+    expect(management.rows).toEqual([]);
+    expect(management.text).toBe("No fee sits far from its peer median and no large change in fee income was filed. Add the points your team wants management to weigh this month.");
+    expectNumbersSourced(quiet);
   });
 
   it("compares only fees with ten or more peers and says what it left out", () => {

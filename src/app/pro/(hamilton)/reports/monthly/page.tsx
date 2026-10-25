@@ -6,7 +6,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { redirectWithoutPremium } from "@/lib/team-billing";
-import { getHamiltonReportById, getRecentHamiltonReports } from "@/lib/hamilton/pro-tables";
+import { getHamiltonReportById, getHamiltonReportsByType } from "@/lib/hamilton/pro-tables";
 import { resolveHamiltonInstitutionContext } from "@/lib/hamilton/workspace-context";
 import { MONTHLY_BRIEFING_REPORT_TYPE, MONTHLY_BRIEFING_SECTIONS, briefingMonth, dayLabel } from "@/lib/hamilton/monthly-briefing";
 import { LinkButton, MemoHeader, MemoPage, MemoSection } from "@/components/hamilton/memo/memo";
@@ -52,8 +52,8 @@ export default async function MonthlyBriefingPage({
     );
   }
 
-  const earlier = (await getRecentHamiltonReports(user.id, 50).catch(() => []))
-    .filter((r) => r.report_type === MONTHLY_BRIEFING_REPORT_TYPE && r.institution_id === String(institution.id));
+  // Every briefing for this institution, however old: the list is read by type, not from the 90-day library.
+  const earlier = await getHamiltonReportsByType({ userId: user.id, reportType: MONTHLY_BRIEFING_REPORT_TYPE, institutionId: String(institution.id) }).catch(() => []);
   const { monthLabel } = briefingMonth(new Date());
   const error = params.error ? ERRORS[params.error] : null;
 

@@ -27,6 +27,7 @@ const state = vi.hoisted(() => ({
   institution: null as null | { id: number; name: string },
   saved: null as unknown,
   recent: [] as unknown[],
+  byTypeParams: null as unknown,
 }));
 
 vi.mock("next/navigation", () => ({ redirect: vi.fn(), useRouter: () => ({ replace: vi.fn() }) }));
@@ -37,7 +38,10 @@ vi.mock("@/lib/hamilton/workspace-context", () => ({
 }));
 vi.mock("@/lib/hamilton/pro-tables", () => ({
   getHamiltonReportById: vi.fn(async () => state.saved),
-  getRecentHamiltonReports: vi.fn(async () => state.recent),
+  getHamiltonReportsByType: vi.fn(async (params: { userId: number; reportType: string; institutionId: string }) => {
+    state.byTypeParams = params;
+    return state.recent;
+  }),
 }));
 vi.mock("./actions", () => ({ createMonthlyBriefing: vi.fn(), saveMonthlyBriefing: vi.fn() }));
 
@@ -69,16 +73,13 @@ describe("/pro/reports/monthly (#1897)", () => {
     expect(text).toContain(`No briefings for ${NAME} yet.`);
   });
 
-  it("lists only this institution's earlier briefings", async () => {
-    state.recent = [
-      { id: "a", report_type: "monthly_briefing", institution_id: "7", title: `${NAME}: monthly briefing, October 2026`, created_at: "2026-10-25T12:00:00Z" },
-      { id: "b", report_type: "monthly_briefing", institution_id: "8", title: "Another bank: monthly briefing", created_at: "2026-10-25T12:00:00Z" },
-      { id: "c", report_type: "board_brief", institution_id: "7", title: "A board brief", created_at: "2026-10-25T12:00:00Z" },
-    ];
+  it("lists this institution's earlier briefings, read by type with no age limit", async () => {
+    state.recent = [{ id: "a", title: "Lakeshore: monthly briefing, March 2025", created_at: "2025-03-25T12:00:00Z" }];
     const { markup, text } = await render();
+    expect(state.byTypeParams).toEqual({ userId: 1, reportType: "monthly_briefing", institutionId: "7" });
     expect(markup).toContain("/pro/reports/monthly?report_id=a");
-    expect(text).not.toContain("Another bank");
-    expect(text).not.toContain("A board brief");
+    expect(text).toContain("March 2025");
+    expect(text).toContain("Built Mar 25, 2025");
   });
 
   it("opens a saved briefing with every figure's source and period and the edit controls", async () => {
