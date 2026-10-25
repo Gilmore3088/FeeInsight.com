@@ -219,11 +219,12 @@ export const EDITION_SCAN_CHARS = 8000;
 
 /**
  * T1 (Hamilton V5 plan, current-schedule checks): read a schedule's own edition line past the menu.
- * Off until James approves the dry-run holds (finding 2026-10-25-edition-line-past-the-menu). While
- * off, Darwin's edition re-check reports what it would hold (`late_heading_would_hold`) and holds
- * nothing on that account; Hamilton's publish hold reads the heading only.
+ * On since James chose "Turn it on" (Oct 25, 2026) after the dry run held one fee (finding
+ * 2026-10-25-edition-line-past-the-menu). Set it false to go back to the heading alone: Darwin's
+ * edition re-check then reports what it would hold (`late_heading_would_hold`) and restores the
+ * fees held only on that account, and Hamilton's publish hold reads the heading only.
  */
-export const EDITION_LATE_HEADING_LIVE = false;
+export const EDITION_LATE_HEADING_LIVE = true;
 
 /**
  * A title names the whole fee schedule. A bare "schedule" is any schedule ("Dividend Rate Schedule",

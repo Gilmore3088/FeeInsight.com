@@ -83,6 +83,10 @@ the rework ran in 5.6 s on prod (EXPLAIN ANALYZE, Oct 25), reading 28,930 live o
 2,011 dated documents. The tighter reader only refuses more lines, so the switch-on dry run stays
 at most the one Allentown hold, which the guard test still reads.
 
+**Switch on:** James chose "Turn it on" on the decision card (Oct 25, 11:22 UTC), after #2573 merged
+with the switch off. The flip PR sets `EDITION_LATE_HEADING_LIVE = true`: Darwin's next edition
+re-check holds fee 149487 until January 1, 2027, and Hamilton's publish hold reads the late line too.
+
 **Not fixed here:** a page with a dated future edition beside an undated current one ("NSF | $30 …
 Fees effective January 1, 2027 … NSF | $35") cannot be told apart from doc 38132's footer by the
 text alone; the dry run before the switch goes on must list such pages. Also not fixed: sections with their own editions in one document (38132, 30611, MECU 37380;
