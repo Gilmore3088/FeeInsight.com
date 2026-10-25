@@ -2,7 +2,9 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
-import { PUBLISH_MIN_ROWS_PER_STEP, ARTICLE_PAGE_RESELECT_SQL, ARTICLE_PAGE_SKIP_REASON, CATALOG_DEPTH_LIVE_SQL, decidePriorFee, normalizedFeeName, HAMILTON_PUBLISH_MIN_INSTITUTION_FEES, HAMILTON_PUBLISH_STRATEGY, linesApartOnPage, listsBothPrices, qualifiedLines, namesShareReading, newerCopyPrintsLine, otherBalanceLine, publishedFeeName, publishNameHold, publishSkipReason, runHamiltonPublish, selectListedFeeLines, sameLineDuplicateOf, sentenceFragmentName, separateLines } from "./publish";
+import { PUBLISH_MIN_ROWS_PER_STEP, ARTICLE_PAGE_RESELECT_SQL, EDITION_HOLD_RESELECT_SQL, ARTICLE_PAGE_SKIP_REASON, CATALOG_DEPTH_LIVE_SQL, decidePriorFee, normalizedFeeName, HAMILTON_PUBLISH_MIN_INSTITUTION_FEES, HAMILTON_PUBLISH_STRATEGY, linesApartOnPage, listsBothPrices, qualifiedLines, namesShareReading, newerCopyPrintsLine, otherBalanceLine, publishedFeeName, publishNameHold, publishSkipReason, runHamiltonPublish, selectListedFeeLines, sameLineDuplicateOf, sentenceFragmentName, separateLines } from "./publish";
+import { NOT_YET_EFFECTIVE_REASON } from "../darwin/edition-effective-check";
+import { productPageUrlSql } from "@/lib/agents/learning/fee-page";
 import { feePageKey } from "./page-key";
 import { PUBLISH_REFUSE_SWEEP_RULES_LIVE, publishSweepRefusals } from "./publish-sweep-rules";
 
@@ -178,8 +180,11 @@ describe("Hamilton agentic publish", () => {
     expect(publishedFeeName("Stop Payment, all items including ACH and bill pay", "stop_payment")).toBe("Stop Payment");
     expect(publishNameHold("Legal Process Fee, per occurrence, or such lesser rate as may be set by law", "legal_process", 125)).toBeNull();
     expect(publishedFeeName("Legal Process Fee, per occurrence, or such lesser rate as may be set by law", "legal_process")).toBe("Legal Process Fee, per occurrence");
-    // Any other clause may be the fee's condition, and a line cut mid-sentence has no name: both stay held.
-    expect(publishNameHold("ATM Withdrawal Fees, out of Network (Surcharge Fees, fees accessed by other ATM proprietors, may still apply.)", "atm_non_network", 0)?.code).toBe("cutoff_name");
+    // Any other clause may be the fee's condition, so it is never cut off; a line cut mid-sentence has no name and stays held.
+    // #1443: a closed parenthetical ending the name qualifies it, so this name is no longer cut off and publishes whole.
+    const atmName = "ATM Withdrawal Fees, out of Network (Surcharge Fees, fees accessed by other ATM proprietors, may still apply.)";
+    expect(publishNameHold(atmName, "atm_non_network", 0)).toBeNull();
+    expect(publishedFeeName(atmName, "atm_non_network")).toBe(atmName);
     expect(publishNameHold("Any replacement cards whether lost, stolen, or damaged will be charged a", "card_replacement", 5)?.code).toBe("cutoff_name");
     expect(publishedFeeName("Wire Transfer Outgoing, including international", "wire_domestic_outgoing")).not.toBe("Wire Transfer Outgoing");
     // The same price in the name as the amount is only glue: the name is cut before it and the fee publishes.
@@ -1230,6 +1235,21 @@ describe("Hamilton agentic publish", () => {
       const [query] = db.unsafe.mock.calls[0] as [string, unknown[]];
       expect(query).toContain(ARTICLE_PAGE_RESELECT_SQL);
       expect(query).toContain("art_prev.rolled_back_reason LIKE 'article_page:%'");
+    });
+
+    it("selects again a row skipped as identical to a fee Darwin held as not yet in effect (#1915)", async () => {
+      // ONE Credit Union (7174), Oct 11: the current schedule (doc 29000, "Effective November 1, 2024")
+      // was skipped line by line as identical to the 2027 schedule (doc 28999); #2523 held those
+      // and the bank was left with one live fee.
+      const db = learningDb([verifiedFee]);
+
+      await runHamiltonPublish({ runId: 507, db: asPublishDb(db) });
+
+      const [query] = db.unsafe.mock.calls[0] as [string, unknown[]];
+      expect(query).toContain(EDITION_HOLD_RESELECT_SQL);
+      expect(query).toContain(`held_prev.rolled_back_reason LIKE '${NOT_YET_EFFECTIVE_REASON}:%'`);
+      // A product page's line stays decided (Security Federal's Money Market paper statement, docs 25730/25731).
+      expect(query).toContain(`held_kind.document_kind = 'product_page' OR ${productPageUrlSql("held_sd.document_url")}`);
     });
 
     it("does not log held rows, so they publish once the institution has enough fees", async () => {

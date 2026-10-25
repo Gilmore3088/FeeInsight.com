@@ -4,7 +4,6 @@ import {
   buildSelectedInstitutionFeeDeltas,
   compareSelectedInstitutionFees,
 } from "./report-evidence";
-import { chargeBasesFromCounts } from "@/lib/data-store/fee-index";
 import { SPECIAL_UNIT_FREQUENCIES, UNIT_LABELS } from "@/lib/fee-unit";
 
 const indexEntries = [
@@ -252,25 +251,21 @@ describe("buildReportPeerCoveragePreview", () => {
 });
 
 describe("compareSelectedInstitutionFees (like for like)", () => {
-  it("keeps special units out even without a dominant peer basis, retaining ordinary own prices (#2248)", () => {
+  it("keeps special units out, retaining ordinary own prices (#2248)", () => {
     const research = {
       fee_category: "account_research", median_amount: 25, p25_amount: 15, p75_amount: 35,
       institution_count: 80, maturity_tier: "strong" as const,
     };
     for (const frequency of SPECIAL_UNIT_FREQUENCIES) {
-      for (const bases of [undefined, [], chargeBasesFromCounts([
-        { fee_category: "account_research", frequency, n: 100 },
-      ])]) {
-        const selectedFees = [
-          { fee_name: "Research", fee_category: "account_research", amount: 10, frequency,
-            review_status: "approved", source_url: "https://example.com/consumer/fees" },
-        ];
-        const onlySpecial = compareSelectedInstitutionFees({ selectedFees, indexEntries: [research], chargeBases: bases });
-        expect(onlySpecial.deltas, frequency).toEqual([]);
-        expect(onlySpecial.notLikeForLike[0]).toMatchObject({
-          reason: "different_charge_basis", detail: `Charged ${UNIT_LABELS[frequency]}; comparison unavailable`,
-        });
-      }
+      const selectedFees = [
+        { fee_name: "Research", fee_category: "account_research", amount: 10, frequency,
+          review_status: "approved", source_url: "https://example.com/consumer/fees" },
+      ];
+      const onlySpecial = compareSelectedInstitutionFees({ selectedFees, indexEntries: [research] });
+      expect(onlySpecial.deltas, frequency).toEqual([]);
+      expect(onlySpecial.notLikeForLike[0]).toMatchObject({
+        reason: "different_charge_basis", detail: `Charged ${UNIT_LABELS[frequency]}; comparison unavailable`,
+      });
       const mixed = compareSelectedInstitutionFees({
         selectedFees: [
           { fee_name: "Research by unit", fee_category: "account_research", amount: 10, frequency, review_status: "approved" },
@@ -287,24 +282,6 @@ describe("compareSelectedInstitutionFees (like for like)", () => {
     { fee_category: "safe_deposit_box", median_amount: 50, p25_amount: 35, p75_amount: 75, institution_count: 900, maturity_tier: "strong" as const },
     { fee_category: "bill_pay", median_amount: 5, p25_amount: 3, p75_amount: 8, institution_count: 300, maturity_tier: "strong" as const },
   ];
-  // Peer charge bases as measured on prod (Oct 9, 2026): monthly maintenance 98% monthly,
-  // safe deposit box 86% annual, bill pay 51% per item.
-  const chargeBases = chargeBasesFromCounts([
-    { fee_category: "monthly_maintenance", frequency: "monthly", n: 2551 },
-    { fee_category: "monthly_maintenance", frequency: "per_item", n: 42 },
-    { fee_category: "safe_deposit_box", frequency: "annual", n: 1644 },
-    { fee_category: "safe_deposit_box", frequency: "monthly", n: 150 },
-    { fee_category: "safe_deposit_box", frequency: "one_time", n: 126 },
-    { fee_category: "bill_pay", frequency: "per_item", n: 182 },
-    { fee_category: "bill_pay", frequency: "per_transaction", n: 97 },
-    { fee_category: "bill_pay", frequency: "monthly", n: 259 },
-    { fee_category: "bill_pay", frequency: "annual", n: 8 },
-  ]);
-
-  it("folds per-event frequencies into one basis", () => {
-    expect(chargeBases.find((b) => b.fee_category === "bill_pay")).toMatchObject({ family: "per_item", stated_rows: 546 });
-    expect(chargeBases.find((b) => b.fee_category === "monthly_maintenance")?.share).toBeCloseTo(0.984, 3);
-  });
 
   it("does not compare a fee stated only on a business schedule with consumer peers", () => {
     // Security Federal Bank: its three monthly maintenance rows are all on a business schedule.
@@ -313,7 +290,6 @@ describe("compareSelectedInstitutionFees (like for like)", () => {
         { fee_name: "Monthly service fee (per month)", fee_category: "monthly_maintenance", amount: 39.95, frequency: "monthly", review_status: "approved", source_url: "https://www.securityfederalbank.com/assets/files/mzGcsIYr/BusinessFeeSchedule2026.pdf" },
       ],
       indexEntries: entries,
-      chargeBases,
     });
     expect(deltas).toHaveLength(0);
     expect(notLikeForLike).toEqual([
@@ -328,12 +304,11 @@ describe("compareSelectedInstitutionFees (like for like)", () => {
         { fee_name: "Commercial Checking", fee_category: "monthly_maintenance", amount: 25, frequency: "monthly", review_status: "approved", source_url: "https://a.com/commercial-fees.pdf" },
       ],
       indexEntries: entries,
-      chargeBases,
     });
     expect(deltas).toEqual([expect.objectContaining({ institution_amount: 8, delta_amount: -2, position: "below_peer_median" })]);
   });
 
-  it("compares a category on the peers' charge basis and leaves other bases out", () => {
+  it("compares a category on its own charging basis and leaves other bases out (#1901)", () => {
     // Rushford State Bank: a $10 monthly late fee beside annual box rent; peers charge annually.
     const { deltas, notLikeForLike } = compareSelectedInstitutionFees({
       selectedFees: [
@@ -342,7 +317,6 @@ describe("compareSelectedInstitutionFees (like for like)", () => {
         { fee_name: "Safe Deposit Box 5x10", fee_category: "safe_deposit_box", amount: 80, frequency: null, review_status: "approved", source_url: "https://a.com/fees" },
       ],
       indexEntries: entries,
-      chargeBases,
     });
     expect(notLikeForLike).toHaveLength(0);
     expect(deltas).toEqual([expect.objectContaining({ fee_name: "Safe Deposit Box 3x5 (2 variants)", institution_amount: 60 })]);
@@ -352,31 +326,55 @@ describe("compareSelectedInstitutionFees (like for like)", () => {
         { fee_name: "Safe Deposit Box, monthly late fee", fee_category: "safe_deposit_box", amount: 10, frequency: "monthly", review_status: "approved", source_url: "https://a.com/fees" },
       ],
       indexEntries: entries,
-      chargeBases,
     });
     expect(monthlyOnly.deltas).toHaveLength(0);
     expect(monthlyOnly.notLikeForLike[0]).toMatchObject({
       reason: "different_charge_basis",
-      detail: "Charged monthly; peers charge it annually.",
+      detail: "Monthly charge, not annual; the peer median compares one charging basis.",
     });
   });
 
-  it("says a category whose peers mix charge bases is not like for like", () => {
+  it("compares a monthly bill pay subscription with the monthly median and leaves per-payment fees out (#1901)", () => {
+    // Bill pay's peers stated monthly (273 institutions) and per payment (about 220) on Oct 25;
+    // the median now holds only the monthly ones, so the bank's per-payment fee is not placed in it.
     const { deltas, notLikeForLike } = compareSelectedInstitutionFees({
       selectedFees: [
         { fee_name: "Bill Pay", fee_category: "bill_pay", amount: 6, frequency: "monthly", review_status: "approved", source_url: null },
+        { fee_name: "Expedited payment", fee_category: "bill_pay", amount: 15, frequency: "per_item", review_status: "approved", source_url: null },
       ],
       indexEntries: entries,
-      chargeBases,
     });
-    expect(deltas).toHaveLength(0);
-    expect(notLikeForLike[0]).toMatchObject({ reason: "mixed_peer_basis" });
+    expect(notLikeForLike).toHaveLength(0);
+    expect(deltas).toEqual([expect.objectContaining({ fee_name: "Bill Pay", institution_amount: 6, delta_amount: 1 })]);
+
+    const perPaymentOnly = buildSelectedInstitutionFeeDeltas({
+      selectedFees: [
+        { fee_name: "Bill payment", fee_category: "bill_pay", amount: 1, frequency: "per_transaction", review_status: "approved", source_url: null },
+      ],
+      indexEntries: entries,
+    });
+    expect(perPaymentOnly).toHaveLength(0);
   });
 
-  it("checks only the schedule when peer charge bases are not supplied", () => {
+  it("leaves a monthly price out of a per-event category's comparison (#1901)", () => {
+    const nsf = { fee_category: "nsf", median_amount: 30, p25_amount: 25, p75_amount: 32, institution_count: 900, maturity_tier: "strong" as const };
+    const { deltas, notLikeForLike } = compareSelectedInstitutionFees({
+      selectedFees: [
+        { fee_name: "NSF", fee_category: "nsf", amount: 9, frequency: "monthly", review_status: "approved", source_url: null },
+      ],
+      indexEntries: [nsf],
+    });
+    expect(deltas).toHaveLength(0);
+    expect(notLikeForLike[0]).toMatchObject({
+      reason: "different_charge_basis",
+      detail: "Monthly charge, not per item; the peer median compares one charging basis.",
+    });
+  });
+
+  it("keeps a fee with no stated frequency, as the medians do", () => {
     const deltas = buildSelectedInstitutionFeeDeltas({
       selectedFees: [
-        { fee_name: "Bill Pay", fee_category: "bill_pay", amount: 6, frequency: "monthly", review_status: "approved", source_url: null },
+        { fee_name: "Bill Pay", fee_category: "bill_pay", amount: 6, frequency: null, review_status: "approved", source_url: null },
       ],
       indexEntries: entries,
     });

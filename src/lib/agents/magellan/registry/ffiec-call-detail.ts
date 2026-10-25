@@ -1,6 +1,12 @@
 import { sql } from "@/lib/data-store/connection";
-import { FFIEC_BULK_URL, fetchFfiecCallBulk, schedulePattern } from "@/lib/regulatory/ffiec";
-import { FFIEC_CALL_ITEM_SCHEDULES, readFfiecCallItems, type FfiecColumnCheck, type FfiecItemValue } from "@/lib/regulatory/ffiec-call-items";
+import { FFIEC_BULK_URL, FFIEC_POR_FILE, fetchFfiecCallBulk, readFfiecPor, schedulePattern, type FfiecPorRead } from "@/lib/regulatory/ffiec";
+import {
+  FFIEC_CALL_ITEM_SCHEDULES,
+  porItemValues,
+  readFfiecCallItems,
+  type FfiecColumnCheck,
+  type FfiecItemValue,
+} from "@/lib/regulatory/ffiec-call-items";
 import type { RegistryFetchOptions } from "@/lib/regulatory/http";
 import { parseQuarterKey, quarterEndDate, type Quarter } from "@/lib/regulatory/quarters";
 import { ffiecOverdraftPartitions, ffiecRefreshHours } from "./ffiec-overdraft";
@@ -16,10 +22,16 @@ import { recordRegistryPartition, type RegistryDb } from "./partitions";
  * Values are stored as filed: income lines year to date, balance lines at quarter end, dollars
  * in thousands. A line missing from the file or described differently is listed in the
  * partition detail and nothing is written for it.
+ *
+ * v5 (#1925) also reads the zip's POR file and stores each bank's "Last Date/Time Submission
+ * Updated On" for the quarter as one more item row (`filing_last_updated`, code
+ * `POR_LAST_UPDATED`, epoch seconds), so Deming's filings reconcile can tell which feed holds the
+ * newer version of a refiled report. It is not a financial line: it is left out of the line
+ * counts and value checks, and readers that sum or serve lines never see it.
  */
 
 export const FFIEC_CALL_DETAIL_SOURCE = "ffiec-call-detail";
-export const FFIEC_CALL_DETAIL_PARSER_VERSION = 4;
+export const FFIEC_CALL_DETAIL_PARSER_VERSION = 5;
 const EMPTY_RETRY_HOURS = 24;
 const WRITE_CHUNK = 5_000;
 
@@ -57,6 +69,8 @@ export interface RegistryFfiecCallDetailResult {
   loadedLines: string[];
   missingLines: FfiecColumnCheck[];
   chargeOffPartsOverTotal: number;
+  /** Banks with a filing last-updated time read from the POR file (0 when the file or column is missing). */
+  filingTimes: number;
   dryRun: boolean;
   empty: boolean;
   emptyReason: string | null;
@@ -128,8 +142,14 @@ export async function runRegistryFfiecCallDetail(options: RegistryFfiecCallDetai
   if (!quarter) throw new Error(`Invalid FFIEC quarter partition: ${options.partitionKey}`);
   const reportDate = quarterEndDate(quarter);
 
-  const download = await fetchFfiecCallBulk(quarter, options.fetchOptions, schedulePattern(FFIEC_CALL_ITEM_SCHEDULES));
-  const parsed = download.files ? readFfiecCallItems(download.files) : null;
+  const schedules = schedulePattern(FFIEC_CALL_ITEM_SCHEDULES);
+  const download = await fetchFfiecCallBulk(quarter, options.fetchOptions, new RegExp(`${schedules.source}|${FFIEC_POR_FILE.source}`, "i"));
+  const scheduleFiles = download.files
+    ? Object.fromEntries(Object.entries(download.files).filter(([name]) => !FFIEC_POR_FILE.test(name)))
+    : null;
+  const parsed = scheduleFiles ? readFfiecCallItems(scheduleFiles) : null;
+  const por: FfiecPorRead = download.files ? readFfiecPor(download.files) : { file: null, column: null, rows: [], unreadable: 0 };
+  const filingTimes = porItemValues(por);
   const loadedLines = [...new Set((parsed?.columns ?? []).filter((c) => c.status === "loaded").map((c) => c.key))];
   // A line with an RCFD/RCON pair counts as missing only when neither code loaded.
   const missingLines = (parsed?.columns ?? []).filter((c) => c.status !== "loaded" && !loadedLines.includes(c.key));
@@ -154,6 +174,7 @@ export async function runRegistryFfiecCallDetail(options: RegistryFfiecCallDetai
     loadedLines,
     missingLines,
     chargeOffPartsOverTotal: parsed?.chargeOffPartsOverTotal ?? 0,
+    filingTimes: filingTimes.length,
     dryRun,
     empty: emptyReason !== null,
     emptyReason,
@@ -171,6 +192,7 @@ export async function runRegistryFfiecCallDetail(options: RegistryFfiecCallDetai
     missing_lines: missingLines,
     columns: parsed?.columns ?? [],
     charge_off_parts_over_total: base.chargeOffPartsOverTotal,
+    por: { file: por.file, column: por.column, banks: por.rows.length, unreadable: por.unreadable },
   };
   if (emptyReason !== null) {
     await recordRegistryPartition(db, {
@@ -188,6 +210,7 @@ export async function runRegistryFfiecCallDetail(options: RegistryFfiecCallDetai
 
   const matched = base.matchedBanks;
   const writtenRows = await writeValues(db, quarter, values, options.runId ?? null);
+  const filingTimeRows = filingTimes.length > 0 ? await writeValues(db, quarter, filingTimes, options.runId ?? null) : 0;
   await recordRegistryPartition(db, {
     source: FFIEC_CALL_DETAIL_SOURCE,
     partitionKey: options.partitionKey,
@@ -199,7 +222,14 @@ export async function runRegistryFfiecCallDetail(options: RegistryFfiecCallDetai
     sourceUrl: FFIEC_BULK_URL,
     runId: options.runId ?? null,
     nextAttemptAfterHours: ffiecRefreshHours(quarter, options.now ?? new Date()),
-    detail: { ...detail, banks: rssds.length, matched_banks: matched, values: values.length, written_rows: writtenRows },
+    detail: {
+      ...detail,
+      banks: rssds.length,
+      matched_banks: matched,
+      values: values.length,
+      written_rows: writtenRows,
+      filing_time_rows: filingTimeRows,
+    },
   });
   return { ...base, writtenRows };
 }

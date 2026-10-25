@@ -15,7 +15,7 @@ vi.mock("@/lib/api-hardening/rate-limit", () => ({ isRateLimited: mocks.limited 
 import { GET, maxDuration } from "./route";
 
 const STEPS = ["score-answer-key", "deming-regression", "deming-fresh-audit", "deming-benchmark-health",
-  "deming-playbook-check", "deming-data-quality", "deming-source-health", "scoreboard-snapshot",
+  "deming-playbook-check", "deming-data-quality", "deming-source-health", "deming-filings-reconcile", "scoreboard-snapshot",
   "deming-change-outcomes", "deming-error-fix-recheck", "deming-error-classes", "deming-monthly-review", "deming-sunday-maintenance", "deming-live-source-draw", "atlas-lesson-sync", "atlas-city-repair", "atlas-storage-retention"];
 const request = (headers: Record<string, string> = { authorization: "Bearer synthetic-scoreboard-cron" }) =>
   new NextRequest("https://feeinsight.com/api/admin/crew/scoreboard", { headers });

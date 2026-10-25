@@ -36,6 +36,16 @@
  * separate (overdraft revenue) cannot be answered with the broad total. A question sentence that
  * only supposes ("what if", "should") states no premise; the words count only in that sentence.
  *
+ * A fee figure binds only to a record of the fee its clause names (#1077 follow-up): "our overdraft
+ * fee is $30" never rests on a $30 stop-payment record. The fee named is read with the Ask bar's
+ * fee names (`feeCategoriesIn`) from the figure's own clause (from the sentence only when the
+ * clause leaves its fee out: "and Bank B's is $30"); a record also counts as named when its fee
+ * name or product is written out. When the only records at that value are other fees (not a
+ * sub-type of the fee named, `FEE_SUB_TYPES`, so a daily overdraft cap still fits "overdraft" and
+ * an NSF fee does not; a wire only in the direction its words give), the sentence is left out
+ * as `wrong_category`. A clause that names no fee, or a record with no category, binds as before,
+ * on value, unit and institution (a later sentence's "it" carries no fee).
+ *
  * Missing, unavailable and conflicting evidence each add one plain limitation line. No line here
  * invents a figure, and none tells the bank what to do with a fee. Source text (fee names,
  * conditions, document text) is data: it is never read as an instruction and never copied into a
@@ -43,6 +53,8 @@
  */
 import { historicalAssertionWithdrawn, refuses } from "./answer-interpretations";
 import { splitIntoSentences } from "./citation-gate";
+import { FEE_FAMILIES, FEE_SUB_TYPES, getFeeFamily } from "@/lib/fee-taxonomy";
+import { feeCategoriesIn } from "./workspace/ask";
 import { proseFeeName } from "./workspace/names";
 import {
   claimBindingMatches,
@@ -90,6 +102,8 @@ export type OmitReason =
   | "wrong_basis"
   /** Another institution's filing figure stated as the reader's own ("your"). */
   | "account_as_subject"
+  /** A fee figure whose only same-value record is a different fee than the one the sentence names ("overdraft" stated at the stop-payment price). */
+  | "wrong_category"
   /** A figure or change the question states, repeated as fact, that a record of the same institution and fee or measure contradicts. */
   | "premise_contradicted"
   /** A figure or measure the question states, repeated as fact, that the records read for that institution do not hold. */
@@ -326,6 +340,26 @@ function shiftQuarter(quarter: string, back: number): string {
   return `${Math.floor(index / 4)}-Q${(index % 4) + 1}`;
 }
 
+/** A clause that leaves its fee out: "Bank B's is $30", "its is", "theirs is". */
+const FEE_ELLIPSIS = /(?:'s|s'|\b(?:its|theirs|ours|yours))\s+(?:is|was|are|were|stands at|sits at)\b/i;
+
+const WIRES: readonly string[] = FEE_FAMILIES["Wire Transfers"] ?? [];
+
+/** The wire fees the words name: each direction or reach word narrows them; none leaves every wire. */
+function wiresNamed(words: string): string[] {
+  const incoming = /\b(?:incoming|inbound|receiv\w*)\b/.test(words);
+  const outgoing = /\b(?:outgoing|outbound|send\w*|sent)\b/.test(words);
+  const international = /\b(?:international|int'l|intl|foreign)\b/.test(words);
+  const domestic = /\bdomestic\b/.test(words);
+  return WIRES.filter((wire) => {
+    const isIncoming = wire.endsWith("_incoming");
+    const isInternational = wire.startsWith("wire_intl_");
+    if (incoming !== outgoing && isIncoming !== incoming) return false;
+    if (international !== domestic && isInternational !== international) return false;
+    return true;
+  });
+}
+
 /** Words that split two figures' clauses: the part before belongs to the first figure, the rest to the next. */
 const CLAUSE_BREAK = /,|;|\s(?:and|but|while|whereas|versus|vs\.?|compared\s+(?:with|to)|against|up\s+from|down\s+from|from)\s/i;
 
@@ -398,12 +432,20 @@ function money(value: number): string {
 
 /** Institutions the sentence names, in the order it names them. */
 function namedIn(text: string, names: ReadonlyMap<number, string>): number[] {
-  const lower = text.toLowerCase();
-  return [...names.entries()]
-    .map(([id, name]) => ({ id, at: name.trim() ? lower.indexOf(name.trim().toLowerCase()) : -1 }))
-    .filter((hit) => hit.at >= 0)
-    .sort((a, b) => a.at - b.at)
-    .map((hit) => hit.id);
+  // Longest name first, each match blanked, so "Capital Bank of Texas" is not also read as "Capital Bank".
+  let rest = text.toLowerCase();
+  const hits: { id: number; at: number }[] = [];
+  const byLength = [...names.entries()]
+    .map(([id, name]) => ({ id, name: name.trim().toLowerCase() }))
+    .filter(({ name }) => name)
+    .sort((a, b) => b.name.length - a.name.length);
+  for (const { id, name } of byLength) {
+    const at = rest.indexOf(name);
+    if (at < 0) continue;
+    hits.push({ id, at });
+    rest = rest.split(name).join(" ".repeat(name.length));
+  }
+  return hits.sort((a, b) => a.at - b.at).map((hit) => hit.id);
 }
 
 /** The direction words next to a figure: just after it first ("$25 lower"), then just before it ("rose 10%"). */
@@ -491,6 +533,41 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
      * sentence's quarter, and with no quarter to count from the period is unknown (null).
      */
     const clauseBases = clauses.map((clause) => statedBasis(clause));
+
+    /**
+     * Whether a fee record is the fee the figure's clause names. True when its category is named
+     * (a fee name or synonym, a sub-type of a named fee in `FEE_SUB_TYPES`, a wire of the
+     * direction the words give, its own fee name or its product); false when the clause names a
+     * different fee; null (bind as before) when the record has no category or one outside the
+     * taxonomy, or the clause names no fee. A clause that names no fee takes the sentence's fees
+     * only when it leaves the fee out ("and Bank B's is $30").
+     */
+    const clauseFees = clauses.map((clause) => feeCategoriesIn(clause));
+    const sentenceFees = feeCategoriesIn(text);
+    const feeNamed = (fact: HamiltonEvidenceFact, figure: NarrativeFigure): boolean | null => {
+      const category = fact.scope.feeCategory;
+      if (!category) return null;
+      const at = figures.indexOf(figure);
+      const clause = clauses[at] ?? text;
+      const own = clauseFees[at] ?? [];
+      const named = own.length > 0 ? own : FEE_ELLIPSIS.test(clause) ? sentenceFees : [];
+      if (named.length === 0 || getFeeFamily(category) === null) return null;
+      const words = (own.length > 0 ? clause : text).toLowerCase();
+      const covered = new Set(named.flatMap((fee) => [fee, ...(FEE_SUB_TYPES[fee] ?? [])]));
+      // A wire is the one its direction words give ("incoming", "international"); "wire" alone is any wire.
+      if (named.some((fee) => WIRES.includes(fee))) {
+        for (const wire of WIRES) covered.delete(wire);
+        // A bank's own name ("First International Bank") is not a direction word.
+        const unnamed = [...names.values()].reduce(
+          (rest, name) => (name.trim() ? rest.split(name.trim().toLowerCase()).join(" ") : rest),
+          words,
+        );
+        for (const wire of wiresNamed(unnamed)) covered.add(wire);
+      }
+      if (covered.has(category)) return true;
+      const product = fact.scope.product?.trim().toLowerCase();
+      return words.includes(proseFeeName(category).toLowerCase()) || (!!product && words.includes(product));
+    };
     const periodFor = (figure: NarrativeFigure) => {
       const at = figures.indexOf(figure);
       const clause = clauses[at] ?? text;
@@ -585,6 +662,8 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
         const subject = feeSubjects.length === 0 ? undefined : fact.scope.institutionId;
         if (subject !== undefined && !feeSubjects.includes(subject as number)) { contradict(personal ? "account_as_subject" : "wrong_institution"); continue; }
         if (!claimBindingMatches(fact, { unit, value: figure.value })) continue;
+        // The fee the clause names must be the record's; a sentence that names no fee keeps today's rule.
+        if (feeNamed(fact, figure) === false) { contradict("wrong_category"); continue; }
         const factPeriod = inPeriod(fact);
         if (factPeriod === "no") { contradict("wrong_period"); continue; }
         if (factPeriod === "unknown") continue;

@@ -256,7 +256,7 @@ export const PLANTED_ERRORS: PlantedError[] = [
     stage: "extract",
     detect: () => sourceCheckReason(DISCONTINUED_PLANTED),
     record: (reason) => rows(takedown(951, reason, { canonical_fee_key: "monthly_maintenance", fee_name: DISCONTINUED_PLANTED.fee_name, amount: 5 })),
-    // Knox learns the class from the shared check (rules v107); no Knox file reads its takedown rows.
+    // Knox learns the class from the shared check (rules v113); no Knox file reads its takedown rows.
     reader: null,
     rerun: () => errorFixCanName("extract", "hamilton.source_check"),
     recheck: {

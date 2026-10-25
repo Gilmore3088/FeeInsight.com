@@ -6,7 +6,10 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/data-store", () => ({ getInstitutionById: mocks.institution }));
 vi.mock("@/lib/data-store/fee-index", () => ({ getInstitutionOwnFees: mocks.ownFees }));
-vi.mock("@/lib/data-store/local-market", () => ({ getLocalMarketCompetitors: mocks.market }));
+vi.mock("@/lib/data-store/local-market", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/data-store/local-market")>()),
+  getLocalMarketCompetitors: mocks.market,
+}));
 
 import { getLocalCompetitors } from "./tool-local-competitors";
 
@@ -66,5 +69,53 @@ describe("local competitor subject prices", () => {
         garnishment: { low: 150, high: 175.13, fees: [{ name: "Levy", amount: 150 }, { name: "Garnishment", amount: 175.13 }] },
       },
     });
+  });
+});
+
+describe("local competitor identity (#1077, Cycle A defect 2)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.institution.mockResolvedValue({ institution_name: "Own Bank", cert_number: 123, city: "Town", state_code: "VA" });
+    mocks.ownFees.mockResolvedValue(new Map([own("overdraft", [{ fee_name: "Overdraft", amount: 37 }], 37)]));
+  });
+
+  it("should_carry_the_subject_and_each_competitor_by_id_with_the_market_and_its_document", async () => {
+    mocks.market.mockResolvedValue({
+      basis: "branch_counties", label: "Town, VA area (2 counties)", county_fips: [51001, 51003], sod_year: 2025,
+      competitors: [{
+        institution_id: 42, institution_name: "Rival  Bank", charter_type: "bank", market_deposits: 1000,
+        fees: { overdraft: 35, stop_payment: 30 }, several: {},
+        document_url: "https://fixture.invalid/42.pdf", document_date: "2026-09-30",
+      }],
+    });
+    const result = await run();
+    expect(result).toMatchObject({
+      institution: "Own Bank", institution_id: 1, your_fees: { overdraft: 37 },
+      market: "Town, VA area (2 counties)", market_basis: "branch_counties", county_fips: [51001, 51003], sod_year: 2025,
+      competitors: [{
+        institution_id: 42, name: "Rival Bank", fees: { overdraft: 35, stop_payment: 30 },
+        fee_basis: { overdraft: "max", stop_payment: "median" },
+        document_url: "https://fixture.invalid/42.pdf", document_date: "2026-09-30",
+      }],
+    });
+  });
+
+  it("should_give_no_basis_for_a_category_shown_only_as_several_fees", async () => {
+    mocks.market.mockResolvedValue({
+      basis: "hq_city", label: "Town, VA area", county_fips: [51001], sod_year: 2025,
+      competitors: [{
+        institution_id: 43, institution_name: "Other CU", charter_type: "credit_union", market_deposits: null,
+        fees: { overdraft: 32.5 },
+        several: { overdraft: { low: 30, high: 35, fees: [{ name: "Standard", amount: 30 }, { name: "Premium", amount: 35 }] } },
+        document_url: null, document_date: null,
+      }],
+    });
+    const result = (await run()) as { competitors: Array<Record<string, unknown>> };
+    expect(result.competitors[0]).toMatchObject({ institution_id: 43, fees: {}, fee_basis: {}, several_fees: { overdraft: { low: 30, high: 35 } } });
+  });
+
+  it("should_carry_the_subject_id_when_no_market_is_found", async () => {
+    mocks.market.mockResolvedValue(null);
+    expect(await run()).toMatchObject({ institution: "Own Bank", institution_id: 1 });
   });
 });

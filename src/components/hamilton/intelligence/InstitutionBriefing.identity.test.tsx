@@ -8,7 +8,7 @@ vi.mock("@/lib/auth", () => ({ getCurrentUser: mocks.user }));
 vi.mock("@/lib/hamilton/workspace-context", () => ({ resolveHamiltonInstitutionContext: mocks.context }));
 vi.mock("@/lib/hamilton/workspace/research", () => ({ COMPETITOR_MOVE_WINDOW_DAYS: 90, getWorkspaceBriefing: mocks.briefing }));
 vi.mock("@/lib/hamilton/active-peer-set", () => ({ getActivePeerSet: mocks.peer }));
-vi.mock("@/lib/data-store/fee-index", () => ({ getCategoryChargeBases: async () => [] }));
+vi.mock("@/lib/data-store/fee-index", () => ({}));
 vi.mock("@/lib/hamilton/home-data", () => ({ fetchHomeBriefingSignals: mocks.signals }));
 
 import { InstitutionBriefing as HamiltonHomePage } from "./InstitutionBriefing";

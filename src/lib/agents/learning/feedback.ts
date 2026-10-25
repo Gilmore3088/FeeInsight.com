@@ -41,7 +41,9 @@ export type FeedbackStage = (typeof FEEDBACK_STAGES)[number];
  *     unreproduced, outside_range, off_taxonomy, duplicate, answer_key,
  *     restored_after_takedown, darwin_verified, missing_lineage
  *   Restore records (weight 0, Hamilton): business_schedule_restored (a business-schedule
- *     takedown brought back for want of a consumer fee, `hamilton/business-schedule.ts`, #1671)
+ *     takedown brought back for want of a consumer fee, `hamilton/business-schedule.ts`, #1671),
+ *     account_type_hold_released (a guard-refused row the account type hold put back to verified,
+ *     held, `hamilton/account-type-hold.ts`, #1680)
  *   Audience records (weight 0, the old value kept for a rollback): audience_relabeled
  *     (`darwin/audience-relabel.ts`), audience_hand_fixed (`hamilton/hand-takedowns.ts`, #1302)
  *   Link level (Magellan): produced_live_fees, thin_link, wrong_document, dead_link,
@@ -74,6 +76,14 @@ export type FeedbackStage = (typeof FEEDBACK_STAGES)[number];
  * of `signal = 'restored'` as a lesson leave it out (`darwin/release-review.ts`).
  */
 export const BUSINESS_SCHEDULE_RESTORED_KIND = "business_schedule_restored";
+
+/**
+ * A row the category guard refused only for its account words, put back to verified (held, never
+ * published) by the account type hold because it passes every check with those words set aside
+ * (weight 0, a record, `hamilton/account-type-hold.ts`, #1680). Signal `restored`, never `wrong`:
+ * the hold judged the refusal wrong, not the fee's category. It carries no `fee_published_id`.
+ */
+export const ACCOUNT_TYPE_HOLD_RELEASED_KIND = "account_type_hold_released";
 
 /**
  * A kind registered in `feedback-kinds.ts` with the code that reads it (#2062). Recording a kind

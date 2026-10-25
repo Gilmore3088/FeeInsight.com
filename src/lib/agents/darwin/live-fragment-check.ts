@@ -140,8 +140,11 @@ export const LIVE_FRAGMENT_FLAG_PREFIX = "darwin_live_fragment";
  * dollar is no second price; an all-capitals line ending on a verb and "A" is a sentence_end.
  * Round 4 (still v6, shadow): the rename bar, the three narrow head forms, the target checks, the
  * one soft check for every refusal and the sentence-start reading of "no fee of this bank".
+ * v7 (#1521): a name cut before its noun, after a count and an audience word ("Counter Check: A
+ * blank page of 3 personal", 75914; "... Daily fee after 5 business", 74142), is a `sentence_end`
+ * (`DANGLING_AUDIENCE` in the shared shape). Both live matches on 2026-10-25 are rereads kept live.
  */
-export const LIVE_FRAGMENT_STRATEGY = { strategy: LIVE_FRAGMENT_CHECK, version: 6 } as const;
+export const LIVE_FRAGMENT_STRATEGY = { strategy: LIVE_FRAGMENT_CHECK, version: 7 } as const;
 /**
  * Waiver or discount wording: a name that says the price is waived or cut is a waived price, never
  * renamed. v6 (#1499 review): it bars a rename only; a waived line at a positive amount is kept live
@@ -1330,6 +1333,7 @@ function postgresPattern(re: RegExp): string {
  * and its credit word come from the same regexes; a credit line with a fee head and no price before
  * its credit (`creditBefore`) is a `reread`; `rename_tail` needs `readable` not to open in lower case;
  * U+FEFF joins the no-break spaces in the `translate`.
+ * v7 (#1521): `sentence_end` also reads `sentence_end_audience` (a count and an audience word ending the name).
  */
 export function liveFragmentCountSql(): string {
   const re = LIVE_FRAGMENT_REGEXES;
@@ -1382,7 +1386,7 @@ export function liveFragmentCountSql(): string {
   SELECT *, CASE
     WHEN name ~ '${postgresPattern(re.plus)}' AND regexp_replace(name, '^\\++\\s*', '') !~* '${postgresPattern(re.plus_fee_noun)}' THEN 'plus'
     WHEN name ~* '${postgresPattern(new RegExp(re.trailing_range.source.replace(/^\[[^\]]*\]\*/, "")))}' THEN 'trailing_range'
-    WHEN name ~* '${postgresPattern(re.sentence_end)}' OR name ~ '${postgresPattern(re.sentence_end_article)}' OR name ~ '${postgresPattern(LIVE_FRAGMENT_CAPS_ARTICLE)}' THEN 'sentence_end'
+    WHEN name ~* '${postgresPattern(re.sentence_end)}' OR name ~ '${postgresPattern(re.sentence_end_article)}' OR name ~* '${postgresPattern(re.sentence_end_audience)}' OR name ~ '${postgresPattern(LIVE_FRAGMENT_CAPS_ARTICLE)}' THEN 'sentence_end'
     WHEN name ~* '${postgresPattern(re.pronoun)}' THEN 'pronoun'
   END AS pattern,
   btrim(regexp_replace(regexp_replace(name, '${postgresPattern(re.parenthetical)}', ' ', 'g'), '\\s+', ' ', 'g')) AS outside,

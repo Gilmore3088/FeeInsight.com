@@ -17,8 +17,6 @@ import { getQuarterlyChanges } from "@/lib/hamilton/briefing-snapshots";
 import { buildAttentionItems, buildBriefingOverview } from "@/lib/hamilton/briefing-observations";
 import { provenanceToTrail, STANDARD_METHOD } from "@/lib/hamilton/audit-trail";
 import { COMPETITOR_MOVE_WINDOW_DAYS, getWorkspaceBriefing, type EnginePeerOptions } from "@/lib/hamilton/workspace/research";
-import { getCategoryChargeBases } from "@/lib/data-store/fee-index";
-import { mixedBasisCategories } from "@/lib/hamilton/report-evidence";
 import { getActivePeerSet } from "@/lib/hamilton/active-peer-set";
 import { POSITION_EXTREME_PCT, REVENUE_SHIFT_PCT } from "@/lib/hamilton/workspace/observations";
 import type { Briefing } from "@/lib/hamilton/workspace/types";
@@ -26,44 +24,40 @@ import { AuditPanel, Callout, LinkButton, MemoHeader, MemoPage } from "@/compone
 
 /**
  * The engine's Briefing, cached for an hour per institution and peer group (keyed on both, so a
- * bank's own group from Settings never serves another reader), with the categories whose peers
- * charge them on mixed bases.
+ * bank's own group from Settings never serves another reader). Every median it reads compares one
+ * charging basis per category (statistics rule 9, #1901), so no category is held back as mixed.
  */
 const getCachedBriefing = unstable_cache(
-  async (institutionId: number, peerSet: EnginePeerOptions["peerSet"]) => {
-    const [briefing, bases] = await Promise.all([
-      getWorkspaceBriefing(institutionId, new Date(), { peerSet }),
-      getCategoryChargeBases().catch(() => []),
-    ]);
-    return { briefing, mixedBasis: [...mixedBasisCategories(bases)] };
-  },
-  ["hamilton-this-month-briefing-v4"],
+  async (institutionId: number, peerSet: EnginePeerOptions["peerSet"]) => ({
+    briefing: await getWorkspaceBriefing(institutionId, new Date(), { peerSet }),
+  }),
+  ["hamilton-this-month-briefing-v5"],
   { revalidate: 3600 },
 );
 
 async function loadBriefing(
   user: User | null,
   selectedInstitutionId: string | null,
-): Promise<{ briefing: Briefing | null; mixedBasis: string[]; unavailable: boolean }> {
+): Promise<{ briefing: Briefing | null; unavailable: boolean }> {
   const institutionId = parseInstitutionId(selectedInstitutionId);
-  if (!institutionId) return { briefing: null, mixedBasis: [], unavailable: false };
+  if (!institutionId) return { briefing: null, unavailable: false };
   try {
     const active = user ? await getActivePeerSet({ userId: user.id, institutionId }).catch(() => null) : null;
     const peerSet = active ? { filters: active.filters, label: active.label } : null;
     const result = await getCachedBriefing(institutionId, peerSet);
     if (result.briefing && result.briefing.institutionId !== institutionId) {
-      return { briefing: null, mixedBasis: [], unavailable: true };
+      return { briefing: null, unavailable: true };
     }
     return { ...result, unavailable: false };
   } catch {
-    return { briefing: null, mixedBasis: [], unavailable: true };
+    return { briefing: null, unavailable: true };
   }
 }
 
 const BRIEFING_METHOD = [
   ...STANDARD_METHOD,
   `What stands out: the research institution's fees in the top or bottom ${POSITION_EXTREME_PCT}% of their peer group (overdraft first when it is one), institutions in its state that changed a matching fee in the last ${COMPETITOR_MOVE_WINDOW_DAYS} days, and any move of ${REVENUE_SHIFT_PCT}% or more in its service charge income, most unusual first, at most three.`,
-  "A fee whose peers charge it on more than one basis (per item and monthly, say) has no single median to stand out from, so it is not listed.",
+  "Each fee is compared on one charging basis (monthly, yearly, daily or each time it is charged); a fee stated on a different basis, on either side, is left out of the comparison.",
 ];
 
 function ChangesSkeleton() {
@@ -147,10 +141,9 @@ export async function InstitutionBriefing({
   const user = await getCurrentUser().catch(() => null);
   const { institution, error: contextError } = await resolveResearchInstitution(user, params);
   const selectedInstitutionId = institution ? String(institution.id) : null;
-  const { briefing, mixedBasis, unavailable } = await loadBriefing(user, selectedInstitutionId);
-  const mixed = new Set(mixedBasis);
-  const items = buildAttentionItems(briefing, { mixedBasis: mixed });
-  const overview = briefing ? buildBriefingOverview(briefing, briefing.stateCode ?? null, mixed) : null;
+  const { briefing, unavailable } = await loadBriefing(user, selectedInstitutionId);
+  const items = buildAttentionItems(briefing);
+  const overview = briefing ? buildBriefingOverview(briefing, briefing.stateCode ?? null) : null;
   const month = new Date().toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
   const trail = briefing
     ? provenanceToTrail(briefing.provenance, { method: BRIEFING_METHOD })
@@ -220,11 +213,11 @@ export async function InstitutionBriefing({
         </Suspense>
       ) : null}
 
-      {briefing?.localMarket ? <LocalCompetitors market={briefing.localMarket} notCompared={mixedBasis} /> : null}
+      {briefing?.localMarket ? <LocalCompetitors market={briefing.localMarket} /> : null}
 
       {/* Every fee against its own peer group, in the engine's order. */}
       {briefing && briefing.positions.length > 0 ? (
-        <FeeScorecard rows={briefing.positions} institutionId={selectedInstitutionId} institutionName={briefing.institutionName} notCompared={mixedBasis} />
+        <FeeScorecard rows={briefing.positions} institutionId={selectedInstitutionId} institutionName={briefing.institutionName} />
       ) : null}
 
       <Suspense fallback={<ChangesSkeleton />}>

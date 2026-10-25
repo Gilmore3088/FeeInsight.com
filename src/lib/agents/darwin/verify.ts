@@ -20,7 +20,7 @@ import { countOutcomes, type AttemptOutcome } from "@/lib/agents/learning/outcom
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { WHOLE_DOCUMENT_BATCH } from "@/lib/agents/document-batch";
 import { currentCopySchemaReady } from "@/lib/agents/magellan/current-copy";
-import { CATEGORY_GUARD_VERSION, checkFeeCategory, refileCategory, refileFromLine } from "@/lib/fee-category-guard";
+import { CATEGORY_GUARD_VERSION, checkFeeCategory, refileCategory, refileFromLine, withHeadingAbove } from "@/lib/fee-category-guard";
 import { RETIRED_CATEGORIES } from "@/lib/fee-fold";
 import { RULE_WHY, ruleFor } from "@/lib/agents/hamilton/eval-verdicts";
 import { checkFeeAgainstSource, checkRateAgainstSource, sourceLines } from "@/lib/custom-report/source-check";
@@ -101,8 +101,12 @@ export const DARWIN_VERIFY_STRATEGY = { strategy: "verify.rules", version: 3 } a
  * whose completed change statement does not name it is not the fee, a price that conflicts with
  * the schedule's audience statement is not the fee, and an overdraft cushion or a per-day total
  * is not a per-item overdraft or NSF price.
+ * v3: #1479, a name | description | price row stays one fee's row ("Late Payment Fee | Fee assessed
+ * when a loan payment is made after the grace period. | $20.00"), and a price under its name with the
+ * balance that waives it ("$3.00 if balance falls below $100 minimum") is that name's price. The bump
+ * re-reads the older `not_in_source` rejections, so the rows the fix was made for are decided again.
  */
-export const DARWIN_SOURCE_CHECK_VERSION = 2;
+export const DARWIN_SOURCE_CHECK_VERSION = 3;
 /**
  * The verified row's frequency was settled from the fee's own schedule line (`settledFrequency`,
  * the same rule as Hamilton's frequency fill and Knox v52) because Knox's stated frequency
@@ -1715,7 +1719,8 @@ export async function runDarwinVerify(
         const canonicalFeeKey = categoryOf(row);
         if (admission) requireInternationalVerification(admission, canonicalFeeKey, categoryOf(admission.row));
         if (admission) requirePaidReturnedVerification(admission, canonicalFeeKey);
-        let reasonCode = verificationReasonCode(row, canonicalFeeKey, learnedEnvelopes);
+        // Guard v84 (#1788): a generic monthly charge is read under the heading its stored text prints above it.
+        let reasonCode = verificationReasonCode(withHeadingAbove(canonicalFeeKey, row.fee_name, row, sourceText), canonicalFeeKey, learnedEnvelopes);
         const categoryHold = reasonCode ? null : pendingCategoryLesson(canonicalFeeKey, row.fee_name);
         if (categoryHold) reasonCode = "category_lesson_pending";
         if (!reasonCode && !statedInOwnSource(row, rowSourceTexts, canonicalFeeKey)) reasonCode = "not_in_source";

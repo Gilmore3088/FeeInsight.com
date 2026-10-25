@@ -16,7 +16,7 @@ const SCHEDULE = [
   "Domestic Outgoing Wire | $25.00",
 ].join("\n");
 
-describe("Knox v107: a discontinued account's row is not a current fee (#2070)", () => {
+describe("Knox v113: a discontinued account's row is not a current fee (#2070)", () => {
   const { candidates } = runFreeSpecialists(SCHEDULE, { institutionName: "Example Bank" });
 
   it("no specialist read of a discontinued row passes the self-check", () => {

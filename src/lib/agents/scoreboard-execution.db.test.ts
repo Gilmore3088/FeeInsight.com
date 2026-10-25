@@ -62,6 +62,8 @@ vi.mock("@/lib/agents/deming/data-quality", () => ({ runDataQuality: () => effec
   summarizeDataQuality: () => "Synthetic quality check", dataQualityDetail: () => ({ fixture: true }) }));
 vi.mock("@/lib/agents/hoovie/source-health", () => ({ readSourceHealth: () => effect("deming-source-health"),
   summarizeSourceHealth: () => "Synthetic source health", sourceHealthDetail: () => ({ fixture: true }) }));
+vi.mock("@/lib/agents/deming/filings-reconcile", () => ({ runFilingsReconcile: () => effect("deming-filings-reconcile"),
+  summarizeFilingsReconcile: () => "Synthetic filings reconcile", filingsReconcileDetail: () => ({ fixture: true }) }));
 vi.mock("@/lib/agents/scoreboard", () => ({ runScoreboardSnapshot: async ({ db, runId }: { db: postgres.Sql; runId: number }) => {
   state.effects.push("scoreboard-snapshot");
   await db`INSERT INTO fixture_snapshots (agent_run_id) VALUES (${runId})`;
@@ -138,7 +140,7 @@ describe.skipIf(!connection)("scoreboard execution in isolated PostgreSQL", () =
     expect(new Set(results.map(body => body.runId)).size).toBe(1);
     expect(results.filter(body => !body.reused)).toHaveLength(1);
     expect((await db`SELECT count(*)::int AS n FROM agent_runs`)[0].n).toBe(1);
-    expect(await steps(results[0].runId)).toHaveLength(17);
+    expect(await steps(results[0].runId)).toHaveLength(18);
     expect(state.effects).toEqual([]);
   });
 
@@ -174,19 +176,20 @@ describe.skipIf(!connection)("scoreboard execution in isolated PostgreSQL", () =
     expect((await startAgentRun(input)).run.id).not.toBe(first.run.id);
   });
 
-  it("advances all 17 real ledger steps over ticks, snapshots after measurements, and holds/resumes the paused tail", async () => {
+  it("advances all 18 real ledger steps over ticks, snapshots after measurements, and holds/resumes the paused tail", async () => {
     const body = await (await queueScoreboard(request("crew/scoreboard"))).json();
     state.pipeline = state.marketing = false;
     const firstTick = await (await tick(request("agents/tick"))).json();
-    // The tick runs at most 10 steps of a run (DEFAULT_MAX_STEPS_PER_RUN): it stops after the error-fix re-check.
+    // The tick runs at most 10 steps of a run (DEFAULT_MAX_STEPS_PER_RUN): it stops after the change-outcomes check.
     expect(firstTick).toMatchObject({ measurementOnly: true, selected: 1, results: [{ runId: body.runId, executedSteps: 10, terminal: false }] });
-    expect(await row(body.runId)).toMatchObject({ status: "queued", progress_current: 10, current_stage: "deming-error-classes" });
+    expect(await row(body.runId)).toMatchObject({ status: "queued", progress_current: 10, current_stage: "deming-error-fix-recheck" });
     expect((await db`SELECT agent_run_id FROM fixture_snapshots`)[0].agent_run_id).toBe(body.runId);
-    expect(state.effects.indexOf("scoreboard-snapshot")).toBeGreaterThan(state.effects.indexOf("deming-source-health"));
-    // Still paused: the last pause-exempt steps (error classes, the monthly review and the Sunday email) run, then the paused tail holds.
+    expect(state.effects.indexOf("scoreboard-snapshot")).toBeGreaterThan(state.effects.indexOf("deming-filings-reconcile"));
+    expect(state.effects.indexOf("deming-filings-reconcile")).toBeGreaterThan(state.effects.indexOf("deming-source-health"));
+    // Still paused: the last pause-exempt steps (the error-fix re-check, error classes, the monthly review and the Sunday email) run, then the paused tail holds.
     const secondTick = await (await tick(request("agents/tick"))).json();
-    expect(secondTick).toMatchObject({ selected: 1, results: [{ runId: body.runId, executedSteps: 3, terminal: false }] });
-    expect(await row(body.runId)).toMatchObject({ status: "queued", progress_current: 13, current_stage: "deming-live-source-draw" });
+    expect(secondTick).toMatchObject({ selected: 1, results: [{ runId: body.runId, executedSteps: 4, terminal: false }] });
+    expect(await row(body.runId)).toMatchObject({ status: "queued", progress_current: 14, current_stage: "deming-live-source-draw" });
     const thirdTick = await (await tick(request("agents/tick"))).json();
     expect(thirdTick.selected).toBe(0);
     expect((await steps(body.runId)).slice(-4).map(s => s.status)).toEqual(["queued", "queued", "queued", "queued"]);
@@ -195,8 +198,8 @@ describe.skipIf(!connection)("scoreboard execution in isolated PostgreSQL", () =
     state.pipeline = true;
     const resumed = await (await tick(request("agents/tick"))).json();
     expect(resumed.results).toMatchObject([{ runId: body.runId, terminal: true, executedSteps: 4 }]);
-    expect(await row(body.runId)).toMatchObject({ status: "completed", progress_current: 17, progress_total: 17 });
-    expect((await db`SELECT count(*)::int AS n FROM agent_run_events WHERE agent_run_id=${body.runId} AND event_type='step.finished'`)[0].n).toBe(17);
+    expect(await row(body.runId)).toMatchObject({ status: "completed", progress_current: 18, progress_total: 18 });
+    expect((await db`SELECT count(*)::int AS n FROM agent_run_events WHERE agent_run_id=${body.runId} AND event_type='step.finished'`)[0].n).toBe(18);
     expect((await db`SELECT count(*)::int AS n FROM agent_run_events WHERE agent_run_id=${body.runId} AND event_type='run.completed'`)[0].n).toBe(1);
   });
 
@@ -205,13 +208,13 @@ describe.skipIf(!connection)("scoreboard execution in isolated PostgreSQL", () =
     state.pipeline = pipeline; state.marketing = marketing;
     const first = await (await tick(request("agents/tick"))).json();
     expect(first.results).toMatchObject([{ runId: body.runId, executedSteps: 10 }]);
-    expect(await row(body.runId)).toMatchObject({ status: "queued", progress_current: 10, current_stage: "deming-error-classes" });
+    expect(await row(body.runId)).toMatchObject({ status: "queued", progress_current: 10, current_stage: "deming-error-fix-recheck" });
     expect((await db`SELECT count(*)::int AS n FROM fixture_snapshots`)[0].n).toBe(1);
     const tail = await (await tick(request("agents/tick"))).json();
-    expect(await row(body.runId)).toMatchObject({ status: pipeline ? "completed" : "queued", progress_current: pipeline ? 17 : 13 });
-    // The second tick picks the run up either way: paused, it runs only error classes, the monthly review and the Sunday email (exempt).
+    expect(await row(body.runId)).toMatchObject({ status: pipeline ? "completed" : "queued", progress_current: pipeline ? 18 : 14 });
+    // The second tick picks the run up either way: paused, it runs only the error-fix re-check, error classes, the monthly review and the Sunday email (exempt).
     expect(tail.selected).toBe(1);
-    expect(tail.results).toMatchObject([{ runId: body.runId, executedSteps: pipeline ? 7 : 3 }]);
+    expect(tail.results).toMatchObject([{ runId: body.runId, executedSteps: pipeline ? 8 : 4 }]);
     expect(state.provider).not.toHaveBeenCalled();
   });
 
