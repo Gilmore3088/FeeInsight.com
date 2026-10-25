@@ -15,8 +15,11 @@ import type { ExtractedFeeCandidate } from "@/lib/agents/knox/rules";
 type SqlTag = typeof sql;
 
 /**
- * Knox's reader of Darwin's re-read requests (#1511). Darwin's live fragment check
- * (`darwin/live-fragment-check.ts`, `LIVE_FRAGMENT_REREAD_KIND`) writes one `pipeline_feedback`
+ * Knox's reader of re-read requests (#1511): Darwin's, and Deming's for a bad-name audit miss
+ * (`deming/audit-misses.ts`, #2055). The better name is still judged by Darwin's fragment rule, not
+ * Deming's name-quality rule, so a Deming request can settle `same_name` or take a name Deming would
+ * still flag; Deming's next audit draw of the fee flags it again. Darwin's live
+ * fragment check (`darwin/live-fragment-check.ts`, `LIVE_FRAGMENT_REREAD_KIND`) writes one `pipeline_feedback`
  * row per live fee whose name is a `sentence_end` fragment it cannot rename ("Paper statement fee
  * for the" $2): `reread` (evidence `kept_live: true`, the fee stays live) or `fragment_reread` (the
  * fee came down because a gate refused its amount). This pass reads each request's line again from
@@ -114,6 +117,8 @@ export function rereadResolutionKey(requestId: number, rulesVersion: number = KN
 
 export interface RereadRequestRow {
   request_id: number | string;
+  /** The check that asked: Darwin's live fragment check, or a Deming audit check (#2055). */
+  request_check?: string | null;
   institution_id: number | string | null;
   source_document_id: number | string | null;
   fee_raw_id: number | string | null;
@@ -131,6 +136,7 @@ export interface RereadRequestRow {
 
 export interface RereadRequest {
   requestId: number;
+  requestCheck: string;
   kind: RereadRequestKind;
   institutionId: number | null;
   sourceDocumentId: number | null;
@@ -183,6 +189,7 @@ export function toRereadRequest(row: RereadRequestRow): RereadRequest {
   const keptLive = evidence.kept_live === true || evidence.kept_live === "true";
   return {
     requestId: Number(row.request_id),
+    requestCheck: row.request_check ?? LIVE_FRAGMENT_CHECK,
     kind: keptLive ? "reread" : "fragment_reread",
     institutionId: num(row.institution_id),
     sourceDocumentId: num(row.source_document_id),
@@ -323,7 +330,7 @@ function pendingWhere(alias: string, rulesVersion: number): string {
  * current Knox rules version. Runs in the SQL editor as is.
  */
 export function rereadFeedbackCountSql(rulesVersion: number = KNOX_RULES_STRATEGY.version): string {
-  return `-- Knox re-read requests from Darwin's live fragment check (#1511), pending at
+  return `-- Knox re-read requests (Darwin's live fragment check #1511, Deming's audit #2055), pending at
 -- ${KNOX_REREAD_FEEDBACK_STRATEGY.strategy} v${KNOX_REREAD_FEEDBACK_STRATEGY.version}, Knox rules v${rulesVersion}. Read only.
 BEGIN READ ONLY;
 SET LOCAL statement_timeout = '120s';
@@ -416,7 +423,7 @@ async function selectPending(db: SqlTag, limit: number, claim: boolean, institut
   const ids = (await rows).map((row) => Number(row.request_id));
   if (ids.length === 0) return [];
   return db<RereadRequestRow[]>`
-    SELECT req.id AS request_id, req.institution_id, req.source_document_id, req.fee_raw_id, req.fee_published_id, req.canonical_fee_key, req.amount, req.evidence,
+    SELECT req.id AS request_id, req.check_name AS request_check, req.institution_id, req.source_document_id, req.fee_raw_id, req.fee_published_id, req.canonical_fee_key, req.amount, req.evidence,
            fr.fee_name AS raw_fee_name, fp.fee_name AS live_fee_name,
            CASE WHEN fp.fee_published_id IS NULL THEN NULL ELSE fp.rolled_back_at IS NOT NULL END AS live_rolled_back,
            adt.id AS document_text_id, adt.text_hash, adt.source_url
@@ -496,7 +503,7 @@ function resolutionRow(request: RereadRequest, decision: RereadDecision, runId: 
     evidence: {
       request_id: request.requestId,
       request_kind: request.kind,
-      request_check: LIVE_FRAGMENT_CHECK,
+      request_check: request.requestCheck,
       outcome: decision.outcome,
       resolved: !UNRESOLVED_OUTCOMES.has(decision.outcome),
       ...(decision.outcome === "same_name" ? { note: "unresolved: same name under today's rules" } : {}),
@@ -657,7 +664,7 @@ export async function consumeRereadRequests(
           row,
           candidate,
           extraFlags: [KNOX_REREAD_FEEDBACK_FLAG],
-          method: `${KNOX_REREAD_FEEDBACK_STRATEGY.strategy} v${KNOX_REREAD_FEEDBACK_STRATEGY.version} re-read (Darwin request #${request.requestId})`,
+          method: `${KNOX_REREAD_FEEDBACK_STRATEGY.strategy} v${KNOX_REREAD_FEEDBACK_STRATEGY.version} re-read (request #${request.requestId})`,
         },takedownLessons));
         if (receipt.declinedReason) result.takedownGuardDeclines[receipt.declinedReason]=(result.takedownGuardDeclines[receipt.declinedReason]??0)+1;
         if (!receipt.inserted) entry.decision = { ...decision, outcome: "already_read" };
@@ -710,7 +717,7 @@ const outcomeList = (outcomes: Partial<Record<RereadOutcome, number>>) =>
   Object.entries(outcomes).map(([outcome, count]) => `${count} ${outcome.replace(/_/g, " ")}`).join(", ") || "none";
 
 export function rereadFeedbackMessage(result: RereadFeedbackResult): string {
-  const pending = `${result.pending} re-read request(s) from Darwin pending (${result.pendingByKind.reread} kept live, ${result.pendingByKind.fragment_reread} taken down) at ${result.pendingDocuments} document(s), ${result.pendingInstitutions} bank(s)`;
+  const pending = `${result.pending} re-read request(s) from Darwin and Deming pending (${result.pendingByKind.reread} kept live, ${result.pendingByKind.fragment_reread} taken down) at ${result.pendingDocuments} document(s), ${result.pendingInstitutions} bank(s)`;
   if (result.failed) return `${pending}; the read failed, nothing written`;
   if (!result.live || result.dryRun) return `${pending}; read ${result.read} with today's rules (would be: ${outcomeList(result.outcomes)}); ${result.dryRun ? "dry run" : "switch off"}, nothing written`;
   return `${pending}; read and settled ${result.resolved} of ${result.read} (${outcomeList(result.outcomes)}): ${result.renamed.length} live fee(s) renamed, ${result.sentToDarwin.length} sent to Darwin`;

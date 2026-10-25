@@ -47,4 +47,14 @@ export const DEMING_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-24",
   },
+  {
+    id: "issue-2055-route-to-owner-queue",
+    agent: "deming",
+    stage: "fresh audit",
+    lesson: "An audit finding is finished only when it sits in a queue its owner's next step reads, in a form that queue can match and act on safely. Send a bad name to Knox's re-read queue, and only a bad name, since the re-read takes any other name on the line as the better one. Match a wrong-document miss to the bank's link, or to the document that link's own last fetch stored while the remembered address still agrees (a link just replaced keeps the old document until its first fetch), since the miss names the stored document's address after redirects. Count it only when its document is the page's current copy, since every copy of a page shares one address; only for a fee still live; and once per document, not once per fee drawn. Rule out exactly the addresses the misses named in the new search, so an old copy's, a companion's or a side copy's miss, a re-drawn fee or the old link's next miss never replaces a good link with the wrong one. Keeping a finding as a judgement nobody selects is not enough.",
+    why: "Deming's audit misses were written as audit_miss feedback with the right stage, but no Knox, Magellan or Rosetta reader selected that kind, so a miss never reached the step that caused it. The first route matched Magellan's link exactly, which redirected documents never do; matching by bank, by a remembered address a side copy's read could set, or by address alone (old copies share it) would have let an old page's miss replace a correct link. It also sent amount and category misses to a re-read that could rename a correct fee sideways.",
+    evidence: { issues: [2055], prs: [2558], files: ["src/lib/agents/deming/audit-misses.ts", "src/lib/agents/magellan/discovery.ts", "src/lib/agents/knox/reread-feedback.ts"] },
+    appliesTo: "all",
+    since: "2026-10-24",
+  },
 ];

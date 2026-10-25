@@ -61,6 +61,7 @@ import { loadDemotedFinders } from "./batch-review";
 import { keepRefusedPaidAnswers, type KeepRefusedAnswersResult } from "./refused-answers";
 import { restoreSwappedFeePages, type RestoreFeePagesResult } from "./restore-fee-page";
 import { inSavepoint } from "@/lib/agents/savepoint";
+import { AUDIT_FEEDBACK_KIND } from "@/lib/agents/deming/audit-misses";
 import { recordSearchMisses } from "./search-misses";
 import { LEADER_RANK, runSecondDocumentFind, type RunSecondDocumentFindResult } from "./second-document";
 import { countAnchors, detectPlatform, looksJavaScriptBuilt, looksLikeBotChallenge } from "./site-signals";
@@ -313,6 +314,8 @@ interface DiscoveryCandidateRow {
   freshness?: boolean;
   /** Why the link looks out of date ("effective 2021", "address names 2022"). */
   stale_reason?: string | null;
+  /** Addresses a wrong-document finding named: the search must not find them again (#2055). */
+  freshness_exclude?: string[];
   /** `detail.resume` of the bank's last search, when it was cut short by time. */
   discovery_resume?: unknown;
   /** True when the bank's last search was cut short by time (`retry_after`, `out_of_time`). */
@@ -667,7 +670,7 @@ async function discoverForInstitution(
     rejected: options.rejectedUrls?.identities ?? new Set(),
     tried: new Set([urlIdentity(baseUrl.toString())]),
     replacing: (row.upgrade || row.business || row.freshness) && row.fee_schedule_url
-      ? new Set([urlIdentity(row.fee_schedule_url)])
+      ? new Set([row.fee_schedule_url, ...(row.freshness_exclude ?? [])].map((url) => urlIdentity(url)))
       : undefined,
     homepageHtml: "",
     homepageLinks: [],
@@ -1259,6 +1262,14 @@ async function selectBusinessCandidates(db: SqlTag, limit: number, stateCode: st
 }
 
 /**
+ * The addresses a wrong-document finding named, which the new search rules out beside the link
+ * itself: each distinct, non-empty one. Pure.
+ */
+export function wrongDocumentAddresses(urls: ReadonlyArray<string | null | undefined> | null | undefined): string[] {
+  return [...new Set((urls ?? []).filter((url): url is string => typeof url === "string" && url.trim() !== ""))];
+}
+
+/**
  * Banks whose fee link looks out of date (see FRESHNESS_SEARCH_VERSION), not yet searched
  * for a newer schedule at this version. Their link is kept unless a different page
  * passes the fee-page check.
@@ -1274,7 +1285,7 @@ async function selectStaleCandidates(
   const marker = JSON.stringify({ freshness_search: FRESHNESS_SEARCH_VERSION });
   const staleYear = now.getUTCFullYear() - STALE_AFTER_YEARS;
   const rows = await db<
-    Array<DiscoveryCandidateRow & { effective_year: number | null; url_year: number | null; wrong_at: string | Date | null; searched_at: string | Date | null }>
+    Array<DiscoveryCandidateRow & { effective_year: number | null; url_year: number | null; wrong_at: string | Date | null; confirmed_at: string | Date | null; audit_at: string | Date | null; audit_urls: Array<string | null> | null; main_document_url: string | null; searched_at: string | Date | null }>
   >`
     -- stale-link freshness search
     WITH due AS (
@@ -1292,6 +1303,12 @@ async function selectStaleCandidates(
              profile.read_strategy AS profile_read_strategy,
              profile.locked_by_correction AS profile_locked_by_correction,
              profile.consecutive_failures AS profile_consecutive_failures,
+             -- The document the link's own last fetch stored: only the main fetch writes
+             -- last_successful_source_document_id (side copies and companions never do).
+             (
+               SELECT doc.document_url FROM source_documents doc
+                WHERE doc.id = profile.last_successful_source_document_id
+             ) AS main_document_url,
              substring(inst.fee_schedule_url from ${URL_YEAR_SQL})::int AS url_year,
              (
                SELECT substring(left(text.normalized_text, 4000) from ${EFFECTIVE_YEAR_SQL})::int
@@ -1333,21 +1350,72 @@ async function selectStaleCandidates(
                   AND f.kind = 'confirmed_wrong_fees'
                   AND f.institution_id = due.id
                   AND f.source_url = due.fee_schedule_url
-             ) AS wrong_at
+             ) AS confirmed_at,
+             audit.audit_at,
+             audit.audit_urls
         FROM due
+        -- Deming's daily audit found a live fee read from this link came from the wrong document
+        -- (another bank's, an unconfirmed host or an article; #2055). The miss names the stored
+        -- document's address, the address after any redirect, so it is matched to the link or to
+        -- the document the link's own last fetch stored (main_document_url; not
+        -- profile.canonical_source_url, which a read of a side copy of an old page can also set),
+        -- and only when that document is the page's current copy (not superseded by a newer
+        -- fetch, not a companion page): a miss on an old copy, a companion or a side copy never
+        -- replaces a good link. Only a fee still live counts, only when the finding was first made
+        -- (created_at: the audit upserts a re-drawn fee's row), and only once per document. The
+        -- main-document arm holds only while the remembered address is that document's, so a
+        -- link just replaced is not searched again on the old link's misses. audit_urls are the
+        -- addresses those misses named; the search rules them out.
+        LEFT JOIN LATERAL (
+          SELECT max(f.created_at) AS audit_at, array_agg(DISTINCT f.source_url) AS audit_urls
+            FROM pipeline_feedback f
+            JOIN published_fee_records fp
+              ON fp.fee_published_id = f.fee_published_id
+             AND fp.rolled_back_at IS NULL
+             AND fp.quarantined_at IS NULL
+            JOIN source_documents sd
+              ON sd.id = f.source_document_id
+             AND sd.superseded_by_id IS NULL
+             AND sd.companion_source_id IS NULL
+           WHERE f.kind = ${AUDIT_FEEDBACK_KIND}
+             AND f.about_stage = 'discover'
+             AND f.institution_id = due.id
+             AND (
+               f.source_url = due.fee_schedule_url
+               -- The main document stands for the link only while the remembered address agrees:
+               -- a search that replaces the link sets that address to the new link at once, but
+               -- the main document stays the old link's until the new one's first fetch.
+               OR (f.source_url = due.main_document_url AND due.main_document_url = due.profile_canonical_source_url)
+             )
+             -- One search per document: a miss on a document already searched behind (stored
+             -- before the last search) is the same finding, whichever fee the audit drew.
+             AND NOT EXISTS (
+               SELECT 1 FROM pipeline_attempts pa
+                WHERE pa.institution_id = due.id
+                  AND pa.stage = 'discover'
+                  AND pa.detail @> ${marker}::jsonb
+                  AND pa.created_at > sd.crawled_at
+             )
+        ) audit ON TRUE
+    ), judged AS (
+      SELECT marked.*, GREATEST(confirmed_at, audit_at) AS wrong_at FROM marked
     )
-    SELECT * FROM marked
+    SELECT * FROM judged
      WHERE (COALESCE(effective_year, url_year) <= ${staleYear} AND searched_at IS NULL)
         OR (wrong_at IS NOT NULL AND (searched_at IS NULL OR searched_at < wrong_at))
      ORDER BY (wrong_at IS NOT NULL) DESC, asset_size DESC NULLS LAST, id ASC
      LIMIT ${limit}
   `;
-  return rows.map(({ effective_year, url_year, wrong_at, ...row }) => ({
+  return rows.map(({ effective_year, url_year, wrong_at, confirmed_at, audit_at, audit_urls, ...row }) => ({
     ...row,
     freshness: true,
+    // A wrong-document finding rules out the addresses it named, not only the link (#2055).
+    ...(audit_at != null ? { freshness_exclude: wrongDocumentAddresses(audit_urls) } : {}),
     stale_reason:
       wrong_at != null
-        ? "fees read from it were confirmed wrong on a second look"
+        ? audit_at != null && (confirmed_at == null || new Date(audit_at).getTime() >= new Date(confirmed_at).getTime())
+          ? "Deming's audit found fees read from it came from the wrong document"
+          : "fees read from it were confirmed wrong on a second look"
         : effective_year != null
           ? `effective ${effective_year}`
           : `address names ${url_year}`,
