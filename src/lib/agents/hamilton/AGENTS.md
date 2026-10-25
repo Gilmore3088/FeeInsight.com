@@ -184,6 +184,17 @@ Hamilton supports the decision; it does not make it.
   Ask engine and the one output gate, and records each verdict as a shadow with `origin: "replay"`,
   apart from readers'. Runs pick up where the last stopped; none starts once the day is complete.
   No model calls; it covers the free Ask path only.
+- The paid gate replay batch (`hamilton/paid-gate-replay.ts`, provider step
+  `hamilton-paid-gate-replay`, #1077) is one batch, never a schedule: James approved about 200
+  samples, about $35, on 2026-10-25. It writes up the gate replay's plan (Pro questions first, then
+  the quality bar over a spread seeded by the batch id) through the paid eval's own paths, in the
+  mix 100 written answers, 50 memos, 25 Simulate reads, 25 report pages, and records each shadow
+  with `origin: "replay_paid"`. Every sample is reserved before its first call
+  (`paid_replay.sample_reserved`, under the batch's advisory lock) and refused past 200 samples or
+  when the batch's estimated spend plus the ceilings of samples in flight and the next one would
+  pass $40. The hourly gate replay route runs it once the day's free plan is complete, or
+  `?paid=1` at once; once the batch is complete or capped, no run starts again. A new batch needs a
+  new `PAID_REPLAY_BATCH_ID` and James's yes.
 - The paid answer eval (`hamilton/paid-answer-eval.ts`, provider step `hamilton-paid-answer-eval`,
   cron once a day, `/api/admin/crew/answer-eval-paid`, #1079) writes at most five memos a day
   (James, 2026-10-15) over free answers that carry a storyline: Pro readers' questions first, then

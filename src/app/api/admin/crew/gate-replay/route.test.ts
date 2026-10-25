@@ -6,6 +6,7 @@ const executeAgentRunMock = vi.fn();
 const startAgentRunMock = vi.fn();
 const oldestQueuedRunBySourceMock = vi.fn();
 const completeTodayMock = vi.fn();
+const paidCompleteMock = vi.fn();
 
 vi.mock("@/lib/auth", () => ({ getCurrentUser: vi.fn(), hasPermission: vi.fn() }));
 vi.mock("@/lib/cron-secret", () => ({ matchesConfiguredCronSecret: matchesConfiguredCronSecretMock }));
@@ -19,6 +20,12 @@ vi.mock("@/lib/hamilton/gate-replay", () => ({
   GATE_REPLAY_STEP_KEY: "hamilton-gate-replay",
   gateReplayCompleteToday: completeTodayMock,
 }));
+vi.mock("@/lib/hamilton/paid-gate-replay", () => ({
+  PAID_REPLAY_BATCH_ID: "2026-10-25",
+  PAID_REPLAY_SOURCE: "hamilton.paid_gate_replay",
+  PAID_REPLAY_STEP_KEY: "hamilton-paid-gate-replay",
+  paidReplayBatchComplete: paidCompleteMock,
+}));
 
 const { GET } = await import("./route");
 const url = "https://feeinsight.com/api/admin/crew/gate-replay";
@@ -29,6 +36,7 @@ describe("/api/admin/crew/gate-replay", () => {
     matchesConfiguredCronSecretMock.mockReturnValue(true);
     executeAgentRunMock.mockResolvedValue({ executedSteps: 1 });
     completeTodayMock.mockResolvedValue(false);
+    paidCompleteMock.mockResolvedValue(false);
   });
 
   it("refuses without the cron secret or an admin", async () => {
@@ -59,11 +67,54 @@ describe("/api/admin/crew/gate-replay", () => {
     expect(executeAgentRunMock).toHaveBeenCalledWith(9102, { maxSteps: 1 });
   });
 
-  it("starts no run once today's plan is complete", async () => {
+  it("starts no run once today's plan is complete and the paid batch is complete", async () => {
     oldestQueuedRunBySourceMock.mockResolvedValue(null);
     completeTodayMock.mockResolvedValue(true);
+    paidCompleteMock.mockResolvedValue(true);
     const response = await GET(new NextRequest(url));
     expect(startAgentRunMock).not.toHaveBeenCalled();
     expect(await response.json()).toMatchObject({ ok: true, done: true });
+  });
+
+  it("gives the hour to the unfinished paid batch once today's free plan is complete", async () => {
+    oldestQueuedRunBySourceMock.mockResolvedValue(null);
+    completeTodayMock.mockResolvedValue(true);
+    startAgentRunMock.mockResolvedValue({ reused: false, run: { id: 9201, status: "queued" } });
+    const response = await GET(new NextRequest(url));
+    expect(oldestQueuedRunBySourceMock).toHaveBeenCalledWith("hamilton.paid_gate_replay");
+    const input = startAgentRunMock.mock.calls[0][0];
+    expect(input.steps).toEqual([expect.objectContaining({ key: "hamilton-paid-gate-replay", agent: "hamilton" })]);
+    expect(input.params).toEqual({ source: "hamilton.paid_gate_replay", batch_id: "2026-10-25" });
+    expect(input.idempotencyKey).toMatch(/^hamilton:paid-gate-replay:2026-10-25:\d{4}-\d{2}-\d{2}T\d{2}$/);
+    expect(executeAgentRunMock).toHaveBeenCalledWith(9201, { maxSteps: 1 });
+    expect(await response.json()).toMatchObject({ ok: true, paid: true, runId: 9201 });
+  });
+
+  it("never starts the paid batch while today's free plan is unfinished, unless asked with ?paid=1", async () => {
+    oldestQueuedRunBySourceMock.mockResolvedValue(null);
+    startAgentRunMock.mockResolvedValue({ reused: false, run: { id: 9202, status: "queued" } });
+    await GET(new NextRequest(url));
+    expect(startAgentRunMock.mock.calls[0][0].steps[0].key).toBe("hamilton-gate-replay");
+    expect(paidCompleteMock).not.toHaveBeenCalled();
+    startAgentRunMock.mockClear();
+    await GET(new NextRequest(`${url}?paid=1`));
+    expect(startAgentRunMock.mock.calls[0][0].steps[0].key).toBe("hamilton-paid-gate-replay");
+    expect(completeTodayMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("starts no paid run once the batch is complete, even with ?paid=1", async () => {
+    oldestQueuedRunBySourceMock.mockResolvedValue(null);
+    paidCompleteMock.mockResolvedValue(true);
+    const response = await GET(new NextRequest(`${url}?paid=1`));
+    expect(startAgentRunMock).not.toHaveBeenCalled();
+    expect(await response.json()).toMatchObject({ ok: true, paid: true, done: true });
+  });
+
+  it("runs a paid run left queued before starting a new one", async () => {
+    oldestQueuedRunBySourceMock.mockImplementation(async (source: string) => (source === "hamilton.paid_gate_replay" ? 9203 : null));
+    const response = await GET(new NextRequest(`${url}?paid=1`));
+    expect(executeAgentRunMock).toHaveBeenCalledWith(9203, { maxSteps: 1 });
+    expect(startAgentRunMock).not.toHaveBeenCalled();
+    expect(await response.json()).toMatchObject({ ok: true, paid: true, runId: 9203, reused: true });
   });
 });
