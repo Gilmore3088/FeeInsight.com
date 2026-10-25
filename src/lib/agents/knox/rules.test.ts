@@ -1843,3 +1843,26 @@ describe("v80 (#2032): rows named by the heading above them", () => {
     expect(far.map((fee) => fee[0])).not.toContain("International Wire Transfers: Outgoing");
   });
 });
+
+describe("Knox v111 (#1877): draft protection fee", () => {
+  it("files a credit union's draft protection fee as overdraft", () => {
+    expect(classifyFeeText("Draft Protection Fee (Paid) per presentment")).toBe("overdraft");
+    expect(classifyFeeText("Draft Protection Fee")).toBe("overdraft");
+    expect(classifyFeeText("Withdrawal Cash Fee (Overdraft at teller window) per presentment")).toBe("overdraft");
+  });
+
+  it("leaves draft protection transfers, lines and the over-draft protection program alone", () => {
+    expect(classifyFeeText("Draft Protection Transfer from Savings")).not.toBe("overdraft");
+    expect(classifyFeeText("Draft Protection Line of Credit")).not.toBe("overdraft");
+    expect(classifyFeeText("Over-Draft Protection")).not.toBe("overdraft");
+  });
+
+  it("reads Abbey FCU's schedule lines with their prices", () => {
+    const { candidates } = extractCandidatesFromText(
+      "Checking and ACH Accounts\nOverdraft Transfer from Share, each transfer FREE\nDraft Protection Fee (Paid) per presentment * $30.00\nWithdrawal Cash Fee (Overdraft at teller window) per presentment * $30.00\nStop Payment, per item $30.00",
+    );
+    const fee = candidates.find((candidate) => /draft protection/i.test(candidate.feeName));
+    expect(fee?.amount).toBe(30);
+    expect(classifyFeeText(fee?.canonicalHint ?? "") ?? fee?.canonicalHint).toBe("overdraft");
+  });
+});

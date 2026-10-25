@@ -257,7 +257,14 @@ import { withGluedFootnotePrices } from "@/lib/custom-report/glued-footnote-pric
 // (`DANGLING_AUDIENCE`, shared with Darwin's live fragment check). Publish's `cutoff_name` hold,
 // Darwin's release review and Deming's name check read the same function. On 2026-10-25 it matched
 // 2 live fees, 3 verified and 3 raw rows. The stale-read floor stays at v97. Name re-tidy stays at v26.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 108 } as const;
+// v111 (#1877; v109 and v110 are claimed by in-flight work): a credit union's "Draft Protection Fee"
+// (share-draft wording) is filed as the overdraft fee (`DRAFT_PROTECTION_FEE`, shared with guard v85).
+// Abbey FCU's "Draft Protection Fee (Paid) per presentment * $30.00" and Members Choice's "Draft
+// Protection Fee * | $30.00 per Presentment" were set aside with no category; the held recheck
+// re-reads set-aside lines on a version bump, so both go to Darwin. On 2026-10-25 the wording matched
+// 4 raw rows at 2 institutions (5827, 8749), none live. Categories only; prices and names are
+// unchanged. The stale-read floor stays at v97. Name re-tidy stays at v26.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 111 } as const;
 
 export interface SpecialistRun {
   strategy: string;

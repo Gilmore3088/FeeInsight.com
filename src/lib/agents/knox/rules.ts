@@ -4,7 +4,7 @@ import { composableTail, LEADER_PRICE_WORDS, nameAfterPrice, passesDarwinChecks,
 import type { AccountLineup } from "@/lib/agents/knox/lineup";
 import type { AncillaryProduct } from "@/lib/agents/knox/ancillary-product";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
-import { ATM_ADJUSTMENT, CHECKBOOK_RECONCILIATION, CROSS_BORDER_BUNDLE, FAX_SERVICE, PER_PAGE_COPY, researchSplitTarget } from "@/lib/fee-fold";
+import { ATM_ADJUSTMENT, CHECKBOOK_RECONCILIATION, CROSS_BORDER_BUNDLE, DRAFT_PROTECTION_FEE, FAX_SERVICE, PER_PAGE_COPY, researchSplitTarget } from "@/lib/fee-fold";
 import { joinWrappedLeaderNames, parenBalance, stripPriceFootnoteMarks, withDroppedDecimalPoints } from "@/lib/custom-report/source-check";
 
 // Shared with the source check since #1334; Knox's tests and callers keep importing it from here.
@@ -393,6 +393,13 @@ export const FEE_PATTERNS: FeePattern[] = [
     key: "overdraft",
     pattern: /\b(overdraft|courtesy pay|privilege pay|bounce(d)? (check )?protection)\b|\boverdrawing\b|^\W*overdrafts\b|\boverdrafts\s+(?:paid|fees?\b|charges?\b|\((?:OD|per item)\))|\b(?:OD|O\/D)\s+(?:privilege|items?|fees?|paid|charges?)\b|\bpaid items?\s+(?:fees?|charges?)\b(?!\s*\/)/i,
   },
+  // v111 (#1877): a credit union's "Draft Protection Fee" (share-draft wording) is its paid-overdraft
+  // fee: Abbey FCU's "Draft Protection Fee (Paid) per presentment * $30.00" and Members Choice's
+  // "Draft Protection Fee * | $30.00 per Presentment", whose footnote charges it "for handling each
+  // overdraft ... that is paid". Both were set aside with no category, so a channel line (Abbey's
+  // "Overdraft at teller window") stood in for the institution's overdraft fee. "Over Draft
+  // Protection" and a draft protection transfer, sweep, line or plan are not it.
+  { key: "overdraft", pattern: DRAFT_PROTECTION_FEE },
   {
     key: "nsf",
     pattern: /\b(NSF|non[-\s]?sufficient|insufficient funds|return(ed)? (checks?|items?|ach|drafts?))\b/i,

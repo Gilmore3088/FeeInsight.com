@@ -526,4 +526,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-1877-draft-protection-is-the-overdraft-fee",
+    agent: "knox",
+    stage: "extract",
+    lesson: "Read a credit union's share-draft wording for its overdraft program: a \"Draft Protection Fee\" charged per item paid is the overdraft fee, filed as overdraft like Courtesy Pay or Bounce Protection. When an institution's schedule leaves its standard overdraft line uncategorized, a channel line (\"Overdraft at teller window\", \"ATM Overdraft\") becomes its only overdraft fee and stands in for the standard one. Before setting aside a $25-$40 per-presentment line in a checking block beside NSF, check whether it is the overdraft program under another name. A draft protection transfer, sweep, line of credit or plan, and \"Over Draft Protection\", are not the fee.",
+    why: "Abbey FCU's schedule prints \"Draft Protection Fee (Paid) per presentment * $30.00\" between its NSF and teller-window lines. Knox set it aside with no category over seven rules versions, so the teller-window overdraft was the only live overdraft row James found in the Oct 18 /fees audit. Members Choice (5827) had the same line and no live overdraft fee at all.",
+    evidence: { issues: [1877], prs: [], files: ["src/lib/fee-fold.ts", "src/lib/agents/knox/rules.ts", "src/lib/fee-category-guard.ts", "src/lib/agents/knox/specialists.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];

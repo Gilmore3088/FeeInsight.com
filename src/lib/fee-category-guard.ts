@@ -18,7 +18,7 @@
  * The one exception is a dollar amount in a category that is usually a rate (below).
  */
 
-import { ATM_ABROAD, COLLECTION_ITEM, foldRetiredCategory, FOREIGN_DEPOSIT_RETURN, FOREIGN_ITEM_RETURN, INCOMING_WIRE, INTERNATIONAL_ATM, IRA_CLOSING, ITEM_COPY, RESEARCH_SPLIT_LIVE, SKIP_A_PAY, SUSTAINED_OVERDRAFT } from "@/lib/fee-fold";
+import { ATM_ABROAD, COLLECTION_ITEM, DRAFT_PROTECTION_FEE, foldRetiredCategory, FOREIGN_DEPOSIT_RETURN, FOREIGN_ITEM_RETURN, INCOMING_WIRE, INTERNATIONAL_ATM, IRA_CLOSING, ITEM_COPY, RESEARCH_SPLIT_LIVE, SKIP_A_PAY, SUSTAINED_OVERDRAFT } from "@/lib/fee-fold";
 
 export type CategoryGuardCode = "name_contradicts" | "name_unsupported" | "rate_as_amount" | "schedule_contradicts" | "amount_implausible";
 
@@ -444,7 +444,9 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // (the $50 check paid)", "...because your Available Balance was not sufficient"), a waiver
     // threshold ("unless the total overdraft is $50 or less"), page navigation, an account name
     // and a credit card or savings account "as overdraft protection" are not the fee.
-    include: /(overdraft|overdrawn|\bod\b|o\/d|sobregir|pago de cortes[ií]a|partidas? pagadas?|paid item|items? paid|paid nsf|paid (?:non[-\s]?|in)sufficient|paid (?:[\w&]+ ){1,3}nsf items?|courtesy pay|bounce protection|privilege|(?:in|non[-\s]?)sufficient funds?\b.{0,25}\(\s*paid\s*\)|\(\s*honou?red\s*\)|(?:nsf|(?:in|non[-\s]?)sufficient)\b[^|]{0,30}?(?:(?<!\bnon)[-–]\s*|\(\s*(?:check\s+)?)paid\b(?!\s+(?:or|from|by)\b))/i,
+    // v85 (#1877): a credit union's "Draft Protection Fee (Paid) per presentment" is the paid-overdraft fee
+    // (`DRAFT_PROTECTION_FEE`, shared with Knox v111).
+    include: new RegExp(`${DRAFT_PROTECTION_FEE.source}|` + /(overdraft|overdrawn|\bod\b|o\/d|sobregir|pago de cortes[ií]a|partidas? pagadas?|paid item|items? paid|paid nsf|paid (?:non[-\s]?|in)sufficient|paid (?:[\w&]+ ){1,3}nsf items?|courtesy pay|bounce protection|privilege|(?:in|non[-\s]?)sufficient funds?\b.{0,25}\(\s*paid\s*\)|\(\s*honou?red\s*\)|(?:nsf|(?:in|non[-\s]?)sufficient)\b[^|]{0,30}?(?:(?<!\bnon)[-–]\s*|\(\s*(?:check\s+)?)paid\b(?!\s+(?:or|from|by)\b))/.source, "i"),
     // v72 (#1788): staying overdrawn for days is the continuous overdraft fee (`SUSTAINED_OVERDRAFT`).
     exclude: new RegExp(String.raw`${SUSTAINED_OVERDRAFT.source}|` +
       /(transfer|transferencia|traspaso|máxim|por d[ií]a|diari|xfe?r\b|sweep|from (your |eligible |a )?(savings|shares?|loan|loc)\b|to loan|share to share|daily|continu|consecutive|extended(?! coverage)|sustained|limit|line of credit|protection plan|\bcap\b|maximum|reduced to|not be (charged|assessed)|\bwill not (charge|assess)|non[- ]?paid|waive|night dep|notary|counter check|check images?|set ?up|dividend|(savings|share|loan|link(ed)?) overdraft protection|overdraft protection ?[-–(]+ ?(savings|loan)|loan overdraft|covered by|per advance|advances? from|annual|collection|accrual|account closed|closed in overdraft|late repayment|\blate (payment|charge|fee)\b|recurring overdraft|every \d+|beginning|threshold|cushion|overdrawn by|overdraws your account by|with approval|options|\b\d+ ?x ?\d+\b|\bbox\b|outgoing|international|\bwires?\b|check printing|statement cop(y|ies)|photo ?cop(y|ies)|\bcopy fee|\bcop(y|ies) of\b|annual fee|or less\b|\bat least\b|or equal to|is positive|would not apply|otherwise would\b|from (your |eligible |an? |linked )?(checking|money market|statement savings)|pre-?authori[sz]ed automatic tran|\bwill honor\b|\bvia\s*:?\s*$|^.{0,20}\bfee on$|because your (available |current |ledger )?balance|\b(mon|tues|wednes|thurs|fri|satur|sun)day['’]s\b|unless the total|contact us|online statements|\bno overdraft checking\b|\bas overdraft protection\b|\bcharge(d)?[- ]?off\b)/.source, "i"),
@@ -945,7 +947,16 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // header or an unrelated "service"/"monthly" clause no longer keeps a key deposit filed as the
 // service. Read-only dry run (Oct 25): none of the 142 live night deposit names that name a key
 // changes verdict; the guard catch-up re-checks every live fee once.
-export const CATEGORY_GUARD_VERSION = 82;
+// v85 (Oct 25, #1877; v83 and v84 are claimed by in-flight work): a credit union's "Draft Protection
+// Fee" is its paid-overdraft fee and the overdraft rule accepts the name (`DRAFT_PROTECTION_FEE`, shared
+// with Knox v111). Abbey FCU's own "Draft Protection Fee (Paid) per presentment" $30 was set aside by
+// Knox and would be refused as name_unsupported, so its "Overdraft at teller window" line stood in as
+// its overdraft fee. A channel-specific overdraft (ATM, debit card, in-person or teller) stays
+// overdraft, as about 300 live rows already are; the institution value is its highest overdraft amount
+// (DECISIONS, tiered overdraft). It only admits names; no fee that passes today fails. Read-only dry
+// run (Oct 25): 1 live fee matches the wording ("Overdraft Paid by Over Draft Protection (OD)", already
+// overdraft, verdict unchanged); 0 live fees are held, re-filed or taken down.
+export const CATEGORY_GUARD_VERSION = 85;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed

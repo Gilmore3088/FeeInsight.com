@@ -2292,3 +2292,26 @@ describe("guard v80: loan, PIN, non-customer, ATM table and band-floor rows (#19
     expect(withLine("monthly_maintenance", "Monthly Maintenance Fee .No Charge", 0, "$0 - $1,500.00 | Monthly Maintenance Fee…...No Charge").ok).toBe(true);
   });
 });
+
+describe("guard v85 (#1877): draft protection and channel overdrafts", () => {
+  it("accepts a credit union's paid draft protection fee as the overdraft fee", () => {
+    expect(checkFeeCategory("overdraft", "Draft Protection Fee (Paid) per presentment")).toEqual({ ok: true });
+    expect(checkFeeCategory("overdraft", "Draft Protection Fee")).toEqual({ ok: true });
+  });
+
+  it("keeps a channel-specific overdraft (teller window, over the counter, ATM) in overdraft", () => {
+    for (const name of [
+      "Withdrawal Cash Fee (Overdraft at teller window) per presentment",
+      "Over-the-Counter Overdraft Fee: Consumer accounts",
+      "ATM Overdraft",
+    ]) {
+      expect(checkFeeCategory("overdraft", name)).toEqual({ ok: true });
+    }
+  });
+
+  it("does not take a draft protection transfer or line, or the over-draft protection program", () => {
+    for (const name of ["Draft Protection Transfer from Savings", "Draft Protection Line of Credit", "Over-Draft Protection"]) {
+      expect(checkFeeCategory("overdraft", name).ok).toBe(false);
+    }
+  });
+});

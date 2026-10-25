@@ -294,6 +294,17 @@ export const ATM_ABROAD = new RegExp(
  * ("Max 5 per day") is not matched, nor a name that also prices each item paid ("fee assessed for each
  * item paid1 Continuous Overdraft Fee...", taken-down 14969: its $30 is the per-item fee).
  */
+/**
+ * Knox v111 and guard v85 (#1877): a credit union's "Draft Protection Fee" (share-draft wording for
+ * overdraft coverage) is its paid-overdraft fee ("Draft Protection Fee (Paid) per presentment", Abbey
+ * FCU; "Draft Protection Fee * | $30.00 per Presentment", Members Choice, whose footnote charges it
+ * "for handling each overdraft ... that is paid"). "Over Draft Protection"/"Over-Draft Protection"
+ * (the overdraft protection program) and a draft protection transfer, sweep, line, loan or plan are
+ * not matched. Knox files it as overdraft and the guard accepts the name for overdraft.
+ */
+export const DRAFT_PROTECTION_FEE =
+  /(?<!\bover[\s-]*)(?<![\w-])draft\s+protection\b(?![^|]{0,40}\b(?:transfers?|xfers?|sweeps?|from\s+(?:savings|shares?|loans?)|lines?|loans?|LOC|credit|plans?|limits?)\b)/i;
+
 export const SUSTAINED_OVERDRAFT =
   /^(?![\s\S]*\b(?:(?:each|per)\s+(?:item|presentment)|items?\s+paid)\b)[\s\S]*(?:\bcont(?:inuous)?\.?\s+(?:od|overdraft|o\/d)\b|\b\d+(?:st|nd|rd|th)?[- ](?:business\s+|calendar\s+|banking\s+)?days?[- ](?:overdraft|overdrawn|negative|od)\b|\b\d+(?:st|nd|rd|th)\s+(?:business\s+|calendar\s+|banking\s+)?day\s+(?:overdrawn|negative|in overdraft)\b|\b(?:overdrawn|negative|in overdraft)\s+(?:for\s+)?(?:more than|over|after|beyond)\s+\d+\s+(?:\w+\s+)?days\b)/i;
 
