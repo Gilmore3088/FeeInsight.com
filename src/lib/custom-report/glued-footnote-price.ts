@@ -5,7 +5,8 @@
  * whole-dollar price with a leading zero, so a "$0" followed by one or two digits, with no cents, no
  * thousands comma and no further digit, is a $0 price with its footnote: the footnote is dropped and
  * the price kept. "$0.50", "$05.00" and "$01,000" are left alone, and so is a zero-padded price whose
- * decimal point the PDF dropped ("$ 050 00", Civista Bank, is $50.00). Pure.
+ * decimal point the PDF dropped ("$ 050 00", Civista Bank, is $50.00). Known gap: a glued footnote
+ * followed by a period or comma ("$03, $10") is left as written, since "$05.00" looks the same. Pure.
  */
 const GLUED_FOOTNOTE_PRICE = /\$(\s?)0(\d{1,2})(?![\d.,]|\s\d{2}(?!\d))/g;
 

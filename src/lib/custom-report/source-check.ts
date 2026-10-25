@@ -1336,13 +1336,15 @@ export function ownSizePrintsAmount(text: string, feeName: string, amount: numbe
 }
 
 export function checkFeeAgainstSource(
-  rawText: string | null | undefined,
+  sourceText: string | null | undefined,
   feeName: string,
   amount: number,
   categoryPattern: string,
   canonicalFeeKey?: string | null,
   options: SourceCheckOptions = {},
 ): SourceCheckResult {
+  // #1946: every refusal below reads a footnote glued to a $0 price ("$01") as $0, as the main path does.
+  const rawText = sourceText ? withGluedFootnotePrices(sourceText) : sourceText;
   if (namesItsClosedFreeRow(rawText, feeName, amount)) return { ok: false, reason: "amount_not_the_fee" };
   const result = checkOwnName(rawText, feeName, amount, categoryPattern, canonicalFeeKey, options);
   // W43 live audit (#2064): Knox names a box row printed as its size alone "Safe Deposit Box <size>"

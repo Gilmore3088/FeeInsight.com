@@ -20,6 +20,8 @@ describe("a footnote glued to a $0 price (#1946)", () => {
     expect(checkFeeAgainstSource(PENN, "Non-Penn Community Bank network ATM transactions", 1, ".").ok).toBe(false);
     expect(checkFeeAgainstSource(NORTH_STATE, "Monthly Fee", 3, ".").ok).toBe(false);
     // Another row's glued figure on the same line does not take this row's own "$2".
+    // The correct $0 read traces: the shared check's own-row refusals read the same cleaned text (#1946 review).
+    expect(checkFeeAgainstSource(PENN, "Non-Penn Community Bank network ATM transactions", 0, ".").ok).toBe(true);
     expect(checkFeeAgainstSource("• Minimum balance requirement – $02 | • Monthly maintenance fee – $2 (if account falls below)", "Monthly maintenance fee", 2, ".").ok).toBe(true);
   });
 });
