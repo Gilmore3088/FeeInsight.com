@@ -248,6 +248,7 @@ export function takedownKind(reason: string): FeedbackKind {
     if (detail === "amount_not_the_fee") return "wrong_amount";
     if (detail === "priced_per_amount") return "priced_per_amount";
     if (detail === "category_not_in_text") return "wrong_category";
+    if (detail === "discontinued_account") return "discontinued_account";
     return "not_on_schedule";
   }
   // Any other takedown reason becomes its own kind, unregistered on purpose: the morning brief

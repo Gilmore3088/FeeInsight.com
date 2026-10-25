@@ -8,7 +8,7 @@ import { BUSINESS_FOOTNOTE_REASON, BUSINESS_SCHEDULE_CHECK, footnoteMarksBusines
 import { DUPLICATE_COLLAPSE_REASON_PREFIX, NEAR_NAME_COLLAPSE_REASON_SUFFIX, nearNameRepeats, type NearNameRow } from "@/lib/agents/hamilton/duplicate-collapse";
 import { nextReaderRung, PRIMARY_READERS, survivalFeedback, type SurvivalRow } from "@/lib/agents/rosetta/text-survival";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
-import type { InstitutionText } from "@/lib/agents/hamilton/source-check";
+import { SOURCE_CHECK_REASON, traceLiveFee, type InstitutionText } from "@/lib/agents/hamilton/source-check";
 import { auditFeedback } from "./audit-misses";
 import { errorFixProblems, judgeErrorFix, type ErrorFixFee } from "./error-fixes";
 import { scoreFreshAudit, type FreshAuditFee } from "./fresh-audit";
@@ -153,6 +153,15 @@ const KEY_FEE: KeyFee = {
 };
 const keyText = (text: string) => ({ textId: 1, sourceDocumentId: DOCUMENT, textHash: "h", text });
 
+// A discontinued account's fee: a row the schedule keeps for accounts the bank no longer opens (#2070).
+const DISCONTINUED_TEXT = "Fee Schedule\nBasic Checking Monthly Service Charge | $3.00\nMonthly Service Charge (80 Suffix) daily balance below $500 | $5.00 (this account no longer offered)";
+const DISCONTINUED_PLANTED = liveFee(951, { canonical_fee_key: "monthly_maintenance", fee_name: "Monthly Service Charge (80 Suffix)", amount: 5 });
+const DISCONTINUED_CORRECTED = liveFee(952, { canonical_fee_key: "monthly_maintenance", fee_name: "Basic Checking Monthly Service Charge", amount: 3 });
+const sourceCheckReason = (fee: ErrorFixFee): string | null => {
+  const verdict = traceLiveFee(fee, texts(DISCONTINUED_TEXT));
+  return verdict.kind === "untraceable" ? `${SOURCE_CHECK_REASON}:${verdict.reason}` : null;
+};
+
 export const PLANTED_ERRORS: PlantedError[] = [
   {
     key: "wrong_document",
@@ -241,6 +250,21 @@ export const PLANTED_ERRORS: PlantedError[] = [
     recheck: null,
   },
   {
+    key: "discontinued_account",
+    label: "a fee priced for an account the bank no longer offers",
+    owner: "knox",
+    stage: "extract",
+    detect: () => sourceCheckReason(DISCONTINUED_PLANTED),
+    record: (reason) => rows(takedown(951, reason, { canonical_fee_key: "monthly_maintenance", fee_name: DISCONTINUED_PLANTED.fee_name, amount: 5 })),
+    // Knox learns the class from the shared check (rules v107); no Knox file reads its takedown rows.
+    reader: null,
+    rerun: () => errorFixCanName("extract", "hamilton.source_check"),
+    recheck: {
+      planted: () => errorFixJudges(DISCONTINUED_PLANTED, DISCONTINUED_TEXT, "hamilton.source_check") === "still_wrong",
+      corrected: () => errorFixJudges(DISCONTINUED_CORRECTED, DISCONTINUED_TEXT, "hamilton.source_check") === "now_matches",
+    },
+  },
+  {
     key: "missed_fee",
     label: "a fee on the schedule that Knox did not read",
     owner: "knox",
@@ -275,6 +299,9 @@ export const KNOWN_GAPS: Record<string, Partial<Record<LoopLink, number>>> = {
   wrong_audience: { recorded: 2062, read: 2062, rerun: 2058, fixed: 2058 },
   // Duplicates teach Knox nothing: only the takedown sync's restore detection reads them.
   duplicate: { read: 2062, rerun: 2058, fixed: 2058 },
+  // #2070: the takedown sync records a discontinued account's takedown as its own kind, but only its
+  // restore detection reads it; Knox learns the class from the shared check, not from the rows.
+  discontinued_account: { read: 2062 },
   // A missed fee is a Deming test case, not a feedback row, so Knox never learns from it.
   missed_fee: { recorded: 2062, read: 2062, rerun: 2058 },
 };

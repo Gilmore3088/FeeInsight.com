@@ -245,7 +245,13 @@ import { withGluedFootnotePrices } from "@/lib/custom-report/glued-footnote-pric
 // Bank; "$01", Penn Community Bank) is read as $0, never as the footnote's number
 // (`withGluedFootnotePrices`), and the shared check reads the same text (source check v22), so the
 // $3 read is refused wherever it is made. The stale-read floor stays at v97. Name re-tidy stays at v26.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 106 } as const;
+// v107 (#2070): a fee priced for an account the bank no longer offers is not a current fee. The
+// shared check refuses a read whose every row at that price carries the marker on its own row
+// ("$5.00 (this account no longer offered)") or sits under a legacy section heading ("Legacy
+// Accounts", "Retired Accounts (no longer available on new memberships)") (`discontinuedRow`, source
+// check v23), so the self-check holds it as untraced. Removes reads only. The stale-read floor stays
+// at v97. Name re-tidy stays at v26.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 107 } as const;
 
 export interface SpecialistRun {
   strategy: string;

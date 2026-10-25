@@ -3,6 +3,7 @@ import { documentKind } from "@/lib/agents/learning/document-kind";
 import { scoreFeePage } from "@/lib/agents/learning/fee-page";
 import { isBusinessOnlyLink, isBusinessOnlyText } from "@/lib/agents/magellan/link-coverage";
 import { effectiveDate, scheduleAudience } from "@/lib/agents/hamilton/schedule-edition";
+import { LEGACY_SCOPE } from "@/lib/custom-report/discontinued-rows";
 
 /** Reference-document eligibility is separate from both human confirmation and scorer v3. */
 export const ANSWER_KEY_ELIGIBILITY_PROTOCOL = 1;
@@ -180,7 +181,8 @@ export function audienceHeading(line: string, audience: "consumer" | "business")
 const BUSINESS_SECTION = /^(?:small business|business|commercial|corporate|treasury|cash management|account analysis|merchant services|non[- ]?personal|organi[sz]ation(?:al)?)\b(?! days?\b)[^$0-9.!?;]{0,60}$/i;
 /** Leading bullets and markdown markers ("• Business Checking", "## Business") are not part of a label. */
 const businessSectionLine = (line: string): boolean => BUSINESS_SECTION.test(line.trim().replace(/^(?:[-*•·▪◦#>]+\s*|\d+[.)]\s+)+/, ""));
-const LEGACY = /\b(?:closed to new (?:customers|accounts)|no longer (?:available|offered) to open|previously offered (?:accounts|products)|legacy accounts? (?:only|closed))\b/i;
+// Shared with the source check's discontinued-row refusal (#2070).
+const LEGACY = LEGACY_SCOPE;
 
 /** A positive audience attestation requires the key's own lines in consumer scope. */
 function consumerFact(key: ReferenceKeySnapshot, page: ReferencePageObservation): ReferenceEligibilityFact {
