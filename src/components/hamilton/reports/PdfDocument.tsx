@@ -416,6 +416,12 @@ function PdfAddedFindings({ report }: { report: ReportSummaryResponse }) {
     <Text style={styles.sectionHeading}>{REPORT_SECTION_HEADINGS.addedFindings}</Text>
     {report.addedFindings.map((finding, index) => <View key={index} wrap={false}>
       <Text style={styles.paragraph}>{finding.title}{finding.detail ? ` ${finding.detail}` : ""}</Text>
+      {finding.reading?.length ? (
+        <View style={styles.metadataStrip}>
+          <Text style={styles.answerLabel}>{INTERPRETATION_LABEL}</Text>
+          {finding.reading.map((sentence, i) => <Text key={i} style={styles.noteItem}>{"•"} {sentence}</Text>)}
+        </View>
+      ) : null}
       {(hamiltonIdentityLines(readHamiltonIdentitySnapshot(finding.identityContext))).map((line) => <Text key={line} style={styles.readOnlyNotice}>{line}</Text>)}
     </View>)}
   </View>;

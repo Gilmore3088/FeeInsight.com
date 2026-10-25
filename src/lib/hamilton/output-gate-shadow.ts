@@ -25,8 +25,8 @@ export type ShadowDisagreement =
   /** Both show it, but one cuts sentences and the other does not. */
   | "partial_differs";
 
-/** Which caller ran the shadow: the written-answer route's two paths, the Ask memo, Simulate. */
-export type ShadowPath = "written_streaming" | "written_buffered" | "memo" | "simulate_stream" | "simulate_read" | "golden_replay";
+/** Which caller ran the shadow: the written-answer route's two paths, the Ask memo, Simulate, a report section (#1077 step 6). */
+export type ShadowPath = "written_streaming" | "written_buffered" | "memo" | "simulate_stream" | "simulate_read" | "report_section" | "golden_replay";
 
 export interface GateShadowRecord {
   version: typeof OUTPUT_GATE_VERSION;
