@@ -48,8 +48,19 @@ James's 2026-10-15 budget, so a week gives about 35 paid shadows across four sur
   (`estimateAnthropicCostMicrousd`, never below the Opus 5.5 floor): written answer 4 steps x 16,000
   output tokens (the Pro agent's `maxSteps`/`maxTokens`) plus 80,000 input a step, $2.88; report 2 x
   8,000 output plus 30,000 input, $0.62; memo 2 x 4,000 plus 20,000, $0.36; Simulate 1 x 4,000 plus
-  10,000, $0.13. Input is priced at the cache-write rate (1.25x), the dearest way it is billed. A path's costliest clean sample raises its ceiling. Before reserving, the path's own
-  budget line is checked (`assertProviderBudgetAllowed`), so a spent daily line does not use up the
+  10,000, $0.13. Input is priced at the cache-write rate (1.25x), the dearest way it is billed. A path's costliest clean sample raises its ceiling.
+- Its own budget line: the live readers' lines are $5 a day each (`route:api.research.hamilton`,
+  `route:api.hamilton.ask.memo`, `route:api.hamilton.simulate`, `route:api.reports.generate`) and
+  `agent:hamilton` is $20 a day, so a $31 batch on them would stall after about $5 of written
+  answers a day and block real Pro readers. Every batch call is budgeted and recorded as agent
+  `hamilton_replay` with no route (`PAID_REPLAY_LEDGER`, threaded through the tagged paths as a
+  `ledger` on each path's tracking and read by `ledgerFields` in `ai-provider-usage.ts`), so it
+  checks only `global:provider:default` ($75 a day, $500 a month) and `agent:hamilton_replay`.
+  Migration `20270110000078_hamilton_replay_budget.sql` inserts that row (enabled, fail-closed, $40
+  a day, $40 a month, $20 a run; `ON CONFLICT DO NOTHING`, no existing row changed). The daily eval
+  passes no ledger and keeps its route lines and `agent:hamilton`. Usage rows keep the batch's
+  subject keys, so `batchCharge` reads them. Before reserving, the same keys the real call checks are
+  checked (`replayBudgetContext`, `assertProviderBudgetAllowed`), so a spent line does not use up the
   batch's samples.
 - A failed free read (`answer(..., { strict: true })`, which throws on a fee-research error instead
   of answering with none; the daily eval's call is unchanged) or a report's reads that throw or pass
@@ -75,9 +86,10 @@ James's 2026-10-15 budget, so a week gives about 35 paid shadows across four sur
 - Throughput: a run writes six at a time and starts no sample after 100 s (a written answer
   started then stops by 180 s more, inside the 300 s function), so roughly 10 to 20 samples a run.
   Called with `?paid=1` every 2 to 3 minutes, a new run starts as each one finishes (about every
-  5 minutes), so the batch should take an hour or two. Each path's own budget line (daily caps on
-  `api.research.hamilton` and the others) can slow it; a refused line is skipped for that run and
-  tried again the next.
+  5 minutes), so the batch should take an hour or two. The batch's calls fail closed until the
+  `agent:hamilton_replay` row exists: the migration must run (it needs James's yes) before the
+  batch can write anything. The global line ($500 a month, about $380 spent this month) leaves room
+  for the batch, but the batch shares it with every other agent.
 - The worst-case ceilings are far above the daily eval's real costs, so near the end the cap stops
   a written answer once the charge passes $37.12; cheaper paths may still fill. A killed sample
   keeps its full ceiling for good.

@@ -121,6 +121,8 @@ const live: LiveReader = async (_id, research) => {
 function writers(book: ReturnType<typeof ledger>, cost: Partial<Record<PaidPath, number>> = {}) {
   const calls = { memo: 0, simulate: 0, written_answer: 0, report: 0 } as Record<PaidPath, number>;
   const operations: string[] = [];
+  /** The agent each tracked call books under: "own" when no ledger moves it off its path's line. */
+  const ledgers: string[] = [];
   const client: MemoClient = {
     async create({ system, user }) {
       if (system.includes("THIS ANSWER: a short read of one price")) {
@@ -137,6 +139,7 @@ function writers(book: ReturnType<typeof ledger>, cost: Partial<Record<PaidPath,
   const written: WrittenAnswerWriter = async (input) => {
     calls.written_answer += 1;
     operations.push(input.tracking?.operation ?? "");
+    ledgers.push(input.tracking?.ledger?.agent ?? "own");
     book.state.usage.push({ subject_key: input.tracking?.subjectKey ?? null, agent_run_id: RUN, microusd: cost.written_answer ?? 0 });
     const text = "Your overdraft fee is $32.";
     const toolResults = [{ toolName: "searchFees", output: { fee_category: "overdraft", amount: 32 } }];
@@ -146,11 +149,12 @@ function writers(book: ReturnType<typeof ledger>, cost: Partial<Record<PaidPath,
   const writeReport: ReportAnswerWriter = async (_prepared, tracking) => {
     calls.report += 1;
     operations.push(tracking.operation ?? "");
+    ledgers.push(tracking.ledger?.agent ?? "own");
     book.state.usage.push({ subject_key: tracking.subjectKey ?? null, agent_run_id: RUN, microusd: cost.report ?? 0 });
     const narrative = "HEADLINE: the overdraft fee sits near peers.";
     return { status: "written", narrative, passed: true, problems: [], gateShadow: () => reportSectionGateShadow(narrative, {}, "shown", tracking.gateIdentity!) };
   };
-  return { calls, operations, client, written, writeReport };
+  return { calls, operations, ledgers, client, written, writeReport };
 }
 
 const prepared: PreparedReportAnswer = {
@@ -211,6 +215,9 @@ describe("the one-off paid gate replay batch (#1077)", () => {
     expect(w.operations).toContain("written_answer_replay");
     expect(w.operations).toContain("report_answer_replay");
     expect(w.operations).not.toContain(PAID_EVAL_WRITTEN_OPERATION);
+    // Every batch call books as hamilton_replay, off the live readers' lines.
+    expect(w.ledgers.length).toBeGreaterThan(0);
+    expect(w.ledgers.every((agent) => agent === "hamilton_replay")).toBe(true);
     expect(summary.shadows?.bySurface.written_answer?.total).toBe(w.calls.written_answer);
     const line = paidReplaySummaryLine(summary);
     expect(line).toContain(`of ${PAID_REPLAY_MAX_SAMPLES} samples reserved`);
@@ -504,5 +511,7 @@ describe("the batch stays apart from the daily eval and the free replay", () => 
     expect(records.every((r) => r.origin === "paid_eval")).toBe(true);
     expect(w.operations).toContain(PAID_EVAL_WRITTEN_OPERATION);
     expect(w.operations.some((op) => op.endsWith("_replay"))).toBe(false);
+    // The daily eval keeps its paths' own budget lines.
+    expect(w.ledgers.every((agent) => agent === "own")).toBe(true);
   });
 });

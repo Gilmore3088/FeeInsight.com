@@ -196,7 +196,9 @@ Hamilton supports the decision; it does not make it.
   usage row completed with a cost, else its full ceiling. `?paid=1` runs it at once (returning a
   running batch run rather than starting another), and the hourly gate replay call continues it once
   the day's free plan is complete; once the batch is complete or capped, no run starts again. A new batch needs a
-  new `PAID_REPLAY_BATCH_ID` and James's yes.
+  new `PAID_REPLAY_BATCH_ID` and James's yes. Its calls are budgeted and recorded as agent
+  `hamilton_replay` with no route (`agent:hamilton_replay`, $40, migration 20270110000078), never
+  on the live readers' route lines or `agent:hamilton`.
 - The paid answer eval (`hamilton/paid-answer-eval.ts`, provider step `hamilton-paid-answer-eval`,
   cron once a day, `/api/admin/crew/answer-eval-paid`, #1079) writes at most five memos a day
   (James, 2026-10-15) over free answers that carry a storyline: Pro readers' questions first, then

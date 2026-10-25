@@ -21,8 +21,9 @@
  * reader's, the daily eval's or the free replay's.
  *
  * Capped like the daily eval: a provider step (`hamilton-paid-gate-replay`, in
- * `PROVIDER_STEP_KEYS`), so the global provider stop and the budget policies hold it, and each
- * call still passes its own path's budget line. Each sample is reserved before its first model call
+ * `PROVIDER_STEP_KEYS`), so the global provider stop holds it. Its calls are budgeted and recorded
+ * as agent `hamilton_replay` with no route (`PAID_REPLAY_LEDGER`), so each passes the global line
+ * and the batch's own `agent:hamilton_replay` line, never the live readers' route lines. Each sample is reserved before its first model call
  * by one `paid_replay.sample_reserved` run event, written by a conditional insert under the batch's
  * advisory lock, outside the step's transaction: it refuses a sample key already reserved, a path
  * at its share, the 201st sample, a ninth sample in flight across every run, and a sample whose
@@ -37,7 +38,7 @@
 
 import { sql } from "@/lib/data-store/connection";
 import { getHamiltonModel } from "@/lib/ai-provider";
-import { estimateAnthropicCostMicrousd } from "@/lib/ai-provider-usage";
+import { estimateAnthropicCostMicrousd, ledgerFields, type ProviderLedger } from "@/lib/ai-provider-usage";
 import type { SqlTag } from "@/lib/agents/hamilton/studies/common";
 import {
   liveCatalogReader, liveFilingReader, type FilingReader, type LiveReader,
@@ -101,10 +102,13 @@ export const PAID_REPLAY_CEILING_MICROUSD: Record<PaidPath, number> = { written_
 export const PAID_REPLAY_OPERATIONS: Record<PaidPath, string> = {
   memo: "storyline_memo_replay", simulate: "simulate_fee_change_replay", written_answer: "written_answer_replay", report: "report_answer_replay",
 };
-/** Each path's budget line, checked before a sample is reserved so a spent line does not use up reservations. */
-const PATH_ROUTE: Record<PaidPath, string> = {
-  memo: "api.hamilton.ask.memo", simulate: "api.hamilton.simulate", written_answer: "api.research.hamilton", report: "api.reports.generate",
-};
+/**
+ * Who every batch call is budgeted and recorded as: agent `hamilton_replay`, no route. Its calls
+ * check only `global:provider:default` and `agent:hamilton_replay` (migration
+ * 20270110000078_hamilton_replay_budget.sql), never the live readers' route lines or
+ * `agent:hamilton`, so the batch neither stalls on their $5 days nor uses them up.
+ */
+export const PAID_REPLAY_LEDGER: ProviderLedger = { agent: "hamilton_replay" };
 /** Every batch sample's subject key starts with this. */
 export const PAID_REPLAY_SUBJECT_PREFIX = `hamilton-replay-paid:${PAID_REPLAY_BATCH_ID}:`;
 /** A reservation with no done mark after this long was killed; it no longer counts in flight, but keeps its full ceiling. */
@@ -462,11 +466,19 @@ export interface PaidReplaySummary {
 /** A budget line's verdict before a sample is reserved: null when it allows the call, else why not. */
 export type PathPreflight = (path: PaidPath, agentRunId: number) => Promise<string | null>;
 
+/** The budget context of a batch call on `path`, as its tracked call books it (ledgerFields over PAID_REPLAY_LEDGER). */
+export function replayBudgetContext(path: PaidPath, agentRunId: number) {
+  return {
+    provider: "anthropic", model: getHamiltonModel(), operation: PAID_REPLAY_OPERATIONS[path], agentRunId,
+    // The ledger always applies to a batch call, so the path's own agent and route never do.
+    ...ledgerFields(PAID_REPLAY_LEDGER, { agent: PAID_REPLAY_LEDGER.agent, routeId: PAID_REPLAY_LEDGER.routeId ?? "" }),
+  };
+}
+
 const budgetPreflight: PathPreflight = async (path, agentRunId) => {
   const { assertProviderBudgetAllowed } = await import("@/lib/api-hardening/budget");
-  const decision = await assertProviderBudgetAllowed({
-    provider: "anthropic", model: "hamilton", agent: "hamilton", operation: PAID_REPLAY_OPERATIONS[path], routeId: PATH_ROUTE[path], agentRunId,
-  });
+  // The same keys the real call checks: the global line and the batch's own agent line, no route.
+  const decision = await assertProviderBudgetAllowed(replayBudgetContext(path, agentRunId));
   return decision.allowed ? null : (decision.message ?? decision.reasonCode ?? "blocked by the provider budget");
 };
 
@@ -649,7 +661,7 @@ export async function runPaidGateReplay({
 
   const write = (path: PaidPath, prepared: Prepared, sampleKey: string): Promise<PaidSampleResult> => {
     const subjectKey = subjectKeyFor(sampleKey);
-    const tag: SampleTag = { origin: "replay_paid", operation: PAID_REPLAY_OPERATIONS[path], shadowKey: subjectKey };
+    const tag: SampleTag = { origin: "replay_paid", operation: PAID_REPLAY_OPERATIONS[path], shadowKey: subjectKey, ledger: PAID_REPLAY_LEDGER };
     const { candidate, answered } = prepared;
     const shared = { subjectKey, agentRunId, recordShadow: deps.recordShadow, tag };
     if (path === "simulate" && prepared.simulate) return simulateUp(candidate, answered, prepared.simulate, deps.live, { ...shared, client: deps.client });

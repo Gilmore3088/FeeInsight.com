@@ -46,6 +46,7 @@ import {
 import { claimEvidenceFacts } from "./claim-evidence";
 import { gateAnswer, type GateFailureCode, type GateStatus } from "./output-gate";
 import { gateShadowRecord, type GateShadowCounts, type GateShadowRecord, type GateShadowTally, type ShadowOrigin } from "./output-gate-shadow";
+import type { ProviderLedger } from "@/lib/ai-provider-usage";
 import type { GateShadowContext } from "./output-gate-shadow-store";
 import { analyzeAnswerDecision } from "./analyze-answer-decision";
 import { HELD_ANSWER_MESSAGE } from "./answer-gate";
@@ -161,7 +162,12 @@ export interface SampleTag {
   operation: string;
   /** Kept with each shadow (its `replay_key`), so a batch's shadow names its sample. */
   shadowKey?: string;
+  /** Books every call under this agent and route instead of the path's own budget line. */
+  ledger?: ProviderLedger;
 }
+
+/** The tag's ledger, spread into a path's tracking; nothing for the daily eval. */
+const ledgerOf = (tag?: SampleTag) => (tag?.ledger ? { ledger: tag.ledger } : {});
 
 /**
  * Records each shadow verdict a sample produced as its own run, marked as the paid eval's
@@ -304,7 +310,7 @@ export async function writeUp(
     institutionId: candidate.institutionId,
     factEvidence: buildFeeResearchEvidence(answered.research),
     client: options.client,
-    tracking: { operation: options.tag?.operation ?? PAID_EVAL_OPERATION, subjectKey: options.subjectKey, agentRunId: options.agentRunId },
+    tracking: { operation: options.tag?.operation ?? PAID_EVAL_OPERATION, subjectKey: options.subjectKey, agentRunId: options.agentRunId, ...ledgerOf(options.tag) },
     onGateShadow: (compute) => { shadows.push(compute); },
   });
   await recordEvalShadows(shadows, options.recordShadow, candidate.institutionId, options.tag);
@@ -362,7 +368,7 @@ export async function simulateUp(
   const result = await writeSimulateRead(input, {
     client: options.client,
     institutionId: candidate.institutionId,
-    tracking: { operation: options.tag?.operation ?? PAID_EVAL_SIMULATE_OPERATION, subjectKey: options.subjectKey, agentRunId: options.agentRunId },
+    tracking: { operation: options.tag?.operation ?? PAID_EVAL_SIMULATE_OPERATION, subjectKey: options.subjectKey, agentRunId: options.agentRunId, ...ledgerOf(options.tag) },
     onGateShadow: (compute) => { shadows.push(compute); },
   });
   await recordEvalShadows(shadows, options.recordShadow, candidate.institutionId, options.tag);
@@ -475,7 +481,7 @@ export async function writtenUp(
     institutionId: candidate.institutionId,
     institutionName: answered.research.institutionName,
     question: candidate.question,
-    tracking: { operation: options.tag?.operation ?? PAID_EVAL_WRITTEN_OPERATION, subjectKey: options.subjectKey, agentRunId: options.agentRunId },
+    tracking: { operation: options.tag?.operation ?? PAID_EVAL_WRITTEN_OPERATION, subjectKey: options.subjectKey, agentRunId: options.agentRunId, ...ledgerOf(options.tag) },
   });
   if (result.status !== "written") {
     return { ...candidate, path: "written_answer", status: "unavailable", failures: [result.reason], correctness: null, figures: 0 };
@@ -540,7 +546,7 @@ export async function reportUp(
 ): Promise<PaidSampleResult> {
   const sample = { ...candidate, question: `Peer Benchmarking report answer page for ${prepared.institutionName}` };
   const result = await options.writeReport(prepared, {
-    operation: options.tag?.operation ?? PAID_EVAL_REPORT_OPERATION, subjectKey: options.subjectKey, agentRunId: options.agentRunId,
+    operation: options.tag?.operation ?? PAID_EVAL_REPORT_OPERATION, subjectKey: options.subjectKey, agentRunId: options.agentRunId, ...ledgerOf(options.tag),
     // The sampled institution is the reader's own and the report's subject, so the shadow's account rule can fire.
     gateIdentity: { researchInstitutionId: prepared.institutionId, accountInstitutionId: prepared.institutionId, accountInstitutionName: prepared.institutionName },
   });
