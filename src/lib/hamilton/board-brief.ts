@@ -158,15 +158,18 @@ function writtenSourceLine(fact: SavedClaimFact, names: ReadonlyMap<number, stri
   const figure = [category ?? metric ?? "Recorded figure", fact.kind === "derived" ? "calculated" : null].filter(Boolean).join(", ");
   const basis = fact.periodBasis ? PERIOD_BASIS_WORDS[fact.periodBasis] ?? null : null;
   const reportingDate = `reporting date ${fact.reportingDate ? readerAsOf(fact.reportingDate) : "not recorded"}`;
+  // The schedule the figure was read from, as saved with the claims (#1077 defect 6); absent on claims saved before.
+  const firstDocument = fact.kind === "observed" ? fact.source?.sourceDocumentIds[0] : undefined;
+  const document = firstDocument ? `source document ${firstDocument}` : null;
   // A calculated figure has no record or reporting date of its own: it names how it was made and the quarter it covers.
   const detail = fact.kind === "derived"
     ? ["Calculated by Hamilton", fact.reportingDate ? `for ${readerAsOf(fact.reportingDate)}` : null, basis]
     : filing
-      ? [financialMeasureDefinition(filing[1] as "fdic" | "ncua").publisher, `record ${id}`, reportingDate, basis]
+      ? [financialMeasureDefinition(filing[1] as "fdic" | "ncua").publisher, `record ${id}`, document, reportingDate, basis]
       : id.startsWith("fee:")
-        ? ["Published fee catalog", /^fee:published:\d+$/.test(id) ? `record ${id}` : `record ${id}; fee record not recorded`,
+        ? ["Published fee catalog", /^fee:published:\d+$/.test(id) ? `record ${id}` : `record ${id}; fee record not recorded`, document,
           fact.asOf ? `published ${readerAsOf(fact.asOf)}` : "date not recorded"]
-        : [`record ${id}`, reportingDate, basis];
+        : [`record ${id}`, document, reportingDate, basis];
   return { id, figure, institution, value: fact.value, unit: fact.unit, detail: detail.filter(Boolean).join(" · "), complete: fact.value !== null };
 }
 
