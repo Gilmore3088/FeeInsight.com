@@ -455,8 +455,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — Sign out on the account page and admin used Server Actions that a redeploy breaks. — [finding](findings/2026-10-09-sign-out-server-action.md) — Guard: `src/app/api/auth/logout/route.test.ts:30`
 - 2026-10-09 — A refunded report kept its paid status and its private link. — [finding](findings/2026-10-09-report-refund-not-handled.md) — Guard: `src/lib/stripe-webhook.test.ts` (+1 more)
 
-### Hamilton workspace (27)
+### Hamilton workspace (28)
 
+- 2026-10-25 — When a figure's clause names a fee, a record of another fee at the same price (not a sub-type in `FEE_SUB_TYPES`, not the wire direction named) no longer supports it; a clause that names no fee, or a record with no category, still binds on value and institution alone. — [finding](findings/2026-10-25-fee-binding-category.md) — Guard: `src/lib/hamilton/narrative-bound.test.ts`, `src/lib/hamilton/claim-golden-set.ts`
 - 2026-10-25 — A screen that hides text by matching it has still been sent that text: when the verdict comes before the reader sees anything, the server writes the shown text and a binding that matches it. — [finding](findings/2026-10-25-streamed-omitted-text.md) — Guard: `src/app/api/research/hamilton/route.streamed-omitted.test.ts`, `src/app/api/research/hamilton/route.omitted-payload.test.ts`, `src/lib/hamilton/written-answer-binding.test.ts`
 - 2026-10-25 — A save that takes an answer from the browser keeps only its prose; the binding, verdict and other evidence fields come only from the server, and a browser save gets a "not checked" verdict so readers fail closed. — [finding](findings/2026-10-25-fallback-save-trust.md) — Guard: `src/lib/hamilton/analyze-actions.test.ts`
 - 2026-10-25 — When a view leaves a sentence out, the reply leaves out its text too: send the reason and the count, and keep the text only where it is saved and read server side. — [finding](findings/2026-10-25-omitted-text-payload.md) — Guard: `src/app/api/research/hamilton/route.omitted-payload.test.ts`, `src/lib/hamilton/written-answer-binding.test.ts`

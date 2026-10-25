@@ -3,7 +3,8 @@
  * whole-answer cases for the four kinds of false claim the shared gate and the sentence binding
  * do not yet catch reliably: a wrong premise in the reader's question, causal language with no
  * causal evidence, a figure stated for the wrong period or basis, and one bank's figure stated as
- * another's. Controls beside them say what must still pass.
+ * another's; and a fifth, added after the Cycle A trace: one fee's price stated as another fee's
+ * (#1077 follow-up). Controls beside them say what must still pass.
  *
  * Each case records two things:
  * - `expect`: what today's code does with it, found by running it (`runClaimGoldenCase`). A
@@ -48,8 +49,11 @@ import type { AnswerToolEvidence } from "./written-answer-evidence";
  * .3: three controls from the PR #2571 review (mixed basis, prior quarter, "our data").
  * .4: step 3 (premise and causation) recorded its outcomes; the cases and targets are unchanged.
  * .5: PR #2572 review: premises only where the question asserts its figure; the broad causal rule is a shadow line.
+ * .7: a fifth group, wrong fee category (#1077 follow-up): three cases and two controls; earlier cases unchanged.
+ * .8: review of .7: seven more wrong-fee-category controls (correct sentences the first rule cut); earlier cases unchanged.
+ * .9: review of .8: five sibling-fee swaps (overdraft and NSF, maintenance and paper statement, cashier's check and stop payment, wire direction) must hold; earlier cases unchanged.
  */
-export const CLAIM_GOLDEN_SET_VERSION = "2026-10-25.6";
+export const CLAIM_GOLDEN_SET_VERSION = "2026-10-25.9";
 
 /** Who has checked these cases. Nobody has: change only with a link to an actual review record. */
 export const CLAIM_GOLDEN_REVIEW = {
@@ -87,12 +91,12 @@ const BANK_A = 9001;
 const BANK_B = 9002;
 export const CLAIM_GOLDEN_NAMES: ReadonlyMap<number, string> = new Map([[BANK_A, "Bank A"], [BANK_B, "Bank B"]]);
 
-export type ClaimGoldenGroup = "wrong_premise" | "causation" | "wrong_period_claim" | "swapped_bank";
+export type ClaimGoldenGroup = "wrong_premise" | "causation" | "wrong_period_claim" | "swapped_bank" | "wrong_fee_category";
 
-/** The design's claim reasons (claim-contract design 1.3) that these cases name. */
+/** The design's claim reasons (claim-contract design 1.3) that these cases name, plus `wrong_category` (#1077 follow-up). */
 export type ClaimGoldenReason =
   | "premise_contradicted" | "premise_unsupported" | "causal_unsupported" | "wrong_period" | "wrong_basis"
-  | "wrong_institution" | "account_as_subject" | "median_as_fee";
+  | "wrong_institution" | "account_as_subject" | "median_as_fee" | "wrong_category";
 
 /** Where today's code lets the case through. Each is one root cause a later step closes. */
 export type ClaimGoldenHole =
@@ -157,7 +161,7 @@ export type ClaimGoldenCase = ClaimGoldenBase & (
 
 // --- Synthetic tool reads, in the shapes getInstitution and queryFeeRevenueCorrelation return (research/tools.ts) ---
 
-interface FeeRow { recordId: number; category: string; name: string; amount: number }
+interface FeeRow { recordId: number; category: string | null; name: string; amount: number }
 
 function feeRows(institutionId: number, fees: readonly FeeRow[]) {
   return fees.map((fee) => ({
@@ -260,10 +264,11 @@ const A_FDIC = fdicProfile(BANK_A, { "2026-06-30": 1100 });
 const B_FDIC = fdicProfile(BANK_B, { "2026-06-30": 2300 });
 
 /** An evidence-bundle fee record, as buildFeeResearchEvidence makes one. */
-function bundleFee(recordId: number, institutionId: number, value: number, reportingDate: string): HamiltonEvidenceFact {
+function bundleFee(recordId: number, institutionId: number, value: number, reportingDate: string,
+  fee: { category: string; product: string } = { category: "overdraft", product: "Overdraft" }): HamiltonEvidenceFact {
   return {
     id: `fee:published:${recordId}`, kind: "observed",
-    scope: { institutionId, feeCategory: "overdraft", product: "Overdraft", reportingDate, effectiveDate: null, accountApplicability: "consumer" },
+    scope: { institutionId, feeCategory: fee.category, product: fee.product, reportingDate, effectiveDate: null, accountApplicability: "consumer" },
     value, unit: "usd", currency: "USD", frequency: "per item", conditions: null, status: "published",
     source: { label: "Published fee catalog", table: "published_fee_catalog", recordId, sourceDocumentIds: [recordId + 100],
       urls: [`https://fixture.invalid/${recordId}.pdf`], asOf: reportingDate, verificationEventId: null },
@@ -275,6 +280,28 @@ function bundle(...facts: HamiltonEvidenceFact[]): HamiltonEvidenceBundle {
 }
 
 const A_FEES = feeProfile(BANK_A, [A_OVERDRAFT_10]);
+/** Bank A's $10 overdraft and $30 stop-payment records: the stop-payment price is the only $30 on file. */
+const A_STOP_PAYMENT_30: FeeRow = { recordId: 4, category: "stop_payment", name: "Stop payment", amount: 30 };
+const A_TWO_FEES = feeProfile(BANK_A, [A_OVERDRAFT_10, A_STOP_PAYMENT_30]);
+/** A fuller schedule for the controls: each fee at its own price, several of them sub-types of the fee a reader names. */
+const A_SCHEDULE = feeProfile(BANK_A, [
+  { recordId: 5, category: "overdraft", name: "Overdraft", amount: 35 },
+  A_STOP_PAYMENT_30,
+  { recordId: 6, category: "continuous_od", name: "Extended overdraft", amount: 7 },
+  { recordId: 7, category: "wire_domestic_incoming", name: "Wire in", amount: 15 },
+  { recordId: 8, category: "od_daily_cap", name: "Daily cap", amount: 175 },
+  { recordId: 9, category: "od_protection_transfer", name: "Transfer from savings", amount: 10 },
+  { recordId: 10, category: "atm_international", name: "Foreign ATM use", amount: 5 },
+]);
+/** Bank A's $35 overdraft and $30 NSF records. */
+const A_OD_NSF = feeProfile(BANK_A, [
+  { recordId: 5, category: "overdraft", name: "Overdraft", amount: 35 },
+  { recordId: 12, category: "nsf", name: "Insufficient funds", amount: 30 },
+]);
+/** A $30 fee whose catalog row has no fee category. */
+const A_UNCATEGORISED = feeProfile(BANK_A, [{ recordId: 11, category: null, name: "Item fee", amount: 30 }]);
+const A_TWO_FEES_BUNDLE =bundle(bundleFee(1, BANK_A, 10, "2026-06-30"),
+  bundleFee(4, BANK_A, 30, "2026-06-30", { category: "stop_payment", product: "Stop payment" }));
 const B_FEES = feeProfile(BANK_B, [B_OVERDRAFT_35]);
 const W = "written_answer" as const;
 
@@ -440,6 +467,76 @@ export const CLAIM_GOLDEN_CASES: readonly ClaimGoldenCase[] = [
     description: "control: \"our data\" is Hamilton's, not the reader's bank, so the research subject's own quarter stands",
     text: "Based on our data, fee income was $1.4 million in Q2 2026.",
     expect: { status: "shown", problems: [], binding: { supported: 1, interpretation: 0, omitted: [], factIds: ["filing:ncua:9001:2026-03-31:service_charge_income:ytd", "filing:ncua:9001:2026-06-30:service_charge_income:ytd", "ncua-profile:9001:service_charge_income:2026-06-30:ytd_to_quarter"] } },
+    target: { status: "validated", reasons: [] }, todayWrong: false },
+
+  // Wrong fee category: one fee's price stated as another fee's (#1077 follow-up, Cycle A trace).
+  { id: "wc-written-fee", group: "wrong_fee_category", control: false, surface: W, reads: [A_TWO_FEES], institutionId: BANK_A,
+    description: "Bank A's $30 stop-payment price stated as its overdraft fee, whose record says $10",
+    text: "Bank A's overdraft fee is $30.",
+    expect: { status: "held", problems: [], binding: { supported: 0, interpretation: 0, omitted: ["wrong_category"], factIds: [] } },
+    target: { status: "held", reasons: ["wrong_category"] }, todayWrong: false },
+  { id: "wc-bundle-fee", group: "wrong_fee_category", control: false, surface: "evidence_bundle", bundle: A_TWO_FEES_BUNDLE,
+    description: "the same swap in an Ask bar or memo answer bound to its evidence bundle",
+    text: "Bank A's overdraft fee is $30.",
+    expect: { status: "held", problems: [], binding: { supported: 0, interpretation: 0, omitted: ["wrong_category"], factIds: [] } },
+    target: { status: "held", reasons: ["wrong_category"] }, todayWrong: false },
+  { id: "wc-two-fees-swapped", group: "wrong_fee_category", control: false, surface: W, reads: [A_TWO_FEES], institutionId: BANK_A,
+    description: "one sentence gives both of Bank A's fees, each at the other's price",
+    text: "Bank A's overdraft fee is $30 and its stop payment fee is $10.",
+    expect: { status: "held", problems: [], binding: { supported: 0, interpretation: 0, omitted: ["wrong_category"], factIds: [] } },
+    target: { status: "held", reasons: ["wrong_category"] }, todayWrong: false },
+  { id: "wc-two-fees-control", group: "wrong_fee_category", control: true, surface: W, reads: [A_TWO_FEES], institutionId: BANK_A,
+    description: "control: both of Bank A's fees, each at its own price, bind per clause",
+    text: "Bank A's overdraft fee is $10 and its stop payment fee is $30.",
+    expect: { status: "shown", problems: [], binding: { supported: 1, interpretation: 0, omitted: [], factIds: ["fee:published:1", "fee:published:4"] } },
+    target: { status: "validated", reasons: [] }, todayWrong: false },
+  { id: "wc-no-fee-named", group: "wrong_fee_category", control: true, surface: W, reads: [A_TWO_FEES], institutionId: BANK_A,
+    description: "control: a sentence that names no fee binds on value and institution, as before",
+    text: "Bank A charges $30 to stop a check.",
+    expect: { status: "shown", problems: [], binding: { supported: 1, interpretation: 0, omitted: [], factIds: ["fee:published:4"] } },
+    target: { status: "validated", reasons: [] }, todayWrong: false },
+  // Controls from the review of the first version, which cut each of these correct sentences.
+  ...([
+    ["wc-ctl-stop-a-check", "a second clause that names no fee binds on value, not on the first clause's fee",
+      "Bank A's overdraft fee is $35, and it charges $30 to stop a check.", [4, 5]],
+    ["wc-ctl-continuous-od", "a daily charge after an overdraft, with no fee named in its clause",
+      "Bank A's overdraft fee is $35, plus $7 a day after five days.", [5, 6]],
+    ["wc-ctl-incoming-wires", "a plural fee name (\"incoming wires\") the fee names do not match",
+      "Bank A charges $35 for overdrafts and $15 for incoming wires.", [5, 7]],
+    ["wc-ctl-daily-cap", "a daily overdraft cap is a sub-type of the overdraft and NSF fees named",
+      "Bank A caps overdraft and NSF fees at $175 a day.", [8]],
+    ["wc-ctl-od-transfer", "an overdraft transfer from savings is a sub-type of the overdraft named",
+      "Bank A charges $10 to cover an overdraft from savings.", [9]],
+    ["wc-ctl-atm-abroad", "an international ATM fee is a sub-type of the ATM fee named",
+      "Bank A's ATM fee abroad is $5.", [10]],
+  ] as const).map(([id, description, text, records]): ClaimGoldenCase => ({
+    id, group: "wrong_fee_category", control: true, surface: W, reads: [A_SCHEDULE], institutionId: BANK_A,
+    description: `control: ${description}`, text,
+    expect: { status: "shown", problems: [], binding: { supported: 1, interpretation: 0, omitted: [], factIds: records.map((r) => `fee:published:${r}`) } },
+    target: { status: "validated", reasons: [] }, todayWrong: false,
+  })),
+  // Swaps between sibling fees, which the fee-family rule let through (review of 2026-10-25.8).
+  ...([
+    ["wc-od-at-nsf-price", "Bank A's $30 NSF price stated as its overdraft fee, whose record says $35",
+      "Our overdraft fee is $30.", A_OD_NSF],
+    ["wc-od-nsf-reversed", "Bank A's overdraft and NSF fees, each at the other's price",
+      "Bank A's overdraft fee is $30 and its NSF fee is $35.", A_OD_NSF],
+    ["wc-maintenance-at-statement", "Bank A's $2 paper-statement price stated as its monthly maintenance fee",
+      "Bank A's monthly maintenance fee is $2.", feeProfile(BANK_A, [{ recordId: 13, category: "paper_statement", name: "Paper statement", amount: 2 }])],
+    ["wc-cashiers-at-stop", "Bank A's $30 stop-payment price stated as its cashier's check fee",
+      "Bank A's cashier's check fee is $30.", A_TWO_FEES],
+    ["wc-wire-direction", "Bank A's $15 incoming domestic wire price stated as its outgoing international wire fee",
+      "Bank A's outgoing international wire fee is $15.", feeProfile(BANK_A, [{ recordId: 14, category: "wire_domestic_incoming", name: "Wire in", amount: 15 }])],
+  ] as const).map(([id, description, text, read]): ClaimGoldenCase => ({
+    id, group: "wrong_fee_category", control: false, surface: W, reads: [read], institutionId: BANK_A, accountInstitutionId: BANK_A,
+    description, text,
+    expect: { status: "held", problems: [], binding: { supported: 0, interpretation: 0, omitted: ["wrong_category"], factIds: [] } },
+    target: { status: "held", reasons: ["wrong_category"] }, todayWrong: false,
+  })),
+  { id: "wc-ctl-no-category", group: "wrong_fee_category", control: true, surface: W, reads: [A_UNCATEGORISED], institutionId: BANK_A,
+    description: "control: a fee record with no category binds on value and institution, as before",
+    text: "Bank A's overdraft fee is $30.",
+    expect: { status: "shown", problems: [], binding: { supported: 1, interpretation: 0, omitted: [], factIds: ["fee:published:11"] } },
     target: { status: "validated", reasons: [] }, todayWrong: false },
 ];
 

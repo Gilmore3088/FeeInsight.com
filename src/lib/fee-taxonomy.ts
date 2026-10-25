@@ -93,6 +93,18 @@ export const FEE_FAMILIES: Record<string, string[]> = {
   ],
 };
 
+/**
+ * Fee types a reader may name by a broader fee: "overdraft" covers an extended overdraft charge,
+ * an overdraft transfer and the daily cap; "ATM" covers an ATM fee abroad. Narrower than a family:
+ * overdraft and NSF are different fees, and so are two wire directions (a wire's direction words
+ * decide its sub-type; Hamilton's sentence binding, narrative-bound.ts).
+ */
+export const FEE_SUB_TYPES: Readonly<Record<string, readonly string[]>> = {
+  overdraft: ["continuous_od", "od_protection_transfer", "od_daily_cap"],
+  nsf: ["od_daily_cap"],
+  atm_non_network: ["atm_international", "card_foreign_txn"],
+};
+
 export const DISPLAY_NAMES: Record<string, string> = {
   // Account Maintenance
   monthly_maintenance: "Monthly Maintenance",
