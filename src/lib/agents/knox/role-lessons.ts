@@ -506,4 +506,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-1443-parenthetical-is-not-a-cutoff",
+    agent: "knox",
+    stage: "extract",
+    lesson: "A closed parenthetical that ends a fee's name qualifies the fee; it is not the sentence the name was cut from. \"ACH Return Item (fee is per item)\" and \"Notary fee (this service is for members only)\" are full names, so a verb, a pronoun or an \"if\"/\"when\" inside that parenthetical never makes the name cut off. Judge a cut-off name by the words outside it. Three things still mark a cut: an unclosed \"(\" (\"Perks Checking (monthly service charge if\"), a parenthetical that opens the name (another column's cell glued on), and words running on after the \")\" (the line went past the name and may be the sentence itself).",
+    why: "The cut-off test read every word of the name, parentheticals included, so the cut-off hold refused real fees for the words of their own qualifier. A hand read of 35 held names on Oct 15 found about 21 real fee names with a parenthetical qualifier and 13 true fragments. On Oct 25, 4,584 verified rows were held as cut off; 984 of them carry no cut-off shape once the closing qualifier is read as one.",
+    evidence: { issues: [1443], prs: [2589], files: ["src/lib/agents/knox/cutoff-shape.ts", "src/lib/agents/knox/cutoff-shape.test.ts", "src/lib/agents/knox/specialists.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];
