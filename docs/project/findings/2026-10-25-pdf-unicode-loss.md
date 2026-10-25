@@ -155,7 +155,7 @@ review the complete owner-query backlog and rollout before production deployment
 5. **Authorize and execute the concrete data diff separately.** Verify the bank's
    currently effective schedule before publishing; the exact archived 2024 Reliance
    PDF proves this incident, not today's effective pricing. Use current semantic
-   tables and normal Rosetta -> Knox -> Darwin -> Gutenberg run-ledger boundaries,
+   tables and normal Rosetta -> Knox -> Darwin -> Hamilton run-ledger boundaries,
    source checks and witness capture, with document/text/source-hash rechecks at
    write time so a stale manifest cannot overwrite a newer good read. Do not delete
    prior raw, verified or published evidence. A corrected category/name can have a
