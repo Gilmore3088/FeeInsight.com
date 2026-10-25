@@ -2,12 +2,15 @@
  * A competitor fee change alert drawn as a report exhibit (src/lib/report-design/README.md):
  * label, a headline that states the change, a table of the competitor's old and new price
  * beside the bank's own, and a source line. It reports the change; it never recommends a price.
- * Server component.
+ *
+ * Under it, the alert's baseline (#1898): the price we had on file before and the one that
+ * replaced it, each with the schedule edition it came from and the day it reached our records,
+ * so the reader can see what we knew and when. Server component.
  */
 
 import { Exhibit, ReportDesign } from "@/components/report-design";
 import { getDisplayName } from "@/lib/fee-taxonomy";
-import type { CompetitorChangeDetail } from "@/lib/hamilton/competitor-alert-detail";
+import type { BaselineSideDetail, CompetitorChangeDetail } from "@/lib/hamilton/competitor-alert-detail";
 
 function money(value: number): string {
   return `$${value.toFixed(2)}`;
@@ -25,6 +28,27 @@ function formatDate(value: string | null): string | null {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 }
 
+function BaselineRow({ label, side }: { label: string; side: BaselineSideDetail }) {
+  const edition = formatDate(side.edition);
+  const schedule = edition ? `Effective ${edition}` : "No date stated";
+  return (
+    <tr>
+      <th scope="row">{label}</th>
+      <td className="num">{money(side.amount)}</td>
+      <td>
+        {side.scheduleUrl ? (
+          <a href={side.scheduleUrl} rel="noopener noreferrer" target="_blank">
+            {schedule}
+          </a>
+        ) : (
+          schedule
+        )}
+      </td>
+      <td>{formatDate(side.readOn) ?? "Not recorded"}</td>
+    </tr>
+  );
+}
+
 export function CompetitorAlertExhibit({
   signalId,
   title,
@@ -40,7 +64,10 @@ export function CompetitorAlertExhibit({
   const source =
     `Source: ${competitor}'s published fee schedule` +
     (date ? `, ${date}` : "") +
-    ". Verified, then held for a 12-hour second look before this alert.";
+    ". Verified, then held for a 12-hour second look before this alert." +
+    (detail.baseline
+      ? " A schedule older than the one we had, or a correction to our own reading, is never reported as a change."
+      : "");
 
   return (
     <ReportDesign>
@@ -79,6 +106,31 @@ export function CompetitorAlertExhibit({
             </tbody>
           </table>
         </div>
+        {detail.baseline ? (
+          <div className="rd-table-wrap">
+            <table className="rd-table" aria-label={`What we knew and when: ${competitor}`}>
+              <caption className="rd-sub" style={{ captionSide: "top", textAlign: "left" }}>
+                What we knew and when
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">
+                    <span className="sr-only">Reading</span>
+                  </th>
+                  <th scope="col" className="num">
+                    Price
+                  </th>
+                  <th scope="col">Schedule</th>
+                  <th scope="col">In our records</th>
+                </tr>
+              </thead>
+              <tbody>
+                <BaselineRow label="Before" side={detail.baseline.before} />
+                <BaselineRow label="Now" side={detail.baseline.after} />
+              </tbody>
+            </table>
+          </div>
+        ) : null}
       </Exhibit>
     </ReportDesign>
   );

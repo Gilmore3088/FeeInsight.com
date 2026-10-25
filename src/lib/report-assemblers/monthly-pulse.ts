@@ -16,7 +16,7 @@ import { createHash } from "crypto";
 import { getSql } from "@/lib/data-store/connection";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { getDisplayName } from "@/lib/fee-taxonomy";
-import { sameSchedule } from "@/lib/agents/hamilton/schedule-edition";
+import { effectiveDate, sameSchedule } from "@/lib/agents/hamilton/schedule-edition";
 import type { DataManifest } from "@/lib/report-engine/types";
 
 export const PULSE_WINDOW_DAYS = 30;
@@ -76,6 +76,9 @@ export interface RecordedChangeRow {
   new_document_text: string | null;
   /** Text of the schedule the old price was read from. */
   old_document_text: string | null;
+  /** source_documents ids behind the two prices, when the reader loaded them (#1898). */
+  old_document_id?: number | string | null;
+  new_document_id?: number | string | null;
 }
 
 // ─── Pure rule ────────────────────────────────────────────────────────────────
@@ -116,6 +119,39 @@ export function sameEdition(a: string | null | undefined, b: string | null | und
  * it a change when the earlier schedule already stated the new price for that fee.
  */
 export function confirmFeeChange(row: RecordedChangeRow): PulseChange | null {
+  return judgeFeeChange(row).change;
+}
+
+/**
+ * Why a recorded change is not one the bank made (#1898), when the reason is what we knew and
+ * when rather than the reading itself:
+ *   - `correction`: both prices come from one stored document, so the later price is our
+ *     corrected reading of the same schedule, not a new price;
+ *   - `older_edition`: the new price's schedule states an earlier edition than the old price's,
+ *     so it is an old schedule we found late, not the bank's current pricing;
+ *   - `edition_unknown`: the old price's schedule states its edition and the new one states
+ *     none, so nothing shows the new one is the newer schedule.
+ * Every other refusal is `not_confirmed`.
+ */
+export type FeeChangeHold = "correction" | "older_edition" | "edition_unknown" | "not_confirmed";
+
+export type FeeChangeVerdict = { change: PulseChange; hold: null } | { change: null; hold: FeeChangeHold };
+
+/** Pure: the change the bank made, or why this recorded change is not one. */
+export function judgeFeeChange(row: RecordedChangeRow): FeeChangeVerdict {
+  const hold = (reason: FeeChangeHold): FeeChangeVerdict => ({ change: null, hold: reason });
+  if (row.old_document_id != null && row.new_document_id != null && String(row.old_document_id) === String(row.new_document_id)) {
+    return hold("correction");
+  }
+  const oldEdition = effectiveDate(row.old_document_text);
+  const newEdition = effectiveDate(row.new_document_text);
+  if (oldEdition && newEdition && newEdition < oldEdition) return hold("older_edition");
+  if (oldEdition && row.new_document_text && !newEdition) return hold("edition_unknown");
+  const change = confirmStatedChange(row);
+  return change ? { change, hold: null } : hold("not_confirmed");
+}
+
+function confirmStatedChange(row: RecordedChangeRow): PulseChange | null {
   const oldAmount = row.old_amount == null ? null : Number(row.old_amount);
   const newAmount = row.new_amount == null ? null : Number(row.new_amount);
   if (oldAmount == null || newAmount == null || !Number.isFinite(oldAmount) || !Number.isFinite(newAmount)) return null;

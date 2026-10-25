@@ -101,6 +101,53 @@ describe("change helpers", () => {
     expect(html).toContain("Lone Star CU&#x27;s published fee schedule, Oct 6, 2026");
     expect(html).toContain('href="https://lonestar.example/fees.pdf"');
     expect(html).not.toMatch(/cheapest|cheaper|dearest|\u2014/);
+    // An alert raised before its baseline was recorded shows no baseline table.
+    expect(html).not.toContain("What we knew and when");
+  });
+
+  it("shows what we knew and when: each price with its schedule edition and the day it reached our records (#1898)", () => {
+    const competitor: SignalEntry = {
+      ...signal,
+      id: "signal-10",
+      signalType: "hamilton_competitor_fee_change",
+      severity: "medium",
+      title: "Lone Star CU raised its overdraft fee from $30.00 to $35.00",
+      body: "Home Bank charges $32.00, $3.00 lower.",
+      competitorChange: parseCompetitorChangeDetail({
+        competitor_name: "Lone Star CU",
+        bank_name: "Home Bank",
+        canonical_fee_key: "overdraft",
+        previous_amount: 30,
+        new_amount: 35,
+        own_amount: 32,
+        changed_at: "2026-10-06",
+        schedule_url: "https://lonestar.example/fees-2026.pdf",
+        baseline: {
+          before: { amount: 30, schedule_url: "https://lonestar.example/fees-2025.pdf", edition: "2025-01-01", read_on: "2026-10-02" },
+          after: { amount: 35, schedule_url: "https://lonestar.example/fees-2026.pdf", edition: null, read_on: "2026-10-06" },
+        },
+      }),
+    };
+    const html = renderToStaticMarkup(<SignalFeed signals={[competitor]} />);
+
+    expect(html).toContain("What we knew and when");
+    expect(html).toContain('href="https://lonestar.example/fees-2025.pdf"');
+    expect(html).toContain("Effective Jan 1, 2025");
+    expect(html).toContain("Oct 2, 2026");
+    expect(html).toContain("No date stated");
+    expect(html).toContain("A schedule older than the one we had, or a correction to our own reading, is never reported as a change.");
+    expect(html).not.toMatch(/\u2014|Knox|Darwin|Magellan|Rosetta/);
+  });
+
+  it("drops a baseline link that is not a web address", () => {
+    const detail = parseCompetitorChangeDetail({
+      canonical_fee_key: "overdraft",
+      previous_amount: 30,
+      new_amount: 35,
+      baseline: { before: { amount: 30, schedule_url: "javascript:alert(1)" }, after: { amount: 35 } },
+    });
+    expect(detail?.baseline?.before).toEqual({ amount: 30, scheduleUrl: null, edition: null, readOn: null });
+    expect(parseCompetitorChangeDetail({ canonical_fee_key: "overdraft", previous_amount: 30, new_amount: 35, baseline: { before: { amount: 30 } } })?.baseline).toBeNull();
   });
 
   it("falls back to the plain card when a competitor row has no prices", () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { confirmFeeChange, sameEdition, type RecordedChangeRow } from "./monthly-pulse";
+import { confirmFeeChange, judgeFeeChange, sameEdition, type RecordedChangeRow } from "./monthly-pulse";
 
 // Lines copied from stored schedule texts (agent_source_texts), Oct 2026.
 const NH_OLD = "Account Inquiry/Research/Reconciliation | $25\nTemporary Checks | $2 for 4";
@@ -119,5 +119,64 @@ describe("renderMonthlyPulseReport", () => {
     expect(html).toContain("New Hampshire Federal Credit Union (NH, credit union)");
     expect(html).toContain("7 recorded changes were left out");
     expect(html).toContain("1,935 institutions of 2,669 were added");
+  });
+});
+
+describe("judgeFeeChange: what we knew and when (#1898)", () => {
+  // NHFCU's two editions (prod docs 13141 and 16271): Oct 1, 2024 then Aug 15, 2026, one page.
+  const EDITION_2024 = `Fee Schedule Effective October 1, 2024\n${NH_OLD}`;
+  const EDITION_2026 = `Fee Schedule Effective August 15, 2026\n${NH_NEW}`;
+
+  it("confirms the newer edition replacing the older one", () => {
+    const verdict = judgeFeeChange(row({ old_document_text: EDITION_2024, new_document_text: EDITION_2026, old_document_id: 13141, new_document_id: 16271 }));
+    expect(verdict.hold).toBeNull();
+    expect(verdict.change).toMatchObject({ old_amount: 25, new_amount: 50 });
+  });
+
+  it("holds an older schedule found late: the 2024 copy read after the 2026 one is not a price cut", () => {
+    const late = row({
+      old_amount: 50,
+      new_amount: 25,
+      old_document_text: EDITION_2026,
+      new_document_text: EDITION_2024,
+      old_document_id: 16271,
+      new_document_id: 13141,
+    });
+    expect(judgeFeeChange(late)).toEqual({ change: null, hold: "older_edition" });
+    expect(confirmFeeChange(late)).toBeNull();
+  });
+
+  it("holds a corrected reading of one document", () => {
+    expect(judgeFeeChange(row({ old_document_id: 16271, new_document_id: "16271" }))).toEqual({ change: null, hold: "correction" });
+  });
+
+  it("holds an undated new schedule against a dated old one", () => {
+    expect(judgeFeeChange(row({ old_document_text: EDITION_2024, new_document_text: NH_NEW }))).toEqual({
+      change: null,
+      hold: "edition_unknown",
+    });
+  });
+
+  it("still confirms a page edited under the same edition date (Safe 1, prod docs 20742 and 32073)", () => {
+    const head = "Fee Schedule Effective as of October 1, 2026\n";
+    const verdict = judgeFeeChange(
+      row({
+        fee_key: "skip_payment",
+        fee_name: "Consumer Loan Extension/Skip Payment",
+        old_fee_name: "Consumer Loan Extension/Skip Payment",
+        old_amount: 34,
+        new_amount: 25,
+        old_document_text: `${head}Consumer Loan Extension/Skip Payment | $34.00\nStop Payment Order | $25.00`,
+        new_document_text: `${head}Consumer Loan Extension/Skip Payment | $25.00\nStop Payment Order | $25.00`,
+        old_document_id: 20742,
+        new_document_id: 32073,
+      }),
+    );
+    expect(verdict.hold).toBeNull();
+    expect(verdict.change).toMatchObject({ old_amount: 34, new_amount: 25, direction: "down" });
+  });
+
+  it("names every other refusal not_confirmed", () => {
+    expect(judgeFeeChange(row({ old_fee_name: "Express Checking Plus Monthly Fee" })).hold).toBe("not_confirmed");
   });
 });
