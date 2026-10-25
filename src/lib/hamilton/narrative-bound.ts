@@ -262,6 +262,8 @@ function statedQuarters(text: string, years: readonly string[]): string[] {
     if (year) out.add(`${year}-Q${m[1]}`);
   }
   for (const m of text.matchAll(/\b(20\d{2})[\s-]?Q([1-4])\b/gi)) out.add(`${m[1]}-Q${m[2]}`);
+  // "2Q26": the quarter, then the year's last two digits.
+  for (const m of text.matchAll(/\b([1-4])Q(\d{2})\b/g)) out.add(`20${m[2]}-Q${m[1]}`);
   for (const m of text.matchAll(/\b(first|second|third|fourth)[\s-]quarter(?:\s+of)?(?:\s+(20\d{2}))?/gi)) {
     const year = m[2] ?? only;
     if (year) out.add(`${year}-Q${ORDINAL_QUARTER[m[1].toLowerCase()]}`);
@@ -283,14 +285,43 @@ function quarterOf(record: EvidenceRecord): string | null {
   return `${date.slice(0, 4)}-Q${Math.ceil(Number(date.slice(5, 7)) / 3)}`;
 }
 
-/** Year to date when the sentence says so; a standalone quarter when it says quarter and not year to date. */
+/** Year to date when the text says so; a standalone quarter when it says quarter and not year to date. */
 function statedBasis(text: string): "ytd" | "standalone_quarter" | null {
   if (YTD_WORDS.test(text)) return "ytd";
   return QUARTER_WORDS.test(text) ? "standalone_quarter" : null;
 }
 
-/** "Your", "our" or "we": the reader's own institution, in a sentence that names none. */
-const PERSONAL = /\b(?:your|yours|our|ours|we|us)\b/i;
+/** A period named relative to the sentence's own quarter: "the prior quarter" is one back, "a year earlier" four. */
+const PRIOR_QUARTER = /\b(?:prior|previous|preceding|last)\s+quarter\b|\bquarter\s+before\b/i;
+const YEAR_EARLIER = /\b(?:a|one)\s+year\s+(?:earlier|ago|before)\b|\bsame\s+quarter\s+(?:of\s+)?(?:last|a|the\s+prior|the\s+previous|the\s+preceding)\s+year\b|\b(?:prior|previous)[- ]year\b|\byear[- ](?:earlier|ago)\b/i;
+
+function shiftQuarter(quarter: string, back: number): string {
+  const index = Number(quarter.slice(0, 4)) * 4 + Number(quarter.slice(6)) - 1 - back;
+  return `${Math.floor(index / 4)}-Q${(index % 4) + 1}`;
+}
+
+/** Words that split two figures' clauses: the part before belongs to the first figure, the rest to the next. */
+const CLAUSE_BREAK = /,|;|\s(?:and|but|while|whereas|versus|vs\.?|compared\s+(?:with|to)|against|up\s+from|down\s+from|from)\s/i;
+
+/**
+ * The clause around each figure: its own text, with the words between it and its neighbours split
+ * at the first clause break (or halfway). A one-figure sentence is the whole sentence.
+ */
+function figureClauses(text: string, figures: readonly NarrativeFigure[]): string[] {
+  if (figures.length <= 1) return figures.map(() => text);
+  const cuts: number[] = [0];
+  for (let i = 1; i < figures.length; i += 1) {
+    const from = figures[i - 1].index + figures[i - 1].raw.length;
+    const gap = text.slice(from, figures[i].index);
+    const at = CLAUSE_BREAK.exec(gap);
+    cuts.push(from + (at ? at.index : Math.floor(gap.length / 2)));
+  }
+  cuts.push(text.length);
+  return figures.map((_, i) => text.slice(cuts[i], cuts[i + 1]));
+}
+
+/** Second person only: "your" is the reader's own institution. "Our" and "we" are Hamilton's, and "US" is the country. */
+const PERSONAL = /\b(?:you|your|yours)\b/i;
 
 /**
  * How the sentence names a figure: "median" when a median word sits within 40 characters of it,
@@ -408,23 +439,46 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
     }
     const years = [...text.matchAll(YEAR)].map((m) => m[1]);
     const quarters = statedQuarters(text, years);
-    const basis = statedBasis(text);
+    const clauses = figureClauses(text, figures);
+
+    /**
+     * The period and basis a figure is stated for, read from its own clause so one sentence can give
+     * a quarter and a year-to-date total, or this quarter and the prior one. A clause that names no
+     * period takes the sentence's; "the prior quarter" or "a year earlier" counts back from the
+     * sentence's quarter, and with no quarter to count from the period is unknown (null).
+     */
+    const periodFor = (figure: NarrativeFigure) => {
+      const clause = clauses[figures.indexOf(figure)] ?? text;
+      const basis = clauses.length > 1 ? statedBasis(clause) : statedBasis(text);
+      const back = PRIOR_QUARTER.test(clause) ? 1 : YEAR_EARLIER.test(clause) ? 4 : 0;
+      const clauseYears = [...clause.matchAll(YEAR)].map((m) => m[1]);
+      const clauseQuarters = statedQuarters(clause, clauseYears.length > 0 ? clauseYears : years);
+      // A quarter the clause names outright wins over "the last quarter" or "a year earlier" in it.
+      if (clauseQuarters.length > 0) return { quarters: clauseQuarters, years: clauseYears, basis };
+      if (back > 0) return quarters.length === 1 ? { quarters: [shiftQuarter(quarters[0], back)], years: [] as string[], basis } : null;
+      if (clauseYears.length > 0) return { quarters: [] as string[], years: clauseYears, basis };
+      return { quarters, years, basis };
+    };
 
     /**
      * Whether a filing figure fits the sentence: "skip" when the sentence does not name its metric
      * or its owner is unknown, an omit reason when its institution, quarter, year or basis is not
      * the one the sentence states, else null.
      */
-    const claimFit = (record: EvidenceRecord, owner: number | null): OmitReason | "skip" | null => {
+    const claimFit = (record: EvidenceRecord, owner: number | null, figure: NarrativeFigure): OmitReason | "skip" | null => {
       if (!metricNamed(text, record.scope.metric as string)) return "skip";
       if (owner !== null) {
         if (claimSubjects === null) return "skip";
         if (claimSubjects.length > 0 && !claimSubjects.includes(owner)) return personal ? "account_as_subject" : "wrong_institution";
       }
+      const period = periodFor(figure);
+      if (!period) return "skip";
       const quarter = quarterOf(record);
-      if (quarters.length > 0 ? !quarter || !quarters.includes(quarter) : years.length > 0 && !years.includes(String(record.scope.reportingDate).slice(0, 4))) {
+      if (period.quarters.length > 0 ? !quarter || !period.quarters.includes(quarter)
+        : period.years.length > 0 && !period.years.includes(String(record.scope.reportingDate).slice(0, 4))) {
         return "wrong_period";
       }
+      const basis = period.basis;
       // A first quarter's year-to-date total is that quarter, so only later quarters can be the wrong basis.
       const firstQuarter = quarter?.endsWith("Q1") ?? false;
       if (basis && !firstQuarter && (record.scope.periodBasis === "ytd" || record.scope.periodBasis === "standalone_quarter")
@@ -459,7 +513,7 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
         // A dollar figure for a rate fee contradicts it; a percent that happens to equal a dollar fee is a coincidence.
         if (fact.unit !== unit) { if (fact.unit === "percent") contradict("wrong_unit"); continue; }
         if (claimRecord(fact)) {
-          const fit = claimFit(fact, fact.scope.institutionId);
+          const fit = claimFit(fact, fact.scope.institutionId, figure);
           if (fit === "skip") continue;
           if (fit) { contradict(fit, true); continue; }
           if (!claimBindingMatches(fact, { unit, value: figure.value })) continue;
@@ -481,7 +535,7 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
         const kind = derived.derivation.kind;
         if (claimRecord(derived)) {
           // A filed peer median names a group, not an institution; a quarter or ratio is its institution's own figure.
-          const fit = claimFit(derived, kind === "peer_median" ? null : derived.scope.institutionId);
+          const fit = claimFit(derived, kind === "peer_median" ? null : derived.scope.institutionId, figure);
           if (fit === "skip") continue;
           if (fit) { contradict(fit, true); continue; }
           if (kind === "peer_median") {

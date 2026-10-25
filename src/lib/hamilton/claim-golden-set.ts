@@ -43,8 +43,11 @@ import { bindNarrative, type NarrativeBinding, type OmitReason } from "./narrati
 import { bindingLeavesNothing } from "./written-answer-binding";
 import type { AnswerToolEvidence } from "./written-answer-evidence";
 
-/** .2: step 2 (claim sentence binding) recorded its outcomes; the cases and targets are unchanged. */
-export const CLAIM_GOLDEN_SET_VERSION = "2026-10-25.2";
+/**
+ * .2: step 2 (claim sentence binding) recorded its outcomes; the cases and targets are unchanged.
+ * .3: three controls from the PR #2571 review (mixed basis, prior quarter, "our data").
+ */
+export const CLAIM_GOLDEN_SET_VERSION = "2026-10-25.3";
 
 /** Who has checked these cases. Nobody has: change only with a link to an actual review record. */
 export const CLAIM_GOLDEN_REVIEW = {
@@ -382,6 +385,16 @@ export const CLAIM_GOLDEN_CASES: readonly ClaimGoldenCase[] = [
     text: "Bank A earned $1.4 million in fee income in Q2 2026.",
     expect: { status: "shown", problems: [], binding: { supported: 1, interpretation: 0, omitted: [], factIds: ["filing:ncua:9001:2026-03-31:service_charge_income:ytd", "filing:ncua:9001:2026-06-30:service_charge_income:ytd", "ncua-profile:9001:service_charge_income:2026-06-30:ytd_to_quarter"] } },
     target: { status: "validated", reasons: [] }, todayWrong: false },
+  { id: "pd-mixed-basis", group: "wrong_period_claim", control: true, surface: W, reads: [A_NCUA_RISE], institutionId: BANK_A,
+    description: "control: one sentence gives the Q2 2026 quarter and the year-to-date total, each on its own basis",
+    text: "Bank A's fee income was $1.4 million in Q2 2026 and $2.6 million year to date.",
+    expect: { status: "shown", problems: [], binding: { supported: 1, interpretation: 0, omitted: [], factIds: ["filing:ncua:9001:2026-03-31:service_charge_income:ytd", "filing:ncua:9001:2026-06-30:service_charge_income:ytd", "ncua-profile:9001:service_charge_income:2026-06-30:ytd_to_quarter"] } },
+    target: { status: "validated", reasons: [] }, todayWrong: false },
+  { id: "pd-prior-quarter", group: "wrong_period_claim", control: true, surface: W, reads: [A_NCUA_RISE], institutionId: BANK_A,
+    description: "control: the Q2 2026 quarter against the prior quarter, named only as \"the prior quarter\"",
+    text: "Bank A's fee income was $1.4 million in Q2 2026, up from $1.2 million in the prior quarter.",
+    expect: { status: "shown", problems: [], binding: { supported: 1, interpretation: 0, omitted: [], factIds: ["filing:ncua:9001:2026-03-31:service_charge_income:ytd", "filing:ncua:9001:2026-06-30:service_charge_income:ytd", "ncua-profile:9001:service_charge_income:2026-06-30:ytd_to_quarter"] } },
+    target: { status: "validated", reasons: [] }, todayWrong: false },
 
   // Swapped bank: one institution's figure stated as another's.
   { id: "sb-fee", group: "swapped_bank", control: false, surface: W, reads: [A_FEES, B_FEES], institutionId: BANK_A,
@@ -415,6 +428,11 @@ export const CLAIM_GOLDEN_CASES: readonly ClaimGoldenCase[] = [
     description: "control: Bank A's own $1.1 million figure about Bank A",
     text: "Bank A's service charge income was $1.1 million in Q2 2026.",
     expect: { status: "shown", problems: [], binding: { supported: 1, interpretation: 0, omitted: [], factIds: ["filing:fdic:9001:2026-06-30:service_charge_income:standalone_quarter"] } },
+    target: { status: "validated", reasons: [] }, todayWrong: false },
+  { id: "sb-our-data", group: "swapped_bank", control: true, surface: W, reads: [A_NCUA_RISE], institutionId: BANK_A, accountInstitutionId: BANK_B,
+    description: "control: \"our data\" is Hamilton's, not the reader's bank, so the research subject's own quarter stands",
+    text: "Based on our data, fee income was $1.4 million in Q2 2026.",
+    expect: { status: "shown", problems: [], binding: { supported: 1, interpretation: 0, omitted: [], factIds: ["filing:ncua:9001:2026-03-31:service_charge_income:ytd", "filing:ncua:9001:2026-06-30:service_charge_income:ytd", "ncua-profile:9001:service_charge_income:2026-06-30:ytd_to_quarter"] } },
     target: { status: "validated", reasons: [] }, todayWrong: false },
 ];
 

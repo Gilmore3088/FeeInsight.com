@@ -65,6 +65,35 @@ describe("filing figures bind to the institution, metric, quarter and basis the 
     expect(bind("Bank A earned $1.2 million in fee income in Q1 2026.", evidence).supported).toHaveLength(1);
   });
 
+  it("reads each figure's period and basis from its own clause (PR #2571 review)", () => {
+    const evidence = bundle([A_YTD_Q1, A_YTD_Q2, filing(BANK_A, "2025-06-30", "service_charge_income", "standalone_quarter", 1_000_000)],
+      [quarter(A_YTD_Q2, A_YTD_Q1, 1_400_000)]);
+    const supported = (text: string) => {
+      const binding = bind(text, evidence);
+      expect(binding.omitted, text).toEqual([]);
+      expect(binding.supported, text).toHaveLength(1);
+      return binding.supported[0].factIds;
+    };
+    expect(supported("Bank A's fee income was $1.4 million in Q2 2026 and $2.6 million year to date.")).toContain(A_YTD_Q2.id);
+    expect(supported("Bank A's fee income was $2.6 million year to date and $1.4 million in Q2 2026.")).toContain(`derived:${A_YTD_Q2.id}`);
+    expect(supported("Bank A's fee income was $1.4 million in Q2 2026, up from $1.2 million in the prior quarter.")).toContain(A_YTD_Q1.id);
+    expect(supported("Bank A's fee income was $1.4 million in Q2 2026, against $1.0 million a year earlier."))
+      .toContain(filingFactId("fdic", BANK_A, "2025-06-30", "service_charge_income", "standalone_quarter"));
+    expect(supported("Bank A earned $1.4 million in fee income in 2Q26.")).toContain(`derived:${A_YTD_Q2.id}`);
+    // A relative period with no quarter to count from binds nothing.
+    expect(bind("Bank A's fee income was $1.2 million in the prior quarter.", evidence).interpretation).toHaveLength(1);
+    // The mixed-basis fix does not let a year-to-date total pass as the quarter it names.
+    expect(reasons(bind("Bank A's fee income was $2.6 million in Q2 2026 and $1.2 million in Q1 2026.", evidence))).toEqual(["wrong_basis"]);
+  });
+
+  it("reads only second person as the reader's own institution, never \"our\", \"we\" or \"US\" (PR #2571 review)", () => {
+    const evidence = bundle([A_Q2, B_Q2]);
+    const research = { researchInstitutionId: BANK_A, accountInstitutionId: BANK_B };
+    expect(bind("Based on our data, service charge income was $1.1 million in Q2 2026.", evidence, research).supported[0].factIds).toEqual([A_Q2.id]);
+    expect(bind("Bank A's service charge income was $1.1 million in Q2 2026, among the highest of US banks.", evidence, research).supported[0].factIds).toEqual([A_Q2.id]);
+    expect(bind("We read service charge income of $1.1 million in Q2 2026.", evidence, research).supported[0].factIds).toEqual([A_Q2.id]);
+  });
+
   it("binds only where the sentence names the figure's metric", () => {
     const evidence = bundle([A_Q2]);
     expect(bind("Bank A's overdraft revenue was $1.1 million in Q2 2026.", evidence).interpretation).toHaveLength(1);

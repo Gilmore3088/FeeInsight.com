@@ -43,7 +43,7 @@ describe("Hamilton claim golden set: today's behaviour, recorded (#1077, step 0)
       else expect(c.target.reasons.length, c.id).toBeGreaterThan(0);
     }
     expect(run.todayWrong).toBe(7);
-    expect(run.total).toBe(25);
+    expect(run.total).toBe(28);
   });
 
   it("measures the two holes the design names", () => {
@@ -58,7 +58,7 @@ describe("Hamilton claim golden set: today's behaviour, recorded (#1077, step 0)
 
   it("says plainly that no person has reviewed it, and is held out", () => {
     expect(run.version).toBe(CLAIM_GOLDEN_SET_VERSION);
-    expect(CLAIM_GOLDEN_SET_VERSION).toBe("2026-10-25.2");
+    expect(CLAIM_GOLDEN_SET_VERSION).toBe("2026-10-25.3");
     expect(CLAIM_GOLDEN_REVIEW.status).toBe("unreviewed");
     expect(CLAIM_GOLDEN_REVIEW.record).toBeNull();
     expect(CLAIM_GOLDEN_REVIEW.note).toMatch(/No person has reviewed these cases/);

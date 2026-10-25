@@ -17,10 +17,14 @@ shown with no binding. `derivationHolds` also passed any derivation kind it did 
   date, metric, period basis, table and natural key; an NCUA call line also an ncua.gov URL; no
   other non-fee class is a record). A filing figure binds only where the sentence names its metric
   (broad fee income never stands for overdraft revenue), to its institution (`wrong_institution`),
-  quarter (`wrong_period`; "Q2 2026", "second quarter", "June 30, 2026") and basis (new
-  `wrong_basis`; a first quarter's year-to-date total is that quarter). "Your" with no institution
-  named is the reader's own institution, and another's figure stated as it is the new
-  `account_as_subject`; a sentence naming nobody is the research subject's. `derivationHolds`
+  quarter (`wrong_period`; "Q2 2026", "2Q26", "second quarter", "June 30, 2026") and basis (new
+  `wrong_basis`; a first quarter's year-to-date total is that quarter). Period and basis are read
+  per figure from its own clause (the words between two figures split at the first comma, "and",
+  "up from" and the like), so one sentence can state a quarter and a year-to-date total, and "the
+  prior quarter" or "a year earlier" counts back from the sentence's quarter; with no quarter to
+  count from, the figure binds nothing. Only second person ("you", "your") with no institution
+  named is the reader's own institution ("our", "we" and "US" are not), and another's figure
+  stated as it is the new `account_as_subject`; a sentence naming nobody is the research subject's. `derivationHolds`
   recomputes `ytd_to_quarter` (this quarter's YTD less the prior quarter's, same institution and
   metric) and `ratio`, checks a filed peer median's peers share its metric, quarter and basis, and
   fails any other unknown kind. Fee-record behaviour is unchanged: every existing binding test passes.
@@ -35,7 +39,13 @@ shown with no binding. `derivationHolds` also passed any derivation kind it did 
   `unit: null` never falls through to the response's units; an unreadable row makes its whole date
   conflicting). One conflicting peer fact drops the whole filed peer median derivation (fails closed).
 
-**Golden set (`claim-golden-set.ts`, version 2026-10-25.2):** wrong today 10 of 25 before, 7 after.
+**Review of PR #2571:** a first version read period and basis once per sentence and took "our",
+"we" and "US" as the reader's bank, so correct sentences with a quarter and a year-to-date total,
+with "the prior quarter", or with "our data" were left out (and one omission refuses a buffered
+report). Fixed as above; `memo.ts` `OMIT_FEEDBACK` gained wording for both new reasons.
+
+**Golden set (`claim-golden-set.ts`, version 2026-10-25.3):** wrong today 10 of 25 before, 7 of 28
+after; the three added controls (`pd-mixed-basis`, `pd-prior-quarter`, `sb-our-data`) are supported.
 `sb-financial` (wrong_institution), `sb-account-as-research` (account_as_subject) and
 `sb-median-as-subject` now hold. `pd-quarter` and `pd-ytd-as-quarter` keep their gate hold and now
 also omit `wrong_period` and `wrong_basis`. `sb-median-as-subject` holds as `wrong_institution`, not
