@@ -251,6 +251,7 @@ describe("bounded NCUA interpretation gate (#2331)", () => {
     expect(check("District 5 coverage has not been checked.", { toolResults: [nationwide] })).toEqual([]);
     expect(check("We cannot determine whether the District 5 group would be too small.", { toolResults: [nationwide] })).toEqual([]);
     expect(check("District 5 coverage is unavailable because the group is too small.", { toolResults: [nationwide] }).join(" ")).toContain("unqueried district group");
+    expect(check("District 5 coverage is unavailable because the group has fewer than ten institutions.", { toolResults: [nationwide] }).join(" ")).toContain("unqueried district group");
   });
 
   it("permits a small district-group limitation only after an exact current matching query", () => {

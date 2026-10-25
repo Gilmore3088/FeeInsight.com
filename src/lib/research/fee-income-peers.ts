@@ -7,8 +7,8 @@
 import type { FiledFeeIncome } from "@/lib/data-store/fee-revenue";
 import { financialMeasureDefinition, financialSourceForCharter } from "@/lib/data-store/financial-peer-contract";
 
-/** Below this many peers there is no median (the Pro evidence rule). */
-export const MIN_PEERS_FOR_MEDIAN = 5;
+/** Below this many peers there is no median (the Pro evidence rule; James, 2026-10-25). */
+export const MIN_PEERS_FOR_MEDIAN = 10;
 const MAX_PEER_ROWS = 15;
 
 export interface FeeIncomePeerFilters {

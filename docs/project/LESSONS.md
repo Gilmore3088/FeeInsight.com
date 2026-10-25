@@ -16,8 +16,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Decisions
 
-190 entries, newest first. The full text, who decided and why are in [DECISIONS.md](DECISIONS.md).
+191 entries, newest first. The full text, who decided and why are in [DECISIONS.md](DECISIONS.md).
 
+- 2026-10-25 — Hamilton's peer minimum: a median needs 5 local competitors, or 10 peers for any other group. — [decision](DECISIONS.md#2026-10-25) — `MIN_PEERS_FOR_POSITION` and its tests
 - 2026-10-22 — Data-quality work has an executive owner: its decisions, HOLD-class ones included, proceed after an independent exact-head review and green CI; CLAUDE.md hard limits still apply. — [decision](DECISIONS.md#2026-10-22)
 - 2026-10-22 — The second wave: Knox reads every stored document once more with today's rules (stale-read floor v78 to v97). — [decision](DECISIONS.md#2026-10-22)
 - 2026-10-21 — Targets of about 90% accuracy and 80% breadth; the shadow lab ratchet lets the pipeline move only one way. — [decision](DECISIONS.md#2026-10-21)

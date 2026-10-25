@@ -26,8 +26,20 @@ import {
   type SourceRef,
 } from "./types";
 
-/** Fewer peers than this and a percentile says more than the data does. */
-export const MIN_PEERS_FOR_POSITION = 5;
+/**
+ * Fewer peers than this and a percentile says more than the data does: 10 for every peer group,
+ * 5 for local competitors (James, 2026-10-25; docs/project/DECISIONS.md).
+ */
+export const MIN_PEERS_FOR_POSITION = 10;
+export const MIN_LOCAL_PEERS_FOR_POSITION = 5;
+
+/** The label a comparison group carries when it is the bank's local competitors. */
+export const LOCAL_COMPETITORS_GROUP = "local competitors";
+
+/** The minimum for a group by its label: local competitors need 5, every other group 10. */
+export function minPeersForGroup(groupLabel: string): number {
+  return groupLabel === LOCAL_COMPETITORS_GROUP ? MIN_LOCAL_PEERS_FOR_POSITION : MIN_PEERS_FOR_POSITION;
+}
 
 function fmtMoney(n: number): string {
   const cents = Math.abs(n % 1) > SAME_PRICE_TOLERANCE;
@@ -63,9 +75,12 @@ export function spanOf(lo: string, hi: string): string {
   return lo === hi ? lo : `${lo} to ${hi}`;
 }
 
-/** The shared mid-rank percentile (#2048), once enough peers publish the fee to place a price. */
-export function pricePosition(price: number, peers: number[]): number | null {
-  if (peers.length < MIN_PEERS_FOR_POSITION) return null;
+/**
+ * The shared mid-rank percentile (#2048), once enough peers publish the fee to place a price.
+ * `minPeers` is MIN_LOCAL_PEERS_FOR_POSITION for local competitors, else the default.
+ */
+export function pricePosition(price: number, peers: number[], minPeers = MIN_PEERS_FOR_POSITION): number | null {
+  if (peers.length < minPeers) return null;
   return midRankPercentile(price, peers);
 }
 
