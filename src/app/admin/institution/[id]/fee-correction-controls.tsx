@@ -194,8 +194,9 @@ export function CorrectFeeButton({
   };
 
   const suggestedCause = suggestCorrectionCause({
-    liveSourceDocumentId: fee.sourceDocumentId,
-    sourceDocumentId: form.sourceDocumentId ? Number(form.sourceDocumentId) : null,
+    // Compared by address: a newer copy of the same page is the same document, not a wrong one.
+    liveDocumentUrl: documents.find((doc) => doc.id === fee.sourceDocumentId)?.url ?? fee.sourceUrl,
+    sourceDocumentUrl: documents.find((doc) => String(doc.id) === form.sourceDocumentId)?.url ?? null,
     beforeCategory: before.canonicalFeeKey || null,
     afterCategory: after.canonicalFeeKey || null,
     beforeAmount: before.amount,
@@ -330,7 +331,8 @@ export function CorrectFeeButton({
               />
               <FieldError message={errors.reason} />
               <label className={LABEL} htmlFor={`${titleId}-cause`}>What went wrong</label>
-              <select id={`${titleId}-cause`} className={INPUT} value={cause} onChange={(e) => set("cause", e.target.value)}>
+              <select id={`${titleId}-cause`} className={INPUT} value={form.cause} onChange={(e) => set("cause", e.target.value)}>
+                <option value="">Suggested: {FEE_ERROR_CAUSE_LABELS[suggestedCause]}</option>
                 {FEE_ERROR_CAUSES.map((value) => (
                   <option key={value} value={value}>{FEE_ERROR_CAUSE_LABELS[value]}</option>
                 ))}

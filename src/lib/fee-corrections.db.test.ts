@@ -175,7 +175,7 @@ describe.skipIf(!connection)("admin fee corrections in isolated PostgreSQL", () 
     const feedback = await raw`SELECT kind, signal, agent_run_id, about_stage, source_url, evidence->>'cause' AS cause FROM pipeline_feedback WHERE check_name = 'admin.fee_correction' AND fee_published_id = ${wrongFeeId}`;
     expect(feedback).toHaveLength(1);
     // No cause sent, and only the amount changed on the same document: filed against extract (#2057).
-    expect(feedback[0]).toMatchObject({ kind: "admin_correction", signal: "wrong", about_stage: "extract", cause: "wrong_amount", source_url: "https://bank.test/fees" });
+    expect(feedback[0]).toMatchObject({ kind: "admin_correction", signal: "wrong", about_stage: "extract", cause: "wrong_amount", source_url: null });
     expect(Number(feedback[0].agent_run_id)).toBe(result.runId);
     const [run] = await raw`SELECT run_kind, status, trigger_source FROM agent_runs WHERE id = ${result.runId}`;
     expect(run).toMatchObject({ run_kind: "manual_repair", status: "completed", trigger_source: "admin" });

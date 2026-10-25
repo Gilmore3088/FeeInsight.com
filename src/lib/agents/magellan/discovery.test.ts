@@ -1211,7 +1211,10 @@ describe("Magellan agentic discovery", () => {
       const handQuery = templateText(call[0]).split(") audit ON TRUE")[1].split(") hand ON TRUE")[0];
       expect(handQuery).toContain("f.kind IN ('admin_hold', 'admin_correction')");
       expect(handQuery).toContain("f.about_stage = 'discover'");
-      expect(handQuery).toContain("f.source_url = due.main_document_url AND due.main_document_url = due.profile_canonical_source_url");
+      expect(handQuery).toContain("f.evidence->>'wrong_document_url' = due.main_document_url AND due.main_document_url = due.profile_canonical_source_url");
+      // Only the page's current copy, and a release or reversal withdraws the finding.
+      expect(handQuery).toContain("sd.superseded_by_id IS NULL AND sd.companion_source_id IS NULL");
+      expect(handQuery).toContain("undo.kind IN ('admin_release', 'admin_correction_reversed')");
       expect(call.slice(1)).toContain("audit_miss");
       expect(attempts(db).some((attempt) => attempt.detail.stale_reason === "Deming's audit found fees read from it came from the wrong document")).toBe(true);
     });

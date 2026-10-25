@@ -30,7 +30,7 @@ import { rebuildIndexAfterAdminAction, recordAdminFeeRun } from "@/lib/fee-admin
 import { correctionsReady } from "./fee-correction-guard";
 import { captureCorrectiveSource } from "@/lib/agents/deming/corrective-source-store";
 import type { CorrectiveDocument } from "@/lib/agents/deming/corrective-source";
-import { feeErrorStage, suggestCorrectionCause, type FeeErrorCause } from "@/lib/fee-error-cause";
+import { feeErrorStage, suggestCorrectionCause, wrongDocument, type FeeErrorCause } from "@/lib/fee-error-cause";
 
 import {
   CORRECTION_BATCH_PREFIX,
@@ -68,6 +68,8 @@ interface LiveFeeRow {
   fee_treatment: string | null;
   conditions: string | null;
   lineage_source_document_id: number | string | null;
+  /** The address of the document the live fee was read from. */
+  lineage_document_url: string | null;
   source_url: string | null;
 }
 
@@ -109,7 +111,8 @@ async function lockLiveFee(tx: SqlTag, feePublishedId: number): Promise<LiveFeeR
   const rows = await tx<LiveFeeRow[]>`
     SELECT fp.fee_published_id, fp.institution_id, fp.canonical_fee_key, fp.fee_name, fp.amount,
            fp.frequency, fp.variant_type, fp.fee_audience, fp.amount_kind, fp.fee_treatment, fp.source_url,
-           fr.conditions, fr.source_document_id AS lineage_source_document_id
+           fr.conditions, fr.source_document_id AS lineage_source_document_id,
+           (SELECT sd.document_url FROM source_documents sd WHERE sd.id = fr.source_document_id) AS lineage_document_url
       FROM published_fee_records fp
       LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
       LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
@@ -356,7 +359,6 @@ async function writeVersion(tx: SqlTag, w: WriteVersion): Promise<FeeCorrectionR
     checkName: FEE_CORRECTION_CHECK,
     institutionId,
     sourceDocumentId: sourceDocumentId ?? null,
-    sourceUrl: w.live.source_url,
     feePublishedId: oldId,
     canonicalFeeKey: w.before.canonicalFeeKey,
     amount: w.before.amount,
@@ -370,6 +372,7 @@ async function writeVersion(tx: SqlTag, w: WriteVersion): Promise<FeeCorrectionR
       actor: w.actor.name,
       reason: w.reason,
       ...(w.cause ? { cause: w.cause } : {}),
+      ...(w.cause === "wrong_document" ? wrongDocument(w.live.lineage_source_document_id, w.live.lineage_document_url) : {}),
       before: w.before,
       after: w.after,
       source_excerpt: w.evidence?.excerpt ?? null,
@@ -475,8 +478,8 @@ export async function correctPublishedFee(
       evidence: { ...checked.evidence, excerpt: input.sourceExcerpt, location: input.sourceLocation },
       reversedToDocumentId: null,
       cause: input.cause ?? suggestCorrectionCause({
-        liveSourceDocumentId: num(live.lineage_source_document_id),
-        sourceDocumentId: input.sourceDocumentId,
+        liveDocumentUrl: live.lineage_document_url,
+        sourceDocumentUrl: checked.evidence.documentUrl,
         beforeCategory: before.canonicalFeeKey,
         afterCategory: after.canonicalFeeKey,
         beforeAmount: before.amount,

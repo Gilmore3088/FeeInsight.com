@@ -1410,22 +1410,34 @@ async function selectStaleCandidates(
                   AND pa.created_at > sd.crawled_at
              )
         ) audit ON TRUE
-        -- An admin held or corrected a fee read from this link and named a wrong document as the
-        -- cause (#2057), matched to the link the same way (the main document only while the
-        -- remembered address agrees). A person's judgement, so the copy and the fee's state are not
-        -- asked: the fee is held or replaced by then, and each hold or correction is its own row
-        -- (created_at), so a search runs once per person's finding.
+        -- An admin held or corrected a fee and named a wrong document as the cause (#2057). The
+        -- finding names the document the fee was read from (evidence wrong_document_id and its
+        -- address), matched to the link as an audit miss is: the page's current copy only (a fee
+        -- read from an old copy or a side copy of a good link is not this link's fault), and the
+        -- main document only while the remembered address agrees. A release or reversal of the
+        -- same hold or correction withdraws it. A person's judgement, so the fee's state is not
+        -- asked: each hold or correction is its own row (created_at), one search per finding.
         LEFT JOIN LATERAL (
-          SELECT max(f.created_at) AS hand_at, array_agg(DISTINCT f.source_url) AS hand_urls
+          SELECT max(f.created_at) AS hand_at, array_agg(DISTINCT f.evidence->>'wrong_document_url') AS hand_urls
             FROM pipeline_feedback f
+            JOIN source_documents sd ON sd.id = (f.evidence->>'wrong_document_id')::bigint
+                 AND sd.superseded_by_id IS NULL AND sd.companion_source_id IS NULL
            WHERE f.kind IN ('admin_hold', 'admin_correction')
              AND f.reported_by = 'human'
              AND f.about_stage = 'discover'
              AND f.signal = 'wrong'
              AND f.institution_id = due.id
+             AND f.evidence ? 'wrong_document_id'
              AND (
-               f.source_url = due.fee_schedule_url
-               OR (f.source_url = due.main_document_url AND due.main_document_url = due.profile_canonical_source_url)
+               f.evidence->>'wrong_document_url' = due.fee_schedule_url
+               OR (f.evidence->>'wrong_document_url' = due.main_document_url AND due.main_document_url = due.profile_canonical_source_url)
+             )
+             AND NOT EXISTS (
+               SELECT 1 FROM pipeline_feedback undo
+                WHERE undo.kind IN ('admin_release', 'admin_correction_reversed')
+                  AND undo.institution_id = due.id
+                  AND undo.fee_published_id IN (f.fee_published_id, (f.evidence->>'new_fee_published_id')::bigint)
+                  AND undo.created_at > f.created_at
              )
         ) hand ON TRUE
     ), judged AS (

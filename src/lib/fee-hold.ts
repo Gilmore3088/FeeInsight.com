@@ -15,7 +15,7 @@
 import type { sql as Sql } from "@/lib/data-store/connection";
 import { recordFeedback } from "@/lib/agents/learning/feedback";
 import { rebuildIndexAfterAdminAction, recordAdminFeeRun } from "@/lib/fee-admin-run";
-import { feeErrorStage, type FeeErrorCause } from "@/lib/fee-error-cause";
+import { feeErrorStage, wrongDocument, type FeeErrorCause } from "@/lib/fee-error-cause";
 
 import {
   ADMIN_HOLD_PREFIX,
@@ -37,7 +37,7 @@ interface FeeRow {
   canonical_fee_key: string;
   amount: number | string | null;
   fee_name: string;
-  source_url: string | null;
+  lineage_ref: number | string | null;
 }
 
 async function logHoldEvent(
@@ -48,6 +48,18 @@ async function logHoldEvent(
   reason: string | null,
   cause: FeeErrorCause | null,
 ): Promise<{ indexRefreshed: boolean; runId: number }> {
+  // A wrong document names the document the fee was read from, for Magellan's link search.
+  let wrong: ReturnType<typeof wrongDocument> = {};
+  if (action === "hold" && cause === "wrong_document" && row.lineage_ref != null) {
+    const [doc] = await tx<Array<{ id: number | string; document_url: string | null }>>`
+      SELECT sd.id, sd.document_url
+        FROM verified_fee_observations fv
+        JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+        JOIN source_documents sd ON sd.id = fr.source_document_id
+       WHERE fv.fee_verified_id = ${row.lineage_ref}
+    `;
+    if (doc) wrong = wrongDocument(doc.id, doc.document_url);
+  }
   const at = new Date().toISOString();
   const run = await recordAdminFeeRun(tx, {
     action,
@@ -64,11 +76,10 @@ async function logHoldEvent(
     reportedBy: "human",
     checkName: FEE_HOLD_CHECK,
     institutionId: Number(row.institution_id),
-    sourceUrl: row.source_url,
     feePublishedId: Number(row.fee_published_id),
     canonicalFeeKey: row.canonical_fee_key,
     amount: row.amount == null ? null : Number(row.amount),
-    evidence: { action, actor_id: actor.id, actor: actor.name, reason, ...(cause ? { cause } : {}), fee_name: row.fee_name, at },
+    evidence: { action, actor_id: actor.id, actor: actor.name, reason, ...(cause ? { cause } : {}), ...wrong, fee_name: row.fee_name, at },
     runId: run.runId,
     dedupeKey: `${FEE_HOLD_CHECK}:${row.fee_published_id}:${action}:${at}`,
   }]);
@@ -96,7 +107,7 @@ export async function holdPublishedFee(
        WHERE fee_published_id = ${feePublishedId}
          AND rolled_back_at IS NULL
          AND quarantined_at IS NULL
-      RETURNING fee_published_id, institution_id, canonical_fee_key, amount, fee_name, source_url
+      RETURNING fee_published_id, institution_id, canonical_fee_key, amount, fee_name, lineage_ref
     `;
     const row = rows[0];
     if (!row) return { ok: false, error: "That fee is not live, or it is already held." } as const;
@@ -123,7 +134,7 @@ export async function releasePublishedFee(
          AND fp.quarantined_at IS NOT NULL
          AND left(fp.quarantine_reason, ${ADMIN_HOLD_PREFIX.length}) = ${ADMIN_HOLD_PREFIX}
       RETURNING fp.fee_published_id, fp.institution_id, fp.canonical_fee_key, fp.amount, fp.fee_name,
-                fp.source_url, before.quarantine_reason
+                fp.lineage_ref, before.quarantine_reason
     `;
     const row = rows[0];
     if (!row) return { ok: false, error: "That fee is not on an admin hold." } as const;
