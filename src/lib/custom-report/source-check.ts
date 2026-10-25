@@ -1263,7 +1263,7 @@ interface PricedRow {
 
 /**
  * One line read as a table or list row: its name cells and the prices its price cells state.
- * `wrapsBelow` is true when the next line opens with a price (the wrapped layout `regridRows`
+ * `wrapsBelow` is true when the next non-blank line opens with a price (the wrapped layout `regridRows`
  * splits), so a sentence-cased middle cell there is another fee's name, not a description.
  */
 function pricedRow(line: string, wrapsBelow = false): PricedRow {
@@ -1316,7 +1316,9 @@ export function ownRowRefusal(text: string, feeName: string, amount: number): st
     if (!index.names[i].includes(own)) continue;
     const line = index.lines[i];
     const cells = line.split("|").map((cell) => cell.trim()).filter((cell) => cell.length > 0 && cell !== "**");
-    const below = index.lines[i + 1]?.split("|").map((cell) => cell.trim()).find((cell) => cell.length > 0);
+    // The next non-blank line: `regridRows` reads lines with the blank ones dropped.
+    const below = index.lines.slice(i + 1).find((next) => next.trim().length > 0)
+      ?.split("|").map((cell) => cell.trim()).find((cell) => cell.length > 0);
     const row = pricedRow(line, below !== undefined && PRICE_ONLY_CELL.test(below));
     // Only a table row (two cells or more) or a name line whose price "varies" is a row here: a
     // sentence or a price-first line ("$5 monthly service fee", "Monthly service fee of $6.99 with

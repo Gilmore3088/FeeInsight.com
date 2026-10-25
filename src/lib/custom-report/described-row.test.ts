@@ -99,6 +99,12 @@ describe("a name | description | price row stays whole (#1479, Vickswood 518640)
     const statement = "Returned check | Copy of statement per page. | $20\n$30 | (Business accounts)";
     expect(checkFeeAgainstSource(statement, "Returned check", 30, ".").ok).toBe(true);
     expect(checkFeeAgainstSource(statement, "Returned check", 20, ".").ok).toBe(false);
+    // Stored texts often put a blank line between rows.
+    for (const text of [wrapped, statement].map((layout) => layout.replace("\n", "\n\n"))) {
+      const [fee, own, other] = text.startsWith("Stop") ? ["Stop Payment", 25, 30] : ["Returned check", 30, 20];
+      expect(checkFeeAgainstSource(text, fee, own, ".").ok).toBe(true);
+      expect(checkFeeAgainstSource(text, fee, other, ".").ok).toBe(false);
+    }
   });
 });
 
