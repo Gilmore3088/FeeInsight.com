@@ -560,6 +560,9 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // at another bank's ATMs fails cash advance.
     // v89 (Oct 25, #1877): overdraft admits a credit union's "Draft Protection Fee" (Knox v112's pattern);
     // names only, so no live fee changes on the Oct 25 dry run.
+    // v90 (Oct 25, #1912): a plain return charge printed in a foreign check or collection section
+    // re-files from NSF to deposited_item_return, and a late charge named for the safe deposit box
+    // re-files from late_payment to safe_deposit_box (2 move in place; 6 go to the second look).
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",
