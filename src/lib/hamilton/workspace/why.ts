@@ -16,7 +16,7 @@ import type { AskResponse, Fact, FeePositionRow, SourceRef } from "./types";
 const WHY = /\b(?:why|what explains|what(?:'s| is) behind|what(?:'s| is) driving|driv(?:e|es|ing)|explain)\b/i;
 const INCOME = /\b(?:fee income|income|revenue|service charges?)\b/i;
 /** Fee income as a share of revenue ("run a fee share below 4%"). */
-const FEE_SHARE = /\bfee (?:income )?share\b/i;
+const FEE_SHARE = /\bfee (?:income )?shares?\b/i;
 
 /**
  * A question about the bank's fee income: where it stands ("How does our service-charge income

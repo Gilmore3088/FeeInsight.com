@@ -20,6 +20,15 @@ describe("the fee of the page Ask was opened from (#1895)", () => {
     expect(parseAsk("How does our NSF fee compare with peers?", null, "overdraft")).toMatchObject({ feeCategory: "nsf", feeFrom: "question" });
   });
 
+  it("reads the informal names a reader uses for a fee, so they never fall to the page's fee", () => {
+    expect(parseAsk("What are peers charging for wires?", null, "overdraft")).toMatchObject({ feeCategory: "wire_domestic_outgoing", feeFrom: "question" });
+    expect(parseAsk("How do incoming wires compare?", null, "overdraft").feeCategory).toBe("wire_domestic_incoming");
+    expect(parseAsk("What do peers charge for stop payments?", null, "overdraft").feeCategory).toBe("stop_payment");
+    expect(parseAsk("How does our statement fee compare?", null, "overdraft").feeCategory).toBe("paper_statement");
+    expect(parseAsk("What do peers charge for a replacement card?", null, "overdraft").feeCategory).toBe("card_replacement");
+    expect(parseAsk("What do peers charge for ATM fees?", null, "overdraft").feeCategory).toBe("atm_non_network");
+  });
+
   it("tests a price for the page's fee", () => {
     expect(parseAsk("What if we charged $30?", null, "overdraft")).toMatchObject({ feeCategory: "overdraft", feeFrom: "page", tested: [30] });
   });
@@ -36,8 +45,26 @@ describe("the fee of the page Ask was opened from (#1895)", () => {
       "How do our fees compare?",
       "Talk to me about institutions above $10B",
       "What's new this week?",
+      // Other measures and subjects (review of #1895).
+      "What's our ROA versus peers?",
+      "How do we rank on efficiency ratio against peers?",
+      "How do our deposit rates compare?",
+      "What is the national average deposit size?",
+      "What are the market trends?",
+      "Who are our competitors?",
+      "How do our peers' fee shares compare?",
+      // A price on every fee or on fee income is not a price for the page's fee.
+      "What if every fee went up $5?",
+      "What if we cut all our fees by $5?",
+      "What if our fee income rose by $50,000?",
+      "What if we charged $30 across our whole schedule?",
+      // A fee the parser can't place is never read as the page's fee.
+      "What are peers charging for transfers?",
+      "How do our card fees compare?",
     ]) {
-      expect(parseAsk(q, null, "overdraft").feeCategory).toBeNull();
+      // The same reading as with no page fee at all.
+      expect(parseAsk(q, null, "overdraft"), q).toEqual(parseAsk(q));
+      expect(parseAsk(q, null, "overdraft").feeCategory, q).not.toBe("overdraft");
     }
     const offTopic = parseAsk("What's new this week?", null, "overdraft");
     expect(buildAskResponse({ question: "What's new this week?", intent: offTopic, research: null, memory: [] }).shortAnswer).toMatch(/^Hamilton can't answer that from the data it holds/);

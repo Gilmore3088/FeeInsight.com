@@ -50,14 +50,15 @@ const FEE_SYNONYMS: Record<string, string[]> = {
   continuous_od: ["continuous overdraft", "extended overdraft", "sustained overdraft", "daily overdraft"],
   od_protection_transfer: ["overdraft protection transfer", "overdraft transfer", "od transfer", "od protection"],
   monthly_maintenance: ["monthly maintenance", "maintenance fee", "monthly service fee", "monthly fee"],
-  atm_non_network: ["atm fee", "atm", "out-of-network atm", "foreign atm", "non-network atm"],
-  wire_domestic_outgoing: ["wire", "wire fee", "outgoing wire", "domestic wire"],
-  wire_domestic_incoming: ["incoming wire"],
-  wire_intl_outgoing: ["international wire", "foreign wire"],
-  stop_payment: ["stop payment"],
+  atm_non_network: ["atm fee", "atm fees", "atm", "out-of-network atm", "foreign atm", "non-network atm"],
+  wire_domestic_outgoing: ["wire", "wires", "wire fee", "wire fees", "outgoing wire", "outgoing wires", "domestic wire", "domestic wires"],
+  wire_domestic_incoming: ["incoming wire", "incoming wires"],
+  wire_intl_outgoing: ["international wire", "international wires", "foreign wire", "foreign wires"],
+  stop_payment: ["stop payment", "stop payments", "stop-payment"],
+  card_replacement: ["replacement card", "card replacement", "lost card", "replacement debit card"],
   card_foreign_txn: ["foreign transaction", "international atm", "atm abroad"],
   cashiers_check: ["cashier's check", "cashiers check", "official check"],
-  paper_statement: ["paper statement"],
+  paper_statement: ["paper statement", "paper statements", "statement fee", "statement fees"],
 };
 
 // Excess withdrawals and returned mail (#1398) get their own phrases only once the research split
@@ -201,11 +202,31 @@ function questionFee(question: string, carriedCategory: string | null, tested: n
  * income, so the fee of the page Ask was opened from is not put in its place (#1895, #1077).
  */
 const SETS_PAGE_FEE_ASIDE =
-  /\b(?:every|all(?: of)?(?: our| my| the)?|each|whole|entire|overall)\b(?! (?:peer|competitor))[^.?!]{0,30}\bfees?\b|\bfee schedule\b|\b(?:all|every) (?:our|my) (?:prices|pricing)\b|\b(?:which|what) (?:of )?(?:our|my) fees\b|\b(?:our|my) fees\b/i;
+  /\b(?:every|all(?: of)?(?: our| my| the)?|each|whole|entire|overall)\b(?! (?:peer|competitor))[^.?!]{0,30}\bfees?\b|\bfee schedule\b|\bschedules?\b|\b(?:all|every) (?:our|my) (?:prices|pricing)\b|\b(?:which|what) (?:of )?(?:our|my) fees\b|\b(?:our|my) fees\b/i;
 
-/** A question about how a fee compares or is priced: what a reader asks on a fee's own page. */
-const ASKS_ABOUT_PAGE_FEE =
-  /\b(?:compar\w*|peers?|competitors?|median|position|stand|rank\w*|market|charg\w*|pric\w*|nationally|national|benchmark\w*|versus|vs\.?|against|higher|lower|cheaper|more expensive)\b/i;
+/**
+ * A measure other than a fee's price: return on assets, efficiency, deposits, rates, fee share,
+ * income, trends, averages, size, market share. A question about one is never about the page's fee.
+ */
+const OTHER_MEASURE =
+  /\b(?:roa|roe|return on (?:assets|equity)|efficiency|deposits?|rates?|apy|yield|fee shares?|income|revenue|earnings?|profit\w*|margin|nim|trends?|average|size|assets|loans?|capital|branch\w*|members?|membership|customers?|complaints?|market share|growth|ratio)\b/i;
+
+/** "Who are our competitors?": a question about institutions, not a fee. */
+const ABOUT_INSTITUTIONS = /\bwho (?:are|is)\b|\b(?:list|name) (?:our|my|the) (?:peers|competitors)\b(?![^.?!]*\b(?:fee|charg|pric))/i;
+
+/** Words that make a question about a price: a fee, a charge, a price. */
+const FEE_WORDS = /\b(?:fees?|charg\w*|pric\w*|cost\w*)\b/i;
+
+/** A comparison asked of the subject itself ("how do we compare with peers?", "where do we stand?"). */
+const COMPARES_SUBJECT =
+  /\b(?:how|where) (?:do|does|are|is) (?:we|us|our \w+|it|i)\b[^.?!]{0,40}\b(?:compar\w*|stand|rank|sit|fall|stack up)\b|\b(?:we|our|it)\b[^.?!]{0,30}\b(?:versus|vs\.?|against) (?:the )?(?:peers?|market|competitors?)\b/i;
+
+/**
+ * Nouns for a fee or service the reader may mean but the parser cannot place ("transfers",
+ * "cards", "checks"). With one in the question the page's fee is never put in its place.
+ */
+const UNPLACED_FEE_NOUN =
+  /\b(?:transfers?|cards?|checks?|cheques?|statements?|withdrawals?|payments?|accounts?|boxes|loans?|zelle|ach|notary|coins?|courier|research|appraisals?|ira)\b/i;
 
 /**
  * The fee of the page Ask was opened from (#1895), for a question that names no fee and asks how
@@ -213,11 +234,14 @@ const ASKS_ABOUT_PAGE_FEE =
  * reader never has to name the fee again. A question about every fee, fee income or anything else
  * keeps no page fee, so Ask still says plainly what it cannot answer (#1077).
  */
-export function pageFeeFor(question: string, pageFee: string | null): string | null {
-  if (!pageFee || !DISPLAY_NAMES[pageFee]) return null;
+export function pageFeeFor(question: string, pageFee: string | null, tested: readonly number[] = []): string | null {
+  if (!pageFee || !Object.hasOwn(DISPLAY_NAMES, pageFee)) return null;
   if (matchFeeCategory(question)) return null;
   if (asksIncome(question) || asksIncomeWhy(question) || SETS_PAGE_FEE_ASIDE.test(question)) return null;
-  return ASKS_ABOUT_PAGE_FEE.test(question) ? pageFee : null;
+  if (OTHER_MEASURE.test(question) || ABOUT_INSTITUTIONS.test(question) || UNPLACED_FEE_NOUN.test(question)) return null;
+  // Fee-shaped: it tests a price ("what if we charged $30?"), says fee, charge or price, or asks
+  // how the subject compares.
+  return tested.length > 0 || FEE_WORDS.test(question) || COMPARES_SUBJECT.test(question) ? pageFee : null;
 }
 
 export function parseAsk(question: string, carriedCategory: string | null = null, pageFee: string | null = null): AskIntent {
@@ -225,8 +249,9 @@ export function parseAsk(question: string, carriedCategory: string | null = null
   // Asset sizes ("$10B") are not prices.
   const tested = segment ? pricesIn(question.replace(SEGMENT_AMOUNTS, " ")) : pricesIn(question);
   const carried = questionFee(question, carriedCategory, tested);
-  // A price tested from a fee's page ("what if we charged $30?") is about that fee too.
-  const fromPage = carried ? null : pageFeeFor(question, pageFee) ?? (tested.length > 0 && pageFee && DISPLAY_NAMES[pageFee] ? pageFee : null);
+  // A price tested from a fee's page ("what if we charged $30?") is about that fee too, after the
+  // same checks: a price on every fee or on fee income is not.
+  const fromPage = carried ? null : pageFeeFor(question, pageFee, tested);
   const feeCategory = carried ?? fromPage;
   return {
     feeCategory,

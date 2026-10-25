@@ -66,6 +66,23 @@ describe("StructuredAsk", () => {
     expect(onNoStoryline).not.toHaveBeenCalled();
   });
 
+  it("sends the page's fee until the conversation has a fee of its own (#1895)", async () => {
+    const memo = { status: "unavailable", reason: "n/a" };
+    const fresh = mockFetch(withStoryline, memo);
+    render(<StructuredAsk question="how do we compare with peers?" institutionId="8109" modelHrefFor={() => "/"} contextFee="overdraft" />);
+    await waitFor(() => expect(fresh.map((c) => c.url)).toEqual(["/api/hamilton/ask", "/api/hamilton/ask/memo"]));
+    expect(fresh[0].body.contextFee).toBe("overdraft");
+    // The memo is read for the fee the answer used.
+    expect(fresh[1].body.contextFee).toBe("overdraft");
+    cleanup();
+    vi.unstubAllGlobals();
+    // A conversation that already carries a decision (it moved to its own fee) sends none.
+    const carried = mockFetch(withStoryline, memo);
+    render(<StructuredAsk question="what about NSF?" decisionId="d9" institutionId="8109" modelHrefFor={() => "/"} contextFee="overdraft" />);
+    await waitFor(() => expect(carried.length).toBeGreaterThan(0));
+    expect(carried[0].body.contextFee).toBeUndefined();
+  });
+
   it("asks for no memo over a list of peers' fees (#2033)", async () => {
     const list: AskResponse = { ...withStoryline, answer: buildFeeAnswer(overdraftResearch(), { story: { list: true } }) };
     expect(list.answer?.storyline?.kind).toBe("list");

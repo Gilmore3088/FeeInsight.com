@@ -391,6 +391,8 @@ function StructuredAskConversation({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const decisionId = useRef<string | undefined>(carriedDecisionId ?? undefined);
+  // The page's fee the last Ask request sent, so its memo is read for the same fee.
+  const sentContextFee = useRef<string | null>(null);
   // The request in flight; aborted when this answer is left (new conversation, subject or question).
   const inFlight = useRef<AbortController | null>(null);
   const lastQuestion = useRef<string | null>(null);
@@ -430,7 +432,11 @@ function StructuredAskConversation({
       const controller = new AbortController();
       inFlight.current = controller;
       try {
-        const res = await postAsk({ ...body, institutionId, decisionId: decisionId.current, ...(contextFee ? { contextFee } : {}) }, controller.signal);
+        // The page's fee goes only until the conversation has a fee of its own (an open decision),
+        // so a fee the conversation moved to wins.
+        const pageFee = decisionId.current ? null : contextFee;
+        sentContextFee.current = pageFee;
+        const res = await postAsk({ ...body, institutionId, decisionId: decisionId.current, ...(pageFee ? { contextFee: pageFee } : {}) }, controller.signal);
         if (!active.current || generation !== requestGeneration.current) return null;
         if (res.decisionId) decisionId.current = res.decisionId;
         onAnsweredRef.current?.({
@@ -467,7 +473,8 @@ function StructuredAskConversation({
         }
         memoFor.current = asked;
         setMemo({ state: "writing" });
-        void postMemo({ institutionId, question: asked, decisionId: decisionId.current, savedAnalysisId: res.savedAnalysisId, ...(contextFee ? { contextFee } : {}) }).then((m) => {
+        const memoPageFee = sentContextFee.current;
+        void postMemo({ institutionId, question: asked, decisionId: decisionId.current, savedAnalysisId: res.savedAnalysisId, ...(memoPageFee ? { contextFee: memoPageFee } : {}) }).then((m) => {
           if (active.current && memoFor.current === asked) setMemo(m);
         });
         return;
@@ -485,7 +492,7 @@ function StructuredAskConversation({
       onEngineRows?.(Boolean(res?.scenario || res?.segment));
       onNoStoryline?.(asked);
     },
-    [institutionId, contextFee, onNoStoryline, onStoryline, onLead, onEngineRows],
+    [institutionId, onNoStoryline, onStoryline, onLead, onEngineRows],
   );
 
   useEffect(() => {
