@@ -432,6 +432,12 @@ const SAFE_DEPOSIT_KEY_DEPOSIT_EXEMPT = new RegExp(
     String.raw`\bdrill\w*`,
     String.raw`\b(?:annual|yearly|monthly)\s+(?:rental\s+)?(?:fees?|charges?|rent)\b`,
     String.raw`\brental\s+(?:fees?|charges?)\b`,
+    // A deposit the bank keeps is a charge ("Key Deposit (non-refundable)", "Forfeited Key Deposit"),
+    // and lock work prices the box's service ("Lock Change / Key Deposit", "Re-keying").
+    String.raw`\bnon-?\s?refundable\b`,
+    String.raw`\bforfeit\w*`,
+    String.raw`\block\s+(?:change|replacement)\b`,
+    String.raw`\bre-?key\w*`,
   ].join("|"),
   "i",
 );

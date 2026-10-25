@@ -1173,6 +1173,12 @@ describe("refundable key deposits filed as a safe deposit box fee (v85, #1831)",
     "Safe deposit box - Drilling fee - Key deposit",
     // The box's own rental fee ("Annual Rental Fees *(Key Deposit) | $25.00", the 3x5 rent).
     "Annual Rental Fees (Key Deposit)",
+    // A deposit the bank keeps, and lock work, are charges for the box (#2603 review).
+    "Key Deposit (non-refundable)",
+    "Non-refundable key deposit",
+    "Forfeited Key Deposit",
+    "Lock Change / Key Deposit",
+    "Re-keying / Key Deposit",
     // Late fees and other box fees.
     "Safety Deposit Box Late Payment Fee",
     "Safe Deposit Box Closed with only 1 key",

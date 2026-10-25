@@ -54,7 +54,8 @@ import { combineScores, scoreAnswerKeys, type AnswerKeyDocument, type GateScore 
 // 60 / 4 (tid 841, one stored line of 100,841 characters).
 // Guard v85 (#1831, James chose "Take down", Oct 25): a refundable safe deposit box key deposit is
 // not a box fee. The Texas keys still list five key deposits under safe_deposit_box (841, 2409, 2414,
-// 2416, 2426); Knox read one of them as a right fee, and the guard now refuses it: all 590 / 11 to
+// 2416, 2426); Knox read one of them as a right fee (tid 2414, VeraBank, "Safe Deposit Box Rental** - Key
+// Deposit | $10.00"), and the guard now refuses it: all 590 / 11 to
 // 589 / 11, held out stays 60 / 4. No wrong read is added.
 const FLOORS = {
   all: { right: 589, wrong: 11 },

@@ -1609,7 +1609,7 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   the night deposit. A lost, replaced or duplicate key, drilling and the box's annual or rental fee
   stay (`SAFE_DEPOSIT_KEY_DEPOSIT_EXEMPT`, each word on its noun); a "Rental - Key Deposit" header
   does not. No type holds a key deposit, so the live ones go to the second look and come down. Its
-  live re-check is the guard catch-up; the read-only dry run (Oct 25) counted 108 live fees at 107
+  live re-check is the guard catch-up; the read-only dry run (Oct 25) counted 110 live fees at 109
   institutions, each a key or security deposit on its own stored schedule.
 - v84 (Oct 25, #1788): a monthly
   maintenance fee named only as a monthly fee or service charge (`genericMonthlyCharge`: "Monthly

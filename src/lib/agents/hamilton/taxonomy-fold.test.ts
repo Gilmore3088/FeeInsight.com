@@ -345,7 +345,7 @@ describe("hand fixes of joined or misfiled live fees (#1512, #1513; James, Oct 1
     liveRow(63055, "wire_domestic_outgoing", "35.00", "Wire Trans. (Intern. Outgoing) ………"),
   ];
 
-  it("renames or re-files all eight while they still read as listed (73876 no longer: guard v84)", () => {
+  it("renames or re-files the other seven while they still read as listed (73876 no longer: guard v85)", () => {
     // Guard v85 (#1831) refuses 73876's new name "Key Deposit Fee" (a refundable key deposit), so
     // its rename is no longer planned.
     expect(planHandRefiles(ROWS).map((move) => [move.refile.feePublishedId, move.currentKey, move.refile.to, move.refile.name])).toEqual([

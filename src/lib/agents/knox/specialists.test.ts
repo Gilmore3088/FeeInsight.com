@@ -496,7 +496,8 @@ describe("a price-first row keeps its own price (#1827)", () => {
   it("pairs each markdown row's price with the name after it (Valley Strong CU)", () => {
     const rows = fees(valleyStrong);
     expect(amountsOf(rows, "Drilling of Box by Locksmith/New Lock")).toEqual([195]);
-    expect(amountsOf(rows, "Key Deposit")).toEqual([20]);
+    // Guard v85 (#1831): a refundable key deposit is not a box fee, so the paired row is refused.
+    expect(amountsOf(rows, "Key Deposit")).toEqual([]);
     expect(amountsOf(rows, "Key Replacement")).toEqual([11]);
     expect(amountsOf(rows, "Rental of 3 × 5 Box Annual Fee")).toEqual([45]);
     expect(amountsOf(rows, "Rental of 5 × 5 Box Annual Fee")).toEqual([55]);
@@ -562,8 +563,8 @@ describe("a price-first row keeps its own price (#1827)", () => {
   });
 
   it("reads a lone price-first row under a markdown header and rule row", () => {
-    const text = ["| Amount | Service |", "| --- | --- |", "| $20 | Key Deposit |"].join("\n");
-    expect(amountsOf(fees(text), "Key Deposit")).toEqual([20]);
+    const text = ["| Amount | Service |", "| --- | --- |", "| $20 | Key Replacement |"].join("\n");
+    expect(amountsOf(fees(text), "Key Replacement")).toEqual([20]);
   });
 
   it("never reads a period or a waiver after the price as the row's name", () => {
