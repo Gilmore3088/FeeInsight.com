@@ -55,7 +55,10 @@ import { normalizeCanonicalInstitutionId } from "@/lib/hamilton/context-link";
 import { withHamiltonAccountContext } from "@/lib/hamilton/account-context-store";
 import { accountIdentitySnapshot } from "@/lib/hamilton/account-context";
 import { getInstitutionById } from "@/lib/data-store";
-import { writtenAnswerStepSystemPrompt } from "@/lib/hamilton/written-answer-evidence";
+import { writtenAnswerStepSystemPrompt, type AnswerToolEvidence } from "@/lib/hamilton/written-answer-evidence";
+import { shadowGate, type ShadowPath, type TodayDecision } from "@/lib/hamilton/output-gate-shadow";
+import { scheduleGateShadow } from "@/lib/hamilton/output-gate-shadow-store";
+import type { GateInput } from "@/lib/hamilton/output-gate";
 
 export const maxDuration = 300;
 
@@ -142,9 +145,9 @@ async function handlePOST(request: Request) {
   let messages: UIMessage[];
   let mode: string | undefined;
   let institutionId: number | null = null;
-  // Opt-in buffered path. Default false preserves the streaming chat UX (useChat);
-  // callers that need a vetted report (report runner, export) set `gate_citations: true`
-  // and receive a JSON response: `{ status: "ok" }`, or `{ status: "refused" }` with reason
+  // Opt-in buffered path. Default false preserves the streaming chat UX (useChat). No screen
+  // sends `gate_citations: true` today (2026-10-25 question trace); a caller that does
+  // receives a JSON response: `{ status: "ok" }`, or `{ status: "refused" }` with reason
   // "insufficient_citations" or "evidence_check_failed" (the shared gate, answer-gate.ts).
   let gateCitations = false;
   const audience: HamiltonAudience = role;
@@ -217,6 +220,28 @@ async function handlePOST(request: Request) {
     return Response.json({ error: "Institution not found" }, { status: 404 });
   }
   const { systemPrompt, focus, briefingEvidence } = prompt;
+
+  // The one output gate in shadow (#1077, claim contract step 4): it runs for every mode, the admin
+  // chats' included, and is recorded beside what today's gates decided. It never decides itself:
+  // `today` is the decision already made, and a shadow that fails changes nothing. It is computed
+  // and written after the response (scheduleGateShadow): nothing here awaits it. Every input is
+  // captured now, since `identityContext` changes later.
+  const shadowWrittenAnswer = (text: string, reads: readonly AnswerToolEvidence[], today: TodayDecision, path: ShadowPath): void => {
+    try {
+      if (!text.trim()) return;
+      const input: GateInput = {
+        surface: "written_answer",
+        text,
+        evidence: { kind: "tool_reads", toolOutputs: reads.map((read) => read.output), reads, briefingEvidence },
+        identity: { researchInstitutionId: institutionId, accountInstitutionId: homeId ?? null, accountInstitutionName: identityContext.accountInstitutionName ?? null },
+        question: questionOnly(lastUserText),
+      };
+      const context = { path, mode: mode ?? null };
+      scheduleGateShadow(() => shadowGate(input, today, context), { userId: user.id, researchInstitutionId: institutionId });
+    } catch (error) {
+      console.error("[hamilton] the shadow output gate could not be scheduled", error);
+    }
+  };
 
   const providerContext = {
     provider: "anthropic" as const,
@@ -296,8 +321,12 @@ async function handlePOST(request: Request) {
         // Non-critical — don't fail the response
       }
 
+      const bufferedReads: AnswerToolEvidence[] = (result.steps ?? []).flatMap((step) => step.toolResults.map((toolResult) => ({
+        toolName: toolResult.toolName, input: toolResult.input, output: toolResult.output,
+      })));
       const gate = evaluateCitationDensity(result.text ?? "");
       if (gate.status === "refused") {
+        shadowWrittenAnswer(result.text ?? "", bufferedReads, "held", "written_buffered");
         return Response.json(
           {
             status: "refused",
@@ -311,9 +340,6 @@ async function handlePOST(request: Request) {
       }
 
       // The same evidence gate a memo passes, against the tool outputs the model saw (#981).
-      const bufferedReads = (result.steps ?? []).flatMap((step) => step.toolResults.map((toolResult) => ({
-        toolName: toolResult.toolName, input: toolResult.input, output: toolResult.output,
-      })));
       const evidence = writtenAnswerCheck(
         result.text ?? "",
         (result.steps ?? []).flatMap((step) => step.toolResults.map((toolResult) => toolResult.output)),
@@ -321,6 +347,7 @@ async function handlePOST(request: Request) {
         { briefingEvidence, toolResults: bufferedReads, institutionId },
       );
       if (!evidence.passed) {
+        shadowWrittenAnswer(result.text ?? "", bufferedReads, "held", "written_buffered");
         return Response.json(
           { status: "refused", reason: "evidence_check_failed", problems: evidence.problems, metrics: gate.metrics },
           { status: 200 },
@@ -334,6 +361,7 @@ async function handlePOST(request: Request) {
         { toolResults: bufferedReads, institutionId, accountInstitutionId: homeId ?? null },
       );
       if (binding && binding.omitted.length > 0) {
+        shadowWrittenAnswer(result.text ?? "", bufferedReads, "held", "written_buffered");
         return Response.json(
           {
             status: "refused",
@@ -345,6 +373,7 @@ async function handlePOST(request: Request) {
         );
       }
 
+      shadowWrittenAnswer(result.text ?? "", bufferedReads, "shown", "written_buffered");
       return Response.json({
         status: "ok",
         text: result.text,
@@ -385,6 +414,11 @@ async function handlePOST(request: Request) {
         catch (error) { resolveVerdict(null); resolveSaved(null); await failProvider(error, observedProviderUsage(totalUsage)); return; }
         scope.dispose();
         identityContext = identityFor(steps);
+        const reads: AnswerToolEvidence[] = steps.flatMap((step) => step.toolResults.map((toolResult) => ({
+          toolName: toolResult.toolName, input: toolResult.input, output: toolResult.output,
+        })));
+        // What today's gates decided, for the shadow gate below: an answer outside Analyze is shown ungated.
+        let today: TodayDecision = "shown_ungated";
         // The Analyze screen's answer is saved here, not only from the browser, so a closed
         // tab or a failed browser call never loses it.
         if (mode === "analyze" && text.trim()) {
@@ -393,15 +427,13 @@ async function handlePOST(request: Request) {
           // resolve (a promise keeps its first value), so the reader is never left waiting and
           // the usage below is still recorded.
           try {
-            const reads = steps.flatMap((step) => step.toolResults.map((toolResult) => ({
-              toolName: toolResult.toolName, input: toolResult.input, output: toolResult.output,
-            })));
             const check = writtenAnswerCheck(text, toolOutputs, questionOnly(lastUserText), { briefingEvidence, toolResults: reads, institutionId });
             // Each sentence bound to the fee records and filings the tools returned (#981 H06-T06,
             // #1077). An answer with nothing left once the contradicted sentences go is held like a failing one.
             const binding = writtenAnswerBinding(text, toolOutputs, questionOnly(lastUserText), { toolResults: reads, institutionId, accountInstitutionId: homeId ?? null });
             const held = holdsAnswers && (!check.passed || bindingLeavesNothing(parseAnalyzeResponse(text), binding));
             resolveVerdict({ passed: check.passed, held, binding });
+            today = held ? "held" : binding && binding.omitted.length > 0 ? "shown_partial" : "shown";
             const response = {
               ...writtenAnswerResponse(text, toolOutputs, check, binding),
               // Historical reference metadata only; never a future access grant.
@@ -437,6 +469,7 @@ async function handlePOST(request: Request) {
             console.error("[hamilton] the evidence gate or its response could not run", error);
             resolveVerdict({ passed: false, held: holdsAnswers });
             resolveSaved(null);
+            today = holdsAnswers ? "held" : "shown";
           }
         } else {
           resolveVerdict(null);
@@ -468,6 +501,8 @@ async function handlePOST(request: Request) {
         } catch {
           // Non-critical — don't fail the response
         }
+        // Scheduled, not awaited: onFinish runs inside the stream's flush, so awaiting here would hold the stream open.
+        shadowWrittenAnswer(text, reads, today, "written_streaming");
       },
       onAbort: async () => {
         resolveVerdict(null); resolveSaved(null);

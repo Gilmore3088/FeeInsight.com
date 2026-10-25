@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   user: vi.fn(), members: vi.fn(), generate: vi.fn(), stream: vi.fn(), save: vi.fn(),
   briefing: vi.fn(), guard: vi.fn(), metadata: vi.fn(), peerSet: vi.fn(),
 }));
+vi.mock("@/lib/hamilton/output-gate-shadow-store", () => ({ scheduleGateShadow: () => {}, GATE_SHADOW_DETAIL_KEY: "gate_shadow" }));
 vi.mock("@/lib/api-hardening/route-wrapper", () => ({ withApiRoutePolicy: (_id: string, _method: string, handler: unknown) => handler }));
 vi.mock("@/lib/api-hardening/audit", () => ({ getRequestSubjectKey: () => "synthetic-user" }));
 vi.mock("@/lib/auth", () => ({ getCurrentUser: mocks.user }));
