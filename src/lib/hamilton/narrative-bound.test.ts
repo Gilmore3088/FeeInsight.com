@@ -240,6 +240,29 @@ describe("a fee figure binds only to a record of the fee its clause names (#1077
     }
   });
 
+  it("a sibling fee is not a sub-type: overdraft vs NSF, maintenance vs paper statement, cashier's check vs stop payment, wire directions", () => {
+    const of = (id: number, value: number, feeCategory: string, product: string) =>
+      fee(id, A, value, "2026-06-30", { scope: { institutionId: A, feeCategory, product, reportingDate: "2026-06-30", effectiveDate: null, accountApplicability: "consumer" } });
+    const NSF30 = of(40, 30, "nsf", "Insufficient funds");
+    const cases: Array<[string, HamiltonEvidenceFact[]]> = [
+      ["Our overdraft fee is $30.", [NSF30, OD35]],
+      // The two prices reversed: overdraft $35 and NSF $30 on record.
+      ["Bank A's overdraft fee is $30 and its NSF fee is $35.", [OD35, NSF30]],
+      ["Bank A's monthly maintenance fee is $2.", [of(43, 2, "paper_statement", "Paper statement")]],
+      ["Bank A's cashier's check fee is $30.", [STOP30]],
+      ["Bank A's outgoing international wire fee is $15.", [of(44, 15, "wire_domestic_incoming", "Wire in")]],
+    ];
+    for (const [text, facts] of cases) {
+      const result = bindNarrative({ text, evidence: bundle(facts, []), names, accountInstitutionId: A });
+      expect(result.supported, text).toEqual([]);
+      expect(result.omitted, text).toEqual([{ text, reason: "wrong_category" }]);
+    }
+    // A wire named in its own direction, or "wire" alone, still binds.
+    const incoming = of(45, 15, "wire_domestic_incoming", "Wire in");
+    expect(bindNarrative({ text: "Bank A's incoming wire fee is $15.", evidence: bundle([incoming], []), names }).supported[0].factIds).toEqual([incoming.id]);
+    expect(bindNarrative({ text: "Bank A's wire fee is $15.", evidence: bundle([incoming], []), names }).supported[0].factIds).toEqual([incoming.id]);
+  });
+
   it("a clause that leaves its fee out (\"Bank B's is $30\") takes the fee the sentence names", () => {
     const B30 = stop(23, B, 30);
     const result = bindNarrative({ text: "Bank A's overdraft fee is $35, and Bank B's is $30.", evidence: bundle([OD35, B30], []), names });

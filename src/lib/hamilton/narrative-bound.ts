@@ -40,8 +40,9 @@
  * fee is $30" never rests on a $30 stop-payment record. The fee named is read with the Ask bar's
  * fee names (`feeCategoriesIn`) from the figure's own clause (from the sentence only when the
  * clause leaves its fee out: "and Bank B's is $30"); a record also counts as named when its fee
- * name or product is written out. When the only records at that value are clearly other fees (not
- * the same fee family, so a daily overdraft cap still fits "overdraft"), the sentence is left out
+ * name or product is written out. When the only records at that value are other fees (not a
+ * sub-type of the fee named, `FEE_SUB_TYPES`, so a daily overdraft cap still fits "overdraft" and
+ * an NSF fee does not; a wire only in the direction its words give), the sentence is left out
  * as `wrong_category`. A clause that names no fee, or a record with no category, binds as before,
  * on value, unit and institution (a later sentence's "it" carries no fee).
  *
@@ -52,7 +53,7 @@
  */
 import { historicalAssertionWithdrawn, refuses } from "./answer-interpretations";
 import { splitIntoSentences } from "./citation-gate";
-import { getFeeFamily } from "@/lib/fee-taxonomy";
+import { FEE_FAMILIES, FEE_SUB_TYPES, getFeeFamily } from "@/lib/fee-taxonomy";
 import { feeCategoriesIn } from "./workspace/ask";
 import { proseFeeName } from "./workspace/names";
 import {
@@ -342,6 +343,23 @@ function shiftQuarter(quarter: string, back: number): string {
 /** A clause that leaves its fee out: "Bank B's is $30", "its is", "theirs is". */
 const FEE_ELLIPSIS = /(?:'s|s'|\b(?:its|theirs|ours|yours))\s+(?:is|was|are|were|stands at|sits at)\b/i;
 
+const WIRES: readonly string[] = FEE_FAMILIES["Wire Transfers"] ?? [];
+
+/** The wire fees the words name: each direction or reach word narrows them; none leaves every wire. */
+function wiresNamed(words: string): string[] {
+  const incoming = /\b(?:incoming|inbound|receiv\w*)\b/.test(words);
+  const outgoing = /\b(?:outgoing|outbound|send\w*|sent)\b/.test(words);
+  const international = /\b(?:international|int'l|intl|foreign)\b/.test(words);
+  const domestic = /\bdomestic\b/.test(words);
+  return WIRES.filter((wire) => {
+    const isIncoming = wire.endsWith("_incoming");
+    const isInternational = wire.startsWith("wire_intl_");
+    if (incoming !== outgoing && isIncoming !== incoming) return false;
+    if (international !== domestic && isInternational !== international) return false;
+    return true;
+  });
+}
+
 /** Words that split two figures' clauses: the part before belongs to the first figure, the rest to the next. */
 const CLAUSE_BREAK = /,|;|\s(?:and|but|while|whereas|versus|vs\.?|compared\s+(?:with|to)|against|up\s+from|down\s+from|from)\s/i;
 
@@ -510,11 +528,11 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
 
     /**
      * Whether a fee record is the fee the figure's clause names. True when its category is named
-     * (a fee name or synonym, its own fee name or its product); false only when the clause clearly
-     * names a different fee; null (bind as before) when the record has no category, the clause
-     * names no fee, or the named fee and the record share a fee family (a sub-type such as a daily
-     * overdraft cap or an international ATM fee under the fee named). A clause that names no fee
-     * takes the sentence's fees only when it leaves the fee out ("and Bank B's is $30").
+     * (a fee name or synonym, a sub-type of a named fee in `FEE_SUB_TYPES`, a wire of the
+     * direction the words give, its own fee name or its product); false when the clause names a
+     * different fee; null (bind as before) when the record has no category or one outside the
+     * taxonomy, or the clause names no fee. A clause that names no fee takes the sentence's fees
+     * only when it leaves the fee out ("and Bank B's is $30").
      */
     const clauseFees = clauses.map((clause) => feeCategoriesIn(clause));
     const sentenceFees = feeCategoriesIn(text);
@@ -525,13 +543,17 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
       const clause = clauses[at] ?? text;
       const own = clauseFees[at] ?? [];
       const named = own.length > 0 ? own : FEE_ELLIPSIS.test(clause) ? sentenceFees : [];
-      if (named.length === 0) return null;
-      if (named.includes(category)) return true;
+      if (named.length === 0 || getFeeFamily(category) === null) return null;
       const words = (own.length > 0 ? clause : text).toLowerCase();
+      const covered = new Set(named.flatMap((fee) => [fee, ...(FEE_SUB_TYPES[fee] ?? [])]));
+      // A wire is the one its direction words give ("incoming", "international"); "wire" alone is any wire.
+      if (named.some((fee) => WIRES.includes(fee))) {
+        for (const wire of WIRES) covered.delete(wire);
+        for (const wire of wiresNamed(words)) covered.add(wire);
+      }
+      if (covered.has(category)) return true;
       const product = fact.scope.product?.trim().toLowerCase();
-      if (words.includes(proseFeeName(category).toLowerCase()) || (!!product && words.includes(product))) return true;
-      const family = getFeeFamily(category);
-      return family === null || named.some((fee) => getFeeFamily(fee) === family) ? null : false;
+      return words.includes(proseFeeName(category).toLowerCase()) || (!!product && words.includes(product));
     };
     const periodFor = (figure: NarrativeFigure) => {
       const at = figures.indexOf(figure);
