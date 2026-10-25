@@ -19,6 +19,7 @@
  */
 
 import { boxSectionLateFee } from "@/lib/custom-report/box-section-late-fee";
+import { collectionSectionReturn } from "@/lib/custom-report/collection-section-return";
 import { namedForCheckingAccount } from "@/lib/checking-fee-name";
 import { ATM_ABROAD, COLLECTION_ITEM, DRAFT_PROTECTION_FEE, foldRetiredCategory, FOREIGN_DEPOSIT_RETURN, FOREIGN_ITEM_RETURN, INCOMING_WIRE, INTERNATIONAL_ATM, IRA_CLOSING, ITEM_COPY, RESEARCH_SPLIT_LIVE, SKIP_A_PAY, SUSTAINED_OVERDRAFT } from "@/lib/fee-fold";
 
@@ -40,6 +41,11 @@ export interface CategoryGuardContext {
    * when the caller read it (`withBoxSection`). Read only for a late payment.
    */
   box_section?: boolean | null;
+  /**
+   * v90 (#1912): the fee's stored text prints it in a foreign check or collection section
+   * (`collectionSectionReturn`), when the caller read it (`withCollectionSection`). Read only for NSF.
+   */
+  collection_section?: boolean | null;
 }
 
 export type CategoryGuardVerdict =
@@ -118,6 +124,12 @@ const ES_OUTGOING = "saliente|enviad";
  * out of the bank, and pooled with one it pulls the bank's wire price down. A wire price that only
  * says it also covers book transfers ("incluidas las transferencias contables") stays.
  */
+/**
+ * v90 (#1912): a name that names the safe deposit box ("Safety Deposit Box-Late Fee", "Safe Box Late
+ * Fee - Per Month after 3 months", "SDB Late Payment", "Late charge for safety deposit box rental
+ * after 10 days"). A night deposit box is the night depository's, not this.
+ */
+const SAFE_DEPOSIT_BOX_NAME = /\bsafe(?:ty)?[\s-]*(?:deposit|box)|\bsdb\b|(?<!night[\s-])\bdeposit\s+box(?:es)?\b/i;
 const BOOK_TRANSFER = String.raw`^(?![\s\S]*(?:\b(?:includ|incluid|exclud|excluy)\w*|\bincl\b|\bfree\b|\bwaiv\w*|\bno\s+charge|\bor\s+book))[\s\S]*(?:\bbook[- ]?(?:entry\s+)?transfers?\b|\btransferencias?\s+contables?\b)`;
 /** "Transferencia bancaria" and "Giro bancario" are a wire in a Spanish schedule. */
 const WIRE = /(wire|transferencias? (bancarias?|cablegr[aá]ficas?)|giros? bancarios?)/i;
@@ -761,7 +773,9 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   },
   // v70: skipping a loan payment ("Skip-A-Pay Fee" $25) is other lending, not a late payment
   // (James, Oct 17). The price ceiling below still applies.
-  late_payment: { include: /\S/, exclude: SKIP_A_PAY },
+  // v90 (#1912): a late charge whose name names the safe deposit box (`SAFE_DEPOSIT_BOX_NAME`:
+  // "Safety Deposit Box-Late Fee", "SDB Late Payment") is the box's late rent charge.
+  late_payment: { include: /\S/, exclude: new RegExp(`${SKIP_A_PAY.source}|${SAFE_DEPOSIT_BOX_NAME.source}`, "i") },
   // A dormant fee names inactivity. Other lines filed here ("Money Market Savings Account
   // (below )" $15 beside Space Coast's real $5 dormant fee, "Telephone transfers") are
   // neighbouring fees or fragments (v18).
@@ -1078,10 +1092,50 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // (DECISIONS, tiered overdraft). It only admits names; no fee that passes today fails. Read-only dry
 // run (Oct 25): 1 live fee matches the wording ("Overdraft Paid by Over Draft Protection (OD)", already
 // overdraft, verdict unchanged); 0 live fees are held, re-filed or taken down.
-export const CATEGORY_GUARD_VERSION = 89;
+// v90 (Oct 25, #1912): a plain return charge ("Returned Check Fee", "Return Items") its stored text
+// prints in a foreign check or collection section (`collection_section`, read by
+// `withCollectionSection` with `collectionSectionReturn`: U.S. Bank 75929 under "Foreign Check
+// Collection (incoming/outgoing)" after "Tracer Fee | $50.00"; BankUnited 56558 under "COLLECTIONS" and
+// 109208 under "FOREIGN CHECK CLEARING") is a deposited item coming back unpaid: it fails NSF and re-files
+// to deposited_item_return (`refileFromLine`), only where that type accepts the name. And a late charge
+// whose name names the safe deposit box (`SAFE_DEPOSIT_BOX_NAME`: "Safety Deposit Box-Late Fee" 36020,
+// "SDB Late Payment" 159317) fails late_payment and re-files to safe_deposit_box. Read-only dry run,
+// Oct 25: of 4,002 live NSF fees, 3 fail (75929 re-files in place; 56558 and 109208 have a live
+// "Return Items" $25 twin, 157215, so they go to the second look); of 1,102 live late payments, 5 fail
+// (159317 re-files in place; 152482, 153210 and 155092 each have their own live box late twin, and
+// 36020's $1 is below the box type's $5 floor, so those 4 go to the second look). None of the 2,975
+// live domestic outgoing wires changes: the book transfer refusal shipped in v88.
+export const CATEGORY_GUARD_VERSION = 90;
 
 /** v87 (#1916): where a late charge printed in a safe deposit box section is filed. */
 export const BOX_LATE_TARGET = "safe_deposit_box";
+/** v90 (#1912): where a return charge printed in a foreign check or collection section is filed. */
+export const COLLECTION_RETURN_TARGET = "deposited_item_return";
+
+function collectionSectionReason(name: string): string {
+  return `"${name}" is printed in a foreign check or collection section of its schedule: a deposited item coming back unpaid, not the member's NSF fee`;
+}
+
+/** v90 (#1912): the fee's stored text prints it in a collection section, and the returned deposited item type accepts it. */
+function collectionReturn(canonicalFeeKey: string, name: string, context: CategoryGuardContext | undefined): boolean {
+  return canonicalFeeKey === "nsf" && context?.collection_section === true && checkFeeCategory(COLLECTION_RETURN_TARGET, name, context).ok;
+}
+
+/**
+ * v90 (#1912): the guard context with `collection_section` read from the fee's stored text, for an
+ * NSF fee only (every other fee is returned as it is, so no text is needed for it). Darwin's verify,
+ * Hamilton's live guard and its takedown restore call it with each such fee's stored text.
+ */
+export function withCollectionSection<T extends CategoryGuardContext>(
+  canonicalFeeKey: string | null | undefined,
+  feeName: string | null | undefined,
+  context: T,
+  text: string | null | undefined,
+): T {
+  if (canonicalFeeKey !== "nsf" || !text || !feeName) return context;
+  const amount = context.amount == null || context.amount === "" ? null : Number(context.amount);
+  return { ...context, collection_section: collectionSectionReturn(text, feeName, amount != null && Number.isFinite(amount) ? amount : null) };
+}
 
 function boxSectionReason(name: string): string {
   return `"${name}" is printed in a safe deposit box section of its schedule: the box's late rent charge, not a loan's late payment`;
@@ -1200,6 +1254,8 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
   { from: "atm_non_network", to: "early_closure", when: new RegExp(EARLY_CLOSE, "i") },
   // v70: skipping a loan payment is other lending, not a late payment or a loan origination.
   { from: "late_payment", to: "other_lending_fee", when: SKIP_A_PAY },
+  // v90 (#1912): a late charge named for the safe deposit box is the box's (as the fold's split has it).
+  { from: "late_payment", to: BOX_LATE_TARGET, when: SAFE_DEPOSIT_BOX_NAME },
   { from: "loan_origination", to: "other_lending_fee", when: SKIP_A_PAY },
   { from: "check_printing", to: "counter_check", when: /\btemporar/i },
   { from: "check_cashing", to: "collection_item", when: COLLECTION_ITEM },
@@ -1441,6 +1497,9 @@ export function checkFeeCategory(
   if (canonicalFeeKey === "late_payment" && context?.box_section === true) {
     return { ok: false, code: "schedule_contradicts", reason: boxSectionReason(name) };
   }
+  if (collectionReturn(canonicalFeeKey, name, context)) {
+    return { ok: false, code: "schedule_contradicts", reason: collectionSectionReason(name) };
+  }
   const addOnReason = addOnOnLine(canonicalFeeKey, context);
   if (addOnReason) return { ok: false, code: "schedule_contradicts", reason: addOnReason };
   const serviceReason = otherServiceMonthlyCharge(canonicalFeeKey, name, context);
@@ -1660,6 +1719,8 @@ export function refileFromLine(
   if (canonicalFeeKey === "late_payment" && context?.box_section === true) {
     return checkFeeCategory(BOX_LATE_TARGET, feeName, context).ok ? BOX_LATE_TARGET : null;
   }
+  // v90 (#1912): a return charge its stored text prints in a collection section is a returned deposited item.
+  if (collectionReturn(canonicalFeeKey, feeName ?? "", context)) return COLLECTION_RETURN_TARGET;
   // v72 (#1788): an overdraft row whose own line charges it for staying overdrawn is the continuous
   // overdraft fee.
   if (sustainedOverdraftOnLine(canonicalFeeKey, context)) {

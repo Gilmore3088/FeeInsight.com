@@ -213,7 +213,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-299 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+300 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
 ### Extraction and fee reading (45)
 
@@ -276,8 +276,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A provider refusal inside a streamed response never reaches the route's catch; map it in the stream's `onError`. — [finding](findings/2026-10-09-provider-limit-blank-answers.md) — Guard: `src/lib/ai-provider.test.ts` (+2 more)
 - 2026-10-09 — The Console usage limit did not trip the provider stop, and the verdict score starved. — [finding](findings/2026-10-09-api-usage-limit-did-not-trip-provider-stop.md) — Guard: `src/lib/ai-provider-usage.test.ts` (+1 more)
 
-### Categorisation and audience (21)
+### Categorisation and audience (22)
 
+- 2026-10-25 — A fee's section heading, and what its name names, decide its category: a return charge under a foreign check or collection heading is not NSF, and a box-named late fee is the box's. — [finding](findings/2026-10-25-section-heading-and-destination-decide-category.md) — Guard: `collection-section-return.test.ts`, guard v90 tests; Agent lesson: `darwin/issue-1912-section-and-name-decide-category`, `knox/issue-1912-heading-decides-a-plain-return`
 - 2026-10-19 — Applicability needs both the final existing decision and positive current source facts; an early negative-key exit cannot certify that no affected facts exist. — [finding](findings/2026-10-19-stale-nonwire-international-verification.md) — Guard: Preserve the full Family PDF OLD-red and green pure controls, actual common...
 - 2026-10-19 — An exclusive audience on the fee's own price clause (#2342). — [finding](findings/2026-10-19-own-price-audience.md) — Guard: `own-price-audience.test.ts` (+2 more)
 - 2026-10-19 — Re-extract the actual policy unit, retain every qualifying scope clause, and inspect downstream price selection before making a restricted price eligible. — [finding](findings/2026-10-19-nsf-policy-price-scope.md) — Guard: `nsf-policy-prices.test.ts` (+5 more)
@@ -558,7 +559,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (209 in all).
+counts as of this index (211 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
@@ -566,8 +567,8 @@ counts as of this index (209 in all).
 | magellan | 20 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
 | hoovie | 10 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
 | rosetta | 9 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
-| knox | 59 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
-| darwin | 29 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
+| knox | 60 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
+| darwin | 30 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 40 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
 | hamilton | 22 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
 | deming | 13 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
