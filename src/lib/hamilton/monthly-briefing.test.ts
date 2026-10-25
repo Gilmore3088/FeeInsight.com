@@ -126,6 +126,17 @@ describe("buildMonthlyBriefing (#1897)", () => {
     expect(management.text).not.toMatch(/should (raise|lower|set|charge)|recommend/i);
   });
 
+  it("asks about complaints only when a complaint record is listed, and names fees in sentence case", () => {
+    const circularOnly = buildMonthlyBriefing(input({
+      regulation: [{ text: "Overdraft fees on authorize-positive transactions can be unfair.", source: { label: "CFPB Circular 2022-06", asOf: null } }],
+      competition: { ...input().competition!, fees: [{ feeCategory: "stop_payment", own: 25, ownAsOf: null, ownUrl: null, peerMedian: 31, peerCount: 14 }] },
+    }));
+    const management = circularOnly.sections.find((s) => s.id === "management")!;
+    expect(management.text).not.toMatch(/complaint/);
+    expect(management.text).toContain("The stop payment fee sits");
+    expect(circularOnly.sections.find((s) => s.id === "regulation")!.rows[0].period).toBe("Read Oct 25, 2026");
+  });
+
   it("keeps em dashes out of text read from shared readers", () => {
     const all = JSON.stringify(briefing);
     expect(all).not.toContain("\u2014");

@@ -24,7 +24,9 @@ const styles = StyleSheet.create({
   paragraph: { fontSize: 10.5, color: C.textPrimary, lineHeight: 1.6, marginBottom: 6 },
   edited: { fontSize: 8, color: C.textSecondary, marginBottom: 6 },
   tableHead: { flexDirection: "row", borderBottomWidth: 1, borderBottomColor: C.borderDark, borderBottomStyle: "solid", paddingBottom: 3, marginTop: 4 },
-  row: { flexDirection: "row", borderBottomWidth: 0.5, borderBottomColor: C.borderDark, borderBottomStyle: "solid", paddingVertical: 3 },
+  rowWrap: { borderBottomWidth: 0.5, borderBottomColor: C.borderDark, borderBottomStyle: "solid", paddingVertical: 3 },
+  rowCells: { flexDirection: "row" },
+  url: { fontSize: 7, color: C.textTertiary, marginTop: 1 },
   headCell: { fontSize: 7.5, fontFamily: "Helvetica-Bold", color: C.textSecondary },
   cell: { fontSize: 8, color: C.textPrimary, lineHeight: 1.4, paddingRight: 6 },
   label: { width: "34%" },
@@ -59,11 +61,15 @@ export function MonthlyBriefingPdf({ title, briefing }: { title: string; briefin
                   <Text style={[styles.headCell, styles.period]}>Period</Text>
                 </View>
                 {section.rows.map((row, i) => (
-                  <View key={i} style={styles.row} wrap={false}>
-                    <Text style={[styles.cell, styles.label]}>{row.label}</Text>
-                    <Text style={[styles.cell, styles.value]}>{row.value ?? ""}</Text>
-                    <Text style={[styles.cell, styles.source]}>{row.url ? `${row.source} (${row.url})` : row.source}</Text>
-                    <Text style={[styles.cell, styles.period]}>{row.period}</Text>
+                  <View key={i} style={styles.rowWrap} wrap={false}>
+                    <View style={styles.rowCells}>
+                      <Text style={[styles.cell, styles.label]}>{row.label}</Text>
+                      <Text style={[styles.cell, styles.value]}>{row.value ?? ""}</Text>
+                      <Text style={[styles.cell, styles.source]}>{row.source}</Text>
+                      <Text style={[styles.cell, styles.period]}>{row.period}</Text>
+                    </View>
+                    {/* A long link gets its own line, so it never runs over the next column. */}
+                    {row.url ? <Text style={styles.url}>Source link: {row.url}</Text> : null}
                   </View>
                 ))}
               </View>

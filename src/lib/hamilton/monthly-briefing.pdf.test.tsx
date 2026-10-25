@@ -31,7 +31,7 @@ it("exports the six sections with each figure's source and period, and marks the
     "October board pack",
     "Summary", "Financials", "Competition", "Market", "Regulation", "Management considerations",
     "$35", "$30", "Bank Fee Index, Ohio community banks, 42 institutions", "As of Oct 24, 2026", "Published Sep 2, 2026",
-    "Regulation E, 12 CFR 1005.17", "Rule in force",
+    "Regulation E, 12 CFR 1005.17", "Read Oct 25, 2026",
     "Our reading of the market this month.", "Words edited by your team.",
     "No call report filings are on file",
   ]) expect(normalized).toContain(phrase);

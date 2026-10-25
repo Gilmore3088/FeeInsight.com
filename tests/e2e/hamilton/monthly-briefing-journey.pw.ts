@@ -28,6 +28,8 @@ const MONTHS = Array.from({ length: 13 }, (_, i) => {
 async function seed(db: FixtureDb): Promise<void> {
   const ids = [HOME.id, ...PEERS.map((p) => p.id)];
   await db`DELETE FROM institution_financial_records WHERE id BETWEEN ${RECORD_BASE} AND ${RECORD_BASE + 999}`;
+  // The shared fixtures file one assets-only row per institution for Q2 2026; these filings replace it.
+  await db`DELETE FROM institution_financial_records WHERE institution_id = ANY(${ids}) AND report_date = ANY(${DATES})`;
   await db`UPDATE institution_sources SET institution_name = ${SHOWN_NAME} WHERE id = ${HOME.id}`;
   await db`UPDATE users SET institution_name = ${SHOWN_NAME} WHERE id = ${FIXTURE_USERS.pro.id}`;
   let recordId = RECORD_BASE;

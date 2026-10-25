@@ -170,7 +170,7 @@ function capital(text: string): string {
 
 /** A fee's name inside a sentence: "Overdraft (OD)" reads "overdraft". */
 function spoken(name: string): string {
-  return lowerFirst(name.replace(/\s*\([^)]*\)/g, "").trim());
+  return name.replace(/\s*\([^)]*\)/g, "").trim().split(/\s+/).map(lowerFirst).join(" ");
 }
 
 function feeName(category: string): string {
@@ -385,7 +385,7 @@ function market(input: MonthlyBriefingInput): MarketFacts {
     const row: BriefingRow = { label: i.label, value, source: i.source.label, period, url: i.source.url ?? null };
     rows.push(row);
     const sentence = i.measure === "rate"
-      ? `The ${lowerFirst(i.label)} was ${value} in ${period}.`
+      ? `${i.label} was ${value} in ${period}.`
       : `${i.label} ${i.value === 0 ? "were unchanged" : `were ${i.value > 0 ? "up" : "down"} ${pct1(i.value)}`} over the 12 months to ${period}.`;
     draft.push(sentence);
     if (i.key === "fed_funds" || (!lead && i.measure === "rate")) lead = { row, sentence };
@@ -412,7 +412,7 @@ function regulation(input: MonthlyBriefingInput): Built {
       label: plain(f.text),
       value: null,
       source: plain(f.source.label),
-      period: f.source.asOf ? (/^\d{4}$/.test(f.source.asOf) ? `Year ${f.source.asOf}` : dayLabel(f.source.asOf)) : "Rule in force",
+      period: f.source.asOf ? (/^\d{4}$/.test(f.source.asOf) ? `Year ${f.source.asOf}` : dayLabel(f.source.asOf)) : `Read ${dayLabel(input.now.toISOString())}`,
       url: f.source.url ?? null,
     })),
     gaps: [],
@@ -438,7 +438,7 @@ function management(fin: FinancialFacts, comp: CompetitionFacts, reg: Built): Bu
     draft.push(`${fin.feeNoun} ${fin.yoyPct > 0 ? "rose" : "fell"} ${pct1(fin.yoyPct)} on a year earlier in ${fin.quarter}. Which fee lines moved it?`);
     rows.push(fin.feeRow, fin.yoyRow);
   }
-  if (reg.rows.some((r) => /CFPB/.test(r.source))) {
+  if (reg.rows.some((r) => /complaint/i.test(r.source))) {
     draft.push("How do the CFPB complaint figures under Regulation compare with the complaints your own team logged?");
   }
   if (draft.length === 0) {
