@@ -50,12 +50,16 @@ export function hasDiscontinuedMarker(text: string): boolean {
 }
 
 /** A legacy section heading: "Legacy Accounts", "Retired Accounts (...)", "Grandfathered Checking Account Types:". */
-const LEGACY_SECTION = /^(?:legacy|discontinued|retired|grandfathered)\b[^$]{0,40}?\b(?:accounts|account types|products|plans|packages)\b/i;
+// The marker word opens the heading and names the accounts at once ("Legacy Bank Accounts", "Retired
+// Military Accounts" and "Grandfathered Plans and Current Products" are not legacy sections).
+const LEGACY_SECTION =
+  /^(?:legacy|discontinued|retired|grandfathered)\s+(?:(?:checking|savings|deposit|personal|business|consumer|share|money market|certificate)\s+)?(?:accounts|account types|products|plans|packages)\b(?![^$]*\bcurrent\b)/i;
 /** A section heading that carries the marker itself: "Accounts No Longer Offered", "Previously Offered Products". */
 const MARKED_SECTION = /^(?:the following\s+)?(?:(?:checking|savings|deposit|personal)\s+)?(?:accounts|account types|products|previously offered)\b/i;
 /** A heading that opens another section, which ends a legacy section above it. */
 // A notes block ("PLEASE NOTE", "Disclosures:") closes the section above it too.
-const SECTION_WORDS = /\b(?:fees|charges|services|schedule|accounts|account types|products|miscellaneous|other|general|notes?|disclosures?|footnotes?)\b/i;
+// So does a service heading under it ("Wire Transfers", "ATM", "Debit Cards").
+const SECTION_WORDS = /\b(?:fees|charges|services|schedule|accounts|account types|products|miscellaneous|other|general|notes?|disclosures?|footnotes?|wires?|transfers?|atms?|cards?)\b/i;
 /** A footnote or note opening a cell or line ("10. Account type ...", "* This account ...", "(2) ..."). */
 const FOOTNOTE_MARK = /^\s*(?:\d{1,2}[.)]\s|\(\d{1,2}\)|[*†‡§¹²³⁴⁵⁶⁷⁸⁹]|notes?\b|footnote)/i;
 /** A numbered footnote without a point: "1 Required notice under ...", "5 The monthly fee ...". */

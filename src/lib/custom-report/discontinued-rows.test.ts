@@ -98,6 +98,16 @@ describe("discontinuedRow (#2070)", () => {
 
 // Trimmed copies of stored texts from the production dry run of the first cut (#2070).
 describe("production layouts (#2070 dry run)", () => {
+  it("reads a legacy heading only when it names the accounts, and a service heading closes it (review)", () => {
+    expect(discontinuedRow("Legacy Bank Accounts\nStop Payment Fee $30.00", "Stop Payment Fee", 30)).toBeNull();
+    expect(discontinuedRow("Retired Military Accounts\nStop Payment Fee $30.00", "Stop Payment Fee", 30)).toBeNull();
+    expect(discontinuedRow("Grandfathered Plans and Current Products\nStop Payment Fee $30.00", "Stop Payment Fee", 30)).toBeNull();
+    const legacy = "Legacy Accounts\nGold Checking Monthly Fee $10.00\nWire Transfers\nIncoming Wire $15.00";
+    expect(discontinuedRow(legacy, "Incoming Wire", 15)).toBeNull();
+    expect(discontinuedRow(legacy, "Gold Checking Monthly Fee", 10)).not.toBeNull();
+    expect(discontinuedRow("Grandfathered Checking Accounts\nMonthly Service Charge $8.00", "Monthly Service Charge", 8)).not.toBeNull();
+  });
+
   it("never lets a left column's legacy heading take the right column's item (GBC Bank, fee 14202)", () => {
     const text = [
       "The following accounts are no longer offered but will continue to be served to",
