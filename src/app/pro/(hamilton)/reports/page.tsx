@@ -28,6 +28,7 @@ import {
 import { DISTRICT_NAMES, FDIC_TIER_LABELS } from "@/lib/fed-districts";
 import { savedOutputChangeNotice } from "@/lib/hamilton/saved-output-notice";
 import { SavedChangeNotice } from "../analyze/saved-change-notice";
+import { MONTHLY_BRIEFING_REPORT_TYPE } from "@/lib/hamilton/monthly-briefing";
 
 export const metadata: Metadata = { title: "Reports" };
 
@@ -142,6 +143,10 @@ export default async function ReportsPage({
       actionLabel={sourceAnalysisId ? "Open the saved answer to ask again" : "Write a new report with current data"}
     />
   ) : null;
+  // A monthly briefing (#1897) opens in its own editor, from the library or a bookmarked link.
+  if (initialReport?.report_type === MONTHLY_BRIEFING_REPORT_TYPE && initialReport.report_json.monthlyBriefing) {
+    redirect(`/pro/reports/monthly?report_id=${encodeURIComponent(initialReport.id)}`);
+  }
   if (initialReport?.report_type === "board_brief" && initialReport.report_json.boardBrief) {
     return <>
       {noticeBlock}
