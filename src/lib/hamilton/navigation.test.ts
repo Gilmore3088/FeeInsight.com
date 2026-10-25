@@ -188,6 +188,7 @@ describe("workspace left navigation: five areas (#2044, James's Oct 19 review)",
     const price = HAMILTON_WORKSPACE_NAV.find(item => item.label === "Try a price")!;
     expect(isWorkspaceNavActive("/pro/research", research)).toBe(true);
     expect(isWorkspaceNavActive("/pro/intelligence", research)).toBe(true);
+    expect(isWorkspaceNavActive("/pro/peers", research)).toBe(true);
     expect(isWorkspaceNavActive("/pro/saved", price)).toBe(true);
     expect(isWorkspaceNavActive("/pro/simulate", price)).toBe(true);
     expect(isWorkspaceNavActive("/pro/simulate", research)).toBe(false);

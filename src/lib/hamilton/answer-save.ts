@@ -5,13 +5,14 @@
  * instead of inserting another.
  */
 
-import { answerTitle, parseAnalyzeResponse } from "@/components/hamilton/analyze/parse-response";
+import { parseAnalyzeResponse } from "@/components/hamilton/analyze/parse-response";
 import { confidenceFromFigureCheck } from "@/lib/hamilton/figure-check";
 import { checkAnswerEvidence, savedAnswerEvidence, type AnswerEvidenceCheck } from "@/lib/hamilton/answer-gate";
 import type { AnalyzeResponse } from "@/lib/hamilton/types";
 import type { NarrativeBinding } from "@/lib/hamilton/narrative-bound";
 import { bindWrittenAnswer, withoutOmitted, writtenAnswerFeeEvidence } from "@/lib/hamilton/written-answer-binding";
 import { claimEvidenceFacts } from "./claim-evidence";
+import { savedAnswerTitle } from "./saved-title";
 import { savedClaimsFrom, type SavedClaimSet } from "./saved-claims";
 import { writtenAnswerEvidence, type AnswerToolEvidence, type WrittenAnswerEvidenceContext } from "./written-answer-evidence";
 
@@ -58,7 +59,9 @@ export function writtenAnswerClaims(binding: NarrativeBinding | null, toolOutput
 /**
  * The saved response for a written answer: its sections, title, figure-check confidence, the
  * evidence gate's verdict, the sentence binding and its claims. A sentence the records contradict
- * is left out of the saved sections; the binding and the claims keep its text and why.
+ * is left out of the saved sections; the binding and the claims keep its text and why. The title
+ * is a supported or figure-free lead, else the question (saved-title.ts, #1077 defect 8): reports
+ * and briefs print it as a headline with no label, so a reading sentence is never the title.
  */
 export function writtenAnswerResponse(
   text: string,
@@ -66,10 +69,11 @@ export function writtenAnswerResponse(
   check: AnswerEvidenceCheck = writtenAnswerCheck(text, toolOutputs),
   binding: NarrativeBinding | null = null,
   claims: SavedClaimSet | null = null,
+  question = "",
 ): AnalyzeResponse {
   const parsed = withoutOmitted(parseAnalyzeResponse(text), binding);
   return {
-    title: answerTitle(parsed.hamiltonView),
+    title: savedAnswerTitle(parsed.hamiltonView, binding, question),
     confidence: confidenceFromFigureCheck(check.figureCheck),
     hamiltonView: parsed.hamiltonView,
     whatThisMeans: parsed.whatThisMeans,

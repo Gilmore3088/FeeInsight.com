@@ -35,8 +35,10 @@ describe("every feedback kind names its reader (#2062)", () => {
   it("registers every kind the takedown sync maps a reason to", () => {
     const reasons = ["refreshed by #1", "rules_recheck_unreproduced", "category_guard", "amount_outside_category_range", "category_outside_taxonomy",
       "limit_as_fee", "duplicate of #2", "source_check_untraceable:amount_is_a_threshold", "source_check_untraceable:amount_not_the_fee",
-      "source_check_untraceable:priced_per_amount", "source_check_untraceable:category_not_in_text", "source_check_untraceable:other"];
+      "source_check_untraceable:priced_per_amount", "source_check_untraceable:category_not_in_text", "source_check_untraceable:discontinued_account", "source_check_untraceable:other"];
     for (const reason of reasons) expect(Object.keys(FEEDBACK_KINDS), reason).toContain(takedownKind(reason));
+    // #2070: a discontinued account's takedown is its own kind, not "not on the schedule".
+    expect(takedownKind("source_check_untraceable:discontinued_account")).toBe("discontinued_account");
   });
 
   it("calls a row unread when its kind is unread or unregistered, or read only at another stage or from other checks", () => {

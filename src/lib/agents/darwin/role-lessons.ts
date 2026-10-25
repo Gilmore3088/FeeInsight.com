@@ -286,4 +286,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-1912-same-bank-transfer-and-other-atm-price",
+    agent: "darwin",
+    stage: "classify",
+    lesson: "A wire category holds only wires that leave or reach the bank: a book transfer to another account at the same bank (\"Book Transfer\", \"transferencia contable\") is a cheaper internal move and is not the domestic wire. A cash advance whose own line states its price for another bank's ATMs (\"$3.00 for Non M&T Bank ATMs\") is the non-network ATM fee cut from a wrapped cell, not a cash advance. Read the excerpt's price clause, not just the name, before passing a fee into a benchmarked category.",
+    why: "M&T's $16 book transfer went live as an outgoing domestic wire beside its real $32 wire and its $3 non-M&T ATM withdrawal went live as a cash advance (Oct 18 live check, #1912). Both amounts trace to their own lines, so the shared source check passed them; only the category was wrong. Guard v88 found 5 such live fees (M&T 145046, 68601; IBC 26125, 35171, 121267).",
+    evidence: { issues: [1912], prs: [2628], files: ["src/lib/fee-category-guard.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];
