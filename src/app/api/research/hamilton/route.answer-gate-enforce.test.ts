@@ -11,8 +11,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   stream: vi.fn(), generate: vi.fn(), briefing: vi.fn(), save: vi.fn(), usage: vi.fn(), shadow: vi.fn(),
   held: { message: "Synthetic held line." as string | null },
-  /** A forced status for the gate; null runs the real gate. */
-  forced: null as null | "validated" | "ready_partial" | "held" | "throw",
+  /** A forced status for the gate; null runs the real gate; "partial_cut" adds a non-critical cut of `cut` to the real verdict. */
+  forced: null as null | "validated" | "ready_partial" | "held" | "throw" | "partial_cut",
+  cut: "",
   calls: 0,
 }));
 // The shadow is computed at once here, so each test reads the record it would write after the response.
@@ -29,6 +30,10 @@ vi.mock("@/lib/hamilton/output-gate", async () => {
       if (mocks.forced === "throw") throw new Error("synthetic gate failure");
       const verdict = actual.gateAnswer(input);
       if (!mocks.forced) return verdict;
+      if (mocks.forced === "partial_cut") {
+        return { ...verdict, status: "ready_partial" as const,
+          failures: [...verdict.failures, { code: "causal_unsupported" as const, message: "Synthetic unsupported cause.", critical: false, source: "cause" as const, sentences: [mocks.cut] }] };
+      }
       const failures = mocks.forced === "validated" ? []
         : [{ code: "untraced_figure" as const, message: "Synthetic untraced figure.", critical: mocks.forced === "held", source: "check" as const }];
       return { ...verdict, status: mocks.forced, failures };
@@ -71,12 +76,17 @@ vi.mock("@/lib/hamilton/answer-gate", async () => {
   const actual = await vi.importActual<typeof import("@/lib/hamilton/answer-gate")>("@/lib/hamilton/answer-gate");
   return { ...actual, get HELD_ANSWER_MESSAGE() { return mocks.held.message; } };
 });
-vi.mock("@/lib/hamilton/citation-gate", () => ({ evaluateCitationDensity: (text: string) => ({ status: "ok", metrics: { chars: text.length } }) }));
+// The real module, with only the density check passing every draft: these tests are about the output gate.
+vi.mock("@/lib/hamilton/citation-gate", async () => ({
+  ...(await vi.importActual<typeof import("@/lib/hamilton/citation-gate")>("@/lib/hamilton/citation-gate")),
+  evaluateCitationDensity: (text: string) => ({ status: "ok", metrics: { chars: text.length } }),
+}));
 vi.mock("ai", async () => ({
   ...(await vi.importActual<typeof import("ai")>("ai")),
   streamText: mocks.stream, generateText: mocks.generate, convertToModelMessages: async (messages: unknown) => messages, stepCountIs: () => ({}),
 }));
 import { ALL_LEFT_OUT_LEAD } from "@/lib/hamilton/written-answer-binding";
+import { writtenAnswerBinding } from "@/lib/hamilton/answer-save";
 import { POST } from "./route";
 
 // Invented figures for tests only.
@@ -92,23 +102,23 @@ const request = (mode: string | null = "analyze", extra: Record<string, unknown>
 
 type Chunk = Record<string, unknown> & { type: string };
 
-function providerChunks(text: string): Chunk[] {
+function providerChunks(text: string, output: unknown = TOOL_OUTPUT): Chunk[] {
   return [
     { type: "start" }, { type: "start-step" },
     { type: "tool-input-available", toolCallId: "call-1", toolName: "getInstitution", input: {} },
-    { type: "tool-output-available", toolCallId: "call-1", output: TOOL_OUTPUT },
+    { type: "tool-output-available", toolCallId: "call-1", output },
     { type: "reasoning-start", id: "r1" }, { type: "reasoning-delta", id: "r1", delta: `Drafting: ${text}` }, { type: "reasoning-end", id: "r1" },
     { type: "text-start", id: "t1" }, { type: "text-delta", id: "t1", delta: text }, { type: "text-end", id: "t1" },
     { type: "finish-step" }, { type: "finish", finishReason: "stop" },
   ];
 }
 
-function streams(text: string, finishReason = "stop") {
+function streams(text: string, finishReason = "stop", outputs: unknown[] = [TOOL_OUTPUT]) {
   mocks.stream.mockImplementation((options) => ({
     consumeStream: async () => options.onFinish({ finishReason, totalUsage: { inputTokens: 1, outputTokens: 1 }, text,
-      steps: [{ toolResults: [{ toolName: "getInstitution", input: {}, output: TOOL_OUTPUT }] }] }),
+      steps: [{ toolResults: outputs.map((output) => ({ toolName: "getInstitution", input: {}, output })) }] }),
     toUIMessageStream: (streamOptions: { messageMetadata?: (input: { part: Chunk }) => unknown }) => {
-      const chunks = providerChunks(text).map((chunk) => {
+      const chunks = providerChunks(text, outputs[0]).map((chunk) => {
         const messageMetadata = streamOptions.messageMetadata?.({ part: chunk });
         return messageMetadata === undefined ? chunk : { ...chunk, messageMetadata };
       });
@@ -198,6 +208,29 @@ describe("streamed written answer, switch on", () => {
     expect(mocks.shadow.mock.calls[0][0]).toMatchObject({ unified: "validated", gateMode: "enforced" });
     streams(PASSING);
     expect(textOf((await sse(await POST(request(null)))).chunks)).toBe(PASSING);
+  });
+
+  it("a partial verdict that cuts a sentence the real binding keeps: the cut text is nowhere in the body and is not saved", async () => {
+    // Invented banks: the profile read returns Synthetic Bank A's $10 overdraft fee as a catalog row, so the binding binds.
+    const profile = {
+      identity: { id: 9001, name: "Synthetic Bank A" },
+      fees: { verified: [{ fee_name: "Overdraft", fee_category: "overdraft", amount: 10, frequency: "per item", status: "verified", record_id: 1, source_document_id: 101 }], provisional: [] },
+    };
+    const kept = "Synthetic Bank A charges $10 for an overdraft.";
+    const cut = "Synthetic Bank A keeps it there because its costs rose.";
+    const text = `## Hamilton's View\n${kept} ${cut}`;
+    const binding = writtenAnswerBinding(text, [profile], QUESTION,
+      { toolResults: [{ toolName: "getInstitution", input: {}, output: profile }], institutionId: 202, accountInstitutionId: null });
+    expect(binding?.supported.map((s) => s.text)).toContain(kept);
+    expect(binding?.omitted.map((o) => o.text) ?? []).not.toContain(cut);
+    mocks.forced = "partial_cut";
+    mocks.cut = cut;
+    streams(text, "stop", [profile]);
+    const { raw, chunks } = await sse(await POST(request("analyze")));
+    expect(raw).not.toContain(cut);
+    expect(raw).not.toContain("because its costs rose");
+    expect(textOf(chunks)).toBe("Synthetic held line.");
+    expect(mocks.save).not.toHaveBeenCalled();
   });
 
   it("an answer the provider never finished sends no text: the gate never read it", async () => {

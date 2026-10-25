@@ -96,24 +96,21 @@ describe("the outcome rule", () => {
   });
 
   it("never shows a streamed answer today holds or the gate holds; keeps today's view when validated", () => {
-    expect(enforceStreamedDecision("x", verdict("validated"), { held: true }, true)).toEqual({ held: true });
-    expect(enforceStreamedDecision("x", verdict("held"), { held: false, shownText: "y" }, true)).toEqual({ held: true });
-    expect(enforceStreamedDecision("x", null, { held: false }, true)).toEqual({ held: true });
-    expect(enforceStreamedDecision("x", verdict("ready_partial"), { held: false }, false)).toEqual({ held: true });
-    expect(enforceStreamedDecision("x", verdict("validated"), { held: false, shownText: "y" }, true)).toEqual({ held: false, shownText: "y" });
+    expect(enforceStreamedDecision(verdict("validated"), { held: true }, true)).toEqual({ held: true });
+    expect(enforceStreamedDecision(verdict("held"), { held: false, shownText: "y" }, true)).toEqual({ held: true });
+    expect(enforceStreamedDecision(null, { held: false }, true)).toEqual({ held: true });
+    expect(enforceStreamedDecision(verdict("ready_partial"), { held: false }, false)).toEqual({ held: true });
+    expect(enforceStreamedDecision(verdict("validated"), { held: false, shownText: "y" }, true)).toEqual({ held: false, shownText: "y" });
   });
 
-  it("shows a partial streamed answer as the gate's own view, without the sentence it cut", () => {
-    const text = "Synthetic Bank A charges $10 for an overdraft. Synthetic Bank A raised it because of costs.";
-    const cut = "Synthetic Bank A raised it because of costs.";
-    const partial = verdict("ready_partial", { failures: [{ code: "causal_unsupported", message: "cause", critical: false, source: "cause", sentences: [cut] }] });
-    const decision = enforceStreamedDecision(text, partial, { held: false }, true);
-    expect(decision.held).toBe(false);
-    expect(decision.shownText).toContain("$10 for an overdraft");
-    expect(decision.shownText).not.toContain(cut);
-    // A cut the view cannot find fails closed.
-    const missing = verdict("ready_partial", { failures: [{ code: "causal_unsupported", message: "cause", critical: false, source: "cause", sentences: ["Not in the text."] }] });
-    expect(enforceStreamedDecision(text, missing, { held: false }, true)).toEqual({ held: true });
+  it("shows a partial streamed answer only when its cuts are the binding's own; any other cut holds", () => {
+    const leftOut = verdict("ready_partial", { failures: [{ code: "wrong_institution", message: "Synthetic Bank A charges $35.", critical: false, source: "binding" }] });
+    expect(enforceStreamedDecision(leftOut, { held: false, shownText: "kept" }, true)).toEqual({ held: false, shownText: "kept" });
+    const cause = verdict("ready_partial", { failures: [
+      { code: "wrong_institution", message: "Synthetic Bank A charges $35.", critical: false, source: "binding" },
+      { code: "causal_unsupported", message: "cause", critical: false, source: "cause", sentences: ["It rose because of costs."] },
+    ] });
+    expect(enforceStreamedDecision(cause, { held: false, shownText: "kept" }, true)).toEqual({ held: true });
   });
 });
 

@@ -28,8 +28,11 @@ it never shows what today's checks hold, and an untraced figure is critical in t
 - Written answer, streamed: every mode is held until the gate has read the answer, admin chats
   included (they streamed ungated before). Held: the held line (`HELD_ANSWER_MESSAGE`, or the same
   source-check line if it is ever null), nothing saved. Partial (Analyze only, which already shows
-  partial answers): `gatedAnswerView` builds the shown text, held when it fails closed or cuts
-  nothing. An answer the provider never finished gets the stream's error with every text and
+  partial answers): shown as today only when every failure is a sentence the binding left out,
+  since today's view, the reader binding on the start chunk and in the final metadata, and the
+  saved row already mark exactly those. A partial verdict that cuts any other sentence (a cause,
+  advice, an internal name, house wording) is held: the stream's binding and the save would still
+  carry that sentence as supported (review of the first commit). An answer the provider never finished gets the stream's error with every text and
   reasoning chunk taken out (`withoutText`), so ungated text is never sent.
 - Ask memo (`writeStorylineMemo`): a draft today's checks pass is withheld (`status: "withheld"`,
   `MEMO_GATE_HELD_REASON`) unless the gate validates it; no retry, so no provider call is added.
@@ -38,7 +41,9 @@ it never shows what today's checks hold, and an untraced figure is critical in t
   provider has finished cleanly, then the read or `SIMULATE_HELD_MESSAGE` (`enforcedSimulateBody`).
 - Report section (`generateVerifiedSection`): a section the figure check passes comes back
   `needs_review` with `SECTION_GATE_HELD` unless the gate validates it, which refuses the report as
-  an untraced figure does; the report's error names no figure for it.
+  an untraced figure does; the report's error names no figure for it, and the ledger records it as
+  `held_by: "one_output_gate"` with a section count, never under `unverified_figures`. The paid
+  eval scores a held Simulate read as withheld, not unavailable.
 - Every shadow record written with the switch on carries `gateMode: "enforced"`; a shadow record
   has no such field, so its bytes are as before (`gateModeOf` reads it as "shadow"). The ledger
   summary starts "Enforced gate" instead of "Shadow gate". `today` stays what today's checks decided.
@@ -49,8 +54,9 @@ record has no new field, and the route's held line and hold rule are the same va
 **Known limits:**
 - With the switch on, admin chats and Analyze answers arrive in one block once the gate has read
   them, not token by token, and so does the Simulate read.
-- The forced "partial" a test builds with no cut sentence holds (`leftOut === 0`); the real gate
-  marks a failure with no sentence to cut as critical, so this only adds a fail-closed edge.
+- A streamed Analyze answer the gate would cut for a cause, advice or wording sentence is held
+  whole, not shown in part. Showing it in part needs the cut applied to the start binding, the
+  final metadata and the save; that is later work.
 - The Simulate stream's enforced body is covered by unit tests on `enforcedSimulateBody`; there
   is no route test for `/api/hamilton/simulate`.
 - New reader-facing lines (`MEMO_GATE_HELD_REASON`, `SIMULATE_HELD_MESSAGE`, the report's "could
@@ -60,12 +66,13 @@ record has no new field, and the route's held line and hold rule are the same va
 **Provider calls:** none added, on or off. **Migration:** none. **Golden set:** unchanged.
 
 **Guard:** `src/lib/hamilton/output-gate-enforce.test.ts` (switch values; the outcome rule; the
-streamed decision and its partial view; `gateMode` absent in shadow and kept on read-back and on a
+streamed decision, partial only for the binding's own cuts; `gateMode` absent in shadow and kept on read-back and on a
 thrown gate; memo, Simulate read, Simulate stream body and report section each with the switch off
 (unchanged, gate never called) and on (held withheld, validated shown)),
 `src/app/api/research/hamilton/route.answer-gate-enforce.test.ts` (streamed, Analyze and no mode:
 off byte-identical with a gate that would hold; on, held, partial and a thrown gate send only the
-held line and never the draft or its reasoning; validated shown and saved; an unfinished answer
+held line and never the draft or its reasoning; a partial verdict cutting a sentence the real
+binding keeps sends that sentence nowhere and saves nothing; validated shown and saved; an unfinished answer
 sends no text; buffered off unchanged, on refused with no answer text) and
 `src/app/api/research/hamilton/route.streamed-omitted.test.ts` (on, with the real gate, a
 left-out answer still shows in part without the left-out sentence, and an admin chat's draft is

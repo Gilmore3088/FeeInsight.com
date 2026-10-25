@@ -353,6 +353,8 @@ async function simulateUp(
   await recordEvalShadows(shadows, options.recordShadow, candidate.institutionId);
   const sample = { ...candidate, question: `Simulate ${input.feeCategory} at $${input.proposedFee.toFixed(2)}` };
   if (result.status !== "written") {
+    // A read the one output gate held (HAMILTON_ANSWER_GATE_ENFORCE on) was answered and withheld, like a failing memo.
+    if (result.status === "held") return { ...sample, path: "simulate", status: "withheld", failures: result.problems.length ? result.problems : [result.reason], correctness: null, figures: 0 };
     return { ...sample, path: "simulate", status: "unavailable", failures: [result.reason], correctness: null, figures: 0 };
   }
   const values = await live(candidate.institutionId, answered.research, answered.schedule).catch(() => null);

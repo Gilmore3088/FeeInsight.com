@@ -16,7 +16,6 @@
  */
 
 import { gateAnswer, type GateInput, type GateVerdict } from "./output-gate";
-import { gatedAnswerView } from "./output-gate-repair";
 
 /** The environment variable that lets the one output gate decide. Off by default. */
 export const ANSWER_GATE_ENFORCE_SWITCH = "HAMILTON_ANSWER_GATE_ENFORCE" as const;
@@ -64,16 +63,17 @@ export interface StreamedDecision {
 
 /**
  * The streamed written answer's decision with the gate enforced. Today's hold stands; the gate's
- * hold is added; a `ready_partial` verdict, where the path shows partial answers, is shown as
- * `gatedAnswerView` builds it (the same view as the repair path), and held when that view fails
- * closed or cuts nothing (a failure left in the text is never shown). A validated verdict keeps
- * today's decision, its own partial view included.
+ * hold is added. A `ready_partial` verdict, where the path shows partial answers, is shown only
+ * when every failure is a sentence the binding left out: today's view already cuts exactly those,
+ * and the start binding, the final metadata and the saved row already mark them left out. A
+ * partial verdict that cuts any other sentence (a cause, advice, an internal name, house wording)
+ * is held: the stream's binding and save would still carry that sentence as supported (#1077 T4
+ * review). A validated verdict keeps today's decision.
  */
-export function enforceStreamedDecision(text: string, verdict: GateVerdict | null, today: StreamedDecision, supportsPartial: boolean): StreamedDecision {
+export function enforceStreamedDecision(verdict: GateVerdict | null, today: StreamedDecision, supportsPartial: boolean): StreamedDecision {
   if (today.held) return { held: true };
   const outcome = enforcedOutcome(verdict, supportsPartial);
   if (outcome === "held") return { held: true };
   if (outcome === "validated") return today;
-  const view = gatedAnswerView(text, verdict!);
-  return view.text === null || view.leftOut === 0 ? { held: true } : { held: false, shownText: view.text };
+  return verdict!.failures.every((f) => f.source === "binding") ? today : { held: true };
 }

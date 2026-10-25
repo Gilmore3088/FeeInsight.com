@@ -602,10 +602,11 @@ async function handlePOST(request: Request) {
             // so it is not saved as shown. The saved row keeps the full text and binding, as before.
             // One rule with the paid eval's shadow record (analyzeAnswerDecision).
             const decision = analyzeAnswerDecision(text, check, binding, holdsAnswers);
-            // HAMILTON_ANSWER_GATE_ENFORCE on: the one output gate's hold is added; its partial view
-            // is shown where it validates nothing whole (this path shows partial answers).
+            // HAMILTON_ANSWER_GATE_ENFORCE on: the one output gate's hold is added. A partial verdict is
+            // shown only when its cuts are the binding's own left-out sentences, which today's view,
+            // reader binding and save already handle; any other cut holds the answer.
             const { held, shownText } = enforceGate
-              ? enforceStreamedDecision(text, tryGateAnswer(writtenGateInput(text, reads)), decision, true)
+              ? enforceStreamedDecision(tryGateAnswer(writtenGateInput(text, reads)), decision, true)
               : decision;
             if (decision.viewFailed) console.warn("[hamilton] written answer held: its left-out sentences could not be cut", decision.heldBy);
             resolveVerdict({ passed: check.passed, held, binding, ...(shownText !== undefined ? { shownText } : {}) });

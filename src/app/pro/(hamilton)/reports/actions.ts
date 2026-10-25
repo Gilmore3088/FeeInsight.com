@@ -419,11 +419,14 @@ export async function generateReport(
     // Every $ and % in the narrative must trace to the data the model was given.
     const unverified = verifiedSections.flatMap((result) => (result.status === "needs_review" ? result.unmatched : []));
     if (unverified.length > 0) {
-      await recordReportOutcome("failed", "Report not saved: figures could not be traced to the data.", verifiedSections, {
-        unverified_figures: [...new Set(unverified)],
-      });
-      // A section the one output gate held (HAMILTON_ANSWER_GATE_ENFORCE on) names no figure.
+      // A section the one output gate held (HAMILTON_ANSWER_GATE_ENFORCE on) names no figure: it is
+      // recorded as a reason, never as an unverified figure.
       const figures = unverified.filter((line) => line !== SECTION_GATE_HELD);
+      const gateHeldSections = verifiedSections.filter((result) => result.status === "needs_review" && result.unmatched.includes(SECTION_GATE_HELD)).length;
+      await recordReportOutcome("failed", "Report not saved: figures could not be traced to the data.", verifiedSections, {
+        unverified_figures: [...new Set(figures)],
+        ...(gateHeldSections > 0 ? { held_by: "one_output_gate", gate_held_sections: gateHeldSections } : {}),
+      });
       return {
         success: false,
         error: figures.length === 0
