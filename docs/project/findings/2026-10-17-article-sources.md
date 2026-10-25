@@ -53,8 +53,8 @@ page scoring); folding it in is left for its owner.
 
 Prod (read-only, Oct 25): no live fee matches the rule, but article pages kept arriving as
 documents after #1777, because the step that let them in was Magellan's, not publish's. The
-companion finder stored them as account pages by their link words (15 article companions at 8
-institutions, 7 banks with TD on two records, among them TD's two /learning/ pages and Keesler's advice article; Security First's 2022
+companion finder stored them as account pages by their link words (15 article companions on 8
+institution records, TD on two, among them TD's two /learning/ pages and Keesler's advice article; Security First's 2022
 blog post was stored again on Oct 18), and a read remembers the page it read, so the plain fetch
 kept asking for SchoolsFirst FCU's advice article on Oct 18 and 19 instead of its saved link.
 Knox's free read and Darwin then read and verified their fees again, and only publish refused

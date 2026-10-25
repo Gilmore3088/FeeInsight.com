@@ -200,7 +200,7 @@ and `detail.method_version`).
   been stored as account pages, and the last one again on Oct 18, after publish refused its fees.
   The stored-companion review retires the ones stored before (`ARTICLE_COMPANION_REASON`, under
   `not_consumer_fee_page`, so Hamilton's companion retire takes down any live fee read from one;
-  prod, Oct 25: 15 such companions at 8 institutions, 7 banks with TD on two records, no live fee). The plain fetch sets aside a
+  prod, Oct 25: 15 such companions on 8 institution records, TD on two, no live fee). The plain fetch sets aside a
   remembered address that is an article when the saved fee link is not one
   (`withoutArticleRemembered`), unless a person's correction locked it: a read remembers the page
   it read, so SchoolsFirst FCU's advice article was fetched on Oct 18 and 19 instead of its saved
