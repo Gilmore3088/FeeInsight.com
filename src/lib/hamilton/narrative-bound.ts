@@ -38,10 +38,12 @@
  *
  * A fee figure binds only to a record of the fee its clause names (#1077 follow-up): "our overdraft
  * fee is $30" never rests on a $30 stop-payment record. The fee named is read with the Ask bar's
- * fee names (`feeCategoriesIn`), from the figure's own clause, else from the whole sentence; a
- * record also counts as named when its fee name or product is written out. When the only records
- * at that value are other fees, the sentence is left out as `wrong_category`. A sentence that names
- * no fee binds as before, on value, unit and institution (a later sentence's "it" carries no fee).
+ * fee names (`feeCategoriesIn`) from the figure's own clause (from the sentence only when the
+ * clause leaves its fee out: "and Bank B's is $30"); a record also counts as named when its fee
+ * name or product is written out. When the only records at that value are clearly other fees (not
+ * the same fee family, so a daily overdraft cap still fits "overdraft"), the sentence is left out
+ * as `wrong_category`. A clause that names no fee, or a record with no category, binds as before,
+ * on value, unit and institution (a later sentence's "it" carries no fee).
  *
  * Missing, unavailable and conflicting evidence each add one plain limitation line. No line here
  * invents a figure, and none tells the bank what to do with a fee. Source text (fee names,
@@ -50,6 +52,7 @@
  */
 import { historicalAssertionWithdrawn, refuses } from "./answer-interpretations";
 import { splitIntoSentences } from "./citation-gate";
+import { getFeeFamily } from "@/lib/fee-taxonomy";
 import { feeCategoriesIn } from "./workspace/ask";
 import { proseFeeName } from "./workspace/names";
 import {
@@ -336,6 +339,9 @@ function shiftQuarter(quarter: string, back: number): string {
   return `${Math.floor(index / 4)}-Q${(index % 4) + 1}`;
 }
 
+/** A clause that leaves its fee out: "Bank B's is $30", "its is", "theirs is". */
+const FEE_ELLIPSIS = /(?:'s|s'|\b(?:its|theirs|ours|yours))\s+(?:is|was|are|were|stands at|sits at)\b/i;
+
 /** Words that split two figures' clauses: the part before belongs to the first figure, the rest to the next. */
 const CLAUSE_BREAK = /,|;|\s(?:and|but|while|whereas|versus|vs\.?|compared\s+(?:with|to)|against|up\s+from|down\s+from|from)\s/i;
 
@@ -503,23 +509,29 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
     const clauseBases = clauses.map((clause) => statedBasis(clause));
 
     /**
-     * Whether a fee record is a fee the figure's clause names: null when neither the clause nor
-     * the sentence names a fee (binds as before), else true when the record's category is named,
-     * by a fee name or synonym, its own fee name or its product. One fee's name never licenses
-     * another clause's figure; a clause that names no fee takes the fees the sentence names.
+     * Whether a fee record is the fee the figure's clause names. True when its category is named
+     * (a fee name or synonym, its own fee name or its product); false only when the clause clearly
+     * names a different fee; null (bind as before) when the record has no category, the clause
+     * names no fee, or the named fee and the record share a fee family (a sub-type such as a daily
+     * overdraft cap or an international ATM fee under the fee named). A clause that names no fee
+     * takes the sentence's fees only when it leaves the fee out ("and Bank B's is $30").
      */
     const clauseFees = clauses.map((clause) => feeCategoriesIn(clause));
     const sentenceFees = feeCategoriesIn(text);
     const feeNamed = (fact: HamiltonEvidenceFact, figure: NarrativeFigure): boolean | null => {
-      const at = figures.indexOf(figure);
-      const own = clauseFees[at] ?? [];
-      const named = own.length > 0 ? own : sentenceFees;
-      if (named.length === 0) return null;
       const category = fact.scope.feeCategory;
-      if (category && named.includes(category)) return true;
-      const words = (own.length > 0 ? clauses[at] : text).toLowerCase();
+      if (!category) return null;
+      const at = figures.indexOf(figure);
+      const clause = clauses[at] ?? text;
+      const own = clauseFees[at] ?? [];
+      const named = own.length > 0 ? own : FEE_ELLIPSIS.test(clause) ? sentenceFees : [];
+      if (named.length === 0) return null;
+      if (named.includes(category)) return true;
+      const words = (own.length > 0 ? clause : text).toLowerCase();
       const product = fact.scope.product?.trim().toLowerCase();
-      return (!!category && words.includes(proseFeeName(category).toLowerCase())) || (!!product && words.includes(product));
+      if (words.includes(proseFeeName(category).toLowerCase()) || (!!product && words.includes(product))) return true;
+      const family = getFeeFamily(category);
+      return family === null || named.some((fee) => getFeeFamily(fee) === family) ? null : false;
     };
     const periodFor = (figure: NarrativeFigure) => {
       const at = figures.indexOf(figure);

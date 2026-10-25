@@ -221,7 +221,26 @@ describe("a fee figure binds only to a record of the fee its clause names (#1077
     expect(short.omitted[0]?.reason).toBe("wrong_category");
   });
 
-  it("a clause that names no fee takes the fee the sentence names", () => {
+  it("correct sentences stay supported: a clause naming no fee, a sub-type of the fee named, or a record with no category", () => {
+    const of = (id: number, value: number, feeCategory: string | null, product: string) =>
+      fee(id, A, value, "2026-06-30", { scope: { institutionId: A, feeCategory, product, reportingDate: "2026-06-30", effectiveDate: null, accountApplicability: "consumer" } });
+    const cases: Array<[string, HamiltonEvidenceFact[]]> = [
+      ["Bank A's overdraft fee is $35, and it charges $30 to stop a check.", [OD35, STOP30]],
+      ["Bank A's overdraft fee is $35, plus $7 a day after five days.", [OD35, of(30, 7, "continuous_od", "Extended overdraft")]],
+      ["Bank A charges $35 for overdrafts and $15 for incoming wires.", [OD35, of(31, 15, "wire_domestic_incoming", "Wire in")]],
+      ["Bank A caps overdraft and NSF fees at $175 a day.", [of(32, 175, "od_daily_cap", "Daily cap")]],
+      ["Bank A charges $10 to cover an overdraft from savings.", [of(33, 10, "od_protection_transfer", "Transfer from savings")]],
+      ["Bank A's ATM fee abroad is $5.", [of(34, 5, "atm_international", "Foreign ATM use")]],
+      ["Bank A's overdraft fee is $30.", [of(35, 30, null, "Item fee")]],
+    ];
+    for (const [text, facts] of cases) {
+      const result = bindNarrative({ text, evidence: bundle(facts, []), names });
+      expect(result.omitted, text).toEqual([]);
+      expect(result.supported, text).toEqual([{ text, factIds: facts.map((f) => f.id) }]);
+    }
+  });
+
+  it("a clause that leaves its fee out (\"Bank B's is $30\") takes the fee the sentence names", () => {
     const B30 = stop(23, B, 30);
     const result = bindNarrative({ text: "Bank A's overdraft fee is $35, and Bank B's is $30.", evidence: bundle([OD35, B30], []), names });
     expect(result.omitted).toEqual([{ text: "Bank A's overdraft fee is $35, and Bank B's is $30.", reason: "wrong_category" }]);
