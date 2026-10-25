@@ -367,6 +367,22 @@ describe.skipIf(!connection)("admin fee corrections in isolated PostgreSQL", () 
     }
   });
 
+  it("should_refuse_a_wrong_document_cause_that_cites_the_fee_s_own_document_(#2057)", async () => {
+    const result = await correctPublishedFee(db, correction({
+      feePublishedId: overdraftFeeId,
+      idempotencyKey: "db-test-correct-wrongdoc",
+      canonicalFeeKey: "overdraft",
+      feeName: "Overdraft Fee",
+      amount: "31.00",
+      sourceDocumentId: DOC_OLD,
+      sourceExcerpt: "Overdraft Fee | $30.00 per item",
+      cause: "wrong_document",
+    }), admin);
+    expect(result).toMatchObject({ ok: false, code: "invalid", errors: { cause: expect.stringContaining("came from") } });
+    const feedback = await raw`SELECT 1 FROM pipeline_feedback WHERE kind = 'admin_correction' AND fee_published_id = ${overdraftFeeId}`;
+    expect(feedback).toHaveLength(0);
+  });
+
   it("should_rebuild_the_national_index_when_a_fee_is_held", async () => {
     const result = await holdPublishedFee(db as never, overdraftFeeId, "Wrong audience on the line", { id: 2, name: "Ana" });
     expect(result).toMatchObject({ ok: true, indexRefreshed: true });

@@ -472,6 +472,12 @@ export async function correctPublishedFee(
     if (sameFeeValues(before, after)) return { ok: false, code: "invalid", error: "Nothing changed: the values are the ones already live." };
     const treatment = treatmentConflict(live.fee_treatment, input.amount);
     if (treatment) return { ok: false, code: "invalid", error: treatment, errors: { amount: treatment } };
+    // The right value read from the fee's own document cannot make that document the wrong one,
+    // and the finding would send the bank's link to be searched again.
+    if (input.cause === "wrong_document" && live.live_document_id != null && input.sourceDocumentId === Number(live.live_document_id)) {
+      const error = "You cited the document this fee came from, so it is not the wrong document. Choose another cause.";
+      return { ok: false, code: "invalid", error, errors: { cause: error } };
+    }
     const checked = await checkEvidence(tx, Number(live.institution_id), input);
     if (!checked.ok) return { ok: false, code: "evidence", error: checked.error, errors: { [checked.field]: checked.error } };
     return writeVersion(tx, {
