@@ -2,6 +2,7 @@ import { feeApplicability } from "@/lib/fee-audience";
 import {
   billPayByHeading,
   boxSectionLateFeeRead,
+  checkingNamePriceAmbiguous,
   extractCandidatesFromText,
   recognizedFeeBullets,
   isUnpricedHeldShape,
@@ -267,15 +268,25 @@ import { withGluedFootnotePrices } from "@/lib/custom-report/glued-footnote-pric
 // checking or other title it stays as before; a short product heading ("Visa") is such a title, and a
 // lone title under two side-by-side columns heads neither. Adds reads only. The stale-read floor stays at
 // v97. Name re-tidy stays at v27.
-// v110 (#1916): a late charge printed in a safe deposit box section is the box's, whichever
+// v110 (#1918): a fee named for the checking account itself ("MAX Checking Fee (per month)", "Platinum
+// Checking Fee", Bellco FCU) is that account's monthly fee (`CHECKING_ACCOUNT_FEE_NAME`); "$15K" is a
+// balance, never a $15 price; and a waiver bracketed inside a name's own cell stops at that cell, so
+// the price in the next cell is read. An ambiguous checking-named price (activity-triggered, tiered,
+// a percentage, a second price, an opening charge, an "if"/"when" condition, a closure or initial
+// deposit, a price per year, quarter, item or debit) is held (`checkingNamePriceAmbiguous`). The name
+// pattern is shared with Darwin's category guard (`@/lib/checking-fee-name`) and keeps out opening,
+// setup and reopening charges, business accounts and other fees' words (review of #2618). The
+// held-line recheck promotes held lines this files, only from a page's current copy; a page's dropped
+// line returns when the page is read again. The stale-read floor stays at v97. Name re-tidy stays at v27.
+// v111 (#1916): a late charge printed in a safe deposit box section is the box's, whichever
 // specialist read it (`boxSectionLateFeeRead`, `boxSectionLateFee` in
 // `src/lib/custom-report/box-section-late-fee.ts`). v78's `boxLateFee` read the section only from the
 // rules pass's previous read or its segment heading, so Advia FCU's two-column "page | Safe Deposit
 // Box 30 Day" / "Courtesy Pay Coverage | Late Payment (by credit union | $10" and 36 more live box
 // late fees were still read as a loan's late payment today. The shared check refuses such a fee filed
-// as late_payment, so the self-check, Darwin's verify and source check v24 agree. The stale-read
+// as late_payment, so the self-check, Darwin's verify and source check v25 agree. The stale-read
 // floor stays at v97. Name re-tidy stays at v27.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 110 } as const;
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 111 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -490,7 +501,7 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
     const run = specialist.run();
     // v78 (#1304): no specialist files a bill payment priced under an overdraft or NSF heading on
     // its own line as bill pay (`billPayByHeading`); the table pass named such a cell by its words.
-    // v110 (#1916): every specialist's late fee printed in a safe deposit box section is the box's
+    // v111 (#1916): every specialist's late fee printed in a safe deposit box section is the box's
     // (`boxSectionLateFeeRead`), read on the self-check's text.
     const found = { ...run, candidates: run.candidates.map((read) => { const next = billPayByHeading(read); return next && carryColumnHeadingCell(read, next); }).filter((read): read is ExtractedFeeCandidate => read != null).map((read) => boxSectionLateFeeRead(read, checkText)) };
     for (const [reason, count] of Object.entries(found.dropped ?? {})) countDropped(reason as DroppedLineReason, count);
@@ -690,6 +701,16 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
     held.push({ shape: "eligibility", feeName: read.feeName, amount: read.amount, amountMax: null,
       percent: null, frequency: read.frequency, canonicalHint: read.canonicalHint,
       excerpt: formula.ownText, ownedPolicy: true, lineShare: read.lineShare });
+  }
+  // v110 (#1918): a checking account's named fee printed with a condition, a band, a percentage, a
+  // second price or an opening charge is held for review, not sent to Darwin as a monthly fee.
+  for (let at = candidates.length - 1; at >= 0; at--) {
+    const read = candidates[at];
+    if (read.canonicalHint !== "monthly_maintenance" || !checkingNamePriceAmbiguous(read.excerpt, read.feeName, read.amount)) continue;
+    candidates.splice(at, 1);
+    held.push({ shape: "eligibility", feeName: read.feeName, amount: read.amount, amountMax: null,
+      percent: null, frequency: read.frequency, canonicalHint: read.canonicalHint, excerpt: read.excerpt,
+      ownedPolicy: true, lineShare: read.lineShare });
   }
   const monthlyOwnerReview = monthlyAccountOwnerReview(text, institutionName);
   for (const candidate of candidates) {

@@ -186,7 +186,8 @@ const DAILY_CAP_NAME_WORDS = new Set(["daily", "maxim", "max", "cap", "limit", "
 const DAILY_CAP_BEFORE = /\b(max(?:imum)?|cap(?:ped)?|up to|not to exceed|limit(?:ed)?|no more than|daily)\b[^$|]{0,30}$/i;
 const DAILY_CAP_AFTER = /^\s*\)?\s*(?:(?:per|a|each|in (?:a|one))\s+(?:business\s+|calendar\s+)?day\b|daily\b|(?:max(?:imum)?|cap)\s+(?:per|a|each)\s+(?:business\s+)?day\b)/i;
 const CENTS = /\$\s*\.(\d{2})(?!\d)|(?<![\d.,$])(\d{1,2})\s*(?:¢|cents?\b)/gi;
-const MONEY = /\$\s*(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{2}))?(?!\d)|(?<![\d,$])(?<!\d\.)(\d+)\.(\d{2})(?![\d])/g;
+// v24 (#1918): "$15K" or "$1.5M" is a balance in thousands or millions, never a price.
+const MONEY = /\$\s*(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{2}))?(?!\d)(?!(?:\.\d+)?[KkMm]\b)|(?<![\d,$])(?<!\d\.)(\d+)\.(\d{2})(?![\d])/g;
 
 interface MoneyToken {
   value: number;

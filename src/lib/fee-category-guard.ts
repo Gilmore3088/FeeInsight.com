@@ -19,6 +19,7 @@
  */
 
 import { boxSectionLateFee } from "@/lib/custom-report/box-section-late-fee";
+import { namedForCheckingAccount } from "@/lib/checking-fee-name";
 import { ATM_ABROAD, COLLECTION_ITEM, foldRetiredCategory, FOREIGN_DEPOSIT_RETURN, FOREIGN_ITEM_RETURN, INCOMING_WIRE, INTERNATIONAL_ATM, IRA_CLOSING, ITEM_COPY, RESEARCH_SPLIT_LIVE, SKIP_A_PAY, SUSTAINED_OVERDRAFT } from "@/lib/fee-fold";
 
 export type CategoryGuardCode = "name_contradicts" | "name_unsupported" | "rate_as_amount" | "schedule_contradicts" | "amount_implausible";
@@ -35,7 +36,7 @@ export interface CategoryGuardContext {
    */
   heading_above?: string | null;
   /**
-   * v86 (#1916): the fee's stored text prints it in a safe deposit box section (`boxSectionLateFee`),
+   * v87 (#1916): the fee's stored text prints it in a safe deposit box section (`boxSectionLateFee`),
    * when the caller read it (`withBoxSection`). Read only for a late payment.
    */
   box_section?: boolean | null;
@@ -1036,7 +1037,14 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // deposit; a lost, replaced or duplicate key, drilling and the box's annual or rental fee stay
 // (`SAFE_DEPOSIT_KEY_DEPOSIT_EXEMPT`). No type holds a key deposit, so the live ones go to the second
 // look and come down. Dry-run count in the PR.
-// v86 (Oct 25, #1916): a late payment its stored text prints in a safe deposit box
+// v86 (Oct 25, #1918): monthly maintenance also admits a checking account's own named fee ("MAX
+// Checking Fee (per month)", "Jumpstart Checking Account Fee", Bellco FCU's $3.95), read by the
+// pattern Knox files it with (`namedForCheckingAccount`, `@/lib/checking-fee-name`), so the two never
+// drift. The pattern keeps out opening, setup and reopening charges, business accounts, other fees'
+// words and a period other than the month. It only admits names; no fee that passes today fails.
+// Read-only dry run (Oct 25): only a name containing "checking (account) fee|charge" can change
+// verdict; of the 38 live fees and 2 guard takedowns with one, none changes verdict, re-file or restore.
+// v87 (Oct 25, #1916): a late payment its stored text prints in a safe deposit box
 // section (`box_section`, read by `withBoxSection` with `boxSectionLateFee`: "Safe Deposit Box Fees" /
 // "Late Payment (per month) | $10.00", U.S. Bank 75926; "page | Safe Deposit Box 30 Day" over
 // "Courtesy Pay Coverage | Late Payment (by credit union | $10", Advia FCU 142240) is the box's late
@@ -1046,9 +1054,9 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // look. Read-only dry run, Oct 25: of 410 live late_payment fees whose text names a safe deposit box,
 // 299 pass; 111 at 110 institutions fail, 99 re-file in place, 11 have a live box late fee twin (142240
 // beside 139815, ...) and 1 is the second copy at its bank (35992 beside 9785): those 12 come down.
-export const CATEGORY_GUARD_VERSION = 86;
+export const CATEGORY_GUARD_VERSION = 87;
 
-/** v86 (#1916): where a late charge printed in a safe deposit box section is filed. */
+/** v87 (#1916): where a late charge printed in a safe deposit box section is filed. */
 export const BOX_LATE_TARGET = "safe_deposit_box";
 
 function boxSectionReason(name: string): string {
@@ -1056,7 +1064,7 @@ function boxSectionReason(name: string): string {
 }
 
 /**
- * v86 (#1916): the guard context with `box_section` read from the fee's stored text, for a late
+ * v87 (#1916): the guard context with `box_section` read from the fee's stored text, for a late
  * payment only (every other fee is returned as it is, so no text is needed for it). Hamilton's live
  * guard and its takedown restore call it with each such fee's stored text.
  */
@@ -1386,7 +1394,8 @@ export function checkFeeCategory(
       reason: `${CARD_PRODUCT_REASON}: "${name}" prices the card itself, not ${canonicalFeeKey} ("${cardProduct}")`,
     };
   }
-  if (!rule.include.test(name) && !(canonicalFeeKey === "excess_withdrawal" && GENERIC_SERVICE_CHARGE.test(name) && savingsOverLimitLine(name, context))) {
+  if (!rule.include.test(name) && !(canonicalFeeKey === "excess_withdrawal" && GENERIC_SERVICE_CHARGE.test(name) && savingsOverLimitLine(name, context)) &&
+      !(canonicalFeeKey === "monthly_maintenance" && namedForCheckingAccount(name))) {
     return {
       ok: false,
       code: "name_unsupported",
@@ -1623,7 +1632,7 @@ export function refileFromLine(
   live: boolean = RESEARCH_SPLIT_LIVE,
 ): string | null {
   if (!canonicalFeeKey) return null;
-  // v86 (#1916): a late charge its stored text prints in a safe deposit box section is the box's.
+  // v87 (#1916): a late charge its stored text prints in a safe deposit box section is the box's.
   if (canonicalFeeKey === "late_payment" && context?.box_section === true) {
     return checkFeeCategory(BOX_LATE_TARGET, feeName, context).ok ? BOX_LATE_TARGET : null;
   }

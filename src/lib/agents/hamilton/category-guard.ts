@@ -117,7 +117,7 @@ export interface RunHamiltonCategoryGuardResult {
    */
   headingReadFailed: boolean;
   /**
-   * v86: the stored-text read for late payments' safe deposit box sections failed, so this step
+   * v87: the stored-text read for late payments' safe deposit box sections failed, so this step
    * judged them by name and line only (nothing re-filed or came down for it).
    */
   boxSectionReadFailed: boolean;
@@ -250,8 +250,8 @@ export async function runHamiltonCategoryGuard(
   // failed text read judges them by name and line only, as before v84, so nothing comes down for it.
   const headedRows = await withHeadingsAbove(db, selected);
   const headed = headedRows ?? selected;
-  // Guard v86 (#1916): a late payment is judged with its stored text's section, so a box late fee
-  // re-files in place. A failed text read judges by name and line only, as before v86.
+  // Guard v87 (#1916): a late payment is judged with its stored text's section, so a box late fee
+  // re-files in place. A failed text read judges by name and line only, as before v87.
   const sectioned = await withBoxSections(db, headed);
   const rows = sectioned ?? headed;
 
@@ -509,18 +509,18 @@ interface LiveRefile extends Restore {
   /** The fee being moved is an excess activity fee, by its name or its own source line. */
   excess: boolean;
   /**
-   * Guard v86 (#1916): a late payment moving to safe_deposit_box. Its twin there is the bank's live
+   * Guard v87 (#1916): a late payment moving to safe_deposit_box. Its twin there is the bank's live
    * box late fee at that price (same name, or a late word), never a box size, key or drilling fee
    * that happens to share the price (Advia's $10 key replacement, 139816, beside its $10 late fee).
    */
   lateBox: boolean;
 }
 
-/** Guard v86 (#1916): a live box fee named as a late charge, in TS and Postgres. */
+/** Guard v87 (#1916): a live box fee named as a late charge, in TS and Postgres. */
 export const BOX_LATE_NAME_PATTERN = String.raw`\mlate\M`;
 const BOX_LATE_NAME = /\blate\b/i;
 
-/** Pure: a refile moves a late payment to the safe deposit box (guard v86). */
+/** Pure: a refile moves a late payment to the safe deposit box (guard v87). */
 export function movesBoxLateFee(restore: Restore): boolean {
   return restore.row.canonical_fee_key === "late_payment" && restore.to === BOX_LATE_TARGET;
 }
@@ -531,9 +531,9 @@ export function lateBoxFlags(unique: LiveRefile[]): string[] {
 }
 
 /**
- * Guard v86 (#1916): the rows with `box_section` read from their stored text, for late payments only
+ * Guard v87 (#1916): the rows with `box_section` read from their stored text, for late payments only
  * (`withBoxSection`); only those rows' documents are read. Null when the read fails, so the caller
- * judges by name and line only, as before v86, and nothing moves or comes down for it.
+ * judges by name and line only, as before v87, and nothing moves or comes down for it.
  */
 async function withBoxSections<T extends Pick<LivePublishedRow, "source_document_id" | "canonical_fee_key" | "fee_name" | "amount">>(
   db: SqlTag,
@@ -576,7 +576,7 @@ export function uniqueRefiles(refiles: Restore[]): LiveRefile[] {
       (!(other.excess || candidate.excess) ||
         nameKey(other.row.fee_name) === nameKey(candidate.row.fee_name) ||
         (other.excess && candidate.excess)) &&
-      // Guard v86: a box late fee is one fee only with another box late fee (or the same name).
+      // Guard v87: a box late fee is one fee only with another box late fee (or the same name).
       (!(other.lateBox || candidate.lateBox) ||
         nameKey(other.row.fee_name) === nameKey(candidate.row.fee_name) ||
         (BOX_LATE_NAME.test(other.row.fee_name) && BOX_LATE_NAME.test(candidate.row.fee_name))));
@@ -797,7 +797,7 @@ export async function restorePassingTakedowns(
   // Guard v84 (#1788): a takedown is judged with the heading above it, as the live check took it down.
   const headed = await withHeadingsAbove(db, rows);
   if (!headed) return none;
-  // Guard v86 (#1916): a late payment takedown is judged with its section, as the live check took it
+  // Guard v87 (#1916): a late payment takedown is judged with its section, as the live check took it
   // down, so a box late fee's twin never comes back as a late payment.
   const sectioned = await withBoxSections(db, headed);
   if (!sectioned) return none;

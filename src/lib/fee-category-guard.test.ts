@@ -2507,7 +2507,7 @@ describe("guard v84: another service's monthly charge filed as monthly maintenan
   });
 });
 
-describe("guard v86: a late charge in a safe deposit box section is the box's (#1916)", () => {
+describe("guard v87: a late charge in a safe deposit box section is the box's (#1916)", () => {
   // Advia FCU doc 32751 (live 142240): "page | Safe Deposit Box 30 Day" over
   // "Courtesy Pay Coverage | Late Payment (by credit union | $10".
   const advia = readFileSync(join(process.cwd(), "src/lib/custom-report/__fixtures__/advia-two-column-source.txt"), "utf8");
@@ -2532,7 +2532,7 @@ describe("guard v86: a late charge in a safe deposit box section is the box's (#
     expect(refileFromLine("late_payment", "Late Payment after 30 days", box)).toBe(BOX_LATE_TARGET);
   });
 
-  it("reads nothing without the stored text or for another type, as before v86", () => {
+  it("reads nothing without the stored text or for another type, as before v87", () => {
     const context = { amount: 10, conditions: null };
     expect(withBoxSection("late_payment", name, context, null)).toBe(context);
     expect(withBoxSection("stop_payment", "Stop Payment", context, advia)).toBe(context);

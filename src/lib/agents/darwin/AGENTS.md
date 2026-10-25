@@ -1613,9 +1613,9 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v86 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v86 (Oct 25, #1916): a late
+- The guard is at v87 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v87 (Oct 25, #1916): a late
   payment its stored text prints in a safe deposit box section (`box_section`, read by `withBoxSection`
-  with `boxSectionLateFee`, the detector Knox v110 and source check v24 share) is the box's late rent
+  with `boxSectionLateFee`, the detector Knox v111 and source check v25 share) is the box's late rent
   charge: it fails `late_payment` and re-files to `safe_deposit_box` (`refileFromLine`). Hamilton's live
   guard and its takedown restore read the section from each live late payment's stored text, so the
   live box late fees move in place with their own name and price instead of coming down. A late fee
@@ -1627,7 +1627,20 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   71846/155276, 78842/78835, 84270/153200, 101143/153357, 116960/157002, 143901/13520,
   154848/92156) and 35992 is the second copy of 9785 at its bank, so those 12 go to the second look
   and come down as duplicates.
-- v86 (Oct 25, #1831): a refundable safe deposit box key deposit or the
+- v86 (Oct 25, #1918): monthly
+  maintenance also admits a checking account's own named fee ("MAX Checking Fee (per month)",
+  "Jumpstart Checking Account Fee"), read by the one pattern Knox files it with
+  (`namedForCheckingAccount` in `src/lib/checking-fee-name.ts`), so Knox and the guard cannot drift.
+  Before v86 the include list took only maintenance, monthly service, service charge or monthly fee,
+  so every line Knox v110's held-line recheck promotes failed `category_mismatch` (name_unsupported)
+  and Bellco FCU's $3.95 could never publish. The pattern keeps out opening, setup and reopening
+  charges, business accounts (corporate, non-profit, analysis, merchant, professional, ag, farm,
+  IOLTA, trust, estate), other fees' words (replacement, late, lost, bounce, withdrawal, deposit,
+  counter, collection, foreign, unclaimed and the older list) and a period other than the month. It
+  only admits names. Live re-check: the guard catch-up. Read-only dry run (Oct 25) over every live
+  fee, and every guard takedown, whose name contains "checking (account) fee|charge" (38 live, 2
+  down; no other name can change verdict): no verdict, re-file or restore changes.
+- v85 (Oct 25, #1831): a refundable safe deposit box key deposit or the
   box's security deposit (`SAFE_DEPOSIT_KEY_DEPOSIT`) fails the safe deposit box rule, as v66 does for
   the night deposit. A lost, replaced or duplicate key, drilling, a lock change or re-key, a
   non-refundable or forfeited deposit and the box's annual or rental fee stay

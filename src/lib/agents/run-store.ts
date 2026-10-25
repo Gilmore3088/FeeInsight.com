@@ -829,6 +829,8 @@ async function executeAgenticStep(
           layout_recheck_lost: read.layoutRecheckLost,
           layout_recheck_gained: read.layoutRecheckGained,
           layout_recheck_error: read.layoutRecheckError,
+          reader_replayed: read.readerReplayed,
+          reader_replay_text_changed: read.readerReplayTextChanged,
           outcomes: read.outcomes,
           learning_log: read.learning,
           read_chars: read.chars,
@@ -2297,7 +2299,7 @@ async function executeAgenticStep(
           card_product_pending_samples: guard.cardProductPendingSamples,
           // v84: the heading read failed, so generic monthly charges were judged by name and line only.
           heading_read_failed: guard.headingReadFailed,
-          // v86: the box section read failed, so late payments were judged by name and line only.
+          // v87: the box section read failed, so late payments were judged by name and line only.
           box_section_read_failed: guard.boxSectionReadFailed,
           category_guard_limit: guard.limit,
           rollback_batch_id: guard.rollbackBatchId,
