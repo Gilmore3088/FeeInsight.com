@@ -8,7 +8,7 @@ import { claimEvidenceFacts, filingFactId, SHORTENED_PEER_LIST_LIMITATION } from
 import { medianOf } from "./evidence-contract";
 import { writtenAnswerEvidence, writtenAnswerEvidenceBuild, type AnswerToolEvidence } from "./written-answer-evidence";
 
-// Synthetic institutions only: Bank A 9001 and Bank B 9002 (evidence-regression-set.ts), peers 9003-9007.
+// Synthetic institutions only: Bank A 9001 and Bank B 9002 (evidence-regression-set.ts), peers 9003-9011 (ten filed peers with Bank B, the Hamilton minimum).
 const BANK_A = 9001;
 const BANK_B = 9002;
 const UNITS = "dollar amounts in thousands; fee_income_ratio is a fraction (0.068 = 6.8%)";
@@ -49,9 +49,9 @@ function callRead(id: number, key: string, values: Array<[string, number]>): Ans
   };
 }
 
-/** queryFeeRevenueCorrelation peers for Bank A, its peers 9002-9007, built by the real tool code. */
+/** queryFeeRevenueCorrelation peers for Bank A, its peers 9002-9011, built by the real tool code. */
 function peerRead(): AnswerToolEvidence & { output: Record<string, unknown> } {
-  const rows: FiledFeeIncome[] = Array.from({ length: 7 }, (_, index) => ({
+  const rows: FiledFeeIncome[] = Array.from({ length: 11 }, (_, index) => ({
     institution_id: BANK_A + index, institution_name: `Synthetic ${BANK_A + index}`, charter_type: "credit_union", financial_source: "ncua",
     report_date: "2026-06-30", state_code: "VA", asset_size_tier: "regional", fed_district: 5,
     total_assets: 400_000, service_charge_income: index === 0 ? 1_400 : index * 100, fee_income_ratio: index === 0 ? 35 : index * 2.5,
@@ -131,9 +131,9 @@ describe("claim fact IDs for filings and filed peers (#1077 step 1)", () => {
   it("names every peer row behind a complete peer median, recomputing to the tool's median", () => {
     const evidence = claimEvidenceFacts([peerRead()], BANK_A);
     const median = evidence.derivations.find((derived) => derived.derivation.kind === "peer_median")!;
-    expect(median).toMatchObject({ value: 350_000, scope: { institutionId: null, cohortKey: expect.stringMatching(/^filed_peers:ncua:2026-06-30:[0-9a-f]{8}$/) } });
+    expect(median).toMatchObject({ value: 550_000, scope: { institutionId: null, cohortKey: expect.stringMatching(/^filed_peers:ncua:2026-06-30:[0-9a-f]{8}$/) } });
     expect(median.id).toBe(`stat:${median.scope.cohortKey}:median`);
-    expect(median.derivation.inputFactIds).toEqual([9002, 9003, 9004, 9005, 9006, 9007].map((id) => quarterIncome(id, "2026-06-30")));
+    expect(median.derivation.inputFactIds).toEqual([9002, 9003, 9004, 9005, 9006, 9007, 9008, 9009, 9010, 9011].map((id) => quarterIncome(id, "2026-06-30")));
     const values = median.derivation.inputFactIds.map((id) => evidence.facts.find((fact) => fact.id === id)!.value as number);
     expect(medianOf(values)).toBe(median.value);
     expect(evidence.limitations).toEqual([]);
@@ -142,20 +142,21 @@ describe("claim fact IDs for filings and filed peers (#1077 step 1)", () => {
   it("gives a shortened peer list's median no inputs and a limitation", () => {
     const read = peerRead();
     read.output.peers = (read.output.peers as unknown[]).slice(0, 3);
-    read.output._shortened = "peers: kept 3 of 6";
+    read.output._shortened = "peers: kept 3 of 10";
     const evidence = claimEvidenceFacts([read], BANK_A);
     const median = evidence.derivations.find((derived) => derived.derivation.kind === "peer_median");
-    expect(median).toMatchObject({ value: 350_000, derivation: { inputFactIds: [] } });
+    expect(median).toMatchObject({ value: 550_000, derivation: { inputFactIds: [] } });
     expect(evidence.limitations).toEqual([SHORTENED_PEER_LIST_LIMITATION]);
     expect(evidence.facts.filter((fact) => fact.scope.periodBasis === "standalone_quarter")).toHaveLength(4);
   });
 
-  // Digests of writtenAnswerEvidence's JSON for these fixtures, recorded on origin/main before this change.
+  // Digests of writtenAnswerEvidence's JSON for these fixtures, recorded on origin/main before #2569; peers and all
+  // re-recorded when the peer fixture grew to ten peers for the Hamilton peer minimum (#2568).
   const BEFORE: Record<string, string> = {
     profile: "55521bceeb4ccaf01739360f8bb943bb464dcea9049d5e41b073f2296bf4e576",
     call: "74aa5fc8e9f96570f140219f52b178024f73dd16f85b489b2215e7fde1e113f4",
-    peers: "ed4089a62127781d9bd340b6099b0972b686b843a2c089ae4c75d4046d25c196",
-    all: "e3712cb1d32bf95897c51c8071c9466a2b7c4daaaed4609ffe346304c9e79076",
+    peers: "c6ecd951d8e084b10319c658c6a49b48d04e0ed54b3a4b55a7d0f26012c08b00",
+    all: "994f645f7e85fbb58055dd7b4ce553dc9e51a03ff21cf5348c8ab3b0c759896c",
   };
   it("leaves the figure check's DATA byte-identical", () => {
     const cases: Record<string, AnswerToolEvidence[]> = { profile: [profileA(), profileB()], call: [callA()], peers: [peerRead()], all: fixtures() };
