@@ -1,4 +1,4 @@
-import { PRONOUN_WORDS, SENTENCE_END_WORDS, endsIn, trailingRange, wordsIn } from "@/lib/fee-name-fragments";
+import { DANGLING_AUDIENCE, PRONOUN_WORDS, SENTENCE_END_WORDS, endsIn, trailingRange, wordsIn } from "@/lib/fee-name-fragments";
 
 /**
  * The cut-off name shapes (`isCutoffName`, publish's `cutoff_name` hold), the regexes they are
@@ -61,6 +61,8 @@ export function withoutClosedQualifiers(name: string): string {
  * closed qualifiers that end it (`withoutClosedQualifiers`). Read with them, about 21 of 35 hand-read
  * `cutoff_name` holds on Oct 15 were real fees whose parenthetical said "is", "you" or "if". The
  * shapes read at the end of the name are unchanged: a closing ")" never ends on a dangling word.
+ * #1521 (Knox v108): a name cut before its noun, after a count and an audience word ("Counter
+ * Check: A blank page of 3 personal"), is cut off too (`DANGLING_AUDIENCE`, the live twin's shape).
  */
 export function isCutoffName(name: string): boolean {
   const current = name.replace(/\s+/g, " ").trim();
@@ -71,6 +73,7 @@ export function isCutoffName(name: string): boolean {
     TRAILING_HEADER_CELL.test(current) ||
     TRAILING_RANGE.test(current) ||
     SENTENCE_END.test(current) ||
+    DANGLING_AUDIENCE.test(current) ||
     CONDITION_TAIL.test(unqualified) ||
     PRONOUN.test(unqualified) ||
     SENTENCE_VERB.test(unqualified) ||

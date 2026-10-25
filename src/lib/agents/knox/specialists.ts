@@ -252,7 +252,12 @@ import { withGluedFootnotePrices } from "@/lib/custom-report/glued-footnote-pric
 // count. v104's glued-sentence cut now runs on fewer names (only ones still cut off), and publish's
 // `cutoff_name` hold, Darwin's release review and Deming's name check read the same function. The
 // stale-read floor stays at v97. Name re-tidy stays at v26.
-// v109 (#1828; v108 is held by open PR #2591): a bare "Returned payment" row under a loan section's
+// v108 (#1521): `isCutoffName` also reads a name cut before its noun, after a count and an audience
+// word ("Counter Check: A blank page of 3 personal", "Daily fee after 5 business"), as cut off
+// (`DANGLING_AUDIENCE`, shared with Darwin's live fragment check). Publish's `cutoff_name` hold,
+// Darwin's release review and Deming's name check read the same function. On 2026-10-25 it matched
+// 2 live fees, 3 verified and 3 raw rows. The stale-read floor stays at v97. Name re-tidy stays at v26.
+// v109 (#1828): a bare "Returned payment" row under a loan section's
 // title ("Loan fees", "Personal Credit Line fees", "Consumer Loans", "LOANS") is the loan's returned
 // payment fee, read as `other_lending_fee` at its own plain price under its own printed name
 // (`loanReturnedPaymentRows`, `loan-section-rows.ts`). Before this the row named no category and

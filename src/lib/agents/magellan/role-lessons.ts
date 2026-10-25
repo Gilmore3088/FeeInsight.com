@@ -166,4 +166,14 @@ export const MAGELLAN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-20",
   },
+  {
+    id: "issue-1774-article-never-a-source",
+    agent: "magellan",
+    stage: "discover",
+    lesson: "Never store, keep or fetch an article, blog, post, story, learning or advice page, or a dated blog path, as a bank's fee source, by the one article rule (`isArticleLink`), however its link text names an account: refuse it as a companion, retire a companion stored before, and when the remembered fetch address is such a page but the saved fee link is not, fetch the saved link instead unless a person's correction locked the address.",
+    why: "The companion finder judged links by their words, so TD's /learning/ article on types of checking accounts, Keesler's /resources/advice/ app article and Security First's 2022 blog post were stored as account pages and their national or third-party figures went live as the banks' own (7 fees at 6 banks on Oct 17). After publish refused them, the finder stored Security First's blog post again on Oct 18 and the plain fetch kept asking for SchoolsFirst's remembered advice article, so 15 article companions on 8 institution records (TD has two) stayed stored and Knox and Darwin read and verified their fees again.",
+    evidence: { issues: [1774], prs: [2596], files: ["docs/project/findings/2026-10-17-article-sources.md", "src/lib/agents/magellan/second-document.ts", "src/lib/agents/magellan/companion-fetch.ts", "src/lib/agents/magellan/fetch.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];

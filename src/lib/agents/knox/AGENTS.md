@@ -284,7 +284,7 @@ fees found (54.7%); 56 of the 59 wrong reads are the right price under another c
 
 ## Rules versions (`extract.rules`)
 
-v109 (Oct 25, #1828; v108 is held by open PR #2591): a bare "Returned payment" row ("Returned
+v109 (Oct 25, #1828): a bare "Returned payment" row ("Returned
 payment", "Returned Payment Fee", "RETURNED PAYMENT") under a loan section's title is the loan's
 returned payment fee, read as `other_lending_fee` at its own plain price under its own printed
 name (`loanReturnedPaymentRows`, `loan-section-rows.ts`). On its own the name says no loan and no
