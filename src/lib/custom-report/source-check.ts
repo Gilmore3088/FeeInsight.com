@@ -606,6 +606,16 @@ function stemCount(text: string, stems: NameStems): number {
   return stems.filter((stem) => haystacks.some((haystack) => stemAt(haystack, stem, stems.words))).length;
 }
 
+/**
+ * A dot-leader row closed by its own free word ("ATM Transactions……FREE | activity……$5", United Bank,
+ * #2477) ends at that word: its name never owns the next column's price. Returns where each such
+ * row ends.
+ */
+const LEADER_FREE_WORD = /(?:(?:\.\s?){2,}|…+)[\s.…]*(?:free|none|no charge|n\/c|waived)\b/gi;
+function leaderFreeRowEnds(line: string): number[] {
+  return [...line.matchAll(LEADER_FREE_WORD)].map((match) => (match.index ?? 0) + match[0].length);
+}
+
 function statesAmount(line: string, amount: number, stems: NameStems): SourceCheckFailure | null {
   const money = moneyTokens(line);
   if (amount === 0 && !money.some((t) => t.value > 0 && !isThreshold(line, t))) {
@@ -633,12 +643,16 @@ function statesAmount(line: string, amount: number, stems: NameStems): SourceChe
   // not the fee's price when the row prints another; alone ("5 free, $2.00 each additional") it is.
   const base = noted.filter((t) => !ADD_ON_RATE.test(line.slice(t.end)));
   const prices = base.length > 0 ? base : noted;
-  const before = withJoinedPrices(
-    line,
-    prices,
-    prices.map((price, i) => nearNameCount(line.slice(i === 0 ? 0 : prices[i - 1].end, price.start), stems)),
-    stems,
-  );
+  // A priced fee's words stop at a row its own free word closed (`leaderFreeRowEnds`): a name the
+  // closed row states better than the words after it is that row's, not this price's.
+  const closedEnds = amount > 0 ? leaderFreeRowEnds(line) : [];
+  const nearPrice = (price: MoneyToken, i: number) => {
+    const from = i === 0 ? 0 : prices[i - 1].end;
+    const closed = Math.max(from, ...closedEnds.filter((end) => end <= price.start));
+    const open = nearNameCount(line.slice(closed, price.start), stems);
+    return closed > from && nearNameCount(line.slice(from, closed), stems) > open ? 0 : open;
+  };
+  const before = withJoinedPrices(line, prices, prices.map(nearPrice), stems);
   const after = prices.map((price, i) => nearNameCount(line.slice(price.end, prices[i + 1]?.start ?? line.length), stems));
   // A line that opens with a price and ends with a name ("$25 (3 X 5), $35 (3 X 10)")
   // names each fee after its price.
@@ -659,7 +673,10 @@ function statesAmount(line: string, amount: number, stems: NameStems): SourceChe
     );
   }
   if (best === 0 || index < 0) {
-    return tokens.some((t) => Math.abs(t.value - amount) < 0.005) ? "amount_is_a_threshold" : "amount_not_the_fee";
+    // The price after a closed row is another column's, not a limit on this fee.
+    const same = tokens.filter((t) => Math.abs(t.value - amount) < 0.005);
+    if (same.length > 0 && same.every((t) => closedEnds.some((end) => end <= t.start))) return "amount_not_the_fee";
+    return same.length > 0 ? "amount_is_a_threshold" : "amount_not_the_fee";
   }
   if (amount === 0 && !freeWordIsThePrice(line, prices, index, stems)) return "amount_not_the_fee";
   // A fee that depends on a balance band ("Negative $25 or less | $5") has no single

@@ -236,7 +236,11 @@ import { withoutGluedSentence } from "./glued-sentence-name";
 // other word (audience, tier, region, speed, channel, a figure) keeps the name as read and the fee
 // held, as at v103 (review of 6dd3641). Names only: categories and prices are unchanged. The
 // stale-read floor stays at v97. Name re-tidy stays at v26.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 104 } as const;
+// v105 (#2477): a table row whose name cell a free word already closes ("ATM Transactions……FREE |
+// activity……$5", United Bank) is not paired with the next cell's price (table pass v10), and the
+// shared check refuses that pairing too (`leaderFreeRowEnds`, source check v21). Removes reads only.
+// The stale-read floor stays at v97. Name re-tidy stays at v26.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 105 } as const;
 
 export interface SpecialistRun {
   strategy: string;

@@ -196,4 +196,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-21",
   },
+  {
+    id: "issue-2477-closed-row-owns-no-later-price",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "When a fee's name sits in a dot-leader row that its own free word closes, a price later on the same line belongs to whatever is named after that word. Do not pass the fee at that price because its name appears earlier on the line; a name stated in a fee name (\"ATM Transactions FREE\") with a dollar amount is a contradiction to refuse.",
+    why: "The shared check traced United Bank's \"ATM Transactions FREE\" at $5 because the name's words sat before the line's only price, so Darwin verified a free fee at another column's price and it went live.",
+    evidence: { issues: [2477], prs: [], files: ["src/lib/custom-report/source-check.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];

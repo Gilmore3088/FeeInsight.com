@@ -76,7 +76,10 @@ export const SOURCE_CHECK_REASON = "source_check_untraceable";
 // column's price beside the name ("ATM Transactions | $10.00 monthly for average" over "Free | Money
 // Market Checking*") or under the other of two names ("Account Reopen | Member-Requested ATM/Debit"
 // over "$10 | $5") is not the fee's (`refusesOtherColumnPrice`). Follows #2465's v19.
-export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 20 } as const;
+// Version 21 (#2477): a dot-leader row closed by its own free word ("ATM Transactions……FREE |
+// activity……$5", United Bank) ends there, so its name never owns the next column's price
+// (`leaderFreeRowEnds`).
+export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 21 } as const;
 
 /**
  * An institution is checked again whenever a newer live fee appears, so a fee
