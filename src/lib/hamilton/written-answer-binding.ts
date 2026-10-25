@@ -388,6 +388,11 @@ const OMIT_REASONS = new Set<OmitReason>([
   "wrong_basis", "account_as_subject", "premise_contradicted", "premise_unsupported",
 ]);
 
+/** True for an omit reason a saved binding or saved claims may carry. */
+export function isOmitReason(value: unknown): value is OmitReason {
+  return typeof value === "string" && OMIT_REASONS.has(value as OmitReason);
+}
+
 const strings = (value: unknown): value is string[] => Array.isArray(value) && value.every((item) => typeof item === "string");
 
 /** A saved or sent binding, read defensively: anything malformed reads as no binding. */

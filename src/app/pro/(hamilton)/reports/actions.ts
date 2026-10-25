@@ -9,7 +9,7 @@ import { reportStartError } from "@/lib/report-access";
 import { loadHamiltonAccountContext } from "@/lib/hamilton/account-context-store";
 import { accountIdentitySnapshot } from "@/lib/hamilton/account-context";
 import { readHamiltonIdentitySnapshot } from "@/lib/hamilton/identity-display";
-import { loadAnalysisRecord } from "@/app/pro/(hamilton)/analyze/actions";
+import { readSavedAnalysisRecord } from "@/lib/hamilton/saved-analysis-record";
 import { getFeesByInstitution, getInstitutionById } from "@/lib/data-store";
 import { sql } from "@/lib/data-store/connection";
 import { getCategoryChargeBases } from "@/lib/data-store/fee-index";
@@ -22,12 +22,13 @@ import { logUsage } from "@/lib/research/history";
 import { estimateAnthropicCostMicrousd, incompleteProviderResponse, type ProviderUsage } from "@/lib/ai-provider-usage";
 import { getHamiltonModel, isProviderLimitError } from "@/lib/ai-provider";
 import { HAMILTON_PAUSED_MESSAGE } from "@/lib/hamilton/provider-paused";
-import type { AnalyzeResponse, SectionInput } from "@/lib/hamilton/types";
+import type { SectionInput } from "@/lib/hamilton/types";
 import { buildReportPeerCoveragePreview, type ReportPeerCoveragePreview } from "@/lib/hamilton/report-evidence";
 import { parseAnswerSection, parseTradeoffSection } from "@/lib/hamilton/report-answer";
 import { validateHamiltonReportArtifact } from "@/lib/hamilton/report-quality";
-import { basketItemsFor, sanitizeBasketItems } from "@/lib/hamilton/report-basket";
-import { applyNarrativeBinding, savedAnswerBinding } from "@/lib/hamilton/written-answer-binding";
+import { basketItemsFor, sanitizeBasketItems, type ReportBasketItem } from "@/lib/hamilton/report-basket";
+import { reportFindingReadingEnabled, savedAnswerFinding } from "@/lib/hamilton/report-saved-finding";
+import { scheduleGateShadow } from "@/lib/hamilton/output-gate-shadow-store";
 import { resolveHamiltonPeerIndex } from "@/lib/hamilton/peer-index";
 import { completeHamiltonRefreshJobsForInstitution } from "@/lib/hamilton/refresh-jobs";
 import {
@@ -148,26 +149,20 @@ export async function previewReportPeerCoverage(
 
 
 /**
- * A saved answer's finding text: its view, then what it means. For a bound answer only the
- * supported sentences stay; Hamilton's reading and the sentences its records contradict are left
- * out, so a report never states either as a finding (#1899). An answer saved before the binding
- * keeps its text as saved.
+ * Resolve saved Ask references with numeric-user scoping before using their historical identity.
+ * A saved answer is read through its saved claims (#1077 step 6, #1899; report-saved-finding.ts):
+ * the finding's detail is its supported sentences only, and the claims and Hamilton's reading ride
+ * with it, server side, for the report to print under the label when that is switched on.
  */
-function savedAnswerFindingDetail(answer: AnalyzeResponse): string {
-  const sections = { hamiltonView: answer.hamiltonView, whatThisMeans: answer.whatThisMeans ?? "", whyItMatters: [] };
-  const bound = applyNarrativeBinding(sections, savedAnswerBinding(answer)).sections;
-  return [bound.hamiltonView, bound.whatThisMeans].map((part) => part.trim()).filter(Boolean).join(" ");
-}
-
-/** Resolve saved Ask references with numeric-user scoping before using their historical identity. */
-async function authenticatedReportFindings(raw: unknown, institutionId: string | null) {
-  const findings = await Promise.all(sanitizeBasketItems(raw).map(async (item) => {
+async function authenticatedReportFindings(raw: unknown, institutionId: string | null): Promise<ReportBasketItem[]> {
+  const findings = await Promise.all(sanitizeBasketItems(raw).map(async (item): Promise<ReportBasketItem | null> => {
     if (item.source === "Ask" && item.savedAnalysisId) {
-      const saved = await loadAnalysisRecord(item.savedAnalysisId);
+      // The server-only read: the saved claims are kept here (never in what a browser receives).
+      const saved = await readSavedAnalysisRecord(item.savedAnalysisId);
       if (!saved || typeof saved.responseJson.hamiltonView !== "string") return null;
       // An answer that failed the evidence gate when it was saved is not a finding to restate.
       if (saved.responseJson.answerEvidence?.passed === false) return null;
-      const detail = savedAnswerFindingDetail(saved.responseJson);
+      const { detail, reading, claims } = savedAnswerFinding(saved.responseJson);
       // No supported sentence left: the title alone is model prose with nothing behind it.
       if (!detail) return null;
       const identity = readHamiltonIdentitySnapshot(saved.responseJson.identityContext);
@@ -177,6 +172,8 @@ async function authenticatedReportFindings(raw: unknown, institutionId: string |
         // its identity; browser edits cannot relabel another institution's answer.
         title: saved.responseJson.title,
         detail,
+        ...(claims ? { savedClaims: claims } : {}),
+        ...(reading.length ? { reading } : {}),
         institutionId: saved.institutionId,
         ...(identity ? { identityContext: identity } : { identityContext: undefined }),
       };
@@ -281,9 +278,16 @@ export async function generateReport(
     // Drafts the partner review replaced or rejected: billed, so counted in usage.
     const billedDrafts: VerifiedSectionOutput[] = [];
     const providerResponses: Array<{ usage: ProviderUsage | undefined; model: string }> = [];
-    const tracking = { onProviderResponse: (usage: ProviderUsage | undefined, model: string) => {
-      providerResponses.push({ usage, model });
-    } };
+    const tracking = {
+      onProviderResponse: (usage: ProviderUsage | undefined, model: string) => {
+        providerResponses.push({ usage, model });
+      },
+      gateIdentity: {
+        researchInstitutionId: identityContext?.researchInstitutionId ?? selectedInstitution?.id ?? null,
+        accountInstitutionId: identityContext?.accountInstitutionId ?? null,
+        accountInstitutionName: identityContext?.accountInstitutionName ?? null,
+      },
+    };
     let outcomeRecorded = false;
     const recordReportOutcome = async (
       status: "completed" | "failed",
@@ -293,6 +297,11 @@ export async function generateReport(
     ) => {
       if (outcomeRecorded) return;
       outcomeRecorded = true;
+      // The one output gate in shadow (#1077 step 6): one run per section the report kept, written
+      // after the response. It never decides; the figure check and the report's own gates do.
+      for (const kept of sections) {
+        if (kept.gateShadow) scheduleGateShadow(kept.gateShadow, { userId: user.id, researchInstitutionId: selectedInstitution?.id ?? null });
+      }
       sections = [...sections, ...billedDrafts];
       // Returned sections omit discarded figure drafts and failed partner rewrites.
       // The request-owned observer includes each returned generation response once after siblings settle.
@@ -485,7 +494,13 @@ export async function generateReport(
       },
     };
     if (addedFindings.length > 0) {
-      report.addedFindings = addedFindings.map((f) => ({ source: f.source, title: f.title, detail: f.detail, ...(f.identityContext ? { identityContext: f.identityContext } : {}) }));
+      // A saved answer's reading prints under its label only with the switch on (off by default).
+      const printReading = reportFindingReadingEnabled();
+      report.addedFindings = addedFindings.map((f) => ({
+        source: f.source, title: f.title, detail: f.detail,
+        ...(printReading && f.reading?.length ? { reading: [...f.reading] } : {}),
+        ...(f.identityContext ? { identityContext: f.identityContext } : {}),
+      }));
     }
     const artifactQuality = validateHamiltonReportArtifact({
       report,
