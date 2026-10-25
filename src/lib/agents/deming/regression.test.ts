@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildTakedownCase, replayOutcome, summarizeDemingRegression, takedownCaseKey, type DemingRegressionResult } from "./regression";
+import { buildTakedownCase, replayFieldCase, replayOutcome, summarizeDemingRegression, takedownCaseKey, type DemingRegressionResult } from "./regression";
 import { compareSeverity, reasonCode, severityFor } from "./severity";
 import { replayCase } from "./checkers";
 
@@ -49,6 +49,17 @@ describe("severity scale", () => {
 });
 
 describe("replayCase", () => {
+  it("replays a fee-fields snapshot by the check that caught it (#2064)", () => {
+    const takedown = { kind: "unreplayable" as const, canonical_fee_key: "stop_payment", fee_name: "Stop payment of Home Equity Line checks", amount: 25, conditions: null };
+    expect(replayCase(takedown, "hamilton.category_guard")).toEqual({ caught: true, verdict: "name_contradicts" });
+    // A schedule-contradiction catch needed the schedule's NSF price, which the snapshot lacks: not caught, so it stays a candidate.
+    expect(replayCase({ ...takedown, canonical_fee_key: "nsf", fee_name: "Return Item Fee", amount: 10 }, "hamilton.category_guard")?.caught).toBe(false);
+    expect(replayCase({ ...takedown, canonical_fee_key: "od_daily_cap", fee_name: "No Bounce Courtesy Pay Limit", amount: 600 }, "hamilton.limit_guard")?.caught).toBe(true);
+    // A check with no replayer, or no check named, is not replayed.
+    expect(replayCase(takedown, "hamilton.product_page")).toBeNull();
+    expect(replayCase(takedown)).toBeNull();
+  });
+
   it("passes a real fee through the limit guard", () => {
     expect(replayCase({ kind: "limit_guard", canonical_fee_key: "overdraft", fee_name: "Overdraft Fee", amount: 35, conditions: null }))
       .toEqual({ caught: false, verdict: "passes_limit_guard" });
@@ -77,10 +88,17 @@ describe("buildTakedownCase", () => {
   });
 
   it("keeps a check with no replayer as a candidate", () => {
-    const built = buildTakedownCase({ ...baseRow, check_name: "hamilton.category_guard", reason: "category_mismatch: x" }, []);
+    const built = buildTakedownCase({ ...baseRow, check_name: "hamilton.product_page", reason: "product_page: x" }, []);
     expect(built.input.kind).toBe("unreplayable");
     expect(built.status).toBe("candidate");
     expect(built.lastCaught).toBeNull();
+  });
+
+  it("freezes a category-guard takedown as a case the guard replays (#2064)", () => {
+    const built = buildTakedownCase({ ...baseRow, check_name: "hamilton.category_guard", canonical_fee_key: "stop_payment", fee_name: "Stop payment of Home Equity Line checks", amount: "25", reason: "name_contradicts: x" }, []);
+    expect(built.input).toMatchObject({ kind: "category_guard", canonical_fee_key: "stop_payment", amount: 25 });
+    expect(built.status).toBe("active");
+    expect(built.lastVerdict).toBe("name_contradicts");
   });
 
   it("gives a Knox source-check case only the document Knox read", () => {
@@ -108,6 +126,20 @@ describe("replayOutcome", () => {
   it("promotes a caught candidate and leaves an uncaught one waiting", () => {
     expect(replayOutcome("candidate", true, false)).toEqual({ status: "active", regression: false });
     expect(replayOutcome("candidate", false, false)).toEqual({ status: "candidate", regression: false });
+  });
+});
+
+describe("replayFieldCase", () => {
+  const categoryCase = { status: "candidate", check_name: "hamilton.category_guard", input: { kind: "unreplayable" as const, canonical_fee_key: "stop_payment", fee_name: "Stop payment of Home Equity Line checks", amount: 25, conditions: null } };
+  it("activates an old takedown the guard still catches", () => {
+    expect(replayFieldCase({ ...categoryCase, fee_live: false })).toMatchObject({ restored: false, outcome: { status: "active", regression: false } });
+  });
+  it("retires a takedown case whose fee came back", () => {
+    expect(replayFieldCase({ ...categoryCase, fee_live: true })).toMatchObject({ restored: true, outcome: { status: "retired" } });
+  });
+  it("flags an active case the guard no longer catches", () => {
+    const fine = { ...categoryCase, status: "active", input: { ...categoryCase.input, fee_name: "Stop Payment Fee" } };
+    expect(replayFieldCase({ ...fine, fee_live: false }).outcome).toEqual({ status: "active", regression: true });
   });
 });
 

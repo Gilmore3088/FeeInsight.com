@@ -2,7 +2,8 @@ import { sql } from "@/lib/data-store/connection";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { CONFIRMED_KIND } from "@/lib/agents/hamilton/second-look";
 import { LIMIT_GUARD_CHECK } from "@/lib/agents/hamilton/limit-guard";
-import { replayCase, SOURCE_CHECK_NAME, type CaseInput } from "@/lib/agents/deming/checkers";
+import { FIELD_REPLAY_CHECKS, replayCase, SOURCE_CHECK_NAME, type CaseInput } from "@/lib/agents/deming/checkers";
+import { CATEGORY_GUARD_CHECK } from "@/lib/agents/hamilton/category-guard";
 import { severityFor, reasonCode, type Severity } from "@/lib/agents/deming/severity";
 
 import { CORRECTIVE_CHECK } from "./corrective-source";
@@ -18,8 +19,11 @@ type SqlTag = typeof sql;
  *    caught it, and a frozen copy of what the check read (the fee and its stored text).
  * 2. Replay: the deployed rules run on every replayable case. A case the rule reproduces is
  *    `active`; an active case the rule no longer catches is a regression, reported in the step
- *    detail and on the scoreboard. A case whose fee was restored is `retired`: a later check
- *    found the takedown wrong, so it is not a lesson.
+ *    detail and on the scoreboard. A takedown case whose fee was restored is `retired`: a later
+ *    check found the takedown wrong, so it is not a lesson. Takedowns frozen before their check had
+ *    a replayer replay by their check name from the fee's own fields (`FIELD_REPLAY_CHECKS`,
+ *    #2064): the category guard and the limit guard. The fresh audit's misses stay candidates the
+ *    replay never reads: an audit alone never confirms a label (#1119).
  *
  * Deterministic: no model calls, no fee rows written. Cases are never deleted; their input is
  * never rewritten after insert.
@@ -28,6 +32,8 @@ type SqlTag = typeof sql;
 export const DEMING_REGRESSION_VERSION = 1;
 export const REGRESSION_PROMOTE_LIMIT = 300;
 export const REGRESSION_REPLAY_LIMIT = 400;
+/** Fee-fields takedown cases replayed per run, apart from the limit above: each is a pure check of a few fields. */
+export const FIELD_REPLAY_LIMIT = 1_000;
 const TEXT_CHAR_CAP = 200_000;
 
 export function takedownCaseKey(feePublishedId: number, checkName: string): string {
@@ -107,7 +113,7 @@ export interface NewCase {
   feePublishedId: number;
   feeVerifiedId: number | null;
   feeRawId: number | null;
-  input: CaseInput | { kind: "unreplayable"; fee_name: string | null; amount: number | null; canonical_fee_key: string; conditions: string | null };
+  input: CaseInput;
   expected: { publishable: false; caught_by: string; reason: string | null };
   originFeedbackId: number;
   lastVerdict: string | null;
@@ -129,6 +135,8 @@ export function buildTakedownCase(row: TakedownRow, texts: TextRow[]): NewCase {
   let sourceTextHash: string | null = null;
   if (row.check_name === LIMIT_GUARD_CHECK) {
     input = { kind: "limit_guard", canonical_fee_key: row.canonical_fee_key, fee_name: row.fee_name, amount, conditions: row.conditions };
+  } else if (row.check_name === CATEGORY_GUARD_CHECK) {
+    input = { kind: "category_guard", canonical_fee_key: row.canonical_fee_key, fee_name: row.fee_name, amount, conditions: row.conditions };
   } else if (row.check_name === SOURCE_CHECK_NAME) {
     // A Knox fee answers only to the document Knox read it from (`traceLiveFee`).
     const own = texts.filter((text) => Number(text.institution_id) === institutionId)
@@ -154,7 +162,7 @@ export function buildTakedownCase(row: TakedownRow, texts: TextRow[]): NewCase {
   } else {
     input = { kind: "unreplayable", fee_name: row.fee_name, amount, canonical_fee_key: row.canonical_fee_key, conditions: row.conditions };
   }
-  const replay = input.kind === "unreplayable" ? null : replayCase(input);
+  const replay = replayCase(input, row.check_name);
   return {
     caseKey: takedownCaseKey(feePublishedId, row.check_name),
     checkName: row.check_name,
@@ -264,18 +272,26 @@ export function replayOutcome(
   return { status: status === "active" ? "active" : "candidate", regression: status === "active" };
 }
 
+/** Pure: one takedown frozen as fee fields, replayed by its check name (#2064). A restored fee retires it. */
+export function replayFieldCase(row: { status: string; check_name: string | null; input: CaseInput; fee_live: boolean }) {
+  const replay = replayCase(row.input, row.check_name);
+  return { replay, restored: row.fee_live, outcome: replayOutcome(row.status, replay?.caught ?? null, row.fee_live) };
+}
+
 export async function runDemingRegression({
   runId,
   dryRun = false,
   db = sql,
   promoteLimit = REGRESSION_PROMOTE_LIMIT,
   replayLimit = REGRESSION_REPLAY_LIMIT,
+  fieldLimit = FIELD_REPLAY_LIMIT,
 }: {
   runId: number | null;
   dryRun?: boolean;
   db?: SqlTag;
   promoteLimit?: number;
   replayLimit?: number;
+  fieldLimit?: number;
 }): Promise<DemingRegressionResult> {
   const result: DemingRegressionResult = {
     schemaReady: false,
@@ -335,6 +351,33 @@ export async function runDemingRegression({
       caught: replay?.caught ?? null,
       verdict: row.fee_live ? "fee_restored" : replay?.verdict ?? null,
     });
+  }
+  // Takedowns frozen as fee fields, replayed by their check name (#2064).
+  const fieldDue = await db<Array<CaseRow & { fee_live: boolean }>>`
+    SELECT c.id, c.check_name, c.severity, c.status, c.input, c.fee_published_id,
+           EXISTS (
+             SELECT 1 FROM published_fee_records fp
+              WHERE fp.fee_published_id = c.fee_published_id AND fp.rolled_back_at IS NULL
+           ) AS fee_live
+      FROM eval_cases c
+     WHERE c.status IN ('active', 'candidate')
+       AND c.dataset = 'regression'
+       AND c.label_provenance = 'takedown_confirmed'
+       AND (c.input->>'kind' = 'category_guard'
+            OR (c.input->>'kind' = 'unreplayable' AND c.check_name = ANY(${[...FIELD_REPLAY_CHECKS]}::text[])))
+     ORDER BY c.last_checked_at NULLS FIRST, c.id
+     LIMIT ${fieldLimit}
+  `;
+  for (const row of fieldDue) {
+    const { replay, restored, outcome } = replayFieldCase(row);
+    result.replayed += 1;
+    if (replay?.caught) result.caught += 1;
+    if (outcome.status === "active" && row.status !== "active") result.activated += 1;
+    if (outcome.status === "retired") result.retired += 1;
+    if (outcome.regression) {
+      result.regressions.push({ caseId: Number(row.id), checkName: row.check_name, severity: row.severity, verdict: replay?.verdict ?? "unknown" });
+    }
+    updates.push({ id: Number(row.id), status: outcome.status, caught: replay?.caught ?? null, verdict: restored ? "fee_restored" : replay?.verdict ?? null });
   }
   if (!dryRun && updates.length > 0) {
     await db`
