@@ -126,3 +126,39 @@ describe("Hamilton's publish hold (#1915)", () => {
     expect(editionHolds(rows, heads, "2026-12-01").size).toBe(0);
   });
 });
+
+describe("ONE Credit Union's current schedule beside its 2027 one (#1915, PR #2531)", () => {
+  // Prod, Oct 25: stored text heads, verbatim. Doc 29000 is in effect; doc 28999 starts Jan 1, 2027.
+  const CURRENT_URL = "https://irp.cdn-website.com/69136b4b/files/uploaded/fee-schedule-new-optimized.pdf";
+  const NEXT_URL = "https://irp.cdn-website.com/69136b4b/files/uploaded/Fee+Schedule+1_1_2027.pdf";
+  const CURRENT_TEXT = "FEE SCHEDULE\nONE\nEffective November 1, 2024\nNon-Sufficient Funds - | Late Payment Fee (14 or more days) | $30.00\n";
+  const NEXT_TEXT = "FEE SCHEDULE\nEffective January 1, 2027\nGENERAL ACCOUNT FEES | LOAN SERVICING FEES\nNon-Sufficient Funds - | Late Payment Fee (14 or more days) | $30.00\n";
+  // A reselected current-schedule line (doc 29000), live once published, and its held 2027 copy (fixture ids).
+  const reselected = row({
+    fee_published_id: 1, fee_verified_id: 11, institution_id: 7174, fee_name: "Late Payment Fee (14 or more days)",
+    amount: 30, canonical_fee_key: "late_payment", fee_audience: "unknown", source_document_id: 29000,
+    document_url: CURRENT_URL, head: CURRENT_TEXT, first_read: "2026-10-11",
+  });
+  const held = { ...reselected, fee_published_id: 2, fee_verified_id: 12, source_document_id: 28999, document_url: NEXT_URL, head: NEXT_TEXT, live: false };
+
+  it("publish holds the 2027 line until January 1 and never the current one", () => {
+    const heads = new Map([["29000", CURRENT_TEXT], ["28999", NEXT_TEXT]]);
+    const rows = [{ fee_verified_id: 11, source_document_id: 29000 }, { fee_verified_id: 12, source_document_id: 28999 }];
+    expect([...editionHolds(rows, heads, "2026-10-25")]).toEqual([[12, "2027-01-01"]]);
+    expect([...editionHolds(rows, heads, "2026-12-31")]).toEqual([[12, "2027-01-01"]]);
+    expect(editionHolds(rows, heads, "2027-01-01").size).toBe(0);
+  });
+
+  it("keeps the 2027 copy held and the current line live through December 31", () => {
+    const found = judgeEditions([reselected, held], "2026-12-31");
+    expect(found.holds).toEqual([]);
+    expect(found.restores).toEqual([]);
+    expect(found.takeovers).toEqual([]);
+  });
+
+  it("on January 1 restores the 2027 copy and retires the current line, so the fee is never live twice", () => {
+    const found = judgeEditions([reselected, held], "2027-01-01");
+    expect(found.restores.map((fee) => fee.feePublishedId)).toEqual([2]);
+    expect(found.takeovers.map((fee) => [fee.feePublishedId, fee.reason])).toEqual([[1, "older_edition: #28999 effective 2027-01-01"]]);
+  });
+});
