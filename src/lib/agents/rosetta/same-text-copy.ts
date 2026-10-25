@@ -1,0 +1,197 @@
+import type { sql } from "@/lib/data-store/connection";
+import { recordAttempt } from "@/lib/agents/learning/attempts";
+import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
+import { preserveStatusChange } from "./normalized-witness";
+
+type SqlTag = typeof sql;
+
+/**
+ * Same page, same text, same verdict (#2477).
+ *
+ * The fee-page check spares a text Knox already pulled fees from (`triageEarlierTexts`: "a text
+ * Knox already pulled fees from is never rejected"), but it judged each copy of a page on its own.
+ * When Magellan stored a newer copy of a page whose bytes changed and whose text did not (an HTML
+ * nonce, a tracking tag), the newer copy had no Knox fees yet, so the product-page rule (#1053,
+ * fee-page check v2) rejected it as `wrong_document` while the older copy, with identical text,
+ * stayed readable. Knox never reads a `wrong_document` text, so the page's current copy never got
+ * rows, Darwin never verified any, Hamilton's refresh had nothing to move the live fees to, and the
+ * page's live fees stayed on the superseded copy, out of reach of every current-copy check.
+ *
+ * Prod, 25 Oct 2026 (read-only): of 2,573 live fees whose page's current copy has no live fee,
+ * 684 sit behind a current copy Rosetta judged `wrong_document`; for 441 of them (202 current
+ * copies at 186 banks) the current copy's text is byte-for-byte the older copy's, the older copy
+ * has Knox rows, and every one was rejected by the product-page rule.
+ *
+ * The rule: a text on a page's current copy is spared the fee-page check exactly as its older
+ * copy was when an older copy of the same page (superseded by this one, same bank) holds the same
+ * text and Knox rows sent to Darwin. A changed text is still judged on its own.
+ */
+export const SAME_TEXT_COPY_STRATEGY = { strategy: "read.same_text_copy", version: 1 } as const;
+
+/**
+ * False (shadow): each read step counts and samples the `wrong_document` current copies the rule
+ * would reopen (`rosetta.same_text_copies`) and changes none. New reads take the rule at read time
+ * either way. True: those texts become readable (`completed`) so Knox reads them. No fee moves
+ * here: Knox writes rows for the current copy, Darwin verifies them, and Hamilton's refresh moves a
+ * live fee only when the current copy's row is the same line.
+ */
+export const SAME_TEXT_COPY_REOPEN_LIVE = false;
+/** Texts the reopen pass looks at (and, live, reopens) per read step. */
+export const SAME_TEXT_COPY_REOPEN_LIMIT = 200;
+/** Copies listed in the step's event, so a reviewer can open them. */
+export const SAME_TEXT_COPY_SAMPLE = 10;
+export const SAME_TEXT_COPY_EVENT = "rosetta.same_text_copies";
+
+/**
+ * SQL (text alias `adt`, an agent_source_texts row): an older copy of the same page, superseded by
+ * this text's document at the same bank, holds this exact text and Knox rows sent to Darwin.
+ * Driven by `source_documents_superseded_by_idx`; the Knox rows by the Knox dedup index.
+ */
+export function sameTextKnoxCopySql(textAlias = "adt"): string {
+  return `(${textAlias}.text_hash IS NOT NULL AND EXISTS (
+           SELECT 1
+             FROM agent_source_texts older_text
+             JOIN source_documents older ON older.id = older_text.source_document_id
+            WHERE older.superseded_by_id = ${textAlias}.source_document_id
+              AND older.institution_id = ${textAlias}.institution_id
+              AND older_text.text_hash = ${textAlias}.text_hash
+              AND EXISTS (
+                SELECT 1 FROM raw_fee_observations older_fr
+                 WHERE older_fr.source = 'knox'
+                   AND older_fr.source_document_id = older.id
+                   AND older_fr.outlier_flags ? 'needs_darwin_verification'
+              )
+         ))`;
+}
+
+/**
+ * At read time: the older copy of this page that holds `textHash` and Knox rows, or null. The
+ * text is not stored yet, so the rule is asked with the new read's own values.
+ */
+export async function sameTextCopyOf(
+  db: SqlTag,
+  input: { institutionId: number; sourceDocumentId: number; textHash: string | null },
+): Promise<number | null> {
+  if (!input.textHash) return null;
+  const [row] = await db<Array<{ id: number | string }>>`
+    SELECT older.id
+      FROM agent_source_texts older_text
+      JOIN source_documents older ON older.id = older_text.source_document_id
+     WHERE older.superseded_by_id = ${input.sourceDocumentId}
+       AND older.institution_id = ${input.institutionId}
+       AND older_text.text_hash = ${input.textHash}
+       AND EXISTS (
+         SELECT 1 FROM raw_fee_observations older_fr
+          WHERE older_fr.source = 'knox'
+            AND older_fr.source_document_id = older.id
+            AND older_fr.outlier_flags ? 'needs_darwin_verification'
+       )
+     ORDER BY older.id DESC
+     LIMIT 1
+  `;
+  return row?.id == null ? null : Number(row.id);
+}
+
+export interface SameTextCopy {
+  textId: number;
+  sourceDocumentId: number;
+  olderDocumentId: number;
+  institutionId: number;
+  url: string | null;
+}
+
+export interface SameTextCopyReopenResult {
+  live: boolean;
+  /** `wrong_document` current copies the rule covers (up to the limit). */
+  candidates: number;
+  /** Texts made readable this step (0 in shadow mode). */
+  reopened: number;
+  sample: SameTextCopy[];
+}
+
+/**
+ * The backlog: `wrong_document` texts on current copies that the rule covers, rejected before it
+ * existed. Shadow by default (SAME_TEXT_COPY_REOPEN_LIVE): counted, sampled and logged only.
+ */
+export async function reopenSameTextCopies(
+  db: SqlTag,
+  options: { runId: number; stepId?: number | null; institutionId?: number; stateCode?: string; limit?: number; live?: boolean },
+): Promise<SameTextCopyReopenResult> {
+  const live = options.live ?? SAME_TEXT_COPY_REOPEN_LIVE;
+  const limit = Math.max(1, Math.min(options.limit ?? SAME_TEXT_COPY_REOPEN_LIMIT, SAME_TEXT_COPY_REOPEN_LIMIT));
+  const institutionId = options.institutionId ?? null;
+  const stateCode = normalizeStateCode(options.stateCode);
+  const rows = await db<Array<{
+    text_id: number | string;
+    source_document_id: number | string;
+    institution_id: number | string;
+    source_url: string | null;
+    text_hash: string;
+    older_id: number | string;
+  }>>`
+    SELECT adt.id AS text_id, adt.source_document_id, adt.institution_id, adt.source_url, adt.text_hash,
+           (SELECT max(older.id) FROM source_documents older
+             WHERE older.superseded_by_id = adt.source_document_id
+               AND older.institution_id = adt.institution_id) AS older_id
+      FROM agent_source_texts adt
+      JOIN source_documents doc ON doc.id = adt.source_document_id
+      JOIN institution_sources inst ON inst.id = adt.institution_id
+     WHERE adt.status = 'wrong_document'
+       AND adt.normalized_text IS NOT NULL
+       AND doc.status = 'success'
+       AND doc.superseded_by_id IS NULL
+       AND doc.duplicate_of_id IS NULL
+       AND (${institutionId}::bigint IS NULL OR adt.institution_id = ${institutionId}::bigint)
+       AND (${stateCode}::text IS NULL OR upper(btrim(inst.state_code)) = ${stateCode}::text)
+       AND ${db.unsafe(sameTextKnoxCopySql("adt"))}
+     ORDER BY adt.id
+     LIMIT ${limit}
+  `;
+  const copies: SameTextCopy[] = rows.map((row) => ({
+    textId: Number(row.text_id),
+    sourceDocumentId: Number(row.source_document_id),
+    olderDocumentId: Number(row.older_id),
+    institutionId: Number(row.institution_id),
+    url: row.source_url,
+  }));
+  const result: SameTextCopyReopenResult = { live, candidates: copies.length, reopened: 0, sample: copies.slice(0, SAME_TEXT_COPY_SAMPLE) };
+  if (copies.length === 0) return result;
+  if (live) {
+    for (const [index, copy] of copies.entries()) {
+      const write = await preserveStatusChange(db, copy.textId, (scope) => scope`
+        UPDATE agent_source_texts
+           SET status = 'completed', error_message = NULL, updated_at = NOW()
+         WHERE id = ${copy.textId}
+           AND status = 'wrong_document'
+        RETURNING id
+      `);
+      const changed = Array.isArray(write.value) && write.value.length > 0;
+      if (changed) result.reopened += 1;
+      await recordAttempt(db, {
+        institutionId: copy.institutionId,
+        sourceDocumentId: copy.sourceDocumentId,
+        stage: "read",
+        strategy: SAME_TEXT_COPY_STRATEGY.strategy,
+        version: SAME_TEXT_COPY_STRATEGY.version,
+        fingerprint: rows[index].text_hash,
+        outcome: changed ? "ok" : "unchanged",
+        yieldCount: 0,
+        costMicrousd: 0,
+        runId: options.runId,
+        stepId: options.stepId ?? null,
+        detail: { text_id: copy.textId, older_document_id: copy.olderDocumentId, url: copy.url, witness_retention: write.retention },
+      });
+    }
+  }
+  await db`
+    INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
+    VALUES (
+      ${options.runId}, ${options.stepId ?? null}, ${SAME_TEXT_COPY_EVENT}, 'completed',
+      ${live
+        ? `Reopened ${result.reopened} current cop(ies) rejected as not a fee page whose older copy of the same page holds the same text and Knox fees`
+        : `Would reopen (shadow) ${copies.length} current cop(ies) rejected as not a fee page whose older copy of the same page holds the same text and Knox fees`},
+      ${JSON.stringify({ live, candidates: copies.length, reopened: result.reopened, limit, sample: result.sample })}::jsonb
+    )
+  `;
+  return result;
+}
