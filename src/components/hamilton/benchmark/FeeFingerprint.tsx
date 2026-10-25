@@ -49,8 +49,12 @@ export function stripNote(strip: FingerprintStrip, fingerprint: Pick<FeeFingerpr
       const middle = band.p25 === band.p75 ? `middle half all at ${money(band.p25)}` : `middle half ${money(band.p25)} to ${money(band.p75)}`;
       return `${institutions(strip.peerCount)}: median ${money(band.median)}, ${middle}${placeText(strip.percentile)}. ${source}`;
     }
-    case "few_peers":
-      return `Only ${publishing}, fewer than the ${fingerprint.minPeers} needed for a median: ${strip.namedPeers.map((p) => `${p.institutionName} ${money(p.amount)}`).join("; ")}. ${source}`;
+    case "few_peers": {
+      // Name every institution listed; sister charters still count once toward the minimum.
+      const listed = strip.namedPeers.length;
+      const sisters = listed > strip.peerCount ? ` (${strip.peerCount} counting sister charters once)` : "";
+      return `Only ${institutions(listed)} in the group ${listed === 1 ? "publishes" : "publish"} it${sisters}, fewer than the ${fingerprint.minPeers} needed for a median: ${strip.namedPeers.map((p) => `${p.institutionName} ${money(p.amount)}`).join("; ")}. ${source}`;
+    }
     case "no_peers":
       return "No institution in the group publishes this fee.";
     case "not_published":

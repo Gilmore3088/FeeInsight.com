@@ -45,6 +45,13 @@ const fingerprint: FeeFingerprint = {
 };
 
 describe("FeeFingerprint", () => {
+  it("names every listed institution and says when sister charters count once", () => {
+    const few = fingerprint.strips[1];
+    const sisters = { ...few, peerCount: 1 };
+    expect(stripNote(few, fingerprint)).toMatch(/^Only 2 institutions in the group publish it, fewer than/);
+    expect(stripNote(sisters, fingerprint)).toMatch(/^Only 2 institutions in the group publish it \(1 counting sister charters once\), fewer than/);
+  });
+
   it("gives each placed strip its peer count, median, percentile, source and period", () => {
     expect(stripNote(blank, fingerprint)).toBe(
       "12 institutions: median $25.50, middle half $22.75 to $28.50; 71st percentile. Source: published fee schedules, Mar 2026 to Oct 2026.",
