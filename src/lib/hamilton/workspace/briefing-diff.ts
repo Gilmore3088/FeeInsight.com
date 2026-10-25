@@ -5,13 +5,22 @@
  * (`hamilton_briefing_snapshots`, written by the `briefing-refresh` step) and never
  * builds a briefing itself. Wording follows the workspace contract in `types.ts`:
  * it reports what moved, with "higher" and "lower", and takes no stance on the price.
+ *
+ * Two stored copies cannot tell a bank's price change from a correction to Fee Insight's own
+ * reading of its schedule (#1891, V5 plan P5). So a moved, added or dropped fee of the
+ * institution's own is a data update by default (`own_record`, `fee_added`, `fee_removed`, worded
+ * as figures on file), and only `withConfirmedPriceChanges` makes one a price change (`own_price`):
+ * when a change confirmed against both schedule copies (`confirmFeeChange`) bears it out.
  */
 
 import { PRO_STUDIES } from "./studies";
 import type { Briefing, FeePositionRow, Observation } from "./types";
 
 export type BriefingChangeKind =
+  /** A price change confirmed on the institution's own schedules (see withConfirmedPriceChanges). */
   | "own_price"
+  /** The figure on file moved, with no confirmed price change behind it: never worded as one. */
+  | "own_record"
   | "peer_median"
   | "peer_group"
   | "band_side"
@@ -25,7 +34,21 @@ export interface BriefingChange {
   kind: BriefingChangeKind;
   feeCategory: string | null;
   text: string;
+  /** The institution's own figure before and after, on `own_record` and `own_price` changes. */
+  amounts?: { from: number; to: number; feeName: string };
 }
+
+/** One of the institution's own price changes, confirmed against both schedule copies. */
+export interface ConfirmedOwnChange {
+  feeCategory: string;
+  oldAmount: number;
+  newAmount: number;
+  /** YYYY-MM-DD. */
+  changedAt: string;
+}
+
+/** Kinds that change only what Fee Insight holds for the institution, not a confirmed price. */
+export const RECORD_UPDATE_KINDS: ReadonlySet<BriefingChangeKind> = new Set(["own_record", "fee_added", "fee_removed"]);
 
 export interface BriefingDiff {
   institutionId: number;
@@ -86,6 +109,41 @@ function same(a: number, b: number): boolean {
   return Math.abs(a - b) < 0.005;
 }
 
+function ownRecordText(name: string, from: number, to: number): string {
+  return `${name}: the figure on file moved from ${money(from)} to ${money(to)}. No price change is confirmed on its schedules, so this is shown as an update to our data, not as a price change.`;
+}
+
+function dayText(iso: string): string {
+  const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+}
+
+/**
+ * Pure: an `own_record` change becomes a price change only when confirmed changes for the same fee
+ * start at the old figure and end at the new one (one change, or a chain of them between the two
+ * copies). Everything else stays a data update, so a corrected reading never reads as a price move.
+ */
+export function withConfirmedPriceChanges(diff: BriefingDiff, confirmed: readonly ConfirmedOwnChange[]): BriefingDiff {
+  return {
+    ...diff,
+    changes: diff.changes.map((change) => {
+      if (change.kind !== "own_record" || !change.amounts || !change.feeCategory) return change;
+      const { from, to } = change.amounts;
+      const forFee = confirmed.filter((c) => c.feeCategory === change.feeCategory);
+      const start = forFee.find((c) => same(c.oldAmount, from));
+      const end = forFee
+        .filter((c) => same(c.newAmount, to))
+        .sort((a, b) => b.changedAt.localeCompare(a.changedAt))[0];
+      if (!start || !end || start.changedAt > end.changedAt) return change;
+      return {
+        ...change,
+        kind: "own_price" as const,
+        text: `${change.amounts.feeName}: its price changed from ${money(from)} to ${money(to)} (${delta(from, to)}), confirmed against its published schedules and recorded ${dayText(end.changedAt)}.`,
+      };
+    }),
+  };
+}
+
 function feeChanges(previous: FeePositionRow[], current: FeePositionRow[]): BriefingChange[] {
   const before = new Map(previous.map((row) => [row.feeCategory, row]));
   const after = new Map(current.map((row) => [row.feeCategory, row]));
@@ -94,14 +152,19 @@ function feeChanges(previous: FeePositionRow[], current: FeePositionRow[]): Brie
     const old = before.get(row.feeCategory);
     const name = row.displayName;
     if (!old) {
-      changes.push({ kind: "fee_added", feeCategory: row.feeCategory, text: `${name}: now on its published schedule at ${money(row.current)}.` });
+      changes.push({
+        kind: "fee_added",
+        feeCategory: row.feeCategory,
+        text: `${name}: added to the fees on file at ${money(row.current)}, a newly listed fee or a first reading of its schedule.`,
+      });
       continue;
     }
     if (!same(old.current, row.current)) {
       changes.push({
-        kind: "own_price",
+        kind: "own_record",
         feeCategory: row.feeCategory,
-        text: `${name}: its published price moved from ${money(old.current)} to ${money(row.current)} (${delta(old.current, row.current)}).`,
+        text: ownRecordText(name, old.current, row.current),
+        amounts: { from: old.current, to: row.current, feeName: name },
       });
     }
     if (old.peerLabel !== row.peerLabel) {
@@ -132,7 +195,11 @@ function feeChanges(previous: FeePositionRow[], current: FeePositionRow[]): Brie
   }
   for (const row of previous) {
     if (!after.has(row.feeCategory)) {
-      changes.push({ kind: "fee_removed", feeCategory: row.feeCategory, text: `${row.displayName}: no longer on its published schedule (was ${money(row.current)}).` });
+      changes.push({
+        kind: "fee_removed",
+        feeCategory: row.feeCategory,
+        text: `${row.displayName}: no longer in the fees on file (was ${money(row.current)}), dropped from its schedule or withdrawn after a check of our reading.`,
+      });
     }
   }
   return changes;

@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ sql: vi.fn(), getWorkspaceBriefing: vi.fn() }));
+const mocks = vi.hoisted(() => ({ sql: vi.fn(), getWorkspaceBriefing: vi.fn(), confirmed: vi.fn() }));
 vi.mock("@/lib/data-store/connection", () => ({ sql: mocks.sql }));
+vi.mock("@/lib/report-assemblers/monthly-pulse", () => ({ loadConfirmedFeeChanges: mocks.confirmed }));
 vi.mock("@/lib/hamilton/workspace/research", () => ({ getWorkspaceBriefing: mocks.getWorkspaceBriefing }));
 
 import { getQuarterlyChanges, runBriefingRefresh, summarizeBriefingRefresh } from "./briefing-snapshots";
@@ -11,6 +12,7 @@ const brief = (current: number) => ({
   institutionName: "Home Bank",
   observations: [],
   positions: [{ feeCategory: "overdraft", displayName: "Overdraft", current, band: null, peerLabel: "Texas banks" }],
+  stateCode: "TX",
   generatedAt: "2026-10-07T15:07:00Z",
   provenance: { engineVersion: "1.12.1" },
 });
@@ -84,6 +86,8 @@ describe("runBriefingRefresh", () => {
 describe("getQuarterlyChanges (#1083)", () => {
   it("is null with no stored copy, names the first copy, then compares the two newest", async () => {
     mocks.sql.mockReset();
+    mocks.confirmed.mockReset();
+    mocks.confirmed.mockResolvedValue({ changes: [], recorded: 0 });
     mocks.sql.mockResolvedValueOnce([]);
     expect(await getQuarterlyChanges(1)).toBeNull();
     mocks.sql.mockResolvedValueOnce([{ quarter: "2026-Q4", briefing: brief(35) }]);
@@ -93,7 +97,35 @@ describe("getQuarterlyChanges (#1083)", () => {
       { quarter: "2026-Q3", briefing: JSON.stringify(brief(30)) },
     ]);
     const changes = await getQuarterlyChanges(1);
-    expect(changes?.kind === "diff" && changes.diff.changes[0].text).toBe("Overdraft: its published price moved from $30.00 to $35.00 ($5.00 higher).");
+    expect(changes?.kind === "diff" && changes.diff.changes[0].kind).toBe("own_record");
+    expect(changes?.kind === "diff" && changes.diff.changes[0].text).toBe(
+      "Overdraft: the figure on file moved from $30.00 to $35.00. No price change is confirmed on its schedules, so this is shown as an update to our data, not as a price change.",
+    );
+    expect(mocks.confirmed).toHaveBeenCalledWith("2026-10-07T15:07:00Z", "TX");
+  });
+
+  it("calls a moved own fee a price change only when the institution's confirmed change bears it out (#1891)", async () => {
+    const stored = () => [
+      { quarter: "2026-Q4", briefing: brief(35) },
+      { quarter: "2026-Q3", briefing: brief(30) },
+    ];
+    const change = (institution_id: number) => ({ institution_id, fee_category: "overdraft", old_amount: 30, new_amount: 35, changed_at: "2026-09-15" });
+    mocks.sql.mockReset();
+    mocks.confirmed.mockReset();
+    // Another institution's confirmed change never confirms this one's.
+    mocks.confirmed.mockResolvedValueOnce({ changes: [change(2)], recorded: 1 });
+    mocks.sql.mockResolvedValueOnce(stored());
+    const other = await getQuarterlyChanges(1);
+    expect(other?.kind === "diff" && other.diff.changes[0].kind).toBe("own_record");
+    mocks.confirmed.mockResolvedValueOnce({ changes: [change(1)], recorded: 1 });
+    mocks.sql.mockResolvedValueOnce(stored());
+    const own = await getQuarterlyChanges(1);
+    expect(own?.kind === "diff" && own.diff.changes[0].kind).toBe("own_price");
+    // A failed read confirms nothing.
+    mocks.confirmed.mockRejectedValueOnce(new Error("db"));
+    mocks.sql.mockResolvedValueOnce(stored());
+    const failed = await getQuarterlyChanges(1);
+    expect(failed?.kind === "diff" && failed.diff.changes[0].kind).toBe("own_record");
   });
 
   it("shows nothing for a stored copy it cannot read", async () => {

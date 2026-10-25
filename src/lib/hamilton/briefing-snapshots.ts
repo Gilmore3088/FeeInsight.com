@@ -1,6 +1,13 @@
 import { sql } from "@/lib/data-store/connection";
 import { getWorkspaceBriefing } from "@/lib/hamilton/workspace/research";
-import { briefingQuarter, diffBriefings, type BriefingDiff } from "@/lib/hamilton/workspace/briefing-diff";
+import {
+  briefingQuarter,
+  diffBriefings,
+  withConfirmedPriceChanges,
+  type BriefingDiff,
+  type ConfirmedOwnChange,
+} from "@/lib/hamilton/workspace/briefing-diff";
+import { loadConfirmedFeeChanges } from "@/lib/report-assemblers/monthly-pulse";
 import type { Briefing } from "@/lib/hamilton/workspace/types";
 
 /**
@@ -178,16 +185,34 @@ export async function getQuarterlyChanges(institutionId: number): Promise<Quarte
   if (rows.length === 0) return null;
   if (rows.length === 1) return { kind: "first", quarter: rows[0].quarter };
   const parse = (value: Briefing | string): Briefing => (typeof value === "string" ? (JSON.parse(value) as Briefing) : value);
+  let diff: BriefingDiff;
+  let current: Briefing;
   try {
-    return {
-      kind: "diff",
-      diff: diffBriefings(
-        { quarter: rows[1].quarter, briefing: parse(rows[1].briefing) },
-        { quarter: rows[0].quarter, briefing: parse(rows[0].briefing) },
-      ),
-    };
+    const previous = parse(rows[1].briefing);
+    current = parse(rows[0].briefing);
+    diff = diffBriefings({ quarter: rows[1].quarter, briefing: previous }, { quarter: rows[0].quarter, briefing: current });
   } catch {
     // A malformed or outdated stored copy shows nothing rather than taking the page down.
     return null;
+  }
+  if (!diff.changes.some((c) => c.kind === "own_record")) return { kind: "diff", diff };
+  const confirmed = await confirmedOwnChanges(institutionId, current.stateCode ?? null, diff.fromGeneratedAt);
+  return { kind: "diff", diff: withConfirmedPriceChanges(diff, confirmed) };
+}
+
+/**
+ * The institution's own price changes since `sinceIso` that its two schedule copies bear out
+ * (`confirmFeeChange`, the rule competitor alerts and the Monthly Pulse use). A failed read or an
+ * unknown state confirms nothing, so a moved figure stays a data update, never a price change (#1891).
+ */
+export async function confirmedOwnChanges(institutionId: number, stateCode: string | null, sinceIso: string): Promise<ConfirmedOwnChange[]> {
+  if (!stateCode || !sinceIso) return [];
+  try {
+    const { changes } = await loadConfirmedFeeChanges(sinceIso, stateCode);
+    return changes
+      .filter((c) => c.institution_id === institutionId)
+      .map((c) => ({ feeCategory: c.fee_category, oldAmount: c.old_amount, newAmount: c.new_amount, changedAt: c.changed_at }));
+  } catch {
+    return [];
   }
 }

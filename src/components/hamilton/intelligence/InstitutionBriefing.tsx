@@ -1,4 +1,4 @@
-import { Suspense } from "react";
+import { cache, Suspense } from "react";
 import { unstable_cache, unstable_noStore } from "next/cache";
 import Link from "next/link";
 import { fetchHomeBriefingSignals, type HomeBriefingSignals } from "@/lib/hamilton/home-data";
@@ -35,7 +35,7 @@ const getCachedBriefing = unstable_cache(
   { revalidate: 3600 },
 );
 
-async function loadBriefing(
+export async function loadBriefing(
   user: User | null,
   selectedInstitutionId: string | null,
 ): Promise<{ briefing: Briefing | null; unavailable: boolean }> {
@@ -64,10 +64,13 @@ function ChangesSkeleton() {
   return <div className="skeleton rounded-lg" style={{ minHeight: "3rem" }} />;
 }
 
+/** One read of the quarterly comparison per request, shared with the command center (#1891). */
+export const getQuarterlyChangesOnce = cache(getQuarterlyChanges);
+
 /** The briefing against last quarter's stored copy (#1083); nothing when none is stored. */
 async function QuarterlyChangesFor({ institutionId, pagePeerLabel }: { institutionId: number; pagePeerLabel: string }) {
   unstable_noStore();
-  return <QuarterlyChanges changes={await getQuarterlyChanges(institutionId)} pagePeerLabel={pagePeerLabel} />;
+  return <QuarterlyChanges changes={await getQuarterlyChangesOnce(institutionId)} pagePeerLabel={pagePeerLabel} />;
 }
 
 /** Signals and alerts are fresh on every load (never cached). */
@@ -134,8 +137,11 @@ async function resolveResearchInstitution(
  */
 export async function InstitutionBriefing({
   searchParams,
+  headless = false,
 }: {
   searchParams: Promise<{ instId?: string; intent?: string; research?: string }>;
+  /** Under the command center (#1891), which already names the institution and its month at a glance. */
+  headless?: boolean;
 }) {
   const params = await searchParams;
   const user = await getCurrentUser().catch(() => null);
@@ -151,7 +157,7 @@ export async function InstitutionBriefing({
 
   return (
     <MemoPage>
-      <MemoHeader
+      {headless ? null : <MemoHeader
         kicker={`This month · ${month}`}
         title={institution?.name ?? "Monthly briefing"}
         dek={
@@ -161,9 +167,9 @@ export async function InstitutionBriefing({
               ? `Research institution: ${institution.name}.`
               : "Choose an institution and Hamilton reads its published fees against its market every month."
         }
-      />
+      />}
 
-      {briefing && overview ? (
+      {briefing && overview && !headless ? (
         <ThisMonthOverview
           institutionName={briefing.institutionName}
           peerLabel={briefing.peerLabel}

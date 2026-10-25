@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { briefingQuarter, diffBriefings, nextQuarter, quarterLabel } from "./briefing-diff";
+import { briefingQuarter, diffBriefings, nextQuarter, quarterLabel, withConfirmedPriceChanges } from "./briefing-diff";
 import type { Briefing, FeePositionRow, Observation } from "./types";
 
 function row(feeCategory: string, current: number, median: number | null = 30): FeePositionRow {
@@ -41,13 +41,13 @@ describe("briefingQuarter", () => {
 });
 
 describe("diffBriefings", () => {
-  it("reports own price, peer median and band moves with higher and lower", () => {
+  it("reports an own figure, peer median and band moves with higher and lower", () => {
     const diff = diffBriefings(
       { quarter: "2026-Q3", briefing: briefing({ positions: [row("overdraft", 30, 30), row("nsf", 25)] }) },
       { quarter: "2026-Q4", briefing: briefing({ positions: [row("overdraft", 36, 29), row("nsf", 25)] }) },
     );
     expect(diff.changes.map((c) => c.text)).toEqual([
-      "Overdraft: its published price moved from $30.00 to $36.00 ($6.00 higher).",
+      "Overdraft: the figure on file moved from $30.00 to $36.00. No price change is confirmed on its schedules, so this is shown as an update to our data, not as a price change.",
       "Overdraft: the peer median moved from $30.00 to $29.00 ($1.00 lower; 40 peers).",
       "Overdraft: its price is now above the middle half of peers; last quarter it was within the middle half of peers.",
     ]);
@@ -61,7 +61,7 @@ describe("diffBriefings", () => {
       { quarter: "2026-Q4", briefing: briefing({ positions: [row("overdraft", 36, 40)] }) },
     );
     expect(diff.changes.map((c) => c.text)).toEqual([
-      "Overdraft: its published price moved from $30.00 to $36.00 ($6.00 higher).",
+      "Overdraft: the figure on file moved from $30.00 to $36.00. No price change is confirmed on its schedules, so this is shown as an update to our data, not as a price change.",
       "Overdraft: now compared with Texas banks (last quarter US banks), so its peer figures are not compared.",
     ]);
     expect(diff).toMatchObject({ fromPeerLabel: "US banks", toPeerLabel: "Texas banks" });
@@ -142,5 +142,56 @@ describe("quarter labels (#1083)", () => {
     expect(quarterLabel("2026-Q4")).toBe("Q4 2026");
     expect(nextQuarter("2026-Q4")).toBe("2027-Q1");
     expect(nextQuarter("2027-Q2")).toBe("2027-Q3");
+  });
+});
+
+describe("own fee changes are data updates unless confirmed (#1891, V5 P5)", () => {
+  const moved = () =>
+    diffBriefings(
+      { quarter: "2026-Q3", briefing: briefing({ generatedAt: "2026-07-06T15:07:00Z", positions: [row("overdraft", 30), row("nsf", 25)] }) },
+      { quarter: "2026-Q4", briefing: briefing({ positions: [row("overdraft", 36), row("nsf", 20)] }) },
+    );
+
+  it("never words a moved, added or dropped own figure as a price change by default", () => {
+    const diff = diffBriefings(
+      { quarter: "2026-Q3", briefing: briefing({ positions: [row("overdraft", 30), row("nsf", 25)] }) },
+      { quarter: "2026-Q4", briefing: briefing({ positions: [row("overdraft", 36)] }) },
+    );
+    expect(diff.changes.map((c) => c.kind)).toEqual(["own_record", "band_side", "fee_removed"]);
+    const text = diff.changes.map((c) => c.text).join(" ");
+    expect(text).not.toMatch(/published price moved|price changed|raised|lowered/);
+    expect(text).toContain("update to our data");
+  });
+
+  it("makes a change a price change only when a confirmed change goes from the old figure to the new one", () => {
+    const diff = withConfirmedPriceChanges(moved(), [
+      { feeCategory: "overdraft", oldAmount: 30, newAmount: 36, changedAt: "2026-09-02" },
+      // A confirmed NSF change between other figures does not confirm this move.
+      { feeCategory: "nsf", oldAmount: 30, newAmount: 20, changedAt: "2026-09-02" },
+    ]);
+    expect(diff.changes.filter((c) => c.kind.startsWith("own_")).map((c) => [c.feeCategory, c.kind])).toEqual([
+      ["overdraft", "own_price"],
+      ["nsf", "own_record"],
+    ]);
+    expect(diff.changes[0].text).toBe(
+      "Overdraft: its price changed from $30.00 to $36.00 ($6.00 higher), confirmed against its published schedules and recorded Sep 2, 2026.",
+    );
+  });
+
+  it("accepts a chain of confirmed changes, in order, and refuses one out of order", () => {
+    const chain = withConfirmedPriceChanges(moved(), [
+      { feeCategory: "overdraft", oldAmount: 30, newAmount: 33, changedAt: "2026-08-01" },
+      { feeCategory: "overdraft", oldAmount: 33, newAmount: 36, changedAt: "2026-09-01" },
+    ]);
+    expect(chain.changes[0].kind).toBe("own_price");
+    const backwards = withConfirmedPriceChanges(moved(), [
+      { feeCategory: "overdraft", oldAmount: 33, newAmount: 36, changedAt: "2026-08-01" },
+      { feeCategory: "overdraft", oldAmount: 30, newAmount: 33, changedAt: "2026-09-01" },
+    ]);
+    expect(backwards.changes[0].kind).toBe("own_record");
+  });
+
+  it("confirms nothing with no confirmed changes", () => {
+    expect(withConfirmedPriceChanges(moved(), []).changes.filter((c) => c.kind.startsWith("own_")).map((c) => c.kind)).toEqual(["own_record", "own_record"]);
   });
 });
