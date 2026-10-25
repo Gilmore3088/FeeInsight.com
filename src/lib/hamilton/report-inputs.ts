@@ -10,7 +10,6 @@ import { accountIdentitySnapshot, type HamiltonAccountContext } from "@/lib/hami
 import { getFeesByInstitution, getFinancialsByInstitution, getInstitutionById } from "@/lib/data-store";
 import { financialSourceForCharter } from "@/lib/data-store/financial-peer-contract";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/fee-stats";
-import { getCategoryChargeBases } from "@/lib/data-store/fee-index";
 import { getInstitutionPeerRanking, getInstitutionRevenueTrend } from "@/lib/data-store/call-reports";
 import { getInstitutionFeeScheduleEvidence } from "@/lib/data-store/institution";
 import type { SectionInput } from "@/lib/hamilton/types";
@@ -280,7 +279,6 @@ export async function assembleReportInputs(input: {
     selectedRevenueTrend,
     selectedPeerRanking,
     selectedEvidence,
-    chargeBases,
     accountContext,
   ] = await Promise.all([
     params.institutionId ? getInstitutionById(params.institutionId).catch(() => null) : null,
@@ -290,7 +288,6 @@ export async function assembleReportInputs(input: {
     params.institutionId ? getInstitutionRevenueTrend(params.institutionId).catch(() => []) : [],
     params.institutionId ? getInstitutionPeerRanking(params.institutionId).catch(() => null) : null,
     params.institutionId ? getInstitutionFeeScheduleEvidence(params.institutionId).catch(() => null) : null,
-    params.institutionId ? getCategoryChargeBases().catch(() => null) : null,
     input.loadAccountContext(),
   ]);
   if (params.institutionId && !selectedInstitution) {
@@ -336,7 +333,6 @@ export async function assembleReportInputs(input: {
   const { deltas: selectedFeeDeltas, notLikeForLike } = compareSelectedInstitutionFees({
     selectedFees: selectedVisibleFees,
     indexEntries: indexData,
-    chargeBases,
     evidencePolicy,
   });
   const pipelineCounts = selectedEvidence?.pipeline_counts ?? null;
@@ -559,7 +555,6 @@ export async function assembleReportInputs(input: {
   return {
     kind: "ready" as const,
     sectionInputs,
-    chargeBases,
     institutionName,
     reportTitle,
     period,

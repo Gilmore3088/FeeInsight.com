@@ -256,4 +256,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-1901-one-basis-per-benchmark",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "Before a fee counts in a benchmark, check its stated charging basis against its category's one basis (fee-comparability.ts categoryBasis): a monthly, quarterly, annual or daily price is not a per-item fee, and a one-time or quarterly charge is not a monthly one. A blank basis states nothing and keeps its place. Never measure \"the peers' basis\" a second way in one surface; the medians and the bank's own value read the same rule.",
+    why: "Stats rule 9 gave only five categories a basis, so bill pay, returned mail, late payment and 38 other categories pooled monthly with per-item prices (1,853 rows at 1,310 institutions on Oct 25), and Hamilton's own data-driven basis held seven categories back as mixed while /fees still showed their pooled medians.",
+    evidence: { issues: [1901], prs: [], files: ["docs/project/findings/2026-10-25-benchmarks-pool-charging-bases.md", "src/lib/fee-comparability.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];
