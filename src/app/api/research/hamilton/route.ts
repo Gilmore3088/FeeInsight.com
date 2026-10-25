@@ -58,7 +58,11 @@ import { getInstitutionById } from "@/lib/data-store";
 import { writtenAnswerStepSystemPrompt, type AnswerToolEvidence } from "@/lib/hamilton/written-answer-evidence";
 import { shadowGate, type ShadowPath, type TodayDecision } from "@/lib/hamilton/output-gate-shadow";
 import { scheduleGateShadow } from "@/lib/hamilton/output-gate-shadow-store";
-import type { GateInput } from "@/lib/hamilton/output-gate";
+import { gateAnswer, type GateInput } from "@/lib/hamilton/output-gate";
+import { gatedAnswerView, isGateRepairEnabled, runGatedAnswer } from "@/lib/hamilton/output-gate-repair";
+
+/** research_usage agent id for a gate rewrite; the "hamilton" prefix counts it in the Pro quota (quota.ts). */
+const GATE_REPAIR_USAGE_AGENT_ID = "hamilton-repair";
 
 export const maxDuration = 300;
 
@@ -337,6 +341,88 @@ async function handlePOST(request: Request) {
           },
           { status: 200 },
         );
+      }
+
+      // Claim contract step 5 (#1077), only while HAMILTON_GATE_REPAIR is on: the one output gate
+      // decides, one rewrite is asked for when the draft fails, and a partial answer shows its
+      // supported sentences. Off (the default), today's gates below decide and no rewrite is made.
+      if (isGateRepairEnabled()) {
+        const gateDraft = (draft: { text: string }) => gateAnswer({
+          surface: "written_answer",
+          text: draft.text,
+          evidence: { kind: "tool_reads", toolOutputs: bufferedReads.map((read) => read.output), reads: bufferedReads, briefingEvidence },
+          identity: { researchInstitutionId: institutionId, accountInstitutionId: homeId ?? null, accountInstitutionName: identityContext.accountInstitutionName ?? null },
+          question: questionOnly(lastUserText),
+        });
+        const gated = await runGatedAnswer({
+          draft: { text: result.text ?? "" },
+          gate: gateDraft,
+          // One more paid call only within the reader's daily quota; the provider budget is checked by trackAnthropicRequest.
+          allowRepair: async () => (await checkProAiQuota(user!)).allowed,
+          repair: async (feedback) => {
+            const { generated: rewrite } = await trackAnthropicRequest(
+              { ...providerContext, operation: "research_gate_repair" },
+              () => withProviderResponseOperation(AI_PROVIDER_TIMEOUT_MS, async (scope) => {
+                const generated = await generateText({
+                  model: getAnthropicLanguageModel(agent.model, "hamilton", scope),
+                  system: cachedSystem(writtenAnswerStepSystemPrompt(systemPrompt, result.steps ?? [])),
+                  // The same reads, no new ones: the rewrite is gated against what the first draft read.
+                  messages: [
+                    ...(await convertToModelMessages(messages)),
+                    ...(result.response?.messages ?? []),
+                    { role: "user" as const, content: feedback },
+                  ],
+                  tools: agent.tools,
+                  toolChoice: "none",
+                  maxOutputTokens: agent.maxTokens,
+                  stopWhen: stepCountIs(1),
+                  abortSignal: scope.signal,
+                });
+                assertCompletedProviderFinish(generated.finishReason, observedProviderUsage(generated.totalUsage));
+                return { generated, usage: trackerUsage(generated.totalUsage) };
+              }),
+            );
+            const repairIn = rewrite.totalUsage?.inputTokens ?? 0;
+            const repairOut = rewrite.totalUsage?.outputTokens ?? 0;
+            try {
+              // Its own research_usage row, so the rewrite counts in the Pro quota like a memo retry (quota.ts).
+              await logUsage(user?.id ?? null, null, GATE_REPAIR_USAGE_AGENT_ID, repairIn, repairOut, estimateCostCents(agent.model, repairIn, repairOut));
+            } catch {
+              // Non-critical, as above.
+            }
+            return { text: rewrite.text ?? "" };
+          },
+        });
+        const finalText = gated.draft.text;
+        const view = gatedAnswerView(finalText, gated.verdict);
+        const repairNote = { status: gated.verdict.status, repair: gated.repair, firstStatus: gated.first.status };
+        if (gated.repair === "used" && view.text !== null) {
+          const rewriteGate = evaluateCitationDensity(finalText);
+          if (rewriteGate.status === "refused") {
+            shadowWrittenAnswer(finalText, bufferedReads, "held", "written_buffered");
+            return Response.json(
+              { status: "refused", reason: rewriteGate.reason, metrics: rewriteGate.metrics, suggestion: rewriteGate.suggestion,
+                claims_without_citations: rewriteGate.claims_without_citations, gate: repairNote },
+              { status: 200 },
+            );
+          }
+        }
+        if (view.text === null) {
+          shadowWrittenAnswer(finalText, bufferedReads, "held", "written_buffered");
+          return Response.json(
+            { status: "refused", reason: "evidence_check_failed", problems: gated.verdict.failures.map((f) => f.message), metrics: gate.metrics, gate: repairNote },
+            { status: 200 },
+          );
+        }
+        shadowWrittenAnswer(finalText, bufferedReads, view.leftOut > 0 ? "shown_partial" : "shown", "written_buffered");
+        return Response.json({
+          status: "ok",
+          text: view.text,
+          metrics: gate.metrics,
+          identityContext: identityFor(result.steps),
+          gate: { ...repairNote, lead: view.lead, corrections: view.corrections, leftOut: view.leftOut },
+          ...(gated.verdict.binding ? { narrativeBinding: gated.verdict.binding } : {}),
+        });
       }
 
       // The same evidence gate a memo passes, against the tool outputs the model saw (#981).
