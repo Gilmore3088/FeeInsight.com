@@ -476,4 +476,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-2068-learn-name-families",
+    agent: "knox",
+    stage: "extract",
+    lesson: "Learn a category from the fee, not from one bank's spelling of it. \"Balance Inquiries\", \"Balance Inquiry Fee\" and \"Fee for each balance inquiry\" are one fee: drop plurals, fee words and joining words, ignore word order, and when that family was rejected under one category at two banks and verified under another at two others, file every spelling under the verified one. Prefer an exact name's lesson when there is one, and never learn from a one-word family (\"Annual\", \"Additional\"), which names many different fees.",
+    why: "Category lessons needed the exact normalised name at two banks each way, so each new spelling waited for its own two banks. On 2026-10-25 the family rule found 132 lessons the exact rule could not learn, and 7 live balance-inquiry fees still filed as network ATM fees that no exact lesson reached.",
+    evidence: { issues: [2068], prs: [2584], files: ["src/lib/agents/knox/lessons.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];
