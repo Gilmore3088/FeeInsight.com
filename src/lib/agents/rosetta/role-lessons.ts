@@ -67,6 +67,16 @@ export const ROSETTA_LESSONS: AgentLesson[] = [
     since: "2026-10-20",
   },
   {
+    id: "issue-2059-reader-fix-rereads-its-errors",
+    agent: "rosetta",
+    stage: "read",
+    lesson: "When you change how you read documents, read again the documents whose text is known to be wrong, not only the ones you read next: a reader version bump must reopen every text with a read error recorded after it was written, once, and keep the old text unless the new one lists at least as many fees.",
+    why: "A ROSETTA_READ_VERSION bump re-read only thin, empty and unreadable texts. A text an operator held because its text lost a fee, or that text survival or a batch review marked wrong, kept its old reading after a reader fix, so the fix reached only documents fetched afterwards (#2059). Holds for a lost text did not even name the document.",
+    evidence: { issues: [2059], prs: [], files: ["src/lib/agents/rosetta/read.ts", "src/lib/fee-hold.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
+  {
     id: "pdf-second-reading",
     agent: "rosetta",
     stage: "read",

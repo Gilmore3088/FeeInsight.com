@@ -9,7 +9,9 @@
  *
  * A hold names its cause (`fee-error-cause.ts`, #2057): the hold's feedback row is filed against
  * the stage that made the mistake (a wrong document against discover, which Magellan's stale-link
- * search reads), not always against publishing. A release is filed against publishing.
+ * search reads), not always against publishing. A release is filed against publishing. A lost text
+ * names the document whose text lost the fee, so Rosetta reads it again when its reader version
+ * moves (#2059).
  */
 
 import type { sql as Sql } from "@/lib/data-store/connection";
@@ -48,11 +50,13 @@ async function logHoldEvent(
   reason: string | null,
   cause: FeeErrorCause | null,
 ): Promise<{ indexRefreshed: boolean; runId: number }> {
-  // A wrong document names the document the fee was read from, for Magellan's link search.
+  // A wrong document names the document the fee was read from, for Magellan's link search; a lost
+  // text names it as the row's document, for Rosetta's re-read on a reader version bump.
   let wrong: ReturnType<typeof wrongDocument> = {};
+  let lostTextDocumentId: number | null = null;
   // A correction version keeps the pipeline's lineage, so its value's document is the current
   // correction's cited one.
-  if (action === "hold" && cause === "wrong_document") {
+  if (action === "hold" && (cause === "wrong_document" || cause === "text_lost")) {
     const [doc] = await tx<Array<{ id: number | string; document_url: string | null }>>`
       SELECT sd.id, sd.document_url
         FROM source_documents sd
@@ -63,7 +67,8 @@ async function logHoldEvent(
                   JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
                  WHERE fv.fee_verified_id = ${row.lineage_ref}))
     `;
-    if (doc) wrong = wrongDocument(doc.id, doc.document_url);
+    if (doc && cause === "wrong_document") wrong = wrongDocument(doc.id, doc.document_url);
+    if (doc && cause === "text_lost") lostTextDocumentId = Number(doc.id);
   }
   const at = new Date().toISOString();
   const run = await recordAdminFeeRun(tx, {
@@ -81,6 +86,7 @@ async function logHoldEvent(
     reportedBy: "human",
     checkName: FEE_HOLD_CHECK,
     institutionId: Number(row.institution_id),
+    sourceDocumentId: lostTextDocumentId,
     feePublishedId: Number(row.fee_published_id),
     canonicalFeeKey: row.canonical_fee_key,
     amount: row.amount == null ? null : Number(row.amount),

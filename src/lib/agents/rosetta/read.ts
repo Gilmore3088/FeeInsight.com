@@ -1183,8 +1183,26 @@ export function rosettaReadCandidatesQuery(
                 AND ${alias}.char_count > ${flatMinParam}::int
                 AND strpos(${alias}.normalized_text, chr(10)) = 0
               )`;
+      // A read error recorded against a document's current text (a hold or correction whose cause is
+      // a lost text, a text-survival or batch-review miss; #2059): a reader version bump gives it
+      // one read with the current reader, so a reader fix reaches the documents it was written
+      // for, not only those read afterwards. The text was written before the error, so the error
+      // is about it; a better text moves `updated_at` past it and settles the document.
+      const readErrorOnText = (alias: string, text: string) => `EXISTS (
+                SELECT 1 FROM pipeline_feedback ${alias}
+                 WHERE ${alias}.source_document_id = ${text}.source_document_id
+                   AND ${alias}.about_stage = 'read'
+                   AND ${alias}.signal = 'wrong'
+                   AND ${alias}.weight > 0
+                   AND ${alias}.created_at >= ${text}.updated_at
+              )`;
       lostTextRereadable = `(
               (${flatLegacyText("adt")} AND ${notSettledByCurrentReader})
+              OR (
+                adt.status = 'completed'
+                AND ${readErrorOnText("read_error", "adt")}
+                AND ${notSettledByCurrentReader}
+              )
               OR (
                 adt.status = 'completed'
                 AND EXISTS (
@@ -1245,6 +1263,15 @@ export function rosettaReadCandidatesQuery(
                   WHERE adt.source_document_id = cr.id
                     AND adt.source_hash IS NOT DISTINCT FROM cr.content_hash
                     AND ${flatLegacyText("adt")}
+                  LIMIT 1
+               ),
+               -- A text with a read error is kept unless the new reader's text lists as many fees.
+               (
+                 SELECT adt.normalized_text FROM agent_source_texts adt
+                  WHERE adt.source_document_id = cr.id
+                    AND adt.source_hash IS NOT DISTINCT FROM cr.content_hash
+                    AND adt.status = 'completed'
+                    AND ${readErrorOnText("kept_error", "adt")}
                   LIMIT 1
                )
              ) AS last_lost_text,
