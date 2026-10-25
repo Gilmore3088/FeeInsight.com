@@ -73,6 +73,21 @@ Rosetta owns source text normalization.
   the current reader, so an institution whose flattened table gave up one fee gets its
   whole schedule. Texts with more Knox fees are left alone, and a failed re-read keeps
   the earlier text.
+- A completed text with an operator's lost-text finding (a hold or correction whose cause is
+  a lost text: a `pipeline_feedback` row about `read`, signal wrong, weight above 0; text-survival
+  and batch-review misses keep their own branches, so a zero-fee wrong page still goes back to
+  Magellan) is also read once more
+  when `ROSETTA_READ_VERSION` moves, however many fees it has (#2059). A reader fix then
+  reaches the documents it was written for, not only those read afterwards. The new text
+  replaces it only when it lists at least as many fees (the lost-text rule). A hold or
+  correction records the hash of the text it is about, and stays open until the text
+  changes, so a re-read that writes the same text keeps it for the next bump; an error with
+  no hash is settled by any rewrite. A correction keeps the document it cites as its own and names the live
+  document whose text lost the fee as `evidence.lost_text_document_id`. Holds recorded before #2565 name no
+  document and are not matched; older corrections name the cited document. A release or
+  reversal does not withdraw the error, which costs at most one read per version. Magellan's side already
+  holds: a `DISCOVERY_METHOD_VERSION` bump re-searches every bank whose last search missed,
+  and a wrong-document error re-searches its bank through the stale-link search (#2055).
 - Scoped layout 5 repairs (#2219) keep the global reader 3 and prose-layout 4 replay floors
   settled (`PDF_PROSE_REREAD_VERSION`). `PDF_STACKED_REPAIR_VERSION` v1 makes only current
   completed PDF-layout texts with at least three crossed bullet-price cells and three

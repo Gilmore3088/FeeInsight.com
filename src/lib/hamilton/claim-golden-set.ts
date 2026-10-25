@@ -43,7 +43,11 @@ import { bindNarrative, type NarrativeBinding, type OmitReason } from "./narrati
 import { bindingLeavesNothing } from "./written-answer-binding";
 import type { AnswerToolEvidence } from "./written-answer-evidence";
 
-export const CLAIM_GOLDEN_SET_VERSION = "2026-10-25.1";
+/**
+ * .2: step 2 (claim sentence binding) recorded its outcomes; the cases and targets are unchanged.
+ * .3: three controls from the PR #2571 review (mixed basis, prior quarter, "our data").
+ */
+export const CLAIM_GOLDEN_SET_VERSION = "2026-10-25.3";
 
 /** Who has checked these cases. Nobody has: change only with a link to an actual review record. */
 export const CLAIM_GOLDEN_REVIEW = {
@@ -97,9 +101,9 @@ export type ClaimGoldenHole =
   | "causal_words_narrow"
   /** The question's direction ("why did X fall") or metric is never compared with the data. Design step 3. */
   | "premise_not_checked"
-  /** A filing figure has no fact record, so nothing ties it to its institution, metric or role, and a written answer with no fee row gets no binding. Design steps 1 and 2. */
+  /** A filing figure has no fact record, so nothing ties it to its institution, metric or role, and a written answer with no fee row gets no binding. Closed by design step 2 (claim sentence binding). */
   | "filing_figure_unbound"
-  /** The written-answer gate is told only the research subject, never the reader's own institution behind "your". Design step 2. */
+  /** The written-answer binding is told only the research subject, never the reader's own institution behind "your". Closed for filing figures by design step 2. */
   | "no_account_identity";
 
 /** What today's code does with a case. */
@@ -281,33 +285,33 @@ export const CLAIM_GOLDEN_CASES: readonly ClaimGoldenCase[] = [
     description: "the question says fee income fell; the filings show the second quarter rose, and the answer agrees with the question and gives a cause",
     question: "Why did Bank A's fee income fall in Q2 2026?",
     text: "Bank A's fee income fell in the second quarter of 2026 because members moved to accounts with fewer fees.",
-    expect: { status: "held", problems: ["The question asks for standalone-quarter fee income."], binding: null },
+    expect: { status: "held", problems: ["The question asks for standalone-quarter fee income."], binding: { supported: 1, interpretation: 0, omitted: [], factIds: [] } },
     target: { status: "held", reasons: ["premise_contradicted", "causal_unsupported"] }, todayWrong: false },
   { id: "wp-direction-no-quarter", group: "wrong_premise", control: false, surface: W, reads: [A_NCUA_RISE], institutionId: BANK_A,
     description: "the same wrong direction and cause, with no quarter named in the question",
     question: "Why did Bank A's fee income fall this year?",
     text: "Bank A's fee income fell this year because members moved to accounts with fewer fees.",
-    expect: { status: "shown", problems: [], binding: null },
+    expect: { status: "shown", problems: [], binding: { supported: 1, interpretation: 0, omitted: [], factIds: [] } },
     target: { status: "held", reasons: ["premise_contradicted", "causal_unsupported"] }, todayWrong: true, holes: ["premise_not_checked", "causal_words_narrow"],
     todayWrongReason: "shown: nothing compares \"fell\" with the rising quarters, and \"because\" is not a causal word the checks know" },
   { id: "wp-metric-absent", group: "wrong_premise", control: false, surface: W, reads: [A_NCUA_RISE], institutionId: BANK_A,
     description: "the question asks about overdraft revenue, which the broad NCUA fee income does not separate; the answer states a change in it",
     question: "Why did Bank A's overdraft revenue fall?",
     text: "Bank A's overdraft revenue fell 8% in the second quarter of 2026.",
-    expect: { status: "held", problems: ["These figures are not in DATA: 8%."], binding: null },
+    expect: { status: "held", problems: ["These figures are not in DATA: 8%."], binding: { supported: 0, interpretation: 1, omitted: [], factIds: [] } },
     target: { status: "held", reasons: ["premise_unsupported"] }, todayWrong: false },
   { id: "wp-metric-absent-traced", group: "wrong_premise", control: false, surface: W, reads: [A_NCUA_RISE], institutionId: BANK_A,
     description: "the broad quarter total ($1.4 million) is stated as overdraft revenue",
     question: "Why did Bank A's overdraft revenue fall?",
     text: "Bank A's overdraft revenue was $1.4 million in the second quarter of 2026.",
-    expect: { status: "shown", problems: [], binding: null },
+    expect: { status: "shown", problems: [], binding: { supported: 0, interpretation: 1, omitted: [], factIds: [] } },
     target: { status: "held", reasons: ["premise_unsupported"] }, todayWrong: true, holes: ["premise_not_checked"],
-    todayWrongReason: "shown: the broad quarter total traces as a number, and nothing checks that the data holds no overdraft revenue" },
+    todayWrongReason: "shown as Hamilton's reading: the broad quarter total no longer binds as overdraft revenue, but nothing yet holds an answer to a question whose metric the data does not hold" },
   { id: "wp-metric-absent-control", group: "wrong_premise", control: true, surface: W, reads: [A_NCUA_RISE], institutionId: BANK_A,
     description: "control: the answer says plainly the data cannot answer the question",
     question: "Why did Bank A's overdraft revenue fall?",
     text: "The filing reports Bank A's broad fee income only, so this data cannot say whether its overdraft revenue fell.",
-    expect: { status: "shown", problems: [], binding: null },
+    expect: { status: "shown", problems: [], binding: { supported: 1, interpretation: 0, omitted: [], factIds: [] } },
     target: { status: "validated", reasons: [] }, todayWrong: false },
   { id: "wp-nonexistent-fee", group: "wrong_premise", control: false, surface: W, reads: [A_FEES], institutionId: BANK_A,
     description: "the question names a $5 paper statement fee Bank A has no record of; the answer states it as Bank A's fee",
@@ -333,7 +337,7 @@ export const CLAIM_GOLDEN_CASES: readonly ClaimGoldenCase[] = [
   { id: "ca-financial-pricing", group: "causation", control: false, surface: W, reads: [A_NCUA_NSF], institutionId: BANK_A,
     description: "the same pricing-cause words with NCUA filings in the reads",
     text: "Bank A's fee income rose to $1.4 million in the second quarter of 2026 because pricing in its market drove it up.",
-    expect: { status: "held", problems: ["Observed totals and peer correlations do not establish a pricing or market cause"], binding: { supported: 0, interpretation: 1, omitted: [], factIds: [] } },
+    expect: { status: "held", problems: ["Observed totals and peer correlations do not establish a pricing or market cause"], binding: { supported: 1, interpretation: 0, omitted: [], factIds: ["filing:ncua:9001:2026-03-31:service_charge_income:ytd", "filing:ncua:9001:2026-06-30:service_charge_income:ytd", "ncua-profile:9001:service_charge_income:2026-06-30:ytd_to_quarter"] } },
     target: { status: "held", reasons: ["causal_unsupported"] }, todayWrong: false },
   { id: "ca-financial", group: "causation", control: false, surface: W, reads: [A_NCUA_NSF], institutionId: BANK_A,
     description: "a quarter's fee income rise is put down to the NSF fee, with NCUA filings and an NSF fee record in the reads",
@@ -349,7 +353,7 @@ export const CLAIM_GOLDEN_CASES: readonly ClaimGoldenCase[] = [
   { id: "ca-withdrawn", group: "causation", control: true, surface: W, reads: [A_NCUA_NSF], institutionId: BANK_A,
     description: "control: the rise is stated and the cause is withdrawn",
     text: "Bank A's fee income rose to $1.4 million in the second quarter of 2026; these figures do not establish why.",
-    expect: { status: "shown", problems: [], binding: { supported: 0, interpretation: 1, omitted: [], factIds: [] } },
+    expect: { status: "shown", problems: [], binding: { supported: 1, interpretation: 0, omitted: [], factIds: ["filing:ncua:9001:2026-03-31:service_charge_income:ytd", "filing:ncua:9001:2026-06-30:service_charge_income:ytd", "ncua-profile:9001:service_charge_income:2026-06-30:ytd_to_quarter"] } },
     target: { status: "validated", reasons: [] }, todayWrong: false },
   { id: "ca-method", group: "causation", control: true, surface: W, reads: [A_NCUA_NSF], institutionId: BANK_A,
     description: "control: \"because\" in a method note, with no figure or direction in its clause",
@@ -362,13 +366,13 @@ export const CLAIM_GOLDEN_CASES: readonly ClaimGoldenCase[] = [
     description: "Q1 2026's $1.2 million quarter stated as Q2 2026's",
     question: "What was Bank A's fee income in Q2 2026?",
     text: "Bank A earned $1.2 million in fee income in Q2 2026.",
-    expect: { status: "held", problems: ["The question asks for standalone-quarter fee income."], binding: null },
+    expect: { status: "held", problems: ["The question asks for standalone-quarter fee income."], binding: { supported: 0, interpretation: 0, omitted: ["wrong_period"], factIds: [] } },
     target: { status: "held", reasons: ["wrong_period"] }, todayWrong: false },
   { id: "pd-ytd-as-quarter", group: "wrong_period_claim", control: false, surface: W, reads: [A_NCUA_RISE], institutionId: BANK_A,
     description: "the $2.6 million year-to-date total stated as the Q2 2026 quarter",
     question: "What was Bank A's fee income in Q2 2026?",
     text: "Bank A's Q2 2026 fee income was $2.6 million.",
-    expect: { status: "held", problems: ["The question asks for standalone-quarter fee income."], binding: null },
+    expect: { status: "held", problems: ["The question asks for standalone-quarter fee income."], binding: { supported: 0, interpretation: 0, omitted: ["wrong_basis"], factIds: [] } },
     target: { status: "held", reasons: ["wrong_basis"] }, todayWrong: false },
   { id: "pd-fee-year", group: "wrong_period_claim", control: false, surface: "evidence_bundle", bundle: bundle(bundleFee(8, BANK_B, 35, "2024-06-30")),
     description: "Bank B's $35 record from 2024 stated as its 2026 fee, at sentence level",
@@ -379,7 +383,17 @@ export const CLAIM_GOLDEN_CASES: readonly ClaimGoldenCase[] = [
     description: "control: Q2 2026's own $1.4 million quarter",
     question: "What was Bank A's fee income in Q2 2026?",
     text: "Bank A earned $1.4 million in fee income in Q2 2026.",
-    expect: { status: "shown", problems: [], binding: null },
+    expect: { status: "shown", problems: [], binding: { supported: 1, interpretation: 0, omitted: [], factIds: ["filing:ncua:9001:2026-03-31:service_charge_income:ytd", "filing:ncua:9001:2026-06-30:service_charge_income:ytd", "ncua-profile:9001:service_charge_income:2026-06-30:ytd_to_quarter"] } },
+    target: { status: "validated", reasons: [] }, todayWrong: false },
+  { id: "pd-mixed-basis", group: "wrong_period_claim", control: true, surface: W, reads: [A_NCUA_RISE], institutionId: BANK_A,
+    description: "control: one sentence gives the Q2 2026 quarter and the year-to-date total, each on its own basis",
+    text: "Bank A's fee income was $1.4 million in Q2 2026 and $2.6 million year to date.",
+    expect: { status: "shown", problems: [], binding: { supported: 1, interpretation: 0, omitted: [], factIds: ["filing:ncua:9001:2026-03-31:service_charge_income:ytd", "filing:ncua:9001:2026-06-30:service_charge_income:ytd", "ncua-profile:9001:service_charge_income:2026-06-30:ytd_to_quarter"] } },
+    target: { status: "validated", reasons: [] }, todayWrong: false },
+  { id: "pd-prior-quarter", group: "wrong_period_claim", control: true, surface: W, reads: [A_NCUA_RISE], institutionId: BANK_A,
+    description: "control: the Q2 2026 quarter against the prior quarter, named only as \"the prior quarter\"",
+    text: "Bank A's fee income was $1.4 million in Q2 2026, up from $1.2 million in the prior quarter.",
+    expect: { status: "shown", problems: [], binding: { supported: 1, interpretation: 0, omitted: [], factIds: ["filing:ncua:9001:2026-03-31:service_charge_income:ytd", "filing:ncua:9001:2026-06-30:service_charge_income:ytd", "ncua-profile:9001:service_charge_income:2026-06-30:ytd_to_quarter"] } },
     target: { status: "validated", reasons: [] }, todayWrong: false },
 
   // Swapped bank: one institution's figure stated as another's.
@@ -391,31 +405,34 @@ export const CLAIM_GOLDEN_CASES: readonly ClaimGoldenCase[] = [
   { id: "sb-financial", group: "swapped_bank", control: false, surface: W, reads: [A_FDIC, B_FDIC], institutionId: BANK_A,
     description: "Bank B's $2.3 million Q2 2026 service charge income stated as Bank A's",
     text: "Bank A's service charge income was $2.3 million in Q2 2026.",
-    expect: { status: "shown", problems: [], binding: null },
-    target: { status: "held", reasons: ["wrong_institution"] }, todayWrong: true, holes: ["filing_figure_unbound"],
-    todayWrongReason: "shown with no binding: Bank B's figure is in the tool output, and a filing figure has no record to tie it to Bank B" },
+    expect: { status: "held", problems: [], binding: { supported: 0, interpretation: 0, omitted: ["wrong_institution"], factIds: [] } },
+    target: { status: "held", reasons: ["wrong_institution"] }, todayWrong: false },
   { id: "sb-account-as-research", group: "swapped_bank", control: false, surface: W, reads: [A_FDIC, B_FDIC], institutionId: BANK_B, accountInstitutionId: BANK_A,
     description: "the reader's bank is Bank A and the research subject is Bank B; Bank B's figure is stated as \"your\" income",
     text: "Your service charge income was $2.3 million in Q2 2026.",
-    expect: { status: "shown", problems: [], binding: null },
-    target: { status: "held", reasons: ["account_as_subject"] }, todayWrong: true, holes: ["no_account_identity", "filing_figure_unbound"],
-    todayWrongReason: "shown with no binding: the gate is never told the reader's own bank, so \"your\" on Bank B's figure passes" },
+    expect: { status: "held", problems: [], binding: { supported: 0, interpretation: 0, omitted: ["account_as_subject"], factIds: [] } },
+    target: { status: "held", reasons: ["account_as_subject"] }, todayWrong: false },
   { id: "sb-median-as-subject", group: "swapped_bank", control: false, surface: W, reads: [filedPeerRead()], institutionId: BANK_A,
     description: "the filed peer median ($300,000) stated as Bank A's own Q2 2026 fee income",
     text: "Bank A's Q2 2026 broad fee income was $300,000.",
-    expect: { status: "shown", problems: [], binding: null },
-    target: { status: "held", reasons: ["median_as_fee"] }, todayWrong: true, holes: ["filing_figure_unbound"],
-    todayWrongReason: "shown with no binding: the peer median traces as a number, and only a quarter question runs the filed-peer role check" },
+    expect: { status: "held", problems: [], binding: { supported: 0, interpretation: 0, omitted: ["wrong_institution"], factIds: [] } },
+    // Held for another reason than the target names: peer 9013's own $300,000 quarter equals the median and is checked first.
+    target: { status: "held", reasons: ["median_as_fee"] }, todayWrong: false },
   { id: "sb-median-as-subject-asked", group: "swapped_bank", control: false, surface: W, reads: [filedPeerRead()], institutionId: BANK_A,
     description: "the same swap, when the question asks for the Q2 2026 peer comparison",
     question: "How does Bank A's fee income compare with its peers for Q2 2026?",
     text: "Bank A's Q2 2026 broad fee income was $300,000.",
-    expect: { status: "held", problems: ["The question asks for standalone-quarter fee income."], binding: null },
+    expect: { status: "held", problems: ["The question asks for standalone-quarter fee income."], binding: { supported: 0, interpretation: 0, omitted: ["wrong_institution"], factIds: [] } },
     target: { status: "held", reasons: ["median_as_fee"] }, todayWrong: false },
   { id: "sb-control", group: "swapped_bank", control: true, surface: W, reads: [A_FDIC, B_FDIC], institutionId: BANK_A,
     description: "control: Bank A's own $1.1 million figure about Bank A",
     text: "Bank A's service charge income was $1.1 million in Q2 2026.",
-    expect: { status: "shown", problems: [], binding: null },
+    expect: { status: "shown", problems: [], binding: { supported: 1, interpretation: 0, omitted: [], factIds: ["filing:fdic:9001:2026-06-30:service_charge_income:standalone_quarter"] } },
+    target: { status: "validated", reasons: [] }, todayWrong: false },
+  { id: "sb-our-data", group: "swapped_bank", control: true, surface: W, reads: [A_NCUA_RISE], institutionId: BANK_A, accountInstitutionId: BANK_B,
+    description: "control: \"our data\" is Hamilton's, not the reader's bank, so the research subject's own quarter stands",
+    text: "Based on our data, fee income was $1.4 million in Q2 2026.",
+    expect: { status: "shown", problems: [], binding: { supported: 1, interpretation: 0, omitted: [], factIds: ["filing:ncua:9001:2026-03-31:service_charge_income:ytd", "filing:ncua:9001:2026-06-30:service_charge_income:ytd", "ncua-profile:9001:service_charge_income:2026-06-30:ytd_to_quarter"] } },
     target: { status: "validated", reasons: [] }, todayWrong: false },
 ];
 
@@ -446,7 +463,7 @@ export function claimGoldenOutcome(c: ClaimGoldenCase): ClaimGoldenOutcome {
   if (c.surface === "written_answer") {
     const outputs = c.reads.map((read) => read.output);
     const check = writtenAnswerCheck(c.text, outputs, c.question, { toolResults: c.reads, institutionId: c.institutionId });
-    const binding = writtenAnswerBinding(c.text, outputs, c.question);
+    const binding = writtenAnswerBinding(c.text, outputs, c.question, { toolResults: c.reads, institutionId: c.institutionId, accountInstitutionId: c.accountInstitutionId ?? null });
     const held = !check.passed || bindingLeavesNothing(parseAnalyzeResponse(c.text), binding);
     return { status: held ? "held" : "shown", problems: check.problems, binding: countBinding(binding) };
   }

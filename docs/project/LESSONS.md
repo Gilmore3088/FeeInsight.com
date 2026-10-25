@@ -213,7 +213,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-261 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+262 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
 ### Extraction and fee reading (42)
 
@@ -449,8 +449,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — Sign out on the account page and admin used Server Actions that a redeploy breaks. — [finding](findings/2026-10-09-sign-out-server-action.md) — Guard: `src/app/api/auth/logout/route.test.ts:30`
 - 2026-10-09 — A refunded report kept its paid status and its private link. — [finding](findings/2026-10-09-report-refund-not-handled.md) — Guard: `src/lib/stripe-webhook.test.ts` (+1 more)
 
-### Hamilton workspace (18)
+### Hamilton workspace (19)
 
+- 2026-10-25 — A filing figure is supported only by a fact of the institution, metric, quarter and period basis the sentence states; a sentence whose owner or metric is unknown binds nothing. — [finding](findings/2026-10-25-claim-sentence-binding.md) — Guard: `src/lib/hamilton/claim-sentence-binding.test.ts`, `src/lib/hamilton/claim-golden-set.test.ts`
 - 2026-10-25 — Give a filing figure a fact ID only through the validator that already reads it, with its period basis in the ID. — [finding](findings/2026-10-25-claim-fact-ids.md) — Guard: `src/lib/hamilton/claim-evidence.test.ts`
 - 2026-10-25 — Before changing a check, record what it does today on cases built to break it and mark the ones it gets wrong (10 of 25 for Hamilton's answer checks). — [finding](findings/2026-10-25-claim-golden-set.md) — Guard: `src/lib/hamilton/claim-golden-set.test.ts` (recorded outcomes, held-out check)
 - 2026-10-25 — Reuse a saved answer through its sentence binding and evidence verdict, never as its raw prose. — [finding](findings/2026-10-25-saved-answer-binding-in-reports.md) — Guard: `src/lib/hamilton/report-actions.test.ts`
@@ -489,8 +490,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — When an agent writes a link into a draft, check that the route exists on main. — [finding](findings/2026-10-09-outreach-snapshot-links-404.md) — Guard: `src/lib/agents/growth/norman.test.ts`
 - 2026-10-09 — An outgoing side effect needs its own record in Postgres; don't rely on a provider's read API that needs broader credentials than sending. — [finding](findings/2026-10-09-no-sent-email-log.md) — Guard: `src/lib/email/resend.test.ts` (+1 more)
 
-### CI, tests, tooling and PR workflow (14)
+### CI, tests, tooling and PR workflow (15)
 
+- 2026-10-25 — Every DB suite on the shared e2e database removes its own rows when it ends, and a suite that counts rows across the whole database isolates its fixture in its rolled-back transaction; vitest's file order is not the CLI order. — [finding](findings/2026-10-25-shared-test-database-leftover-fees.md) — Guard: `src/lib/agents/darwin/verified-recheck.db.test.ts`
 - 2026-10-20 — Parallel agents write PR bodies to a unique `mktemp` file and re-read the body after every edit. — [finding](findings/2026-10-20-shared-scratch-file-overwrote-pr-body.md) — Guard: Foundation tracker #1048 line "agents use mktemp for PR bodies and verify the body after edit"
 - 2026-10-20 — A push that drops scope while reconciling with `main` updates the PR title and body in the same push. — [finding](findings/2026-10-20-pr-descriptions-stale-after-reconcile.md) — Guard: the independent review of the exact head checks that the body matches the diff
 - 2026-10-20 — A caught error is recorded where people look (a step warning or a logged error), never turned silently into an empty result. — [finding](findings/2026-10-20-swallowed-errors-hid-failures.md) — Guard: the `step.warning` added in #2414, and the #975 line for the `layout.tsx:94` lookup

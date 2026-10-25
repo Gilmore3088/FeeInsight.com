@@ -151,3 +151,16 @@ export async function retryAdminFeeRefresh(
     return { ok: true, runId: run.runId, retryOf: originalRunId, institutionId, indexRefreshed: refresh.refreshed } as const;
   })) as RetryRefreshResult;
 }
+
+/**
+ * The text a lost-text hold or correction is about (#2059): the hash of the document's current
+ * text, so Rosetta reads the document again on each reader version bump until its text changes,
+ * not only until it is next rewritten.
+ */
+export async function lostTextEvidence(tx: SqlTag, documentId: number | null): Promise<{ text_hash?: string }> {
+  if (documentId == null) return {};
+  const [text] = await tx<Array<{ text_hash: string | null }>>`
+    SELECT text_hash FROM agent_source_texts WHERE source_document_id = ${documentId}
+  `;
+  return text?.text_hash ? { text_hash: text.text_hash } : {};
+}
