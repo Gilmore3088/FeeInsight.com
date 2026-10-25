@@ -34,7 +34,11 @@ vi.mock("@/lib/automation-control", () => ({ getPipelineControl: async () => {
 },
   getMarketingControl: async () => ({ enabled: state.marketing, reason: "Fixture marketing" }),
   getAutomationControl: state.provider, assertAutomationEnabled: state.provider }));
-vi.mock("@/lib/api-hardening/budget", () => ({ assertCronTickBudgetAllowed: state.provider }));
+vi.mock("@/lib/api-hardening/budget", () => ({
+  assertCronTickBudgetAllowed: state.provider,
+  // A module the tick loads extends this class at import (task-budget.ts, #1921).
+  ProviderBudgetBlockedError: class ProviderBudgetBlockedError extends Error {},
+}));
 vi.mock("@/lib/agents/state-lane-scheduler", () => ({ scheduleDueStateLaneRuns: state.schedule, STATE_LANE_LIMIT_PER_TICK: 3 }));
 vi.mock("@/lib/agents/atlas/priority-institutions", () => ({ schedulePriorityInstitutionRuns: state.schedule }));
 vi.mock("@/lib/agents/atlas/priority-state-research", () => ({ schedulePriorityStateResearchRuns: state.schedule }));

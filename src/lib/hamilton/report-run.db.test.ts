@@ -29,8 +29,11 @@ const connection = process.env.E2E_DATABASE_URL;
 const USER = 900101;
 const SECTIONS = ["Answer", "Strategic rationale", "Recommendation"];
 
+// The handle carries the production client's types (2026-10-18-postgres-returntype-in-db-tests).
+type TypedSql = postgres.Sql<{ numeric: number; json: unknown; text: string }>;
+
 describe.skipIf(!connection)("durable report runs in isolated PostgreSQL", () => {
-  let db: ReturnType<typeof postgres>;
+  let db: TypedSql;
   type Db = NonNullable<Parameters<typeof saveReportSection>[3]>;
   const asDb = () => db as unknown as Db;
   const cleanup = async () => {
@@ -51,7 +54,7 @@ describe.skipIf(!connection)("durable report runs in isolated PostgreSQL", () =>
     db = postgres(connection, {
       max: 1, ssl: "require",
       types: { numeric: NUMERIC_AS_NUMBER, json: JSON_TEXT_PASSTHROUGH, text: TEXT_WITHOUT_NUL },
-    }) as unknown as ReturnType<typeof postgres>;
+    });
   });
   beforeEach(cleanup);
   afterAll(async () => {
@@ -244,7 +247,7 @@ describe.skipIf(!connection || process.env.DATABASE_URL !== connection)("a kille
     const db = postgres(connection!, {
       max: 1, ssl: "require",
       types: { numeric: NUMERIC_AS_NUMBER, json: JSON_TEXT_PASSTHROUGH, text: TEXT_WITHOUT_NUL },
-    }) as unknown as ReturnType<typeof postgres>;
+    });
     type Db = NonNullable<Parameters<typeof saveReportSection>[3]>;
     const asDb = () => db as unknown as Db;
     const cleanup = async () => {
