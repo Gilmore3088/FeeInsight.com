@@ -191,6 +191,7 @@ const OMIT_FEEDBACK: Record<string, string> = {
   wrong_direction: "states a gap or change in the wrong direction",
   wrong_period: "states a figure for the wrong year",
   wrong_unit: "states a rate fee as a dollar amount",
+  wrong_category: "states one fee's price as another fee's; give each figure with the fee its record is for",
   conflicting_sources: "picks one of two sources that disagree; say that they disagree instead",
   instruction_text: "repeats instruction-like text from a source",
   wrong_basis: "states a year-to-date filing total as a quarter, or a quarter as year to date; say which the figure is",

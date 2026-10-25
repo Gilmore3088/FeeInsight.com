@@ -9,6 +9,7 @@ import {
   supportedText,
 } from "./narrative-bound";
 import { RECOMMENDATION } from "./workspace/four-roles";
+import { isOmitReason } from "./written-answer-binding";
 
 // Invented institutions and fees (H06-AC1): Bank A charges $10, Bank B charges $35.
 const A = 9001;
@@ -169,5 +170,60 @@ describe("bindNarrative (#981, H06-T06)", () => {
   it("carries the subject from the sentence before ('it')", () => {
     const result = bindNarrative({ text: "Bank A publishes one overdraft fee. It charges $35.", evidence: EVIDENCE, names });
     expect(result.omitted).toEqual([{ text: "It charges $35.", reason: "wrong_institution" }]);
+  });
+});
+
+describe("a fee figure binds only to a record of the fee its clause names (#1077 follow-up)", () => {
+  const stop = (id: number, institutionId: number, value: number) =>
+    fee(id, institutionId, value, "2026-06-30", { scope: { institutionId, feeCategory: "stop_payment", product: "Stop Payment", reportingDate: "2026-06-30", effectiveDate: null, accountApplicability: "consumer" } });
+  const STOP30 = stop(20, A, 30);
+  const OD35 = fee(21, A, 35, "2026-06-30");
+  const evidence = bundle([STOP30, OD35], []);
+
+  it("wrong category, same value: the overdraft fee stated at the stop-payment price is left out, never supported", () => {
+    const result = bindNarrative({ text: "Our overdraft fee is $30.", evidence, names, accountInstitutionId: A, researchInstitutionId: A });
+    expect(result.supported).toEqual([]);
+    expect(result.omitted).toEqual([{ text: "Our overdraft fee is $30.", reason: "wrong_category" }]);
+    expect(result.limitations).toEqual([CONTRADICTED_LIMITATION]);
+    expect(isOmitReason("wrong_category")).toBe(true);
+  });
+
+  it("right category: the stop-payment fee at its own price binds to its record", () => {
+    const result = bindNarrative({ text: "Bank A's stop payment fee is $30.", evidence, names });
+    expect(result.supported).toEqual([{ text: "Bank A's stop payment fee is $30.", factIds: [STOP30.id] }]);
+  });
+
+  it("a synonym the fee names know counts: courtesy pay is the overdraft fee", () => {
+    expect(bindNarrative({ text: "Bank A's courtesy pay fee is $35.", evidence, names }).supported[0].factIds).toEqual([OD35.id]);
+    expect(bindNarrative({ text: "Bank A's courtesy pay fee is $30.", evidence, names }).omitted[0].reason).toBe("wrong_category");
+  });
+
+  it("when two fees share the price, the figure binds only to the fee the sentence names", () => {
+    const OD30 = fee(22, A, 30, "2026-06-30");
+    const result = bindNarrative({ text: "Bank A's overdraft fee is $30.", evidence: bundle([STOP30, OD30], []), names });
+    expect(result.supported).toEqual([{ text: "Bank A's overdraft fee is $30.", factIds: [OD30.id] }]);
+  });
+
+  it("no fee named: unchanged, the figure binds on value, unit and institution as before", () => {
+    expect(bindNarrative({ text: "Bank A charges $30.", evidence, names }).supported).toEqual([{ text: "Bank A charges $30.", factIds: [STOP30.id] }]);
+    // A later sentence's "it" carries the institution, not the fee: documented as today's rule.
+    const carried = bindNarrative({ text: "Bank A publishes an overdraft fee. It charges $30.", evidence, names });
+    expect(carried.supported.map((s) => s.factIds)).toEqual([[], [STOP30.id]]);
+  });
+
+  it("two-fee sentence: each figure binds per clause, and one fee's name never licenses the other's figure", () => {
+    const right = bindNarrative({ text: "Bank A's overdraft fee is $35 and its stop payment fee is $30.", evidence, names });
+    expect(right.supported).toEqual([{ text: "Bank A's overdraft fee is $35 and its stop payment fee is $30.", factIds: [OD35.id, STOP30.id] }]);
+    const swapped = bindNarrative({ text: "Bank A's overdraft fee is $30 and its stop payment fee is $35.", evidence, names });
+    expect(swapped.supported).toEqual([]);
+    expect(swapped.omitted).toEqual([{ text: "Bank A's overdraft fee is $30 and its stop payment fee is $35.", reason: "wrong_category" }]);
+    const short = bindNarrative({ text: "Overdraft is $35 and NSF is $30.", evidence, names });
+    expect(short.omitted[0]?.reason).toBe("wrong_category");
+  });
+
+  it("a clause that names no fee takes the fee the sentence names", () => {
+    const B30 = stop(23, B, 30);
+    const result = bindNarrative({ text: "Bank A's overdraft fee is $35, and Bank B's is $30.", evidence: bundle([OD35, B30], []), names });
+    expect(result.omitted).toEqual([{ text: "Bank A's overdraft fee is $35, and Bank B's is $30.", reason: "wrong_category" }]);
   });
 });

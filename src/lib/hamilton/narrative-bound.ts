@@ -36,6 +36,13 @@
  * separate (overdraft revenue) cannot be answered with the broad total. A question sentence that
  * only supposes ("what if", "should") states no premise; the words count only in that sentence.
  *
+ * A fee figure binds only to a record of the fee its clause names (#1077 follow-up): "our overdraft
+ * fee is $30" never rests on a $30 stop-payment record. The fee named is read with the Ask bar's
+ * fee names (`feeCategoriesIn`), from the figure's own clause, else from the whole sentence; a
+ * record also counts as named when its fee name or product is written out. When the only records
+ * at that value are other fees, the sentence is left out as `wrong_category`. A sentence that names
+ * no fee binds as before, on value, unit and institution (a later sentence's "it" carries no fee).
+ *
  * Missing, unavailable and conflicting evidence each add one plain limitation line. No line here
  * invents a figure, and none tells the bank what to do with a fee. Source text (fee names,
  * conditions, document text) is data: it is never read as an instruction and never copied into a
@@ -43,6 +50,7 @@
  */
 import { historicalAssertionWithdrawn, refuses } from "./answer-interpretations";
 import { splitIntoSentences } from "./citation-gate";
+import { feeCategoriesIn } from "./workspace/ask";
 import { proseFeeName } from "./workspace/names";
 import {
   claimBindingMatches,
@@ -90,6 +98,8 @@ export type OmitReason =
   | "wrong_basis"
   /** Another institution's filing figure stated as the reader's own ("your"). */
   | "account_as_subject"
+  /** A fee figure whose only same-value record is a different fee than the one the sentence names ("overdraft" stated at the stop-payment price). */
+  | "wrong_category"
   /** A figure or change the question states, repeated as fact, that a record of the same institution and fee or measure contradicts. */
   | "premise_contradicted"
   /** A figure or measure the question states, repeated as fact, that the records read for that institution do not hold. */
@@ -491,6 +501,26 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
      * sentence's quarter, and with no quarter to count from the period is unknown (null).
      */
     const clauseBases = clauses.map((clause) => statedBasis(clause));
+
+    /**
+     * Whether a fee record is a fee the figure's clause names: null when neither the clause nor
+     * the sentence names a fee (binds as before), else true when the record's category is named,
+     * by a fee name or synonym, its own fee name or its product. One fee's name never licenses
+     * another clause's figure; a clause that names no fee takes the fees the sentence names.
+     */
+    const clauseFees = clauses.map((clause) => feeCategoriesIn(clause));
+    const sentenceFees = feeCategoriesIn(text);
+    const feeNamed = (fact: HamiltonEvidenceFact, figure: NarrativeFigure): boolean | null => {
+      const at = figures.indexOf(figure);
+      const own = clauseFees[at] ?? [];
+      const named = own.length > 0 ? own : sentenceFees;
+      if (named.length === 0) return null;
+      const category = fact.scope.feeCategory;
+      if (category && named.includes(category)) return true;
+      const words = (own.length > 0 ? clauses[at] : text).toLowerCase();
+      const product = fact.scope.product?.trim().toLowerCase();
+      return (!!category && words.includes(proseFeeName(category).toLowerCase())) || (!!product && words.includes(product));
+    };
     const periodFor = (figure: NarrativeFigure) => {
       const at = figures.indexOf(figure);
       const clause = clauses[at] ?? text;
@@ -585,6 +615,8 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
         const subject = feeSubjects.length === 0 ? undefined : fact.scope.institutionId;
         if (subject !== undefined && !feeSubjects.includes(subject as number)) { contradict(personal ? "account_as_subject" : "wrong_institution"); continue; }
         if (!claimBindingMatches(fact, { unit, value: figure.value })) continue;
+        // The fee the clause names must be the record's; a sentence that names no fee keeps today's rule.
+        if (feeNamed(fact, figure) === false) { contradict("wrong_category"); continue; }
         const factPeriod = inPeriod(fact);
         if (factPeriod === "no") { contradict("wrong_period"); continue; }
         if (factPeriod === "unknown") continue;
