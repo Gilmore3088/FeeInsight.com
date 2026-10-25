@@ -3,10 +3,12 @@ import {
   CARD_PRODUCT_TAKEDOWN_LIVE,
   checkFeeCategory,
   CATEGORY_GUARD_VERSION,
+  genericMonthlyCharge,
   GUARDED_CATEGORIES,
   PLAIN_RETURNED_ITEM,
   refileCategory,
   refileFromLine,
+  withHeadingAbove,
   type CategoryGuardCode,
 } from "@/lib/fee-category-guard";
 import { isRetiredCategory, splitLiveCategory, FOLD_RULES_VERSION } from "@/lib/fee-fold";
@@ -230,7 +232,10 @@ export async function runHamiltonCategoryGuard(
   const limit = boundedLimit(options.limit);
   const dryRun = Boolean(options.dryRun);
   const rollbackBatchId = `category-guard-run-${options.runId}`;
-  const rows = await selectLiveGuardedFees(db, options.institutionId);
+  const selected = await selectLiveGuardedFees(db, options.institutionId);
+  // Guard v84 (#1788): generic monthly charges are judged under the heading printed above them. A
+  // failed text read judges them by name and line only, as before v84, so nothing comes down for it.
+  const rows = (await withHeadingsAbove(db, selected)) ?? selected;
 
   const failures: CategoryGuardFailure[] = [];
   const passing: number[] = [];
@@ -642,6 +647,28 @@ async function ownStoredTexts(db: SqlTag, documentIds: Array<number | string | n
   return new Map(rows.map((row) => [Number(row.source_document_id), row.normalized_text]));
 }
 
+/**
+ * Guard v84 (#1788): the rows with `heading_above` read from their stored text, for generic monthly
+ * charges only (`withHeadingAbove`); only those rows' documents are read. Null when the read fails.
+ */
+async function withHeadingsAbove<T extends Pick<LivePublishedRow, "source_document_id" | "canonical_fee_key" | "fee_name" | "conditions">>(
+  db: SqlTag,
+  rows: T[],
+): Promise<T[] | null> {
+  const needing = rows.filter((row) => genericMonthlyCharge(row.canonical_fee_key, row.fee_name));
+  if (needing.length === 0) return rows;
+  let texts: Map<number, string>;
+  try {
+    texts = await ownStoredTexts(db, needing.map((row) => row.source_document_id));
+  } catch (error) {
+    console.error("category guard heading read failed:", error);
+    return null;
+  }
+  return rows.map((row) =>
+    row.source_document_id == null ? row : withHeadingAbove(row.canonical_fee_key, row.fee_name, row, texts.get(Number(row.source_document_id))),
+  );
+}
+
 /** Pure: does a takedown trace, at its price and under the type it comes back as, on its own stored text? */
 export function tracesOnOwnText(
   row: Pick<TakenDownRow, "source_document_id" | "fee_name" | "amount">,
@@ -692,7 +719,10 @@ export async function restorePassingTakedowns(
     console.error("category guard restore read failed:", error);
     return none;
   }
-  const candidates = rows.flatMap((row) => {
+  // Guard v84 (#1788): a takedown is judged with the heading above it, as the live check took it down.
+  const headed = await withHeadingsAbove(db, rows);
+  if (!headed) return none;
+  const candidates = headed.flatMap((row) => {
     const to = restoreTarget(row);
     return to ? [{ row, to }] : [];
   });

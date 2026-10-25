@@ -236,4 +236,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-1788-generic-monthly-charge-reads-its-heading",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "A fee named only \"Monthly fee\" or \"Service charge\" says nothing about what it charges for, so its category comes from the schedule around it: the cell before its name on its own line, or the heading printed above it. When that names another service (Positive Pay, ACH, bill pay, online banking, an ATM, debit or gift card, paper statements, a benefits package), it is that service's charge, not the account's monthly maintenance. Keep it only when its own line says how to avoid it.",
+    why: "Florida Capital's Positive Pay charges (\"Service charge for six or more accounts | $5 per month per account\" under \"POSITIVE PAY for ACH and Checks\") and TD's \"Paper statements | $3 monthly fee\" went live as monthly maintenance, because the guard read only the name Knox kept. Guard v84 read the heading on the stored text and found 24 such live fees, every one confirmed on its page.",
+    evidence: { issues: [1788], prs: [], files: ["src/lib/fee-category-guard.ts", "src/lib/agents/darwin/verify.ts", "src/lib/agents/hamilton/category-guard.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];
