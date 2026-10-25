@@ -1,0 +1,11 @@
+{
+  "source_url": "https://www.rsbiowa.com/media/cms/Fee_Schedule_9_1_2024_81F44B6C0C382.pdf",
+  "source_document_id": 31383,
+  "institution_id": 2521,
+  "artifact_id": 29159,
+  "source_sha256": "e1468b1d3f3eacf88e447b1089a901d8531d10bdb925a105b914b86d8e712617",
+  "stored_normalized_text_sha256": "ae2e1178d71a66828364cea5b050864d6ee9cb75a9bc4a2d2e4708d5e2ccb4f7",
+  "inspected_date": "2026-10-25",
+  "printed_effective_date": "2024-09-01",
+  "scope": "Unmodified bank PDF downloaded from its own URL; SHA-256 matches the captured production document. The PDF itself maps CID 019F to FFFD in its Calibri-Bold ToUnicode CMap. Independent pypdf and raw pdf.js extraction reproduce the replacement before Rosetta layout. The rendered page prints International and $70.00. This fixture establishes the text-map failure, not that the schedule is currently effective or that any production fee has been repaired."
+}

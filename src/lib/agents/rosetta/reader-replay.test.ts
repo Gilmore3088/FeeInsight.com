@@ -205,4 +205,21 @@ describe("the read step's replay lane", () => {
     expect(result.readerReplayTextChanged).toBe(1);
     expect(db.mock.calls.some((call) => text(call[0]).includes("INSERT INTO agent_source_texts"))).toBe(true);
   });
+
+  it("retains the incumbent and every fee when a replay finds Unicode loss (#2598)", async () => {
+    const db = laneDb([{ ...replayRow(1), document_url: "https://replay1.example/fees.pdf" }]);
+    const scannedPdfReader = { read: vi.fn(), close: vi.fn(async () => undefined) };
+    const result = await runRosettaRead({
+      runId: 2598, db: asDb(db), scannedPdfReader,
+      fetchImpl: vi.fn(async () => new Response(new Uint8Array([37,80,68,70]), { headers: { "content-type": "application/pdf" } })),
+      // More priced lines than the incumbent: fee-count conservation alone must not admit it.
+      pdfTextExtractor: vi.fn(async () => ({ totalPages: 1, text: [...feeLines(12), "Wire Interna\uFFFDonal Transfer-Remote Outgoing | $70.00"].join("\n") })),
+    });
+    expect(result).toMatchObject({ needsOcr: 1, readerReplayed: 1, readerReplayTextChanged: 0, sentBackToMagellan: 0 });
+    expect(scannedPdfReader.read).not.toHaveBeenCalled();
+    expect(receipts(db)).toHaveLength(1);
+    expect(JSON.stringify(receipts(db))).toContain("parse_error");
+    const mutations = db.mock.calls.map((call) => text(call[0])).join("\n");
+    expect(mutations).not.toMatch(/(?:INSERT INTO|UPDATE) (?:agent_source_texts|raw_fee_observations|verified_fee_observations|published_fee_records)/);
+  });
 });

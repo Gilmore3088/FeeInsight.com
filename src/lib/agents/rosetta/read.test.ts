@@ -214,6 +214,26 @@ describe("Rosetta agentic read", () => {
     expect(storedText).toBe(cleanText);
   });
 
+  it("routes Unicode loss to visual transcription without passing corrupt text, OCRing a logo or changing fees", async () => {
+    const db = createDbMock([{ ...htmlCandidate, document_url: "https://testbank.example/fees.pdf" }]);
+    const scannedPdfReader = { read: vi.fn(), close: vi.fn(async () => undefined) };
+    const result = await runRosettaRead({
+      runId: 2598, db: asReadDb(db), scannedPdfReader,
+      fetchImpl: vi.fn(async () => response(new Uint8Array([37,80,68,70]), "application/pdf")),
+      pdfTextExtractor: vi.fn(async () => ({ totalPages: 1, text: "Schedule of Fees\nWire Interna\uFFFDonal Transfer-Remote Outgoing | $70.00" })),
+    });
+    expect(result).toMatchObject({ completed: 0, needsOcr: 1, sentBackToMagellan: 0 });
+    expect(result.results[0]).toMatchObject({ status: "needs_ocr", attemptOutcome: "parse_error", format: "pdf_text", textHash: null, rows: [] });
+    expect(result.results[0].error).toContain("full-page visual transcription required");
+    expect(scannedPdfReader.read).not.toHaveBeenCalled();
+    const calls = db.mock.calls.map((call) => templateText(call[0])).join("\n");
+    expect(calls).not.toMatch(/(?:INSERT INTO|UPDATE) (?:raw_fee_observations|verified_fee_observations|published_fee_records)/);
+    const insert = db.mock.calls.find((call) => templateText(call[0]).includes("INSERT INTO agent_source_texts"));
+    expect(insert).toBeDefined();
+    expect(JSON.stringify(insert)).not.toContain("Interna\uFFFDonal");
+    expect(JSON.stringify(insert)).not.toContain("Wire International");
+  });
+
   it("routes scanned PDFs to OCR after embedded text extraction is empty", async () => {
     const db = createDbMock([
       {

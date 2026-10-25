@@ -1,0 +1,26 @@
+{
+  "measured_at": "2026-10-25T15:21:52.899562+00:00",
+  "scope": "Read-only production symptom census, not a count of proven ti-ligature errors or a repair authorization. Counts are a dated snapshot. No enumerated 30-document manifest is claimed.",
+  "all_texts": 29788,
+  "texts_with_replacement": 219,
+  "institutions_with_replacement": 77,
+  "current_completed_matching_copy_texts": 125,
+  "live_corrupted_names": 15,
+  "live_corrupted_name_documents": 8,
+  "live_fees_from_flagged_documents": 497,
+  "inline_corrupted_texts_all_formats": 96,
+  "inline_current_completed_pdf_texts": 30,
+  "live_fees_from_inline_flagged_documents_all_formats": 336,
+  "readers_of_texts_with_replacement": {
+    "read.html_dom": 152,
+    "read.js_fallback": 16,
+    "read.pdf_layout": 44,
+    "read.plain_text": 2,
+    "legacy_null": 5
+  },
+  "reported_fees": [
+    {"published_id": 140286, "institution_id": 2521, "source_document_id": 31383, "source_text_id": 29159, "source_sha256": "e1468b1d3f3eacf88e447b1089a901d8531d10bdb925a105b914b86d8e712617", "amount": 70, "published_category": "wire_domestic_outgoing"},
+    {"published_id": 133140, "institution_id": 8739, "source_document_id": 28625, "source_text_id": 26035, "source_sha256": "4fd20c8a4ab2b42695cf2858220fbf445dd54b3c65acef9d65710110ceb36a9e", "amount": 20, "published_category": "wire_domestic_outgoing"},
+    {"published_id": 144304, "institution_id": 5072, "source_document_id": 2240, "source_text_id": 7808, "source_sha256": "6c4b4f78f87f271a384e8dc7ea5cff595028696d0d8d9057399f0e15b24396f9", "amount": 25, "published_category": "stop_payment"}
+  ]
+}

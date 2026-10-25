@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { layoutPageResult, type PdfTextItem } from "./pdf-layout";
 import { compareReadings, streamPageText, type PdfReaderAgreement } from "./pdf-reader-agreement";
 import { textSha256, type StackedGeometryReceipt } from "./pdf-repair-survival";
+import { assertPdfTextIntegrity } from "./pdf-text-integrity";
 
 export interface PdfTextExtraction {
   text: string; totalPages: number; pages?: string[];
@@ -53,6 +54,9 @@ export async function extractPdfDocumentText(bytes: Uint8Array, options: {
         }
         const layouts = pages.map(layoutPageResult);
         const pageTexts = layouts.map((page) => page.text);
+        // Check after joining split items, before issuing hashes/agreement/geometry
+        // receipts. Both readings share pdf.js's Unicode map and can agree on loss.
+        pageTexts.forEach((text, index) => assertPdfTextIntegrity(text, index + 1));
         const text = pageTexts.join("\n\n");
         const readerAgreement = { ...compareReadings(pageTexts, pages.map(streamPageText)), textHash: textSha256(text) };
         return { text, totalPages, pages: pageTexts, readerAgreement, stackedGeometry: {

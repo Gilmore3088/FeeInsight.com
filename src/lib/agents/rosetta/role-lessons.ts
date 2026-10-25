@@ -7,6 +7,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const ROSETTA_LESSONS: AgentLesson[] = [
   {
+    id: "issue-2598-pdf-unicode-loss",
+    agent: "rosetta",
+    stage: "read",
+    lesson: "A PDF can draw the right word while its Unicode map already replaces letters with U+FFFD; refuse damaged words or numbers before extraction and require full-page visual transcription. Never guess that every replacement means ti, and retain the incumbent text and fees until a staged reread accounts for every valid fee.",
+    why: "Reliance State Bank's exact captured PDF maps CID 019F to FFFD before layout, producing Interna�onal on live fee 140286, filed as a domestic outgoing wire; the same PDF also loses ft in overdrafts. Its embedded subset fonts have no cmap, GSUB or post table to recover the missing letters semantically.",
+    evidence: { issues: [2598], prs: [], files: ["src/lib/agents/rosetta/pdf-text-integrity.ts", "src/lib/agents/rosetta/pdf-unicode-source.test.ts", "docs/project/findings/2026-10-25-pdf-unicode-loss.md"] },
+    appliesTo: ["read", "read-paid"],
+    since: "2026-10-25",
+  },
+  {
     id: "issue-1053",
     agent: "rosetta",
     stage: "fee-page check",
