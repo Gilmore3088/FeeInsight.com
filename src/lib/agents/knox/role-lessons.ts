@@ -572,7 +572,7 @@ export const KNOX_LESSONS: AgentLesson[] = [
     stage: "extract",
     lesson: "Before filing a transfer as a wire, read where the money goes: a transfer to another account at the same bank (\"a una cuenta en M&T (transferencia contable)\", \"within IBC (Book Transfer)\") is a book transfer, not an outgoing domestic wire. A cell that wraps over several lines (\"ATM Cash Withdrawal, / Cash Advance or / Account ...\") names one row; a name that ends on a joining word is cut, and its price (\"$3.00 for Non M&T Bank ATMs\") belongs to the row's first line, the ATM withdrawal.",
     why: "Knox's paid read filed M&T's $16 book transfer as an outgoing domestic wire, pulling M&T's wire to a false $24 beside the real $32, and its rules read the middle line of a wrapped ATM cell as a $3 cash advance (Oct 18 live check, #1912). Guard v88 now refuses both shapes at Darwin's verify and on live fees.",
-    evidence: { issues: [1912], prs: [], files: ["src/lib/fee-category-guard.ts"] },
+    evidence: { issues: [1912], prs: [2628], files: ["src/lib/fee-category-guard.ts"] },
     appliesTo: "all",
     since: "2026-10-25",
   },
