@@ -11,6 +11,7 @@
 import { withRawProviderResponseOperation } from "@/lib/ai-response-budget";
 
 import { getAnthropicMessagesClient, extractAnthropicText, getHamiltonModel, hasAnthropicApiKey, isProviderLimitError } from "@/lib/ai-provider";
+import { HamiltonTaskBudgetError } from "./task-budget";
 import { HAMILTON_PAUSED_MESSAGE } from "./provider-paused";
 import { trackAnthropicRequest, assertCompletedAnthropicTextResponse, incompleteProviderResponse } from "@/lib/ai-provider-usage";
 import { extractFigures } from "./figure-check";
@@ -310,6 +311,8 @@ export interface MemoTracking {
   operation: string;
   subjectKey?: string;
   agentRunId?: number;
+  /** The reader the memo is for: its usage row counts toward their daily cap (#1921). */
+  userId?: number;
 }
 
 function anthropicMemoClient(institutionId: number | null, usage?: MemoUsage, tracking?: MemoTracking): MemoClient {
@@ -323,6 +326,7 @@ function anthropicMemoClient(institutionId: number | null, usage?: MemoUsage, tr
           routeId: MEMO_ROUTE_ID,
           ...(tracking?.subjectKey ? { subjectKey: tracking.subjectKey } : {}),
           ...(tracking?.agentRunId ? { agentRunId: tracking.agentRunId } : {}),
+          ...(tracking?.userId ? { userId: tracking.userId } : {}),
           metadata: { institution_id: institutionId },
         },
         () => withRawProviderResponseOperation(REQUEST_TIMEOUT_MS, (scope) => {
@@ -395,6 +399,8 @@ export async function writeStorylineMemo(
         return { status: "unavailable", reason: incomplete.message };
       }
       if (isProviderLimitError(error)) return { status: "unavailable", reason: HAMILTON_PAUSED_MESSAGE };
+      // A task or daily cap (#1921) says so in its own words.
+      if (error instanceof HamiltonTaskBudgetError) return { status: "unavailable", reason: error.message };
       const message = error instanceof Error ? error.message : String(error);
       return { status: "unavailable", reason: /budget|usage limit/i.test(message) ? "Hamilton's writing budget for today is used up." : "Hamilton's writer could not be reached." };
     }

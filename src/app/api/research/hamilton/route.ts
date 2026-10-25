@@ -1,5 +1,6 @@
 import { ProviderResponseOperation, AI_PROVIDER_TIMEOUT_MS, assertCompletedProviderFinish, withProviderResponseOperation, requireCompletedProviderUIStream } from "@/lib/ai-response-budget";
 import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
+import { HamiltonTaskBudgetError, withHamiltonTask } from "@/lib/hamilton/task-budget";
 import {
   streamText,
   generateText,
@@ -736,6 +737,12 @@ async function handlePOST(request: Request) {
       return Response.json({ error: HAMILTON_PAUSED_MESSAGE, code: "provider_paused" }, { status: 503 });
     }
 
+    // A Hamilton task or daily cap is a ProviderBudgetBlockedError too, but the reader gets its own
+    // plain line (what was capped and when it resets), not the stop line (#1921, task-budget.ts).
+    if (err instanceof HamiltonTaskBudgetError) {
+      return Response.json({ error: err.message, code: "hamilton_budget_cap" }, { status: 429 });
+    }
+
     if (
       err instanceof ProviderCircuitOpenError
       || err instanceof ProviderBudgetBlockedError
@@ -766,4 +773,5 @@ async function handlePOST(request: Request) {
   }
 }
 
-export const POST = withApiRoutePolicy("api.research.hamilton", "POST", handlePOST);
+// Each request is one Hamilton task, capped per task and per reader day (#1921, task-budget.ts).
+export const POST = withApiRoutePolicy("api.research.hamilton", "POST", withHamiltonTask("ask", handlePOST));

@@ -179,7 +179,7 @@ describe("H01 Structured Ask identity acceptance", () => {
     identityStore.research.mockClear();
     const result = await answerAskMemo(user, { institutionId: "2", question: "overdraft?", savedAnalysisId: "a1" });
     expect(result.status).toBe(200);
-    expect(writeStorylineMemo).toHaveBeenCalledWith(frozenStory, "overdraft?", { institutionId: 2, identityContext: saved.identityContext, factEvidence: store.analyses[0].response.factEvidence, usage: expect.any(Object), onGateShadow: expect.any(Function) });
+    expect(writeStorylineMemo).toHaveBeenCalledWith(frozenStory, "overdraft?", { institutionId: 2, identityContext: saved.identityContext, factEvidence: store.analyses[0].response.factEvidence, usage: expect.any(Object), tracking: { operation: "storyline_memo", userId: 7 }, onGateShadow: expect.any(Function) });
     expect((store.analyses[0].response as { factEvidence?: { facts: unknown[] } }).factEvidence?.facts.length).toBeGreaterThan(0);
     expect(identityStore.peers).not.toHaveBeenCalled();
     expect(identityStore.research).not.toHaveBeenCalled();

@@ -11,7 +11,11 @@ export type BudgetBlockReason =
   | "budget_daily_exhausted"
   | "budget_monthly_exhausted"
   | "budget_run_cap_exhausted"
-  | "budget_tick_cap_exhausted";
+  | "budget_tick_cap_exhausted"
+  /** A Hamilton task reached its own cap (src/lib/hamilton/task-budget.ts). */
+  | "budget_task_cap_exhausted"
+  /** A Hamilton reader reached their cap for the UTC day (src/lib/hamilton/task-budget.ts). */
+  | "budget_reader_daily_exhausted";
 
 interface BudgetPolicyRow {
   id: number;

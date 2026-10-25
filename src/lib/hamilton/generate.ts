@@ -13,6 +13,7 @@ import {
 } from "@/lib/ai-provider";
 import { trackAnthropicRequest, assertCompletedAnthropicTextResponse, observedProviderUsage, type ProviderUsage } from "@/lib/ai-provider-usage";
 import { HAMILTON_VOICE } from "./voice";
+import { MalformedProviderOutputError } from "./task-faults";
 import {
   evaluateCitationDensity,
   type CitationGateResult,
@@ -120,7 +121,8 @@ export async function generateSection(input: SectionInput, tracking: SectionTrac
   const narrative = extractAnthropicText(response);
 
   if (!narrative) {
-    throw new Error(`Hamilton returned empty response for section type '${input.type}'`);
+    // Malformed output: a typed fault, so the report's retry policy can try it once more (#1921).
+    throw new MalformedProviderOutputError(`Hamilton returned empty response for section type '${input.type}'`);
   }
 
   return {
@@ -249,15 +251,16 @@ export async function generateGlobalThesis(input: ThesisInput): Promise<ThesisOu
   const raw = extractAnthropicText(response);
 
   if (!raw) {
-    throw new Error(`Hamilton returned empty thesis response [scope=${input.scope}]`);
+    throw new MalformedProviderOutputError(`Hamilton returned empty thesis response [scope=${input.scope}]`);
   }
 
   let parsed: Omit<ThesisOutput, 'model' | 'usage'>;
   try {
     parsed = JSON.parse(raw) as Omit<ThesisOutput, 'model' | 'usage'>;
   } catch {
-    throw new Error(
+    throw new MalformedProviderOutputError(
       `Hamilton thesis generation returned unparseable JSON [scope=${input.scope}]: ${raw.slice(0, 200)}`,
+      raw.slice(0, 200),
     );
   }
 
