@@ -165,6 +165,8 @@ export async function gateReplayCompleteToday(day: string, db: SqlTag = sql): Pr
        AND e.event_type = 'step.finished'
        AND e.detail->>'complete' = 'true'
        AND e.detail->>'day' = ${day}
+       AND e.created_at >= (${day}::date::timestamp AT TIME ZONE 'UTC')
+       AND e.created_at < ((${day}::date + 2)::timestamp AT TIME ZONE 'UTC')
      LIMIT 1
   `;
   return (rows as unknown as unknown[]).length > 0;
@@ -289,11 +291,14 @@ export async function runGateReplay({
   const started = Date.now();
   const day = now.toISOString().slice(0, 10);
   const since = `${day}T00:00:00.000Z`;
-  const pro = await deps.pickProQuestions(db, cap).catch(() => []);
-  const institutions = await deps.pickInstitutions(db, perGroup, day).catch(() => []);
+  // These reads fail the run rather than fall back to empty: an empty plan could mark the day
+  // complete half done, and an empty "already recorded" read would record every answer twice
+  // (review of #2644). A failed run shows in the ledger and the next hourly run retries.
+  const pro = await deps.pickProQuestions(db, cap);
+  const institutions = await deps.pickInstitutions(db, perGroup, day);
   const plan = planGateReplay(day, pro, institutions, cap);
-  const earlier = await deps.recordedSince(since).catch(() => []);
-  const settled = await deps.settledToday(db, day).catch(() => new Set<string>());
+  const earlier = await deps.recordedSince(since);
+  const settled = await deps.settledToday(db, day);
   const done = new Set([...settled, ...earlier.map((e) => e.key).filter((k): k is string => !!k)]);
   const pending = plan.filter((item) => !done.has(item.key));
 

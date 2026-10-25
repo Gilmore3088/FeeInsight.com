@@ -104,6 +104,15 @@ describe("the gate replay (#1077)", () => {
     expect(again.complete).toBe(true);
   });
 
+  it("fails the run, recording nothing, when it cannot read what today already recorded or planned (review of #2644)", async () => {
+    const lost = deps({ recordedSince: vi.fn(async () => { throw new Error("statement timeout"); }) });
+    await expect(runGateReplay({ db, now, deps: lost.deps })).rejects.toThrow("statement timeout");
+    expect(lost.recorded).toHaveLength(0);
+    const noPlan = deps({ pickProQuestions: vi.fn(async () => { throw new Error("connection reset"); }) });
+    await expect(runGateReplay({ db, now, deps: noPlan.deps })).rejects.toThrow("connection reset");
+    expect(noPlan.recorded).toHaveLength(0);
+  });
+
   it("stops at the time budget and leaves the rest for the next run", async () => {
     const { deps: d } = deps();
     const summary = await runGateReplay({ db, now, deps: d, budgetMs: -1 });
