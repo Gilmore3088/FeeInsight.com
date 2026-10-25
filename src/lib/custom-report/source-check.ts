@@ -597,59 +597,13 @@ function namesFee(line: string, stems: NameStems, atLeast?: number): boolean {
  * the fee at all is `namesFee`, which reads whole words.
  */
 function nearNameCount(text: string, stems: string[]): number {
-  return nearNameStems(text, stems).length;
-}
-
-function nearNameStems(text: string, stems: string[]): string[] {
   const haystack = ` ${comparable(text)} `;
-  return stems.filter((stem) => haystack.includes(stem));
+  return stems.filter((stem) => haystack.includes(stem)).length;
 }
 
 function stemCount(text: string, stems: NameStems): number {
   const haystacks = nameHaystacks(text);
   return stems.filter((stem) => haystacks.some((haystack) => stemAt(haystack, stem, stems.words))).length;
-}
-
-/**
- * A dot-leader row closed by its own free word ("ATM Transactions……FREE | activity……$5", United Bank,
- * #2477) ends at that word: its name never owns the next column's price. A row is closed only when a
- * column break or a new capitalised name with its own leader follows the free word; words after it
- * in the same row ("Paper Statement ……. Free with e-statements, otherwise $3.00", "Free* $2.00 after
- * 4 per month") are the row's own terms, and its later price is still its own. A closed row binds
- * only a fee whose name holds every word of that row's name: "Overdraft Transfer ……. None |
- * Overdraft Fee ……. $30.00" is a different row from Overdraft Fee's. Returns where each closed row
- * that binds this fee ends.
- */
-const LEADER_FREE_WORD = /(?:(?:\.\s?){2,}|…+)[\s.…]*(?:free|none|no charge|n\/c|waived)\b/gi;
-const ROW_CLOSED_AFTER = /^[\s*†‡\d]*(?:\||[A-Z][^$|]*?(?:(?:\.\s?){2,}|…))/;
-/**
- * A row after the free word that only sets the free row's own tier or audience ("Excessive
- * Withdrawals (first 6) …. FREE | Each Additional …. $3.00", "None | After 12 Months …. $5.00",
- * "FREE | Non-Customers …. $10.00") continues the free row: its price is the same fee's.
- */
-export const FREE_ROW_CONTINUES =
-  /^[\s*†‡\d|]*(?:each\b|additional\b|add'?l\b|after\b|over\b|thereafter\b|then\b|per\b|excess\b|more than\b|beyond\b|subsequent\b|non[\s-]?(?:customers?|members?|account\s?holders?|depositors?)\b)/i;
-function leaderFreeRowEnds(line: string, stems: NameStems): number[] {
-  return [...line.matchAll(LEADER_FREE_WORD)].flatMap((match) => {
-    const start = match.index ?? 0;
-    const end = start + match[0].length;
-    const after = line.slice(end);
-    if (!ROW_CLOSED_AFTER.test(after) || FREE_ROW_CONTINUES.test(after)) return [];
-    // The row's name starts after an earlier row's price; a figure in its own note ("Overdraft Fee
-    // (under $5)") is part of the name, not an earlier price.
-    const rowName = line
-      .slice(line.lastIndexOf("|", start) + 1, start)
-      .replace(/\([^)]*\)/g, " ")
-      .replace(/^.*\$\s?\d[\d,]*(?:\.\d{2})?/, "");
-    const words = rowWords(rowName);
-    const feeWords = new Set(rowWords(stems.words.join(" ")));
-    return words.length > 0 && words.every((word) => feeWords.has(word)) ? [end] : [];
-  });
-}
-
-/** A row name's own words for telling two rows apart; "Transfer" counts ("Overdraft Transfer" is not "Overdraft Fee"). */
-function rowWords(name: string): string[] {
-  return nameStems(name).words.filter((word) => word.length >= 3 && !/^\d+$/.test(word) && (word === "transfer" || !STOP_WORDS.has(word))).map((word) => word.slice(0, STEM_LENGTH));
 }
 
 function statesAmount(line: string, amount: number, stems: NameStems): SourceCheckFailure | null {
@@ -679,24 +633,12 @@ function statesAmount(line: string, amount: number, stems: NameStems): SourceChe
   // not the fee's price when the row prints another; alone ("5 free, $2.00 each additional") it is.
   const base = noted.filter((t) => !ADD_ON_RATE.test(line.slice(t.end)));
   const prices = base.length > 0 ? base : noted;
-  // A priced fee's words stop at a row its own free word closed (`leaderFreeRowEnds`): the price
-  // after it is the fee's only when the words after the free word name something of the fee that
-  // the closed row does not, or name the whole fee again ("Incoming Wire ... Free | Outgoing Wire ...
-  // $25" is Outgoing's $25; a name glued across both rows, "Copy of cashier check ... N/C | Levy
-  // request", keeps the levy's).
-  const closedEnds = amount > 0 ? leaderFreeRowEnds(line, stems) : [];
-  const nearPrice = (price: MoneyToken, i: number) => {
-    const from = i === 0 ? 0 : prices[i - 1].end;
-    const closed = Math.max(from, ...closedEnds.filter((end) => end <= price.start));
-    const open = nearNameStems(line.slice(closed, price.start), stems);
-    if (closed === from) return open.length;
-    // A row after the break that names the whole fee again ("Stop Payment ... Free | Stop Payment
-    // (in branch) ... $30.00") is the fee's own priced row.
-    if (open.length === stems.length) return open.length;
-    const shut = new Set(nearNameStems(line.slice(from, closed), stems));
-    return open.some((stem) => !shut.has(stem)) ? open.length : 0;
-  };
-  const before = withJoinedPrices(line, prices, prices.map(nearPrice), stems);
+  const before = withJoinedPrices(
+    line,
+    prices,
+    prices.map((price, i) => nearNameCount(line.slice(i === 0 ? 0 : prices[i - 1].end, price.start), stems)),
+    stems,
+  );
   const after = prices.map((price, i) => nearNameCount(line.slice(price.end, prices[i + 1]?.start ?? line.length), stems));
   // A line that opens with a price and ends with a name ("$25 (3 X 5), $35 (3 X 10)")
   // names each fee after its price.
@@ -717,10 +659,7 @@ function statesAmount(line: string, amount: number, stems: NameStems): SourceChe
     );
   }
   if (best === 0 || index < 0) {
-    // The price after a closed row is another column's, not a limit on this fee.
-    const same = tokens.filter((t) => Math.abs(t.value - amount) < 0.005);
-    if (same.length > 0 && same.every((t) => closedEnds.some((end) => end <= t.start))) return "amount_not_the_fee";
-    return same.length > 0 ? "amount_is_a_threshold" : "amount_not_the_fee";
+    return tokens.some((t) => Math.abs(t.value - amount) < 0.005) ? "amount_is_a_threshold" : "amount_not_the_fee";
   }
   if (amount === 0 && !freeWordIsThePrice(line, prices, index, stems)) return "amount_not_the_fee";
   // A fee that depends on a balance band ("Negative $25 or less | $5") has no single
@@ -1402,6 +1341,7 @@ export function checkFeeAgainstSource(
   canonicalFeeKey?: string | null,
   options: SourceCheckOptions = {},
 ): SourceCheckResult {
+  if (namesItsClosedFreeRow(rawText, feeName, amount)) return { ok: false, reason: "amount_not_the_fee" };
   const result = checkOwnName(rawText, feeName, amount, categoryPattern, canonicalFeeKey, options);
   // W43 live audit (#2064): Knox names a box row printed as its size alone "Safe Deposit Box <size>"
   // (`boxSizeNamed`); the row is traced by its own words. Only for a fee filed as a safe deposit box
@@ -1412,6 +1352,38 @@ export function checkFeeAgainstSource(
   const traced = checkOwnName(rawText, asRead, amount, categoryPattern, canonicalFeeKey, options);
   return traced.ok && leadsBoxRow(traced.sourceLine, asRead, rawText) ? traced : result;
 }
+
+/**
+ * #2477: a priced fee whose own name is a dot-leader row closed by its free word ("ATM Transactions
+ * FREE" read from "ATM Transactions……….. ……….FREE | activity……$5", United Bank) took the next
+ * column's price: the row says the fee is free. Only a name that ends in the free word the source
+ * prints right after that name's leader; "ATM Withdrawals After 6 Free" or "Cashier's Check | N/C"
+ * (another column) are left to the usual reading.
+ */
+const NAME_CLOSED_FREE = /^(.*?)[\s.…:–-]*\b(free|none|no charge|n\/c)\s*$/i;
+function namesItsClosedFreeRow(rawText: string | null | undefined, feeName: string, amount: number): boolean {
+  if (!rawText || amount <= 0) return false;
+  const named = feeName.match(NAME_CLOSED_FREE);
+  const words = named?.[1].match(/[a-z0-9']+/gi);
+  if (!named || !words || words.length === 0) return false;
+  const leader = "\\s*(?:(?:\\.\\s?){2,}|…+)[\\s.…]*";
+  const escaped = words.map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const row = new RegExp(`(?<![a-z0-9])${escaped.join("[^a-z0-9$|]+")}${leader}${named[2].replace("/", "\\/")}(?![a-z])`, "gi");
+  return [...rawText.matchAll(row)].some((match) => {
+    const after = rawText.slice((match.index ?? 0) + match[0].length, (match.index ?? 0) + match[0].length + 200);
+    return ROW_ENDS_AT_FREE.test(after) && !FREE_ROW_CONTINUES.test(after);
+  });
+}
+
+/** The row ends at its free word: a column break, the line's end, or a new capitalised row with its own leader. */
+const ROW_ENDS_AT_FREE = /^[ \t*†‡\d]*(?:\||\n|$|[A-Z][^$|\n]*?(?:(?:\.\s?){2,}|…))/;
+/**
+ * A next row that only sets the free row's own tier, condition or audience ("FREE | Each Additional
+ * …. $3.00", "None | After 12 Months", "Free | All Others", "None | Within 90 days") continues the
+ * same fee: its price is that fee's.
+ */
+export const FREE_ROW_CONTINUES =
+  /^[\s*†‡\d|(]*(?:each|additional|add'?l|after|over|thereafter|then|per|excess|more than|beyond|subsequent|others?|all others|otherwise|within|prior to|before|less than|under|below|with|without|standard|second|third|\d+(?:st|nd|rd|th)|\d+ or more|\d+\+|non[\s-]?(?:customers?|members?|account\s?holders?|depositors?))(?![a-z])/i;
 
 function checkOwnName(
   rawText: string | null | undefined,

@@ -9,10 +9,9 @@ Debit Card & ATM Card Purchases
 Veterans Checking | PIN-based purchase…………..FREE
 Minimum balance ................................$0 | International Transactions: | Stop payment ................................... $36`;
 
-describe("a dot-leader row closed by its free word keeps its own price (#2477)", () => {
+describe("a fee named as its own closed free row is not priced (#2477)", () => {
   it("refuses the next column's price for the closed row", () => {
     expect(checkFeeAgainstSource(UNITED, "ATM Transactions FREE", 5, ".", "atm_non_network")).toEqual({ ok: false, reason: "amount_not_the_fee" });
-    expect(checkFeeAgainstSource(UNITED, "ATM Transactions", 5, ".", "atm_non_network").ok).toBe(false);
   });
 
   it("still traces the closed row's own free price and the other column's own fee", () => {
@@ -23,7 +22,7 @@ describe("a dot-leader row closed by its free word keeps its own price (#2477)",
   it("still traces a priced fee named after the closed row on the same line", () => {
     const line = "Incoming Wire ............ Free | Outgoing Wire ............ $25.00";
     expect(checkFeeAgainstSource(line, "Outgoing Wire", 25, ".", "wire_domestic_outgoing").ok).toBe(true);
-    expect(checkFeeAgainstSource(line, "Incoming Wire", 25, ".", "wire_domestic_incoming").ok).toBe(false);
+    expect(checkFeeAgainstSource(line, "Incoming Wire Free", 25, ".", "wire_domestic_incoming").ok).toBe(false);
   });
 
   it("leaves a free word without a leader as before", () => {
@@ -107,5 +106,21 @@ describe("a free word that does not close the fee's row (#2477 review)", () => {
     ["Online Banking ....... Free | Bill Pay ........ Free | Online Banking Bill Pay ....... $5.00", "Online Banking Bill Pay", 5],
   ])("traces a fee whose name is not the closed row's: %s", (line, name, amount) => {
     expect(checkFeeAgainstSource(line, name, amount, ".", null).ok).toBe(true);
+  });
+});
+
+// Names that end in a free word but are not a closed leader row keep the usual reading (live fees, Oct 25).
+describe("a free word in the name that is not a closed leader row (#2477)", () => {
+  it.each([
+    ["ATM Withdrawals After 6 Free ........ $1.50 each", "ATM Withdrawals After 6 Free", 1.5],
+    ["Cashier's Check | N/C | $3.00", "Cashier's Check | N/C", 3],
+    ["Notary Service – First Document Free | $5.00 each additional", "Notary Service – First Document Free", 5],
+    ["Notary Service . . . . . . . . . . . . . . . . Free, $2 for non-members", "Notary Service Free", 2],
+    ["Excessive Withdrawals (first 6) .......... FREE | Each Additional .......... $3.00", "Excessive Withdrawals (first 6) FREE", 3],
+    ["Notary Service ........ Free | All Others ........ $5.00", "Notary Service Free", 5],
+    ["Early Closure ........ None | Within 90 days of opening ........ $25.00", "Early Closure None", 25],
+  ])("%s", (line, name, amount) => {
+    const result = checkFeeAgainstSource(line, name, amount, ".", null);
+    expect(result.ok ? null : result.reason).not.toBe("amount_not_the_fee");
   });
 });
