@@ -508,6 +508,7 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v23 (#1479): a name | description | price row stays one fee's row; same fingerprint path.
   // v24 (#1918): "$15K" or "$1.5M" is a balance, never a price; same fingerprint path.
   // v25 (#1916): a late charge in a safe deposit box section is not a late payment; same fingerprint path.
+  // v26 (#2070): a fee whose every row at its price is for a discontinued account is refused; same fingerprint path.
   SOURCE_CHECK_STRATEGY: "Its fingerprint carries the version, so each publish step's batch re-checks every institution not yet checked at the new version; nothing to replay.",
   // v3 (#1810): headings over an opening deposit, "Interest Checking" and numbered accounts name a fee.
   // v4 (#1917): a fused breadcrumb or menu is no heading, and a comparison table's header row stops

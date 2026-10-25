@@ -581,7 +581,7 @@ async function handlePOST(request: Request) {
                   console.error("[hamilton] the saved claims could not be built; saving the answer without them", error);
                   return null;
                 }
-              })()),
+              })(), questionOnly(lastUserText)),
               // Historical reference metadata only; never a future access grant.
               identityContext,
             };

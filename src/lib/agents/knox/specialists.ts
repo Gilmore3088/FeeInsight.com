@@ -293,7 +293,13 @@ import { withGluedFootnotePrices } from "@/lib/custom-report/glued-footnote-pric
 // re-reads set-aside lines on a version bump, so both go to Darwin. On 2026-10-25 the wording matched
 // 4 raw rows at 2 institutions (5827, 8749), none live. Categories only; prices and names are
 // unchanged. The stale-read floor stays at v97. Name re-tidy stays at v27.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 112 } as const;
+// v113 (#2070): a fee priced for an account the bank no longer offers is not a current fee. The
+// shared check refuses a read whose every row at that price carries the marker on its own row
+// ("$5.00 (this account no longer offered)") or sits under a legacy section heading ("Legacy
+// Accounts", "Retired Accounts (no longer available on new memberships)") (`discontinuedRow`, source
+// check v26), so the self-check holds it as untraced. Removes reads only. The stale-read floor stays
+// at v97. Name re-tidy stays at v27.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 113 } as const;
 
 export interface SpecialistRun {
   strategy: string;

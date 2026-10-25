@@ -99,7 +99,11 @@ export const SOURCE_CHECK_REASON = "source_check_untraceable";
 // Read-only dry run, Oct 25: it flags 111 live late_payment fees at 110 institutions, but the category
 // guard v87 re-files 99 of them in place to safe_deposit_box (where they trace) on its first sweep,
 // well inside the 12h second look; the 12 left are copies of a live box late fee and come down.
-export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 25 } as const;
+// Version 26 (#2070): a fee whose every row at its price is for an account the bank no longer offers
+// (the marker on its own row, "$5.00 (this account no longer offered)", or a legacy section heading
+// over it, "Legacy Accounts") is refused as `discontinued_account` (`discontinuedRow`). The bump
+// re-checks every institution; the PR gives the dry-run count of live fees it takes down.
+export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 26 } as const;
 
 /**
  * An institution is checked again whenever a newer live fee appears, so a fee
