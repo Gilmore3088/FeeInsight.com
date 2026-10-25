@@ -6,7 +6,7 @@ import { htmlToScoringText, scoreFeePage } from "@/lib/agents/learning/fee-page"
 import { companionStreamsReady } from "@/lib/agents/companion-streams";
 import { brokerageLinkText, documentOpeningKind, nonDepositDocumentKind } from "@/lib/non-deposit-document";
 
-import { fetchWithTimeout, looksLikePdfUrl, MAX_PDF_CHECK_BYTES, pdfCheckText, validateFeeCandidate } from "./find-validate";
+import { fetchWithTimeout, looksLikePdfUrl, mainContentText, MAX_PDF_CHECK_BYTES, pdfCheckText, validateFeeCandidate } from "./find-validate";
 import { loadSharedNameIds } from "./other-bank-host";
 import {
   BUSINESS_PATH_SQL,
@@ -498,7 +498,8 @@ export async function agreementListsFees(url: string, fetchImpl: Fetcher): Promi
     return { ok: false, documentType: null, feeLines: 0, verdict: "unsupported_type", reason: `Unsupported content type ${contentType || "unknown"}` };
   }
   const html = await response.text();
-  const refused = notGeneral("html", htmlToScoringText(html));
+  // The page's main content, as the schedule check reads it: nav items never become the opening.
+  const refused = notGeneral("html", mainContentText(html));
   if (refused) return refused;
   const check = accountPageListsFees(html, url, AGREEMENT_MIN_FEE_LINES);
   return check.ok ? kept("html", check.feeLines) : noFee("html", check.feeLines);

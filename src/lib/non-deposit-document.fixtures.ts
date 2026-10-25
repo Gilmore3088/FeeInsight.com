@@ -152,6 +152,10 @@ export const OPENING_FIXTURES: Array<{ text: string; kind: DocumentOpeningKind |
   { text: "Supplemental Terms and Conditions for LCCU Visa Debit, Cash,\nYouth Debit, Tita Debit and HSA Cards (Consumer Accounts)\n(\"Supplement\")", kind: null, why: "debit card terms naming a youth card, doc 36491" },
   { text: "Skip to main content\nFind a Car\nYouth Accounts\nLocations & Hours", kind: null, why: "a menu's youth accounts link, doc 36315" },
   { text: "Personal Account Fee Schedule\nEffective May 1, 2026\nCHECKING ACCOUNTS\nYouth Checking Fee Schedule", kind: null, why: "a youth heading past the third line" },
+  // Review of #2671: a sentence about another document, and a general schedule's title above a loan word.
+  { text: "Schedule of Fees\nEffective 1/1/2026\nRefer to your loan agreement for loan fees", kind: null, why: "a general schedule's title outweighs line 3" },
+  { text: "Fee Schedule\nCredit Cards\nDisclosures", kind: null, why: "a general schedule's title outweighs lines 2 and 3 read together" },
+  { text: "details of rate, fee, and other cost information\nAs required by law, rates, fees, and other costs of this credit card offer are\ndisclosed here. All account terms are governed by the credit card Agreement.", kind: null, why: "a loan phrase after \"the\" is a sentence, not a title, doc 18797" },
   { text: "Youth Savings | $5.00 fee schedule", kind: null, why: "a priced line is never a title" },
   { text: "", kind: null, why: "no text" },
 ];

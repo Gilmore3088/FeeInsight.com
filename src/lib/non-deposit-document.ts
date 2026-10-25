@@ -324,6 +324,11 @@ export function ratePageSql(path: string, kind: string): string {
  *   (`LOAN_OPENING`), with no deposit, general schedule or business word (`NOT_LOAN_OPENING`): an
  *   overdraft line of credit agreement is the deposit side's, and a business card agreement stays
  *   out of scope as in the address rule. A bare "Loan Application" (a menu entry) is not a title.
+ *   A loan phrase after "your", "the", "this" or a like word is a sentence about another document
+ *   ("governed by the credit card Agreement", "refer to your loan agreement"), not a title
+ *   (`LOAN_OPENING_MENTION`), and an opening whose lines name a general schedule ("Schedule of
+ *   Fees" / "Effective 1/1/2026" / "...") is the schedule, whatever line 2 or 3 says
+ *   (`GENERAL_SCHEDULE_OPENING`, review of #2671).
  * - "youth_account": one of the first two lines opens with a youth, teen, student or minor word
  *   and names a fee schedule, fees, addendum or disclosure ("Youth Member Fee Schedule (ages
  *   13-17)", `YOUTH_OPENING_TITLE`), or one of the first three says its disclosures or fees apply
@@ -344,7 +349,11 @@ export const NOT_LOAN_OPENING = " (?:checking|savings|shares?|share drafts?|depo
 export const YOUTH_OPENING_TITLE = `^ (?:[a-z0-9]+ ){0,3}${YOUTH_WORDS} (?:[a-z0-9]+ ){0,4}(?:fee schedule|schedule of fees|schedule of charges|fees|addendum|disclosures?) `;
 export const YOUTH_OPENING_SUBJECT = ` (?:disclosures?|fees?|charges|terms) (?:(?!not )[a-z0-9]+ ){0,3}appl(?:y|ies) (?:only )?to (?:the |our |your )?(?:[a-z0-9]+ ){0,5}${YOUTH_WORDS} (?:[a-z0-9]+ ){0,3}accounts? `;
 export const NOT_YOUTH_OPENING = " (?:not|except|excluding|excludes?|waived|credit union|federal credit|university|loans?|scholarships?) ";
+export const LOAN_OPENING_MENTION = ` (?:your|our|the|this|that|these|a|an|its|their|any|such)${LOAN_OPENING}`;
+export const GENERAL_SCHEDULE_OPENING = " (?:fee schedule|schedule of fees|schedule of charges|fees and charges|schedule of service charges) ";
 const LOAN_OPENING_RE = re(LOAN_OPENING);
+const LOAN_OPENING_MENTION_RE = re(LOAN_OPENING_MENTION);
+const GENERAL_SCHEDULE_OPENING_RE = re(GENERAL_SCHEDULE_OPENING);
 const NOT_LOAN_OPENING_RE = re(NOT_LOAN_OPENING);
 const YOUTH_OPENING_TITLE_RE = re(YOUTH_OPENING_TITLE);
 const YOUTH_OPENING_SUBJECT_RE = re(YOUTH_OPENING_SUBJECT);
@@ -368,7 +377,7 @@ function titleWords(line: string): string | null {
 }
 
 function loanOpening(words: string): boolean {
-  return LOAN_OPENING_RE.test(words) && !NOT_LOAN_OPENING_RE.test(words);
+  return LOAN_OPENING_RE.test(words) && !NOT_LOAN_OPENING_RE.test(words) && !LOAN_OPENING_MENTION_RE.test(words);
 }
 
 /** Pure: "loan" or "youth_account" when the document's opening names it so (see the note above); null otherwise. */
@@ -378,7 +387,8 @@ export function documentOpeningKind(text: string | null | undefined): DocumentOp
     const before = titles[i];
     return words != null && before != null ? `${before.trimEnd()}${words}` : null;
   });
-  if ([...titles, ...pairs].some((words) => words != null && loanOpening(words))) return "loan";
+  const general = titles.some((words) => words != null && GENERAL_SCHEDULE_OPENING_RE.test(words));
+  if (!general && [...titles, ...pairs].some((words) => words != null && loanOpening(words))) return "loan";
   const youth = titles.some((words, i) =>
     words != null && !NOT_YOUTH_OPENING_RE.test(words) && ((i < 2 && YOUTH_OPENING_TITLE_RE.test(words)) || YOUTH_OPENING_SUBJECT_RE.test(words)));
   return youth ? "youth_account" : null;
@@ -392,8 +402,9 @@ export function documentOpeningKind(text: string | null | undefined): DocumentOp
 export function documentOpeningKindSql(column: string): string {
   const lines = `array_remove(regexp_split_to_array(btrim(left(COALESCE(${column}, ''), ${OPENING_SCAN_CHARS}), E' \\t\\r\\n\\f\\v'), E'[[:space:]]*\\n[[:space:]]*'), '')`;
   const title = (i: number) => `(o.l[${i}] IS NOT NULL AND strpos(o.l[${i}], '$') = 0 AND length(o.w[${i}]) <= ${OPENING_LINE_MAX_CHARS + 2})`;
-  const loan = (words: string) => `(${words} ~ ${pgLiteral(LOAN_OPENING)} AND ${words} !~ ${pgLiteral(NOT_LOAN_OPENING)})`;
+  const loan = (words: string) => `(${words} ~ ${pgLiteral(LOAN_OPENING)} AND ${words} !~ ${pgLiteral(NOT_LOAN_OPENING)} AND ${words} !~ ${pgLiteral(LOAN_OPENING_MENTION)})`;
   const indexes = Array.from({ length: OPENING_LINES }, (_, i) => i + 1);
+  const general = indexes.map((i) => `(${title(i)} AND o.w[${i}] ~ ${pgLiteral(GENERAL_SCHEDULE_OPENING)})`).join(" OR ");
   const loanAny = [
     ...indexes.map((i) => `(${title(i)} AND ${loan(`o.w[${i}]`)})`),
     ...indexes.slice(1).map((i) => `(${title(i - 1)} AND ${title(i)} AND ${loan(`(rtrim(o.w[${i - 1}]) || o.w[${i}])`)})`),
@@ -401,7 +412,7 @@ export function documentOpeningKindSql(column: string): string {
   const youth = indexes
     .map((i) => `(${title(i)} AND o.w[${i}] !~ ${pgLiteral(NOT_YOUTH_OPENING)} AND (${i <= 2 ? `o.w[${i}] ~ ${pgLiteral(YOUTH_OPENING_TITLE)} OR ` : ""}o.w[${i}] ~ ${pgLiteral(YOUTH_OPENING_SUBJECT)}))`)
     .join(" OR ");
-  return `(SELECT CASE WHEN ${loanAny} THEN 'loan' WHEN ${youth} THEN 'youth_account' END
+  return `(SELECT CASE WHEN NOT (${general}) AND (${loanAny}) THEN 'loan' WHEN ${youth} THEN 'youth_account' END
      FROM (SELECT c.l[1:${OPENING_LINES}] AS l,
                   ARRAY(SELECT ' ' || btrim(regexp_replace(regexp_replace(lower(u.e), '[,;:]', ' , ', 'g'), '[^a-z0-9,]+', ' ', 'g')) || ' '
                           FROM unnest(c.l[1:${OPENING_LINES}]) WITH ORDINALITY AS u(e, n) ORDER BY u.n) AS w

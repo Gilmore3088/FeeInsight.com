@@ -43,7 +43,7 @@ alone decides nothing: youth pages often carry the general schedule.
 - Darwin's live re-check `darwin.non_deposit_document` v4:
   - It reads each live fee's document opening (newest completed `agent_source_texts`).
   - New rules: `loan_titled_document` and `youth_account_document`. Each is counted on its own
-    behind `OPENING_DOCUMENT_TAKEDOWN_LIVE`, which ships off. Every one of the 18 matched
+    behind `OPENING_DOCUMENT_TAKEDOWN_LIVE`, which ships off. Every one of the 17 matched
     documents' stored openings was checked and none is a general schedule, so the sample is clean
     for turning it on (DECISIONS 2026-10-20).
   - Hamilton's publish gate and its depth count ask the same reason with the same switch.

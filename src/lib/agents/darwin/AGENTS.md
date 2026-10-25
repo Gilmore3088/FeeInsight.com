@@ -1095,11 +1095,14 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   Savings"), a credit union named for students and a youth heading past the third line do not
   count. The address never gives the youth kind: GTE Financial's `/go-student-checking` page carried
   27 live general fees. Both rules act only with `OPENING_DOCUMENT_TAKEDOWN_LIVE` (off: counted,
-  left as they are; all 18 matched documents' stored openings were checked and none is a general
+  left as they are; all 17 matched documents' stored openings were checked and none is a general
   schedule, so the sample is clean for turning it on) and Hamilton's publish gate and depth count
   ask the same rule with the row's document opening. Dry run (prod, read-only, Oct 25, `openingDocumentFeesSql()`):
-  48 live fees on 18 documents at 16 institutions, 41 `loan_titled_document` (16 documents) and 7
-  `youth_account_document` (2 documents); none of the 18 had an address kind. Step detail adds
+  48 live fees on 17 documents at 15 institutions, 41 `loan_titled_document` (15 documents) and 7
+  `youth_account_document` (2 documents); none of the 17 had an address kind. A loan phrase after
+  "your", "the" or a like word is a sentence, not a title, and an opening that names a general
+  schedule is never a loan document (review of #2671; doc 18797's "governed by the credit card
+  Agreement" dropped out). Step detail adds
   `opening_document`, `opening_documents`, `opening_institutions`, `opening_switch_live` and
   `samples_opening_document`; each sample carries `opening`.
 - Spanish copies of an English schedule (`translated-copy-check.ts`, #1909, James's live-fee check
