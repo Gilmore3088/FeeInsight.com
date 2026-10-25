@@ -54,7 +54,8 @@ export type FeedbackStage = (typeof FEEDBACK_STAGES)[number];
  *     audit trail flag_recorded, flag_cleared, flag_confirmed (one row per event, never rewritten)
  *   Re-read request (Darwin, `darwin/live-fragment-check.ts`): knox_reread_requested (a live fee
  *     with a `sentence_end` fragment name, kept live or taken down; Knox is asked to read its
- *     source line again, #1499). Knox settles each one per rules version with
+ *     source line again, #1499; also written by Deming for each daily-audit miss Knox owns,
+ *     `deming/audit-misses.ts`, #2055). Knox settles each one per rules version with
  *     knox_reread_resolved (`knox/reread-feedback.ts`, weight 0, #1511)
  *   Operator actions (human, `fee-hold.ts`, `fee-corrections.ts`, #978): admin_hold, admin_release,
  *     admin_correction, admin_correction_reversed

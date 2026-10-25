@@ -47,4 +47,14 @@ export const DEMING_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-24",
   },
+  {
+    id: "issue-2055-route-to-owner-queue",
+    agent: "deming",
+    stage: "fresh audit",
+    lesson: "An audit finding is finished only when it sits in a queue its owner's next step reads. Write each miss in the form that owner already acts on: a Knox re-read request for a misread line, and an audit_miss row on the link Magellan's stale-link search reads for a wrong document. Keeping it as a judgement nobody selects is not enough.",
+    why: "Deming's audit misses were written as audit_miss feedback with the right stage, but no Knox, Magellan or Rosetta reader selected that kind, so a miss never reached the step that caused it.",
+    evidence: { issues: [2055], prs: [], files: ["src/lib/agents/deming/audit-misses.ts", "src/lib/agents/magellan/discovery.ts", "src/lib/agents/knox/reread-feedback.ts"] },
+    appliesTo: "all",
+    since: "2026-10-24",
+  },
 ];

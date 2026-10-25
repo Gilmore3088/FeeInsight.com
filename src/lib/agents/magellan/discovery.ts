@@ -61,6 +61,7 @@ import { loadDemotedFinders } from "./batch-review";
 import { keepRefusedPaidAnswers, type KeepRefusedAnswersResult } from "./refused-answers";
 import { restoreSwappedFeePages, type RestoreFeePagesResult } from "./restore-fee-page";
 import { inSavepoint } from "@/lib/agents/savepoint";
+import { AUDIT_FEEDBACK_KIND } from "@/lib/agents/deming/audit-misses";
 import { recordSearchMisses } from "./search-misses";
 import { LEADER_RANK, runSecondDocumentFind, type RunSecondDocumentFindResult } from "./second-document";
 import { countAnchors, detectPlatform, looksJavaScriptBuilt, looksLikeBotChallenge } from "./site-signals";
@@ -1274,7 +1275,7 @@ async function selectStaleCandidates(
   const marker = JSON.stringify({ freshness_search: FRESHNESS_SEARCH_VERSION });
   const staleYear = now.getUTCFullYear() - STALE_AFTER_YEARS;
   const rows = await db<
-    Array<DiscoveryCandidateRow & { effective_year: number | null; url_year: number | null; wrong_at: string | Date | null; searched_at: string | Date | null }>
+    Array<DiscoveryCandidateRow & { effective_year: number | null; url_year: number | null; wrong_at: string | Date | null; confirmed_at: string | Date | null; audit_at: string | Date | null; searched_at: string | Date | null }>
   >`
     -- stale-link freshness search
     WITH due AS (
@@ -1333,21 +1334,34 @@ async function selectStaleCandidates(
                   AND f.kind = 'confirmed_wrong_fees'
                   AND f.institution_id = due.id
                   AND f.source_url = due.fee_schedule_url
-             ) AS wrong_at
+             ) AS confirmed_at,
+             -- Deming's daily audit found a live fee read from this link came from the wrong
+             -- document (another bank's, an unconfirmed host, an article or a product page; #2055).
+             (
+               SELECT max(f.updated_at) FROM pipeline_feedback f
+                WHERE f.kind = ${AUDIT_FEEDBACK_KIND}
+                  AND f.about_stage = 'discover'
+                  AND f.institution_id = due.id
+                  AND f.source_url = due.fee_schedule_url
+             ) AS audit_at
         FROM due
+    ), judged AS (
+      SELECT marked.*, GREATEST(confirmed_at, audit_at) AS wrong_at FROM marked
     )
-    SELECT * FROM marked
+    SELECT * FROM judged
      WHERE (COALESCE(effective_year, url_year) <= ${staleYear} AND searched_at IS NULL)
         OR (wrong_at IS NOT NULL AND (searched_at IS NULL OR searched_at < wrong_at))
      ORDER BY (wrong_at IS NOT NULL) DESC, asset_size DESC NULLS LAST, id ASC
      LIMIT ${limit}
   `;
-  return rows.map(({ effective_year, url_year, wrong_at, ...row }) => ({
+  return rows.map(({ effective_year, url_year, wrong_at, confirmed_at, audit_at, ...row }) => ({
     ...row,
     freshness: true,
     stale_reason:
       wrong_at != null
-        ? "fees read from it were confirmed wrong on a second look"
+        ? audit_at != null && (confirmed_at == null || new Date(audit_at).getTime() >= new Date(confirmed_at).getTime())
+          ? "Deming's audit found fees read from it came from the wrong document"
+          : "fees read from it were confirmed wrong on a second look"
         : effective_year != null
           ? `effective ${effective_year}`
           : `address names ${url_year}`,

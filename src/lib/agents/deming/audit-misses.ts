@@ -1,5 +1,6 @@
 import { sql } from "@/lib/data-store/connection";
 import { recordFeedback, type FeedbackRow, type FeedbackStage } from "@/lib/agents/learning/feedback";
+import { LIVE_FRAGMENT_REREAD_KIND } from "@/lib/agents/darwin/live-fragment-check";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { ARTICLE_PAGE_CHECK } from "@/lib/agents/hamilton/article-page";
 import { PRODUCT_PAGE_CHECK } from "@/lib/agents/hamilton/product-page";
@@ -20,6 +21,15 @@ type SqlTag = typeof sql;
  *    a document that is another bank's, on an unconfirmed host, an article or a product page
  *    goes to Magellan (stage discover); an amount the schedule does not support, a category it
  *    does not support, a perk read as a fee and a bad name go to Knox (stage extract).
+ *
+ * 3. Each miss reaches its owner's own queue, so it is acted on and not only stored (#2055). A
+ *    miss Knox owns (stage extract) is also a Knox re-read request (`LIVE_FRAGMENT_REREAD_KIND`,
+ *    kept live, as Darwin's live fragment check writes it): Knox's re-read pass reads the fee's line
+ *    again from its own document with today's rules and settles the request once per rules
+ *    version with an outcome on its run step (`knox/reread-feedback.ts`); it renames the live fee
+ *    only when the line reads a proper name that passes the category guard and the shared source
+ *    check. A miss Magellan owns (stage discover) is picked up by Magellan's stale-link search,
+ *    which reads these rows and searches the bank's link again (`magellan/discovery.ts`).
  *
  * A miss Hamilton's second look already holds (`pending`) is skipped: it is not a new finding.
  * Both writes need migration 20270110000045 (the `deming_audit` label and the `deming` reporter);
@@ -111,9 +121,42 @@ export function auditFeedback(misses: FreshAuditMiss[], auditedOn: string, runId
     }));
 }
 
+/** Pure: the Knox re-read request each new miss Knox owns becomes (#2055). */
+export function auditRereadRequests(misses: FreshAuditMiss[], auditedOn: string, runId: number | null): FeedbackRow[] {
+  return misses
+    .filter((miss) => !miss.pending && missOwner(miss.check).agent === "knox")
+    .map((miss) => ({
+      aboutStage: "extract",
+      signal: "wrong",
+      kind: LIVE_FRAGMENT_REREAD_KIND,
+      reportedBy: "deming",
+      checkName: miss.check,
+      institutionId: miss.institutionId,
+      sourceDocumentId: miss.sourceDocumentId,
+      sourceUrl: miss.documentUrl,
+      feePublishedId: miss.feePublishedId,
+      canonicalFeeKey: miss.canonicalFeeKey,
+      amount: miss.amount,
+      // A request, not a judgement: it never counts toward a lesson.
+      weight: 0,
+      evidence: {
+        request: "reread_source_line",
+        fee_name: miss.feeName,
+        kept_live: true,
+        reason: `deming audit: ${miss.reason}`,
+        audited_on: auditedOn,
+        consumer: "knox.reread_feedback (#1511, #2055)",
+      },
+      runId,
+      dedupeKey: `deming.fresh_audit:reread:${miss.feePublishedId}:${miss.check}`,
+    }));
+}
+
 export interface AuditMissWrites {
   cases: number;
   feedback: number;
+  /** Knox re-read requests written for the misses Knox owns (#2055). */
+  rereadRequests: number;
   /** Why a write did not happen (the migration is not applied yet, or a dry run). */
   skipped: string[];
 }
@@ -124,11 +167,12 @@ export async function recordAuditMisses(
   result: FreshAuditResult,
   options: { runId: number | null; dryRun?: boolean },
 ): Promise<AuditMissWrites> {
-  const writes: AuditMissWrites = { cases: 0, feedback: 0, skipped: [] };
+  const writes: AuditMissWrites = { cases: 0, feedback: 0, rereadRequests: 0, skipped: [] };
   if (!result.readable || result.misses.length === 0) return writes;
   const auditedOn = result.seed;
   const cases = auditCases(result.misses, auditedOn);
   const feedback = auditFeedback(result.misses, auditedOn, options.runId);
+  const rereads = auditRereadRequests(result.misses, auditedOn, options.runId);
   if (options.dryRun) {
     writes.skipped.push("dry run");
     return writes;
@@ -156,6 +200,13 @@ export async function recordAuditMisses(
     writes.feedback = await inSavepoint(db, (scope) => recordFeedback(scope, feedback));
   } catch (error) {
     writes.skipped.push(`owner feedback: ${error instanceof Error ? error.message : String(error)}`.slice(0, 200));
+  }
+  if (rereads.length > 0) {
+    try {
+      writes.rereadRequests = await inSavepoint(db, (scope) => recordFeedback(scope, rereads));
+    } catch (error) {
+      writes.skipped.push(`knox re-read requests: ${error instanceof Error ? error.message : String(error)}`.slice(0, 200));
+    }
   }
   return writes;
 }

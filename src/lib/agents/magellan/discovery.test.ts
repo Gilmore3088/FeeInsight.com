@@ -1184,6 +1184,17 @@ describe("Magellan agentic discovery", () => {
       expect(attempts(db).some((attempt) => attempt.detail.stale_reason === "fees read from it were confirmed wrong on a second look")).toBe(true);
     });
 
+    it("re-searches a link Deming's audit found a wrong document behind (#2055)", async () => {
+      const auditBank = { ...staleBank, url_year: null, effective_year: null, wrong_at: "2026-10-24T05:00:00Z", confirmed_at: null, audit_at: "2026-10-24T05:00:00Z", searched_at: null };
+      const db = createDbMock([], learningHandler((text) => (text.includes("stale-link freshness search") ? [auditBank] : undefined)));
+      const result = await runMagellanDiscovery({ runId: 127, dryRun: false, db: asDiscoveryDb(db), fetchImpl: site({}), politeDelayMs: 0 });
+      expect(result.results.map((row) => Number(row.institutionId))).toContain(78);
+      const call = db.mock.calls.find((c) => templateText(c[0]).includes("stale-link freshness search"))!;
+      expect(templateText(call[0])).toContain("f.about_stage = 'discover'");
+      expect(call.slice(1)).toContain("audit_miss");
+      expect(attempts(db).some((attempt) => attempt.detail.stale_reason === "Deming's audit found fees read from it came from the wrong document")).toBe(true);
+    });
+
     it("replaces an out-of-date link with the bank's current schedule, without keeping the old one", async () => {
       const db = staleDb();
       const fetchImpl = site({
