@@ -527,6 +527,16 @@ export const KNOX_LESSONS: AgentLesson[] = [
     since: "2026-10-25",
   },
   {
+    id: "issue-1828-returned-payment-in-a-loan-section",
+    agent: "knox",
+    stage: "extract",
+    lesson: "A row's section title is part of its name. A bare \"Returned payment\" printed under a loan section's title (\"Loan fees\", \"Personal Credit Line fees\", \"Consumer Loans\", \"LOANS\") is that loan's returned payment fee: read it at its own price as other lending, under the name the page prints. Take the title from the row's own column on a two-column page, and let the nearest title win, so a returned payment under a credit card or checking title is never filed as a loan fee. A short product heading (\"Visa\", \"Debit Cards\") is a title too, and when a page's columns are flattened so a title could head either column, read nothing.",
+    why: "Oregon Community FCU prints \"Returned payment...... $4.95\" under three loan titles and none was read: the name alone says no loan and no fee word, so the row was dropped. Before #2467 one went live under the joined name \"Reconveyance .. Actual Cost: Returned payment\". The same layout left the returned payment unread at 11 more institutions on Oct 25. A first cut also read a card's fee under \"Loans … Visa\", because a one-word product heading did not count as a title.",
+    evidence: { issues: [1828], prs: [2599], files: ["src/lib/agents/knox/loan-section-rows.ts", "src/lib/agents/knox/rules.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
+  {
     id: "issue-1810-short-all-caps-names",
     agent: "knox",
     stage: "name retidy",

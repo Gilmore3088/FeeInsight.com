@@ -12,6 +12,7 @@ export { withDroppedDecimalPoints };
 import { newestColumnText } from "@/lib/fee-change-columns";
 import { feeBullets, withoutFeeBullets } from "@/lib/custom-report/fee-bullets";
 import { isStackedFeeLabel } from "@/lib/custom-report/stacked-fee-prices";
+import { loanReturnedPaymentRows } from "@/lib/agents/knox/loan-section-rows";
 import { domesticStackedStem, stackedCellVariants } from "@/lib/custom-report/stacked-cell-variants";
 import { domesticWireClausePrices } from "@/lib/custom-report/wire-clause-prices";
 import type { OwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
@@ -2678,6 +2679,18 @@ export function extractCandidatesFromText(input: string): ExtractionRulesResult 
     if (seen.has(key)) continue;
     seen.add(key);
     result.candidates.push(candidate);
+  }
+  // v109 (#1828): a bare "Returned payment" row under a loan section's title is the loan's
+  // returned payment fee. Read at its own price, under its own printed name.
+  for (const row of loanReturnedPaymentRows(joinWrappedProse(joinWrappedLeaderNames(legacyText.split(/\n+/).map((line) => line.replace(/\s+/g, " ").trim()))))) {
+    const read = extractFromSegment(`Returned loan payment ${row.priceText}`);
+    for (const candidate of read.candidates) {
+      if (candidate.canonicalHint !== "other_lending_fee" || !passesDarwinChecks(candidate.canonicalHint, row.label, candidate.amount)) continue;
+      const key = `fee:${candidate.canonicalHint}:${row.label.toLowerCase()}:${candidate.amount}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      result.candidates.push({ ...candidate, feeName: row.label, excerpt: row.line, frequency: detectFrequency(row.line) });
+    }
   }
   let unclassified = 0;
   const tableHeld: HeldFeeCandidate[] = [];
