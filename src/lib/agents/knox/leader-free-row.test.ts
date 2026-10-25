@@ -21,9 +21,10 @@ describe("Knox v105: a row its free word closes never takes the next column's pr
     expect(candidates.some((fee) => /ATM Transactions/i.test(fee.feeName) && fee.amount === 5)).toBe(false);
   });
 
-  it("still reads a priced row in the next cell when its own name is there", () => {
+  it("never gives the closed row the next row's price, and still reads the next row", () => {
     const text = "Wire Transfers\nIncoming Wire ............ Free | Outgoing Wire ............ $25.00";
     const { candidates } = runFreeSpecialists(text, { institutionName: "Test Bank" });
     expect(candidates.some((fee) => fee.amount === 25 && /incoming/i.test(fee.feeName))).toBe(false);
+    expect(candidates.some((fee) => fee.amount === 25 && /outgoing wire/i.test(fee.feeName))).toBe(true);
   });
 });

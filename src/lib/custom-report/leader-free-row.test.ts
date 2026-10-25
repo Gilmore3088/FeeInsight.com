@@ -54,3 +54,34 @@ describe("a name glued across the closed row keeps its own price (#2477 dry run)
     expect(checkFeeAgainstSource(line, name, amount, ".", key).ok).toBe(false);
   });
 });
+
+// Review of #2564: the free word closes a row only before a column break or a new named row, and a
+// closed row binds only the fee it names.
+describe("a free word that does not close the fee's row (#2477 review)", () => {
+  it.each([
+    ["Paper Statement ....... Free with e-statements, otherwise $3.00", "Paper Statement", 3],
+    ["Paper Statement ....... Free with e-statements; $3.00 per month otherwise", "Paper Statement", 3],
+    ["Overdraft Fee .......... Waived for first item, $35 each thereafter", "Overdraft Fee", 35],
+    ["Stop Payment ........ Free online / $30 in branch", "Stop Payment", 30],
+    ["Cashier's Check ........ Free for Premier customers, $10 for others", "Cashier's Check", 10],
+    ["Monthly Service Charge ........ None with direct deposit, $10 without", "Monthly Service Charge", 10],
+    ["Dormant Account .... None for 12 months, then $5.00 per month", "Dormant Account", 5],
+    ["Inactive Account Fee .......... None first year; $5.00 per month thereafter", "Inactive Account Fee", 5],
+    ["Coin Counting .... Free to customers; non-customers $5.00", "Coin Counting", 5],
+    ["Foreign ATM Withdrawal .......... Free* $2.00 after 4 per month", "Foreign ATM Withdrawal", 2],
+    ["Debit Card Replacement .......... Free first card | Additional .......... $10.00", "Debit Card Replacement", 10],
+    ["Statements .......... Free (e-statements) | $2.00 (paper)", "Statements", 2],
+  ])("keeps the row's own later price: %s", (line, name, amount) => {
+    expect(checkFeeAgainstSource(line, name, amount, ".", null).reason).not.toBe("amount_not_the_fee");
+  });
+
+  it.each([
+    ["Overdraft Transfer ...... None | Overdraft Fee ...... $30.00", "Overdraft Fee", 30],
+    ["Overdraft Protection Transfer ...... None | Overdraft Fee ...... $30.00", "Overdraft Fee", 30],
+    ["Overdraft Transfer ...... None | Overdraft Item Fee ...... $30.00", "Overdraft Item Fee", 30],
+    ["Incoming Domestic Wire ..... None | Domestic Wire ..... $20.00", "Domestic Wire", 20],
+    ["ATM Transactions (our ATMs) ..... Free | ATM Transactions (other ATMs) ..... $2.00", "ATM Transactions", 2],
+  ])("traces a fee whose name is not the closed row's: %s", (line, name, amount) => {
+    expect(checkFeeAgainstSource(line, name, amount, ".", null).ok).toBe(true);
+  });
+});

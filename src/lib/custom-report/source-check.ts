@@ -612,12 +612,30 @@ function stemCount(text: string, stems: NameStems): number {
 
 /**
  * A dot-leader row closed by its own free word ("ATM Transactions……FREE | activity……$5", United Bank,
- * #2477) ends at that word: its name never owns the next column's price. Returns where each such
- * row ends.
+ * #2477) ends at that word: its name never owns the next column's price. A row is closed only when a
+ * column break or a new capitalised name with its own leader follows the free word; words after it
+ * in the same row ("Paper Statement ……. Free with e-statements, otherwise $3.00", "Free* $2.00 after
+ * 4 per month") are the row's own terms, and its later price is still its own. A closed row binds
+ * only a fee whose name holds every word of that row's name: "Overdraft Transfer ……. None |
+ * Overdraft Fee ……. $30.00" is a different row from Overdraft Fee's. Returns where each closed row
+ * that binds this fee ends.
  */
 const LEADER_FREE_WORD = /(?:(?:\.\s?){2,}|…+)[\s.…]*(?:free|none|no charge|n\/c|waived)\b/gi;
-function leaderFreeRowEnds(line: string): number[] {
-  return [...line.matchAll(LEADER_FREE_WORD)].map((match) => (match.index ?? 0) + match[0].length);
+const ROW_CLOSED_AFTER = /^[\s*†‡\d]*(?:\||[A-Z][^$|]*?(?:(?:\.\s?){2,}|…))/;
+function leaderFreeRowEnds(line: string, stems: NameStems): number[] {
+  return [...line.matchAll(LEADER_FREE_WORD)].flatMap((match) => {
+    const start = match.index ?? 0;
+    const end = start + match[0].length;
+    if (!ROW_CLOSED_AFTER.test(line.slice(end))) return [];
+    const rowName = line.slice(line.lastIndexOf("|", start) + 1, start).replace(/^.*\$\s?\d[\d,]*(?:\.\d{2})?/, "");
+    const feeWords = new Set(rowWords(stems.words.join(" ")));
+    return rowWords(rowName).every((word) => feeWords.has(word)) ? [end] : [];
+  });
+}
+
+/** A row name's own words for telling two rows apart; "Transfer" counts ("Overdraft Transfer" is not "Overdraft Fee"). */
+function rowWords(name: string): string[] {
+  return nameStems(name).words.filter((word) => word.length >= 3 && !/^\d+$/.test(word) && (word === "transfer" || !STOP_WORDS.has(word))).map((word) => word.slice(0, STEM_LENGTH));
 }
 
 function statesAmount(line: string, amount: number, stems: NameStems): SourceCheckFailure | null {
@@ -651,7 +669,7 @@ function statesAmount(line: string, amount: number, stems: NameStems): SourceChe
   // after it is the fee's only when the words after the free word name something of the fee that
   // the closed row does not ("Incoming Wire ... Free | Outgoing Wire ... $25" is Outgoing's $25; a
   // name glued across both rows, "Copy of cashier check ... N/C | Levy request", keeps the levy's).
-  const closedEnds = amount > 0 ? leaderFreeRowEnds(line) : [];
+  const closedEnds = amount > 0 ? leaderFreeRowEnds(line, stems) : [];
   const nearPrice = (price: MoneyToken, i: number) => {
     const from = i === 0 ? 0 : prices[i - 1].end;
     const closed = Math.max(from, ...closedEnds.filter((end) => end <= price.start));

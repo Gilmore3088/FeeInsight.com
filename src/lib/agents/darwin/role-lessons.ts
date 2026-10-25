@@ -200,7 +200,7 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     id: "issue-2477-closed-row-owns-no-later-price",
     agent: "darwin",
     stage: "verify",
-    lesson: "When a fee's name sits in a dot-leader row that its own free word closes, a price later on the same line belongs to whatever is named after that word. Do not pass the fee at that price because its name appears earlier on the line; a name stated in a fee name (\"ATM Transactions FREE\") with a dollar amount is a contradiction to refuse.",
+    lesson: "When a fee's name sits in a dot-leader row that its own free word closes (a column break or a new named row with its own leader follows the word), a price later on the same line belongs to whatever is named after that word. Words that qualify the free price in the same row (\"Free with e-statements, otherwise $3.00\") are the row's own terms, and a closed row with other words in its name (\"Overdraft Transfer\") is a different fee's row. Do not pass the fee at that price because its name appears earlier on the line; a name stated in a fee name (\"ATM Transactions FREE\") with a dollar amount is a contradiction to refuse.",
     why: "The shared check traced United Bank's \"ATM Transactions FREE\" at $5 because the name's words sat before the line's only price, so Darwin verified a free fee at another column's price and it went live.",
     evidence: { issues: [2477], prs: [], files: ["src/lib/custom-report/source-check.ts"] },
     appliesTo: "all",
