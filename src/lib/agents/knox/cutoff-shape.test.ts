@@ -52,3 +52,25 @@ describe("isCutoffName reads a closed parenthetical after the name as a qualifie
     expect(publishNameHold("Perks Checking (monthly service charge if", "monthly_maintenance", 5)?.code).toBe("cutoff_name");
   });
 });
+
+// #1521: names read on prod on 2026-10-25 (live 75914 and 74142, verified 23259).
+describe("isCutoffName reads a name cut before its noun after a count and an audience word (#1521)", () => {
+  it.each([
+    "Counter Check: A blank page of 3 personal",
+    "Overdraft - Non-consumer - Continuous Overdraft Charge. Daily fee after 5 business",
+    "Priority Rush Card Fee (up to 3 business",
+  ])("holds %s as cut off", (name) => {
+    expect(isCutoffName(name)).toBe(true);
+  });
+
+  it("publish holds the live name as cutoff_name", () => {
+    expect(publishNameHold("Counter Check: A blank page of 3 personal", "counter_check", 3)?.code).toBe("cutoff_name");
+  });
+
+  it.each(["Monthly Service Fee - Business", "Small Business", "Overdraft (Personal)", "Tier 2 Business", "Wire Transfer Commercial", "Plan A Commercial"])(
+    "keeps a name whose audience word is its own label: %s",
+    (name) => {
+      expect(isCutoffName(name)).toBe(false);
+    },
+  );
+});

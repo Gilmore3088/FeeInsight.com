@@ -516,4 +516,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-1521-dangling-audience-is-a-cutoff",
+    agent: "knox",
+    stage: "extract",
+    lesson: "A name that ends on an audience word right after a preposition and a count (\"Counter Check: A blank page of 3 personal\", \"Daily fee after 5 business\") has lost the noun that word described (checks, days): the line was cut mid-phrase, so the name is cut off even though its last word is not a joining word. Read the line on to its noun, or treat the name as cut off. A name whose audience word is its own label (\"Monthly Service Fee - Business\", \"Small Business\", \"Tier 2 Business\") is a full name.",
+    why: "The cut-off test looked only for a dangling joining word, range or pronoun, so \"Counter Check: A blank page of 3 personal\" passed publish and stayed live at a large bank; only the public page hid it. On Oct 25 the shape matched 2 live fees, 3 verified rows and 3 raw rows, every one a cut line.",
+    evidence: { issues: [1521], prs: [2591], files: ["src/lib/fee-name-fragments.ts", "src/lib/agents/knox/cutoff-shape.ts", "src/lib/agents/knox/specialists.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];

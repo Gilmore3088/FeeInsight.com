@@ -343,7 +343,7 @@ describe("Darwin live fragment re-check", () => {
 
   it("v2: reads the head after the glued footnote number and refuses opening-deposit renames in SQL too", () => {
     const text = liveFragmentCountSql();
-    expect(LIVE_FRAGMENT_STRATEGY.version).toBe(6);
+    expect(LIVE_FRAGMENT_STRATEGY.version).toBe(7);
     expect(text).toContain("AS figure_is_amount");
     expect(text).toContain("AND tail_ok AND tail !~ '[0-9$]'");
     expect(text).toContain("btrim(regexp_replace(name, '\\s*\\((?:cont\\.?|continued)\\)', '', 'gi')), '^(?:(?:\\d{2}");
@@ -1693,5 +1693,36 @@ describe("round 8: a closing \"account you have at <bank>\" clause renames, even
     expect(text).toContain("AS own_account_head");
     expect(text).toContain("(pattern = 'pronoun' AND amount >= 0 AND own_account_head IS NOT NULL AND renamable");
     expect(text).toContain("THEN own_account_head WHEN head_ok OR exception_ok THEN head");
+  });
+});
+
+// #1521: live fees on 2026-10-25 whose names stop on an audience word after a count (fee_published_id in each comment).
+describe("v7: a name cut before its noun after a count and an audience word is a sentence_end (#1521)", () => {
+  const CUT = [
+    ["Counter Check: A blank page of 3 personal", 3, "counter_check"], // 75914
+    ["Overdraft - Non-consumer - Continuous Overdraft Charge. Daily fee after 5 business", 10, "continuous_od"], // 74142
+  ] as const;
+
+  it.each(CUT)("keeps %s live and asks Knox to re-read it", (name, amount, key) => {
+    expect(liveFragmentShape(name)).toBe("sentence_end");
+    expect(liveFragmentName(name)).toBe("sentence_end");
+    expect(liveFragmentVerdict(name, amount, key)).toEqual({ pattern: "sentence_end", action: "reread" });
+  });
+
+  it("takes neither live fee down nor renames it", () => {
+    const found = findLiveFragments(CUT.map(([name, amount, key], index) => ({
+      fee_published_id: [75914, 74142][index], fee_verified_id: index + 1, institution_id: index + 1, fee_name: name, amount, canonical_fee_key: key, source_document_id: index + 1,
+    })));
+    expect(found).toMatchObject({ matched: 2, wouldTakeDown: 0, wouldRename: 0, wouldReread: 2 });
+  });
+
+  it("leaves a name whose audience word is its own label", () => {
+    for (const name of ["Monthly Service Fee - Business", "Small Business", "Overdraft (Personal)", "Tier 2 Business", "Online Banking for Your Business", "Checks for the Business"]) {
+      expect(liveFragmentShape(name)).toBeNull();
+    }
+  });
+
+  it("mirrors the shape in the count SQL", () => {
+    expect(liveFragmentCountSql()).toContain("OR name ~* '\\y(?:of|after|within|for|per|up to|over)\\s+(?:\\d+|each)\\s+(?:personal|business|consumer|commercial)\\s*$' OR name ~ ");
   });
 });
