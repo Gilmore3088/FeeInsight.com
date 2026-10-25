@@ -509,6 +509,7 @@ function undecidedAtThisVersionSql(params: Array<number | string | number[]>, mi
             AND NOT (pa.outcome = 'unchanged' AND ${QUALIFIER_RESELECT_SQL})
             AND NOT (pa.outcome = 'unchanged' AND ${ARTICLE_PAGE_RESELECT_SQL})
             AND NOT (pa.outcome = 'unchanged' AND ${EDITION_HOLD_RESELECT_SQL})
+            AND NOT (pa.outcome = 'unchanged' AND ${OLDER_EDITION_RESELECT_SQL})
             -- A row refused only for low confidence is decided once more when its confidence
             -- now clears the floor: Knox re-scored 1,017 promoted held rates refused at its
             -- 0.5 placeholder (#1055). A row still below the floor stays decided.
@@ -1358,6 +1359,21 @@ export const EDITION_HOLD_RESELECT_SQL = `(EXISTS (
                    WHERE held_sd.id = fr.source_document_id
                      AND (held_kind.document_kind = 'product_page' OR ${productPageUrlSql("held_sd.document_url")})
                 ))`;
+
+/**
+ * #1945: a row skipped as identical to a live line that Darwin's edition check later retired for
+ * this row's own document (`older_edition: #<this document> ...`, the newer edition that takes it
+ * over) is decided again, so the fee goes live from the current schedule instead of leaving the
+ * bank without it. Cedar Falls (7833), Oct 13: 15 lines of its 2026 schedule (doc 31873) were skipped
+ * behind its 2024 lines (doc 2671). A row of any other document skipped behind the same line (an
+ * older copy of the retired edition) stays decided. The literal matches Darwin's
+ * `OLDER_EDITION_REASON` (`publish.test.ts`); importing it here would close an import cycle.
+ */
+export const OLDER_EDITION_RESELECT_SQL = `EXISTS (
+                  SELECT 1 FROM published_fee_records oe_prev
+                   WHERE oe_prev.fee_published_id = NULLIF(pa.detail->>'previous_fee_published_id', '')::bigint
+                     AND oe_prev.rolled_back_reason LIKE 'older_edition: #' || fr.source_document_id::text || ' %'
+                )`;
 
 /** A balance-named row skipped as an older document before check 3 is decided again (`newerCopyPrintsLine`). */
 const OLDER_DOCUMENT_RESELECT_SQL = `(COALESCE((pa.detail->>'same_line_check')::int, 0) < 3
