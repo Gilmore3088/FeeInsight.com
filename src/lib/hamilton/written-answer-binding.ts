@@ -358,6 +358,43 @@ export function indexBasisFor(sentence: string, stats: readonly IndexStatistic[]
   return lines.length > 0 ? `Basis: ${lines.join("; ")}.` : null;
 }
 
+/**
+ * The index statistics a sentence states: each dollar figure that is a statistic the tools returned,
+ * by the same fit the basis line uses (fee, statistic word, amount and group). The one output gate
+ * reads their institution counts against the peer minimum (#1726, T5).
+ */
+export function indexStatisticsStated(sentence: string, stats: readonly IndexStatistic[]): IndexStatistic[] {
+  if (stats.length === 0) return [];
+  const named = namedGroups(sentence);
+  return extractFigures(sentence).flatMap((figure) => {
+    if (figure.kind !== "usd") return [];
+    const match = statisticFor(sentence, figure, stats, named);
+    return match ? [match] : [];
+  });
+}
+
+/**
+ * How many local competitors state a price for each fee category, per local competitor read
+ * (getLocalCompetitors' `competitors[].fees`). Empty when the tools made no such read.
+ */
+export function localCompetitorPriceCounts(toolOutputs: readonly unknown[]): Array<Map<string, number>> {
+  const out: Array<Map<string, number>> = [];
+  for (const output of toolOutputs) {
+    const obj = record(output);
+    if (!obj || !Array.isArray(obj.competitors) || !record(obj.your_fees)) continue;
+    // The subject's own categories count from zero, so a fee no competitor states reads as none.
+    const counts = new Map<string, number>(Object.keys(record(obj.your_fees) ?? {}).map((category) => [category, 0]));
+    for (const item of obj.competitors) {
+      const fees = record(record(item)?.fees);
+      for (const [category, amount] of Object.entries(fees ?? {})) {
+        if (typeof amount === "number" && Number.isFinite(amount)) counts.set(category, (counts.get(category) ?? 0) + 1);
+      }
+    }
+    out.push(counts);
+  }
+  return out;
+}
+
 export interface BindWrittenAnswerInput {
   sections: WrittenAnswerSections;
   toolOutputs: readonly unknown[];

@@ -58,8 +58,12 @@ export function findUnrequestedAdvice(text: string): RegExpMatchArray | null {
   return withoutCautionModal.match(RECOMMENDATION);
 }
 
-/** Internal names a bank reader should never see: agent names, and any snake_case table or column name. */
-export const PIPELINE_TERMS = /\b(Knox|Darwin|Rosetta|Magellan|Atlas|pipeline|agent run)\b|\b[a-z0-9]+_[a-z0-9_]+\b/i;
+/**
+ * Internal names a bank reader should never see: every crew agent's name (crew-members.ts, plus the
+ * replay tooling), and any snake_case table or column name. Gutenberg, Hoovie, Deming and Bayes were
+ * missing until the T5 golden set (#1726) showed answers naming them passed.
+ */
+export const PIPELINE_TERMS = /\b(Knox|Darwin|Rosetta|Magellan|Atlas|Gutenberg|Hoovie|Deming|Bayes|pipeline|agent run)\b|\b[a-z0-9]+_[a-z0-9_]+\b/i;
 
 /** "$209400", "$2,640,000" (a total over $1 million belongs in words), "2.38%". */
 const UNFORMATTED_UNITS = [

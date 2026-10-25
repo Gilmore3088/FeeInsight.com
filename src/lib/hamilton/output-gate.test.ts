@@ -234,3 +234,42 @@ describe("the golden set replayed through the unified gate", () => {
     for (const r of replay.results.filter((x) => x.control)) expect(r.cause, r.id).toBe("none");
   });
 });
+
+describe("gateAnswer: the peer minimum (T5, #1726)", () => {
+  const profile = { toolName: "getInstitution", input: { id: 9101 }, output: {
+    identity: { id: 9101, name: "Harbor Point Bank", state: "TX", city: "Synthetic City", charter_type: "bank" },
+    fees: { verified: [{ fee_name: "Overdraft", fee_category: "overdraft", amount: 30, status: "verified", record_id: 1, source_document_id: 1001 }], provisional: [] },
+  } };
+  const index = (count: number) => ({ toolName: "searchIndex", input: { state: "WY", charter: "credit_union" }, output: {
+    scope: "filtered", filters: { state: "WY", charter: "credit_union", district: null },
+    data: [{ category: "overdraft", median: 27.5, p25: 25, p75: 30, institution_count: count }],
+  } });
+  const local = (fees: number[]) => ({ toolName: "getLocalCompetitors", input: { institution_id: 9101 }, output: {
+    institution: "Harbor Point Bank", institution_id: 9101, your_fees: { overdraft: 30 },
+    competitors: fees.map((amount, i) => ({ institution_id: 9131 + i, name: `Synthetic Competitor ${i}`, fees: { overdraft: amount } })),
+  } });
+  const gate = (text: string, reads: Array<{ toolName: string; input: unknown; output: unknown }>) => gateAnswer({
+    surface: "written_answer", text,
+    evidence: { kind: "tool_reads", toolOutputs: reads.map((r) => r.output), reads },
+    identity: { researchInstitutionId: 9101, accountInstitutionId: 9101 },
+  });
+
+  it("cuts an index median over fewer than 10 institutions and keeps the rest of the answer", () => {
+    const verdict = gate("Harbor Point Bank's overdraft fee is $30. The median overdraft fee for WY credit unions is $27.50.", [profile, index(6)]);
+    expect(verdict.status).toBe("ready_partial");
+    expect(verdict.failures.find((f) => f.code === "thin_peer_group")?.sentences).toEqual(["The median overdraft fee for WY credit unions is $27.50."]);
+  });
+
+  it("holds an answer that is only a thin median, and leaves a 10-institution median alone", () => {
+    expect(gate("The median overdraft fee for WY credit unions is $27.50.", [profile, index(6)]).status).toBe("held");
+    expect(gate("The median overdraft fee for WY credit unions is $27.50.", [profile, index(10)]).status).toBe("validated");
+  });
+
+  it("cuts a median of fewer than 5 local competitors, never one of 5", () => {
+    const text = "The median overdraft fee among Harbor Point Bank's local competitors is $33.";
+    expect(gate(text, [profile, local([25, 33, 36])]).failures.map((f) => f.code)).toContain("thin_peer_group");
+    expect(gate(text, [profile, local([25, 29, 33, 34, 36])]).status).toBe("validated");
+    // Naming the competitors' prices is the house rule's alternative, and is never cut.
+    expect(gate("Its three local competitors charge $25, $33 and $36 for an overdraft.", [profile, local([25, 33, 36])]).status).toBe("validated");
+  });
+});

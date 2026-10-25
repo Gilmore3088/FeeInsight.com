@@ -27,12 +27,17 @@ import { bindNarrative, type NarrativeBinding, type OmitReason } from "./narrati
 import { causeLines, causeShadowInput, PREMISE_REASONS } from "./output-gate-signals";
 import { PIPELINE_TERMS, findUnrequestedAdvice } from "./workspace/four-roles";
 import {
+  indexStatisticsStated,
+  localCompetitorPriceCounts,
   withoutOmitted,
   withoutSentences,
   writtenAnswerFeeEvidence,
+  writtenAnswerIndexStats,
   writtenAnswerProse,
   type WrittenAnswerSections,
 } from "./written-answer-binding";
+import { MIN_LOCAL_PEERS_FOR_POSITION, MIN_PEERS_FOR_POSITION } from "./workspace/scenario";
+import { proseFeeName } from "./workspace/names";
 import type { AnswerToolEvidence } from "./written-answer-evidence";
 
 export const OUTPUT_GATE_VERSION = 1 as const;
@@ -89,6 +94,7 @@ export type GateFailureCode =
   | "causal_unsupported"
   | "account_identity"
   | "surface_rule"
+  | "thin_peer_group"
   | "nothing_left";
 
 export interface GateFailure {
@@ -97,7 +103,7 @@ export interface GateFailure {
   message: string;
   critical: boolean;
   /** Which check found it: the shared evidence gate, the binding, the cause rule (shadow input) or the identity rule. */
-  source: "check" | "binding" | "cause" | "identity" | "surface" | "status";
+  source: "check" | "binding" | "cause" | "identity" | "surface" | "peers" | "status";
   /** The sentences a non-critical failure cuts from the view. */
   sentences?: string[];
 }
@@ -189,6 +195,42 @@ function checkCode(problem: string, figureProblem: boolean, cause: ReadonlySet<s
   return "interpretation_rule";
 }
 
+const MEDIAN_WORD = /\b(?:median|midpoint|typical|middle)\b/i;
+const LOCAL_WORD = /\b(?:local|competitors?|market)\b/i;
+
+/**
+ * Sentences that state a peer figure over too few institutions (#1726, T5; house rule: a median
+ * only at 10 or more peers, 5 or more local competitors, otherwise name the peers). Read from a
+ * written answer's own tool reads: an index statistic (searchIndex, searchFees) whose institution
+ * count is under the minimum, and a median or typical price of the local competitors when fewer
+ * than five of them state that fee. A surface without tool reads has none.
+ */
+export function thinPeerSentences(input: GateInput, sentences: readonly string[]): Array<{ sentence: string; count: number; minimum: number }> {
+  if (input.evidence.kind !== "tool_reads") return [];
+  const outputs = input.evidence.toolOutputs;
+  const stats = writtenAnswerIndexStats(outputs);
+  const local = localCompetitorPriceCounts(outputs);
+  const out: Array<{ sentence: string; count: number; minimum: number }> = [];
+  for (const sentence of sentences) {
+    const thinStat = indexStatisticsStated(sentence, stats).find((stat) => stat.institutionCount < MIN_PEERS_FOR_POSITION);
+    if (thinStat) {
+      out.push({ sentence, count: thinStat.institutionCount, minimum: MIN_PEERS_FOR_POSITION });
+      continue;
+    }
+    if (local.length === 0 || !MEDIAN_WORD.test(sentence) || !LOCAL_WORD.test(sentence) || !/\$\s?\d/.test(sentence)) continue;
+    const lower = sentence.toLowerCase();
+    for (const counts of local) {
+      const named = [...counts].filter(([category]) => lower.includes(proseFeeName(category).toLowerCase()) || lower.includes(category.replace(/_/g, " ")));
+      const thin = named.find(([, count]) => count < MIN_LOCAL_PEERS_FOR_POSITION);
+      if (thin) {
+        out.push({ sentence, count: thin[1], minimum: MIN_LOCAL_PEERS_FOR_POSITION });
+        break;
+      }
+    }
+  }
+  return out;
+}
+
 /** The one output gate. */
 export function gateAnswer(input: GateInput): GateVerdict {
   const { check, binding, shown, factInstitutions } = evaluate(input);
@@ -230,6 +272,12 @@ export function gateAnswer(input: GateInput): GateVerdict {
   }
 
   for (const problem of input.extra ?? []) failures.push({ code: "surface_rule", message: problem, critical: true, source: "surface" });
+
+  // 5. The peer minimum (#1726, T5): a peer figure over too few institutions is cut, never shown.
+  for (const thin of thinPeerSentences(input, shownSentences)) {
+    failures.push({ code: "thin_peer_group", critical: false, source: "peers", sentences: [thin.sentence],
+      message: `A peer figure over ${thin.count} institution${thin.count === 1 ? "" : "s"} is stated as a benchmark; it needs ${thin.minimum} or more. Name the peers and their prices instead.` });
+  }
 
   const cut = new Set(failures.flatMap((f) => f.sentences ?? []));
   const left = shownSentences.filter((s) => !cut.has(s));

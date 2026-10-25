@@ -84,6 +84,8 @@ export function extractFigures(text: string): NarrativeFigure[] {
 const MONEY_KEY = /amount|median|mean|avg|average|p\d\d|min|max|fee|price|cost|charge|income|revenue|deposit|asset|delta|cap|total|value/i;
 const RATE_KEY = /pct|percent|ratio|rate|share|roa|roe|margin|yield|change|growth|delta/i;
 const NOT_A_FIGURE = /(^|_)(id|ids|count|counts|year|quarter|district|rank|version|step|limit)$/i;
+/** A map of fee prices keyed by fee category: the local competitor read's `your_fees` and each competitor's `fees`. */
+const FEE_MAP_KEY = /^(?:your_)?fees$/i;
 const assetIntensityUnit = (unit: unknown) => typeof unit === "string" && /^USD income per 10,?000 USD assets$/i.test(unit.trim());
 
 interface PayloadNumber {
@@ -148,10 +150,14 @@ export function collectPayloadNumbers(data: unknown): PayloadNumber[] {
         ? record.denominator_unit : denominatorUnit;
       const fieldUnits = record.field_units && typeof record.field_units === "object" && !Array.isArray(record.field_units)
         ? record.field_units as Record<string, unknown> : {};
+      // A fee map keyed by category ({ "your_fees": { "overdraft": 30 } }, the local competitor read)
+      // holds prices under keys that name only the fee, so each price keeps the map's money key (T5, #1726).
+      const feeMap = FEE_MAP_KEY.test(key);
       for (const [childKey, child] of Object.entries(record)) {
         if (found.length >= MAX_PAYLOAD_NUMBERS) break;
         const fieldUnit = typeof fieldUnits[childKey] === "string" ? fieldUnits[childKey] : undefined;
-        visit(child, childKey, fieldUnit ?? own, depth + 1, ownNcua, ownArithmetic, ownDenominator,
+        const priceKey = feeMap && numericPayloadValue(child) !== null && !NOT_A_FIGURE.test(childKey) ? `${key}.${childKey}` : childKey;
+        visit(child, priceKey, fieldUnit ?? own, depth + 1, ownNcua, ownArithmetic, ownDenominator,
           fieldUnit !== undefined && (dollarUnitScale(fieldUnit) !== null || assetIntensityUnit(fieldUnit)));
       }
     }
