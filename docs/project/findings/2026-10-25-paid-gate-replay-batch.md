@@ -46,9 +46,9 @@ James's 2026-10-15 budget, so a week gives about 35 paid shadows across four sur
   sample's subject key count as recorded.
 - Ceilings are each path's worst case from its own limits, priced for the configured model
   (`estimateAnthropicCostMicrousd`, never below the Opus 5.5 floor): written answer 4 steps x 16,000
-  output tokens (the Pro agent's `maxSteps`/`maxTokens`) plus 60,000 input a step, $2.24; report 2 x
-  8,000 output plus 30,000 input, $0.56; memo 2 x 4,000 plus 20,000, $0.32; Simulate 1 x 4,000 plus
-  10,000, $0.12. A path's costliest clean sample raises its ceiling. Before reserving, the path's own
+  output tokens (the Pro agent's `maxSteps`/`maxTokens`) plus 80,000 input a step, $2.88; report 2 x
+  8,000 output plus 30,000 input, $0.62; memo 2 x 4,000 plus 20,000, $0.36; Simulate 1 x 4,000 plus
+  10,000, $0.13. Input is priced at the cache-write rate (1.25x), the dearest way it is billed. A path's costliest clean sample raises its ceiling. Before reserving, the path's own
   budget line is checked (`assertProviderBudgetAllowed`), so a spent daily line does not use up the
   batch's samples.
 - A failed free read (`answer(..., { strict: true })`, which throws on a fee-research error instead
@@ -79,10 +79,10 @@ James's 2026-10-15 budget, so a week gives about 35 paid shadows across four sur
   `api.research.hamilton` and the others) can slow it; a refused line is skipped for that run and
   tried again the next.
 - The worst-case ceilings are far above the daily eval's real costs, so near the end the cap stops
-  a written answer once the charge passes $37.76; cheaper paths may still fill. A killed sample
+  a written answer once the charge passes $37.12; cheaper paths may still fill. A killed sample
   keeps its full ceiling for good.
-- A usage row lost after a real call is not seen by the spend check (as in the daily eval); the
-  ceilings and the 200-sample cap still bound it. A killed function's reservation counts for good.
+- A sample whose usage row was lost after a real call is charged its full ceiling, so the cap
+  still holds. A killed function's reservation counts for good.
 - A question a path cannot write up (no storyline, no peer band, no report) is passed over for
   good; a free-engine error is kept for a later run.
 - While the provider stop is on, each hourly paid run is blocked at launch and leaves a blocked run

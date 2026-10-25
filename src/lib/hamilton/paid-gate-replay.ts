@@ -78,23 +78,25 @@ export const PAID_REPLAY_MAX_IN_FLIGHT = 8;
 export const PAID_REPLAY_MIX: Record<PaidPath, number> = { written_answer: 100, memo: 50, simulate: 25, report: 25 };
 /**
  * The worst case of one sample's calls, from each path's own limits (review of 938daa70a): output at
- * every call's `max_tokens` (thinking counts toward it) and an input estimate per call.
- * - written answer: the Pro agent's 4 steps x 16,000 output tokens (research/agents.ts), 60,000 input a step;
+ * every call's `max_tokens` (thinking counts toward it) and an input estimate per call, priced at the
+ * cache-write rate (1.25x input), the dearest way an input token is billed (review of 99a45081b).
+ * - written answer: the Pro agent's 4 steps x 16,000 output tokens (research/agents.ts), 80,000 input a step
+ *   (the briefing plus tool results, which grow the context each step);
  * - memo: 2 attempts x 4,000 (memo.ts MAX_ATTEMPTS, MAX_TOKENS), 20,000 input each;
  * - Simulate read: 1 call x 4,000 (SIMULATE_MAX_TOKENS), 10,000 input;
  * - report page: the draft and its figure-check redraft, 2 x 8,000 (generate.ts), 30,000 input each.
  */
 export const PAID_REPLAY_WORST_CASE: Record<PaidPath, { calls: number; inputTokens: number; outputTokens: number }> = {
-  written_answer: { calls: 4, inputTokens: 60_000, outputTokens: 16_000 },
+  written_answer: { calls: 4, inputTokens: 80_000, outputTokens: 16_000 },
   memo: { calls: 2, inputTokens: 20_000, outputTokens: 4_000 },
   simulate: { calls: 1, inputTokens: 10_000, outputTokens: 4_000 },
   report: { calls: 2, inputTokens: 30_000, outputTokens: 8_000 },
 };
 /**
- * The ceiling floor of one sample: its worst case at the Hamilton model's list price ($4 in, $20 out
- * per million tokens). Priced again at run time for the model actually configured, whichever is higher.
+ * The ceiling floor of one sample: its worst case at the Hamilton model's list price ($4 in, written to
+ * the cache at $5, and $20 out per million tokens). Priced again at run time for the model actually configured, whichever is higher.
  */
-export const PAID_REPLAY_CEILING_MICROUSD: Record<PaidPath, number> = { written_answer: 2_240_000, memo: 320_000, simulate: 120_000, report: 560_000 };
+export const PAID_REPLAY_CEILING_MICROUSD: Record<PaidPath, number> = { written_answer: 2_880_000, memo: 360_000, simulate: 130_000, report: 620_000 };
 /** Each path's provider-usage operation, apart from the daily eval's. */
 export const PAID_REPLAY_OPERATIONS: Record<PaidPath, string> = {
   memo: "storyline_memo_replay", simulate: "simulate_fee_change_replay", written_answer: "written_answer_replay", report: "report_answer_replay",
@@ -172,7 +174,7 @@ export function baseCeilings(models: { hamilton: string; pro: string } = configu
   for (const path of PAID_PATHS) {
     const w = PAID_REPLAY_WORST_CASE[path];
     const priced = estimateAnthropicCostMicrousd(path === "written_answer" ? models.pro : models.hamilton, {
-      inputTokens: w.calls * w.inputTokens, outputTokens: w.calls * w.outputTokens,
+      cacheCreationInputTokens: w.calls * w.inputTokens, outputTokens: w.calls * w.outputTokens,
     });
     if (priced !== null && priced > out[path]) out[path] = priced;
   }

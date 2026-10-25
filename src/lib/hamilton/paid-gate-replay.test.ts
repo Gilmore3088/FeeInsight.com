@@ -259,13 +259,13 @@ describe("the one-off paid gate replay batch (#1077)", () => {
   });
 
   it("charges a sample still in flight, or killed, its full ceiling, so a concurrent run cannot spend it twice", async () => {
-    // $36.00 recorded and one written answer reserved two minutes ago with no done mark: it is charged its $2.24.
+    // $36.00 recorded and one written answer reserved two minutes ago with no done mark: it is charged its $2.88.
     const book = ledger({
       usage: [{ subject_key: `${PAID_REPLAY_SUBJECT_PREFIX}memo|old`, agent_run_id: 400, microusd: 36_000_000 }],
       events: [{ agent_run_id: 400, event_type: PAID_REPLAY_RESERVATION, detail: { batch_id: PAID_REPLAY_BATCH_ID, sample_key: "written_answer|flying", path: "written_answer" }, created_at: "2026-10-25T17:58:00.000Z" }],
     });
     const base = { ...PAID_REPLAY_CEILING_MICROUSD };
-    // $36.00 + $2.24 held + $2.24 for another written answer passes $40; a $0.12 Simulate read fits.
+    // $36.00 + $2.88 held + $2.88 for another written answer passes $40; a $0.13 Simulate read fits.
     expect(await reservePaidReplaySample(book.db, { runId: RUN, path: "written_answer", sampleKey: "written_answer|x", now: NOW, base })).toEqual({ reserved: false, reason: "spend_cap" });
     expect(await reservePaidReplaySample(book.db, { runId: RUN, path: "simulate", sampleKey: "simulate|x", now: NOW, base })).toEqual({ reserved: true });
     // Fifteen minutes on the flying sample is taken as killed: it no longer counts in flight, but it keeps its ceiling.
@@ -295,8 +295,8 @@ describe("the one-off paid gate replay batch (#1077)", () => {
     const over = usage([["failed", { microusd: 3_000_000, rows: 2, clean: 1 }]]);
     expect(batchCharge({ reservations: [done("failed")] }, over, pathCeilings({ reservations: [done("failed")] }, over, base))).toBe(3_000_000);
     // A clean sample costlier than the ceiling raises its path's ceiling.
-    const dear = usage([["clean", { microusd: 2_500_000, rows: 4, clean: 4 }]]);
-    expect(pathCeilings({ reservations: [done("clean")] }, dear, base).written_answer).toBe(2_500_000);
+    const dear = usage([["clean", { microusd: 3_200_000, rows: 4, clean: 4 }]]);
+    expect(pathCeilings({ reservations: [done("clean")] }, dear, base).written_answer).toBe(3_200_000);
   });
 
   it("charges a sample whose written answer failed after spending, end to end", async () => {
@@ -313,7 +313,7 @@ describe("the one-off paid gate replay batch (#1077)", () => {
       db: book.db, now: () => NOW, agentRunId: RUN,
       deps: deps(book, w, { written: failing, preflight: async (path) => (path === "written_answer" ? null : "only written answers in this test") }).deps,
     });
-    // $37.00 + $2.24 fits once; after that failed sample is charged its $2.24, a second does not fit.
+    // $37.00 + $2.88 fits once; after that failed sample is charged its $2.88, a second does not fit.
     expect(calls).toBe(1);
     expect(summary.spentMicrousd).toBe(37_000_000);
     expect(summary.chargedMicrousd).toBe(37_000_000 + PAID_REPLAY_CEILING_MICROUSD.written_answer);
@@ -345,11 +345,11 @@ describe("the one-off paid gate replay batch (#1077)", () => {
   it("prices each path's worst case from its own limits, never below the floor", () => {
     expect(PAID_REPLAY_WORST_CASE.written_answer).toMatchObject({ calls: 4, outputTokens: 16_000 });
     const opus55 = baseCeilings({ hamilton: "claude-opus-5-5", pro: "claude-opus-5-5" });
-    // 4 x 16,000 output at $20/M is $1.28 alone; with 4 x 60,000 input at $4/M, $2.24.
-    expect(opus55.written_answer).toBe(2_240_000);
+    // 4 x 16,000 output at $20/M is $1.28 alone; with 4 x 80,000 input written to the cache at $5/M, $2.88.
+    expect(opus55.written_answer).toBe(2_880_000);
     expect(opus55).toEqual(PAID_REPLAY_CEILING_MICROUSD);
     // A pricier configured model raises the ceiling.
-    expect(baseCeilings({ hamilton: "claude-opus-4-6", pro: "claude-opus-4-6" }).written_answer).toBeGreaterThan(2_240_000);
+    expect(baseCeilings({ hamilton: "claude-opus-4-6", pro: "claude-opus-4-6" }).written_answer).toBeGreaterThan(2_880_000);
   });
 
   it("reserves a sample key once, however often it is retried", async () => {
