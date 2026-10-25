@@ -234,6 +234,14 @@ function feeForQuarter(row: FiledQuarterRow, filings: Map<string, FiledQuarterRo
       heldReason: "Not shown: the previous quarter's filing is missing, so the year-to-date total cannot be split.",
     };
   }
+  // A prior filing whose stored figure does not match its filing can't be subtracted either.
+  if (reconcile(prior.feeIncome, prior.rawFeeIncome, prior.source === "ncua" ? "dollars" : "thousands of dollars") === "differs") {
+    return {
+      quarter: null,
+      calculation: `${code} year to date at ${dayText(row.reportDate)} is ${filed}. The stored ${dayText(priorDate)} figure does not match its filing, so the quarter cannot be split out.`,
+      heldReason: "Held back: the previous quarter's stored figure does not match its filing.",
+    };
+  }
   const quarter = row.feeIncome - prior.feeIncome;
   return {
     quarter,

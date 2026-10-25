@@ -275,9 +275,12 @@ export default async function FinancialsPage({
               single quarter.
             </li>
           ) : (
-            <li>Banks file service charges on deposit accounts for each quarter, so no conversion is needed.</li>
+            <li>FDIC publishes service charges on deposit accounts for each quarter, so no conversion is needed.</li>
           )}
-          <li>Deposits and assets are balances at quarter end. Dollar figures are filed in thousands.</li>
+          <li>
+            Deposits and assets are balances at quarter end.{" "}
+            {ncua ? "Credit unions file in whole dollars; figures here are rounded to thousands." : "Banks file dollar figures in thousands."}
+          </li>
           <li>
             Your peer group is the other {kind}{tier} that filed for the same quarter. Its median shows only
             when at least {FINANCIAL_PEER_MINIMUM} of them report the figure.

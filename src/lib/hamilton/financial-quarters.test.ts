@@ -105,6 +105,14 @@ describe("financial performance view (#1892)", () => {
     expect(q3.evidence.heldReason).toMatch(/cannot be split/);
   });
 
+  it("never splits a quarter out from a previous filing that does not match its own filing", () => {
+    const badPrior = { ...ncuaRow("2026-03-31", 120, 1), rawFeeIncome: 250_000 };
+    const view = buildFinancialPerformance([badPrior, ncuaRow("2026-06-30", 260, 2)], [])!;
+    const q2 = view.quarters.find((q) => q.reportDate === "2026-06-30")!;
+    expect(q2.fee.value).toBeNull();
+    expect(q2.evidence.heldReason).toMatch(/previous quarter's stored figure does not match/);
+  });
+
   it("holds back a stored fee figure that does not match the filing", () => {
     const bad = { ...fdicRow("2026-06-30", 900, 2), rawFeeIncome: 950 };
     const view = buildFinancialPerformance([fdicRow("2026-03-31", 800, 1), bad], [])!;
