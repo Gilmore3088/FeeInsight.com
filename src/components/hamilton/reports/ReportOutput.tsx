@@ -7,6 +7,7 @@ import { InterpretationBox, SERIF } from "@/components/hamilton/memo/memo";
 import { DatasetNote } from "@/components/hamilton/DatasetNote";
 import { readStampedFigures } from "@/lib/dataset-note";
 import { ReportSection } from "./ReportSection";
+import { AddedFindingEvidenceBlock } from "./AddedFindingEvidence";
 import { StatCalloutBox } from "./StatCalloutBox";
 import {
   REPORT_SECTION_HEADINGS,
@@ -129,6 +130,7 @@ function AddedFindings({ report }: { report: ReportSummaryResponse }) {
             {finding.reading?.length ? (
               <div className="mt-2"><InterpretationBox sentences={finding.reading} /></div>
             ) : null}
+            <AddedFindingEvidenceBlock value={finding.evidence} />
             <p className="mt-1 text-xs text-warm-600">From {finding.source}</p>
             {hamiltonIdentityLines(readHamiltonIdentitySnapshot(finding.identityContext)).map((line) => <p key={line} className="mt-1 text-xs text-warm-600">{line}</p>)}
           </li>

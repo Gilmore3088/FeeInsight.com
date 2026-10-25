@@ -1,9 +1,11 @@
 "use client";
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FileText, Download, Save } from "lucide-react";
-import { saveBoardBrief } from "@/app/pro/(hamilton)/reports/board-actions";
+import { previewBoardBriefFindings, saveBoardBrief } from "@/app/pro/(hamilton)/reports/board-actions";
+import { useReportBasket } from "@/components/hamilton/basket/AddToReportButton";
+import { basketItemsFor } from "@/lib/hamilton/report-basket";
 import { boardBriefFromAnalysis, editBoardBrief } from "@/lib/hamilton/board-brief";
 import type { AnalyzeResponse, ReportSummaryResponse, ReportArtifactMetadata } from "@/lib/hamilton/types";
 import { ReportOutput } from "./ReportOutput";
@@ -21,15 +23,39 @@ export function BoardBriefEditor({ analysis, analysisId, initialReport, reportId
   const [savedId, setSavedId] = useState(reportId ?? null);
   const [savedFingerprint, setSavedFingerprint] = useState(reportId ? JSON.stringify([title, teamNote, includeEvidence]) : null);
   const saving = useRef(false);
+  // #1899: a new brief carries the findings the reader added for the answer's institution, each
+  // re-read on the server with its chart, sources, method, dates and limits. A saved brief keeps its own.
+  const basket = useReportBasket();
+  const answerInstitution = analysis?.identityContext?.researchInstitutionId ?? null;
+  const candidates = useMemo(
+    () => (initialReport || !analysisId || answerInstitution === null ? [] : basketItemsFor(basket, String(answerInstitution)).filter((item) => item.savedAnalysisId !== analysisId)),
+    [basket, initialReport, analysisId, answerInstitution],
+  );
+  const [leftOut, setLeftOut] = useState<string[]>([]);
+  const included = useMemo(() => candidates.filter((item) => !leftOut.includes(item.id)), [candidates, leftOut]);
+  const includedKey = JSON.stringify(included.map((item) => item.id));
+  const [preview, setPreview] = useState<{ key: string; findings: NonNullable<ReportSummaryResponse["addedFindings"]> } | null>(null);
+  useEffect(() => {
+    if (!analysisId || initialReport || !included.length) return;
+    let live = true;
+    previewBoardBriefFindings({ analysisId, addedFindings: included })
+      .then((findings) => { if (live) setPreview({ key: includedKey, findings }); })
+      .catch(() => { if (live) setPreview({ key: includedKey, findings: [] }); });
+    return () => { live = false; };
+    // includedKey stands for `included`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [analysisId, initialReport, includedKey]);
   const fingerprint = JSON.stringify([title, teamNote, includeEvidence]);
   const dirty = savedFingerprint !== fingerprint;
   const edits = { title, teamNote, includeEvidence };
-  const report = initialReport ? editBoardBrief(initialReport, edits) : analysis && analysisId ? boardBriefFromAnalysis(analysis, analysisId, edits) : null;
+  const built = initialReport ? editBoardBrief(initialReport, edits) : analysis && analysisId ? boardBriefFromAnalysis(analysis, analysisId, edits) : null;
+  const shownFindings = !initialReport && included.length && preview?.key === includedKey ? preview.findings : [];
+  const report = built && shownFindings.length ? { ...built, addedFindings: shownFindings } : built;
   async function save() {
     if (saving.current) return;
     saving.current = true; setBusy(true); setError(null);
     try {
-      const result = await saveBoardBrief({ ...(savedId ? { reportId: savedId } : { analysisId }), edits });
+      const result = await saveBoardBrief({ ...(savedId ? { reportId: savedId } : { analysisId, addedFindings: included }), edits });
       if (!result.success) { setError(result.error); return; }
       setSavedId(result.reportId); setSavedFingerprint(fingerprint);
       router.replace(`/pro/reports?report_id=${encodeURIComponent(result.reportId)}`);
@@ -59,6 +85,10 @@ export function BoardBriefEditor({ analysis, analysisId, initialReport, reportId
       <h2 className="!text-base">Report details</h2><label className="text-sm">Title<input className="mt-2 w-full rounded-md border border-[var(--fi-control-border)] p-2" value={title} maxLength={200} disabled={busy} onChange={e => setTitle(e.target.value)} /></label>
       <label className="text-sm">Team note<textarea className="mt-2 w-full rounded-md border border-[var(--fi-control-border)] p-2" rows={6} value={teamNote} maxLength={5000} disabled={busy} onChange={e => setTeamNote(e.target.value)} /><span className="mt-1 block text-xs text-[var(--fi-muted)]">Shown as your note, kept apart from Hamilton’s findings.</span></label>
       {!initialReport ? <label className="text-sm"><input type="checkbox" checked={includeEvidence} disabled={busy} onChange={e => setIncludeEvidence(e.target.checked)} /> Include the evidence table from the answer</label> : null}
+      {candidates.length ? <fieldset className="text-sm" disabled={busy}><legend className="font-medium">Findings you added</legend>
+        <p className="mt-1 text-xs text-[var(--fi-muted)]">Each prints with its chart, sources, method, dates and limits.</p>
+        <ul className="mt-2 flex flex-col gap-2">{candidates.map((item) => <li key={item.id}><label className="flex items-start gap-2"><input type="checkbox" className="mt-1" checked={!leftOut.includes(item.id)} onChange={e => setLeftOut((ids) => e.target.checked ? ids.filter((id) => id !== item.id) : [...ids, item.id])} /><span>{item.title}<span className="block text-xs text-[var(--fi-muted)]">From {item.source}</span></span></label></li>)}</ul>
+      </fieldset> : null}
       <p className="text-xs leading-relaxed text-[var(--fi-muted)]">The figures and reporting dates are kept as first saved and are not recalculated.</p>
       {report.boardBrief?.sourceAnalysisId
         ? <Link href={`/pro/analyze?analysis=${encodeURIComponent(report.boardBrief.sourceAnalysisId)}`} className="flex items-center gap-2 text-sm text-[var(--fi-brick)] underline"><FileText size={16} aria-hidden />Open the saved answer</Link>

@@ -8,8 +8,6 @@ import { canAccessPremium } from "@/lib/access";
 import { reportStartError } from "@/lib/report-access";
 import { loadHamiltonAccountContext } from "@/lib/hamilton/account-context-store";
 import { accountIdentitySnapshot } from "@/lib/hamilton/account-context";
-import { readHamiltonIdentitySnapshot } from "@/lib/hamilton/identity-display";
-import { readSavedAnalysisRecord } from "@/lib/hamilton/saved-analysis-record";
 import { getFeesByInstitution, getInstitutionById } from "@/lib/data-store";
 import { sql } from "@/lib/data-store/connection";
 import { getInstitutionFeeScheduleEvidence } from "@/lib/data-store/institution";
@@ -25,8 +23,8 @@ import type { SectionInput } from "@/lib/hamilton/types";
 import { buildReportPeerCoveragePreview, type ReportPeerCoveragePreview } from "@/lib/hamilton/report-evidence";
 import { parseAnswerSection, parseTradeoffSection } from "@/lib/hamilton/report-answer";
 import { validateHamiltonReportArtifact } from "@/lib/hamilton/report-quality";
-import { basketItemsFor, sanitizeBasketItems, type ReportBasketItem } from "@/lib/hamilton/report-basket";
-import { reportFindingReadingEnabled, savedAnswerFinding } from "@/lib/hamilton/report-saved-finding";
+import { reportFindingReadingEnabled } from "@/lib/hamilton/report-saved-finding";
+import { authenticatedReportFindings, reportAddedFindings } from "@/lib/hamilton/report-findings";
 import { scheduleGateShadow } from "@/lib/hamilton/output-gate-shadow-store";
 import { resolveHamiltonPeerIndex } from "@/lib/hamilton/peer-index";
 import { completeHamiltonRefreshJobsForInstitution } from "@/lib/hamilton/refresh-jobs";
@@ -146,43 +144,6 @@ export async function previewReportPeerCoverage(
 
 
 /**
- * Resolve saved Ask references with numeric-user scoping before using their historical identity.
- * A saved answer is read through its saved claims (#1077 step 6, #1899; report-saved-finding.ts):
- * the finding's detail is its supported sentences only, and the claims and Hamilton's reading ride
- * with it, server side, for the report to print under the label when that is switched on.
- */
-async function authenticatedReportFindings(raw: unknown, institutionId: string | null): Promise<ReportBasketItem[]> {
-  const findings = await Promise.all(sanitizeBasketItems(raw).map(async (item): Promise<ReportBasketItem | null> => {
-    if (item.source === "Ask" && item.savedAnalysisId) {
-      // The server-only read: the saved claims are kept here (never in what a browser receives).
-      const saved = await readSavedAnalysisRecord(item.savedAnalysisId);
-      if (!saved || typeof saved.responseJson.hamiltonView !== "string") return null;
-      // An answer that failed the evidence gate when it was saved is not a finding to restate.
-      if (saved.responseJson.answerEvidence?.passed === false) return null;
-      const { detail, reading, claims } = savedAnswerFinding(saved.responseJson);
-      // No supported sentence left: the title alone is model prose with nothing behind it.
-      if (!detail) return null;
-      const identity = readHamiltonIdentitySnapshot(saved.responseJson.identityContext);
-      return {
-        ...item,
-        // A saved-answer reference authenticates its original content as well as
-        // its identity; browser edits cannot relabel another institution's answer.
-        title: saved.responseJson.title,
-        detail,
-        ...(claims ? { savedClaims: claims } : {}),
-        ...(reading.length ? { reading } : {}),
-        institutionId: saved.institutionId,
-        ...(identity ? { identityContext: identity } : { identityContext: undefined }),
-      };
-    }
-    // Browser metadata can identify a research selection but cannot establish who the
-    // account represented when a historic answer was generated.
-    return { ...item, identityContext: undefined };
-  }));
-  return basketItemsFor(findings.filter((item) => item !== null), institutionId);
-}
-
-/**
  * Generate a Hamilton report from a template and configuration.
  * Assembles fee data, calls generateSection() for key sections,
  * saves to hamilton_reports, and returns the assembled report.
@@ -206,7 +167,8 @@ export async function generateReport(
       params,
       userId: user.id,
       loadAccountContext: () => loadHamiltonAccountContext(user),
-      resolveFindings: (institutionId) => authenticatedReportFindings(params.addedFindings, institutionId),
+      // Saved answers re-read with user scoping; Position and Test findings re-read against this report's peers (#1899).
+      resolveFindings: (institutionId, peers) => authenticatedReportFindings(params.addedFindings, institutionId, peers),
     });
     if (assembled.kind === "not_found") {
       return { success: false, error: "Selected institution not found" };
@@ -493,11 +455,7 @@ export async function generateReport(
     if (addedFindings.length > 0) {
       // A saved answer's reading prints under its label only with the switch on (off by default).
       const printReading = reportFindingReadingEnabled();
-      report.addedFindings = addedFindings.map((f) => ({
-        source: f.source, title: f.title, detail: f.detail,
-        ...(printReading && f.reading?.length ? { reading: [...f.reading] } : {}),
-        ...(f.identityContext ? { identityContext: f.identityContext } : {}),
-      }));
+      report.addedFindings = reportAddedFindings(addedFindings, printReading);
     }
     const artifactQuality = validateHamiltonReportArtifact({
       report,

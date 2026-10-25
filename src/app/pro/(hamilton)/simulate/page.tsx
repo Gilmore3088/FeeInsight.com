@@ -18,6 +18,8 @@ import { institutionFactsFrom } from "@/lib/hamilton/workspace/ask";
 import { getMemoryFacts } from "@/lib/data-store/hamilton-workspace";
 import { ExhibitView } from "@/components/hamilton/memo/exhibit-view";
 import { PositionCheckPanel } from "@/components/hamilton/PositionCheckPanel";
+import { AddToReportButton } from "@/components/hamilton/basket/AddToReportButton";
+import { basketItemId } from "@/lib/hamilton/report-basket";
 import { checkPosition, parseProposedFee } from "@/lib/hamilton/position-check";
 import { DatasetNote } from "@/components/hamilton/DatasetNote";
 import {
@@ -416,6 +418,22 @@ export default async function ModelPage({ searchParams }: PageProps) {
         invalid={Boolean(params.check) && proposed === null}
         unavailable={membersComplete ? null : "Peer list not available for this group, so a proposed fee cannot be placed by name. Choose another comparison below."}
       />
+      {positionCheck && proposed !== null && instId ? (
+        // #1899: the report re-reads the peers on the server and prints this as the reader's own test.
+        <div className="-mt-4 flex justify-end">
+          <AddToReportButton
+            item={{
+              id: basketItemId("Test", instId, ws.fee, proposed),
+              source: "Test",
+              title: `${ws.feeName}: test of ${fmtMoney(proposed)}`,
+              detail: "",
+              feeCategory: ws.fee,
+              institutionId: instId,
+              proposedFee: proposed,
+            }}
+          />
+        </div>
+      ) : null}
 
       <AuditPanel trail={trail} downloadHref={csvHref} />
 

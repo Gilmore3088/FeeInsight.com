@@ -217,4 +217,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-1899",
+    agent: "hamilton",
+    stage: "report",
+    lesson: "A finding added to a report carries its chart, sources, method, dates and limits, and every figure in it is read again on the server when the report is made: a saved answer from its saved record, a peer comparison from the published fees against the report's peers, and a tested price labelled as the reader's own figure. Never print a figure the browser sent with the finding.",
+    why: "Findings added to a report kept only their text, so a board brief lost the chart, sources, dates and limits behind each one, and a peer comparison printed whatever figures the browser had sent with it.",
+    evidence: { issues: [1899], prs: [], files: ["src/lib/hamilton/report-finding-evidence.ts", "src/lib/hamilton/report-findings.ts", "src/app/pro/(hamilton)/reports/board-actions.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];

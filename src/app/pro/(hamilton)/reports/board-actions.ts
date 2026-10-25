@@ -8,6 +8,10 @@ import { readSavedOutputFeeRefs } from "@/lib/data-store/saved-output-fee-refs";
 import { loadAnalysisRecord } from "../analyze/actions";
 import { boardBriefFromAnalysis, editBoardBrief, type BoardBriefEdits } from "@/lib/hamilton/board-brief";
 import { recordProRequest } from "@/lib/agents/run-store";
+import { boardBriefFindings, reportAddedFindings } from "@/lib/hamilton/report-findings";
+import { reportFindingReadingEnabled } from "@/lib/hamilton/report-saved-finding";
+import { canAccessPremium } from "@/lib/access";
+import type { ReportSummaryResponse } from "@/lib/hamilton/types";
 import { redirect } from "next/navigation";
 import { boardBriefFromMarket } from "@/lib/hamilton/board-brief";
 import { decodeLandingResearch } from "@/lib/hamilton/landing-research-handoff";
@@ -17,7 +21,7 @@ import { loadIntelligence } from "@/components/hamilton/intelligence/Intelligenc
 import { marketBoardBriefInput } from "@/components/hamilton/intelligence/market-board-brief";
 
 /** Source IDs are user-scoped on every save; browser evidence/identity is never accepted. */
-export async function saveBoardBrief(input: { analysisId?: string; reportId?: string; edits: BoardBriefEdits }): Promise<{ success: true; reportId: string } | { success: false; error: string }> {
+export async function saveBoardBrief(input: { analysisId?: string; reportId?: string; edits: BoardBriefEdits; addedFindings?: unknown }): Promise<{ success: true; reportId: string } | { success: false; error: string }> {
   const user = await getCurrentUser();
   if (!user) return { success: false, error: "Hamilton access required." };
   // A lapsed account keeps its saved briefs read-only: no new brief and no edits (#1999).
@@ -38,14 +42,35 @@ export async function saveBoardBrief(input: { analysisId?: string; reportId?: st
     const saved = await loadAnalysisRecord(input.analysisId);
     if (!saved) return { success: false, error: "Saved analysis not found." };
     const report = boardBriefFromAnalysis(saved.responseJson, saved.id, input.edits);
+    // #1899: the findings the reader added, re-read on the server with their chart, sources, method, dates and limits.
+    const findings = await boardBriefFindings(input.addedFindings, { analysisId: saved.id, institutionId: saved.institutionId, userId: user.id });
+    if (findings.length) report.addedFindings = reportAddedFindings(findings, reportFindingReadingEnabled());
     // H03-T09: the brief reuses the answer's findings, so it carries the fee rows the answer recorded.
     const feeRefs = (await readSavedOutputFeeRefs(sql, "analysis", saved.id)) ?? undefined;
     const reportId = await saveHamiltonReport({ feeRefs, userId: user.id, institutionId: saved.institutionId ?? "", reportType: "board_brief", reportJson: report, evidencePolicy: "source-diligence", selectedSource: "manual", selectedSourceLabel: "Original saved analysis", peerBaselineLabel: saved.responseJson.identityContext?.peerBaselineLabel ?? null, peerFallbackReason: "Reused the saved analysis; no new research or cohort substitution." });
-    await recordProRequest({ operation: "report", title: report.title, status: "completed", summary: "Created board brief from saved research without a provider call", userId: user.id, institutionId: Number(saved.institutionId) || null, detail: { report_id: reportId, analysis_id: saved.id, provider_call_queued: false, evidence_policy: "source-diligence" } });
+    await recordProRequest({ operation: "report", title: report.title, status: "completed", summary: "Created board brief from saved research without a provider call", userId: user.id, institutionId: Number(saved.institutionId) || null, detail: { report_id: reportId, analysis_id: saved.id, provider_call_queued: false, evidence_policy: "source-diligence", added_findings: findings.length } });
     return { success: true, reportId };
   } catch (error) {
     console.error("[board-brief] save failed", error);
     return { success: false, error: "The board brief could not be saved. Your edits remain here; retry." };
+  }
+}
+
+/**
+ * The added findings a new board brief would carry (#1899), for the editor's preview: the same
+ * server read `saveBoardBrief` makes, which re-reads them again on save. Reads only; no saved claims.
+ */
+export async function previewBoardBriefFindings(input: { analysisId: string; addedFindings: unknown }): Promise<NonNullable<ReportSummaryResponse["addedFindings"]>> {
+  const user = await getCurrentUser();
+  if (!user || !canAccessPremium(user) || typeof input?.analysisId !== "string") return [];
+  try {
+    const saved = await loadAnalysisRecord(input.analysisId);
+    if (!saved) return [];
+    const findings = await boardBriefFindings(input.addedFindings, { analysisId: saved.id, institutionId: saved.institutionId, userId: user.id });
+    return reportAddedFindings(findings, reportFindingReadingEnabled());
+  } catch (error) {
+    console.error("[board-brief] findings preview failed", error);
+    return [];
   }
 }
 

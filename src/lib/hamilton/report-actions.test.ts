@@ -10,6 +10,7 @@ import { filingFactId } from "@/lib/hamilton/claim-evidence";
 import { HAMILTON_EVIDENCE_CONTRACT_VERSION, type HamiltonEvidenceBundle, type HamiltonEvidenceFact } from "@/lib/hamilton/evidence-contract";
 import { bindNarrative } from "@/lib/hamilton/narrative-bound";
 import { savedClaimsFrom } from "@/lib/hamilton/saved-claims";
+import { SAVED_ANSWER_METHOD } from "@/lib/hamilton/report-finding-evidence";
 import type { SectionTracking } from "@/lib/hamilton/generate";
 
 const mocks = vi.hoisted(() => ({
@@ -25,6 +26,7 @@ const mocks = vi.hoisted(() => ({
   getInstitutionFeeScheduleEvidence: vi.fn(),
   generateSection: vi.fn(),
   resolveHamiltonPeerIndex: vi.fn(),
+  getInstitutionOwnFees: vi.fn(),
   saveHamiltonReport: vi.fn(),
   getRecentHamiltonReports: vi.fn(),
   getActiveScenarios: vi.fn(),
@@ -123,6 +125,11 @@ vi.mock("@/lib/hamilton/generate", async () => {
 
 vi.mock("@/lib/hamilton/peer-index", () => ({
   resolveHamiltonPeerIndex: mocks.resolveHamiltonPeerIndex,
+}));
+
+vi.mock("@/lib/data-store/fee-index", async (original) => ({
+  ...(await original<typeof import("@/lib/data-store/fee-index")>()),
+  getInstitutionOwnFees: mocks.getInstitutionOwnFees,
 }));
 
 vi.mock("@/lib/hamilton/refresh-jobs", () => ({
@@ -229,6 +236,7 @@ describe("Hamilton Reports generateReport", () => {
     mocks.getInstitutionPeerRanking.mockResolvedValue({ rank: 4, count: 19 });
     mocks.getInstitutionFeeScheduleEvidence.mockResolvedValue(null);
     mocks.resolveHamiltonPeerIndex.mockResolvedValue(peerIndex());
+    mocks.getInstitutionOwnFees.mockResolvedValue(new Map());
     mocks.saveHamiltonReport.mockResolvedValue("report-1");
     mocks.completeHamiltonRefreshJobsForInstitution.mockResolvedValue(undefined);
     mocks.generateSection.mockImplementation(async (input: SectionInput) => ({
@@ -484,7 +492,10 @@ describe("Hamilton Reports generateReport", () => {
     it("states the financial sentence only when supported; with the switch off (default) nothing else changes", async () => {
       const result = await addSaved();
       if (!result.success) throw new Error(result.error);
-      expect(result.report.addedFindings?.[0]).toEqual({ source: "Ask", title: "Service charge income at Research CU", detail: supported, identityContext: undefined });
+      const { evidence, ...finding } = result.report.addedFindings?.[0] ?? { evidence: undefined };
+      expect(finding).toEqual({ source: "Ask", title: "Service charge income at Research CU", detail: supported, identityContext: undefined });
+      // #1899: the saved answer's method, dates and limits ride with it, read from the saved record.
+      expect(evidence).toMatchObject({ method: SAVED_ANSWER_METHOD, chart: null });
       expect(JSON.stringify(result.report)).not.toContain("$2.3 million");
       expect(JSON.stringify(result.report)).not.toContain(reading);
       // The model's context is the same supported prose as before step 6: no claims, no reading.
@@ -517,16 +528,21 @@ describe("Hamilton Reports generateReport", () => {
 
   it("keeps the reader's added findings out of the DATA a section's figures are checked against", async () => {
     mocks.getFeesByInstitution.mockResolvedValue([{ fee_name: "Domestic wire", fee_category: "wire_transfer", amount: 35, review_status: "pending" }]);
-    // A Position item is browser text: nothing on the server re-reads its $99.
-    const result = await generateReport({ ...reportParams(), addedFindings: [{ id: "position-a", source: "Position", title: "Overdraft peers", detail: "Peers charge $99 for an overdraft.", institutionId: "2945" }] });
-    expect(result.success).toBe(true);
+    mocks.getInstitutionOwnFees.mockResolvedValue(new Map([["overdraft", { category: "overdraft", value: 34, price: 34, low: 34, high: 34, fees: [{ name: "Overdraft", amount: 34 }] }]]));
+    // #1899: a Position item is re-read on the server against the report's peers; the browser's $99 never reaches the report.
+    const result = await generateReport({ ...reportParams(), addedFindings: [{ id: "position-a", source: "Position", title: "Overdraft peers", detail: "Peers charge $99 for an overdraft.", feeCategory: "overdraft", institutionId: "2945" }] });
+    if (!result.success) throw new Error(result.error);
     const summary = mocks.generateSection.mock.calls.map(([input]) => input as SectionInput).find((input) => input.type === "executive_summary");
     expect(summary?.data).not.toHaveProperty("findings_added_by_reader");
-    expect(JSON.stringify(summary?.data)).not.toContain("$99");
     expect(summary?.context).toContain("READER FINDINGS");
-    expect(summary?.context).toContain("Peers charge $99 for an overdraft.");
-    const { checkNarrativeFigures } = await vi.importActual<typeof import("./figure-check")>("./figure-check");
-    expect(checkNarrativeFigures("Peers charge $99 for an overdraft.", summary?.data).unmatched).toEqual(["$99"]);
+    expect(JSON.stringify(summary)).not.toContain("$99");
+    expect(JSON.stringify(result.report)).not.toContain("$99");
+    const [finding] = result.report.addedFindings ?? [];
+    expect(finding.title).toBe("Overdraft (OD): $34.00 against a peer group median of $30.00");
+    expect(finding.evidence?.chart).toMatchObject({ subject: 34, median: 30, p25: 25, p75: 35, peerCount: 80, peerLabel: "Custom CU peers" });
+    expect(finding.evidence?.sources[0].label).toBe("Bank Fee Index published fee catalog");
+    expect(finding.evidence?.limitations.length).toBeGreaterThan(0);
+    expect(mocks.getInstitutionOwnFees).toHaveBeenCalledWith(2945, ["overdraft"]);
   });
 
   it("normalizes transient saved-artifact source before persisting a new report", async () => {

@@ -6,7 +6,7 @@ import { INTERPRETATION_LABEL } from "@/lib/hamilton/narrative-bound";
  * Called from /api/pro/report-pdf route only.
  *
  * Design: consulting-grade text-heavy layout with stat callout boxes.
- * No charts (chart-to-PNG pipeline deferred post v8.0 per D-09).
+ * Charts only where a finding carries one (#1899), drawn with react-pdf's SVG primitives (BriefCharts).
  */
 import {
   Document,
@@ -23,6 +23,8 @@ import { RD_PDF } from "@/lib/report-design/tokens";
 import { LEGACY_REPORT_CONFIDENCE_FOOTNOTE, displayReportDecision, hasLegacyHighRating } from "@/lib/hamilton/report-answer";
 import { datasetPassage, readStampedFigures } from "@/lib/dataset-note";
 import { SAVED_ANSWER_FULL_LIST, SAVED_DATASET_SOURCE_LABEL } from "@/lib/hamilton/board-brief";
+import { FINDING_EVIDENCE_LABELS, findingChartCaption, readAddedFindingEvidence } from "@/lib/hamilton/report-finding-evidence";
+import { FeeRangeChart } from "./BriefCharts";
 
 // Words wrap whole, as in AnalysisPdfDocument (the same route loads both): default hyphenation split
 // evidence record IDs mid-way ("fee:pub-lished:502"), so a printed ID no longer matched its record.
@@ -414,8 +416,9 @@ function PdfAddedFindings({ report }: { report: ReportSummaryResponse }) {
   if (!report.addedFindings?.length) return null;
   return <View style={styles.section}>
     <Text style={styles.sectionHeading}>{REPORT_SECTION_HEADINGS.addedFindings}</Text>
-    {report.addedFindings.map((finding, index) => <View key={index} wrap={false}>
-      <Text style={styles.paragraph}>{finding.title}{finding.detail ? ` ${finding.detail}` : ""}</Text>
+    {report.addedFindings.map((finding, index) => <View key={index} wrap={!finding.evidence ? false : undefined}>
+      <Text style={styles.paragraph} minPresenceAhead={60}>{finding.title}{finding.detail ? ` ${finding.detail}` : ""}</Text>
+      <PdfAddedFindingEvidence value={finding.evidence} />
       {finding.reading?.length ? (
         <View style={styles.metadataStrip}>
           <Text style={styles.answerLabel}>{INTERPRETATION_LABEL}</Text>
@@ -424,6 +427,31 @@ function PdfAddedFindings({ report }: { report: ReportSummaryResponse }) {
       ) : null}
       {(hamiltonIdentityLines(readHamiltonIdentitySnapshot(finding.identityContext))).map((line) => <Text key={line} style={styles.readOnlyNotice}>{line}</Text>)}
     </View>)}
+  </View>;
+}
+
+/** An added finding's chart, figures, method, sources, dates and limits (#1899), as on screen. */
+function PdfAddedFindingEvidence({ value }: { value: unknown }) {
+  const evidence = readAddedFindingEvidence(value);
+  if (!evidence) return null;
+  const { chart } = evidence;
+  return <View style={styles.metadataStrip}>
+    {chart ? <View wrap={false}>
+      {chart.subject !== null ? <FeeRangeChart
+        institutionName={chart.subjectLabel}
+        positions={[{ feeCategory: chart.feeCategory, displayName: chart.feeName, current: chart.subject, peerMedian: chart.median, peerCount: chart.peerCount, peerLabel: chart.peerLabel, direction: chart.subject > chart.median ? "higher" : chart.subject < chart.median ? "lower" : "at" }]}
+        bands={{ [chart.feeCategory]: { p25: chart.p25 ?? chart.median, median: chart.median, p75: chart.p75 ?? chart.median } }}
+      /> : null}
+      <Text style={styles.metadataText}>{findingChartCaption(chart)}</Text>
+    </View> : null}
+    {evidence.figures.length ? <View>
+      <Text style={styles.metadataText}>{FINDING_EVIDENCE_LABELS.figures}:</Text>
+      {evidence.figures.map((f, i) => <Text key={i} style={styles.metadataText}>{"•"} {f.label}: {f.value}{f.note ? ` (${f.note})` : ""}</Text>)}
+    </View> : null}
+    <Text style={styles.metadataText}>{FINDING_EVIDENCE_LABELS.method}: {evidence.method}</Text>
+    {evidence.sources.map((src, i) => <Text key={i} style={styles.metadataText}>{i === 0 ? `${FINDING_EVIDENCE_LABELS.sources}: ` : ""}{src.label} · {src.detail}</Text>)}
+    <Text style={styles.metadataText}>{FINDING_EVIDENCE_LABELS.dates}: {evidence.dates}</Text>
+    {evidence.limitations.map((l, i) => <Text key={i} style={styles.metadataText}>{i === 0 ? `${FINDING_EVIDENCE_LABELS.limits}: ` : ""}{l}</Text>)}
   </View>;
 }
 

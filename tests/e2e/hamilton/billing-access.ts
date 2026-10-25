@@ -383,6 +383,7 @@ export const ACTIONS: ActionEntry[] = [
   routeOnly("reports/actions.ts", "saveLandingResearchReport", "writes; loaded only by the /api/pro/report-pdf route, probed above; checks canAccessPremium"),
   notSent("reports/board-actions.ts", "saveBoardBrief", "writes; checks canAccessPremium"),
   notSent("reports/board-actions.ts", "createMarketBoardBrief", "writes; checks canAccessPremium"),
+  notSent("reports/board-actions.ts", "previewBoardBriefFindings", "needs a saved answer and a basket; checks canAccessPremium"),
   routeOnly("simulate/actions.ts", "listScenarios", "loaded only by the /api/hamilton/simulate route, probed above; checks canAccessPremium"),
   routeOnly("simulate/actions.ts", "getScenario", "loaded only by the /api/hamilton/simulate route, probed above; checks canAccessPremium"),
   routeOnly("simulate/actions.ts", "getDistributionForCategory", "loaded only by the /api/hamilton/simulate route, probed above; checks canAccessPremium"),

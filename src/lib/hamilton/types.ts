@@ -328,6 +328,8 @@ export interface ReportSummaryResponse {
     source: "Position" | "Ask" | "Test"; title: string; detail: string; identityContext?: HamiltonIdentitySnapshot;
     /** A saved answer's sentences that are Hamilton's reading, printed under `INTERPRETATION_LABEL` (#1077 step 6; only with HAMILTON_REPORT_FINDING_READING on). */
     reading?: string[];
+    /** The finding's chart, sources, method, dates and limits, built on the server (#1899); absent on reports made before it. */
+    evidence?: import("./report-finding-evidence").AddedFindingEvidence;
   }>;
   exportControls: {
     pdfEnabled: boolean;
