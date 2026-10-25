@@ -228,3 +228,65 @@ describe("readerNarrativeBinding (#1077 follow-up)", () => {
     expect(withoutOmitted(sections, sent)).toEqual(sections);
   });
 });
+
+describe("local competitors in a written answer (#1077, Cycle A defect 2)", () => {
+  // Invented: Capital City Bank (9101) has two overdraft lines, $37 and $35; its competitor Rival Bank (9142) $35.
+  const SUBJECT = profile(9101, "Capital City Bank", [
+    overdraft(11, 37),
+    overdraft(12, 35, { fee_name: "Overdraft, second item of the day" }),
+  ]);
+  const SUBJECT_37 = profile(9101, "Capital City Bank", [overdraft(11, 37)]);
+  // The getLocalCompetitors output shape (research/tool-local-competitors.ts).
+  const LOCAL = {
+    institution: "Capital City Bank",
+    institution_id: 9101,
+    your_fees: { overdraft: 37 },
+    market: "Capital City, ZZ area (2 counties)",
+    market_basis: "branch_counties",
+    county_fips: [99001, 99003],
+    sod_year: 2025,
+    source: "FDIC Summary of Deposits 2025; verified published fee amounts",
+    competitors: [{
+      institution_id: 9142, name: "Rival Bank, N.A.", fees: { overdraft: 35 }, fee_basis: { overdraft: "max" },
+      document_url: "https://fixture.invalid/9142.pdf", document_date: "2026-09-30",
+    }],
+  };
+  const TWO = "Capital City Bank charges $37 for an overdraft. Rival Bank charges $35 for an overdraft.";
+
+  it("learns each competitor's name by id, and makes no fee record of its aggregate price", () => {
+    const found = writtenAnswerFeeEvidence([SUBJECT, LOCAL])!;
+    expect(found.names.get(9142)).toBe("Rival Bank");
+    expect(found.names.get(9101)).toBe("Capital City Bank");
+    expect(found.evidence.facts.map((fact) => fact.id)).toEqual(["fee:published:11", "fee:published:12"]);
+    // The local read alone holds no fee record, so it makes no binding, as before.
+    expect(writtenAnswerFeeEvidence([LOCAL])).toBeNull();
+    expect(bind(TWO, [LOCAL])).toBeNull();
+  });
+
+  it("leaves out a competitor's price that only the subject's same-value record would support", () => {
+    const binding = bind(TWO, [SUBJECT, LOCAL])!;
+    expect(binding.supported).toEqual([{ text: "Capital City Bank charges $37 for an overdraft.", factIds: ["fee:published:11"] }]);
+    expect(binding.omitted).toEqual([{ text: "Rival Bank charges $35 for an overdraft.", reason: "wrong_institution" }]);
+    expect(binding.limitations).toContain(CONTRADICTED_LIMITATION);
+  });
+
+  it("shows a competitor's price as Hamilton's reading when no record holds that value", () => {
+    const binding = bind(TWO, [SUBJECT_37, LOCAL])!;
+    expect(binding.supported).toEqual([{ text: "Capital City Bank charges $37 for an overdraft.", factIds: ["fee:published:11"] }]);
+    expect(binding.interpretation).toEqual(["Rival Bank charges $35 for an overdraft."]);
+    expect(binding.omitted).toEqual([]);
+  });
+
+  it("control: the subject's own fee still binds to its record", () => {
+    const binding = bind("Capital City Bank charges $35 for an overdraft on a second item.", [SUBJECT, LOCAL])!;
+    expect(binding.supported).toEqual([{ text: "Capital City Bank charges $35 for an overdraft on a second item.", factIds: ["fee:published:12"] }]);
+    expect(binding.omitted).toEqual([]);
+  });
+
+  it("control: a sentence naming no institution binds exactly as without the local read", () => {
+    for (const text of ["The overdraft fee is $35.", "An overdraft costs $37, and a second one $35."]) {
+      expect(bind(text, [SUBJECT, LOCAL]), text).toEqual(bind(text, [SUBJECT]));
+    }
+    expect(bind("The overdraft fee is $35.", [SUBJECT, LOCAL])!.supported).toEqual([{ text: "The overdraft fee is $35.", factIds: ["fee:published:12"] }]);
+  });
+});
