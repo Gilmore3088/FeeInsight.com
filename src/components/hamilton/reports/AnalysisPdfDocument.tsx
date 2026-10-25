@@ -27,7 +27,7 @@ import { getDisplayName } from "@/lib/fee-taxonomy";
 import { exportedAnswer } from "@/lib/hamilton/written-answer-binding";
 import { INTERPRETATION_LABEL } from "@/lib/hamilton/narrative-bound";
 import { datasetPassage, readStampedFigures } from "@/lib/dataset-note";
-import { SAVED_ANSWER_FULL_LIST } from "@/lib/hamilton/board-brief";
+import { SAVED_ANSWER_FULL_LIST, WRITTEN_SOURCES_NOTE, writtenAnswerSources } from "@/lib/hamilton/board-brief";
 
 // Words wrap whole; react-pdf's default hyphenation broke figures and words mid-way ("medi-an").
 Font.registerHyphenationCallback((word) => [word]);
@@ -237,14 +237,63 @@ const FORMULA_WORDS: Record<string, string> = {
   "(current - prior) / prior * 100": "The change from the earlier figure, as a percent of it",
 };
 
+/** The first of the record's notes, shared by the written answer's source lines. */
+const RECORDS_SAVED_NOTE = "These records were saved with this answer and show where each figure came from.";
+
 /** Plain notes under the record; the appendix's own limitation codes are written for auditors. */
 function evidenceRecordNotes(record: SavedEvidenceAppendix): string[] {
   const incomplete = record.facts.some((f) => f.problems.length > 0) || record.derivations.some((f) => f.problems.length > 0);
   return [
-    "These records were saved with this answer and show where each figure came from.",
+    RECORDS_SAVED_NOTE,
     "Each figure matches the bank document Hamilton had stored at the time. It was not re-checked against the bank's current schedule, and the sentences around the figures were not checked one by one.",
     ...(incomplete ? ["Records marked \"Source not fully traceable\" or \"Inputs incomplete\" could not be traced in full."] : []),
   ];
+}
+
+interface EvidenceRecordRow { id: string; label: string; value: string; note: string }
+
+/**
+ * The rows and notes under "Evidence Record": the saved structured evidence when the answer has it
+ * (the storyline path), else a written answer's supported sentences' records (#1077), else none.
+ */
+export function evidenceRecordSection(analysis: AnalyzeResponse): { rows: EvidenceRecordRow[]; notes: string[] } | null {
+  const record = savedEvidence(analysis);
+  if (record) {
+    return {
+      rows: [...record.facts.map((fact) => ({
+        id: fact.id,
+        label: recordLabel(fact.scope, fact.source.label),
+        value: recordedValue(fact.value, fact.unit),
+        note: [
+          fact.source.label ?? fact.source.table,
+          fact.source.asOf ? `as of ${fact.source.asOf}` : "date not recorded",
+          fact.source.urls[0] ?? null,
+          fact.conditions,
+          fact.problems.length > 0 ? "Source not fully traceable" : null,
+        ].filter(Boolean).join(" · "),
+      })), ...record.derivations.map((fact) => ({
+        id: fact.id,
+        label: recordLabel(fact.scope, null),
+        value: recordedValue(fact.value, fact.unit),
+        note: [
+          `${FORMULA_WORDS[fact.formula] ?? fact.formula}, from ${fact.inputFactIds.length} recorded figure${fact.inputFactIds.length === 1 ? "" : "s"}`,
+          fact.problems.length > 0 ? "Inputs incomplete" : null,
+        ].filter(Boolean).join(" · "),
+      }))],
+      notes: evidenceRecordNotes(record),
+    };
+  }
+  const written = writtenAnswerSources(analysis);
+  if (!written.length) return null;
+  return {
+    rows: written.map((source) => ({
+      id: source.id,
+      label: `${source.figure} · ${source.institution}`,
+      value: source.unit ? recordedValue(source.value, source.unit) : "Not recorded",
+      note: [source.detail, source.complete ? null : "Source not fully traceable"].filter(Boolean).join(" · "),
+    })),
+    notes: [RECORDS_SAVED_NOTE, WRITTEN_SOURCES_NOTE, ...(written.some((s) => !s.complete) ? ["Records marked \"Source not fully traceable\" or \"Inputs incomplete\" could not be traced in full."] : [])],
+  };
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -290,7 +339,7 @@ export function AnalysisPdfDocument({
   const meaningSentences = splitSentences(humanizeAnswerText(shown.whatThisMeans));
   const meaningAsList = meaningSentences.length > 3;
 
-  const record = savedEvidence(analysis);
+  const record = evidenceRecordSection(analysis);
   // The appendix's dataset words (savedEvidenceAppendix(...).dataset comes from the same saved
   // stamps): read as saved, never refreshed (#1924 step 4). None for an answer saved without them.
   const about = datasetPassage(readStampedFigures(analysis.datasetStamps), SAVED_ANSWER_FULL_LIST);
@@ -404,26 +453,7 @@ export function AnalysisPdfDocument({
         {/* The saved evidence record: each figure with its source, as saved with the answer */}
         {record ? (
           <View style={styles.section}>
-            {[...record.facts.map((fact) => ({
-              id: fact.id,
-              label: recordLabel(fact.scope, fact.source.label),
-              value: recordedValue(fact.value, fact.unit),
-              note: [
-                fact.source.label ?? fact.source.table,
-                fact.source.asOf ? `as of ${fact.source.asOf}` : "date not recorded",
-                fact.source.urls[0] ?? null,
-                fact.conditions,
-                fact.problems.length > 0 ? "Source not fully traceable" : null,
-              ].filter(Boolean).join(" · "),
-            })), ...record.derivations.map((fact) => ({
-              id: fact.id,
-              label: recordLabel(fact.scope, null),
-              value: recordedValue(fact.value, fact.unit),
-              note: [
-                `${FORMULA_WORDS[fact.formula] ?? fact.formula}, from ${fact.inputFactIds.length} recorded figure${fact.inputFactIds.length === 1 ? "" : "s"}`,
-                fact.problems.length > 0 ? "Inputs incomplete" : null,
-              ].filter(Boolean).join(" · "),
-            }))].map((row, i) => (
+            {record.rows.map((row, i) => (
               <View key={row.id} wrap={false}>
                 {i === 0 ? <Text style={styles.sectionHeading}>Evidence Record</Text> : null}
                 <View style={styles.evidenceRow}>
@@ -435,7 +465,7 @@ export function AnalysisPdfDocument({
                 </View>
               </View>
             ))}
-            {evidenceRecordNotes(record).map((line) => <Text key={line} style={styles.evidenceNote}>{line}</Text>)}
+            {record.notes.map((line) => <Text key={line} style={styles.evidenceNote}>{line}</Text>)}
           </View>
         ) : null}
 
