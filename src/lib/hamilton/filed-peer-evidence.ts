@@ -1,4 +1,5 @@
 import { financialMeasureDefinition, financialSourceForCharter } from "@/lib/data-store/financial-peer-contract";
+import { MIN_PEERS_FOR_MEDIAN } from "@/lib/research/fee-income-peers";
 import type { AnswerToolEvidence } from "./written-answer-evidence";
 
 type RecordValue = Record<string, unknown>;
@@ -112,7 +113,7 @@ export function filedPeerIncomeReadings(reads: readonly AnswerToolEvidence[], in
       || comparison.population_basis !== "filed_financials" || comparison.fee_schedule_coverage_required !== false
       || comparison.subject_included !== false || !Number.isSafeInteger(comparison.sample_size) || Number(comparison.sample_size) < 0
       || output.peer_count !== comparison.sample_size || !Number.isSafeInteger(comparison.minimum_median_count)
-      || Number(comparison.minimum_median_count) < 5 || !finite(subject.service_charge_income)) continue;
+      || Number(comparison.minimum_median_count) < MIN_PEERS_FOR_MEDIAN || !finite(subject.service_charge_income)) continue;
     const peerCount = Number(output.peer_count);
     const rows = output.peers;
     if (!Array.isArray(rows) || rows.length > peerCount || (peerCount > 0 && rows.length === 0)) continue;

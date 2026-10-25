@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { coversOwnFees } from "../peer-index";
+import { MIN_PEERS_FOR_POSITION } from "./scenario";
 import { briefingLocalMarket, choosePeers, ownScheduleFrom, peerGroupIndex, feeLayerStamps, feePeerStamp, localMarketView, marketLayerSets, peerAmounts } from "./research";
 
 const peer = (amount: number, id: number) => ({ institution_id: id, institution_name: `Bank ${id}`, state_code: "TX", amount, source_document_ids: [id], document_urls: [], published_at: null });
@@ -11,14 +12,14 @@ describe("choosePeers", () => {
       { state_code: "TX", charter_type: "bank", asset_tiers: ["community_mid"] },
       {},
     ];
-    // The narrowest group has 4 overdraft publishers, so the next one is the group for every fee.
-    const narrow = new Map([["night_deposit", [1, 2, 3, 4, 5, 6].map((i) => peer(5, i))], ["overdraft", [1, 2, 3, 4].map((i) => peer(35, i))]]);
-    const wider = new Map([["overdraft", [1, 2, 3, 4, 5, 6, 7, 8].map((i) => peer(33, i))], ["rare_fee", [peer(10, 1)]]]);
+    // The narrowest group has 9 overdraft publishers, one short, so the next one is the group for every fee.
+    const narrow = new Map([["night_deposit", [1, 2, 3, 4, 5, 6].map((i) => peer(5, i))], ["overdraft", [1, 2, 3, 4, 5, 6, 7, 8, 9].map((i) => peer(35, i))]]);
+    const wider = new Map([["overdraft", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((i) => peer(33, i))], ["rare_fee", [peer(10, 1)]]]);
     const national = new Map([["rare_fee", Array.from({ length: 9 }, (_, i) => peer(10, i + 20))]]);
     const chosen = choosePeers(candidates, [narrow, wider, national], ["night_deposit", "overdraft", "rare_fee"]);
     const group = "TX · bank · $300M to $1B peers";
     expect(chosen.get("overdraft")).toMatchObject({ label: group, filters: candidates[1] });
-    expect(chosen.get("overdraft")?.values).toHaveLength(8);
+    expect(chosen.get("overdraft")?.values).toHaveLength(12);
     expect(chosen.get("night_deposit")).toMatchObject({ label: `${group}; none of them publish this fee`, filters: candidates[1], values: [] });
     expect(chosen.get("rare_fee")).toMatchObject({ label: `${group}; only 1 of them publish this fee`, filters: candidates[1] });
     expect(new Set([...chosen.values()].map((c) => JSON.stringify(c.filters))).size).toBe(1);
@@ -26,28 +27,30 @@ describe("choosePeers", () => {
 
   it("takes the narrowest group the shared rule passes, not the overdraft test, when coverage is known (#2098)", () => {
     const candidates = [{ state_code: "CA", charter_type: "credit_union" }, { charter_type: "credit_union" }, {}];
-    const narrow = new Map([["overdraft", [1, 2, 3, 4, 5].map((i) => peer(30, i))]]);
+    const narrow = new Map([["overdraft", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((i) => peer(30, i))]]);
     expect(peerGroupIndex([narrow, new Map(), new Map()], 3)).toBe(0);
     expect(peerGroupIndex([narrow, new Map(), new Map()], 3, { covers: [false, true, false] })).toBe(1);
     expect(peerGroupIndex([narrow, new Map(), new Map()], 3, { covers: [false, false, false] })).toBe(2);
     expect(choosePeers(candidates, [narrow, new Map(), new Map()], ["overdraft"], { covers: [false, true, false] }).get("overdraft")?.filters).toEqual(candidates[1]);
   });
 
-  it("covers a bank's fees when 5 others publish 80% of them; the bank counts itself in the index", () => {
+  it(`covers a bank's fees when ${MIN_PEERS_FOR_POSITION} others publish 80% of them; the bank counts itself in the index`, () => {
     const entries = (n: number) => ["a", "b", "c", "d", "e"].map((c) => ({ fee_category: c, institution_count: n }));
     const own = new Set(["a", "b", "c", "d", "e"]);
-    expect(coversOwnFees(entries(6), own)).toBe(true);
-    expect(coversOwnFees(entries(5), own)).toBe(false);
+    const enough = MIN_PEERS_FOR_POSITION + 1;
+    expect(coversOwnFees(entries(enough), own)).toBe(true);
+    expect(coversOwnFees(entries(MIN_PEERS_FOR_POSITION), own)).toBe(false);
     // Four of five is 80%.
-    expect(coversOwnFees([...entries(6).slice(0, 4), { fee_category: "e", institution_count: 2 }], own)).toBe(true);
-    expect(coversOwnFees([...entries(6).slice(0, 3), ...entries(2).slice(3)], own)).toBe(false);
+    expect(coversOwnFees([...entries(enough).slice(0, 4), { fee_category: "e", institution_count: 2 }], own)).toBe(true);
+    expect(coversOwnFees([...entries(enough).slice(0, 3), ...entries(2).slice(3)], own)).toBe(false);
     // No published fees: the overdraft test.
-    expect(coversOwnFees([{ fee_category: "overdraft", institution_count: 5 }], new Set())).toBe(true);
+    expect(coversOwnFees([{ fee_category: "overdraft", institution_count: MIN_PEERS_FOR_POSITION }], new Set())).toBe(true);
+    expect(coversOwnFees([{ fee_category: "overdraft", institution_count: MIN_PEERS_FOR_POSITION - 1 }], new Set())).toBe(false);
   });
 
   it("picks the same group whichever fee is asked about", () => {
     const candidates = [{ state_code: "TX", charter_type: "bank" }, {}];
-    const narrow = new Map([["overdraft", [1, 2, 3, 4, 5].map((i) => peer(30, i))], ["nsf", [peer(25, 1)]]]);
+    const narrow = new Map([["overdraft", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((i) => peer(30, i))], ["nsf", [peer(25, 1)]]]);
     const national = new Map([["nsf", Array.from({ length: 9 }, (_, i) => peer(25, i + 10))]]);
     expect(peerGroupIndex([narrow, national], 2)).toBe(0);
     expect(choosePeers(candidates, [narrow, national], ["nsf"]).get("nsf")?.filters).toEqual(candidates[0]);
@@ -212,14 +215,14 @@ describe("market layer stamps (#1924)", () => {
 
 describe("peer group stamp (#1924 step 3)", () => {
   const candidates = [{ state_code: "TX", charter_type: "bank" }, {}];
-  const narrow = new Map([["overdraft", [1, 2, 3, 4, 5].map((i) => ({ ...peer(30 + i, i), published_at: `2026-09-0${i}T00:00:00Z` }))]]);
+  const narrow = new Map([["overdraft", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((i) => ({ ...peer(30 + i, i), published_at: `2026-09-${String(i).padStart(2, "0")}T00:00:00Z` }))]]);
   const peers = choosePeers(candidates, [narrow, new Map()], ["overdraft", "nsf"]);
   const readAt = new Date("2026-10-18T14:10:00Z");
 
   it("stamps the band with the chosen group's own filters, the same read time, and the bank left out", () => {
     expect(peers.get("overdraft")?.filters).toEqual({ state_code: "TX", charter_type: "bank" });
     const stamp = feePeerStamp({ institutionId: 7, readAt, peers }, "overdraft");
-    expect(stamp).toMatchObject({ dataset: "published_fee_catalog", mode: "live", readAt: "2026-10-18T14:10:00.000Z", newestRecordAt: "2026-09-05T00:00:00.000Z" });
+    expect(stamp).toMatchObject({ dataset: "published_fee_catalog", mode: "live", readAt: "2026-10-18T14:10:00.000Z", newestRecordAt: "2026-09-10T00:00:00.000Z" });
     expect(stamp?.filters.map((f) => f.label)).toEqual(expect.arrayContaining(["Institutions in Texas", "The institution being compared left out"]));
   });
 

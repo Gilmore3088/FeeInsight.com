@@ -16,8 +16,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Decisions
 
-190 entries, newest first. The full text, who decided and why are in [DECISIONS.md](DECISIONS.md).
+191 entries, newest first. The full text, who decided and why are in [DECISIONS.md](DECISIONS.md).
 
+- 2026-10-25 — Hamilton's peer minimum: a median needs 5 local competitors, or 10 peers for any other group. — [decision](DECISIONS.md#2026-10-25) — `MIN_PEERS_FOR_POSITION` and its tests
 - 2026-10-22 — Data-quality work has an executive owner: its decisions, HOLD-class ones included, proceed after an independent exact-head review and green CI; CLAUDE.md hard limits still apply. — [decision](DECISIONS.md#2026-10-22)
 - 2026-10-22 — The second wave: Knox reads every stored document once more with today's rules (stale-read floor v78 to v97). — [decision](DECISIONS.md#2026-10-22)
 - 2026-10-21 — Targets of about 90% accuracy and 80% breadth; the shadow lab ratchet lets the pipeline move only one way. — [decision](DECISIONS.md#2026-10-21)
@@ -214,8 +215,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 262 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
-### Extraction and fee reading (42)
+### Extraction and fee reading (43)
 
+- 2026-10-25 — A dot-leader row that ends in its own price word ("…FREE") is finished; on a two-column page the next cell's price is the other column's fee, so neither the reader nor the check may give it to the closed row's name. — [finding](findings/2026-10-25-free-row-takes-next-column-price.md) — Agent lesson: knox/issue-2477-free-word-closes-the-row, darwin/issue-2477-closed-row-owns-no-later-price
 - 2026-10-25 — A better reader does not fix the texts it never re-reads; before re-reading thousands of stored documents, measure on a small sample what the current reader would change for their live fees, record-only. — [finding](findings/2026-10-25-pdf-texts-read-by-old-layout.md) — Guard: `src/lib/agents/rosetta/layout-recheck.test.ts`
 - 2026-10-24 — Read every PDF a second, independent way and compare which price each fee name gets; a layout mistake no detector knows yet shows up as a name the two readings price differently. — [finding](findings/2026-10-24-pdf-second-reader.md) — Agent lesson: rosetta/pdf-second-reading
 - 2026-10-22 — When a right read is held because its name reads as a sentence, fix the name Knox gives it, not the hold. Cut glued words only when every one is filler or the name's own: a cut in Knox hides a qualifier from every later check. — [finding](findings/2026-10-22-glued-sentence-names-held-at-publish.md) — Agent lesson: knox/glued-sentence-name

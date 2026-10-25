@@ -66,22 +66,29 @@ describe("segment answer", () => {
     member("Delta Bank", 35, 80_000_000, null, 3),
     member("Epsilon Bank", 35, 50_000_000, null, 3),
     member("Zeta Bank", 38, 38_000_000),
+    member("Eta Bank", 30, 30_000_000),
+    member("Theta Bank", 25, 25_000_000),
+    member("Iota Bank", 40, 20_000_000),
+    member("Kappa Bank", 34, 15_000_000),
+    member("Lambda Bank", 37, 10_000_000),
   ];
 
   it("builds the band, the $0 count and the bank's place, largest members first", () => {
     const seg = buildSegmentResearch({ segment, feeCategory: "overdraft", institutionsInSegment: 184, members, current: 32, ownInSegment: false });
-    expect(seg.members.map((m) => m.institutionName)).toEqual(["Alpha Bank", "Beta Bank", "Gamma Bank", "Delta Bank", "Epsilon Bank", "Zeta Bank"]);
-    expect(seg.band).toEqual({ p25: 16.25, median: 35, p75: 35.75, n: 6 });
+    expect(seg.members.map((m) => m.institutionName)).toEqual(["Alpha Bank", "Beta Bank", "Gamma Bank", "Delta Bank", "Epsilon Bank", "Zeta Bank", "Eta Bank", "Theta Bank", "Iota Bank", "Kappa Bank", "Lambda Bank"]);
+    // 0, 10, 25, 30, 34, 35, 35, 36, 37, 38, 40.
+    expect(seg.band).toEqual({ p25: 27.5, median: 35, p75: 36.5, n: 11 });
     expect(seg).toMatchObject({ zeroCount: 1, withDailyCap: 1, withDailyFeeLimit: 2, problem: null });
     expect(seg.ownPosition).not.toBeNull();
   });
 
   it("counts sister charters on one shared schedule once in the band, and still lists each (rule 7)", () => {
-    // Delta and Epsilon are sister charters reading one schedule: five values count, six are listed.
+    // Delta and Epsilon are sister charters reading one schedule: ten values count, eleven are listed.
     const sisters = members.map((m) => (m.institutionName === "Epsilon Bank" ? { ...m, countedAs: 80_000_000 } : m));
     const seg = buildSegmentResearch({ segment, feeCategory: "overdraft", institutionsInSegment: 184, members: sisters, current: 32, ownInSegment: false });
-    expect(seg.members).toHaveLength(6);
-    expect(seg.band).toEqual({ p25: 10, median: 35, p75: 36, n: 5 });
+    expect(seg.members).toHaveLength(11);
+    // 0, 10, 25, 30, 34, 35 (Delta and Epsilon once), 36, 37, 38, 40.
+    expect(seg.band).toEqual({ p25: 26.25, median: 34.5, p75: 36.75, n: 10 });
   });
 
   it("hands the segment and its members to the page with the Ask response", () => {
@@ -99,16 +106,16 @@ describe("segment answer", () => {
       segment: buildSegmentResearch({ segment, feeCategory: "overdraft", institutionsInSegment: 184, members, current: 32, ownInSegment: false }),
     };
     const answer = buildFeeAnswer(research, { focus: "competitors" });
-    expect(answer.headline).toBe("Your $32 overdraft fee is at the 33rd percentile of 6 $10B+ institutions (median $35).");
-    expect(answer.claims[0].text).toBe("6 of the 184 $10B+ institutions publish an overdraft fee in the index.");
+    expect(answer.headline).toBe("Your $32 overdraft fee is at the 36th percentile of 11 $10B+ institutions (median $35).");
+    expect(answer.claims[0].text).toBe("11 of the 184 $10B+ institutions publish an overdraft fee in the index.");
     expect(answer.claims.map((c) => c.text)).toContain("1 charge $0: Beta Bank.");
     expect(answer.claims.find((c) => c.text.startsWith("The largest by assets:"))?.text).not.toMatch(/National Association|Federal Credit Union/);
     expect(answer.claims.map((c) => c.text)).toContain("2 of them limit how many overdraft fees they charge in a day; the most common limit is 3.");
     expect(answer.claims.map((c) => c.text)).toContain("Your institution is outside this segment; your $32 is placed against it for comparison.");
     expect(answer.exhibit).toMatchObject({ kind: "competitor_range" });
     if (answer.exhibit?.kind === "competitor_range") {
-      expect(answer.exhibit.items.map((i) => i.amount)).toEqual([0, 10, 35, 35, 36, 38]);
-      expect(answer.exhibit.title).toBe("Overdraft fees at the 6 largest $10B+ institutions");
+      expect(answer.exhibit.items.map((i) => i.amount)).toEqual([0, 10, 25, 30, 34, 35, 35, 36, 37, 38, 40]);
+      expect(answer.exhibit.title).toBe("Overdraft fees at the 11 largest $10B+ institutions");
     }
     expect(JSON.stringify(answer)).not.toMatch(/recommend|should|raise your|lower your/i);
     const verdict = evaluateFourRoles(answer);
@@ -123,13 +130,13 @@ describe("segment answer", () => {
 
   describe("a 'the N largest' segment reads as counted English (#2028)", () => {
     const top25 = parseSegment("Which credit unions in the top 25 of the $1 billion to $10 billion tier run a fee share below 4%?")!;
-    const five = members.filter((m) => m.amount > 0).map((m) => ({ ...m, charterType: "credit_union" as const }));
+    const ten = members.filter((m) => m.amount > 0).map((m) => ({ ...m, charterType: "credit_union" as const }));
 
-    it("places the fee 'at the bottom of 5 of the 25 largest', never 'of 5 the 25 largest'", () => {
-      const seg = buildSegmentResearch({ segment: top25, feeCategory: "overdraft", institutionsInSegment: 25, members: five, current: 0, ownInSegment: true });
+    it("places the fee 'at the bottom of 10 of the 25 largest', never 'of 10 the 25 largest'", () => {
+      const seg = buildSegmentResearch({ segment: top25, feeCategory: "overdraft", institutionsInSegment: 25, members: ten, current: 0, ownInSegment: true });
       const answer = buildFeeAnswer({ ...overdraftResearch(), current: 0, segment: seg }, { focus: "competitors" });
-      expect(answer.headline).toBe("Your $0 overdraft fee is at the bottom of 5 of the 25 largest $1B to $10B credit unions (median $35).");
-      expect(answer.claims[0].text).toBe("5 of the 25 largest $1B to $10B credit unions publish an overdraft fee in the index.");
+      expect(answer.headline).toBe("Your $0 overdraft fee is at the bottom of 10 of the 25 largest $1B to $10B credit unions (median $35).");
+      expect(answer.claims[0].text).toBe("10 of the 25 largest $1B to $10B credit unions publish an overdraft fee in the index.");
     });
 
     it("names the whole group once when every member publishes", () => {
@@ -141,7 +148,7 @@ describe("segment answer", () => {
     });
 
     it("counts a too-small group without stacking two counts", () => {
-      const seg = buildSegmentResearch({ segment: top25, feeCategory: "overdraft", institutionsInSegment: 25, members: five.slice(0, 2), current: 32, ownInSegment: false });
+      const seg = buildSegmentResearch({ segment: top25, feeCategory: "overdraft", institutionsInSegment: 25, members: ten.slice(0, 2), current: 32, ownInSegment: false });
       expect(buildFeeAnswer({ ...overdraftResearch(), segment: seg }).headline).toBe(
         "Only 2 of the 25 largest $1B to $10B credit unions publish an overdraft fee, too few for a median.",
       );
@@ -153,7 +160,7 @@ describe("segment answer", () => {
     });
 
     it("writes no 'N the' or 'the N the' anywhere in the answer", () => {
-      const seg = buildSegmentResearch({ segment: top25, feeCategory: "overdraft", institutionsInSegment: 25, members: five, current: 32, ownInSegment: true });
+      const seg = buildSegmentResearch({ segment: top25, feeCategory: "overdraft", institutionsInSegment: 25, members: ten, current: 32, ownInSegment: true });
       const text = JSON.stringify(buildFeeAnswer({ ...overdraftResearch(), segment: seg }, { focus: "competitors" }));
       expect(text).not.toMatch(/\d the \d/);
     });

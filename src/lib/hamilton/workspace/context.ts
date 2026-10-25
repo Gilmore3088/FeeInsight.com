@@ -15,7 +15,7 @@ import {
   isEftFee,
 } from "./implementation";
 import { priceBands } from "./bands";
-import { MIN_PEERS_FOR_POSITION, pricePosition } from "./scenario";
+import { MIN_LOCAL_PEERS_FOR_POSITION, MIN_PEERS_FOR_POSITION, pricePosition } from "./scenario";
 import type { Fact, MarketLayer, MarketLayerScope, Observation, PeerValue, SourceRef } from "./types";
 
 const FEE_SOURCE: SourceRef = {
@@ -40,7 +40,8 @@ export function marketLayer(
   members: PeerValue[] = [],
 ): MarketLayer {
   const sorted = [...amounts].sort((a, b) => a - b);
-  const enough = sorted.length >= MIN_PEERS_FOR_POSITION;
+  const minPeers = scope === "local" ? MIN_LOCAL_PEERS_FOR_POSITION : MIN_PEERS_FOR_POSITION;
+  const enough = sorted.length >= minPeers;
   const asOf = publishedAt.filter((d): d is string => !!d).map((d) => d.slice(0, 10)).sort().pop() ?? null;
   return {
     scope,
@@ -49,7 +50,7 @@ export function marketLayer(
     p25: enough ? quantile(sorted, 0.25) : null,
     median: enough ? quantile(sorted, 0.5) : null,
     p75: enough ? quantile(sorted, 0.75) : null,
-    position: current === null ? null : pricePosition(current, sorted),
+    position: current === null ? null : pricePosition(current, sorted, minPeers),
     amounts: sorted,
     bands: priceBands(sorted, current),
     members: [...members].sort((a, b) => a.amount - b.amount || a.institutionName.localeCompare(b.institutionName)),
