@@ -296,4 +296,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-1912-section-and-name-decide-category",
+    agent: "darwin",
+    stage: "classify",
+    lesson: "Before filing a fee by its name, read the section heading its line is printed under and what the fee names besides its own words. A plain \"Returned Check Fee\" or \"Return Items\" printed under a foreign check or collection heading (\"Foreign Check Collection\", \"COLLECTIONS\", \"FOREIGN CHECK CLEARING\"), with only collection rows (courier, tracer, cash letter) between, is a deposited item coming back unpaid, not the member's NSF fee. A late fee whose name names the safe deposit box is the box's late rent, not a loan's late payment, and a transfer to another account at the same bank is not a wire. Walk up only through rows of that section: an overdraft or other heading, a sentence or another fee's row ends it, so a flat-list returned item keeps its category.",
+    why: "U.S. Bank's $35 foreign check collection return (75929) and BankUnited's collection and foreign check clearing returns (56558, 109208) went live as NSF beside each bank's real NSF fee, and five box late fees (36020, 152482, 153210, 155092, 159317) went live as lending late payments. Each traced to its own line, so the shared source check passed it; only the category was wrong (Oct 25, guard v90).",
+    evidence: { issues: [1912], prs: [], files: ["src/lib/custom-report/collection-section-return.ts", "src/lib/fee-category-guard.ts", "src/lib/agents/darwin/verify.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];
