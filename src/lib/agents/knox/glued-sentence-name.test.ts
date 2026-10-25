@@ -149,12 +149,14 @@ describe("Knox v104 through Knox, Darwin's verify and the publish gate", () => {
   });
 
   it("should_leave_publish_holding_every_name_its_tests_hold", () => {
-    // Hamilton's rule is unchanged: these are publish.test.ts's held names.
+    // These are publish.test.ts's held names.
     expect(publishNameHold("GUASFCU charges a", "check_image", 2)?.code).toBe("cutoff_name");
     expect(publishNameHold("Any replacement cards whether lost, stolen, or damaged will be charged a", "card_replacement", 5)?.code).toBe("cutoff_name");
+    // #1443 (Knox v107): a closed parenthetical ending the name is a qualifier, not a sentence, so
+    // this name is no longer cut off and publishes whole.
     expect(
-      publishNameHold("ATM Withdrawal Fees, out of Network (Surcharge Fees, fees accessed by other ATM proprietors, may still apply.)", "atm_non_network", 0)?.code,
-    ).toBe("cutoff_name");
+      publishNameHold("ATM Withdrawal Fees, out of Network (Surcharge Fees, fees accessed by other ATM proprietors, may still apply.)", "atm_non_network", 0),
+    ).toBeNull();
   });
 });
 
