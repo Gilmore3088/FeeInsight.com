@@ -1601,9 +1601,9 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   ACH", "ATM Photos at Credit Union"; re-filed to account research on Darwin's path, except a
   card's own research or film fee, the retired card dispute type, which has no home), an ATM
   transaction that overdraws a share ("ATM Negative Share Transaction") and an additional card
-  ("Additional ATM/Debit Card"); "each additional ATM withdrawal" names no card and stays. The six
+  ("Additional ATM/Debit Card"); "each additional ATM withdrawal" names no card and stays. Five of the six
   peer-check holds in #1690 now fail the category guard instead (the card issuance row already did,
-  v70). Read-only dry run, Oct 25: 4 of 2,290 live atm_non_network fees fail (82585, 100991, 127917,
+  v70; 740157 stays held, below). Read-only dry run, Oct 25: 4 of 2,290 live atm_non_network fees fail (82585, 100991, 127917,
   31292), each read on its stored line; the guard catch-up run takes them to the second look, and the
   live restore list (`RESTORE_REFILES`) is unchanged. A rewards account's ATM refund cap read as a
   fee ("o Nationwide ATM withdrawal fees/surcharges", raw 740157) says nothing in its name that marks

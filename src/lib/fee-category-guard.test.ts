@@ -2323,6 +2323,11 @@ describe("guard v83: other card and ATM services filed as the non-network ATM fe
     expect(atm("ATM/Debit: Each Additional Card", 5).ok).toBe(false);
   });
 
+  it("keeps a card holder or a photo ID, which name no card or research (review of #2595)", () => {
+    expect(atm("ATM Transaction (additional card holders)").ok).toBe(true);
+    expect(atm("Out-of-network ATM (photo ID required)").ok).toBe(true);
+  });
+
   it("still refuses card issuance (raw 691530, v70)", () => {
     expect(atm("Card Services ATM Card Issuance Service Charge: Charges").ok).toBe(false);
   });
