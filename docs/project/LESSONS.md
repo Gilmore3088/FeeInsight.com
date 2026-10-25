@@ -465,8 +465,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — Sign out on the account page and admin used Server Actions that a redeploy breaks. — [finding](findings/2026-10-09-sign-out-server-action.md) — Guard: `src/app/api/auth/logout/route.test.ts:30`
 - 2026-10-09 — A refunded report kept its paid status and its private link. — [finding](findings/2026-10-09-report-refund-not-handled.md) — Guard: `src/lib/stripe-webhook.test.ts` (+1 more)
 
-### Hamilton workspace (37)
+### Hamilton workspace (38)
 
+- 2026-10-25 — A price read later is not a later price: a change counts only when the new price's schedule (its own edition line, `editionStarts`) is not an older edition than the one on file and is not our corrected reading of the same document, and every competitor alert keeps what we knew before and when. — [finding](findings/2026-10-25-late-older-schedule-change.md) — Guard: `src/lib/report-assemblers/monthly-pulse.test.ts`, `src/lib/hamilton/competitor-alerts.test.ts`; Agent lesson: hamilton/issue-1898
 - 2026-10-25 — A decision that waits on shadow counts should not wait on live traffic when the engine can be replayed for free: the gate replay puts every Pro question on record and the quality bar for a seeded spread of institutions (up to 400 a day) through the free Ask engine and the one output gate, recorded as shadows with `origin: "replay"`, kept apart from readers'. — [finding](findings/2026-10-25-gate-replay-counts.md) — Guard: `src/lib/hamilton/gate-replay.test.ts`, `src/app/api/admin/crew/gate-replay/route.test.ts`
 - 2026-10-25 — A checked answer stays checked only while its claims travel with it: a saved answer's report finding now carries its supported sentences, cited facts and source lines into `report_json`, and the answer section holds any finding figure that neither those facts nor its own data support. — [finding](findings/2026-10-25-report-finding-claims.md) — Guard: `src/lib/hamilton/report-finding-claims.test.ts`, `src/lib/hamilton/report-actions.test.ts`
 - 2026-10-25 — Shrink what an answer does not rest on first: tool-output compaction now trims a profile's fee rows to their record, amount, category and name, drops conditions and halves its other lists (keeping five quarters of filing history) before any fee row, keeps spotlight and core fee types when rows must go, never cuts a profile to text, and marks `_fee_rows_complete` so saved fee refs survive a trim. — [finding](findings/2026-10-25-compaction-keeps-records.md) — Guard: `src/lib/research/tool-output.test.ts`, `src/lib/saved-output-corrections.test.ts`
@@ -568,7 +569,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (219 in all).
+counts as of this index (220 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
@@ -579,7 +580,7 @@ counts as of this index (219 in all).
 | knox | 62 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
 | darwin | 32 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 40 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
-| hamilton | 24 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
+| hamilton | 26 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
 | deming | 14 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
 
 ## Before 2026-10-10

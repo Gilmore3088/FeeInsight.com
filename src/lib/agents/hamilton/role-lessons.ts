@@ -257,4 +257,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-1898",
+    agent: "hamilton",
+    stage: "analysis",
+    lesson: "Report a competitor fee change only when the bank's current pricing moved, measured against the price you had on file. A newer reading is not a newer price: read each schedule's own edition line (editionStarts), never any 'effective' date in the text such as a privacy notice's; when the new price's schedule states an earlier edition than the one on file, it is an old schedule found late; when both prices come from one stored document, it is a corrected reading. Hold both, and for a competitor alert also hold a dated old schedule against an undated new one, since nothing shows it is newer. Take back an alert raised before the rule, and show every alert's before and after with each schedule's edition and the day each price reached the records.",
+    why: "The change rule compared prices on one fee page, and the page key ignores the dates in a file name, so a 2024 schedule read after the 2026 one on the same page would have been reported as the bank cutting its price. Alerts carried no record of what was on file before or when, so a reader could not check them.",
+    evidence: { issues: [1898], prs: [], files: ["src/lib/report-assemblers/monthly-pulse.ts", "src/lib/hamilton/competitor-alerts.ts", "src/components/hamilton/monitor/CompetitorAlertExhibit.tsx"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];
