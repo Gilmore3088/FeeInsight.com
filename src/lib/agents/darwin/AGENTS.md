@@ -1618,10 +1618,12 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   ("Business debit card included") and a line that says how to avoid the fee (104536, "In order to
   avoid the $5 monthly maintenance fee, your 10 debit card purchases must settle") keep it. None of
   the 50 types holds these charges, so the fee fails rather than moving. Read-only dry run, Oct 25:
-  24 of the 1,950 live generic monthly charges fail, each read on its stored text (14864, 20609,
+  23 of the 1,951 live generic monthly charges fail, each read on its stored text (14864, 20609,
   22589, 25656, 30168, 37098, 39939, 39940, 54853, 56683, 56684, 62697, 73286, 95222, 105305, 113537,
-  123617, 130477, 132739, 133705, 144067, 145952, 152527, 153643); the guard catch-up takes them to
-  the second look. TD's paper statement fee (152525) was already down (#1774).
+  123617, 132739, 133705, 144067, 145952, 152527, 153643); the guard catch-up takes them to the second
+  look. A line printed more than once is read under a heading only when every place's heading names
+  another service (123617, under two card headings); 130477 stays live because its line also sits
+  under "In-Office Deposit", which the service list does not name. TD's paper statement fee (152525) was already down (#1774).
 - v83 (Oct 25, #1690): the non-network
   ATM fee refuses a research, investigation or photo name ("Account Investigation - Share / ATM /
   ACH", "ATM Photos at Credit Union"; re-filed to account research on Darwin's path, except a

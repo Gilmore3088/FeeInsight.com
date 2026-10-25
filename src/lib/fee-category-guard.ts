@@ -967,8 +967,9 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // Positive Pay, ACH, bill pay, online banking, an ATM, debit or gift card, paper statements, a
 // benefits package (`otherServiceMonthlyCharge`). Florida Capital's Positive Pay rows (56683, 56684)
 // and TD's paper statement fee (152525, already down for #1774) are the cases. A line that says how
-// to avoid the fee, and a heading inside a feature list, keep it. Read-only dry run, Oct 25: 24 of
-// the 1,950 live generic monthly charges fail, each read on its stored text; Darwin's verify and
+// to avoid the fee, and a heading inside a feature list, keep it. A line printed more than once is
+// read under a heading only when every place's heading names another service. Read-only dry run,
+// Oct 25: 23 of the 1,951 live generic monthly charges fail, each read on its stored text; Darwin's verify and
 // Hamilton's live guard (with its takedown restore) read the heading from the stored text.
 export const CATEGORY_GUARD_VERSION = 84;
 
