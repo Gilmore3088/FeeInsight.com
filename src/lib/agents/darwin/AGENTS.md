@@ -1160,7 +1160,7 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
 - A late charge's cap or floor (`late-charge-bound-check.ts`, #1905). A loan schedule states its
   late charge as a share of the payment with a cap or floor ("5% of the principal and interest ...;
   maximum late charge of $30", "Minimum Late Fee $10" beside "5% of Payment Amount"). The cap or
-  floor is a bound on a percentage charge, not the late fee, and Knox v114 no longer reads one
+  floor is a bound on a percentage charge, not the late fee, and Knox v115 no longer reads one
   (`namesLateChargeBound`, `src/lib/late-charge-bound.ts`). Each verify step reads every live
   `late_payment` fee whose name's last clause is the bound (`LATE_CHARGE_BOUND_SQL`). The switch
   (`LATE_CHARGE_BOUND_TAKEDOWN_LIVE`) is on, under the sampled-clean rule (DECISIONS, 2026-10-20):
@@ -1631,7 +1631,7 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
 - The guard is at v91 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v91 (Oct 25, #1905):
   the network ATM rule's savings/share-withdrawal exclusion no longer refuses a share withdrawal
   priced at another network's ATM ("Share withdrawal at Non-Navy Federal/Non-CO-OP Network ATM",
-  Knox v114's network table read); the savings withdrawal limit stays out. Dry run: 0 live and 0
+  Knox v115's network table read); the savings withdrawal limit stays out. Dry run: 0 live and 0
   raw rows carry the wording.
 - v90 (Oct 25, #1912): a plain
   return charge ("Returned Check Fee", "Return Items") its stored text prints under a foreign check or

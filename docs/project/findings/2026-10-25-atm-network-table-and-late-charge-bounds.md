@@ -26,7 +26,7 @@ at two more institutions: "Minimum Late Fee" $10 beside "5% of Payment Amount" (
 Guard v80 caught the cash advance class after the fact; the input step was unchanged.
 
 **Fix:**
-- Knox v114 reads a network table by its columns (`src/lib/custom-report/network-column-rows.ts`):
+- Knox v115 reads a network table by its columns (`src/lib/custom-report/network-column-rows.ts`):
   a header of three to eight short cells with exactly one non-network ATM column and one own-network
   column arms it. The own column must name an ATM or a network by name, so a product column like
   "Star Checking" does not. Each withdrawal, transfer or inquiry row is read at a flat price opening
@@ -35,7 +35,7 @@ Guard v80 caught the cash advance class after the fact; the input step was uncha
   Payment | $30 | $30" row under the same header stays theirs. The source check traces the
   composed name through the same module, admit-only.
 - Guard v91 lets "share withdrawal at <non-network> ATM" stay a network ATM fee.
-- Knox v114 refuses a name whose last clause is a late charge's cap or floor
+- Knox v115 refuses a name whose last clause is a late charge's cap or floor
   (`src/lib/late-charge-bound.ts`), and Darwin's `late-charge-bound-check.ts` re-checks live ones
   with the same pattern. Its switch (`LATE_CHARGE_BOUND_TAKEDOWN_LIVE`) is on under the
   sampled-clean rule (DECISIONS, 2026-10-20): the review read all 5 dry-run fees against each

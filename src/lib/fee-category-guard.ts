@@ -1109,7 +1109,7 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // 36020's $1 is below the box type's $5 floor, so those 4 go to the second look). None of the 2,975
 // live domestic outgoing wires changes: the book transfer refusal shipped in v88.
 // v91 (Oct 25, #1905): a share withdrawal at an ATM the bank does not own or another network's ("Share
-// withdrawal at Non-Navy Federal/Non-CO-OP Network ATM", read by Knox v114 from an ATM network table)
+// withdrawal at Non-Navy Federal/Non-CO-OP Network ATM", read by Knox v115 from an ATM network table)
 // passes the non-network ATM fee; the savings-limit charge ("ATM Share Savings Withdrawal (over 3x per
 // month)") stays out. It only admits names. Read-only dry run (Oct 25): 0 live and 0 raw rows carry
 // the wording, so no fee is held, re-filed or taken down.

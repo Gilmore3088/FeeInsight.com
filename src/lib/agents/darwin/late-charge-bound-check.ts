@@ -8,7 +8,7 @@ type SqlTag = typeof sql;
 
 /**
  * Darwin's live re-check of late fees that are a late charge's cap or floor (#1905; decision
- * 2026-10-15, "Darwin re-checks every live fee against today's rules"). Knox v114 no longer reads
+ * 2026-10-15, "Darwin re-checks every live fee against today's rules"). Knox v115 no longer reads
  * them (`namesLateChargeBound` in `@/lib/late-charge-bound`), but the ones read before stay live:
  * Navy Federal's "Late charges | Generally 5% of the principal and interest ...; maximum late charge
  * of $30 in WV ... minimum late charge of $10 in ID, MD, WY" went live as three flat late fees,

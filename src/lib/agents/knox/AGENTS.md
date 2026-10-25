@@ -284,7 +284,26 @@ fees found (54.7%); 56 of the 59 wrong reads are the right price under another c
 
 ## Rules versions (`extract.rules`)
 
-v114 (Oct 25, #1905): an ATM network table (one column per network, priced row by row) is read by
+v114 (Oct 25): a sentence's priced noun phrase, "a/an <X> fee of $N", names and files the price
+(`pricedNounPhrase` in `rules.ts`, reusing `FEE_OF_SENTENCE`). Reliance State Bank's "... to cover
+overdrafts an NSF fee of $30.00 per item may also apply" (live fee 140283) is the NSF fee, named "NSF
+fee"; read from the cut words "overdrafts an NSF fee" it was nsf only while a PDF glyph garbled
+"Overdrafts", and overdraft once Rosetta's glyph repair reads it. The phrase re-files only between
+overdraft and nsf, and never to nsf when the words before say the bank paid or honored the item or
+name an overdraft program (`PAID_WORD`, `PAID_ITEM`, `PAID_AND_RETURNED_ITEM`, Courtesy Pay, Bounce,
+Privilege): "NSF items paid: an NSF fee of" and "Courtesy Pay overdrafts an NSF fee of" stay
+overdraft (v19, v42, v43), as do "Overdrafts we choose to pay", "honored" and "covered by us" (`BANK_PAYS`); "Overdraft items returned an NSF fee of" and "Overdrafts we do not pay an NSF fee of" are nsf, and an NSF item returned stays nsf whatever the phrase (`ITEM_RETURNED`). Any other disagreement keeps the read's category and name, because the words
+before are then the more specific fee ("For incoming international wires, an incoming wire fee of"
+stays an international wire; deposited item returns, garnishments and subpoena copies stay as read).
+The read also stays when the phrase is generic ("a monthly fee of", "a service charge of", "an
+inactivity fee of"), when the words before it name a fee, or when no rule reads the line as a fee. The
+name stays as read when the cut drops a condition or a family qualifier (`FAMILY_QUALIFIER`). A
+combined "NSF/Overdraft Fee" stays overdraft (v16, v82). Oct 25 dry run over 972 live fees: 217 reads
+take the phrase's name (30 differ from the live name), none changes category; with the glyph
+repaired, only Reliance moves, overdraft to nsf, its live category. The stale-read floor stays at v97
+and name re-tidy at v27.
+
+v115 (Oct 25, #1905): an ATM network table (one column per network, priced row by row) is read by
 its columns (`networkColumnReads` in `src/lib/custom-report/network-column-rows.ts`, shared with the
 source check). Each machine-use row (withdrawal, transfer, inquiry, balance) is read at the price
 that opens the one non-network column ("Non-Navy Federal/Non-CO-OP Network ATM", "Non-Owned ATM")
@@ -2077,7 +2096,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v114 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v115 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v10 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

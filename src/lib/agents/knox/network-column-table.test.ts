@@ -16,7 +16,7 @@ const rg = ["Item/Service | Non-Owned ATM Fee | Owned ATM Fee", "", "Withdrawal 
 
 const reads = (text: string) => runFreeSpecialists(text).candidates;
 
-describe("Knox v114 reads an ATM network table by its columns (#1905)", () => {
+describe("Knox v115 reads an ATM network table by its columns (#1905)", () => {
   it("reads each machine use at the non-network column's price, named by the row and the column", () => {
     const atm = reads(navy).filter((read) => read.canonicalHint === "atm_non_network" && read.excerpt.includes("| None |"));
     expect(atm.map((read) => [read.feeName, read.amount])).toEqual([
@@ -90,6 +90,20 @@ describe("Knox v114 reads an ATM network table by its columns (#1905)", () => {
     ]);
   });
 
+  it("an account row that shares a machine word is neither read at the network column nor blanked (re-review)", () => {
+    const table = [
+      "Service | Our ATMs | Non-Bank ATMs",
+      "Withdrawal | Free | $2.00",
+      "Overdraft transfer | $5.00 | $5.00",
+      "Minimum balance | $100 | $100",
+    ].join("\n");
+    expect(networkColumnReads(table).map((read) => [read.feeName, read.amount])).toEqual([["Withdrawal at Non-Bank ATMs", 2]]);
+    const blanked = withoutNetworkTableRows(table).split("\n");
+    expect(blanked[2]).toBe("Overdraft transfer | $5.00 | $5.00");
+    expect(blanked[3]).toBe("Minimum balance | $100 | $100");
+    expect(reads(table).some((read) => read.canonicalHint === "atm_non_network" && /overdraft|minimum/i.test(read.feeName))).toBe(false);
+  });
+
   it("a conditional price is no flat read (review note 2)", () => {
     const table = ["Service | Our ATMs | Other ATMs", "Withdrawal | Free | $2.00", "Transfer | $0 | $3.00 per transfer after 4"].join("\n");
     expect(networkColumnReads(table).map((read) => [read.feeName, read.amount])).toEqual([["Withdrawal at Other ATMs", 2]]);
@@ -103,7 +117,7 @@ describe("Knox v114 reads an ATM network table by its columns (#1905)", () => {
   });
 });
 
-describe("Knox v114: a late charge's cap or floor is no late fee (#1905)", () => {
+describe("Knox v115: a late charge's cap or floor is no late fee (#1905)", () => {
   it("reads no late fee from the mortgage late-charge sentence, and keeps the real late fees", () => {
     const late = reads(navy).filter((read) => read.canonicalHint === "late_payment");
     expect(late.map((read) => [read.feeName, read.amount])).toEqual([

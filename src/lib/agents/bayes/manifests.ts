@@ -568,7 +568,7 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // re-files from NSF to deposited_item_return, and a late charge named for the safe deposit box
     // re-files from late_payment to safe_deposit_box (2 move in place; 6 go to the second look).
     // v91 (Oct 25, #1905): the non-network ATM fee admits a share withdrawal at another network's ATM
-    // (Knox v114's network table read); names only, 0 live and 0 raw rows on the Oct 25 dry run.
+    // (Knox v115's network table read); names only, 0 live and 0 raw rows on the Oct 25 dry run.
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",

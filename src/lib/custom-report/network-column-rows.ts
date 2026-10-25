@@ -61,6 +61,12 @@ const ATM_ROW =
 const FLAT_UNIT = /^(?:each|per\s+(?:transaction|item|withdrawal|transfer|inquiry|use|occurrence))?$/i;
 /** A row that prices a use of the machine. */
 const MACHINE_USE = /\b(?:withdraw\w*|w\/d|transfers?|inquir\w*|balances?)\b/i;
+/**
+ * An account row whose words overlap a machine use ("Overdraft transfer", "Minimum balance", "Monthly
+ * statement"): the account's fee or term, never a use of the machine, so neither read nor blanked here
+ * (#1905 re-review).
+ */
+const ACCOUNT_ROW = /\b(?:overdraft|od|courtesy|minimum|min\.?|low|average|avg|daily|monthly|statements?|accounts?|dormant|inactiv\w*|wire|ach|stop|protection|sweep|interest|dividend|apy|rate)\b/i;
 /** A row that is no fee of the account's at another network's ATM. */
 const NOT_ACCOUNT_USE = /\bcredit\s+cards?\b|\b(?:reject\w*|denied|declin\w*|invalid|insufficient|purchases?|deposits?)\b/i;
 const PRICE_OPENS_CELL = /^\$\s?(\d[\d,]*(?:\.\d{1,2})?)(?![\d,])/;
@@ -114,7 +120,7 @@ export function networkColumnReads(text: string): NetworkColumnRead[] {
     for (const index of table.rows) {
       const cells = cellsOf(lines[index]);
       const name = rowName(cells[0]);
-      if (!/[a-z]{3,}/i.test(name) || !MACHINE_USE.test(name) || NOT_ACCOUNT_USE.test(name)) continue;
+      if (!/[a-z]{3,}/i.test(name) || !MACHINE_USE.test(name) || NOT_ACCOUNT_USE.test(name) || ACCOUNT_ROW.test(name)) continue;
       const cell = cells[table.column];
       const price = PRICE_OPENS_CELL.exec(cell);
       if (!price) continue;
@@ -161,7 +167,10 @@ export function withoutNetworkTableRows(text: string): string {
   const tables = networkTables(lines);
   if (tables.length === 0) return text;
   for (const table of tables) {
-    for (const index of table.rows) if (ATM_ROW.test(rowName(cellsOf(lines[index])[0]))) lines[index] = "";
+    for (const index of table.rows) {
+      const name = rowName(cellsOf(lines[index])[0]);
+      if (ATM_ROW.test(name) && !ACCOUNT_ROW.test(name)) lines[index] = "";
+    }
   }
   return lines.join("\n");
 }

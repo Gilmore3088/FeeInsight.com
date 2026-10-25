@@ -301,7 +301,20 @@ import { namesLateChargeBound } from "@/lib/late-charge-bound";
 // Accounts", "Retired Accounts (no longer available on new memberships)") (`discontinuedRow`, source
 // check v26), so the self-check holds it as untraced. Removes reads only. The stale-read floor stays
 // at v97. Name re-tidy stays at v27.
-// v114 (#1905): an ATM network table ("Transaction Type | Navy Federal ATM | CO-OP ATM Network® |
+// v114: a sentence's priced noun phrase ("... to cover overdrafts an NSF fee of $30.00 per item",
+// Reliance State Bank, live fee 140283) names and files the price (`pricedNounPhrase` in rules.ts,
+// reusing `FEE_OF_SENTENCE`). The cut words "overdrafts an NSF fee" filed it by their first fee word:
+// nsf only while a PDF glyph garbled "Overdrafts", overdraft once Rosetta's glyph repair reads it. The
+// phrase re-files only between overdraft and nsf, never a paid item's or an overdraft program's NSF
+// wording ("NSF items paid: an NSF fee of", "Courtesy Pay overdrafts an NSF fee of" stay overdraft,
+// v19/v42/v43); any other disagreement keeps the read (an incoming international wire stays
+// international). A generic phrase ("a monthly fee of"), words before it
+// that name a fee, or a line no rule reads as a fee keep the read; a cut that drops a condition or a
+// family qualifier ("Subpoenas/Summons") keeps the name. A combined "NSF/Overdraft Fee" stays
+// overdraft. Oct 25 dry run over 972 live fees whose line or name has the phrase: 217 rules reads
+// take the phrase's name (30 differ from the live name), none changes category; with the glyph
+// repaired, Reliance alone moves, overdraft to nsf (its live category).
+// v115 (#1905): an ATM network table ("Transaction Type | Navy Federal ATM | CO-OP ATM Network® |
 // Non-Navy Federal/Non-CO-OP Network ATM | ...", Navy Federal doc 39026; "Item/Service | Non-Owned ATM
 // Fee | Owned ATM Fee", R-G FCU) is read by its columns: each row that prices a use of the machine is
 // read at the non-network column's price, named by the row and that column ("Share withdrawal at
@@ -312,9 +325,9 @@ import { namesLateChargeBound } from "@/lib/late-charge-bound";
 // column's price only (`networkColumnRow`); guard v91 lets a share withdrawal at another network's ATM
 // pass the non-network fee. And a late charge's cap or floor ("maximum late charge of $30 in WV",
 // "Minimum Late Fee $10" beside "5% of Payment Amount") is no late fee (`namesLateChargeBound`):
-// Darwin's late charge bound re-check (switch off) holds the 5 live ones. The stale-read floor stays at
+// Darwin's late charge bound re-check (switch on) takes down the 5 live ones. The stale-read floor stays at
 // v97. Name re-tidy stays at v27.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 114 } as const;
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 115 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -450,7 +463,7 @@ function withContextFees(text: string, read: ExtractionRulesResult): ExtractionR
 }
 
 /**
- * v114 (#1905): pass 1 adds each ATM network table row's non-network price (`networkColumnReads`),
+ * v115 (#1905): pass 1 adds each ATM network table row's non-network price (`networkColumnReads`),
  * named by the row and that column, as the non-network ATM fee when Darwin's checks accept it.
  */
 const NETWORK_COLUMN_CATEGORY = "atm_non_network";
@@ -516,7 +529,7 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
   // must be supported by the stored row itself: "Courtesy Pay $20 $30 ..." at $30 is held untraced.
   // v106: "$03" is a $0 price with its footnote glued on (`withGluedFootnotePrices`, #1946).
   const checkText = withSidewaysBoxTable(withBoxSizeCellsSplit(withoutBusinessOnlyFees(joinLabeledFeeCardText(withGluedFootnotePrices(sourceText)))));
-  // v114 (#1905): an ATM network table's rows are read only by their non-network column
+  // v115 (#1905): an ATM network table's rows are read only by their non-network column
   // (`withNetworkColumnFees`); no other reader sees them, so none takes another column's price.
   const text = withoutNetworkTableRows(withTierColumnRows(checkText));
   const legacyText = withoutFeeBullets(text, recognizedFeeBullets(text));
@@ -610,7 +623,7 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
       const candidate = { ...read, ...feeApplicability(feeName, read.excerpt, read.amount), feeName, frequency };
       // v28: a limit is not a price ("Zelle transfer limit | $1,000").
       if (namesALimit(candidate.feeName, candidate.canonicalHint)) continue;
-      // v114 (#1905): a late charge's cap or floor ("maximum late charge of $30 in WV", "Minimum Late
+      // v115 (#1905): a late charge's cap or floor ("maximum late charge of $30 in WV", "Minimum Late
       // Fee $10" beside "5% of Payment Amount") bounds a percentage charge; it is no late fee.
       if (namesLateChargeBound(candidate.feeName)) continue;
       // v32: a name that closes a parenthesis it never opened ("SCCU for using a non-SCCU
