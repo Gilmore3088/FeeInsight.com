@@ -177,6 +177,37 @@ describe("Hamilton monitor data", () => {
     expect(sqlCalls[1].values).toEqual([["8109"], ["darwin_verification_needs_review", "knox_extraction_needs_review"], 20]);
   });
 
+  it("reads a competitor change's prices and baseline into the Monitor feed (#1898)", async () => {
+    const { fetchMonitorPageData } = await import("./monitor-data");
+    const competitorJson = {
+      competitor_name: "Lone Star CU",
+      canonical_fee_key: "overdraft",
+      previous_amount: 30,
+      new_amount: 35,
+      baseline: {
+        before: { amount: 30, schedule_url: "https://lonestar.example/fees-2025.pdf", edition: "2025-01-01", read_on: "2026-10-02" },
+        after: { amount: 35, schedule_url: "https://lonestar.example/fees-2026.pdf", edition: "2026-10-01", read_on: "2026-10-06" },
+      },
+    };
+    queuedRows = [
+      [],
+      [{ id: "s1", institution_id: "8109", signal_type: "hamilton_competitor_fee_change", severity: "medium", title: "Lone Star CU raised its overdraft fee from $30.00 to $35.00", body: "Home Bank has no published overdraft fee on file.", created_at: "2026-10-07T00:00:00Z", competitor_json: competitorJson }],
+      [],
+      [{ count: 0 }],
+      [{ count: 0 }],
+      [{ count: 0 }],
+      [],
+    ];
+
+    const data = await fetchMonitorPageData(7, { selectedInstitutionId: 8109 });
+
+    expect(sqlCalls[1].text).toContain("competitor_json");
+    expect(data.signalFeed[0].competitorChange?.baseline).toEqual({
+      before: { amount: 30, scheduleUrl: "https://lonestar.example/fees-2025.pdf", edition: "2025-01-01", readOn: "2026-10-02" },
+      after: { amount: 35, scheduleUrl: "https://lonestar.example/fees-2026.pdf", edition: "2026-10-01", readOn: "2026-10-06" },
+    });
+  });
+
   it("shows no signals for legacy non-canonical watchlist values instead of a global sample", async () => {
     const { fetchMonitorPageData } = await import("./monitor-data");
 
