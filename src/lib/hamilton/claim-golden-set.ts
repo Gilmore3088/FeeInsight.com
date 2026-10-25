@@ -80,6 +80,7 @@ export const CLAIM_GOLDEN_PROMPT_FILES: readonly string[] = [
   "src/lib/hamilton/answer-interpretations.ts",
   "src/lib/hamilton/narrative-bound.ts",
   "src/lib/hamilton/written-answer-binding.ts",
+  "src/lib/hamilton/output-gate-repair.ts",
 ];
 
 const BANK_A = 9001;

@@ -118,6 +118,13 @@ institutions remains the only human launch workflow.
   runs its stage; rows with no pattern are counted, never a class. Each class keeps one weight-0
   `error_class` ledger row, opened the first day it is seen and updated with each later day's
   counts, date, examples and a GitHub-ready title and body. The morning brief lists the largest classes, so the data lane works classes, not fees.
+- Live wrong amounts at extract (#2067; `amount-patterns.ts`) group by the text layout around the
+  fee, not its category: price-first rows paired with the wrong row, an opening deposit read as the
+  fee, a cap or minimum, a figure in the name, a footnote glued to a $0 price, a price from the
+  next line, several columns. Each row is re-checked with today's shared `checkFeeAgainstSource`
+  (a `tiered_fee` verdict traces, as in Knox's self-check): a class it refuses no longer traces
+  wherever the check runs; a class it still passes (`passes_today`) is the next extraction rule to
+  write, with its Darwin dry-run count. A hand amount correction's row is judged at its old read.
 
 ## Weekly live-check gaps (#2066)
 
@@ -367,6 +374,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DEMING_REGRESSION_VERSION` | — | v1 | `deming/regression.ts` |
 | `BENCHMARK_HEALTH_VERSION` | — | v1 | `deming/benchmark-health.ts` |
 | `PLAYBOOK_CHECK_VERSION` | — | v1 | `deming/playbook-contradictions.ts` |
+| `AMOUNT_PATTERN_VERSION` | — | v1 | `deming/amount-patterns.ts` |
 | `DATA_QUALITY_VERSION` | — | v1 | `deming/data-quality.ts` |
 | `KNOX_MISSES_VERSION` | — | v1 | `deming/knox-misses.ts` |
 | `MONTHLY_REVIEW_VERSION` | — | v1 | `deming/monthly-review.ts` |
