@@ -265,7 +265,14 @@ export interface GateReplaySummary {
   /** Today's replay shadows, every run's together. */
   today: GateReplayCounts;
   /** The last week's shadows by origin, replays apart from readers' answers; null when they could not be read. */
-  recent: { days: number; reader: GateShadowCountsLite & { disagree: number }; paid_eval: GateShadowCountsLite & { disagree: number }; replay: GateShadowCountsLite & { disagree: number } } | null;
+  recent: {
+    days: number;
+    reader: GateShadowCountsLite & { disagree: number };
+    paid_eval: GateShadowCountsLite & { disagree: number };
+    replay: GateShadowCountsLite & { disagree: number };
+    /** The one-off paid replay batch (paid-gate-replay.ts), apart from this free replay's. */
+    replay_paid: GateShadowCountsLite & { disagree: number };
+  } | null;
   golden: GateReplayGolden;
 }
 
@@ -362,6 +369,7 @@ export async function runGateReplay({
     reader: { ...lite(tally.byOrigin.reader), disagree: tally.byOrigin.reader.disagree },
     paid_eval: { ...lite(tally.byOrigin.paid_eval), disagree: tally.byOrigin.paid_eval.disagree },
     replay: { ...lite(tally.byOrigin.replay), disagree: tally.byOrigin.replay.disagree },
+    replay_paid: { ...lite(tally.byOrigin.replay_paid), disagree: tally.byOrigin.replay_paid.disagree },
   })).catch(() => null);
   return {
     day, cap, planned: plan.length, proQuestions: plan.filter((p) => p.from === "pro").length, institutions: institutions.length,
@@ -386,7 +394,7 @@ export function gateReplaySummaryLine(s: GateReplaySummary): string {
     t.topCodes.length ? `Top failure codes: ${codeList(t.topCodes)}.` : "",
     `Golden set ${s.golden.version}: ${s.golden.meetsTarget} of ${s.golden.total} meet target, ${s.golden.controlsValidated} of ${s.golden.controls} controls validated.`,
     s.recent
-      ? `Last ${s.recent.days} days, kept apart: reader answers ${s.recent.reader.total} (${s.recent.reader.disagree} disagree), paid eval ${s.recent.paid_eval.total} (${s.recent.paid_eval.disagree} disagree).`
+      ? `Last ${s.recent.days} days, kept apart: reader answers ${s.recent.reader.total} (${s.recent.reader.disagree} disagree), paid eval ${s.recent.paid_eval.total} (${s.recent.paid_eval.disagree} disagree)${s.recent.replay_paid.total ? `, paid replay batch ${s.recent.replay_paid.total} (${s.recent.replay_paid.disagree} disagree)` : ""}.`
       : "Last week's reader counts could not be read.",
     s.complete ? "Today's plan is complete." : `${s.remaining} answers left for the next run${s.run.timedOut ? " (stopped at the time budget)" : ""}.`,
   ];

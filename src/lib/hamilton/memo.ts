@@ -13,7 +13,7 @@ import { withRawProviderResponseOperation } from "@/lib/ai-response-budget";
 import { getAnthropicMessagesClient, extractAnthropicText, getHamiltonModel, hasAnthropicApiKey, isProviderLimitError } from "@/lib/ai-provider";
 import { HamiltonTaskBudgetError } from "./task-budget";
 import { HAMILTON_PAUSED_MESSAGE } from "./provider-paused";
-import { trackAnthropicRequest, assertCompletedAnthropicTextResponse, incompleteProviderResponse } from "@/lib/ai-provider-usage";
+import { trackAnthropicRequest, assertCompletedAnthropicTextResponse, incompleteProviderResponse, ledgerFields, type ProviderLedger } from "@/lib/ai-provider-usage";
 import { extractFigures } from "./figure-check";
 import { checkAnswerEvidence } from "./answer-gate";
 import type { HamiltonEvidenceBundle } from "./evidence-contract";
@@ -317,6 +317,8 @@ export interface MemoTracking {
   agentRunId?: number;
   /** The reader the memo is for: its usage row counts toward their daily cap (#1921). */
   userId?: number;
+  /** Books the call under another agent and route (the paid replay batch); absent, the path's own. */
+  ledger?: ProviderLedger;
 }
 
 function anthropicMemoClient(institutionId: number | null, usage?: MemoUsage, tracking?: MemoTracking): MemoClient {
@@ -325,9 +327,8 @@ function anthropicMemoClient(institutionId: number | null, usage?: MemoUsage, tr
       const response = await trackAnthropicRequest(
         {
           model,
-          agent: "hamilton",
+          ...ledgerFields(tracking?.ledger, { agent: "hamilton", routeId: MEMO_ROUTE_ID }),
           operation: tracking?.operation ?? "storyline_memo",
-          routeId: MEMO_ROUTE_ID,
           ...(tracking?.subjectKey ? { subjectKey: tracking.subjectKey } : {}),
           ...(tracking?.agentRunId ? { agentRunId: tracking.agentRunId } : {}),
           ...(tracking?.userId ? { userId: tracking.userId } : {}),
