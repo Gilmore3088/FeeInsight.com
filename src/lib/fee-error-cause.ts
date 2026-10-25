@@ -65,28 +65,32 @@ export function documentAddress(value: string): string {
 
 /**
  * The cause a correction most likely has, from what it changes, used as the form's starting
- * choice and when none is sent. Pure. The value read from a document at another address than the
- * live fee's points to the wrong document; a newer copy of the same page is the same document
- * (the fee was read from an old copy, not from the wrong page). Otherwise a new fee type points to
- * the category, a new amount to the amount; anything else (a name, frequency or conditions only)
- * is left as not sure.
+ * choice and when none is sent. Pure. A new fee type points to the category, a new amount to the
+ * amount; anything else (a name, frequency or conditions only) is left as not sure. A wrong
+ * document is never suggested: citing another document does not show the fee's own document was
+ * the wrong page (the right price can sit in a companion disclosure beside a correct schedule), and
+ * a wrong-document finding sends the bank's link to be searched again, so only a person's explicit
+ * choice files one.
  */
 export function suggestCorrectionCause(input: {
-  liveDocumentUrl: string | null;
-  sourceDocumentUrl: string | null;
   beforeCategory: string | null;
   afterCategory: string | null;
   beforeAmount: number | null;
   afterAmount: number | null;
 }): FeeErrorCause {
-  if (input.liveDocumentUrl && input.sourceDocumentUrl && documentAddress(input.liveDocumentUrl) !== documentAddress(input.sourceDocumentUrl)) {
-    return "wrong_document";
-  }
   if (input.afterCategory && input.beforeCategory !== input.afterCategory) return "wrong_category";
   if (input.afterAmount != null && (input.beforeAmount == null || Math.abs(input.beforeAmount - input.afterAmount) >= 0.005)) {
     return "wrong_amount";
   }
   return "not_sure";
+}
+
+/**
+ * True when the cited document sits at another address than the live fee's, so the form can
+ * remind the operator that "Wrong document" is theirs to choose. A hint only, never a cause. Pure.
+ */
+export function citesAnotherAddress(liveDocumentUrl: string | null, sourceDocumentUrl: string | null): boolean {
+  return Boolean(liveDocumentUrl && sourceDocumentUrl && documentAddress(liveDocumentUrl) !== documentAddress(sourceDocumentUrl));
 }
 
 /**

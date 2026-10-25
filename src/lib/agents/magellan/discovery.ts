@@ -1415,7 +1415,8 @@ async function selectStaleCandidates(
         -- address), matched to the link as an audit miss is: the page's current copy only (a fee
         -- read from an old copy or a side copy of a good link is not this link's fault), and the
         -- main document only while the remembered address agrees. A release or reversal of the
-        -- same hold or correction withdraws it. A person's judgement, so the fee's state is not
+        -- same hold or correction withdraws it (a later hold and release of a corrected fee
+        -- withdraws its correction's finding too: fewer searches, never a wrong one). A person's judgement, so the fee's state is not
         -- asked: each hold or correction is its own row (created_at), one search per finding.
         LEFT JOIN LATERAL (
           SELECT max(f.created_at) AS hand_at, array_agg(DISTINCT f.evidence->>'wrong_document_url') AS hand_urls

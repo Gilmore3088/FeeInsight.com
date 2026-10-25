@@ -15,7 +15,7 @@ import {
   type FeeCorrectionVersion,
   type FeeValues,
 } from "@/lib/fee-correction-rules";
-import { FEE_ERROR_CAUSES, FEE_ERROR_CAUSE_LABELS, suggestCorrectionCause, type FeeErrorCause } from "@/lib/fee-error-cause";
+import { FEE_ERROR_CAUSES, FEE_ERROR_CAUSE_LABELS, citesAnotherAddress, suggestCorrectionCause, type FeeErrorCause } from "@/lib/fee-error-cause";
 
 export interface CorrectableFee {
   id: number;
@@ -194,15 +194,17 @@ export function CorrectFeeButton({
   };
 
   const suggestedCause = suggestCorrectionCause({
-    // Compared by address: a newer copy of the same page is the same document, not a wrong one.
-    liveDocumentUrl: documents.find((doc) => doc.id === fee.sourceDocumentId)?.url ?? fee.sourceUrl,
-    sourceDocumentUrl: documents.find((doc) => String(doc.id) === form.sourceDocumentId)?.url ?? null,
     beforeCategory: before.canonicalFeeKey || null,
     afterCategory: after.canonicalFeeKey || null,
     beforeAmount: before.amount,
     afterAmount: after.amount,
   });
   const cause: FeeErrorCause = (form.cause as FeeErrorCause) || suggestedCause;
+  // A hint only: another address may mean the wrong page, which only the operator can say.
+  const otherAddress = citesAnotherAddress(
+    documents.find((doc) => doc.id === fee.sourceDocumentId)?.url ?? null,
+    documents.find((doc) => String(doc.id) === form.sourceDocumentId)?.url ?? null,
+  );
 
   function review() {
     const missing: Partial<Record<string, string>> = {};
@@ -339,6 +341,7 @@ export function CorrectFeeButton({
               </select>
               <p className="mt-0.5 text-[11px] text-gray-500">
                 {form.cause ? "" : "Suggested from what you changed. "}This sends the error back to the step that made it, so that step learns from it.
+                {otherAddress && !form.cause ? " You cited a different page: choose Wrong document only if the fee was read from the wrong page." : ""}
               </p>
               <FieldError message={errors.cause} />
               {error && <p className="mt-2 text-xs text-red-600" role="alert">{error}</p>}

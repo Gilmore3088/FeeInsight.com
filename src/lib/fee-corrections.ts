@@ -70,7 +70,6 @@ interface LiveFeeRow {
   lineage_source_document_id: number | string | null;
   /** The address of the document the live fee was read from. */
   lineage_document_url: string | null;
-  source_url: string | null;
 }
 
 interface CurrentVersionRow {
@@ -110,7 +109,7 @@ function liveValues(row: LiveFeeRow, conditionsOverride?: string | null): FeeVal
 async function lockLiveFee(tx: SqlTag, feePublishedId: number): Promise<LiveFeeRow | null> {
   const rows = await tx<LiveFeeRow[]>`
     SELECT fp.fee_published_id, fp.institution_id, fp.canonical_fee_key, fp.fee_name, fp.amount,
-           fp.frequency, fp.variant_type, fp.fee_audience, fp.amount_kind, fp.fee_treatment, fp.source_url,
+           fp.frequency, fp.variant_type, fp.fee_audience, fp.amount_kind, fp.fee_treatment,
            fr.conditions, fr.source_document_id AS lineage_source_document_id,
            (SELECT sd.document_url FROM source_documents sd WHERE sd.id = fr.source_document_id) AS lineage_document_url
       FROM published_fee_records fp
@@ -478,8 +477,6 @@ export async function correctPublishedFee(
       evidence: { ...checked.evidence, excerpt: input.sourceExcerpt, location: input.sourceLocation },
       reversedToDocumentId: null,
       cause: input.cause ?? suggestCorrectionCause({
-        liveDocumentUrl: live.lineage_document_url,
-        sourceDocumentUrl: checked.evidence.documentUrl,
         beforeCategory: before.canonicalFeeKey,
         afterCategory: after.canonicalFeeKey,
         beforeAmount: before.amount,
