@@ -95,6 +95,19 @@ describe("decideReread (pure)", () => {
     expect(decideReread(requestOf({ ...PAPER, canonical_fee_key: "overdraft" }), PAPER_TEXT, readOf(PAPER_TEXT)).outcome).toBe("other_category");
   });
 
+  it("settles a Deming bad-name request (no raw row, Deming's own evidence) like Darwin's, and leaves a proper name alone (#2055)", () => {
+    const deming = (feeName: string) => requestOf({
+      ...PAPER,
+      fee_raw_id: null,
+      raw_fee_name: null,
+      live_fee_name: feeName,
+      evidence: { request: "reread_source_line", fee_name: feeName, kept_live: true, reason: "deming audit: trailing_cut_word", audited_on: "2026-10-24" },
+    });
+    expect(deming("Paper statement fee for the").kind).toBe("reread");
+    expect(decideReread(deming("Paper statement fee for the"), PAPER_TEXT, readOf(PAPER_TEXT))).toMatchObject({ outcome: "renamed", newName: "Paper statement fee for the life of the account" });
+    expect(decideReread(deming("Paper statement fee for the life of the account"), PAPER_TEXT, readOf(PAPER_TEXT)).outcome).toBe("same_name");
+  });
+
   it("reads a request as stale when the kept-live fee was renamed or taken down, or the taken-down fee is live again", () => {
     expect(rereadStale(requestOf(PAPER))).toBe(false);
     expect(rereadStale(requestOf({ ...PAPER, live_fee_name: "Paper Statement Fee" }))).toBe(true);

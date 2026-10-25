@@ -657,7 +657,7 @@ export async function consumeRereadRequests(
           row,
           candidate,
           extraFlags: [KNOX_REREAD_FEEDBACK_FLAG],
-          method: `${KNOX_REREAD_FEEDBACK_STRATEGY.strategy} v${KNOX_REREAD_FEEDBACK_STRATEGY.version} re-read (Darwin request #${request.requestId})`,
+          method: `${KNOX_REREAD_FEEDBACK_STRATEGY.strategy} v${KNOX_REREAD_FEEDBACK_STRATEGY.version} re-read (request #${request.requestId})`,
         },takedownLessons));
         if (receipt.declinedReason) result.takedownGuardDeclines[receipt.declinedReason]=(result.takedownGuardDeclines[receipt.declinedReason]??0)+1;
         if (!receipt.inserted) entry.decision = { ...decision, outcome: "already_read" };
@@ -710,7 +710,7 @@ const outcomeList = (outcomes: Partial<Record<RereadOutcome, number>>) =>
   Object.entries(outcomes).map(([outcome, count]) => `${count} ${outcome.replace(/_/g, " ")}`).join(", ") || "none";
 
 export function rereadFeedbackMessage(result: RereadFeedbackResult): string {
-  const pending = `${result.pending} re-read request(s) from Darwin pending (${result.pendingByKind.reread} kept live, ${result.pendingByKind.fragment_reread} taken down) at ${result.pendingDocuments} document(s), ${result.pendingInstitutions} bank(s)`;
+  const pending = `${result.pending} re-read request(s) from Darwin and Deming pending (${result.pendingByKind.reread} kept live, ${result.pendingByKind.fragment_reread} taken down) at ${result.pendingDocuments} document(s), ${result.pendingInstitutions} bank(s)`;
   if (result.failed) return `${pending}; the read failed, nothing written`;
   if (!result.live || result.dryRun) return `${pending}; read ${result.read} with today's rules (would be: ${outcomeList(result.outcomes)}); ${result.dryRun ? "dry run" : "switch off"}, nothing written`;
   return `${pending}; read and settled ${result.resolved} of ${result.read} (${outcomeList(result.outcomes)}): ${result.renamed.length} live fee(s) renamed, ${result.sentToDarwin.length} sent to Darwin`;

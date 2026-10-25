@@ -42,7 +42,7 @@ describe("Deming's audit misses (#1119)", () => {
     expect(row).toMatchObject({ aboutStage: "extract", signal: "wrong", kind: "audit_miss", reportedBy: "deming", weight: 0.5, runId: 7, dedupeKey: `deming.fresh_audit:501:${NAME_QUALITY_CHECK}` });
   });
 
-  it("asks Knox to re-read the line of each miss Knox owns, as a kept-live request that never counts as a lesson (#2055)", () => {
+  it("asks Knox to re-read the line of each bad-name miss, as a kept-live request that never counts as a lesson (#2055)", () => {
     const misses = [
       miss({ feePublishedId: 601, check: NAME_QUALITY_CHECK, reason: "trailing_cut_word", feeName: "ATM A fee of", canonicalFeeKey: "atm_non_network", amount: 3 }),
       miss({ feePublishedId: 602, check: "hamilton.source_check", reason: "amount_not_in_text" }),
@@ -50,8 +50,9 @@ describe("Deming's audit misses (#1119)", () => {
       miss({ feePublishedId: 604 }),
     ];
     const rows = auditRereadRequests(misses, "2026-10-24", 7);
-    // The wrong document (604) is Magellan's; the held one (603) is not a new finding.
-    expect(rows.map((row) => row.feePublishedId)).toEqual([601, 602]);
+    // Only a bad name: an amount miss (602) has a fine name a re-read could rename sideways; the
+    // wrong document (604) is Magellan's; the held one (603) is not a new finding.
+    expect(rows.map((row) => row.feePublishedId)).toEqual([601]);
     expect(rows[0]).toMatchObject({
       aboutStage: "extract",
       kind: LIVE_FRAGMENT_REREAD_KIND,

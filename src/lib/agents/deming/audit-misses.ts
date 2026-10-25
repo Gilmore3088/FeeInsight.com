@@ -5,7 +5,7 @@ import { inSavepoint } from "@/lib/agents/savepoint";
 import { ARTICLE_PAGE_CHECK } from "@/lib/agents/hamilton/article-page";
 import { PRODUCT_PAGE_CHECK } from "@/lib/agents/hamilton/product-page";
 import { OTHER_BANK_DOCUMENT_CHECK, UNCONFIRMED_HOST_CHECK } from "@/lib/agents/hamilton/other-bank-document";
-import { FRESH_AUDIT_VERSION, type FreshAuditMiss, type FreshAuditResult } from "./fresh-audit";
+import { FRESH_AUDIT_VERSION, NAME_QUALITY_CHECK, type FreshAuditMiss, type FreshAuditResult } from "./fresh-audit";
 
 type SqlTag = typeof sql;
 
@@ -23,13 +23,16 @@ type SqlTag = typeof sql;
  *    does not support, a perk read as a fee and a bad name go to Knox (stage extract).
  *
  * 3. Each miss reaches its owner's own queue, so it is acted on and not only stored (#2055). A
- *    miss Knox owns (stage extract) is also a Knox re-read request (`LIVE_FRAGMENT_REREAD_KIND`,
+ *    bad-name miss (`NAME_QUALITY_CHECK`) is also a Knox re-read request (`LIVE_FRAGMENT_REREAD_KIND`,
  *    kept live, as Darwin's live fragment check writes it): Knox's re-read pass reads the fee's line
  *    again from its own document with today's rules and settles the request once per rules
  *    version with an outcome on its run step (`knox/reread-feedback.ts`); it renames the live fee
  *    only when the line reads a proper name that passes the category guard and the shared source
- *    check. A miss Magellan owns (stage discover) is picked up by Magellan's stale-link search,
- *    which reads these rows and searches the bank's link again (`magellan/discovery.ts`).
+ *    check. Only name misses: that pass treats any other name on the line at the same price as the
+ *    better one, so a request for a fee whose name is fine (an amount or category miss) could
+ *    rename it sideways ("Stop payment fee" to "Stop payment fee renewal") and hide the miss.
+ *    A miss Magellan owns (stage discover) is picked up by Magellan's stale-link search, which
+ *    reads these rows for the bank and searches its link again (`magellan/discovery.ts`).
  *
  * A miss Hamilton's second look already holds (`pending`) is skipped: it is not a new finding.
  * Both writes need migration 20270110000045 (the `deming_audit` label and the `deming` reporter);
@@ -124,7 +127,7 @@ export function auditFeedback(misses: FreshAuditMiss[], auditedOn: string, runId
 /** Pure: the Knox re-read request each new miss Knox owns becomes (#2055). */
 export function auditRereadRequests(misses: FreshAuditMiss[], auditedOn: string, runId: number | null): FeedbackRow[] {
   return misses
-    .filter((miss) => !miss.pending && missOwner(miss.check).agent === "knox")
+    .filter((miss) => !miss.pending && miss.check === NAME_QUALITY_CHECK)
     .map((miss) => ({
       aboutStage: "extract",
       signal: "wrong",
@@ -155,7 +158,7 @@ export function auditRereadRequests(misses: FreshAuditMiss[], auditedOn: string,
 export interface AuditMissWrites {
   cases: number;
   feedback: number;
-  /** Knox re-read requests written for the misses Knox owns (#2055). */
+  /** Knox re-read requests written for the bad-name misses (#2055). */
   rereadRequests: number;
   /** Why a write did not happen (the migration is not applied yet, or a dry run). */
   skipped: string[];
