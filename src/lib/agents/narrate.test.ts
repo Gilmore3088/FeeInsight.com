@@ -189,6 +189,8 @@ describe("narrateStepFinished", () => {
       .toBe("ALARM: Deming compared no shown financials with the stored filings.");
     expect(narrateStepFinished("deming-filings-reconcile", { totals: { compared: 2378, matched: 2378, explained: 0, unexplained: 0 }, bank: { error: "timeout" }, credit_union: { error: null } }))
       .toContain("ALARM: Deming could not read banks for the filings check");
+    expect(narrateStepFinished("deming-filings-reconcile", { totals, version_skew: { unexplained: 12 }, bank: { error: null }, credit_union: { error: null } }))
+      .toBe("Deming reconciled shown financials with the stored filings: 10077 of 10122 figures match, 29 differ for a known reason, ALARM: 16 figures unexplained, 12 of them where BankFind and FFIEC hold different versions of the filing.");
   });
 
   it("stays quiet for bookkeeping steps and unknown keys", () => {

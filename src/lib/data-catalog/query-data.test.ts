@@ -358,6 +358,13 @@ describe("queryData: area measures over a peer group", () => {
 describe("queryData: call-report lines", () => {
   const CALL = "call:service_charges_deposits_ytd";
 
+  it("refuses a filing's last-updated time, which is stored beside the lines but is not a figure (#1925)", async () => {
+    for (const scope of [{ kind: "institution" as const, id: "12" }, { kind: "national" as const }]) {
+      expect(await queryData({ measure: "call:filing_last_updated", scope })).toMatchObject({ ok: false, reason: expect.stringContaining("last-updated time") });
+    }
+    expect(calls).toHaveLength(0);
+  });
+
   it("keeps dated reporting identities in nested metadata while statistic rows remain scalar", async () => {
     nextRows = [
       { period: "2026-06-30", unit: "USD", median: 350, p25: 225, p75: 475, institution_count: 11,
