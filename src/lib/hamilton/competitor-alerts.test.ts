@@ -109,8 +109,10 @@ describe("planCompetitorAlerts", () => {
       new_document_text: "Fee Schedule Effective January 1, 2023\nOverdraft fee $30.00\nStop payment $25.00",
     });
     const corrected = change({ change_id: 502, old_document_id: 41, new_document_id: 41 });
-    const plan = planCompetitorAlerts({ bankId: 1, bankName: "Home Bank", ownFees: {}, changes: [late, corrected], alreadyAlerted: new Set() });
-    expect(plan).toMatchObject({ alerts: [], notConfirmed: 2, held: { older_edition: 1, correction: 1, edition_unknown: 0 } });
+    // Alerts alone also hold an undated new schedule against a dated old one.
+    const undated = change({ change_id: 503, old_document_text: "Fee Schedule Effective March 1, 2026\nOverdraft fee $30.00\nStop payment $25.00" });
+    const plan = planCompetitorAlerts({ bankId: 1, bankName: "Home Bank", ownFees: {}, changes: [late, corrected, undated], alreadyAlerted: new Set() });
+    expect(plan).toMatchObject({ alerts: [], notConfirmed: 3, held: { older_edition: 1, correction: 1, edition_unknown: 1 } });
   });
 
   it("carries its baseline: the price on file before and what replaced it, with schedules and dates", () => {

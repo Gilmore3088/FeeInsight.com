@@ -6,7 +6,7 @@ import { HEADLINE_FEE_KEYS } from "@/lib/data-store/market-readiness";
 import { FEE_MOVES_TRACKED_SINCE, getLocalMarketCompetitors } from "@/lib/data-store/local-market";
 import { SECOND_LOOK_MIN_MINUTES } from "@/lib/agents/hamilton/second-look";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
-import { effectiveDate } from "@/lib/agents/hamilton/schedule-edition";
+import { editionStarts } from "@/lib/agents/hamilton/schedule-edition";
 import {
   judgeFeeChange,
   type FeeChangeHold,
@@ -36,6 +36,12 @@ import {
  */
 
 export const COMPETITOR_CHANGE_SIGNAL = "hamilton_competitor_fee_change";
+/**
+ * An alert tells a subscriber a competitor moved a price, so it also holds a change whose new
+ * schedule states no edition against a dated old one (`edition_unknown`). The Monthly Pulse and
+ * the fee alert emails do not, so a bank that moves to an undated web page keeps its real changes.
+ */
+const ALERT_RULE = { holdUndatedEdition: true } as const;
 /**
  * Space Coast CU, the demo institution. While no institution has an active workspace, the
  * scheduled competitor-alert and briefing runs also record a dry-run preview for it, so the
@@ -122,13 +128,13 @@ export function buildCompetitorBaseline(row: CompetitorChangeRow, change: PulseC
     before: {
       amount: change.old_amount,
       scheduleUrl: row.old_source_url ?? null,
-      edition: effectiveDate(row.old_document_text),
+      edition: editionStarts(row.old_document_text),
       readOn: day(row.old_read_at),
     },
     after: {
       amount: change.new_amount,
       scheduleUrl: row.source_url ?? null,
-      edition: effectiveDate(row.new_document_text),
+      edition: editionStarts(row.new_document_text),
       readOn: day(row.new_read_at),
     },
   };
@@ -199,7 +205,7 @@ export function planCompetitorAlerts(input: {
       alreadyShown += 1;
       continue;
     }
-    const verdict = judgeFeeChange(row);
+    const verdict = judgeFeeChange(row, ALERT_RULE);
     if (!verdict.change) {
       notConfirmed += 1;
       if (verdict.hold !== "not_confirmed") held[verdict.hold] += 1;
@@ -236,7 +242,7 @@ const HOLD_REASON: Record<Exclude<FeeChangeHold, "not_confirmed">, string> = {
 
 /** Pure: why an alert's change no longer stands under the change rule, or null when it does. */
 export function recheckReason(row: CompetitorChangeRow): string | null {
-  const verdict = judgeFeeChange(row);
+  const verdict = judgeFeeChange(row, ALERT_RULE);
   if (verdict.change) return null;
   return verdict.hold === "not_confirmed" ? "schedules no longer bear out the change" : HOLD_REASON[verdict.hold];
 }

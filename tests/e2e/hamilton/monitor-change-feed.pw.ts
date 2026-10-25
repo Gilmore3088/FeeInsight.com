@@ -125,7 +125,11 @@ test.describe("institution change feed (#1898)", () => {
       await expect(baseline).toContainText("Oct 20, 2026");
       await expect(page.getByText(`${COMPETITOR.name} raised its overdraft fee from $30.00 to $35.00`)).toBeVisible();
       // The withdrawn "cut" from an older schedule found late never shows.
+      // Not as a card, not in any other text on the page, and not by its schedule link.
       await expect(page.getByText("lowered its overdraft fee from $35.00 to $25.00")).toHaveCount(0);
+      await expect(page.locator("body")).not.toContainText(`${COMPETITOR.name} lowered its overdraft fee`);
+      await expect(page.locator('a[href$="fee-schedule-2024.pdf"]')).toHaveCount(0);
+      await expect(page.locator("section.rd-exhibit")).toHaveCount(1);
       await expect(page.locator("body")).not.toContainText("—");
       // No horizontal page scroll at phone width: tables scroll inside their own box.
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);

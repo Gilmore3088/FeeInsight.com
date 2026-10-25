@@ -150,11 +150,39 @@ describe("judgeFeeChange: what we knew and when (#1898)", () => {
     expect(judgeFeeChange(row({ old_document_id: 16271, new_document_id: "16271" }))).toEqual({ change: null, hold: "correction" });
   });
 
-  it("holds an undated new schedule against a dated old one", () => {
-    expect(judgeFeeChange(row({ old_document_text: EDITION_2024, new_document_text: NH_NEW }))).toEqual({
-      change: null,
-      hold: "edition_unknown",
-    });
+  it("holds an undated new schedule against a dated old one only when asked (competitor alerts)", () => {
+    const undated = row({ old_document_text: EDITION_2024, new_document_text: NH_NEW });
+    expect(judgeFeeChange(undated, { holdUndatedEdition: true })).toEqual({ change: null, hold: "edition_unknown" });
+    // The Monthly Pulse and the fee alert emails keep a bank's move from a dated PDF to an undated page.
+    expect(judgeFeeChange(undated).hold).toBeNull();
+    expect(confirmFeeChange(undated)).toMatchObject({ old_amount: 25, new_amount: 50 });
+  });
+
+  it("reads each schedule's own edition line, not a privacy notice's date further down", () => {
+    const verdict = judgeFeeChange(
+      row({
+        old_document_text: `Fee Schedule Effective January 1, 2026\n${NH_OLD}\nOur privacy notice is effective 12/1/2026.`,
+        new_document_text: `Fee Schedule Effective October 1, 2026\n${NH_NEW}`,
+        old_document_id: 501,
+        new_document_id: 502,
+      }),
+    );
+    expect(verdict.hold).toBeNull();
+    expect(verdict.change).toMatchObject({ old_amount: 25, new_amount: 50 });
+  });
+
+  it("reads each schedule's own edition line, not a CD rate table's date", () => {
+    const verdict = judgeFeeChange(
+      row({
+        old_document_text: `Fee Schedule Effective March 1, 2026\n${NH_OLD}\nCD rates effective 10/15/2026 | 12 month 4.10% APY`,
+        new_document_text: `Fee Schedule Effective October 1, 2026\n${NH_NEW}`,
+        old_document_id: 601,
+        new_document_id: 602,
+      }),
+      { holdUndatedEdition: true },
+    );
+    expect(verdict.hold).toBeNull();
+    expect(verdict.change).toMatchObject({ old_amount: 25, new_amount: 50 });
   });
 
   it("still confirms a page edited under the same edition date (Safe 1, prod docs 20742 and 32073)", () => {
