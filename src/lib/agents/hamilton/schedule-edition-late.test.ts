@@ -84,6 +84,21 @@ describe("an edition line past the menu (lateEdition)", () => {
     expect(lateEdition(`${MENU}Fee Schedule\nEffective November 14th, 2026, the branch will have reduced drive-up hours`)).toBeNull();
   });
 
+  it("does not hold a current page for a link, a rate or holiday schedule, a newsletter line or a notice (review of #2573)", () => {
+    const pages = [
+      `${MENU}Disclosures\n\nConsumer Fee Schedule Effective January 1, 2027 (PDF)\n\nNSF | $35`,
+      `${MENU}Fee Schedule\n\nDividend Rate Schedule\nEffective December 1, 2026\n\nNSF | $35`,
+      `${MENU}Fee Schedule\n\nHoliday Schedule\nEffective December 24, 2026\n\nNSF | $35`,
+      `${MENU}Newsletter\n\nOur fees and charges effective January 1, 2027 are listed on our website.`,
+      `${MENU}Coming soon: Fee Schedule effective January 1, 2027`,
+      `${MENU}Notice to Members\nFee Schedule effective January 1, 2027\nNSF | $35`,
+    ];
+    for (const page of pages) {
+      expect(lateEdition(page)).toBeNull();
+      expect(notYetEffective(page, TODAY, true)).toBeNull();
+    }
+  });
+
   it("keeps the heading's own edition first: a second, later schedule further down changes nothing (MECU, doc 37380)", () => {
     const mecu =
       "CONSUMER FEE SCHEDULE\nEFFECTIVE JANUARY 2, 2026\nOnline Banking | Free\n" + "Stop Payment | $25.00 per presentment\n".repeat(12) +
@@ -99,7 +114,7 @@ describe("an edition line past the menu (lateEdition)", () => {
 });
 
 describe("the SQL window an edition reader is given (editionWindowSql)", () => {
-  it("sends the long window only for a schedule word before an effective date in this year or the next two", () => {
+  it("sends the long window only for an effective date in this year or the next two", () => {
     const sql = editionWindowSql("t.normalized_text", TODAY);
     expect(sql).toContain("left(t.normalized_text, 8000)");
     expect(sql).toContain("left(t.normalized_text, 400)");

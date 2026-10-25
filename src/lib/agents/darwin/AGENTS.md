@@ -1115,8 +1115,9 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   (prod, read-only): 166 live fees on 10 documents at 8 institutions would be held; no older
   edition retires yet. v2 (T1, Oct 25): a web page's menu fills the first 400 characters, so the
   schedule's own edition line further down (`lateEdition`: a schedule title with "Effective <date>"
-  under it, or "Fees Effective <date>"; not when the page calls its prices current, announces a new
-  schedule, dates a contents entry or dates two editions) is read too, behind
+  under it, or "Fees Effective <date>", ending at its date; a bare "schedule" never counts; not when
+  the page calls its prices current, announces a new schedule or links one, dates a contents entry
+  or dates two editions) is read too, behind
   `EDITION_LATE_HEADING_LIVE` (off). While off the step reports `late_heading_would_hold` and holds
   nothing on that account. Each document's text comes once per read, up to 8,000 characters only
   where a late edition line can be (`editionWindowSql`). Dry run Oct 25: 0 holds today; 1 more with

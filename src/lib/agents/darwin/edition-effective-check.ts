@@ -174,23 +174,23 @@ export function editionRowsSql(db: SqlTag, options: { institutionId?: number; to
         JOIN agent_source_texts t ON t.id = l.id
     ),
     dated AS MATERIALIZED (
-      SELECT h.source_document_id, h.head, to_char(MIN(first.created_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS first_read
+      SELECT h.source_document_id, to_char(MIN(first.created_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS first_read
         FROM heads h
         JOIN agent_source_texts first ON first.source_document_id = h.source_document_id AND first.status = 'completed'
        WHERE h.head ~* 'effective'
-       GROUP BY h.source_document_id, h.head
+       GROUP BY h.source_document_id
     )
+    -- The text joins last, onto each document's first row only, so it is never sorted or joined per fee.
     SELECT r.fee_published_id, r.fee_verified_id, r.institution_id, r.fee_name, r.amount, r.canonical_fee_key,
-           r.fee_audience, r.live, r.verified_ok, r.source_document_id, r.document_url,
-           CASE WHEN r.nth = 1 THEN h.head END AS head, h.first_read
+           r.fee_audience, r.live, r.verified_ok, r.source_document_id, r.document_url, h.head, r.first_read
       FROM (
-        SELECT f.*, btrim(sd.document_url) AS document_url,
+        SELECT f.*, btrim(sd.document_url) AS document_url, d.first_read,
                row_number() OVER (PARTITION BY f.source_document_id ORDER BY f.fee_published_id) AS nth
           FROM fees f
+          JOIN dated d ON d.source_document_id = f.source_document_id
           JOIN source_documents sd ON sd.id = f.source_document_id
-         WHERE f.source_document_id IN (SELECT source_document_id FROM dated)
       ) r
-      JOIN dated h ON h.source_document_id = r.source_document_id
+      LEFT JOIN heads h ON r.nth = 1 AND h.source_document_id = r.source_document_id
      ORDER BY r.fee_published_id
   `;
 }

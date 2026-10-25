@@ -225,8 +225,11 @@ export const EDITION_SCAN_CHARS = 8000;
  */
 export const EDITION_LATE_HEADING_LIVE = false;
 
-/** A title or edition line names the schedule. SQL mirror: `editionWindowSql`. */
-const SCHEDULE_WORD = /\b(?:schedule|fees|charges)\b/i;
+/**
+ * A title or edition line names the fee schedule: "fee(s)" or "charges". A bare "schedule" is any
+ * schedule ("Dividend Rate Schedule", "Holiday Schedule"), so it never counts on its own.
+ */
+const SCHEDULE_WORD = /\b(?:fees?|charges)\b/i;
 /** A price on the line makes it a fee line ("Account Research - Effective 11/1/26 | $25.00 per hour"). */
 const PRICED = /\$\s?\d/;
 /** A table of contents entry dates a section, not the document ("Schedule of Fees and Services Effective 11.01.2026 ……44"). */
@@ -236,7 +239,15 @@ const CONTENTS_LEADER = /\.{3,}|…/;
  * Schedule effective November 1, 2026." above a "Fee - Current" table (BayPort, doc 37226),
  * "2027 Updated Fee Schedule" in a newsletter (Wyrope, doc 36403), "Important Changes Effective …".
  */
-const ANNOUNCES = /\b(?:new|updated?|upcoming|changes?|changing|revised|revisions?|amended|proposed)\b/i;
+const ANNOUNCES =
+  /\b(?:new|updated?|upcoming|coming|soon|changes?|changing|revised|revisions?|amended|amendments?|proposed|notices?|pdf|download|link)\b/i;
+/**
+ * What may follow the date on an edition line: nothing, closing punctuation, or a footnote mark
+ * ("Fees Effective 1/1/2027 * Fee will be assessed …", doc 38132). A line that goes on is a
+ * sentence or a link about the schedule ("… effective January 1, 2027 are listed on our website",
+ * "… Effective January 1, 2027 (PDF)"), not its edition line.
+ */
+const ENDS_AT_DATE = /^\s*(?:[*†‡]|[.,;:)\]]*\s*$)/;
 /**
  * A page that says its prices are the current ones is in effect whatever else it dates: MCCU (doc
  * 38397) links its December 1, 2026 schedule above "Current Consumer Fees are listed below and in
@@ -268,13 +279,17 @@ export function lateEdition(text: string | null | undefined): string | null {
     let above = i - 1;
     if (above >= 0 && lines[above].trim() === "") above -= 1;
     const title = above >= 0 ? lines[above].trim() : "";
-    const underTitle =
-      title.length > 0 && title.length <= TITLE_MAX_CHARS && SCHEDULE_WORD.test(title) && !PRICED.test(title) && !ANNOUNCES.test(title);
+    // A notice or announcement title above makes the line part of it ("Notice to Members").
+    if (ANNOUNCES.test(title)) continue;
+    const underTitle = title.length > 0 && title.length <= TITLE_MAX_CHARS && SCHEDULE_WORD.test(title) && !PRICED.test(title);
     for (const m of line.matchAll(/effective/gi)) {
       const at = m.index ?? 0;
       const before = line.slice(0, at);
       if (ANNOUNCES.test(before)) continue;
       if (!SCHEDULE_WORD.test(before) && !(underTitle && before.trim() === "")) continue;
+      const after = line.slice(at + "effective".length);
+      const dated = DATE_AFTER_EFFECTIVE.exec(after);
+      if (dated && !ENDS_AT_DATE.test(after.slice(dated[0].length))) continue;
       const found = editionAt(line, at);
       if (found === IMMEDIATELY) return null;
       if (found && found !== SKIP) dates.add(found);
@@ -285,17 +300,17 @@ export function lateEdition(text: string | null | undefined): string | null {
 
 /**
  * SQL: the part of a stored text column an edition reader needs. The heading alone, unless the rest
- * of the window has a schedule word before an "effective" dated in `today`'s year or the next two
- * (on the same line or the line below); only those texts can have a late edition line that holds or
- * restores a fee, so only they carry `EDITION_SCAN_CHARS` characters. On prod (Oct 25) that was 472
- * of the 9,118 documents live fees cite, 2.7 MB. `column` is a trusted column name, never user text.
+ * of the window has an "effective" dated in `today`'s year or the next two; only those texts can have
+ * a late edition line that holds or restores a fee, so only they carry `EDITION_SCAN_CHARS`
+ * characters, and `lateEdition` decides. The prefilter is only the date: adding the fee word before
+ * it cost about 4 s more on prod (Oct 25) for half the bytes (982 of 9,133 documents, 6.3 MB, against
+ * 493 and 3.0 MB). `column` is a trusted column name, never user text.
  */
 export function editionWindowSql(column: string, today: string): string {
   const year = Number(today.slice(0, 4));
   const years = [year, year + 1, year + 2];
   const dated = `effective[^\\n$]{0,40}(?:${years.join("|")}|[/.-](?:${years.map((y) => String(y).slice(2)).join("|")})\\M)`;
-  const late = `(?:schedule|fees|charges)[^\\n$]{0,60}(?:\\n[ \\t]*\\n?[ \\t]*)?${dated}`;
-  return `CASE WHEN substr(${column}, ${EDITION_HEAD_CHARS + 1}, ${EDITION_SCAN_CHARS - EDITION_HEAD_CHARS}) ~* '${late}' THEN left(${column}, ${EDITION_SCAN_CHARS}) ELSE left(${column}, ${EDITION_HEAD_CHARS}) END`;
+  return `CASE WHEN substr(${column}, ${EDITION_HEAD_CHARS + 1}, ${EDITION_SCAN_CHARS - EDITION_HEAD_CHARS}) ~* '${dated}' THEN left(${column}, ${EDITION_SCAN_CHARS}) ELSE left(${column}, ${EDITION_HEAD_CHARS}) END`;
 }
 
 /** The calendar day of `now` in UTC, YYYY-MM-DD. */

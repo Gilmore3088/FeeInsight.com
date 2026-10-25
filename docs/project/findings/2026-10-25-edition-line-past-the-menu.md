@@ -44,12 +44,13 @@ would have held 182 live fees on 13 documents. Only one is a schedule not yet in
 
 **Fix:** `lateEdition` in `hamilton/schedule-edition.ts`, used by `editionStarts` when the heading
 states no edition. A line past the heading counts when it has "effective <date>", no price and no
-contents leader, and names the schedule before "effective" or sits under a short schedule title.
-The heading's filters apply; announcement words skip a line; a page that calls its prices current,
-or whose edition lines disagree, gets no late edition. Both readers get the same text:
-`editionWindowSql` sends up to 8,000 characters only for texts with a schedule word before an
-effective date in this year or the next two (472 of 9,118 cited documents, 2.7 MB), and Darwin's
-read sends each document's text once, not once per fee. The switch `EDITION_LATE_HEADING_LIVE` is
+contents leader, ends at its date (or a footnote mark), and names the fees ("fee(s)" or "charges",
+never a bare "schedule") before "effective" or sits under a short fee schedule title. The heading's
+filters apply; announcement, notice and link words (on the line or the title above) skip a line; a
+page that calls its prices current, or whose edition lines disagree, gets no late edition. Both
+readers get the same text: `editionWindowSql` sends up to 8,000 characters only for texts with an
+effective date in this year or the next two past the heading (982 of 9,133 cited documents,
+6.3 MB), and Darwin's read sends each document's text once, joined after the per-fee sort. The switch `EDITION_LATE_HEADING_LIVE` is
 off: Darwin's edition re-check (`EDITION_CHECK_VERSION` 2) reports `late_heading_would_hold` and holds nothing on that
 account until James approves.
 
@@ -60,6 +61,17 @@ now read). Today's rule: 0 holds, 0 restores, 0 retirements. With the switch on:
 (text 34322, 15,554 characters): its only "effective" is the 2027 heading at character 5,821, and the
 line "Monthly Service Charge | NONE" is the first row of that schedule's share account fees. The bank
 keeps 18 live fees from its checking page (doc 36182). The read took 11.6 s (EXPLAIN ANALYZE).
+
+**Independent review (PR #2573, first head):** the first guards still dated six kinds of current
+page with the switch on: a link line ("Consumer Fee Schedule Effective January 1, 2027 (PDF)"), a
+rate or holiday schedule title ("Dividend Rate Schedule" / "Effective December 1, 2026"), a
+newsletter sentence ("Our fees and charges effective January 1, 2027 are listed on our website."),
+"Coming soon: Fee Schedule effective …" and a "Notice to Members" title. None is in prod's texts
+today, but each is now refused and tested. The same review timed Darwin's read at 20.7 s against
+main's 7.8 s (a per-fee join carrying the 8,000-character text and a costly fee-word prefilter);
+the rework ran in 5.6 s on prod (EXPLAIN ANALYZE, Oct 25), reading 28,930 live or held fees on
+2,011 dated documents. The tighter reader only refuses more lines, so the switch-on dry run stays
+at most the one Allentown hold, which the guard test still reads.
 
 **Not fixed here:** sections with their own editions in one document (38132, 30611, MECU 37380;
 40 live fees sit on those three) need a rule that dates the section a fee was read from.
