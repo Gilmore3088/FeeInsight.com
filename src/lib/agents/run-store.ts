@@ -61,7 +61,7 @@ import { refreshFeeIndexCache } from "@/lib/data-store/fee-index";
 import { runMagellanDiscovery } from "@/lib/agents/magellan/discovery";
 import { runMagellanFetch } from "@/lib/agents/magellan/fetch";
 import { runAddressVariantFetch, type RunAddressVariantFetchResult } from "@/lib/agents/magellan/address-variant-fetch";
-import { runSavedLinkFetch, type RunSavedLinkFetchResult } from "@/lib/agents/magellan/saved-link-fetch";
+import { SAVED_LINK_BUDGET_MS, runSavedLinkFetch, type RunSavedLinkFetchResult } from "@/lib/agents/magellan/saved-link-fetch";
 import { runLiveSourceRefetch, type RunLiveSourceRefetchResult } from "@/lib/agents/magellan/live-source-refetch";
 import { reviewLinkBatches } from "@/lib/agents/magellan/batch-review";
 import { recordLinkOutcomes } from "@/lib/agents/magellan/outcomes";
@@ -573,6 +573,8 @@ async function executeAgenticStep(
       };
     }
     case "fetch": {
+      // The saved-link pass's budget counts from the step's start, not its own (#1881 review).
+      const fetchStepStartedAt = Date.now();
       const recheck = laneRecheckParam(params);
       const fetched = await runMagellanFetch({
         runId: run.id,
@@ -610,6 +612,7 @@ async function executeAgenticStep(
             fetchImpl: feeSourceFetch,
             runId: run.id,
             stepId: step.id,
+            deadline: fetchStepStartedAt + SAVED_LINK_BUDGET_MS,
             institutionId: numericRunParam(params, ["institution_id"]) ?? null,
           });
         } catch (error) {

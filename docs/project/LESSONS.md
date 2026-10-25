@@ -213,7 +213,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-287 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+288 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
 ### Extraction and fee reading (43)
 
@@ -455,8 +455,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — Sign out on the account page and admin used Server Actions that a redeploy breaks. — [finding](findings/2026-10-09-sign-out-server-action.md) — Guard: `src/app/api/auth/logout/route.test.ts:30`
 - 2026-10-09 — A refunded report kept its paid status and its private link. — [finding](findings/2026-10-09-report-refund-not-handled.md) — Guard: `src/lib/stripe-webhook.test.ts` (+1 more)
 
-### Hamilton workspace (26)
+### Hamilton workspace (27)
 
+- 2026-10-25 — A screen that hides text by matching it has still been sent that text: when the verdict comes before the reader sees anything, the server writes the shown text and a binding that matches it. — [finding](findings/2026-10-25-streamed-omitted-text.md) — Guard: `src/app/api/research/hamilton/route.streamed-omitted.test.ts`, `src/app/api/research/hamilton/route.omitted-payload.test.ts`, `src/lib/hamilton/written-answer-binding.test.ts`
 - 2026-10-25 — A save that takes an answer from the browser keeps only its prose; the binding, verdict and other evidence fields come only from the server, and a browser save gets a "not checked" verdict so readers fail closed. — [finding](findings/2026-10-25-fallback-save-trust.md) — Guard: `src/lib/hamilton/analyze-actions.test.ts`
 - 2026-10-25 — When a view leaves a sentence out, the reply leaves out its text too: send the reason and the count, and keep the text only where it is saved and read server side. — [finding](findings/2026-10-25-omitted-text-payload.md) — Guard: `src/app/api/research/hamilton/route.omitted-payload.test.ts`, `src/lib/hamilton/written-answer-binding.test.ts`
 - 2026-10-25 — An eval scores what the reader gets only with the gate that decides it, and a supported filing claim is tied to its live row, not accepted as the tools read it. — [finding](findings/2026-10-25-claim-eval-reads.md) — Guard: `src/lib/hamilton/answer-correctness-filings.test.ts`, `src/lib/data-store/filing-reread.test.ts`, `src/lib/hamilton/paid-answer-eval.test.ts`
@@ -546,7 +547,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (191 in all).
+counts as of this index (192 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
@@ -557,7 +558,7 @@ counts as of this index (191 in all).
 | knox | 54 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
 | darwin | 27 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 40 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
-| hamilton | 17 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
+| hamilton | 18 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
 | deming | 11 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
 
 ## Before 2026-10-10

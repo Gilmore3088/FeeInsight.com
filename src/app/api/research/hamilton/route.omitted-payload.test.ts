@@ -1,9 +1,9 @@
 /**
  * #1077 follow-up (claim contract step 5 review): a buffered reader-facing reply never carries the
  * text of a sentence the reader's view left out. The binding's omitted sentences keep their reason
- * and count; a refused reply names a left-out sentence by its reason only. The streamed answer is
- * unchanged: its replayed text holds the left-out sentences, and the screen hides them by the
- * binding's text, so stripping that text there would put them on screen.
+ * and count; a refused reply names a left-out sentence by its reason only. A held streamed answer
+ * does the same (its whole SSE body is read in route.streamed-omitted.test.ts); the saved row keeps
+ * the full binding on both paths.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -184,7 +184,7 @@ describe("buffered written answer with HAMILTON_GATE_REPAIR off (the default)", 
   });
 });
 
-describe("streamed written answer (unchanged, switch on or off)", () => {
+describe("streamed written answer, held (switch on or off)", () => {
   let streamOptions: Array<{ messageMetadata?: (input: { part: { type: string } }) => unknown }> = [];
   beforeEach(() => {
     streamOptions = [];
@@ -200,12 +200,13 @@ describe("streamed written answer (unchanged, switch on or off)", () => {
   const finalMetadata = () => mocks.write.mock.calls.map(([chunk]) => chunk).find((chunk) => chunk.type === "message-metadata")?.messageMetadata;
 
   for (const value of ["", "true"]) {
-    it(`keeps the left-out sentence's text on the start chunk, the final metadata and the saved row, so the screen can hide it (switch ${value ? "on" : "off"})`, async () => {
+    it(`sends the left-out sentence's reason, never its text, on the start chunk and the final metadata; the saved row keeps it (switch ${value ? "on" : "off"})`, async () => {
       if (value) vi.stubEnv("HAMILTON_GATE_REPAIR", value);
       await POST(requestFor({}));
       expect(mocks.merge).toHaveBeenCalledTimes(1);
       const start = streamOptions[0].messageMetadata?.({ part: { type: "start" } }) as { narrativeBinding: { omitted: unknown[] } };
-      expect(start.narrativeBinding.omitted).toEqual([{ text: LEFT_OUT, reason: "wrong_institution" }]);
+      expect(start.narrativeBinding.omitted).toEqual([{ reason: "wrong_institution" }]);
+      expect(JSON.stringify(start)).not.toContain(LEFT_OUT);
       expect(finalMetadata()).toMatchObject({ narrativeBinding: start.narrativeBinding, answerEvidence: { passed: true, held: false } });
       expect(mocks.save.mock.calls[0][0].response.narrativeBinding.omitted).toEqual([{ text: LEFT_OUT, reason: "wrong_institution" }]);
       expect(mocks.generate).not.toHaveBeenCalled();
