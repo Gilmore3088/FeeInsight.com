@@ -12,6 +12,7 @@ import { NOT_CONSUMER_FEE_PAGE_REASON, companionStreamsReady } from "@/lib/agent
 
 import { accountNameFor, isGenericAccountName, isNonDepositLink } from "./second-document";
 import { markCurrentCopy } from "./current-copy";
+import { isArticleLink } from "./link-coverage";
 import { OTHER_BANK_HOST_CODE } from "./other-bank-host";
 import { looksLikeBotChallenge } from "./site-signals";
 
@@ -140,11 +141,18 @@ interface ReviewRow {
 const HAND_GIVEN_STRATEGIES: ReadonlySet<string> = new Set(["discover.operator_schedule", "supply.hand_supplied"]);
 
 const NON_DEPOSIT_REASON = `${NOT_CONSUMER_FEE_PAGE_REASON}: loan or other non-deposit document`;
+/**
+ * An article, blog, learning or advice page stored as a companion before the finder refused them
+ * (#1774). Hamilton's companion retire then takes down any live fee read from it, as its own
+ * article check (`hamilton/article-page.ts`) already does by the same rule.
+ */
+export const ARTICLE_COMPANION_REASON = `${NOT_CONSUMER_FEE_PAGE_REASON}: article, blog, learning or advice page`;
 
 /**
  * Re-applies today's finder rules to the companion pages already stored for a state, so
  * a rule learned later reaches every bank found before it. A page that today's rules
- * call a loan, HELOC or business document is retired with NOT_CONSUMER_FEE_PAGE_REASON
+ * call a loan, HELOC or business document, or an article, blog, learning or advice page
+ * (`isArticleLink`), is retired with NOT_CONSUMER_FEE_PAGE_REASON
  * (Hamilton then takes down the live fees read from it), and a page named after its
  * link text ("Download", "Features and Fees") is renamed from its URL.
  */
@@ -214,6 +222,21 @@ export async function reviewStoredCompanions(
   for (const row of rows) {
     const companionId = Number(row.id);
     const label = row.account_name ?? "";
+    // Magellan's one article rule (`isArticleLink`, #1774): the companion finder now refuses these
+    // links, and the ones it stored before are retired here. TD's "/learning/.../types-of-checking-
+    // accounts" and Keesler's "/resources/advice/3-apps-to-scare-up-savings" were stored as
+    // account pages and their "$35 is common" and app-fee figures went live as the bank's.
+    if (isArticleLink(row.url)) {
+      await db`
+        UPDATE institution_additional_sources
+           SET status = 'rejected',
+               reason = ${ARTICLE_COMPANION_REASON},
+               updated_at = NOW()
+         WHERE id = ${companionId}
+      `;
+      result.retired.push({ companionId, institutionId: Number(row.institution_id), url: row.url, accountName: row.account_name });
+      continue;
+    }
     if (!HAND_GIVEN_STRATEGIES.has(row.found_by_strategy ?? "") && isNonDepositLink(label, row.url)) {
       await db`
         UPDATE institution_additional_sources
