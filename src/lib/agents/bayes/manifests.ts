@@ -264,7 +264,21 @@ export function rosettaReaderManifests(versions: RosettaVersions): ReplayManifes
     notCounted: ROSETTA_NOT_COUNTED,
   });
   return [
-    reader("read", "read.page_check", versions.read, "Texts read from PDFs, HTML, plain text and Word files by an older reader."),
+    {
+      ...reader("read", "read.page_check", versions.read, "Texts read from PDFs, HTML, plain text and Word files by an older reader."),
+      unit: "current-copy document text",
+      // #2069 ("Re-read all", James, 25 Oct): every older-reader current copy, OCR and JavaScript
+      // fallback texts included, is replayed once per version, a few a read step.
+      count: async (db): Promise<ReplayCount> => {
+        const { countReaderReplaysDue } = await import("@/lib/agents/rosetta/read");
+        const { countReaderReplaysDone, READER_REPLAY_PER_RUN } = await import("@/lib/agents/rosetta/reader-replay");
+        const queued = await countReaderReplaysDue(db);
+        const { done, textChanged } = await countReaderReplaysDone(db);
+        return { affected: queued + done, done, queued, exclusions: {},
+          note: `Queued is the read step's own replay selection (current copies whose text an older version of its reader wrote: a primary or the legacy reader, free OCR or the JavaScript fallback; the paid pass is not replayed), read at most ${READER_REPLAY_PER_RUN} a step. Done counts rosetta.reader_replay receipts at this version; ${textChanged} stored a new text, which Knox re-extracts and Darwin re-checks. A replay keeps the earlier text unless the new one lists at least as many fees. A replay whose bytes are a known failure for its reader is settled without a read and counts as done; a scan deferred past a run's OCR allowance stays queued. Thin texts the ordinary re-read settled count as neither.` };
+      },
+      notCounted: undefined,
+    },
     reader("pdf_layout", "read.pdf_layout", versions.pdfLayout, "PDF texts laid out by an older column and row layout."),
     reader("ocr", "read.ocr_tesseract", versions.ocr, "Scanned PDFs read by an older OCR pass."),
     reader("js_fallback", "read.js_fallback", versions.jsFallback, "JavaScript-built pages read by an older browser fallback."),
@@ -339,9 +353,11 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v1 (#1909): Darwin re-reads every live fee on a Spanish copy of a schedule each verify step (no
   // cursor; a few hundred rows), so there is no backlog for a replay to count.
   TRANSLATED_COPY_CHECK_VERSION: "Each verify step re-reads every live fee on a Spanish-copy document (no cursor); nothing to replay.",
-  PRODUCT_PAGE_REPEAT_CHECK_VERSION: "First version: each verify step re-reads every live product-page fee with a same-price schedule twin (no cursor); nothing older to replay.",
+  // v2 (#1910): the name cover reads NSF/insufficient, OD/overdraft and a paid NSF item/overdraft as one item.
+  PRODUCT_PAGE_REPEAT_CHECK_VERSION: "Each verify step re-reads every live product-page fee with a same-price schedule twin (no cursor), so version 2's wider name cover reaches every live fee on the next step; nothing older to replay.",
   // v1 (#1915): schedule editions not yet in effect. Every verify step reads every live fee on a dated document.
-  EDITION_CHECK_VERSION: "First version: each verify step re-reads every live or held fee on a document whose heading states an edition (no cursor); nothing older to replay.",
+  // v2 (T1): an edition line past a web page's menu, counted only until EDITION_LATE_HEADING_LIVE.
+  EDITION_CHECK_VERSION: "Each verify step re-reads every live or held fee on a document whose heading or late edition line states an edition (no cursor); nothing older to replay.",
   // v1 (#2022): Canadian bank documents. A full verify step re-reads every live document's text at most hourly.
   CANADIAN_DOCUMENT_CHECK_VERSION: "First version: a verify step re-reads every live fee's document text (no cursor, at most hourly); nothing older to replay.",
   // v8 (#1112): new no-fee, discount, allowance and loan-amount name rules. Each step's eval-verdict
@@ -418,6 +434,10 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // every bank not yet searched at the new version, so the discover steps re-search them themselves.
   UPGRADE_SEARCH_VERSION: "Its selector re-searches every product-page link not yet searched at v3; there is nothing to replay.",
   FRESHNESS_SEARCH_VERSION: "Its selector re-searches every stale link not yet searched at v2; there is nothing to replay.",
+  // v1 (#1878): a new pass that stores each document's own stated date. Its selector reads every
+  // live-fee document and current copy whose stated_date_version is below the current one (200 a
+  // discover step), so a new version re-dates them itself.
+  STATED_DATE_VERSION: "Its selector dates every live-fee document and current copy not yet dated at the current version (200 a discover step); there is nothing to replay.",
   // v1 (#1342): a new hand-started step that reads every live fee with no source link on each run.
   SOURCE_LINK_VERSION: "Its own step reads every live fee with no source link on each run; nothing to replay.",
   SOURCE_LINK_DRIFT_VERSION: "Every publish step reads every live fee whose link opens another page than its own document; nothing to replay.",
@@ -469,9 +489,14 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // not yet checked at v18.
   // v20 (#1916): a fee never takes the other column's price on a two-column page; same fingerprint path.
   // v23 (#1479): a name | description | price row stays one fee's row; same fingerprint path.
+  // v24 (#1918): "$15K" or "$1.5M" is a balance, never a price; same fingerprint path.
+  // v25 (#1916): a late charge in a safe deposit box section is not a late payment; same fingerprint path.
   SOURCE_CHECK_STRATEGY: "Its fingerprint carries the version, so each publish step's batch re-checks every institution not yet checked at the new version; nothing to replay.",
   // v3 (#1810): headings over an opening deposit, "Interest Checking" and numbered accounts name a fee.
-  ACCOUNT_NAME_STRATEGY: "Its fingerprint carries the version, so each publish step's batch (40 institutions) re-reads every institution with a generic monthly name not yet read at v3; nothing to replay.",
+  // v4 (#1917): a fused breadcrumb or menu is no heading, and a comparison table's header row stops
+  // the search. Names given before from a heading v4 refuses (3 live on Oct 25) are set back by the
+  // step itself, across every institution, before it names again.
+  ACCOUNT_NAME_STRATEGY: "Its fingerprint carries the version, so each publish step's batch (40 institutions) re-reads every institution with a generic monthly name not yet read at v4; earlier names from a refused heading are set back by the step; nothing to replay.",
   STATE_LISTS_PARSER_VERSION: "New sources (depositories, non-bank lenders, Urban debt held until its license is confirmed); no older rows to replay.",
 };
 
@@ -520,6 +545,16 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // v80 (Oct 20, #1912, #1905): PIN replacements, home equity stop payments, ATM-table cash
     // advances and cut-lead-in $0s fail; non-customer cashier's checks wait behind a switch (off).
     // v82 (Oct 25, #1662): the night deposit key-deposit exemptions are tied to the key or the noun.
+    // v83 (Oct 25, #1690): the non-network ATM fee refuses research, photo, negative-share and
+    // additional-card names.
+    // v84 (Oct 25, #1788): a generic monthly charge under another service's heading or cell fails
+    // monthly maintenance (Positive Pay, ACH, bill pay, cards, paper statements).
+    // v85 (Oct 25, #1831): a refundable safe deposit box key or security deposit fails the box rule.
+    // v86 (Oct 25, #1918): monthly maintenance admits a checking account's own named fee (Knox's pattern).
+    // v87 (Oct 25, #1916): a late payment printed in a safe deposit box section re-files live to
+    // safe_deposit_box (99 of 111 on the Oct 25 dry run; 12 duplicates of a live box late fee come down).
+    // v89 (Oct 25, #1877): overdraft admits a credit union's "Draft Protection Fee" (Knox v112's pattern);
+    // names only, so no live fee changes on the Oct 25 dry run.
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",

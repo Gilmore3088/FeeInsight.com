@@ -682,8 +682,13 @@ function fullyTidiedName(name: string, canonicalKey: string): string | null {
  * tidy would cut its condition takes title case whole. "IS", "ARE", "MET" and "SUB" read as words, not
  * acronyms. Dry run on 2026-10-21 01:16 UTC: 19 of the 32 renamed; the other 13 are fragments, a
  * same-price twin, a glued acronym ("SAME-DAYACH") or acronyms only ("CBCU ATM").
+ * v27 (#1810): v22's test wanted a run of four capitals, so an all-caps name made only of short
+ * groups stayed in caps ("NSF FEE", "FAX FEE", "FAX OUT", "FED EX FEE", "ATM WD FEE", "NSF FEE1"):
+ * 14 live names at 13 institutions on 2026-10-25. Such a name now counts as all caps when one of its
+ * groups is a plain three-letter word (`SHOUTED_SHORT_WORDS`); a name of acronyms only ("NSF ACH",
+ * "CD ROM", "NON CO OP ATM") stays as printed.
  */
-export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 26 } as const;
+export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 27 } as const;
 export const NAME_RETIDY_KIND = "name_retidied";
 /**
  * Institutions the scan visits first after a version change, then the rest in id order. v9:
@@ -708,6 +713,8 @@ export const NAME_RETIDY_FIRST_INSTITUTIONS = [
   3842, 227, 1977, 2228, 2612, 2777, 3431, 4589, 5140, 5632, 5649, 5651, 5730, 5994, 7926, 8183, 8347, 8578,
   // v26 (#1810): the institutions with a live all-caps name on Oct 20.
   211, 418, 858, 1459, 3383, 3657, 4070, 4551, 5548, 6343, 6685, 7637, 8556, 8638,
+  // v27 (#1810): the institutions with a live all-caps name of short groups on Oct 25 (858 is above).
+  1783, 1972, 2413, 2796, 3252, 3292, 3580, 4817, 5552, 5712, 5873, 5933,
 ];
 
 /** A footnote glyph the bank prints after a word ("Charge¹", "Checking†", "accounts) †"); v23: "^", "*" and "∞" too ("Fee^", "check**"). */
@@ -837,6 +844,16 @@ const SMALL_WORDS = new Set(["a", "an", "and", "as", "at", "by", "for", "from", 
 /** v26: a part of a hyphenated word that runs into an acronym ("SAME-DAYACH" is "Same-Day ACH"). */
 const GLUED_ACRONYM = /-[A-Z]{2,}(?:ACH|ATM|NSF|ODP|PIN)\b/;
 
+/**
+ * v27 (#1810): the three-letter plain words that mark a name of short groups as all caps rather than
+ * acronyms ("NSF FEE", "FAX OUT", "FED EX FEE", "ATM WD FEE"). "NON" is left out: "NON CO OP ATM"
+ * is acronyms after it. A name of acronyms only ("NSF ACH", "CD ROM", "NCB ATM") has none of these.
+ */
+const SHOUTED_SHORT_WORDS = [...SHORT_WORDS].filter((word) => word.length === 3 && word !== "NON").sort();
+const SHOUTED_SHORT_WORD = new RegExp(`(?:^|[^A-Z])(?:${SHOUTED_SHORT_WORDS.join("|")})(?![A-Z])`);
+/** The same test in SQL, for the due query. */
+const SHOUTED_SHORT_WORD_SQL = `(^|[^A-Z])(${SHOUTED_SHORT_WORDS.join("|")})([^A-Z]|$)`;
+
 function acronym(letters: string): boolean {
   return LONG_ACRONYMS.has(letters) || /^[A-Z]{2,}F?CU$/.test(letters) || (letters.length <= 3 && !SHORT_WORDS.has(letters));
 }
@@ -863,7 +880,8 @@ export function capsCasedName(name: string): string | null {
  */
 export function casedCapsName(name: string): string | null {
   const current = name.replace(/\s+/g, " ").trim();
-  if (/[a-z]/.test(current) || !/[A-Z]{4}/.test(current)) return null;
+  // v27 (#1810): a name of short groups only counts when one of them is a plain word ("NSF FEE").
+  if (/[a-z]/.test(current) || !(/[A-Z]{4}/.test(current) || SHOUTED_SHORT_WORD.test(current))) return null;
   // v26: an acronym glued to the word before it ("SAME-DAYACH") cannot be cased word by word.
   if (GLUED_ACRONYM.test(current)) return null;
   const cased = current
@@ -1939,6 +1957,8 @@ export function retidyDueInstitutions(
                    OR fp.fee_name ~ '[[:space:]]([Tt]his[[:space:]]+(fee|charge|service charge)[[:space:]]+(applies|is[[:space:]]+(charged|assessed|applied|imposed))|(Applies|Charged|Assessed|Applied|Imposed)[[:space:]]+(when|if|after|whenever))\\M'
                    -- v22 (#1810): an all-caps name (capsCasedName decides).
                    OR (fp.fee_name ~ '[A-Z]{4}' AND fp.fee_name !~ '[a-z]')
+                   -- v27 (#1810): or a name of short groups with a plain word in it ("NSF FEE", "FAX OUT").
+                   OR (fp.fee_name ~ ${SHOUTED_SHORT_WORD_SQL} AND fp.fee_name !~ '[a-z]')
                  )
                  -- v14: the same test as sharedNameFeeIds, a monthly-fee name shared at different prices.
                  OR count(DISTINCT lower(regexp_replace(btrim(fp.fee_name), '[[:space:]]+', ' ', 'g')))

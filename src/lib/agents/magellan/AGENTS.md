@@ -192,6 +192,20 @@ and `detail.method_version`).
   A link on another kind of site (`isOtherSiteLink`: a government page, a broker's disclosures,
   a car-price site) is searched the same way and never kept as a companion, unless that host
   is the bank's own website (GSA FCU on gsafcu.gsa.gov).
+- Article pages are never a source (#1774, the one article rule `isArticleLink`). The companion
+  finder (`classifyCompanionLink`, and a disclosures index's documents) refuses an article,
+  blog, post, story, learning or advice page, or a dated blog path, however its link text names an
+  account: TD's "/learning/.../types-of-checking-accounts", Keesler's "/resources/advice/..." and
+  Security First's "/2022/01/how-to-choose-between-a-time-deposit-or-money-market-account/" had
+  been stored as account pages, and the last one again on Oct 18, after publish refused its fees.
+  The stored-companion review retires the ones stored before (`ARTICLE_COMPANION_REASON`, under
+  `not_consumer_fee_page`, so Hamilton's companion retire takes down any live fee read from one;
+  prod, Oct 25: 15 such companions on 8 institution records, TD on two, no live fee). The plain fetch sets aside a
+  remembered address that is an article when the saved fee link is not one
+  (`withoutArticleRemembered`), unless a person's correction locked it: a read remembers the page
+  it read, so SchoolsFirst FCU's advice article was fetched on Oct 18 and 19 instead of its saved
+  link. A saved link that is itself an article (Nelnet Bank, Fidelity, KEMBA on Oct 25) is left to
+  the upgrade search above.
 - Restored fee pages (`restore-fee-page.ts`, `RESTORE_FEE_PAGE_VERSION`): a bank whose page
   named as the fee schedule (`namesFeeSchedulePage`) was set aside by Rosetta for reading no
   amounts or needing JavaScript, and whose link is now a weaker page (not fee-named, not a
@@ -215,8 +229,13 @@ and `detail.method_version`).
   or without one a year in its address, is `STALE_AFTER_YEARS` (3) or more years old.
   A state's step checks the whole state; a step without a state checks only the hour's
   slot of banks (id mod 24, `stepSlot`, as the outcome ledger).
+  A bank whose link's document states a date more than 24 months old (`stated-date.ts`, below)
+  is picked too, once at this version.
   A different page that passes the fee-page check replaces the link (the old one is not
-  kept); the same page or a miss changes nothing.
+  kept); the same page or a miss changes nothing. Without a wrong-document finding a page
+  that states a date must state a later one than the old document, and an undated page is
+  refused when the old document's text states a date (`freshnessOldDate`,
+  `statedDateReplaces`, below); a wrong-document search is not held to a date.
 - URLs in `institution_source_profiles.rejected_source_urls` (one entry per URL) are
   not proposed again for that bank for 90 days (`REJECTED_URL_TTL_DAYS`), count against
   their path in per-platform learning, and their links are searched first.
@@ -464,6 +483,53 @@ is a bot wall on every spelling and stays with the paid fetch below; a person's 
 correction is never re-spelled. The `fetch` step's `address_variants` detail counts banks
 selected, tried, recovered and failed.
 
+## A document's own date (`stated-date.ts`)
+
+A fetch date says when Magellan asked for a page, not how old the schedule is (#1878): a fee PDF
+named 2022 and fetched in October looked current on /fees. At the start of each `discover` step,
+up to `STATED_DATES_PER_STEP` (200) documents not yet dated at `STATED_DATE_VERSION` are dated
+(documents live fees cite first, then other current copies, newest first) from the first
+`STATED_DATE_SCAN_CHARS` characters of their newest completed text (Hamilton's `EDITION_SCAN_CHARS`,
+8,000). The stated date is the latest "Effective ..." date, read by Hamilton's own readers so there
+is one rule (the later of `effectiveDate()` and `editionStarts()`, which also reads a schedule's
+edition line past a web page's menu), a "Revised / Rev. / Updated ..." date, or a currency line
+("As of January 1, 2026" heading the schedule, "current / accurate as of ...", "Disclosure Date:
+..."), whichever is latest. An "effective" that dates rates ("Rates effective September 1, 2024")
+is masked first and never dates the schedule. Only when the text states no date at all is the
+latest year 2000-2029 in the address used (stored as 1 January, old only once the whole year is);
+an upload folder's year says when the file went up, not what it prices. Otherwise none. The latest
+date wins, so the rule can call an old schedule current, never the reverse. It is written to
+`source_documents.stated_date`, `stated_date_basis` (`effective_statement`, `printed_date`,
+`url_year`, `none`) and `stated_date_version`, and one `magellan.stated_dates` run event records
+the counts and up to 10 stale samples with the words the date was read from (step detail
+`stated_dates`). Free, no provider; a dry run writes no column.
+
+A bank whose link's own document (its last main fetch, or the current copy of the link's page,
+never a companion) states a latest date more than `STALE_STATED_MONTHS` (24) ago is picked once by
+the freshness search (stale reason "schedule dated YYYY-MM-DD (basis)"). Every freshness search
+without a wrong-document finding, whichever arm picked it, is held to the old date
+(`statedDateReplaces`): the old document's stated date, or, when none is known, the year the older
+arm read (its "Effective" year or address year, counted to 31 December; `freshnessOldDate`). A page
+found that states a date (by the same reader) replaces the link only when that date is later. A page
+that states no date is refused only when the old date comes from the old document's text
+(`effective_statement` or `printed_date`, `TEXT_STATED_BASES`); when it is only an address year or
+the older arm's effective year, an undated page replaces the link as it did before the guard (about
+half of the age-triggered freshness v2 replacements with stored text state no date). hebfcu.org's link
+`/wp-content/uploads/2022/03/TISA.pdf` names 2022 but says "accurate as of October 12, 2026", so a
+page found must state a date after that. On the page found, a dated line whose sentence names rates
+(rates, APY, dividends, interest, yields) and not fees or a schedule does not count
+(`skipRateLines`): "Rates current as of October 24, 2026" says when rates were set. Stored
+documents are dated without that rule (doc 32498's only current line is about its rates). A page
+that states an older or equal date, or no date against a text-stated old date, leaves the link as
+it is, and the refusal is kept on
+the attempt (`detail.stated_date_check`) and counted in the step detail (`stated_date_refusals`).
+A wrong-document search is not held to a date. The pass picks its documents from
+`source_documents` and the fee tier tables (cited first, looked up only for banks with a document
+still to date) and counts live fees in `published_fee_catalog` for the picked documents only, so a
+step with nothing to date reads no catalog. The pass and the search both
+wait for the columns (migration `20270110000077`, `statedDateColumnsReady`): until then the pass
+reads and writes nothing (`schema_ready: false`) and the search leaves out its stated-date arm.
+
 ## Pages live fees come from (`live-source-refetch.ts`)
 
 The plain fetch asks for one address per bank and judges the bank due by its own last crawl; it
@@ -626,13 +692,14 @@ fails a PR that changes one of these constants without updating its line here (#
 | `PAGE_CLASSIFIER_VERSION` | — | v2 | `magellan/page-classifier.ts` |
 | `SAVED_LINK_FETCH_STRATEGY` | `fetch.saved_link` | v1 | `magellan/saved-link-fetch.ts` |
 | `LIVE_SOURCE_REFETCH_STRATEGY` | `fetch.live_source` | v1 | `magellan/live-source-refetch.ts` |
+| `STATED_DATE_VERSION` | — | v1 | `magellan/stated-date.ts` |
 | `PAID_FIND_STRATEGY` | `discover.paid_web_search` | v2 (top-10 first) | `magellan/paid-find.ts` |
 | `PAID_PICK_STRATEGY` | `discover.paid_pick` | v1 | `magellan/paid-find.ts` |
 | `KEEP_REFUSED_ANSWER_STRATEGY` | `discover.keep_refused_answer` | v1 | `magellan/refused-answers.ts` |
 | `CENSUS_ACS_PARSER_VERSION` | — | v3 | `magellan/registry/census-acs.ts` |
 | `CFPB_PARSER_VERSION` | — | v5 | `magellan/registry/cfpb.ts` |
 | `FDIC_HISTORY_PARSER_VERSION` | — | v1 | `magellan/registry/fdic-history.ts` |
-| `FFIEC_CALL_DETAIL_PARSER_VERSION` | — | v4 (adds deposit interest expense, cost lines, total deposits and assets; v3 reads RC-O account-size labels as filed; v2 matches the bulk file's abbreviated descriptions; reads split "(1 of 2)" schedules) | `magellan/registry/ffiec-call-detail.ts` |
+| `FFIEC_CALL_DETAIL_PARSER_VERSION` | — | v5 (also stores each bank's POR "Last Date/Time Submission Updated On" as item `filing_last_updated`, epoch seconds, kept out of the lines, #1925; v4 adds deposit interest expense, cost lines, total deposits and assets; v3 reads RC-O account-size labels as filed; v2 matches the bulk file's abbreviated descriptions; reads split "(1 of 2)" schedules) | `magellan/registry/ffiec-call-detail.ts` |
 | `NCUA_EXTRAS_PARSER_VERSION` | — | v3 (adds dividend expense and share mix; v2 reads AcctDesc.txt, not the trade-names file) | `magellan/registry/ncua-extras.ts` |
 | `FED_INDICATORS_PARSER_VERSION` | — | v2 (each indicator from BLS, BEA or the Fed Board, not FRED; 2026-10-18) | `magellan/registry/fed.ts` (registry-fred) |
 | `ECONOMY_PARSER_VERSION` | — | v1 | `magellan/registry/economy.ts` (13 economy sources; remittances, branch tracts and BEA have their own) |

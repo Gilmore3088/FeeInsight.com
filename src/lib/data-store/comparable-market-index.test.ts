@@ -140,7 +140,10 @@ const CASES: Array<{ label: string; fee: CatalogFee; counts: boolean }> = [
   { label: "a per-item dormant fee keeps its place", fee: catalogFee({ fee_category: "dormant_account", fee_name: "Dormant Account Fee", amount: 5, frequency: "per_item" }), counts: true },
   { label: "a monthly safe deposit rent", fee: catalogFee({ fee_category: "safe_deposit_box", fee_name: "Safe Deposit Box 3x5", amount: 4, frequency: "monthly" }), counts: false },
   { label: "an annual safe deposit rent", fee: catalogFee({ fee_category: "safe_deposit_box", fee_name: "Safe Deposit Box 3x5", amount: 40, frequency: "annual" }), counts: true },
-  { label: "a quarterly frequency outside the basis categories", fee: catalogFee({ fee_category: "paper_statement", fee_name: "Paper Statement", amount: 6, frequency: "quarterly" }), counts: true },
+  { label: "a quarterly paper statement fee (#1901)", fee: catalogFee({ fee_category: "paper_statement", fee_name: "Paper Statement", amount: 6, frequency: "quarterly" }), counts: false },
+  { label: "a monthly price in a per-event category (#1901)", fee: catalogFee({ fee_category: "document_reproduction", fee_name: "Statement Copies", amount: 5, frequency: "monthly" }), counts: false },
+  { label: "a per-item returned mail fee beside the monthly median (#1901)", fee: catalogFee({ fee_category: "returned_mail", fee_name: "Returned Mail", amount: 5, frequency: "per_item" }), counts: false },
+  { label: "a monthly returned mail fee", fee: catalogFee({ fee_category: "returned_mail", fee_name: "Bad Address Fee", amount: 5, frequency: "monthly" }), counts: true },
   { label: "a night depository key, under night deposit", fee: catalogFee({ fee_category: "night_deposit", fee_name: "Night Depository Key, per additional key", amount: 15 }), counts: true },
 ];
 

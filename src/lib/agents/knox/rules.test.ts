@@ -1844,7 +1844,7 @@ describe("v80 (#2032): rows named by the heading above them", () => {
   });
 });
 
-describe("Knox v111 (#1877): draft protection fee", () => {
+describe("Knox v112 (#1877): draft protection fee", () => {
   it("files a credit union's draft protection fee as overdraft", () => {
     expect(classifyFeeText("Draft Protection Fee (Paid) per presentment")).toBe("overdraft");
     expect(classifyFeeText("Draft Protection Fee")).toBe("overdraft");

@@ -18,6 +18,8 @@
  * The one exception is a dollar amount in a category that is usually a rate (below).
  */
 
+import { boxSectionLateFee } from "@/lib/custom-report/box-section-late-fee";
+import { namedForCheckingAccount } from "@/lib/checking-fee-name";
 import { ATM_ABROAD, COLLECTION_ITEM, DRAFT_PROTECTION_FEE, foldRetiredCategory, FOREIGN_DEPOSIT_RETURN, FOREIGN_ITEM_RETURN, INCOMING_WIRE, INTERNATIONAL_ATM, IRA_CLOSING, ITEM_COPY, RESEARCH_SPLIT_LIVE, SKIP_A_PAY, SUSTAINED_OVERDRAFT } from "@/lib/fee-fold";
 
 export type CategoryGuardCode = "name_contradicts" | "name_unsupported" | "rate_as_amount" | "schedule_contradicts" | "amount_implausible";
@@ -28,6 +30,16 @@ export interface CategoryGuardContext {
   conditions?: string | null;
   /** The highest NSF or insufficient-funds price elsewhere on the same schedule, when known. */
   document_nsf_amount?: number | string | null;
+  /**
+   * v84 (#1788): the line printed right above the fee's own line in its stored text
+   * (`headingAboveExcerpt`), when the caller read it. Read only for a generic monthly charge.
+   */
+  heading_above?: string | null;
+  /**
+   * v87 (#1916): the fee's stored text prints it in a safe deposit box section (`boxSectionLateFee`),
+   * when the caller read it (`withBoxSection`). Read only for a late payment.
+   */
+  box_section?: boolean | null;
 }
 
 export type CategoryGuardVerdict =
@@ -229,8 +241,15 @@ const CARD_SERVICE_ELSEWHERE = String.raw`\bbill payer\b|\baccount clos\w*`;
  * balance_inquiry is retired and folds into this type (v25). v71: verifying an ATM transaction
  * ("Verification of ATM Transaction" $3, 96092) is research. A denied ATM transaction ("ATM
  * Denials", 12 live rows) is left for James: it may be the network ATM fee for a failed attempt.
+ * v83 (#1690, held by Darwin's peer check): research or an investigation that lists ATM items
+ * ("Account Investigation - Share / ATM / ACH (per item after 60 days)" $10, raw 750417) and ATM
+ * photos ("ATM Photos at Credit Union" $10, raw 790236) are account research (`ATM_RESEARCH`); a
+ * transaction that overdraws a share ("ATM Negative Share Transaction" $10, raw 790212) is a
+ * negative balance; and an additional card ("Additional ATM/Debit Card" $10, raw 750400; "ATM/Debit:
+ * Each Additional Card") prices the card. "Each additional ATM withdrawal" names no card and stays.
  */
-const NOT_ATM_USE = String.raw`\bdisput\w*|\b(?:photo ?)?cop(?:y|ies)\b|\bnegative\s+balance\b|\btreasurer|\bcashier|\bofficial\s+checks?\b|\btemporary\s+checks?\b|\bcut[- ]?off\s+times?\b|\blost\b|\bstolen\b|\b(?:un)?block(?:ed)?\s+cards?\b|\breplac|\bverification of\b`;
+const ATM_RESEARCH = String.raw`\binvestigat\w*|\bresearch\w*|\bphotos?\b(?!\s*(?:id|identification)\b)`;
+const NOT_ATM_USE = String.raw`${ATM_RESEARCH}|\bnegative\s+(?:share|savings|account)\b|\badditional\s+(?:(?:atm|debit|visa|check|mastercard)\s*\/?\s*)*cards?\b(?!\s*-?\s*holders?\b)|\bdisput\w*|\b(?:photo ?)?cop(?:y|ies)\b|\bnegative\s+balance\b|\btreasurer|\bcashier|\bofficial\s+checks?\b|\btemporary\s+checks?\b|\bcut[- ]?off\s+times?\b|\blost\b|\bstolen\b|\b(?:un)?block(?:ed)?\s+cards?\b|\breplac|\bverification of\b`;
 
 /**
  * v70 (#1765, card-product misfiles; #1690): a fee for the card itself is not a fee for using another
@@ -383,6 +402,54 @@ const NIGHT_DEPOSIT_KEY_DEPOSIT_EXEMPT = new RegExp(
   "i",
 );
 
+/**
+ * v85 (#1831): a refundable safe deposit box key deposit is money the renter gets back when both
+ * keys come home, not a charge for the box ("Safety Deposit Box Key Deposit at Account Opening (per
+ * key)" $5, Central Bank 152139; "Key Deposit (refundable)" $100, "Safe Deposit Box Security Deposit
+ * (paid at opening ..., refunded upon returning both keys)" $40). The name has to name the deposit
+ * on the key: a key followed by "deposit" (not "Safe Deposit" or "Deposit Box") or "refund...", a
+ * deposit for or on the key, a refundable deposit, or the box's security deposit. "Non-refundable"
+ * is not a refund.
+ */
+const SAFE_DEPOSIT_KEY_DEPOSIT = new RegExp(
+  [
+    String.raw`\bkeys?\b[^|]{0,30}?(?:(?<!\bsafe\s)(?<!\bsafety\s)\bdeposit\b(?!\s*box)|(?<!\bnon-?)\brefund\w*)`,
+    String.raw`\bdeposit\s+(?:for|on)\s+(?:the\s+|each\s+)?keys?\b`,
+    String.raw`(?<!\bnon-?)\brefundable\s+(?:keys?|deposit)\b`,
+    String.raw`\bsecurity\s+deposit\b`,
+  ].join("|"),
+  "i",
+);
+/**
+ * v85 (#1831): what keeps a safe deposit box name that mentions a key deposit filed as the box fee.
+ * Each word sits on what it qualifies (Darwin lesson issue-1662-exemption-sits-on-its-noun):
+ * - a lost, replaced, duplicate, missing, damaged or stolen key, or the loss of a key: the lost-key
+ *   and replacement fees stay safe deposit box fees ("Key Deposit/Lost Key", "Key Deposit / Replacement");
+ * - drilling: the line prices drilling the box open ("Box Drilling / Lost Keys / Key Deposit" $200,
+ *   "Safe deposit box - Drilling fee - Key deposit" $150, each the drilling price on its schedule);
+ * - the box's annual or rental fee itself ("Annual Rental Fees (Key Deposit)" $25, the smallest
+ *   box's rent on its schedule). A "Rental - Key Deposit" header is not a rental fee
+ *   ("Safe Deposit Box Rental** - Key Deposit | $10.00" prices the key deposit).
+ */
+const SAFE_DEPOSIT_KEY_DEPOSIT_EXEMPT = new RegExp(
+  [
+    String.raw`\b(?:lost|replac\w*|duplicat\w*|missing|damaged|stolen)\b[^|]{0,15}\bkeys?\b`,
+    String.raw`\bkeys?\b[^|]{0,15}\b(?:lost|replac\w*|duplicat\w*|missing|damaged|stolen)\b`,
+    String.raw`\bloss\s+of\b[^|]{0,15}\bkeys?\b`,
+    String.raw`\bdrill\w*`,
+    String.raw`\b(?:annual|yearly|monthly)\s+(?:rental\s+)?(?:fees?|charges?|rent)\b`,
+    String.raw`\brental\s+(?:fees?|charges?)\b`,
+    // A deposit the bank keeps is a charge ("Key Deposit (non-refundable)", "Forfeited Key Deposit"),
+    // and lock work prices the box's service ("Lock Change / Key Deposit", "Re-keying").
+    String.raw`\bnon-?\s?refundable\b`,
+    String.raw`\bforfeit\w*`,
+    String.raw`\block\s+(?:change|replacement)\b`,
+    String.raw`\bchange\s+of\s+locks?\b`,
+    String.raw`\bre-?key\w*`,
+  ].join("|"),
+  "i",
+);
+
 export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   monthly_maintenance: {
     // v10: "Minimum daily balance of $500 required to avoid a $5.00 service fee" names the
@@ -444,8 +511,8 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // (the $50 check paid)", "...because your Available Balance was not sufficient"), a waiver
     // threshold ("unless the total overdraft is $50 or less"), page navigation, an account name
     // and a credit card or savings account "as overdraft protection" are not the fee.
-    // v85 (#1877): a credit union's "Draft Protection Fee (Paid) per presentment" is the paid-overdraft fee
-    // (`DRAFT_PROTECTION_FEE`, shared with Knox v111).
+    // v89 (#1877): a credit union's "Draft Protection Fee (Paid) per presentment" is the paid-overdraft fee
+    // (`DRAFT_PROTECTION_FEE`, shared with Knox v112).
     include: new RegExp(`${DRAFT_PROTECTION_FEE.source}|` + /(overdraft|overdrawn|\bod\b|o\/d|sobregir|pago de cortes[ií]a|partidas? pagadas?|paid item|items? paid|paid nsf|paid (?:non[-\s]?|in)sufficient|paid (?:[\w&]+ ){1,3}nsf items?|courtesy pay|bounce protection|privilege|(?:in|non[-\s]?)sufficient funds?\b.{0,25}\(\s*paid\s*\)|\(\s*honou?red\s*\)|(?:nsf|(?:in|non[-\s]?)sufficient)\b[^|]{0,30}?(?:(?<!\bnon)[-–]\s*|\(\s*(?:check\s+)?)paid\b(?!\s+(?:or|from|by)\b))/.source, "i"),
     // v72 (#1788): staying overdrawn for days is the continuous overdraft fee (`SUSTAINED_OVERDRAFT`).
     exclude: new RegExp(String.raw`${SUSTAINED_OVERDRAFT.source}|` +
@@ -745,9 +812,15 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   },
   // v60: a night deposit bag, its key or a bag bundle is not a safe deposit box fee (UAT 104666,
   // "Deposit Bags & Night Deposit Drop Box: Disposable 9" x 12" bundle" $15; 6/6 on source, Oct 9).
+  // v85 (#1831): a refundable key deposit (`SAFE_DEPOSIT_KEY_DEPOSIT`) is not a charge for the box,
+  // as v66 has it for the night deposit. A lost, replaced or duplicate key, drilling and the box's
+  // annual or rental fee stay here (`SAFE_DEPOSIT_KEY_DEPOSIT_EXEMPT`); so do late fees.
   safe_deposit_box: {
     include: /\S/,
-    exclude: /(\bbags?\b|zipper|pouch|depository|night deposit|drop box)/i,
+    exclude: new RegExp(
+      String.raw`(\bbags?\b|zipper|pouch|depository|night deposit|drop box)|^(?![\s\S]*(?:${SAFE_DEPOSIT_KEY_DEPOSIT_EXEMPT.source}))[\s\S]*(?:${SAFE_DEPOSIT_KEY_DEPOSIT.source})`,
+      "i",
+    ),
   },
   // v65: excess withdrawals and returned mail are their own types (James, Oct 15, #1398; nothing is
   // filed there until `RESEARCH_SPLIT_LIVE` is on). An excess withdrawal row is often named only
@@ -947,16 +1020,75 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // header or an unrelated "service"/"monthly" clause no longer keeps a key deposit filed as the
 // service. Read-only dry run (Oct 25): none of the 142 live night deposit names that name a key
 // changes verdict; the guard catch-up re-checks every live fee once.
-// v85 (Oct 25, #1877; v83 and v84 are claimed by in-flight work): a credit union's "Draft Protection
+// v83 (Oct 25, #1690): the non-network ATM fee refuses research, investigation and photo names
+// (re-filed to account research on Darwin's path), an ATM transaction that overdraws a share, and an
+// additional card (`NOT_ATM_USE`). Read-only dry run, Oct 25: 4 of 2,290 live atm_non_network fees
+// fail and go to the second look; the live sweep's restore list is unchanged.
+// v84 (Oct 25, #1788): a monthly maintenance fee named only as a monthly fee or service charge
+// (`genericMonthlyCharge`) fails when the cell before its name on its own line, or the heading its
+// stored text prints above it (`heading_above`, `headingAboveExcerpt`), names another service:
+// Positive Pay, ACH, bill pay, online banking, an ATM, debit or gift card, paper statements, a
+// benefits package (`otherServiceMonthlyCharge`). Florida Capital's Positive Pay rows (56683, 56684)
+// and TD's paper statement fee (152525, already down for #1774) are the cases. A line that says how
+// to avoid the fee, and a heading inside a feature list, keep it. A line printed more than once is
+// read under a heading only when every place's heading names another service. Read-only dry run,
+// Oct 25: 23 of the 1,951 live generic monthly charges fail, each read on its stored text; Darwin's verify and
+// Hamilton's live guard (with its takedown restore) read the heading from the stored text.
+// v85 (Oct 25, #1831): a refundable safe deposit box key
+// deposit (`SAFE_DEPOSIT_KEY_DEPOSIT`) fails the safe deposit box rule, as v66 does for the night
+// deposit; a lost, replaced or duplicate key, drilling and the box's annual or rental fee stay
+// (`SAFE_DEPOSIT_KEY_DEPOSIT_EXEMPT`). No type holds a key deposit, so the live ones go to the second
+// look and come down. Dry-run count in the PR.
+// v86 (Oct 25, #1918): monthly maintenance also admits a checking account's own named fee ("MAX
+// Checking Fee (per month)", "Jumpstart Checking Account Fee", Bellco FCU's $3.95), read by the
+// pattern Knox files it with (`namedForCheckingAccount`, `@/lib/checking-fee-name`), so the two never
+// drift. The pattern keeps out opening, setup and reopening charges, business accounts, other fees'
+// words and a period other than the month. It only admits names; no fee that passes today fails.
+// Read-only dry run (Oct 25): only a name containing "checking (account) fee|charge" can change
+// verdict; of the 38 live fees and 2 guard takedowns with one, none changes verdict, re-file or restore.
+// v87 (Oct 25, #1916): a late payment its stored text prints in a safe deposit box
+// section (`box_section`, read by `withBoxSection` with `boxSectionLateFee`: "Safe Deposit Box Fees" /
+// "Late Payment (per month) | $10.00", U.S. Bank 75926; "page | Safe Deposit Box 30 Day" over
+// "Courtesy Pay Coverage | Late Payment (by credit union | $10", Advia FCU 142240) is the box's late
+// rent charge: it fails late_payment and re-files to safe_deposit_box (`refileFromLine`), in place on
+// Hamilton's live guard with its own name and price. Where the bank already has a live box late fee
+// at that price (or a second copy moves in the same sweep), the copy is not moved and goes to the second
+// look. Read-only dry run, Oct 25: of 410 live late_payment fees whose text names a safe deposit box,
+// 299 pass; 111 at 110 institutions fail, 99 re-file in place, 11 have a live box late fee twin (142240
+// beside 139815, ...) and 1 is the second copy at its bank (35992 beside 9785): those 12 come down.
+// v89 (Oct 25, #1877; v88 is claimed by in-flight work, #2628): a credit union's "Draft Protection
 // Fee" is its paid-overdraft fee and the overdraft rule accepts the name (`DRAFT_PROTECTION_FEE`, shared
-// with Knox v111). Abbey FCU's own "Draft Protection Fee (Paid) per presentment" $30 was set aside by
+// with Knox v112). Abbey FCU's own "Draft Protection Fee (Paid) per presentment" $30 was set aside by
 // Knox and would be refused as name_unsupported, so its "Overdraft at teller window" line stood in as
 // its overdraft fee. A channel-specific overdraft (ATM, debit card, in-person or teller) stays
 // overdraft, as about 300 live rows already are; the institution value is its highest overdraft amount
 // (DECISIONS, tiered overdraft). It only admits names; no fee that passes today fails. Read-only dry
 // run (Oct 25): 1 live fee matches the wording ("Overdraft Paid by Over Draft Protection (OD)", already
 // overdraft, verdict unchanged); 0 live fees are held, re-filed or taken down.
-export const CATEGORY_GUARD_VERSION = 85;
+export const CATEGORY_GUARD_VERSION = 89;
+
+/** v87 (#1916): where a late charge printed in a safe deposit box section is filed. */
+export const BOX_LATE_TARGET = "safe_deposit_box";
+
+function boxSectionReason(name: string): string {
+  return `"${name}" is printed in a safe deposit box section of its schedule: the box's late rent charge, not a loan's late payment`;
+}
+
+/**
+ * v87 (#1916): the guard context with `box_section` read from the fee's stored text, for a late
+ * payment only (every other fee is returned as it is, so no text is needed for it). Hamilton's live
+ * guard and its takedown restore call it with each such fee's stored text.
+ */
+export function withBoxSection<T extends CategoryGuardContext>(
+  canonicalFeeKey: string | null | undefined,
+  feeName: string | null | undefined,
+  context: T,
+  text: string | null | undefined,
+): T {
+  if (canonicalFeeKey !== "late_payment" || !text || !feeName) return context;
+  const amount = context.amount == null || context.amount === "" ? null : Number(context.amount);
+  return { ...context, box_section: boxSectionLateFee(text, feeName, amount != null && Number.isFinite(amount) ? amount : null) };
+}
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -1036,6 +1168,11 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
   // v69: an ATM dispute or a copy of a card sale is research.
   // v71: verifying an ATM transaction is research too (96092, #1773).
   { from: "atm_non_network", to: "account_research", when: /\bdisput|\b(?:photo ?)?cop(?:y|ies) of\b|\bverification of\b/i },
+  // v83 (#1690): an investigation or research listing ATM items, and ATM photos, are research too.
+  // A card's own research or film fee ("ATM Card Research/Film Fee" $75, Rally FCU, keyed as the
+  // retired card dispute type) is not re-filed: the fold gives a card dispute without a dispute word
+  // no home (`card_dispute` in fee-fold.ts), so it fails and is not read.
+  { from: "atm_non_network", to: "account_research", when: new RegExp(ATM_RESEARCH, "i"), unless: /\bcards?\b/i },
   // v70: an ATM-named bill payer service is bill pay, and a card charge on closing the account early
   // is an early closure (`CARD_SERVICE_ELSEWHERE`).
   { from: "atm_non_network", to: "bill_pay", when: /\bbill payer\b/i },
@@ -1268,7 +1405,8 @@ export function checkFeeCategory(
       reason: `${CARD_PRODUCT_REASON}: "${name}" prices the card itself, not ${canonicalFeeKey} ("${cardProduct}")`,
     };
   }
-  if (!rule.include.test(name) && !(canonicalFeeKey === "excess_withdrawal" && GENERIC_SERVICE_CHARGE.test(name) && savingsOverLimitLine(name, context))) {
+  if (!rule.include.test(name) && !(canonicalFeeKey === "excess_withdrawal" && GENERIC_SERVICE_CHARGE.test(name) && savingsOverLimitLine(name, context)) &&
+      !(canonicalFeeKey === "monthly_maintenance" && namedForCheckingAccount(name))) {
     return {
       ok: false,
       code: "name_unsupported",
@@ -1287,8 +1425,13 @@ export function checkFeeCategory(
   if (billPayReason) return { ok: false, code: billPayReason.code, reason: billPayReason.reason };
   const activityReason = activityChargeOnLine(canonicalFeeKey, context);
   if (activityReason) return { ok: false, code: "schedule_contradicts", reason: activityReason.reason };
+  if (canonicalFeeKey === "late_payment" && context?.box_section === true) {
+    return { ok: false, code: "schedule_contradicts", reason: boxSectionReason(name) };
+  }
   const addOnReason = addOnOnLine(canonicalFeeKey, context);
   if (addOnReason) return { ok: false, code: "schedule_contradicts", reason: addOnReason };
+  const serviceReason = otherServiceMonthlyCharge(canonicalFeeKey, name, context);
+  if (serviceReason) return { ok: false, code: "schedule_contradicts", reason: serviceReason };
   const sustainedReason = sustainedOverdraftOnLine(canonicalFeeKey, context);
   if (sustainedReason) return { ok: false, code: "schedule_contradicts", reason: sustainedReason };
   const atmTableReason = cashAdvanceFromAtmTable(canonicalFeeKey, context);
@@ -1500,6 +1643,10 @@ export function refileFromLine(
   live: boolean = RESEARCH_SPLIT_LIVE,
 ): string | null {
   if (!canonicalFeeKey) return null;
+  // v87 (#1916): a late charge its stored text prints in a safe deposit box section is the box's.
+  if (canonicalFeeKey === "late_payment" && context?.box_section === true) {
+    return checkFeeCategory(BOX_LATE_TARGET, feeName, context).ok ? BOX_LATE_TARGET : null;
+  }
   // v72 (#1788): an overdraft row whose own line charges it for staying overdrawn is the continuous
   // overdraft fee.
   if (sustainedOverdraftOnLine(canonicalFeeKey, context)) {
@@ -1528,6 +1675,169 @@ function addOnOnLine(canonicalFeeKey: string, context: CategoryGuardContext | un
   const excerpt = context?.conditions?.match(/\bexcerpt=([\s\S]*)$/)?.[1];
   const named = excerpt ? plainQuotes(excerpt).match(ADD_ON_LINE) : null;
   return named ? `the source line sells an optional add-on ("${named[0]}"), not the account's monthly maintenance fee` : null;
+}
+
+/**
+ * v84 (#1788): a monthly charge whose name says only that it is a monthly fee or service charge
+ * ("Monthly fee", "Service charge for six or more accounts") is named by what its schedule prints
+ * around it, and Knox kept only the generic words. TD's "Paper statements | $3 monthly fee" (152525)
+ * went live as "Monthly fee", and Florida Capital's Positive Pay rows ("POSITIVE PAY for ACH and
+ * Checks" over "Service charge for one up to five accounts | $25 per month" and "Service charge for
+ * six or more accounts | $5 per month per account", 56683 and 56684) went live as monthly maintenance.
+ * Two readings place such a fee under another service:
+ * - the cell right before its name on its own line (`excerpt=`) names the service ("Paper
+ *   statements", "Lifestyle Benefits");
+ * - the heading printed on the line right above it in the stored text (`heading_above`, read by
+ *   `headingAboveExcerpt`) names the service ("Positive Pay", "ACH Origination", "BILL PAY",
+ *   "ATM / Debit Card Fees", "Visa® Gift Card").
+ * A name that says anything more ("Perks Checking Monthly service charge", "Bill Payer (monthly fee)")
+ * is read by its own words, as before. A service line must open with the service, so a feature list
+ * ("Debit card available", "Free Online Banking", "Card Management in our mobile banking app") never
+ * names one. None of the 50 types holds a Positive Pay, ACH, scanner, bill pay, card, paper statement
+ * or benefits package charge, so the fee fails rather than moving.
+ */
+const GENERIC_MONTHLY_CHARGE =
+  /^[\W_]*(?:(?:monthly|quarterly|account|maintenance|service)\s+){0,3}(?:fees?|charges?|maintenance|service)(?:\s*\(?\s*(?:per|a|each)\s+(?:month|statement(?:\s+cycle)?|cycle|account(?:\s+number)?)\s*\)?)?(?:\s+for\s+(?:[\w-]+\s+){0,4}accounts?)?[\W_]*$/i;
+const GENERIC_MONTHLY_WORD = /\b(?:monthly|quarterly|maintenance|service)\b/i;
+/** A name that says which account, card, plan or service it is for names more than a monthly charge. */
+const NAMES_ITS_OWNER = /\b(?:checking|savings|share|draft|money\s+market|club|now|dda|business|personal|consumer|student|senior|card|bill|plan|program)\b/i;
+/** A service with its own monthly charge, named at the start of a heading or cell. */
+const OTHER_SERVICE_START = new RegExp(
+  String.raw`^(?:(?:business|personal|consumer|commercial|retail|fee\s+schedule\s+for|the)\s+){0,2}(?:` +
+    [
+      String.raw`positive\s*pay\b`,
+      String.raw`ach\b`,
+      String.raw`remote\s+deposit`,
+      String.raw`merchant\b`,
+      String.raw`(?:(?:internet|online)\s+)?bill\s*pay(?:er|ments?)?\b`,
+      String.raw`(?:internet|online|mobile)\s+banking\b`,
+      String.raw`(?:(?:atm|debit|check|gift|prepaid|credit|visa|master\s*card)[®™]?\s*(?:or|and|&|\/)?\s*){1,3}cards?\b(?!\s+(?:purchases?|transactions?|usage|activity))`,
+      String.raw`paper\s+(?:statements?|stmts?)\b`,
+      String.raw`returned?\s+mail\b`,
+      String.raw`lockbox\b`,
+      String.raw`sweeps?\b`,
+      String.raw`zero\s+balance\b`,
+      String.raw`treasury\b`,
+      String.raw`cash\s+management\b`,
+      String.raw`safe\s+deposit\b`,
+      String.raw`night\s+deposit\b`,
+      String.raw`lifestyle\s+benefits\b`,
+      String.raw`identity\s+(?:theft|protection)\b`,
+    ].join("|") +
+    ")",
+  "i",
+);
+/** Words that make a short line a feature or a condition, not a heading. */
+const FEATURE_LINE = /\b(?:free|no\s+(?:charge|fee|cost|monthly)|included|includes?|available|unlimited|rewards?|privileges?|with|waive[ds]?|requires?|required|enroll(?:ed)?|must|opt|avoid|discount(?:ed)?|reinstated|eligible)\b|[?.!]\s*$/i;
+const MAX_SERVICE_HEADING_WORDS = 8;
+
+/** A short line or cell that opens by naming another service, or null. */
+function serviceHeading(line: string | null | undefined): string | null {
+  const plain = plainQuotes(line ?? "").replace(/^[\s\-–—•·*#>›]+|[\s*|:]+$/g, "").trim();
+  if (!plain || /[$|]|\d/.test(plain) || plain.length > 80) return null;
+  if (plain.split(/\s+/).length > MAX_SERVICE_HEADING_WORDS || FEATURE_LINE.test(plain)) return null;
+  return OTHER_SERVICE_START.test(plain) ? plain : null;
+}
+
+/** Pure: the fee is a monthly maintenance fee named only as a monthly fee or service charge. */
+export function genericMonthlyCharge(canonicalFeeKey: string | null | undefined, feeName: string | null | undefined): boolean {
+  const name = plainQuotes(feeName ?? "").trim();
+  return canonicalFeeKey === "monthly_maintenance" && GENERIC_MONTHLY_WORD.test(name) && !NAMES_ITS_OWNER.test(name) && GENERIC_MONTHLY_CHARGE.test(name);
+}
+
+/** A priced row whose label is itself a generic monthly charge: a sibling row under the same heading. */
+function genericSiblingRow(line: string): boolean {
+  if (!/\$|\bfree\b|\bno charge\b/i.test(line)) return false;
+  const label = line.split(/\||\$/)[0].replace(/[.…_\s:]+$/, "");
+  return GENERIC_MONTHLY_WORD.test(label) && GENERIC_MONTHLY_CHARGE.test(label);
+}
+
+/** A short unpriced line that is itself a service or a feature: part of a list, not over one. */
+function listLine(line: string | undefined): boolean {
+  const plain = plainQuotes(line ?? "").replace(/^[\s\-–—•·*#>›]+|[\s*|:]+$/g, "").trim();
+  if (!plain || /[$|]/.test(plain) || plain.split(/\s+/).length > MAX_SERVICE_HEADING_WORDS) return false;
+  return OTHER_SERVICE_START.test(plain) || FEATURE_LINE.test(plain);
+}
+
+/**
+ * Pure: the heading over a fee's own line, from the lines printed above it (nearest last). Up to three
+ * sibling rows priced as generic monthly charges are passed over ("Service charge for one up to five
+ * accounts | $25 per month" between Florida Capital's "POSITIVE PAY for ACH and Checks" and 56684).
+ * A line that sits under another short service or feature line is part of a list ("ATM debit card /
+ * Online banking / Online bill pay / $5.00 Service Charge per statement cycle", a product page's
+ * features over the account's own charge), so no heading is read. Null when no line is in reach.
+ */
+export function headingFromLinesAbove(linesAbove: readonly string[]): string | null {
+  const lines = linesAbove.map((line) => line.trim()).filter(Boolean);
+  let index = lines.length - 1;
+  for (let skipped = 0; index >= 0 && skipped < 3 && genericSiblingRow(lines[index]); skipped += 1) index -= 1;
+  const heading = lines[index];
+  if (!heading || heading.length > 80 || listLine(lines[index - 1])) return null;
+  return heading;
+}
+
+/**
+ * Pure: the heading printed above the fee's own line (`excerpt=` in its conditions) in its stored
+ * text (`headingFromLinesAbove`); null when the excerpt is not found on the text, or is printed more
+ * than once and not every place's heading names another service. The guard reads it
+ * only for a generic monthly charge (`genericMonthlyCharge`).
+ */
+export function headingAboveExcerpt(text: string | null | undefined, conditions: string | null | undefined): string | null {
+  const excerpt = conditions?.match(/\bexcerpt=([\s\S]*)$/)?.[1];
+  if (!text || !excerpt) return null;
+  const probe = excerpt.replace(/^["\s]+|["\s]+$/g, "").slice(0, 60).trim();
+  if (probe.length < 8) return null;
+  const places: number[] = [];
+  for (let at = text.indexOf(probe); at !== -1; at = text.indexOf(probe, at + 1)) places.push(at);
+  if (places.length === 0 || places[0] <= 0) return null;
+  if (places.length === 1) return headingAtPlace(text, places[0]);
+  // The same line printed more than once (under a checking section and a Positive Pay section) has
+  // no one heading: a heading is read only when every place's heading names another service (123617,
+  // "Monthly Fee | None" under two card headings), so a real maintenance fee never comes down for it.
+  const headings = places.map((at) => headingAtPlace(text, at));
+  return headings.every((heading) => serviceHeading(heading)) ? headings[0] : null;
+}
+
+function headingAtPlace(text: string, at: number): string | null {
+  const lines = text.slice(Math.max(0, at - 600), at).split(/\n+/);
+  // The excerpt may start mid-line: the text before it on its own line is not a line above.
+  return lines.length < 2 ? null : headingFromLinesAbove(lines.slice(0, -1));
+}
+
+/**
+ * Pure: the guard context with `heading_above` read from the fee's stored text, for a generic monthly
+ * charge only (every other fee is returned as it is, so no text is needed for it). Darwin's verify
+ * and Hamilton's live guard both call it with the document text they hold.
+ */
+export function withHeadingAbove<T extends CategoryGuardContext>(
+  canonicalFeeKey: string | null | undefined,
+  feeName: string | null | undefined,
+  context: T,
+  text: string | null | undefined,
+): T {
+  if (!genericMonthlyCharge(canonicalFeeKey, feeName) || !text) return context;
+  return { ...context, heading_above: headingAboveExcerpt(text, context.conditions) };
+}
+
+/**
+ * The fee's own line says how to avoid it (a balance, "In order to avoid the $5 monthly maintenance
+ * fee, your 10 debit card purchases must settle", 104536 under "Debit Card Purchases"): the account's
+ * own monthly fee, whatever is printed above it.
+ */
+const ACCOUNT_WAIVER_ON_LINE = /\b(?:balances?|minimum|min\.|avoid(?:ed)?|waive[ds]?|waiver)\b/i;
+
+function otherServiceMonthlyCharge(canonicalFeeKey: string, name: string, context: CategoryGuardContext | undefined): string | null {
+  if (!genericMonthlyCharge(canonicalFeeKey, name)) return null;
+  const excerpt = context?.conditions?.match(/\bexcerpt=([\s\S]*)$/)?.[1];
+  if (excerpt && ACCOUNT_WAIVER_ON_LINE.test(excerpt)) return null;
+  if (excerpt && name.length >= 3) {
+    const cells = plainQuotes(excerpt).replace(/^["\s]+|["\s]+$/g, "").split("|");
+    const at = cells.findIndex((cell) => cell.toLowerCase().includes(name.toLowerCase().replace(/^[\W_]+|[\W_]+$/g, "")));
+    const cell = at > 0 ? serviceHeading(cells[at - 1]) : null;
+    if (cell) return `the source line prices "${name}" in the row of "${cell}", that service's charge, not the account's monthly maintenance fee`;
+  }
+  const heading = serviceHeading(context?.heading_above);
+  return heading ? `the source prints "${name}" under "${heading}", that service's charge, not the account's monthly maintenance fee` : null;
 }
 
 /**

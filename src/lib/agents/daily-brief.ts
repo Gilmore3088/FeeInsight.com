@@ -16,6 +16,7 @@ import { qualityLedgerLines, readQualityLedger, type QualityLedger } from "./qua
 import { redactRegistrySecrets } from "@/lib/regulatory/http";
 import { STORAGE_STEP_KEY } from "./atlas/storage-retention";
 import { readSourceHealth, sourceHealthLines, urgentSourceCount, type SourceHealthReport } from "./hoovie/source-health";
+import { hamiltonHealthProblems, readHamiltonHealth, type HamiltonHealthReport } from "@/lib/hamilton/health-check";
 import { readUnreadFeedback, unreadFeedbackLines, type UnreadFeedbackSummary } from "./learning/unread-feedback";
 import { errorClassLines, readErrorClasses, type ErrorClassSummary } from "./deming/error-classes";
 
@@ -143,6 +144,8 @@ export function buildDailyBrief({
   ledger,
   storage,
   sources,
+  hamilton,
+  hamiltonError,
   unread,
   errorClasses,
   now = new Date(),
@@ -167,6 +170,13 @@ export function buildDailyBrief({
    * sources that are not fresh, and says nothing about public data when every source is fresh.
    */
   sources?: SourceHealthReport | null;
+  /**
+   * Hamilton's health check (#1921): the database, Ask and export probes, read when the brief
+   * runs. Each failed check is a thing that needs James; nothing is said when all pass.
+   */
+  hamilton?: HamiltonHealthReport | null;
+  /** Why the Hamilton check could not run at all; also a thing that needs James. */
+  hamiltonError?: string | null;
   /** Error rows no agent reads (#2062), counted when the brief runs. */
   unread?: UnreadFeedbackSummary | null;
   /** The week's confirmed errors grouped by step and pattern (#2063). */
@@ -224,33 +234,37 @@ export function buildDailyBrief({
 
   const status = !health.pipeline_enabled ? "paused" : problems.length > 0 ? "needs attention" : "running";
   const storageLines = storageWarningLines(storage);
+  const hamiltonLines = hamiltonHealthProblems(hamilton, hamiltonError);
+  const hamiltonSubject = hamiltonLines.length > 0 ? ", Hamilton check failed" : "";
 
   if (needsYou) {
     const shown = needsYou.slice(0, NEEDS_YOU_IN_EMAIL).map(needsYouLine);
     const more = needsYou.length > shown.length ? [`- and ${needsYou.length - shown.length} more in the console`] : [];
-    const problemLines = [...problems, ...storageLines].map((problem) => `- ${problem}`);
+    const problemLines = [...hamiltonLines, ...problems, ...storageLines].map((problem) => `- ${problem}`);
     const count = needsYou.length + problemLines.length;
     const headline = count > 0 ? `${count} thing${count === 1 ? " needs" : "s need"} you.`
       : urgentSources > 0 ? "Public data warning." : "Nothing needs you.";
     lines.unshift([headline, ...problemLines, ...shown, ...more].join("\n"));
     const storageSubject = storageLines.length > 0 && headline !== "Storage warning." ? ", storage warning" : "";
     return {
-      subject: `Morning brief: ${headline.replace(/\.$/, "").toLowerCase()}${storageSubject}${headline === "Public data warning." ? "" : sourceSubject}, pipeline ${status}`,
+      subject: `Morning brief: ${headline.replace(/\.$/, "").toLowerCase()}${hamiltonSubject}${storageSubject}${headline === "Public data warning." ? "" : sourceSubject}, pipeline ${status}`,
       lines,
       needsYou,
     };
   }
 
   const errors = feed24h.filter((item) => item.tone === "error").slice(0, 2);
-  if (problems.length === 0 && errors.length === 0 && storageLines.length === 0 && urgentSources === 0) {
+  if (problems.length === 0 && errors.length === 0 && storageLines.length === 0 && urgentSources === 0 && hamiltonLines.length === 0) {
     lines.push("Nothing is stuck. Nothing needs you.");
   } else if (problems.length > 0 || errors.length > 0) {
     lines.push(`Needs you: ${[...problems, ...errors.map((item) => item.text)].slice(0, 3).join(" ")}`);
   }
+  // Hamilton's failed checks are never cut by the three-item limit above.
+  lines.push(...hamiltonLines);
   lines.push(...storageLines);
 
   return {
-    subject: `Atlas daily brief: pipeline ${status}${storageLines.length > 0 ? ", storage warning" : ""}${sourceSubject}, ${funnel.sourcedInstitutions.toLocaleString("en-US")} institutions published`,
+    subject: `Atlas daily brief: pipeline ${status}${hamiltonSubject}${storageLines.length > 0 ? ", storage warning" : ""}${sourceSubject}, ${funnel.sourcedInstitutions.toLocaleString("en-US")} institutions published`,
     lines,
   };
 }
@@ -345,12 +359,16 @@ export interface DailyBriefResult {
   deliveryReason: string | null;
   recipient: string;
   cc: string[];
+  /** Hamilton's health check (#1921), or null when it could not run (`hamiltonError` says why). */
+  hamilton: HamiltonHealthReport | null;
+  hamiltonError: string | null;
 }
 
 /** Gathers the numbers, writes the brief and emails it. Never throws on delivery. */
 export async function runDailyBrief({ dryRun = false }: { dryRun?: boolean } = {}): Promise<DailyBriefResult> {
   const now = new Date();
-  const [health, funnel, previous, stepsByAgent, feed, center, failureAlerts, leads, spend, goal, ledger, storage, sources, unread, errorClasses] = await Promise.all([
+  let hamiltonError: string | null = null;
+  const [health, funnel, previous, stepsByAgent, feed, center, failureAlerts, leads, spend, goal, ledger, storage, sources, hamilton, unread, errorClasses] = await Promise.all([
     getPipelineHealth(),
     getPipelineFunnel(),
     previousBrief(now),
@@ -384,6 +402,12 @@ export async function runDailyBrief({ dryRun = false }: { dryRun?: boolean } = {
       console.error("Morning brief source health read failed", error);
       return null;
     }),
+    // Hamilton's database, Ask and export probes (#1921): deterministic, read-only, no model call.
+    readHamiltonHealth({ now }).catch((error) => {
+      console.error("Morning brief Hamilton health check failed to run", error);
+      hamiltonError = error instanceof Error ? error.message : String(error);
+      return null;
+    }),
     readUnreadFeedback().catch((error) => {
       console.error("Morning brief unread feedback read failed", error);
       return null;
@@ -397,15 +421,15 @@ export async function runDailyBrief({ dryRun = false }: { dryRun?: boolean } = {
   const feed24h = feed.filter((item) => new Date(item.at).getTime() >= since);
   // Without Atlas's attention list the Needs-you count would be short, so the brief falls back to its older summary.
   const needsYou = center ? buildNeedsYou({ attention: center.attention, failureAlerts, leads, now }) : undefined;
-  const brief = buildDailyBrief({ health, funnel, previous, stepsByAgent, feed24h, needsYou, spend, goal, ledger, storage, sources, unread, errorClasses, now });
+  const brief = buildDailyBrief({ health, funnel, previous, stepsByAgent, feed24h, needsYou, spend, goal, ledger, storage, sources, hamilton, hamiltonError, unread, errorClasses, now });
   const { to: recipient, cc } = briefRecipients();
   const from = getTransactionalFromAddress();
 
   if (dryRun) {
-    return { brief, funnel, deliveryStatus: "not_configured", deliveryReason: "dry run", recipient, cc };
+    return { brief, funnel, deliveryStatus: "not_configured", deliveryReason: "dry run", recipient, cc, hamilton, hamiltonError };
   }
   if (!from) {
-    return { brief, funnel, deliveryStatus: "not_configured", deliveryReason: "TRANSACTIONAL_EMAIL_FROM is not configured.", recipient, cc };
+    return { brief, funnel, deliveryStatus: "not_configured", deliveryReason: "TRANSACTIONAL_EMAIL_FROM is not configured.", recipient, cc, hamilton, hamiltonError };
   }
 
   const { text, html } = dailyBriefEmail(brief);
@@ -428,5 +452,7 @@ export async function runDailyBrief({ dryRun = false }: { dryRun?: boolean } = {
     deliveryReason: result.status === "sent" ? null : result.status === "failed" ? result.error : result.reason,
     recipient,
     cc,
+    hamilton,
+    hamiltonError,
   };
 }

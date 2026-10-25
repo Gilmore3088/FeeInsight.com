@@ -288,14 +288,7 @@ export const ATM_ABROAD = new RegExp(
 );
 
 /**
- * Guard v72 (#1788): an overdraft charged for staying overdrawn for days ("7 Day Overdraft Processing
- * Fee", "Overdraft Charge (First assessed on the 6th business day overdrawn)", "Cont OD Charge") is
- * the continuous overdraft fee, not the per-item overdraft fee. A daily cap or a per-day item limit
- * ("Max 5 per day") is not matched, nor a name that also prices each item paid ("fee assessed for each
- * item paid1 Continuous Overdraft Fee...", taken-down 14969: its $30 is the per-item fee).
- */
-/**
- * Knox v111 and guard v85 (#1877): a credit union's "Draft Protection Fee" (share-draft wording for
+ * Knox v112 and guard v89 (#1877): a credit union's "Draft Protection Fee" (share-draft wording for
  * overdraft coverage) is its paid-overdraft fee ("Draft Protection Fee (Paid) per presentment", Abbey
  * FCU; "Draft Protection Fee * | $30.00 per Presentment", Members Choice, whose footnote charges it
  * "for handling each overdraft ... that is paid"). "Over Draft Protection"/"Over-Draft Protection"
@@ -305,6 +298,13 @@ export const ATM_ABROAD = new RegExp(
 export const DRAFT_PROTECTION_FEE =
   /(?<!\bover[\s-]*)(?<![\w-])draft\s+protection\b(?![^|]{0,40}\b(?:transfers?|xfers?|sweeps?|from\s+(?:savings|shares?|loans?)|lines?|loans?|LOC|credit|plans?|limits?)\b)/i;
 
+/**
+ * Guard v72 (#1788): an overdraft charged for staying overdrawn for days ("7 Day Overdraft Processing
+ * Fee", "Overdraft Charge (First assessed on the 6th business day overdrawn)", "Cont OD Charge") is
+ * the continuous overdraft fee, not the per-item overdraft fee. A daily cap or a per-day item limit
+ * ("Max 5 per day") is not matched, nor a name that also prices each item paid ("fee assessed for each
+ * item paid1 Continuous Overdraft Fee...", taken-down 14969: its $30 is the per-item fee).
+ */
 export const SUSTAINED_OVERDRAFT =
   /^(?![\s\S]*\b(?:(?:each|per)\s+(?:item|presentment)|items?\s+paid)\b)[\s\S]*(?:\bcont(?:inuous)?\.?\s+(?:od|overdraft|o\/d)\b|\b\d+(?:st|nd|rd|th)?[- ](?:business\s+|calendar\s+|banking\s+)?days?[- ](?:overdraft|overdrawn|negative|od)\b|\b\d+(?:st|nd|rd|th)\s+(?:business\s+|calendar\s+|banking\s+)?day\s+(?:overdrawn|negative|in overdraft)\b|\b(?:overdrawn|negative|in overdraft)\s+(?:for\s+)?(?:more than|over|after|beyond)\s+\d+\s+(?:\w+\s+)?days\b)/i;
 
