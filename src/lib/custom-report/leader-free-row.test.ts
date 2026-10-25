@@ -82,6 +82,20 @@ describe("a free word that does not close the fee's row (#2477 review)", () => {
     ["Overdraft Transfer ...... None | Overdraft Item Fee ...... $30.00", "Overdraft Item Fee", 30],
     ["Incoming Domestic Wire ..... None | Domestic Wire ..... $20.00", "Domestic Wire", 20],
     ["ATM Transactions (our ATMs) ..... Free | ATM Transactions (other ATMs) ..... $2.00", "ATM Transactions", 2],
+    ["Overdraft Fee (under $5) ....... None | Overdraft Fee ....... $30.00", "Overdraft Fee", 30],
+    ["Monthly Service Charge ............ None | Monthly Service Charge ............ $10.00", "Monthly Service Charge", 10],
+    ["Paper Statement Fee ......... None | Paper Statement Fee ......... $2.00", "Paper Statement Fee", 2],
+    ["Inactive Account Fee .......... None | Inactive Account Fee (after 12 months) .......... $5.00", "Inactive Account Fee", 5],
+    ["Early Closure Fee ........ None | Early Closure Fee (within 90 days) ........ $25.00", "Early Closure Fee", 25],
+    ["Excessive Withdrawal Fee ........ None | Excessive Withdrawal Fee (over 6 per month) ........ $5.00", "Excessive Withdrawal Fee", 5],
+    ["Overdraft Fee ....... None | Overdraft Fee per item ....... $30.00", "Overdraft Fee", 30],
+    ["Stop Payment ...... Free | Stop Payment (in branch) ...... $30.00", "Stop Payment", 30],
+    ["Notary Service .......... Free | Notary Service (non-member) .......... $5.00", "Notary Service", 5],
+    ["Debit Card Replacement ..... Free | Debit Card Replacement (rush) ..... $50.00", "Debit Card Replacement", 50],
+    ["Incoming Wire ...... Free | Incoming Wire (international) ...... $15.00", "Incoming Wire", 15],
+    ["ATM Withdrawal …… FREE | ATM Withdrawal …… $2.00", "ATM Withdrawal", 2],
+    ["Returned Deposited Item ...... None | Returned Deposited Item (foreign) ...... $10.00", "Returned Deposited Item", 10],
+    ["Online Banking ....... Free | Bill Pay ........ Free | Online Banking Bill Pay ....... $5.00", "Online Banking Bill Pay", 5],
   ])("traces a fee whose name is not the closed row's: %s", (line, name, amount) => {
     expect(checkFeeAgainstSource(line, name, amount, ".", null).ok).toBe(true);
   });

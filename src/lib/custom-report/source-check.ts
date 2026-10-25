@@ -627,9 +627,15 @@ function leaderFreeRowEnds(line: string, stems: NameStems): number[] {
     const start = match.index ?? 0;
     const end = start + match[0].length;
     if (!ROW_CLOSED_AFTER.test(line.slice(end))) return [];
-    const rowName = line.slice(line.lastIndexOf("|", start) + 1, start).replace(/^.*\$\s?\d[\d,]*(?:\.\d{2})?/, "");
+    // The row's name starts after an earlier row's price; a figure in its own note ("Overdraft Fee
+    // (under $5)") is part of the name, not an earlier price.
+    const rowName = line
+      .slice(line.lastIndexOf("|", start) + 1, start)
+      .replace(/\([^)]*\)/g, " ")
+      .replace(/^.*\$\s?\d[\d,]*(?:\.\d{2})?/, "");
+    const words = rowWords(rowName);
     const feeWords = new Set(rowWords(stems.words.join(" ")));
-    return rowWords(rowName).every((word) => feeWords.has(word)) ? [end] : [];
+    return words.length > 0 && words.every((word) => feeWords.has(word)) ? [end] : [];
   });
 }
 
@@ -667,14 +673,18 @@ function statesAmount(line: string, amount: number, stems: NameStems): SourceChe
   const prices = base.length > 0 ? base : noted;
   // A priced fee's words stop at a row its own free word closed (`leaderFreeRowEnds`): the price
   // after it is the fee's only when the words after the free word name something of the fee that
-  // the closed row does not ("Incoming Wire ... Free | Outgoing Wire ... $25" is Outgoing's $25; a
-  // name glued across both rows, "Copy of cashier check ... N/C | Levy request", keeps the levy's).
+  // the closed row does not, or name the whole fee again ("Incoming Wire ... Free | Outgoing Wire ...
+  // $25" is Outgoing's $25; a name glued across both rows, "Copy of cashier check ... N/C | Levy
+  // request", keeps the levy's).
   const closedEnds = amount > 0 ? leaderFreeRowEnds(line, stems) : [];
   const nearPrice = (price: MoneyToken, i: number) => {
     const from = i === 0 ? 0 : prices[i - 1].end;
     const closed = Math.max(from, ...closedEnds.filter((end) => end <= price.start));
     const open = nearNameStems(line.slice(closed, price.start), stems);
     if (closed === from) return open.length;
+    // A row after the break that names the whole fee again ("Stop Payment ... Free | Stop Payment
+    // (in branch) ... $30.00") is the fee's own priced row.
+    if (open.length === stems.length) return open.length;
     const shut = new Set(nearNameStems(line.slice(from, closed), stems));
     return open.some((stem) => !shut.has(stem)) ? open.length : 0;
   };
