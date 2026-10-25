@@ -12,7 +12,7 @@ const ordinary = "Fee Schedule\nStop Payment | $30.00 per item";
 interface Fixture { institutionId: number; runId: number; documentId: number; artifactId: number; rawIds: number[] }
 
 describe.skipIf(!connection)("generic paid collection before current-input settlement", () => {
-  let db: postgres.Sql<any>;
+  let db: postgres.Sql<{ numeric: number; json: unknown; text: string }>;
   let application: Db;
   let reviews: typeof import("./release-review");
   let release: typeof import("./release-held");

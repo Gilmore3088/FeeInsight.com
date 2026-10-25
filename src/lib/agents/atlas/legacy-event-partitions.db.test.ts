@@ -13,14 +13,14 @@ const NOW = new Date("2026-10-19T08:00:00Z");
 const MONTHS = ["2026_04", "2026_05", "2026_06", "2026_07", "2026_08", "2026_09", "2026_10", "2026_11"];
 const context = { runId: 1, stepId: 10, stepKey: "atlas-storage-retention" };
 
-async function children(db: postgres.Sql<any>): Promise<string[]> {
+async function children(db: postgres.Sql<{ numeric: number; json: unknown; text: string }>): Promise<string[]> {
   const rows = await db<{ relname: string }[]>`
     SELECT c.relname FROM pg_inherits i JOIN pg_class c ON c.oid = i.inhrelid
      WHERE i.inhparent = to_regclass('public.agent_events') ORDER BY c.relname`;
   return rows.map((row) => row.relname);
 }
 
-const call = (db: postgres.Sql<any>, partition: string, cutoff: string) =>
+const call = (db: postgres.Sql<{ numeric: number; json: unknown; text: string }>, partition: string, cutoff: string) =>
   db`SELECT public.drop_expired_legacy_event_partition(${partition}::regclass, ${cutoff}::timestamptz)`;
 
 describe.skipIf(!connection)("legacy event-log partition drop in isolated PostgreSQL", () => {
