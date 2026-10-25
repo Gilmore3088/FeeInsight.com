@@ -100,6 +100,7 @@ import { documentOwnerDetail } from "@/lib/agents/darwin/document-owner";
 import { findingsDetail as releaseRepairFindingsDetail, releaseRepairDetail, runReleaseRepairStep } from "@/lib/agents/darwin/release-repair";
 import { AUDIENCE_RELABEL_VERSION, dryRunFullTotals, runAudienceRelabel, type AudienceRelabelMode } from "@/lib/agents/darwin/audience-relabel";
 import { runDailyBrief } from "@/lib/agents/daily-brief";
+import { hamiltonHealthDetail } from "@/lib/hamilton/health-check";
 import { runSundayMaintenance, summarizeSundayMaintenance } from "@/lib/agents/deming/sunday-maintenance";
 import { MONTHLY_REVIEW_VERSION, runMonthlyReview, summarizeMonthlyReview } from "@/lib/agents/deming/monthly-review";
 import { runFeeAlertDispatch, summarizeFeeAlertDispatch } from "@/lib/agents/fee-alerts";
@@ -2495,6 +2496,8 @@ async function executeAgenticStep(
           lines: result.brief.lines,
           needs_you: result.brief.needsYou?.map((item) => ({ id: item.id, severity: item.severity, title: item.title })) ?? null,
           funnel: result.funnel,
+          // Hamilton's health check (#1921): each probe's verdict, so a failure is on the run too.
+          hamilton_health: result.hamilton ? hamiltonHealthDetail(result.hamilton) : { error: result.hamiltonError },
         },
       };
     }
