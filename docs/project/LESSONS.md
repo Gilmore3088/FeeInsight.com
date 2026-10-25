@@ -213,10 +213,11 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-262 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+263 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
-### Extraction and fee reading (43)
+### Extraction and fee reading (44)
 
+- 2026-10-25 — A reader upgrade must reach every current document an older version of that reader wrote, not only the ones that look broken: queue them all at a bounded pace, read each once per version, keep the old text unless the new one lists at least as many fees, and count how many texts changed. — [finding](findings/2026-10-25-reader-upgrade-reaches-thin-texts-only.md) — Agent lesson: rosetta/issue-2069-reader-upgrade-reaches-every-text
 - 2026-10-25 — A dot-leader row that ends in its own price word ("…FREE") is finished; on a two-column page the next cell's price is the other column's fee, so neither the reader nor the check may give it to the closed row's name. — [finding](findings/2026-10-25-free-row-takes-next-column-price.md) — Agent lesson: knox/issue-2477-free-word-closes-the-row, darwin/issue-2477-closed-row-owns-no-later-price
 - 2026-10-25 — A better reader does not fix the texts it never re-reads; before re-reading thousands of stored documents, measure on a small sample what the current reader would change for their live fees, record-only. — [finding](findings/2026-10-25-pdf-texts-read-by-old-layout.md) — Guard: `src/lib/agents/rosetta/layout-recheck.test.ts`
 - 2026-10-24 — Read every PDF a second, independent way and compare which price each fee name gets; a layout mistake no detector knows yet shows up as a name the two readings price differently. — [finding](findings/2026-10-24-pdf-second-reader.md) — Agent lesson: rosetta/pdf-second-reading

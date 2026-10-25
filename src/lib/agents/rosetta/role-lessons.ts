@@ -77,6 +77,16 @@ export const ROSETTA_LESSONS: AgentLesson[] = [
     since: "2026-10-25",
   },
   {
+    id: "issue-2069-reader-upgrade-reaches-every-text",
+    agent: "rosetta",
+    stage: "read",
+    lesson: "When you upgrade a reader, read again every current document an older version of that reader wrote, not only the ones that look broken: queue them all at a steady, bounded pace, read each once per version (record a receipt whatever the outcome, so a failure never holds a slot run after run), keep the old text unless the new one lists at least as many fees, and record how many texts changed so the fee changes can be counted.",
+    why: "A ROSETTA_READ_VERSION bump re-read a completed text only when Knox had sent Darwin fewer than 5 fees from it, so a garbled text that still yielded many fees kept its old reading forever and a reader fix reached only documents fetched afterwards (#2069). On 25 Oct 190 current documents at 190 banks, with 3,586 live fees, had never been read by the current reader.",
+    evidence: { issues: [2069], prs: [], files: ["src/lib/agents/rosetta/reader-replay.ts", "src/lib/agents/rosetta/read.ts", "docs/project/findings/2026-10-25-reader-upgrade-reaches-thin-texts-only.md"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
+  {
     id: "pdf-second-reading",
     agent: "rosetta",
     stage: "read",

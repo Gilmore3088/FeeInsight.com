@@ -805,6 +805,8 @@ async function executeAgenticStep(
           layout_recheck_lost: read.layoutRecheckLost,
           layout_recheck_gained: read.layoutRecheckGained,
           layout_recheck_error: read.layoutRecheckError,
+          reader_replayed: read.readerReplayed,
+          reader_replay_text_changed: read.readerReplayTextChanged,
           outcomes: read.outcomes,
           learning_log: read.learning,
           read_chars: read.chars,
