@@ -487,7 +487,7 @@ export const queryDataQuality = tool({
 });
 
 const SAFE_PIPELINE_COMMANDS = new Set([
-  "enhance", "classify", "verify", "review", "publish", "publish-index",
+  "enhance", "classify", "verify", "review", "publish",
 ]);
 
 const SAFE_PIPELINE_AGENTS: Record<string, AdminAgent> = {
@@ -497,12 +497,11 @@ const SAFE_PIPELINE_AGENTS: Record<string, AdminAgent> = {
   review: "knox",
   // Publishing is Gutenberg's (#1075 step 2).
   publish: "gutenberg",
-  "publish-index": "gutenberg",
 };
 
 export const triggerPipelineJob = tool({
   description:
-    "Creates a visible agentic run for an implemented pipeline step: enhance, classify, verify, review, publish, publish-index. Does not launch retired external workers.",
+    "Creates a visible agentic run for an implemented pipeline step: enhance, classify, verify, review, publish. Does not launch retired external workers.",
   inputSchema: z.object({
     command: z.string().describe("Pipeline command name"),
     dryRun: z.boolean().optional().default(false).describe("If true, pass --dry-run flag"),
