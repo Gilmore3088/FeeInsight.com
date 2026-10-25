@@ -1,13 +1,14 @@
 /**
- * The title a saved written answer is filed under (#1077, Cycle A defect 8). Reports, board briefs
- * and the PDF reuse it as a headline with no label, so it never carries a figure the sentence
+ * The title a saved written answer is filed under (#1077, Cycle A defect 8). History, report items
+ * and board briefs reuse it as a headline with no label, so it never carries a figure the sentence
  * binding did not support: a reading sentence (Hamilton's interpretation, shown on screen only
  * under its label) or a sentence the records contradict is never the title.
  *
  * The rule: the first sentence of the view once the binding's left-out and reading sentences are
  * taken out, when the binding supports it or it states no figure; with no binding, the view's
  * first sentence only when it states no figure; otherwise the reader's question. Pure; safe to
- * import from the browser.
+ * import from the browser. The PDF headline and the screen's report-basket title use the shown
+ * lead instead (safe with a binding; not yet filtered for a browser save with none).
  */
 import { answerTitle } from "@/components/hamilton/analyze/parse-response";
 import { extractFigures } from "./figure-check";
