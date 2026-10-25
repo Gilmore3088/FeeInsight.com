@@ -19,6 +19,7 @@ import { getFeesByInstitution } from "@/lib/data-store";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { isProviderLimitError } from "@/lib/ai-provider";
 import { generateVerifiedSection, type SectionGateShadow, type SectionTracking } from "./generate";
+import { SECTION_GATE_HELD } from "./output-gate-enforce";
 import { reviewAnswerPage } from "./partner-review";
 import { HAMILTON_PAUSED_MESSAGE } from "./provider-paused";
 import { extractFigures, type NarrativeFigure } from "./figure-check";
@@ -105,7 +106,10 @@ export const writeReportAnswer: ReportAnswerWriter = async (prepared, tracking) 
       competitorNames: prepared.competitorNames,
       narrative: result.section.narrative,
     });
-    const untraced = result.status === "needs_review" ? [`figures not in the report data: ${result.unmatched.join(", ")}`] : [];
+    // A section the one output gate held (HAMILTON_ANSWER_GATE_ENFORCE on) names no figure.
+    const figures = result.status === "needs_review" ? result.unmatched.filter((line) => line !== SECTION_GATE_HELD) : [];
+    const gateHeld = result.status === "needs_review" && figures.length < result.unmatched.length ? ["held by the one output gate"] : [];
+    const untraced = [...(figures.length > 0 ? [`figures not in the report data: ${figures.join(", ")}`] : []), ...gateHeld];
     const problems = [...untraced, ...review];
     return { status: "written", narrative: result.section.narrative, passed: problems.length === 0, problems, ...(result.gateShadow ? { gateShadow: result.gateShadow } : {}) };
   } catch (error) {

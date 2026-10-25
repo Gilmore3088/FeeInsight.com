@@ -1,5 +1,6 @@
 import { ProviderResponseOperation, AI_PROVIDER_TIMEOUT_MS, assertCompletedProviderFinish, withProviderResponseOperation, requireCompletedProviderUIStream } from "@/lib/ai-response-budget";
 import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
+import { HamiltonTaskBudgetError, withHamiltonTask } from "@/lib/hamilton/task-budget";
 import {
   streamText,
   generateText,
@@ -26,7 +27,7 @@ import {
   isProviderLimitError,
   MISSING_ANTHROPIC_API_KEY_MESSAGE,
 } from "@/lib/ai-provider";
-import { HAMILTON_PAUSED_MESSAGE } from "@/lib/hamilton/provider-paused";
+import { HAMILTON_PAUSED_MESSAGE, HAMILTON_STOPPED_MESSAGE, UNFINISHED_ANSWER_MESSAGE } from "@/lib/hamilton/provider-paused";
 import { viewAsCustomerFromCookieHeader } from "@/lib/hamilton/view-as";
 import { getHamilton, savedPeerSetUsed, type AnswerStep, type HamiltonRole } from "@/lib/research/agents";
 import { getActivePeerSet } from "@/lib/hamilton/active-peer-set";
@@ -45,7 +46,7 @@ import { getRequestSubjectKey } from "@/lib/api-hardening/audit";
 import { trackFirstHamiltonUse } from "@/lib/analytics-server";
 import { cacheLatestMessage, cachedSystem, ledgerUsage, trackerUsage } from "@/lib/research/tool-output";
 import { SAVED_ANALYSIS_ID_KEY, questionOnly, writtenAnswerBinding, writtenAnswerCheck, writtenAnswerClaims, writtenAnswerResponse } from "@/lib/hamilton/answer-save";
-import { readerNarrativeBinding } from "@/lib/hamilton/written-answer-binding";
+import { ALL_LEFT_OUT_LEAD, readerNarrativeBinding } from "@/lib/hamilton/written-answer-binding";
 import type { NarrativeBinding } from "@/lib/hamilton/narrative-bound";
 import { messageBoundsError } from "@/lib/hamilton/conversation-context";
 import { HELD_ANSWER_MESSAGE } from "@/lib/hamilton/answer-gate";
@@ -61,6 +62,7 @@ import { scheduleGateShadow } from "@/lib/hamilton/output-gate-shadow-store";
 import { gateAnswer, type GateInput } from "@/lib/hamilton/output-gate";
 import { isGateRepairEnabled, repairTimeBudgetMs, runGatedAnswer, settleGatedDraft } from "@/lib/hamilton/output-gate-repair";
 import { analyzeAnswerDecision } from "@/lib/hamilton/analyze-answer-decision";
+import { enforceStreamedDecision, enforcedOutcome, enforcedProblems, isAnswerGateEnforced, tryGateAnswer } from "@/lib/hamilton/output-gate-enforce";
 
 /** research_usage agent id for a gate rewrite; the "hamilton" prefix counts it in the Pro quota (quota.ts). */
 const GATE_REPAIR_USAGE_AGENT_ID = "hamilton-repair";
@@ -260,17 +262,21 @@ async function handlePOST(request: Request) {
   // `today` is the decision already made, and a shadow that fails changes nothing. It is computed
   // and written after the response (scheduleGateShadow): nothing here awaits it. Every input is
   // captured now, since `identityContext` changes later.
+  // HAMILTON_ANSWER_GATE_ENFORCE (#1077 T4), off by default: on, the one output gate's verdict also
+  // decides (output-gate-enforce.ts). It only adds holds: today's checks below still hold what they hold.
+  const enforceGate = isAnswerGateEnforced();
+  const writtenGateInput = (text: string, reads: readonly AnswerToolEvidence[]): GateInput => ({
+    surface: "written_answer",
+    text,
+    evidence: { kind: "tool_reads", toolOutputs: reads.map((read) => read.output), reads, briefingEvidence },
+    identity: { researchInstitutionId: institutionId, accountInstitutionId: homeId ?? null, accountInstitutionName: identityContext.accountInstitutionName ?? null },
+    question: questionOnly(lastUserText),
+  });
   const shadowWrittenAnswer = (text: string, reads: readonly AnswerToolEvidence[], today: TodayDecision, path: ShadowPath, repair?: GateShadowRepair): void => {
     try {
       if (!text.trim()) return;
-      const input: GateInput = {
-        surface: "written_answer",
-        text,
-        evidence: { kind: "tool_reads", toolOutputs: reads.map((read) => read.output), reads, briefingEvidence },
-        identity: { researchInstitutionId: institutionId, accountInstitutionId: homeId ?? null, accountInstitutionName: identityContext.accountInstitutionName ?? null },
-        question: questionOnly(lastUserText),
-      };
-      const context = { path, mode: mode ?? null };
+      const input = writtenGateInput(text, reads);
+      const context = { path, mode: mode ?? null, ...(enforceGate ? { enforced: true } : {}) };
       scheduleGateShadow(() => {
         const record = shadowGate(input, today, context);
         return repair ? { ...record, repair } : record;
@@ -504,6 +510,20 @@ async function handlePOST(request: Request) {
         );
       }
 
+      // HAMILTON_ANSWER_GATE_ENFORCE on: an answer today's checks pass is shown only when the one output
+      // gate validates it. This reply has no partial view (a left-out sentence refuses it above), so a
+      // partial verdict is refused too, and so is a gate that throws.
+      if (enforceGate) {
+        const unified = tryGateAnswer(writtenGateInput(result.text ?? "", bufferedReads));
+        if (enforcedOutcome(unified, false) !== "validated") {
+          shadowWrittenAnswer(result.text ?? "", bufferedReads, "shown", "written_buffered");
+          return Response.json(
+            // Named by reason, never quoted: a refused reply carries no answer text.
+            { status: "refused", reason: "evidence_check_failed", problems: enforcedProblems(unified), metrics: gate.metrics },
+            { status: 200 },
+          );
+        }
+      }
       shadowWrittenAnswer(result.text ?? "", bufferedReads, "shown", "written_buffered");
       return Response.json({
         status: "ok",
@@ -521,7 +541,10 @@ async function handlePOST(request: Request) {
     // line (HELD_ANSWER_MESSAGE) is set, the answer is held until then and is never shown, or
     // saved, when it fails; with it null, a failing answer streams as before and the verdict
     // is saved with it.
-    const holdsAnswers = mode === "analyze" && HELD_ANSWER_MESSAGE !== null;
+    // With HAMILTON_ANSWER_GATE_ENFORCE on, every streamed answer, in every mode, is held until the
+    // one output gate has read it, so no text it holds is ever sent.
+    const holdsAnswers = enforceGate || (mode === "analyze" && HELD_ANSWER_MESSAGE !== null);
+    const heldLine = HELD_ANSWER_MESSAGE ?? (enforceGate ? ALL_LEFT_OUT_LEAD : null);
     let resolveVerdict: (verdict: AnswerVerdict | null) => void = () => {};
     const verdict = new Promise<AnswerVerdict | null>((resolve) => { resolveVerdict = resolve; });
     const scope = responseOperation = new ProviderResponseOperation({ timeoutMs: AI_PROVIDER_TIMEOUT_MS });
@@ -567,7 +590,12 @@ async function handlePOST(request: Request) {
             // so it is not saved as shown. The saved row keeps the full text and binding, as before.
             // One rule with the paid eval's shadow record (analyzeAnswerDecision).
             const decision = analyzeAnswerDecision(text, check, binding, holdsAnswers);
-            const { held, shownText } = decision;
+            // HAMILTON_ANSWER_GATE_ENFORCE on: the one output gate's hold is added. A partial verdict is
+            // shown only when its cuts are the binding's own left-out sentences, which today's view,
+            // reader binding and save already handle; any other cut holds the answer.
+            const { held, shownText } = enforceGate
+              ? enforceStreamedDecision(tryGateAnswer(writtenGateInput(text, reads)), decision, true)
+              : decision;
             if (decision.viewFailed) console.warn("[hamilton] written answer held: its left-out sentences could not be cut", decision.heldBy);
             resolveVerdict({ passed: check.passed, held, binding, ...(shownText !== undefined ? { shownText } : {}) });
             today = decision.today;
@@ -618,6 +646,13 @@ async function handlePOST(request: Request) {
             resolveSaved(null);
             today = holdsAnswers ? "held" : "shown";
           }
+        } else if (enforceGate) {
+          // Outside Analyze (or with no text) nothing is saved. Enforced, the answer is shown only when
+          // the one output gate validates it: these modes show no partial answer, and no text holds.
+          const unified = text.trim() ? tryGateAnswer(writtenGateInput(text, reads)) : null;
+          const shown = enforcedOutcome(unified, false) === "validated";
+          resolveVerdict({ passed: shown, held: !shown });
+          resolveSaved(null);
         } else {
           resolveVerdict(null);
           resolveSaved(null);
@@ -677,10 +712,19 @@ async function handlePOST(request: Request) {
           // A held answer waits for the gate. The result's stream replays from its start, so
           // an answer that passes still reaches the reader whole.
           const heldVerdict = holdsAnswers ? await verdict : null;
-          if (heldVerdict?.held && HELD_ANSWER_MESSAGE !== null) {
+          // With the gate deciding, an answer it never read also fails closed, even if the failure
+          // flag was not set (review of 21105873c).
+          if (holdsAnswers && (providerFailed || (enforceGate && !heldVerdict))) {
+            // V5 T6 fault injection: the provider erred, timed out or stopped short, so the gate
+            // never ran. Fail closed: none of the unverified draft is sent, only a plain line.
+            // The failure is already on the ledger (flushProviderFailure, ai_api_usage_events).
+            const failure = responseOperation?.error ?? terminalFailure;
+            writer.write({ type: "start" });
+            writer.write({ type: "error", errorText: isProviderLimitError(failure) ? HAMILTON_PAUSED_MESSAGE : UNFINISHED_ANSWER_MESSAGE });
+          } else if (heldVerdict?.held && heldLine !== null) {
             writer.write({ type: "start" });
             writer.write({ type: "text-start", id: "held" });
-            writer.write({ type: "text-delta", id: "held", delta: HELD_ANSWER_MESSAGE });
+            writer.write({ type: "text-delta", id: "held", delta: heldLine });
             writer.write({ type: "text-end", id: "held" });
           } else {
             // A provider refusal happens inside the stream, past the catch below: send the
@@ -691,7 +735,7 @@ async function handlePOST(request: Request) {
             // was left out the draft's text is replaced by the shown text, which no longer holds it.
             const startBinding = heldVerdict?.binding ? readerNarrativeBinding(heldVerdict.binding) : null;
             const replay = result.toUIMessageStream({
-              onError: (error) => (isProviderLimitError(error) ? HAMILTON_PAUSED_MESSAGE : "Hamilton couldn't finish this answer."),
+              onError: (error) => (isProviderLimitError(error) ? HAMILTON_PAUSED_MESSAGE : UNFINISHED_ANSWER_MESSAGE),
               ...(startBinding
                 ? { messageMetadata: ({ part }: { part: { type: string } }) => (part.type === "start" ? { narrativeBinding: startBinding } : undefined) }
                 : {}),
@@ -729,12 +773,20 @@ async function handlePOST(request: Request) {
       return Response.json({ error: HAMILTON_PAUSED_MESSAGE, code: "provider_paused" }, { status: 503 });
     }
 
+    // A Hamilton task or daily cap is a ProviderBudgetBlockedError too, but the reader gets its own
+    // plain line (what was capped and when it resets), not the stop line (#1921, task-budget.ts).
+    if (err instanceof HamiltonTaskBudgetError) {
+      return Response.json({ error: err.message, code: "hamilton_budget_cap" }, { status: 429 });
+    }
+
     if (
       err instanceof ProviderCircuitOpenError
       || err instanceof ProviderBudgetBlockedError
       || message.includes("Emergency stop")
     ) {
-      return Response.json({ error: message }, { status: 423 });
+      // V5 T6: the stop's internal reason (provider, admin note, breaker detail) stays on the
+      // ledger (guardProviderCall records it as blocked); the reader gets one plain line.
+      return Response.json({ error: HAMILTON_STOPPED_MESSAGE, code: "provider_stopped" }, { status: 423 });
     }
 
     if (message.includes("authentication") || message.includes("API key")) {
@@ -757,4 +809,5 @@ async function handlePOST(request: Request) {
   }
 }
 
-export const POST = withApiRoutePolicy("api.research.hamilton", "POST", handlePOST);
+// Each request is one Hamilton task, capped per task and per reader day (#1921, task-budget.ts).
+export const POST = withApiRoutePolicy("api.research.hamilton", "POST", withHamiltonTask("ask", handlePOST));

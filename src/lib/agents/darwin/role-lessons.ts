@@ -7,6 +7,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const DARWIN_LESSONS: AgentLesson[] = [
   {
+    id: "issue-1945-latest-edition-in-force",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "When two documents of one bank are editions of the same schedule, date each by the date its own text states and keep live only the latest edition in force today, whatever its address and whenever it was read; take down the older line only where the newer edition states the same fee, and never pair one account's or product's schedule with the bank's.",
+    why: "The edition re-check retired an older edition only when the newer one stated an \"Effective\" heading and was read before that date, so Cedar Falls' 2026 schedule (\"Revised 03/2026\", read seven months after it took effect) left 21 lines of its 2024 schedule live and cited; the Oct 25 dry run found 35 such older lines at 4 more banks, 5 of them at a price the newer schedule had changed.",
+    evidence: { issues: [1945], prs: [2667], files: ["src/lib/agents/darwin/dated-edition.ts", "src/lib/agents/darwin/edition-effective-check.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
+  {
     id: "issue-1910-bank-shorthand-is-one-item",
     agent: "darwin",
     stage: "verify",
@@ -313,6 +323,26 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     lesson: "A price for people who are not the bank's customers is another party's price, not a condition on the customer's $0, however the bank writes them: \"non-members\", \"non-customers\", or with its own name between (\"$5.00 charge for non-F&M customers ... No Charge\"). Read the word between \"non-\" and \"customers\" before calling the $0 conditional: a capitalised bank name marks an outsider's price, while a condition word there (\"non-eStatement customers\", \"non-Premium\", \"non-qualifying\") is still this customer's condition. Before an older-live re-check goes on, run it over every older live row and read each failure against the bank's text.",
     why: "The conditional-$0 rule only knew \"non-customers\" spelled out, so F&M Bank's (institution 2279) live Notary Fee $0 (published 13219) read as conditional, and an Oct 16 test pinned that wrong reading. The Oct 25 dry run of DARWIN_RECHECK_OLDER_LIVE over all 3,266 older live rows found it as one of 5 failures; the other 4 were real conditional $0s and still fail.",
     evidence: { issues: [1568, 1397], prs: [], files: ["src/lib/agents/darwin/verify.ts", "src/lib/agents/darwin/verified-recheck.ts", "docs/project/findings/2026-10-25-named-bank-non-customer-price.md"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
+  {
+    id: "issue-1905-late-charge-bound-is-no-fee",
+    agent: "darwin",
+    stage: "classify",
+    lesson: "A late_payment fee whose name is the cap or floor of a late charge (\"Maximum late charge\", \"Minimum Late Fee\", \"...; maximum late charge of\") is a bound on a percentage charge, not the late fee: its amount traces to the page, so the source check passes it, but the late fee is the percentage. Keep it out of late_payment, and re-check live ones with the same name pattern Knox now refuses.",
+    why: "Five such fees were live on Oct 25 at three institutions (Navy Federal's mortgage cap and floor, a $10 floor beside \"5% of Payment Amount\" and a $0.50 floor beside \"5% of payment due\"), pulling late-fee medians toward the bounds (#1905). Darwin's late-charge-bound check lists them; its switch is on since the five were read against each bank's text and found correct (sampled-clean rule).",
+    evidence: { issues: [1905], prs: [], files: ["src/lib/agents/darwin/late-charge-bound-check.ts", "src/lib/late-charge-bound.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
+  {
+    id: "issue-1908-card-program-section-recheck",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "Re-check live fees against the section they were printed in, not only the document's address: a fee on the bank's own fee schedule can still be a prepaid, payroll, gift or travel card's fee when it sits under that card's heading. Take one down only when every line that prints its name at its price sits in such a section, keep the card's purchase and reload prices, and read the stored text with the same shared rule the extractor uses (card-program-section.ts), so a re-read cannot bring the fee back and the re-check cannot disagree with the reader.",
+    why: "Navy Federal's GO Prepaid and Visa Gift Card rows came back live after each re-read of its fees page and needed three hand takedowns (#1905); the address-only card_program_document re-check could not see a section inside a general schedule.",
+    evidence: { issues: [1908, 1905], prs: [], files: ["src/lib/agents/darwin/card-program-section-check.ts", "src/lib/custom-report/card-program-section.ts"] },
     appliesTo: "all",
     since: "2026-10-25",
   },

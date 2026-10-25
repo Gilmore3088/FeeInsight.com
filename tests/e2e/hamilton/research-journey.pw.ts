@@ -116,7 +116,7 @@ test("H01-AC3 H05-AC4: a fee answer is saved, reopens about the same institution
   await page.goto(`/pro/analyze?instId=${HOME.id}`);
   await ask(page, `What is the NSF fee at ${HOME.name}?`);
   await expect(page.getByText(`${HOME.name}'s $27 NSF / returned item fee`).first()).toBeVisible();
-  const brief = page.getByRole("link", { name: "Build board brief" }).first();
+  const brief = page.getByRole("link", { name: "Add to board brief" }).first();
   await expect(brief).toBeVisible();
   const analysisId = new URL((await brief.getAttribute("href"))!, "http://x").searchParams.get("from_analysis");
   expect(analysisId).toMatch(/^[0-9a-f-]{36}$/);

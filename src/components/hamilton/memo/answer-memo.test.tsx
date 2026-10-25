@@ -15,7 +15,7 @@ describe("AnswerMemo", () => {
   it("lays out the answer, figures, a numbered exhibit and numbered takeaways", () => {
     const answer = buildFeeAnswer(overdraftResearch());
     const html = renderToStaticMarkup(<AnswerMemo answer={answer} />);
-    expect(html).toContain("The answer");
+    expect(html).toContain("Summary");
     expect(html).toContain(answer.headline.replace(/'/g, "&#x27;"));
     expect(html).toContain("Exhibit 1");
     expect(html).toContain("What the data says");

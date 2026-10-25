@@ -49,7 +49,7 @@ describe.skipIf(!url)("public-data compaction and atomic archive", () => {
       CREATE TABLE ${schema}.hmda_lender_loan_costs(id bigserial PRIMARY KEY,activity_year int,cost_detail jsonb);
       CREATE TABLE ${schema}.agent_run_steps(id bigint,step_key text);
       CREATE TABLE ${schema}.agent_run_events(id bigint,step_id bigint,event_type text,status text,detail jsonb);`);
-    const migration = readFileSync("supabase/migrations/20270110000078_public_data_storage_compaction.sql","utf8")
+    const migration = readFileSync("supabase/migrations/20270110000079_public_data_storage_compaction.sql","utf8")
       .replaceAll("public.",`${schema}.`).replaceAll("search_path=pg_catalog,public",`search_path=pg_catalog,${schema}`);
     await db.begin((tx) => tx.unsafe(migration));
   });

@@ -126,4 +126,5 @@ export const RD_PDF_CHART = {
   band: mix(T.brick, T["surface-0"], 0.16),
   bar: RD.context,
   rule: RD.rule2,
+  paper: RD.paper,
 } as const;

@@ -11,8 +11,9 @@
 import { withRawProviderResponseOperation } from "@/lib/ai-response-budget";
 
 import { getAnthropicMessagesClient, extractAnthropicText, getHamiltonModel, hasAnthropicApiKey, isProviderLimitError } from "@/lib/ai-provider";
+import { HamiltonTaskBudgetError } from "./task-budget";
 import { HAMILTON_PAUSED_MESSAGE } from "./provider-paused";
-import { trackAnthropicRequest, assertCompletedAnthropicTextResponse, incompleteProviderResponse } from "@/lib/ai-provider-usage";
+import { trackAnthropicRequest, assertCompletedAnthropicTextResponse, incompleteProviderResponse, ledgerFields, type ProviderLedger } from "@/lib/ai-provider-usage";
 import { extractFigures } from "./figure-check";
 import { checkAnswerEvidence } from "./answer-gate";
 import type { HamiltonEvidenceBundle } from "./evidence-contract";
@@ -21,6 +22,7 @@ import { HAMILTON_VOICE } from "./voice";
 import type { Storyline, StorylineMemo, StorylineMemoResult } from "./workspace/storyline-types";
 import type { HamiltonIdentitySnapshot } from "./account-context";
 import { shadowGate, type GateShadowRecord, type TodayDecision } from "./output-gate-shadow";
+import { enforcedOutcome, enforcedProblems, isAnswerGateEnforced, tryGateAnswer } from "./output-gate-enforce";
 import type { GateInput } from "./output-gate";
 
 /**
@@ -297,9 +299,12 @@ export function memoGateInput(draft: MemoDraft, payload: unknown, question: stri
 }
 
 /** The one output gate's shadow verdict on a memo draft, beside today's decision. */
-export function memoGateShadow(draft: MemoDraft, payload: unknown, question: string | undefined, today: TodayDecision): GateShadowRecord {
-  return shadowGate(memoGateInput(draft, payload, question), today, { path: "memo" });
+export function memoGateShadow(draft: MemoDraft, payload: unknown, question: string | undefined, today: TodayDecision, enforced = false): GateShadowRecord {
+  return shadowGate(memoGateInput(draft, payload, question), today, { path: "memo", ...(enforced ? { enforced } : {}) });
 }
+
+/** The withheld reason when the one output gate, enforced, holds a memo today's checks pass. */
+export const MEMO_GATE_HELD_REASON = "The written memo did not pass Hamilton's checks, so only the storyline is shown.";
 
 export interface MemoClient {
   create(input: { system: string; user: string; model: string }): Promise<string>;
@@ -310,6 +315,10 @@ export interface MemoTracking {
   operation: string;
   subjectKey?: string;
   agentRunId?: number;
+  /** The reader the memo is for: its usage row counts toward their daily cap (#1921). */
+  userId?: number;
+  /** Books the call under another agent and route (the paid replay batch); absent, the path's own. */
+  ledger?: ProviderLedger;
 }
 
 function anthropicMemoClient(institutionId: number | null, usage?: MemoUsage, tracking?: MemoTracking): MemoClient {
@@ -318,11 +327,11 @@ function anthropicMemoClient(institutionId: number | null, usage?: MemoUsage, tr
       const response = await trackAnthropicRequest(
         {
           model,
-          agent: "hamilton",
+          ...ledgerFields(tracking?.ledger, { agent: "hamilton", routeId: MEMO_ROUTE_ID }),
           operation: tracking?.operation ?? "storyline_memo",
-          routeId: MEMO_ROUTE_ID,
           ...(tracking?.subjectKey ? { subjectKey: tracking.subjectKey } : {}),
           ...(tracking?.agentRunId ? { agentRunId: tracking.agentRunId } : {}),
+          ...(tracking?.userId ? { userId: tracking.userId } : {}),
           metadata: { institution_id: institutionId },
         },
         () => withRawProviderResponseOperation(REQUEST_TIMEOUT_MS, (scope) => {
@@ -374,6 +383,7 @@ export async function writeStorylineMemo(
     return { status: "unavailable", reason: error instanceof Error ? error.message : String(error) };
   }
   const system = `${HAMILTON_VOICE.systemPrompt}\n\n${MEMO_INSTRUCTIONS}`;
+  const enforce = isAnswerGateEnforced();
   let feedback = "";
   let lastProblems: string[] = [];
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
@@ -395,6 +405,8 @@ export async function writeStorylineMemo(
         return { status: "unavailable", reason: incomplete.message };
       }
       if (isProviderLimitError(error)) return { status: "unavailable", reason: HAMILTON_PAUSED_MESSAGE };
+      // A task or daily cap (#1921) says so in its own words.
+      if (error instanceof HamiltonTaskBudgetError) return { status: "unavailable", reason: error.message };
       const message = error instanceof Error ? error.message : String(error);
       return { status: "unavailable", reason: /budget|usage limit/i.test(message) ? "Hamilton's writing budget for today is used up." : "Hamilton's writer could not be reached." };
     }
@@ -409,7 +421,16 @@ export async function writeStorylineMemo(
     // Only the decision a reader sees counts: a passing draft, or the last draft before the memo is withheld.
     if (options.onGateShadow && (problems.length === 0 || attempt === MAX_ATTEMPTS)) {
       const today: TodayDecision = problems.length === 0 ? "shown" : "held";
-      options.onGateShadow(() => memoGateShadow(draft, payload, question, today));
+      options.onGateShadow(() => memoGateShadow(draft, payload, question, today, enforce));
+    }
+    // HAMILTON_ANSWER_GATE_ENFORCE on (#1077 T4): a draft today's checks pass is shown only when the
+    // one output gate validates it. A memo has no partial view, so a partial verdict holds too, and a
+    // held draft is withheld at once, with no further provider call.
+    if (enforce && problems.length === 0) {
+      const verdict = tryGateAnswer(memoGateInput(draft, payload, question));
+      if (enforcedOutcome(verdict, false) !== "validated") {
+        return { status: "withheld", reason: MEMO_GATE_HELD_REASON, problems: enforcedProblems(verdict) };
+      }
     }
     if (problems.length === 0) {
       const memo: StorylineMemo = {

@@ -45,7 +45,8 @@ import {
 } from "./answer-correctness";
 import { claimEvidenceFacts } from "./claim-evidence";
 import { gateAnswer, type GateFailureCode, type GateStatus } from "./output-gate";
-import { gateShadowRecord, type GateShadowCounts, type GateShadowRecord, type GateShadowTally } from "./output-gate-shadow";
+import { gateShadowRecord, type GateShadowCounts, type GateShadowRecord, type GateShadowTally, type ShadowOrigin } from "./output-gate-shadow";
+import type { ProviderLedger } from "@/lib/ai-provider-usage";
 import type { GateShadowContext } from "./output-gate-shadow-store";
 import { analyzeAnswerDecision } from "./analyze-answer-decision";
 import { HELD_ANSWER_MESSAGE } from "./answer-gate";
@@ -94,7 +95,7 @@ export interface PaidCandidate {
 
 export type PaidPath = "memo" | "simulate" | "written_answer" | "report";
 /** The sampled paths, in the order the summary lists them (memo first). */
-const PAID_PATHS: PaidPath[] = ["memo", "simulate", "written_answer", "report"];
+export const PAID_PATHS: PaidPath[] = ["memo", "simulate", "written_answer", "report"];
 
 export interface PaidSampleResult extends PaidCandidate {
   path: PaidPath;
@@ -152,14 +153,34 @@ function originCounts(counts: GateShadowCounts): ShadowOriginCounts {
 }
 
 /**
- * Records each shadow verdict a sample produced as its own run, marked as the paid eval's
- * (`origin: "paid_eval"`), so it is never counted as a reader's answer. A shadow that fails is
- * logged and dropped: it never changes the sample's score.
+ * What a sample's calls and shadows are tagged with. The daily eval leaves it out and keeps its own
+ * (`origin: "paid_eval"`, its PAID_EVAL_* operations); the one-off paid replay batch
+ * (paid-gate-replay.ts) passes `replay_paid` and its own operations, so the two never mix.
  */
-async function recordEvalShadows(shadows: ReadonlyArray<() => GateShadowRecord>, recordShadow: ShadowRecorder, institutionId: number): Promise<void> {
+export interface SampleTag {
+  origin: ShadowOrigin;
+  operation: string;
+  /** Kept with each shadow (its `replay_key`), so a batch's shadow names its sample. */
+  shadowKey?: string;
+  /** Books every call under this agent and route instead of the path's own budget line. */
+  ledger?: ProviderLedger;
+}
+
+/** The tag's ledger, spread into a path's tracking; nothing for the daily eval. */
+const ledgerOf = (tag?: SampleTag) => (tag?.ledger ? { ledger: tag.ledger } : {});
+
+/**
+ * Records each shadow verdict a sample produced as its own run, marked as the paid eval's
+ * (`origin: "paid_eval"`, or the tag's), so it is never counted as a reader's answer. A shadow that
+ * fails is logged and dropped: it never changes the sample's score.
+ */
+async function recordEvalShadows(shadows: ReadonlyArray<() => GateShadowRecord>, recordShadow: ShadowRecorder, institutionId: number, tag?: SampleTag): Promise<void> {
   for (const compute of shadows) {
     try {
-      await recordShadow({ ...compute(), origin: "paid_eval" }, { userId: null, researchInstitutionId: institutionId });
+      await recordShadow(
+        { ...compute(), origin: tag?.origin ?? "paid_eval" },
+        { userId: null, researchInstitutionId: institutionId, ...(tag?.shadowKey ? { replayKey: tag.shadowKey } : {}) },
+      );
     } catch (error) {
       console.error("[hamilton] the paid eval's shadow output gate could not be recorded", error);
     }
@@ -276,11 +297,11 @@ export function orderCandidates(pro: Array<{ institutionId: number; question: st
   ];
 }
 
-async function writeUp(
+export async function writeUp(
   candidate: PaidCandidate,
   answered: Answered & { research: FeeResearch },
   live: LiveReader,
-  options: { subjectKey: string; agentRunId?: number; client?: MemoClient; recordShadow: ShadowRecorder },
+  options: { subjectKey: string; agentRunId?: number; client?: MemoClient; recordShadow: ShadowRecorder; tag?: SampleTag },
 ): Promise<PaidSampleResult> {
   const storyline = answered.response.answer!.storyline!;
   // The one output gate's shadow verdict on the draft the memo's decision rests on (#1077 step 4).
@@ -289,10 +310,10 @@ async function writeUp(
     institutionId: candidate.institutionId,
     factEvidence: buildFeeResearchEvidence(answered.research),
     client: options.client,
-    tracking: { operation: PAID_EVAL_OPERATION, subjectKey: options.subjectKey, agentRunId: options.agentRunId },
+    tracking: { operation: options.tag?.operation ?? PAID_EVAL_OPERATION, subjectKey: options.subjectKey, agentRunId: options.agentRunId, ...ledgerOf(options.tag) },
     onGateShadow: (compute) => { shadows.push(compute); },
   });
-  await recordEvalShadows(shadows, options.recordShadow, candidate.institutionId);
+  await recordEvalShadows(shadows, options.recordShadow, candidate.institutionId, options.tag);
   if (result.status !== "written") {
     const failures = result.status === "withheld" ? (result.problems?.length ? result.problems : [result.reason]) : [result.reason];
     return { ...candidate, path: "memo", status: result.status, failures, correctness: null, figures: 0 };
@@ -334,12 +355,12 @@ export function simulateInputFor(research: FeeResearch): SimulateInput | null {
   };
 }
 
-async function simulateUp(
+export async function simulateUp(
   candidate: PaidCandidate,
   answered: Answered & { research: FeeResearch },
   input: SimulateInput,
   live: LiveReader,
-  options: { subjectKey: string; agentRunId?: number; client?: MemoClient; recordShadow: ShadowRecorder },
+  options: { subjectKey: string; agentRunId?: number; client?: MemoClient; recordShadow: ShadowRecorder; tag?: SampleTag },
 ): Promise<PaidSampleResult> {
   // The one output gate's shadow verdict on the read (#1077 step 4), recorded as its own run once the
   // read is back. It never changes the score: a shadow that fails is logged and dropped.
@@ -347,12 +368,14 @@ async function simulateUp(
   const result = await writeSimulateRead(input, {
     client: options.client,
     institutionId: candidate.institutionId,
-    tracking: { operation: PAID_EVAL_SIMULATE_OPERATION, subjectKey: options.subjectKey, agentRunId: options.agentRunId },
+    tracking: { operation: options.tag?.operation ?? PAID_EVAL_SIMULATE_OPERATION, subjectKey: options.subjectKey, agentRunId: options.agentRunId, ...ledgerOf(options.tag) },
     onGateShadow: (compute) => { shadows.push(compute); },
   });
-  await recordEvalShadows(shadows, options.recordShadow, candidate.institutionId);
+  await recordEvalShadows(shadows, options.recordShadow, candidate.institutionId, options.tag);
   const sample = { ...candidate, question: `Simulate ${input.feeCategory} at $${input.proposedFee.toFixed(2)}` };
   if (result.status !== "written") {
+    // A read the one output gate held (HAMILTON_ANSWER_GATE_ENFORCE on) was answered and withheld, like a failing memo.
+    if (result.status === "held") return { ...sample, path: "simulate", status: "withheld", failures: result.problems.length ? result.problems : [result.reason], correctness: null, figures: 0 };
     return { ...sample, path: "simulate", status: "unavailable", failures: [result.reason], correctness: null, figures: 0 };
   }
   const values = await live(candidate.institutionId, answered.research, answered.schedule).catch(() => null);
@@ -397,7 +420,8 @@ function publicDataDollars(output: unknown): number[] {
       return [];
     }
   }
-  if (parsed && typeof parsed === "object" && (parsed as { _shortened?: unknown })._shortened === true) {
+  // A result cut by characters is `{ _shortened: "<note>", text }` (research/tool-output.ts): the note is a string, never true.
+  if (parsed && typeof parsed === "object" && "_shortened" in parsed && typeof (parsed as { text?: unknown }).text === "string") {
     try {
       parsed = JSON.parse(String((parsed as { text?: unknown }).text ?? ""));
     } catch { return []; }
@@ -447,17 +471,17 @@ export function toolMoneyFigures(results: ReadonlyArray<{ toolName: string; inpu
   return out;
 }
 
-async function writtenUp(
+export async function writtenUp(
   candidate: PaidCandidate,
   answered: Answered & { research: FeeResearch },
   live: LiveReader,
-  options: { subjectKey: string; agentRunId?: number; written: WrittenAnswerWriter; filings: FilingReader; recordShadow: ShadowRecorder },
+  options: { subjectKey: string; agentRunId?: number; written: WrittenAnswerWriter; filings: FilingReader; recordShadow: ShadowRecorder; tag?: SampleTag },
 ): Promise<PaidSampleResult> {
   const result = await options.written({
     institutionId: candidate.institutionId,
     institutionName: answered.research.institutionName,
     question: candidate.question,
-    tracking: { operation: PAID_EVAL_WRITTEN_OPERATION, subjectKey: options.subjectKey, agentRunId: options.agentRunId },
+    tracking: { operation: options.tag?.operation ?? PAID_EVAL_WRITTEN_OPERATION, subjectKey: options.subjectKey, agentRunId: options.agentRunId, ...ledgerOf(options.tag) },
   });
   if (result.status !== "written") {
     return { ...candidate, path: "written_answer", status: "unavailable", failures: [result.reason], correctness: null, figures: 0 };
@@ -481,7 +505,7 @@ async function writtenUp(
     verdict,
     analyzeAnswerDecision(result.text, verdict.check, verdict.binding, HELD_ANSWER_MESSAGE !== null).today,
     { path: "written_streaming", mode: "analyze" },
-  )], options.recordShadow, candidate.institutionId);
+  )], options.recordShadow, candidate.institutionId, options.tag);
   const gate = { status: verdict.status, critical: verdict.failures.filter((f) => f.critical).map((f) => f.code), checkPassed: result.check.passed };
   if (verdict.status === "held" || !verdict.check.passed) {
     const failures = verdict.status === "held" ? verdict.failures.filter((f) => f.critical).map((f) => `${f.code}: ${f.message}`) : verdict.check.problems;
@@ -515,18 +539,18 @@ async function writtenUp(
   };
 }
 
-async function reportUp(
+export async function reportUp(
   candidate: PaidCandidate,
   prepared: PreparedReportAnswer,
-  options: { subjectKey: string; agentRunId?: number; writeReport: ReportAnswerWriter; comparison: ComparisonReader; recordShadow: ShadowRecorder },
+  options: { subjectKey: string; agentRunId?: number; writeReport: ReportAnswerWriter; comparison: ComparisonReader; recordShadow: ShadowRecorder; tag?: SampleTag },
 ): Promise<PaidSampleResult> {
   const sample = { ...candidate, question: `Peer Benchmarking report answer page for ${prepared.institutionName}` };
   const result = await options.writeReport(prepared, {
-    operation: PAID_EVAL_REPORT_OPERATION, subjectKey: options.subjectKey, agentRunId: options.agentRunId,
+    operation: options.tag?.operation ?? PAID_EVAL_REPORT_OPERATION, subjectKey: options.subjectKey, agentRunId: options.agentRunId, ...ledgerOf(options.tag),
     // The sampled institution is the reader's own and the report's subject, so the shadow's account rule can fire.
     gateIdentity: { researchInstitutionId: prepared.institutionId, accountInstitutionId: prepared.institutionId, accountInstitutionName: prepared.institutionName },
   });
-  if (result.status === "written" && result.gateShadow) await recordEvalShadows([result.gateShadow], options.recordShadow, prepared.institutionId);
+  if (result.status === "written" && result.gateShadow) await recordEvalShadows([result.gateShadow], options.recordShadow, prepared.institutionId, options.tag);
   if (result.status !== "written") {
     return { ...sample, path: "report", status: "unavailable", failures: [result.reason], correctness: null, figures: 0 };
   }

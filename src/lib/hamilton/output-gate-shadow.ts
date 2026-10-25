@@ -25,22 +25,29 @@ export type ShadowDisagreement =
   /** Both show it, but one cuts sentences and the other does not. */
   | "partial_differs";
 
-/** Which caller ran the shadow: the written-answer route's two paths, the Ask memo, Simulate, a report section (#1077 step 6). */
-export type ShadowPath = "written_streaming" | "written_buffered" | "memo" | "simulate_stream" | "simulate_read" | "report_section" | "golden_replay";
+/** Which caller ran the shadow: the written-answer route's two paths, the Ask memo, Simulate, a report section (#1077 step 6), the replays. */
+export type ShadowPath = "written_streaming" | "written_buffered" | "memo" | "simulate_stream" | "simulate_read" | "report_section" | "golden_replay" | "ask_replay";
 
 /**
- * Whose answer the shadow ran on: a reader's (the live routes), the daily paid eval's sample, or the
- * golden replay. Kept apart in every count, so synthetic answers never stand in for readers'.
+ * Whose answer the shadow ran on: a reader's (the live routes), the daily paid eval's sample, the
+ * golden replay, the daily gate replay (gate-replay.ts: real questions re-answered by today's free
+ * engine), or the one-off paid replay batch (paid-gate-replay.ts: real questions written up by the
+ * paid paths). Kept apart in every count, so replayed and synthetic answers never stand in for readers'.
  */
-export type ShadowOrigin = "reader" | "paid_eval" | "golden";
-export const SHADOW_ORIGINS: readonly ShadowOrigin[] = ["reader", "paid_eval", "golden"];
+export type ShadowOrigin = "reader" | "paid_eval" | "golden" | "replay" | "replay_paid";
+export const SHADOW_ORIGINS: readonly ShadowOrigin[] = ["reader", "paid_eval", "golden", "replay", "replay_paid"];
 
 /** Where a shadow ran, as its record keeps it; `origin` defaults to "reader". */
 export interface ShadowContext {
   path: ShadowPath;
   mode?: string | null;
   origin?: ShadowOrigin;
+  /** True when HAMILTON_ANSWER_GATE_ENFORCE was on, so the unified verdict decided (output-gate-enforce.ts). */
+  enforced?: boolean;
 }
+
+/** How the unified verdict was used: written only when it decided; a record without it ran in shadow. */
+export type GateMode = "enforced" | "shadow";
 
 export interface GateShadowRecord {
   /** The gate version that wrote it: a record from before a version bump keeps its own. */
@@ -63,6 +70,8 @@ export interface GateShadowRecord {
   corrections: number;
   /** `GATE_SHADOW_ERROR` when the unified gate threw: today's decision stands and nothing else is known. */
   error?: string;
+  /** "enforced" when HAMILTON_ANSWER_GATE_ENFORCE was on and the unified verdict decided; absent in shadow. */
+  gateMode?: "enforced";
   /** Set when step 5's bounded repair ran (HAMILTON_GATE_REPAIR on): statuses, outcome and call count only. */
   repair?: GateShadowRepair;
 }
@@ -105,7 +114,13 @@ export function gateShadowRecord(verdict: GateVerdict, today: TodayDecision, con
     critical,
     cause: verdict.failures.some((f) => f.code === "causal_unsupported"),
     corrections: verdict.corrections.length,
+    ...(context.enforced ? { gateMode: "enforced" as const } : {}),
   };
+}
+
+/** A record's gate mode: "enforced" when the unified verdict decided, else "shadow". */
+export function gateModeOf(record: Pick<GateShadowRecord, "gateMode">): GateMode {
+  return record.gateMode === "enforced" ? "enforced" : "shadow";
 }
 
 /**
@@ -121,6 +136,7 @@ export function shadowGate(input: GateInput, today: TodayDecision, context: Shad
       version: OUTPUT_GATE_VERSION, origin: context.origin ?? "reader", surface: input.surface, path: context.path, mode: context.mode ?? null, today,
       unified: "held", agrees: false, disagreement: null, codes: [], critical: [], cause: false, corrections: 0,
       error: GATE_SHADOW_ERROR,
+      ...(context.enforced ? { gateMode: "enforced" as const } : {}),
     };
   }
 }
@@ -217,6 +233,7 @@ export function readGateShadowRecord(value: unknown): GateShadowRecord | null {
     agrees: typeof obj.error === "string" ? false : disagreement === null, disagreement: typeof obj.error === "string" ? null : disagreement,
     codes, critical, cause: obj.cause === true, corrections: typeof obj.corrections === "number" ? obj.corrections : 0,
     ...(typeof obj.error === "string" ? { error: obj.error } : {}),
+    ...(obj.gateMode === "enforced" ? { gateMode: "enforced" as const } : {}),
     ...(readRepair(obj.repair, statuses) ?? {}),
   };
 }

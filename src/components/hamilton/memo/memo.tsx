@@ -22,7 +22,7 @@ export const SERIF = { fontFamily: "var(--fi-font-sans)" } as const;
  * comparison, a storyline and a reopened answer set the same fact the same way.
  */
 export const ANSWER_TYPE = {
-  /** Small capitals over a block: "The answer", "Exhibit 1". */
+  /** Small capitals over a block: "Summary", "Exhibit 1". */
   kicker: "text-xs font-semibold uppercase tracking-[0.12em] text-terra-text",
   /** The governing thought: the one sentence that answers the question. */
   lead: "text-[1.375rem] leading-snug text-warm-900 sm:text-2xl",
@@ -43,11 +43,11 @@ export function figureSize(value: string): string {
   return value.length > 8 ? "text-xl" : "text-2xl";
 }
 
-/** "The answer" over its governing thought, the same on every answer branch. */
+/** "Summary" over its governing thought, the first of the standard result blocks (#1895), the same on every answer branch. */
 export function AnswerLead({ children, after }: { children: ReactNode; after?: ReactNode }) {
   return (
     <div className="border-l-2 border-terra pl-5">
-      <p className={ANSWER_TYPE.kicker}>The answer</p>
+      <p className={ANSWER_TYPE.kicker}>Summary</p>
       <p className={`mt-1 ${ANSWER_TYPE.lead}`} style={SERIF}>
         {children}
       </p>
@@ -443,7 +443,9 @@ export function PriceStrip({
   const counts = new Array<number>(bins).fill(0);
   for (const a of amounts) counts[Math.min(bins - 1, Math.floor(Math.round(a) / binWidth))]++;
   const tallest = Math.max(1, ...counts);
-  const tallestAt = counts.indexOf(tallest) * binWidth;
+  // With no amounts every bin is 0, so indexOf(tallest) is -1; the caption must not print "$-1".
+  const tallestAt = amounts.length > 0 ? counts.indexOf(tallest) * binWidth : null;
+  const scope = scopeLabel ? `institutions in ${scopeLabel}` : "institutions";
   const axisMax = bins * binWidth;
   const x = (v: number) => (Math.min(axisMax, Math.floor(Math.round(v) / binWidth) * binWidth + binWidth / 2) / axisMax) * 100;
   const sorted = [...marks].sort((a, b) => a.price - b.price);
@@ -498,9 +500,11 @@ export function PriceStrip({
         ))}
       </div>
       <figcaption className="mt-1 text-xs leading-relaxed text-warm-600">
-        <span className="font-medium text-warm-800">How to read this.</span> Each bar is a price; its height is how many{" "}
-        {scopeLabel ? `institutions in ${scopeLabel}` : "institutions"} charge it ({amounts.length} in all; the tallest bar is{" "}
-        {tallest} at {fmtMoney(tallestAt)}). The lines mark the current published price and the prices being tested.
+        <span className="font-medium text-warm-800">How to read this.</span>{" "}
+        {tallestAt == null
+          ? `None of the ${scope} publish this fee, so there are no bars.`
+          : `Each bar is a price; its height is how many ${scope} charge it (${amounts.length} in all; the tallest bar is ${tallest} at ${fmtMoney(tallestAt)}).`}{" "}
+        The lines mark the current published price and the prices being tested.
       </figcaption>
     </figure>
   );

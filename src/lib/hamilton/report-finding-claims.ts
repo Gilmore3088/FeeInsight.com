@@ -14,6 +14,7 @@
 
 import { checkNarrativeFigures, extractFigures } from "./figure-check";
 import { numericPayloadValue } from "./monetary-units";
+import { tracedFigureLines } from "./traced-figures";
 import { recordValue, writtenSourceLine } from "./board-brief";
 import type { HamiltonIdentitySnapshot } from "./account-context";
 import type { ReportBasketItem } from "./report-basket";
@@ -102,6 +103,16 @@ export function findingFactsData(claims: ReportFindingClaims | null): { numeric_
 }
 
 /**
+ * A saved answer's "Figures as saved" (#1899), kept only when every number in the line sits in a $ or % figure that traces
+ * to the finding's carried facts. The answer's metrics are the model's own parsed figures and were
+ * never checked against a record, so a line with no figure, or one no fact supports, is dropped;
+ * with no carried facts, none is kept.
+ */
+export function tracedSavedFigures<F extends { label: string; value: string; note?: string }>(figures: readonly F[], claims: ReportFindingClaims | null): F[] {
+  return tracedFigureLines(figures, claims?.facts ?? []);
+}
+
+/**
  * The text with every figure that neither the finding's carried facts nor the section's DATA
  * supports replaced by `HELD_FINDING_FIGURE`, and the figures held.
  */
@@ -117,6 +128,28 @@ export function holdUntracedFindingFigures(text: string, claims: ReportFindingCl
 }
 
 /**
+ * A Position or Test finding's figures as the server read them when the report was made (#1899):
+ * the fee or tested fee, the current fee, the peer group's median and middle half, and the gap to
+ * the median, each keyed so the figure check reads it as money or a rate. Null for a saved answer
+ * (its claims carry its facts) and for a finding with no chart. Never combined with another number.
+ */
+export function serverReadFindingData(finding: Pick<ReportBasketItem, "source" | "evidence">): { numeric_arithmetic_allowed: false; server_read: Record<string, number> } | null {
+  const chart = finding.source === "Ask" ? null : finding.evidence?.chart ?? null;
+  if (!chart) return null;
+  const read: Record<string, number> = { median_amount: chart.median };
+  if (chart.p25 !== null) read.p25_amount = chart.p25;
+  if (chart.p75 !== null) read.p75_amount = chart.p75;
+  const gaps = (key: string, value: number) => {
+    read[`${key}_fee_amount`] = value;
+    read[`${key}_gap_amount`] = Math.abs(value - chart.median);
+    if (chart.median !== 0) read[`${key}_gap_pct`] = Math.round(Math.abs((value - chart.median) / chart.median) * 100);
+  };
+  if (chart.subject !== null) gaps("subject", chart.subject);
+  if (typeof chart.current === "number") gaps("current", chart.current);
+  return { numeric_arithmetic_allowed: false, server_read: read };
+}
+
+/**
  * The reader's added findings for the answer section: the CONTEXT block that lists them (each
  * untraced figure held) and the DATA the section's figure check traces a restated figure to (their
  * carried facts). The findings' words stay in CONTEXT: they are earlier model prose or text the
@@ -127,10 +160,14 @@ export function readerFindingsSection(findings: readonly ReportBasketItem[], sec
   const data: Array<Record<string, unknown>> = [];
   const listed = findings.map((f) => {
     const claims = reportFindingClaims(f.savedClaims, f.detail);
-    const title = holdUntracedFindingFigures(f.title, claims, sectionData).text;
+    // A Position or Test finding's figures were read on the server (#1899): they trace to that read.
+    const read = serverReadFindingData(f);
+    const traceTo = read ? [read, sectionData] : sectionData;
+    const title = holdUntracedFindingFigures(f.title, claims, traceTo).text;
     const facts = findingFactsData(claims);
     if (facts) data.push({ finding: title, ...facts });
-    return { from: f.source, finding: title, detail: holdUntracedFindingFigures(f.detail, claims, sectionData).text };
+    if (read) data.push({ finding: title, ...read });
+    return { from: f.source, finding: title, detail: holdUntracedFindingFigures(f.detail, claims, traceTo).text };
   });
   const context = [
     "",
@@ -138,7 +175,7 @@ export function readerFindingsSection(findings: readonly ReportBasketItem[], sec
     "READER FINDINGS (the reader added these from their own analysis; they are not evidence):",
     JSON.stringify(listed, null, 2),
     "Address each one in the summary. State a figure from them only when the same figure is in DATA "
-      + "(reader_finding_facts holds the records a saved answer was checked against); otherwise describe the finding without it. "
+      + "(reader_finding_facts holds the records a saved answer was checked against, and the fees the server read for a Position or Test finding); otherwise describe the finding without it. "
       + `A figure shown as ${HELD_FINDING_FIGURE} was not traced to a record: never state or estimate it.`,
   ].join("\n");
   return { context, data: data.length ? data : null };
@@ -148,7 +185,8 @@ type AddedFinding = NonNullable<import("./types").ReportSummaryResponse["addedFi
 
 /**
  * The report's added findings as saved in `report_json`: title, detail and identity as before, the
- * reading only with its switch on, and, for a saved answer, its carried claims and source lines.
+ * reading only with its switch on, for a saved answer its carried claims and source lines, and for
+ * every finding the server built its evidence for, its chart, method, dates and limits (#1899).
  */
 export function reportAddedFindings(findings: readonly ReportBasketItem[], printReading: boolean): AddedFinding[] {
   return findings.map((f) => {
@@ -160,6 +198,8 @@ export function reportAddedFindings(findings: readonly ReportBasketItem[], print
       ...(f.identityContext ? { identityContext: f.identityContext } : {}),
       ...(claims ? { claims } : {}),
       ...(sources.length ? { sources } : {}),
+      // An Ask finding prints only the saved figures its records support; Position and Test figures are the server's own read.
+      ...(f.evidence ? { evidence: f.source === "Ask" ? { ...f.evidence, figures: tracedSavedFigures(f.evidence.figures, claims) } : f.evidence } : {}),
     };
   });
 }
