@@ -1159,7 +1159,17 @@ export async function applyHandTakedowns(
           evidence: { fee_name: entry.feeName, reason: entry.reason, issue: entry.issue, source: entry.evidence },
         };
       });
-      if (feedback.length > 0) await recordFeedback(scope, feedback);
+      if (feedback.length > 0) {
+        await recordFeedback(scope, feedback);
+        // The shared upsert keeps a row's stage, so a row written before #1677 (extract) whose fee
+        // comes back and down again is moved to the stage charged now, never left half re-filed.
+        await scope`
+          UPDATE pipeline_feedback pf
+             SET about_stage = charged.stage, updated_at = NOW()
+            FROM unnest(${feedback.map((row) => row.dedupeKey)}::text[], ${feedback.map((row) => row.aboutStage)}::text[]) AS charged(dedupe_key, stage)
+           WHERE pf.dedupe_key = charged.dedupe_key AND pf.about_stage IS DISTINCT FROM charged.stage
+        `;
+      }
       for (const feeVerifiedId of waitingPlan) {
         const entry = waiting.find((candidate) => candidate.feeVerifiedId === feeVerifiedId)!;
         const rejected = await scope<{ fee_verified_id: number | string }[]>`

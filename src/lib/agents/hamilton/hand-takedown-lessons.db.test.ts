@@ -85,5 +85,13 @@ describe.skipIf(!connection)("Hand takedown lessons in isolated PostgreSQL (#167
       [1, "extract", "wrong_category"],
       [2, "extract", "wrong_category"],
     ]);
+
+    // Brought back and taken down again: the old row moves to the stage charged now, kind and stage together.
+    await db`UPDATE published_fee_records SET rolled_back_at = NULL, rolled_back_reason = NULL WHERE fee_published_id = 1`;
+    expect((await run(5)).takenDown.map((item) => item.feePublishedId)).toEqual([1]);
+    expect((await lessons()).map((row) => [row.fee_published_id, row.about_stage, row.kind])).toEqual([
+      [1, "discover", "wrong_document"],
+      [2, "extract", "wrong_category"],
+    ]);
   });
 });
