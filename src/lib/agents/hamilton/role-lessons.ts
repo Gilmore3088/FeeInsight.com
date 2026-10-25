@@ -177,4 +177,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-1892-split-on-filed-dollars",
+    agent: "hamilton",
+    stage: "analysis",
+    lesson: "Derive a figure from the values as filed, then round once for display. Subtracting two totals that were each rounded first adds a rounding error to every derived quarter, and the calculation shown to the reader no longer adds up.",
+    why: "The financial performance page split credit union year-to-date fee income into quarters by subtracting two totals already rounded to thousands, so 5 of 12 SchoolsFirst quarters were $1 thousand off the exact split when checked against the stored filing on Oct 25.",
+    evidence: { issues: [1892], prs: [2611], files: ["src/lib/hamilton/financial-quarters.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];

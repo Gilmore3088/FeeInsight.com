@@ -97,6 +97,17 @@ describe("financial performance view (#1892)", () => {
     expect(view.short).toBe(true);
   });
 
+  it("splits a credit union quarter on the filed dollars, not on two rounded totals", () => {
+    // Filed $120,400 then $260,600 year to date: the quarter is $140,200, shown as 140 thousand, not 261 - 120 = 141.
+    const q1 = { ...ncuaRow("2026-03-31", 120, 1), rawFeeIncome: 120_400 };
+    const q2 = { ...ncuaRow("2026-06-30", 261, 2), rawFeeIncome: 260_600 };
+    const view = buildFinancialPerformance([q1, q2], [])!;
+    const q = view.quarters.find((x) => x.reportDate === "2026-06-30")!;
+    expect(q.fee.value).toBe(140);
+    expect(q.evidence.calculation).toContain("($260,600) less ACCT_131 year to date at");
+    expect(q.evidence.calculation).toContain("= $140,200 for the quarter.");
+  });
+
   it("never shows a year-to-date total as one quarter when the previous filing is missing", () => {
     const view = buildFinancialPerformance([ncuaRow("2026-03-31", 120, 1), ncuaRow("2026-09-30", 400, 2)], [])!;
     const q3 = view.quarters.find((q) => q.reportDate === "2026-09-30")!;
