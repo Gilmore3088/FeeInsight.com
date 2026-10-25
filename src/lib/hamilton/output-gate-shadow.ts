@@ -46,6 +46,15 @@ export interface GateShadowRecord {
   corrections: number;
   /** `GATE_SHADOW_ERROR` when the unified gate threw: today's decision stands and nothing else is known. */
   error?: string;
+  /** Set when step 5's bounded repair ran (HAMILTON_GATE_REPAIR on): statuses, outcome and call count only. */
+  repair?: GateShadowRepair;
+}
+
+/** The repair's trace in the ledger (output-gate-repair.ts): codes and counts, never text. */
+export interface GateShadowRepair {
+  firstStatus: GateStatus;
+  outcome: string;
+  calls: number;
 }
 
 /** The one error code a shadow record carries when the unified gate threw. */
@@ -149,6 +158,13 @@ export function tallyGateShadow(records: readonly GateShadowRecord[]): GateShado
 }
 
 /** A record read back from the ledger, defensively: anything malformed reads as null. */
+function readRepair(value: unknown, statuses: readonly string[]): { repair: GateShadowRepair } | null {
+  if (!value || typeof value !== "object") return null;
+  const r = value as Record<string, unknown>;
+  if (typeof r.firstStatus !== "string" || !statuses.includes(r.firstStatus) || typeof r.outcome !== "string" || typeof r.calls !== "number") return null;
+  return { repair: { firstStatus: r.firstStatus as GateStatus, outcome: r.outcome, calls: r.calls } };
+}
+
 export function readGateShadowRecord(value: unknown): GateShadowRecord | null {
   if (!value || typeof value !== "object") return null;
   const obj = value as Record<string, unknown>;
@@ -165,5 +181,6 @@ export function readGateShadowRecord(value: unknown): GateShadowRecord | null {
     agrees: typeof obj.error === "string" ? false : disagreement === null, disagreement: typeof obj.error === "string" ? null : disagreement,
     codes, critical, cause: obj.cause === true, corrections: typeof obj.corrections === "number" ? obj.corrections : 0,
     ...(typeof obj.error === "string" ? { error: obj.error } : {}),
+    ...(readRepair(obj.repair, statuses) ?? {}),
   };
 }

@@ -56,10 +56,10 @@ import { withHamiltonAccountContext } from "@/lib/hamilton/account-context-store
 import { accountIdentitySnapshot } from "@/lib/hamilton/account-context";
 import { getInstitutionById } from "@/lib/data-store";
 import { writtenAnswerStepSystemPrompt, type AnswerToolEvidence } from "@/lib/hamilton/written-answer-evidence";
-import { shadowGate, type ShadowPath, type TodayDecision } from "@/lib/hamilton/output-gate-shadow";
+import { shadowGate, type GateShadowRepair, type ShadowPath, type TodayDecision } from "@/lib/hamilton/output-gate-shadow";
 import { scheduleGateShadow } from "@/lib/hamilton/output-gate-shadow-store";
 import { gateAnswer, type GateInput } from "@/lib/hamilton/output-gate";
-import { gatedAnswerView, isGateRepairEnabled, runGatedAnswer } from "@/lib/hamilton/output-gate-repair";
+import { isGateRepairEnabled, repairTimeBudgetMs, runGatedAnswer, settleGatedDraft } from "@/lib/hamilton/output-gate-repair";
 
 /** research_usage agent id for a gate rewrite; the "hamilton" prefix counts it in the Pro quota (quota.ts). */
 const GATE_REPAIR_USAGE_AGENT_ID = "hamilton-repair";
@@ -83,6 +83,8 @@ interface AnswerVerdict {
 }
 
 async function handlePOST(request: Request) {
+  // A gate rewrite (claim contract step 5) gets only the time left under maxDuration.
+  const requestStartedAt = Date.now();
   // Resolve role from session
   let user: User | null = null;
   const subjectKey = getRequestSubjectKey(request);
@@ -230,7 +232,7 @@ async function handlePOST(request: Request) {
   // `today` is the decision already made, and a shadow that fails changes nothing. It is computed
   // and written after the response (scheduleGateShadow): nothing here awaits it. Every input is
   // captured now, since `identityContext` changes later.
-  const shadowWrittenAnswer = (text: string, reads: readonly AnswerToolEvidence[], today: TodayDecision, path: ShadowPath): void => {
+  const shadowWrittenAnswer = (text: string, reads: readonly AnswerToolEvidence[], today: TodayDecision, path: ShadowPath, repair?: GateShadowRepair): void => {
     try {
       if (!text.trim()) return;
       const input: GateInput = {
@@ -241,7 +243,10 @@ async function handlePOST(request: Request) {
         question: questionOnly(lastUserText),
       };
       const context = { path, mode: mode ?? null };
-      scheduleGateShadow(() => shadowGate(input, today, context), { userId: user.id, researchInstitutionId: institutionId });
+      scheduleGateShadow(() => {
+        const record = shadowGate(input, today, context);
+        return repair ? { ...record, repair } : record;
+      }, { userId: user.id, researchInstitutionId: institutionId });
     } catch (error) {
       console.error("[hamilton] the shadow output gate could not be scheduled", error);
     }
@@ -354,15 +359,20 @@ async function handlePOST(request: Request) {
           identity: { researchInstitutionId: institutionId, accountInstitutionId: homeId ?? null, accountInstitutionName: identityContext.accountInstitutionName ?? null },
           question: questionOnly(lastUserText),
         });
+        let repairTimeMs: number | null = null;
         const gated = await runGatedAnswer({
           draft: { text: result.text ?? "" },
           gate: gateDraft,
-          // One more paid call only within the reader's daily quota; the provider budget is checked by trackAnthropicRequest.
-          allowRepair: async () => (await checkProAiQuota(user!)).allowed,
+          // One more paid call only with time left under maxDuration and within the reader's daily
+          // quota; the provider budget and breaker are checked by trackAnthropicRequest.
+          allowRepair: async () => {
+            repairTimeMs = repairTimeBudgetMs(requestStartedAt, maxDuration);
+            return repairTimeMs !== null && (await checkProAiQuota(user!)).allowed;
+          },
           repair: async (feedback) => {
             const { generated: rewrite } = await trackAnthropicRequest(
               { ...providerContext, operation: "research_gate_repair" },
-              () => withProviderResponseOperation(AI_PROVIDER_TIMEOUT_MS, async (scope) => {
+              () => withProviderResponseOperation(Math.min(repairTimeMs ?? 0, AI_PROVIDER_TIMEOUT_MS), async (scope) => {
                 const generated = await generateText({
                   model: getAnthropicLanguageModel(agent.model, "hamilton", scope),
                   system: cachedSystem(writtenAnswerStepSystemPrompt(systemPrompt, result.steps ?? [])),
@@ -393,35 +403,35 @@ async function handlePOST(request: Request) {
             return { text: rewrite.text ?? "" };
           },
         });
-        const finalText = gated.draft.text;
-        const view = gatedAnswerView(finalText, gated.verdict);
-        const repairNote = { status: gated.verdict.status, repair: gated.repair, firstStatus: gated.first.status };
-        if (gated.repair === "used" && view.text !== null) {
-          const rewriteGate = evaluateCitationDensity(finalText);
-          if (rewriteGate.status === "refused") {
-            shadowWrittenAnswer(finalText, bufferedReads, "held", "written_buffered");
-            return Response.json(
-              { status: "refused", reason: rewriteGate.reason, metrics: rewriteGate.metrics, suggestion: rewriteGate.suggestion,
-                claims_without_citations: rewriteGate.claims_without_citations, gate: repairNote },
-              { status: 200 },
-            );
-          }
-        }
-        if (view.text === null) {
-          shadowWrittenAnswer(finalText, bufferedReads, "held", "written_buffered");
+        // The citation-density gate reads a rewrite too; a failing rewrite falls back to a showable partial first draft.
+        const settled = settleGatedDraft(gated, gate, (text) => evaluateCitationDensity(text));
+        const { view, density } = settled;
+        const ledgerRepair: GateShadowRepair = { firstStatus: gated.first.status, outcome: gated.repair, calls: gated.repairCalls };
+        const repairNote = { status: view.status, gateStatus: settled.verdict.status, repair: gated.repair, firstStatus: gated.first.status,
+          chosen: settled.chosen, ...(view.heldBy ? { heldBy: view.heldBy } : {}) };
+        if (density.status === "refused") {
+          shadowWrittenAnswer(settled.text, bufferedReads, "held", "written_buffered", ledgerRepair);
           return Response.json(
-            { status: "refused", reason: "evidence_check_failed", problems: gated.verdict.failures.map((f) => f.message), metrics: gate.metrics, gate: repairNote },
+            { status: "refused", reason: density.reason, metrics: density.metrics, suggestion: density.suggestion,
+              claims_without_citations: density.claims_without_citations, gate: repairNote },
             { status: 200 },
           );
         }
-        shadowWrittenAnswer(finalText, bufferedReads, view.leftOut > 0 ? "shown_partial" : "shown", "written_buffered");
+        if (view.text === null) {
+          shadowWrittenAnswer(settled.text, bufferedReads, "held", "written_buffered", ledgerRepair);
+          return Response.json(
+            { status: "refused", reason: "evidence_check_failed", problems: settled.verdict.failures.map((f) => f.message), metrics: density.metrics, gate: repairNote },
+            { status: 200 },
+          );
+        }
+        shadowWrittenAnswer(settled.text, bufferedReads, view.leftOut > 0 ? "shown_partial" : "shown", "written_buffered", ledgerRepair);
         return Response.json({
           status: "ok",
           text: view.text,
-          metrics: gate.metrics,
+          metrics: density.metrics,
           identityContext: identityFor(result.steps),
           gate: { ...repairNote, lead: view.lead, corrections: view.corrections, leftOut: view.leftOut },
-          ...(gated.verdict.binding ? { narrativeBinding: gated.verdict.binding } : {}),
+          ...(settled.verdict.binding ? { narrativeBinding: settled.verdict.binding } : {}),
         });
       }
 

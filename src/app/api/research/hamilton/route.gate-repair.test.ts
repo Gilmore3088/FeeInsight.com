@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   stream: vi.fn(), generate: vi.fn(), briefing: vi.fn(), save: vi.fn(), write: vi.fn(), merge: vi.fn(), usage: vi.fn(), shadow: vi.fn(),
-  logUsage: vi.fn(), tracked: vi.fn(),
+  logUsage: vi.fn(), tracked: vi.fn(), density: vi.fn(),
   held: { message: null as string | null },
   quotaAllowed: true,
 }));
@@ -66,7 +66,7 @@ vi.mock("@/lib/hamilton/answer-gate", async () => {
   };
 });
 // The citation-density gate is not what these tests are about: every draft passes it.
-vi.mock("@/lib/hamilton/citation-gate", () => ({ evaluateCitationDensity: () => ({ status: "ok", metrics: {} }) }));
+vi.mock("@/lib/hamilton/citation-gate", () => ({ evaluateCitationDensity: (text: string) => mocks.density(text) }));
 vi.mock("ai", () => ({
   generateText: mocks.generate, streamText: mocks.stream, convertToModelMessages: async (messages: unknown) => messages, stepCountIs: () => ({}),
   createUIMessageStream: ({ execute }: { execute: (input: unknown) => Promise<void> }) => execute({ writer: { merge: mocks.merge, write: mocks.write } }),
@@ -101,6 +101,7 @@ beforeEach(() => {
   mocks.save.mockReset().mockResolvedValue("saved-1");
   mocks.shadow.mockReset().mockResolvedValue(null);
   mocks.logUsage.mockResolvedValue(undefined);
+  mocks.density.mockReset().mockImplementation((text: string) => ({ status: "ok", metrics: { chars: text.length } }));
 });
 afterEach(() => { vi.unstubAllEnvs(); });
 
@@ -193,5 +194,58 @@ describe("buffered written answer with HAMILTON_GATE_REPAIR on (#1077 step 5)", 
     expect(mocks.stream).toHaveBeenCalledTimes(1);
     expect(mocks.write.mock.calls.some(([chunk]) => chunk.type === "text-delta" && chunk.delta === "Synthetic held line.")).toBe(true);
     expect(repairRows()).toEqual([]);
+  });
+
+  it("records the repair in the shadow run: first status, outcome and calls, no text", async () => {
+    mocks.generate.mockResolvedValueOnce(draft(UNTRACED)).mockResolvedValueOnce(rewrite(PASSING));
+    await POST(buffered());
+    const record = mocks.shadow.mock.calls[0][0];
+    expect(record.repair).toEqual({ firstStatus: "held", outcome: "used", calls: 1 });
+    expect(JSON.stringify(record)).not.toContain("overdraft fee of");
+  });
+
+  it("gives the rewrite only the time left under maxDuration, and skips it when too little is left", async () => {
+    let now = 1_000_000;
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => now);
+    try {
+      mocks.generate.mockImplementationOnce(async () => { now += 290_000; return draft(UNTRACED); });
+      const body = await (await POST(buffered())).json();
+      expect(body).toMatchObject({ status: "refused", gate: { repair: "not_allowed" } });
+      expect(mocks.generate).toHaveBeenCalledTimes(1);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("keeps a showable partial first draft when the rewrite fails citation density, with that draft's metrics", async () => {
+    mocks.generate.mockResolvedValueOnce(draft(WITH_ADVICE)).mockResolvedValueOnce(rewrite(PASSING));
+    mocks.density.mockImplementation((text: string) => text === PASSING
+      ? { status: "refused", reason: "insufficient_citations", metrics: { which: "rewrite" } }
+      : { status: "ok", metrics: { which: "first" } });
+    const body = await (await POST(buffered())).json();
+    expect(body).toMatchObject({ status: "ok", text: PASSING, metrics: { which: "first" }, gate: { status: "ready_partial", chosen: "first", repair: "used" } });
+  });
+
+  it("reports the chosen rewrite's density metrics", async () => {
+    mocks.generate.mockResolvedValueOnce(draft(UNTRACED)).mockResolvedValueOnce(rewrite(PASSING));
+    const body = await (await POST(buffered())).json();
+    expect(body.metrics).toEqual({ chars: PASSING.length });
+  });
+
+  it("(B) never shows a bold-led Why It Matters bullet the gate cut", async () => {
+    const text = `${PASSING}\n\n## Why It Matters\n- **Pricing.** ${ADVICE_SENTENCE}\n- The fee is one of the most visible prices on the account.`;
+    mocks.generate.mockResolvedValueOnce(draft(text)).mockResolvedValueOnce(rewrite(text));
+    const body = await (await POST(buffered())).json();
+    expect(body).toMatchObject({ status: "ok", gate: { status: "ready_partial", leftOut: 1 } });
+    expect(body.text).not.toContain("should lower");
+    expect(body.text).toContain("The fee is one of the most visible prices on the account.");
+  });
+
+  it("(D) holds when the failing line also sits in Evidence", async () => {
+    const text = `${WITH_ADVICE}\n\n## Evidence\n- **Overdraft fee:** $35, so the bank should lower the fee`;
+    mocks.generate.mockResolvedValueOnce(draft(text)).mockResolvedValueOnce(rewrite(text));
+    const body = await (await POST(buffered())).json();
+    expect(body).toMatchObject({ status: "refused", reason: "evidence_check_failed", gate: { status: "held", gateStatus: "ready_partial", heldBy: "failure_outside_prose" } });
+    expect(mocks.shadow.mock.calls[0][0]).toMatchObject({ today: "held" });
   });
 });

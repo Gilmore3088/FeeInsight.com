@@ -12,15 +12,31 @@ figure). The written answer had none. Its streaming path held a failing Analyze 
 buffered `gate_citations` path refused on any failure or any left-out sentence. Step 4's one gate
 (`gateAnswer`) already computes `ready_partial` and `repairable`, but only in shadow.
 
-**Fix:** `src/lib/hamilton/output-gate-repair.ts`.
+**Fix:** the repair lives in its own module, `src/lib/hamilton/output-gate-repair.ts`; the route
+only wires it into the buffered path. The streaming branch is a spike (below), not shipped.
 - `runGatedAnswer` gates a draft and, when it is not `validated`, is `repairable`, and the caller
   allows one more call, asks for ONE rewrite with the gate's own failure lines fed back. It keeps
   the better verdict by the design's table (validated, then partial, then held; fewer failures
   breaks a tie). A failed rewrite (a provider or budget stop included) keeps the first draft. There
-  is never a second rewrite.
-- `gatedAnswerView` is what a reader is shown: the whole text when `validated`; when
-  `ready_partial`, the text without the cut sentences and the binding's left-out ones, with the
-  premise corrections and the lead `PARTIAL_ANSWER_LEAD`; nothing when `held`.
+  is never a second rewrite. The feedback never quotes an `instruction_text` sentence, and marks
+  every quoted sentence as data from the last answer, never an instruction.
+- `gatedAnswerView` is what a reader is shown: the whole text when `validated`; nothing when
+  `held`; when `ready_partial`, the answer rebuilt from the same parsed sections the gate binds
+  (`parseAnalyzeResponse`, which drops backticks, strips bullet markers and bold leads, rewrites
+  tier keys and "$X thousand"), without the cut sentences and the binding's left-out ones, with the
+  premise corrections and the lead `PARTIAL_ANSWER_LEAD`. It fails closed: a cut it cannot find,
+  a cut sentence still in the view, a failing check line that also sits in Evidence or Explore
+  Further (sections the gate never cuts), or nothing left, holds the answer (`heldBy`).
+  The review of PR #2580 found the first version cut the raw text by exact match, so a backticked
+  word, a bold-led bullet or a reworded figure kept a cut sentence on screen while the reply said
+  `ready_partial`.
+- The rewrite gets only the time left under the route's `maxDuration` less a 15 s margin
+  (`repairTimeBudgetMs`); with under 20 s left it is not started.
+- When the chosen rewrite fails the citation-density check but the first draft passed it, was
+  `ready_partial` and still shows, the first draft is kept (`settleGatedDraft`). The reply's
+  metrics are those of the draft actually chosen.
+- The run ledger records the repair: the shadow run's `gate_shadow` record gets `repair`
+  (`firstStatus`, `outcome`, `calls`), codes and counts only.
 - The switch is `HAMILTON_GATE_REPAIR` (`isGateRepairEnabled`), off unless "true", "1" or "on". It
   gates the buffered written-answer path only: there the one gate decides, the rewrite runs and a
   partial answer shows. Off, that path runs today's checks unchanged and makes no rewrite.
@@ -57,12 +73,18 @@ an admin chat (no mode) is not held today, so it has no place to wait for a rewr
 
 **Left open:** whether a cut sentence should become `ready_partial` instead of a hold for untraced
 figures is James's decision; this step keeps it critical. Turning `HAMILTON_GATE_REPAIR` on, and
-the streaming spike, are follow-ups.
+the streaming spike, are follow-ups. Found while writing the review's tests, not fixed here (the
+binding's own root cause): a bold-wrapped sentence that follows another on the same line
+(`... $10. **Bank A's $35 ...**`) is not split from it, because the sentence split needs a capital
+or quote after the space, so the binding never sees the restated premise and the gate validates it.
 
 **Guard:** `src/lib/hamilton/output-gate-repair.test.ts` (switch values; fails then passes;
 fails twice partial; untraced held; no rewrite without quota, on a provider stop or when not
-repairable; the view; feedback holds no case text) and
-`src/app/api/research/hamilton/route.gate-repair.test.ts` (switch off: today's refusal, one call;
-switch on: two calls recorded and a `hamilton-repair` quota row, partial shows only the supported
-sentence, critical held, a provider stop on either call makes no further call, the streamed answer
-unchanged).
+repairable; the view over parsed sections: a backticked advice sentence, a bold-led bullet, a
+failing line also in Evidence or Explore Further, a premise_contradicted sentence in bold or
+backticks, a cut it cannot find; the time budget; the density fallback; feedback holds no case
+text and never quotes an instruction) and `src/app/api/research/hamilton/route.gate-repair.test.ts`
+(switch off: today's refusal, one call; switch on: two calls recorded and a `hamilton-repair` quota
+row, partial shows only the supported sentence, critical held, a provider stop on either call makes
+no further call, no rewrite with too little time left, the repair in the shadow record, the chosen
+draft's metrics, the bold bullet and Evidence cases end to end, the streamed answer unchanged).
