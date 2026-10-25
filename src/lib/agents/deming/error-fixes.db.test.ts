@@ -9,7 +9,7 @@ import { KNOX_RULES_STRATEGY } from "@/lib/agents/knox/specialists";
 import { errorFixRequests, runErrorFixRecheck, type ErrorFixEntry } from "./error-fixes";
 
 const connection = process.env.E2E_DATABASE_URL;
-const INST = 20580001, WAITING = 20580002, DOC = 20580101;
+const INST = 20580001, WAITING = 20580002, DOC = 20580101, OLD_DOC = 20580100;
 const EVENT = "00000000-0000-4000-8000-000020580001";
 const KIND = "test_2058_named_error";
 const FIX: ErrorFixEntry = { pr: 92058, issue: 2058, stage: "extract", merged_on: "2026-10-20", knox_version: KNOX_RULES_STRATEGY.version, kinds: [KIND] };
@@ -61,6 +61,9 @@ describe.skipIf(!connection)("error loop in isolated PostgreSQL (#2058)", () => 
               VALUES (${INST}, 'Loop Test Bank', 'bank', 'fdic', 'TX'), (${WAITING}, 'Loop Waiting Bank', 'bank', 'fdic', 'TX')`;
     await raw`INSERT INTO source_documents (id, institution_id, status, document_url, content_hash, crawled_at)
               VALUES (${DOC}, ${INST}, 'success', 'https://bank2058.test/fees', 'hash-2058', '2026-10-01T00:00:00Z')`;
+    // An older copy of the page that DOC replaced: an error on it is served by the re-run of DOC.
+    await raw`INSERT INTO source_documents (id, institution_id, status, document_url, content_hash, crawled_at, superseded_by_id)
+              VALUES (${OLD_DOC}, ${INST}, 'success', 'https://bank2058.test/fees', 'hash-2058-old', '2026-09-01T00:00:00Z', ${DOC})`;
     await raw`INSERT INTO agent_source_texts (source_document_id, institution_id, status, normalized_text)
               VALUES (${DOC}, ${INST}, 'completed', ${"OTHER SERVICES\nStop Payment Fee | $35.00\nOverdraft Fee | $30.00 per item\nWire Transfer | $25.00"})`;
     // Three live fee types, so the institution is deep enough for the catalog.
@@ -77,7 +80,9 @@ describe.skipIf(!connection)("error loop in isolated PostgreSQL (#2058)", () => 
     await named("matches", INST, stop, "stop_payment");
     await named("down", INST, nsf, "nsf");
     await named("still", INST, wire, "wire_domestic_outgoing");
-    await named("replaced", INST, oldOverdraft, "overdraft", "2026-10-10T00:00:00Z", "hamilton.source_check", DOC);
+    await named("replaced", INST, oldOverdraft, "overdraft", "2026-10-10T00:00:00Z", "hamilton.source_check", OLD_DOC);
+    // Filed on the merge day itself: the fixed rules may already have read its text, so not named.
+    await named("merge_day", INST, stop, "stop_payment", "2026-10-20T12:00:00Z");
     await named("waiting", WAITING, waitingFee, "overdraft");
     // Recorded after the fix merged: not one of the errors it names.
     await named("after", INST, stop, "stop_payment", "2026-10-21T00:00:00Z");

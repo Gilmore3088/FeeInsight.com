@@ -82,6 +82,8 @@ describe("the error loop: a process fix names its errors, re-runs their banks an
     expect(judgeErrorFix(down, [rerun], TEXT)).toMatchObject({ verdict: "now_matches", judged: [501] });
     expect(judgeErrorFix({ ...down, source_document_id: 77 }, [rerun], TEXT)).toMatchObject({ verdict: "now_matches" });
     expect(judgeErrorFix({ ...down, source_document_id: 78 }, [rerun], TEXT)).toMatchObject({ verdict: "not_reproduced" });
+    // Once a newer copy replaced the error's document, the re-run's fee cites the newer copy.
+    expect(judgeErrorFix({ ...down, source_document_id: 78, document_replaced: true }, [rerun], TEXT)).toMatchObject({ verdict: "now_matches" });
     // Taken down with nothing in its category: not closed.
     expect(judgeErrorFix({ ...at, fee_published_id: 500, canonical_fee_key: "nsf" }, [rerun], TEXT)).toMatchObject({ verdict: "not_reproduced", judged: [] });
   });

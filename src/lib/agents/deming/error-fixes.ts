@@ -127,6 +127,8 @@ export interface NamedErrorRow {
   fee_published_id: number | string;
   /** The document the error names, when it names one: the re-run must read that document. */
   source_document_id?: number | string | null;
+  /** A newer copy has replaced that document, so the re-run reads (and its fees cite) the newer one. */
+  document_replaced?: boolean | string | null;
   canonical_fee_key: string | null;
   kind: string;
   check_name: string | null;
@@ -169,6 +171,8 @@ async function namedRows(db: SqlTag, entry: ErrorFixEntry, limit: number, waitin
     )`;
   return db<NamedErrorRow[]>`
     SELECT f.id, f.institution_id, f.fee_published_id, f.source_document_id, f.canonical_fee_key, f.kind, f.check_name, f.created_at,
+           EXISTS (SELECT 1 FROM source_documents old
+                    WHERE old.id = f.source_document_id AND old.superseded_by_id IS NOT NULL) AS document_replaced,
            ${waiting ? db`FALSE` : rerun} AS rerun,
            ${waiting ? db`FALSE` : stillWrong} AS reported_still_wrong
       FROM pipeline_feedback f
@@ -253,14 +257,15 @@ function time(value: string | Date | null | undefined): number {
  * Pure: is the named error gone? The named fee is judged while it is still live. Once it is down
  * (a takedown names a fee already down), only the fees the re-run extracted in its place are
  * judged: live fees in its category whose raw observation is newer than the error, from the
- * error's document when it names one. A fee that has been live all along proves nothing about the
+ * error's document when it names one (any document once a newer copy has replaced it, as the
+ * re-run guard counts). A fee that has been live all along proves nothing about the
  * fix, so it is never counted. Every judged fee must pass the fresh audit's checks. With no
  * re-extracted fee the error is `not_reproduced`: the fix did not bring a right fee back, so the
  * row stays open. A fee with no stored text is unknown, never closed, and so is a named fee still
  * published but not among the dollar fees judged here (a rate) or one with no category.
  */
 export function judgeErrorFix(
-  row: Pick<NamedErrorRow, "fee_published_id" | "canonical_fee_key" | "created_at" | "source_document_id">,
+  row: Pick<NamedErrorRow, "fee_published_id" | "canonical_fee_key" | "created_at" | "source_document_id" | "document_replaced">,
   live: ErrorFixFee[],
   texts: InstitutionText[],
   evidence?: FreshAuditEvidence,
@@ -272,7 +277,7 @@ export function judgeErrorFix(
   const fees = own.length > 0 ? own : live.filter((fee) =>
     fee.canonical_fee_key === row.canonical_fee_key
     && time(fee.raw_created_at) > errorAt
-    && (row.source_document_id == null || Number(fee.source_document_id) === Number(row.source_document_id)));
+    && (row.source_document_id == null || truthy(row.document_replaced) || Number(fee.source_document_id) === Number(row.source_document_id)));
   const judged = fees.map((fee) => Number(fee.fee_published_id));
   if (fees.length === 0) return { verdict: "not_reproduced", judged };
   const byInstitution = new Map<number, InstitutionText[]>();
