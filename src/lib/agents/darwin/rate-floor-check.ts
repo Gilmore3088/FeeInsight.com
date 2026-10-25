@@ -27,10 +27,11 @@ type SqlTag = typeof sql;
  *
  * Dry run, prod read-only, 2026-10-25 (fixture `__fixtures__/rate-floor-live-2026-10-25.json`): the
  * prefilter selects 58 live flat fees at 53 institutions, and 53 at 48 institutions are such floors,
- * 2 of them beside the bank's live rate fee at that percentage (13406, 68415). The 5 kept price the fee
- * on their own: the floor on the line is another fee's (20404, 132118, 53988, 83788) or ends a wrapped
- * line above (80150). The switch stays off until a reviewer reads a sample against each bank's stored
- * text (sampled-clean rule, DECISIONS 2026-10-20).
+ * 2 of them beside the bank's live rate fee at that percentage (13406, 68415). 4 are kept because the
+ * fee's own price stands alone and the floor on the line is another fee's (20404, 132118, 53988,
+ * 83788). 1 is missed: 80150 is a floor (stored text 242, "C a sh Adva nce. ......$5.00 or 2% whichever
+ * is great er"), missed for a misaligned excerpt and spaced OCR text. The switch stays off until a
+ * reviewer reads a sample against each bank's stored text (sampled-clean rule, DECISIONS 2026-10-20).
  */
 export const RATE_FLOOR_CHECK = "darwin.rate_floor";
 export const RATE_FLOOR_CHECK_VERSION = 1;
@@ -110,7 +111,7 @@ export function findRateFloors(rows: RateFloorRow[]): RateFloorFindings & { matc
     if (seen.has(feeId)) continue;
     seen.add(feeId);
     const name = (row.fee_name ?? "").trim();
-    const floor = rateFloorOf(`${name} | ${storedLine(row.source_line)}`, row.amount);
+    const floor = rateFloorOf(storedLine(row.source_line), row.amount, name);
     if (!floor) continue;
     const rateTwinLive = (row.live_rates ?? []).some((rate) => Math.abs(Number(rate) - floor.ratePercent) < 0.0001);
     matches.push({

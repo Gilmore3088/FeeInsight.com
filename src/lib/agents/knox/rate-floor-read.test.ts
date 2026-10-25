@@ -44,6 +44,11 @@ describe("rateFeeFromHeld reads a floor stated before the rate (#1615)", () => {
     expect(rateFeeFromHeld(held("Cash Advance Fee", line, "cash_advance"), line)).toMatchObject({ ratePercent: 2, rateMinAmount: 5, rateMaxAmount: null });
   });
 
+  it("keeps a figure held when the line has both greater-of and lesser-of words (review of #2673)", () => {
+    const line = "Cash Advance Fee | $10 or 3% of the advance, whichever is greater; balance transfers whichever is less";
+    expect(rateFeeFromHeld(held("Cash Advance Fee", line, "cash_advance"), line)).toBe("several_rates");
+  });
+
   it("reads '$Y or X%, whichever is less' as the rate's cap", () => {
     const line = "Loan Late Fee | $30.00 or 5% of the payment, whichever is less";
     expect(rateFeeFromHeld(held("Loan Late Fee", line, "late_payment"), line)).toMatchObject({ ratePercent: 5, rateMinAmount: null, rateMaxAmount: 30 });

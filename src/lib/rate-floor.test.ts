@@ -30,8 +30,6 @@ const KEPT: [number, string, number][] = [
   [132118, "Account Closed within 3 mos. of Opening………........……...…….$20.00 | Non-Member................................Greater of 1% of Check or $10.00", 20],
   [53988, "ATM NSF Fee + | $29.50 | - 2% of each transfer or $20.00 whichever is greater", 29.5],
   [83788, "Skip-A-Pay/loan payment deferment (per month) …………….………. $9 | ($10 or 3% of the amount of each transfer, whichever is greater)", 9],
-  // The percentage clause ends a wrapped line above; the price on this row stands alone.
-  [80150, "or 2% whichever is greater Cash Advance ………………… $5.00", 5],
   // A lesser-of cap is a different charge.
   [0, "Late Fee | $30 or 5% of payment, whichever is less", 30],
   [0, "Wire Transfer | $25 | International 1% conversion", 25],
@@ -44,6 +42,35 @@ describe("rateFloorOf (#1615): a percentage charge's floor is not a flat fee", (
   it.each(KEPT)("live %s keeps its flat price", (_id, line, amount) => {
     expect(pricesRateFloor(line, amount)).toBe(false);
   });
+  it("misses live 80150 today: a misaligned excerpt and spaced OCR text (known miss)", () => {
+    // 80150 is a floor: stored text 242 reads "C a sh Adva nce. ......$5.00 or 2% whichever is great
+    // er". Knox stored a misaligned excerpt (the rate clause ends the line above), and the OCR spacing
+    // breaks "greater" in the text itself, so neither the excerpt nor the stored line reads as one.
+    expect(pricesRateFloor("or 2% whichever is greater Cash Advance ………………… $5.00", 5, "Cash Advance")).toBe(false);
+    expect(pricesRateFloor("C a sh Adva nce. ......$5.00 or 2% whichever is great er", 5, "Cash Advance")).toBe(false);
+  });
+
+  it("reads only the fee's own figure, after its name (review of #2673)", () => {
+    // Another fee's floor at the same amount before the fee's own price.
+    expect(pricesRateFloor("Cash advance $10 or 3%, whichever is greater | Overdraft $10", 10, "Overdraft")).toBe(false);
+    expect(rateFloorOf("Cash advance $10 or 3%, whichever is greater | Overdraft $10", 10, "Cash advance")).toMatchObject({ ratePercent: 3 });
+    // Two columns, each its own floor: each fee takes the rate after its own name.
+    const twoColumns = "Cash Advance | $5 or 2%, whichever is greater | Check Cashing | $5 or 1%, whichever is greater";
+    expect(rateFloorOf(twoColumns, 5, "Cash Advance")).toMatchObject({ ratePercent: 2 });
+    expect(rateFloorOf(twoColumns, 5, "Check Cashing")).toMatchObject({ ratePercent: 1 });
+    // A flat price whose next column is another fee's floor at the same amount.
+    expect(pricesRateFloor("Overdraft | $10 | Cash Advance | $10 or 3%, whichever is greater", 10, "Overdraft")).toBe(false);
+  });
+
+  it("needs the greater-of words in the rate's own clause (review of #2673)", () => {
+    expect(pricesRateFloor("Late fee $15 or 5% whichever is less. Cash advance greater of $15 or 2%", 15, "Late fee")).toBe(false);
+    expect(pricesRateFloor("Cash advance: $10 or 3%, whichever is lesser. Balance transfer: greater of 2% or $10", 10, "Cash advance")).toBe(false);
+    // A sentence end right before the whichever clause keeps it one clause.
+    expect(pricesRateFloor("Late Payment $20 or 5% of payment. Whichever is greater", 20, "Late Payment")).toBe(true);
+    // The other fee's own floor on such a line is still read.
+    expect(rateFloorOf("Late fee $15 or 5% whichever is less. Cash advance greater of $15 or 2%", 15, "Cash advance")).toMatchObject({ ratePercent: 2 });
+  });
+
   it("matches the figure in any written form", () => {
     expect(pricesRateFloor("Check Cashing | $ 10 or 2% of face value, whichever is greater", "10.00")).toBe(true);
     expect(pricesRateFloor("Coin counting | $1,000.00 or 1%, whichever is greater", 1000)).toBe(true);

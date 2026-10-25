@@ -660,8 +660,8 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
       // charge can be, not its price. It is held as the percentage, so the rate pass below files the
       // rate fee with this floor as its rate_min_amount (or keeps it held), never a flat fee.
       const floorLine = [candidate.excerpt, checked.row]
-        .find((line): line is string => !!line && rateFloorOf(`${candidate.feeName} | ${line}`, candidate.amount) !== null);
-      const floor = floorLine ? rateFloorOf(`${candidate.feeName} | ${floorLine}`, candidate.amount) : null;
+        .find((line): line is string => !!line && rateFloorOf(line, candidate.amount, candidate.feeName) !== null);
+      const floor = floorLine ? rateFloorOf(floorLine, candidate.amount, candidate.feeName) : null;
       if (floorLine && floor) {
         const row: HeldFeeCandidate = {
           shape: "percentage",

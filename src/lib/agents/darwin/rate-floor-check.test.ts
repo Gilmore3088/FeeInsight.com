@@ -32,8 +32,11 @@ describe("Darwin's rate floor re-check (#1615)", () => {
     expect(found.institutions).toBe(48);
     expect(found.rateTwinLive).toBe(2);
     const matched = new Set(found.matches.map((fee) => fee.feePublishedId));
-    // Kept: the fee's own price, with another fee's floor beside it or a wrapped line above.
-    for (const kept of [20404, 53988, 80150, 83788, 132118]) expect(matched.has(kept)).toBe(false);
+    // Kept: the fee's own price, with another fee's floor beside it.
+    for (const kept of [20404, 53988, 83788, 132118]) expect(matched.has(kept)).toBe(false);
+    // Known miss: 80150 is a floor ("C a sh Adva nce. ......$5.00 or 2% whichever is great er", text
+    // 242), missed for its misaligned excerpt and spaced OCR text.
+    expect(matched.has(80150)).toBe(false);
     expect(found.matches.filter((fee) => fee.rateTwinLive).map((fee) => fee.feePublishedId)).toEqual([13406, 68415]);
   });
 

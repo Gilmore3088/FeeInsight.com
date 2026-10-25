@@ -152,13 +152,18 @@ export function rateFeeFromHeld(
   // "Greater of 10% or $29.00", "5% of payment or $30.00, whichever is lower".
   const or = /\bor\s+\$\s?(\d{1,4}(?:\.\d{2})?)/i.exec(after);
   const greater = /\bgreater of\b|whichever is (?:greater|more|higher)/i.test(excerpt);
-  const lower = /\blesser of\b|whichever is (?:less|lower|smaller)/i.test(excerpt);
+  const lower = /\blesser of\b|whichever is (?:less|lesser|lower|smaller)/i.test(excerpt);
   // #1615: the dollar figure can come first ("$5.00 or 3% of each cash advance, whichever is greater",
   // "Greater of $10 or 5% of Scheduled Pmt").
   const orBefore = OR_BEFORE_RATE.exec(excerpt.slice(0, rates[0].start));
   const bound = or ?? orBefore;
-  const rateMinAmount = amountOf(MIN_AMOUNT.exec(after)) ?? (bound && greater ? amountOf(bound) : null);
-  const rateMaxAmount = amountOf(MAX_AMOUNT.exec(after)) ?? (bound && lower ? amountOf(bound) : null);
+  const statedMin = amountOf(MIN_AMOUNT.exec(after));
+  const statedMax = amountOf(MAX_AMOUNT.exec(after));
+  // Review of #2673: a line with both greater-of and lesser-of words does not say which one the
+  // "or" figure is; it would become both the floor and the cap. Keep it held.
+  if (bound && greater && lower && statedMin === null && statedMax === null) return "several_rates";
+  const rateMinAmount = statedMin ?? (bound && greater ? amountOf(bound) : null);
+  const rateMaxAmount = statedMax ?? (bound && lower ? amountOf(bound) : null);
   // A cap below the floor is a misread; the tiers' CHECK would reject it too.
   if (rateMinAmount !== null && rateMaxAmount !== null && rateMaxAmount < rateMinAmount) return "several_rates";
   return {

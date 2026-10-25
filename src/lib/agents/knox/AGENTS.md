@@ -291,7 +291,9 @@ Scheduled Pmt" and "Merchant Check Cashing (Greater of 10% of Item or $10)" cost
 dollar figure is the least the charge can be. Such a read is held as the percentage, so the rate pass
 files the rate fee with the floor as `rate_min_amount` where the category publishes rates, and keeps it
 held elsewhere; `rateFeeFromHeld` now reads a "$Y or X%" floor (or a lesser-of cap) stated before the
-rate. Only the fee's own figure joined to the rate by "or" counts: another fee's floor on the same line
+rate (a line with both greater-of and lesser-of words stays held). Only the fee's own figure, the
+first at its amount after its name, joined to the rate by "or" with no lesser-of words or sentence end
+before the greater-of words, counts: another fee's floor on the same line
 ("ATM NSF Fee + | $29.50 | - 2% of each transfer or $20.00 whichever is greater"), a lesser-of cap and a
 figure in another cell keep the read. Oct 25 dry run: 53 of the 58 live flat fees (48 institutions)
 whose stored line carries greater-of wording and a percentage are such floors, each read on its stored
