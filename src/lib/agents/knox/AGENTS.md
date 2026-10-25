@@ -284,10 +284,10 @@ fees found (54.7%); 56 of the 59 wrong reads are the right price under another c
 
 ## Rules versions (`extract.rules`)
 
-v115 (Oct 25, #1947): a read filed as the account's monthly maintenance fee whose own line prices it
+v116 (Oct 25, #1947): a read filed as the account's monthly maintenance fee whose own line prices it
 as the paper statement charge is the paper statement fee, named "Paper statement fee" unless its name
 already says so (`paperStatementRead` in `rules.ts`, reading the line with `paperStatementPriceOnLine`
-in `src/lib/paper-statement-price.ts`, the matcher category guard v91 uses). The words right after the
+in `src/lib/paper-statement-price.ts`, the matcher category guard v92 uses). The words right after the
 price name a paper statement fee or a charge per or for each paper statement ("Service charge | $3.00
 paper statement fee each statement cycle", "$3.50 charge for each original paper statement", "$5 per
 paper statement", "$1.00 per month (paper statement)"), charge it only for receiving paper ("*A monthly
@@ -2111,7 +2111,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v115 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v116 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v10 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |
