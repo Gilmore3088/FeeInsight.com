@@ -286,7 +286,14 @@ import { withGluedFootnotePrices } from "@/lib/custom-report/glued-footnote-pric
 // late fees were still read as a loan's late payment today. The shared check refuses such a fee filed
 // as late_payment, so the self-check, Darwin's verify and source check v25 agree. The stale-read
 // floor stays at v97. Name re-tidy stays at v27.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 111 } as const;
+// v112 (#1877): a credit union's "Draft Protection Fee" (share-draft wording) is filed as the
+// overdraft fee (`DRAFT_PROTECTION_FEE`, shared with guard v89).
+// Abbey FCU's "Draft Protection Fee (Paid) per presentment * $30.00" and Members Choice's "Draft
+// Protection Fee * | $30.00 per Presentment" were set aside with no category; the held recheck
+// re-reads set-aside lines on a version bump, so both go to Darwin. On 2026-10-25 the wording matched
+// 4 raw rows at 2 institutions (5827, 8749), none live. Categories only; prices and names are
+// unchanged. The stale-read floor stays at v97. Name re-tidy stays at v27.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 112 } as const;
 
 export interface SpecialistRun {
   strategy: string;
