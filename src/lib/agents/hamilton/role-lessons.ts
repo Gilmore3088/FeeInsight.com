@@ -306,4 +306,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-1726-thin-median-and-place-names",
+    agent: "hamilton",
+    stage: "written answer",
+    lesson: "Before cutting a median as too thin, work out which fee it describes: the fee named beside the figure, then in the sentence, then in earlier sentences, then in the question. Cut it only when that fee has fewer than the minimum peers; with no fee named, cut only when the figure is exactly one thin fee's median. A place or institution that shares an internal system's name (a town, a credit union, a bank check) is ordinary text, never a leak.",
+    why: "The golden-set replay found the thin-median rule fell back to the thinnest fee and held correct wire, monthly service and courtesy pay medians, and that the internal-name check held real sentences about Deming, New Mexico and Deming Schools Employees FCU.",
+    evidence: { issues: [1726], prs: [2642], files: ["src/lib/hamilton/output-gate.ts", "src/lib/hamilton/workspace/four-roles.ts", "src/lib/hamilton/workspace/fee-phrases.ts", "src/lib/hamilton/persona-golden-set.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];
