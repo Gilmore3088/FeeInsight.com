@@ -210,11 +210,12 @@ function checkAlias(alias: string): void {
  * source_documents row (institution_id is NOT NULL), so the document id alone never links
  * them. A vendor download path gives no keys. With the switch off it is NULL.
  */
-export function scheduleKeysSql(alias = "ef", enabled = COUNT_SHARED_SCHEDULE_ONCE): string {
+export function scheduleKeysSql(alias = "ef", enabled = COUNT_SHARED_SCHEDULE_ONCE, joinedTextAlias?: string): string {
   checkAlias(alias);
+  if (joinedTextAlias) checkAlias(joinedTextAlias);
   if (!enabled) return "NULL::text[]";
   const url = `lower(regexp_replace(regexp_replace(regexp_replace(${alias}.document_url, '^https?://(www\\.)?', '', 'i'), '#.*$', ''), '/+$', ''))`;
-  const textHash = `(SELECT ast.text_hash FROM agent_source_texts ast
+  const textHash = joinedTextAlias ? `${joinedTextAlias}.text_hash` : `(SELECT ast.text_hash FROM agent_source_texts ast
      WHERE ast.source_document_id = ${alias}.source_document_id AND ast.char_count >= ${MIN_LINKING_TEXT_CHARS})`;
   return `CASE WHEN COALESCE(${alias}.document_url, '') ~* '${VENDOR_DOWNLOAD_PATH_SQL}' THEN NULL::text[]
     ELSE array_remove(ARRAY[NULLIF('u:' || ${url}, 'u:'), 't:' || ${textHash}], NULL) END`;

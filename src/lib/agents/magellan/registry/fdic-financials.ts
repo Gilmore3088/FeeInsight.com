@@ -338,6 +338,9 @@ async function upsertChunk(db: RegistryDb, records: ReturnType<typeof toRecord>[
         source_url = EXCLUDED.source_url,
         agent_run_id = EXCLUDED.agent_run_id,
         fetched_at = NOW()
+      -- Partition receipts record successful rechecks; unchanged facts keep their original row.
+      WHERE ROW(f.source_cert_number, f.total_assets, f.total_deposits, f.total_loans, f.total_equity, f.total_securities, f.net_income, f.net_interest_income, f.other_noninterest_income, f.noninterest_expense, f.provision_for_losses, f.service_charge_income, f.net_charge_offs, f.noncurrent_loans, f.loans_real_estate, f.loans_commercial, f.loans_consumer, f.loans_credit_card, f.loans_auto, f.loans_agricultural, f.core_deposits, f.brokered_deposits, f.uninsured_deposits, f.total_revenue, f.fee_income_ratio, f.roa, f.roe, f.net_interest_margin, f.efficiency_ratio, f.net_charge_off_rate, f.noncurrent_loan_rate, f.leverage_ratio, f.tier1_capital_ratio, f.total_capital_ratio, f.employee_count, f.branch_count, f.raw_json, f.source_url)
+        IS DISTINCT FROM ROW(EXCLUDED.source_cert_number, EXCLUDED.total_assets, EXCLUDED.total_deposits, EXCLUDED.total_loans, EXCLUDED.total_equity, EXCLUDED.total_securities, EXCLUDED.net_income, EXCLUDED.net_interest_income, EXCLUDED.other_noninterest_income, EXCLUDED.noninterest_expense, EXCLUDED.provision_for_losses, EXCLUDED.service_charge_income, EXCLUDED.net_charge_offs, EXCLUDED.noncurrent_loans, EXCLUDED.loans_real_estate, EXCLUDED.loans_commercial, EXCLUDED.loans_consumer, EXCLUDED.loans_credit_card, EXCLUDED.loans_auto, EXCLUDED.loans_agricultural, EXCLUDED.core_deposits, EXCLUDED.brokered_deposits, EXCLUDED.uninsured_deposits, EXCLUDED.total_revenue, EXCLUDED.fee_income_ratio, EXCLUDED.roa, EXCLUDED.roe, EXCLUDED.net_interest_margin, EXCLUDED.efficiency_ratio, EXCLUDED.net_charge_off_rate, EXCLUDED.noncurrent_loan_rate, EXCLUDED.leverage_ratio, EXCLUDED.tier1_capital_ratio, EXCLUDED.total_capital_ratio, EXCLUDED.employee_count, EXCLUDED.branch_count, EXCLUDED.raw_json, EXCLUDED.source_url)
       RETURNING 1
     ), unmatched AS (
       INSERT INTO institution_financial_records AS f (
@@ -362,6 +365,9 @@ async function upsertChunk(db: RegistryDb, records: ReturnType<typeof toRecord>[
         source_url = EXCLUDED.source_url,
         agent_run_id = EXCLUDED.agent_run_id,
         fetched_at = NOW()
+      -- Partition receipts record successful rechecks; unchanged facts keep their original row.
+      WHERE ROW(f.total_assets, f.total_deposits, f.total_loans, f.total_equity, f.net_income, f.service_charge_income, f.roa, f.raw_json, f.source_url)
+        IS DISTINCT FROM ROW(EXCLUDED.total_assets, EXCLUDED.total_deposits, EXCLUDED.total_loans, EXCLUDED.total_equity, EXCLUDED.net_income, EXCLUDED.service_charge_income, EXCLUDED.roa, EXCLUDED.raw_json, EXCLUDED.source_url)
       RETURNING 1
     ), stale_detached AS (
       -- An institution's row under today's certificate for a quarter POR says it filed under

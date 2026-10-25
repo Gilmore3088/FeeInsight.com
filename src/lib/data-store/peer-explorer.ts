@@ -74,7 +74,9 @@ interface FactRow {
  * publishing at least one approved fee. Alias is code, not input.
  */
 export function explorerMemberSql(alias: string): string {
-  return `${activeInstitutionFilter(alias)} AND EXISTS (SELECT 1 FROM published_fee_catalog p WHERE p.institution_id = ${alias}.id AND p.review_status = 'approved')`;
+  return `${activeInstitutionFilter(alias)} AND ${alias}.id IN (
+    WITH eligible AS MATERIALIZED (SELECT DISTINCT institution_id FROM published_fee_catalog WHERE review_status = 'approved')
+    SELECT institution_id FROM eligible)`;
 }
 
 /** Whether a member may be named as a peer at all (buildPeerExplorerSet leaves the rest out). */

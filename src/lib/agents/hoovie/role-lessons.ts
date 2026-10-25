@@ -6,6 +6,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const HOOVIE_LESSONS: AgentLesson[] = [
   {
+    id: "issue-1870-storage-handoff",
+    agent: "hoovie",
+    stage: "public-data storage",
+    lesson: "Before moving an old period out of Postgres, prove its file equals the current facts and that historical readers still work; keep the filing identity witnesses other loaders need. Store repeated definitions separately and leave an unchanged fact alone while recording the recheck on its partition.",
+    why: "The storage-tier foundation had export disabled and no pruning handoff; moving all rows would also remove the POR certificate witnesses that attach old FDIC filings to the right bank.",
+    evidence: { issues: [1870], prs: [], files: ["src/lib/agents/hoovie/call-period-prune.ts", "src/lib/data-store/call-item-storage.ts", "docs/plans/database-growth-controls-2026-10-25.md"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
+  {
     id: "issue-2306",
     agent: "hoovie",
     stage: "registry load",

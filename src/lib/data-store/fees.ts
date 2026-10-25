@@ -1,5 +1,5 @@
 import { sql } from "./connection";
-import { COUNT_SHARED_SCHEDULE_ONCE, STATS_ROW_FILTER, STATS_SCHEDULE_KEYS, activeInstitutionFilter, countedValuePerInstitution, summarizeFeesBy, type StatsInputRow } from "./fee-stats";
+import { COUNT_SHARED_SCHEDULE_ONCE, MIN_LINKING_TEXT_CHARS, scheduleKeysSql, STATS_ROW_FILTER, STATS_SCHEDULE_KEYS, activeInstitutionFilter, countedValuePerInstitution, summarizeFeesBy, type StatsInputRow } from "./fee-stats";
 import { consumerPriceMoveSql } from "./consumer-price-moves";
 import type { FeeReview } from "./types";
 import { institutionDisplayName } from "@/lib/institution-display-name";
@@ -113,9 +113,12 @@ export function computeStats(amounts: number[]): {
 export async function getFeeCategorySummaries(): Promise<FeeCategorySummary[]> {
   const rows = await sql`
     SELECT ef.fee_category, ef.amount, ef.institution_id, ct.charter_type, ef.fee_audience,
-           ${sql.unsafe(STATS_SCHEDULE_KEYS)}
+           ${sql.unsafe(scheduleKeysSql("ef", COUNT_SHARED_SCHEDULE_ONCE, "stats_text"))} AS schedule_keys,
+           ${sql.unsafe(COUNT_SHARED_SCHEDULE_ONCE ? "NULLIF(NULLIF(btrim(ct.holding_company_rssd), ''), '0')" : "NULL::text")} AS schedule_group
     FROM published_fee_catalog ef
     JOIN institution_sources ct ON ef.institution_id = ct.id
+    LEFT JOIN agent_source_texts stats_text
+      ON stats_text.source_document_id = ef.source_document_id AND stats_text.char_count >= ${MIN_LINKING_TEXT_CHARS}
     WHERE ef.fee_category IS NOT NULL
       AND ef.review_status = 'approved'
       AND ${sql.unsafe(STATS_ROW_FILTER)}

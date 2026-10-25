@@ -36,7 +36,11 @@ export async function recordAttempt(db: SqlTag, attempt: AttemptRecord): Promise
   const yieldCount = Math.max(0, Math.floor(attempt.yieldCount));
   const costMicrousd = Math.max(0, Math.floor(attempt.costMicrousd));
   const detail = JSON.stringify(attempt.detail ?? {});
-  if (attempt.skipRepeat) {
+  // Re-entering the same ledger step may repeat a free deterministic decision. Keep its
+  // first identical receipt; different runs, paid work and counted fetch retries stay whole.
+  const sameStepRepeat = costMicrousd === 0 && attempt.runId != null && attempt.stepId != null
+    && ["extract", "verify", "publish"].includes(attempt.stage);
+  if (attempt.skipRepeat || sameStepRepeat) {
     // Found through pipeline_attempts_input_idx (input_fingerprint, strategy, strategy_version).
     await db`
       INSERT INTO pipeline_attempts (
@@ -61,6 +65,9 @@ export async function recordAttempt(db: SqlTag, attempt: AttemptRecord): Promise
            AND pa.outcome = ${attempt.outcome}
            AND pa.yield_count = ${yieldCount}
            AND pa.cost_microusd = ${costMicrousd}
+           AND (${Boolean(attempt.skipRepeat)} OR (
+             pa.agent_run_id = ${attempt.runId ?? null} AND pa.agent_run_step_id = ${attempt.stepId ?? null}
+           ))
            AND pa.detail = ${detail}::jsonb
       )
     `;

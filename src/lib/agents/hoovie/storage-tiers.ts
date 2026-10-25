@@ -1,3 +1,5 @@
+import { callItemFactsRelation } from "@/lib/data-store/call-item-storage";
+import { CALL_PERIOD_PRUNE_LIVE, CALL_PERIOD_RESTORE_TARGET, pruneCallPeriod, restoreCallPeriod } from "./call-period-prune";
 import type { sql } from "@/lib/data-store/connection";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { STORAGE_STEP_KEY } from "@/lib/agents/atlas/storage-retention";
@@ -20,9 +22,9 @@ type SqlTag = typeof sql;
  * Two things stay off:
  * - Export (`COLD_EXPORT_LIVE`): writing a cold period to R2 and its index row. Writes no
  *   existing row. Turned on by a later PR once James says yes.
- * - Pruning: removing the hot rows a verified file holds. No code here deletes any row; a prune
- *   is a production data change and waits for James's yes, with this step's dry-run count and
- *   size. Readers use a file only once its index row has `pruned_at` set.
+ * - Pruning: `call-period-prune.ts` compares the current period to its verified file before an
+ *   atomic removal. This production data change remains off pending a reviewed manifest and
+ *   restore/consumer acceptance. Readers use a file only once its index row has `pruned_at` set.
  */
 
 /** Turns on by PR, after James's yes. While false, nothing is written to R2 or the index table. */
@@ -45,9 +47,9 @@ export const COLD_TIER_POLICY: readonly ColdTierPolicy[] = [
   {
     table: "institution_call_report_items",
     sources: ["ffiec", "ncua"],
-    // Two years of quarters: the newest quarter that the peer, cost-of-deposits and account-size
-    // reads use, plus year-over-year and a two-year trend for Hamilton's series.
-    hotPeriods: 8,
+    // Three years of quarters: the newest quarter that the peer, cost-of-deposits and account-size
+    // reads use, plus year-over-year and the twelve-quarter CFO view for Hamilton's series.
+    hotPeriods: 12,
     why: "About 3.6 GB and 8.7 million rows on Oct 17, 2026, almost all of it back-filled history.",
   },
 ];
@@ -133,6 +135,8 @@ export interface ColdTierResult {
   indexReady: boolean;
   tables: ColdTierTable[];
   exported: ColdExportResult[];
+  pruned?: Array<{ source: string; period: string; deleted: number; status: string }>;
+  restored?: { source: string; period: string; rows: number };
   /** "source|period" -> rows, carried to the next run. */
   counts: Record<string, number>;
   error?: string;
@@ -267,16 +271,18 @@ export async function exportCallPeriod(
       const query = scope<Array<Record<string, unknown>>>`
         SELECT id::text AS id, institution_id::text AS institution_id, source, report_date::text AS report_date,
                item_code, item_key, item_description, schedule, value::text AS value, unit, period_basis,
-               source_url, agent_run_id::text AS agent_run_id, fetched_at
-          FROM institution_call_report_items
+               source_url, agent_run_id::text AS agent_run_id,
+               to_char(fetched_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS fetched_at
+          FROM ${scope.unsafe(await callItemFactsRelation(scope))}
          WHERE source = ${args.source} AND report_date = ${args.period}::date
+         ORDER BY id
       `;
       for await (const batch of query.cursor(EXPORT_CURSOR_ROWS)) writer.push(batch);
       const file = writer.finish();
-      const objectKey = coldObjectKey(table, args.source, args.period);
+      const objectKey = coldObjectKey(table, args.source, `${args.period}.${file.sha256}`);
       await store.put(objectKey, file.bytes);
       decodeColdFile(await store.get(objectKey), { expected: { sha256: file.sha256, rowCount: file.rowCount }, lineFilter: () => false });
-      await scope`
+      const indexed = await scope`
         INSERT INTO public_data_cold_files
           (table_name, source, period, bucket, object_key, format, columns, row_count, byte_size, sha256,
            hot_bytes_estimate, agent_run_id, verified_at)
@@ -289,7 +295,9 @@ export async function exportCallPeriod(
               hot_bytes_estimate = EXCLUDED.hot_bytes_estimate, agent_run_id = EXCLUDED.agent_run_id,
               written_at = NOW(), verified_at = NOW()
           WHERE public_data_cold_files.pruned_at IS NULL
+        RETURNING id
       `;
+      if (indexed.length !== 1) throw new Error("Archive index changed or the period was already pruned; existing archive kept");
       return { ...base, status: "exported" as const, rowCount: file.rowCount, byteSize: file.bytes.length, objectKey };
     });
   } catch (error) {
@@ -299,10 +307,10 @@ export async function exportCallPeriod(
 
 /**
  * The daily plan: which periods are cold, their row counts so far and the size a prune would
- * free. Exports only when switched on. Never throws, never deletes.
+ * free. Export and atomic pruning require their separate switches. Default operation is read-only.
  */
 export async function runColdTier(
-  options: { db: SqlTag; dryRun?: boolean; exportLive?: boolean; store?: ColdStore; runId?: number | null },
+  options: { db: SqlTag; dryRun?: boolean; exportLive?: boolean; pruneLive?: boolean; restore?: { source: "ffiec" | "ncua"; period: string }; store?: ColdStore; runId?: number | null },
 ): Promise<ColdTierResult> {
   const { db } = options;
   const store = options.store ?? getColdStore();
@@ -337,7 +345,7 @@ export async function runColdTier(
             cold.push({ source, period, rows, file: fileState(file) });
           }
         }
-        const countedRows = cold.reduce((sum, p) => sum + (p.rows ?? 0), 0);
+        const countedRows = cold.filter((p) => p.file !== "pruned").reduce((sum, p) => sum + (p.rows ?? 0), 0);
         result.tables.push({
           table: policy.table,
           hotPeriods: policy.hotPeriods,
@@ -355,6 +363,17 @@ export async function runColdTier(
     return result;
   }
 
+  const restoreTarget = options.restore ?? CALL_PERIOD_RESTORE_TARGET;
+  if (!options.dryRun && restoreTarget && result.indexReady) {
+    try {
+      const rows = await inSavepoint(db, (scope) => restoreCallPeriod(scope, store, restoreTarget));
+      result.restored = { ...restoreTarget, rows };
+      for (const table of result.tables) for (const period of table.cold) {
+        if (period.source === restoreTarget.source && period.period === restoreTarget.period) period.file = "verified";
+      }
+    } catch (error) { result.error = `Archive restore held: ${message(error)}`; }
+    return result; // A rollback step never exports or prunes in the same pass.
+  }
   if (exportLive && result.indexReady) {
     for (const table of result.tables) {
       const next = table.cold.filter((p) => p.file === "none").slice(0, EXPORT_PARTITIONS_PER_RUN);
@@ -365,6 +384,15 @@ export async function runColdTier(
       }
     }
   }
+  if (!options.dryRun && (options.pruneLive ?? CALL_PERIOD_PRUNE_LIVE) && result.indexReady) {
+    const next = result.tables.flatMap((t) => t.cold).find((p) => p.file === "verified");
+    if (next && (next.source === "ffiec" || next.source === "ncua")) {
+      try {
+        const receipt = await inSavepoint(db, (scope) => pruneCallPeriod(scope, store, { source: next.source as "ffiec" | "ncua", period: next.period }));
+        result.pruned = [{ source: next.source, period: next.period, ...receipt }];
+      } catch (error) { result.error = `Archive prune held: ${message(error)}`; }
+    }
+  }
   return result;
 }
 
@@ -373,7 +401,9 @@ export function coldTierDetail(result: ColdTierResult): Record<string, unknown> 
     export_live: result.exportLive,
     store_configured: result.storeConfigured,
     index_ready: result.indexReady,
-    prune: "not built; waits for James's yes",
+    prune: CALL_PERIOD_PRUNE_LIVE ? "enabled" : "implemented; off pending reviewed rollout",
+    pruned: result.pruned ?? [],
+    restored: result.restored ?? null,
     counts: result.counts,
     tables: result.tables.map((t) => ({
       table: t.table,

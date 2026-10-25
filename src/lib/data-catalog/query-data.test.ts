@@ -405,7 +405,7 @@ describe("queryData: call-report lines", () => {
     ];
     const result = await queryData({ measure: CALL, scope: { kind: "institution", id: "12" } });
     const { text, values } = lastQuery();
-    expect(text).toContain("institution_call_report_items");
+    expect(values).toContainEqual({ unsafe: "institution_call_report_items" });
     expect(values).toContain(12);
     expect(values).toContain("service_charges_deposits_ytd");
     expect(values).toContainEqual(["ffiec", "ncua"]);

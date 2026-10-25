@@ -352,3 +352,11 @@ fails a PR that changes one of these constants without updating its line here (#
 |---|---|---|---|
 | `SCHEDULE_CHECK_VERSION` | — | v1 | `atlas/schedule-check.ts` |
 | `ANSWER_KEY_RELABEL_VERSION` | — | v1 | `atlas/answer-key-relabels.ts` |
+
+## Bounded storage compaction
+
+The existing `atlas-storage-retention` step also records `storage_compaction` from Hoovie's
+`storage-compaction.ts`; historical conversion is off by default. It uses savepoint rollback,
+5,000-row batches and explicit cursor receipts, never a side script. Archive removal remains
+off pending the dated twelve-quarter rollout and restore/consumer acceptance in
+`docs/plans/database-growth-controls-2026-10-25.md`. No new scheduler or provider work is added.
