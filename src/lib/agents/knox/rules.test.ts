@@ -1906,6 +1906,24 @@ describe("Knox v114: a sentence's priced noun phrase names and files its fee", (
     expect(billPay?.canonicalHint).toBe("bill_pay");
   });
 
+  // Review of #2637 (B1): outside overdraft/nsf, the words before are the more specific fee.
+  it.each([
+    ["For incoming international wires, an incoming wire fee of $15.00", "wire_intl_incoming"],
+    ["Outgoing international wire an outgoing wire fee of $45", "wire_intl_outgoing"],
+    ["Wire transfers outgoing international an outgoing wire fee of $45", "wire_intl_outgoing"],
+    ["Deposited items returned unpaid will be charged a returned item fee of $10", "deposited_item_return"],
+    ["Garnishments and levies: a legal processing fee of $100", "garnishment_levy"],
+    ["Subpoenas/Summons A Copy Fee of $1.00 per page", "legal_process"],
+  ] as const)("keeps the read of %s", (line, category) => {
+    const [fee] = extractCandidatesFromText(line).candidates;
+    expect(fee?.canonicalHint).toBe(category);
+    expect(fee?.feeName).toBe(nameFrom(line.slice(0, line.indexOf("$"))));
+  });
+
+  it("keeps a family qualifier in the name when the phrase agrees with the read", () => {
+    expect(reads("Business accounts an NSF fee of $30.00 per item")).toEqual([["Business accounts an NSF fee of", 30, "nsf"]]);
+  });
+
   it("leaves a phrase after words that name a fee of their own as read", () => {
     const [fee] = extractCandidatesFromText("Overdraft Transfer Fee - a transfer fee of $5.00 per transfer").candidates;
     expect(fee?.feeName).not.toBe("Transfer fee");

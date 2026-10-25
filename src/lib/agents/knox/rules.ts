@@ -1870,29 +1870,46 @@ const GENERIC_PRICED_PHRASE =
   /^(?:(?:monthly|annual|yearly|quarterly|weekly|daily|service|charge|maintenance|account|inactivity|handling|processing|flat|one[-\s]time|low|modest|small|nominal|minimal|cycle|additional)\s+)*(?:fee|charge)$/i;
 
 /**
+ * v114: words before a priced phrase that say which kind of the phrase's fee it is: a wire's
+ * region or direction ("For incoming international wires, an incoming wire fee of"), a deposited
+ * item ("Deposited items returned unpaid ... a returned item fee of"), legal process ("Garnishments
+ * and levies: a legal processing fee of", "Subpoenas/Summons A Copy Fee of"), an audience or a
+ * product. Cutting them would drop the distinction, so the name keeps them.
+ */
+const FAMILY_QUALIFIER =
+  /\b(?:international|int'?l|foreign|domestic|incoming|outgoing|deposit\w*|garnish\w*|lev(?:y|ies)|subpoena\w*|summons|business|commercial|non[-\s]?members?|youth|student|senior|loans?|mortgages?|heloc|ira|club)\b/i;
+/** v114: the one pair a sentence's priced phrase re-files: an NSF fee cut from overdraft words, or the reverse. */
+const PHRASE_REFILES = new Set(["nsf>overdraft", "overdraft>nsf"]);
+
+/**
  * v114: "... is not sufficient to cover overdrafts an NSF fee of $30.00 per item may also apply"
  * (Reliance State Bank, live fee 140283) prices the fee the sentence names right before the price,
  * the NSF fee (`FEE_OF_SENTENCE`, the noun phrase name re-tidy already names such a sentence by).
  * Classifying the cut words ("overdrafts an NSF fee") filed the price by their first fee word: nsf
- * only while a PDF glyph garbled "Overdrafts", overdraft once the glyph reads. The category is the
- * phrase's; the name is the phrase ("NSF fee") unless cutting the words before it drops a condition
- * (`dropsCondition`: "If your account is overdrawn by more than $5 an overdraft fee of" keeps its
- * name). Only the price's own cell is read, only a line some rule already reads as a fee (a held
+ * only while a PDF glyph garbled "Overdrafts", overdraft once the glyph reads.
+ * - The phrase re-files the read only between overdraft and nsf (`PHRASE_REFILES`). Any other
+ *   disagreement keeps the read's category and name: the words before are then usually the more
+ *   specific fee ("For incoming international wires, an incoming wire fee of" stays international).
+ * - When the categories agree, or after an overdraft/nsf re-file, the name is the phrase ("NSF fee")
+ *   unless the words cut before it carry a condition (`dropsCondition`) or a family qualifier
+ *   (`FAMILY_QUALIFIER`: "Subpoenas/Summons A Copy Fee of" keeps its name).
+ * Only the price's own cell is read, only a line some rule already reads as a fee (`readHint`; a held
  * "you will be required to pay an early closure fee of $750 plus any mortgage ..." stays held), and
- * only when the words before the phrase name no fee of their own ("Overdraft Transfer Fee - a
- * transfer fee of" keeps its read). A combined "NSF/Overdraft Fee (per item)" has no such phrase and
- * stays overdraft (v16, v82). Pure.
+ * only when the phrase is not generic and the words before it name no fee of their own. A combined
+ * "NSF/Overdraft Fee (per item)" has no such phrase and stays overdraft (v16, v82). Pure.
  */
-export function pricedNounPhrase(words: string, amount: number): { name: string | null; hint: string } | null {
+export function pricedNounPhrase(words: string, amount: number, readHint: string): { name: string | null; hint: string } | null {
   const cell = (words.split(CELL_SEPARATOR).at(-1) ?? "").replace(/\s+/g, " ").trim();
   const match = cell.match(FEE_OF_SENTENCE);
-  if (!match || NAMES_A_FEE.test(cell.slice(0, match.index))) return null;
+  const before = match ? cell.slice(0, match.index) : "";
+  if (!match || NAMES_A_FEE.test(before)) return null;
   const phrase = match[1].trim();
   if (GENERIC_PRICED_PHRASE.test(phrase)) return null;
   const name = `${phrase.charAt(0).toUpperCase()}${phrase.slice(1)}`;
   const hint = classifyFeeText(name);
-  if (!hint || !usableName(name) || !passesDarwinChecks(hint, name, amount)) return null;
-  return { name: dropsCondition(cell, name, hint) ? null : name, hint };
+  if (!hint || (hint !== readHint && !PHRASE_REFILES.has(`${readHint}>${hint}`))) return null;
+  if (!usableName(name) || !passesDarwinChecks(hint, name, amount)) return null;
+  return { name: FAMILY_QUALIFIER.test(before) || dropsCondition(cell, name, hint) ? null : name, hint };
 }
 
 /** "You can only be assessed one overdraft fee per day". */
@@ -2352,7 +2369,7 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
     }
   }
   // v114: "... to cover overdrafts an NSF fee of $30.00 per item" is the NSF fee, named "NSF fee".
-  const priced = hint ? pricedNounPhrase(ownWords(0, feeAmounts[0]), feeAmounts[0].value) : null;
+  const priced = hint ? pricedNounPhrase(ownWords(0, feeAmounts[0]), feeAmounts[0].value, hint) : null;
   if (priced) {
     feeName = priced.name ?? feeName;
     hint = priced.hint;
