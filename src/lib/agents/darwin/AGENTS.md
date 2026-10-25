@@ -1236,6 +1236,19 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   `late_charge_bound: <name>` (verified row rejected with the `late_charge_bound` flag). Step
   detail `late_charge_bound_check`. Dry run Oct 25: 5 live fees at 3 institutions (15729, 154636,
   154637 at 4956; 79880 at 5338; 124614 at 6789).
+- A percentage charge's floor read as a flat fee (`rate-floor-check.ts`, #1615). "Cash Advance |
+  Either $5.00 or 3% of the amount of each cash advance, whichever is greater" costs the percentage;
+  the $5 is the least it can be, and went live as a flat $5. Knox v118 no longer reads such a floor as
+  a flat fee (`rateFloorOf`, `src/lib/rate-floor.ts`). Each verify step reads every live flat fee whose
+  stored line carries greater-of wording and a percentage, and `rateFloorOf` decides on the fee's name
+  and line: only the fee's own figure joined to the rate by "or" counts, so another fee's floor on the
+  same line and a lesser-of cap keep the fee. Each match says whether the bank's same-category rate fee
+  at that percentage is live; a takedown never adds a rate fee (Knox's v118 re-read files it). The
+  switch (`RATE_FLOOR_TAKEDOWN_LIVE`) is off until a sample is read clean (sampled-clean rule,
+  DECISIONS 2026-10-20); on, a match goes through the 12-hour second look (`darwin.rate_floor`) and is
+  archived with `rate_floor: <rate>% or $<floor>, whichever is greater` (verified row rejected with the
+  `rate_floor` flag; event `darwin.rate_floor_takedown`). Step detail `rate_floor_check`. Dry run Oct
+  25: 53 of 58 live fees at 48 institutions, 2 beside the live rate fee (13406, 68415).
 - Card program sections of a general schedule (`card-program-section-check.ts`, #1908, #1905). Navy
   Federal's fees page prints "Prepaid and Gift Cards" / "GO Prepaid Cards" sections after its deposit
   fees, and their "Lost/Stolen Card" $5 and Visa/PLUS ATM $1 rows went live as the account's fees on
@@ -2064,6 +2077,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `SAME_LINE_REPLACEMENT_CHECK_VERSION` | `darwin.same_line_replacement` | v1 | `darwin/same-line-replacement-check.ts` |
 | `CANADIAN_DOCUMENT_CHECK_VERSION` | `darwin.canadian_document` | v1 | `darwin/canadian-document-check.ts` |
 | `LATE_CHARGE_BOUND_CHECK_VERSION` | `darwin.late_charge_bound` | v1 | `darwin/late-charge-bound-check.ts` |
+| `RATE_FLOOR_CHECK_VERSION` | `darwin.rate_floor` | v1 | `darwin/rate-floor-check.ts` |
 | `CARD_PROGRAM_SECTION_CHECK_VERSION` | `darwin.card_program_section` | v1 | `darwin/card-program-section-check.ts` |
 | `DOCUMENT_OWNER_STRATEGY` | `verify.document_owner` | v1 | `darwin/document-owner.ts` |
 | `DARWIN_VERIFY_STRATEGY` | `verify.rules` | v3 | `darwin/verify.ts` |

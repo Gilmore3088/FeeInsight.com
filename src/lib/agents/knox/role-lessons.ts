@@ -646,4 +646,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-1615-rate-floor-is-no-flat-fee",
+    agent: "knox",
+    stage: "extract",
+    lesson: "A dollar figure joined by \"or\" to a percentage with \"whichever is greater\" or \"greater of\" (\"$5.00 or 3% of each cash advance, whichever is greater\", \"Greater of $10 or 5% of Scheduled Pmt\", \"Greater of 10% of Item or $10\") is the floor of a percentage charge, not the fee's price. Read the charge as the rate with the figure as its rate_min_amount (or keep it held where the category publishes no rates); never emit the figure as a flat fee. A figure that is the fee's own price beside another fee's floor on the same line, or a lesser-of cap, is not a floor.",
+    why: "53 live flat fees at 48 institutions on Oct 25 were the floor of a percentage charge (cash advance, check cashing, loan late fees, coin counting), published at the least the charge can be; Patriot FCU's \"5% of the monthly payment or $35.00 whichever is greater\" went live as a flat $35 twice beside its own rate fee (#1615). Knox's rate reader already read the floor, but only when the dollar figure came after the rate, and every specialist kept its flat read of the same line.",
+    evidence: { issues: [1615], prs: [], files: ["src/lib/rate-floor.ts", "src/lib/agents/knox/specialists.ts", "src/lib/agents/knox/percent.ts", "src/lib/agents/knox/rate-floor-read.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];

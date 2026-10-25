@@ -213,10 +213,11 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-320 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+321 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
-### Extraction and fee reading (49)
+### Extraction and fee reading (50)
 
+- 2026-10-25 — "$5 or 3%, whichever is greater" costs the percentage: the dollar figure is the floor, read as the rate's `rate_min_amount`, never as a flat fee (#1615). — [finding](findings/2026-10-25-rate-floor-published-as-flat-fee.md) — Agent lesson: knox/issue-1615-rate-floor-is-no-flat-fee, darwin/issue-1615-rate-floor-recheck; Guard: `src/lib/agents/knox/rate-floor-read.test.ts`
 - 2026-10-25 — An ATM network table prices each row once per column: read the non-network column's price by row and column, never a row's first price; a late charge's cap or floor bounds a percentage charge and is not the late fee (#1905). — [finding](findings/2026-10-25-atm-network-table-and-late-charge-bounds.md) — Agent lesson: knox/issue-1905-network-table-columns, darwin/issue-1905-late-charge-bound-is-no-fee; Guard: `src/lib/agents/knox/network-column-table.test.ts`
 - 2026-10-25 — Judge a page, not a copy: a newer copy of a page that holds exactly the text of an older copy Knox already read gets that copy's verdict, or the page's current copy is rejected while its fees stay live on a superseded copy nothing checks. — [finding](findings/2026-10-25-same-text-newer-copy-rejected.md) — Agent lesson: rosetta/issue-2477-same-text-same-verdict; Guard: `src/lib/agents/rosetta/same-text-copy.test.ts`
 - 2026-10-25 — A card program is not only its own document: the rows of a prepaid, payroll, gift or travel card section inside a bank's own schedule are the card's fees, not the account's, so read the section a fee is printed in, not only the document's address (#1908, #1905). — [finding](findings/2026-10-25-card-program-sections-in-general-schedules.md) — Agent lesson: knox/issue-1908-card-program-sections-are-not-account-fees, darwin/issue-1908-card-program-section-recheck; Guard: `src/lib/custom-report/card-program-section.test.ts`
@@ -579,7 +580,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (237 in all).
+counts as of this index (239 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
@@ -587,8 +588,8 @@ counts as of this index (237 in all).
 | magellan | 21 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
 | hoovie | 10 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
 | rosetta | 11 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
-| knox | 64 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
-| darwin | 34 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
+| knox | 65 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
+| darwin | 35 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 40 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
 | hamilton | 36 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
 | deming | 14 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |

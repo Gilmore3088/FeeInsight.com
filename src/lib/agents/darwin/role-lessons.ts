@@ -346,4 +346,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-1615-rate-floor-recheck",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "A flat fee whose own line makes its amount the floor of a percentage charge (\"$Y or X%, whichever is greater\") traces to the page, so the source check passes it, but it is not the fee's price. Re-check live flat fees with the same rule Knox applies (rateFloorOf) and say whether the bank's rate fee at that percentage is live; a takedown removes the floor and never invents the rate.",
+    why: "53 such fees were live at 48 institutions on Oct 25, only 2 beside their live rate fee (#1615). Darwin's rate-floor check lists them; its switch stays off until a sample is read against each bank's stored text (sampled-clean rule).",
+    evidence: { issues: [1615], prs: [], files: ["src/lib/agents/darwin/rate-floor-check.ts", "src/lib/rate-floor.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];

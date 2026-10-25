@@ -40,6 +40,8 @@ const INTEREST = /\b(apy|apr|annual percentage|interest|dividend|rate earned|yie
 const UP_TO_BEFORE = /\b(?:up to|maximum of|max(?:imum)?\.?|not to exceed|as much as|no more than)\s*$/i;
 const MIN_AMOUNT = /\$\s?(\d{1,4}(?:\.\d{2})?)\s*(?:min(?:imum)?\b|minimum)|\bmin(?:imum)?\.?\s*(?:of\s*|fee\s*(?:of\s*)?)?\$\s?(\d{1,4}(?:\.\d{2})?)/i;
 const MAX_AMOUNT = /\$\s?(\d{1,4}(?:\.\d{2})?)\s*(?:max(?:imum)?\b)|\b(?:max(?:imum)?\.?|not to exceed|cap(?:ped)? at)\s*(?:of\s*)?\$\s?(\d{1,4}(?:\.\d{2})?)/i;
+/** A dollar figure "or" the rate right after it: "$5.00 or 3%", "Greater of / $25.00 or 1%". */
+const OR_BEFORE_RATE = /\$\s?(\d{1,4}(?:\.\d{2})?)\s*,?\s*or\s+(?:the\s+)?$/i;
 /** A safe deposit box's late charge is a percent of its rent, not a late payment fee. */
 const NOT_LATE_PAYMENT = /\b(box|rental|rent)\b/i;
 const BALANCE_TRANSFER = /\bbalance transfers?\b/i;
@@ -151,8 +153,12 @@ export function rateFeeFromHeld(
   const or = /\bor\s+\$\s?(\d{1,4}(?:\.\d{2})?)/i.exec(after);
   const greater = /\bgreater of\b|whichever is (?:greater|more|higher)/i.test(excerpt);
   const lower = /\blesser of\b|whichever is (?:less|lower|smaller)/i.test(excerpt);
-  const rateMinAmount = amountOf(MIN_AMOUNT.exec(after)) ?? (or && greater ? amountOf(or) : null);
-  const rateMaxAmount = amountOf(MAX_AMOUNT.exec(after)) ?? (or && lower ? amountOf(or) : null);
+  // #1615: the dollar figure can come first ("$5.00 or 3% of each cash advance, whichever is greater",
+  // "Greater of $10 or 5% of Scheduled Pmt").
+  const orBefore = OR_BEFORE_RATE.exec(excerpt.slice(0, rates[0].start));
+  const bound = or ?? orBefore;
+  const rateMinAmount = amountOf(MIN_AMOUNT.exec(after)) ?? (bound && greater ? amountOf(bound) : null);
+  const rateMaxAmount = amountOf(MAX_AMOUNT.exec(after)) ?? (bound && lower ? amountOf(bound) : null);
   // A cap below the floor is a misread; the tiers' CHECK would reject it too.
   if (rateMinAmount !== null && rateMaxAmount !== null && rateMaxAmount < rateMinAmount) return "several_rates";
   return {
