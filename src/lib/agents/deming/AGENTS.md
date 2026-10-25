@@ -121,9 +121,10 @@ institutions remains the only human launch workflow.
 - Live wrong amounts at extract (#2067; `amount-patterns.ts`) group by the text layout around the
   fee, not its category: price-first rows paired with the wrong row, an opening deposit read as the
   fee, a cap or minimum, a figure in the name, a footnote glued to a $0 price, a price from the
-  next line, several columns. Each row is re-checked with today's `checkFeeAgainstSource`: a class
-  it refuses is already blocked by Knox's self-check at every bank; a class it still passes
-  (`passes_today`) is the next extraction rule to write, with its Darwin dry-run count.
+  next line, several columns. Each row is re-checked with today's shared `checkFeeAgainstSource`
+  (a `tiered_fee` verdict traces, as in Knox's self-check): a class it refuses no longer traces
+  wherever the check runs; a class it still passes (`passes_today`) is the next extraction rule to
+  write, with its Darwin dry-run count. A hand amount correction's row is judged at its old read.
 
 ## Weekly live-check gaps (#2066)
 

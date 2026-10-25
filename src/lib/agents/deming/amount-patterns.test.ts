@@ -41,6 +41,8 @@ describe("amount error layouts (#2067)", () => {
     expect(amountLayout("Safe Deposit Box 3x5/Year", 14, PRICE_FIRST)).toBe("other");
     expect(amountLayout("Wire Fee", 25, PRICE_FIRST)).toBe("name_not_in_text");
     expect(amountLayout("Wire Fee", 25, null)).toBe("no_document");
+    // Names match whole words: "Wire" is not "Wireless banking".
+    expect(amountLayout("Wire", 25, "Wireless banking $25 setup\nStatement copy $5")).toBe("name_not_in_text");
   });
 
   it("groups rows by kind and layout across banks, leaves unnamed layouts unpatterned, and counts rows today's check still passes", () => {
@@ -61,6 +63,8 @@ describe("amount error layouts (#2067)", () => {
   it("re-checks a row with the shared source check: a matching line passes, the next row's price does not", () => {
     expect(passesTodaysCheck({ text: PRICE_FIRST_PIPES, fee_name: "Domestic Outgoing Wire Transfer Fee", amount: 10, canonical_fee_key: null })).toBe(true);
     expect(passesTodaysCheck({ text: PRICE_FIRST_PIPES, fee_name: "Domestic Outgoing Wire Transfer Fee", amount: 50, canonical_fee_key: null })).toBe(false);
+    // A tiered fee traces, as in Knox's self-check: a balance band is not counted as refused.
+    expect(passesTodaysCheck({ text: "Monthly Service Fee | Balance under $1,500 | $10.00", fee_name: "Monthly Service Fee", amount: 10, canonical_fee_key: null })).toBe(true);
     // A gap, not a wish: today's check still lets a glued footnote ("$01") pass as $1 (#1946).
     expect(passesTodaysCheck({ text: "Network ATM transactions | $0\nOther network ATM transactions | $01\nOnline Bill Pay | $0", fee_name: "Other network ATM transactions", amount: 1, canonical_fee_key: null })).toBe(true);
     expect(passesTodaysCheck({ text: null, fee_name: "Wire", amount: 10, canonical_fee_key: null })).toBe(false);

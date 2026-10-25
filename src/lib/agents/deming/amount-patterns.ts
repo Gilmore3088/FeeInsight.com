@@ -7,10 +7,12 @@ import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
  * around the fee, the layout that misled the read, instead of by fee category, so a layout seen at
  * two or more banks shows up as one class with its owner (Knox).
  *
- * Each row is also re-checked against today's shared source check (`checkFeeAgainstSource`, the
- * check Knox runs on every find before keeping it). A row the check now refuses is already blocked
- * at extract for every bank with that layout; a row it still passes escaped the rules, and its class
- * is the next deterministic extraction rule to write (with its Darwin dry-run count, 2026-10-15).
+ * Each row is also re-checked against today's shared source check (`checkFeeAgainstSource`), read
+ * the way Knox's self-check and Darwin read it: a `tiered_fee` verdict still traces. A row the
+ * check now refuses no longer traces anywhere the check runs; a row it still passes escaped the
+ * rules, and its class is the next deterministic extraction rule to write (with its Darwin dry-run
+ * count, 2026-10-15). Knox's self-check passes its own category hint, so this is the shared check's
+ * verdict, not a replay of Knox's exact one.
  * Pure.
  */
 
@@ -68,15 +70,19 @@ function nameCore(feeName: string): string {
   return lineWords(tail.replace(/^\s*o\s+/i, "").replace(/\([^)]*\)/g, " ")).split(" ").slice(0, 5).join(" ");
 }
 
-/** Pure: the index of the line naming the fee, or -1. */
+/** Pure: the index of the line naming the fee (whole words; the first such line with a price), or -1. */
 function nameLine(lines: string[], feeName: string): number {
   const core = nameCore(feeName);
   if (core.length < 3) return -1;
-  const words = lines.map(lineWords);
-  const exact = words.findIndex((line) => line.includes(core));
+  const words = lines.map((line) => ` ${lineWords(line)} `);
+  const find = (needle: string) => {
+    const hits = words.flatMap((line, index) => (line.includes(` ${needle} `) ? [index] : []));
+    return hits.find((index) => prices(lines[index]).length > 0) ?? hits[0] ?? -1;
+  };
+  const exact = find(core);
   if (exact >= 0) return exact;
   const short = core.split(" ").slice(0, 3).join(" ");
-  return short.length >= 6 ? words.findIndex((line) => line.includes(short)) : -1;
+  return short.length >= 6 && short.includes(" ") ? find(short) : -1;
 }
 
 const has = (values: number[], amount: number) => values.some((value) => Math.abs(value - amount) < 0.005);
@@ -138,10 +144,11 @@ export interface AmountClassRow {
   passes_today: number;
 }
 
-/** Pure: whether today's shared check would still let Knox keep this read. */
+/** Pure: whether today's shared check still traces this read; a tiered fee traces, as in Knox's self-check. */
 export function passesTodaysCheck(row: Pick<AmountErrorRow, "text" | "fee_name" | "amount" | "canonical_fee_key">): boolean {
   if (!row.text || !row.fee_name || row.amount === null || row.amount === undefined) return false;
-  return checkFeeAgainstSource(row.text, row.fee_name, Number(row.amount), ".", row.canonical_fee_key).ok;
+  const result = checkFeeAgainstSource(row.text, row.fee_name, Number(row.amount), ".", row.canonical_fee_key);
+  return result.ok || result.reason === "tiered_fee";
 }
 
 /** Pure: amount error rows grouped by kind and layout. */

@@ -82,6 +82,8 @@ export interface ErrorClassSummary {
   oneBankPatterns: number;
   /** Rows with no category, layout or document kind to group by. */
   unpatternedRows: number;
+  /** Set when the week held more live amount errors than one run reads (`AMOUNT_ROW_LIMIT`). */
+  amountRowLimitHit?: boolean;
   classes: ErrorClass[];
 }
 
@@ -136,25 +138,39 @@ export async function readErrorClasses(db: SqlTag = sql, windowDays = ERROR_CLAS
      GROUP BY about_stage, kind, pattern
      ORDER BY banks DESC, rows DESC, about_stage, kind, pattern
   `;
-  // The fee's document: the row's own, else the one Knox read the live fee from.
-  const amountRows = await db<AmountErrorRow[]>`
+  // The fee's document: the row's own, else the one Knox read the live fee from. A hand amount
+  // correction rewrote the live row, so its row's evidence holds the read that was wrong.
+  const amountRows = await db<Array<Omit<AmountErrorRow, "text"> & { document_id: number | string | null }>>`
     SELECT f.id AS feedback_id, f.kind, f.check_name, f.institution_id, f.fee_published_id,
-           fp.fee_name, fp.amount, COALESCE(f.canonical_fee_key, fp.canonical_fee_key) AS canonical_fee_key,
-           t.normalized_text AS text
+           COALESCE(f.evidence->>'old_name', fp.fee_name) AS fee_name,
+           CASE WHEN f.evidence->>'old_amount' ~ '^[0-9]+([.][0-9]+)?$' THEN (f.evidence->>'old_amount')::numeric ELSE fp.amount END AS amount,
+           COALESCE(f.canonical_fee_key, fp.canonical_fee_key) AS canonical_fee_key,
+           COALESCE(f.source_document_id, fr.source_document_id) AS document_id
       FROM pipeline_feedback f
-      JOIN published_fee_records fp ON fp.fee_published_id = f.fee_published_id
+      LEFT JOIN published_fee_records fp ON fp.fee_published_id = f.fee_published_id
       LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
       LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
-      LEFT JOIN agent_source_texts t ON t.source_document_id = COALESCE(f.source_document_id, fr.source_document_id)
      WHERE f.created_at >= NOW() - make_interval(days => ${windowDays}::int)
        AND f.signal IN ('wrong', 'missed')
        AND f.weight > 0
        AND f.about_stage = 'extract'
        AND f.kind = ANY(${[...AMOUNT_ERROR_KINDS]}::text[])
+       AND f.fee_published_id IS NOT NULL
      ORDER BY f.id DESC
      LIMIT ${AMOUNT_ROW_LIMIT}
   `;
-  return summarizeRows([...rows, ...amountClassRows(amountRows, EXAMPLES)], windowDays);
+  // Each document's text once, however many of the week's rows it holds.
+  const documentIds = [...new Set(amountRows.map((row) => row.document_id).filter((id) => id !== null).map(Number))];
+  const texts = new Map<number, string>();
+  if (documentIds.length > 0) {
+    const read = await db<Array<{ source_document_id: number | string; normalized_text: string | null }>>`
+      SELECT source_document_id, normalized_text FROM agent_source_texts WHERE source_document_id = ANY(${documentIds}::bigint[])
+    `;
+    for (const text of read) if (text.normalized_text) texts.set(Number(text.source_document_id), text.normalized_text);
+  }
+  const withText: AmountErrorRow[] = amountRows.map(({ document_id, ...row }) => ({ ...row, text: document_id === null ? null : texts.get(Number(document_id)) ?? null }));
+  const summary = summarizeRows([...rows, ...amountClassRows(withText, EXAMPLES)], windowDays);
+  return amountRows.length >= AMOUNT_ROW_LIMIT ? { ...summary, amountRowLimitHit: true } : summary;
 }
 
 /** Pure: rows into classes and the one-bank count. */
@@ -220,7 +236,7 @@ export function classRecord(cls: ErrorClass, windowDays = ERROR_CLASS_WINDOW_DAY
     ...(cls.passesToday === undefined ? [] : [
       cls.passesToday > 0
         ? `- Today's source check still passes ${cls.passesToday} of ${cls.rows} rows, so Knox would keep this layout's wrong amount at a new bank: write the extraction rule, with its Darwin dry-run count (2026-10-15).`
-        : `- Today's source check refuses all ${cls.rows} rows, so Knox's self-check already blocks this layout at every bank; re-run the banks behind it.`,
+        : `- Today's shared source check refuses all ${cls.rows} rows, so wherever it runs (Knox's self-check, Darwin, Hamilton) this layout's wrong amount no longer traces; re-run the banks behind it.`,
     ]),
     "",
     `Fix the ${cls.stage} step so the whole class is fixed, re-run the banks behind it, and add a ${cls.owner} lesson (#2054). Name the rows in \`error-fixes.json\` so Deming re-checks them after the fix (#2058).`,
@@ -312,6 +328,7 @@ export function errorClassesDetail(result: ErrorClassesResult) {
     confirmed_rows: summary?.confirmedRows ?? null,
     one_bank_patterns: summary?.oneBankPatterns ?? null,
     unpatterned_rows: summary?.unpatternedRows ?? null,
+    amount_row_limit_hit: summary?.amountRowLimitHit ?? false,
     classes: summary?.classes.length ?? null,
     written: result.written,
     skipped: result.skipped,

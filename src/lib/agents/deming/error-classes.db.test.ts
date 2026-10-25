@@ -35,14 +35,14 @@ describe.skipIf(!connection)("error classes in isolated PostgreSQL (#2063)", () 
   }
 
   async function feedback(stage: string, kind: string, institution: number, extra: {
-    feePublishedId?: number | null; reportedBy?: string; weight?: number; daysAgo?: number; signal?: string; key?: string | null; documentId?: number;
+    feePublishedId?: number | null; reportedBy?: string; weight?: number; daysAgo?: number; signal?: string; key?: string | null; documentId?: number; evidence?: Record<string, unknown>;
   } = {}) {
     n += 1;
     await raw`INSERT INTO pipeline_feedback (about_stage, signal, kind, reported_by, check_name, institution_id, source_document_id, fee_published_id,
-                                             canonical_fee_key, weight, dedupe_key, created_at)
+                                             canonical_fee_key, weight, dedupe_key, created_at, evidence)
               VALUES (${stage}, ${extra.signal ?? "wrong"}, ${kind}, ${extra.reportedBy ?? "hamilton"}, 'hamilton.category_guard:v1', ${institution},
                       ${extra.documentId ?? null}, ${"feePublishedId" in extra ? extra.feePublishedId ?? null : 2063000 + n}, ${extra.key === undefined ? KEY : extra.key}, ${extra.weight ?? 1},
-                      ${`test2063:${n}`}, NOW() - make_interval(days => ${extra.daysAgo ?? 1}::int))`;
+                      ${`test2063:${n}`}, NOW() - make_interval(days => ${extra.daysAgo ?? 1}::int), ${raw.json((extra.evidence ?? {}) as never)})`;
   }
 
   async function clean() {
@@ -117,10 +117,15 @@ describe.skipIf(!connection)("error classes in isolated PostgreSQL (#2063)", () 
     for (const [bank, name, amount] of [[BANKS[0], "Box 2063 Small/Year", 19], [BANKS[1], "Box 2063 Medium/Year", 21], [BANKS[1], "Box 2063 Small/Year", 14]] as const) {
       await feedback("extract", "wrong_amount", bank, { feePublishedId: await liveFee(bank, name, amount), key: null });
     }
+    // A hand amount correction already set the live row right ($21); the row is judged at the read it fixed ($19).
+    await feedback("extract", "wrong_amount", BANKS[2], {
+      feePublishedId: await liveFee(BANKS[2], "Box 2063 Large/Year", 21), key: null,
+      evidence: { old_amount: 19, new_amount: 21, old_name: "Box 2063 Large/Year", new_name: "Box 2063 Large/Year" },
+    });
     const summary = await readErrorClasses(raw as unknown as Db);
     const cls = summary.classes.find((item) => item.key === "extract:wrong_amount:amount:price_before_label" && item.exampleInstitutions.some((id) => BANKS.includes(id)));
     expect(cls).toMatchObject({ owner: "knox", passesToday: 0 });
-    expect(cls!.exampleInstitutions).toEqual(expect.arrayContaining([BANKS[0], BANKS[1]]));
+    expect(cls!.exampleInstitutions).toEqual(expect.arrayContaining(BANKS));
     // The row with the line's own price is no named layout, and never pools into the category grouping.
     expect(summary.classes.some((item) => item.pattern === "category:safe_deposit_box" && item.exampleInstitutions.some((id) => BANKS.includes(id)))).toBe(false);
   });
