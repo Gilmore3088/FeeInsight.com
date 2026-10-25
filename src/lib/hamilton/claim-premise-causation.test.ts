@@ -183,6 +183,12 @@ describe("question figures that are not premises (PR #2572 review)", () => {
     // Bank A's own $10 still binds as "your" fee; with the account unknown, "your" matches any record as before.
     expect(bindNarrative({ text: "Your $10 overdraft fee is among the lowest we track.", evidence: FEES, names, accountInstitutionId: BANK_A }).supported).toHaveLength(1);
     expect(bindNarrative({ text: "Your $35 overdraft fee is the highest we track.", evidence: FEES, names, accountInstitutionId: BANK_A }).omitted.map((o) => o.reason)).toEqual(["account_as_subject"]);
+    // "Your competitor" or "your market" is someone else in the reader's world, not the reader's own fee.
+    for (const text of ["Your nearest competitor charges $35 for overdraft.", "Across your market, the highest overdraft fee is $35."]) {
+      const other = bindNarrative({ text, evidence: FEES, names, question: "How does our overdraft fee compare?", accountInstitutionId: BANK_A });
+      expect(other.omitted, text).toEqual([]);
+      expect(other.supported, text).toHaveLength(1);
+    }
   });
 });
 
