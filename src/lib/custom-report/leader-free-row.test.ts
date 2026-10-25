@@ -72,7 +72,8 @@ describe("a free word that does not close the fee's row (#2477 review)", () => {
     ["Debit Card Replacement .......... Free first card | Additional .......... $10.00", "Debit Card Replacement", 10],
     ["Statements .......... Free (e-statements) | $2.00 (paper)", "Statements", 2],
   ])("keeps the row's own later price: %s", (line, name, amount) => {
-    expect(checkFeeAgainstSource(line, name, amount, ".", null).reason).not.toBe("amount_not_the_fee");
+    const result = checkFeeAgainstSource(line, name, amount, ".", null);
+    expect(result.ok ? null : result.reason).not.toBe("amount_not_the_fee");
   });
 
   it.each([
