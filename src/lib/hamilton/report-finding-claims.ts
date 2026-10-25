@@ -14,6 +14,7 @@
 
 import { checkNarrativeFigures, extractFigures } from "./figure-check";
 import { numericPayloadValue } from "./monetary-units";
+import { tracedFigureLines } from "./traced-figures";
 import { recordValue, writtenSourceLine } from "./board-brief";
 import type { HamiltonIdentitySnapshot } from "./account-context";
 import type { ReportBasketItem } from "./report-basket";
@@ -102,18 +103,13 @@ export function findingFactsData(claims: ReportFindingClaims | null): { numeric_
 }
 
 /**
- * A saved answer's "Figures as saved" (#1899), kept only when every $ or % figure in the line traces
+ * A saved answer's "Figures as saved" (#1899), kept only when every number in the line sits in a $ or % figure that traces
  * to the finding's carried facts. The answer's metrics are the model's own parsed figures and were
  * never checked against a record, so a line with no figure, or one no fact supports, is dropped;
  * with no carried facts, none is kept.
  */
 export function tracedSavedFigures<F extends { label: string; value: string; note?: string }>(figures: readonly F[], claims: ReportFindingClaims | null): F[] {
-  const own = findingFactsData(claims);
-  if (!own) return [];
-  return figures.filter((f) => {
-    const text = [f.label, f.value, f.note].filter(Boolean).join(" ");
-    return extractFigures(f.value).length > 0 && checkNarrativeFigures(text, own).unmatched.length === 0;
-  });
+  return tracedFigureLines(figures, claims?.facts ?? []);
 }
 
 /**
