@@ -98,6 +98,22 @@ describe("discontinuedRow (#2070)", () => {
 
 // Trimmed copies of stored texts from the production dry run of the first cut (#2070).
 describe("production layouts (#2070 dry run)", () => {
+  it("never lets a left column's legacy heading take the right column's item (GBC Bank, fee 14202)", () => {
+    const text = [
+      "The following accounts are no longer offered but will continue to be served to",
+      "Bill Pay activity occurs in any 60 day period.",
+      "existing customers.",
+      "- Mobile Banking: available via our free iOS or Android apps, in addition to our",
+      "Essential Business Checking | responsive mobile website.",
+      "Minimum deposit to open: $50.00 | ATM Service Fees:",
+      "Minimum Balance Requirement: None | - ATM cash withdrawals: $1.00 at ATMs not owned or operated by GBC Bank",
+      "Monthly Maintenance Charge: None | or Visa Plus Alliance.",
+    ].join("\n");
+    expect(discontinuedRow(text, "ATM cash withdrawals", 1)).toBeNull();
+    // The left column's own row under the heading still reads as the legacy account's.
+    expect(discontinuedRow(`${text}\nMonthly Service Charge | $8.00`, "Monthly Service Charge", 8)).not.toBeNull();
+  });
+
   it("never lets another column's legacy heading mark a two-column row (fee 134036)", () => {
     const text = [
       "Replacement of Card………………………………………... $10",

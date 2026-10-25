@@ -238,6 +238,21 @@ function legacyHeadingAbove(lines: string[], rowIndex: number): string | null {
 }
 
 /**
+ * A fee named and priced in a later cell of its line, beside a first cell about something else
+ * ("Minimum Balance Requirement: None | - ATM cash withdrawals: $1.00 at ATMs not owned ...", GBC
+ * Bank), is another column's item: a two-column page lays its own block beside the left one, so the
+ * left column's legacy heading above is not its heading.
+ */
+function otherColumnItem(line: string, prices: number[], words: string[]): boolean {
+  const parts = cells(line);
+  if (parts.length < 2 || namesFee(parts[0].text, words)) return false;
+  return prices.every((at) => {
+    const index = parts.findIndex((cell, i) => at >= cell.start && (i === parts.length - 1 || at < parts[i + 1].start));
+    return index > 0 && namesFee(parts[index].text, words);
+  });
+}
+
+/**
  * Is the fee's own row (every row that names it at its amount) for an account the bank no longer
  * offers? Null when no row names it at that amount or any such row is current.
  */
@@ -261,7 +276,7 @@ export function discontinuedRow(text: string | null | undefined, feeName: string
       const rowStart = below ? i - 1 : i;
       const marked = below ? rowMarked(row, row.length - line.length + prices[0], words, amount) : prices.some((at) => rowMarked(line, at, words, amount));
       if (marked) { found ??= { row: row.trim(), why: "row_marker" }; continue; }
-      const heading = legacyHeadingAbove(lines, rowStart);
+      const heading = below || !otherColumnItem(line, prices, words) ? legacyHeadingAbove(lines, rowStart) : null;
       if (heading) { found ??= { row: row.trim(), why: "legacy_section", heading }; continue; }
       return null;
     }
