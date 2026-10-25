@@ -30,6 +30,7 @@ import { getEnforcementRecord } from "@/lib/data-store/registry-profile";
 import { getFeeIncomeTrend } from "@/lib/hamilton/report-trend";
 import { ANSWER_SECTION_FORMAT, TRADEOFF_SECTION_FORMAT } from "@/lib/hamilton/report-answer";
 import type { ReportBasketItem } from "@/lib/hamilton/report-basket";
+import type { IndexEntry } from "@/lib/data-store/fee-index";
 import { readerFindingsSection } from "@/lib/hamilton/report-finding-claims";
 import { resolveHamiltonPeerIndex } from "@/lib/hamilton/peer-index";
 import { getFeePublicationStatusLabel } from "@/lib/institution-quality";
@@ -250,8 +251,14 @@ export async function assembleReportInputs(input: {
   /** The reader, for their saved peer group; null uses the institution's default peers. */
   userId: number | string | null;
   loadAccountContext: () => Promise<HamiltonAccountContext>;
-  /** The reader's added findings, already authenticated, for the chosen institution. */
-  resolveFindings: (institutionId: string | null) => Promise<ReportBasketItem[]>;
+  /**
+   * The reader's added findings, already authenticated, for the chosen institution. `peers` is the
+   * report's own peer read, which a Position or Test finding is re-read against (#1899).
+   */
+  resolveFindings: (
+    institutionId: string | null,
+    peers: { entries: IndexEntry[]; label: string; institutionName: string | null },
+  ) => Promise<ReportBasketItem[]>;
 }) {
   const { params } = input;
   // 1. Fetch selected institution data as grounding for Hamilton
@@ -303,7 +310,11 @@ export async function assembleReportInputs(input: {
   const selectedVerifiedFees = selectedVisibleFees.filter((fee) => fee.review_status === "approved");
   const selectedProvisionalFees = selectedVisibleFees.filter((fee) => fee.review_status !== "approved");
   const evidencePolicy = params.evidencePolicy ?? "provisional-first";
-  const addedFindings = await input.resolveFindings(selectedInstitution ? String(selectedInstitution.id) : null);
+  const addedFindings = await input.resolveFindings(selectedInstitution ? String(selectedInstitution.id) : null, {
+    entries: indexData,
+    label: peerIndex.label,
+    institutionName: selectedInstitution?.institution_name ?? null,
+  });
   const selectedSourceContext = resolveReportSelectedSource(params);
   const identityContext = accountIdentitySnapshot(selectedInstitution?.id ?? null, accountContext, {
     researchInstitutionName: selectedInstitution?.institution_name ?? null,
