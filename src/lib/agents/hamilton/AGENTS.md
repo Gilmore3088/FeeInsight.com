@@ -178,6 +178,12 @@ Hamilton supports the decision; it does not make it.
   engine. `detail.pro` counts how many meet the bar and how many Hamilton still asks back on,
   and lists every one that falls short. A replayed answer about a fee the question did not
   ask about fails as "answers a different subject" (`offSubjectFailure`). Questions stay in our own database only.
+- The gate replay (`hamilton/gate-replay.ts`, deterministic step `hamilton-gate-replay`, cron
+  hourly, `/api/admin/crew/gate-replay`, #1077) puts every Pro question on record and the quality
+  bar for two institutions per charter and asset tier (up to 400 answers a day) through the free
+  Ask engine and the one output gate, and records each verdict as a shadow with `origin: "replay"`,
+  apart from readers'. Runs pick up where the last stopped; none starts once the day is complete.
+  No model calls; it covers the free Ask path only.
 - The paid answer eval (`hamilton/paid-answer-eval.ts`, provider step `hamilton-paid-answer-eval`,
   cron once a day, `/api/admin/crew/answer-eval-paid`, #1079) writes at most five memos a day
   (James, 2026-10-15) over free answers that carry a storyline: Pro readers' questions first, then

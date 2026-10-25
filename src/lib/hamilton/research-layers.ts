@@ -9,6 +9,7 @@ import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/fee-stats";
 import { median, peerPosition, quantile } from "./fee-scenario";
 import type { LocalMarketInfo, MarketLayer, MarketLayerScope, PeerValue } from "./workspace/types";
 import type { DatasetStamp } from "@/lib/dataset-stamp";
+import { MIN_LOCAL_PEERS_FOR_POSITION, MIN_PEERS_FOR_POSITION } from "./workspace/scenario";
 
 export const LAYER_KEYS = ["local", "state", "district", "peers", "national"] as const;
 export type LayerKey = (typeof LAYER_KEYS)[number];
@@ -34,6 +35,14 @@ export interface LayerSummary {
   members?: PeerValue[];
   /** The data behind the layer's figures, from the engine (#1924); none for the local market. */
   stamp?: DatasetStamp;
+}
+
+/**
+ * True when a layer has too few institutions for Hamilton to print a middle price or seed a
+ * tested price from it: 5 for the local market, 10 for every other layer (James, 2026-10-25).
+ */
+export function belowPeerMinimum(layer: Pick<LayerSummary, "key" | "n">): boolean {
+  return layer.n < (layer.key === "local" ? MIN_LOCAL_PEERS_FOR_POSITION : MIN_PEERS_FOR_POSITION);
 }
 
 export function parseLayer(value: string | undefined | null): LayerKey {

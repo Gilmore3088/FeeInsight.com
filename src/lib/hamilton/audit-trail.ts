@@ -142,7 +142,8 @@ export function buildAuditTrail(input: {
     if (figures.waiverRate != null) {
       clientFacts.push({ label: "Share waived or refunded", value: `${Math.round(figures.waiverRate * 1000) / 10}%`, givenBy, givenAt: preparedAt });
     }
-    if (clientFacts.length === 0) assumptions.push("No volume assumed: without your figures, income is shown per 1,000 items only.");
+    // #1896: fee income needs the bank's own yearly volume; without it nothing is sized.
+    if (figures.paidItems == null) assumptions.push("No volume assumed: without your own yearly volume, no fee income figure is shown.");
   }
 
   return {
