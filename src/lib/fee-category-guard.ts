@@ -1652,8 +1652,8 @@ export function headingFromLinesAbove(linesAbove: readonly string[]): string | n
 
 /**
  * Pure: the heading printed above the fee's own line (`excerpt=` in its conditions) in its stored
- * text (`headingFromLinesAbove`); null when the excerpt is not found on the text or is printed more
- * than once. The guard reads it
+ * text (`headingFromLinesAbove`); null when the excerpt is not found on the text, or is printed more
+ * than once and not every place's heading names another service. The guard reads it
  * only for a generic monthly charge (`genericMonthlyCharge`).
  */
 export function headingAboveExcerpt(text: string | null | undefined, conditions: string | null | undefined): string | null {
@@ -1661,11 +1661,18 @@ export function headingAboveExcerpt(text: string | null | undefined, conditions:
   if (!text || !excerpt) return null;
   const probe = excerpt.replace(/^["\s]+|["\s]+$/g, "").slice(0, 60).trim();
   if (probe.length < 8) return null;
-  const at = text.indexOf(probe);
-  if (at <= 0) return null;
-  // The same line printed twice (under a checking section and a Positive Pay section) has no one
-  // heading: none is read, so the fee is judged by its name and line only.
-  if (text.indexOf(probe, at + 1) !== -1) return null;
+  const places: number[] = [];
+  for (let at = text.indexOf(probe); at !== -1; at = text.indexOf(probe, at + 1)) places.push(at);
+  if (places.length === 0 || places[0] <= 0) return null;
+  if (places.length === 1) return headingAtPlace(text, places[0]);
+  // The same line printed more than once (under a checking section and a Positive Pay section) has
+  // no one heading: a heading is read only when every place's heading names another service (123617,
+  // "Monthly Fee | None" under two card headings), so a real maintenance fee never comes down for it.
+  const headings = places.map((at) => headingAtPlace(text, at));
+  return headings.every((heading) => serviceHeading(heading)) ? headings[0] : null;
+}
+
+function headingAtPlace(text: string, at: number): string | null {
   const lines = text.slice(Math.max(0, at - 600), at).split(/\n+/);
   // The excerpt may start mid-line: the text before it on its own line is not a line above.
   return lines.length < 2 ? null : headingFromLinesAbove(lines.slice(0, -1));

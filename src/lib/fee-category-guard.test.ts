@@ -2388,6 +2388,9 @@ describe("guard v84: another service's monthly charge filed as monthly maintenan
     const conditions = note("Monthly fee | $5.00");
     expect(headingAboveExcerpt(twice, conditions)).toBeNull();
     expect(checkFeeCategory("monthly_maintenance", "Monthly fee", withHeadingAbove("monthly_maintenance", "Monthly fee", { amount: 5, conditions }, twice)).ok).toBe(true);
+    // Printed twice, each time under a card heading (123617): the card heading is read.
+    const cards = ["Fee Schedule for ATM/Check Card", "Monthly Fee | None", "", "ATM Cards", "Monthly Fee | None"].join("\n");
+    expect(headingAboveExcerpt(cards, note("Monthly Fee | None"))).toBe("Fee Schedule for ATM/Check Card");
   });
 
   it("refuses a generic monthly charge priced in another service's row (20609, 152527)", () => {
