@@ -11,6 +11,7 @@ import { collectFeeRefs } from "@/lib/saved-output-corrections";
 import { recordSavedOutputFeeRefs } from "@/lib/data-store/saved-output-fee-refs";
 import type { AnalyzeResponse } from "@/lib/hamilton/types";
 import { recentQuestions, type RecentQuestion, type SavedAnalysisRow } from "@/lib/hamilton/recent-analyses";
+import { fallbackSaveTitle } from "@/lib/hamilton/saved-title";
 import { fallbackSaveSections, readSavedAnalysisRecord, withoutSavedClaims, type LoadedAnalysisRecord } from "@/lib/hamilton/saved-analysis-record";
 
 export type { LoadedAnalysisRecord } from "@/lib/hamilton/saved-analysis-record";
@@ -33,11 +34,10 @@ export async function saveAnalysis(params: {
     return { error: "Active subscription required" };
   }
 
-  // Derive title: use explicit title, or first 60 chars of the prompt
-  const title =
-    params.title?.trim() ||
-    (typeof params.responseJson?.title === "string" ? params.responseJson.title : "") ||
-    params.prompt.slice(0, 60).trim() + (params.prompt.length > 60 ? "…" : "");
+  // The title: the explicit or the browser's title only when it states no figure, else the first
+  // 60 characters of the prompt. This save has no binding the server trusts, so a figure in a
+  // browser title is unchecked and never becomes a headline (#1077 defect 8, saved-title.ts).
+  const title = fallbackSaveTitle([params.title, params.responseJson?.title], typeof params.prompt === "string" ? params.prompt : "");
   // Server actions receive caller-controlled values even when TypeScript declares a string.
   // A malformed explicit subject must not become an unscoped saved artifact.
   if (typeof params.institutionId !== "string") {
@@ -62,6 +62,8 @@ export async function saveAnalysis(params: {
     // since reports and briefs trust them; this save's verdict is the server's "not checked".
     const responseJson: AnalyzeResponse = {
       ...fallbackSaveSections(params.responseJson),
+      // Reports and briefs read the title from the saved response, so it is the checked one.
+      title,
       identityContext: accountIdentitySnapshot(institution?.id ?? null, account, {
         researchInstitutionName: institution?.institution_name ?? null,
         researchSelectionSource: "Captured at save; generation-time account and peer context unavailable",

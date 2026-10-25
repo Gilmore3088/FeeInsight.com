@@ -64,6 +64,21 @@ describe("H01 saved-analysis server action input and error boundaries", () => {
     expect(mocks.sql.mock.calls[0]).toContain(11);
   });
 
+  it("files the prompt, not a browser title that states a figure, in the row and the saved response (#1077 defect 8)", async () => {
+    const prompt = "How does my overdraft fee compare with peers?";
+    await saveAnalysis({ ...saveInput, prompt, responseJson: { ...analysis, title: "Your overdraft fee sits about 21% above the peer median." } });
+    const call = mocks.sql.mock.calls[0];
+    expect(call[3]).toBe(prompt);
+    expect(JSON.parse(call[6] as string).title).toBe(prompt);
+  });
+
+  it("keeps a figure-free browser title in the fallback save", async () => {
+    await saveAnalysis(saveInput);
+    const call = mocks.sql.mock.calls[0];
+    expect(call[3]).toBe("Synthetic research answer");
+    expect(JSON.parse(call[6] as string).title).toBe("Synthetic research answer");
+  });
+
   it("never discloses driver or database details in a failed saved-analysis response", async () => {
     mocks.sql.mockRejectedValueOnce(new Error("Synthetic private schema: relation hidden_owner_records missing"));
     const result = await saveAnalysis(saveInput);
