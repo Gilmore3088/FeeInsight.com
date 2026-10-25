@@ -118,8 +118,10 @@ export function sameEdition(a: string | null | undefined, b: string | null | und
  * not a change: a PDF read twice can pair a fee with a neighbouring column's price. Nor is
  * it a change when the earlier schedule already stated the new price for that fee.
  */
-export function confirmFeeChange(row: RecordedChangeRow, options: FeeChangeOptions = {}): PulseChange | null {
-  return judgeFeeChange(row, options).change;
+export function confirmFeeChange(row: RecordedChangeRow): PulseChange | null {
+  // One argument on purpose: callers pass it to Array.map, and only competitor alerts, which
+  // call judgeFeeChange themselves, ask for `holdUndatedEdition`.
+  return judgeFeeChange(row).change;
 }
 
 /**
