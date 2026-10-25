@@ -1107,7 +1107,7 @@ function AnalyzeConversationWorkspace({
               {contextFee ? (
                 <>
                   <span aria-hidden className="text-[var(--fi-border)]">|</span>
-                  <span>{getDisplayName(contextFee)}, from the page you came from</span>
+                  <span>Fee: {getDisplayName(contextFee)}, from the page you came from</span>
                 </>
               ) : null}
               <span aria-hidden className="text-[var(--fi-border)]">|</span>

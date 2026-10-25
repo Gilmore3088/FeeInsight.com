@@ -98,6 +98,12 @@ describe("StorylineView standard blocks (#1895)", () => {
     expect(html.indexOf("What would change this")).toBeGreaterThan(html.indexOf(">Limitations<"));
     expect(html).toContain("One value per institution: the median of its published amounts.");
   });
+
+  it("shows three assumptions and keeps the rest one click away", () => {
+    const many = renderToStaticMarkup(<StorylineView story={sampleStoryline()} limitations={["A.", "B.", "C.", "D.", "E."]} />);
+    expect(many).toContain("Show all 5 assumptions");
+    expect(many.indexOf("D.")).toBeGreaterThan(many.indexOf("Show all 5 assumptions"));
+  });
 });
 
 describe("StorylineView dataset note (#1924 step 3)", () => {

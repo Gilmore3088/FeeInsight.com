@@ -309,10 +309,21 @@ export function StorylineView({ story, nextSteps, memo, identityContext, stamps,
             <div>
               <h4 className="mb-2 text-sm font-medium text-warm-700">Method and assumptions</h4>
               <ul className="flex max-w-[65ch] list-disc flex-col gap-1.5 pl-5 text-sm leading-relaxed text-warm-800">
-                {limitations.map((line) => (
+                {limitations.slice(0, 3).map((line) => (
                   <li key={line}>{line}</li>
                 ))}
               </ul>
+              {/* The first three carry the peer rule; the rest stay one click away. */}
+              {limitations.length > 3 ? (
+                <details className="mt-2 max-w-[65ch] text-sm text-warm-800">
+                  <summary className="cursor-pointer text-sm font-medium text-terra-text">Show all {limitations.length} assumptions</summary>
+                  <ul className="mt-2 flex list-disc flex-col gap-1.5 pl-5 leading-relaxed">
+                    {limitations.slice(3).map((line) => (
+                      <li key={line}>{line}</li>
+                    ))}
+                  </ul>
+                </details>
+              ) : null}
             </div>
           ) : null}
         </section>
