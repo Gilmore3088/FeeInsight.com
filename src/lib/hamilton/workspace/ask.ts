@@ -238,7 +238,10 @@ const PRODUCT_WORDS = new Set(
 );
 
 /** All-capitals words that are a measure or product, not an institution ("with ROA", "against CD"). */
-const MEASURE_CAPS = new Set("roa roe apy apr nim cd atm heloc ira ach nsf od".split(" "));
+const MEASURE_CAPS = new Set(
+  ("roa roe roaa roae apy apr nim nii eps cd atm heloc ira ach nsf od cpi gdp ytd yoy qoq mom ly ttm " +
+    "er cir opex fdic ncua cfpb occ frb fed ffiec").split(" "),
+);
 
 /** Capitalized words after with, than or against that are not an institution ("versus Inflation"). */
 const NOT_NAMES = new Set("inflation last next year years month quarter history budget plan target goal brokerage".split(" "));

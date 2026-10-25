@@ -135,6 +135,11 @@ describe("the fee of the page Ask was opened from (#1895)", () => {
       "How do we compare versus Inflation?",
       "How do we compare with Last Year?",
       "Is it higher against Brokerage?",
+      // A measure, period or regulator in capitals is not a bank.
+      "How do we compare with CPI?",
+      "How do we compare with FDIC?",
+      "How do we compare with YTD?",
+      "How do we compare with LY?",
     ]) {
       // The same reading as with no page fee at all.
       expect(parseAsk(q, null, "overdraft"), q).toEqual(parseAsk(q));
