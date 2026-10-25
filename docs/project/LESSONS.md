@@ -213,7 +213,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-300 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+303 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
 ### Extraction and fee reading (45)
 
@@ -537,8 +537,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A shared log that every PR appends to at the same spot needs one file per entry. — [finding](findings/2026-10-09-findings-md-merge-conflicts.md) — Guard: `scripts/ci-guards.sh findings-file-kill`
 - 2026-10-09 — Backlog Node checks were accidentally discovered by application Vitest. — [finding](findings/2026-10-09-backlog-node-test-discovery.md) — Guard: `src/lib/vitest-collection.test.ts:26` (+2 more)
 
-### Agent process, learning and measurement (17)
+### Agent process, learning and measurement (18)
 
+- 2026-10-25 — A retrieval add-on is judged only by its lift on a holdout of human-confirmed current schedules; the first metadata and full-text ranker showed none over today's page choice, so no embeddings. — [finding](findings/2026-10-25-retrieval-pilot-no-holdout-lift.md) — Guard: `src/lib/agents/deming/shadow-lab/retrieval-pilot.test.ts`; Agent lesson: deming/o2-retrieval-holdout-before-embeddings
 - 2026-10-24 — Answer-key lines were compared to the bank's page as markup (table bars, HTML codes, dot leaders), so the same words and prices never matched. — [finding](findings/2026-10-24-answer-key-lines-compared-as-markup.md) — Agent lesson: deming/issue-2466-line-content-match
 - 2026-10-22 — Replay each weekly live audit in the shadow lab: most live errors start at extraction, and wrong names pass every stage. — [finding](findings/2026-10-22-live-audit-replay.md) — Guard: `src/lib/agents/deming/shadow-lab/ratchet-gate.test.ts` (live_audit expectations in `ratchet-baseline.json`)
 - 2026-10-21 — Before fixing a batch of live fees, replay the frozen sources and fix the stage where the failures start. — [finding](findings/2026-10-21-pipeline-shadow-lab-first-run.md) — Guard: `npm run test:shadow-lab`
@@ -562,7 +563,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (211 in all).
+counts as of this index (212 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
@@ -574,7 +575,7 @@ counts as of this index (211 in all).
 | darwin | 30 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 40 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
 | hamilton | 22 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
-| deming | 13 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
+| deming | 14 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
 
 ## Before 2026-10-10
 
