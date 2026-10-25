@@ -14,6 +14,7 @@ import { getFeesByInstitution, getInstitutionById } from "@/lib/data-store";
 import { sql } from "@/lib/data-store/connection";
 import { getInstitutionFeeScheduleEvidence } from "@/lib/data-store/institution";
 import { generateVerifiedSection, type VerifiedSectionOutput } from "@/lib/hamilton/generate";
+import { SECTION_GATE_HELD } from "@/lib/hamilton/output-gate-enforce";
 import { checkProAiQuota, quotaExceededMessage } from "@/lib/hamilton/quota";
 import { checkConsultantReportCap, reportCapMessage } from "@/lib/hamilton/report-cap";
 import { recordProRequest } from "@/lib/agents/run-store";
@@ -421,11 +422,14 @@ export async function generateReport(
       await recordReportOutcome("failed", "Report not saved: figures could not be traced to the data.", verifiedSections, {
         unverified_figures: [...new Set(unverified)],
       });
+      // A section the one output gate held (HAMILTON_ANSWER_GATE_ENFORCE on) names no figure.
+      const figures = unverified.filter((line) => line !== SECTION_GATE_HELD);
       return {
         success: false,
-        error:
-          `Hamilton could not verify ${unverified.length === 1 ? "this figure" : "these figures"} against the report data: ` +
-          `${[...new Set(unverified)].join(", ")}. The report was not saved; please try again.`,
+        error: figures.length === 0
+          ? "Hamilton could not verify a statement in this report against the report data. The report was not saved; please try again."
+          : `Hamilton could not verify ${figures.length === 1 ? "this figure" : "these figures"} against the report data: ` +
+            `${[...new Set(figures)].join(", ")}. The report was not saved; please try again.`,
       };
     }
     const [summarySection, strategicSection, recommendationSection] = verifiedSections.map((result) => result.section);

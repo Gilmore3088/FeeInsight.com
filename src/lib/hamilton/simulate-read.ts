@@ -17,6 +17,8 @@ import type { MemoClient, MemoTracking } from "./memo";
 import { HAMILTON_PAUSED_MESSAGE } from "./provider-paused";
 import { HAMILTON_SYSTEM_PROMPT } from "./voice";
 import { shadowGate, type GateShadowRecord, type ShadowPath, type TodayDecision } from "./output-gate-shadow";
+import { enforcedOutcome, enforcedProblems, isAnswerGateEnforced, tryGateAnswer } from "./output-gate-enforce";
+import type { GateInput } from "./output-gate";
 
 export const SIMULATE_ROUTE_ID = "api.hamilton.simulate";
 /** The live route's output cap; thinking counts toward it. */
@@ -104,7 +106,12 @@ What would this price mean competitively, and what question does it put to manag
 
 export type SimulateReadResult =
   | { status: "written"; text: string; check: AnswerEvidenceCheck }
+  /** Only with HAMILTON_ANSWER_GATE_ENFORCE on: the one output gate held the read, so its text is not returned. */
+  | { status: "held"; reason: string; problems: string[] }
   | { status: "unavailable"; reason: string };
+
+/** What a reader sees in place of a Simulate read the one output gate holds (HAMILTON_ANSWER_GATE_ENFORCE on). */
+export const SIMULATE_HELD_MESSAGE = "This read didn't pass Hamilton's source check, so it isn't shown. Try the price again.";
 
 /** The read as one buffered call, checked with the shared evidence gate. Used by the eval. */
 export async function writeSimulateRead(
@@ -135,20 +142,53 @@ export async function writeSimulateRead(
     return { status: "unavailable", reason: /budget|usage limit/i.test(message) ? "Hamilton's writing budget for today is used up." : "Hamilton's writer could not be reached." };
   }
   const check = checkAnswerEvidence(text, prompts.data);
+  const enforce = isAnswerGateEnforced();
   // The one output gate in shadow (#1077 step 4): handed over as a thunk with its inputs captured,
   // so the caller computes and records it after its own work, never before returning.
   if (options.onGateShadow) {
     const today: TodayDecision = check.passed ? "shown" : "held";
     const data = prompts.data;
-    options.onGateShadow(() => simulateGateShadow(text, data, today, "simulate_read"));
+    options.onGateShadow(() => simulateGateShadow(text, data, today, "simulate_read", enforce));
+  }
+  // HAMILTON_ANSWER_GATE_ENFORCE on (#1077 T4): the read is returned only when the one output gate
+  // validates it. A read has no partial view, so a partial verdict holds too.
+  if (enforce) {
+    const verdict = tryGateAnswer(simulateGateInput(text, prompts.data));
+    if (enforcedOutcome(verdict, false) !== "validated") return { status: "held", reason: SIMULATE_HELD_MESSAGE, problems: enforcedProblems(verdict) };
   }
   return { status: "written", text, check };
 }
 
 /** The one output gate's shadow verdict on a Simulate read (#1077 step 4): its text against the numbers the model was given. */
-export function simulateGateShadow(text: string, data: SimulatePrompts["data"], today: TodayDecision, path: ShadowPath): GateShadowRecord {
-  return shadowGate({ surface: "simulate", text, evidence: { kind: "data", data },
-    identity: { researchInstitutionId: null, accountInstitutionId: null } }, today, { path });
+export function simulateGateShadow(text: string, data: SimulatePrompts["data"], today: TodayDecision, path: ShadowPath, enforced = false): GateShadowRecord {
+  return shadowGate(simulateGateInput(text, data), today, { path, ...(enforced ? { enforced } : {}) });
+}
+
+/** The one output gate's input for a Simulate read: its text against the numbers the model was given. */
+export function simulateGateInput(text: string, data: SimulatePrompts["data"]): GateInput {
+  return { surface: "simulate", text, evidence: { kind: "data", data }, identity: { researchInstitutionId: null, accountInstitutionId: null } };
+}
+
+/**
+ * The Simulate stream's body with HAMILTON_ANSWER_GATE_ENFORCE on (#1077 T4): nothing is sent until
+ * the read is finished and gated; then the read, or `SIMULATE_HELD_MESSAGE` in its place. A read
+ * that never finishes (`text` rejects) errors the body, as an unfinished stream does today.
+ */
+export function enforcedSimulateBody(text: PromiseLike<string>, data: SimulatePrompts["data"]): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  return new ReadableStream<Uint8Array>({
+    async start(controller) {
+      try {
+        const read = await text;
+        const verdict = read.trim() ? tryGateAnswer(simulateGateInput(read, data)) : null;
+        const shown = read.trim() && enforcedOutcome(verdict, false) === "validated" ? read : SIMULATE_HELD_MESSAGE;
+        controller.enqueue(encoder.encode(shown));
+        controller.close();
+      } catch (error) {
+        controller.error(error);
+      }
+    },
+  });
 }
 
 function anthropicSimulateClient(institutionId: number | null, tracking?: MemoTracking): MemoClient {

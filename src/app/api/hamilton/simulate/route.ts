@@ -36,7 +36,8 @@ import { getDistributionForCategory } from "@/app/pro/(hamilton)/simulate/action
 import { canSimulate } from "@/lib/hamilton/confidence";
 import { getInstitutionById } from "@/lib/data-store";
 import { getRequestSubjectKey } from "@/lib/api-hardening/audit";
-import { SIMULATE_MAX_TOKENS, SIMULATE_ROUTE_ID, simulatePrompts, simulateGateShadow } from "@/lib/hamilton/simulate-read";
+import { SIMULATE_MAX_TOKENS, SIMULATE_ROUTE_ID, enforcedSimulateBody, simulatePrompts, simulateGateShadow } from "@/lib/hamilton/simulate-read";
+import { isAnswerGateEnforced } from "@/lib/hamilton/output-gate-enforce";
 import { scheduleGateShadow } from "@/lib/hamilton/output-gate-shadow-store";
 
 export const maxDuration = 120;
@@ -105,6 +106,10 @@ async function handlePOST(request: Request) {
     distribution: distributionData,
     institution,
   });
+
+  // HAMILTON_ANSWER_GATE_ENFORCE on (#1077 T4): the read is sent only once it is finished and the
+  // one output gate validates it; off (the default), it streams ungated as before.
+  const enforceGate = isAnswerGateEnforced();
 
   const providerContext = {
     provider: "anthropic" as const,
@@ -190,7 +195,7 @@ async function handlePOST(request: Request) {
       // ungated. Computed and recorded after the response; nothing here waits on it.
       if (typeof text === "string" && text.trim()) {
         const shadowText = text;
-        scheduleGateShadow(() => simulateGateShadow(shadowText, promptData, "shown_ungated", "simulate_stream"),
+        scheduleGateShadow(() => simulateGateShadow(shadowText, promptData, "shown_ungated", "simulate_stream", enforceGate),
           { userId: user.id, researchInstitutionId: institutionId && /^\d+$/.test(institutionId) ? Number(institutionId) : null });
       }
     },
@@ -202,6 +207,19 @@ async function handlePOST(request: Request) {
   const observeFailure = (error: unknown) => { void failProvider(error); };
   // consumeStream swallows reader failures unless its public onError observer is supplied.
   void Promise.resolve(result.consumeStream({ onError: observeFailure })).catch(observeFailure).finally(async () => { scope.dispose(); await flushProviderFailure(); });
+  if (enforceGate) {
+    // Nothing is sent before the provider has finished cleanly: an unfinished read errors the body, as below.
+    const finished = (async () => {
+      const text = await result.text;
+      assertCompletedProviderFinish(await result.finishReason);
+      if (providerFailed) throw scope.error ?? terminalFailure;
+      return text;
+    })();
+    return scope.wrapOutgoingResponse(
+      new Response(enforcedSimulateBody(finished, promptData), { headers: { "content-type": "text/plain; charset=utf-8" } }),
+      () => failProvider(scope.error),
+    );
+  }
   return scope.wrapOutgoingResponse(result.toTextStreamResponse(), () => failProvider(scope.error), async () => {
     // The SDK text-only projection discards error/finish parts; reject its body instead of silent partial success.
     assertCompletedProviderFinish(await result.finishReason);

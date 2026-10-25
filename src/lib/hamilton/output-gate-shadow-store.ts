@@ -20,8 +20,13 @@ const SURFACE_LABEL: Record<GateShadowRecord["surface"], string> = {
 };
 
 export function shadowSummary(record: GateShadowRecord): string {
-  if (record.error) return `Shadow gate could not run (${record.error}); today's decision (${record.today}) stands.`;
-  return `Shadow gate: ${record.unified.replace("_", " ")}; today: ${record.today.replace("_", " ")}${record.disagreement ? `; disagrees (${record.disagreement.replace("_", " ")})` : "; agrees"}.`;
+  if (record.error) {
+    return record.gateMode === "enforced"
+      ? `Enforced gate could not run (${record.error}); the answer was held.`
+      : `Shadow gate could not run (${record.error}); today's decision (${record.today}) stands.`;
+  }
+  const lead = record.gateMode === "enforced" ? "Enforced gate" : "Shadow gate";
+  return `${lead}: ${record.unified.replace("_", " ")}; today: ${record.today.replace("_", " ")}${record.disagreement ? `; disagrees (${record.disagreement.replace("_", " ")})` : "; agrees"}.`;
 }
 
 export interface GateShadowContext {
