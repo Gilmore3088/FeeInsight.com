@@ -418,6 +418,48 @@ export function readNarrativeBinding(value: unknown): NarrativeBinding | null {
   };
 }
 
+/**
+ * A binding as a buffered reader-facing response sends it: each left-out sentence by its reason
+ * only. `readNarrativeBinding` cannot read it back (it rejects an omitted entry with no text), so it
+ * is for JSON replies only, never for a saved row or the streamed answer's metadata.
+ */
+export interface ReaderNarrativeBinding extends Omit<NarrativeBinding, "omitted"> {
+  omitted: Array<{ reason: OmitReason }>;
+}
+
+/**
+ * One sentence as both splitters see it, for comparing a gate cut with a binding sentence. The
+ * gate's split (`gateSentences`) strips a list marker or a blockquote marker; the binding's
+ * (`splitIntoSentences`) strips a list marker and then a blockquote marker, so on a `- > ...` line
+ * their texts differ. Every leading list and blockquote marker goes here, on both sides.
+ */
+export function sentenceMatchKey(text: string): string {
+  return text.trim().replace(/^(?:(?:[-*+]|\d+\.)\s+|>\s*)+/, "").trim();
+}
+
+/**
+ * The binding a buffered JSON response may carry (#1077 follow-up). It never holds the text of a
+ * sentence the reader's view left out: the binding's omitted sentences keep their reason and their
+ * count but lose their text, and a sentence the gate cut from the view (`cut`) is dropped from the
+ * supported, reading and basis lists (matched by `sentenceMatchKey`). Keys keep the binding's own
+ * order, so a binding with nothing omitted or cut serialises exactly as before. The saved row keeps
+ * the full binding (reports read it server side). The streamed answer still sends the full binding:
+ * its replayed text holds the left-out sentences and the screen needs their text to hide them.
+ */
+export function readerNarrativeBinding(binding: NarrativeBinding, cut: Iterable<string> = []): ReaderNarrativeBinding {
+  const drop = new Set([...cut].map(sentenceMatchKey));
+  const kept = (text: string) => !drop.has(sentenceMatchKey(text));
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(binding)) {
+    if (key === "supported") out[key] = binding.supported.filter((s) => kept(s.text));
+    else if (key === "interpretation") out[key] = binding.interpretation.filter(kept);
+    else if (key === "omitted") out[key] = binding.omitted.map((o) => ({ reason: o.reason }));
+    else if (key === "readingBasis") out[key] = (binding.readingBasis ?? []).filter((b) => kept(b.text));
+    else out[key] = value;
+  }
+  return out as unknown as ReaderNarrativeBinding;
+}
+
 const LIST_MARKER = /^(\s*(?:[-*+]|\d+\.)\s+|\s*>\s*)/;
 
 /**

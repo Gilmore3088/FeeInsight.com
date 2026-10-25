@@ -1,10 +1,9 @@
-import type { CategoryChargeBasis, IndexEntry } from "@/lib/data-store/fee-index";
+import type { IndexEntry } from "@/lib/data-store/fee-index";
 
-export type { CategoryChargeBasis };
 import { institutionValue, MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/fee-stats";
 import { isBusinessOnlyLink } from "@/lib/agents/magellan/link-coverage";
-import { frequencyFamily } from "@/lib/fee-frequency";
-import { isSpecialUnitFrequency, specialUnitReason, UNIT_LABELS } from "@/lib/fee-unit";
+import { basisMismatchReason } from "@/lib/fee-comparability";
+import { isSpecialUnitFrequency, specialUnitReason } from "@/lib/fee-unit";
 
 export interface SelectedInstitutionFeeDelta {
   fee_name: string;
@@ -50,42 +49,13 @@ export interface ReportPeerCoveragePreview {
   canGenerateSelectedInstitutionBenchmarkConclusions: boolean;
 }
 
-/** A basis is the category's own when at least this share of peers' stated rows carry it. */
-export const CHARGE_BASIS_MIN_SHARE = 0.8;
-/** Below this many stated peer rows the basis is unknown, and frequency is not checked. */
-export const CHARGE_BASIS_MIN_ROWS = 20;
-
-/** Categories whose peers charge them on more than one basis, so one median does not compare like for like. */
-export function mixedBasisCategories(bases: readonly CategoryChargeBasis[] | null | undefined): Set<string> {
-  return new Set(
-    (bases ?? [])
-      .filter((basis) => basis.stated_rows >= CHARGE_BASIS_MIN_ROWS && basis.share < CHARGE_BASIS_MIN_SHARE)
-      .map((basis) => basis.fee_category),
-  );
-}
-
 /** A fee left out of the peer comparison because the two sides are not charged alike. */
 export interface UnlikeFeeComparison {
   fee_name: string;
   fee_category: string;
   institution_amount: number;
-  reason: "business_schedule" | "different_charge_basis" | "mixed_peer_basis";
+  reason: "business_schedule" | "different_charge_basis";
   detail: string;
-}
-
-const BASIS_WORDS: Record<string, string> = {
-  ...UNIT_LABELS,
-  per_item: "per item",
-  monthly: "monthly",
-  annual: "annually",
-  quarterly: "quarterly",
-  daily: "daily",
-  weekly: "weekly",
-  hourly: "by the hour",
-};
-
-function basisWords(family: string): string {
-  return BASIS_WORDS[family] ?? family.replace(/_/g, " ");
 }
 
 interface SelectedInstitutionFeeInput {
@@ -129,8 +99,6 @@ type SelectedFeeComparisonParams = {
     | "institution_count"
     | "maturity_tier"
   >[];
-  /** How peers charge each category; without it only the schedule (business) check applies. */
-  chargeBases?: CategoryChargeBasis[] | null;
   evidencePolicy?: string | null;
   limit?: number;
 };
@@ -141,11 +109,12 @@ export function buildSelectedInstitutionFeeDeltas(params: SelectedFeeComparisonP
 
 /**
  * The selected institution's fees against the peer median, like for like only. Peer medians
- * leave out business-only schedules (fee-stats rule 6) and pool each category's charge basis,
- * so the institution's value is taken from its consumer rows charged on the peers' basis
- * (a row with no stated frequency counts as that basis). A category the institution states
- * only on a business schedule or only on another basis, or one whose peers mix bases, is
- * listed in `notLikeForLike` instead of being given an above/below position.
+ * leave out business-only schedules (fee-stats rule 6) and every row stated on another basis
+ * than the category's own (rule 9, #1901), so the institution's value is taken from its consumer
+ * rows by the same basis rule (basisMismatchReason; a row with no stated frequency keeps its
+ * place, as it does in the medians). A category the institution states only on a business
+ * schedule or only on another basis is listed in `notLikeForLike` instead of being given an
+ * above/below position.
  */
 export function compareSelectedInstitutionFees(params: SelectedFeeComparisonParams): {
   deltas: SelectedInstitutionFeeDelta[];
@@ -155,11 +124,6 @@ export function compareSelectedInstitutionFees(params: SelectedFeeComparisonPara
     params.indexEntries
       .filter((entry) => entry.median_amount !== null)
       .map((entry) => [entry.fee_category, entry]),
-  );
-  const basisByCategory = new Map(
-    (params.chargeBases ?? [])
-      .filter((basis) => basis.stated_rows >= CHARGE_BASIS_MIN_ROWS)
-      .map((basis) => [basis.fee_category, basis]),
   );
   const verifiedOnly = params.evidencePolicy === "verified-only";
   const visible = params.selectedFees
@@ -187,15 +151,6 @@ export function compareSelectedInstitutionFees(params: SelectedFeeComparisonPara
         detail,
       });
     };
-    const basis = basisByCategory.get(category) ?? null;
-    if (basis && basis.share < CHARGE_BASIS_MIN_SHARE) {
-      unlike(
-        "mixed_peer_basis",
-        `Peers charge this fee on more than one basis (${Math.round(basis.share * 100)}% ${basisWords(basis.family)}), so one median does not compare like for like.`,
-        group,
-      );
-      continue;
-    }
     const consumer = group.filter((fee) => !fee.source_url || !isBusinessOnlyLink(fee.source_url));
     if (consumer.length === 0) {
       unlike(
@@ -211,17 +166,11 @@ export function compareSelectedInstitutionFees(params: SelectedFeeComparisonPara
     }
     const eligible = consumer.filter(fee => !isSpecialUnitFrequency(fee.frequency));
     if (eligible.length === 0) continue;
-    const sameBasis = basis
-      ? eligible.filter((fee) => {
-          const family = frequencyFamily(fee.frequency);
-          return family === null || family === basis.family;
-        })
-      : eligible;
+    const sameBasis = eligible.filter((fee) => basisMismatchReason(category, fee.frequency) === null);
     if (sameBasis.length === 0) {
-      const family = frequencyFamily(eligible[0].frequency) as string;
       unlike(
         "different_charge_basis",
-        `Charged ${basisWords(family)}; peers charge it ${basisWords(basis!.family)}.`,
+        `${basisMismatchReason(category, eligible[0].frequency)}; the peer median compares one charging basis.`,
         eligible,
       );
       continue;
@@ -325,7 +274,6 @@ export function buildReportPeerCoveragePreview(params: {
     | "maturity_tier"
   >[];
   evidencePolicy?: string | null;
-  chargeBases?: CategoryChargeBasis[] | null;
   peerBaselineSource?: string | null;
   peerBaselineLabel?: string | null;
   peerFallbackReason?: string | null;
@@ -341,7 +289,6 @@ export function buildReportPeerCoveragePreview(params: {
   const selectedFeeDeltas = buildSelectedInstitutionFeeDeltas({
     selectedFees: selectedVisibleFees,
     indexEntries: params.indexEntries,
-    chargeBases: params.chargeBases,
     evidencePolicy,
   });
   const selectedVerifiedFeeDeltaCount = selectedFeeDeltas.filter(

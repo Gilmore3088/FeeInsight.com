@@ -294,3 +294,41 @@ describe("actionable morning brief", () => {
     expect(text).not.toContain("last success 2026-10-19");
   });
 });
+
+describe("Hamilton health in the morning brief (#1921)", () => {
+  const base = { health, funnel, previous: null, stepsByAgent: {}, feed24h: [] };
+  const report = (askOk: boolean) => ({
+    readAt: "2026-10-25T12:00:00.000Z",
+    failed: askOk ? 0 : 1,
+    checks: [
+      { check: "database" as const, ok: true, reason: "7 tables readable", ms: 40 },
+      { check: "ask" as const, ok: askOk, reason: askOk ? "answered institution 1 (research)" : "the overdraft research for institution 1 did not load", ms: 900 },
+      { check: "export" as const, ok: true, reason: "analysis PDF rendered (4 KB)", ms: 700 },
+    ],
+  });
+
+  it("puts a failed check at the top of what needs James, and in the subject", () => {
+    const brief = buildDailyBrief({ ...base, needsYou: [], hamilton: report(false) });
+    expect(brief.subject).toBe("Morning brief: 1 thing needs you, Hamilton check failed, pipeline running");
+    expect(brief.lines[0]).toBe([
+      "1 thing needs you.",
+      "- Hamilton Ask check failed: the overdraft research for institution 1 did not load. See docs/runbooks/hamilton-incident.md.",
+    ].join("\n"));
+
+    const older = buildDailyBrief({ ...base, hamilton: report(false) });
+    expect(older.subject).toContain("pipeline running, Hamilton check failed,");
+    expect(older.lines).not.toContain("Nothing is stuck. Nothing needs you.");
+    expect(older.lines.some((line) => line.startsWith("Hamilton Ask check failed"))).toBe(true);
+  });
+
+  it("treats a check that could not run as a failure", () => {
+    const brief = buildDailyBrief({ ...base, needsYou: [], hamilton: null, hamiltonError: "connect ECONNREFUSED" });
+    expect(brief.lines[0]).toContain("- Hamilton health check could not run: connect ECONNREFUSED.");
+  });
+
+  it("says nothing about Hamilton when every check passed", () => {
+    const brief = buildDailyBrief({ ...base, needsYou: [], hamilton: report(true) });
+    expect(brief.subject).toBe("Morning brief: nothing needs you, pipeline running");
+    expect(brief.lines.join("\n")).not.toContain("Hamilton");
+  });
+});

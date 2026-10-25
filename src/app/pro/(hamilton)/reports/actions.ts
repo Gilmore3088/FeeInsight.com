@@ -12,7 +12,6 @@ import { readHamiltonIdentitySnapshot } from "@/lib/hamilton/identity-display";
 import { readSavedAnalysisRecord } from "@/lib/hamilton/saved-analysis-record";
 import { getFeesByInstitution, getInstitutionById } from "@/lib/data-store";
 import { sql } from "@/lib/data-store/connection";
-import { getCategoryChargeBases } from "@/lib/data-store/fee-index";
 import { getInstitutionFeeScheduleEvidence } from "@/lib/data-store/institution";
 import { generateVerifiedSection, type VerifiedSectionOutput } from "@/lib/hamilton/generate";
 import { checkProAiQuota, quotaExceededMessage } from "@/lib/hamilton/quota";
@@ -97,13 +96,12 @@ export async function previewReportPeerCoverage(
   }
 
   try {
-    const [selectedInstitution, selectedFees, selectedEvidence, chargeBases] = await Promise.all([
+    const [selectedInstitution, selectedFees, selectedEvidence] = await Promise.all([
       params.institutionId ? getInstitutionById(params.institutionId).catch(() => null) : null,
       params.institutionId ? getFeesByInstitution(params.institutionId).catch(() => []) : [],
       params.institutionId
         ? getInstitutionFeeScheduleEvidence(params.institutionId).catch(() => null)
         : null,
-      params.institutionId ? getCategoryChargeBases().catch(() => null) : null,
     ]);
 
     if (params.institutionId && !selectedInstitution) {
@@ -128,7 +126,6 @@ export async function previewReportPeerCoverage(
         hasSelectedInstitution: Boolean(selectedInstitution),
         selectedFees,
         indexEntries: peerIndex.entries,
-        chargeBases,
         evidencePolicy: params.evidencePolicy ?? "provisional-first",
         peerBaselineSource: peerIndex.source,
         peerBaselineLabel: peerIndex.label,
