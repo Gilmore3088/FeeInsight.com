@@ -9,6 +9,7 @@ describe("a saved answer's figure lines print only when they trace to its record
     expect(figuresTraceToRecords("$35", records)).toBe(true);
     expect(figuresTraceToRecords("Overdraft fee · $35 · Published schedule · 2026-06-30", records)).toBe(true);
     expect(figuresTraceToRecords("Share of income · 12% · As of Oct 5, 2026 (Q2 2026)", records)).toBe(true);
+    expect(figuresTraceToRecords("Overdraft fee · $35 · Fee schedule, September 30, 2026; filed in 2025; FY 2026 through December 2026", records)).toBe(true);
   });
 
   it.each([
@@ -19,6 +20,12 @@ describe("a saved answer's figure lines print only when they trace to its record
     ["a comma-joined number", "$35,41"],
     ["a full-width dollar sign", "＄41 $35"],
     ["no $ or % figure at all", "38th percentile"],
+    ["a count in the year range", "$35 across 2041 peers"],
+    ["a count that looks like a year", "$35 · 1999 accounts"],
+    ["a day no month has", "$35 · Oct 41, 2026"],
+    ["a word that starts like a month", "$35 · Mayday 41, 2026"],
+    ["an ISO date with no such month or day", "$35 · 2026-41-99"],
+    ["a quarter in a year out of range", "$35 · Q2 2041"],
   ])("drops %s: %s", (_case, text) => {
     expect(figuresTraceToRecords(text, records)).toBe(false);
   });

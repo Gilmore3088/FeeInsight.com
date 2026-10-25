@@ -13,8 +13,32 @@ export interface TraceRecord {
   unit: string;
 }
 
-/** Dates and quarters are not figures: "2026-06-30", "Oct 5, 2026", "Q2 2026", a bare year. */
-const DATE_LIKE = /\b\d{4}-\d{2}-\d{2}\b|\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2},\s+\d{4}\b|\bQ[1-4]\s+\d{4}\b|\b(?:19|20)\d{2}\b/gi;
+const MONTH = "(?:Jan|January|Feb|February|Mar|March|Apr|April|May|Jun|June|Jul|July|Aug|August|Sep|Sept|September|Oct|October|Nov|November|Dec|December)";
+const DAY = "(?:[1-9]|[12]\\d|3[01])";
+/**
+ * Dates are not figures, and only real dates are exempt: an ISO date ("2026-06-30"), a month and day
+ * ("Oct 5, 2026"), a month and year ("October 2026"), a quarter ("Q2 2026") or a year after "as of",
+ * "in", "FY" or "through". The year must fall from 2000 to next year. Every pattern's year is group 1.
+ */
+const DATE_PATTERNS: RegExp[] = [
+  /\b(\d{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])\b/g,
+  new RegExp(`\\b${MONTH}\\.?\\s+${DAY},\\s+(\\d{4})\\b`, "gi"),
+  new RegExp(`\\b${MONTH}\\.?\\s+(\\d{4})\\b`, "gi"),
+  /\bQ[1-4]\s+(\d{4})\b/gi,
+  /\b(?:as of|in|FY|through)\s+(\d{4})\b/gi,
+];
+
+function blankDates(text: string): string {
+  const latest = new Date().getUTCFullYear() + 1;
+  let out = text;
+  for (const pattern of DATE_PATTERNS) {
+    out = out.replace(pattern, (match, year: string) => {
+      const y = Number(year);
+      return y >= 2000 && y <= latest ? " ".repeat(match.length) : match;
+    });
+  }
+  return out;
+}
 
 /**
  * True when every $ or % figure in the text traces to the records and every other run of digits
@@ -34,7 +58,7 @@ export function figuresTraceToRecords(text: string, records: readonly TraceRecor
     const start = text.indexOf(f.raw, f.index);
     return [start, start + f.raw.length] as const;
   });
-  const undated = text.replace(DATE_LIKE, (m) => " ".repeat(m.length));
+  const undated = blankDates(text);
   for (const run of undated.matchAll(/\d+/g)) {
     const at = run.index ?? 0;
     if (!spans.some(([s, e]) => at >= s && at + run[0].length <= e)) return false;
