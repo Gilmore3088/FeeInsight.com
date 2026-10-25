@@ -62,6 +62,9 @@ export type FeedbackStage = (typeof FEEDBACK_STAGES)[number];
  *     evidence wrong_document_id and wrong_document_url, read by Magellan's stale-link search; no
  *     agent reads the other stages yet): admin_hold, admin_release, admin_correction,
  *     admin_correction_reversed
+ *   Error loop (weight 0, Deming, `deming/error-fixes.ts`, #2058): error_fix_closed (a named error
+ *     re-checked after its process fix and gone) and error_fix_still_wrong (still wrong after the
+ *     re-run, recorded once per fix)
  */
 /**
  * A business-schedule takedown brought back for want of a consumer fee (weight 0, a record,

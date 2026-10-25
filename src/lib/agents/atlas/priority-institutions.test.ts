@@ -320,7 +320,7 @@ describe("requestWindows (#1384 follow-up)", () => {
       { ...base, institutionId: 2, requestedAt: "2026-13-40" },
       { ...base, institutionId: 3, requestedAt: "2026-10-15" },
     ], (message) => warnings.push(message));
-    expect(windows).toEqual({ institutionIds: [3], since: ["2026-10-15T00:00:00.000Z"] });
+    expect(windows).toEqual({ institutionIds: [3], since: ["2026-10-15T00:00:00.000Z"], minVersion: [0] });
     expect(warnings).toHaveLength(2);
     expect(warnings[0]).toContain("institution 1");
   });
@@ -332,7 +332,16 @@ describe("requestWindows (#1384 follow-up)", () => {
       { ...base, institutionId: 7, requestedAt: "2026-10-15" },
       { ...base, institutionId: 8 },
     ]);
-    expect(windows).toEqual({ institutionIds: [7, 8], since: ["2026-10-16T09:00:00.000Z", ""] });
+    expect(windows).toEqual({ institutionIds: [7, 8], since: ["2026-10-16T09:00:00.000Z", ""], minVersion: [0, 0] });
+  });
+
+  it("ends a fix request only on an extract at the fixed Knox version, the highest a bank's entries ask (#2058)", () => {
+    const windows = requestWindows([
+      { ...base, institutionId: 7, requestedAt: "2026-10-20" },
+      { ...base, institutionId: 7, requestedAt: "2026-10-20", minExtractVersion: 105 },
+      { ...base, institutionId: 8, requestedAt: "2026-10-20", minExtractVersion: 104 },
+    ]);
+    expect(windows.minVersion).toEqual([105, 104]);
   });
 
   it("reads today's list as one entry per bank, none skipped", () => {
