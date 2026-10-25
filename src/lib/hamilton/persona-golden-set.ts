@@ -625,9 +625,7 @@ export function personaLegacyDecision(c: Exclude<PersonaGoldenCase, { surface: "
 }
 
 const SHADOW_PATH: Record<GateSurface, ShadowPath> = {
-  written_answer: "written_streaming", memo: "memo", report_section: "report_section", simulate: "simulate_read",
-  // No persona case is an Ask bar answer; the key is here because the type lists every surface (#2644).
-  ask: "ask_replay",
+  written_answer: "written_streaming", memo: "memo", report_section: "report_section", simulate: "simulate_read", ask: "ask_replay",
 };
 
 function agreementOf(legacy: TodayDecision, unified: GateStatus): PersonaReplayResult["agreement"] {
