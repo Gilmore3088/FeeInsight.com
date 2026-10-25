@@ -1,4 +1,5 @@
 import { sql, withTransaction } from "@/lib/data-store/connection";
+import { sweepInterruptedReportRuns } from "@/lib/hamilton/report-run";
 import { feeSourceFetch } from "@/lib/agents/fee-source-fetch";
 import { mapEvent, mapRun, mapStep } from "./run-row-mappers";
 import { lessonIds, lessonsForStep } from "./learning/lesson-reader";
@@ -3567,6 +3568,8 @@ export interface ReapStaleAgentStepsResult {
   requeued: Array<{ runId: number; stepId: number; stepKey: string; attempt: number }>;
   dead: Array<{ runId: number; stepId: number; stepKey: string; attempts: number }>;
   orphanRunsRequeued: number[];
+  /** Pro report runs a killed request left running, closed once their lease lapsed (#1921). */
+  reportRunsClosed?: number[];
 }
 
 export { MAX_STEP_ATTEMPTS, STALE_RUNNING_STEP_MINUTES };
@@ -3688,6 +3691,15 @@ export async function reapStaleAgentSteps({
          ${JSON.stringify({ reaper: true })}::jsonb)
     `;
     result.orphanRunsRequeued.push(runId);
+  }
+
+  // Pro report runs (pro_request, which the queries above never requeue) a killed request left
+  // running: their open steps and the run are closed once the lease lapses, whatever the scope or
+  // pause, since this is cleanup of a reader's request, not pipeline work (#1921, report-run.ts).
+  try {
+    result.reportRunsClosed = await sweepInterruptedReportRuns();
+  } catch (error) {
+    console.error("[reaper] interrupted report-run sweep failed", error instanceof Error ? error.message : String(error));
   }
 
   return result;

@@ -1030,6 +1030,34 @@ describe("durable report runs and fault handling (#1921)", () => {
     expect(mocks.saveHamiltonReport).not.toHaveBeenCalled();
   });
 
+  it("keeps each parallel section's own fault: one section's fault never stands in for another's", async () => {
+    mocks.openReportRun.mockResolvedValue({ kind: "opened", run: handle() });
+    mocks.generateSection.mockImplementation(async (input: SectionInput) => {
+      if (input.title === "What Is Behind It") throw Object.assign(new Error("Overloaded"), { status: 529 });
+      if (input.title === "Trade-offs and What to Watch") throw new HamiltonTaskBudgetError("task", "calls", 16, 16, "report");
+      return sectionText(input);
+    });
+    const result = await generateReport(reportParams());
+    // The first failed section (index 1) is the one reported, with its own fault.
+    expect(result).toMatchObject({ success: false, error: expect.stringContaining("What Is Behind It") });
+    const failed = Object.fromEntries(mocks.failReportSection.mock.calls.map(([, key, fault]) => [key, fault.kind]));
+    expect(failed).toEqual({ "pro.report.section.2": "provider_error", "pro.report.section.3": "budget" });
+    expect(mocks.failReportRun).toHaveBeenCalledWith(expect.anything(), expect.any(String), expect.objectContaining({ fault: "provider_error" }));
+  });
+
+  it("keeps the run's report id and closes the run when a checkpoint write fails mid-report", async () => {
+    mocks.openReportRun.mockResolvedValue({ kind: "opened", run: handle() });
+    mocks.startReportSection.mockRejectedValueOnce(new Error("connection reset"));
+    const result = await generateReport(reportParams());
+    expect(result).toMatchObject({ success: true, reportId: RUN_REPORT_ID });
+    // Checkpoints stop for the rest of the request; the save and the close still use the run.
+    expect(mocks.saveReportSection).not.toHaveBeenCalled();
+    expect(mocks.saveHamiltonReport).toHaveBeenCalledWith(expect.objectContaining({ reportId: RUN_REPORT_ID }));
+    expect(mocks.completeReportRun).toHaveBeenCalledWith(expect.objectContaining({ runId: 41 }), expect.any(String),
+      expect.objectContaining({ durable_run_id: 41, checkpoints_degraded: true }));
+    expect(mocks.recordProRequest).not.toHaveBeenCalled();
+  });
+
   it("writes the report without checkpoints when the run ledger is unavailable, as before", async () => {
     mocks.openReportRun.mockResolvedValue({ kind: "unavailable", reason: "connection refused" });
     const result = await generateReport(reportParams());

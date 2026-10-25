@@ -87,28 +87,38 @@ The caps are code constants (no environment variable, no table row). They sit ab
 single calls in `ai_api_usage_events` for the 60 days to 2026-10-25 (written answer $0.67 and 148k
 tokens, report section $0.18 and 23k tokens, chat $0.39), and the reader's day sits below
 `agent:hamilton`'s $20 daily policy. A refused call writes a `blocked` row in
-`ai_api_usage_events` (metadata `hamilton_budget_scope`, `hamilton_budget_measure`) and, for a
+`ai_api_usage_events` (metadata `budget_reason_code`, `hamilton_budget_scope`,
+`hamilton_budget_measure`) and, for a
 report, a `budget.blocked` event on its run. The reader sees a plain line ("Hamilton stopped this
 request because it reached the limit for a single request..." or "You've reached today's limit
 for Hamilton's written work..."). If the day's usage cannot be read, the call is refused.
 
 **Faults** (`src/lib/hamilton/task-faults.ts`): a provider error, a timeout or an unusable reply
-is retried once; a usage or billing limit, a budget cap, the provider stop and an unfinished reply
-are never retried. A report section that still fails ends its run `failed`, with the fault kind on
-the step (`section.failed` event) and on the run.
+is retried once; a reply too large to read, a usage or billing limit, a budget cap, the provider
+stop and an unfinished reply are never retried. Each report section keeps its own fault. A section
+that still fails ends its run `failed`, with the fault kind on the step (`section.failed` event)
+and on the run.
 
 **Report runs** (`src/lib/hamilton/report-run.ts`): each Pro report is one `pro_request` run at
 stage `pro.report`, with a step per section and a save step. A finished section is saved on its
-step before the next starts. If the request is cut off, asking for the same report again resumes
-after about 5.5 minutes (the lease) and reuses the saved sections; a request inside the lease is
+step before the next starts; a request inside the lease (5.5 minutes, renewed at each section) is
 told the report is still being written. The report's id is fixed when the run opens, so a replay
 never saves a second copy, and the report row is written only after every section passed. A
-failed run's finished sections carry into a new run of the same request for an hour. A run nobody
-resumes is closed `failed` after 24 hours, the next time that reader starts a report.
+failed run's finished sections carry into a new run of the same request for an hour.
+
+If the request is killed (a deploy, a timeout, a closed tab), its run and its current step are
+left `running`. Once the lease lapses, `sweepInterruptedReportRuns` closes them without waiting for
+the reader: the step it was on is marked `failed` ("Interrupted: ..."), later steps `skipped`, and
+the run `failed` (`run.interrupted` event, `closed_by_sweep` in its params), or `completed` when
+the report had already been saved, in which case the next request for it gets that report back
+once. The sweep runs on every agents tick (the stale-step reaper), on every pipeline health read
+(`/api/admin/job-health`) and before every report opens, so an interrupted report never counts as
+a stale running step. If a checkpoint write fails mid-report, the report is still written and
+saved under the run's id, and the run is still closed (`checkpoints_degraded` in its detail).
 
 To check a stuck or failed report: in the admin run ledger, open the reader's `pro.report` run.
 Its steps show which section stopped and why; its events show `section.saved`, `section.failed`,
-`budget.blocked`, `run.resumed`.
+`budget.blocked`, `run.interrupted`, `run.resumed`.
 
 ## Switches and rollback
 

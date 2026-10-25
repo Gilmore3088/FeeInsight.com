@@ -6,6 +6,8 @@
  * event), and the retry policy decides whether the same step is tried again:
  * - a provider error (5xx, 429, a dropped connection) and a timeout are retried once;
  * - malformed output (an empty reply, a reply that is not the shape asked for) is retried once;
+ * - a reply too large to read (over a response byte limit) is never retried: the same request
+ *   would grow the same reply, and pay for it again;
  * - an unfinished reply (stopped at its token limit, refused), a usage or billing limit at the
  *   provider, a budget cap and the provider stop are never retried: trying again cannot help,
  *   and each try would be another charge.
@@ -27,6 +29,7 @@ export type HamiltonFaultKind =
   | "provider_error"
   | "timeout"
   | "malformed_output"
+  | "too_large"
   | "incomplete"
   | "provider_paused"
   | "budget"
@@ -39,6 +42,7 @@ export const HAMILTON_RETRY_POLICY: Readonly<Record<HamiltonFaultKind, number>> 
   provider_error: 1,
   timeout: 1,
   malformed_output: 1,
+  too_large: 0,
   incomplete: 0,
   provider_paused: 0,
   budget: 0,
@@ -101,7 +105,7 @@ export function classifyHamiltonFault(error: unknown): HamiltonFault {
   if (responseBudget) {
     if (responseBudget.reason === "cancelled") return fault("cancelled", responseBudget.message);
     if (responseBudget.reason === "deadline" || responseBudget.reason === "idle") return fault("timeout", responseBudget.message);
-    return fault("malformed_output", responseBudget.message);
+    return fault("too_large", "Hamilton's reply was too long to use. Please try a narrower question.");
   }
   if (links.some((link) => link instanceof IncompleteProviderResponseError)) {
     return fault("incomplete", "Hamilton's reply could not finish. Please try again or ask a smaller question.");

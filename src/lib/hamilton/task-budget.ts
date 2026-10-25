@@ -256,7 +256,7 @@ export async function assertHamiltonTaskBudget(context: TaskCallContext, now: Da
   if (!scope) return;
   const refuse = async (error: HamiltonTaskBudgetError): Promise<never> => {
     scope.blocked.push({ scope: error.scope, measure: error.measure, used: error.used, cap: error.cap, operation: context.operation });
-    context.metadata = { ...(context.metadata ?? {}), hamilton_budget_scope: error.scope, hamilton_budget_measure: error.measure };
+    context.metadata = { ...(context.metadata ?? {}), budget_reason_code: error.reasonCode, hamilton_budget_scope: error.scope, hamilton_budget_measure: error.measure };
     await recordBlockedOnRun(scope, error, context.operation);
     throw error;
   };

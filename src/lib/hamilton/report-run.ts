@@ -23,9 +23,16 @@
  * - A failed run (a section that failed under the retry policy) ends `failed` with the fault.
  *   A new request for the same report within an hour carries its finished sections over, so
  *   a retry pays only for what did not finish.
+ * - A request that is killed leaves its run `running` and a step `running`. Once the lease
+ *   lapses, `sweepInterruptedReportRuns` closes them: the step it was on is marked failed, the
+ *   steps after it skipped, and the run failed (finished sections kept for a retry within the
+ *   hour) or, when the report was already saved, completed (the next request for it gets that
+ *   report back). The sweep runs on every agents tick (`reapStaleAgentSteps`), on every
+ *   pipeline health read and before every report opens, so no step is left `running` for the
+ *   15 minutes after which job health reports it stuck.
  *
- * pro_request runs are never picked up by the tick or the stale-step reaper (run-store.ts),
- * so a run in progress here is touched only by the reader's own requests.
+ * pro_request runs are never executed by the tick or requeued by the stale-step reaper
+ * (run-store.ts); only the sweep above and the reader's own requests touch them.
  *
  * If the ledger cannot be written, `openReportRun` returns `unavailable` and the report is
  * written as before this change (no checkpoints), so a ledger outage never blocks a report.
@@ -39,10 +46,8 @@ type SqlTag = typeof sql;
 
 /** Longer than the report page's maxDuration (300s), so a live request is never taken over. */
 export const REPORT_RUN_LEASE_MS = 330_000;
-/** A failed run's finished sections are carried into a new run for this long. */
+/** A failed run's finished sections, or a report saved by a cut-off run, carry into a new request for this long. */
 export const REPORT_RUN_CARRY_MINUTES = 60;
-/** A run left running this long was never resumed: it is closed as failed. */
-export const REPORT_RUN_ABANDONED_HOURS = 24;
 
 export const REPORT_RUN_STAGE = "pro.report";
 export const REPORT_SAVE_STEP = "pro.report.save";
@@ -166,18 +171,98 @@ async function event(db: SqlTag, runId: number, stepId: number | null, type: str
   `;
 }
 
-/** Close this reader's report runs nobody resumed for a day, so none sits "running" forever. Best effort. */
-async function closeAbandonedRuns(db: SqlTag, userId: number): Promise<void> {
-  const message = `Report run was interrupted and not resumed within ${REPORT_RUN_ABANDONED_HOURS} hours; no report was saved from it.`;
-  const closed = await db`
-    UPDATE agent_runs
-       SET status = 'failed', error_summary = ${message}, summary = ${message}, completed_at = NOW(), updated_at = NOW()
-     WHERE run_kind = 'pro_request' AND current_stage = ${REPORT_RUN_STAGE} AND status = 'running'
-       AND triggered_by = ${`user:${userId}`}
-       AND updated_at < NOW() - make_interval(hours => ${REPORT_RUN_ABANDONED_HOURS})
-     RETURNING id
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export const INTERRUPTED_STEP_MESSAGE = "Interrupted: the request stopped before this step finished.";
+export const INTERRUPTED_RUN_MESSAGE =
+  "The request stopped before the report finished. No report was saved; finished sections are kept for a retry within the hour.";
+export const INTERRUPTED_SAVED_RUN_MESSAGE =
+  "The request stopped after the report was saved and before its run was closed; the saved report stands.";
+
+/**
+ * Close the steps a cut-off request left open on a run: the one it was on fails, later ones are
+ * skipped. With `saved`, the save step is completed instead (the report row exists).
+ */
+async function closeOpenSteps(db: SqlTag, runId: number, saved: boolean): Promise<void> {
+  if (saved) {
+    await db`
+      UPDATE agent_run_steps SET status = 'completed', summary = 'The report was saved.', completed_at = NOW(), updated_at = NOW()
+       WHERE agent_run_id = ${runId} AND step_key = ${REPORT_SAVE_STEP} AND status IN ('queued', 'running')
+    `;
+  }
+  await db`
+    UPDATE agent_run_steps
+       SET status = CASE WHEN status = 'running' THEN 'failed' ELSE 'skipped' END,
+           error_summary = CASE WHEN status = 'running' THEN ${INTERRUPTED_STEP_MESSAGE} ELSE error_summary END,
+           summary = CASE WHEN status = 'running' THEN ${INTERRUPTED_STEP_MESSAGE} ELSE 'Not run: the request stopped first.' END,
+           completed_at = NOW(), updated_at = NOW()
+     WHERE agent_run_id = ${runId} AND status IN ('queued', 'running')
   `;
-  for (const row of closed) await event(db, Number(row.id), null, "run.failed", "failed", message, { abandoned: true });
+}
+
+/**
+ * Close every report run whose request was cut off: running, with its lease lapsed. Its open
+ * steps are closed (closeOpenSteps) and the run ends failed, or completed when the report row
+ * was already saved. Guarded by status and lease, so a live request is never touched. Returns
+ * the closed run ids. Runs on every agents tick, every pipeline health read and before every
+ * report opens; needs no reader to come back.
+ */
+export async function sweepInterruptedReportRuns(db: SqlTag = sql, now: Date = new Date()): Promise<number[]> {
+  const nowIso = now.toISOString();
+  const leaseSeconds = Math.ceil(REPORT_RUN_LEASE_MS / 1000);
+  const candidates = await db`
+    SELECT id, params_json->>'report_id' AS report_id
+      FROM agent_runs
+     WHERE run_kind = 'pro_request' AND current_stage = ${REPORT_RUN_STAGE} AND status = 'running'
+       AND COALESCE((params_json->>'lease_until')::timestamptz, updated_at + make_interval(secs => ${leaseSeconds})) < ${nowIso}::timestamptz
+     ORDER BY updated_at ASC
+     LIMIT 50
+  `;
+  const closed: number[] = [];
+  for (const row of candidates) {
+    const runId = Number(row.id);
+    if (!Number.isSafeInteger(runId)) continue;
+    const reportId = typeof row.report_id === "string" && UUID.test(row.report_id) ? row.report_id : null;
+    const saved = reportId ? (await db`SELECT 1 FROM hamilton_reports WHERE id = ${reportId}::uuid LIMIT 1`).length > 0 : false;
+    const status = saved ? "completed" : "failed";
+    const message = saved ? INTERRUPTED_SAVED_RUN_MESSAGE : INTERRUPTED_RUN_MESSAGE;
+    const updated = await db`
+      UPDATE agent_runs
+         SET status = ${status}, summary = ${message}, error_summary = ${saved ? null : message},
+             params_json = params_json || ${JSON.stringify({ closed_by_sweep: true })}::jsonb,
+             completed_at = NOW(), updated_at = NOW()
+       WHERE id = ${runId} AND status = 'running'
+         AND COALESCE((params_json->>'lease_until')::timestamptz, updated_at + make_interval(secs => ${leaseSeconds})) < ${nowIso}::timestamptz
+       RETURNING id
+    `;
+    if (updated.length === 0) continue;
+    await closeOpenSteps(db, runId, saved);
+    await event(db, runId, null, "run.interrupted", status, message, { closed_by_sweep: true, report_saved: saved });
+    closed.push(runId);
+  }
+  return closed;
+}
+
+/**
+ * A report a cut-off run saved, which its reader never received: returned once to the next
+ * request for the same report within the hour, instead of writing it again.
+ */
+async function findSweptSavedReport(db: SqlTag, taskKey: string): Promise<{ runId: number; reportId: string } | null> {
+  const [row] = await db`
+    UPDATE agent_runs
+       SET params_json = params_json || ${JSON.stringify({ swept_report_returned: true })}::jsonb
+     WHERE id = (
+       SELECT id FROM agent_runs
+        WHERE idempotency_key = ${taskKey} AND status = 'completed'
+          AND params_json->>'closed_by_sweep' = 'true' AND params_json->>'swept_report_returned' IS NULL
+          AND updated_at >= NOW() - make_interval(mins => ${REPORT_RUN_CARRY_MINUTES})
+        ORDER BY updated_at DESC, id DESC LIMIT 1
+     )
+       AND params_json->>'swept_report_returned' IS NULL
+     RETURNING id, params_json->>'report_id' AS report_id
+  `;
+  if (!row || typeof row.report_id !== "string") return null;
+  return { runId: Number(row.id), reportId: row.report_id };
 }
 
 /** Copy a recent failed run's finished sections into the new run, so a retry pays only for the rest. */
@@ -229,7 +314,12 @@ export async function openReportRun(input: OpenReportRunInput): Promise<ReportRu
   const leaseToken = randomUUID();
   const leaseUntil = new Date(now.getTime() + REPORT_RUN_LEASE_MS).toISOString();
   try {
-    await closeAbandonedRuns(db, input.userId).catch((error) => console.error("[report-run] abandoned-run sweep failed", errorText(error)));
+    await sweepInterruptedReportRuns(db, now).catch((error) => console.error("[report-run] interrupted-run sweep failed", errorText(error)));
+    const swept = await findSweptSavedReport(db, input.taskKey);
+    if (swept) {
+      const run: ReportRunHandle = { runId: swept.runId, leaseToken, reportId: swept.reportId, taskKey: input.taskKey, stepIds: new Map(), checkpoints: new Map(), resumed: true, carriedFromRun: null };
+      return { kind: "already_saved", run };
+    }
     const reportId = randomUUID();
     const params = {
       operation: "report",
@@ -288,12 +378,21 @@ export async function openReportRun(input: OpenReportRunInput): Promise<ReportRu
     if (claimed.length === 0) return { kind: "busy", runId };
     const claimedParams = parseParams(claimed[0].params_json);
     const savedReportId = typeof claimedParams.report_id === "string" ? claimedParams.report_id : randomUUID();
+    // The cut-off request's step never finished: close it as failed (it is written again below).
+    const interrupted = await db`
+      UPDATE agent_run_steps
+         SET status = 'failed', error_summary = ${INTERRUPTED_STEP_MESSAGE}, summary = ${INTERRUPTED_STEP_MESSAGE},
+             completed_at = NOW(), updated_at = NOW()
+       WHERE agent_run_id = ${runId} AND status = 'running'
+       RETURNING step_key
+    `;
     const { stepIds, checkpoints } = await loadSteps(db, runId);
     const run: ReportRunHandle = { runId, leaseToken, reportId: savedReportId, taskKey: input.taskKey, stepIds, checkpoints, resumed: true, carriedFromRun: null };
     const [saved] = await db`SELECT id FROM hamilton_reports WHERE id = ${savedReportId}::uuid LIMIT 1`;
+    if (saved) await closeOpenSteps(db, runId, true);
     await event(db, runId, null, "run.resumed", "running",
       saved ? "Report run resumed after an interruption; the report was already saved." : `Report run resumed after an interruption; ${checkpoints.size} finished section(s) reused.`,
-      { reused_sections: [...checkpoints.keys()], report_already_saved: Boolean(saved) });
+      { reused_sections: [...checkpoints.keys()], report_already_saved: Boolean(saved), interrupted_steps: interrupted.map((row) => String(row.step_key)) });
     return saved ? { kind: "already_saved", run } : { kind: "resumed", run };
   } catch (error) {
     console.error("[report-run] could not open the report run", errorText(error));
@@ -375,6 +474,13 @@ async function closeRun(db: SqlTag, run: ReportRunHandle, status: "completed" | 
     await db`
       UPDATE agent_run_steps SET status = 'completed', summary = ${summary}, completed_at = NOW(), updated_at = NOW()
        WHERE agent_run_id = ${run.runId} AND step_key = ${REPORT_SAVE_STEP}
+    `;
+    // A section whose checkpoint write failed mid-request is still open: no step outlives its run.
+    await db`
+      UPDATE agent_run_steps
+         SET status = 'skipped', summary = 'Checkpoint not recorded; the section is in the saved report.',
+             completed_at = NOW(), updated_at = NOW()
+       WHERE agent_run_id = ${run.runId} AND status IN ('queued', 'running')
     `;
   } else {
     await db`

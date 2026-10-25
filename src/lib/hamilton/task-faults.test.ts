@@ -22,7 +22,9 @@ describe("Hamilton task faults (#1921)", () => {
       [Object.assign(new Error("Request timed out."), { name: "APIConnectionTimeoutError" }), "timeout"],
       [new MalformedProviderOutputError("Hamilton returned empty response for section type 'answer'"), "malformed_output"],
       [new SyntaxError("Unexpected token"), "malformed_output"],
-      [new ProviderResponseBudgetError("json_bytes"), "malformed_output"],
+      [new ProviderResponseBudgetError("json_bytes"), "too_large"],
+      [new ProviderResponseBudgetError("event_bytes"), "too_large"],
+      [new ProviderResponseBudgetError("operation_bytes"), "too_large"],
       [new IncompleteProviderResponseError("max_tokens"), "incomplete"],
       [Object.assign(new Error("You have reached your specified API usage limits"), { status: 400 }), "provider_paused"],
       [Object.assign(new Error("payment required"), { status: 402 }), "provider_paused"],
@@ -41,7 +43,7 @@ describe("Hamilton task faults (#1921)", () => {
   it("retries only what a retry can fix, and never more than once", () => {
     expect(HAMILTON_RETRY_POLICY).toEqual({
       provider_error: 1, timeout: 1, malformed_output: 1,
-      incomplete: 0, provider_paused: 0, budget: 0, stopped: 0, cancelled: 0, unknown: 0,
+      too_large: 0, incomplete: 0, provider_paused: 0, budget: 0, stopped: 0, cancelled: 0, unknown: 0,
     });
     for (const retries of Object.values(HAMILTON_RETRY_POLICY)) expect(retries).toBeLessThanOrEqual(1);
   });
@@ -70,5 +72,9 @@ describe("Hamilton task faults (#1921)", () => {
     const capped = vi.fn().mockRejectedValue(new HamiltonTaskBudgetError("task", "calls", 6, 6, "ask"));
     expect(await runWithHamiltonRetry(capped)).toMatchObject({ ok: false, fault: { kind: "budget", retryable: false } });
     expect(capped).toHaveBeenCalledTimes(1);
+
+    const huge = vi.fn().mockRejectedValue(wrapped(new ProviderResponseBudgetError("json_bytes")));
+    expect(await runWithHamiltonRetry(huge)).toMatchObject({ ok: false, fault: { kind: "too_large", retryable: false } });
+    expect(huge).toHaveBeenCalledTimes(1);
   });
 });

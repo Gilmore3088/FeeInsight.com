@@ -309,6 +309,9 @@ async function writeReport(params: GenerateReportParams): Promise<GenerateReport
       }
     }
     let durable: ReportRunHandle | null = opened.kind === "unavailable" ? null : opened.run;
+    // Kept when a ledger write fails mid-report (durable turns null): the save still uses the run's
+    // report id, so a retry never saves the report twice, and the run is still closed at the end.
+    const openedRun: ReportRunHandle | null = durable;
     if (durable) await bindHamiltonTaskRun(durable.runId, { resumed: durable.resumed });
     const ledgerBase = {
       userId: user.id,
@@ -370,15 +373,21 @@ async function writeReport(params: GenerateReportParams): Promise<GenerateReport
         sections: sections.map((item) => ({ words: item.section.wordCount, status: item.status })),
         partner_review: partnerReview,
         reused_sections: reusedSections,
-        durable_run_id: durable?.runId ?? null,
+        durable_run_id: openedRun?.runId ?? null,
+        checkpoints_degraded: openedRun !== null && durable === null,
         task_budget: hamiltonTaskBudgetDetail(currentHamiltonTask()),
         ...extra,
       };
       // A durable run is closed with the outcome; without one, the outcome is its own run, as before.
-      const closed = durable
-        ? status === "completed"
-          ? await completeReportRun(durable, summary, outcomeDetail)
-          : await failReportRun(durable, summary, outcomeDetail)
+      const closing = durable ?? openedRun;
+      const closed = closing
+        ? await (status === "completed"
+          ? completeReportRun(closing, summary, outcomeDetail)
+          : failReportRun(closing, summary, outcomeDetail)
+        ).catch((error) => {
+          console.error("[hamilton-report] closing the run failed; recording the outcome on its own", error);
+          return false;
+        })
         : false;
       if (!closed) await recordProRequest({ ...ledgerBase, operation: "report", status, summary, detail: outcomeDetail });
     };
@@ -390,22 +399,22 @@ async function writeReport(params: GenerateReportParams): Promise<GenerateReport
     const verifiedSections: VerifiedSectionOutput[] = [];
     const reusedSections: string[] = [];
     recordPaidFailure = (summary) => recordReportOutcome("failed", summary, verifiedSections);
-    let lastFault: HamiltonFault | null = null;
-    let lastAttempts: Array<{ attempt: number; fault: string | null }> = [];
+    // Faults are kept per section: the follow-ups run in parallel, so one section's fault never
+    // stands in for another's.
+    const sectionFaults = new Map<number, { fault: HamiltonFault; attempts: Array<{ attempt: number; fault: string | null }> }>();
     type ResponseSink = Array<{ usage: ProviderUsage | undefined; model: string }>;
     const sectionTracking = (sink: ResponseSink): SectionTracking => ({
       ...tracking,
-      ...(durable ? { agentRunId: durable.runId } : {}),
+      ...(openedRun ? { agentRunId: openedRun.runId } : {}),
       onProviderResponse: (usage, model) => {
         tracking.onProviderResponse(usage, model);
         sink.push({ usage, model });
       },
     });
-    const generateWithRetry = async (input: SectionInput, sectionTrack: SectionTracking): Promise<VerifiedSectionOutput | null> => {
+    const generateWithRetry = async (index: number, input: SectionInput, sectionTrack: SectionTracking): Promise<VerifiedSectionOutput | null> => {
       const outcome = await runWithHamiltonRetry(() => generateVerifiedSection(input, sectionTrack));
       if (outcome.ok) return outcome.value ?? null;
-      lastFault = outcome.fault ?? null;
-      lastAttempts = outcome.attempts;
+      if (outcome.fault) sectionFaults.set(index, { fault: outcome.fault, attempts: outcome.attempts });
       return null;
     };
     // Ledger writes for a section. A lost lease stops the request; any other ledger error turns
@@ -443,15 +452,15 @@ async function writeReport(params: GenerateReportParams): Promise<GenerateReport
         // The gate-shadow thunk is not data; a reused section records no shadow verdict.
         const storable = { status: result.status, section: result.section, figuresChecked: result.figuresChecked, citation: result.citation };
         await ledger((run) => saveReportSection(run, key, { inputHash, output: storable, providerResponses: sink }));
-      } else if (!result && lastFault) {
-        const fault: HamiltonFault = lastFault;
-        const attempts = lastAttempts;
-        await ledger((run) => failReportSection(run, key, fault, attempts));
+      } else if (!result) {
+        const failed = sectionFaults.get(index);
+        if (failed) await ledger((run) => failReportSection(run, key, failed.fault, failed.attempts));
       }
       return result;
     };
-    const sectionFailed = (input: SectionInput): GenerateReportResult => {
-      const fault = lastFault as HamiltonFault | null;
+    const sectionFailed = (index: number): GenerateReportResult => {
+      const input = sectionInputs[index];
+      const fault = sectionFaults.get(index)?.fault ?? null;
       const paused = fault !== null && (fault.kind === "provider_paused" || fault.kind === "stopped");
       return {
         success: false,
@@ -475,7 +484,7 @@ async function writeReport(params: GenerateReportParams): Promise<GenerateReport
     // its decisions, so they receive it as context and run together. The answer is saved after
     // partner review, so a resumed run never reviews or rewrites it again.
     const answerResult = await runSection(0, sectionInputs[0], async (sectionTrack) => {
-      let answer = await generateWithRetry(sectionInputs[0], sectionTrack);
+      let answer = await generateWithRetry(0, sectionInputs[0], sectionTrack);
       if (!answer) return null;
       const firstProblems = reviewAnswerPage({ ...reviewInput, narrative: answer.section.narrative });
       partnerReview.problems = firstProblems;
@@ -500,23 +509,23 @@ async function writeReport(params: GenerateReportParams): Promise<GenerateReport
       return answer;
     });
     if (!answerResult) {
-      await recordReportOutcome("failed", `Section "${sectionInputs[0].title}" could not finish. Report not saved.`, verifiedSections, { fault: (lastFault as HamiltonFault | null)?.kind ?? null });
-      return sectionFailed(sectionInputs[0]);
+      await recordReportOutcome("failed", `Section "${sectionInputs[0].title}" could not finish. Report not saved.`, verifiedSections, { fault: sectionFaults.get(0)?.fault.kind ?? null });
+      return sectionFailed(0);
     }
     verifiedSections.push(answerResult);
     const answerContext = `ANSWER PAGE (already written; explain and stress-test these decisions, do not contradict or add to them):\n${answerResult.section.narrative}`;
     const followUps = await Promise.all(
       sectionInputs.slice(1).map((input, offset) => {
         const withAnswer = { ...input, context: `${input.context ?? ""}\n\n${answerContext}`.trim() };
-        return runSection(offset + 1, withAnswer, (sectionTrack) => generateWithRetry(withAnswer, sectionTrack));
+        return runSection(offset + 1, withAnswer, (sectionTrack) => generateWithRetry(offset + 1, withAnswer, sectionTrack));
       }),
     );
     // All started work has settled; include successful siblings before the one final receipt.
     for (const result of followUps) if (result) verifiedSections.push(result);
     const failedFollowUp = followUps.findIndex((result) => result === null);
     if (failedFollowUp >= 0) {
-      await recordReportOutcome("failed", "A report section could not finish. Report not saved.", verifiedSections, { fault: (lastFault as HamiltonFault | null)?.kind ?? null });
-      return sectionFailed(sectionInputs[failedFollowUp + 1]);
+      await recordReportOutcome("failed", "A report section could not finish. Report not saved.", verifiedSections, { fault: sectionFaults.get(failedFollowUp + 1)?.fault.kind ?? null });
+      return sectionFailed(failedFollowUp + 1);
     }
 
     // Every $ and % in the narrative must trace to the data the model was given.
@@ -656,7 +665,7 @@ async function writeReport(params: GenerateReportParams): Promise<GenerateReport
       selectedProvisionalFeeCount: artifactMetadata.selectedProvisionalFeeCount,
       selectedFeeDeltaCount: artifactMetadata.selectedFeeDeltaCount,
       // Chosen when the run opened: a replay of this run saves nothing new (#1921).
-      ...(durable ? { reportId: durable.reportId } : {}),
+      ...(openedRun ? { reportId: openedRun.reportId } : {}),
     });
     if (selectedInstitution) {
       await completeHamiltonRefreshJobsForInstitution({

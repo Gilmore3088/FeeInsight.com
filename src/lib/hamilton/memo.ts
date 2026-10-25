@@ -311,6 +311,8 @@ export interface MemoTracking {
   operation: string;
   subjectKey?: string;
   agentRunId?: number;
+  /** The reader the memo is for: its usage row counts toward their daily cap (#1921). */
+  userId?: number;
 }
 
 function anthropicMemoClient(institutionId: number | null, usage?: MemoUsage, tracking?: MemoTracking): MemoClient {
@@ -324,6 +326,7 @@ function anthropicMemoClient(institutionId: number | null, usage?: MemoUsage, tr
           routeId: MEMO_ROUTE_ID,
           ...(tracking?.subjectKey ? { subjectKey: tracking.subjectKey } : {}),
           ...(tracking?.agentRunId ? { agentRunId: tracking.agentRunId } : {}),
+          ...(tracking?.userId ? { userId: tracking.userId } : {}),
           metadata: { institution_id: institutionId },
         },
         () => withRawProviderResponseOperation(REQUEST_TIMEOUT_MS, (scope) => {

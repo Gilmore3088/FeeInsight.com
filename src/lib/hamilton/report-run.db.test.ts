@@ -1,7 +1,8 @@
 /**
  * Real PostgreSQL checks of durable report runs (#1921, V5 O1) against the production schema
  * (tests/e2e/production-schema.sql) on a loopback-only database: the active-key unique index,
- * the lease, section checkpoints, carry-over after a failure and the already-saved replay.
+ * the lease, section checkpoints, carry-over after a failure, the already-saved replay and the
+ * sweep that closes a run a killed request left running.
  * Synthetic user 900101 only; its rows are removed before and after.
  */
 import postgres from "postgres";
@@ -11,6 +12,7 @@ import {
   completeReportRun,
   failReportRun,
   failReportSection,
+  INTERRUPTED_STEP_MESSAGE,
   openReportRun,
   REPORT_RUN_LEASE_MS,
   REPORT_SAVE_STEP,
@@ -19,6 +21,7 @@ import {
   reportTaskKey,
   saveReportSection,
   startReportSection,
+  sweepInterruptedReportRuns,
   type ReportRunHandle,
 } from "./report-run";
 
@@ -90,7 +93,7 @@ describe.skipIf(!connection)("durable report runs in isolated PostgreSQL", () =>
     expect(active[0].n).toBe(1);
   });
 
-  it("resumes an interrupted run from its saved sections, and the cut-off request can no longer write", async () => {
+  it("closes an interrupted run once its lease lapses, and a retry carries its saved sections over", async () => {
     const key = reportTaskKey(USER, { n: 3 });
     const first = (await open(key)) as { kind: "opened"; run: ReportRunHandle };
     await startReportSection(first.run, reportSectionStepKey(0), asDb());
@@ -98,21 +101,29 @@ describe.skipIf(!connection)("durable report runs in isolated PostgreSQL", () =>
     await startReportSection(first.run, reportSectionStepKey(1), asDb());
     // The request is cut off here: section 2 is left running and nothing closes the run.
 
-    const resumed = await open(key, later());
-    expect(resumed.kind).toBe("resumed");
-    const run = (resumed as { run: ReportRunHandle }).run;
-    expect(run.runId).toBe(first.run.runId);
-    expect(run.reportId).toBe(first.run.reportId);
+    const retry = await open(key, later());
+    expect(retry.kind).toBe("opened");
+    const run = (retry as { run: ReportRunHandle }).run;
+    expect(run.runId).not.toBe(first.run.runId);
+    expect(run.carriedFromRun).toBe(first.run.runId);
     expect([...run.checkpoints.keys()]).toEqual([reportSectionStepKey(0)]);
     expect(run.checkpoints.get(reportSectionStepKey(0))?.inputHash).toBe("hash-answer");
 
+    // The cut-off run is closed: failed, its running step failed, the rest skipped.
+    const [old] = await db`SELECT status, params_json FROM agent_runs WHERE id = ${first.run.runId}`;
+    expect(old.status).toBe("failed");
+    expect(old.params_json.closed_by_sweep).toBe(true);
+    const steps = await db`SELECT status, error_summary FROM agent_run_steps WHERE agent_run_id = ${first.run.runId} ORDER BY sequence`;
+    expect(steps.map((step) => step.status)).toEqual(["completed", "failed", "skipped", "skipped"]);
+    expect(steps[1].error_summary).toBe(INTERRUPTED_STEP_MESSAGE);
+
     // The old request lost its lease: its next write throws and changes nothing.
     await expect(saveReportSection(first.run, reportSectionStepKey(1), checkpoint("stale"), asDb())).rejects.toBeInstanceOf(ReportRunLeaseLostError);
-    const [step] = await db`SELECT status, output_payload FROM agent_run_steps WHERE agent_run_id = ${run.runId} AND step_key = ${reportSectionStepKey(1)}`;
+    const [step] = await db`SELECT output_payload FROM agent_run_steps WHERE agent_run_id = ${first.run.runId} AND step_key = ${reportSectionStepKey(1)}`;
     expect(step.output_payload).toBeNull();
 
-    const events = await db`SELECT event_type FROM agent_run_events WHERE agent_run_id = ${run.runId} ORDER BY id`;
-    expect(events.map((event) => event.event_type)).toEqual(["run.created", "section.saved", "run.resumed"]);
+    const events = await db`SELECT event_type FROM agent_run_events WHERE agent_run_id = ${first.run.runId} ORDER BY id`;
+    expect(events.map((event) => event.event_type)).toEqual(["run.created", "section.saved", "run.interrupted"]);
   });
 
   it("finds an already saved report on replay instead of saving it again", async () => {
@@ -122,10 +133,16 @@ describe.skipIf(!connection)("durable report runs in isolated PostgreSQL", () =>
       INSERT INTO hamilton_reports (id, user_id, institution_id, report_type, report_json, status)
       VALUES (${first.run.reportId}::uuid, ${String(USER)}, '101', 'peer_benchmark', ${JSON.stringify({ title: "Synthetic" })}, 'generated')
     `;
-    // Cut off between the save and closing the run.
+    // Cut off between the save and closing the run: the sweep completes the run, and the next
+    // request gets the saved report back once, instead of writing it again.
     const replay = await open(key, later());
     expect(replay.kind).toBe("already_saved");
     expect((replay as { run: ReportRunHandle }).run.reportId).toBe(first.run.reportId);
+    const [row] = await db`SELECT status FROM agent_runs WHERE id = ${first.run.runId}`;
+    expect(row.status).toBe("completed");
+    const open_steps = await db`SELECT COUNT(*)::int AS n FROM agent_run_steps WHERE agent_run_id = ${first.run.runId} AND status IN ('queued', 'running')`;
+    expect(open_steps[0].n).toBe(0);
+    expect((await open(key, later())).kind).toBe("opened");
   });
 
   it("ends a failed run with its fault, and a retry within the hour carries the finished sections over", async () => {
@@ -160,12 +177,23 @@ describe.skipIf(!connection)("durable report runs in isolated PostgreSQL", () =>
     expect((await open(key)).kind).toBe("opened");
   });
 
-  it("closes a run nobody resumed for a day", async () => {
-    const { run } = (await open(reportTaskKey(USER, { n: 7 }))) as { kind: "opened"; run: ReportRunHandle };
-    await db`UPDATE agent_runs SET updated_at = NOW() - interval '25 hours' WHERE id = ${run.runId}`;
-    await open(reportTaskKey(USER, { n: 8 }));
-    const [row] = await db`SELECT status FROM agent_runs WHERE id = ${run.runId}`;
-    expect(row.status).toBe("failed");
+  it("sweeps a killed request's run without the reader coming back, and never a live one", async () => {
+    const killed = (await open(reportTaskKey(USER, { n: 7 }))) as { kind: "opened"; run: ReportRunHandle };
+    await startReportSection(killed.run, reportSectionStepKey(0), asDb());
+    const live = (await open(reportTaskKey(USER, { n: 8 }))) as { kind: "opened"; run: ReportRunHandle };
+    await startReportSection(live.run, reportSectionStepKey(0), asDb());
+
+    // Within the lease nothing is touched.
+    expect(await sweepInterruptedReportRuns(asDb())).toEqual([]);
+    // The killed request's lease lapses; the live one renews its lease.
+    await db`UPDATE agent_runs SET params_json = params_json || ${JSON.stringify({ lease_until: new Date(Date.now() - 1000).toISOString() })}::jsonb WHERE id = ${killed.run.runId}`;
+    expect(await sweepInterruptedReportRuns(asDb())).toEqual([killed.run.runId]);
+    expect(await sweepInterruptedReportRuns(asDb())).toEqual([]);
+
+    const running = await db`SELECT COUNT(*)::int AS n FROM agent_run_steps WHERE agent_run_id = ${killed.run.runId} AND status IN ('queued', 'running')`;
+    expect(running[0].n).toBe(0);
+    const [liveRow] = await db`SELECT status FROM agent_runs WHERE id = ${live.run.runId}`;
+    expect(liveRow.status).toBe("running");
   });
 });
 
@@ -198,6 +226,55 @@ describe.skipIf(!connection || process.env.DATABASE_URL !== connection)("idempot
       expect(rows.map((row) => row.title)).toEqual(["Synthetic"]);
     } finally {
       await db`DELETE FROM hamilton_reports WHERE id = ${reportId}::uuid`;
+      await db.end();
+    }
+  });
+});
+
+// Job health reads the app's own client, so it must point at the same loopback database.
+describe.skipIf(!connection || process.env.DATABASE_URL !== connection)("a killed report in pipeline health, in isolated PostgreSQL", () => {
+  it("leaves no running step behind, so job health reports 0 stale steps", async () => {
+    const { getPipelineHealth } = await import("@/lib/pipeline-health");
+    const db = postgres(connection!, {
+      max: 1, ssl: "require",
+      types: { numeric: NUMERIC_AS_NUMBER, json: JSON_TEXT_PASSTHROUGH, text: TEXT_WITHOUT_NUL },
+    }) as unknown as ReturnType<typeof postgres>;
+    type Db = NonNullable<Parameters<typeof saveReportSection>[3]>;
+    const asDb = () => db as unknown as Db;
+    const cleanup = async () => {
+      const runs = await db`SELECT id FROM agent_runs WHERE triggered_by = ${`user:${USER + 1}`}`;
+      const ids = runs.map((row) => Number(row.id));
+      if (ids.length) {
+        await db`DELETE FROM agent_run_events WHERE agent_run_id = ANY(${ids})`;
+        await db`DELETE FROM agent_run_steps WHERE agent_run_id = ANY(${ids})`;
+        await db`DELETE FROM agent_runs WHERE id = ANY(${ids})`;
+      }
+    };
+    try {
+      await cleanup();
+      const opened = await openReportRun({
+        userId: USER + 1, institutionId: 101, title: "Hamilton report: Synthetic CU",
+        taskKey: reportTaskKey(USER + 1, { killed: true }), sectionTitles: SECTIONS, db: asDb(),
+      });
+      const { run } = opened as { kind: "opened"; run: ReportRunHandle };
+      await startReportSection(run, reportSectionStepKey(0), asDb());
+      // The request is killed mid-section and twenty minutes pass: past the lease and past the
+      // 15 minutes after which a running step reads as stuck.
+      await db`UPDATE agent_runs SET updated_at = NOW() - interval '20 minutes',
+        params_json = params_json || ${JSON.stringify({ lease_until: new Date(Date.now() - 15 * 60_000).toISOString() })}::jsonb
+        WHERE id = ${run.runId}`;
+      await db`UPDATE agent_run_steps SET updated_at = NOW() - interval '20 minutes' WHERE agent_run_id = ${run.runId}`;
+      const [before] = await db`SELECT COUNT(*)::int AS n FROM agent_run_steps WHERE status = 'running' AND updated_at < NOW() - interval '15 minutes'`;
+      expect(before.n).toBe(1);
+
+      const health = await getPipelineHealth();
+      expect(health.stale_running_steps).toBe(0);
+      const running = await db`SELECT COUNT(*)::int AS n FROM agent_run_steps WHERE agent_run_id = ${run.runId} AND status = 'running'`;
+      expect(running[0].n).toBe(0);
+      const [row] = await db`SELECT status FROM agent_runs WHERE id = ${run.runId}`;
+      expect(row.status).toBe("failed");
+    } finally {
+      await cleanup();
       await db.end();
     }
   });

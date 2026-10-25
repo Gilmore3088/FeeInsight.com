@@ -1,6 +1,7 @@
 import { getAutomationControl, getPipelineControl } from "@/lib/automation-control";
 import { sql } from "@/lib/data-store/connection";
 import { STALE_RUNNING_STEP_MINUTES } from "@/lib/agents/types";
+import { sweepInterruptedReportRuns } from "@/lib/hamilton/report-run";
 import type { PipelineHealth } from "@/lib/job-health";
 
 function minutesSince(value: unknown): number | null {
@@ -18,6 +19,11 @@ function isoOrNull(value: unknown): string | null {
  * the Atlas admin overview both use it, so they always agree.
  */
 export async function getPipelineHealth(): Promise<PipelineHealth> {
+  // A Pro report a killed request left running is closed before steps are counted, so a reader's
+  // interrupted report never reads as a stuck pipeline step (#1921). Best effort.
+  await sweepInterruptedReportRuns().catch((error) => {
+    console.error("[pipeline-health] interrupted report-run sweep failed", error instanceof Error ? error.message : String(error));
+  });
   const [pipeline, provider, rows] = await Promise.all([
     getPipelineControl(),
     getAutomationControl(),

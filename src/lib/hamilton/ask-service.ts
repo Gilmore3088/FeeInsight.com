@@ -648,6 +648,7 @@ export async function answerAskMemo(user: Asker, body: AskBody): Promise<AskMemo
   // The one output gate in shadow (#1077 step 4): computed and recorded as its own run after the
   // response, never deciding and never waited on.
   const result = await writeStorylineMemo(storyline, question, { institutionId, identityContext: identity, factEvidence, usage,
+    tracking: { operation: "storyline_memo", userId: user.id },
     onGateShadow: (compute) => scheduleGateShadow(compute, { userId: user.id, researchInstitutionId: institutionId }) });
   await recordMemoUsage(user.id, usage);
   let memoSaved = false;

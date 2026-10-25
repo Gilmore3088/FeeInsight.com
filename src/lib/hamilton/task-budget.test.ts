@@ -91,7 +91,7 @@ describe("Hamilton task budgets (#1921)", () => {
     // The usage rows carry the reader and the task, so the reader's day can be summed.
     expect(blocked).toContain(7);
     const metadata = JSON.parse(String(blocked.at(-1))) as Record<string, unknown>;
-    expect(metadata).toMatchObject({ hamilton_task: "report", hamilton_budget_scope: "task", hamilton_budget_measure: "calls", user_id: 7 });
+    expect(metadata).toMatchObject({ hamilton_task: "report", budget_reason_code: "budget_task_cap_exhausted", hamilton_budget_scope: "task", hamilton_budget_measure: "calls", user_id: 7 });
   });
 
   it("refuses on the task's token cap and its cost cap", async () => {
