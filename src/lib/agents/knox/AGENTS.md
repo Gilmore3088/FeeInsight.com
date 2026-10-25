@@ -284,6 +284,22 @@ fees found (54.7%); 56 of the 59 wrong reads are the right price under another c
 
 ## Rules versions (`extract.rules`)
 
+v109 (Oct 25, #1828; v108 is held by open PR #2591): a bare "Returned payment" row ("Returned
+payment", "Returned Payment Fee", "RETURNED PAYMENT") under a loan section's title is the loan's
+returned payment fee, read as `other_lending_fee` at its own plain price under its own printed
+name (`loanReturnedPaymentRows`, `loan-section-rows.ts`). On its own the name says no loan and no
+fee word, so the row was dropped: Oregon Community FCU prints "Returned payment…… $4.95" under
+"Loan fees", "Personal Credit Line fees" and "Home Equity Line of Credit and Loan fees" (docs
+13272, 19849, 21634) and none was read. The nearest title in the row's own column decides (a
+line's first cell is the left column, any later cell the right; a full-width title heads the left
+and ends the right's). A title is a short cell with no figure or leader that ends in "fees",
+"charges", "services", "cards" or "accounts", is in capitals, or names loans alone, and never a
+cell with a price beside it ("LATE PAYMENT | $20.00"). Under a credit card, checking or other title
+the row stays as before, and a cap ("Up to $25"), a sentence or a choice ("$15 or the minimum
+payment") is never read this way. Adds reads only. Dry run (read-only, Oct 25, windows of the 415
+bare returned payment rows in 354 stored texts): new reads at 6 banks, 5 with no returned payment
+fee live (6833, 5888, 622, 431, 7209); Oregon's matches live 83794. No live fee changes.
+
 v104 (Oct 22): a read whose name `isCutoffName` reads as cut off is held at publish (Hamilton's
 `cutoff_name`) however right its category and price. `withoutGluedSentence` (`glued-sentence-name.ts`,
 after the name tidy) cuts words that say nothing off the fee's own: another column's cell in front
@@ -1971,7 +1987,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v26 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v107 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v109 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v10 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |
