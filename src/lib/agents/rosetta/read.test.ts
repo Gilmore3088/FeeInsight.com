@@ -701,7 +701,7 @@ describe("Rosetta agentic read", () => {
       const productPage = "<h1>Everyday Checking</h1><p>Monthly service fee $10</p><p>Overdraft fee $30</p><p>Open an account today</p>";
 
       function withOlderCopy(db: DbMock, olderId: number | null): DbMock {
-        const base = db.getMockImplementation()!;
+        const base = db.getMockImplementation()! as (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown>;
         db.mockImplementation(((strings: TemplateStringsArray, ...values: unknown[]) =>
           templateText(strings).includes("ORDER BY older.id DESC")
             ? Promise.resolve(olderId == null ? [] : [{ id: olderId }])
