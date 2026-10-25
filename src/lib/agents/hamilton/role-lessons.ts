@@ -247,4 +247,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-1896-median-minimum",
+    agent: "hamilton",
+    stage: "analysis",
+    lesson: "Show a median, middle half or percentile for a group only when at least 10 institutions publish the fee, or at least 5 local competitors; below that, give the count and name each institution with its price instead. Gate on Hamilton's own minimum (belowPeerMinimum), never on the public index's lower one.",
+    why: "My fees and Try a price printed a layer's median whenever the layer had any institutions, with only a 'Few institutions; read with care' note below 5, because the layer summary marked a layer thin by the public index's minimum of 5 for every layer.",
+    evidence: { issues: [1896], prs: [], files: ["src/lib/hamilton/research-layers.ts", "src/app/pro/(hamilton)/research/page.tsx", "src/app/pro/(hamilton)/simulate/page.tsx"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];

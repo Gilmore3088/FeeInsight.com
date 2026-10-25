@@ -8,7 +8,7 @@ import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
 import { isSavedArtifactId, resolveArtifactContextInstitutionId } from "@/lib/hamilton/artifact-context";
 import { layerDates, loadFeeWorkspace } from "@/lib/hamilton/fee-workspace-data";
 import { buildAuditTrail } from "@/lib/hamilton/audit-trail";
-import { belowPeerMinimum, defaultLayer, parseLayer } from "@/lib/hamilton/research-layers";
+import { belowPeerMinimum, defaultLayer, parseLayer, thinLayerText } from "@/lib/hamilton/research-layers";
 import { feeIncomeAssumptions, modelScenario } from "@/lib/hamilton/fee-scenario";
 import { buildImplementationPlan } from "@/lib/hamilton/implementation-plan";
 import { defaultPrices, parseCount, parsePercent, parsePrices } from "@/lib/hamilton/model-params";
@@ -119,6 +119,8 @@ export default async function ModelPage({ searchParams }: PageProps) {
   const instId = inst ? String(inst.id) : null;
   const layerKey = params.layer ? parseLayer(params.layer) : defaultLayer(ws.layers);
   const layer = ws.layers.find((l) => l.key === layerKey) ?? ws.layers[ws.layers.length - 1];
+  // A thin layer's note and named institutions, worked out once.
+  const thinText = thinLayerText(layer, fmtMoney);
 
   const current = ws.ownAmount;
   // Figures typed here win; otherwise the ones the bank saved (an answer or an upload).
@@ -290,6 +292,17 @@ export default async function ModelPage({ searchParams }: PageProps) {
       </form>
 
       <MemoSection title="Side by side" note={`Against ${layer.label.toLowerCase() === "national" ? "every institution nationally" : layer.label}: ${layer.scope} (${layer.n}).`}>
+        {/* Too few for a median (5 local, 10 elsewhere): the count and, where the engine lists them, the names stand in. */}
+        {thinText ? (
+          <div className="flex flex-col gap-1 text-sm text-warm-800">
+            <p>{thinText.note}</p>
+            {thinText.names ? (
+              <p>
+                <span className="font-medium text-warm-900">Each institution, lowest price first:</span> {thinText.names}.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
         <div className="flex flex-col gap-6 rounded-lg border border-warm-300 bg-warm-50 p-5">
           <PriceStrip
             amounts={layer.amounts}
