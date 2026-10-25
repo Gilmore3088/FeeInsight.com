@@ -29,6 +29,7 @@ import {
   fmtMoney,
 } from "@/components/hamilton/memo/memo";
 import { buildFeeAnswer } from "@/lib/hamilton/workspace/answer";
+import { proseFeeName } from "@/lib/hamilton/workspace/names";
 import { AnswerView } from "@/components/hamilton/memo/exhibit-view";
 import { LayerTabs } from "@/components/hamilton/memo/LayerTabs";
 import { DatasetNote } from "@/components/hamilton/DatasetNote";
@@ -203,7 +204,7 @@ export default async function ResearchPage({ searchParams }: PageProps) {
     <MemoPage>
       <MemoHeader
         kicker={`My fees · ${ws.feeName}`}
-        title={inst ? `Where ${inst.name} sits on ${ws.feeName.toLowerCase()}` : `${ws.feeName} across the market`}
+        title={inst ? `Where ${inst.name} sits on ${proseFeeName(ws.fee)}` : `${ws.feeName} across the market`}
         dek={
           inst
             ? ws.ownAmount != null

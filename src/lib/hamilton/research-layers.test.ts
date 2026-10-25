@@ -128,8 +128,23 @@ describe("Hamilton's median minimum (James, 2026-10-25)", () => {
       null,
     );
     const names = thinLayerText(state, money)?.names;
-    expect(names).toBe("Harbor Savings $28; Bayside Bank $25 to $35 (Paper item $25; Electronic item $35)");
+    // Its range starts at $25, so it comes first: lowest stated price first.
+    expect(names).toBe("Bayside Bank $25 to $35 (Paper item $25; Electronic item $35); Harbor Savings $28");
     expect(names).not.toContain("Bayside Bank $30");
+  });
+
+  it("orders the names by each one's lowest stated price, so a range sorts by its low end, not its counted median", () => {
+    const several = { low: 30, high: 34, fees: [{ name: "NSF Fee", amount: 30 }, { name: "NSF Fee, electronic item", amount: 34 }] };
+    const [state] = layersFromEngine(
+      [{ ...layer("state", "Florida", [28, 31, 32]), members: [member("Lantana Test CU", 31, 7), member("Keystone Bay Test CU", 32, 6, { several } as Partial<PeerValue>), member("Tiny Lagoon Test CU", 28, 16)] }],
+      null,
+      null,
+    );
+    const names = thinLayerText(state, money)?.names ?? "";
+    expect(names).toBe("Tiny Lagoon Test CU $28; Keystone Bay Test CU $30 to $34 (NSF Fee $30; NSF Fee, electronic item $34); Lantana Test CU $31");
+    expect(names.indexOf("Keystone Bay Test CU $30 to $34")).toBeLessThan(names.indexOf("Lantana Test CU $31"));
+    // The counted value behind the figures is unchanged: the median of $30 and $34.
+    expect(state.amounts).toEqual([28, 31, 32]);
   });
 
   it("counts sister charters on one schedule once, names each of them, and says why the names outnumber the count", () => {

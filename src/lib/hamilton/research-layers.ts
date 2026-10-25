@@ -151,6 +151,8 @@ export function describePosition(layer: LayerSummary, ownAmount: number | null):
   return parts.join(", ");
 }
 
+const lowestStated = (m: PeerValue) => m.several?.low ?? m.amount;
+
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 /**
@@ -176,7 +178,9 @@ export function thinLayerText(
   }
   const names = complete
     ? [...members]
-        .sort((a, b) => a.amount - b.amount || a.institutionName.localeCompare(b.institutionName))
+        // "Lowest price first" by each one's lowest stated price: a range sorts by its low end, not by
+        // the median it counts at (which stays the value behind every count and figure).
+        .sort((a, b) => lowestStated(a) - lowestStated(b) || a.institutionName.localeCompare(b.institutionName))
         .map((m) => `${m.institutionName} ${statedFeeText(m.amount, m.several, money)}`)
         .join("; ")
     : null;

@@ -14,6 +14,7 @@ import { buildImplementationPlan } from "@/lib/hamilton/implementation-plan";
 import { defaultPrices, parseCount, parsePercent, parsePrices } from "@/lib/hamilton/model-params";
 import { getHamiltonScenarioById } from "@/lib/hamilton/pro-tables";
 import { buildFeeAnswer } from "@/lib/hamilton/workspace/answer";
+import { proseFeeName } from "@/lib/hamilton/workspace/names";
 import { institutionFactsFrom } from "@/lib/hamilton/workspace/ask";
 import { getMemoryFacts } from "@/lib/data-store/hamilton-workspace";
 import { ExhibitView } from "@/components/hamilton/memo/exhibit-view";
@@ -224,7 +225,7 @@ export default async function ModelPage({ searchParams }: PageProps) {
     <MemoPage>
       <MemoHeader
         kicker={`Try a price · ${ws.feeName}`}
-        title={`Test any ${ws.feeName.toLowerCase()} price side by side`}
+        title={`Test any ${proseFeeName(ws.fee)} price side by side`}
         dek={
           current != null
             ? `Today ${inst?.name ?? "your institution"} charges ${fmtMoney(current)}. See where each price would sit against published fees. Fee income appears only when you add your own yearly volume.`
