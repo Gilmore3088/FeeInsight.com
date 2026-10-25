@@ -13,6 +13,7 @@ import {
 } from "@/lib/ai-provider";
 import { trackAnthropicRequest, assertCompletedAnthropicTextResponse, observedProviderUsage, type ProviderUsage } from "@/lib/ai-provider-usage";
 import { HAMILTON_VOICE } from "./voice";
+import { MalformedProviderOutputError } from "./task-faults";
 import {
   evaluateCitationDensity,
   type CitationGateResult,
@@ -20,6 +21,7 @@ import {
 import { checkNarrativeFigures } from "./figure-check";
 import type { GateIdentity } from "./output-gate";
 import { shadowGate, type GateShadowRecord, type TodayDecision } from "./output-gate-shadow";
+import { SECTION_GATE_HELD, enforcedOutcome, isAnswerGateEnforced, tryGateAnswer } from "./output-gate-enforce";
 import type { SectionInput, SectionOutput, ThesisInput, ThesisOutput } from "./types";
 
 const MODEL = getHamiltonModel();
@@ -120,7 +122,8 @@ export async function generateSection(input: SectionInput, tracking: SectionTrac
   const narrative = extractAnthropicText(response);
 
   if (!narrative) {
-    throw new Error(`Hamilton returned empty response for section type '${input.type}'`);
+    // Malformed output: a typed fault, so the report's retry policy can try it once more (#1921).
+    throw new MalformedProviderOutputError(`Hamilton returned empty response for section type '${input.type}'`);
   }
 
   return {
@@ -249,15 +252,16 @@ export async function generateGlobalThesis(input: ThesisInput): Promise<ThesisOu
   const raw = extractAnthropicText(response);
 
   if (!raw) {
-    throw new Error(`Hamilton returned empty thesis response [scope=${input.scope}]`);
+    throw new MalformedProviderOutputError(`Hamilton returned empty thesis response [scope=${input.scope}]`);
   }
 
   let parsed: Omit<ThesisOutput, 'model' | 'usage'>;
   try {
     parsed = JSON.parse(raw) as Omit<ThesisOutput, 'model' | 'usage'>;
   } catch {
-    throw new Error(
+    throw new MalformedProviderOutputError(
       `Hamilton thesis generation returned unparseable JSON [scope=${input.scope}]: ${raw.slice(0, 200)}`,
+      raw.slice(0, 200),
     );
   }
 
@@ -298,8 +302,8 @@ export type VerifiedSectionOutput =
  * no premise: what it adds over the figure check is the shared gate's other rules (advice,
  * internal names, house wording, interpretation rules), the cause rule and the account rule.
  */
-export function reportSectionGateShadow(narrative: string, data: unknown, today: TodayDecision, identity: GateIdentity): GateShadowRecord {
-  return shadowGate({ surface: "report_section", text: narrative, evidence: { kind: "data", data }, identity }, today, { path: "report_section" });
+export function reportSectionGateShadow(narrative: string, data: unknown, today: TodayDecision, identity: GateIdentity, enforced = false): GateShadowRecord {
+  return shadowGate({ surface: "report_section", text: narrative, evidence: { kind: "data", data }, identity }, today, { path: "report_section", ...(enforced ? { enforced } : {}) });
 }
 
 /**
@@ -330,7 +334,17 @@ export async function generateVerifiedSection(input: SectionInput, tracking: Sec
   const narrative = section.narrative;
   const data = input.data;
   const identity: GateIdentity = { researchInstitutionId: null, accountInstitutionId: null, ...tracking.gateIdentity };
-  const gateShadow: SectionGateShadow = () => reportSectionGateShadow(narrative, data, today, identity);
+  const enforce = isAnswerGateEnforced();
+  const gateShadow: SectionGateShadow = () => reportSectionGateShadow(narrative, data, today, identity, enforce);
+  // HAMILTON_ANSWER_GATE_ENFORCE on (#1077 T4): a section the figure check passes is `ok` only when the
+  // one output gate validates it. A report prints no partial section, so a partial verdict holds too:
+  // the section comes back `needs_review`, which refuses the report as an untraced figure does.
+  if (enforce && check.unmatched.length === 0) {
+    const verdict = tryGateAnswer({ surface: "report_section", text: narrative, evidence: { kind: "data", data }, identity });
+    if (enforcedOutcome(verdict, false) !== "validated") {
+      return { status: "needs_review", section, unmatched: [SECTION_GATE_HELD], citation, gateShadow };
+    }
+  }
   if (check.unmatched.length > 0) {
     return { status: "needs_review", section, unmatched: check.unmatched, citation, gateShadow };
   }

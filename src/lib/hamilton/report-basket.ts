@@ -1,6 +1,7 @@
 import type { HamiltonIdentitySnapshot } from "./account-context";
 import type { SavedClaimSet } from "./saved-claims";
 import { readHamiltonIdentitySnapshot } from "./identity-display";
+import type { AddedFindingEvidence } from "./report-finding-evidence";
 /**
  * The report basket: findings and tests a user adds from Position, Ask and
  * Test, which the Report page turns into the board brief. Kept in the
@@ -28,6 +29,13 @@ export interface ReportBasketItem {
   savedClaims?: SavedClaimSet;
   /** Server only: the saved answer's sentences that are Hamilton's reading, from `savedClaims`. */
   reading?: string[];
+  /** Test only: the fee the reader proposed, their own input, labelled as such in a report (#1899). */
+  proposedFee?: number | null;
+  /**
+   * Server only (#1899): the finding's chart, sources, method, dates and limits, built when a report
+   * is made (report-finding-evidence.ts). `sanitizeBasketItems` never takes it from the browser.
+   */
+  evidence?: AddedFindingEvidence;
 }
 
 export const REPORT_BASKET_KEY = "hamilton-report-basket-v1";
@@ -56,6 +64,9 @@ export function sanitizeBasketItems(raw: unknown): ReportBasketItem[] {
     const institutionId = clip(e.institutionId, 20);
     const snapshot = readHamiltonIdentitySnapshot(e.identityContext);
     const savedAnalysisId = clip(e.savedAnalysisId, 40);
+    const proposedFee = source === "Test" && typeof e.proposedFee === "number" && Number.isFinite(e.proposedFee) && e.proposedFee >= 0 && e.proposedFee <= 100_000
+      ? Math.round(e.proposedFee * 100) / 100
+      : null;
     items.push({
       id,
       source,
@@ -65,6 +76,7 @@ export function sanitizeBasketItems(raw: unknown): ReportBasketItem[] {
       institutionId: snapshot ? (snapshot.researchInstitutionId === null ? null : String(snapshot.researchInstitutionId)) : /^\d+$/.test(institutionId) ? institutionId : null,
       ...(snapshot ? { identityContext: snapshot } : {}),
       ...(savedAnalysisId ? { savedAnalysisId: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(savedAnalysisId) ? savedAnalysisId : null } : {}),
+      ...(proposedFee !== null ? { proposedFee } : {}),
       addedAt: clip(e.addedAt, 40) || new Date(0).toISOString(),
     });
   }
