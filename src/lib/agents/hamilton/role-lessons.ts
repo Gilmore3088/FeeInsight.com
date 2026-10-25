@@ -198,6 +198,16 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     since: "2026-10-25",
   },
   {
+    id: "issue-1673-follow-the-replacement",
+    agent: "hamilton",
+    stage: "publish",
+    lesson: "A takedown that names another line is not undone just because that line is down: follow the line's own takedown to the line that replaced it (refreshed by, superseded by, duplicate of, a same-line kept line), and keep the fee down while a replacement at its category and price is live or held.",
+    why: "The same-line restore brought back a copy as soon as its older line was no longer live, but the older line had often come down for a newer line of the same fee, so 8 copies went live beside that replacement: 15109 'for each check requested for stop payment.' $19.95 beside 141864 'Stop Payment Fee - Check', and four at institution 8058.",
+    evidence: { issues: [1673], prs: [], files: ["src/lib/agents/hamilton/same-line-duplicates.ts", "src/lib/agents/hamilton/same-line-duplicates.db.test.ts", "src/lib/agents/darwin/same-line-replacement-check.ts", "docs/project/findings/2026-10-25-same-line-restore-beside-replacement.md"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
+  {
     id: "issue-1915-edition-hold-twins",
     agent: "hamilton",
     stage: "publish",

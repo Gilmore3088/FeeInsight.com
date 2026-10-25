@@ -376,6 +376,10 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   TRANSLATED_COPY_CHECK_VERSION: "Each verify step re-reads every live fee on a Spanish-copy document (no cursor); nothing to replay.",
   // v2 (#1910): the name cover reads NSF/insufficient, OD/overdraft and a paid NSF item/overdraft as one item.
   PRODUCT_PAGE_REPEAT_CHECK_VERSION: "Each verify step re-reads every live product-page fee with a same-price schedule twin (no cursor), so version 2's wider name cover reaches every live fee on the next step; nothing older to replay.",
+  // v1 (#1673): same-line copies the v1 restore brought back beside their older line's live replacement.
+  SAME_LINE_REPLACEMENT_CHECK_VERSION: "First version: each verify step re-reads every live fee after a confirmed same-line takedown (no cursor, a few dozen rows); its switch is off, so it only reports; nothing older to replay.",
+  // v2 (#1673): the same-line restore follows the older line's replacement before bringing a copy back.
+  SAME_LINE_DUPLICATE_RESTORE_VERSION: "Each publish step re-reads every same-line takedown whose older line is down (no cursor), so v2's replacement check reaches every pending restore on the next step; the copies v1 already restored are read by Darwin's same-line replacement re-check.",
   // v1 (#1915): schedule editions not yet in effect. Every verify step reads every live fee on a dated document.
   // v2 (T1): an edition line past a web page's menu, counted only until EDITION_LATE_HEADING_LIVE.
   // v3 (#1945): a later dated edition of the same schedule takes over, read from every text-dated document each step.

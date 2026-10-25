@@ -524,7 +524,13 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
    fee, on its second look, `business_schedule: consumer fee #<id>`.
 8. Same-line duplicates (`same-line-duplicates.ts`): a fee the 9 Oct same-line re-decide
    published beside an older live line of itself, on its second look,
-   `same_line_duplicate: live fee #<id>`; it comes back when the older line is no longer live.
+   `same_line_duplicate: live fee #<id>`; it comes back when the older line is no longer live
+   and no line that replaced it is. The restore (`SAME_LINE_DUPLICATE_RESTORE_VERSION` v2, #1673)
+   follows the older line's takedown through the lines it names (`refreshed by #`, `superseded by
+   #`, `duplicate of #`, `same_line_duplicate: live fee #`, at most 8 steps, never through the copy
+   itself, `sameLineReplacementSql`) and keeps the copy down while one of them is live, or held by
+   the account type hold, at the copy's category and price. v1 brought back 8 copies beside such a
+   replacement; Darwin's `same-line-replacement-check.ts` re-checks them.
 9. Other bank's document (`other-bank-document.ts`): a fee from another institution's site,
    on first look, `other_bank_document: <host>`; a host that does not name the bank, on its
    second look, `unconfirmed_document_host: <host>`.
@@ -1400,6 +1406,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `HAMILTON_PUBLISH_STRATEGY` | `publish.rules` | v3 | `hamilton/publish.ts` |
 | `REFRESH_COPY_STRATEGY` | `hamilton.refresh_copy` | v2 | `hamilton/refresh-copy.ts` |
 | `RULES_RECHECK_STRATEGY` | `hamilton.rules_recheck` | v4 | `hamilton/rules-recheck.ts` |
+| `SAME_LINE_DUPLICATE_RESTORE_VERSION` | `hamilton.same_line_duplicate` | v2 | `hamilton/same-line-duplicates.ts` |
 | `SOURCE_CHECK_STRATEGY` | `hamilton.source_check` | v26 | `hamilton/source-check.ts` |
 | `SOURCE_LINK_VERSION` | `hamilton.source_link` | v2 | `hamilton/source-link.ts` |
 | `SOURCE_LINK_DRIFT_VERSION` | `hamilton.source_link_drift` | v1 | `hamilton/source-link.ts` |
