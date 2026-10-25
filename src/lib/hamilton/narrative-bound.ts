@@ -320,8 +320,12 @@ function figureClauses(text: string, figures: readonly NarrativeFigure[]): strin
   return figures.map((_, i) => text.slice(cuts[i], cuts[i + 1]));
 }
 
-/** Second person only: "your" is the reader's own institution. "Our" and "we" are Hamilton's, and "US" is the country. */
-const PERSONAL = /\b(?:you|your|yours)\b/i;
+/**
+ * Possessive second person only: "your" is the reader's own institution. "You" alone ("as you can
+ * see") addresses the reader without naming whose figure it is; "our" and "we" are Hamilton's, and
+ * "US" is the country.
+ */
+const PERSONAL = /\b(?:your|yours)\b/i;
 
 /**
  * How the sentence names a figure: "median" when a median word sits within 40 characters of it,
@@ -447,9 +451,19 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
      * period takes the sentence's; "the prior quarter" or "a year earlier" counts back from the
      * sentence's quarter, and with no quarter to count from the period is unknown (null).
      */
+    const clauseBases = clauses.map((clause) => statedBasis(clause));
     const periodFor = (figure: NarrativeFigure) => {
-      const clause = clauses[figures.indexOf(figure)] ?? text;
-      const basis = clauses.length > 1 ? statedBasis(clause) : statedBasis(text);
+      const at = figures.indexOf(figure);
+      const clause = clauses[at] ?? text;
+      let basis = clauses.length > 1 ? clauseBases[at] ?? null : statedBasis(text);
+      if (clauses.length > 1 && basis === null) {
+        // A clause with no basis words ("while Bank B's was $3.0 million") takes the basis the rest
+        // of the sentence states, as its period does. When the other clauses disagree, the figure's
+        // basis is unknown and it binds nothing.
+        const others = new Set(clauseBases.filter((b): b is "ytd" | "standalone_quarter" => b !== null));
+        if (others.size > 1) return null;
+        basis = others.size === 1 ? [...others][0] : null;
+      }
       const back = PRIOR_QUARTER.test(clause) ? 1 : YEAR_EARLIER.test(clause) ? 4 : 0;
       const clauseYears = [...clause.matchAll(YEAR)].map((m) => m[1]);
       const clauseQuarters = statedQuarters(clause, clauseYears.length > 0 ? clauseYears : years);

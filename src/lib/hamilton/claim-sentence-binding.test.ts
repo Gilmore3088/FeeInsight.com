@@ -86,12 +86,28 @@ describe("filing figures bind to the institution, metric, quarter and basis the 
     expect(reasons(bind("Bank A's fee income was $2.6 million in Q2 2026 and $1.2 million in Q1 2026.", evidence))).toEqual(["wrong_basis"]);
   });
 
-  it("reads only second person as the reader's own institution, never \"our\", \"we\" or \"US\" (PR #2571 review)", () => {
+  it("gives a clause with no basis words the basis the rest of the sentence states (PR #2571 re-review)", () => {
+    const B_YTD_Q1 = filing(BANK_B, "2026-03-31", "service_charge_income", "ytd", 1_000_000);
+    const B_YTD_Q2 = filing(BANK_B, "2026-06-30", "service_charge_income", "ytd", 3_000_000);
+    const evidence = bundle([A_YTD_Q1, A_YTD_Q2, B_YTD_Q1, B_YTD_Q2],
+      [quarter(A_YTD_Q2, A_YTD_Q1, 1_400_000), quarter(B_YTD_Q2, B_YTD_Q1, 2_000_000)]);
+    // Bank B's $3.0 million is its year-to-date total, not the Q2 quarter the sentence states.
+    expect(reasons(bind("Bank A's Q2 2026 fee income was $1.4 million, while Bank B's was $3.0 million.", evidence))).toEqual(["wrong_basis"]);
+    expect(reasons(bind("In Q2 2026, Bank A's fee income was $1.4 million and Bank B's fee income was $3.0 million.", evidence))).toEqual(["wrong_basis"]);
+    const right = bind("Bank A's Q2 2026 fee income was $1.4 million, while Bank B's was $2.0 million.", evidence);
+    expect(right.omitted).toEqual([]);
+    expect(right.supported).toHaveLength(1);
+  });
+
+  it("reads only \"your\" as the reader's own institution, never \"you\", \"our\", \"we\" or \"US\" (PR #2571 review)", () => {
     const evidence = bundle([A_Q2, B_Q2]);
     const research = { researchInstitutionId: BANK_A, accountInstitutionId: BANK_B };
     expect(bind("Based on our data, service charge income was $1.1 million in Q2 2026.", evidence, research).supported[0].factIds).toEqual([A_Q2.id]);
     expect(bind("Bank A's service charge income was $1.1 million in Q2 2026, among the highest of US banks.", evidence, research).supported[0].factIds).toEqual([A_Q2.id]);
     expect(bind("We read service charge income of $1.1 million in Q2 2026.", evidence, research).supported[0].factIds).toEqual([A_Q2.id]);
+    // "You" addressing the reader is not "your": the figure is still the research subject's.
+    expect(bind("As you can see, service charge income was $1.1 million in Q2 2026.", evidence, research).supported[0].factIds).toEqual([A_Q2.id]);
+    expect(bind("If you compare peers, service charge income was $1.1 million in Q2 2026.", evidence, research).supported[0].factIds).toEqual([A_Q2.id]);
   });
 
   it("binds only where the sentence names the figure's metric", () => {

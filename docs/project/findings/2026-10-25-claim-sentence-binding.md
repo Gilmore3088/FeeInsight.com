@@ -22,8 +22,11 @@ shown with no binding. `derivationHolds` also passed any derivation kind it did 
   per figure from its own clause (the words between two figures split at the first comma, "and",
   "up from" and the like), so one sentence can state a quarter and a year-to-date total, and "the
   prior quarter" or "a year earlier" counts back from the sentence's quarter; with no quarter to
-  count from, the figure binds nothing. Only second person ("you", "your") with no institution
-  named is the reader's own institution ("our", "we" and "US" are not), and another's figure
+  count from, the figure binds nothing. A clause with no basis words takes the basis the rest of
+  the sentence states, as its period does ("Bank A's Q2 figure was X, while Bank B's was Y" checks
+  Y as a quarter); when the other clauses disagree it binds nothing. Only the possessive "your" or
+  "yours" with no institution named is the reader's own institution ("you can see", "our", "we"
+  and "US" are not), and another's figure
   stated as it is the new `account_as_subject`; a sentence naming nobody is the research subject's. `derivationHolds`
   recomputes `ytd_to_quarter` (this quarter's YTD less the prior quarter's, same institution and
   metric) and `ratio`, checks a filed peer median's peers share its metric, quarter and basis, and
