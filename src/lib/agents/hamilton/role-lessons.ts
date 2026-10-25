@@ -157,4 +157,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-1921",
+    agent: "hamilton",
+    stage: "operations",
+    lesson: "A Hamilton path a paying reader depends on (the database, the Ask answer, the PDF export) is checked every morning without a model call, and a failed check is the first thing that needs James in the brief. A path you add or change keeps its probe passing; when one fails, contain it with the incident runbook before anything else.",
+    why: "Hamilton had a rollback runbook but no health check, no alert and no incident process, so a broken Ask or export would have been heard about from a customer first.",
+    evidence: { issues: [1921], prs: [], files: ["src/lib/hamilton/health-check.ts", "docs/runbooks/hamilton-incident.md", "docs/project/findings/2026-10-17-hamilton-release-runbook.md"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];
