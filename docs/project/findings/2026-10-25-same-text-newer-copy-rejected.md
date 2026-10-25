@@ -47,19 +47,31 @@ current copies have exactly an older copy's text, every one rejected by the prod
   `same_text_copy_of`, and the bank is not sent back to Magellan. Triage spares such a text too.
 - The backlog (`reopenSameTextCopies`, `SAME_TEXT_COPY_REOPEN_LIVE = false`): each read step counts
   and samples the rejected current copies the rule covers (`rosetta.same_text_copies` event); live,
-  it sets them to `completed` with a `read.same_text_copy` attempt. Dry run on prod (Oct 25): 714
-  current copies at 641 banks, 712 of them product-page rejections; 451 live fees sit on their older
-  copies.
+  it sets them to `completed` with a `read.same_text_copy` attempt and names, as the older copy, the
+  newest one that qualified (same text hash and Knox rows; the same predicate admits the text).
+  Dry run on prod (Oct 25, read-only): 714 current copies at 641 banks qualify, 712 of them
+  product-page rejections, behind 921 older copies with the same text and Knox rows. Live fees on
+  those 921 copies, counted on `published_fee_records` with `rolled_back_at IS NULL AND
+  quarantined_at IS NULL`: 433 dollar fees (`amount_kind = 'flat'`) and 8 rate fees, kept apart.
+  Of those, the reader views show 314 in `published_fee_catalog` and 3 in
+  `published_fee_rate_catalog` (the dollar view also leaves out banks with fewer than 3 live
+  categories and a fee with a pending takedown that a newer live fee replaces). Counting every older copy the 714
+  supersede, not only same-text ones: 443 dollar and 8 rate (323 and 3 in the views). The live-fee
+  counts in the table above use the same `published_fee_records` definition.
 - No fee moves in this change. Once a copy is readable, Knox reads it, Darwin verifies its rows, and
   Hamilton's refresh moves a live fee only when the current copy's row is the same line, so no Darwin
   live re-check is needed for this rule. A changed text is still judged on its own.
 
-**Before switching the backlog on:** the 10 sampled pages are account and product pages
-(Evolve, UMB, Timberland, North State Bank's cash-management page). Some of their live fees read
-oddly ("No monthly service charge: Only $5.00", a safe deposit line read as $10.00). Reopening
-them lets Knox, Darwin and Hamilton's checks judge those pages again under today's rules, which is
-the point, but the reviewer decides whether the product-page rule or the "Knox already read it"
-exemption should win for these pages before the switch flips.
+**Before switching the backlog on:** 10 copies sampled at random from the 714 (current copy,
+the older copy the rule names, live fees on it): Dakota Heritage Bank 33060/30481 (none); Evolve
+34076/18775 (monthly service charge $5, paper statements $5); Montgomery Bank 34212/31272 (none);
+Jackson Area FCU 35631/27035 (service charge for minimum balance $10); Clay County State Bank
+38338/23726 (none); First Commerce Bank 32791/22502 (none); The Park Bank 32182/28394 (none);
+First Southern National Bank 37963/25840 (none); Sterling State Bank 33206/22609 (none); Encore
+Bank 35760/21635 (none). All ten are account or product pages, and most have no live fee left on
+the older copy. Reopening them lets Knox, Darwin and Hamilton's checks judge those pages again
+under today's rules, but the reviewer decides whether the product-page rule or the "Knox already
+read it" exemption should win for these pages before the switch flips.
 
 **Agent lesson:** rosetta/issue-2477-same-text-same-verdict
 

@@ -6,6 +6,7 @@ import {
   SAME_TEXT_COPY_SAMPLE,
   SAME_TEXT_COPY_STRATEGY,
   sameTextCopyOf,
+  sameTextKnoxCopyIdSql,
   sameTextKnoxCopySql,
 } from "./same-text-copy";
 
@@ -57,6 +58,18 @@ describe("same page, same text, same verdict (#2477)", () => {
     expect(fragment).toContain("adt.text_hash IS NOT NULL");
     expect(fragment).toContain("older_fr.source = 'knox'");
     expect(fragment).toContain("older_fr.outlier_flags ? 'needs_darwin_verification'");
+    // The predicate is the id lookup: a text is covered exactly when a qualifying copy is found.
+    expect(fragment).toContain(sameTextKnoxCopyIdSql("adt"));
+  });
+
+  it("names the newest older copy that qualifies, not just the newest superseded copy", () => {
+    const id = sameTextKnoxCopyIdSql("adt");
+    expect(id).toMatch(/^\(SELECT older\.id\s/);
+    expect(id).toContain("older_text.text_hash = adt.text_hash");
+    expect(id).toContain("older_fr.source_document_id = older.id");
+    expect(id).toContain("older_fr.outlier_flags ? 'needs_darwin_verification'");
+    expect(id).toMatch(/ORDER BY older\.id DESC\s+LIMIT 1\)$/);
+    expect(id).not.toMatch(/max\(older\.id\)/);
   });
 
   it("finds the older copy at read time, and asks nothing for a read with no text", async () => {
@@ -90,7 +103,12 @@ describe("same page, same text, same verdict (#2477)", () => {
     expect(select.text).toContain("doc.superseded_by_id IS NULL");
     expect(select.text).toContain("doc.duplicate_of_id IS NULL");
     expect(select.values).toContain("TX");
-    expect(db.unsafe).toHaveBeenCalledWith(sameTextKnoxCopySql("adt"));
+    // olderDocumentId comes from the same predicate that admitted the text (#2477 review: a bare
+    // max(older.id) named a copy without the text or the Knox rows for 114 of 714).
+    expect(db.unsafe).toHaveBeenCalledWith(sameTextKnoxCopyIdSql("adt"));
+    expect(select.text).toContain("AS older_id");
+    expect(select.text).toContain("WHERE covered.older_id IS NOT NULL");
+    expect(select.text).not.toMatch(/max\(older\.id\)/);
     const event = all.find((call) => call.text.includes("INSERT INTO agent_run_events"))!;
     expect(event.values).toContain(SAME_TEXT_COPY_EVENT);
     expect(String(event.values.find((value) => typeof value === "string" && value.startsWith("Would reopen")))).toContain("12");

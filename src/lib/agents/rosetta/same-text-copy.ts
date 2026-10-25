@@ -43,13 +43,14 @@ export const SAME_TEXT_COPY_SAMPLE = 10;
 export const SAME_TEXT_COPY_EVENT = "rosetta.same_text_copies";
 
 /**
- * SQL (text alias `adt`, an agent_source_texts row): an older copy of the same page, superseded by
- * this text's document at the same bank, holds this exact text and Knox rows sent to Darwin.
+ * SQL (text alias `adt`, an agent_source_texts row): the newest older copy of the same page,
+ * superseded by this text's document at the same bank, that holds this exact text and Knox rows
+ * sent to Darwin; NULL when there is none. The one predicate the rule uses, so the copy it names is
+ * the copy that qualified (`sameTextCopyOf` asks the same with a new read's own values).
  * Driven by `source_documents_superseded_by_idx`; the Knox rows by the Knox dedup index.
  */
-export function sameTextKnoxCopySql(textAlias = "adt"): string {
-  return `(${textAlias}.text_hash IS NOT NULL AND EXISTS (
-           SELECT 1
+export function sameTextKnoxCopyIdSql(textAlias = "adt"): string {
+  return `(SELECT older.id
              FROM agent_source_texts older_text
              JOIN source_documents older ON older.id = older_text.source_document_id
             WHERE older.superseded_by_id = ${textAlias}.source_document_id
@@ -61,7 +62,13 @@ export function sameTextKnoxCopySql(textAlias = "adt"): string {
                    AND older_fr.source_document_id = older.id
                    AND older_fr.outlier_flags ? 'needs_darwin_verification'
               )
-         ))`;
+            ORDER BY older.id DESC
+            LIMIT 1)`;
+}
+
+/** SQL (text alias `adt`): true when the rule covers this text (`sameTextKnoxCopyIdSql` finds a copy). */
+export function sameTextKnoxCopySql(textAlias = "adt"): string {
+  return `(${textAlias}.text_hash IS NOT NULL AND ${sameTextKnoxCopyIdSql(textAlias)} IS NOT NULL)`;
 }
 
 /**
@@ -129,22 +136,25 @@ export async function reopenSameTextCopies(
     text_hash: string;
     older_id: number | string;
   }>>`
-    SELECT adt.id AS text_id, adt.source_document_id, adt.institution_id, adt.source_url, adt.text_hash,
-           (SELECT max(older.id) FROM source_documents older
-             WHERE older.superseded_by_id = adt.source_document_id
-               AND older.institution_id = adt.institution_id) AS older_id
-      FROM agent_source_texts adt
-      JOIN source_documents doc ON doc.id = adt.source_document_id
-      JOIN institution_sources inst ON inst.id = adt.institution_id
-     WHERE adt.status = 'wrong_document'
-       AND adt.normalized_text IS NOT NULL
-       AND doc.status = 'success'
-       AND doc.superseded_by_id IS NULL
-       AND doc.duplicate_of_id IS NULL
-       AND (${institutionId}::bigint IS NULL OR adt.institution_id = ${institutionId}::bigint)
-       AND (${stateCode}::text IS NULL OR upper(btrim(inst.state_code)) = ${stateCode}::text)
-       AND ${db.unsafe(sameTextKnoxCopySql("adt"))}
-     ORDER BY adt.id
+    SELECT covered.*
+      FROM (
+        SELECT adt.id AS text_id, adt.source_document_id, adt.institution_id, adt.source_url, adt.text_hash,
+               ${db.unsafe(sameTextKnoxCopyIdSql("adt"))} AS older_id
+          FROM agent_source_texts adt
+          JOIN source_documents doc ON doc.id = adt.source_document_id
+          JOIN institution_sources inst ON inst.id = adt.institution_id
+         WHERE adt.status = 'wrong_document'
+           AND adt.normalized_text IS NOT NULL
+           AND adt.text_hash IS NOT NULL
+           AND doc.status = 'success'
+           AND doc.superseded_by_id IS NULL
+           AND doc.duplicate_of_id IS NULL
+           AND (${institutionId}::bigint IS NULL OR adt.institution_id = ${institutionId}::bigint)
+           AND (${stateCode}::text IS NULL OR upper(btrim(inst.state_code)) = ${stateCode}::text)
+      ) covered
+     -- The copy named is the copy that qualified: same text hash and Knox rows (#2477 review).
+     WHERE covered.older_id IS NOT NULL
+     ORDER BY covered.text_id
      LIMIT ${limit}
   `;
   const copies: SameTextCopy[] = rows.map((row) => ({
