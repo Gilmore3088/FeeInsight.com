@@ -622,11 +622,19 @@ function stemCount(text: string, stems: NameStems): number {
  */
 const LEADER_FREE_WORD = /(?:(?:\.\s?){2,}|…+)[\s.…]*(?:free|none|no charge|n\/c|waived)\b/gi;
 const ROW_CLOSED_AFTER = /^[\s*†‡\d]*(?:\||[A-Z][^$|]*?(?:(?:\.\s?){2,}|…))/;
+/**
+ * A row after the free word that only sets the free row's own tier or audience ("Excessive
+ * Withdrawals (first 6) …. FREE | Each Additional …. $3.00", "None | After 12 Months …. $5.00",
+ * "FREE | Non-Customers …. $10.00") continues the free row: its price is the same fee's.
+ */
+export const FREE_ROW_CONTINUES =
+  /^[\s*†‡\d|]*(?:each\b|additional\b|add'?l\b|after\b|over\b|thereafter\b|then\b|per\b|excess\b|more than\b|beyond\b|subsequent\b|non[\s-]?(?:customers?|members?|account\s?holders?|depositors?)\b)/i;
 function leaderFreeRowEnds(line: string, stems: NameStems): number[] {
   return [...line.matchAll(LEADER_FREE_WORD)].flatMap((match) => {
     const start = match.index ?? 0;
     const end = start + match[0].length;
-    if (!ROW_CLOSED_AFTER.test(line.slice(end))) return [];
+    const after = line.slice(end);
+    if (!ROW_CLOSED_AFTER.test(after) || FREE_ROW_CONTINUES.test(after)) return [];
     // The row's name starts after an earlier row's price; a figure in its own note ("Overdraft Fee
     // (under $5)") is part of the name, not an earlier price.
     const rowName = line

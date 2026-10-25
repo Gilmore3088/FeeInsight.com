@@ -27,4 +27,9 @@ describe("Knox v105: a row its free word closes never takes the next column's pr
     expect(candidates.some((fee) => fee.amount === 25 && /incoming/i.test(fee.feeName))).toBe(false);
     expect(candidates.some((fee) => fee.amount === 25 && /outgoing wire/i.test(fee.feeName))).toBe(true);
   });
+
+  it("still pairs a free row with a next cell that only sets its tier", () => {
+    const text = "Withdrawals\nExcessive Withdrawals (first 6) .......... FREE | Each Additional .......... $3.00";
+    expect(extractTableCandidates(text).candidates.some((fee) => /Excessive Withdrawals/i.test(fee.feeName) && fee.amount === 3)).toBe(true);
+  });
 });

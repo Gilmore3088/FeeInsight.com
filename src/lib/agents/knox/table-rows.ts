@@ -29,6 +29,7 @@ import {
   ZERO_WORD,
 } from "@/lib/agents/knox/layout";
 import { columnHeadingRows } from "@/lib/agents/knox/column-heading-rows";
+import { FREE_ROW_CONTINUES } from "@/lib/custom-report/source-check";
 
 /**
  * Knox pass 2a, `extract.table`: pair each table row's fee-name cell with its amount
@@ -247,7 +248,9 @@ export function extractFromTableRows(rows: KnoxTableRow[]): ExtractionRulesResul
     const nameCell = row.cells[nameIndex];
     // v10 (#2477): a dot-leader name cell closed by its own free word ("ATM Transactions……FREE |
     // activity……$5") is a row of its own; the next cell's price is another column's.
-    if (LEADER_PRICE_WORDS.test(nameCell.trim())) continue;
+    // A next cell that only sets the free row's tier or audience ("FREE | Each Additional …. $3")
+    // continues the same fee, as the shared check reads it.
+    if (LEADER_PRICE_WORDS.test(nameCell.trim()) && !FREE_ROW_CONTINUES.test(row.cells[nameIndex + 1] ?? "")) continue;
     const valueCell = row.cells[valueIndex];
     const name = cleanFeeName(nameCell);
     if (!name || /\b(no (?:[a-z]+ ){0,2}(?:fee|charge)s?|not charged|without charge)\b/i.test(name)) continue;

@@ -71,6 +71,15 @@ describe("a free word that does not close the fee's row (#2477 review)", () => {
     ["Foreign ATM Withdrawal .......... Free* $2.00 after 4 per month", "Foreign ATM Withdrawal", 2],
     ["Debit Card Replacement .......... Free first card | Additional .......... $10.00", "Debit Card Replacement", 10],
     ["Statements .......... Free (e-statements) | $2.00 (paper)", "Statements", 2],
+    ["Excessive Withdrawals (first 6) .......... FREE | Each Additional .......... $3.00", "Excessive Withdrawal", 3],
+    ["Excess Withdrawals (first 6) .......... FREE | Each Additional .......... $3.00", "Excess Withdrawal Fee", 3],
+    ["Debit Card Replacement .......... Free Each Additional .......... $10.00", "Debit Card Replacement", 10],
+    ["Debit Card Replacement .......... Free | Additional .......... $10.00", "Debit Card Replacement", 10],
+    ["Inactive Account Fee .......... None After 12 Months .......... $5.00", "Inactive Account Fee", 5],
+    ["Dormant Account Fee .......... None | After 12 months of inactivity .......... $5.00 per month", "Dormant Account Fee", 5],
+    ["Savings Withdrawals ........ FREE | Over 6 Per Month ........ $3.00", "Savings Withdrawal", 3],
+    ["Cashier's Checks ......... FREE Non-Customers ........ $10.00", "Cashier's Check", 10],
+    ["Coin Counting ......... FREE | Non-Customers ........ $5.00", "Coin Counting", 5],
   ])("keeps the row's own later price: %s", (line, name, amount) => {
     const result = checkFeeAgainstSource(line, name, amount, ".", null);
     expect(result.ok ? null : result.reason).not.toBe("amount_not_the_fee");

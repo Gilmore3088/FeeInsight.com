@@ -470,7 +470,7 @@ export const KNOX_LESSONS: AgentLesson[] = [
     id: "issue-2477-free-word-closes-the-row",
     agent: "knox",
     stage: "extract",
-    lesson: "A dot-leader row that ends in its own price word (\"ATM Transactions……FREE\") is finished. On a two-column page the next cell's price (\"| activity……$5\") is the other column's fee, never this row's; read the closed row at its free price or not at all.",
+    lesson: "A dot-leader row that ends in its own price word (\"ATM Transactions……FREE\") is finished. On a two-column page the next cell's price (\"| activity……$5\") is the other column's fee, never this row's; read the closed row at its free price or not at all. A next cell that only sets the same fee's tier or audience (\"| Each Additional……$3.00\", \"| Non-Customers……$10.00\") continues the free row, so its price is the same fee's.",
     why: "United Bank's ATM Transactions, free on its schedule, went live at $5, the right column's dormant-savings fee, and stayed live for five days after the Oct 20 hand check found it.",
     evidence: { issues: [2477], prs: [], files: ["src/lib/agents/knox/table-rows.ts", "src/lib/custom-report/source-check.ts"] },
     appliesTo: "all",
