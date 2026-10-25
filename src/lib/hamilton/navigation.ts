@@ -55,7 +55,7 @@ export const HAMILTON_WORKSPACE_NAV = [
 /** The secondary link beside Settings: managing watches, whose alerts show across the workspace. */
 export const HAMILTON_ALERTS_NAV = { label: "Alerts and watches", href: `${HAMILTON_BASE}/monitor` } as const;
 
-const RESEARCH_PATHS = ["/pro/intelligence", "/pro/research", "/pro/data", "/pro/market", "/pro/categories", "/pro/districts", "/pro/news"];
+const RESEARCH_PATHS = ["/pro/intelligence", "/pro/research", "/pro/peers", "/pro/data", "/pro/market", "/pro/categories", "/pro/districts", "/pro/news"];
 const TRY_A_PRICE_PATHS = ["/pro/simulate", "/pro/saved"];
 
 const under = (pathname: string, paths: readonly string[]) => paths.some(path => pathname === path || pathname.startsWith(`${path}/`));
