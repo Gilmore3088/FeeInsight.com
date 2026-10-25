@@ -12,7 +12,7 @@ const connection = process.env.E2E_DATABASE_URL;
 const INST = 20580001, WAITING = 20580002, DOC = 20580101;
 const EVENT = "00000000-0000-4000-8000-000020580001";
 const KIND = "test_2058_named_error";
-const FIX: ErrorFixEntry = { pr: 92058, issue: 2058, stage: "extract", merged_on: "2026-10-20", kinds: [KIND] };
+const FIX: ErrorFixEntry = { pr: 92058, issue: 2058, stage: "extract", merged_on: "2026-10-20", knox_version: KNOX_RULES_STRATEGY.version, kinds: [KIND] };
 type Db = Parameters<typeof runErrorFixRecheck>[0] extends infer O ? O extends { db?: infer D } ? D : never : never;
 
 describe.skipIf(!connection)("error loop in isolated PostgreSQL (#2058)", () => {
@@ -32,9 +32,9 @@ describe.skipIf(!connection)("error loop in isolated PostgreSQL (#2058)", () => 
     return Number(published.fee_published_id);
   }
 
-  async function named(key: string, institutionId: number, feePublishedId: number, canonical: string, createdAt = "2026-10-10T00:00:00Z") {
-    await raw`INSERT INTO pipeline_feedback (about_stage, signal, kind, reported_by, institution_id, fee_published_id, canonical_fee_key, dedupe_key, created_at)
-              VALUES ('extract', 'wrong', ${KIND}, 'deming', ${institutionId}, ${feePublishedId}, ${canonical}, ${`test2058:${key}`}, ${createdAt})`;
+  async function named(key: string, institutionId: number, feePublishedId: number, canonical: string, createdAt = "2026-10-10T00:00:00Z", check = "hamilton.source_check") {
+    await raw`INSERT INTO pipeline_feedback (about_stage, signal, kind, reported_by, institution_id, fee_published_id, canonical_fee_key, check_name, dedupe_key, created_at)
+              VALUES ('extract', 'wrong', ${KIND}, 'deming', ${institutionId}, ${feePublishedId}, ${canonical}, ${check}, ${`test2058:${key}`}, ${createdAt})`;
     const [row] = await raw`SELECT id FROM pipeline_feedback WHERE dedupe_key = ${`test2058:${key}`}`;
     ids[key] = Number(row.id);
   }
@@ -76,6 +76,8 @@ describe.skipIf(!connection)("error loop in isolated PostgreSQL (#2058)", () => 
     await named("waiting", WAITING, waitingFee, "overdraft");
     // Recorded after the fix merged: not one of the errors it names.
     await named("after", INST, stop, "stop_payment", "2026-10-21T00:00:00Z");
+    // Raised by a check the re-check does not re-run: never named, so never closed by it.
+    await named("unjudged", INST, wire, "wire_domestic_outgoing", "2026-10-10T00:00:00Z", "darwin.audience_guard");
   });
 
   afterAll(async () => {
@@ -89,6 +91,10 @@ describe.skipIf(!connection)("error loop in isolated PostgreSQL (#2058)", () => 
     const requests = await errorFixRequests(db, [FIX]);
     expect(requests.map((request) => [request.institutionId, request.requestedAt]).sort()).toEqual([[INST, "2026-10-20"], [WAITING, "2026-10-20"]]);
     const [run] = await raw`INSERT INTO agent_runs (agent_name, run_kind, title, status) VALUES ('atlas', 'manual_repair', 'Loop test re-run', 'completed') RETURNING id`;
+    // An extract at the old rules version did not carry the fix.
+    await raw`INSERT INTO pipeline_attempts (institution_id, source_document_id, stage, strategy, strategy_version, outcome, agent_run_id)
+              VALUES (${INST}, ${DOC}, 'extract', ${KNOX_RULES_STRATEGY.strategy}, ${KNOX_RULES_STRATEGY.version - 1}, 'ok', ${Number(run.id)})`;
+    expect((await errorFixRequests(db, [FIX])).map((request) => request.institutionId).sort()).toEqual([INST, WAITING]);
     await raw`INSERT INTO pipeline_attempts (institution_id, source_document_id, stage, strategy, strategy_version, outcome, agent_run_id)
               VALUES (${INST}, ${DOC}, 'extract', ${KNOX_RULES_STRATEGY.strategy}, ${KNOX_RULES_STRATEGY.version}, 'ok', ${Number(run.id)})`;
     expect((await errorFixRequests(db, [FIX])).map((request) => request.institutionId)).toEqual([WAITING]);

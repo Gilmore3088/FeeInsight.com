@@ -14,7 +14,7 @@ import {
 } from "./error-fixes";
 import type { FreshAuditFee } from "./fresh-audit";
 
-const entry = (over: Partial<ErrorFixEntry> = {}): ErrorFixEntry => ({ pr: 9001, issue: 2058, stage: "extract", merged_on: "2026-10-20", kinds: ["wrong_amount_read"], ...over });
+const entry = (over: Partial<ErrorFixEntry> = {}): ErrorFixEntry => ({ pr: 9001, issue: 2058, stage: "extract", merged_on: "2026-10-20", knox_version: 105, kinds: ["wrong_amount_read"], ...over });
 
 const fee = (over: Partial<FreshAuditFee> = {}): FreshAuditFee => ({
   fee_id: 1,
@@ -42,9 +42,18 @@ describe("the error loop: a process fix names its errors, re-runs their banks an
     expect(errorFixProblems([entry()])).toEqual([]);
     expect(errorFixProblems([entry({ kinds: [] })])[0]).toContain("name the error rows");
     expect(errorFixProblems([entry({ stage: "discover" as never })])[0]).toContain("Magellan");
+    // Rosetta reads unchanged bytes once, and Knox reads a text again only at a new version.
+    for (const stage of ["read", "verify", "publish"]) expect(errorFixProblems([entry({ stage: stage as never })])[0]).toContain("stage must be one of extract");
     expect(errorFixProblems([entry({ merged_on: "Oct 20" })])[0]).toContain("ISO date");
     expect(errorFixProblems([entry(), entry()])[0]).toContain("listed twice");
     expect(errorFixProblems([entry({ kinds: undefined, feedback_ids: [0] })])[0]).toContain("row ids");
+  });
+
+  it("refuses an entry with no fixed Knox version, or naming a check the re-check cannot judge", () => {
+    expect(errorFixProblems([entry({ knox_version: undefined as never })])[0]).toContain("knox_version");
+    expect(errorFixProblems([entry({ checks: ["hamilton.category_guard", "deming.name_quality"] })])).toEqual([]);
+    // An audience or hand judgement is not re-run, so its error could never be judged gone.
+    expect(errorFixProblems([entry({ checks: ["darwin.audience_guard"] })])[0]).toContain("cannot judge darwin.audience_guard");
   });
 
   it("closes an error whose fee now matches the bank's document", () => {
@@ -66,6 +75,11 @@ describe("the error loop: a process fix names its errors, re-runs their banks an
     expect(judgeErrorFix({ fee_published_id: 501, canonical_fee_key: "stop_payment" }, [fee()], [])).toMatchObject({ verdict: "unknown" });
   });
 
+  it("never calls a fee no longer published when it is still live as a rate, or has no category to look for", () => {
+    expect(judgeErrorFix({ fee_published_id: 500, canonical_fee_key: "nsf" }, [fee()], TEXT, undefined, true)).toMatchObject({ verdict: "unknown", judged: [] });
+    expect(judgeErrorFix({ fee_published_id: 500, canonical_fee_key: null }, [fee()], TEXT)).toMatchObject({ verdict: "unknown", judged: [] });
+  });
+
   it("asks for nothing and writes nothing with an empty or broken registry", async () => {
     const db = vi.fn();
     expect(await errorFixRequests(db as never, [])).toEqual([]);
@@ -78,24 +92,32 @@ describe("the error loop: a process fix names its errors, re-runs their banks an
   });
 
   it("asks for each bank behind an open, not yet re-run error once, dated the day the fix merged", async () => {
-    const db = vi.fn(async () => [
-      { id: 1, institution_id: 9, fee_published_id: 501, canonical_fee_key: "stop_payment", kind: "wrong_amount_read", check_name: null, created_at: "2026-10-10", rerun: false },
-      { id: 2, institution_id: 9, fee_published_id: 502, canonical_fee_key: "overdraft", kind: "wrong_amount_read", check_name: null, created_at: "2026-10-10", rerun: false },
-      { id: 3, institution_id: 10, fee_published_id: 503, canonical_fee_key: "overdraft", kind: "wrong_amount_read", check_name: null, created_at: "2026-10-10", rerun: true },
-    ]);
+    const queries: string[] = [];
+    const db = vi.fn(async (parts: TemplateStringsArray) => {
+      queries.push(parts.join("?"));
+      return !parts.join("?").includes("FROM pipeline_feedback f") ? [] : [
+      { id: 1, institution_id: 9, fee_published_id: 501, canonical_fee_key: "stop_payment", kind: "wrong_amount_read", check_name: "hamilton.source_check", created_at: "2026-10-10", rerun: false },
+      { id: 2, institution_id: 9, fee_published_id: 502, canonical_fee_key: "overdraft", kind: "wrong_amount_read", check_name: "hamilton.source_check", created_at: "2026-10-10", rerun: false },
+      ];
+    });
     const requests = await errorFixRequests(db as never, [entry()]);
     expect(requests).toEqual([expect.objectContaining({ institutionId: 9, requestedAt: "2026-10-20" })]);
-    expect(requests[0].reason).toContain("PR #9001");
+    expect(requests[0].reason).toBe("re-check an error here after PR #9001 (#2058) fixed the extract step");
+    // Re-run banks and inactive banks are left out in the query, and only judgeable checks named.
+    const all = queries.join("\n");
+    expect(all).toContain("strategy_version >=");
+    expect(all).toContain("COALESCE(inst.status, 'active') = 'active'");
+    expect(all).toContain("f.check_name = ANY(");
   });
 
   it("re-checks only the errors whose bank was read again, records each outcome once, and nothing on a dry run", async () => {
     const writes: Array<Array<{ kind: string; dedupe_key: string; weight: number; signal: string }>> = [];
     const named = [
-      { id: 11, institution_id: 9, fee_published_id: 501, canonical_fee_key: "stop_payment", kind: "wrong_amount_read", check_name: null, created_at: "2026-10-10", rerun: true },
-      { id: 12, institution_id: 9, fee_published_id: 600, canonical_fee_key: "nsf", kind: "wrong_amount_read", check_name: null, created_at: "2026-10-10", rerun: "t" },
-      { id: 13, institution_id: 9, fee_published_id: 502, canonical_fee_key: "wire_domestic_outgoing", kind: "wrong_amount_read", check_name: null, created_at: "2026-10-10", rerun: true },
-      { id: 14, institution_id: 9, fee_published_id: 502, canonical_fee_key: "wire_domestic_outgoing", kind: "wrong_amount_read", check_name: null, created_at: "2026-10-10", rerun: true, reported_still_wrong: true },
-      { id: 15, institution_id: 10, fee_published_id: 700, canonical_fee_key: "overdraft", kind: "wrong_amount_read", check_name: null, created_at: "2026-10-10", rerun: false },
+      { id: 11, institution_id: 9, fee_published_id: 501, canonical_fee_key: "stop_payment", kind: "wrong_amount_read", check_name: "hamilton.source_check", created_at: "2026-10-10", rerun: true },
+      { id: 12, institution_id: 9, fee_published_id: 600, canonical_fee_key: "nsf", kind: "wrong_amount_read", check_name: "hamilton.source_check", created_at: "2026-10-10", rerun: "t" },
+      { id: 13, institution_id: 9, fee_published_id: 502, canonical_fee_key: "wire_domestic_outgoing", kind: "wrong_amount_read", check_name: "hamilton.source_check", created_at: "2026-10-10", rerun: true },
+      { id: 14, institution_id: 9, fee_published_id: 502, canonical_fee_key: "wire_domestic_outgoing", kind: "wrong_amount_read", check_name: "hamilton.source_check", created_at: "2026-10-10", rerun: true, reported_still_wrong: true },
+      { id: 15, institution_id: 10, fee_published_id: 700, canonical_fee_key: "overdraft", kind: "wrong_amount_read", check_name: "hamilton.source_check", created_at: "2026-10-10", rerun: false },
     ];
     const makeDb = () => Object.assign(vi.fn(async (parts: TemplateStringsArray, ...values: unknown[]) => {
       const text = parts.join("?");

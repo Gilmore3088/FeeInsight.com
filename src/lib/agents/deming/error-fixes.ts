@@ -3,7 +3,17 @@ import { inSavepoint } from "@/lib/agents/savepoint";
 import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { KNOX_RULES_STRATEGY } from "@/lib/agents/knox/specialists";
 import type { InstitutionText } from "@/lib/agents/hamilton/source-check";
-import { readEvidence, scoreFreshAudit, type FreshAuditEvidence, type FreshAuditFee } from "./fresh-audit";
+import { ARTICLE_PAGE_CHECK } from "@/lib/agents/hamilton/article-page";
+import { PRODUCT_PAGE_CONFLICT_CHECK } from "@/lib/agents/hamilton/product-page-conflict";
+import { OTHER_BANK_DOCUMENT_CHECK, UNCONFIRMED_HOST_CHECK } from "@/lib/agents/hamilton/other-bank-document";
+import {
+  NAME_QUALITY_CHECK,
+  NOT_A_FEE_CHECK,
+  readEvidence,
+  scoreFreshAudit,
+  type FreshAuditEvidence,
+  type FreshAuditFee,
+} from "./fresh-audit";
 import registry from "./error-fixes.json";
 
 type SqlTag = typeof sql;
@@ -14,16 +24,25 @@ type SqlTag = typeof sql;
  * own document, so a fix is known to have fixed its errors rather than assumed to.
  *
  * 1. A process-fix PR adds an entry to `error-fixes.json` in the same PR: the stage it fixed, the
- *    day it merged, and the `pipeline_feedback` rows it fixes (by kind, check name or id).
+ *    day it merged, the Knox rules version that carries the fix, and the `pipeline_feedback` rows
+ *    it fixes (by check name, kind or id).
  * 2. Atlas's direct path (`selectPriorityInstitutions`) asks for each named row's institution as a
  *    request dated `merged_on`, so it is fetched, read, extracted, verified and published again
  *    under the fixed code; a run of its state's lane serves it just as well.
  * 3. Deming's daily `deming-error-fix-recheck` step (Atlas's scoreboard run) waits until a
- *    completed run has read the institution again after the fix and after the error, then judges
+ *    completed run has extracted the institution again at the fixed rules version, after the
+ *    error, then judges
  *    the fee as it now stands with the fresh audit's checks (the shared source check
  *    `checkFeeAgainstSource` through `traceLiveFee`, the category guard, evidence and name). A row
  *    whose fee now matches, or is no longer published, is closed; a row still wrong is reported
  *    and recorded once, and is judged again each day in case a later pass fixes it.
+ *
+ * Only what the judgement can see is named. A row is named only when the check that raised it is
+ * one the fresh audit re-runs (`ERROR_FIX_CHECKS`), so a fee that still has the error fails that
+ * same check and is never closed; an audience, frequency or hand judgement is not re-run here.
+ * Only extract fixes are named for now: Knox reads a stored text again only when its rules version
+ * moves (`knox/extract.ts`), and Rosetta reads unchanged bytes only once, so a read, verify or
+ * publish fix would never reach the bank's fee through a re-run (follow-ups on #2058).
  * Writes only weight-0 `pipeline_feedback` ledger rows with no strategy, so neither outcome counts
  * as a lesson signal twice. No model calls.
  */
@@ -36,9 +55,25 @@ export const ERROR_FIX_ROWS_PER_ENTRY = 200;
 /** Institutions asked for at once across every entry; the rest wait until these are served. */
 export const ERROR_FIX_MAX_INSTITUTIONS = 100;
 
-/** The steps a direct run re-runs. A wrong document is Magellan's link search (#2055), not a re-run. */
-export const ERROR_FIX_STAGES = ["read", "extract", "verify", "publish"] as const;
+/**
+ * The steps whose fix a re-run reaches: an extract fix ships with a Knox rules version, and Knox
+ * reads every stored text again once that version moves. A wrong document is Magellan's link
+ * search (#2055), not a re-run.
+ */
+export const ERROR_FIX_STAGES = ["extract"] as const;
 export type ErrorFixStage = (typeof ERROR_FIX_STAGES)[number];
+
+/** The checks the fresh audit re-runs on a live fee, so only their errors can be judged gone. */
+export const ERROR_FIX_CHECKS = [
+  "hamilton.source_check",
+  "hamilton.category_guard",
+  OTHER_BANK_DOCUMENT_CHECK,
+  UNCONFIRMED_HOST_CHECK,
+  ARTICLE_PAGE_CHECK,
+  PRODUCT_PAGE_CONFLICT_CHECK,
+  NOT_A_FEE_CHECK,
+  NAME_QUALITY_CHECK,
+] as const;
 
 export interface ErrorFixEntry {
   pr: number;
@@ -46,6 +81,8 @@ export interface ErrorFixEntry {
   stage: ErrorFixStage;
   /** ISO date the PR merged; only errors recorded before it are named. */
   merged_on: string;
+  /** The Knox rules version (`KNOX_RULES_STRATEGY.version`) that carries the fix. */
+  knox_version: number;
   kinds?: string[];
   checks?: string[];
   feedback_ids?: number[];
@@ -69,6 +106,11 @@ export function errorFixProblems(entries: readonly ErrorFixEntry[]): string[] {
       problems.push(`${name}: stage must be one of ${ERROR_FIX_STAGES.join(", ")} (a wrong document re-runs through Magellan's link search)`);
     }
     if (!ISO_DAY.test(entry.merged_on ?? "") || Number.isNaN(Date.parse(entry.merged_on))) problems.push(`${name}: merged_on must be an ISO date (YYYY-MM-DD)`);
+    if (!Number.isInteger(entry.knox_version) || entry.knox_version < 1) {
+      problems.push(`${name}: knox_version must be the Knox rules version that carries the fix (bump KNOX_RULES_STRATEGY.version)`);
+    }
+    const unjudged = (entry.checks ?? []).filter((check) => !(ERROR_FIX_CHECKS as readonly string[]).includes(check));
+    if (unjudged.length > 0) problems.push(`${name}: the daily re-check cannot judge ${unjudged.join(", ")}; name rows raised by ${ERROR_FIX_CHECKS.join(", ")}`);
     const named = (entry.kinds?.length ?? 0) + (entry.checks?.length ?? 0) + (entry.feedback_ids?.length ?? 0);
     if (named === 0) problems.push(`${name}: name the error rows by kinds, checks or feedback_ids`);
     if (entry.feedback_ids?.some((id) => !Number.isInteger(id) || id <= 0)) problems.push(`${name}: feedback_ids must be row ids`);
@@ -92,44 +134,61 @@ export interface NamedErrorRow {
   kind: string;
   check_name: string | null;
   created_at: string | Date;
-  /** A completed run read the institution again after the fix and after this error. */
+  /** A completed run extracted the institution again at the fixed rules version after this error. */
   rerun: boolean | string | null;
   /** The ledger already holds a still-wrong record of this row for this fix. */
   reported_still_wrong?: boolean | string | null;
 }
 
-/** The entry's named errors not yet closed for it: wrong judgements of a published fee about its stage. */
-async function namedRows(db: SqlTag, entry: ErrorFixEntry, limit: number): Promise<NamedErrorRow[]> {
+/**
+ * The entry's named errors not yet closed for it: wrong judgements of a published fee about its
+ * stage, raised by a check the re-check can judge. `waiting` reads only rows of active banks not
+ * yet re-run, for the direct path's requests, in id order so the read stops at the limit.
+ * Otherwise every open row is read, rows already recorded as still wrong last and the rest in an
+ * order that changes each day, so neither stubborn rows nor rows with no stored text hold the
+ * limit for good.
+ */
+async function namedRows(db: SqlTag, entry: ErrorFixEntry, limit: number, waiting = false): Promise<NamedErrorRow[]> {
   const ids = (entry.feedback_ids ?? []).map(Number);
   const closedPrefix = `deming.error_fix:${entry.pr}:`;
+  const rerun = db`
+    EXISTS (
+      SELECT 1 FROM pipeline_attempts again
+        JOIN agent_runs run ON run.id = again.agent_run_id AND run.status = 'completed'
+       WHERE again.institution_id = f.institution_id
+         AND again.stage = 'extract'
+         AND again.strategy = ${KNOX_RULES_STRATEGY.strategy}::text
+         AND again.strategy_version >= ${entry.knox_version}::int
+         AND again.created_at > f.created_at
+    )`;
+  const stillWrong = db`
+    EXISTS (
+      SELECT 1 FROM pipeline_feedback still
+       WHERE still.dedupe_key = ${closedPrefix}::text || f.id::text || ':still_wrong'
+    )`;
   return db<NamedErrorRow[]>`
     SELECT f.id, f.institution_id, f.fee_published_id, f.canonical_fee_key, f.kind, f.check_name, f.created_at,
-           EXISTS (
-             SELECT 1 FROM pipeline_attempts read
-               JOIN agent_runs run ON run.id = read.agent_run_id AND run.status = 'completed'
-              WHERE read.institution_id = f.institution_id
-                AND read.stage = 'extract'
-                AND read.strategy = ${KNOX_RULES_STRATEGY.strategy}::text
-                AND read.created_at >= ${entry.merged_on}::timestamptz
-                AND read.created_at > f.created_at
-           ) AS rerun,
-           EXISTS (
-             SELECT 1 FROM pipeline_feedback still
-              WHERE still.dedupe_key = ${closedPrefix}::text || f.id::text || ':still_wrong'
-           ) AS reported_still_wrong
+           ${waiting ? db`FALSE` : rerun} AS rerun,
+           ${waiting ? db`FALSE` : stillWrong} AS reported_still_wrong
       FROM pipeline_feedback f
      WHERE f.signal = 'wrong'
        AND f.about_stage = ${entry.stage}::text
        AND f.created_at < ${entry.merged_on}::timestamptz
        AND f.fee_published_id IS NOT NULL
        AND f.institution_id IS NOT NULL
+       AND f.check_name = ANY(${[...ERROR_FIX_CHECKS]}::text[])
        AND (f.id = ANY(${ids}::bigint[]) OR f.kind = ANY(${entry.kinds ?? []}::text[]) OR f.check_name = ANY(${entry.checks ?? []}::text[]))
        AND NOT EXISTS (
          SELECT 1 FROM pipeline_feedback done
           WHERE done.dedupe_key = ${closedPrefix}::text || f.id::text || ':closed'
        )
-     -- Rows not yet recorded as still wrong first, so a fix's stubborn rows never crowd out the rest.
-     ORDER BY reported_still_wrong ASC, f.id
+       ${waiting ? db`
+       AND NOT ${rerun}
+       AND EXISTS (
+         SELECT 1 FROM institution_sources inst
+          WHERE inst.id = f.institution_id AND COALESCE(inst.status, 'active') = 'active'
+       )` : db``}
+     ORDER BY ${waiting ? db`f.id` : db`reported_still_wrong ASC, md5(f.id::text || CURRENT_DATE::text)`}
      LIMIT ${limit}::int
   `;
 }
@@ -143,25 +202,24 @@ export interface ErrorFixRequest {
 
 /**
  * The institutions to re-run for the registry's fixes, as direct-path requests dated the day each
- * fix merged: one per institution with a named error not yet closed nor read again since. A request ends once a run
- * started after that date has read the bank (the `requested` tier's own rule), so an institution
- * whose error is still wrong after its re-run is not asked for again. Read-only.
+ * fix merged: one per active institution with a named error not yet closed nor extracted again at
+ * the fixed version. A request ends once a run has done that, so an institution whose error is
+ * still wrong after its re-run is not asked for again. Read-only.
  */
 export async function errorFixRequests(db: SqlTag, entries: readonly ErrorFixEntry[] = ERROR_FIXES): Promise<ErrorFixRequest[]> {
   if (entries.length === 0 || errorFixProblems(entries).length > 0) return [];
   const requests = new Map<number, ErrorFixRequest>();
   for (const entry of entries) {
     if (requests.size >= ERROR_FIX_MAX_INSTITUTIONS) break;
-    const rows = await namedRows(db, entry, ERROR_FIX_ROWS_PER_ENTRY);
+    // Only active banks not yet extracted again at the fixed version (by its lane or a direct run).
+    const rows = await namedRows(db, entry, ERROR_FIX_ROWS_PER_ENTRY, true);
     for (const row of rows) {
       const id = Number(row.institution_id);
-      // Already read again after the fix (by its lane or a direct run): nothing to ask for.
-      if (truthy(row.rerun)) continue;
       if (requests.has(id) || requests.size >= ERROR_FIX_MAX_INSTITUTIONS) continue;
       requests.set(id, {
         institutionId: id,
         institutionName: "",
-        reason: `re-run after PR #${entry.pr}${entry.issue ? ` (#${entry.issue})` : ""} fixed the ${entry.stage} step behind an error read here`,
+        reason: `re-check an error here after PR #${entry.pr}${entry.issue ? ` (#${entry.issue})` : ""} fixed the ${entry.stage} step`,
         requestedAt: entry.merged_on,
       });
     }
@@ -183,16 +241,19 @@ export interface ErrorFixJudgement {
  * Pure: is the named error gone? The named fee is judged while it is still live; once it is down,
  * the bank's live fees in the same category (its replacement) are judged. Every judged fee must
  * pass the fresh audit's checks; none live means the wrong fee is no longer published. A fee with
- * no stored text is unknown, never closed.
+ * no stored text is unknown, never closed, and so is a named fee that is still published but not
+ * among the dollar fees judged here (a rate) or one with no category to find its replacement by.
  */
 export function judgeErrorFix(
   row: Pick<NamedErrorRow, "fee_published_id" | "canonical_fee_key">,
   live: FreshAuditFee[],
   texts: InstitutionText[],
   evidence?: FreshAuditEvidence,
+  namedStillPublished = false,
 ): ErrorFixJudgement {
   const own = live.filter((fee) => Number(fee.fee_published_id) === Number(row.fee_published_id));
-  const fees = own.length > 0 ? own : live.filter((fee) => row.canonical_fee_key != null && fee.canonical_fee_key === row.canonical_fee_key);
+  if (own.length === 0 && (namedStillPublished || row.canonical_fee_key == null)) return { verdict: "unknown", judged: [] };
+  const fees = own.length > 0 ? own : live.filter((fee) => fee.canonical_fee_key === row.canonical_fee_key);
   const judged = fees.map((fee) => Number(fee.fee_published_id));
   if (fees.length === 0) return { verdict: "not_live", judged };
   const byInstitution = new Map<number, InstitutionText[]>();
@@ -268,6 +329,13 @@ export async function runErrorFixRecheck({
        ORDER BY source_document_id, id DESC
     `;
     const evidence = await readEvidence(db, live.map((fee) => Number(fee.fee_published_id)));
+    // Named fees still published but outside the dollar catalog read above, e.g. a rate.
+    const stillPublished = new Set((await db<Array<{ fee_published_id: number | string }>>`
+      SELECT fee_published_id FROM published_fee_records
+       WHERE fee_published_id = ANY(${ready.map((row) => Number(row.fee_published_id))}::bigint[])
+         AND rolled_back_at IS NULL
+         AND quarantined_at IS NULL
+    `).map((fee) => Number(fee.fee_published_id)));
     for (const row of ready) {
       const institutionId = Number(row.institution_id);
       const judgement = judgeErrorFix(
@@ -275,6 +343,7 @@ export async function runErrorFixRecheck({
         live.filter((fee) => Number(fee.institution_id) === institutionId),
         texts.filter((text) => Number(text.institution_id) === institutionId),
         evidence,
+        stillPublished.has(Number(row.fee_published_id)),
       );
       const feedbackId = Number(row.id);
       const feePublishedId = Number(row.fee_published_id);
