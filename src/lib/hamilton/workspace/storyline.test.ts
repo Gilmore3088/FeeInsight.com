@@ -22,7 +22,7 @@ const structure: FeeResearch["structure"] = {
   ],
   rows: [
     { institutionId: 1, name: "Example Valley Credit Union", own: true, values: { overdraft: 32, nsf: 32 } },
-    ...[1, 2, 3, 4, 5, 6].map((i) => ({
+    ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((i) => ({
       institutionId: i,
       name: `Peer ${i}`,
       own: false,
@@ -68,20 +68,20 @@ describe("storyline", () => {
     const lowest = {
       ...base,
       current: 5,
-      peers: base.peers.slice(0, 5).map((p) => ({ ...p, amount: 25 })),
-      band: { p25: 25, median: 25, p75: 25, n: 5 },
+      peers: base.peers.slice(0, 10).map((p) => ({ ...p, amount: 25 })),
+      band: { p25: 25, median: 25, p75: 25, n: 10 },
       localCompetitors: base.localCompetitors!.map((c) => ({ ...c, amount: 10 })),
     };
     const answer = buildFeeAnswer(lowest);
-    expect(answer.headline).toBe("Your $5 overdraft fee is below all 5 peers (median $25).");
+    expect(answer.headline).toBe("Your $5 overdraft fee is below all 10 peers (median $25).");
     const titles = answer.storyline!.exhibits.map((e) => e.actionTitle);
-    expect(titles).toContain("Peers' middle half all charge $25; your $5 sits below all 5 peers.");
+    expect(titles).toContain("Peers' middle half all charge $25; your $5 sits below all 10 peers.");
     expect(titles).toContain("All 3 competitors in your market charge more than your $5; each charges $10.");
     expect(titles.join(" ")).not.toMatch(/0th|\$25 to \$25|\$10 to \$10/);
     const named = buildFeeAnswer({ ...lowest, subjectName: "Example Valley Credit Union" }).storyline!.exhibits.map((e) => e.actionTitle);
     for (const t of named) expect(t.split("Example Valley Credit Union").length - 1).toBeLessThanOrEqual(1);
     expect(named).toContain("All 3 competitors in Example Valley Credit Union's market charge more than its $5; each charges $10.");
-    expect(answer.storyline!.keyFigures).toContainEqual(expect.objectContaining({ value: "Lowest", label: "Your place among 5 peers" }));
+    expect(answer.storyline!.keyFigures).toContainEqual(expect.objectContaining({ value: "Lowest", label: "Your place among 10 peers" }));
     const groups = buildFeeAnswer({ ...lowest, subjectName: "Example Valley Credit Union" }).storyline!.exhibits.find((e) => e.exhibit.kind === "archetype_map");
     expect(groups?.takeaway?.text).toBe("Example Valley Credit Union's $5 puts it in the low group ($0.01 to $15), where no peer sits.");
   });
@@ -142,7 +142,7 @@ describe("storyline", () => {
       const zeroNsf = { ...structure!, rows: structure!.rows.map((r) => (r.institutionId === 3 || r.institutionId === 4 ? { ...r, values: { ...r.values, nsf: 0 } } : r)) };
       const story = buildFeeAnswer(research({ structure: zeroNsf }), { story: { structure: true } }).storyline!;
       const matrix = story.exhibits.find((e) => e.exhibit.kind === "structure_matrix")!;
-      expect(matrix.actionTitle).toBe("Of 6 peers: 2 charge an NSF fee, 2 a transfer fee, 1 a daily cap.");
+      expect(matrix.actionTitle).toBe("Of 10 peers: 2 charge an NSF fee, 2 a transfer fee, 1 a daily cap.");
       if (matrix.exhibit.kind !== "structure_matrix") throw new Error("expected a matrix");
       expect(matrix.exhibit.rows.find((r) => r.name === "Peer 3")?.cells[1]).toBe("No fee ($0)");
       expect(matrix.exhibit.rows.find((r) => r.name === "Peer 5")?.cells[1]).toBeNull();
@@ -158,7 +158,7 @@ describe("storyline", () => {
       );
       const story = buildFeeAnswer(research({ structure: { ...structure!, rows } }), { story: { structure: true } }).storyline!;
       const matrix = story.exhibits.find((e) => e.exhibit.kind === "structure_matrix")!;
-      expect(matrix.actionTitle).toBe("Of 6 peers: 5 charge an NSF fee, 2 a transfer fee, 0 a daily cap.");
+      expect(matrix.actionTitle).toBe("Of 10 peers: 5 charge an NSF fee, 2 a transfer fee, 0 a daily cap.");
       if (matrix.exhibit.kind !== "structure_matrix") throw new Error("expected a matrix");
       const cap = matrix.exhibit.columns.indexOf("Daily cap");
       expect(matrix.exhibit.rows.find((r) => r.name === "Peer 1")?.cells[cap]).toBe("$0");
@@ -197,17 +197,17 @@ describe("storyline", () => {
     const story = buildFeeAnswer(research({ structure: { ...structure!, rows } })).storyline!;
     const line = story.lenses.market.map((f) => f.text).find((t) => t.includes("transfer from savings"));
     // Two priced transfers, $5 and $12.50: the median is $8.75 (a $0 transfer is no fee and is not counted).
-    expect(line).toBe("2 of 6 in the group price a transfer from savings, typically $8.75; your schedule in the index shows none.");
+    expect(line).toBe("2 of 10 in the group price a transfer from savings, typically $8.75; your schedule in the index shows none.");
   });
 
   it("shows fee structure beyond the price, with blanks where a schedule shows nothing", () => {
     const story = buildFeeAnswer(research(), { story: { structure: true } }).storyline!;
     expect(story.kind).toBe("structure");
     const matrix = story.exhibits[0];
-    expect(matrix.actionTitle).toBe("Of 6 peers: 4 charge an NSF fee, 2 a transfer fee, 1 a daily cap.");
+    expect(matrix.actionTitle).toBe("Of 10 peers: 4 charge an NSF fee, 2 a transfer fee, 1 a daily cap.");
     if (matrix.exhibit.kind === "structure_matrix") {
       expect(matrix.exhibit.rows[0]).toMatchObject({ name: "Example Valley Credit Union", own: true, cells: ["$32", "$32", null, null, null] });
-      expect(matrix.exhibit.rows).toHaveLength(7);
+      expect(matrix.exhibit.rows).toHaveLength(11);
     }
   });
 
@@ -283,7 +283,7 @@ describe("storyline", () => {
 
   it("leads a segment question with the segment table and its pricing groups", () => {
     const segment = parseSegment("all 10B and up institutions")!;
-    const members: SegmentMember[] = [10, 0, 36, 35, 35, 38].map((amount, i) => ({
+    const members: SegmentMember[] = [10, 0, 36, 35, 35, 38, 30, 25, 40, 34, 37].map((amount, i) => ({
       institutionId: 200 + i,
       institutionName: `Big Bank ${i + 1}`,
       amount,
@@ -302,14 +302,14 @@ describe("storyline", () => {
     const story = res.answer!.storyline!;
     expect(story.kind).toBe("segment");
     expect(story.exhibits[0].exhibit.kind).toBe("segment_table");
-    expect(story.exhibits[0].actionTitle).toBe("6 of 184 $10B+ institutions publish an overdraft fee, 1 at $0; the median is $35.");
+    expect(story.exhibits[0].actionTitle).toBe("11 of 184 $10B+ institutions publish an overdraft fee, 1 at $0; the median is $35.");
     expect(story.exhibits.some((e) => e.exhibit.kind === "archetype_map")).toBe(true);
     // The table already lists every member at its price; no second exhibit repeats it.
     expect(story.exhibits.some((e) => e.exhibit.kind === "competitor_range")).toBe(false);
     expect(story.lenses.market.map((f) => f.text)).toEqual([
-      "2 of 6 $10B+ institutions charge less than your $32; the lowest is Big Bank 2 ($0).",
+      "4 of 11 $10B+ institutions charge less than your $32; the lowest is Big Bank 2 ($0).",
       "1 of them publishes a $0 overdraft fee (Big Bank 2), the claim your $32 faces.",
-      "2 of 6 in the group price a transfer from savings, typically $10; your schedule in the index shows none.",
+      "2 of 10 in the group price a transfer from savings, typically $10; your schedule in the index shows none.",
       "In Tennessee, 1 decrease and 1 increase in 180 days; latest Peer 9, $29 to $32 on Sep 15.",
     ]);
   });
@@ -317,7 +317,7 @@ describe("storyline", () => {
   it("counts a 'the N largest' segment as 'n of the N largest' in every storyline line (#2028)", () => {
     const question = "Which credit unions in the top 25 of the $1 billion to $10 billion tier run a fee share below 4%?";
     const segment = parseSegment(question)!;
-    const members: SegmentMember[] = [10, 0, 36, 35, 38].map((amount, i) => ({
+    const members: SegmentMember[] = [10, 0, 36, 35, 38, 30, 25, 40, 35, 37].map((amount, i) => ({
       institutionId: 300 + i,
       institutionName: `Big CU ${i + 1}`,
       amount,
@@ -335,12 +335,12 @@ describe("storyline", () => {
       return buildFeeAnswer(research({ current, segment: seg }), { focus: "competitors" }).storyline!;
     };
     const mid = story(32);
-    expect(mid.exhibits[0].actionTitle).toBe("5 of the 25 largest $1B to $10B credit unions publish an overdraft fee, 1 at $0; the median is $35.");
-    expect(mid.lenses.market[0].text).toMatch(/^2 of 5 of the 25 largest \$1B to \$10B credit unions charge less than your \$32; the lowest/);
+    expect(mid.exhibits[0].actionTitle).toBe("10 of the 25 largest $1B to $10B credit unions publish an overdraft fee, 1 at $0; the median is $35.");
+    expect(mid.lenses.market[0].text).toMatch(/^4 of 10 of the 25 largest \$1B to \$10B credit unions charge less than your \$32; the lowest/);
     const archetype = mid.exhibits.find((e) => e.exhibit.kind === "archetype_map");
-    expect(archetype?.actionTitle).toMatch(/^Of 5 of the 25 largest \$1B to \$10B credit unions: /);
+    expect(archetype?.actionTitle).toMatch(/^Of 10 of the 25 largest \$1B to \$10B credit unions: /);
     const low = story(0);
-    expect(low.lenses.market[0].text).toMatch(/^None of the 5 of the 25 largest \$1B to \$10B credit unions charge less than your \$0/);
+    expect(low.lenses.market[0].text).toMatch(/^None of the 10 of the 25 largest \$1B to \$10B credit unions charge less than your \$0/);
     expect(JSON.stringify([mid, low])).not.toMatch(/\d the \d/);
   });
 
@@ -382,13 +382,24 @@ describe("storyline", () => {
     const largest = { ...structure!, groupLabel: "the 25 largest $1B to $10B credit unions" };
     const story = buildFeeAnswer(research({ structure: largest }), { story: { structure: true } }).storyline!;
     const matrix = story.exhibits.find((e) => e.exhibit.kind === "structure_matrix")!;
-    expect(matrix.actionTitle).toBe("Of 6 of the 25 largest $1B to $10B credit unions: 4 charge an NSF fee, 2 a transfer fee, 1 a daily cap.");
-    const whole = { ...structure!, groupLabel: "the 6 largest credit unions in Tennessee" };
+    expect(matrix.actionTitle).toBe("Of 10 of the 25 largest $1B to $10B credit unions: 4 charge an NSF fee, 2 a transfer fee, 1 a daily cap.");
+    const whole = { ...structure!, groupLabel: "the 10 largest credit unions in Tennessee" };
     const all = buildFeeAnswer(research({ structure: whole }), { story: { structure: true } }).storyline!;
     expect(all.exhibits.find((e) => e.exhibit.kind === "structure_matrix")!.actionTitle).toBe(
-      "Of the 6 largest credit unions in Tennessee: 4 charge an NSF fee, 2 a transfer fee, 1 a daily cap.",
+      "Of the 10 largest credit unions in Tennessee: 4 charge an NSF fee, 2 a transfer fee, 1 a daily cap.",
     );
     expect(JSON.stringify([story, all])).not.toMatch(/\d the \d/);
+  });
+
+  it("compares structure across local competitors from 5, other groups from 10", () => {
+    const own = structure!.rows.find((r) => r.own)!;
+    const others = structure!.rows.filter((r) => !r.own);
+    const matrixFor = (groupLabel: string, n: number) =>
+      buildFeeAnswer(research({ structure: { ...structure!, groupLabel, rows: [own, ...others.slice(0, n)] } }), { story: { structure: true } })
+        .storyline!.exhibits.find((e) => e.exhibit.kind === "structure_matrix");
+    expect(matrixFor("local competitors", 5)?.actionTitle).toBe("Of 5 local competitors: 4 charge an NSF fee, 2 a transfer fee, 1 a daily cap.");
+    expect(matrixFor("local competitors", 4)).toBeUndefined();
+    expect(matrixFor("peers (Credit unions in Tennessee)", 9)).toBeUndefined();
   });
 
   it("shows a structure cell with several fees as their range and names, a single fee as its price (#1931)", () => {
@@ -398,7 +409,7 @@ describe("storyline", () => {
     const story = buildFeeAnswer(research({ structure: { ...structure!, rows } }), { story: { structure: true } }).storyline!;
     const matrix = story.exhibits[0];
     // The counts stay one per institution.
-    expect(matrix.actionTitle).toBe("Of 6 peers: 4 charge an NSF fee, 2 a transfer fee, 1 a daily cap.");
+    expect(matrix.actionTitle).toBe("Of 10 peers: 4 charge an NSF fee, 2 a transfer fee, 1 a daily cap.");
     if (matrix.exhibit.kind === "structure_matrix") {
       expect(matrix.exhibit.rows.find((r) => r.name === "Peer 2")?.cells[1]).toBe("$20 to $30 (NSF item $20; NSF ACH $30)");
       expect(matrix.exhibit.rows.find((r) => r.name === "Peer 1")?.cells[1]).toBe("$25");
@@ -565,7 +576,7 @@ describe("storyline: checking lineup", () => {
     groupLabel: "peers (Credit unions in Tennessee)",
     rows: [
       { institutionId: 1, name: "Example Valley Credit Union", own: true, summary: summary(2, 5, 7.5, false, 1500) },
-      ...[2, 3, 4, 5, 6, 7].map((i) => ({ institutionId: i, name: `Peer ${i}`, own: false, summary: summary(3, i <= 3 ? 0 : 4, 6, i <= 3, null) })),
+      ...[2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map((i) => ({ institutionId: i, name: `Peer ${i}`, own: false, summary: summary(3, i <= 3 ? 0 : 4, 6, i <= 3, null) })),
     ],
     ownAccounts: [],
     source: { label: "Monthly maintenance fees with the account each one belongs to", table: "published_fee_catalog" },
@@ -574,11 +585,11 @@ describe("storyline: checking lineup", () => {
   it("sets the bank's accounts beside each peer's lineup for a monthly fee question", () => {
     const story = buildFeeAnswer(research({ feeCategory: "monthly_maintenance", lineup, structure: null })).storyline!;
     const piece = story.exhibits.find((e) => e.exhibit.kind === "structure_matrix" && e.exhibit.title.startsWith("Checking lineup"))!;
-    expect(piece.actionTitle).toBe("Your lowest monthly fee is $5; 2 of 6 peers offer a no-fee account.");
+    expect(piece.actionTitle).toBe("Your lowest monthly fee is $5; 2 of 10 peers offer a no-fee account.");
     if (piece.exhibit.kind === "structure_matrix") {
       expect(piece.exhibit.rows[0]).toEqual({ name: "Example Valley Credit Union", own: true, cells: ["2", "$5", "$7.50", "No", "$1,500"] });
       expect(piece.exhibit.rows[1].cells).toEqual(["3", "$0", "$6", "Yes", null]);
-      expect(piece.exhibit.rows).toHaveLength(7);
+      expect(piece.exhibit.rows).toHaveLength(11);
     }
   });
 
@@ -586,7 +597,7 @@ describe("storyline: checking lineup", () => {
     const withFree = { ...lineup!, rows: lineup!.rows.map((r) => (r.own ? { ...r, summary: summary(7, 0, 5, true, null) } : r)) };
     const story = buildFeeAnswer(research({ feeCategory: "monthly_maintenance", lineup: withFree, structure: null })).storyline!;
     const piece = story.exhibits.find((e) => e.exhibit.kind === "structure_matrix" && e.exhibit.title.startsWith("Checking lineup"))!;
-    expect(piece.actionTitle).toBe("Your lineup includes a no-fee account; 2 of 6 peers offer a no-fee account.");
+    expect(piece.actionTitle).toBe("Your lineup includes a no-fee account; 2 of 10 peers offer a no-fee account.");
     expect(piece.exhibit.note).toBe("A blank balance means the schedule states none.");
   });
 
@@ -594,7 +605,7 @@ describe("storyline: checking lineup", () => {
     const largest = { ...lineup!, groupLabel: "the 25 largest $1B to $10B credit unions" };
     const story = buildFeeAnswer(research({ feeCategory: "monthly_maintenance", lineup: largest, structure: null })).storyline!;
     const piece = story.exhibits.find((e) => e.exhibit.kind === "structure_matrix" && e.exhibit.title.startsWith("Checking lineup"))!;
-    expect(piece.actionTitle).toBe("Your lowest monthly fee is $5; 2 of 6 of the 25 largest $1B to $10B credit unions offer a no-fee account.");
+    expect(piece.actionTitle).toBe("Your lowest monthly fee is $5; 2 of 10 of the 25 largest $1B to $10B credit unions offer a no-fee account.");
     const few = { ...largest, rows: largest.rows.slice(0, 3) };
     const thin = buildFeeAnswer(research({ feeCategory: "monthly_maintenance", lineup: few, structure: null })).storyline!;
     const thinPiece = thin.exhibits.find((e) => e.exhibit.kind === "structure_matrix" && e.exhibit.title.startsWith("Checking lineup"))!;

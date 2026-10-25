@@ -107,4 +107,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "peer-minimum-5-local-10-everywhere",
+    agent: "hamilton",
+    stage: "analysis",
+    lesson: "Give a median or a price position only when the group is big enough: at least 5 local competitors publish the fee, or at least 10 institutions for any other group (financial peers, state, district, national, a study's comparison group, or the answer check). With fewer, name the institutions and their own prices and say how many report it, with no median, quartile or percentile. A worked example in a prompt or template carries placeholders, never figures, so a model never copies an invented number as if it were data.",
+    why: "The minimum was 3 for local competitors, 5 for workspace positions, studies and the answer check, and 10 only in the prompt text, so one answer could print a median from 5 peers while the written framework said 10 were needed. The product frameworks also showed made-up fee tables ($35.00 overdraft, P72) that read like data. James set one rule on Oct 25: 5 local, 10 everywhere.",
+    evidence: { issues: [], prs: [], files: ["src/lib/hamilton/workspace/scenario.ts", "src/lib/hamilton/report-exhibits.ts", "src/lib/hamilton/knowledge.ts", "docs/project/DECISIONS.md"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];

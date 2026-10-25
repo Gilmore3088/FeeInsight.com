@@ -594,6 +594,8 @@ describe("Hamilton Reports generateReport", () => {
         { institution_id: 1, institution_name: "First  Flora Bank", charter_type: "bank", market_deposits: 1, fees: { wire_transfer: 25 }, document_url: "https://a.example/fees", document_date: "2026-09-01" },
         { institution_id: 2, institution_name: "Clay County Bank", charter_type: "bank", market_deposits: 1, fees: { wire_transfer: 30 }, document_url: null, document_date: null },
         { institution_id: 3, institution_name: "Prairie Trust", charter_type: "bank", market_deposits: 1, fees: { wire_transfer: 40 }, document_url: null, document_date: null },
+        { institution_id: 4, institution_name: "Wabash Savings", charter_type: "bank", market_deposits: 1, fees: { wire_transfer: 28 }, document_url: null, document_date: null },
+        { institution_id: 5, institution_name: "Louisville State Bank", charter_type: "bank", market_deposits: 1, fees: { wire_transfer: 35 }, document_url: null, document_date: null },
       ],
     });
     mocks.getLocalFeeMoves.mockResolvedValue([
@@ -604,7 +606,7 @@ describe("Hamilton Reports generateReport", () => {
         input.type === "executive_summary"
           ? [
               "HEADLINE: Hamilton Federal Credit Union charges $35 for a domestic wire, $5 above the local median.",
-              "DECISION: Lower the domestic wire fee to $30 || WHY: Clay County Bank charges $30, the local median; the row is provisional. || CONFIDENCE: Medium - 3 local competitors, provisional row",
+              "DECISION: Lower the domestic wire fee to $30 || WHY: Clay County Bank charges $30, the local median; the row is provisional. || CONFIDENCE: Medium - 5 local competitors, provisional row",
             ].join("\n")
           : input.type === "recommendation"
             ? "Clay County Bank already charges $30, so business customers will notice. The row is provisional.\n\nWATCH: Prairie Trust's wire price"
@@ -628,7 +630,7 @@ describe("Hamilton Reports generateReport", () => {
           action: "Lower the domestic wire fee to $30",
           why: "Clay County Bank charges $30, the local median; the row is provisional.",
           confidence: "Medium",
-          confidenceReason: "3 local competitors, provisional row",
+          confidenceReason: "5 local competitors, provisional row",
         },
       ],
     });

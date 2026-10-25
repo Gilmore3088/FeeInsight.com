@@ -50,6 +50,7 @@ import { areaRowServedSql } from "@/lib/data-store/struck-sources";
 import { URBAN_DEBT_ATTRIBUTION } from "@/lib/regulatory/state-lists";
 import { QUERY_DATA_MAX_LIMIT, familyRows, parseMeasure, periodMonths, queryData, queryDataInputSchema } from "./query-data";
 import { NCUA_CALL_MEASURES } from "./ncua-call-measures";
+import { ROLLUP_MIN_INSTITUTIONS } from "./roll-ups";
 
 const AREA = "area:bls-laus:laus_unemployment_rate";
 const queries = () => calls.filter((c) => !c.text.includes("SET LOCAL") && !c.text.includes("SELECT id, source, charter_type") && !c.text.includes("FROM institution_structure_events"));
@@ -275,7 +276,7 @@ describe("queryData: fee measures", () => {
   });
 });
 
-const MEMBERS = [11, 12, 13, 14, 15, 16, 17];
+const MEMBERS = [11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22];
 const BANKS = { definition: { charter_type: "bank" }, filters: { charter_type: "bank" }, label: "Banks", market: null };
 
 describe("queryData: area measures over a peer group", () => {
@@ -283,8 +284,8 @@ describe("queryData: area measures over a peer group", () => {
     vi.mocked(resolvePeerSet).mockResolvedValue(BANKS);
     vi.mocked(peerSetMemberIds).mockResolvedValue(MEMBERS);
     nextRows = [
-      { period: "2026-09", unit: "percent", median: 4.1, p25: 3.6, p75: 4.8, institution_count: 7, area_count: 5, source_url: "https://www.bls.gov/lau", fetched_at: "2026-10-12T00:00:00Z" },
-      { period: "2026-08", unit: "percent", median: 4.0, p25: 3.5, p75: 4.7, institution_count: 3, area_count: 2, source_url: "https://www.bls.gov/lau", fetched_at: "2026-10-10T00:00:00Z" },
+      { period: "2026-09", unit: "percent", median: 4.1, p25: 3.6, p75: 4.8, institution_count: 12, area_count: 5, source_url: "https://www.bls.gov/lau", fetched_at: "2026-10-12T00:00:00Z" },
+      { period: "2026-08", unit: "percent", median: 4.0, p25: 3.5, p75: 4.7, institution_count: 9, area_count: 2, source_url: "https://www.bls.gov/lau", fetched_at: "2026-10-10T00:00:00Z" },
     ];
     const result = await queryData({ measure: AREA, scope: { kind: "peer_set", peer: { charter_type: "bank" } }, period: { from: "2026" } });
 
@@ -307,14 +308,14 @@ describe("queryData: area measures over a peer group", () => {
       unit: "percent",
       citation: { source_url: "https://www.bls.gov/lau", as_of: "2026-09", fetched_at: "2026-10-12T00:00:00.000Z" },
       rows: [
-        expect.objectContaining({ scope_label: "Banks", period: "2026-09", median: 4.1, institution_count: 7, member_count: 7, geo_level: "county", note: null }),
+        expect.objectContaining({ scope_label: "Banks", period: "2026-09", median: 4.1, institution_count: 12, member_count: 12, geo_level: "county", note: null }),
         // Under the minimum group size: no median, never zero, and the reason.
-        expect.objectContaining({ period: "2026-08", median: null, p25: null, p75: null, institution_count: 3, note: expect.stringContaining("at least 5") }),
+        expect.objectContaining({ period: "2026-08", median: null, p25: null, p75: null, institution_count: 9, note: expect.stringContaining(`at least ${ROLLUP_MIN_INSTITUTIONS}`) }),
       ],
     });
     if (result.ok) {
       expect(result.citation.publisher).toMatch(/Bureau of Labor Statistics/);
-      expect(result.note).toContain("7 of the group's 7 institutions");
+      expect(result.note).toContain("12 of the group's 12 institutions");
       expect(result.note).toContain("headquarters county");
     }
   });
@@ -359,12 +360,12 @@ describe("queryData: call-report lines", () => {
 
   it("keeps dated reporting identities in nested metadata while statistic rows remain scalar", async () => {
     nextRows = [
-      { period: "2026-06-30", unit: "USD", median: 350, p25: 225, p75: 475, institution_count: 6,
-        reporting_institution_ids: [2, 3, 4, 5, 6, 7], reporter_ids_complete: true, period_basis: "ytd", sources: ["ncua"], source_url: "https://ncua.gov/new", fetched_at: null },
-      { period: "2025-06-30", unit: "USD", median: 350, p25: 225, p75: 475, institution_count: 6,
-        reporting_institution_ids: [1, 2, 3, 4, 5, 6], reporter_ids_complete: true, period_basis: "ytd", sources: ["ncua"], source_url: "https://ncua.gov/old", fetched_at: null },
+      { period: "2026-06-30", unit: "USD", median: 350, p25: 225, p75: 475, institution_count: 11,
+        reporting_institution_ids: [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], reporter_ids_complete: true, period_basis: "ytd", sources: ["ncua"], source_url: "https://ncua.gov/new", fetched_at: null },
+      { period: "2025-06-30", unit: "USD", median: 350, p25: 225, p75: 475, institution_count: 11,
+        reporting_institution_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], reporter_ids_complete: true, period_basis: "ytd", sources: ["ncua"], source_url: "https://ncua.gov/old", fetched_at: null },
     ];
-    nextCohortIdentities = Array.from({ length: 7 }, (_, at) => ({ id: String(at + 1), source: "ncua", charter_type: "credit_union", cert_number: String(at + 101),
+    nextCohortIdentities = Array.from({ length: 12 }, (_, at) => ({ id: String(at + 1), source: "ncua", charter_type: "credit_union", cert_number: String(at + 101),
       ncua_charter_id: String(at + 101), institution_name: `Current ${at + 1}`, regulatory_status: at ? "active" : "inactive", closed_date: at ? null : "2026-01-01" }));
     nextLifecycleEvents = [{ id: "1", source: "ncua-mergers", event_key: "merge", institution_id: null, cert: "101", outgoing_cert: "101", acquirer_cert: "102", survivor_cert: "102",
       effective_date: "2026-01-01", change_code: "merger", change_description: "Published event", source_url: "https://ncua.gov/event" }];
@@ -372,14 +373,14 @@ describe("queryData: call-report lines", () => {
     expect(result).toMatchObject({ ok: true, peer_comparison: { cohort_history: {
       basis: "period_cross_sections", growth_status: "not_established", merger_adjusted: false, charter_refs_complete: true,
       requested: { institution_ids: null, member_count: null },
-      periods: [expect.objectContaining({ period: "2026-06-30", source: "ncua", reporting_institution_ids: [2, 3, 4, 5, 6, 7] }),
-        expect.objectContaining({ period: "2025-06-30", source: "ncua", reporting_institution_ids: [1, 2, 3, 4, 5, 6] })],
-      membership_changes: [expect.objectContaining({ added_ids: [7], dropped_ids: [1], common_ids: [2, 3, 4, 5, 6] })],
+      periods: [expect.objectContaining({ period: "2026-06-30", source: "ncua", reporting_institution_ids: [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] }),
+        expect.objectContaining({ period: "2025-06-30", source: "ncua", reporting_institution_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] })],
+      membership_changes: [expect.objectContaining({ added_ids: [12], dropped_ids: [1], common_ids: [2, 3, 4, 5, 6, 7, 8, 9, 10, 11] })],
       lifecycle: { coverage: "not_established", events: [expect.objectContaining({ event_key: "merge" })] },
     } } });
     if (!result.ok) throw new Error(result.reason);
     expect(result.peer_comparison!.cohort_history.charter_refs[0]).toMatchObject({ institution_id: 1, current_regulatory_status: "inactive" });
-    expect(result.rows.map((row) => [row.period, row.median, row.reported_count])).toEqual([["2026-06-30", 350, 6], ["2025-06-30", 350, 6]]);
+    expect(result.rows.map((row) => [row.period, row.median, row.reported_count])).toEqual([["2026-06-30", 350, 11], ["2025-06-30", 350, 11]]);
     expect(result.rows.every((row) => Object.values(row).every((value) => value === null || ["number", "string", "boolean"].includes(typeof value)))).toBe(true);
     expect(calls.find((call) => call.text.includes("FROM institution_structure_events"))?.values).toContain("2025-01-01");
   });
@@ -407,14 +408,14 @@ describe("queryData: call-report lines", () => {
   it("rolls a line up over a peer group, a state and every filer, and refuses a county", async () => {
     vi.mocked(resolvePeerSet).mockResolvedValue(BANKS);
     vi.mocked(peerSetMemberIds).mockResolvedValue(MEMBERS);
-    nextRows = [{ period: "2026-06-30", unit: "USD", median: 900_000, p25: 400_000, p75: 2_000_000, institution_count: 6, period_basis: "ytd", sources: ["ffiec"], source_url: "https://cdr.ffiec.gov/x", fetched_at: "2026-08-01T00:00:00Z" }];
+    nextRows = [{ period: "2026-06-30", unit: "USD", median: 900_000, p25: 400_000, p75: 2_000_000, institution_count: 11, period_basis: "ytd", sources: ["ffiec"], source_url: "https://cdr.ffiec.gov/x", fetched_at: "2026-08-01T00:00:00Z" }];
     const peer = await queryData({ measure: CALL, scope: { kind: "peer_set", peer: { charter_type: "bank" } } });
     expect(lastQuery().values).toContainEqual(MEMBERS);
     expect(peer).toMatchObject({
       ok: true,
-      rows: [expect.objectContaining({ scope_label: "Banks — FFIEC filers only", median: 900_000, institution_count: 6, member_count: 7, period_basis: "ytd" })],
+      rows: [expect.objectContaining({ scope_label: "Banks — FFIEC filers only", median: 900_000, institution_count: 11, member_count: 12, period_basis: "ytd" })],
       citation: { publisher: "FFIEC Central Data Repository (call report)" },
-      note: expect.stringContaining("6 of the group's 7 institutions"),
+      note: expect.stringContaining("11 of the group's 12 institutions"),
     });
 
     vi.mocked(resolvePeerSet).mockResolvedValue({ definition: { states: ["TX"] }, filters: { states: ["TX"] }, label: "Institutions in Texas", market: null });
@@ -474,10 +475,10 @@ describe("queryData: call-report lines", () => {
     { hot: "ffiec", cold: "ncua", charter: "credit_union" },
     { hot: "ncua", cold: "ffiec", charter: "bank" },
   ])("includes archived $cold when $hot is hot for the same period", async ({ hot, cold, charter }) => {
-    nextRows = [{ period: "2026-06-30", unit: "USD", median: 1000, p25: 1000, p75: 1000, institution_count: 5,
+    nextRows = [{ period: "2026-06-30", unit: "USD", median: 1000, p25: 1000, p75: 1000, institution_count: 10,
       period_basis: "ytd", sources: [hot], source_url: null, fetched_at: null }];
-    nextIdentities = Array.from({ length: 5 }, (_, index) => ({ id: index + 20, charter_type: charter }));
-    const file = { source: cold, period: "2026-06-30", objectKey: cold, rowCount: 5, sha256: "a".repeat(64) };
+    nextIdentities = Array.from({ length: 10 }, (_, index) => ({ id: index + 20, charter_type: charter }));
+    const file = { source: cold, period: "2026-06-30", objectKey: cold, rowCount: 10, sha256: "a".repeat(64) };
     vi.mocked(prunedCallFiles).mockResolvedValueOnce([file, { ...file, source: hot, objectKey: hot }]);
     vi.mocked(readColdCallRows).mockResolvedValueOnce({ failed: [], rows: nextIdentities.map(({ id }) => ({
       institution_id: id, source: cold, report_date: "2026-06-30", item_code: cold === "ncua" ? "ACCT_131" : "RIAD4080",
@@ -487,8 +488,8 @@ describe("queryData: call-report lines", () => {
     const result = await queryData({ measure: CALL, scope: { kind: "national" } });
     expect(readColdCallRows).toHaveBeenCalledWith([file], { itemKey: "service_charges_deposits_ytd", institutionIds: null });
     expect(result).toMatchObject({ ok: true, rows: [
-      expect.objectContaining({ period: "2026-06-30", sources: hot, median: 1000, institution_count: 5 }),
-      expect.objectContaining({ period: "2026-06-30", sources: cold, median: 100, institution_count: 5 }),
+      expect.objectContaining({ period: "2026-06-30", sources: hot, median: 1000, institution_count: 10 }),
+      expect.objectContaining({ period: "2026-06-30", sources: cold, median: 100, institution_count: 10 }),
     ] });
   });
 
@@ -563,12 +564,12 @@ describe("queryData: call-report lines", () => {
     const result = await queryData({ measure: "call:acct_131", scope: { kind: "peer_set", id: "4956", peer: { charter_type: "same", nearest: 20 } } });
     expect(result).toMatchObject({ ok: true, peer_comparison: {
       kind: "call_report_peer_comparison", definition: { charter_type: "credit_union", nearest: 20 }, filters: { institutionIds: members },
-      member_count: 20, subject_institution_id: 4956, subject_in_requested_cohort: false, minimum_median_count: 5,
+      member_count: 20, subject_institution_id: 4956, subject_in_requested_cohort: false, minimum_median_count: ROLLUP_MIN_INSTITUTIONS,
       nearest_requires_approved_published_fee: true,
       size_criterion: { basis: "current institution registry assets", nearest_count: 20 },
       income_basis_warning: expect.stringContaining("Never subtract independently rolled-up quarter medians"),
     }, rows: [expect.objectContaining({ period: "2026-06-30", period_basis: "ytd", unit: "USD", sources: "ncua",
-      member_count: 20, reported_count: 18, minimum_median_count: 5, subject_included: false })] });
+      member_count: 20, reported_count: 18, minimum_median_count: ROLLUP_MIN_INSTITUTIONS, subject_included: false })] });
     if (result.ok) expect(result.peer_comparison?.selection_limitations.join(" ")).toContain("require at least one approved published fee");
   });
 
@@ -576,18 +577,18 @@ describe("queryData: call-report lines", () => {
     vi.mocked(getPeerSubject).mockResolvedValue({ id: 12, charter_type: "credit_union", asset_size_tier: "regional" });
     vi.mocked(resolvePeerRequest).mockResolvedValue({ definition: { charter_type: "credit_union", asset_tiers: ["regional"], asset_min: 10000000000, asset_max: 250000000000 },
       filters: { charter_type: "credit_union", asset_tiers: ["regional"] }, label: "Credit unions in the requested size group", market: null });
-    vi.mocked(peerSetMemberIds).mockResolvedValue([11, 12, 13, 14, 15]);
+    vi.mocked(peerSetMemberIds).mockResolvedValue([11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
     nextRows = [
-      { period: "2026-06-30", unit: "USD", median: 100, p25: 50, p75: 150, institution_count: 4, period_basis: "ytd", sources: ["ncua"], subject_included: false, source_url: null, fetched_at: null },
-      { period: "2026-03-31", unit: "USD", median: 90, p25: 40, p75: 140, institution_count: 5, period_basis: "ytd", sources: ["ncua"], subject_included: true, source_url: null, fetched_at: null },
+      { period: "2026-06-30", unit: "USD", median: 100, p25: 50, p75: 150, institution_count: 9, period_basis: "ytd", sources: ["ncua"], subject_included: false, source_url: null, fetched_at: null },
+      { period: "2026-03-31", unit: "USD", median: 90, p25: 40, p75: 140, institution_count: 10, period_basis: "ytd", sources: ["ncua"], subject_included: true, source_url: null, fetched_at: null },
     ];
     const result = await queryData({ measure: "call:acct_131", scope: { kind: "peer_set", id: "12", peer: { charter_type: "same", asset_tiers: "same" } } });
     expect(result).toMatchObject({ ok: true, peer_comparison: {
-      subject_in_requested_cohort: true, member_count: 5, nearest_requires_approved_published_fee: false,
+      subject_in_requested_cohort: true, member_count: 10, nearest_requires_approved_published_fee: false,
       size_criterion: { asset_tiers: ["regional"], minimum_usd_inclusive: 10000000000, maximum_usd_inclusive: 250000000000 },
     }, rows: [
-      expect.objectContaining({ period: "2026-06-30", subject_included: false, reported_count: 4, median: null }),
-      expect.objectContaining({ period: "2026-03-31", subject_included: true, reported_count: 5, median: 90 }),
+      expect.objectContaining({ period: "2026-06-30", subject_included: false, reported_count: 9, median: null }),
+      expect.objectContaining({ period: "2026-03-31", subject_included: true, reported_count: 10, median: 90 }),
     ], note: expect.stringContaining("YTD equals standalone-quarter income only in Q1") });
     expect(lastQuery().text).toContain("BOOL_OR(c.institution_id");
     expect(lastQuery().values).toContain(12);
@@ -596,9 +597,9 @@ describe("queryData: call-report lines", () => {
   it.each(["credit_union", "bank"])("derives archived reporting inclusion only after canonical identity filtering for %s subject", async (subjectCharter) => {
     vi.mocked(getPeerSubject).mockResolvedValue({ id: 12, charter_type: subjectCharter });
     vi.mocked(resolvePeerRequest).mockResolvedValue({ definition: { charter_type: "credit_union" }, filters: { charter_type: "credit_union" }, label: "Credit unions", market: null });
-    vi.mocked(peerSetMemberIds).mockResolvedValue([12, 13, 14, 15, 16]);
-    nextIdentities = [12, 13, 14, 15, 16].map((id) => ({ id, charter_type: id === 12 ? subjectCharter : "credit_union" }));
-    const file = { source: "ncua", period: "2019-06-30", objectKey: "n", rowCount: 5, sha256: "a".repeat(64) };
+    vi.mocked(peerSetMemberIds).mockResolvedValue([12, 13, 14, 15, 16, 17, 18, 19, 20, 21]);
+    nextIdentities = [12, 13, 14, 15, 16, 17, 18, 19, 20, 21].map((id) => ({ id, charter_type: id === 12 ? subjectCharter : "credit_union" }));
+    const file = { source: "ncua", period: "2019-06-30", objectKey: "n", rowCount: 10, sha256: "a".repeat(64) };
     vi.mocked(prunedCallFiles).mockResolvedValueOnce([file]);
     vi.mocked(readColdCallRows).mockResolvedValueOnce({ failed: [], rows: nextIdentities.map(({ id }) => ({
       institution_id: id, source: "ncua", report_date: "2019-06-30", item_code: "ACCT_131", item_key: "acct_131", item_description: "Fee income", schedule: "IS",
@@ -606,9 +607,9 @@ describe("queryData: call-report lines", () => {
     })) });
     const included = subjectCharter === "credit_union";
     expect(await queryData({ measure: "call:acct_131", scope: { kind: "peer_set", id: "12", peer: { charter_type: "credit_union" } } })).toMatchObject({ ok: true,
-      peer_comparison: { subject_in_requested_cohort: true, member_count: 5 },
+      peer_comparison: { subject_in_requested_cohort: true, member_count: 10 },
       rows: [expect.objectContaining({ period: "2019-06-30", sources: "ncua", subject_included: included,
-        reported_count: included ? 5 : 4, median: included ? 100 : null, minimum_median_count: 5 })],
+        reported_count: included ? 10 : 9, median: included ? 100 : null, minimum_median_count: ROLLUP_MIN_INSTITUTIONS })],
     });
   });
 

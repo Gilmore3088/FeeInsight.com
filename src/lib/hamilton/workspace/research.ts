@@ -78,7 +78,7 @@ import { readableHeadline } from "@/lib/regulatory/state-news";
 import { enforcementAgencyLabel } from "@/lib/regulatory/state-enforcement";
 import { OCC_ENFORCEMENT_SEARCH_URL } from "@/lib/regulatory/enforcement";
 import { buildSegmentResearch, shortSegmentLabel } from "./segment";
-import { MIN_PEERS_FOR_POSITION } from "./scenario";
+import { LOCAL_COMPETITORS_GROUP, MIN_LOCAL_PEERS_FOR_POSITION, MIN_PEERS_FOR_POSITION } from "./scenario";
 import { feeRevenueLine, institutionFinancials, serviceChargeTrend, type ServiceChargeRow } from "./revenue";
 import {
   WORKSPACE_ENGINE_VERSION,
@@ -1269,8 +1269,8 @@ export async function getFeeResearch(
   const structureGroup =
     segment && !segment.problem
       ? { label: shortSegmentLabel(segment.segment), members: segment.members }
-      : local.competitors && local.competitors.length >= MIN_PEERS_FOR_POSITION
-        ? { label: "local competitors", members: local.competitors }
+      : local.competitors && local.competitors.length >= MIN_LOCAL_PEERS_FOR_POSITION
+        ? { label: LOCAL_COMPETITORS_GROUP, members: local.competitors }
         : { label: `peers (${chosen?.label ?? base.peerLabel})`, members: peers };
   const structure = STRUCTURE_FEES.has(feeCategory) ? await loadStructure(base, structureGroup) : null;
   const lineup = feeCategory === LINEUP_CATEGORY ? await loadLineup(base, structureGroup) : null;
@@ -1378,7 +1378,7 @@ export async function getFeeResearch(
         "Pricing groups count each institution once, at its highest published tier.",
         "A fee change is shown only when the institution's own schedule bears it out.",
         "A blank cell in a table means the fee is not on that institution's published schedule in the index.",
-        `Market layers show percentiles only where at least ${MIN_PEERS_FOR_POSITION} other institutions publish the fee.`,
+        `Market layers show percentiles only where at least ${MIN_PEERS_FOR_POSITION} other institutions publish the fee, or ${MIN_LOCAL_PEERS_FOR_POSITION} local competitors in the local layer.`,
         "The local market is the counties holding the bank's branches (up to three, in its main state), or its headquarters city when it is not in the Summary of Deposits, as in the custom report.",
         "Rules come from a short reviewed list. State fee laws appear only once reviewed; none is cited otherwise.",
         "Recent rules, bills and enforcement actions come from the Regulatory Wire as each agency or legislature published them; they are listed, not interpreted.",

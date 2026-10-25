@@ -21,13 +21,20 @@ describe("Hamilton product knowledge (#1081)", () => {
     const ids = listSkills().map((skill) => skill.id);
     expect(ids).toEqual(HAMILTON_DELIVERABLES.map((deliverable) => deliverable.id));
     for (const id of DEVELOPER_SKILLS) expect(ids).not.toContain(id);
-    expect(HAMILTON_KNOWLEDGE_VERSION).toBe(1);
+    expect(HAMILTON_KNOWLEDGE_VERSION).toBe(2);
   });
 
   it("never tells the model to recommend a fee change", () => {
     for (const deliverable of HAMILTON_DELIVERABLES) {
       expect(deliverable.framework).not.toMatch(/#+\s*Recommendations/i);
       expect(deliverable.framework).not.toMatch(/actionable recommendation|numbered recommendations/i);
+    }
+  });
+
+  it("prints no invented example figures in an output template", () => {
+    for (const deliverable of HAMILTON_DELIVERABLES) {
+      const template = deliverable.framework.split(/\n## (?:Output|Structure) Template\n/)[1]?.split(/\n## /)[0] ?? "";
+      expect(template, deliverable.id).not.toMatch(/\|\s*[-+]?\$?\d[\d.,]*\s*(?:%|bps|pp|[MB])?\s*\|/);
     }
   });
 

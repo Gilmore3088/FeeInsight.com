@@ -12,6 +12,7 @@ import { ASSET_TIER_RANGES } from "./peer-index";
 import { getFeeResearch, getWorkspaceBriefing, loadDependenceSeries, loadStudyPlacements, type EnginePeerOptions } from "./workspace/research";
 import { dependenceChart, studyObservations, type DependenceChart } from "./workspace/studies";
 import { scheduleOverview } from "./workspace/schedule";
+import { MIN_LOCAL_PEERS_FOR_POSITION } from "./workspace/scenario";
 import type { FeePositionRow, InstitutionFinancials, Observation, SchedulePosition } from "./workspace/types";
 import { loadBriefContext, type BriefContext } from "./brief-context";
 import { explainIncome, incomeSplit, type IncomeExplanation, type IncomeSplit } from "./workspace/why";
@@ -44,9 +45,9 @@ export interface LocalCompetitorFee {
   place: string | null;
 }
 
-/** Fees charted against local competitors: the furthest from their medians with three or more named competitors. */
+/** Fees charted against local competitors: the furthest from their medians with at least MIN_LOCAL_PEERS_FOR_POSITION named competitors. */
 const COMPETITOR_FEES = 3;
-const MIN_COMPETITORS = 3;
+const MIN_COMPETITORS = MIN_LOCAL_PEERS_FOR_POSITION;
 /** Fees looked up before giving up, so a bank with few local competitors costs a bounded number of reads. */
 const COMPETITOR_LOOKUPS = 6;
 
