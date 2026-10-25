@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { cacheLatestMessage, cachedSystem, compactToolResult, ledgerUsage, withCompactResults } from "./tool-output";
+import { cacheLatestMessage, cachedSystem, compactToolResult, ledgerUsage, TOOL_RESULT_MAX_CHARS, withCompactResults } from "./tool-output";
+import { writtenAnswerFeeEvidence } from "@/lib/hamilton/written-answer-binding";
+import { collectFeeRefs, writtenAnswerFeeRefs } from "@/lib/saved-output-corrections";
 import type { LanguageModelUsage, ModelMessage } from "ai";
 
 const fee = (i: number) => ({ fee_name: `Fee ${i}`, amount: i, conditions: "x".repeat(200), source_url: `https://bank.example/fees/${i}` });
@@ -11,10 +13,10 @@ describe("compactToolResult", () => {
   });
 
   it("shortens the largest list until the result fits, and says which list and by how much", () => {
-    const big = { identity: { id: 1, name: "Bank" }, fees: { verified: Array.from({ length: 200 }, (_, i) => fee(i)), provisional: [fee(1)] } };
+    const big = { summary: { id: 1, name: "Bank" }, fees: { verified: Array.from({ length: 200 }, (_, i) => fee(i)), provisional: [fee(1)] } };
     const out = compactToolResult(big, 12_000) as Record<string, unknown> & { fees: { verified: unknown[]; provisional: unknown[] } };
     expect(JSON.stringify(out).length).toBeLessThanOrEqual(12_000 + 300);
-    expect(out.identity).toEqual({ id: 1, name: "Bank" });
+    expect(out.summary).toEqual({ id: 1, name: "Bank" });
     expect(out.fees.provisional).toHaveLength(1);
     expect(out.fees.verified.length).toBeLessThan(200);
     expect(out.fees.verified[0]).toEqual(fee(0));
@@ -45,6 +47,93 @@ describe("compactToolResult", () => {
     expect(rows._shortened).toContain("rows: first");
     const text = compactToolResult({ note: "y".repeat(20_000) }, 5_000) as { _shortened: string; text: string };
     expect(text.text).toHaveLength(5_000);
+  });
+});
+
+// An institution profile as getInstitution returns it, Capital City Bank's shape (#1077, defect 9):
+// 60 catalog rows sorted by fee name, so the overdraft rows sit past the first half.
+const CATEGORIES = ["account_research", "check_printing", "coin_counting", "safe_deposit_box", "money_order", "check_image", "notary_fee", "night_deposit"];
+function capitalCityProfile() {
+  const rows = Array.from({ length: 58 }, (_, i) => ({ name: `${String.fromCharCode(65 + (i % 26))}${String(i).padStart(2, "0")} Service Fee`, category: CATEGORIES[i % CATEGORIES.length] }));
+  rows.push({ name: "Overdraft Item Fee", category: "overdraft" }, { name: "Overdraft Daily Fee", category: "continuous_od" });
+  rows.sort((a, b) => a.name.localeCompare(b.name));
+  const verified = rows.map((row, i) => ({
+    fee_name: row.name,
+    fee_category: row.category,
+    display_name: row.name,
+    amount: row.category === "overdraft" ? 36 : 5 + i,
+    frequency: "per_item",
+    conditions: `Charged per item. ${"Waived for accounts enrolled in the program. ".repeat(5)}`,
+    status: "verified",
+    extraction_confidence: 0.93,
+    source_url: "https://www.ccbg.example/disclosures/schedule-of-fees.pdf",
+    record_id: 70_000 + i,
+    source_document_id: 4_400,
+  }));
+  const quarter = (q: number) => ({ quarter: `2026-Q${q}`, service_charge_income: 1000 + q, total_revenue: 50_000 + q, fee_income_ratio: 0.02, yoy_change_pct: 1.5, source: "fdic", units: "thousands of dollars", field_units: { fee_income_ratio: "fraction", yoy_change_pct: "percent" } });
+  return {
+    identity: { id: 5501, name: "Capital City Bank", state: "FL", city: "Tallahassee", charter_type: "bank", asset_size: 4_200_000 },
+    public_fee_status: { status: "published", verified_fee_count: verified.length, provisional_fee_count: 0 },
+    fees: { verified, provisional: [] as typeof verified },
+    financials: { units: "thousands", latest: quarter(2), records: [1, 2, 3, 4, 1, 2, 3, 4].map(quarter) },
+    revenue_trend: [1, 2, 3, 4, 1, 2, 3, 4].map(quarter),
+    quality: { label: "verified", status: "ok", signals: ["a", "b"] },
+  };
+}
+
+describe("compactToolResult on an institution profile (#1077, Cycle A defect 9)", () => {
+  const factIds = (output: unknown) => (writtenAnswerFeeEvidence([output])?.evidence.facts ?? []).map((fact) => fact.id);
+  const factUrls = (output: unknown) => (writtenAnswerFeeEvidence([output])?.evidence.facts ?? []).map((fact) => fact.source.urls);
+
+  it("keeps every fee row's record when trimming fields is enough, and marks the rows complete", () => {
+    const profile = capitalCityProfile();
+    expect(JSON.stringify(profile).length).toBeGreaterThan(TOOL_RESULT_MAX_CHARS);
+    const out = compactToolResult(profile) as ReturnType<typeof capitalCityProfile> & { _shortened: string; _fee_rows_complete?: boolean };
+    expect(JSON.stringify(out).length).toBeLessThanOrEqual(TOOL_RESULT_MAX_CHARS + 600);
+    expect(out.fees.verified).toHaveLength(60);
+    expect(out.fees.verified.find((row) => row.fee_category === "overdraft")).toMatchObject({ amount: 36, record_id: expect.any(Number), source_document_id: 4_400 });
+    expect(out._fee_rows_complete).toBe(true);
+    expect(out._shortened).toContain("Every fee row is kept.");
+    // The binding and the answer gate see the same fee records, with the same source URL.
+    expect(factIds(out)).toEqual(factIds(profile));
+    expect(factUrls(out)).toEqual(factUrls(profile));
+    // The subject's fee refs are saved, since no row was dropped.
+    const refs = collectFeeRefs(out);
+    expect(refs).toHaveLength(60);
+    expect(writtenAnswerFeeRefs(refs, 5501, [out])).toEqual(refs);
+  });
+
+  it("drops fee rows only after the other lists and the conditions, keeping spotlight and core fee types first", () => {
+    const profile = capitalCityProfile();
+    const out = compactToolResult(profile, 5_000) as ReturnType<typeof capitalCityProfile> & { _shortened: string; _fee_rows_complete?: boolean };
+    expect(out.fees.verified.length).toBeLessThan(60);
+    expect(out.fees.verified.some((row) => row.fee_category === "overdraft")).toBe(true);
+    expect(out.revenue_trend).toHaveLength(1);
+    expect(out.financials.records).toHaveLength(1);
+    expect(out.fees.verified.every((row) => !("conditions" in row))).toBe(true);
+    expect(out._fee_rows_complete).toBeUndefined();
+    expect(out._shortened).toContain("fees.verified:");
+    expect(out._shortened).toContain("Say so if the answer depends on the fee rows left out.");
+    // Every surviving row keeps the fact id it had before compaction.
+    const before = new Set(factIds(profile));
+    expect(factIds(out).every((id) => before.has(id))).toBe(true);
+    expect(factIds(out)).toContain("fee:published:" + profile.fees.verified.find((row) => row.fee_category === "overdraft")!.record_id);
+    // Rows were dropped, so the subject keeps its institution match instead of partial refs.
+    expect(writtenAnswerFeeRefs(collectFeeRefs(out), 5501, [out])).toEqual([]);
+  });
+
+  it("never cuts a profile to plain text", () => {
+    // One fee row and no list to halve: before the fix this became `{ _shortened, text }`, with no record left.
+    const base = capitalCityProfile();
+    const profile = {
+      identity: base.identity,
+      public_fee_status: { status: "published", confidence_summary: "y".repeat(20_000) },
+      fees: { verified: base.fees.verified.filter((row) => row.fee_category === "overdraft"), provisional: [] },
+    };
+    const out = compactToolResult(profile) as { identity?: { id: number }; fees?: { verified: unknown[] }; text?: unknown };
+    expect(out.text).toBeUndefined();
+    expect(out.identity?.id).toBe(5501);
+    expect(factIds(out).length).toBeGreaterThan(0);
   });
 });
 
