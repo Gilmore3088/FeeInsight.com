@@ -476,8 +476,12 @@ async function writtenUp(
   });
   // Its shadow record beside what the Analyze screen would have done with this answer: the route's
   // own rule (analyzeAnswerDecision) over the verdict's check and binding, which are the route's.
-  const decision = analyzeAnswerDecision(result.text, verdict.check, verdict.binding, HELD_ANSWER_MESSAGE !== null);
-  await recordEvalShadows([() => gateShadowRecord(verdict, decision.today, { path: "written_streaming", mode: "analyze" })], options.recordShadow, candidate.institutionId);
+  // Worked out inside the shadow's own compute, so a throw there never changes this sample's score.
+  await recordEvalShadows([() => gateShadowRecord(
+    verdict,
+    analyzeAnswerDecision(result.text, verdict.check, verdict.binding, HELD_ANSWER_MESSAGE !== null).today,
+    { path: "written_streaming", mode: "analyze" },
+  )], options.recordShadow, candidate.institutionId);
   const gate = { status: verdict.status, critical: verdict.failures.filter((f) => f.critical).map((f) => f.code), checkPassed: result.check.passed };
   if (verdict.status === "held" || !verdict.check.passed) {
     const failures = verdict.status === "held" ? verdict.failures.filter((f) => f.critical).map((f) => `${f.code}: ${f.message}`) : verdict.check.problems;
