@@ -49,4 +49,18 @@ page scoring); folding it in is left for its owner.
 - Fee links Magellan now treats as articles: 6 institutions (4 more), among them TD Bank, whose
   saved fee link is a /learning/ article.
 
-**Agent lesson:** gutenberg/pr-1777-one-article-rule
+## Follow-up, Oct 25: the pages still came in upstream
+
+Prod (read-only, Oct 25): no live fee matches the rule, but article pages kept arriving as
+documents after #1777, because the step that let them in was Magellan's, not publish's. The
+companion finder stored them as account pages by their link words (15 article companions on 8
+institution records, TD on two, among them TD's two /learning/ pages and Keesler's advice article; Security First's 2022
+blog post was stored again on Oct 18), and a read remembers the page it read, so the plain fetch
+kept asking for SchoolsFirst FCU's advice article on Oct 18 and 19 instead of its saved link.
+Knox's free read and Darwin then read and verified their fees again, and only publish refused
+them. Magellan now applies the same rule there: the companion finder refuses such links, the
+stored-companion review retires the 15 (no live fee), and the fetch sets aside a remembered
+article for a saved link that is not one. Three banks whose saved link is itself an article
+(Nelnet Bank, Fidelity, KEMBA) stay with the upgrade search.
+
+**Agent lesson:** gutenberg/pr-1777-one-article-rule, magellan/issue-1774-article-never-a-source
