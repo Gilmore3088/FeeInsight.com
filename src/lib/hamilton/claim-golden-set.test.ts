@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   CLAIM_GOLDEN_CASES,
   CLAIM_GOLDEN_HELD_OUT,
+  CLAIM_GOLDEN_PERSONAS,
   CLAIM_GOLDEN_PROMPT_FILES,
   CLAIM_GOLDEN_REVIEW,
   CLAIM_GOLDEN_SET_VERSION,
@@ -26,11 +27,28 @@ describe("Hamilton claim golden set: today's behaviour, recorded (#1077, step 0)
     });
   }
 
-  it("covers the four groups the design names and the wrong-fee-category group, each with a control, under distinct ids", () => {
+  it("covers the design's groups, the wrong-fee-category group and the V5 kinds, each with a control, under distinct ids", () => {
     const groups = new Set(CLAIM_GOLDEN_CASES.map((c) => c.group));
-    expect([...groups].sort()).toEqual(["causation", "swapped_bank", "wrong_fee_category", "wrong_period_claim", "wrong_premise"]);
+    expect([...groups].sort()).toEqual(["causation", "cross_account", "income_trend", "manipulative_prompt", "missing_quarter", "rate_vs_flat",
+      "superseded_date", "swapped_bank", "thin_cohort", "wrong_fee_category", "wrong_period_claim", "wrong_premise"]);
     for (const group of groups) expect(CLAIM_GOLDEN_CASES.some((c) => c.group === group && c.control), group).toBe(true);
+    for (const group of groups) expect(CLAIM_GOLDEN_CASES.some((c) => c.group === group && !c.control), group).toBe(true);
     expect(new Set(CLAIM_GOLDEN_CASES.map((c) => c.id)).size).toBe(CLAIM_GOLDEN_CASES.length);
+  });
+
+  it("names the persona of every case, all five of them, each with a control", () => {
+    for (const c of CLAIM_GOLDEN_CASES) expect(CLAIM_GOLDEN_PERSONAS, c.id).toContain(c.persona);
+    for (const persona of CLAIM_GOLDEN_PERSONAS) expect(CLAIM_GOLDEN_CASES.some((c) => c.persona === persona && c.control), persona).toBe(true);
+  });
+
+  it("holds the income trend's wrong bank, period, span and direction, and supports its controls with both filed quarters (Cycle A defect 10)", () => {
+    for (const c of CLAIM_GOLDEN_CASES.filter((x) => x.group === "income_trend" || x.group === "missing_quarter")) {
+      const actual = runClaimGoldenCase(c).actual;
+      if (!c.control) { expect(actual.status, c.id).toBe("held"); continue; }
+      expect(actual.binding?.omitted, c.id).toEqual([]);
+      const ids = actual.binding?.factIds ?? [];
+      if (ids.some((id) => id.startsWith("change:"))) expect(ids.filter((id) => id.startsWith("filing:fdic:9001:")), c.id).toHaveLength(2);
+    }
   });
 
   it("marks a case wrong today exactly when today's status disagrees with the target, with a reason and a hole", () => {
@@ -43,7 +61,7 @@ describe("Hamilton claim golden set: today's behaviour, recorded (#1077, step 0)
       else expect(c.target.reasons.length, c.id).toBeGreaterThan(0);
     }
     expect(run.todayWrong).toBe(3);
-    expect(run.total).toBe(48);
+    expect(run.total).toBe(81);
   });
 
   it("closes the asked-figure hole and records the causal hole as a shadow line (step 3)", () => {
@@ -60,7 +78,7 @@ describe("Hamilton claim golden set: today's behaviour, recorded (#1077, step 0)
 
   it("says plainly that no person has reviewed it, and is held out", () => {
     expect(run.version).toBe(CLAIM_GOLDEN_SET_VERSION);
-    expect(CLAIM_GOLDEN_SET_VERSION).toBe("2026-10-25.10");
+    expect(CLAIM_GOLDEN_SET_VERSION).toBe("2026-10-25.11");
     expect(CLAIM_GOLDEN_REVIEW.status).toBe("unreviewed");
     expect(CLAIM_GOLDEN_REVIEW.record).toBeNull();
     expect(CLAIM_GOLDEN_REVIEW.note).toMatch(/No person has reviewed these cases/);

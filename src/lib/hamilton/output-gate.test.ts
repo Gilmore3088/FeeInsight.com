@@ -218,11 +218,11 @@ describe("the golden set replayed through the unified gate", () => {
   const replay = replayClaimGoldenGate();
 
   it("decides every case as its target says; it parts from today only on the causes step 3 records in shadow", () => {
-    expect(replay.total).toBe(48);
-    expect(replay.meetsTarget).toBe(48);
+    expect(replay.total).toBe(81);
+    expect(replay.meetsTarget).toBe(81);
     expect(replay.controlsValidated).toBe(replay.controls);
-    expect(replay.controls).toBe(20);
-    expect(replay.tally).toMatchObject({ agree: 45, disagree: 3, errors: 0, byStatus: { validated: 20, ready_partial: 1, held: 27 },
+    expect(replay.controls).toBe(33);
+    expect(replay.tally).toMatchObject({ agree: 78, disagree: 3, errors: 0, byStatus: { validated: 33, ready_partial: 1, held: 47 },
       byDisagreement: { unified_holds: 3, unified_shows: 0, partial_differs: 0 } });
     // Exactly the cases the golden set marks wrong today (todayWrong), and each of them a stated cause.
     const disagreeing = replay.results.filter((r) => r.disagreement).map((r) => r.id).sort();

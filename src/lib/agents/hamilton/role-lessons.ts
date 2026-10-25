@@ -346,4 +346,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-1077-income-trend-change",
+    agent: "hamilton",
+    stage: "written answer",
+    lesson: "State a change in filed fee income with the institution, the two quarters it runs between (or its span: a year, or one quarter) and its direction. Compare a quarter only with the same quarter one year earlier or the quarter just before; when that filing is missing, say no change can be given rather than measuring from an older quarter.",
+    why: "The profile's revenue trend gave quarters and a year-over-year percent with no fact behind them, so a correct change could never be checked, and with a filing quarter missing the trend compared a quarter with the same quarter two years back under a year-over-year label.",
+    evidence: { issues: [1077], prs: [], files: ["src/lib/hamilton/claim-evidence.ts", "src/lib/hamilton/narrative-bound.ts", "src/lib/data-store/call-reports.ts", "docs/project/findings/2026-10-25-income-trend-facts.md"] },
+    appliesTo: ["written-answer"],
+    since: "2026-10-25",
+  },
 ];
