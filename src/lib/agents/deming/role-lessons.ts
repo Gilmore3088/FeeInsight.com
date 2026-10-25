@@ -98,6 +98,16 @@ export const DEMING_LESSONS: AgentLesson[] = [
     since: "2026-10-25",
   },
   {
+    id: "issue-2066-trace-every-live-miss",
+    agent: "deming",
+    stage: "loop proof",
+    lesson: "Read the weekly live check for its gaps, not only its score. For every miss, ask whether a loop flagged that fee, and whether the agent that owns the step that made the error reads the flag. A miss nobody flagged is a gap in detection; a flag only another agent or nobody reads is a gap in routing. Report both counts beside accuracy every week, including when they are zero, and plant a case for each class no loop catches.",
+    why: "The W43 check scored 68.5%, but nothing asked what the loops had done about its misses. Traced, 445 of 532 misses had never been flagged by any check (every missing fee among them), and 56 more were flagged only by checks whose rows Knox never reads, most of them frequency fixes for hourly fees shown flat.",
+    evidence: { issues: [2066], prs: [2581], files: ["scripts/live-batch-gaps.mjs"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
+  {
     id: "issue-2065-plant-errors-walk-the-loop",
     agent: "deming",
     stage: "loop proof",

@@ -119,6 +119,16 @@ institutions remains the only human launch workflow.
   `error_class` ledger row, opened the first day it is seen and updated with each later day's
   counts, date, examples and a GitHub-ready title and body. The morning brief lists the largest classes, so the data lane works classes, not fees.
 
+## Weekly live-check gaps (#2066)
+
+- `scripts/live-batch-gaps.mjs` (read-only audit) traces every miss of James's weekly live check to
+  the step that caused it and tags it: caught and routed to that step's agent (an error row on the
+  fee that the agent reads, per `learning/feedback-kinds.ts`), caught but not routed, not caught (a
+  gap; every missing fee is one), or unresolved. It prints one read-only SELECT for the production
+  SQL tool, then tags the results file from its output. The gap count goes beside accuracy on the
+  weekly scorecard; a miss whose class has no planted case gets one. 2026-W43: 445 of 532 misses
+  not caught, 56 caught but not routed, 11 routed, 20 unresolved.
+
 ## Planted error loop (#2065)
 
 - `planted-errors.ts` and its test plant one of each error class the 2026-10-19 learning audit
