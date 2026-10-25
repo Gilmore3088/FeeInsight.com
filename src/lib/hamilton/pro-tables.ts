@@ -274,6 +274,29 @@ export async function getRecentHamiltonReports(
 }
 
 /**
+ * One user's saved reports of one type for one institution, newest first, with no age limit: a
+ * monthly briefing (#1897) stays in its list however old it is. Only the fields a list needs.
+ */
+export async function getHamiltonReportsByType(params: {
+  userId: number;
+  reportType: string;
+  institutionId: string;
+  limit?: number;
+}): Promise<Array<{ id: string; title: string; created_at: string }>> {
+  const rows = await sql`
+    SELECT id, report_json->>'title' AS title, created_at
+    FROM hamilton_reports
+    WHERE user_id = ${params.userId}
+      AND report_type = ${params.reportType}
+      AND institution_id = ${params.institutionId}
+      AND status = 'generated'
+    ORDER BY created_at DESC
+    LIMIT ${Math.max(1, Math.min(120, Math.floor(params.limit ?? 60)))}
+  `;
+  return rows.map((row) => ({ id: String(row.id), title: String(row.title ?? ""), created_at: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at) }));
+}
+
+/**
  * Get active scenarios for a user (for scenario selector in ConfigSidebar).
  * Returns newest first, limited to 20. Reports older than 90 days are left
  * out: their figures predate the current fee data, and the April 2026 seed

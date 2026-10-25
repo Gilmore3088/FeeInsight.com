@@ -5,7 +5,7 @@
  * and counts, never the answer's text.
  */
 
-import { OUTPUT_GATE_VERSION, gateAnswer, type GateFailureCode, type GateInput, type GateStatus, type GateVerdict } from "./output-gate";
+import { OUTPUT_GATE_VERSION, OUTPUT_GATE_VERSIONS, gateAnswer, type OutputGateVersion, type GateFailureCode, type GateInput, type GateStatus, type GateVerdict } from "./output-gate";
 
 /**
  * What today's gates did with the answer:
@@ -25,15 +25,16 @@ export type ShadowDisagreement =
   /** Both show it, but one cuts sentences and the other does not. */
   | "partial_differs";
 
-/** Which caller ran the shadow: the written-answer route's two paths, the Ask memo, Simulate, a report section (#1077 step 6). */
-export type ShadowPath = "written_streaming" | "written_buffered" | "memo" | "simulate_stream" | "simulate_read" | "report_section" | "golden_replay";
+/** Which caller ran the shadow: the written-answer route's two paths, the Ask memo, Simulate, a report section (#1077 step 6), the replays. */
+export type ShadowPath = "written_streaming" | "written_buffered" | "memo" | "simulate_stream" | "simulate_read" | "report_section" | "golden_replay" | "ask_replay";
 
 /**
- * Whose answer the shadow ran on: a reader's (the live routes), the daily paid eval's sample, or the
- * golden replay. Kept apart in every count, so synthetic answers never stand in for readers'.
+ * Whose answer the shadow ran on: a reader's (the live routes), the daily paid eval's sample, the
+ * golden replay, or the daily gate replay (gate-replay.ts: real questions re-answered by today's free
+ * engine). Kept apart in every count, so replayed and synthetic answers never stand in for readers'.
  */
-export type ShadowOrigin = "reader" | "paid_eval" | "golden";
-export const SHADOW_ORIGINS: readonly ShadowOrigin[] = ["reader", "paid_eval", "golden"];
+export type ShadowOrigin = "reader" | "paid_eval" | "golden" | "replay";
+export const SHADOW_ORIGINS: readonly ShadowOrigin[] = ["reader", "paid_eval", "golden", "replay"];
 
 /** Where a shadow ran, as its record keeps it; `origin` defaults to "reader". */
 export interface ShadowContext {
@@ -43,7 +44,8 @@ export interface ShadowContext {
 }
 
 export interface GateShadowRecord {
-  version: typeof OUTPUT_GATE_VERSION;
+  /** The gate version that wrote it: a record from before a version bump keeps its own. */
+  version: OutputGateVersion;
   /** Whose answer it was; a record written before this field reads as "reader". */
   origin: ShadowOrigin;
   surface: GateVerdict["surface"];
@@ -203,7 +205,7 @@ export function readGateShadowRecord(value: unknown): GateShadowRecord | null {
   const obj = value as Record<string, unknown>;
   const todays: readonly string[] = ["held", "shown", "shown_partial", "shown_ungated"];
   const statuses: readonly string[] = ["validated", "ready_partial", "held"];
-  if (obj.version !== OUTPUT_GATE_VERSION || typeof obj.today !== "string" || !todays.includes(obj.today)) return null;
+  if (!(OUTPUT_GATE_VERSIONS as readonly unknown[]).includes(obj.version) || typeof obj.today !== "string" || !todays.includes(obj.today)) return null;
   if (typeof obj.unified !== "string" || !statuses.includes(obj.unified) || typeof obj.surface !== "string" || typeof obj.path !== "string") return null;
   const codes = Array.isArray(obj.codes) ? obj.codes.filter((c): c is GateFailureCode => typeof c === "string") : [];
   const critical = Array.isArray(obj.critical) ? obj.critical.filter((c): c is GateFailureCode => typeof c === "string") : [];
@@ -211,7 +213,7 @@ export function readGateShadowRecord(value: unknown): GateShadowRecord | null {
   // A record written before origins were kept is a reader's: only the live routes recorded then.
   const origin: ShadowOrigin = typeof obj.origin === "string" && (SHADOW_ORIGINS as readonly string[]).includes(obj.origin) ? obj.origin as ShadowOrigin : "reader";
   return {
-    version: OUTPUT_GATE_VERSION, origin, surface: obj.surface as GateShadowRecord["surface"], path: obj.path as ShadowPath,
+    version: obj.version as OutputGateVersion, origin, surface: obj.surface as GateShadowRecord["surface"], path: obj.path as ShadowPath,
     mode: typeof obj.mode === "string" ? obj.mode : null, today: obj.today as TodayDecision, unified: obj.unified as GateStatus,
     agrees: typeof obj.error === "string" ? false : disagreement === null, disagreement: typeof obj.error === "string" ? null : disagreement,
     codes, critical, cause: obj.cause === true, corrections: typeof obj.corrections === "number" ? obj.corrections : 0,

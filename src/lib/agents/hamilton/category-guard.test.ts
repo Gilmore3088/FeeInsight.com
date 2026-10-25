@@ -466,3 +466,61 @@ describe("guard v87: a live box late fee re-files in place to safe_deposit_box (
     expect(lateBoxFlags(kept)).toEqual(["true", "false"]);
   });
 });
+
+describe("guard v90: a live collection return re-files in place from NSF (#1912)", () => {
+  // U.S. Bank doc 20724: "Foreign Check Collection (incoming/outgoing)" ... "Tracer Fee | $50.00" / "Returned Check Fee | $35.00".
+  const usBank = [
+    "Foreign Check Collection (incoming/outgoing)",
+    "Courier Fee (per check) | $55.00",
+    "Initiation Fee (per check) | $55.00",
+    "Tracer Fee | $50.00",
+    "Returned Check Fee | $35.00",
+  ].join("\n");
+  const flat = ["Foreign Checks deposits | $5.00", "Courtesy Pay or NSF Fee | $30.00", "Return Item | $30.00"].join("\n");
+  const fee = (id: number, inst: number, doc: number, name: string, amount: string) => ({
+    fee_published_id: id, lineage_ref: id + 100000, institution_id: inst, source_document_id: doc,
+    canonical_fee_key: "nsf", fee_name: name, amount, conditions: null, document_nsf_amount: null,
+  });
+
+  it("moves U.S. Bank's foreign check return (75929) and leaves a flat-list return item as NSF", async () => {
+    const collection = fee(75929, 5, 20724, "Returned Check Fee", "35.00");
+    const ordinary = fee(13311, 4588, 7, "Return Item", "30.00");
+    const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = templateText(strings);
+      if (text.includes("to_regclass('public.pipeline_feedback')")) return Promise.resolve([{ ready: true }]);
+      if (text.includes("FROM agent_source_texts")) {
+        return Promise.resolve([{ source_document_id: 20724, normalized_text: usBank }, { source_document_id: 7, normalized_text: flat }]);
+      }
+      if (text.includes("UPDATE published_fee_records") && text.includes("v.from_key")) {
+        return Promise.resolve((values[0] as number[]).map((id, i) => ({ fee_published_id: id, lineage_ref: id + 100000, canonical_fee_key: (values[2] as string[])[i] })));
+      }
+      if (text.includes("rolled_back_at IS NOT NULL")) return Promise.resolve([]);
+      if (text.includes("FROM published_fee_records")) return Promise.resolve([collection, ordinary]);
+      return Promise.resolve([]);
+    });
+    const result = await runHamiltonCategoryGuard({ runId: 90, db: db as unknown as GuardDb });
+    expect(result).toMatchObject({ liveRefiledFees: 1, failingFees: 0, collectionSectionReadFailed: false });
+    const move = db.mock.calls.find((call) => templateText(call[0]).includes("v.from_key") && templateText(call[0]).includes("UPDATE"));
+    expect([move?.[1], move?.[2], move?.[3]]).toEqual([[75929], ["nsf"], ["deposited_item_return"]]);
+  });
+
+  it("judges by name and line only when the stored text cannot be read", async () => {
+    const collection = fee(75929, 5, 20724, "Returned Check Fee", "35.00");
+    const db = vi.fn((strings: TemplateStringsArray) => {
+      const text = templateText(strings);
+      if (text.includes("FROM agent_source_texts")) return Promise.reject(new Error("timeout"));
+      if (text.includes("rolled_back_at IS NOT NULL")) return Promise.resolve([]);
+      if (text.includes("FROM published_fee_records")) return Promise.resolve([collection]);
+      return Promise.resolve([]);
+    });
+    const result = await runHamiltonCategoryGuard({ runId: 91, db: db as unknown as GuardDb });
+    expect(result).toMatchObject({ liveRefiledFees: 0, failingFees: 0, collectionSectionReadFailed: true });
+  });
+
+  it("re-files a late fee named for the safe deposit box to the box type (159317)", () => {
+    const base = { fee_published_id: 159317, canonical_fee_key: "late_payment", fee_name: "SDB Late Payment", amount: "10.00", conditions: null, document_nsf_amount: null };
+    expect(restoreTarget(base)).toBe("safe_deposit_box");
+    // 36020's $1 is below the box type's floor: it has no home and goes to the second look.
+    expect(restoreTarget({ ...base, fee_published_id: 36020, fee_name: "Safety Deposit Box-Late Fee", amount: "1.00" })).toBeNull();
+  });
+});

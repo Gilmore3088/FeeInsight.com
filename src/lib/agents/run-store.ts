@@ -98,6 +98,7 @@ import { recheckTranslatedCopies, translatedCopyDetail } from "@/lib/agents/darw
 import { productPageRepeatDetail, recheckProductPageRepeats } from "@/lib/agents/darwin/product-page-repeat-check";
 import { editionCheckDetail, recheckScheduleEditions } from "@/lib/agents/darwin/edition-effective-check";
 import { canadianDocumentDetail, recheckCanadianDocuments } from "@/lib/agents/darwin/canadian-document-check";
+import { lateChargeBoundDetail, recheckLateChargeBounds } from "@/lib/agents/darwin/late-charge-bound-check";
 import { lineConflictDetail, recheckLineConflicts } from "@/lib/agents/darwin/line-conflict-check";
 import { documentOwnerDetail } from "@/lib/agents/darwin/document-owner";
 import { findingsDetail as releaseRepairFindingsDetail, releaseRepairDetail, runReleaseRepairStep } from "@/lib/agents/darwin/release-repair";
@@ -426,6 +427,13 @@ async function executeAgenticStep(
       summary: `Answered ${result.answers} questions for ${result.institutions} of ${result.planned} institutions; ${result.passed} met the bar; ${result.correctness.correct} of ${result.correctness.checked} checked tie to the live catalog.${result.pro ? ` Replayed ${result.pro.questions}${result.pro.planned && result.pro.planned > result.pro.questions ? ` of ${result.pro.planned}` : ""} Pro questions: ${result.pro.passed} met the bar, ${result.pro.correctness.correct} of ${result.pro.correctness.checked} checked tie to the catalog, ${result.pro.askedBack} still asked back.` : ""}${result.timedOut ? " Stopped at the time budget." : ""}`,
       detail: { ...result },
     };
+  }
+
+  // The one output gate replayed on real questions through the free Ask engine (#1077): no model calls.
+  if (step.stepKey === "hamilton-gate-replay") {
+    const { runGateReplay, gateReplaySummaryLine } = await import("@/lib/hamilton/gate-replay");
+    const result = await runGateReplay();
+    return { status: "completed", summary: gateReplaySummaryLine(result), detail: { ...result } };
   }
 
   // Hamilton's paid answer eval (#1079): a provider step, capped at five paid samples a day.
@@ -816,6 +824,8 @@ async function executeAgenticStep(
           reopened_links_restored: read.reopenedLinksRestored,
           reopened_unreadable_pdfs: read.reopenedUnreadablePdfs,
           thin_copies_set_aside: read.thinCopiesSetAside,
+          same_text_copies_kept: read.sameTextCopiesKept,
+          same_text_copy_reopen: read.sameTextCopyReopen,
           text_survival_refreshed: read.textSurvivalRefreshed,
           texts_held_up: read.textsHeldUp,
           texts_lost_fees: read.textsLostFees,
@@ -1140,6 +1150,17 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId: numericRunParam(params, ["institution_id"]),
       });
+      // #1905: live late fees that are a late charge's cap or floor (late-charge-bound-check.ts);
+      // a report only on a dry run or with its switch off.
+      const lateChargeBound = await recheckLateChargeBounds(tx, {
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+      });
+      const lateChargeBoundNote = lateChargeBound.matched > 0
+        ? ` Late charge bound re-check: ${lateChargeBound.matched.toLocaleString()} live late fee(s) at ${lateChargeBound.institutions.toLocaleString()} institution(s) are a late charge's cap or floor (${lateChargeBound.live && !lateChargeBound.dryRun ? `${lateChargeBound.flagged.toLocaleString()} flagged, ${lateChargeBound.takenDown.length.toLocaleString()} archived` : lateChargeBound.dryRun ? "dry run: would take down, nothing written" : "switch off: would take down, nothing written"}).`
+        : "";
       const canadianDocumentNote = canadianDocument.matched > 0
         ? ` Canadian document re-check: ${canadianDocument.matched.toLocaleString()} live fee(s) on ${canadianDocument.documents.toLocaleString()} Canadian bank document(s) (${canadianDocument.live && !canadianDocument.dryRun ? `${canadianDocument.flagged.toLocaleString()} flagged, ${canadianDocument.takenDown.length.toLocaleString()} archived` : canadianDocument.dryRun ? "dry run: would take down, nothing written" : "switch off: would take down, nothing written"}).`
         : "";
@@ -1204,7 +1225,7 @@ async function executeAgenticStep(
         : "";
       return {
         status: "completed",
-        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${verification.deferredRawFees ? ` ${verification.deferredRawFees.toLocaleString()} row(s) deferred without a verification decision because current source/raw admission remains unresolved.` : ""}${recheckReceiptNote(recheck)}${release.deferred ? ` ${release.deferred.toLocaleString()} held fee(s) deferred without a release decision.` : ""}${conditionalZero.selected > 0 ? ` Settled ${(conditionalZero.selected - (conditionalZero.deferred ?? 0)).toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).${conditionalZero.deferred ? ` ${conditionalZero.deferred.toLocaleString()} conditional-$0 hold(s) deferred without a decision.` : ""}` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${verification.categoryChange && verification.categoryChange.takeoverProof.rows > 0 ? ` ${verification.categoryChange.takeoverProof.rows.toLocaleString()} row(s) a re-read took over under a new category ${verification.categoryChange.takeoverProof.live ? "(judged again)" : "(take-over proof switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${hourlyNote}${hourlyFullNote}${nonDepositNote}${nonDepositFullNote}${translatedCopyNote}${productPageRepeatNote}${editionNote}${canadianDocumentNote}${lineConflictNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}`,
+        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${verification.deferredRawFees ? ` ${verification.deferredRawFees.toLocaleString()} row(s) deferred without a verification decision because current source/raw admission remains unresolved.` : ""}${recheckReceiptNote(recheck)}${release.deferred ? ` ${release.deferred.toLocaleString()} held fee(s) deferred without a release decision.` : ""}${conditionalZero.selected > 0 ? ` Settled ${(conditionalZero.selected - (conditionalZero.deferred ?? 0)).toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).${conditionalZero.deferred ? ` ${conditionalZero.deferred.toLocaleString()} conditional-$0 hold(s) deferred without a decision.` : ""}` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${verification.categoryChange && verification.categoryChange.takeoverProof.rows > 0 ? ` ${verification.categoryChange.takeoverProof.rows.toLocaleString()} row(s) a re-read took over under a new category ${verification.categoryChange.takeoverProof.live ? "(judged again)" : "(take-over proof switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${hourlyNote}${hourlyFullNote}${nonDepositNote}${nonDepositFullNote}${translatedCopyNote}${productPageRepeatNote}${editionNote}${canadianDocumentNote}${lateChargeBoundNote}${lineConflictNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}`,
         detail: {
           selected_raw_fees: verification.selectedRawFees,
           processed_raw_fees: verification.processedRawFees,
@@ -1240,6 +1261,7 @@ async function executeAgenticStep(
           product_page_repeat_check: productPageRepeatDetail(productPageRepeat),
           edition_effective_check: editionCheckDetail(editions),
           canadian_document_check: canadianDocumentDetail(canadianDocument),
+          late_charge_bound_check: lateChargeBoundDetail(lateChargeBound),
           line_conflict_check: lineConflictDetail(lineConflict),
           ...(nonDepositFull ? { non_deposit_document_full_count: nonDepositFindingsDetail(nonDepositFull) } : {}),
           release_repair: releaseRepair ? releaseRepairDetail(releaseRepair) : { error: releaseRepairError },
@@ -1928,6 +1950,7 @@ async function executeAgenticStep(
           category_guard_version: categoryGuard.guardVersion,
           category_guard_heading_read_failed: categoryGuard.headingReadFailed,
           category_guard_box_section_read_failed: categoryGuard.boxSectionReadFailed,
+          category_guard_collection_section_read_failed: categoryGuard.collectionSectionReadFailed,
           // v70: live card-product misfiles held live while CARD_PRODUCT_TAKEDOWN_LIVE is off (0 while on).
           category_guard_card_product_pending: categoryGuard.cardProductPending,
           category_guard_card_product_samples: categoryGuard.cardProductPendingSamples.slice(0, 10),
@@ -2301,6 +2324,7 @@ async function executeAgenticStep(
           heading_read_failed: guard.headingReadFailed,
           // v87: the box section read failed, so late payments were judged by name and line only.
           box_section_read_failed: guard.boxSectionReadFailed,
+          collection_section_read_failed: guard.collectionSectionReadFailed,
           category_guard_limit: guard.limit,
           rollback_batch_id: guard.rollbackBatchId,
           guard_version: guard.guardVersion,
@@ -3811,6 +3835,8 @@ const STEP_EXPECTED_MS: Record<string, number> = {
   "hamilton-answer-eval": 400_000,
   // Up to five memos at once, each up to two 90 s model calls, after the free answers.
   "hamilton-paid-answer-eval": 280_000,
+  // The gate replay stops starting answers at 200 s (gate-replay.ts BUDGET_MS); its slowest batch may run past it.
+  "hamilton-gate-replay": 280_000,
   // The hourly nationwide lane sync (state-lane-scheduler runNationwideLaneSync), run from its own
   // route, never the tick. Measured inside the tick over the 24 hours to 23:55 UTC 2026-10-18:
   // the first tick of each hour started its first step p50 80 s, p90 171 s, max 200 s in.
@@ -3835,7 +3861,7 @@ const STEP_EXPECTED_MS: Record<string, number> = {
  * from `/api/admin/crew/lane-sync`. The bounded HMDA identity repair requires an explicit
  * admin advance of its reviewed configuration, so the tick never starts it either.
  */
-export const TICK_EXCLUDED_STEP_KEYS = ["hamilton-answer-eval", "hamilton-paid-answer-eval", "lane-sync", HMDA_IDENTITY_REPAIR_STEP_KEY] as const;
+export const TICK_EXCLUDED_STEP_KEYS = ["hamilton-answer-eval", "hamilton-paid-answer-eval", "hamilton-gate-replay", "lane-sync", HMDA_IDENTITY_REPAIR_STEP_KEY] as const;
 /** Steps not listed above: most run in seconds, so this keeps an unknown long one safe. */
 const DEFAULT_STEP_EXPECTED_MS = 120_000;
 /**

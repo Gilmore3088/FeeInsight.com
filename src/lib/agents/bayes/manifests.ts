@@ -323,6 +323,8 @@ export function rosettaReaderManifests(versions: RosettaVersions): ReplayManifes
  * in a manifest above.
  */
 export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
+  // #2477: a receipt strategy for a status-only reopen, not a selector that replays work.
+  SAME_TEXT_COPY_STRATEGY: "v1 names the receipt `read.same_text_copy` that reopenSameTextCopies writes when it sets a wrong_document current copy to completed because an older copy of the same page holds the same text and Knox rows. The backlog pass is off (SAME_TEXT_COPY_REOPEN_LIVE false) and only counts and samples: 714 current copies at 641 banks on 2026-10-25. Nothing is replayed by the version; reopened texts reach Knox's ordinary selection, and no fee row or provider work is touched here.",
   // #2625: recorded on each fdic-financials partition, deliberately not a registry replay selector.
   FDIC_FINANCIALS_PARSER_VERSION: "v2 attaches a BankFind quarter to the bank by the certificate the FFIEC POR file says filed as its RSSD that quarter. Only quarters with stored POR certificates (2023 Q1 on) can change, and the FFIEC call-detail loader (v6) makes each such fdic-financials quarter due again when its POR shows a bank filing under a certificate that is not today's. Registering this version in REGISTRY_PARSER_VERSIONS would reload every quarter back to 2010 for no change, so there is no separate replay to count. No fee row or provider work is touched.",
   // #2052: a study method version, not a fee selector.
@@ -362,6 +364,8 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   EDITION_CHECK_VERSION: "Each verify step re-reads every live or held fee on a document whose heading or late edition line states an edition (no cursor); nothing older to replay.",
   // v1 (#2022): Canadian bank documents. A full verify step re-reads every live document's text at most hourly.
   CANADIAN_DOCUMENT_CHECK_VERSION: "First version: a verify step re-reads every live fee's document text (no cursor, at most hourly); nothing older to replay.",
+  // v1 (#1905): a late charge's cap or floor read as the late fee. On (LATE_CHARGE_BOUND_TAKEDOWN_LIVE), sampled clean 5 of 5.
+  LATE_CHARGE_BOUND_CHECK_VERSION: "First version: each verify step reads every live late_payment fee whose name is a late charge's cap or floor (no cursor) and takes it down after the second look; nothing older to replay.",
   // v8 (#1112): new no-fee, discount, allowance and loan-amount name rules. Each step's eval-verdict
   // pass reads every live fee whose name or line matches one of their prefilter clauses
   // (`V8_PREFILTER`), then the second look; Darwin reads each new row under them. There is no
@@ -560,6 +564,11 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // at another bank's ATMs fails cash advance.
     // v89 (Oct 25, #1877): overdraft admits a credit union's "Draft Protection Fee" (Knox v112's pattern);
     // names only, so no live fee changes on the Oct 25 dry run.
+    // v90 (Oct 25, #1912): a plain return charge printed in a foreign check or collection section
+    // re-files from NSF to deposited_item_return, and a late charge named for the safe deposit box
+    // re-files from late_payment to safe_deposit_box (2 move in place; 6 go to the second look).
+    // v91 (Oct 25, #1905): the non-network ATM fee admits a share withdrawal at another network's ATM
+    // (Knox v115's network table read); names only, 0 live and 0 raw rows on the Oct 25 dry run.
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",
