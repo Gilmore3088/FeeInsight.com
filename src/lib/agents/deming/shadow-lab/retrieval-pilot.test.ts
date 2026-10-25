@@ -92,6 +92,8 @@ describe("retrieval pilot rankers", () => {
     expect(pageKey("http://bank.com/fees?print=1&output=amp")).toBe("bank.com/fees");
     expect(pageKey("https://bank.com/checking?utm_source=a&amp;utm_medium=b")).toBe("bank.com/checking");
     expect(pageKey("https://bank.com/fee_schedule.php?e=350")).toBe("bank.com/fee_schedule.php?e=350");
+    expect(pageKey("https://cu.org/docs/pricing-r5.pdf?sfvrsn=8ee8d174_28")).toBe("cu.org/docs/pricing-r5.pdf");
+    expect(pageKey("https://bank.com/us/en/bonus?cm_sp=b000-80-0853")).toBe("bank.com/us/en/bonus");
   });
 
   it("should_rank_like_today_fee_link_then_profile_then_sources_then_the_rest_newest_first", () => {
@@ -139,8 +141,8 @@ describe("retrieval pilot measurement", () => {
 
   it("should_report_the_tuning_numbers_apart_from_the_holdout", () => {
     const { baseline, metadata } = result.splits.tuning;
-    expect([baseline.recallAt3, baseline.precisionAt1, baseline.staleOrWrongAt1]).toEqual([48 / 61, 32 / 45, 7]);
-    expect([metadata.recallAt3, metadata.precisionAt1, metadata.staleOrWrongAt1]).toEqual([56 / 61, 35 / 45, 1]);
+    expect([baseline.recallAt3, baseline.precisionAt1, baseline.staleOrWrongAt1]).toEqual([49 / 61, 32 / 45, 7]);
+    expect([metadata.recallAt3, metadata.precisionAt1, metadata.staleOrWrongAt1]).toEqual([57 / 61, 36 / 45, 1]);
   });
 
   it("should_write_the_report_when_the_shadow_lab_runs", () => {

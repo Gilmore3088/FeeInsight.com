@@ -86,8 +86,8 @@ export function splitFor(institutionId: number): Split {
   return createHash("sha256").update(`o2-retrieval-pilot:${institutionId}`).digest()[0] % 2 === 0 ? "holdout" : "tuning";
 }
 
-/** Query parameters that change how a page is printed or tracked, never which page it is. */
-const PRESENTATION_PARAM = /^(?:print|output|utm_[a-z]+|icid|gclid|fbclid)$/;
+/** Query parameters that change how a page is printed, tracked or cached (sfvrsn, cm_sp), never which page it is. */
+const PRESENTATION_PARAM = /^(?:print|output|utm_[a-z]+|icid|gclid|fbclid|sfvrsn|cm_sp)$/;
 
 function decode(text: string): string {
   try {

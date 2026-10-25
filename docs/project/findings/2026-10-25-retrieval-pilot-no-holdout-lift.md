@@ -43,15 +43,17 @@ holdout was scored once with those weights: `{bm25: 0.5, kind: 2, url: 0, head: 
 
 | Split | Ranker | recall@3 | recall@10 | precision@1 | Stale or wrong page first | Primary page outside the top 3 |
 |---|---|---|---|---|---|---|
-| Tuning (45) | Today | 78.7% (48/61) | 91.8% (56/61) | 71.1% (32/45) | 7 | 4 ranked lower |
-| Tuning (45) | Metadata | 91.8% (56/61) | 96.7% (59/61) | 77.8% (35/45) | 1 | 0 |
+| Tuning (45) | Today | 80.3% (49/61) | 95.1% (58/61) | 71.1% (32/45) | 7 | 4 ranked lower |
+| Tuning (45) | Metadata | 93.4% (57/61) | 100.0% (61/61) | 80.0% (36/45) | 1 | 0 |
 | **Holdout (42)** | Today | 79.2% (42/53) | 96.2% (51/53) | 78.6% (33/42) | 3 | 2 not stored, 1 ranked lower |
 | **Holdout (42)** | Metadata | 83.0% (44/53) | 96.2% (51/53) | 76.2% (32/42) | 1 | 2 not stored |
 
 recall@k is the share of relevant pages ranked in the top k, counted over every relevant page,
 stored or not. precision@1 is the share of institutions whose first page is relevant. The primary
 page is the relevant page with the most confirmed fees. False negatives: on the holdout, two
-institutions (825, 7656) have no stored copy of their confirmed schedule, so no ranker can find it.
+institutions (825, 7656) have no stored copy at the confirmed address, so no ranker can find it
+(7656's file is stored under another address, `wp-content/uploads/2024/05/...`, which the labels
+do not name).
 Today's choice also ranks 6741's confirmed schedule below its top 3; the metadata ranker does not.
 
 **On the holdout, precision@1 shows 6 wins, 7 losses and 29 ties, so the sign test gives p = 1.00.
@@ -78,8 +80,8 @@ Two caveats favour today's choice, so its numbers are an upper bound:
   and Simplicity's 2025-09 fees disclosure, which it ranked below a 2026 packet. A stated year is
   a weak sign of being current, which is why PRD section 10 says retrieval is never a currency
   check.
-- `stated_date` was set on only 21 of the 334 candidate pages, so most years came from opening text
-  or addresses.
+- `stated_date` was read on 21 of the 334 candidate pages and a date found on 11 (the other 10 read
+  as `none`), so most years came from opening text or addresses.
 
 **Rights and cost:** no new vendor, no spend and no provider call. The pilot reads only frozen
 counts that were already in our own database, taken from pages the banks publish. The fixture
