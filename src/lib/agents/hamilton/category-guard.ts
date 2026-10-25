@@ -3,10 +3,12 @@ import {
   CARD_PRODUCT_TAKEDOWN_LIVE,
   checkFeeCategory,
   CATEGORY_GUARD_VERSION,
+  genericMonthlyCharge,
   GUARDED_CATEGORIES,
   PLAIN_RETURNED_ITEM,
   refileCategory,
   refileFromLine,
+  withHeadingAbove,
   type CategoryGuardCode,
 } from "@/lib/fee-category-guard";
 import { isRetiredCategory, splitLiveCategory, FOLD_RULES_VERSION } from "@/lib/fee-fold";
@@ -16,6 +18,7 @@ import { categoryGuardFlag } from "@/lib/agents/hamilton/publish";
 import { secondLook } from "@/lib/agents/hamilton/second-look";
 import { TAXONOMY_FOLD_CHECK, TAXONOMY_FOLD_KIND } from "@/lib/agents/hamilton/taxonomy-fold";
 import { inSavepoint } from "@/lib/agents/savepoint";
+import { ACCOUNT_TYPE_HOLD_REASON } from "@/lib/agents/hamilton/account-type-hold";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 
 type SqlTag = typeof sql;
@@ -105,6 +108,12 @@ export interface RunHamiltonCategoryGuardResult {
    */
   cardProductPending: number;
   cardProductPendingSamples: CardProductPendingFee[];
+  /**
+   * v84: the stored-text read for generic monthly charges' headings failed, so this step judged them
+   * by name and line only. Recorded in the step detail so a catch-up run that took nothing down for
+   * this reason shows it.
+   */
+  headingReadFailed: boolean;
   limit: number;
   dryRun: boolean;
   rollbackBatchId: string;
@@ -229,7 +238,11 @@ export async function runHamiltonCategoryGuard(
   const limit = boundedLimit(options.limit);
   const dryRun = Boolean(options.dryRun);
   const rollbackBatchId = `category-guard-run-${options.runId}`;
-  const rows = await selectLiveGuardedFees(db, options.institutionId);
+  const selected = await selectLiveGuardedFees(db, options.institutionId);
+  // Guard v84 (#1788): generic monthly charges are judged under the heading printed above them. A
+  // failed text read judges them by name and line only, as before v84, so nothing comes down for it.
+  const headed = await withHeadingsAbove(db, selected);
+  const rows = headed ?? selected;
 
   const failures: CategoryGuardFailure[] = [];
   const passing: number[] = [];
@@ -343,6 +356,7 @@ export async function runHamiltonCategoryGuard(
     refiledFees: restore.refiled,
     liveRefiledFees: refiled.size,
     cardProductPending: pending.length,
+    headingReadFailed: headed === null,
     cardProductPendingSamples: pending.slice(0, 50),
     limit,
     dryRun,
@@ -641,6 +655,28 @@ async function ownStoredTexts(db: SqlTag, documentIds: Array<number | string | n
   return new Map(rows.map((row) => [Number(row.source_document_id), row.normalized_text]));
 }
 
+/**
+ * Guard v84 (#1788): the rows with `heading_above` read from their stored text, for generic monthly
+ * charges only (`withHeadingAbove`); only those rows' documents are read. Null when the read fails.
+ */
+async function withHeadingsAbove<T extends Pick<LivePublishedRow, "source_document_id" | "canonical_fee_key" | "fee_name" | "conditions">>(
+  db: SqlTag,
+  rows: T[],
+): Promise<T[] | null> {
+  const needing = rows.filter((row) => genericMonthlyCharge(row.canonical_fee_key, row.fee_name));
+  if (needing.length === 0) return rows;
+  let texts: Map<number, string>;
+  try {
+    texts = await ownStoredTexts(db, needing.map((row) => row.source_document_id));
+  } catch (error) {
+    console.error("category guard heading read failed:", error);
+    return null;
+  }
+  return rows.map((row) =>
+    row.source_document_id == null ? row : withHeadingAbove(row.canonical_fee_key, row.fee_name, row, texts.get(Number(row.source_document_id))),
+  );
+}
+
 /** Pure: does a takedown trace, at its price and under the type it comes back as, on its own stored text? */
 export function tracesOnOwnText(
   row: Pick<TakenDownRow, "source_document_id" | "fee_name" | "amount">,
@@ -661,8 +697,14 @@ export function tracesOnOwnText(
  * an identical fee is already live. One whose fold split places it comes back re-filed there,
  * published and verified rows alike, and the move is logged to pipeline_feedback as a fold.
  * Bounded per run; a failed read restores nothing.
+ *
+ * A twin the account type hold took down (`account_type_hold:`, #1100) still counts as the
+ * identical fee being there: the hold is a publish policy about a savings or money market
+ * account's monthly fee, so a copy of that fee coming back here would only go live until the
+ * hold's next run (#1675, as #1671 did for the business-schedule, cross-page and same-line
+ * restores).
  */
-async function restorePassingTakedowns(
+export async function restorePassingTakedowns(
   db: SqlTag,
   options: { dryRun: boolean; institutionId?: number; runId: number },
 ): Promise<{ restored: number; refiled: number }> {
@@ -685,7 +727,10 @@ async function restorePassingTakedowns(
     console.error("category guard restore read failed:", error);
     return none;
   }
-  const candidates = rows.flatMap((row) => {
+  // Guard v84 (#1788): a takedown is judged with the heading above it, as the live check took it down.
+  const headed = await withHeadingsAbove(db, rows);
+  if (!headed) return none;
+  const candidates = headed.flatMap((row) => {
     const to = restoreTarget(row);
     return to ? [{ row, to }] : [];
   });
@@ -731,7 +776,7 @@ async function restorePassingTakedowns(
            AND fp.rolled_back_reason LIKE 'category_guard:%'
            AND NOT EXISTS (
              SELECT 1 FROM published_fee_records live
-              WHERE live.rolled_back_at IS NULL
+              WHERE (live.rolled_back_at IS NULL OR live.rolled_back_reason LIKE ${`${ACCOUNT_TYPE_HOLD_REASON}:%`})
                 AND live.institution_id = fp.institution_id
                 AND live.canonical_fee_key = v.to_key
                 AND live.amount IS NOT DISTINCT FROM fp.amount

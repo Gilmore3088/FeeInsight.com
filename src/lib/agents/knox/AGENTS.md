@@ -284,6 +284,27 @@ fees found (54.7%); 56 of the 59 wrong reads are the right price under another c
 
 ## Rules versions (`extract.rules`)
 
+v109 (Oct 25, #1828): a bare "Returned payment" row ("Returned
+payment", "Returned Payment Fee", "RETURNED PAYMENT") under a loan section's title is the loan's
+returned payment fee, read as `other_lending_fee` at its own plain price under its own printed
+name (`loanReturnedPaymentRows`, `loan-section-rows.ts`). On its own the name says no loan and no
+fee word, so the row was dropped: Oregon Community FCU prints "Returned payment…… $4.95" under
+"Loan fees", "Personal Credit Line fees" and "Home Equity Line of Credit and Loan fees" (docs
+13272, 19849, 21634) and none was read. The nearest title in the row's own column decides (a
+line's first cell is the left column, any later cell the right; a full-width title heads the left
+and ends the right's). A title is a short cell with no figure or leader that ends in "fees",
+"charges", "services", "cards" or "accounts", is in capitals, or names loans alone, and never a
+cell with a price or a sentence beside it ("LATE PAYMENT | $20.00", "First Mortgage Fees | Call for
+current schedule."). A short heading that names a card or deposit product ("Visa", "Debit Cards",
+"Share Account") is a non-loan title, so "Loans … Visa … Returned Payment Fee $25.00" (institution
+6794) stays unread; a lone title right under two columns side by side heads neither column
+(institution 4410's flattened page). Under a credit card, checking or other title the row stays as
+before, and a cap ("Up to $25"), a sentence or a choice ("$15 or the minimum payment") is never
+read this way. Adds reads only. Dry run (read-only, Oct 25, the rules run on windows around the
+stored texts' bare returned payment rows; a window count, so it may be low): new reads at 12
+institutions. Oregon's (7859) matches live 83794; the other 11 have no returned payment fee live
+(431, 622, 5888, 5943, 6705, 6833, 7174, 7209, 7607, 8078, 8533). No live fee changes.
+
 v104 (Oct 22): a read whose name `isCutoffName` reads as cut off is held at publish (Hamilton's
 `cutoff_name`) however right its category and price. `withoutGluedSentence` (`glued-sentence-name.ts`,
 after the name tidy) cuts words that say nothing off the fee's own: another column's cell in front
@@ -1711,6 +1732,14 @@ whole. "IS", "ARE", "MET", "SUB" and a few more read as words, not acronyms; an 
 word before it ("SAME-DAYACH") stays in caps. Dry run Oct 21 01:16 UTC over the 22 institutions with
 an all-caps live name: 19 of the 32 renamed; 13 left (fragments and conditions waiting for #1443 and
 #1521, a same-price twin, "SAME-DAYACH", and "CBCU ATM" / "OPEFCU ATM", which are acronyms only).
+v27 (Oct 25, #1810): v22's all-caps test wanted a run of four capitals, so a name made only of short
+groups stayed in caps ("NSF FEE", "FAX FEE", "FAX OUT", "FED EX FEE", "ATM WD FEE", "NSF FEE1"). Such
+a name now counts as all caps when one of its groups is a plain three-letter word from v22's word
+list, "NON" left out (`SHOUTED_SHORT_WORDS`); the due query matches the same words. A name of acronyms
+only ("NSF ACH", "CD ROM", "NCB ATM", "NON CO OP ATM") stays as printed. The rename is a change of case
+under the v22/v26 guards; nothing is held, re-filed or taken down. Read-only count Oct 25: 14 live
+names at 13 institutions match, every one printed so on its own page and none with a same-name live
+row in its category; 13 should be renamed, and "FAX IN" waits because "Fax in" ends on a joining word.
 
 `isCutoffName` (publish's `cutoff_name` hold; in `cutoff-shape.ts` since v104, re-exported by
 `name-retidy.ts`) has a narrow live twin, `liveFragmentName` (#1443), built from the same regex pieces: a dangling joining word (lower-case "a/an/the" only;
@@ -1969,9 +1998,9 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_LAYOUT_SIGNATURE_VERSION` | — | v1 | `knox/layout-signature.ts` |
 | `KNOX_LESSONS_VERSION` | — | v4 | `knox/lessons.ts` |
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
-| `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v26 | `knox/name-retidy.ts` |
+| `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v108 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v109 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v10 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

@@ -257,7 +257,16 @@ import { withGluedFootnotePrices } from "@/lib/custom-report/glued-footnote-pric
 // (`DANGLING_AUDIENCE`, shared with Darwin's live fragment check). Publish's `cutoff_name` hold,
 // Darwin's release review and Deming's name check read the same function. On 2026-10-25 it matched
 // 2 live fees, 3 verified and 3 raw rows. The stale-read floor stays at v97. Name re-tidy stays at v26.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 108 } as const;
+// v109 (#1828): a bare "Returned payment" row under a loan section's
+// title ("Loan fees", "Personal Credit Line fees", "Consumer Loans", "LOANS") is the loan's returned
+// payment fee, read as `other_lending_fee` at its own plain price under its own printed name
+// (`loanReturnedPaymentRows`, `loan-section-rows.ts`). Before this the row named no category and
+// said no fee word, so it was dropped (Oregon Community FCU's "Returned payment…… $4.95", docs
+// 13272, 19849, 21634). The nearest title in the row's own column decides: under a credit card,
+// checking or other title it stays as before; a short product heading ("Visa") is such a title, and a
+// lone title under two side-by-side columns heads neither. Adds reads only. The stale-read floor stays at
+// v97. Name re-tidy stays at v27.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 109 } as const;
 
 export interface SpecialistRun {
   strategy: string;

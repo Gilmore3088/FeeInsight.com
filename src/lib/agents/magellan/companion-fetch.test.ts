@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { COMPANION_FETCH_STRATEGY, reviewStoredCompanions, runCompanionFetch } from "./companion-fetch";
+import { ARTICLE_COMPANION_REASON, COMPANION_FETCH_STRATEGY, reviewStoredCompanions, runCompanionFetch } from "./companion-fetch";
+import { isArticleLink } from "./link-coverage";
 
 type DbMock = ReturnType<typeof vi.fn>;
 
@@ -188,6 +189,38 @@ describe("Magellan companion fetch", () => {
 
     expect(review.checked).toBe(rows.length);
     expect(review.retired.map((page) => page.companionId)).toEqual([308, 309]);
+  });
+
+  it("retires stored article, learning and advice pages, keeping fee pages filed in such folders (#1774)", async () => {
+    // Stored companions on prod (read-only, Oct 25), all found by the companion finder.
+    const stored = (id: number, url: string, account_name: string | null) => ({ id, institution_id: 900, url, account_name, found_by_strategy: "discover.second_document" });
+    const rows = [
+      stored(854, "https://www.td.com/us/en/personal-banking/learning/money-management/types-of-checking-accounts", "checking account"),
+      stored(476, "https://www.kfcu.org/resources/advice/3-apps-to-scare-up-savings", "3 Apps To Scare Up Savings"),
+      stored(10202, "https://security1stbank.com/2022/01/how-to-choose-between-a-time-deposit-or-money-market-account/?_rt=M3wxfGZlZSBzY2hlZHVsZXwxNzkyMzE4OTUw&", "How To Choose Between A Time Deposit Or Money Market Account"),
+      stored(888, "https://www.idahofirstbank.com/post/top-5-checking-account-myths/", "Top 5 Checking Account Myths"),
+      stored(1390, "https://www.ally.com/stories/spend/what-is-overdraft-protection/", "Overdraft protection"),
+      // Kept: the bank's own fee pages, in folders the rule leaves alone or names as fee documents.
+      stored(2496, "https://security1stbank.com/personal-banking/personal-checking-accounts/", "Personal Checking Accounts"),
+      stored(1964, "https://www.schoolsfirstfcu.org/globalassets/pdf/disclosures/mk360-fees.pdf", null),
+      stored(990, "https://www.unitedone.example/learn/resources/avoid-fees", "Avoid Fees"),
+      stored(991, "https://www.bank.example/education-center/service-fees", "Service Fees"),
+      // Kept: an article link a person gave, as the plain fetch keeps a person's locked correction.
+      { ...stored(992, "https://www.bank.example/learning/money-management/types-of-checking-accounts", null), found_by_strategy: "supply.hand_supplied" },
+      { ...stored(993, "https://www.bank.example/stories/spend/what-is-overdraft-protection/", null), found_by_strategy: "discover.operator_schedule" },
+    ];
+    const db = createDb(rows);
+
+    const review = await reviewStoredCompanions(asDb(db), { stateCode: "NJ", institutionId: null });
+
+    expect(review.retired.map((page) => page.companionId)).toEqual([854, 476, 10202, 888, 1390]);
+    // The two hand-given links are articles by the rule; only who gave them keeps them.
+    expect(rows.filter((row) => row.id === 992 || row.id === 993).every((row) => isArticleLink(row.url))).toBe(true);
+    const reasons = db.mock.calls
+      .filter((call) => templateText(call[0]).includes("SET status = 'rejected'") && !templateText(call[0]).includes("institution_sources other"))
+      .map((call) => call[1]);
+    expect(new Set(reasons)).toEqual(new Set([ARTICLE_COMPANION_REASON]));
+    expect(ARTICLE_COMPANION_REASON).toMatch(/^not_consumer_fee_page: /);
   });
 
   it("retires a stored page on another institution's own website, even one found by hand", async () => {

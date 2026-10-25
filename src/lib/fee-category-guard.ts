@@ -28,6 +28,11 @@ export interface CategoryGuardContext {
   conditions?: string | null;
   /** The highest NSF or insufficient-funds price elsewhere on the same schedule, when known. */
   document_nsf_amount?: number | string | null;
+  /**
+   * v84 (#1788): the line printed right above the fee's own line in its stored text
+   * (`headingAboveExcerpt`), when the caller read it. Read only for a generic monthly charge.
+   */
+  heading_above?: string | null;
 }
 
 export type CategoryGuardVerdict =
@@ -229,8 +234,15 @@ const CARD_SERVICE_ELSEWHERE = String.raw`\bbill payer\b|\baccount clos\w*`;
  * balance_inquiry is retired and folds into this type (v25). v71: verifying an ATM transaction
  * ("Verification of ATM Transaction" $3, 96092) is research. A denied ATM transaction ("ATM
  * Denials", 12 live rows) is left for James: it may be the network ATM fee for a failed attempt.
+ * v83 (#1690, held by Darwin's peer check): research or an investigation that lists ATM items
+ * ("Account Investigation - Share / ATM / ACH (per item after 60 days)" $10, raw 750417) and ATM
+ * photos ("ATM Photos at Credit Union" $10, raw 790236) are account research (`ATM_RESEARCH`); a
+ * transaction that overdraws a share ("ATM Negative Share Transaction" $10, raw 790212) is a
+ * negative balance; and an additional card ("Additional ATM/Debit Card" $10, raw 750400; "ATM/Debit:
+ * Each Additional Card") prices the card. "Each additional ATM withdrawal" names no card and stays.
  */
-const NOT_ATM_USE = String.raw`\bdisput\w*|\b(?:photo ?)?cop(?:y|ies)\b|\bnegative\s+balance\b|\btreasurer|\bcashier|\bofficial\s+checks?\b|\btemporary\s+checks?\b|\bcut[- ]?off\s+times?\b|\blost\b|\bstolen\b|\b(?:un)?block(?:ed)?\s+cards?\b|\breplac|\bverification of\b`;
+const ATM_RESEARCH = String.raw`\binvestigat\w*|\bresearch\w*|\bphotos?\b(?!\s*(?:id|identification)\b)`;
+const NOT_ATM_USE = String.raw`${ATM_RESEARCH}|\bnegative\s+(?:share|savings|account)\b|\badditional\s+(?:(?:atm|debit|visa|check|mastercard)\s*\/?\s*)*cards?\b(?!\s*-?\s*holders?\b)|\bdisput\w*|\b(?:photo ?)?cop(?:y|ies)\b|\bnegative\s+balance\b|\btreasurer|\bcashier|\bofficial\s+checks?\b|\btemporary\s+checks?\b|\bcut[- ]?off\s+times?\b|\blost\b|\bstolen\b|\b(?:un)?block(?:ed)?\s+cards?\b|\breplac|\bverification of\b`;
 
 /**
  * v70 (#1765, card-product misfiles; #1690): a fee for the card itself is not a fee for using another
@@ -355,7 +367,36 @@ export function borrowedDirection(
 }
 
 /**
- * v84 (#1831): a refundable safe deposit box key deposit is money the renter gets back when both
+ * v82 (#1662): what keeps a night deposit name that mentions a key deposit filed as the service.
+ * v66 exempted lost, replac, service, per month, monthly, annual and rental anywhere in the name,
+ * unanchored, so "Night Depository Services: Key Deposit" (a section header Knox carried in),
+ * "... (refundable; service fee billed monthly)" and "... - Serviced Accounts" passed. Each word now
+ * has to sit on what it qualifies, with word boundaries:
+ * - a lost or replaced key: "lost" or "replac..." within a few words of "key";
+ * - the service itself: "night deposit(ory) service(s)" or "night drop service", not a header
+ *   ("Services:", "Services -") and not running straight into "Key" ("Night Deposit Service Key
+ *   Deposit", where the key deposit is the item);
+ * - a periodic fee: "monthly/annual/yearly fee or charge", "fee/charge per month/monthly/annually";
+ * - the depository's rental or period: "night depository rental", "night deposit, annual".
+ */
+const NIGHT_DEPOSIT_NOUN = String.raw`(?:night\s+deposit(?:ory)?(?:\s+box)?|night\s+drop|depository|drop\s+box)`;
+const NIGHT_DEPOSIT_KEY_DEPOSIT_EXEMPT = new RegExp(
+  [
+    String.raw`\b(?:lost|replac\w*)\b[^|]{0,15}\bkeys?\b`,
+    String.raw`\bkeys?\b[^|]{0,15}\b(?:lost|replac\w*)\b`,
+    String.raw`\b(?:night\s+deposit(?:ory)?|depository|night\s+drop)\s+services?\b(?!\s*[:\-–—|/,]|\s+keys?\b)`,
+    String.raw`\b(?:monthly|annual|yearly)\s+(?:fee|charge|service\s+charge)\b`,
+    String.raw`\b(?:fee|charge)\s+(?:per\s+month|per\s+year|monthly|annually|yearly)\b`,
+    String.raw`\b${NIGHT_DEPOSIT_NOUN}\s+(?:rental|rent)\b`,
+    String.raw`\b(?:monthly|annual|yearly)\s+${NIGHT_DEPOSIT_NOUN}\s+(?:fee|charge)\b`,
+    String.raw`\$\s*\d[\d.,]*\s*\/\s*(?:mo|month|yr|year)\b`,
+    String.raw`\b${NIGHT_DEPOSIT_NOUN}[\s,:-]*(?:per\s+month|monthly|annual(?:ly)?|per\s+year|yearly)\b`,
+  ].join("|"),
+  "i",
+);
+
+/**
+ * v85 (#1831): a refundable safe deposit box key deposit is money the renter gets back when both
  * keys come home, not a charge for the box ("Safety Deposit Box Key Deposit at Account Opening (per
  * key)" $5, Central Bank 152139; "Key Deposit (refundable)" $100, "Safe Deposit Box Security Deposit
  * (paid at opening ..., refunded upon returning both keys)" $40). The name has to name the deposit
@@ -373,7 +414,7 @@ const SAFE_DEPOSIT_KEY_DEPOSIT = new RegExp(
   "i",
 );
 /**
- * v84 (#1831): what keeps a safe deposit box name that mentions a key deposit filed as the box fee.
+ * v85 (#1831): what keeps a safe deposit box name that mentions a key deposit filed as the box fee.
  * Each word sits on what it qualifies (Darwin lesson issue-1662-exemption-sits-on-its-noun):
  * - a lost, replaced, duplicate, missing, damaged or stolen key, or the loss of a key: the lost-key
  *   and replacement fees stay safe deposit box fees ("Key Deposit/Lost Key", "Key Deposit / Replacement");
@@ -747,11 +788,15 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // Depository Key Deposit", "Night Deposit Box Key (Refundable Deposit)", "Deposit for Receptacle
     // Key") is a key charge, not the service. A lost or replaced key stays the night deposit fee, and so
     // does a service, monthly, annual or rental line that names a key deposit (as for bags).
-    exclude: /(^(?!.*(lost|replac|per month|monthly|annual|rental)).*(\bbags?\b|zipper|pouch|wrapper|strap)|^(?!.*(lost|replac|service|per month|monthly|annual|rental)).*(\bkeys?\b[^|]{0,30}?\b(deposit|refundable)\b|\bdeposit for\b[^|]{0,30}\bkeys?\b|\bsecurity deposit\b[^|]{0,30}\bkeys?\b))/i,
+    // v82 (#1662): those exemptions are tied to the key or the night deposit noun
+    // (`NIGHT_DEPOSIT_KEY_DEPOSIT_EXEMPT`), so a section header ("Night Depository Services: Key
+    // Deposit") or an unrelated clause ("service fee billed monthly", "customer service hours")
+    // no longer lets a key deposit through.
+    exclude: new RegExp(String.raw`(^(?!.*(lost|replac|per month|monthly|annual|rental)).*(\bbags?\b|zipper|pouch|wrapper|strap)|^(?!.*(?:${NIGHT_DEPOSIT_KEY_DEPOSIT_EXEMPT.source})).*(\bkeys?\b[^|]{0,30}?\b(deposit|refundable)\b|\bdeposit for\b[^|]{0,30}\bkeys?\b|\bsecurity deposit\b[^|]{0,30}\bkeys?\b))`, "i"),
   },
   // v60: a night deposit bag, its key or a bag bundle is not a safe deposit box fee (UAT 104666,
   // "Deposit Bags & Night Deposit Drop Box: Disposable 9" x 12" bundle" $15; 6/6 on source, Oct 9).
-  // v84 (#1831): a refundable key deposit (`SAFE_DEPOSIT_KEY_DEPOSIT`) is not a charge for the box,
+  // v85 (#1831): a refundable key deposit (`SAFE_DEPOSIT_KEY_DEPOSIT`) is not a charge for the box,
   // as v66 has it for the night deposit. A lost, replaced or duplicate key, drilling and the box's
   // annual or rental fee stay here (`SAFE_DEPOSIT_KEY_DEPOSIT_EXEMPT`); so do late fees.
   safe_deposit_box: {
@@ -954,12 +999,31 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // v81 (Oct 22): "Returned Check Deposit" / "Returned Item Deposit" names a returned deposited item
 // (the shadow lab's answer keys, #2536: $5 and $32 refused before). It only admits names; no fee that
 // passes today fails. Rows rejected as category_mismatch under an older guard are judged once more.
-// v84 (Oct 25, #1831; v82 and v83 are taken by other open PRs): a refundable safe deposit box key
+// v82 (Oct 25, #1662): the night deposit key-deposit refusal's exemptions are tied to the key or the
+// night deposit noun (`NIGHT_DEPOSIT_KEY_DEPOSIT_EXEMPT`), with word boundaries, so a "Services:"
+// header or an unrelated "service"/"monthly" clause no longer keeps a key deposit filed as the
+// service. Read-only dry run (Oct 25): none of the 142 live night deposit names that name a key
+// changes verdict; the guard catch-up re-checks every live fee once.
+// v83 (Oct 25, #1690): the non-network ATM fee refuses research, investigation and photo names
+// (re-filed to account research on Darwin's path), an ATM transaction that overdraws a share, and an
+// additional card (`NOT_ATM_USE`). Read-only dry run, Oct 25: 4 of 2,290 live atm_non_network fees
+// fail and go to the second look; the live sweep's restore list is unchanged.
+// v84 (Oct 25, #1788): a monthly maintenance fee named only as a monthly fee or service charge
+// (`genericMonthlyCharge`) fails when the cell before its name on its own line, or the heading its
+// stored text prints above it (`heading_above`, `headingAboveExcerpt`), names another service:
+// Positive Pay, ACH, bill pay, online banking, an ATM, debit or gift card, paper statements, a
+// benefits package (`otherServiceMonthlyCharge`). Florida Capital's Positive Pay rows (56683, 56684)
+// and TD's paper statement fee (152525, already down for #1774) are the cases. A line that says how
+// to avoid the fee, and a heading inside a feature list, keep it. A line printed more than once is
+// read under a heading only when every place's heading names another service. Read-only dry run,
+// Oct 25: 23 of the 1,951 live generic monthly charges fail, each read on its stored text; Darwin's verify and
+// Hamilton's live guard (with its takedown restore) read the heading from the stored text.
+// v85 (Oct 25, #1831): a refundable safe deposit box key
 // deposit (`SAFE_DEPOSIT_KEY_DEPOSIT`) fails the safe deposit box rule, as v66 does for the night
 // deposit; a lost, replaced or duplicate key, drilling and the box's annual or rental fee stay
 // (`SAFE_DEPOSIT_KEY_DEPOSIT_EXEMPT`). No type holds a key deposit, so the live ones go to the second
 // look and come down. Dry-run count in the PR.
-export const CATEGORY_GUARD_VERSION = 84;
+export const CATEGORY_GUARD_VERSION = 85;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -1039,6 +1103,11 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
   // v69: an ATM dispute or a copy of a card sale is research.
   // v71: verifying an ATM transaction is research too (96092, #1773).
   { from: "atm_non_network", to: "account_research", when: /\bdisput|\b(?:photo ?)?cop(?:y|ies) of\b|\bverification of\b/i },
+  // v83 (#1690): an investigation or research listing ATM items, and ATM photos, are research too.
+  // A card's own research or film fee ("ATM Card Research/Film Fee" $75, Rally FCU, keyed as the
+  // retired card dispute type) is not re-filed: the fold gives a card dispute without a dispute word
+  // no home (`card_dispute` in fee-fold.ts), so it fails and is not read.
+  { from: "atm_non_network", to: "account_research", when: new RegExp(ATM_RESEARCH, "i"), unless: /\bcards?\b/i },
   // v70: an ATM-named bill payer service is bill pay, and a card charge on closing the account early
   // is an early closure (`CARD_SERVICE_ELSEWHERE`).
   { from: "atm_non_network", to: "bill_pay", when: /\bbill payer\b/i },
@@ -1292,6 +1361,8 @@ export function checkFeeCategory(
   if (activityReason) return { ok: false, code: "schedule_contradicts", reason: activityReason.reason };
   const addOnReason = addOnOnLine(canonicalFeeKey, context);
   if (addOnReason) return { ok: false, code: "schedule_contradicts", reason: addOnReason };
+  const serviceReason = otherServiceMonthlyCharge(canonicalFeeKey, name, context);
+  if (serviceReason) return { ok: false, code: "schedule_contradicts", reason: serviceReason };
   const sustainedReason = sustainedOverdraftOnLine(canonicalFeeKey, context);
   if (sustainedReason) return { ok: false, code: "schedule_contradicts", reason: sustainedReason };
   const atmTableReason = cashAdvanceFromAtmTable(canonicalFeeKey, context);
@@ -1531,6 +1602,169 @@ function addOnOnLine(canonicalFeeKey: string, context: CategoryGuardContext | un
   const excerpt = context?.conditions?.match(/\bexcerpt=([\s\S]*)$/)?.[1];
   const named = excerpt ? plainQuotes(excerpt).match(ADD_ON_LINE) : null;
   return named ? `the source line sells an optional add-on ("${named[0]}"), not the account's monthly maintenance fee` : null;
+}
+
+/**
+ * v84 (#1788): a monthly charge whose name says only that it is a monthly fee or service charge
+ * ("Monthly fee", "Service charge for six or more accounts") is named by what its schedule prints
+ * around it, and Knox kept only the generic words. TD's "Paper statements | $3 monthly fee" (152525)
+ * went live as "Monthly fee", and Florida Capital's Positive Pay rows ("POSITIVE PAY for ACH and
+ * Checks" over "Service charge for one up to five accounts | $25 per month" and "Service charge for
+ * six or more accounts | $5 per month per account", 56683 and 56684) went live as monthly maintenance.
+ * Two readings place such a fee under another service:
+ * - the cell right before its name on its own line (`excerpt=`) names the service ("Paper
+ *   statements", "Lifestyle Benefits");
+ * - the heading printed on the line right above it in the stored text (`heading_above`, read by
+ *   `headingAboveExcerpt`) names the service ("Positive Pay", "ACH Origination", "BILL PAY",
+ *   "ATM / Debit Card Fees", "Visa® Gift Card").
+ * A name that says anything more ("Perks Checking Monthly service charge", "Bill Payer (monthly fee)")
+ * is read by its own words, as before. A service line must open with the service, so a feature list
+ * ("Debit card available", "Free Online Banking", "Card Management in our mobile banking app") never
+ * names one. None of the 50 types holds a Positive Pay, ACH, scanner, bill pay, card, paper statement
+ * or benefits package charge, so the fee fails rather than moving.
+ */
+const GENERIC_MONTHLY_CHARGE =
+  /^[\W_]*(?:(?:monthly|quarterly|account|maintenance|service)\s+){0,3}(?:fees?|charges?|maintenance|service)(?:\s*\(?\s*(?:per|a|each)\s+(?:month|statement(?:\s+cycle)?|cycle|account(?:\s+number)?)\s*\)?)?(?:\s+for\s+(?:[\w-]+\s+){0,4}accounts?)?[\W_]*$/i;
+const GENERIC_MONTHLY_WORD = /\b(?:monthly|quarterly|maintenance|service)\b/i;
+/** A name that says which account, card, plan or service it is for names more than a monthly charge. */
+const NAMES_ITS_OWNER = /\b(?:checking|savings|share|draft|money\s+market|club|now|dda|business|personal|consumer|student|senior|card|bill|plan|program)\b/i;
+/** A service with its own monthly charge, named at the start of a heading or cell. */
+const OTHER_SERVICE_START = new RegExp(
+  String.raw`^(?:(?:business|personal|consumer|commercial|retail|fee\s+schedule\s+for|the)\s+){0,2}(?:` +
+    [
+      String.raw`positive\s*pay\b`,
+      String.raw`ach\b`,
+      String.raw`remote\s+deposit`,
+      String.raw`merchant\b`,
+      String.raw`(?:(?:internet|online)\s+)?bill\s*pay(?:er|ments?)?\b`,
+      String.raw`(?:internet|online|mobile)\s+banking\b`,
+      String.raw`(?:(?:atm|debit|check|gift|prepaid|credit|visa|master\s*card)[®™]?\s*(?:or|and|&|\/)?\s*){1,3}cards?\b(?!\s+(?:purchases?|transactions?|usage|activity))`,
+      String.raw`paper\s+(?:statements?|stmts?)\b`,
+      String.raw`returned?\s+mail\b`,
+      String.raw`lockbox\b`,
+      String.raw`sweeps?\b`,
+      String.raw`zero\s+balance\b`,
+      String.raw`treasury\b`,
+      String.raw`cash\s+management\b`,
+      String.raw`safe\s+deposit\b`,
+      String.raw`night\s+deposit\b`,
+      String.raw`lifestyle\s+benefits\b`,
+      String.raw`identity\s+(?:theft|protection)\b`,
+    ].join("|") +
+    ")",
+  "i",
+);
+/** Words that make a short line a feature or a condition, not a heading. */
+const FEATURE_LINE = /\b(?:free|no\s+(?:charge|fee|cost|monthly)|included|includes?|available|unlimited|rewards?|privileges?|with|waive[ds]?|requires?|required|enroll(?:ed)?|must|opt|avoid|discount(?:ed)?|reinstated|eligible)\b|[?.!]\s*$/i;
+const MAX_SERVICE_HEADING_WORDS = 8;
+
+/** A short line or cell that opens by naming another service, or null. */
+function serviceHeading(line: string | null | undefined): string | null {
+  const plain = plainQuotes(line ?? "").replace(/^[\s\-–—•·*#>›]+|[\s*|:]+$/g, "").trim();
+  if (!plain || /[$|]|\d/.test(plain) || plain.length > 80) return null;
+  if (plain.split(/\s+/).length > MAX_SERVICE_HEADING_WORDS || FEATURE_LINE.test(plain)) return null;
+  return OTHER_SERVICE_START.test(plain) ? plain : null;
+}
+
+/** Pure: the fee is a monthly maintenance fee named only as a monthly fee or service charge. */
+export function genericMonthlyCharge(canonicalFeeKey: string | null | undefined, feeName: string | null | undefined): boolean {
+  const name = plainQuotes(feeName ?? "").trim();
+  return canonicalFeeKey === "monthly_maintenance" && GENERIC_MONTHLY_WORD.test(name) && !NAMES_ITS_OWNER.test(name) && GENERIC_MONTHLY_CHARGE.test(name);
+}
+
+/** A priced row whose label is itself a generic monthly charge: a sibling row under the same heading. */
+function genericSiblingRow(line: string): boolean {
+  if (!/\$|\bfree\b|\bno charge\b/i.test(line)) return false;
+  const label = line.split(/\||\$/)[0].replace(/[.…_\s:]+$/, "");
+  return GENERIC_MONTHLY_WORD.test(label) && GENERIC_MONTHLY_CHARGE.test(label);
+}
+
+/** A short unpriced line that is itself a service or a feature: part of a list, not over one. */
+function listLine(line: string | undefined): boolean {
+  const plain = plainQuotes(line ?? "").replace(/^[\s\-–—•·*#>›]+|[\s*|:]+$/g, "").trim();
+  if (!plain || /[$|]/.test(plain) || plain.split(/\s+/).length > MAX_SERVICE_HEADING_WORDS) return false;
+  return OTHER_SERVICE_START.test(plain) || FEATURE_LINE.test(plain);
+}
+
+/**
+ * Pure: the heading over a fee's own line, from the lines printed above it (nearest last). Up to three
+ * sibling rows priced as generic monthly charges are passed over ("Service charge for one up to five
+ * accounts | $25 per month" between Florida Capital's "POSITIVE PAY for ACH and Checks" and 56684).
+ * A line that sits under another short service or feature line is part of a list ("ATM debit card /
+ * Online banking / Online bill pay / $5.00 Service Charge per statement cycle", a product page's
+ * features over the account's own charge), so no heading is read. Null when no line is in reach.
+ */
+export function headingFromLinesAbove(linesAbove: readonly string[]): string | null {
+  const lines = linesAbove.map((line) => line.trim()).filter(Boolean);
+  let index = lines.length - 1;
+  for (let skipped = 0; index >= 0 && skipped < 3 && genericSiblingRow(lines[index]); skipped += 1) index -= 1;
+  const heading = lines[index];
+  if (!heading || heading.length > 80 || listLine(lines[index - 1])) return null;
+  return heading;
+}
+
+/**
+ * Pure: the heading printed above the fee's own line (`excerpt=` in its conditions) in its stored
+ * text (`headingFromLinesAbove`); null when the excerpt is not found on the text, or is printed more
+ * than once and not every place's heading names another service. The guard reads it
+ * only for a generic monthly charge (`genericMonthlyCharge`).
+ */
+export function headingAboveExcerpt(text: string | null | undefined, conditions: string | null | undefined): string | null {
+  const excerpt = conditions?.match(/\bexcerpt=([\s\S]*)$/)?.[1];
+  if (!text || !excerpt) return null;
+  const probe = excerpt.replace(/^["\s]+|["\s]+$/g, "").slice(0, 60).trim();
+  if (probe.length < 8) return null;
+  const places: number[] = [];
+  for (let at = text.indexOf(probe); at !== -1; at = text.indexOf(probe, at + 1)) places.push(at);
+  if (places.length === 0 || places[0] <= 0) return null;
+  if (places.length === 1) return headingAtPlace(text, places[0]);
+  // The same line printed more than once (under a checking section and a Positive Pay section) has
+  // no one heading: a heading is read only when every place's heading names another service (123617,
+  // "Monthly Fee | None" under two card headings), so a real maintenance fee never comes down for it.
+  const headings = places.map((at) => headingAtPlace(text, at));
+  return headings.every((heading) => serviceHeading(heading)) ? headings[0] : null;
+}
+
+function headingAtPlace(text: string, at: number): string | null {
+  const lines = text.slice(Math.max(0, at - 600), at).split(/\n+/);
+  // The excerpt may start mid-line: the text before it on its own line is not a line above.
+  return lines.length < 2 ? null : headingFromLinesAbove(lines.slice(0, -1));
+}
+
+/**
+ * Pure: the guard context with `heading_above` read from the fee's stored text, for a generic monthly
+ * charge only (every other fee is returned as it is, so no text is needed for it). Darwin's verify
+ * and Hamilton's live guard both call it with the document text they hold.
+ */
+export function withHeadingAbove<T extends CategoryGuardContext>(
+  canonicalFeeKey: string | null | undefined,
+  feeName: string | null | undefined,
+  context: T,
+  text: string | null | undefined,
+): T {
+  if (!genericMonthlyCharge(canonicalFeeKey, feeName) || !text) return context;
+  return { ...context, heading_above: headingAboveExcerpt(text, context.conditions) };
+}
+
+/**
+ * The fee's own line says how to avoid it (a balance, "In order to avoid the $5 monthly maintenance
+ * fee, your 10 debit card purchases must settle", 104536 under "Debit Card Purchases"): the account's
+ * own monthly fee, whatever is printed above it.
+ */
+const ACCOUNT_WAIVER_ON_LINE = /\b(?:balances?|minimum|min\.|avoid(?:ed)?|waive[ds]?|waiver)\b/i;
+
+function otherServiceMonthlyCharge(canonicalFeeKey: string, name: string, context: CategoryGuardContext | undefined): string | null {
+  if (!genericMonthlyCharge(canonicalFeeKey, name)) return null;
+  const excerpt = context?.conditions?.match(/\bexcerpt=([\s\S]*)$/)?.[1];
+  if (excerpt && ACCOUNT_WAIVER_ON_LINE.test(excerpt)) return null;
+  if (excerpt && name.length >= 3) {
+    const cells = plainQuotes(excerpt).replace(/^["\s]+|["\s]+$/g, "").split("|");
+    const at = cells.findIndex((cell) => cell.toLowerCase().includes(name.toLowerCase().replace(/^[\W_]+|[\W_]+$/g, "")));
+    const cell = at > 0 ? serviceHeading(cells[at - 1]) : null;
+    if (cell) return `the source line prices "${name}" in the row of "${cell}", that service's charge, not the account's monthly maintenance fee`;
+  }
+  const heading = serviceHeading(context?.heading_above);
+  return heading ? `the source prints "${name}" under "${heading}", that service's charge, not the account's monthly maintenance fee` : null;
 }
 
 /**

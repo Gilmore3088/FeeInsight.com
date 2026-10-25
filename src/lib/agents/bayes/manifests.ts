@@ -339,7 +339,8 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v1 (#1909): Darwin re-reads every live fee on a Spanish copy of a schedule each verify step (no
   // cursor; a few hundred rows), so there is no backlog for a replay to count.
   TRANSLATED_COPY_CHECK_VERSION: "Each verify step re-reads every live fee on a Spanish-copy document (no cursor); nothing to replay.",
-  PRODUCT_PAGE_REPEAT_CHECK_VERSION: "First version: each verify step re-reads every live product-page fee with a same-price schedule twin (no cursor); nothing older to replay.",
+  // v2 (#1910): the name cover reads NSF/insufficient, OD/overdraft and a paid NSF item/overdraft as one item.
+  PRODUCT_PAGE_REPEAT_CHECK_VERSION: "Each verify step re-reads every live product-page fee with a same-price schedule twin (no cursor), so version 2's wider name cover reaches every live fee on the next step; nothing older to replay.",
   // v1 (#1915): schedule editions not yet in effect. Every verify step reads every live fee on a dated document.
   EDITION_CHECK_VERSION: "First version: each verify step re-reads every live or held fee on a document whose heading states an edition (no cursor); nothing older to replay.",
   // v1 (#2022): Canadian bank documents. A full verify step re-reads every live document's text at most hourly.
@@ -519,7 +520,12 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // v79 (Oct 20, #1830): bill pay refuses a name its own line puts under a stop payment.
     // v80 (Oct 20, #1912, #1905): PIN replacements, home equity stop payments, ATM-table cash
     // advances and cut-lead-in $0s fail; non-customer cashier's checks wait behind a switch (off).
-    // v84 (Oct 25, #1831): a refundable safe deposit box key or security deposit fails the box rule.
+    // v82 (Oct 25, #1662): the night deposit key-deposit exemptions are tied to the key or the noun.
+    // v83 (Oct 25, #1690): the non-network ATM fee refuses research, photo, negative-share and
+    // additional-card names.
+    // v84 (Oct 25, #1788): a generic monthly charge under another service's heading or cell fails
+    // monthly maintenance (Positive Pay, ACH, bill pay, cards, paper statements).
+    // v85 (Oct 25, #1831): a refundable safe deposit box key or security deposit fails the box rule.
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",

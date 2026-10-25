@@ -194,7 +194,7 @@ describe("hand re-files of misread live fees (retidy v15 review, Oct 9)", () => 
       // account, so its rename no longer applies (the row has been down since Oct 16, #1196).
       // Guard v74 (#2018) does the same for 131129: a withdrawal at DFCU's own ATM is not a
       // non-network ATM fee (that row has been down since Oct 16, #1196).
-      // Guard v84 (#1831) does the same for 73876: a refundable key deposit is not a box fee.
+      // Guard v85 (#1831) does the same for 73876: a refundable key deposit is not a box fee.
       if (refile.feePublishedId === 70319 || refile.feePublishedId === 131129 || refile.feePublishedId === 73876) {
         expect(passesDarwinChecks(refile.to, refile.name, refile.amount)).toBe(false);
         continue;
@@ -346,7 +346,7 @@ describe("hand fixes of joined or misfiled live fees (#1512, #1513; James, Oct 1
   ];
 
   it("renames or re-files all eight while they still read as listed (73876 no longer: guard v84)", () => {
-    // Guard v84 (#1831) refuses 73876's new name "Key Deposit Fee" (a refundable key deposit), so
+    // Guard v85 (#1831) refuses 73876's new name "Key Deposit Fee" (a refundable key deposit), so
     // its rename is no longer planned.
     expect(planHandRefiles(ROWS).map((move) => [move.refile.feePublishedId, move.currentKey, move.refile.to, move.refile.name])).toEqual([
       [139453, "rush_card", "card_replacement", "Credit or debit card replacement fee"],

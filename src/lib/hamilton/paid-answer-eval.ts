@@ -21,10 +21,14 @@ import { dollarsFromUnit } from "./monetary-units";
  * killed function still leaves the reservation, so a retried or repeated run never goes past five.
  * One sample a day goes through the Simulate read instead (#1079): a tested price against the
  * answer's own peer layer, written by the same prompt as the live screen, form-checked with the
- * shared evidence gate and tied to live values like the memo. One more is a written answer (#1079):
- * the Analyze screen's own prompt and tools for the question, form-checked with the route's evidence
- * gate and its own dollar figures tied to live values for the asked fee, money its tools read from
- * other sources (call reports, national data) accepted as stated.
+ * shared evidence gate and tied to live values like the memo; the one output gate's shadow verdict
+ * on it is recorded as its own run (`simulate_read`, #1077 step 4). One more is a written answer
+ * (#1079): the Analyze screen's own prompt and tools for the question, its form scored with the one
+ * output gate's verdict (`gateAnswer`, #1077 step 7: held fails, and so does any problem today's
+ * evidence check finds) and its own dollar figures tied to live values for the asked fee. Each filing
+ * figure the gate's sentence binding supports is re-read live from its filing row and must still
+ * match; other money its tools read from other sources (national data, a filing sentence left as
+ * Hamilton's reading) is accepted as stated.
  * One more is a report's answer page (#1079): the Reports screen's own inputs and section call for
  * the institution, its first verified draft scored by the figure check and the partner review, and
  * the bank's own fee amounts it states tied to live values. Every paid path is now sampled.
@@ -33,7 +37,14 @@ import { dollarsFromUnit } from "./monetary-units";
 
 import { sql } from "@/lib/data-store/connection";
 import type { SqlTag } from "@/lib/agents/hamilton/studies/common";
-import { liveCatalogReader, reconcileMemoText, reconcileSimulateText, reconcileWrittenText, type LiveReader } from "./answer-correctness";
+import {
+  liveCatalogReader, liveFilingReader, reconcileMemoText, reconcileSimulateText, reconcileWrittenText, supportedFilingClaims,
+  type FilingReader, type LiveReader,
+} from "./answer-correctness";
+import { claimEvidenceFacts } from "./claim-evidence";
+import { gateAnswer, type GateFailureCode, type GateStatus } from "./output-gate";
+import type { GateShadowRecord } from "./output-gate-shadow";
+import type { GateShadowContext } from "./output-gate-shadow-store";
 import { answer, EVAL_QUESTION_IDS, pickEvalInstitutions, pickProQuestions, summarizeCorrectness, type Answered, type CorrectnessSummary } from "./answer-eval";
 import { buildFeeResearchEvidence } from "./evidence-contract";
 import { writeStorylineMemo, type MemoClient } from "./memo";
@@ -90,7 +101,17 @@ export interface PaidSampleResult extends PaidCandidate {
   correctness: string[] | null;
   /** Dollar figures checked in the memo. */
   figures: number;
+  /** Written answers: the output gate's verdict that scored form, beside what today's evidence check said. */
+  gate?: { status: GateStatus; critical: GateFailureCode[]; checkPassed: boolean };
+  /** Written answers: supported filing claims re-read live; absent when none were. */
+  filings?: number;
 }
+
+/** Records a shadow verdict as its own run (output-gate-shadow-store.ts); never throws. */
+export type ShadowRecorder = (record: GateShadowRecord, context: GateShadowContext) => Promise<unknown>;
+
+const recordShadowRun: ShadowRecorder = async (record, context) =>
+  (await import("./output-gate-shadow-store")).recordGateShadow(record, context);
 
 export interface PaidPathSummary {
   path: PaidPath;
@@ -259,13 +280,24 @@ async function simulateUp(
   answered: Answered & { research: FeeResearch },
   input: SimulateInput,
   live: LiveReader,
-  options: { subjectKey: string; agentRunId?: number; client?: MemoClient },
+  options: { subjectKey: string; agentRunId?: number; client?: MemoClient; recordShadow: ShadowRecorder },
 ): Promise<PaidSampleResult> {
+  // The one output gate's shadow verdict on the read (#1077 step 4), recorded as its own run once the
+  // read is back. It never changes the score: a shadow that fails is logged and dropped.
+  const shadows: Array<() => GateShadowRecord> = [];
   const result = await writeSimulateRead(input, {
     client: options.client,
     institutionId: candidate.institutionId,
     tracking: { operation: PAID_EVAL_SIMULATE_OPERATION, subjectKey: options.subjectKey, agentRunId: options.agentRunId },
+    onGateShadow: (compute) => { shadows.push(compute); },
   });
+  for (const compute of shadows) {
+    try {
+      await options.recordShadow(compute(), { userId: null, researchInstitutionId: candidate.institutionId });
+    } catch (error) {
+      console.error("[hamilton] the paid eval's shadow output gate could not be recorded", error);
+    }
+  }
   const sample = { ...candidate, question: `Simulate ${input.feeCategory} at $${input.proposedFee.toFixed(2)}` };
   if (result.status !== "written") {
     return { ...sample, path: "simulate", status: "unavailable", failures: [result.reason], correctness: null, figures: 0 };
@@ -366,7 +398,7 @@ async function writtenUp(
   candidate: PaidCandidate,
   answered: Answered & { research: FeeResearch },
   live: LiveReader,
-  options: { subjectKey: string; agentRunId?: number; written: WrittenAnswerWriter },
+  options: { subjectKey: string; agentRunId?: number; written: WrittenAnswerWriter; filings: FilingReader },
 ): Promise<PaidSampleResult> {
   const result = await options.written({
     institutionId: candidate.institutionId,
@@ -377,10 +409,27 @@ async function writtenUp(
   if (result.status !== "written") {
     return { ...candidate, path: "written_answer", status: "unavailable", failures: [result.reason], correctness: null, figures: 0 };
   }
-  if (!result.check.passed) {
-    return { ...candidate, path: "written_answer", status: "withheld", failures: result.check.problems, correctness: null, figures: 0 };
+  // Form is the one output gate's verdict (#1077 step 7), over the same reads, briefing and identity
+  // the route gives it. Held fails; so does any problem today's evidence check finds (the verdict's
+  // own `check`), so an answer whose failing sentence the gate would only cut never passes form here.
+  const reads = result.toolResults;
+  const verdict = gateAnswer({
+    surface: "written_answer",
+    text: result.text,
+    evidence: { kind: "tool_reads", toolOutputs: reads.map((r) => r.output), reads, briefingEvidence: result.briefingEvidence },
+    // The sampled institution stands as the reader's own, as writeWrittenAnswer writes it.
+    identity: { researchInstitutionId: candidate.institutionId, accountInstitutionId: candidate.institutionId, accountInstitutionName: answered.research.institutionName },
+    question: candidate.question,
+  });
+  const gate = { status: verdict.status, critical: verdict.failures.filter((f) => f.critical).map((f) => f.code), checkPassed: result.check.passed };
+  if (verdict.status === "held" || !verdict.check.passed) {
+    const failures = verdict.status === "held" ? verdict.failures.filter((f) => f.critical).map((f) => `${f.code}: ${f.message}`) : verdict.check.problems;
+    return { ...candidate, path: "written_answer", status: "withheld", failures, correctness: null, figures: 0, gate };
   }
   const values = await live(candidate.institutionId, answered.research, answered.schedule).catch(() => null);
+  // Each filing figure the binding supports, re-read live from its row (a database read, no model call).
+  const claims = reads.length ? supportedFilingClaims(verdict.binding, claimEvidenceFacts(reads, candidate.institutionId)) : [];
+  const filingValues = claims.length ? await options.filings(claims.map((c) => c.key)).catch(() => null) : null;
   const tied = reconcileWrittenText({
     question: candidate.question,
     response: answered.response,
@@ -388,16 +437,20 @@ async function writtenUp(
     schedule: answered.schedule,
     live: values,
     text: result.text,
-    // Money the answer's tools read from other sources (call reports, national data) counts as stated.
+    // Money the answer's tools read from other sources counts as stated, except a supported filing claim's, which is re-read.
     extra: toolMoneyFigures(result.toolResults),
+    ...(claims.length ? { filings: { claims, live: filingValues } } : {}),
   });
+  const scored = tied.checked && (tied.figures > 0 || (tied.filings ?? 0) > 0);
   return {
     ...candidate,
     path: "written_answer",
     status: "written",
     failures: [],
-    correctness: tied.checked && tied.figures > 0 ? tied.failures : null,
+    correctness: scored ? tied.failures : null,
     figures: tied.figures,
+    gate,
+    ...(tied.filings ? { filings: tied.filings } : {}),
   };
 }
 
@@ -444,6 +497,8 @@ export async function runPaidAnswerEval({
   prepareReport = prepareReportAnswer,
   writeReport = writeReportAnswer,
   comparison = liveReportComparison,
+  filings = liveFilingReader(),
+  recordShadow = recordShadowRun,
 }: {
   db?: SqlTag;
   now?: Date;
@@ -455,6 +510,10 @@ export async function runPaidAnswerEval({
   prepareReport?: (institutionId: number, institutionName: string, now: Date) => Promise<PreparedReportAnswer | null>;
   writeReport?: ReportAnswerWriter;
   comparison?: ComparisonReader;
+  /** Live filing re-reads for the written answer's supported filing claims. */
+  filings?: FilingReader;
+  /** Where the Simulate sample's shadow verdict is recorded. */
+  recordShadow?: ShadowRecorder;
 }): Promise<PaidAnswerEvalSummary> {
   const started = Date.now();
   const usedBefore = await paidSamplesToday(db, now);
@@ -528,9 +587,9 @@ export async function runPaidAnswerEval({
   const results = await Promise.all(
     reserved.map(({ path, candidate, answered, simulate: input, report, subjectKey }) =>
       (path === "simulate" && input
-        ? simulateUp(candidate, answered, input, live, { subjectKey, agentRunId, client })
+        ? simulateUp(candidate, answered, input, live, { subjectKey, agentRunId, client, recordShadow })
         : path === "written_answer"
-          ? writtenUp(candidate, answered, live, { subjectKey, agentRunId, written })
+          ? writtenUp(candidate, answered, live, { subjectKey, agentRunId, written, filings })
           : path === "report" && report
             ? reportUp(candidate, report, { subjectKey, agentRunId, writeReport, comparison })
             : writeUp(candidate, answered, live, { subjectKey, agentRunId, client })

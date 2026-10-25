@@ -1090,7 +1090,7 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   M&T 5, FirstBank PR 2) and 92 stay. v2 (review of v1): a fee with no dollar amount (a percent fee)
   never has a twin, and "fondos", "insuficientes" and "cobro" read as Spanish. A fee taken down for
   its twin is not read again if the twin later comes down under another check; restore it by hand.
-- Product-page repeats of a schedule line (`product-page-repeat-check.ts`, v1, #1910, James's
+- Product-page repeats of a schedule line (`product-page-repeat-check.ts`, v2, #1910, James's
   live-fee check Oct 18). TD's checking campaign page gave "Paper statements" $3 (fee 64717), live
   beside the fee schedule's "Paper statement (per statement cycle)" $3. Rosetta typed the page a
   product page (#2428), but the page-copy collapse pairs copies of one page only and the
@@ -1108,7 +1108,15 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   `darwin-product-page-repeat-<run>`, the verified row rejected with the `product_page_repeat` flag,
   never deleted; event `darwin.product_page_repeat_takedown`). Step detail
   `product_page_repeat_check`. Dry run 2026-10-21 01:06 UTC (prod, read-only): 222 candidates, 89
-  at 72 institutions would come down, 133 stay.
+  at 72 institutions would come down, 133 stay. v2 (#1910, Amarillo National): the name cover reads
+  the bank's shorthand as one item (`ITEM_SYNONYMS`): NSF, insufficient and non-sufficient funds are
+  one word, OD is overdraft, and a paid NSF item ("Paid NSF Item", "Paid Nonsufficient Funds") is
+  the overdraft; "one" is filler. Version 1 compared the words literally, so Amarillo's "NSF
+  charges" and "One overdraft (OD) fee" stayed live beside the schedule's "Insufficient Item
+  Charge" and "Paid NSF Item" at $19. Dry run 2026-10-25 (prod, read-only): 148 candidates; v1
+  matches 2, v2 adds 5 (105411, 105412, 49815, 110285, 142887 at institutions 156, 6110, 8577, 321),
+  each one and its twin found on their own stored text by `checkFeeAgainstSource`, so the switch
+  stays on.
 - Schedule editions (`edition-effective-check.ts`, #1915). Avidia's schedule "Effective December 1,
   2026" went live beside its March 2024 one, so the page showed next year's $35 overdraft. Each
   step reads the edition each document's heading states (`editionStarts` in
@@ -1596,14 +1604,52 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v84 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`; v82 and v83
-  belong to other open PRs). v84 (Oct 25, #1831): a refundable safe deposit box key deposit or the
+- The guard is at v85 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v85 (Oct 25, #1831): a refundable safe deposit box key deposit or the
   box's security deposit (`SAFE_DEPOSIT_KEY_DEPOSIT`) fails the safe deposit box rule, as v66 does for
   the night deposit. A lost, replaced or duplicate key, drilling and the box's annual or rental fee
   stay (`SAFE_DEPOSIT_KEY_DEPOSIT_EXEMPT`, each word on its noun); a "Rental - Key Deposit" header
   does not. No type holds a key deposit, so the live ones go to the second look and come down. Its
   live re-check is the guard catch-up; the read-only dry run (Oct 25) counted 108 live fees at 107
   institutions, each a key or security deposit on its own stored schedule.
+- v84 (Oct 25, #1788): a monthly
+  maintenance fee named only as a monthly fee or service charge (`genericMonthlyCharge`: "Monthly
+  fee", "Service charge for six or more accounts") fails when the cell before its name on its own
+  line, or the heading its stored text prints above it, names another service: Positive Pay, ACH,
+  remote deposit, merchant capture, bill pay, online banking, an ATM, debit, check or gift card, paper
+  statements, returned mail, a sweep, a benefits package (`otherServiceMonthlyCharge`). Darwin's verify
+  reads the heading from the document text it already holds (`withHeadingAbove`), and Hamilton's live
+  guard and its takedown restore read it from each such fee's stored text, so a takedown is never
+  restored on its name alone. Up to three sibling rows priced as generic monthly charges are passed
+  over (Florida Capital's "POSITIVE PAY for ACH and Checks" over its two rows, 56683 and 56684); a
+  heading inside a feature list ("ATM debit card / Online banking / Online bill pay"), a feature line
+  ("Business debit card included") and a line that says how to avoid the fee (104536, "In order to
+  avoid the $5 monthly maintenance fee, your 10 debit card purchases must settle") keep it. None of
+  the 50 types holds these charges, so the fee fails rather than moving. Read-only dry run, Oct 25:
+  23 of the 1,951 live generic monthly charges fail, each read on its stored text (14864, 20609,
+  22589, 25656, 30168, 37098, 39939, 39940, 54853, 56683, 56684, 62697, 73286, 95222, 105305, 113537,
+  123617, 132739, 133705, 144067, 145952, 152527, 153643); the guard catch-up takes them to the second
+  look. A line printed more than once is read under a heading only when every place's heading names
+  another service (123617, under two card headings); 130477 stays live because its line also sits
+  under "In-Office Deposit", which the service list does not name. TD's paper statement fee (152525) was already down (#1774).
+- v83 (Oct 25, #1690): the non-network
+  ATM fee refuses a research, investigation or photo name ("Account Investigation - Share / ATM /
+  ACH", "ATM Photos at Credit Union"; re-filed to account research on Darwin's path, except a
+  card's own research or film fee, the retired card dispute type, which has no home), an ATM
+  transaction that overdraws a share ("ATM Negative Share Transaction") and an additional card
+  ("Additional ATM/Debit Card"); "each additional ATM withdrawal" names no card and stays. Five of the six
+  peer-check holds in #1690 now fail the category guard instead (the card issuance row already did,
+  v70; 740157 stays held, below). Read-only dry run, Oct 25: 4 of 2,290 live atm_non_network fees fail (82585, 100991, 127917,
+  31292), each read on its stored line; the guard catch-up run takes them to the second look, and the
+  live restore list (`RESTORE_REFILES`) is unchanged. A rewards account's ATM refund cap read as a
+  fee ("o Nationwide ATM withdrawal fees/surcharges", raw 740157) says nothing in its name that marks
+  it a refund, so the name rule leaves it held.
+- v82 (Oct 25,
+  #1662): the night deposit key-deposit refusal keeps a name only when its lost, replaced, service,
+  monthly, annual or rental word sits on the key or the night deposit noun
+  (`NIGHT_DEPOSIT_KEY_DEPOSIT_EXEMPT`), with word boundaries; a "Services:" header or an unrelated
+  "service fee billed monthly" clause no longer keeps a key deposit filed as the service. Its live
+  re-check is the guard catch-up; the read-only dry run (Oct 25) found no live fee that changes
+  verdict (142 live night deposit names that name a key, all unchanged).
 - v81 (Oct 22):
   "Returned Check Deposit" and "Returned Item Deposit" name a returned deposited item (not one
   followed by "bag"). It only admits names, so no fee that passes today fails. Found by the shadow
@@ -1831,7 +1877,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `NON_DEPOSIT_CHECK_VERSION` | `darwin.non_deposit_document` | v3 | `darwin/non-deposit-document-check.ts` |
 | `LINE_CONFLICT_CHECK_VERSION` | `darwin.line_conflict` | v1 | `darwin/line-conflict-check.ts` |
 | `TRANSLATED_COPY_CHECK_VERSION` | `darwin.translated_copy` | v2 | `darwin/translated-copy-check.ts` |
-| `PRODUCT_PAGE_REPEAT_CHECK_VERSION` | `darwin.product_page_repeat` | v1 | `darwin/product-page-repeat-check.ts` |
+| `PRODUCT_PAGE_REPEAT_CHECK_VERSION` | `darwin.product_page_repeat` | v2 | `darwin/product-page-repeat-check.ts` |
 | `CANADIAN_DOCUMENT_CHECK_VERSION` | `darwin.canadian_document` | v1 | `darwin/canadian-document-check.ts` |
 | `DOCUMENT_OWNER_STRATEGY` | `verify.document_owner` | v1 | `darwin/document-owner.ts` |
 | `DARWIN_VERIFY_STRATEGY` | `verify.rules` | v3 | `darwin/verify.ts` |
