@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { knoxStrategyFromFlags, lastPerDedupeKey, recordFeedback, takedownCheck, takedownKind } from "./feedback";
-import { relabelPerFeeTakedowns, syncPipelineFeedback, takedownFeedback } from "./feedback-sync";
+import { relabelPerFeeTakedowns, syncPipelineFeedback, takedownFeedback, takedownSynced, TAKEDOWN_SYNC_SKIPS } from "./feedback-sync";
 
 import * as referenceStore from "@/lib/data-store/answer-key-reference-store";
 import { referenceKeyFingerprint } from "@/lib/data-store/answer-key-eligibility";
@@ -222,6 +222,16 @@ describe("shared learning store", () => {
     await syncPipelineFeedback(db, { runId: 7, dryRun: true });
     expect(calls.find((call) => call.query.includes("FROM published_fee_records fp"))?.query).toContain("NOT LIKE 'account_type_hold:%'");
     expect(calls.find((call) => call.query.includes("hamilton.restore:pub:"))?.query).toContain("f.kind <> 'account_type_hold'");
+  });
+
+  it("skips exactly the takedown reasons it names (TAKEDOWN_SYNC_SKIPS)", async () => {
+    const { db, calls } = mockDb([["to_regclass('public.pipeline_feedback')", [{ ready: true }]]]);
+    await syncPipelineFeedback(db, { runId: 7, dryRun: true });
+    const query = calls.find((call) => call.query.includes("FROM published_fee_records fp"))?.query ?? "";
+    const skipped = [...query.matchAll(/rolled_back_reason NOT LIKE '([a-z_]+):%'/g)].map((match) => match[1]);
+    expect(skipped).toEqual([...TAKEDOWN_SYNC_SKIPS]);
+    expect(takedownSynced("business_schedule: business-only footnote")).toBe(false);
+    expect(takedownSynced("category_guard:name_contradicts: x")).toBe(true);
   });
 
   it("only reads in a dry run", async () => {

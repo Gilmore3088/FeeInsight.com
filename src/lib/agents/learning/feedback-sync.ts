@@ -146,6 +146,17 @@ export function takedownFeedback(row: TakedownRow, runId: number | null): Feedba
 }
 
 /**
+ * Takedown reasons the sync skips: each writes its own lesson elsewhere, or was right when read.
+ * The query lists each as `NOT LIKE '<prefix>:%'` (kept in step by `feedback.test.ts`).
+ */
+export const TAKEDOWN_SYNC_SKIPS = ["newer_copy_drops_fee", "business_schedule", "frequency_hold", "not_on_current_copy", "article_page", "closed_institution", "source_link_untraceable", "account_type_hold"] as const;
+
+/** Pure: does the takedown sync write rows for a takedown with this reason? */
+export function takedownSynced(reason: string): boolean {
+  return !TAKEDOWN_SYNC_SKIPS.some((prefix) => reason.startsWith(`${prefix}:`));
+}
+
+/**
  * Fills the shared learning store from outcomes the pipeline already records, a bounded
  * batch per call so it never loads the database:
  *   - Hamilton takedowns (`published_fee_records.rolled_back_reason`): `wrong` about the
