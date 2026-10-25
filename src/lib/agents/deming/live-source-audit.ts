@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { checkFeeAgainstSource, sourceLines } from "@/lib/custom-report/source-check";
+import { LEGACY_SCOPE } from "@/lib/custom-report/discontinued-rows";
 import { checkFeeCategory, CATEGORY_GUARD_VERSION } from "@/lib/fee-category-guard";
 import { frequencyFromLine, frequencyFamily } from "@/lib/fee-frequency";
 import { productKey } from "@/lib/fee-product";
@@ -235,7 +236,7 @@ export function evaluateLiveAuditFee(fee: LiveAuditFee, group: LiveAuditGroup, g
   const current: Array<{ page: LiveAuditPage; text: string }> = [];
   for (const page of candidates) {
     if(unconfirmedDocumentHost({url:page.finalUrl,websiteUrl:group.policy.websiteUrl,text:page.text}))return unknown("candidate_institution_unproven");
-    if(/\b(?:closed to new (?:customers|accounts)|no longer (?:available|offered) to open|previously offered (?:accounts|products)|legacy accounts? (?:only|closed))\b/i.test(page.text))return unknown("candidate_legacy_scope_unproven");
+    if(LEGACY_SCOPE.test(page.text))return unknown("candidate_legacy_scope_unproven");
     if(Array.isArray(group.policy.rejectedSourceUrls)&&group.policy.rejectedSourceUrls.some(entry=>entry&&typeof entry==="object"&&!Array.isArray(entry)
       &&typeof entry.url==="string"&&[urlKey(page.requestedUrl),urlKey(page.finalUrl)].includes(urlKey(entry.url))))return unknown("candidate_source_policy_rejected");
     const date = effectiveDate(page.text); if (date && date > at.slice(0, 10)) continue;
