@@ -1,5 +1,6 @@
 import { ProviderResponseOperation, AI_PROVIDER_TIMEOUT_MS, assertCompletedProviderFinish } from "@/lib/ai-response-budget";
 import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
+import { HamiltonTaskBudgetError, withHamiltonTask } from "@/lib/hamilton/task-budget";
 /**
  * POST /api/hamilton/simulate
  *
@@ -127,6 +128,8 @@ async function handlePOST(request: Request) {
   } catch (error) {
     // V5 T6: guardProviderCall recorded the stop as blocked; the reader gets the plain line, never its reason.
     console.error("[hamilton-simulate] provider call refused", error);
+    // A Hamilton task or daily cap keeps its own plain line (#1921, task-budget.ts).
+    if (error instanceof HamiltonTaskBudgetError) return new Response(error.message, { status: 429 });
     return new Response(HAMILTON_STOPPED_MESSAGE, { status: 423 });
   }
 
@@ -228,4 +231,5 @@ async function handlePOST(request: Request) {
   } catch (error) { await failProvider(error); await flushProviderFailure(); throw error; }
 }
 
-export const POST = withApiRoutePolicy("api.hamilton.simulate", "POST", handlePOST);
+// Each request is one Hamilton task, capped per task and per reader day (#1921, task-budget.ts).
+export const POST = withApiRoutePolicy("api.hamilton.simulate", "POST", withHamiltonTask("simulate", handlePOST));

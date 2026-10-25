@@ -330,6 +330,21 @@ describe("POST /api/research/hamilton — citation gate", () => {
     expect(generateTextMock).not.toHaveBeenCalled();
   });
 
+  it("keeps a Hamilton daily cap's own line instead of the stop line (#1921)", async () => {
+    const { HamiltonTaskBudgetError, HAMILTON_READER_DAILY_CAP_MESSAGE } = await import("@/lib/hamilton/task-budget");
+    providerUsageMocks.guardProviderCallMock.mockRejectedValueOnce(
+      new HamiltonTaskBudgetError("reader_daily", "calls", 120, 120, "ask"),
+    );
+
+    const { POST } = await import("./route");
+    const res = await POST(makeRequest({
+      messages: [{ role: "user", parts: [{ type: "text", text: "overdraft report" }] }],
+    }));
+
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({ error: HAMILTON_READER_DAILY_CAP_MESSAGE, code: "hamilton_budget_cap" });
+  });
+
   it("should_return_locked_when_streaming_provider_circuit_is_open", async () => {
     const { ProviderCircuitOpenError } = await import("@/lib/ai-provider-usage");
     providerUsageMocks.guardProviderCallMock.mockRejectedValueOnce(

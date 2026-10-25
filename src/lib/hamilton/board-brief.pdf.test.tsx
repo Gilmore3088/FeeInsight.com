@@ -30,8 +30,11 @@ it("exports edited board presentation with original values, sources and separate
   const buffer = await renderToBuffer(createElement(PdfDocument, { report, reportType: "board_brief" }) as unknown as ReactElement<DocumentProps>);
   const { text } = await extractText(new Uint8Array(buffer), { mergePages: true });
   const normalized = text.replace(/\s+/g, " ");
-  for (const phrase of ["Board review", "Research institution: Research CU", "Account institution: Home CU", "$35", "$30", "2026-07-01", "Team note (user-authored)", "Discuss waivers at the next meeting."]) expect(normalized).toContain(phrase);
+  for (const phrase of ["Board review", "Research institution: Research CU", "Account institution: Home CU", "$35", "$30", "Team note (user-authored)", "Discuss waivers at the next meeting."]) expect(normalized).toContain(phrase);
   expect(normalized).toContain("were not saved with this answer");
+  // #1899: with no record saved, the answer's own figure lines are not printed as evidence.
+  expect(normalized).not.toContain("Evidence from the saved answer");
+  expect(normalized).not.toContain("2026-07-01");
 }, 20000);
 
 // Synthetic fee data only; it is not a claim about any real institution.

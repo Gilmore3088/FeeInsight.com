@@ -66,6 +66,23 @@ describe("StructuredAsk", () => {
     expect(onNoStoryline).not.toHaveBeenCalled();
   });
 
+  it("sends the page's fee until the conversation has a fee of its own (#1895)", async () => {
+    const memo = { status: "unavailable", reason: "n/a" };
+    const fresh = mockFetch(withStoryline, memo);
+    render(<StructuredAsk question="how do we compare with peers?" institutionId="8109" modelHrefFor={() => "/"} contextFee="overdraft" />);
+    await waitFor(() => expect(fresh.map((c) => c.url)).toEqual(["/api/hamilton/ask", "/api/hamilton/ask/memo"]));
+    expect(fresh[0].body.contextFee).toBe("overdraft");
+    // The memo is read for the fee the answer used.
+    expect(fresh[1].body.contextFee).toBe("overdraft");
+    cleanup();
+    vi.unstubAllGlobals();
+    // A conversation that already carries a decision (it moved to its own fee) sends none.
+    const carried = mockFetch(withStoryline, memo);
+    render(<StructuredAsk question="what about NSF?" decisionId="d9" institutionId="8109" modelHrefFor={() => "/"} contextFee="overdraft" />);
+    await waitFor(() => expect(carried.length).toBeGreaterThan(0));
+    expect(carried[0].body.contextFee).toBeUndefined();
+  });
+
   it("asks for no memo over a list of peers' fees (#2033)", async () => {
     const list: AskResponse = { ...withStoryline, answer: buildFeeAnswer(overdraftResearch(), { story: { list: true } }) };
     expect(list.answer?.storyline?.kind).toBe("list");
@@ -79,7 +96,7 @@ describe("StructuredAsk", () => {
     mockFetch(withStoryline, { status: "withheld", reason: "A figure could not be traced, so the memo is held back." });
     render(<StructuredAsk question="q" institutionId="8109" modelHrefFor={() => "/"} />);
     await screen.findByText("A figure could not be traced, so the memo is held back.");
-    expect(screen.getByText("The answer")).toBeTruthy();
+    expect(screen.getByText("Summary")).toBeTruthy();
   });
 
   it("keeps the storyline and shows the paused line when the provider's usage limit is reached", async () => {
@@ -87,7 +104,7 @@ describe("StructuredAsk", () => {
     mockFetch(withStoryline, { status: "unavailable", reason: HAMILTON_PAUSED_MESSAGE });
     render(<StructuredAsk question="q" institutionId="8109" modelHrefFor={() => "/"} />);
     await screen.findByText(HAMILTON_PAUSED_MESSAGE);
-    expect(screen.getByText("The answer")).toBeTruthy();
+    expect(screen.getByText("Summary")).toBeTruthy();
   });
 
   it("hands a question with no storyline back to the page, and asks for no memo", async () => {

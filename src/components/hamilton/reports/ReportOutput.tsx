@@ -7,6 +7,7 @@ import { InterpretationBox, SERIF } from "@/components/hamilton/memo/memo";
 import { DatasetNote } from "@/components/hamilton/DatasetNote";
 import { readStampedFigures } from "@/lib/dataset-note";
 import { ReportSection } from "./ReportSection";
+import { AddedFindingEvidenceBlock } from "./AddedFindingEvidence";
 import { StatCalloutBox } from "./StatCalloutBox";
 import {
   REPORT_FINDING_SOURCES_LABEL,
@@ -130,7 +131,10 @@ function AddedFindings({ report }: { report: ReportSummaryResponse }) {
             {finding.reading?.length ? (
               <div className="mt-2"><InterpretationBox sentences={finding.reading} /></div>
             ) : null}
-            {finding.sources?.length ? (
+            {/* One Sources block per finding (#1899): the evidence block lists a saved answer's record lines when it has them. */}
+            {finding.evidence ? (
+              <AddedFindingEvidenceBlock value={finding.evidence} claimSources={finding.sources} />
+            ) : finding.sources?.length ? (
               <div className="mt-2 text-xs text-warm-600">
                 <p className="font-medium text-warm-700">{REPORT_FINDING_SOURCES_LABEL}</p>
                 <ul className="mt-1 space-y-0.5">
