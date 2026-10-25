@@ -108,6 +108,12 @@ export interface RunHamiltonCategoryGuardResult {
    */
   cardProductPending: number;
   cardProductPendingSamples: CardProductPendingFee[];
+  /**
+   * v84: the stored-text read for generic monthly charges' headings failed, so this step judged them
+   * by name and line only. Recorded in the step detail so a catch-up run that took nothing down for
+   * this reason shows it.
+   */
+  headingReadFailed: boolean;
   limit: number;
   dryRun: boolean;
   rollbackBatchId: string;
@@ -235,7 +241,8 @@ export async function runHamiltonCategoryGuard(
   const selected = await selectLiveGuardedFees(db, options.institutionId);
   // Guard v84 (#1788): generic monthly charges are judged under the heading printed above them. A
   // failed text read judges them by name and line only, as before v84, so nothing comes down for it.
-  const rows = (await withHeadingsAbove(db, selected)) ?? selected;
+  const headed = await withHeadingsAbove(db, selected);
+  const rows = headed ?? selected;
 
   const failures: CategoryGuardFailure[] = [];
   const passing: number[] = [];
@@ -349,6 +356,7 @@ export async function runHamiltonCategoryGuard(
     refiledFees: restore.refiled,
     liveRefiledFees: refiled.size,
     cardProductPending: pending.length,
+    headingReadFailed: headed === null,
     cardProductPendingSamples: pending.slice(0, 50),
     limit,
     dryRun,

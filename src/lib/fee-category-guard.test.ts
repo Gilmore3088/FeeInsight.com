@@ -2383,6 +2383,13 @@ describe("guard v84: another service's monthly charge filed as monthly maintenan
     expect(checkFeeCategory("monthly_maintenance", "Monthly fee", withHeadingAbove("monthly_maintenance", "Monthly fee", { amount: 3, conditions }, td)).ok).toBe(false);
   });
 
+  it("reads no heading when the fee's line is printed more than once (#2601 review)", () => {
+    const twice = ["Personal Checking", "Monthly fee | $5.00", "", "POSITIVE PAY", "Monthly fee | $5.00"].join("\n");
+    const conditions = note("Monthly fee | $5.00");
+    expect(headingAboveExcerpt(twice, conditions)).toBeNull();
+    expect(checkFeeCategory("monthly_maintenance", "Monthly fee", withHeadingAbove("monthly_maintenance", "Monthly fee", { amount: 5, conditions }, twice)).ok).toBe(true);
+  });
+
   it("refuses a generic monthly charge priced in another service's row (20609, 152527)", () => {
     expect(mm("Monthly fee", 5, "Lifestyle Benefits | $5 monthly fee | $5 monthly fee | $5 monthly fee | included").ok).toBe(false);
     expect(mm("Service Charge", 4, "Paper Statements | Available / $4 Service Charge | Available / $4 Service Charge | No").ok).toBe(false);
