@@ -35,7 +35,8 @@ import type { HamiltonBriefingEvidence } from "./institution-briefing";
 
 /** .2: review of PR #2642: six correct answers the first gate fixes held (Deming as a name and a town; local sentences). */
 /** .3: second review (v5-t5b): thin local medians the rule missed, Deming and Bayes phrasings, and their controls. */
-export const PERSONA_GOLDEN_SET_VERSION = "2026-10-25.3";
+/** .4: third review: well-covered fees named in other words or an earlier sentence, loose "typical", and real "Deming" text. */
+export const PERSONA_GOLDEN_SET_VERSION = "2026-10-25.4";
 
 export type Persona = "ceo" | "cfo" | "retail_product_manager" | "board" | "analyst";
 export const PERSONAS: readonly Persona[] = ["ceo", "cfo", "retail_product_manager", "board", "analyst"];
@@ -307,6 +308,15 @@ const COMPETITORS_MIXED = localCompetitors(HARBOR, { overdraft: 30, stop_payment
   { id: 9134, name: "Synthetic Competitor Four", fees: { stop_payment: 33 } },
   { id: 9135, name: "Synthetic Competitor Five", fees: { stop_payment: 35 } },
 ]);
+/**
+ * Seven local competitors state overdraft (median $31), outgoing wire (median $23) and monthly
+ * maintenance (median $12); only two state NSF.
+ */
+const COMPETITORS_SEVEN = localCompetitors(HARBOR, { overdraft: 30, nsf: 28, monthly_maintenance: 12, wire_domestic_outgoing: 25 },
+  ([[27, 18, 8], [29, 20, 10], [30, 22, 11], [31, 23, 12], [33, 25, 13], [34, 26, 15], [36, 30, 16]] as const).map(([overdraft, wire, maintenance], i) => ({
+    id: 9141 + i, name: `Synthetic Neighbor ${i + 1}`,
+    fees: { overdraft, wire_domestic_outgoing: wire, monthly_maintenance: maintenance, ...(i < 2 ? { nsf: [26, 29][i] } : {}) },
+  })));
 /** The national NSF median happens to be $34, the local overdraft median: another fee's statistic. */
 const NATIONAL_NSF_34 = indexRead(null, [{ category: "nsf", median: 34, p25: 30, p75: 36, count: 1204 }]);
 const DEMING_SCHOOLS_PROFILE =feeProfile(DEMING_SCHOOLS, [{ recordId: 41, category: "overdraft", name: "Overdraft", amount: 25 }]);
@@ -447,6 +457,22 @@ export const PERSONA_GOLDEN_CASES: readonly PersonaGoldenCase[] = [
     question: "Is our overdraft fee the same at every branch?",
     text: "Harbor Point Bank's branch in Deming, NM charges the same $30 overdraft fee.",
     expect: "validated" },
+  // Third review: real text with "Deming" that the second round's patterns held.
+  { id: "ceo-deming-possessive-branch", group: "persona", persona: "ceo", ...harbor([HARBOR_PROFILE]),
+    description: "\"Deming's\" before a branch, not a system word",
+    question: "What does the Deming branch charge for an overdraft?",
+    text: "Deming's branch charges $30.",
+    expect: "validated" },
+  { id: "analyst-according-to-deming-schools", group: "persona", persona: "analyst", surface: W, reads: [DEMING_SCHOOLS_PROFILE], researchId: DEMING_SCHOOLS, accountId: HARBOR,
+    description: "\"according to\" an institution whose name starts with Deming",
+    question: "What does Deming Schools Employees FCU charge for an overdraft?",
+    text: "According to Deming Schools Employees FCU, the fee is $25.",
+    expect: "validated" },
+  { id: "cfo-deming-bank-check", group: "persona", persona: "cfo", ...harbor([HARBOR_PROFILE]),
+    description: "a bank check written in Deming, not a system check",
+    question: "What happens when a check bounces at the Deming branch?",
+    text: "A Deming check for $30 bounced.",
+    expect: "validated" },
   { id: "rpm-national-beside-local", group: "persona", persona: "retail_product_manager", ...harbor([HARBOR_PROFILE, NATIONAL_2750, COMPETITORS_THREE]),
     description: "the national median beside three local competitors' own prices",
     question: "How do we compare nationally and locally on overdraft?",
@@ -505,14 +531,31 @@ export const PERSONA_GOLDEN_CASES: readonly PersonaGoldenCase[] = [
     id, group: "adversarial", adversarial: "thin_local_median", ...harbor([HARBOR_PROFILE, ...extra, COMPETITORS_25_34_36]),
     description: `a median of three local competitors: ${description}`, ...(question ? { question } : {}), text, expect: "held",
   })),
-  { id: "adv-thin-thinnest-fee", group: "adversarial", adversarial: "thin_local_median", ...harbor([HARBOR_PROFILE, COMPETITORS_MIXED]),
-    description: "no fee named anywhere: the read's thinnest fee (overdraft, three competitors) decides",
+  { id: "adv-thin-fee-by-median", group: "adversarial", adversarial: "thin_local_median", ...harbor([HARBOR_PROFILE, COMPETITORS_MIXED]),
+    description: "no fee named anywhere: $34 is the overdraft fee's local median (three competitors), and no other fee's",
     text: "Among its local competitors, the median is $34.",
     expect: "held" },
   { id: "rpm-question-picks-fee", group: "persona", persona: "retail_product_manager", ...harbor([HARBOR_PROFILE, COMPETITORS_MIXED]),
     description: "control: the question names stop payment, which five competitors state",
     question: "What do our local competitors charge for a stop payment?",
     text: "Among its local competitors, the median is $32.",
+    expect: "validated" },
+  // Third review (v5-t5b at b34e6b812): well-covered fees named in other words, or in an earlier sentence, must pass.
+  ...([
+    ["rpm-seven-outgoing-wire", "\"outgoing wire\" names the wire fee seven competitors state", "The median outgoing wire fee among its seven local competitors is $23."],
+    ["rpm-seven-wire-fee", "\"wire fee\" names the wire fee seven competitors state", "The median wire fee among its seven local competitors is $23."],
+    ["rpm-seven-monthly-service", "\"monthly service fee\" names monthly maintenance", "The median monthly service fee among its seven local competitors is $12."],
+    ["rpm-seven-courtesy-pay", "\"courtesy pay\" names overdraft", "The median courtesy pay charge among its seven local competitors is $31."],
+    ["rpm-seven-earlier-sentence", "the fee is named in the sentence before", "Harbor Point Bank charges $30 for an overdraft. The median among its seven local competitors is $31."],
+  ] as const).map(([id, description, text]): PersonaGoldenCase => ({
+    id, group: "persona", persona: "retail_product_manager", ...harbor([HARBOR_PROFILE, COMPETITORS_SEVEN]),
+    description: `seven local competitors (two state NSF): ${description}`,
+    question: "How do our fees compare with our local competitors?", text, expect: "validated",
+  })),
+  { id: "rpm-typical-customer", group: "persona", persona: "retail_product_manager", ...harbor([HARBOR_PROFILE, COMPETITORS_25_34_36]),
+    description: "\"typical\" about a customer, not a fee's middle",
+    question: "What does an overdraft cost our customers?",
+    text: "A typical local customer pays $30 for an overdraft.",
     expect: "validated" },
   { id: "adv-untraced", group: "adversarial", adversarial: "untraced_figure", ...harbor([HARBOR_PROFILE]),
     description: "an overdraft price no read holds",

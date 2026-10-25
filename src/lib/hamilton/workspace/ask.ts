@@ -14,8 +14,7 @@
 
 import { subjectPossessive, subjectName } from "./subject";
 import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
-import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
-import { RESEARCH_SPLIT_LIVE } from "@/lib/fee-fold";
+import { FEE_PHRASES } from "./fee-phrases";
 import { buildFeeAnswer, type ExhibitFocus } from "./answer";
 import { feeItem, proseFeeName } from "./names";
 import { annualItemsQuestion, buildScenario, countedPeerAmounts, MIN_PEERS_FOR_POSITION, placeAmong, waiverRateQuestion } from "./scenario";
@@ -42,45 +41,8 @@ export const MAX_TESTED_PRICES = 5;
 /** Highest fee amount a question can test. */
 const MAX_PRICE = 10_000;
 
-/** Words people use for a fee that its display name does not carry. Longest phrase wins. */
-const FEE_SYNONYMS: Record<string, string[]> = {
-  overdraft: ["overdraft", "overdrafts", "od fee", "od fees", "courtesy pay", "bounce protection", "paid item"],
-  nsf: ["nsf", "non-sufficient funds", "nonsufficient funds", "insufficient funds", "returned item", "bounced check"],
-  continuous_od: ["continuous overdraft", "extended overdraft", "sustained overdraft", "daily overdraft"],
-  od_protection_transfer: ["overdraft protection transfer", "overdraft transfer", "od transfer", "od protection"],
-  monthly_maintenance: ["monthly maintenance", "maintenance fee", "monthly service fee", "monthly fee"],
-  atm_non_network: ["atm fee", "atm", "out-of-network atm", "foreign atm", "non-network atm"],
-  wire_domestic_outgoing: ["wire", "wire fee", "outgoing wire", "domestic wire"],
-  wire_domestic_incoming: ["incoming wire"],
-  wire_intl_outgoing: ["international wire", "foreign wire"],
-  stop_payment: ["stop payment"],
-  card_foreign_txn: ["foreign transaction", "international atm", "atm abroad"],
-  cashiers_check: ["cashier's check", "cashiers check", "official check"],
-  paper_statement: ["paper statement"],
-};
-
-// Excess withdrawals and returned mail (#1398) get their own phrases only once the research split
-// is on; until then Ask reads these questions exactly as before.
-if (RESEARCH_SPLIT_LIVE) for (const [category, phrases] of [
-  ["excess_withdrawal", ["excess withdrawal", "excess withdrawals", "excessive withdrawal", "excessive withdrawals", "excess transaction", "excess transactions"]],
-  ["returned_mail", ["returned mail", "returned statement", "bad address"]],
-] as const) {
-  FEE_SYNONYMS[category] = [...(FEE_SYNONYMS[category] ?? []), ...phrases];
-}
-
-function phrasesFor(category: string): string[] {
-  const display = (DISPLAY_NAMES[category] ?? "").toLowerCase();
-  const fromDisplay = display
-    .replace(/\(([^)]*)\)/g, "/$1")
-    .split("/")
-    .map((p) => p.trim())
-    .filter((p) => p.length >= 4);
-  return [...new Set([...(FEE_SYNONYMS[category] ?? []), display.replace(/\s*\([^)]*\)/g, "").trim(), ...fromDisplay].filter(Boolean))];
-}
-
-const PHRASES: { category: string; phrase: string }[] = Object.keys(DISPLAY_NAMES)
-  .flatMap((category) => phrasesFor(category).map((phrase) => ({ category, phrase })))
-  .sort((a, b) => b.phrase.length - a.phrase.length);
+/** Fee names and synonyms, longest first (fee-phrases.ts, shared with the output gate). */
+const PHRASES = FEE_PHRASES;
 
 function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

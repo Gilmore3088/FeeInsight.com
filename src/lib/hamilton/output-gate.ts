@@ -40,6 +40,7 @@ import { MIN_LOCAL_PEERS_FOR_POSITION, MIN_PEERS_FOR_POSITION } from "./workspac
 import { proseFeeName } from "./workspace/names";
 import { extractFigures } from "./figure-check";
 import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
+import { FEE_PHRASES } from "./workspace/fee-phrases";
 import type { AnswerToolEvidence } from "./written-answer-evidence";
 
 /** 2: the `thin_peer_group` failure code (T5, #1726). A version 1 record is still read (output-gate-shadow.ts). */
@@ -202,26 +203,54 @@ function checkCode(problem: string, figureProblem: boolean, cause: ReadonlySet<s
   return "interpretation_rule";
 }
 
-/** Words that call a figure a group's middle. "The middle 50%" is a band, not a median. */
-const MEDIAN_WORDS = /\b(?:median|midpoint|typical|middle(?!\s*(?:50|half|fifty)\b))\b/gi;
+/**
+ * Words that call a figure a group's middle. "The middle 50%" is a band, not a median. "Typical"
+ * counts only before a fee word ("the typical overdraft fee"), so "a typical local customer" does not.
+ */
+const MEDIAN_WORDS = /\b(?:median|midpoint|middle(?!\s*(?:50|half|fifty)\b)|typical(?=(?:\s+[\w'-]+){0,3}?\s+(?:fees?|prices?|charges?|amounts?)\b))\b/gi;
 /** Words that put the group in the bank's own market. */
 const LOCAL_WORD = /\b(?:local|competitors?|competitor's|competitors'|market|nearby|area|peers\s+in\s+(?:the|its|their|your)\s+(?:county|city|market|area))\b/i;
 
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+let namePhrases: Array<{ category: string; phrase: string }> | null = null;
 /**
- * The names a reader may use for a fee: its prose name, its slug in words, and each part of its
- * taxonomy display name ("Wire Transfer (Domestic Out)" gives "Wire Transfer"), as infer-category.ts
- * reads them. Acronyms match case-sensitively ("NSF"); words do not.
+ * The names a reader may use for a fee, longest first: the Ask bar's synonyms and display-name parts
+ * (fee-phrases.ts: "courtesy pay", "outgoing wire", "monthly service fee"), its prose name and its
+ * slug in words.
  */
-function feeNamePatterns(category: string): RegExp[] {
-  const parts = (DISPLAY_NAMES[category] ?? "").replace(/\(([^)]*)\)/g, "/$1").split("/").map((part) => part.trim()).filter((part) => part.length >= 3);
-  return [proseFeeName(category), category.replace(/_/g, " "), ...parts].filter((name) => name.trim())
-    .map((name) => new RegExp(`\\b${escapeRegExp(name.trim())}\\b`, name === name.toUpperCase() ? "" : "i"));
+function feeNamePhrases(): Array<{ category: string; phrase: string }> {
+  namePhrases ??= [
+    ...FEE_PHRASES,
+    ...Object.keys(DISPLAY_NAMES).flatMap((category) => [proseFeeName(category), category.replace(/_/g, " ")]
+      .map((name) => ({ category, phrase: name.trim().toLowerCase() }))),
+  ].filter((entry) => entry.phrase.length >= 3).sort((a, b) => b.phrase.length - a.phrase.length);
+  return namePhrases;
 }
 
-/** The fee categories a span names, each on word boundaries ("transfer" never names NSF). */
+/**
+ * The fee categories a span names. The longest name wins and takes its words, so "outgoing wire
+ * transfer" names only the outgoing wire and "international wire" never also names "wire".
+ */
 function categoriesNamed(span: string, categories: Iterable<string>): string[] {
-  return [...categories].filter((category) => feeNamePatterns(category).some((pattern) => pattern.test(span)));
+  const wanted = new Set(categories);
+  let rest = span.toLowerCase().replace(/[’`]/g, "'");
+  const found = new Set<string>();
+  for (const { category, phrase } of feeNamePhrases()) {
+    const pattern = new RegExp(`(^|[^a-z])${escapeRegExp(phrase)}(?=$|[^a-z])`, "g");
+    if (!rest.match(pattern)) continue;
+    rest = rest.replace(pattern, (match, lead: string) => lead + " ".repeat(match.length - lead.length));
+    if (wanted.has(category)) found.add(category);
+  }
+  return [...found];
+}
+
+/** The middle value of a list of prices. */
+function medianOf(values: readonly number[]): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
 /**
@@ -234,7 +263,8 @@ function categoriesNamed(span: string, categories: Iterable<string>): string[] {
  *   state that fee. A median word (median, midpoint, middle, typical) names the dollar figure nearest
  *   it in the sentence, before or after it; the sentence puts the group locally (local, competitors,
  *   market, nearby, area, peers in the county). The fee is the one named between the word and the
- *   figure, else in the sentence, else in the reader's question, else the read's thinnest fee.
+ *   figure, else in the sentence, else in the answer's earlier sentences, else in the reader's
+ *   question, else the one fee whose local median is the figure. With no such fee it passes.
  *   Two things clear the figure: it is an index statistic for that same fee (a national median
  *   beside the local prices), or the sentence names every competitor's price for that fee (naming
  *   the peers is the house rule's alternative).
@@ -245,7 +275,7 @@ export function thinPeerSentences(input: GateInput, sentences: readonly string[]
   const stats = writtenAnswerIndexStats(outputs);
   const local = localCompetitorPrices(outputs);
   const out: Array<{ sentence: string; count: number; minimum: number }> = [];
-  for (const sentence of sentences) {
+  for (const [index, sentence] of sentences.entries()) {
     const thinStat = indexStatisticsStated(sentence, stats).find((stat) => stat.institutionCount < MIN_PEERS_FOR_POSITION);
     if (thinStat) {
       out.push({ sentence, count: thinStat.institutionCount, minimum: MIN_PEERS_FOR_POSITION });
@@ -264,9 +294,20 @@ export function thinPeerSentences(input: GateInput, sentences: readonly string[]
       const span = sentence.slice(Math.min(end, figure.index + figure.raw.length), Math.max(start, figure.index));
       return local.flatMap((prices) => {
         const categories = [...prices.keys()];
-        const thinnest = [...prices].sort((a, b) => a[1].length - b[1].length)[0]?.[0];
-        const named = [categoriesNamed(span, categories), categoriesNamed(sentence, categories), categoriesNamed(input.question ?? "", categories),
-          thinnest ? [thinnest] : []].find((list) => list.length > 0) ?? [];
+        const named = [
+          categoriesNamed(span, categories),
+          categoriesNamed(sentence, categories),
+          // The answer's earlier sentences, nearest first ("We charge $30 for an overdraft. The median among ...").
+          ...sentences.slice(0, index).reverse().map((earlier) => categoriesNamed(earlier, categories)),
+          categoriesNamed(input.question ?? "", categories),
+        ].find((list) => list.length > 0)
+          // No fee named anywhere: the fee whose own local median is this figure, when exactly one is.
+          // Two or none and the sentence passes: an unknown fee is never cut on a guess.
+          ?? [categories.filter((category) => {
+            const median = medianOf(prices.get(category) ?? []);
+            return median !== null && near(figure, median);
+          })].find((list) => list.length === 1)
+          ?? [];
         return named.flatMap((category) => {
           const stated = prices.get(category) ?? [];
           if (stated.length >= MIN_LOCAL_PEERS_FOR_POSITION) return [];

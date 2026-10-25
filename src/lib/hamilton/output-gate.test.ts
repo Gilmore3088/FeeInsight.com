@@ -275,4 +275,21 @@ describe("gateAnswer: the peer minimum (T5, #1726)", () => {
     // Naming the competitors' prices is the house rule's alternative, and is never cut.
     expect(gate("Its three local competitors charge $25, $33 and $36 for an overdraft.", [profile, local([25, 33, 36])]).status).toBe("validated");
   });
+
+  it("with no fee named, cuts only when the figure is one thin fee's own local median, never on a guess", () => {
+    // Overdraft: three competitors, median $33. Stop payment: five competitors, median `stopMedian`.
+    const mixed = (stopMedian: number) => ({ toolName: "getLocalCompetitors", input: { institution_id: 9101 }, output: {
+      institution: "Harbor Point Bank", institution_id: 9101, your_fees: { overdraft: 30, stop_payment: 32 },
+      competitors: [stopMedian - 2, stopMedian - 1, stopMedian, stopMedian + 1, stopMedian + 2].map((stop, i) => ({
+        institution_id: 9131 + i, name: `Synthetic Competitor ${i}`, fees: { stop_payment: stop, ...(i < 3 ? { overdraft: [25, 33, 36][i] } : {}) },
+      })),
+    } });
+    const text = "Among its local competitors, the median is $33.";
+    expect(gate(text, [profile, mixed(31)]).status).toBe("held");
+    // $33 is both fees' local median: which fee is meant is unknown, so it passes.
+    expect(gate(text, [profile, mixed(33)]).status).toBe("validated");
+    // The answer's earlier sentence names the fee.
+    expect(gate(`Harbor Point Bank charges $32 for a stop payment. ${text.replace("$33", "$31")}`, [profile, mixed(31)]).failures.map((f) => f.code))
+      .not.toContain("thin_peer_group");
+  });
 });
