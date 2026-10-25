@@ -16,9 +16,11 @@ const INST = 20640001, DOC = 20640101;
 const EVENT = "00000000-0000-4000-8000-000020640001";
 const TEXT = "OTHER SERVICES\nWire Transfer | $25.00\nStop Payment Fee | $35.00";
 type Db = Parameters<typeof correctPublishedFee>[0];
+// The handle carries the app client's custom types; a bare postgres.Sql is Sql<{}> (#2657).
+type TypedSql = postgres.Sql<{ numeric: number; json: unknown; text: string }>;
 
 describe.skipIf(!connection)("prospective corrective source context in actual PostgreSQL", () => {
-  let raw: postgres.Sql, db: Db, oldId: number, correctionId: number, originRunId: number;
+  let raw: TypedSql, db: Db, oldId: number, correctionId: number, originRunId: number;
   let metadataSql=""; let metadataParams:unknown[]=[];
   async function anotherCorrection(key: string = randomUUID(), evidenceDoc = DOC) {
     const event = randomUUID();

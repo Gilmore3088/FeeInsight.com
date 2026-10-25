@@ -18,10 +18,13 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+// The handles carry the app client's custom types; a bare postgres.Sql is Sql<{}> (#2657).
+type TypedSql = postgres.Sql<{ numeric: number; json: unknown; text: string }>;
+
 describe.skipIf(!connection)("Symbolic lesser-of hold and Darwin concurrency (#2335)", () => {
-  let observer: postgres.Sql;
-  let firstConnection: postgres.Sql;
-  let secondConnection: postgres.Sql;
+  let observer: TypedSql;
+  let firstConnection: TypedSql;
+  let secondConnection: TypedSql;
   let appSql: Db;
   let extract: typeof import("./extract");
   let darwin: typeof import("../darwin/verify");
