@@ -10,6 +10,7 @@ import { AnalyzeWorkspace } from "@/components/hamilton/analyze/AnalyzeWorkspace
 import { MarketBrief } from "@/components/hamilton/intelligence/MarketBrief";
 import { parseMarketQuestion } from "@/lib/hamilton/market-question";
 import { listSavedAnalyses, loadAnalysisRecord } from "./actions";
+import { withoutSavedClaims } from "@/lib/hamilton/saved-analysis-record";
 import { SavedChangeNotice } from "./saved-change-notice";
 import { resolveHamiltonInstitutionContext } from "@/lib/hamilton/workspace-context";
 import {
@@ -133,7 +134,8 @@ export default async function AnalyzePage({
         key={`${user.id}:${hasResearch ? JSON.stringify(landingResearch) : institutionId}:${analysisId ?? "new"}:${initialConversation?.conversationId ?? ""}`}
         userId={user.id}
         institutionId={institutionId}
-        initialAnalysis={initialAnalysisRecord?.responseJson ?? null}
+        // A client prop: never the saved claims (#1077 step 6), whichever loader filled it.
+        initialAnalysis={initialAnalysisRecord ? withoutSavedClaims(initialAnalysisRecord.responseJson) : null}
         initialAnalysisId={initialAnalysisRecord?.id ?? null}
         initialAnalysisPrompt={initialAnalysisRecord?.prompt ?? null}
         recent={recent}

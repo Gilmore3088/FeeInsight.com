@@ -10,8 +10,9 @@ import { confidenceFromFigureCheck } from "@/lib/hamilton/figure-check";
 import { checkAnswerEvidence, savedAnswerEvidence, type AnswerEvidenceCheck } from "@/lib/hamilton/answer-gate";
 import type { AnalyzeResponse } from "@/lib/hamilton/types";
 import type { NarrativeBinding } from "@/lib/hamilton/narrative-bound";
-import { bindWrittenAnswer, withoutOmitted } from "@/lib/hamilton/written-answer-binding";
+import { bindWrittenAnswer, withoutOmitted, writtenAnswerFeeEvidence } from "@/lib/hamilton/written-answer-binding";
 import { claimEvidenceFacts } from "./claim-evidence";
+import { savedClaimsFrom, type SavedClaimSet } from "./saved-claims";
 import { writtenAnswerEvidence, type AnswerToolEvidence, type WrittenAnswerEvidenceContext } from "./written-answer-evidence";
 
 /** The message metadata key that carries the saved row's id to the Analyze screen. */
@@ -44,15 +45,27 @@ export function writtenAnswerBinding(text: string, toolOutputs: readonly unknown
 }
 
 /**
+ * The claims a written answer is saved with (#1077 step 6, #1899): the binding's outcome per
+ * sentence and the facts its supported sentences cite, read from the same fee records and claim
+ * facts the binding was computed against. Null with no binding.
+ */
+export function writtenAnswerClaims(binding: NarrativeBinding | null, toolOutputs: readonly unknown[], context: WrittenAnswerBindingContext = {}): SavedClaimSet | null {
+  if (!binding) return null;
+  const claimFacts = context.toolResults?.length ? claimEvidenceFacts(context.toolResults, context.institutionId ?? null) : null;
+  return savedClaimsFrom(binding, [writtenAnswerFeeEvidence(toolOutputs)?.evidence, claimFacts]);
+}
+
+/**
  * The saved response for a written answer: its sections, title, figure-check confidence, the
- * evidence gate's verdict and the sentence binding. A sentence the records contradict is left out
- * of the saved sections; the binding keeps its text and why.
+ * evidence gate's verdict, the sentence binding and its claims. A sentence the records contradict
+ * is left out of the saved sections; the binding and the claims keep its text and why.
  */
 export function writtenAnswerResponse(
   text: string,
   toolOutputs: readonly unknown[],
   check: AnswerEvidenceCheck = writtenAnswerCheck(text, toolOutputs),
   binding: NarrativeBinding | null = null,
+  claims: SavedClaimSet | null = null,
 ): AnalyzeResponse {
   const parsed = withoutOmitted(parseAnalyzeResponse(text), binding);
   return {
@@ -65,5 +78,6 @@ export function writtenAnswerResponse(
     exploreFurther: parsed.exploreFurther,
     answerEvidence: savedAnswerEvidence(check),
     ...(binding ? { narrativeBinding: binding } : {}),
+    ...(binding && claims ? { claims } : {}),
   };
 }

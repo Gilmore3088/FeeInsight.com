@@ -7,6 +7,7 @@ export const maxDuration = 300;
 import { boardBriefHref, decodeLandingResearch } from "@/lib/hamilton/landing-research-handoff";
 import { BoardBriefEditor } from "@/components/hamilton/reports/BoardBriefEditor";
 import { loadAnalysisRecord } from "../analyze/actions";
+import { withoutSavedClaims } from "@/lib/hamilton/saved-analysis-record";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
@@ -104,7 +105,8 @@ export default async function ReportsPage({
     if (params.report_id || params.report || params.scenario_id) return <p role="alert">Open the saved answer separately from another report.</p>;
     const analysis = await loadAnalysisRecord(params.from_analysis);
     if (!analysis) return <p role="alert">Saved answer not found or unavailable.</p>;
-    return <BoardBriefEditor key={analysis.id} analysis={analysis.responseJson} analysisId={analysis.id} />;
+    // A client prop: never the saved claims (#1077 step 6), whichever loader filled it.
+    return <BoardBriefEditor key={analysis.id} analysis={withoutSavedClaims(analysis.responseJson)} analysisId={analysis.id} />;
   }
   const initialReportId = params.report_id ?? params.report ?? null;
   const [publishedReports, savedReports, savedScenario, initialReport] = await Promise.all([
