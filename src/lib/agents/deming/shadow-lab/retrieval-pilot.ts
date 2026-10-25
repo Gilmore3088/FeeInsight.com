@@ -106,7 +106,7 @@ export function pageKey(url: string): string {
   const [rawPath, rawQuery = ""] = decode(url.trim().split("#")[0].replace(/&amp;/g, "&"))
     .replace(/^https?:\/\/(www\.)?/i, "")
     .toLowerCase()
-    .split(/\?(.*)/s);
+    .split(/\?([\s\S]*)/);
   const query = rawQuery
     .split("&")
     .filter((pair) => pair !== "" && !PRESENTATION_PARAM.test(pair.split("=")[0]))
