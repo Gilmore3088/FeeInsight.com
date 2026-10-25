@@ -6,6 +6,9 @@ import { runKnoxExtract } from "../knox/extract";
 import {
   DOCUMENT_ACCESS_STRATEGY,
   FLAT_TEXT_MIN_CHARS,
+  GLYPH_REPAIR_MAX_TRIES,
+  GLYPH_REPAIR_RETRY_OUTCOMES,
+  GLYPH_REPAIR_STRATEGY,
   REREAD_MAX_KNOX_FEES,
   ROSETTA_DOCUMENT_ACCESS_VERSION,
   ROSETTA_READ_MAX_LIMIT,
@@ -625,6 +628,41 @@ describe("Rosetta agentic read", () => {
       const lostText = survival.slice(survival.indexOf("AS last_text_lost"), survival.indexOf("AS last_lost_text"));
       expect(lostText).toContain("read again for glyph repair");
       expect(lostText).toMatch(/adt\.normalized_text !~ \$\d+/);
+    });
+
+    it("settles the glyph lane on its own receipt, not only on a glyph-repair reader's read (#2649 review)", async () => {
+      const db = learningDb([]);
+      await runRosettaRead({ runId: 316, db: asReadDb(db), fetchImpl: vi.fn() });
+      const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
+      const valueAt = (placeholder: string) => params[Number(placeholder) - 1];
+      const strategy = /glyph_receipt\.strategy = \$(\d+)/.exec(query);
+      expect(valueAt(strategy![1])).toBe(GLYPH_REPAIR_STRATEGY);
+      const retry = /glyph_receipt\.outcome <> ALL\(\$(\d+)::text\[\]\)/.exec(query);
+      expect(valueAt(retry![1])).toEqual(GLYPH_REPAIR_RETRY_OUTCOMES);
+      const tries = /COUNT\(\*\) >= \$(\d+)::int/.exec(query);
+      expect(valueAt(tries![1])).toBe(GLYPH_REPAIR_MAX_TRIES);
+      expect(query).toContain("AS glyph_repair_due");
+    });
+
+    it.each([
+      { status: 404, outcome: "http_404" },
+      { status: 503, outcome: "http_5xx" },
+    ])("leaves a glyph receipt when the due text's document cannot be fetched ($outcome)", async ({ status, outcome }) => {
+      const capturedHash = rawHash("captured glyph text bytes");
+      const db = learningDb([{ ...htmlCandidate, content_hash: capturedHash, glyph_repair_due: true }]);
+      const fetchImpl = vi.fn().mockResolvedValueOnce(response("unavailable", "text/html", status));
+
+      await runRosettaRead({ runId: 317, stepId: 13, db: asReadDb(db), fetchImpl });
+
+      const receipt = attemptValues(db).find((values) => values[3] === GLYPH_REPAIR_STRATEGY)!;
+      expect(receipt.slice(2, 7)).toEqual(["read", GLYPH_REPAIR_STRATEGY, GLYPH_REPAIR_VERSION, capturedHash, outcome]);
+      expect(JSON.parse(String(receipt[12]))).toMatchObject({ glyph_repair: GLYPH_REPAIR_VERSION, read_status: "failed", reader: null });
+    });
+
+    it("leaves no glyph receipt for a text the lane did not select", async () => {
+      const db = learningDb([{ ...htmlCandidate, content_hash: rawHash("not due") }]);
+      await runRosettaRead({ runId: 318, db: asReadDb(db), fetchImpl: vi.fn().mockResolvedValueOnce(response("unavailable", "text/html", 404)) });
+      expect(attemptValues(db).some((values) => values[3] === GLYPH_REPAIR_STRATEGY)).toBe(false);
     });
 
     it("records the glyph-repair version on a primary read", async () => {

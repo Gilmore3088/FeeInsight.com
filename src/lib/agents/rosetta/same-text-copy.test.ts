@@ -156,6 +156,15 @@ describe("same page, same text, same verdict (#2477)", () => {
       expect(sameTextGlyphBlind(older, repaired.slice(1))).toBe(false);
       // More letters than a glyph can stand for.
       expect(sameTextGlyphBlind("Overdra\uFFFD Fee", "Overdraftxyz Fee")).toBe(false);
+      // A glyph never hides a different amount (#2649 review).
+      expect(sameTextGlyphBlind("Fee \uFFFD5.00 each", "Fee $15.00 each")).toBe(false);
+      expect(sameTextGlyphBlind("Fee $25\uFFFD", "Fee $250")).toBe(false);
+      expect(sameTextGlyphBlind("Fee $1\uFFFD00", "Fee $1500")).toBe(false);
+      expect(sameTextGlyphBlind("Fee $1\uFFFD00", "Fee $1,00")).toBe(false);
+      expect(sameTextGlyphBlind("\uFFFD", "$5")).toBe(false);
+      // Only the decimal repair itself puts "." in a slot, keeping every digit.
+      expect(sameTextGlyphBlind("Fee $1\uFFFD00 each", "Fee $1.00 each")).toBe(true);
+      expect(sameTextGlyphBlind("Fee $1\uFFFD\uFFFD00 each", "Fee $1.00 each")).toBe(false);
       // An older text with no glyph is compared exactly.
       expect(sameTextGlyphBlind("Overdraft Fee $30", "Overdraft Fee $35")).toBe(false);
     });

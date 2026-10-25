@@ -76,8 +76,14 @@ describe("repairUnmappedGlyphs (#2598)", () => {
   });
 
   it("restores a decimal point between a dollar amount and its cents", () => {
-    expect(repaired(`Bill Pay Overnight Check ${G}${G}${G} $14${G}95 each`)).toBe(`Bill Pay Overnight Check ${G}${G}${G} $14.95 each`);
     expect(repaired(`Out of Network ATMs $2${G}00/Transaction`)).toBe("Out of Network ATMs $2.00/Transaction");
+    expect(repaired(`Research $143${G}56`)).toBe("Research $143.56");
+    // Cents above the dollar figure could be a range ("$5-10"): restored only where the document
+    // writes the glyph as its decimal elsewhere and never between two dollar figures.
+    expect(repaired(`Copies $5${G}10 per page`)).toBe(`Copies $5${G}10 per page`);
+    expect(repaired(`Bill Pay Overnight Check ${G}${G}${G} $14${G}95 each`)).toBe(`Bill Pay Overnight Check ${G}${G}${G} $14${G}95 each`);
+    expect(repaired(`Bill Pay Overnight Check $14${G}95 each\nStop Payment $30${G}00`)).toBe("Bill Pay Overnight Check $14.95 each\nStop Payment $30.00");
+    expect(repaired(`Copies $5${G}10 per page\nStop Payment $30${G}00\nResearch $5${G}$10`)).toBe(`Copies $5${G}10 per page\nStop Payment $30.00\nResearch $5${G}$10`);
     // Without a dollar sign, or with more than two digits after it, the glyph is not provably a point.
     expect(repaired(`Account Closed Early Fee 30${G}89`)).toBe(`Account Closed Early Fee 30${G}89`);
     expect(repaired(`$1${G}000`)).toBe(`$1${G}000`);
@@ -156,6 +162,19 @@ describe("decodeTextBytes (#2598)", () => {
   it("keeps valid UTF-8 as UTF-8 whatever the page declares", () => {
     const bytes = new TextEncoder().encode("Zelle\u00AE \u2014 $5.00");
     expect(decodeTextBytes(bytes, "text/html;charset=ISO-8859-1")).toBe("Zelle\u00AE \u2014 $5.00");
+  });
+
+  it("keeps a UTF-8 page's characters when one byte on it is Latin-1 (#2649 review)", () => {
+    const utf8 = (text: string) => Array.from(new TextEncoder().encode(text));
+    const mixed = Uint8Array.from([...utf8("Zelle\u00AE fee \u2013 $5 Cashier\u2019s "), 0xa0, ...utf8("ok")]);
+    expect(decodeTextBytes(mixed, "text/html; charset=utf-8")).toBe("Zelle\u00AE fee \u2013 $5 Cashier\u2019s \u00A0ok");
+    // The Kasasa footer: a UTF-8 page whose copyright sign is a raw 0xA9 byte.
+    const kasasa = Uint8Array.from([...utf8("NSF \u2013 Nonsufficient Funds Fee $30.00\nCopyright "), 0xa9, ...utf8(" Kasasa, Ltd.")]);
+    expect(decodeTextBytes(kasasa, "text/html; charset=UTF-8")).toBe("NSF \u2013 Nonsufficient Funds Fee $30.00\nCopyright \u00A9 Kasasa, Ltd.");
+    expect(decodeTextBytes(kasasa, null)).not.toMatch(/\u00E2|\uFFFD/);
+    // A truncated or overlong sequence is not UTF-8: each of its bytes is read as Windows-1252.
+    expect(decodeTextBytes(Uint8Array.from([0x41, 0xe2, 0x80, 0x41]), null)).toBe("A\u00E2\u20ACA");
+    expect(decodeTextBytes(Uint8Array.from([0xc0, 0xaf, 0x93]), null)).toBe("\u00C0\u00AF\u201C");
   });
 
   it("reads the charset a page declares in its own meta tag", () => {

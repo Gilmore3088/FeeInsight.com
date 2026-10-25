@@ -70,19 +70,28 @@ Rosetta owns source text normalization.
   so keep that contract.
 - Glyph repair (#2598, `glyph-repair.ts`, `GLYPH_REPAIR_VERSION` v1). U+FFFD is never passed on
   as text where the letters can be known. HTML and plain text keep valid UTF-8; bytes that are not
-  UTF-8 are read in their declared charset (header or meta tag) or as Windows-1252, so a Latin-1
-  page's "Zelle(R)" is not stored as "Zelle" plus U+FFFD. U+FB00-U+FB06 ligatures are written as
-  their letters. A PDF whose ToUnicode map sends a glyph to U+FFFD (Word's ti, ft, tt, ff, fi
+  UTF-8 are read in their declared charset (header or meta tag) when it is neither UTF-8 nor
+  Windows-1252, and otherwise each valid UTF-8 sequence stays UTF-8 and only a byte that starts none
+  is read as Windows-1252, so a Latin-1 page's "Zelle(R)" is not stored as "Zelle" plus U+FFFD and a
+  UTF-8 page with one raw Latin-1 byte (the Kasasa footer's 0xA9) keeps its other characters.
+  U+FB00-U+FB06 ligatures are written as their letters. HTML and plain text get only these two
+  steps: a U+FFFD the page itself sends as valid UTF-8 stays. A PDF whose ToUnicode map sends a glyph to U+FFFD (Word's ti, ft, tt, ff, fi
   ligatures) has no letters to decode, so the PDF reader restores a glyph, in both readings of each
   page, only where one reading is possible: a dollar amount's glyph before exactly two digits is
-  "."; a word with one or two glyphs is restored when exactly one ligature spelling
+  "." when no range reading is possible (cents "00" or not above the dollar figure), or when the
+  same document writes the glyph as its decimal before "00" and never between two dollar figures,
+  and otherwise stays, since "$5", glyph, "10" may be a $5 to $10 range; a word with one or two
+  glyphs is restored when exactly one ligature spelling
   (`LIGATURE_CANDIDATES`; a lone "f" only before i or l) is a known word (`FEE_TEXT_LIGATURE_WORDS`
   or a word the same document prints in clear); a glyph ending a word only when the letters
   before it are not a word the document prints on its own and not "an", "of", "so" or "the".
   Runs (dot leaders), lone glyphs (bullets) and words with no single reading stay. A completed
   `read.pdf_layout`, `read.html_dom`, `read.plain_text` or `read.js_fallback` text that still
   carries U+FFFD or a ligature is read once per glyph-repair version: the read attempt records
-  `detail.glyph_repair`, and only a settled outcome at the current version takes the text out
+  `detail.glyph_repair`, and every read of a due text also leaves a `read.glyph_repair` receipt
+  (`GLYPH_REPAIR_STRATEGY`, auxiliary, outside the playbook) whatever its outcome. The text is
+  settled by a glyph reader's answer or permanent failure, by a receipt that is not a transient
+  failure (`GLYPH_REPAIR_RETRY_OUTCOMES`), or after `GLYPH_REPAIR_MAX_TRIES` receipts
   (`GLYPH_REPAIR_READERS`, `GLYPH_REPAIR_DUE_PATTERN`). Oct 25: 173 current copies at 100
   institutions (121 with U+FFFD, 52 with only a ligature; 1 not in the vault). Bayes counts them
   (`rosetta.glyph_repair`, `countGlyphRepairs`). Knox then reads each changed text; Rosetta
@@ -239,7 +248,8 @@ Rosetta owns source text normalization.
     `SAME_TEXT_COPY_REOPEN_LIVE` is true (off; 714 copies at 641 banks on Oct 25).
     Older copies are never read again, so their stored text keeps glyphs a new read now restores
     (#2598): when no older copy has the exact text, a read also matches glyph-blind
-    (`sameTextGlyphBlind`: only the older text's U+FFFD runs may differ, up to 3 letters each;
+    (`sameTextGlyphBlind`: only the older text's U+FFFD runs may differ, up to 3 characters each,
+    never a digit, "$", "." or "," except the decimal repair's single "." between digits;
     attempt detail `same_text_glyph_blind`). On Oct 25, 21 current copies at 20 banks had a
     same-text older Knox copy whose text carries U+FFFD or a ligature (7 of them `wrong_document`).
   - Every text Rosetta stores gets its document kind (#1094, `learning/document-kind.ts`,

@@ -145,6 +145,8 @@ interface ReadCandidateRow {
   reader_replay_text_hash?: string | null;
   reader_replay_reader?: string | null;
   reader_replay_from_version?: number | string | null;
+  /** Glyph repair (#2598): the current text is due for its read at GLYPH_REPAIR_VERSION. */
+  glyph_repair_due?: boolean | null;
 }
 
 /**
@@ -411,6 +413,7 @@ export const ROSETTA_REOPEN_LIMIT = 100;
 /** Strategies that run beside or after the first reader; they never settle a read. */
 export const AUXILIARY_READ_STRATEGIES = [
   PAGE_CHECK_STRATEGY,
+  "read.glyph_repair",
   REOPEN_STRATEGY,
   PDF_STACKED_REPAIR_STRATEGY,
   TABLE_ROWS_STRATEGY,
@@ -444,6 +447,44 @@ export const INTERLEAVED_PROSE_CELL_PATTERN = String.raw`[a-z,;] \| [a-z]`;
  * many fees (the lost-text rule, `last_lost_text`).
  */
 export const GLYPH_REPAIR_READERS: string[] = ["read.pdf_layout", "read.html_dom", "read.plain_text", "read.js_fallback"];
+/**
+ * The lane's own receipt: every read of a text the lane selected leaves one, whatever happened
+ * (an access failure, a mismatch, a scan sent to OCR, the router's known-failure skip), so a read
+ * that never reaches a glyph-repair reader still settles the text (#2649 review). Auxiliary: it
+ * never settles an ordinary read and never enters the bank's playbook.
+ */
+export const GLYPH_REPAIR_STRATEGY = "read.glyph_repair";
+/** Receipt outcomes that may pass on a retry; after this many tries the text is settled anyway. */
+export const GLYPH_REPAIR_RETRY_OUTCOMES: AttemptOutcome[] = ["timeout", "network_error", "http_429", "http_5xx", "budget_blocked"];
+export const GLYPH_REPAIR_MAX_TRIES = 3;
+
+/**
+ * SQL (text alias `alias`): the text has had its read at the current glyph-repair version: a read
+ * by a glyph-repair reader that ended in an answer or a permanent failure, or a lane receipt that
+ * is not a transient failure, or GLYPH_REPAIR_MAX_TRIES receipts of any kind.
+ */
+export function glyphRepairSettledSql(
+  alias: string,
+  p: { version: string; settled: string; strategy: string; retry: string; maxTries: string },
+): string {
+  return `(EXISTS (
+                    SELECT 1 FROM pipeline_attempts glyph_read
+                     WHERE glyph_read.stage = 'read'
+                       AND glyph_read.institution_id = ${alias}.institution_id
+                       AND glyph_read.input_fingerprint = ${alias}.source_hash
+                       AND COALESCE((glyph_read.detail->>'glyph_repair')::int, 0) >= ${p.version}
+                       AND glyph_read.outcome = ANY(${p.settled}::text[])
+                  ) OR (
+                    SELECT COUNT(*) FILTER (WHERE glyph_receipt.outcome <> ALL(${p.retry}::text[])) > 0
+                           OR COUNT(*) >= ${p.maxTries}::int
+                      FROM pipeline_attempts glyph_receipt
+                     WHERE glyph_receipt.stage = 'read'
+                       AND glyph_receipt.strategy = ${p.strategy}
+                       AND glyph_receipt.strategy_version >= ${p.version}::int
+                       AND glyph_receipt.institution_id = ${alias}.institution_id
+                       AND glyph_receipt.input_fingerprint = ${alias}.source_hash
+                  ))`;
+}
 /**
  * The first PDF reader (no `reader` recorded) ran a document's text onto one line. Knox
  * splits a line only at wide gaps and sentence ends, so a schedule longer than this ran
@@ -1080,6 +1121,8 @@ export function rosettaReadCandidatesQuery(
   let readerReplayDue = "FALSE";
   let readerReplayText = "FALSE";
   let readerReplayColumns = "";
+  // Glyph repair (#2598): this document's current text is due for its read at this version.
+  let glyphRepairDueColumn = "FALSE";
   if (learning) {
     // This repair reads existing vault bytes only. It cannot discover a new source
     // or create a paid-reader retry wave.
@@ -1133,23 +1176,32 @@ export function rosettaReadCandidatesQuery(
     const glyphVersionParam = `$${params.length}`;
     params.push(GLYPH_REPAIR_READERS);
     const glyphReadersParam = `$${params.length}`;
+    params.push(GLYPH_REPAIR_STRATEGY);
+    const glyphStrategyParam = `$${params.length}`;
+    params.push(GLYPH_REPAIR_RETRY_OUTCOMES);
+    const glyphRetryParam = `$${params.length}`;
+    params.push(GLYPH_REPAIR_MAX_TRIES);
+    const glyphMaxTriesParam = `$${params.length}`;
+    const glyphSettled = (alias: string) => glyphRepairSettledSql(alias, {
+      version: glyphVersionParam, settled: settledParam, strategy: glyphStrategyParam,
+      retry: glyphRetryParam, maxTries: glyphMaxTriesParam,
+    });
     const glyphRepairDue = (alias: string) => `(
                 ${alias}.status = 'completed'
                 AND ${alias}.reader = ANY(${glyphReadersParam}::text[])
                 -- CASE keeps the text scan behind the cheap checks.
                 AND CASE
                   WHEN ${alias}.normalized_text !~ ${glyphPatternParam} THEN FALSE
-                  WHEN EXISTS (
-                    SELECT 1 FROM pipeline_attempts glyph_read
-                     WHERE glyph_read.stage = 'read'
-                       AND glyph_read.institution_id = ${alias}.institution_id
-                       AND glyph_read.input_fingerprint = ${alias}.source_hash
-                       AND COALESCE((glyph_read.detail->>'glyph_repair')::int, 0) >= ${glyphVersionParam}
-                       AND glyph_read.outcome = ANY(${settledParam}::text[])
-                  ) THEN FALSE
+                  WHEN ${glyphSettled(alias)} THEN FALSE
                   ELSE TRUE
                 END
               )`;
+    glyphRepairDueColumn = `EXISTS (
+      SELECT 1 FROM agent_source_texts glyph_text
+       WHERE glyph_text.source_document_id = cr.id
+         AND glyph_text.source_hash IS NOT DISTINCT FROM cr.content_hash
+         AND ${glyphRepairDue("glyph_text")}
+    )`;
     // Page checks, table rows, OCR, fallbacks and the paid pass never settle a read.
     params.push(AUXILIARY_READ_STRATEGIES);
     const auxiliaryParam = `$${params.length}`;
@@ -1574,7 +1626,8 @@ export function rosettaReadCandidatesQuery(
              ct.institution_name,
              cr.document_url,
              cr.content_hash,
-             ${stackedRepairDue} AS pdf_stacked_repair_due${playbookColumns}${survivalColumns}${readerReplayColumns}${vaultColumns}${companionColumns}${repairIncumbent}
+             ${stackedRepairDue} AS pdf_stacked_repair_due,
+             ${glyphRepairDueColumn} AS glyph_repair_due${playbookColumns}${survivalColumns}${readerReplayColumns}${vaultColumns}${companionColumns}${repairIncumbent}
         FROM source_documents cr
         JOIN institution_sources ct ON ct.id = cr.institution_id
         LEFT JOIN institution_source_profiles profile
@@ -1656,14 +1709,7 @@ export async function countGlyphRepairs(db: SqlTag): Promise<{ queued: number; d
            COUNT(*) FILTER (WHERE repaired) AS done
       FROM (
         SELECT adt.normalized_text ~ $1 AS due,
-               EXISTS (
-                 SELECT 1 FROM pipeline_attempts glyph_read
-                  WHERE glyph_read.stage = 'read'
-                    AND glyph_read.institution_id = adt.institution_id
-                    AND glyph_read.input_fingerprint = adt.source_hash
-                    AND COALESCE((glyph_read.detail->>'glyph_repair')::int, 0) >= $2
-                    AND glyph_read.outcome = ANY($3::text[])
-               ) AS repaired
+               ${glyphRepairSettledSql("adt", { version: "$2", settled: "$3", strategy: "$5", retry: "$6", maxTries: "$7" })} AS repaired
           FROM agent_source_texts adt
           JOIN source_documents doc ON doc.id = adt.source_document_id
            AND adt.source_hash IS NOT DISTINCT FROM doc.content_hash
@@ -1673,8 +1719,35 @@ export async function countGlyphRepairs(db: SqlTag): Promise<{ queued: number; d
            AND doc.superseded_by_id IS NULL AND doc.duplicate_of_id IS NULL
       ) texts
      WHERE due OR repaired
-  `, [GLYPH_REPAIR_DUE_PATTERN, GLYPH_REPAIR_VERSION, [...PERMANENT_OUTCOMES, ...SETTLED_READ_OUTCOMES], GLYPH_REPAIR_READERS]);
+  `, [GLYPH_REPAIR_DUE_PATTERN, GLYPH_REPAIR_VERSION, [...PERMANENT_OUTCOMES, ...SETTLED_READ_OUTCOMES], GLYPH_REPAIR_READERS,
+    GLYPH_REPAIR_STRATEGY, GLYPH_REPAIR_RETRY_OUTCOMES, GLYPH_REPAIR_MAX_TRIES]);
   return { queued: Number(row?.queued ?? 0), done: Number(row?.done ?? 0) };
+}
+
+/** One `read.glyph_repair` receipt for a read of a text the glyph lane selected (see GLYPH_REPAIR_STRATEGY). */
+export async function recordGlyphRepairReceipt(
+  db: SqlTag,
+  env: { runId: number; stepId: number | null },
+  row: Pick<ReadCandidateRow, "institution_id" | "source_document_id" | "content_hash">,
+  result: Pick<ReadResult, "status" | "attemptOutcome" | "reader" | "textHash">,
+): Promise<void> {
+  if (!row.content_hash) return;
+  await recordAttempt(db, {
+    institutionId: Number(row.institution_id),
+    sourceDocumentId: Number(row.source_document_id),
+    stage: "read",
+    strategy: GLYPH_REPAIR_STRATEGY,
+    version: GLYPH_REPAIR_VERSION,
+    fingerprint: row.content_hash,
+    // The router's known-failure skip fetches nothing and would skip again: it settles the text.
+    outcome: result.attemptOutcome ?? "unchanged",
+    yieldCount: 0,
+    costMicrousd: 0,
+    runId: env.runId,
+    stepId: env.stepId,
+    foldIntoPlaybook: false,
+    detail: { glyph_repair: GLYPH_REPAIR_VERSION, read_status: result.status, reader: result.reader ?? null, text_hash: result.textHash ?? null },
+  });
 }
 
 /** Read-only: the reader-replay lane's full due set (#2069), for Bayes's ledger and dry runs. It
@@ -2793,6 +2866,11 @@ export async function runRosettaRead(
       // Every replay that was read leaves its receipt, whatever the outcome: once per reader version
       // (#2069). A deferred scan fetched nothing (this run's OCR allowance was used up), so it stays
       // due for a later run.
+      // The glyph lane's receipt, whatever the read's outcome (#2649 review): a deferred scan fetched
+      // nothing, so it stays due.
+      if (row.glyph_repair_due === true && result.status !== "deferred") {
+        await recordGlyphRepairReceipt(db, { runId: options.runId, stepId: options.stepId ?? null }, row, result);
+      }
       if (row.reader_replay_due === true && result.status !== "deferred") {
         const replay = await recordReaderReplay(db, { runId: options.runId, stepId: options.stepId ?? null }, row, result);
         readerReplayed += 1;

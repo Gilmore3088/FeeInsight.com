@@ -9,8 +9,12 @@
  * restores a glyph only where the answer is unambiguous:
  *
  * - U+FB00-U+FB06 are real Unicode ligatures; each has one compatibility decomposition (NFKC).
- * - "$14\uFFFD95": a dollar amount, the glyph, exactly two digits. US amounts write cents after
- *   a point, so the glyph is ".".
+ * - "$2\uFFFD00": a dollar amount, the glyph, exactly two digits. US amounts write cents after
+ *   a point, so the glyph is "." when no range reading is possible: the cents are "00", or are
+ *   not above the dollar figure ("$143\uFFFD56"). "$5\uFFFD10" may be "$5-10", so it is restored
+ *   only when the same document writes the glyph as its decimal ("$N\uFFFD00") and never between
+ *   two dollar figures ("$5\uFFFD$10"). This is the one repair that can change an amount, so a
+ *   doubtful case stays as it is (#2649 review).
  * - A word with one or two unknown glyphs: each is tried as every ligature Word draws
  *   (`LIGATURE_CANDIDATES`). The word is restored only when exactly one spelling is a known word
  *   (`FEE_TEXT_LIGATURE_WORDS`, or a word the same text prints in clear). At the end of a word the
@@ -173,6 +177,19 @@ const GLYPH_WORD = /[A-Za-z\uFFFD]*[A-Za-z][A-Za-z\uFFFD]*/g;
  */
 const SENTENCE_END_WORDS: ReadonlySet<string> = new Set(["an", "of", "so", "the"]);
 const DOLLAR_CENTS = /(\$\s?\d{1,3}(?:,\d{3})*|\$\s?\d+)\uFFFD(\d{2})(?![\d\uFFFD])/g;
+/** The glyph written as a decimal point before "00", and the glyph between two dollar figures. */
+const GLYPH_DECIMAL_00 = /\$\s?\d[\d,]*\uFFFD00(?![\d\uFFFD])/;
+const GLYPH_DOLLAR_RANGE = /\$\s?\d[\d,]*\s?\uFFFD\s?\$/;
+
+/** The text with each provable decimal glyph restored (see the module comment). */
+function restoreDecimals(text: string, documentText: string): string {
+  const glyphIsDecimal = GLYPH_DECIMAL_00.test(documentText) && !GLYPH_DOLLAR_RANGE.test(documentText);
+  return text.replace(DOLLAR_CENTS, (match: string, dollars: string, cents: string) => {
+    const whole = Number(dollars.replace(/[$,\s]/g, ""));
+    const noRange = cents === "00" || Number(cents) <= whole;
+    return noRange || glyphIsDecimal ? `${dollars}.${cents}` : match;
+  });
+}
 
 /** U+FB00-U+FB06 written as their letters ("\uFB01nancial" is "financial"). */
 export function expandUnicodeLigatures(text: string): string {
@@ -240,7 +257,7 @@ export function repairUnmappedGlyphs(input: string, documentText: string = input
   const expanded = expandUnicodeLigatures(input);
   const total = expanded.split(REPLACEMENT_CHARACTER).length - 1;
   if (total === 0) return { text: expanded, restored: 0, left: 0 };
-  let text = expanded.replace(DOLLAR_CENTS, "$1.$2");
+  let text = restoreDecimals(expanded, expandUnicodeLigatures(documentText));
   const printed = clearWords(expandUnicodeLigatures(documentText));
   const known = (candidate: string) =>
     LIGATURE_LETTERS.test(candidate) && (FEE_TEXT_LIGATURE_WORDS.has(candidate) || printed.has(candidate));
@@ -289,17 +306,63 @@ function decoderFor(label: string): TextDecoder | null {
   }
 }
 
+/** Length of the valid UTF-8 sequence starting at `index`, or 0 when the byte there starts none. */
+function utf8SequenceLength(bytes: Uint8Array, index: number): number {
+  const lead = bytes[index];
+  if (lead < 0x80) return 1;
+  const cont = (offset: number, low = 0x80, high = 0xbf) => {
+    const byte = bytes[index + offset];
+    return byte !== undefined && byte >= low && byte <= high;
+  };
+  if (lead >= 0xc2 && lead <= 0xdf) return cont(1) ? 2 : 0;
+  if (lead === 0xe0) return cont(1, 0xa0) && cont(2) ? 3 : 0;
+  if ((lead >= 0xe1 && lead <= 0xec) || lead === 0xee || lead === 0xef) return cont(1) && cont(2) ? 3 : 0;
+  if (lead === 0xed) return cont(1, 0x80, 0x9f) && cont(2) ? 3 : 0;
+  if (lead === 0xf0) return cont(1, 0x90) && cont(2) && cont(3) ? 4 : 0;
+  if (lead >= 0xf1 && lead <= 0xf3) return cont(1) && cont(2) && cont(3) ? 4 : 0;
+  if (lead === 0xf4) return cont(1, 0x80, 0x8f) && cont(2) && cont(3) ? 4 : 0;
+  return 0;
+}
+
+/**
+ * Mostly-UTF-8 bytes as text: every valid UTF-8 sequence is read as UTF-8, and only a byte that
+ * starts no valid sequence is read as Windows-1252. A UTF-8 page with one raw Latin-1 byte (the
+ * Kasasa footer's 0xA9 "Copyright (c)") keeps its "’", "–" and "®" (#2649 review); a
+ * pure Latin-1 page, whose high bytes start no valid sequence, reads as Windows-1252 throughout.
+ */
+function decodeUtf8WithWindows1252(bytes: Uint8Array): string {
+  const utf8 = new TextDecoder("utf-8");
+  const parts: string[] = [];
+  let runStart = 0;
+  let index = 0;
+  while (index < bytes.length) {
+    const length = utf8SequenceLength(bytes, index);
+    if (length > 0) {
+      index += length;
+      continue;
+    }
+    if (index > runStart) parts.push(utf8.decode(bytes.subarray(runStart, index)));
+    parts.push(decodeWindows1252(bytes.subarray(index, index + 1)));
+    index += 1;
+    runStart = index;
+  }
+  if (bytes.length > runStart) parts.push(utf8.decode(bytes.subarray(runStart)));
+  return parts.join("");
+}
+
 /**
  * Bytes as text. Valid UTF-8 is read as UTF-8 whatever the page declares (a page labelled
  * ISO-8859-1 that sends UTF-8 is common). Bytes that are not valid UTF-8 are read in the declared
- * charset, or as Windows-1252, which gives every byte a character, so none becomes U+FFFD.
+ * charset when it is neither UTF-8 nor Windows-1252; otherwise each valid UTF-8 sequence stays
+ * UTF-8 and only the bytes that are not are read as Windows-1252, so no byte becomes U+FFFD and no
+ * UTF-8 character is split.
  */
 export function decodeTextBytes(bytes: Uint8Array, contentType?: string | null): string {
   try {
     return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   } catch {
     const declared = declaredCharset(bytes, contentType);
-    if (!declared || /^utf-?8$/.test(declared) || WINDOWS_1252_LABELS.has(declared)) return decodeWindows1252(bytes);
-    return decoderFor(declared)?.decode(bytes) ?? decodeWindows1252(bytes);
+    if (!declared || /^utf-?8$/.test(declared) || WINDOWS_1252_LABELS.has(declared)) return decodeUtf8WithWindows1252(bytes);
+    return decoderFor(declared)?.decode(bytes) ?? decodeUtf8WithWindows1252(bytes);
   }
 }

@@ -37,13 +37,20 @@ whatever its charset.
 
 **Fix:** `src/lib/agents/rosetta/glyph-repair.ts`, `GLYPH_REPAIR_VERSION` v1. The PDF reader
 restores a glyph only where one reading is possible: U+FB00-U+FB06 to their letters; a dollar
-amount's glyph before exactly two digits to "."; a word's glyph when exactly one ligature spelling
+amount's glyph before exactly two digits to "." when it cannot be a range (cents "00" or not above
+the dollar figure), or when the document writes the glyph as its decimal before "00" and never
+between two dollar figures (all 85 such glyphs in current prod texts qualify); a word's glyph when exactly one ligature spelling
 is a known word (a list of 1,093 such words printed at 10+ institutions in a prod sample, plus the
 document's own clear words), and at a word's end only when the letters before it are not a word
 the document prints on its own. Runs, lone glyphs and words with no single reading stay. HTML and
-plain text keep valid UTF-8 and read other bytes in their declared charset or Windows-1252. A
+plain text get only ligature expansion and the charset fix: they keep valid UTF-8, and a page that
+is not valid UTF-8 is read in its declared charset, or, when that is UTF-8, Windows-1252 or none,
+sequence by sequence: valid UTF-8 stays UTF-8 and only a byte that starts no sequence is read as
+Windows-1252 (a first version decoded the whole page as Windows-1252, which would have turned every
+"’" on a UTF-8 page with one raw 0xA9 byte into mojibake; review of PR 2649). A
 completed text with U+FFFD or a ligature is read once per glyph-repair version (`read.ts`, witness
-`detail.glyph_repair`).
+`detail.glyph_repair`), and each read of a due text leaves a `read.glyph_repair` receipt, so an
+access failure or a skipped read settles the text instead of reselecting it every run.
 
 **Dry run (rule applied to prod data, record-only):** of 1,130 in-word glyphs in completed PDF
 texts, 1,096 are restored and 34 stay (scan noise, web addresses, words outside the list); of
