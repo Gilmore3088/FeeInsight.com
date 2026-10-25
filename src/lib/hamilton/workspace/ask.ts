@@ -23,6 +23,7 @@ import { parseSegment, SEGMENT_AMOUNTS } from "./segment";
 import { rateVolumeQuestion } from "./rates";
 import { asksAboutStructure } from "./storyline";
 import { asksWholeSchedule } from "./schedule";
+import { asksIncome, asksIncomeWhy } from "./why";
 import type {
   AskObjective,
   AskSegment,
@@ -95,7 +96,7 @@ export function matchFeeCategory(question: string): string | null {
 }
 
 // "What should I know about ..." asks for facts, not a decision.
-const OPINION = /what would you do|what do you (recommend|suggest|advise)|\bshould (we|i)\b(?! (know|be aware|understand|note|keep in mind|watch))|your (opinion|recommendation|advice|view)|which (price|option|scenario|one) (is|was|would be) best|best (price|option)/i;
+const OPINION = /what would you do|what (?:do|would) you (recommend|suggest|advise)|\bshould (we|i)\b(?! (know|be aware|understand|note|keep in mind|watch))|your (opinion|recommendation|advice|view)|which (price|option|scenario|one) (is|was|would be) best|best (price|option)/i;
 const COMPETITORS = /competitor|competition|compet(e|ing)|local|nearby|down the street|who charges|in (our|my) market/i;
 const TREND = /trend|over time|history|historical|income|revenue|earn/i;
 const ELIMINATE = /\b(eliminat\w*|remov\w*|get rid of|scrap\w*|drop(ping)? (it|the fee)|go to (zero|\$0)|no fee|free)\b/i;
@@ -151,13 +152,54 @@ const LIST_QUESTION = new RegExp(
 /** "What regulation applies", "regulatory risk", "is this compliant", "what does the CFPB say". */
 const REGULATION_QUESTION = /\b(regulat\w*|rules?|laws?|legal|complian\w*|CFPB|OCC|FDIC|NCUA|examin\w*|Reg [A-Z]{1,2})\b/i;
 
-export function parseAsk(question: string, fallbackCategory: string | null = null): AskIntent {
+/**
+ * A question about something other than one fee: every fee, or fee income and fee share. The fee
+ * an open decision carries is never put in such a question's place (#1077): "which credit unions
+ * run a fee share below 4%?" asked after an overdraft question is about fee share, not overdraft.
+ */
+export function asksOtherSubject(question: string): boolean {
+  return asksWholeSchedule(question) || asksIncome(question) || asksIncomeWhy(question);
+}
+
+/**
+ * Words that point back at the fee already on screen: "it", "that", "this fee", "ours", "the same",
+ * "what about", "why". "This week" or "that year" point at a time, not the fee.
+ */
+const REFERS_BACK = /\b(?:it|its|ours|same|what about|how about|and for|why|(?:this|that|these|those)(?! (?:week|month|year|quarter|morning|afternoon|evening)\b))\b/i;
+
+/**
+ * Words that can only point at the fee on screen ("it", "that", "the same"), so they hold even in a
+ * question about income: "how would that affect our revenue?" is still about the fee. "Ours", "this"
+ * and asking what to do don't: "what should we do about our falling fee income?" is about income.
+ */
+const POINTS_AT_FEE = /\b(?:it|its|same|that(?! (?:week|month|year|quarter|morning|afternoon|evening)\b))\b/i;
+
+/**
+ * The fee a question is about: the one it names, else the open decision's fee (`carriedCategory`)
+ * only for a follow-up on that fee, one that tests a price, asks what to do, or points back at it
+ * ("what if we charged $30?", "should we raise it?", "how does that compare nationally?"). Any other
+ * question that names no fee keeps none (#1077): "talk to me about institutions above $10B" or
+ * "which credit unions run a fee share below 4%?" is never answered with the open decision's fee.
+ */
+function questionFee(question: string, carriedCategory: string | null, tested: number[]): string | null {
+  const named = matchFeeCategory(question);
+  if (named) return named;
+  if (!carriedCategory) return null;
+  if (tested.length > 0) return carriedCategory;
+  if (asksWholeSchedule(question)) return null;
+  // A question about income keeps the fee only when it points at it ("how would that affect revenue?").
+  if (asksOtherSubject(question)) return POINTS_AT_FEE.test(question) ? carriedCategory : null;
+  return OPINION.test(question) || REFERS_BACK.test(question) ? carriedCategory : null;
+}
+
+export function parseAsk(question: string, carriedCategory: string | null = null): AskIntent {
   const segment = parseSegment(question);
+  // Asset sizes ("$10B") are not prices.
+  const tested = segment ? pricesIn(question.replace(SEGMENT_AMOUNTS, " ")) : pricesIn(question);
   return {
-    feeCategory: matchFeeCategory(question) ?? fallbackCategory,
+    feeCategory: questionFee(question, carriedCategory, tested),
     segment,
-    // Asset sizes ("$10B") are not prices.
-    tested: segment ? pricesIn(question.replace(SEGMENT_AMOUNTS, " ")) : pricesIn(question),
+    tested,
     wantsOpinion: OPINION.test(question),
     focus: segment || COMPETITORS.test(question) ? "competitors" : TREND.test(question) ? "trend" : "position",
     structure: asksAboutStructure(question),
@@ -202,6 +244,33 @@ export function objectiveQuestion(): ClarifyingQuestion {
 
 export function feeQuestion(): ClarifyingQuestion {
   return { prompt: "Which fee do you want to look at?", inputKind: "text", fieldKey: "ask.fee_category" };
+}
+
+/** What Hamilton answers from the data it holds, in the words every out-of-scope answer uses. */
+export const ANSWERABLE =
+  "Hamilton answers from published fee schedules and filed fee income: how one fee compares with peers or a market segment, what a new price would do to fee income, where every fee sits against its peer median, and how fee income compares with peers.";
+
+/**
+ * The answer to a question Hamilton cannot answer from the data it holds (#1077). It says so
+ * plainly and says what it can answer; it never answers a different subject in the question's
+ * place, and never asks "which fee?" of a question about something else. The question it carries
+ * keeps the page's one-tap fee charts; its prompt offers them, it does not ask which fee was meant.
+ */
+export function cannotAnswer(question: string, segment: AskSegment | null): AskResponse {
+  const lead =
+    asksIncome(question) || asksIncomeWhy(question)
+      ? "Hamilton can't answer that from the data it holds: it has no filed fee income to compare for this institution and its peers."
+      : asksWholeSchedule(question)
+        ? "Hamilton can't answer that from the data it holds: it could not place this institution's published fees against its peers."
+        : segment
+          ? `Hamilton can't answer that from the data it holds. It read a question about ${segment.label}, but not one about a fee or fee income.`
+          : "Hamilton can't answer that from the data it holds.";
+  return {
+    kind: "clarifying_question",
+    shortAnswer: `${lead} ${ANSWERABLE}`,
+    pageChange: { screen: "none" },
+    question: { prompt: "Pick one fee to see how it compares with peers.", inputKind: "text", fieldKey: "ask.fee_category" },
+  };
 }
 
 export function testedPricesQuestion(feeCategory: string): ClarifyingQuestion {
@@ -399,7 +468,8 @@ export function buildAskResponse(input: AskInput): AskResponse {
 
 function respond(input: AskInput): AskResponse {
   const { intent, research, memory } = input;
-  if (!intent.feeCategory || !research) return clarify(feeQuestion());
+  // No fee to answer for: say what Hamilton can and can't answer, never another subject (#1077).
+  if (!intent.feeCategory || !research) return cannotAnswer(input.question, intent.segment);
   const fee = research.feeCategory;
   const facts = institutionFactsFrom(memory, fee);
   const stated = research.current === null ? statedCurrent(memory, fee) : null;

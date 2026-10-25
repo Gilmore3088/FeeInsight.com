@@ -1129,7 +1129,16 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   `older_edition: #<doc> effective <date>`, its verified row rejected with the `older_edition` flag.
   Step detail `edition_effective_check`, event `darwin.edition_effective_check`. Dry run Oct 20
   (prod, read-only): 166 live fees on 10 documents at 8 institutions would be held; no older
-  edition retires yet.
+  edition retires yet. v2 (T1, Oct 25): a web page's menu fills the first 400 characters, so the
+  schedule's own edition line further down (`lateEdition`: a title naming the whole schedule with
+  "Effective <date>" under it, or a line that is only the schedule's name and "Effective <date>",
+  ending at its date; a bare "schedule" or one section's "<X> Fees" never counts; not when
+  the page calls its prices current, announces a new schedule or links one, dates a contents entry
+  or dates two editions) is read too, behind
+  `EDITION_LATE_HEADING_LIVE` (on since James's yes, Oct 25; while off the step reports
+  `late_heading_would_hold` and holds nothing on that account). Each document's text comes once per read, up to 8,000 characters only
+  where a late edition line can be (`editionWindowSql`). Dry run Oct 25: 0 holds today; 1 more with
+  the switch on (fee 149487, Allentown FCU's 2027 newsletter schedule, doc 36178).
 - Canadian bank documents (`canadian-document-check.ts`, #2022, James's "Do all three", Oct 19).
   Natbank (2675), a Florida bank owned by National Bank of Canada, had 12 live fees read from the
   parent's Canadian chequing page and personal fee guide. Every institution here is U.S.-chartered,
@@ -1604,7 +1613,27 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v83 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v83 (Oct 25, #1690): the non-network
+- The guard is at v84 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v84 (Oct 25, #1788): a monthly
+  maintenance fee named only as a monthly fee or service charge (`genericMonthlyCharge`: "Monthly
+  fee", "Service charge for six or more accounts") fails when the cell before its name on its own
+  line, or the heading its stored text prints above it, names another service: Positive Pay, ACH,
+  remote deposit, merchant capture, bill pay, online banking, an ATM, debit, check or gift card, paper
+  statements, returned mail, a sweep, a benefits package (`otherServiceMonthlyCharge`). Darwin's verify
+  reads the heading from the document text it already holds (`withHeadingAbove`), and Hamilton's live
+  guard and its takedown restore read it from each such fee's stored text, so a takedown is never
+  restored on its name alone. Up to three sibling rows priced as generic monthly charges are passed
+  over (Florida Capital's "POSITIVE PAY for ACH and Checks" over its two rows, 56683 and 56684); a
+  heading inside a feature list ("ATM debit card / Online banking / Online bill pay"), a feature line
+  ("Business debit card included") and a line that says how to avoid the fee (104536, "In order to
+  avoid the $5 monthly maintenance fee, your 10 debit card purchases must settle") keep it. None of
+  the 50 types holds these charges, so the fee fails rather than moving. Read-only dry run, Oct 25:
+  23 of the 1,951 live generic monthly charges fail, each read on its stored text (14864, 20609,
+  22589, 25656, 30168, 37098, 39939, 39940, 54853, 56683, 56684, 62697, 73286, 95222, 105305, 113537,
+  123617, 132739, 133705, 144067, 145952, 152527, 153643); the guard catch-up takes them to the second
+  look. A line printed more than once is read under a heading only when every place's heading names
+  another service (123617, under two card headings); 130477 stays live because its line also sits
+  under "In-Office Deposit", which the service list does not name. TD's paper statement fee (152525) was already down (#1774).
+- v83 (Oct 25, #1690): the non-network
   ATM fee refuses a research, investigation or photo name ("Account Investigation - Share / ATM /
   ACH", "ATM Photos at Credit Union"; re-filed to account research on Darwin's path, except a
   card's own research or film fee, the retired card dispute type, which has no home), an ATM
@@ -1836,7 +1865,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `AUDIENCE_RELABEL_VERSION` | `darwin.audience_relabel` | v4 | `darwin/audience-relabel.ts` |
 | `DARWIN_ADJUDICATE_STRATEGY` | `verify.adjudicate` | v2 | `darwin/adjudicate.ts` |
 | `DARWIN_CATEGORY_MODEL_STRATEGY` | `verify.category_model` | v1 | `darwin/category-model.ts` |
-| `EDITION_CHECK_VERSION` | `darwin.edition_effective_check` | v1 | `darwin/edition-effective-check.ts` |
+| `EDITION_CHECK_VERSION` | `darwin.edition_effective_check` | v2 | `darwin/edition-effective-check.ts` |
 | `DARWIN_PEER_STRATEGY` | `verify.peer_range` | v5 | `darwin/peer-checks.ts` |
 | `DARWIN_SECOND_SOURCE_STRATEGY` | `verify.second_source` | v2 | `darwin/peer-checks.ts` |
 | `DARWIN_RELEASE_STRATEGY` | `verify.release` | v4 | `darwin/release-held.ts` |

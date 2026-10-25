@@ -342,7 +342,8 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v2 (#1910): the name cover reads NSF/insufficient, OD/overdraft and a paid NSF item/overdraft as one item.
   PRODUCT_PAGE_REPEAT_CHECK_VERSION: "Each verify step re-reads every live product-page fee with a same-price schedule twin (no cursor), so version 2's wider name cover reaches every live fee on the next step; nothing older to replay.",
   // v1 (#1915): schedule editions not yet in effect. Every verify step reads every live fee on a dated document.
-  EDITION_CHECK_VERSION: "First version: each verify step re-reads every live or held fee on a document whose heading states an edition (no cursor); nothing older to replay.",
+  // v2 (T1): an edition line past a web page's menu, counted only until EDITION_LATE_HEADING_LIVE.
+  EDITION_CHECK_VERSION: "Each verify step re-reads every live or held fee on a document whose heading or late edition line states an edition (no cursor); nothing older to replay.",
   // v1 (#2022): Canadian bank documents. A full verify step re-reads every live document's text at most hourly.
   CANADIAN_DOCUMENT_CHECK_VERSION: "First version: a verify step re-reads every live fee's document text (no cursor, at most hourly); nothing older to replay.",
   // v8 (#1112): new no-fee, discount, allowance and loan-amount name rules. Each step's eval-verdict
@@ -527,6 +528,8 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // v82 (Oct 25, #1662): the night deposit key-deposit exemptions are tied to the key or the noun.
     // v83 (Oct 25, #1690): the non-network ATM fee refuses research, photo, negative-share and
     // additional-card names.
+    // v84 (Oct 25, #1788): a generic monthly charge under another service's heading or cell fails
+    // monthly maintenance (Positive Pay, ACH, bill pay, cards, paper statements).
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",

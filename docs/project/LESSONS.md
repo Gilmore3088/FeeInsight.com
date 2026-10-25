@@ -213,7 +213,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-263 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+285 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
 ### Extraction and fee reading (43)
 
@@ -298,8 +298,10 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A consumer comparison needs the payer checked as well as the category. — [finding](findings/2026-10-09-business-wire-as-consumer-price.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 - 2026-10-09 — Returned bonds and coupons were filed as NSF. — [finding](findings/2026-10-09-bond-return-filed-nsf.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 
-### Verification and publication (45)
+### Verification and publication (47)
 
+- 2026-10-25 — A web page's first lines are often its menu, so a schedule's own edition line can sit further down; read it there only with guards, since most pages that date a future edition past the menu are current pages announcing the next one (T1). — [finding](findings/2026-10-25-edition-line-past-the-menu.md) — Agent lesson: hamilton/t1-edition-line-past-menu; Guard: `src/lib/agents/hamilton/schedule-edition-late.test.ts`
+- 2026-10-25 — A benchmark compares one charging basis per category; give every category a basis and have the medians and the subject's own value read that one rule, never a second data-driven measure in one surface (#1901). — [finding](findings/2026-10-25-benchmarks-pool-charging-bases.md) — Agent lesson: darwin/issue-1901-one-basis-per-benchmark
 - 2026-10-20 — A stored name carries the older copy's text layout; compare it against a newer layout only after undoing what that layout glued (#2477). — [finding](findings/2026-10-20-heading-row-glued-name-false-flag.md) — Guard: `src/lib/agents/hamilton/newer-copy-retire.test.ts`
 - 2026-10-20 — Measure a takedown rule on prod before building it out: the dry run showed the rule reached none of the fees it was meant for (#2477). — [finding](findings/2026-10-20-superseded-copy-fees-stay-live.md) — Guard: `src/lib/agents/hamilton/newer-copy-retire.db.test.ts`
 - 2026-10-20 — A fee found again on a newer document should cite the newer document. — [finding](findings/2026-10-20-live-fees-stay-on-moved-pages.md) — Agent lesson: hamilton/issue-1200-follow-moved-pages
@@ -369,8 +371,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A blank HTML page from a bank that blocks our fetcher is a wall, not a script page. — [finding](findings/2026-10-09-hand-found-bot-challenge-read-as-js.md) — Agent lesson: magellan/pr-850-held-means-readable
 - 2026-10-09 — Two fee links our fetcher can't open but a Mac can. — [finding](findings/2026-10-09-fetcher-refused-where-a-browser-is-not.md) — Agent lesson: magellan/pr-1293-plain-fetch-outcome
 
-### Public and regulatory data (10)
+### Public and regulatory data (11)
 
+- 2026-10-25 — A bank's year-to-date line cannot be differenced into quarters without knowing about mergers and mid-year restarts; where BankFind's merger-adjusted quarter disagrees, show it (#2025). — [finding](findings/2026-10-25-bank-quarters-differenced-across-mergers.md) — Guard: `src/app/(public)/institution/[id]/quarterly-ledger.test.ts`
 - 2026-10-20 — When a publisher's page answers silently with itself, try the other formats and products it offers: the format may be withdrawn (FFIEC serves the single-period UBPR file only as XBRL, #2473). — [finding](findings/2026-10-20-ffiec-ubpr-single-period-xbrl-only.md) — Guard: `src/lib/agents/magellan/registry/ubpr-peer-groups.test.ts` (+1 more)
 - 2026-10-19 — NCUA credit union mergers never loaded: both addresses were dead. — [finding](findings/2026-10-19-ncua-merger-list-dead.md) — Guard: `src/lib/agents/magellan/registry/industry-events.test.ts`
 - 2026-10-19 — Only rows actually loaded can show that data is there. — [finding](findings/2026-10-19-hoovie-finished-is-not-loaded.md) — Guard: `src/lib/regulatory/industry-events.test.ts` (+4 more)
@@ -451,8 +454,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — Sign out on the account page and admin used Server Actions that a redeploy breaks. — [finding](findings/2026-10-09-sign-out-server-action.md) — Guard: `src/app/api/auth/logout/route.test.ts:30`
 - 2026-10-09 — A refunded report kept its paid status and its private link. — [finding](findings/2026-10-09-report-refund-not-handled.md) — Guard: `src/lib/stripe-webhook.test.ts` (+1 more)
 
-### Hamilton workspace (24)
+### Hamilton workspace (25)
 
+- 2026-10-25 — When a view leaves a sentence out, the reply leaves out its text too: send the reason and the count, and keep the text only where it is saved and read server side. — [finding](findings/2026-10-25-omitted-text-payload.md) — Guard: `src/app/api/research/hamilton/route.omitted-payload.test.ts`, `src/lib/hamilton/written-answer-binding.test.ts`
 - 2026-10-25 — An eval scores what the reader gets only with the gate that decides it, and a supported filing claim is tied to its live row, not accepted as the tools read it. — [finding](findings/2026-10-25-claim-eval-reads.md) — Guard: `src/lib/hamilton/answer-correctness-filings.test.ts`, `src/lib/data-store/filing-reread.test.ts`, `src/lib/hamilton/paid-answer-eval.test.ts`
 - 2026-10-25 — When a checked answer is reused, save what the check decided (each sentence's outcome and its facts' values, versioned) and have the next surface read that record, never the prose. — [finding](findings/2026-10-25-claim-report-carry.md) — Guard: `src/lib/hamilton/claim-report-carry.test.ts`, `src/lib/hamilton/report-actions.test.ts`, `src/lib/hamilton/bound-export.pdf.test.tsx`
 - 2026-10-25 — A rewrite of a failing answer is a paid call and a partial answer changes what a reader sees: build both behind one default-off switch and count each rewrite in the quota. — [finding](findings/2026-10-25-claim-repair-partial.md) — Guard: `src/lib/hamilton/output-gate-repair.test.ts`, `src/app/api/research/hamilton/route.gate-repair.test.ts`
@@ -540,19 +544,19 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (152 in all).
+counts as of this index (190 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
 | atlas | 7 | [`src/lib/agents/atlas/role-lessons.ts`](../../src/lib/agents/atlas/role-lessons.ts) |
-| magellan | 16 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
-| hoovie | 9 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
-| rosetta | 7 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
-| knox | 46 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
-| darwin | 19 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
-| gutenberg | 37 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
-| hamilton | 9 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
-| deming | 2 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
+| magellan | 18 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
+| hoovie | 10 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
+| rosetta | 8 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
+| knox | 54 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
+| darwin | 26 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
+| gutenberg | 40 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
+| hamilton | 16 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
+| deming | 11 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
 
 ## Before 2026-10-10
 
