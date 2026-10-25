@@ -106,6 +106,9 @@ describe("financial performance view (#1892)", () => {
     expect(q.fee.value).toBe(140);
     expect(q.evidence.calculation).toContain("($260,600) less ACCT_131 year to date at");
     expect(q.evidence.calculation).toContain("= $140,200 for the quarter.");
+    // A quarter that comes out negative reads as -$X.
+    const back = buildFinancialPerformance([q1, { ...ncuaRow("2026-06-30", 115, 2), rawFeeIncome: 115_000 }], [])!;
+    expect(back.quarters.find((x) => x.reportDate === "2026-06-30")!.evidence.calculation).toContain("= -$5,400 for the quarter.");
   });
 
   it("never shows a year-to-date total as one quarter when the previous filing is missing", () => {
