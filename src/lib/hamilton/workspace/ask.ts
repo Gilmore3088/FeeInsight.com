@@ -168,6 +168,12 @@ export function asksOtherSubject(question: string): boolean {
 const REFERS_BACK = /\b(?:it|its|ours|same|what about|how about|and for|why|(?:this|that|these|those)(?! (?:week|month|year|quarter|morning|afternoon|evening)\b))\b/i;
 
 /**
+ * The part of REFERS_BACK that names the fee itself ("it", "that", "the same"), so it holds even in a
+ * question about income: "how would that affect our revenue?" is still about the fee on screen.
+ */
+const POINTS_AT_FEE = /\b(?:it|its|ours|same|(?:this|that|these|those)(?! (?:week|month|year|quarter|morning|afternoon|evening)\b))\b/i;
+
+/**
  * The fee a question is about: the one it names, else the open decision's fee (`carriedCategory`)
  * only for a follow-up on that fee, one that tests a price, asks what to do, or points back at it
  * ("what if we charged $30?", "should we raise it?", "how does that compare nationally?"). Any other
@@ -179,8 +185,11 @@ function questionFee(question: string, carriedCategory: string | null, tested: n
   if (named) return named;
   if (!carriedCategory) return null;
   if (tested.length > 0) return carriedCategory;
+  if (asksWholeSchedule(question)) return null;
+  // A follow-up that asks what to do or points at the fee keeps it, even when it asks about income.
+  if (OPINION.test(question) || POINTS_AT_FEE.test(question)) return carriedCategory;
   if (asksOtherSubject(question)) return null;
-  return OPINION.test(question) || REFERS_BACK.test(question) ? carriedCategory : null;
+  return REFERS_BACK.test(question) ? carriedCategory : null;
 }
 
 export function parseAsk(question: string, carriedCategory: string | null = null): AskIntent {

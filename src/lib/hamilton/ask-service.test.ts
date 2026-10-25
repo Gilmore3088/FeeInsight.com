@@ -85,7 +85,7 @@ vi.mock("@/lib/research/history", () => ({ logUsage: vi.fn(async () => undefined
 
 import { writeStorylineMemo } from "./memo";
 import { logUsage } from "@/lib/research/history";
-import { answerAsk, answerAskMemo, MEMO_USAGE_AGENT_ID, ownScheduleQueued, storylineRequestKey } from "./ask-service";
+import { answerAsk, answerAskMemo, MEMO_USAGE_AGENT_ID, ownScheduleQueued, resolveAskIntent, storylineRequestKey } from "./ask-service";
 
 const user = { id: 7, display_name: "Pat", username: "pat" };
 
@@ -362,5 +362,14 @@ describe("the queued note for a Pro account's own schedule (#1388)", () => {
     const quiet = vi.spyOn(console, "error").mockImplementation(() => undefined);
     expect(await ownScheduleQueued(own, 7, async () => { throw new Error("down"); })).toBe(false);
     quiet.mockRestore();
+  });
+});
+
+describe("a reply to Hamilton's own price question (#1077)", () => {
+  it("stays on the fee Hamilton asked about, even without a dollar sign", async () => {
+    for (const reply of ["25 and 30", "25", "thirty dollars"]) {
+      const { intent } = await resolveAskIntent(1, reply, {}, "Capital City Bank", "overdraft", "overdraft");
+      expect(intent.feeCategory).toBe("overdraft");
+    }
   });
 });

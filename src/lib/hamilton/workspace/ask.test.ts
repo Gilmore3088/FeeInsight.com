@@ -226,7 +226,16 @@ describe("no answer about a different subject, even with an overdraft decision o
   });
 
   it("keeps the open decision's fee for a follow-up on that fee", () => {
-    for (const question of ["What if we charged $30?", "Why?", "How does that compare nationally?", "What would $20 do to our fee income?"]) {
+    for (const question of [
+      "What if we charged $30?",
+      "Why?",
+      "How does that compare nationally?",
+      "What would $20 do to our fee income?",
+      // Points at the fee or asks what to do, so income or revenue in the question doesn't change the subject.
+      "How would that affect our revenue?",
+      "What does that do to revenue?",
+      "Should we raise it, given our fee income?",
+    ]) {
       expect(parseAsk(question, "overdraft").feeCategory).toBe("overdraft");
     }
   });

@@ -323,6 +323,8 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
 
   let question = cleanText(body.question, MAX_QUESTION_CHARS);
   let fallbackFee = decision?.feeCategory ?? null;
+  // The fee Hamilton asked about, when this is the reader's reply ("25 and 30" to "Which overdraft prices?").
+  let answeredFee: string | null = null;
   let effectiveObjective = objective;
 
   // An answer to Hamilton's own question: save it, or turn it back into a question.
@@ -337,6 +339,7 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
     } else if (fieldKey.endsWith(".tested_prices")) {
       question = text;
       fallbackFee = fieldKey.split(".")[1];
+      answeredFee = fallbackFee;
     } else {
       const parsed = fieldKey === "decision.objective" ? parseObjective(text) : fieldKey.endsWith(".waiver_rate") ? waiverShare(text) : NUMERIC_KEYS.test(fieldKey) ? numericAnswer(text) : text;
       if (parsed === null) return { status: 200, body: { ...clarifyAgain(fieldKey, { subjectName: institution.name }), decisionId: decision?.id,
@@ -368,7 +371,7 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
   }
 
   if (!question) return { status: 400, body: { error: "Ask a question." } };
-  const resolvedAsk = await resolveAskIntent(institutionId, question, peers, institution.name, fallbackFee);
+  const resolvedAsk = await resolveAskIntent(institutionId, question, peers, institution.name, fallbackFee, answeredFee);
   const { intent, why } = resolvedAsk;
   // A carried decision is about one fee (#979, H04-T05): a follow-up naming another fee opens its
   // own, so its questions and tested prices never land on the earlier fee's record.
@@ -495,8 +498,11 @@ export async function resolveAskIntent(
   peers: EnginePeerOptions,
   subjectName?: string,
   fallbackFee: string | null = null,
+  answeredFee: string | null = null,
 ): Promise<ResolvedAsk> {
   let intent = parseAsk(question, fallbackFee);
+  // A reply to Hamilton's own question about one fee is about that fee, whatever its wording (#1077).
+  if (!intent.feeCategory && answeredFee) intent = { ...intent, feeCategory: answeredFee };
   // "Where do we stand on every fee?" is answered outright: an overview of every fee,
   // then the fee furthest from its peer median in detail. A list of one fee's peers is only
   // for a fee the reader named, so "list all our fees vs peers" keeps the overview (#2033).
