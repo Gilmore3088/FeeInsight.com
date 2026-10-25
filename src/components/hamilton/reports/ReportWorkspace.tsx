@@ -450,6 +450,19 @@ export function ReportWorkspace({
         </Link>
       )}
 
+      {selectedInstitution && (
+        <Link
+          href={hrefWithInstitutionContext("/pro/reports/monthly", String(selectedInstitution.id))}
+          className="flex flex-col gap-0.5 rounded-lg border border-warm-300 bg-warm-50 px-5 py-4 no-underline hover:border-warm-500 focus:outline-none focus-visible:border-terra focus-visible:ring-2 focus-visible:ring-terra"
+        >
+          <span className="text-base font-semibold text-warm-900">Monthly briefing</span>
+          <span className="text-sm text-warm-700">
+            The month for your institution in six sections: summary, financials, competition, market, regulation and management considerations. Every figure shows its source and period, and you can edit each section before you download the PDF.
+          </span>
+          <span className="mt-1 text-sm font-medium text-terra-text">Open the briefing →</span>
+        </Link>
+      )}
+
       {!selectedInstitution && !reportGenerated && (
         <Callout>
           Choose a research institution before checking coverage or writing a report.{" "}

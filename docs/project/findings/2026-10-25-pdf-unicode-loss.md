@@ -116,7 +116,11 @@ review the complete owner-query backlog and rollout before production deployment
    versions, source URL, current-copy state and vault key. Export its published IDs
    and raw/verified lineage, names, categories, amounts, units, audience, products,
    waivers and qualifiers in a separate bounded catalog read. Count distinct
-   documents and fees. Inventory superseded/duplicate/paid-reader sources separately
+   documents and fees. Before a write, also snapshot all raw and verified rows for
+   those sources, including valid unpublished observations and their exact text/hash
+   lineage; the 227 published baselines are not a complete all-tier preservation
+   snapshot. Separate older-hash observations and held/invalid rows for review rather
+   than declaring them valid from a row count. Inventory superseded/duplicate/paid-reader sources separately
    when they still carry live fees; the replay selector does not cover all history.
 2. **Read the exact captured bytes without replacing anything.** Require a valid
    content-addressed vault object and verify its SHA-256; missing/mismatched bytes
@@ -133,7 +137,11 @@ review the complete owner-query backlog and rollout before production deployment
    waiver/threshold context. A missing valid fee, an unexplained amount or qualifier
    change, or unresolved duplicate fails the document, even if total fee count rose.
    Record additions, unchanged fees, visually supported renames/refiles and proposed
-   removals separately. Review the complete diff before an authorized ledger run.
+   removals separately. Reconcile the complete printed schedule too, so a valid fee
+   missing from the old extraction can be added. Reliance's $20 outgoing, $40 remote
+   outgoing, $50 international outgoing and $70 international remote outgoing are
+   distinct source statements; a shared canonical category must not collapse their
+   channel/qualifier differences. Review the complete diff before an authorized ledger run.
 4. **Reverify category against the original rendered schedule, separately from price.**
    For 140286, the printed international remote outgoing wording supports
    `wire_intl_outgoing`, $70.00, with the remote variant and tax qualifier retained;
@@ -267,10 +275,14 @@ an authorized ledger run. Production persistence still needs the transactional
 source/text compare-and-swap and persisted-witness binding already required by the
 repair procedure; no production recovery integration is claimed here.
 
-On the integration with main `5aa41e3`, the Rosetta directory passed 23 files /
-277 tests (8 native database files / 108 tests were gated locally). The final
+On the final integration with main `a4c0eed`, the Rosetta directory passed 23 files /
+279 tests (8 native database files / 108 tests were gated locally). The final
 three Unicode files passed 22 tests, including real rendering/local OCR after a
 text parse, cancellation during OCR, stale/mismatched lineage and refusal of
 network-model fallback. Repository guards, changed-file lint and the lockfile
-dry-run check passed. The earlier native-CI receipt above predates this preview;
-the new head needs its own CI receipt before any merge decision.
+dry-run check passed. Preview head `08e3811` passed all eight checks in CI run
+40218403136, including both unit shards, the real rendering/OCR regression and
+82 native database files / 1,188 tests. The final main integration keeps Rosetta's
+code unchanged, adopts main's identical Ask compatibility mapping (no unrelated
+file remains in the PR diff), and still needs its own CI receipt before any merge
+decision. That final receipt belongs in PR #2632, without rewriting this dated one.

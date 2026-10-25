@@ -303,6 +303,8 @@ export interface ReportSummaryResponse {
     /** Sentences printed only under "Hamilton's reading, not tied to a fee record" (#981 H06-T08); absent on briefs made before it. */
     reading?: string[];
   };
+  /** A monthly institution briefing (#1897): six fixed sections, each figure with its source and period. */
+  monthlyBriefing?: import("./monthly-briefing").MonthlyBriefing;
   title: string;
   /** Historical reference identity captured on the authenticated generation request. */
   identityContext?: HamiltonIdentitySnapshot;
