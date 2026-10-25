@@ -118,7 +118,7 @@ const ES_OUTGOING = "saliente|enviad";
  * out of the bank, and pooled with one it pulls the bank's wire price down. A wire price that only
  * says it also covers book transfers ("incluidas las transferencias contables") stays.
  */
-const BOOK_TRANSFER = String.raw`^(?![\s\S]*\b(?:includ|incluid)\w*)[\s\S]*(?:\bbook[- ]?(?:entry\s+)?transfers?\b|\btransferencias?\s+contables?\b)`;
+const BOOK_TRANSFER = String.raw`^(?![\s\S]*(?:\b(?:includ|incluid|exclud|excluy)\w*|\bincl\b|\bfree\b|\bwaiv\w*|\bno\s+charge|\bor\s+book))[\s\S]*(?:\bbook[- ]?(?:entry\s+)?transfers?\b|\btransferencias?\s+contables?\b)`;
 /** "Transferencia bancaria" and "Giro bancario" are a wire in a Spanish schedule. */
 const WIRE = /(wire|transferencias? (bancarias?|cablegr[aá]ficas?)|giros? bancarios?)/i;
 /**
@@ -1894,12 +1894,15 @@ function cashAdvanceFromAtmTable(canonicalFeeKey: string, context: CategoryGuard
  * cards at foreign ATMs" and "$15.00 at counter; $0 at ATM" do not match.
  */
 const PRICE_FOR_OTHER_ATM =
-  /\$\s?\d[\d,]*(?:\.\d{2})?\s+(?:each\s+)?(?:for|at)\s+(?:any\s+|all\s+)?(?:non[- ]?[\w&.'’ -]{0,30}?|foreign|other\s+(?:banks?|institutions?|financial\s+institutions?)'?s?|out[- ]of[- ]network|third[- ]party)\s*atms?\b/i;
+  /\$\s?\d[\d,]*(?:\.\d{2})?\s+(?:each\s+)?(?:for|at)\s+(?:any\s+|all\s+)?(?:non(?![- ]?(?:teller|branch))[- ]?[\w&.'’ -]{0,30}?|foreign|other\s+(?:banks?|institutions?|financial\s+institutions?)'?s?|out[- ]of[- ]network|third[- ]party)\s*atms?\b/i;
 
 function cashAdvanceAtOtherAtm(canonicalFeeKey: string, context: CategoryGuardContext | undefined): string | null {
   if (canonicalFeeKey !== "cash_advance") return null;
   const excerpt = context?.conditions?.match(/\bexcerpt=([\s\S]*)$/)?.[1];
-  const named = excerpt ? plainQuotes(excerpt).match(PRICE_FOR_OTHER_ATM) : null;
+  if (!excerpt || context?.amount == null || context.amount === "") return null;
+  // Only the fee's own price counts: another price on the line may be the non-network ATM fee.
+  const named = [...plainQuotes(excerpt).matchAll(new RegExp(PRICE_FOR_OTHER_ATM.source, "gi"))]
+    .find((match) => Number(match[0].match(/\d[\d,]*(?:\.\d{2})?/)?.[0].replace(/,/g, "")) === Number(context.amount));
   return named ? `the source line prices it at another bank's ATMs ("${named[0].trim()}"), so the price is the non-network ATM fee, not the cash advance fee` : null;
 }
 

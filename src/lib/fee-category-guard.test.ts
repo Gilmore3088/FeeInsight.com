@@ -2559,6 +2559,15 @@ describe("guard v88: book transfers and cash advances priced at another bank's A
     expect(checkFeeCategory("wire_domestic_outgoing", "Transferencia bancaria nacional saliente a una cuenta que no sea de M&T", { amount: 32 }).ok).toBe(true);
     expect(checkFeeCategory("wire_domestic_outgoing", "Outgoing Wire Transfer within USA by IBC Representative", { amount: 35 }).ok).toBe(true);
     expect(checkFeeCategory("wire_domestic_outgoing", "Outgoing Domestic Wire (bookkeeping review included)", { amount: 30 }).ok).toBe(true);
+    // A wire that names book transfers only to say how they are charged or that it also covers them.
+    for (const name of [
+      "Outgoing wire (incl. book transfers)",
+      "Outgoing domestic wire (book transfers free)",
+      "Domestic wire transfer out (excluding book transfers)",
+      "Outgoing domestic wire - Fedwire or book transfer",
+      "Incoming Wire Transfer (book transfers waived)",
+      "Outgoing domestic wire; book transfers no charge",
+    ]) expect(checkFeeCategory(name.startsWith("Incoming") ? "wire_domestic_incoming" : "wire_domestic_outgoing", name, { amount: 25 }).ok, name).toBe(true);
   });
 
   it("refuses a cash advance whose own price is for another bank's ATMs (M&T 68601)", () => {
@@ -2567,6 +2576,13 @@ describe("guard v88: book transfers and cash advances priced at another bank's A
       code: "schedule_contradicts",
     });
     expect(withLine("cash_advance", "Cash Advance Fee", 2, "Cash Advance Fee | $2.00 at foreign ATMs").ok).toBe(false);
+  });
+
+  it("reads only the fee's own price, and a teller or branch is not another bank's ATM", () => {
+    expect(withLine("cash_advance", "Cash Advance Fee", 10, "Cash Advance Fee | 3% or $10 minimum; $3.00 at non-network ATMs additional").ok).toBe(true);
+    expect(withLine("cash_advance", "Cash Advance Fee", 3, "Cash Advance Fee | 3% or $10 minimum; $3.00 at non-network ATMs additional").ok).toBe(false);
+    expect(withLine("cash_advance", "Cash Advance Fee", 5, "Cash Advance Fee | $5.00 at non-teller ATMs").ok).toBe(true);
+    expect(withLine("cash_advance", "Cash Advance Fee", 5, "Cash Advance Fee | $5.00 at non-branch ATMs").ok).toBe(true);
   });
 
   it("keeps cash advances whose line names an ATM without pricing another bank's machine (live rows, Oct 25)", () => {
