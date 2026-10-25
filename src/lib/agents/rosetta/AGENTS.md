@@ -81,6 +81,11 @@ Rosetta owns source text normalization.
   rereads/replays keep the incumbent and live fees. A reader bump does not repair
   old live names or categories. Its deployment/replay and any later data repair need
   separate review; see the #2598 finding's staged reconciliation procedure.
+  `pdf-unicode-preview.ts` and `scripts/rosetta-unicode-preview.ts` are offline review
+  tools only: render glyph outlines at two scales with local OCR, fill only witnessed
+  missing internal letters, preserve the incumbent's known text/layout, and refuse a
+  complete proposal while any word remains damaged. They write local review JSON,
+  not source texts, reader/replay receipts or fees; no production lane invokes them.
 - A completed text with an operator's lost-text finding (a hold or correction whose cause is
   a lost text: a `pipeline_feedback` row about `read`, signal wrong, weight above 0; text-survival
   and batch-review misses keep their own branches, so a zero-fee wrong page still goes back to
@@ -220,6 +225,12 @@ Rosetta owns source text normalization.
     companion account page, as a schedule: a product address listing fewer than 10 fee lines
     and no schedule title is `wrong_document`, and the bank goes back to Magellan (#1053).
     The backlog triage re-checks stored texts under v2; a text Knox pulled fees from is kept.
+    Same page, same text, same verdict (#2477, `rosetta/same-text-copy.ts`): a newer copy of a page
+    whose text is exactly an older copy's that Knox pulled fees from is kept readable at read time
+    and in triage (attempt detail `same_text_copy_of`; step detail `same_text_copies_kept`), and the
+    bank is not sent back. Copies rejected before the rule are counted and sampled each read step
+    (`rosetta.same_text_copies`, step detail `same_text_copy_reopen`) and reopened only once
+    `SAME_TEXT_COPY_REOPEN_LIVE` is true (off; 714 copies at 641 banks on Oct 25).
   - Every text Rosetta stores gets its document kind (#1094, `learning/document-kind.ts`,
     `DOCUMENT_KIND_VERSION`): `fee_schedule`, `truth_in_savings`, `account_agreement`,
     `product_page` or `other`. The kind is decided from the content, free and with no model call,
@@ -430,5 +441,6 @@ fails a PR that changes one of these constants without updating its line here (#
 | `ROSETTA_READ_VERSION` | primary readers; replayed to every older-reader current copy (`rosetta.reader_replay`, #2069) | v4 | `rosetta/reader-versions.ts` |
 | `ROSETTA_DOCUMENT_ACCESS_VERSION` | `read.document_access` | v1 | `rosetta/read.ts` |
 | `REOPEN_VERSION` | — | v1 | `rosetta/read.ts` |
+| `SAME_TEXT_COPY_STRATEGY` | `read.same_text_copy` | v1 | `rosetta/same-text-copy.ts` |
 | `ROSETTA_TABLE_ROWS_VERSION` | — | v1 | `rosetta/reader-versions.ts` |
 | `TEXT_SURVIVAL_VERSION` | — | v1 | `rosetta/text-survival.ts` |

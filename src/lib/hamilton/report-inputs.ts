@@ -30,6 +30,7 @@ import { getEnforcementRecord } from "@/lib/data-store/registry-profile";
 import { getFeeIncomeTrend } from "@/lib/hamilton/report-trend";
 import { ANSWER_SECTION_FORMAT, TRADEOFF_SECTION_FORMAT } from "@/lib/hamilton/report-answer";
 import type { ReportBasketItem } from "@/lib/hamilton/report-basket";
+import { readerFindingsSection } from "@/lib/hamilton/report-finding-claims";
 import { resolveHamiltonPeerIndex } from "@/lib/hamilton/peer-index";
 import { getFeePublicationStatusLabel } from "@/lib/institution-quality";
 import {
@@ -81,24 +82,6 @@ const TONE_GUIDANCE: Record<ReportNarrativeTone, string> = {
 function withTone(context: string, tone: ReportNarrativeTone | undefined, goal?: ReportClientGoal): string {
   const parts = [context, tone ? TONE_GUIDANCE[tone] ?? "" : "", reportGoal(goal).guidance];
   return parts.filter(Boolean).join("\n\n").trim();
-}
-
-/**
- * The reader's added findings, for the summary to address. They ride in CONTEXT, never in DATA:
- * DATA is what the figure check traces a section's figures to, and a finding's words are earlier
- * model prose or text the browser sent (Position and Test items are not re-read on the server), so
- * a figure the report restates from one must also be in the server's own data to pass.
- */
-export function readerFindingsContext(findings: readonly ReportBasketItem[]): string {
-  if (findings.length === 0) return "";
-  const listed = findings.map((f) => ({ from: f.source, finding: f.title, detail: f.detail }));
-  return [
-    "",
-    "",
-    "READER FINDINGS (the reader added these from their own analysis; they are not evidence):",
-    JSON.stringify(listed, null, 2),
-    "Address each one in the summary. State a figure from them only when the same figure is in DATA; otherwise describe the finding without it.",
-  ].join("\n");
 }
 
 const TEMPLATE_TITLES: Record<ReportTemplateType, string> = {
@@ -472,30 +455,35 @@ export async function assembleReportInputs(input: {
 
   // 2-4. The three sections: the answer page, what is behind it, and the trade-offs.
   const strategicSectionType = getStrategicSectionType(params.templateType);
+  const summaryData = {
+    report_type: params.templateType,
+    period,
+    institution_name: institutionName,
+    selected_institution: selectedInstitutionData,
+    state_peers: statePeers,
+    exhibits: exhibitData,
+    focus_category: params.focusCategory ?? null,
+    categories: topCategories.map((c) => ({
+      fee_category: c.fee_category,
+      median_amount: c.median_amount,
+      p25_amount: c.p25_amount,
+      p75_amount: c.p75_amount,
+      institution_count: c.institution_count,
+      maturity: c.maturity_tier,
+    })),
+  };
+  // #1077 defect 7: a finding's figure is traced to its saved answer's carried facts or this
+  // section's own data; any other figure is held before the model sees it (report-finding-claims.ts).
+  const readerFindings = readerFindingsSection(addedFindings, summaryData);
   const sectionInputs: SectionInput[] = [
     {
       type: "executive_summary",
       title: "The Answer",
-      data: {
-        report_type: params.templateType,
-        period,
-        institution_name: institutionName,
-        selected_institution: selectedInstitutionData,
-        state_peers: statePeers,
-        exhibits: exhibitData,
-        focus_category: params.focusCategory ?? null,
-        categories: topCategories.map((c) => ({
-          fee_category: c.fee_category,
-          median_amount: c.median_amount,
-          p25_amount: c.p25_amount,
-          p75_amount: c.p75_amount,
-          institution_count: c.institution_count,
-          maturity: c.maturity_tier,
-        })),
-      },
+      // The carried facts come first, so the figure check's number cap never drops them.
+      data: readerFindings.data ? { reader_finding_facts: readerFindings.data, ...summaryData } : summaryData,
       context: withTone(
         withExpertRules(
-          buildExecutiveSummaryContext(params, institutionName, period) + readerFindingsContext(addedFindings),
+          buildExecutiveSummaryContext(params, institutionName, period) + readerFindings.context,
         ),
         params.narrativeTone,
         params.clientGoal,

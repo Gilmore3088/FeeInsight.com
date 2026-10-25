@@ -9,6 +9,7 @@ import { checkFeeCategory, refileCategory } from "@/lib/fee-category-guard";
 import { layoutPageText } from "./pdf-layout";
 import { extractPdfDocumentText } from "./pdf-document-text";
 import { PdfTextIntegrityError } from "./pdf-text-integrity";
+import { applyUnicodeWordRepairs } from "./pdf-unicode-words";
 
 const fixture = () => new Uint8Array(readFileSync(join(process.cwd(), "src/lib/agents/rosetta/test-fixtures/reliance-unicode-loss.pdf")));
 
@@ -46,5 +47,19 @@ describe("#2598: the original schedule's Unicode map", () => {
     expect(checkFeeCategory("wire_domestic_outgoing", name).ok).toBe(false);
     expect(refileCategory("wire_domestic_outgoing", name)).toBe("wire_intl_outgoing");
     expect(checkFeeCategory("wire_intl_outgoing", name).ok).toBe(true);
+  });
+
+  it("keeps the other reported domestic wire domestic and does not clean a crossed-column name", () => {
+    // Visually read from the exact Glendale/Merck hashes in the pilot evidence.
+    const domestic = "Wire transfer - Outgoing (domestic only)";
+    expect(checkFeeAgainstSource(`${domestic} | $20.00`, domestic, 20, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(`${domestic} | $20.00`, domestic, 70, ".").ok).toBe(false);
+    expect(refileCategory("wire_domestic_outgoing", domestic)).toBe("wire_domestic_outgoing");
+    const crossed = "automa�c transfers per month | Cashier’s Check Stop Payment Fee";
+    // Even a proven letter map cannot delete the unrelated left-column prefix.
+    expect(applyUnicodeWordRepairs(crossed, [{ from: "automa�c", to: "automatic", occurrences: 1, confidence: [96, 96] }]))
+      .toBe("automatic transfers per month | Cashier’s Check Stop Payment Fee");
+    expect(checkFeeAgainstSource("Cashier’s Check Stop Payment Fee | $25/check", "Cashier’s Check Stop Payment Fee", 25, ".").ok).toBe(true);
+    expect(refileCategory("stop_payment", "Cashier’s Check Stop Payment Fee")).toBe("stop_payment");
   });
 });

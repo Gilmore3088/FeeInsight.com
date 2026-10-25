@@ -39,6 +39,7 @@ import { documentKind, DOCUMENT_KIND_VERSION } from "@/lib/agents/learning/docum
 import { chooseStrategy, type StrategyCandidate } from "@/lib/agents/learning/router";
 import { feedbackSchemaReady } from "@/lib/agents/learning/feedback";
 import { currentCopySchemaReady, restoreReadableCopies } from "@/lib/agents/magellan/current-copy";
+import { reopenSameTextCopies, sameTextCopyOf, sameTextKnoxCopySql, type SameTextCopyReopenResult } from "./same-text-copy";
 import {
   ALTERNATE_READERS,
   PRIMARY_READERS,
@@ -218,6 +219,11 @@ export interface ReadResult {
   readerAgreement?: PdfReaderAgreement;
   witnessRetention?: WitnessRetention;
   repairSettlement?: { accepted: boolean; reason: string; artifactId?: number; textHash?: string };
+  /**
+   * The older copy of this page whose identical text Knox already read: the fee-page check's
+   * rejection is set aside, as it is for that copy (#2477, same-text-copy.ts).
+   */
+  sameTextCopyOf?: number | null;
   durationMs: number;
 }
 
@@ -275,6 +281,10 @@ export interface RunRosettaReadResult {
   reopenedUnreadablePdfs: number;
   /** Current copies read as a bot check, script shell or bare title, put back on the page's readable copy. */
   thinCopiesSetAside: number[];
+  /** Reads the fee-page check rejected but kept readable: an older copy of the page has the same text and Knox fees (#2477). */
+  sameTextCopiesKept: number;
+  /** Earlier rejected current copies the same rule covers (shadow unless SAME_TEXT_COPY_REOPEN_LIVE). */
+  sameTextCopyReopen: Omit<SameTextCopyReopenResult, "sample">;
   /** Text-survival scores rebuilt this step, and how many texts held up or lost fees. */
   textSurvivalRefreshed: boolean;
   textsHeldUp: number;
@@ -1961,12 +1971,14 @@ async function triageEarlierTexts(
              adt.text_hash,
              adt.normalized_text,
              (sdoc.companion_source_id IS NOT NULL) AS companion,
-             EXISTS (
+             (EXISTS (
                -- Rows Knox only held for review do not prove this is a fee page.
                SELECT 1 FROM raw_fee_observations fr
                 WHERE fr.source = 'knox' AND fr.source_document_id = adt.source_document_id
                   AND fr.outlier_flags ? 'needs_darwin_verification'
-             ) AS has_knox_fees
+             )
+             -- The same text on an older copy of this page that Knox read (#2477).
+             OR ${sameTextKnoxCopySql("adt")}) AS has_knox_fees
         FROM agent_source_texts adt
         JOIN institution_sources inst ON inst.id = adt.institution_id
         LEFT JOIN source_documents sdoc ON sdoc.id = adt.source_document_id
@@ -2253,6 +2265,19 @@ async function reopenUnreadablePdfTexts(
 /** Five control codes (not tab or line breaks) in a stretch of text. */
 export const CONTROL_CODES_PATTERN = "([\\x01-\\x08\\x0e-\\x1f][^\\x01-\\x08\\x0e-\\x1f]*){5}";
 
+/**
+ * Sets aside a fee-page rejection in place (the run's counts read the same object): the read is
+ * completed, as its older copy's identical text is.
+ */
+export function keepSameTextCopy(result: ReadResult, olderDocumentId: number): ReadResult {
+  result.status = "completed";
+  result.error = null;
+  if (result.attemptOutcome === "wrong_document") result.attemptOutcome = "ok";
+  for (const followUp of result.followUps) if (followUp.outcome === "wrong_document") followUp.outcome = "ok";
+  result.sameTextCopyOf = olderDocumentId;
+  return result;
+}
+
 interface SettleReadEnv {
   runId: number;
   stepId: number | null;
@@ -2275,6 +2300,16 @@ async function settleReadInScope(
   repairProof?: { artifactId: number; lossless: boolean },
 ): Promise<"sent_back" | "handed_to_magellan" | null> {
   const { learning, vaultSchema, textColumns } = env;
+  // Same page, same text, same verdict (#2477): a newer copy of a page whose identical text Knox
+  // already read is spared the fee-page check, as the older copy is, and is not sent back.
+  if (learning && result.status === "wrong_document" && !result.handoff) {
+    const olderDocumentId = await sameTextCopyOf(db, {
+      institutionId: result.institutionId,
+      sourceDocumentId: result.sourceDocumentId,
+      textHash: result.textHash,
+    });
+    if (olderDocumentId != null) keepSameTextCopy(result, olderDocumentId);
+  }
   const byteIdentityUnavailable = result.primaryByteIdentity?.status === "mismatch"
     || result.primaryByteIdentity?.status === "invalid_selected_hash";
   // A companion page's reads stay out of the bank's playbook (its main fee link's).
@@ -2361,6 +2396,7 @@ async function settleReadInScope(
         reread: result.reread,
         escalation: result.escalation ?? null,
         page_check: result.pageCheck,
+        same_text_copy_of: result.sameTextCopyOf ?? undefined,
         error: result.error,
       },
     });
@@ -2705,6 +2741,15 @@ export async function runRosettaRead(
       })
     : emptyLayoutRecheckResult();
 
+  // #2477: earlier rejected current copies whose older copy has the same text and Knox fees.
+  const sameTextReopen: SameTextCopyReopenResult = vaultSchema && currentCopy
+    ? await reopenSameTextCopies(db, {
+        runId: options.runId,
+        stepId: options.stepId ?? null,
+        institutionId: options.institutionId,
+        stateCode: options.stateCode,
+      })
+    : { live: false, candidates: 0, reopened: 0, sample: [] };
   const triage = vaultSchema
     ? await triageEarlierTexts(db, {
         runId: options.runId,
@@ -2748,6 +2793,8 @@ export async function runRosettaRead(
     reopenedLinksRestored: reopen.relinked,
     reopenedUnreadablePdfs,
     thinCopiesSetAside: thinCopies.thinCopies,
+    sameTextCopiesKept: results.filter((result) => result.sameTextCopyOf != null).length,
+    sameTextCopyReopen: { live: sameTextReopen.live, candidates: sameTextReopen.candidates, reopened: sameTextReopen.reopened },
     textSurvivalRefreshed: survival.refreshed,
     textsHeldUp: survival.held,
     textsLostFees: survival.lost,

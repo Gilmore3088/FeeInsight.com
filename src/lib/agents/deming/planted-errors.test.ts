@@ -14,7 +14,8 @@ const source = (file: string) => {
 };
 
 // The classes the 2026-10-19 learning audit named (#2065).
-const AUDIT_CLASSES = ["wrong_document", "lost_text", "limit_as_fee", "wrong_category", "wrong_audience", "duplicate", "missed_fee"];
+// #2070 added the discontinued account's fee.
+const AUDIT_CLASSES = ["wrong_document", "lost_text", "limit_as_fee", "wrong_category", "wrong_audience", "duplicate", "missed_fee", "discontinued_account"];
 
 describe("the error loop, planted end to end (#2065)", () => {
   it("plants one of each error class the learning audit named", () => {
@@ -50,7 +51,7 @@ describe("the error loop, planted end to end (#2065)", () => {
     }
     // Lower this when a gap closes; it never goes up without a new class.
     const missing = Object.values(KNOWN_GAPS).reduce((sum, gaps) => sum + Object.keys(gaps).length, 0);
-    expect(missing).toBe(12);
+    expect(missing).toBe(13);
   });
 
   it("fails a link when its reader stops naming the rows it reads", () => {

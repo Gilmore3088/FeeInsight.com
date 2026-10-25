@@ -39,6 +39,8 @@ export { PDF_LAYOUT_VERSION };
 
 export interface PdfTextItem {
   str: string;
+  /** Preserve the font boundary when visually checking a split damaged word. */
+  fontName?: string;
   /** pdf.js transform matrix: [a, b, c, d, x, y]. */
   transform: number[];
   width: number;

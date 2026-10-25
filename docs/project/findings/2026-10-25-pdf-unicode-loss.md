@@ -3,8 +3,8 @@
 **Lesson:** Treat damaged words or numbers as unreadable evidence, even when a PDF
 looks readable and two layout readings agree. Never guess that U+FFFD means "ti".
 
-**Status:** Code prevention and a historical-repair procedure, not a deployment or
-a live repair. #2598 remains open. No production mutation, pipeline execution,
+**Status:** Code prevention, an offline visual-recovery preview and an executed
+three-document pilot, not a deployment or live repair. #2598 remains open. No production mutation, pipeline execution,
 provider call, fee rename, refile or takedown was performed in this investigation.
 
 ## Earliest reproducible fault
@@ -200,5 +200,77 @@ cannot unlock paid work and a current free read can. The exact runtime head
 database files / 1,187 tests. The receipt is recorded in PR #2632, separately
 from the local unit counts above.
 
-No claim is made of automated recovery, an executed historical-repair pilot,
-production deployment or replay, or repaired live fees.
+## Offline visual-recovery preview and executed pilot
+
+`pdf-unicode-preview.ts` renders full pages, including font glyph outlines, rather
+than reading only embedded images. The development-only native canvas dependency
+is compatible with unpdf's optional peer range; no route, runtime OCR reader or
+deployment tracing configuration calls this preview. The earlier text-only parse
+can install an empty DOMMatrix shim; the preview replaces that incomplete shim
+before rendering, and the real-source regression exercises that import order.
+
+The preview reads a damaged page at 240 and 300 dpi with the bundled local English
+Tesseract model. These are two scales of **one engine**, not independent readers;
+confidence scores are heuristics. Every damaged internal word occurrence needs an
+OCR spelling inside its original horizontal, same-font source cell, retaining all
+known letters, with confidence at least 85 at both scales and at least 90 at one.
+Unknown prefixes/suffixes, numbers, conflicting maps, ambiguous/weak witnesses and
+nonhorizontal text remain unresolved. A dictionary never supplies missing letters.
+
+Only missing letters are substituted into the original layout. A historical
+proposal additionally binds the incumbent's source hash and exact text hash and
+applies the same literal repairs to that incumbent's existing geometry. Conflicting
+document-wide maps or excess incumbent occurrences refuse it. An incomplete
+document gets **no complete incumbent proposal**, even when its target fee's word
+was recovered. Every output says `review_required`; none is a persisted witness,
+successful replay event or permission to publish. Limits: 20 MB input, 150 total
+pages, two damaged pages, 100,000 text items, 1,000,000 characters, 9,000,000 pixels
+per rendering and 60 seconds per preview. Cancellation destroys the parser,
+cancels a render and terminates the OCR worker. Default OCR requires a local model;
+the report records its gzip SHA-256 and each grayscale rendering's SHA-256.
+
+Reproduce without database credentials or network source fetching, after `npm ci`:
+
+```sh
+node --import tsx scripts/rosetta-unicode-preview.ts \
+  src/lib/agents/rosetta/test-fixtures/reliance-unicode-loss.pdf \
+  e1468b1d3f3eacf88e447b1089a901d8531d10bdb925a105b914b86d8e712617 \
+  /tmp/reliance-unicode-preview.json
+```
+
+An optional fourth argument names local JSON containing `text`, `sha256` and
+`sourceSha256` from a read-only incumbent export. Output files cannot be overwritten.
+This is a local preview, not an alternative production runtime or repair script.
+
+The [executed pilot](../evidence/2026-10-25-pdf-unicode-loss-preview-pilot.json)
+contains the exact three source hashes, incumbent texts/hashes rechecked read-only
+at **2026-10-25 17:34:07 UTC**, raw and partial proposed layouts, per-word confidence,
+render/model hashes, unresolved words and all **57** baseline fee comparisons
+(Merck 23, Glendale 11, Reliance 23). The fee baseline is still the earlier
+16:08:43 UTC snapshot; these are separate observations, requiring revalidation.
+Partial incumbent substitutions retain all known characters and all 57 existing
+name/price diagnostic matches, with zero such regressions. Those matchers already
+accept the damaged names and Merck's crossed-column prefix: passing them does not
+verify the name, category, units, audience, waivers or current effectiveness.
+
+| Reported fee | Captured-page evidence and pilot | Remaining review |
+|---|---|---|
+| 140286 | `Interna�onal` -> `International`, confidence 93 at both scales; $70 remote outgoing, distinct $40 domestic remote outgoing. Existing category guard rejects domestic and proposes `wire_intl_outgoing`. | Reliance's `Automa�c` lacks a complete witness at 300 dpi (`utomatic`); full document remains incomplete. Sales-tax footnote and all other valid fees must survive. |
+| 133140 | `domes�c` -> `domestic`, confidence 94/95; original page says outgoing domestic only, $20. Existing category stays `wire_domestic_outgoing`. | Glendale's terminal `Overdra�` is outside this internal-letter rule; full document remains incomplete. |
+| 144304 | Original right-column row visibly states `Cashier’s Check Stop Payment Fee`, $25/check; category remains `stop_payment`. | Merck's `automa�c` is unresolved; its live name also borrows unrelated text from the left-column free excessive-withdrawal note. Letter recovery cannot delete that prefix or correct the cross-column geometry. Full document remains incomplete. |
+
+All three previews are incomplete and produce no complete incumbent replacement.
+The 30-document candidate manifest remains the recovery inventory; this pilot is
+not a verified repair of 57 fees or an audit of all 227 exposed baselines. Finish
+the unresolved page transcription and per-fee reconciliation described above before
+an authorized ledger run. Production persistence still needs the transactional
+source/text compare-and-swap and persisted-witness binding already required by the
+repair procedure; no production recovery integration is claimed here.
+
+On the integration with main `5aa41e3`, the Rosetta directory passed 23 files /
+277 tests (8 native database files / 108 tests were gated locally). The final
+three Unicode files passed 22 tests, including real rendering/local OCR after a
+text parse, cancellation during OCR, stale/mismatched lineage and refusal of
+network-model fallback. Repository guards, changed-file lint and the lockfile
+dry-run check passed. The earlier native-CI receipt above predates this preview;
+the new head needs its own CI receipt before any merge decision.

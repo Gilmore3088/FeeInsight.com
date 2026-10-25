@@ -16,7 +16,7 @@ import { readGateShadowRecord, tallyGateShadow, type GateShadowRecord, type Gate
 export const GATE_SHADOW_DETAIL_KEY = "gate_shadow";
 
 const SURFACE_LABEL: Record<GateShadowRecord["surface"], string> = {
-  written_answer: "written answer", memo: "memo", report_section: "report section", simulate: "Simulate read",
+  written_answer: "written answer", memo: "memo", report_section: "report section", simulate: "Simulate read", ask: "Ask answer",
 };
 
 export function shadowSummary(record: GateShadowRecord): string {
@@ -27,7 +27,12 @@ export function shadowSummary(record: GateShadowRecord): string {
 export interface GateShadowContext {
   userId: number | null;
   researchInstitutionId: number | null;
+  /** The gate replay's key for one replayed answer (gate-replay.ts), so a day's batches never record it twice. No question text. */
+  replayKey?: string;
 }
+
+/** The params key a replayed shadow's key rides under. */
+export const GATE_REPLAY_KEY = "replay_key";
 
 /** Records a shadow verdict as its own run. Never throws (recordProRequest does not). */
 export async function recordGateShadow(record: GateShadowRecord, context: GateShadowContext): Promise<number | null> {
@@ -38,7 +43,10 @@ export async function recordGateShadow(record: GateShadowRecord, context: GateSh
     summary: shadowSummary(record),
     userId: context.userId,
     // Kept inside the record's params, not as the run's institution, so a shadow run never counts as a request on it.
-    detail: { [GATE_SHADOW_DETAIL_KEY]: record, research_institution_id: context.researchInstitutionId },
+    detail: {
+      [GATE_SHADOW_DETAIL_KEY]: record, research_institution_id: context.researchInstitutionId,
+      ...(context.replayKey ? { [GATE_REPLAY_KEY]: context.replayKey } : {}),
+    },
   });
 }
 
@@ -75,4 +83,24 @@ export async function countGateShadowDisagreements(days = 7, db: typeof sql = sq
        AND started_at >= NOW() - make_interval(days => ${days})
   `;
   return tallyGateShadow([...rows].map((row) => readGateShadowRecord(row.record)).filter((r): r is GateShadowRecord => r !== null));
+}
+
+/** One origin's shadow records since `since` (an ISO time), with each record's replay key when it has one. */
+export async function gateShadowRecordsSince(
+  origin: GateShadowRecord["origin"],
+  since: string,
+  db: typeof sql = sql,
+): Promise<Array<{ record: GateShadowRecord; key: string | null }>> {
+  const rows = await db<Array<{ record: unknown; key: string | null }>>`
+    SELECT params_json->${GATE_SHADOW_DETAIL_KEY} AS record, params_json->>${GATE_REPLAY_KEY} AS key
+      FROM agent_runs
+     WHERE run_kind = 'pro_request'
+       AND params_json ? ${GATE_SHADOW_DETAIL_KEY}
+       AND params_json->${GATE_SHADOW_DETAIL_KEY}->>'origin' = ${origin}
+       AND started_at >= ${since}::timestamptz
+  `;
+  return [...rows].flatMap((row) => {
+    const record = readGateShadowRecord(row.record);
+    return record ? [{ record, key: row.key ?? null }] : [];
+  });
 }

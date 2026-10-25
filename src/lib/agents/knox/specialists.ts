@@ -293,7 +293,27 @@ import { withGluedFootnotePrices } from "@/lib/custom-report/glued-footnote-pric
 // re-reads set-aside lines on a version bump, so both go to Darwin. On 2026-10-25 the wording matched
 // 4 raw rows at 2 institutions (5827, 8749), none live. Categories only; prices and names are
 // unchanged. The stale-read floor stays at v97. Name re-tidy stays at v27.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 112 } as const;
+// v113 (#2070): a fee priced for an account the bank no longer offers is not a current fee. The
+// shared check refuses a read whose every row at that price carries the marker on its own row
+// ("$5.00 (this account no longer offered)") or sits under a legacy section heading ("Legacy
+// Accounts", "Retired Accounts (no longer available on new memberships)") (`discontinuedRow`, source
+// check v26), so the self-check holds it as untraced. Removes reads only. The stale-read floor stays
+// at v97. Name re-tidy stays at v27.
+// v114: a sentence's priced noun phrase ("... to cover overdrafts an NSF fee of $30.00 per item",
+// Reliance State Bank, live fee 140283) names and files the price (`pricedNounPhrase` in rules.ts,
+// reusing `FEE_OF_SENTENCE`). The cut words "overdrafts an NSF fee" filed it by their first fee word:
+// nsf only while a PDF glyph garbled "Overdrafts", overdraft once Rosetta's glyph repair reads it. The
+// phrase re-files only between overdraft and nsf, never a paid item's or an overdraft program's NSF
+// wording ("NSF items paid: an NSF fee of", "Courtesy Pay overdrafts an NSF fee of" stay overdraft,
+// v19/v42/v43); any other disagreement keeps the read (an incoming international wire stays
+// international). A generic phrase ("a monthly fee of"), words before it
+// that name a fee, or a line no rule reads as a fee keep the read; a cut that drops a condition or a
+// family qualifier ("Subpoenas/Summons") keeps the name. A combined "NSF/Overdraft Fee" stays
+// overdraft. Oct 25 dry run over 972 live fees whose line or name has the phrase: 217 rules reads
+// take the phrase's name (30 differ from the live name), none changes category; with the glyph
+// repaired, Reliance alone moves, overdraft to nsf (its live category). The stale-read floor stays at
+// v97. Name re-tidy stays at v27.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 114 } as const;
 
 export interface SpecialistRun {
   strategy: string;
