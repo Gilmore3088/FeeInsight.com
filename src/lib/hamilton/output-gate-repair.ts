@@ -22,7 +22,9 @@
  */
 
 import { parseAnalyzeResponse, type ParsedResponse } from "@/components/hamilton/analyze/parse-response";
-import { gateSentences, sentencesFor, type GateFailure, type GateStatus, type GateVerdict } from "./output-gate";
+import type { AnswerEvidenceCheck } from "./answer-gate";
+import type { NarrativeBinding } from "./narrative-bound";
+import { gateSentences, OUTPUT_GATE_VERSION, sentencesFor, type GateFailure, type GateStatus, type GateVerdict } from "./output-gate";
 import { withoutSentences, writtenAnswerProse } from "./written-answer-binding";
 
 /** The environment variable that turns repair and partial answers on. Off by default. */
@@ -268,6 +270,20 @@ export function gatedAnswerView(text: string, verdict: GateVerdict): GatedAnswer
     corrections: verdict.corrections,
     leftOut,
   };
+}
+
+/**
+ * What a reader is shown for a streamed written answer that today's gates show but whose binding
+ * left sentences out (#1077 follow-up): `gatedAnswerView` over a `ready_partial` verdict whose
+ * only cuts are the binding's own left-out sentences. It fails closed the same way (a left-out
+ * sentence it cannot find, or one still shown, or nothing left, holds the answer), and Evidence
+ * and Explore Further are dropped, since the binding never reads them.
+ */
+export function bindingAnswerView(text: string, check: AnswerEvidenceCheck, binding: NarrativeBinding): GatedAnswerView {
+  return gatedAnswerView(text, {
+    version: OUTPUT_GATE_VERSION, surface: "written_answer", status: "ready_partial", check, binding,
+    failures: [], corrections: binding.corrections ?? [], repairable: false,
+  });
 }
 
 export interface SettledDraft<T extends { text: string }> {

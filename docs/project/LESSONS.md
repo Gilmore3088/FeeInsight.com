@@ -213,7 +213,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-285 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+287 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
 ### Extraction and fee reading (43)
 
@@ -371,8 +371,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A blank HTML page from a bank that blocks our fetcher is a wall, not a script page. — [finding](findings/2026-10-09-hand-found-bot-challenge-read-as-js.md) — Agent lesson: magellan/pr-850-held-means-readable
 - 2026-10-09 — Two fee links our fetcher can't open but a Mac can. — [finding](findings/2026-10-09-fetcher-refused-where-a-browser-is-not.md) — Agent lesson: magellan/pr-1293-plain-fetch-outcome
 
-### Public and regulatory data (11)
+### Public and regulatory data (12)
 
+- 2026-10-25 — A one-off audit says nothing about next quarter's load: shown financials are now reconciled with the stored FFIEC and NCUA filing lines every day, with known causes counted apart (T3, #1925). — [finding](findings/2026-10-25-financials-reconciled-once-not-daily.md) — Guard: `src/lib/agents/deming/filings-reconcile.test.ts`
 - 2026-10-25 — A bank's year-to-date line cannot be differenced into quarters without knowing about mergers and mid-year restarts; where BankFind's merger-adjusted quarter disagrees, show it (#2025). — [finding](findings/2026-10-25-bank-quarters-differenced-across-mergers.md) — Guard: `src/app/(public)/institution/[id]/quarterly-ledger.test.ts`
 - 2026-10-20 — When a publisher's page answers silently with itself, try the other formats and products it offers: the format may be withdrawn (FFIEC serves the single-period UBPR file only as XBRL, #2473). — [finding](findings/2026-10-20-ffiec-ubpr-single-period-xbrl-only.md) — Guard: `src/lib/agents/magellan/registry/ubpr-peer-groups.test.ts` (+1 more)
 - 2026-10-19 — NCUA credit union mergers never loaded: both addresses were dead. — [finding](findings/2026-10-19-ncua-merger-list-dead.md) — Guard: `src/lib/agents/magellan/registry/industry-events.test.ts`
@@ -454,8 +455,10 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — Sign out on the account page and admin used Server Actions that a redeploy breaks. — [finding](findings/2026-10-09-sign-out-server-action.md) — Guard: `src/app/api/auth/logout/route.test.ts:30`
 - 2026-10-09 — A refunded report kept its paid status and its private link. — [finding](findings/2026-10-09-report-refund-not-handled.md) — Guard: `src/lib/stripe-webhook.test.ts` (+1 more)
 
-### Hamilton workspace (25)
+### Hamilton workspace (27)
 
+- 2026-10-25 — A screen that hides text by matching it has still been sent that text: when the verdict comes before the reader sees anything, the server writes the shown text and a binding that matches it. — [finding](findings/2026-10-25-streamed-omitted-text.md) — Guard: `src/app/api/research/hamilton/route.streamed-omitted.test.ts`, `src/app/api/research/hamilton/route.omitted-payload.test.ts`, `src/lib/hamilton/written-answer-binding.test.ts`
+- 2026-10-25 — A save that takes an answer from the browser keeps only its prose; the binding, verdict and other evidence fields come only from the server, and a browser save gets a "not checked" verdict so readers fail closed. — [finding](findings/2026-10-25-fallback-save-trust.md) — Guard: `src/lib/hamilton/analyze-actions.test.ts`
 - 2026-10-25 — When a view leaves a sentence out, the reply leaves out its text too: send the reason and the count, and keep the text only where it is saved and read server side. — [finding](findings/2026-10-25-omitted-text-payload.md) — Guard: `src/app/api/research/hamilton/route.omitted-payload.test.ts`, `src/lib/hamilton/written-answer-binding.test.ts`
 - 2026-10-25 — An eval scores what the reader gets only with the gate that decides it, and a supported filing claim is tied to its live row, not accepted as the tools read it. — [finding](findings/2026-10-25-claim-eval-reads.md) — Guard: `src/lib/hamilton/answer-correctness-filings.test.ts`, `src/lib/data-store/filing-reread.test.ts`, `src/lib/hamilton/paid-answer-eval.test.ts`
 - 2026-10-25 — When a checked answer is reused, save what the check decided (each sentence's outcome and its facts' values, versioned) and have the next surface read that record, never the prose. — [finding](findings/2026-10-25-claim-report-carry.md) — Guard: `src/lib/hamilton/claim-report-carry.test.ts`, `src/lib/hamilton/report-actions.test.ts`, `src/lib/hamilton/bound-export.pdf.test.tsx`
