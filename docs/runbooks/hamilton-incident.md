@@ -196,8 +196,8 @@ summarised on #1921 (issuecomment-6402906130).
 - **Step 3 build:** main before #2660 (`b896375d3`, the tree a revert of #2660 leaves) built as
   preview `dpl_LyySkE79vrbj3Aqeexj2LmZg4r5z`, READY about 4.5 minutes after the build started.
   `/api/health` returns 200 `ok`, and `/pro/reports` returns the sign-in page.
-- **Reverts on `fac4b3ec5` (local):** reverting #2660, #2659, #2658, #2656, #2654, #2652 and #2651 newest
-  first applies cleanly; #2650 conflicts only in `docs/project/LESSONS.md`. The unwound tree
+- **Reverts on `fac4b3ec5` (local):** reverting #2660, #2659, #2658, #2656, #2654, #2652 and
+  #2651 newest first applies cleanly; #2650 conflicts only in `docs/project/LESSONS.md`. The unwound tree
   type-checks, and no file under `supabase/` is touched.
 - **Before promoting, check the target is READY.** Six production builds of `main` in a row
   (#2652, #2649, #2654, #2656, #2658, #2659) ended in ERROR, so production stayed on #2651 until

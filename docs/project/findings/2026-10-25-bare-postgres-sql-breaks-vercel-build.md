@@ -2,12 +2,13 @@
 
 **Found:** 2026-10-25, Hamilton V5 merges (#2657).
 
-**What happened:** production deployments of `main` for #2652, #2649, #2654, #2656, #2658 and #2659
-all ended in ERROR at "Failed to type check", so production stayed on #2651 (`06ff84a4b`) until #2660's
-build passed. Branch previews failed the same way. GitHub's `checks` job (tsc) passed on every one
-of those commits. The errors were in two Knox database tests none of those PRs touched
+**What happened:** production deployments of `main` for #2652, #2649, #2654, #2656, #2658 and
+#2659 all ended in ERROR, so production stayed on #2651 (`06ff84a4b`) until #2660's build passed.
+#2659's log ends at "Failed to type check" (the other five logs were not read). Branch previews for
+#2652, #2656, #2658 and #2659 failed the same way, in two Knox database tests
 (`paid-returned-events.db.test.ts`, `symbolic-lesser-of-concurrency.db.test.ts`): `Sql<{ numeric;
-json; text }>` is not assignable to `Sql<{}>`.
+json; text }>` is not assignable to `Sql<{}>`. GitHub's `checks` job (tsc) passed on those commits.
+Deployment ids: `/mnt/project-files/hamilton-v5/rollback-preview/receipts.md`.
 
 **Cause:** the same order-dependent variance check as
 [2026-10-18](2026-10-18-postgres-returntype-in-db-tests.md). A handle declared as a bare
