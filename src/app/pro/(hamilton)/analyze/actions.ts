@@ -137,6 +137,9 @@ export async function listSavedAnalyses(limit = 10): Promise<RecentQuestion[]> {
  * (#1077 step 6) are dropped. Server code that needs them reads `readSavedAnalysisRecord`.
  */
 export async function loadAnalysisRecord(id: string): Promise<LoadedAnalysisRecord | null> {
+  // Server actions skip the /pro layouts, so the browser entry point checks access itself too.
+  const user = await getCurrentUser();
+  if (!user || !canAccessPremium(user)) return null;
   const record = await readSavedAnalysisRecord(id);
   return record ? { ...record, responseJson: withoutSavedClaims(record.responseJson) } : null;
 }
