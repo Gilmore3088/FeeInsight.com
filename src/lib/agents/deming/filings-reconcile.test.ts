@@ -14,6 +14,7 @@ import {
   compareCreditUnions,
   filingsReconcileDetail,
   previousQuarterEnd,
+  shownBankDates,
   quarterEnds,
   runFilingsReconcile,
   sameFigure,
@@ -70,7 +71,7 @@ describe("compareBanks", () => {
     expect(out.tallies.assets).toMatchObject({ compared: 1, matched: 1 });
     expect(out.tallies.serviceCharges).toMatchObject({ compared: 1, matched: 0, explained: 1, unexplained: 0 });
     expect(out.mismatches).toEqual([
-      { charter: "bank", institutionId: 5, reportDate: "2023-06-30", metric: "serviceCharges", shown: 266_655_000, filed: 294_262_000, cls: "merger_quarter" },
+      { charter: "bank", institutionId: 5, reportDate: "2023-06-30", metric: "serviceCharges", shown: 266_655_000, filed: 294_262_000, cls: "merger_quarter", explained: true },
     ]);
   });
 
@@ -213,9 +214,135 @@ describe("compareCreditUnions", () => {
       ["2026-06-30"],
     );
     expect(out.mismatches).toEqual([
-      { charter: "credit_union", institutionId: 9, reportDate: "2026-06-30", metric: "feeIncomeYtd", shown: 500_000, filed: 400_000, cls: "unexplained" },
+      { charter: "credit_union", institutionId: 9, reportDate: "2026-06-30", metric: "feeIncomeYtd", shown: 500_000, filed: 400_000, cls: "unexplained", explained: false },
     ]);
     expect(out.tallies.overdraftYtd).toMatchObject({ shownMissing: 1, notReported: 0 });
+  });
+});
+
+describe("filing versions (#1925: the feeds hold different versions of a refiled report)", () => {
+  const epoch = (iso: string) => Date.parse(iso) / 1000;
+  const por = (institution_id: number, report_date: string, iso: string): FiledItemRow =>
+    ({ institution_id, report_date, item_key: "filing_last_updated", item_code: "POR_LAST_UPDATED", value: epoch(iso), unit: "count" });
+  const NOW = new Date("2026-10-25T06:00:00Z");
+  const verdicts = (out: ReturnType<typeof compareBanks>) =>
+    out.mismatches.map((m) => `${m.reportDate}:${m.metric}:${m.cls}:${m.filingVersion ?? "-"}:${m.explained ? "explained" : "unexplained"}`);
+
+  // Institution 3541 (read 2026-10-25): 2025-Q3 assets BankFind 125,950 vs FFIEC 125,418 ($K), and
+  // its year-to-date income differs; the 2025-Q4 year to date agrees in both feeds, so Q4's gap is
+  // Q3's carried into the subtraction. Both feeds were fetched in October 2026. Income figures
+  // and the POR time here are illustrative.
+  const fetched3541 = epoch("2026-10-10T08:00:00Z");
+  const records3541 = [
+    record(3541, "2025-03-31", { total_assets: 120_000, service_charge_income: 100, fetched_epoch: fetched3541 }),
+    record(3541, "2025-06-30", { total_assets: 122_000, service_charge_income: 110, fetched_epoch: fetched3541 }),
+    record(3541, "2025-09-30", { total_assets: 125_950, service_charge_income: 120, fetched_epoch: fetched3541 }),
+    record(3541, "2025-12-31", { total_assets: 126_500, service_charge_income: 130, fetched_epoch: fetched3541 }),
+  ];
+  const items3541 = [
+    ffiec(3541, "2025-03-31", "total_assets", "RCON2170", 120_000),
+    ffiec(3541, "2025-06-30", "total_assets", "RCON2170", 122_000),
+    ffiec(3541, "2025-09-30", "total_assets", "RCON2170", 125_418),
+    ffiec(3541, "2025-12-31", "total_assets", "RCON2170", 126_500),
+    ffiec(3541, "2025-03-31", "service_charges_deposits_ytd", "RIAD4080", 100),
+    ffiec(3541, "2025-06-30", "service_charges_deposits_ytd", "RIAD4080", 210),
+    ffiec(3541, "2025-09-30", "service_charges_deposits_ytd", "RIAD4080", 345),
+    ffiec(3541, "2025-12-31", "service_charges_deposits_ytd", "RIAD4080", 460),
+    por(3541, "2025-09-30", "2026-01-20T15:00:00Z"),
+  ];
+
+  it("tags 3541's 2025-Q4 as a knock-on of 2025-Q3, and says BankFind was fetched after the refiling", () => {
+    const out = compareBanks(records3541, items3541, [], ["2025-03-31", "2025-06-30", "2025-09-30", "2025-12-31"], NOW);
+    expect(verdicts(out)).toEqual([
+      "2025-09-30:assets:filing_version_skew:bankfind_fetched_after_refiling:unexplained",
+      "2025-09-30:serviceCharges:filing_version_skew:bankfind_fetched_after_refiling:unexplained",
+      "2025-12-31:serviceCharges:prior_quarter_knock_on:-:explained",
+    ]);
+    expect(out.mismatches[2]).toMatchObject({ shown: 130_000, filed: 115_000, priorQuarterDiffers: true });
+    expect(out.tallies.serviceCharges).toMatchObject({ compared: 4, matched: 2, explained: 1, unexplained: 1 });
+  });
+
+  it("leaves a knock-on unexplained when its prior quarter is not itself reported", () => {
+    const out = compareBanks(records3541, items3541, [], ["2025-12-31"], NOW);
+    expect(verdicts(out)).toEqual(["2025-12-31:serviceCharges:prior_quarter_knock_on:-:unexplained"]);
+  });
+
+  it("keeps 3519's 2026-Q2 negative difference unexplained, because 2026-Q1 differs between the feeds", () => {
+    // Institution 3519 (read 2026-10-25): 2026-Q1 service charges BankFind 15 vs FFIEC 45 ($K);
+    // BankFind Q1 + Q2 equals FFIEC's Q2 year to date. The Q2 figures here are illustrative.
+    const out = compareBanks(
+      [
+        record(3519, "2026-03-31", { service_charge_income: 15, fetched_epoch: epoch("2026-10-01T00:00:00Z") }),
+        record(3519, "2026-06-30", { service_charge_income: 25, fetched_epoch: epoch("2026-10-01T00:00:00Z") }),
+      ],
+      [
+        ffiec(3519, "2026-03-31", "service_charges_deposits_ytd", "RIAD4080", 45),
+        ffiec(3519, "2026-06-30", "service_charges_deposits_ytd", "RIAD4080", 40),
+      ],
+      [],
+      ["2026-03-31", "2026-06-30"],
+      NOW,
+    );
+    expect(verdicts(out)).toEqual([
+      "2026-03-31:serviceCharges:filing_version_skew:unknown:unexplained",
+      "2026-06-30:serviceCharges:negative_differenced:-:unexplained",
+    ]);
+    expect(out.mismatches[1]).toMatchObject({ filed: -5_000, priorQuarterDiffers: true });
+    expect(out.tallies.serviceCharges).toMatchObject({ explained: 0, unexplained: 2 });
+  });
+
+  // Institution 744 (read 2026-10-25): 2026-Q2 non-interest income and assets both differ by exactly
+  // 1,436 ($K). The other figures and the times are illustrative.
+  const case744 = (porTime: string | null, fetchedIso: string) => compareBanks(
+    [
+      record(744, "2026-03-31", { total_assets: 1_000_000, total_revenue: 10_000, fetched_epoch: epoch(fetchedIso) }),
+      record(744, "2026-06-30", { total_assets: 998_564, total_revenue: 10_500, fetched_epoch: epoch(fetchedIso) }),
+    ],
+    [
+      ffiec(744, "2026-03-31", "total_assets", "RCON2170", 1_000_000),
+      ffiec(744, "2026-06-30", "total_assets", "RCON2170", 1_000_000),
+      ffiec(744, "2026-03-31", "net_interest_income_ytd", "RIAD4074", 8_000),
+      ffiec(744, "2026-06-30", "net_interest_income_ytd", "RIAD4074", 16_500),
+      ffiec(744, "2026-03-31", "noninterest_income_total_ytd", "RIAD4079", 2_000),
+      ffiec(744, "2026-06-30", "noninterest_income_total_ytd", "RIAD4079", 5_436),
+      ...(porTime ? [por(744, "2026-06-30", porTime)] : []),
+    ],
+    [],
+    ["2026-03-31", "2026-06-30"],
+    NOW,
+  );
+
+  it("counts 744's 2026-Q2 as explained only while FFIEC's refiling is newer and under 14 days old", () => {
+    expect(verdicts(case744("2026-10-20T14:00:00Z", "2026-10-01T00:00:00Z"))).toEqual([
+      "2026-06-30:assets:filing_version_skew:ffiec_newer:explained",
+      "2026-06-30:revenue:filing_version_skew:ffiec_newer:explained",
+    ]);
+    // FFIEC newer but refiled 54 days ago: BankFind's lag no longer explains it.
+    expect(verdicts(case744("2026-09-01T14:00:00Z", "2026-08-15T00:00:00Z"))).toEqual([
+      "2026-06-30:assets:filing_version_skew:ffiec_newer:unexplained",
+      "2026-06-30:revenue:filing_version_skew:ffiec_newer:unexplained",
+    ]);
+    // No POR time stored for the quarter: which feed is newer is unknown.
+    expect(verdicts(case744(null, "2026-10-01T00:00:00Z"))).toEqual([
+      "2026-06-30:assets:filing_version_skew:unknown:unexplained",
+      "2026-06-30:revenue:filing_version_skew:unknown:unexplained",
+    ]);
+  });
+
+  it("names the version skew in the summary and the detail", () => {
+    const bank = { quarters: ["2026-03-31", "2026-06-30"], institutions: 1, error: null, ...case744(null, "2026-10-01T00:00:00Z") };
+    const creditUnion = { quarters: [], institutions: 0, tallies: {}, mismatches: [], error: null };
+    const report = buildFilingsReconcileReport("2026-10-25", 150, bank, creditUnion);
+    expect(report.versionSkew).toEqual({ figures: 2, unexplained: 2, ffiecNewer: 0, bankfindFetchedAfterRefiling: 0, unknown: 2, knockOn: 0 });
+    expect(summarizeFilingsReconcile(report)).toContain("ALARM: 2 unexplained (2 where BankFind and FFIEC hold different versions of the filing)");
+    const detail = filingsReconcileDetail(report);
+    expect(detail.version_skew).toMatchObject({ figures: 2, unexplained: 2, unknown: 2, bankfind_lag_days: 14 });
+    expect((detail.mismatches as Record<string, unknown>[])[0]).toMatchObject({ class: "filing_version_skew", filing_version: "unknown", explained: false });
+  });
+
+  it("reads shown rows back to the first quarter of the year so a year to date can be summed", () => {
+    expect(shownBankDates(["2025-09-30", "2025-12-31"])).toEqual(["2025-03-31", "2025-06-30", "2025-09-30", "2025-12-31"]);
+    expect(shownBankDates(["2026-03-31"])).toEqual(["2026-03-31"]);
   });
 });
 

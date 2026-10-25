@@ -213,7 +213,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-293 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+295 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
 ### Extraction and fee reading (45)
 
@@ -374,8 +374,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A blank HTML page from a bank that blocks our fetcher is a wall, not a script page. — [finding](findings/2026-10-09-hand-found-bot-challenge-read-as-js.md) — Agent lesson: magellan/pr-850-held-means-readable
 - 2026-10-09 — Two fee links our fetcher can't open but a Mac can. — [finding](findings/2026-10-09-fetcher-refused-where-a-browser-is-not.md) — Agent lesson: magellan/pr-1293-plain-fetch-outcome
 
-### Public and regulatory data (12)
+### Public and regulatory data (13)
 
+- 2026-10-25 — When two feeds of the same filing disagree, first ask whether they hold different versions of it, and keep the filing's own last-updated time so the check can say which feed is newer; compare years to date before quarters (#1925). — [finding](findings/2026-10-25-feeds-hold-different-filing-versions.md) — Agent lesson: deming/issue-1925-filing-version-skew (+1 more)
 - 2026-10-25 — A one-off audit says nothing about next quarter's load: shown financials are now reconciled with the stored FFIEC and NCUA filing lines every day, with known causes counted apart (T3, #1925). — [finding](findings/2026-10-25-financials-reconciled-once-not-daily.md) — Guard: `src/lib/agents/deming/filings-reconcile.test.ts`
 - 2026-10-25 — A bank's year-to-date line cannot be differenced into quarters without knowing about mergers and mid-year restarts; where BankFind's merger-adjusted quarter disagrees, show it (#2025). — [finding](findings/2026-10-25-bank-quarters-differenced-across-mergers.md) — Guard: `src/app/(public)/institution/[id]/quarterly-ledger.test.ts`
 - 2026-10-20 — When a publisher's page answers silently with itself, try the other formats and products it offers: the format may be withdrawn (FFIEC serves the single-period UBPR file only as XBRL, #2473). — [finding](findings/2026-10-20-ffiec-ubpr-single-period-xbrl-only.md) — Guard: `src/lib/agents/magellan/registry/ubpr-peer-groups.test.ts` (+1 more)
@@ -458,8 +459,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — Sign out on the account page and admin used Server Actions that a redeploy breaks. — [finding](findings/2026-10-09-sign-out-server-action.md) — Guard: `src/app/api/auth/logout/route.test.ts:30`
 - 2026-10-09 — A refunded report kept its paid status and its private link. — [finding](findings/2026-10-09-report-refund-not-handled.md) — Guard: `src/lib/stripe-webhook.test.ts` (+1 more)
 
-### Hamilton workspace (29)
+### Hamilton workspace (30)
 
+- 2026-10-25 — The binder knows whose figure a sentence states only if every tool that gives a figure also gives whose it is, by id: the local competitor read now names each competitor by id, and its aggregate prices (max or median, no record) stay Hamilton's reading. A true competitor price that equals a subject record is now left out. — [finding](findings/2026-10-25-competitor-identity.md) — Guard: `src/lib/hamilton/written-answer-binding.test.ts`, `src/lib/research/tool-local-competitors.test.ts`, `src/lib/hamilton/claim-golden-set.ts`
 - 2026-10-25 — A shadow decision needs volume: count where answers are already written (the daily paid eval), and keep eval and synthetic counts apart from reader counts. — [finding](findings/2026-10-25-shadow-counts-from-eval.md) — Guard: `src/lib/hamilton/paid-answer-eval.test.ts`, `src/lib/hamilton/output-gate.test.ts`, `src/lib/hamilton/analyze-answer-decision.test.ts`
 - 2026-10-25 — When a figure's clause names a fee, a record of another fee at the same price (not a sub-type in `FEE_SUB_TYPES`, not the wire direction named) no longer supports it; a clause that names no fee, or a record with no category, still binds on value and institution alone. — [finding](findings/2026-10-25-fee-binding-category.md) — Guard: `src/lib/hamilton/narrative-bound.test.ts`, `src/lib/hamilton/claim-golden-set.ts`
 - 2026-10-25 — A screen that hides text by matching it has still been sent that text: when the verdict comes before the reader sees anything, the server writes the shown text and a binding that matches it. — [finding](findings/2026-10-25-streamed-omitted-text.md) — Guard: `src/app/api/research/hamilton/route.streamed-omitted.test.ts`, `src/app/api/research/hamilton/route.omitted-payload.test.ts`, `src/lib/hamilton/written-answer-binding.test.ts`
@@ -552,19 +554,19 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (199 in all).
+counts as of this index (201 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
 | atlas | 7 | [`src/lib/agents/atlas/role-lessons.ts`](../../src/lib/agents/atlas/role-lessons.ts) |
-| magellan | 18 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
+| magellan | 19 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
 | hoovie | 10 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
 | rosetta | 9 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
 | knox | 56 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
 | darwin | 28 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 40 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
 | hamilton | 20 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
-| deming | 11 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
+| deming | 12 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
 
 ## Before 2026-10-10
 
