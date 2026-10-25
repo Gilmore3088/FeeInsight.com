@@ -31,8 +31,8 @@ describe("an edition line past the menu (lateEdition)", () => {
     expect(editionStarts(ALLENTOWN, true)).toBe("2027-01-01");
     expect(notYetEffective(ALLENTOWN, TODAY, true)).toBe("2027-01-01");
     expect(notYetEffective(ALLENTOWN, "2027-01-01", true)).toBeNull();
-    expect(EDITION_LATE_HEADING_LIVE).toBe(false);
-    expect(notYetEffective(ALLENTOWN, TODAY)).toBeNull();
+    expect(EDITION_LATE_HEADING_LIVE).toBe(true);
+    expect(notYetEffective(ALLENTOWN, TODAY)).toBe("2027-01-01");
   });
 
   it("reads an edition line that names the fees ('Fees Effective …')", () => {

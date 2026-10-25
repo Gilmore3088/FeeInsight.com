@@ -101,9 +101,10 @@ describe("an edition line past the menu in Darwin's re-check (T1)", () => {
     expect(withDocumentHeads(rows).map((r) => r.head === newsletter)).toEqual([true, true]);
   });
 
-  it("holds nothing on that account while the switch is off, and counts what it would hold", () => {
+  it("holds the page's fees with the switch on (James, Oct 25), and only counts them with it off", () => {
     const full = withDocumentHeads(rows);
-    const found = judgeEditions(full, "2026-10-25");
+    expect(judgeEditions(full, "2026-10-25").holds.map((fee) => fee.feePublishedId)).toEqual([149487, 149488]);
+    const found = judgeEditions(full, "2026-10-25", false);
     expect(found.holds).toEqual([]);
     const shadow = judgeEditions(full, "2026-10-25", true);
     expect(lateHeadingOnly(found, shadow).map((fee) => [fee.feePublishedId, fee.reason])).toEqual([

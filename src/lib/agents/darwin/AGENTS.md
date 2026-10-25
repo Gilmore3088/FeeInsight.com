@@ -1135,8 +1135,8 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   ending at its date; a bare "schedule" or one section's "<X> Fees" never counts; not when
   the page calls its prices current, announces a new schedule or links one, dates a contents entry
   or dates two editions) is read too, behind
-  `EDITION_LATE_HEADING_LIVE` (off). While off the step reports `late_heading_would_hold` and holds
-  nothing on that account. Each document's text comes once per read, up to 8,000 characters only
+  `EDITION_LATE_HEADING_LIVE` (on since James's yes, Oct 25; while off the step reports
+  `late_heading_would_hold` and holds nothing on that account). Each document's text comes once per read, up to 8,000 characters only
   where a late edition line can be (`editionWindowSql`). Dry run Oct 25: 0 holds today; 1 more with
   the switch on (fee 149487, Allentown FCU's 2027 newsletter schedule, doc 36178).
 - Canadian bank documents (`canadian-document-check.ts`, #2022, James's "Do all three", Oct 19).
