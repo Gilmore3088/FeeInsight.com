@@ -213,7 +213,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-295 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+297 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
 ### Extraction and fee reading (45)
 
@@ -374,8 +374,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A blank HTML page from a bank that blocks our fetcher is a wall, not a script page. — [finding](findings/2026-10-09-hand-found-bot-challenge-read-as-js.md) — Agent lesson: magellan/pr-850-held-means-readable
 - 2026-10-09 — Two fee links our fetcher can't open but a Mac can. — [finding](findings/2026-10-09-fetcher-refused-where-a-browser-is-not.md) — Agent lesson: magellan/pr-1293-plain-fetch-outcome
 
-### Public and regulatory data (13)
+### Public and regulatory data (14)
 
+- 2026-10-25 — A regulator identifier is today's, not history's: when a bank merges into a different charter, the FDIC cert and the Fed RSSD can come from different predecessors; attach past filings by the cert that filed as that RSSD that quarter (FFIEC POR), not by today's cert (#2625). — [finding](findings/2026-10-25-merger-into-other-charter-splits-history.md) — Agent lesson: magellan/issue-2625-identifier-is-todays-not-historys (+1 more)
 - 2026-10-25 — When two feeds of the same filing disagree, first ask whether they hold different versions of it, and keep the filing's own last-updated time so the check can say which feed is newer; compare years to date before quarters (#1925). — [finding](findings/2026-10-25-feeds-hold-different-filing-versions.md) — Agent lesson: deming/issue-1925-filing-version-skew (+1 more)
 - 2026-10-25 — A one-off audit says nothing about next quarter's load: shown financials are now reconciled with the stored FFIEC and NCUA filing lines every day, with known causes counted apart (T3, #1925). — [finding](findings/2026-10-25-financials-reconciled-once-not-daily.md) — Guard: `src/lib/agents/deming/filings-reconcile.test.ts`
 - 2026-10-25 — A bank's year-to-date line cannot be differenced into quarters without knowing about mergers and mid-year restarts; where BankFind's merger-adjusted quarter disagrees, show it (#2025). — [finding](findings/2026-10-25-bank-quarters-differenced-across-mergers.md) — Guard: `src/app/(public)/institution/[id]/quarterly-ledger.test.ts`
@@ -555,19 +556,19 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (202 in all).
+counts as of this index (204 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
 | atlas | 7 | [`src/lib/agents/atlas/role-lessons.ts`](../../src/lib/agents/atlas/role-lessons.ts) |
-| magellan | 19 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
+| magellan | 20 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
 | hoovie | 10 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
 | rosetta | 9 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
 | knox | 56 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
 | darwin | 28 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 40 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
 | hamilton | 21 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
-| deming | 12 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
+| deming | 13 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
 
 ## Before 2026-10-10
 

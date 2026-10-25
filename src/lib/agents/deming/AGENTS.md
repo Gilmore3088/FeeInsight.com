@@ -284,7 +284,7 @@ institutions remains the only human launch workflow.
 - Read-only, deterministic, no model calls, pause-exempt: one SELECT over
   `registry_ingest_partitions` and one over Atlas's newest table sizes.
 - `deming-filings-reconcile` (#1925, Hamilton V5 T3; `filings-reconcile.ts`,
-  `FILINGS_RECONCILE_VERSION` v2): a step in the same run, after `deming-source-health`. It compares
+  `FILINGS_RECONCILE_VERSION` v3): a step in the same run, after `deming-source-health`. It compares
   the figures the institution page and Hamilton show (`institution_financial_records`) with the
   stored filing lines (`institution_call_report_items`) over the newest 12 quarter ends, for 150
   banks and 150 credit unions drawn each day by md5(id || date): bank assets, deposits, service
@@ -301,6 +301,8 @@ institutions remains the only human launch workflow.
   is newer by under 14 days. A quarter whose year to date agrees but whose prior quarter differs is
   a `prior_quarter_knock_on`, explained only when that prior quarter is reported. A negative
   differenced line is not explained when the prior quarter differs between the feeds.
+  v3 (#2625): a structure-history 713 (offices acquired in a merger) and 510 (main office change)
+  on one date also mark a merger quarter, as when a bank merges into a different, smaller charter.
 - Read-only, deterministic, no model calls, pause-exempt: five indexed SELECTs per charter under
   a 20 s statement timeout; a failed read is reported as an error, never as a clean result.
 
