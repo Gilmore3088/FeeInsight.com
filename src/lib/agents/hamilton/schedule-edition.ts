@@ -250,7 +250,7 @@ const CONTENTS_LEADER = /\.{3,}|…/;
  * "2027 Updated Fee Schedule" in a newsletter (Wyrope, doc 36403), "Important Changes Effective …".
  */
 const ANNOUNCES =
-  /\b(?:new|updat\w*|upcoming|coming|soon|chang\w*|revis\w*|amend\w*|adjust\w*|waiv\w*|eliminat\w*|no more|no longer|increas\w*|decreas\w*|reduc\w*|lower\w*|propos\w*|pending|future|next year'?s?|notices?|pdf|download|link)\b/i;
+  /\b(?:new|updat\w*|upcoming|coming|soon|chang\w*|revis\w*|amend\w*|adjust\w*|waiv\w*|eliminat\w*|no more|no longer|increas\w*|decreas\w*|reduc\w*|lower\w*|propos\w*|pending|future|next year'?s?|notices?|alerts?|attention|important|press|news|pdf|download|link)\b/i;
 /**
  * What may follow the date on an edition line: nothing, closing punctuation, or a footnote mark
  * ("Fees Effective 1/1/2027 * Fee will be assessed …", doc 38132). A line that goes on is a
@@ -264,7 +264,7 @@ const ENDS_AT_DATE = /^\s*(?:[*†‡]|[.,;)\]]*\s*$)/;
  * effect through November 30, 2026"; BayPort's table header is "Fee - Current".
  */
 const CURRENT_PRICES =
-  /\bfees?\s*[-–:|]\s*current\b|\bcurrent\s+(?:consumer\s+|business\s+|personal\s+)?(?:fees?|fee schedule|schedule of fees|prices?)\b|\bfees?\s+today\b|\bcurrent schedule\b|\bin effect (?:through|until|now)\b|\bremains? in effect\b/i;
+  /\bfees?\s*[-–:|]\s*current\b|\bcurrent\s+(?:consumer\s+|business\s+|personal\s+)?(?:fees?|fee schedule|schedule of fees|prices?)\b|\bfees?\s+today\b|\bcurrent schedule\b|\b(?:in effect|effective|appl(?:y|ies)|valid)\s+(?:through|thru|until|now)\b|\bremains?\s+(?:in effect|valid)\b/i;
 const TITLE_MAX_CHARS = 80;
 
 /**

@@ -120,7 +120,7 @@ describe("an edition line past the menu (lateEdition)", () => {
     }
   });
 
-  it("does not date a page by one section's 'Fees Effective …' or an end date (third review of #2573)", () => {
+  it("does not date a page by one section's 'Fees Effective …' or an end date (third and fourth reviews of #2573)", () => {
     const pages = [
       `${MENU}Fee Schedule\n\nNSF | $30\n\nOverdraft Fees\nFees Effective January 1, 2027\nWe will no longer charge for overdrafts under $50.`,
       `${MENU}Fee Schedule\n\nNSF | $30\n\nIRA Fees\n\nFees effective January 1, 2027\n\nIRA closing | $25`,
@@ -131,6 +131,10 @@ describe("an edition line past the menu (lateEdition)", () => {
       `${MENU}Fee Schedule\nEffective January 1, 2027\nUntil then, the fees below remain in effect.`,
       `${MENU}Pending Fee Schedule\nEffective January 1, 2027\nNSF | $35`,
       `${MENU}Next Year's Fee Schedule\nEffective January 1, 2027\nNSF | $35`,
+      `${MENU}Fee Schedule Effective December 1, 2026\n\nThe fees below are effective through November 30, 2026.\n\nNSF | $30 per item`,
+      `${MENU}Fee Schedule Effective December 1, 2026\n\nFees listed below apply through November 30, 2026.\n\nNSF | $30`,
+      `${MENU}Consumer Fee Schedule\n\nEffective December 1, 2026\n\nFees shown below remain valid until November 30, 2026.\n\nNSF | $30 per item`,
+      `${MENU}Member Alert\nFee Schedule Effective January 1, 2027`,
     ];
     for (const page of pages) {
       expect(lateEdition(page)).toBeNull();
