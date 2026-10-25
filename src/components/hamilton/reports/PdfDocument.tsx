@@ -18,11 +18,11 @@ import {
 } from "@react-pdf/renderer";
 import type { ReportArtifactMetadata, ReportExhibit, ReportSummaryResponse } from "@/lib/hamilton/types";
 import { HAMILTON_ATTRIBUTION } from "@/lib/constants";
-import { REPORT_SECTION_HEADINGS, evidencePolicyLabel, reportTypeLabel } from "./report-labels";
+import { REPORT_FINDING_SOURCES_LABEL, REPORT_SECTION_HEADINGS, evidencePolicyLabel, reportTypeLabel } from "./report-labels";
 import { RD_PDF } from "@/lib/report-design/tokens";
 import { LEGACY_REPORT_CONFIDENCE_FOOTNOTE, displayReportDecision, hasLegacyHighRating } from "@/lib/hamilton/report-answer";
 import { datasetPassage, readStampedFigures } from "@/lib/dataset-note";
-import { SAVED_ANSWER_FULL_LIST, SAVED_DATASET_SOURCE_LABEL } from "@/lib/hamilton/board-brief";
+import { SAVED_ANSWER_FULL_LIST, SAVED_DATASET_SOURCE_LABEL, WRITTEN_SOURCES_NOTE } from "@/lib/hamilton/board-brief";
 
 // Words wrap whole, as in AnalysisPdfDocument (the same route loads both): default hyphenation split
 // evidence record IDs mid-way ("fee:pub-lished:502"), so a printed ID no longer matched its record.
@@ -420,6 +420,13 @@ function PdfAddedFindings({ report }: { report: ReportSummaryResponse }) {
         <View style={styles.metadataStrip}>
           <Text style={styles.answerLabel}>{INTERPRETATION_LABEL}</Text>
           {finding.reading.map((sentence, i) => <Text key={i} style={styles.noteItem}>{"•"} {sentence}</Text>)}
+        </View>
+      ) : null}
+      {finding.sources?.length ? (
+        <View style={styles.metadataStrip}>
+          <Text style={styles.answerLabel}>{REPORT_FINDING_SOURCES_LABEL}</Text>
+          {finding.sources.map((source) => <Text key={source.id} style={styles.noteItem}>{"•"} {source.label}: {source.value} ({source.note})</Text>)}
+          <Text style={styles.readOnlyNotice}>{WRITTEN_SOURCES_NOTE}</Text>
         </View>
       ) : null}
       {(hamiltonIdentityLines(readHamiltonIdentitySnapshot(finding.identityContext))).map((line) => <Text key={line} style={styles.readOnlyNotice}>{line}</Text>)}
