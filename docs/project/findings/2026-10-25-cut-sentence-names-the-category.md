@@ -18,9 +18,13 @@ cell ends in "a/an <X> fee of" (`FEE_OF_SENTENCE`, shared with name re-tidy), th
   "For incoming international wires, an incoming wire fee of $15.00" as a domestic wire, "Deposited
   items returned unpaid ... a returned item fee of $10" as NSF, "Garnishments and levies: a legal
   processing fee of $100" as legal process and "Subpoenas/Summons A Copy Fee of" as a plain copy fee.
+  Its re-review found the overdraft-to-nsf re-file breaking Knox's paid-NSF-is-overdraft rules
+  (v19, v34, v42, v43): "NSF items paid: an NSF fee of", "Courtesy Pay overdrafts an NSF fee of" and
+  "Overdraft privilege items an NSF fee of" went to nsf. The re-file now skips words that say the
+  bank paid or honored the item or name an overdraft program, reusing those rules' own patterns.
 - Name: the phrase ("NSF fee"), unless the words cut before it carry a condition (`dropsCondition`)
-  or a family qualifier (`FAMILY_QUALIFIER`: international, deposited, garnishment, subpoena,
-  business and the like).
+  or a family qualifier (`FAMILY_QUALIFIER`: international, abroad, deposited, garnishment,
+  subpoena, business, personal, non-customers, online, phone, same-day, money market and the like).
 The read stays as before when:
 - the phrase is generic ("a monthly fee of", "a service charge of", "an inactivity fee of"): the words
   before say what the charge is for ("Paper statements will have a monthly fee of", a Bill Pay

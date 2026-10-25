@@ -1920,8 +1920,47 @@ describe("Knox v114: a sentence's priced noun phrase names and files its fee", (
     expect(fee?.feeName).toBe(nameFrom(line.slice(0, line.indexOf("$"))));
   });
 
+  // Re-review of #2637 (B2): a paid item's or an overdraft program's NSF wording stays overdraft
+  // (v19/v34/v42/v43, v78's overdraft words).
+  it.each([
+    "NSF items paid: an NSF fee of $30",
+    "Paid NSF items an NSF fee of $30",
+    "Insufficient funds items paid an NSF fee of $30",
+    "Checks paid (honored) an NSF fee of $30",
+    "Overdraft items paid an NSF fee of $30 per item",
+    "Items paid into overdraft are charged an NSF fee of $30",
+    "Overdrawn items paid: an NSF fee of $30",
+    "Overdrafts paid or returned an NSF fee of $30",
+    "Courtesy Pay overdrafts an NSF fee of $30",
+    "Bounce protection paid items an NSF fee of $30",
+    "Overdraft privilege items an NSF fee of $30",
+  ])("keeps %s as the overdraft fee, named as read", (line) => {
+    const [fee] = extractCandidatesFromText(line).candidates;
+    expect(fee?.canonicalHint).toBe("overdraft");
+    expect(fee?.feeName).toBe(nameFrom(line.slice(0, line.indexOf("$"))));
+  });
+
+  it("re-files overdraft items the bank returns as the NSF fee", () => {
+    expect(reads("Overdraft items returned an NSF fee of $30")).toEqual([["NSF fee", 30, "nsf"]]);
+  });
+
   it("keeps a family qualifier in the name when the phrase agrees with the read", () => {
     expect(reads("Business accounts an NSF fee of $30.00 per item")).toEqual([["Business accounts an NSF fee of", 30, "nsf"]]);
+  });
+
+  // Re-review of #2637 (N2): an audience, channel or product before the phrase stays in the name.
+  it.each([
+    "Stop payments placed by phone a stop payment fee of $30",
+    "Online stop payments: a stop payment fee of $20",
+    "Non-customers cashing checks pay a check cashing fee of $10",
+    "Cashier's checks for non-customers a cashier's check fee of $10",
+    "Same-day ACH a ACH origination fee of $10",
+    "Money market accounts an excess withdrawal fee of $10",
+    "Personal accounts overdrafts an NSF fee of $30",
+    "Receiving wires from abroad, an incoming wire fee of $15",
+  ])("keeps the qualifier in %s", (line) => {
+    const [fee] = extractCandidatesFromText(line).candidates;
+    expect(fee?.feeName).toBe(nameFrom(line.slice(0, line.indexOf("$"))));
   });
 
   it("leaves a phrase after words that name a fee of their own as read", () => {

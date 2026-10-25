@@ -303,8 +303,10 @@ import { withGluedFootnotePrices } from "@/lib/custom-report/glued-footnote-pric
 // Reliance State Bank, live fee 140283) names and files the price (`pricedNounPhrase` in rules.ts,
 // reusing `FEE_OF_SENTENCE`). The cut words "overdrafts an NSF fee" filed it by their first fee word:
 // nsf only while a PDF glyph garbled "Overdrafts", overdraft once Rosetta's glyph repair reads it. The
-// phrase re-files only between overdraft and nsf; any other disagreement keeps the read (an incoming
-// international wire stays international). A generic phrase ("a monthly fee of"), words before it
+// phrase re-files only between overdraft and nsf, never a paid item's or an overdraft program's NSF
+// wording ("NSF items paid: an NSF fee of", "Courtesy Pay overdrafts an NSF fee of" stay overdraft,
+// v19/v42/v43); any other disagreement keeps the read (an incoming international wire stays
+// international). A generic phrase ("a monthly fee of"), words before it
 // that name a fee, or a line no rule reads as a fee keep the read; a cut that drops a condition or a
 // family qualifier ("Subpoenas/Summons") keeps the name. A combined "NSF/Overdraft Fee" stays
 // overdraft. Oct 25 dry run over 972 live fees whose line or name has the phrase: 217 rules reads

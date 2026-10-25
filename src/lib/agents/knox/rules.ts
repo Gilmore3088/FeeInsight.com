@@ -1207,6 +1207,15 @@ export function readUnderHeading(segment: string, heading: string): ExtractedFee
     );
 }
 
+/** v22: "paid" anywhere in the text: "Overdrafts Returned" is the NSF fee only without it. */
+const PAID_WORD = /\bpaid\b/i;
+/**
+ * v19/v34/v42: an insufficient-funds item the bank pays ("Insufficient Funds Fee – Item Paid",
+ * "Insufficient Funds Charge (Paid)", "Paid nonsufficient funds (NSF)", "NSF Share Draft (Honored)").
+ */
+const PAID_ITEM = /\b(?:items?|checks?)\s*[-–:]?\s*paid\b|\bpaid\s+(?:items?|checks?|non[-\s]?sufficient|insufficient|NSF)\b|\bpaid\s+(?:[\w&]+\s+){1,3}NSF\s+items?\b|\(\s*(?:paid|honou?red)\s*\)/i;
+/** v114: an overdraft program's own words (Courtesy Pay, Bounce Protection, Overdraft Privilege). */
+const OVERDRAFT_PROGRAM = /\b(?:courtesy|privilege|bounce)/i;
 /** v78 (#1304): words that make a charge the overdraft (courtesy pay) fee or the NSF fee. */
 const OVERDRAFT_WORDS = /courtesy\s*pay|\boverdraft|\bpaid\s+nsf\b|\bbounce/i;
 const NSF_WORDS = /\bnsf\b|\b(?:in|non[-\s]?)sufficient\b/i;
@@ -1344,7 +1353,7 @@ export function classifyPatternKey(value: string): string | null {
     key = "nsf";
   }
   // v22: "Overdrafts Returned" is an item the bank returns unpaid, so an NSF fee.
-  if (key === "overdraft" && /\boverdrafts?\s+returned\b/i.test(text) && !/\bpaid\b/i.test(text)) return "nsf";
+  if (key === "overdraft" && /\boverdrafts?\s+returned\b/i.test(text) && !PAID_WORD.test(text)) return "nsf";
   // v43: one price for the paid and the returned item ("NSF Paid Item Fee/Returned Item Fee
   // (items over $10)", Pinnacle Bank Wyoming) is the overdraft price too, like "NSF/Overdraft".
   if (key === "nsf" && PAID_AND_RETURNED_ITEM.test(text)) return "overdraft";
@@ -1355,7 +1364,7 @@ export function classifyPatternKey(value: string): string | null {
   // (Bluestone FCU) are items the bank pays, as are "Paid Consumer & Business NSF Items" (NIH FCU).
   if (
     key === "nsf" &&
-    /\b(?:items?|checks?)\s*[-–:]?\s*paid\b|\bpaid\s+(?:items?|checks?|non[-\s]?sufficient|insufficient|NSF)\b|\bpaid\s+(?:[\w&]+\s+){1,3}NSF\s+items?\b|\(\s*(?:paid|honou?red)\s*\)/i.test(text) &&
+    PAID_ITEM.test(text) &&
     !/\b(?:return(?:ed)?|unpaid)\b/i.test(text)
   ) {
     return "overdraft";
@@ -1877,9 +1886,19 @@ const GENERIC_PRICED_PHRASE =
  * product. Cutting them would drop the distinction, so the name keeps them.
  */
 const FAMILY_QUALIFIER =
-  /\b(?:international|int'?l|foreign|domestic|incoming|outgoing|deposit\w*|garnish\w*|lev(?:y|ies)|subpoena\w*|summons|business|commercial|non[-\s]?members?|youth|student|senior|loans?|mortgages?|heloc|ira|club)\b/i;
+  /\b(?:international|int'?l|foreign|abroad|domestic|incoming|outgoing|deposit\w*|garnish\w*|lev(?:y|ies)|subpoena\w*|summons|business|commercial|personal|consumer|non[-\s]?(?:members?|customers?)|online|phone|same[-\s]?day|money\s+market|youth|student|senior|loans?|mortgages?|heloc|ira|club)\b/i;
 /** v114: the one pair a sentence's priced phrase re-files: an NSF fee cut from overdraft words, or the reverse. */
 const PHRASE_REFILES = new Set(["nsf>overdraft", "overdraft>nsf"]);
+/**
+ * v114: overdraft words before an "an NSF fee of" phrase that still make the price the overdraft
+ * fee: an item the bank paid or honored (`PAID_WORD`, `PAID_ITEM`: "NSF items paid: an NSF fee of",
+ * "Overdrafts paid or returned an NSF fee of"), or an overdraft program ("Courtesy Pay overdrafts",
+ * "Overdraft privilege items"). Only a paid item's or program's NSF wording stays overdraft;
+ * "overdrafts an NSF fee of" and "Overdraft items returned an NSF fee of" are the NSF fee.
+ */
+function paidOverdraftWords(words: string): boolean {
+  return PAID_WORD.test(words) || PAID_ITEM.test(words) || PAID_AND_RETURNED_ITEM.test(words) || OVERDRAFT_PROGRAM.test(words);
+}
 
 /**
  * v114: "... is not sufficient to cover overdrafts an NSF fee of $30.00 per item may also apply"
@@ -1887,7 +1906,8 @@ const PHRASE_REFILES = new Set(["nsf>overdraft", "overdraft>nsf"]);
  * the NSF fee (`FEE_OF_SENTENCE`, the noun phrase name re-tidy already names such a sentence by).
  * Classifying the cut words ("overdrafts an NSF fee") filed the price by their first fee word: nsf
  * only while a PDF glyph garbled "Overdrafts", overdraft once the glyph reads.
- * - The phrase re-files the read only between overdraft and nsf (`PHRASE_REFILES`). Any other
+ * - The phrase re-files the read only between overdraft and nsf (`PHRASE_REFILES`), and never an
+ *   item the bank paid or an overdraft program's NSF wording to nsf (`paidOverdraftWords`). Any other
  *   disagreement keeps the read's category and name: the words before are then usually the more
  *   specific fee ("For incoming international wires, an incoming wire fee of" stays international).
  * - When the categories agree, or after an overdraft/nsf re-file, the name is the phrase ("NSF fee")
@@ -1908,6 +1928,7 @@ export function pricedNounPhrase(words: string, amount: number, readHint: string
   const name = `${phrase.charAt(0).toUpperCase()}${phrase.slice(1)}`;
   const hint = classifyFeeText(name);
   if (!hint || (hint !== readHint && !PHRASE_REFILES.has(`${readHint}>${hint}`))) return null;
+  if (readHint === "overdraft" && hint === "nsf" && paidOverdraftWords(before)) return null;
   if (!usableName(name) || !passesDarwinChecks(hint, name, amount)) return null;
   return { name: FAMILY_QUALIFIER.test(before) || dropsCondition(cell, name, hint) ? null : name, hint };
 }
