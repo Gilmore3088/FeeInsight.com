@@ -47,7 +47,8 @@ WITH r AS MATERIALIZED (
       AND archived.period=p_date::text AND archived.pruned_at IS NOT NULL)
 ), defs AS (
   INSERT INTO public.call_report_item_definitions(source,item_key,item_code,item_description,schedule)
-  SELECT DISTINCT p_source,item_key,item_code,item_description,NULLIF(schedule,'') FROM r
+  SELECT DISTINCT p_source,item_key,item_code,item_description,
+    CASE WHEN p_source='ncua' THEN NULLIF(schedule,'') ELSE schedule END FROM r
   ON CONFLICT (source,item_key,item_code,item_description,schedule)
   DO UPDATE SET item_key=EXCLUDED.item_key
   RETURNING *
@@ -56,7 +57,8 @@ WITH r AS MATERIALIZED (
     (institution_id,source,report_date,item_key,item_code,value,unit,period_basis,source_url,agent_run_id,metadata_definition_id)
   SELECT r.institution_id,p_source,p_date,r.item_key,r.item_code,r.value,r.unit,r.period_basis,p_url,p_run,d.id
     FROM r JOIN defs d ON d.source=p_source AND d.item_key=r.item_key AND d.item_code=r.item_code
-     AND d.item_description IS NOT DISTINCT FROM r.item_description AND d.schedule IS NOT DISTINCT FROM NULLIF(r.schedule,'')
+     AND d.item_description IS NOT DISTINCT FROM r.item_description
+     AND d.schedule IS NOT DISTINCT FROM CASE WHEN p_source='ncua' THEN NULLIF(r.schedule,'') ELSE r.schedule END
   ON CONFLICT (institution_id,source,report_date,item_key) DO UPDATE SET
     item_code=EXCLUDED.item_code,value=EXCLUDED.value,unit=EXCLUDED.unit,period_basis=EXCLUDED.period_basis,
     source_url=EXCLUDED.source_url,agent_run_id=EXCLUDED.agent_run_id,fetched_at=now(),

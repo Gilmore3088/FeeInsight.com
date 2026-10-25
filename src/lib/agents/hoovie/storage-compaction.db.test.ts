@@ -94,6 +94,14 @@ describe.skipIf(!url)("public-data compaction and atomic archive", () => {
     const [expanded] = await db.unsafe(`SELECT row_to_json(c) AS row FROM ${schema}.call_report_item_facts c`);
     expect(expanded).toEqual(before);
   });
+  it("preserves the two publishers' existing blank-schedule conventions", async () => {
+    await upsert([{...input()[0],schedule:""}]);
+    await db.unsafe(`SELECT ${schema}.upsert_call_report_item_batch('ncua',$1::date,'https://official.example/cu',7,$2::text::jsonb)`,[
+      old,JSON.stringify([{...input()[0],rssd:null,charter:"202",schedule:"",unit:"dollars"}]),
+    ]);
+    const rows=await db.unsafe(`SELECT source,schedule FROM ${schema}.call_report_item_facts ORDER BY source`);
+    expect(rows).toEqual([{source:"ffiec",schedule:""},{source:"ncua",schedule:null}]);
+  });
   it("exports, verifies and atomically prunes; retries are idempotent and re-ingestion stays blocked", async () => {
     await seedHistory();
     const exported = await db.begin((tx) => exportCallPeriod(tx as unknown as Parameters<typeof exportCallPeriod>[0],store,{source:"ffiec",period:old,avgRowBytes:400}));

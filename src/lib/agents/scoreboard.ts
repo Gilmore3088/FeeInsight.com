@@ -10,6 +10,7 @@ import { readHistoricalLiveSourceAudit } from "@/lib/data-store/live-source-audi
 import { goalHeadline, readGoalScorecard, type GoalScorecard } from "@/lib/agents/goal-scorecard";
 import { readQueueBoard, summarizeQueueBoard, type QueueBoard } from "@/lib/agents/queue-board";
 import { PIPELINE_QUEUES } from "@/lib/agents/queue-registry";
+import { readStorageScorecard } from "@/lib/agents/atlas/storage-retention";
 
 /**
  * Atlas's daily scoreboard: six numbers that say whether the pipeline is getting
@@ -304,6 +305,7 @@ export async function writeScoreboardSnapshot({db,snapshotDate,runId,numbers,age
     await scope`SELECT pg_advisory_xact_lock(hashtextextended(${`atlas.scoreboard.snapshot:${snapshotDate}`},0))`;
     const [previous]=await scope<{detail:unknown}[]>`SELECT detail FROM pipeline_scoreboard_snapshots WHERE snapshot_date=${snapshotDate}::date FOR UPDATE`;
     const retained=readHistoricalLiveSourceAudit(previous?.detail);
+    const storage=await inSavepoint(scope,readStorageScorecard).catch(()=>null);
     const detail={
         right_document_window_days: numbers.rightDocument?.windowDays ?? null,
         accuracy_scored_at: numbers.accuracy?.scoredAt ?? null,
@@ -323,6 +325,7 @@ export async function writeScoreboardSnapshot({db,snapshotDate,runId,numbers,age
         ...(agentHealth ? { agent_health: agentHealth } : {}),
         ...(goal ? { goal } : {}),
         ...(queues ? { queues } : {}),
+        ...(storage ? { storage } : {}),
       };
     if(retained?.archive)detail.goal={...(goal??{}),liveSourceAudit:retained} as GoalScorecard;
   await scope`

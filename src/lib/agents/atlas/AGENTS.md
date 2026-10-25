@@ -360,3 +360,8 @@ The existing `atlas-storage-retention` step also records `storage_compaction` fr
 5,000-row batches and explicit cursor receipts, never a side script. Archive removal remains
 off pending the dated twelve-quarter rollout and restore/consumer acceptance in
 `docs/plans/database-growth-controls-2026-10-25.md`. No new scheduler or provider work is added.
+
+The daily scoreboard preserves the latest completed storage measurement as `detail.storage`
+(`databaseMb`, `growthMb`, `measuredAt`), read from its ledger receipt. It never invents a current
+size or growth value; the measurement date and interval matter when comparing the seven-day
+change outcome. This adds no fresh table scan and no provider call.
