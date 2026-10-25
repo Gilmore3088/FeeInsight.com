@@ -27,7 +27,11 @@ and a `fees` object, taking each row in `fees.verified` and `fees.provisional` t
 `record_id`, with `identity.id` as its institution and `source_document_id` as its document. A row
 with `pipeline_stage` (a verified-unpublished or raw preview, which has no catalog row) records
 nothing. A local competitor read (`getLocalCompetitors`) carries no record id, so its aggregate
-prices record nothing. The route is unchanged.
+prices record nothing. The route saves those refs only when they include a row of the research
+subject (`writtenAnswerFeeRefs`). A correction matches an output with refs by its fee rows only, so
+an answer that read only a peer's profile, with the subject's prices from an aggregate, would
+otherwise lose the institution match it has today (review of #2623); it saves no refs and keeps
+that match.
 
 **Option chosen: what the tools read (A), not what the sentences rest on (B).** The H03-T09 module
 says a saved output records "the published fee rows it read", and the storyline save
@@ -40,9 +44,11 @@ most needs to flag. So the written answer now matches that meaning.
 **Known limits:**
 - No `sourceContentHash` is recorded for profile rows: the profile does not carry the document's
   content hash, so the source version is the document id only.
-- Provisional catalog rows (in `published_fee_catalog` but not approved) are recorded, as the
-  binding reads them; a correction to one flags the answer, which may be broader than a reader
-  expects.
+- Once an answer records the subject's rows, it is matched by those rows only. A correction to a
+  subject row the answer did not read (a row cut from the profile by tool-output compaction, or
+  one it saw only through the local competitor aggregate) no longer flags it.
+- The profile's `fees.provisional` rows are read too, but today the catalog view holds approved
+  rows only, so its provisional rows are pipeline previews and record nothing.
 - An answer that read many profiles records every row of each, up to `MAX_SAVED_FEE_REFS` (2000).
 - The browser fallback save (`src/app/pro/(hamilton)/analyze/actions.ts`, #2609) does not benefit:
   it keeps only the prose the browser sent and has no tool outputs, so it still records no rows and

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { affectedSavedOutputsLabel, collectFeeRefs, MAX_SAVED_FEE_REFS, savedOutputNotice } from "./saved-output-corrections";
+import { affectedSavedOutputsLabel, collectFeeRefs, MAX_SAVED_FEE_REFS, savedOutputNotice, writtenAnswerFeeRefs } from "./saved-output-corrections";
 
 // H03-T09 (#978): a saved output made before a fee change keeps its figures and says so.
 
@@ -121,5 +121,19 @@ describe("collectFeeRefs", () => {
     const loop: Record<string, unknown> = { ownRows: [{ id: 5 }], institutionId: 3 };
     loop.self = loop;
     expect(collectFeeRefs(loop).map((ref) => ref.feePublishedId)).toEqual([5]);
+  });
+});
+
+describe("writtenAnswerFeeRefs", () => {
+  const own = { feePublishedId: 1, institutionId: 9001, sourceDocumentId: 101, sourceContentHash: null };
+  const peer = { feePublishedId: 2, institutionId: 9002, sourceDocumentId: 102, sourceContentHash: null };
+  it("should_keep_refs_that_include_a_row_of_the_research_subject", () => {
+    expect(writtenAnswerFeeRefs([own, peer], 9001)).toEqual([own, peer]);
+  });
+  it("should_save_none_when_no_ref_is_the_subjects_so_the_institution_match_stays", () => {
+    expect(writtenAnswerFeeRefs([peer], 9001)).toEqual([]);
+  });
+  it("should_keep_refs_when_the_answer_has_no_subject", () => {
+    expect(writtenAnswerFeeRefs([peer], null)).toEqual([peer]);
   });
 });
