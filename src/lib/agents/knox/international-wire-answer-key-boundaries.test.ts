@@ -375,5 +375,7 @@ describe("explicit international-wire scope coverage tradeoffs (#2278)", () => {
     expect(internationalWireEligibility(document.text, boundary.candidate)).toMatchObject(boundary.review);
     if (!readOnce.has(id)) readOnce.set(id, gateReads(document.text));
     expect(readOnce.get(id)!.has(boundary.key)).toBe(false);
-  });
+    // A whole saved document is read through every Knox pass and the shared check (about 4 s for
+    // tid 2451 on a laptop), so the default 5 s limit fails on a loaded CI runner.
+  }, 20_000);
 });
