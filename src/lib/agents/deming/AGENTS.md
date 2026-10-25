@@ -36,8 +36,11 @@ institutions remains the only human launch workflow.
   (`golden`, `adversarial`, `regression`, `holdout`, `fresh_audit`). Today only `regression` is
   written. A case's `input` is frozen at insert and never rewritten; cases are never deleted.
 - `severity.ts`: the critical / major / minor / info scale. An unknown check is `major`.
-- `checkers.ts`: pure offline checkers. Runtime generic replay admits `hamilton.limit_guard`;
-  a legacy `source_check` body remains historical and unavailable. The prospective source-bound
+- `checkers.ts`: pure offline checkers. Runtime generic replay admits `hamilton.limit_guard` and
+  `hamilton.category_guard` (#2064); a takedown frozen as `unreplayable` before its check had a
+  replayer replays by its check name from the fee's frozen category, name, amount and conditions,
+  without the schedule's NSF price, so a catch that needed it stays a candidate. A legacy
+  `source_check` body remains historical and unavailable. The prospective source-bound
   corrective protocol below has its own paired replay; other error families are not counted as
   evaluated merely because a checker name exists.
 - `regression.ts`: the `deming-regression` step in Atlas's daily scoreboard run
