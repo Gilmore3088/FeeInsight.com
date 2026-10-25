@@ -7,7 +7,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
 import { layerDates, loadFeeWorkspace } from "@/lib/hamilton/fee-workspace-data";
 import { buildAuditTrail } from "@/lib/hamilton/audit-trail";
-import { parseLayer } from "@/lib/hamilton/research-layers";
+import { belowPeerMinimum, parseLayer } from "@/lib/hamilton/research-layers";
 import { peerPosition } from "@/lib/hamilton/fee-scenario";
 import { buildImplementationPlan, earliestEffectiveDate } from "@/lib/hamilton/implementation-plan";
 import { parseCount, parsePercent, parsePrices } from "@/lib/hamilton/model-params";
@@ -128,7 +128,7 @@ export default async function PlanPage({ searchParams }: PageProps) {
         fromLabel={`${fmtMoney(from)} today`}
         toLabel={`${fmtMoney(to)}`}
         // A middle price only for a group large enough to publish one (#1896).
-        rows={layerRows.map(({ layer, now, after }) => ({ label: layer.label, n: layer.n, median: layer.thin ? null : layer.median, from: now, to: after }))}
+        rows={layerRows.map(({ layer, now, after }) => ({ label: layer.label, n: layer.n, median: belowPeerMinimum(layer) ? null : layer.median, from: now, to: after }))}
       />
       <DatasetNote figures={stampedLayers} />
     </>

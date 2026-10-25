@@ -8,7 +8,7 @@ import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
 import { isSavedArtifactId, resolveArtifactContextInstitutionId } from "@/lib/hamilton/artifact-context";
 import { layerDates, loadFeeWorkspace } from "@/lib/hamilton/fee-workspace-data";
 import { buildAuditTrail } from "@/lib/hamilton/audit-trail";
-import { defaultLayer, parseLayer } from "@/lib/hamilton/research-layers";
+import { belowPeerMinimum, defaultLayer, parseLayer } from "@/lib/hamilton/research-layers";
 import { feeIncomeAssumptions, modelScenario } from "@/lib/hamilton/fee-scenario";
 import { buildImplementationPlan } from "@/lib/hamilton/implementation-plan";
 import { defaultPrices, parseCount, parsePercent, parsePrices } from "@/lib/hamilton/model-params";
@@ -133,7 +133,7 @@ export default async function ModelPage({ searchParams }: PageProps) {
     ? typed
     : saved
       ? [Number(saved.proposed_value)]
-      : defaultPrices(current, layer.thin ? null : layer.median);
+      : defaultPrices(current, belowPeerMinimum(layer) ? null : layer.median);
   const base = current ?? 0;
   const charter = inst?.charterType === "credit_union" ? "credit_union" : "bank";
 
