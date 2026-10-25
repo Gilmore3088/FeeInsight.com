@@ -561,10 +561,8 @@ function historicalPeerProblems(text: string, data: unknown, evidence: Evidence)
 
 /** Specific known interpretation failures, with actionable feedback for regeneration. */
 export function checkAnswerInterpretations(text: string, data: unknown, question?: string): string[] {
-  const known = knownInterpretationProblems(text, data, question);
-  if (record(data)?.filed_peer_income_conflict === true) return known;
-  // Causal language is checked on every answer, whatever the data holds (#1077, claim contract step 3).
-  return [...new Set([...known, ...causalClaimProblems(text)])];
+  // The broad causal rule (causalClaimProblems) is shadow-only: answer-gate.ts records it, never fails on it.
+  return knownInterpretationProblems(text, data, question);
 }
 
 function knownInterpretationProblems(text: string, data: unknown, question?: string): string[] {
@@ -698,8 +696,16 @@ const PRICING_CAUSE_PROBLEM = "Observed totals and peer correlations do not esta
 
 /** General causal connectives. */
 const CAUSAL_CONNECTIVE = /\b(?:because(?:\s+of)?|due\s+to|driven\s+by|as\s+a\s+result\s+of|(?:led|leads?)\s+to|explains?|explained\s+by|caused\s+by|caus(?:es|ed)|results?\s+from|resulted\s+from|stems?\s+from|owing\s+to|thanks\s+to)\b/gi;
-/** A connective whose cause is the data or the method ("because the filing reports year-to-date totals") states no cause in the world. */
-const METHOD_CAUSE = /^\s*(?:(?:the|its|their|this|these|that|a|an)\s+)?(?:[\w-]+\s+){0,2}?(?:filings?|data|records?|sources?|schedules?|call[ -]reports?|5300|reads?|calculations?|definitions?|question|rounding|method(?:ology)?|tools?|tables?|reporting\s+(?:dates?|periods?|basis))\b/i;
+/**
+ * A connective whose cause is the data, the method or arithmetic states no cause in the world:
+ * "because the filing reports year-to-date totals", "because Hamilton subtracted", "because $10 is
+ * less than $35".
+ */
+const METHOD_CAUSE = /^\s*(?:(?:the|its|their|this|these|that|a|an)\s+)?(?:[\w-]+\s+){0,2}?(?:filings?|data|records?|sources?|schedules?|call[ -]reports?|5300|reads?|calculations?|definitions?|question|rounding|method(?:ology)?|tools?|tables?|reporting\s+(?:dates?|periods?|basis))\b|^\s*(?:Hamilton|we|I)\s+\w+|^\s*(?:\w+\s+){0,3}?(?:subtract\w*|add\w*|divid\w*|comput\w*|calculat\w*|derived?|rounded)\b|^\s*(?:the\s+)?(?:\$\s?\d|\d)[^.;]*\b(?:is|are|was|were)\s+(?:less|more|greater|lower|higher|smaller|larger)\s+than\b/i;
+/** A fee schedule's own terms: a waiver, a condition, a cap or a per-item count. A rule, not a cause in the world. */
+const SCHEDULE_TERMS = /\b(?:waiv\w*|exempt\w*|does not apply|do not apply|applies|apply only|conditions?|requir\w*|qualif\w*|eligib\w*|minimum balance|keeps? an?\b.{0,30}\bbalance|capped|cap of|caps?\s+at|maximum|daily (?:total|limit|cap)|per[- ]item|number of items|items paid|item count)\b/i;
+/** A clause that supposes or negates its own change states no cause. */
+const SUPPOSED_OR_NEGATED = /\b(?:if|would|suppose|supposing|were to|hypothetical(?:ly)?)\b|\b(?:not|never)\b|n't\b/i;
 /** A named fee or financial measure with a direction or comparison word: a material claim with no figure. */
 const MATERIAL_TOPIC = /\b(?:fees?|income|revenue|service[ -]charges?|prices?|pricing|deposits|assets|members?(?:hip)?|accounts?|balances?|dividends?)\b/i;
 const MATERIAL_DIRECTION = /\b(?:higher|lower|rose|risen|ris(?:es|ing)|fell|fallen|fall(?:s|ing)?|increas\w*|decreas\w*|declin\w*|grew|grow\w*|drop\w*|jump\w*|climb\w*|shrank|shrunk|leads?|lag(?:s|ged|ging)?|above|below|gap)\b/i;
@@ -710,19 +716,22 @@ export const CAUSAL_CLAIM_PROBLEM =
   "This answer states a cause that the data does not show. Fee records and filings report amounts and dates, not why they differ or change. State the figures and say that the cause is not established.";
 
 /**
- * Causal language on any answer, whatever the data holds (claim contract design 2.2 (5)): the NCUA
- * check's size and pricing patterns, plus the general connectives ("because", "due to", "driven by",
- * "led to"), each only in a clause that also holds a material claim (a figure, or a named fee or
- * measure with a direction word). No evidence Hamilton reads carries a cause, so such a claim is
- * unsupported unless its clause withdraws it ("these figures do not establish why"). A connective
- * whose cause is the data or the method is not a causal claim.
+ * SHADOW ONLY (claim contract step 3; step 4 measures it): causal language on any answer, whatever
+ * the data holds (design 2.2 (5)). The NCUA check's size and pricing patterns, plus the general
+ * connectives ("because", "due to", "driven by", "led to"), each only in a clause that also holds
+ * a material claim (a figure, or a named fee or measure with a direction word). The shared gate
+ * records these lines with the verdict (`AnswerEvidenceCheck.shadowProblems`) and never fails on
+ * them; the gate still holds only what `checkAnswerInterpretations` held before (NCUA or
+ * filed-peer data). Not flagged: a withdrawn cause ("these figures do not establish why"), a cause
+ * that is the data, method or arithmetic, a fee schedule's own terms (waivers, conditions, caps,
+ * per-item counts), and a clause that supposes or negates.
  */
 export function causalClaimProblems(text: string): string[] {
   const problems = new Set<string>();
   const clauses = text.split(/\r?\n+|(?<=[.!?])\s+|;\s*|,\s*(?:but|yet|however|therefore|thus|so)\s+|\s+(?:but|however|therefore|thus)\s+/i);
   for (const raw of clauses) {
     const clause = raw.replace(/^\s*[-*#]+\s*/, "").trim();
-    if (!clause || clause.endsWith("?")) continue;
+    if (!clause || clause.endsWith("?") || SCHEDULE_TERMS.test(clause) || SUPPOSED_OR_NEGATED.test(clause)) continue;
     const figures = extractFigures(clause);
     const sizes = tierBoundsAsSize(clause, figures);
     const material = figures.some((figure) => !sizes.has(figure)) || (MATERIAL_TOPIC.test(clause) && MATERIAL_DIRECTION.test(clause));

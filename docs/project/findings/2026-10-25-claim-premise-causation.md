@@ -1,9 +1,10 @@
 # 2026-10-25: Hamilton repeated the question's premises and checked causes only with NCUA data
 
-**Lesson:** A figure or change the reader's question states as fact is a claim like any other: it
-needs a record, and a record that says otherwise must win. A cause stated next to a figure or a
-named measure with a direction is unsupported whatever data the answer holds, because nothing
-Hamilton reads carries a cause.
+**Lesson:** A figure the reader's question asserts as an institution's own fee, or a change it
+states, is a claim like any other: it needs a record, and a record that says otherwise must win.
+Only an assertion is a premise. A question, a comparison, a threshold or another subject's figure
+is not, and when unsure the check keeps today's outcome rather than leave a sentence out. A new
+rule that could hold more answers ships in shadow first, recorded but not deciding.
 
 **What happened (#1077, claim contract step 3):** the number check and the sentence binding both
 treated any figure the question named as traced (`checkNarrativeFigures`' asked figures,
@@ -15,38 +16,48 @@ held NCUA or filed-peer figures (`checkAnswerInterpretations`' early return) and
 pricing causes, so "because it competes" or "due to its $35 NSF fee" passed.
 
 **Fix:**
-- `narrative-bound.ts`: `questionPremises` reads the question unless it only supposes ("what if",
-  "would", "plan"). A fee figure it gives for an institution whose record of that fee says
-  otherwise is contradicted, with a correction line written from the record; a fee-income change
-  is checked against the filed standalone quarters (every filed measure must agree); a narrower
-  income line (overdraft revenue) with only broader filings read cannot be answered. An answer
-  sentence that repeats a contradicted figure or change is omitted as the new `premise_contradicted`;
-  a question figure the institution's read records do not hold, or a figure or change in the
-  unseparated income line, as the new `premise_unsupported`. A sentence that quotes the question,
-  negates, withdraws or supposes keeps today's outcome; with nothing read for that institution the
-  figure is Hamilton's reading. Corrections go first in `limitations` (shown today) and in a new
-  optional `corrections` field; both reasons and the field read back (`readNarrativeBinding`).
-- `answer-interpretations.ts`: `causalClaimProblems` runs on every answer: the NCUA check's size
-  and pricing patterns (same wording, now shared constants) plus general connectives, only in a
-  clause with a material claim, with the existing withdrawal helpers. A connective whose cause is
-  the data or method ("because the filing reports year-to-date totals") is not a claim.
+- `narrative-bound.ts`: `questionPremises` reads each question sentence on its own. Supposing words
+  ("what if", "should", "plan") count only in the sentence that holds the figure. A figure is a
+  premise only when its sentence names the institution and asserts the figure as its fee ("Bank A's
+  overdraft fee is $30", "Bank A charges $30", "Bank A raised its fee to $35", "its $5 paper
+  statement fee"). A question ending in "?", except in the "its $5 ... fee" form, is not a premise.
+  Neither is a sentence with a comparison or threshold ("more than", "above", "compare",
+  "threshold", "versus") or another subject ("most banks", "peers", "average", "median"). An answer
+  sentence that repeats a premise its record contradicts is omitted as the new
+  `premise_contradicted`, with a correction line written from the record. One the institution's
+  read records do not hold is omitted as `premise_unsupported`. A "why did fee income fall" premise
+  is checked against the filed standalone quarters, which must all agree; a yes-or-no "did it fall?"
+  is not a premise. A narrower income line the filings do not separate (overdraft revenue) cannot be
+  answered with the broad total. Quoted, negated, withdrawn or supposed answer sentences keep
+  today's outcome. Corrections go first in `limitations` (shown today) and in a new optional
+  `corrections` field; both reasons and the field read back (`readNarrativeBinding`).
+- `memo.ts`: `OMIT_FEEDBACK` has repair lines for both new reasons.
+- `answer-interpretations.ts` / `answer-gate.ts`: `causalClaimProblems` (the NCUA size and pricing
+  patterns, now shared constants, plus "because", "due to", "driven by", "led to" in a clause with
+  a material claim) is **shadow only**. `checkAnswerEvidence` records its lines as `shadowProblems`
+  and saves them with the verdict, but they never fail the gate. The gate holds exactly what it held
+  before. The shadow rule does not flag method notes ("because Hamilton subtracted"), arithmetic
+  ("because $10 is less than $35"), fee schedule terms (waivers, conditions, caps, per-item counts),
+  or a clause that negates or supposes.
 - From the PR #2571 re-review: a later clause with no basis words that states a running total
   ("bringing its total to", "in all") gets an unknown basis and binds nothing, rather than
   inheriting the quarter basis and being omitted as `wrong_basis`.
 
-**Golden set (`claim-golden-set.ts` 2026-10-25.4):** wrong today 7 of 28 before, 0 of 28 after.
-Every control still passes.
+**Golden set (`claim-golden-set.ts` 2026-10-25.5):** wrong today 7 of 28 before step 3, 3 of 28
+after. The premise cases are closed. `ca-fee-only`, `ca-fee-only-pricing` and `ca-financial-traced`
+are still shown, each with its shadow line recorded (`expect.shadow`). Every control passes.
 
 **Where the design differs from the code:**
 - The design narrows the asked-figure rule in `figure-check.ts` too. The number check holds no
-  facts, so it cannot tell a contradicted figure from a restated one; it is unchanged, and the
+  facts, so it cannot tell a contradicted figure from a restated one. It is unchanged, and the
   binding decides. The written answer is held when the binding leaves nothing, so the hole is
-  closed there; the report path (`generateVerifiedSection`, number check only) is not.
+  closed there. The report path (`generateVerifiedSection`, number check only) is not covered.
 - The design puts premises and causal checks in the one gate (step 4). There is no gate yet, so
-  premises live in the binding and causes in the shared interpretation check.
-- Filing figures in the question get no correction line, only `premise_unsupported`.
+  premises live in the binding and causes stay a shadow line in the shared gate.
+- A filing figure in the question gets no correction line, only `premise_unsupported`.
 
-**Risk:** "because" with a figure now fails the gate for every written answer, memo and Ask bar
-answer, which holds it today. Step 4's shadow run should count how often.
+**Left for step 4:** count the shadow lines from saved verdicts and decide whether to enforce them.
+The shadow rule skips any clause with "not", so "lower because it does not compete" is not
+flagged.
 
 **Guard:** `src/lib/hamilton/claim-premise-causation.test.ts` and `src/lib/hamilton/claim-golden-set.test.ts`.

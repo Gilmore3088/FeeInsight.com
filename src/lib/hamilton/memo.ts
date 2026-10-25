@@ -193,6 +193,8 @@ const OMIT_FEEDBACK: Record<string, string> = {
   instruction_text: "repeats instruction-like text from a source",
   wrong_basis: "states a year-to-date filing total as a quarter, or a quarter as year to date; say which the figure is",
   account_as_subject: "states another institution's filed figure as the reader's own; name the institution it belongs to",
+  premise_contradicted: "repeats a figure or change from the question that the records contradict; give the record's figure and say the question's differs",
+  premise_unsupported: "repeats a figure or measure from the question that the records do not hold; say the records do not show it",
 };
 
 /**

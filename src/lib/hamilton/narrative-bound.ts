@@ -25,14 +25,16 @@
  * (or the reverse) `wrong_basis`, and another institution's figure stated as "your" own
  * `account_as_subject`. A sentence that does not name the figure's metric does not bind to it.
  *
- * The reader's question is checked too (#1077, claim contract step 3). A figure the question
- * states as fact counts only when a record supports it: a sentence that repeats it is left out as
+ * The reader's question is checked too (#1077, claim contract step 3). A figure a question
+ * sentence asserts as a named institution's own fee ("Bank A raised its fee to $35", "its $5 paper
+ * statement fee"; never a question, comparison, threshold or group figure; when unsure, not a
+ * premise) counts only when a record supports it: a sentence that repeats it is left out as
  * `premise_contradicted` when a record of the same institution and fee says otherwise (a plain
  * correction line then names both figures), and as `premise_unsupported` when that institution's
  * records were read and none holds it. A question that says a fee income fell or rose is checked
  * against the filed quarters, and a question about a narrower income line the filings do not
- * separate (overdraft revenue) cannot be answered with the broad total. A figure in a question
- * that only supposes ("what if", "would") may still be restated, as before.
+ * separate (overdraft revenue) cannot be answered with the broad total. A question sentence that
+ * only supposes ("what if", "should") states no premise; the words count only in that sentence.
  *
  * Missing, unavailable and conflicting evidence each add one plain limitation line. No line here
  * invents a figure, and none tells the bank what to do with a fee. Source text (fee names,
@@ -536,9 +538,10 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
     const outcome = (figure: NarrativeFigure): FigureOutcome => {
       const tolerance = Math.max(figure.tolerance, 0.005);
       const unit = figure.kind === "usd" ? "usd" : "percent";
-      // A figure from a question that only supposes may be restated; one the question states as fact needs a record.
+      // A question figure may be restated, as before, unless the question asserts it as an institution's own fee.
       const askedHit = asked.some((q) => q.kind === figure.kind && Math.abs(q.value - figure.value) <= tolerance);
-      if (askedHit && !premises.assertive) return { kind: "asked" };
+      const premise = askedHit ? premises.figures.find((p) => p.kind === figure.kind && Math.abs(p.value - figure.value) <= tolerance) : undefined;
+      if (askedHit && !premise) return { kind: "asked" };
       const sameValue = (record: EvidenceRecord) =>
         typeof record.value === "number" && Math.abs(Math.abs(record.value) - figure.value) <= tolerance;
       // "yes" when the sentence names no year or the record's own; "no" when the record has another;
@@ -632,15 +635,15 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
         ids.push(derived.id, ...derived.derivation.inputFactIds);
       }
       if (ids.length > 0) return { kind: "bound", ids };
-      if (askedHit) {
-        // Quoted back, supposed, or a group's figure: restated as before. Otherwise a record must hold it.
-        if (SENTENCE_SUPPOSES.test(text) || ATTRIBUTED_TO_QUESTION.test(text) || groupWordNear(text, figure)) return { kind: "asked" };
+      if (premise) {
+        // Quoted back, supposed, a group's figure, or about someone else: restated as before. Otherwise a record must hold it.
         const owners = claimSubjects ?? [];
-        if (premises.figures.some((p) => p.kind === figure.kind && Math.abs(p.value - figure.value) <= tolerance
-          && (owners.length === 0 || owners.includes(p.subject)))) return { kind: "contradicted", reason: "premise_contradicted", filing: false };
+        if (SENTENCE_SUPPOSES.test(text) || ATTRIBUTED_TO_QUESTION.test(text) || groupWordNear(text, figure)
+          || (owners.length > 0 && !owners.includes(premise.subject))) return { kind: "asked" };
+        if (premise.contradicted) return { kind: "contradicted", reason: "premise_contradicted", filing: false };
         if (found.reason) return { kind: "contradicted", reason: found.reason, filing: found.filing };
         if (unsourcedFacts.some((fact) => sameValue(fact) && fact.unit === unit)) return { kind: "unsourced" };
-        if (owners.some((id) => premises.readInstitutions.has(id))) return { kind: "contradicted", reason: "premise_unsupported", filing: false };
+        if (premises.readInstitutions.has(premise.subject)) return { kind: "contradicted", reason: "premise_unsupported", filing: false };
         return { kind: "unmatched" };
       }
       if (found.reason) return { kind: "contradicted", reason: found.reason, filing: found.filing };
@@ -725,11 +728,38 @@ function quarterSpan(from: string, to: string): string {
     : `from the ${name(from)} quarter of ${from.slice(0, 4)} to the ${name(to)} quarter of ${to.slice(0, 4)}`;
 }
 
+/** A comparison or threshold: a figure set beside the fee, not stated as it. */
+const COMPARISON_OR_THRESHOLD = /\b(?:more|less|fewer|greater|higher|lower|cheaper|bigger|smaller)\s+than\b|\b(?:above|below|under|over|exceed\w*|beyond|within|versus|vs\.?|against|threshold|limit|cap|ceiling|floor|at (?:least|most)|up to|compar\w*|relative to)\b/i;
+/** Someone other than the institution: a group, the market, a statistic. */
+const OTHER_SUBJECT = /\b(?:most|many|some|other|several|all|few)\s+(?:banks?|credit unions?|institutions?|lenders?|competitors?)\b|\b(?:others|peers?|industry|average|median|mean|market|typical|competitors?|national|nationally|benchmark|index)\b/i;
+/** The asker's own institution in the question: "we", "our", "your". */
+const ASKER_OWN = /\b(?:we|our|ours|your|yours)\b/i;
+/** A sentence that states an institution's fee: "X's overdraft fee is $30", "X charges $30", "X raised its fee to $35". */
+const FEE_ASSERTION = /(?:'s|s'|\b(?:its|our|your|their))\s+(?:[\w-]+\s+){0,3}(?:fee|charge|price)s?\s+(?:is|was|are|were|now|stands at|sits at|of)\b|\b(?:charges?|charged|raised|lowered|cut|set|increased|decreased|moved|changed|reduced|hiked)\b/i;
+/** "its $5 paper statement fee": the figure itself said as the institution's own fee. */
+const OWN_FIGURE_BEFORE = /(?:'s|s'|\b(?:its|our|your|their))\s+(?:new\s+|current\s+|published\s+)?$/i;
+/** A question about a change that presupposes it ("why did ... fall"), unlike a yes-or-no question ("did ... fall?"). */
+const PRESUPPOSING_QUESTION = /\bwhy\b|\bhow much\b|\bby how much\b|\bwhat (?:caused|drove|explains)\b/i;
+
+/**
+ * Whether a question sentence asserts this figure as the institution's own fee. When unsure it
+ * does not, so the figure keeps today's outcome (it may be restated) rather than an omission.
+ */
+function assertsOwnFee(sentence: string, figure: NarrativeFigure, subjectNamedHere: boolean): boolean {
+  if (figure.kind !== "usd" || figure.denominatorUnit || !subjectNamedHere) return false;
+  if (COMPARISON_OR_THRESHOLD.test(sentence) || OTHER_SUBJECT.test(sentence)) return false;
+  const after = sentence.slice(figure.index + figure.raw.length, figure.index + figure.raw.length + 40);
+  if (OWN_FIGURE_BEFORE.test(sentence.slice(0, figure.index)) && /^\s*(?:[\w-]+\s+){0,3}(?:fee|charge|price)s?\b/i.test(after)) return true;
+  // Any other form must be a statement, not a question.
+  return !sentence.trim().endsWith("?") && FEE_ASSERTION.test(sentence.slice(0, figure.index));
+}
+
 interface QuestionPremises {
-  /** True when the question states something as fact; false when it only supposes, or there is none. */
-  assertive: boolean;
-  /** Fee figures the question gives for an institution whose record of that fee says otherwise. */
-  figures: Array<{ kind: NarrativeFigure["kind"]; value: number; subject: number }>;
+  /**
+   * Fee figures a question sentence asserts as an institution's own (`assertsOwnFee`), each with
+   * whether that institution's record of the fee says otherwise.
+   */
+  figures: Array<{ kind: NarrativeFigure["kind"]; value: number; subject: number; contradicted: boolean }>;
   /** A change in fee income the question states and the filed quarters contradict. */
   direction: { subject: number; stated: 1 | -1 } | null;
   /** A narrower income line the question asks about and the filings read do not report separately. */
@@ -758,10 +788,9 @@ function questionPremises(input: {
   for (const record of [...input.validFacts, ...input.validDerivations]) {
     if (record.scope.institutionId !== null) readInstitutions.add(record.scope.institutionId);
   }
-  const out: QuestionPremises = { assertive: false, figures: [], direction: null, absentIncome: false, readInstitutions, corrections: [] };
+  const out: QuestionPremises = { figures: [], direction: null, absentIncome: false, readInstitutions, corrections: [] };
   const question = input.question?.trim();
-  if (!question || QUESTION_SUPPOSES.test(question)) return out;
-  out.assertive = true;
+  if (!question) return out;
   const who = (id: number) => input.names.get(id) ?? "the institution";
   const feeFacts = input.validFacts.filter((fact) => !claimRecord(fact) && fact.unit === "usd" && fact.scope.feeCategory);
 
@@ -769,19 +798,23 @@ function questionPremises(input: {
   for (const sentence of question.split(/(?<=[.!?])\s+/)) {
     const named = namedIn(sentence, input.names);
     if (named.length > 0) carried = named;
-    const subject = named[0] ?? carried[0] ?? (PERSONAL.test(sentence) ? input.account : input.research);
+    // Supposing words count only in the sentence that holds the figure or change ("... raised it to $35. Should we follow?").
+    if (QUESTION_SUPPOSES.test(sentence)) continue;
+    const own = ASKER_OWN.test(sentence) && named.length === 0 ? input.account : null;
+    const subject = named[0] ?? own ?? carried[0] ?? (PERSONAL.test(sentence) ? input.account : input.research);
     if (subject === null || subject === undefined) continue;
     const lower = sentence.toLowerCase();
 
-    // A fee figure the question gives for the subject, against the subject's record of that fee.
+    // A fee figure the sentence asserts as the subject's own, against the subject's record of that fee.
     for (const figure of extractFigures(sentence)) {
-      if (figure.kind !== "usd" || figure.denominatorUnit || groupWordNear(sentence, figure)) continue;
+      if (!assertsOwnFee(sentence, figure, named.length > 0 || own !== null)) continue;
       const records = feeFacts.filter((fact) => fact.scope.institutionId === subject
         && (lower.includes(proseFeeName(fact.scope.feeCategory as string).toLowerCase())
           || (!!fact.scope.product?.trim() && lower.includes(fact.scope.product.trim().toLowerCase()))));
       const tolerance = Math.max(figure.tolerance, 0.005);
-      if (records.length === 0 || records.some((fact) => Math.abs((fact.value as number) - figure.value) <= tolerance)) continue;
-      out.figures.push({ kind: figure.kind, value: figure.value, subject });
+      const contradicted = records.length > 0 && !records.some((fact) => Math.abs((fact.value as number) - figure.value) <= tolerance);
+      out.figures.push({ kind: figure.kind, value: figure.value, subject, contradicted });
+      if (!contradicted) continue;
       const values = [...new Set(records.map((fact) => fact.value as number))].sort((a, b) => a - b).map(money);
       const fee = proseFeeName(records[0].scope.feeCategory as string);
       out.corrections.push(`The question gives ${figure.raw} for ${who(subject)}'s ${fee} fee; Hamilton's fee record shows ${values.join(" and ")}.`);
@@ -790,7 +823,8 @@ function questionPremises(input: {
     // A change in fee income the question states, against the subject's filed standalone quarters.
     const down = DOWN_CHANGE.test(sentence);
     const up = UP_CHANGE.test(sentence);
-    if (!out.direction && down !== up && !NEGATED_CHANGE.test(sentence) && metricNamed(sentence, "service_charge_income")) {
+    const presupposes = !sentence.trim().endsWith("?") || PRESUPPOSING_QUESTION.test(sentence);
+    if (!out.direction && presupposes && down !== up && !NEGATED_CHANGE.test(sentence) && metricNamed(sentence, "service_charge_income")) {
       const stated: 1 | -1 = up ? 1 : -1;
       const years = [...sentence.matchAll(YEAR)].map((m) => m[1]);
       const asked = statedQuarters(sentence, years);
@@ -845,7 +879,7 @@ function questionPremises(input: {
  * back does not.
  */
 function restatesPremise(text: string, owners: number[] | null, premises: QuestionPremises): OmitReason | null {
-  if (!premises.assertive || (!premises.direction && !premises.absentIncome)) return null;
+  if (!premises.direction && !premises.absentIncome) return null;
   if (SENTENCE_SUPPOSES.test(text) || ATTRIBUTED_TO_QUESTION.test(text) || NEGATED_CHANGE.test(text) || refuses(text, CHANGE_TOPIC)) return null;
   const withdrawn = (pattern: RegExp) => {
     const match = text.match(pattern);

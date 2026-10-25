@@ -42,23 +42,25 @@ describe("Hamilton claim golden set: today's behaviour, recorded (#1077, step 0)
       if (c.control) expect(c.target, c.id).toEqual({ status: "validated", reasons: [] });
       else expect(c.target.reasons.length, c.id).toBeGreaterThan(0);
     }
-    expect(run.todayWrong).toBe(0);
+    expect(run.todayWrong).toBe(3);
     expect(run.total).toBe(28);
   });
 
-  it("closes the two holes the design names (step 3)", () => {
-    // A figure the question states is no longer supported unchecked: a contradicting record omits it.
+  it("closes the asked-figure hole and records the causal hole as a shadow line (step 3)", () => {
+    // A figure the question asserts as an institution's fee is no longer supported unchecked.
     expect(runClaimGoldenCase(byId("wp-fee-restated")).actual.binding?.omitted).toEqual(["premise_contradicted"]);
     expect(runClaimGoldenCase(byId("wp-nonexistent-fee")).actual.binding?.omitted).toEqual(["premise_unsupported"]);
-    // The same pricing-cause words are held with NCUA data and without it (answer-interpretations.ts).
+    // The pricing-cause words are held with NCUA data, as before, and only recorded without it.
     expect(runClaimGoldenCase(byId("ca-financial-pricing")).actual.status).toBe("held");
-    expect(runClaimGoldenCase(byId("ca-fee-only-pricing")).actual.status).toBe("held");
-    expect(CLAIM_GOLDEN_CASES.filter((c) => c.holes?.length)).toEqual([]);
+    const feeOnly = runClaimGoldenCase(byId("ca-fee-only-pricing")).actual;
+    expect(feeOnly.status).toBe("shown");
+    expect(feeOnly.shadow).toEqual([expect.stringMatching(/^Observed totals and peer correlations/)]);
+    expect(CLAIM_GOLDEN_CASES.filter((c) => c.holes?.length).map((c) => c.id)).toEqual(["ca-fee-only", "ca-fee-only-pricing", "ca-financial-traced"]);
   });
 
   it("says plainly that no person has reviewed it, and is held out", () => {
     expect(run.version).toBe(CLAIM_GOLDEN_SET_VERSION);
-    expect(CLAIM_GOLDEN_SET_VERSION).toBe("2026-10-25.4");
+    expect(CLAIM_GOLDEN_SET_VERSION).toBe("2026-10-25.5");
     expect(CLAIM_GOLDEN_REVIEW.status).toBe("unreviewed");
     expect(CLAIM_GOLDEN_REVIEW.record).toBeNull();
     expect(CLAIM_GOLDEN_REVIEW.note).toMatch(/No person has reviewed these cases/);

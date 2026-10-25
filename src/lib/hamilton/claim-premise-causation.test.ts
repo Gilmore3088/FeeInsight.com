@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkAnswerEvidence } from "./answer-gate";
+import { checkAnswerEvidence, savedAnswerEvidence } from "./answer-gate";
 import { CAUSAL_CLAIM_PROBLEM, causalClaimProblems, checkAnswerInterpretations } from "./answer-interpretations";
 import { filingFactId } from "./claim-evidence";
 import {
@@ -79,9 +79,9 @@ describe("a figure the question states as fact (#1077, claim contract step 3)", 
     expect(binding.corrections).toBeUndefined();
   });
 
-  it("shows it as Hamilton's reading when nothing was read for that institution", () => {
+  it("keeps today's outcome for an institution Hamilton does not know by name", () => {
     const binding = bind("Bank C charges $5 for paper statements.", "What does Bank C charge for its $5 paper statement fee?", bundle(A_OVERDRAFT_10));
-    expect(binding.interpretation).toEqual(["Bank C charges $5 for paper statements."]);
+    expect(binding.supported).toEqual([{ text: "Bank C charges $5 for paper statements.", factIds: [] }]);
   });
 
   it("leaves a group's figure from the question alone", () => {
@@ -143,17 +143,65 @@ describe("a running total in a later clause (PR #2571 re-review)", () => {
   });
 });
 
-describe("causal claims on every answer (#1077, claim contract step 3)", () => {
-  it("flags a cause stated with a figure or a direction, with no NCUA or filed-peer data", () => {
+describe("question figures that are not premises (PR #2572 review)", () => {
+  const record = bundle(A_OVERDRAFT_10);
+  it("keeps the correct answer and writes no correction for a question, a comparison, a threshold or another subject", () => {
+    for (const [question, text] of [
+      ["Is Bank A's overdraft fee more than $30?", "Bank A's overdraft fee is $10, below $30."],
+      ["How does Bank A's overdraft fee compare with a $30 threshold?", "Bank A's overdraft fee is $10, below the $30 threshold."],
+      ["Most banks charge $35 for overdraft. How does Bank A compare?", "Bank A's $10 overdraft fee is well below the $35 most banks charge."],
+      ["Bank A's overdraft fee versus $30: where is it?", "Bank A's overdraft fee is $10, below $30."],
+    ]) {
+      const binding = bind(text, question, record);
+      expect(binding.omitted, question).toEqual([]);
+      expect(binding.supported, question).toEqual([{ text, factIds: [A_OVERDRAFT_10.id] }]);
+      expect(binding.corrections, question).toBeUndefined();
+    }
+  });
+
+  it("reads supposing words only in the sentence that holds the figure", () => {
+    const binding = bind("Bank A's $35 overdraft fee is above most banks we track.", "Bank A raised its overdraft fee to $35. Should we follow?", record);
+    expect(binding.omitted.map((o) => o.reason)).toEqual(["premise_contradicted"]);
+    expect(binding.corrections).toEqual(["The question gives $35 for Bank A's overdraft fee; Hamilton's fee record shows $10."]);
+    const supposed = bind("Bank A's $35 overdraft fee would be above most banks we track.", "Should Bank A raise its overdraft fee to $35?", record);
+    expect(supposed.omitted).toEqual([]);
+  });
+
+  it("takes a figure stated as the institution's own fee as a premise", () => {
+    for (const question of ["Bank A's overdraft fee is $30. How does it rank?", "Bank A charges $30 for overdraft. How does it rank?"]) {
+      expect(bind("Bank A's $30 overdraft fee ranks high.", question, record).omitted.map((o) => o.reason), question).toEqual(["premise_contradicted"]);
+    }
+  });
+});
+
+describe("causal claims on every answer: shadow only (#1077, claim contract step 3)", () => {
+  it("records a cause stated with a figure or a direction, without failing the gate", () => {
     for (const text of [
       "Bank A's overdraft fee is $25 lower because it competes locally.",
       "Bank A's fee income rose due to its new account fees.",
-      "Higher waivers led to Bank A's lower fee income.",
+      "Higher account closures led to Bank A's lower fee income.",
     ]) {
       expect(causalClaimProblems(text), text).toEqual([CAUSAL_CLAIM_PROBLEM]);
-      expect(checkAnswerInterpretations(text, { fees: [] }), text).toEqual([CAUSAL_CLAIM_PROBLEM]);
+      expect(checkAnswerInterpretations(text, { fees: [] }), text).toEqual([]);
     }
-    expect(checkAnswerEvidence("Bank A's overdraft fee is $25 lower because it competes locally.", { amount: 25 }).passed).toBe(false);
+    const check = checkAnswerEvidence("Bank A's overdraft fee is $25 lower because it competes locally.", { amount: 25 });
+    expect(check.passed).toBe(true);
+    expect(check.shadowProblems).toEqual([CAUSAL_CLAIM_PROBLEM]);
+    expect(savedAnswerEvidence(check)).toEqual({ passed: true, problems: [], shadowProblems: [CAUSAL_CLAIM_PROBLEM] });
+    expect(checkAnswerEvidence("Bank A's overdraft fee is $25 lower.", { amount: 25 }).shadowProblems).toBeUndefined();
+  });
+
+  it("does not flag method notes, schedule terms, arithmetic, negation or suppositions", () => {
+    for (const text of [
+      "Bank A's Q2 fee income was $1.4 million because Hamilton subtracted the first quarter from the year-to-date total.",
+      "The $35 overdraft fee is waived because the member keeps a $1,500 balance.",
+      "The $35 fee does not apply to this account because Bank A's schedule waives it.",
+      "Daily overdraft fees are capped at $105, driven by the per-item count.",
+      "Bank A charges $35 per item, with the daily total driven by the number of items paid.",
+      "Bank A sits lower because $10 is less than $35.",
+      "Bank A's fee income did not fall because of pricing.",
+      "If Bank A raised its fee to $35, it would sit above Bank B because Bank B charges $30.",
+    ]) expect(causalClaimProblems(text), text).toEqual([]);
   });
 
   it("uses the NCUA check's own wording for a pricing or size cause, with any data", () => {
