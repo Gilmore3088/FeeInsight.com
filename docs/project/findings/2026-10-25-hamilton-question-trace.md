@@ -46,8 +46,10 @@ report, and note where a figure stops being tied to its source. Read from `main`
 `readerFindingsContext` in `report-inputs.ts` passes the findings in the section's CONTEXT, labelled
 "not evidence", and tells the model to state a figure from them only when the same figure is in
 DATA. The figure check no longer sees them, so a restated figure passes only when the server's own
-data holds it; otherwise the section comes back `needs_review`. Guard: the new test in
-`src/lib/hamilton/report-actions.test.ts` ("keeps the reader's added findings out of the DATA…").
+data holds it; otherwise the section comes back `needs_review`.
+
+**Guard:** `src/lib/hamilton/report-actions.test.ts`, "keeps the reader's added findings out of the
+DATA a section's figures are checked against".
 
 ## Gaps found, not fixed here (each goes on its existing issue)
 
