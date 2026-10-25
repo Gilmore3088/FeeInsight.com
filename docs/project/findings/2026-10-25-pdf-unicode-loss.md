@@ -71,11 +71,16 @@ diagnosis; this PDF guard does not claim to solve them. The census is determinis
 not a random sample or a statistical accuracy grade. It misses corruption expressed
 as other Unicode characters, which belongs to the existing font-map work.
 
-The prepared read-only inventory SQL materializes the cheap replacement-character
-screen before the regex. An attempted full enumerated manifest query timed out;
-there is no claimed export of all 30 candidate IDs or their live-fee baselines.
-The successful aggregate census and the three specific reported lineages are
-distinct from that outstanding manifest export.
+The optimized read-only inventory SQL materializes the cheap replacement-character
+screen before the regex. Earlier broad-regex and per-document repeated catalog
+queries timed out; the optimized two-phase export succeeded at **09:08 Pacific**:
+30 candidate documents and a baseline of **227 live fees across 16 of those documents**.
+The [repair manifest](../evidence/2026-10-25-pdf-unicode-loss-repair-manifest.json)
+records every candidate's text/source identity and vault key, and every baseline
+fee's published/raw/verified IDs, category, price, unit, audience, variant, waiver,
+conditions and event lineage. These are potential exposure and preservation baselines,
+not 227 wrong fees. The candidate and fee exports were separate read-only snapshots
+(16:08:12 and 16:08:43 UTC); their identities must be checked again before any write.
 
 ## Focused correction
 
@@ -190,8 +195,10 @@ GitHub's real-schema CI exposed three fixtures pinned to reader 3: paid-read
 eligibility, normalized-witness paid setup and stacked-repair readiness/receipts.
 They now seed/assert `ROSETTA_READ_VERSION` for the current free pass, without
 weakening the runtime gate. A paired native case checks that an older free read
-cannot unlock paid work and a current free read can. The final exact-head CI
-receipt is recorded in PR #2632, separately from the local unit counts above.
+cannot unlock paid work and a current free read can. The exact runtime head
+`b8b3247` passed all eight checks in CI run 40209292611, including all 82 native
+database files / 1,187 tests. The receipt is recorded in PR #2632, separately
+from the local unit counts above.
 
 No claim is made of automated recovery, an executed historical-repair pilot,
 production deployment or replay, or repaired live fees.
