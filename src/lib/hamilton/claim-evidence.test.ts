@@ -168,3 +168,38 @@ describe("claim fact IDs for filings and filed peers (#1077 step 1)", () => {
     }
   });
 });
+
+describe("profile filings read as profileQuarterCalculations reads them (#1077 step 2)", () => {
+  type Output = { financials: { units: unknown; definition: Record<string, unknown>; records: Array<Record<string, unknown>>; latest: unknown } };
+  const changedProfile = (change: (output: Output) => void) => {
+    const read = profileA();
+    change(read.output as Output);
+    return read;
+  };
+  const profileFacts = (read: AnswerToolEvidence) => [...byId([read]).keys()].filter((id) => id.startsWith(`filing:ncua:${BANK_A}:`));
+
+  it("gives no fact when the definition's unit, publisher or period basis is not the source's own", () => {
+    expect(profileFacts(profileA())).not.toHaveLength(0);
+    expect(profileFacts(changedProfile((o) => { o.financials.definition.unit = "dollars"; }))).toEqual([]);
+    expect(profileFacts(changedProfile((o) => { o.financials.definition.publisher = "A spreadsheet"; }))).toEqual([]);
+    expect(profileFacts(changedProfile((o) => { o.financials.definition.period_basis = "standalone_quarter"; }))).toEqual([]);
+  });
+
+  it("makes a date conflicting when a row's unit cannot be read, and never lets an explicit null fall through", () => {
+    // The 2026-06-30 row says unit: null; the response's thousands are not used, and the whole date gives no fact.
+    const nullUnit = changedProfile((o) => {
+      o.financials.records[0].unit = null;
+      o.financials.latest = o.financials.records[0];
+    });
+    expect(profileFacts(nullUnit).filter((id) => id.includes(":2026-06-30:"))).toEqual([]);
+    expect(profileFacts(nullUnit)).toContain(ytdIncome(BANK_A, "2026-03-31"));
+    const unreadableField = changedProfile((o) => {
+      o.financials.records[1].field_units = { fee_income_ratio: "fraction", service_charge_income: "widgets" };
+    });
+    expect(profileFacts(unreadableField).filter((id) => id.includes(":2026-03-31:"))).toEqual([]);
+    expect(profileFacts(unreadableField)).toContain(ytdIncome(BANK_A, "2026-06-30"));
+    // The profile's quarter needs the dropped date, so it is not derived either.
+    const evidence = claimEvidenceFacts([changedProfile((o) => { o.financials.records[1].unit = null; })], BANK_A);
+    expect(evidence.derivations.some((derived) => derived.derivation.kind === "ytd_to_quarter")).toBe(false);
+  });
+});

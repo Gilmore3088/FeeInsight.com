@@ -14,9 +14,12 @@
  * year stated in a written answer is never shown as a supported fact, but lands under the label
  * rather than being left out.
  *
- * With no fee record in the tool outputs there is nothing to bind to, so no binding is made and
- * the answer is shown as before, with its untraced figures called out. Pure: no read, no write,
- * no model call; safe to import from the browser.
+ * Filing figures bind too (#1077, claim contract step 2): the caller passes the claim facts built
+ * from the same server-observed reads (claim-evidence.ts), and a filed fee income, balance or
+ * peer median binds only to the fact of the institution, metric, quarter and basis the sentence
+ * states. With neither a fee record nor a claim fact there is nothing to bind to, so no binding is
+ * made and the answer is shown as before, with its untraced figures called out. Pure: no read, no
+ * write, no model call; safe to import from the browser.
  */
 import {
   HAMILTON_EVIDENCE_CONTRACT_VERSION,
@@ -103,6 +106,22 @@ function profileFact(institutionId: number, fee: Record<string, unknown>, index:
  * hold no fee amount at all.
  */
 export function writtenAnswerFeeEvidence(toolOutputs: readonly unknown[]): { evidence: HamiltonEvidenceBundle; names: Map<number, string> } | null {
+  const { facts, names } = feeFactsAndNames(toolOutputs);
+  if (facts.length === 0) return null;
+  return {
+    evidence: {
+      version: HAMILTON_EVIDENCE_CONTRACT_VERSION,
+      generatedAt: new Date(0).toISOString(),
+      facts,
+      derivations: [],
+      limitations: [STORED_SNAPSHOT_LIMITATION],
+    },
+    names,
+  };
+}
+
+/** The fee records and the institution names the tool outputs give, names kept even with no fee. */
+function feeFactsAndNames(toolOutputs: readonly unknown[]): { facts: HamiltonEvidenceFact[]; names: Map<number, string> } {
   const facts = new Map<string, HamiltonEvidenceFact>();
   const names = new Map<number, string>();
   const name = (id: number | null, value: unknown) => {
@@ -132,21 +151,11 @@ export function writtenAnswerFeeEvidence(toolOutputs: readonly unknown[]): { evi
     }
     // An institution listed by another lookup is named, so its fee is never read as another's.
     if (typeof obj.institution_name === "string") name(positiveInt(obj.institution_id), obj.institution_name);
-    else if (typeof obj.name === "string" && ("charter_type" in obj || "state" in obj)) name(positiveInt(obj.id), obj.name);
+    else if (typeof obj.name === "string" && ("charter_type" in obj || "state" in obj)) name(positiveInt(obj.id) ?? positiveInt(obj.institution_id), obj.name);
     for (const child of Object.values(obj)) if (child && typeof child === "object") visit(child, depth + 1);
   };
   for (const output of toolOutputs) visit(output, 0);
-  if (facts.size === 0) return null;
-  return {
-    evidence: {
-      version: HAMILTON_EVIDENCE_CONTRACT_VERSION,
-      generatedAt: new Date(0).toISOString(),
-      facts: [...facts.values()],
-      derivations: [],
-      limitations: [STORED_SNAPSHOT_LIMITATION],
-    },
-    names,
-  };
+  return { facts: [...facts.values()], names };
 }
 
 /**
@@ -334,13 +343,35 @@ export function indexBasisFor(sentence: string, stats: readonly IndexStatistic[]
   return lines.length > 0 ? `Basis: ${lines.join("; ")}.` : null;
 }
 
-/** The binding for a written answer, or null when its tool outputs hold no fee record. */
-export function bindWrittenAnswer(input: { sections: WrittenAnswerSections; toolOutputs: readonly unknown[]; question?: string }): NarrativeBinding | null {
-  const found = writtenAnswerFeeEvidence(input.toolOutputs);
-  if (!found) return null;
+export interface BindWrittenAnswerInput {
+  sections: WrittenAnswerSections;
+  toolOutputs: readonly unknown[];
+  question?: string;
+  /** The filing and filed-peer facts from the same server-observed reads (claimEvidenceFacts). */
+  claims?: HamiltonEvidenceBundle | null;
+  /** The reader's own institution, which "your" in a sentence means. */
+  accountInstitutionId?: number | null;
+  /** The research subject, which a sentence naming no institution is about. */
+  researchInstitutionId?: number | null;
+}
+
+/** The binding for a written answer, or null when its tool outputs hold no fee record and no claim fact. */
+export function bindWrittenAnswer(input: BindWrittenAnswerInput): NarrativeBinding | null {
+  const { facts, names } = feeFactsAndNames(input.toolOutputs);
+  const claimFacts = input.claims?.facts ?? [];
+  const claimDerivations = input.claims?.derivations ?? [];
+  if (facts.length + claimFacts.length + claimDerivations.length === 0) return null;
   const text = writtenAnswerProse(input.sections);
   if (!text.trim()) return null;
-  const binding = bindNarrative({ text, evidence: found.evidence, names: found.names, question: input.question });
+  const evidence: HamiltonEvidenceBundle = {
+    version: HAMILTON_EVIDENCE_CONTRACT_VERSION,
+    generatedAt: new Date(0).toISOString(),
+    facts: [...facts, ...claimFacts],
+    derivations: claimDerivations,
+    limitations: [STORED_SNAPSHOT_LIMITATION, ...(input.claims?.limitations ?? [])],
+  };
+  const binding = bindNarrative({ text, evidence, names, question: input.question,
+    accountInstitutionId: input.accountInstitutionId, researchInstitutionId: input.researchInstitutionId });
   const stats = writtenAnswerIndexStats(input.toolOutputs);
   const readingBasis = stats.length > 0
     ? binding.interpretation.flatMap((sentence) => {
@@ -354,6 +385,7 @@ export function bindWrittenAnswer(input: { sections: WrittenAnswerSections; tool
 const OMIT_REASONS = new Set<OmitReason>([
   "advice", "instruction_text", "no_evidence", "wrong_institution", "gap_as_fee",
   "wrong_direction", "wrong_period", "wrong_unit", "conflicting_sources", "median_as_fee",
+  "wrong_basis", "account_as_subject",
 ]);
 
 const strings = (value: unknown): value is string[] => Array.isArray(value) && value.every((item) => typeof item === "string");
