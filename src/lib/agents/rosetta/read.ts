@@ -1587,9 +1587,10 @@ export function pdfStackedRepairsPendingQuery(stateCode: string): { query: strin
   return { query: `SELECT EXISTS (${selection.query}) AS repair_due`, params: selection.params };
 }
 
-/** Read-only: the reader-replay lane's full due set (#2069), for Bayes's ledger and dry runs. */
+/** Read-only: the reader-replay lane's full due set (#2069), for Bayes's ledger and dry runs. It
+ * leaves out the stacked-repair lane's documents, as the replay lane does. */
 export function readerReplaysDueQuery(stateCode?: string): { query: string; params: Array<number | string | string[]> } {
-  const selection = rosettaReadCandidatesQuery(2_147_483_647, true, undefined, stateCode, true, true, true, true, "include", "only");
+  const selection = rosettaReadCandidatesQuery(2_147_483_647, true, undefined, stateCode, true, true, true, true, "exclude", "only");
   return { query: `SELECT COUNT(*) AS due FROM (${selection.query}) reader_replays`, params: selection.params };
 }
 
@@ -2659,8 +2660,10 @@ export async function runRosettaRead(
         if (settled === "handed_to_magellan") handedToMagellan += 1;
         else if (settled === "sent_back") sentBack += 1;
       }
-      // Every replay leaves its receipt, whatever the outcome: once per reader version (#2069).
-      if (row.reader_replay_due === true) {
+      // Every replay that was read leaves its receipt, whatever the outcome: once per reader version
+      // (#2069). A deferred scan fetched nothing (this run's OCR allowance was used up), so it stays
+      // due for a later run.
+      if (row.reader_replay_due === true && result.status !== "deferred") {
         const replay = await recordReaderReplay(db, { runId: options.runId, stepId: options.stepId ?? null }, row, result);
         readerReplayed += 1;
         if (replay.textChanged) readerReplayTextChanged += 1;

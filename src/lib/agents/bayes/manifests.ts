@@ -275,7 +275,7 @@ export function rosettaReaderManifests(versions: RosettaVersions): ReplayManifes
         const queued = await countReaderReplaysDue(db);
         const { done, textChanged } = await countReaderReplaysDone(db);
         return { affected: queued + done, done, queued, exclusions: {},
-          note: `Queued is the read step's own replay selection (current copies whose text an older version of its reader wrote: a primary or the legacy reader, free OCR or the JavaScript fallback; the paid pass is not replayed), read at most ${READER_REPLAY_PER_RUN} a step. Done counts rosetta.reader_replay receipts at this version; ${textChanged} stored a new text, which Knox re-extracts and Darwin re-checks. A replay keeps the earlier text unless the new one lists at least as many fees. Thin texts the ordinary re-read settled count as neither.` };
+          note: `Queued is the read step's own replay selection (current copies whose text an older version of its reader wrote: a primary or the legacy reader, free OCR or the JavaScript fallback; the paid pass is not replayed), read at most ${READER_REPLAY_PER_RUN} a step. Done counts rosetta.reader_replay receipts at this version; ${textChanged} stored a new text, which Knox re-extracts and Darwin re-checks. A replay keeps the earlier text unless the new one lists at least as many fees. A replay whose bytes are a known failure for its reader is settled without a read and counts as done; a scan deferred past a run's OCR allowance stays queued. Thin texts the ordinary re-read settled count as neither.` };
       },
       notCounted: undefined,
     },

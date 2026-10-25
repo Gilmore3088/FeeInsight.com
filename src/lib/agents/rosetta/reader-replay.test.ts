@@ -178,6 +178,24 @@ describe("the read step's replay lane", () => {
     expect(db.mock.calls.some((call) => text(call[0]).includes("INSERT INTO agent_source_texts"))).toBe(false);
   });
 
+  it("leaves no receipt for a scan deferred past this run's OCR allowance, so it stays due", async () => {
+    const db = laneDb([{ ...replayRow(1), document_url: "https://replay1.example/scan.pdf" }]);
+    const fetchImpl = vi.fn(async () => new Response(new TextEncoder().encode("%PDF-1.4 scan"), { headers: { "content-type": "application/pdf" } }));
+    const reader = { read: vi.fn(async () => ({ text: "", pages: [], pageCount: 1, imagePages: 1, confidence: 90 })), close: vi.fn(async () => undefined) };
+    const result = await runRosettaRead({
+      runId: 22,
+      db: asDb(db),
+      fetchImpl,
+      pdfTextExtractor: vi.fn(async () => ({ totalPages: 1, text: "" })),
+      scannedPdfReader: reader,
+      ocrDocumentsPerRun: 0,
+      limit: 25,
+    });
+    expect(result).toMatchObject({ deferred: 1, readerReplayed: 0 });
+    expect(reader.read).not.toHaveBeenCalled();
+    expect(receipts(db)).toHaveLength(0);
+  });
+
   it("stores a new text that lists at least as many fees and counts it as changed", async () => {
     const db = laneDb([replayRow(1)]);
     const rich = `<main><h1>Schedule of Fees</h1>${feeLines(12).map((line) => `<p>${line}</p>`).join("")}</main>`;
