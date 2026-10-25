@@ -556,6 +556,8 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // safe_deposit_box (99 of 111 on the Oct 25 dry run; 12 duplicates of a live box late fee come down).
     // v88 (Oct 25, #1912): book transfers fail the domestic wire categories, and a cash advance priced
     // at another bank's ATMs fails cash advance.
+    // v89 (Oct 25, #1877): overdraft admits a credit union's "Draft Protection Fee" (Knox v112's pattern);
+    // names only, so no live fee changes on the Oct 25 dry run.
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",

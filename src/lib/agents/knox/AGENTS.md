@@ -284,6 +284,15 @@ fees found (54.7%); 56 of the 59 wrong reads are the right price under another c
 
 ## Rules versions (`extract.rules`)
 
+v112 (Oct 25, #1877): a credit union's "Draft Protection Fee" (share-draft wording) is filed as
+the overdraft fee (`DRAFT_PROTECTION_FEE` in `fee-fold.ts`, shared with guard v89). Abbey FCU's "Draft Protection Fee (Paid) per presentment * $30.00" and Members
+Choice's "Draft Protection Fee * | $30.00 per Presentment" were set aside with no category, so Abbey's
+"Overdraft at teller window" line was its only live overdraft fee and Members Choice had none. A
+channel-specific overdraft (teller, ATM, debit card, in-person) stays overdraft. "Over Draft
+Protection" and a draft protection transfer, sweep, line, loan or plan are not matched. The held
+recheck re-reads set-aside lines on the version bump. On Oct 25 the wording matched 4 raw rows at 2
+institutions, none live. Categories only; the stale-read floor stays at v97 and name re-tidy at v27.
+
 v111 (Oct 25, #1916): a late charge printed in a safe deposit box section is the box's late rent
 charge, whichever specialist read it (`boxSectionLateFeeRead`, `boxSectionLateFee` in
 `src/lib/custom-report/box-section-late-fee.ts`). The section is read upward from the fee's own
