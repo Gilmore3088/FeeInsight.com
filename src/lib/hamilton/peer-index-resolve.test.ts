@@ -45,6 +45,7 @@ const savedPeers = vi.hoisted(() => ({ getSavedPeerSetById: vi.fn(), getDefaultP
 vi.mock("@/lib/data-store/saved-peers", () => savedPeers);
 
 import { resolveHamiltonPeerIndex } from "./peer-index";
+import { MIN_PEERS_FOR_POSITION } from "./workspace/scenario";
 
 const institution = {
   institution_name: "Example Bank",
@@ -55,8 +56,8 @@ const institution = {
 };
 
 // Usable: three fees with a median, overdraft (the fee that picks the group) among them.
-function usable(median: number, overdraftCount = 8) {
-  return ["overdraft", "c2", "c3"].map((c) => ({ fee_category: c, median_amount: median, institution_count: c === "overdraft" ? overdraftCount : 8 }));
+function usable(median: number, overdraftCount = 12) {
+  return ["overdraft", "c2", "c3"].map((c) => ({ fee_category: c, median_amount: median, institution_count: c === "overdraft" ? overdraftCount : 12 }));
 }
 
 describe("resolveHamiltonPeerIndex", () => {
@@ -76,9 +77,9 @@ describe("resolveHamiltonPeerIndex", () => {
     expect(result.stamp.mode).toBe("live");
   });
 
-  it("picks the group as every answer does: the narrowest where 5 or more publish an overdraft fee (#2096)", async () => {
-    // The first candidate has three usable fees but only 4 overdraft publishers, so it is passed over.
-    mocks.getPeerIndexes.mockImplementation(async (sets: unknown[]) => sets.map((_, i) => (i === 0 ? usable(1, 4) : usable(i + 1))));
+  it(`picks the group as every answer does: the narrowest where ${MIN_PEERS_FOR_POSITION} or more publish an overdraft fee (#2096)`, async () => {
+    // The first candidate has three usable fees but only 9 overdraft publishers, so it is passed over.
+    mocks.getPeerIndexes.mockImplementation(async (sets: unknown[]) => sets.map((_, i) => (i === 0 ? usable(1, MIN_PEERS_FOR_POSITION - 1) : usable(i + 1))));
 
     const result = await resolveHamiltonPeerIndex({ selectedInstitution: institution, minUsableCategories: 1 });
 
@@ -87,7 +88,7 @@ describe("resolveHamiltonPeerIndex", () => {
   });
 
   it("still needs the caller's usable fees: a report's three are not met by overdraft alone", async () => {
-    const overdraftOnly = [{ fee_category: "overdraft", median_amount: 30, institution_count: 9 }];
+    const overdraftOnly = [{ fee_category: "overdraft", median_amount: 30, institution_count: 12 }];
     mocks.getPeerIndexes.mockImplementation(async (sets: unknown[]) => sets.map((_, i) => (i === 0 ? overdraftOnly : usable(i + 1))));
 
     const result = await resolveHamiltonPeerIndex({ selectedInstitution: institution, minUsableCategories: 3 });
@@ -95,11 +96,11 @@ describe("resolveHamiltonPeerIndex", () => {
     expect(result.entries[0].median_amount).toBe(2);
   });
 
-  it("picks the narrowest group where 5 others publish 80% of the bank's own fees (#2098)", async () => {
-    // The bank publishes overdraft, c2 and c3. The first group has 9 overdraft publishers but only
-    // 3 for c2 and c3 (the bank counts itself, so 6 are needed): one of three fees, passed over.
+  it(`picks the narrowest group where ${MIN_PEERS_FOR_POSITION} others publish 80% of the bank's own fees (#2098)`, async () => {
+    // The bank publishes overdraft, c2 and c3. The first group has 12 overdraft publishers but only
+    // 10 for c2 and c3 (the bank counts itself, so 11 are needed): one of three fees, passed over.
     mocks.getInstitutionOwnFees.mockResolvedValue(new Map([["overdraft", {}], ["c2", {}], ["c3", {}]]));
-    const thin = [{ fee_category: "overdraft", median_amount: 1, institution_count: 9 }, ...["c2", "c3"].map((c) => ({ fee_category: c, median_amount: 1, institution_count: 3 }))];
+    const thin = [{ fee_category: "overdraft", median_amount: 1, institution_count: 12 }, ...["c2", "c3"].map((c) => ({ fee_category: c, median_amount: 1, institution_count: MIN_PEERS_FOR_POSITION }))];
     mocks.getPeerIndexes.mockImplementation(async (sets: unknown[]) => sets.map((_, i) => (i === 0 ? thin : usable(i + 1))));
 
     const result = await resolveHamiltonPeerIndex({ selectedInstitution: { ...institution, id: 2945 }, minUsableCategories: 1 });

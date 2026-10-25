@@ -3,6 +3,21 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-10-25
+
+**Hamilton's peer minimum: 5 local, 10 everywhere.** James, 2026-10-25 ("5 local, 10 everywhere"),
+answering the peer-maturity question in the Hamilton PRD (V5 §22, gate G7 peer correctness). A
+median, quartile or price position over local competitors needs at least 5 of them publishing the
+fee; every other median needs at least 10 institutions: financial peers, fed district, state,
+national, a study's comparison group and the answer check. Below the minimum, Hamilton names the
+institutions and their own prices without a median. Before this the code used 3 for local
+competitors (`MIN_LOCAL_COMPETITORS_FOR_MEDIAN`), 5 for workspace positions, studies, filed
+fee-income peers and the answer check, and 10 only in the product prompt text. The constants are
+`MIN_LOCAL_COMPETITORS_FOR_MEDIAN` and `MIN_LOCAL_PEERS_FOR_POSITION` (5) and
+`MIN_PEERS_FOR_POSITION`, `MIN_STUDY_PEERS` and `MIN_PEERS_FOR_MEDIAN` (10). The public Index's own
+maturity minimum (`MIN_INSTITUTIONS_FOR_MEDIAN` in `src/lib/data-store/maturity.ts`) is not part of
+this decision and stays 5.
+
 ## 2026-10-22
 
 **Data-quality work has an executive owner.** James, 2026-10-22 ("At this point you are the
