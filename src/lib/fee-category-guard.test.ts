@@ -1131,6 +1131,68 @@ describe("monthly maintenance add-ons (v59)", () => {
   });
 });
 
+describe("refundable key deposits filed as a safe deposit box fee (v85, #1831)", () => {
+  // Live names (read-only, prod, Oct 25), each a key deposit on its bank's own stored schedule.
+  it.each([
+    "Safety Deposit Box Key Deposit at Account Opening (per key)", // Central Bank 152139, $5
+    "Key Deposit", // Valley Strong 154788, "| **$20** | Key Deposit |"
+    "Safe Deposit Box Key Deposit",
+    "Key Deposit (refundable)",
+    "Key Deposit (Refunded with return of both keys)",
+    "Key Deposit – Refunded if Both Keys Returned",
+    "Key Deposit, 2 keys, refundable",
+    "Refundable Key Deposit",
+    "Safe Deposit Refundable Key Deposit Fee",
+    "Safe Deposit Box Keys (Refundable)",
+    "Required Key Deposit (each box)",
+    "Box Size Initial key deposit",
+    "Safe Deposit Box Key Deposit for Loss",
+    "Key Deposit/Setup",
+    "Safe Deposit Box Security Deposit",
+    // A "Rental" header before the key deposit is not the rental fee ("Safe Deposit Box Rental** -
+    // Key Deposit | $10.00").
+    "Safe Deposit Box Rental - Key Deposit",
+    "Overdraft protection per transfer: Safe deposit box: key deposit per box",
+  ])("refuses %s", (name) => {
+    const verdict = checkFeeCategory("safe_deposit_box", name);
+    expect(verdict.ok, name).toBe(false);
+    if (!verdict.ok) expect(verdict.code).toBe("name_contradicts");
+    // No type holds a key deposit, so it is not re-filed.
+    expect(refileCategory("safe_deposit_box", name)).toBe("safe_deposit_box");
+  });
+
+  it.each([
+    // Lost, replaced and duplicate keys are real box fees (the issue's change 2).
+    "Key Replacement",
+    "Lost Key",
+    "Safe Deposit Box Duplicate Key",
+    "Lost Key - One of the two keys issued for the safe deposit box is lost and is replaced",
+    "Duplicate Key for Safe Deposit Box",
+    "Key Deposit/Lost Key",
+    "Key Deposit / Replacement",
+    // Drilling: the price on each schedule is the drilling price ("$200 / $150 / $50", "$150.00 $10.00 per key").
+    "Box Drilling / Lost Keys / Key Deposit",
+    "Safe deposit box - Drilling fee - Key deposit",
+    // The box's own rental fee ("Annual Rental Fees *(Key Deposit) | $25.00", the 3x5 rent).
+    "Annual Rental Fees (Key Deposit)",
+    // A deposit the bank keeps, and lock work, are charges for the box (#2603 review).
+    "Key Deposit (non-refundable)",
+    "Non-refundable key deposit",
+    "Forfeited Key Deposit",
+    "Lock Change / Key Deposit",
+    "Re-keying / Key Deposit",
+    "Change of Lock Fee / Key Deposit",
+    // Late fees and other box fees.
+    "Safety Deposit Box Late Payment Fee",
+    "Safe Deposit Box Closed with only 1 key",
+    // "Non-refundable" is not a refund.
+    "Safe Deposit Non-Refundable Set-up Fee",
+    "Safe Deposit Box Rental Rent is paid annually in advance; Non-refundable on early box closure",
+  ])("keeps %s", (name) => {
+    expect(checkFeeCategory("safe_deposit_box", name), name).toEqual({ ok: true });
+  });
+});
+
 describe("night deposit items filed as a safe deposit box (v60)", () => {
   it.each([
     ["Deposit Bags & Night Deposit Drop Box: Disposable 9\" x 12\" bundle", null],
@@ -2445,7 +2507,7 @@ describe("guard v84: another service's monthly charge filed as monthly maintenan
   });
 });
 
-describe("guard v85: a late charge in a safe deposit box section is the box's (#1916)", () => {
+describe("guard v86: a late charge in a safe deposit box section is the box's (#1916)", () => {
   // Advia FCU doc 32751 (live 142240): "page | Safe Deposit Box 30 Day" over
   // "Courtesy Pay Coverage | Late Payment (by credit union | $10".
   const advia = readFileSync(join(process.cwd(), "src/lib/custom-report/__fixtures__/advia-two-column-source.txt"), "utf8");
@@ -2470,7 +2532,7 @@ describe("guard v85: a late charge in a safe deposit box section is the box's (#
     expect(refileFromLine("late_payment", "Late Payment after 30 days", box)).toBe(BOX_LATE_TARGET);
   });
 
-  it("reads nothing without the stored text or for another type, as before v85", () => {
+  it("reads nothing without the stored text or for another type, as before v86", () => {
     const context = { amount: 10, conditions: null };
     expect(withBoxSection("late_payment", name, context, null)).toBe(context);
     expect(withBoxSection("stop_payment", "Stop Payment", context, advia)).toBe(context);

@@ -295,7 +295,7 @@ pass's previous read or its segment heading, so Advia FCU's two-column box late 
 live 142240) and 36 more live box late fees were still read as `late_payment`. The shared check
 refuses such a fee filed as `late_payment` (`category_not_in_text`), so the self-check, Darwin's
 verify and Hamilton's source check v24 agree; the live ones are not taken down but re-filed in place
-by the category guard v85 (`box_section`, `withBoxSection`). Read-only dry run, Oct 25: 111 live
+by the category guard v86 (`box_section`, `withBoxSection`). Read-only dry run, Oct 25: 111 live
 late_payment fees at 110 institutions are box late fees (each read on its stored line); 99 re-file to
 `safe_deposit_box` with their own name and price, and 12 copies of a live box late fee (11 beside a
 live twin, 1 a second copy at its bank) come down. Today's rules read all 111 lines as the box's, so a

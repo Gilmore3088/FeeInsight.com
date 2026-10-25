@@ -91,7 +91,7 @@ export const SOURCE_CHECK_REASON = "source_check_untraceable";
 // "Courtesy Pay Coverage | Late Payment (by credit union | $10", Advia FCU) is the box's late rent
 // charge, so filed as late_payment it no longer traces (`boxSectionLateFee`, category_not_in_text).
 // Read-only dry run, Oct 25: it flags 111 live late_payment fees at 110 institutions, but the category
-// guard v85 re-files 99 of them in place to safe_deposit_box (where they trace) on its first sweep,
+// guard v86 re-files 99 of them in place to safe_deposit_box (where they trace) on its first sweep,
 // well inside the 12h second look; the 12 left are copies of a live box late fee and come down.
 export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 24 } as const;
 

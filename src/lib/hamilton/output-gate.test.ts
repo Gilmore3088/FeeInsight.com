@@ -115,7 +115,7 @@ describe("the gate in shadow", () => {
   });
 
   it("counts agreements, disagreements and what the unified gate holds for", () => {
-    const base = { version: 1 as const, surface: "written_answer" as const, mode: null, codes: [] as GateShadowRecord["codes"], corrections: 0, cause: false };
+    const base = { version: 1 as const, origin: "reader" as const, surface: "written_answer" as const, mode: null, codes: [] as GateShadowRecord["codes"], corrections: 0, cause: false };
     const records: GateShadowRecord[] = [
       { ...base, path: "written_streaming", today: "shown", unified: "validated", agrees: true, disagreement: null, critical: [] },
       { ...base, path: "written_streaming", today: "shown_ungated", unified: "held", agrees: false, disagreement: "unified_holds", critical: ["untraced_figure"] },
@@ -126,6 +126,32 @@ describe("the gate in shadow", () => {
     expect(tally).toMatchObject({ total: 4, agree: 1, disagree: 2, errors: 1,
       byDisagreement: { unified_holds: 1, unified_shows: 1, partial_differs: 0 }, heldBy: { untraced_figure: 1 }, cause: { flagged: 1, held: 0 } });
     expect(tally.byPath["written_answer/written_streaming"]).toEqual({ total: 2, disagree: 1, unifiedHolds: 1, unifiedShows: 0 });
+  });
+
+  it("counts each origin apart, so the paid eval's samples never stand in for readers' answers", () => {
+    const base = { version: 1 as const, surface: "written_answer" as const, mode: null, codes: [] as GateShadowRecord["codes"], corrections: 0, cause: false, critical: [] };
+    const records: GateShadowRecord[] = [
+      { ...base, origin: "reader", path: "written_streaming", today: "shown", unified: "validated", agrees: true, disagreement: null },
+      { ...base, origin: "paid_eval", path: "written_streaming", today: "shown", unified: "held", agrees: false, disagreement: "unified_holds" },
+      { ...base, origin: "paid_eval", path: "memo", today: "held", unified: "validated", agrees: false, disagreement: "unified_shows" },
+      { ...base, origin: "golden", path: "golden_replay", today: "held", unified: "held", agrees: true, disagreement: null },
+    ];
+    const tally = tallyGateShadow(records);
+    expect(tally).toMatchObject({ total: 4, agree: 2, disagree: 2 });
+    expect(tally.byOrigin.reader).toMatchObject({ total: 1, agree: 1, disagree: 0 });
+    expect(tally.byOrigin.paid_eval).toMatchObject({ total: 2, disagree: 2, byDisagreement: { unified_holds: 1, unified_shows: 1, partial_differs: 0 } });
+    expect(tally.byOrigin.golden).toMatchObject({ total: 1, agree: 1 });
+    expect(tallyGateShadow([]).byOrigin.paid_eval.total).toBe(0);
+  });
+
+  it("reads a record written before origins were kept as a reader's, and keeps a known origin", () => {
+    const record = gateShadowRecord(gateAnswer(writtenInput(byId("sb-fee"))), "held", { path: "written_streaming", mode: "analyze" });
+    expect(record.origin).toBe("reader");
+    const { origin: _origin, ...old } = JSON.parse(JSON.stringify(record)) as Record<string, unknown>;
+    expect(readGateShadowRecord(old)?.origin).toBe("reader");
+    expect(readGateShadowRecord({ ...old, origin: "paid_eval" })?.origin).toBe("paid_eval");
+    expect(readGateShadowRecord({ ...old, origin: "someone" })?.origin).toBe("reader");
+    expect(gateShadowRecord(gateAnswer(writtenInput(byId("sb-fee"))), "held", { path: "golden_replay", origin: "golden" }).origin).toBe("golden");
   });
 
   it("gives a Simulate read a verdict against the numbers the model was given", () => {
@@ -189,11 +215,11 @@ describe("the golden set replayed through the unified gate", () => {
   const replay = replayClaimGoldenGate();
 
   it("decides every case as its target says; it parts from today only on the causes step 3 records in shadow", () => {
-    expect(replay.total).toBe(28);
-    expect(replay.meetsTarget).toBe(28);
+    expect(replay.total).toBe(45);
+    expect(replay.meetsTarget).toBe(45);
     expect(replay.controlsValidated).toBe(replay.controls);
-    expect(replay.controls).toBe(9);
-    expect(replay.tally).toMatchObject({ agree: 25, disagree: 3, errors: 0, byStatus: { validated: 9, ready_partial: 0, held: 19 },
+    expect(replay.controls).toBe(18);
+    expect(replay.tally).toMatchObject({ agree: 42, disagree: 3, errors: 0, byStatus: { validated: 18, ready_partial: 0, held: 27 },
       byDisagreement: { unified_holds: 3, unified_shows: 0, partial_differs: 0 } });
     // Exactly the cases the golden set marks wrong today (todayWrong), and each of them a stated cause.
     const disagreeing = replay.results.filter((r) => r.disagreement).map((r) => r.id).sort();

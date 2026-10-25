@@ -342,7 +342,8 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v2 (#1910): the name cover reads NSF/insufficient, OD/overdraft and a paid NSF item/overdraft as one item.
   PRODUCT_PAGE_REPEAT_CHECK_VERSION: "Each verify step re-reads every live product-page fee with a same-price schedule twin (no cursor), so version 2's wider name cover reaches every live fee on the next step; nothing older to replay.",
   // v1 (#1915): schedule editions not yet in effect. Every verify step reads every live fee on a dated document.
-  EDITION_CHECK_VERSION: "First version: each verify step re-reads every live or held fee on a document whose heading states an edition (no cursor); nothing older to replay.",
+  // v2 (T1): an edition line past a web page's menu, counted only until EDITION_LATE_HEADING_LIVE.
+  EDITION_CHECK_VERSION: "Each verify step re-reads every live or held fee on a document whose heading or late edition line states an edition (no cursor); nothing older to replay.",
   // v1 (#2022): Canadian bank documents. A full verify step re-reads every live document's text at most hourly.
   CANADIAN_DOCUMENT_CHECK_VERSION: "First version: a verify step re-reads every live fee's document text (no cursor, at most hourly); nothing older to replay.",
   // v8 (#1112): new no-fee, discount, allowance and loan-amount name rules. Each step's eval-verdict
@@ -419,6 +420,10 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // every bank not yet searched at the new version, so the discover steps re-search them themselves.
   UPGRADE_SEARCH_VERSION: "Its selector re-searches every product-page link not yet searched at v3; there is nothing to replay.",
   FRESHNESS_SEARCH_VERSION: "Its selector re-searches every stale link not yet searched at v2; there is nothing to replay.",
+  // v1 (#1878): a new pass that stores each document's own stated date. Its selector reads every
+  // live-fee document and current copy whose stated_date_version is below the current one (200 a
+  // discover step), so a new version re-dates them itself.
+  STATED_DATE_VERSION: "Its selector dates every live-fee document and current copy not yet dated at the current version (200 a discover step); there is nothing to replay.",
   // v1 (#1342): a new hand-started step that reads every live fee with no source link on each run.
   SOURCE_LINK_VERSION: "Its own step reads every live fee with no source link on each run; nothing to replay.",
   SOURCE_LINK_DRIFT_VERSION: "Every publish step reads every live fee whose link opens another page than its own document; nothing to replay.",
@@ -526,7 +531,8 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // additional-card names.
     // v84 (Oct 25, #1788): a generic monthly charge under another service's heading or cell fails
     // monthly maintenance (Positive Pay, ACH, bill pay, cards, paper statements).
-    // v85 (Oct 25, #1916): a late payment printed in a safe deposit box section re-files live to
+    // v85 (Oct 25, #1831): a refundable safe deposit box key or security deposit fails the box rule.
+    // v86 (Oct 25, #1916): a late payment printed in a safe deposit box section re-files live to
     // safe_deposit_box (99 of 111 on the Oct 25 dry run; 12 duplicates of a live box late fee come down).
     {
       key: "hamilton.guard_catch_up",

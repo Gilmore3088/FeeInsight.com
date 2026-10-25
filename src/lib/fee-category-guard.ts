@@ -35,7 +35,7 @@ export interface CategoryGuardContext {
    */
   heading_above?: string | null;
   /**
-   * v85 (#1916): the fee's stored text prints it in a safe deposit box section (`boxSectionLateFee`),
+   * v86 (#1916): the fee's stored text prints it in a safe deposit box section (`boxSectionLateFee`),
    * when the caller read it (`withBoxSection`). Read only for a late payment.
    */
   box_section?: boolean | null;
@@ -401,6 +401,54 @@ const NIGHT_DEPOSIT_KEY_DEPOSIT_EXEMPT = new RegExp(
   "i",
 );
 
+/**
+ * v85 (#1831): a refundable safe deposit box key deposit is money the renter gets back when both
+ * keys come home, not a charge for the box ("Safety Deposit Box Key Deposit at Account Opening (per
+ * key)" $5, Central Bank 152139; "Key Deposit (refundable)" $100, "Safe Deposit Box Security Deposit
+ * (paid at opening ..., refunded upon returning both keys)" $40). The name has to name the deposit
+ * on the key: a key followed by "deposit" (not "Safe Deposit" or "Deposit Box") or "refund...", a
+ * deposit for or on the key, a refundable deposit, or the box's security deposit. "Non-refundable"
+ * is not a refund.
+ */
+const SAFE_DEPOSIT_KEY_DEPOSIT = new RegExp(
+  [
+    String.raw`\bkeys?\b[^|]{0,30}?(?:(?<!\bsafe\s)(?<!\bsafety\s)\bdeposit\b(?!\s*box)|(?<!\bnon-?)\brefund\w*)`,
+    String.raw`\bdeposit\s+(?:for|on)\s+(?:the\s+|each\s+)?keys?\b`,
+    String.raw`(?<!\bnon-?)\brefundable\s+(?:keys?|deposit)\b`,
+    String.raw`\bsecurity\s+deposit\b`,
+  ].join("|"),
+  "i",
+);
+/**
+ * v85 (#1831): what keeps a safe deposit box name that mentions a key deposit filed as the box fee.
+ * Each word sits on what it qualifies (Darwin lesson issue-1662-exemption-sits-on-its-noun):
+ * - a lost, replaced, duplicate, missing, damaged or stolen key, or the loss of a key: the lost-key
+ *   and replacement fees stay safe deposit box fees ("Key Deposit/Lost Key", "Key Deposit / Replacement");
+ * - drilling: the line prices drilling the box open ("Box Drilling / Lost Keys / Key Deposit" $200,
+ *   "Safe deposit box - Drilling fee - Key deposit" $150, each the drilling price on its schedule);
+ * - the box's annual or rental fee itself ("Annual Rental Fees (Key Deposit)" $25, the smallest
+ *   box's rent on its schedule). A "Rental - Key Deposit" header is not a rental fee
+ *   ("Safe Deposit Box Rental** - Key Deposit | $10.00" prices the key deposit).
+ */
+const SAFE_DEPOSIT_KEY_DEPOSIT_EXEMPT = new RegExp(
+  [
+    String.raw`\b(?:lost|replac\w*|duplicat\w*|missing|damaged|stolen)\b[^|]{0,15}\bkeys?\b`,
+    String.raw`\bkeys?\b[^|]{0,15}\b(?:lost|replac\w*|duplicat\w*|missing|damaged|stolen)\b`,
+    String.raw`\bloss\s+of\b[^|]{0,15}\bkeys?\b`,
+    String.raw`\bdrill\w*`,
+    String.raw`\b(?:annual|yearly|monthly)\s+(?:rental\s+)?(?:fees?|charges?|rent)\b`,
+    String.raw`\brental\s+(?:fees?|charges?)\b`,
+    // A deposit the bank keeps is a charge ("Key Deposit (non-refundable)", "Forfeited Key Deposit"),
+    // and lock work prices the box's service ("Lock Change / Key Deposit", "Re-keying").
+    String.raw`\bnon-?\s?refundable\b`,
+    String.raw`\bforfeit\w*`,
+    String.raw`\block\s+(?:change|replacement)\b`,
+    String.raw`\bchange\s+of\s+locks?\b`,
+    String.raw`\bre-?key\w*`,
+  ].join("|"),
+  "i",
+);
+
 export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   monthly_maintenance: {
     // v10: "Minimum daily balance of $500 required to avoid a $5.00 service fee" names the
@@ -761,9 +809,15 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   },
   // v60: a night deposit bag, its key or a bag bundle is not a safe deposit box fee (UAT 104666,
   // "Deposit Bags & Night Deposit Drop Box: Disposable 9" x 12" bundle" $15; 6/6 on source, Oct 9).
+  // v85 (#1831): a refundable key deposit (`SAFE_DEPOSIT_KEY_DEPOSIT`) is not a charge for the box,
+  // as v66 has it for the night deposit. A lost, replaced or duplicate key, drilling and the box's
+  // annual or rental fee stay here (`SAFE_DEPOSIT_KEY_DEPOSIT_EXEMPT`); so do late fees.
   safe_deposit_box: {
     include: /\S/,
-    exclude: /(\bbags?\b|zipper|pouch|depository|night deposit|drop box)/i,
+    exclude: new RegExp(
+      String.raw`(\bbags?\b|zipper|pouch|depository|night deposit|drop box)|^(?![\s\S]*(?:${SAFE_DEPOSIT_KEY_DEPOSIT_EXEMPT.source}))[\s\S]*(?:${SAFE_DEPOSIT_KEY_DEPOSIT.source})`,
+      "i",
+    ),
   },
   // v65: excess withdrawals and returned mail are their own types (James, Oct 15, #1398; nothing is
   // filed there until `RESEARCH_SPLIT_LIVE` is on). An excess withdrawal row is often named only
@@ -977,7 +1031,12 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // read under a heading only when every place's heading names another service. Read-only dry run,
 // Oct 25: 23 of the 1,951 live generic monthly charges fail, each read on its stored text; Darwin's verify and
 // Hamilton's live guard (with its takedown restore) read the heading from the stored text.
-// v85 (Oct 25, #1916): a late payment its stored text prints in a safe deposit box
+// v85 (Oct 25, #1831): a refundable safe deposit box key
+// deposit (`SAFE_DEPOSIT_KEY_DEPOSIT`) fails the safe deposit box rule, as v66 does for the night
+// deposit; a lost, replaced or duplicate key, drilling and the box's annual or rental fee stay
+// (`SAFE_DEPOSIT_KEY_DEPOSIT_EXEMPT`). No type holds a key deposit, so the live ones go to the second
+// look and come down. Dry-run count in the PR.
+// v86 (Oct 25, #1916): a late payment its stored text prints in a safe deposit box
 // section (`box_section`, read by `withBoxSection` with `boxSectionLateFee`: "Safe Deposit Box Fees" /
 // "Late Payment (per month) | $10.00", U.S. Bank 75926; "page | Safe Deposit Box 30 Day" over
 // "Courtesy Pay Coverage | Late Payment (by credit union | $10", Advia FCU 142240) is the box's late
@@ -987,9 +1046,9 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // look. Read-only dry run, Oct 25: of 410 live late_payment fees whose text names a safe deposit box,
 // 299 pass; 111 at 110 institutions fail, 99 re-file in place, 11 have a live box late fee twin (142240
 // beside 139815, ...) and 1 is the second copy at its bank (35992 beside 9785): those 12 come down.
-export const CATEGORY_GUARD_VERSION = 85;
+export const CATEGORY_GUARD_VERSION = 86;
 
-/** v85 (#1916): where a late charge printed in a safe deposit box section is filed. */
+/** v86 (#1916): where a late charge printed in a safe deposit box section is filed. */
 export const BOX_LATE_TARGET = "safe_deposit_box";
 
 function boxSectionReason(name: string): string {
@@ -997,7 +1056,7 @@ function boxSectionReason(name: string): string {
 }
 
 /**
- * v85 (#1916): the guard context with `box_section` read from the fee's stored text, for a late
+ * v86 (#1916): the guard context with `box_section` read from the fee's stored text, for a late
  * payment only (every other fee is returned as it is, so no text is needed for it). Hamilton's live
  * guard and its takedown restore call it with each such fee's stored text.
  */
@@ -1564,7 +1623,7 @@ export function refileFromLine(
   live: boolean = RESEARCH_SPLIT_LIVE,
 ): string | null {
   if (!canonicalFeeKey) return null;
-  // v85 (#1916): a late charge its stored text prints in a safe deposit box section is the box's.
+  // v86 (#1916): a late charge its stored text prints in a safe deposit box section is the box's.
   if (canonicalFeeKey === "late_payment" && context?.box_section === true) {
     return checkFeeCategory(BOX_LATE_TARGET, feeName, context).ok ? BOX_LATE_TARGET : null;
   }

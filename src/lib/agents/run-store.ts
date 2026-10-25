@@ -61,8 +61,9 @@ import { refreshFeeIndexCache } from "@/lib/data-store/fee-index";
 import { runMagellanDiscovery } from "@/lib/agents/magellan/discovery";
 import { runMagellanFetch } from "@/lib/agents/magellan/fetch";
 import { runAddressVariantFetch, type RunAddressVariantFetchResult } from "@/lib/agents/magellan/address-variant-fetch";
-import { runSavedLinkFetch, type RunSavedLinkFetchResult } from "@/lib/agents/magellan/saved-link-fetch";
+import { SAVED_LINK_BUDGET_MS, runSavedLinkFetch, type RunSavedLinkFetchResult } from "@/lib/agents/magellan/saved-link-fetch";
 import { runLiveSourceRefetch, type RunLiveSourceRefetchResult } from "@/lib/agents/magellan/live-source-refetch";
+import { runStatedDatePass, type StatedDatePassResult } from "@/lib/agents/magellan/stated-date";
 import { reviewLinkBatches } from "@/lib/agents/magellan/batch-review";
 import { recordLinkOutcomes } from "@/lib/agents/magellan/outcomes";
 import { recordAuditMisses } from "@/lib/agents/deming/audit-misses";
@@ -102,6 +103,7 @@ import { documentOwnerDetail } from "@/lib/agents/darwin/document-owner";
 import { findingsDetail as releaseRepairFindingsDetail, releaseRepairDetail, runReleaseRepairStep } from "@/lib/agents/darwin/release-repair";
 import { AUDIENCE_RELABEL_VERSION, dryRunFullTotals, runAudienceRelabel, type AudienceRelabelMode } from "@/lib/agents/darwin/audience-relabel";
 import { runDailyBrief } from "@/lib/agents/daily-brief";
+import { hamiltonHealthDetail } from "@/lib/hamilton/health-check";
 import { runSundayMaintenance, summarizeSundayMaintenance } from "@/lib/agents/deming/sunday-maintenance";
 import { MONTHLY_REVIEW_VERSION, runMonthlyReview, summarizeMonthlyReview } from "@/lib/agents/deming/monthly-review";
 import { runFeeAlertDispatch, summarizeFeeAlertDispatch } from "@/lib/agents/fee-alerts";
@@ -120,6 +122,7 @@ import { benchmarkHealthDetail, runBenchmarkHealth, summarizeBenchmarkHealth } f
 import { playbookContradictionsDetail, runPlaybookContradictions, summarizePlaybookContradictions } from "@/lib/agents/deming/playbook-contradictions";
 import { dataQualityDetail, runDataQuality, summarizeDataQuality } from "@/lib/agents/deming/data-quality";
 import { readSourceHealth, sourceHealthDetail, summarizeSourceHealth } from "@/lib/agents/hoovie/source-health";
+import { filingsReconcileDetail, runFilingsReconcile, summarizeFilingsReconcile } from "@/lib/agents/deming/filings-reconcile";
 import { knoxMissesDetail, runKnoxMisses, summarizeKnoxMisses } from "@/lib/agents/deming/knox-misses";
 import { runBayesLedger, summarizeBayesLedger, BAYES_LEDGER_VERSION } from "@/lib/agents/bayes/ledger";
 import { runScheduleCheck, summarizeScheduleCheck, SCHEDULE_CHECK_VERSION } from "@/lib/agents/atlas/schedule-check";
@@ -427,7 +430,7 @@ async function executeAgenticStep(
 
   // Hamilton's paid answer eval (#1079): a provider step, capped at five paid samples a day.
   if (step.stepKey === "hamilton-paid-answer-eval") {
-    const { runPaidAnswerEval } = await import("@/lib/hamilton/paid-answer-eval");
+    const { runPaidAnswerEval, shadowCountsLine } = await import("@/lib/hamilton/paid-answer-eval");
     const result = await runPaidAnswerEval({ agentRunId: run.id });
     const memo = result.paths[0];
     const names: Record<string, string> = { simulate: "Simulate", written_answer: "Written answer", report: "Report answer page" };
@@ -437,7 +440,8 @@ async function executeAgenticStep(
       .join("");
     return {
       status: "completed",
-      summary: result.note ?? `Wrote ${memo.passed} of ${memo.answers} paid memos (cap ${result.cap} a day, ${result.usedBefore} used before); ${memo.correctness.correct} of ${memo.correctness.checked} checked tie to the live catalog.${simulateLine}`,
+      // The shadow gate's last-week counts ride on every run, readers' answers apart from the eval's (#1077).
+      summary: `${result.note ?? `Wrote ${memo.passed} of ${memo.answers} paid memos (cap ${result.cap} a day, ${result.usedBefore} used before); ${memo.correctness.correct} of ${memo.correctness.checked} checked tie to the live catalog.${simulateLine}`}${shadowCountsLine(result.shadow)}`,
       detail: { ...result },
     };
   }
@@ -503,6 +507,19 @@ async function executeAgenticStep(
       // A quarterly re-check run asks discovery to re-validate every link and re-search
       // dead and needs-human banks; Magellan reads `recheck` from the run params.
       const recheck = laneRecheckParam(params);
+      // Each document's own stated date, kept apart from when it was read; a schedule dated more
+      // than two years ago goes to this step's freshness search (#1878, magellan/stated-date.ts).
+      // Waits for its columns (schema_ready false until the migration runs). Never fails the step.
+      // A pass that throws leaves its error in the step detail, so a broken pass is visible.
+      let statedDates: StatedDatePassResult | { error: string } | null = null;
+      if (step.stepKey === "discover") {
+        try {
+          statedDates = await runStatedDatePass(sql, { runId: run.id, stepId: step.id, dryRun: run.runKind === "dry_run" });
+        } catch (error) {
+          console.error("Stated date pass failed:", error);
+          statedDates = { error: error instanceof Error ? error.message : String(error) };
+        }
+      }
       const discovery = await runMagellanDiscovery({
         runId: run.id,
         stepId: step.id,
@@ -528,6 +545,7 @@ async function executeAgenticStep(
         status: "completed",
         summary: `Magellan processed ${discovery.processed.toLocaleString()} institutions and discovered ${discovery.discovered.toLocaleString()} fee schedule URLs (${discovery.retryAfter.toLocaleString()} retry later, ${discovery.dead.toLocaleString()} no source, ${discovery.needsHuman.toLocaleString()} need human review).`,
         detail: {
+          stated_dates: statedDates,
           link_outcomes: linkOutcomes,
           batch_review: batchReview,
           page_classifier: { ...pageClassifier, scored_with: discovery.pageClassifier },
@@ -554,6 +572,9 @@ async function executeAgenticStep(
           kept_refused_answers: discovery.keptRefusedAnswers?.kept ?? 0,
           kept_refused_answer_samples: discovery.keptRefusedAnswers?.samples ?? [],
           search_miss_lessons: discovery.searchMisses,
+          // Freshness finds that kept the link: the page found states no date later than the old one's.
+          stated_date_refusals: discovery.statedDateRefusals.length,
+          stated_date_refusal_samples: discovery.statedDateRefusals.slice(0, 10),
           discovery_limit: discovery.limit,
           dry_run: discovery.dryRun,
           recheck,
@@ -571,6 +592,8 @@ async function executeAgenticStep(
       };
     }
     case "fetch": {
+      // The saved-link pass's budget counts from the step's start, not its own (#1881 review).
+      const fetchStepStartedAt = Date.now();
       const recheck = laneRecheckParam(params);
       const fetched = await runMagellanFetch({
         runId: run.id,
@@ -608,6 +631,7 @@ async function executeAgenticStep(
             fetchImpl: feeSourceFetch,
             runId: run.id,
             stepId: step.id,
+            deadline: fetchStepStartedAt + SAVED_LINK_BUDGET_MS,
             institutionId: numericRunParam(params, ["institution_id"]) ?? null,
           });
         } catch (error) {
@@ -1081,9 +1105,13 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId: numericRunParam(params, ["institution_id"]),
       });
-      const editionNote = editions.holds + editions.restores + editions.takeovers > 0
-        ? ` Schedule editions: ${editions.holds.toLocaleString()} live fee(s) from schedules not in effect yet, ${editions.restores.toLocaleString()} now in effect, ${editions.takeovers.toLocaleString()} older-edition line(s) (${editions.live && !editions.dryRun ? `${editions.held.length.toLocaleString()} held, ${editions.restored.length.toLocaleString()} restored, ${editions.retired.length.toLocaleString()} retired` : "dry run or switch off: nothing written"}).`
+      // T1: what an edition line past a page's menu would add while EDITION_LATE_HEADING_LIVE is off.
+      const lateEditionNote = editions.lateHeadingWouldHold > 0
+        ? ` Edition lines past the menu (switch off, nothing written): ${editions.lateHeadingWouldHold.toLocaleString()} more live fee(s) would come down.`
         : "";
+      const editionNote = lateEditionNote + (editions.holds + editions.restores + editions.takeovers > 0
+        ? ` Schedule editions: ${editions.holds.toLocaleString()} live fee(s) from schedules not in effect yet, ${editions.restores.toLocaleString()} now in effect, ${editions.takeovers.toLocaleString()} older-edition line(s) (${editions.live && !editions.dryRun ? `${editions.held.length.toLocaleString()} held, ${editions.restored.length.toLocaleString()} restored, ${editions.retired.length.toLocaleString()} retired` : "dry run or switch off: nothing written"}).`
+        : "");
       // #1909: fees read from a bank's Spanish copy of a schedule whose English line is live
       // (translated-copy-check.ts); a report only on a dry run or with its switch off.
       const translatedCopy = await recheckTranslatedCopies(tx, {
@@ -2269,7 +2297,7 @@ async function executeAgenticStep(
           card_product_pending_samples: guard.cardProductPendingSamples,
           // v84: the heading read failed, so generic monthly charges were judged by name and line only.
           heading_read_failed: guard.headingReadFailed,
-          // v85: the box section read failed, so late payments were judged by name and line only.
+          // v86: the box section read failed, so late payments were judged by name and line only.
           box_section_read_failed: guard.boxSectionReadFailed,
           category_guard_limit: guard.limit,
           rollback_batch_id: guard.rollbackBatchId,
@@ -2503,6 +2531,8 @@ async function executeAgenticStep(
           lines: result.brief.lines,
           needs_you: result.brief.needsYou?.map((item) => ({ id: item.id, severity: item.severity, title: item.title })) ?? null,
           funnel: result.funnel,
+          // Hamilton's health check (#1921): each probe's verdict, so a failure is on the run too.
+          hamilton_health: result.hamilton ? hamiltonHealthDetail(result.hamilton) : { error: result.hamiltonError },
         },
       };
     }
@@ -2746,6 +2776,12 @@ async function executeAgenticStep(
       // completeness, #2228) and one over Atlas's newest table sizes.
       const report = await readSourceHealth({ db: tx });
       return { status: "completed", summary: summarizeSourceHealth(report), detail: sourceHealthDetail(report) };
+    }
+    case "deming-filings-reconcile": {
+      // Read-only (#1925, T3): shown bank and credit-union figures against the stored filing lines,
+      // for a daily draw of institutions over the newest 12 quarters, under a 20 s statement timeout.
+      const report = await runFilingsReconcile({ db: tx, now: new Date() });
+      return { status: "completed", summary: summarizeFilingsReconcile(report), detail: filingsReconcileDetail(report) };
     }
     case "deming-knox-misses": {
       // #1099: writes only eval_cases (new missed-fee cases and each case's replay); never a fee row.

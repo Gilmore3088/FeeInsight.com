@@ -385,7 +385,7 @@ export function bindWrittenAnswer(input: BindWrittenAnswerInput): NarrativeBindi
 const OMIT_REASONS = new Set<OmitReason>([
   "advice", "instruction_text", "no_evidence", "wrong_institution", "gap_as_fee",
   "wrong_direction", "wrong_period", "wrong_unit", "conflicting_sources", "median_as_fee",
-  "wrong_basis", "account_as_subject", "premise_contradicted", "premise_unsupported",
+  "wrong_basis", "account_as_subject", "premise_contradicted", "premise_unsupported", "wrong_category",
 ]);
 
 /** True for an omit reason a saved binding or saved claims may carry. */
@@ -416,6 +416,65 @@ export function readNarrativeBinding(value: unknown): NarrativeBinding | null {
     ...(basis.length > 0 ? { readingBasis: basis.map((b) => ({ text: b.text as string, basis: b.basis as string })) } : {}),
     ...(strings(obj.corrections) && obj.corrections.length > 0 ? { corrections: obj.corrections } : {}),
   };
+}
+
+/**
+ * A binding as a reader-facing response sends it: each left-out sentence by its reason only.
+ * `readNarrativeBinding` cannot read it back (it rejects an omitted entry with no text), so it is
+ * never for a saved row; the Analyze screen reads a sent one with `readSentNarrativeBinding`.
+ */
+export interface ReaderNarrativeBinding extends Omit<NarrativeBinding, "omitted"> {
+  omitted: Array<{ reason: OmitReason }>;
+}
+
+/**
+ * One sentence as both splitters see it, for comparing a gate cut with a binding sentence. The
+ * gate's split (`gateSentences`) strips a list marker or a blockquote marker; the binding's
+ * (`splitIntoSentences`) strips a list marker and then a blockquote marker, so on a `- > ...` line
+ * their texts differ. Every leading list and blockquote marker goes here, on both sides.
+ */
+export function sentenceMatchKey(text: string): string {
+  return text.trim().replace(/^(?:(?:[-*+]|\d+\.)\s+|>\s*)+/, "").trim();
+}
+
+/**
+ * The binding a buffered JSON response may carry (#1077 follow-up). It never holds the text of a
+ * sentence the reader's view left out: the binding's omitted sentences keep their reason and their
+ * count but lose their text, and a sentence the gate cut from the view (`cut`) is dropped from the
+ * supported, reading and basis lists (matched by `sentenceMatchKey`). Keys keep the binding's own
+ * order, so a binding with nothing omitted or cut serialises exactly as before. The saved row keeps
+ * the full binding (reports read it server side). A held streamed Analyze answer sends it too, with
+ * text that no longer holds the left-out sentences; a stream that is not held (no held line, or no
+ * mode) still sends the full binding, since its text streams before the binding is known.
+ */
+export function readerNarrativeBinding(binding: NarrativeBinding, cut: Iterable<string> = []): ReaderNarrativeBinding {
+  const drop = new Set([...cut].map(sentenceMatchKey));
+  const kept = (text: string) => !drop.has(sentenceMatchKey(text));
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(binding)) {
+    if (key === "supported") out[key] = binding.supported.filter((s) => kept(s.text));
+    else if (key === "interpretation") out[key] = binding.interpretation.filter(kept);
+    else if (key === "omitted") out[key] = binding.omitted.map((o) => ({ reason: o.reason }));
+    else if (key === "readingBasis") out[key] = (binding.readingBasis ?? []).filter((b) => kept(b.text));
+    else out[key] = value;
+  }
+  return out as unknown as ReaderNarrativeBinding;
+}
+
+/**
+ * A binding the route sent to the screen (#1077 follow-up): a full binding, or the reader binding
+ * of a held streamed answer, whose omitted entries carry only a reason. Each such entry reads with
+ * empty text, which drops nothing (`trimmedSet` skips it), so its reason and count stay. Anything
+ * else malformed reads as no binding, as with `readNarrativeBinding`.
+ */
+export function readSentNarrativeBinding(value: unknown): NarrativeBinding | null {
+  const obj = record(value);
+  if (!obj || !Array.isArray(obj.omitted)) return readNarrativeBinding(value);
+  const omitted = obj.omitted.map((entry) => {
+    const item = record(entry);
+    return item && item.text === undefined ? { text: "", ...item } : entry;
+  });
+  return readNarrativeBinding({ ...obj, omitted });
 }
 
 const LIST_MARKER = /^(\s*(?:[-*+]|\d+\.)\s+|\s*>\s*)/;
@@ -452,7 +511,8 @@ function sectionsWithout<T extends WrittenAnswerSections>(sections: T, drop: Rea
   };
 }
 
-const trimmedSet = (texts: readonly string[]) => new Set(texts.map((text) => text.trim()));
+/** The texts to drop, trimmed; an empty text (a sent binding's left-out entry) drops nothing. */
+const trimmedSet = (texts: readonly string[]) => new Set(texts.map((text) => text.trim()).filter(Boolean));
 
 /** The sections as saved: the sentences the records contradict are left out; the rest stays as written. */
 export function withoutOmitted<T extends WrittenAnswerSections>(sections: T, binding: NarrativeBinding | null | undefined): T {

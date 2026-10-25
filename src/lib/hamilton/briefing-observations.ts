@@ -68,22 +68,17 @@ const OFF_BRIEFING = new Set(["study:inferred_items_paid"]);
 
 /**
  * What stands out this month, at most three. Overdraft leads only when it is itself unusual: a fee
- * at its peers' median is in the scorecard, not here. A fee whose peers charge it on mixed bases
- * (per item and monthly, say) has no single median to stand out from, so it is left out; so is
- * the inferred items-paid study, whose filing year runs behind the month.
+ * at its peers' median is in the scorecard, not here. The inferred items-paid study is left out,
+ * as its filing year runs behind the month. Every median compares one charging basis per category
+ * (statistics rule 9, #1901), so no position needs holding back as mixed.
  */
 export function buildAttentionItems(
   briefing: Briefing | null,
-  options: { mixedBasis?: ReadonlySet<string>; limit?: number } = {},
+  options: { limit?: number } = {},
 ): AttentionItem[] {
   if (!briefing) return [];
   const limit = options.limit ?? 3;
-  const mixed = options.mixedBasis ?? new Set<string>();
-  const kept = briefing.observations.filter(
-    (o) =>
-      !OFF_BRIEFING.has(o.id) &&
-      !(o.kind === "market_position" && o.feeCategory != null && mixed.has(o.feeCategory)),
-  );
+  const kept = briefing.observations.filter((o) => !OFF_BRIEFING.has(o.id));
   const flagged = kept.find((o) => o.feeCategory === FLAGSHIP_FEE && o.kind === "market_position");
   const ordered = flagged ? [flagged, ...kept.filter((o) => o !== flagged)] : kept;
   const items = ordered.map(fromObservation).slice(0, limit);
@@ -112,9 +107,8 @@ export interface BriefingOverview {
 export function buildBriefingOverview(
   briefing: Briefing,
   stateLabel: string | null,
-  mixedBasis: ReadonlySet<string> = new Set(),
 ): BriefingOverview {
-  const banded = briefing.positions.filter((p) => p.band && !mixedBasis.has(p.feeCategory));
+  const banded = briefing.positions.filter((p) => p.band);
   const higher = banded.filter((p) => p.current > p.band!.p75).length;
   const lower = banded.filter((p) => p.current < p.band!.p25).length;
   const feesChangedNearby = briefing.observations.filter((o) => o.kind === "competitor_move").length;

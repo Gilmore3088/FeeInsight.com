@@ -1129,7 +1129,16 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   `older_edition: #<doc> effective <date>`, its verified row rejected with the `older_edition` flag.
   Step detail `edition_effective_check`, event `darwin.edition_effective_check`. Dry run Oct 20
   (prod, read-only): 166 live fees on 10 documents at 8 institutions would be held; no older
-  edition retires yet.
+  edition retires yet. v2 (T1, Oct 25): a web page's menu fills the first 400 characters, so the
+  schedule's own edition line further down (`lateEdition`: a title naming the whole schedule with
+  "Effective <date>" under it, or a line that is only the schedule's name and "Effective <date>",
+  ending at its date; a bare "schedule" or one section's "<X> Fees" never counts; not when
+  the page calls its prices current, announces a new schedule or links one, dates a contents entry
+  or dates two editions) is read too, behind
+  `EDITION_LATE_HEADING_LIVE` (on since James's yes, Oct 25; while off the step reports
+  `late_heading_would_hold` and holds nothing on that account). Each document's text comes once per read, up to 8,000 characters only
+  where a late edition line can be (`editionWindowSql`). Dry run Oct 25: 0 holds today; 1 more with
+  the switch on (fee 149487, Allentown FCU's 2027 newsletter schedule, doc 36178).
 - Canadian bank documents (`canadian-document-check.ts`, #2022, James's "Do all three", Oct 19).
   Natbank (2675), a Florida bank owned by National Bank of Canada, had 12 live fees read from the
   parent's Canadian chequing page and personal fee guide. Every institution here is U.S.-chartered,
@@ -1604,7 +1613,7 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v85 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v85 (Oct 25, #1916): a late
+- The guard is at v86 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v86 (Oct 25, #1916): a late
   payment its stored text prints in a safe deposit box section (`box_section`, read by `withBoxSection`
   with `boxSectionLateFee`, the detector Knox v110 and source check v24 share) is the box's late rent
   charge: it fails `late_payment` and re-files to `safe_deposit_box` (`refileFromLine`). Hamilton's live
@@ -1618,6 +1627,14 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   71846/155276, 78842/78835, 84270/153200, 101143/153357, 116960/157002, 143901/13520,
   154848/92156) and 35992 is the second copy of 9785 at its bank, so those 12 go to the second look
   and come down as duplicates.
+- v86 (Oct 25, #1831): a refundable safe deposit box key deposit or the
+  box's security deposit (`SAFE_DEPOSIT_KEY_DEPOSIT`) fails the safe deposit box rule, as v66 does for
+  the night deposit. A lost, replaced or duplicate key, drilling, a lock change or re-key, a
+  non-refundable or forfeited deposit and the box's annual or rental fee stay
+  (`SAFE_DEPOSIT_KEY_DEPOSIT_EXEMPT`, each word on its noun); a "Rental - Key Deposit" header
+  does not. No type holds a key deposit, so the live ones go to the second look and come down. Its
+  live re-check is the guard catch-up; the read-only dry run (Oct 25) counted 110 live fees at 109
+  institutions, each a key or security deposit on its own stored schedule.
 - v84 (Oct 25, #1788): a monthly
   maintenance fee named only as a monthly fee or service charge (`genericMonthlyCharge`: "Monthly
   fee", "Service charge for six or more accounts") fails when the cell before its name on its own
@@ -1870,7 +1887,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `AUDIENCE_RELABEL_VERSION` | `darwin.audience_relabel` | v4 | `darwin/audience-relabel.ts` |
 | `DARWIN_ADJUDICATE_STRATEGY` | `verify.adjudicate` | v2 | `darwin/adjudicate.ts` |
 | `DARWIN_CATEGORY_MODEL_STRATEGY` | `verify.category_model` | v1 | `darwin/category-model.ts` |
-| `EDITION_CHECK_VERSION` | `darwin.edition_effective_check` | v1 | `darwin/edition-effective-check.ts` |
+| `EDITION_CHECK_VERSION` | `darwin.edition_effective_check` | v2 | `darwin/edition-effective-check.ts` |
 | `DARWIN_PEER_STRATEGY` | `verify.peer_range` | v5 | `darwin/peer-checks.ts` |
 | `DARWIN_SECOND_SOURCE_STRATEGY` | `verify.second_source` | v2 | `darwin/peer-checks.ts` |
 | `DARWIN_RELEASE_STRATEGY` | `verify.release` | v4 | `darwin/release-held.ts` |

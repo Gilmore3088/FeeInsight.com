@@ -7,6 +7,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const MAGELLAN_LESSONS: AgentLesson[] = [
   {
+    id: "issue-1878-stated-date-not-read-date",
+    agent: "magellan",
+    stage: "discover",
+    lesson: "A fetch date says when a page was asked for, not how old the schedule is: record the date the document itself states apart from when it was read. A schedule's own effective, revised or currency line (\"As of January 1, 2026\", \"FEES CURRENT AS OF: August 3, 2026\", \"accurate as of\") dates it, and the latest such line wins; a rate's effective date (\"Rates effective September 1, 2024\") does not, and an upload-path year (\"/uploads/2017/08/\") is read only when the text states no date at all. Send a main link dated more than two years ago back to discovery. Any freshness search without a wrong-document finding, whatever started it (a stated date, an effective year or an address year), is held to the old document's date (its stated date, else the year the search read, to 31 December): a page that states a date replaces the link only when that date is later, and a dated line about rates on that page (\"Rates current as of October 24, 2026\") does not count. Refuse an undated page only when the old document's own text states a date (an effective or printed date); against a date known only from the address or the older arm's effective year, an undated page replaces the link as before, or about half of the needed replacements are lost.",
+    why: "source_documents kept only fetch dates, so a fee PDF named 2022 and fetched in October looked current on /fees (James's Oct 18 audit). The first reader then called current schedules old: unclecu.org's /uploads/2017/ PDF says \"As of January 1, 2026\", riegelfcu.org's \"FEES CURRENT AS OF: August 3, 2026\" sat under \"Rates effective September 1, 2024\", and the freshness search would have swapped those links for any page that passed the fee-page check (#2615 review). The older address-year arm still could: hebfcu.org's /wp-content/uploads/2022/03/TISA.pdf says \"accurate as of October 12, 2026\" (institution 6072), and a rate page stamped with today's date passed as newer.",
+    evidence: { issues: [1878], prs: [2615], files: ["src/lib/agents/magellan/stated-date.ts", "src/lib/agents/magellan/discovery.ts", "docs/project/findings/2026-10-25-read-date-is-not-schedule-date.md"] },
+    appliesTo: ["discover"],
+    since: "2026-10-25",
+  },
+  {
     id: "issue-1677-charge-the-step-that-erred",
     agent: "magellan",
     stage: "discover",
@@ -150,9 +160,9 @@ export const MAGELLAN_LESSONS: AgentLesson[] = [
     id: "pr-2074-fetch-saved-link-once",
     agent: "magellan",
     stage: "fetch",
-    lesson: "When a bank's saved fee link has no stored copy and is a different page from the remembered address the plain fetch asks for, fetch it once as a copy beside the remembered one, changing neither that address, the bank's failure count nor its saved link, and store it only when it passes the fee-candidate check. Skip a bank whose profile a person's correction locks, or that is offline or set to manual review, and after a failed try wait 7 days before the next. While SAVED_LINK_FETCH_LIVE is off, only report the banks it would fetch.",
+    lesson: "When a bank's saved fee link has no stored copy and is a different page from the remembered address the plain fetch asks for, fetch it once as a copy beside the remembered one, changing neither that address, the bank's failure count nor its saved link, and store it only when it passes the fee-candidate check. Skip a bank whose profile a person's correction locks, or that is offline or set to manual review, and after a failed try wait 7 days before the next. The pass is on (James, Oct 25); with SAVED_LINK_FETCH_LIVE off it only reports the banks it would fetch.",
     why: "The plain fetch asks for the remembered address before the saved link, so a link re-pointed by a person, an answer key or a registry load was never fetched: on Oct 19, 308 active banks (204 with live fees) had such a saved link and no copy of it, and for 220 documents that were no longer any bank's source the saved link had never been fetched.",
-    evidence: { issues: [1881, 1945], prs: [2074, 2446], files: ["docs/project/findings/2026-10-19-saved-link-never-fetched.md", "src/lib/agents/magellan/saved-link-fetch.ts"] },
+    evidence: { issues: [1881, 1945], prs: [2074, 2446, 2610], files: ["docs/project/findings/2026-10-19-saved-link-never-fetched.md", "src/lib/agents/magellan/saved-link-fetch.ts"] },
     appliesTo: "all",
     since: "2026-10-19",
   },
