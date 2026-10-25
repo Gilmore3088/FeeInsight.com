@@ -402,7 +402,7 @@ export const GUTENBERG_LESSONS: AgentLesson[] = [
     stage: "learning feedback",
     lesson: "Write a takedown lesson for every takedown cycle, not once per fee. A fee taken down, restored and taken down again teaches again: key the later lesson by when that takedown happened, skip a fee only when a takedown lesson was written after its last restore, and never let a policy hold's own row stand in for a real takedown's lesson. A re-run of the same takedown must upsert the same row.",
     why: "The feedback sync keyed takedown lessons per fee and skipped any fee that had one, so 1,386 fees taken down again after a logged restore (Oct 6 to Oct 25) taught nothing, and a fee brought back from the account type hold would never teach on a real takedown.",
-    evidence: { issues: [1648], prs: [], files: ["src/lib/agents/learning/feedback-sync.ts", "src/lib/agents/learning/feedback-sync.db.test.ts"] },
+    evidence: { issues: [1648], prs: [2587], files: ["src/lib/agents/learning/feedback-sync.ts", "src/lib/agents/learning/feedback-sync.db.test.ts"] },
     appliesTo: ["publish-sweeps"],
     since: "2026-10-25",
   },
