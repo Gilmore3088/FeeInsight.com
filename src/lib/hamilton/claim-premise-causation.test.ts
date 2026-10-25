@@ -189,6 +189,10 @@ describe("question figures that are not premises (PR #2572 review)", () => {
       expect(other.omitted, text).toEqual([]);
       expect(other.supported, text).toHaveLength(1);
     }
+    // Someone else named elsewhere in the sentence does not hide the reader's own fee or figure.
+    for (const text of ["Your $35 overdraft fee is above your market's typical fee.", "Your members pay $35 for an overdraft."]) {
+      expect(bindNarrative({ text, evidence: FEES, names, accountInstitutionId: BANK_A }).omitted.map((o) => o.reason), text).toEqual(["account_as_subject"]);
+    }
   });
 });
 

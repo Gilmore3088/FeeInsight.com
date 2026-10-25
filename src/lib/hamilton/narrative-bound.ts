@@ -353,8 +353,12 @@ function figureClauses(text: string, figures: readonly NarrativeFigure[]): strin
  */
 const PERSONAL = /\b(?:your|yours)\b/i;
 
-/** "Your" naming someone else in the reader's world ("your nearest competitor", "your market"): not the reader's own figure. */
-const YOUR_OTHER = /\byour\s+(?:[a-z-]+\s+){0,2}(?:competitors?|competition|rivals?|markets?|peers?|peer\s+group|area|region|footprint|state|county|city|neighbou?rs?|members|customers|branches)\b/i;
+/**
+ * "Your" naming someone else in the reader's world ("your nearest competitor", "your market"). It is
+ * taken out before the sentence is read for "your", so "your fee income … above your peers" is still
+ * the reader's own figure. Members, customers and branches are the reader's own institution's.
+ */
+const YOUR_OTHER = /\byour\s+(?:[a-z-]+\s+){0,2}(?:competitors?|competition|rivals?|markets?|peers?|peer\s+group|area|region|footprint|state|county|city|neighbou?rs?)\b/gi;
 
 /**
  * How the sentence names a figure: "median" when a median word sits within 40 characters of it,
@@ -454,7 +458,7 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
     if (named.length > 0) carried = named;
     // Whose filing figure the sentence states: "your" with no institution named is the reader's own,
     // no subject at all is the research subject's; null when that institution is not known.
-    const personal = named.length === 0 && PERSONAL.test(text) && !YOUR_OTHER.test(text);
+    const personal = named.length === 0 && PERSONAL.test(text.replace(YOUR_OTHER, ""));
     const claimSubjects: number[] | null = personal ? (account !== null ? [account] : null)
       : subjects.length > 0 ? subjects : research !== null ? [research] : null;
 
