@@ -6,6 +6,9 @@ import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { paidReturnedUnits, PAID_RETURNED_EVENT_FLAG, PAID_RETURNED_ELIGIBILITY_FLAG } from "@/lib/custom-report/paid-returned-events";
 
+// The custom types every connection here is opened with (connection.ts); a bare `postgres.Sql` is `Sql<{}>`, which TypeScript may refuse a typed connection.
+type PgTypes = { numeric: number; json: unknown; text: string };
+
 vi.mock("@/lib/agents/fee-source-fetch", async original => ({
   ...await original<typeof import("@/lib/agents/fee-source-fetch")>(),
   feeSourceFetch: () => { throw new Error("Paid/returned native fixtures forbid source/provider requests"); },
@@ -40,7 +43,7 @@ function intercept(tx: Db, before: (sql: string) => Promise<void>): Db {
 }
 
 describe.skipIf(!connection)("Prospective owned paid/returned events in actual PostgreSQL (#1918)", () => {
-  let db: postgres.Sql, competitor: postgres.Sql, observer: postgres.Sql, appSql: Db;
+  let db: postgres.Sql<PgTypes>, competitor: postgres.Sql<PgTypes>, observer: postgres.Sql<PgTypes>, appSql: Db;
   let extract: typeof import("./extract");
   let darwin: typeof import("../darwin/verify");
   let publish: typeof import("../hamilton/publish");
