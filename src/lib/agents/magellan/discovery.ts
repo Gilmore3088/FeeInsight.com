@@ -132,6 +132,17 @@ export const BUSINESS_RESERVED_SLOTS = 3;
  */
 export const UPGRADE_RESERVED_SLOTS = 3;
 export const FRESHNESS_RESERVED_SLOTS = 2;
+type WrongAt = Date | string | null | undefined;
+
+/** Why a link is searched again: the newest finding that it gives wrong fees. Pure. */
+export function staleWrongReason(marks: { confirmed_at: WrongAt; audit_at: WrongAt; hand_at: WrongAt }): string {
+  const time = (value: WrongAt) => (value == null ? -Infinity : new Date(value).getTime());
+  const newest = Math.max(time(marks.confirmed_at), time(marks.audit_at), time(marks.hand_at));
+  if (marks.hand_at != null && time(marks.hand_at) === newest) return "an admin named a wrong document as the cause of a fee read from it";
+  if (marks.audit_at != null && time(marks.audit_at) === newest) return "Deming's audit found fees read from it came from the wrong document";
+  return "fees read from it were confirmed wrong on a second look";
+}
+
 /**
  * Banks whose fee link looks out of date get one search for a newer schedule per version
  * (`detail.freshness_search`), in spare discovery capacity, after the upgrade searches.
@@ -1285,7 +1296,7 @@ async function selectStaleCandidates(
   const marker = JSON.stringify({ freshness_search: FRESHNESS_SEARCH_VERSION });
   const staleYear = now.getUTCFullYear() - STALE_AFTER_YEARS;
   const rows = await db<
-    Array<DiscoveryCandidateRow & { effective_year: number | null; url_year: number | null; wrong_at: string | Date | null; confirmed_at: string | Date | null; audit_at: string | Date | null; audit_urls: Array<string | null> | null; main_document_url: string | null; searched_at: string | Date | null }>
+    Array<DiscoveryCandidateRow & { effective_year: number | null; url_year: number | null; wrong_at: string | Date | null; confirmed_at: string | Date | null; audit_at: string | Date | null; audit_urls: Array<string | null> | null; hand_at: string | Date | null; hand_urls: Array<string | null> | null; main_document_url: string | null; searched_at: string | Date | null }>
   >`
     -- stale-link freshness search
     WITH due AS (
@@ -1352,7 +1363,9 @@ async function selectStaleCandidates(
                   AND f.source_url = due.fee_schedule_url
              ) AS confirmed_at,
              audit.audit_at,
-             audit.audit_urls
+             audit.audit_urls,
+             hand.hand_at,
+             hand.hand_urls
         FROM due
         -- Deming's daily audit found a live fee read from this link came from the wrong document
         -- (another bank's, an unconfirmed host or an article; #2055). The miss names the stored
@@ -1397,8 +1410,22 @@ async function selectStaleCandidates(
                   AND pa.created_at > sd.crawled_at
              )
         ) audit ON TRUE
+        -- An admin held or corrected a fee read from this link and named a wrong document as the
+        -- cause (#2057), matched to the link the same way. A person's judgement, so the copy and
+        -- the fee's state are not asked: the fee is held or replaced by then, and each hold or
+        -- correction is its own row (created_at).
+        LEFT JOIN LATERAL (
+          SELECT max(f.created_at) AS hand_at, array_agg(DISTINCT f.source_url) AS hand_urls
+            FROM pipeline_feedback f
+           WHERE f.kind IN ('admin_hold', 'admin_correction')
+             AND f.reported_by = 'human'
+             AND f.about_stage = 'discover'
+             AND f.signal = 'wrong'
+             AND f.institution_id = due.id
+             AND f.source_url IN (due.fee_schedule_url, due.main_document_url)
+        ) hand ON TRUE
     ), judged AS (
-      SELECT marked.*, GREATEST(confirmed_at, audit_at) AS wrong_at FROM marked
+      SELECT marked.*, GREATEST(confirmed_at, audit_at, hand_at) AS wrong_at FROM marked
     )
     SELECT * FROM judged
      WHERE (COALESCE(effective_year, url_year) <= ${staleYear} AND searched_at IS NULL)
@@ -1406,16 +1433,14 @@ async function selectStaleCandidates(
      ORDER BY (wrong_at IS NOT NULL) DESC, asset_size DESC NULLS LAST, id ASC
      LIMIT ${limit}
   `;
-  return rows.map(({ effective_year, url_year, wrong_at, confirmed_at, audit_at, audit_urls, ...row }) => ({
+  return rows.map(({ effective_year, url_year, wrong_at, confirmed_at, audit_at, audit_urls, hand_at, hand_urls, ...row }) => ({
     ...row,
     freshness: true,
-    // A wrong-document finding rules out the addresses it named, not only the link (#2055).
-    ...(audit_at != null ? { freshness_exclude: wrongDocumentAddresses(audit_urls) } : {}),
+    // A wrong-document finding rules out the addresses it named, not only the link (#2055, #2057).
+    ...(audit_at != null || hand_at != null ? { freshness_exclude: wrongDocumentAddresses([...(audit_urls ?? []), ...(hand_urls ?? [])]) } : {}),
     stale_reason:
       wrong_at != null
-        ? audit_at != null && (confirmed_at == null || new Date(audit_at).getTime() >= new Date(confirmed_at).getTime())
-          ? "Deming's audit found fees read from it came from the wrong document"
-          : "fees read from it were confirmed wrong on a second look"
+        ? staleWrongReason({ confirmed_at, audit_at, hand_at })
         : effective_year != null
           ? `effective ${effective_year}`
           : `address names ${url_year}`,

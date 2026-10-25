@@ -4,6 +4,7 @@ import { useId, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { holdFee, releaseFee } from "./actions";
 import { MAX_HOLD_REASON, MIN_HOLD_REASON, type HeldFee } from "@/lib/fee-hold-rules";
+import { FEE_ERROR_CAUSES, FEE_ERROR_CAUSE_LABELS, type FeeErrorCause } from "@/lib/fee-error-cause";
 
 function formatAmount(amount: number | null): string {
   if (amount === null) return "varies";
@@ -31,12 +32,14 @@ export function HoldFeeButton({
   const titleId = useId();
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
+  const [cause, setCause] = useState<FeeErrorCause>("not_sure");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   function close() {
     setOpen(false);
     setReason("");
+    setCause("not_sure");
     setError(null);
   }
 
@@ -46,7 +49,7 @@ export function HoldFeeButton({
       return;
     }
     startTransition(async () => {
-      const result = await holdFee(feeId, reason);
+      const result = await holdFee(feeId, reason, cause);
       if (!result.ok) {
         setError(result.error);
         return;
@@ -97,6 +100,22 @@ export function HoldFeeButton({
               placeholder="Wrong category: escheat fee filed as a safe deposit box fee"
               className="mt-1 h-20 w-full rounded border border-gray-300 p-2 text-xs dark:border-white/[0.12] dark:bg-transparent"
             />
+            <label className="mt-3 block text-xs font-medium text-gray-700 dark:text-gray-300" htmlFor={`${titleId}-cause`}>
+              What went wrong
+            </label>
+            <select
+              id={`${titleId}-cause`}
+              value={cause}
+              onChange={(event) => setCause(event.target.value as FeeErrorCause)}
+              className="mt-1 w-full rounded border border-gray-300 p-1.5 text-xs dark:border-white/[0.12] dark:bg-transparent"
+            >
+              {FEE_ERROR_CAUSES.map((value) => (
+                <option key={value} value={value}>{FEE_ERROR_CAUSE_LABELS[value]}</option>
+              ))}
+            </select>
+            <p className="mt-1 text-[11px] text-gray-500">
+              This sends the error back to the step that made it, so that step learns from it.
+            </p>
             {error && <p className="mt-1 text-xs text-red-600" role="alert">{error}</p>}
             <div className="mt-4 flex justify-end gap-2">
               <button type="button" className={BUTTON} onClick={close} disabled={pending}>

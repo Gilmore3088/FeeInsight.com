@@ -97,4 +97,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-20",
   },
+  {
+    id: "issue-2057-hand-fix-names-cause",
+    agent: "hamilton",
+    stage: "operator correction",
+    lesson: "A person's hold or correction of a published fee is a finding about an earlier step, not about publishing. Ask the operator what went wrong (wrong document, text lost, amount, fee type, verification), suggest the answer from what the correction changes, and file the feedback row against that stage with the fee's link, so the step that made the mistake reads it (a wrong document sends the bank's link back to be searched again).",
+    why: "Every hand correction and hold was filed as stage publish, reported by a person, so each one looked like a publishing problem and no agent learned from the errors operators fixed by hand.",
+    evidence: { issues: [2057], prs: [], files: ["src/lib/fee-error-cause.ts", "src/lib/fee-hold.ts", "src/lib/fee-corrections.ts", "src/lib/agents/magellan/discovery.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];

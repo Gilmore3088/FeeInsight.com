@@ -69,6 +69,23 @@ describe("admin fee hold", () => {
     });
   });
 
+  it("should_file_the_hold_against_the_stage_its_cause_names_with_the_fee_link_(#2057)", async () => {
+    const withLink = { ...liveRow, source_url: "https://bank.example/fees.pdf" };
+    const logged = async (cause?: Parameters<typeof holdPublishedFee>[4]) => {
+      const { db, calls } = createDb((query) => (query.includes("UPDATE published_fee_records") ? [withLink] : [{ id: 1 }]));
+      await holdPublishedFee(db, 117687, "Another bank's schedule", actor, cause);
+      const log = calls.find((call) => call.query.includes("INSERT INTO pipeline_feedback"));
+      return JSON.parse(String(log?.values[0]))[0];
+    };
+    // A wrong document goes to discover, which Magellan's stale-link search reads by bank.
+    expect(await logged("wrong_document")).toMatchObject({ about_stage: "discover", source_url: "https://bank.example/fees.pdf", evidence: { cause: "wrong_document" } });
+    expect((await logged("wrong_amount")).about_stage).toBe("extract");
+    expect((await logged("text_lost")).about_stage).toBe("read");
+    expect((await logged("verify_missed")).about_stage).toBe("verify");
+    // No answer is "not sure", filed against publishing as before.
+    expect(await logged()).toMatchObject({ about_stage: "publish", evidence: { cause: "not_sure" } });
+  });
+
   it("should_refuse_a_fee_that_is_not_live_or_already_held_and_write_nothing_else", async () => {
     const { db, calls } = createDb(() => []);
     const result = await holdPublishedFee(db, 117687, "Wrong category", actor);
