@@ -16,8 +16,9 @@ type SqlTag = typeof sql;
 
 /**
  * Knox's reader of re-read requests (#1511): Darwin's, and Deming's for a bad-name audit miss
- * (`deming/audit-misses.ts`, #2055; the "proper" name is still judged by Darwin's fragment rule, so
- * a Deming miss that is not a `sentence_end` fragment mostly settles `same_name`). Darwin's live
+ * (`deming/audit-misses.ts`, #2055). The better name is still judged by Darwin's fragment rule, not
+ * Deming's name-quality rule, so a Deming request can settle `same_name` or take a name Deming would
+ * still flag; Deming's next audit draw of the fee flags it again. Darwin's live
  * fragment check (`darwin/live-fragment-check.ts`, `LIVE_FRAGMENT_REREAD_KIND`) writes one `pipeline_feedback`
  * row per live fee whose name is a `sentence_end` fragment it cannot rename ("Paper statement fee
  * for the" $2): `reread` (evidence `kept_live: true`, the fee stays live) or `fragment_reread` (the

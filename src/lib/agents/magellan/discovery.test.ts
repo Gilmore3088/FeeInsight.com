@@ -14,6 +14,7 @@ import {
   RESUME_FIRST_PER_STEP,
   RESUME_MAX_TICKS,
   runMagellanDiscovery,
+  wrongDocumentAddresses,
   type DiscoveryResume,
   UPGRADE_SEARCH_VERSION,
   FRESHNESS_SEARCH_VERSION,
@@ -1191,9 +1192,11 @@ describe("Magellan agentic discovery", () => {
       expect(result.results.map((row) => Number(row.institutionId))).toContain(78);
       const call = db.mock.calls.find((c) => templateText(c[0]).includes("stale-link freshness search"))!;
       expect(templateText(call[0])).toContain("f.about_stage = 'discover'");
-      // The link or the address its own last fetch landed on (after redirects); a live fee; once per finding.
+      // The link or the document its own last fetch stored (after redirects); a live fee; once per finding.
       const auditQuery = templateText(call[0]).split("AS confirmed_at")[1].split("AS audit_at")[0];
-      expect(auditQuery).toContain("f.source_url IN (due.fee_schedule_url, due.profile_canonical_source_url)");
+      expect(auditQuery).toContain("f.source_url IN (due.fee_schedule_url, due.main_document_url)");
+      // The main fetch's document, never the remembered address a side copy's read can set.
+      expect(templateText(call[0])).toContain("WHERE doc.id = profile.last_successful_source_document_id");
       expect(auditQuery).toContain("fp.rolled_back_at IS NULL");
       expect(auditQuery).toContain("max(f.created_at)");
       expect(call.slice(1)).toContain("audit_miss");
@@ -1454,5 +1457,13 @@ describe("finderOrderFromHints", () => {
     const keys = finderOrderFromHints({ ...hints, source: "none" }).map((finder) => finder.key);
     expect(keys[0]).toBe("knownLink");
     expect(keys).toEqual(finderOrderFromHints(null).map((finder) => finder.key));
+  });
+});
+
+describe("wrongDocumentAddresses (#2055)", () => {
+  it("rules out the stored document and the remembered address a wrong-document finding named", () => {
+    expect(wrongDocumentAddresses("https://bank.test/fees.pdf", "https://bank.test/fees.pdf")).toEqual(["https://bank.test/fees.pdf"]);
+    expect(wrongDocumentAddresses("https://bank.test/fees.pdf", "https://other.test/x")).toEqual(["https://bank.test/fees.pdf", "https://other.test/x"]);
+    expect(wrongDocumentAddresses(null, " ")).toEqual([]);
   });
 });

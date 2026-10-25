@@ -18,8 +18,9 @@ type SqlTag = typeof sql;
  *    reads it (it replays `limit_guard` and `source_check` inputs only).
  * 2. Each miss goes to the agent that owns the mistake, in the shared learning store, as a
  *    `wrong` judgement of kind `audit_miss` with weight 0.5 (an audit is evidence, not proof):
- *    a document that is another bank's, on an unconfirmed host or an article (or a product page,
- *    a check the audit does not run today) goes to Magellan (stage discover); an amount the schedule does not support, a category it
+ *    a document that is another bank's, on an unconfirmed host or an article goes to Magellan
+ *    (stage discover; `PRODUCT_PAGE_CHECK` is listed too, but the audit does not run it, and its
+ *    product-page conflict check, `PRODUCT_PAGE_CONFLICT_CHECK`, goes to Knox); an amount the schedule does not support, a category it
  *    does not support, a perk read as a fee and a bad name go to Knox (stage extract).
  *
  * 3. Each miss reaches its owner's own queue, so it is acted on and not only stored (#2055). A
@@ -32,9 +33,9 @@ type SqlTag = typeof sql;
  *    better one, so a request for a fee whose name is fine (an amount or category miss) could
  *    rename it sideways ("Stop payment fee" to "Stop payment fee renewal") and hide the miss.
  *    A miss Magellan owns (stage discover) is picked up by Magellan's stale-link search, which
- *    reads these rows when the miss's document came from the bank's link (or the address its last
- *    fetch landed on) and the fee is still live, and searches the link again once per finding
- *    (`magellan/discovery.ts`).
+ *    reads these rows when the miss's document came from the bank's link (or is the document the
+ *    link's last fetch stored) and the fee is still live, and searches the link again once per
+ *    finding, ruling out the address the miss named (`magellan/discovery.ts`).
  *
  * A miss Hamilton's second look already holds (`pending`) is skipped: it is not a new finding.
  * Both writes need migration 20270110000045 (the `deming_audit` label and the `deming` reporter);
