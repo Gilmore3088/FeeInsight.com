@@ -20,6 +20,8 @@ import { bindNarrative, type NarrativeBinding } from "./narrative-bound";
 import { HAMILTON_VOICE } from "./voice";
 import type { Storyline, StorylineMemo, StorylineMemoResult } from "./workspace/storyline-types";
 import type { HamiltonIdentitySnapshot } from "./account-context";
+import { shadowGate, type GateShadowRecord, type TodayDecision } from "./output-gate-shadow";
+import type { GateInput } from "./output-gate";
 
 /**
  * Room for the JSON memo with headroom: at 1,800 both attempts of a live overdraft memo
@@ -217,25 +219,38 @@ export function memoProblems(draft: MemoDraft, payload: unknown, question?: stri
   // The shared gate every paid answer passes (answer-gate.ts); the checks below are the memo's own.
   const shared = checkAnswerEvidence(all, payload);
   const figureCheck = shared.figureCheck;
-  const problems: string[] = [...shared.problems];
+  const own = memoOwnProblems(draft, payload);
+  const binding = memoBinding(draft, payload, question);
+  const bound: string[] = [];
+  for (const omitted of binding?.omitted ?? []) {
+    const why = OMIT_FEEDBACK[omitted.reason];
+    if (why) bound.push(`This sentence ${why}: "${omitted.text}"`);
+  }
+  for (const line of binding?.limitations ?? []) if (line.startsWith("Sources disagree")) bound.push(`State this instead of either figure: ${line}`);
+  return { problems: [...shared.problems, ...own.factIds, ...bound, ...own.rest], figureCheck, binding };
+}
+
+/**
+ * The checks only a storyline memo makes, in memoProblems' order: its evidence fact-ID references
+ * (`factIds`), then the no-fee wording, the pointing opener, the opening line and the account
+ * institution (`rest`). The one output gate (output-gate.ts) takes the shared part.
+ */
+export function memoOwnProblems(draft: MemoDraft, payload: unknown): { factIds: string[]; rest: string[] } {
+  const all = [draft.summary, draft.board, draft.market, ...draft.questions].join("\n");
+  const factIds: string[] = [];
   const evidence = (payload as { fact_evidence?: HamiltonEvidenceBundle } | null)?.fact_evidence;
   if (evidence) {
     const allowed = new Set([...evidence.facts, ...evidence.derivations].map((fact) => fact.id));
     const referenced = draft.evidenceFactIds ?? [];
     if (allowed.size > 0 && referenced.length === 0) {
-      problems.push("The memo did not identify any supporting evidence_fact_ids from DATA.fact_evidence.");
+      factIds.push("The memo did not identify any supporting evidence_fact_ids from DATA.fact_evidence.");
     }
     const unknown = referenced.filter((id) => !allowed.has(id));
     if (unknown.length > 0) {
-      problems.push(`These evidence_fact_ids are not in DATA.fact_evidence: ${unknown.join(", ")}.`);
+      factIds.push(`These evidence_fact_ids are not in DATA.fact_evidence: ${unknown.join(", ")}.`);
     }
   }
-  const binding = memoBinding(draft, payload, question);
-  for (const omitted of binding?.omitted ?? []) {
-    const why = OMIT_FEEDBACK[omitted.reason];
-    if (why) problems.push(`This sentence ${why}: "${omitted.text}"`);
-  }
-  for (const line of binding?.limitations ?? []) if (line.startsWith("Sources disagree")) problems.push(`State this instead of either figure: ${line}`);
+  const problems: string[] = [];
   const noFee = ownFeeMissing(payload) ? all.match(NO_FEE_CLAIM) : null;
   if (noFee) problems.push(`"${noFee[0]}" reads as if the bank charges no fee. No price for its fee is in the index; say it as DATA's claims word it.`);
   const pointing = all.match(POINTING_OPENER);
@@ -253,7 +268,36 @@ export function memoProblems(draft: MemoDraft, payload: unknown, question?: stri
       problems.push(`The memo references ${home} without account-institution evidence in the storyline. Account identity alone supplies no fee or financial facts.`);
     }
   }
-  return { problems, figureCheck, binding };
+  return { factIds, rest: problems };
+}
+
+/**
+ * The one output gate's input for a memo draft (#1077 step 4), with exactly today's memo inputs:
+ * the check over the whole memo with no question (`checkAnswerEvidence(all, payload)`), the binding
+ * over its prose with the question and no account or research institution (`memoBinding`), and the
+ * memo's own checks as surface rules. The memo's own rule already covers the account institution,
+ * so the gate's account rule is left out (no account name) rather than counted twice.
+ */
+export function memoGateInput(draft: MemoDraft, payload: unknown, question: string | undefined): GateInput {
+  const own = memoOwnProblems(draft, payload);
+  const evidence = (payload as { fact_evidence?: HamiltonEvidenceBundle } | null)?.fact_evidence ?? null;
+  const identity = (payload as { identityContext?: HamiltonIdentitySnapshot } | null)?.identityContext;
+  const names = new Map<number, string>();
+  if (identity?.researchInstitutionId && identity.researchInstitutionName) names.set(identity.researchInstitutionId, identity.researchInstitutionName);
+  return {
+    surface: "memo",
+    text: [draft.summary, draft.board, draft.market, ...draft.questions].join("\n"),
+    bindText: [draft.summary, draft.board, draft.market].join("\n"),
+    evidence: { kind: "data", data: payload, bundle: evidence, names, checkQuestion: false, bindIdentity: false },
+    identity: { researchInstitutionId: identity?.researchInstitutionId ?? null, accountInstitutionId: identity?.accountInstitutionId ?? null },
+    question,
+    extra: [...own.factIds, ...own.rest],
+  };
+}
+
+/** The one output gate's shadow verdict on a memo draft, beside today's decision. */
+export function memoGateShadow(draft: MemoDraft, payload: unknown, question: string | undefined, today: TodayDecision): GateShadowRecord {
+  return shadowGate(memoGateInput(draft, payload, question), today, { path: "memo" });
 }
 
 export interface MemoClient {
@@ -310,6 +354,11 @@ export async function writeStorylineMemo(
     /** Filled with every model call the memo makes, retries included. */
     usage?: MemoUsage;
     tracking?: MemoTracking;
+    /**
+     * Given a thunk for the one output gate's shadow verdict on the draft the decision rests on
+     * (#1077 step 4). Its inputs are captured now; the caller runs it after the response.
+     */
+    onGateShadow?: (compute: () => GateShadowRecord) => void;
   } = {},
 ): Promise<StorylineMemoResult> {
   if (!options.client && !hasAnthropicApiKey("hamilton")) {
@@ -355,6 +404,12 @@ export async function writeStorylineMemo(
       continue;
     }
     const { problems, figureCheck, binding } = memoProblems(draft, payload, question);
+    // The one output gate in shadow (#1077 step 4): recorded by the caller beside this decision, never deciding.
+    // Only the decision a reader sees counts: a passing draft, or the last draft before the memo is withheld.
+    if (options.onGateShadow && (problems.length === 0 || attempt === MAX_ATTEMPTS)) {
+      const today: TodayDecision = problems.length === 0 ? "shown" : "held";
+      options.onGateShadow(() => memoGateShadow(draft, payload, question, today));
+    }
     if (problems.length === 0) {
       const memo: StorylineMemo = {
         ...draft,

@@ -4792,7 +4792,8 @@ export async function startAgentRun(input: StartAgentRunInput, transaction?: typ
   return created;
 }
 
-export type ProRequestOperation = "report" | "thesis" | "simulate_interpretation" | "ask" | "upload" | "decision" | "ask_memo";
+/** `answer_gate_shadow`: the one output gate's shadow verdict on a written answer (#1077 step 4, output-gate-shadow-store.ts). */
+export type ProRequestOperation = "report" | "thesis" | "simulate_interpretation" | "ask" | "upload" | "decision" | "ask_memo" | "answer_gate_shadow";
 
 export interface RecordProRequestInput {
   operation: ProRequestOperation;
