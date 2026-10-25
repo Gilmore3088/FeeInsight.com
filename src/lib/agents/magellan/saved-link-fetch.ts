@@ -52,7 +52,7 @@ export const SAVED_LINK_FETCH_LIVE = true;
 /** Banks tried per fetch step. */
 export const SAVED_LINK_BANKS_PER_STEP = 10;
 export const SAVED_LINK_RETRY_DAYS = 7;
-/** The whole pass, so the fetch step's other passes still get their time. */
+/** The whole pass, counted from the fetch step's start (run-store.ts), so the step's other passes still get their time. */
 export const SAVED_LINK_BUDGET_MS = 45_000;
 
 export interface SavedLinkRow extends FetchCandidateRow {
