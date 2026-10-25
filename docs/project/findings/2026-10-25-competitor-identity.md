@@ -53,9 +53,10 @@ record of another institution does.
   names both, so the $35 can still bind to a $35 record of Bank A.
 - A later sentence that names nobody now carries the competitor ("Bank B charges $35. It also
   charges $30 to stop a check."), as it would for a profile-named bank.
-- Names are found by plain substring (`namedIn`). A competitor whose name sits inside another's
-  ("First Bank" in "First Bank of Texas"), or a short name that is also an ordinary word, can be
-  read as named when it is not.
+- Names are found by plain substring (`namedIn`). The longest name is matched first and blanked,
+  so "Capital Bank of Texas" is not also read as "Capital Bank" (a review finding, fixed here).
+  A short name that is also an ordinary phrase ("Community Bank" in "as a community bank") is
+  still read as named, and a shortened name ("Wells Fargo" for "Wells Fargo Bank") is missed.
 - `document_url` and `document_date` are the first category's `MAX(document_url)` and
   `MAX(updated_at)` per competitor, as the existing exhibit uses them. That is a pointer to a
   schedule and the catalog's last update, not the document behind each price, nor its date.

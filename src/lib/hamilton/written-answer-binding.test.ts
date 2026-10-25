@@ -277,6 +277,15 @@ describe("local competitors in a written answer (#1077, Cycle A defect 2)", () =
     expect(binding.omitted).toEqual([]);
   });
 
+  it("a competitor whose name holds the subject's name is still the competitor", () => {
+    // Invented: "Capital City Bank of Texas" contains "Capital City Bank".
+    const longer = { ...LOCAL, competitors: [{ ...LOCAL.competitors[0], name: "Capital City Bank of Texas" }] };
+    const text = "Capital City Bank charges $37 for an overdraft. Capital City Bank of Texas charges $35 for an overdraft.";
+    const binding = bind(text, [SUBJECT, longer])!;
+    expect(binding.supported).toEqual([{ text: "Capital City Bank charges $37 for an overdraft.", factIds: ["fee:published:11"] }]);
+    expect(binding.omitted).toEqual([{ text: "Capital City Bank of Texas charges $35 for an overdraft.", reason: "wrong_institution" }]);
+  });
+
   it("control: the subject's own fee still binds to its record", () => {
     const binding = bind("Capital City Bank charges $35 for an overdraft on a second item.", [SUBJECT, LOCAL])!;
     expect(binding.supported).toEqual([{ text: "Capital City Bank charges $35 for an overdraft on a second item.", factIds: ["fee:published:12"] }]);
