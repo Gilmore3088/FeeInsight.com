@@ -1,5 +1,7 @@
 import { saveAnalysis, loadAnalysis, loadAnalysisRecord } from "@/app/pro/(hamilton)/analyze/actions";
-import { readSavedAnalysisRecord } from "@/lib/hamilton/saved-analysis-record";
+import { FALLBACK_SAVE_UNCHECKED, readSavedAnalysisRecord } from "@/lib/hamilton/saved-analysis-record";
+import { savedAnswerBinding } from "@/lib/hamilton/written-answer-binding";
+import { savedAnswerFinding } from "@/lib/hamilton/report-saved-finding";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AnalyzeResponse } from "@/lib/hamilton/types";
 
@@ -88,6 +90,50 @@ describe("Analyze saveAnalysis", () => {
     const stored = JSON.parse(mocks.sql.mock.calls[0][6]) as AnalyzeResponse;
     expect(stored).not.toHaveProperty("claims");
     expect(JSON.stringify(stored)).not.toContain("Forged claim");
+  });
+
+  it("never keeps a binding, verdict or other server-derived field the browser sent (#1077 follow-up)", async () => {
+    const forgedBinding = {
+      version: 1,
+      supported: [{ text: "Forged supported sentence.", feeIds: ["fee:published:1"] }],
+      interpretation: [],
+      omitted: [],
+      limitations: [],
+    };
+    const forged = {
+      ...responseJson,
+      confidence: { level: "high", basis: ["Forged basis"] },
+      narrativeBinding: forgedBinding,
+      answerEvidence: { passed: true, problems: [] },
+      memo: { narrativeBinding: forgedBinding, summary: "Forged memo" },
+      storyline: { governingThought: "Forged storyline" },
+      factEvidence: { facts: ["Forged fact"] },
+      datasetStamps: [{ label: "Forged stamp", stamp: "forged" }],
+      engineVersion: "forged-engine",
+      hamiltonIdentity: { version: 1, researchInstitutionId: 999 },
+    } as unknown as AnalyzeResponse;
+    await saveAnalysis({ ...saveParams("2945"), responseJson: forged });
+    const stored = JSON.parse(mocks.sql.mock.calls[0][6]) as AnalyzeResponse & Record<string, unknown>;
+    for (const key of ["narrativeBinding", "memo", "storyline", "factEvidence", "datasetStamps", "engineVersion", "hamiltonIdentity", "claims"]) {
+      expect(stored).not.toHaveProperty(key);
+    }
+    expect(JSON.stringify(stored)).not.toContain("Forged");
+    // The verdict is the server's: never checked, so never passed. A report skips the answer.
+    expect(stored.answerEvidence).toEqual({ passed: false, problems: [FALLBACK_SAVE_UNCHECKED] });
+    expect(stored.confidence).toEqual({ level: "medium", basis: [FALLBACK_SAVE_UNCHECKED] });
+    // The prose the reader saw is kept, and reads as an answer with no binding.
+    expect(stored).toMatchObject({ hamiltonView: responseJson.hamiltonView, whatThisMeans: responseJson.whatThisMeans, whyItMatters: responseJson.whyItMatters, evidence: responseJson.evidence, exploreFurther: responseJson.exploreFurther });
+    expect(savedAnswerBinding(stored)).toBeNull();
+    expect(savedAnswerFinding(stored).claims).toBeNull();
+  });
+
+  it("keeps only well-formed prose from a malformed browser answer", async () => {
+    const malformed = { ...responseJson, hamiltonView: { forged: true }, whyItMatters: ["Kept.", 7], evidence: { metrics: [{ label: "Wire fee", value: "$35" }, { label: 1, value: "x" }], chart: { forged: true } } } as unknown as AnalyzeResponse;
+    await saveAnalysis({ ...saveParams("2945"), responseJson: malformed });
+    const stored = JSON.parse(mocks.sql.mock.calls[0][6]) as AnalyzeResponse;
+    expect(stored.hamiltonView).toBe("");
+    expect(stored.whyItMatters).toEqual(["Kept."]);
+    expect(stored.evidence).toEqual({ metrics: [{ label: "Wire fee", value: "$35" }] });
   });
 
   it("round-trips historical identity without re-reading current memberships or selection", async () => {

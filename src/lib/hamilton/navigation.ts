@@ -55,7 +55,7 @@ export const HAMILTON_WORKSPACE_NAV = [
 /** The secondary link beside Settings: managing watches, whose alerts show across the workspace. */
 export const HAMILTON_ALERTS_NAV = { label: "Alerts and watches", href: `${HAMILTON_BASE}/monitor` } as const;
 
-const RESEARCH_PATHS = ["/pro/intelligence", "/pro/research", "/pro/peers", "/pro/data", "/pro/market", "/pro/categories", "/pro/districts", "/pro/news"];
+const RESEARCH_PATHS = ["/pro/intelligence", "/pro/research", "/pro/peers", "/pro/financials", "/pro/data", "/pro/market", "/pro/categories", "/pro/districts", "/pro/news"];
 const TRY_A_PRICE_PATHS = ["/pro/simulate", "/pro/saved"];
 
 const under = (pathname: string, paths: readonly string[]) => paths.some(path => pathname === path || pathname.startsWith(`${path}/`));
@@ -108,6 +108,7 @@ export const HAMILTON_WIRE_NAV = { label: "Regulatory Wire", href: `${HAMILTON_B
 /** Reference pages: Pro data you look things up in, under one "Reference" menu. */
 export const HAMILTON_REFERENCE_NAV = [
   { label: "Market",       href: `${HAMILTON_BASE}/market`,     description: "Beige Book themes and market reading" },
+  { label: "Financial performance", href: `${HAMILTON_BASE}/financials`, description: "Your filed fee income and deposits by quarter, beside peers" },
   { label: "Institutions", href: `${HAMILTON_BASE}/data`,       description: "Find any bank or credit union" },
   { label: "Fee categories", href: `${HAMILTON_BASE}/categories`, description: "Every fee type and its national median" },
   { label: "Fed districts", href: `${HAMILTON_BASE}/districts`, description: "Fees and coverage by Federal Reserve district" },

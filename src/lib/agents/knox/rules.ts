@@ -4,6 +4,7 @@ import { composableTail, LEADER_PRICE_WORDS, nameAfterPrice, passesDarwinChecks,
 import type { AccountLineup } from "@/lib/agents/knox/lineup";
 import type { AncillaryProduct } from "@/lib/agents/knox/ancillary-product";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
+import { CHECKING_ACCOUNT_FEE_NAME, checkingNameCore, namedForCheckingAccount, NON_MONTHLY_PERIOD } from "@/lib/checking-fee-name";
 import { ATM_ADJUSTMENT, CHECKBOOK_RECONCILIATION, CROSS_BORDER_BUNDLE, FAX_SERVICE, PER_PAGE_COPY, researchSplitTarget } from "@/lib/fee-fold";
 import { joinWrappedLeaderNames, parenBalance, stripPriceFootnoteMarks, withDroppedDecimalPoints } from "@/lib/custom-report/source-check";
 
@@ -13,6 +14,7 @@ import { newestColumnText } from "@/lib/fee-change-columns";
 import { feeBullets, withoutFeeBullets } from "@/lib/custom-report/fee-bullets";
 import { isStackedFeeLabel } from "@/lib/custom-report/stacked-fee-prices";
 import { loanReturnedPaymentRows } from "@/lib/agents/knox/loan-section-rows";
+import { boxSectionLateFee } from "@/lib/custom-report/box-section-late-fee";
 import { domesticStackedStem, stackedCellVariants } from "@/lib/custom-report/stacked-cell-variants";
 import { domesticWireClausePrices } from "@/lib/custom-report/wire-clause-prices";
 import type { OwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
@@ -327,6 +329,64 @@ export function foldedCategory(text: string): string | null {
   return FOLDED_PATTERNS.find((entry) => entry.pattern.test(text))?.key ?? null;
 }
 
+// v110 (#1918): the checking-name pattern is shared with the category guard (`@/lib/checking-fee-name`),
+// so Knox never files a name Darwin's guard refuses. The review of #2618 tightened it there.
+export { CHECKING_ACCOUNT_FEE_NAME, namedForCheckingAccount };
+
+/**
+ * v110 (#1918): the words around a checking account's named fee that make its price something
+ * other than a flat monthly fee: a charge only when activity passes a count ("Personal Convenience
+ * Checking fee | $ 8.00 if activity exceeds 25 checks & ACHs in a month", The Peoples Bank's 2023
+ * schedule), a percentage, a second price ("$5.00 or $3.00 with eStatements"), an opening or one-time
+ * charge, or a balance band printed between the name and its price ("Gold Checking Fee | Balances
+ * under $15K | $12.00"). James's condition on #2532: an ambiguous line stays held.
+ */
+const AMBIGUOUS_PRICE_CLAUSE =
+  /\bif\b[^|$]{0,60}\b(?:exceed\w*|more than|over|greater than|above)\s+\$?\d|%|\bor\s+\$\s*\d|\b(?:to open|open(?:ing)?\s+(?:deposit|fee|charge)|one[- ]time|set[- ]?up)\b|\bclosed?\s+within\b|\binitial\s+deposit\b|\bif\b[^|$]{0,80}\bnot\s+(?:chosen|selected|elected|used|enrolled|met)\b/i;
+/**
+ * v110 (#1918, review of #2618): a price charged only if or when something happens ("EZ Checking Fee $4.95 if
+ * standard features are not chosen", docs 6800 and 30291; "$25.00 if the account is closed within
+ * 90 days") is a conditional charge, not the account's flat monthly fee.
+ */
+const CONDITIONAL_PRICE = /^\W{0,4}(?:only\s+)?(?:if|when|whenever)\b/i;
+const MONEY_AT = /\$\s*(\d[\d,]*(?:\.\d{1,2})?)(?![\d,]*\d)/g;
+
+/**
+ * v110 (#1918): true when a fee filed as monthly maintenance only because it is named for the
+ * checking account itself (`CHECKING_ACCOUNT_FEE_NAME`) prints its price with words that make it
+ * ambiguous (`AMBIGUOUS_PRICE_CLAUSE`). Such a line is held for review, never sent to Darwin.
+ * Names another rule files ("Monthly Service Fee") are left to that rule.
+ */
+export function checkingNamePriceAmbiguous(excerpt: string | null | undefined, feeName: string, amount: number): boolean {
+  const core = checkingNameCore(feeName);
+  if (!excerpt || !CHECKING_ACCOUNT_FEE_NAME.test(core)) return false;
+  // v110 (review of #2618): a period other than the month in the name ("Gold Checking Fee (per year)") is not the monthly fee.
+  if (!namedForCheckingAccount(feeName)) return true;
+  // A band or percentage carried in the name itself ("Gold Checking Fee (under $2,500)") is a tier.
+  if (/\$\s*\d|%/.test(feeName.replace(/\((?:[^()]*\bwaiv)[^()]*\)?/gi, " "))) return true;
+  const lower = excerpt.toLowerCase();
+  const word = core.replace(/^\W*\d?\s*/, "").split(/\s+/)[0]?.toLowerCase() ?? "";
+  for (const match of excerpt.matchAll(MONEY_AT)) {
+    if (Math.abs(Number(match[1].replace(/,/g, "")) - amount) >= 0.005) continue;
+    const priceAt = match.index ?? 0;
+    const nameAt = word ? lower.lastIndexOf(word, priceAt) : -1;
+    const priceEnd = priceAt + match[0].length;
+    // The price's own clause: to the next cell, line or price.
+    const cell = excerpt.slice(priceEnd).split(/\s\|\s|\n/)[0] ?? "";
+    const clause = cell.split("$")[0] ?? "";
+    // A second price for the same fee ("$5.00 or $3.00 with eStatements") is a tier.
+    if (/^[^$]{0,20}\bor\s+\$\s*\d/i.test(cell)) return true;
+    // What the name's cell prints before its price: a band or a percentage there is a tier.
+    const between = nameAt >= 0 ? excerpt.slice(nameAt, priceAt) : "";
+    const tierBefore = /\$\s*\d|%|\b(?:under|over|below|above|less than|more than)\s+\$?\d/i.test(between.replace(/\((?:[^()]*\bwaiv)[^()]*\)?/gi, " "));
+    // v110 (review of #2618): a price per year, quarter, item or debit, a closure or initial-deposit
+    // charge, or a price charged only if or when something happens is not a flat monthly fee.
+    const otherPeriod = NON_MONTHLY_PERIOD.test(clause) || NON_MONTHLY_PERIOD.test(between);
+    return tierBefore || otherPeriod || CONDITIONAL_PRICE.test(clause) || AMBIGUOUS_PRICE_CLAUSE.test(clause);
+  }
+  return false;
+}
+
 /**
  * First match wins, so the most specific patterns come first and the generic ones
  * (monthly maintenance, minimum balance) last. An overdraft "service charge" is an
@@ -516,6 +576,10 @@ export const FEE_PATTERNS: FeePattern[] = [
     key: "monthly_maintenance",
     pattern: /\b(monthly (service|maintenance)|maintenance (fee|charge)|monthly (fee|charge)|account service (fee|charge)|service charge)\b/i,
   },
+  // v110 (#1918): a fee named for the checking account itself ("MAX Checking Fee (per month)",
+  // "2Platinum Checking Fee", Bellco FCU) is that account's monthly fee. The whole name is the
+  // account and "Checking (Account) Fee"; a waiver clause is cut before this runs.
+  { key: "monthly_maintenance", pattern: CHECKING_ACCOUNT_FEE_NAME },
   { key: "minimum_balance", pattern: /\b(minimum balance|low balance|fall[- ]below)\b.{0,30}\b(fee|charge)\b/i },
   // v14: names the answer keys show Knox held as unclassified. Last, so they only claim
   // lines no rule above recognizes.
@@ -1121,7 +1185,10 @@ export function readUnderHeading(segment: string, heading: string): ExtractedFee
   if (/\b(?:fee|charge)\b/i.test(heading) && /[A-Z]/.test(label)) return [];
   // A label that names a fee of its own ("Picture Check Card:", "Same-Day ACH (per item)") is
   // that fee's row in a column beside the heading, not a row of it.
-  const own = label ? classifyPatternKey(`${label} fee`) ?? classifyPatternKey(label) : null;
+  // v110 (#1918): an account's name ("Performance Checking", under "Cashier's Checks") stays a row of the
+  // heading; only the name the page prints can make it that account's own fee.
+  const withFee = `${label} fee`;
+  const own = label ? (CHECKING_ACCOUNT_FEE_NAME.test(withFee) ? null : classifyPatternKey(withFee)) ?? classifyPatternKey(label) : null;
   // Named as the table pass names a row under its heading ("Return item: Consumer account").
   const title = heading.replace(/\s*:\s*$/, "");
   return extractFromSegment(`${heading} ${line}`).candidates
@@ -1188,6 +1255,21 @@ const BARE_LATE_FEE = /^\W*late\s+(?:payment|fee|charge)s?(?:\s+(?:fee|charge))?
 export function boxLateFee(candidate: ExtractedFeeCandidate, previousKind: string | null): ExtractedFeeCandidate {
   if (candidate.canonicalHint !== "late_payment" || previousKind !== "safe_deposit_box" || !BARE_LATE_FEE.test(candidate.feeName)) return candidate;
   // The name stays the page's own, so the self-check still traces it to its row.
+  return passesDarwinChecks("safe_deposit_box", candidate.feeName, candidate.amount) ? { ...candidate, canonicalHint: "safe_deposit_box" } : candidate;
+}
+
+/**
+ * v111 (#1916): a late charge printed in a safe deposit box section is the box's, whichever
+ * specialist read it and whatever came before it. `boxLateFee` above reads the section from the read
+ * just before and from the segment's heading in the rules pass only, so the box heading above a
+ * two-column row ("page | Safe Deposit Box 30 Day" over "Courtesy Pay Coverage | Late Payment (by
+ * credit union | $10", Advia FCU), a box row Knox read as no fee, a later specialist's read or a name
+ * with words after the late fee ("Late Payment after 30 days (per month)") left it a late payment.
+ * Here the section is read on the page (`boxSectionLateFee`, shared with the source check, which
+ * refuses such a read filed as late_payment). The name stays the page's own.
+ */
+export function boxSectionLateFeeRead(candidate: ExtractedFeeCandidate, text: string): ExtractedFeeCandidate {
+  if (candidate.canonicalHint !== "late_payment" || !boxSectionLateFee(text, candidate.feeName, candidate.amount)) return candidate;
   return passesDarwinChecks("safe_deposit_box", candidate.feeName, candidate.amount) ? { ...candidate, canonicalHint: "safe_deposit_box" } : candidate;
 }
 
@@ -1330,12 +1412,39 @@ export function classifyFeeText(value: string): string | null {
   return key ? CANONICAL_KEY_MAP[key] ?? null : null;
 }
 
+const THOUSANDS_SUFFIX = /^[KkMm]\b/;
+const BRACKETED_WAIVER = /\((?=\s*waiv)[^()|]*\)?/gi;
+
+/** v110 (#1918): "Platinum Checking Fee (waived if $15K in combined balances in | " is "Platinum Checking Fee | ". */
+export function withoutBracketedWaiver(words: string): string {
+  return words.replace(BRACKETED_WAIVER, " ");
+}
+const TABLE_CELL_BREAK = " | ";
+
+/**
+ * v110 (#1918): where a waiver bracketed inside a name's own cell stops covering prices. "Platinum
+ * Checking Fee (waived if $15K in combined balances in | $12.00" (Bellco FCU) prices the fee in the
+ * next cell; the waiver ends with its cell. A waiver that is not bracketed, or not followed by
+ * another cell, covers the rest of the line, as before.
+ */
+export function bracketedWaiverEnd(segment: string, waiverAt: number): number {
+  if (!Number.isFinite(waiverAt)) return Number.POSITIVE_INFINITY;
+  const cellStart = segment.lastIndexOf(TABLE_CELL_BREAK, waiverAt);
+  const open = segment.lastIndexOf("(", waiverAt);
+  if (open < 0 || open < cellStart || segment.slice(open, waiverAt).includes(")")) return Number.POSITIVE_INFINITY;
+  const cellEnd = segment.indexOf(TABLE_CELL_BREAK, waiverAt);
+  return cellEnd < 0 ? Number.POSITIVE_INFINITY : cellEnd;
+}
+
 export function amountsIn(segment: string): AmountMatch[] {
   const matches: AmountMatch[] = [];
   for (const match of segment.matchAll(AMOUNT_PATTERN)) {
     const value = Number(match[1].replace(/,/g, ""));
     if (!Number.isFinite(value)) continue;
     const start = match.index ?? 0;
+    // v110 (#1918): "$15K" or "$1.5M" is a balance in thousands or millions, never a price. Read as
+    // $15, it took the name before it and left Bellco's "Platinum Checking Fee ... | $12.00" unread.
+    if (THOUSANDS_SUFFIX.test(segment.slice(start + match[0].length))) continue;
     matches.push({ value: Math.round(value * 100) / 100, start, end: start + match[0].length });
   }
   return matches;
@@ -2144,10 +2253,16 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
     /^\s*(?:\/?\s*(?:mo|month|monthly|each|ea|item|year|yr|annually|per \w+))?\.?\s*$/i.test(segment.slice(amount.end, labelEnd));
   const inLabel = (amount: AmountMatch) =>
     pricedLater && amount.start < labelEnd && !namesNextFee(amount) && !endsLabel(amount);
-  const feeAmounts = amounts.filter((amount) => amount.start < waiverAt && !inLabel(amount) && !isConditionAmount(segment, amount));
+  const waiverEnd = bracketedWaiverEnd(segment, waiverAt);
+  const beforeOrPastWaiver = (amount: AmountMatch) => amount.start < waiverAt || amount.start >= waiverEnd;
+  const feeAmounts = amounts.filter((amount) => beforeOrPastWaiver(amount) && !inLabel(amount) && !isConditionAmount(segment, amount));
   if (feeAmounts.length === 0) return result;
   const waivable = Number.isFinite(waiverAt);
-  let feeName = usableName(nameFrom(segment.slice(0, feeAmounts[0].start))) ? nameFrom(segment.slice(0, feeAmounts[0].start)) : name;
+  // v110 (#1918): a price past a bracketed waiver is named without that waiver.
+  const ownWords = (from: number, amount: AmountMatch) =>
+    amount.start >= waiverEnd ? withoutBracketedWaiver(segment.slice(from, amount.start)) : segment.slice(from, amount.start);
+  const firstName = nameFrom(ownWords(0, feeAmounts[0]));
+  let feeName = usableName(firstName) ? firstName : name;
   // v68: the free column is not part of the name ("Stop Payment | FREE | $25" is "Stop Payment").
   if (freeColumns && usableName(nameFrom(cells![0]))) feeName = nameFrom(cells![0]);
   // v68: a box size row priced per year ("2×5 | $ 25/Year") is named by its size: the unit
@@ -2268,7 +2383,7 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
     // $15.00 per month Nonsufficient funds | $35.00"), not the next fee's name or period.
     const unitAfterPrevious = index === 0 ? null : segment.slice(feeAmounts[index - 1].end, amount.start).match(PRICE_UNIT_AFTER);
     const ownStart = index === 0 ? 0 : feeAmounts[index - 1].end + (unitAfterPrevious?.[0].length ?? 0);
-    const between = index === 0 ? null : nameFrom(segment.slice(ownStart, amount.start));
+    const between = index === 0 ? null : nameFrom(ownWords(ownStart, amount));
     const ownFrequency = unitAfterPrevious ? detectFrequency(segment.slice(ownStart)) : frequency;
     // v19: "$30.00 - fee assessed for each item paid1 Continuous Overdraft Fee ..... $5.00":
     // the lowercase words finish the earlier price's terms; the title that ends them is the name.

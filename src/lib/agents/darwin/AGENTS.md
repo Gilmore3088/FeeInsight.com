@@ -1613,7 +1613,52 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v84 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v84 (Oct 25, #1788): a monthly
+- The guard is at v88 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v88 (Oct 25, #1912): a book
+  transfer to another account at the same bank (`BOOK_TRANSFER`: "Book Transfer", Spanish
+  "transferencia contable") fails both domestic wire categories; a price that only says it also covers
+  book transfers ("incluidas las transferencias contables") stays. A cash advance whose own line prices
+  it at another bank's ATMs (`cashAdvanceAtOtherAtm`: "Cash Advance or | $3.00 for Non M&T Bank ATMs",
+  read from Knox's excerpt) fails cash advance: it is the non-network ATM fee cut from a wrapped cell.
+  Read-only dry run, Oct 25: 5 live fees fail and none re-files (M&T 145046 and 68601; IBC's "Outgoing
+  Wire Transfer within IBC (Book Transfer)" $10, 26125, 35171, 121267, beside IBC's $35 outgoing wire).
+  `checkFeeAgainstSource` traces all three sampled amounts to their own lines, so the price is right and
+  the category is wrong. The guard catch-up takes the 5 to the second look.
+- v87 (Oct 25, #1916): a late
+  payment its stored text prints in a safe deposit box section (`box_section`, read by `withBoxSection`
+  with `boxSectionLateFee`, the detector Knox v111 and source check v25 share) is the box's late rent
+  charge: it fails `late_payment` and re-files to `safe_deposit_box` (`refileFromLine`). Hamilton's live
+  guard and its takedown restore read the section from each live late payment's stored text, so the
+  live box late fees move in place with their own name and price instead of coming down. A late fee
+  moving to the box keeps its live twin test narrow: only a live box fee at that price with the same
+  name or a late word is its twin (Advia's $10 key replacement, 139816, is not). Read-only dry run,
+  Oct 25: of 410 live late_payment fees whose text names a safe deposit box, 299 pass and 111 at 110
+  institutions fail; all 111 trace on their stored text as `safe_deposit_box`. 99 re-file; 11 already
+  have a live box late fee twin (142240/139815, 56561/156686, 58085/157521, 60557/156513,
+  71846/155276, 78842/78835, 84270/153200, 101143/153357, 116960/157002, 143901/13520,
+  154848/92156) and 35992 is the second copy of 9785 at its bank, so those 12 go to the second look
+  and come down as duplicates.
+- v86 (Oct 25, #1918): monthly
+  maintenance also admits a checking account's own named fee ("MAX Checking Fee (per month)",
+  "Jumpstart Checking Account Fee"), read by the one pattern Knox files it with
+  (`namedForCheckingAccount` in `src/lib/checking-fee-name.ts`), so Knox and the guard cannot drift.
+  Before v86 the include list took only maintenance, monthly service, service charge or monthly fee,
+  so every line Knox v110's held-line recheck promotes failed `category_mismatch` (name_unsupported)
+  and Bellco FCU's $3.95 could never publish. The pattern keeps out opening, setup and reopening
+  charges, business accounts (corporate, non-profit, analysis, merchant, professional, ag, farm,
+  IOLTA, trust, estate), other fees' words (replacement, late, lost, bounce, withdrawal, deposit,
+  counter, collection, foreign, unclaimed and the older list) and a period other than the month. It
+  only admits names. Live re-check: the guard catch-up. Read-only dry run (Oct 25) over every live
+  fee, and every guard takedown, whose name contains "checking (account) fee|charge" (38 live, 2
+  down; no other name can change verdict): no verdict, re-file or restore changes.
+- v85 (Oct 25, #1831): a refundable safe deposit box key deposit or the
+  box's security deposit (`SAFE_DEPOSIT_KEY_DEPOSIT`) fails the safe deposit box rule, as v66 does for
+  the night deposit. A lost, replaced or duplicate key, drilling, a lock change or re-key, a
+  non-refundable or forfeited deposit and the box's annual or rental fee stay
+  (`SAFE_DEPOSIT_KEY_DEPOSIT_EXEMPT`, each word on its noun); a "Rental - Key Deposit" header
+  does not. No type holds a key deposit, so the live ones go to the second look and come down. Its
+  live re-check is the guard catch-up; the read-only dry run (Oct 25) counted 110 live fees at 109
+  institutions, each a key or security deposit on its own stored schedule.
+- v84 (Oct 25, #1788): a monthly
   maintenance fee named only as a monthly fee or service charge (`genericMonthlyCharge`: "Monthly
   fee", "Service charge for six or more accounts") fails when the cell before its name on its own
   line, or the heading its stored text prints above it, names another service: Positive Pay, ACH,

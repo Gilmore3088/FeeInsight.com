@@ -24,6 +24,7 @@ import { capFirstItemPrices, refusesStackedFeePrice, stackedLabelKey } from "./s
 import { checkWireClausePrice } from "./wire-clause-prices";
 import { stackedCellVariants } from "./stacked-cell-variants";
 import { refusesOtherColumnPrice } from "./column-pair-prices";
+import { boxSectionLateFee } from "./box-section-late-fee";
 import { withGluedFootnotePrices } from "./glued-footnote-price";
 const NSF_POLICY_CATEGORIES = new Set(["nsf", "overdraft"]);
 
@@ -185,7 +186,8 @@ const DAILY_CAP_NAME_WORDS = new Set(["daily", "maxim", "max", "cap", "limit", "
 const DAILY_CAP_BEFORE = /\b(max(?:imum)?|cap(?:ped)?|up to|not to exceed|limit(?:ed)?|no more than|daily)\b[^$|]{0,30}$/i;
 const DAILY_CAP_AFTER = /^\s*\)?\s*(?:(?:per|a|each|in (?:a|one))\s+(?:business\s+|calendar\s+)?day\b|daily\b|(?:max(?:imum)?|cap)\s+(?:per|a|each)\s+(?:business\s+)?day\b)/i;
 const CENTS = /\$\s*\.(\d{2})(?!\d)|(?<![\d.,$])(\d{1,2})\s*(?:¢|cents?\b)/gi;
-const MONEY = /\$\s*(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{2}))?(?!\d)|(?<![\d,$])(?<!\d\.)(\d+)\.(\d{2})(?![\d])/g;
+// v24 (#1918): "$15K" or "$1.5M" is a balance in thousands or millions, never a price.
+const MONEY = /\$\s*(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{2}))?(?!\d)(?!(?:\.\d+)?[KkMm]\b)|(?<![\d,$])(?<!\d\.)(\d+)\.(\d{2})(?![\d])/g;
 
 interface MoneyToken {
   value: number;
@@ -1387,6 +1389,10 @@ export function checkFeeAgainstSource(
   // #1946: every refusal below reads a footnote glued to a $0 price ("$01") as $0, as the main path does.
   const rawText = sourceText ? withGluedFootnotePrices(sourceText) : sourceText;
   if (namesItsClosedFreeRow(rawText, feeName, amount)) return { ok: false, reason: "amount_not_the_fee" };
+  // #1916: a bare late charge printed in a safe deposit box section ("Safe Deposit Box Fees" /
+  // "Late Payment (per month) | $10.00") is the box's late rent charge, not a loan's late payment.
+  // Only for a fee filed as late_payment; Knox files the read as the box's (`boxSectionLateFeeRead`).
+  if (canonicalFeeKey === "late_payment" && boxSectionLateFee(rawText, feeName, amount)) return { ok: false, reason: "category_not_in_text" };
   const result = checkOwnName(rawText, feeName, amount, categoryPattern, canonicalFeeKey, options);
   // W43 live audit (#2064): Knox names a box row printed as its size alone "Safe Deposit Box <size>"
   // (`boxSizeNamed`); the row is traced by its own words. Only for a fee filed as a safe deposit box

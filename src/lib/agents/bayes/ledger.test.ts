@@ -89,7 +89,8 @@ describe("current copy and retidy counts", () => {
     const manifests = await loadManifests();
     const uncounted = manifests.filter((manifest) => !manifest.count).map((manifest) => manifest.key);
     expect(uncounted).toEqual([
-      "rosetta.read", "rosetta.pdf_layout", "rosetta.ocr", "rosetta.js_fallback", "rosetta.table_rows",
+      // rosetta.read counts its replay lane (#2069).
+      "rosetta.pdf_layout", "rosetta.ocr", "rosetta.js_fallback", "rosetta.table_rows",
       "darwin.verify_rules", "darwin.envelopes",
     ]);
     // An uncounted change always says why, so it reads as not_counted, never as finished.

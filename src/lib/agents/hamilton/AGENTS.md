@@ -694,7 +694,12 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     account reads as an account name, is printed in the fee's own schedule and is on no other
     generic fee of that schedule (`evidence.heading_from` says which). v3: a heading followed by its
     opening deposit traces (source check v18), and "Interest Checking", "Club 2 Checking" and
-    "Money Market Checking" read as accounts.
+    "Money Market Checking" read as accounts. v4 (#1917): a breadcrumb or menu printed with no
+    spaces between its links ("HomePersonal BankingAccountsPersonal Checking") is no account, and
+    the heading search stops at a comparison table's header row, so the price's column (Knox's
+    recorded account) names it. A live name an earlier version gave from a heading today's rule
+    refuses is set back to Knox's name first (`name_account_removed` row); Oct 25 dry run: 3 of
+    558 live added names (66144, 140140, 137749).
 26. Lineup correct (`correctStoredLineups`, `knox/lineup-correct.ts`): lineup values stored
     before Knox v55 that came from a neighbouring account are corrected from the stored text,
     up to 200 documents a step (`lineup_corrected` feedback row). No rollback.
@@ -910,6 +915,20 @@ common" overdraft on both TD records, Axos's /insights/ NSF, two SchoolsFirst /a
 Keesler's /advice/ app fee, Security First's 2022 blog post). A verified row skipped as identical
 to a fee this check took down is decided again (`ARTICLE_PAGE_RESELECT_SQL`), so the bank's own
 copy of the fee goes live in its place: TD's $35 overdraft from its overdraft-services page.
+
+**Edition-hold twins (#1915, Oct 21).** A verified row skipped as identical to a live fee that
+Darwin's edition check later held as not yet in effect (`not_yet_effective: <date> #<doc>`) is
+decided again (`EDITION_HOLD_RESELECT_SQL`), so the schedule in force today carries the fee while
+the next edition waits. ONE Credit Union (7174) had 16 lines of its current schedule (doc 29000,
+"Effective November 1, 2024") skipped behind its 2027 schedule (doc 28999) on Oct 11; once #2523
+held the 2027 rows the bank kept one live fee. A reselected row read from a schedule itself not yet
+in effect is held by `selectEditionHolds` and waits for its own date. Only a schedule's line is
+decided again: a line read from a product page (Rosetta's kind `product_page` or a product-area
+address, `productPageUrlSql`) prices one account and stays decided, so Security Federal's Money
+Market "Paper statements available for $3 per month" (docs 25730/25731) does not go live as the
+bank's paper statement fee. Dry run on prod, Oct 25: 91 rows at 3 institutions reselected; 16 from
+a document in effect today (7174, doc 29000), the other 75 read from Dec 1, 2026 schedules and held
+until then (5297 docs 16640/23342; 722 docs 316/16682).
 
 **Qualifier pairs, check 4 (#1314, Oct 15).** `linesApartOnPage` keeps two names apart only when the
 shorter one is printed at the price clear of every place of the longer: a shorter name found only
@@ -1343,7 +1362,7 @@ fails a PR that changes one of these constants without updating its line here (#
 
 | Constant | Strategy | Version | File |
 |---|---|---|---|
-| `ACCOUNT_NAME_STRATEGY` | `hamilton.account_names` | v3 | `hamilton/account-names.ts` |
+| `ACCOUNT_NAME_STRATEGY` | `hamilton.account_names` | v4 | `hamilton/account-names.ts` |
 | `CURRENT_COPY_STRATEGY` | `hamilton.current_copy_check` | v2 | `hamilton/current-copy.ts` |
 | `EVAL_VERDICT_VERSION` | — | v8 | `hamilton/eval-verdicts.ts` |
 | `FREQUENCY_FILL_VERSION` | — | v15 | `hamilton/frequency-fill.ts` |
@@ -1352,7 +1371,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `HAMILTON_PUBLISH_STRATEGY` | `publish.rules` | v3 | `hamilton/publish.ts` |
 | `REFRESH_COPY_STRATEGY` | `hamilton.refresh_copy` | v2 | `hamilton/refresh-copy.ts` |
 | `RULES_RECHECK_STRATEGY` | `hamilton.rules_recheck` | v4 | `hamilton/rules-recheck.ts` |
-| `SOURCE_CHECK_STRATEGY` | `hamilton.source_check` | v23 | `hamilton/source-check.ts` |
+| `SOURCE_CHECK_STRATEGY` | `hamilton.source_check` | v25 | `hamilton/source-check.ts` |
 | `SOURCE_LINK_VERSION` | `hamilton.source_link` | v2 | `hamilton/source-link.ts` |
 | `SOURCE_LINK_DRIFT_VERSION` | `hamilton.source_link_drift` | v1 | `hamilton/source-link.ts` |
 | `FEE_DEPENDENCE_VERSION` | — | v1 | `hamilton/studies/fee-dependence.ts` |

@@ -58,6 +58,7 @@ import {
   SINGLE_PRODUCT_SQL,
 } from "./link-coverage";
 import { loadDemotedFinders } from "./batch-review";
+import { STATED_DATE_VERSION, statedDateColumnsReady, statedDateLastDaySql, statedDateReplaces, statedDateStaleSql, type FreshnessBasis, type StatedDateReplacement } from "./stated-date";
 import { keepRefusedPaidAnswers, type KeepRefusedAnswersResult } from "./refused-answers";
 import { restoreSwappedFeePages, type RestoreFeePagesResult } from "./restore-fee-page";
 import { inSavepoint } from "@/lib/agents/savepoint";
@@ -133,6 +134,12 @@ export const BUSINESS_RESERVED_SLOTS = 3;
 export const UPGRADE_RESERVED_SLOTS = 3;
 export const FRESHNESS_RESERVED_SLOTS = 2;
 type WrongAt = Date | string | null | undefined;
+
+/** Why a link is searched again for its stored stated date (#1878, stated-date.ts). Pure. */
+export function statedStaleReason(date: string | Date, basis: string | null): string {
+  const iso = date instanceof Date ? date.toISOString().slice(0, 10) : String(date).slice(0, 10);
+  return basis === "url_year" ? `address names ${iso.slice(0, 4)}` : `schedule dated ${iso} (${basis ?? "stated"})`;
+}
 
 /** Why a link is searched again: the newest finding that it gives wrong fees. Pure. */
 export function staleWrongReason(marks: { confirmed_at: WrongAt; audit_at: WrongAt; hand_at: WrongAt }): string {
@@ -327,6 +334,15 @@ interface DiscoveryCandidateRow {
   stale_reason?: string | null;
   /** Addresses a wrong-document finding named: the search must not find them again (#2055). */
   freshness_exclude?: string[];
+  /**
+   * Set on every freshness search without a wrong-document finding (#1878, #2615 review): the old
+   * document's stated date and its basis when one is known, else the year the older arm read
+   * (`effective_year` or `url_year`, YYYY-01-01, counted to 31 December). A page found that states
+   * a date replaces the link only when that date is later; an undated page is refused only when
+   * the old date is one the old document's text states (`statedDateReplaces`).
+   */
+  stale_stated_date?: string | null;
+  stale_stated_basis?: FreshnessBasis | null;
   /** `detail.resume` of the bank's last search, when it was cut short by time. */
   discovery_resume?: unknown;
   /** True when the bank's last search was cut short by time (`retry_after`, `out_of_time`). */
@@ -399,6 +415,13 @@ export interface CandidateDiscoveryResult {
   resumedFrom: DiscoveryResume | null;
   /** Where the next search continues; null unless this search was cut short by time with resume on. */
   resume: DiscoveryResume | null;
+  /** The text the fee-page check read on the page found, when it read one. */
+  foundText?: string | null;
+  /**
+   * A freshness search without a wrong-document finding: whether the page found states a later
+   * date than the old document and so replaced the link, or the link was kept (#2615 review).
+   */
+  statedDateCheck?: StatedDateReplacement | null;
 }
 
 export interface WebsiteRepairSummary {
@@ -437,6 +460,8 @@ export interface RunMagellanDiscoveryOptions {
   secondDocuments?: boolean;
 }
 
+export type StatedDateRefusal = StatedDateReplacement & { institution_id: number; stale_link: string | null };
+
 export interface RunMagellanDiscoveryResult {
   selected: number;
   processed: number;
@@ -469,6 +494,13 @@ export interface RunMagellanDiscoveryResult {
   keptRefusedAnswers: KeepRefusedAnswersResult | null;
   /** Search-miss lessons written (`magellan.search_miss`). */
   searchMisses: number;
+  /**
+   * Freshness searches without a wrong-document finding that found a page but kept the link,
+   * because the page states an earlier or equal date, or states none while the old document's
+   * text states one (#2615 review). Each is also on
+   * the bank's attempt (`stated_date_check`).
+   */
+  statedDateRefusals: StatedDateRefusal[];
   limit: number;
   dryRun: boolean;
   results: CandidateDiscoveryResult[];
@@ -605,7 +637,7 @@ async function discoverForInstitution(
   let websiteRepair: WebsiteRepairSummary | null = null;
   const finish = (
     fields: Pick<CandidateDiscoveryResult, "outcome" | "code" | "reason"> &
-      Partial<Pick<CandidateDiscoveryResult, "url" | "documentType" | "confidence" | "foundBy">>,
+      Partial<Pick<CandidateDiscoveryResult, "url" | "documentType" | "confidence" | "foundBy" | "foundText">>,
   ): CandidateDiscoveryResult => ({
     institutionId,
     institutionName,
@@ -952,6 +984,7 @@ function foundResult(
     confidence: found.confidence,
     reason: found.reason,
     foundBy: key,
+    foundText: found.text ?? null,
   });
 }
 
@@ -1283,7 +1316,9 @@ export function wrongDocumentAddresses(urls: ReadonlyArray<string | null | undef
 /**
  * Banks whose fee link looks out of date (see FRESHNESS_SEARCH_VERSION), not yet searched
  * for a newer schedule at this version. Their link is kept unless a different page
- * passes the fee-page check.
+ * passes the fee-page check and, without a wrong-document finding, states no date earlier than or
+ * equal to the old document's, nor leaves out a date the old text states (`freshnessOldDate`,
+ * `statedDateReplaces`; #2615 review).
  */
 async function selectStaleCandidates(
   db: SqlTag,
@@ -1295,8 +1330,10 @@ async function selectStaleCandidates(
   const normalizedState = normalizeStateCode(stateCode);
   const marker = JSON.stringify({ freshness_search: FRESHNESS_SEARCH_VERSION });
   const staleYear = now.getUTCFullYear() - STALE_AFTER_YEARS;
+  // The link's document's own stated date (#1878, stated-date.ts), once its columns exist.
+  const statedReady = await statedDateColumnsReady(db);
   const rows = await db<
-    Array<DiscoveryCandidateRow & { effective_year: number | null; url_year: number | null; wrong_at: string | Date | null; confirmed_at: string | Date | null; audit_at: string | Date | null; audit_urls: Array<string | null> | null; hand_at: string | Date | null; hand_urls: Array<string | null> | null; main_document_url: string | null; searched_at: string | Date | null }>
+    Array<DiscoveryCandidateRow & { stated_date: string | Date | null; stated_date_basis: string | null; stated_stale: boolean | null; effective_year: number | null; url_year: number | null; wrong_at: string | Date | null; confirmed_at: string | Date | null; audit_at: string | Date | null; audit_urls: Array<string | null> | null; hand_at: string | Date | null; hand_urls: Array<string | null> | null; main_document_url: string | null; searched_at: string | Date | null }>
   >`
     -- stale-link freshness search
     WITH due AS (
@@ -1329,10 +1366,32 @@ async function selectStaleCandidates(
                   AND text.status = 'completed'
                 ORDER BY text.id DESC
                 LIMIT 1
-             ) AS effective_year
+             ) AS effective_year,
+             ${statedReady
+               ? db`stated.stated_date, stated.stated_date_basis, stated.stated_stale`
+               : db`NULL::date AS stated_date, NULL::text AS stated_date_basis, FALSE AS stated_stale`}
         FROM institution_sources inst
         LEFT JOIN institution_source_profiles profile
           ON profile.institution_id = inst.id
+        -- The latest date the link's own document states (its last main fetch, or the current copy
+        -- of the link's page), and whether it is more than STALE_STATED_MONTHS old (stated-date.ts).
+        -- A stale one starts a search; any known one is the date a page found must beat.
+        ${statedReady
+          ? db`LEFT JOIN LATERAL (
+              SELECT stated_doc.stated_date, stated_doc.stated_date_basis, ${statedDateStaleSql(db, now)} AS stated_stale
+                FROM source_documents stated_doc
+               WHERE stated_doc.institution_id = inst.id
+                 AND stated_doc.status = 'success'
+                 AND stated_doc.duplicate_of_id IS NULL
+                 AND stated_doc.superseded_by_id IS NULL
+                 AND stated_doc.companion_source_id IS NULL
+                 AND (stated_doc.id = profile.last_successful_source_document_id OR stated_doc.document_url = inst.fee_schedule_url)
+                 AND stated_doc.stated_date_version = ${STATED_DATE_VERSION}
+                 AND stated_doc.stated_date IS NOT NULL
+               ORDER BY ${statedDateLastDaySql(db)} DESC
+               LIMIT 1
+            ) stated ON TRUE`
+          : db``}
        WHERE COALESCE(inst.status, 'active') = 'active'
          -- One slot of banks per UTC hour when the step has no state, so the text check stays
          -- small; a state's step checks the whole state (stepSlot, as the outcome ledger).
@@ -1448,22 +1507,53 @@ async function selectStaleCandidates(
     )
     SELECT * FROM judged
      WHERE (COALESCE(effective_year, url_year) <= ${staleYear} AND searched_at IS NULL)
+        OR (stated_stale AND searched_at IS NULL)
         OR (wrong_at IS NOT NULL AND (searched_at IS NULL OR searched_at < wrong_at))
      ORDER BY (wrong_at IS NOT NULL) DESC, asset_size DESC NULLS LAST, id ASC
      LIMIT ${limit}
   `;
-  return rows.map(({ effective_year, url_year, wrong_at, confirmed_at, audit_at, audit_urls, hand_at, hand_urls, ...row }) => ({
-    ...row,
-    freshness: true,
-    // A wrong-document finding rules out the addresses it named, not only the link (#2055, #2057).
-    ...(audit_at != null || hand_at != null ? { freshness_exclude: wrongDocumentAddresses([...(audit_urls ?? []), ...(hand_urls ?? [])]) } : {}),
-    stale_reason:
-      wrong_at != null
-        ? staleWrongReason({ confirmed_at, audit_at, hand_at })
-        : effective_year != null
-          ? `effective ${effective_year}`
-          : `address names ${url_year}`,
-  }));
+  return rows.map(({ stated_date, stated_date_basis, stated_stale, effective_year, url_year, wrong_at, confirmed_at, audit_at, audit_urls, hand_at, hand_urls, ...row }) => {
+    // Every search without a wrong-document finding is held to the old date (statedDateReplaces):
+    // a wrong document is replaced whatever its date.
+    const oldDate = wrong_at == null ? freshnessOldDate({ stated_date, stated_date_basis, effective_year, url_year }) : null;
+    return {
+      ...row,
+      freshness: true,
+      // A wrong-document finding rules out the addresses it named, not only the link (#2055, #2057).
+      ...(audit_at != null || hand_at != null ? { freshness_exclude: wrongDocumentAddresses([...(audit_urls ?? []), ...(hand_urls ?? [])]) } : {}),
+      ...(oldDate ? { stale_stated_date: oldDate.date, stale_stated_basis: oldDate.basis } : {}),
+      stale_reason:
+        wrong_at != null
+          ? staleWrongReason({ confirmed_at, audit_at, hand_at })
+          : stated_stale === true && stated_date != null
+            ? statedStaleReason(stated_date, stated_date_basis)
+            : effective_year != null
+            ? `effective ${effective_year}`
+            : `address names ${url_year}`,
+    };
+  });
+}
+
+/**
+ * The date a page found must beat to replace a link the freshness search was sent to for its age
+ * (#2615 review): the old document's stated date when one is known, else the year the older arm
+ * read (an "Effective" year in its text, else its address's), as YYYY-01-01 counted to 31 December.
+ * Institution 6072's link /wp-content/uploads/2022/03/TISA.pdf names 2022, but its text says
+ * "accurate as of October 12, 2026": a page found must state a date after that. Pure.
+ */
+export function freshnessOldDate(row: {
+  stated_date: string | Date | null;
+  stated_date_basis: string | null;
+  effective_year: number | null;
+  url_year: number | null;
+}): { date: string; basis: FreshnessBasis } | null {
+  if (row.stated_date != null && row.stated_date_basis && row.stated_date_basis !== "none") {
+    const iso = row.stated_date instanceof Date ? row.stated_date.toISOString().slice(0, 10) : String(row.stated_date).slice(0, 10);
+    return { date: iso, basis: row.stated_date_basis as FreshnessBasis };
+  }
+  if (row.effective_year != null) return { date: `${row.effective_year}-01-01`, basis: "effective_year" };
+  if (row.url_year != null) return { date: `${row.url_year}-01-01`, basis: "url_year" };
+  return null;
 }
 
 /**
@@ -1684,6 +1774,7 @@ async function recordFinderAttempts(
     ...(row.freshness
       ? { freshness_search: FRESHNESS_SEARCH_VERSION, stale_link: row.fee_schedule_url ?? null, stale_reason: row.stale_reason ?? null }
       : {}),
+    ...(result.statedDateCheck ? { stated_date_check: result.statedDateCheck } : {}),
     website: row.website_url,
     searched_website: result.websiteRepair?.repaired ?? row.website_url,
     moved_to: result.movedTo,
@@ -1879,6 +1970,8 @@ export async function runMagellanDiscovery(
   // With the companion search on, banks stop early enough to leave it its reserve.
   const { stepDeadline, lastBankStart, bankDeadline } = discoveryTimeBudget(Date.now(), wantSecondDocuments);
   const results: CandidateDiscoveryResult[] = [];
+  // Freshness finds that kept the link because the page found is not known to be newer.
+  const statedDateRefusals: StatedDateRefusal[] = [];
   const sharedNames = await loadSharedNameIds(db, rows, dryRun ? undefined : { runId: options.runId, stepId: options.stepId ?? null });
   for (const row of rows) {
     row.name_shared = sharedNames.has(Number(row.id));
@@ -1905,13 +1998,29 @@ export async function runMagellanDiscovery(
     // A re-search of a bank that already has a link (product page or stale) changes it only
     // when a different page passes the fee-page check.
     const reSearch = Boolean(row.upgrade || row.business || row.freshness);
-    const upgraded = Boolean(
+    let upgraded = Boolean(
       reSearch &&
         result.outcome === "discovered" &&
         result.url &&
         row.fee_schedule_url &&
         urlIdentity(result.url) !== urlIdentity(row.fee_schedule_url),
     );
+    // A freshness search without a wrong-document finding replaces the link only with a page that
+    // states a later date than the old document (or the year the older arm read), or states none
+    // while the old date is not one the old document's text states (#2615 review).
+    if (upgraded && row.freshness && row.stale_stated_date) {
+      const check = statedDateReplaces({
+        oldDate: row.stale_stated_date,
+        oldBasis: row.stale_stated_basis ?? null,
+        candidateUrl: result.url,
+        candidateText: result.foundText,
+      });
+      result.statedDateCheck = check;
+      if (!check.replaces) {
+        upgraded = false;
+        statedDateRefusals.push({ institution_id: institutionId, stale_link: row.fee_schedule_url ?? null, ...check });
+      }
+    }
     // A re-search that finds nothing new leaves the bank's link and rescue state alone.
     if (!reSearch || upgraded) await recordDiscoveryResult(db, result);
     // An article, blog link or one product's disclosure is not kept beside the schedule: its amounts were never the bank's schedule.
@@ -2020,6 +2129,7 @@ export async function runMagellanDiscovery(
     restoredFeePages,
     keptRefusedAnswers,
     searchMisses,
+    statedDateRefusals,
     limit,
     dryRun,
     results,
