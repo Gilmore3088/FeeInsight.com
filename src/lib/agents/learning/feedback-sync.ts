@@ -65,6 +65,22 @@ interface TakedownRow {
   rolled_back_reason: string;
   verify_attempt_id: number | string | null;
   verify_version: number | string | null;
+  /** When the fee was taken down, in epoch milliseconds: keys a later takedown cycle (#1648). */
+  rolled_back_ms?: number | string | null;
+  /** The fee already has a first-cycle `hamilton.takedown:pub:<id>:extract` row (#1648). */
+  prior_takedown?: boolean | null;
+}
+
+/**
+ * The dedupe key prefix of a takedown lesson. A fee's first takedown keeps the original
+ * `hamilton.takedown:pub:<id>`; a later takedown of the same fee (taken down, restored, taken
+ * down again) is keyed by when it was taken down, `hamilton.takedown:pub:<id>:at:<epoch ms>`, so
+ * every cycle gets its own lesson and a re-run of the same takedown upserts the same row (#1648).
+ * Readers match `hamilton.takedown:pub:%:extract`, which both shapes satisfy.
+ */
+export function takedownDedupePrefix(row: Pick<TakedownRow, "fee_published_id" | "rolled_back_ms" | "prior_takedown">): string {
+  const base = `hamilton.takedown:pub:${row.fee_published_id}`;
+  return row.prior_takedown && row.rolled_back_ms != null ? `${base}:at:${Number(row.rolled_back_ms)}` : base;
 }
 
 interface RestoreRow {
@@ -106,6 +122,7 @@ const num = (value: number | string | null | undefined) => (value == null ? null
  */
 export function takedownFeedback(row: TakedownRow, runId: number | null): FeedbackRow[] {
   const kind = takedownKind(row.rolled_back_reason);
+  const prefix = takedownDedupePrefix(row);
   const pointer = takedownPointer(row.rolled_back_reason);
   const shared = {
     signal: takedownSignal(row.rolled_back_reason),
@@ -132,7 +149,7 @@ export function takedownFeedback(row: TakedownRow, runId: number | null): Feedba
       ...shared,
       aboutStage: "extract",
       aboutStrategy: row.source === "knox" ? knoxStrategyFromFlags(row.outlier_flags) : `import.${row.source}`,
-      dedupeKey: `hamilton.takedown:pub:${row.fee_published_id}:extract`,
+      dedupeKey: `${prefix}:extract`,
     },
     {
       ...shared,
@@ -140,7 +157,7 @@ export function takedownFeedback(row: TakedownRow, runId: number | null): Feedba
       aboutStrategy: "verify.rules",
       aboutVersion: num(row.verify_version),
       aboutAttemptId: num(row.verify_attempt_id),
-      dedupeKey: `hamilton.takedown:pub:${row.fee_published_id}:verify`,
+      dedupeKey: `${prefix}:verify`,
     },
   ];
 }
@@ -180,7 +197,10 @@ export async function syncPipelineFeedback(
     const takedowns = await inSavepoint(db, (scope) => scope<TakedownRow[]>`
       SELECT fp.fee_published_id, fv.fee_verified_id, fr.fee_raw_id, fp.institution_id, fr.source_document_id,
              fr.source_url, fr.source, fr.outlier_flags, fp.canonical_fee_key, fp.fee_name, fp.amount,
-             fp.rolled_back_reason, verify.id AS verify_attempt_id, verify.strategy_version AS verify_version
+             fp.rolled_back_reason, verify.id AS verify_attempt_id, verify.strategy_version AS verify_version,
+             floor(extract(epoch FROM fp.rolled_back_at) * 1000)::bigint AS rolled_back_ms,
+             EXISTS (SELECT 1 FROM pipeline_feedback first
+                      WHERE first.dedupe_key = 'hamilton.takedown:pub:' || fp.fee_published_id || ':extract') AS prior_takedown
         FROM published_fee_records fp
         JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
         JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
@@ -216,9 +236,18 @@ export async function syncPipelineFeedback(
          -- A non-checking account's monthly fee held as verified (#1100, account-type-hold.ts): a
          -- publish policy, not a wrong read. The hold writes its own weight-0 row per fee.
          AND fp.rolled_back_reason NOT LIKE 'account_type_hold:%'
+         -- One lesson per takedown cycle (#1648): skip the fee only when a takedown lesson was
+         -- written after its last restore. The account type hold's own rows never count: the hold
+         -- was publish policy, so a real takedown after it still teaches.
          AND NOT EXISTS (
            SELECT 1 FROM pipeline_feedback f
-            WHERE f.dedupe_key = 'hamilton.takedown:pub:' || fp.fee_published_id || ':extract'
+            WHERE f.fee_published_id = fp.fee_published_id
+              AND f.dedupe_key LIKE 'hamilton.takedown:pub:' || fp.fee_published_id || ':%extract'
+              AND f.kind <> 'account_type_hold'
+              AND f.created_at > COALESCE((
+                SELECT MAX(r.created_at) FROM pipeline_feedback r
+                 WHERE r.fee_published_id = fp.fee_published_id AND r.kind = 'restored_after_takedown'
+              ), '-infinity'::timestamptz)
          )
        ORDER BY fp.fee_published_id
        LIMIT ${limit}
@@ -227,7 +256,7 @@ export async function syncPipelineFeedback(
     result.takedowns = takedowns.length;
 
     const restores = await inSavepoint(db, (scope) => scope<RestoreRow[]>`
-      SELECT f.fee_published_id, f.about_strategy, f.institution_id, f.source_document_id, f.fee_raw_id,
+      SELECT DISTINCT ON (f.fee_published_id) f.fee_published_id, f.about_strategy, f.institution_id, f.source_document_id, f.fee_raw_id,
              f.fee_verified_id, f.canonical_fee_key, f.amount, fp.fee_name, f.evidence->>'reason' AS taken_down_for,
              (SELECT flag #>> '{}'
                 FROM verified_fee_observations fv, jsonb_array_elements(COALESCE(fv.outlier_flags, '[]'::jsonb)) flag
@@ -252,11 +281,15 @@ export async function syncPipelineFeedback(
               AND NOT EXISTS (
                 SELECT 1 FROM pipeline_feedback t
                  WHERE t.fee_published_id = f.fee_published_id
-                   AND t.kind IN ('takedown_confirmed', 'flag_confirmed')
+                   -- A hand takedown, or the sync's own lesson for a later takedown cycle (#1648).
+                   AND (t.kind IN ('takedown_confirmed', 'flag_confirmed')
+                        OR (t.dedupe_key LIKE 'hamilton.takedown:pub:' || f.fee_published_id || ':%extract'
+                            AND t.kind <> 'account_type_hold'))
                    AND t.created_at > r.created_at
               )
          )
-       ORDER BY f.fee_published_id
+       -- The latest takedown cycle's lesson says what this restore undid (#1648).
+       ORDER BY f.fee_published_id, f.created_at DESC, f.id DESC
        LIMIT ${limit}
     `);
     for (const row of restores) {
