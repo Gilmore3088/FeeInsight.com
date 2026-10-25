@@ -213,7 +213,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-311 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+312 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
 ### Extraction and fee reading (48)
 
@@ -421,8 +421,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A public page reads catalog aggregates through `public-cached-reads.ts`, never the uncached data-store functions. — [finding](findings/2026-10-09-guide-pages-skipped-public-cache.md) — Guard: `src/app/(public)/guides/[slug]/page.test.ts:22` (+1 more)
 - 2026-10-09 — Each reference to published_fee_catalog recomputes the whole catalog. — [finding](findings/2026-10-09-catalog-view-recomputed-per-reference.md) — Guard: `src/lib/data-store/search.test.ts:267` (+2 more)
 
-### Migrations, deploys and builds (17)
+### Migrations, deploys and builds (18)
 
+- 2026-10-25 — A green tsc job does not mean production deployed: a bare `postgres.Sql` handle assigned a custom-typed `postgres()` failed Vercel's type check at random and held production on an older build for five merges (#2657). — [finding](findings/2026-10-25-bare-postgres-sql-breaks-vercel-build.md) — Guard: `src/lib/data-store/db-test-handles.test.ts`
 - 2026-10-20 — An ISR page that reads the database gives those reads a deadline during `next build` (`readOnRequest`, 15 s) and renders its short-lived fallback past it, so a busy database never holds a page past Next's 60-second limit. — [finding](findings/2026-10-20-isr-pages-build-time-db-reads.md) — Guard: `src/app/build-time-reads.test.ts` (+1 more)
 - 2026-10-20 — A check whose exit 0 means "skip the build" must default to building; only an explicit skip decision may exit 0. — [finding](findings/2026-10-20-vercel-skip-check-fails-open.md) — Guard: `scripts/vercel-ignore-build.test.ts:158` (+3 more)
 - 2026-10-20 — A page or route that reads the database must not be prerendered at build; render it on request and cache the data, so the database's load never decides whether a deploy succeeds. — [finding](findings/2026-10-20-sitemap-build-time-db-reads.md) — Guard: `src/app/sitemap-cache.test.ts` (+1 more)
