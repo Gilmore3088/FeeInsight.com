@@ -336,6 +336,52 @@ describe("checkFeeCategory", () => {
     }
   });
 
+  it("ties the key-deposit exemptions to the key or the night deposit noun (v82, #1662)", () => {
+    // Kept by v66's unanchored "service"/"monthly" match; each is a key deposit, so each is refused.
+    for (const name of [
+      // A section header Knox carries into the name (live rows 14439, 104888 show the shape).
+      "Night Depository Services: Key Deposit",
+      // "monthly" sits in an unrelated clause.
+      "Night Depository Key Deposit (refundable; service fee billed monthly)",
+      "Night deposit key deposit; customer service hours apply",
+      // "Serviced" is not "service", and the accounts it names are not the service.
+      "Key Deposit (Night Depository) - Serviced Accounts",
+      // The service noun runs straight into the item: the key deposit is what is priced.
+      "Night Deposit Service Key Deposit",
+      // Borderline, refused: "Monthly" qualifies nothing priced here (no monthly fee or charge); the
+      // item is still the key deposit.
+      "Monthly Night Deposit Key Deposit",
+      // Borderline, refused: "Annual Rental" names which customers pay the deposit, not an annual or
+      // rental fee; the item is still the key deposit.
+      "Night Deposit Key Deposit - Annual Rental Customers",
+      // A "/" or "," after the service noun is a header too (review of #2592).
+      "Night Depository Service/Key Deposit",
+      "Night Depository Service, Key Deposit",
+    ]) {
+      expect(checkFeeCategory("night_deposit", name).ok, name).toBe(false);
+    }
+    for (const name of [
+      // Borderline, kept: the price names replacement keys ("replacement keys $25"), and a replaced
+      // key stays night deposit under option A.
+      "Night Depository Key Deposit - replacement keys $25",
+      // Live 74024 stays, as at #1640's head: the deposit row also prices a lost key.
+      "Night Deposit Key Deposit/Lost",
+      // The service or a periodic fee that names a key deposit is still the service.
+      "Night Depository Service Monthly Fee (key deposit $10)",
+      "Night Drop Service (key deposit required)",
+      "Night Depository - Annual (key deposit refundable)",
+      "Night Deposit Fee per month, key deposit $5",
+      // A night deposit box, a periodic fee named before the noun, or a "$10/month" price is the
+      // service too (review of #2592).
+      "Night Deposit Box Rental - Key Deposit $25",
+      "Night Deposit Box - Annual (key deposit refundable)",
+      "Annual Night Drop Fee (key deposit $20)",
+      "Night Depository Key Deposit (rental $10/month)",
+    ]) {
+      expect(checkFeeCategory("night_deposit", name), name).toEqual({ ok: true });
+    }
+  });
+
   it("keeps other banks' customers at our ATMs out of non-network ATM fees (live rows, Oct 6)", () => {
     for (const name of [
       "Non-Member ATM Transaction Fee",
@@ -2244,5 +2290,53 @@ describe("guard v80: loan, PIN, non-customer, ATM table and band-floor rows (#19
     // A band that only says which checks or balances a free fee covers stays (107296, 43270).
     expect(withLine("check_cashing", "Check Cashing", 0, "Check Cashing ($0.00 – $300.00) | N/C").ok).toBe(true);
     expect(withLine("monthly_maintenance", "Monthly Maintenance Fee .No Charge", 0, "$0 - $1,500.00 | Monthly Maintenance Fee…...No Charge").ok).toBe(true);
+  });
+});
+
+describe("guard v83: other card and ATM services filed as the non-network ATM fee (#1690)", () => {
+  const atm = (name: string, amount: number = 10) => checkFeeCategory("atm_non_network", name, { amount });
+
+  it("re-files an account investigation listing ATM items to account research (raw 750417)", () => {
+    const name = "Account Investigation - Share / ATM / ACH (per item after 60 days)";
+    expect(atm(name)).toMatchObject({ ok: false, code: "name_contradicts" });
+    expect(refileCategory("atm_non_network", name)).toBe("account_research");
+  });
+
+  it("re-files ATM photos to account research (raw 790236)", () => {
+    expect(atm("ATM Photos at Credit Union").ok).toBe(false);
+    expect(refileCategory("atm_non_network", "ATM Photos at Credit Union")).toBe("account_research");
+    expect(atm("ATM Research Fee").ok).toBe(false);
+  });
+
+  it("refuses a card's research or film fee without re-filing it (the retired card dispute type)", () => {
+    expect(atm("ATM Card Research/Film Fee", 75).ok).toBe(false);
+    expect(refileCategory("atm_non_network", "ATM Card Research/Film Fee")).toBe("atm_non_network");
+  });
+
+  it("refuses an ATM transaction that overdraws a share (raw 790212)", () => {
+    expect(atm("ATM Negative Share Transaction")).toMatchObject({ ok: false, code: "name_contradicts" });
+    expect(refileCategory("atm_non_network", "ATM Negative Share Transaction")).toBe("atm_non_network");
+  });
+
+  it("refuses an additional card (raw 750400; live 82585, 100991)", () => {
+    expect(atm("Additional ATM/Debit Card").ok).toBe(false);
+    expect(atm("ATM/Debit: Each Additional Card", 5).ok).toBe(false);
+  });
+
+  it("keeps a card holder or a photo ID, which name no card or research (review of #2595)", () => {
+    expect(atm("ATM Transaction (additional card holders)").ok).toBe(true);
+    expect(atm("Out-of-network ATM (photo ID required)").ok).toBe(true);
+  });
+
+  it("still refuses card issuance (raw 691530, v70)", () => {
+    expect(atm("Card Services ATM Card Issuance Service Charge: Charges").ok).toBe(false);
+  });
+
+  it("keeps additional ATM transactions and withdrawals, which name no card", () => {
+    expect(atm("Each additional ATM transaction over six (6) per month", 2).ok).toBe(true);
+    expect(atm("ATM withdrawals per month, each additional withdrawal", 1).ok).toBe(true);
+    expect(atm("Other ATM Locations: (Additional Withdrawals)", 1.5).ok).toBe(true);
+    expect(atm("Additional charge per transaction if ATM transaction is done outside our no-surcharge ATM network", 2).ok).toBe(true);
+    expect(atm("Foreign ATM Withdrawal", 2).ok).toBe(true);
   });
 });

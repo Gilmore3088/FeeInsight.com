@@ -533,6 +533,9 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     otherwise it stays rejected with the flag. A checked row with no type and a lineup
     product gets `account_type_checked:v1` and is not read again; a row with no product is read
     again on every step, since a later Knox read can fill its product. One event per run names every row.
+    Each live takedown writes a weight-0 `pipeline_feedback` row `wrong` / `wrong_category` at publish;
+    each release (part 3) writes `restored` / `account_type_hold_released`, a record, never a
+    `wrong` row, so no reader keyed on kind or signal counts a release as a wrong category (#1680).
     A fee a hand check found wrongly typed stays live through `ACCOUNT_TYPE_KEEP_LIVE`: one line per
     fee with its reason, keyed by institution, name, price and the stored document the hand check read,
     so a re-read's new row stays live too (28834: inst 5800, doc 3633). The key is bound to that
@@ -594,7 +597,9 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     edition of`).
 14. Category guard (`category-guard.ts`): a name that contradicts its category, up to 100 a
     step, batch `category-guard-run-<run id>`, `category_guard:<code>: <reason>`; it also
-    re-files a live fee under the type its name names.
+    re-files a live fee under the type its name names. Its restore brings back a takedown
+    today's guard passes and that traces on its own stored text, unless the same fee is already
+    live; a twin held as `account_type_hold:%` counts as present too (#1675).
 15. Guard requeue (`guard-requeue.ts`): a verified row the guard rejected at publish and never
     published is re-read once per guard version; one today's guard passes goes back to
     verified (flag `category_guard_requeued:g<version>`). No rollback.
