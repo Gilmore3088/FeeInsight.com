@@ -27,7 +27,7 @@ report, and note where a figure stops being tied to its source. Read from `main`
    records are bound.
 4. **Report basket** (`report-basket.ts`). Kept in the browser's localStorage. When the report is
    built, an Ask item with a saved-answer ID is re-read on the server (`authenticatedReportFindings`
-   in `reports/actions.ts`): the title is kept, and `hamiltonView` plus `whatThisMeans` are joined
+   in `reports/actions.ts`): the saved answer's title replaces the browser's, and `hamiltonView` plus `whatThisMeans` are joined
    into `detail` as plain text. The binding and verdict are dropped. A Position or Test item is
    passed on as the browser sent it (`detail` up to 1,200 characters).
 5. **Report sections** (`report-inputs.ts`, `generateVerifiedSection` in `generate.ts`). Before this
@@ -66,6 +66,9 @@ DATA a section's figures are checked against".
   outside tests. The report path does not use it; it runs its own figure check instead. One output
   gate (V5 T4) should be the only gate.
 - **The written-answer gate runs only for `mode: "analyze"`.** Every customer screen sends that
-  mode today (`AnalyzeWorkspace.tsx`), so nothing streams ungated now, but a new screen with
-  another mode would stream unchecked and unsaved. The one output gate should not depend on a
+  mode today (`AnalyzeWorkspace.tsx`), so no customer answer streams ungated. The two admin chats
+  (`admin/hamilton/research/[agentId]/research-chat.tsx`, `admin/hamilton/chat/hamilton-chat.tsx`)
+  send no mode and get no written-answer gate, and a new screen with another mode would stream
+  unchecked and unsaved. The comment at `route.ts:146` that names a report runner and export as
+  `gate_citations` callers is out of date. The one output gate should not depend on a
   mode string.
