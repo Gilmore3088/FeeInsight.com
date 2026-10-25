@@ -137,4 +137,14 @@ export const DEMING_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "o2-retrieval-holdout-before-embeddings",
+    agent: "deming",
+    stage: "retrieval pilot",
+    lesson: "Judge a retrieval add-on only by its lift on a holdout of human-confirmed current schedules: split by institution id, tune on the tuning split alone, score the holdout once, and report recall at 3 and 10, precision at 1, false negatives split into never stored and ranked lower, and a paired sign test, saying too few labels when it cannot decide. Compare it with the pipeline's own page choice, not with nothing, and note when the labels were drawn from the pages that choice already cites. Treat a ranker as a re-order of approved candidates only: never the source of truth, proof a fee is absent, a currency check or permission to publish. Consider embeddings only after a plain metadata and full-text ranker shows holdout lift.",
+    why: "The O2 pilot's metadata and full-text ranker gained 13 points of recall at 3 on its tuning split but none that held on the 42-bank holdout (precision at 1 was 6 wins, 7 losses, p = 1.00): the tuning gain was fitted. The W43 labels came from documents the live fees cite, so today's choice scored 89% there and 47% on the independent browser hunt. A stated year also proved a weak sign of being current, since several confirmed schedules carry 2022 to 2024 dates.",
+    evidence: { issues: [1027], prs: [], files: ["docs/project/findings/2026-10-25-retrieval-pilot-no-holdout-lift.md", "src/lib/agents/deming/shadow-lab/retrieval-pilot.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];
