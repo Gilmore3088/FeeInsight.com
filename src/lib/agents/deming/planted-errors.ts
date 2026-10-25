@@ -21,7 +21,8 @@ import { judgeBank, type KeyFee } from "./knox-misses";
  * 1. detected: the check that runs on live fees today flags the planted fee;
  * 2. recorded: the rows that check writes to `pipeline_feedback` name the stage that caused it;
  * 3. read: one of those rows is read (`feedbackRowRead`) by a file of the owning agent that is a
- *    registered reader of its kind (`FEEDBACK_KINDS`, #2062) and picks it out by name;
+ *    registered reader of its kind (`FEEDBACK_KINDS`, #2062) and picks it out in the code that acts
+ *    on it (`picksOut` is that code, not a mention elsewhere in the file);
  * 4. rerun: a fix to the owning step reaches the bank again (for an extract fix, an entry in
  *    `error-fixes.json` may name the check, #2058; for lost text, Rosetta's next reader);
  * 5. fixed: the daily re-check that would close the error judges the corrected fee right, and
@@ -55,8 +56,8 @@ export interface PlantedError {
   record: (reason: string) => PlantedRecord[];
   /** The owner's file that acts on those rows, and the name in it that picks them out. */
   reader: { file: string; picksOut: string } | null;
-  /** True when a fix to the owning step reaches the bank again. Null: no such path. */
-  rerun: (() => boolean) | null;
+  /** True when a fix to the owning step reaches the bank again (`source` reads a repository file). Null: no such path. */
+  rerun: ((source: (file: string) => string | null) => boolean) | null;
   /** The daily re-check on the planted fee and on the corrected one. Null: no such re-check. */
   recheck: { planted: () => boolean; corrected: () => boolean } | null;
 }
@@ -162,7 +163,9 @@ export const PLANTED_ERRORS: PlantedError[] = [
       "2026-10-20", null,
     )),
     reader: { file: "src/lib/agents/magellan/discovery.ts", picksOut: "AUDIT_FEEDBACK_KIND" },
-    rerun: null,
+    // The reader is the re-run: Magellan's stale-link search reads the discover miss and searches
+    // the bank's link again (#2558).
+    rerun: (source) => Boolean(source("src/lib/agents/magellan/discovery.ts")?.includes("AUDIT_FEEDBACK_KIND")),
     recheck: null,
   },
   {
@@ -187,7 +190,8 @@ export const PLANTED_ERRORS: PlantedError[] = [
     stage: "extract",
     detect: () => { const verdict = limitGuardVerdict(LIMIT_PLANTED); return verdict ? limitGuardReason(verdict) : null; },
     record: (reason) => [...rows(takedown(921, reason, LIMIT_PLANTED)), confirmed(LIMIT_GUARD_CHECK, 921)],
-    reader: { file: "src/lib/agents/knox/takedown-lessons.ts", picksOut: LIMIT_GUARD_CHECK },
+    // Knox's takedown lessons act on the limit guard's confirmed takedowns and skip every other producer.
+    reader: { file: "src/lib/agents/knox/takedown-lessons.ts", picksOut: `row.check_name!=="${LIMIT_GUARD_CHECK}"` },
     rerun: () => errorFixCanName("extract", LIMIT_GUARD_CHECK),
     recheck: { planted: () => limitGuardVerdict(LIMIT_PLANTED) != null, corrected: () => limitGuardVerdict(LIMIT_CORRECTED) == null },
   },
@@ -212,7 +216,8 @@ export const PLANTED_ERRORS: PlantedError[] = [
     stage: "extract",
     detect: () => (footnoteMarksBusiness(AUDIENCE_TEXT, "Overdraft - Insufficient Funds / Uncollected") ? BUSINESS_FOOTNOTE_REASON : null),
     record: (reason) => [...rows(takedown(931, reason, { canonical_fee_key: "nsf", fee_name: "Overdraft - Insufficient Funds / Uncollected", amount: 40 })), confirmed(BUSINESS_SCHEDULE_CHECK, 931)],
-    reader: { file: "src/lib/agents/knox/takedown-lessons.ts", picksOut: BUSINESS_SCHEDULE_CHECK },
+    // Knox acts only on producers its takedown witness supports; the business schedule is not one.
+    reader: { file: "src/lib/agents/knox/takedown-lessons.ts", picksOut: `row.check_name!=="${BUSINESS_SCHEDULE_CHECK}"` },
     rerun: () => errorFixCanName("extract", BUSINESS_SCHEDULE_CHECK),
     recheck: null,
   },
@@ -256,10 +261,12 @@ export const PLANTED_ERRORS: PlantedError[] = [
  */
 export const KNOWN_GAPS: Record<string, Partial<Record<LoopLink, number>>> = {
   // Magellan re-searches the link (#2558), but nothing re-checks that the new document fixed the fee.
-  wrong_document: { rerun: 2058, fixed: 2058 },
+  wrong_document: { fixed: 2058 },
   // The error loop names only checks its daily re-check re-runs; the limit guard is not one.
   limit_as_fee: { rerun: 2058 },
-  wrong_audience: { rerun: 2058, fixed: 2058 },
+  // Knox's takedown lessons load the business-schedule second look but learn only from the limit
+  // guard's (`takedown-lessons.ts` skips other producers as unsupported).
+  wrong_audience: { read: 2062, rerun: 2058, fixed: 2058 },
   // Duplicates teach Knox nothing: only the takedown sync's restore detection reads them.
   duplicate: { read: 2062, rerun: 2058, fixed: 2058 },
   // A missed fee is a Deming test case, not a feedback row, so Knox never learns from it.
@@ -304,7 +311,7 @@ export function walkLoop(planted: PlantedError, source: (file: string) => string
     else read = true;
   }
 
-  const rerun = planted.rerun ? planted.rerun() || fail("rerun", "a fix to the step never reaches the bank again") : fail("rerun", "no re-run path");
+  const rerun = planted.rerun ? planted.rerun(source) || fail("rerun", "a fix to the step never reaches the bank again") : fail("rerun", "no re-run path");
   const fixed = planted.recheck
     ? (planted.recheck.planted() && planted.recheck.corrected()) || fail("fixed", "the re-check cannot tell the corrected fee from the planted one")
     : fail("fixed", "no daily re-check judges it gone");
