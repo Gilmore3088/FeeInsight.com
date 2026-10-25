@@ -549,7 +549,12 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
       // A wire is the one its direction words give ("incoming", "international"); "wire" alone is any wire.
       if (named.some((fee) => WIRES.includes(fee))) {
         for (const wire of WIRES) covered.delete(wire);
-        for (const wire of wiresNamed(words)) covered.add(wire);
+        // A bank's own name ("First International Bank") is not a direction word.
+        const unnamed = [...names.values()].reduce(
+          (rest, name) => (name.trim() ? rest.split(name.trim().toLowerCase()).join(" ") : rest),
+          words,
+        );
+        for (const wire of wiresNamed(unnamed)) covered.add(wire);
       }
       if (covered.has(category)) return true;
       const product = fact.scope.product?.trim().toLowerCase();

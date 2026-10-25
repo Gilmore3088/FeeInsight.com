@@ -261,6 +261,10 @@ describe("a fee figure binds only to a record of the fee its clause names (#1077
     const incoming = of(45, 15, "wire_domestic_incoming", "Wire in");
     expect(bindNarrative({ text: "Bank A's incoming wire fee is $15.", evidence: bundle([incoming], []), names }).supported[0].factIds).toEqual([incoming.id]);
     expect(bindNarrative({ text: "Bank A's wire fee is $15.", evidence: bundle([incoming], []), names }).supported[0].factIds).toEqual([incoming.id]);
+    // A bank's own name is not a direction word: "First International Bank" still binds its domestic wire.
+    const domestic = of(46, 25, "wire_domestic_outgoing", "Wire out");
+    const intlName = new Map([[A, "First International Bank"], [B, "Bank B"]]);
+    expect(bindNarrative({ text: "First International Bank's wire fee is $25.", evidence: bundle([domestic], []), names: intlName }).supported[0]?.factIds).toEqual([domestic.id]);
   });
 
   it("a clause that leaves its fee out (\"Bank B's is $30\") takes the fee the sentence names", () => {
