@@ -226,10 +226,20 @@ export const EDITION_SCAN_CHARS = 8000;
 export const EDITION_LATE_HEADING_LIVE = false;
 
 /**
- * A title or edition line names the fee schedule: "fee(s)" or "charges". A bare "schedule" is any
- * schedule ("Dividend Rate Schedule", "Holiday Schedule"), so it never counts on its own.
+ * A title names the whole fee schedule. A bare "schedule" is any schedule ("Dividend Rate Schedule",
+ * "Holiday Schedule"), and "<X> Fees" is one section or one fee's notice ("Overdraft Fees",
+ * "ATM Fees"), so neither dates the page.
  */
-const SCHEDULE_WORD = /\b(?:fees?|charges)\b/i;
+const WHOLE_SCHEDULE =
+  /\b(?:fee schedule|schedule of (?:fees|charges|service charges)|fees (?:and|&) charges|service charges|fee disclosures?)\b/i;
+/**
+ * An edition line that names the schedule itself before "effective": nothing but the schedule's
+ * name, optionally with its audience ("Fees Effective 1/1/2027", doc 38132; "Consumer Schedule of
+ * Fees - Effective …"). "Some fees", "Wire transfer fees" or a table header with other columns
+ * date something narrower.
+ */
+const SCHEDULE_NAME_ONLY =
+  /^\s*(?:(?:consumer|business|personal|commercial|retail|deposit account|account)\s+)?(?:fee schedule|schedule of (?:fees|charges|service charges)(?: and services)?|fees(?: (?:and|&) charges)?|service charges)\s*[-–:|]?\s*$/i;
 /** A price on the line makes it a fee line ("Account Research - Effective 11/1/26 | $25.00 per hour"). */
 const PRICED = /\$\s?\d/;
 /** A table of contents entry dates a section, not the document ("Schedule of Fees and Services Effective 11.01.2026 ……44"). */
@@ -240,21 +250,21 @@ const CONTENTS_LEADER = /\.{3,}|…/;
  * "2027 Updated Fee Schedule" in a newsletter (Wyrope, doc 36403), "Important Changes Effective …".
  */
 const ANNOUNCES =
-  /\b(?:new|updated?|upcoming|coming|soon|changes?|changing|revised|revisions?|amended|amendments?|proposed|notices?|pdf|download|link)\b/i;
+  /\b(?:new|updat\w*|upcoming|coming|soon|chang\w*|revis\w*|amend\w*|adjust\w*|waiv\w*|eliminat\w*|no more|no longer|increas\w*|decreas\w*|reduc\w*|lower\w*|propos\w*|notices?|pdf|download|link)\b/i;
 /**
  * What may follow the date on an edition line: nothing, closing punctuation, or a footnote mark
  * ("Fees Effective 1/1/2027 * Fee will be assessed …", doc 38132). A line that goes on is a
  * sentence or a link about the schedule ("… effective January 1, 2027 are listed on our website",
  * "… Effective January 1, 2027 (PDF)"), not its edition line.
  */
-const ENDS_AT_DATE = /^\s*(?:[*†‡]|[.,;:)\]]*\s*$)/;
+const ENDS_AT_DATE = /^\s*(?:[*†‡]|[.,;)\]]*\s*$)/;
 /**
  * A page that says its prices are the current ones is in effect whatever else it dates: MCCU (doc
  * 38397) links its December 1, 2026 schedule above "Current Consumer Fees are listed below and in
  * effect through November 30, 2026"; BayPort's table header is "Fee - Current".
  */
 const CURRENT_PRICES =
-  /\bfees?\s*[-–:|]\s*current\b|\bcurrent\s+(?:consumer\s+|business\s+|personal\s+)?(?:fees|fee schedule|schedule of fees|prices)\b|\bin effect (?:through|until)\b/i;
+  /\bfees?\s*[-–:|]\s*current\b|\bcurrent\s+(?:consumer\s+|business\s+|personal\s+)?(?:fees?|fee schedule|schedule of fees|prices?)\b|\bfees?\s+today\b|\bin effect (?:through|until)\b/i;
 const TITLE_MAX_CHARS = 80;
 
 /**
@@ -281,12 +291,12 @@ export function lateEdition(text: string | null | undefined): string | null {
     const title = above >= 0 ? lines[above].trim() : "";
     // A notice or announcement title above makes the line part of it ("Notice to Members").
     if (ANNOUNCES.test(title)) continue;
-    const underTitle = title.length > 0 && title.length <= TITLE_MAX_CHARS && SCHEDULE_WORD.test(title) && !PRICED.test(title);
+    const underTitle = title.length > 0 && title.length <= TITLE_MAX_CHARS && WHOLE_SCHEDULE.test(title) && !PRICED.test(title);
     for (const m of line.matchAll(/effective/gi)) {
       const at = m.index ?? 0;
       const before = line.slice(0, at);
       if (ANNOUNCES.test(before)) continue;
-      if (!SCHEDULE_WORD.test(before) && !(underTitle && before.trim() === "")) continue;
+      if (!SCHEDULE_NAME_ONLY.test(before) && !(underTitle && before.trim() === "")) continue;
       const after = line.slice(at + "effective".length);
       const dated = DATE_AFTER_EFFECTIVE.exec(after);
       if (dated && !ENDS_AT_DATE.test(after.slice(dated[0].length))) continue;
@@ -302,7 +312,9 @@ export function lateEdition(text: string | null | undefined): string | null {
  * SQL: the part of a stored text column an edition reader needs. The heading alone, unless the rest
  * of the window has an "effective" dated in `today`'s year or the next two; only those texts can have
  * a late edition line that holds or restores a fee, so only they carry `EDITION_SCAN_CHARS`
- * characters, and `lateEdition` decides. The prefilter is only the date: adding the fee word before
+ * characters, and `lateEdition` decides. An older edition whose only edition line is late and dated
+before this year is cut to its heading, so `editionTakesOver` misses that retirement (it never
+takes a fee down wrongly). The prefilter is only the date: adding the fee word before
  * it cost about 4 s more on prod (Oct 25) for half the bytes (982 of 9,133 documents, 6.3 MB, against
  * 493 and 3.0 MB). `column` is a trusted column name, never user text.
  */

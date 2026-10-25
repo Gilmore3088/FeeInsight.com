@@ -44,8 +44,11 @@ would have held 182 live fees on 13 documents. Only one is a schedule not yet in
 
 **Fix:** `lateEdition` in `hamilton/schedule-edition.ts`, used by `editionStarts` when the heading
 states no edition. A line past the heading counts when it has "effective <date>", no price and no
-contents leader, ends at its date (or a footnote mark), and names the fees ("fee(s)" or "charges",
-never a bare "schedule") before "effective" or sits under a short fee schedule title. The heading's
+contents leader, ends at its date (or a footnote mark), and either has only the whole schedule's
+name before "effective" ("Fees Effective …", "Business Fee Schedule - Effective …") or sits under a
+short title naming the whole schedule ("Fee Schedule", "Schedule of Fees", "Fees and Charges";
+never a bare "schedule" or one section's "<X> Fees"). A "Current Fee" or "Fee Today" column counts
+as current prices. The heading's
 filters apply; announcement, notice and link words (on the line or the title above) skip a line; a
 page that calls its prices current, or whose edition lines disagree, gets no late edition. Both
 readers get the same text: `editionWindowSql` sends up to 8,000 characters only for texts with an
@@ -66,8 +69,12 @@ keeps 18 live fees from its checking page (doc 36182). The read took 11.6 s (EXP
 page with the switch on: a link line ("Consumer Fee Schedule Effective January 1, 2027 (PDF)"), a
 rate or holiday schedule title ("Dividend Rate Schedule" / "Effective December 1, 2026"), a
 newsletter sentence ("Our fees and charges effective January 1, 2027 are listed on our website."),
-"Coming soon: Fee Schedule effective …" and a "Notice to Members" title. None is in prod's texts
-today, but each is now refused and tested. The same review timed Darwin's read at 20.7 s against
+"Coming soon: Fee Schedule effective …" and a "Notice to Members" title. A second review found
+more: a table with a "Current Fee" column beside "Fees Effective January 1, 2027", notice titles
+("Fee Updates", "Fee Waivers", "No More Overdraft Fees") and one section's date ("Overdraft Fees" /
+"Effective …", "Wire transfer fees effective …:"). So the reader now takes only the whole
+schedule's name, not any line with a fee word. None of these is in prod's texts today; each is
+refused and tested. The same review timed Darwin's read at 20.7 s against
 main's 7.8 s (a per-fee join carrying the 8,000-character text and a costly fee-word prefilter);
 the rework ran in 5.6 s on prod (EXPLAIN ANALYZE, Oct 25), reading 28,930 live or held fees on
 2,011 dated documents. The tighter reader only refuses more lines, so the switch-on dry run stays

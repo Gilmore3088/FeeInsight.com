@@ -99,6 +99,32 @@ describe("an edition line past the menu (lateEdition)", () => {
     }
   });
 
+  it("does not hold a current page for a future column, a fee notice or one section's date (second review of #2573)", () => {
+    const pages = [
+      `${MENU}Fee Schedule\n\nService | Current Fee | Fees Effective January 1, 2027\n\nNSF | $30 | $35`,
+      `${MENU}Service | Fee Today | Fees effective 1/1/2027\nNSF | $30 | $35`,
+      `${MENU}Fee Updates\nEffective January 1, 2027`,
+      `${MENU}Fee Adjustments\nEffective January 1, 2027`,
+      `${MENU}Fee Waivers\nEffective January 1, 2027`,
+      `${MENU}No More Overdraft Fees\nEffective January 1, 2027`,
+      `${MENU}Eliminating NSF Fees\nEffective January 1, 2027`,
+      `${MENU}Fee Schedule\n\nNSF | $30\n\nOverdraft Fees\n\nEffective January 1, 2027\n\nWe will no longer charge a fee for overdrafts under $50.`,
+      `${MENU}ATM Fees\nEffective December 1, 2026\nForeign ATM withdrawals will be free at partner ATMs.`,
+      `${MENU}Our Fees\n\nWire transfer fees effective January 1, 2027:\nOutgoing domestic | $30`,
+      `${MENU}Some fees effective January 1, 2027`,
+      `${MENU}Monthly Service Charge\nEffective January 1, 2027`,
+    ];
+    for (const page of pages) {
+      expect(lateEdition(page)).toBeNull();
+      expect(notYetEffective(page, TODAY, true)).toBeNull();
+    }
+  });
+
+  it("still reads a whole schedule's own edition line", () => {
+    expect(lateEdition(`${MENU}CONSUMER SCHEDULE OF FEES AND CHARGES\nEffective January 1, 2027\nNSF | $35`)).toBe("2027-01-01");
+    expect(lateEdition(`${MENU}Business Fee Schedule - Effective December 1, 2026\nNSF | $35`)).toBe("2026-12-01");
+  });
+
   it("keeps the heading's own edition first: a second, later schedule further down changes nothing (MECU, doc 37380)", () => {
     const mecu =
       "CONSUMER FEE SCHEDULE\nEFFECTIVE JANUARY 2, 2026\nOnline Banking | Free\n" + "Stop Payment | $25.00 per presentment\n".repeat(12) +
