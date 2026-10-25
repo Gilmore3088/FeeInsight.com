@@ -332,6 +332,32 @@ describe("written answer sentence binding (#981, H06-T06)", () => {
     expect(metadata()).not.toHaveProperty("claims");
   });
 
+  it("records every published fee row the profile reads returned, so a correction finds the saved answer by fee (#1077 defect 4)", async () => {
+    // A pipeline preview row has no record id; a local competitor's price is an aggregate, not a record.
+    const PREVIEW = { identity: { id: 9003, name: "Synthetic Bank C" }, fees: { verified: [], provisional: [
+      { fee_name: "Overdraft", fee_category: "overdraft", amount: 33, status: "provisional", pipeline_stage: "verified_unpublished" },
+    ] } };
+    const COMPETITORS = { institution: "Synthetic Bank A", your_fees: { overdraft: 10 }, market: "Synthetic County",
+      source: "FDIC Summary of Deposits 2025; verified published fee amounts", competitors: [{ name: "Synthetic Bank D", fees: { overdraft: 30 } }] };
+    answersFrom(BOUND, [PROFILE, OTHER, PREVIEW, COMPETITORS, TOOL_OUTPUT]);
+    await POST(request());
+    // Bank B's row is recorded though its sentence is a reading: the save records what the tools read, as a storyline does.
+    expect(mocks.save.mock.calls[0][0].feeRefs).toEqual([
+      { feePublishedId: 1, institutionId: 9001, sourceDocumentId: 101, sourceContentHash: null },
+      { feePublishedId: 2, institutionId: 9002, sourceDocumentId: 102, sourceContentHash: null },
+    ]);
+  });
+
+  it("records no fee rows when the profile holds only pipeline preview rows, so the answer keeps the institution match", async () => {
+    const PREVIEW_ONLY = { identity: { id: 9001, name: "Synthetic Bank A" }, fees: { verified: [], provisional: [
+      { fee_name: "Overdraft", fee_category: "overdraft", amount: 10, status: "provisional", pipeline_stage: "raw_unverified" },
+    ] } };
+    answersFrom("## Hamilton's View\nSynthetic Bank A lists a $10 overdraft fee.", [PREVIEW_ONLY]);
+    await POST(request());
+    expect(mocks.save).toHaveBeenCalledTimes(1);
+    expect(mocks.save.mock.calls[0][0].feeRefs).toEqual([]);
+  });
+
   it("still saves the answer, with its binding and without claims, when the claims build throws (PR #2583 review)", async () => {
     mocks.claimsThrow = true;
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});

@@ -53,8 +53,10 @@ function hashOf(value: unknown): string | null {
 
 /**
  * The published fee rows found in what a saved output was built from: the institution's own rows
- * (`ownRows`), evidence facts read from `published_fee_catalog`, and named peers or competitors
- * that carry `feePublishedIds`. Market layers (state, district, national) are aggregates and are
+ * (`ownRows`), evidence facts read from `published_fee_catalog`, the catalog rows of an
+ * institution profile (`identity` with `fees.verified` / `fees.provisional` rows carrying
+ * `record_id`), and named peers or competitors that carry `feePublishedIds`. Every row read
+ * counts, not only the rows a sentence rests on, as for a storyline. Market layers (state, district, national) are aggregates and are
  * skipped. First sighting of a row wins, then one that names its document fills the gap. Capped
  * at MAX_SAVED_FEE_REFS. Pure.
  */
@@ -99,6 +101,22 @@ export function collectFeeRefs(...values: unknown[]): SavedFeeRef[] {
     if (source && typeof source === "object" && source.table === "published_fee_catalog") {
       const scope = obj.scope as Record<string, unknown> | undefined;
       add(source.recordId, scope?.institutionId, single(source.sourceDocumentIds), source.documentContentHash);
+    }
+    // An institution profile as a written answer's `getInstitution` read returns it
+    // (`src/lib/research/tools.ts`): `identity.id` and catalog rows under `fees.verified` and
+    // `fees.provisional`, each with its `record_id` and `source_document_id` (#1077, defect 4).
+    // The same shape the written answer's binding reads its fee records from. A pipeline preview
+    // row (`pipeline_stage`) is no published row and has no `record_id`; it records nothing.
+    const identity = obj.identity as Record<string, unknown> | undefined;
+    const profileFees = obj.fees as Record<string, unknown> | undefined;
+    if (identity && typeof identity === "object" && profileFees && typeof profileFees === "object" && !Array.isArray(profileFees)) {
+      for (const list of [profileFees.verified, profileFees.provisional]) {
+        if (!Array.isArray(list)) continue;
+        for (const row of list as Record<string, unknown>[]) {
+          if (!row || typeof row !== "object" || row.pipeline_stage) continue;
+          add(row.record_id, identity.id, row.source_document_id, null);
+        }
+      }
     }
     const peerIds = obj.feePublishedIds ?? obj.fee_published_ids;
     if (Array.isArray(peerIds)) {
