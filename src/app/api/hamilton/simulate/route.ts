@@ -26,6 +26,7 @@ import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
 
 import { recordProRequest } from "@/lib/agents/run-store";
 import { checkProAiQuota, quotaExceededMessage } from "@/lib/hamilton/quota";
+import { HAMILTON_STOPPED_MESSAGE } from "@/lib/hamilton/provider-paused";
 import { streamText } from "ai";
 import { guardProviderCall, recordProviderUsage, observedProviderUsage, type ProviderUsage, estimateAnthropicCostMicrousd } from "@/lib/ai-provider-usage";
 import { getAnthropicLanguageModel, getHamiltonModel } from "@/lib/ai-provider";
@@ -119,10 +120,9 @@ async function handlePOST(request: Request) {
   try {
     providerStartedAt = await guardProviderCall(providerContext);
   } catch (error) {
-    return new Response(
-      error instanceof Error ? error.message : "Automation is stopped",
-      { status: 423 },
-    );
+    // V5 T6: guardProviderCall recorded the stop as blocked; the reader gets the plain line, never its reason.
+    console.error("[hamilton-simulate] provider call refused", error);
+    return new Response(HAMILTON_STOPPED_MESSAGE, { status: 423 });
   }
 
   let providerFailed = false;

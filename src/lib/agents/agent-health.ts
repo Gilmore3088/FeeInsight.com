@@ -6,6 +6,7 @@ import { SOURCE_CHECK_REASON, SOURCE_CHECK_RESTORE_PREFIX, SOURCE_CHECK_STRATEGY
 import { GUTENBERG_AGENT, PUBLISHER_AGENT_NAMES, PUBLISHER_STEP_KEYS } from "@/lib/agents/gutenberg/names";
 import { HOOVIE_AGENT, registryLedgerNames } from "@/lib/agents/hoovie/names";
 import { pdfStackedRepairSchemaReady } from "./rosetta/pdf-stacked-repair";
+import { GLYPH_REPAIR_STRATEGY } from "./rosetta/glyph-repair";
 
 /**
  * Agent health check: the same numbers for every agent every day, stored with the daily
@@ -403,6 +404,8 @@ export async function readRosettaNumbers(db: SqlTag): Promise<HealthNumbers> {
            COUNT(*) FILTER (WHERE outcome = ANY(${HARD_FAILURES}::text[]))::int AS read_failed
       FROM pipeline_attempts
      WHERE stage = 'read'
+       -- The glyph lane's receipt repeats a read already counted (#2598).
+       AND strategy <> ${GLYPH_REPAIR_STRATEGY}
        AND created_at > NOW() - INTERVAL '24 hours'
   `;
   return {
