@@ -370,7 +370,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | Constant | Strategy | Version | File |
 |---|---|---|---|
 | `ACCURACY_REPORTING_VERSION` | — | v1 | `deming/accuracy-measure.ts` |
-| `FRESH_AUDIT_VERSION` | — | v7 | `deming/fresh-audit.ts` |
+| `FRESH_AUDIT_VERSION` | — | v9 | `deming/fresh-audit.ts` |
 | `DEMING_REGRESSION_VERSION` | — | v1 | `deming/regression.ts` |
 | `BENCHMARK_HEALTH_VERSION` | — | v1 | `deming/benchmark-health.ts` |
 | `PLAYBOOK_CHECK_VERSION` | — | v1 | `deming/playbook-contradictions.ts` |

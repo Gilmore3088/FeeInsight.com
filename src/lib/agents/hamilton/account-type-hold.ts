@@ -1,7 +1,7 @@
 import type { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
-import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
+import { ACCOUNT_TYPE_HOLD_RELEASED_KIND, recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { accountTypeFlag, accountTypeOf, ACCOUNT_TYPE_FLAG_PREFIX, type AccountType } from "@/lib/account-type";
 import { passesDarwinChecks } from "@/lib/agents/knox/layout";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
@@ -350,11 +350,20 @@ export async function applyAccountTypeHold(
   return result;
 }
 
-function feedbackRow(hold: PlannedHold, part: "live" | "restored", runId: number): FeedbackRow {
+/**
+ * One `pipeline_feedback` row per changed fee, weight 0. A live takedown (part 1) reads as
+ * `wrong` / `wrong_category`: the fee was published under the consumer checking category. A release
+ * (part 3) is the opposite judgement, a guard refusal undone, so it reads as `restored` /
+ * `account_type_hold_released` (#1680); labelled `wrong_category` it would count as a wrong category
+ * to any reader keyed on kind or signal. Both are filed at publish, so a re-run's upsert on the same
+ * dedupe key never needs to move the stage.
+ */
+export function feedbackRow(hold: PlannedHold, part: "live" | "restored", runId: number): FeedbackRow {
+  const released = part === "restored";
   return {
     aboutStage: "publish",
-    signal: "wrong",
-    kind: "wrong_category",
+    signal: released ? "restored" : "wrong",
+    kind: released ? ACCOUNT_TYPE_HOLD_RELEASED_KIND : "wrong_category",
     reportedBy: "hamilton",
     checkName: ACCOUNT_TYPE_HOLD_CHECK,
     institutionId: hold.institutionId,

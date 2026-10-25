@@ -43,8 +43,13 @@ type SqlTag = typeof sql;
  * differently (`isSameItemConflict`), the rule Hamilton's own conflict check uses.
  * v7: that rule counts only schedule lines on the page's own host, priced above $0 and fetched
  * no earlier than the page, and pairs names only when they are the same item word for word.
+ * v8 (#1443): `nameQuality` reads Knox's narrowed `isCutoffName` (Knox v107), so a name whose only
+ * sentence words sit in a closed parenthetical ending it ("Notary fee (this service is for members
+ * only)") is no longer a `name_fragment`.
+ * v9 (#1521): `isCutoffName` (Knox v108) also reads a name cut before its noun after a count and an
+ * audience word ("Counter Check: A blank page of 3 personal") as a `name_fragment`.
  */
-export const FRESH_AUDIT_VERSION = 7;
+export const FRESH_AUDIT_VERSION = 9;
 export const FRESH_AUDIT_SAMPLE = ACCURACY_DAILY_SAMPLE;
 /** Below this many scorable fees the audit reports counts, not a percentage. */
 export const FRESH_AUDIT_MIN_SCORABLE = ACCURACY_MIN_SCORABLE;

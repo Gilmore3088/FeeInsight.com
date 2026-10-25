@@ -16,6 +16,7 @@ import { categoryGuardFlag } from "@/lib/agents/hamilton/publish";
 import { secondLook } from "@/lib/agents/hamilton/second-look";
 import { TAXONOMY_FOLD_CHECK, TAXONOMY_FOLD_KIND } from "@/lib/agents/hamilton/taxonomy-fold";
 import { inSavepoint } from "@/lib/agents/savepoint";
+import { ACCOUNT_TYPE_HOLD_REASON } from "@/lib/agents/hamilton/account-type-hold";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 
 type SqlTag = typeof sql;
@@ -661,8 +662,14 @@ export function tracesOnOwnText(
  * an identical fee is already live. One whose fold split places it comes back re-filed there,
  * published and verified rows alike, and the move is logged to pipeline_feedback as a fold.
  * Bounded per run; a failed read restores nothing.
+ *
+ * A twin the account type hold took down (`account_type_hold:`, #1100) still counts as the
+ * identical fee being there: the hold is a publish policy about a savings or money market
+ * account's monthly fee, so a copy of that fee coming back here would only go live until the
+ * hold's next run (#1675, as #1671 did for the business-schedule, cross-page and same-line
+ * restores).
  */
-async function restorePassingTakedowns(
+export async function restorePassingTakedowns(
   db: SqlTag,
   options: { dryRun: boolean; institutionId?: number; runId: number },
 ): Promise<{ restored: number; refiled: number }> {
@@ -731,7 +738,7 @@ async function restorePassingTakedowns(
            AND fp.rolled_back_reason LIKE 'category_guard:%'
            AND NOT EXISTS (
              SELECT 1 FROM published_fee_records live
-              WHERE live.rolled_back_at IS NULL
+              WHERE (live.rolled_back_at IS NULL OR live.rolled_back_reason LIKE ${`${ACCOUNT_TYPE_HOLD_REASON}:%`})
                 AND live.institution_id = fp.institution_id
                 AND live.canonical_fee_key = v.to_key
                 AND live.amount IS NOT DISTINCT FROM fp.amount

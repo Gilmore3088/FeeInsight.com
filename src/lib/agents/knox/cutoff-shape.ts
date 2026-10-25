@@ -1,4 +1,4 @@
-import { PRONOUN_WORDS, SENTENCE_END_WORDS, endsIn, trailingRange, wordsIn } from "@/lib/fee-name-fragments";
+import { DANGLING_AUDIENCE, PRONOUN_WORDS, SENTENCE_END_WORDS, endsIn, trailingRange, wordsIn } from "@/lib/fee-name-fragments";
 
 /**
  * The cut-off name shapes (`isCutoffName`, publish's `cutoff_name` hold), the regexes they are
@@ -33,18 +33,50 @@ export const PRONOUN = wordsIn(PRONOUN_WORDS);
 /** A verb that makes the words a sentence ("Checking accounts are considered dormant"). */
 export const SENTENCE_VERB = /\b(?:is|are|was|were|be|been|considered|incurs?|applies|apply|impose|assessed|excluding|including|includes?|do(?:es)?\s+not)\b/i;
 export const SENTENCE_END = endsIn(SENTENCE_END_WORDS);
-/** True when the name carries one of the v6 cut-off shapes, repaired or not (release review holds it). */
+/** A closed parenthetical that ends the name after at least one word, with any footnote mark or stop after it. */
+const TRAILING_QUALIFIER = /(\S)\s*\([^()]*\)[\s.,;*†‡¹²³⁴⁵⁶⁷⁸⁹⁰]*$/u;
+/**
+ * The name with the closed parentheticals that end it taken off (#1443). A closed "(...)" after
+ * the name qualifies the fee ("ACH Return Item (fee is per item)", "Notary fee (this service is
+ * for members only)"), so a verb, pronoun or "if"/"when" inside it is not a sentence the name was
+ * cut from. What stays:
+ * - an unclosed "(", so "Perks Checking (monthly service charge if" is still cut off;
+ * - a parenthetical that opens the name, which is another column's cell glued on ("(Per month
+ *   some exclusions apply): Cashier's Check");
+ * - a parenthetical with words after it ("Inactive Fee (each month the account is inactive) After
+ *   12 months with no activity; excludes f"): the line runs on past it, so it may be the sentence.
+ */
+export function withoutClosedQualifiers(name: string): string {
+  let current = name.replace(/\s+/g, " ").trim();
+  for (;;) {
+    const next = current.replace(TRAILING_QUALIFIER, "$1").trim();
+    if (next === current) return current;
+    current = next;
+  }
+}
+
+/**
+ * True when the name carries one of the v6 cut-off shapes, repaired or not (release review holds it).
+ * #1443: the sentence tests (`CONDITION_TAIL`, `PRONOUN`, `SENTENCE_VERB`) read the name without the
+ * closed qualifiers that end it (`withoutClosedQualifiers`). Read with them, about 21 of 35 hand-read
+ * `cutoff_name` holds on Oct 15 were real fees whose parenthetical said "is", "you" or "if". The
+ * shapes read at the end of the name are unchanged: a closing ")" never ends on a dangling word.
+ * #1521 (Knox v108): a name cut before its noun, after a count and an audience word ("Counter
+ * Check: A blank page of 3 personal"), is cut off too (`DANGLING_AUDIENCE`, the live twin's shape).
+ */
 export function isCutoffName(name: string): boolean {
   const current = name.replace(/\s+/g, " ").trim();
+  const unqualified = withoutClosedQualifiers(current);
   return (
     /^\+/.test(current) ||
     LEADING_HEADER.test(current) ||
     TRAILING_HEADER_CELL.test(current) ||
     TRAILING_RANGE.test(current) ||
     SENTENCE_END.test(current) ||
-    CONDITION_TAIL.test(current) ||
-    PRONOUN.test(current) ||
-    SENTENCE_VERB.test(current) ||
+    DANGLING_AUDIENCE.test(current) ||
+    CONDITION_TAIL.test(unqualified) ||
+    PRONOUN.test(unqualified) ||
+    SENTENCE_VERB.test(unqualified) ||
     FEE_OF_SENTENCE.test(current)
   );
 }

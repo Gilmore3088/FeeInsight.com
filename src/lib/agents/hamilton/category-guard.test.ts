@@ -106,6 +106,9 @@ describe("Hamilton category guard repair", () => {
     expect(result.restoredFees).toBe(1);
     const restore = db.mock.calls.find((call) => templateText(call[0]).includes("rolled_back_at = NULL"));
     expect(restore?.[1]).toEqual([21]);
+    // A twin the account type hold took down still counts as present (#1675).
+    expect(templateText(restore?.[0])).toContain("(live.rolled_back_at IS NULL OR live.rolled_back_reason LIKE");
+    expect(restore?.slice(1)).toContain("account_type_hold:%");
   });
 
   it("brings back an ATM adjustment the guard took down under the type its fold split gives it, logged as a fold", async () => {

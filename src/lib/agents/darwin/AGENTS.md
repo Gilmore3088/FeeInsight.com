@@ -922,6 +922,14 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
     head and stays live. On prod (2026-10-17) the clause matches 2 live fees: 139153 (a takedown
     before) and 93520 "Overdraft Protection transfer to another deposit account you have at Cross
     Bank" $10. The count SQL mirrors the rule (`own_account_head`).
+  v7 (#1521, `LIVE_FRAGMENT_STRATEGY` v7). A name cut before its noun, after a preposition, a count
+  and an audience word ("of 3 personal", "after 5 business"; `DANGLING_AUDIENCE` in
+  `fee-name-fragments.ts`), is a `sentence_end`. Neither shape read it, so the public page alone
+  hid it (#1180). Knox's `isCutoffName` (v108) reads the same shape, so publish holds new ones. Dry
+  run 2026-10-25 over 88,108 live fees: 2 change verdict, both from no match to `reread` (kept live,
+  Knox asked to re-read the line): 75914 "Counter Check: A blank page of 3 personal" $3 and 74142
+  "Overdraft - Non-consumer - Continuous Overdraft Charge. Daily fee after 5 business" $10. No
+  takedown, no rename. The count SQL reads it as `sentence_end_audience`.
 - Live hourly re-check (`hourly-frequency-check.ts`, #1456). About 802 live fees say in their name
   that they are priced by the hour ("Research Fee $25/hour", "Subpoena Fee - Per Hour") but carried
   no frequency or a per-item one, so a report read the price as a flat charge. `hourly` shows as "per
@@ -1588,8 +1596,7 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v83 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`; v82 is #1662's,
-  and the two are renumbered if they land in the other order). v83 (Oct 25, #1690): the non-network
+- The guard is at v83 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v83 (Oct 25, #1690): the non-network
   ATM fee refuses a research, investigation or photo name ("Account Investigation - Share / ATM /
   ACH", "ATM Photos at Credit Union"; re-filed to account research on Darwin's path, except a
   card's own research or film fee, the retired card dispute type, which has no home), an ATM
@@ -1601,6 +1608,13 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   live restore list (`RESTORE_REFILES`) is unchanged. A rewards account's ATM refund cap read as a
   fee ("o Nationwide ATM withdrawal fees/surcharges", raw 740157) says nothing in its name that marks
   it a refund, so the name rule leaves it held.
+- v82 (Oct 25,
+  #1662): the night deposit key-deposit refusal keeps a name only when its lost, replaced, service,
+  monthly, annual or rental word sits on the key or the night deposit noun
+  (`NIGHT_DEPOSIT_KEY_DEPOSIT_EXEMPT`), with word boundaries; a "Services:" header or an unrelated
+  "service fee billed monthly" clause no longer keeps a key deposit filed as the service. Its live
+  re-check is the guard catch-up; the read-only dry run (Oct 25) found no live fee that changes
+  verdict (142 live night deposit names that name a key, all unchanged).
 - v81 (Oct 22):
   "Returned Check Deposit" and "Returned Item Deposit" name a returned deposited item (not one
   followed by "bag"). It only admits names, so no fee that passes today fails. Found by the shadow
@@ -1823,7 +1837,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DARWIN_SCHEDULE_REFILE_STRATEGY` | `verify.schedule_refile` | v1 | `darwin/schedule-refile.ts` |
 | `DARWIN_VERDICT_SCORE_STRATEGY` | `verify.verdict_score` | v2 | `darwin/verdict-score.ts` |
 | `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v5 | `darwin/verified-recheck.ts` |
-| `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v6 | `darwin/live-fragment-check.ts` |
+| `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v7 | `darwin/live-fragment-check.ts` |
 | `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v3 | `darwin/hourly-frequency-check.ts` |
 | `NON_DEPOSIT_CHECK_VERSION` | `darwin.non_deposit_document` | v3 | `darwin/non-deposit-document-check.ts` |
 | `LINE_CONFLICT_CHECK_VERSION` | `darwin.line_conflict` | v1 | `darwin/line-conflict-check.ts` |
@@ -1832,5 +1846,5 @@ fails a PR that changes one of these constants without updating its line here (#
 | `CANADIAN_DOCUMENT_CHECK_VERSION` | `darwin.canadian_document` | v1 | `darwin/canadian-document-check.ts` |
 | `DOCUMENT_OWNER_STRATEGY` | `verify.document_owner` | v1 | `darwin/document-owner.ts` |
 | `DARWIN_VERIFY_STRATEGY` | `verify.rules` | v3 | `darwin/verify.ts` |
-| `DARWIN_SOURCE_CHECK_VERSION` | — | v2 | `darwin/verify.ts` |
+| `DARWIN_SOURCE_CHECK_VERSION` | — | v3 | `darwin/verify.ts` |
 | `DARWIN_BATCH_KEY_VERSION` | — | v4 | `darwin/verify.ts` |

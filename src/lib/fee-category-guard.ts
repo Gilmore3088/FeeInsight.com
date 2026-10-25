@@ -361,6 +361,35 @@ export function borrowedDirection(
   return words.length > 0 && words.length <= 5 && words.every((word) => DIRECTION_ROW_WORDS.has(word)) ? row : null;
 }
 
+/**
+ * v82 (#1662): what keeps a night deposit name that mentions a key deposit filed as the service.
+ * v66 exempted lost, replac, service, per month, monthly, annual and rental anywhere in the name,
+ * unanchored, so "Night Depository Services: Key Deposit" (a section header Knox carried in),
+ * "... (refundable; service fee billed monthly)" and "... - Serviced Accounts" passed. Each word now
+ * has to sit on what it qualifies, with word boundaries:
+ * - a lost or replaced key: "lost" or "replac..." within a few words of "key";
+ * - the service itself: "night deposit(ory) service(s)" or "night drop service", not a header
+ *   ("Services:", "Services -") and not running straight into "Key" ("Night Deposit Service Key
+ *   Deposit", where the key deposit is the item);
+ * - a periodic fee: "monthly/annual/yearly fee or charge", "fee/charge per month/monthly/annually";
+ * - the depository's rental or period: "night depository rental", "night deposit, annual".
+ */
+const NIGHT_DEPOSIT_NOUN = String.raw`(?:night\s+deposit(?:ory)?(?:\s+box)?|night\s+drop|depository|drop\s+box)`;
+const NIGHT_DEPOSIT_KEY_DEPOSIT_EXEMPT = new RegExp(
+  [
+    String.raw`\b(?:lost|replac\w*)\b[^|]{0,15}\bkeys?\b`,
+    String.raw`\bkeys?\b[^|]{0,15}\b(?:lost|replac\w*)\b`,
+    String.raw`\b(?:night\s+deposit(?:ory)?|depository|night\s+drop)\s+services?\b(?!\s*[:\-–—|/,]|\s+keys?\b)`,
+    String.raw`\b(?:monthly|annual|yearly)\s+(?:fee|charge|service\s+charge)\b`,
+    String.raw`\b(?:fee|charge)\s+(?:per\s+month|per\s+year|monthly|annually|yearly)\b`,
+    String.raw`\b${NIGHT_DEPOSIT_NOUN}\s+(?:rental|rent)\b`,
+    String.raw`\b(?:monthly|annual|yearly)\s+${NIGHT_DEPOSIT_NOUN}\s+(?:fee|charge)\b`,
+    String.raw`\$\s*\d[\d.,]*\s*\/\s*(?:mo|month|yr|year)\b`,
+    String.raw`\b${NIGHT_DEPOSIT_NOUN}[\s,:-]*(?:per\s+month|monthly|annual(?:ly)?|per\s+year|yearly)\b`,
+  ].join("|"),
+  "i",
+);
+
 export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   monthly_maintenance: {
     // v10: "Minimum daily balance of $500 required to avoid a $5.00 service fee" names the
@@ -713,7 +742,11 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // Depository Key Deposit", "Night Deposit Box Key (Refundable Deposit)", "Deposit for Receptacle
     // Key") is a key charge, not the service. A lost or replaced key stays the night deposit fee, and so
     // does a service, monthly, annual or rental line that names a key deposit (as for bags).
-    exclude: /(^(?!.*(lost|replac|per month|monthly|annual|rental)).*(\bbags?\b|zipper|pouch|wrapper|strap)|^(?!.*(lost|replac|service|per month|monthly|annual|rental)).*(\bkeys?\b[^|]{0,30}?\b(deposit|refundable)\b|\bdeposit for\b[^|]{0,30}\bkeys?\b|\bsecurity deposit\b[^|]{0,30}\bkeys?\b))/i,
+    // v82 (#1662): those exemptions are tied to the key or the night deposit noun
+    // (`NIGHT_DEPOSIT_KEY_DEPOSIT_EXEMPT`), so a section header ("Night Depository Services: Key
+    // Deposit") or an unrelated clause ("service fee billed monthly", "customer service hours")
+    // no longer lets a key deposit through.
+    exclude: new RegExp(String.raw`(^(?!.*(lost|replac|per month|monthly|annual|rental)).*(\bbags?\b|zipper|pouch|wrapper|strap)|^(?!.*(?:${NIGHT_DEPOSIT_KEY_DEPOSIT_EXEMPT.source})).*(\bkeys?\b[^|]{0,30}?\b(deposit|refundable)\b|\bdeposit for\b[^|]{0,30}\bkeys?\b|\bsecurity deposit\b[^|]{0,30}\bkeys?\b))`, "i"),
   },
   // v60: a night deposit bag, its key or a bag bundle is not a safe deposit box fee (UAT 104666,
   // "Deposit Bags & Night Deposit Drop Box: Disposable 9" x 12" bundle" $15; 6/6 on source, Oct 9).
@@ -914,7 +947,11 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // v81 (Oct 22): "Returned Check Deposit" / "Returned Item Deposit" names a returned deposited item
 // (the shadow lab's answer keys, #2536: $5 and $32 refused before). It only admits names; no fee that
 // passes today fails. Rows rejected as category_mismatch under an older guard are judged once more.
-// v82 is #1662's.
+// v82 (Oct 25, #1662): the night deposit key-deposit refusal's exemptions are tied to the key or the
+// night deposit noun (`NIGHT_DEPOSIT_KEY_DEPOSIT_EXEMPT`), with word boundaries, so a "Services:"
+// header or an unrelated "service"/"monthly" clause no longer keeps a key deposit filed as the
+// service. Read-only dry run (Oct 25): none of the 142 live night deposit names that name a key
+// changes verdict; the guard catch-up re-checks every live fee once.
 // v83 (Oct 25, #1690): the non-network ATM fee refuses research, investigation and photo names
 // (re-filed to account research on Darwin's path), an ATM transaction that overdraws a share, and an
 // additional card (`NOT_ATM_USE`). Read-only dry run, Oct 25: 4 of 2,290 live atm_non_network fees

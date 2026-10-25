@@ -55,7 +55,7 @@ const EXTRACT = ["extract"] as const;
 
 export const FEEDBACK_KINDS = {
   // Fee level.
-  wrong_category: { readers: [KNOX_LESSONS, LABEL_QUEUE, RELEASE_REVIEW], readStages: EXTRACT, anyStageChecks: ["hamilton.category_guard"], unreadChecks: ["hamilton.account_type_hold"], note: "Knox's lessons read extract rows; release review reads the category guard's rows at any stage; the account-type hold files at publish." },
+  wrong_category: { readers: [KNOX_LESSONS, LABEL_QUEUE, RELEASE_REVIEW], readStages: EXTRACT, anyStageChecks: ["hamilton.category_guard"], unreadChecks: ["hamilton.account_type_hold"], note: "Knox's lessons read extract rows; release review reads the category guard's rows at any stage; the account-type hold files its live takedowns at publish (its releases are account_type_hold_released, #1680)." },
   wrong_amount: { readStages: EXTRACT, readers: [FEEDBACK_SYNC], unreadChecks: [DARWIN_VERIFY, "hamilton.hand_takedown", "hamilton.eval_verdict", "hamilton.hand_amount_correction"], note: "Only the takedown sync's restore detection reads it; Knox learns no amount lesson (#2067)." },
   not_a_fee: { readStages: EXTRACT, readers: [FEEDBACK_SYNC], unreadChecks: [DARWIN_VERIFY, "hamilton.hand_takedown", "hamilton.eval_verdict"] },
   threshold: { readStages: EXTRACT, readers: [FEEDBACK_SYNC] },
@@ -82,6 +82,7 @@ export const FEEDBACK_KINDS = {
   audience_relabeled: { record: "Darwin's audience relabel keeps the old value for a rollback (audience-relabel.ts)." },
   audience_hand_fixed: { record: "Hamilton's hand audience fix keeps the old value for a rollback." },
   business_schedule_restored: { record: "A business-schedule takedown brought back; release review leaves it out on purpose." },
+  account_type_hold_released: { record: "A guard-refused row the account type hold put back to verified, held (#1680); not a category verdict, and with no published fee release review never reads it." },
   category_fold: { record: "Hamilton's taxonomy fold logs each fee it moved." },
   name_account_added: { record: "Hamilton's account names log each name it added." },
   rule_revised: { record: "Hamilton's eval verdicts log a revised rule." },
@@ -140,7 +141,7 @@ export const FEEDBACK_KINDS = {
   dead_link: { readers: MAGELLAN_LINK_READERS },
   business_schedule: { readers: MAGELLAN_LINK_READERS },
   confirmed_wrong_fees: { readers: [...MAGELLAN_LINK_READERS, MAGELLAN_DISCOVERY] },
-  wrong_document: { readers: MAGELLAN_LINK_READERS, unreadChecks: ["hamilton.other_bank_document", "hamilton.unconfirmed_document_host", "hamilton.article_page", "hamilton.business_schedule"], note: "Magellan reads its own link-yield rows; Hamilton's wrong-document takedowns reach it only as audit misses." },
+  wrong_document: { readers: MAGELLAN_LINK_READERS, unreadChecks: ["hamilton.other_bank_document", "hamilton.unconfirmed_document_host", "hamilton.article_page", "hamilton.business_schedule", "hamilton.hand_takedown"], note: "Magellan reads its own link-yield rows; Hamilton's wrong-document takedowns (hand takedowns too, #1677) reach it only as audit misses." },
   batch_review: { readers: ["src/lib/agents/magellan/batch-review.ts"] },
   search_miss: { unread: "Magellan's search misses are recorded but its finders do not read them." },
 
