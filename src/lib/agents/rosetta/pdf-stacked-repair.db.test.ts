@@ -3,7 +3,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { PDF_STACKED_REPAIR_VERSION } from "./reader-versions";
+import { PDF_STACKED_REPAIR_VERSION, ROSETTA_READ_VERSION } from "./reader-versions";
 import { extractPdfDocumentText } from "./pdf-document-text";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -82,7 +82,7 @@ describe.skipIf(!connection)("stacked PDF repair in isolated PostgreSQL", () => 
     `;
     await db`
       INSERT INTO pipeline_attempts (institution_id, source_document_id, stage, strategy, strategy_version, input_fingerprint, outcome, detail)
-      VALUES (${inst.id}, ${doc.id}, 'read', 'read.pdf_layout', 3, ${sourceHash}, 'ok', '{"pdf_layout":4}'::jsonb),
+      VALUES (${inst.id}, ${doc.id}, 'read', 'read.pdf_layout', ${ROSETTA_READ_VERSION}, ${sourceHash}, 'ok', '{"pdf_layout":4}'::jsonb),
              (${inst.id}, ${doc.id}, 'extract', 'extract.rules', 84, ${textHash}, 'ok', '{}'::jsonb)
     `;
     return { institutionId: Number(inst.id), documentId: Number(doc.id) };
@@ -175,7 +175,7 @@ describe.skipIf(!connection)("stacked PDF repair in isolated PostgreSQL", () => 
     expect(fetchImpl).not.toHaveBeenCalled();
     const versions = await db`SELECT detail FROM pipeline_attempts WHERE detail ? 'pdf_stacked'`;
     expect(versions).toHaveLength(4);
-    for (const row of versions) expect(row.detail).toMatchObject({ pdf_layout: 5, pdf_stacked: 1, reader_version: 3 });
+    for (const row of versions) expect(row.detail).toMatchObject({ pdf_layout: 5, pdf_stacked: 1, reader_version: ROSETTA_READ_VERSION });
     expect(await owner.countPdfStackedRepairsDue(db)).toBe(1);
   });
 
@@ -234,7 +234,7 @@ describe.skipIf(!connection)("stacked PDF repair in isolated PostgreSQL", () => 
     const fixture = await lostFixture();
     await db`
       INSERT INTO pipeline_attempts (institution_id, source_document_id, stage, strategy, strategy_version, input_fingerprint, outcome, detail)
-      VALUES (${fixture.institutionId}, ${fixture.documentId}, 'read', 'read.pdf_layout', 3, ${sourceHash}, 'ok',
+      VALUES (${fixture.institutionId}, ${fixture.documentId}, 'read', 'read.pdf_layout', ${ROSETTA_READ_VERSION}, ${sourceHash}, 'ok',
         '{"pdf_layout":5,"pdf_stacked_requested":1,"pdf_stacked":1}'::jsonb)
     `;
     expect(await selected()).toHaveLength(1);

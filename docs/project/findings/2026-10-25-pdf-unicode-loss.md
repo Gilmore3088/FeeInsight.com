@@ -176,13 +176,22 @@ damaged replay has more fee lines. Source matching and category verification hav
 separate assertions. The rendered fixture was visually inspected; independent
 pypdf and font-table inspection were local diagnostic checks, not runtime dependencies.
 
-Validation on the pinned-base implementation: full Vitest 1,313 files passed,
-88 files skipped; 17,529 tests passed, 12 expected failures and 1,225 gated skips.
-Agentic: 1,867 passed, 3 skipped. All repository guards passed. Full lint: zero
-errors, 71 warnings. `tsc --noEmit` passed with `NODE_OPTIONS=--max-old-space-size=4096`;
-the default 2 GiB heap had exhausted memory. No native database-test connection was
-configured, so gated DB suites did not execute. The focused six-file pass before
-the final NUL-adjacency case had 116 passing tests; the final case is in the full pass.
+Validation after integrating main `fcf91f4`: full Vitest 1,314 files passed,
+88 files skipped; 17,550 tests passed, 12 expected failures and 1,225 gated skips.
+The focused seven-file pass, including outcome registration, passed 128 tests.
+Agentic on the original base: 1,867 passed, 3 skipped. Repository guards passed
+again on the integration. Full original-base lint: zero errors, 71 warnings;
+changed-file lint also passed. `tsc --noEmit` passed on the integration with
+`NODE_OPTIONS=--max-old-space-size=4096`; the default 2 GiB heap had exhausted memory.
+No local native database-test connection was configured; those local skips are
+not native-SQL evidence.
+
+GitHub's real-schema CI exposed three fixtures pinned to reader 3: paid-read
+eligibility, normalized-witness paid setup and stacked-repair readiness/receipts.
+They now seed/assert `ROSETTA_READ_VERSION` for the current free pass, without
+weakening the runtime gate. A paired native case checks that an older free read
+cannot unlock paid work and a current free read can. The final exact-head CI
+receipt is recorded in PR #2632, separately from the local unit counts above.
 
 No claim is made of automated recovery, an executed historical-repair pilot,
-production deployment, native-DB replay execution, or repaired live fees.
+production deployment or replay, or repaired live fees.

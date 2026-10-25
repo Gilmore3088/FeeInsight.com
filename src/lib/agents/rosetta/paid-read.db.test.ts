@@ -37,6 +37,7 @@ import { hashText, recordReadResult, type ReadResult } from "./read";
 import { incurredProviderUsageSql } from "@/lib/provider-usage-accounting";
 import { normalizedWitnessSchemaReady } from "./normalized-witness";
 import { tableRowsFromText, tableRowsPayload } from "./table-rows";
+import { ROSETTA_READ_VERSION } from "./reader-versions";
 
 const url = process.env.E2E_DATABASE_URL;
 const schema = `rosetta_policy_${randomBytes(8).toString("hex")}`;
@@ -98,7 +99,7 @@ describe.skipIf(!url)("Rosetta paid policy on owned full-schema PostgreSQL", () 
     await sql`INSERT INTO institution_source_profiles (institution_id, state_code, canonical_source_url, last_source_hash, last_successful_text_id)
       VALUES (${inst.id}, 'ZX', 'https://fixture.invalid/fees.pdf', ${sourceHash}, ${prior ? artifact.id : null})`;
     await sql`INSERT INTO pipeline_attempts (institution_id, source_document_id, stage, strategy, strategy_version, input_fingerprint, outcome)
-      VALUES (${inst.id}, ${doc.id}, 'read', 'read.pdf_layout', 3, ${sourceHash}, ${prior ? "ok" : "scanned_pdf"})`;
+      VALUES (${inst.id}, ${doc.id}, 'read', 'read.pdf_layout', ${ROSETTA_READ_VERSION}, ${sourceHash}, ${prior ? "ok" : "scanned_pdf"})`;
     if (prior) await sql`INSERT INTO pipeline_feedback (institution_id, source_document_id, about_stage, check_name, signal, kind, reported_by, dedupe_key, evidence)
       VALUES (${inst.id}, ${doc.id}, 'read', 'rosetta.text_survival', 'wrong', 'text_lost_fees', 'rosetta', ${`fixture:${doc.id}`}, ${JSON.stringify({ text_hash: hashText(prior) })}::jsonb)`;
     return { institution: Number(inst.id), document: Number(doc.id), artifact: Number(artifact.id) };
@@ -149,6 +150,20 @@ describe.skipIf(!url)("Rosetta paid policy on owned full-schema PostgreSQL", () 
     expect(dry.selected).toBe(1); // The access failure did not become a settled paid attempt.
   });
 
+  it("requires the current free-reader attempt before a scan is eligible for paid work", async () => {
+    const selected = await seed();
+    await sql`UPDATE pipeline_attempts SET strategy_version=${ROSETTA_READ_VERSION - 1}
+      WHERE source_document_id=${selected.document} AND strategy='read.pdf_layout'`;
+    const before = await run();
+    expect(before.result).toMatchObject({ selected: 0, processed: 0 });
+    expect(before.create).not.toHaveBeenCalled();
+    await sql`UPDATE pipeline_attempts SET strategy_version=${ROSETTA_READ_VERSION}
+      WHERE source_document_id=${selected.document} AND strategy='read.pdf_layout'`;
+    const after = await run();
+    expect(after.result).toMatchObject({ selected: 1, succeeded: 1 });
+    expect(after.create).toHaveBeenCalledTimes(1);
+  });
+
   it("does not select an unbound legacy scan for paid work through the actual SQL join", async () => {
     const selected = await seed();
     await sql`UPDATE source_documents SET content_hash=NULL WHERE id=${selected.document}`;
@@ -190,7 +205,7 @@ describe.skipIf(!url)("Rosetta paid policy on owned full-schema PostgreSQL", () 
     await sql`INSERT INTO agent_source_texts (institution_id, source_document_id, status, document_type, reader, source_hash)
       VALUES (${selected.institution}, ${next.id}, 'needs_ocr', 'pdf', 'read.pdf_layout', ${changedHash})`;
     await sql`INSERT INTO pipeline_attempts (institution_id, source_document_id, stage, strategy, strategy_version, input_fingerprint, outcome)
-      VALUES (${selected.institution}, ${next.id}, 'read', 'read.pdf_layout', 3, ${changedHash}, 'scanned_pdf')`;
+      VALUES (${selected.institution}, ${next.id}, 'read', 'read.pdf_layout', ${ROSETTA_READ_VERSION}, ${changedHash}, 'scanned_pdf')`;
     const result = await runRosettaPaidRead(options);
     expect(result).toMatchObject({ selected: 1, succeeded: 1, failed: 0, costMicrousd: 220 });
     expect(result.results[0].source_document_id).toBe(Number(next.id));
