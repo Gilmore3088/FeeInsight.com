@@ -11,6 +11,11 @@ import { HAMILTON_EVIDENCE_CONTRACT_VERSION, type HamiltonEvidenceBundle, type H
 import { bindNarrative } from "@/lib/hamilton/narrative-bound";
 import { savedClaimsFrom } from "@/lib/hamilton/saved-claims";
 import type { SectionTracking } from "@/lib/hamilton/generate";
+import { REPORT_RUN_BUSY_MESSAGE, ReportRunLeaseLostError } from "@/lib/hamilton/report-run";
+import { HAMILTON_TASK_CAP_MESSAGE, HamiltonTaskBudgetError } from "@/lib/hamilton/task-budget";
+import { MalformedProviderOutputError } from "@/lib/hamilton/task-faults";
+import { IncompleteProviderResponseError, ProviderResponseBudgetError } from "@/lib/ai-response-budget";
+import { HAMILTON_PAUSED_MESSAGE } from "@/lib/hamilton/provider-paused";
 
 const mocks = vi.hoisted(() => ({
   getCurrentUser: vi.fn(),
@@ -38,6 +43,24 @@ const mocks = vi.hoisted(() => ({
   getInstitutionComplaintYears: vi.fn(),
   sql: Object.assign(vi.fn(), { json: vi.fn((value: unknown) => ({ json: value })) }),
   state: { gateShadow: false },
+  // Durable report runs (#1921): the ledger calls, so the report flow can be driven through
+  // opened, resumed, busy and already-saved runs.
+  openReportRun: vi.fn(),
+  startReportSection: vi.fn(),
+  saveReportSection: vi.fn(),
+  failReportSection: vi.fn(),
+  completeReportRun: vi.fn(),
+  failReportRun: vi.fn(),
+}));
+
+vi.mock("@/lib/hamilton/report-run", async (original) => ({
+  ...await original<typeof import("@/lib/hamilton/report-run")>(),
+  openReportRun: mocks.openReportRun,
+  startReportSection: mocks.startReportSection,
+  saveReportSection: mocks.saveReportSection,
+  failReportSection: mocks.failReportSection,
+  completeReportRun: mocks.completeReportRun,
+  failReportRun: mocks.failReportRun,
 }));
 
 vi.mock("@/lib/hamilton/account-context-store", () => ({ loadHamiltonAccountContext: mocks.loadHamiltonAccountContext }));
@@ -200,6 +223,8 @@ describe("Hamilton Reports generateReport", () => {
     mocks.loadHamiltonAccountContext.mockResolvedValue({ status: "identified", institution: { id: 101, name: "Space Coast CU" }, profileLabel: null });
     mocks.checkProAiQuota.mockResolvedValue({ allowed: true, used: 0, limit: 50, resetsAt: "" });
     mocks.recordProRequest.mockResolvedValue(1);
+    // No ledger by default: the report is written as before this change, without checkpoints.
+    mocks.openReportRun.mockResolvedValue({ kind: "unavailable", reason: "test" });
     mocks.getLocalMarketCompetitors.mockResolvedValue(null);
     mocks.getLocalFeeMoves.mockResolvedValue([]);
     mocks.getInstitutionComplaintYears.mockResolvedValue([]);
@@ -841,6 +866,177 @@ describe("Hamilton Reports generateReport", () => {
       local_market: { comparisons: [expect.objectContaining({ local_median: 30, position_vs_local: "above" })] },
       fee_impacts: [expect.objectContaining({ reference: "local median", gap_amount: -5, income_per_1000_amount: -5000 })],
     });
+  });
+});
+
+describe("durable report runs and fault handling (#1921)", () => {
+  const RUN_REPORT_ID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+  const withFees = () => mocks.getFeesByInstitution.mockResolvedValue([
+    { fee_name: "Domestic wire", fee_category: "wire_transfer", amount: 35, frequency: "per wire", review_status: "pending", extraction_confidence: 0.76, source_url: "https://example.com/fees" },
+  ]);
+  const handle = (overrides: Record<string, unknown> = {}) => ({
+    runId: 41, leaseToken: "lease", reportId: RUN_REPORT_ID, taskKey: "hamilton-report:test",
+    stepIds: new Map(), checkpoints: new Map(), resumed: false, carriedFromRun: null, ...overrides,
+  });
+  const sectionText = async (input: SectionInput) => ({
+    narrative: input.type === "recommendation"
+      ? "Treat the $35 domestic wire row as provisional. Do not use it as a verified benchmark score."
+      : `${input.title} uses the $35 domestic wire row and the $20 Custom CU peers median with provisional labeling.`,
+    wordCount: 18, model: "mock", usage: { inputTokens: 10, outputTokens: 8 },
+  });
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    mocks.loadHamiltonAccountContext.mockResolvedValue({ status: "identified", institution: { id: 101, name: "Coastal Test CU" }, profileLabel: null });
+    mocks.checkProAiQuota.mockResolvedValue({ allowed: true, used: 0, limit: 50, resetsAt: "" });
+    mocks.recordProRequest.mockResolvedValue(1);
+    mocks.getLocalMarketCompetitors.mockResolvedValue(null);
+    mocks.getLocalFeeMoves.mockResolvedValue([]);
+    mocks.getInstitutionComplaintYears.mockResolvedValue([]);
+    mocks.getCurrentUser.mockResolvedValue({ id: 7, role: "premium", subscription_status: "active", institution_name: "Fallback Bank" });
+    mocks.getInstitutionById.mockResolvedValue(selectedInstitution());
+    mocks.getFinancialsByInstitution.mockResolvedValue([]);
+    mocks.getInstitutionRevenueTrend.mockResolvedValue([]);
+    mocks.getInstitutionPeerRanking.mockResolvedValue(null);
+    mocks.getInstitutionFeeScheduleEvidence.mockResolvedValue(null);
+    mocks.resolveHamiltonPeerIndex.mockResolvedValue(peerIndex());
+    mocks.saveHamiltonReport.mockImplementation(async (params: { reportId?: string }) => params.reportId ?? "report-1");
+    mocks.completeHamiltonRefreshJobsForInstitution.mockResolvedValue(undefined);
+    mocks.generateSection.mockImplementation(sectionText);
+    mocks.startReportSection.mockResolvedValue(undefined);
+    mocks.saveReportSection.mockResolvedValue(undefined);
+    mocks.failReportSection.mockResolvedValue(undefined);
+    mocks.completeReportRun.mockResolvedValue(true);
+    mocks.failReportRun.mockResolvedValue(true);
+    withFees();
+  });
+
+  it("saves each finished section on the run, saves the report under the run's id once, and closes the run", async () => {
+    mocks.openReportRun.mockResolvedValue({ kind: "opened", run: handle() });
+    const result = await generateReport(reportParams());
+    expect(result).toMatchObject({ success: true, reportId: RUN_REPORT_ID });
+    expect(mocks.saveReportSection.mock.calls.map(([, key]) => key)).toEqual(["pro.report.section.1", "pro.report.section.2", "pro.report.section.3"]);
+    for (const [, , checkpoint] of mocks.saveReportSection.mock.calls) {
+      expect(checkpoint.inputHash).toMatch(/^[0-9a-f]{64}$/);
+      expect(checkpoint.output).toMatchObject({ status: "ok" });
+      expect(JSON.parse(JSON.stringify(checkpoint))).toEqual(checkpoint);
+    }
+    expect(mocks.saveHamiltonReport).toHaveBeenCalledTimes(1);
+    expect(mocks.saveHamiltonReport).toHaveBeenCalledWith(expect.objectContaining({ reportId: RUN_REPORT_ID }));
+    expect(mocks.completeReportRun).toHaveBeenCalledWith(expect.objectContaining({ runId: 41 }), `Report saved (${RUN_REPORT_ID}).`,
+      expect.objectContaining({ durable_run_id: 41, task_budget: expect.objectContaining({ kind: "report", caps: expect.objectContaining({ calls: 16 }) }) }));
+    // One record per report: the run is the record, not a second pro_request.
+    expect(mocks.recordProRequest).not.toHaveBeenCalled();
+  });
+
+  it("resumes an interrupted run without writing (or paying for) a saved section again", async () => {
+    mocks.openReportRun.mockResolvedValue({ kind: "opened", run: handle() });
+    await generateReport(reportParams());
+    const [, answerKey, answerCheckpoint] = mocks.saveReportSection.mock.calls[0];
+    const firstRunCalls = mocks.generateSection.mock.calls.length;
+
+    mocks.generateSection.mockClear();
+    mocks.saveReportSection.mockClear();
+    mocks.saveHamiltonReport.mockClear();
+    mocks.openReportRun.mockResolvedValue({ kind: "resumed", run: handle({ resumed: true, checkpoints: new Map([[answerKey, answerCheckpoint]]) }) });
+    const result = await generateReport(reportParams());
+    expect(result.success).toBe(true);
+    // The answer (with its partner review) is not written again; only the two later sections are.
+    expect(firstRunCalls).toBe(4);
+    expect(mocks.generateSection).toHaveBeenCalledTimes(2);
+    expect(mocks.generateSection.mock.calls.every(([input]) => (input as SectionInput).title !== "Answer")).toBe(true);
+    expect(mocks.saveReportSection.mock.calls.map(([, key]) => key)).toEqual(["pro.report.section.2", "pro.report.section.3"]);
+    expect(mocks.completeReportRun.mock.calls.at(-1)?.[2]).toMatchObject({ reused_sections: ["pro.report.section.1"] });
+  });
+
+  it("does not reuse a saved section written from different data", async () => {
+    mocks.openReportRun.mockResolvedValue({ kind: "resumed", run: handle({ resumed: true, checkpoints: new Map([["pro.report.section.1", { inputHash: "stale", output: { status: "ok" }, providerResponses: [] }]]) }) });
+    const result = await generateReport(reportParams());
+    expect(result.success).toBe(true);
+    expect(mocks.generateSection).toHaveBeenCalledTimes(4);
+  });
+
+  it("tells a second request the report is still being written, with no model call", async () => {
+    mocks.openReportRun.mockResolvedValue({ kind: "busy", runId: 41 });
+    const result = await generateReport(reportParams());
+    expect(result).toEqual({ success: false, error: REPORT_RUN_BUSY_MESSAGE });
+    expect(mocks.generateSection).not.toHaveBeenCalled();
+    expect(mocks.saveHamiltonReport).not.toHaveBeenCalled();
+  });
+
+  it("returns the report an interrupted run already saved, with no model call and no second save", async () => {
+    mocks.openReportRun.mockResolvedValue({ kind: "already_saved", run: handle({ resumed: true }) });
+    mocks.getHamiltonReportById.mockResolvedValue({ id: RUN_REPORT_ID, report_json: { title: "Saved" }, artifact_metadata: { evidencePolicy: "provisional-first" } });
+    const result = await generateReport(reportParams());
+    expect(result).toMatchObject({ success: true, reportId: RUN_REPORT_ID, report: { title: "Saved" } });
+    expect(mocks.generateSection).not.toHaveBeenCalled();
+    expect(mocks.saveHamiltonReport).not.toHaveBeenCalled();
+    expect(mocks.completeReportRun).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries a provider error once, then ends the run failed with the fault and saves nothing", async () => {
+    mocks.openReportRun.mockResolvedValue({ kind: "opened", run: handle() });
+    mocks.generateSection.mockRejectedValue(Object.assign(new Error("Overloaded"), { status: 529 }));
+    const result = await generateReport(reportParams());
+    expect(result).toMatchObject({ success: false, error: expect.stringContaining("couldn't write the") });
+    expect(mocks.generateSection).toHaveBeenCalledTimes(2);
+    expect(mocks.failReportSection).toHaveBeenCalledWith(expect.anything(), "pro.report.section.1", expect.objectContaining({ kind: "provider_error" }), expect.anything());
+    expect(mocks.failReportRun).toHaveBeenCalledWith(expect.anything(), expect.stringContaining("could not finish"), expect.objectContaining({ fault: "provider_error" }));
+    expect(mocks.saveHamiltonReport).not.toHaveBeenCalled();
+  });
+
+  it("retries a timeout once and malformed output once, and keeps the sections that worked", async () => {
+    mocks.openReportRun.mockResolvedValue({ kind: "opened", run: handle() });
+    mocks.generateSection
+      .mockRejectedValueOnce(new ProviderResponseBudgetError("deadline"))
+      .mockRejectedValueOnce(new MalformedProviderOutputError("Hamilton returned empty response for section type 'x'"));
+    mocks.generateSection.mockImplementation(sectionText);
+    const result = await generateReport(reportParams());
+    // Timeout on try 1, malformed on try 2: the second fault has no retry left, so the section fails.
+    expect(result.success).toBe(false);
+    expect(mocks.generateSection).toHaveBeenCalledTimes(2);
+
+    mocks.generateSection.mockReset();
+    mocks.generateSection.mockRejectedValueOnce(new MalformedProviderOutputError("empty"));
+    mocks.generateSection.mockImplementation(sectionText);
+    expect((await generateReport(reportParams())).success).toBe(true);
+  });
+
+  it("never retries a budget cap and shows its plain message", async () => {
+    mocks.openReportRun.mockResolvedValue({ kind: "opened", run: handle() });
+    mocks.generateSection.mockRejectedValue(new HamiltonTaskBudgetError("task", "calls", 16, 16, "report"));
+    const result = await generateReport(reportParams());
+    expect(result).toEqual({ success: false, error: HAMILTON_TASK_CAP_MESSAGE });
+    expect(mocks.generateSection).toHaveBeenCalledTimes(1);
+    expect(mocks.failReportRun).toHaveBeenCalledWith(expect.anything(), expect.any(String), expect.objectContaining({ fault: "budget" }));
+  });
+
+  it("never retries an unfinished reply or a provider usage limit", async () => {
+    mocks.openReportRun.mockResolvedValue({ kind: "opened", run: handle() });
+    mocks.generateSection.mockRejectedValue(new IncompleteProviderResponseError("max_tokens"));
+    expect((await generateReport(reportParams())).success).toBe(false);
+    expect(mocks.generateSection).toHaveBeenCalledTimes(1);
+    mocks.generateSection.mockReset();
+    mocks.generateSection.mockRejectedValue(Object.assign(new Error("You have reached your specified API usage limits"), { status: 400 }));
+    expect(await generateReport(reportParams())).toEqual({ success: false, error: HAMILTON_PAUSED_MESSAGE });
+    expect(mocks.generateSection).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops without saving when another request took the run over", async () => {
+    mocks.openReportRun.mockResolvedValue({ kind: "opened", run: handle() });
+    mocks.saveReportSection.mockRejectedValue(new ReportRunLeaseLostError(41));
+    const result = await generateReport(reportParams());
+    expect(result).toEqual({ success: false, error: REPORT_RUN_BUSY_MESSAGE });
+    expect(mocks.saveHamiltonReport).not.toHaveBeenCalled();
+  });
+
+  it("writes the report without checkpoints when the run ledger is unavailable, as before", async () => {
+    mocks.openReportRun.mockResolvedValue({ kind: "unavailable", reason: "connection refused" });
+    const result = await generateReport(reportParams());
+    expect(result).toMatchObject({ success: true, reportId: "report-1" });
+    expect(mocks.saveReportSection).not.toHaveBeenCalled();
+    expect(mocks.saveHamiltonReport.mock.calls[0][0]).not.toHaveProperty("reportId");
+    expect(mocks.recordProRequest).toHaveBeenCalledWith(expect.objectContaining({ operation: "report", status: "completed" }));
   });
 });
 

@@ -1,5 +1,6 @@
 import { ProviderResponseOperation, AI_PROVIDER_TIMEOUT_MS, assertCompletedProviderFinish, withProviderResponseOperation, requireCompletedProviderUIStream } from "@/lib/ai-response-budget";
 import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
+import { withHamiltonTask } from "@/lib/hamilton/task-budget";
 import {
   streamText,
   generateText,
@@ -757,4 +758,5 @@ async function handlePOST(request: Request) {
   }
 }
 
-export const POST = withApiRoutePolicy("api.research.hamilton", "POST", handlePOST);
+// Each request is one Hamilton task, capped per task and per reader day (#1921, task-budget.ts).
+export const POST = withApiRoutePolicy("api.research.hamilton", "POST", withHamiltonTask("ask", handlePOST));

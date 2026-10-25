@@ -68,8 +68,66 @@ James is the only person who emails customers. A session never sends customer em
 
 Every number in the notice needs a source, as on the site. If the start time is not known, say so.
 
+## Spend caps, faults and report runs (V5 O1)
+
+Every Hamilton request that makes paid model calls runs as one task
+(`src/lib/hamilton/task-budget.ts`). Before each call, after the `global` provider stop, the
+credit circuit and the `api_budget_policies` caps (all unchanged), it checks:
+
+| Task | Calls | Tokens (in + out + cache write) | Cost |
+|---|---|---|---|
+| Ask (written answer, memo) | 6 | 400,000 | $2.00 |
+| Report | 16 | 400,000 | $4.00 |
+| Simulate | 3 | 60,000 | $0.50 |
+| Chat | 2 | 250,000 | $1.50 |
+| Briefing (no paid call yet) | 3 | 120,000 | $1.00 |
+| One reader, per UTC day, all tasks | 120 | 3,000,000 | $10.00 |
+
+The caps are code constants (no environment variable, no table row). They sit above the largest
+single calls in `ai_api_usage_events` for the 60 days to 2026-10-25 (written answer $0.67 and 148k
+tokens, report section $0.18 and 23k tokens, chat $0.39), and the reader's day sits below
+`agent:hamilton`'s $20 daily policy. A refused call writes a `blocked` row in
+`ai_api_usage_events` (metadata `hamilton_budget_scope`, `hamilton_budget_measure`) and, for a
+report, a `budget.blocked` event on its run. The reader sees a plain line ("Hamilton stopped this
+request because it reached the limit for a single request..." or "You've reached today's limit
+for Hamilton's written work..."). If the day's usage cannot be read, the call is refused.
+
+**Faults** (`src/lib/hamilton/task-faults.ts`): a provider error, a timeout or an unusable reply
+is retried once; a usage or billing limit, a budget cap, the provider stop and an unfinished reply
+are never retried. A report section that still fails ends its run `failed`, with the fault kind on
+the step (`section.failed` event) and on the run.
+
+**Report runs** (`src/lib/hamilton/report-run.ts`): each Pro report is one `pro_request` run at
+stage `pro.report`, with a step per section and a save step. A finished section is saved on its
+step before the next starts. If the request is cut off, asking for the same report again resumes
+after about 5.5 minutes (the lease) and reuses the saved sections; a request inside the lease is
+told the report is still being written. The report's id is fixed when the run opens, so a replay
+never saves a second copy, and the report row is written only after every section passed. A
+failed run's finished sections carry into a new run of the same request for an hour. A run nobody
+resumes is closed `failed` after 24 hours, the next time that reader starts a report.
+
+To check a stuck or failed report: in the admin run ledger, open the reader's `pro.report` run.
+Its steps show which section stopped and why; its events show `section.saved`, `section.failed`,
+`budget.blocked`, `run.resumed`.
+
+## Switches and rollback
+
+| Switch | Off (unset) means | Proof |
+|---|---|---|
+| `global` provider stop (`/admin`) | Paid calls refused; deterministic answers keep working | `task-budget.test.ts`: the stop is checked first and no task check runs |
+| `HAMILTON_GATE_REPAIR` | No repair call; the first draft and its verdict stand | `rollback-rehearsal.test.ts`, `output-gate-repair.test.ts` |
+| `HAMILTON_REPORT_FINDING_READING` | A saved answer's reading is not printed in reports | `rollback-rehearsal.test.ts`, `report-actions.test.ts` |
+| `HAMILTON_MODEL` | The default model in `ai-provider.ts` | `rollback-rehearsal.test.ts` |
+
+Turning a switch off is a Vercel environment change plus a redeploy (James's call). The O1 work has
+no switch and no migration: roll it back by promoting the previous deployment and reverting its PR.
+Code outside a task, or a report with no run ledger, behaves as before O1 (both tested in
+`rollback-rehearsal.test.ts`). Rehearsed by tests on 2026-10-25 (local, synthetic data); not yet
+on a preview.
+
 ## Not covered yet
 
-- The rollback rehearsal on a preview (#1921's last item) has not been run.
+- The rollback rehearsal on a preview (#1921's last item) has not been run. The switch tests
+  above are local evidence, not that rehearsal.
 - The health check runs once a day, with the brief. A more frequent check or a page would need a
   new cron entry, which is James's call.

@@ -16,6 +16,7 @@ import {
 } from "./api-hardening/budget";
 import { getApiRoutePolicy } from "./api-hardening/policies";
 import { recordApiRouteAuditEvent } from "./api-hardening/audit";
+import { assertHamiltonTaskBudget, attachHamiltonTask, noteHamiltonTaskUsage } from "./hamilton/task-budget";
 
 export { ProviderBudgetBlockedError } from "./api-hardening/budget";
 
@@ -260,6 +261,12 @@ export async function recordProviderUsage(
   const estimatedCost = usageObservation === "unknown" ? null : context.provider === "anthropic"
     ? estimateAnthropicCostMicrousd(context.model, recordedUsage)
     : null;
+  // A Hamilton task counts its own calls before the next one is checked (#1921).
+  noteHamiltonTaskUsage(context, isIncurredProviderUsage(status, usageObservation), {
+    inputTokens: nonNegative(recordedUsage.inputTokens),
+    outputTokens: nonNegative(recordedUsage.outputTokens),
+    cacheCreationInputTokens: nonNegative(recordedUsage.cacheCreationInputTokens),
+  }, estimatedCost);
   try {
     await sql`
       INSERT INTO ai_api_usage_events
@@ -316,6 +323,8 @@ export async function guardProviderCall(
   context: ProviderCallContext,
 ): Promise<number> {
   const startedAt = Date.now();
+  // Inside a Hamilton task, the call carries its reader and run (#1921); outside one, nothing changes.
+  attachHamiltonTask(context);
   try {
     await assertAutomationEnabled(`${context.agent} ${context.operation}`);
     await assertProviderCircuitHealthy(context);
@@ -330,6 +339,8 @@ export async function guardProviderCall(
       throw providerBudgetDecisionToError(budgetDecision);
     }
     context.budgetPolicyId = budgetDecision.policyId ?? context.budgetPolicyId;
+    // Then the task's own caps and the reader's day. The stop, circuit and policies above come first, unchanged.
+    await assertHamiltonTaskBudget(context);
     return startedAt;
   } catch (error) {
     if (

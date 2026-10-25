@@ -11,6 +11,7 @@
 import { withRawProviderResponseOperation } from "@/lib/ai-response-budget";
 
 import { getAnthropicMessagesClient, extractAnthropicText, getHamiltonModel, hasAnthropicApiKey, isProviderLimitError } from "@/lib/ai-provider";
+import { HamiltonTaskBudgetError } from "./task-budget";
 import { HAMILTON_PAUSED_MESSAGE } from "./provider-paused";
 import { trackAnthropicRequest, assertCompletedAnthropicTextResponse, incompleteProviderResponse } from "@/lib/ai-provider-usage";
 import { extractFigures } from "./figure-check";
@@ -395,6 +396,8 @@ export async function writeStorylineMemo(
         return { status: "unavailable", reason: incomplete.message };
       }
       if (isProviderLimitError(error)) return { status: "unavailable", reason: HAMILTON_PAUSED_MESSAGE };
+      // A task or daily cap (#1921) says so in its own words.
+      if (error instanceof HamiltonTaskBudgetError) return { status: "unavailable", reason: error.message };
       const message = error instanceof Error ? error.message : String(error);
       return { status: "unavailable", reason: /budget|usage limit/i.test(message) ? "Hamilton's writing budget for today is used up." : "Hamilton's writer could not be reached." };
     }

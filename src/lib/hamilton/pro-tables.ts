@@ -169,7 +169,13 @@ export async function saveHamiltonReport(params: {
   selectedFeeDeltaCount?: number;
   /** The published fee rows the report was built from (H03-T09); left out, the rows named in `reportJson`. */
   feeRefs?: SavedFeeRef[];
+  /**
+   * The id a durable report run chose when it opened (#1921, report-run.ts). With it the save is
+   * idempotent: a replay inserts nothing and returns the same id. Left out, the database picks one.
+   */
+  reportId?: string;
 }): Promise<string> {
+  if (params.reportId) return saveHamiltonReportOnce(params as typeof params & { reportId: string });
   const rows = await sql`
     INSERT INTO hamilton_reports
       (
@@ -212,6 +218,59 @@ export async function saveHamiltonReport(params: {
     RETURNING id
   `;
   // Best effort: a report with no record keeps the institution match for correction notices.
+  await recordSavedOutputFeeRefs(sql, "report", String(rows[0].id), params.feeRefs ?? collectFeeRefs(params.reportJson));
+  await trackFirstHamiltonUse(params.userId, "report");
+  return rows[0].id as string;
+}
+
+/** The idempotent save: one row per run-chosen id, written once however often the run replays. */
+async function saveHamiltonReportOnce(params: Parameters<typeof saveHamiltonReport>[0] & { reportId: string }): Promise<string> {
+  const rows = await sql`
+    INSERT INTO hamilton_reports
+      (
+        id,
+        user_id,
+        institution_id,
+        report_type,
+        report_json,
+        scenario_id,
+        evidence_policy,
+        peer_set_id,
+        peer_baseline_source,
+        peer_baseline_label,
+        peer_fallback_reason,
+        selected_source,
+        selected_source_label,
+        selected_verified_fee_count,
+        selected_provisional_fee_count,
+        selected_fee_delta_count,
+        status
+      )
+    VALUES
+      (
+        ${params.reportId}::uuid,
+        ${params.userId},
+        ${params.institutionId},
+        ${params.reportType},
+        ${JSON.stringify(params.reportJson)},
+        ${params.scenarioId ?? null},
+        ${params.evidencePolicy ?? "provisional-first"},
+        ${params.peerSetId ?? null},
+        ${params.peerBaselineSource ?? null},
+        ${params.peerBaselineLabel ?? null},
+        ${params.peerFallbackReason ?? null},
+        ${params.selectedSource ?? "manual"},
+        ${params.selectedSourceLabel ?? null},
+        ${params.selectedVerifiedFeeCount ?? 0},
+        ${params.selectedProvisionalFeeCount ?? 0},
+        ${params.selectedFeeDeltaCount ?? 0},
+        'generated'
+      )
+    ON CONFLICT (id) DO NOTHING
+    RETURNING id
+  `;
+  // Already saved by an earlier attempt of the same run: its fee refs and first use were recorded then.
+  if (rows.length === 0) return params.reportId;
   await recordSavedOutputFeeRefs(sql, "report", String(rows[0].id), params.feeRefs ?? collectFeeRefs(params.reportJson));
   await trackFirstHamiltonUse(params.userId, "report");
   return rows[0].id as string;

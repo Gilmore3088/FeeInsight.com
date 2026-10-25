@@ -227,4 +227,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-1921-task-budgets",
+    agent: "hamilton",
+    stage: "paid work",
+    lesson: "Treat every request that makes paid model calls as one task with its own limit on calls, tokens and cost, checked before each call, and save each finished part before starting the next, so a request that is cut off resumes from what is done instead of paying for it again. Retry a dropped connection, a timeout or an unusable reply once; never retry a budget or usage limit, the provider stop or a reply that could not finish.",
+    why: "A Pro report wrote its sections in memory inside one server action: a timeout or redeploy lost every finished section and the reader paid again on retry, and only a per-reader count of requests per day limited spend, not the calls, tokens or cost of one request.",
+    evidence: { issues: [1921], prs: [], files: ["src/lib/hamilton/task-budget.ts", "src/lib/hamilton/task-faults.ts", "src/lib/hamilton/report-run.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];

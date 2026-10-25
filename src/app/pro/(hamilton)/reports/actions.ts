@@ -13,12 +13,28 @@ import { readSavedAnalysisRecord } from "@/lib/hamilton/saved-analysis-record";
 import { getFeesByInstitution, getInstitutionById } from "@/lib/data-store";
 import { sql } from "@/lib/data-store/connection";
 import { getInstitutionFeeScheduleEvidence } from "@/lib/data-store/institution";
-import { generateVerifiedSection, type VerifiedSectionOutput } from "@/lib/hamilton/generate";
+import { generateVerifiedSection, type SectionTracking, type VerifiedSectionOutput } from "@/lib/hamilton/generate";
+import { bindHamiltonTaskReader, bindHamiltonTaskRun, currentHamiltonTask, hamiltonTaskBudgetDetail, runHamiltonTask } from "@/lib/hamilton/task-budget";
+import { runWithHamiltonRetry, type HamiltonFault } from "@/lib/hamilton/task-faults";
+import {
+  completeReportRun,
+  failReportRun,
+  failReportSection,
+  openReportRun,
+  REPORT_RUN_BUSY_MESSAGE,
+  ReportRunLeaseLostError,
+  reportSectionStepKey,
+  reportTaskKey,
+  saveReportSection,
+  sectionInputHash,
+  startReportSection,
+  type ReportRunHandle,
+} from "@/lib/hamilton/report-run";
 import { checkProAiQuota, quotaExceededMessage } from "@/lib/hamilton/quota";
 import { checkConsultantReportCap, reportCapMessage } from "@/lib/hamilton/report-cap";
 import { recordProRequest } from "@/lib/agents/run-store";
 import { logUsage } from "@/lib/research/history";
-import { estimateAnthropicCostMicrousd, incompleteProviderResponse, type ProviderUsage } from "@/lib/ai-provider-usage";
+import { estimateAnthropicCostMicrousd, type ProviderUsage } from "@/lib/ai-provider-usage";
 import { getHamiltonModel, isProviderLimitError } from "@/lib/ai-provider";
 import { HAMILTON_PAUSED_MESSAGE } from "@/lib/hamilton/provider-paused";
 import type { SectionInput } from "@/lib/hamilton/types";
@@ -190,6 +206,12 @@ async function authenticatedReportFindings(raw: unknown, institutionId: string |
 export async function generateReport(
   params: GenerateReportParams
 ): Promise<GenerateReportResult> {
+  // One report is one Hamilton task: every paid call in it is checked against the task's caps
+  // and the reader's day before it is made (#1921, task-budget.ts).
+  return runHamiltonTask("report", {}, () => writeReport(params));
+}
+
+async function writeReport(params: GenerateReportParams): Promise<GenerateReportResult> {
   const user = await getCurrentUser();
   if (!user) return { success: false, error: "Authentication required" };
   // generateSection() below makes paid model calls: Pro only.
@@ -265,6 +287,29 @@ export async function generateReport(
     if (!quota.allowed) return { success: false, error: quotaExceededMessage(quota) };
     const reportCap = await checkConsultantReportCap(user);
     if (!reportCap.allowed) return { success: false, error: reportCapMessage(reportCap) };
+    bindHamiltonTaskReader(user.id);
+
+    // A durable run (#1921, report-run.ts): each finished section is saved on the run before the
+    // next, so a request cut short resumes without writing (or paying for) a section twice.
+    // With the ledger unavailable the report is written as before, without checkpoints.
+    const opened = await openReportRun({
+      userId: user.id,
+      institutionId: selectedInstitution?.id ?? null,
+      title: `Hamilton report: ${reportTitle}`,
+      taskKey: reportTaskKey(user.id, params),
+      sectionTitles: sectionInputs.map((input) => input.title),
+      detail: { template: params.templateType },
+    });
+    if (opened.kind === "busy") return { success: false, error: REPORT_RUN_BUSY_MESSAGE };
+    if (opened.kind === "already_saved") {
+      const saved = await getHamiltonReportById(opened.run.reportId, user.id);
+      if (saved) {
+        await completeReportRun(opened.run, `Report saved (${saved.id}); found already saved when the run resumed.`, { report_id: saved.id, resumed: true });
+        return { success: true, reportId: saved.id, report: saved.report_json, artifactMetadata: saved.artifact_metadata };
+      }
+    }
+    let durable: ReportRunHandle | null = opened.kind === "unavailable" ? null : opened.run;
+    if (durable) await bindHamiltonTaskRun(durable.runId, { resumed: durable.resumed });
     const ledgerBase = {
       userId: user.id,
       institutionId: selectedInstitution?.id ?? null,
@@ -313,65 +358,111 @@ export async function generateReport(
       if (providerResponses.length > 0) {
         await logUsage(user.id, null, "hamilton-report", inputTokens, outputTokens, Math.round((costMicrousd ?? 0) / 10_000)).catch(() => {});
       }
-      await recordProRequest({
-        ...ledgerBase,
-        operation: "report",
-        status,
-        summary,
-        detail: {
-          template: params.templateType,
-          model,
-          input_tokens: inputTokens,
-          output_tokens: outputTokens,
-          estimated_cost_microusd: costMicrousd,
-          provider_response_events: providerResponses.length,
-          unknown_usage_response_events: providerResponses.filter((item) => !item.usage).length,
-          token_counts_include_unknown_placeholders: providerResponses.some((item) => !item.usage),
-          sections: sections.map((item) => ({ words: item.section.wordCount, status: item.status })),
-          partner_review: partnerReview,
-          ...extra,
-        },
-      });
+      const outcomeDetail = {
+        template: params.templateType,
+        model,
+        input_tokens: inputTokens,
+        output_tokens: outputTokens,
+        estimated_cost_microusd: costMicrousd,
+        provider_response_events: providerResponses.length,
+        unknown_usage_response_events: providerResponses.filter((item) => !item.usage).length,
+        token_counts_include_unknown_placeholders: providerResponses.some((item) => !item.usage),
+        sections: sections.map((item) => ({ words: item.section.wordCount, status: item.status })),
+        partner_review: partnerReview,
+        reused_sections: reusedSections,
+        durable_run_id: durable?.runId ?? null,
+        task_budget: hamiltonTaskBudgetDetail(currentHamiltonTask()),
+        ...extra,
+      };
+      // A durable run is closed with the outcome; without one, the outcome is its own run, as before.
+      const closed = durable
+        ? status === "completed"
+          ? await completeReportRun(durable, summary, outcomeDetail)
+          : await failReportRun(durable, summary, outcomeDetail)
+        : false;
+      if (!closed) await recordProRequest({ ...ledgerBase, operation: "report", status, summary, detail: outcomeDetail });
     };
 
-    // One retry per section, so a provider hiccup never discards (and re-bills) the
-    // sections that worked.
+    // Each section runs under the bounded retry policy (task-faults.ts): a provider error, a
+    // timeout or malformed output is tried once more; a usage limit, a budget cap, the provider
+    // stop or an unfinished reply is not. A provider hiccup never discards (and re-bills) the
+    // sections that worked: they are saved on the run first.
     const verifiedSections: VerifiedSectionOutput[] = [];
+    const reusedSections: string[] = [];
     recordPaidFailure = (summary) => recordReportOutcome("failed", summary, verifiedSections);
-    // A usage or billing limit at the provider: no retry, and the reader is told it is paused.
-    let providerPaused = false;
-    const generateWithRetry = async (input: SectionInput): Promise<VerifiedSectionOutput | null> => {
+    let lastFault: HamiltonFault | null = null;
+    let lastAttempts: Array<{ attempt: number; fault: string | null }> = [];
+    type ResponseSink = Array<{ usage: ProviderUsage | undefined; model: string }>;
+    const sectionTracking = (sink: ResponseSink): SectionTracking => ({
+      ...tracking,
+      ...(durable ? { agentRunId: durable.runId } : {}),
+      onProviderResponse: (usage, model) => {
+        tracking.onProviderResponse(usage, model);
+        sink.push({ usage, model });
+      },
+    });
+    const generateWithRetry = async (input: SectionInput, sectionTrack: SectionTracking): Promise<VerifiedSectionOutput | null> => {
+      const outcome = await runWithHamiltonRetry(() => generateVerifiedSection(input, sectionTrack));
+      if (outcome.ok) return outcome.value ?? null;
+      lastFault = outcome.fault ?? null;
+      lastAttempts = outcome.attempts;
+      return null;
+    };
+    // Ledger writes for a section. A lost lease stops the request; any other ledger error turns
+    // checkpoints off for the rest of this request, and the report is written as before.
+    const ledger = async (write: (run: ReportRunHandle) => Promise<void>): Promise<void> => {
+      if (!durable) return;
       try {
-        return await generateVerifiedSection(input, tracking);
-      } catch (firstError) {
-        if (isProviderLimitError(firstError)) {
-          providerPaused = true;
-          return null;
-        }
-        // A successful HTTP response with unfinished generation is not a transport hiccup.
-        if (incompleteProviderResponse(firstError)) return null;
-        try {
-          return await generateVerifiedSection(input, tracking);
-        } catch (retryError) {
-          providerPaused ||= isProviderLimitError(retryError);
-          return null;
-        }
+        await write(durable);
+      } catch (error) {
+        if (error instanceof ReportRunLeaseLostError) throw error;
+        console.error("[hamilton-report] run checkpoint failed; continuing without checkpoints", error);
+        durable = null;
       }
     };
-    const sectionFailed = (input: SectionInput): GenerateReportResult => ({
-      success: false,
-      error: providerPaused
-        ? HAMILTON_PAUSED_MESSAGE
-        : `Hamilton couldn't write the ${input.title} section right now. Please try again in a minute.`,
-    });
+    /**
+     * One section: reused when this run (or a failed run of the same request within the hour)
+     * already wrote it from the same input; otherwise written, then saved before anything else.
+     */
+    const runSection = async (
+      index: number,
+      input: SectionInput,
+      write: (sectionTrack: SectionTracking) => Promise<VerifiedSectionOutput | null>,
+    ): Promise<VerifiedSectionOutput | null> => {
+      const key = reportSectionStepKey(index);
+      const inputHash = sectionInputHash(input);
+      const saved = durable?.checkpoints.get(key);
+      if (saved && saved.inputHash === inputHash) {
+        reusedSections.push(key);
+        return saved.output as VerifiedSectionOutput;
+      }
+      await ledger((run) => startReportSection(run, key));
+      const sink: ResponseSink = [];
+      const result = await write(sectionTracking(sink));
+      if (result && result.status === "ok") {
+        // The gate-shadow thunk is not data; a reused section records no shadow verdict.
+        const storable = { status: result.status, section: result.section, figuresChecked: result.figuresChecked, citation: result.citation };
+        await ledger((run) => saveReportSection(run, key, { inputHash, output: storable, providerResponses: sink }));
+      } else if (!result && lastFault) {
+        const fault: HamiltonFault = lastFault;
+        const attempts = lastAttempts;
+        await ledger((run) => failReportSection(run, key, fault, attempts));
+      }
+      return result;
+    };
+    const sectionFailed = (input: SectionInput): GenerateReportResult => {
+      const fault = lastFault as HamiltonFault | null;
+      const paused = fault !== null && (fault.kind === "provider_paused" || fault.kind === "stopped");
+      return {
+        success: false,
+        error: paused
+          ? HAMILTON_PAUSED_MESSAGE
+          : fault?.kind === "budget"
+            ? fault.readerMessage
+            : `Hamilton couldn't write the ${input.title} section right now. Please try again in a minute.`,
+      };
+    };
 
-    // The answer page comes first; the other two sections explain and stress-test
-    // its decisions, so they receive it as context and run together.
-    let answerResult = await generateWithRetry(sectionInputs[0]);
-    if (!answerResult) {
-      await recordReportOutcome("failed", `Section "${sectionInputs[0].title}" could not finish. Report not saved.`, verifiedSections);
-      return sectionFailed(sectionInputs[0]);
-    }
     // Partner review: a draft that fails the checklist goes back once with the
     // problems named; the rewrite is kept only if it fixes more than it breaks.
     const reviewInput = {
@@ -379,38 +470,52 @@ export async function generateReport(
       feeNames: selectedFeeDeltas.map((delta) => getDisplayName(delta.fee_category)),
       competitorNames: exhibitSet.data.local_market?.comparisons.flatMap((row) => row.competitors.map((c) => c.name)) ?? [],
     };
-    const firstProblems = reviewAnswerPage({ ...reviewInput, narrative: answerResult.section.narrative });
-    partnerReview.problems = firstProblems;
-    partnerReview.remaining = firstProblems.length;
-    if (firstProblems.length > 0) {
-      const rewrite = await generateVerifiedSection({
-        ...sectionInputs[0],
-        context: `${sectionInputs[0].context ?? ""}\n\n${partnerReviewContext(firstProblems, answerResult.section.narrative)}`.trim(),
-      }, tracking).catch(() => null);
-      if (rewrite) {
-        const remaining = reviewAnswerPage({ ...reviewInput, narrative: rewrite.section.narrative });
-        if (remaining.length < firstProblems.length && rewrite.status !== "needs_review") {
-          billedDrafts.push(answerResult);
-          answerResult = rewrite;
-          partnerReview.rewritten = true;
-          partnerReview.remaining = remaining.length;
-        } else {
-          billedDrafts.push(rewrite);
+
+    // The answer page comes first; the other two sections explain and stress-test
+    // its decisions, so they receive it as context and run together. The answer is saved after
+    // partner review, so a resumed run never reviews or rewrites it again.
+    const answerResult = await runSection(0, sectionInputs[0], async (sectionTrack) => {
+      let answer = await generateWithRetry(sectionInputs[0], sectionTrack);
+      if (!answer) return null;
+      const firstProblems = reviewAnswerPage({ ...reviewInput, narrative: answer.section.narrative });
+      partnerReview.problems = firstProblems;
+      partnerReview.remaining = firstProblems.length;
+      if (firstProblems.length > 0) {
+        const rewrite = await generateVerifiedSection({
+          ...sectionInputs[0],
+          context: `${sectionInputs[0].context ?? ""}\n\n${partnerReviewContext(firstProblems, answer.section.narrative)}`.trim(),
+        }, sectionTrack).catch(() => null);
+        if (rewrite) {
+          const remaining = reviewAnswerPage({ ...reviewInput, narrative: rewrite.section.narrative });
+          if (remaining.length < firstProblems.length && rewrite.status !== "needs_review") {
+            billedDrafts.push(answer);
+            answer = rewrite;
+            partnerReview.rewritten = true;
+            partnerReview.remaining = remaining.length;
+          } else {
+            billedDrafts.push(rewrite);
+          }
         }
       }
+      return answer;
+    });
+    if (!answerResult) {
+      await recordReportOutcome("failed", `Section "${sectionInputs[0].title}" could not finish. Report not saved.`, verifiedSections, { fault: (lastFault as HamiltonFault | null)?.kind ?? null });
+      return sectionFailed(sectionInputs[0]);
     }
     verifiedSections.push(answerResult);
     const answerContext = `ANSWER PAGE (already written; explain and stress-test these decisions, do not contradict or add to them):\n${answerResult.section.narrative}`;
     const followUps = await Promise.all(
-      sectionInputs.slice(1).map((input) =>
-        generateWithRetry({ ...input, context: `${input.context ?? ""}\n\n${answerContext}`.trim() }),
-      ),
+      sectionInputs.slice(1).map((input, offset) => {
+        const withAnswer = { ...input, context: `${input.context ?? ""}\n\n${answerContext}`.trim() };
+        return runSection(offset + 1, withAnswer, (sectionTrack) => generateWithRetry(withAnswer, sectionTrack));
+      }),
     );
     // All started work has settled; include successful siblings before the one final receipt.
     for (const result of followUps) if (result) verifiedSections.push(result);
     const failedFollowUp = followUps.findIndex((result) => result === null);
     if (failedFollowUp >= 0) {
-      await recordReportOutcome("failed", "A report section could not finish. Report not saved.", verifiedSections);
+      await recordReportOutcome("failed", "A report section could not finish. Report not saved.", verifiedSections, { fault: (lastFault as HamiltonFault | null)?.kind ?? null });
       return sectionFailed(sectionInputs[failedFollowUp + 1]);
     }
 
@@ -550,6 +655,8 @@ export async function generateReport(
       selectedVerifiedFeeCount: artifactMetadata.selectedVerifiedFeeCount,
       selectedProvisionalFeeCount: artifactMetadata.selectedProvisionalFeeCount,
       selectedFeeDeltaCount: artifactMetadata.selectedFeeDeltaCount,
+      // Chosen when the run opened: a replay of this run saves nothing new (#1921).
+      ...(durable ? { reportId: durable.reportId } : {}),
     });
     if (selectedInstitution) {
       await completeHamiltonRefreshJobsForInstitution({
@@ -563,6 +670,7 @@ export async function generateReport(
     return { success: true, reportId, report, artifactMetadata };
   } catch (err) {
     await recordPaidFailure?.("Report generation or saving failed. Report was not completed.").catch(() => {});
+    if (err instanceof ReportRunLeaseLostError) return { success: false, error: REPORT_RUN_BUSY_MESSAGE };
     if (isProviderLimitError(err)) return { success: false, error: HAMILTON_PAUSED_MESSAGE };
     const message = err instanceof Error ? err.message : String(err);
     return { success: false, error: `Report generation failed: ${message}` };

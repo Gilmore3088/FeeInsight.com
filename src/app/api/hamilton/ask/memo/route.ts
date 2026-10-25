@@ -1,4 +1,5 @@
 import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
+import { withHamiltonTask } from "@/lib/hamilton/task-budget";
 /**
  * POST /api/hamilton/ask/memo
  *
@@ -50,4 +51,5 @@ async function handlePOST(request: Request) {
   }
 }
 
-export const POST = withApiRoutePolicy("api.hamilton.ask.memo", "POST", handlePOST);
+// Each request is one Hamilton task, capped per task and per reader day (#1921, task-budget.ts).
+export const POST = withApiRoutePolicy("api.hamilton.ask.memo", "POST", withHamiltonTask("ask", handlePOST));

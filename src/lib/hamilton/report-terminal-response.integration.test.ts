@@ -183,7 +183,7 @@ describe("actual raw report completion and final request accounting", () => {
     expect(await generateReport(params)).toMatchObject({ success: false });
     expect(fetches).toBe(0); expect(fixture.save).not.toHaveBeenCalled(); expect(fixture.usage).not.toHaveBeenCalled();
     expect(fixture.pro).toHaveBeenCalledTimes(1);
-    // Existing generic retry rechecks the guard; neither denied invocation calls the provider.
-    expect(providerEvents().map((event) => event[5])).toEqual(["blocked", "blocked"]);
+    // A budget denial is never retried (#1921, task-faults.ts): one blocked row, no provider call.
+    expect(providerEvents().map((event) => event[5])).toEqual(["blocked"]);
   });
 });
