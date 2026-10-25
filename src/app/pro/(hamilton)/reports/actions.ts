@@ -12,7 +12,7 @@ import { getFeesByInstitution, getInstitutionById } from "@/lib/data-store";
 import { sql } from "@/lib/data-store/connection";
 import { getInstitutionFeeScheduleEvidence } from "@/lib/data-store/institution";
 import { generateVerifiedSection, type SectionTracking, type VerifiedSectionOutput } from "@/lib/hamilton/generate";
-import { SECTION_GATE_HELD } from "@/lib/hamilton/output-gate-enforce";
+import { SECTION_GATE_HELD, isAnswerGateEnforced } from "@/lib/hamilton/output-gate-enforce";
 import { bindHamiltonTaskReader, bindHamiltonTaskRun, currentHamiltonTask, HamiltonTaskBudgetError, hamiltonTaskBudgetDetail, runHamiltonTask } from "@/lib/hamilton/task-budget";
 import { runWithHamiltonRetry, type HamiltonFault } from "@/lib/hamilton/task-faults";
 import {
@@ -404,7 +404,9 @@ async function writeReport(params: GenerateReportParams): Promise<GenerateReport
       write: (sectionTrack: SectionTracking) => Promise<VerifiedSectionOutput | null>,
     ): Promise<VerifiedSectionOutput | null> => {
       const key = reportSectionStepKey(index);
-      const inputHash = sectionInputHash(input);
+      // A section saved with the one output gate off was never gated, so it is not reused once the
+      // gate decides (HAMILTON_ANSWER_GATE_ENFORCE on); with it off, the hash is as before (review of #2647).
+      const inputHash = sectionInputHash(isAnswerGateEnforced() ? { input, gate: "enforced" } : input);
       const saved = durable?.checkpoints.get(key);
       if (saved && saved.inputHash === inputHash) {
         reusedSections.push(key);

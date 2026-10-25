@@ -98,19 +98,6 @@ const STREAM_TEXT_CHUNKS = new Set(["text-start", "text-delta", "text-end", "rea
  * the screen's figure check and the completion check read the same stream. The draft's reasoning
  * goes too: it can hold the left-out sentences. With no finish chunk nothing is written.
  */
-/**
- * The provider's replayed stream with its text and reasoning chunks taken out, for an answer the
- * enforced gate never reached (the provider failed or stopped, HAMILTON_ANSWER_GATE_ENFORCE on):
- * the reader gets the stream's error, never ungated text.
- */
-function withoutText(stream: ReadableStream<UIMessageChunk>): ReadableStream<UIMessageChunk> {
-  return stream.pipeThrough(new TransformStream<UIMessageChunk, UIMessageChunk>({
-    transform(part, controller) {
-      if (!STREAM_TEXT_CHUNKS.has(part.type)) controller.enqueue(part);
-    },
-  }));
-}
-
 function withShownText(stream: ReadableStream<UIMessageChunk>, shownText: string): ReadableStream<UIMessageChunk> {
   return stream.pipeThrough(new TransformStream<UIMessageChunk, UIMessageChunk>({
     transform(part, controller) {
@@ -737,11 +724,6 @@ async function handlePOST(request: Request) {
             writer.write({ type: "text-start", id: "held" });
             writer.write({ type: "text-delta", id: "held", delta: heldLine });
             writer.write({ type: "text-end", id: "held" });
-          } else if (enforceGate && !heldVerdict) {
-            // The gate never read this answer (the provider failed or stopped): its error, never its text.
-            writer.merge(requireCompletedProviderUIStream(withoutText(result.toUIMessageStream({
-              onError: (error) => (isProviderLimitError(error) ? HAMILTON_PAUSED_MESSAGE : "Hamilton couldn't finish this answer."),
-            }))));
           } else {
             // A provider refusal happens inside the stream, past the catch below: send the
             // reader the paused line for a usage/billing limit, never the provider's text.
