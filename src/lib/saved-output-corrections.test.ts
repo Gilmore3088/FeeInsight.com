@@ -133,6 +133,14 @@ describe("writtenAnswerFeeRefs", () => {
   it("should_save_none_when_no_ref_is_the_subjects_so_the_institution_match_stays", () => {
     expect(writtenAnswerFeeRefs([peer], 9001)).toEqual([]);
   });
+  it("should_save_none_when_the_subjects_profile_was_cut_by_compaction_so_the_institution_match_stays", () => {
+    const cutProfile = { _shortened: "fees.verified kept 20 of 40 rows", identity: { id: 9001 }, fees: { verified: [], provisional: [] } };
+    expect(writtenAnswerFeeRefs([own, peer], 9001, [cutProfile])).toEqual([]);
+    expect(writtenAnswerFeeRefs([own, peer], 9001, [{ _shortened: "Result cut to 12000 characters.", text: "…" }])).toEqual([]);
+    // A peer's cut profile leaves the subject's rows whole.
+    expect(writtenAnswerFeeRefs([own, peer], 9001, [{ ...cutProfile, identity: { id: 9002 } }])).toEqual([own, peer]);
+    expect(writtenAnswerFeeRefs([own, peer], 9001, [{ _shortened: "rows kept 50 of 100", rows: [] }])).toEqual([own, peer]);
+  });
   it("should_keep_refs_when_the_answer_has_no_subject", () => {
     expect(writtenAnswerFeeRefs([peer], null)).toEqual([peer]);
   });

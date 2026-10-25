@@ -52,6 +52,27 @@ function hashOf(value: unknown): string | null {
 }
 
 /**
+ * The fee refs a written answer saves. A correction matches an output with refs by its fee rows
+ * only, and one with none by its institution. So the refs are saved only when they hold the
+ * research subject's own rows and its profile came back whole; otherwise (it read only a peer's
+ * profile, the subject's prices came from an aggregate such as `getLocalCompetitors`, or tool-output
+ * compaction cut its rows) none are saved and the answer keeps its match on the subject. With no
+ * subject there is no institution match to keep. Pure.
+ */
+export function writtenAnswerFeeRefs(refs: SavedFeeRef[], subjectId: number | null, toolOutputs: readonly unknown[] = []): SavedFeeRef[] {
+  if (subjectId == null) return refs;
+  if (!refs.some((ref) => ref.institutionId === subjectId)) return [];
+  const cut = toolOutputs.some((output) => {
+    if (!output || typeof output !== "object" || !("_shortened" in output)) return false;
+    const cutOutput = output as { identity?: { id?: unknown }; text?: unknown };
+    // A result cut to plain text no longer says whose rows it held; a cut list is not a profile.
+    if (typeof cutOutput.text === "string" && !cutOutput.identity) return true;
+    return Number(cutOutput.identity?.id) === subjectId;
+  });
+  return cut ? [] : refs;
+}
+
+/**
  * The published fee rows found in what a saved output was built from: the institution's own rows
  * (`ownRows`), evidence facts read from `published_fee_catalog`, the catalog rows of an
  * institution profile (`identity` with `fees.verified` / `fees.provisional` rows carrying
@@ -60,18 +81,6 @@ function hashOf(value: unknown): string | null {
  * skipped. First sighting of a row wins, then one that names its document fills the gap. Capped
  * at MAX_SAVED_FEE_REFS. Pure.
  */
-/**
- * The fee refs a written answer saves. A correction matches an output with refs by its fee rows
- * only, and one with none by its institution. So refs that hold none of the research subject's own
- * rows (it read only a peer's profile, or the subject's prices came from an aggregate such as
- * `getLocalCompetitors`) are not saved, and the answer keeps its match on the subject. With no
- * subject there is no institution match to keep. Pure.
- */
-export function writtenAnswerFeeRefs(refs: SavedFeeRef[], subjectId: number | null): SavedFeeRef[] {
-  if (subjectId == null) return refs;
-  return refs.some((ref) => ref.institutionId === subjectId) ? refs : [];
-}
-
 export function collectFeeRefs(...values: unknown[]): SavedFeeRef[] {
   const refs = new Map<number, SavedFeeRef>();
   const seen = new WeakSet<object>();

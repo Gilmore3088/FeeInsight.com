@@ -605,7 +605,7 @@ async function handlePOST(request: Request) {
                   replaceRecentDuplicate: { request: `written\n${focus}\n${lastUserText}` },
                   // H03-T09: the fee rows the answer's tools read, so a later correction finds it;
                   // none unless they include the subject's own, so it keeps its institution match.
-                  feeRefs: writtenAnswerFeeRefs(collectFeeRefs(toolOutputs, response), institutionId),
+                  feeRefs: writtenAnswerFeeRefs(collectFeeRefs(toolOutputs, response), institutionId, toolOutputs),
                 }));
               } catch (error) {
                 console.error("[hamilton] saving the written answer failed", error);

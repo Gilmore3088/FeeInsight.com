@@ -31,7 +31,8 @@ prices record nothing. The route saves those refs only when they include a row o
 subject (`writtenAnswerFeeRefs`). A correction matches an output with refs by its fee rows only, so
 an answer that read only a peer's profile, with the subject's prices from an aggregate, would
 otherwise lose the institution match it has today (review of #2623); it saves no refs and keeps
-that match.
+that match. It also saves none when tool-output compaction cut the subject's profile (or cut any
+result to plain text), since the rows it recorded would then be incomplete.
 
 **Option chosen: what the tools read (A), not what the sentences rest on (B).** The H03-T09 module
 says a saved output records "the published fee rows it read", and the storyline save
@@ -44,9 +45,11 @@ most needs to flag. So the written answer now matches that meaning.
 **Known limits:**
 - No `sourceContentHash` is recorded for profile rows: the profile does not carry the document's
   content hash, so the source version is the document id only.
-- Once an answer records the subject's rows, it is matched by those rows only. A correction to a
-  subject row the answer did not read (a row cut from the profile by tool-output compaction, or
-  one it saw only through the local competitor aggregate) no longer flags it.
+- Once an answer records the subject's whole profile, it is matched by those rows only. A
+  correction to a subject row the profile did not return (one it saw only through the local
+  competitor aggregate) no longer flags it.
+- A result cut to plain text by compaction makes the answer keep the institution match even when
+  that result was another bank's, which is broader than needed but never narrower than today.
 - The profile's `fees.provisional` rows are read too, but today the catalog view holds approved
   rows only, so its provisional rows are pipeline previews and record nothing.
 - An answer that read many profiles records every row of each, up to `MAX_SAVED_FEE_REFS` (2000).
