@@ -316,7 +316,7 @@ function districtSizeSupported(clause: string, evidence: Evidence): boolean {
 
 /** An epistemic withdrawal must govern this assertion. An unrelated "Unavailable"
  * label or an unavailable result followed by "because" cannot excuse its reason. */
-function explicitlyWithdrawn(clause: string, assertion: RegExpMatchArray): boolean {
+export function explicitlyWithdrawn(clause: string, assertion: RegExpMatchArray): boolean {
   const index = assertion.index ?? 0;
   const before = clause.slice(Math.max(0, index - 160), index);
   const after = clause.slice(index + assertion[0].length);
@@ -327,7 +327,7 @@ function explicitlyWithdrawn(clause: string, assertion: RegExpMatchArray): boole
 }
 
 /** Negations apply to the claim's clause, never to an entire answer. */
-function refuses(clause: string, topic: RegExp): boolean {
+export function refuses(clause: string, topic: RegExp): boolean {
   const refusal = /\b(?:cannot|can't|does not|do not|did not|doesn't|don't|didn't|is not|isn't|are not|aren't|not enough(?: (?:data|evidence|information))? to|insufficient(?: (?:data|evidence|information))? to|no basis to)\s+(?:\w+[ -]){0,5}(?:infer|establish|show|prove|determine|identify|conclude|mean|imply|tell|say|reveal|attribute|evidence|measure|known|available|reported|supported)|\b(?:unavailable|unknown|unreported|not (?:established|reported|available|shown|known|measured|supported))\b/i;
   const absentLine = /\bno\s+(?:overdraft\s+)?(?:income|revenue|payer counts?)(?:\s+from\s+overdrafts?)?\s+(?:is|was|has been)\s+(?:reported\b|available\b.{0,35}\b(?:data|filings?|sources?))\b/i;
   return (refusal.test(clause) || absentLine.test(clause)) && topic.test(clause);
@@ -471,7 +471,7 @@ function quarterQuestionProblems(text: string, question: string | undefined, evi
 }
 
 /** A withdrawal governs its own assertion; an earlier disclaimer never excuses a later claim. */
-function historicalAssertionWithdrawn(clause: string, assertion: RegExpMatchArray): boolean {
+export function historicalAssertionWithdrawn(clause: string, assertion: RegExpMatchArray): boolean {
   const before = clause.slice(0, assertion.index);
   const after = clause.slice((assertion.index ?? 0) + assertion[0].length);
   const coordinated = /\bnot\s+(?:(?:a|an|the)\s+)?(?:constant[ -]cohort|merger[ -]adjusted)(?:\s*(?:,|or|and)\s*(?:constant[ -]cohort|merger[ -]adjusted))*\s*(?:,|or|and)\s*$/i.test(before);
@@ -515,10 +515,8 @@ function historicalPeerProblems(text: string, data: unknown, evidence: Evidence)
       }
     }
     const causes = [
-      { pattern: /\b(?:gap|difference|income|revenue|comparison|lead|rank(?:ing)?|position)\b.{0,80}\b(?:reflects?|explained by|due to|driven by|results? from|comes? from|stems? from|because of)\b.{0,50}\b(?:size|scale|assets?)\b/gi,
-        problem: "A dollar-income peer gap does not establish that size, rather than pricing, caused it. State the unadjusted comparison and the missing causal evidence." },
-      { pattern: /\b(?:market|pricing|prices?|zero[ -]fee|overdraft fees?)\b.{0,80}\b(?:driv\w*|drove|caus\w*|keeps?|kept|explains?|remov\w*|responsible)\b|\b(?:growth|income|revenue)\b.{0,70}\b(?:driven|caused|explained)\s+by\b.{0,50}\b(?:market|pricing|prices?|fees?)\b/gi,
-        problem: "Observed totals and peer correlations do not establish a pricing or market cause, or rank dividend-cost changes against unmeasured fee changes. State the observation and the missing causal evidence." },
+      { pattern: new RegExp(SIZE_CAUSE.source, "gi"), problem: SIZE_CAUSE_PROBLEM },
+      { pattern: new RegExp(PRICING_CAUSE.source, "gi"), problem: PRICING_CAUSE_PROBLEM },
     ];
     if (evidence.financialPeerComparison || history?.observed === true) for (const { pattern, problem } of causes) {
       for (const assertion of clause.matchAll(pattern)) if (!historicalAssertionWithdrawn(clause, assertion)) {
@@ -564,6 +562,11 @@ function historicalPeerProblems(text: string, data: unknown, evidence: Evidence)
 
 /** Specific known interpretation failures, with actionable feedback for regeneration. */
 export function checkAnswerInterpretations(text: string, data: unknown, question?: string): string[] {
+  // The broad causal rule (causalClaimProblems) is shadow-only: answer-gate.ts records it, never fails on it.
+  return knownInterpretationProblems(text, data, question);
+}
+
+function knownInterpretationProblems(text: string, data: unknown, question?: string): string[] {
   // The written-answer boundary reconstructs this verdict from its observed reads.
   // It applies to both regulators, including when contradictions leave no usable facts.
   if (record(data)?.filed_peer_income_conflict === true) {
@@ -654,10 +657,9 @@ export function checkAnswerInterpretations(text: string, data: unknown, question
     if (peerTrend.test(clause) && !refuses(clause, /\b(?:peers?|group|median|trend|growth)\b/i)) {
       problems.add("Separate dated peer medians are cross-sections, not comparable-cohort growth. Report the current median and coverage; hold peer-growth conclusions until membership and merger treatment are established.");
     }
-    const sizeCause = /\b(?:gap|difference|income|revenue|comparison|lead|rank(?:ing)?|position)\b.{0,80}\b(?:reflects?|explained by|due to|driven by|results? from|comes? from|stems? from|because of)\b.{0,50}\b(?:size|scale|assets?)\b/i;
-    const sizeClaim = clause.match(sizeCause);
+    const sizeClaim = clause.match(SIZE_CAUSE);
     if (sizeClaim && !explicitlyWithdrawn(clause, sizeClaim) && !refuses(clause, /\b(?:cause|size|scale|gap|difference)\b/i)) {
-      problems.add("A dollar-income peer gap does not establish that size, rather than pricing, caused it. State the unadjusted comparison and the missing causal evidence.");
+      problems.add(SIZE_CAUSE_PROBLEM);
     }
     const soleCohort = /\b(?:only|sole)\s+(?:(?:true|valid|real|proper|genuine|appropriate|comparable)\s+)+(?:size\s+)?(?:peer\s+)?(?:group|cohort|comparison)\b/i;
     const soleClaim = clause.match(soleCohort);
@@ -675,12 +677,84 @@ export function checkAnswerInterpretations(text: string, data: unknown, question
         problems.add("The peer-income multiple is not in the server-validated calculation ledger. Report the sourced income and median without an unvalidated quotient.");
       }
     }
-    const pricingCause = /\b(?:market|pricing|prices?|zero[ -]fee|overdraft fees?)\b.{0,80}\b(?:driv\w*|drove|caus\w*|keeps?|kept|explains?|remov\w*|responsible)\b|\b(?:growth|income|revenue)\b.{0,70}\b(?:driven|caused|explained)\s+by\b.{0,50}\b(?:market|pricing|prices?|fees?)\b/i;
     const fundingCounterfactual = /\b(?:dividend|funding)\s+costs?\b.{0,90}\b(?:more|less|greater|larger|smaller)\b.{0,50}\b(?:fee schedule|fee pricing|pricing|fee change)\b/i;
     const onlyRates = /\b(?:earns?|earned|generates?|generated)\b.{0,45}\brevenue\b.{0,35}\b(?:through|from)\s+rates?\s*,?\s*(?:not|rather than)\s+fees?\b/i;
-    const causalClaim = clause.match(pricingCause) ?? clause.match(fundingCounterfactual) ?? clause.match(onlyRates);
+    const causalClaim = clause.match(PRICING_CAUSE) ?? clause.match(fundingCounterfactual) ?? clause.match(onlyRates);
     if (causalClaim && !explicitlyWithdrawn(clause, causalClaim) && !refuses(clause, /\b(?:cause|pricing|market|fees?|revenue|income)\b/i)) {
-      problems.add("Observed totals and peer correlations do not establish a pricing or market cause, or rank dividend-cost changes against unmeasured fee changes. State the observation and the missing causal evidence.");
+      problems.add(PRICING_CAUSE_PROBLEM);
+    }
+  }
+  return [...problems];
+}
+
+// --- Causal claims on every answer (#1077, claim contract step 3) ---
+
+/** The NCUA check's size-cause and pricing- or market-cause patterns and problem lines, unchanged. */
+const SIZE_CAUSE = /\b(?:gap|difference|income|revenue|comparison|lead|rank(?:ing)?|position)\b.{0,80}\b(?:reflects?|explained by|due to|driven by|results? from|comes? from|stems? from|because of)\b.{0,50}\b(?:size|scale|assets?)\b/i;
+const PRICING_CAUSE = /\b(?:market|pricing|prices?|zero[ -]fee|overdraft fees?)\b.{0,80}\b(?:driv\w*|drove|caus\w*|keeps?|kept|explains?|remov\w*|responsible)\b|\b(?:growth|income|revenue)\b.{0,70}\b(?:driven|caused|explained)\s+by\b.{0,50}\b(?:market|pricing|prices?|fees?)\b/i;
+const SIZE_CAUSE_PROBLEM = "A dollar-income peer gap does not establish that size, rather than pricing, caused it. State the unadjusted comparison and the missing causal evidence.";
+const PRICING_CAUSE_PROBLEM = "Observed totals and peer correlations do not establish a pricing or market cause, or rank dividend-cost changes against unmeasured fee changes. State the observation and the missing causal evidence.";
+
+/** General causal connectives. */
+const CAUSAL_CONNECTIVE = /\b(?:because(?:\s+of)?|due\s+to|driven\s+by|as\s+a\s+result\s+of|(?:led|leads?)\s+to|explains?|explained\s+by|caused\s+by|caus(?:es|ed)|results?\s+from|resulted\s+from|stems?\s+from|owing\s+to|thanks\s+to)\b/gi;
+/**
+ * A connective whose cause is the data, the method or arithmetic states no cause in the world:
+ * "because the filing reports year-to-date totals", "because Hamilton subtracted", "because $10 is
+ * less than $35".
+ */
+const METHOD_CAUSE = /^\s*(?:(?:the|its|their|this|these|that|a|an)\s+)?(?:[\w-]+\s+){0,2}?(?:filings?|data|records?|sources?|schedules?|call[ -]reports?|5300|reads?|calculations?|definitions?|question|rounding|method(?:ology)?|tools?|tables?|reporting\s+(?:dates?|periods?|basis))\b|^\s*(?:Hamilton|we|I)\s+\w+|^\s*(?:\w+\s+){0,3}?(?:subtract\w*|add\w*|divid\w*|comput\w*|calculat\w*|derived?|rounded)\b|^\s*(?:the\s+)?(?:\$\s?\d|\d)[^.;]*\b(?:is|are|was|were)\s+(?:less|more|greater|lower|higher|smaller|larger)\s+than\b/i;
+/** A fee schedule's own terms: a waiver, a condition, a cap or a per-item count. A rule, not a cause in the world. */
+const SCHEDULE_TERMS = /\b(?:waiv\w*|exempt\w*|does not apply|do not apply|applies|apply only|conditions?|requir\w*|qualif\w*|eligib\w*|minimum balance|keeps? an?\b.{0,30}\bbalance|capped|cap of|caps?\s+at|maximum|daily (?:total|limit|cap)|per[- ]item|number of items|items paid|item count)\b/i;
+/** A clause that supposes or negates its own change states no cause. */
+const SUPPOSED_OR_NEGATED = /\b(?:if|would|suppose|supposing|were to|hypothetical(?:ly)?)\b|\b(?:not|never)\b|n't\b/i;
+/** A named fee or financial measure with a direction or comparison word: a material claim with no figure. */
+const MATERIAL_TOPIC = /\b(?:fees?|income|revenue|service[ -]charges?|prices?|pricing|deposits|assets|members?(?:hip)?|accounts?|balances?|dividends?)\b/i;
+const MATERIAL_DIRECTION = /\b(?:higher|lower|rose|risen|ris(?:es|ing)|fell|fallen|fall(?:s|ing)?|increas\w*|decreas\w*|declin\w*|grew|grow\w*|drop\w*|jump\w*|climb\w*|shrank|shrunk|leads?|lag(?:s|ged|ging)?|above|below|gap)\b/i;
+const CAUSE_TOPIC = /\b(?:caus\w*|why|reasons?|explain\w*|because|due to|driv\w*|attribut\w*)\b/i;
+
+/** The problem line for a stated cause that no evidence Hamilton reads can show. */
+export const CAUSAL_CLAIM_PROBLEM =
+  "This answer states a cause that the data does not show. Fee records and filings report amounts and dates, not why they differ or change. State the figures and say that the cause is not established.";
+
+/**
+ * SHADOW ONLY (claim contract step 3; step 4 measures it): causal language on any answer, whatever
+ * the data holds (design 2.2 (5)). The NCUA check's size and pricing patterns, plus the general
+ * connectives ("because", "due to", "driven by", "led to"), each only in a clause that also holds
+ * a material claim (a figure, or a named fee or measure with a direction word). The shared gate
+ * records these lines with the verdict (`AnswerEvidenceCheck.shadowProblems`) and never fails on
+ * them; the gate still holds only what `checkAnswerInterpretations` held before (NCUA or
+ * filed-peer data). Not flagged: a withdrawn cause ("these figures do not establish why"), a cause
+ * that is the data, method or arithmetic, a fee schedule's own terms (waivers, conditions, caps,
+ * per-item counts), and a clause that supposes or negates.
+ */
+export function causalClaimProblems(text: string): string[] {
+  const problems = new Set<string>();
+  const clauses = text.split(/\r?\n+|(?<=[.!?])\s+|;\s*|,\s*(?:but|yet|however|therefore|thus|so)\s+|\s+(?:but|however|therefore|thus)\s+/i);
+  for (const raw of clauses) {
+    const clause = raw.replace(/^\s*[-*#]+\s*/, "").trim();
+    if (!clause || clause.endsWith("?") || SCHEDULE_TERMS.test(clause) || SUPPOSED_OR_NEGATED.test(clause)) continue;
+    const figures = extractFigures(clause);
+    const sizes = tierBoundsAsSize(clause, figures);
+    const material = figures.some((figure) => !sizes.has(figure)) || (MATERIAL_TOPIC.test(clause) && MATERIAL_DIRECTION.test(clause));
+    if (!material) continue;
+    // Where a known pattern names the cause, it and its withdrawal govern the clause.
+    let known = false;
+    for (const [pattern, topic, problem] of [
+      [SIZE_CAUSE, /\b(?:cause|size|scale|gap|difference)\b/i, SIZE_CAUSE_PROBLEM],
+      [PRICING_CAUSE, /\b(?:cause|pricing|market|fees?|revenue|income)\b/i, PRICING_CAUSE_PROBLEM],
+    ] as const) {
+      const claim = clause.match(pattern);
+      if (!claim) continue;
+      known = true;
+      if (!historicalAssertionWithdrawn(clause, claim) && !refuses(clause, topic)) problems.add(problem);
+    }
+    if (known) continue;
+    for (const connective of clause.matchAll(CAUSAL_CONNECTIVE)) {
+      if (METHOD_CAUSE.test(clause.slice((connective.index ?? 0) + connective[0].length))) continue;
+      const before = clause.slice(0, connective.index ?? 0);
+      if (historicalAssertionWithdrawn(clause, connective) || refuses(clause, CAUSE_TOPIC) || /\b(?:not|no)\s+(?:evidence|proof|basis)\b/i.test(before)) continue;
+      problems.add(CAUSAL_CLAIM_PROBLEM);
+      break;
     }
   }
   return [...problems];
