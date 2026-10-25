@@ -369,7 +369,7 @@ function narrateFinished(
     }
     case "deming-error-fix-recheck": {
       if (n(detail, "entries") === 0) return "No process fix names the errors it fixes yet.";
-      return `Re-checked the errors ${count(n(detail, "entries"), "process fix", "process fixes")} named: ${n(detail, "closed")} closed, ${n(detail, "still_wrong")} still wrong after a re-run, ${n(detail, "waiting")} waiting for a re-run.`;
+      return `Re-checked the errors ${count(n(detail, "entries"), "process fix", "process fixes")} named: ${n(detail, "closed")} closed, ${n(detail, "still_wrong")} still wrong after a re-run, ${n(detail, "not_reproduced")} taken down with no right fee in their place, ${n(detail, "waiting")} waiting for a re-run, ${n(detail, "unknown")} not judged.`;
     }
     case "deming-monthly-review": {
       if (detail.ran === false) return "Not the 1st of the month: no monthly agent review this time.";

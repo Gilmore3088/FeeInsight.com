@@ -12,11 +12,12 @@ import {
   summarizeErrorFixRecheck,
   type ErrorFixEntry,
 } from "./error-fixes";
-import type { FreshAuditFee } from "./fresh-audit";
+import { KNOX_RULES_STRATEGY } from "@/lib/agents/knox/specialists";
+import type { ErrorFixFee } from "./error-fixes";
 
-const entry = (over: Partial<ErrorFixEntry> = {}): ErrorFixEntry => ({ pr: 9001, issue: 2058, stage: "extract", merged_on: "2026-10-20", knox_version: 105, kinds: ["wrong_amount_read"], ...over });
+const entry = (over: Partial<ErrorFixEntry> = {}): ErrorFixEntry => ({ pr: 9001, issue: 2058, stage: "extract", merged_on: "2026-10-20", knox_version: KNOX_RULES_STRATEGY.version, kinds: ["wrong_amount_read"], ...over });
 
-const fee = (over: Partial<FreshAuditFee> = {}): FreshAuditFee => ({
+const fee = (over: Partial<ErrorFixFee> = {}): ErrorFixFee => ({
   fee_id: 1,
   fee_published_id: 501,
   lineage_ref: 401,
@@ -28,8 +29,11 @@ const fee = (over: Partial<FreshAuditFee> = {}): FreshAuditFee => ({
   fee_name: "Stop Payment Fee",
   amount: 35,
   document_url: "https://bank.example/fees.pdf",
+  raw_created_at: "2026-10-01T00:00:00Z",
   ...over,
-} as FreshAuditFee);
+} as ErrorFixFee);
+// The error rows below were recorded on Oct 10, after the fee above was extracted.
+const at = { created_at: "2026-10-10T00:00:00Z", source_document_id: null };
 
 const TEXT = [{ source_document_id: 77, normalized_text: "OTHER SERVICES\nStop Payment Fee | $35.00\nWire Transfer | $25.00" }];
 
@@ -51,33 +55,44 @@ describe("the error loop: a process fix names its errors, re-runs their banks an
 
   it("refuses an entry with no fixed Knox version, or naming a check the re-check cannot judge", () => {
     expect(errorFixProblems([entry({ knox_version: undefined as never })])[0]).toContain("knox_version");
+    // A version no extract can reach yet would leave every row waiting for good.
+    expect(errorFixProblems([entry({ knox_version: KNOX_RULES_STRATEGY.version + 1 })])[0]).toContain("above the shipped Knox rules version");
+    // The audit's evidence checks are filed against discover or publish, never extract.
+    expect(errorFixProblems([entry({ checks: ["hamilton.other_bank_document"] })])[0]).toContain("cannot judge");
     expect(errorFixProblems([entry({ checks: ["hamilton.category_guard", "deming.name_quality"] })])).toEqual([]);
     // An audience or hand judgement is not re-run, so its error could never be judged gone.
     expect(errorFixProblems([entry({ checks: ["darwin.audience_guard"] })])[0]).toContain("cannot judge darwin.audience_guard");
   });
 
   it("closes an error whose fee now matches the bank's document", () => {
-    expect(judgeErrorFix({ fee_published_id: 501, canonical_fee_key: "stop_payment" }, [fee()], TEXT)).toMatchObject({ verdict: "now_matches", judged: [501] });
+    expect(judgeErrorFix({ ...at, fee_published_id: 501, canonical_fee_key: "stop_payment" }, [fee()], TEXT)).toMatchObject({ verdict: "now_matches", judged: [501] });
   });
 
   it("keeps an error whose fee is still not in the document, naming the check it fails", () => {
-    const judged = judgeErrorFix({ fee_published_id: 501, canonical_fee_key: "stop_payment" }, [fee({ amount: 30 })], TEXT);
+    const judged = judgeErrorFix({ ...at, fee_published_id: 501, canonical_fee_key: "stop_payment" }, [fee({ amount: 30 })], TEXT);
     expect(judged).toMatchObject({ verdict: "still_wrong", check: "hamilton.source_check" });
   });
 
-  it("judges the replacement once the named fee is down, and calls a category with nothing live no longer published", () => {
-    // The named fee 500 came down; the bank's live stop payment fee is its replacement.
-    expect(judgeErrorFix({ fee_published_id: 500, canonical_fee_key: "stop_payment" }, [fee()], TEXT)).toMatchObject({ verdict: "now_matches", judged: [501] });
-    expect(judgeErrorFix({ fee_published_id: 500, canonical_fee_key: "nsf" }, [fee()], TEXT)).toMatchObject({ verdict: "not_live", judged: [] });
+  it("judges only a fee the re-run extracted in place of a named fee that is down, and never closes on nothing", () => {
+    const down = { ...at, fee_published_id: 500, canonical_fee_key: "stop_payment" };
+    // A stop payment fee live since before the error proves nothing about the fix.
+    expect(judgeErrorFix(down, [fee()], TEXT)).toMatchObject({ verdict: "not_reproduced", judged: [] });
+    // One the re-run extracted after the error, from the error's document, is judged.
+    const rerun = fee({ raw_created_at: "2026-10-21T00:00:00Z" });
+    expect(judgeErrorFix(down, [rerun], TEXT)).toMatchObject({ verdict: "now_matches", judged: [501] });
+    expect(judgeErrorFix({ ...down, source_document_id: 77 }, [rerun], TEXT)).toMatchObject({ verdict: "now_matches" });
+    expect(judgeErrorFix({ ...down, source_document_id: 78 }, [rerun], TEXT)).toMatchObject({ verdict: "not_reproduced" });
+    // Taken down with nothing in its category: not closed.
+    expect(judgeErrorFix({ ...at, fee_published_id: 500, canonical_fee_key: "nsf" }, [rerun], TEXT)).toMatchObject({ verdict: "not_reproduced", judged: [] });
   });
 
   it("never closes an error it cannot read: no stored text is unknown", () => {
-    expect(judgeErrorFix({ fee_published_id: 501, canonical_fee_key: "stop_payment" }, [fee()], [])).toMatchObject({ verdict: "unknown" });
+    expect(judgeErrorFix({ ...at, fee_published_id: 501, canonical_fee_key: "stop_payment" }, [fee()], [])).toMatchObject({ verdict: "unknown" });
   });
 
-  it("never calls a fee no longer published when it is still live as a rate, or has no category to look for", () => {
-    expect(judgeErrorFix({ fee_published_id: 500, canonical_fee_key: "nsf" }, [fee()], TEXT, undefined, true)).toMatchObject({ verdict: "unknown", judged: [] });
-    expect(judgeErrorFix({ fee_published_id: 500, canonical_fee_key: null }, [fee()], TEXT)).toMatchObject({ verdict: "unknown", judged: [] });
+  it("never judges a named fee still live as a rate, or one with no category to look for", () => {
+    expect(judgeErrorFix({ ...at, fee_published_id: 500, canonical_fee_key: "nsf" }, [fee()], TEXT, undefined, true)).toMatchObject({ verdict: "unknown", judged: [] });
+    expect(judgeErrorFix({ ...at, fee_published_id: 500, canonical_fee_key: null }, [fee()], TEXT)).toMatchObject({ verdict: "unknown", judged: [] });
   });
 
   it("asks for nothing and writes nothing with an empty or broken registry", async () => {
@@ -138,14 +153,14 @@ describe("the error loop: a process fix names its errors, re-runs their banks an
     expect(writes).toHaveLength(0);
 
     const result = await runErrorFixRecheck({ db: makeDb() as never, entries: [entry()], runId: 7 });
-    expect(result.results[0]).toMatchObject({ named: 5, waiting: 1, nowMatches: 1, notLive: 1, stillWrong: 2, unknown: 0 });
+    expect(result.results[0]).toMatchObject({ named: 5, waiting: 1, nowMatches: 1, notReproduced: 1, stillWrong: 2, unknown: 0 });
     // Row 14 was already recorded as still wrong: judged again, not written again.
     expect(writes[0].map((row) => [row.kind, row.dedupe_key, row.signal, row.weight])).toEqual([
       ["error_fix_closed", "deming.error_fix:9001:11:closed", "right", 0],
-      ["error_fix_closed", "deming.error_fix:9001:12:closed", "right", 0],
+      // Row 12's fee is down and nothing was extracted in its place: open, not written.
       ["error_fix_still_wrong", "deming.error_fix:9001:13:still_wrong", "wrong", 0],
     ]);
-    expect(errorFixDetail(result)).toMatchObject({ entries: 1, closed: 2, still_wrong: 2, waiting: 1 });
-    expect(summarizeErrorFixRecheck(result)).toBe("5 open error(s) named by 1 fix(es): 2 closed (1 now match the bank's document, 1 no longer published), 2 still wrong after a re-run, 1 waiting for a re-run, 0 with no stored text.");
+    expect(errorFixDetail(result)).toMatchObject({ entries: 1, closed: 1, not_reproduced: 1, still_wrong: 2, waiting: 1 });
+    expect(summarizeErrorFixRecheck(result)).toBe("5 open error(s) named by 1 fix(es): 1 closed (now match the bank's document), 2 still wrong after a re-run, 1 taken down with no right fee extracted in their place, 1 waiting for a re-run, 0 not judged (no stored text, or the fee is a rate or has no category).");
   });
 });

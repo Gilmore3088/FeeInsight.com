@@ -32,9 +32,9 @@ describe.skipIf(!connection)("error loop in isolated PostgreSQL (#2058)", () => 
     return Number(published.fee_published_id);
   }
 
-  async function named(key: string, institutionId: number, feePublishedId: number, canonical: string, createdAt = "2026-10-10T00:00:00Z", check = "hamilton.source_check") {
-    await raw`INSERT INTO pipeline_feedback (about_stage, signal, kind, reported_by, institution_id, fee_published_id, canonical_fee_key, check_name, dedupe_key, created_at)
-              VALUES ('extract', 'wrong', ${KIND}, 'deming', ${institutionId}, ${feePublishedId}, ${canonical}, ${check}, ${`test2058:${key}`}, ${createdAt})`;
+  async function named(key: string, institutionId: number, feePublishedId: number, canonical: string, createdAt = "2026-10-10T00:00:00Z", check = "hamilton.source_check", documentId: number | null = null) {
+    await raw`INSERT INTO pipeline_feedback (about_stage, signal, kind, reported_by, institution_id, fee_published_id, source_document_id, canonical_fee_key, check_name, dedupe_key, created_at)
+              VALUES ('extract', 'wrong', ${KIND}, 'deming', ${institutionId}, ${feePublishedId}, ${documentId}, ${canonical}, ${check}, ${`test2058:${key}`}, ${createdAt})`;
     const [row] = await raw`SELECT id FROM pipeline_feedback WHERE dedupe_key = ${`test2058:${key}`}`;
     ids[key] = Number(row.id);
   }
@@ -69,10 +69,15 @@ describe.skipIf(!connection)("error loop in isolated PostgreSQL (#2058)", () => 
     const wire = await seedFee(INST, "Wire Transfer", "wire_domestic_outgoing", 40);
     const nsf = await seedFee(INST, "NSF Fee", "nsf", 99);
     await raw`UPDATE published_fee_records SET rolled_back_at = NOW() WHERE fee_published_id = ${nsf}`;
+    // A wrong overdraft fee taken down; the live one above was extracted after the error (the
+    // fixture writes it now), from the error's document: the re-run's fee in its place.
+    const oldOverdraft = await seedFee(INST, "Overdraft Charge", "overdraft", 45);
+    await raw`UPDATE published_fee_records SET rolled_back_at = NOW() WHERE fee_published_id = ${oldOverdraft}`;
     const waitingFee = await seedFee(WAITING, "Courtesy Overdraft Fee", "overdraft", 30);
     await named("matches", INST, stop, "stop_payment");
     await named("down", INST, nsf, "nsf");
     await named("still", INST, wire, "wire_domestic_outgoing");
+    await named("replaced", INST, oldOverdraft, "overdraft", "2026-10-10T00:00:00Z", "hamilton.source_check", DOC);
     await named("waiting", WAITING, waitingFee, "overdraft");
     // Recorded after the fix merged: not one of the errors it names.
     await named("after", INST, stop, "stop_payment", "2026-10-21T00:00:00Z");
@@ -103,19 +108,20 @@ describe.skipIf(!connection)("error loop in isolated PostgreSQL (#2058)", () => 
   it("closes the errors that are gone, records the one still wrong once, and leaves the bank not yet re-run waiting", async () => {
     const first = await runErrorFixRecheck({ db, entries: [FIX], runId: null });
     expect(first.skipped).toEqual([]);
-    expect(first.results[0]).toMatchObject({ named: 4, waiting: 1, nowMatches: 1, notLive: 1, stillWrong: 1, unknown: 0 });
+    expect(first.results[0]).toMatchObject({ named: 5, waiting: 1, nowMatches: 2, notReproduced: 1, stillWrong: 1, unknown: 0 });
     expect(first.results[0].stillWrongRows).toEqual([expect.objectContaining({ feedbackId: ids.still, check: "hamilton.source_check" })]);
     const ledger = await raw`SELECT kind, signal, weight, dedupe_key, evidence->>'verdict' AS verdict FROM pipeline_feedback
                               WHERE check_name = 'deming.error_fix_recheck' AND institution_id = ${INST} ORDER BY dedupe_key`;
     expect(ledger.map((row) => [row.dedupe_key, row.kind, row.verdict, Number(row.weight)])).toEqual([
-      [`deming.error_fix:92058:${ids.down}:closed`, "error_fix_closed", "not_live", 0],
+      // The taken-down NSF fee has nothing extracted in its place: open, not written.
       [`deming.error_fix:92058:${ids.matches}:closed`, "error_fix_closed", "now_matches", 0],
+      [`deming.error_fix:92058:${ids.replaced}:closed`, "error_fix_closed", "now_matches", 0],
       [`deming.error_fix:92058:${ids.still}:still_wrong`, "error_fix_still_wrong", "still_wrong", 0],
     ].sort((a, b) => String(a[0]).localeCompare(String(b[0]))));
 
     // The next day: closed rows are not named again; the still-wrong one is judged, not re-written.
     const second = await runErrorFixRecheck({ db, entries: [FIX], runId: null });
-    expect(second.results[0]).toMatchObject({ named: 2, waiting: 1, stillWrong: 1 });
+    expect(second.results[0]).toMatchObject({ named: 3, waiting: 1, stillWrong: 1, notReproduced: 1 });
     expect(second.written).toBe(0);
   });
 });

@@ -74,6 +74,11 @@ export interface PriorityInstitutionRequest {
    * before Oct 15 carry none: any run serves them.
    */
   requestedAt?: string;
+  /**
+   * The Knox rules version a serving run's extract must reach (#2058): a fix request ends only on
+   * a read under the fixed rules, not on a run that started before they shipped.
+   */
+  minExtractVersion?: number;
 }
 
 /** An ISO date ("2026-10-15") or date-time ("2026-10-15T12:00:00Z"). */
@@ -84,6 +89,8 @@ export interface RequestWindows {
   institutionIds: number[];
   /** For each id, the latest `requestedAt` as an ISO time, or "" when the bank has no dated entry. */
   since: string[];
+  /** For each id, the highest `minExtractVersion` of its entries, or 0. */
+  minVersion: number[];
 }
 
 /**
@@ -97,6 +104,7 @@ export function requestWindows(
   warn: (message: string) => void = (message) => console.warn(message),
 ): RequestWindows {
   const latest = new Map<number, string>();
+  const versions = new Map<number, number>();
   for (const request of requests) {
     let since = "";
     if (request.requestedAt != null) {
@@ -109,8 +117,11 @@ export function requestWindows(
     }
     const prior = latest.get(request.institutionId);
     if (prior === undefined || since > prior) latest.set(request.institutionId, since);
+    const version = Number.isInteger(request.minExtractVersion) ? Number(request.minExtractVersion) : 0;
+    versions.set(request.institutionId, Math.max(versions.get(request.institutionId) ?? 0, version));
   }
-  return { institutionIds: [...latest.keys()], since: [...latest.values()] };
+  const institutionIds = [...latest.keys()];
+  return { institutionIds, since: [...latest.values()], minVersion: institutionIds.map((id) => versions.get(id) ?? 0) };
 }
 
 const REPORT_GAP_MISREAD = "report-ready gap: schedule on file but fees misread (funnel/report-rule-gaps-2026-10-07.md)";
@@ -293,6 +304,7 @@ export async function selectPriorityInstitutions(
   const windows = requestWindows([...PRIORITY_INSTITUTION_REQUESTS, ...(options.fixRequests ?? [])]);
   const requested = windows.institutionIds;
   const requestedSince = windows.since;
+  const requestedVersion = windows.minVersion;
   const leaders = [...options.leaderIds].map(Number);
   const rows = await db<
     Array<{
@@ -352,7 +364,7 @@ export async function selectPriorityInstitutions(
                WHEN inst.id = ANY(${requested}::bigint[])
                 AND NOT EXISTS (
                       SELECT 1 FROM agent_runs served
-                        JOIN unnest(${requested}::bigint[], ${requestedSince}::text[]) AS asked(institution_id, since)
+                        JOIN unnest(${requested}::bigint[], ${requestedSince}::text[], ${requestedVersion}::int[]) AS asked(institution_id, since, min_version)
                           ON asked.institution_id = inst.id
                        WHERE served.params_json->>'source' = ${PRIORITY_INSTITUTION_SOURCE}::text
                          AND served.params_json->>'institution_id' = inst.id::text
@@ -365,6 +377,7 @@ export async function selectPriorityInstitutions(
                                   AND read.institution_id = inst.id
                                   AND read.stage = 'extract'
                                   AND read.strategy = ${KNOX_RULES_STRATEGY.strategy}::text
+                                  AND read.strategy_version >= asked.min_version
                              )
                     ) THEN 2
                WHEN (COALESCE(inst.asset_size, 0) >= ${PRIORITY_MIN_ASSETS_THOUSANDS}::bigint
