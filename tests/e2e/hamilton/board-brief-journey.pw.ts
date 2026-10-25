@@ -27,6 +27,10 @@ let db: FixtureDb;
 async function shoot(page: Page, name: string): Promise<void> {
   const dir = process.env.HAMILTON_SCREENS_DIR;
   if (!dir) return;
+  // Shoot a settled page, not one mid-transition (the saved view fades in after the save).
+  await page.waitForLoadState("networkidle");
+  await page.evaluate(() => Promise.all(document.getAnimations().filter((a) => a.effect?.getComputedTiming().endTime !== Infinity).map((a) => a.finished.catch(() => undefined))));
+  await page.waitForTimeout(400);
   await page.screenshot({ path: path.join(dir, `${name}.png`), fullPage: true });
 }
 
