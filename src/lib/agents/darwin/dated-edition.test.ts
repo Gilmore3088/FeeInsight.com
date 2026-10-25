@@ -101,6 +101,17 @@ describe("dated editions (#1945)", () => {
     expect(judgeDatedEditions([stopOld, business, ...docs], "2026-10-25")).toEqual([]);
   });
 
+  it("names the latest of three editions, whatever order their copies come in (#2667 review)", () => {
+    // Brazos Star (8142) shape: 2021, 2025 and 2026 copies of one schedule; the 2025 one has the lower id.
+    const mid = { source_document_id: 2700, document_url: "https://cfccu.org/2025-Fee-Schedule.pdf", stated_date: "2025-01-01" };
+    const stopOld = row(2671, "Stop Payment Order", { fee_published_id: 31244 });
+    const stopMid = row(31873, "Stop Payment Order", { ...mid, behind_fee_published_id: 31244 });
+    const stopNew = row(31873, "Stop Payment Order", { behind_fee_published_id: 31244 });
+    const midNames = NEW_NAMES.map((name) => row(31873, name, { ...mid, canonical_fee_key: "other" }));
+    const rows = [stopOld, stopMid, stopNew, ...midNames, ...fill(2671, OLD_NAMES), ...fill(31873, NEW_NAMES)];
+    expect(judgeDatedEditions(rows, "2026-10-25").map((fee) => fee.reason)).toEqual(["older_edition: #31873 dated 2026-03-01"]);
+  });
+
   it("does not take a copy skipped behind another live line for this one", () => {
     const stopOld = row(2671, "Stop Payment Order", { fee_published_id: 31244 });
     const stopNew = row(31873, "Stop Payment Order", { behind_fee_published_id: 77777 });

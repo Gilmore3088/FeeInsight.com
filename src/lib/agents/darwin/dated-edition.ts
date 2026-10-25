@@ -173,6 +173,8 @@ export function judgeDatedEditions(rows: DatedEditionRow[], today: string, skip:
       ...(partners.get(key) ?? []),
       ...(waiting.get(String(older.fee_published_id)) ?? []).filter((row) => lineKey(row) === key),
     ];
+    // The latest edition in force names the takeover, so a bank with three editions never lands on the middle one.
+    candidates.sort((a, b) => String(b.stated_date ?? "").localeCompare(String(a.stated_date ?? "")));
     const newer = candidates.find((row) =>
       String(row.source_document_id) !== String(older.source_document_id) &&
       sameAudience(older, row) &&
