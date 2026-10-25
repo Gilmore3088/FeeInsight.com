@@ -354,6 +354,9 @@ describe("checkFeeCategory", () => {
       // Borderline, refused: "Annual Rental" names which customers pay the deposit, not an annual or
       // rental fee; the item is still the key deposit.
       "Night Deposit Key Deposit - Annual Rental Customers",
+      // A "/" or "," after the service noun is a header too (review of #2592).
+      "Night Depository Service/Key Deposit",
+      "Night Depository Service, Key Deposit",
     ]) {
       expect(checkFeeCategory("night_deposit", name).ok, name).toBe(false);
     }
@@ -368,6 +371,12 @@ describe("checkFeeCategory", () => {
       "Night Drop Service (key deposit required)",
       "Night Depository - Annual (key deposit refundable)",
       "Night Deposit Fee per month, key deposit $5",
+      // A night deposit box, a periodic fee named before the noun, or a "$10/month" price is the
+      // service too (review of #2592).
+      "Night Deposit Box Rental - Key Deposit $25",
+      "Night Deposit Box - Annual (key deposit refundable)",
+      "Annual Night Drop Fee (key deposit $20)",
+      "Night Depository Key Deposit (rental $10/month)",
     ]) {
       expect(checkFeeCategory("night_deposit", name), name).toEqual({ ok: true });
     }

@@ -367,15 +367,17 @@ export function borrowedDirection(
  * - a periodic fee: "monthly/annual/yearly fee or charge", "fee/charge per month/monthly/annually";
  * - the depository's rental or period: "night depository rental", "night deposit, annual".
  */
-const NIGHT_DEPOSIT_NOUN = String.raw`(?:night\s+deposit(?:ory)?|night\s+drop|depository|drop\s+box)`;
+const NIGHT_DEPOSIT_NOUN = String.raw`(?:night\s+deposit(?:ory)?(?:\s+box)?|night\s+drop|depository|drop\s+box)`;
 const NIGHT_DEPOSIT_KEY_DEPOSIT_EXEMPT = new RegExp(
   [
     String.raw`\b(?:lost|replac\w*)\b[^|]{0,15}\bkeys?\b`,
     String.raw`\bkeys?\b[^|]{0,15}\b(?:lost|replac\w*)\b`,
-    String.raw`\b(?:night\s+deposit(?:ory)?|depository|night\s+drop)\s+services?\b(?!\s*[:\-–—|]|\s+keys?\b)`,
+    String.raw`\b(?:night\s+deposit(?:ory)?|depository|night\s+drop)\s+services?\b(?!\s*[:\-–—|/,]|\s+keys?\b)`,
     String.raw`\b(?:monthly|annual|yearly)\s+(?:fee|charge|service\s+charge)\b`,
     String.raw`\b(?:fee|charge)\s+(?:per\s+month|per\s+year|monthly|annually|yearly)\b`,
     String.raw`\b${NIGHT_DEPOSIT_NOUN}\s+(?:rental|rent)\b`,
+    String.raw`\b(?:monthly|annual|yearly)\s+${NIGHT_DEPOSIT_NOUN}\s+(?:fee|charge)\b`,
+    String.raw`\$\s*\d[\d.,]*\s*\/\s*(?:mo|month|yr|year)\b`,
     String.raw`\b${NIGHT_DEPOSIT_NOUN}[\s,:-]*(?:per\s+month|monthly|annual(?:ly)?|per\s+year|yearly)\b`,
   ].join("|"),
   "i",
