@@ -10,10 +10,10 @@ import { loadFeeFingerprint, type FeeFingerprint } from "@/lib/hamilton/fee-fing
 import { FeeFingerprintView } from "@/components/hamilton/benchmark/FeeFingerprint";
 import { Callout, LinkButton, MemoHeader, MemoPage } from "@/components/hamilton/memo/memo";
 
-export const metadata: Metadata = { title: "Peers" };
+export const metadata: Metadata = { title: "Peer group" };
 
 /**
- * Peers (#1893, #1894): the peer group every Hamilton screen compares with, the saved peer set
+ * Peer group (#1893, #1894): the peer group every Hamilton screen compares with, the saved peer set
  * from Settings when there is one, and the research institution's fee position against it.
  * Deterministic: no model call on this page.
  */
@@ -44,20 +44,20 @@ export default async function PeersPage({ searchParams }: { searchParams: Promis
   return (
     <MemoPage>
       <MemoHeader
-        kicker="Peers"
-        title={institution ? `${institution.name} against its peers` : "Peers"}
+        kicker="Peer group"
+        title={institution ? `${institution.name} against its peer group` : "Peer group"}
         dek={
           fingerprint
             ? fingerprint.saved
-              ? `Every Hamilton screen compares ${institution?.name} with ${fingerprint.peerLabel}, your saved peer set.`
-              : `Every Hamilton screen compares ${institution?.name} with ${fingerprint.peerLabel}, the group Hamilton picks. Save your own peer set in Settings to use it everywhere.`
-            : "Choose an institution to see its fee position against its peers."
+              ? `Every Hamilton screen compares ${institution?.name} with ${fingerprint.peerLabel}, your saved peer group.`
+              : `Every Hamilton screen compares ${institution?.name} with ${fingerprint.peerLabel}, the peer group Hamilton picks. Save your own in Settings to use it on every screen.`
+            : "Choose an institution to see its fee position against its peer group."
         }
-        actions={<LinkButton href={settingsHref}>{fingerprint?.saved ? "Change the peer set" : "Save a peer set"}</LinkButton>}
+        actions={<LinkButton href={settingsHref}>{fingerprint?.saved ? "Change the peer group" : "Save a peer group"}</LinkButton>}
       />
 
       {fingerprint ? (
-        <FeeFingerprintView fingerprint={fingerprint} />
+        <FeeFingerprintView fingerprint={fingerprint} institutionId={instId} />
       ) : unavailable ? (
         <p role="status" className="text-sm text-terra-text">
           The fee position for {institution?.name ?? "this institution"} couldn&apos;t load just now. Please try again.

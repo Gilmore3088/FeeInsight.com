@@ -6,6 +6,8 @@ const mocks = vi.hoisted(() => ({
   getEnginePeerGroup: vi.fn(),
 }));
 vi.mock("@/lib/data-store/fee-index", () => ({ getInstitutionOwnFees: mocks.getInstitutionOwnFees }));
+const rates = vi.hoisted(() => ({ getRateFeesByInstitution: vi.fn() }));
+vi.mock("@/lib/data-store/rate-fees", () => rates);
 vi.mock("./active-peer-set", () => ({ getActivePeerSet: mocks.getActivePeerSet }));
 vi.mock("./workspace/research", () => ({ getEnginePeerGroup: mocks.getEnginePeerGroup, getFeeResearch: vi.fn() }));
 vi.mock("./workspace-context", () => ({ resolveHamiltonInstitutionContext: vi.fn() }));
@@ -64,6 +66,14 @@ describe("fee position fingerprint strips", () => {
     expect(strip.currentLabel).toMatch(/to/);
   });
 
+  it("keeps a fee stated as a rate apart from dollar prices, never as missing", () => {
+    const strip = buildFingerprintStrip("card_foreign_txn", undefined, peers(12), MIN_PEERS_FOR_POSITION, "1.1% of the transaction");
+    expect(strip.status).toBe("stated_as_rate");
+    expect(strip.current).toBeNull();
+    expect(strip.percentile).toBeNull();
+    expect(strip.currentLabel).toBe("1.1% of the transaction");
+  });
+
   it("says no peer publishes it when none does", () => {
     expect(buildFingerprintStrip("overdraft", own(29), [], MIN_PEERS_FOR_POSITION).status).toBe("no_peers");
   });
@@ -107,7 +117,7 @@ describe("fee position fingerprint", () => {
     });
     expect(fp.strips).toHaveLength(FEATURED_FEES.length);
     expect(fp.strips.filter((s) => s.status === "not_published")).toHaveLength(FEATURED_FEES.length - 1);
-    expect(fp.source).toMatch(/published schedule/);
+    expect(fp.source).toMatch(/published fee schedule/);
   });
 });
 
@@ -115,6 +125,10 @@ describe("loadFeeFingerprint", () => {
   beforeEach(() => {
     mocks.getActivePeerSet.mockReset();
     mocks.getEnginePeerGroup.mockReset();
+    rates.getRateFeesByInstitution.mockResolvedValue([
+      { fee_category: "card_foreign_txn", rate_label: "1.1% of the transaction" },
+      { fee_category: "overdraft", rate_label: "ignored: a dollar price exists" },
+    ]);
     mocks.getInstitutionOwnFees.mockResolvedValue(
       new Map([["overdraft", { category: "overdraft", value: 29, price: 29, low: 29, high: 29, fees: [] }]]),
     );
@@ -135,6 +149,8 @@ describe("loadFeeFingerprint", () => {
     expect(fp?.peerLabel).toBe("Team peers");
     expect(fp?.saved).toBe(true);
     expect(fp?.strips.find((s) => s.feeCategory === "overdraft")?.status).toBe("placed");
+    expect(fp?.strips.find((s) => s.feeCategory === "card_foreign_txn")?.status).toBe("stated_as_rate");
+    expect(rates.getRateFeesByInstitution).toHaveBeenCalledWith(323, "consumer");
   });
 
   it("falls back to the default group when the saved set can't be read", async () => {

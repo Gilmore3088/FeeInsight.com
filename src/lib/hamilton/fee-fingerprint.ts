@@ -11,6 +11,7 @@
  */
 import { countedAmounts } from "@/lib/data-store/counted-amounts";
 import { getInstitutionOwnFees } from "@/lib/data-store/fee-index";
+import { getRateFeesByInstitution } from "@/lib/data-store/rate-fees";
 import { ownFeeLabel, type InstitutionOwnFee } from "@/lib/own-fee";
 import { getActivePeerSet } from "./active-peer-set";
 import { quantile } from "./fee-scenario";
@@ -29,7 +30,9 @@ export type FingerprintStatus =
   /** The institution's schedule does not list this fee. */
   | "not_published"
   /** The schedule states several different amounts, so there is no one price to place. */
-  | "several_amounts";
+  | "several_amounts"
+  /** The schedule states the fee as a rate ("1.1% of the transaction"): never placed among dollar amounts. */
+  | "stated_as_rate";
 
 export interface FingerprintStrip {
   feeCategory: string;
@@ -66,7 +69,7 @@ export interface FeeFingerprint {
 }
 
 export const FINGERPRINT_SOURCE =
-  "Fees on each institution's own published schedule, verified against that schedule (Bank Fee Index)";
+  "Bank Fee Index, fees read from each institution's own published fee schedule";
 
 const round = (n: number) => Math.round(n * 100) / 100;
 
@@ -88,12 +91,16 @@ export function buildFingerprintStrip(
   own: Pick<InstitutionOwnFee, "price" | "low" | "high"> | undefined,
   peers: readonly PeerValue[],
   minPeers: number,
+  /** How the schedule states the fee as a rate ("1.1% of the transaction"), when it has no dollar amount for it. */
+  ownRateLabel: string | null = null,
 ): FingerprintStrip {
   const amounts = countedAmounts(peers);
   const enough = amounts.length >= minPeers;
   const current = own?.price ?? null;
   const status: FingerprintStatus = !own
-    ? "not_published"
+    ? ownRateLabel
+      ? "stated_as_rate"
+      : "not_published"
     : own.price === null
       ? "several_amounts"
       : amounts.length === 0
@@ -109,7 +116,7 @@ export function buildFingerprintStrip(
     feeName: feeName(feeCategory),
     status,
     current,
-    currentLabel: own ? ownFeeLabel(own) : null,
+    currentLabel: own ? ownFeeLabel(own) : ownRateLabel,
     peerCount: amounts.length,
     peerAmounts: amounts,
     band,
@@ -129,10 +136,13 @@ export function buildFeeFingerprint(input: {
   saved: boolean;
   ownFees: ReadonlyMap<string, Pick<InstitutionOwnFee, "price" | "low" | "high">>;
   peersByCategory: ReadonlyMap<string, readonly PeerValue[]>;
+  /** Fees the schedule states as a rate, by category: label, e.g. "1.1% of the transaction". */
+  ownRates?: ReadonlyMap<string, string>;
 }): FeeFingerprint {
   const minPeers = minPeersForGroup(input.peerLabel);
-  const strips = fingerprintCategories(input.ownFees.keys()).map((category) =>
-    buildFingerprintStrip(category, input.ownFees.get(category), input.peersByCategory.get(category) ?? [], minPeers),
+  const rates = input.ownRates ?? new Map<string, string>();
+  const strips = fingerprintCategories([...input.ownFees.keys(), ...rates.keys()]).map((category) =>
+    buildFingerprintStrip(category, input.ownFees.get(category), input.peersByCategory.get(category) ?? [], minPeers, rates.get(category) ?? null),
   );
   return { institutionName: input.institutionName, peerLabel: input.peerLabel, saved: input.saved, minPeers, source: FINGERPRINT_SOURCE, strips };
 }
@@ -143,11 +153,19 @@ export function buildFeeFingerprint(input: {
  * picks. Null when the institution can't be read.
  */
 export async function loadFeeFingerprint(params: { userId: number | string; institutionId: number }): Promise<FeeFingerprint | null> {
-  const [ownFees, peerSet] = await Promise.all([
+  const [ownFees, rateFees, peerSet] = await Promise.all([
     getInstitutionOwnFees(params.institutionId),
+    // A fee stated as a rate is published, not missing; it is never pooled with dollar amounts.
+    getRateFeesByInstitution(params.institutionId, "consumer"),
     getActivePeerSet({ userId: params.userId, institutionId: params.institutionId }).catch(() => null),
   ]);
-  const categories = fingerprintCategories(ownFees.keys());
+  const ownRates = new Map<string, string>();
+  for (const rate of rateFees) {
+    if (!rate.fee_category || ownFees.has(rate.fee_category)) continue;
+    const prior = ownRates.get(rate.fee_category);
+    ownRates.set(rate.fee_category, prior ? `${prior}; ${rate.rate_label}` : rate.rate_label);
+  }
+  const categories = fingerprintCategories([...ownFees.keys(), ...ownRates.keys()]);
   const group = await getEnginePeerGroup(params.institutionId, categories, { peerSet });
   if (!group) return null;
   return buildFeeFingerprint({
@@ -155,6 +173,7 @@ export async function loadFeeFingerprint(params: { userId: number | string; inst
     peerLabel: group.peerLabel,
     saved: group.saved,
     ownFees,
+    ownRates,
     peersByCategory: new Map(group.fees.map((f) => [f.feeCategory, f.peers])),
   });
 }

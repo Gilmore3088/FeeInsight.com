@@ -47,8 +47,23 @@ const fingerprint: FeeFingerprint = {
 describe("FeeFingerprint", () => {
   it("gives each placed strip its peer count, median, percentile, source and period", () => {
     expect(stripNote(blank, fingerprint)).toBe(
-      "12 peers: median $25.50, middle half $22.75 to $28.50, 71st percentile. Published fee schedules; fees published Mar 2026 to Oct 2026.",
+      "12 institutions: median $25.50, middle half $22.75 to $28.50; 71st percentile. Source: published fee schedules, Mar 2026 to Oct 2026.",
     );
+  });
+
+  it("says lowest or highest in the group rather than the 0th or 100th percentile", () => {
+    expect(stripNote({ ...blank, percentile: 0 }, fingerprint)).toContain("; lowest in the group.");
+    expect(stripNote({ ...blank, percentile: 100 }, fingerprint)).toContain("; highest in the group.");
+  });
+
+  it("keeps a fee stated as a rate off the dollar strip", () => {
+    const note = stripNote({ ...blank, status: "stated_as_rate", current: null, currentLabel: "1.1% of the transaction", percentile: null, band: null }, fingerprint);
+    expect(note).toMatch(/^Stated as a rate \(1\.1% of the transaction\), so it is not placed among dollar prices\./);
+  });
+
+  it("links each fee to My fees for the research institution", () => {
+    const html = renderToStaticMarkup(<FeeFingerprintView fingerprint={fingerprint} institutionId="323" />);
+    expect(html).toContain('href="/pro/research?fee=overdraft&amp;instId=323"');
   });
 
   it("names the peers and their prices when too few publish the fee for a median", () => {
@@ -67,7 +82,7 @@ describe("FeeFingerprint", () => {
   });
 
   it("states one month when every peer fee was published in it", () => {
-    expect(periodText({ from: "2026-09-01", to: "2026-09-20" })).toBe("fees published Sep 2026");
+    expect(periodText({ from: "2026-09-01", to: "2026-09-20" })).toBe("Sep 2026");
     expect(periodText(null)).toBeNull();
   });
 

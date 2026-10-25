@@ -4,6 +4,8 @@
  * the one highlighted mark. Each strip states its peer count, source and period. A fee the
  * institution does not publish stays in the list, marked missing. Descriptive only.
  */
+import Link from "next/link";
+import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
 import type { FeeFingerprint, FingerprintStrip } from "@/lib/hamilton/fee-fingerprint";
 
 const money = (v: number) => (Number.isInteger(v) ? `$${v.toLocaleString("en-US")}` : `$${v.toFixed(2)}`);
@@ -19,35 +21,46 @@ function monthYear(iso: string): string {
   return new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
 }
 
+/** "Oct 2026", or "May 2024 to Oct 2026": when the peers' fees were published. */
 export function periodText(period: FingerprintStrip["period"]): string | null {
   if (!period) return null;
   const [from, to] = [monthYear(period.from), monthYear(period.to)];
-  return from === to ? `fees published ${from}` : `fees published ${from} to ${to}`;
+  return from === to ? from : `${from} to ${to}`;
 }
 
-const peersWord = (n: number) => (n === 1 ? "1 peer" : `${n.toLocaleString("en-US")} peers`);
+const institutions = (n: number) => (n === 1 ? "1 institution" : `${n.toLocaleString("en-US")} institutions`);
+
+/** Where the fee sits: plain words at the ends, a percentile between them. */
+function placeText(percentile: number | null): string {
+  if (percentile === null) return "";
+  if (percentile <= 0) return "; lowest in the group";
+  if (percentile >= 100) return "; highest in the group";
+  return `; ${ordinal(percentile)} percentile`;
+}
 
 /** The line under a strip: peer count, position, source and period. */
 export function stripNote(strip: FingerprintStrip, fingerprint: Pick<FeeFingerprint, "minPeers" | "institutionName">): string {
   const period = periodText(strip.period);
-  const tail = period ? `; ${period}` : "";
+  const source = `Source: published fee schedules${period ? `, ${period}` : ""}.`;
+  const publishing = `${institutions(strip.peerCount)} in the group ${strip.peerCount === 1 ? "publishes" : "publish"} it`;
   switch (strip.status) {
     case "placed": {
       const band = strip.band!;
       const middle = band.p25 === band.p75 ? `middle half all at ${money(band.p25)}` : `middle half ${money(band.p25)} to ${money(band.p75)}`;
-      const at = strip.percentile !== null ? `, ${ordinal(strip.percentile)} percentile` : "";
-      return `${peersWord(strip.peerCount)}: median ${money(band.median)}, ${middle}${at}. Published fee schedules${tail}.`;
+      return `${institutions(strip.peerCount)}: median ${money(band.median)}, ${middle}${placeText(strip.percentile)}. ${source}`;
     }
     case "few_peers":
-      return `Only ${peersWord(strip.peerCount)} publish this fee, fewer than the ${fingerprint.minPeers} needed for a median: ${strip.namedPeers.map((p) => `${p.institutionName} ${money(p.amount)}`).join("; ")}. Published fee schedules${tail}.`;
+      return `Only ${publishing}, fewer than the ${fingerprint.minPeers} needed for a median: ${strip.namedPeers.map((p) => `${p.institutionName} ${money(p.amount)}`).join("; ")}. ${source}`;
     case "no_peers":
-      return "No peer in this group publishes this fee.";
+      return "No institution in the group publishes this fee.";
     case "not_published":
       return strip.peerCount > 0
-        ? `Missing: not on ${fingerprint.institutionName}'s published schedule. ${peersWord(strip.peerCount)} publish it${tail}.`
-        : `Missing: not on ${fingerprint.institutionName}'s published schedule, and no peer in this group publishes it.`;
+        ? `Missing: not on ${fingerprint.institutionName}'s published schedule. ${publishing}. ${source}`
+        : `Missing: not on ${fingerprint.institutionName}'s published schedule, and no institution in the group publishes it.`;
     case "several_amounts":
-      return `The schedule states several amounts (${strip.currentLabel}), so there is no one price to place. ${peersWord(strip.peerCount)} publish it${tail}.`;
+      return `The schedule states several amounts (${strip.currentLabel}), so there is no one price to place. ${publishing}. ${source}`;
+    case "stated_as_rate":
+      return `Stated as a rate (${strip.currentLabel}), so it is not placed among dollar prices.${strip.peerCount > 0 ? ` ${publishing} as a dollar price. ${source}` : ""}`;
   }
 }
 
@@ -61,8 +74,8 @@ function Strip({ strip }: { strip: FingerprintStrip }) {
   const hi = max + pad;
   const at = (v: number) => ((v - lo) / (hi - lo || 1)) * 100;
   const label = strip.current !== null
-    ? `${money(strip.current)} among ${peersWord(strip.peerCount)} priced ${money(min)} to ${money(max)}`
-    : `${peersWord(strip.peerCount)} priced ${money(Math.min(...strip.peerAmounts))} to ${money(Math.max(...strip.peerAmounts))}`;
+    ? `${money(strip.current)} among ${institutions(strip.peerCount)} priced ${money(min)} to ${money(max)}`
+    : `${institutions(strip.peerCount)} priced ${money(Math.min(...strip.peerAmounts))} to ${money(Math.max(...strip.peerAmounts))}`;
   return (
     <div className="relative h-4" role="img" aria-label={label}>
       <span className="absolute inset-x-0 top-1.5 h-1 rounded-full bg-warm-200" />
@@ -88,7 +101,13 @@ function Strip({ strip }: { strip: FingerprintStrip }) {
   );
 }
 
-export function FeeFingerprintView({ fingerprint }: { fingerprint: FeeFingerprint }) {
+function PriceCell({ strip }: { strip: FingerprintStrip }) {
+  if (strip.status === "not_published") return <span className="font-normal text-warm-600">Missing</span>;
+  if (strip.status === "stated_as_rate") return <span className="text-xs font-normal text-warm-800">{strip.currentLabel}</span>;
+  return <>{strip.currentLabel}</>;
+}
+
+export function FeeFingerprintView({ fingerprint, institutionId = null }: { fingerprint: FeeFingerprint; institutionId?: string | null }) {
   const missing = fingerprint.strips.filter((s) => s.status === "not_published").length;
   return (
     <section aria-labelledby="fee-fingerprint" className="flex flex-col gap-3">
@@ -97,18 +116,23 @@ export function FeeFingerprintView({ fingerprint }: { fingerprint: FeeFingerprin
           Fee position against {fingerprint.peerLabel}
         </h2>
         <p className="text-sm text-warm-700">
-          Gray marks are peers; the highlighted mark is {fingerprint.institutionName}. Shaded: the middle half of peer
-          prices; line: the median. A median and percentile appear only where at least {fingerprint.minPeers} peers
-          publish the fee; with fewer, the peers are named.
+          Gray marks are the institutions in the peer group; the highlighted mark is {fingerprint.institutionName}.
+          Shaded: the middle half of their prices; line: the median. A median and percentile appear only where at
+          least {fingerprint.minPeers} institutions in the group publish the fee; with fewer, each is named with its price.
           {missing > 0 ? ` ${missing} of the fees shown ${missing === 1 ? "is" : "are"} not on ${fingerprint.institutionName}'s published schedule.` : ""}
         </p>
       </div>
       <ul className="divide-y divide-warm-100 overflow-hidden rounded-lg border border-warm-300 bg-white">
         {fingerprint.strips.map((strip) => (
-          <li key={strip.feeCategory} className="grid gap-x-4 gap-y-1.5 px-4 py-3 sm:grid-cols-[minmax(0,12rem)_6rem_minmax(0,1fr)]">
-            <span className="min-w-0 text-sm text-warm-900">{strip.feeName}</span>
+          <li key={strip.feeCategory} className="grid gap-x-4 gap-y-1.5 px-4 py-3 sm:grid-cols-[minmax(0,12rem)_7rem_minmax(0,1fr)]">
+            <Link
+              href={hrefWithInstitutionContext(`/pro/research?fee=${encodeURIComponent(strip.feeCategory)}`, institutionId)}
+              className="min-w-0 text-sm text-warm-900 underline decoration-warm-300 underline-offset-2 hover:text-terra-text"
+            >
+              {strip.feeName}
+            </Link>
             <span className="text-sm font-semibold text-warm-900 [font-variant-numeric:tabular-nums] sm:text-right">
-              {strip.status === "not_published" ? <span className="font-normal text-warm-600">Missing</span> : strip.currentLabel}
+              <PriceCell strip={strip} />
             </span>
             <span className="min-w-0">
               <Strip strip={strip} />
@@ -117,7 +141,10 @@ export function FeeFingerprintView({ fingerprint }: { fingerprint: FeeFingerprin
           </li>
         ))}
       </ul>
-      <p className="text-xs text-warm-600">Source: {fingerprint.source}. Each institution counts once, and institutions that share one fee schedule count once together.</p>
+      <p className="text-xs text-warm-600">
+        Source: {fingerprint.source}. Each institution counts once, and institutions that share one fee schedule count once
+        together. Open a fee to see it in My fees.
+      </p>
     </section>
   );
 }

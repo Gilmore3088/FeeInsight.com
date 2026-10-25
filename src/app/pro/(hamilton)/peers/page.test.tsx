@@ -60,16 +60,16 @@ describe("Peers page", () => {
     mocks.fingerprint.mockResolvedValue(fingerprint(true));
     const html = await render();
     expect(mocks.fingerprint).toHaveBeenCalledWith({ userId: 7, institutionId: 323 });
-    expect(html).toContain("Every Hamilton screen compares Capital City Bank with Team peers, your saved peer set.");
-    expect(html).toContain("Change the peer set");
+    expect(html).toContain("Every Hamilton screen compares Capital City Bank with Team peers, your saved peer group.");
+    expect(html).toContain("Change the peer group");
     expect(html).toContain("Missing");
   });
 
   it("offers to save a peer set when none is saved", async () => {
     mocks.fingerprint.mockResolvedValue(fingerprint(false));
     const html = await render();
-    expect(html).toContain("the group Hamilton picks");
-    expect(html).toContain("Save a peer set");
+    expect(html).toContain("the peer group Hamilton picks");
+    expect(html).toContain("Save a peer group");
     expect(html).toContain("/pro/settings?instId=323#peer-sets");
   });
 
