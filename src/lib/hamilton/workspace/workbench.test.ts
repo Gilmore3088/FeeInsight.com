@@ -11,8 +11,17 @@ describe("the standard result blocks (#1895)", () => {
 
 describe("the fee of the page Ask was opened from (#1895)", () => {
   it("answers a comparison question that names no fee for the page's fee", () => {
-    for (const q of ["How do we compare with peers?", "Where do we stand?", "What are local competitors charging?", "Is our price higher than the market?"]) {
-      expect(parseAsk(q, null, "overdraft")).toMatchObject({ feeCategory: "overdraft", feeFrom: "page" });
+    for (const q of [
+      "How do we compare with peers?",
+      "Where do we stand?",
+      "What if we charged $30?",
+      "Is $35 too high?",
+      "Is our price higher than the market?",
+      "What are local competitors charging?",
+      "How do we compare with Navy Federal?",
+      "Which peers charge more?",
+    ]) {
+      expect(parseAsk(q, null, "overdraft"), q).toMatchObject({ feeCategory: "overdraft", feeFrom: "page" });
     }
   });
 
@@ -61,6 +70,14 @@ describe("the fee of the page Ask was opened from (#1895)", () => {
       // A fee the parser can't place is never read as the page's fee.
       "What are peers charging for transfers?",
       "How do our card fees compare?",
+      // Any word that is not a price, position or subject word keeps no page fee (re-review).
+      "How does our CD pricing compare?",
+      "What do peers charge for mortgages?",
+      "How do peers price their checking?",
+      "How do we compare on interchange?",
+      "How do we compare on early closure?",
+      "How do our prices compare?",
+      "How do our fees stack up?",
     ]) {
       // The same reading as with no page fee at all.
       expect(parseAsk(q, null, "overdraft"), q).toEqual(parseAsk(q));

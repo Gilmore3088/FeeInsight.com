@@ -198,50 +198,59 @@ function questionFee(question: string, carriedCategory: string | null, tested: n
 }
 
 /**
- * A question that sets the page's fee aside: it asks about every fee, the fee schedule, or fee
- * income, so the fee of the page Ask was opened from is not put in its place (#1895, #1077).
+ * A question that sets the page's fee aside: it asks about every fee, the fee schedule, all of
+ * the subject's prices, or fee income, so the fee of the page Ask was opened from is not put in
+ * its place (#1895, #1077).
  */
 const SETS_PAGE_FEE_ASIDE =
-  /\b(?:every|all(?: of)?(?: our| my| the)?|each|whole|entire|overall)\b(?! (?:peer|competitor))[^.?!]{0,30}\bfees?\b|\bfee schedule\b|\bschedules?\b|\b(?:all|every) (?:our|my) (?:prices|pricing)\b|\b(?:which|what) (?:of )?(?:our|my) fees\b|\b(?:our|my) fees\b/i;
+  /\b(?:every|all(?: of)?(?: our| my| the)?|each|whole|entire|overall)\b(?! (?:peer|competitor))[^.?!]{0,30}\bfees?\b|\bfee schedule\b|\bschedules?\b|\b(?:our|my) (?:prices|pricing)\b|\b(?:which|what) (?:of )?(?:our|my) fees\b|\b(?:our|my) fees\b/i;
+
+/** Words that carry no subject of their own: who is asking, about whom, and how the question is put. */
+const FUNCTION_WORDS = new Set(
+  ("how do does did is are was were be been am what whats which where wheres if we us our ours i me my it its " +
+    "they them their theirs the a an to of for with on in at by than and or about too so should would could can " +
+    "will there this that these those s now today currently still really just me show list name other " +
+    "institutions institution banks bank credit unions union group").split(" "),
+);
+
+/** Words that ask how a price compares or sits: what a reader asks on a fee's own page. */
+const PRICE_POSITION_WORDS = new Set(
+  ("compare compares compared comparing comparison stand stands rank ranks ranked ranking sit sits stack stacks up " +
+    "position positioned place placed peer peers competitor competitors market local nearby national nationally " +
+    "median benchmark benchmarks vs versus against high higher highest low lower lowest more less most least " +
+    "cheap cheaper cheapest expensive fee fees charge charges charged charging price priced pricing cost costs " +
+    "raise raised raising cut cutting drop dropped increase decrease change went go").split(" "),
+);
 
 /**
- * A measure other than a fee's price: return on assets, efficiency, deposits, rates, fee share,
- * income, trends, averages, size, market share. A question about one is never about the page's fee.
- */
-const OTHER_MEASURE =
-  /\b(?:roa|roe|return on (?:assets|equity)|efficiency|deposits?|rates?|apy|yield|fee shares?|income|revenue|earnings?|profit\w*|margin|nim|trends?|average|size|assets|loans?|capital|branch\w*|members?|membership|customers?|complaints?|market share|growth|ratio)\b/i;
-
-/** "Who are our competitors?": a question about institutions, not a fee. */
-const ABOUT_INSTITUTIONS = /\bwho (?:are|is)\b|\b(?:list|name) (?:our|my|the) (?:peers|competitors)\b(?![^.?!]*\b(?:fee|charg|pric))/i;
-
-/** Words that make a question about a price: a fee, a charge, a price. */
-const FEE_WORDS = /\b(?:fees?|charg\w*|pric\w*|cost\w*)\b/i;
-
-/** A comparison asked of the subject itself ("how do we compare with peers?", "where do we stand?"). */
-const COMPARES_SUBJECT =
-  /\b(?:how|where) (?:do|does|are|is) (?:we|us|our \w+|it|i)\b[^.?!]{0,40}\b(?:compar\w*|stand|rank|sit|fall|stack up)\b|\b(?:we|our|it)\b[^.?!]{0,30}\b(?:versus|vs\.?|against) (?:the )?(?:peers?|market|competitors?)\b/i;
-
-/**
- * Nouns for a fee or service the reader may mean but the parser cannot place ("transfers",
- * "cards", "checks"). With one in the question the page's fee is never put in its place.
- */
-const UNPLACED_FEE_NOUN =
-  /\b(?:transfers?|cards?|checks?|cheques?|statements?|withdrawals?|payments?|accounts?|boxes|loans?|zelle|ach|notary|coins?|courier|research|appraisals?|ira)\b/i;
-
-/**
- * The fee of the page Ask was opened from (#1895), for a question that names no fee and asks how
- * a fee compares or is priced ("how do we compare with peers?" asked from the overdraft page). The
- * reader never has to name the fee again. A question about every fee, fee income or anything else
- * keeps no page fee, so Ask still says plainly what it cannot answer (#1077).
+ * The fee of the page Ask was opened from (#1895), for a question that names no fee and asks only
+ * how a price compares or sits: "how do we compare with peers?", "is $35 too high?", "how do we
+ * compare with Navy Federal?" asked from the overdraft page. Every content word must be a price,
+ * position or comparison word, a word for the subject, a number, or an institution's name; any
+ * other word ("CD pricing", "mortgages", "interchange", "deposit rates") keeps no page fee, so Ask
+ * reads the question as it would with no page at all, and says plainly what it can't answer (#1077).
  */
 export function pageFeeFor(question: string, pageFee: string | null, tested: readonly number[] = []): string | null {
   if (!pageFee || !Object.hasOwn(DISPLAY_NAMES, pageFee)) return null;
   if (matchFeeCategory(question)) return null;
   if (asksIncome(question) || asksIncomeWhy(question) || SETS_PAGE_FEE_ASIDE.test(question)) return null;
-  if (OTHER_MEASURE.test(question) || ABOUT_INSTITUTIONS.test(question) || UNPLACED_FEE_NOUN.test(question)) return null;
-  // Fee-shaped: it tests a price ("what if we charged $30?"), says fee, charge or price, or asks
-  // how the subject compares.
-  return tested.length > 0 || FEE_WORDS.test(question) || COMPARES_SUBJECT.test(question) ? pageFee : null;
+  const words = question.replace(/[’`]/g, "'").match(/\$?[A-Za-z0-9.,']+/g) ?? [];
+  let asksPrice = tested.length > 0;
+  for (const [index, raw] of words.entries()) {
+    const word = raw.replace(/'s?$|'/g, "").replace(/[.,]+$/, "");
+    if (!word || /^\$?[\d.,]+[kKmMbB]?$/.test(word)) continue;
+    const lower = word.toLowerCase();
+    if (PRICE_POSITION_WORDS.has(lower)) {
+      asksPrice = true;
+      continue;
+    }
+    if (FUNCTION_WORDS.has(lower)) continue;
+    // An institution's name ("Navy Federal"): a capitalized word after the first. An all-capitals
+    // word ("CD", "ROA") is a product or measure, not a name.
+    if (index > 0 && /^[A-Z][a-z][A-Za-z&-]*$/.test(word)) continue;
+    return null;
+  }
+  return asksPrice ? pageFee : null;
 }
 
 export function parseAsk(question: string, carriedCategory: string | null = null, pageFee: string | null = null): AskIntent {
