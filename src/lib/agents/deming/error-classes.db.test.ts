@@ -92,8 +92,8 @@ describe.skipIf(!connection)("error classes in isolated PostgreSQL (#2063)", () 
     await feedback("extract", "wrong_category", BANKS[2], { weight: 0 });
     await feedback("extract", "wrong_category", BANKS[2], { signal: "right" });
     await feedback("extract", "wrong_category", BANKS[2], { daysAgo: 9 });
-    // One bank only: counted, not listed.
-    await feedback("extract", "wrong_amount", BANKS[0]);
+    // One bank only: counted, not listed. (A live wrong amount groups by layout instead, #2067.)
+    await feedback("extract", "wrong_audience", BANKS[0], { key: "test_2063_one_bank" });
     // A person's hold with no fee key, on a read document: its pattern is the reader's layout.
     await feedback("read", "admin_hold", BANKS[0], { reportedBy: "human", feePublishedId: null, key: null, documentId: DOC });
     await feedback("read", "admin_hold", BANKS[1], { reportedBy: "human", feePublishedId: null, key: null, documentId: DOC });
