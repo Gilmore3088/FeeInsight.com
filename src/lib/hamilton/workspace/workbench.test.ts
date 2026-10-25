@@ -34,6 +34,17 @@ describe("the fee of the page Ask was opened from (#1895)", () => {
       "How do we compare with Navy Federal Credit Union?",
       "How do we compare with credit unions in New York?",
       "Is it higher against Chime?",
+      // Names with "of", in capitals, or with initials; a state's code after "in".
+      "How do we compare with Bank of America?",
+      "How do we compare with Credit Union of Texas?",
+      "How do we compare with USAA?",
+      "Are we cheaper than PNC?",
+      "Is it higher against BECU?",
+      "How do we compare with TD Bank?",
+      "How do we compare with U.S. Bank?",
+      "How do we compare with credit unions in DC?",
+      "Are we cheaper than Payday Lenders?",
+      "How do we compare with Check Cashers?",
     ]) {
       expect(parseAsk(q, null, "overdraft"), q).toMatchObject({ feeCategory: "overdraft", feeFrom: "page" });
     }
@@ -115,6 +126,15 @@ describe("the fee of the page Ask was opened from (#1895)", () => {
       "How do we compare with Zelle?",
       "Is it higher against Venmo?",
       "Are we cheaper than HELOCs?",
+      // A measure in capitals, or a word that is not an institution, after with, than, against or versus.
+      "How do we compare with ROA?",
+      "Is it higher against APY?",
+      "Are we cheaper than NIM?",
+      "How do we compare with CD?",
+      "Are we higher than HELOC?",
+      "How do we compare versus Inflation?",
+      "How do we compare with Last Year?",
+      "Is it higher against Brokerage?",
     ]) {
       // The same reading as with no page fee at all.
       expect(parseAsk(q, null, "overdraft"), q).toEqual(parseAsk(q));

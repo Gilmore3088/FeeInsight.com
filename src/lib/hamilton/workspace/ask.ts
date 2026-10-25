@@ -237,6 +237,22 @@ const PRODUCT_WORDS = new Set(
     "credit debit wire wires atm atms").split(" "),
 );
 
+/** All-capitals words that are a measure or product, not an institution ("with ROA", "against CD"). */
+const MEASURE_CAPS = new Set("roa roe apy apr nim cd atm heloc ira ach nsf od".split(" "));
+
+/** Capitalized words after with, than or against that are not an institution ("versus Inflation"). */
+const NOT_NAMES = new Set("inflation last next year years month quarter history budget plan target goal brokerage".split(" "));
+
+/** Whether a word can be part of an institution's name: "Navy", "USAA", "U.S" (as in U.S. Bank), "Credit" before "Union". */
+function nameWord(word: string, next: string | undefined): boolean {
+  if (/^[A-Z](?:\.[A-Z])+$/.test(word)) return true;
+  if (!/^[A-Z][A-Za-z&-]*$/.test(word) || /^[A-Z]{2,}s$/.test(word)) return false;
+  const lower = word.toLowerCase();
+  if (/^[A-Z]{2,}$/.test(word)) return !MEASURE_CAPS.has(lower);
+  if (lower === "credit") return /^unions?$/i.test(next ?? "");
+  return !PRODUCT_WORDS.has(lower) && !NOT_NAMES.has(lower);
+}
+
 /** Lowercase state names, each as its words, for "in Florida" and "in New York". */
 const STATE_WORDS: string[][] = Object.values(STATE_NAMES).map((name) => name.toLowerCase().split(/\s+/));
 
@@ -278,6 +294,8 @@ export function pageFeeFor(question: string, pageFee: string | null, tested: rea
     // A state after "in" ("in Florida", "in New York"); any other capitalized word after "in"
     // ("in Checking", "in Wealth") is a product line, not a place.
     if (before === "in") {
+      // "in DC", "in TX": a state's two-letter code, written in capitals.
+      if (/^[A-Z]{2}$/.test(word.replace(/\./g, "")) && Object.hasOwn(STATE_NAMES, word.replace(/\./g, ""))) continue;
       const span = stateNameAt(words, i);
       if (span > 0) {
         i += span - 1;
@@ -289,21 +307,21 @@ export function pageFeeFor(question: string, pageFee: string | null, tested: rea
       asksPrice = true;
       continue;
     }
-    // "credit" only in "credit union(s)", never a credit line or credit card.
-    if (lower === "credit" && /^unions?$/i.test(words[i + 1] ?? "")) continue;
     // An institution's name: a capitalized word right after with, than, against, vs or versus, and
     // the capitalized words that run on from it ("with Navy Federal Credit Union"). Never a
     // product or app ("with Zelle"), an all-capitals word ("CD", "ROA") or one with a plural s
     // ("CDs", "HELOCs").
-    if (
-      (NAME_LEADS.has(before) || continuesName) &&
-      /^[A-Z][A-Za-z&-]*$/.test(word) &&
-      !/^[A-Z]{2,}s?$/.test(word) &&
-      !PRODUCT_WORDS.has(lower)
-    ) {
+    if ((NAME_LEADS.has(before) || continuesName) && nameWord(word, words[i + 1])) {
       inName = true;
       continue;
     }
+    // "of" inside a name: "Bank of America", "Credit Union of Texas".
+    if (continuesName && lower === "of" && nameWord(words[i + 1] ?? "", words[i + 2])) {
+      inName = true;
+      continue;
+    }
+    // "credit" only in "credit union(s)", never a credit line or credit card.
+    if (lower === "credit" && /^unions?$/i.test(words[i + 1] ?? "")) continue;
     if (PRICE_POSITION_WORDS.has(lower)) {
       asksPrice = true;
       continue;
