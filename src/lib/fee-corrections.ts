@@ -26,7 +26,7 @@ import { recordFeedback } from "@/lib/agents/learning/feedback";
 import { releaseCategoryPattern } from "@/lib/agents/darwin/release-held";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
-import { rebuildIndexAfterAdminAction, recordAdminFeeRun } from "@/lib/fee-admin-run";
+import { lostTextEvidence, rebuildIndexAfterAdminAction, recordAdminFeeRun } from "@/lib/fee-admin-run";
 import { correctionsReady } from "./fee-correction-guard";
 import { captureCorrectiveSource } from "@/lib/agents/deming/corrective-source-store";
 import type { CorrectiveDocument } from "@/lib/agents/deming/corrective-source";
@@ -359,6 +359,10 @@ async function writeVersion(tx: SqlTag, w: WriteVersion): Promise<FeeCorrectionR
     `;
   }
   const at = new Date().toISOString();
+  // A lost text names the live document whose text lost the fee, not the document the corrected
+  // value was read from, so Rosetta reads that one again on its next reader version (#2059).
+  const lostTextDocumentId = w.action === "correct" && w.cause === "text_lost" && w.live.live_document_id != null ? Number(w.live.live_document_id) : null;
+  const lostText = await lostTextEvidence(tx, lostTextDocumentId);
   await recordFeedback(tx, [{
     aboutStage: w.cause ? feeErrorStage(w.cause) : "publish",
     signal: w.action === "correct" ? "wrong" : "restored",
@@ -366,7 +370,7 @@ async function writeVersion(tx: SqlTag, w: WriteVersion): Promise<FeeCorrectionR
     reportedBy: "human",
     checkName: FEE_CORRECTION_CHECK,
     institutionId,
-    sourceDocumentId: sourceDocumentId ?? null,
+    sourceDocumentId: lostTextDocumentId ?? sourceDocumentId ?? null,
     feePublishedId: oldId,
     canonicalFeeKey: w.before.canonicalFeeKey,
     amount: w.before.amount,
@@ -381,6 +385,7 @@ async function writeVersion(tx: SqlTag, w: WriteVersion): Promise<FeeCorrectionR
       reason: w.reason,
       ...(w.cause ? { cause: w.cause } : {}),
       ...(w.cause === "wrong_document" ? wrongDocument(w.live.live_document_id, w.live.live_document_url) : {}),
+      ...(lostTextDocumentId != null ? { ...lostText, evidence_document_id: sourceDocumentId ?? null } : {}),
       before: w.before,
       after: w.after,
       source_excerpt: w.evidence?.excerpt ?? null,

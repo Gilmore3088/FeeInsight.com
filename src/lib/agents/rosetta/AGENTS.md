@@ -78,8 +78,12 @@ Rosetta owns source text normalization.
   whose cause is a lost text, a text-survival or batch-review miss) is also read once more
   when `ROSETTA_READ_VERSION` moves, however many fees it has (#2059). A reader fix then
   reaches the documents it was written for, not only those read afterwards. The new text
-  replaces it only when it lists at least as many fees (the lost-text rule); a better text
-  moves `updated_at` past the error and settles the document. Magellan's side already
+  replaces it only when it lists at least as many fees (the lost-text rule). A hold or
+  correction records the hash of the text it is about, and stays open until the text
+  changes, so a re-read that writes the same text keeps it for the next bump; an error with
+  no hash is settled by any rewrite. A correction names the live document whose text lost
+  the fee, not the document its new value came from. Holds recorded before #2565 name no
+  document and are not matched. Magellan's side already
   holds: a `DISCOVERY_METHOD_VERSION` bump re-searches every bank whose last search missed,
   and a wrong-document error re-searches its bank through the stale-link search (#2055).
 - Scoped layout 5 repairs (#2219) keep the global reader 3 and prose-layout 4 replay floors

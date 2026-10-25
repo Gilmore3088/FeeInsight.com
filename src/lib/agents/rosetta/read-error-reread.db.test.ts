@@ -15,6 +15,7 @@ const HASH = "hash-2059-bytes";
 // A product page is exempt from the thin re-reads, and a text with lines is not a flat legacy one,
 // so only a read error can select it.
 const TEXT = "OTHER SERVICES\nStop Payment Fee $35.00\nWire Transfer $25.00";
+const TEXT_HASH = "text-hash-2059";
 
 describe.skipIf(!connection)("Rosetta re-reads a document with a read error on a reader version bump (#2059)", () => {
   let raw: postgres.Sql<{ numeric: number; json: unknown; text: string }>;
@@ -38,9 +39,10 @@ describe.skipIf(!connection)("Rosetta re-reads a document with a read error on a
               VALUES (${INST}, ${DOC}, 'read', 'read.pdf_layout', ${version}, ${HASH}, 'ok')`;
   }
 
-  async function readError(createdAt: string) {
-    await raw`INSERT INTO pipeline_feedback (about_stage, signal, kind, reported_by, check_name, institution_id, source_document_id, dedupe_key, created_at)
-              VALUES ('read', 'wrong', 'admin_hold', 'human', 'admin.fee_hold', ${INST}, ${DOC}, ${`test2059:${createdAt}`}, ${createdAt})`;
+  async function readError(createdAt: string, textHash?: string) {
+    const evidence = textHash ? { text_hash: textHash } : {};
+    await raw`INSERT INTO pipeline_feedback (about_stage, signal, kind, reported_by, check_name, institution_id, source_document_id, dedupe_key, created_at, evidence)
+              VALUES ('read', 'wrong', 'admin_hold', 'human', 'admin.fee_hold', ${INST}, ${DOC}, ${`test2059:${createdAt}`}, ${createdAt}, ${raw.json(evidence)})`;
   }
 
   beforeAll(async () => {
@@ -56,9 +58,9 @@ describe.skipIf(!connection)("Rosetta re-reads a document with a read error on a
               VALUES (${INST}, 'Reread Test Bank', 'bank', 'fdic', 'TX')`;
     await raw`INSERT INTO source_documents (id, institution_id, status, document_url, content_hash, crawled_at)
               VALUES (${DOC}, ${INST}, 'success', 'https://bank2059.test/fees.pdf', ${HASH}, '2026-10-01T00:00:00Z')`;
-    await raw`INSERT INTO agent_source_texts (source_document_id, institution_id, status, normalized_text, source_hash, reader, document_type,
+    await raw`INSERT INTO agent_source_texts (source_document_id, institution_id, status, normalized_text, text_hash, source_hash, reader, document_type,
                                               document_kind, document_kind_version, updated_at)
-              VALUES (${DOC}, ${INST}, 'completed', ${TEXT}, ${HASH}, 'read.pdf_layout', 'pdf', 'product_page', ${DOCUMENT_KIND_VERSION}, '2026-10-02T00:00:00Z')`;
+              VALUES (${DOC}, ${INST}, 'completed', ${TEXT}, ${TEXT_HASH}, ${HASH}, 'read.pdf_layout', 'pdf', 'product_page', ${DOCUMENT_KIND_VERSION}, '2026-10-02T00:00:00Z')`;
     await readAt(ROSETTA_READ_VERSION - 1);
   });
 
@@ -81,6 +83,16 @@ describe.skipIf(!connection)("Rosetta re-reads a document with a read error on a
     expect((await raw.unsafe(query, params as never[]))[0].last_lost_text).toBe(TEXT);
     // Read by the current reader: settled until the next bump.
     await readAt(ROSETTA_READ_VERSION);
+    expect(await selected()).toEqual([]);
+  });
+
+  it("keeps an error that names the text's hash open through a re-read that writes the same text", async () => {
+    await readError("2026-10-05T00:00:00Z", TEXT_HASH);
+    // The same text written again later: still the text the error is about.
+    await raw`UPDATE agent_source_texts SET updated_at = '2026-10-10T00:00:00Z' WHERE source_document_id = ${DOC}`;
+    expect(await selected()).toEqual([DOC]);
+    // A different text settles it, whenever it was written.
+    await raw`UPDATE agent_source_texts SET text_hash = 'text-hash-2059-new', updated_at = '2026-10-03T00:00:00Z' WHERE source_document_id = ${DOC}`;
     expect(await selected()).toEqual([]);
   });
 

@@ -512,4 +512,40 @@ describe.skipIf(!connection)("admin fee corrections in isolated PostgreSQL", () 
       await raw`DELETE FROM institution_sources WHERE id = ${otherInstitution}`;
     }
   });
+
+  it("should_name_the_lost_text_s_document_and_its_text_hash_when_a_fee_is_held_or_corrected_for_a_lost_text_(#2059)", async () => {
+    // Rosetta re-reads the document whose text lost the fee on each reader version until that text
+    // changes, so the row names the live document and the hash of its current text.
+    // The national index test leaves this fee held.
+    await releasePublishedFee(db as never, overdraftFeeId, { id: 1, name: "James" });
+    await raw`UPDATE agent_source_texts SET text_hash = 'hash-2059-old' WHERE source_document_id = ${DOC_OLD}`;
+    await raw`UPDATE agent_source_texts SET text_hash = 'hash-2059-new' WHERE source_document_id = ${DOC_NEW}`;
+    const held = await holdPublishedFee(db as never, overdraftFeeId, "The text dropped the per-item note", { id: 1, name: "James" }, "text_lost");
+    expect(held).toMatchObject({ ok: true });
+    const [hold] = await raw`SELECT about_stage, source_document_id::int AS source_document_id, evidence->>'text_hash' AS hash
+                               FROM pipeline_feedback WHERE kind = 'admin_hold' AND fee_published_id = ${overdraftFeeId} ORDER BY id DESC LIMIT 1`;
+    expect(hold).toMatchObject({ about_stage: "read", source_document_id: DOC_OLD, hash: "hash-2059-old" });
+    expect(await releasePublishedFee(db as never, overdraftFeeId, { id: 1, name: "James" })).toMatchObject({ ok: true });
+
+    // A correction whose value comes from the newer document still names the live document.
+    const result = await correctPublishedFee(db, correction({
+      feePublishedId: overdraftFeeId,
+      idempotencyKey: "db-test-correct-losttext",
+      canonicalFeeKey: "overdraft",
+      feeName: "Overdraft Fee",
+      amount: "30.00",
+      conditions: "per item",
+      sourceDocumentId: DOC_NEW,
+      sourceExcerpt: "Overdraft Fee | $30.00 per item",
+      cause: "text_lost",
+    }), admin);
+    expect(result).toMatchObject({ ok: true });
+    if (!result.ok) return;
+    const [corrected] = await raw`SELECT about_stage, source_document_id::int AS source_document_id, evidence->>'text_hash' AS hash, evidence->>'evidence_document_id' AS cited
+                                    FROM pipeline_feedback WHERE kind = 'admin_correction' AND fee_published_id = ${overdraftFeeId} ORDER BY id DESC LIMIT 1`;
+    expect(corrected).toMatchObject({ about_stage: "read", source_document_id: DOC_OLD, hash: "hash-2059-old", cited: String(DOC_NEW) });
+    const reversed = await reverseFeeCorrection(db, { feePublishedId: result.feePublishedId, expectedVersion: 1,
+      idempotencyKey: "db-test-losttext-reverse-000001", reason: "Restore the fee as it was read" }, admin);
+    expect(reversed.ok).toBe(true);
+  });
 });

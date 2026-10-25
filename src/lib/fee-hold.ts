@@ -16,7 +16,7 @@
 
 import type { sql as Sql } from "@/lib/data-store/connection";
 import { recordFeedback } from "@/lib/agents/learning/feedback";
-import { rebuildIndexAfterAdminAction, recordAdminFeeRun } from "@/lib/fee-admin-run";
+import { lostTextEvidence, rebuildIndexAfterAdminAction, recordAdminFeeRun } from "@/lib/fee-admin-run";
 import { feeErrorStage, wrongDocument, type FeeErrorCause } from "@/lib/fee-error-cause";
 
 import {
@@ -70,6 +70,7 @@ async function logHoldEvent(
     if (doc && cause === "wrong_document") wrong = wrongDocument(doc.id, doc.document_url);
     if (doc && cause === "text_lost") lostTextDocumentId = Number(doc.id);
   }
+  const lostText = await lostTextEvidence(tx, lostTextDocumentId);
   const at = new Date().toISOString();
   const run = await recordAdminFeeRun(tx, {
     action,
@@ -90,7 +91,7 @@ async function logHoldEvent(
     feePublishedId: Number(row.fee_published_id),
     canonicalFeeKey: row.canonical_fee_key,
     amount: row.amount == null ? null : Number(row.amount),
-    evidence: { action, actor_id: actor.id, actor: actor.name, reason, ...(cause ? { cause } : {}), ...wrong, fee_name: row.fee_name, at },
+    evidence: { action, actor_id: actor.id, actor: actor.name, reason, ...(cause ? { cause } : {}), ...wrong, ...lostText, fee_name: row.fee_name, at },
     runId: run.runId,
     dedupeKey: `${FEE_HOLD_CHECK}:${row.fee_published_id}:${action}:${at}`,
   }]);
