@@ -77,4 +77,14 @@ export const DEMING_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-2063-work-classes-not-fees",
+    agent: "deming",
+    stage: "error classes",
+    lesson: "Report errors as classes, never as a list of fees. Group the week's confirmed errors (about a live fee, or recorded by a person) by the stage that made them, their kind and the pattern they share (the fee category, the reader and layout, or the document kind), count the banks each class reaches, name the agent that owns the stage, and keep one record per class, updated each day it is seen. Leave rows with no shared pattern out of the classes. A pattern at one bank is a data point; at two or more it is a process error to fix at its step. Count a takedown's extract and verify rows as two classes, because both the step that made the error and the step that let it through must learn.",
+    why: "The only grouping across banks was Knox's exact-name category lessons. Audit misses, holds, corrections and takedowns were fixed one fee or one bank at a time, so the same error (a category error on early-closure fees at 270 banks in one week) kept coming back at every bank that shared the pattern.",
+    evidence: { issues: [2063], prs: [2576], files: ["src/lib/agents/deming/error-classes.ts", "src/lib/agents/daily-brief.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];

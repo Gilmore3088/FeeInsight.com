@@ -91,6 +91,7 @@ export const FEEDBACK_KINDS = {
   account_type_hold: { record: "Legacy takedown rows; the sync skips this kind now (feedback-sync.ts)." },
   error_fix_closed: { record: "Deming's error loop: a named error re-checked after its fix and gone (error-fixes.ts, #2058)." },
   error_fix_still_wrong: { record: "Deming's error loop: a named error still wrong after its re-run (error-fixes.ts, #2058)." },
+  error_class: { record: "Deming's error classes: one row per class of confirmed errors per week, with its counts and a GitHub-ready record (error-classes.ts, #2063)." },
 
   // Frequency and held fees.
   frequency_filled: { unread: "Darwin's hourly check and Hamilton's frequency fill record it; Knox should learn the frequency." },

@@ -17,6 +17,7 @@ import { redactRegistrySecrets } from "@/lib/regulatory/http";
 import { STORAGE_STEP_KEY } from "./atlas/storage-retention";
 import { readSourceHealth, sourceHealthLines, urgentSourceCount, type SourceHealthReport } from "./hoovie/source-health";
 import { readUnreadFeedback, unreadFeedbackLines, type UnreadFeedbackSummary } from "./learning/unread-feedback";
+import { errorClassLines, readErrorClasses, type ErrorClassSummary } from "./deming/error-classes";
 
 /**
  * Atlas's morning brief: what ran, how the database moved since the last brief,
@@ -143,6 +144,7 @@ export function buildDailyBrief({
   storage,
   sources,
   unread,
+  errorClasses,
   now = new Date(),
 }: {
   health: PipelineHealth;
@@ -167,6 +169,8 @@ export function buildDailyBrief({
   sources?: SourceHealthReport | null;
   /** Error rows no agent reads (#2062), counted when the brief runs. */
   unread?: UnreadFeedbackSummary | null;
+  /** The week's confirmed errors grouped by step and pattern (#2063). */
+  errorClasses?: ErrorClassSummary | null;
   now?: Date;
 }): DailyBrief {
   const problems = pipelineHealthProblems(health);
@@ -204,6 +208,7 @@ export function buildDailyBrief({
     lines.push(["Quality ledger (live fees now):", ...qualityLedgerLines(ledger).map((line) => `- ${line}`)].join("\n"));
   }
   lines.push(...unreadFeedbackLines(unread));
+  lines.push(...errorClassLines(errorClasses));
 
   if (spend) {
     const caps = spend.total.dailyCapUsd !== null ? ` of the $${spend.total.dailyCapUsd} daily cap` : "";
@@ -345,7 +350,7 @@ export interface DailyBriefResult {
 /** Gathers the numbers, writes the brief and emails it. Never throws on delivery. */
 export async function runDailyBrief({ dryRun = false }: { dryRun?: boolean } = {}): Promise<DailyBriefResult> {
   const now = new Date();
-  const [health, funnel, previous, stepsByAgent, feed, center, failureAlerts, leads, spend, goal, ledger, storage, sources, unread] = await Promise.all([
+  const [health, funnel, previous, stepsByAgent, feed, center, failureAlerts, leads, spend, goal, ledger, storage, sources, unread, errorClasses] = await Promise.all([
     getPipelineHealth(),
     getPipelineFunnel(),
     previousBrief(now),
@@ -383,12 +388,16 @@ export async function runDailyBrief({ dryRun = false }: { dryRun?: boolean } = {
       console.error("Morning brief unread feedback read failed", error);
       return null;
     }),
+    readErrorClasses().catch((error) => {
+      console.error("Morning brief error classes read failed", error);
+      return null;
+    }),
   ]);
   const since = now.getTime() - DAY_MS;
   const feed24h = feed.filter((item) => new Date(item.at).getTime() >= since);
   // Without Atlas's attention list the Needs-you count would be short, so the brief falls back to its older summary.
   const needsYou = center ? buildNeedsYou({ attention: center.attention, failureAlerts, leads, now }) : undefined;
-  const brief = buildDailyBrief({ health, funnel, previous, stepsByAgent, feed24h, needsYou, spend, goal, ledger, storage, sources, unread, now });
+  const brief = buildDailyBrief({ health, funnel, previous, stepsByAgent, feed24h, needsYou, spend, goal, ledger, storage, sources, unread, errorClasses, now });
   const { to: recipient, cc } = briefRecipients();
   const from = getTransactionalFromAddress();
 
