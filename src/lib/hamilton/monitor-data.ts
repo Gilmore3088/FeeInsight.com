@@ -12,6 +12,7 @@ import {
   type HamiltonSelectedInstitutionContext,
 } from "@/lib/hamilton/institution-context";
 import type { SignalEntry, AlertEntry } from "@/lib/hamilton/home-data";
+import { parseCompetitorChangeDetail } from "@/lib/hamilton/competitor-alert-detail";
 import {
   fetchQueuedHamiltonRefreshJobs,
   type HamiltonRefreshJobEntry,
@@ -147,7 +148,9 @@ async function fetchSignalFeed(
             body,
             created_at,
             source_json ->> 'evidence_policy' AS evidence_policy,
-            COALESCE((source_json ->> 'provider_call_queued')::boolean, false) AS provider_call_queued
+            COALESCE((source_json ->> 'provider_call_queued')::boolean, false) AS provider_call_queued,
+            -- A competitor change carries its prices and baseline for the exhibit (#1898).
+            CASE WHEN signal_type = 'hamilton_competitor_fee_change' THEN source_json END AS competitor_json
           FROM hamilton_signals
           WHERE institution_id = ANY(${institutionIds}::text[])
             AND NOT (source_json ? 'withdrawn_at')
@@ -181,6 +184,7 @@ async function fetchSignalFeed(
       createdAt: String(r.created_at),
       evidencePolicy: r.evidence_policy == null ? null : String(r.evidence_policy) as SignalEntry["evidencePolicy"],
       providerCallQueued: r.provider_call_queued === true,
+      competitorChange: parseCompetitorChangeDetail(r.competitor_json),
     }));
   } catch {
     return [];

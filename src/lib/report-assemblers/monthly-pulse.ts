@@ -16,7 +16,7 @@ import { createHash } from "crypto";
 import { getSql } from "@/lib/data-store/connection";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { getDisplayName } from "@/lib/fee-taxonomy";
-import { sameSchedule } from "@/lib/agents/hamilton/schedule-edition";
+import { editionStarts, sameSchedule } from "@/lib/agents/hamilton/schedule-edition";
 import type { DataManifest } from "@/lib/report-engine/types";
 
 export const PULSE_WINDOW_DAYS = 30;
@@ -76,6 +76,9 @@ export interface RecordedChangeRow {
   new_document_text: string | null;
   /** Text of the schedule the old price was read from. */
   old_document_text: string | null;
+  /** source_documents ids behind the two prices, when the reader loaded them (#1898). */
+  old_document_id?: number | string | null;
+  new_document_id?: number | string | null;
 }
 
 // ─── Pure rule ────────────────────────────────────────────────────────────────
@@ -116,6 +119,50 @@ export function sameEdition(a: string | null | undefined, b: string | null | und
  * it a change when the earlier schedule already stated the new price for that fee.
  */
 export function confirmFeeChange(row: RecordedChangeRow): PulseChange | null {
+  // One argument on purpose: callers pass it to Array.map, and only competitor alerts, which
+  // call judgeFeeChange themselves, ask for `holdUndatedEdition`.
+  return judgeFeeChange(row).change;
+}
+
+/**
+ * Why a recorded change is not one the bank made (#1898), when the reason is what we knew and
+ * when rather than the reading itself. Editions are each schedule's own edition line
+ * (`editionStarts`, the reader Darwin, Magellan and publish use), never any "effective" date in
+ * the text, which can be a privacy notice's or a rate table's.
+ *   - `correction`: both prices come from one stored document, so the later price is our
+ *     corrected reading of the same schedule, not a new price;
+ *   - `older_edition`: the new price's schedule states an earlier edition than the old price's,
+ *     so it is an old schedule we found late, not the bank's current pricing;
+ *   - `edition_unknown` (only with `holdUndatedEdition`): the old price's schedule states its
+ *     edition and the new one states none, so nothing shows the new one is the newer schedule.
+ *     Only the competitor alerts ask for it: a bank moving from a dated PDF to an undated web
+ *     page must not have its real changes dropped from the Monthly Pulse or the fee alert emails.
+ * Every other refusal is `not_confirmed`.
+ */
+export type FeeChangeHold = "correction" | "older_edition" | "edition_unknown" | "not_confirmed";
+
+export type FeeChangeVerdict = { change: PulseChange; hold: null } | { change: null; hold: FeeChangeHold };
+
+export interface FeeChangeOptions {
+  /** Hold a change whose new schedule states no edition against a dated old one. */
+  holdUndatedEdition?: boolean;
+}
+
+/** Pure: the change the bank made, or why this recorded change is not one. */
+export function judgeFeeChange(row: RecordedChangeRow, options: FeeChangeOptions = {}): FeeChangeVerdict {
+  const hold = (reason: FeeChangeHold): FeeChangeVerdict => ({ change: null, hold: reason });
+  if (row.old_document_id != null && row.new_document_id != null && String(row.old_document_id) === String(row.new_document_id)) {
+    return hold("correction");
+  }
+  const oldEdition = editionStarts(row.old_document_text);
+  const newEdition = editionStarts(row.new_document_text);
+  if (oldEdition && newEdition && newEdition < oldEdition) return hold("older_edition");
+  if (options.holdUndatedEdition && oldEdition && row.new_document_text && !newEdition) return hold("edition_unknown");
+  const change = confirmStatedChange(row);
+  return change ? { change, hold: null } : hold("not_confirmed");
+}
+
+function confirmStatedChange(row: RecordedChangeRow): PulseChange | null {
   const oldAmount = row.old_amount == null ? null : Number(row.old_amount);
   const newAmount = row.new_amount == null ? null : Number(row.new_amount);
   if (oldAmount == null || newAmount == null || !Number.isFinite(oldAmount) || !Number.isFinite(newAmount)) return null;
