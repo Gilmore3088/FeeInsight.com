@@ -356,7 +356,9 @@ function narrateFinished(
         .filter(([key]) => typeof ((detail[key] ?? {}) as Detail).error === "string").map(([, label]) => label);
       if (n(totals, "compared") === 0) return `ALARM: Deming compared no shown financials with the stored filings${unread.length ? `; it could not read ${unread.join(" or ")}` : ""}.`;
       if (unread.length) return `ALARM: Deming could not read ${unread.join(" or ")} for the filings check; of the rest, ${n(totals, "matched")} of ${n(totals, "compared")} figures match, ${unexplained === 0 ? "none unexplained" : `${count(unexplained, "figure")} unexplained`}.`;
-      return `Deming reconciled shown financials with the stored filings: ${n(totals, "matched")} of ${n(totals, "compared")} figures match, ${n(totals, "explained")} differ for a known reason, ${unexplained === 0 ? "none unexplained" : `ALARM: ${count(unexplained, "figure")} unexplained`}.`;
+      const skewed = n((detail.version_skew ?? {}) as Detail, "unexplained");
+      const skewNote = skewed > 0 ? `, ${skewed} of them where BankFind and FFIEC hold different versions of the filing` : "";
+      return `Deming reconciled shown financials with the stored filings: ${n(totals, "matched")} of ${n(totals, "compared")} figures match, ${n(totals, "explained")} differ for a known reason, ${unexplained === 0 ? "none unexplained" : `ALARM: ${count(unexplained, "figure")} unexplained${skewNote}`}.`;
     }
     case "deming-knox-misses": {
       if (detail.ready === false) return "Deming could not replay Knox's answer-key misses: the case store or the answer key is not there.";

@@ -64,6 +64,7 @@ import {
   readColdCallRows,
   type ColdCallRow,
 } from "./cold-reads";
+import { FFIEC_FILING_METADATA_KEYS } from "@/lib/regulatory/ffiec-call-items";
 import { ncuaCallMeasure } from "./ncua-call-measures";
 import { buildCallCohortHistory, readCallCohortHistory, type CallCohortHistory } from "./call-cohort-history";
 
@@ -643,6 +644,8 @@ async function queryFee(input: QueryDataInput, category: string): Promise<QueryD
  * institutions, or every filer. Dollar lines come back in dollars whichever regulator filed them.
  */
 async function queryCall(input: QueryDataInput, itemKey: string): Promise<QueryDataResult> {
+  // A filing's last-updated time (#1925) is stored beside the lines but is not a figure.
+  if (FFIEC_FILING_METADATA_KEYS.has(itemKey)) return refuse(input.measure, "That is a filing's last-updated time, not a call-report line.");
   const measure = ncuaCallMeasure(itemKey);
   const entries = callReportEntries().filter((entry) => !measure || entry.id === CALL_REPORT_ROW_SOURCES.ncua);
   const servable = entries.filter((e) => e.servable);

@@ -86,7 +86,13 @@ export const SOURCE_CHECK_REASON = "source_check_untraceable";
 // payment is made after the grace period. | $20.00") stays one fee's row, so its description is no
 // second name and the fee keeps its own price; a price under its name with the balance that waives it
 // ("$3.00 if balance falls below $100 minimum") is that name's price. Dry run: no live fee comes down.
-export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 23 } as const;
+// Version 24 (#1918): "$15K" or "$1.5M" is a balance in thousands or millions, never a price, so it
+// never stands in for a fee's price or takes the fee's name from the price after it. Dry run (Oct 25,
+// read-only) over the published fees whose texts print such a figure (1,151 by one scope, 988 by an
+// independent re-run): one verdict
+// changes. 64038 ("High Dollar Returned Check ($10k & over)", live at $10; the bank charges 1% of the
+// check plus the regular fee) comes down; no fee is restored.
+export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 24 } as const;
 
 /**
  * An institution is checked again whenever a newer live fee appears, so a fee

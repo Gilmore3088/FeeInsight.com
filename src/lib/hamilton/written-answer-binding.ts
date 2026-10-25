@@ -7,7 +7,9 @@
  * stored schedule, so those amounts are records a sentence can bind to. Benchmarks (medians,
  * bands), financials and fees still in review carry no record, so a sentence that states them is
  * Hamilton's reading and is shown under `INTERPRETATION_LABEL`. A sentence the records contradict
- * (another bank's fee as this one's, a rate fee as dollars, advice) is left out.
+ * (another bank's fee as this one's, a rate fee as dollars, advice) is left out. The local
+ * competitor read (`getLocalCompetitors`) names the subject and each competitor by id; its prices
+ * are aggregates with no record, so a sentence stating one is Hamilton's reading.
  *
  * The profile's fees carry no reporting period, product audience or schedule date, so the evidence
  * contract derives no gap or change from them (`deriveDifference` needs both periods): a gap or a
@@ -147,6 +149,19 @@ function feeFactsAndNames(toolOutputs: readonly unknown[]): { facts: HamiltonEvi
         const fact = fee ? profileFact(profileId, fee, index) : null;
         if (fact && !facts.has(fact.id)) facts.set(fact.id, fact);
       });
+      return;
+    }
+    // The local competitor read (getLocalCompetitors): the subject and each competitor by id, so a
+    // sentence naming a competitor is about that competitor and never binds to the subject's record
+    // (#1077, Cycle A defect 2). Its prices are aggregates of a competitor's rows (fee_basis: the
+    // highest overdraft tier or a median) with no record or document id, so no fact is made of them:
+    // a sentence stating one is Hamilton's reading, as a benchmark is.
+    if (Array.isArray(obj.competitors) && record(obj.your_fees)) {
+      name(positiveInt(obj.institution_id), obj.institution);
+      for (const item of obj.competitors) {
+        const competitor = record(item);
+        if (competitor) name(positiveInt(competitor.institution_id), competitor.name);
+      }
       return;
     }
     // An institution listed by another lookup is named, so its fee is never read as another's.

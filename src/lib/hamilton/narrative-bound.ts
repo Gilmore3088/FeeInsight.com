@@ -432,12 +432,20 @@ function money(value: number): string {
 
 /** Institutions the sentence names, in the order it names them. */
 function namedIn(text: string, names: ReadonlyMap<number, string>): number[] {
-  const lower = text.toLowerCase();
-  return [...names.entries()]
-    .map(([id, name]) => ({ id, at: name.trim() ? lower.indexOf(name.trim().toLowerCase()) : -1 }))
-    .filter((hit) => hit.at >= 0)
-    .sort((a, b) => a.at - b.at)
-    .map((hit) => hit.id);
+  // Longest name first, each match blanked, so "Capital Bank of Texas" is not also read as "Capital Bank".
+  let rest = text.toLowerCase();
+  const hits: { id: number; at: number }[] = [];
+  const byLength = [...names.entries()]
+    .map(([id, name]) => ({ id, name: name.trim().toLowerCase() }))
+    .filter(({ name }) => name)
+    .sort((a, b) => b.name.length - a.name.length);
+  for (const { id, name } of byLength) {
+    const at = rest.indexOf(name);
+    if (at < 0) continue;
+    hits.push({ id, at });
+    rest = rest.split(name).join(" ".repeat(name.length));
+  }
+  return hits.sort((a, b) => a.at - b.at).map((hit) => hit.id);
 }
 
 /** The direction words next to a figure: just after it first ("$25 lower"), then just before it ("rose 10%"). */
