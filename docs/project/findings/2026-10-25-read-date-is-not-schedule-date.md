@@ -79,6 +79,24 @@ newer sign the reader does not count (34 sit at an address naming 2025 or later,
 these may be current. With the replacement guard such a document costs at most a search, never its
 link.
 
+**Second review fix (same PR, Oct 25):** the review of the fixed head found three more items.
+(1) The older freshness arm (an "Effective" year or address year three or more years old) still
+replaced a link with any page that passed the fee-page check: hebfcu.org (institution 6072) links
+`/wp-content/uploads/2022/03/TISA.pdf`, whose text says "accurate as of October 12, 2026". Every
+freshness search without a wrong-document finding is now held to a later-dated page: later than the
+old document's stated date when one is known (stale or not), else than the year the arm read, to 31
+December (`freshnessOldDate`). Wrong-document searches stay unguarded. (2) A page that stamps
+today's date on its rate table ("Rates current as of October 24, 2026") passed the guard; on the
+page found, a dated line whose sentence names rates and not fees or a schedule no longer counts.
+Stored documents are still dated by such a line: doc 32498's fee chart says "updated 06/2024" and
+its only current line is "Interest Rates and Annual Percentage Yields are current as of
+02/27/2026", so leaving that line out there would call it old. (3) The pass grouped all of
+`published_fee_catalog` every discover step (about 1 s on prod; the review saw 1-8 s). It now
+picks documents from `source_documents` and the fee tier tables, looking up cited documents only for
+banks with a document still to date (prod EXPLAIN: 0.1 s for ~480 such documents, 0.9 s while all
+~25,000 are), and counts live fees in the catalog only for the 200 picked (0.8 s, only on a step
+that picked some).
+
 **Not yet done:** the public pages do not show "schedule dated 2022, read Oct 2026" yet. That
 belongs to the Page templates lane and needs the columns filled first. A rate's "effective" date is no longer read as the page's date, but a currency line about rates
 ("Interest Rates ... are current as of 02/27/2026") is, since it dates the document as printed. A

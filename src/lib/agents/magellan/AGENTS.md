@@ -232,7 +232,9 @@ and `detail.method_version`).
   A bank whose link's document states a date more than 24 months old (`stated-date.ts`, below)
   is picked too, once at this version.
   A different page that passes the fee-page check replaces the link (the old one is not
-  kept); the same page or a miss changes nothing.
+  kept); the same page or a miss changes nothing. Without a wrong-document finding the page
+  must also state a later date than the old document (`freshnessOldDate`,
+  `statedDateReplaces`, below); a wrong-document search is not held to a date.
 - URLs in `institution_source_profiles.rejected_source_urls` (one entry per URL) are
   not proposed again for that bank for 90 days (`REJECTED_URL_TTL_DAYS`), count against
   their path in per-platform learning, and their links are searched first.
@@ -502,12 +504,23 @@ the counts and up to 10 stale samples with the words the date was read from (ste
 `stated_dates`). Free, no provider; a dry run writes no column.
 
 A bank whose link's own document (its last main fetch, or the current copy of the link's page,
-never a companion) states a date more than `STALE_STATED_MONTHS` (24) ago is picked once by the
-freshness search (stale reason "schedule dated YYYY-MM-DD (basis)"). Such a search replaces the
-link only when the page it finds states a later date by the same reader (`statedDateReplaces`): a
-page that states no date, or an older or equal one, leaves the link as it is, and the refusal is
-kept on the attempt (`detail.stated_date_check`) and counted in the step detail
-(`stated_date_refusals`). The pass and the search both
+never a companion) states a latest date more than `STALE_STATED_MONTHS` (24) ago is picked once by
+the freshness search (stale reason "schedule dated YYYY-MM-DD (basis)"). Every freshness search
+without a wrong-document finding, whichever arm picked it, replaces the link only when the page it
+finds states a later date by the same reader (`statedDateReplaces`) than the old document's stated
+date, or, when none is known, than the year the older arm read (its "Effective" year or address
+year, counted to 31 December; `freshnessOldDate`). hebfcu.org's link
+`/wp-content/uploads/2022/03/TISA.pdf` names 2022 but says "accurate as of October 12, 2026", so a
+page found must state a date after that. On the page found, a dated line whose sentence names rates
+(rates, APY, dividends, interest, yields) and not fees or a schedule does not count
+(`skipRateLines`): "Rates current as of October 24, 2026" says when rates were set. Stored
+documents are dated without that rule (doc 32498's only current line is about its rates). A page
+that states no date, or an older or equal one, leaves the link as it is, and the refusal is kept on
+the attempt (`detail.stated_date_check`) and counted in the step detail (`stated_date_refusals`).
+A wrong-document search is not held to a date. The pass picks its documents from
+`source_documents` and the fee tier tables (cited first, looked up only for banks with a document
+still to date) and counts live fees in `published_fee_catalog` for the picked documents only, so a
+step with nothing to date reads no catalog. The pass and the search both
 wait for the columns (migration `20270110000077`, `statedDateColumnsReady`): until then the pass
 reads and writes nothing (`schema_ready: false`) and the search leaves out its stated-date arm.
 

@@ -350,7 +350,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ### Sources and discovery (20)
 
-- 2026-10-25 — A fetch date is not a schedule date: record the date a document states (its effective, revised or "as of" line, never a rate's date or an upload year), and replace a link dated over two years ago only with a page that states a later date. — [finding](findings/2026-10-25-read-date-is-not-schedule-date.md) — Agent lesson: magellan/issue-1878-stated-date-not-read-date
+- 2026-10-25 — A fetch date is not a schedule date: record the date a document states (its effective, revised or "as of" line, never a rate's date or an upload year), and replace an out-of-date link (by its stated, effective or address date) only with a page that states a later date, not counting a rate line. — [finding](findings/2026-10-25-read-date-is-not-schedule-date.md) — Agent lesson: magellan/issue-1878-stated-date-not-read-date
 - 2026-10-20 — Magellan's hub and crawl finders accepted product pages as fee schedules (#1051). — [finding](findings/2026-10-20-magellan-self-accepted-product-pages.md) — Guard: `src/lib/agents/magellan/discovery.test.ts`
 - 2026-10-20 — A freshness check has to start from what is live. — [finding](findings/2026-10-20-live-fee-pages-never-refetched.md) — Agent lesson: magellan/issue-1200-refetch-live-fee-pages
 - 2026-10-19 — A check that keys on "same address" misses every schedule that moves. — [finding](findings/2026-10-19-saved-link-never-fetched.md) — Agent lesson: magellan/pr-2074-fetch-saved-link-once, gutenberg/pr-2074-retired-documents

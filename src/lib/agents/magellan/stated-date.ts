@@ -108,7 +108,7 @@ const CURRENCY_DATE = new RegExp(
   "i",
 );
 
-function currencyDates(head: string): Found[] {
+function currencyDates(head: string, skipRateLines = false): Found[] {
   const found: Found[] = [];
   for (const m of head.matchAll(CURRENCY)) {
     const start = m.index ?? 0;
@@ -119,6 +119,7 @@ function currencyDates(head: string): Found[] {
     // not a heading: a line-start "As of" counts only when its date ends the clause.
     const lineStart = !/\S\s+as\s+of/i.test(m[0]) && !/disclosure/i.test(m[0]);
     if (lineStart && /^,\s*[a-z]/i.test(head.slice(end + d[0].length))) continue;
+    if (skipRateLines && rateOnlySentence(head, start, end + d[0].length)) continue;
     let date: string | null = null;
     if (d[1]) date = calendarDate(Number(d[3]), monthOf(d[1]), Number(d[2]));
     else if (d[4]) date = calendarDate(Number(d[4]), Number(d[5]), Number(d[6]));
@@ -136,21 +137,43 @@ const RATE_WORDS = /\b(?:rates?|apys?|apr|annual percentage (?:yields?|rates?)|d
 const FEE_WORDS = /\b(?:fees?|charges?|schedule|services?)\b/i;
 const RATE_MASK = "_".repeat("effective".length);
 
+/** The sentence around `head[start, end)`: from the last sentence end on its line to the next one after it. */
+function sentenceAround(head: string, start: number, end: number): string {
+  const lineStart = head.lastIndexOf("\n", start - 1) + 1;
+  const before = head.slice(lineStart, start).split(/[.;!?]\s/).at(-1) ?? "";
+  const restEnd = head.slice(end).search(/\n|[.;!?](?:\s|$)/);
+  return `${before}${head.slice(start, restEnd < 0 ? head.length : end + restEnd)}`;
+}
+
+/**
+ * True when the sentence around a dated line names rates (rates, APY, dividends, interest, yields)
+ * and not fees or a schedule: "Rates current as of October 24, 2026", "Interest Rates and Annual
+ * Percentage Yields are current as of 02/27/2026". A page that stamps today's date on its rate
+ * table says when the rates were set, not that its fees are new (#2615 review).
+ */
+function rateOnlySentence(head: string, start: number, end: number): boolean {
+  const sentence = sentenceAround(head, start, end);
+  return RATE_WORDS.test(sentence) && !FEE_WORDS.test(sentence);
+}
+
 /**
  * The text with each "effective" that dates rates blanked out (same length, so Hamilton's readers
  * see the same positions), and whether any of those blanked ones carried a date. A rate's
  * "effective" is one whose sentence names rates before it, or starts with it and names rates, and
  * names no fees or schedule (#2615 review: "Rates effective September 1, 2024" over "FEES CURRENT AS
- * OF: August 3, 2026"). Hamilton's own `effectiveDate()` is shared with Darwin and is left as is.
+ * OF: August 3, 2026"). `strict` masks any "effective" whose sentence names rates and no fees, for
+ * the page the freshness search found (`statedDateReplaces`). Hamilton's own `effectiveDate()` is
+ * shared with Darwin and is left as is.
  */
-export function maskRateEffective(head: string): { masked: string; rateDated: boolean } {
+export function maskRateEffective(head: string, strict = false): { masked: string; rateDated: boolean } {
   let rateDated = false;
   const masked = head.replace(/effective/gi, (word: string, at: number) => {
     const lineStart = head.lastIndexOf("\n", at - 1) + 1;
     const before = head.slice(lineStart, at).split(/[.;!?]\s/).at(-1) ?? "";
     const restEnd = head.slice(at).search(/\n|[.;!?]\s/);
     const sentence = `${before}${head.slice(at, restEnd < 0 ? head.length : at + restEnd)}`;
-    const aboutRates = before.trim() === "" ? RATE_WORDS.test(sentence) : RATE_WORDS.test(before);
+    // Strict (a page found to replace a link): any rate sentence without fee words, wherever it names rates.
+    const aboutRates = strict || before.trim() === "" ? RATE_WORDS.test(sentence) : RATE_WORDS.test(before);
     if (!aboutRates || FEE_WORDS.test(sentence)) return word;
     if (effectiveDate(head.slice(at, at + 60))) rateDated = true;
     return RATE_MASK;
@@ -194,9 +217,10 @@ function effectiveStatement(head: string): Found | null {
   return { date, evidence: effectiveEvidence(head, date) };
 }
 
-function printedDates(head: string): Found[] {
+function printedDates(head: string, skipRateLines = false): Found[] {
   const found: Found[] = [];
   for (const m of head.matchAll(PRINTED)) {
+    if (skipRateLines && rateOnlySentence(head, m.index ?? 0, (m.index ?? 0) + m[0].length)) continue;
     let date: string | null = null;
     if (m[1]) date = calendarDate(Number(m[3]), monthOf(m[1]), Number(m[2]));
     else if (m[4]) date = calendarDate(Number(m[6]), Number(m[4]), Number(m[5]));
@@ -224,11 +248,24 @@ function latest(found: Found[]): Found | null {
   return found.reduce<Found | null>((best, item) => (best == null || item.date > best.date ? item : best), null);
 }
 
-/** The date a document states (see the file comment). Pure. */
-export function readStatedDate(text: string | null | undefined, url: string | null | undefined, now = new Date()): StatedDate {
-  const { masked: head, rateDated } = maskRateEffective((text ?? "").slice(0, STATED_DATE_SCAN_CHARS));
+/**
+ * The date a document states (see the file comment). Pure. `skipRateLines` (the page the freshness
+ * search found, `statedDateReplaces`) leaves out every dated line whose sentence names rates and
+ * not fees or a schedule: a revised, current-as-of or effective line about rates. The stored
+ * documents are read without it: doc 32498's only date is "Interest Rates and Annual Percentage
+ * Yields are current as of 02/27/2026", printed under its fee table, and the fee table's own
+ * "Fees/Rate Chart | updated 06/2024" would call it old.
+ */
+export function readStatedDate(
+  text: string | null | undefined,
+  url: string | null | undefined,
+  now = new Date(),
+  options: { skipRateLines?: boolean } = {},
+): StatedDate {
+  const skip = options.skipRateLines === true;
+  const { masked: head, rateDated } = maskRateEffective((text ?? "").slice(0, STATED_DATE_SCAN_CHARS), skip);
   const effective = effectiveStatement(head);
-  const printed = latest([...printedDates(head), ...currencyDates(head)]);
+  const printed = latest([...printedDates(head, skip), ...currencyDates(head, skip)]);
   if (effective && (!printed || effective.date >= printed.date)) {
     return { date: effective.date, basis: "effective_statement", evidence: effective.evidence };
   }
@@ -239,10 +276,17 @@ export function readStatedDate(text: string | null | undefined, url: string | nu
   return { date: null, basis: "none", evidence: null };
 }
 
-/** The last day a stated date can stand for: a year from an address counts to 31 December. */
-function lastDayOf(stated: Pick<StatedDate, "date" | "basis">): string | null {
+/**
+ * What an old link was dated by when the freshness search was sent to it: its document's stated
+ * date (a `StatedDateBasis`), or, when none is known, the year the older freshness arm read (an
+ * "Effective" year in its text, `effective_year`, or its address's year, `url_year`).
+ */
+export type FreshnessBasis = StatedDateBasis | "effective_year";
+
+/** The last day a date can stand for: a year alone (from an address or an effective year) counts to 31 December. */
+function lastDayOf(stated: { date: string | null; basis: string | null }): string | null {
   if (!stated.date) return null;
-  return stated.basis === "url_year" ? `${stated.date.slice(0, 4)}-12-31` : stated.date;
+  return stated.basis === "url_year" || stated.basis === "effective_year" ? `${stated.date.slice(0, 4)}-12-31` : stated.date;
 }
 
 export interface StatedDateReplacement {
@@ -258,10 +302,12 @@ export interface StatedDateReplacement {
 }
 
 /**
- * Whether a page the freshness search found may replace a link sent there for its stated date
- * (#2615 review): only when the page's own text states a later date than the old document. A page
- * that states no date is not known to be newer, so the link stays; the candidate's address year is
- * not read (it says when a file was put up, not what it prices). Pure.
+ * Whether a page the freshness search found may replace a link the search was sent to for its age
+ * (#2615 review): only when the page's own text states a later date than the old document. The old
+ * date is the document's stated date when one is known, else the year the older arm read, counted
+ * to 31 December. A page that states no date is not known to be newer, so the link stays; the
+ * candidate's address year is not read (it says when a file was put up, not what it prices), nor
+ * a dated line about rates ("Rates current as of October 24, 2026": `skipRateLines`). Pure.
  */
 export function statedDateReplaces(input: {
   oldDate: string;
@@ -270,8 +316,8 @@ export function statedDateReplaces(input: {
   candidateText: string | null | undefined;
   now?: Date;
 }): StatedDateReplacement {
-  const oldLast = lastDayOf({ date: input.oldDate.slice(0, 10), basis: (input.oldBasis ?? "none") as StatedDateBasis })!;
-  const candidate = readStatedDate(input.candidateText, null, input.now);
+  const oldLast = lastDayOf({ date: input.oldDate.slice(0, 10), basis: input.oldBasis })!;
+  const candidate = readStatedDate(input.candidateText, null, input.now, { skipRateLines: true });
   const base = {
     old_date: input.oldDate.slice(0, 10),
     old_basis: input.oldBasis,
@@ -309,10 +355,15 @@ export function statedDateStaleSql(db: SqlTag, now = new Date()) {
   return db`(
     stated_doc.stated_date_version = ${STATED_DATE_VERSION}
     AND stated_doc.stated_date IS NOT NULL
-    AND (CASE WHEN stated_doc.stated_date_basis = 'url_year'
-              THEN make_date(extract(year FROM stated_doc.stated_date)::int, 12, 31)
-              ELSE stated_doc.stated_date END) < ${staleBefore(now)}::date
+    AND ${statedDateLastDaySql(db)} < ${staleBefore(now)}::date
   )`;
+}
+
+/** The last day the stated date of a `source_documents` row aliased `stated_doc` stands for (an address year counts to 31 December). */
+export function statedDateLastDaySql(db: SqlTag) {
+  return db`(CASE WHEN stated_doc.stated_date_basis = 'url_year'
+                  THEN make_date(extract(year FROM stated_doc.stated_date)::int, 12, 31)
+                  ELSE stated_doc.stated_date END)`;
 }
 
 const readyCache = new WeakMap<object, true>();
@@ -340,8 +391,28 @@ interface DocumentRow {
   id: number | string;
   institution_id: number | string;
   document_url: string | null;
-  live_fees: number | string;
   head: string | null;
+}
+
+/**
+ * Live fees per picked document, from published_fee_catalog, for those documents only (the bank
+ * filter lets the view use its institution index). Nothing is read when nothing was picked.
+ */
+async function countLiveFees(db: SqlTag, rows: DocumentRow[]): Promise<Map<number, number>> {
+  const counts = new Map<number, number>();
+  if (rows.length === 0) return counts;
+  const ids = rows.map((row) => Number(row.id));
+  const institutions = [...new Set(rows.map((row) => Number(row.institution_id)))];
+  const live = await db<Array<{ id: number | string; live_fees: number | string }>>`
+    -- magellan stated-date live fees
+    SELECT c.source_document_id AS id, COUNT(*) AS live_fees
+      FROM published_fee_catalog c
+     WHERE c.institution_id = ANY(${institutions}::bigint[])
+       AND c.source_document_id = ANY(${ids}::bigint[])
+     GROUP BY c.source_document_id
+  `;
+  for (const row of live) counts.set(Number(row.id), Number(row.live_fees) || 0);
+  return counts;
 }
 
 export interface StatedDateSample {
@@ -405,36 +476,44 @@ export async function runStatedDatePass(
   const result = emptyResult(true, dryRun, now);
   if (limit === 0) return result;
 
+  // The documents are picked first, from the cheap tier tables, and only the picked ones are read
+  // or counted (#2615 review): a published_fee_catalog group-by over every live fee took 1-8 s on
+  // prod each discover step, and reading the text of every eligible document before the LIMIT ~5 s.
+  // "Cited" here is a live published record read from the document (the catalog's own lineage,
+  // published -> verified -> raw), looked up only for the banks that have a document still to date:
+  // ~0.1 s for ~500 such documents on prod, ~0.9 s while all ~25,000 are.
   const rows = await db<DocumentRow[]>`
     -- magellan stated dates
-    WITH live AS (
-      SELECT c.source_document_id AS id, COUNT(*) AS live_fees
-        FROM published_fee_catalog c
-       WHERE c.source_document_id IS NOT NULL
-       GROUP BY c.source_document_id
-    ),
-    -- The documents are picked first and only their texts are read: reading the text for
-    -- every eligible document before the LIMIT took ~5 s on prod (#2615 review).
-    picked AS (
+    WITH undated AS MATERIALIZED (
       SELECT doc.id, doc.institution_id, doc.document_url,
-             COALESCE(live.live_fees, 0) AS live_fees,
-             (live.id IS NOT NULL) AS cited
+             (doc.status = 'success' AND doc.duplicate_of_id IS NULL AND doc.superseded_by_id IS NULL) AS current_copy
         FROM source_documents doc
-        LEFT JOIN live ON live.id = doc.id
        WHERE (doc.stated_date_version IS NULL OR doc.stated_date_version < ${STATED_DATE_VERSION})
-         AND (
-           live.id IS NOT NULL
-           OR (doc.status = 'success' AND doc.duplicate_of_id IS NULL AND doc.superseded_by_id IS NULL)
-         )
          AND EXISTS (
            SELECT 1 FROM agent_source_texts t
             WHERE t.source_document_id = doc.id
               AND t.status = 'completed'
          )
-       ORDER BY (live.id IS NOT NULL) DESC, doc.id DESC
+    ),
+    cited AS MATERIALIZED (
+      SELECT DISTINCT fr.source_document_id AS id
+        FROM published_fee_records fp
+        JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+        JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+       WHERE fp.institution_id IN (SELECT institution_id FROM undated)
+         AND fp.rolled_back_at IS NULL
+         AND fp.quarantined_at IS NULL
+         AND fr.source_document_id IN (SELECT id FROM undated)
+    ),
+    picked AS (
+      SELECT undated.id, undated.institution_id, undated.document_url, (cited.id IS NOT NULL) AS cited
+        FROM undated
+        LEFT JOIN cited ON cited.id = undated.id
+       WHERE cited.id IS NOT NULL OR undated.current_copy
+       ORDER BY (cited.id IS NOT NULL) DESC, undated.id DESC
        LIMIT ${limit}
     )
-    SELECT picked.id, picked.institution_id, picked.document_url, picked.live_fees, txt.head
+    SELECT picked.id, picked.institution_id, picked.document_url, txt.head
       FROM picked
       JOIN LATERAL (
         SELECT left(t.normalized_text, ${STATED_DATE_SCAN_CHARS}) AS head
@@ -446,13 +525,14 @@ export async function runStatedDatePass(
       ) txt ON TRUE
      ORDER BY picked.cited DESC, picked.id DESC
   `;
+  const liveByDocument = await countLiveFees(db, rows);
 
   const ids: number[] = [];
   const dates: string[] = [];
   const bases: string[] = [];
   for (const row of rows) {
     const stated = readStatedDate(row.head, row.document_url, now);
-    const liveFees = Number(row.live_fees) || 0;
+    const liveFees = liveByDocument.get(Number(row.id)) ?? 0;
     result.read += 1;
     result.by_basis[stated.basis] += 1;
     if (stated.date) result.dated += 1;

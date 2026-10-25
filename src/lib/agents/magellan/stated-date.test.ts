@@ -192,6 +192,50 @@ describe("statedDateReplaces", () => {
   });
 });
 
+describe("statedDateReplaces: the older freshness arm and rate lines (#2615 review)", () => {
+  it("holds a link the older arm sent by its year to a page dated after that year", () => {
+    const fromEffectiveYear = { oldDate: "2022-01-01", oldBasis: "effective_year" };
+    expect(statedDateReplaces({ ...fromEffectiveYear, candidateUrl: null, candidateText: "FEE SCHEDULE\nEffective June 1, 2022", now: NOW }).replaces).toBe(false);
+    expect(statedDateReplaces({ ...fromEffectiveYear, candidateUrl: null, candidateText: "FEE SCHEDULE\nEffective March 1, 2023", now: NOW }).replaces).toBe(true);
+  });
+
+  it("keeps hebfcu's link: its document states October 12, 2026, though its address names 2022 (institution 6072)", () => {
+    const hebfcu = { oldDate: "2026-10-12", oldBasis: "printed_date" };
+    const check = statedDateReplaces({ ...hebfcu, candidateUrl: "https://www.hebfcu.org/fee-schedule", candidateText: "FEE SCHEDULE\nEffective March 1, 2026\nOverdraft $30", now: NOW });
+    expect(check).toMatchObject({ replaces: false, old_date: "2026-10-12", candidate_date: "2026-03-01" });
+  });
+
+  it("does not count a page's rate line stamped with today's date", () => {
+    const old = { oldDate: "2022-01-01", oldBasis: "effective_statement" };
+    for (const text of [
+      "SAVINGS RATES\nRates current as of October 24, 2026\nOverdraft $30",
+      "Dividend rates updated 10/24/2026\nOverdraft $30",
+      "Interest Rates and Annual Percentage Yields are current as of 10/24/2026.\nFees may reduce earnings.",
+      "Overdraft $30\nEffective October 24, 2026, our certificate APY is 4.00%.",
+    ]) {
+      const check = statedDateReplaces({ ...old, candidateUrl: null, candidateText: text, now: NOW });
+      expect(check.replaces, text).toBe(false);
+      expect(check.candidate_date, text).toBeNull();
+    }
+  });
+
+  it("still counts a line that dates fees, or fees and rates together", () => {
+    const old = { oldDate: "2022-01-01", oldBasis: "effective_statement" };
+    for (const text of ["FEES CURRENT AS OF: August 3, 2026\nRates effective September 1, 2024", "Fees and rates current as of August 3, 2026", "As of August 3, 2026\nOverdraft $30"]) {
+      expect(statedDateReplaces({ ...old, candidateUrl: null, candidateText: text, now: NOW })).toMatchObject({ replaces: true, candidate_date: "2026-08-03" });
+    }
+  });
+
+  it("dates a stored document by its rate currency line as before (doc 32498)", () => {
+    const doc32498 =
+      "Personal Miscellaneous Fees and Charges\nOverdraft Charge | $29.00\nFSB Personal Misc Fees/Rate Chart | updated 06/2024\n" +
+      "Money Market Account | 0.40% | 0.40%\nInterest Rates and Annual Percentage Yields are current as of 02/27/2026.\nFees may reduce earnings on these accounts.";
+    expect(readStatedDate(doc32498, "https://www.myfsbonline.com/assets/files/aC9Ij8HH", NOW)).toMatchObject({ date: "2026-02-27", basis: "printed_date" });
+    // As a page found to replace a link, only its fee chart's line counts.
+    expect(readStatedDate(doc32498, null, NOW, { skipRateLines: true })).toMatchObject({ date: "2024-06-01", basis: "printed_date" });
+  });
+});
+
 describe("isStaleStatedDate", () => {
   it("is old more than 24 months before today", () => {
     expect(staleBefore(NOW)).toBe("2024-10-25");
@@ -214,7 +258,10 @@ function mockDb(options: { ready: boolean; rows?: Array<Record<string, unknown>>
     const text = Array.isArray(strings) ? strings.join(" ") : String(strings);
     calls.push({ text, values });
     if (text.includes("information_schema.columns")) return Promise.resolve([{ ready: options.ready }]);
-    if (text.includes("-- magellan stated dates")) return Promise.resolve(options.rows ?? []);
+    if (text.includes("-- magellan stated dates")) return Promise.resolve((options.rows ?? []).map((row) => ({ id: row.id, institution_id: row.institution_id, document_url: row.document_url, head: row.head })));
+    if (text.includes("-- magellan stated-date live fees")) {
+      return Promise.resolve((options.rows ?? []).filter((row) => Number(row.live_fees) > 0).map((row) => ({ id: row.id, live_fees: row.live_fees })));
+    }
     return Promise.resolve([]);
   });
   return { db: db as unknown as Parameters<typeof runStatedDatePass>[0], calls };
@@ -256,9 +303,23 @@ describe("runStatedDatePass", () => {
     const select = calls.find((c) => c.text.includes("-- magellan stated dates"))!;
     expect(select.text).toContain("stated_date_version IS NULL OR doc.stated_date_version <");
     expect(select.text).toContain("t.status = 'completed'");
+    // The pick never groups the whole catalog: cited is looked up for the undated documents' banks
+    // only, and live fees are counted for the picked documents only (#2615 review).
+    expect(select.text).not.toContain("published_fee_catalog");
+    expect(select.text).toContain("fp.institution_id IN (SELECT institution_id FROM undated)");
+    const live = calls.find((c) => c.text.includes("-- magellan stated-date live fees"))!;
+    expect(live.text).toContain("FROM published_fee_catalog c");
+    expect(live.values).toEqual([[1, 2, 3, 4], [11, 12, 13, 14]]);
     const event = calls.find((c) => c.text.includes("INSERT INTO agent_run_events"))!;
     expect(event.values).toContain(STATED_DATE_EVENT);
     expect(event.values).toContain("completed");
+  });
+
+  it("counts no live fees when it picks no document", async () => {
+    const { db, calls } = mockDb({ ready: true, rows: [] });
+    const result = await runStatedDatePass(db, { runId: 1, now: NOW });
+    expect(result).toMatchObject({ read: 0, stale_live_fees: 0 });
+    expect(calls.some((c) => c.text.includes("published_fee_catalog"))).toBe(false);
   });
 
   it("writes no column in a dry run but still records what it read", async () => {
