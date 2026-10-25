@@ -63,6 +63,7 @@ import { runMagellanFetch } from "@/lib/agents/magellan/fetch";
 import { runAddressVariantFetch, type RunAddressVariantFetchResult } from "@/lib/agents/magellan/address-variant-fetch";
 import { runSavedLinkFetch, type RunSavedLinkFetchResult } from "@/lib/agents/magellan/saved-link-fetch";
 import { runLiveSourceRefetch, type RunLiveSourceRefetchResult } from "@/lib/agents/magellan/live-source-refetch";
+import { runStatedDatePass, type StatedDatePassResult } from "@/lib/agents/magellan/stated-date";
 import { reviewLinkBatches } from "@/lib/agents/magellan/batch-review";
 import { recordLinkOutcomes } from "@/lib/agents/magellan/outcomes";
 import { recordAuditMisses } from "@/lib/agents/deming/audit-misses";
@@ -503,6 +504,17 @@ async function executeAgenticStep(
       // A quarterly re-check run asks discovery to re-validate every link and re-search
       // dead and needs-human banks; Magellan reads `recheck` from the run params.
       const recheck = laneRecheckParam(params);
+      // Each document's own stated date, kept apart from when it was read; a schedule dated more
+      // than two years ago goes to this step's freshness search (#1878, magellan/stated-date.ts).
+      // Waits for its columns (schema_ready false until the migration runs). Never fails the step.
+      let statedDates: StatedDatePassResult | null = null;
+      if (step.stepKey === "discover") {
+        try {
+          statedDates = await runStatedDatePass(sql, { runId: run.id, stepId: step.id, dryRun: run.runKind === "dry_run" });
+        } catch (error) {
+          console.error("Stated date pass failed:", error);
+        }
+      }
       const discovery = await runMagellanDiscovery({
         runId: run.id,
         stepId: step.id,
@@ -528,6 +540,7 @@ async function executeAgenticStep(
         status: "completed",
         summary: `Magellan processed ${discovery.processed.toLocaleString()} institutions and discovered ${discovery.discovered.toLocaleString()} fee schedule URLs (${discovery.retryAfter.toLocaleString()} retry later, ${discovery.dead.toLocaleString()} no source, ${discovery.needsHuman.toLocaleString()} need human review).`,
         detail: {
+          stated_dates: statedDates,
           link_outcomes: linkOutcomes,
           batch_review: batchReview,
           page_classifier: { ...pageClassifier, scored_with: discovery.pageClassifier },

@@ -124,6 +124,10 @@ vi.mock("@/lib/agents/magellan/outcomes", () => ({
   recordLinkOutcomes: vi.fn(async () => ({ ready: false, slot: 0, links: 0, judged: { good: 0, thin: 0, rejected: 0, dead: 0 }, undecided: 0, unchanged: 0, written: 0 })),
 }));
 
+vi.mock("@/lib/agents/magellan/stated-date", () => ({
+  runStatedDatePass: vi.fn(async () => ({ schema_ready: false, version: 1, dry_run: false, read: 0, dated: 0, by_basis: { effective_statement: 0, printed_date: 0, url_year: 0, none: 0 }, stale: 0, stale_live_fees: 0, stale_before: "2024-10-25", stale_samples: [] })),
+}));
+
 vi.mock("@/lib/agents/magellan/page-classifier", () => ({
   refreshPageClassifier: vi.fn(async () => ({ status: "not_ready", positives: 0, negatives: 0, features: 0, holdout: null, trainedAt: null })),
 }));

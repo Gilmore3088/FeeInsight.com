@@ -1253,6 +1253,32 @@ describe("Magellan agentic discovery", () => {
       expect(attempts(db).length).toBeGreaterThan(0);
       expect(attempts(db).every((attempt) => attempt.detail.freshness_search === FRESHNESS_SEARCH_VERSION)).toBe(true);
     });
+
+    it("searches behind a link whose document states a date over two years old, once its columns exist (#1878)", async () => {
+      const datedBank = { ...staleBank, url_year: null, effective_year: null, stated_date: "2023-07-01", stated_date_basis: "effective_statement", searched_at: null };
+      const db = createDbMock([], learningHandler((text) => {
+        if (text.includes("information_schema.columns") && text.includes("stated_date_version")) return [{ ready: true }];
+        return text.includes("stale-link freshness search") ? [datedBank] : undefined;
+      }));
+      const result = await runMagellanDiscovery({ runId: 128, dryRun: false, db: asDiscoveryDb(db), fetchImpl: site({}), politeDelayMs: 0 });
+      expect(result.results.map((row) => Number(row.institutionId))).toContain(78);
+      const texts = db.mock.calls.map((c) => templateText(c[0]));
+      expect(texts.find((text) => text.includes("stale-link freshness search"))).toMatch(/stated_date IS NOT NULL AND searched_at IS NULL/);
+      // The arm reads the link's own current document, never a companion.
+      const arm = texts.find((text) => text.includes("FROM source_documents stated_doc"))!;
+      expect(arm).toContain("stated_doc.companion_source_id IS NULL");
+      expect(arm).toContain("stated_doc.id = profile.last_successful_source_document_id");
+      expect(texts.some((text) => text.includes("stated_doc.stated_date_version ="))).toBe(true);
+      expect(attempts(db).some((attempt) => attempt.detail.stale_reason === "schedule dated 2023-07-01 (effective_statement)")).toBe(true);
+    });
+
+    it("leaves the stated-date arm out before its columns exist", async () => {
+      const db = staleDb();
+      await runMagellanDiscovery({ runId: 129, dryRun: false, db: asDiscoveryDb(db), fetchImpl: site({}), politeDelayMs: 0 });
+      const texts = db.mock.calls.map((c) => templateText(c[0]));
+      expect(texts.some((text) => text.includes("FROM source_documents stated_doc"))).toBe(false);
+      expect(texts.some((text) => text.includes("NULL::date AS stated_date"))).toBe(true);
+    });
   });
 
   describe("searches cut short by time resume where they stopped", () => {

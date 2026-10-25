@@ -229,6 +229,8 @@ and `detail.method_version`).
   or without one a year in its address, is `STALE_AFTER_YEARS` (3) or more years old.
   A state's step checks the whole state; a step without a state checks only the hour's
   slot of banks (id mod 24, `stepSlot`, as the outcome ledger).
+  A bank whose link's document states a date more than 24 months old (`stated-date.ts`, below)
+  is picked too, once at this version.
   A different page that passes the fee-page check replaces the link (the old one is not
   kept); the same page or a miss changes nothing.
 - URLs in `institution_source_profiles.rejected_source_urls` (one entry per URL) are
@@ -478,6 +480,28 @@ is a bot wall on every spelling and stays with the paid fetch below; a person's 
 correction is never re-spelled. The `fetch` step's `address_variants` detail counts banks
 selected, tried, recovered and failed.
 
+## A document's own date (`stated-date.ts`)
+
+A fetch date says when Magellan asked for a page, not how old the schedule is (#1878): a fee PDF
+named 2022 and fetched in October looked current on /fees. At the start of each `discover` step,
+up to `STATED_DATES_PER_STEP` (200) documents not yet dated at `STATED_DATE_VERSION` are dated
+(documents live fees cite first, then other current copies, newest first) from the first
+`STATED_DATE_SCAN_CHARS` (12,000) characters of their newest completed text. The stated date is the
+latest "Effective ..." date (the shapes of Hamilton's `effectiveDate()`) or "Revised / Rev. /
+Updated ..." date found there; with neither, the latest year 2000-2029 in the address (stored as
+1 January, old only once the whole year is); otherwise none. The latest date wins, so the rule
+can call an old schedule current, never the reverse. It is written to
+`source_documents.stated_date`, `stated_date_basis` (`effective_statement`, `printed_date`,
+`url_year`, `none`) and `stated_date_version`, and one `magellan.stated_dates` run event records
+the counts and up to 10 stale samples with the words the date was read from (step detail
+`stated_dates`). Free, no provider; a dry run writes no column.
+
+A bank whose link's own document (its last main fetch, or the current copy of the link's page,
+never a companion) states a date more than `STALE_STATED_MONTHS` (24) ago is picked once by the
+freshness search (stale reason "schedule dated YYYY-MM-DD (basis)"). The pass and the search both
+wait for the columns (migration `20270110000077`, `statedDateColumnsReady`): until then the pass
+reads and writes nothing (`schema_ready: false`) and the search leaves out its stated-date arm.
+
 ## Pages live fees come from (`live-source-refetch.ts`)
 
 The plain fetch asks for one address per bank and judges the bank due by its own last crawl; it
@@ -640,6 +664,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `PAGE_CLASSIFIER_VERSION` | — | v2 | `magellan/page-classifier.ts` |
 | `SAVED_LINK_FETCH_STRATEGY` | `fetch.saved_link` | v1 | `magellan/saved-link-fetch.ts` |
 | `LIVE_SOURCE_REFETCH_STRATEGY` | `fetch.live_source` | v1 | `magellan/live-source-refetch.ts` |
+| `STATED_DATE_VERSION` | — | v1 | `magellan/stated-date.ts` |
 | `PAID_FIND_STRATEGY` | `discover.paid_web_search` | v2 (top-10 first) | `magellan/paid-find.ts` |
 | `PAID_PICK_STRATEGY` | `discover.paid_pick` | v1 | `magellan/paid-find.ts` |
 | `KEEP_REFUSED_ANSWER_STRATEGY` | `discover.keep_refused_answer` | v1 | `magellan/refused-answers.ts` |

@@ -58,6 +58,7 @@ import {
   SINGLE_PRODUCT_SQL,
 } from "./link-coverage";
 import { loadDemotedFinders } from "./batch-review";
+import { statedDateColumnsReady, statedDateStaleSql } from "./stated-date";
 import { keepRefusedPaidAnswers, type KeepRefusedAnswersResult } from "./refused-answers";
 import { restoreSwappedFeePages, type RestoreFeePagesResult } from "./restore-fee-page";
 import { inSavepoint } from "@/lib/agents/savepoint";
@@ -133,6 +134,12 @@ export const BUSINESS_RESERVED_SLOTS = 3;
 export const UPGRADE_RESERVED_SLOTS = 3;
 export const FRESHNESS_RESERVED_SLOTS = 2;
 type WrongAt = Date | string | null | undefined;
+
+/** Why a link is searched again for its stored stated date (#1878, stated-date.ts). Pure. */
+export function statedStaleReason(date: string | Date, basis: string | null): string {
+  const iso = date instanceof Date ? date.toISOString().slice(0, 10) : String(date).slice(0, 10);
+  return basis === "url_year" ? `address names ${iso.slice(0, 4)}` : `schedule dated ${iso} (${basis ?? "stated"})`;
+}
 
 /** Why a link is searched again: the newest finding that it gives wrong fees. Pure. */
 export function staleWrongReason(marks: { confirmed_at: WrongAt; audit_at: WrongAt; hand_at: WrongAt }): string {
@@ -1295,8 +1302,10 @@ async function selectStaleCandidates(
   const normalizedState = normalizeStateCode(stateCode);
   const marker = JSON.stringify({ freshness_search: FRESHNESS_SEARCH_VERSION });
   const staleYear = now.getUTCFullYear() - STALE_AFTER_YEARS;
+  // The link's document's own stated date (#1878, stated-date.ts), once its columns exist.
+  const statedReady = await statedDateColumnsReady(db);
   const rows = await db<
-    Array<DiscoveryCandidateRow & { effective_year: number | null; url_year: number | null; wrong_at: string | Date | null; confirmed_at: string | Date | null; audit_at: string | Date | null; audit_urls: Array<string | null> | null; hand_at: string | Date | null; hand_urls: Array<string | null> | null; main_document_url: string | null; searched_at: string | Date | null }>
+    Array<DiscoveryCandidateRow & { stated_date: string | Date | null; stated_date_basis: string | null; effective_year: number | null; url_year: number | null; wrong_at: string | Date | null; confirmed_at: string | Date | null; audit_at: string | Date | null; audit_urls: Array<string | null> | null; hand_at: string | Date | null; hand_urls: Array<string | null> | null; main_document_url: string | null; searched_at: string | Date | null }>
   >`
     -- stale-link freshness search
     WITH due AS (
@@ -1329,10 +1338,28 @@ async function selectStaleCandidates(
                   AND text.status = 'completed'
                 ORDER BY text.id DESC
                 LIMIT 1
-             ) AS effective_year
+             ) AS effective_year,
+             ${statedReady ? db`stated.stated_date, stated.stated_date_basis` : db`NULL::date AS stated_date, NULL::text AS stated_date_basis`}
         FROM institution_sources inst
         LEFT JOIN institution_source_profiles profile
           ON profile.institution_id = inst.id
+        -- The link's own document (its last main fetch, or the current copy of the link's page)
+        -- when the date it states is more than STALE_STATED_MONTHS old (stated-date.ts).
+        ${statedReady
+          ? db`LEFT JOIN LATERAL (
+              SELECT stated_doc.stated_date, stated_doc.stated_date_basis
+                FROM source_documents stated_doc
+               WHERE stated_doc.institution_id = inst.id
+                 AND stated_doc.status = 'success'
+                 AND stated_doc.duplicate_of_id IS NULL
+                 AND stated_doc.superseded_by_id IS NULL
+                 AND stated_doc.companion_source_id IS NULL
+                 AND (stated_doc.id = profile.last_successful_source_document_id OR stated_doc.document_url = inst.fee_schedule_url)
+                 AND ${statedDateStaleSql(db, now)}
+               ORDER BY stated_doc.stated_date DESC
+               LIMIT 1
+            ) stated ON TRUE`
+          : db``}
        WHERE COALESCE(inst.status, 'active') = 'active'
          -- One slot of banks per UTC hour when the step has no state, so the text check stays
          -- small; a state's step checks the whole state (stepSlot, as the outcome ledger).
@@ -1448,11 +1475,12 @@ async function selectStaleCandidates(
     )
     SELECT * FROM judged
      WHERE (COALESCE(effective_year, url_year) <= ${staleYear} AND searched_at IS NULL)
+        OR (stated_date IS NOT NULL AND searched_at IS NULL)
         OR (wrong_at IS NOT NULL AND (searched_at IS NULL OR searched_at < wrong_at))
      ORDER BY (wrong_at IS NOT NULL) DESC, asset_size DESC NULLS LAST, id ASC
      LIMIT ${limit}
   `;
-  return rows.map(({ effective_year, url_year, wrong_at, confirmed_at, audit_at, audit_urls, hand_at, hand_urls, ...row }) => ({
+  return rows.map(({ stated_date, stated_date_basis, effective_year, url_year, wrong_at, confirmed_at, audit_at, audit_urls, hand_at, hand_urls, ...row }) => ({
     ...row,
     freshness: true,
     // A wrong-document finding rules out the addresses it named, not only the link (#2055, #2057).
@@ -1460,7 +1488,9 @@ async function selectStaleCandidates(
     stale_reason:
       wrong_at != null
         ? staleWrongReason({ confirmed_at, audit_at, hand_at })
-        : effective_year != null
+        : stated_date != null
+          ? statedStaleReason(stated_date, stated_date_basis)
+          : effective_year != null
           ? `effective ${effective_year}`
           : `address names ${url_year}`,
   }));
