@@ -553,6 +553,8 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // v86 (Oct 25, #1918): monthly maintenance admits a checking account's own named fee (Knox's pattern).
     // v87 (Oct 25, #1916): a late payment printed in a safe deposit box section re-files live to
     // safe_deposit_box (99 of 111 on the Oct 25 dry run; 12 duplicates of a live box late fee come down).
+    // v88 (Oct 25, #1912): book transfers fail the domestic wire categories, and a cash advance priced
+    // at another bank's ATMs fails cash advance.
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",

@@ -111,6 +111,14 @@ const INACTIVE = String.raw`inactiv|no activity|dorman`;
 const ES_INTL = "internacional|extranjer";
 const ES_INCOMING = "entrante|recibid";
 const ES_OUTGOING = "saliente|enviad";
+/**
+ * v88 (#1912): a book transfer moves money to another account at the same bank ("Transferencia
+ * bancaria saliente a una cuenta en M&T (transferencia contable)" $16, M&T 145046, beside its $32
+ * outgoing wire; "Outgoing Wire Transfer within IBC (Book Transfer)" $10). It is not a domestic wire
+ * out of the bank, and pooled with one it pulls the bank's wire price down. A wire price that only
+ * says it also covers book transfers ("incluidas las transferencias contables") stays.
+ */
+const BOOK_TRANSFER = String.raw`^(?![\s\S]*(?:\b(?:includ|incluid|exclud|excluy)\w*|\bincl\b|\bfree\b|\bwaiv\w*|\bno\s+charge|\bor\s+book))[\s\S]*(?:\bbook[- ]?(?:entry\s+)?transfers?\b|\btransferencias?\s+contables?\b)`;
 /** "Transferencia bancaria" and "Giro bancario" are a wire in a Spanish schedule. */
 const WIRE = /(wire|transferencias? (bancarias?|cablegr[aá]ficas?)|giros? bancarios?)/i;
 /**
@@ -577,9 +585,10 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   },
   // v72 (#1788): a wire the member receives (`INCOMING_WIRE`: "– In Coming", "(in-bound)", "Wire-In")
   // is not an outgoing wire.
+  // v88 (#1912): a book transfer to another account at the same bank (`BOOK_TRANSFER`) is not one either.
   wire_domestic_outgoing: {
     include: WIRE,
-    exclude: new RegExp(`${INCOMING_WIRE.source}|(incoming|receiv|international|foreign|intl|${ES_INTL}|${ES_INCOMING}|${INTL_ABBREV}|${WIRE_CORRECTIONS}|${BUSINESS_ONLY})`, "i"),
+    exclude: new RegExp(`${INCOMING_WIRE.source}|${BOOK_TRANSFER}|(incoming|receiv|international|foreign|intl|${ES_INTL}|${ES_INCOMING}|${INTL_ABBREV}|${WIRE_CORRECTIONS}|${BUSINESS_ONLY})`, "i"),
   },
   wire_intl_outgoing: {
     include: WIRE,
@@ -589,7 +598,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   wire_intl_incoming: { include: /\S/, exclude: new RegExp(BUSINESS_ONLY, "i") },
   wire_domestic_incoming: {
     include: WIRE,
-    exclude: new RegExp(`(outgoing|send|sent|international|foreign|intl|${ES_INTL}|${ES_OUTGOING}|${INTL_ABBREV}|${WIRE_CORRECTIONS}|${BUSINESS_ONLY})`, "i"),
+    exclude: new RegExp(`${BOOK_TRANSFER}|(outgoing|send|sent|international|foreign|intl|${ES_INTL}|${ES_OUTGOING}|${INTL_ABBREV}|${WIRE_CORRECTIONS}|${BUSINESS_ONLY})`, "i"),
   },
   stop_payment: {
     // v63: Spanish "Suspensión de pago", "Orden de no pago", "Detener pago" or "Parar cheques".
@@ -1054,7 +1063,11 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // look. Read-only dry run, Oct 25: of 410 live late_payment fees whose text names a safe deposit box,
 // 299 pass; 111 at 110 institutions fail, 99 re-file in place, 11 have a live box late fee twin (142240
 // beside 139815, ...) and 1 is the second copy at its bank (35992 beside 9785): those 12 come down.
-export const CATEGORY_GUARD_VERSION = 87;
+// v88 (Oct 25, #1912): a book transfer (`BOOK_TRANSFER`) fails both domestic wire categories, and a
+// cash advance whose own line prices it at another bank's ATMs (`cashAdvanceAtOtherAtm`) fails cash
+// advance. Read-only dry run, Oct 25: 5 live fees go to the second look (M&T 145046 and 68601; IBC's
+// book transfers 26125, 35171, 121267). None re-files.
+export const CATEGORY_GUARD_VERSION = 88;
 
 /** v87 (#1916): where a late charge printed in a safe deposit box section is filed. */
 export const BOX_LATE_TARGET = "safe_deposit_box";
@@ -1423,7 +1436,7 @@ export function checkFeeCategory(
   if (serviceReason) return { ok: false, code: "schedule_contradicts", reason: serviceReason };
   const sustainedReason = sustainedOverdraftOnLine(canonicalFeeKey, context);
   if (sustainedReason) return { ok: false, code: "schedule_contradicts", reason: sustainedReason };
-  const atmTableReason = cashAdvanceFromAtmTable(canonicalFeeKey, context);
+  const atmTableReason = cashAdvanceFromAtmTable(canonicalFeeKey, context) ?? cashAdvanceAtOtherAtm(canonicalFeeKey, context);
   if (atmTableReason) return { ok: false, code: "schedule_contradicts", reason: atmTableReason };
   const bandReason = bandFloorAsPrice(context);
   if (bandReason) return { ok: false, code: "schedule_contradicts", reason: bandReason };
@@ -1870,6 +1883,27 @@ function cashAdvanceFromAtmTable(canonicalFeeKey: string, context: CategoryGuard
   const excerpt = context?.conditions?.match(/\bexcerpt=([\s\S]*)$/)?.[1];
   const named = excerpt ? plainQuotes(excerpt).match(ATM_NETWORK_ROW) : null;
   return named ? `the source line is an ATM network table row ("${named[0].trim()}"), so the price is one network's ATM fee, not the cash advance fee` : null;
+}
+
+/**
+ * v88 (#1912): a cash advance whose own price is stated for another bank's ATMs ("Cash Advance or |
+ * $3.00 for Non M&T Bank ATMs located in the United States.", M&T 68601) was cut from a wrapped cell
+ * ("ATM Cash Withdrawal, / Cash Advance or / Account ..."): the price is the non-network ATM
+ * withdrawal fee, not a cash advance fee. Only a price followed at once by "for" or "at" another
+ * institution's or network's ATMs counts, read from Knox's excerpt; "$1.00 cash advance fee on credit
+ * cards at foreign ATMs" and "$15.00 at counter; $0 at ATM" do not match.
+ */
+const PRICE_FOR_OTHER_ATM =
+  /\$\s?\d[\d,]*(?:\.\d{2})?\s+(?:each\s+)?(?:for|at)\s+(?:any\s+|all\s+)?(?:non(?![- ]?(?:teller|branch))[- ]?[\w&.'’ -]{0,30}?|foreign|other\s+(?:banks?|institutions?|financial\s+institutions?)'?s?|out[- ]of[- ]network|third[- ]party)\s*atms?\b/i;
+
+function cashAdvanceAtOtherAtm(canonicalFeeKey: string, context: CategoryGuardContext | undefined): string | null {
+  if (canonicalFeeKey !== "cash_advance") return null;
+  const excerpt = context?.conditions?.match(/\bexcerpt=([\s\S]*)$/)?.[1];
+  if (!excerpt || context?.amount == null || context.amount === "") return null;
+  // Only the fee's own price counts: another price on the line may be the non-network ATM fee.
+  const named = [...plainQuotes(excerpt).matchAll(new RegExp(PRICE_FOR_OTHER_ATM.source, "gi"))]
+    .find((match) => Number(match[0].match(/\d[\d,]*(?:\.\d{2})?/)?.[0].replace(/,/g, "")) === Number(context.amount));
+  return named ? `the source line prices it at another bank's ATMs ("${named[0].trim()}"), so the price is the non-network ATM fee, not the cash advance fee` : null;
 }
 
 /**
