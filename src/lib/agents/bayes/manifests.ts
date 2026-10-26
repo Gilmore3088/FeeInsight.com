@@ -634,6 +634,8 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // line of credit (not an overdraft line of credit, nor one that also names a deposit account)
     // re-files to other_lending_fee; beside a live other lending twin (154634 beside 122342) it goes to
     // the second look. Dry-run counts in the PR.
+    // v99 (Oct 26, #1912): a bill pay return the payee sent back (its name, or its stored line or the
+    // note wrapped onto the next) fails NSF and re-files to bill_pay; 1 live fee (85460) on the dry run.
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",

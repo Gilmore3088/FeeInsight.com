@@ -213,7 +213,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-346 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+349 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
 ### Extraction and fee reading (57)
 
@@ -288,8 +288,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A provider refusal inside a streamed response never reaches the route's catch; map it in the stream's `onError`. — [finding](findings/2026-10-09-provider-limit-blank-answers.md) — Guard: `src/lib/ai-provider.test.ts` (+2 more)
 - 2026-10-09 — The Console usage limit did not trip the provider stop, and the verdict score starved. — [finding](findings/2026-10-09-api-usage-limit-did-not-trip-provider-stop.md) — Guard: `src/lib/ai-provider-usage.test.ts` (+1 more)
 
-### Categorisation and audience (27)
+### Categorisation and audience (28)
 
+- 2026-10-26 — "Return item" words do not make a fee NSF: read the whole row, including the note a PDF wraps onto the next line, for who returned the item; Bellco's "Bill Pay Return Item Fee" $10 "(per item returned by payee)" went live as NSF (#1912). — [finding](findings/2026-10-26-payee-returned-bill-pay.md) — Agent lesson: knox/issue-1912-payee-returned-bill-pay; Guard: `src/lib/custom-report/payee-returned-bill-pay.test.ts`, `src/lib/agents/knox/payee-returned-bill-pay.test.ts`
 - 2026-10-26 — A fee whose own name names a loan (a home equity loan or line, a HELOC, a line of credit) is the loan's fee, however much its words sound like an account's NSF or overdraft fee; an overdraft line of credit is the account's overdraft protection, not a loan. — [finding](findings/2026-10-26-equity-line-nsf-is-a-loan-fee.md) — Guard: guard v97 tests in `fee-category-guard.test.ts` and `hamilton/category-guard.test.ts`; Agent lesson: `darwin/issue-1905-equity-line-nsf`
 - 2026-10-26 — A category's price range is set for its main fee: check it against every kind of fee a re-file moves there (a box late fee is a late charge, not rent), and match a name's words however they are spaced ("Night Drop Deposit Box" is never the safe deposit box). — [finding](findings/2026-10-26-rent-floor-blocked-box-late-refile.md) — Guard: `box-late-envelope.test.ts`, guard v96 tests; Agent lesson: `darwin/issue-1912-box-late-floor-and-night-drop`
 - 2026-10-26 — A row printed in a loan section of a general fee schedule ("Equity Loan", "LOAN FEES") is the loan's fee, however much its words sound like an account's (a returned check, a service charge); read the section before filing it under NSF or monthly maintenance. — [finding](findings/2026-10-26-loan-section-rows-filed-as-deposit-fees.md) — Guard: `src/lib/custom-report/loan-section-fee.test.ts`, `src/lib/agents/darwin/loan-section-check.test.ts`; Agent lesson: knox/issue-1905-loan-section-rows-are-loan-fees, darwin/issue-1905-loan-section-recheck
@@ -608,19 +609,19 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (306 in all).
+counts as of this index (311 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
 | atlas | 8 | [`src/lib/agents/atlas/role-lessons.ts`](../../src/lib/agents/atlas/role-lessons.ts) |
-| magellan | 25 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
+| magellan | 26 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
 | hoovie | 12 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
-| rosetta | 13 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
-| knox | 83 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
+| rosetta | 14 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
+| knox | 84 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
 | darwin | 48 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 40 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
 | hamilton | 61 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
-| deming | 17 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
+| deming | 18 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
 
 ## Before 2026-10-10
 

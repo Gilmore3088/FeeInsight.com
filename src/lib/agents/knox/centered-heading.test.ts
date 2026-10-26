@@ -23,7 +23,7 @@ const reads = (text: string) => runFreeSpecialists(text).candidates.map((read) =
 
 describe("a heading in a vertically centred merged cell (Knox v130, #1912)", () => {
   it("bumps the rules strategy so Hamilton's rules re-check revisits live documents", () => {
-    expect(KNOX_RULES_STRATEGY.version).toBe(130);
+    expect(KNOX_RULES_STRATEGY.version).toBeGreaterThanOrEqual(130);
   });
 
   it("lends the middle row's heading to its sibling rows above and below", () => {

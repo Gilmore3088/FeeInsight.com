@@ -26,6 +26,7 @@ import { inSavepoint } from "@/lib/agents/savepoint";
 import { ACCOUNT_TYPE_HOLD_REASON } from "@/lib/agents/hamilton/account-type-hold";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { RETURN_NAME_PATTERN } from "@/lib/custom-report/collection-section-return";
+import { billPayReturnName } from "@/lib/custom-report/payee-returned-bill-pay";
 
 type SqlTag = typeof sql;
 
@@ -562,7 +563,7 @@ export function lateBoxFlags(unique: LiveRefile[]): string[] {
  * section (`COLLECTION_HEADING` in collection-section-return.ts), so only those texts are read for NSF
  * fees, and only for a plain return name (`collectionSectionReturn` reads no other).
  */
-export const COLLECTION_TEXT_PATTERN = String.raw`collection|foreign\s+(check|item|draft)|check\s+clearing`;
+export const COLLECTION_TEXT_PATTERN = String.raw`collection|foreign\s+(check|item|draft)|check\s+clearing|(returned|rejected)\s+by\s+(the\s+)?payee`;
 
 /**
  * Guard v90 (#1912): the rows with `collection_section` read from their stored text, for NSF fees
@@ -573,7 +574,10 @@ async function withCollectionSections<T extends Pick<LivePublishedRow, "source_d
   db: SqlTag,
   rows: T[],
 ): Promise<T[] | null> {
-  const needing = rows.filter((row) => row.canonical_fee_key === "nsf" && row.source_document_id != null && RETURN_NAME_PATTERN.test(row.fee_name ?? ""));
+  // Guard v99 (#1912): and a bill pay return name, whose text may say the payee returned it
+  // (`payeeReturnedBillPayOnLine`); only texts that say "returned by payee" are fetched for it.
+  const needing = rows.filter((row) => row.canonical_fee_key === "nsf" && row.source_document_id != null &&
+    (RETURN_NAME_PATTERN.test(row.fee_name ?? "") || billPayReturnName(row.fee_name)));
   if (needing.length === 0) return rows;
   let texts: Map<number, string>;
   try {

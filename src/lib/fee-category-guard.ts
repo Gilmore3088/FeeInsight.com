@@ -20,6 +20,7 @@
 
 import { boxSectionLateFee } from "@/lib/custom-report/box-section-late-fee";
 import { collectionSectionReturn } from "@/lib/custom-report/collection-section-return";
+import { billPayReturnedByPayee, payeeReturnedBillPayOnLine } from "@/lib/custom-report/payee-returned-bill-pay";
 import { namedForCheckingAccount } from "@/lib/checking-fee-name";
 import { paperStatementPriceOnLine } from "@/lib/paper-statement-price";
 import { abbreviatesInternationalWire, ATM_ABROAD, COLLECTION_ITEM, DRAFT_PROTECTION_FEE, foldRetiredCategory, FOREIGN_DEPOSIT_RETURN, FOREIGN_ITEM_RETURN, INCOMING_WIRE, INTERNATIONAL_ATM, IRA_CLOSING, ITEM_COPY, RESEARCH_SPLIT_LIVE, SKIP_A_PAY, SUSTAINED_OVERDRAFT } from "@/lib/fee-fold";
@@ -47,6 +48,12 @@ export interface CategoryGuardContext {
    * (`collectionSectionReturn`), when the caller read it (`withCollectionSection`). Read only for NSF.
    */
   collection_section?: boolean | null;
+  /**
+   * v99 (#1912): the fee's stored text prints this bill pay return charge with the bank's words that
+   * the payee returned it, on its line or the note wrapped onto the next (`payeeReturnedBillPayOnLine`),
+   * when the caller read it (`withCollectionSection`). Read only for NSF.
+   */
+  payee_returned?: boolean | null;
 }
 
 export type CategoryGuardVerdict =
@@ -1200,7 +1207,18 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // v98 (Oct 26, #1912): a rejected wire (`WIRE_CORRECTIONS` gains "reject") fails the domestic and
 // international wire types, as a returned or recalled wire does: Apl FCU's "Foreign Wire Reject" $25
 // (67971) was live as an international outgoing wire beside its real $40 price. Dry-run counts in the PR.
-export const CATEGORY_GUARD_VERSION = 98;
+// v99 (Oct 26, #1912): a bill pay return charge the payee sent back is the bill pay service's charge,
+// not the member's NSF fee. Bellco FCU's "Bill Pay Return Item Fee" $10 (85460) prints its note "(per
+// item returned by payee)" on the next line of a two-column PDF, outside the line Knox read. NSF
+// refuses a bill pay return name with no NSF words when the name itself says the payee returned it
+// (`billPayReturnedByPayee`), or when its stored text says so on its line or in the note wrapped onto
+// the next one (`payee_returned`, read by `withCollectionSection` with `payeeReturnedBillPayOnLine`),
+// and the fee re-files to bill_pay (`refileFromLine`), only where that type accepts the name. The name
+// alone never moves it: the Texas key files "Bill Payment Return Item Fee (per presentment)" (tid
+// 2419) as NSF. Read-only dry run (Oct 26): of the live NSF fees, 1 fails (85460, re-filed in place;
+// the bank has no live bill pay fee at $10). The other 19 live NSF bill pay return names with no NSF
+// words print no payee wording and stay NSF.
+export const CATEGORY_GUARD_VERSION = 99;
 
 /** v87 (#1916): where a late charge printed in a safe deposit box section is filed. */
 export const BOX_LATE_TARGET = "safe_deposit_box";
@@ -1211,6 +1229,19 @@ export const COLLECTION_RETURN_TARGET = "deposited_item_return";
 
 function collectionSectionReason(name: string): string {
   return `"${name}" is printed in a foreign check or collection section of its schedule: a deposited item coming back unpaid, not the member's NSF fee`;
+}
+
+/** v99 (#1912): where a bill pay return charge the payee sent back is filed. */
+export const PAYEE_RETURN_TARGET = "bill_pay";
+
+function payeeReturnReason(name: string): string {
+  return `"${name}" is a bill payment the payee returned: the bill pay service's charge, not the member's NSF fee`;
+}
+
+/** v99 (#1912): an NSF fee the payee returned, by its name or its stored line, and the bill pay type accepts it. */
+function payeeReturn(canonicalFeeKey: string, name: string, context: CategoryGuardContext | undefined): boolean {
+  return canonicalFeeKey === "nsf" && (billPayReturnedByPayee(name) || context?.payee_returned === true) &&
+    checkFeeCategory(PAYEE_RETURN_TARGET, name).ok;
 }
 
 /** v90 (#1912): the fee's stored text prints it in a collection section, and the returned deposited item type accepts it. */
@@ -1231,7 +1262,9 @@ export function withCollectionSection<T extends CategoryGuardContext>(
 ): T {
   if (canonicalFeeKey !== "nsf" || !text || !feeName) return context;
   const amount = context.amount == null || context.amount === "" ? null : Number(context.amount);
-  return { ...context, collection_section: collectionSectionReturn(text, feeName, amount != null && Number.isFinite(amount) ? amount : null) };
+  const priced = amount != null && Number.isFinite(amount) ? amount : null;
+  // v99 (#1912): and `payee_returned`, a bill pay return its line or the next says the payee sent back.
+  return { ...context, collection_section: collectionSectionReturn(text, feeName, priced), payee_returned: payeeReturnedBillPayOnLine(text, feeName, priced) };
 }
 
 function boxSectionReason(name: string): string {
@@ -1630,6 +1663,9 @@ export function checkFeeCategory(
   if (collectionReturn(canonicalFeeKey, name, context)) {
     return { ok: false, code: "schedule_contradicts", reason: collectionSectionReason(name) };
   }
+  if (payeeReturn(canonicalFeeKey, name, context)) {
+    return { ok: false, code: "schedule_contradicts", reason: payeeReturnReason(name) };
+  }
   const addOnReason = addOnOnLine(canonicalFeeKey, context);
   if (addOnReason) return { ok: false, code: "schedule_contradicts", reason: addOnReason };
   const serviceReason = otherServiceMonthlyCharge(canonicalFeeKey, name, context);
@@ -1862,6 +1898,8 @@ export function refileFromLine(
   }
   // v90 (#1912): a return charge its stored text prints in a collection section is a returned deposited item.
   if (collectionReturn(canonicalFeeKey, feeName ?? "", context)) return COLLECTION_RETURN_TARGET;
+  // v99 (#1912): a bill pay return its name or stored line says the payee sent back is bill pay.
+  if (payeeReturn(canonicalFeeKey, feeName ?? "", context)) return PAYEE_RETURN_TARGET;
   // v92 (#1947): a monthly maintenance row its own line prices as the paper statement charge.
   if (canonicalFeeKey === "monthly_maintenance" && paperStatementOnLine(context)) {
     return checkFeeCategory("paper_statement", feeName, context).ok ? "paper_statement" : null;

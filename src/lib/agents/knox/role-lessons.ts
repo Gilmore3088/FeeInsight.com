@@ -836,4 +836,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract"],
     since: "2026-10-26",
   },
+  {
+    id: "issue-1912-payee-returned-bill-pay",
+    agent: "knox",
+    stage: "extract",
+    lesson: "\"Return item\" words do not make a fee NSF on their own. Before filing a bill pay return charge as NSF, read its whole row, including the note a PDF wraps onto the next line: when the bank says the payee returned the item (\"(per item returned by payee)\"), it is the bill pay service's charge, so file it as bill pay. A bill pay return with no such words, or one whose name names insufficient funds, stays NSF.",
+    why: "Bellco FCU's two-column schedule (document 15817) prints \"Bill Pay Return Item Fee | $10.00\" with \"(per item returned by payee)\" on the line below. Knox's table pass read the first line only and the fee went live as NSF (85460). The name alone is not enough: the Texas answer key files \"Bill Payment Return Item Fee (per presentment)\" (tid 2419) as NSF.",
+    evidence: { issues: [1912], prs: [], files: ["src/lib/custom-report/payee-returned-bill-pay.ts", "src/lib/agents/knox/payee-returned-bill-pay.test.ts", "docs/project/findings/2026-10-26-payee-returned-bill-pay.md"] },
+    appliesTo: ["extract"],
+    since: "2026-10-26",
+  },
 ];
