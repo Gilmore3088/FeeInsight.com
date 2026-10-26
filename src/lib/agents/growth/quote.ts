@@ -60,7 +60,7 @@ function firstName(name: string): string {
 
 function proLine(tier: ProTier): string {
   const def = proTier(tier);
-  return `${def.assetsLabel}: ${tierPriceLabel(tier)}, billed yearly`;
+  return `${def.assetsLabel}: ${tierPriceLabel(tier)}`;
 }
 
 /** The quote email and its audit block for one qualified lead. Pure. */
