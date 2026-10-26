@@ -1,4 +1,5 @@
 import { isNonCheckingAccount, nonCheckingAccountSql } from "./account-kind";
+import { WIRE_CHANNEL_CATEGORIES, namesWireChannel, wireChannelSql } from "./wire-channel";
 
 /** Product applicability is identity. Unassigned is never every product.
  * Fold ASCII case and explicit transport whitespace only. Non-ASCII case/other separators
@@ -30,20 +31,38 @@ export const ACCOUNT_PRICED_CATEGORIES: ReadonlySet<string> = new Set(["monthly_
  * certificate, IRA, HSA or club account's own fee is (#1912: M&T's $20 Preferred Money Market
  * charge beside its checking accounts' $4.95, $14.95 and $24.95): the bank's value there is its
  * checking price, so the row is set aside as rule 11 sets aside any exception. It stays listed.
+ *
+ * In the four wire categories a fee name that names a channel (online, phone, fax, PIN, a
+ * repetitive or template wire; wire-channel.ts namesWireChannel) is an exception too (#1912,
+ * Bank OZK: "Outgoing Online Wire (Domestic)" $20 beside the general $30). "In branch", "in
+ * person" and "manual" name the standard channel, so those rows are general. The name is
+ * optional: a caller that passes none keeps the product test alone.
  */
-export function isProductException(category: string | null | undefined, product: string | null | undefined): boolean {
+export function isProductException(
+  category: string | null | undefined,
+  product: string | null | undefined,
+  feeName?: string | null,
+): boolean {
   if (!category) return false;
   if (ACCOUNT_PRICED_CATEGORIES.has(category)) return isNonCheckingAccount(product);
+  if (WIRE_CHANNEL_CATEGORIES.has(category) && namesWireChannel(feeName)) return true;
   return productKey(product) !== "";
 }
 
-/** SQL twin of isProductException over a catalog alias's account_product_type. Static internal names only. */
-export function productExceptionSql(alias = "ef", categoryColumn = "fee_category"): string {
-  if (!/^[a-z][a-z0-9_]*$/i.test(alias) || !/^[a-z][a-z0-9_]*$/i.test(categoryColumn)) throw new Error("Invalid internal product column");
+/**
+ * SQL twin of isProductException over a catalog alias's account_product_type and fee name
+ * (`nameColumn`, default fee_name; null leaves the wire channel test out, like the TS call with
+ * no name). Static internal names only.
+ */
+export function productExceptionSql(alias = "ef", categoryColumn = "fee_category", nameColumn: string | null = "fee_name"): string {
+  const name = /^[a-z][a-z0-9_]*$/i;
+  if (!name.test(alias) || !name.test(categoryColumn) || (nameColumn !== null && !name.test(nameColumn))) throw new Error("Invalid internal product column");
   const accountPriced = [...ACCOUNT_PRICED_CATEGORIES].map((category) => `'${category}'`).join(", ");
+  const wires = [...WIRE_CHANNEL_CATEGORIES].map((category) => `'${category}'`).join(", ");
   const product = `${alias}.account_product_type`;
+  const channel = nameColumn === null ? "" : `WHEN ${alias}.${categoryColumn} IN (${wires}) AND ${wireChannelSql(`${alias}.${nameColumn}`)} THEN true `;
   return `COALESCE(CASE WHEN ${alias}.${categoryColumn} IS NULL THEN false WHEN ${alias}.${categoryColumn} IN (${accountPriced}) THEN ${nonCheckingAccountSql(product)} ` +
-    `ELSE ${productKeySql(product)} <> '' END, false)`;
+    channel + `ELSE ${productKeySql(product)} <> '' END, false)`;
 }
 
 /** Static internal columns only; values remain bound by the caller's SQL tag. */

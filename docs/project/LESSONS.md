@@ -213,7 +213,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-339 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+341 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
 ### Extraction and fee reading (54)
 
@@ -315,8 +315,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A consumer comparison needs the payer checked as well as the category. — [finding](findings/2026-10-09-business-wire-as-consumer-price.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 - 2026-10-09 — Returned bonds and coupons were filed as NSF. — [finding](findings/2026-10-09-bond-return-filed-nsf.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 
-### Verification and publication (57)
+### Verification and publication (58)
 
+- 2026-10-26 — A bank's wire value is its general wire price: an online, phone, fax, PIN or repetitive wire price beside it is an exception set aside from the value, "in branch" or "manual" is the general price, and with no general row every row counts; 76 live wire values moved (#1912). — [finding](findings/2026-10-26-channel-wire-price-sets-value.md) — Agent lesson: hamilton/issue-1912-channel-wire-is-an-exception; Guard: `src/lib/wire-channel.test.ts`, `src/lib/data-store/fee-stats.test.ts`, `src/lib/data-store/product-exception-value.db.test.ts`
 - 2026-10-26 — An overdraft or NSF $0 is the fee's price only when the schedule states it for the whole fee: a $0 whose own cell goes on to price the fee, whose name is priced on a band row ("Negative account balance $10.00 or more"), or that is the next column's free word is held, never verified as free; 4 of 139 live $0s were such reads (#1882). — [finding](findings/2026-10-26-zero-overdraft-band-read-as-free.md) — Agent lesson: knox/issue-1882-a-zero-band-is-not-the-fee, darwin/issue-1882-zero-overdraft-needs-its-whole-cell; Guard: `src/lib/banded-zero.test.ts`, `src/lib/agents/darwin/banded-zero-check.test.ts`, `src/lib/agents/darwin/banded-zero-check.db.test.ts`
 - 2026-10-26 — Two reads of one printed line are one fee whatever their names or frequencies: a row whose stored line a live fee shares, printed once with its price once, frequencies not in conflict and one name inside the other, is not published again; 108 such second reads at 44 institutions were live (#1876). — [finding](findings/2026-10-26-one-line-read-twice.md) — Agent lesson: hamilton/issue-1876-one-line-read-twice; Guard: `src/lib/agents/hamilton/same-line-read.test.ts`, `src/lib/agents/darwin/same-line-read-check.test.ts`, `src/lib/agents/darwin/same-line-read-check.db.test.ts`
 - 2026-10-25 — An institution's value rests on its general price when it also states a named account's exception price in the category; the exception stays listed as that account's own fee, and with no general price the named prices count (#1911). — [finding](findings/2026-10-25-product-exceptions-pool-general-price.md) — Agent lesson: hamilton/issue-1911-general-over-product-exception; Guard: `src/lib/data-store/fee-stats.test.ts`, `src/lib/data-store/product-exception-value.db.test.ts`
@@ -599,7 +600,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (293 in all).
+counts as of this index (295 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
@@ -607,10 +608,10 @@ counts as of this index (293 in all).
 | magellan | 25 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
 | hoovie | 12 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
 | rosetta | 12 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
-| knox | 76 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
+| knox | 77 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
 | darwin | 45 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 40 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
-| hamilton | 58 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
+| hamilton | 59 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
 | deming | 17 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
 
 ## Before 2026-10-10

@@ -189,6 +189,22 @@ describe("general price over product exceptions (#1911, rule 11)", () => {
     expect(rowIsProductException({ fee_category: "minimum_balance", account_product_type: "Premier Checking" })).toBe(false);
   });
 
+  it("values a bank's wire at its general price, not its online or PIN price (#1912)", () => {
+    const wire = (institution_id: number, amount: number, fee_name: string, fee_category = "wire_domestic_outgoing") =>
+      ({ institution_id, fee_category, amount, account_product_type: null, fee_name });
+    // An online price beside the general one.
+    expect(valuePerInstitution([wire(40, 15, "Online Outgoing Domestic Wire"), wire(40, 30, "Outgoing Domestic Wire")]).get(40)).toBe(30);
+    // "In branch" is the standard channel, so it is the general row.
+    expect(valuePerInstitution([wire(41, 15, "Wire transfers: Domestic outgoing (online)"), wire(41, 20, "Wire transfers: Domestic outgoing (in branch)")]).get(41)).toBe(20);
+    expect(valuePerInstitution([wire(42, 40, "Wire Transfers – Outgoing Wire: PIN - International", "wire_intl_outgoing"), wire(42, 60, "Wire Transfers – Outgoing Wire: Branch - International", "wire_intl_outgoing")]).get(42)).toBe(60);
+    // No general row: every row counts as before.
+    expect(valuePerInstitution([wire(43, 12, "Domestic Outbound Wires (Online)"), wire(43, 18, "Repetitive Wire - Domestic")]).get(43)).toBe(15);
+    // Outside the wires a channel word is no exception.
+    expect(valuePerInstitution([1, 3].map((amount) => ({ institution_id: 44, fee_category: "atm_non_network", amount, fee_name: amount === 1 ? "Online ATM" : "Foreign ATM" }))).get(44)).toBe(2);
+    expect(rowIsProductException({ fee_category: "wire_domestic_outgoing", fee_name: "Telephone Wire Out" })).toBe(true);
+    expect(rowIsProductException({ product_exception: false, fee_category: "wire_domestic_outgoing", fee_name: "Telephone Wire Out" })).toBe(false);
+  });
+
   it("compares overdraft at the general rows' highest tier", () => {
     const od = [
       { institution_id: 4, fee_category: "overdraft", amount: 39, account_product_type: "Premier Checking" },
@@ -225,6 +241,9 @@ describe("general price over product exceptions (#1911, rule 11)", () => {
     expect(sql).toContain(`COALESCE(percentile_cont(0.5) WITHIN GROUP (ORDER BY ef.amount) ${general}, percentile_cont(0.5) WITHIN GROUP (ORDER BY ef.amount))`);
     expect(sql).toContain("ef.fee_category IN ('overdraft')");
     expect(institutionValueSql("f", "canonical_fee_key")).toContain("WHEN f.canonical_fee_key IN ('monthly_maintenance', 'minimum_balance')");
+    expect(sql).toContain("WHEN ef.fee_category IN ('wire_domestic_outgoing', 'wire_intl_outgoing', 'wire_domestic_incoming', 'wire_intl_incoming') AND COALESCE(ef.fee_name ~* ");
+    expect(institutionValueSql("f", "canonical_fee_key")).toContain("WHEN f.canonical_fee_key IN ('wire_domestic_outgoing'");
+    expect(institutionValueSql("f", "canonical_fee_key")).toContain("COALESCE(f.fee_name ~* ");
     expect(() => institutionValueSql("ef; drop", "fee_category")).toThrow();
     expect(() => institutionValueSql("ef", "fee_category)--")).toThrow();
   });
@@ -468,7 +487,7 @@ describe("count once: sibling charters sharing one schedule (#1441, rule 7)", ()
     expect(COUNT_SHARED_SCHEDULE_ONCE).toBe(true);
     expect(summarizeFees(rows).institution_count).toBe(5);
     expect(STATS_SCHEDULE_KEYS).toBe(`${scheduleKeysSql("ef", true)} AS schedule_keys, ${scheduleGroupSql("ef", true)} AS schedule_group, ${productExceptionSql("ef")} AS product_exception`);
-    expect(STATS_METHOD_VERSION).toBe(23);
+    expect(STATS_METHOD_VERSION).toBe(25);
   });
 
   it("switched off, selects no keys and counts each charter", () => {

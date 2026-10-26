@@ -141,7 +141,7 @@ export async function getFeeRevenueData(source?: FinancialSource): Promise<FeeRe
     -- Scope the semantic catalog through canonical institution IDs before category
     -- aggregation, retaining every catalog and fee eligibility predicate.
     WITH eligible_fee_rows AS MATERIALIZED (
-      SELECT ef.institution_id, ef.canonical_fee_key, ef.amount, ef.account_product_type
+      SELECT ef.institution_id, ef.canonical_fee_key, ef.amount, ef.account_product_type, ef.fee_name
       FROM published_fee_catalog ef
       WHERE ef.review_status = 'approved'
         AND ef.amount IS NOT NULL
@@ -227,7 +227,7 @@ export async function getTierFeeRevenueSummary(source?: FinancialSource): Promis
     -- Scope the semantic catalog through canonical institution IDs before category
     -- aggregation, retaining every catalog and fee eligibility predicate.
     WITH eligible_fee_rows AS MATERIALIZED (
-      SELECT ef.institution_id, ef.canonical_fee_key, ef.amount, ef.account_product_type
+      SELECT ef.institution_id, ef.canonical_fee_key, ef.amount, ef.account_product_type, ef.fee_name
       FROM published_fee_catalog ef
       WHERE ef.review_status = 'approved'
         AND ef.amount IS NOT NULL
@@ -303,7 +303,7 @@ export async function getCharterFeeRevenueSummary(source?: FinancialSource): Pro
     -- Scope the semantic catalog through canonical institution IDs before category
     -- aggregation, retaining every catalog and fee eligibility predicate.
     WITH eligible_fee_rows AS MATERIALIZED (
-      SELECT ef.institution_id, ef.canonical_fee_key, ef.amount, ef.account_product_type
+      SELECT ef.institution_id, ef.canonical_fee_key, ef.amount, ef.account_product_type, ef.fee_name
       FROM published_fee_catalog ef
       WHERE ef.review_status = 'approved'
         AND ef.amount IS NOT NULL
