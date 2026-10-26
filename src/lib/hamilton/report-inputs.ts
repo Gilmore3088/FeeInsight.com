@@ -198,7 +198,7 @@ ${NO_FLUFF_RULES}
 
 DECISION-POINT RULES:
 14. Cover the decision points on the answer page, in its order, and no others. At most 3.
-15. For each, lay out the options management could weigh (keep the price, move toward the local or peer anchor, restructure the fee), each with one concrete consequence: who notices, the complaint or regulatory exposure, or the income figure from exhibits.fee_impacts.
+15. For each, lay out the options management could weigh (keep the price, move toward the local or peer anchor, restructure the fee), each with one concrete consequence: who notices, the complaint or regulatory exposure, or the change per item and rank from exhibits.fee_impacts. Never state a fee income figure for an option: no volume is known.
 16. Never choose an option. Never tell the institution to raise, lower, hold, cut or drop a fee, and never write "we recommend" or "should". End each decision point with the question management faces.
 17. If you can ground only 0 or 1 decision points, write only that many. Better short than generic.
 `.trim();
@@ -210,7 +210,7 @@ function buildRecommendationContext(
   const head = (() => {
     switch (params.templateType) {
       case "peer_benchmarking":
-        return `Write the trade-offs for ${institutionName}'s fee decision points: for each (largest value in exhibits.fee_impacts first), the options management could weigh, who notices, and what each option risks.`;
+        return `Write the trade-offs for ${institutionName}'s fee decision points: for each (largest price gap in exhibits.fee_impacts first), the options management could weigh, who notices, and what each option risks.`;
       case "regional_landscape":
         return `Write the trade-offs for ${institutionName}'s regional decision points: for each, the named local competitors customers will compare it with and what each option risks.`;
       case "category_deep_dive": {
@@ -417,7 +417,7 @@ export async function assembleReportInputs(input: {
     statePeers ? `${context}\n\n${STATE_EXPERT_REPORT_RULES}` : context;
 
   // Consultant exhibits, built from data only: named local competitors (FDIC branch
-  // deposits), the peer range, and dollar sensitivity from the institution's filings.
+  // deposits), the peer range, and each price move per item and by rank (no income figure, #1896).
   const localMarket = selectedInstitution
     ? await getLocalMarketCompetitors({
         institutionId: selectedInstitution.id,
