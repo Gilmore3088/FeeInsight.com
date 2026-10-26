@@ -697,6 +697,15 @@ describe("v124 (#2079): a fee joined after an article", () => {
     expect(tailOfEarlierRead(read("Copy of a draft or Teller Check", 5, line), read("Teller Check", 5, line))).toBe(false);
   });
 
+  it("reads a count after the price as no fee name, and an abbreviation as part of the category (#2711 review)", () => {
+    const each = "Overdraft fee applies to each item or the daily cap $35";
+    expect(tailOfEarlierRead(read("Overdraft fee applies to each item or the daily cap", 35, each), read("daily cap", 35, each))).toBe(true);
+    const series = "Stop payment item fee - one item or the whole series $30";
+    expect(tailOfEarlierRead(read("Stop payment item fee - one item or the whole series", 30, series), read("whole series", 30, series))).toBe(true);
+    const od = "Overdraft (OD) or an NSF Fee $30";
+    expect(tailOfEarlierRead(read("Overdraft (OD) or an NSF Fee", 30, od), read("NSF Fee", 30, od))).toBe(false);
+  });
+
   it("counts an earlier pass-2 read as the earlier find", () => {
     const line = "Stop Payment (check, ACH or Bill Pay) | $25 per request";
     const tablePrior = read("Stop Payment (check, ACH or Bill Pay)", 25, line, "extract.table");

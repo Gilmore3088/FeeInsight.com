@@ -514,10 +514,14 @@ export function tailOfEarlierRead(prior: ExtractedFeeCandidate, later: Extracted
  * category's display name ("Overdraft", "Stop Payment"; a bracketed abbreviation is left out).
  */
 const FEE_WORD_END = /\b(?:fees?|charges?|items?)$/;
+/** "per item", "each item", "one item": a count after the price, not a fee's name (#2711 review). */
+const ITEM_QUALIFIER_END = /\b(?:per|each|every|one|an?|the)\s+items?$/;
 const CATEGORY_NAMES = new Set(Object.values(DISPLAY_NAMES).map((name) => words(name.replace(/\([^)]*\)/g, " "))));
 function namesAFee(text: string): boolean {
-  const name = words(text);
-  return FEE_WORD_END.test(name) || CATEGORY_NAMES.has(name);
+  // A trailing abbreviation ("Overdraft (OD)") is left out, as in the category names.
+  const bare = words(text.replace(/[([][^)\]]*[)\]]\s*$/, " "));
+  if (ITEM_QUALIFIER_END.test(bare)) return false;
+  return FEE_WORD_END.test(bare) || CATEGORY_NAMES.has(bare);
 }
 
 /**
