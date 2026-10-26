@@ -16,7 +16,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Decisions
 
-191 entries, newest first. The full text, who decided and why are in [DECISIONS.md](DECISIONS.md).
+192 entries, newest first. The full text, who decided and why are in [DECISIONS.md](DECISIONS.md).
 
 - 2026-10-25 — Hamilton's peer minimum: a median needs 5 local competitors, or 10 peers for any other group. — [decision](DECISIONS.md#2026-10-25) — `MIN_PEERS_FOR_POSITION` and its tests
 - 2026-10-22 — Data-quality work has an executive owner: its decisions, HOLD-class ones included, proceed after an independent exact-head review and green CI; CLAUDE.md hard limits still apply. — [decision](DECISIONS.md#2026-10-22)
@@ -213,7 +213,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-353 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+356 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
 ### Extraction and fee reading (57)
 
@@ -320,8 +320,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A consumer comparison needs the payer checked as well as the category. — [finding](findings/2026-10-09-business-wire-as-consumer-price.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 - 2026-10-09 — Returned bonds and coupons were filed as NSF. — [finding](findings/2026-10-09-bond-return-filed-nsf.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 
-### Verification and publication (65)
+### Verification and publication (66)
 
+- 2026-10-26 — A read one agent leaves for another needs the other's reader in the same PR: Knox's re-read settled three misfiled live fees' lines as `other_category`, "left for Darwin", and nothing read them, so they stayed misfiled; Darwin's re-check (switch off) would re-file 2 and take down 1 of 9 such live fees (#1513). — [finding](findings/2026-10-26-reread-other-category-unread.md) — Agent lesson: darwin/issue-1513-read-what-knox-left-for-you; Guard: `src/lib/agents/darwin/reread-category-check.test.ts`, `src/lib/agents/darwin/reread-category-check.db.test.ts`
 - 2026-10-26 — A figure a name leads into or completes is part of the name: publish cut "monthly fee if balance falls below $2,500.00" to "... falls below", and the re-read never settled it because the whole name was its own raw read; 19 live fees showed the cut (#1443). — [finding](findings/2026-10-26-publish-cut-the-threshold.md) — Agent lesson: hamilton/issue-1443-keep-the-threshold; Guard: `src/lib/agents/hamilton/publish.test.ts`, `src/lib/agents/knox/reread-feedback.test.ts`
 - 2026-10-26 — A tier's own document is known by what it is, not only a file named fees: a Bank On or premier account's truth-in-savings disclosure, terms and charges or summary of fees prices that account only, so its $0s are perks unless the text says the bank charges none of that fee; 13 live $0s at 3 institutions newly match, read through a narrow recheck cohort behind its switch (#1397). — [finding](findings/2026-10-26-tier-schedule-addresses.md) — Agent lesson: darwin/issue-1397-tier-disclosure-addresses; Guard: `src/lib/agents/darwin/tier-perk.test.ts`, `src/lib/agents/darwin/verified-recheck.db.test.ts`
 - 2026-10-26 — Every path that brings a fee back live calls the same shared category step with the same stored-text context: the rules re-check's same-read restore skipped it, so an NSF return printed in a collection section could come back as NSF; no restore verdict changed on Oct 26 (731 proposed restores before and after) (#1912). — [finding](findings/2026-10-26-same-read-restore-skipped-category-context.md) — Agent lesson: hamilton/issue-1912-every-restore-path-checks-category; Guard: `src/lib/agents/hamilton/rules-recheck.test.ts`
@@ -615,7 +616,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (318 in all).
+counts as of this index (319 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
@@ -624,7 +625,7 @@ counts as of this index (318 in all).
 | hoovie | 12 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
 | rosetta | 14 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
 | knox | 85 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
-| darwin | 50 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
+| darwin | 51 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 40 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
 | hamilton | 64 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
 | deming | 18 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
