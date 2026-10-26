@@ -361,6 +361,16 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     since: "2026-10-25",
   },
   {
+    id: "issue-2100-carry-over-non-fee-refusals",
+    agent: "darwin",
+    stage: "classify",
+    lesson: "When a new category type takes names from an older one, carry over the older type's non-fee refusals with its exact patterns, so a name the older type refused (a low balance charge, a currency exchange or order, a check collection, a sentence about \"many\" ATMs) is not accepted by the new one. Compare the two types' exclude lists in the same change and test each carried-over refusal on a name the new type's include matches.",
+    why: "Guard v76 split International ATM out of the card's foreign transaction fee, but its exclude kept only the card and purchase refusals, so \"Many international ATMs\" or \"International ATM foreign currency order\" would have passed as an International ATM fee (#2093 review). Guard v94 adds the six refusals; the Oct 26 read-only dry run found 0 of 60 live dollar and 0 of 3 live rate fees affected.",
+    evidence: { issues: [2100], prs: [2709], files: ["src/lib/fee-category-guard.ts", "src/lib/fee-category-guard.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
+  {
     id: "issue-1568-named-bank-non-customer-price",
     agent: "darwin",
     stage: "verify",
