@@ -1155,15 +1155,20 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   check's alone (reason, batch, not quarantined, verified row rejected with `translated_copy` as its
   last flag, no other check's second look pending or confirmed: else `other_takedown`), the named
   twin is no longer live at its category and amount (`twin_live`), no other English line of the fee
-  is live or account-type-held (`english_twin_live`) or verified and waiting to publish
-  (`english_twin_waiting`), the twin was not replaced by a newer copy of the schedule
+  is live or account-type-held (`english_twin_live`) or verified with no catalog row yet
+  (`english_twin_waiting`), no other live fee at that institution, category and amount on any
+  document, another Spanish copy included, would be duplicated (`same_fee_live`), the twin was not
+  replaced by a newer copy of the schedule
   (`older_edition`, `refreshed by`, `superseded by`, `newer_copy_drops_fee`, `not_on_current_copy`:
   `twin_replaced`), and its own document's newest text still states it (`checkFeeAgainstSource`;
   `no_amount`, `no_text`, `not_on_own_document`). `TRANSLATED_COPY_RESTORE_LIVE` is off, so the step
   only reports (`restore` in the step detail). Switched on, a restorable fee comes back in one
-  statement that re-checks its state: the rollback cleared, the verified row `verified` with
-  `translated_copy` replaced by `rules_recheck_restored:translated_copy_twin_gone` (the learning
-  sync's `restored_after_takedown` record names it), its second look set to `takedown_cleared`, event
+  statement that re-checks its state and every condition but the document check (shared SQL
+  fragments, so a publish between the read and the write cannot race it): the rollback cleared, the
+  verified row `verified` with `translated_copy` replaced by
+  `rules_recheck_restored:translated_copy_twin_gone` (the learning sync's `restored_after_takedown`
+  record names it), its second look set to `takedown_cleared` at weight 0 (the takedown was right
+  when made, so the check's precision is not credited), event
   `darwin.translated_copy_restored`. Dry run Oct 26 (prod, read-only): 35 archived, 0 would come
   back; 32 twins live, and OnPoint's 64334 (`twin_replaced`: $133 in Spanish, $153 in the current
   English edition), 64337 and 64339 (`english_twin_waiting`) stay down.

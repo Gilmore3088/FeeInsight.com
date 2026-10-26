@@ -20,6 +20,7 @@ const INST = 1986001;
 const SPANISH = 1986101;
 const ENGLISH = 1986102;
 const CURRENT = 1986103;
+const SPANISH_OTHER = 1986104;
 const EVENT = "00000000-0000-4000-8000-000001986000";
 type Db = Parameters<typeof restoreTranslatedCopies>[0];
 type Tx = postgres.Sql<{ numeric: number; json: unknown; text: string }>;
@@ -34,6 +35,8 @@ const SPANISH_TEXT = [
   "Cargo por proceso legal $75.00",
   "Análisis de cuentas (por hora) $25.00",
   "Copias de cheques $2.00",
+  "Giro bancario nacional $25.00",
+  "Copia de estado de cuenta $3.00",
 ].join("\n");
 
 describe.skipIf(!connection)("translated-copy restore (#1986)", () => {
@@ -59,7 +62,8 @@ describe.skipIf(!connection)("translated-copy restore (#1986)", () => {
       await tx`INSERT INTO source_documents (id, institution_id, status, document_url, content_hash, crawled_at)
                VALUES (${SPANISH}, ${INST}, 'success', 'https://cu.test/files/110125-Personal-Fee-Schedule_ES-US.pdf', 'h-es', NOW()),
                       (${ENGLISH}, ${INST}, 'success', 'https://cu.test/files/010125_Personal_Fee_Schedule.pdf', 'h-en', NOW()),
-                      (${CURRENT}, ${INST}, 'success', 'https://cu.test/files/Personal-Fee-Schedule-Current.pdf', 'h-cur', NOW())`;
+                      (${CURRENT}, ${INST}, 'success', 'https://cu.test/files/Personal-Fee-Schedule-Current.pdf', 'h-cur', NOW()),
+                      (${SPANISH_OTHER}, ${INST}, 'success', 'https://cu.test/es/tarifas', 'h-es2', NOW())`;
       await tx`INSERT INTO agent_source_texts (source_document_id, institution_id, source_url, document_type, status, normalized_text, text_hash, char_count)
                VALUES (${SPANISH}, ${INST}, 'https://cu.test/files/110125-Personal-Fee-Schedule_ES-US.pdf', 'pdf', 'completed', ${SPANISH_TEXT}, 't-1986', ${SPANISH_TEXT.length})`;
       await work(tx, runId);
@@ -131,6 +135,13 @@ describe.skipIf(!connection)("translated-copy restore (#1986)", () => {
       await tx`UPDATE verified_fee_observations SET outlier_flags = outlier_flags || '["source_check"]'::jsonb WHERE fee_verified_id = ${other.copyVerified}`;
       // Its own document no longer states this price.
       const reread = await pair(tx, "Reemplazo de tarjeta", "Card Replacement", "card_replacement", 5, "source_check: amount_not_in_text");
+      // Another Spanish copy's fee is live at this category and price: a restore would duplicate it.
+      const duplicate = await pair(tx, "Giro bancario nacional", "Domestic Wire", "wire_domestic_outgoing", 25, "source_check: amount_not_in_text");
+      await fee(tx, "Transferencia nacional saliente", { documentId: SPANISH_OTHER, key: "wire_domestic_outgoing", amount: 25 });
+      // An English row with a catalog row (here quarantined) is not waiting to publish.
+      const quarantined = await pair(tx, "Copia de estado de cuenta", "Statement Copy", "statement_copy", 3, "source_check: amount_not_in_text");
+      const heldOut = await fee(tx, "Statement Copy", { documentId: CURRENT, key: "statement_copy", amount: 3 });
+      await tx`UPDATE published_fee_records SET quarantined_at = NOW(), quarantine_reason = 'test' WHERE fee_published_id = ${heldOut.published}`;
 
       expect(await verdicts(tx)).toEqual({
         [gone.copy]: "restore",
@@ -141,6 +152,8 @@ describe.skipIf(!connection)("translated-copy restore (#1986)", () => {
         [held.copy]: "english_twin_live",
         [other.copy]: "other_takedown",
         [reread.copy]: "not_on_own_document",
+        [duplicate.copy]: "same_fee_live",
+        [quarantined.copy]: "restore",
       });
     });
   });
@@ -178,6 +191,9 @@ describe.skipIf(!connection)("translated-copy restore (#1986)", () => {
       expect(flags).toEqual([TRANSLATED_COPY_RESTORED_FLAG]);
       const looks = await tx`SELECT kind FROM pipeline_feedback WHERE fee_published_id = ${gone.copy} AND check_name = 'darwin.translated_copy' ORDER BY kind`;
       expect(looks.map((row) => row.kind)).toEqual(["flag_cleared", "takedown_cleared"]);
+      // Weight 0: the takedown was right when made, so the check's precision is not credited.
+      const weights = await tx`SELECT DISTINCT weight::float AS weight FROM pipeline_feedback WHERE fee_published_id = ${gone.copy} AND check_name = 'darwin.translated_copy'`;
+      expect(weights.map((row) => Number(row.weight))).toEqual([0]);
       const events = await tx`SELECT event_type FROM agent_run_events WHERE agent_run_id = ${runId}`;
       expect(events.map((row) => row.event_type)).toEqual(["darwin.translated_copy_restored"]);
       const [kept] = await tx`SELECT rolled_back_at FROM published_fee_records WHERE fee_published_id = ${live.copy}`;
@@ -188,5 +204,39 @@ describe.skipIf(!connection)("translated-copy restore (#1986)", () => {
       expect(again.restored).toEqual([]);
       expect(again.archived).toBe(1);
     });
+  });
+
+  it("re-checks every condition in the write: a line published between the read and the write keeps the fee down", async () => {
+    for (const race of ["english", "spanish_copy", "waiting", "other_look"] as const) {
+      await inRollback(async (tx, runId) => {
+        const gone = await pair(tx, "Cargo por sobregiro", "Overdraft Fee", "overdraft", 15, "source_check: amount_not_in_text");
+        const land = async () => {
+          if (race === "english") await fee(tx, "Overdraft Item Fee", { documentId: CURRENT, key: "overdraft", amount: 15 });
+          if (race === "spanish_copy") await fee(tx, "Sobregiro por partida", { documentId: SPANISH_OTHER, key: "overdraft", amount: 15 });
+          if (race === "waiting") await fee(tx, "Overdraft Item Fee", { documentId: CURRENT, key: "overdraft", amount: 15, publish: false });
+          if (race === "other_look") {
+            await tx`INSERT INTO pipeline_feedback (about_stage, about_strategy, signal, kind, reported_by, check_name, institution_id, fee_published_id, agent_run_id, dedupe_key, weight, evidence)
+                     VALUES ('publish', 'hamilton.source_check', 'wrong', 'takedown_pending', 'gutenberg', 'hamilton.source_check', ${INST}, ${gone.copy}, ${runId},
+                             ${`hamilton.second_look:hamilton.source_check:pub:${gone.copy}`}, 0, '{}'::jsonb)`;
+          }
+        };
+        // The write's statement runs only after the race lands (no savepoint: the proxy has none).
+        const racing = new Proxy(tx, {
+          get: (target, key) => (key === "savepoint" ? undefined : Reflect.get(target, key)),
+          apply: (target, thisArg, args) => {
+            const strings = args[0] as TemplateStringsArray;
+            if (Array.isArray(strings) && strings.join("?").includes("WITH eligible AS")) {
+              return (async () => { await land(); return await Reflect.apply(target, thisArg, args); })();
+            }
+            return Reflect.apply(target, thisArg, args);
+          },
+        }) as unknown as Db;
+        const result = await restoreTranslatedCopies(racing, { runId, dryRun: false, institutionId: INST, live: true });
+        expect(result.restorable.map((row) => row.feePublishedId), race).toEqual([gone.copy]);
+        expect(result.restored, race).toEqual([]);
+        const [still] = await tx`SELECT rolled_back_at FROM published_fee_records WHERE fee_published_id = ${gone.copy}`;
+        expect(still.rolled_back_at, race).not.toBeNull();
+      });
+    }
   });
 });

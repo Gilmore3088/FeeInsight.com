@@ -156,7 +156,7 @@ function archived(overrides: Partial<TranslatedCopyRestoreRow> = {}): Translated
     fee_published_id: "145047", fee_verified_id: "9001", institution_id: "21", fee_name: "Cargo por sobregiro", amount: "15",
     canonical_fee_key: "overdraft", rolled_back_reason: "translated_copy: #33498 twin #68605", source_document_id: "33498",
     own_state_clean: true, other_takedown: null, named_twin_id: "68605", named_twin_live: false,
-    named_twin_reason: "source_check: amount_not_in_text", english_twin_id: null, english_waiting_id: null, newest_text: ES_TEXT,
+    named_twin_reason: "source_check: amount_not_in_text", english_twin_id: null, english_waiting_id: null, same_fee_live_id: null, newest_text: ES_TEXT,
     ...overrides,
   };
 }
@@ -170,6 +170,10 @@ describe("translatedCopyRestoreVerdict (#1986)", () => {
     expect(translatedCopyRestoreVerdict(archived({ named_twin_live: true }))).toBe("twin_live");
     expect(translatedCopyRestoreVerdict(archived({ english_twin_id: "70001" }))).toBe("english_twin_live");
     expect(translatedCopyRestoreVerdict(archived({ english_waiting_id: "65446" }))).toBe("english_twin_waiting");
+  });
+
+  it("keeps it down when any other live fee, another Spanish copy included, has its category and price", () => {
+    expect(translatedCopyRestoreVerdict(archived({ same_fee_live_id: "145990" }))).toBe("same_fee_live");
   });
 
   it("keeps it down when another rule took it down too", () => {
@@ -230,5 +234,8 @@ describe("the restore in recheckTranslatedCopies (#1986)", () => {
     expect(all).toContain("hamilton.second_look:darwin.translated_copy:pub:145047");
     expect(all).toContain("takedown_cleared");
     expect(all).toContain("darwin.translated_copy_restored");
+    // The write re-checks every condition, not only the fee's own state (review of #2707).
+    const write = texts(db).find((text) => text.includes("WITH eligible AS")) ?? "";
+    expect(write.match(/NOT EXISTS \(SELECT 1 \?\)/g)).toHaveLength(4);
   });
 });
