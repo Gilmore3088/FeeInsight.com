@@ -2919,7 +2919,7 @@ async function executeAgenticStep(
     }
     case "deming-error-fix-recheck": {
       // #2058: the errors each process fix named, re-checked once their bank was re-run.
-      const result = await runErrorFixRecheck({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
+      const result = await runErrorFixRecheck({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run", sourceFirstRead: true });
       return { status: "completed", summary: summarizeErrorFixRecheck(result), detail: errorFixDetail(result) };
     }
     case "deming-error-classes": {
