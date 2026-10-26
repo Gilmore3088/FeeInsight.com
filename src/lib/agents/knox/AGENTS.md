@@ -163,6 +163,27 @@ fingerprint reopening, broad re-run, historical metadata backfill, recovery or n
 policy is authorized by this code phase. Bayes's `ANCILLARY_PRODUCT_VERSION` no-replay entry
 records the exception; old settled decisions need a separately designed and authorized path.
 
+### Ancillary product recovery (#1911 current-data recovery, 2026-10-26)
+
+`correctAncillaryOwners` (`knox/ancillary-owner-correct.ts`, `ANCILLARY_OWNER_CORRECT_STRATEGY`
+`knox.ancillary_owner_correct` v1) is the explicit recovery the insert-conflict comments in
+`extract.ts` leave room for. Each extract step (scoped to its bank or state lane, at most 100
+documents; an unscoped step skips it, since the screen takes about 10 s across all banks) reads the newest completed text of each document with a live Knox fee whose raw row has
+no product. When `primaryAncillaryProduct` names one product and `withAncillaryProduct` witnesses the
+fee's own name and price in that product's block (account-priced categories and amounts of $0 or
+less excluded), the raw row takes `product_name` and the `ancillary_product:v1` flag, so Darwin's
+re-check narrows to the block and the catalog's account type reads the product. Deterministic, no
+model call; it runs under the `pipeline` pause and never waits on provider budget.
+- The UPDATE lands only while `product_name` is NULL and the name and amount are as read; a
+  labelled row never changes and nothing is deleted.
+- One `pipeline_feedback` row per change (`ancillary_owner_corrected`, weight 0) keeps the old and
+  new values; applied, each document is an attempt keyed `v1:<text id>`, plus one run event.
+- **Switch:** `KNOX_ANCILLARY_OWNER_CORRECT_LIVE` (env, `1` or `true`; unset by default). Off, or in
+  a dry-run run, the step only counts and lists (`ancillary_owner_correct` in the extract step's
+  detail, up to 50 samples) and writes nothing. On 2026-10-26 two live fees qualified: U.S. Bank's
+  Safe Debit "Personal money order" $1.65 and "Non-U.S. Bank ATM transaction fee" $2.50 (published
+  142603/142604, raw 678084/678085, document 33344, text 31406).
+
 ## Authority
 
 - Knox reads `agent_source_texts`.
@@ -2204,6 +2225,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `NAME_FILE_KEY_VERSION` | — | v2 | `knox/held-recheck.ts` |
 | `KNOX_LAYOUT_SIGNATURE_VERSION` | — | v1 | `knox/layout-signature.ts` |
 | `KNOX_LESSONS_VERSION` | — | v5 | `knox/lessons.ts` |
+| `ANCILLARY_OWNER_CORRECT_STRATEGY` | `knox.ancillary_owner_correct` | v1 | `knox/ancillary-owner-correct.ts` |
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
