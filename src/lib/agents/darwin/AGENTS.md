@@ -1196,6 +1196,27 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   flag, never deleted; event `darwin.same_line_replacement_takedown`), so Hamilton's restore brings
   it back if that line goes. Dry run 2026-10-25 22:14 UTC (prod, read-only): 17 candidates, 8 at 5
   institutions would come down (15109, 66618, 104751, 104866, 105031 to 105034), 9 stay.
+- One printed line read twice (`same-line-read-check.ts`, v1, #1876). Access FCU (7235) showed
+  132908 "charge for each one-time debit overdraft" (no frequency) and 137315 "One-time debit
+  overdraft charge" (per item), both $30 from the one line "- $30.00 charge for each one-time debit
+  overdraft." of doc 28555: Knox's deterministic and paid reads of one artifact. The in-batch key
+  and Hamilton's live-line read compare frequency exactly, and the collapses need the same or a
+  near name, so the second read went live. Each step groups the live dollar fees that share an
+  institution, document, category, variant, amount, audience, product and stored source line
+  (`SAME_LINE_READ_ROWS_SQL`), keeps the read that states its frequency, then the oldest, and
+  matches each other read under Hamilton's one rule (`readsSameLine` in
+  `hamilton/same-line-read.ts`): the line is printed once in the current completed text, prints
+  the amount once, the frequencies do not differ and one name's words are all in the other's.
+  `SAME_LINE_READ_TAKEDOWN_LIVE` is off: the step reports only (step detail `same_line_read_check`).
+  Switched on, a match goes through the 12-hour second look (check `darwin.same_line_read`) and is
+  archived while its kept read is live (rolled back as `same_line_duplicate: live fee #<kept>`, batch
+  `darwin-same-line-read-<run>`, the verified row rejected with the `same_line_duplicate` flag;
+  event `darwin.same_line_read_takedown`), so Hamilton's same-line restore brings it back if the
+  kept read goes. Dry run 2026-10-26 (prod, read-only): 248 live fees in 124 groups at 58
+  institutions share a line; 108 at 44 institutions would come down (77 safe deposit boxes, 76 of
+  them Knox v99's "Safe Deposit Box <size>" beside the older annual read; 6 overdraft), and 16
+  groups stay. A seeded sample of 10 plus Access FCU, each read against its stored text, was one
+  line read twice in all 11 (finding 2026-10-26-one-line-read-twice).
 - Schedule editions (`edition-effective-check.ts`, #1915). Avidia's schedule "Effective December 1,
   2026" went live beside its March 2024 one, so the page showed next year's $35 overdraft. Each
   step reads the edition each document's heading states (`editionStarts` in
@@ -2104,6 +2125,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `TRANSLATED_COPY_CHECK_VERSION` | `darwin.translated_copy` | v2 | `darwin/translated-copy-check.ts` |
 | `PRODUCT_PAGE_REPEAT_CHECK_VERSION` | `darwin.product_page_repeat` | v2 | `darwin/product-page-repeat-check.ts` |
 | `SAME_LINE_REPLACEMENT_CHECK_VERSION` | `darwin.same_line_replacement` | v1 | `darwin/same-line-replacement-check.ts` |
+| `SAME_LINE_READ_CHECK_VERSION` | `darwin.same_line_read` | v1 | `darwin/same-line-read-check.ts` |
 | `CANADIAN_DOCUMENT_CHECK_VERSION` | `darwin.canadian_document` | v1 | `darwin/canadian-document-check.ts` |
 | `LATE_CHARGE_BOUND_CHECK_VERSION` | `darwin.late_charge_bound` | v1 | `darwin/late-charge-bound-check.ts` |
 | `RATE_FLOOR_CHECK_VERSION` | `darwin.rate_floor` | v1 | `darwin/rate-floor-check.ts` |

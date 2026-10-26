@@ -476,8 +476,8 @@ describe("Hamilton agentic publish", () => {
     expect(result.publishedFees).toBe(1);
     expect(result.results[0]).toMatchObject({ status: "published", feePublishedId: null });
     // The selection, the edition-hold read (#1915), the depth read, the three sweep-rule reads
-    // (#1069 step 2) and the document-owner verdict read, all SELECTs.
-    expect(db.unsafe.mock.calls.filter(([query]) => /SELECT|WITH/.test(query))).toHaveLength(7);
+    // (#1069 step 2), the document-owner verdict read and the same-line read (#1876), all SELECTs.
+    expect(db.unsafe.mock.calls.filter(([query]) => /SELECT|WITH/.test(query))).toHaveLength(8);
     expect(writes(db)).toEqual([]);
   });
 
@@ -664,6 +664,35 @@ describe("Hamilton agentic publish", () => {
     expect(result.results[0]).toMatchObject({ evidenceDeferred: true, unavailableEvidence: ["page_copy_document"] });
     expect(writes(db).join("\n")).not.toMatch(/INSERT INTO published_fee_records|UPDATE published_fee_records|UPDATE verified_fee_observations|INSERT INTO pipeline_attempts/);
     expect(db.mock.calls.some(([query]) => templateText(query).includes("SELECT DISTINCT ON (source_document_id)"))).toBe(false);
+  });
+
+  it("refuses a second read of a live fee's printed line, and defers when that read fails (#1876)", async () => {
+    const liveRead = {
+      fee_published_id: 132908, fee_name: "Overdraft fee charged for each item", frequency: null,
+      excerpt: "overdraft fee | $35.00 per item", line_prints: 1,
+    };
+    const run = async (read: () => Promise<unknown[]>, refuseSameLineReadsLive?: boolean) => {
+      const db = createDbMock([verifiedFee]);
+      const base = db.unsafe.getMockImplementation()!;
+      db.unsafe.mockImplementation((query: string, params: unknown[]) => (query.includes("slr_candidate") ? read() : base(query, params)) as Promise<unknown[]>);
+      return { db, result: await runHamiltonPublish({ runId: 152, db: asPublishDb(db), refuseSameLineReadsLive }) };
+    };
+
+    const refused = await run(() => Promise.resolve([liveRead]));
+    expect(refused.result.results[0]).toMatchObject({ status: "skipped", reason: "Same printed line as live fee #132908", sameLineReadOf: 132908 });
+    expect(refused.result.sameLineReadCheck).toMatchObject({ live: true, wouldRefuse: 1, refused: 1 });
+    expect(writes(refused.db).join("\n")).not.toContain("INSERT INTO published_fee_records");
+
+    const counted = await run(() => Promise.resolve([liveRead]), false);
+    expect(counted.result.results[0]).toMatchObject({ status: "published", sameLineReadOf: 132908 });
+    expect(counted.result.sameLineReadCheck).toMatchObject({ live: false, wouldRefuse: 1, refused: 0 });
+
+    const apart = await run(() => Promise.resolve([{ ...liveRead, fee_name: "ACH Returned Item", line_prints: 1 }]));
+    expect(apart.result.results[0]).toMatchObject({ status: "published" });
+
+    const failed = await run(() => Promise.reject(new Error("private read failure")));
+    expect(failed.result.results[0]).toMatchObject({ evidenceDeferred: true, unavailableEvidence: ["same_line_read"] });
+    expect(failed.result.publishedFees).toBe(0);
   });
 
   it("defers the wide same-line prerequisite instead of deciding from a failed reselect", async () => {
