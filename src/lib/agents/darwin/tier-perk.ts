@@ -9,15 +9,25 @@
  * Only $0 is refused: a priced row on a premium schedule (the account's own $30 fee) is real.
  * A general schedule that lists a premium account among others is not a tier schedule: only its
  * address and its title (the first line, before any figure) are read. Pure.
+ *
+ * Rule v2 (2026-10-26, #1397): a tier's own document is often named for what it is rather than
+ * "fees": a truth-in-savings disclosure ("Bank-On-Checking-TIS.pdf"), a terms and charges
+ * disclosure ("premier_tcs.pdf") or a summary of fees ("BankOn_Summary_of_Fees.pdf"). Those
+ * addresses now count. A file named for a premium account's "package" does not: one bank's
+ * "PREMIUM-CHECKING-PACKAGE" PDF carries its general pricing guide for every account. And a $0 on a
+ * tier's schedule stays when the schedule says the bank itself does not charge that fee ("The Bank
+ * does not charge NSF fees"): that is every account's price, not the tier's perk.
  */
+export const TIER_PERK_RULE_VERSION = 2;
 const TIER_WORDS = "premium|premier|private|platinum|prestige|preferred|relationship|wealth|bank[\\s_-]?on";
 const TIER_QUALIFIERS = "client|banking|account|checking|certified|services";
 /**
  * An address naming a tier's own fee page: "/truth-in-savings/premium-account-fees",
- * "/private-banking/fees", "/sites/wealth/fee_schedule.pdf". Also read by Hamilton's
+ * "/private-banking/fees", "/sites/wealth/fee_schedule.pdf", "/bank-on-checking-tis.pdf",
+ * "/premier_tcs.pdf", "/BankOn_Summary_of_Fees.pdf". Also read by Hamilton's
  * product-page conflict check in SQL (`TIER_PATH_SQL`), so it uses only syntax both engines share.
  */
-const TIER_PATH_SOURCE = `(^|[/_-])(${TIER_WORDS})([/_-](${TIER_QUALIFIERS}))*[/_-]?(account[/_-])?(fees?|schedule|disclosures?)([^a-z]|$)`;
+const TIER_PATH_SOURCE = `(^|[/_-])(${TIER_WORDS})([/_-](${TIER_QUALIFIERS}))*[/_-]?(account[/_-])?(fees?|schedule|disclosures?|tis|tcs|terms|summary[/_-]of[/_-]fees)([^a-z]|$)`;
 const TIER_PATH = new RegExp(TIER_PATH_SOURCE, "i");
 /** A title naming a tier's own schedule: "The Example Premium Account Schedule of Fees", "Private Banking Fee Schedule". */
 const TIER_TITLE = new RegExp(`\\b(?:${TIER_WORDS})\\b(?:\\s+(?:${TIER_QUALIFIERS}))*\\s+(?:schedule|fee schedule|fees|rate and fee schedule)\\b`, "i");
@@ -59,6 +69,31 @@ export function isTierSchedule(url: string | null | undefined, text: string | nu
 }
 
 /**
+ * A clause where the bank says it charges no such fee at all: "The Bank does not charge NSF fees",
+ * "We do not charge overdraft fees". Not one naming whom it spares ("for Premier customers"), which
+ * is the tier's perk again.
+ */
+const BANK_NO_CHARGE = /\b(?:the bank|we)\s+(?:does|do)\s+not\s+(?:charge|assess|impose)\s+([^.\n]{1,80})/gi;
+const NAMES_WHOM = new RegExp(`\\b(?:${TIER_WORDS}|customers?|clients?|members?|account ?holders?)\\b`, "i");
+const NAME_FILLER = new Set(["fee", "fees", "the", "for", "each", "per", "item", "items", "and", "charge", "charges", "service"]);
+
+function nameWords(feeName: string): string[] {
+  return (feeName.toLowerCase().match(/[a-z]{3,}/g) ?? []).filter((word) => !NAME_FILLER.has(word));
+}
+
+/** True when the text says the bank charges none of this fee, for any account. */
+export function bankChargesNone(text: string | null | undefined, feeName: string | null | undefined): boolean {
+  const words = nameWords(feeName ?? "");
+  if (!text || words.length === 0) return false;
+  for (const match of text.matchAll(BANK_NO_CHARGE)) {
+    const clause = match[1].toLowerCase();
+    if (NAMES_WHOM.test(clause)) continue;
+    if (words.some((word) => new RegExp(`\\b${word}\\b`).test(clause))) return true;
+  }
+  return false;
+}
+
+/**
  * The account's own price: a fee named for the account here ("Premier Checking", monthly
  * maintenance, "NONE (with no minimum balance or other requirements)") is that account's real
  * price, not a perk the account grants on another fee (#1574).
@@ -79,5 +114,6 @@ export function tierPerkZero(
 ): boolean {
   if (amount == null || Math.abs(amount) >= 0.005) return false;
   const accountOwn = canonicalFeeKey != null && ACCOUNT_OWN_KEYS.has(canonicalFeeKey);
-  return (!accountOwn && TIER_NAME.test(feeName ?? "")) || isTierSchedule(url, text);
+  if (!accountOwn && TIER_NAME.test(feeName ?? "")) return true;
+  return isTierSchedule(url, text) && !bankChargesNone(text, feeName);
 }
