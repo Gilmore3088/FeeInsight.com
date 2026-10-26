@@ -381,6 +381,14 @@ Regulatory work needs a defensible position, so nothing Hamilton produces is a b
   no URL, the fee takes its document's (`publishSourceLink`); refresh-copy does the same.
 - `published_by_adversarial_event_id` holds Darwin's verification event id, the gate
   that actually ran.
+- A fee goes live under `publishedFeeName`: the verified name ends at a dot leader or a glued
+  price (`nameBeforeLeaders`), but a figure the words before it lead into ("falls below $2,500.00",
+  "< $30") or the words after it complete ("$300 and over"), a range's second figure and any
+  figure inside an open parenthesis are the name's own threshold and stay (#1443; the cut put 19
+  live names such as "monthly fee if balance falls below" live). A fee's own price ("A fee of
+  $20.00 ...") and a second tier ("Up to $2,500 Over $2,500") still end the name, and so does the
+  sentence that ends on a kept threshold. `publishNameHold` reads a doubled space inside the name
+  as one before its cut-off test.
 - Operators' holds and corrections win over a re-read (#978, docs/plans/hamilton-h03-corrections.md).
   A held line is not republished. A fee an admin corrected (`published_fee_corrections`, a new
   version per correction; the replaced row is quarantined `admin_correction: ...`) is matched by

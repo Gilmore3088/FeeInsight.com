@@ -2173,6 +2173,17 @@ after the held-line passes, reads these requests (`consumeRereadRequests`, `knox
   id`) and count read only the requests, and the settled rows by kind.
 - `rereadFeedbackCountSql()` is the read-only count of pending requests by kind, documents and
   banks, and of settled requests by outcome.
+- Publish's cut of Knox's own read (#1443, `publishedNameRepair`, `KNOX_REREAD_PUBLISHED_NAME_LIVE`,
+  off): a kept-live fragment such as "monthly fee if balance falls below" came from publish cutting
+  the read "monthly fee if balance falls below $2,500.00", so the re-read found the raw name and
+  settled `same_name`, `other_category` or `ambiguous` on every rules version. With the switch on,
+  such a request is `renamed` to today's `publishedFeeName` of the raw name when today's team
+  still reads the raw name on the line, the fragment is that name's head, and the name is no
+  fragment, passes the category guard and traces with `checkFeeAgainstSource`. Off, the outcome is
+  unchanged and the step detail's `published_name` counts the would-be renames with samples.
+  Settled requests are read again only after a rules bump, so the switch-on goes with one. Oct 26
+  dry run on the stored texts: 5 of the 6 requested live fees would be renamed, each right against
+  the bank's line.
 
 ## Batch review (`batch-review.ts`)
 

@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
-import { PUBLISH_MIN_ROWS_PER_STEP, ARTICLE_PAGE_RESELECT_SQL, EDITION_HOLD_RESELECT_SQL, OLDER_EDITION_RESELECT_SQL, ARTICLE_PAGE_SKIP_REASON, CATALOG_DEPTH_LIVE_SQL, decidePriorFee, normalizedFeeName, HAMILTON_PUBLISH_MIN_INSTITUTION_FEES, HAMILTON_PUBLISH_STRATEGY, linesApartOnPage, listsBothPrices, qualifiedLines, namesShareReading, newerCopyPrintsLine, otherBalanceLine, publishedFeeName, publishNameHold, publishSkipReason, runHamiltonPublish, selectListedFeeLines, sameLineDuplicateOf, sentenceFragmentName, separateLines } from "./publish";
+import { PUBLISH_MIN_ROWS_PER_STEP, ARTICLE_PAGE_RESELECT_SQL, EDITION_HOLD_RESELECT_SQL, OLDER_EDITION_RESELECT_SQL, ARTICLE_PAGE_SKIP_REASON, CATALOG_DEPTH_LIVE_SQL, decidePriorFee, normalizedFeeName, HAMILTON_PUBLISH_MIN_INSTITUTION_FEES, HAMILTON_PUBLISH_STRATEGY, linesApartOnPage, listsBothPrices, nameBeforeLeaders, qualifiedLines, namesShareReading, newerCopyPrintsLine, otherBalanceLine, publishedFeeName, publishNameHold, publishSkipReason, runHamiltonPublish, selectListedFeeLines, sameLineDuplicateOf, sentenceFragmentName, separateLines } from "./publish";
 import { NOT_YET_EFFECTIVE_REASON, OLDER_EDITION_REASON } from "../darwin/edition-effective-check";
 import { OPENING_DOCUMENT_TAKEDOWN_LIVE, nonDepositTakedownReason } from "../darwin/non-deposit-document-check";
 import { productPageUrlSql } from "@/lib/agents/learning/fee-page";
@@ -198,6 +198,37 @@ describe("Hamilton agentic publish", () => {
     expect(publishedFeeName("Service charge (daily balance falls below $500)", "minimum_balance")).toBe("Service charge (daily balance falls below $500)");
     expect(publishedFeeName("Classic Money Market Account (balance below $1,000)", "minimum_balance")).toBe("Classic Money Market Account (balance below $1,000)");
     expect(publishedFeeName("Wire Transfer Fee $25", "wire_domestic_outgoing")).toBe("Wire Transfer Fee");
+  });
+
+  it("keeps a threshold the name leads into or completes, outside a parenthesis too (#1443)", () => {
+    // Live on 2026-10-26 under publish's cut: 149336, 157375, 109755, 136523, 139704, 120270.
+    expect(publishedFeeName("monthly fee if balance falls below $2,500.00", "monthly_maintenance")).toBe("monthly fee if balance falls below $2,500.00");
+    expect(publishedFeeName("Overdraft/NSF Charge, per item if the amount of the individual item is $35.00 or less", "nsf")).toBe(
+      "Overdraft/NSF Charge, per item if the amount of the individual item is $35.00 or less",
+    );
+    expect(publishedFeeName("Paid NSF Item < $30 (Courtesy Pay)", "overdraft")).toBe("Paid NSF Item < $30 (Courtesy Pay)");
+    expect(publishedFeeName("Loan Processing Fee > $5000 unsecured", "other_lending_fee")).toBe("Loan Processing Fee > $5000 unsecured");
+    expect(publishedFeeName("Non Member Check Cashing Fee - For checks $300 and over", "check_cashing")).toBe("Non Member Check Cashing Fee - For checks $300 and over");
+    expect(publishedFeeName("Dormant Account Fee, balance $50 or greater", "dormant_account")).toBe("Dormant Account Fee, balance $50 or greater");
+    // A range's second figure belongs to the range.
+    expect(nameBeforeLeaders("Gift Cards: Available in any amounts from $25 - $500")).toBe("Gift Cards: Available in any amounts from $25 - $500");
+    // A sentence that ends on the threshold ends the name.
+    expect(nameBeforeLeaders("Service Charge - Monthly on all accounts with an average daily balance of less than $100. Fee is posted on last working")).toBe(
+      "Service Charge - Monthly on all accounts with an average daily balance of less than $100",
+    );
+    // Still cut: the fee's own price, a price after a closed name, a second tier, and a figure inside an unclosed parenthesis's cell.
+    expect(nameBeforeLeaders("Continuous overdraft fee - A fee of $20.00 will be assessed on the 6th calendar day")).toBe("Continuous overdraft fee - A fee of");
+    expect(publishedFeeName("Continuous overdraft fee - A fee of $20.00 will be assessed on the 6th calendar day", "continuous_od")).toBe("Continuous overdraft fee");
+    expect(nameBeforeLeaders("Stop Payment (single item or series) $35.00 Money Market Monthly Fee")).toBe("Stop Payment (single item or series)");
+    expect(nameBeforeLeaders("Foreign Check Collections (US & Non-US Dollars) Up to $2,500 Over $2,500")).toBe("Foreign Check Collections (US & Non-US Dollars) Up to");
+    expect(nameBeforeLeaders("Check Cashing (Members with average balance less than $100) -- $5-500.00")).toBe("Check Cashing (Members with average balance less than $100)");
+    expect(nameBeforeLeaders("Overdraft $10.00 – $29.99")).toBe("Overdraft");
+  });
+
+  it("reads a doubled space inside a cut name as one, so the collapse is no repair (#1443)", () => {
+    expect(publishNameHold("Courtesy Pay, you will incur a non-refundable fee of", "overdraft", 30)?.code).toBe("cutoff_name");
+    expect(publishNameHold("Courtesy  Pay, you will incur a non-refundable fee of", "overdraft", 30)?.code).toBe("cutoff_name");
+    expect(publishNameHold("Fees  Legal Process", "legal_process", 100)?.code).toBe(publishNameHold("Fees Legal Process", "legal_process", 100)?.code);
   });
 
   it("publishes a twin of a rules re-check takedown only when today's rules read it from its own document", async () => {

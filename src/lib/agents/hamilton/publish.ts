@@ -1138,11 +1138,48 @@ const LEADER_OR_PRICE = /(?:[.…]\s*){2,}|\s+\$\s?\d/g;
 function insideParenthesis(text: string): boolean {
   return (text.match(/\(/g)?.length ?? 0) > (text.match(/\)/g)?.length ?? 0);
 }
+/**
+ * #1443: a price the words before it lead into ("monthly fee if balance falls below $2,500.00",
+ * "Paid NSF Item < $30", the second figure of a range) or the words after it complete ("For checks
+ * $300 and over") is the name's own threshold, outside a parenthesis too. Cutting there published
+ * "monthly fee if balance falls below" (149336) and "Paid NSF Item <" (109755), and cut a name
+ * Knox's retidy had restored again on its next publish ("Check cashing if less than $100", 131639).
+ * Darwin's live check asked Knox to re-read those lines every day; Knox read the whole name each
+ * time and publish cut it again. A fee's own price ("Continuous overdraft fee - A fee of $20.00
+ * will be assessed ...") is no threshold, so the name still ends there; a sentence that ends on
+ * a kept threshold ends the name ("... less than $100. Fee is posted on last working").
+ */
+const THRESHOLD_LEAD =
+  /(?:\b(?:below|under|over|above|than|least|exceeds?|exceeding|excess of|of|is|are|balances?|minimum|maximum|min|max|between|from|to|up to|within)|[<>≤≥=]|\d\s*[-–—])\s*$/i;
+const PRICE_OF_LEAD = /\b(?:fee|charge|cost|price|rate|total|sum|amount|payment)\s+of\s*$/i;
+/** A second tier after the first ("Up to $2,500 Over $2,500"): a tier header, not the name's own threshold. */
+const NEXT_TIER = /^[\d,.]*\s+(?:up to|over|under|above|below|more than|less than)\s+\$/i;
+const THRESHOLD_TAIL = /^[\d,.]*\s*(?:(?:or|and)\s+(?:less|more|greater|higher|lower|over|under|above|below|up|fewer)\b|\+)/i;
+const THRESHOLD_SENTENCE_END = /^[\d,.]*\d(?=\.\s+[A-Z])/;
+/** Where a name with a threshold price at `match` ends: null when the price is no threshold (the name ends at it), -1 when it reads on. */
+function thresholdEnd(name: string, match: RegExpMatchArray): number | null {
+  const at = match.index ?? 0;
+  const before = name.slice(0, at);
+  const after = name.slice(at + match[0].length);
+  if (!(THRESHOLD_LEAD.test(before) && !PRICE_OF_LEAD.test(before)) && !THRESHOLD_TAIL.test(after)) return null;
+  if (NEXT_TIER.test(after)) return null;
+  const sentence = after.match(THRESHOLD_SENTENCE_END);
+  return sentence ? at + match[0].length + sentence[0].length : -1;
+}
 export function nameBeforeLeaders(name: string): string {
-  const stop = [...name.matchAll(LEADER_OR_PRICE)].find(
-    (match) => !match[0].includes("$") || !insideParenthesis(name.slice(0, match.index)),
-  );
-  const cut = name.slice(0, stop?.index ?? name.length).replace(/[\s:;,.\-–—|]+$/u, "").trim();
+  let end: number | undefined;
+  for (const match of name.matchAll(LEADER_OR_PRICE)) {
+    if (!match[0].includes("$")) {
+      end = match.index;
+      break;
+    }
+    if (insideParenthesis(name.slice(0, match.index))) continue;
+    const threshold = thresholdEnd(name, match);
+    if (threshold === -1) continue;
+    end = threshold ?? match.index;
+    break;
+  }
+  const cut = name.slice(0, end ?? name.length).replace(/[\s:;,.\-–—|]+$/u, "").trim();
   return cut.length >= 3 && /[a-z]/i.test(cut) ? cut : name.trim();
 }
 
@@ -1171,7 +1208,12 @@ export function publishNameHold(name: string, canonicalKey: string, amount: numb
   if (ADDON_PRICE_NAME.test(name.trim())) return { code: "price_is_addon", reason: "Name ends in \"plus\": the amount is an add-on to the fee's price, not the fee" };
   // A name cut from a sentence or a table that Knox's repair cannot turn into a fee's name
   // ("GUASFCU charges a") is not published as it is.
-  if (isCutoffName(name) && !retidiedFeeName(name, canonicalKey) && !clauseCutName(name, canonicalKey)) {
+  // Read with a doubled space inside it collapsed, as it goes live: the collapse itself counted as
+  // Knox's repair ("Courtesy  Pay, you will incur a non-refundable fee of"; #1443). Space around the
+  // name is left as it was: a trailing space let one verified row through whose published name is
+  // whole (65495), so trimming is a separate change with its own dry run.
+  const spaced = name.replace(/(\S)\s{2,}(?=\S)/g, "$1 ");
+  if (isCutoffName(spaced) && !retidiedFeeName(spaced, canonicalKey) && !clauseCutName(spaced, canonicalKey)) {
     return { code: "cutoff_name", reason: "Name is cut from a sentence or a table and has no repaired form" };
   }
   // A name that would show only a condition ("(balance falls below $1,000)", cut from "(balance
