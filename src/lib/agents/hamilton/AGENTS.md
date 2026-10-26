@@ -1136,6 +1136,21 @@ re-check; this check takes nothing down. An enabled unavailable read leaves the 
 rows closed as page copies in the 30 hours to Oct 18 02:40 UTC were closed behind a row already live
 when they published.
 
+**One printed line read twice, at publish (#1876, live).** Knox keeps each read of a line as its own
+raw row (a deterministic read and a paid read of one artifact; Knox v99's "Safe Deposit Box 3x5"
+beside the older "3x5"). The live-line read (`selectLivePublishedFees`) compares frequency
+exactly and the collapses need the same or a near name, so a second read published beside the
+first: Access FCU's 137315 "One-time debit overdraft charge" (per item) beside 132908 "charge for
+each one-time debit overdraft" (no frequency), one $30 line of doc 28555. Each dollar row about to
+publish is now read against the live fees of its institution, document, category, variant,
+amount, audience and product that share its stored source line (`selectSameLineReadOf`,
+`same-line-read.ts`). It is the same line read twice (`readsSameLine`) when the current completed
+text prints that line once, the line prints the amount once, the frequencies do not differ and
+one name's words are all in the other's (`namesShareReading`). Counted in the step's
+`same_line_read_check` and, while `PUBLISH_REFUSE_SAME_LINE_READS_LIVE` is on, skipped (`Same printed
+line as live fee #<id>`); an enabled unavailable read leaves the row pending. This takes nothing
+down; Darwin's `same-line-read-check.ts` re-checks what is already live.
+
 ## Rules Re-check
 
 In state-lane (or single-institution) publish steps, `rules-recheck.ts` re-runs Knox's

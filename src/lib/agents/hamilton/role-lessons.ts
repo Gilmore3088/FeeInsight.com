@@ -238,6 +238,16 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     since: "2026-10-25",
   },
   {
+    id: "issue-1876-one-line-read-twice",
+    agent: "hamilton",
+    stage: "publish",
+    lesson: "Two reads of one printed line are one fee whatever their names or frequencies: before publishing, compare a row with the live fees from the same document and stored source line, and when the text prints that line once with the price once, the frequencies do not conflict and one name's words are all in the other's, publish nothing new.",
+    why: "Access FCU's one line '- $30.00 charge for each one-time debit overdraft.' went live twice, 132908 (no frequency) and 137315 'One-time debit overdraft charge' (per item), because the live-line read compared frequency exactly and the collapses needed the same name; 108 such second reads at 44 institutions were live on Oct 26, 76 of them Knox v99 box names beside the older read.",
+    evidence: { issues: [1876], prs: [], files: ["src/lib/agents/hamilton/same-line-read.ts", "src/lib/agents/darwin/same-line-read-check.ts", "docs/project/findings/2026-10-26-one-line-read-twice.md"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
+  {
     id: "issue-1915-edition-hold-twins",
     agent: "hamilton",
     stage: "publish",
