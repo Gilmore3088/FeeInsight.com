@@ -1984,7 +1984,7 @@ reads each piece that holds a dollar price on its own; capitalised section headi
 first name ("DEPOSIT SERVICES MISCELLANEOUS SERVICES Cashier's Checks") are cut with `splitCapsHeading`
 only when the cut reads at least as many fees (a name in capitals, "OVERDRAFT ITEM Fee", is kept), and a
 footer's page number or web address is dropped from the start of the next piece. A phrase that names an
-audience ("Business Schedule of Fees") keeps the segment skipped whole: cutting it would cut the only word
+audience ("Business Schedule of Fees", "Business Banking Fee Schedule") keeps the segment skipped whole: cutting it would cut the only word
 saying whose prices follow, and a business price would publish for everyone.
 A piece with no price is heading or boilerplate and yields nothing, so a heading-only line or a footer
 still reads nothing. A segment that also says "effective" ("Effective Date: ...", "will be $35 effective

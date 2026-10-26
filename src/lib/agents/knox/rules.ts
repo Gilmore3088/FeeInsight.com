@@ -2215,12 +2215,14 @@ const SCHEDULE_HEADING_PHRASE =
  */
 const EFFECTIVE_WORD = /\beffective\b/i;
 /**
- * v125: a phrase named for an audience ("Business Schedule of Fees", "Personal Fee Schedule") keeps the
- * segment skipped whole: cutting the phrase would cut the only word saying whose prices follow, and a
- * business price read without it publishes for everyone (review of #2725).
+ * v125: a title naming an audience ("Business Schedule of Fees", "Business Banking Fee Schedule",
+ * "Treasury Management Fee Schedule", "Personal Fee Schedule") keeps the segment skipped whole: cutting
+ * the phrase would cut the only words saying whose prices follow, and a business price read without
+ * them publishes for everyone (review of #2725). The audience word may sit up to 60 characters before
+ * the phrase, with no price between.
  */
 const AUDIENCE_HEADING_PHRASE =
-  /\b(?:consumer|personal|business|commercial)\s+(?:schedule of fees|fee schedule|truth in savings)\b/i;
+  /\b(?:consumer|personal|business|commercial|corporate|treasury|merchant|non-?profit|retail|individual)\b[^$\n]{0,60}?\b(?:schedule of fees|fee schedule|truth in savings)\b/i;
 /** v125: a page footer's leftovers at the start of the next piece: "Page 2 of 4", a bare page number, a web address. */
 const FOOTER_LEFTOVER = /^(?:page\s+\d+(?:\s+of\s+\d+)?|\d{1,3}|(?:https?:\/\/)?(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|org|net|bank|coop|us)\S*)\s+/i;
 

@@ -2061,6 +2061,12 @@ describe("v125 (#1094 item 3): a heading phrase skips only itself, not the fees 
       "Personal Fee Schedule ATM Fee $2 Business Fee Schedule ATM Fee $3",
       "Business Fee Schedule | Overdraft Fee | $35.00",
       "COMMERCIAL SCHEDULE OF FEES Wire Transfer Outgoing $30",
+      "Business Accounts Fee Schedule | Overdraft Fee | $35.00",
+      "Business Banking Fee Schedule Overdraft Fee $35",
+      "BUSINESS SERVICES FEE SCHEDULE Overdraft Fee $35",
+      "Commercial Banking Schedule of Fees Wire Transfer Outgoing $25",
+      "Treasury Management Fee Schedule ACH Origination $15",
+      "Small Business Fee Schedule Overdraft Fee $35",
     ]) {
       expect(reads(line)).toEqual({ candidates: [], held: [] });
     }
