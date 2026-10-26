@@ -213,10 +213,11 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-338 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+339 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
-### Extraction and fee reading (53)
+### Extraction and fee reading (54)
 
+- 2026-10-26 — A note that a fee is free for some is a waiver, not "no fee": read the price everyone else pays ("Money Orders (Free with Platinum Checking) | $5.00"), and on a two-column PDF give a name with no price beside it the price under its own note (#1918). — [finding](findings/2026-10-26-free-note-drops-priced-row.md) — Agent lesson: knox/issue-1918-free-note-is-a-waiver; Guard: `src/lib/agents/knox/free-note-prices.test.ts`
 - 2026-10-26 — A fee with no account counts as the bank's checking price: read the account its own sentence names ("The M&T Preferred Money Market account has a $20 monthly maintenance charge."), and keep a savings or money market account's own monthly or minimum balance fee out of the bank's checking value (#1912). — [finding](findings/2026-10-26-savings-maintenance-sets-checking-value.md) — Agent lesson: knox/issue-1912-account-named-in-fee-sentence; Guard: `src/lib/agents/knox/account-subject.test.ts`, `src/lib/account-kind.test.ts`, `src/lib/data-store/fee-stats.test.ts`
 - 2026-10-26 — When a new labelling rule lands, re-read the rows already live, not only the new reads: Knox's ancillary product ownership labelled only new rows, so two live U.S. Bank Safe Debit fees kept no product (#1911). — [finding](findings/2026-10-26-ancillary-product-not-backfilled.md) — Agent lesson: knox/issue-1911-ancillary-owner-recovery; Guard: `src/lib/agents/knox/ancillary-owner-correct.test.ts`
 - 2026-10-26 — A ligature a PDF font draws can come out as nothing at all, with no U+FFFD to mark the loss: restore it only in known fee words, and only when the same document shows the loss in at least two different words. — [finding](findings/2026-10-26-dropped-pdf-ligatures.md) — Agent lesson: rosetta/issue-1513-dropped-ligatures; Guard: `src/lib/agents/rosetta/glyph-repair.test.ts`
@@ -606,7 +607,7 @@ counts as of this index (292 in all).
 | magellan | 25 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
 | hoovie | 12 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
 | rosetta | 12 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
-| knox | 75 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
+| knox | 76 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
 | darwin | 45 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 40 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
 | hamilton | 58 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |

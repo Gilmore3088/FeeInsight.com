@@ -2031,6 +2031,21 @@ read: M&T's page lists five other savings products. Account product only; the st
 at v97. Live rows read before v126 keep their NULL product until the account-subject recovery below
 fills them (`account-subject-correct.ts`).
 
+v127 (#1918): a note that a fee is free with an account or condition ("Money Orders (Free with Platinum
+Checking) | $5.00", "Notary Fee (FREE for Members) | $10.00") or that a few are free ("ATM Withdrawals
+(3 FREE each month) | $3.50") no longer drops the row as "no fee" (`FREE_FOR_NOTE` in `rules.ts`): the
+price is read, as waivable, under a name that starts as a name and holds no price. An account's own
+monthly maintenance or minimum balance fee with such a note stays the account expert's read. A
+two-column PDF page ("name | price | name | price") whose left price cell was empty on a name's line
+("Wire Transfers – Domestic | Bill Pay Return Item Fee | $10.00" over "(Free with Platinum Checking) |
+$20.00 | (per item returned by payee)", Bellco document 15817) is rebuilt as one row per fee before any
+line is read (`withShiftedColumnsRebuilt`); of two glued names one must name a fee, a lone name must
+name one, and the next line must open with the left fee's "(" note and its price. On Oct 26 (prod,
+read-only) these rules read 351 fee prices on 543 current lines at 228 banks that the v126 rules drop;
+296 were already live from other reads, and 45 prices at 37 banks are new. No price v126 read is lost.
+The stale-read floor stays at v97; the new signature sends every live document through Hamilton's rules
+re-check once, which asks Knox to read it again where a fee these rules read is not live.
+
 ## Darwin's re-read requests (`reread-feedback.ts`, #1511)
 
 Darwin's live fragment check (`darwin/live-fragment-check.ts`) writes one `pipeline_feedback` row of
@@ -2286,7 +2301,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v126 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v127 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v10 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |
