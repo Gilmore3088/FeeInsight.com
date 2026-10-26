@@ -477,6 +477,16 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     since: "2026-10-26",
   },
   {
+    id: "issue-1899-records-figure-column",
+    agent: "hamilton",
+    stage: "report",
+    lesson: "Size an exhibit's columns by what they hold: right-align and keep on one line only a short figure; a column of long source lines wraps (breaking a long record ID where it must), the first column keeps a readable minimum width, and a table wider than a phone scrolls inside its own box. Give the PDF's prose column the room too.",
+    why: "The board brief's 'Records behind the saved answer' exhibit held its 'Source as saved' lines on one line as if they were figures, so the table ran far past its box and the Figure column shrank to one or two words a line at 1440; the PDF gave that column a quarter of the width, so its lines ran into the next row.",
+    evidence: { issues: [1899], prs: [], files: ["src/components/hamilton/reports/ReportAnswer.tsx", "src/components/hamilton/reports/PdfDocument.tsx", "src/components/hamilton/reports/exhibit-columns.test.tsx"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
+  {
     id: "issue-1896-no-per-1000-anywhere",
     agent: "hamilton",
     stage: "written answer",
