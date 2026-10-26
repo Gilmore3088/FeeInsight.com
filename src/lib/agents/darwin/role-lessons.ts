@@ -506,7 +506,7 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     stage: "verify",
     lesson: "A document's address can name its owner even on this bank's own host: a website vendor's file folder (`/files/<folder>/<n>/file/`) named for another institution's website is that institution's file. Link that institution to the document like a text-hash sharer, and when the text prints its name and not this bank's, the fees are the other institution's. A folder alone takes nothing down: the text must still name its owner.",
     why: "Sunrise Family CU's schedule at `/files/sunrisefamilycu/1/file/` was live under four other CUs (102 fees, #1455). The document-owner check passed the two copies that share Sunrise's text hash as shared_service, because each sat on that CU's own site and the path was not one of the known vendor paths, and never read the two with their own hash, which nothing linked to Sunrise.",
-    evidence: { issues: [1455], prs: [], files: ["src/lib/agents/darwin/document-owner.ts", "docs/project/findings/2026-10-26-vendor-folder-is-one-banks-file.md"] },
+    evidence: { issues: [1455], prs: [2749], files: ["src/lib/agents/darwin/document-owner.ts", "docs/project/findings/2026-10-26-vendor-folder-is-one-banks-file.md"] },
     appliesTo: "all",
     since: "2026-10-26",
   },
