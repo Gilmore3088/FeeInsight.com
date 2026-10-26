@@ -361,9 +361,10 @@ const FEE_FREE_LEAD = /^\s*\*?\s*fee-free\b/i;
  * service fee after a $50 opening deposit").
  */
 const CLAUSE_BREAK = /[;,:|]|\.\s/g;
-const DOLLAR_PRICE = /\$\s?(\d[\d,]*(?:\.\d{1,2})?)/;
 const DOLLAR_PRICES = /\$\s?(\d[\d,]*(?:\.\d{1,2})?)/g;
 /** v9: a comma or colon followed by a condition still belongs to the free clause ("no monthly service fee, after a $50 opening deposit"). */
+/** v9: words after a price that make it a cap or a threshold, not a fee's price ("$175 daily max", "$5 or less"). */
+const CAP_AFTER_PRICE = /^\s*(?:(?:daily|per\s+day|monthly|per\s+month|annual|yearly)\s+)?(?:max|maximum|cap|limit)\b|^\s*or\s+(?:less|under|below|more|over|above)\b/i;
 const CONDITION_AFTER_BREAK = /^\s*(?:after|with|when|if|unless|until|once|provided|upon|as\s+long\s+as)\b/i;
 function laterClausePricesAmount(name: string, amount: number | null | undefined, v9: boolean): boolean {
   if (amount == null) return false;
@@ -374,10 +375,14 @@ function laterClausePricesAmount(name: string, amount: number | null | undefined
       return Array.from(rest.matchAll(DOLLAR_PRICES)).some((match) => sameAmount(match[1], amount));
     }
     if ((cut[0] === "," || cut[0] === ":") && CONDITION_AFTER_BREAK.test(rest)) continue;
-    // v9: only the first price after the cut is the later clause's price; a cap after it is not
-    // ("No fee for overdrafts under $5, $35 per item, $175 daily max" at $175).
-    const first = DOLLAR_PRICE.exec(rest);
-    return Boolean(first && sameAmount(first[1], amount));
+    // v9: every price after the free clause counts, so a second fee later in the name is read
+    // ("There is no monthly fee; stop payment $30, paper statement $2" at $2), except a cap or a
+    // threshold ("No fee for overdrafts under $5, $35 per item, $175 daily max" at $175).
+    for (const match of rest.matchAll(DOLLAR_PRICES)) {
+      const after = rest.slice(match.index + match[0].length);
+      if (sameAmount(match[1], amount) && !CAP_AFTER_PRICE.test(after)) return true;
+    }
+    return false;
   }
   return false;
 }
@@ -403,9 +408,10 @@ function namesDiscount(name: string, amount: number | null | undefined): boolean
 const DISCOUNTED_PRICE = /\bdiscounted\b|w\/\s*discount/i;
 /**
  * v9: "$X discount" on the stored line (also "$X annual discount", "$X Annual Fee Discount"). Not
- * "discounted": "$X discounted" is the discounted price, the fee itself.
+ * "discounted", and not "$X discount rate/price/plan/box": those are the discounted price, the fee
+ * itself ("$40 regular, $30 discount rate for members" at $30).
  */
-const DISCOUNT_PRICE = /\$\s?(\d[\d,]*(?:\.\d{1,2})?)(?=\s+(?:annual\s+(?:fee\s+)?)?discounts?\b)/gi;
+const DISCOUNT_PRICE = /\$\s?(\d[\d,]*(?:\.\d{1,2})?)(?=\s+(?:annual\s+(?:fee\s+)?)?discounts?\b(?!\s+(?:rate|price|plan|box)\b))/gi;
 /**
  * v9: true when the stored line prints the fee's own amount, and every time it prints that amount it
  * is a discount ("An annual $5.00 discount will apply to the rental price…" at $5). A line that also
@@ -641,6 +647,15 @@ export const EVAL_VERDICT_SECOND_BATCH: ReadonlySet<number> = new Set([120626]);
  * empties and the switch goes.
  */
 export const EVAL_VERDICT_SECOND_BATCH_ACTS = false;
+
+/**
+ * True when a name rule fails the fee only under v9 (v8 passes it). While
+ * `EVAL_VERDICT_SECOND_BATCH_ACTS` is off, no live-fee path takes such a fee down: this check's
+ * re-check and Darwin's verified re-check both count it as deferred. Pure.
+ */
+export function failsOnlyAtV9(canonicalFeeKey: string, feeName: string | null | undefined, amount: number | null | undefined, excerpt?: string | null): boolean {
+  return ruleFor(canonicalFeeKey, feeName, amount, excerpt) != null && ruleFor(canonicalFeeKey, feeName, amount, excerpt, { version: 8 }) == null;
+}
 const LABELLED_IDS = new Set([...EVAL_CRITICAL_VERDICTS, ...HAND_CHECKED_VERDICTS].map((entry) => entry.feePublishedId));
 
 /** The eval verdict a live record still matches, or null when none or the record has changed. Pure. */

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { EVAL_CRITICAL_VERDICTS, EVAL_VERDICT_SECOND_BATCH, EVAL_VERDICT_SECOND_BATCH_ACTS, HAND_CHECKED_VERDICTS, V8_PREFILTER, V9_PREFILTER, distinctPrices, evalVerdictFeesSql, flagFor, priceInName, retireEvalVerdictFees, ruleFor, verdictFor } from "./eval-verdicts";
+import { EVAL_CRITICAL_VERDICTS, EVAL_VERDICT_SECOND_BATCH, EVAL_VERDICT_SECOND_BATCH_ACTS, HAND_CHECKED_VERDICTS, V8_PREFILTER, V9_PREFILTER, distinctPrices, failsOnlyAtV9, evalVerdictFeesSql, flagFor, priceInName, retireEvalVerdictFees, ruleFor, verdictFor } from "./eval-verdicts";
 
 function templateText(strings: unknown): string {
   return Array.isArray(strings) ? strings.join(" ") : String(strings);
@@ -267,6 +267,33 @@ describe("v9: a discount the stored line prints at the fee's own amount (#1696)"
     expect(ruleFor("excess_withdrawal", "There is no charge for the first 2; $2 each after", 2)).toBeNull();
     expect(ruleFor("overdraft", "No fee; overdraft $35 applies", 35)).toBeNull();
     expect(ruleFor("overdraft", "No fee for overdrafts under $5, $35 per item, $175 daily max", 35)).toBeNull();
+  });
+
+  it("no-fee exception reads every price after the free clause, so a second fee later in the name passes (#2681 review B1)", () => {
+    for (const [key, name, amount] of [
+      ["paper_statement", "There is no monthly fee; stop payment $30, paper statement $2", 2],
+      ["overdraft", "There is no charge for the first 2 items; $5, then $35 per item", 35],
+      ["overdraft", "There is no fee for overdrafts: $5 or less; $35 per item", 35],
+    ] as const) {
+      expect(ruleFor(key, name, amount), name).toBeNull();
+      expect(ruleFor(key, name, amount, null, { version: 8 }), name).toBeNull();
+    }
+    // A cap or threshold after the cut is not the fee's price.
+    expect(ruleFor("overdraft", "There is no fee for overdrafts: $5 or less; $35 per item", 5)).toBe("no_fee_sentence");
+    expect(ruleFor("overdraft", "No fee for overdrafts under $5; $35 per item; $175 maximum per day", 175)).toBe("no_fee_sentence");
+  });
+
+  it("a discount rate, price, plan or box is the discounted fee itself (#2681 review)", () => {
+    for (const [key, name, amount, excerpt] of [
+      ["safe_deposit_box", "Safe deposit box, members", 30, "Safe deposit box $40 regular, $30 discount rate for members"],
+      ["safe_deposit_box", "Safe deposit box", 30, "Safe deposit box $30 discount price"],
+      ["overdraft", "Overdraft protection", 5, "Overdraft protection $5 discount plan"],
+      ["safe_deposit_box", "Safe deposit box", 20, "3x5 $20 discount box"],
+    ] as const) {
+      expect(ruleFor(key, name, amount, excerpt), excerpt).toBeNull();
+    }
+    expect(failsOnlyAtV9("stop_payment", "Stop Payment Discount Receive one", 5, "Stop Payment Discount Receive one $5.00 discount off the normal stop payment fee each month.")).toBe(true);
+    expect(failsOnlyAtV9("overdraft", "Courtesy Pay", 5, "Courtesy Pay / $5 Allowance")).toBe(false);
   });
 
   it("holds the second batch behind its switch: counted and named while off, flagged when on", async () => {
