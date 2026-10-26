@@ -201,7 +201,7 @@ export const KNOX_LESSONS: AgentLesson[] = [
     stage: "held queue",
     lesson: "A line your rules keep failing to trace to one row of its text is a disagreement between the text and the fee, not only a rules gap: after 3 rules versions, report that text to Rosetta as a possible reading error so the document is read again at the next reader version, instead of re-reading the same text forever.",
     why: "Knox's untraced re-check read the same stored text under every rules version and nothing else ever looked at it: on Oct 26, 3,301 of the 3,769 untraced held lines had failed 3 or more versions, at 2,062 texts and 1,302 banks, and no reader ever saw them.",
-    evidence: { issues: [1102], prs: [], files: ["src/lib/agents/knox/untraced-read-error.ts", "src/lib/agents/rosetta/read.ts"] },
+    evidence: { issues: [1102], prs: [2728], files: ["src/lib/agents/knox/untraced-read-error.ts", "src/lib/agents/rosetta/read.ts"] },
     appliesTo: ["extract"],
     since: "2026-10-26",
   },
