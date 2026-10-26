@@ -2203,16 +2203,26 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
 
 /**
  * v125 (#1094 item 3): the schedule's own heading phrase or boilerplate (`GENERIC_SCHEDULE_LANGUAGE`,
- * "effective date" aside) with the words that belong to it: an audience before ("Personal Schedule of
- * Fees"), "and Charges" or "Disclosure" after, "Equal Housing Lender" after "Member FDIC".
+ * "effective date" aside) with the words that belong to it: "and Charges" or "Disclosure" after,
+ * "Equal Housing Lender" after "Member FDIC". A phrase named for an audience never gets here
+ * (`AUDIENCE_HEADING_PHRASE`).
  */
 const SCHEDULE_HEADING_PHRASE =
-  /\b(?:(?:consumer|personal|business|commercial)\s+)?(?:schedule of fees(?:\s+(?:and|&)\s+(?:service\s+)?charges)?|fee schedule|truth in savings(?:\s+disclosures?)?|member fdic(?:\.?\s+equal housing (?:lender|opportunity))?)\b\.?/gi;
+  /\b(?:schedule of fees(?:\s+(?:and|&)\s+(?:service\s+)?charges)?|fee schedule|truth in savings(?:\s+disclosures?)?|member fdic(?:\.?\s+equal housing (?:lender|opportunity))?)\b\.?/gi;
 /**
  * v125: a segment with the phrase that also says "effective" ("Effective Date", "Schedule of fees effective
  * January 1") is still skipped whole: it can announce a price not yet charged (R11 on #1094).
  */
 const EFFECTIVE_WORD = /\beffective\b/i;
+/**
+ * v125: a phrase named for an audience ("Business Schedule of Fees", "Personal Fee Schedule") keeps the
+ * segment skipped whole: cutting the phrase would cut the only word saying whose prices follow, and a
+ * business price read without it publishes for everyone (review of #2725).
+ */
+const AUDIENCE_HEADING_PHRASE =
+  /\b(?:consumer|personal|business|commercial)\s+(?:schedule of fees|fee schedule|truth in savings)\b/i;
+/** v125: a page footer's leftovers at the start of the next piece: "Page 2 of 4", a bare page number, a web address. */
+const FOOTER_LEFTOVER = /^(?:page\s+\d+(?:\s+of\s+\d+)?|\d{1,3}|(?:https?:\/\/)?(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|org|net|bank|coop|us)\S*)\s+/i;
 
 /**
  * v125 (#1094 item 3): a segment holding the schedule's heading phrase or boilerplate ("Fee Schedule",
@@ -2229,19 +2239,24 @@ const EFFECTIVE_WORD = /\beffective\b/i;
 function readSegment(segment: string): ExtractionRulesResult {
   if (!GENERIC_SCHEDULE_LANGUAGE.test(segment)) return readPlainSegment(segment);
   const result: ExtractionRulesResult = { candidates: [], held: [] };
-  if (EFFECTIVE_WORD.test(segment)) return result;
-  for (const rawPiece of segment.split(SCHEDULE_HEADING_PHRASE)) {
-    const trimmed = rawPiece.replace(/^[\s|:;,.\-–—]+/, "").replace(/[\s|:;,\-–—]+$/, "");
+  if (EFFECTIVE_WORD.test(segment) || AUDIENCE_HEADING_PHRASE.test(segment)) return result;
+  segment.split(SCHEDULE_HEADING_PHRASE).forEach((rawPiece, index) => {
+    let trimmed = rawPiece.replace(/^[\s|:;,.\-–—]+/, "").replace(/[\s|:;,\-–—]+$/, "");
+    // A piece after a phrase can open with the footer's page number or web address.
+    if (index > 0) for (let left = trimmed.match(FOOTER_LEFTOVER); left; left = trimmed.match(FOOTER_LEFTOVER)) trimmed = trimmed.slice(left[0].length);
     const price = trimmed.search(/\$\s*\.?\d/);
-    if (price < 0 || GENERIC_SCHEDULE_LANGUAGE.test(trimmed)) continue;
+    if (price < 0) return;
     const lead = splitCapsHeading(trimmed.slice(0, price));
-    const piece = lead.heading ? `${lead.name} ${trimmed.slice(price)}`.trim() : trimmed;
-    const read = readPlainSegment(piece);
+    // The capitals cut stands only when it reads at least as many fees as the whole piece: a name in
+    // capitals ("OVERDRAFT ITEM Fee", "DOMESTIC WIRE Outgoing") is not a section heading.
+    const whole = readPlainSegment(trimmed);
+    const cut = lead.heading ? readPlainSegment(`${lead.name} ${trimmed.slice(price)}`.trim()) : null;
+    const read = cut && cut.candidates.length >= whole.candidates.length ? cut : whole;
     result.candidates.push(...read.candidates);
     result.held.push(...read.held);
     if (read.tableHeld?.length) (result.tableHeld ??= []).push(...read.tableHeld);
     for (const [reason, count] of Object.entries(read.dropped ?? {})) countDrop(result, reason as DroppedLineReason, count);
-  }
+  });
   return result;
 }
 

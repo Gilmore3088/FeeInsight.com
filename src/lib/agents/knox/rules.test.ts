@@ -2017,7 +2017,7 @@ describe("v125 (#1094 item 3): a heading phrase skips only itself, not the fees 
 
   it("reads every fee of a Truth in Savings PDF flattened to one line", () => {
     const flat =
-      "PERSONAL SCHEDULE OF FEES AND CHARGES Truth in Savings Disclosure Overdraft Fee........ $30.00 per item " +
+      "SCHEDULE OF FEES AND CHARGES Truth in Savings Disclosure Overdraft Fee........ $30.00 per item " +
       "Returned Item (NSF) Fee........ $30.00 per item Stop Payment........ $25.00 Domestic Outgoing Wire Transfer........ $20.00 " +
       "Account Research (per hour)........ $25.00 Member FDIC Equal Housing Lender";
     const found = fees(flat);
@@ -2039,7 +2039,7 @@ describe("v125 (#1094 item 3): a heading phrase skips only itself, not the fees 
       ["Overdraft Fee", 35, "overdraft"],
       ["Stop Payment", 30, "stop_payment"],
     ]);
-    expect(reads("Personal Schedule of Fees and Charges | Overdraft Fee | $35.00").candidates.map((c) => [c.feeName, c.amount])).toEqual([["Overdraft Fee", 35]]);
+    expect(reads("Schedule of Fees and Charges | Overdraft Fee | $35.00").candidates.map((c) => [c.feeName, c.amount])).toEqual([["Overdraft Fee", 35]]);
     expect(reads("Overdraft Fee | $35.00 | Member FDIC").candidates.map((c) => [c.feeName, c.amount])).toEqual([["Overdraft Fee", 35]]);
   });
 
@@ -2053,6 +2053,28 @@ describe("v125 (#1094 item 3): a heading phrase skips only itself, not the fees 
       expect(reads(line)).toEqual({ candidates: [], held: [] });
     }
     expect(extractCandidatesFromText("Fee Schedule\nMember FDIC")).toEqual({ candidates: [], held: [] });
+  });
+
+  it("keeps a line skipped whole when its heading names an audience, so a business price never reads as everyone's", () => {
+    for (const line of [
+      "Business Schedule of Fees Overdraft Fee $35 Stop Payment $30",
+      "Personal Fee Schedule ATM Fee $2 Business Fee Schedule ATM Fee $3",
+      "Business Fee Schedule | Overdraft Fee | $35.00",
+      "COMMERCIAL SCHEDULE OF FEES Wire Transfer Outgoing $30",
+    ]) {
+      expect(reads(line)).toEqual({ candidates: [], held: [] });
+    }
+  });
+
+  it("drops a page footer's number or web address from the next fee's name", () => {
+    for (const line of ["Member FDIC Page 2 of 4 Overdraft Fee $35", "Member FDIC 3 Overdraft Fee $35", "Member FDIC www.examplebank.com Overdraft Fee $35"]) {
+      expect(reads(line).candidates.map((c) => [c.feeName, c.amount, c.canonicalHint])).toEqual([["Overdraft Fee", 35, "overdraft"]]);
+    }
+  });
+
+  it("keeps a fee name written in capitals instead of cutting it as a section heading", () => {
+    expect(reads("Fee Schedule OVERDRAFT ITEM Fee $35").candidates.map((c) => [c.amount, c.canonicalHint])).toEqual([[35, "overdraft"]]);
+    expect(reads("Fee Schedule DOMESTIC WIRE Outgoing $25").candidates.map((c) => [c.amount, c.canonicalHint])).toEqual([[25, "wire_domestic_outgoing"]]);
   });
 
   it("leaves an effective-date line that announces a future price skipped, as before", () => {

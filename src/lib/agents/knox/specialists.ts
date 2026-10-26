@@ -428,7 +428,8 @@ import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 // Payment $30", lost every fee on it. Each piece between phrases that holds a dollar price is read on
 // its own, with capitalised section headings before its first name cut, so the phrase never joins a
 // name; a piece with no price yields nothing. A segment that also says "effective" stays skipped whole,
-// since it can announce a price not yet charged (R11 on #1094). Only segments holding the phrase read differently. The stale-read floor
+// since it can announce a price not yet charged (R11 on #1094), and so does one whose phrase names an
+// audience ("Business Schedule of Fees"), so a business price never reads as everyone's. Only segments holding the phrase read differently. The stale-read floor
 // stays at v97. Name re-tidy stays at v27.
 export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 125 } as const;
 

@@ -1978,10 +1978,14 @@ a stop payment, and a $0 in words keep their read. Darwin re-checks live fees wi
 v125 (#1094 item 3): pass 1 skips only the schedule's heading phrase, not the line that holds it. A
 segment matching `GENERIC_SCHEDULE_LANGUAGE` ("Fee Schedule", "Schedule of Fees", "Truth in Savings",
 "Member FDIC") was dropped whole, so a PDF flattened to one line, or "Fee Schedule Overdraft Fee $35 Stop
-Payment $30", lost every fee on it. `readSegment` now cuts the segment at each phrase (with an audience
-word before it, "and Charges" or "Disclosure" after it, "Equal Housing Lender" after "Member FDIC") and
+Payment $30", lost every fee on it. `readSegment` now cuts the segment at each phrase (with "and Charges"
+or "Disclosure" after it, "Equal Housing Lender" after "Member FDIC") and
 reads each piece that holds a dollar price on its own; capitalised section headings before the piece's
-first name ("DEPOSIT SERVICES MISCELLANEOUS SERVICES Cashier's Checks") are cut with `splitCapsHeading`.
+first name ("DEPOSIT SERVICES MISCELLANEOUS SERVICES Cashier's Checks") are cut with `splitCapsHeading`
+only when the cut reads at least as many fees (a name in capitals, "OVERDRAFT ITEM Fee", is kept), and a
+footer's page number or web address is dropped from the start of the next piece. A phrase that names an
+audience ("Business Schedule of Fees") keeps the segment skipped whole: cutting it would cut the only word
+saying whose prices follow, and a business price would publish for everyone.
 A piece with no price is heading or boilerplate and yields nothing, so a heading-only line or a footer
 still reads nothing. A segment that also says "effective" ("Effective Date: ...", "will be $35 effective
 date January 1") stays skipped whole: a price not yet charged is R11 on #1094. Only segments holding the phrase read differently; the
