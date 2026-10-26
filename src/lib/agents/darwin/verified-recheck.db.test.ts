@@ -415,6 +415,39 @@ suite("Darwin recheck committed settlement (#2072)",()=>{
       expect(result.takenDown).toEqual([f.publishedId]);expect(result.dueSecondLooks).toBeUndefined();
     });
   });
+  // #1696 / #2681 review B2: a live fee only name rules v9 fail is Hamilton's second takedown batch.
+  async function asV9OnlyDiscount(tx:Tx,f:Fixture) {
+    const line="Stop Payment Discount Receive one $5.00 discount off the normal stop payment fee each month.";
+    const name="Stop Payment Discount Receive one";
+    await tx`UPDATE raw_fee_observations SET fee_name=${name},amount=5,source_url='https://recheck.example/fees',extraction_note=${`excerpt="${line}"`} WHERE fee_raw_id=${f.rawId}`;
+    await tx`UPDATE verified_fee_observations SET fee_name=${name},amount=5,canonical_fee_key='stop_payment',source_url='https://recheck.example/fees' WHERE fee_verified_id=${f.verifiedId}`;
+    await tx`UPDATE published_fee_records SET fee_name=${name},amount=5,canonical_fee_key='stop_payment',source_url='https://recheck.example/fees' WHERE fee_published_id=${f.publishedId}`;
+    await tx`UPDATE source_documents SET document_url='https://recheck.example/fees',content_hash=${hash(line)} WHERE id=${f.docId}`;
+    await tx`UPDATE agent_source_texts SET source_url='https://recheck.example/fees',normalized_text=${line},text_hash=${hash(line)},char_count=${line.length} WHERE id=${f.textId}`;
+  }
+  it("while the second-batch switch is off, a v9-only live fee is neither flagged nor taken down, on first or second look",async()=>{
+    await rollback("live",async(tx,f)=>{
+      await asV9OnlyDiscount(tx,f);
+      // Second look due (fixture flag, 13 hours old).
+      const due=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,...SETTLEMENT_ONLY});
+      expect(due.takenDown).toEqual([]);expect(due.secondBatchDeferred).toEqual([f.publishedId]);expect(await attemptCount(tx,f)).toBe(0);
+      expect((await tx`SELECT rolled_back_at FROM published_fee_records WHERE fee_published_id=${f.publishedId}`)[0].rolled_back_at).toBe(null);
+      expect((await tx`SELECT kind FROM pipeline_feedback WHERE dedupe_key=${secondLookDedupeKey(DARWIN_RECHECK_CHECK,f.publishedId!)}`)[0].kind).toBe("takedown_pending");
+      // First look: no flag is written.
+      await tx`DELETE FROM pipeline_feedback WHERE fee_published_id=${f.publishedId}`;
+      const first=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,...SETTLEMENT_ONLY});
+      expect(first.flagged).toBe(0);expect(first.secondBatchDeferred).toEqual([f.publishedId]);
+      expect((await tx`SELECT count(*)::int AS n FROM pipeline_feedback WHERE fee_published_id=${f.publishedId}`)[0].n).toBe(0);
+    });
+  });
+  it("with the second-batch switch on, the same v9-only live fee goes through the normal second look",async()=>{
+    await rollback("live",async(tx,f)=>{
+      await asV9OnlyDiscount(tx,f);
+      const result=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,secondBatchActs:true,...SETTLEMENT_ONLY});
+      expect(result.secondBatchDeferred).toEqual([]);expect(result.takenDown).toEqual([f.publishedId]);
+      expect((await tx`SELECT rolled_back_reason FROM published_fee_records WHERE fee_published_id=${f.publishedId}`)[0].rolled_back_reason).toBe("darwin_recheck:name_rule:discount_or_allowance");
+    });
+  });
   it("the existing explicit same-step option archives without manufacturing a second-look confirmation",async()=>{
     await rollback("live",async(tx,f)=>{
       await tx`DELETE FROM pipeline_feedback WHERE fee_published_id=${f.publishedId}`;
