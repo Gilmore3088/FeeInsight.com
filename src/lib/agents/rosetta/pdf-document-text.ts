@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { layoutPageResult, type PdfTextItem } from "./pdf-layout";
 import { compareReadings, streamPageText, type PdfReaderAgreement } from "./pdf-reader-agreement";
 import { textSha256, type StackedGeometryReceipt } from "./pdf-repair-survival";
-import { repairUnmappedGlyphs } from "./glyph-repair";
+import { droppedLigatureEvidence, repairUnmappedGlyphs, restoreDroppedLigatures } from "./glyph-repair";
 
 export interface PdfTextExtraction {
   text: string; totalPages: number; pages?: string[];
@@ -53,12 +53,15 @@ export async function extractPdfDocumentText(bytes: Uint8Array, options: {
           pages.push(items);
         }
         const layouts = pages.map(layoutPageResult);
-        // A glyph the PDF's own map leaves unknown is restored where unambiguous (#2598), in
-        // both readings, so the reader-agreement receipt compares like with like.
+        // A glyph the PDF's own map leaves unknown is restored where unambiguous (#2598), and a
+        // ligature its font drops altogether is restored in known fee words (#1513), in both
+        // readings, so the reader-agreement receipt compares like with like.
         const rawPages = layouts.map((page) => page.text);
         const rawDocument = rawPages.join("\n\n");
-        const pageTexts = rawPages.map((page) => repairUnmappedGlyphs(page, rawDocument).text);
-        const streamTexts = pages.map((items) => repairUnmappedGlyphs(streamPageText(items), rawDocument).text);
+        const evidence = droppedLigatureEvidence(rawDocument);
+        const repair = (page: string) => restoreDroppedLigatures(repairUnmappedGlyphs(page, rawDocument).text, evidence).text;
+        const pageTexts = rawPages.map(repair);
+        const streamTexts = pages.map((items) => repair(streamPageText(items)));
         const text = pageTexts.join("\n\n");
         const readerAgreement = { ...compareReadings(pageTexts, streamTexts), textHash: textSha256(text) };
         return { text, totalPages, pages: pageTexts, readerAgreement, stackedGeometry: {
