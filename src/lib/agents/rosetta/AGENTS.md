@@ -127,6 +127,15 @@ Rosetta owns source text normalization.
   reversal does not withdraw the error, which costs at most one read per version. Magellan's side already
   holds: a `DISCOVERY_METHOD_VERSION` bump re-searches every bank whose last search missed,
   and a wrong-document error re-searches its bank through the stale-link search (#2055).
+- Knox's untraced lines (#1102, `knox/untraced-read-error.ts`): a text whose held lines Knox's
+  rules failed to trace to one row under 3 or more rules versions (`knox_review:untraced`) is
+  reported as a possible reading error (check `knox.untraced_held`, kind `untraced_lines`, weight
+  0.5, always naming the text's hash). The read selection treats it exactly like an operator's
+  lost-text finding above: one read when the text's reader version is older than
+  `ROSETTA_READ_VERSION`, the stored text kept unless the new one lists at least as many fees,
+  open until the text changes. On Oct 26, 2,062 texts at 1,302 banks (3,288 lines) qualified; 56
+  of them, at 55 banks, were last read below the current reader version and are read on the next
+  pass, and the rest wait for the next reader bump.
 - Reader replay (#2069, `reader-replay.ts`; "Re-read all", James, 25 Oct; live, no switch):
   when a reader's version moves, every current copy (not superseded or a duplicate) whose
   completed text an older version of that reader wrote is read once more, however many fees it
