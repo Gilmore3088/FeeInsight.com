@@ -5,6 +5,9 @@ vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
 import {
   answerQualityFrom,
   bucketReaderMissWeeks,
+  bucketHeldExitWeeks,
+  heldExitsFromDetail,
+  KNOX_HELD_EXIT_WEEKS,
   readerMissSince,
   summarizeReaderRemedies,
   weekStartUtc,
@@ -461,5 +464,62 @@ describe("coverageGroupsSql reads the live catalog once", () => {
     expect(text.match(/published_fee_catalog/g)).toHaveLength(1);
     expect(text).toContain("LEFT JOIN live ON live.institution_id = i.id");
     if (weekAgo) expect(text).toContain("week_ago AS MATERIALIZED (");
+  });
+});
+
+// #1102 item 4: the scorecard shows Knox's held lines by reason and age, and how many leave the
+// pile each week, from the counts Knox's extract step already writes to the run ledger.
+describe("Knox's held pile on the scorecard (#1102)", () => {
+  const step = (detail: Record<string, unknown>) => ({
+    dry_run: false,
+    held_recheck: { dryRun: false, checked: 300, promoted: 12, setAside: 40 },
+    held_name_file: { dryRun: false, filed: 3 },
+    untraced_recheck: { dryRun: false, promoted: 2 },
+    held_rate_recheck: { dryRun: false, promoted: 1 },
+    range_band_set_aside: { dryRun: false, setAside: 5 },
+    promotion_recheck: { dryRun: false, withdrawn: 4 },
+    ...detail,
+  });
+
+  it("counts each pass's exits, and nothing from a dry run", () => {
+    expect(heldExitsFromDetail(step({}))).toEqual({ toDarwin: 18, heldRecheck: 12, nameFiled: 3, untraced: 2, rates: 1, setAside: 45, backOnHold: 4 });
+    // A pass that ran as a dry run moved nothing.
+    expect(heldExitsFromDetail(step({ held_name_file: { dryRun: true, filed: 99 } })).nameFiled).toBe(0);
+    // An older step without a pass counts zero for it.
+    expect(heldExitsFromDetail({ held_recheck: { promoted: 7 } })).toMatchObject({ toDarwin: 7, untraced: 0, setAside: 0 });
+  });
+
+  it("sums steps into UTC weeks, every week listed, and skips dry-run steps", () => {
+    const now = new Date("2026-10-26T18:00:00Z");
+    const weeks = bucketHeldExitWeeks([
+      { at: "2026-10-26T01:00:00Z", detail: step({}) },
+      { at: "2026-10-26T02:00:00Z", detail: step({}) },
+      { at: "2026-10-26T03:00:00Z", detail: step({ dry_run: true }) },
+      { at: "2026-10-19T00:00:00Z", detail: step({ held_recheck: { promoted: 100 } }) },
+      { at: "2026-01-01T00:00:00Z", detail: step({}) },
+    ], now);
+    expect(weeks).toHaveLength(KNOX_HELD_EXIT_WEEKS);
+    expect(weeks.at(-1)).toMatchObject({ weekStart: "2026-10-26", steps: 2, toDarwin: 36, setAside: 90, backOnHold: 8, partial: true });
+    expect(weeks.at(-2)).toMatchObject({ weekStart: "2026-10-19", steps: 1, heldRecheck: 100, toDarwin: 106, partial: false });
+    expect(weeks[0]).toMatchObject({ weekStart: "2026-09-07", steps: 0, toDarwin: 0 });
+  });
+
+  it("reads the pile by reason and age and the weekly exits from the ledger", async () => {
+    const { db, queries } = fakeDb([
+      [/knox_review:%/, [
+        { shape: "unclassified", count: 38844, set_aside: 26363, new_7d: 4457, age_7_14: 20000, age_14_30: 14387, age_over_30: 0 },
+        { shape: "varies", count: 1513, set_aside: 0, new_7d: 636, age_7_14: 877, age_14_30: 0, age_over_30: 0 },
+      ]],
+      [/'held_recheck'/, [{ created_at: new Date("2026-10-26T01:00:00Z"), detail: step({}) }]],
+    ]);
+    const goal = await readGoalScorecard(db, new Date("2026-10-26T18:00:00Z"));
+    expect(goal.knoxHeld).toMatchObject({ query: "goal.knox_held_by_reason_age", total: 40357, setAside: 26363 });
+    expect(goal.knoxHeld?.byReason[1]).toMatchObject({ shape: "varies", hasExit: false, ages: { under7: 636, days7to14: 877, days14to30: 0, over30: 0 } });
+    expect(goal.knoxHeld?.byReason[1].owner).toContain("no re-check reads them");
+    expect(goal.knoxHeldExits?.query).toBe("goal.knox_held_exits_weekly");
+    expect(goal.knoxHeldExits?.weeks.at(-1)).toMatchObject({ weekStart: "2026-10-26", steps: 1, toDarwin: 18 });
+    const ledger = queries.find((q) => /'held_recheck'/.test(q))!;
+    expect(ledger).toContain("s.step_key = 'extract'");
+    expect(ledger).toContain("e.event_type = 'step.finished'");
   });
 });
