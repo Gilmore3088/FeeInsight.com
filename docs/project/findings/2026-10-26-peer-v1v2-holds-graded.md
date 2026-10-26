@@ -51,3 +51,5 @@ stay held, and its comment records this grade. Darwin's lesson
 `darwin/issue-1694-grade-the-holds-you-re-decide` records the method. These rows should get a
 new decision from a newer Knox read of their document, not from v5 re-deciding an old read.
 Retiring them is a production-data change and needs James's yes.
+
+**Agent lesson:** darwin/issue-1694-grade-the-holds-you-re-decide

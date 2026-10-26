@@ -12,7 +12,7 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     stage: "verify",
     lesson: "Before a check's new version re-decides older holds, grade a sample of those very holds against each bank's stored text, spread by day and category, and replay today's rules on the sample to count the misreads that would be verified. A grade of one period's holds does not carry to holds made under an older version or from older reads: keep the older holds out of the re-decision until their own grade backs it, and let a newer read of their document decide them instead.",
     why: "Peer check v5 (#1691) stopped holding outliers outside six categories because, among the v3/v4 holds of Oct 15–16, those were nearly all real fees (103 real, 14 misread in v4). The 2,124 v1/v2 holds of Oct 5–10 were never graded. The Oct 26 grade of 60 of them found 34 real, 21 misread and 5 unsure; replaying today's rules, v5 would verify 27 of the 30 outside its categories, 6 of them misreads (an invalid-address fee as NSF, a fax as account research, a scanner's and a cash management service's \"Monthly Service\" as maintenance, a neighbour's price). So the v1/v2 versions stay out of DARWIN_PEER_GRADED_VERSIONS.",
-    evidence: { issues: [1694, 1691], prs: [], files: ["src/lib/agents/darwin/peer-checks.ts", "docs/project/findings/2026-10-26-peer-v1v2-holds-graded.md"] },
+    evidence: { issues: [1694, 1691], prs: [2679], files: ["src/lib/agents/darwin/peer-checks.ts", "docs/project/findings/2026-10-26-peer-v1v2-holds-graded.md"] },
     appliesTo: "all",
     since: "2026-10-26",
   },
