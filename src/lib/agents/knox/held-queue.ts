@@ -7,6 +7,7 @@ import {
   RANGE_BAND_SET_ASIDE_LIVE,
   UNTRACED_RECHECK_LIMIT,
 } from "./held-recheck";
+import { UNTRACED_READ_ERROR_AFTER_VERSIONS, UNTRACED_READ_ERROR_LIMIT } from "./untraced-read-error";
 
 type SqlTag = typeof sql;
 
@@ -99,8 +100,8 @@ const SHAPES: Record<string, ShapeInfo> = {
   },
   untraced: {
     label: "Not found in the source text",
-    owner: "Knox's untraced re-check; the lines it keeps failing are Rosetta's next (a possible reading error)",
-    wayOut: `Re-read ${UNTRACED_RECHECK_LIMIT} a step: promoted when today's rules trace the same name, amount and category.`,
+    owner: "Knox's untraced re-check; after 3 rules versions, Rosetta (a possible reading error)",
+    wayOut: `Re-read ${UNTRACED_RECHECK_LIMIT} a step: promoted when today's rules trace the same name, amount and category. A text whose lines stay untraced under ${UNTRACED_READ_ERROR_AFTER_VERSIONS} rules versions goes to Rosetta (${UNTRACED_READ_ERROR_LIMIT} texts a step), which reads the document again at its next reader version and keeps the new text only when it lists at least as many fees; Knox then reads the new text.`,
     hasExit: true,
   },
   zero: {

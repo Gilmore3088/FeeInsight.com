@@ -75,6 +75,7 @@ import { atomicTextWrite, captureNormalizedWitness, normalizedWitnessSchemaReady
 import { PDF_LAYOUT_VERSION } from "@/lib/agents/rosetta/pdf-layout";
 import { FEE_HOLD_CHECK } from "@/lib/fee-hold-rules";
 import { FEE_CORRECTION_CHECK } from "@/lib/fee-correction-rules";
+import { UNTRACED_READ_ERROR_CHECK } from "@/lib/agents/knox/untraced-read-error";
 import { extractPdfDocumentText as extractPdfText, type PdfTextExtraction } from "./pdf-document-text";
 import { losslessStackedRecovery, textSha256, type StackedGeometryReceipt } from "./pdf-repair-survival";
 import type { PdfReaderAgreement } from "./pdf-reader-agreement";
@@ -1377,8 +1378,11 @@ export function rosettaReadCandidatesQuery(
       // wrong document. A finding that names the text's hash stays open until the text changes, so
       // a re-read that writes the same text keeps it for the next bump; one without a hash is about
       // the text written before it, and any rewrite settles it. A correction names the lost text's
-      // document in its evidence, since its own document is the cited one.
-      params.push([FEE_HOLD_CHECK, FEE_CORRECTION_CHECK]);
+      // document in its evidence, since its own document is the cited one. Knox's report of a text
+      // whose held lines its rules failed to trace under 3+ rules versions (`knox.untraced_held`,
+      // #1102) is read the same way: the text and the fee disagree, so the text may be wrong. It
+      // always names the text's hash.
+      params.push([FEE_HOLD_CHECK, FEE_CORRECTION_CHECK, UNTRACED_READ_ERROR_CHECK]);
       const operatorChecksParam = `$${params.length}`;
       const readErrorOnText = (alias: string, text: string) => `EXISTS (
                 SELECT 1 FROM pipeline_feedback ${alias}

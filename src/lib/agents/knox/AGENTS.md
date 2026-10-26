@@ -1635,6 +1635,18 @@ After the extract itself, each extract step runs these passes in order (`run-sto
   amount and category; the rest get `knox_untraced_recheck:extract.rules:v<N>` and wait for the
   next version. Before this pass the dedupe index kept the held row in place of a later traced
   read (Arvest's "Overdraft (OD) - Paid Item" $17, raw 449097, 9 Oct). Nothing is deleted.
+- `reportUntracedToRosetta` (`untraced-read-error.ts`, #1102): untraced lines the re-check has
+  failed under 3 or more rules versions are the text's problem as much as Knox's: the text and the
+  fee disagree. For each document text with such lines (on its current `text_hash`, not
+  superseded, not sent to Darwin), up to 200 texts a step, most lines first, Knox writes one
+  `pipeline_feedback` row about the read: signal `wrong`, kind `untraced_lines`, check
+  `knox.untraced_held`, weight 0.5 (possible, not proof), evidence the text hash, line count, up to
+  20 raw ids and 5 examples. Rosetta's read step reads it like an operator's lost-text finding
+  (#2059): the document is read again at the next reader version and its new text replaces the old
+  only when it lists at least as many fees; Knox then extracts the new text. The row is keyed on
+  the text's hash, so each text is reported once, and a new text with lines still untraced gets its
+  own row. Writes only the learning store; no fee is held, released or re-filed. Dry runs count
+  only. On Oct 26: 2,062 texts at 1,302 banks (3,288 of the 3,769 untraced held lines).
 - `recheckSupersededRows`: up to 100 rows a re-read retired (`superseded_by_reread`) that Knox's paid
   reader produced (`knox_paid_extraction`), on a page's current copy and not verified, across all
   lanes. Each is read again from the document's newest completed text with today's free team. A row
@@ -1789,7 +1801,7 @@ more rules versions without moving them:
 | `range_no_category` | Knox's range-band pass (on since Oct 20) | bands set aside as not fees |
 | `range_band` | Knox's range-band pass | set aside, kept |
 | `percentage` | Knox's rate re-check | to Darwin as a rate fee |
-| `untraced` | Knox's untraced re-check; then Rosetta | traced by today's rules; a Rosetta re-read is the next slice |
+| `untraced` | Knox's untraced re-check; after 3 rules versions, Rosetta | traced by today's rules; else a Rosetta re-read at its next reader version (`untraced-read-error.ts`) |
 | `superseded` (any shape a newer copy or a re-read retired) | Knox's superseded re-check and re-file | back to Darwin when the current text prints the same fee |
 | `taken_down` | Hamilton's confirmed takedown | held on purpose |
 
@@ -2290,3 +2302,4 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v10 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |
+| `UNTRACED_READ_ERROR_EVIDENCE_VERSION` | `knox.untraced_held` read-error report | v1 | `knox/untraced-read-error.ts` |
