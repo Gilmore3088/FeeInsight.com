@@ -1,3 +1,4 @@
+import { abbreviatesInternationalWire } from "@/lib/fee-fold";
 import { sourceOwnedWireScope, reviewInternationalDirection, hasLiteralOutsideUsaWireCue } from "@/lib/custom-report/own-wire-scope";
 import { INTERNATIONAL_WIRE_ELIGIBILITY_FLAG } from "../knox/international-wire-eligibility";
 import { matchOriginalRawSource, type LockedSourceSnapshot } from "./locked-raw-source";
@@ -33,8 +34,9 @@ export function internationalVerificationDecision(raw: ActualRaw, finalCategory:
   const flags = flagValues(actual.outlier_flags);
   if (flags.includes(INTERNATIONAL_WIRE_ELIGIBILITY_FLAG)) return { kind: "deferred", reason: "private_eligibility_hold" };
   // This finite current-name cue routes uncertainty only; it never supplies a category.
+  // #1513: "Wire Trans. (Intern. Outgoing)" and "Int. Wire Transfer" name one too (`abbreviatesInternationalWire`).
   const namedInternationalWire = (/\b(?:international|foreign|intl|int['’]?l)\b/i.test(actual.fee_name)
-    && /\b(?:wires?|transfers?)\b/i.test(actual.fee_name)) || hasLiteralOutsideUsaWireCue(actual.fee_name);
+    && /\b(?:wires?|transfers?)\b/i.test(actual.fee_name)) || abbreviatesInternationalWire(actual.fee_name) || hasLiteralOutsideUsaWireCue(actual.fee_name);
   const affected = namedInternationalWire || finalCategory.startsWith("wire_intl_") || existingRawResolvedCategory?.startsWith("wire_intl_");
   if (context.kind !== "bound") return affected ? { kind: "deferred", reason: "source_unavailable" } : { kind: "not_applicable" };
   if (actual.amount == null || actual.amount === "" || !Number.isFinite(Number(actual.amount)))

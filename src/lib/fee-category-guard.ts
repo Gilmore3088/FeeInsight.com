@@ -22,7 +22,7 @@ import { boxSectionLateFee } from "@/lib/custom-report/box-section-late-fee";
 import { collectionSectionReturn } from "@/lib/custom-report/collection-section-return";
 import { namedForCheckingAccount } from "@/lib/checking-fee-name";
 import { paperStatementPriceOnLine } from "@/lib/paper-statement-price";
-import { ATM_ABROAD, COLLECTION_ITEM, DRAFT_PROTECTION_FEE, foldRetiredCategory, FOREIGN_DEPOSIT_RETURN, FOREIGN_ITEM_RETURN, INCOMING_WIRE, INTERNATIONAL_ATM, IRA_CLOSING, ITEM_COPY, RESEARCH_SPLIT_LIVE, SKIP_A_PAY, SUSTAINED_OVERDRAFT } from "@/lib/fee-fold";
+import { abbreviatesInternationalWire, ATM_ABROAD, COLLECTION_ITEM, DRAFT_PROTECTION_FEE, foldRetiredCategory, FOREIGN_DEPOSIT_RETURN, FOREIGN_ITEM_RETURN, INCOMING_WIRE, INTERNATIONAL_ATM, IRA_CLOSING, ITEM_COPY, RESEARCH_SPLIT_LIVE, SKIP_A_PAY, SUSTAINED_OVERDRAFT } from "@/lib/fee-fold";
 
 export type CategoryGuardCode = "name_contradicts" | "name_unsupported" | "rate_as_amount" | "schedule_contradicts" | "amount_implausible";
 
@@ -220,6 +220,23 @@ const NON_CUSTOMER_PAYEE_OR_BOTH =
 export function nonCustomerCashiersCheck(canonicalFeeKey: string, name: string, live: boolean = NON_CUSTOMER_CASHIERS_CHECK_LIVE): string | null {
   if (!live || canonicalFeeKey !== "cashiers_check" || NON_CUSTOMER_PAYEE_OR_BOTH.test(name)) return null;
   return name.match(NON_CUSTOMER_PRICE)?.[0] ?? null;
+}
+/**
+ * #1513: a wire filed as domestic whose name writes "international" short ("Wire Trans. (Intern.
+ * Outgoing)", "Int. Wire Transfer – Outgoing", "Internat'l Wire"; `abbreviatesInternationalWire`,
+ * the reading Knox v120 files them by) fails the domestic wire and re-files to the international
+ * wire of its direction. Held by `INTL_ABBREVIATION_REFILE_LIVE`: off, the rule reads nothing. The
+ * read-only dry run (Oct 26) found 2 live domestic wires it would re-file (inst 1405: 90381
+ * "Int. Wire Transfers – Incoming" $20 beside "Wire Transfers – Incoming" $15, and 90382 "Int. Wire
+ * Transfer – Outgoing" $40 beside "Wire Transfers – Outgoing" $20). Turning it on bumps
+ * `CATEGORY_GUARD_VERSION`, so Darwin's re-check judges every live wire again.
+ */
+export const INTL_ABBREVIATION_REFILE_LIVE = false;
+/** The international wire a domestic wire's abbreviated name re-files to, while the rule is live; null otherwise. Pure. */
+export function intlAbbreviationRefile(canonicalFeeKey: string, name: string, live: boolean = INTL_ABBREVIATION_REFILE_LIVE): string | null {
+  if (!live) return null;
+  const to = canonicalFeeKey === "wire_domestic_outgoing" ? "wire_intl_outgoing" : canonicalFeeKey === "wire_domestic_incoming" ? "wire_intl_incoming" : null;
+  return to && abbreviatesInternationalWire(name) ? to : null;
 }
 /** v74: investigating or tracing a payment ("Online Bill Payment Investigation" $30, 154324) is research, not bill pay. */
 const PAYMENT_INVESTIGATION = /\binvestigat|\bresearch\b|\btrac(?:e|er|ing)\b/i;
@@ -1327,14 +1344,19 @@ export function refileCategory(
   feeName: string | null | undefined,
   /** Schedule text just before the fee's line (`foldContext`), when the caller has it. */
   context?: string | null,
+  /** #1513: the switch overrides (`CategoryGuardOptions`), for the dry-run count and tests. */
+  options?: Pick<CategoryGuardOptions, "intlAbbreviation">,
 ): string | null {
   if (!canonicalFeeKey) return null;
-  return foldedInto(refiledCategory(canonicalFeeKey, feeName), feeName, context);
+  return foldedInto(refiledCategory(canonicalFeeKey, feeName, options), feeName, context);
 }
 
-function refiledCategory(canonicalFeeKey: string, feeName: string | null | undefined): string {
-  if (checkFeeCategory(canonicalFeeKey, feeName).ok) return canonicalFeeKey;
+function refiledCategory(canonicalFeeKey: string, feeName: string | null | undefined, options?: Pick<CategoryGuardOptions, "intlAbbreviation">): string {
+  if (checkFeeCategory(canonicalFeeKey, feeName, undefined, options).ok) return canonicalFeeKey;
   const name = plainQuotes(feeName ?? "");
+  // #1513: the switched re-file goes to the international wire, when that category's guard accepts the name.
+  const switched = intlAbbreviationRefile(canonicalFeeKey, name, options?.intlAbbreviation ?? INTL_ABBREVIATION_REFILE_LIVE);
+  if (switched && checkFeeCategory(switched, name).ok) return switched;
   const rule = REFILE_RULES.find(
     (candidate) =>
       candidate.from === canonicalFeeKey &&
@@ -1431,6 +1453,18 @@ function capOnlyInNotes(rule: CategoryRule, name: string, context: CategoryGuard
   return words.length > 0 && words.every((word) => capped.cap.test(word));
 }
 
+/**
+ * Overrides for one reading: `cardProducts: false` reads the fee without the v70 card-product rule
+ * (`cardProductMisfile`); the others override their switches (the dry-run count and tests), and
+ * `intlAbbreviation` overrides `INTL_ABBREVIATION_REFILE_LIVE` (#1513).
+ */
+export interface CategoryGuardOptions {
+  cardProducts?: boolean;
+  borrowedDirection?: boolean;
+  nonCustomerCashiersCheck?: boolean;
+  intlAbbreviation?: boolean;
+}
+
 export function checkFeeCategory(
   canonicalFeeKey: string | null | undefined,
   feeName: string | null | undefined,
@@ -1439,7 +1473,7 @@ export function checkFeeCategory(
    * `cardProducts: false` reads the fee without the v70 card-product rule (`cardProductMisfile`);
    * `borrowedDirection` overrides `BORROWED_DIRECTION_LIVE` (the dry-run count and tests).
    */
-  options?: { cardProducts?: boolean; borrowedDirection?: boolean; nonCustomerCashiersCheck?: boolean },
+  options?: CategoryGuardOptions,
 ): CategoryGuardVerdict {
   const rule = canonicalFeeKey ? CATEGORY_GUARD_RULES[canonicalFeeKey] : undefined;
   if (!canonicalFeeKey) return { ok: true };
@@ -1483,6 +1517,11 @@ export function checkFeeCategory(
   const outsider = nonCustomerCashiersCheck(canonicalFeeKey, name, options?.nonCustomerCashiersCheck ?? NON_CUSTOMER_CASHIERS_CHECK_LIVE);
   if (outsider) {
     return { ok: false, code: "name_contradicts", reason: `"${name}" is the price non-customers pay ("${outsider}"), not the ${canonicalFeeKey} fee` };
+  }
+  // #1513: a wire whose name abbreviates international is the international wire (behind its switch).
+  const abbreviated = intlAbbreviationRefile(canonicalFeeKey, name, options?.intlAbbreviation ?? INTL_ABBREVIATION_REFILE_LIVE);
+  if (abbreviated) {
+    return { ok: false, code: "name_contradicts", reason: `"${name}" abbreviates international on a wire, so it is the ${abbreviated} fee, not ${canonicalFeeKey}` };
   }
   const cardProduct = options?.cardProducts === false ? null : cardProductMisfile(canonicalFeeKey, name);
   if (cardProduct) {

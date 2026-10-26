@@ -5,7 +5,7 @@ import type { AccountLineup } from "@/lib/agents/knox/lineup";
 import type { AncillaryProduct } from "@/lib/agents/knox/ancillary-product";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { CHECKING_ACCOUNT_FEE_NAME, checkingNameCore, namedForCheckingAccount, NON_MONTHLY_PERIOD } from "@/lib/checking-fee-name";
-import { ATM_ADJUSTMENT, CHECKBOOK_RECONCILIATION, CROSS_BORDER_BUNDLE, DRAFT_PROTECTION_FEE, FAX_SERVICE, PER_PAGE_COPY, researchSplitTarget } from "@/lib/fee-fold";
+import { abbreviatesInternationalWire, ATM_ADJUSTMENT, CHECKBOOK_RECONCILIATION, CROSS_BORDER_BUNDLE, DRAFT_PROTECTION_FEE, FAX_SERVICE, INTL_ABBREVIATION, PER_PAGE_COPY, researchSplitTarget } from "@/lib/fee-fold";
 import { joinWrappedLeaderNames, parenBalance, stripPriceFootnoteMarks, withDroppedDecimalPoints } from "@/lib/custom-report/source-check";
 import { dropsCondition, FEE_OF_SENTENCE } from "@/lib/agents/knox/cutoff-shape";
 import { paperStatementPriceOnLine } from "@/lib/paper-statement-price";
@@ -500,7 +500,7 @@ export const FEE_PATTERNS: FeePattern[] = [
   },
   {
     key: "wire_intl_incoming",
-    pattern: /\b(international|foreign).{0,40}\b(incoming|receive|received).{0,40}\bwires?\b|\b(incoming|receive|received).{0,40}\b(international|foreign).{0,40}\bwires?\b|\bwires?\b.{0,40}\b(international|foreign|intl)\b.{0,20}\b(incoming|in|received)\b|\bwires?\b.{0,30}\b(incoming|in)\b.{0,20}\b(international|foreign|intl)\b|\b(incoming|receive|received)\b.{0,10}\bwires?\b.{0,30}\b(international|foreign|intl)\b/i,
+    pattern: /\b(international|foreign).{0,40}\b(incoming|receive|received).{0,40}\bwires?\b|\b(incoming|receive|received).{0,40}\b(international|foreign).{0,40}\bwires?\b|\bwires?\b.{0,40}\b(international|foreign|intl)\b.{0,20}\b(incoming|in|received)\b|\bwires?\b.{0,30}\b(incoming|in)\b.{0,20}\b(international|foreign|intl)\b|\b(incoming|receive|received)\b.{0,10}\bwires?\b.{0,30}\b(international|foreign|intl)\b|\b(international|foreign|intl)\b.{0,10}\bwires?\b.{0,30}\b(incoming|inbound|received)\b/i,
   },
   {
     key: "wire_domestic_outgoing",
@@ -1313,7 +1313,11 @@ export function classifyPatternKey(value: string): string | null {
     // v16: "Int'l Wire Fee Out" and "Outgoing Wire Out of Country" are international
     // wires; one price for "domestic/int'l" stays domestic.
     .replace(/\bint'l\b\.?|\b(?:out of|outside(?: of)?)\s+(?:the\s+)?country\b/gi, (match, offset, whole: string) =>
-      /\bdomestic\b/i.test(whole) ? match : "international");
+      /\bdomestic\b/i.test(whole) ? match : "international")
+    // v120 (#1513): a wire's "Intern.", "Int." or "Internat'l" is international too ("Wire Trans.
+    // (Intern. Outgoing)"), unless the name also says domestic ("Dom.").
+    .replace(new RegExp(INTL_ABBREVIATION.source, "gi"), (match, offset, whole: string) =>
+      abbreviatesInternationalWire(whole) ? "international" : match);
   let key = FEE_PATTERNS.find((entry) => entry.pattern.test(text))?.key ??
     (heldNameRulesOn ? HELD_NAME_PATTERNS.find((entry) => entry.pattern.test(text))?.key : null) ??
     V101_HELD_VOCABULARY.find((entry) => entry.pattern.test(text))?.key ??
@@ -1944,6 +1948,43 @@ export function pricedNounPhrase(words: string, amount: number, readHint: string
   return { name: FAMILY_QUALIFIER.test(before) || dropsCondition(cell, name, hint) ? null : name, hint };
 }
 
+/** v120: the lead-in a sentence prices its titled fee with ("..., there will be a", "you will be charged an"). */
+const TITLED_PRICE_LEAD_IN =
+  /[,;:]?\s*(?:(?:there|which)\s+(?:will|may|would)\s+be|there\s+is|(?:you|we|it|members?|customers?)\s+(?:will|may|would)\s+(?:be\s+)?(?:charged?|assessed?|incur|imposed?|pay)|(?:will|may)\s+(?:be\s+)?(?:charged|assessed|incur|imposed?))?\s+(?:a|an)\s*$/i;
+
+/**
+ * v120 (#1513): "For ATM and Debit Card transactions ONLY, when funds are available in your
+ * savings, there will be a $1 Overdraft Transfer Fee." (inst 6643, live fee 128668) prices the
+ * fee its title after the price names, the overdraft transfer. The words before it ("ATM and Debit
+ * Card transactions") filed it as a non-network ATM fee. When the price's own cell ends in "a" or
+ * "an" and a capitalized fee title follows the price (`TITLE_AFTER_PRICE`, the v33 shape), and the
+ * title files under another category than the words before, the title's category wins, as
+ * `titledAfterPrice` already files such a line when the words before name nothing. The name is the
+ * title, with the words before in brackets when cutting them would drop a condition
+ * (`dropsCondition`). Kept as read: a generic title ("a $12.00 Monthly Fee") or one that files as
+ * monthly maintenance ("... falls below $50.00 in the cycle period, a $5.00 Base Service Charge" is
+ * the minimum balance fee, live 88206), words before that
+ * name a region, direction, product or audience (`FAMILY_QUALIFIER`: "For international wires,
+ * there is a $45 Wire Transfer Fee" stays international), a title no rule files, and a name the
+ * target's checks refuse. Pure.
+ */
+export function titledPriceRead(words: string, after: string, amount: number, readHint: string): { name: string; hint: string } | null {
+  // The price's own cell, from the start of its sentence ("... $2.00 per day. For ATM ...").
+  const cell = ((words.split(CELL_SEPARATOR).at(-1) ?? "").split(/(?<=[.!?])\s+(?=[A-Z])/).at(-1) ?? "").replace(/\s+/g, " ").trim();
+  const lead = cell.match(TITLED_PRICE_LEAD_IN);
+  const title = after.match(TITLE_AFTER_PRICE)?.[1]?.trim();
+  if (!lead || !title || GENERIC_PRICED_PHRASE.test(title)) return null;
+  const before = cell.slice(0, lead.index).trim();
+  if (FAMILY_QUALIFIER.test(before)) return null;
+  const hint = classifyFeeText(title);
+  // A service charge title ("a $5.00 Base Service Charge") says what kind of charge, not what for:
+  // "If minimum average balance falls below $50.00 ..., a $5.00 Base Service Charge" is the balance fee.
+  if (!hint || hint === readHint || hint === "monthly_maintenance") return null;
+  const name = before && dropsCondition(cell, title, hint) ? `${title} (${before})` : title;
+  if (name.length > MAX_NAME_CHARS || !usableName(name) || !passesDarwinChecks(hint, name, amount)) return null;
+  return { name, hint };
+}
+
 /** "You can only be assessed one overdraft fee per day". */
 const ONE_PER_DAY = /\b(?:only|no more than|maximum of|limit of|up to)\s+(?:be\s+(?:assessed|charged)\s+)?one\b[^.;|]{0,30}?\bper\s+(?:business\s+)?day\b/i;
 
@@ -2432,6 +2473,12 @@ function readSegment(segment: string): ExtractionRulesResult {
     feeName = priced.name ?? feeName;
     hint = priced.hint;
   }
+  // v120 (#1513): "... in your savings, there will be a $1 Overdraft Transfer Fee." is the overdraft transfer.
+  const titled = hint && !priced ? titledPriceRead(ownWords(0, feeAmounts[0]), segment.slice(feeAmounts[0].end), feeAmounts[0].value, hint) : null;
+  if (titled) {
+    feeName = titled.name;
+    hint = titled.hint;
+  }
 
   // v34: "We've lowered Overdraft Paid Item fees from $38 to $30" (Pinnacle): a change the
   // bank has already made, so the later figure is today's price, not a range's top. A
@@ -2515,7 +2562,10 @@ function readSegment(segment: string): ExtractionRulesResult {
     // the lowercase words finish the earlier price's terms; the title that ends them is the name.
     const tail = between && /^[^A-Z]/.test(between) ? titleTail(between) : null;
     const chunk = tail && classifyFeeText(tail) ? tail : between;
-    const chunkHint = chunk ? classifyFeeText(chunk) : null;
+    const chunkRead = chunk ? classifyFeeText(chunk) : null;
+    // v120 (#1513): a later price's titled fee ("... per day. For ATM ..., there will be a $1 Overdraft Transfer Fee.").
+    const titledLater = index > 0 && chunkRead ? titledPriceRead(ownWords(ownStart, amount), segment.slice(amount.end), amount.value, chunkRead) : null;
+    const chunkHint = titledLater?.hint ?? chunkRead;
     if (index > 0 && (!chunk || !usableName(chunk) || !chunkHint)) return;
     // v22: "... you will be assessed a fee of $25.00 on the 7th day. This fee is in addition to
     // any Overdraft Fees assessed. | $25.00": the row's price cell repeats the price in its own cell.
@@ -2523,7 +2573,7 @@ function readSegment(segment: string): ExtractionRulesResult {
     // #1196: not when the earlier price ends on its own unit ("$25.00/hr Wire message | $25.00").
     if (index > 0 && !unitAfterPrevious && cells && amount.value === feeAmounts[index - 1].value && amount.start > priceCellAt &&
       PRICE_ONLY_CELL.test(cells.at(-1) ?? "") && segment.lastIndexOf(CELL_SEPARATOR, priceCellAt - 1) < feeAmounts[index - 1].start) return;
-    const candidateName = index === 0 ? feeName : (chunk as string);
+    const candidateName = index === 0 ? feeName : titledLater?.name ?? (chunk as string);
     const canonicalHint = index === 0 ? hint : (chunkHint as string);
     if (!usableName(candidateName) || amount.value <= 0 || amount.value > MAX_REASONABLE_FEE_AMOUNT) return;
     if (segment.slice(amount.end, amount.end + 3).includes("%")) return;

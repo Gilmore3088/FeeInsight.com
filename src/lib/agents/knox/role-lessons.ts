@@ -617,6 +617,16 @@ export const KNOX_LESSONS: AgentLesson[] = [
     since: "2026-10-25",
   },
   {
+    id: "issue-1513-abbreviations-and-titled-prices",
+    agent: "knox",
+    stage: "extract",
+    lesson: "Read a fee's region the way banks write it short: on a wire's name, \"Intern.\", \"Int.\" right before \"Wire\", \"Internat'l\" and \"INTL\" mean international, as \"Int'l\" does, so \"Wire Trans. (Intern. Outgoing)\" and \"Int. Wire Transfer – Outgoing\" are international wires; a name that also says domestic (\"Dom.\") prices both and stays domestic. When a sentence prices a fee whose title follows the price (\"..., there will be a $1 Overdraft Transfer Fee.\"), file it by that title, not by the words before it (\"For ATM and Debit Card transactions\"), unless the title is generic (\"Monthly Fee\", \"Service Charge\") or the words before name a region, direction, product or audience; keep the words before in brackets when they carry a condition.",
+    why: "Banner FCU's \"Wire Trans. (Intern. Outgoing)\" $35 (beside \"Dom.\" $18) and inst 1405's \"Int. Wire Transfer – Outgoing\" $40 (beside a plain $20 outgoing wire) went live as domestic wires, and Local 804's $1 \"Overdraft Transfer Fee\" went live as a non-network ATM fee because the sentence before its price mentioned ATM transactions (#1513). The first was re-filed by hand; the reads stayed wrong until the rules read the abbreviation and the title.",
+    evidence: { issues: [1513], prs: [2677], files: ["src/lib/agents/knox/rules.ts", "src/lib/fee-fold.ts", "src/lib/custom-report/own-wire-scope.ts", "src/lib/fee-category-guard.ts"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
+  {
     id: "issue-1905-network-table-columns",
     agent: "knox",
     stage: "extract",
