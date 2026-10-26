@@ -8,6 +8,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const DEMING_LESSONS: AgentLesson[] = [
   {
+    id: "issue-1105-check-the-stored-shape",
+    agent: "deming",
+    stage: "playbook check",
+    lesson: "Write a check against the shape production stores, and seed its test from a production row: a JSON list of { url, reason, at } objects is searched by its url field, never as a list of bare strings. A check that reports 0 every day is suspect until a seeded positive case shows it can fire.",
+    why: "The playbook check tested the rejected list with `rejected ? source`, which matches only bare strings, and its test seeded bare strings, so it reported 0 current sources on their own rejected list every day while 26 profiles had one (Oct 26).",
+    evidence: { issues: [1105], prs: [2740], files: ["src/lib/agents/deming/playbook-contradictions.ts", "src/lib/agents/deming/playbook-contradictions.db.test.ts"] },
+    appliesTo: ["deming-playbook-check"],
+    since: "2026-10-26",
+  },
+  {
     id: "pr-2119-bound-not-point",
     agent: "deming",
     stage: "accuracy audit",

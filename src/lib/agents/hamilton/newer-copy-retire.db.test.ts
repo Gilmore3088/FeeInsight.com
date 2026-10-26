@@ -37,7 +37,7 @@ describe.skipIf(!connection)("Newer-copy retirement in isolated PostgreSQL (#211
     await db`CREATE TEMP TABLE agent_run_events (agent_run_id bigint, event_type text, status text, message text, detail jsonb)`;
     await db`CREATE TEMP TABLE institution_source_profiles (institution_id bigint, format text,
       best_strategy jsonb, strategy_stats jsonb, do_not_retry jsonb, expected_fee_count int,
-      cost_to_date_microusd bigint, last_learned_at timestamptz)`;
+      cost_to_date_microusd bigint, last_learned_at timestamptz, layout_fingerprint text)`;
   });
   afterAll(async () => { if (db) await db.end(); });
   beforeEach(async () => {
