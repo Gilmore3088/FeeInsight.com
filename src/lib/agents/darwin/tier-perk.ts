@@ -71,10 +71,13 @@ export function isTierSchedule(url: string | null | undefined, text: string | nu
 /**
  * A clause where the bank says it charges no such fee at all: "The Bank does not charge NSF fees",
  * "We do not charge overdraft fees". Not one naming whom it spares ("for Premier customers"), which
- * is the tier's perk again.
+ * is the tier's perk again, nor one with a figure or a condition ("on items of $5 or less", "for the
+ * first two", "if you keep $500"), which is a waiver, not the bank's price (review of #2744).
  */
 const BANK_NO_CHARGE = /\b(?:the bank|we)\s+(?:does|do)\s+not\s+(?:charge|assess|impose)\s+([^.\n]{1,80})/gi;
 const NAMES_WHOM = new RegExp(`\\b(?:${TIER_WORDS}|customers?|clients?|members?|account ?holders?)\\b`, "i");
+/** A clause with a figure or a condition ("on items of $5 or less", "the first two", "if you keep") is not "none at all". */
+const CONDITIONAL_CLAUSE = /[$\d]|\b(?:if|unless|when|while|until|after|thereafter|first|on items?|or less|or more|up to|below|above|under|over|except|provided|waived)\b/i;
 const NAME_FILLER = new Set(["fee", "fees", "the", "for", "each", "per", "item", "items", "and", "charge", "charges", "service"]);
 
 function nameWords(feeName: string): string[] {
@@ -87,8 +90,9 @@ export function bankChargesNone(text: string | null | undefined, feeName: string
   if (!text || words.length === 0) return false;
   for (const match of text.matchAll(BANK_NO_CHARGE)) {
     const clause = match[1].toLowerCase();
-    if (NAMES_WHOM.test(clause)) continue;
-    if (words.some((word) => new RegExp(`\\b${word}\\b`).test(clause))) return true;
+    if (NAMES_WHOM.test(clause) || CONDITIONAL_CLAUSE.test(clause)) continue;
+    // A plural on either side still names the fee: "payment" and "payments", "atm" and "ATMs".
+    if (words.some((word) => new RegExp(`\\b${word.replace(/s$/, "")}s?\\b`).test(clause))) return true;
   }
   return false;
 }

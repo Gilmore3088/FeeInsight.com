@@ -106,6 +106,11 @@ describe("a $0 that is one account tier's perk (#1397)", () => {
     // The tier's other $0s are still its perks.
     expect(tierPerkZero(0, "Stop Payment", premier, text, "stop_payment")).toBe(true);
     // A clause that names whom it spares is the tier's perk again.
+    expect(bankChargesNone("The Bank does not charge an NSF fee on items of $5 or less.", "NSF Fee")).toBe(false);
+    expect(bankChargesNone("We do not charge for the first two stop payments each year; thereafter $30.", "Stop Payment")).toBe(false);
+    expect(bankChargesNone("We do not charge a monthly service fee if you keep $500.", "Monthly Service Fee")).toBe(false);
+    expect(bankChargesNone("The Bank does not charge stop payments fees.", "Stop Payment")).toBe(true);
+    expect(bankChargesNone("We do not charge fees at other banks' ATMs.", "Non-network ATM")).toBe(true);
     expect(bankChargesNone("We do not charge stop payment fees for Premier clients.", "Stop Payment")).toBe(false);
     expect(bankChargesNone("We do not charge overdraft fees to members under 18.", "Overdraft Fee")).toBe(false);
     // A fee name that shares no word with the clause is not covered by it.
