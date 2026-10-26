@@ -592,7 +592,7 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     stage: "publish",
     lesson: "A publish step checks only what it publishes (its own rows and its own state); a sweep over every live fee runs on its own clock, at most hourly, in its own step, where each sweep is its own savepoint so one failure is rolled back and recorded alone while the rest run. A sweep that later sweeps rely on (the taxonomy fold, the change pairing) skips its dependents when it fails, rather than letting them judge rows it did not prepare.",
     why: "Every state lane's publish ran 40 sweeps over the whole live catalog before and after its own rows: in the 7 days to Oct 26, 432 lane publishes averaged 203 s (p90 256 s), 153 s of it sweeps before the rows and 41 s after, and 13 more ran past the tick and were marked failed; the rows themselves took 8 s.",
-    evidence: { issues: [1070], prs: [], files: ["docs/project/findings/2026-10-26-publish-step-swept-whole-catalog.md", "src/lib/agents/hamilton/publish-sweeps.ts", "src/lib/agents/hamilton/publish-sweeps-schedule.ts", "src/lib/agents/hamilton/publish-sweeps-isolation.db.test.ts"] },
+    evidence: { issues: [1070], prs: [2727], files: ["docs/project/findings/2026-10-26-publish-step-swept-whole-catalog.md", "src/lib/agents/hamilton/publish-sweeps.ts", "src/lib/agents/hamilton/publish-sweeps-schedule.ts", "src/lib/agents/hamilton/publish-sweeps-isolation.db.test.ts"] },
     appliesTo: "all",
     since: "2026-10-26",
   },
