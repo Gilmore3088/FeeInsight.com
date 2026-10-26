@@ -702,7 +702,7 @@ export const KNOX_LESSONS: AgentLesson[] = [
     stage: "extract",
     lesson: "Read the section a row is printed in before filing it by its words. A general fee schedule can print a loan's fees in its own section (\"Equity Loan\", \"Consumer Loan Fees\", \"LOAN FEES\", \"HELOC - Home Equity Line of Credit\") right after the deposit accounts' rows, and a row there that sounds like an account fee (\"Home Equity Line Check returned (due to non-sufficient funds)\", \"Tax Service Charge\", \"Returned Item\") is the loan's: file it as other lending, never as NSF, overdraft or monthly maintenance. Only a short heading that names a loan and no deposit, card or business product opens such a section (\"Checking Line of Credit Fees\" and \"Other Account/Loan Fees\" do not), and a row that names a deposit account or service keeps its read.",
     why: "Navy Federal's fees page (doc 39026, read Oct 21) put its home equity line's returned check ($29) live as the account's NSF fee and its tax service charge ($25) live as its monthly maintenance fee (154634, 154635), beside the same fees read from the page's earlier copy as other lending (122342, 122343). The name alone cannot tell them apart. On Oct 26, 8 live fees at 7 institutions had the shape.",
-    evidence: { issues: [1905], prs: [], files: ["src/lib/custom-report/loan-section-fee.ts", "src/lib/agents/knox/rules.ts", "src/lib/agents/knox/specialists.ts", "src/lib/agents/knox/loan-section-fee.test.ts"] },
+    evidence: { issues: [1905], prs: [2703], files: ["src/lib/custom-report/loan-section-fee.ts", "src/lib/agents/knox/rules.ts", "src/lib/agents/knox/specialists.ts", "src/lib/agents/knox/loan-section-fee.test.ts"] },
     appliesTo: "all",
     since: "2026-10-26",
   },
