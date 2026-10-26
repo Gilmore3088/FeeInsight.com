@@ -213,10 +213,11 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-343 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+344 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
-### Extraction and fee reading (55)
+### Extraction and fee reading (56)
 
+- 2026-10-26 — An empty table cell holds a column: place every cell on the table's grid before writing the row, and when an empty cell would shift a value under the column to its left, write that column's header name after the value; Capital City's IRA closing fee went live as a CD early closure (#1912). — [finding](findings/2026-10-26-html-table-empty-cells.md) — Agent lesson: rosetta/issue-1912-empty-cells-keep-their-column; Guard: `src/lib/agents/rosetta/html-table-columns.test.ts`
 - 2026-10-26 — When two prices are glued into one cell, the line is two columns flattened and neither price belongs to either name: read each fee from a line that prints it alone; and a rejected wire is a wire correction, not a wire price (#1912). — [finding](findings/2026-10-26-glued-price-pair.md) — Agent lesson: knox/issue-1912-glued-price-pair, darwin/issue-1912-rejected-wire-is-a-correction; Guard: `src/lib/custom-report/glued-price-pair.test.ts`
 - 2026-10-26 — A note that a fee is free for some is a waiver, not "no fee": read the price everyone else pays ("Money Orders (Free with Platinum Checking) | $5.00"), and on a two-column PDF give a name with no price beside it the price under its own note (#1918). — [finding](findings/2026-10-26-free-note-drops-priced-row.md) — Agent lesson: knox/issue-1918-free-note-is-a-waiver; Guard: `src/lib/agents/knox/free-note-prices.test.ts`
 - 2026-10-26 — A fee with no account counts as the bank's checking price: read the account its own sentence names ("The M&T Preferred Money Market account has a $20 monthly maintenance charge."), and keep a savings or money market account's own monthly or minimum balance fee out of the bank's checking value (#1912). — [finding](findings/2026-10-26-savings-maintenance-sets-checking-value.md) — Agent lessons: knox/issue-1912-account-named-in-fee-sentence, knox/issue-1912-own-line-account-first; Guard: `src/lib/agents/knox/account-subject.test.ts`, `src/lib/account-kind.test.ts`, `src/lib/data-store/fee-stats.test.ts`
@@ -602,15 +603,15 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (301 in all).
+counts as of this index (303 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
 | atlas | 8 | [`src/lib/agents/atlas/role-lessons.ts`](../../src/lib/agents/atlas/role-lessons.ts) |
 | magellan | 25 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
 | hoovie | 12 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
-| rosetta | 12 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
-| knox | 81 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
+| rosetta | 13 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
+| knox | 82 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
 | darwin | 46 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 40 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
 | hamilton | 60 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |

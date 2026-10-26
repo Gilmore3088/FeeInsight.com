@@ -146,6 +146,120 @@ function inlineText(element: DomElement): string {
   return collapse(inner.toString());
 }
 
+/** HTML caps colspan at 1000 and rowspan at 65534; a fee table never needs more than this. */
+const MAX_SPAN = 50;
+
+function spanOf(cell: DomElement, attribute: "colspan" | "rowspan"): number {
+  const value = Number.parseInt(cell.attribs?.[attribute] ?? "", 10);
+  return Number.isFinite(value) && value >= 1 ? Math.min(value, MAX_SPAN) : 1;
+}
+
+/** One table row placed on the table's column grid (#1912). */
+interface GridRow {
+  row: DomElement;
+  rowCells: DomElement[];
+  /** Non-empty cells in document order, as the text has always written them. */
+  cells: string[];
+  /** Grid column of each entry of `cells`. */
+  cellColumns: number[];
+  /** Each grid column's own text: "" for an empty cell, a column a span covers, or no cell. */
+  columns: string[];
+  /** Per entry of `cells`: an empty cell of the row's own sits before it. */
+  displaced: boolean[];
+  /** Grid column each of `rowCells` starts at. */
+  starts: number[];
+}
+
+/**
+ * Places each row's cells on the table's column grid: a `colspan` cell covers its columns, a
+ * `rowspan` cell holds its column in the rows below, and an empty cell keeps its column (#1912).
+ * Dropping empty cells shifted Capital City's "$50 fee to close prior to maturity" from the IRA
+ * column into the CD column. Pure.
+ */
+function gridRows(rows: DomElement[]): GridRow[] {
+  const heldBelow: number[] = [];
+  const result: GridRow[] = [];
+  for (const row of rows) {
+    const rowCells = cellsOf(row);
+    const columns: string[] = [];
+    const cells: string[] = [];
+    const cellColumns: number[] = [];
+    const displaced: boolean[] = [];
+    const starts: number[] = [];
+    const taken = (column: number) => (heldBelow[column] ?? 0) > 0;
+    let column = 0;
+    let emptyBefore = false;
+    for (const cell of rowCells) {
+      while (taken(column)) columns[column++] = "";
+      starts.push(column);
+      const text = inlineText(cell);
+      const colspan = spanOf(cell, "colspan");
+      const rowspan = spanOf(cell, "rowspan");
+      for (let offset = 0; offset < colspan; offset += 1) {
+        columns[column + offset] = offset === 0 ? text : "";
+        if (rowspan > 1) heldBelow[column + offset] = Math.max(heldBelow[column + offset] ?? 0, rowspan);
+      }
+      if (text) {
+        cells.push(text);
+        cellColumns.push(column);
+        displaced.push(emptyBefore);
+      } else {
+        emptyBefore = true;
+      }
+      column += colspan;
+    }
+    for (let index = 0; index < columns.length; index += 1) columns[index] ??= "";
+    // A rowspan counts down once per row, including the row that set it.
+    for (let index = 0; index < heldBelow.length; index += 1) {
+      if ((heldBelow[index] ?? 0) > 0) heldBelow[index] -= 1;
+    }
+    result.push({ row, rowCells, cells, cellColumns, columns, displaced, starts });
+  }
+  return result;
+}
+
+/**
+ * A header cell short enough to name its column beside a value. A header carrying a figure
+ * ("Checking (balance $1,500)") would put a second amount on the line, so it names nothing.
+ */
+const MAX_COLUMN_LABEL_CHARS = 40;
+function columnLabel(text: string | undefined): string | null {
+  if (!text || text.length > MAX_COLUMN_LABEL_CHARS || /\d/.test(text)) return null;
+  // The name is written in parentheses after the value, so its own parentheses go.
+  return text.replace(/:\s*$/, "").replace(/[()]/g, "").replace(/\s+/g, " ").trim() || null;
+}
+
+/** Each grid column's header name: a header cell that spans columns names each of them. */
+function headerLabels(header: GridRow): Array<string | null> {
+  const labels: Array<string | null> = header.columns.map(() => null);
+  header.rowCells.forEach((cell, index) => {
+    const label = columnLabel(header.columns[header.starts[index]]);
+    const span = spanOf(cell, "colspan");
+    for (let offset = 0; offset < span; offset += 1) labels[header.starts[index] + offset] = label;
+  });
+  return labels;
+}
+
+/**
+ * The row's text cells. A cell an empty cell displaced (it would read as the column to its left)
+ * is followed by its column's header name in parentheses ("$50 fee to close prior to maturity
+ * (ira)") when the table's header row names that column; every other cell, and every row with no
+ * displaced cell, is written exactly as before. The row's first column is its own name and never
+ * takes a label.
+ *
+ * The name goes after the value, not before it: "Stop payment | Premier Checking: $25.00" lost the
+ * fee from Knox's free reading (the words before the price became its name), while "Stop payment |
+ * $25.00 (Premier Checking)" reads the same fee as the old line (html-table-columns.test.ts).
+ */
+function lineCells(grid: GridRow, labels: Array<string | null> | null): string[] {
+  if (!labels || !grid.displaced.some(Boolean)) return grid.cells;
+  return grid.cells.map((cell, index) => {
+    const column = grid.cellColumns[index];
+    const label = column > 0 && grid.displaced[index] ? labels[column] : null;
+    return label ? `${cell} (${label})` : cell;
+  });
+}
+
 function writeTable(table: DomElement, out: TextWriter): void {
   const rows = tableRowsOf(table);
   if (isLayoutTable(rows)) {
@@ -178,17 +292,27 @@ function writeTable(table: DomElement, out: TextWriter): void {
   );
   const tableIndex = out.tables;
   out.tables += 1;
-  for (const row of rows) {
-    const rowCells = cellsOf(row);
-    const cells = rowCells.map(inlineText).filter((cell) => cell.length > 0);
+  const grid = gridRows(rows);
+  const width = Math.max(...grid.map((row) => row.columns.length));
+  let labels: Array<string | null> | null = null;
+  for (const gridRow of grid) {
+    const { row, rowCells, cells } = gridRow;
     if (cells.length === 0) continue;
-    out.line(cells.join(CELL_SEPARATOR));
+    const header = headRows.has(row) || rowCells.every((cell) => cell.name === "th");
+    // The nearest header row above names the columns of the rows under it; a one-cell header row
+    // is a section heading ("Checking accounts") and names no column.
+    if (header && cells.length >= 2) labels = headerLabels(gridRow);
+    const line = (header ? cells : lineCells(gridRow, labels)).join(CELL_SEPARATOR);
+    out.line(line);
     out.tableRows += 1;
+    const columns = Array.from({ length: width }, (_, index) => gridRow.columns[index] ?? "");
     out.rows.push({
       table: tableIndex,
       page: null,
       cells,
-      header: headRows.has(row) || rowCells.every((cell) => cell.name === "th"),
+      columns,
+      ...(line === cells.join(CELL_SEPARATOR) ? {} : { line }),
+      header,
       origin: "html_table",
     });
   }
