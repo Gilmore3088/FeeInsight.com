@@ -596,4 +596,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-26",
   },
+  {
+    id: "issue-1912-channel-wire-is-an-exception",
+    agent: "hamilton",
+    stage: "analysis",
+    lesson: "A bank's wire value is its general wire price: a row whose name states a channel (online, digital, mobile, phone, fax, email, PIN) or a repetitive, recurring, template or standing wire is an exception to it, set aside from the value when the bank also states a general row in that category and counted as before when it states none. \"In branch\", \"in person\", \"manual\" and \"assisted\" name the standard channel, so those rows are the general price; the channel rows stay listed as their own fees.",
+    why: "Rule 11 set aside only named-product rows, so an online wire beside the general price pulled the median toward the cheaper channel (Bank OZK: \"Outgoing Online Wire (Domestic)\" $20 beside \"Outgoing Wire (Domestic)\" $30 was valued at $25). On Oct 26 the rule moved 76 live wire values: 49 domestic outgoing, 26 international outgoing and 1 domestic incoming.",
+    evidence: { issues: [1912], prs: [], files: ["docs/project/findings/2026-10-26-channel-wire-price-sets-value.md", "src/lib/wire-channel.ts", "src/lib/fee-product.ts", "src/lib/data-store/fee-stats.ts"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
 ];

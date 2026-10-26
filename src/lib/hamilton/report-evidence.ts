@@ -243,8 +243,8 @@ function collapseToCategoryValues<T extends SelectedInstitutionFeeInput>(fees: T
   for (const group of byCategory.values()) {
     const approved = group.filter((fee) => fee.review_status === "approved");
     const used = approved.length > 0 ? approved : group;
-    // Rule 11 (#1911): a named account's exception price beside a general price leaves the value.
-    const amounts = statisticsRows(used, (fee) => isProductException(fee.fee_category, fee.account_product_type))
+    // Rule 11 (#1911, #1912): a named account's or wire channel's exception price beside a general price leaves the value.
+    const amounts = statisticsRows(used, (fee) => isProductException(fee.fee_category, fee.account_product_type, fee.fee_name))
       .map((fee) => toNumber(fee.amount) as number);
     const first = used[0];
     const confidences = used.map((fee) => toNumber(fee.extraction_confidence)).filter((c): c is number => c !== null);

@@ -301,9 +301,9 @@ export function pickHeadlineValues(verifiedFees: ExtractedFee[], categories: rea
         : category === "monthly_maintenance"
           ? pickFee(rows, category, undefined, isMonthlyMaintenanceFee)
           : pickFee(rows, category);
-    // Rule 11 (fee-stats.ts, #1911): the value rests on the general rows when the category also
-    // holds named product exceptions; every row stays in the range and the named prices.
-    const valueAmounts = statisticsRows(rows, (fee) => isProductException(category, fee.account_product_type ?? null))
+    // Rule 11 (fee-stats.ts, #1911, #1912): the value rests on the general rows when the category
+    // also holds named product or wire channel exceptions; every row stays in the range and the named prices.
+    const valueAmounts = statisticsRows(rows, (fee) => isProductException(category, fee.account_product_type ?? null, fee.fee_name))
       .map((fee) => fee.amount as number);
     const value = institutionValue(category, valueAmounts);
     const named: AccountPrice[] = rows.flatMap((fee) => {
