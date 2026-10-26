@@ -463,7 +463,7 @@ export function frequencySpelling(frequency: string | null | undefined): string 
 
 /** SQL twin of `frequencySpelling` on a column or expression; NULL for blank. */
 export function frequencySpellingSql(column: string): string {
-  return `NULLIF(replace(btrim(regexp_replace(lower(${column}), '[[:space:]_-]+', ' ', 'g')), ' ', '_'), '')`;
+  return `NULLIF(replace(btrim(regexp_replace(lower(${column}), '[ \\t\\n\\r\\f\\v_-]+', ' ', 'g')), ' ', '_'), '')`;
 }
 
 /**
