@@ -8,7 +8,7 @@ import { FEEDBACK_KINDS, feedbackRowRead, unreadFeedbackPredicate, type Feedback
 import { takedownKind } from "./feedback";
 import { unreadFeedbackLines } from "./unread-feedback";
 
-const UNREAD_KINDS_CEILING = 17;
+const UNREAD_KINDS_CEILING = 14;
 const entries = Object.entries(FEEDBACK_KINDS) as Array<[string, FeedbackKindEntry]>;
 
 describe("every feedback kind names its reader (#2062)", () => {
@@ -42,7 +42,11 @@ describe("every feedback kind names its reader (#2062)", () => {
   });
 
   it("calls a row unread when its kind is unread or unregistered, or read only at another stage or from other checks", () => {
-    expect(feedbackRowRead({ kind: "search_miss", about_stage: "discover", check_name: "magellan.search_miss" })).toBe(false);
+    expect(feedbackRowRead({ kind: "made_up_kind", about_stage: "discover", check_name: "x" })).toBe(false);
+    // Magellan reads its search misses and Hamilton's conflict lessons (#2062).
+    expect(feedbackRowRead({ kind: "search_miss", about_stage: "discover", check_name: "magellan.search_miss" })).toBe(true);
+    expect(feedbackRowRead({ kind: "stale_price", about_stage: "publish", check_name: "hamilton.cross_page_conflict" })).toBe(true);
+    expect(feedbackRowRead({ kind: "schedule_conflict", about_stage: "publish", check_name: "hamilton.product_page_conflict" })).toBe(true);
     expect(feedbackRowRead({ kind: "flag_cleared", about_stage: "publish", check_name: "x" })).toBe(true);
     expect(feedbackRowRead({ kind: "audit_miss", about_stage: "discover", check_name: "hamilton.other_bank_document" })).toBe(true);
     expect(feedbackRowRead({ kind: "audit_miss", about_stage: "extract", check_name: "hamilton.source_check" })).toBe(false);
@@ -80,7 +84,9 @@ describe("every feedback kind names its reader (#2062)", () => {
 
   it("splits the registry for the brief's query the same way", () => {
     const { unreadKinds, partial, stageOnly, registered } = unreadFeedbackPredicate();
-    expect(unreadKinds).toContain("search_miss");
+    expect(unreadKinds).not.toContain("search_miss");
+    expect(unreadKinds).not.toContain("stale_price");
+    expect(unreadKinds).not.toContain("schedule_conflict");
     expect(partial).toContainEqual({ kind: "audit_miss", stages: ["discover", "extract"], checks: ["hamilton.source_check", "hamilton.product_page_conflict", "deming.not_a_fee_line", "deming.name_quality"], anyStageChecks: [], causes: [] });
     expect(partial).toContainEqual(expect.objectContaining({ kind: "admin_hold", causes: ["wrong_amount"] }));
     expect(partial).toContainEqual({ kind: "admin_correction", stages: ["discover", "read", "extract", "verify"], checks: ["hamilton.admin_correction"], anyStageChecks: [], causes: [] });

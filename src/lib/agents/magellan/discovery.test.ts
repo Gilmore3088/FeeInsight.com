@@ -20,7 +20,14 @@ import {
   UPGRADE_SEARCH_VERSION,
   FRESHNESS_SEARCH_VERSION,
   UPGRADE_RESERVED_SLOTS,
+  CROSS_PAGE_CONFLICT_CHECK,
+  PRODUCT_PAGE_CONFLICT_CHECK,
+  STALE_PRICE_REASON,
+  stalePriceReplaces,
 } from "./discovery";
+import { missDemotedStrategies } from "./search-misses";
+import { CROSS_PAGE_CHECK } from "@/lib/agents/hamilton/cross-page-conflict";
+import { PRODUCT_PAGE_CONFLICT_CHECK as HAMILTON_PRODUCT_PAGE_CHECK } from "@/lib/agents/hamilton/product-page-conflict";
 
 type DbMock = ReturnType<typeof vi.fn>;
 type Handler = (text: string, values: unknown[]) => unknown[] | undefined;
@@ -1704,5 +1711,129 @@ describe("staleWrongReason (#2055, #2057)", () => {
     expect(staleWrongReason({ confirmed_at: at(20), audit_at: at(21), hand_at: null })).toBe("Deming's audit found fees read from it came from the wrong document");
     expect(staleWrongReason({ confirmed_at: at(22), audit_at: at(21), hand_at: null })).toBe("fees read from it were confirmed wrong on a second look");
     expect(staleWrongReason({ confirmed_at: null, audit_at: at(21), hand_at: at(23) })).toBe("an admin named a wrong document as the cause of a fee read from it");
+  });
+});
+
+describe("Magellan reads Hamilton's conflict lessons and its own search misses (#2062)", () => {
+  it("names Hamilton's own checks", () => {
+    expect(CROSS_PAGE_CONFLICT_CHECK).toBe(CROSS_PAGE_CHECK);
+    expect(PRODUCT_PAGE_CONFLICT_CHECK).toBe(HAMILTON_PRODUCT_PAGE_CHECK);
+  });
+
+  it("holds every page to a known old date, takes the newer document only without one, and refuses others", () => {
+    const stale = { kept_urls: ["https://www.bank.example/fees-2026.pdf"], only: true };
+    expect(stalePriceReplaces(stale, "https://bank.example/fees-2026.pdf", false).verdict).toBe("newer_document");
+    // The conflict's "newer" can rest on fetch time: it never outranks a known date.
+    expect(stalePriceReplaces(stale, "https://bank.example/fees-2026.pdf", true).verdict).toBe("date_rule");
+    expect(stalePriceReplaces(stale, "https://bank.example/other.pdf", true).verdict).toBe("date_rule");
+    expect(stalePriceReplaces(stale, "https://bank.example/other.pdf", false).verdict).toBe("refused");
+    // Sent for its age too: the age search's own rule holds.
+    expect(stalePriceReplaces({ ...stale, only: false }, "https://bank.example/other.pdf", false).verdict).toBe("date_rule");
+  });
+
+  it("demotes only the specialists a miss ran that saw nothing", () => {
+    expect(missDemotedStrategies([
+      { key: "sitemap", outcome: "no_candidates" },
+      { key: "hubPages", outcome: "wrong_document" },
+      { key: "siteCrawl", outcome: "timeout" },
+      { key: "notAFinder", outcome: "no_candidates" },
+    ])).toEqual(["discover.sitemap"]);
+    expect(missDemotedStrategies(null)).toEqual([]);
+  });
+
+  const staleBank = {
+    ...bank(91, "https://stalebank.example", {
+      fee_schedule_url: "https://stalebank.example/fees.pdf",
+      profile_canonical_source_url: "https://stalebank.example/fees.pdf",
+    }),
+    url_year: null,
+    effective_year: null,
+    wrong_at: null,
+    searched_at: null,
+    stale_price_at: "2026-10-20T00:00:00Z",
+    stale_kept_urls: ["https://stalebank.example/fees-current.pdf"],
+  };
+  const staleDb = () => createDbMock([], learningHandler((text) => (text.includes("stale-link freshness search") ? [staleBank] : undefined)));
+
+  it("replaces a stale-priced link with the newer document the conflict kept, logged on the step and the attempt", async () => {
+    const db = staleDb();
+    const fetchImpl = site({
+      "https://stalebank.example/": () => response('<a href="/fees-current.pdf">Fee Schedule</a>'),
+      "https://stalebank.example/fees-current.pdf": () => response(FEE_TABLE),
+    });
+    const result = await runMagellanDiscovery({ runId: 140, db: asDiscoveryDb(db), fetchImpl, politeDelayMs: 0 });
+    expect(result.results[0]).toMatchObject({ outcome: "discovered", url: "https://stalebank.example/fees-current.pdf" });
+    expect(db.mock.calls.some((call) => templateText(call[0]).includes("UPDATE institution_sources"))).toBe(true);
+    expect(result.feedbackReads).toMatchObject({ stalePriceSearches: 1, stalePriceRefusals: 0 });
+    const detail = attempts(db)[0].detail;
+    expect(detail.stale_reason).toBe(STALE_PRICE_REASON);
+    expect(detail.stale_price_check).toMatchObject({ verdict: "newer_document" });
+    const query = templateText(db.mock.calls.find((call) => templateText(call[0]).includes("stale-link freshness search"))![0]);
+    const arm = query.split(") hand ON TRUE")[1].split(") stale_price ON TRUE")[0];
+    // #2558's safety: the link's own current page only, the price still archived, once per document.
+    expect(arm).toContain("sd.superseded_by_id IS NULL");
+    expect(arm).toContain("sd.companion_source_id IS NULL");
+    expect(arm).toContain("sd.document_url = due.fee_schedule_url");
+    expect(arm).toContain("sd.id = due.main_document_id AND due.main_document_url = due.profile_canonical_source_url");
+    expect(arm).toContain("fp.rolled_back_at IS NOT NULL");
+    expect(arm).toContain("pa.created_at > GREATEST(sd.crawled_at, f.created_at)");
+    // The newer document is a main document, never a companion.
+    expect(arm).toContain("kept.companion_source_id IS NULL");
+  });
+
+  it("keeps a dated link when the newer document found states an earlier date (review of 56e9a5f95)", async () => {
+    const datedBank = { ...staleBank, stated_date: "2026-01-01", stated_date_basis: "effective_statement", stated_stale: false };
+    const db = createDbMock([], learningHandler((text) => (text.includes("stale-link freshness search") ? [datedBank] : undefined)));
+    const fetchImpl = site({
+      "https://stalebank.example/": () => response('<a href="/fees-current.pdf">Fee Schedule</a>'),
+      "https://stalebank.example/fees-current.pdf": () => response(`<p>Effective January 1, 2024</p>${FEE_TABLE}`),
+    });
+    const result = await runMagellanDiscovery({ runId: 144, db: asDiscoveryDb(db), fetchImpl, politeDelayMs: 0 });
+    expect(result.results[0]).toMatchObject({ outcome: "discovered", url: "https://stalebank.example/fees-current.pdf" });
+    expect(db.mock.calls.some((call) => templateText(call[0]).includes("UPDATE institution_sources"))).toBe(false);
+    const detail = attempts(db)[0].detail;
+    expect(detail.stale_price_check).toMatchObject({ verdict: "date_rule" });
+    expect(detail.stated_date_check).toMatchObject({ replaces: false, old_date: "2026-01-01" });
+  });
+
+  it("keeps a stale-priced link when the page found is neither the newer document nor known to be newer", async () => {
+    const db = staleDb();
+    const fetchImpl = site({
+      "https://stalebank.example/": () => response('<a href="/other-fees">Fee Schedule</a>'),
+      "https://stalebank.example/other-fees": () => response(FEE_TABLE),
+    });
+    const result = await runMagellanDiscovery({ runId: 141, db: asDiscoveryDb(db), fetchImpl, politeDelayMs: 0 });
+    expect(db.mock.calls.some((call) => templateText(call[0]).includes("UPDATE institution_sources"))).toBe(false);
+    expect(result.feedbackReads).toMatchObject({ stalePriceSearches: 1, stalePriceRefusals: 1 });
+    expect(attempts(db)[0].detail.stale_price_check).toMatchObject({ verdict: "refused" });
+  });
+
+  it("gives a link whose page lost to the schedule an upgrade search, logged with its reason", async () => {
+    const conflictBank = { ...bank(92, "https://conflictbank.example", { fee_schedule_url: "https://conflictbank.example/p/1" }), conflict_at: "2026-10-20T00:00:00Z" };
+    const db = createDbMock([], learningHandler((text) => (text.includes("product-page upgrade search") ? [conflictBank] : undefined)));
+    const result = await runMagellanDiscovery({ runId: 142, db: asDiscoveryDb(db), fetchImpl: site({}), politeDelayMs: 0 });
+    expect(result.feedbackReads.scheduleConflictSearches).toBe(1);
+    expect(attempts(db).every((attempt) => attempt.detail.upgrade_reason === "schedule_conflict")).toBe(true);
+    const query = templateText(db.mock.calls.find((call) => templateText(call[0]).includes("product-page upgrade search"))![0]);
+    const arm = query.split("LEFT JOIN LATERAL")[1].split(") conflict ON TRUE")[0];
+    expect(arm).toContain("sd.superseded_by_id IS NULL");
+    expect(arm).toContain("sd.companion_source_id IS NULL");
+    expect(arm).toContain("fp.rolled_back_at IS NOT NULL");
+    expect(arm).toContain("pa.created_at > GREATEST(sd.crawled_at, f.created_at)");
+  });
+
+  it("runs the specialists a bank's last miss saw nothing with after the others", async () => {
+    const db = createDbMock([bank(93, "https://missbank.example")], learningHandler((text) => {
+      if (text.includes("to_regclass('public.pipeline_feedback')")) return [{ ready: true }];
+      if (text.includes("search-miss lessons for the next search")) {
+        return [{ institution_id: 93, source_url: "https://missbank.example", finders: JSON.stringify([{ key: "homepageLinks", outcome: "no_candidates" }]) }];
+      }
+      return undefined;
+    }));
+    const result = await runMagellanDiscovery({ runId: 143, db: asDiscoveryDb(db), fetchImpl: site({ "https://missbank.example/": () => response("<p>Welcome</p>") }), politeDelayMs: 0 });
+    expect(result.feedbackReads.searchMissReorders).toBe(1);
+    const strategies = attempts(db).map((attempt) => attempt.strategy);
+    expect(strategies.indexOf("discover.homepage_links")).toBeGreaterThan(strategies.indexOf("discover.sitemap"));
+    expect(attempts(db).every((attempt) => JSON.stringify(attempt.detail.search_miss_demoted) === JSON.stringify(["discover.homepage_links"]))).toBe(true);
   });
 });
