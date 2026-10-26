@@ -3,6 +3,8 @@ import { feedbackSchemaReady } from "@/lib/agents/learning/feedback";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import type { ExtractedFeeCandidate } from "@/lib/agents/knox/rules";
 import { eligibleReferenceFeedbackSql, readReferenceEligibility } from "@/lib/data-store/answer-key-reference-store";
+import { FEE_CORRECTION_CHECK } from "@/lib/fee-correction-rules";
+import { FEE_HOLD_CHECK } from "@/lib/fee-hold-rules";
 
 type SqlTag = typeof sql;
 
@@ -47,9 +49,26 @@ type SqlTag = typeof sql;
  * "balance inquiry". Families of two words or more learn globally under the same rule as
  * names (two banks each way, nothing on the other side), and apply only when the exact name
  * has no lesson. A one-word family ("annual", "additional") is too broad to learn from.
+ *
+ * v5, findings filed against extract (#2057, #2055, #2062): a person's hold or correction whose
+ * cause is Knox's step, and Deming's audit misses at extract, are read here as category verdicts,
+ * one bank each like every other verdict, never as a re-read (a re-read takes any other name on
+ * the line at the same price as the better one, so it could rename a correct fee sideways; Deming's
+ * lesson `issue-2055-route-to-owner-queue`). Only what a row says about the category counts
+ * (`knoxFindingsSql`):
+ * - an audit miss from the category guard is wrong under the fee's category;
+ * - a hold whose cause is the wrong category is wrong under it, until the hold is released;
+ * - a correction that moved the fee to another category is wrong under the old one and right under
+ *   the new one, for the name Knox read; one that kept the category is right under it (the person
+ *   cited the source line and the shared category guard passed it); a reversed one counts nothing.
+ * An amount, perk or name miss and an amount hold say nothing about the category and teach no
+ * lesson here: Knox has no amount lesson yet (#2067), and a bad name goes to the re-read queue. The
+ * takedown sync's copies of a correction (check `hamilton.admin_correction`) are skipped, since the
+ * person's own row is the finding. Each extract step counts what it read by kind and verdict
+ * (`loadKnoxFindingsRead`, `hand_findings_read` on the step).
  */
 
-export const KNOX_LESSONS_VERSION = 4;
+export const KNOX_LESSONS_VERSION = 5;
 /** Words a name family leaves out: they say a price is charged, not what for. */
 export const FAMILY_FILLER_WORDS = ["fee", "charge", "cost", "per", "item", "each", "the", "a", "an", "of", "for", "to", "on", "and", "or", "service", "by", "with"] as const;
 const FAMILY_PREFIX = "family:";
@@ -95,6 +114,86 @@ function familySql(column: string): string {
   return `array_to_string(ARRAY(SELECT DISTINCT s FROM (SELECT CASE WHEN length(w) > 4 AND w ~ 'ies$' THEN left(w, -3) || 'y'
                                                 WHEN length(w) > 3 AND w ~ 's$' AND w !~ 'ss$' THEN left(w, -1) ELSE w END AS s
             FROM unnest(string_to_array(${column}, ' ')) AS w) q WHERE s <> '' AND s NOT IN (${fillers}) ORDER BY s), ' ')`;
+}
+
+/** The finding kinds Knox reads at extract (v5), and the audit check whose misses are category verdicts. */
+export const KNOX_FINDING_KINDS = ["admin_correction", "admin_hold", "audit_miss"] as const;
+export const AUDIT_CATEGORY_CHECK = "hamilton.category_guard";
+export type KnoxFindingKind = (typeof KNOX_FINDING_KINDS)[number];
+export type KnoxFindingVerdict = "category" | "category_confirmed" | "no_category_verdict" | "withdrawn";
+
+/** The store's name key in SQL, as `lessonName`. */
+function nameKeySql(column: string): string {
+  return `regexp_replace(btrim(lower(regexp_replace(${column}, '[^A-Za-z ]+', ' ', 'g'))), '\\s+', ' ', 'g')`;
+}
+
+/**
+ * Extract-stage holds, corrections and audit misses as category verdicts (v5): one row per side, with
+ * `signal` null when the finding says nothing about the category. Columns: id, kind, verdict,
+ * institution_id, name (the store's name key), raw_name, fee_key, signal. Static SQL, no parameters.
+ */
+export function knoxFindingsSql(): string {
+  return `SELECT h.id, h.kind, h.verdict, h.institution_id, ${nameKeySql("h.raw_name")} AS name, h.raw_name, side.fee_key, side.signal
+    FROM (
+      SELECT f.id, f.kind, f.institution_id,
+             COALESCE(f.evidence->>'fee_name', f.evidence#>>'{before,feeName}') AS raw_name,
+             f.canonical_fee_key AS before_key,
+             f.evidence#>>'{after,canonicalFeeKey}' AS after_key,
+             CASE
+               WHEN f.kind = 'audit_miss' THEN
+                 CASE WHEN split_part(COALESCE(f.check_name, ''), ':', 1) = '${AUDIT_CATEGORY_CHECK}' THEN 'category' ELSE 'no_category_verdict' END
+               WHEN f.kind = 'admin_hold' THEN
+                 CASE WHEN EXISTS (SELECT 1 FROM pipeline_feedback r
+                                    WHERE r.kind = 'admin_release' AND r.fee_published_id = f.fee_published_id AND r.created_at >= f.created_at) THEN 'withdrawn'
+                      WHEN f.evidence->>'cause' = 'wrong_category' THEN 'category' ELSE 'no_category_verdict' END
+               ELSE
+                 CASE WHEN EXISTS (SELECT 1 FROM pipeline_feedback r
+                                    WHERE r.kind = 'admin_correction_reversed' AND r.fee_published_id::text = f.evidence->>'new_fee_published_id') THEN 'withdrawn'
+                      WHEN f.evidence#>>'{after,canonicalFeeKey}' IS NULL OR f.canonical_fee_key IS NULL THEN 'no_category_verdict'
+                      WHEN f.evidence#>>'{after,canonicalFeeKey}' <> f.canonical_fee_key THEN 'category'
+                      ELSE 'category_confirmed' END
+             END AS verdict
+        FROM pipeline_feedback f
+       WHERE f.about_stage = 'extract'
+         AND f.signal = 'wrong'
+         AND ((f.kind = 'audit_miss' AND f.reported_by = 'deming')
+           OR (f.kind = 'admin_hold' AND f.check_name = '${FEE_HOLD_CHECK}')
+           OR (f.kind = 'admin_correction' AND f.check_name = '${FEE_CORRECTION_CHECK}'))
+    ) h
+    CROSS JOIN LATERAL (VALUES
+      (h.before_key, CASE WHEN h.verdict = 'category' THEN 'wrong' END),
+      (CASE WHEN h.kind = 'admin_correction' THEN h.after_key END,
+       CASE WHEN h.kind = 'admin_correction' AND h.verdict IN ('category', 'category_confirmed') THEN 'right' END)
+    ) AS side(fee_key, signal)`;
+}
+
+/** The findings' category verdicts: name, raw_name, fee_key, signal, institution_id. */
+export function knoxFindingVerdictsSql(): string {
+  return `SELECT hf.name, hf.raw_name, hf.fee_key, hf.signal, hf.institution_id FROM (${knoxFindingsSql()}) hf
+           WHERE hf.signal IS NOT NULL AND hf.fee_key IS NOT NULL AND hf.name <> ''`;
+}
+
+export type KnoxFindingsRead = Partial<Record<KnoxFindingKind, Partial<Record<KnoxFindingVerdict, number>>>>;
+
+/** The extract-stage findings Knox read, by kind and verdict, for the extract step's output. Empty on failure. */
+export async function loadKnoxFindingsRead(db: SqlTag): Promise<KnoxFindingsRead> {
+  try {
+    return await inSavepoint(db, async (scope) => {
+      if (!(await feedbackSchemaReady(scope))) return {};
+      const rows = await scope<Array<{ kind: KnoxFindingKind; verdict: KnoxFindingVerdict; rows: number | string }>>`
+        SELECT kind, verdict, count(DISTINCT id)::int AS rows
+          FROM (${scope.unsafe(knoxFindingsSql())}) hf
+         GROUP BY kind, verdict
+         ORDER BY kind, verdict
+      `;
+      const read: KnoxFindingsRead = {};
+      for (const row of rows) read[row.kind] = { ...read[row.kind], [row.verdict]: Number(row.rows) };
+      return read;
+    });
+  } catch (error) {
+    console.error("loadKnoxFindingsRead failed:", error);
+    return {};
+  }
 }
 
 function lessonKey(name: string, wrongKey: string, institutionId?: number | null): string {
@@ -149,6 +248,9 @@ export async function loadKnoxLessons(db: SqlTag): Promise<KnoxLessons> {
              AND rs.fee_raw_id IS NULL
           UNION ALL
           SELECT name, canonical_fee_key, 'right', institution_id FROM restored
+          UNION ALL
+          -- v5: holds, corrections and audit misses filed against extract, as category verdicts.
+          SELECT fv.name, fv.fee_key, fv.signal, fv.institution_id FROM (${scope.unsafe(knoxFindingVerdictsSql())}) fv
         ), families AS MATERIALIZED (
           SELECT name, ${scope.unsafe(familySql("name"))} AS family FROM (SELECT DISTINCT name FROM judged WHERE name <> '') d
         ), family_tally AS (

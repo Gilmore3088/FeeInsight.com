@@ -1,7 +1,7 @@
 import type { sql } from "@/lib/data-store/connection";
 import { feedbackSchemaReady, recordFeedback } from "@/lib/agents/learning/feedback";
 import { inSavepoint } from "@/lib/agents/savepoint";
-import { lessonName } from "@/lib/agents/knox/lessons";
+import { knoxFindingVerdictsSql, lessonName } from "@/lib/agents/knox/lessons";
 import { eligibleReferenceFeedbackSql, readReferenceEligibility } from "@/lib/data-store/answer-key-reference-store";
 
 type SqlTag = typeof sql;
@@ -96,6 +96,9 @@ export async function loadLabelQueue(db: SqlTag, limit = LABEL_QUEUE_SIZE): Prom
           UNION ALL
           -- A restored fee is verified under the category it came back with (as in lessons.ts).
           SELECT regexp_replace(btrim(lower(regexp_replace(fee_name, '[^A-Za-z ]+', ' ', 'g'))), '\\s+', ' ', 'g'), fee_name, canonical_fee_key, 'right', institution_id FROM restored
+          UNION ALL
+          -- Holds, corrections and audit misses filed against extract, as in lessons.ts (v5).
+          SELECT fv.name, fv.raw_name, fv.fee_key, fv.signal, fv.institution_id FROM (${scope.unsafe(knoxFindingVerdictsSql())}) fv
         ), tally AS (
           SELECT name, fee_key,
                  count(DISTINCT institution_id) FILTER (WHERE signal = 'wrong')::int AS wrong_banks,

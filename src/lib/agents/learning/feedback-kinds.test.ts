@@ -46,6 +46,13 @@ describe("every feedback kind names its reader (#2062)", () => {
     expect(feedbackRowRead({ kind: "flag_cleared", about_stage: "publish", check_name: "x" })).toBe(true);
     expect(feedbackRowRead({ kind: "audit_miss", about_stage: "discover", check_name: "hamilton.other_bank_document" })).toBe(true);
     expect(feedbackRowRead({ kind: "audit_miss", about_stage: "extract", check_name: "hamilton.source_check" })).toBe(false);
+    // Knox reads extract findings that say something about the category (lessons.ts v5).
+    expect(FEEDBACK_KINDS.audit_miss.readers).toContain("src/lib/agents/knox/lessons.ts");
+    expect(feedbackRowRead({ kind: "audit_miss", about_stage: "extract", check_name: "hamilton.category_guard" })).toBe(true);
+    expect(feedbackRowRead({ kind: "admin_correction", about_stage: "extract", check_name: "admin.fee_correction", cause: "wrong_category" })).toBe(true);
+    expect(feedbackRowRead({ kind: "admin_correction", about_stage: "extract", check_name: "hamilton.admin_correction" })).toBe(false);
+    expect(feedbackRowRead({ kind: "admin_hold", about_stage: "extract", check_name: "admin.fee_hold", cause: "wrong_category" })).toBe(true);
+    expect(feedbackRowRead({ kind: "admin_hold", about_stage: "extract", check_name: "admin.fee_hold", cause: "wrong_amount" })).toBe(false);
     expect(feedbackRowRead({ kind: "wrong_document", about_stage: "discover", check_name: "magellan.link_yield" })).toBe(true);
     expect(feedbackRowRead({ kind: "wrong_document", about_stage: "discover", check_name: "hamilton.article_page" })).toBe(false);
     // A takedown's verify row is read by nobody when the sync is the kind's only reader (#2062 review).
@@ -63,7 +70,8 @@ describe("every feedback kind names its reader (#2062)", () => {
   it("splits the registry for the brief's query the same way", () => {
     const { unreadKinds, partial, registered } = unreadFeedbackPredicate();
     expect(unreadKinds).toContain("search_miss");
-    expect(partial).toContainEqual({ kind: "audit_miss", stages: ["discover"], checks: [], anyStageChecks: [] });
+    expect(partial).toContainEqual({ kind: "audit_miss", stages: ["discover", "extract"], checks: ["hamilton.source_check", "hamilton.product_page_conflict", "deming.not_a_fee_line", "deming.name_quality"], anyStageChecks: [], causes: [] });
+    expect(partial).toContainEqual(expect.objectContaining({ kind: "admin_hold", causes: ["wrong_amount"] }));
     expect(new Set(registered)).toEqual(new Set(Object.keys(FEEDBACK_KINDS)));
   });
 

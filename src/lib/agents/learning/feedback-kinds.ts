@@ -29,6 +29,9 @@ type Reader = {
   /** Rows from these checks are read at any stage, `readStages` aside. A check name matches on
    * its part before the first ":", as the readers match it. */
   anyStageChecks?: readonly string[];
+  /** Rows whose `evidence.cause` is one of these are not read: a person's hold or correction names
+   * its cause (#2057), and some causes have no reader yet. */
+  unreadCauses?: readonly string[];
   note?: string;
 };
 type Unread = { unread: string };
@@ -50,6 +53,10 @@ const ROSETTA_READ_LESSONS = [ROSETTA_READ, "src/lib/agents/rosetta/paid-read.ts
 const ROSETTA_BATCH_READERS = [...ROSETTA_READ_LESSONS, "src/lib/agents/goal-scorecard.ts"] as const;
 /** Fee-level verdicts recorded by Darwin's verify that only Magellan's batch review counts. */
 const DARWIN_VERIFY = "darwin.verify";
+/** Deming's extract-stage audit checks whose misses Knox does not learn from (`knox/lessons.ts` v5 reads only the category guard's). */
+const KNOX_UNREAD_AUDIT_CHECKS = ["hamilton.source_check", "hamilton.product_page_conflict", "deming.not_a_fee_line", "deming.name_quality"] as const;
+/** The takedown sync's copy of a hand correction, written at extract and at verify. */
+const TAKEDOWN_SYNC_CORRECTION_CHECK = "hamilton.admin_correction";
 /** The stage of the takedown sync's row that its restore detection reads. */
 const EXTRACT = ["extract"] as const;
 
@@ -122,10 +129,10 @@ export const FEEDBACK_KINDS = {
   flag_cleared: { record: "The second look's appended audit trail of a cleared flag." },
 
   // Daily audit and operator actions.
-  audit_miss: { readers: [MAGELLAN_DISCOVERY], readStages: ["discover"], note: "Magellan's stale-link search reads the document misses; extract misses teach Knox nothing yet." },
-  admin_hold: { readers: [MAGELLAN_DISCOVERY, ROSETTA_READ], readStages: ["discover", "read"], note: "A wrong-document hold goes to Magellan, a lost text to Rosetta's next reader version (#2059); other causes are read by no agent yet." },
+  audit_miss: { readers: [MAGELLAN_DISCOVERY, KNOX_LESSONS, LABEL_QUEUE], readStages: ["discover", "extract"], unreadChecks: KNOX_UNREAD_AUDIT_CHECKS, note: "Magellan's stale-link search reads the document misses; Knox's lessons and label queue read the category guard's misses at extract as category verdicts (v5). Amount, product-page and perk misses teach Knox nothing yet (#2055, #2067); a bad name is acted on through its knox_reread_requested twin, not this row." },
+  admin_hold: { readers: [MAGELLAN_DISCOVERY, ROSETTA_READ, KNOX_LESSONS, LABEL_QUEUE], readStages: ["discover", "read", "extract"], unreadCauses: ["wrong_amount"], note: "A wrong-document hold goes to Magellan, a lost text to Rosetta's next reader version (#2059), a wrong category to Knox's lessons and label queue (v5); an amount hold teaches no agent yet (#2067)." },
   admin_release: { readers: [MAGELLAN_DISCOVERY, RELEASE_REVIEW] },
-  admin_correction: { readers: [MAGELLAN_DISCOVERY, ROSETTA_READ], readStages: ["discover", "read"] },
+  admin_correction: { readers: [MAGELLAN_DISCOVERY, ROSETTA_READ, KNOX_LESSONS, LABEL_QUEUE], readStages: ["discover", "read", "extract"], unreadChecks: [TAKEDOWN_SYNC_CORRECTION_CHECK], note: "Knox's lessons read an extract correction as a verdict on its category, old and new (v5). The takedown sync's copies (check hamilton.admin_correction) are read by no agent: the person's own row is the finding." },
   admin_correction_reversed: { readers: [MAGELLAN_DISCOVERY, RELEASE_REVIEW] },
 
   // Rosetta's reads.
@@ -169,12 +176,13 @@ function entry(kind: string): FeedbackKindEntry | undefined {
 }
 
 /** Pure: is this row read by any agent? Unregistered kinds are unread, records are not debt. */
-export function feedbackRowRead(row: { kind: string; about_stage: string; check_name: string | null; dedupe_key?: string | null }): boolean {
+export function feedbackRowRead(row: { kind: string; about_stage: string; check_name: string | null; dedupe_key?: string | null; cause?: string | null }): boolean {
   const known = entry(row.kind);
   if (!known) return /^hamilton\.takedown:pub:.*:extract$/.test(row.dedupe_key ?? "");
   if ("record" in known) return true;
   if ("unread" in known) return false;
   if (known.unreadChecks && row.check_name != null && known.unreadChecks.includes(row.check_name)) return false;
+  if (known.unreadCauses && row.cause != null && known.unreadCauses.includes(row.cause)) return false;
   const check = row.check_name?.split(":")[0];
   if (known.anyStageChecks && check != null && known.anyStageChecks.includes(check)) return true;
   if (known.readStages && !known.readStages.includes(row.about_stage)) return false;
@@ -184,13 +192,13 @@ export function feedbackRowRead(row: { kind: string; about_stage: string; check_
 /** SQL-side split of the same rule, for the brief's count: kinds read whole, and the rest. */
 export function unreadFeedbackPredicate() {
   const unreadKinds: string[] = [];
-  const partial: Array<{ kind: string; stages: string[] | null; checks: string[]; anyStageChecks: string[] }> = [];
+  const partial: Array<{ kind: string; stages: string[] | null; checks: string[]; anyStageChecks: string[]; causes: string[] }> = [];
   const records: string[] = [];
   const read: string[] = [];
   for (const [kind, value] of Object.entries(FEEDBACK_KINDS) as Array<[string, FeedbackKindEntry]>) {
     if ("record" in value) records.push(kind);
     else if ("unread" in value) unreadKinds.push(kind);
-    else if (value.readStages || value.unreadChecks) partial.push({ kind, stages: value.readStages ? [...value.readStages] : null, checks: value.unreadChecks ? [...value.unreadChecks] : [], anyStageChecks: value.anyStageChecks ? [...value.anyStageChecks] : [] });
+    else if (value.readStages || value.unreadChecks || value.unreadCauses) partial.push({ kind, stages: value.readStages ? [...value.readStages] : null, checks: value.unreadChecks ? [...value.unreadChecks] : [], anyStageChecks: value.anyStageChecks ? [...value.anyStageChecks] : [], causes: value.unreadCauses ? [...value.unreadCauses] : [] });
     else read.push(kind);
   }
   return { unreadKinds, partial, registered: [...records, ...unreadKinds, ...read, ...partial.map((item) => item.kind)] };

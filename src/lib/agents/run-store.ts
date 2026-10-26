@@ -1013,6 +1013,7 @@ async function executeAgenticStep(
           learning_log: extraction.learning,
           lessons_loaded: extraction.lessonsLoaded,
           lesson_refiles: extraction.lessonRefiles,
+          hand_findings_read: extraction.handFindingsRead ?? {},
           takedown_lessons_loaded: extraction.takedownLessonsLoaded,
           takedown_holds: extraction.takedownHolds,
           takedown_lessons_unknown: extraction.takedownLessonsUnknown ?? {},
