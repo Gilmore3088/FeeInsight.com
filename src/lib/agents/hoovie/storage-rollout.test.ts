@@ -6,10 +6,11 @@ describe("approved storage rollout", () => {
     expect(storageRolloutAction({ ...run, params: { source: "atlas.scoreboard", storageAction: "compact" } })).toBeNull();
     expect(() => storageRolloutAction({ ...run, runKind: "dry_run" })).toThrow();
   });
-  it("allows only separately queued admin compaction or export, never deletion", () => {
+  it("allows only separately queued admin actions from the approved staged plan", () => {
     expect(storageRolloutAction(run)).toBe("compact");
     expect(storageRolloutAction({ ...run, params: { ...run.params, storageAction: "export" } })).toBe("export");
-    for (const storageAction of ["prune", "restore", "", true]) expect(() => storageRolloutAction({ ...run, params: { ...run.params, storageAction } })).toThrow();
+    for (const storageAction of ["rehearse", "prune"]) expect(storageRolloutAction({ ...run, params: { ...run.params, storageAction } })).toBe(storageAction);
+    for (const storageAction of ["restore", "", true]) expect(() => storageRolloutAction({ ...run, params: { ...run.params, storageAction } })).toThrow();
     expect(() => storageRolloutAction({ ...run, triggerSource: "cron" })).toThrow();
     expect(() => storageRolloutAction({ ...run, agent: "magellan" })).toThrow();
   });

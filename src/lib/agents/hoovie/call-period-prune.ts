@@ -18,6 +18,20 @@ export const CALL_PERIOD_PRUNE_MANIFEST = [
 export const CALL_PERIOD_RESTORE_TARGET: { source: "ffiec" | "ncua"; period: string } | null = null;
 type Db = typeof sql;
 
+export async function archiveRehearsalRecorded(db: Db, args: { source: string; period: string }): Promise<boolean> {
+  const [row]=await db<{ready:boolean}[]>`
+    SELECT EXISTS(SELECT 1 FROM agent_run_events e JOIN agent_run_steps s ON s.id=e.step_id
+      JOIN public_data_cold_files f ON f.table_name='institution_call_report_items'
+       AND f.source=${args.source} AND f.period=${args.period}
+     WHERE s.step_key='atlas-storage-retention' AND e.event_type='step.finished' AND e.status='completed'
+       AND e.detail->'cold_tier'->'rehearsed'->>'source'=f.source
+       AND e.detail->'cold_tier'->'rehearsed'->>'period'=f.period
+       AND e.detail->'cold_tier'->'rehearsed'->>'sha256'=f.sha256
+       AND e.detail->'cold_tier'->'rehearsed'->>'status'='verified') AS ready
+  `;
+  return row?.ready===true;
+}
+
 /**
  * Caller must own a ledger transaction. No external action can invoke this without the live
  * switch. Recheck the actual current rows under a short-wait writer lock, not a stale plan count.
@@ -25,9 +39,11 @@ type Db = typeof sql;
 export async function pruneCallPeriod(db: Db, store: ColdStore, args: {
   source: "ffiec" | "ncua"; period: string;
   expected?: { archiveRows: number; pruneRows: number; retainedIdentityRows: number };
+  requireRehearsal?: boolean;
 }): Promise<{ deleted: number; status: "pruned" | "already_pruned" }> {
   if (typeof (db as unknown as { savepoint?: unknown }).savepoint !== "function") throw new Error("Pruning requires a run-ledger transaction");
   if (!store.configured) throw new Error("Archive storage is not configured");
+  if(args.requireRehearsal && !await archiveRehearsalRecorded(db,args))throw new Error("This exact archive has no completed restore rehearsal");
   await db`SET LOCAL lock_timeout = '2s'`;
   await db`SET LOCAL statement_timeout = '30s'`;
   // Also excludes legacy writers, manual writers, compaction and simultaneous export/prune.
@@ -91,6 +107,55 @@ export async function pruneCallPeriod(db: Db, store: ColdStore, args: {
 }
 
 /** Rollback rehearsal/approved ledger task: restore a complete period, keeping newer POR witnesses. */
+async function insertArchiveRows(db: Db, rows: Record<string, unknown>[], rehearsal: boolean): Promise<number> {
+  let inserted=0;
+  const destination=rehearsal ? "call_report_archive_restore_checks" : "institution_call_report_items";
+  for(let at=0;at<rows.length;at+=5000){
+    const result=await db`
+      INSERT INTO ${db.unsafe(destination)}
+        (id,institution_id,source,report_date,item_code,item_key,item_description,schedule,value,unit,period_basis,source_url,agent_run_id,fetched_at)
+      SELECT id,institution_id,source,report_date,item_code,item_key,item_description,schedule,value,unit,period_basis,source_url,agent_run_id,fetched_at
+        FROM jsonb_to_recordset(${JSON.stringify(rows.slice(at,at+5000))}::text::jsonb) AS r(
+          id bigint,institution_id bigint,source text,report_date date,item_code text,item_key text,item_description text,
+          schedule text,value numeric,unit text,period_basis text,source_url text,agent_run_id bigint,fetched_at timestamptz)
+      RETURNING id
+    `;
+    inserted+=result.length;
+  }
+  return inserted;
+}
+
+/** Restore a real verified file into a disposable unlogged table, compare every field, then empty it. */
+export async function rehearseCallPeriod(db: Db, store: ColdStore, args: { source: "ffiec" | "ncua"; period: string }) {
+  if (typeof (db as unknown as { savepoint?: unknown }).savepoint !== "function") throw new Error("Rehearsal requires a run-ledger transaction");
+  const manifest=CALL_PERIOD_PRUNE_MANIFEST.find((m)=>m.source===args.source&&m.period===args.period);
+  if(!manifest)throw new Error("Rehearsal period is outside the reviewed manifest");
+  await db`SET LOCAL lock_timeout='2s'`;
+  await db`SET LOCAL statement_timeout='30s'`;
+  await db`LOCK TABLE call_report_archive_restore_checks IN ACCESS EXCLUSIVE MODE NOWAIT`;
+  const [file]=await db<Array<{bucket:string;object_key:string;sha256:string;row_count:string;verified_at:string|null}>>`
+    SELECT bucket,object_key,sha256,row_count,verified_at FROM public_data_cold_files
+     WHERE table_name='institution_call_report_items' AND source=${args.source} AND period=${args.period}
+  `;
+  if(!file?.verified_at||file.bucket!==store.bucket||Number(file.row_count)!==manifest.archiveRows)throw new Error("Verified reviewed archive required");
+  const decoded=decodeColdFile(await store.get(file.object_key),{expected:{sha256:file.sha256,rowCount:Number(file.row_count)}});
+  if(JSON.stringify(decoded.columns)!==JSON.stringify(CALL_ITEM_COLUMNS)||decoded.rows.some((r)=>r.source!==args.source||r.report_date!==args.period))throw new Error("Archive shape or source/period mismatch");
+  await db`TRUNCATE call_report_archive_restore_checks`;
+  const inserted=await insertArchiveRows(db,decoded.rows,true);
+  const writer=new ColdFileWriter(CALL_ITEM_COLUMNS);
+  const query=db<Array<Record<string,unknown>>>`
+    SELECT id::text AS id,institution_id::text AS institution_id,source,report_date::text AS report_date,
+      item_code,item_key,item_description,schedule,value::text AS value,unit,period_basis,source_url,
+      agent_run_id::text AS agent_run_id,to_char(fetched_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS fetched_at
+      FROM call_report_archive_restore_checks ORDER BY id
+  `;
+  for await(const batch of query.cursor(5000))writer.push(batch);
+  const restored=writer.finish();
+  if(inserted!==manifest.archiveRows||restored.sha256!==file.sha256||restored.rowCount!==inserted)throw new Error("Restored archive differs from its original file");
+  await db`TRUNCATE call_report_archive_restore_checks`;
+  return {...args,sha256:file.sha256,rowCount:inserted,status:"verified" as const};
+}
+
 export async function restoreCallPeriod(db: Db, store: ColdStore, args: {
   source: "ffiec" | "ncua"; period: string;
 }): Promise<number> {
@@ -109,19 +174,7 @@ export async function restoreCallPeriod(db: Db, store: ColdStore, args: {
   if(JSON.stringify(decoded.columns)!==JSON.stringify(CALL_ITEM_COLUMNS))throw new Error("Unsupported archive columns");
   if(decoded.rows.some((row)=>row.source!==args.source||row.report_date!==args.period))throw new Error("Archive source/period mismatch");
   const rows=decoded.rows.filter((row)=>!FFIEC_FILING_METADATA_KEYS.has(String(row.item_key)));
-  let inserted=0;
-  for(let at=0;at<rows.length;at+=5000){
-    const result=await db`
-      INSERT INTO institution_call_report_items
-        (id,institution_id,source,report_date,item_code,item_key,item_description,schedule,value,unit,period_basis,source_url,agent_run_id,fetched_at)
-      SELECT id,institution_id,source,report_date,item_code,item_key,item_description,schedule,value,unit,period_basis,source_url,agent_run_id,fetched_at
-        FROM jsonb_to_recordset(${JSON.stringify(rows.slice(at,at+5000))}::text::jsonb) AS r(
-          id bigint,institution_id bigint,source text,report_date date,item_code text,item_key text,item_description text,
-          schedule text,value numeric,unit text,period_basis text,source_url text,agent_run_id bigint,fetched_at timestamptz)
-      RETURNING id
-    `;
-    inserted+=result.length;
-  }
+  const inserted=await insertArchiveRows(db,rows,false);
   if(inserted!==rows.length)throw new Error("Restore count mismatch; roll back this transaction");
   await db`UPDATE public_data_cold_files SET pruned_at=NULL WHERE id=${file.id}`;
   return inserted;

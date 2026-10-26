@@ -270,7 +270,10 @@ HMDA preserves every statistic in versioned tuples; the manifest-pinned 2025 yea
 The migration changes no existing observations. See the dated rollout for acceptance and rollback.
 
 James approved the staged rollout on October 26. An admin Atlas workflow with source
-`atlas.storage-rollout.2026-10-26` can request one `compact` or `export` action through the
+`atlas.storage-rollout.2026-10-26` can request one `compact`, `export`, `rehearse` or `prune` action through the
 existing storage step. Each compaction remains bounded to 5,000 rows per table; exports are
-restricted to the four reviewed source/periods. Daily switches remain off. This path never
-prunes or restores, and invalid actions fail before the storage step writes.
+restricted to the four reviewed source/periods. Daily switches remain off. Pruning requires a successful
+rehearsal receipt for that exact file checksum, the approved row counts and twelve newer quarters.
+Rehearsal restores into the migration-owned disposable unlogged table and empties it after exact
+byte comparison. Rollback restoring remains outside this action path. Invalid actions fail before
+the storage step writes.

@@ -2902,7 +2902,8 @@ async function executeAgenticStep(
       const result = await runStorageRetention({ db: tx, commitDb: sql, dryRun: run.runKind === "dry_run", context: { runId: run.id, stepId: step.id, stepKey: step.stepKey } });
       // #1870: Twelve quarters hot. Export, historical compaction and pruning stay off pending rollout.
       const cold = await runColdTier({ db: tx, dryRun: run.runKind === "dry_run", runId: run.id,
-        ...(rolloutAction ? { exportLive: rolloutAction === "export", pruneLive: false, approvedExportsOnly: true } : {}),
+        ...(rolloutAction ? { exportLive: rolloutAction === "export", pruneLive: rolloutAction === "prune",
+          rehearseLive: rolloutAction === "rehearse", approvedExportsOnly: true, requireRehearsal: true } : {}),
       });
       const compaction = await runStorageCompaction(tx, { dryRun: run.runKind === "dry_run",
         ...(rolloutAction ? { live: rolloutAction === "compact" } : {}),
