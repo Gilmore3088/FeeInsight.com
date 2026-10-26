@@ -376,4 +376,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-1882-zero-overdraft-needs-its-whole-cell",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "A $0 overdraft or NSF fee is the bank's price only when the schedule states $0 for the whole fee. Before passing one, read its whole price cell however long it is, and the document's other rows with its name: further prices in its own cell, the same name priced on a band row (\"Negative account balance $10.00 or more\"), or a price straight after the name with the free word in the next column mean the $0 is a band or another column. Re-check live $0s with the same rule Knox applies (bandedZeroOf).",
+    why: "Darwin's conditional-$0 test reads a price cell of more than four words as no price of the fee's, so \"Safety Net Overdraft | $0 if the negative balance is $5 or less. $10 if ... $35 per item\" passed the recheck and went live as the credit union's only overdraft price; 4 of 139 live $0 overdraft and NSF fees were such reads on Oct 26 (#1882). The banded $0 re-check lists them; its switch stays off until they are read against each bank's stored text (sampled-clean rule).",
+    evidence: { issues: [1882], prs: [2702], files: ["src/lib/agents/darwin/banded-zero-check.ts", "src/lib/banded-zero.ts"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
 ];
