@@ -413,7 +413,7 @@ describe("v4 rules: documents that open as a loan disclosure or a youth account'
     });
     const db: DbMock = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
       if (strings.join("?").includes("UPDATE published_fee_records")) return Promise.resolve([{ fee_published_id: "115697" }, { fee_published_id: "142944" }, { fee_published_id: "142945" }]);
-      return base(strings, ...values);
+      return (base as unknown as (s: TemplateStringsArray, ...v: unknown[]) => Promise<unknown>)(strings, ...values);
     });
     const result = await recheckNonDepositDocuments(asDb(db), { runId: 8, stepId: 80, dryRun: false, now });
     expect(result.openingLive).toBe(true);
