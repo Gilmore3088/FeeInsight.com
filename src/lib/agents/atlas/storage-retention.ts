@@ -88,6 +88,20 @@ export const STORAGE_ALERT_GROWTH_MB = 300;
 export const NORMALIZED_WITNESS_ALERT_MB = 256;
 const LISTED_TABLES = 12;
 
+/** Reuse a completed measurement, including its date; the scorecard must not invent a live size. */
+export async function readStorageScorecard(db: SqlTag): Promise<{ databaseMb: number | null; growthMb: number | null; measuredAt: string } | null> {
+  const [row] = await db<{ database_mb: number | null; growth_mb: number | null; created_at: Date | string }[]>`
+    SELECT (e.detail->>'database_mb')::double precision AS database_mb,
+           (e.detail->>'growth_mb')::double precision AS growth_mb,e.created_at
+      FROM agent_run_events e JOIN agent_run_steps s ON s.id=e.step_id
+     WHERE s.step_key='atlas-storage-retention' AND e.event_type='step.finished' AND e.status='completed'
+       AND e.detail->>'database_mb' IS NOT NULL
+     ORDER BY e.id DESC LIMIT 1
+  `;
+  if(!row?.created_at)return null;
+  return { databaseMb: row.database_mb, growthMb: row.growth_mb, measuredAt: new Date(row.created_at).toISOString() };
+}
+
 export interface TableSize {
   table: string;
   totalMb: number;

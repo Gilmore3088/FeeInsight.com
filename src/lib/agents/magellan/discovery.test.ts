@@ -163,8 +163,9 @@ describe("Magellan agentic discovery", () => {
     const result = await runMagellanDiscovery({ runId: 102, dryRun: true, db: asDiscoveryDb(db), fetchImpl });
 
     expect(result.discovered).toBe(1);
-    // Only reads: the market-leader ranking, the shared-name read and the candidate list.
-    const reads = db.mock.calls.map((call) => templateText(call[0]));
+    // Only reads: the market-leader ranking, the shared-name read and the candidate list (the
+    // website-owner fragment is part of the candidate query, #1455).
+    const reads = db.mock.calls.map((call) => templateText(call[0])).filter((text) => !text.includes("discover.website_owner"));
     expect(reads.filter((text) => !text.includes("market leaders by state") && !text.includes("market gaps:") && !text.includes("shared-name check"))).toHaveLength(1);
   });
 
@@ -205,6 +206,30 @@ describe("Magellan agentic discovery", () => {
     expect(logged.every((attempt) => attempt.detail.method_version === DISCOVERY_METHOD_VERSION)).toBe(true);
     expect(logged.find((attempt) => attempt.strategy === "discover.common_paths")?.outcome).toBe("no_candidates");
     expect(db.mock.calls.some((call) => call.includes("magellan_dead"))).toBe(true);
+  });
+
+  it("judges websites another institution stores before choosing banks, and skips those it flags (#1455)", async () => {
+    const contested = {
+      id: 1903, institution_name: "First National Bank", city: "Oldham", state_code: "SD", cert_number: "25894",
+      holding_company_rssd: "1133567", website_url: "https://firstnationalbanks.bank", host: "firstnationalbanks.bank",
+      sharers: [{ id: 582, institution_name: "First National Bank", city: "Fort Pierre", state_code: "SD", cert_number: "3218", holding_company_rssd: "1127294" }],
+    };
+    const db = createDbMock([], learningHandler((text) => (text.includes("website owner review") ? [contested] : undefined)));
+    const fetchImpl = site({
+      "https://firstnationalbanks.bank": () => response("<title>First National Bank</title><li>Fort Pierre, SD</li><li>Murdo, SD</li>"),
+    });
+
+    const result = await runMagellanDiscovery({ runId: 104, db: asDiscoveryDb(db), fetchImpl, politeDelayMs: 0 });
+
+    expect(result.websiteOwners).toMatchObject({ checked: 1, flagged: 1, verdicts: { other_institution: 1 } });
+    const texts = db.mock.calls.map((call) => templateText(call[0]));
+    const review = texts.findIndex((text) => text.includes("website owner review"));
+    const selector = texts.findIndex((text) => text.includes("AS profile_canonical_source_url"));
+    expect(review).toBeGreaterThanOrEqual(0);
+    expect(review).toBeLessThan(selector);
+    // The candidate selector carries the website-owner exclusion.
+    expect(templateText(selectorCall(db)[0])).toContain("AND NOT");
+    expect(texts.some((text) => text.includes("'discover.website_owner'") && text.includes("'other_institution'"))).toBe(true);
   });
 
   describe("guessed-path learning memory", () => {

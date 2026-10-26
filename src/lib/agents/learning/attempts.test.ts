@@ -46,4 +46,16 @@ describe("recordAttempt (#1808)", () => {
     expect(calls[0].text).toContain("VALUES");
     expect(calls[0].text).not.toContain("NOT EXISTS");
   });
+
+  it("bounds free retries to their own ledger step while keeping paid and fetch attempts", async () => {
+    const { db, calls } = captureDb();
+    await recordAttempt(db, { ...specialist, runId: 10, stepId: 20 });
+    expect(calls[0].text).toContain("pa.agent_run_id");
+    expect(calls[0].text).toContain("pa.agent_run_step_id");
+    expect(calls[0].values).toContain(false); // Not the cross-run specialist skipRepeat path.
+    await recordAttempt(db, { ...specialist, runId: 11, stepId: 21, costMicrousd: 1 });
+    expect(calls[1].text).not.toContain("NOT EXISTS");
+    await recordAttempt(db, { ...specialist, stage: "fetch", runId: 12, stepId: 22 });
+    expect(calls[2].text).not.toContain("NOT EXISTS");
+  });
 });

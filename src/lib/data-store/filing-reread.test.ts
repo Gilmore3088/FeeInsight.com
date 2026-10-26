@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("./connection", () => ({ sql: vi.fn() }));
+const coldRead = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/data-catalog/cold-reads", () => ({ readColdCallRows: coldRead }));
 const { financialRecordValue, priorQuarterEnd, readFilingValues } = await import("./filing-reread");
 type Key = Parameters<typeof financialRecordValue>[0];
 
@@ -12,6 +14,23 @@ const key = (change: Partial<Key>): Key => ({
 const row = (institution_id: number, report_date: string, source: string, fields: Record<string, unknown>) => ({ institution_id, report_date, source, ...fields });
 
 describe("the live filing re-read (#1077 step 7)", () => {
+  it("rechecks archived claims from a verified file once per period/measure, preserving a reported zero", async () => {
+    coldRead.mockResolvedValue({rows:[{institution_id:9101,value:0},{institution_id:9102,value:1250}],failed:[],incomplete:[]});
+    const db=vi.fn(async(parts:TemplateStringsArray)=>parts.join("").includes("FROM public_data_cold_files")
+      ? [{source:"ncua",period:"2023-03-31",object_key:"archive",row_count:"2",sha256:"0".repeat(64)}] : []);
+    const a=key({id:"old-a",table:"institution_call_report_items",source:"ncua",institutionId:9101,reportDate:"2023-03-31",metric:"call:acct_452",basis:"point_in_time"});
+    const out=await readFilingValues([a,{...a,id:"old-b",institutionId:9102}],db as never);
+    expect(Object.fromEntries(out)).toEqual({"old-a":0,"old-b":1250});
+    expect(coldRead).toHaveBeenCalledTimes(1);
+    expect(coldRead.mock.calls[0][1]).toEqual({itemKey:"acct_452",institutionIds:[9101,9102]});
+  });
+  it("holds an archived claim when its file fails verification", async () => {
+    coldRead.mockResolvedValue({rows:[{institution_id:9101,value:1250}],failed:["ncua 2023-03-31"]});
+    const db=vi.fn(async(parts:TemplateStringsArray)=>parts.join("").includes("FROM public_data_cold_files")
+      ? [{source:"ncua",period:"2023-03-31",object_key:"archive",row_count:"1",sha256:"0".repeat(64)}] : []);
+    const out=await readFilingValues([key({table:"institution_call_report_items",source:"ncua",institutionId:9101,reportDate:"2023-03-31",metric:"call:acct_452",basis:"point_in_time"})],db as never);
+    expect(out.get("k")).toBeNull();
+  });
   it("names the prior quarter in the same year, and none for Q1", () => {
     expect(priorQuarterEnd("2026-06-30")).toBe("2026-03-31");
     expect(priorQuarterEnd("2026-12-31")).toBe("2026-09-30");

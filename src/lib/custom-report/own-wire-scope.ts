@@ -1,3 +1,4 @@
+import { abbreviatesInternationalWire } from "@/lib/fee-fold";
 import { wireClausePrices } from "./wire-clause-prices";
 
 export type WireDirection = "incoming" | "outgoing";
@@ -94,7 +95,8 @@ export function hasLiteralOutsideUsaWireCue(value: string): boolean {
 
 function facts(own: string): { geography: WireGeography; directions: WireDirection[] } | null {
   const outsideUSA = hasLiteralOutsideUsaWireCue(own);
-  const intl = INTERNATIONAL.test(own) || outsideUSA, domestic = DOMESTIC.test(own);
+  // #1513: "Wire Trans. (Intern. Outgoing)", "Int. Wire Transfer – Outgoing" write international short.
+  const intl = INTERNATIONAL.test(own) || abbreviatesInternationalWire(own) || outsideUSA, domestic = DOMESTIC.test(own);
   const incoming = INCOMING.test(own), outgoing = OUTGOING.test(own);
   // Both means literal common scope, never a merger of unrelated direction cells.
   if (intl && domestic && !/(?:domestic\s*(?:and|or|&|\/)\s*(?:international|foreign|intl)|(?:international|foreign|intl)\s*(?:and|or|&|\/)\s*domestic)/i.test(own)) return null;

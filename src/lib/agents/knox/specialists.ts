@@ -39,6 +39,7 @@ import { withoutGluedSentence } from "./glued-sentence-name";
 import { withGluedFootnotePrices } from "@/lib/custom-report/glued-footnote-price";
 import { networkColumnReads, withoutNetworkTableRows } from "@/lib/custom-report/network-column-rows";
 import { namesLateChargeBound } from "@/lib/late-charge-bound";
+import { rateFloorOf } from "@/lib/rate-floor";
 
 /**
  * Knox's free extraction team, run over one whole document. Pure.
@@ -345,7 +346,48 @@ import { namesLateChargeBound } from "@/lib/late-charge-bound";
 // paper holders beside an electronic price ("$4 for paper statement or $3 for estatement", "$7 with
 // paper statement") stays maintenance. Oct 25 dry run: 19 live maintenance fees match, each checked on
 // its bank's stored text. The stale-read floor stays at v97. Name re-tidy stays at v27.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 117 } as const;
+// v118 (#1615): a price its own line makes the floor of a percentage charge ("Cash Advance | Either
+// $5.00 or 3% of the amount of each cash advance, whichever is greater", "Greater of $10 or 5% of
+// Scheduled Pmt", "Merchant Check Cashing (Greater of 10% of Item or $10)") is not a flat fee
+// (`rateFloorOf` in `src/lib/rate-floor.ts`, shared with Darwin's rate floor re-check). It is held as
+// the percentage, so the rate pass files the rate fee with the floor as its rate_min_amount where the
+// category publishes rates (`rateFeeFromHeld` now reads a "$Y or X%" floor or cap stated before the
+// rate) and keeps it held elsewhere. Another fee's floor on the same line, a lesser-of cap and a figure
+// not joined to the rate by "or" keep the read. Removes flat reads only. The stale-read floor stays at
+// v97. Name re-tidy stays at v27.
+// v119 (#1443): `isCutoffName` also reads the end shapes on the name without its closing qualifiers
+// (`liveQualifiedFragmentShape`, the same function Darwin's live fragment check reads behind its own
+// switch), so "Late Fee up to (see schedule)" and "Gift Cards up to (per card)" are cut off: the note
+// glued after the cut hid the dangling "up to". It uses the live twin's narrow end words, so "each"
+// before a unit note ("Stop payments - each (Draft or ACH)") stays a real name, and leaves out a
+// comparative ("Cashier's check more than (sold to MCB customers only)": a threshold figure the price
+// read took out, the fee itself whole). On 2026-10-25 it matched 3 live fees and 7 verified rows not live. Publish's `cutoff_name` hold, Darwin's release review and Deming's name check
+// read the same function. The stale-read floor stays at v97. Name re-tidy stays at v27.
+// v120 (#1513): two category reads that filed a fee under another fee's name.
+// - A wire's "Intern.", "Int." (before "Wire"), "Internat'l" or bare "INTL" is international
+//   (`abbreviatesInternationalWire` in fee-fold.ts, shared with the source facts in own-wire-scope.ts
+//   and the category guard's switched re-file): "Wire Trans. (Intern. Outgoing)" $35 beside "Wire
+//   Trans. (Dom. Outgoing)" $18, "Int. Wire Transfer – Outgoing" $40 beside "Wire Transfers –
+//   Outgoing" $20. A name that also says domestic ("Dom.") stays domestic. An international wire
+//   named before its incoming word ("Intl Wire Transfer – Incoming") is the incoming one.
+// - A sentence that prices a titled fee ("..., there will be a $1 Overdraft Transfer Fee.") files
+//   under the title when the words before name another category (`titledPriceRead`); the words
+//   before stay in brackets when they carry a condition.
+// Dry run (Oct 26, read-only, live fees): 2 live domestic wires read international (90381, 90382)
+// and 1 live non-network ATM fee is the overdraft transfer (128668), each checked on its stored line. They move only when their banks are next read, each
+// still checked by Darwin. The stale-read floor stays at v97. Name re-tidy stays at v27.
+// v121 (#1672): a table with no label column, whose header row names one account per column ("Savings
+// Account | Checking Account | Money Market | Certificate Accounts | Holiday Account") over rows of
+// each account's features, records the account of a monthly fee cell from its own column
+// (`unlabelledHeaderColumn` in lineup.ts). Every header cell must name an account, the price row's
+// first cell must be a feature cell (a price or "Label: value"), and the price cell must hold the
+// fee's own name. Lower East Side People's FCU's money market "No monthly fee ... otherwise $10.00"
+// (live 135709) recorded no account and stayed live as checking's fee. Account product only: no fee's
+// category or price changes, so the rules re-check this bump replays finds nothing new from it. Oct 26 dry run
+// on prod's live no-product monthly fees with a table line (776): the new read names an account for 10,
+// 3 of them not checking (135709, 56641, 60745); the account-type hold's column read takes those down
+// once switched on. The stale-read floor stays at v97. Name re-tidy stays at v27.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 121 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -645,6 +687,31 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
       // v115 (#1905): a late charge's cap or floor ("maximum late charge of $30 in WV", "Minimum Late
       // Fee $10" beside "5% of Payment Amount") bounds a percentage charge; it is no late fee.
       if (namesLateChargeBound(candidate.feeName)) continue;
+      // v118 (#1615): a price its own line makes the floor of a percentage charge ("$5.00 or 3% of
+      // each cash advance, whichever is greater", "Greater of 10% of Item or $10") is the least the
+      // charge can be, not its price. It is held as the percentage, so the rate pass below files the
+      // rate fee with this floor as its rate_min_amount (or keeps it held), never a flat fee.
+      const floorLine = [candidate.excerpt, checked.row]
+        .find((line): line is string => !!line && rateFloorOf(line, candidate.amount, candidate.feeName) !== null);
+      const floor = floorLine ? rateFloorOf(floorLine, candidate.amount, candidate.feeName) : null;
+      if (floorLine && floor) {
+        const row: HeldFeeCandidate = {
+          shape: "percentage",
+          feeName: candidate.feeName,
+          amount: null,
+          amountMax: null,
+          percent: floor.ratePercent,
+          frequency: candidate.frequency,
+          canonicalHint: candidate.canonicalHint,
+          excerpt: floorLine,
+        };
+        const key = heldKey(row);
+        if (!seenHeld.has(key) && held.filter(prior => !unpricedHalf(prior)).length < MAX_HELD_PER_DOCUMENT) {
+          seenHeld.add(key);
+          held.push(row);
+        }
+        continue;
+      }
       // v32: a name that closes a parenthesis it never opened ("SCCU for using a non-SCCU
       // ATM) | $60") is the end of the line above, and the price is another column's.
       if (closesUnopenedParen(candidate.feeName)) continue;

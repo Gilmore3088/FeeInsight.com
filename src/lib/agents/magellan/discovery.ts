@@ -38,7 +38,8 @@ import {
 } from "./finders";
 import { LINK_YIELD_CHECK, LINK_YIELD_SLOTS, stepSlot } from "./outcomes";
 import { NO_CONSUMER_SCHEDULE_IDS } from "./operator-schedules";
-import { loadSharedNameIds, OTHER_BANK_HOST_CODE, otherInstitutionAtHost } from "./other-bank-host";
+import { loadSharedNameIds, OTHER_BANK_HOST_CODE, otherInstitutionAtHost, websiteOwnedElsewhereSql } from "./other-bank-host";
+import { reviewWebsiteOwners, type WebsiteOwnerReviewResult } from "./website-owner";
 import { loadPageClassifier, type PageClassifier } from "./page-classifier";
 import { createPlatformLearner, type PlatformLearner } from "./platform-learning";
 import {
@@ -93,8 +94,10 @@ const DISCOVERY_METHOD = "magellan_agentic_discovery";
  * in a row run last, and links to another country's schedule are refused (7 Oct 2026).
  * 6: guessed paths honor learning memory for the same homepage and applicable paths;
  * an absent guessed address is a miss, while transient requests remain retryable.
+ * 7: a candidate whose own opening names it a loan, card or line-of-credit disclosure, or a
+ * youth, teen or student account's schedule, is refused (`openingRejection`, #1944).
  */
-export const DISCOVERY_METHOD_VERSION = 6;
+export const DISCOVERY_METHOD_VERSION = 7;
 /** The website repair, logged as its own attempt when it changes the stored address. */
 export const WEBSITE_REPAIR_STRATEGY = { strategy: "discover.website_repair", version: 1 } as const;
 /**
@@ -492,6 +495,8 @@ export interface RunMagellanDiscoveryResult {
   restoredFeePages: RestoreFeePagesResult | null;
   /** Paid search answers kept although the bank's site refused our check (HTTP 403). */
   keptRefusedAnswers: KeepRefusedAnswersResult | null;
+  /** Websites another institution also stores, judged this step (#1455, `website-owner.ts`). */
+  websiteOwners: WebsiteOwnerReviewResult | { error: string } | null;
   /** Search-miss lessons written (`magellan.search_miss`). */
   searchMisses: number;
   /**
@@ -1077,6 +1082,8 @@ async function selectCandidates(
        )
        AND inst.website_url IS NOT NULL
        AND btrim(inst.website_url) <> ''
+       -- Not a website judged another institution's (#1455, website-owner.ts).
+       AND NOT ${websiteOwnedElsewhereSql(db)}
        AND (${normalizedState}::text IS NULL OR upper(btrim(inst.state_code)) = ${normalizedState})
        AND (
          (COALESCE(profile.source_kind, 'unknown') <> 'offline'
@@ -1181,6 +1188,8 @@ async function selectNeverSearchedElsewhere(db: SqlTag, limit: number, stateCode
        AND (inst.fee_schedule_url IS NULL OR btrim(inst.fee_schedule_url) = '')
        AND inst.website_url IS NOT NULL
        AND btrim(inst.website_url) <> ''
+       -- Not a website judged another institution's (#1455, website-owner.ts).
+       AND NOT ${websiteOwnedElsewhereSql(db)}
        AND upper(btrim(COALESCE(inst.state_code, ''))) <> COALESCE(${normalizedState}::text, '')
        AND COALESCE(profile.locked_by_correction, FALSE) IS FALSE
        AND COALESCE(profile.source_kind, 'unknown') <> 'offline'
@@ -1241,6 +1250,8 @@ async function selectUpgradeCandidates(db: SqlTag, limit: number, stateCode: str
            )
        AND inst.website_url IS NOT NULL
        AND btrim(inst.website_url) <> ''
+       -- Not a website judged another institution's (#1455, website-owner.ts).
+       AND NOT ${websiteOwnedElsewhereSql(db)}
        AND (${normalizedState}::text IS NULL OR upper(btrim(inst.state_code)) = ${normalizedState})
        AND COALESCE(profile.locked_by_correction, FALSE) IS FALSE
        AND COALESCE(profile.source_kind, 'unknown') <> 'offline'
@@ -1289,6 +1300,8 @@ async function selectBusinessCandidates(db: SqlTag, limit: number, stateCode: st
        AND lower(regexp_replace(inst.fee_schedule_url, '^https?://[^/]+', '')) !~ ${CONSUMER_PATH_SQL}
        AND inst.website_url IS NOT NULL
        AND btrim(inst.website_url) <> ''
+       -- Not a website judged another institution's (#1455, website-owner.ts).
+       AND NOT ${websiteOwnedElsewhereSql(db)}
        AND (${normalizedState}::text IS NULL OR upper(btrim(inst.state_code)) = ${normalizedState})
        AND COALESCE(profile.locked_by_correction, FALSE) IS FALSE
        AND COALESCE(profile.source_kind, 'unknown') <> 'offline'
@@ -1400,6 +1413,8 @@ async function selectStaleCandidates(
          AND btrim(inst.fee_schedule_url) <> ''
          AND inst.website_url IS NOT NULL
          AND btrim(inst.website_url) <> ''
+         -- Not a website judged another institution's (#1455, website-owner.ts).
+         AND NOT ${websiteOwnedElsewhereSql(db)}
          AND (${normalizedState}::text IS NULL OR upper(btrim(inst.state_code)) = ${normalizedState})
          AND COALESCE(profile.locked_by_correction, FALSE) IS FALSE
          AND COALESCE(profile.source_kind, 'unknown') <> 'offline'
@@ -1915,6 +1930,21 @@ export async function runMagellanDiscovery(
         ...(await loadMarketGapIds(db, undefined, NO_CONSUMER_SCHEDULE_IDS).catch(() => [])),
       ]),
     ];
+  // Websites another institution also stores are judged first (#1455, website-owner.ts): one
+  // found to be another institution's is skipped by every selector below in this same step.
+  const websiteOwners = learning && options.mode !== "rescue"
+    ? await inSavepoint(db, (scope) => reviewWebsiteOwners({
+        db: scope,
+        fetchImpl,
+        runId: options.runId,
+        stepId: options.stepId ?? null,
+        stateCode: options.stateCode ?? null,
+        dryRun,
+      })).catch((error) => {
+        console.error("reviewWebsiteOwners failed:", error);
+        return { error: error instanceof Error ? error.message : String(error) };
+      })
+    : null;
   const found = await selectCandidates(db, limit, options.stateCode, learning, leaderIds);
   // Links that are not the schedule each keep a few reserved slots, searched right after
   // the cut-off banks resuming their search: business-only links, then product pages, then
@@ -2128,6 +2158,7 @@ export async function runMagellanDiscovery(
     secondDocuments,
     restoredFeePages,
     keptRefusedAnswers,
+    websiteOwners,
     searchMisses,
     statedDateRefusals,
     limit,

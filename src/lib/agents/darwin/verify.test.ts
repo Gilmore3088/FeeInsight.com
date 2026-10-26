@@ -2,7 +2,7 @@ import { CATEGORY_AMOUNT_ENVELOPES } from "./envelopes";
 import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { canonicalHintFrom, conditionalZero, DARWIN_BATCH_KEY_VERSION, DARWIN_CATEGORY_HOLDS, DARWIN_SOURCE_CHECK_VERSION, DARWIN_VERIFY_STRATEGY, FREQUENCY_SETTLED_FLAG, pendingCategoryLesson, postSourceCheck, runDarwinVerify, sourceLineFor, statedInOwnSource, verificationReasonCode, verificationReasonText, type RawFeeRow } from "./verify";
+import { canonicalHintFrom, conditionalZero, DARWIN_BATCH_KEY_VERSION, DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE, DARWIN_CATEGORY_HOLDS, DARWIN_SOURCE_CHECK_VERSION, DARWIN_VERIFY_STRATEGY, FREQUENCY_SETTLED_FLAG, pendingCategoryLesson, postSourceCheck, runDarwinVerify, sourceLineFor, statedInOwnSource, verificationReasonCode, verificationReasonText, type RawFeeRow } from "./verify";
 import { CATEGORY_GUARD_VERSION, refileCategory } from "@/lib/fee-category-guard";
 import { DARWIN_PEER_GRADED_VERSIONS, DARWIN_PEER_STRATEGY, DARWIN_SECOND_SOURCE_STRATEGY, resetWiderPeerLevelCache, SECOND_SOURCE_FLAG } from "./peer-checks";
 import { learnedEnvelope, resetLearnedEnvelopeCache } from "./learned-envelopes";
@@ -1209,7 +1209,7 @@ describe("conditional $0 on two-column pages and its own line (#1593, live rows 
   const SD = 1;
   const lineOf = (name: string, text: string, key: string) =>
     sourceLineFor({ fee_name: name, amount: "0.00", source_document_id: SD, amount_kind: "flat", rate_percent: null }, new Map([[SD, text]]), key);
-  const verdict = (name: string, text: string, key: string) => postSourceCheck(key, name, 0, lineOf(name, text, key), text)?.code ?? null;
+  const verdict = (name: string, text: string, key: string, layout?: boolean) => postSourceCheck(key, name, 0, lineOf(name, text, key), text, { layout })?.code ?? null;
 
   const terrabank = [
     "Card Replacement $ 100.00 | Copies per item $ 1.00",
@@ -1262,8 +1262,19 @@ describe("conditional $0 on two-column pages and its own line (#1593, live rows 
     "Fee per transfer for pre-established automatic transfer of funds from a checking, savings, or money market account or line of credit to cover an overdraft.",
   ].join("\n");
 
-  // [published id, fee name, category, document]: 6 of the 8 real free fees the advisor found held.
-  // 56797 and 38491 stay held (below): the page gives no positive proof of the other column.
+  // [published id, fee name, category, document]: the 8 real free fees the advisor found held. 56797
+  // and 38491 are freed by the page layout evidence (2026-10-26, `DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE`):
+  // rows printed side by side around 38491's line, and the right column's heading above 56797's line
+  // that its note describes.
+  const layoutFree: Array<[number, string, string, string]> = [
+    [38491, "Foreign Transaction Fees", "card_foreign_txn", terrabank],
+    [56797, "Maintenance Fee (per statement cycle)", "monthly_maintenance", prairie],
+  ];
+  it.each(layoutFree)("%i is a real free fee by the page layout, held while the switch is off", (_id, name, key, text) => {
+    expect(DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE).toBe(false);
+    expect(verdict(name, text, key)).toBe("conditional_zero");
+    expect(verdict(name, text, key, true)).toBeNull();
+  });
   const free: Array<[number, string, string, string]> = [
     [44979, "Bill Pay", "bill_pay", tcfcu],
     [45011, "Bill Pay", "bill_pay", atlantic],
@@ -1274,6 +1285,7 @@ describe("conditional $0 on two-column pages and its own line (#1593, live rows 
   ];
   it.each(free)("%i is a real free fee, not conditional", (_id, name, key, text) => {
     expect(verdict(name, text, key)).toBeNull();
+    expect(verdict(name, text, key, true)).toBeNull();
   });
 
   it("reads a $0 on the line that prints its whole name when the traced line lacks a word of it", () => {
@@ -1284,12 +1296,7 @@ describe("conditional $0 on two-column pages and its own line (#1593, live rows 
   it("keeps the debatable and the conditional ones held", () => {
     // Debatable (#1593): a fee named for one audience is a person's call.
     expect(verdict("Check Printing (members over 62)", tcfcu, "check_printing")).toBe("conditional_zero");
-    // A real free fee left held on purpose (re-review of #1621): the right column's note "(closed
-    // within 90 days of opening)" reads like a condition, and a freed conditional $0 is the worse miss.
-    expect(verdict("Maintenance Fee (per statement cycle)", prairie, "monthly_maintenance")).toBe("conditional_zero");
-    // Likewise 38491: "Night Depository Bags & Key" carries a fee noun, but a fee noun alone is no
-    // proof (third review of #1621) and the stored lines show no other-fees heading or own row for it.
-    expect(verdict("Foreign Transaction Fees", terrabank, "card_foreign_txn")).toBe("conditional_zero");    // A traced line that carries every word of the name keeps its own terms.
+    // A traced line that carries every word of the name keeps its own terms.
     const twoAccounts = ["Monthly Service Charge 0.00 for 1st account 2nd account $5.00", "Applies to all Internet Banking/Bill Pay", "Monthly Service Fee $0.00"].join("\n");
     expect(verdict("Monthly Service Fee", twoAccounts, "monthly_maintenance")).toBe("conditional_zero");
     // A $0 that is one audience's price is never read in place of the traced line.
@@ -1329,6 +1336,94 @@ describe("conditional $0 on two-column pages and its own line (#1593, live rows 
     expect(conditionalZero(0, "Coin Counting FREE | Commercial Accounts $0.10 per roll", "Coin Counting")).toBe(true);
     const cashier = ["Cashier's Check No Charge Customer $5.00", "Money Order $2.00 Customer $3.00 each"].join("\n");
     expect(conditionalZero(0, "Cashier's Check No Charge Customer $5.00", "Cashier's Check", { documentText: cashier })).toBe(true);
+  });
+
+  it("frees the next cell only when the rows around it are printed side by side (38491, 2026-10-26)", () => {
+    const sideBySide = (line: string) => [
+      "Card Replacement $ 100.00 | Copies per item $ 1.00",
+      "Rush Order $ 125.00 | Mail Deposit Processing, per item $ 15.00",
+      line,
+      "ATM Withdrawals2 | Non-Sufficient Funds (NSF) / Uncollected (UNC)",
+    ].join("\n");
+    const terra = "Foreign Transaction Fees No Charge | Night Depository Bags & Key $ 30.00";
+    expect(conditionalZero(0, terra, "Foreign Transaction Fees", { documentText: sideBySide(terra), layout: true })).toBe(false);
+    // One side-by-side line is not enough.
+    const one = ["Rush Order $ 125.00 | Mail Deposit Processing, per item $ 15.00", terra, "ATM Withdrawals2 | Non-Sufficient Funds (NSF)"].join("\n");
+    expect(conditionalZero(0, terra, "Foreign Transaction Fees", { documentText: one, layout: true })).toBe(true);
+    // Two-cell lines that are a heading and a row, not two rows, are not enough either.
+    const headings = ["Debit Cards | Legal", "Card Delivery No Charge | Seizure, Freeze or Other Disposition", terra, "Funds", "Terrabank owned No Charge"].join("\n");
+    expect(conditionalZero(0, terra, "Foreign Transaction Fees", { documentText: headings, layout: true })).toBe(true);
+    // The same fee by channel, delivery, activity or audience, a quantity, a condition, or a label
+    // sharing the fee's own word stays this fee's price even among side-by-side rows.
+    for (const [name, line] of [
+      ["Stop Payment", "Stop Payment FREE | Verbal Request $30.00"],
+      ["Card Replacement", "Card Replacement FREE | Overnight Shipping $35.00"],
+      ["Monthly Service Fee", "Monthly Service Fee FREE | Low Activity $5.00"],
+      ["Stop Payment", "Stop Payment FREE | Range of Checks $30.00"],
+      ["Paper Statement", "Paper Statement No Charge | With Check Images $ 20.00"],
+      ["Coin Counting", "Coin Counting FREE | Commercial Accounts $0.10 per roll"],
+      ["Safe Deposit Box", "Safe Deposit Box FREE | Large Box $50.00"],
+      ["Monthly Maintenance Fee", "Monthly Maintenance Fee FREE | Minimum Balance Fee $10.00"],
+      // Review of #2676: the fee's own variant or source in the right cell.
+      ["Debit Card Replacement", "Debit Card Replacement No Charge | Lost Or Stolen $10.00"],
+      ["Overdraft Transfer", "Overdraft Transfer No Charge | From Line Of Credit $10.00"],
+      ["Overdraft Transfer", "Overdraft Transfer No Charge | Savings Sweep $10.00"],
+      ["Paper Statement", "Paper Statement No Charge | Printed Image Copies $2.00"],
+      ["Wire Transfer", "Wire Transfer No Charge | International Wire Fee $35.00"],
+      ["Debit Card", "Debit Card No Charge | Rush Card Order $25.00"],
+    ]) {
+      expect(conditionalZero(0, line, name, { documentText: sideBySide(line), layout: true })).toBe(true);
+    }
+  });
+
+  it("frees a run-on tail only when it is the note of the right column's heading just above (56797, 2026-10-26)", () => {
+    const page = (heading: string, row: string, repeat = true) => [
+      "Blue Lion Accounts | Micellaneous Fees",
+      heading,
+      row,
+      "Paper Statement Fee (per statement) $3.00",
+      ...(repeat ? ["Blue Lion Savings", "Maintenance Fee (per statement cycle) $0.00 Lost Debit Card (per card) $10.00"] : []),
+    ].join("\n");
+    const name = "Maintenance Fee (per statement cycle)";
+    const row = "Maintenance Fee (per statement cycle) $0.00 (closed within 90 days of opening) $20.00";
+    expect(conditionalZero(0, row, name, { documentText: page("Blue Lion Checking | Account Early Closure", row), layout: true })).toBe(false);
+    // No repeated row for another account, a heading the note does not describe, a heading with a
+    // price, or an audience heading: the tail stays the fee's terms.
+    expect(conditionalZero(0, row, name, { documentText: page("Blue Lion Checking | Account Early Closure", row, false), layout: true })).toBe(true);
+    expect(conditionalZero(0, row, name, { documentText: page("Blue Lion Checking | Other Services", row), layout: true })).toBe(true);
+    expect(conditionalZero(0, row, name, { documentText: page("Blue Lion Checking | Account Early Closure $20.00", row), layout: true })).toBe(true);
+    expect(conditionalZero(0, row, name, { documentText: page("Blue Lion Checking | Closed Accounts", row), layout: true })).toBe(true);
+    // A mention of the name without its $0 straight after it is not a repeated row (review of #2676).
+    const mention = [
+      "Blue Lion Checking | Account Early Closure",
+      row,
+      "Blue Lion Savings",
+      "Maintenance Fee (per statement cycle) is waived for savings; see Account Early Closure $20.00",
+      "Maintenance Fee (per statement cycle) Lost Debit Card $0.00",
+    ].join("\n");
+    expect(conditionalZero(0, row, name, { documentText: mention, layout: true })).toBe(true);
+    // A note that states the fee's own terms stays a condition, whatever heading sits above.
+    for (const [heading, conditional] of [
+      ["Blue Lion Checking | Low Balance Charge", "Maintenance Fee (per statement cycle) $0.00 (if balance falls below $100) $5.00"],
+      ["Blue Lion Checking | Paper Statements", "Maintenance Fee (per statement cycle) $0.00 (paper statements) $3.00"],
+      ["Blue Lion Checking | Closing Balance Fee", "Maintenance Fee (per statement cycle) $0.00 (closing balance under $500) $5.00"],
+      ["Blue Lion Checking | Direct Deposit Program", "Maintenance Fee (per statement cycle) $0.00 (without direct deposit) $8.00"],
+      ["Blue Lion Checking | Debit Purchase Program", "Maintenance Fee (per statement cycle) $0.00 (fewer than 10 debit purchases) $8.00"],
+      // Review of #2676: a promotion, status, graduation, program or reward condition.
+      ["Student Checking | Promotional Period", "Maintenance Fee (per statement cycle) $0.00 (after promotional period) $10.00"],
+      ["Student Checking | Introductory Period", "Maintenance Fee (per statement cycle) $0.00 (after introductory period ends) $10.00"],
+      ["Blue Lion Checking | Inactive Account", "Maintenance Fee (per statement cycle) $0.00 (inactive 12 months) $5.00"],
+      ["Blue Lion Checking | Dormant Account", "Maintenance Fee (per statement cycle) $0.00 (dormant accounts) $5.00"],
+      ["Student Checking | Graduation", "Maintenance Fee (per statement cycle) $0.00 (after graduation) $8.00"],
+      ["Student Checking | Graduation", "Maintenance Fee (per statement cycle) $0.00 (graduates) $8.00"],
+      ["Blue Lion Checking | Electronic Program", "Maintenance Fee (per statement cycle) $0.00 (electronic program) $3.00"],
+      ["Rewards Checking | Rewards Criteria", "Maintenance Fee (per statement cycle) $0.00 (rewards criteria unmet) $10.00"],
+      ["Kasasa Checking | Kasasa Cash", "Maintenance Fee (per statement cycle) $0.00 (kasasa cash not earned) $10.00"],
+      // An early-closure window with a condition after it is still a condition.
+      ["Blue Lion Checking | Account Early Closure", "Maintenance Fee (per statement cycle) $0.00 (closed within 90 days of opening without direct deposit) $20.00"],
+    ]) {
+      expect(conditionalZero(0, conditional, name, { documentText: page(heading, conditional), layout: true })).toBe(true);
+    }
   });
 
   // Re-review of #1621: the two-column reading frees a $0 only when the other column is positively another fee.

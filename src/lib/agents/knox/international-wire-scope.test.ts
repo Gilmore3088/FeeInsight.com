@@ -15,7 +15,7 @@ const pdf = fixture.sources.find((row: { kind: string }) => row.kind === "consum
 const html = fixture.sources.find((row: { kind: string }) => row.kind === "fresh_html");
 
 describe("source-owned international wire scope, independent of price admission (#2278)", () => {
-  it("keeps all four exact PDF wire prices and the incoming domestic-hint refile", () => {
+  it("keeps all four exact PDF wire prices and the incoming international read", () => {
     expect(createHash("sha256").update(pdf.normalizedText).digest("hex")).toBe(pdf.normalizedTextSHA256);
     expect(pdf.sourceBytesSHA256).toBe("d978a0178d3d8063f8d99c41f508f69135578dbabab1af980836d27b09009cc9");
     const wires = runFreeSpecialists(pdf.normalizedText).candidates.filter(row => row.canonicalHint.startsWith("wire_"));
@@ -28,7 +28,9 @@ describe("source-owned international wire scope, independent of price admission 
       expect(checkFeeAgainstSource(pdf.normalizedText, row.feeName, row.amount, ".", resolved).ok).toBe(true);
       expect(reviewInternationalDirection(scope, resolved).kind).toBe(row.amount < 30 ? "not_applicable" : "admit");
       if (row.amount === 35) {
-        expect(row.canonicalHint).toBe("wire_domestic_incoming");
+        // Knox v120 (#1513) reads "International Wire Incoming" (international before wire, incoming
+        // after) as the incoming international wire itself; before, Darwin's re-file moved its domestic hint.
+        expect(row.canonicalHint).toBe("wire_intl_incoming");
         expect(resolved).toBe("wire_intl_incoming");
         expect(scope).toMatchObject({ geography: "international", directions: ["incoming"] });
       }

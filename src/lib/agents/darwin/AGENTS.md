@@ -386,7 +386,26 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   a domestic wire's row reads its international price as another fee's. A $0 traced to a line
   that lacks a word of its name is read on the line that prints its whole name with its $0
   (`sourceLineFor`), unless that $0 is one audience's. A fee named for one audience ("Check
-  Printing (members over 62)") is never freed by the column reading. A failing row that is
+  Printing (members over 62)") is never freed by the column reading.
+  Page layout evidence (#1593, 2026-10-26; still version 5), behind
+  `DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE` (`verify.ts`, off). Rows printed side by side around the
+  fee's line (two of the two lines above and two below are each "Label $price | Label $price") make
+  its next cell the right column's row only when that cell's label names a different fee: a fee
+  noun and no word of this fee's variants, sources or channels (lost, stolen, from, sweep, rush,
+  printed, images, copies, replacement, incoming...; "Foreign Transaction Fees No Charge | Night
+  Depository Bags & Key $ 30.00", 38491). A run-on tail that is only "(note) $price" is the right
+  column's heading's fee when the two-cell line just above has no price and its right heading
+  shares a word root with the note, the note states no term once an early-closure window
+  ("closed within 90 days of opening") is set aside (the full `tailStatesCondition` test plus
+  promotion, status, graduation, program and reward words), and another line prints the fee's whole
+  name with a $0 straight after it ("Blue Lion Checking | Account Early Closure" over "Maintenance
+  Fee (per statement cycle) $0.00 (closed within 90 days of opening) $20.00", 56797). The evidence
+  only frees $0s the test holds, never holds one more. Off, verdicts are unchanged; a failing
+  `conditional_zero` row the recheck reads anyway records `layout_would_pass` on its attempt. There
+  is no recheck bump: one would re-read every verified row under every rule change since v5 with no
+  count. Turning the switch on is its own PR with its own bump and dry run. Dry run (read-only SQL
+  and the code over the stored texts, 2026-10-26): of the 61 rows held
+  `darwin_recheck:conditional_zero`, 2 pass (verified 37685 / published 38491, 59671 / 56797). A failing row that is
   not live is rejected with an `outlier_flags` entry `darwin_recheck:<code>[:<rule>]`; a live one
   is archived in the same step (`published_fee_records` rolled back with that reason, batch
   `darwin-recheck-<run>`, never deleted), the verified row rejected with the same flag and the
@@ -510,7 +529,12 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   `live_fragment_check`: rows read, the counts and samples by action below, the cursor. `FRAGMENT_NAME_TAKEDOWN_LIVE` is on
   (James's yes, 2026-10-17, after the whole-table dry run: 619 matched, 8 down, 21 renamed, 572 kept
   live for a re-read, 18 exempt; with round 8 below, 7 down and 23 renamed). Switched off it only
-  reports. On, a `takedown` fee is archived in the same step (`rolled_back_reason` `fragment name:
+  reports. #1443 (Knox v119): an end shape a closing note hid ("Late Fee up to (see schedule)",
+  `liveQualifiedFragmentShape`) joins the check only with `QUALIFIED_FRAGMENT_TAKEDOWN_LIVE`, which
+  is off: each step reports those matches as `qualified_shadow` (new matches or changed actions, by
+  action and pattern, with samples) and acts on none. Oct 25 dry run on the 2 live matches: 0
+  down, 0 renamed, 0 re-read, 2 exempt as priced trailing ranges (104534, 149762); a $0 or
+  waived one would come down or be re-read. The count SQL counts the check with the switch off. On, a `takedown` fee is archived in the same step (`rolled_back_reason` `fragment name:
   <pattern>`, batch `darwin-live-fragment-<run>`, never deleted), its verified row is rejected
   with `darwin_live_fragment:<pattern>` so publish does not bring it back, the public read cache
   is cleared and a `darwin.live_fragment_name_taken_down` event lists the takedowns. A pure
@@ -1075,6 +1099,36 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   companion filter skips these documents too. A card program's section inside one fee page (Navy
   Federal's "GO Prepaid Cards", #1905) has no address of its own and is not caught here; the
   card program section re-check below reads it.
+  v4 (#1944, James's live-fee check round 2, Oct 18): the document's own opening, the first three
+  lines of its newest completed stored text (`documentOpeningKind` in
+  `src/lib/non-deposit-document.ts`, read once per document in each batch), not only its address.
+  `loan_titled_document`: a document that opens as a loan, card, HELOC or line-of-credit disclosure
+  or agreement ("TD Fit Personal Unsecured Consumer Loan Disclosure" at
+  `td-fit-account-guide-acc-en.pdf`, whose "Monthly fee" $0 and "NSF payment fee" $0 were live under
+  deposit categories; "IMPORTANT CREDIT CARD DISCLOSURES"; "VISA CREDIT CARD / AGREEMENT AND
+  DISCLOSURE STATEMENT" read across two lines). On a document the address names no kind, every fee
+  on it comes down; on one the address already calls a loan page, lending fees keep
+  `lending_category` and only the deposit-category fees v2 kept move here. An overdraft line of
+  credit agreement, a business card agreement, a menu's "Loan Application" and a general schedule
+  with a loan section do not count. `youth_account_document`: a document that opens as a youth,
+  teen, student or minor account's schedule or addendum ("Youth Member Fee Schedule (ages 13-17)";
+  Arbor Financial's Volt addendum, "The following additional disclosures apply to the Volt Teen
+  Banking & Volt Banking accounts", whose NSF "FREE*" means members 9-18 cannot overdraw, beside
+  "(regularly $35)"); every fee on it, when the address names no other kind. A general schedule
+  that lists a student account among others, a negated mention ("does not apply to Youth
+  Savings"), a credit union named for students and a youth heading past the third line do not
+  count. The address never gives the youth kind: GTE Financial's `/go-student-checking` page carried
+  27 live general fees. Both rules act only with `OPENING_DOCUMENT_TAKEDOWN_LIVE` (off: counted,
+  left as they are; all 17 matched documents' stored openings were checked and none is a general
+  schedule, so the sample is clean for turning it on) and Hamilton's publish gate and depth count
+  ask the same rule with the row's document opening. Dry run (prod, read-only, Oct 25, `openingDocumentFeesSql()`):
+  48 live fees on 17 documents at 15 institutions, 41 `loan_titled_document` (15 documents) and 7
+  `youth_account_document` (2 documents); none of the 17 had an address kind. A loan phrase after
+  "your", "the" or a like word is a sentence, not a title, and an opening that names a general
+  schedule is never a loan document (review of #2671; doc 18797's "governed by the credit card
+  Agreement" dropped out). Step detail adds
+  `opening_document`, `opening_documents`, `opening_institutions`, `opening_switch_live` and
+  `samples_opening_document`; each sample carries `opening`.
 - Spanish copies of an English schedule (`translated-copy-check.ts`, #1909, James's live-fee check
   Oct 18). M&T publishes its checking fee guide in English and Spanish, both were read, and "Cargo
   por sobregiro" $15 sat beside "Overdraft Fee" $15. A live fee comes down only when its document's
@@ -1122,6 +1176,24 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   matches 2, v2 adds 5 (105411, 105412, 49815, 110285, 142887 at institutions 156, 6110, 8577, 321),
   each one and its twin found on their own stored text by `checkFeeAgainstSource`, so the switch
   stays on.
+- Same-line copies beside their older line's replacement (`same-line-replacement-check.ts`, v1,
+  #1673). Hamilton's same-line restore v1 brought a copy back once its older line was down, though
+  that line had often come down for a newer line of the same fee (`refreshed by #`, `duplicate of
+  #`), so the copy went live beside it: 15109 "for each check requested for stop payment." $19.95
+  beside 141864 "Stop Payment Fee - Check". The restore now follows the replacement (Hamilton v2).
+  This re-check reads every live fee whose `hamilton.same_line_duplicate` second look is
+  `takedown_confirmed`, follows its older line's chain with the restore's own rule
+  (`sameLineReplacementSql`, live and unquarantined only; a held replacement is the hold's to
+  judge), and matches it when the replacement has its institution, category and dollar amount,
+  the names name one item (`repeatsScheduleLine`), the variants agree and the frequencies do not
+  differ. `SAME_LINE_REPLACEMENT_TAKEDOWN_LIVE` is off: the step reports only (step detail
+  `same_line_replacement_check`). Switched on, a match goes through the 12-hour second look (check
+  `darwin.same_line_replacement`) and is archived on its second failure while its replacement is
+  live (rolled back as `same_line_duplicate: live fee #<replacement>`, batch
+  `darwin-same-line-replacement-<run>`, the verified row rejected with the `same_line_duplicate`
+  flag, never deleted; event `darwin.same_line_replacement_takedown`), so Hamilton's restore brings
+  it back if that line goes. Dry run 2026-10-25 22:14 UTC (prod, read-only): 17 candidates, 8 at 5
+  institutions would come down (15109, 66618, 104751, 104866, 105031 to 105034), 9 stay.
 - Schedule editions (`edition-effective-check.ts`, #1915). Avidia's schedule "Effective December 1,
   2026" went live beside its March 2024 one, so the page showed next year's $35 overdraft. Each
   step reads the edition each document's heading states (`editionStarts` in
@@ -1188,6 +1260,22 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   `late_charge_bound: <name>` (verified row rejected with the `late_charge_bound` flag). Step
   detail `late_charge_bound_check`. Dry run Oct 25: 5 live fees at 3 institutions (15729, 154636,
   154637 at 4956; 79880 at 5338; 124614 at 6789).
+- A percentage charge's floor read as a flat fee (`rate-floor-check.ts`, #1615). "Cash Advance |
+  Either $5.00 or 3% of the amount of each cash advance, whichever is greater" costs the percentage;
+  the $5 is the least it can be, and went live as a flat $5. Knox v118 no longer reads such a floor as
+  a flat fee (`rateFloorOf`, `src/lib/rate-floor.ts`). Each verify step reads every live flat fee whose
+  stored line carries greater-of wording and a percentage, and `rateFloorOf` decides on the fee's name
+  and line: only the fee's own figure (the first at its amount after its name) joined to the rate by
+  "or" counts, with no lesser-of words or sentence end before the greater-of words, so another fee's
+  floor on the same line and a lesser-of cap keep the fee. Each match says whether the bank's same-category rate fee
+  at that percentage is live; a takedown never adds a rate fee (Knox's v118 re-read files it). The
+  switch (`RATE_FLOOR_TAKEDOWN_LIVE`) is off until a sample is read clean (sampled-clean rule,
+  DECISIONS 2026-10-20); on, a match goes through the 12-hour second look (`darwin.rate_floor`) and is
+  archived with `rate_floor: <rate>% or $<floor>, whichever is greater` (verified row rejected with the
+  `rate_floor` flag; event `darwin.rate_floor_takedown`). Step detail `rate_floor_check`. Dry run Oct
+  25: 53 of 58 live fees at 48 institutions, 2 beside the live rate fee (13406, 68415). Missed: 80150,
+  a floor ("C a sh Adva nce. ......$5.00 or 2% whichever is great er", text 242), for a misaligned
+  excerpt and spaced OCR text.
 - Card program sections of a general schedule (`card-program-section-check.ts`, #1908, #1905). Navy
   Federal's fees page prints "Prepaid and Gift Cards" / "GO Prepaid Cards" sections after its deposit
   fees, and their "Lost/Stolen Card" $5 and Visa/PLUS ATM $1 rows went live as the account's fees on
@@ -2009,12 +2097,14 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v5 | `darwin/verified-recheck.ts` |
 | `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v7 | `darwin/live-fragment-check.ts` |
 | `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v3 | `darwin/hourly-frequency-check.ts` |
-| `NON_DEPOSIT_CHECK_VERSION` | `darwin.non_deposit_document` | v3 | `darwin/non-deposit-document-check.ts` |
+| `NON_DEPOSIT_CHECK_VERSION` | `darwin.non_deposit_document` | v4 | `darwin/non-deposit-document-check.ts` |
 | `LINE_CONFLICT_CHECK_VERSION` | `darwin.line_conflict` | v1 | `darwin/line-conflict-check.ts` |
 | `TRANSLATED_COPY_CHECK_VERSION` | `darwin.translated_copy` | v2 | `darwin/translated-copy-check.ts` |
 | `PRODUCT_PAGE_REPEAT_CHECK_VERSION` | `darwin.product_page_repeat` | v2 | `darwin/product-page-repeat-check.ts` |
+| `SAME_LINE_REPLACEMENT_CHECK_VERSION` | `darwin.same_line_replacement` | v1 | `darwin/same-line-replacement-check.ts` |
 | `CANADIAN_DOCUMENT_CHECK_VERSION` | `darwin.canadian_document` | v1 | `darwin/canadian-document-check.ts` |
 | `LATE_CHARGE_BOUND_CHECK_VERSION` | `darwin.late_charge_bound` | v1 | `darwin/late-charge-bound-check.ts` |
+| `RATE_FLOOR_CHECK_VERSION` | `darwin.rate_floor` | v1 | `darwin/rate-floor-check.ts` |
 | `CARD_PROGRAM_SECTION_CHECK_VERSION` | `darwin.card_program_section` | v1 | `darwin/card-program-section-check.ts` |
 | `DOCUMENT_OWNER_STRATEGY` | `verify.document_owner` | v1 | `darwin/document-owner.ts` |
 | `DARWIN_VERIFY_STRATEGY` | `verify.rules` | v3 | `darwin/verify.ts` |

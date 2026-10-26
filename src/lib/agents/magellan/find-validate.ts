@@ -3,6 +3,7 @@ import { htmlToScoringText, isProductPageUrl, scoreFeePage, urlNamesFeePage } fr
 
 import { isArticleLink, isBusinessOnlyLink, isBusinessOnlyText, isErrorPageLink, isForeignHostLink, isNonFeeDocumentLink, isSingleProductDisclosureLink, looksForeignSchedule } from "./link-coverage";
 import { unconfirmedDocumentHost } from "./other-bank-host";
+import { documentOpeningKind } from "@/lib/non-deposit-document";
 
 /**
  * The fee-page check every Magellan finder (free and paid) runs before a link is
@@ -96,6 +97,8 @@ export type CandidateVerdict =
   | "error_page"
   | "article_page"
   | "single_product_disclosure"
+  | "loan_document"
+  | "youth_account_document"
   | "non_fee_document"
   | "unconfirmed_host"
   | "unreadable_pdf_weak_label"
@@ -192,6 +195,21 @@ export async function pdfCheckText(bytes: Uint8Array, maxPages = PDF_CHECK_PAGES
 
 function rejected(verdict: CandidateVerdict, reason: string, status: number | null, confidence = 0): CandidateValidation {
   return { ok: false, documentType: null, confidence, reason, verdict, status, html: null };
+}
+
+/**
+ * A document whose own opening names it a loan, card or line-of-credit disclosure, or a youth,
+ * teen or student account's schedule or addendum (`documentOpeningKind`, #1944), is not the
+ * institution's general personal schedule, whatever its address says: TD's
+ * "td-fit-account-guide-acc-en.pdf" opens "TD Fit Personal Unsecured Consumer Loan Disclosure",
+ * Arbor Financial's "Volt Disclosures 4.pdf" opens with disclosures for its teen accounts. Both
+ * gave live $0 fees the institution's schedule does not charge that way.
+ */
+export function openingRejection(text: string, status: number | null, confidence: number): CandidateValidation | null {
+  const kind = documentOpeningKind(text);
+  if (kind === "loan") return rejected("loan_document", "Candidate opens as a loan, card or line-of-credit disclosure, not the deposit fee schedule", status, confidence);
+  if (kind === "youth_account") return rejected("youth_account_document", "Candidate opens as a youth, teen or student account's schedule, not the institution's general schedule", status, confidence);
+  return null;
 }
 
 /** Open a candidate and decide whether it is the bank's fee schedule. Throws only on network errors. */
@@ -303,6 +321,8 @@ function checkFeeHtml(candidate: FeeCandidate, rawBody: string, status: number):
   if (looksForeignSchedule(mainText)) {
     return { ...rejected("foreign_schedule", "Candidate is another country's fee schedule (foreign currency)", response.status, candidate.score), html: rawBody, scoringText: mainText };
   }
+  const opening = openingRejection(mainText, response.status, candidate.score);
+  if (opening) return { ...opening, html: rawBody, scoringText: mainText };
   const page = scoreFeePage(mainText, candidate.url, { feeSchedule: true });
   if (page.productPage) {
     return { ...rejected("product_page", `Candidate is an account or product page (${page.reason})`, response.status, candidate.score), html: rawBody, scoringText: mainText };
@@ -376,6 +396,8 @@ async function validatePdf(candidate: FeeCandidate, response: Response): Promise
   if (looksForeignSchedule(text)) {
     return { ...rejected("foreign_schedule", "PDF is another country's fee schedule (foreign currency)", response.status, candidate.score), scoringText: text };
   }
+  const opening = openingRejection(text, response.status, candidate.score);
+  if (opening) return { ...opening, scoringText: text };
   const page = scoreFeePage(text);
   if (page.verdict === "wrong_document") {
     return { ...rejected("not_fee_page", `PDF is not a fee schedule (${page.reason})`, response.status, candidate.score), scoringText: text };

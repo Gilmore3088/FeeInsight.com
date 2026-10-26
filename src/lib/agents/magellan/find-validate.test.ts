@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from "vitest";
 
-import { looksLikeProductPage, mainContentText, validateFeeCandidate } from "./find-validate";
+import { looksLikeProductPage, mainContentText, openingRejection, validateFeeCandidate } from "./find-validate";
 
 /** A minimal one-page PDF with real text objects (no lines: an image-only "scan"). */
 function pdf(lines: string[]): Uint8Array {
@@ -33,6 +33,24 @@ function serve(body: BodyInit, contentType: string) {
 }
 
 const candidate = (url: string, score = 0.9) => ({ url, score, reasons: ["schedule of fees"] });
+
+describe("Magellan refuses documents that open as a loan disclosure or a youth account's (#1944)", () => {
+  it("names them from the opening", () => {
+    expect(openingRejection("TD Fit Personal Unsecured Consumer Loan Disclosure\nMonthly fee $0", 200, 0.9)).toMatchObject({ ok: false, verdict: "loan_document" });
+    expect(openingRejection("ACCOUNT-SPECIFIC DISCLOSURES\nThe following additional disclosures apply to the Volt Teen Banking & Volt Banking accounts:", 200, 0.9)).toMatchObject({ ok: false, verdict: "youth_account_document" });
+    expect(openingRejection("Schedule of Fees\nOverdraft fee $32.00\nNSF fee $30.00", 200, 0.9)).toBeNull();
+    expect(openingRejection("Georgetown University Alumni & Student Federal Credit Union\nFee Schedule\nOverdraft fee $25.00", 200, 0.9)).toBeNull();
+  });
+
+  it("rejects a loan disclosure PDF that lists fees, and keeps the general schedule", async () => {
+    const loan = pdf(["TD Fit Personal Unsecured Consumer Loan Disclosure", "Monthly fee $0.00", "Non-sufficient funds (NSF) payment fee $0.00", "Late fee $0.00"]);
+    const general = pdf(["Schedule of Fees", "Overdraft fee $32.00", "NSF fee $30.00", "Stop payment $35.00", "Wire transfer fee $25.00"]);
+    const loanResult = await validateFeeCandidate(candidate("https://www.td.com/td-fit-account-guide-acc-en.pdf"), serve(loan as BodyInit, "application/pdf"));
+    const generalResult = await validateFeeCandidate(candidate("https://a.example/fees.pdf"), serve(general as BodyInit, "application/pdf"));
+    expect(loanResult).toMatchObject({ ok: false, verdict: "loan_document" });
+    expect(generalResult).toMatchObject({ ok: true, verdict: "accepted_pdf" });
+  });
+});
 
 describe("Magellan fee-page check", () => {
   it("accepts a text PDF that lists fees", async () => {

@@ -1,3 +1,4 @@
+import { compactCallStorageReady, writeCompactCallItems } from "@/lib/data-store/call-item-storage";
 import { sql } from "@/lib/data-store/connection";
 import { FFIEC_BULK_URL, FFIEC_POR_FILE, NO_FFIEC_POR, fetchFfiecCallBulk, readFfiecPor, schedulePattern, type FfiecPorRead } from "@/lib/regulatory/ffiec";
 import {
@@ -87,6 +88,20 @@ export interface RegistryFfiecCallDetailResult {
 
 async function writeValues(db: RegistryDb, q: Quarter, values: FfiecItemValue[], runId: number | null): Promise<number> {
   const reportDate = quarterEndDate(q);
+  if (await compactCallStorageReady(db)) {
+    return writeCompactCallItems(db, { source: "ffiec", reportDate: reportDate, url: FFIEC_BULK_URL, runId,
+      rows: values.map((v) => ({
+        rssd: v.rssd,
+        item_key: v.key,
+        item_code: v.code,
+        item_description: v.description,
+        schedule: v.schedule,
+        value: v.value,
+        unit: v.unit,
+        period_basis: v.basis,
+      })),
+    });
+  }
   let written = 0;
   for (let at = 0; at < values.length; at += WRITE_CHUNK) {
     const payload = JSON.stringify(
@@ -111,7 +126,7 @@ async function writeValues(db: RegistryDb, q: Quarter, values: FfiecItemValue[],
          WHERE s.source = 'fdic' AND s.rssd_id IN (SELECT DISTINCT rssd FROM r)
          ORDER BY s.rssd_id, s.id
       )
-      INSERT INTO institution_call_report_items
+      INSERT INTO institution_call_report_items AS f
         (institution_id, source, report_date, item_code, item_key, item_description, schedule, value, unit,
          period_basis, source_url, agent_run_id, fetched_at)
       SELECT ids.institution_id, 'ffiec', ${reportDate}::date, r.item_code, r.item_key, r.item_description, r.schedule,
@@ -127,6 +142,9 @@ async function writeValues(db: RegistryDb, q: Quarter, values: FfiecItemValue[],
         source_url = EXCLUDED.source_url,
         agent_run_id = EXCLUDED.agent_run_id,
         fetched_at = NOW()
+      -- Partition receipts record successful rechecks; unchanged facts keep their original row.
+      WHERE ROW(f.item_code, f.item_description, f.schedule, f.value, f.unit, f.period_basis, f.source_url)
+        IS DISTINCT FROM ROW(EXCLUDED.item_code, EXCLUDED.item_description, EXCLUDED.schedule, EXCLUDED.value, EXCLUDED.unit, EXCLUDED.period_basis, EXCLUDED.source_url)
       RETURNING 1
     `;
     written += [...(result as unknown as unknown[])].length;

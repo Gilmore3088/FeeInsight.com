@@ -7,6 +7,26 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const DARWIN_LESSONS: AgentLesson[] = [
   {
+    id: "issue-1694-grade-the-holds-you-re-decide",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "Before a check's new version re-decides older holds, grade a sample of those very holds against each bank's stored text, spread by day and category, and replay today's rules on the sample to count the misreads that would be verified. A grade of one period's holds does not carry to holds made under an older version or from older reads: keep the older holds out of the re-decision until their own grade backs it, and let a newer read of their document decide them instead.",
+    why: "Peer check v5 (#1691) stopped holding outliers outside six categories because, among the v3/v4 holds of Oct 15–16, those were nearly all real fees (103 real, 14 misread in v4). The 2,124 v1/v2 holds of Oct 5–10 were never graded. The Oct 26 grade of 60 of them found 34 real, 21 misread and 5 unsure; replaying today's rules, v5 would verify 27 of the 30 outside its categories, 6 of them misreads (an invalid-address fee as NSF, a fax as account research, a scanner's and a cash management service's \"Monthly Service\" as maintenance, a neighbour's price). So the v1/v2 versions stay out of DARWIN_PEER_GRADED_VERSIONS.",
+    evidence: { issues: [1694, 1691], prs: [2679], files: ["src/lib/agents/darwin/peer-checks.ts", "docs/project/findings/2026-10-26-peer-v1v2-holds-graded.md"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
+  {
+    id: "issue-1593-page-layout-free-zero",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "Before reading a second price on a $0 fee's line as its condition, read how the page lays out the lines around it: when the neighbouring lines are each two whole rows side by side (a label and its own price on both sides of the cell break), a right cell whose label names a different fee (a fee noun, and no word of this fee's own variants, sources or channels such as lost, stolen, from, sweep, rush, printed or images) is the right column's row; and a note-and-price tail under the right column's heading printed just above is that heading's fee only when the note is an early-closure window (\"closed within 90 days of opening\") or states no term at all, and the fee's own row, its name with a $0 straight after it, repeats for another account. A note that states a balance, statement, deposit, audience, promotion, status, program or reward stays the fee's condition. Ship such a release behind a switch with a dry run, never a recheck version bump that re-reads every row under other unmeasured rule changes.",
+    why: "After #1621, two real free fees stayed held as conditional $0 and were taken down by the second look: Terrabank's \"Foreign Transaction Fees No Charge | Night Depository Bags & Key $ 30.00\" (38491) and Bank of Prairie Village's Blue Lion Checking maintenance fee (56797). The test read a fee noun or a condition-like word as enough, ignoring the page's own two-column layout. The review of #2676 found the first draft freed notes such as \"(after promotional period) $10.00\" and right cells such as \"Lost Or Stolen $10.00\", and that its recheck bump would have re-read every verified row under ten days of uncounted rule changes. Dry run on Oct 26 (read-only SQL and the code over the stored texts): of the 61 rows the recheck holds as conditional_zero, these 2 pass with the layout evidence and no other row changes.",
+    evidence: { issues: [1593], prs: [2676], files: ["src/lib/agents/darwin/verify.ts", "src/lib/agents/darwin/verified-recheck.ts"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
+  {
     id: "issue-1945-latest-edition-in-force",
     agent: "darwin",
     stage: "verify",
@@ -343,6 +363,16 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     lesson: "Re-check live fees against the section they were printed in, not only the document's address: a fee on the bank's own fee schedule can still be a prepaid, payroll, gift or travel card's fee when it sits under that card's heading. Take one down only when every line that prints its name at its price sits in such a section, keep the card's purchase and reload prices, and read the stored text with the same shared rule the extractor uses (card-program-section.ts), so a re-read cannot bring the fee back and the re-check cannot disagree with the reader.",
     why: "Navy Federal's GO Prepaid and Visa Gift Card rows came back live after each re-read of its fees page and needed three hand takedowns (#1905); the address-only card_program_document re-check could not see a section inside a general schedule.",
     evidence: { issues: [1908, 1905], prs: [], files: ["src/lib/agents/darwin/card-program-section-check.ts", "src/lib/custom-report/card-program-section.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
+  {
+    id: "issue-1615-rate-floor-recheck",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "A flat fee whose own line makes its amount the floor of a percentage charge (\"$Y or X%, whichever is greater\") traces to the page, so the source check passes it, but it is not the fee's price. Re-check live flat fees with the same rule Knox applies (rateFloorOf) and say whether the bank's rate fee at that percentage is live; a takedown removes the floor and never invents the rate.",
+    why: "53 such fees were live at 48 institutions on Oct 25, only 2 beside their live rate fee (#1615). Darwin's rate-floor check lists them; its switch stays off until a sample is read against each bank's stored text (sampled-clean rule).",
+    evidence: { issues: [1615], prs: [2673], files: ["src/lib/agents/darwin/rate-floor-check.ts", "src/lib/rate-floor.ts"] },
     appliesTo: "all",
     since: "2026-10-25",
   },
