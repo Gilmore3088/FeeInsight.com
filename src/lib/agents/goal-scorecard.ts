@@ -9,6 +9,8 @@ import { BATCH_REVIEW_CHECK, type BatchMissKind } from "@/lib/agents/rosetta/bat
 import { readLiveSourceAudit } from "@/lib/data-store/live-source-audit-read";
 import { liveAuditBrief,validateLiveAuditComponent,type LiveAuditComponent } from "./deming/live-source-audit-records";
 import { readKnoxHoldGroups, type KnoxHoldAges } from "./knox/held-queue";
+import { ANSWER_KEY_SCORER_VERSION } from "@/lib/data-store/answer-key";
+import type { KnoxSpecialistScore } from "./answer-key-score";
 
 /**
  * The goal scorecard (#1040): the numbers that say whether Fee Insight is getting closer to a
@@ -59,7 +61,12 @@ export const GOAL_QUERIES = {
   dataQuality: "goal.deming_data_quality_latest",
   knoxHeld: "goal.knox_held_by_reason_age",
   knoxHeldExits: "goal.knox_held_exits_weekly",
+  knoxAnswerKey: "goal.knox_answer_key_right_document",
 } as const;
+
+/** James, Oct 12 (#1098, DECISIONS): Knox finds 85% of the key's fees, and 90% of what it finds is right. */
+export const KNOX_FOUND_TARGET = 0.85;
+export const KNOX_RIGHT_TARGET = 0.9;
 
 /** Weeks of text-reading misses shown, oldest first, the current week last (#1054). */
 export const READER_MISS_WEEKS = 8;
@@ -427,6 +434,36 @@ export interface KnoxHeldExitWeeks {
   weeks: KnoxHeldExitWeek[];
 }
 
+/**
+ * Knox against its targets on the answer key (#1098), counting only banks whose right document
+ * Rosetta read: the newest stored answer-key score, summed from its per-bank Knox counts.
+ */
+export interface KnoxAnswerKeyScore {
+  query: string;
+  /** The answer-key score run read; null when there is none at this scorer version. */
+  scoreRunId: number | null;
+  scoredAt: string | null;
+  scorerVersion: number;
+  /** The reference cohort's state stored with that score ("measured" or "no_measurement"); null on a run from before it. */
+  referenceState: string | null;
+  /** Answer-key banks whose right document Rosetta read, with at least one key fee. */
+  banks: number;
+  /** Key fees on those banks. */
+  expected: number;
+  /** Key fees a Knox row from the right document matches. */
+  found: number;
+  /** Knox's distinct (category, price) reads from those documents. */
+  reads: number;
+  /** Reads that are in the key. */
+  right: number;
+  /** found / expected (target 85%). */
+  recall: number | null;
+  /** right / reads (target 90%). */
+  precision: number | null;
+  /** Each specialist's own found/right; null on a score run from before #1098. */
+  bySpecialist: KnoxSpecialistScore[] | null;
+}
+
 export interface GoalScorecard {
   readAt: string;
   windowDays: number;
@@ -450,6 +487,8 @@ export interface GoalScorecard {
   /** Knox's held pile by reason and age, and lines leaving it each week (#1102); absent on snapshots from before it. */
   knoxHeld?: KnoxHeldPile | null;
   knoxHeldExits?: KnoxHeldExitWeeks | null;
+  /** Knox's found/right on the answer key against 85/90, and per specialist (#1098); absent on snapshots from before it. */
+  knoxAnswerKey?: KnoxAnswerKeyScore | null;
 }
 
 const usd = (micro: unknown): number => Math.round(Number(micro ?? 0) / 10_000) / 100;
@@ -1087,6 +1126,88 @@ export async function readKnoxHeldExitWeeks(db: SqlTag, now: Date): Promise<Knox
   };
 }
 
+const share = (numerator: number, denominator: number): number | null =>
+  denominator > 0 ? Math.round((numerator / denominator) * 10_000) / 10_000 : null;
+
+/** Pure: a stored specialist row, or null when it is not one. */
+function specialistFrom(value: unknown): KnoxSpecialistScore | null {
+  if (!value || typeof value !== "object") return null;
+  const row = value as Record<string, unknown>;
+  if (typeof row.strategy !== "string" || !row.strategy) return null;
+  const banks = missCount(row.banks);
+  const found = missCount(row.found);
+  const foundOnly = missCount(row.foundOnly);
+  const reads = missCount(row.reads);
+  const right = missCount(row.right);
+  const num = (field: unknown) => (field == null || !Number.isFinite(Number(field)) ? null : Number(field));
+  return { strategy: row.strategy, banks, found, foundOnly, reads, right, precision: share(right, reads), shareOfKey: num(row.shareOfKey) };
+}
+
+/**
+ * Pure: the newest answer-key score row as Knox's target numbers. The totals are summed in SQL from
+ * the run's per-bank Knox counts (banks whose right document Rosetta read); the specialist rows are
+ * the ones the scorer stored with the run (`by_stage._knox_specialists`), absent before #1098.
+ */
+export function knoxAnswerKeyFrom(row: Record<string, unknown> | undefined): Omit<KnoxAnswerKeyScore, "query"> {
+  if (!row || row.id == null) {
+    return { scoreRunId: null, scoredAt: null, scorerVersion: ANSWER_KEY_SCORER_VERSION, referenceState: null,
+      banks: 0, expected: 0, found: 0, reads: 0, right: 0, recall: null, precision: null, bySpecialist: null };
+  }
+  const expected = missCount(row.expected);
+  const found = missCount(row.found);
+  const reads = missCount(row.reads);
+  const right = missCount(row.right);
+  const stored = (typeof row.specialists === "string" ? JSON.parse(row.specialists) : row.specialists) as Record<string, unknown> | null;
+  const list = stored && Array.isArray(stored.bySpecialist) ? stored.bySpecialist : null;
+  const scoredAt = row.scored_at instanceof Date ? row.scored_at.toISOString() : row.scored_at == null ? null : String(row.scored_at);
+  return {
+    scoreRunId: Number(row.id),
+    scoredAt,
+    scorerVersion: Number(row.scorer_version ?? ANSWER_KEY_SCORER_VERSION),
+    referenceState: typeof row.reference_state === "string" ? row.reference_state : null,
+    banks: missCount(row.banks),
+    expected,
+    found,
+    reads,
+    right,
+    recall: share(found, expected),
+    precision: share(right, reads),
+    bySpecialist: list ? list.map(specialistFrom).filter((entry): entry is KnoxSpecialistScore => entry != null) : null,
+  };
+}
+
+/**
+ * The newest answer-key score at the current scorer version (one row, by the `scored_at` index), with
+ * its per-bank Knox counts summed over the banks whose right document Rosetta read. Reads only the
+ * stored score; it never re-scores.
+ */
+export async function readKnoxAnswerKey(db: SqlTag): Promise<KnoxAnswerKeyScore> {
+  const [row] = await db<Array<Record<string, unknown>>>`
+    SELECT r.id, r.scored_at, r.scorer_version,
+           r.by_stage->'_reference'->>'state' AS reference_state,
+           r.by_stage->'_knox_specialists' AS specialists,
+           k.banks, k.expected, k.found, k.reads, k.right
+      FROM (
+        SELECT id, scored_at, scorer_version, by_stage, by_bank
+          FROM answer_key_score_runs
+         WHERE scorer_version = ${ANSWER_KEY_SCORER_VERSION}
+         ORDER BY scored_at DESC, id DESC
+         LIMIT 1
+      ) r
+      CROSS JOIN LATERAL (
+        SELECT COUNT(*)::int AS banks,
+               COALESCE(SUM((b->'stages'->'knox'->>'expected')::int), 0)::int AS expected,
+               COALESCE(SUM((b->'stages'->'knox'->>'matched')::int), 0)::int AS found,
+               COALESCE(SUM((b->'stages'->'knox'->>'predicted')::int), 0)::int AS reads,
+               COALESCE(SUM((b->'stages'->'knox'->>'correct')::int), 0)::int AS right
+          FROM jsonb_array_elements(CASE WHEN jsonb_typeof(r.by_bank) = 'array' THEN r.by_bank ELSE '[]'::jsonb END) b
+         WHERE b->'stages'->'rosetta'->>'right' = 'true'
+           AND COALESCE((b->'stages'->'knox'->>'expected')::int, 0) > 0
+      ) k
+  `;
+  return { query: GOAL_QUERIES.knoxAnswerKey, ...knoxAnswerKeyFrom(row) };
+}
+
 /** One read, in its own savepoint: a failure leaves that number null and the others standing. */
 async function guarded<T>(db: SqlTag, name: string, read: (scope: SqlTag) => Promise<T>): Promise<T | null> {
   return inSavepoint(db, read).catch((error) => {
@@ -1112,6 +1233,7 @@ export async function readGoalScorecard(db: SqlTag = sql, now = new Date()): Pro
   const liveSourceAudit=await guarded(db,"goal.live_source_audit",scope=>readLiveSourceAudit(scope,now));
   const knoxHeld = await guarded(db, GOAL_QUERIES.knoxHeld, readKnoxHeldPile);
   const knoxHeldExits = await guarded(db, GOAL_QUERIES.knoxHeldExits, (scope) => readKnoxHeldExitWeeks(scope, now));
+  const knoxAnswerKey = await guarded(db, GOAL_QUERIES.knoxAnswerKey, readKnoxAnswerKey);
   return {
     readAt: now.toISOString(),
     windowDays: GOAL_WINDOW_DAYS,
@@ -1129,6 +1251,7 @@ export async function readGoalScorecard(db: SqlTag = sql, now = new Date()): Pro
     liveSourceAudit,
     knoxHeld,
     knoxHeldExits,
+    knoxAnswerKey,
   };
 }
 

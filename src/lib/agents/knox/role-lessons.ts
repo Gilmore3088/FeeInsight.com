@@ -216,6 +216,16 @@ export const KNOX_LESSONS: AgentLesson[] = [
     since: "2026-10-26",
   },
   {
+    id: "issue-1098-score-against-the-target",
+    agent: "knox",
+    stage: "extract",
+    lesson: "Judge a change to how you read fees by your two targets on the answer key, 85% of the key's fees found and 90% of your reads right, on banks whose right document was read, and by the score of the specialist you changed. A specialist that adds fees nobody else finds but reads under 90% right is a loss, not a gain.",
+    why: "Knox's targets were set on Oct 12 and Knox stood at 65% found and 78% right on the answer key (Oct 11), but neither number was on the scorecard, and every specialist's reads were pooled, so no one could see which specialist moved them.",
+    evidence: { issues: [1098], prs: [], files: ["src/lib/agents/answer-key-score.ts", "src/lib/agents/goal-scorecard.ts", "src/app/admin/scoreboard/knox-answer-key-panel.tsx"] },
+    appliesTo: ["extract"],
+    since: "2026-10-26",
+  },
+  {
     id: "price-first-rows",
     agent: "knox",
     stage: "extract",

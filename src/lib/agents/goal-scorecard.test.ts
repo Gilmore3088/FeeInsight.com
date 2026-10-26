@@ -4,6 +4,9 @@ vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
 
 import {
   answerQualityFrom,
+  knoxAnswerKeyFrom,
+  KNOX_FOUND_TARGET,
+  KNOX_RIGHT_TARGET,
   bucketReaderMissWeeks,
   bucketHeldExitWeeks,
   heldExitsFromDetail,
@@ -521,5 +524,30 @@ describe("Knox's held pile on the scorecard (#1102)", () => {
     const ledger = queries.find((q) => /'held_recheck'/.test(q))!;
     expect(ledger).toContain("s.step_key = 'extract'");
     expect(ledger).toContain("e.event_type = 'step.finished'");
+  });
+});
+
+describe("Knox against its answer-key targets (#1098)", () => {
+  it("turns the newest score run into found and right shares, with its specialist rows", () => {
+    const score = knoxAnswerKeyFrom({
+      id: "41", scored_at: new Date("2026-10-26T06:00:00Z"), scorer_version: 3, reference_state: "measured",
+      banks: 2, expected: 30, found: 23, reads: 26, right: 23,
+      specialists: JSON.stringify({ banks: 2, expected: 30, bySpecialist: [
+        { strategy: "extract.rules", banks: 2, found: 20, foundOnly: 18, reads: 24, right: 21, shareOfKey: 0.6667 },
+        { strategy: "", found: 1 },
+        null,
+      ] }),
+    });
+    expect(score).toMatchObject({ scoreRunId: 41, scoredAt: "2026-10-26T06:00:00.000Z", referenceState: "measured", recall: 0.7667, precision: 0.8846 });
+    // The right share is worked out again from the stored counts; a malformed row is dropped.
+    expect(score.bySpecialist).toEqual([{ strategy: "extract.rules", banks: 2, found: 20, foundOnly: 18, reads: 24, right: 21, precision: 0.875, shareOfKey: 0.6667 }]);
+    expect(KNOX_FOUND_TARGET).toBe(0.85);
+    expect(KNOX_RIGHT_TARGET).toBe(0.9);
+  });
+
+  it("says when there is no score, and has no specialist rows on a run from before them", () => {
+    expect(knoxAnswerKeyFrom(undefined)).toMatchObject({ scoreRunId: null, recall: null, precision: null, bySpecialist: null });
+    expect(knoxAnswerKeyFrom({ id: 5, scorer_version: 3, banks: 0, expected: 0, found: 0, reads: 0, right: 0, specialists: null }))
+      .toMatchObject({ scoreRunId: 5, recall: null, precision: null, bySpecialist: null, referenceState: null });
   });
 });

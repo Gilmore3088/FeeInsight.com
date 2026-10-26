@@ -330,6 +330,15 @@ rules), with a floor per state. Baseline at v12: 665 right of 724 reads (91.9%),
 fees found (54.7%); 56 of the 59 wrong reads are the right price under another category. At v14:
 677 of 736 (92.0%), 677 found (55.7%).
 
+## Targets on the scorecard (#1098)
+
+James's targets (Oct 12): Knox finds 85% of the answer key's fees and 90% of its reads are right,
+counting only banks whose right document Rosetta read. The goal scorecard (/admin/scoreboard) shows
+both from the newest stored answer-key score (`goal.knox_answer_key_right_document`), and a row per
+specialist, grouped by the `knox_specialist:` flag (no flag is the rules pass; `knox_paid_extraction`
+is the paid pass). The score-answer-key step stores the specialist rows with each run
+(`by_stage._knox_specialists`). A fee is stored once, under the first specialist that read it.
+
 ## Rules versions (`extract.rules`)
 
 v118 (Oct 25, #1615): a price its own line makes the floor of a percentage charge is not a flat fee
