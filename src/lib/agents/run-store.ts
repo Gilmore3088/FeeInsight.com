@@ -1,5 +1,6 @@
 import { runStorageCompaction } from "@/lib/agents/hoovie/storage-compaction";
 import { storageRolloutAction } from "@/lib/agents/hoovie/storage-rollout";
+import { verifyNextArchivedCallRead } from "@/lib/agents/hoovie/storage-read-acceptance";
 import { sql, withTransaction } from "@/lib/data-store/connection";
 import { sweepInterruptedReportRuns } from "@/lib/hamilton/report-run";
 import { feeSourceFetch } from "@/lib/agents/fee-source-fetch";
@@ -2908,6 +2909,7 @@ async function executeAgenticStep(
       const compaction = await runStorageCompaction(tx, { dryRun: run.runKind === "dry_run",
         ...(rolloutAction ? { live: rolloutAction === "compact" } : {}),
       });
+      const readAcceptance=rolloutAction==="verify"?await verifyNextArchivedCallRead(tx):null;
       const compactionAlerts = [
         ...(cold.error ? [`Public-data archive held: ${cold.error}`] : []),
         ...(compaction.error ? [`Public-data compaction held: ${compaction.error}`] : []),
@@ -2919,7 +2921,7 @@ async function executeAgenticStep(
         status: "completed",
         summary: `${summarizeStorageRetention(result)} ${summarizeColdTier(cold)} ${summarizeVaultRetention(vault)}`,
         // The vault's warnings join `alerts`, which the morning brief emails.
-        detail: { ...storageRetentionDetail(result), alerts: [...result.alerts, ...vault.alerts, ...compactionAlerts], cold_tier: coldTierDetail(cold), storage_compaction: compaction, vault: vaultRetentionDetail(vault) },
+        detail: { ...storageRetentionDetail(result), alerts: [...result.alerts, ...vault.alerts, ...compactionAlerts], cold_tier: coldTierDetail(cold), storage_compaction: compaction, ...(readAcceptance?{storage_read_acceptance:readAcceptance}:{}), vault: vaultRetentionDetail(vault) },
       };
     }
     case "schedule-check": {
