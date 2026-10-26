@@ -56,7 +56,7 @@ describe("Darwin recheck policy and unsupported contexts",()=>{
     selected_verified:"selected-v",selected_raw:"selected-r",selected_published:null,selected_feedback:null};
   const assess=(changes:Partial<typeof base>,text=TEXT)=>recheckAssessment({...base,...changes},new Map([[55,text]]));
   it("keeps settled versions and switches (older-live and second look on since Oct 25's sampled-clean dry run)",()=>{
-    expect(DARWIN_RECHECK_STRATEGY).toEqual({strategy:"verify.recheck",version:6});
+    expect(DARWIN_RECHECK_STRATEGY).toEqual({strategy:"verify.recheck",version:5});
     expect(DARWIN_RECHECK_SAME_STEP_TAKEDOWN).toBe(false);expect(DARWIN_RECHECK_OLDER_LIVE).toBe(true);expect(DARWIN_RECHECK_SECOND_LOOK_LIVE).toBe(true);
     expect(DARWIN_RECHECK_SECOND_LOOK_LIVE_CODES).toEqual(["tier_perk_zero"]);
   });
@@ -70,7 +70,7 @@ describe("Darwin recheck policy and unsupported contexts",()=>{
     const text="FREE Debit Card, FREE Bill Pay, FREE eStatements, Buy back of unused checks up to $10 within 30 days";
     expect(assess({conditions:`excerpt="${text}"`},text).check).toBeNull();
   });
-  it("v6 keeps the page-layout $0s held while the switch is off and records that they would pass (38491, 56797)",()=>{
+  it("keeps the page-layout $0s held while the switch is off and records that they would pass (38491, 56797)",()=>{
     const terrabank="Card Replacement $ 100.00 | Copies per item $ 1.00\nRush Order $ 125.00 | Mail Deposit Processing, per item $ 15.00\nForeign Transaction Fees No Charge | Night Depository Bags & Key $ 30.00\nATM Withdrawals2 | Non-Sufficient Funds (NSF) / Uncollected (UNC)";
     const terra=assess({canonical_fee_key:"card_foreign_txn",fee_name:"Foreign Transaction Fees"},terrabank);
     expect(terra.check?.code).toBe("conditional_zero");expect(terra.layoutWouldPass).toBe(true);

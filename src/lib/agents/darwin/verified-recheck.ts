@@ -39,12 +39,13 @@ type SqlTag = typeof sql;
  * international price as another fee's, with the document text as evidence; a $0 traced to a line
  * that lacks a word of its name is read on the line that prints it. Of the 31 live conditional-$0
  * flags hand-checked on Oct 16, 8 were real free fees held this way.
- * v6 (2026-10-26, #1593): the last two of those 8 (published 38491, 56797) pass under the page
- * layout evidence behind `DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE` (off). v6 reads every row once more
- * with the verdicts unchanged and records on each failing `conditional_zero` row's attempt whether
- * that evidence would pass it (`layout_would_pass`): the live dry run before the switch turns on.
+ * 2026-10-26 (#1593, still v5): the last two of those 8 (published 38491, 56797) pass under the page
+ * layout evidence behind `DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE` (off). No version bump: a bump would
+ * re-read every verified row under every rule change since v5 with no dry-run count. Rows the
+ * recheck reads anyway record on a failing `conditional_zero` attempt whether that evidence would
+ * pass them (`layout_would_pass`). Turning the switch on needs its own bump and dry run.
  */
-export const DARWIN_RECHECK_STRATEGY = { strategy: "verify.recheck", version: 6 } as const;
+export const DARWIN_RECHECK_STRATEGY = { strategy: "verify.recheck", version: 5 } as const;
 export const RECHECK_LIMIT = 200;
 /** The shared second look's check name while live failures are only flagged. */
 export const DARWIN_RECHECK_CHECK = "darwin.verified_recheck";

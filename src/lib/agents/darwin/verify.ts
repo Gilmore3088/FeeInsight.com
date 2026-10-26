@@ -480,7 +480,23 @@ function positivelyOtherFee(label: string, feeName: string, line: string | null,
     const lower = cell.toLowerCase();
     return lower.startsWith(name) && PRICE_AT.test(cell.slice(name.length));
   }));
-  return elsewhere || lines.some((other, index) => other === flat && (headedByFees(lines[index - 1], feeName) || (layout && rowsSideBySide(lines, index))));
+  return elsewhere || lines.some((other, index) => other === flat && (headedByFees(lines[index - 1], feeName)
+    || (layout && namesDifferentFee(label) && rowsSideBySide(lines, index))));
+}
+
+// Words that make a label this fee's own variant, source or delivery, not another fee: a lost or
+// stolen card, a transfer from a line of credit or a sweep, a rush order, printed images or copies
+// (review of #2676: "Lost Or Stolen $10.00", "From Line Of Credit $10.00", "Savings Sweep $10.00",
+// "Printed Image Copies $2.00").
+const LAYOUT_VARIANT_WORDS = /\b(?:lost|stolen|damaged|from|source|sweep|savings|line\s+of\s+credit|credit|rush|expedited|express|overnight|images?|imaged|printed|print|copies|copy|replacement|replaced|reissued?|renewal|additional|subsequent|each|second|third|linked|automatic|manual|online|branch|teller|phone|mobile|internal|external|domestic|international|incoming|outgoing)\b/i;
+
+/**
+ * When rows printed side by side are the only evidence, the right cell's label must name a
+ * different fee: a fee noun ("Night Depository Bags & Key") and no word of this fee's variants,
+ * sources or channels (`LAYOUT_VARIANT_WORDS`). Pure (review of #2676).
+ */
+function namesDifferentFee(label: string): boolean {
+  return FEE_NOUN.test(label.replace(/\([^)]*\)/g, " ")) && !LAYOUT_VARIANT_WORDS.test(label);
 }
 
 /**
@@ -488,12 +504,12 @@ function positivelyOtherFee(label: string, feeName: string, line: string | null,
  * layout evidence, rows printed side by side around the fee's line (`rowsSideBySide`, 38491) and a
  * run-on tail that is the note of the right column's heading just above (`noteOfRightHeading`,
  * 56797). It only frees $0s the test holds today, never holds one more. Off, verify and the recheck
- * read as before, and the recheck records on each row's attempt whether this evidence would pass it
- * (`layout_would_pass`), the live dry run. It turns on by PR once that count is checked against the
- * banks' stored texts, with a recheck version bump so the rows it frees are read again. Dry run
- * (read-only, 2026-10-26): of the 61 rows the recheck holds as `darwin_recheck:conditional_zero`,
- * 2 pass (verified 37685 / published 38491 and 59671 / 56797), both real free fees on the stored
- * text; 0 live fees fail that pass today.
+ * read as before, and a failing `conditional_zero` row the recheck reads anyway records whether
+ * this evidence would pass it (`layout_would_pass`). It turns on by its own PR, with a recheck
+ * version bump and that bump's dry run. Dry run (read-only SQL and this code over the stored texts,
+ * 2026-10-26, after the review of #2676): of the 61 rows the recheck holds as
+ * `darwin_recheck:conditional_zero`, 2 pass (verified 37685 / published 38491 and 59671 / 56797),
+ * both real free fees on the stored text; 0 live fees fail that pass today.
  */
 export const DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE = false;
 
@@ -527,9 +543,14 @@ function wholeRowPair(line: string | undefined): boolean {
 // A note in parentheses with its price, the whole tail after a fee's $0 ("(closed within 90 days of
 // opening) $20.00").
 const NOTE_PRICE = /^\(([^()]+)\)\s*\$\s*\d[\d,]*(?:\.\d{1,2})?$/;
-// Words that make such a note this fee's own terms: a way to avoid it, a balance, a statement or
-// deposit, an audience. A time limit ("within 90 days of opening") is not one of them.
-const NOTE_CONDITION = /\b(?:if|unless|when|with|without|balances?|bal|avg|average|minimum|maximum|below|under|less|fewer|more|over|above|e-?statements?|statements?|paper|direct|deposits?|enroll\w*|qualif\w*|otherwise|waived?|avoid\w*|maintain\w*|keep\w*|or|members?|non-?members?|customers?|non-?customers?|students?|seniors?|ages?|youth|required|requires?|needed|needs?|recurring|purchases?|transactions?|activity)\b/i;
+// Words that make such a note this fee's own terms, on top of `tailStatesCondition`: a way to
+// avoid it, a balance, a statement or deposit, an audience, a program, promotion or reward period
+// (review of #2676).
+const NOTE_CONDITION = /\b(?:if|unless|when|with|without|balances?|bal|avg|average|minimum|maximum|below|under|less|fewer|more|over|above|e-?statements?|statements?|paper|direct|deposits?|enroll\w*|qualif\w*|otherwise|waived?|avoid\w*|maintain\w*|keep\w*|or|members?|non-?members?|customers?|non-?customers?|students?|seniors?|ages?|youth|required|requires?|needed|needs?|recurring|purchases?|transactions?|activity|graduat\w*|rewards?|criteria|unmet|met|promo\w*|introductory|intro|periods?|ends?|ended|earn\w*|program\w*|eligib\w*|cash|bonus\w*|kasasa|accounts?)\b/i;
+// The one time limit a note may state and still be the right column's fee: an early-closure fee's
+// own window ("closed within 90 days of opening", 56797). Any other words in the note are read with
+// the full condition test.
+const EARLY_CLOSURE_WINDOW = /\bclosed\s+within\s+\d+\s+(?:days?|months?)\s+(?:of|after)\s+(?:account\s+)?opening\b/i;
 
 /** Four-letter roots of a text's words of five letters or more, generic and condition words left out. */
 function wordRoots(text: string): string[] {
@@ -541,18 +562,21 @@ function wordRoots(text: string): string[] {
  * printed on the line just above (#1593, 56797): "Blue Lion Checking | Account Early Closure" over
  * "Maintenance Fee (per statement cycle) $0.00 (closed within 90 days of opening) $20.00". Fails
  * safe; every part must hold:
- * - the tail is only a note in parentheses and a price, and the note states none of this fee's
- *   terms (`NOTE_CONDITION`);
+ * - the tail is only a note in parentheses and a price, and the note, an early-closure window
+ *   (`EARLY_CLOSURE_WINDOW`) aside, states none of this fee's terms (`tailStatesCondition`,
+ *   `NOTE_CONDITION`);
  * - the line above is two text cells with no price, and its right cell is a Title Case heading of
  *   another fee (`otherFeeLabel`: no audience, no condition, no word of this fee's name);
  * - the note shares a word root with that heading ("closed" / "Closure"), so it describes that fee;
- * - the fee's own row, its whole name and its $0, prints on another line with another tail, as an
+ * - the fee's own row, its whole name and a $0 straight after it, prints on another line with another tail, as an
  *   account list prints one fee per account.
  * Pure.
  */
 function noteOfRightHeading(flat: string, lines: string[], here: number[], feeName: string): boolean {
   const note = NOTE_PRICE.exec(flat);
-  if (!note || NOTE_CONDITION.test(note[1])) return false;
+  if (!note) return false;
+  const rest = note[1].replace(EARLY_CLOSURE_WINDOW, " ").replace(/\s+/g, " ").trim();
+  if (rest && (tailStatesCondition(rest) || NOTE_CONDITION.test(rest))) return false;
   const noteRoots = new Set(wordRoots(note[1]));
   const headed = here.some((index) => {
     const above = lines[index - 1];
@@ -563,7 +587,10 @@ function noteOfRightHeading(flat: string, lines: string[], here: number[], feeNa
     return titleCase(heading) && otherFeeLabel(heading, feeName) && wordRoots(heading).some((root) => noteRoots.has(root));
   });
   if (!headed) return false;
-  return lines.some((line) => {
+  // Another line prints the fee's whole name with a $0 straight after it (`printsOwnZero`), and
+  // that row goes on with another tail: a mention of the name alone is not a repeat.
+  return lines.some((line, index) => {
+    if (here.includes(index) || !printsOwnZero(line, feeName)) return false;
     const after = rowTail(line, feeName);
     return after != null && after.replace(/\s+/g, " ").trim() !== flat;
   });

@@ -1364,6 +1364,13 @@ describe("conditional $0 on two-column pages and its own line (#1593, live rows 
       ["Coin Counting", "Coin Counting FREE | Commercial Accounts $0.10 per roll"],
       ["Safe Deposit Box", "Safe Deposit Box FREE | Large Box $50.00"],
       ["Monthly Maintenance Fee", "Monthly Maintenance Fee FREE | Minimum Balance Fee $10.00"],
+      // Review of #2676: the fee's own variant or source in the right cell.
+      ["Debit Card Replacement", "Debit Card Replacement No Charge | Lost Or Stolen $10.00"],
+      ["Overdraft Transfer", "Overdraft Transfer No Charge | From Line Of Credit $10.00"],
+      ["Overdraft Transfer", "Overdraft Transfer No Charge | Savings Sweep $10.00"],
+      ["Paper Statement", "Paper Statement No Charge | Printed Image Copies $2.00"],
+      ["Wire Transfer", "Wire Transfer No Charge | International Wire Fee $35.00"],
+      ["Debit Card", "Debit Card No Charge | Rush Card Order $25.00"],
     ]) {
       expect(conditionalZero(0, line, name, { documentText: sideBySide(line), layout: true })).toBe(true);
     }
@@ -1386,6 +1393,15 @@ describe("conditional $0 on two-column pages and its own line (#1593, live rows 
     expect(conditionalZero(0, row, name, { documentText: page("Blue Lion Checking | Other Services", row), layout: true })).toBe(true);
     expect(conditionalZero(0, row, name, { documentText: page("Blue Lion Checking | Account Early Closure $20.00", row), layout: true })).toBe(true);
     expect(conditionalZero(0, row, name, { documentText: page("Blue Lion Checking | Closed Accounts", row), layout: true })).toBe(true);
+    // A mention of the name without its $0 straight after it is not a repeated row (review of #2676).
+    const mention = [
+      "Blue Lion Checking | Account Early Closure",
+      row,
+      "Blue Lion Savings",
+      "Maintenance Fee (per statement cycle) is waived for savings; see Account Early Closure $20.00",
+      "Maintenance Fee (per statement cycle) Lost Debit Card $0.00",
+    ].join("\n");
+    expect(conditionalZero(0, row, name, { documentText: mention, layout: true })).toBe(true);
     // A note that states the fee's own terms stays a condition, whatever heading sits above.
     for (const [heading, conditional] of [
       ["Blue Lion Checking | Low Balance Charge", "Maintenance Fee (per statement cycle) $0.00 (if balance falls below $100) $5.00"],
@@ -1393,6 +1409,18 @@ describe("conditional $0 on two-column pages and its own line (#1593, live rows 
       ["Blue Lion Checking | Closing Balance Fee", "Maintenance Fee (per statement cycle) $0.00 (closing balance under $500) $5.00"],
       ["Blue Lion Checking | Direct Deposit Program", "Maintenance Fee (per statement cycle) $0.00 (without direct deposit) $8.00"],
       ["Blue Lion Checking | Debit Purchase Program", "Maintenance Fee (per statement cycle) $0.00 (fewer than 10 debit purchases) $8.00"],
+      // Review of #2676: a promotion, status, graduation, program or reward condition.
+      ["Student Checking | Promotional Period", "Maintenance Fee (per statement cycle) $0.00 (after promotional period) $10.00"],
+      ["Student Checking | Introductory Period", "Maintenance Fee (per statement cycle) $0.00 (after introductory period ends) $10.00"],
+      ["Blue Lion Checking | Inactive Account", "Maintenance Fee (per statement cycle) $0.00 (inactive 12 months) $5.00"],
+      ["Blue Lion Checking | Dormant Account", "Maintenance Fee (per statement cycle) $0.00 (dormant accounts) $5.00"],
+      ["Student Checking | Graduation", "Maintenance Fee (per statement cycle) $0.00 (after graduation) $8.00"],
+      ["Student Checking | Graduation", "Maintenance Fee (per statement cycle) $0.00 (graduates) $8.00"],
+      ["Blue Lion Checking | Electronic Program", "Maintenance Fee (per statement cycle) $0.00 (electronic program) $3.00"],
+      ["Rewards Checking | Rewards Criteria", "Maintenance Fee (per statement cycle) $0.00 (rewards criteria unmet) $10.00"],
+      ["Kasasa Checking | Kasasa Cash", "Maintenance Fee (per statement cycle) $0.00 (kasasa cash not earned) $10.00"],
+      // An early-closure window with a condition after it is still a condition.
+      ["Blue Lion Checking | Account Early Closure", "Maintenance Fee (per statement cycle) $0.00 (closed within 90 days of opening without direct deposit) $20.00"],
     ]) {
       expect(conditionalZero(0, conditional, name, { documentText: page(heading, conditional), layout: true })).toBe(true);
     }

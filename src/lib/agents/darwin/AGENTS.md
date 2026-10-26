@@ -360,7 +360,7 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   prices it free on its own line with no other dollar figure, outside overdraft, NSF, monthly
   maintenance and minimum balance, and not on one account tier's own schedule (`tier-perk.ts`,
   #1397); (b) otherwise rejected, for Knox's next read of the line.
-- `verify.recheck` (`verified-recheck.ts`, version 6, 2026-10-26) ends every learning verify step
+- `verify.recheck` (`verified-recheck.ts`, version 5, 2026-10-16) ends every learning verify step
   by reading up to 200 rows `verify.rules` v3 verified (the rows the `not_in_source` re-select
   verified first, then newest first), once each under `postSourceCheck` and, from version 3, the
   tier-perk test (`tier_perk_zero`, #1397). Version 4 (#1571, #1574): on a run-on line with no
@@ -387,19 +387,25 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   that lacks a word of its name is read on the line that prints its whole name with its $0
   (`sourceLineFor`), unless that $0 is one audience's. A fee named for one audience ("Check
   Printing (members over 62)") is never freed by the column reading.
-  Version 6 (#1593, 2026-10-26): page layout evidence, behind `DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE`
-  (`verify.ts`, off). Rows printed side by side around the fee's line (two of the two lines above
-  and two below are each "Label $price | Label $price") make its next cell the right column's row
-  ("Foreign Transaction Fees No Charge | Night Depository Bags & Key $ 30.00", 38491); a run-on
-  tail that is only "(note) $price", whose note shares a word root with the right column's
-  heading on the two-cell line just above and states none of the fee's terms, is that heading's
-  fee when the fee's own row repeats for another account ("Blue Lion Checking | Account Early
-  Closure" over "Maintenance Fee (per statement cycle) $0.00 (closed within 90 days of opening)
-  $20.00", 56797). The evidence only frees $0s the test holds, never holds one more. Off, verdicts
-  are unchanged and each failing `conditional_zero` row's v6 attempt records `layout_would_pass`,
-  the live dry run; it turns on by PR once that count is checked against the stored texts, with a
-  recheck bump. Dry run (read-only, 2026-10-26): of the 61 rows held `darwin_recheck:conditional_zero`,
-  2 pass (verified 37685 / published 38491, 59671 / 56797). A failing row that is
+  Page layout evidence (#1593, 2026-10-26; still version 5), behind
+  `DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE` (`verify.ts`, off). Rows printed side by side around the
+  fee's line (two of the two lines above and two below are each "Label $price | Label $price") make
+  its next cell the right column's row only when that cell's label names a different fee: a fee
+  noun and no word of this fee's variants, sources or channels (lost, stolen, from, sweep, rush,
+  printed, images, copies, replacement, incoming...; "Foreign Transaction Fees No Charge | Night
+  Depository Bags & Key $ 30.00", 38491). A run-on tail that is only "(note) $price" is the right
+  column's heading's fee when the two-cell line just above has no price and its right heading
+  shares a word root with the note, the note states no term once an early-closure window
+  ("closed within 90 days of opening") is set aside (the full `tailStatesCondition` test plus
+  promotion, status, graduation, program and reward words), and another line prints the fee's whole
+  name with a $0 straight after it ("Blue Lion Checking | Account Early Closure" over "Maintenance
+  Fee (per statement cycle) $0.00 (closed within 90 days of opening) $20.00", 56797). The evidence
+  only frees $0s the test holds, never holds one more. Off, verdicts are unchanged; a failing
+  `conditional_zero` row the recheck reads anyway records `layout_would_pass` on its attempt. There
+  is no recheck bump: one would re-read every verified row under every rule change since v5 with no
+  count. Turning the switch on is its own PR with its own bump and dry run. Dry run (read-only SQL
+  and the code over the stored texts, 2026-10-26): of the 61 rows held
+  `darwin_recheck:conditional_zero`, 2 pass (verified 37685 / published 38491, 59671 / 56797). A failing row that is
   not live is rejected with an `outlier_flags` entry `darwin_recheck:<code>[:<rule>]`; a live one
   is archived in the same step (`published_fee_records` rolled back with that reason, batch
   `darwin-recheck-<run>`, never deleted), the verified row rejected with the same flag and the
@@ -2088,7 +2094,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DARWIN_RELEASE_REVIEW_STRATEGY` | `verify.release_review` | v17 | `darwin/release-review.ts` |
 | `DARWIN_SCHEDULE_REFILE_STRATEGY` | `verify.schedule_refile` | v1 | `darwin/schedule-refile.ts` |
 | `DARWIN_VERDICT_SCORE_STRATEGY` | `verify.verdict_score` | v2 | `darwin/verdict-score.ts` |
-| `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v6 | `darwin/verified-recheck.ts` |
+| `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v5 | `darwin/verified-recheck.ts` |
 | `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v7 | `darwin/live-fragment-check.ts` |
 | `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v3 | `darwin/hourly-frequency-check.ts` |
 | `NON_DEPOSIT_CHECK_VERSION` | `darwin.non_deposit_document` | v4 | `darwin/non-deposit-document-check.ts` |
