@@ -2154,6 +2154,24 @@ Each extract attempt records the text's layout signature (`table/short`, `leader
 more priced lines), so a layout the rules miss shows up as one group instead of scattered bad
 documents.
 
+## What paid finds were to the free team (`paid-find-misses.ts`, #1101)
+Every free specialist already runs on every text, so a layout cannot call up a specialist the
+free team skipped; what the paid pass finds is what no free rule reads yet. After each paid read
+(`KNOX_PAID_FIND_MISS_VERSION` v1), Knox runs today's free team on the same text once more (no
+provider call) and files each grounded paid fee as `free_read` (the free team reads it too: the
+call bought nothing new for it), `free_other_category` (same line and price under another
+category), `free_held` (the free team held the line, with its held shape) or `free_missed`
+(nothing at that price on that line), with the source line's shape (`table`, `leaders`,
+`sentences`, `split`, `plain`), the text's layout, the page's host and the bank's website platform
+(`institution_source_profiles.platform`, else `institution_sources.cms_platform`). The summary
+rides the paid attempt's detail (`free_misses`); the step writes one `knox.paid_find_misses` event
+with the run's totals and the misses seen at two banks or more under one layout and line shape.
+
+Category misses and held names already reach Knox's lessons and label queue once Darwin judges the
+paid and free rows, which carry the bank's own name. `free_missed` is the class no lesson learns:
+it needs a free rule for that line shape, chosen from the repeated misses. Nothing here writes,
+holds or re-files a fee, and no read changes.
+
 ## Extraction Passes
 
 Knox reads one whole document at a time. The free team runs first; the paid pass runs
@@ -2323,6 +2341,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
+| `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
 | `KNOX_RULES_STRATEGY` | `extract.rules` | v127 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v10 | `knox/table-rows.ts` |
