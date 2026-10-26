@@ -636,4 +636,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-26",
   },
+  {
+    id: "issue-1912-every-restore-path-checks-category",
+    agent: "hamilton",
+    stage: "publish",
+    lesson: "Every branch that brings a fee back live calls the shared category step (`restoreCategoryVerdict`: the category guard on the stored name with its stored-text context), the rules re-check's same-read restore included; a fee that step refuses stays down, however cleanly today's rules read it again and its name and price trace.",
+    why: "The same-read restore came back on the source trace alone, and the read's own category check had no stored-text context, so an NSF \"Returned Items\" $25 printed under a COLLECTIONS heading could come back as NSF while the restore bar, Darwin and the live guard refused it. On Oct 26 a dry run over the 1,742 due documents proposed the same 731 restores before and after the fix (0 changed).",
+    evidence: { issues: [1912], prs: [], files: ["docs/project/findings/2026-10-26-same-read-restore-skipped-category-context.md", "src/lib/agents/hamilton/rules-recheck.ts", "src/lib/agents/hamilton/restore-guard.ts", "src/lib/agents/hamilton/rules-recheck.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
 ];
