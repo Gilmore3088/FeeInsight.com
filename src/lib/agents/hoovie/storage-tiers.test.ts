@@ -114,7 +114,7 @@ describe("runColdTier", () => {
     expect(writes(calls)).toEqual([]);
     expect(calls.some((c) => c.text.includes("set_config('statement_timeout'") && c.values.includes("10s"))).toBe(true);
     expect(summarizeColdTier(result)).toContain("4 periods older than the newest 12 per source; 2,000 rows in 3 counted");
-    expect(summarizeColdTier(result)).toContain("Export off; pruning waits for James's yes.");
+    expect(summarizeColdTier(result)).toContain("Export off; pruning off.");
     expect(coldTierDetail(result)).toMatchObject({ export_live: false, index_ready: true, counts: { [`institution_call_report_items|ffiec|${oldest}`]: 1_000 } });
   });
 

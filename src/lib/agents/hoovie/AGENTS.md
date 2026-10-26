@@ -277,3 +277,8 @@ rehearsal receipt for that exact file checksum, the approved row counts and twel
 Rehearsal restores into the migration-owned disposable unlogged table and empties it after exact
 byte comparison. Rollback restoring remains outside this action path. Invalid actions fail before
 the storage step writes.
+
+The approved workflow also has a `verify` action: after a prune commits, read one archived sample
+through Hamilton's shared `queryData` and compare amount, unit, identity and citation with the
+verified file. A failed or incomplete read cannot record acceptance. These explicit, bounded
+admin workflows drain after customer report requests so stuck publication cannot starve them.

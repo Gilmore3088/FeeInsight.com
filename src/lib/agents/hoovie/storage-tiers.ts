@@ -130,6 +130,7 @@ export interface ColdExportResult {
 
 export interface ColdTierResult {
   exportLive: boolean;
+  pruneLive?: boolean;
   storeConfigured: boolean;
   /** False until the public_data_cold_files migration is applied. */
   indexReady: boolean;
@@ -316,7 +317,8 @@ export async function runColdTier(
   const { db } = options;
   const store = options.store ?? getColdStore();
   const exportLive = !options.dryRun && (options.exportLive ?? COLD_EXPORT_LIVE);
-  const result: ColdTierResult = { exportLive, storeConfigured: store.configured, indexReady: false, tables: [], exported: [], counts: {} };
+  const pruneLive = !options.dryRun && (options.pruneLive ?? CALL_PERIOD_PRUNE_LIVE);
+  const result: ColdTierResult = { exportLive, pruneLive, storeConfigured: store.configured, indexReady: false, tables: [], exported: [], counts: {} };
   try {
     await withTimeout(db, COLD_STATEMENT_TIMEOUT, async (scope) => {
       const index = await inSavepoint(scope, (s) => readIndex(s, COLD_TIER_POLICY.map((p) => p.table))).catch(() => null);
@@ -397,7 +399,7 @@ export async function runColdTier(
     } catch(error){result.error=`Archive rehearsal held: ${message(error)}`;}
     return result;
   }
-  if (!options.dryRun && (options.pruneLive ?? CALL_PERIOD_PRUNE_LIVE) && result.indexReady) {
+  if (pruneLive && result.indexReady) {
     const next = result.tables.flatMap((t) => t.cold).find((p) => p.file === "verified"
       && CALL_PERIOD_PRUNE_MANIFEST.some((m) => m.source === p.source && m.period === p.period));
     if (next && (next.source === "ffiec" || next.source === "ncua")) {
@@ -416,7 +418,7 @@ export function coldTierDetail(result: ColdTierResult): Record<string, unknown> 
     export_live: result.exportLive,
     store_configured: result.storeConfigured,
     index_ready: result.indexReady,
-    prune: CALL_PERIOD_PRUNE_LIVE ? "enabled" : "implemented; off pending reviewed rollout",
+    prune: result.pruneLive ? "enabled for reviewed manifest" : "off",
     pruned: result.pruned ?? [],
     prune_manifest: CALL_PERIOD_PRUNE_MANIFEST,
     restored: result.restored ?? null,
@@ -462,5 +464,5 @@ export function summarizeColdTier(result: ColdTierResult): string {
     ? ` Exported: ${result.exported.map((e) => `${e.source} ${e.period} ${e.status === "exported" ? `${(e.rowCount ?? 0).toLocaleString("en-US")} rows` : `failed (${e.error})`}`).join("; ")}.`
     : "";
   const index = result.indexReady ? "" : " The cold-file index table is not migrated yet.";
-  return `Cold tier: ${parts.join("; ")}. Export ${result.exportLive ? "on" : "off"}; pruning waits for James's yes.${exported}${index}`;
+  return `Cold tier: ${parts.join("; ")}. Export ${result.exportLive ? "on" : "off"}; pruning ${result.pruneLive ? "on for reviewed manifest" : "off"}.${exported}${index}`;
 }
