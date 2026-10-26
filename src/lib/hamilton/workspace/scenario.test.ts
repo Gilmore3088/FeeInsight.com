@@ -28,6 +28,7 @@ describe("buildScenario", () => {
   it("places the tested price among local competitors when their amounts are given (#1896)", () => {
     const s = buildScenario({ feeCategory: "overdraft", current: 30, tested: 25, peers, peerLabel: "Texas banks", localAmounts: [20, 25, 29, 33] });
     expect(s.local).toEqual({ n: 4, more: 2, same: 1, less: 1 });
+    expect(s.assumptions).toContain("Local count is among the 4 local competitors that publish this fee (FDIC Summary of Deposits branch markets).");
     expect(buildScenario({ feeCategory: "overdraft", current: 30, tested: 25, peers, peerLabel: "p", localAmounts: [] }).local).toBeNull();
   });
 

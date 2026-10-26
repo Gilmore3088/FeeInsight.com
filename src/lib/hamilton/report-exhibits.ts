@@ -12,7 +12,7 @@ import { formatAmount, formatCompactDollars } from "@/lib/format";
 import { FEE_MOVES_TRACKED_SINCE, type LocalFeeMove, type LocalMarket } from "@/lib/data-store/local-market";
 import type { SelectedInstitutionFeeDelta } from "./report-evidence";
 import { statedFeeText, type SeveralFees } from "@/lib/own-fee";
-import { inSentence } from "@/lib/hamilton/workspace/names";
+import { proseFeeName } from "@/lib/hamilton/workspace/names";
 import type { ReportExhibit, ReportSource } from "./types";
 
 /** A local median needs at least this many competitors publishing the fee (James, 2026-10-25). */
@@ -165,6 +165,12 @@ function ordinal(n: number): string {
   return `${n}${({ 1: "st", 2: "nd", 3: "rd" } as Record<number, string>)[n % 10] ?? "th"}`;
 }
 
+/** The fee as a title names it: its prose name, with "fee" added only when the name lacks it. */
+function feeInTitle(feeCategory: string): string {
+  const name = proseFeeName(feeCategory);
+  return /\bfees?$/i.test(name) ? name : `${name} fee`;
+}
+
 export function buildFeeImpacts(
   deltas: SelectedInstitutionFeeDelta[],
   local: LocalFeeComparison[],
@@ -273,7 +279,7 @@ export function buildReportExhibits(params: {
     const largest = [...impacts].sort((a, b) => Math.abs(b.gap_amount) - Math.abs(a.gap_amount))[0];
     exhibits.push({
       id: "dollar_impact",
-      title: `The largest price move is the ${inSentence(largest.fee)} fee: ${formatAmount(largest.your_amount)} to the ${largest.reference} of ${formatAmount(largest.reference_amount)}, ${signed(largest.gap_amount)} per item`,
+      title: `The largest price move is the ${feeInTitle(largest.fee_category)}: ${formatAmount(largest.your_amount)} to the ${largest.reference} of ${formatAmount(largest.reference_amount)}, ${signed(largest.gap_amount)} per item`,
       subtitle:
         "What each price move does: the change per item and where the fee would rank locally and against peers. Filings do not report how often each fee is charged, so no fee income figure is shown.",
       columns: ["Fee", "Move", "Change per item", "Local rank, lowest price first", `Against ${peerLabel}`],

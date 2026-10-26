@@ -189,6 +189,10 @@ export function buildScenario(input: ScenarioInput): Scenario {
     peers.length < MIN_PEERS_FOR_POSITION
       ? `Only ${peers.length} peers in ${group} publish this fee, too few for a percentile.`
       : `Position is among ${peers.length} institutions in ${group} that publish this fee.`;
+  // The local count needs its own source line, as the peer count has (every number has a source).
+  const localAssumption = local
+    ? [`Local count is among the ${local.n} local competitors that publish this fee (FDIC Summary of Deposits branch markets).`]
+    : [];
 
   const facts = input.institutionFacts;
   if (facts?.annualItems !== undefined && facts.annualItems >= 0) {
@@ -196,6 +200,7 @@ export function buildScenario(input: ScenarioInput): Scenario {
     const paidItems = facts.annualItems * (1 - waiver);
     const assumptions = [
       peerAssumption,
+      ...localAssumption,
       `${fmtCount(facts.annualItems)} items a year, as you gave them, with ${Math.round(waiver * 100)}% waived or refunded${facts.waiverRate === undefined ? " (no waiver rate given yet, so none is assumed)" : ""}.`,
       volumeAssumption(tested, input.volumeChangePct),
     ];
@@ -215,6 +220,7 @@ export function buildScenario(input: ScenarioInput): Scenario {
     const impliedPaid = line.annualIncome / current;
     const assumptions = [
       peerAssumption,
+      ...localAssumption,
       `Implied paid items: ${fmtMoney(line.annualIncome)} reported (${line.label}, four quarters to ${line.quarterEnd}) ÷ ${fmtMoney(current)} ≈ ${fmtCount(impliedPaid)} a year. Waivers are already netted out.`,
       "Treats every paid item as charged the published amount; tiered or capped fees make this approximate.",
       ...(line.combinedWith
@@ -235,6 +241,7 @@ export function buildScenario(input: ScenarioInput): Scenario {
 
   const assumptions = [
     peerAssumption,
+    ...localAssumption,
     line === undefined || line === null
       ? "No current filing reports income for this fee on its own, so there is no dollar estimate from public data."
       : "The reported income for this fee cannot support an estimate at the current price.",
