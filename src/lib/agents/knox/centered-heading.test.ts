@@ -126,4 +126,20 @@ describe("a heading in a vertically centred merged cell (Knox v130, #1912)", () 
     const ownFee = ["Outgoing Domestic: $30.00", "Wire Transfers | Stop Payment: $60.00", "Outgoing International: $45.00"].join("\n");
     expect(withCenteredBlockHeadings(ownFee)).toBe(ownFee);
   });
+
+  // agent_source_texts 7728, as stored: a two-column page read across. "OVERDRAFT PRIVILEGE" is the left
+  // column's heading beside the right column's wire row, not a centred cell over "Outgoing Domestic".
+  const TWO_COLUMN = [
+    "• $2.50/item. Call Center assisted or automatic overdraft. | WIRE TRANSFERS",
+    "Outgoing Domestic: $30",
+    "OVERDRAFT PRIVILEGE | Outgoing International: $50",
+    "Checks, ACH, Point-of-Sale, ATM, withdrawals, in-person | Incoming: $15",
+  ].join("\n");
+
+  it("lends no heading to a row under a line whose last cell is a heading (two-column page, text 7728)", () => {
+    expect(centeredHeadingRows(TWO_COLUMN.split("\n")).size).toBe(0);
+    expect(withCenteredHeadingCells(TWO_COLUMN)).toBe(TWO_COLUMN);
+    expect(reads(TWO_COLUMN).some((read) => read.includes("OVERDRAFT PRIVILEGE | Outgoing Domestic"))).toBe(false);
+    expect(checkFeeAgainstSource(TWO_COLUMN, "OVERDRAFT PRIVILEGE | Outgoing Domestic", 30, ".", "overdraft").ok).toBe(false);
+  });
 });

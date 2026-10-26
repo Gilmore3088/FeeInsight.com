@@ -11,7 +11,8 @@
  *   own, whose name shares a word with the middle row's name (a sibling: "Outgoing International"
  *   beside "Outgoing Domestic - Not in Person");
  * - the block ends at a blank line or any other line (a page footer, a wrapped note, a heading);
- * - rows above that sit right under a heading line of their own ("Stop Payments" / "Online: $20.00")
+ * - rows above that sit right under a heading line of their own ("Stop Payments" / "Online: $20.00"),
+ *   or under a line whose last cell is a heading (a two-column page read across: "... | WIRE TRANSFERS"),
  *   are that heading's rows, not the block's;
  * - the block is centred: as many rows above the middle as below, give or take one;
  * - a row two middle rows both reach is lent by neither.
@@ -30,6 +31,15 @@ function headingLine(line: string): boolean {
   const text = line.replace(/\s+/g, " ").trim().replace(/:$/, "");
   if (!text || /[\d$|%]/.test(text) || !/^[A-Z]/.test(text) || /[.;!?]$/.test(text)) return false;
   return text.split(" ").length <= MAX_HEADING_WORDS;
+}
+
+/**
+ * A line that ends in a heading cell ("... automatic overdraft. | WIRE TRANSFERS", a two-column page
+ * read across) heads the rows under it as a heading line does.
+ */
+function endsInHeading(line: string): boolean {
+  const cells = line.split("|");
+  return headingLine(line) || (cells.length > 1 && headingLine(cells[cells.length - 1]));
 }
 
 const words = (name: string) => new Set((name.toLowerCase().match(/[a-z]{3,}/g) ?? []).filter((word) => !NOT_SIBLING_WORDS.has(word)));
@@ -61,7 +71,7 @@ export function centeredHeadingRows(lines: string[], options: CenteredHeadingOpt
     };
     let top = index;
     while (top > 0 && rowOf(top - 1)) top -= 1;
-    if (top < index && top > 0 && headingLine(lines[top - 1])) top = index;
+    if (top < index && top > 0 && endsInHeading(lines[top - 1])) top = index;
     let bottom = index;
     while (bottom + 1 < lines.length && rowOf(bottom + 1)) bottom += 1;
     const above = index - top;

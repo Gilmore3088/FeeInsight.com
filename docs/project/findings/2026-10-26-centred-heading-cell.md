@@ -27,7 +27,9 @@ so free Knox did not read the middle row either, and the international wire revi
   row "<Heading> | <name>: <price>" with a short figure-free heading, and the contiguous
   "<name>: <price>" rows above and below it that have no cell of their own and share a word with the
   middle row's name. The block stops at a blank line or any other line, drops the rows above when a
-  heading line of their own sits over them, must be centred (rows above and below differ by at most
+  heading line of their own sits over them (or a line whose last cell is a heading: a two-column page
+  read across, "... | WIRE TRANSFERS" over "Outgoing Domestic: $30" beside "OVERDRAFT PRIVILEGE |
+  Outgoing International: $50", text 7728, where the left column's heading is no centred cell), must be centred (rows above and below differ by at most
   one), and a row two middle rows reach is lent by neither. Each row of the block gains "<Heading> | ".
 - Knox applies it with a fee-family check (`withCenteredBlockHeadings` in `rules.ts`): the heading names
   a fee family, the middle row's name alone names no fee and reads with the heading, and each borrowed
