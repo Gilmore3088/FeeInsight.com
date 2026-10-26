@@ -1167,7 +1167,8 @@ const TAIL_ONLY = /^[\d,.]*\s*(?:or|and)\s+(?:less|more|greater|higher|lower|ove
  * or "and" ("between $100 and $500", "between $100 - $500"); a balance lead opens one closed by "-"
  * or "to" ("Balances of $1,000 - $2,499.99 $5", whose $5 is the fee). After a one-sided comparison
  * the next figure is the fee's own price ("Overdraft item over $5 - $35", "below $500 and $10
- * service").
+ * service"). A band's upper figure is higher than its lower one, so a second figure that is not is
+ * the fee's own price and ends the name ("Minimum balance $500 - $10 fee", "between $35 and $5").
  */
 const RANGE_CLOSE = /^[\d,.]*\s*(?:[-–—]|to|and)\s*$/i;
 const DASH_RANGE_CLOSE = /^[\d,.]*\s*(?:[-–—]|to)\s*$/i;
@@ -1181,11 +1182,16 @@ const THRESHOLD_SENTENCE_END = /^[\d,]*(?:\.\d+)?(?=\.\s+[A-Z])/;
  * Whether the figure at `match` is the name's threshold. `kept` is where the last kept threshold
  * figure ends and which range, if any, it opened, or null when none was kept yet.
  */
-type KeptThreshold = { end: number; range: "between" | "balance" | null };
-function closesRange(kept: KeptThreshold | null, between: string): boolean {
-  if (kept?.range === "between") return RANGE_CLOSE.test(between);
-  if (kept?.range === "balance") return DASH_RANGE_CLOSE.test(between);
-  return false;
+type KeptThreshold = { end: number; value: number; range: "between" | "balance" | null };
+/** The figure a LEADER_OR_PRICE match starts (its first digit is inside the match) and its value. */
+function figureAt(name: string, match: RegExpMatchArray): { rest: string; value: number } {
+  const after = name.slice((match.index ?? 0) + match[0].length);
+  const rest = after.match(/^[\d,]*(?:\.\d+)?/)?.[0] ?? "";
+  return { rest, value: Number((match[0].slice(-1) + rest).replace(/,/g, "")) };
+}
+function closesRange(kept: KeptThreshold | null, between: string, value: number): boolean {
+  if (!kept?.range || !(value > kept.value)) return false;
+  return (kept.range === "between" ? RANGE_CLOSE : DASH_RANGE_CLOSE).test(between);
 }
 function isThreshold(name: string, match: RegExpMatchArray, kept: KeptThreshold | null): boolean {
   const at = match.index ?? 0;
@@ -1194,7 +1200,7 @@ function isThreshold(name: string, match: RegExpMatchArray, kept: KeptThreshold 
   if (NEXT_TIER.test(after)) return false;
   if (kept) {
     const between = name.slice(kept.end, at);
-    if (closesRange(kept, between)) return true;
+    if (closesRange(kept, between, figureAt(name, match).value)) return true;
     return COMPARISON_LEAD.test(before) && !TAIL_ONLY.test(between);
   }
   if (COMPARISON_LEAD.test(before)) return true;
@@ -1215,13 +1221,13 @@ export function nameBeforeLeaders(name: string): string {
       break;
     }
     const after = name.slice(at + match[0].length);
-    const figure = after.match(/^[\d,]*(?:\.\d+)?/)?.[0] ?? "";
+    const figure = figureAt(name, match);
     // A range's closing figure opens no further range.
     const before = name.slice(0, at);
-    const range = kept != null && closesRange(kept, name.slice(kept.end, at))
+    const range = kept != null && closesRange(kept, name.slice(kept.end, at), figure.value)
       ? null
       : BETWEEN_OPEN.test(before) ? "between" : BALANCE_OPEN.test(before) ? "balance" : null;
-    kept = { end: at + match[0].length + figure.length, range };
+    kept = { end: at + match[0].length + figure.rest.length, value: figure.value, range };
     const sentence = after.match(THRESHOLD_SENTENCE_END);
     if (sentence) {
       end = at + match[0].length + sentence[0].length;

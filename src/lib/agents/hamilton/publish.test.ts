@@ -224,6 +224,20 @@ describe("Hamilton agentic publish", () => {
     expect(nameBeforeLeaders("Balance $100 - $500 $3")).toBe("Balance $100 - $500");
     expect(nameBeforeLeaders("Balance $100 to $500 $3")).toBe("Balance $100 to $500");
     expect(nameBeforeLeaders("Minimum balance $500 and $10 fee")).toBe("Minimum balance $500");
+    // A band's upper figure is higher; a lower second figure is the fee's own price (#1443 review).
+    for (const [name, amount, kept] of [
+      ["Minimum balance $500 - $10 fee", 10, "Minimum balance $500"],
+      ["Daily balance $1,000 - $12 per month", 12, "Daily balance $1,000"],
+      ["Monthly fee minimum balance $500 - $10", 10, "Monthly fee minimum balance $500"],
+      ["Monthly fee minimum balance $500 – $10.00 per month", 10, "Monthly fee minimum balance $500"],
+      ["Service charge if balance $500 to $10", 10, "Service charge if balance $500"],
+      ["Monthly fee balance of $1,000 - $5", 5, "Monthly fee balance of $1,000"],
+      ["Overdraft between $35 and $5", 5, "Overdraft between $35"],
+    ] as const) {
+      expect(nameBeforeLeaders(name)).toBe(kept);
+      expect(publishedFeeName(name, "monthly_maintenance")).not.toMatch(new RegExp(`\\$${amount}(?![\\d,])`));
+    }
+    expect(nameBeforeLeaders("Balance $100 – $500 $3")).toBe("Balance $100 – $500");
     // A sentence that ends right after a one-digit threshold ends the name there.
     expect(nameBeforeLeaders("Overdraft fee if item over $5. Fee $35")).toBe("Overdraft fee if item over $5");
     for (const [name, amount, kept] of [
