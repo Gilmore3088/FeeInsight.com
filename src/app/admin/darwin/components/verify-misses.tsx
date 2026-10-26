@@ -28,7 +28,7 @@ export async function VerifyMisses() {
       {result == null ? (
         <p className="text-xs text-red-700 dark:text-red-300">The verify misses could not be read.</p>
       ) : result.standing === 0 ? (
-        <p className="text-xs text-gray-500">No hold or correction is filed against verify.</p>
+        <p className="text-xs text-gray-500">{result.withdrawn > 0 ? "No hold or correction filed against verify is still standing." : "No hold or correction is filed against verify."}</p>
       ) : (
         <>
           <ul className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
