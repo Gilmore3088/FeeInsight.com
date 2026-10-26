@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { parseAnswerSection, parseTradeoffSection, REPORT_CONFIDENCE_LIMITATION } from "./report-answer";
+import { ANSWER_SECTION_FORMAT, parseAnswerSection, parseTradeoffSection, REPORT_CONFIDENCE_LIMITATION, TRADEOFF_SECTION_FORMAT } from "./report-answer";
+import { REPORT_GOALS } from "./report-goal";
 
 describe("parseAnswerSection", () => {
   it("reads the headline and up to three decisions with confidence", () => {
@@ -48,5 +49,14 @@ describe("parseTradeoffSection", () => {
     );
     expect(parsed.body).toBe("Raising NSF draws complaints.\n\nWhat this data cannot tell you: volumes.");
     expect(parsed.watch).toEqual(["Bank A's NSF price", "complaint trend"]);
+  });
+});
+
+describe("report instructions (#1896)", () => {
+  it("never ask for a fee income figure per 1,000 charges, in any section format or client goal", () => {
+    for (const text of [ANSWER_SECTION_FORMAT, TRADEOFF_SECTION_FORMAT, ...REPORT_GOALS.flatMap((g) => [g.hint, g.guidance])]) {
+      expect(text).not.toMatch(/income per 1,000|income at stake/i);
+    }
+    expect(ANSWER_SECTION_FORMAT).toContain("the change per item and the local rank or peer band");
   });
 });

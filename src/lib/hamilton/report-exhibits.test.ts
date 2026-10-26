@@ -56,16 +56,37 @@ describe("buildLocalComparisons", () => {
 });
 
 describe("buildFeeImpacts", () => {
-  it("sizes each gap per 1,000 charges against the local median when there is one, and states it as a share of income", () => {
+  it("sizes each gap per item against the local median when there is one, with no income figure (#1896)", () => {
     const deltas = [delta("nsf", 25, 30), delta("overdraft", 30, 32)];
     const local = buildLocalComparisons(deltas, market([{ nsf: 30 }, { nsf: 32 }, { nsf: 28 }, { nsf: 26 }, { nsf: 34 }]));
-    const impacts = buildFeeImpacts(deltas, local, { year: 2025, amount: 1_000_000, source: "fdic" });
+    const impacts = buildFeeImpacts(deltas, local);
     expect(impacts).toEqual([
-      expect.objectContaining({ fee_category: "nsf", reference: "local median", gap_amount: 5, income_per_1000_amount: 5000, share_of_service_charges_pct: 0.5 }),
-      expect.objectContaining({ fee_category: "overdraft", reference: "peer median", gap_amount: 2, income_per_1000_amount: 2000, share_of_service_charges_pct: 0.2 }),
+      expect.objectContaining({ fee_category: "nsf", reference: "local median", gap_amount: 5 }),
+      expect.objectContaining({ fee_category: "overdraft", reference: "peer median", gap_amount: 2 }),
     ]);
-    // The figures Hamilton may quote trace back to the payload.
-    expect(checkNarrativeFigures("Moving NSF to $30 is worth $5,000 per 1,000 charges, 0.5% of income.", { impacts }).unmatched).toEqual([]);
+    for (const impact of impacts) {
+      expect(impact).not.toHaveProperty("income_per_1000_amount");
+      expect(impact).not.toHaveProperty("share_of_service_charges_pct");
+    }
+    // The figures Hamilton may quote trace back to the payload; a per-1,000 income figure no longer does.
+    expect(checkNarrativeFigures("Moving NSF from $25 to $30 adds $5 per item.", { impacts }).unmatched).toEqual([]);
+    expect(checkNarrativeFigures("Moving NSF to $30 is worth $5,000 per 1,000 charges.", { impacts }).unmatched).not.toEqual([]);
+  });
+
+  it("shows each price move per item and by rank, with no per-1,000 or share-of-income column, on screen and in the PDF alike", () => {
+    const { exhibits } = buildReportExhibits({
+      institutionName: "Example Bank",
+      deltas: [delta("nsf", 25, 30), delta("overdraft", 30, 32)],
+      peerLabel: "peers",
+      market: market([{ nsf: 30 }, { nsf: 32 }, { nsf: 28 }, { nsf: 26 }, { nsf: 34 }]),
+      serviceCharges: { year: 2025, amount: 1_000_000, source: "fdic" },
+    });
+    const move = exhibits.find((e) => e.id === "dollar_impact");
+    expect(move?.columns).toEqual(["Fee", "Move", "Change per item", "Local rank, lowest price first", "Against peers"]);
+    expect(move?.title).toBe("The largest price move is the NSF / returned item fee: $25.00 to the local median of $30.00, +$5.00 per item");
+    expect(move?.rows[0]).toEqual(["NSF / Returned Item", "$25.00 to $30.00 (local median)", "+$5.00", "1st to 3rd of 6", "From below the median to at the median"]);
+    const text = JSON.stringify(move);
+    expect(text).not.toMatch(/1,000|Share of|income change/i);
   });
 });
 
@@ -73,7 +94,7 @@ describe("price-move scenarios", () => {
   it("ranks the fee among local competitors before and after moving to the reference price", () => {
     const deltas = [delta("nsf", 36, 30)];
     const local = buildLocalComparisons(deltas, market([{ nsf: 30 }, { nsf: 32 }, { nsf: 28 }, { nsf: 35 }, { nsf: 31 }]));
-    const [impact] = buildFeeImpacts(deltas, local, null);
+    const [impact] = buildFeeImpacts(deltas, local);
     // Local median of 28, 30, 31, 32, 35 is 31; today 36 is the most expensive of 6.
     expect(impact).toMatchObject({ reference_amount: 31, local_rank_today: 6, local_rank_at_reference: 3, local_field_size: 6 });
   });
