@@ -1,4 +1,5 @@
 import { productKey, productKeySql, sameProduct } from "@/lib/fee-product";
+import { frequencyFamily } from "@/lib/fee-frequency";
 import { sql } from "@/lib/data-store/connection";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { splitLiveCategory } from "@/lib/fee-fold";
@@ -16,13 +17,15 @@ export const PUBLISH_REFUSE_DUPLICATES_LIVE = true;
 export const PUBLISH_DUPLICATE_REFUSE_REASON_PREFIX = "Exact duplicate of live fee #";
 
 /**
- * Frequencies that name the same thing count as one (the collapse's `FREQUENCY_CLASS`): per item,
- * per occurrence, per transaction and one-time all mean "each time it happens", and an unstated
- * (or "other") frequency matches any stated one.
+ * Frequencies that name the same thing count as one (the collapse's `FREQUENCY_CLASS`), by the
+ * shared rule in fee-frequency.ts (#1992): case and separators are ignored ("Per_Item", "per item"),
+ * per item, per occurrence, per transaction, one-time and each all mean "each time it happens",
+ * and an unstated (or "other") frequency matches any stated one.
  */
 export function frequencyClass(frequency: string | null | undefined): string | null {
-  if (frequency == null || frequency === "other") return null;
-  return ["per_item", "per_occurrence", "per_transaction", "one_time"].includes(frequency) ? "each" : frequency;
+  const family = frequencyFamily(frequency);
+  if (family == null || family === "other") return null;
+  return family === "per_item" ? "each" : family;
 }
 
 /** A live copy of the line a row is about to publish: same institution, category, variant, value and name. */
