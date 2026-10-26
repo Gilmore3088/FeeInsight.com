@@ -1157,14 +1157,18 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   twin is no longer live at its category and amount (`twin_live`), no other English line of the fee
   is live or account-type-held (`english_twin_live`) or verified with no catalog row yet
   (`english_twin_waiting`), no other live fee at that institution, category and amount on any
-  document, another Spanish copy included, would be duplicated (`same_fee_live`), the twin was not
+  document, another Spanish copy included, would be duplicated (`same_fee_live`; also every archived
+  copy but the lowest id when two pass at one institution, category and amount in a run, as Sound's
+  67050 and 108450 would), the twin was not
   replaced by a newer copy of the schedule
   (`older_edition`, `refreshed by`, `superseded by`, `newer_copy_drops_fee`, `not_on_current_copy`:
   `twin_replaced`), and its own document's newest text still states it (`checkFeeAgainstSource`;
   `no_amount`, `no_text`, `not_on_own_document`). `TRANSLATED_COPY_RESTORE_LIVE` is off, so the step
   only reports (`restore` in the step detail). Switched on, a restorable fee comes back in one
-  statement that re-checks its state and every condition but the document check (shared SQL
-  fragments, so a publish between the read and the write cannot race it): the rollback cleared, the
+  statement whose write re-checks its own state, another check's open second look, an English line
+  live or account-type-held, an English row waiting, any other live fee at its price, and one restore
+  per price (`DISTINCT ON`, lowest id); not the twin by id, `twin_replaced` or the document text
+  (shared SQL fragments, so a publish between the read and the write cannot race it): the rollback cleared, the
   verified row `verified` with `translated_copy` replaced by
   `rules_recheck_restored:translated_copy_twin_gone` (the learning sync's `restored_after_takedown`
   record names it), its second look set to `takedown_cleared` at weight 0 (the takedown was right

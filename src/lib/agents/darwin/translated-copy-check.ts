@@ -263,9 +263,16 @@ export function translatedCopyRowsSql(db: SqlTag, options: { institutionId?: num
  * - it has a dollar amount (`no_amount`) and its own document's newest text still states it
  *   (`checkFeeAgainstSource`, ok or tiered; `no_text`, `not_on_own_document`).
  *
+ * Only one archived copy per institution, category and amount comes back in a run, the lowest id;
+ * the others are `same_fee_live` (two copies would otherwise both pass and go live side by side).
+ *
  * Switched on (`TRANSLATED_COPY_RESTORE_LIVE`) and not a dry run, a restorable fee comes back live in
- * one statement that re-checks its state and every condition above but the document check, so a
- * publish between the read and the write cannot race it: the rollback cleared, its verified row `verified` again
+ * one statement. Its write re-checks the fee's own state (reason, batch, not quarantined, verified
+ * row rejected with `translated_copy` last), another check's open second look, an English line live
+ * or account-type-held, an English verified row waiting to publish, any other live fee at its price,
+ * and one restore per price; it does not re-check the named twin by id (a live twin is a live fee at
+ * the price), `twin_replaced`, or the document text. So a publish between the read and the write
+ * cannot race it. Then: the rollback cleared, its verified row `verified` again
  * without the `translated_copy` flag and with `rules_recheck_restored:translated_copy_twin_gone`
  * (so the learning sync's `restored_after_takedown` record names why it came back), its second look
  * set to `takedown_cleared` at weight 0 (the takedown was right when made, so the check's precision
@@ -368,6 +375,7 @@ export function judgeTranslatedCopyRestores(rows: TranslatedCopyRestoreRow[]): O
   const restorable: TranslatedCopyRestoreFee[] = [];
   const keptFees: TranslatedCopyRestoreFee[] = [];
   const kept: TranslatedCopyRestoreResult["kept"] = {};
+  const restoringKeys = new Set<string>();
   for (const row of [...rows].sort((a, b) => Number(a.fee_published_id) - Number(b.fee_published_id))) {
     const verdict = translatedCopyRestoreVerdict(row);
     const fee: TranslatedCopyRestoreFee = {
@@ -384,10 +392,19 @@ export function judgeTranslatedCopyRestores(rows: TranslatedCopyRestoreRow[]): O
       verdict,
     };
     if (verdict === "restore") {
-      restorable.push(fee);
-      continue;
+      // At most one restore per institution, category and amount in a run: two archived copies of one
+      // fee would both pass, since the same-price rule sees only live fees. The lowest id comes back
+      // (rows are read in id order); the rest are same_fee_live now, and stay down next run because
+      // that one is live (review of #2707: Sound's 67050 and 108450, document reproduction $2).
+      const key = `${fee.institutionId}|${fee.canonicalFeeKey ?? ""}|${fee.amount ?? ""}`;
+      if (!restoringKeys.has(key)) {
+        restoringKeys.add(key);
+        restorable.push(fee);
+        continue;
+      }
+      fee.verdict = "same_fee_live";
     }
-    kept[verdict] = (kept[verdict] ?? 0) + 1;
+    kept[fee.verdict] = (kept[fee.verdict] ?? 0) + 1;
     keptFees.push(fee);
   }
   // Samples show the rarer verdicts first: a twin still live is the common case.
@@ -538,8 +555,8 @@ export async function restoreTranslatedCopies(
       // Every condition is re-checked in the write: a fee another rule touched since the read, or whose
       // English line (or any other live line at its price) was published since, stays down.
       const back = await scope<{ fee_published_id: number | string }[]>`
-        WITH eligible AS (
-          SELECT fp.fee_published_id, fp.lineage_ref
+        WITH passing AS (
+          SELECT fp.fee_published_id, fp.lineage_ref, fp.institution_id, fp.canonical_fee_key, fp.amount
             FROM published_fee_records fp
             JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
            WHERE fp.fee_published_id = ANY(${result.restorable.map((fee) => fee.feePublishedId)}::bigint[])
@@ -553,6 +570,12 @@ export async function restoreTranslatedCopies(
              AND NOT EXISTS (SELECT 1 ${englishLineFrom(scope)})
              AND NOT EXISTS (SELECT 1 ${waitingFrom(scope)})
              AND NOT EXISTS (SELECT 1 ${sameFeeLiveFrom(scope)})
+        ), eligible AS (
+          -- One restore per institution, category and amount, the lowest id, as the read's verdict.
+          SELECT DISTINCT ON (passing.institution_id, passing.canonical_fee_key, passing.amount)
+                 passing.fee_published_id, passing.lineage_ref
+            FROM passing
+           ORDER BY passing.institution_id, passing.canonical_fee_key, passing.amount, passing.fee_published_id
         ), verified AS (
           UPDATE verified_fee_observations fv
              SET review_status = 'verified',

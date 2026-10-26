@@ -37,6 +37,7 @@ const SPANISH_TEXT = [
   "Copias de cheques $2.00",
   "Giro bancario nacional $25.00",
   "Copia de estado de cuenta $3.00",
+  "Cargo por partida sobregirada $15.00",
 ].join("\n");
 
 describe.skipIf(!connection)("translated-copy restore (#1986)", () => {
@@ -207,11 +208,15 @@ describe.skipIf(!connection)("translated-copy restore (#1986)", () => {
   });
 
   it("re-checks every condition in the write: a line published between the read and the write keeps the fee down", async () => {
-    for (const race of ["english", "spanish_copy", "waiting", "other_look"] as const) {
+    for (const race of ["english", "english_held", "spanish_copy", "waiting", "other_look"] as const) {
       await inRollback(async (tx, runId) => {
         const gone = await pair(tx, "Cargo por sobregiro", "Overdraft Fee", "overdraft", 15, "source_check: amount_not_in_text");
         const land = async () => {
           if (race === "english") await fee(tx, "Overdraft Item Fee", { documentId: CURRENT, key: "overdraft", amount: 15 });
+          // Only the write's englishLineFrom clause sees a line held by the account type hold: it is not live.
+          if (race === "english_held") {
+            await fee(tx, "Overdraft Item Fee", { documentId: CURRENT, key: "overdraft", amount: 15, reason: "account_type_hold: savings", batch: "account-type-hold-1" });
+          }
           if (race === "spanish_copy") await fee(tx, "Sobregiro por partida", { documentId: SPANISH_OTHER, key: "overdraft", amount: 15 });
           if (race === "waiting") await fee(tx, "Overdraft Item Fee", { documentId: CURRENT, key: "overdraft", amount: 15, publish: false });
           if (race === "other_look") {
@@ -225,7 +230,7 @@ describe.skipIf(!connection)("translated-copy restore (#1986)", () => {
           get: (target, key) => (key === "savepoint" ? undefined : Reflect.get(target, key)),
           apply: (target, thisArg, args) => {
             const strings = args[0] as TemplateStringsArray;
-            if (Array.isArray(strings) && strings.join("?").includes("WITH eligible AS")) {
+            if (Array.isArray(strings) && strings.join("?").includes("eligible AS (")) {
               return (async () => { await land(); return await Reflect.apply(target, thisArg, args); })();
             }
             return Reflect.apply(target, thisArg, args);
@@ -238,5 +243,49 @@ describe.skipIf(!connection)("translated-copy restore (#1986)", () => {
         expect(still.rolled_back_at, race).not.toBeNull();
       });
     }
+  });
+
+  it("restores only the lowest id of two archived copies of one fee, and the other stays down next run", async () => {
+    await inRollback(async (tx, runId) => {
+      const first = await pair(tx, "Cargo por sobregiro", "Overdraft Fee", "overdraft", 15, "source_check: amount_not_in_text");
+      const second = await pair(tx, "Cargo por partida sobregirada", "Overdraft Item Fee", "overdraft", 15, "source_check: amount_not_in_text");
+      const db = tx as unknown as Db;
+      expect(await verdicts(tx)).toEqual({ [first.copy]: "restore", [second.copy]: "same_fee_live" });
+
+      const on = await restoreTranslatedCopies(db, { runId, dryRun: false, institutionId: INST, live: true });
+      expect(on.restored).toEqual([first.copy]);
+      const live = await tx`SELECT fee_published_id FROM published_fee_records
+                             WHERE fee_published_id IN (${first.copy}, ${second.copy}) AND rolled_back_at IS NULL`;
+      expect(live.map((row) => Number(row.fee_published_id))).toEqual([first.copy]);
+
+      const again = await restoreTranslatedCopies(db, { runId, dryRun: false, institutionId: INST, live: true });
+      expect(again.restored).toEqual([]);
+      expect(again.kept).toEqual({ same_fee_live: 1 });
+    });
+  });
+
+  it("the write itself restores one copy per price when both reach it", async () => {
+    await inRollback(async (tx, runId) => {
+      const first = await pair(tx, "Cargo por sobregiro", "Overdraft Fee", "overdraft", 15, "source_check: amount_not_in_text");
+      const second = await pair(tx, "Cargo por partida sobregirada", "Overdraft Item Fee", "overdraft", 15, "source_check: amount_not_in_text");
+      // Make the read pass both (as two runs' reads could), so only the write's guard stands between them.
+      const both = new Proxy(tx, {
+        get: (target, key) => (key === "savepoint" ? undefined : Reflect.get(target, key)),
+        apply: (target, thisArg, args) => {
+          const strings = args[0] as TemplateStringsArray;
+          const call = Reflect.apply(target, thisArg, args);
+          if (Array.isArray(strings) && strings.join("?").includes("translated_copy_restore_rows")) {
+            return (async () => {
+              const rows = (await call) as Array<Record<string, unknown>>;
+              return rows.map((row) => ({ ...row, institution_id: Number(row.fee_published_id) }));
+            })();
+          }
+          return call;
+        },
+      }) as unknown as Db;
+      const result = await restoreTranslatedCopies(both, { runId, dryRun: false, institutionId: INST, live: true });
+      expect(result.restorable.map((fee) => fee.feePublishedId)).toEqual([first.copy, second.copy]);
+      expect(result.restored).toEqual([first.copy]);
+    });
   });
 });

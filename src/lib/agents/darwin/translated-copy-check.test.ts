@@ -31,7 +31,7 @@ function dbFor(rows: Array<Record<string, unknown>>, options: { flags?: Array<Re
   return vi.fn((strings: TemplateStringsArray) => {
     const text = strings.join("?");
     if (text.includes("translated_copy_restore_rows")) return Promise.resolve(options.archived ?? []);
-    if (text.includes("WITH eligible AS")) return Promise.resolve((options.archived ?? []).map((row) => ({ fee_published_id: row.fee_published_id })));
+    if (text.includes("eligible AS (")) return Promise.resolve((options.archived ?? []).map((row) => ({ fee_published_id: row.fee_published_id })));
     if (text.includes("information_schema") || text.includes("to_regclass")) return Promise.resolve([{ ready: true, exists: true, present: true }]);
     if (text.includes("FROM pipeline_feedback")) return Promise.resolve(options.flags ?? []);
     if (text.includes("UPDATE published_fee_records")) return Promise.resolve([{ fee_published_id: "145047" }]);
@@ -193,6 +193,17 @@ describe("translatedCopyRestoreVerdict (#1986)", () => {
     expect(translatedCopyRestoreVerdict(archived({ amount: null }))).toBe("no_amount");
   });
 
+  it("restores one archived copy per institution, category and amount, the lowest id", () => {
+    const judged = judgeTranslatedCopyRestores([
+      archived({ fee_published_id: "108450", fee_name: "Cargo por sobregiro" }),
+      archived({ fee_published_id: "67050" }),
+      archived({ fee_published_id: "67051", amount: "10", fee_name: "Cargo por cheque oficial", canonical_fee_key: "cashiers_check" }),
+    ]);
+    expect(judged.restorable.map((fee) => fee.feePublishedId)).toEqual([67050, 67051]);
+    expect(judged.kept).toEqual({ same_fee_live: 1 });
+    expect(judged.keptSamples.map((fee) => [fee.feePublishedId, fee.verdict])).toEqual([[108450, "same_fee_live"]]);
+  });
+
   it("counts the kept ones by verdict", () => {
     const judged = judgeTranslatedCopyRestores([
       archived(),
@@ -215,7 +226,7 @@ describe("the restore in recheckTranslatedCopies (#1986)", () => {
     const result = await recheckTranslatedCopies(asDb(db), { runId: 9, stepId: 90, dryRun: false, live: false });
     expect(result.restore.restorable.map((fee) => fee.feePublishedId)).toEqual([145047]);
     expect(result.restore.restored).toEqual([]);
-    expect(texts(db).some((text) => text.includes("WITH eligible AS"))).toBe(false);
+    expect(texts(db).some((text) => text.includes("eligible AS ("))).toBe(false);
   });
 
   it("a dry run restores nothing, even switched on", async () => {
@@ -235,7 +246,8 @@ describe("the restore in recheckTranslatedCopies (#1986)", () => {
     expect(all).toContain("takedown_cleared");
     expect(all).toContain("darwin.translated_copy_restored");
     // The write re-checks every condition, not only the fee's own state (review of #2707).
-    const write = texts(db).find((text) => text.includes("WITH eligible AS")) ?? "";
+    const write = texts(db).find((text) => text.includes("eligible AS (")) ?? "";
+    expect(write).toContain("DISTINCT ON (passing.institution_id, passing.canonical_fee_key, passing.amount)");
     expect(write.match(/NOT EXISTS \(SELECT 1 \?\)/g)).toHaveLength(4);
   });
 });
