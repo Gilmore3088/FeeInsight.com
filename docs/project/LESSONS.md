@@ -213,7 +213,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-325 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+334 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
 ### Extraction and fee reading (51)
 
@@ -282,8 +282,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A provider refusal inside a streamed response never reaches the route's catch; map it in the stream's `onError`. — [finding](findings/2026-10-09-provider-limit-blank-answers.md) — Guard: `src/lib/ai-provider.test.ts` (+2 more)
 - 2026-10-09 — The Console usage limit did not trip the provider stop, and the verdict score starved. — [finding](findings/2026-10-09-api-usage-limit-did-not-trip-provider-stop.md) — Guard: `src/lib/ai-provider-usage.test.ts` (+1 more)
 
-### Categorisation and audience (25)
+### Categorisation and audience (26)
 
+- 2026-10-26 — A category's price range is set for its main fee: check it against every kind of fee a re-file moves there (a box late fee is a late charge, not rent), and match a name's words however they are spaced ("Night Drop Deposit Box" is never the safe deposit box). — [finding](findings/2026-10-26-rent-floor-blocked-box-late-refile.md) — Guard: `box-late-envelope.test.ts`, guard v96 tests; Agent lesson: `darwin/issue-1912-box-late-floor-and-night-drop`
 - 2026-10-26 — A row printed in a loan section of a general fee schedule ("Equity Loan", "LOAN FEES") is the loan's fee, however much its words sound like an account's (a returned check, a service charge); read the section before filing it under NSF or monthly maintenance. — [finding](findings/2026-10-26-loan-section-rows-filed-as-deposit-fees.md) — Guard: `src/lib/custom-report/loan-section-fee.test.ts`, `src/lib/agents/darwin/loan-section-check.test.ts`; Agent lesson: knox/issue-1905-loan-section-rows-are-loan-fees, darwin/issue-1905-loan-section-recheck
 - 2026-10-25 — A price its own line makes the paper statement charge ("$3.00 paper statement fee", "applies if you choose to receive paper statements") is the paper statement fee, never the account's monthly maintenance fee, however generic the words around it; a price for paper holders beside an electronic price stays maintenance. — [finding](findings/2026-10-25-paper-statement-price-filed-as-maintenance.md) — Guard: `src/lib/paper-statement-price.test.ts`, guard v92 tests; Agent lesson: knox/issue-1947-paper-statement-price-is-not-maintenance
 - 2026-10-25 — A price stated as "a/an <X> fee of $N" is the <X> fee: an NSF fee cut from overdraft words is the NSF fee, named by the phrase; outside that pair the words before are the more specific fee (an international wire, a deposited item return) and keep the read, as they do for a generic phrase ("a monthly fee of"). — [finding](findings/2026-10-25-cut-sentence-names-the-category.md) — Agent lesson: knox/priced-noun-phrase-names-the-fee; Guard: `src/lib/agents/knox/rules.test.ts`
@@ -569,7 +570,6 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 ### Agent process, learning and measurement (19)
 
 - 2026-10-26 — A weight-0 restore record is named in every reader that treats a restore as a lesson, and rows written under an old label are relabelled by the typed repair behind an off switch: the account type hold's 5 Oct 16 releases still read wrong / wrong_category (#1680). — [finding](findings/2026-10-26-hold-release-labelled-wrong-category.md) — Agent lesson: hamilton/issue-1680-record-kind-named-by-every-reader; Guard: `src/lib/agents/learning/account-type-hold-feedback.db.test.ts`, `src/lib/agents/darwin/release-review.test.ts`
-
 - 2026-10-25 — A retrieval add-on is judged only by its lift on a holdout of human-confirmed current schedules; the first metadata and full-text ranker showed none over today's page choice, so no embeddings. — [finding](findings/2026-10-25-retrieval-pilot-no-holdout-lift.md) — Guard: `src/lib/agents/deming/shadow-lab/retrieval-pilot.test.ts`; Agent lesson: deming/o2-retrieval-holdout-before-embeddings
 - 2026-10-24 — Answer-key lines were compared to the bank's page as markup (table bars, HTML codes, dot leaders), so the same words and prices never matched. — [finding](findings/2026-10-24-answer-key-lines-compared-as-markup.md) — Agent lesson: deming/issue-2466-line-content-match
 - 2026-10-22 — Replay each weekly live audit in the shadow lab: most live errors start at extraction, and wrong names pass every stage. — [finding](findings/2026-10-22-live-audit-replay.md) — Guard: `src/lib/agents/deming/shadow-lab/ratchet-gate.test.ts` (live_audit expectations in `ratchet-baseline.json`)
@@ -594,18 +594,18 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (264 in all).
+counts as of this index (281 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
 | atlas | 8 | [`src/lib/agents/atlas/role-lessons.ts`](../../src/lib/agents/atlas/role-lessons.ts) |
 | magellan | 22 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
-| hoovie | 11 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
+| hoovie | 12 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
 | rosetta | 12 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
-| knox | 69 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
-| darwin | 38 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
+| knox | 72 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
+| darwin | 44 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 40 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
-| hamilton | 50 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
+| hamilton | 57 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
 | deming | 14 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
 
 ## Before 2026-10-10

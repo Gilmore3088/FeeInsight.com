@@ -74,9 +74,20 @@ export const ZERO_FEE_VERIFIED_FLAG = "zero_fee";
 export const ESCHEAT_NAME = /\bescheat/i;
 export const ESCHEAT_ENVELOPE: AmountEnvelope = { min: 1, max: 150 };
 
-/** The hand range for a fee, by its category and, for escheat processing, its own name. */
+/**
+ * #1912 (review of #2639): the safe deposit box floor of $5 is a rent floor. A box late fee is priced
+ * as a late charge, not rent: "Safety Deposit Box-Late Fee" $1.00 (fee_published_id 36020, inst 494)
+ * is real, and under the rent floor the guard's re-file of it from late_payment failed Darwin's range
+ * and the fee came down instead. Only a box fee whose own name says late gets this floor; the ceiling
+ * stays the box's, so no live box fee leaves its range for it.
+ */
+export const BOX_LATE_FEE_NAME = /\blate\b/i;
+export const BOX_LATE_FEE_ENVELOPE: AmountEnvelope = { min: 1, max: 1_500 };
+
+/** The hand range for a fee, by its category and, for escheat processing and a box late fee, its own name. */
 export function handEnvelopeFor(canonicalFeeKey: string, feeName?: string | null): AmountEnvelope | undefined {
   if (canonicalFeeKey === "dormant_account" && feeName && ESCHEAT_NAME.test(feeName)) return ESCHEAT_ENVELOPE;
+  if (canonicalFeeKey === "safe_deposit_box" && feeName && BOX_LATE_FEE_NAME.test(feeName)) return BOX_LATE_FEE_ENVELOPE;
   return CATEGORY_AMOUNT_ENVELOPES[canonicalFeeKey];
 }
 

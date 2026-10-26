@@ -421,6 +421,16 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     since: "2026-10-25",
   },
   {
+    id: "issue-1912-box-late-floor-and-night-drop",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "A category's price range is set for its main fee, so check it against every fee the category holds before a re-file moves one there. The safe deposit box floor of $5 is a rent floor; a box late fee is a late charge and can be $1, so it has its own floor (BOX_LATE_FEE_ENVELOPE) and a re-file of a real $1 box late fee moves it instead of taking it down. And match a name's words however they are spaced or joined: a night depository is \"Night Drop Deposit Box\" or \"Night  Deposit Box\" as often as \"Night Deposit Box\", and it is never the safe deposit box.",
+    why: "The review of #2639 (guard v90) found that the guard's re-file of \"Safety Deposit Box-Late Fee\" $1.00 (36020, institution 494) from late_payment to safe_deposit_box failed Darwin's $5 box floor in restoreTarget, so the fee was pending a takedown instead of moving, and that v90's one-space lookbehind let \"Night Drop Deposit Box Late Fee\" count as a safe deposit box name (Oct 26, guard v96).",
+    evidence: { issues: [1912], prs: [2639], files: ["src/lib/agents/darwin/envelopes.ts", "src/lib/fee-category-guard.ts", "src/lib/agents/hamilton/category-guard.ts"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
+  {
     id: "issue-1882-zero-overdraft-needs-its-whole-cell",
     agent: "darwin",
     stage: "verify",

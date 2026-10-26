@@ -23,6 +23,7 @@ import { TAXONOMY_FOLD_CHECK, TAXONOMY_FOLD_KIND } from "@/lib/agents/hamilton/t
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { ACCOUNT_TYPE_HOLD_REASON } from "@/lib/agents/hamilton/account-type-hold";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
+import { RETURN_NAME_PATTERN } from "@/lib/custom-report/collection-section-return";
 
 type SqlTag = typeof sql;
 
@@ -553,7 +554,6 @@ export function lateBoxFlags(unique: LiveRefile[]): string[] {
  * fees, and only for a plain return name (`collectionSectionReturn` reads no other).
  */
 export const COLLECTION_TEXT_PATTERN = String.raw`collection|foreign\s+(check|item|draft)|check\s+clearing`;
-const RETURN_NAME_PATTERN = /^\W*return(?:ed)?\s+(?:checks?|items?)\b/i;
 
 /**
  * Guard v90 (#1912): the rows with `collection_section` read from their stored text, for NSF fees

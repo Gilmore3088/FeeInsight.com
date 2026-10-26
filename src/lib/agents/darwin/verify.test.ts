@@ -630,6 +630,10 @@ describe("Darwin agentic verification", () => {
       expect(query).toContain("->>'min')::numeric");
       expect(query).toContain(`'${JSON.stringify(CATEGORY_AMOUNT_ENVELOPES)}'::jsonb`);
       expect(CATEGORY_AMOUNT_ENVELOPES.account_research).toEqual({ min: 1, max: 150 });
+      // #1912: a box late fee held under the box's $5 rent floor is re-read once its own $1 floor takes it.
+      expect(query).toContain("pa.detail->>'canonical_fee_key' = 'safe_deposit_box'");
+      expect(query).toContain("fr.fee_name ~* '\\mlate\\M'");
+      expect(query).toContain("(pa.detail->>'amount')::numeric BETWEEN 1 AND 1500");
     });
 
     it("records the learned category model's dispute without changing the decision", async () => {

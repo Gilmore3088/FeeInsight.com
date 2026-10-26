@@ -1851,7 +1851,15 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v92 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v91 (Oct 25, #1905):
+- The guard is at v96 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v96 (Oct 26,
+  #1912, review of #2639): a night depository's name ("Night Drop Deposit Box Late Fee", the
+  double-spaced "Night  Deposit Box") is never a safe deposit box name (`NIGHT_DEPOSIT_NAME`), so a
+  night drop's late fee stays a late payment and a box fee so named re-files to night_deposit. A box
+  late fee has its own range (`BOX_LATE_FEE_ENVELOPE` in `envelopes.ts`: $1 floor, the box's ceiling):
+  the box's $5 floor is a rent floor, and it made the guard's re-file of "Safety Deposit Box-Late Fee"
+  $1.00 (36020) fail Darwin's range, so the fee came down instead of moving. Verify re-reads box late
+  holds the new floor takes; Hamilton's outlier sweep leaves them live. Dry-run counts in the PR.
+- v91 (Oct 25, #1905):
   the network ATM rule's savings/share-withdrawal exclusion no longer refuses a share withdrawal
   priced at another network's ATM ("Share withdrawal at Non-Navy Federal/Non-CO-OP Network ATM",
   Knox v115's network table read); the savings withdrawal limit stays out. Dry run: 0 live and 0
