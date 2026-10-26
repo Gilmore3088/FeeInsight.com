@@ -222,3 +222,10 @@ fails a PR that changes one of these constants without updating its line here (#
 |---|---|---|---|
 | `FEE_PAGE_CHECK_VERSION` | — | v2 | `learning/fee-page.ts` |
 | `DOCUMENT_KIND_VERSION` | — | v1 | `learning/document-kind.ts` |
+
+## Same-step deterministic receipt repeats
+
+`recordAttempt` keeps the first identical free extract/verify/publish receipt on re-entry into
+the same run and step. It compares the entire decision, including input, outcome and detail;
+paid work, different runs/steps and discovery/fetch/read retries remain separate. Playbook folding
+still accounts for each attempt. The explicit specialist `skipRepeat` contract is unchanged.
