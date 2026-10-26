@@ -225,7 +225,7 @@ records the exception; old settled decisions need a separately designed and auth
   leaders.
 - Exact fees go to Darwin with `needs_darwin_verification`. Waived fees keep their price
   and a `waivable` flag. A free fee ("Free", "No charge" or $0 next to a recognized fee
-  name) is stored at $0 with `knox_review:zero` and `needs_darwin_verification`, so Darwin
+  name, or since v124 an unconditional "We do not charge a(n) NSF fee." sentence) is stored at $0 with `knox_review:zero` and `needs_darwin_verification`, so Darwin
   can verify it as a real $0 price. Ranges, percentages and priced lines no rule
   recognizes are stored with `knox_review:<shape>` (plus `amount_max:` / `percent:`) and
   without `needs_darwin_verification`, so Darwin never verifies them as exact amounts. A fee
@@ -1954,6 +1954,37 @@ account's NSF and monthly maintenance fees (154634, 154635). A row naming a depo
 a stop payment, and a $0 in words keep their read. Darwin re-checks live fees with the same rule
 (`darwin/loan-section-check.ts`, switch off).
 
+v124 (#2040): a plain sentence saying the bank does not charge a named fee is that fee's $0. "We do not
+charge a returned item/non-sufficient funds (NSF) fee for items returned unpaid." (Wells Fargo, doc 33356)
+is held as `zero` under the name it prints, like a "No Fee" row, and goes to Darwin; before, only a free
+word or a $0 cell was read, so Wells and others showed NSF as "Not published". The grammar is shared
+(`noChargeStatementsIn` in `src/lib/no-charge-statement.ts`), and the shared source check traces the $0 to
+the sentence for that exact name only (`statesNoChargeFor`), so Knox's self-check, Darwin's verify and the
+rules re-check read it the same way. A read needs all of:
+- one whole sentence on one line of prose, ending in "." or "!" on that line; never a table row (Fidelity
+  Bank's "BILL PAY SERVICES NSF | We do not charge a fee when we return an item unpaid ..." is the bill
+  pay service's terms, beside a $35 account NSF);
+- the sentence opens on "We", "The bank" or "The credit union" with a present negation: "do not",
+  "don't", "does not", "doesn't", "never" ("currently" allowed). "In that case, we will not ...",
+  "However, ...", a product name as subject, "will not"/"won't" (a scenario's consequence) and "no longer"
+  (no unconditional prod example; the read cannot see whether the copy is current) are no read;
+- the fee named explicitly, in `nsf` (returned item, NSF, non-sufficient or insufficient funds),
+  `overdraft` or `od_protection_transfer` only: the fees banks announce in prose that they dropped, and
+  the ones #2040 names. Other "we do not charge for ..." sentences are mostly Reg E boilerplate whose
+  object is no one fee. A name with both overdraft and NSF ("overdraft or NSF fees") is not read;
+- no figure and nothing after the fee but a restatement of it ("for items returned unpaid", "for
+  returned items"): "if ...", "when ...", "on transactions under $5", "for the first ...", "more than 3
+  per day", "for one-time debit card or ATM transactions", "on Assure Checking accounts" or a colon
+  that opens a list keep it unread.
+One $0 per category per text, read from a sentence that prints the fee's name when one does. None when
+the rules pass already read a $0 in that category, or any specialist read a price in it from the same
+text. Darwin's conditional $0 and banded $0 checks pass such a sentence (no dollar figure, no band).
+Oct 26 dry run (prod, read-only, current copies): 10 texts at 10 institutions, 7 NSF (Wells Fargo 4,
+172, 359; HSBC 26; United Bank 67; Cape & Coast 678; Grand Bank for Savings 2568), 2 overdraft transfer
+(Regions 27, New Tripoli 1424) and 1 overdraft (Monet 309). 5 banks gain an NSF row and 2 an overdraft
+transfer row; the other 3 already show $0 there. None has a live charged fee in the category, and no
+live fee's source-check verdict changes. Adds reads only, so there is no live takedown to re-check.
+
 ## Darwin's re-read requests (`reread-feedback.ts`, #1511)
 
 Darwin's live fragment check (`darwin/live-fragment-check.ts`) writes one `pipeline_feedback` row of
@@ -2207,7 +2238,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v123 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v124 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v10 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

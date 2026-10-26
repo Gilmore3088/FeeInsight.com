@@ -28,6 +28,7 @@ import { boxSectionLateFee } from "./box-section-late-fee";
 import { withGluedFootnotePrices } from "./glued-footnote-price";
 import { discontinuedRow } from "./discontinued-rows";
 import { networkColumnRow } from "./network-column-rows";
+import { statesNoChargeFor } from "@/lib/no-charge-statement";
 const NSF_POLICY_CATEGORIES = new Set(["nsf", "overdraft"]);
 
 export type SourceCheckFailure =
@@ -1639,6 +1640,10 @@ function checkAgainstLines(
     // A tier named by its own band ("Overdraft Item Fee (items $10.01 - $20.00)") is that
     // tier's price, not a band standing in for the whole fee.
     if (amountProblem === "tiered_fee" && namesItsBand(row, feeName)) amountProblem = null;
+    // #2040: "We do not charge a returned item/non-sufficient funds (NSF) fee for items returned unpaid."
+    // states that fee's $0 with no free word. Only the exact name the sentence prints, only in a whole
+    // sentence of the shared no-charge grammar (`statesNoChargeFor`), which never reads a condition.
+    if (amountProblem === "amount_not_the_fee" && rounded === 0 && !dailyCap && statesNoChargeFor(row, feeName)) amountProblem = null;
     const leader = dailyCap ? null : leaderRow(lines, i);
     if (amountProblem && leader && leader !== row && namesFee(leader, stems) && !statesAmount(leader, rounded, stems)) {
       row = leader;

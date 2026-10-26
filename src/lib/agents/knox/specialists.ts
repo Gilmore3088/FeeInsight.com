@@ -41,6 +41,7 @@ import { withGluedFootnotePrices } from "@/lib/custom-report/glued-footnote-pric
 import { networkColumnReads, withoutNetworkTableRows } from "@/lib/custom-report/network-column-rows";
 import { namesLateChargeBound } from "@/lib/late-charge-bound";
 import { rateFloorOf } from "@/lib/rate-floor";
+import { noChargeStatement } from "@/lib/no-charge-statement";
 
 /**
  * Knox's free extraction team, run over one whole document. Pure.
@@ -415,7 +416,20 @@ import { rateFloorOf } from "@/lib/rate-floor";
 // (prod, read-only): 8 live fees at 7 institutions sit in a loan section under a deposit category. They
 // move only when their banks are next read, each still checked by Darwin. Categories only; names and
 // prices are unchanged. The stale-read floor stays at v97. Name re-tidy stays at v27.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 123 } as const;
+// v124 (#2040): a plain sentence saying the bank does not charge a named fee ("We do not charge a
+// returned item/non-sufficient funds (NSF) fee for items returned unpaid.", Wells Fargo doc 33356) is
+// that fee's $0, held as `zero` like a "No Fee" row and sent to Darwin (`noChargeStatementsIn` in
+// `src/lib/no-charge-statement.ts`). The shared source check traces the $0 to the sentence for the exact
+// name it prints (`statesNoChargeFor`), so the self-check and Darwin agree. Only a whole sentence on one
+// line of prose (no table row), opening on "We"/"The bank"/"The credit union" with a present negation
+// ("do not", "don't", "does not", "never"; not "will not" or "no longer"), naming an NSF/returned item,
+// overdraft or overdraft transfer fee, with no figure and no words after the fee but a restatement ("for
+// items returned unpaid"); a waiver, band, allowance, cap or product scope is no read. One $0 per category
+// per text, none when the rules pass already read a $0 in that category or any specialist a price. Oct 26
+// dry run (prod, read-only, current copies): 10 texts at 10 institutions, 7 NSF, 2 overdraft transfer, 1
+// overdraft; 5 banks gain an NSF row and 2 an overdraft transfer row, none has a live charged fee in the
+// category. Adds reads only. The stale-read floor stays at v97. Name re-tidy stays at v27.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 124 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -929,6 +943,10 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
   }
   // A priced line a specialist has since classified is no longer unrecognized.
   const kept = held.filter((row) => {
+    // v124 (#2040): a "we do not charge" sentence's $0 never stands beside a priced read of the same
+    // category from this text, whichever specialist read the price.
+    if (row.shape === "zero" && row.canonicalHint && noChargeStatement(row.excerpt)?.canonicalKey === row.canonicalHint &&
+      candidates.some((candidate) => candidate.canonicalHint === row.canonicalHint && candidate.amount > 0)) return false;
     if (row.shape === "untraced") {
       return !candidates.some((candidate) => candidate.canonicalHint === row.canonicalHint && candidate.amount === row.amount);
     }

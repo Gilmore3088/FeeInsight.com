@@ -21,6 +21,7 @@ import { LOAN_SECTION_TARGET, loanSectionFee } from "@/lib/custom-report/loan-se
 import { domesticStackedStem, stackedCellVariants } from "@/lib/custom-report/stacked-cell-variants";
 import { domesticWireClausePrices } from "@/lib/custom-report/wire-clause-prices";
 import type { OwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
+import { noChargeStatementsIn } from "@/lib/no-charge-statement";
 
 /**
  * Knox's deterministic extraction rules (`extract.rules`), pass 1. Pure: text in,
@@ -3071,6 +3072,24 @@ export function extractCandidatesFromText(input: string): ExtractionRulesResult 
     for (const held of found.held) keep(held);
     tableHeld.push(...(found.tableHeld ?? []));
     for (const [reason, count] of Object.entries(found.dropped ?? {})) countDrop(result, reason as DroppedLineReason, count);
+  }
+  // v124 (#2040): "We do not charge a returned item/non-sufficient funds (NSF) fee for items returned
+  // unpaid." is the NSF fee's $0, held as `zero` like a "No Fee" row so Darwin verifies it. Only a whole
+  // sentence of the shared grammar (`noChargeStatementsIn`): no condition, no figure, one named fee in
+  // nsf, overdraft or overdraft transfer. Not when this text prices the same category: a priced read
+  // and a "we do not charge" sentence on one page are two products' terms, not the bank's $0. One $0 per
+  // category per text: a page that says it three ways ("We don't assess fees for declined or returned
+  // transactions", "We do not charge a returned item/non-sufficient funds (NSF) fee ...") is one fee,
+  // read from a sentence that prints the fee's own name when there is one.
+  const statedFree = new Set<string>();
+  const statements = text.split("\n").flatMap((line) => noChargeStatementsIn(line));
+  for (const statement of [...statements.filter((read) => read.namePrinted), ...statements.filter((read) => !read.namePrinted)]) {
+    if (statedFree.has(statement.canonicalKey) || result.held.some((read) => read.shape === "zero" && read.canonicalHint === statement.canonicalKey)) continue;
+    if (result.candidates.some((read) => read.canonicalHint === statement.canonicalKey && read.amount > 0)) continue;
+    if (!passesDarwinChecks(statement.canonicalKey, statement.feeName, 0)) continue;
+    statedFree.add(statement.canonicalKey);
+    keep({ shape: "zero", feeName: statement.feeName, amount: 0, amountMax: null, percent: null, frequency: null,
+      canonicalHint: statement.canonicalKey, excerpt: statement.sentence });
   }
   // v68: label-and-price rows no rule names are held only in a fee schedule (one that names
   // itself so or where the rules read five fees), after the lines that say "fee", so they never
