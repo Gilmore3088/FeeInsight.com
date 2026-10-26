@@ -96,6 +96,16 @@ describe("narrateStepFinished", () => {
       .toBe("Paid pass to find fee schedules in KS: 1 of 2 succeeded for $0.00; then stopped: a budget cap (which cap was not recorded).");
   });
 
+  it("says a paid pass made no call when its verdicts could not act (#1111)", () => {
+    expect(narrateStepFinished("verify-paid", {
+      processed: 0, cost_microusd: 0, budget_stopped: false,
+      skipped_passes: ["release_review: releases are off, so a verdict would change nothing", "adjudicate: shadow verdicts are off; they never change a decision"],
+    }, "KS")).toBe(
+      "Paid pass to review disputed fees in KS made no model call, $0 spent (release_review: releases are off, so a verdict would change nothing; adjudicate: shadow verdicts are off; they never change a decision).",
+    );
+    expect(narrateStepFinished("verify-paid", { processed: 0, cost_microusd: 0 }, "KS")).toBe("Paid pass to review disputed fees in KS: nothing the free passes left.");
+  });
+
   it("describes Magellan downloads with failures and skips", () => {
     expect(narrateStepFinished("fetch", {
       processed_institutions: 25, fetched_documents: 21, failed_fetches: 3, skipped_fetches: 1,

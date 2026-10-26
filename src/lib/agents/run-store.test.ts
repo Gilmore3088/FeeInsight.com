@@ -172,6 +172,7 @@ vi.mock("@/lib/agents/rosetta/read", () => ({
 vi.mock("@/lib/agents/rosetta/paid-read", () => ({ runRosettaPaidRead: runRosettaPaidReadMock }));
 
 import { narrateStepFinished } from "./narrate";
+import { OPTIONAL_PAID_PASS_STEP_KEYS } from "./types";
 
 import {
   cancelAgentRun,
@@ -185,6 +186,7 @@ import {
   timedSweep,
   createStepTurns,
   executeQueuedAgentRuns,
+  hasQueuedProviderSteps,
   PARALLEL_STATE_LANES,
   heldByPause,
   startAgentRun,
@@ -450,6 +452,39 @@ describe("agentic run store", () => {
     } else {
       expect(summary).toContain("for $0.00"); expect(narrated).toContain("for $0.00");
       expect(narrated).not.toContain("unavailable");
+    }
+  });
+
+  it.each([
+    { label: "no provider budget this tick", options: { allowProviderSteps: false } },
+    { label: "no paid slot this tick", options: { allowProviderSteps: true, deferProviderSteps: true } },
+  ])("runs Darwin's verify-paid as a free step while neither pass can act ($label, #1111)", async ({ options }) => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    const paidStep = [{ ...queuedStepRows[0], step_key: "verify-paid", agent_name: "darwin", title: "Verify paid" }];
+    const run = { ...runRow, progress_total: 1 };
+    installSqlMocks({ finalRun: run, finalSteps: paidStep }); installTxMocks(paidStep, run);
+
+    await expect(executeAgentRun(101, { maxSteps: 10, ...options })).resolves.toMatchObject({ status: "completed", executedSteps: 1 });
+    const finish = txMock.mock.calls.find((call) => templateText(call[0]).includes("'step.finished'"))!;
+    // Ran (its free verdict score), not skipped or left queued for a provider budget it never uses.
+    expect(finish.at(-3)).toBe("completed");
+    expect(String(finish.at(-2))).not.toContain("Paid pass skipped: provider budget");
+    expect(JSON.parse(finish.at(-1) as string)).toMatchObject({ processed: 0, cost_microusd: 0, budget_stopped: false });
+  });
+
+  it("asks for a provider budget and picks runs without counting a verify-paid step that cannot pay (#1111)", async () => {
+    sqlMock.mockImplementation(() => Promise.resolve([]));
+    await hasQueuedProviderSteps();
+    await executeQueuedAgentRuns({ runLimit: 2, maxStepsPerRun: 2, allowProviderSteps: false });
+    const keyLists = sqlMock.mock.calls
+      .filter(([strings]) => /agent_run_steps/.test(templateText(strings)))
+      .flatMap((call) => call.slice(1).filter((value): value is string[] => Array.isArray(value) && value.includes("read-paid")))
+      // The optional paid passes keep their own list: a lane may still start at an optional pass.
+      .filter((keys) => keys.length !== OPTIONAL_PAID_PASS_STEP_KEYS.length);
+    expect(keyLists.length).toBeGreaterThanOrEqual(4);
+    for (const keys of keyLists) {
+      expect(keys).toEqual(expect.arrayContaining(["discover-paid", "read-paid", "extract-paid"]));
+      expect(keys).not.toContain("verify-paid");
     }
   });
 

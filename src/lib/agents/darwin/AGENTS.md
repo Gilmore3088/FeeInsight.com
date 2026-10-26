@@ -1643,7 +1643,8 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   (the other is the release review, below), both billed to `ANTHROPIC_API_KEY_DARWIN`. The model also trains on the hand-checked
   answer-key fees in the shared learning store (`pipeline_feedback`, kind `answer_key`).
 - Layer 3, Claude adjudicator (`adjudicate.ts`, step `verify-paid`, a provider step after
-  `classify`, shadow mode): `verify.adjudicate` v1 sends Claude only the fees the free
+  `classify`, shadow mode; it makes no call while `DARWIN_ADJUDICATE_SHADOW` is off, as now, see
+  "Paid calls only when they can act" below): `verify.adjudicate` v1 sends Claude only the fees the free
   layers disagree on: approved fees the category model disputes, and category-guard
   rejects where the model is at least 0.9 sure of another category the guard accepts.
   25 fees per call, at most 10 calls per run, `PIPELINE_PAID_VERIFY_MODEL` (default
@@ -1664,6 +1665,23 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   pass it skipped; the free verdict score still runs. In October the two passes had spent
   $9.02 (812 calls) and $3.98 (778 calls) on verdicts that changed nothing. A capped
   measurement run passes `measure: true` to make the calls anyway.
+  The plan is `verifyPaidPlan` (`adjudicate.ts`). Each pass it skips leaves one
+  `darwin.release_review.skipped` or `darwin.adjudicate.skipped` event (status `skipped`, detail
+  `reason: "verdict cannot act"`, the switch that keeps it off, 0 calls, $0), and the step detail
+  lists them as `skipped_passes`; a dry run writes none. While neither pass can pay
+  (`verifyPaidMayCallProvider`), the tick treats `verify-paid` as a free step
+  (`payingProviderStepKeys` in `types.ts`, #1111 follow-up, 2026-10-26): it asks for no provider
+  budget, takes no paid-run slot and does not wait on the provider stop, so the verdict score runs
+  and the lane behind it never waits for a slot it would not use. It stays in
+  `PROVIDER_STEP_KEYS` (and the pipeline control still pauses it), and it counts as a provider step
+  again as soon as either switch is on. No switch, default, strategy or prompt version changed.
+  Still open on #1111: the release path does not run the post-source checks (retired category,
+  conditional $0, name rules) before a release; it only matters once releases are back on, which
+  waits on the answer-key measurement (item 3) and James's yes. Live released fees are re-checked:
+  with `DARWIN_RECHECK_OLDER_LIVE` on (since 2026-10-25) the recheck reads every live verified row,
+  those with a current `verify.rules` verified attempt and those without, so `darwin_released_hold`
+  rows are no longer skipped (`verified-recheck.ts`), and `release-repair.ts` re-runs the release
+  check on them.
 - Verdict score (`verdict-score.ts`, runs at the end of `verify-paid`, no model call): the
   category review's and the release review's verdicts at answer-key institutions are scored
   against the hand-keyed schedules (`answer-key-fees.json`, compacted from the Knox
@@ -1684,7 +1702,9 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   with `checkFeeAgainstSource`. Not stated: `reject`. Stated but outside the hand-set range:
   `keep` for a person (Hamilton's publish gate uses that range). Stated only as a tier, or
   filed under a category the category model disputes: `keep`. Same fee already verified:
-  `duplicate`. Otherwise `review`: in the next `verify-paid` step, before the adjudicator and
+  `duplicate`. Otherwise `review`: while releases are on (`DARWIN_RELEASE_ACTS`; off since
+  2026-10-08, so today no `review` fee is sent to Claude or released and it stays held), in the
+  next `verify-paid` step, before the adjudicator and
   from the same call budget, `release-review.ts` (`verify.release_review`) has Claude read the
   fee beside its schedule line and release it only if it is a price the bank charges, fits
   the category it was filed under (the prompt lists the names the taxonomy files there), and

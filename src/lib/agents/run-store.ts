@@ -97,7 +97,7 @@ import { runDarwinReleaseHeld } from "@/lib/agents/darwin/release-held";
 import { releaseRecordedPasses } from "@/lib/agents/darwin/release-review";
 import { runDarwinConditionalZeroResolve } from "@/lib/agents/darwin/conditional-zero-resolve";
 import { runDarwinScheduleRefile } from "@/lib/agents/darwin/schedule-refile";
-import { runDarwinAdjudicate } from "@/lib/agents/darwin/adjudicate";
+import { runDarwinAdjudicate, verifyPaidMayCallProvider } from "@/lib/agents/darwin/adjudicate";
 import { countLiveFragmentNames, liveFragmentDetail, liveFragmentFindingsDetail, recheckLiveFragmentNames } from "@/lib/agents/darwin/live-fragment-check";
 import { countHourlyFees, hourlyDetail, hourlyFindingsDetail, recheckHourlyFrequencies } from "@/lib/agents/darwin/hourly-frequency-check";
 import { countNonDepositFees, nonDepositDetail, nonDepositFindingsDetail, recheckNonDepositDocuments } from "@/lib/agents/darwin/non-deposit-document-check";
@@ -186,13 +186,14 @@ import type {
   AgentRunTriggerSource,
 } from "./types";
 import {
+  isPayingProviderStep,
   isProviderStep,
+  payingProviderStepKeys,
   MARKETING_STEP_KEYS,
   MAX_STEP_ATTEMPTS,
   PAUSE_EXEMPT_STEP_KEYS,
   pauseScopeForStep,
   OPTIONAL_PAID_PASS_STEP_KEYS,
-  PROVIDER_STEP_KEYS,
   STALE_RUNNING_STEP_MINUTES,
 } from "./types";
 
@@ -815,6 +816,8 @@ async function executeAgenticStep(
           cost_microusd: paid.costMicrousd,
           ...(paid.unknownCostResponses !== undefined ? { unknown_cost_responses: unknownCosts, known_cost_subtotal_microusd: paid.costMicrousd } : {}),
           dry_run: paid.dryRun,
+          // Passes switched off because their verdicts could not act (#1111), each with its reason.
+          ...(skipped.length > 0 ? { skipped_passes: skipped } : {}),
           sample_results: paid.results.slice(0, 10),
           // Every work-list entry, which the 10-entry sample usually cuts (#1269).
           ...(step.stepKey === "discover-paid" ? { work_lists: workListLedger(paid.results) } : {}),
@@ -3909,9 +3912,22 @@ export async function reapStaleAgentSteps({
   return result;
 }
 
-/** True when any queued ledger run's next step is a provider (paid) step. */
+/**
+ * Provider steps that can spend now: `verify-paid` is left out while neither Darwin pass can act
+ * (#1111), so it needs no budget check, provider slot or clear provider stop.
+ */
+function payingProviderSteps(): readonly string[] {
+  return payingProviderStepKeys(verifyPaidMayCallProvider());
+}
+
+function stepPaysProvider(stepKey: string): boolean {
+  return isPayingProviderStep(stepKey, verifyPaidMayCallProvider());
+}
+
+/** True when any queued ledger run's next step is a provider (paid) step that can spend now. */
 export async function hasQueuedProviderSteps(): Promise<boolean> {
-  if (PROVIDER_STEP_KEYS.length === 0) return false;
+  const providerSteps = payingProviderSteps();
+  if (providerSteps.length === 0) return false;
   const [row] = await sql`
     SELECT 1
       FROM agent_run_steps s
@@ -3919,7 +3935,7 @@ export async function hasQueuedProviderSteps(): Promise<boolean> {
      WHERE r.status = 'queued'
        AND r.run_kind = ANY(${[...RUN_KINDS_WITH_LEDGER]})
        AND s.status = 'queued'
-       AND s.step_key = ANY(${[...PROVIDER_STEP_KEYS]}::text[])
+       AND s.step_key = ANY(${[...providerSteps]}::text[])
      LIMIT 1
   `;
   return Boolean(row);
@@ -4403,7 +4419,7 @@ export async function executeAgentRun(
     }
     // Provider steps (paid model calls) additionally require the global automation
     // stop to be clear and the caller to have provider budget for this tick.
-    if (nextStepKey && isProviderStep(nextStepKey)) {
+    if (nextStepKey && stepPaysProvider(nextStepKey)) {
       if (options.deferProviderSteps) {
         return {
           runId,
@@ -4560,6 +4576,8 @@ export async function executeQueuedAgentRuns({
   // Keep mandatory paid jobs out of a capped tick's run limit. A state's optional
   // paid pass must still reach executeAgentRun's skip receipt when free work follows;
   // otherwise three lanes waiting at paid steps fill every active lane slot forever.
+  // A `verify-paid` step that cannot pay (#1111) counts as free work here.
+  const providerSteps = [...payingProviderSteps()];
   const rows = await sql`
     SELECT r.id, r.run_kind, r.params_json->>'source' AS source,
            -- Time since the run last did anything: its last finished step, else when it was queued.
@@ -4593,12 +4611,12 @@ export async function executeQueuedAgentRuns({
                 SELECT 1 FROM agent_run_steps later
                  WHERE later.agent_run_id = r.id AND later.status = 'queued'
                    AND later.sequence > optional.sequence
-                   AND NOT later.step_key = ANY(${[...PROVIDER_STEP_KEYS]}::text[])
+                   AND NOT later.step_key = ANY(${providerSteps}::text[])
               )
               AND NOT EXISTS (
                 SELECT 1 FROM agent_run_steps required
                  WHERE required.agent_run_id = r.id AND required.status = 'queued'
-                   AND required.step_key = ANY(${[...PROVIDER_STEP_KEYS]}::text[])
+                   AND required.step_key = ANY(${providerSteps}::text[])
                    AND NOT required.step_key = ANY(${[...OPTIONAL_PAID_PASS_STEP_KEYS]}::text[])
               )
          ))
@@ -4607,7 +4625,7 @@ export async function executeQueuedAgentRuns({
              FROM agent_run_steps s
             WHERE s.agent_run_id = r.id
               AND s.status = 'queued'
-              AND s.step_key = ANY(${[...PROVIDER_STEP_KEYS]}::text[])
+              AND s.step_key = ANY(${providerSteps}::text[])
               AND s.sequence = (
                 SELECT MIN(s2.sequence)
                   FROM agent_run_steps s2
