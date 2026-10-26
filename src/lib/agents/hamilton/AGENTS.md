@@ -559,7 +559,13 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     held, when it passes every check with those words set aside and traces in its own text;
     otherwise it stays rejected with the flag. A checked row with no type and a lineup
     product gets `account_type_checked:v1` and is not read again; a row with no product is read
-    again on every step, since a later Knox read can fill its product. One event per run names every row.
+    again on every step, since a later Knox read can fill its product. A superseded copy is never
+    read again, so behind `ACCOUNT_TYPE_COLUMN_READ_LIVE` (off, #1672) such a row is also read for
+    its table column in its stored text, the way Knox v121 reads it (`tableColumnProduct`), and held
+    by that account's type; a row the column read leaves untyped takes
+    `account_type_column_checked:v1` so its text is read once. Off, a dry run lists what it would
+    hold (`columnShadow`, `detail.account_type_hold.column_shadow`) and a real run reads no text.
+    One event per run names every row.
     Each live takedown writes a weight-0 `pipeline_feedback` row `wrong` / `wrong_category` at publish;
     each release (part 3) writes `restored` / `account_type_hold_released`, a record, never a
     `wrong` row, so no reader keyed on kind or signal counts a release as a wrong category (#1680).

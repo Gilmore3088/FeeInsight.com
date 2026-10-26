@@ -326,7 +326,7 @@ export async function sweepsBeforeGuardRequeue(ctx: MovedSweepContext) {
   // #1100 gap 1 (James, Oct 16): a non-checking account's monthly fee is held as verified with
   // its account type and never published as consumer checking monthly maintenance.
   const accountTypeHold = await sweep(ctx, "accountTypeHold", (): Result<typeof applyAccountTypeHold> => ({
-    dryRun, heldLive: [], heldWaiting: [], checkedUntyped: 0, recheckNoProduct: 0, restoredHeld: [], typedRejected: [], error: null,
+    dryRun, heldLive: [], heldWaiting: [], checkedUntyped: 0, recheckNoProduct: 0, columnShadow: [], restoredHeld: [], typedRejected: [], error: null,
   }), () => applyAccountTypeHold(tx, {
     runId,
     stepId: ctx.stepId,
