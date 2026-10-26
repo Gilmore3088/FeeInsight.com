@@ -387,7 +387,20 @@ import { rateFloorOf } from "@/lib/rate-floor";
 // on prod's live no-product monthly fees with a table line (776): the new read names an account for 10,
 // 3 of them not checking (135709, 56641, 60745); the account-type hold's column read takes those down
 // once switched on. The stale-read floor stays at v97. Name re-tidy stays at v27.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 121 } as const;
+// v122 (#1882): a free read of an overdraft, NSF or continuous overdraft fee whose $0 is not the fee's
+// price is held as a range for review (`knox_banded_zero:<kind>`), never sent to Darwin as a free fee
+// (`bandedZeroOf` in `src/lib/banded-zero.ts`, shared with Darwin's banded $0 re-check, switch off).
+// Three shapes: the $0's own cell goes on to price the fee ("Safety Net Overdraft | $0 if the negative
+// balance is $5 or less. $10 if ... $35 per item**"; "Privilege Pay ... | $0 for items ≤ $5"), the same
+// name printed on a band row of its own with a price ("Item paid in overdraft fee (Courtesy Pay) | N/C"
+// over "Negative account balance $0-$9.99", then "| up to 19.00"), and a price straight after the name
+// with the free word the next column's ("Overdraft Fee | $12.00 | Free"). The free read took the first
+// figure after the name and tested only the name for a condition (`notAZeroPrice`). A $0 the schedule
+// states for the whole fee keeps its read ("No-Fee Overdraft | Free", "Overdraft fee $0 $0 $0").
+// Oct 26 dry run over the 139 live $0 fees in those categories: 4 match (99261, 108088, 116439, 149658),
+// each checked on its stored text. Removes free reads only. The stale-read floor stays at v97. Name
+// re-tidy stays at v27.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 122 } as const;
 
 export interface SpecialistRun {
   strategy: string;
