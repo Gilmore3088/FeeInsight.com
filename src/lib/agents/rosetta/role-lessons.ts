@@ -122,7 +122,7 @@ export const ROSETTA_LESSONS: AgentLesson[] = [
     stage: "read",
     lesson: "A PDF font can drop a ligature with no character left, so a word loses its 'ti' or 'ft' without any glyph to find ('Internaonal', 'Domesc', 'Overdra'). Restore such a word only against a short list of fee words, and only when the same document shows the loss in at least two different words; leave short or doubtful forms, and words touching some other stand-in glyph, as they are.",
     why: "Bay Area CU's fee schedule (text 6266) read 'Wire Transfer Outgoing (Internaonal)' $50, so live fee 42754 went live as a domestic outgoing wire. No U+FFFD marked the loss, so glyph repair never saw it. On Oct 26, 4 stored PDF texts and 5 live fee names carried the loss.",
-    evidence: { issues: [1513], prs: [], files: ["docs/project/findings/2026-10-26-dropped-pdf-ligatures.md", "src/lib/agents/rosetta/glyph-repair.ts"] },
+    evidence: { issues: [1513], prs: [2692], files: ["docs/project/findings/2026-10-26-dropped-pdf-ligatures.md", "src/lib/agents/rosetta/glyph-repair.ts"] },
     appliesTo: ["read"],
     since: "2026-10-26",
   },
