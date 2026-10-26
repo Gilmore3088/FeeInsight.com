@@ -196,7 +196,7 @@ async function handleGET(request: NextRequest) {
   // A deployed guard or frequency fix re-checks every live fee now, not at the next publish step.
   let guardCatchUp: Awaited<ReturnType<typeof scheduleGuardCatchUpRun>> | { error: string } | null = null;
   // The sweeps a state lane's publish hands off (hamilton/publish-sweeps.ts): one run at a time,
-  // after a lane publish; a dry run at most hourly while PUBLISH_SWEEPS_SPLIT_LIVE is off.
+  // at most hourly and only after a publish (#1070); a dry run while PUBLISH_SWEEPS_SPLIT_LIVE is off.
   let publishSweeps: Awaited<ReturnType<typeof schedulePublishSweepsRun>> | { error: string } | null = null;
   // Darwin's audience relabel (#1059): a daily dry run while off, once when switched on.
   let audienceRelabel: Awaited<ReturnType<typeof scheduleAudienceRelabelRun>> | { error: string } | null = null;
