@@ -1,11 +1,13 @@
 /**
- * The fee position fingerprint (#1894): one strip per fee category. Each peer's price is a gray
- * mark, the middle half is shaded and the median is a line; the research institution's price is
+ * The fee position fingerprint (#1894): one strip per fee category. Each peer price is a gray
+ * mark (peers at one price share a mark with their count over it), the middle half is shaded and
+ * the median is a line; the research institution's price is
  * the one highlighted mark. Each strip states its peer count, source and period. A fee the
  * institution does not publish stays in the list, marked missing. Descriptive only.
  */
 import Link from "next/link";
 import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
+import { thinLayerText } from "@/lib/hamilton/research-layers";
 import type { FeeFingerprint, FingerprintStrip } from "@/lib/hamilton/fee-fingerprint";
 
 const money = (v: number) => (Number.isInteger(v) ? `$${v.toLocaleString("en-US")}` : `$${v.toFixed(2)}`);
@@ -50,10 +52,11 @@ export function stripNote(strip: FingerprintStrip, fingerprint: Pick<FeeFingerpr
       return `${institutions(strip.peerCount)}: median ${money(band.median)}, ${middle}${placeText(strip.percentile)}. ${source}`;
     }
     case "few_peers": {
-      // Name every institution listed; sister charters still count once toward the minimum.
-      const listed = strip.namedPeers.length;
-      const sisters = listed > strip.peerCount ? ` (${strip.peerCount} counting sister charters once)` : "";
-      return `Only ${institutions(listed)} in the group ${listed === 1 ? "publishes" : "publish"} it${sisters}, fewer than the ${fingerprint.minPeers} needed for a median: ${strip.namedPeers.map((p) => `${p.institutionName} ${money(p.amount)}`).join("; ")}. ${source}`;
+      // The count is the one the strip's marks use (sister charters of one schedule once), and the
+      // names follow My fees: each institution named, with a note when sister charters make more.
+      const thin = thinLayerText({ n: strip.peerCount, thin: true, minPeers: fingerprint.minPeers, members: strip.namedPeers }, money, "in the group");
+      if (!thin) return source;
+      return `${thin.note}${thin.names ? ` ${thin.names}.` : ""} ${source}`;
     }
     case "no_peers":
       return "No institution in the group publishes this fee.";
@@ -64,9 +67,23 @@ export function stripNote(strip: FingerprintStrip, fingerprint: Pick<FeeFingerpr
     case "several_amounts":
       return `The schedule states several amounts (${strip.currentLabel}), so there is no one price to place. ${publishing}. ${source}`;
     case "stated_as_rate":
-      return `Stated as a rate (${strip.currentLabel}), so it is not placed among dollar prices.${strip.peerCount > 0 ? ` ${publishing} as a dollar price. ${source}` : ""}`;
+      return strip.audience === "business"
+        ? `Stated only for business accounts, as a rate (${strip.currentLabel}), so it is not placed among dollar prices or consumer fees.${strip.peerCount > 0 ? ` ${publishing} as a consumer dollar price. ${source}` : ""}`
+        : `Stated as a rate (${strip.currentLabel}), so it is not placed among dollar prices.${strip.peerCount > 0 ? ` ${publishing} as a dollar price. ${source}` : ""}`;
   }
 }
+
+/** Peer prices drawn as marks: one mark per price, with how many institutions sit at it, lowest first. */
+export function peerMarks(amounts: readonly number[]): { amount: number; count: number }[] {
+  const marks = new Map<number, number>();
+  for (const v of amounts) {
+    const key = Math.round(v * 100) / 100;
+    marks.set(key, (marks.get(key) ?? 0) + 1);
+  }
+  return [...marks].map(([amount, count]) => ({ amount, count })).sort((a, b) => a.amount - b.amount);
+}
+
+const atPrice = (n: number, amount: number) => `${institutions(n)} at ${money(amount)}`;
 
 function Strip({ strip }: { strip: FingerprintStrip }) {
   const values = [...strip.peerAmounts, ...(strip.current !== null ? [strip.current] : [])];
@@ -77,11 +94,15 @@ function Strip({ strip }: { strip: FingerprintStrip }) {
   const lo = Math.max(0, min - pad);
   const hi = max + pad;
   const at = (v: number) => ((v - lo) / (hi - lo || 1)) * 100;
-  const label = strip.current !== null
+  const marks = peerMarks(strip.peerAmounts);
+  const stacked = marks.some((m) => m.count > 1);
+  const shared = marks.filter((m) => m.count > 1).map((m) => atPrice(m.count, m.amount)).join(", ");
+  const range = strip.current !== null
     ? `${money(strip.current)} among ${institutions(strip.peerCount)} priced ${money(min)} to ${money(max)}`
     : `${institutions(strip.peerCount)} priced ${money(Math.min(...strip.peerAmounts))} to ${money(Math.max(...strip.peerAmounts))}`;
+  const label = shared ? `${range}; ${shared}` : range;
   return (
-    <div className="relative h-4" role="img" aria-label={label}>
+    <div className={`relative h-4${stacked ? " mt-3" : ""}`} role="img" aria-label={label}>
       <span className="absolute inset-x-0 top-1.5 h-1 rounded-full bg-warm-200" />
       {strip.band ? (
         <>
@@ -92,8 +113,15 @@ function Strip({ strip }: { strip: FingerprintStrip }) {
           <span className="absolute top-0 h-4 w-px -translate-x-1/2 bg-warm-700" style={{ left: `${at(strip.band.median)}%` }} />
         </>
       ) : null}
-      {strip.peerAmounts.map((v, i) => (
-        <span key={i} className="absolute top-1 h-2 w-2 -translate-x-1/2 rounded-full bg-warm-500/60" style={{ left: `${at(v)}%` }} />
+      {marks.map(({ amount, count }) => (
+        <span key={amount} className="absolute top-1 h-2 w-2 -translate-x-1/2" style={{ left: `${at(amount)}%` }} title={atPrice(count, amount)}>
+          <span className="absolute inset-0 rounded-full bg-warm-500/60" />
+          {count > 1 ? (
+            <span className="absolute bottom-full left-1/2 mb-1 -translate-x-1/2 text-[10px] font-semibold leading-none text-warm-700 [font-variant-numeric:tabular-nums]">
+              {count}
+            </span>
+          ) : null}
+        </span>
       ))}
       {strip.current !== null ? (
         <span
@@ -107,12 +135,20 @@ function Strip({ strip }: { strip: FingerprintStrip }) {
 
 function PriceCell({ strip }: { strip: FingerprintStrip }) {
   if (strip.status === "not_published") return <span className="font-normal text-warm-600">Missing</span>;
-  if (strip.status === "stated_as_rate") return <span className="text-xs font-normal text-warm-800">{strip.currentLabel}</span>;
+  if (strip.status === "stated_as_rate") {
+    return (
+      <span className="text-xs font-normal text-warm-800">
+        {strip.currentLabel}
+        {strip.audience === "business" ? <span className="mt-0.5 block font-semibold text-warm-600">Business accounts only</span> : null}
+      </span>
+    );
+  }
   return <>{strip.currentLabel}</>;
 }
 
 export function FeeFingerprintView({ fingerprint, institutionId = null }: { fingerprint: FeeFingerprint; institutionId?: string | null }) {
   const missing = fingerprint.strips.filter((s) => s.status === "not_published").length;
+  const stacked = fingerprint.strips.some((s) => peerMarks(s.peerAmounts).some((m) => m.count > 1));
   return (
     <section aria-labelledby="fee-fingerprint" className="flex flex-col gap-3">
       <div className="flex flex-col gap-1">
@@ -123,6 +159,7 @@ export function FeeFingerprintView({ fingerprint, institutionId = null }: { fing
           Gray marks are the institutions in the peer group; the highlighted mark is {fingerprint.institutionName}.
           Shaded: the middle half of their prices; line: the median. A median and percentile appear only where at
           least {fingerprint.minPeers} institutions in the group publish the fee; with fewer, each is named with its price.
+          {stacked ? " A number over a gray mark is how many institutions in the group charge that price." : ""}
           {missing > 0 ? ` ${missing} of the fees shown ${missing === 1 ? "is" : "are"} not on ${fingerprint.institutionName}'s published schedule.` : ""}
         </p>
       </div>

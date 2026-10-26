@@ -151,7 +151,10 @@ export function describePosition(layer: LayerSummary, ownAmount: number | null):
   return parts.join(", ");
 }
 
-const lowestStated = (m: PeerValue) => m.several?.low ?? m.amount;
+/** What thinLayerText needs of each institution behind a thin count. */
+export type ThinLayerMember = Pick<PeerValue, "institutionId" | "institutionName" | "amount" | "several" | "countedAs">;
+
+const lowestStated = (m: ThinLayerMember) => m.several?.low ?? m.amount;
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
@@ -165,14 +168,16 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
  * named, and the note says so. Null for a layer with a median, or with no institutions.
  */
 export function thinLayerText(
-  layer: Pick<LayerSummary, "n" | "thin" | "minPeers" | "members">,
+  layer: Pick<LayerSummary, "n" | "thin" | "minPeers"> & { members?: readonly ThinLayerMember[] },
   money: (n: number) => string,
+  /** Where the institutions are, after "this fee": "here" on a layer, "in the group" on the Peer group page. */
+  place = "here",
 ): { note: string; names: string | null } | null {
   if (!layer.thin || layer.n === 0) return null;
   const members = layer.members ?? [];
   const counted = new Set(members.map((m) => m.countedAs ?? m.institutionId)).size;
   const complete = members.length > 0 && counted >= layer.n;
-  let note = `Only ${plural(layer.n, "institution publishes", "institutions publish")} this fee here, fewer than the ${layer.minPeers} needed for a median.`;
+  let note = `Only ${plural(layer.n, "institution publishes", "institutions publish")} this fee ${place}, fewer than the ${layer.minPeers} needed for a median.`;
   if (complete && members.length > layer.n) {
     note += ` Institutions that share one fee schedule count once, so ${members.length} are named.`;
   }
