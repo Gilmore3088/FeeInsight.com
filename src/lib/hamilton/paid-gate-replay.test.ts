@@ -437,7 +437,7 @@ describe("the one-off paid gate replay batch (#1077)", () => {
     const book = ledger();
     const w = writers(book);
     const summary = await runPaidGateReplay({
-      db: book.db, now: () => NOW, agentRunId: RUN, startWindowMs: 20,
+      db: book.db, now: () => NOW, agentRunId: RUN, startWindowMs: 300,
       deps: deps(book, w, { answer: () => new Promise<never>(() => {}) }).deps,
     });
     expect(summary.deferredKeys.length).toBeGreaterThan(0);
@@ -451,9 +451,9 @@ describe("the one-off paid gate replay batch (#1077)", () => {
     const w = writers(book);
     const d = deps(book, w);
     // The read itself is quick; the window closes while the budget check runs, after the sample is read.
-    const slowCheck = async () => { await new Promise((r) => setTimeout(r, 60)); return null; };
+    const slowCheck = async () => { await new Promise((r) => setTimeout(r, 600)); return null; };
     const summary = await runPaidGateReplay({
-      db: book.db, now: () => NOW, agentRunId: RUN, startWindowMs: 30,
+      db: book.db, now: () => NOW, agentRunId: RUN, startWindowMs: 300,
       deps: { ...d.deps, preflight: slowCheck },
     });
     expect(book.reservations()).toHaveLength(0);
