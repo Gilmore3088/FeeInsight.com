@@ -82,7 +82,7 @@ function liveFee(id: number, fields: Partial<FreshAuditFee>): ErrorFixFee {
   return {
     fee_id: id, fee_published_id: id, lineage_ref: id, fee_raw_id: id, institution_id: INSTITUTION, source: "knox",
     source_document_id: DOCUMENT, document_url: SCHEDULE_URL, canonical_fee_key: "overdraft", fee_name: "Overdraft Fee",
-    amount: 35, amount_kind: null, rate_percent: null, raw_created_at: RERUN_AT, ...fields,
+    amount: 35, amount_kind: null, rate_percent: null, reread_at: RERUN_AT, published_at: RERUN_AT, ...fields,
   };
 }
 

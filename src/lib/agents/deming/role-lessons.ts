@@ -118,6 +118,16 @@ export const DEMING_LESSONS: AgentLesson[] = [
     since: "2026-10-25",
   },
   {
+    id: "issue-2058-judge-the-read-not-the-row",
+    agent: "deming",
+    stage: "error loop",
+    lesson: "Count a fee as the re-run's replacement for a taken-down fee only when both happened after the error: the fixed rules read its document text (the extract attempt in pipeline_attempts at the fixed version, on the fee's own document and text) and its published row was written. Never date it by its raw row: a fee Knox reads again identically keeps its old raw row, since the insert's ON CONFLICT takes over only unclassified, untraced or superseded rows. Never count the re-read alone: a rules bump re-reads every text, so a correct fee live all along on the same document would close an error the fix never touched, and a restored row keeps its old publish time because a restore is not a fix. Count a row as waiting for a re-run only when a run can still ask for its bank; report rows at banks no longer active apart. Run each read of a step that shares the run's transaction in its own savepoint, so one failed read is reported and the rest of the run goes on.",
+    why: "After #2561, a taken-down fee re-extracted identically kept its old raw row, so its error stayed 'taken down with nothing in its place' for good; the first fix dated replacements by the re-read alone, which a review showed would close a taken-down $54 misread because the correct $30 fee live beside it was re-read too; rows at inactive banks were counted as waiting for a re-run that would never come; and a failed read on the scoreboard transaction would have failed the whole run.",
+    evidence: { issues: [2058], prs: [2722], files: ["src/lib/agents/deming/error-fixes.ts", "src/lib/agents/deming/error-fixes.db.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
+  {
     id: "issue-2065-plant-errors-walk-the-loop",
     agent: "deming",
     stage: "loop proof",
@@ -156,5 +166,15 @@ export const DEMING_LESSONS: AgentLesson[] = [
     evidence: { issues: [1027], prs: [], files: ["docs/project/findings/2026-10-25-retrieval-pilot-no-holdout-lift.md", "src/lib/agents/deming/shadow-lab/retrieval-pilot.ts"] },
     appliesTo: "all",
     since: "2026-10-25",
+  },
+  {
+    id: "issue-2063-group-by-name-family",
+    agent: "deming",
+    stage: "error classes",
+    lesson: "Group the week's fee errors by the family of the fee's name as well as by its category, using the name rules Knox already files fees with (and Knox's lesson family when they file nothing), never a second name list. A category error splits one fee across the categories each bank filed it under, so the class that matters never reaches two banks; the name family puts it back together. List a name class only when it says something its category class does not, and keep it a second view of the same rows so the error counts do not double.",
+    why: "The first error classes grouped fee-level rows by category only. \"NSF Item Returned\" filed as overdraft at one bank and \"Returned item fee\" filed as account research at another were two one-bank patterns, so the class Knox needed to fix never showed.",
+    evidence: { issues: [2063], prs: [2724], files: ["src/lib/agents/deming/error-classes.ts", "src/lib/agents/deming/error-classes.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-26",
   },
 ];
