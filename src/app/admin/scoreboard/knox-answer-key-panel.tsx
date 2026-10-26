@@ -1,21 +1,60 @@
-import { KNOX_FOUND_TARGET, KNOX_RIGHT_TARGET, type GoalScorecard } from "@/lib/agents/goal-scorecard";
+import {
+  KNOX_FOUND_TARGET,
+  KNOX_RIGHT_TARGET,
+  KNOX_TARGET_MIN_BANKS,
+  knoxTargetVerdict,
+  type GoalScorecard,
+  type KnoxAnswerKeyScore,
+} from "@/lib/agents/goal-scorecard";
 
 const n = (value: number) => value.toLocaleString("en-US");
 const pct = (value: number | null) => (value == null ? "—" : `${(value * 100).toFixed(1)}%`);
 
-function Measure({ label, value, target, part, whole }: { label: string; value: number | null; target: number; part: number; whole: number }) {
-  const met = value != null && value >= target;
+/** Plain words for the reasons the answer-key eligibility check leaves a bank out (`answer-key-eligibility.ts`). */
+const EXCLUSION_WORDS: Record<string, string> = {
+  key_line_not_in_reference: "a key line is no longer in the bank's document",
+  reference_source_superseded: "the bank has a newer document",
+  consumer_scope_unproven: "not shown to be the consumer schedule",
+  key_line_consumer_scope_unproven: "a key line not shown to be a consumer fee",
+  reference_bytes_changed: "the document has changed",
+  reference_main_text_changed: "the document's text has changed",
+  reference_unreadable: "the document could not be read",
+  legacy_not_current: "an old schedule",
+  newer_consumer_schedule: "a newer consumer schedule exists",
+  business_document: "a business schedule",
+  not_priced_schedule: "not a priced fee schedule",
+};
+const exclusionWords = (reason: string) => EXCLUSION_WORDS[reason] ?? reason.replaceAll("_", " ");
+
+const TOO_FEW = `Too few banks to judge against the target (fewer than ${KNOX_TARGET_MIN_BANKS})`;
+
+function Measure({ label, value, target, part, whole, banks }: { label: string; value: number | null; target: number; part: number; whole: number; banks: number }) {
+  const verdict = knoxTargetVerdict(value, target, banks);
+  const tone = verdict === "met" ? "text-emerald-600" : verdict === "not_met" ? "text-amber-700 dark:text-amber-400" : "text-gray-500";
   return (
     <div>
       <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">{label}</p>
       <p className="text-2xl font-bold tabular-nums text-gray-900 dark:text-gray-100">
         {pct(value)}
-        <span className={`ml-2 text-xs font-semibold ${value == null ? "text-gray-500" : met ? "text-emerald-600" : "text-amber-700 dark:text-amber-400"}`}>
-          target {pct(target)}{value == null ? "" : met ? ", met" : ", not met"}
+        <span className={`ml-2 text-xs font-semibold ${tone}`}>
+          target {pct(target)}{verdict === "met" ? ", met" : verdict === "not_met" ? ", not met" : ""}
         </span>
       </p>
       <p className="text-xs text-gray-500">{n(part)} of {n(whole)}</p>
+      {verdict === "too_few_banks" ? <p className="text-xs text-gray-500">{TOO_FEW}.</p> : null}
     </div>
+  );
+}
+
+function Cohort({ score }: { score: KnoxAnswerKeyScore }) {
+  if (score.eligibleBanks == null || score.confirmedBanks == null) return null;
+  return (
+    <p className="mt-2 text-xs text-gray-700 dark:text-gray-300">
+      {n(score.eligibleBanks)} of {n(score.confirmedBanks)} answer-key banks qualify (right document read, key still current).
+      {score.topExclusions.length > 0
+        ? ` Most often left out because ${score.topExclusions.map((entry) => `${exclusionWords(entry.reason)} (${n(entry.count)})`).join(", ")}.`
+        : ""}
+    </p>
   );
 }
 
@@ -47,9 +86,10 @@ export function KnoxAnswerKeyPanel({ goal }: { goal: GoalScorecard }) {
         ) : (
           <>
             <div className="mt-2 grid gap-3 sm:grid-cols-2">
-              <Measure label="Found" value={score.recall} target={KNOX_FOUND_TARGET} part={score.found} whole={score.expected} />
-              <Measure label="Right" value={score.precision} target={KNOX_RIGHT_TARGET} part={score.right} whole={score.reads} />
+              <Measure label="Found" value={score.recall} target={KNOX_FOUND_TARGET} part={score.found} whole={score.expected} banks={score.banks} />
+              <Measure label="Right" value={score.precision} target={KNOX_RIGHT_TARGET} part={score.right} whole={score.reads} banks={score.banks} />
             </div>
+            <Cohort score={score} />
             <p className="mt-2 text-xs text-gray-700 dark:text-gray-300">
               {n(score.banks)} {score.banks === 1 ? "bank" : "banks"} with the right document read, {n(score.expected)} key fees. From answer-key score run #{score.scoreRunId} (scorer v{score.scorerVersion}), {score.scoredAt?.slice(0, 10) ?? "date unknown"}.
             </p>
@@ -60,7 +100,7 @@ export function KnoxAnswerKeyPanel({ goal }: { goal: GoalScorecard }) {
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Each Knox specialist on the answer key</p>
           <p className="mt-1 text-xs text-gray-500">
-            The same banks and documents, split by the specialist each Knox line is credited to (its <code>knox_specialist:</code> flag; no flag is the rules pass, and the paid pass is its own row). Knox stores a fee once, under the first specialist that read it, so a fee two specialists read counts for the first. Found is out of every key fee on these banks, so a specialist for one family of fees finds a small share by design; the 85% target is for Knox as a whole. Found only it: key fees no other specialist&apos;s line matched. The 90% target applies to each specialist&apos;s right share.
+            The same banks and documents, split by the specialist each Knox line is credited to (its <code>knox_specialist:</code> flag; no flag is the rules pass, and the paid pass is its own row). Knox stores a fee once, under the first specialist that read it, so a fee two specialists read counts for the first. Found is out of every key fee on these banks, so a specialist for one family of fees finds a small share by design; the 85% target is for Knox as a whole. Found only it: key fees no other specialist&apos;s line matched. The 90% target applies to each specialist&apos;s right share, and a share under it is marked only when the specialist read from at least {KNOX_TARGET_MIN_BANKS} banks.
           </p>
           {!score.bySpecialist ? (
             <p className="mt-2 text-xs text-gray-500">Specialist rows appear with the next answer-key score.</p>
@@ -90,7 +130,7 @@ export function KnoxAnswerKeyPanel({ goal }: { goal: GoalScorecard }) {
                     <td className="py-1 pr-4 text-right tabular-nums">{n(row.foundOnly)}</td>
                     <td className="py-1 pr-4 text-right tabular-nums">{n(row.reads)}</td>
                     <td className="py-1 pr-4 text-right tabular-nums">{n(row.right)}</td>
-                    <td className={`py-1 text-right tabular-nums ${row.precision != null && row.precision < KNOX_RIGHT_TARGET ? "font-semibold text-amber-700 dark:text-amber-400" : ""}`}>{pct(row.precision)}</td>
+                    <td className={`py-1 text-right tabular-nums ${knoxTargetVerdict(row.precision, KNOX_RIGHT_TARGET, row.banks) === "not_met" ? "font-semibold text-amber-700 dark:text-amber-400" : ""}`}>{pct(row.precision)}</td>
                   </tr>
                 ))}
               </tbody>

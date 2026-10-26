@@ -34,6 +34,7 @@ describe.skipIf(!connection)("Knox's answer-key targets on the scorecard, in iso
   it("says there is no score when none is stored", async () => {
     expect(await readKnoxAnswerKey(db as unknown as Db)).toMatchObject({
       query: "goal.knox_answer_key_right_document", scoreRunId: null, recall: null, precision: null, bySpecialist: null,
+      eligibleBanks: null, confirmedBanks: null,
     });
   });
 
@@ -45,7 +46,8 @@ describe.skipIf(!connection)("Knox's answer-key targets on the scorecard, in iso
     await run(ANSWER_KEY_SCORER_VERSION, "2026-10-24T06:00:00Z", {}, [bank(1, true, { expected: 10, matched: 1, predicted: 1, correct: 1 })]);
     await run(ANSWER_KEY_SCORER_VERSION + 1, "2026-10-26T07:00:00Z", {}, [bank(1, true, { expected: 10, matched: 10, predicted: 10, correct: 10 })]);
     const [newest] = await run(ANSWER_KEY_SCORER_VERSION, "2026-10-26T06:00:00Z", {
-      _reference: { state: "measured" },
+      _reference: { state: "measured", confirmedBanks: 62, eligibleBanks: 2, excludedBanks: 60,
+        byReason: { key_line_not_in_reference: 15, reference_source_superseded: 14, consumer_scope_unproven: 12, legacy_not_current: 2 } },
       _knox_specialists: { banks: 2, expected: 30, bySpecialist: [
         { strategy: "extract.rules", banks: 2, found: 20, foundOnly: 18, reads: 24, right: 21, precision: 0.875, shareOfKey: 0.6667 },
         { strategy: "extract.family.overdraft_nsf", banks: 1, found: 3, foundOnly: 1, reads: 3, right: 3, precision: 1, shareOfKey: 0.1 },
@@ -64,6 +66,13 @@ describe.skipIf(!connection)("Knox's answer-key targets on the scorecard, in iso
       scoredAt: "2026-10-26T06:00:00.000Z",
       scorerVersion: ANSWER_KEY_SCORER_VERSION,
       referenceState: "measured",
+      confirmedBanks: 62,
+      eligibleBanks: 2,
+      topExclusions: [
+        { reason: "key_line_not_in_reference", count: 15 },
+        { reason: "reference_source_superseded", count: 14 },
+        { reason: "consumer_scope_unproven", count: 12 },
+      ],
       banks: 2,
       expected: 30,
       found: 23,

@@ -7,6 +7,8 @@ import {
   knoxAnswerKeyFrom,
   KNOX_FOUND_TARGET,
   KNOX_RIGHT_TARGET,
+  KNOX_TARGET_MIN_BANKS,
+  knoxTargetVerdict,
   bucketReaderMissWeeks,
   bucketHeldExitWeeks,
   heldExitsFromDetail,
@@ -530,7 +532,8 @@ describe("Knox's held pile on the scorecard (#1102)", () => {
 describe("Knox against its answer-key targets (#1098)", () => {
   it("turns the newest score run into found and right shares, with its specialist rows", () => {
     const score = knoxAnswerKeyFrom({
-      id: "41", scored_at: new Date("2026-10-26T06:00:00Z"), scorer_version: 3, reference_state: "measured",
+      id: "41", scored_at: new Date("2026-10-26T06:00:00Z"), scorer_version: 3,
+      reference: JSON.stringify({ state: "measured", confirmedBanks: 62, eligibleBanks: 12, byReason: { a_reason: 3, b_reason: 9, c_reason: 3, d_reason: 1, zero: 0 } }),
       banks: 2, expected: 30, found: 23, reads: 26, right: 23,
       specialists: JSON.stringify({ banks: 2, expected: 30, bySpecialist: [
         { strategy: "extract.rules", banks: 2, found: 20, foundOnly: 18, reads: 24, right: 21, shareOfKey: 0.6667 },
@@ -538,7 +541,10 @@ describe("Knox against its answer-key targets (#1098)", () => {
         null,
       ] }),
     });
-    expect(score).toMatchObject({ scoreRunId: 41, scoredAt: "2026-10-26T06:00:00.000Z", referenceState: "measured", recall: 0.7667, precision: 0.8846 });
+    expect(score).toMatchObject({ scoreRunId: 41, scoredAt: "2026-10-26T06:00:00.000Z", referenceState: "measured", recall: 0.7667, precision: 0.8846,
+      confirmedBanks: 62, eligibleBanks: 12 });
+    // The commonest exclusion reasons, most first, at most three.
+    expect(score.topExclusions).toEqual([{ reason: "b_reason", count: 9 }, { reason: "a_reason", count: 3 }, { reason: "c_reason", count: 3 }]);
     // The right share is worked out again from the stored counts; a malformed row is dropped.
     expect(score.bySpecialist).toEqual([{ strategy: "extract.rules", banks: 2, found: 20, foundOnly: 18, reads: 24, right: 21, precision: 0.875, shareOfKey: 0.6667 }]);
     expect(KNOX_FOUND_TARGET).toBe(0.85);
@@ -548,6 +554,24 @@ describe("Knox against its answer-key targets (#1098)", () => {
   it("says when there is no score, and has no specialist rows on a run from before them", () => {
     expect(knoxAnswerKeyFrom(undefined)).toMatchObject({ scoreRunId: null, recall: null, precision: null, bySpecialist: null });
     expect(knoxAnswerKeyFrom({ id: 5, scorer_version: 3, banks: 0, expected: 0, found: 0, reads: 0, right: 0, specialists: null }))
-      .toMatchObject({ scoreRunId: 5, recall: null, precision: null, bySpecialist: null, referenceState: null });
+      .toMatchObject({ scoreRunId: 5, recall: null, precision: null, bySpecialist: null, referenceState: null, confirmedBanks: null, eligibleBanks: null, topExclusions: [] });
+  });
+
+  it("judges a share against its target only from 10 qualifying banks (production's 2-bank run 62)", () => {
+    // Production, Oct 26, score run 62: 2 of 62 banks qualify; 46 of 60 found, 42 of 55 right.
+    const production = knoxAnswerKeyFrom({
+      id: 62, scored_at: "2026-10-26T12:40:00Z", scorer_version: 3,
+      reference: { state: "measured", confirmedBanks: 62, eligibleBanks: 2,
+        byReason: { key_line_not_in_reference: 15, reference_source_superseded: 14, consumer_scope_unproven: 12 } },
+      banks: 2, expected: 60, found: 46, reads: 55, right: 42, specialists: null,
+    });
+    expect(production).toMatchObject({ recall: 0.7667, precision: 0.7636, eligibleBanks: 2, confirmedBanks: 62 });
+    expect(production.topExclusions.map((entry) => entry.reason)).toEqual(["key_line_not_in_reference", "reference_source_superseded", "consumer_scope_unproven"]);
+    expect(KNOX_TARGET_MIN_BANKS).toBe(10);
+    expect(knoxTargetVerdict(production.recall, KNOX_FOUND_TARGET, production.banks)).toBe("too_few_banks");
+    expect(knoxTargetVerdict(production.precision, KNOX_RIGHT_TARGET, production.banks)).toBe("too_few_banks");
+    expect(knoxTargetVerdict(0.7667, KNOX_FOUND_TARGET, 10)).toBe("not_met");
+    expect(knoxTargetVerdict(0.85, KNOX_FOUND_TARGET, 10)).toBe("met");
+    expect(knoxTargetVerdict(null, KNOX_FOUND_TARGET, 50)).toBeNull();
   });
 });

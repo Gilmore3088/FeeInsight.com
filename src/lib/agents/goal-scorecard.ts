@@ -67,6 +67,18 @@ export const GOAL_QUERIES = {
 /** James, Oct 12 (#1098, DECISIONS): Knox finds 85% of the key's fees, and 90% of what it finds is right. */
 export const KNOX_FOUND_TARGET = 0.85;
 export const KNOX_RIGHT_TARGET = 0.9;
+/**
+ * Below this many qualifying banks a share is shown but not judged against its target: the
+ * project's 10-peer minimum for a median. Applies to Knox as a whole and to each specialist.
+ */
+export const KNOX_TARGET_MIN_BANKS = 10;
+
+/** Pure: met, not met, or too few banks to say. */
+export function knoxTargetVerdict(value: number | null, target: number, banks: number): "met" | "not_met" | "too_few_banks" | null {
+  if (value == null) return null;
+  if (banks < KNOX_TARGET_MIN_BANKS) return "too_few_banks";
+  return value >= target ? "met" : "not_met";
+}
 
 /** Weeks of text-reading misses shown, oldest first, the current week last (#1054). */
 export const READER_MISS_WEEKS = 8;
@@ -446,6 +458,11 @@ export interface KnoxAnswerKeyScore {
   scorerVersion: number;
   /** The reference cohort's state stored with that score ("measured" or "no_measurement"); null on a run from before it. */
   referenceState: string | null;
+  /** Confirmed answer-key banks, and those eligible as references, stored with that score; null on a run from before it. */
+  confirmedBanks: number | null;
+  eligibleBanks: number | null;
+  /** The commonest reasons a confirmed bank was left out, most first (at most three). */
+  topExclusions: Array<{ reason: string; count: number }>;
   /** Answer-key banks whose right document Rosetta read, with at least one key fee. */
   banks: number;
   /** Key fees on those banks. */
@@ -1151,6 +1168,7 @@ function specialistFrom(value: unknown): KnoxSpecialistScore | null {
 export function knoxAnswerKeyFrom(row: Record<string, unknown> | undefined): Omit<KnoxAnswerKeyScore, "query"> {
   if (!row || row.id == null) {
     return { scoreRunId: null, scoredAt: null, scorerVersion: ANSWER_KEY_SCORER_VERSION, referenceState: null,
+      confirmedBanks: null, eligibleBanks: null, topExclusions: [],
       banks: 0, expected: 0, found: 0, reads: 0, right: 0, recall: null, precision: null, bySpecialist: null };
   }
   const expected = missCount(row.expected);
@@ -1159,12 +1177,21 @@ export function knoxAnswerKeyFrom(row: Record<string, unknown> | undefined): Omi
   const right = missCount(row.right);
   const stored = (typeof row.specialists === "string" ? JSON.parse(row.specialists) : row.specialists) as Record<string, unknown> | null;
   const list = stored && Array.isArray(stored.bySpecialist) ? stored.bySpecialist : null;
+  const reference = (typeof row.reference === "string" ? JSON.parse(row.reference) : row.reference) as Record<string, unknown> | null;
+  const bankCount = (value: unknown) => (value == null || !Number.isFinite(Number(value)) ? null : Number(value));
   const scoredAt = row.scored_at instanceof Date ? row.scored_at.toISOString() : row.scored_at == null ? null : String(row.scored_at);
   return {
     scoreRunId: Number(row.id),
     scoredAt,
     scorerVersion: Number(row.scorer_version ?? ANSWER_KEY_SCORER_VERSION),
-    referenceState: typeof row.reference_state === "string" ? row.reference_state : null,
+    referenceState: typeof reference?.state === "string" ? reference.state : null,
+    confirmedBanks: bankCount(reference?.confirmedBanks),
+    eligibleBanks: bankCount(reference?.eligibleBanks),
+    topExclusions: Object.entries((reference?.byReason && typeof reference.byReason === "object" ? reference.byReason : {}) as Record<string, unknown>)
+      .map(([reason, value]) => ({ reason, count: missCount(value) }))
+      .filter((entry) => entry.count > 0)
+      .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason))
+      .slice(0, 3),
     banks: missCount(row.banks),
     expected,
     found,
@@ -1184,7 +1211,12 @@ export function knoxAnswerKeyFrom(row: Record<string, unknown> | undefined): Omi
 export async function readKnoxAnswerKey(db: SqlTag): Promise<KnoxAnswerKeyScore> {
   const [row] = await db<Array<Record<string, unknown>>>`
     SELECT r.id, r.scored_at, r.scorer_version,
-           r.by_stage->'_reference'->>'state' AS reference_state,
+           jsonb_build_object(
+             'state', r.by_stage->'_reference'->'state',
+             'confirmedBanks', r.by_stage->'_reference'->'confirmedBanks',
+             'eligibleBanks', r.by_stage->'_reference'->'eligibleBanks',
+             'byReason', r.by_stage->'_reference'->'byReason'
+           ) AS reference,
            r.by_stage->'_knox_specialists' AS specialists,
            k.banks, k.expected, k.found, k.reads, k.right
       FROM (
