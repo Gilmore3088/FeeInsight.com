@@ -27,8 +27,8 @@ export const API_MONTHLY_CALLS_LABEL = API_MONTHLY_CALLS.toLocaleString("en-US")
  */
 export const BURST_CALLS_PER_MINUTE = 60;
 
-/** "$300 and $500 plans": the monthly prices of the plans that include the API. */
-export const API_PLANS_LABEL = `${API_INCLUDED_TIERS.map((tier) => tierAmountLabel(tier, "monthly")).join(" and ")} plans`;
+/** "$3,000 and $5,000 plans": the yearly prices of the plans that include the API. */
+export const API_PLANS_LABEL = `${API_INCLUDED_TIERS.map((tier) => tierAmountLabel(tier)).join(" and ")} plans`;
 
 export function apiIncludedInTier(tier: ProTier | null | undefined): boolean {
   return tier != null && API_INCLUDED_TIERS.includes(tier);

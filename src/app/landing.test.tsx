@@ -8,7 +8,7 @@ import { REPORT_OFFER } from "@/lib/constants";
 import { financialPeerComparison } from "@/lib/data-store/financial-peer-contract";
 import { buildRevenueContext } from "@/lib/custom-report/revenue-context";
 import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
-import { PRO_TIERS, tierAmountLabel } from "@/lib/pro-tiers";
+import { PRO_TIERS, annualPerMonthLabel, tierAmountLabel } from "@/lib/pro-tiers";
 import type { PublicStatsSummary } from "@/lib/public-stats";
 import { histogram, institutionsFor, statsFor } from "./(public)/fees/(index)/index-view";
 import { LandingHero, LandingProof } from "./landing-hero";
@@ -837,19 +837,16 @@ describe("pricing", () => {
   it("takes every price from PRO_TIERS and offers the plan and a conversation", () => {
     const html = renderToStaticMarkup(<LandingPricing />);
     expect(html).toContain("One plan for your whole pricing team.");
-    // The billing line is worked out from PRO_TIERS, never typed.
+    // Pro is sold annually only (James, Oct 26): yearly prices, no monthly plan.
     expect(html).toContain(pricingLine().replace("'", "&#x27;"));
-    expect(pricingLine()).toBe(
-      `Priced by your institution's total assets, for up to ${WORKSPACE_SEAT_LIMIT} people. Pay annually and get two months free.`,
-    );
-    expect(pricingLine([{ monthlyUsd: 100, annualUsd: 1_000 }, { monthlyUsd: 100, annualUsd: 1_100 }], 3)).toBe(
-      "Priced by your institution's total assets, for up to 3 people. Monthly or annual.",
-    );
+    expect(pricingLine()).toBe(`Priced by your institution's total assets, for up to ${WORKSPACE_SEAT_LIMIT} people, billed yearly.`);
+    expect(pricingLine(3)).toBe("Priced by your institution's total assets, for up to 3 people, billed yearly.");
     for (const tier of PRO_TIERS) {
       expect(html).toContain(tier.assetsLabel);
-      expect(html).toContain(tierAmountLabel(tier.key, "monthly"));
-      expect(html).toContain(`or ${tierAmountLabel(tier.key, "annual")} / year`);
+      expect(html).toContain(tierAmountLabel(tier.key));
+      expect(html).toContain(`${annualPerMonthLabel(tier.key)} a month`);
     }
+    expect(html).not.toContain("/ month");
     expect(html).toMatch(/<a href="\/subscribe"[^>]*data-event="upgrade_click" data-placement="home_pricing">Choose your plan</);
     expect(html).toMatch(/<a href="\/for-institutions#demo"[^>]*data-event="contact_sales" data-placement="home_pricing_demo">Ask for a demo</);
     // The FAQ link (James, Oct 18) opens the plan page's questions.

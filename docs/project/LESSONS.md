@@ -16,8 +16,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Decisions
 
-191 entries, newest first. The full text, who decided and why are in [DECISIONS.md](DECISIONS.md).
+192 entries, newest first. The full text, who decided and why are in [DECISIONS.md](DECISIONS.md).
 
+- 2026-10-26 — Pro is sold annually only at today's prices ($1,500 / $3,000 / $5,000 a year); the monthly plan is off sale. — [decision](DECISIONS.md#2026-10-26) — `ProPlan` and its tests in `src/lib/pro-tiers.test.ts`
 - 2026-10-25 — Hamilton's peer minimum: a median needs 5 local competitors, or 10 peers for any other group. — [decision](DECISIONS.md#2026-10-25) — `MIN_PEERS_FOR_POSITION` and its tests
 - 2026-10-22 — Data-quality work has an executive owner: its decisions, HOLD-class ones included, proceed after an independent exact-head review and green CI; CLAUDE.md hard limits still apply. — [decision](DECISIONS.md#2026-10-22)
 - 2026-10-22 — The second wave: Knox reads every stored document once more with today's rules (stale-read floor v78 to v97). — [decision](DECISIONS.md#2026-10-22)

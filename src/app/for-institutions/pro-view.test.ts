@@ -144,8 +144,8 @@ describe("lead line and read dates", () => {
 });
 
 describe("proPlanFacts", () => {
-  it("reads the lowest monthly price and the annual months free from the tiers", () => {
-    expect(proPlanFacts()).toEqual({ fromMonthly: "$150/mo", freeMonths: 2 });
+  it("reads the lowest annual price from the tiers", () => {
+    expect(proPlanFacts()).toEqual({ fromAnnual: "$1,500" });
   });
 });
 

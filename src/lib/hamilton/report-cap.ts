@@ -61,7 +61,5 @@ export async function checkConsultantReportCap(
 
 export function reportCapMessage(cap: ReportCap): string {
   return `Your plan includes ${cap.limit} Hamilton reports a month, and you've used them all. They reset on the 1st. For more, email ${CONTACT_EMAIL} to move to the ${tierAmountLabel(
-    CONSULTANT_UPGRADE_TIER,
-    "annual",
-  )} a year plan, which has no monthly report limit.`;
+    CONSULTANT_UPGRADE_TIER)} a year plan, which has no monthly report limit.`;
 }

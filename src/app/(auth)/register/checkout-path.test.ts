@@ -3,7 +3,7 @@ import { checkoutPathFor } from "./checkout-path";
 
 describe("checkoutPathFor", () => {
   it("should_land_on_subscribe_with_checkout_when_no_from", () => {
-    expect(checkoutPathFor("monthly", undefined)).toBe("/subscribe?plan=monthly&checkout=1");
+    expect(checkoutPathFor("annual", undefined)).toBe("/subscribe?plan=annual&checkout=1");
   });
 
   it("should_preserve_subscribe_query_and_add_checkout", () => {
@@ -16,7 +16,7 @@ describe("checkoutPathFor", () => {
   });
 
   it("should_carry_non_subscribe_from_as_return_path", () => {
-    const result = checkoutPathFor("monthly", "/institution/42");
+    const result = checkoutPathFor("annual", "/institution/42");
     const url = new URL(result, "https://internal.invalid");
     expect(url.pathname).toBe("/subscribe");
     expect(url.searchParams.get("from")).toBe("/institution/42");
@@ -24,8 +24,8 @@ describe("checkoutPathFor", () => {
   });
 
   it("should_reject_external_from", () => {
-    expect(checkoutPathFor("monthly", "https://evil.example/x")).toBe(
-      "/subscribe?plan=monthly&checkout=1",
+    expect(checkoutPathFor("annual", "https://evil.example/x")).toBe(
+      "/subscribe?plan=annual&checkout=1",
     );
   });
 });
