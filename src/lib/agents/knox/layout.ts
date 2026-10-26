@@ -422,16 +422,20 @@ const COMPOSABLE_WORDS = new Set(
     // "Service assisted" and "Online" under "Stop Payments".
     "online service assisted branch series " +
     // v34: "Per transaction" beside "Overdraft Fee - Items Paid" (Banc of California).
-    "transaction transactions"
+    "transaction transactions " +
+    // v130 (#1912): "Outgoing Domestic - Not in Person" under "Wire Transfers" (Sound Community Bank).
+    "person"
   ).split(" "),
 );
+/** v130 (#1912): "not in person" is a channel, as "in person" is ("Outgoing Domestic - Not in Person"). */
+const NOT_IN_PERSON = /\bnot\s+in[-\s]person\b/gi;
 
 /** What a stop payment row is placed on ("Online per check", "Per ACH payment"); only a stop payment heading lends to these. */
 export const STOP_PAYMENT_ITEM_WORDS = new Set(["check", "checks", "ach", "payment", "payments", "draft", "drafts"]);
 
 export function composableTail(name: string, also: ReadonlySet<string> = new Set()): boolean {
   // Single letters are the pieces of an abbreviation ("U.S."), not words.
-  const words = name.toLowerCase().split(/[\s\-–:,()&/.*]+/).filter((word) => word.length > 1);
+  const words = name.toLowerCase().replace(NOT_IN_PERSON, "in person").split(/[\s\-–:,()&/.*]+/).filter((word) => word.length > 1);
   return words.length > 0 && words.length <= 5 && words.every((word) => COMPOSABLE_WORDS.has(word) || also.has(word) || /^\d+(st|nd|rd|th)?$/.test(word));
 }
 

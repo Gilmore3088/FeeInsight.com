@@ -2,6 +2,7 @@ import { sql } from "@/lib/data-store/connection";
 import { THIN_DOCUMENT_MAX_FEES } from "@/lib/agents/thin-document";
 import { PAID_MIN_PRICED_LINES } from "@/lib/agents/knox/paid-extract";
 import { SECOND_DOCUMENT_FINDER, SITE_SEARCH_STRATEGY } from "@/lib/agents/magellan/second-document";
+import { onRejectedListSql } from "@/lib/agents/learning/rejected-sources";
 
 /**
  * Deming's daily check of each institution's playbook against itself (#1105): the learning
@@ -9,7 +10,9 @@ import { SECOND_DOCUMENT_FINDER, SITE_SEARCH_STRATEGY } from "@/lib/agents/magel
  * Read-only: one SELECT, nothing written but the step's own ledger detail. No model calls.
  *
  * A contradiction is counted per institution:
- * - `source_rejected`: the current source address is on the playbook's own rejected list.
+ * - `source_rejected`: the current source address is on the playbook's own rejected list. The
+ *   list holds `{ url, reason, at }` objects; v1 tested it for a bare string (`rejected ? source`)
+ *   and so counted 0 every day while 26 profiles had it on Oct 26 (v2 matches the `url`).
  * - `source_unfetchable`: the current source is on its do-not-retry list for a fetch failure
  *   (too large, gone), so no stage can read it again.
  * - `source_judged_wrong`: a discovery strategy judged the current source itself the wrong
@@ -23,12 +26,13 @@ import { SECOND_DOCUMENT_FINDER, SITE_SEARCH_STRATEGY } from "@/lib/agents/magel
  * - `product_page_expects_many`: the current text is a product page but the playbook expects at
  *   least PAID_MIN_PRICED_LINES fees, a whole schedule's worth.
  * - `layout_never_recorded`: the institution has a completed current text and no layout
- *   fingerprint. A pile to report, not a per-bank error: no stage writes the field yet.
+ *   fingerprint. A pile to report, not a per-bank error: Knox's free rules read writes it
+ *   (its `layoutSignature`) since #1105, so the pile drains as texts are read again.
  */
 
 type SqlTag = typeof sql;
 
-export const PLAYBOOK_CHECK_VERSION = 1;
+export const PLAYBOOK_CHECK_VERSION = 2;
 /** Institutions listed per check in the step detail. */
 export const PLAYBOOK_CHECK_SAMPLE = 20;
 /** Strategies whose do-not-retry fingerprint is the link they searched from, not a document they judged. */
@@ -86,7 +90,7 @@ export function playbookContradictionsSql(): string {
           LEFT JOIN agent_source_texts adt ON adt.id = p.last_successful_text_id AND adt.status = 'completed'
       ), flags AS (
         SELECT institution_id,
-               (source IS NOT NULL AND rejected ? source) AS source_rejected,
+               ${onRejectedListSql("rejected", "source")} AS source_rejected,
                (source IS NOT NULL AND EXISTS (
                  SELECT 1 FROM jsonb_array_elements(do_not_retry) entry
                   WHERE entry->>'fingerprint' = source AND entry->>'stage' = 'fetch')) AS source_unfetchable,

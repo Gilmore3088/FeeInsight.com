@@ -213,10 +213,11 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-345 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+346 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
-### Extraction and fee reading (56)
+### Extraction and fee reading (57)
 
+- 2026-10-26 — A heading cell that spans several rows is printed on the middle row only; when a "<Heading> | <name>: <price>" row has sibling "<name>: <price>" rows directly above and below it, the heading names them all; Sound Community Bank's $30 wire went unread beside its $60 not-in-person wire (#1912). — [finding](findings/2026-10-26-centred-heading-cell.md) — Agent lesson: knox/issue-1912-centred-heading-cell; Guard: `src/lib/agents/knox/centered-heading.test.ts`
 - 2026-10-26 — An empty table cell holds a column: place every cell on the table's grid before writing the row, and when an empty cell would shift a value under the column to its left, write that column's header name after the value; Capital City's IRA closing fee went live as a CD early closure (#1912). — [finding](findings/2026-10-26-html-table-empty-cells.md) — Agent lesson: rosetta/issue-1912-empty-cells-keep-their-column; Guard: `src/lib/agents/rosetta/html-table-columns.test.ts`
 - 2026-10-26 — When two prices are glued into one cell, the line is two columns flattened and neither price belongs to either name: read each fee from a line that prints it alone; and a rejected wire is a wire correction, not a wire price (#1912). — [finding](findings/2026-10-26-glued-price-pair.md) — Agent lesson: knox/issue-1912-glued-price-pair, darwin/issue-1912-rejected-wire-is-a-correction; Guard: `src/lib/custom-report/glued-price-pair.test.ts`
 - 2026-10-26 — A note that a fee is free for some is a waiver, not "no fee": read the price everyone else pays ("Money Orders (Free with Platinum Checking) | $5.00"), and on a two-column PDF give a name with no price beside it the price under its own note (#1918). — [finding](findings/2026-10-26-free-note-drops-priced-row.md) — Agent lesson: knox/issue-1918-free-note-is-a-waiver; Guard: `src/lib/agents/knox/free-note-prices.test.ts`
@@ -381,8 +382,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — Every hand-set rule Darwin holds on needs a re-check exception keyed to the rule's own value, as the guard version has, or a change to the rule is a change for new reads only. — [finding](findings/2026-10-09-envelope-change-never-reached-held-rows.md) — Agent lesson: darwin/pr-883-rule-version-recheck
 - 2026-10-09 — When a fix changes how a fingerprinted check judges its input, bump that strategy's version in the same PR, or the fix only reaches input the check has never seen. — [finding](findings/2026-10-09-check-fingerprint-blocks-rejudge.md) — Agent lesson: gutenberg/pr-767-rejudge-on-change
 
-### Sources and discovery (22)
+### Sources and discovery (23)
 
+- 2026-10-26 — A current source and the reject list are one judgement: no fetch, failed read, search or sync makes an address on the bank's own rejected list its current source; only a read that judged the page a fee page (or a person's link) takes it off the list, and never an ownership reject (another bank's page). Deming's daily check now matches the list's { url } entries, and Knox's rules read records the layout fingerprint (#1105). — [finding](findings/2026-10-26-rejected-source-stays-current.md) — Agent lesson: magellan/issue-1105-rejected-is-never-current, rosetta/issue-1105-a-read-supersedes-a-reject, deming/issue-1105-check-the-stored-shape; Guard: `src/lib/agents/learning/rejected-sources.db.test.ts`, `src/lib/agents/deming/playbook-contradictions.db.test.ts`
 - 2026-10-25 — A stored website is a claim, not a fact: when an unrelated institution stores the same website host, read the homepage and ask whose it is; a website whose homepage names another institution and not this one is not searched, not counted as this institution's own host, and goes back to the website search (a host that spells the institution's or its holding company's name, as after a rename, is its own) (#1455). — [finding](findings/2026-10-25-website-is-another-institutions.md) — Agent lesson: magellan/issue-1455-whose-website-is-it; Guard: `src/lib/agents/magellan/website-owner.test.ts`, `src/lib/agents/magellan/website-owner.db.test.ts`
 - 2026-10-25 — A document says what it is in its opening lines: one that titles itself a loan, card or line-of-credit disclosure, or applies to youth, teen or student accounts, is not the general personal schedule whatever its address says, so neither discovery nor a companion search takes it, and its live fees are counted for Darwin's re-check (an address youth word alone decides nothing). — [finding](findings/2026-10-25-opening-names-non-general-documents.md) — Agent lesson: magellan/issue-1944-opening-names-the-document; Guard: `src/lib/non-deposit-document.test.ts`, `src/lib/agents/darwin/non-deposit-document-check.test.ts`
 - 2026-10-25 — A fetch date is not a schedule date: record the date a document states (its effective, revised or "as of" line, never a rate's date or an upload year), and replace an out-of-date link (by its stated, effective or address date) only with a page that states a later date, not counting a rate line (an undated page is refused only when the old date is printed in the old text). — [finding](findings/2026-10-25-read-date-is-not-schedule-date.md) — Agent lesson: magellan/issue-1878-stated-date-not-read-date
@@ -613,7 +615,7 @@ counts as of this index (306 in all).
 | magellan | 25 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
 | hoovie | 12 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
 | rosetta | 13 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
-| knox | 82 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
+| knox | 83 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
 | darwin | 48 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 40 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
 | hamilton | 61 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |

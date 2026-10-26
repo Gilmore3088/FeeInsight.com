@@ -826,4 +826,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract"],
     since: "2026-10-26",
   },
+  {
+    id: "issue-1912-centred-heading-cell",
+    agent: "knox",
+    stage: "extract",
+    lesson: "A heading cell that spans several rows of a PDF table is printed once, level with the middle row, so the stored text shows \"Wire Transfers | Outgoing Domestic - Not in Person: $60.00\" with \"Outgoing Domestic: $30.00\" above and \"Outgoing International: $45.00\" below and no heading on either. When a heading cell leads one \"<name>: <price>\" row and its sibling rows of the same shape sit directly above and below with names that only say direction, region or channel, the heading names all of them. Stop at a blank line, a row that names its own fee, a footer, or a heading line of another section, and lend nothing when the block is not centred on the heading's row.",
+    why: "Sound Community Bank's schedule (document 14765) printed its wire block this way. Knox read only the middle row, so the bank's wire value was its $60 not-in-person wire (live 15716) while its standard $30 outgoing wire, $15 incoming and $45 international wires were never read.",
+    evidence: { issues: [1912], prs: [], files: ["src/lib/custom-report/centered-heading-cell.ts", "src/lib/agents/knox/centered-heading.test.ts", "docs/project/findings/2026-10-26-centred-heading-cell.md"] },
+    appliesTo: ["extract"],
+    since: "2026-10-26",
+  },
 ];

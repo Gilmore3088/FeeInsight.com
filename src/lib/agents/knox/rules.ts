@@ -20,6 +20,7 @@ import { boxSectionLateFee } from "@/lib/custom-report/box-section-late-fee";
 import { LOAN_SECTION_TARGET, loanSectionFee } from "@/lib/custom-report/loan-section-fee";
 import { domesticStackedStem, stackedCellVariants } from "@/lib/custom-report/stacked-cell-variants";
 import { domesticWireClausePrices } from "@/lib/custom-report/wire-clause-prices";
+import { withCenteredHeadingCells } from "@/lib/custom-report/centered-heading-cell";
 import type { OwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
 
 /**
@@ -2907,6 +2908,29 @@ export function withShiftedColumnsRebuilt(text: string): string {
 }
 
 /**
+ * v130 (#1912): a heading in a vertically centred merged cell names every row of its block, not
+ * only the middle row the PDF reader printed it on ("Outgoing Domestic: $30.00" over "Wire Transfers |
+ * Outgoing Domestic - Not in Person: $60.00", Sound Community Bank). The block is found by layout
+ * (`withCenteredHeadingCells`, which the shared source check also applies); Knox lends the heading
+ * only when the heading names a fee family (a wire heading, or one that classifies), the middle row's
+ * name alone classifies nothing and reads with the heading, and each borrowed row's name alone
+ * classifies nothing, is made only of words a heading may qualify (`composableTail`: directions,
+ * regions, channels) and reads with the heading as the same family.
+ */
+export function withCenteredBlockHeadings(text: string): string {
+  const family = (key: string | null) => key?.split("_")[0] ?? null;
+  return withCenteredHeadingCells(text, {
+    accepts: (heading, middleName, rowName) => {
+      if (classifyFeeText(heading) === null && !FEE_FAMILY_HEADING.test(heading)) return false;
+      const kind = family(classifyFeeText(`${heading} ${middleName}`));
+      if (kind === null || classifyPatternKey(middleName) !== null) return false;
+      if (rowName === null) return true;
+      return classifyPatternKey(rowName) === null && composableTail(normalizeSegment(rowName)) && family(classifyFeeText(`${heading} ${rowName}`)) === kind;
+    },
+  });
+}
+
+/**
  * v35: a fee name that wraps onto a second or third line, with its price alone on the line
  * after ("Overdraft Fee (per item, both returned or paid created by check, in person
  * withdrawal," / "ATM withdrawal, or other electronic means. Maximum of 6 fees per day.)" /
@@ -3090,7 +3114,8 @@ export function extractCandidatesFromText(input: string): ExtractionRulesResult 
   }
   const owned = recognizedFeeBullets(otherPrices);
   // v127 (#1918): shifted two-column PDF rows are rebuilt before any line is read.
-  const legacyText = withShiftedColumnsRebuilt(withoutFeeBullets(otherPrices, owned));
+  // v130 (#1912): a vertically centred heading cell names every row of its block.
+  const legacyText = withCenteredBlockHeadings(withShiftedColumnsRebuilt(withoutFeeBullets(otherPrices, owned)));
   for (const row of owned) {
     if (row.problem || row.price == null || row.priceText == null) {
       countDrop(result, "wrapped_bullet_unresolved");

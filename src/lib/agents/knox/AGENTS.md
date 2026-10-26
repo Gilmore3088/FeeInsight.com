@@ -2091,6 +2091,21 @@ Market" from the line above. The four live rows the account-subject recovery wou
 (`KNOX_ACCOUNT_SUBJECT_CORRECT_LIVE`, off) are unchanged: three name their account on their own line.
 Account product only; the stale-read floor stays at v97.
 
+v130 (#1912): a heading in a vertically centred merged cell. The PDF reader prints the cell once, level
+with the middle row of its block, so Sound Community Bank's "Wire Transfers" sat only on "Wire
+Transfers | Outgoing Domestic - Not in Person: $60.00", and "Outgoing Domestic: $30.00" above and
+"Outgoing International: $45.00 plus international wire fee" below were dropped as naming no fee. The
+heading now leads the block's sibling "<name>: <price>" rows (`withCenteredHeadingCells` in
+`custom-report/centered-heading-cell.ts`): contiguous rows with no cell of their own that share a word
+with the middle row's name, never rows under a heading line of their own, only a centred block (rows
+above and below differ by at most one), and a row two middle rows reach is lent by neither. Knox
+(`withCenteredBlockHeadings` in `rules.ts`) also asks that the heading name a fee family and each row's
+name name no fee alone, be made of words a heading may qualify (`composableTail`) and read as the same
+family; the shared source check applies the layout rule, so the reads trace on the stored text. "Not in
+Person" is a channel `composableTail` accepts, and the international wire review keeps a row's scope
+when the words after its price open with "plus" and restate its own geography and direction. The
+answer-key gates are unchanged. The stale-read floor stays at v97.
+
 ## Darwin's re-read requests (`reread-feedback.ts`, #1511)
 
 Darwin's live fragment check (`darwin/live-fragment-check.ts`) writes one `pipeline_feedback` row of
@@ -2369,7 +2384,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v129 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v130 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v10 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

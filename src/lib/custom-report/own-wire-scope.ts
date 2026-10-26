@@ -105,6 +105,19 @@ function facts(own: string): { geography: WireGeography; directions: WireDirecti
     directions: [...(incoming ? ["incoming" as const] : []), ...(outgoing ? ["outgoing" as const] : [])] };
 }
 
+/**
+ * #1912: a charge added on top of the price ("Outgoing International: $45.00 plus international wire
+ * fee" / "assessed by correspondent bank", Sound Community Bank) names the same wire, so its scope
+ * words restate the row's own and never change it. Only a tail that opens with "plus", holds no price,
+ * and whose geography and directions the row's own name already states.
+ */
+function agreeingAddedCharge(after: string, own: string): boolean {
+  if (!/^plus\b/i.test(after) || /\$\s*\.?\d/.test(after)) return false;
+  const tail = facts(after), row = facts(own);
+  if (!tail || !row || row.geography === "unspecified") return false;
+  return (tail.geography === "unspecified" || tail.geography === row.geography) && tail.directions.every((direction) => row.directions.includes(direction));
+}
+
 function headingBefore(lines: string[], rows: ReadonlyMap<number, PhysicalRow[]>, at: number, admittedZero: boolean, ownerColumn: number): string | null {
   let visited = 0;
   let geographyChild: string | null = null;
@@ -213,7 +226,7 @@ export function sourceOwnedWireScope(text: string, feeName: string, admittedAmou
       if (zeroMarker && (!/^(?:(?:per wire|each|per item)[.!]?)?\s*$/i.test(after)
         || cells.slice(cellIndex + 1).some(next => next.length > 0))) { unsupported = true; continue; }
       const tailScope = INTERNATIONAL.test(after) || DOMESTIC.test(after) || INCOMING.test(after) || OUTGOING.test(after);
-      if (tailScope && !WIRE_WORDS.test(after.replace(/[():/&-]/g, " ").replace(/\s+/g, " ").trim())) { unsupported = true; continue; }
+      if (tailScope && !WIRE_WORDS.test(after.replace(/[():/&-]/g, " ").replace(/\s+/g, " ").trim()) && !agreeingAddedCharge(after, combined)) { unsupported = true; continue; }
       const labelFacts = facts(label), headingFacts = heading ? facts(heading) : null;
       if (!labelFacts || (heading && !headingFacts)) { unsupported = true; continue; }
       // An own explicit direction/geography cannot be contradicted by an inherited header.
