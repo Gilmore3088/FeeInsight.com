@@ -269,6 +269,8 @@ export interface RunKnoxExtractResult {
   lessonRefiles: Record<string, number>;
   /** v5: all-time tally of the extract-stage holds, corrections and audit misses the lessons read, by kind and verdict. */
   handFindingsRead?: KnoxFindingsRead;
+  /** True when the lessons and findings read failed (the tally above is then empty, not zero). */
+  handFindingsReadFailed?: boolean;
   /** Confirmed, still-down takedowns read before the run (`takedown-lessons.ts`). */
   takedownLessonsLoaded: number;
   /** Fees written held because they repeat a confirmed takedown, by check. */
@@ -1610,7 +1612,7 @@ export async function runKnoxExtract(
   const rows = await selectTextArtifacts(db, limit, learning, currentCopy, options.institutionId, options.stateCode, priorityIds);
   const rowByDocumentTextId = new Map(rows.map((row) => [Number(row.document_text_id), row]));
   // v5: the same query tallies, all time, the holds, corrections and audit misses filed against extract that the lessons read.
-  const { lessons, findingsRead: handFindingsRead } = !dryRun && rows.length > 0
+  const { lessons, findingsRead: handFindingsRead, readFailed: handFindingsReadFailed } = !dryRun && rows.length > 0
     ? await loadKnoxLessonsAndFindings(db)
     : { lessons: new Map() as KnoxLessons, findingsRead: {} as KnoxFindingsRead };
   const lessonRefiles: Record<string, number> = {};
@@ -1776,6 +1778,7 @@ export async function runKnoxExtract(
     lessonsLoaded: lessons.size,
     lessonRefiles,
     handFindingsRead,
+    handFindingsReadFailed: handFindingsReadFailed === true,
     takedownLessonsLoaded: [...takedownLessons.values()].reduce((n,group)=>n+group.length,0),
     takedownHolds,
     takedownLessonsUnknown: takedownLessons.unknownReasons,

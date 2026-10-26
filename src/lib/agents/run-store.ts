@@ -1016,6 +1016,7 @@ async function executeAgenticStep(
           lesson_refiles: extraction.lessonRefiles,
           // All-time tally, not this step's new rows: every finding the lessons read, by kind and verdict.
           hand_findings_read_all_time: extraction.handFindingsRead ?? {},
+          hand_findings_read_failed: extraction.handFindingsReadFailed === true,
           takedown_lessons_loaded: extraction.takedownLessonsLoaded,
           takedown_holds: extraction.takedownHolds,
           takedown_lessons_unknown: extraction.takedownLessonsUnknown ?? {},

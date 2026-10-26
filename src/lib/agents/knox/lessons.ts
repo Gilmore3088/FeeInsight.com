@@ -229,7 +229,7 @@ export async function loadKnoxLessons(db: SqlTag): Promise<KnoxLessons> {
 }
 
 /** The lessons, and the all-time tally of the findings they read (v5), from one query. Empty when the store is missing or the read fails. */
-export async function loadKnoxLessonsAndFindings(db: SqlTag): Promise<{ lessons: KnoxLessons; findingsRead: KnoxFindingsRead }> {
+export async function loadKnoxLessonsAndFindings(db: SqlTag): Promise<{ lessons: KnoxLessons; findingsRead: KnoxFindingsRead; readFailed?: true }> {
   try {
     const reference = await readReferenceEligibility(db);
     return await inSavepoint(db, async (scope) => {
@@ -371,7 +371,8 @@ export async function loadKnoxLessonsAndFindings(db: SqlTag): Promise<{ lessons:
     });
   } catch (error) {
     console.error("loadKnoxLessons failed:", error);
-    return { lessons: new Map(), findingsRead: {} };
+    // The step records the failure, so an empty tally never reads as "nothing filed".
+    return { lessons: new Map(), findingsRead: {}, readFailed: true };
   }
 }
 
