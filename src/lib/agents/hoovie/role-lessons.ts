@@ -11,7 +11,7 @@ export const HOOVIE_LESSONS: AgentLesson[] = [
     stage: "registry dispatch",
     lesson: "A registry step that downloads big files is priced in STEP_EXPECTED_MS from its measured runtime in agent_run_steps (about its p99 or max, with the date and numbers in a comment), never left to the 30 s quick default; one with a long fetch timeout and no measurements yet gets a conservative price until it has run.",
     why: "Only a few registry-* keys had their own estimate, so steps measured at 70-196 s (call-report summaries, FFIEC call detail, branch tracts, industry events, card agreements) were priced at 30 s and could be started late in a registry tick and killed at the 300 s limit.",
-    evidence: { issues: [1820], prs: [], files: ["src/lib/agents/run-store.ts", "src/app/api/admin/registry/tick/route.ts"] },
+    evidence: { issues: [1820], prs: [2706], files: ["src/lib/agents/run-store.ts", "src/app/api/admin/registry/tick/route.ts"] },
     appliesTo: "all",
     since: "2026-10-26",
   },
