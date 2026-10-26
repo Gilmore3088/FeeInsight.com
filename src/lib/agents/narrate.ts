@@ -393,7 +393,7 @@ function narrateFinished(
     }
     case "deming-error-fix-recheck": {
       if (n(detail, "entries") === 0) return "No process fix names the errors it fixes yet.";
-      return `Re-checked the errors ${count(n(detail, "entries"), "process fix", "process fixes")} named: ${n(detail, "closed")} closed, ${n(detail, "still_wrong")} still wrong after a re-run, ${n(detail, "not_reproduced")} taken down with no right fee in their place, ${n(detail, "waiting")} waiting for a re-run, ${n(detail, "unknown")} not judged.`;
+      return `Re-checked the errors ${count(n(detail, "entries"), "process fix", "process fixes")} named: ${n(detail, "closed")} closed, ${n(detail, "still_wrong")} still wrong after a re-run, ${n(detail, "not_reproduced")} taken down with no right fee in their place, ${n(detail, "waiting")} waiting for a re-run, ${n(detail, "unknown")} not judged.${n(detail, "inactive") > 0 ? ` ${n(detail, "inactive")} at banks no longer active, so never re-run.` : ""}${n(detail, "read_failed") > 0 ? ` The read failed for ${count(n(detail, "read_failed"), "fix", "fixes")}; re-checked next run.` : ""}`;
     }
     case "deming-error-classes": {
       if (detail.confirmed_rows == null) return "Could not group the week's errors into classes.";
