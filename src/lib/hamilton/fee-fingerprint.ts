@@ -11,12 +11,13 @@
  */
 import { countedAmounts } from "@/lib/data-store/counted-amounts";
 import { getInstitutionOwnFees } from "@/lib/data-store/fee-index";
-import { getRateFeesByInstitution } from "@/lib/data-store/rate-fees";
+import { getRateFeesByInstitution, type RateFee } from "@/lib/data-store/rate-fees";
 import { ownFeeLabel, type InstitutionOwnFee } from "@/lib/own-fee";
 import { getActivePeerSet } from "./active-peer-set";
 import { quantile } from "./fee-scenario";
 import { FEATURED_FEES, feeName } from "./fee-workspace-data";
 import { getEnginePeerGroup } from "./workspace/research";
+import type { ThinLayerMember } from "./research-layers";
 import { minPeersForGroup, pricePosition } from "./workspace/scenario";
 import type { PeerValue } from "./workspace/types";
 
@@ -50,8 +51,17 @@ export interface FingerprintStrip {
   band: { p25: number; median: number; p75: number } | null;
   /** The institution's percentile among the peers (0 to 100); only for a placed strip with a price. */
   percentile: number | null;
-  /** Each peer and its price, lowest first; only when too few peers publish the fee for a median. */
-  namedPeers: { institutionName: string; amount: number }[];
+  /**
+   * Each peer and its price, lowest first; only when too few peers publish the fee for a median.
+   * Sister charters sharing one schedule are each listed with the `countedAs` key `peerCount`
+   * counts them under, so the note says how many count and why more are named (thinLayerText).
+   */
+  namedPeers: ThinLayerMember[];
+  /**
+   * "business" when the rate in `currentLabel` is stated only for business accounts: the schedule
+   * has no consumer rate or dollar price for the fee. Absent for a consumer or unstated audience.
+   */
+  audience?: "business";
   /** Oldest and newest publish dates among the peers' fees (YYYY-MM-DD); null with no peers. */
   period: { from: string; to: string } | null;
 }
@@ -93,6 +103,8 @@ export function buildFingerprintStrip(
   minPeers: number,
   /** How the schedule states the fee as a rate ("1.1% of the transaction"), when it has no dollar amount for it. */
   ownRateLabel: string | null = null,
+  /** "business" when that rate is stated only for business accounts. */
+  ownRateAudience: "business" | null = null,
 ): FingerprintStrip {
   const amounts = countedAmounts(peers);
   const enough = amounts.length >= minPeers;
@@ -124,9 +136,16 @@ export function buildFingerprintStrip(
     namedPeers: !enough
       ? [...peers]
           .sort((a, b) => a.amount - b.amount || a.institutionName.localeCompare(b.institutionName))
-          .map((p) => ({ institutionName: p.institutionName, amount: p.amount }))
+          .map((p) => ({
+            institutionId: p.institutionId,
+            institutionName: p.institutionName,
+            amount: p.amount,
+            ...(p.countedAs !== undefined ? { countedAs: p.countedAs } : {}),
+            ...(p.several ? { several: p.several } : {}),
+          }))
       : [],
     period: periodOf(peers),
+    ...(status === "stated_as_rate" && ownRateAudience === "business" ? { audience: "business" as const } : {}),
   };
 }
 
@@ -138,13 +157,36 @@ export function buildFeeFingerprint(input: {
   peersByCategory: ReadonlyMap<string, readonly PeerValue[]>;
   /** Fees the schedule states as a rate, by category: label, e.g. "1.1% of the transaction". */
   ownRates?: ReadonlyMap<string, string>;
+  /** Rates stated only for business accounts, by category, where there is no consumer rate; labelled business, never pooled. */
+  ownBusinessRates?: ReadonlyMap<string, string>;
 }): FeeFingerprint {
   const minPeers = minPeersForGroup(input.peerLabel);
   const rates = input.ownRates ?? new Map<string, string>();
-  const strips = fingerprintCategories([...input.ownFees.keys(), ...rates.keys()]).map((category) =>
-    buildFingerprintStrip(category, input.ownFees.get(category), input.peersByCategory.get(category) ?? [], minPeers, rates.get(category) ?? null),
-  );
+  const business = input.ownBusinessRates ?? new Map<string, string>();
+  const strips = fingerprintCategories([...input.ownFees.keys(), ...rates.keys(), ...business.keys()]).map((category) => {
+    const consumerRate = rates.get(category) ?? null;
+    const businessRate = consumerRate === null ? (business.get(category) ?? null) : null;
+    return buildFingerprintStrip(
+      category,
+      input.ownFees.get(category),
+      input.peersByCategory.get(category) ?? [],
+      minPeers,
+      consumerRate ?? businessRate,
+      businessRate !== null ? "business" : null,
+    );
+  });
   return { institutionName: input.institutionName, peerLabel: input.peerLabel, saved: input.saved, minPeers, source: FINGERPRINT_SOURCE, strips };
+}
+
+/** Each category's rate labels joined, skipping a category with a dollar price. */
+function ratesByCategory(fees: readonly Pick<RateFee, "fee_category" | "rate_label">[], ownFees: ReadonlyMap<string, unknown>): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const rate of fees) {
+    if (!rate.fee_category || ownFees.has(rate.fee_category)) continue;
+    const prior = out.get(rate.fee_category);
+    out.set(rate.fee_category, prior ? `${prior}; ${rate.rate_label}` : rate.rate_label);
+  }
+  return out;
 }
 
 /**
@@ -153,19 +195,20 @@ export function buildFeeFingerprint(input: {
  * picks. Null when the institution can't be read.
  */
 export async function loadFeeFingerprint(params: { userId: number | string; institutionId: number }): Promise<FeeFingerprint | null> {
-  const [ownFees, rateFees, peerSet] = await Promise.all([
+  const [ownFees, rateFees, allRateFees, peerSet] = await Promise.all([
     getInstitutionOwnFees(params.institutionId),
     // A fee stated as a rate is published, not missing; it is never pooled with dollar amounts.
     getRateFeesByInstitution(params.institutionId, "consumer"),
+    // Every audience, for a fee the schedule states only as a business rate: shown, labelled business.
+    getRateFeesByInstitution(params.institutionId, "all"),
     getActivePeerSet({ userId: params.userId, institutionId: params.institutionId }).catch(() => null),
   ]);
-  const ownRates = new Map<string, string>();
-  for (const rate of rateFees) {
-    if (!rate.fee_category || ownFees.has(rate.fee_category)) continue;
-    const prior = ownRates.get(rate.fee_category);
-    ownRates.set(rate.fee_category, prior ? `${prior}; ${rate.rate_label}` : rate.rate_label);
-  }
-  const categories = fingerprintCategories([...ownFees.keys(), ...ownRates.keys()]);
+  const ownRates = ratesByCategory(rateFees, ownFees);
+  const ownBusinessRates = ratesByCategory(
+    allRateFees.filter((rate) => rate.fee_audience === "business" && !(rate.fee_category && ownRates.has(rate.fee_category))),
+    ownFees,
+  );
+  const categories = fingerprintCategories([...ownFees.keys(), ...ownRates.keys(), ...ownBusinessRates.keys()]);
   const group = await getEnginePeerGroup(params.institutionId, categories, { peerSet });
   if (!group) return null;
   return buildFeeFingerprint({
@@ -174,6 +217,7 @@ export async function loadFeeFingerprint(params: { userId: number | string; inst
     saved: group.saved,
     ownFees,
     ownRates,
+    ownBusinessRates,
     peersByCategory: new Map(group.fees.map((f) => [f.feeCategory, f.peers])),
   });
 }
