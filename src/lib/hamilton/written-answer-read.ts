@@ -59,9 +59,11 @@ export async function buildWrittenAnswerSystemPrompt(input: {
   let systemPrompt = agent.systemPrompt;
   systemPrompt += `\nWRITTEN FINANCIAL EVIDENCE RULES\n`
     + "Answer the requested dated fact directly. Do not add unrequested quarter calculations, growth rates or ratios. "
+    + "State a ratio, share, percentage, gap or growth rate only when it is already in the briefing evidence, a tool result or the VALIDATED FINANCIAL CALCULATIONS ledger; never divide, subtract or compare two figures yourself, even with the inputs shown. "
     + "For any NCUA calculation the reader does request, first call queryData for the same institution's curated call: measure and required reporting dates. "
     + "Use only the resulting VALIDATED FINANCIAL CALCULATIONS ledger for derived figures. "
-    + "The briefing's financial values are rounded thousands: they support labeled direct facts, never calculation inputs. "
+    + "The briefing's call-report money values are whole US dollars, converted from the filings' thousands (649000 is $649,000, never $649): they support labeled direct facts, never calculation inputs. "
+    + "A tool result labeled in thousands of dollars is stated in dollars too: 649 in thousands is $649,000 or $649 thousand, never $649. "
     + "If a requested calculation is absent from the ledger, fetch the missing filing rows or state that it cannot be established. Do not calculate it from the briefing or silently approximate it.\n";
   // Hamilton's role lessons (agents/hamilton/role-lessons.ts), at most ten, newest first.
   const roleLessons = lessonsForModel("hamilton", "written-answer");
