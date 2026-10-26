@@ -3,6 +3,7 @@ import {
   billPayByHeading,
   boxSectionLateFeeRead,
   loanSectionFeeRead,
+  payeeReturnedBillPayRead,
   checkingNamePriceAmbiguous,
   extractCandidatesFromText,
   recognizedFeeBullets,
@@ -467,7 +468,12 @@ import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 // price is followed by "plus <the same wire's> fee" keeps its scope (`own-wire-scope.ts`). The stale-read
 // floor stays at v97; Hamilton's rules re-check revisits each live document once for the new signature
 // and asks Knox to read again where these rules read a fee that is not live.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 130 } as const;
+// v131 (#1912): a bill pay return whose name says the payee returned it ("Bill Pay Return Item Fee (per
+// item returned by payee)", Bellco 85460, its note read from the next line since v127) is filed as bill
+// pay, not NSF (`BILL_PAY_RETURNED_BY_PAYEE` in `custom-report/payee-returned-bill-pay.ts`, shared with
+// guard v99). A bill pay return with no payee words stays NSF ("Bill Payment Return Item Fee (per
+// presentment)", Texas tid 2419). The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 131 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -734,7 +740,7 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
     // (`boxSectionLateFeeRead`), read on the self-check's text.
     // v123 (#1905): every specialist's deposit-category read printed in a loan section is the loan's
     // (`loanSectionFeeRead`), read on the same text.
-    const found = { ...run, candidates: run.candidates.map((read) => { const next = billPayByHeading(read); return next && carryColumnHeadingCell(read, next); }).filter((read): read is ExtractedFeeCandidate => read != null).map((read) => loanSectionFeeRead(boxSectionLateFeeRead(read, checkText), checkText)) };
+    const found = { ...run, candidates: run.candidates.map((read) => { const next = billPayByHeading(read); return next && carryColumnHeadingCell(read, next); }).filter((read): read is ExtractedFeeCandidate => read != null).map((read) => payeeReturnedBillPayRead(loanSectionFeeRead(boxSectionLateFeeRead(read, checkText), checkText), checkText)) };
     for (const [reason, count] of Object.entries(found.dropped ?? {})) countDropped(reason as DroppedLineReason, count);
     let added = 0;
     let selfCheckFailed = 0;
@@ -766,6 +772,8 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
       // v123 (#1905): the tidied name is the one the self-check traces, so a deposit-category read whose
       // name tidying changed is read for its loan section again under that name.
       if (feeName !== read.feeName) read.canonicalHint = loanSectionFeeRead({ ...read, feeName }, checkText).canonicalHint;
+      // v131 (#1912): and for the payee's return of a bill payment under that name.
+      if (feeName !== read.feeName) read.canonicalHint = payeeReturnedBillPayRead({ ...read, feeName }, checkText).canonicalHint;
       const ownPrices = exclusiveStackedPrices(text, stackedPrices, feeName).filter(row => row.amount === read.amount);
       if (read.canonicalHint === "overdraft" && ownPrices.length > 0 && ownPrices.every(row => row.annualProgram)) {
         const row: HeldFeeCandidate = {

@@ -2106,6 +2106,19 @@ Person" is a channel `composableTail` accepts, and the international wire review
 when the words after its price open with "plus" and restate its own geography and direction. The
 answer-key gates are unchanged. The stale-read floor stays at v97.
 
+v131 (#1912): a bill payment the payee sent back is the bill pay service's charge, not NSF. Bellco FCU's
+two-column PDF prints "Wire Transfers – Domestic | Bill Pay Return Item Fee | $10.00" over "(Free with
+Platinum Checking) | $20.00 | (per item returned by payee)"; the table pass read the first line only and
+filed the fee as NSF (live 85460). A name that says the payee returned it ("Bill Pay Return Item Fee (per
+item returned by payee)", read whole since v127) is bill pay (`BILL_PAY_RETURNED_BY_PAYEE`), and an NSF
+read from any specialist whose own line, or the note wrapped onto the next line, says so is re-filed to
+bill pay (`payeeReturnedBillPayRead`, with `payeeReturnedBillPayOnLine` in
+`custom-report/payee-returned-bill-pay.ts`, the check guard v99 makes on live fees' stored text). A
+next-line note counts only when it is that line's last cell and the name is the last name on its own
+line, so the other column's note is never borrowed. A bill pay return with no payee words, or whose name
+names insufficient funds, stays NSF ("Bill Payment Return Item Fee (per presentment)", Texas tid 2419).
+The answer-key gates are unchanged. The stale-read floor stays at v97.
+
 ## Darwin's re-read requests (`reread-feedback.ts`, #1511)
 
 Darwin's live fragment check (`darwin/live-fragment-check.ts`) writes one `pipeline_feedback` row of
@@ -2384,7 +2397,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v130 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v131 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v10 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |
