@@ -131,9 +131,17 @@ describe("correctAncillaryOwners", () => {
     raw = new Map([678083, 678084, 678085].map((id) => [id, { product_name: null, outlier_flags: ["needs_darwin_verification"] }]));
   });
 
+  it("never screens in an unscoped step", async () => {
+    const { db, writes } = fakeDb(await ancillaryOfficialText("safe"), raw);
+    const result = await correctAncillaryOwners(db, { runId: 1, dryRun: false, live: true });
+    expect(result.documentsChecked).toBe(0);
+    expect(result.corrected).toEqual([]);
+    expect(writes).toEqual([]);
+  });
+
   it("with the switch off only counts and lists, and writes nothing", async () => {
     const { db, writes } = fakeDb(await ancillaryOfficialText("safe"), raw);
-    const result = await correctAncillaryOwners(db, { runId: 1, dryRun: false, live: false });
+    const result = await correctAncillaryOwners(db, { institutionId: 5, runId: 1, dryRun: false, live: false });
     expect(result).toMatchObject({ live: false, dryRun: true, documentsChecked: 1, rowsChecked: 3, error: null });
     expect(result.corrected.map((fix) => fix.feeRawId)).toEqual([678084, 678085]);
     expect(writes).toEqual([]);
@@ -144,7 +152,7 @@ describe("correctAncillaryOwners", () => {
 
   it("a dry-run run writes nothing even with the switch on", async () => {
     const { db, writes } = fakeDb(await ancillaryOfficialText("safe"), raw);
-    const result = await correctAncillaryOwners(db, { runId: 1, dryRun: true, live: true });
+    const result = await correctAncillaryOwners(db, { institutionId: 5, runId: 1, dryRun: true, live: true });
     expect(result).toMatchObject({ live: true, dryRun: true });
     expect(result.corrected).toHaveLength(2);
     expect(writes).toEqual([]);
@@ -152,7 +160,7 @@ describe("correctAncillaryOwners", () => {
 
   it("applied, fills only the NULL products, keeps old and new values, and records the attempt", async () => {
     const { db, writes } = fakeDb(await ancillaryOfficialText("safe"), raw);
-    const result = await correctAncillaryOwners(db, { runId: 7, stepId: 70, dryRun: false, live: true });
+    const result = await correctAncillaryOwners(db, { institutionId: 5, runId: 7, stepId: 70, dryRun: false, live: true });
     expect(result).toMatchObject({ live: true, dryRun: false, error: null });
     expect(result.corrected.map((fix) => fix.feeRawId)).toEqual([678084, 678085]);
     expect(raw.get(678084)).toEqual({ product_name: "Safe Debit Account", outlier_flags: ["needs_darwin_verification", ANCILLARY_PRODUCT_FLAG] });
@@ -174,7 +182,7 @@ describe("correctAncillaryOwners", () => {
 
   it("applied, a row labelled between the read and the write keeps its label", async () => {
     const { db } = fakeDb(await ancillaryOfficialText("safe"), raw);
-    const planned = await correctAncillaryOwners(db, { runId: 7, dryRun: false, live: false });
+    const planned = await correctAncillaryOwners(db, { institutionId: 5, runId: 7, dryRun: false, live: false });
     expect(planned.corrected).toHaveLength(2);
     // Someone labels 678085 before the apply's UPDATE lands.
     const tagged = fakeDb(await ancillaryOfficialText("safe"), raw);
@@ -185,7 +193,7 @@ describe("correctAncillaryOwners", () => {
       if (strings.join("?").trimStart().startsWith("SELECT fr.fee_raw_id") && ++selects === 1) raw.get(678085)!.product_name = "Standard Checking";
       return result;
     }) as unknown as typeof sql;
-    const result = await correctAncillaryOwners(racing, { runId: 8, dryRun: false, live: true });
+    const result = await correctAncillaryOwners(racing, { institutionId: 5, runId: 8, dryRun: false, live: true });
     expect(result.corrected.map((fix) => fix.feeRawId)).toEqual([678084]);
     expect(raw.get(678085)?.product_name).toBe("Standard Checking");
     expect(learning.feedback).toHaveLength(1);
@@ -194,7 +202,7 @@ describe("correctAncillaryOwners", () => {
 
   it("applied on a general schedule changes nothing and settles the document as unchanged", async () => {
     const { db, writes } = fakeDb(await ancillaryOfficialText("general"), raw);
-    const result = await correctAncillaryOwners(db, { runId: 9, dryRun: false, live: true });
+    const result = await correctAncillaryOwners(db, { institutionId: 5, runId: 9, dryRun: false, live: true });
     expect(result.corrected).toEqual([]);
     expect(writes.filter((write) => write.query.includes("UPDATE"))).toEqual([]);
     expect(learning.feedback).toEqual([]);

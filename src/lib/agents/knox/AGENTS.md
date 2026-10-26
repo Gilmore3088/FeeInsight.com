@@ -168,7 +168,7 @@ records the exception; old settled decisions need a separately designed and auth
 `correctAncillaryOwners` (`knox/ancillary-owner-correct.ts`, `ANCILLARY_OWNER_CORRECT_STRATEGY`
 `knox.ancillary_owner_correct` v1) is the explicit recovery the insert-conflict comments in
 `extract.ts` leave room for. Each extract step (scoped to its bank or state lane, at most 100
-documents) reads the newest completed text of each document with a live Knox fee whose raw row has
+documents; an unscoped step skips it, since the screen takes about 10 s across all banks) reads the newest completed text of each document with a live Knox fee whose raw row has
 no product. When `primaryAncillaryProduct` names one product and `withAncillaryProduct` witnesses the
 fee's own name and price in that product's block (account-priced categories and amounts of $0 or
 less excluded), the raw row takes `product_name` and the `ancillary_product:v1` flag, so Darwin's

@@ -181,6 +181,9 @@ export async function correctAncillaryOwners(
   const institutionId = options.institutionId ?? null;
   const stateCode = options.stateCode?.trim().toUpperCase() || null;
   const base = { ...EMPTY, live, dryRun };
+  // The screen reads the head of every live document's text (about 10 s across all banks on prod,
+  // Oct 26), so it runs only in a step scoped to one bank or one state lane, never in an unscoped one.
+  if (institutionId == null && stateCode == null) return base;
   let due: { source_document_id: number | string; institution_id: number | string; institution_name: string | null; text_id: number | string; normalized_text: string }[];
   let rows: AncillaryOwnerRow[];
   try {
