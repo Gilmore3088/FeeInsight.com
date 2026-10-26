@@ -30,7 +30,7 @@ export interface SourceRef {
 }
 
 /** Bump when any builder's math or wording changes, so a saved output names the engine that made it. */
-export const WORKSPACE_ENGINE_VERSION = "1.23.0";
+export const WORKSPACE_ENGINE_VERSION = "1.24.0";
 
 /** A figure the bank gave Hamilton, with who gave it and when. */
 export interface ClientFactRef {
@@ -655,6 +655,8 @@ export interface ScenarioInput {
   tested: number;
   peers: number[];
   peerLabel: string;
+  /** Local competitors' amounts for this fee, one per counted institution; null without a local market. */
+  localAmounts?: number[] | null;
   revenueLine?: RevenueLine | null;
   institutionFacts?: InstitutionFeeFacts | null;
   /**
@@ -679,8 +681,13 @@ export interface Scenario {
   peersLess: number;
   positionBefore: number | null;
   positionAfter: number | null;
-  /** Annual change in dollars per 1,000 items: plain arithmetic, true at any volume. */
-  per1000ItemsDelta: number;
+  /**
+   * Where the tested price would sit among the bank's local competitors that publish this fee,
+   * one per counted institution; null when no local market is on file or none publishes it.
+   * There is no per-1,000-items income figure: a fee income figure needs the bank's own yearly
+   * volume (#1896). Absent on older payloads.
+   */
+  local?: { n: number; more: number; same: number; less: number } | null;
   /** Annual gross revenue change; null when the evidence cannot support a dollar figure. */
   revenueEffect: { low: number; high: number } | null;
   evidenceLevel: EvidenceLevel;

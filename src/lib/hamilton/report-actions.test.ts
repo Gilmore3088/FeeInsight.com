@@ -946,7 +946,8 @@ describe("Hamilton Reports generateReport", () => {
       "$25.00 to $40.00",
       "First Flora Bank $25.00; Clay County Bank $30.00; Prairie Trust $40.00",
     ]);
-    expect(result.report.exhibits?.[2].title).toContain("$1.5M in deposit service charges in 2025");
+    expect(result.report.exhibits?.[2].title).toBe("The largest price move is the wire transfer fee: $35.00 to the local median of $30.00, -$5.00 per item");
+    expect(JSON.stringify(result.report.exhibits?.[2])).not.toMatch(/1,000/);
     expect(result.report.watchlist).toEqual(["Prairie Trust's wire price"]);
     expect(result.report.sources?.map((source) => source.label)).toContain("First Flora Bank fee schedule");
 
@@ -956,7 +957,7 @@ describe("Hamilton Reports generateReport", () => {
     for (const input of calls) expect(input.context).toContain("REGULATORY RULES");
     expect(calls[0].data.exhibits).toMatchObject({
       local_market: { comparisons: [expect.objectContaining({ local_median: 30, position_vs_local: "above" })] },
-      fee_impacts: [expect.objectContaining({ reference: "local median", gap_amount: -5, income_per_1000_amount: -5000 })],
+      fee_impacts: [expect.objectContaining({ reference: "local median", gap_amount: -5 })],
     });
   });
 });
