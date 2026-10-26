@@ -4006,17 +4006,16 @@ const STEP_EXPECTED_MS: Record<string, number> = {
   "registry-fdic-history": 45_000,
   // bls-laus 10 / 1 / 39 / 40 / 40
   "registry-bls-laus": 45_000,
-  // Not measured long (2 runs in 60 days, under a second; market-growth did not run): their
-  // downloads allow a 300 s fetch (nic-structure.ts) and 240 s LODES fetches (market-growth.ts),
-  // longer than any later partition is left (at least 240 s, START_NEXT_WITHIN_MS in the registry
-  // tick). Priced at 240 s so only a tick's first slot or its first 30 s starts them; re-measure
-  // and lower once they run. designation-lists and economy (180 s fetches) fit a later partition
-  // as they are; payment-networks completed in at most 3 s (n 73), and its one failure took 56 s.
-  // registry-bank-merger-orders (n 213, p99 12 s, one 93 s outlier) and registry-cfpb (171 s max,
-  // 180 s entry above), registry-state-bills (94 s max, 120 s) and registry-fred (41 s max,
-  // 150 s) keep the quick default or their own entries.
+  // nic-structure: 6 runs ever, all under a second, but its download allows a 300 s fetch
+  // (nic-structure.ts), longer than a later partition is left (it starts by 60 s into the tick,
+  // so it has at least 210 s before TICK_DEADLINE_MS). Priced at 240 s so only a tick's first slot
+  // starts it; re-measure and lower once it has run. The market-growth sources run under their own
+  // keys (registry-census-lehd holds the 240 s LODES fetch: 408 runs, max 25 s, so it keeps the
+  // quick default). designation-lists and economy (180 s fetches) fit a later partition as they
+  // are; payment-networks completed in at most 3 s (n 73), and its one failure took 56 s.
+  // bank-merger-orders (n 213, p99 12 s, one 93 s outlier) keeps the quick default; cfpb (171 s
+  // max), state-bills (94 s max) and fred (41 s max) keep their own entries.
   "registry-nic-structure": 240_000,
-  "registry-market-growth": 240_000,
   // Not measured yet (2026-10-18): each downloads and inflates a Board SDMX zip, H.15 about 68 MB
   // and H.8 about 75 MB, before the BLS/BEA or table reads; priced so a tick starts them early.
   "registry-fred": 150_000,

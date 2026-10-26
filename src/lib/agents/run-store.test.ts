@@ -1883,9 +1883,10 @@ describe("agentic run store", () => {
       expect(expectedStepMs(key), key).toBeGreaterThanOrEqual(maxSeconds * 1000);
       expect(expectedStepMs(key), key).toBeLessThan(270_000);
     }
-    // Long fetch timeouts with no measured runs: priced so only a tick's start runs them.
+    // A 300 s fetch timeout with no long measured run: priced so only a tick's first slot runs it.
     expect(expectedStepMs("registry-nic-structure")).toBe(240_000);
-    expect(expectedStepMs("registry-market-growth")).toBe(240_000);
+    // Market-growth sources run under their own keys; LODES (census-lehd, max 25 s) stays quick.
+    expect(expectedStepMs("registry-census-lehd")).toBe(30_000);
     // p99 12 s: one 93 s outlier in 213 runs does not move it off the quick default.
     expect(expectedStepMs("registry-bank-merger-orders")).toBe(30_000);
   });
