@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import type { FiledFeeIncome } from "@/lib/data-store/fee-revenue";
+import { feeIncomeAgainstPeers } from "@/lib/research/fee-income-peers";
 import { assetTierBoundFacts } from "./asset-tier-facts";
 import { ASSET_TIER_BOUNDS, checkNarrativeFigures, extractFigures, extractQuestionFigures } from "./figure-check";
 
@@ -77,6 +79,59 @@ describe("explicit asset-intensity quantities (#2361)", () => {
     for (const source of ["ncua", "fdic"]) {
       expect(checkNarrativeFigures("Income was $7.49 per $10,000 of assets.", { source, amount: 7.49, unit: "USD" }, options).unmatched).toEqual(["$7.49"]);
     }
+  });
+});
+
+describe("the per-$10,000-of-assets denominator in any wording (#1077)", () => {
+  // Invented rows for tests only: the peers view's shape, values rounded to cents as the tool sends them.
+  const filed = (id: number, ratio: number): FiledFeeIncome => ({
+    institution_id: id, institution_name: `Synthetic CU ${id}`, charter_type: "credit_union", state_code: "VA",
+    asset_size_tier: "large_regional", fed_district: 5, report_date: "2026-06-30", financial_source: "ncua",
+    total_assets: 1_000_000 * id, service_charge_income: 100 * id, fee_income_ratio: ratio,
+  });
+  const evidence = feeIncomeAgainstPeers(
+    [filed(1, 15.14), ...[2, 3, 4, 5, 6, 7, 8].map((id) => filed(id, 10 + id / 100))], 1, {});
+  const options = { explicitFinancialDerivations: true };
+
+  it.each([
+    "Fee income was $15.14 per $10,000 in assets.",
+    "Fee income was $15.14 per $10,000 of assets.",
+    "Fee income was **$15.14** per **$10,000** in total assets.",
+    "Fee income was $15.14 for every $10,000 of assets.",
+    "Fee income was $15.14 for each $10,000 in assets.",
+    "Fee income was $15.14 per $10K in assets.",
+    "Fee income was $15.14 per $10k of assets.",
+    "Fee income was $15.14/$10,000 of assets.",
+    "Fee income was $15.14 per ten thousand dollars in assets.",
+    "For every $10,000 in assets, fee income was $15.14.",
+    "Fee income per $10K of assets was $15.14.",
+  ])("traces a ratio the evidence types as income per ten thousand dollars of assets: %s", (text) => {
+    expect(checkNarrativeFigures(text, evidence, options)).toMatchObject({ unmatched: [] });
+    expect(extractFigures(text).filter((f) => f.kind === "usd")).toEqual([
+      expect.objectContaining({ value: 15.14, denominatorUnit: "ten_thousand_assets" }),
+    ]);
+  });
+
+  it("holds a ratio the evidence does not hold, in every wording", () => {
+    for (const text of [
+      "Fee income was $16.02 per $10,000 in assets.",
+      "Fee income was $16.02 for every $10K of assets.",
+      "For every $10,000 in assets, fee income was $16.02.",
+    ]) expect(checkNarrativeFigures(text, evidence, options).unmatched).toEqual(["$16.02"]);
+  });
+
+  it("never traces a ratio from an untyped dollar figure of the same value", () => {
+    expect(checkNarrativeFigures("Fee income was $15.14 per $10,000 in assets.", { source: "ncua", amount: 15.14, unit: "USD" }, options).unmatched)
+      .toEqual(["$15.14"]);
+  });
+
+  it("holds a bare $10,000 that is no ratio's denominator", () => {
+    for (const text of [
+      "A $10,000 deposit earns no fee.",
+      "Fee income per $10,000 in assets rose this quarter.",
+      "Its fee income was $10,000 in assets terms.",
+      "Fee income was $15.14 per $10,000 of revenue.",
+    ]) expect(checkNarrativeFigures(text, evidence, options).unmatched).toContain("$10,000");
   });
 });
 
