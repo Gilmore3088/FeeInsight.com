@@ -626,4 +626,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-26",
   },
+  {
+    id: "issue-1912-restore-reads-the-same-text",
+    agent: "hamilton",
+    stage: "publish",
+    lesson: "A path that brings a fee back live judges its category with the same stored-text context as the paths that verify and keep it live: when verification and the live check read a collection section, a safe deposit box section or the payee's return note from the fee's stored text, the restore check reads them from the same text through the same functions, never by the name alone.",
+    why: "The restore bar (`disputedRestoreVerdict`) called the category guard with the name only, while Darwin's verify and Hamilton's live guard passed `withCollectionSection` and `withBoxSection`; an NSF fee printed under a collection heading or noted \"returned by payee\" could pass the restore check as NSF and come back live wrong. On Oct 26 no restore verdict changed (0 of 67 held or taken-down rows whose category step flips); two BankUnited NSF holds now stop at the guard instead of the model.",
+    evidence: { issues: [1912], prs: [], files: ["docs/project/findings/2026-10-26-restore-bar-reads-stored-text-context.md", "src/lib/agents/hamilton/restore-guard.ts", "src/lib/agents/hamilton/restore-guard.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
 ];
