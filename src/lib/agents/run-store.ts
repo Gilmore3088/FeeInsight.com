@@ -2858,6 +2858,8 @@ async function executeAgenticStep(
           by_category: score?.byCategory ?? {},
           // #1099: Knox's misses on documents Rosetta read right, by category and document type.
           knox_misses: score?.knoxMisses ?? null,
+          // #1098: each Knox specialist's found/right on those documents.
+          knox_specialists: score?.knoxSpecialists ?? null,
           dry_run: result.dryRun,
         },
       };
