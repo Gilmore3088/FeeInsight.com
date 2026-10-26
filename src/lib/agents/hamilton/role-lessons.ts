@@ -98,6 +98,16 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     since: "2026-10-26",
   },
   {
+    id: "issue-1200-current-copy-must-be-newer",
+    agent: "hamilton",
+    stage: "publish",
+    lesson: "Judge a live fee only against a copy the bank was seen serving (fetched or re-checked) at or after the fee's own document was fetched; a document that is no longer a source is not therefore older than the copy at the bank's link, so a copy last seen before it is older evidence and judges nothing until the link is fetched again.",
+    why: "The retired-document check paired each retired document with the newest read copy at the bank's fetch target or saved link, whatever its date. On Oct 26, 241 live fees on 25 documents were paired with a copy fetched before their own document, and 139 fees on 19 documents with one the bank had not been seen serving since: a print view or business schedule read on Oct 20 against the plain page last fetched on Oct 9, an October page against a Feb 17 copy at a dead link. Once confirmations turned on, a current price would have come down as \"not on the current copy\".",
+    evidence: { issues: [1200], prs: [2742], files: ["docs/project/findings/2026-10-26-retired-copy-older-than-live-document.md", "src/lib/agents/hamilton/current-copy.ts", "src/lib/agents/hamilton/current-copy.db.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
+  {
     id: "issue-1675-held-twin-blocks-restore",
     agent: "hamilton",
     stage: "publish",

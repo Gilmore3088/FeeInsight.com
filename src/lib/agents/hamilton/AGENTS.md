@@ -885,7 +885,10 @@ one price of several on a row) or at $0 ("FREE"). The verdict (`currentCopyVerdi
 counts a fee as stated when the current page follows a piece of its name with its price
 (`priceFollowsName`) or the shared source check traces it, and never judges a $0 row.
 Confirmations stay off until a new hand check passes. `refresh-copy.ts` moves up to 1,000
-fees a step.
+fees a step. A fee on a document that is no longer a source is judged against the newest read
+copy at the bank's fetch target or saved link (`retiredCopiesSql`), and only when the bank was
+seen serving that copy (fetched or re-checked) at or after the fee's own document was fetched:
+an older copy judges nothing (#1200, 139 live fees on Oct 26).
 
 ## Outlier Rollback
 

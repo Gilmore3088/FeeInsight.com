@@ -337,6 +337,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-20 — A stored name carries the older copy's text layout; compare it against a newer layout only after undoing what that layout glued (#2477). — [finding](findings/2026-10-20-heading-row-glued-name-false-flag.md) — Guard: `src/lib/agents/hamilton/newer-copy-retire.test.ts`
 - 2026-10-20 — Measure a takedown rule on prod before building it out: the dry run showed the rule reached none of the fees it was meant for (#2477). — [finding](findings/2026-10-20-superseded-copy-fees-stay-live.md) — Guard: `src/lib/agents/hamilton/newer-copy-retire.db.test.ts`
 - 2026-10-26 — A check of what the bank serves today reads the address the bank is actually fetched at (remembered address, else saved link), not the saved link alone; Bayes's current-copy count had also failed since #2179 (#1200). — [finding](findings/2026-10-26-retired-copy-keyed-on-saved-link.md) — Agent lesson: hamilton/issue-1200-retired-key-is-the-fetch-target; Guard: `src/lib/agents/hamilton/current-copy.db.test.ts`
+- 2026-10-26 — Judge a live fee only against a copy the bank was seen serving at or after the fee's own document was fetched: 139 live fees on 19 retired documents were paired with older copies, and these were the pairs #1200 had held back for a hand check. — [finding](findings/2026-10-26-retired-copy-older-than-live-document.md) — Agent lesson: hamilton/issue-1200-current-copy-must-be-newer; Guard: `src/lib/agents/hamilton/current-copy.db.test.ts`
 - 2026-10-20 — A fee found again on a newer document should cite the newer document. — [finding](findings/2026-10-20-live-fees-stay-on-moved-pages.md) — Agent lesson: hamilton/issue-1200-follow-moved-pages
 - 2026-10-20 — Held rates kept Knox's 0.5 placeholder confidence after promotion (#1055). — [finding](findings/2026-10-20-held-rates-kept-placeholder-confidence.md) — Guard: `src/lib/agents/knox/held-rate-confidence.db.test.ts`
 - 2026-10-20 — Agent checks could take down a fee an admin had corrected. — [finding](findings/2026-10-20-agent-checks-undo-admin-corrections.md) — Guard: `src/lib/fee-corrections.db.test.ts`
@@ -617,7 +618,7 @@ counts as of this index (306 in all).
 | knox | 83 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
 | darwin | 48 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 40 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
-| hamilton | 60 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
+| hamilton | 61 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
 | deming | 17 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
 
 ## Before 2026-10-10
