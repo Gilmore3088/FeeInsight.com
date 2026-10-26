@@ -145,20 +145,23 @@ describe("the per-$10,000-of-assets denominator in any wording (#1077)", () => {
     "Per $10,000 of assets, the bank's overdraft fee of $35 compares with peers.",
     "Income per $10,000 of assets\n\nThe overdraft fee is $35.",
     "Fee income per $10,000 of assets. Its fee is $35.",
-  ])("holds a fee that only follows the denominator: %s", (text) => {
+    "Overdraft costs $35, and $12.00 per $10,000 of assets.",
+    "The overdraft fee is $35 and $12.00 per $10,000 of assets is fee income.",
+    "For every $10,000 in assets at $35 per overdraft, the bank is costly.",
+    "Per $10,000 of assets of $35 a month, the bank is costly.",
+    "Fee income per $10,000 of assets is $35 per item.",
+  ])("holds a fee that only sits near the denominator: %s", (text) => {
     expect(checkNarrativeFigures(text, withFee, options).unmatched).toContain("$35");
     expect(extractFigures(text).find((f) => f.raw === "$35")?.denominatorUnit).toBeUndefined();
   });
 
-  it("gives every figure in a list the denominator they share", () => {
+  it("gives the denominator only to the figure beside it, so a listed second figure holds", () => {
     const text = "Fee income was $35.10 and $12.00 per $10,000 of assets.";
     expect(extractFigures(text).map((f) => [f.raw, f.denominatorUnit])).toEqual([
-      ["$35.10", "ten_thousand_assets"], ["$12.00", "ten_thousand_assets"],
+      ["$35.10", undefined], ["$12.00", "ten_thousand_assets"],
     ]);
-    expect(checkNarrativeFigures(text, withFee, options).unmatched).toEqual([]);
-    // Listed under the denominator, the $30 reads as a ratio, finds no filed ratio of 30 and holds.
-    expect(checkNarrativeFigures("The fee is $30 and $35.10 per $10,000 of assets.", withFee, options).unmatched).toEqual(["$30"]);
-    expect(checkNarrativeFigures("Fee income was $35.10, or $12.50 per $10,000 of assets.", withFee, options).unmatched).toEqual(["$12.50"]);
+    expect(checkNarrativeFigures(text, withFee, options).unmatched).toEqual(["$35.10"]);
+    expect(checkNarrativeFigures("Fee income was $35.10 per $10,000 of assets.", withFee, options).unmatched).toEqual([]);
   });
 });
 
