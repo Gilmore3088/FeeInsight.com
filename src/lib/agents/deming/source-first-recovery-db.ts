@@ -14,6 +14,8 @@ import type { FeeObligation, LineageFacts, CandidateFact, VerificationFact, Publ
 
 type SqlTag = typeof sql;
 export const MAX_OWN_OBSERVATIONS = 25;
+/** Complete per-document census for an omission without any published or raw ID. */
+export const MAX_DOCUMENT_OBSERVATIONS = 300;
 export const MAX_OWN_PUBLISHED = 200;
 export const MAX_STAGE_ATTEMPTS = 60;
 const clean = (s: string) => s.replace(/\s+/g," ").trim();
@@ -28,7 +30,7 @@ export interface SourceFirstDbRead {
 
 interface SourceRow { id:number|string; institution_id:number|string; document_url:string; content_hash:string|null; status:string; superseded_by_id:number|string|null; }
 interface TextRow { source_document_id:number|string; status:string; text_hash:string|null; exact_witness_present:boolean|null; text_bytes:number|null; }
-interface RawRow { fee_raw_id:number|string; source_document_id:number|string; outlier_flags:unknown; }
+interface RawRow { fee_raw_id:number|string; source_document_id:number|string; outlier_flags:unknown; fee_name?:string|null; amount?:number|string|null; amount_kind?:string|null; rate_percent?:number|string|null; product_name?:string|null; extraction_note?:string|null; conditions?:string|null; }
 interface VerifiedRow { fee_verified_id:number|string; fee_raw_id:number|string; review_status:string|null; }
 interface PublishedRow { fee_published_id:number|string; lineage_ref:number|string; rolled_back_at:string|null; quarantined_at:string|null; published_at:string|null; live_in_catalog:boolean|null; }
 interface AttemptRow { stage:string; strategy:string; strategy_version:number|null; created_at:string; outcome:string; }
@@ -49,7 +51,27 @@ export function flagsOf(input: unknown): string[] {
   return [];
 }
 
-/** Query a bounded known observation, not a fuzzy name/amount match. */
+/**
+ * Strict, positive-only raw candidate match for an unpinned source-first obligation.
+ * Never use category alone, a neighboring fee amount, a weak fuzzy name, or a
+ * product we cannot identify. False negatives are an explicit unknown/unmatched
+ * outcome, not evidence that the bank never charged the fee.
+ */
+export function exactRawCandidateMatch(row:RawRow, fee:FeeObligation):boolean {
+  const ownLine=fee.normalizedWitnessPhrase;
+  if(!ownLine || clean(ownLine).length<10 || !row.extraction_note || !clean(row.extraction_note).includes(clean(ownLine)))return false;
+  if(clean(row.fee_name??'').toLowerCase()!==clean(fee.feeName).toLowerCase())return false;
+  if(fee.amountKind==='flat' || fee.amountKind==='zero') {
+    if(row.amount==null || Number(row.amount)!==fee.amount)return false;
+  } else if(fee.amountKind==='percentage') {
+    if(row.rate_percent==null || Number(row.rate_percent)!==fee.ratePercent)return false;
+  } else return false; // no invented normalization of ranges/formulas
+  // A known, conflicting product means a different legitimate fee variant.
+  if(row.product_name && clean(row.product_name).toLowerCase()!==clean(fee.accountProduct).toLowerCase())return false;
+  return true;
+}
+
+/** Query bounded known observations, or a complete source-document census when IDs are absent. */
 export async function readSourceFirstLineage(db:SqlTag, fee:FeeObligation, observedAt=new Date().toISOString()):Promise<SourceFirstDbRead> {
   const warnings:string[]=[];
   const docId=fee.sourceDocumentId;
@@ -93,13 +115,36 @@ export async function readSourceFirstLineage(db:SqlTag, fee:FeeObligation, obser
       exactFeeWitnessSurvived:texts[0].exact_witness_present===true?true:null,
       textSha256:texts[0].text_hash}:null,
   };
-  if(!ids.length){lineage.traceComplete=false;warnings.push("no_pinned_raw_ids_candidate_search_not_attempted");return {obligation:fee,lineage,warnings};}
-  const raw=await db<RawRow[]>`
-    SELECT fee_raw_id,source_document_id,outlier_flags FROM raw_fee_observations
-     WHERE institution_id=${fee.institutionId}::bigint AND source_document_id=${docId!}::bigint
-       AND fee_raw_id=ANY(${ids}::bigint[]) ORDER BY fee_raw_id LIMIT ${MAX_OWN_OBSERVATIONS+1}
-  `;
-  if(raw.length>MAX_OWN_OBSERVATIONS){lineage.traceComplete=false;warnings.push("raw_limit_exceeded");return {obligation:fee,lineage,warnings};}
+  let raw:RawRow[];
+  if(!ids.length){
+    if(!fee.normalizedWitnessPhrase || clean(fee.normalizedWitnessPhrase).length<10){
+      lineage.traceComplete=false;
+      warnings.push('no_pinned_ids_or_exact_witness_for_bounded_raw_census');
+      return {obligation:fee,lineage,warnings};
+    }
+    // Do NOT filter by amount/name in SQL: that could hide a misread row and
+    // falsely certify an extraction miss. Exhaust the single source document.
+    raw=await db<RawRow[]>`
+      SELECT fee_raw_id,source_document_id,outlier_flags,fee_name,amount,amount_kind,rate_percent,product_name,extraction_note,conditions
+        FROM raw_fee_observations
+       WHERE institution_id=${fee.institutionId}::bigint AND source_document_id=${docId!}::bigint
+       ORDER BY fee_raw_id LIMIT ${MAX_DOCUMENT_OBSERVATIONS+1}
+    `;
+    if(raw.length>MAX_DOCUMENT_OBSERVATIONS){
+      lineage.traceComplete=false;warnings.push('source_document_raw_census_exceeds_limit');
+      return {obligation:fee,lineage,warnings};
+    }
+    const matched=raw.filter(row=>exactRawCandidateMatch(row,fee));
+    if(!matched.length)warnings.push('no_exact_own_row_candidate_in_complete_document_census_not_certain_knox_miss');
+    raw=matched;
+  }else{
+    raw=await db<RawRow[]>`
+      SELECT fee_raw_id,source_document_id,outlier_flags FROM raw_fee_observations
+       WHERE institution_id=${fee.institutionId}::bigint AND source_document_id=${docId!}::bigint
+         AND fee_raw_id=ANY(${ids}::bigint[]) ORDER BY fee_raw_id LIMIT ${MAX_OWN_OBSERVATIONS+1}
+    `;
+    if(raw.length>MAX_OWN_OBSERVATIONS){lineage.traceComplete=false;warnings.push('raw_limit_exceeded');return {obligation:fee,lineage,warnings};}
+  }
   const candidates:CandidateFact[]=raw.map(row=>({rawId:Number(row.fee_raw_id),sourceDocumentId:Number(row.source_document_id),matchesOfficialObligation:true,
     retired:flagsOf(row.outlier_flags).some(x=>["superseded_by_reread","superseded_by_newer_copy"].includes(x)),flags:flagsOf(row.outlier_flags)}));
   lineage.candidates=candidates;
