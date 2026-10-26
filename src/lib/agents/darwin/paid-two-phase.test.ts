@@ -13,7 +13,7 @@ vi.mock("@/lib/agents/learning/attempts", () => ({
     if (fixture.reviewSettlementError && attempt.strategy === "verify.release_review") throw new Error("synthetic review settlement error");
   },
 }));
-vi.mock("@/lib/agents/learning/feedback", () => ({ feedbackSchemaReady: async () => false, BUSINESS_SCHEDULE_RESTORED_KIND: "restored" }));
+vi.mock("@/lib/agents/learning/feedback", () => ({ feedbackSchemaReady: async () => false, RESTORE_RECORD_KINDS: ["business_schedule_restored", "account_type_hold_released"] }));
 vi.mock("./category-model", () => ({ loadCategoryModel: async () => ({}), DARWIN_CATEGORY_MODEL_STRATEGY: { strategy: "verify.category_model", version: 1 } }));
 vi.mock("./verdict-score", () => ({ loadReviewMisses: async () => [], runDarwinVerdictScore: async () => ({ chunks: [], reference: { unbound: 0 } }) }));
 vi.mock("./verify", () => ({

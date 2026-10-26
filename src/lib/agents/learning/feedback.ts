@@ -86,6 +86,13 @@ export const BUSINESS_SCHEDULE_RESTORED_KIND = "business_schedule_restored";
 export const ACCOUNT_TYPE_HOLD_RELEASED_KIND = "account_type_hold_released";
 
 /**
+ * Restore records (signal `restored`, weight 0) that are no verdict that a takedown or refusal of
+ * the fee's category was wrong. A reader of `signal = 'restored'` as a lesson leaves each kind out
+ * by name (`darwin/release-review.ts`), never by an accident of its other columns (#1680).
+ */
+export const RESTORE_RECORD_KINDS: readonly string[] = [BUSINESS_SCHEDULE_RESTORED_KIND, ACCOUNT_TYPE_HOLD_RELEASED_KIND];
+
+/**
  * A kind registered in `feedback-kinds.ts` with the code that reads it (#2062). Recording a kind
  * not listed there fails the type check: list it with its readers, or say why no agent reads it.
  */
