@@ -2729,6 +2729,32 @@ describe("guard v90: a return charge in a collection section, and a box-named la
   });
 });
 
+describe("guard v93: a night depository's name is never a safe deposit box name (#1912, review of #2639)", () => {
+  const nightNames = ["Night Drop Deposit Box Late Fee", "Night  Deposit Box Late Fee", "Night Deposit Box Late Fee", "Night Drop/Deposit Box Late Fee"];
+
+  it("keeps a night drop or double-spaced night deposit box late fee a late payment", () => {
+    for (const name of nightNames) {
+      expect(checkFeeCategory("late_payment", name), name).toEqual({ ok: true });
+      expect(refileCategory("late_payment", name), name).toBe("late_payment");
+    }
+  });
+
+  it("refuses those names as a safe deposit box fee and re-files them to night deposit", () => {
+    for (const name of nightNames) {
+      expect(checkFeeCategory("safe_deposit_box", name).ok, name).toBe(false);
+      expect(refileCategory("safe_deposit_box", name), name).toBe("night_deposit");
+    }
+  });
+
+  it("still re-files a box-named late fee, 36020's exact name included", () => {
+    for (const name of ["Safety Deposit Box-Late Fee", "Safe Deposit Box Late Fee", "Deposit Box Late Charge", "SDB Late Payment"]) {
+      expect(checkFeeCategory("late_payment", name, { amount: 1 }), name).toMatchObject({ ok: false, code: "name_contradicts" });
+      expect(refileCategory("late_payment", name), name).toBe(BOX_LATE_TARGET);
+      expect(checkFeeCategory("safe_deposit_box", name, { amount: 1 }), name).toEqual({ ok: true });
+    }
+  });
+});
+
 describe("guard v92: a maintenance fee its own line prices as the paper statement charge (#1947)", () => {
   const line = (excerpt: string, amount: number): CategoryGuardContext => ({ amount, conditions: `Knox deterministic extraction. canonical_hint=monthly_maintenance; excerpt="${excerpt}"` });
   // Live monthly maintenance fees (Oct 25), each borne out by its bank's stored text.

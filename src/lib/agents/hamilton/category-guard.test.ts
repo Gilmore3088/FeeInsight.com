@@ -520,7 +520,49 @@ describe("guard v90: a live collection return re-files in place from NSF (#1912)
   it("re-files a late fee named for the safe deposit box to the box type (159317)", () => {
     const base = { fee_published_id: 159317, canonical_fee_key: "late_payment", fee_name: "SDB Late Payment", amount: "10.00", conditions: null, document_nsf_amount: null };
     expect(restoreTarget(base)).toBe("safe_deposit_box");
-    // 36020's $1 is below the box type's floor: it has no home and goes to the second look.
-    expect(restoreTarget({ ...base, fee_published_id: 36020, fee_name: "Safety Deposit Box-Late Fee", amount: "1.00" })).toBeNull();
+    // Guard v93 (#1912, review of #2639): 36020's $1 is under the box's $5 rent floor, but a box late
+    // fee has its own $1 floor (BOX_LATE_FEE_ENVELOPE), so it re-files instead of going to the second look.
+    expect(restoreTarget({ ...base, fee_published_id: 36020, fee_name: "Safety Deposit Box-Late Fee", amount: "1.00" })).toBe("safe_deposit_box");
+  });
+});
+
+describe("guard v93: a $1 box late fee re-files, and a night drop box is not the safe deposit box (#1912)", () => {
+  const fee = (id: number, inst: number, name: string, amount: string, key = "late_payment") => ({
+    fee_published_id: id, lineage_ref: id + 100000, institution_id: inst, source_document_id: null,
+    canonical_fee_key: key, fee_name: name, amount, conditions: null, document_nsf_amount: null,
+  });
+
+  it("moves 36020 (\"Safety Deposit Box-Late Fee\" $1.00, institution 494) in place instead of taking it down", async () => {
+    const box = fee(36020, 494, "Safety Deposit Box-Late Fee", "1.00");
+    const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = templateText(strings);
+      if (text.includes("to_regclass('public.pipeline_feedback')")) return Promise.resolve([{ ready: true }]);
+      if (text.includes("UPDATE published_fee_records") && text.includes("v.from_key")) {
+        return Promise.resolve((values[0] as number[]).map((id, i) => ({ fee_published_id: id, lineage_ref: id + 100000, canonical_fee_key: (values[2] as string[])[i] })));
+      }
+      if (text.includes("rolled_back_at IS NOT NULL")) return Promise.resolve([]);
+      if (text.includes("FROM published_fee_records")) return Promise.resolve([box]);
+      return Promise.resolve([]);
+    });
+    const result = await runHamiltonCategoryGuard({ runId: 93, db: db as unknown as GuardDb });
+    expect(result).toMatchObject({ liveRefiledFees: 1, failingFees: 0 });
+    const move = db.mock.calls.find((call) => templateText(call[0]).includes("v.from_key") && templateText(call[0]).includes("UPDATE"));
+    expect([move?.[1], move?.[2], move?.[3]]).toEqual([[36020], ["late_payment"], ["safe_deposit_box"]]);
+  });
+
+  it("keeps a box fee that is not a late fee under the box's rent floor", () => {
+    expect(restoreTarget(fee(1, 494, "Safe Deposit Box Rental", "1.00", "late_payment"))).toBeNull();
+  });
+
+  it("leaves a night drop or double-spaced night deposit box late fee a late payment", () => {
+    for (const name of ["Night Drop Deposit Box Late Fee", "Night  Deposit Box Late Fee"]) {
+      expect(restoreTarget(fee(2, 494, name, "10.00")), name).toBe("late_payment");
+    }
+  });
+
+  it("moves a night drop deposit box fee filed as a safe deposit box to night deposit", () => {
+    for (const name of ["Night Drop Deposit Box Late Fee", "Night  Deposit Box Late Fee"]) {
+      expect(restoreTarget(fee(3, 494, name, "10.00", "safe_deposit_box")), name).toBe("night_deposit");
+    }
   });
 });

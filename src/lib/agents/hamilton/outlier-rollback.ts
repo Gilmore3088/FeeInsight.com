@@ -1,9 +1,11 @@
 import { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
-import { amountEnvelopeFor, ESCHEAT_ENVELOPE } from "@/lib/agents/darwin/envelopes";
+import { amountEnvelopeFor, BOX_LATE_FEE_ENVELOPE, ESCHEAT_ENVELOPE } from "@/lib/agents/darwin/envelopes";
 
 /** `ESCHEAT_NAME` as a Postgres regex (word start, any case via ~*). */
 const ESCHEAT_SQL_PATTERN = "\\mescheat";
+/** `BOX_LATE_FEE_NAME` as a Postgres regex (whole word, any case via ~*). */
+const BOX_LATE_SQL_PATTERN = "\\mlate\\M";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 
@@ -85,6 +87,12 @@ export async function rollBackPublishedOutliers(
              fp.canonical_fee_key = 'dormant_account'
              AND fp.fee_name ~* '${ESCHEAT_SQL_PATTERN}'
              AND fp.amount BETWEEN ${ESCHEAT_ENVELOPE.min} AND ${ESCHEAT_ENVELOPE.max}
+           )
+           -- So does a box late fee (\`BOX_LATE_FEE_ENVELOPE\`, #1912): the box floor is a rent floor.
+           AND NOT (
+             fp.canonical_fee_key = 'safe_deposit_box'
+             AND fp.fee_name ~* '${BOX_LATE_SQL_PATTERN}'
+             AND fp.amount BETWEEN ${BOX_LATE_FEE_ENVELOPE.min} AND ${BOX_LATE_FEE_ENVELOPE.max}
            )
            ${institutionFilter}
          ORDER BY fp.fee_published_id

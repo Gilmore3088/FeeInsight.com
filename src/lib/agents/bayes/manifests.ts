@@ -604,6 +604,9 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // (Knox v115's network table read); names only, 0 live and 0 raw rows on the Oct 25 dry run.
     // v92 (Oct 25, #1947): a monthly maintenance fee its own line prices as the paper statement charge
     // re-files to paper_statement (5 move in place; 14 beside a live twin go to the second look).
+    // v93 (Oct 26, #1912): a night drop or double-spaced night deposit box name is never a safe deposit
+    // box name, and a box late fee keeps its own $1 Darwin floor, so a $1 box late fee (36020) re-files
+    // in place instead of coming down. Dry-run counts in the PR.
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",
