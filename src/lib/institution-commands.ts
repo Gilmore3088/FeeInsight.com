@@ -51,9 +51,19 @@ async function rememberPersonFeeUrl(tx: typeof sql, institutionId: number, url: 
   // A new link also brings back a bank marked offline (#1884). The profile sync keeps a locked
   // 'offline' kind and keeps the 'manual_review' strategy it gives offline rows, and Magellan's
   // fetch queues skip both, so the link alone would never be fetched.
+  // A person's link is newer than the pipeline's reject of it, so it leaves the rejected list:
+  // the profile never holds a current source it also rejects (#1105).
   await tx`
     UPDATE institution_source_profiles
        SET canonical_source_url = ${url},
+           rejected_source_urls = CASE
+             WHEN jsonb_typeof(rejected_source_urls) = 'array' THEN (
+               SELECT COALESCE(jsonb_agg(entry), '[]'::jsonb)
+                 FROM jsonb_array_elements(rejected_source_urls) entry
+                WHERE entry->>'url' IS DISTINCT FROM ${url}
+             )
+             ELSE rejected_source_urls
+           END,
            source_kind = CASE WHEN source_kind = 'offline' THEN 'unknown' ELSE source_kind END,
            read_strategy = CASE WHEN read_strategy = 'manual_review' THEN NULL ELSE read_strategy END,
            updated_at = NOW()

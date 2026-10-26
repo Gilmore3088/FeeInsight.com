@@ -757,9 +757,14 @@ async function recordFetchResult(db: SqlTag, result: FetchResult, learning: bool
       WHERE inst.id = ${result.institutionId}
       ON CONFLICT (institution_id) DO UPDATE SET
         state_code = EXCLUDED.state_code,
+        -- A fetch is no verdict on the page: an address on the playbook's own rejected list stays
+        -- off the current source until a read judges it a fee page (#1105).
         canonical_source_url = CASE
           WHEN institution_source_profiles.locked_by_correction
             THEN institution_source_profiles.canonical_source_url
+          WHEN COALESCE(institution_source_profiles.rejected_source_urls, '[]'::jsonb)
+                 @> jsonb_build_array(jsonb_build_object('url', EXCLUDED.canonical_source_url))
+            THEN NULL
           ELSE EXCLUDED.canonical_source_url
         END,
         source_kind = CASE
@@ -820,9 +825,13 @@ async function recordFetchResult(db: SqlTag, result: FetchResult, learning: bool
     WHERE inst.id = ${result.institutionId}
     ON CONFLICT (institution_id) DO UPDATE SET
       state_code = EXCLUDED.state_code,
+      -- A failed fetch of a rejected address does not make it current either (#1105).
       canonical_source_url = CASE
         WHEN institution_source_profiles.locked_by_correction
           THEN institution_source_profiles.canonical_source_url
+        WHEN COALESCE(institution_source_profiles.rejected_source_urls, '[]'::jsonb)
+               @> jsonb_build_array(jsonb_build_object('url', COALESCE(EXCLUDED.canonical_source_url, institution_source_profiles.canonical_source_url)))
+          THEN NULL
         ELSE COALESCE(EXCLUDED.canonical_source_url, institution_source_profiles.canonical_source_url)
       END,
       source_kind = CASE

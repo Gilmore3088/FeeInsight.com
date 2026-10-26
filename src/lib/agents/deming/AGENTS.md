@@ -234,17 +234,21 @@ institutions remains the only human launch workflow.
 
 ## Playbook contradiction check
 
-- `playbook-contradictions.ts` (`PLAYBOOK_CHECK_VERSION` v1): the `deming-playbook-check` step in
+- `playbook-contradictions.ts` (`PLAYBOOK_CHECK_VERSION` v2): the `deming-playbook-check` step in
   Atlas's daily scoreboard run (#1105). One read-only SELECT over `institution_source_profiles`
   and each one's current text. Per institution it counts a playbook that contradicts itself: the
   current source on its own rejected list, on its own do-not-retry list for a fetch failure, or
   judged the wrong document by a discovery strategy; a fee schedule expected to hold fewer than
   `THIN_DOCUMENT_MAX_FEES` fees; a product page expected to hold `PAID_MIN_PRICED_LINES` or more.
-  It lists up to 20 institutions per contradiction in the step detail.
+  It lists up to 20 institutions per contradiction in the step detail. v2 (#1105): the rejected
+  list holds `{ url, reason, at }` objects, so the check matches their `url`
+  (`onRejectedListSql` in `learning/rejected-sources.ts`); v1 tested for a bare string and counted
+  0 every day while 26 profiles had one (Oct 26).
 - Not contradictions: the second-document finder and its site searches record the bank's current
   link as the input they searched *from* (`SEARCH_FROM_STRATEGIES`), so their `wrong_document` /
   `no_candidates` entry means "found nothing better". They are reported as
-  `search_from_entries`, as is `layout_never_recorded` (no stage writes a layout fingerprint yet).
+  `search_from_entries`, as is `layout_never_recorded` (Knox's free rules read writes the layout
+  fingerprint since #1105, so the pile drains as texts are read again).
 - Read-only, deterministic, no model calls, pause-exempt. It changes no row.
 
 ## Daily data-quality checks
@@ -408,7 +412,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `FRESH_AUDIT_VERSION` | — | v9 | `deming/fresh-audit.ts` |
 | `DEMING_REGRESSION_VERSION` | — | v2 | `deming/regression.ts` |
 | `BENCHMARK_HEALTH_VERSION` | — | v1 | `deming/benchmark-health.ts` |
-| `PLAYBOOK_CHECK_VERSION` | — | v1 | `deming/playbook-contradictions.ts` |
+| `PLAYBOOK_CHECK_VERSION` | — | v2 | `deming/playbook-contradictions.ts` |
 | `AMOUNT_PATTERN_VERSION` | — | v1 | `deming/amount-patterns.ts` |
 | `DATA_QUALITY_VERSION` | — | v1 | `deming/data-quality.ts` |
 | `KNOX_MISSES_VERSION` | — | v1 | `deming/knox-misses.ts` |

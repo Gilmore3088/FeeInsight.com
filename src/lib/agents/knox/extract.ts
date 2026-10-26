@@ -28,7 +28,7 @@ import { internationalWireEligibility, requiresInternationalWireSource, INTERNAT
 import { mayHaveCapFirstItemPrice } from "@/lib/custom-report/stacked-fee-prices";
 import { bandedZeroOf } from "@/lib/banded-zero";
 import { withPublishedIdentityWrite } from "@/lib/agents/hamilton/published-identity";
-import { layoutSignature, thinLayouts, type LayoutYield } from "@/lib/agents/knox/layout-signature";
+import { knoxLayoutFingerprint, layoutSignature, thinLayouts, type LayoutYield } from "@/lib/agents/knox/layout-signature";
 import { calibratedConfidence, calibrationKey, loadKnoxCalibration, PUBLISH_FLOOR } from "@/lib/agents/knox/calibration";
 import { knoxFreeSignature, MISSING_FEES_DETAIL, RULES_RECHECK_STRATEGY } from "@/lib/agents/hamilton/rules-recheck";
 import { currentCopySchemaReady } from "@/lib/agents/magellan/current-copy";
@@ -1739,6 +1739,8 @@ export async function runKnoxExtract(
         durationMs: Date.now() - startedAt,
         runId: options.runId,
         stepId: options.stepId ?? null,
+        // The playbook remembers the text's layout (#1105); before this nothing wrote it.
+        layoutFingerprint: knoxLayoutFingerprint(layout),
         detail: {
           document_text_id: Number(row.document_text_id),
           inserted,
