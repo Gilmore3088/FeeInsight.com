@@ -2746,6 +2746,11 @@ describe("guard v93: a night depository's name is never a safe deposit box name 
     }
   });
 
+  it("treats an overnight deposit box late fee as a late payment, as before v93 (review of #2688)", () => {
+    expect(checkFeeCategory("late_payment", "Overnight Deposit Box Late Fee")).toEqual({ ok: true });
+    expect(refileCategory("late_payment", "Overnight Deposit Box Late Fee")).toBe("late_payment");
+  });
+
   it("still re-files a box-named late fee, 36020's exact name included", () => {
     for (const name of ["Safety Deposit Box-Late Fee", "Safe Deposit Box Late Fee", "Deposit Box Late Charge", "SDB Late Payment"]) {
       expect(checkFeeCategory("late_payment", name, { amount: 1 }), name).toMatchObject({ ok: false, code: "name_contradicts" });

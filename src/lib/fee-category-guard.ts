@@ -132,7 +132,7 @@ const ES_OUTGOING = "saliente|enviad";
  * v93 (#1912, review of #2639): whatever stands between "night" and "deposit box": "Night Drop Deposit
  * Box Late Fee", the double-spaced "Night  Deposit Box", "Night Drop/Deposit Box" (`NIGHT_DEPOSIT_NAME`).
  */
-const SAFE_DEPOSIT_BOX_NAME = /\bsafe(?:ty)?[\s-]*(?:deposit|box)|\bsdb\b|(?<!\bnight[\s\/-]+(?:drop[\s\/-]+)?)\bdeposit\s+box(?:es)?\b/i;
+const SAFE_DEPOSIT_BOX_NAME = /\bsafe(?:ty)?[\s-]*(?:deposit|box)|\bsdb\b|(?<!night[\s\/-]+(?:drop[\s\/-]+)?)\bdeposit\s+box(?:es)?\b/i;
 /**
  * v93 (#1912): a night depository named by its night deposit or night drop words, however they are
  * spaced or joined ("Night  Deposit Box", "Night Drop Deposit Box", "Night-Drop"). Never a safe deposit box.
