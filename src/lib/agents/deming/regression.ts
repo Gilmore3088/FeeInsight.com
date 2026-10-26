@@ -4,6 +4,7 @@ import { CONFIRMED_KIND } from "@/lib/agents/hamilton/second-look";
 import { LIMIT_GUARD_CHECK } from "@/lib/agents/hamilton/limit-guard";
 import { FIELD_REPLAY_CHECKS, replayCase, SOURCE_CHECK_NAME, type CaseInput } from "@/lib/agents/deming/checkers";
 import { CATEGORY_GUARD_CHECK } from "@/lib/agents/hamilton/category-guard";
+import { BUSINESS_SCHEDULE_CHECK } from "@/lib/agents/hamilton/business-schedule";
 import { severityFor, reasonCode, type Severity } from "@/lib/agents/deming/severity";
 
 import { CORRECTIVE_CHECK } from "./corrective-source";
@@ -22,7 +23,8 @@ type SqlTag = typeof sql;
  *    detail and on the scoreboard. A takedown case whose fee was restored is `retired`: a later
  *    check found the takedown wrong, so it is not a lesson. Takedowns frozen before their check had
  *    a replayer replay by their check name from the fee's own fields (`FIELD_REPLAY_CHECKS`,
- *    #2064): the category guard and the limit guard. The fresh audit's misses stay candidates the
+ *    #2064): the category guard, the limit guard, and the audience rules for business-schedule
+ *    takedowns (a business fee shown as a consumer one; `replayAudience`). The fresh audit's misses stay candidates the
  *    replay never reads: an audit alone never confirms a label (#1119).
  *
  * Deterministic: no model calls, no fee rows written. Cases are never deleted; their input is
@@ -82,6 +84,8 @@ interface TakedownRow {
   source: string | null;
   source_document_id: number | string | null;
   conditions: string | null;
+  /** The address of the document the fee was read from (the business-schedule read's input). */
+  document_url?: string | null;
 }
 
 interface TextRow {
@@ -137,6 +141,8 @@ export function buildTakedownCase(row: TakedownRow, texts: TextRow[]): NewCase {
     input = { kind: "limit_guard", canonical_fee_key: row.canonical_fee_key, fee_name: row.fee_name, amount, conditions: row.conditions };
   } else if (row.check_name === CATEGORY_GUARD_CHECK) {
     input = { kind: "category_guard", canonical_fee_key: row.canonical_fee_key, fee_name: row.fee_name, amount, conditions: row.conditions };
+  } else if (row.check_name === BUSINESS_SCHEDULE_CHECK) {
+    input = { kind: "audience", canonical_fee_key: row.canonical_fee_key, fee_name: row.fee_name, amount, conditions: row.conditions, document_url: row.document_url ?? null };
   } else if (row.check_name === SOURCE_CHECK_NAME) {
     // A Knox fee answers only to the document Knox read it from (`traceLiveFee`).
     const own = texts.filter((text) => Number(text.institution_id) === institutionId)
@@ -194,11 +200,13 @@ async function loadNewTakedowns(db: SqlTag, limit: number): Promise<TakedownRow[
     SELECT f.id AS feedback_id, f.check_name, f.evidence->>'reason' AS reason,
            fp.fee_published_id, fp.institution_id, fp.canonical_fee_key, fp.fee_name, fp.amount,
            fp.amount_kind, fp.rate_percent, fp.source_url, fp.lineage_ref,
-           fv.fee_raw_id, fr.source, fr.source_document_id, COALESCE(fr.extraction_note, fr.conditions) AS conditions
+           fv.fee_raw_id, fr.source, fr.source_document_id, COALESCE(fr.extraction_note, fr.conditions) AS conditions,
+           sd.document_url
       FROM pipeline_feedback f
       JOIN published_fee_records fp ON fp.fee_published_id = f.fee_published_id
       LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
       LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+      LEFT JOIN source_documents sd ON sd.id = fr.source_document_id
      WHERE f.kind = ${CONFIRMED_KIND}
        AND f.check_name IS NOT NULL
        AND f.check_name <> ${SOURCE_CHECK_NAME}
@@ -281,8 +289,8 @@ export function replayOutcome(
  * active until a person retires it. A restored fee the rule still catches was brought back by
  * another check (a second look), so its case retires as before.
  */
-export function replayFieldCase(row: { status: string; check_name: string | null; input: CaseInput; fee_live: boolean }) {
-  const replay = replayCase(row.input, row.check_name);
+export function replayFieldCase(row: { status: string; check_name: string | null; input: CaseInput; fee_live: boolean; document_url?: string | null }) {
+  const replay = replayCase(row.input, row.check_name, { documentUrl: row.document_url ?? null });
   const caught = replay?.caught ?? null;
   const ruleLetItBack = row.fee_live && caught === false && row.status === "active";
   const restored = row.fee_live && !ruleLetItBack;
@@ -364,18 +372,22 @@ export async function runDemingRegression({
     });
   }
   // Takedowns frozen as fee fields, replayed by their check name (#2064).
-  const fieldDue = await db<Array<CaseRow & { fee_live: boolean }>>`
+  // An old snapshot froze no document address: the case's document's own address stands in (the
+  // read used it), then the fee's address the case froze.
+  const fieldDue = await db<Array<CaseRow & { fee_live: boolean; document_url: string | null }>>`
     SELECT c.id, c.check_name, c.severity, c.status, c.input, c.fee_published_id,
+           COALESCE(sd.document_url, c.source_url) AS document_url,
            EXISTS (
              SELECT 1 FROM published_fee_records fp
               WHERE fp.fee_published_id = c.fee_published_id AND fp.rolled_back_at IS NULL
                 AND fp.canonical_fee_key IS NOT DISTINCT FROM c.input->>'canonical_fee_key'
            ) AS fee_live
       FROM eval_cases c
+      LEFT JOIN source_documents sd ON sd.id = c.source_document_id
      WHERE c.status IN ('active', 'candidate')
        AND c.dataset = 'regression'
        AND c.label_provenance = 'takedown_confirmed'
-       AND (c.input->>'kind' = 'category_guard'
+       AND (c.input->>'kind' IN ('category_guard', 'audience')
             OR (c.input->>'kind' = 'unreplayable' AND c.check_name = ANY(${[...FIELD_REPLAY_CHECKS]}::text[])))
      ORDER BY c.last_checked_at NULLS FIRST, c.id
      LIMIT ${fieldLimit}

@@ -98,6 +98,16 @@ export const DEMING_LESSONS: AgentLesson[] = [
     since: "2026-10-25",
   },
   {
+    id: "issue-2064-replay-audience-against-every-rule-that-decides-it",
+    agent: "deming",
+    stage: "regression replay",
+    lesson: "Replay a confirmed consumer/business mix-up against every rule that decides audience, in the order the pipeline applies them, not only the check that caught it. Darwin's audience decision runs first and the business-schedule read judges only fees Darwin left unknown, so a Darwin read of consumer or both lets a business fee through even while the business-schedule read would still catch it. Freeze the document's address with the case, because the read judges the address; for an old snapshot that froze none, replay with its document's own address. Keep a catch that needed the page text (a business-only footnote) a candidate, and when the read has a SQL form and a code form, test that they agree so the replay judges the deployed rule.",
+    why: "414 confirmed business-schedule takedowns sat as unreplayable cases, so a change to Darwin's audience words or to the business-schedule read could put a business price back on a consumer page with no regression alarm; 413 of them replay as caught from their name and document address alone.",
+    evidence: { issues: [2064], prs: [], files: ["src/lib/agents/deming/checkers.ts", "src/lib/agents/deming/regression.ts", "src/lib/agents/hamilton/business-schedule.ts"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
+  {
     id: "issue-2066-trace-every-live-miss",
     agent: "deming",
     stage: "loop proof",

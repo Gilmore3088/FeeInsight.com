@@ -60,6 +60,26 @@ describe("replayCase", () => {
     expect(replayCase(takedown)).toBeNull();
   });
 
+  it("replays a business-schedule takedown against today's audience rules (#2064)", () => {
+    const old = { kind: "unreplayable" as const, canonical_fee_key: "overdraft", fee_name: "Balancing Checkbook", amount: 15, conditions: null };
+    // The document's address names the business schedule: Darwin reads business.
+    expect(replayCase(old, "hamilton.business_schedule", { documentUrl: "https://www.apgfcu.com/business-service-charges-and-fees-list.html" }))
+      .toEqual({ caught: true, verdict: "darwin_reads_business" });
+    // A business address the read sees though Darwin's word reading does not.
+    expect(replayCase({ kind: "audience", canonical_fee_key: "wire_domestic_outgoing", fee_name: "Outgoing Wire", amount: 30, conditions: null, document_url: "https://bank.test/treasury/fees.pdf" }))
+      .toEqual({ caught: true, verdict: "business_schedule_read" });
+    // The fee's own name says business.
+    expect(replayCase({ ...old, fee_name: "Commercial NSF Fee per item" }, "hamilton.business_schedule", { documentUrl: "https://bank.test/fees.pdf" })?.caught).toBe(true);
+    // A business-only footnote needs the page: not caught, so it stays a candidate.
+    expect(replayCase({ ...old, fee_name: "Overdraft - Insufficient Funds / Uncollected" }, "hamilton.business_schedule", { documentUrl: "https://bank.test/Miscellaneous-Bank-Fees.pdf" }))
+      .toEqual({ caught: false, verdict: "passes_audience_rules" });
+    // Darwin reading a business fee as personal lets it through again.
+    expect(replayCase({ ...old, fee_name: "Personal Overdraft Fee" }, "hamilton.business_schedule", { documentUrl: "https://bank.test/business/fees.pdf" }))
+      .toEqual({ caught: false, verdict: "darwin_reads_consumer" });
+    // No document address given: only the name can say business.
+    expect(replayCase(old, "hamilton.business_schedule")?.caught).toBe(false);
+  });
+
   it("passes a real fee through the limit guard", () => {
     expect(replayCase({ kind: "limit_guard", canonical_fee_key: "overdraft", fee_name: "Overdraft Fee", amount: 35, conditions: null }))
       .toEqual({ caught: false, verdict: "passes_limit_guard" });
@@ -99,6 +119,13 @@ describe("buildTakedownCase", () => {
     expect(built.input).toMatchObject({ kind: "category_guard", canonical_fee_key: "stop_payment", amount: 25 });
     expect(built.status).toBe("active");
     expect(built.lastVerdict).toBe("name_contradicts");
+  });
+
+  it("freezes a business-schedule takedown with its document's address, as an audience case (#2064)", () => {
+    const built = buildTakedownCase({ ...baseRow, check_name: "hamilton.business_schedule", canonical_fee_key: "monthly_maintenance", fee_name: "Monthly Service Charge", amount: "20", reason: "business_schedule: consumer fee #9", document_url: "https://bank.test/commercial-fee-schedule.pdf" }, []);
+    expect(built.input).toEqual({ kind: "audience", canonical_fee_key: "monthly_maintenance", fee_name: "Monthly Service Charge", amount: 20, conditions: null, document_url: "https://bank.test/commercial-fee-schedule.pdf" });
+    expect(built.status).toBe("active");
+    expect(built.severity).toBe("critical");
   });
 
   it("gives a Knox source-check case only the document Knox read", () => {
@@ -143,6 +170,14 @@ describe("replayFieldCase", () => {
     // A candidate the guard never caught retires when its fee comes back.
     expect(replayFieldCase({ ...fine, status: "candidate", fee_live: true }).outcome.status).toBe("retired");
   });
+  it("flags an active audience case today's rules would let through again (#2064)", () => {
+    const audience = { status: "active", check_name: "hamilton.business_schedule", fee_live: false, input: { kind: "audience" as const, canonical_fee_key: "overdraft", fee_name: "Overdraft Fee", amount: 35, conditions: null, document_url: "https://bank.test/business-fee-schedule.pdf" } };
+    expect(replayFieldCase(audience).outcome).toEqual({ status: "active", regression: false });
+    // The same fee read from an address that no longer names the business schedule: the rule regressed.
+    expect(replayFieldCase({ ...audience, input: { ...audience.input, document_url: "https://bank.test/fee-schedule.pdf" } }))
+      .toMatchObject({ replay: { caught: false, verdict: "passes_audience_rules" }, outcome: { status: "active", regression: true } });
+  });
+
   it("flags an active case the guard no longer catches", () => {
     const fine = { ...categoryCase, status: "active", input: { ...categoryCase.input, fee_name: "Stop Payment Fee" } };
     expect(replayFieldCase({ ...fine, fee_live: false }).outcome).toEqual({ status: "active", regression: true });

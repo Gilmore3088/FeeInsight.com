@@ -43,7 +43,7 @@ export const BUSINESS_SCHEDULE_ROLLBACK_LIMIT = 200;
  * FEES | Skip-a-Pay", Apex's "Business Analysis Checking: replacement, and drilling"), 3 of a
  * 10-fee spot check on 9 Oct. 101 such live fees then, 51 beside a consumer fee.
  */
-const BUSINESS_NAME_SQL = (column: string) =>
+export const BUSINESS_NAME_SQL = (column: string) =>
   `(${column} ~* '^\\s*(business|commercial)\\M[^|:]*$' AND ${column} !~* '^\\s*business\\s+days?\\M')`;
 
 /** A footnote that limits its fee to business accounts ("Only applicable to business accounts."). */
@@ -126,9 +126,25 @@ export function footnoteMarksBusiness(text: string, name: string, notes: PageFoo
 }
 
 /** True for a document address whose path names a business-only schedule (SQL, host removed). */
-const BUSINESS_DOC_SQL = (column: string) =>
+export const BUSINESS_DOC_SQL = (column: string) =>
   `(regexp_replace(${column}, '^https?://[^/]+', '') ~* '${BUSINESS_PATH_SQL}'
     AND regexp_replace(${column}, '^https?://[^/]+', '') !~* '${CONSUMER_PATH_SQL}')`;
+
+const BUSINESS_PATH = new RegExp(BUSINESS_PATH_SQL, "i");
+const CONSUMER_PATH = new RegExp(CONSUMER_PATH_SQL, "i");
+
+/**
+ * Pure: the read above in code, for Deming's audience replay (#2064). True when the fee's own name
+ * says business (`BUSINESS_NAME_SQL`) or its document's address, host removed, names a
+ * business-only schedule (`BUSINESS_DOC_SQL`). A business-only footnote needs the page text, so it
+ * is not here. Change this with the SQL: `regression-field-replay.db.test.ts` checks they agree.
+ */
+export function readsAsBusinessSchedule(feeName: string | null | undefined, documentUrl: string | null | undefined): boolean {
+  const name = feeName ?? "";
+  if (/^\s*(business|commercial)\b[^|:]*$/i.test(name) && !/^\s*business\s+days?\b/i.test(name)) return true;
+  const path = (documentUrl ?? "").replace(/^https?:\/\/[^/]+/, "");
+  return BUSINESS_PATH.test(path) && !CONSUMER_PATH.test(path);
+}
 
 interface BusinessFeeRow {
   fee_published_id: number | string;
