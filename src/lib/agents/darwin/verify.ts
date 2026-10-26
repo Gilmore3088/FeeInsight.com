@@ -1865,7 +1865,9 @@ export async function runDarwinVerify(
         if (admission) requireInternationalVerification(admission, canonicalFeeKey, categoryOf(admission.row));
         if (admission) requirePaidReturnedVerification(admission, canonicalFeeKey);
         // Guard v84 (#1788): a generic monthly charge is read under the heading its stored text prints above it.
-        let reasonCode = verificationReasonCode(withHeadingAbove(canonicalFeeKey, row.fee_name, row, sourceText), canonicalFeeKey, learnedEnvelopes);
+        // Guard v100 (#1912): and a lock box filed as a safe deposit box with its stored text's
+        // `commercial_lockbox`, so a lockbox service its line or heading names is refused here too.
+        let reasonCode = verificationReasonCode(withHeadingAbove(canonicalFeeKey, row.fee_name, withCollectionSection(canonicalFeeKey, row.fee_name, row, sourceText), sourceText), canonicalFeeKey, learnedEnvelopes);
         const categoryHold = reasonCode ? null : pendingCategoryLesson(canonicalFeeKey, row.fee_name);
         if (categoryHold) reasonCode = "category_lesson_pending";
         if (!reasonCode && !statedInOwnSource(row, rowSourceTexts, canonicalFeeKey)) reasonCode = "not_in_source";

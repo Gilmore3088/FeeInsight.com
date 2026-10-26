@@ -213,7 +213,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-351 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+353 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
 ### Extraction and fee reading (57)
 
@@ -288,8 +288,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A provider refusal inside a streamed response never reaches the route's catch; map it in the stream's `onError`. — [finding](findings/2026-10-09-provider-limit-blank-answers.md) — Guard: `src/lib/ai-provider.test.ts` (+2 more)
 - 2026-10-09 — The Console usage limit did not trip the provider stop, and the verdict score starved. — [finding](findings/2026-10-09-api-usage-limit-did-not-trip-provider-stop.md) — Guard: `src/lib/ai-provider-usage.test.ts` (+1 more)
 
-### Categorisation and audience (28)
+### Categorisation and audience (29)
 
+- 2026-10-26 — "Lock box" names two things: look for the box (a size, key, drilling, rent or late charge) before filing a lock box as a safe deposit box; a lock box service with no box is a business's remittance processing, which no fee type holds. Forte Bank's "Lock Box Service, per month" $225 went live as a safe deposit box (135270, #1912). — [finding](findings/2026-10-26-commercial-lockbox-not-safe-deposit-box.md) — Agent lesson: knox/issue-1912-commercial-lockbox; Guard: `src/lib/custom-report/commercial-lockbox.test.ts`, `src/lib/agents/knox/commercial-lockbox.test.ts`
 - 2026-10-26 — "Return item" words do not make a fee NSF: read the whole row, including the note a PDF wraps onto the next line, for who returned the item; Bellco's "Bill Pay Return Item Fee" $10 "(per item returned by payee)" went live as NSF (#1912). — [finding](findings/2026-10-26-payee-returned-bill-pay.md) — Agent lesson: knox/issue-1912-payee-returned-bill-pay; Guard: `src/lib/custom-report/payee-returned-bill-pay.test.ts`, `src/lib/agents/knox/payee-returned-bill-pay.test.ts`
 - 2026-10-26 — A fee whose own name names a loan (a home equity loan or line, a HELOC, a line of credit) is the loan's fee, however much its words sound like an account's NSF or overdraft fee; an overdraft line of credit is the account's overdraft protection, not a loan. — [finding](findings/2026-10-26-equity-line-nsf-is-a-loan-fee.md) — Guard: guard v97 tests in `fee-category-guard.test.ts` and `hamilton/category-guard.test.ts`; Agent lesson: `darwin/issue-1905-equity-line-nsf`
 - 2026-10-26 — A category's price range is set for its main fee: check it against every kind of fee a re-file moves there (a box late fee is a late charge, not rent), and match a name's words however they are spaced ("Night Drop Deposit Box" is never the safe deposit box). — [finding](findings/2026-10-26-rent-floor-blocked-box-late-refile.md) — Guard: `box-late-envelope.test.ts`, guard v96 tests; Agent lesson: `darwin/issue-1912-box-late-floor-and-night-drop`
@@ -319,8 +320,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A consumer comparison needs the payer checked as well as the category. — [finding](findings/2026-10-09-business-wire-as-consumer-price.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 - 2026-10-09 — Returned bonds and coupons were filed as NSF. — [finding](findings/2026-10-09-bond-return-filed-nsf.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 
-### Verification and publication (64)
+### Verification and publication (65)
 
+- 2026-10-26 — A figure a name leads into or completes is part of the name: publish cut "monthly fee if balance falls below $2,500.00" to "... falls below", and the re-read never settled it because the whole name was its own raw read; 19 live fees showed the cut (#1443). — [finding](findings/2026-10-26-publish-cut-the-threshold.md) — Agent lesson: hamilton/issue-1443-keep-the-threshold; Guard: `src/lib/agents/hamilton/publish.test.ts`, `src/lib/agents/knox/reread-feedback.test.ts`
 - 2026-10-26 — A tier's own document is known by what it is, not only a file named fees: a Bank On or premier account's truth-in-savings disclosure, terms and charges or summary of fees prices that account only, so its $0s are perks unless the text says the bank charges none of that fee; 13 live $0s at 3 institutions newly match, read through a narrow recheck cohort behind its switch (#1397). — [finding](findings/2026-10-26-tier-schedule-addresses.md) — Agent lesson: darwin/issue-1397-tier-disclosure-addresses; Guard: `src/lib/agents/darwin/tier-perk.test.ts`, `src/lib/agents/darwin/verified-recheck.db.test.ts`
 - 2026-10-26 — Every path that brings a fee back live calls the same shared category step with the same stored-text context: the rules re-check's same-read restore skipped it, so an NSF return printed in a collection section could come back as NSF; no restore verdict changed on Oct 26 (731 proposed restores before and after) (#1912). — [finding](findings/2026-10-26-same-read-restore-skipped-category-context.md) — Agent lesson: hamilton/issue-1912-every-restore-path-checks-category; Guard: `src/lib/agents/hamilton/rules-recheck.test.ts`
 - 2026-10-26 — A path that brings a fee back live must judge it with the same stored-text context as the paths that verify it and keep it live: the restore bar now reads the collection section, safe deposit box section and payee note from the fee's stored text, as Darwin and the live guard do; no restore verdict changed on Oct 26 (0 of 67 rows whose category step flips) (#1912). — [finding](findings/2026-10-26-restore-bar-reads-stored-text-context.md) — Agent lesson: hamilton/issue-1912-restore-reads-the-same-text; Guard: `src/lib/agents/hamilton/restore-guard.test.ts`
@@ -613,7 +615,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (316 in all).
+counts as of this index (318 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
@@ -621,10 +623,10 @@ counts as of this index (316 in all).
 | magellan | 27 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
 | hoovie | 12 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
 | rosetta | 14 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
-| knox | 84 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
+| knox | 85 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
 | darwin | 50 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 40 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
-| hamilton | 63 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
+| hamilton | 64 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
 | deming | 18 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
 
 ## Before 2026-10-10

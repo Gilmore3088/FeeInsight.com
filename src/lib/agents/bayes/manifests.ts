@@ -566,6 +566,8 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
   const manifests: ReplayManifest[] = [
     // v83 (#2151): faithful wrapped bullets use the existing due-text selection.
     // No stale-floor increase or historical rejection replay accompanies this fix.
+    // v132 (#1912): a commercial lockbox service is no safe deposit box (held unclassified); the live
+    // fee it reached (135270) comes down through guard v100's catch-up, not a replay. Floor stays v97.
     {
       key: "knox.rules",
       owner: "knox",
@@ -636,6 +638,8 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // the second look. Dry-run counts in the PR.
     // v99 (Oct 26, #1912): a bill pay return the payee sent back (its name, or its stored line or the
     // note wrapped onto the next) fails NSF and re-files to bill_pay; 1 live fee (85460) on the dry run.
+    // v100 (Oct 26, #1912): a commercial lockbox service (its name, or its stored line or business
+    // heading) fails safe_deposit_box with no re-file; 1 live fee (135270) comes down on the dry run.
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",
