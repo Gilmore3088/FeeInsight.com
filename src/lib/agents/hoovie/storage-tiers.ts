@@ -310,7 +310,7 @@ export async function exportCallPeriod(
  * free. Export and atomic pruning require their separate switches. Default operation is read-only.
  */
 export async function runColdTier(
-  options: { db: SqlTag; dryRun?: boolean; exportLive?: boolean; pruneLive?: boolean; restore?: { source: "ffiec" | "ncua"; period: string }; store?: ColdStore; runId?: number | null },
+  options: { db: SqlTag; dryRun?: boolean; exportLive?: boolean; pruneLive?: boolean; approvedExportsOnly?: boolean; restore?: { source: "ffiec" | "ncua"; period: string }; store?: ColdStore; runId?: number | null },
 ): Promise<ColdTierResult> {
   const { db } = options;
   const store = options.store ?? getColdStore();
@@ -376,7 +376,8 @@ export async function runColdTier(
   }
   if (exportLive && result.indexReady) {
     for (const table of result.tables) {
-      const next = table.cold.filter((p) => p.file === "none").slice(0, EXPORT_PARTITIONS_PER_RUN);
+      const next = table.cold.filter((p) => p.file === "none" && (!options.approvedExportsOnly
+        || CALL_PERIOD_PRUNE_MANIFEST.some((m) => m.source === p.source && m.period === p.period))).slice(0, EXPORT_PARTITIONS_PER_RUN);
       for (const partition of next) {
         const exported = await exportCallPeriod(db, store, { source: partition.source, period: partition.period, avgRowBytes: table.avgRowBytes, runId: options.runId });
         result.exported.push(exported);

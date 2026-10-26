@@ -1,6 +1,11 @@
 # Database growth controls — October 25, 2026
 
-Status: implementation candidate on `codex/database-growth-controls`; production rollout is not active.
+Status: James approved the staged production rollout on October 26, 2026. PR #2668 merged as
+`fb42543af7fffae603d0e0a7a9f6030ade68e8c2`; all eight CI jobs passed on the reviewed head.
+Production deployment `dpl_9ZsGsD8sQnLgrmTh7ukRdZcaFhZw` is READY. Migration 79 is recorded
+in production; its three functions are invoker functions with anonymous execute revoked.
+The explicit apply attempt returned already-exists; the installed migration was verified rather
+than reapplied. No historical conversion or pruning has been activated yet.
 Existing owners: Foundation #1808 (log growth), Hoovie #2225 / #1783 (public data), and the archive foundation from closed #1870.
 
 ## Changes
@@ -42,7 +47,7 @@ At the measured table-average size this is roughly 0.5–0.7 GiB of reusable Pos
 ## Review and rollout
 
 1. Run guards, typecheck, lint, full unit suite, agent suite and isolated PostgreSQL integration tests. Review the exact diff against current main. Keep this migration-dependent PR unmerged until the schema rollout is approved.
-2. Deploy compatible readers before applying migration 78. Ensure old workers are drained before allowing metadata compaction or pruning. Verify dictionary-expanded facts equal originals and capture the current table/index sizes. The migration sets a 3-second lock timeout; retry it later if busy, rather than increasing the timeout indiscriminately. It also proposes 2% autovacuum/analyze scale factors on the two update-heavy filing tables; this is a production configuration change.
+2. Deploy compatible readers before applying migration 79. Ensure old workers are drained before allowing metadata compaction or pruning. Verify dictionary-expanded facts equal originals and capture the current table/index sizes. The migration sets a 3-second lock timeout; retry it later if busy, rather than increasing the timeout indiscriminately. It also proposes 2% autovacuum/analyze scale factors on the two update-heavy filing tables; this is a production configuration change.
 3. Enable only `STORAGE_COMPACTION_LIVE` first, after approval. Inspect a single completed storage-step receipt and original/expanded equality before permitting more batches. Monitor WAL, latency and dead tuples. Calls remain in the existing run ledger and obey its pipeline pause. Failed savepoints do not advance successful cursors.
 4. Run the archive planner with twelve periods hot. Record each source/date, exact row count, estimated bytes, archive hash, reader parity and retained POR count. Enable export separately, verify one file, and rehearse restore before approving pruning. Enabling the boolean alone is not authorization for every future deletion.
 5. Before the first prune, confirm every consumer needing old detail uses the cold path or is covered by the twelve-quarter/POR retention policy. Corrections to an archived financial period require restoring it first; a loader must not silently recreate it. A file failing checksum, current-row comparison, coverage, row cap or lock deadline stays hot.

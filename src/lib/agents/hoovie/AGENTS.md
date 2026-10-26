@@ -262,9 +262,15 @@ empty they fall back to the per-request SQL (`call-reports-legacy.ts`) and log a
 
 ## Compact public-data storage
 
-Migration 78 adds `call_report_item_definitions`, a private `call_report_item_facts` invoker view,
+Migration 79 adds `call_report_item_definitions`, a private `call_report_item_facts` invoker view,
 unchanged-aware compact ingestion and bounded metadata conversion/expansion. Compatible readers
 fall back before migration. `storage-compaction.ts` runs inside Atlas's existing storage step,
 off by default: at most 5,000 rows per table, exact HMDA before-images, malformed rows retained.
 HMDA preserves every statistic in versioned tuples; the manifest-pinned 2025 year is excluded.
 The migration changes no existing observations. See the dated rollout for acceptance and rollback.
+
+James approved the staged rollout on October 26. An admin Atlas workflow with source
+`atlas.storage-rollout.2026-10-26` can request one `compact` or `export` action through the
+existing storage step. Each compaction remains bounded to 5,000 rows per table; exports are
+restricted to the four reviewed source/periods. Daily switches remain off. This path never
+prunes or restores, and invalid actions fail before the storage step writes.
