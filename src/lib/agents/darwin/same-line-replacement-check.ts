@@ -53,7 +53,7 @@ type SqlTag = typeof sql;
 export const SAME_LINE_REPLACEMENT_CHECK = "darwin.same_line_replacement";
 export const SAME_LINE_REPLACEMENT_CHECK_VERSION = 1;
 /** The switch: on takes matches down after the second look; off only reports. */
-export const SAME_LINE_REPLACEMENT_TAKEDOWN_LIVE = false;
+export const SAME_LINE_REPLACEMENT_TAKEDOWN_LIVE = true;
 /** Live fees read per step (a few dozen; the cap is a guard). */
 export const SAME_LINE_REPLACEMENT_LIMIT = 5_000;
 export const SAME_LINE_REPLACEMENT_SAMPLES = 20;

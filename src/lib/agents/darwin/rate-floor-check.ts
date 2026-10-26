@@ -36,7 +36,7 @@ type SqlTag = typeof sql;
 export const RATE_FLOOR_CHECK = "darwin.rate_floor";
 export const RATE_FLOOR_CHECK_VERSION = 1;
 /** The switch: off until a sample of the dry run is read clean. Set to true to take the matches down. */
-export const RATE_FLOOR_TAKEDOWN_LIVE = false;
+export const RATE_FLOOR_TAKEDOWN_LIVE = true;
 export const RATE_FLOOR_REASON = "rate_floor";
 export const RATE_FLOOR_FLAG = "rate_floor";
 export const RATE_FLOOR_LIMIT = 1_000;

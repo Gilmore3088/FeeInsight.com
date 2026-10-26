@@ -62,7 +62,7 @@ type SqlTag = typeof sql;
 export const LOAN_SECTION_CHECK = "darwin.loan_section";
 export const LOAN_SECTION_CHECK_VERSION = 1;
 /** The switch (see the module note): off until James's yes on the dry run; a one-line change turns it on. */
-export const LOAN_SECTION_TAKEDOWN_LIVE: boolean = false;
+export const LOAN_SECTION_TAKEDOWN_LIVE: boolean = true;
 export const LOAN_SECTION_REASON = "loan_section";
 export const LOAN_SECTION_FLAG = "loan_section";
 /** Documents read per step. */

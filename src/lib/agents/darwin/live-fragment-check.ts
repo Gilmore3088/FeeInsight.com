@@ -116,7 +116,7 @@ export const FRAGMENT_NAME_TAKEDOWN_LIVE = true;
  * goes on with James's go, after the dry-run count. The count SQL (`liveFragmentCountSql`) counts
  * the check as it runs with the switch off.
  */
-export const QUALIFIED_FRAGMENT_TAKEDOWN_LIVE = false;
+export const QUALIFIED_FRAGMENT_TAKEDOWN_LIVE = true;
 /** Live fees read per step. A name-only regex read, so a large share; the live table takes about (live fees / 2,000) steps a pass. */
 export const LIVE_FRAGMENT_BATCH = 2_000;
 export const LIVE_FRAGMENT_SAMPLES = 20;

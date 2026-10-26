@@ -31,7 +31,7 @@ export const ACCOUNT_TYPE_HOLD_FEEDBACK_KIND = "account_type_hold";
  * dry run still counts the rows it would relabel (a read on the check's own rows) and a
  * real run reads nothing; on, a real run relabels them. Once it has run, the part can be removed.
  */
-export const ACCOUNT_TYPE_HOLD_RELEASE_RELABEL_ON: boolean = false;
+export const ACCOUNT_TYPE_HOLD_RELEASE_RELABEL_ON: boolean = true;
 export const ACCOUNT_TYPE_HOLD_RELEASE_RELABEL_CHECK = "learning.account_type_hold_release_relabel";
 /**
  * The dedupe-key prefix of the hold's release rows, matched with `left(...) = prefix`. Not a

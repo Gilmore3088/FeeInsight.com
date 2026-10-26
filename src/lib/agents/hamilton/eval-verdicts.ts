@@ -647,7 +647,7 @@ export const EVAL_VERDICT_SECOND_BATCH: ReadonlySet<number> = new Set([120626]);
  * 8 "$X discount" lines), listed in #1696's PR. It turns on by PR; once those are down the list
  * empties and the switch goes.
  */
-export const EVAL_VERDICT_SECOND_BATCH_ACTS = false;
+export const EVAL_VERDICT_SECOND_BATCH_ACTS = true;
 
 /**
  * True when a name rule fails the fee only under v9 (v8 passes it). While

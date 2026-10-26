@@ -231,7 +231,7 @@ export function nonCustomerCashiersCheck(canonicalFeeKey: string, name: string, 
  * Transfer – Outgoing" $40 beside "Wire Transfers – Outgoing" $20). Turning it on bumps
  * `CATEGORY_GUARD_VERSION`, so Darwin's re-check judges every live wire again.
  */
-export const INTL_ABBREVIATION_REFILE_LIVE = false;
+export const INTL_ABBREVIATION_REFILE_LIVE = true;
 /** The international wire a domestic wire's abbreviated name re-files to, while the rule is live; null otherwise. Pure. */
 export function intlAbbreviationRefile(canonicalFeeKey: string, name: string, live: boolean = INTL_ABBREVIATION_REFILE_LIVE): string | null {
   if (!live) return null;

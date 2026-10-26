@@ -39,7 +39,7 @@ type SqlTag = typeof sql;
 export const BANDED_ZERO_CHECK = "darwin.banded_zero";
 export const BANDED_ZERO_CHECK_VERSION = 1;
 /** The switch: off until the dry run is read clean. Set to true to take the matches down. */
-export const BANDED_ZERO_TAKEDOWN_LIVE = false;
+export const BANDED_ZERO_TAKEDOWN_LIVE = true;
 export const BANDED_ZERO_REASON = "banded_zero";
 export const BANDED_ZERO_FLAG = "banded_zero";
 export const BANDED_ZERO_LIMIT = 1_000;
