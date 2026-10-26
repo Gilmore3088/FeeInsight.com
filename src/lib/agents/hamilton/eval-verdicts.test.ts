@@ -274,6 +274,9 @@ describe("v9: a discount the stored line prints at the fee's own amount (#1696)"
       ["paper_statement", "There is no monthly fee; stop payment $30, paper statement $2", 2],
       ["overdraft", "There is no charge for the first 2 items; $5, then $35 per item", 35],
       ["overdraft", "There is no fee for overdrafts: $5 or less; $35 per item", 35],
+      // A cap word that does not end the clause leaves the price a price.
+      ["overdraft", "No fee for overdrafts under $5; $35 maximum per item", 35],
+      ["wire_intl_outgoing", "No fee for incoming wires; outgoing $25 or more for international", 25],
     ] as const) {
       expect(ruleFor(key, name, amount), name).toBeNull();
       expect(ruleFor(key, name, amount, null, { version: 8 }), name).toBeNull();

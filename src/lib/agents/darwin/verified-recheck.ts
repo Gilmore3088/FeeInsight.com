@@ -632,7 +632,7 @@ export async function recheckVerifiedFees(db: SqlTag, options: RecheckOptions): 
             return { otherCode: false as const, action, code: check?.code, publishedId, attemptId, feedbackIds, flagged, waiting, cleared, passed: !wasRejected && !check };
           });
           execution.assessed += 1;
-          if ("secondBatch" in settled) { result.secondBatchDeferred!.push(settled.secondBatch); continue; }
+          if ("secondBatch" in settled && settled.secondBatch != null) { result.secondBatchDeferred!.push(settled.secondBatch); continue; }
           if (settled.otherCode) { result.secondLookOtherCode = (result.secondLookOtherCode ?? 0) + 1; continue; }
           execution.settled += 1; result.checked += 1;
           if (settled.passed) result.passed += 1;

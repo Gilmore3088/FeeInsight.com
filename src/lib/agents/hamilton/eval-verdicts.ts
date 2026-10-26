@@ -363,8 +363,9 @@ const FEE_FREE_LEAD = /^\s*\*?\s*fee-free\b/i;
 const CLAUSE_BREAK = /[;,:|]|\.\s/g;
 const DOLLAR_PRICES = /\$\s?(\d[\d,]*(?:\.\d{1,2})?)/g;
 /** v9: a comma or colon followed by a condition still belongs to the free clause ("no monthly service fee, after a $50 opening deposit"). */
-/** v9: words after a price that make it a cap or a threshold, not a fee's price ("$175 daily max", "$5 or less"). */
-const CAP_AFTER_PRICE = /^\s*(?:(?:daily|per\s+day|monthly|per\s+month|annual|yearly)\s+)?(?:max|maximum|cap|limit)\b|^\s*or\s+(?:less|under|below|more|over|above)\b/i;
+/** v9: words after a price that make it a cap or a threshold, not a fee's price ("$175 daily max", "$5 or less"). The cap word
+ * must end the clause, so "$35 maximum per item" and "$25 or more" stay prices. */
+const CAP_AFTER_PRICE = /^\s*(?:(?:(?:daily|per\s+day|monthly|per\s+month|annual|yearly)\s+)?(?:max|maximum|cap|limit)\b\.?(?:\s+(?:per\s+)?(?:day|month|year|statement|cycle))?|or\s+(?:less|under|below))\s*(?:[;.,)]|$)/i;
 const CONDITION_AFTER_BREAK = /^\s*(?:after|with|when|if|unless|until|once|provided|upon|as\s+long\s+as)\b/i;
 function laterClausePricesAmount(name: string, amount: number | null | undefined, v9: boolean): boolean {
   if (amount == null) return false;
