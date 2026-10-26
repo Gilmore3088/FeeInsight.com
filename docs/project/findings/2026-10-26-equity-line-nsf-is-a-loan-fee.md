@@ -12,11 +12,12 @@ beside the same row from the page's earlier copy, 122342, which a hand fold had 
 `other_lending_fee` for #1655. The category guard refused a home equity line's stop payment by name
 (v80) but read no loan product in NSF or overdraft names. The loan section re-check (#2703,
 `loan-section-check.ts`) reads the section heading instead and waits behind its switch. About 6 live
-fees carry such a name (count in the PR).
+fees carry such a name: 5 in the read-only dry run (3 move in place, 2 come down beside a live twin).
 
 **Fix (guard v97):** `LOAN_LINE_NAME` in `src/lib/fee-category-guard.ts` names a HELOC, a home equity
 loan or line, an equity loan or line, or a line of credit that is not an overdraft (protection) or OD
-line of credit, in a name that names no checking, savings, share or deposit account (as v80's stop
+line of credit (nor advice text such as "Overdraft Protection or lines of credit can help"), in a
+name that does not merely include one among others ("Return Item Fee (including Home Equity)") and names no checking, savings, share or deposit account (as v80's stop
 payment rule). NSF and overdraft refuse such a name, and the guard re-files it to `other_lending_fee`
 (`LOAN_LINE_TARGET`), after the transfer and paid-item re-files so those keep their own types.
 Hamilton's live guard moves it in place (`RESTORE_REFILES`) unless a live other lending fee at the same

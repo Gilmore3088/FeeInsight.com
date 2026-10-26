@@ -2889,6 +2889,10 @@ describe("guard v97: an NSF or overdraft fee named for a home equity line, a HEL
       "Overdraft Protection Line of Credit Transfer",
       "OD Line of Credit",
       "Insufficient Funds (Overdraft Line of Credit)",
+      // Live 41362: advice text after an NSF line names overdraft protection "or lines of credit".
+      "Non-Sufficient Funds (NSF) - Check/ACH/Card Setting up eAlerts and Overdraft Protection or lines of credit can help avoi",
+      // Live 78302: a general returned item fee that also covers home equity lines.
+      "Return Item Fee (including Home Equity)",
     ]) {
       expect(LOAN_LINE_NAME.test(name), name).toBe(false);
     }

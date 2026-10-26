@@ -271,12 +271,14 @@ const LOAN_PAYMENT = /^(?![\s\S]*\bdeposit)[\s\S]*\bloan\s+payments?\b/i;
  * "HELOC NSF fee", "Line of Credit Insufficient Funds". As v80 reads a home equity line's stop payment,
  * one that also names a deposit account ("NSF fee (checking or savings)", "Returned Item - Checking /
  * Home Equity Line") stays the account's. An overdraft (protection) line of credit ("Overdraft Line of
- * Credit transfer", "OD Line of Credit") is a checking account's overdraft protection, not a loan.
+ * Credit transfer", "OD Line of Credit", "Overdraft Protection or lines of credit can help avoid") is a
+ * checking account's overdraft protection, not a loan, and a fee that only includes one among others
+ * ("Return Item Fee (including Home Equity)") is the account's general fee.
  * Mirrored for the read-only dry run in Postgres as
- * `^(?!.*\m(checking|savings|shares?|deposits?)\M).*(\mhelocs?\M|\mhome\s+equity\M|\mequity\s+(lines?|loans?)\M|(?<!\m(overdraft|od)\s+(protection\s+)?)\mlines?\s+of\s+credit\M)`.
+ * `^(?!.*\m(checking|savings|shares?|deposits?)\M)(?!.*\minclud(es|ing)\s+(a\s+|the\s+)?(helocs?|home|equity|lines?)\M).*(\mhelocs?\M|\mhome\s+equity\M|\mequity\s+(lines?|loans?)\M|(?<!\m(overdraft|od)\s+(protection\s+)?((or|and)\s+|/\s*)?)\mlines?\s+of\s+credit\M)`.
  */
 export const LOAN_LINE_NAME =
-  /^(?![\s\S]*\b(?:checking|savings|shares?|deposits?)\b)[\s\S]*(?:\bhelocs?\b|\bhome\s+equity\b|\bequity\s+(?:lines?|loans?)\b|(?<!\b(?:overdraft|od)\s+(?:protection\s+)?)\blines?\s+of\s+credit\b)/i;
+  /^(?![\s\S]*\b(?:checking|savings|shares?|deposits?)\b)(?![\s\S]*\binclud(?:es|ing)\s+(?:a\s+|the\s+)?(?:helocs?|home|equity|lines?)\b)[\s\S]*(?:\bhelocs?\b|\bhome\s+equity\b|\bequity\s+(?:lines?|loans?)\b|(?<!\b(?:overdraft|od)\s+(?:protection\s+)?(?:(?:or|and)\s+|\/\s*)?)\blines?\s+of\s+credit\b)/i;
 
 /**
  * v69: a monthly ATM add-on or plan ("Power Checking +ATM Freedom" $2.99 a month, 114331; "Add ATM
