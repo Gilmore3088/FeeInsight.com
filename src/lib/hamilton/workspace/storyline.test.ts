@@ -361,9 +361,9 @@ describe("storyline", () => {
         dailyFeeLimit: null,
         ...(several && i === 0 ? { several: { low: 5, high: 15, fees: [{ name: "Late fee A", amount: 5 }, { name: "Late fee B", amount: 15 }] } } : {}),
       }));
-    const market = (current: number, several = false) => {
-      const seg = buildSegmentResearch({ segment, feeCategory: "overdraft", institutionsInSegment: 25, members: members(several), current, ownInSegment: true });
-      return buildFeeAnswer(research({ current, segment: seg }), { focus: "competitors" }).storyline!.lenses.market.map((f) => f.text);
+    const market = (current: number, several = false, seg0 = segment, subjectName?: string) => {
+      const seg = buildSegmentResearch({ segment: seg0, feeCategory: "overdraft", institutionsInSegment: 25, members: members(several), current, ownInSegment: true });
+      return buildFeeAnswer(research({ current, segment: seg, ...(subjectName ? { subjectName } : {}) }), { focus: "competitors" }).storyline!.lenses.market.map((f) => f.text);
     };
     const none = market(5);
     const fewer = market(26);
@@ -373,6 +373,17 @@ describe("storyline", () => {
     expect(fewer[0]).toBe("6 of 10 of the 25 largest $1B to $10B credit unions charge less than your $26.");
     expect(stats[0]).toBe("In group statistics, 6 of 10 of the 25 largest $1B to $10B credit unions have values below your $26.");
     for (const line of [...none, ...fewer, ...stats]) expect(words(line)).toBeLessThanOrEqual(MAX_STORY_LINE_WORDS);
+    // A state in the label, or a long subject name, drops the possessive but keeps the price.
+    const texas = parseSegment("Which credit unions in Texas in the top 25 of the $1 billion to $10 billion tier run a fee share below 4%?")!;
+    expect(market(26, true, texas)[0]).toBe("In group statistics, 6 of 10 of the 25 largest $1B to $10B credit unions in Texas have values below $26.");
+    const subject = "Lakeshore Community Federal Credit Union";
+    const counted = [market(26, false, segment, subject)[0], market(26, true, segment, subject)[0], market(5, false, texas)[0]];
+    expect(counted).toEqual([
+      "6 of 10 of the 25 largest $1B to $10B credit unions charge less than $26.",
+      "In group statistics, 6 of 10 of the 25 largest $1B to $10B credit unions have values below $26.",
+      "None of the 10 of the 25 largest $1B to $10B credit unions in Texas charge less than your $5.",
+    ]);
+    for (const line of counted) expect(words(line)).toBeLessThanOrEqual(MAX_STORY_LINE_WORDS);
     // A short label keeps the named form: the fallback only runs when the line is too long.
     expect(buildFeeAnswer({ ...research(), current: 20 }).storyline!.lenses.market[0]).toMatchObject({
       text: "None of the 3 local competitors charge less than your $20; the highest is Peer 101 ($35).",
