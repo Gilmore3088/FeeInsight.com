@@ -490,4 +490,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-26",
   },
+  {
+    id: "issue-1397-tier-disclosure-addresses",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "Know an account tier's own document by what it is, not only by a file named \"fees\": a Bank On or premier account's truth-in-savings disclosure, terms and charges disclosure or summary of fees prices only that account, so its $0s are the tier's perks and not the bank's price. Keep a tier document's $0 only when the text says the bank charges no such fee for anyone (\"The Bank does not charge NSF fees\"). When you widen a test the recheck has already passed rows under, reach those live rows with a narrow cohort recorded on the attempt (the rule's version), not a recheck version bump that re-reads every live fee, and size it with a dry run before its switch goes on.",
+    why: "On Oct 26, 13 live $0s at 3 institutions came from a \"...-Bank-On-Checking-TIS.pdf\", a \"BankOn_Summary_of_Fees.pdf\" and a premier account's \"..._premier_tcs.pdf\", all passed by tier_perk_zero at recheck v5 because the address test wanted fees, schedule or disclosures after the tier word. The Bank On summary's $0 NSF and stop payment sat beside the bank's general $32 prices. The large bank's last 3 live $0s (#1397) were its HSA schedule's real prices and stay.",
+    evidence: { issues: [1397], prs: [2744], files: ["src/lib/agents/darwin/tier-perk.ts", "src/lib/agents/darwin/verified-recheck.ts", "docs/project/findings/2026-10-26-tier-schedule-addresses.md"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
 ];
