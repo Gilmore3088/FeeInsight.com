@@ -386,4 +386,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-26",
   },
+  {
+    id: "issue-1905-loan-section-recheck",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "A fee that traces to its own line at its own price can still be filed under the wrong product: a row in a loan section of the bank's general fee schedule is the loan's fee even when its words sound like an account's (a returned check, a service charge). Re-check live deposit-category fees against the section their lines sit in, with the same shared rule Knox applies (loan-section-fee.ts), so a re-read cannot bring the fee back and the re-check cannot disagree with the reader. Take one down only when every line that prints its name at its price is in such a section.",
+    why: "Navy Federal's \"Equity Loan\" rows went live as the account's NSF fee ($29, 154634) and monthly maintenance fee ($25, 154635) on Oct 21, and Darwin verified them because both trace to the page (#1905). The Oct 26 dry run found 8 such live fees at 7 institutions; the switch stays off until James's yes.",
+    evidence: { issues: [1905], prs: [2703], files: ["src/lib/agents/darwin/loan-section-check.ts", "src/lib/custom-report/loan-section-fee.ts"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
 ];

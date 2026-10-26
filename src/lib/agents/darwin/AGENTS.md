@@ -1335,6 +1335,20 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   event `darwin.card_program_section_takedown`). Step detail `card_program_section_check`. Dry run
   (prod, read-only, Oct 25, `cardProgramSectionFeesSql`): 12 live fees on 9 documents at 9
   institutions; 35 purchase or reload prices in such sections stay.
+- Loan sections of a general schedule (`loan-section-check.ts`, #1905). Navy Federal's fees page prints
+  an "Equity Loan" section; its "Home Equity Line Check returned (due to non-sufficient funds)" $29 and
+  "Tax Service Charge" $25 went live as the account's NSF and monthly maintenance fees (154634, 154635).
+  A live fee under a deposit category (`LOAN_SECTION_DEPOSIT_KEYS`; stop payment excluded) whose name
+  names no deposit account or service comes down when every line of its document's latest stored text
+  that prints its name at its price sits in a loan section (`loanSectionFee` in
+  `src/lib/custom-report/loan-section-fee.ts`, the same rule Knox v123 applies when it files a read).
+  Each step reads the next 400 documents behind such a fee whose text names a loan (`LOAN_TEXT_SQL`),
+  after a cursor kept on the `darwin.loan_section` event (`next_after_id`); an institution-scoped run
+  reads that institution and leaves the cursor alone. The switch is the code constant
+  `LOAN_SECTION_TAKEDOWN_LIVE`, off; off, it only reports. On, a match goes through the 12-hour second
+  look and is archived with `loan_section: #<doc>` (verified row rejected with the `loan_section` flag;
+  event `darwin.loan_section_takedown`). Step detail `loan_section_check`. Dry run (prod, read-only,
+  Oct 26, `loanSectionFeesSql`): 8 live fees at 7 institutions, each read against its stored text.
 - One printed line, two reads (`line-conflict-check.ts`, #1440). James's catalog review (Oct 15)
   found live fees sharing institution, name, amount and source address under two categories (1st
   Summit's "Prepaid Card" $5 as document reproduction and gift card purchase) or one category with
@@ -2149,6 +2163,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `RATE_FLOOR_CHECK_VERSION` | `darwin.rate_floor` | v1 | `darwin/rate-floor-check.ts` |
 | `BANDED_ZERO_CHECK_VERSION` | `darwin.banded_zero` | v1 | `darwin/banded-zero-check.ts` |
 | `CARD_PROGRAM_SECTION_CHECK_VERSION` | `darwin.card_program_section` | v1 | `darwin/card-program-section-check.ts` |
+| `LOAN_SECTION_CHECK_VERSION` | `darwin.loan_section` | v1 | `darwin/loan-section-check.ts` |
 | `DOCUMENT_OWNER_STRATEGY` | `verify.document_owner` | v1 | `darwin/document-owner.ts` |
 | `DARWIN_VERIFY_STRATEGY` | `verify.rules` | v3 | `darwin/verify.ts` |
 | `DARWIN_SOURCE_CHECK_VERSION` | — | v3 | `darwin/verify.ts` |
