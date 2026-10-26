@@ -502,6 +502,8 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v4 (#1571, #1574): the same selector re-reads every verified row once under v4.
   // v5 (#1593): and once more under v5.
   DARWIN_RECHECK_STRATEGY: "Its selector re-reads every verified row not yet read at the current version (200 a verify step); there is nothing to replay.",
+  // v2 (#1397): tier disclosures named TIS, terms and charges or summary of fees, and the bank-wide no-charge exception.
+  TIER_PERK_RULE_VERSION: "Verify, the conditional-$0 resolver and the recheck read it on every row they judge. Live rows the recheck already read at v5 are reached by its own cohort (DARWIN_RECHECK_TIER_RULE_LIVE, off): live $0s on a tier address no attempt read under this rule version, 13 at 3 institutions on 2026-10-26 (12 would fail). Nothing else to replay.",
   // v1 (#1511): a new shadow pass over Darwin's re-read requests. Its resolution key carries its
   // version and the Knox rules version, so every request is read again by the extract steps themselves.
   KNOX_REREAD_FEEDBACK_STRATEGY: "Its resolution key carries its version and the Knox rules version, so the extract steps read every request again themselves; nothing to replay.",

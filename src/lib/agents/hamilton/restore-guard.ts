@@ -1,6 +1,6 @@
 import { categoryOpinion, type CategoryModel } from "@/lib/agents/darwin/category-model";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
-import { checkFeeCategory } from "@/lib/fee-category-guard";
+import { checkFeeCategory, withBoxSection, withCollectionSection, type CategoryGuardContext } from "@/lib/fee-category-guard";
 import { limitGuardVerdict } from "@/lib/agents/hamilton/limit-guard";
 
 /**
@@ -9,7 +9,10 @@ import { limitGuardVerdict } from "@/lib/agents/hamilton/limit-guard";
  * bar so we don't bring misreads back"). A fee comes back only when all of these hold:
  *
  * 1. The second look passes: its name and price trace in its own text
- *    (`checkFeeAgainstSource`) and the category guard accepts its name (`checkFeeCategory`).
+ *    (`checkFeeAgainstSource`) and the category guard accepts its name (`checkFeeCategory`),
+ *    read with the same stored-text context Darwin's verify and Hamilton's live guard give it
+ *    (`restoreGuardContext`: a collection section, a safe deposit box section, a bill payment
+ *    the payee returned).
  * 2. Darwin's category model agrees with its category: the model's top category for the name
  *    is the fee's own, with probability at least `RESTORE_MODEL_MIN_PROBABILITY`. Darwin's
  *    dispute threshold (0.05) let "Fax Service" back as account research and an in-network
@@ -115,6 +118,36 @@ export function statesRefundableDeposit(text: string, feeName: string): boolean 
 }
 
 /**
+ * #1912 follow-up: the category guard's stored-text context for a fee the restore bar judges, read
+ * from `text` by the same functions Darwin's verify (`withCollectionSection`) and Hamilton's live
+ * guard (`withCollectionSection`, `withBoxSection`) use: `collection_section` and `payee_returned`
+ * for NSF, `box_section` for a late payment. Only those flags are kept, so no amount-based rule
+ * joins the restore bar here. Pure.
+ */
+export function restoreGuardContext(
+  text: string,
+  fee: { feeName: string; amount: number; canonicalFeeKey: string },
+): CategoryGuardContext {
+  const read = withBoxSection(fee.canonicalFeeKey, fee.feeName,
+    withCollectionSection<CategoryGuardContext>(fee.canonicalFeeKey, fee.feeName, { amount: fee.amount }, text), text);
+  return { collection_section: read.collection_section, payee_returned: read.payee_returned, box_section: read.box_section };
+}
+
+/**
+ * The restore bar's category step on its own: the category guard reads the fee's stored name with
+ * its stored-text context (`restoreGuardContext`). Every restore path calls it, the "same_read"
+ * restore in `rules-recheck.ts` included (#1912 follow-up: it restored on the source trace alone, so
+ * a fee its own text files elsewhere could come back under the category the live guard refuses). Pure.
+ */
+export function restoreCategoryVerdict(
+  text: string,
+  fee: { feeName: string; amount: number; canonicalFeeKey: string },
+): RestoreGuardVerdict {
+  const category = checkFeeCategory(fee.canonicalFeeKey, fee.feeName, restoreGuardContext(text, fee));
+  return category.ok ? { restore: true } : { restore: false, reason: `category_guard:${category.code}` };
+}
+
+/**
  * Whether a fee an earlier re-check took down, whose own text is `text`, meets the bar to
  * come back. `model` is Darwin's category model (`loadCategoryModel`); without it nothing
  * comes back this way. Pure.
@@ -136,8 +169,8 @@ export function disputedRestoreVerdict(
   }
   const traced = checkFeeAgainstSource(text, fee.feeName, fee.amount, ".", fee.canonicalFeeKey);
   if (!traced.ok && traced.reason !== "tiered_fee") return { restore: false, reason: `source_trace:${traced.reason}` };
-  const category = checkFeeCategory(fee.canonicalFeeKey, fee.feeName);
-  if (!category.ok) return { restore: false, reason: `category_guard:${category.code}` };
+  const category = restoreCategoryVerdict(text, fee);
+  if (!category.restore) return category;
   const opinion = categoryOpinion(model, fee.feeName, fee.canonicalFeeKey);
   if (!opinion) return { restore: false, reason: "category_model:no_opinion" };
   if (opinion.suggested !== fee.canonicalFeeKey || opinion.probability < RESTORE_MODEL_MIN_PROBABILITY) {

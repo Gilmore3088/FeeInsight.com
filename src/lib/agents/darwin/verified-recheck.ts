@@ -8,7 +8,7 @@ import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
 import { PENDING_KIND, SECOND_LOOK_MIN_MINUTES, secondLook, secondLookDedupeKey } from "@/lib/agents/hamilton/second-look";
 import { refileCategory } from "@/lib/fee-category-guard";
 
-import { tierPerkZero } from "./tier-perk";
+import { TIER_PATH_SQL, TIER_PERK_RULE_VERSION, tierPerkZero } from "./tier-perk";
 import { DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE, DARWIN_VERIFY_STRATEGY, loadSourceTexts, normalizedAmount, postSourceCheck, sourceLineFor, type RawFeeRow } from "./verify";
 
 type SqlTag = typeof sql;
@@ -98,6 +98,21 @@ export const DARWIN_RECHECK_SECOND_LOOK_LIVE = true;
  * passes). Roll back by emptying the list.
  */
 export const DARWIN_RECHECK_SECOND_LOOK_LIVE_CODES: readonly string[] = ["tier_perk_zero"];
+/**
+ * Default-off switch (#1397, tier-perk rule v2): also re-read live $0 fees whose document address
+ * is a tier's own schedule under `TIER_PATH_SQL` and that no recheck at this version has read under
+ * the current tier-perk rule (`detail.tier_rule`). The recheck reads each row once per version, and
+ * a version bump would re-read every live fee under every check, so a widened tier test reaches
+ * the live $0s it newly matches only through this narrow cohort. Each read is recorded on a
+ * `verify.recheck` attempt carrying `tier_rule`, so a row is read once per rule version; a failure
+ * goes through the shared 12-hour second look like any other.
+ * Dry run, prod read-only, 2026-10-26: 13 live $0 fees at 3 institutions newly match (a Bank On
+ * truth-in-savings disclosure, a Bank On summary of fees and a premium account's terms and charges);
+ * the stored-text read is in `docs/project/findings/2026-10-26-tier-schedule-addresses.md`.
+ * It turns on by PR once James approves that count.
+ */
+export const DARWIN_RECHECK_TIER_RULE_LIVE = false;
+export const TIER_RULE_LIMIT = 100;
 export const SECOND_LOOK_DUE_LIMIT = 100;
 
 interface RecheckRow extends RawFeeRow {
@@ -205,6 +220,42 @@ function selectOlderLiveRows(db: SqlTag, limit: number, from: "random" | "start"
          )
        ORDER BY CASE WHEN ${sample}::boolean THEN v.fee_verified_id END ASC,
                 v.fee_verified_id DESC
+       LIMIT ${limit}::int
+    `);
+}
+
+/**
+ * Live $0 fees on a tier's own schedule by address (`TIER_PATH_SQL`) that no recheck at this
+ * version has read under the current tier-perk rule (#1397, `DARWIN_RECHECK_TIER_RULE_LIVE`).
+ */
+function selectTierRuleRows(db: SqlTag, limit: number): Promise<RecheckRow[]> {
+  return inSavepoint(db, (scope) => scope<RecheckRow[]>`
+      SELECT md5(to_jsonb(v)::text) AS selected_verified, md5(to_jsonb(r)::text) AS selected_raw,
+             v.fee_verified_id, v.review_status, v.canonical_fee_key, v.amount AS verified_amount,
+             r.fee_raw_id, r.institution_id, r.source_url, r.document_r2_key, r.extraction_confidence,
+             r.fee_name, r.amount, r.frequency, r.outlier_flags, COALESCE(r.extraction_note, r.conditions) AS conditions, r.source_document_id,
+             r.amount_kind, r.rate_percent, live.fee_published_id, live.selected_published, live.selected_feedback
+        FROM verified_fee_observations v
+        JOIN raw_fee_observations r ON r.fee_raw_id = v.fee_raw_id
+        JOIN LATERAL (
+          SELECT p.fee_published_id, md5(to_jsonb(p)::text) AS selected_published,
+                 (SELECT md5(to_jsonb(f)::text) FROM pipeline_feedback f
+                   WHERE f.dedupe_key = ${secondLookDedupeKey(DARWIN_RECHECK_CHECK, 0).replace(/0$/, "")} || p.fee_published_id::text) AS selected_feedback
+            FROM published_fee_records p
+           WHERE p.lineage_ref = v.fee_verified_id AND p.rolled_back_at IS NULL AND p.quarantined_at IS NULL
+           ORDER BY p.fee_published_id DESC LIMIT 1
+        ) live ON true
+       WHERE v.review_status IN ('verified', 'approved')
+         AND COALESCE(v.amount, r.amount) = 0
+         AND regexp_replace(COALESCE(r.source_url, ''), '^[a-z]+://[^/]+', '', 'i') ~* ${TIER_PATH_SQL}
+         AND NOT EXISTS (
+           SELECT 1 FROM pipeline_attempts pa
+            WHERE pa.input_fingerprint = 'verified:' || v.fee_verified_id::text
+              AND pa.strategy = ${DARWIN_RECHECK_STRATEGY.strategy}
+              AND pa.strategy_version = ${DARWIN_RECHECK_STRATEGY.version}
+              AND COALESCE((pa.detail->>'tier_rule')::int, 1) >= ${TIER_PERK_RULE_VERSION}::int
+         )
+       ORDER BY v.fee_verified_id DESC
        LIMIT ${limit}::int
     `);
 }
@@ -416,6 +467,8 @@ interface RecheckOptions {
   secondLookCodes?: readonly string[];
   /** Overrides `EVAL_VERDICT_SECOND_BATCH_ACTS` (#1696). */
   secondBatchActs?: boolean;
+  /** Overrides `DARWIN_RECHECK_TIER_RULE_LIVE` (#1397). */
+  tierRule?: boolean;
 }
 interface SelectedText {
   id: number | string;
@@ -448,7 +501,7 @@ function defer(execution: RecheckExecution, id: number, code: RecheckUnresolvedC
 export const recheckAssessment = recheckOf;
 
 /** Existing members only, NOWAIT: no serializability or unselected-new-row phantom claim. */
-async function lockSelected(db: SqlTag, row: RecheckRow, text: SelectedText, dueOrigin: boolean) {
+async function lockSelected(db: SqlTag, row: RecheckRow, text: SelectedText, origin: "primary" | "due" | "tier_rule") {
   const publishedId = row.fee_published_id == null ? null : Number(row.fee_published_id);
   if (publishedId != null) {
     const [published] = await db<{ stamp: string; lineage_ref: number | string; institution_id: number | string; rolled_back_at: unknown; quarantined_at: unknown }[]>`
@@ -475,8 +528,12 @@ async function lockSelected(db: SqlTag, row: RecheckRow, text: SelectedText, due
   const [document] = await db<{ stamp: string }[]>`SELECT md5(to_jsonb(d)::text) AS stamp FROM source_documents d WHERE id=${Number(text.source_document_id)} FOR SHARE NOWAIT`;
   const [source] = await db<{ stamp: string }[]>`SELECT md5(to_jsonb(t)::text) AS stamp FROM agent_source_texts t WHERE id=${Number(text.id)} FOR SHARE NOWAIT`;
   if (!document || !source || document.stamp !== text.selected_document || source.stamp !== text.selected_source) throw new RecheckDeferred("identity_changed");
-  if (!dueOrigin) {
+  if (origin === "primary") {
     const [already] = await db<{ present: boolean }[]>`SELECT EXISTS (SELECT 1 FROM pipeline_attempts WHERE input_fingerprint=${`verified:${row.fee_verified_id}`} AND strategy=${DARWIN_RECHECK_STRATEGY.strategy} AND strategy_version=${DARWIN_RECHECK_STRATEGY.version}) AS present`;
+    if (already?.present) throw new RecheckDeferred("identity_changed");
+  } else if (origin === "tier_rule") {
+    // #1397: read again only while no attempt at this version has read it under the current tier rule.
+    const [already] = await db<{ present: boolean }[]>`SELECT EXISTS (SELECT 1 FROM pipeline_attempts WHERE input_fingerprint=${`verified:${row.fee_verified_id}`} AND strategy=${DARWIN_RECHECK_STRATEGY.strategy} AND strategy_version=${DARWIN_RECHECK_STRATEGY.version} AND COALESCE((detail->>'tier_rule')::int, 1) >= ${TIER_PERK_RULE_VERSION}::int) AS present`;
     if (already?.present) throw new RecheckDeferred("identity_changed");
   }
 }
@@ -512,6 +569,7 @@ export async function recheckVerifiedFees(db: SqlTag, options: RecheckOptions): 
       const secondLookCodes = secondLooks ? [] : [...(options.secondLookCodes ?? DARWIN_RECHECK_SECOND_LOOK_LIVE_CODES)];
       const sameStep = options.sameStepTakedown ?? DARWIN_RECHECK_SAME_STEP_TAKEDOWN;
       const secondBatchActs = options.secondBatchActs ?? EVAL_VERDICT_SECOND_BATCH_ACTS;
+      const tierRule = options.tierRule ?? DARWIN_RECHECK_TIER_RULE_LIVE;
       if (!olderLive && options.runId % OLDER_LIVE_SHADOW_EVERY === 0) {
         result.olderLive = await olderLiveShadow(scope, { runId: options.runId });
         execution.phases.olderShadow = result.olderLive.error ? "partial" : "reported_unknown";
@@ -522,10 +580,17 @@ export async function recheckVerifiedFees(db: SqlTag, options: RecheckOptions): 
       }
       let rows: RecheckRow[] = [];
       const dueIds = new Set<string>();
+      const tierRuleIds = new Set<string>();
       try {
         rows = await selectRows(scope, limit, true);
         if (rows.length === 0) rows = await selectRows(scope, limit, false);
         if (olderLive) rows = [...rows, ...await selectOlderLiveRows(scope, Math.ceil(limit / 2), null)];
+        if (tierRule) {
+          const seen = new Set(rows.map(row => String(row.fee_verified_id)));
+          const cohort = (await selectTierRuleRows(scope, TIER_RULE_LIMIT)).filter(row => !seen.has(String(row.fee_verified_id)));
+          for (const row of cohort) tierRuleIds.add(String(row.fee_verified_id));
+          rows = [...rows, ...cohort];
+        }
         execution.phases.primary = "complete";
       } catch {
         // A later primary selector may fail after an earlier one returned rows. The
@@ -568,7 +633,7 @@ export async function recheckVerifiedFees(db: SqlTag, options: RecheckOptions): 
         let assessed = false;
         try {
           const settled = await inSavepoint(scope, async tx => {
-            await lockSelected(tx, row, text, dueIds.has(String(id)));
+            await lockSelected(tx, row, text, dueIds.has(String(id)) ? "due" : tierRuleIds.has(String(id)) ? "tier_rule" : "primary");
             const { canonicalFeeKey, amount, check, line, layoutWouldPass: layoutPass } = recheckOf(row, texts);
             assessed = true;
             // #1696: a live fee only the v9 name rules fail belongs to Hamilton's second takedown
@@ -626,7 +691,7 @@ export async function recheckVerifiedFees(db: SqlTag, options: RecheckOptions): 
               stage: "verify", strategy: DARWIN_RECHECK_STRATEGY.strategy, version: DARWIN_RECHECK_STRATEGY.version, fingerprint: `verified:${id}`,
               outcome: check ? "evidence_mismatch" : "ok", yieldCount: check ? 0 : 1, costMicrousd: 0, durationMs: 0, runId: options.runId, stepId, foldIntoPlaybook: false,
               detail: { protocol: RECHECK_EXECUTION_PROTOCOL, batch_key: execution.batchKey, fee_verified_id: id, fee_raw_id: Number(row.fee_raw_id), fee_published_id: publishedId,
-                canonical_fee_key: canonicalFeeKey, amount, code: check?.code ?? null, rule: check?.rule ?? null, ...(layoutPass == null ? {} : { layout_would_pass: layoutPass }), action, feedback_ids: feedbackIds,
+                canonical_fee_key: canonicalFeeKey, amount, code: check?.code ?? null, rule: check?.rule ?? null, tier_rule: TIER_PERK_RULE_VERSION, ...(layoutPass == null ? {} : { layout_would_pass: layoutPass }), action, feedback_ids: feedbackIds,
                 selected_raw: row.selected_raw, selected_verified: row.selected_verified, selected_published: row.selected_published,
                 source_text_id: Number(text.id), normalized_text_sha256: createHash("sha256").update(text.normalized_text).digest("hex") } });
             return { otherCode: false as const, action, code: check?.code, publishedId, attemptId, feedbackIds, flagged, waiting, cleared, passed: !wasRejected && !check };
