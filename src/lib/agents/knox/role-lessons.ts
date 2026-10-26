@@ -797,6 +797,16 @@ export const KNOX_LESSONS: AgentLesson[] = [
     since: "2026-10-26",
   },
   {
+    id: "issue-1101-paid-finds-name-the-free-miss",
+    agent: "knox",
+    stage: "extract",
+    lesson: "When a paid read finds a fee, record what the free team did with that line on the same text: read it already, read it under another category, held it, or missed it, with the line's shape, the text's layout, the host and the platform. A paid fee saved only as a row teaches nothing, so the same layout costs another call at the next bank. Category misses and held names learn through the lessons and label queue once Darwin judges the rows; a miss repeated at two banks under one layout and line shape is the next free rule to write.",
+    why: "In October the paid pass cost $76.80 and found 6,822 fees the free readers had not read, across 1,865 documents, but nothing recorded why the free team missed each one. The layout signature reported which layouts read thin, and nothing acted on it, so no free rule was ever chosen from the paid finds.",
+    evidence: { issues: [1101], prs: [2735], files: ["src/lib/agents/knox/paid-find-misses.ts", "src/lib/agents/knox/paid-extract.ts", "src/lib/agents/knox/paid-find-misses.test.ts"] },
+    appliesTo: ["extract"],
+    since: "2026-10-26",
+  },
+  {
     id: "issue-1912-glued-price-pair",
     agent: "knox",
     stage: "extract",
