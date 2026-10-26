@@ -552,7 +552,7 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     stage: "analysis",
     lesson: "Two fee frequencies are compared by one shared rule (frequencyFamily and frequencySpelling in fee-frequency.ts): case and separators are spelling, so \"per item\", \"Per_Item\" and \"per_item\" are one value, and per item, per transaction, per occurrence, one time and each are one per-event basis. Never compare raw frequency strings or keep a private list of per-event words.",
     why: "After #1991 the evidence contract compared frequencies by meaning, but the charging-basis check, the exact-duplicate class and its SQL twin, and the correction no-op check still compared raw spellings, and the evidence contract called \"each\" and \"per item\" a mismatch while frequencyFamily called them one family.",
-    evidence: { issues: [1992], prs: [], files: ["src/lib/fee-frequency.ts", "src/lib/hamilton/evidence-contract.ts", "src/lib/fee-comparability.ts", "src/lib/agents/hamilton/exact-duplicate.ts", "src/lib/agents/hamilton/duplicate-collapse.ts", "src/lib/fee-correction-rules.ts"] },
+    evidence: { issues: [1992], prs: [2712], files: ["src/lib/fee-frequency.ts", "src/lib/hamilton/evidence-contract.ts", "src/lib/fee-comparability.ts", "src/lib/agents/hamilton/exact-duplicate.ts", "src/lib/agents/hamilton/duplicate-collapse.ts", "src/lib/fee-correction-rules.ts"] },
     appliesTo: "all",
     since: "2026-10-26",
   },
