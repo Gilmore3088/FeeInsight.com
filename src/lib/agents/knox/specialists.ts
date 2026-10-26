@@ -363,7 +363,20 @@ import { rateFloorOf } from "@/lib/rate-floor";
 // comparative ("Cashier's check more than (sold to MCB customers only)": a threshold figure the price
 // read took out, the fee itself whole). On 2026-10-25 it matched 3 live fees and 7 verified rows not live. Publish's `cutoff_name` hold, Darwin's release review and Deming's name check
 // read the same function. The stale-read floor stays at v97. Name re-tidy stays at v27.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 119 } as const;
+// v120 (#1513): two category reads that filed a fee under another fee's name.
+// - A wire's "Intern.", "Int." (before "Wire"), "Internat'l" or bare "INTL" is international
+//   (`abbreviatesInternationalWire` in fee-fold.ts, shared with the source facts in own-wire-scope.ts
+//   and the category guard's switched re-file): "Wire Trans. (Intern. Outgoing)" $35 beside "Wire
+//   Trans. (Dom. Outgoing)" $18, "Int. Wire Transfer – Outgoing" $40 beside "Wire Transfers –
+//   Outgoing" $20. A name that also says domestic ("Dom.") stays domestic. An international wire
+//   named before its incoming word ("Intl Wire Transfer – Incoming") is the incoming one.
+// - A sentence that prices a titled fee ("..., there will be a $1 Overdraft Transfer Fee.") files
+//   under the title when the words before name another category (`titledPriceRead`); the words
+//   before stay in brackets when they carry a condition.
+// Dry run (Oct 26, read-only, live fees): 2 live domestic wires read international (90381, 90382)
+// and 1 live non-network ATM fee is the overdraft transfer (128668), each checked on its stored line. They move only when their banks are next read, each
+// still checked by Darwin. The stale-read floor stays at v97. Name re-tidy stays at v27.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 120 } as const;
 
 export interface SpecialistRun {
   strategy: string;

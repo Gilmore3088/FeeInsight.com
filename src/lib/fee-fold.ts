@@ -321,6 +321,26 @@ export const SUSTAINED_OVERDRAFT =
 export const INCOMING_WIRE =
   /^(?![\s\S]*\b(?:out|outgoing|out[- ]going|outbound|out[- ]bound|send|sent|sending|withdrawals?)\b)(?=[\s\S]*\b(?:wires?|transfers?)\b)[\s\S]*(?:\bin[- ]?coming\b|\bin[- ]bound\b|\binbound\b|\breceiv\w*|\bwires?[- ]in\b|\b(?:domestic|international|foreign)[- ]in\b|:\s*in\s*$|\bincome wire\b|\bwire deposits?\b)/i;
 
+/**
+ * #1513: a wire's name that writes "international" short with a period or a contraction: "Wire
+ * Trans. (Intern. Outgoing)" (inst 5653, its domestic one "Wire Trans. (Dom. Outgoing)" $18 beside
+ * $35), "Int. Wire Transfer – Outgoing" $40 beside "Wire Transfers – Outgoing" $20 (inst 1405),
+ * "Internat'l Wire", "INTL Outgoing Manual Wire Fee". "Int'l" was read since Knox v16 and guard v1;
+ * these were read as domestic. Only on a wire's name (the caller checks); "Int." only right before
+ * "Wire" ("Wire Transfer - Int. Bank Fee" may be an intermediary bank's), and "Int" without its
+ * period (an interest line) is not one. A name that also says domestic ("Domestic/Intern. Wire", "Dom. or Int. Wire") is one
+ * price for both and stays domestic (`DOMESTIC_WORD`). Shared by Knox's rules (v120) and the
+ * category guard (`INTL_ABBREVIATION_REFILE_LIVE`).
+ */
+export const INTL_ABBREVIATION = /\b(?:intern|intnl|internat)\.(?=[\s)\],/–-]|$)|\bint\.(?=\s*wire)|\binternat['’]?l\b|\bintnl\b|\bintl\b\.?/i;
+/** #1513: a wire name's own domestic word, written whole or short ("Dom.", "Dom"). */
+export const DOMESTIC_WORD = /\b(?:domestic|dom[eé]stic|dom)\b/i;
+/** #1513: the name abbreviates international on a wire and says nothing domestic. Pure. */
+export function abbreviatesInternationalWire(name: string | null | undefined): boolean {
+  const text = (name ?? "").replace(/[‘’ʼ`]/g, "'");
+  return /\bwires?\b|\bwire\s*trans/i.test(text) && INTL_ABBREVIATION.test(text) && !DOMESTIC_WORD.test(text);
+}
+
 /** A mortgage, lien or loan subordination; a wire line under a "Subordination Request" heading is not one. */
 export const SUBORDINATION = /^(?![\s\S]*subordination request:\s*(?:incoming|outgoing))[\s\S]*\bsubordinat/i;
 

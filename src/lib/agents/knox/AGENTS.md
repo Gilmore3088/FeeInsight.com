@@ -1902,6 +1902,24 @@ function behind `QUALIFIED_FRAGMENT_TAKEDOWN_LIVE` (off). Only a glued note coun
 Fee for (Non-Customers)", "ACH Origination Per (member transactions ...)"). Oct 25: 2 live fees, 4
 verified rows not live.
 
+v120 (#1513): two category reads that filed a fee under another fee's name.
+- A wire's abbreviated international ("Wire Trans. (Intern. Outgoing)" $35 beside "Wire Trans. (Dom.
+  Outgoing)" $18; "Int. Wire Transfer – Outgoing" $40 beside "Wire Transfers – Outgoing" $20;
+  "Internat'l", bare "INTL") is international (`abbreviatesInternationalWire` in `fee-fold.ts`). "Int."
+  counts only right before "Wire", and a name that also says domestic ("Dom.") stays domestic. The
+  source scope review (`own-wire-scope.ts`) reads the same words, so the read is admitted, not held,
+  and Darwin's international verification routes it. An international wire named before its incoming
+  word ("International Wire Incoming", "Intl Wire Transfer – Incoming") is the incoming one. The
+  category guard re-files a live domestic wire so named only behind `INTL_ABBREVIATION_REFILE_LIVE`
+  (off; Oct 26 dry run: 2 live fees, 90381 and 90382).
+- A sentence that prices a titled fee ("For ATM and Debit Card transactions ONLY, when funds are
+  available in your savings, there will be a $1 Overdraft Transfer Fee.", live 128668) files under the
+  title's category when the words before read as another (`titledPriceRead`), for the line's first or a
+  later price. The name is the title, with the words before in brackets when they carry a condition.
+  A generic title ("Monthly Fee", "Service Charge") or a monthly maintenance one ("Base Service
+  Charge" after a minimum balance condition, live 88206), a region, direction, product or audience before
+  (`FAMILY_QUALIFIER`), or a title no rule files keeps the read. Oct 26: 1 live fee of 7 with the shape.
+
 ## Darwin's re-read requests (`reread-feedback.ts`, #1511)
 
 Darwin's live fragment check (`darwin/live-fragment-check.ts`) writes one `pipeline_feedback` row of
@@ -2155,7 +2173,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v119 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v120 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v10 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |
