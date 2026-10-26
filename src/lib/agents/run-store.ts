@@ -2897,7 +2897,7 @@ async function executeAgenticStep(
       return { status: "completed", summary: summarizeLessonSync(result), detail: lessonSyncDetail(result) };
     }
     case "atlas-storage-retention": {
-      const rolloutAction = storageRolloutAction(run);
+      const rolloutAction = storageRolloutAction(run,step.input);
       // commitDb: each expired legacy event-log partition is dropped in its own committed transaction.
       const result = await runStorageRetention({ db: tx, commitDb: sql, dryRun: run.runKind === "dry_run", context: { runId: run.id, stepId: step.id, stepKey: step.stepKey } });
       // #1870: Twelve quarters hot. Export, historical compaction and pruning stay off pending rollout.
