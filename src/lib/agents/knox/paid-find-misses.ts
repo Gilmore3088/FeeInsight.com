@@ -76,20 +76,30 @@ export function paidFindLineShape(sourceLine: string): string {
   return layoutSignature(sourceLine).signature.split("/")[0];
 }
 
-/**
- * The free read is of the paid find's line: one's line or excerpt holds the other's, or the two
- * names share their words (`lessonFamily`: plural, fee and joining words dropped), at least two
- * words when both names have two.
- */
-export function sameLineRead(find: PaidFind, free: { feeName: string; excerpt: string }): boolean {
+/** The free read's line or excerpt holds the paid find's line, or the other way round. */
+export function sameLineText(find: PaidFind, free: { excerpt: string }): boolean {
   const line = comparable(find.sourceLine);
   const excerpt = comparable(free.excerpt);
-  if (line.length >= 8 && excerpt.length >= 8 && (excerpt.includes(line) || line.includes(excerpt))) return true;
+  return line.length >= 8 && excerpt.length >= 8 && (excerpt.includes(line) || line.includes(excerpt));
+}
+
+/**
+ * The two names share their words (`lessonFamily`: plural, fee and joining words dropped), at
+ * least two words when both names have two. Names alone are weak evidence: "Incoming domestic
+ * wire" and "Incoming international wire" share two words at one price, so a name match only
+ * confirms a free read of the same category, never another category or a hold.
+ */
+export function sameNameRead(find: PaidFind, free: { feeName: string }): boolean {
   const paidWords = new Set(lessonFamily(find.feeName).split(" ").filter(Boolean));
   const freeWords = lessonFamily(free.feeName).split(" ").filter(Boolean);
   if (paidWords.size === 0 || freeWords.length === 0) return false;
   const shared = freeWords.filter((word) => paidWords.has(word)).length;
   return shared >= Math.min(2, paidWords.size, freeWords.length);
+}
+
+/** The free read is of the paid find's line: the line texts hold each other, or the names match. */
+export function sameLineRead(find: PaidFind, free: { feeName: string; excerpt: string }): boolean {
+  return sameLineText(find, free) || sameNameRead(find, free);
 }
 
 function heldAtAmount(held: HeldFeeCandidate, amount: number): boolean {
@@ -101,10 +111,12 @@ function heldAtAmount(held: HeldFeeCandidate, amount: number): boolean {
 /** What one grounded paid fee was to the free team. */
 export function classifyPaidFind(find: PaidFind, free: FreeTeamRead): PaidFindMiss {
   const lineShape = paidFindLineShape(find.sourceLine);
-  const reads = free.candidates.filter((read) => sameAmount(read.amount, find.amount) && sameLineRead(find, read));
-  if (reads.some((read) => read.canonicalHint === find.canonicalKey)) return { kind: "free_read", lineShape };
-  if (reads.length > 0) return { kind: "free_other_category", lineShape, freeCategory: reads[0].canonicalHint };
-  const held = free.held.find((row) => heldAtAmount(row, find.amount) && sameLineRead(find, row));
+  const atAmount = free.candidates.filter((read) => sameAmount(read.amount, find.amount));
+  if (atAmount.some((read) => read.canonicalHint === find.canonicalKey && sameLineRead(find, read))) return { kind: "free_read", lineShape };
+  // Another category or a hold is claimed only from the line itself, never from shared name words.
+  const other = atAmount.find((read) => sameLineText(find, read));
+  if (other) return { kind: "free_other_category", lineShape, freeCategory: other.canonicalHint };
+  const held = free.held.find((row) => heldAtAmount(row, find.amount) && sameLineText(find, row));
   if (held) return { kind: "free_held", lineShape, heldShape: held.shape };
   return { kind: "free_missed", lineShape };
 }

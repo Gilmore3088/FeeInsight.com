@@ -60,6 +60,18 @@ describe("paid finds filed against the free team (#1101)", () => {
     expect(classifyPaidFind({ ...find, amount: 6 }, { candidates: [], held: [hold({ shape: "range", amount: 4, amountMax: 8 })] })).toMatchObject({ kind: "free_held", heldShape: "range" });
   });
 
+  it("never claims another category from shared name words alone (review of #2735)", () => {
+    const intl: PaidFind = { feeName: "Incoming international wire", canonicalKey: "wire_intl_incoming", amount: 15, sourceLine: "Incoming international wire $15.00" };
+    const domestic = read({ feeName: "Incoming domestic wire", canonicalHint: "wire_domestic_incoming", amount: 15, excerpt: "Incoming domestic wire $15.00" });
+    expect(classifyPaidFind(intl, { candidates: [domestic], held: [] })).toEqual({ kind: "free_missed", lineShape: "plain" });
+    // The same name words with the same category still count as read.
+    expect(classifyPaidFind(intl, { candidates: [read({ feeName: "International wire incoming", canonicalHint: "wire_intl_incoming", amount: 15, excerpt: "elsewhere" })], held: [] }))
+      .toEqual({ kind: "free_read", lineShape: "plain" });
+    // A hold is claimed only from the line: a held line elsewhere with shared words is not this line.
+    expect(classifyPaidFind(intl, { candidates: [], held: [hold({ feeName: "Incoming domestic wire", amount: 15, excerpt: "Incoming domestic wire $15.00" })] }))
+      .toEqual({ kind: "free_missed", lineShape: "plain" });
+  });
+
   it("files a find with nothing at its price on its line as free_missed", () => {
     expect(classifyPaidFind(stopPayment, { candidates: [read({ amount: 31 })], held: [hold({ amount: 30 })] })).toEqual({ kind: "free_missed", lineShape: "table" });
   });

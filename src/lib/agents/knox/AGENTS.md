@@ -2184,7 +2184,11 @@ free team skipped; what the paid pass finds is what no free rule reads yet. Afte
 provider call) and files each grounded paid fee as `free_read` (the free team reads it too: the
 call bought nothing new for it), `free_other_category` (same line and price under another
 category), `free_held` (the free team held the line, with its held shape) or `free_missed`
-(nothing at that price on that line), with the source line's shape (`table`, `leaders`,
+(nothing at that price on that line). Shared name words count only for `free_read`, the same
+category: another category or a hold is claimed only when the free read's own line holds the paid
+line, since "Incoming domestic wire" and "Incoming international wire" share two words at one
+price. The re-run is the free specialists alone, before the extract's lesson re-files, so a fee a
+lesson re-files can show as `free_other_category`. Each find carries the source line's shape (`table`, `leaders`,
 `sentences`, `split`, `plain`), the text's layout, the page's host and the bank's website platform
 (`institution_source_profiles.platform`, else `institution_sources.cms_platform`). The summary
 rides the paid attempt's detail (`free_misses`); the step writes one `knox.paid_find_misses` event
