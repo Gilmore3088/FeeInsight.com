@@ -10,6 +10,7 @@ import {
   robotsDisallows,
   robotsSitemaps,
   sitemapLocations,
+  vendorFileFolder,
 } from "./site-signals";
 
 describe("Magellan site signals", () => {
@@ -66,5 +67,16 @@ describe("Magellan site signals", () => {
     expect(isReusablePath("/wp-content/uploads/2024/03/fee-schedule.pdf")).toBe(false);
     expect(isReusablePath("/files/123456/fees.pdf")).toBe(false);
     expect(isReusablePath("/")).toBe(false);
+    // One institution's file in the website vendor's folder, or an upload GUID (#1455).
+    expect(isReusablePath("/files/sunrisefamilycu/1/file/Fee-Schedule-11-2025.pdf")).toBe(false);
+    expect(isReusablePath("/getmedia/e5c2ff85-ac70-49e5-8a17-b870fb5bd34a/Consumer-Schedule-of-Fees-Services.pdf")).toBe(false);
+    expect(isReusablePath("/files/Misc.-Fee-Schedule.pdf")).toBe(true);
+  });
+
+  it("reads a vendor file folder (#1455)", () => {
+    expect(vendorFileFolder("https://www.fam1st.com/files/sunrisefamilycu/1/file/Fee-Schedule-11-2025.pdf")).toBe("sunrisefamilycu");
+    expect(vendorFileFolder("/files/LAFCU/1/file/Disclosures/LAFCU_Rates.pdf")).toBe("lafcu");
+    expect(vendorFileFolder("/files/Misc.-Fee-Schedule.pdf")).toBeNull();
+    expect(vendorFileFolder(null)).toBeNull();
   });
 });

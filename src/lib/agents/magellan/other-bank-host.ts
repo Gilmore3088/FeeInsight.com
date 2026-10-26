@@ -1,6 +1,8 @@
 import type { sql } from "@/lib/data-store/connection";
 import { inSavepoint } from "@/lib/agents/savepoint";
 
+import { vendorFileFolder } from "./site-signals";
+
 type SqlTag = typeof sql;
 
 /**
@@ -256,11 +258,17 @@ export interface OtherBankAtHost {
   institutionName: string;
   stateCode: string | null;
   host: string;
+  /** Set when the address is in the other institution's vendor file folder (#1455), not on its host. */
+  folder?: string;
 }
 
 /**
  * The institution whose own website is the host of `url`, when that is not `institutionId`'s
- * own website. Null when the address is on this bank's site or on no institution's site.
+ * own website, or, for an address in a website vendor's file folder (`/files/<folder>/<n>/file/`,
+ * `vendorFileFolder`), the institution whose website the folder is named for when it is not this
+ * bank's: the vendor serves Sunrise Family CU's `/files/sunrisefamilycu/...` on every member
+ * domain, so the host alone said fam1st.com's (#1455). Null when the address is on this bank's
+ * site or on no institution's site.
  */
 export async function otherInstitutionAtHost(
   db: SqlTag,
@@ -288,12 +296,45 @@ export async function otherInstitutionAtHost(
      ORDER BY (COALESCE(other.status, 'active') = 'active') DESC, other.id
      LIMIT 1
   `;
-  const row = rows[0];
+  const row: { id: number | string; institution_name: string; state_code: string | null; folder?: string } | null =
+    rows[0] ?? await folderOwner(db, institutionId, url);
   if (!row) return null;
   return {
     institutionId: Number(row.id),
     institutionName: row.institution_name,
     stateCode: row.state_code,
     host,
+    ...(row.folder ? { folder: row.folder } : {}),
   };
+}
+
+/**
+ * The institution whose website's name (`hostLabel`, 4+ characters) is the vendor file folder
+ * of `url`, when this bank's own website does not carry that name. Prod, Oct 26: every folder
+ * that matched another institution's website was Sunrise Family CU's, on five other CUs' domains.
+ */
+async function folderOwner(
+  db: SqlTag,
+  institutionId: number,
+  url: string | null | undefined,
+): Promise<{ id: number | string; institution_name: string; state_code: string | null; folder: string } | null> {
+  const folder = vendorFileFolder(url);
+  if (!folder || folder.length < 4) return null;
+  // `hostLabel` in SQL: the second-to-last label of the `hostSql` host.
+  const rows = await db<{ id: number | string; institution_name: string; state_code: string | null }[]>`
+    SELECT other.id, other.institution_name, other.state_code
+      FROM institution_sources other
+     WHERE other.id <> ${institutionId}
+       AND other.website_url IS NOT NULL
+       AND reverse(split_part(reverse(regexp_replace(lower(substring(other.website_url from '^(?:[a-zA-Z][a-zA-Z0-9+.-]*://)?([^/:?#]+)')), '^www\\.', '')), '.', 2)) = ${folder}
+       AND NOT EXISTS (
+         SELECT 1 FROM institution_sources inst
+          WHERE inst.id = ${institutionId}
+            AND inst.website_url IS NOT NULL
+            AND reverse(split_part(reverse(regexp_replace(lower(substring(inst.website_url from '^(?:[a-zA-Z][a-zA-Z0-9+.-]*://)?([^/:?#]+)')), '^www\\.', '')), '.', 2)) = ${folder}
+       )
+     ORDER BY (COALESCE(other.status, 'active') = 'active') DESC, other.id
+     LIMIT 1
+  `;
+  return rows[0] ? { ...rows[0], folder } : null;
 }

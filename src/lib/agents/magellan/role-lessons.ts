@@ -7,6 +7,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const MAGELLAN_LESSONS: AgentLesson[] = [
   {
+    id: "issue-1455-a-vendor-folder-is-one-banks-file",
+    agent: "magellan",
+    stage: "discover",
+    lesson: "A path that opens one institution's file is not a path to try at another bank, even when the other bank's site serves it: a website vendor's file folder (`/files/<folder>/<n>/file/`), an upload GUID, or a path that spells the website's own name (\"/files/sunrisefamilycu/...\" on sunrisefamilycu.org) names its owner. Never learn such a path as a platform path or peer hint, and refuse a found link in a folder named for another institution's website, as for a link on that institution's host.",
+    why: "The vendor serves every member credit union's files on every member domain. Sunrise Family CU's `/files/sunrisefamilycu/1/file/Fee-Schedule-11-2025.pdf` produced live fees on its own site, so the peer hints tried it on Family First FCU's fam1st.com (Oct 14), where it opened; with two banks it became a platform path for every Fiserv site and opened on Beach Municipal, First Pace and Alhambra too (Oct 15-19). Each copy sat on that CU's own website, so the other-bank check passed it, and 102 live fees at four CUs were Sunrise's (#1455).",
+    evidence: { issues: [1455], prs: [], files: ["src/lib/agents/magellan/site-signals.ts", "src/lib/agents/magellan/platform-learning.ts", "src/lib/agents/magellan/other-bank-host.ts", "docs/project/findings/2026-10-26-vendor-folder-is-one-banks-file.md"] },
+    appliesTo: ["discover"],
+    since: "2026-10-26",
+  },
+  {
     id: "issue-1105-rejected-is-never-current",
     agent: "magellan",
     stage: "fetch",

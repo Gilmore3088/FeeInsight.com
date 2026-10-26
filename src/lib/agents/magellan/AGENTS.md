@@ -276,7 +276,13 @@ and `detail.method_version`).
   `institution_source_profiles.platform` (and `institution_sources.cms_platform` when
   empty). Platform paths are `platform_registry.fee_paths` plus reusable paths found
   at two or more banks on the platform, minus paths Rosetta rejected. A find updates
-  `platform_registry` (validated count, institution count, promoted paths).
+  `platform_registry` (validated count, institution count, promoted paths). A path that is one
+  site's file is never reusable, as a learned path or a seed: a dated folder, a long id, an upload
+  GUID, a website vendor's file folder (`/files/<folder>/<n>/file/`, which the vendor serves on
+  every member domain), or a link whose path spells its own website's name (#1455: Sunrise
+  Family CU's `/files/sunrisefamilycu/...` became four other CUs' schedule). A found link in a
+  vendor folder named for another institution's website is refused like a link on its host
+  (`otherInstitutionAtHost`).
 - A redirect to a new domain searches the new site and updates `website_url`.
 - Website repair (`website-repair.ts`, a pure function): before the search, obvious typos in
   `website_url` are fixed: a missing dot after `www` ("wwwbank.com") or before the ending

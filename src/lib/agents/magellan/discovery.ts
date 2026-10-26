@@ -1781,7 +1781,10 @@ async function refuseOtherBankLink(db: SqlTag, result: CandidateDiscoveryResult)
   if (result.outcome !== "discovered" || !result.url) return result;
   const other = await otherInstitutionAtHost(db, result.institutionId, result.url);
   if (!other) return result;
-  const reason = `${result.url} is on ${other.host}, the website of ${other.institutionName}${other.stateCode ? ` (${other.stateCode})` : ""}, another institution`;
+  const owner = `${other.institutionName}${other.stateCode ? ` (${other.stateCode})` : ""}, another institution`;
+  const reason = other.folder
+    ? `${result.url} is in the "${other.folder}" vendor file folder, named for the website of ${owner}`
+    : `${result.url} is on ${other.host}, the website of ${owner}`;
   await db`
     UPDATE institution_source_profiles
        SET rejected_source_urls = (

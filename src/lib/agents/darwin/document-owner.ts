@@ -4,6 +4,7 @@ import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { secondLook } from "@/lib/agents/hamilton/second-look";
 import { hostSql, textHasCertNumber, urlHost } from "@/lib/agents/magellan/other-bank-host";
+import { VENDOR_FILE_FOLDER_PATH } from "@/lib/agents/magellan/site-signals";
 import { STATE_NAMES } from "@/lib/us-states";
 
 import { loadSourceTexts } from "./verify";
@@ -25,7 +26,9 @@ type SqlTag = typeof sql;
  * A live (institution, document) pair is read when its document is linked to another institution
  * (the document's host is that institution's stored website, that institution has live fees from
  * the same address, or one of its documents has the same `text_hash`), or sits on a vendor
- * download path (`VENDOR_DOCUMENT_PATH`; a path alone is no proof). Only linked institutions can
+ * download path (`VENDOR_DOCUMENT_PATH`; a path alone is no proof), or, with
+ * `DARWIN_DOCUMENT_OWNER_FOLDER_LINKS`, its vendor file folder is named for that institution's
+ * website (`/files/sunrisefamilycu/...`, Oct 26). Only linked institutions can
  * take a fee down. The registry-wide name scan finds partners and ordinary words ("Fees
  * associated with" -> Associated Bank, "Currency" -> Currency Bank, a title-cased "Wells Fargo
  * Bank" correspondent on line 1), so an institution only it finds gives `registry_named`, a review
@@ -79,6 +82,24 @@ export const DOCUMENT_OWNER_PAIR_LIMIT = 25;
  * Off (set it to false): shadow, as above.
  */
 export const DARWIN_DOCUMENT_OWNER_TAKEDOWN = true;
+
+/**
+ * Vendor file folders as links (#1455, Oct 26), off until James's yes. A website vendor serves a
+ * member's file at `/files/<folder>/<n>/file/` on every member domain (`VENDOR_FILE_FOLDER_PATH`),
+ * and the folder is named for the owner's website: Sunrise Family CU's (7367,
+ * sunrisefamilycu.org) `/files/sunrisefamilycu/1/file/Fee-Schedule-11-2025.pdf` was the live
+ * schedule of four other CUs (7353 Family First, Saginaw; 6428 Beach Municipal; 7078 Alhambra;
+ * 7662 First Pace), 102 live fees, and passed as `shared_service` or was never read: the path was
+ * no vendor path, two of the copies share no text hash, and each copy sat on that CU's own site.
+ * On: such a path counts as a vendor path, the institution whose website's name (`hostLabel`) is
+ * the folder is linked (`via = 'folder'`), and the vendor-copy rule reads it with the text-hash
+ * sharers; the text must still print its name. Pairs with a folder link are read again (their
+ * fingerprint gains `DOCUMENT_OWNER_FOLDER_SUFFIX`). Off: no folder link, and every verdict is
+ * as before. `documentOwnerCountSql({ folderLinks: true })` is the read-only dry count.
+ */
+export const DARWIN_DOCUMENT_OWNER_FOLDER_LINKS = false;
+/** Appended to the fingerprint's text hash of a pair read with a folder link, so the switch re-reads it. */
+export const DOCUMENT_OWNER_FOLDER_SUFFIX = ":folder";
 
 /**
  * Website-vendor download paths that serve one institution's file on many member domains
@@ -145,6 +166,8 @@ export interface DocumentLinks {
   documentHost?: string | null;
   /** The document is on a vendor download path. */
   vendorPath?: boolean;
+  /** Its website's name is the document's vendor file folder (`DARWIN_DOCUMENT_OWNER_FOLDER_LINKS`). */
+  folderIds?: number[];
 }
 
 export type DocumentOwnerVerdict =
@@ -470,12 +493,17 @@ export function documentOwnerVerdict(
     return { kind: "own_named", evidence: `certificate: ${own.certNumber}` };
   }
 
-  // A vendor-served copy belongs to whichever of this bank and the text-hash sharers it names.
-  const hashIds = new Set(links.hashIds ?? []);
-  if (links.vendorPath && pool.some((other) => hashIds.has(other.id))) {
-    const owner = vendorCopyOwner(text, [own, ...pool.filter((other) => hashIds.has(other.id))], { onOwnSite });
+  // A vendor-served copy belongs to whichever of this bank, the text-hash sharers and the
+  // institution its vendor file folder is named for (#1455) it names.
+  const vendorIds = new Set([...(links.hashIds ?? []), ...(links.folderIds ?? [])]);
+  const vendorPath = links.vendorPath || (links.folderIds ?? []).length > 0;
+  if (vendorPath && pool.some((other) => vendorIds.has(other.id))) {
+    const owner = vendorCopyOwner(text, [own, ...pool.filter((other) => vendorIds.has(other.id))], { onOwnSite });
     if (owner?.id === own.id) return { kind: "own_named", evidence: "vendor copy: own name" };
-    if (owner && !sameHoldingCompany(own, owner)) return { kind: "other_bank", otherId: owner.id, evidence: "vendor copy: text hash" };
+    if (owner && !sameHoldingCompany(own, owner)) {
+      const byHash = (links.hashIds ?? []).includes(owner.id);
+      return { kind: "other_bank", otherId: owner.id, evidence: byHash ? "vendor copy: text hash" : "vendor copy: file folder" };
+    }
   }
 
   // The document sits on exactly one unrelated institution's own website, and not on this bank's
@@ -545,7 +573,18 @@ export const DOCUMENT_OWNER_PENDING_DAYS = 14;
  * publish refuses them (`documentOwnerRefusalsSql`). The read-only count leaves it off: it counts
  * live fees.
  */
-function scopedPairsSql(options: { pending?: boolean } = {}): string {
+function scopedPairsSql(options: { pending?: boolean; folderLinks?: boolean } = {}): string {
+  // With folder links on (#1455): the institution whose website's name (`hostLabel`) is the
+  // document's vendor file folder. Off: none, so every pair and verdict is as before.
+  const folderLinks = options.folderLinks
+    ? `
+      UNION
+      SELECT p.institution_id, p.source_document_id, s.id AS other_id, 'folder' AS via
+        FROM placed p
+        JOIN sites s ON s.label = lower(substring(p.document_url from '${VENDOR_FILE_FOLDER_PATH}')) AND s.id <> p.institution_id
+       WHERE p.document_url ~* '${VENDOR_FILE_FOLDER_PATH}'
+         AND length(s.label) >= 4`
+    : "";
   const pending = options.pending
     ? `
       UNION ALL
@@ -584,9 +623,12 @@ function scopedPairsSql(options: { pending?: boolean } = {}): string {
        WHERE sd.document_url IS NOT NULL
     ),
     sites AS MATERIALIZED (
-      SELECT i.id, ${hostSql("i.website_url")} AS host
-        FROM institution_sources i
-       WHERE i.website_url IS NOT NULL
+      SELECT x.id, x.host, reverse(split_part(reverse(x.host), '.', 2)) AS label
+        FROM (
+          SELECT i.id, ${hostSql("i.website_url")} AS host
+            FROM institution_sources i
+           WHERE i.website_url IS NOT NULL
+        ) x
     ),
     -- The text row the pass judges (\`loadSourceTexts\`: newest completed row with text), so the
     -- fingerprint's hash and the judged text are one row's.
@@ -619,7 +661,7 @@ function scopedPairsSql(options: { pending?: boolean } = {}): string {
         JOIN hashes h ON h.source_document_id = p.source_document_id
         JOIN hash_groups hg ON hg.text_hash = h.text_hash
         CROSS JOIN LATERAL unnest(hg.institution_ids) AS g(other_id)
-       WHERE g.other_id <> p.institution_id
+       WHERE g.other_id <> p.institution_id${folderLinks}
     ),
     shared AS MATERIALIZED (
       SELECT p.institution_id, p.source_document_id, p.document_url, p.host AS document_host, p.live_fees, p.pending_rows,
@@ -627,7 +669,8 @@ function scopedPairsSql(options: { pending?: boolean } = {}): string {
              (p.document_url ~* '${VENDOR_DOCUMENT_PATH}') AS vendor_path,
              COALESCE(array_agg(DISTINCT l.other_id ORDER BY l.other_id) FILTER (WHERE l.other_id IS NOT NULL), '{}'::bigint[]) AS other_ids,
              COALESCE(array_agg(DISTINCT l.other_id ORDER BY l.other_id) FILTER (WHERE l.via = 'host'), '{}'::bigint[]) AS host_ids,
-             COALESCE(array_agg(DISTINCT l.other_id ORDER BY l.other_id) FILTER (WHERE l.via = 'hash'), '{}'::bigint[]) AS hash_ids
+             COALESCE(array_agg(DISTINCT l.other_id ORDER BY l.other_id) FILTER (WHERE l.via = 'hash'), '{}'::bigint[]) AS hash_ids,
+             COALESCE(array_agg(DISTINCT l.other_id ORDER BY l.other_id) FILTER (WHERE l.via = 'folder'), '{}'::bigint[]) AS folder_ids
         FROM placed p
         LEFT JOIN hashes h ON h.source_document_id = p.source_document_id
         LEFT JOIN links l ON l.institution_id = p.institution_id AND l.source_document_id = p.source_document_id
@@ -658,14 +701,16 @@ export function documentOwnerFingerprintPrefix(live: boolean): string {
  * record before Hamilton's publish step decides them. A re-read is only for a pair with live fees:
  * a second look confirms a takedown, and a pair with nothing live has nothing to take down.
  */
-export function documentOwnerPairsSql(): string {
-  const fingerprint = "$1 || s.institution_id::text || ':' || s.source_document_id::text || ':' || s.text_hash";
+export function documentOwnerPairsSql(options: { folderLinks?: boolean } = {}): string {
+  const folderLinks = options.folderLinks ?? DARWIN_DOCUMENT_OWNER_FOLDER_LINKS;
+  const fingerprint = "$1 || s.institution_id::text || ':' || s.source_document_id::text || ':' || s.text_hash"
+    + ` || CASE WHEN cardinality(s.folder_ids) > 0 THEN '${DOCUMENT_OWNER_FOLDER_SUFFIX}' ELSE '' END`;
   const attempts = (extra: string) => `SELECT 1 FROM pipeline_attempts pa
         WHERE pa.input_fingerprint = ${fingerprint}
           AND pa.strategy = $2
           AND pa.strategy_version = $3${extra}`;
-  const columns = "s.institution_id, s.source_document_id, s.document_url, s.document_host, s.vendor_path, s.live_fees, s.other_ids, s.host_ids, s.hash_ids, s.text_hash";
-  return `${scopedPairsSql({ pending: true })},
+  const columns = "s.institution_id, s.source_document_id, s.document_url, s.document_host, s.vendor_path, s.live_fees, s.other_ids, s.host_ids, s.hash_ids, s.folder_ids, s.text_hash";
+  return `${scopedPairsSql({ pending: true, folderLinks })},
     fresh AS (
       SELECT ${columns}, false AS reread
         FROM shared s
@@ -697,8 +742,10 @@ export function documentOwnerPairsSql(): string {
  * unchanged and still takes down what is live.
  */
 export function documentOwnerRefusalsSql(): string {
+  // A pair read with a folder link carries `DOCUMENT_OWNER_FOLDER_SUFFIX` (#1455); its newest read decides too.
   const fingerprint = (live: boolean) =>
     `'${documentOwnerFingerprintPrefix(live)}' || fv.institution_id::text || ':' || fr.source_document_id::text || ':' || COALESCE(cur.text_hash, 'none')`;
+  const folder = (live: boolean) => `${fingerprint(live)} || '${DOCUMENT_OWNER_FOLDER_SUFFIX}'`;
   return `
     SELECT fv.fee_verified_id, owner.named_other_id
       FROM verified_fee_observations fv
@@ -714,7 +761,7 @@ export function documentOwnerRefusalsSql(): string {
       JOIN LATERAL (
         SELECT pa.outcome, pa.detail->>'named_other_id' AS named_other_id
           FROM pipeline_attempts pa
-         WHERE pa.input_fingerprint IN (${fingerprint(true)}, ${fingerprint(false)})
+         WHERE pa.input_fingerprint IN (${fingerprint(true)}, ${fingerprint(false)}, ${folder(true)}, ${folder(false)})
            AND pa.strategy = '${DOCUMENT_OWNER_STRATEGY.strategy}'
            AND pa.strategy_version = ${DOCUMENT_OWNER_STRATEGY.version}
          ORDER BY pa.created_at DESC, pa.id DESC
@@ -741,7 +788,7 @@ function sqlList(values: Iterable<string>): string {
  * together in the text, and shared names join on word sequences. `detail` lists each
  * (institution, document) pair instead of the totals.
  */
-export function documentOwnerCountSql(options: { detail?: boolean } = {}): string {
+export function documentOwnerCountSql(options: { detail?: boolean; folderLinks?: boolean } = {}): string {
   const states = Object.entries(STATE_NAMES).map(([code, name]) => `('${code}', '${ownerWords(name)}')`).join(", ");
   const generic = sqlList(GENERIC_NAMES);
   const small = sqlList(TITLE_SMALL_WORDS);
@@ -791,7 +838,7 @@ BEGIN READ ONLY;
 SET LOCAL jit = off;
 SET LOCAL enable_mergejoin = off;
 SET LOCAL statement_timeout = '120s';
-${scopedPairsSql()},
+${scopedPairsSql({ folderLinks: options.folderLinks ?? DARWIN_DOCUMENT_OWNER_FOLDER_LINKS })},
     states(code, state_w) AS (VALUES ${states}),
     names AS MATERIALIZED (
       SELECT i.id, i.state_code, ${baseSql("i.institution_name")} AS base, ${wordsSql("i.city")} AS city_raw,
@@ -930,7 +977,8 @@ ${scopedPairsSql()},
       SELECT j.institution_id, j.source_document_id, c.id, c.forms, c.acronyms,
              ${sibling("own", "c")} AS sib,
              (c.city_w <> '' AND c.city_w = own.city_w) AS same_city,
-             (c.id = ANY(j.hash_ids)) AS via_hash,
+             -- A vendor copy's group: the text-hash sharers and its file folder's owner (#1455).
+             (c.id = ANY(j.hash_ids) OR c.id = ANY(j.folder_ids)) AS via_hash,
              (c.id = ANY(j.host_ids)) AS via_host,
              (c.id = ANY(j.host_ids) AND c.website_host = j.document_host) AS site,
              (tx.padded IS NOT NULL AND ${otherNamedStrong}) AS named_strong,
@@ -993,7 +1041,7 @@ ${scopedPairsSql()},
         FROM judged0 j
         JOIN own_flags f ON f.institution_id = j.institution_id AND f.source_document_id = j.source_document_id
         JOIN pool_agg a ON a.institution_id = j.institution_id AND a.source_document_id = j.source_document_id
-       WHERE j.vendor_path AND a.hash_linked > 0
+       WHERE (j.vendor_path OR cardinality(j.folder_ids) > 0) AND a.hash_linked > 0
     ),
     registry_pairs AS MATERIALIZED (
       SELECT DISTINCT s.institution_id, s.source_document_id
@@ -1062,6 +1110,8 @@ interface PairRow {
   other_ids: Array<number | string> | null;
   host_ids: Array<number | string> | null;
   hash_ids: Array<number | string> | null;
+  /** Folder links (#1455); empty unless `DARWIN_DOCUMENT_OWNER_FOLDER_LINKS` is on. */
+  folder_ids?: Array<number | string> | null;
   document_host: string | null;
   vendor_path: boolean | null;
   text_hash: string | null;
@@ -1213,9 +1263,10 @@ async function readWatermark(db: SqlTag, live: boolean, at: Date): Promise<{ now
  */
 export async function recheckDocumentOwners(
   db: SqlTag,
-  options: { runId: number; stepId?: number | null; limit?: number; rereadLimit?: number; takedown?: boolean; now?: Date },
+  options: { runId: number; stepId?: number | null; limit?: number; rereadLimit?: number; takedown?: boolean; folderLinks?: boolean; now?: Date },
 ): Promise<DocumentOwnerResult> {
   const live = options.takedown ?? DARWIN_DOCUMENT_OWNER_TAKEDOWN;
+  const folderLinks = options.folderLinks ?? DARWIN_DOCUMENT_OWNER_FOLDER_LINKS;
   const limit = Math.max(1, Math.min(options.limit ?? DOCUMENT_OWNER_PAIR_LIMIT, 500));
   const rereadLimit = live ? Math.max(0, Math.min(options.rereadLimit ?? DOCUMENT_OWNER_REREAD_LIMIT, 500)) : 0;
   const result: DocumentOwnerResult = {
@@ -1240,7 +1291,7 @@ export async function recheckDocumentOwners(
                set_config('statement_timeout', ${DOCUMENT_OWNER_PAIRS_TIMEOUT}, true) AS applied,
                set_config('jit', 'off', true) AS jit_applied
       `;
-      const rows = await scope.unsafe<PairRow[]>(documentOwnerPairsSql(), [
+      const rows = await scope.unsafe<PairRow[]>(documentOwnerPairsSql({ folderLinks }), [
         documentOwnerFingerprintPrefix(live), DOCUMENT_OWNER_STRATEGY.strategy, DOCUMENT_OWNER_STRATEGY.version, limit, rereadLimit,
       ]);
       if (prior?.value != null) await scope`SELECT set_config('statement_timeout', ${prior.value}, true)`;
@@ -1317,13 +1368,16 @@ async function judgePairs(
       const bank = id === institutionId ? null : withShared(id);
       return bank ? [bank] : [];
     });
-    const ids = (values: Array<number | string> | null) => (values ?? []).map(Number);
+    const ids = (values: Array<number | string> | null | undefined) => (values ?? []).map(Number);
     // A pair whose bank has no registry row (or no name) is recorded unproven, so it is not read again.
     const vendorPath = pair.vendor_path === true || isVendorDocumentPath(pair.document_url);
+    const folderIds = ids(pair.folder_ids);
+    const fingerprintHash = folderIds.length > 0 ? `${pair.text_hash ?? "none"}${DOCUMENT_OWNER_FOLDER_SUFFIX}` : pair.text_hash;
     const verdict: DocumentOwnerVerdict = own
       ? documentOwnerVerdict(text, own, linked, found, {
           hostIds: ids(pair.host_ids),
           hashIds: ids(pair.hash_ids),
+          folderIds,
           documentHost: pair.document_host,
           vendorPath,
         })
@@ -1342,7 +1396,7 @@ async function judgePairs(
         stage: "verify",
         strategy: DOCUMENT_OWNER_STRATEGY.strategy,
         version: DOCUMENT_OWNER_STRATEGY.version,
-        fingerprint: documentOwnerFingerprint(institutionId, sourceDocumentId, pair.text_hash, live),
+        fingerprint: documentOwnerFingerprint(institutionId, sourceDocumentId, fingerprintHash, live),
         outcome: verdict.kind === "other_bank" ? "evidence_mismatch" : "ok",
         yieldCount: verdict.kind === "other_bank" ? 0 : 1,
         costMicrousd: 0,
@@ -1355,6 +1409,7 @@ async function judgePairs(
           document_url: pair.document_url,
           vendor_path: vendorPath,
           text_hash: pair.text_hash,
+          folder_ids: folderIds.length > 0 ? folderIds : null,
           live_fees: Number(pair.live_fees),
           linked_ids: linked.map((other) => other.id),
           named_ids: found.map((other) => other.id).slice(0, 20),

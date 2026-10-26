@@ -386,7 +386,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — Every hand-set rule Darwin holds on needs a re-check exception keyed to the rule's own value, as the guard version has, or a change to the rule is a change for new reads only. — [finding](findings/2026-10-09-envelope-change-never-reached-held-rows.md) — Agent lesson: darwin/pr-883-rule-version-recheck
 - 2026-10-09 — When a fix changes how a fingerprinted check judges its input, bump that strategy's version in the same PR, or the fix only reaches input the check has never seen. — [finding](findings/2026-10-09-check-fingerprint-blocks-rejudge.md) — Agent lesson: gutenberg/pr-767-rejudge-on-change
 
-### Sources and discovery (23)
+### Sources and discovery (24)
+
+- 2026-10-26 — A path that opens one institution's file is not a path for another bank: a website vendor's file folder (`/files/sunrisefamilycu/1/file/...`) names its owner whatever host serves it, so it is never learned as a platform path or peer hint, a found link in another institution's folder is refused, and Darwin's document-owner check links the folder's owner behind its switch (off); 102 live fees at 4 CUs were Sunrise Family CU's (#1455). — [finding](findings/2026-10-26-vendor-folder-is-one-banks-file.md) — Agent lesson: magellan/issue-1455-a-vendor-folder-is-one-banks-file, darwin/issue-1455-a-file-folder-names-its-owner; Guard: `src/lib/agents/magellan/platform-learning.test.ts`, `src/lib/agents/magellan/website-owner.db.test.ts`, `src/lib/agents/darwin/document-owner.test.ts`
 
 - 2026-10-26 — A current source and the reject list are one judgement: no fetch, failed read, search or sync makes an address on the bank's own rejected list its current source; only a read that judged the page a fee page (or a person's link) takes it off the list, and never an ownership reject (another bank's page). Deming's daily check now matches the list's { url } entries, and Knox's rules read records the layout fingerprint (#1105). — [finding](findings/2026-10-26-rejected-source-stays-current.md) — Agent lesson: magellan/issue-1105-rejected-is-never-current, rosetta/issue-1105-a-read-supersedes-a-reject, deming/issue-1105-check-the-stored-shape; Guard: `src/lib/agents/learning/rejected-sources.db.test.ts`, `src/lib/agents/deming/playbook-contradictions.db.test.ts`
 - 2026-10-25 — A stored website is a claim, not a fact: when an unrelated institution stores the same website host, read the homepage and ask whose it is; a website whose homepage names another institution and not this one is not searched, not counted as this institution's own host, and goes back to the website search (a host that spells the institution's or its holding company's name, as after a rename, is its own) (#1455). — [finding](findings/2026-10-25-website-is-another-institutions.md) — Agent lesson: magellan/issue-1455-whose-website-is-it; Guard: `src/lib/agents/magellan/website-owner.test.ts`, `src/lib/agents/magellan/website-owner.db.test.ts`
@@ -611,16 +613,16 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (313 in all).
+counts as of this index (316 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
 | atlas | 8 | [`src/lib/agents/atlas/role-lessons.ts`](../../src/lib/agents/atlas/role-lessons.ts) |
-| magellan | 26 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
+| magellan | 27 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
 | hoovie | 12 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
 | rosetta | 14 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
 | knox | 84 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
-| darwin | 48 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
+| darwin | 50 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 40 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
 | hamilton | 63 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
 | deming | 18 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
