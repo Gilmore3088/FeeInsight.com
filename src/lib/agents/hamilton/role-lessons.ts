@@ -253,7 +253,7 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     stage: "publish",
     lesson: "A figure the name leads into or completes is part of the name, not a price glued onto it: 'monthly fee if balance falls below $2,500.00', 'Paid NSF Item < $30', 'For checks $300 and over'. Cut a name at a price only when the price is the fee's own or a neighbouring cell's; a threshold, a range's second figure or a tier stays, and a sentence ending on it ends the name. A name repair that leaves the name ending on 'below', 'of', 'is' or '<' has made the fragment it was meant to remove.",
     why: "The publish name cut at the first dollar figure outside a parenthesis: 19 live fees on 2026-10-26 still showed the cut ('monthly fee if balance falls below' 149336, 'Overdraft/NSF Charge, per item if the amount of the individual item is' 157375), 8 of them fragments no live check reads. The live fragment check asked for a re-read of 6 every day; the re-read found the whole name each time, which equals the raw read, so it never settled, and a republish would cut names the live tidy had already restored ('Check cashing if less than $100', 131639) (#1443).",
-    evidence: { issues: [1443], prs: [], files: ["src/lib/agents/hamilton/publish.ts", "src/lib/agents/hamilton/publish.test.ts", "src/lib/agents/knox/reread-feedback.ts", "docs/project/findings/2026-10-26-publish-cut-the-threshold.md"] },
+    evidence: { issues: [1443], prs: [2747], files: ["src/lib/agents/hamilton/publish.ts", "src/lib/agents/hamilton/publish.test.ts", "src/lib/agents/knox/reread-feedback.ts", "docs/project/findings/2026-10-26-publish-cut-the-threshold.md"] },
     appliesTo: "all",
     since: "2026-10-26",
   },
