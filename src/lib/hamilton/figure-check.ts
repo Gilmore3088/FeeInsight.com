@@ -69,10 +69,16 @@ const PER_ASSETS_DENOMINATOR = new RegExp(
   + String.raw`(?:\$\s?10(?:,000|000)(?:\.00)?(?![\d,])|\$\s?10\s?(?:k|thousand)\b|ten[- ]thousand\s+dollars\b)`
   + String.raw`\s*(?:(?:of|in)\s+)?(?:total\s+)?assets\b`, "gi");
 /**
- * What joins a leading "per $10,000 of assets" to the figure it introduces, in one clause: a
- * colon or equals sign, or up to five words ending in a linking verb (", fee income was").
+ * What may join a leading "per $10,000 of assets" to the figure it introduces, on one line and in
+ * one sentence: a colon or equals sign, a linking verb directly ("was", "is", "of", "at"), or an
+ * income subject and then a linking verb (", fee income was"). Any other words, a fee word above
+ * all ("the overdraft fee is"), mean the figure is not the ratio.
  */
-const DENOMINATOR_LEAD = /^\s*(?:[:=]|,?\s*(?:[a-z'’-]+\s+){0,5}?(?:was|is|were|are|stood\s+at|came\s+to|averaged|equals?|of|at)\s*:?)?\s*$/i;
+const DENOMINATOR_LEAD = new RegExp(
+  String.raw`^[ \t]*(?:[:=]|,?[ \t]*(?:(?:the[ \t]+)?(?:(?:fee|service[ \t]+charge|non-?interest)[ \t]+)?income[ \t]+)?`
+  + String.raw`(?:was|is|were|are|stood[ \t]+at|came[ \t]+to|averaged|equals?|of|at)[ \t]*:?)?[ \t]*$`, "i");
+/** Figures that list values under one shared denominator: "$35.10 and $12.00 per $10,000 of assets". */
+const LIST_JOIN = /^[ \t]*(?:,[ \t]*(?:and[ \t]+|or[ \t]+)?|and[ \t]+|or[ \t]+)$/i;
 
 interface DenominatorSpan { start: number; end: number }
 
@@ -98,17 +104,24 @@ export function extractFigures(text: string): NarrativeFigure[] {
     const span = spans.find((s) => index >= s.start && index < s.end);
     return { match, scale, value, index, end: index + match[0].length, span };
   });
-  // A figure takes the denominator right after it ("$15.14 per $10,000 in assets"), or else one
-  // that leads into it with nothing but a verb between ("for every $10,000 of assets, it was $15.14").
+  // A figure takes the denominator right after it ("$15.14 per $10,000 in assets"), shares the one
+  // after a list it opens ("$35.10 and $12.00 per $10,000 of assets"), or else takes one that leads
+  // into it with only a linking verb between ("for every $10,000 of assets, fee income was $15.14").
   const ratioOf = new Map<number, DenominatorSpan>();
   const taken = new Set<DenominatorSpan>();
+  for (let i = usd.length - 1; i >= 0; i--) {
+    const figure = usd[i];
+    if (figure.span) continue;
+    const following = usd[i + 1];
+    const span = spans.find((s) => s.start >= figure.end && /^[ \t]*$/.test(plain.slice(figure.end, s.start)))
+      ?? (following && ratioOf.has(i + 1) && LIST_JOIN.test(plain.slice(figure.end, following.index)) ? ratioOf.get(i + 1) : undefined);
+    if (span) { ratioOf.set(i, span); taken.add(span); }
+  }
   usd.forEach((figure, i) => {
-    if (figure.span) return;
-    const next = spans.find((s) => s.start >= figure.end && /^\s*$/.test(plain.slice(figure.end, s.start)));
-    const lead = next ? undefined : spans.findLast((s) => s.end <= figure.index && !taken.has(s)
+    if (figure.span || ratioOf.has(i)) return;
+    const lead = spans.findLast((s) => s.end <= figure.index && !taken.has(s)
       && DENOMINATOR_LEAD.test(plain.slice(s.end, figure.index)));
-    const span = next ?? lead;
-    if (span && !taken.has(span)) { ratioOf.set(i, span); taken.add(span); }
+    if (lead) { ratioOf.set(i, lead); taken.add(lead); }
   });
   usd.forEach(({ match, scale, value, index, end, span }, i) => {
     // The "$10,000" of a denominator a figure took is that figure's unit, not a dollar total.

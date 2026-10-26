@@ -420,7 +420,7 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     id: "issue-1077-per-10k-assets-denominator",
     agent: "hamilton",
     stage: "written answer",
-    lesson: "Read a fee-income-per-assets denominator as one unit in any wording (per, for every, for each or /; $10,000, $10K or ten thousand dollars; of, in or bare assets, before or after the figure), so its $10,000 is never a dollar total of its own. The figure it divides traces only to a value the evidence types as USD income per 10,000 USD assets, at the cents the tool sends; a denominator no figure takes, or a $10,000 anywhere else, still traces like any other figure.",
+    lesson: "Read a fee-income-per-assets denominator as one unit in any wording (per, for every, for each or /; $10,000, $10K or ten thousand dollars; of, in or bare assets, right after the figure or its list, or leading into it with only a linking verb or an income subject between and never a fee word, a line break or a sentence end), so its $10,000 is never a dollar total of its own. The figure it divides traces only to a value the evidence types as USD income per 10,000 USD assets, at the cents the tool sends; a denominator no figure takes, or a $10,000 anywhere else, still traces like any other figure.",
     why: "In a paid replay, 4 held written answers about NCUA fee income said \"$15.14 per $10,000 in assets\": the check knew only \"per $10,000 of assets\", so both the ratio and the $10,000 were flagged as untraced, though the fee income tools send that ratio typed and rounded to cents.",
     evidence: { issues: [1077], prs: [], files: ["src/lib/hamilton/figure-check.ts", "src/lib/hamilton/figure-check.test.ts", "src/lib/research/fee-income-peers.ts"] },
     appliesTo: ["written-answer"],

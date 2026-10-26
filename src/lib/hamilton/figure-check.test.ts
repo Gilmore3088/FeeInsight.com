@@ -133,6 +133,33 @@ describe("the per-$10,000-of-assets denominator in any wording (#1077)", () => {
       "Fee income was $15.14 per $10,000 of revenue.",
     ]) expect(checkNarrativeFigures(text, evidence, options).unmatched).toContain("$10,000");
   });
+
+  // A filed ratio of 35.10 beside a $30 overdraft fee: a $35 fee must never borrow the ratio's unit.
+  const withFee = [
+    feeIncomeAgainstPeers([filed(1, 35.1), filed(2, 12), ...[3, 4, 5, 6, 7, 8].map((id) => filed(id, 10 + id / 100))], 1, {}),
+    { fee_category: "overdraft", amount: 30, unit: "USD" },
+  ];
+
+  it.each([
+    "For every $10,000 in assets, the overdraft fee is $35.",
+    "Per $10,000 of assets, the bank's overdraft fee of $35 compares with peers.",
+    "Income per $10,000 of assets\n\nThe overdraft fee is $35.",
+    "Fee income per $10,000 of assets. Its fee is $35.",
+  ])("holds a fee that only follows the denominator: %s", (text) => {
+    expect(checkNarrativeFigures(text, withFee, options).unmatched).toContain("$35");
+    expect(extractFigures(text).find((f) => f.raw === "$35")?.denominatorUnit).toBeUndefined();
+  });
+
+  it("gives every figure in a list the denominator they share", () => {
+    const text = "Fee income was $35.10 and $12.00 per $10,000 of assets.";
+    expect(extractFigures(text).map((f) => [f.raw, f.denominatorUnit])).toEqual([
+      ["$35.10", "ten_thousand_assets"], ["$12.00", "ten_thousand_assets"],
+    ]);
+    expect(checkNarrativeFigures(text, withFee, options).unmatched).toEqual([]);
+    // Listed under the denominator, the $30 reads as a ratio, finds no filed ratio of 30 and holds.
+    expect(checkNarrativeFigures("The fee is $30 and $35.10 per $10,000 of assets.", withFee, options).unmatched).toEqual(["$30"]);
+    expect(checkNarrativeFigures("Fee income was $35.10, or $12.50 per $10,000 of assets.", withFee, options).unmatched).toEqual(["$12.50"]);
+  });
 });
 
 describe("figures that are not the data's to trace (#1425)", () => {
