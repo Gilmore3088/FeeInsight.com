@@ -784,6 +784,9 @@ async function executeAgenticStep(
           : step.stepKey === "extract-paid"
             ? runKnoxPaidExtract
             : runDarwinAdjudicate;
+      // Never pass `measure` or `releaseActs` from run params here: the tick classes verify-paid as
+      // free from `verifyPaidMayCallProvider()` (the code switches alone), so a run-level override
+      // would let it pay without the provider budget or stop (#1111).
       const paid = await runner({
         runId: run.id,
         stepId: step.id,

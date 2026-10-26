@@ -1671,8 +1671,10 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   lists them as `skipped_passes`; a dry run writes none. While neither pass can pay
   (`verifyPaidMayCallProvider`), the tick treats `verify-paid` as a free step
   (`payingProviderStepKeys` in `types.ts`, #1111 follow-up, 2026-10-26): it asks for no provider
-  budget, takes no paid-run slot and does not wait on the provider stop, so the verdict score runs
-  and the lane behind it never waits for a slot it would not use. It stays in
+  budget, is not deferred when the paid-run slots are used up and does not wait on the provider
+  stop, so the verdict score runs and the lane behind it never waits for a slot it would not use.
+  This is the tick only: an admin launch made only of provider steps, and the dispatch-readiness
+  check, still treat it as paid and refuse it while the provider stop is on. It stays in
   `PROVIDER_STEP_KEYS` (and the pipeline control still pauses it), and it counts as a provider step
   again as soon as either switch is on. No switch, default, strategy or prompt version changed.
   Still open on #1111: the release path does not run the post-source checks (retired category,
