@@ -1176,7 +1176,7 @@ lessons_index_kill() {
 db_test_wiring_kill() {
   # A *.db.test.ts skips without E2E_DATABASE_URL, so the unit shards pass it unrun. It runs in CI
   # only when .github/workflows/test.yml names it (E2E_TESTS or its own variable); eight suites,
-  # three of them cited as a lesson's guard, never ran until #2717 (2026-10-26 finding).
+  # two of them cited as a fix's guard, never ran until #2717 (2026-10-26 finding).
   local missing="" f
   while IFS= read -r f; do
     grep -qF "$f" .github/workflows/test.yml || missing+="$f"$'\n'
