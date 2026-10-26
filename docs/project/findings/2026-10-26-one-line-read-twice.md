@@ -55,7 +55,9 @@ share no reading.
 **Fix (Hamilton publish, live):** `same-line-read.ts` holds the one rule (`readsSameLine`). Each
 dollar row about to publish is read against the live fees with its stored line
 (`selectSameLineReadOf`) and, while `PUBLISH_REFUSE_SAME_LINE_READS_LIVE` is on, skipped as `Same
-printed line as live fee #<id>` (step detail `same_line_read_check`). It takes no live fee down.
+printed line as live fee #<id>` (step detail `same_line_read_check`, attempt detail `same_line_read_of`). It takes no live fee down.
+A refused row is decided once more when the fee it was refused behind comes down
+(`undecidedAtThisVersionSql`), so a takedown of the kept read never leaves the bank's price off.
 
 **Live re-check (Darwin, `same-line-read-check.ts`, v1, switch off):** each verify step reads the
 groups, keeps the read that states its frequency (then the oldest) and matches the rest with the

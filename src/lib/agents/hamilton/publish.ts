@@ -523,6 +523,19 @@ function undecidedAtThisVersionSql(params: Array<number | string | number[]>, mi
                        <> lower(regexp_replace(fv.fee_name, '[^a-zA-Z0-9]+', '', 'g'))
               )
             )
+            -- A row refused as a second read of one printed line is decided once more when the
+            -- live fee it was refused behind has come down (#1876): the kept read is often the
+            -- worse one ("Cashier's Check fee. The fee"), and a later takedown of it must not
+            -- leave the bank's price off the catalog while the clean read stays refused.
+            AND NOT (
+              pa.outcome = 'rejected'
+              AND pa.detail ? 'same_line_read_of'
+              AND NOT EXISTS (
+                SELECT 1 FROM published_fee_records kept
+                 WHERE kept.fee_published_id = NULLIF(pa.detail->>'same_line_read_of', '')::bigint
+                   AND kept.rolled_back_at IS NULL
+              )
+            )
             AND NOT (pa.outcome = 'unchanged' AND ${THRESHOLD_RESELECT_SQL})
             AND NOT (pa.outcome = 'unchanged' AND ${OLDER_DOCUMENT_RESELECT_SQL})
             AND NOT (pa.outcome = 'unchanged' AND ${QUALIFIER_RESELECT_SQL})
