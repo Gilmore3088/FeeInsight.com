@@ -21,6 +21,7 @@ import { LOAN_SECTION_TARGET, loanSectionFee } from "@/lib/custom-report/loan-se
 import { domesticStackedStem, stackedCellVariants } from "@/lib/custom-report/stacked-cell-variants";
 import { domesticWireClausePrices } from "@/lib/custom-report/wire-clause-prices";
 import { withCenteredHeadingCells } from "@/lib/custom-report/centered-heading-cell";
+import { BILL_PAY_RETURNED_BY_PAYEE, payeeReturnedBillPayOnLine } from "@/lib/custom-report/payee-returned-bill-pay";
 import type { OwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
 
 /**
@@ -465,6 +466,11 @@ export const FEE_PATTERNS: FeePattern[] = [
   // "Overdraft at teller window") stood in for the institution's overdraft fee. "Over Draft
   // Protection" and a draft protection transfer, sweep, line or plan are not it.
   { key: "overdraft", pattern: DRAFT_PROTECTION_FEE },
+  // v131 (#1912): a bill payment the payee sent back is the bill pay service's charge, not NSF:
+  // Bellco's "Bill Pay Return Item Fee (per item returned by payee) | $10.00" (85460), its note read
+  // from the next line by v127. A bill pay return with no such words stays NSF, as the Texas key files
+  // "Bill Payment Return Item Fee (per presentment)" (tid 2419).
+  { key: "bill_pay", pattern: BILL_PAY_RETURNED_BY_PAYEE },
   {
     key: "nsf",
     pattern: /\b(NSF|non[-\s]?sufficient|insufficient funds|return(ed)? (checks?|items?|ach|drafts?))\b/i,
@@ -1323,6 +1329,18 @@ export function boxSectionLateFeeRead(candidate: ExtractedFeeCandidate, text: st
 export function loanSectionFeeRead(candidate: ExtractedFeeCandidate, text: string): ExtractedFeeCandidate {
   if (!loanSectionFee(text, candidate.feeName, candidate.amount, candidate.canonicalHint)) return candidate;
   return passesDarwinChecks(LOAN_SECTION_TARGET, candidate.feeName, candidate.amount) ? { ...candidate, canonicalHint: LOAN_SECTION_TARGET } : candidate;
+}
+
+/**
+ * v131 (#1912): an NSF read of a bill pay return charge whose own line, or the note wrapped onto the
+ * next line, says the payee returned it is the bill pay service's charge: filed as `bill_pay`,
+ * whichever specialist read it, when that type passes the name. Bellco's table pass read "Bill Pay
+ * Return Item Fee | $10.00" without the "(per item returned by payee)" note printed under it (85460).
+ * Read with `payeeReturnedBillPayOnLine`, the check guard v99 makes on the fee's stored text. Pure.
+ */
+export function payeeReturnedBillPayRead(candidate: ExtractedFeeCandidate, text: string): ExtractedFeeCandidate {
+  if (candidate.canonicalHint !== "nsf" || !payeeReturnedBillPayOnLine(text, candidate.feeName, candidate.amount)) return candidate;
+  return passesDarwinChecks("bill_pay", candidate.feeName, candidate.amount) ? { ...candidate, canonicalHint: "bill_pay" } : candidate;
 }
 
 /** The FEE_PATTERNS key a fee name matches, before mapping to its canonical key. */
