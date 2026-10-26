@@ -557,6 +557,16 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     since: "2026-10-26",
   },
   {
+    id: "issue-1896-no-per-1000-anywhere",
+    agent: "hamilton",
+    stage: "written answer",
+    lesson: "Ask's price card and the report's price-move exhibit show what Try a price shows: the change per item and where the price would rank locally and against peers. Never show or write a fee income figure per 1,000 items or charges, or a share of filed income worked out from one; a yearly fee income figure needs the bank's own yearly volume.",
+    why: "After Try a price dropped its per 1,000 items figure (Oct 18), Ask's fee change card still showed a change per 1,000 items charged, and the report's price-move exhibit, its title and the report instructions still sized each gap per 1,000 charges and as a share of service-charge income, so the same revenue-forecast reading came back on two other screens and in the PDF.",
+    evidence: { issues: [1896], prs: [], files: ["src/components/hamilton/analyze/StructuredAsk.tsx", "src/lib/hamilton/workspace/ask.ts", "src/lib/hamilton/workspace/scenario.ts", "src/lib/hamilton/report-exhibits.ts", "src/lib/hamilton/report-answer.ts", "src/lib/hamilton/report-goal.ts", "src/lib/hamilton/report-inputs.ts"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
+  {
     id: "issue-2028-counted-group-length",
     agent: "hamilton",
     stage: "analysis",
