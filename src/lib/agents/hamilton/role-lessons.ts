@@ -546,4 +546,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: ["written-answer"],
     since: "2026-10-26",
   },
+  {
+    id: "issue-2028-counted-group-length",
+    agent: "hamilton",
+    stage: "analysis",
+    lesson: "A named group that carries its own count (\"the 25 largest $1B to $10B credit unions\") is counted as \"10 of the 25 largest ...\", never \"10 the 25 largest ...\"; a line that counts it keeps the count and the group, and drops a trailing name or extra clause when the line would run past its word limit.",
+    why: "A Pro answer read \"at the bottom of 5 the 25 largest $1B to $10B credit unions\" and \"None of the 5 the 25 largest ...\"; once the counts were fixed, the long label still took the market lines past the 20-word storyline limit, so the writer check flagged them.",
+    evidence: { issues: [2028], prs: [], files: ["src/lib/segment-words.ts", "src/lib/hamilton/workspace/storyline.ts", "src/lib/hamilton/workspace/storyline.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
 ];

@@ -4,7 +4,7 @@ import { PERCENTILE_METHOD } from "@/lib/percentile";
 import { feeItem } from "./names";
 import { buildFeeAnswer } from "./answer";
 import { buildAskResponse, parseAsk } from "./ask";
-import { evaluateFourRoles } from "./four-roles";
+import { evaluateFourRoles, MAX_STORY_LINE_WORDS, words } from "./four-roles";
 import { buildSegmentResearch, parseSegment } from "./segment";
 import { archetypeOf, asksAboutStructure, storylineKind } from "./storyline";
 import { overdraftResearch } from "./test-fixtures";
@@ -336,12 +336,47 @@ describe("storyline", () => {
     };
     const mid = story(32);
     expect(mid.exhibits[0].actionTitle).toBe("10 of the 25 largest $1B to $10B credit unions publish an overdraft fee, 1 at $0; the median is $35.");
-    expect(mid.lenses.market[0].text).toMatch(/^4 of 10 of the 25 largest \$1B to \$10B credit unions charge less than your \$32; the lowest/);
+    expect(mid.lenses.market[0].text).toBe("4 of 10 of the 25 largest $1B to $10B credit unions charge less than your $32.");
     const archetype = mid.exhibits.find((e) => e.exhibit.kind === "archetype_map");
     expect(archetype?.actionTitle).toMatch(/^Of 10 of the 25 largest \$1B to \$10B credit unions: /);
     const low = story(0);
     expect(low.lenses.market[0].text).toMatch(/^None of the 10 of the 25 largest \$1B to \$10B credit unions charge less than your \$0/);
     expect(JSON.stringify([mid, low])).not.toMatch(/\d the \d/);
+  });
+
+  it("keeps every counted market line within a storyline line's words when a 'the N largest' label is long (#2028)", () => {
+    const segment = parseSegment("Which credit unions in the top 25 of the $1 billion to $10 billion tier run a fee share below 4%?")!;
+    const members = (several: boolean): SegmentMember[] =>
+      [10, 25, 25, 30, 20, 25, 27, 30, 35, 22].map((amount, i) => ({
+        institutionId: 400 + i,
+        institutionName: `Lakeshore Community Federal Credit Union ${i + 1}`,
+        amount,
+        stateCode: "NY",
+        sourceDocumentIds: [i],
+        documentUrls: [`https://example.org/lcu-${i}.pdf`],
+        publishedAt: "2026-09-20",
+        totalAssets: 9_000_000 - i * 10_000,
+        charterType: "credit_union",
+        dailyCap: null,
+        dailyFeeLimit: null,
+        ...(several && i === 0 ? { several: { low: 5, high: 15, fees: [{ name: "Late fee A", amount: 5 }, { name: "Late fee B", amount: 15 }] } } : {}),
+      }));
+    const market = (current: number, several = false) => {
+      const seg = buildSegmentResearch({ segment, feeCategory: "overdraft", institutionsInSegment: 25, members: members(several), current, ownInSegment: true });
+      return buildFeeAnswer(research({ current, segment: seg }), { focus: "competitors" }).storyline!.lenses.market.map((f) => f.text);
+    };
+    const none = market(5);
+    const fewer = market(26);
+    const stats = market(26, true);
+    // The count and the group stay; the clause that would run past the limit goes.
+    expect(none[0]).toBe("None of the 10 of the 25 largest $1B to $10B credit unions charge less than your $5.");
+    expect(fewer[0]).toBe("6 of 10 of the 25 largest $1B to $10B credit unions charge less than your $26.");
+    expect(stats[0]).toBe("In group statistics, 6 of 10 of the 25 largest $1B to $10B credit unions have values below your $26.");
+    for (const line of [...none, ...fewer, ...stats]) expect(words(line)).toBeLessThanOrEqual(MAX_STORY_LINE_WORDS);
+    // A short label keeps the named form: the fallback only runs when the line is too long.
+    expect(buildFeeAnswer({ ...research(), current: 20 }).storyline!.lenses.market[0]).toMatchObject({
+      text: "None of the 3 local competitors charge less than your $20; the highest is Peer 101 ($35).",
+    });
   });
 
   it("states where the price sits against local competitors without judging it", () => {

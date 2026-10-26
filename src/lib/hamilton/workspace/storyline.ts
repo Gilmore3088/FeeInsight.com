@@ -399,9 +399,14 @@ function structurePiece(research: FeeResearch): Piece | null {
   };
 }
 
-/** A line naming an institution, or the same line without the name when a long name would run past a storyline line's limit. */
-function namedWithin(named: string, unnamed: string): string {
-  return words(named) <= MAX_STORY_LINE_WORDS ? named : unnamed;
+/**
+ * The first of a line's forms that fits a storyline line's limit, longest first: with the
+ * institution's name, then without it, then without the trailing clause. A long group label
+ * ("10 of the 25 largest $1B to $10B credit unions") can take a line past the limit on its own,
+ * so the last form keeps the count and the group and drops the extra (#2028).
+ */
+function namedWithin(...forms: string[]): string {
+  return forms.find((f) => words(f) <= MAX_STORY_LINE_WORDS) ?? forms[forms.length - 1];
 }
 
 /** Monthly maintenance: the bank's account lineup beside the group's, one row per institution. */
@@ -939,7 +944,10 @@ function marketLens(research: FeeResearch, name: string): Fact[] {
     const n = group.members.length;
     if (group.members.some(m => m.several)) {
       out.push({
-        text: `In group statistics, ${count(cheaper.length)} of ${countedGroup(n, group.label)} have values below ${subjectPossessive(research, false)} ${money(current)}; the named rows show their stated prices.`,
+        text: namedWithin(
+          `In group statistics, ${count(cheaper.length)} of ${countedGroup(n, group.label)} have values below ${subjectPossessive(research, false)} ${money(current)}; the named rows show their stated prices.`,
+          `In group statistics, ${count(cheaper.length)} of ${countedGroup(n, group.label)} have values below ${subjectPossessive(research, false)} ${money(current)}.`,
+        ),
         source: group.source,
         sampleSize: n,
       });
@@ -948,14 +956,16 @@ function marketLens(research: FeeResearch, name: string): Fact[] {
       // Named only by a stated price: an institution stating several different fees has none (#1931).
       const top = [...dearer].sort((a, b) => b.amount - a.amount)[0];
       const highest = top && !top.several ? top : undefined;
+      const none = `None of ${theCountedGroup(n, group.label)} charge less than ${subjectPossessive(research, false)} ${money(current)}`;
       out.push({
         text: highest
           ? namedWithin(
-              `None of ${theCountedGroup(n, group.label)} charge less than ${subjectPossessive(research, false)} ${money(current)}; the highest is ${plainName(highest.name)} (${money(highest.amount)}).`,
-              `None of ${theCountedGroup(n, group.label)} charge less than ${subjectPossessive(research, false)} ${money(current)}; the highest charges ${money(highest.amount)}.`,
+              `${none}; the highest is ${plainName(highest.name)} (${money(highest.amount)}).`,
+              `${none}; the highest charges ${money(highest.amount)}.`,
+              `${none}.`,
             )
           : dearer.length > 0
-            ? `None of ${theCountedGroup(n, group.label)} charge less than ${subjectPossessive(research, false)} ${money(current)}.`
+            ? `${none}.`
             : `All ${countedGroup(n, group.label)} charge the same ${money(current)} ${subjectName(research)} ${research.subjectName ? "does" : "do"}.`,
         source: group.source,
         sampleSize: n,
@@ -968,6 +978,7 @@ function marketLens(research: FeeResearch, name: string): Fact[] {
           ? namedWithin(
               `${fewer}; the lowest is ${plainName(lowest.name)} (${money(lowest.amount)}).`,
               `${fewer}; the lowest charges ${money(lowest.amount)}.`,
+              `${fewer}.`,
             )
           : `${fewer}.`,
         source: group.source,
