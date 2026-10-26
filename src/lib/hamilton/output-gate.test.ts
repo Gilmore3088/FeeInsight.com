@@ -330,4 +330,15 @@ describe("gateAnswer: asset-tier bounds trace to the tier the writer was given (
     expect(untraced(gate(text, [profile]))).toEqual(["These figures are not in DATA: $5 billion."]);
     expect(untraced(gate(text, [profile], "How do credit unions over 5B price overdraft?"))).toEqual([]);
   });
+
+  it("never takes a count in the question for a dollar figure the answer may restate", () => {
+    for (const [question, text, figure] of [
+      ["We serve 2 million members; how does our overdraft compare?", "Overdraft income was $2 million.", "$2 million"],
+      ["We have 30k members; how does our overdraft compare?", "Overdraft income was $30,000.", "$30,000"],
+    ] as const) {
+      const verdict = gate(text, [profile], question);
+      expect(untraced(verdict), question).toEqual([`These figures are not in DATA: ${figure}.`]);
+      expect(verdict.status, question).toBe("held");
+    }
+  });
 });

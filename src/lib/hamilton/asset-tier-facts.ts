@@ -14,8 +14,10 @@ import { FDIC_TIER_BREAKPOINTS } from "@/lib/fed-districts";
  * Each tier's assets in dollars, [minimum, maximum) with null for no upper bound. The stored
  * segment codes (institution_sources.asset_size_tier, regulatory/fdic.ts assetSizeTier) come first;
  * the FDIC call-report codes (fed-districts.ts) add the ones the segments do not use. "regional" is
- * the stored segment ($10B to $50B); the call-report peer ranking states its own FDIC bounds as
- * dollars (minimumAssetsUsd / maximumAssetsUsd).
+ * listed as the stored segment ($10B to $50B), but the same code is the FDIC tier ($10B to $250B) in
+ * call-report reads (by_tier views), so a fact for it states only the shared minimum
+ * (AMBIGUOUS_UPPER_BOUND). The call-report peer ranking states its own FDIC bounds as dollars
+ * (minimumAssetsUsd / maximumAssetsUsd).
  */
 export const ASSET_TIER_DOLLAR_RANGES: Readonly<Record<string, readonly [number, number | null]>> = {
   community_small: [0, 300e6],
@@ -28,6 +30,9 @@ export const ASSET_TIER_DOLLAR_RANGES: Readonly<Record<string, readonly [number,
     .filter(([code]) => code !== "regional")
     .map(([code, [min, max]]) => [code, [min, Number.isFinite(max) ? max : null] as const])),
 };
+
+/** The one code both vocabularies use with different upper bounds: its facts give no maximum. */
+const AMBIGUOUS_UPPER_BOUND: ReadonlySet<string> = new Set(["regional"]);
 
 /** Every nonzero bound of every tier, ascending: what a tier stated as a size can name. */
 export const ASSET_TIER_BOUND_VALUES: readonly number[] = [...new Set(Object.values(ASSET_TIER_DOLLAR_RANGES)
@@ -81,7 +86,7 @@ export function assetTierCodesIn(data: unknown): string[] {
 export function assetTierBoundFacts(data: unknown): AssetTierBoundFact[] {
   return assetTierCodesIn(data).map((code) => {
     const [min, max] = ASSET_TIER_DOLLAR_RANGES[code];
-    return { asset_tier: code, ...(min > 0 ? { min_assets: min } : {}), ...(max !== null ? { max_assets: max } : {}),
+    return { asset_tier: code, ...(min > 0 ? { min_assets: min } : {}), ...(max !== null && !AMBIGUOUS_UPPER_BOUND.has(code) ? { max_assets: max } : {}),
       unit: "USD", numeric_arithmetic_allowed: false, source: "asset tier definition" };
   });
 }

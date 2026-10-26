@@ -320,8 +320,8 @@ describe("asset-tier bounds as typed evidence and question sizes without a $ (#1
   });
 
   it("reads a question's sizes given without a $ as dollars", () => {
-    expect(extractQuestionFigures("credit unions < 10B, 5B, $10bn, 250 billion, 2.5 million and 10 banks").filter((f) => f.kind === "usd").map((f) => f.value))
-      .toEqual([10e9, 10e9, 5e9, 250e9, 2.5e6]);
+    expect(extractQuestionFigures("credit unions < 10B, 5B, $10bn, 250 billion, 2.5 million members, 30k members and 10 banks").filter((f) => f.kind === "usd").map((f) => f.value))
+      .toEqual([10e9, 10e9, 5e9, 250e9]);
     for (const [question, text] of [
       ["How do credit unions < 10B price overdraft?", "Credit unions under $10 billion charge $30."],
       ["What about institutions over 5B?", "Institutions over $5 billion charge $30."],
@@ -334,5 +334,21 @@ describe("asset-tier bounds as typed evidence and question sizes without a $ (#1
     // A bare count is not a dollar figure; an unrelated figure still holds.
     expect(checkNarrativeFigures("Ten banks charge $10.", data, { question: "List 10 banks." }).unmatched).toEqual(["$10"]);
     expect(checkNarrativeFigures("Banks over $7 billion charge $30.", data, { question: "Banks under 10B?" }).unmatched).toEqual(["$7 billion"]);
+  });
+
+  it("never reads a count in the question as dollars (review of f2046e3f7)", () => {
+    expect(checkNarrativeFigures("Overdraft income was $2 million.", data,
+      { question: "We serve 2 million members; how does our overdraft compare?" }).unmatched).toEqual(["$2 million"]);
+    expect(checkNarrativeFigures("Overdraft income was $30,000.", data,
+      { question: "We have 30k members; how does our overdraft compare?" }).unmatched).toEqual(["$30,000"]);
+  });
+
+  it("gives 'regional' only its shared minimum: the FDIC tier runs to $250 billion, the stored segment to $50 billion", () => {
+    const fdicRead = { by_tier: [{ asset_size_tier: "regional", mean_listed_fee_usd: 12 }] };
+    const evidence = { ...fdicRead, asset_tier_bounds: assetTierBoundFacts(fdicRead) };
+    expect(evidence.asset_tier_bounds).toEqual([{ asset_tier: "regional", min_assets: 10e9, unit: "USD", numeric_arithmetic_allowed: false, source: "asset tier definition" }]);
+    expect(checkNarrativeFigures("Regional banks, those under $50 billion, list a $12 mean fee.", evidence).unmatched).toEqual(["$50 billion"]);
+    expect(checkNarrativeFigures("Regional banks, those under $250 billion, list a $12 mean fee.", evidence).unmatched).toEqual(["$250 billion"]);
+    expect(checkNarrativeFigures("Regional banks, those over $10 billion, list a $12 mean fee.", evidence).unmatched).toEqual([]);
   });
 });

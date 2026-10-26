@@ -45,10 +45,11 @@ const SCALE: Record<string, number> = { k: 1e3, thousand: 1e3, m: 1e6, mn: 1e6, 
 
 const USD_PATTERN = /\$\s?(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?\s*(k|mn|m|bn|b|thousand|million|billion)?\b/gi;
 /**
- * A dollar size a question gives with no "$" ("credit unions < 10B", "over 250 billion"): a number
- * with a scale word. A bare number ("10 banks") is not a dollar figure, and "5m" is not read (minutes or months).
+ * An asset size a question gives with no "$" ("credit unions < 10B", "over 250 billion"): a number
+ * in billions. Thousands and millions are not read: "2 million members" and "30k members" are
+ * counts, and reading them as dollars would exempt "$2 million" or "$30,000" in the answer.
  */
-const UNITLESS_SCALED_PATTERN = /(?<![\w$.,])(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?\s*(k|mn|bn|b|thousand|million|billion)\b/gi;
+const UNITLESS_SCALED_PATTERN = /(?<![\w$.,])(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?\s*(bn|b|billion)\b/gi;
 const PCT_PATTERN = /(-?\d+)(?:\.(\d+))?\s?(?:%|percent\b)/gi;
 
 function toleranceFor(decimals: string | undefined, scale: number): number {
@@ -91,7 +92,7 @@ export function extractFigures(text: string): NarrativeFigure[] {
 
 /**
  * The figures a reader's question names: its dollar figures and percentages, plus a scaled size it
- * gives without a "$" ("< 10B", "5B", "250 billion"), read as dollars (#1077).
+ * gives in billions without a "$" ("< 10B", "5B", "250 billion"), read as dollars (#1077).
  */
 export function extractQuestionFigures(question: string): NarrativeFigure[] {
   const figures = extractFigures(question);
