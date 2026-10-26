@@ -7,6 +7,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const DARWIN_LESSONS: AgentLesson[] = [
   {
+    id: "issue-1593-page-layout-free-zero",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "Before reading a second price on a $0 fee's line as its condition, read how the page lays out the lines around it: when the neighbouring lines are each two whole rows side by side (a label and its own price on both sides of the cell break), the right cell of the fee's line is the right column's row; and a note-and-price tail that describes the right column's heading printed just above (\"Account Early Closure\" over \"$0.00 (closed within 90 days of opening) $20.00\") is that fee's, when the same fee row repeats for another account. A note that states a balance, statement, deposit, audience or other term of the fee stays its condition.",
+    why: "After #1621, two real free fees stayed held as conditional $0 and were taken down by the second look: Terrabank's \"Foreign Transaction Fees No Charge | Night Depository Bags & Key $ 30.00\" (38491) and Bank of Prairie Village's Blue Lion Checking maintenance fee (56797). The test read a fee noun or a condition-like word as enough, ignoring the page's own two-column layout. Dry run on Oct 26: of the 61 rows the recheck holds as conditional_zero, these 2 pass with the layout evidence and no other row changes.",
+    evidence: { issues: [1593], prs: [], files: ["src/lib/agents/darwin/verify.ts", "src/lib/agents/darwin/verified-recheck.ts"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
+  {
     id: "issue-1945-latest-edition-in-force",
     agent: "darwin",
     stage: "verify",

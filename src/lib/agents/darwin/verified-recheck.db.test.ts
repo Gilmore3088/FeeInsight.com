@@ -4,7 +4,7 @@ import postgres from "postgres";
 import { createHash, randomUUID } from "node:crypto";
 import { afterAll, describe, expect, it } from "vitest";
 import { JSON_TEXT_PASSTHROUGH, NUMERIC_AS_NUMBER, TEXT_WITHOUT_NUL, sql as appSql } from "@/lib/data-store/connection";
-import { recheckVerifiedFees, DARWIN_RECHECK_CHECK } from "./verified-recheck";
+import { recheckVerifiedFees, DARWIN_RECHECK_CHECK, DARWIN_RECHECK_STRATEGY } from "./verified-recheck";
 import { secondLookDedupeKey } from "../hamilton/second-look";
 
 const url = process.env.E2E_DATABASE_URL;
@@ -329,7 +329,7 @@ suite("Darwin recheck committed settlement (#2072)",()=>{
       await tx`UPDATE verified_fee_observations SET fee_name='Bill Pay',canonical_fee_key='bill_pay' WHERE fee_verified_id=${f.verifiedId}`;
       await tx`UPDATE published_fee_records SET fee_name='Bill Pay',canonical_fee_key='bill_pay' WHERE fee_published_id=${f.publishedId}`;
       await tx`UPDATE agent_source_texts SET normalized_text=${text},text_hash=${hash(text)} WHERE id=${f.textId}`;
-      await tx`INSERT INTO pipeline_attempts (institution_id,stage,strategy,strategy_version,input_fingerprint,outcome,yield_count,cost_microusd,agent_run_id,detail) VALUES (${f.institutionId},'verify','verify.recheck',5,${`verified:${f.verifiedId}`},'evidence_mismatch',0,0,${f.runId},'{}'::jsonb)`;
+      await tx`INSERT INTO pipeline_attempts (institution_id,stage,strategy,strategy_version,input_fingerprint,outcome,yield_count,cost_microusd,agent_run_id,detail) VALUES (${f.institutionId},'verify','verify.recheck',${DARWIN_RECHECK_STRATEGY.version},${`verified:${f.verifiedId}`},'evidence_mismatch',0,0,${f.runId},'{}'::jsonb)`;
       const result=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,secondLooks:false,...SETTLEMENT_ONLY});expect(result.secondLookOtherCode).toBe(1);expect(result.takenDown).toEqual([]);expect(await attemptCount(tx,f)).toBe(1);
       expect((await tx`SELECT kind FROM pipeline_feedback WHERE dedupe_key=${secondLookDedupeKey(DARWIN_RECHECK_CHECK,f.publishedId!)}`)[0].kind).toBe("takedown_pending");
     });
@@ -343,7 +343,7 @@ suite("Darwin recheck committed settlement (#2072)",()=>{
   });
   it("successful empty selection is known zero with a persisted witness",async()=>{
     await rollback("restore",async(tx,f)=>{
-      await tx`INSERT INTO pipeline_attempts (institution_id,stage,strategy,strategy_version,input_fingerprint,outcome,yield_count,cost_microusd,agent_run_id,detail) VALUES (${f.institutionId},'verify','verify.recheck',5,${`verified:${f.verifiedId}`},'ok',1,0,${f.runId},'{}'::jsonb)`;
+      await tx`INSERT INTO pipeline_attempts (institution_id,stage,strategy,strategy_version,input_fingerprint,outcome,yield_count,cost_microusd,agent_run_id,detail) VALUES (${f.institutionId},'verify','verify.recheck',${DARWIN_RECHECK_STRATEGY.version},${`verified:${f.verifiedId}`},'ok',1,0,${f.runId},'{}'::jsonb)`;
       const result=await check(tx,f);expect(result.execution).toMatchObject({state:"complete",selected:0,assessed:0,settled:0,unresolved:0,eventId:expect.any(Number)});
     });
   });
@@ -384,7 +384,7 @@ suite("Darwin recheck committed settlement (#2072)",()=>{
   });
   it("all-codes-off due path reports legacy would outcomes but never archives or changes attempts",async()=>{
     await rollback("live",async(tx,f)=>{
-      await tx`INSERT INTO pipeline_attempts (institution_id,stage,strategy,strategy_version,input_fingerprint,outcome,yield_count,cost_microusd,agent_run_id,detail) VALUES (${f.institutionId},'verify','verify.recheck',5,${`verified:${f.verifiedId}`},'evidence_mismatch',0,0,${f.runId},'{}'::jsonb)`;
+      await tx`INSERT INTO pipeline_attempts (institution_id,stage,strategy,strategy_version,input_fingerprint,outcome,yield_count,cost_microusd,agent_run_id,detail) VALUES (${f.institutionId},'verify','verify.recheck',${DARWIN_RECHECK_STRATEGY.version},${`verified:${f.verifiedId}`},'evidence_mismatch',0,0,${f.runId},'{}'::jsonb)`;
       const result=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,secondLooks:false,secondLookCodes:[],...SETTLEMENT_ONLY});
       expect(result.execution).toMatchObject({selected:0,phases:{due:"not_run",dueShadow:"reported_unknown"}});
       expect(result.dueSecondLooks).toMatchObject({due:1,wouldConfirm:{tier_perk_zero:1}});expect(result.takenDown).toEqual([]);expect(await attemptCount(tx,f)).toBe(1);
