@@ -2,6 +2,7 @@ import { feeApplicability } from "@/lib/fee-audience";
 import {
   billPayByHeading,
   boxSectionLateFeeRead,
+  loanSectionFeeRead,
   checkingNamePriceAmbiguous,
   extractCandidatesFromText,
   recognizedFeeBullets,
@@ -400,7 +401,21 @@ import { rateFloorOf } from "@/lib/rate-floor";
 // Oct 26 dry run over the 139 live $0 fees in those categories: 4 match (99261, 108088, 116439, 149658),
 // each checked on its stored text. Removes free reads only. The stale-read floor stays at v97. Name
 // re-tidy stays at v27.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 122 } as const;
+// v123 (#1905): a read filed under a deposit category (NSF, overdraft, monthly maintenance, minimum
+// balance, dormancy, a returned deposited item) whose every priced line sits in a loan section of the
+// schedule is the loan's fee, filed as other lending (`loanSectionFeeRead`, `loanSectionFee` in
+// `src/lib/custom-report/loan-section-fee.ts`, shared with Darwin's live re-check
+// `darwin/loan-section-check.ts`, switch off). The section is the first non-row line above the fee's
+// line: a short heading that names a loan, mortgage, home equity line, HELOC or line of credit, ends on
+// a section word and names no deposit, card or business product ("Equity Loan", "Consumer Loan Fees",
+// "LOAN FEES", "HELOC - Home Equity Line of Credit"). Navy Federal's "Home Equity Line Check returned
+// (due to non-sufficient funds)" $29 and "Tax Service Charge" $25 under "Equity Loan" were read by their
+// own words as the account's NSF and monthly maintenance fees and went live (154634, 154635). A row
+// naming a deposit account or service, a stop payment and a $0 in words keep their read. Oct 26 dry run
+// (prod, read-only): 8 live fees at 7 institutions sit in a loan section under a deposit category. They
+// move only when their banks are next read, each still checked by Darwin. Categories only; names and
+// prices are unchanged. The stale-read floor stays at v97. Name re-tidy stays at v27.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 123 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -640,7 +655,9 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
     // its own line as bill pay (`billPayByHeading`); the table pass named such a cell by its words.
     // v111 (#1916): every specialist's late fee printed in a safe deposit box section is the box's
     // (`boxSectionLateFeeRead`), read on the self-check's text.
-    const found = { ...run, candidates: run.candidates.map((read) => { const next = billPayByHeading(read); return next && carryColumnHeadingCell(read, next); }).filter((read): read is ExtractedFeeCandidate => read != null).map((read) => boxSectionLateFeeRead(read, checkText)) };
+    // v123 (#1905): every specialist's deposit-category read printed in a loan section is the loan's
+    // (`loanSectionFeeRead`), read on the same text.
+    const found = { ...run, candidates: run.candidates.map((read) => { const next = billPayByHeading(read); return next && carryColumnHeadingCell(read, next); }).filter((read): read is ExtractedFeeCandidate => read != null).map((read) => loanSectionFeeRead(boxSectionLateFeeRead(read, checkText), checkText)) };
     for (const [reason, count] of Object.entries(found.dropped ?? {})) countDropped(reason as DroppedLineReason, count);
     let added = 0;
     let selfCheckFailed = 0;
@@ -669,6 +686,9 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
       if (feeName !== read.feeName && read.canonicalHint === "late_payment") {
         read.canonicalHint = boxSectionLateFeeRead({ ...read, feeName }, checkText).canonicalHint;
       }
+      // v123 (#1905): the tidied name is the one the self-check traces, so a deposit-category read whose
+      // name tidying changed is read for its loan section again under that name.
+      if (feeName !== read.feeName) read.canonicalHint = loanSectionFeeRead({ ...read, feeName }, checkText).canonicalHint;
       const ownPrices = exclusiveStackedPrices(text, stackedPrices, feeName).filter(row => row.amount === read.amount);
       if (read.canonicalHint === "overdraft" && ownPrices.length > 0 && ownPrices.every(row => row.annualProgram)) {
         const row: HeldFeeCandidate = {
