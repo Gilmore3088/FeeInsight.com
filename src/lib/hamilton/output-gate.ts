@@ -43,10 +43,14 @@ import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 import { FEE_PHRASES } from "./workspace/fee-phrases";
 import type { AnswerToolEvidence } from "./written-answer-evidence";
 
-/** 2: the `thin_peer_group` failure code (T5, #1726). A version 1 record is still read (output-gate-shadow.ts). */
-export const OUTPUT_GATE_VERSION = 2 as const;
+/**
+ * 2: the `thin_peer_group` failure code (T5, #1726). 3: interpretation rules cut the sentences they
+ * fire on, a sentence that points back to a cut one goes with it, and `GateFailure.clauses` (#1077,
+ * cause 5). Version 1 and 2 records are still read (output-gate-shadow.ts).
+ */
+export const OUTPUT_GATE_VERSION = 3 as const;
 /** Every version a stored shadow record may carry. */
-export const OUTPUT_GATE_VERSIONS = [1, 2] as const;
+export const OUTPUT_GATE_VERSIONS = [1, 2, 3] as const;
 export type OutputGateVersion = (typeof OUTPUT_GATE_VERSIONS)[number];
 
 /** `ask` is the free Ask bar's storyline, gated only by the replay (gate-replay.ts): the live Ask bar shows it with no gate. */
@@ -114,6 +118,8 @@ export interface GateFailure {
   source: "check" | "binding" | "cause" | "identity" | "surface" | "peers" | "status";
   /** The sentences a non-critical failure cuts from the view. */
   sentences?: string[];
+  /** The clauses an interpretation rule fired on (`interpretation_rule` only), so a view can find them in any section. */
+  clauses?: string[];
 }
 
 export interface GateVerdict {
@@ -136,6 +142,8 @@ const FILED_PEER_CONFLICT = /^Conflicting filed financial peer reads/;
 /** Omit reasons the design (2.3) treats as critical; `premise_contradicted` only without a correction line. */
 const CRITICAL_OMIT = new Set<OmitReason>(["account_as_subject", "instruction_text"]);
 const LIST_MARKER = /^\s*(?:[-*+]|\d+\.)\s+|^\s*>\s*/;
+/** A sentence that opens by pointing back to the one before it. */
+const POINTS_BACK = /^\W*(?:that|this|these|those|as\s+a\s+result|so|which|therefore|thus|hence|accordingly|consequently|because\s+of\s+this|it\s+is\s+why|it['’]s\s+why)\b/i;
 
 /** The text's sentences, split as the binding splits them (withoutSentences). */
 export function gateSentences(text: string): string[] {
@@ -152,6 +160,8 @@ function institutionIdsOf(bundle: HamiltonEvidenceBundle | null | undefined): Se
 interface Evaluated {
   check: AnswerEvidenceCheck;
   binding: NarrativeBinding | null;
+  /** The prose the gate reads, before the binding's omitted sentences go. */
+  before: string;
   /** The prose a reader would see once the binding's omitted sentences go. */
   shown: string;
   /** Institutions the evidence holds a fact for. */
@@ -170,7 +180,7 @@ function evaluate(input: GateInput): Evaluated {
       ...institutionIdsOf(writtenAnswerFeeEvidence(evidence.toolOutputs)?.evidence),
       ...institutionIdsOf(evidence.reads.length ? claimEvidenceFacts(evidence.reads, identity.researchInstitutionId) : null),
     ]);
-    return { check, binding, shown: writtenAnswerProse(withoutOmitted(sections, binding)), factInstitutions };
+    return { check, binding, before: writtenAnswerProse(sections), shown: writtenAnswerProse(withoutOmitted(sections, binding)), factInstitutions };
   }
   // A surface that runs today's checks with fewer inputs (the memo) says so, so the shadow compares like with like.
   const check = checkAnswerEvidence(input.text, evidence.data, evidence.checkQuestion === false ? {} : { question });
@@ -179,18 +189,43 @@ function evaluate(input: GateInput): Evaluated {
       ...(evidence.bindIdentity === false ? {} : { accountInstitutionId: identity.accountInstitutionId, researchInstitutionId: identity.researchInstitutionId }) })
     : null;
   const omitted = new Set((binding?.omitted ?? []).map((o) => o.text.trim()));
-  return { check, binding, shown: withoutSentences(input.text, omitted), factInstitutions: institutionIdsOf(evidence.bundle) };
+  return { check, binding, before: input.text, shown: withoutSentences(input.text, omitted), factInstitutions: institutionIdsOf(evidence.bundle) };
 }
 
-/** Sentences a text-level problem can be pinned to, so it can be cut instead of holding the answer. */
-export function sentencesFor(code: GateFailureCode, sentences: readonly string[]): string[] {
+/** Text as a cut compares it: no markdown emphasis, single spaces, lower case. */
+const plainText = (text: string) => text.replace(/[*_`]+/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+
+/** Whether a sentence holds a clause an interpretation rule fired on (or is part of one). */
+function holdsClause(sentence: string, clauses: readonly string[]): boolean {
+  const plain = plainText(sentence);
+  return plain.length > 0 && clauses.some((clause) => {
+    const wanted = plainText(clause);
+    return wanted.length > 0 && plain.includes(wanted);
+  });
+}
+
+/**
+ * Sentences a text-level problem can be pinned to, so it can be cut instead of holding the answer.
+ * An interpretation rule's problem is pinned by the clauses it fired on (`clauses`, #1077 cause 5).
+ */
+export function sentencesFor(code: GateFailureCode, sentences: readonly string[], clauses: readonly string[] = []): string[] {
   switch (code) {
     case "advice": return sentences.filter((s) => findUnrequestedAdvice(s) !== null);
     case "internal_name": return sentences.filter((s) => PIPELINE_TERMS.test(s));
     case "house_wording": return sentences.filter((s) => CHEAP_WORDING.test(s));
     case "causal_unsupported": return sentences.filter((s) => causeLines(s).length > 0);
+    case "interpretation_rule": return sentences.filter((s) => holdsClause(s, clauses));
     default: return [];
   }
+}
+
+/**
+ * Whether every clause an interpretation rule fired on is in a sentence the view can drop: one it
+ * shows (and so cuts) or one the binding already left out. A clause found in neither (a heading,
+ * an Evidence line, a split the gate does not share) cannot be cut, so the answer holds.
+ */
+function everyClausePinned(clauses: readonly string[], shown: readonly string[], omitted: readonly string[]): boolean {
+  return clauses.length > 0 && clauses.every((clause) => [...shown, ...omitted].some((sentence) => holdsClause(sentence, [clause])));
 }
 
 function checkCode(problem: string, figureProblem: boolean, cause: ReadonlySet<string>): GateFailureCode {
@@ -326,7 +361,7 @@ export function thinPeerSentences(input: GateInput, sentences: readonly string[]
 
 /** The one output gate. */
 export function gateAnswer(input: GateInput): GateVerdict {
-  const { check, binding, shown, factInstitutions } = evaluate(input);
+  const { check, binding, before, shown, factInstitutions } = evaluate(input);
   const causeOff = input.cause === "off";
   const cause = new Set(causeOff ? [] : input.cause ?? causeShadowInput(check));
   // Today's cause problem lines are recognised as causes even when the shadow input is replaced or off.
@@ -336,13 +371,19 @@ export function gateAnswer(input: GateInput): GateVerdict {
 
   // 1. The shared evidence gate, problem by problem, in its own order.
   const figureLine = check.figureCheck.unmatched.length > 0 ? check.problems[0] : null;
+  const omittedTexts = (binding?.omitted ?? []).map((o) => o.text);
   for (const problem of check.problems) {
     const code = checkCode(problem, problem === figureLine, causeKnown);
     if (causeOff && code === "causal_unsupported") continue;
-    const cut = sentencesFor(code, shownSentences);
+    const clauses = code === "interpretation_rule"
+      ? check.interpretationClauses?.find((finding) => finding.problem === problem)?.clauses ?? [] : [];
+    const cut = sentencesFor(code, shownSentences, clauses);
     // Untraced figures stay critical (James, 2026-10-15). A problem that cannot be pinned to a sentence cannot be cut.
-    const critical = code === "untraced_figure" || code === "filed_peer_conflict" || cut.length === 0;
-    failures.push({ code, message: problem, critical, source: "check", ...(critical ? {} : { sentences: cut }) });
+    // An interpretation rule is cut only when every clause it fired on is in a sentence the view drops (#1077, cause 5).
+    const pinned = code === "interpretation_rule" ? everyClausePinned(clauses, shownSentences, omittedTexts) : cut.length > 0;
+    const critical = code === "untraced_figure" || code === "filed_peer_conflict" || !pinned;
+    failures.push({ code, message: problem, critical, source: "check", ...(critical ? {} : { sentences: cut }),
+      ...(clauses.length > 0 ? { clauses: [...clauses] } : {}) });
   }
   // 2. The cause rule as a shadow input: what it flags that today's gate does not already.
   for (const line of cause) {
@@ -372,6 +413,23 @@ export function gateAnswer(input: GateInput): GateVerdict {
       message: `A peer figure over ${thin.count} institution${thin.count === 1 ? "" : "s"} is stated as a benchmark; it needs ${thin.minimum} or more. Name the peers and their prices instead.` });
   }
 
+  // A shown sentence that points back to one that is not shown ("That is why ...", "As a result
+  // ...") leans on it, so it goes too, with the failure that took the one before it: a sentence a
+  // failure cuts, or one the binding left out (#1077, cause 5). Read in the prose's own order.
+  const shownSet = new Set(shownSentences);
+  const cutBy = new Map<string, GateFailure>();
+  for (const failure of failures) for (const sentence of failure.sentences ?? []) if (!cutBy.has(sentence)) cutBy.set(sentence, failure);
+  const leftOutBy = (sentence: string) => failures.find((f) => f.source === "binding" && holdsClause(f.message, [sentence]));
+  let previous: GateFailure | undefined;
+  for (const sentence of gateSentences(before)) {
+    let owner = cutBy.get(sentence) ?? (shownSet.has(sentence) ? undefined : leftOutBy(sentence));
+    if (!owner && previous && shownSet.has(sentence) && POINTS_BACK.test(sentence)) {
+      owner = previous;
+      owner.sentences = [...(owner.sentences ?? []), sentence];
+      cutBy.set(sentence, owner);
+    }
+    previous = owner;
+  }
   const cut = new Set(failures.flatMap((f) => f.sentences ?? []));
   const left = shownSentences.filter((s) => !cut.has(s));
   if (left.length === 0 && input.text.trim()) {

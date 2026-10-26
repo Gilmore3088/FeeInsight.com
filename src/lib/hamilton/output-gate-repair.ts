@@ -245,7 +245,7 @@ export function gatedAnswerView(text: string, verdict: GateVerdict): GatedAnswer
     const lines = uncutLines(parsed);
     for (const failure of verdict.failures) {
       if (!failure.sentences?.length) continue;
-      if (sentencesFor(failure.code, lines).length > 0) return heldView("failure_outside_prose");
+      if (sentencesFor(failure.code, lines, failure.clauses).length > 0) return heldView("failure_outside_prose");
     }
     // The binding reads only the prose, so a claim it left out may be repeated in Evidence or
     // Explore Further, which it never reads. Fail closed: with any left-out sentence, neither shows.
