@@ -65,9 +65,8 @@ async function runPaidBatch(request: NextRequest, now: Date, onDemand: boolean) 
  * budget; the next run picks up the rest. Once today's free plan is complete, the hourly call
  * continues the one-off paid replay batch instead (paid-gate-replay.ts, origin "replay_paid",
  * James's approval of 2026-10-25) until that batch is complete or capped, and then starts nothing
- * until tomorrow's free plan. `?paid=1` runs the paid batch at once; a cron calls it every 10
- * minutes (James, 2026-10-26), since the free plan can fill every hour, and once the batch is
- * complete that call only reads the ledger and starts nothing. The free replay makes no model
+ * until tomorrow's free plan. `?paid=1` runs the paid batch at once (an admin or the cron
+ * secret); once the batch is complete that call only reads the ledger and starts nothing. The free replay makes no model
  * calls; the paid batch is a provider step, held by the provider stop and budget lines.
  */
 async function handleGET(request: NextRequest) {
