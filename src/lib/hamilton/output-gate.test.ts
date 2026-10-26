@@ -293,3 +293,41 @@ describe("gateAnswer: the peer minimum (T5, #1726)", () => {
       .not.toContain("thin_peer_group");
   });
 });
+
+describe("gateAnswer: asset-tier bounds trace to the tier the writer was given (#1077)", () => {
+  const profile = { toolName: "getInstitution", input: { id: 9101 }, output: {
+    identity: { id: 9101, name: "Harbor Point Credit Union", state: "WY", city: "Synthetic City", charter_type: "credit_union", asset_tier: "community_large" },
+    fees: { verified: [{ fee_name: "Overdraft", fee_category: "overdraft", amount: 30, status: "verified", record_id: 1, source_document_id: 1001 }], provisional: [] },
+  } };
+  const peers = (tiers: string[]) => ({ toolName: "queryData", input: { view: "peer_fees", charter_type: "bank", asset_tiers: tiers }, output: {
+    scope: "filtered", data: [{ category: "overdraft", median: 27.5, p25: 25, p75: 30, institution_count: 12 }],
+  } });
+  const gate = (text: string, reads: Array<{ toolName: string; input: unknown; output: unknown }>, question?: string) => gateAnswer({
+    surface: "written_answer", text, question,
+    evidence: { kind: "tool_reads", toolOutputs: reads.map((r) => r.output), reads },
+    identity: { researchInstitutionId: 9101, accountInstitutionId: 9101 },
+  });
+  const untraced = (verdict: ReturnType<typeof gateAnswer>) => verdict.failures.filter((f) => f.code === "untraced_figure").map((f) => f.message);
+
+  it("traces the replay's tier phrasings when the tier is in the reads", () => {
+    for (const [text, reads] of [
+      ["Harbor Point Credit Union is among credit unions under $10 billion.", [profile]],
+      ["Banks over $250 billion have a $27.50 median overdraft fee.", [profile, peers(["super_regional"])]],
+      ["Harbor Point Credit Union has $1 billion to $10 billion in assets.", [profile]],
+    ] as const) expect(untraced(gate(text, [...reads])), text).toEqual([]);
+  });
+
+  it("still holds a figure that is not a bound of the tiers read", () => {
+    expect(untraced(gate("Credit unions under $7 billion charge $30.", [profile]))).toEqual(["These figures are not in DATA: $7 billion."]);
+    // A tier the reads never named is not evidence: $250 billion is super_regional's bound, not community_large's.
+    expect(untraced(gate("Banks over $250 billion charge $30.", [profile]))).toEqual(["These figures are not in DATA: $250 billion."]);
+    // Tier bounds are not pooled into arithmetic: $9 billion is no tier's bound.
+    expect(untraced(gate("The tier spans $9 billion.", [profile]))).toEqual(["These figures are not in DATA: $9 billion."]);
+  });
+
+  it("$5 billion is no tier's bound: it passes only when the question names it, with or without a $", () => {
+    const text = "Credit unions over $5 billion charge $30.";
+    expect(untraced(gate(text, [profile]))).toEqual(["These figures are not in DATA: $5 billion."]);
+    expect(untraced(gate(text, [profile], "How do credit unions over 5B price overdraft?"))).toEqual([]);
+  });
+});

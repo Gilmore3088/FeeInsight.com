@@ -397,6 +397,16 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     since: "2026-10-25",
   },
   {
+    id: "issue-1077-asset-tier-bounds-as-facts",
+    agent: "hamilton",
+    stage: "written answer",
+    lesson: "Give the writer every asset tier it reads (a peer filter, an institution's tier) as typed dollar bounds in the evidence, so a bound it repeats in any wording traces like any other figure, and read a size the question gives without a $ (\"under 10B\", \"250 billion\") as dollars. Never widen the tier-phrase rule or add a size that is no tier's bound: $5 billion stays untraced unless the question names it.",
+    why: "In a paid replay, 7 of 19 held written answers were held only for tier bounds in prose: \"credit unions under $10 billion\" and \"banks over $250 billion\" passed only beside \"in assets\", the tiers reached the writer as codes and prose with no dollar facts, and the question's unitless \"< 10B\" was not read as a figure.",
+    evidence: { issues: [1077], prs: [], files: ["src/lib/hamilton/asset-tier-facts.ts", "src/lib/hamilton/written-answer-evidence.ts", "src/lib/hamilton/figure-check.ts", "src/lib/hamilton/narrative-bound.ts"] },
+    appliesTo: ["written-answer"],
+    since: "2026-10-26",
+  },
+  {
     id: "issue-1911-general-over-product-exception",
     agent: "hamilton",
     stage: "analysis",

@@ -1,3 +1,4 @@
+import { ASSET_TIER_BOUND_VALUES } from "./asset-tier-facts";
 import { dollarUnitScale, dollarsFromUnit, numericPayloadValue, percentageUnitScale } from "./monetary-units";
 
 /**
@@ -8,8 +9,10 @@ import { dollarUnitScale, dollarsFromUnit, numericPayloadValue, percentageUnitSc
  * A figure matches when it equals a payload number, or a difference / percent
  * difference between two payload numbers (the deltas a narrative naturally states),
  * within the rounding its own precision implies ("$35" covers 34.50–35.49).
- * Two kinds of figure are not the data's to trace (#1425): one the reader's own question names,
- * and an asset-tier bound stated as a size ("banks with $1 billion to $10 billion in assets"). Anything else is reported as unmatched so the caller can regenerate or refuse.
+ * Two kinds of figure are not the data's to trace (#1425): one the reader's own question names
+ * (with or without a "$": "under 10B" names $10 billion, #1077), and an asset-tier bound stated as a
+ * size ("banks with $1 billion to $10 billion in assets"). A tier the evidence names traces as typed
+ * dollar facts (asset-tier-facts.ts). Anything else is reported as unmatched so the caller can regenerate or refuse.
  */
 
 export interface NarrativeFigure {
@@ -38,9 +41,14 @@ export interface FigureCheckResult {
 
 // Report payloads carry the institution, state peers and exhibits; keep them all in view.
 const MAX_PAYLOAD_NUMBERS = 1000;
-const SCALE: Record<string, number> = { k: 1e3, thousand: 1e3, m: 1e6, million: 1e6, b: 1e9, billion: 1e9 };
+const SCALE: Record<string, number> = { k: 1e3, thousand: 1e3, m: 1e6, mn: 1e6, million: 1e6, b: 1e9, bn: 1e9, billion: 1e9 };
 
-const USD_PATTERN = /\$\s?(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?\s*(k|m|b|thousand|million|billion)?\b/gi;
+const USD_PATTERN = /\$\s?(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?\s*(k|mn|m|bn|b|thousand|million|billion)?\b/gi;
+/**
+ * A dollar size a question gives with no "$" ("credit unions < 10B", "over 250 billion"): a number
+ * with a scale word. A bare number ("10 banks") is not a dollar figure, and "5m" is not read (minutes or months).
+ */
+const UNITLESS_SCALED_PATTERN = /(?<![\w$.,])(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?\s*(k|mn|bn|b|thousand|million|billion)\b/gi;
 const PCT_PATTERN = /(-?\d+)(?:\.(\d+))?\s?(?:%|percent\b)/gi;
 
 function toleranceFor(decimals: string | undefined, scale: number): number {
@@ -77,6 +85,20 @@ export function extractFigures(text: string): NarrativeFigure[] {
   for (const match of text.matchAll(PCT_PATTERN)) {
     const value = Number(`${match[1]}${match[2] ? `.${match[2]}` : ""}`);
     figures.push({ raw: match[0].trim(), kind: "pct", value, tolerance: toleranceFor(match[2], 1), index: match.index ?? 0 });
+  }
+  return figures;
+}
+
+/**
+ * The figures a reader's question names: its dollar figures and percentages, plus a scaled size it
+ * gives without a "$" ("< 10B", "5B", "250 billion"), read as dollars (#1077).
+ */
+export function extractQuestionFigures(question: string): NarrativeFigure[] {
+  const figures = extractFigures(question);
+  for (const match of question.matchAll(UNITLESS_SCALED_PATTERN)) {
+    const scale = SCALE[match[3].toLowerCase()];
+    const value = Number(`${match[1].replace(/,/g, "")}${match[2] ? `.${match[2]}` : ""}`) * scale;
+    figures.push({ raw: match[0].trim(), kind: "usd", value, tolerance: toleranceFor(match[2], scale), index: match.index ?? 0 });
   }
   return figures;
 }
@@ -220,7 +242,7 @@ function candidateValues(numbers: PayloadNumber[], kind: NarrativeFigure["kind"]
 const near = (figure: NarrativeFigure, value: number) => Math.abs(Math.abs(figure.value) - value) <= figure.tolerance;
 
 /** The bounds of Hamilton's asset tiers, in dollars: the FDIC tiers and the peer-set tiers. */
-export const ASSET_TIER_BOUNDS: readonly number[] = [100e6, 300e6, 1e9, 10e9, 50e9, 250e9];
+export const ASSET_TIER_BOUNDS: readonly number[] = ASSET_TIER_BOUND_VALUES;
 
 const isTierBound = (figure: NarrativeFigure) => figure.kind === "usd" && ASSET_TIER_BOUNDS.some((bound) => near(figure, bound));
 /** Words that make a size phrase after the figure: "in assets", "in total assets", "asset tier", "tier". */
@@ -288,7 +310,7 @@ export function checkNarrativeFigures(narrative: string, data: unknown, options:
     if (!candidates.has(key)) candidates.set(key, candidateValues(numbers, figure.kind, options, figure.denominatorUnit));
     return candidates.get(key)!;
   };
-  const asked = options.question ? extractFigures(options.question) : [];
+  const asked = options.question ? extractQuestionFigures(options.question) : [];
   const sizes = tierBoundsAsSize(narrative, figures);
   const traced = (figure: NarrativeFigure) =>
     valuesFor(figure).some((value) => near(figure, value))
