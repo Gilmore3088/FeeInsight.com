@@ -65,6 +65,18 @@ describe("a $0 that is not an overdraft or NSF fee's price (#1882)", () => {
     expect(od("Non-Sufficient Funds Fee (Returned Item) | No Fee | 6.", "Non-Sufficient Funds Fee (Returned Item)", text, "nsf")).toBeNull();
   });
 
+  it("keeps a free consumer row beside a priced commercial row whose footnote says 'or more'", () => {
+    const text = [
+      "Consumer Returned Item Fee:",
+      "Non-Suficient Funds (NSF) | No Charge",
+      "SIGNATURE SERVICES*",
+      "Commercial Returned Item Fee:",
+      "Non-Suficient Funds (NSF) | $35.00",
+      "*Available to depositors of record for six months or more",
+    ].join("\n");
+    expect(od("Non-Suficient Funds (NSF) | No Charge", "Non-Suficient Funds (NSF)", text, "nsf")).toBeNull();
+  });
+
   it("keeps another audience's price and a price no longer charged", () => {
     expect(od("Courtesy Pay Fee | $0 members, $5 non-members", "Courtesy Pay Fee")).toBeNull();
     expect(od("Overdraft Fee | $0 (was $35)", "Overdraft Fee")).toBeNull();

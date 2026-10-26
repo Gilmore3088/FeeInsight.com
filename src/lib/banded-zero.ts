@@ -63,8 +63,9 @@ const DOLLARS = /\$\s*(\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?|\.\d{1
 // A price straight after the name: "$35", "$35.00", "35.00", "up to 19.00".
 const PRICE_AFTER = /^[\s|.:…–—-]*(?:up\s+to\s+)?(?:\$\s*(\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)|(\d+\.\d{2}))(?!\d)/i;
 // Words that state a band of the negative balance or the item: "Negative account balance $0-$9.99",
-// "$10.00 or more", "items ≤ $5", "overdrawn by less than $5".
-const BAND = /\b(?:negative|overdrawn|overdraws?)\b[^|]{0,60}?\$\s*\d|\$\s*\d[\d,]*(?:\.\d{1,2})?\s*(?:-|–|—|to)\s*\$?\s*\d|\bor\s+(?:more|less|greater|over|above|under|below)\b|[≤≥<>]\s*\$/i;
+// "$10.00 or more", "items ≤ $5", "overdrawn by less than $5". "Or more" counts only after a dollar
+// figure: a footnote's "for six months or more" is not a band (raw 166928, #2702 review).
+const BAND = /\b(?:negative|overdrawn|overdraws?)\b[^|]{0,60}?\$\s*\d|\$\s*\d[\d,]*(?:\.\d{1,2})?\s*(?:-|–|—|to)\s*\$?\s*\d|\$\s*\d[\d,]*(?:\.\d{1,2})?\s+or\s+(?:more|less|greater|over|above|under|below)\b|[≤≥<>]\s*\$/i;
 // Another audience's price, or a price the bank has stopped charging: not this fee's band.
 const OTHER_AUDIENCE = /\bnon-?\s?(?:members?|customers?|depositors?)\b/i;
 const NO_LONGER = /\b(?:was|were|previously|formerly|eliminated|no\s+longer|reduced\s+from|used\s+to\s+be)\b/i;
