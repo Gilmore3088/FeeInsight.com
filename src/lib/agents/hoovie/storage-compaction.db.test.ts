@@ -10,7 +10,7 @@ vi.mock("@/lib/data-store/call-item-storage", () => ({
   compactCallStorageReady: async () => true,
 }));
 import { exportCallPeriod } from "./storage-tiers";
-import { pruneCallPeriod, restoreCallPeriod } from "./call-period-prune";
+import { archiveRehearsalRecorded, rehearseCallPeriod, pruneCallPeriod, restoreCallPeriod } from "./call-period-prune";
 import { decodeColdFile, type ColdStore } from "./cold-files";
 import { runStorageCompaction } from "./storage-compaction";
 import { JSON_TEXT_PASSTHROUGH } from "@/lib/data-store/connection";
@@ -52,6 +52,8 @@ describe.skipIf(!url)("public-data compaction and atomic archive", () => {
     const migration = readFileSync("supabase/migrations/20270110000079_public_data_storage_compaction.sql","utf8")
       .replaceAll("public.",`${schema}.`).replaceAll("search_path=pg_catalog,public",`search_path=pg_catalog,${schema}`);
     await db.begin((tx) => tx.unsafe(migration));
+    const rehearsalMigration=readFileSync("supabase/migrations/20270110000080_archive_restore_rehearsal.sql","utf8").replaceAll("public.",`${schema}.`);
+    await db.begin((tx)=>tx.unsafe(rehearsalMigration));
   });
   afterAll(async () => { if (db) { await db.unsafe(`DROP SCHEMA ${schema} CASCADE`); await db.end(); } });
   beforeEach(async () => {
@@ -61,6 +63,28 @@ describe.skipIf(!url)("public-data compaction and atomic archive", () => {
       const v=objects.get(k); if(!v) throw new Error("missing object"); return v;
     } };
   });
+  it("restores a production-sized reviewed file into the disposable table with exact bytes and empties it", async () => {
+    await db`INSERT INTO institution_call_report_items(institution_id,source,report_date,item_code,item_key,item_description,schedule,value,unit,period_basis,fetched_at)
+      SELECT 1,'ffiec','2023-03-31','TEST', 'test_'||n,'Original',NULL,1.25,'count','point_in_time','2026-10-25T12:34:56.123456Z'
+      FROM generate_series(1,133446) n`;
+    await db.begin(async(tx)=>{
+      const scope=tx as unknown as Parameters<typeof rehearseCallPeriod>[0];
+      const exported=await exportCallPeriod(scope,store,{source:"ffiec",period:"2023-03-31",avgRowBytes:400});
+      expect(exported.status).toBe("exported");
+      const rehearsed=await rehearseCallPeriod(scope,store,{source:"ffiec",period:"2023-03-31"});
+      expect(rehearsed).toMatchObject({status:"verified",rowCount:133446});
+      expect(await scope`SELECT id FROM call_report_archive_restore_checks`).toHaveLength(0);
+      const [original]=await scope`SELECT count(*)::int AS n FROM institution_call_report_items`;
+      expect(original.n).toBe(133446);
+      expect(await archiveRehearsalRecorded(scope,rehearsed)).toBe(false);
+      await scope`INSERT INTO agent_run_steps(id,step_key) VALUES(987,'atlas-storage-retention')`;
+      await scope`INSERT INTO agent_run_events(id,step_id,event_type,status,detail) VALUES(987,987,'step.finished','completed',${JSON.stringify({cold_tier:{rehearsed}})}::jsonb)`;
+      expect(await archiveRehearsalRecorded(scope,rehearsed)).toBe(true);
+      await scope`UPDATE public_data_cold_files SET sha256='changed'`;
+      expect(await archiveRehearsalRecorded(scope,rehearsed)).toBe(false);
+      await expect(pruneCallPeriod(scope,store,{source:"ffiec",period:"2023-03-31",requireRehearsal:true})).rejects.toThrow("no completed restore rehearsal");
+    });
+  },30000);
   const input = (description = "Deposit service charges", value = "100") => [{
     rssd: "101",item_key: "service_charges_deposits_ytd",item_code: "RIAD4080",item_description: description,
     schedule: "RI",value,unit: "thousands",period_basis: "ytd",
