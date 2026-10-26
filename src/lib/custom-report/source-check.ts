@@ -26,6 +26,7 @@ import { stackedCellVariants } from "./stacked-cell-variants";
 import { refusesOtherColumnPrice } from "./column-pair-prices";
 import { boxSectionLateFee } from "./box-section-late-fee";
 import { withGluedFootnotePrices } from "./glued-footnote-price";
+import { withoutGluedPricePairs } from "./glued-price-pair";
 import { discontinuedRow } from "./discontinued-rows";
 import { networkColumnRow } from "./network-column-rows";
 const NSF_POLICY_CATEGORIES = new Set(["nsf", "overdraft"]);
@@ -1391,7 +1392,8 @@ export function checkFeeAgainstSource(
   options: SourceCheckOptions = {},
 ): SourceCheckResult {
   // #1946: every refusal below reads a footnote glued to a $0 price ("$01") as $0, as the main path does.
-  const rawText = sourceText ? withGluedFootnotePrices(sourceText) : sourceText;
+  // #1912: a line whose only price is two different prices glued together traces no fee (`gluedPricePair`).
+  const rawText = sourceText ? withGluedFootnotePrices(withoutGluedPricePairs(sourceText)) : sourceText;
   if (namesItsClosedFreeRow(rawText, feeName, amount)) return { ok: false, reason: "amount_not_the_fee" };
   // #1916: a bare late charge printed in a safe deposit box section ("Safe Deposit Box Fees" /
   // "Late Payment (per month) | $10.00") is the box's late rent charge, not a loan's late payment.

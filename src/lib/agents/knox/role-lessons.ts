@@ -796,4 +796,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract"],
     since: "2026-10-26",
   },
+  {
+    id: "issue-1912-glued-price-pair",
+    agent: "knox",
+    stage: "extract",
+    lesson: "When a line's price is two different prices glued into one cell (\"$20.00$10.00\", \"$ 2.00n/c*\"), the line is two columns of a PDF flattened together, and the prices do not come in the names' order. Read neither price from it; read each fee from a line that prints it alone. Two equal glued prices under a name printed twice are one price and are read as before.",
+    why: "Access FCU's schedule was stored with both columns on one line: \"Change of Personal Identification Number (PIN)Wire Transfers (incoming) ..... $ 2.00n/c*\" went live as a $2 incoming wire (142973), pulling the bank's wire value down, and six more glued rows went live under the wrong price or name (a $55 rush card beside the real $50, two stop payments from a dormant fee's and a club closure's lines). The same page prints the PIN change at $2 and Share Draft Protest at $20 on clean lines, so the glued order was not the names' order.",
+    evidence: { issues: [1912], prs: [], files: ["src/lib/custom-report/glued-price-pair.ts", "src/lib/custom-report/glued-price-pair.test.ts", "docs/project/findings/2026-10-26-glued-price-pair.md"] },
+    appliesTo: ["extract"],
+    since: "2026-10-26",
+  },
 ];
