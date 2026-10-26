@@ -1,4 +1,5 @@
 import { sql } from "@/lib/data-store/connection";
+import { runSourceFirstRecoveryRead, sourceFirstRecoverySummary, type SourceFirstRecoveryRead } from "./source-first-recovery-run";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { KNOX_RULES_STRATEGY } from "@/lib/agents/knox/specialists";
@@ -330,6 +331,8 @@ export interface ErrorFixEntryResult {
 }
 
 export interface ErrorFixRecheckResult {
+  /** Read-only official-source obligation outcomes, never a release approval. */
+  sourceFirst?: SourceFirstRecoveryRead;
   entries: number;
   problems: string[];
   results: ErrorFixEntryResult[];
@@ -459,9 +462,14 @@ export async function runErrorFixRecheck({
   runId = null,
   dryRun = false,
   entries = ERROR_FIXES,
-}: { db?: SqlTag; runId?: number | null; dryRun?: boolean; entries?: readonly ErrorFixEntry[] } = {}): Promise<ErrorFixRecheckResult> {
+  sourceFirstRead = false,
+}: { db?: SqlTag; runId?: number | null; dryRun?: boolean; entries?: readonly ErrorFixEntry[]; sourceFirstRead?: boolean } = {}): Promise<ErrorFixRecheckResult> {
   const problems = errorFixProblems(entries);
   const result: ErrorFixRecheckResult = { entries: entries.length, problems, results: [], written: 0, skipped: [] };
+  if (sourceFirstRead) {
+    try { result.sourceFirst = await runSourceFirstRecoveryRead(db); }
+    catch (error) { result.skipped.push(`source-first read-only audit: ${error instanceof Error ? error.message : String(error)}`); }
+  }
   if (entries.length === 0 || problems.length > 0) return result;
   const ledger: FeedbackRow[] = [];
   for (const entry of entries) {
@@ -490,7 +498,7 @@ export async function runErrorFixRecheck({
 
 export function summarizeErrorFixRecheck(result: ErrorFixRecheckResult): string {
   if (result.problems.length > 0) return `The error-fix registry has ${result.problems.length} problem(s); nothing re-checked: ${result.problems.join("; ")}`;
-  if (result.entries === 0) return "No process fix names the errors it fixes yet.";
+  if (result.entries === 0) return result.sourceFirst?.enrolled ? `No registered process fixes. ${sourceFirstRecoverySummary(result.sourceFirst)}` : "No process fix names the errors it fixes yet.";
   const total = (key: "named" | "waiting" | "inactive" | "nowMatches" | "notReproduced" | "stillWrong" | "unknown") =>
     result.results.reduce((sum, entry) => sum + entry[key], 0);
   const failed = result.results.filter((entry) => entry.readFailed).length;
@@ -517,5 +525,6 @@ export function errorFixDetail(result: ErrorFixRecheckResult) {
     written: result.written,
     skipped: result.skipped,
     fixes: result.results,
+    source_first: result.sourceFirst ?? null,
   };
 }
