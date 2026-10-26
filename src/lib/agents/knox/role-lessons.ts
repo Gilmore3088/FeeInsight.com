@@ -736,4 +736,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract"],
     since: "2026-10-26",
   },
+  {
+    id: "issue-1094-skip-the-heading-not-the-line",
+    agent: "knox",
+    stage: "extract",
+    lesson: "Skip a schedule's heading or boilerplate phrase (\"Fee Schedule\", \"Schedule of Fees\", \"Truth in Savings\", \"Member FDIC\"), not the line it sits on. A PDF flattened to one line puts the title, the section headings and the first rows on the same line (\"SCHEDULE OF FEES AND CHARGES Truth in Savings Disclosure Overdraft Fee........ $30.00\"), so cut the line at the phrase and read each piece that holds a price on its own, never letting the phrase or a capitalised section heading join a fee's name. A piece with no price is only heading and yields nothing. Keep a line that says \"effective\" skipped until future prices are handled, since it can announce a price the bank does not charge yet. But when the phrase names an audience (\"Business Schedule of Fees\", \"Treasury Management Fee Schedule\"), keep the line skipped: that word is the only thing saying whose prices follow, and a business price read without it publishes for everyone.",
+    why: "Pass 1 returned nothing for any segment matching GENERIC_SCHEDULE_LANGUAGE, so \"Fee Schedule Overdraft Fee $35 Stop Payment $30\" and the first and last rows of flattened Truth in Savings PDFs were lost. On Oct 26, 2,197 lines of current completed texts held the phrase and a dollar price without \"effective\"; the 2,141 whose title names no audience, at 515 institutions, are now read (#1094 item 3).",
+    evidence: { issues: [1094], prs: [2725], files: ["src/lib/agents/knox/rules.ts", "src/lib/agents/knox/rules.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
 ];
