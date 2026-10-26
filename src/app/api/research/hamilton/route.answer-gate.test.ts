@@ -125,7 +125,7 @@ beforeEach(() => {
 
 describe("written answer evidence gate", () => {
   const incomeFact = { institution_id: 202, institution_name: "Synthetic Subject 202", context_role: "research",
-    metric: "service_charge_income", value: 57260, unit: "thousands of dollars", report_date: "2026-06-30",
+    metric: "service_charge_income", value: 57_260_000, unit: "USD", report_date: "2026-06-30",
     period_basis: "ytd", source: "ncua", publisher: "NCUA", evidence_tier: "regulatory" };
 
   it("validates the streamed answer against the same briefing snapshot as the prompt", async () => {

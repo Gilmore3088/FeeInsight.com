@@ -516,4 +516,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: ["written-answer"],
     since: "2026-10-26",
   },
+  {
+    id: "issue-1077-call-report-dollars",
+    agent: "hamilton",
+    stage: "written answer",
+    lesson: "Call-report money is filed in thousands; state it in dollars ($649,000 or $649 thousand), never as the bare stored number ($649). State a ratio, share or growth rate only when the evidence or the validated calculations already hold it; never divide two figures yourself.",
+    why: "A paid Hills Bank answer was held for stating overdraft revenue and service charges as $604, $649 and $797, the briefing's raw thousands, and for an 81.4% ratio (649/797) nobody asked for and no tool computed; the briefing passed thousands and its prompt only called them rounded thousands.",
+    evidence: { issues: [1077], prs: [], files: ["src/lib/hamilton/call-report-dollars.ts", "src/lib/hamilton/institution-briefing.ts", "src/lib/hamilton/written-answer-read.ts"] },
+    appliesTo: ["written-answer"],
+    since: "2026-10-26",
+  },
 ];
