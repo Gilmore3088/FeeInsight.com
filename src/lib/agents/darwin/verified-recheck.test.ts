@@ -70,6 +70,17 @@ describe("Darwin recheck policy and unsupported contexts",()=>{
     const text="FREE Debit Card, FREE Bill Pay, FREE eStatements, Buy back of unused checks up to $10 within 30 days";
     expect(assess({conditions:`excerpt="${text}"`},text).check).toBeNull();
   });
+  it("keeps the page-layout $0s held while the switch is off and records that they would pass (38491, 56797)",()=>{
+    const terrabank="Card Replacement $ 100.00 | Copies per item $ 1.00\nRush Order $ 125.00 | Mail Deposit Processing, per item $ 15.00\nForeign Transaction Fees No Charge | Night Depository Bags & Key $ 30.00\nATM Withdrawals2 | Non-Sufficient Funds (NSF) / Uncollected (UNC)";
+    const terra=assess({canonical_fee_key:"card_foreign_txn",fee_name:"Foreign Transaction Fees"},terrabank);
+    expect(terra.check?.code).toBe("conditional_zero");expect(terra.layoutWouldPass).toBe(true);
+    const prairie="Blue Lion Checking | Account Early Closure\nMaintenance Fee (per statement cycle) $0.00 (closed within 90 days of opening) $20.00\nPaper Statement Fee (per statement) $3.00\nBlue Lion Savings\nMaintenance Fee (per statement cycle) $0.00 Lost Debit Card (per card) $10.00";
+    const blue=assess({canonical_fee_key:"monthly_maintenance",fee_name:"Maintenance Fee (per statement cycle)"},prairie);
+    expect(blue.check?.code).toBe("conditional_zero");expect(blue.layoutWouldPass).toBe(true);
+    // A conditional $0 stays failing under the layout evidence too; a passing row records nothing.
+    expect(assess({}).layoutWouldPass).toBe(false);
+    expect(assess({canonical_fee_key:"overdraft",fee_name:"Overdraft fee",amount:35,verified_amount:35}).layoutWouldPass).toBeNull();
+  });
   it("v5 keeps two-column free ATM and Bill Pay separate from a scoped check-print price",()=>{
     const poca="POS transactions No Charge Wire Transfers\nForeign ATM usage No Charge Customer (incoming) $15.00\nReplacement Card $10.00 Customer Domestic (outgoing) $30.00\nCustomer International $60.00";
     expect(assess({canonical_fee_key:"atm_non_network",fee_name:"Foreign ATM usage"},poca).check).toBeNull();

@@ -7,6 +7,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const DARWIN_LESSONS: AgentLesson[] = [
   {
+    id: "issue-1593-page-layout-free-zero",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "Before reading a second price on a $0 fee's line as its condition, read how the page lays out the lines around it: when the neighbouring lines are each two whole rows side by side (a label and its own price on both sides of the cell break), a right cell whose label names a different fee (a fee noun, and no word of this fee's own variants, sources or channels such as lost, stolen, from, sweep, rush, printed or images) is the right column's row; and a note-and-price tail under the right column's heading printed just above is that heading's fee only when the note is an early-closure window (\"closed within 90 days of opening\") or states no term at all, and the fee's own row, its name with a $0 straight after it, repeats for another account. A note that states a balance, statement, deposit, audience, promotion, status, program or reward stays the fee's condition. Ship such a release behind a switch with a dry run, never a recheck version bump that re-reads every row under other unmeasured rule changes.",
+    why: "After #1621, two real free fees stayed held as conditional $0 and were taken down by the second look: Terrabank's \"Foreign Transaction Fees No Charge | Night Depository Bags & Key $ 30.00\" (38491) and Bank of Prairie Village's Blue Lion Checking maintenance fee (56797). The test read a fee noun or a condition-like word as enough, ignoring the page's own two-column layout. The review of #2676 found the first draft freed notes such as \"(after promotional period) $10.00\" and right cells such as \"Lost Or Stolen $10.00\", and that its recheck bump would have re-read every verified row under ten days of uncounted rule changes. Dry run on Oct 26 (read-only SQL and the code over the stored texts): of the 61 rows the recheck holds as conditional_zero, these 2 pass with the layout evidence and no other row changes.",
+    evidence: { issues: [1593], prs: [2676], files: ["src/lib/agents/darwin/verify.ts", "src/lib/agents/darwin/verified-recheck.ts"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
+  {
     id: "issue-1945-latest-edition-in-force",
     agent: "darwin",
     stage: "verify",

@@ -8,7 +8,7 @@ import { PENDING_KIND, SECOND_LOOK_MIN_MINUTES, secondLook, secondLookDedupeKey 
 import { refileCategory } from "@/lib/fee-category-guard";
 
 import { tierPerkZero } from "./tier-perk";
-import { DARWIN_VERIFY_STRATEGY, loadSourceTexts, normalizedAmount, postSourceCheck, sourceLineFor, type RawFeeRow } from "./verify";
+import { DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE, DARWIN_VERIFY_STRATEGY, loadSourceTexts, normalizedAmount, postSourceCheck, sourceLineFor, type RawFeeRow } from "./verify";
 
 type SqlTag = typeof sql;
 
@@ -39,6 +39,11 @@ type SqlTag = typeof sql;
  * international price as another fee's, with the document text as evidence; a $0 traced to a line
  * that lacks a word of its name is read on the line that prints it. Of the 31 live conditional-$0
  * flags hand-checked on Oct 16, 8 were real free fees held this way.
+ * 2026-10-26 (#1593, still v5): the last two of those 8 (published 38491, 56797) pass under the page
+ * layout evidence behind `DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE` (off). No version bump: a bump would
+ * re-read every verified row under every rule change since v5 with no dry-run count. Rows the
+ * recheck reads anyway record on a failing `conditional_zero` attempt whether that evidence would
+ * pass them (`layout_would_pass`). Turning the switch on needs its own bump and dry run.
  */
 export const DARWIN_RECHECK_STRATEGY = { strategy: "verify.recheck", version: 5 } as const;
 export const RECHECK_LIMIT = 200;
@@ -317,7 +322,19 @@ function recheckOf(row: RecheckRow, texts: Map<number, string>) {
   const text = row.source_document_id == null ? null : texts.get(Number(row.source_document_id)) ?? null;
   const check: { code: string; rule?: string } | null = postSourceCheck(canonicalFeeKey, row.fee_name, amount, line, text)
     ?? (tierPerkZero(amount, row.fee_name, row.source_url, text, canonicalFeeKey) ? { code: "tier_perk_zero" } : null);
-  return { canonicalFeeKey, amount, line, check };
+  return { canonicalFeeKey, amount, line, check, layoutWouldPass: layoutWouldPass(check, canonicalFeeKey, row, amount, line, text) };
+}
+
+/**
+ * While `DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE` is off: true when a row failing `conditional_zero`
+ * would pass every check with the page layout evidence on (#1593), the dry run recorded on the
+ * row's attempt; null when it does not apply (the switch is on, or the row fails another code or
+ * none). Pure.
+ */
+function layoutWouldPass(check: { code: string } | null, canonicalFeeKey: string, row: RecheckRow, amount: number | null, line: string | null, text: string | null): boolean | null {
+  if (DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE || check?.code !== "conditional_zero") return null;
+  return postSourceCheck(canonicalFeeKey, row.fee_name, amount, line, text, { layout: true }) == null
+    && !tierPerkZero(amount, row.fee_name, row.source_url, text, canonicalFeeKey);
 }
 
 function textsFor(db: SqlTag, rows: RecheckRow[]): Promise<Map<number, string>> {
@@ -542,7 +559,7 @@ export async function recheckVerifiedFees(db: SqlTag, options: RecheckOptions): 
         try {
           const settled = await inSavepoint(scope, async tx => {
             await lockSelected(tx, row, text, dueIds.has(String(id)));
-            const { canonicalFeeKey, amount, check } = recheckOf(row, texts);
+            const { canonicalFeeKey, amount, check, layoutWouldPass: layoutPass } = recheckOf(row, texts);
             assessed = true;
             if (check && dueIds.has(String(id)) && !secondLooks && !secondLookCodes.includes(check.code)) return { otherCode: true as const };
             const publishedId = row.fee_published_id == null ? null : Number(row.fee_published_id);
@@ -595,7 +612,7 @@ export async function recheckVerifiedFees(db: SqlTag, options: RecheckOptions): 
               stage: "verify", strategy: DARWIN_RECHECK_STRATEGY.strategy, version: DARWIN_RECHECK_STRATEGY.version, fingerprint: `verified:${id}`,
               outcome: check ? "evidence_mismatch" : "ok", yieldCount: check ? 0 : 1, costMicrousd: 0, durationMs: 0, runId: options.runId, stepId, foldIntoPlaybook: false,
               detail: { protocol: RECHECK_EXECUTION_PROTOCOL, batch_key: execution.batchKey, fee_verified_id: id, fee_raw_id: Number(row.fee_raw_id), fee_published_id: publishedId,
-                canonical_fee_key: canonicalFeeKey, amount, code: check?.code ?? null, rule: check?.rule ?? null, action, feedback_ids: feedbackIds,
+                canonical_fee_key: canonicalFeeKey, amount, code: check?.code ?? null, rule: check?.rule ?? null, ...(layoutPass == null ? {} : { layout_would_pass: layoutPass }), action, feedback_ids: feedbackIds,
                 selected_raw: row.selected_raw, selected_verified: row.selected_verified, selected_published: row.selected_published,
                 source_text_id: Number(text.id), normalized_text_sha256: createHash("sha256").update(text.normalized_text).digest("hex") } });
             return { otherCode: false as const, action, code: check?.code, publishedId, attemptId, feedbackIds, flagged, waiting, cleared, passed: !wasRejected && !check };
