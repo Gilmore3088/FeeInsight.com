@@ -341,6 +341,8 @@ export function rosettaReaderManifests(versions: RosettaVersions): ReplayManifes
  * in a manifest above.
  */
 export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
+  // #1102: an evidence version on learning-store rows, not a selector that replays fee work.
+  UNTRACED_READ_ERROR_EVIDENCE_VERSION: "v1 names the evidence on the `knox.untraced_held` pipeline_feedback rows that Knox's extract step writes for a text whose held lines stayed untraced under 3 or more rules versions (at most 200 texts a step). Rosetta's existing read-error re-read reads such a document once more only when its reader version moves, and keeps the new text only when it lists at least as many fees. No fee row is held, rejected or re-filed, and nothing is replayed by the version.",
   // #1455: a review receipt for a shared website host, not a selector that replays fee work.
   WEBSITE_OWNER_STRATEGY: "v1 names the attempt `discover.website_owner` that Magellan writes when it reads a homepage to decide whose website a host shared by unrelated active institutions is. It reviews each host once per version every 30 days (7 when the homepage was unread), at most 5 institutions per discover step. A flag only stops Magellan searching that host and sends the bank to the website search; no fee row is held, rejected or taken down, and no Knox or provider work is replayed by the version.",
   // #2477: a receipt strategy for a status-only reopen, not a selector that replays work.
