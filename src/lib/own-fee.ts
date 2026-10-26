@@ -15,15 +15,18 @@ const SAME_AMOUNT = 0.005;
  * A fee's name as listed among the institution's own fees: a price stated for one named
  * product as an exception (#1911, fee-product.ts isProductException) carries the product,
  * "Personal money order (Safe Debit Account)", so it reads as its own fee beside the general
- * price that the statistics value rests on.
+ * price that the statistics value rests on. The fee name goes to the test too, so a fee that names
+ * checking carries no savings product and a channel wire is marked by its own name (#1912).
  */
 export function ownFeeName(
   category: string,
   row: { fee_name?: string | null; account_product_type?: string | null },
 ): string | null {
   const name = typeof row.fee_name === "string" ? row.fee_name : null;
-  if (!isProductException(category, row.account_product_type)) return name;
+  if (!isProductException(category, row.account_product_type, name)) return name;
   const product = (row.account_product_type ?? "").replace(/\s+/g, " ").trim();
+  // A channel wire ("Outgoing Online Wire") names its own channel and often has no product.
+  if (!product) return name;
   return name && name.trim() ? `${name.trim()} (${product})` : product;
 }
 
