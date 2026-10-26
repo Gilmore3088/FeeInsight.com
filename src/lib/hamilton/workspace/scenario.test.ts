@@ -19,8 +19,16 @@ describe("buildScenario", () => {
     expect(s.evidenceLevel).toBe("market");
     expect(s.revenueEffect).toBeNull();
     expect(s.peersMore + s.peersSame + s.peersLess).toBe(10);
-    expect(s).toMatchObject({ peersMore: 8, peersSame: 2, peersLess: 0, per1000ItemsDelta: -5000 });
+    expect(s).toMatchObject({ peersMore: 8, peersSame: 2, peersLess: 0, local: null });
+    // No per-1,000-items figure, as in Try a price (#1896).
+    expect(s).not.toHaveProperty("per1000ItemsDelta");
     expect(s.missingInput?.fieldKey).toBe("fee.overdraft.annual_items");
+  });
+
+  it("places the tested price among local competitors when their amounts are given (#1896)", () => {
+    const s = buildScenario({ feeCategory: "overdraft", current: 30, tested: 25, peers, peerLabel: "Texas banks", localAmounts: [20, 25, 29, 33] });
+    expect(s.local).toEqual({ n: 4, more: 2, same: 1, less: 1 });
+    expect(buildScenario({ feeCategory: "overdraft", current: 30, tested: 25, peers, peerLabel: "p", localAmounts: [] }).local).toBeNull();
   });
 
   it("builds a working estimate from reported income, with the assumptions written out", () => {

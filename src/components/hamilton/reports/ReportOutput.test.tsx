@@ -10,7 +10,7 @@ const report: ReportSummaryResponse = {
   executiveSummary: ["You charge $35; the state median is $32."],
   snapshot: [{ label: "Overdraft", current: "$35", proposed: "$30" }],
   strategicRationale: "Most peers sit between $29 and $35.",
-  tradeoffs: [{ label: "Fee income per 1,000 items", value: "−$5,000" }],
+  tradeoffs: [{ label: "Change per item", value: "−$5" }],
   recommendation: "Management could hold at $35 or test $30.",
   implementationNotes: ["Reg DD requires 30 days' notice."],
   exportControls: { pdfEnabled: true, shareEnabled: false },

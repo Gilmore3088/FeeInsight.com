@@ -1,7 +1,8 @@
 /**
  * Consultant-style exhibits for Hamilton reports, built only from data:
- * local competitors by name, the peer range, and dollar sensitivity from the
- * institution's own call report / 5300 service-charge income. The model never
+ * local competitors by name, the peer range, and what each price move does per item
+ * and to the fee's rank. No fee income figure is sized from a price gap: that needs the
+ * institution's own yearly volume, which filings do not report (#1896). The model never
  * writes these tables; it receives the same numbers in its DATA payload.
  */
 import { getDisplayName } from "@/lib/fee-taxonomy";
@@ -11,6 +12,7 @@ import { formatAmount, formatCompactDollars } from "@/lib/format";
 import { FEE_MOVES_TRACKED_SINCE, type LocalFeeMove, type LocalMarket } from "@/lib/data-store/local-market";
 import type { SelectedInstitutionFeeDelta } from "./report-evidence";
 import { statedFeeText, type SeveralFees } from "@/lib/own-fee";
+import { inSentence } from "@/lib/hamilton/workspace/names";
 import type { ReportExhibit, ReportSource } from "./types";
 
 /** A local median needs at least this many competitors publishing the fee (James, 2026-10-25). */
@@ -53,12 +55,8 @@ export interface FeeImpactEstimate {
   your_amount: number;
   reference: "local median" | "peer median";
   reference_amount: number;
-  /** reference − yours: positive means moving to the reference raises income. */
+  /** reference − yours: the change per item charged. No income figure: filings give no volume (#1896). */
   gap_amount: number;
-  /** Income change per 1,000 charges a year at the reference price, whole dollars. */
-  income_per_1000_amount: number;
-  /** That change as a percent of last full year's deposit service-charge income. */
-  share_of_service_charges_pct: number | null;
   /** Price-move scenario: rank among local competitors plus this institution, 1 = lowest price. */
   local_rank_today: number | null;
   local_rank_at_reference: number | null;
@@ -170,7 +168,6 @@ function ordinal(n: number): string {
 export function buildFeeImpacts(
   deltas: SelectedInstitutionFeeDelta[],
   local: LocalFeeComparison[],
-  serviceCharges: AnnualServiceCharges | null,
 ): FeeImpactEstimate[] {
   const localByCategory = new Map(local.map((row) => [row.fee_category, row]));
   return fewFees(deltas).flatMap((delta) => {
@@ -178,7 +175,6 @@ export function buildFeeImpacts(
     const reference = localMedian ?? delta.peer_median;
     const gap = round2(reference - delta.institution_amount);
     if (Math.abs(gap) < MIN_GAP_TO_SIZE) return [];
-    const per1000 = Math.round(gap * 1000);
     const localRow = localByCategory.get(delta.fee_category);
     return [{
       fee_category: delta.fee_category,
@@ -187,11 +183,6 @@ export function buildFeeImpacts(
       reference: localMedian !== null ? "local median" : "peer median",
       reference_amount: reference,
       gap_amount: gap,
-      income_per_1000_amount: per1000,
-      share_of_service_charges_pct:
-        serviceCharges && serviceCharges.amount > 0
-          ? Math.round((per1000 / serviceCharges.amount) * 1000) / 10
-          : null,
       local_rank_today: localRow ? cheapestRank(delta.institution_amount, localRow.local_amounts) : null,
       local_rank_at_reference: localRow ? cheapestRank(reference, localRow.local_amounts) : null,
       local_field_size: localRow ? localRow.local_amounts.length + 1 : null,
@@ -222,7 +213,7 @@ export function buildReportExhibits(params: {
   }));
   const trackedSince = FEE_MOVES_TRACKED_SINCE.slice(0, 10);
   const local = buildLocalComparisons(deltas, market);
-  const impacts = buildFeeImpacts(deltas, local, serviceCharges);
+  const impacts = buildFeeImpacts(deltas, local);
   const exhibits: ReportExhibit[] = [];
 
   if (market && local.length > 0) {
@@ -277,34 +268,25 @@ export function buildReportExhibits(params: {
   // NCUA 5300 reports total fee income; the FDIC call report breaks out deposit service charges.
   const incomeLabel = serviceCharges?.source === "ncua" ? "fee income" : "deposit service charges";
   if (impacts.length > 0) {
-    const largest = [...impacts].sort((a, b) => Math.abs(b.income_per_1000_amount) - Math.abs(a.income_per_1000_amount))[0];
-    const largestText = `the ${largest.fee.toLowerCase()} gap is worth ${signed(largest.income_per_1000_amount).replace(".00", "")} per 1,000 charges a year`;
+    // Per item and rank only, as Try a price shows it: no per-1,000-charges or share-of-income
+    // figure, because filings do not report how often a fee is charged (#1896).
+    const largest = [...impacts].sort((a, b) => Math.abs(b.gap_amount) - Math.abs(a.gap_amount))[0];
     exhibits.push({
       id: "dollar_impact",
-      title: serviceCharges
-        ? `${institutionName} earned ${formatCompactDollars(serviceCharges.amount)} in ${incomeLabel} in ${serviceCharges.year}; ${largestText}`
-        : `At today's prices, ${largestText}`,
+      title: `The largest price move is the ${inSentence(largest.fee)} fee: ${formatAmount(largest.your_amount)} to the ${largest.reference} of ${formatAmount(largest.reference_amount)}, ${signed(largest.gap_amount)} per item`,
       subtitle:
-        "What each price move does: where the fee would rank locally and against peers, and the income change per 1,000 times it is charged a year. Filings do not report how often each fee is charged, so read across to your own volumes.",
-      columns: [
-        "Fee",
-        "Move",
-        "Local rank, lowest price first",
-        `Against ${peerLabel}`,
-        "Per 1,000 charges",
-        serviceCharges ? `Share of ${serviceCharges.year} ${incomeLabel}` : `Share of ${incomeLabel}`,
-      ],
+        "What each price move does: the change per item and where the fee would rank locally and against peers. Filings do not report how often each fee is charged, so no fee income figure is shown.",
+      columns: ["Fee", "Move", "Change per item", "Local rank, lowest price first", `Against ${peerLabel}`],
       rows: impacts.map((i) => [
         i.fee,
         `${formatAmount(i.your_amount)} to ${formatAmount(i.reference_amount)} (${i.reference})`,
+        signed(i.gap_amount),
         i.local_rank_today !== null && i.local_rank_at_reference !== null && i.local_field_size !== null
           ? `${ordinal(i.local_rank_today)} to ${ordinal(i.local_rank_at_reference)} of ${i.local_field_size}`
           : "No local comparison",
         i.peer_band_today === i.peer_band_at_reference ? `Stays ${i.peer_band_today}` : `From ${i.peer_band_today} to ${i.peer_band_at_reference}`,
-        signed(i.income_per_1000_amount).replace(".00", ""),
-        i.share_of_service_charges_pct !== null ? `${i.share_of_service_charges_pct.toFixed(1)}%` : "Not reported",
       ]),
-      note: "An estimate of price, not volume: it assumes the same number of charges at the new price. Ranks count only competitors that publish the fee.",
+      note: "Ranks count only competitors that publish the fee, plus your institution.",
     });
   }
 

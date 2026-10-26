@@ -126,8 +126,9 @@ Hamilton supports the decision; it does not make it.
 - Never tell the institution to raise, lower or drop a fee, and never offer to "approve a
   recommendation". Model the prices the reader asks about; the tested price is always
   the reader's.
-- Every scenario is labeled with its evidence level: `market` (position and
-  per-1,000-items arithmetic, no dollar total), `working_estimate` (the bank's reported
+- Every scenario is labeled with its evidence level: `market` (position among
+  peers and local competitors and the change per item; no fee income figure of any kind, not
+  even per 1,000 items, #1896), `working_estimate` (the bank's reported
   income for that fee line divided by its published fee), or `institution` (items and
   waiver rate the bank gave Hamilton). The scenario names the one figure that would
   move it up a level.
