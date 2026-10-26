@@ -21,6 +21,8 @@ describe("a price labelled with another account's column (#1912)", () => {
   it("decides nothing when the fee names no account, or a cell prints the price unlabelled", () => {
     expect(pricedForOtherAccount(CAPITAL_CITY, "Early closure fee", 50)).toBe(false);
     expect(pricedForOtherAccount("Withdrawal: $1 | $1 (Savings)", "Checking Withdrawal", 1)).toBe(false);
+    expect(pricedForOtherAccount("Overdraft transfer | $3.00 (from savings)", "Overdraft Transfer (Savings to Checking)", 3)).toBe(false);
+    expect(pricedForOtherAccount("Monthly fee | $5.00 (checking)", "Share Draft Monthly Fee", 5)).toBe(false);
   });
 
   it("reads a label carrying a figure as a condition, not a column", () => {
