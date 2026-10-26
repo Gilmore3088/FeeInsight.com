@@ -1930,6 +1930,19 @@ first column). Account product only. Hamilton's account-type hold reads stored r
 the same way (`tableColumnProduct`, behind `ACCOUNT_TYPE_COLUMN_READ_LIVE`, off), because a
 superseded copy is never read again.
 
+v122 (#1905): a read filed under a deposit category (NSF, overdraft, monthly maintenance, minimum
+balance, dormancy, a returned deposited item) whose every priced line sits in a loan section of the
+schedule is the loan's fee and files as `other_lending_fee` (`loanSectionFeeRead`, the shared rule
+`loanSectionFee` in `src/lib/custom-report/loan-section-fee.ts`). The section is the first non-row line
+above the fee's line, within 20 lines: a short heading that names a loan, mortgage, home equity line,
+HELOC or line of credit, ends on a section word, and names no deposit, card or business product
+("Equity Loan", "Consumer Loan Fees", "LOAN FEES", "HELOC - Home Equity Line of Credit"; not "Checking
+Line of Credit Fees" or "Other Account/Loan Fees"). Navy Federal's "Home Equity Line Check returned (due
+to non-sufficient funds)" $29 and "Tax Service Charge" $25 under "Equity Loan" went live as the
+account's NSF and monthly maintenance fees (154634, 154635). A row naming a deposit account or service,
+a stop payment, and a $0 in words keep their read. Darwin re-checks live fees with the same rule
+(`darwin/loan-section-check.ts`, switch off).
+
 ## Darwin's re-read requests (`reread-feedback.ts`, #1511)
 
 Darwin's live fragment check (`darwin/live-fragment-check.ts`) writes one `pipeline_feedback` row of
@@ -2183,7 +2196,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v121 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v122 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v10 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |
