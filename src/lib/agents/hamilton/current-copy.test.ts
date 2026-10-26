@@ -193,6 +193,8 @@ describe("retired documents (no longer a source, Oct 19)", () => {
     expect(retired).toContain("t.status = 'completed'");
     expect(retired).toContain("LEFT JOIN institution_source_profiles profile");
     expect(retired).toContain("c.status = 'success'");
+    // #1200: a copy last seen before the retired document was fetched never judges it.
+    expect(retired).toContain("GREATEST(c.crawled_at, c.last_checked_at) < older.crawled_at");
   });
 
   it("judges a retired document's fees like a superseded copy's and reports them apart", async () => {

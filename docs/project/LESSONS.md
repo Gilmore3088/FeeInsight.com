@@ -213,7 +213,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-348 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+349 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
 ### Extraction and fee reading (57)
 
@@ -319,7 +319,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A consumer comparison needs the payer checked as well as the category. — [finding](findings/2026-10-09-business-wire-as-consumer-price.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 - 2026-10-09 — Returned bonds and coupons were filed as NSF. — [finding](findings/2026-10-09-bond-return-filed-nsf.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 
-### Verification and publication (60)
+### Verification and publication (61)
 
 - 2026-10-26 — A price labelled with an account's column is that account's price: "$50 fee to close prior to maturity (ira)" does not trace a fee named "Early closure of CD"; a label carrying a figure is a condition, not a column (#1912). — [finding](findings/2026-10-26-column-label-names-the-account.md) — Agent lesson: darwin/issue-1912-column-label-names-the-account; Guard: `src/lib/custom-report/column-account.test.ts`
 - 2026-10-26 — A fee that names checking is a checking price, whatever product it was filed under: "Share Draft Checking Service Monthly service charge" under "Share Value" stays in the bank's checking value (#1912). — [finding](findings/2026-10-26-checking-name-under-savings-product.md) — Agent lesson: hamilton/issue-1912-checking-name-is-checking; Guard: `src/lib/fee-product.test.ts`, `src/lib/data-store/fee-stats.test.ts`
@@ -338,6 +338,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-20 — A stored name carries the older copy's text layout; compare it against a newer layout only after undoing what that layout glued (#2477). — [finding](findings/2026-10-20-heading-row-glued-name-false-flag.md) — Guard: `src/lib/agents/hamilton/newer-copy-retire.test.ts`
 - 2026-10-20 — Measure a takedown rule on prod before building it out: the dry run showed the rule reached none of the fees it was meant for (#2477). — [finding](findings/2026-10-20-superseded-copy-fees-stay-live.md) — Guard: `src/lib/agents/hamilton/newer-copy-retire.db.test.ts`
 - 2026-10-26 — A check of what the bank serves today reads the address the bank is actually fetched at (remembered address, else saved link), not the saved link alone; Bayes's current-copy count had also failed since #2179 (#1200). — [finding](findings/2026-10-26-retired-copy-keyed-on-saved-link.md) — Agent lesson: hamilton/issue-1200-retired-key-is-the-fetch-target; Guard: `src/lib/agents/hamilton/current-copy.db.test.ts`
+- 2026-10-26 — Judge a live fee only against a copy the bank was seen serving at or after the fee's own document was fetched: 139 live fees on 19 retired documents were paired with older copies, and these were the pairs #1200 had held back for a hand check. — [finding](findings/2026-10-26-retired-copy-older-than-live-document.md) — Agent lesson: hamilton/issue-1200-current-copy-must-be-newer; Guard: `src/lib/agents/hamilton/current-copy.db.test.ts`
 - 2026-10-20 — A fee found again on a newer document should cite the newer document. — [finding](findings/2026-10-20-live-fees-stay-on-moved-pages.md) — Agent lesson: hamilton/issue-1200-follow-moved-pages
 - 2026-10-20 — Held rates kept Knox's 0.5 placeholder confidence after promotion (#1055). — [finding](findings/2026-10-20-held-rates-kept-placeholder-confidence.md) — Guard: `src/lib/agents/knox/held-rate-confidence.db.test.ts`
 - 2026-10-20 — Agent checks could take down a fee an admin had corrected. — [finding](findings/2026-10-20-agent-checks-undo-admin-corrections.md) — Guard: `src/lib/fee-corrections.db.test.ts`
@@ -607,7 +608,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (310 in all).
+counts as of this index (311 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
@@ -618,7 +619,7 @@ counts as of this index (310 in all).
 | knox | 84 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
 | darwin | 48 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 40 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
-| hamilton | 60 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
+| hamilton | 61 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
 | deming | 18 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
 
 ## Before 2026-10-10
