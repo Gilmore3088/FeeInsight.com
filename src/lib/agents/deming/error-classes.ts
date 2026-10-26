@@ -120,6 +120,8 @@ export interface ErrorClassSummary {
   nameRowLimitHit?: boolean;
   /** Set when the name-family read failed; the category classes still stand. */
   nameReadFailed?: boolean;
+  /** Why the name-family read failed, so the ledger shows the cause. */
+  nameReadError?: string;
   classes: ErrorClass[];
 }
 
@@ -225,6 +227,7 @@ export async function readErrorClasses(db: SqlTag = sql, windowDays = ERROR_CLAS
   // correction or audit recorded, else the live fee's.
   // Its own savepoint: a failed name read loses only the name view, never the category classes.
   let nameReadFailed = false;
+  let nameReadError: string | undefined;
   const nameRows = await inSavepoint(db, (scope) => scope<NameErrorRow[]>`
     SELECT f.id AS feedback_id, f.about_stage, f.kind, f.check_name, f.institution_id, f.fee_published_id,
            COALESCE(f.canonical_fee_key, fp.canonical_fee_key) AS canonical_fee_key,
@@ -240,8 +243,9 @@ export async function readErrorClasses(db: SqlTag = sql, windowDays = ERROR_CLAS
        AND COALESCE(NULLIF(f.evidence->>'old_name', ''), NULLIF(f.evidence->>'fee_name', ''), fp.fee_name) IS NOT NULL
      ORDER BY f.id DESC
      LIMIT ${NAME_ROW_LIMIT + 1}
-  `).catch(() => {
+  `).catch((error: unknown) => {
     nameReadFailed = true;
+    nameReadError = error instanceof Error ? error.message : String(error);
     return null;
   });
   const nameLimitHit = nameRows != null && nameRows.length > NAME_ROW_LIMIT;
@@ -250,7 +254,7 @@ export async function readErrorClasses(db: SqlTag = sql, windowDays = ERROR_CLAS
   return {
     ...summary,
     ...(limitHit ? { amountRowLimitHit: true } : {}),
-    ...(nameReadFailed ? { nameReadFailed: true } : {}),
+    ...(nameReadFailed ? { nameReadFailed: true, nameReadError } : {}),
     ...(nameLimitHit ? { nameRowLimitHit: true } : {}),
   };
 }
@@ -496,6 +500,7 @@ export function errorClassesDetail(result: ErrorClassesResult) {
     name_rows_read: summary?.nameRowsRead ?? null,
     name_row_limit_hit: summary?.nameRowLimitHit ?? false,
     name_read_failed: summary?.nameReadFailed ?? false,
+    ...(summary?.nameReadError ? { name_read_error: summary.nameReadError.slice(0, 300) } : {}),
     classes: summary?.classes.length ?? null,
     name_family_classes: summary?.nameFamilyClasses ?? null,
     written: result.written,

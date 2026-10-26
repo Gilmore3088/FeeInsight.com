@@ -175,9 +175,9 @@ describe("error classes (#2063)", () => {
         return text.includes("AS amount_row") ? Promise.reject(new Error("name read failed")) : Promise.resolve([]);
       }) as unknown as Parameters<typeof readErrorClasses>[0];
       const summary = await readErrorClasses(db, 7);
-      expect(summary).toMatchObject({ confirmedRows: 0, nameReadFailed: true });
+      expect(summary).toMatchObject({ confirmedRows: 0, nameReadFailed: true, nameReadError: "name read failed" });
       expect(summary.nameRowsRead).toBeUndefined();
-      expect(errorClassesDetail({ asOf: "2026-10-26", written: 0, skipped: [], summary })).toMatchObject({ name_read_failed: true });
+      expect(errorClassesDetail({ asOf: "2026-10-26", written: 0, skipped: [], summary })).toMatchObject({ name_read_failed: true, name_read_error: "name read failed" });
     });
 
     it("shows the name-family count in the step's summary and run-ledger detail", () => {
