@@ -153,6 +153,7 @@ export const FEEDBACK_KINDS = {
   unread: { readers: ROSETTA_BATCH_READERS },
   text_lost_fees: { readers: ROSETTA_READ_LESSONS },
   text_held_up: { readers: [ROSETTA_READ] },
+  untraced_lines: { readers: [ROSETTA_READ], readStages: ["read"], note: "Knox reports a text whose held lines its rules failed to trace under 3+ rules versions (knox/untraced-read-error.ts, #1102); Rosetta reads the document again at its next reader version, like a lost-text hold (#2059)." },
 
   // Magellan's links.
   produced_live_fees: { readers: MAGELLAN_LINK_READERS },
