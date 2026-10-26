@@ -19,7 +19,7 @@ import { unpackHmdaCosts } from "@/lib/regulatory/hmda-cost-storage";
 
 const url = process.env.E2E_DATABASE_URL;
 describe.skipIf(!url)("public-data compaction and atomic archive", () => {
-  let db: ReturnType<typeof postgres>;
+  let db: postgres.Sql<{ json: unknown }>;
   let store: ColdStore;
   let objects: Map<string, Uint8Array>;
   const schema = `storage_test_${randomBytes(6).toString("hex")}`;
