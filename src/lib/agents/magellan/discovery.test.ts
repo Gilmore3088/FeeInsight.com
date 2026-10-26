@@ -1776,7 +1776,7 @@ describe("Magellan reads Hamilton's conflict lessons and its own search misses (
     expect(arm).toContain("sd.document_url = due.fee_schedule_url");
     expect(arm).toContain("sd.id = due.main_document_id AND due.main_document_url = due.profile_canonical_source_url");
     expect(arm).toContain("fp.rolled_back_at IS NOT NULL");
-    expect(arm).toContain("pa.created_at > sd.crawled_at");
+    expect(arm).toContain("pa.created_at > GREATEST(sd.crawled_at, f.created_at)");
     // The newer document is a main document, never a companion.
     expect(arm).toContain("kept.companion_source_id IS NULL");
   });
@@ -1819,7 +1819,7 @@ describe("Magellan reads Hamilton's conflict lessons and its own search misses (
     expect(arm).toContain("sd.superseded_by_id IS NULL");
     expect(arm).toContain("sd.companion_source_id IS NULL");
     expect(arm).toContain("fp.rolled_back_at IS NOT NULL");
-    expect(arm).toContain("pa.created_at > sd.crawled_at");
+    expect(arm).toContain("pa.created_at > GREATEST(sd.crawled_at, f.created_at)");
   });
 
   it("runs the specialists a bank's last miss saw nothing with after the others", async () => {

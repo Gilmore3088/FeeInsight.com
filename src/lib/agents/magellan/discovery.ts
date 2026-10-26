@@ -1307,7 +1307,7 @@ export async function selectUpgradeCandidates(db: SqlTag, limit: number, stateCo
       -- document must be the link's page (its address, or the link's main document by id while the
       -- remembered address is that document's) and the page's current copy, never a companion or an
       -- old copy (both rows on prod at 2026-10-26 were companion account pages beside a schedule
-      -- link, which says nothing against the link). The fee must still be down, and each document is
+      -- link, which says nothing against the link). The fee must still be down, and each finding is
       -- searched behind once, at any upgrade version.
       LEFT JOIN LATERAL (
         SELECT max(f.created_at) AS conflict_at
@@ -1332,7 +1332,9 @@ export async function selectUpgradeCandidates(db: SqlTag, limit: number, stateCo
               WHERE pa.institution_id = inst.id
                 AND pa.stage = 'discover'
                 AND pa.detail ? 'upgrade_search'
-                AND pa.created_at > sd.crawled_at
+                -- Newer than the finding, not only the copy: a search run before Hamilton saw the
+                -- conflict could not have acted on it.
+                AND pa.created_at > GREATEST(sd.crawled_at, f.created_at)
            )
       ) conflict ON TRUE
      WHERE COALESCE(inst.status, 'active') = 'active'
@@ -1631,7 +1633,7 @@ export async function selectStaleCandidates(
         -- the remembered address agrees) and that page's current copy, never a companion or an old
         -- copy (17 of the first 19 rows were companions: an old edition kept beside a current link,
         -- which says nothing against the link). The newer document must still be current and the
-        -- older price still archived, and each document is searched behind once. Not a wrong
+        -- older price still archived, and each finding is searched behind once. Not a wrong
         -- document: the date rule holds whenever the old date is known; with none, the newer
         -- documents' addresses (stale_kept_urls) are the only pages a search may take. The newer
         -- document must be a main document, not a companion (stalePriceReplaces).
@@ -1667,7 +1669,9 @@ export async function selectStaleCandidates(
                 WHERE pa.institution_id = due.id
                   AND pa.stage = 'discover'
                   AND pa.detail @> ${marker}::jsonb
-                  AND pa.created_at > sd.crawled_at
+                  -- Newer than the finding, not only the copy: an age search run before Hamilton
+                  -- saw the conflict did not know the newer document.
+                  AND pa.created_at > GREATEST(sd.crawled_at, f.created_at)
              )
         ) stale_price ON TRUE
     ), judged AS (

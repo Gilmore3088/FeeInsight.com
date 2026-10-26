@@ -115,16 +115,19 @@ describe.skipIf(!connection)("Magellan reads Hamilton's conflict lessons and its
     // The "newer" document is a companion: never a page the link gives way to.
     await stale(106, "https://bank106.example/fees.pdf");
     await db`UPDATE source_documents SET companion_source_id = 11 WHERE id = ${1062}`;
+    // An age search kept the link before Hamilton saw the conflict: it did not know the newer document.
+    await stale(107, "https://bank107.example/fees.pdf");
+    await searched(107, { freshness_search: FRESHNESS_SEARCH_VERSION }, "2026-10-05T00:00:00Z");
 
     const rows = await selectStaleCandidates(asDb(), 10, "TX", new Date("2026-10-26T00:00:00Z"));
-    expect(rows.map((row) => Number(row.id))).toEqual([101]);
-    expect(rows[0]).toMatchObject({
+    expect(rows.map((row) => Number(row.id)).sort()).toEqual([101, 107]);
+    expect(rows.find((row) => Number(row.id) === 101)).toMatchObject({
       freshness: true,
       stale_reason: STALE_PRICE_REASON,
       stale_price: { kept_urls: ["https://bank101.example/fees-current.pdf"], only: true },
     });
     // Not a wrong document: no address beyond the link is ruled out.
-    expect(rows[0].freshness_exclude).toBeUndefined();
+    expect(rows.find((row) => Number(row.id) === 101)?.freshness_exclude).toBeUndefined();
   });
 
   it("sends a schedule conflict on the link's own current page to the upgrade search, whatever its address", async () => {
@@ -140,10 +143,13 @@ describe.skipIf(!connection)("Magellan reads Hamilton's conflict lessons and its
     // Already given an upgrade search behind this document.
     await conflict(203, "https://bank203.example/p/9");
     await searched(203, { upgrade_search: 2 }, "2026-10-21T00:00:00Z");
+    // An upgrade search ran before Hamilton saw the conflict.
+    await conflict(204, "https://bank204.example/p/7");
+    await searched(204, { upgrade_search: 2 }, "2026-10-05T00:00:00Z");
 
     const rows = await selectUpgradeCandidates(asDb(), 10, "TX");
-    expect(rows.map((row) => Number(row.id))).toEqual([201]);
-    expect(rows[0]).toMatchObject({ upgrade: true, upgrade_reason: "schedule_conflict" });
+    expect(rows.map((row) => Number(row.id)).sort()).toEqual([201, 204]);
+    expect(rows.find((row) => Number(row.id) === 201)).toMatchObject({ upgrade: true, upgrade_reason: "schedule_conflict" });
   });
 
   it("gives the next search the specialists its last miss on the same website saw nothing with", async () => {
