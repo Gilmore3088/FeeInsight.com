@@ -44,6 +44,7 @@ import { networkColumnReads, withoutNetworkTableRows } from "@/lib/custom-report
 import { namesLateChargeBound } from "@/lib/late-charge-bound";
 import { rateFloorOf } from "@/lib/rate-floor";
 import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
+import { commercialLockboxName, commercialLockboxOnLine } from "@/lib/custom-report/commercial-lockbox";
 
 /**
  * Knox's free extraction team, run over one whole document. Pure.
@@ -473,7 +474,14 @@ import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 // pay, not NSF (`BILL_PAY_RETURNED_BY_PAYEE` in `custom-report/payee-returned-bill-pay.ts`, shared with
 // guard v99). A bill pay return with no payee words stays NSF ("Bill Payment Return Item Fee (per
 // presentment)", Texas tid 2419). The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 131 } as const;
+// v132 (#1912): a commercial lockbox service ("Lock Box Service, per month" $225, Forte Bank 135270) is
+// not a safe deposit box: a lock box name that names the service (processing, items, remittances,
+// wholesale or retail) and nothing of a box gets no category (`COMMERCIAL_LOCKBOX_NAME` in
+// `custom-report/commercial-lockbox.ts`, shared with guard v100), and any specialist's safe deposit box
+// read whose name or stored line or business heading says so is held unclassified. A lock box with a
+// size, key, drilling, rent, lease, year or late charge stays a safe deposit box. The stale-read floor
+// stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 132 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -774,6 +782,18 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
       if (feeName !== read.feeName) read.canonicalHint = loanSectionFeeRead({ ...read, feeName }, checkText).canonicalHint;
       // v131 (#1912): and for the payee's return of a bill payment under that name.
       if (feeName !== read.feeName) read.canonicalHint = payeeReturnedBillPayRead({ ...read, feeName }, checkText).canonicalHint;
+      // v132 (#1912): a lock box any specialist filed as a safe deposit box, whose name or own line or
+      // business heading names the commercial lockbox service, is no safe deposit box and no type of
+      // the 50: held unclassified for review, never filed (`custom-report/commercial-lockbox.ts`).
+      if (read.canonicalHint === "safe_deposit_box" && (commercialLockboxName(feeName) || commercialLockboxOnLine(checkText, feeName, read.amount))) {
+        const row: HeldFeeCandidate = { shape: "unclassified", feeName, amount: read.amount, amountMax: null, percent: null, frequency: read.frequency, canonicalHint: null, excerpt: read.excerpt };
+        const key = heldKey(row);
+        if (!seenHeld.has(key) && held.filter(prior => !unpricedHalf(prior)).length < MAX_HELD_PER_DOCUMENT) {
+          seenHeld.add(key);
+          held.push(row);
+        }
+        continue;
+      }
       const ownPrices = exclusiveStackedPrices(text, stackedPrices, feeName).filter(row => row.amount === read.amount);
       if (read.canonicalHint === "overdraft" && ownPrices.length > 0 && ownPrices.every(row => row.annualProgram)) {
         const row: HeldFeeCandidate = {
