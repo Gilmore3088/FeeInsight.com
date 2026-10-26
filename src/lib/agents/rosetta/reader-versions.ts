@@ -24,6 +24,9 @@ export const LAYOUT_RECHECK_VERSION = 1;
 /**
  * Unknown glyphs restored where unambiguous, and non-UTF-8 pages decoded in their own charset
  * (#2598, glyph-repair.ts). A completed text still carrying U+FFFD or a U+FB00-U+FB06 ligature
- * is read once more at each bump; nothing else is reopened.
+ * is read once more at each bump; nothing else is reopened. Oct 26 (#1513): dropped-ligature
+ * repair joined v1 without a bump: none of the 4 stored texts it changes carries U+FFFD or a
+ * Unicode ligature, so none had been due or settled at v1. The wider due pattern reaches them at
+ * v1; a bump would only re-read the settled glyph texts for no change.
  */
 export const GLYPH_REPAIR_VERSION = 1;

@@ -2,11 +2,16 @@ import { describe, expect, it } from "vitest";
 import {
   decodeTextBytes,
   declaredCharset,
+  DROPPED_LIGATURE_DUE_PATTERN,
+  DROPPED_LIGATURE_WORDS,
   expandUnicodeLigatures,
   FEE_TEXT_LIGATURE_WORDS,
   GLYPH_REPAIR_DUE_PATTERN,
   LIGATURE_CANDIDATES,
+  MIN_DROPPED_LIGATURE_WORDS,
   repairUnmappedGlyphs,
+  restoreDroppedLigatures,
+  UNMAPPED_GLYPH_PATTERN,
 } from "./glyph-repair";
 import { extractPdfDocumentText } from "./pdf-document-text";
 
@@ -146,6 +151,89 @@ describe("the PDF reader restores glyphs its ToUnicode map leaves unknown", () =
   it("reads International where the PDF maps the ligature glyph to U+FFFD", async () => {
     const extracted = await extractPdfDocumentText(pdfWithUnmappedGlyph("Wire InternaXonal Transfer $70.00"));
     expect(extracted.text).toBe("Wire International Transfer $70.00");
+  });
+});
+
+describe("restoreDroppedLigatures (#1513 follow-up)", () => {
+  // Stored text 6266 (Bay Area CU, document 3092), lines verbatim: the font drops its ti and ft
+  // ligatures with no character left, so live fee 42754 was filed as a domestic wire.
+  const bayArea = [
+    "Account Research/Reconciliaon (per hour/1hr min.).................25.00",
+    "ACH Overdra...............................................................................30.00",
+    "Non-Sufficient Funds (NSF)...........................................................30.00",
+    "Inacve Checking (per mo. aer 2 consecuve months)..............10.00",
+    "Wire Transfer Outgoing (Domesc)...............................................25.00",
+    "Wire Transfer Outgoing (Internaonal).........................................50.00",
+    "Deposit Verificaons.......................................................................5.00",
+  ].join("\n");
+  const restored = (text: string, documentText?: string) => restoreDroppedLigatures(text, documentText).text;
+
+  it("restores the fee words a font's dropped ligatures broke", () => {
+    expect(restoreDroppedLigatures(bayArea)).toEqual({
+      text: [
+        "Account Research/Reconciliation (per hour/1hr min.).................25.00",
+        "ACH Overdraft...............................................................................30.00",
+        "Non-Sufficient Funds (NSF)...........................................................30.00",
+        // "aer" is too short to tell from a real word and stays.
+        "Inactive Checking (per mo. aer 2 consecutive months)..............10.00",
+        "Wire Transfer Outgoing (Domestic)...............................................25.00",
+        "Wire Transfer Outgoing (International).........................................50.00",
+        "Deposit Verifications.......................................................................5.00",
+      ].join("\n"),
+      restored: 7,
+    });
+  });
+
+  it("restores a page from the evidence of the whole document", () => {
+    expect(restored("Wire Transfer Outgoing (Internaonal) 50.00", bayArea)).toBe("Wire Transfer Outgoing (International) 50.00");
+  });
+
+  it("needs two different broken words in the document before it restores any", () => {
+    // Stored text 24946's kind of slip: one broken word in a text that prints the rest whole.
+    expect(restored("Account Informaon | information about your account")).toBe("Account Informaon | information about your account");
+    expect(restored("Overdra Fee $30 and overdras")).toBe("Overdraft Fee $30 and overdrafts");
+  });
+
+  it("keeps case and reads a ligature left as a space", () => {
+    expect(restored("WIRE (INTERNAONAL) | DOMESC WIRE")).toBe("WIRE (INTERNATIONAL) | DOMESTIC WIRE");
+    expect(restored("Interna onal wire | Transac on fee")).toBe("International wire | Transaction fee");
+    // A gap leaving one letter beside it ("Domes c") is too doubtful to read.
+    expect(restored("Domes c | Interna onal | Transac on")).toBe("Domes c | International | Transaction");
+  });
+
+  it("never touches a real word, a word inside another, or a glyph written as another character", () => {
+    const evidence = "Domesc and Internaonal wires";
+    expect(restored("social security", evidence)).toBe("social security");
+    expect(restored("Socially and officially", evidence)).toBe("Socially and officially");
+    // A font's ligature letter (Knox reads it), U+FFFD (glyph repair), or a stand-in glyph.
+    for (const text of ["OverdraŌ Fee", "Overdra� Fee", "overdra*s", "Overdra( Fee", "transac5on", "Overdra (NSF)"]) {
+      expect(restored(text, evidence)).toBe(text);
+    }
+  });
+
+  it("lists only words with a ligature's letters, and no broken spelling is a word it knows", () => {
+    for (const word of DROPPED_LIGATURE_WORDS) expect(word).toMatch(/^[a-z]+$/);
+    for (const word of DROPPED_LIGATURE_WORDS) expect(word).toMatch(/ti|ft|tt|ff|fi|fl/);
+    expect(MIN_DROPPED_LIGATURE_WORDS).toBe(2);
+    for (const word of [...DROPPED_LIGATURE_WORDS, ...FEE_TEXT_LIGATURE_WORDS]) {
+      expect(restored(`${word} ${word}`, bayArea)).toBe(`${word} ${word}`);
+    }
+  });
+
+  it("makes a text with a broken fee word due for its glyph-repair read, in the same edges", () => {
+    const due = new RegExp(GLYPH_REPAIR_DUE_PATTERN);
+    expect(new RegExp(DROPPED_LIGATURE_DUE_PATTERN).test("Wire Transfer Outgoing (Internaonal)")).toBe(true);
+    expect(due.test("ACH Overdra....30.00")).toBe(true);
+    expect(due.test("DOMESC")).toBe(true);
+    expect(due.test("Wire Transfer Outgoing (International) social")).toBe(false);
+    expect(due.test("OverdraŌ Fee")).toBe(false);
+    expect(due.test(`a${G}b`)).toBe(true);
+    expect(new RegExp(UNMAPPED_GLYPH_PATTERN).test("Overdra Fee")).toBe(false);
+  });
+
+  it("is applied by the PDF reader to every page", async () => {
+    const extracted = await extractPdfDocumentText(pdfWithUnmappedGlyph("Wire Outgoing (Domesc) $25.00 (Internaonal) $50.00"));
+    expect(extracted.text).toBe("Wire Outgoing (Domestic) $25.00 (International) $50.00");
   });
 });
 

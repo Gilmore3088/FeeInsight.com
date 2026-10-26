@@ -2,7 +2,7 @@ import type { sql } from "@/lib/data-store/connection";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { preserveStatusChange } from "./normalized-witness";
-import { expandUnicodeLigatures, GLYPH_REPAIR_DUE_PATTERN, REPLACEMENT_CHARACTER } from "./glyph-repair";
+import { expandUnicodeLigatures, REPLACEMENT_CHARACTER, UNMAPPED_GLYPH_PATTERN } from "./glyph-repair";
 
 type SqlTag = typeof sql;
 
@@ -171,7 +171,7 @@ export async function glyphBlindSameTextCopyOf(
       JOIN source_documents older ON older.id = older_text.source_document_id
      WHERE older.superseded_by_id = ${input.sourceDocumentId}
        AND older.institution_id = ${input.institutionId}
-       AND older_text.normalized_text ~ ${GLYPH_REPAIR_DUE_PATTERN}
+       AND older_text.normalized_text ~ ${UNMAPPED_GLYPH_PATTERN}
        AND EXISTS (
          SELECT 1 FROM raw_fee_observations older_fr
           WHERE older_fr.source = 'knox'
