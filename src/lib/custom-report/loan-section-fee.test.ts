@@ -101,6 +101,9 @@ describe("loanSectionHeading", () => {
     "MORTGAGE CENTER LOCATION",
     "Loan Payment - EasyPay",
     "CREDIT INSURANCE ON LOANS-Based on Monthly Loan",
+    // A row label and a site menu (docs 1968, 2719 and 13937; #2703 review).
+    "Verification of Mortgage",
+    "Loan Calculator Apply for a Loan",
     // No loan word, or a row.
     "General Fees & Charges",
     "Fee | Amount",

@@ -68,9 +68,10 @@ export const LOAN_HEADING_WORDS = " (?:loans?|lending|mortgages?|helocs?|home eq
 export const LOAN_HEADING_END = " (?:loans?|lending|mortgages?|helocs?|equity|credit|fees|charges|services) $";
 /**
  * Words that make a heading another product's or no section's: a deposit account, a card, a
- * business, an overdraft line, insurance, a loan officer, rates, a payment channel or a place.
+ * business, an overdraft line, insurance, a loan officer, rates, a payment channel, a place, or a
+ * row label or site menu ("Verification of Mortgage", "Loan Calculator Apply for a Loan").
  */
-export const NOT_LOAN_HEADING_WORDS = " (?:checking|savings|shares?|share drafts?|drafts?|deposits?|money market|certificates?|accounts?|overdrafts?|debit|atm|business|commercial|cards?|visa|mastercard|insurance|officers?|rates?|payments?|locations?|centers?) ";
+export const NOT_LOAN_HEADING_WORDS = " (?:checking|savings|shares?|share drafts?|drafts?|deposits?|money market|certificates?|accounts?|overdrafts?|debit|atm|business|commercial|cards?|visa|mastercard|insurance|officers?|rates?|payments?|locations?|centers?|verifications?|calculators?|apply) ";
 /** A sentence's end: "line of credit." closes a paragraph, it heads nothing. */
 export const HEADING_SENTENCE_END = "[.;,!?]\\s*$";
 /** A row's own words that name a deposit account or service: the fee stays the account's. */
