@@ -291,6 +291,9 @@ async function sweep<T>(
     return result;
   } catch (error) {
     failures.push({ sweep: key, outcome: "failed", error: error instanceof Error ? error.message : String(error), after: null });
+    // A dry-run sweep that wrote and then threw keeps the transaction's id: check now, so the write
+    // is named for this sweep, not the next one that succeeds.
+    if (ctx.afterSweep) await ctx.afterSweep(key);
     return empty();
   }
 }

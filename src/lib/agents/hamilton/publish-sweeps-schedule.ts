@@ -49,6 +49,8 @@ export async function schedulePublishSweepsRun(
          WHERE s.step_key = 'publish'
            AND s.status = 'completed'
            AND s.completed_at > ${now}::timestamptz - INTERVAL '1 day'
+           -- Live, a dry run's publish wrote nothing, so it owes the sweeps nothing (review of #2727).
+           AND (NOT ${live}::boolean OR COALESCE(r.params_json->>'dry_run', 'false') <> 'true')
            AND (
              ${live}::boolean
              OR (r.run_kind IN ('workflow_lane', 'state_agent') AND r.params_json->>'institution_id' IS NULL)
