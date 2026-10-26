@@ -606,4 +606,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-26",
   },
+  {
+    id: "issue-1912-checking-name-is-checking",
+    agent: "hamilton",
+    stage: "analysis",
+    lesson: "A monthly or minimum balance fee whose own name says checking, share draft or demand is a checking price, whatever savings-sounding product the row was filed under; only a row whose name and product both point away from checking is set aside from the bank's checking value as another account's fee.",
+    why: "Rule 11 read only the product, so \"Share Draft Checking Service Monthly service charge\" filed under \"Share Value\" and \"Monthly Maintenance Fee (on dividend checking)\" under \"Membership Savings Accounts\" were treated as savings fees. On Oct 26 two live rows were affected; each is its bank's only monthly maintenance row, so no published value moved.",
+    evidence: { issues: [1912], prs: [], files: ["docs/project/findings/2026-10-26-checking-name-under-savings-product.md", "src/lib/fee-product.ts", "src/lib/data-store/fee-stats.ts"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
 ];

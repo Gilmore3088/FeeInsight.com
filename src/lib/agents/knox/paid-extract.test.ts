@@ -206,11 +206,24 @@ describe("Knox paid extraction (pass 3)", () => {
     expect(attempt).toEqual(
       expect.arrayContaining([52, 601, "extract", KNOX_PAID_STRATEGY.strategy, KNOX_PAID_STRATEGY.version, "dense-hash", "ok", 2, result.costMicrousd, 301, 31]),
     );
-    expect(JSON.parse(String(attempt[attempt.length - 1]))).toMatchObject({ returned: 3, accepted: 2, rejected: { not_in_text: 1 } });
+    const attemptDetail = JSON.parse(String(attempt[attempt.length - 1]));
+    expect(attemptDetail).toMatchObject({ returned: 3, accepted: 2, rejected: { not_in_text: 1 } });
+    // #1101: each kept fee is filed against today's free read of the same text, with the text's
+    // layout and the page's host, on the attempt and in one step event.
+    expect(attemptDetail.free_misses).toMatchObject({ version: 1, host: "densebank.example", paid_finds: 2 });
+    const byKind = attemptDetail.free_misses.by_kind as Record<string, number>;
+    expect(Object.values(byKind).reduce((sum, count) => sum + count, 0)).toBe(2);
+    const events = db.mock.calls.filter((call) => templateText(call[0]).includes("INSERT INTO agent_run_events"));
+    expect(events).toHaveLength(1);
+    expect(templateText(events[0][0])).toContain("'knox.paid_find_misses'");
+    expect(String(events[0][3])).toMatch(/^Knox's paid pass kept 2 fees: the free team already read \d+/);
+    expect(JSON.parse(String(events[0][4]))).toMatchObject({ by_kind: byKind, repeated: [], texts: [{ institution_id: 52, document_text_id: 801, host: "densebank.example" }] });
 
     const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
     expect(query).toContain("pa.strategy_version");
     expect(query).toContain("free.yield_count <");
+    // #1101: the bank's platform rides each selected text.
+    expect(query).toContain("LEFT JOIN institution_source_profiles profile");
     expect(query).toContain("paid.strategy =");
     // No paid read for a closed bank or for a text Darwin judged another bank's (2026-10-17).
     expect(query).toContain("AND NOT (inst.");

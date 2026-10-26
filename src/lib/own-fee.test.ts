@@ -70,6 +70,13 @@ describe("product exceptions stay listed as their own fees (#1911)", () => {
     expect(ownFeeName("money_order", { fee_name: "Personal money order", account_product_type: "Safe Debit  Account" }))
       .toBe("Personal money order (Safe Debit Account)");
     expect(ownFeeName("money_order", { fee_name: "Personal Money Orders", account_product_type: null })).toBe("Personal Money Orders");
+    // A fee that names checking is the checking price, so it carries no product (#1912).
+    expect(ownFeeName("monthly_maintenance", { fee_name: "Share Draft Checking Service Monthly service charge", account_product_type: "Share Value" }))
+      .toBe("Share Draft Checking Service Monthly service charge");
+    expect(ownFeeName("monthly_maintenance", { fee_name: "Monthly service charge", account_product_type: "Share Value" }))
+      .toBe("Monthly service charge (Share Value)");
+    expect(ownFeeName("wire_domestic_outgoing", { fee_name: "Outgoing Online Wire (Domestic)", account_product_type: null }))
+      .toBe("Outgoing Online Wire (Domestic)");
     // An account's own monthly fee is not an exception, so its name is unchanged.
     expect(ownFeeName("monthly_maintenance", { fee_name: "Monthly fee", account_product_type: "Easy Checking" })).toBe("Monthly fee");
   });
