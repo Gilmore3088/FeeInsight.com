@@ -30,7 +30,14 @@ describe.skipIf(!connection)("regression replay of fee-fields cases (#2064)", ()
     if (text) await raw`INSERT INTO agent_source_texts (source_document_id, institution_id, status, normalized_text) VALUES (${id}, ${INST}, 'completed', ${text})`;
   }
 
+  /** The raw row Knox wrote: its own address can differ from its document's (Knox keeps the text's). */
+  async function rawRow(id: number, sourceUrl: string) {
+    await raw`INSERT INTO raw_fee_observations (fee_raw_id, institution_id, agent_event_id, fee_name, source_url, source)
+              VALUES (${id}, ${INST}, gen_random_uuid(), 'Outgoing Wire', ${sourceUrl}, 'knox')`;
+  }
+
   async function clean() {
+    await raw`DELETE FROM raw_fee_observations WHERE institution_id = ${INST}`;
     await raw`DELETE FROM eval_cases WHERE institution_id = ${INST}`;
     await raw`DELETE FROM agent_source_texts WHERE institution_id = ${INST}`;
     await raw`DELETE FROM source_documents WHERE institution_id = ${INST}`;
@@ -88,9 +95,18 @@ describe.skipIf(!connection)("regression replay of fee-fields cases (#2064)", ()
     // Darwin reads the same fee as consumer from a schedule with no business fees: not caught (review of #2064).
     await document(DOC + 2, wire.document_url, "Schedule of Fees\nOutgoing Wire $30.00\nStop Payment $25.00\nOverdraft Fee $30.00");
     await seed("test2064:audience-consumer", "regression", "hamilton.business_schedule", wire, FEE + 12, "candidate", DOC + 2);
-    // No stored text: nothing is judged.
+    // No stored text: nothing is judged, and the case keeps its last verdict.
     await document(DOC + 3, wire.document_url, null);
     await seed("test2064:audience-no-text", "regression", "hamilton.business_schedule", wire, FEE + 13, "active", DOC + 3);
+    await raw`UPDATE eval_cases SET last_caught = true, last_verdict = 'business_schedule_read' WHERE case_key = 'test2064:audience-no-text'`;
+    // An old snapshot whose raw row has a plain address of its own (the text's) beside a business
+    // document address: Darwin reads the raw row's address and the text, so it reads consumer, as
+    // live verify would (review of #2720). The document's address alone would read business.
+    await document(DOC + 5, "https://bank.test/business/fees.pdf", "Fees\nOutgoing Wire $30.00\nStop Payment $25.00");
+    await rawRow(FEE + 15, "https://bank.test/fees");
+    await seed("test2064:audience-raw-address", "regression", "hamilton.business_schedule",
+      { kind: "unreplayable", canonical_fee_key: "wire_domestic_outgoing", fee_name: "Outgoing Wire", amount: 30, conditions: null }, FEE + 15, "candidate", DOC + 5);
+    await raw`UPDATE eval_cases SET fee_raw_id = ${FEE + 15} WHERE case_key = 'test2064:audience-raw-address'`;
     // An active case today's rules would let through (Darwin reads its name as personal) is a regression.
     await document(DOC + 4, "https://bank.test/business/fees.pdf", "Fees\nPersonal Overdraft Fee $35.00");
     await seed("test2064:audience-regressed", "regression", "hamilton.business_schedule",
@@ -101,7 +117,9 @@ describe.skipIf(!connection)("regression replay of fee-fields cases (#2064)", ()
     expect(await row("test2064:audience-old")).toMatchObject({ status: "active", last_caught: true, last_verdict: "darwin_reads_business" });
     expect(await row("test2064:audience-new")).toMatchObject({ status: "active", last_caught: true, last_verdict: "business_schedule_read" });
     expect(await row("test2064:audience-consumer")).toMatchObject({ status: "candidate", last_caught: false, last_verdict: "darwin_reads_consumer" });
-    expect(await row("test2064:audience-no-text")).toMatchObject({ status: "active", last_caught: null, last_verdict: null });
+    expect(await row("test2064:audience-no-text")).toMatchObject({ status: "active", last_caught: true, last_verdict: "business_schedule_read" });
+    expect(await row("test2064:audience-raw-address")).toMatchObject({ status: "candidate", last_caught: false, last_verdict: "darwin_reads_consumer" });
+    expect(result.notJudged).toBeGreaterThanOrEqual(1);
     expect(await row("test2064:audience-regressed")).toMatchObject({ status: "active", last_caught: false, last_verdict: "darwin_reads_consumer" });
     expect(result.regressions.filter((miss) => miss.checkName === "hamilton.business_schedule")).toHaveLength(1);
     expect(result.regressions.some((miss) => miss.checkName === "hamilton.business_schedule" && miss.verdict === "darwin_reads_consumer")).toBe(true);

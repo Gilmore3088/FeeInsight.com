@@ -63,6 +63,12 @@ export interface AudienceCaseInput {
   amount: number | null;
   conditions: string | null;
   document_url: string | null;
+  /**
+   * The address Darwin reads audience from: the raw row's `source_url` (Knox writes the text's own
+   * address, falling back to the document's), which can differ from `document_url`. Absent on cases
+   * frozen before it was kept; the document's address stands in, as Knox's fallback does.
+   */
+  darwin_url?: string | null;
 }
 
 /** A takedown's snapshot of the fee's own fields, frozen before its check had a replayer. */
@@ -92,18 +98,19 @@ export const REPLAYABLE_CHECKS: readonly string[] = [LIMIT_GUARD_CHECK, SOURCE_C
 /**
  * Today's audience rules on a business fee once shown as a consumer one (#2064), in the pipeline's
  * order. Darwin decides first, with the document's stored text, as prospective verification does
- * (`darwinAudience` with the fee's own price clause). Only a fee Darwin leaves unknown reaches
+ * (`darwinAudience` with the fee's own price clause), and with the address Darwin reads: the raw
+ * row's `source_url` (`darwin_url`), not the document's. Only a fee Darwin leaves unknown reaches
  * Hamilton's business-schedule read: its name or document address (`readsAsBusinessSchedule`), or
  * a business-only footnote on its line (`footnoteMarksBusiness`). Null without the stored text:
  * Darwin's decision needs the page, so nothing is judged and the case keeps its status.
  */
 export function replayAudience(
-  input: { fee_name: string | null; amount: number | null; document_url: string | null },
+  input: { fee_name: string | null; amount: number | null; document_url: string | null; darwin_url?: string | null },
   text: string | null | undefined,
 ): ReplayVerdict | null {
   if (!text) return null;
   const name = input.fee_name ?? "";
-  const darwin = darwinAudience({ fee_audience: null, source_url: input.document_url, fee_name: name }, input.amount, text, { ownPriceClause: true });
+  const darwin = darwinAudience({ fee_audience: null, source_url: input.darwin_url ?? input.document_url, fee_name: name }, input.amount, text, { ownPriceClause: true });
   if (darwin?.feeAudience === "business") return { caught: true, verdict: "darwin_reads_business" };
   if (darwin) return { caught: false, verdict: `darwin_reads_${darwin.feeAudience}` };
   if (readsAsBusinessSchedule(name, input.document_url)) return { caught: true, verdict: "business_schedule_read" };
@@ -123,17 +130,17 @@ function replayCategoryGuard(input: { canonical_fee_key: string | null; fee_name
 export function replayCase(
   input: CaseInput,
   checkName?: string | null,
-  context: { documentUrl?: string | null; documentText?: string | null } = {},
+  context: { documentUrl?: string | null; darwinUrl?: string | null; documentText?: string | null } = {},
 ): ReplayVerdict | null {
   if (input.kind === "limit_guard") {
     const verdict = limitGuardVerdict(input);
     return verdict ? { caught: true, verdict: verdict.code } : { caught: false, verdict: "passes_limit_guard" };
   }
   if (input.kind === "category_guard") return replayCategoryGuard(input);
-  if (input.kind === "audience") return replayAudience(input, context.documentText);
+  if (input.kind === "audience") return replayAudience({ ...input, darwin_url: input.darwin_url ?? context.darwinUrl ?? null }, context.documentText);
   if (input.kind === "unreplayable") {
     if (checkName === CATEGORY_GUARD_CHECK) return replayCategoryGuard(input);
-    if (checkName === BUSINESS_SCHEDULE_CHECK) return replayAudience({ ...input, document_url: context.documentUrl ?? null }, context.documentText);
+    if (checkName === BUSINESS_SCHEDULE_CHECK) return replayAudience({ ...input, document_url: context.documentUrl ?? null, darwin_url: context.darwinUrl ?? null }, context.documentText);
     if (checkName === LIMIT_GUARD_CHECK && input.canonical_fee_key) {
       const verdict = limitGuardVerdict({ canonical_fee_key: input.canonical_fee_key, fee_name: input.fee_name, amount: input.amount, conditions: input.conditions });
       return verdict ? { caught: true, verdict: verdict.code } : { caught: false, verdict: "passes_limit_guard" };

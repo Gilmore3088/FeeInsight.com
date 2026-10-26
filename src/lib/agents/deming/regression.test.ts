@@ -125,7 +125,7 @@ describe("buildTakedownCase", () => {
 
   it("freezes a business-schedule takedown with its document's address, as an audience case (#2064)", () => {
     const built = buildTakedownCase({ ...baseRow, check_name: "hamilton.business_schedule", canonical_fee_key: "monthly_maintenance", fee_name: "Monthly Service Charge", amount: "20", reason: "business_schedule: consumer fee #9", document_url: "https://bank.test/commercial-fee-schedule.pdf" }, []);
-    expect(built.input).toEqual({ kind: "audience", canonical_fee_key: "monthly_maintenance", fee_name: "Monthly Service Charge", amount: 20, conditions: null, document_url: "https://bank.test/commercial-fee-schedule.pdf" });
+    expect(built.input).toEqual({ kind: "audience", canonical_fee_key: "monthly_maintenance", fee_name: "Monthly Service Charge", amount: 20, conditions: null, document_url: "https://bank.test/commercial-fee-schedule.pdf", darwin_url: null });
     // Promotion reads no page text: the case waits for the replay, which reads the document's text.
     expect(built.status).toBe("candidate");
     expect(built.lastCaught).toBeNull();
@@ -212,7 +212,7 @@ describe("summarizeDemingRegression", () => {
     schemaReady: true, dryRun: false, promoted: 3, promotedActive: 2,
     promotedBySeverity: { critical: 2, major: 1, minor: 0, info: 0 },
     replayed: 10, caught: 9, regressions: [{ caseId: 1, checkName: "hamilton.limit_guard", severity: "critical", verdict: "passes_limit_guard" }],
-    activated: 2, retired: 0, activeTotal: 9, candidateTotal: 4,
+    activated: 2, retired: 0, activeTotal: 9, candidateTotal: 4, notJudged: 0,
   };
   it("names counts and regressions", () => {
     expect(summarizeDemingRegression(result)).toBe("Added 3 confirmed mistakes as test cases (2 critical, 1 major). Replayed 10 cases on the deployed rules: 9 still caught, 1 regression: the deployed rules no longer catch a case they used to. 9 active, 4 waiting for a replayer.");

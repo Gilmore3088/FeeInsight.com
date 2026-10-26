@@ -31,7 +31,7 @@ type SqlTag = typeof sql;
  * never rewritten after insert.
  */
 
-export const DEMING_REGRESSION_VERSION = 1;
+export const DEMING_REGRESSION_VERSION = 2;
 export const REGRESSION_PROMOTE_LIMIT = 300;
 export const REGRESSION_REPLAY_LIMIT = 400;
 /** Fee-fields takedown cases replayed per run, apart from the limit above: each is a pure check of a few fields. */
@@ -63,6 +63,8 @@ export interface DemingRegressionResult {
   retired: number;
   activeTotal: number;
   candidateTotal: number;
+  /** Audience cases left unjudged (no stored text for their document); each keeps its last verdict. */
+  notJudged: number;
   /** Prospective human corrective contexts; historical totals above are not trusted source denominators. */
   corrective?: CorrectiveResult;
 }
@@ -86,6 +88,8 @@ interface TakedownRow {
   conditions: string | null;
   /** The address of the document the fee was read from (the business-schedule read's input). */
   document_url?: string | null;
+  /** The raw row's own address, the one Darwin reads audience from. */
+  raw_source_url?: string | null;
 }
 
 interface TextRow {
@@ -142,7 +146,7 @@ export function buildTakedownCase(row: TakedownRow, texts: TextRow[]): NewCase {
   } else if (row.check_name === CATEGORY_GUARD_CHECK) {
     input = { kind: "category_guard", canonical_fee_key: row.canonical_fee_key, fee_name: row.fee_name, amount, conditions: row.conditions };
   } else if (row.check_name === BUSINESS_SCHEDULE_CHECK) {
-    input = { kind: "audience", canonical_fee_key: row.canonical_fee_key, fee_name: row.fee_name, amount, conditions: row.conditions, document_url: row.document_url ?? null };
+    input = { kind: "audience", canonical_fee_key: row.canonical_fee_key, fee_name: row.fee_name, amount, conditions: row.conditions, document_url: row.document_url ?? null, darwin_url: row.raw_source_url ?? null };
   } else if (row.check_name === SOURCE_CHECK_NAME) {
     // A Knox fee answers only to the document Knox read it from (`traceLiveFee`).
     const own = texts.filter((text) => Number(text.institution_id) === institutionId)
@@ -201,7 +205,7 @@ async function loadNewTakedowns(db: SqlTag, limit: number): Promise<TakedownRow[
            fp.fee_published_id, fp.institution_id, fp.canonical_fee_key, fp.fee_name, fp.amount,
            fp.amount_kind, fp.rate_percent, fp.source_url, fp.lineage_ref,
            fv.fee_raw_id, fr.source, fr.source_document_id, COALESCE(fr.extraction_note, fr.conditions) AS conditions,
-           sd.document_url
+           sd.document_url, fr.source_url AS raw_source_url
       FROM pipeline_feedback f
       JOIN published_fee_records fp ON fp.fee_published_id = f.fee_published_id
       LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
@@ -314,9 +318,10 @@ export function replayFieldCase(row: {
   input: CaseInput;
   fee_live: boolean;
   document_url?: string | null;
+  raw_source_url?: string | null;
   document_text?: string | null;
 }) {
-  const replay = replayCase(row.input, row.check_name, { documentUrl: row.document_url ?? null, documentText: row.document_text ?? null });
+  const replay = replayCase(row.input, row.check_name, { documentUrl: row.document_url ?? null, darwinUrl: row.raw_source_url ?? null, documentText: row.document_text ?? null });
   const caught = replay?.caught ?? null;
   const ruleLetItBack = row.fee_live && caught === false && row.status === "active";
   const keepsThroughRestore = row.check_name === BUSINESS_SCHEDULE_CHECK || row.input.kind === "audience";
@@ -352,6 +357,7 @@ export async function runDemingRegression({
     retired: 0,
     activeTotal: 0,
     candidateTotal: 0,
+    notJudged: 0,
   };
   result.schemaReady = await evalCasesSchemaReady(db);
   if (!result.schemaReady) return result;
@@ -399,11 +405,12 @@ export async function runDemingRegression({
     });
   }
   // Takedowns frozen as fee fields, replayed by their check name (#2064).
-  // An old snapshot froze no document address: the case's document's own address stands in, the
-  // address the business-schedule read judges (as a new case freezes it).
-  const fieldDue = await db<Array<CaseRow & { fee_live: boolean; document_url: string | null; source_document_id: number | string | null }>>`
+  // An old snapshot froze no addresses: the case's document's own address stands in for the one the
+  // business-schedule read judges, and its raw row's `source_url` for the one Darwin reads (as a new
+  // case freezes both).
+  const fieldDue = await db<Array<CaseRow & { fee_live: boolean; document_url: string | null; raw_source_url: string | null; source_document_id: number | string | null }>>`
     SELECT c.id, c.check_name, c.severity, c.status, c.input, c.fee_published_id, c.source_document_id,
-           sd.document_url,
+           sd.document_url, fr.source_url AS raw_source_url,
            EXISTS (
              SELECT 1 FROM published_fee_records fp
               WHERE fp.fee_published_id = c.fee_published_id AND fp.rolled_back_at IS NULL
@@ -411,6 +418,7 @@ export async function runDemingRegression({
            ) AS fee_live
       FROM eval_cases c
       LEFT JOIN source_documents sd ON sd.id = c.source_document_id
+      LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = c.fee_raw_id
      WHERE c.status IN ('active', 'candidate')
        AND c.dataset = 'regression'
        AND c.label_provenance = 'takedown_confirmed'
@@ -430,6 +438,7 @@ export async function runDemingRegression({
     const documentText = documentTexts.get(num(row.source_document_id) ?? -1) ?? null;
     const { replay, restored, outcome } = replayFieldCase({ ...row, document_text: documentText });
     result.replayed += 1;
+    if (replay == null) result.notJudged += 1;
     if (replay?.caught) result.caught += 1;
     if (outcome.status === "active" && row.status !== "active") result.activated += 1;
     if (outcome.status === "retired") result.retired += 1;
@@ -442,8 +451,9 @@ export async function runDemingRegression({
     await db`
       UPDATE eval_cases c
          SET status = u.status,
-             last_caught = u.caught,
-             last_verdict = u.verdict,
+             -- A case nothing judged (no stored text) keeps its last verdict.
+             last_caught = CASE WHEN u.caught IS NULL AND u.verdict IS NULL THEN c.last_caught ELSE u.caught END,
+             last_verdict = COALESCE(u.verdict, c.last_verdict),
              last_checked_at = NOW(),
              last_run_id = ${runId},
              updated_at = NOW()

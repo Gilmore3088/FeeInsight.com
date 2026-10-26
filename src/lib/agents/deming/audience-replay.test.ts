@@ -45,6 +45,25 @@ describe("audience replay", () => {
     expect(replay.outcome).toEqual({ status: "active", regression: false });
   });
 
+  it("gives Darwin the raw row's own address, as live verify does, and the business-schedule read the document's", () => {
+    // Knox keeps the text's address on the raw row; it can be plain while the document's is a business one.
+    const built = buildTakedownCase({ ...takedown, document_url: "https://bank.test/business/fees.pdf", raw_source_url: "https://bank.test/fees" }, []);
+    expect(built.input).toMatchObject({ kind: "audience", document_url: "https://bank.test/business/fees.pdf", darwin_url: "https://bank.test/fees" });
+    const text = "Fees\nOutgoing Wire $30.00\nStop Payment $25.00";
+    const wire = { ...built.input, fee_name: "Outgoing Wire", amount: 30 };
+    expect(replayFieldCase({ status: "active", check_name: built.checkName, input: wire, fee_live: false, document_text: text }).replay)
+      .toEqual({ caught: false, verdict: "darwin_reads_consumer" });
+    // The reverse: a business address on the raw row is what Darwin reads.
+    const reverse = { ...wire, document_url: "https://bank.test/fees.pdf", darwin_url: "https://bank.test/business/fees" };
+    expect(replayFieldCase({ status: "candidate", check_name: built.checkName, input: reverse, fee_live: false, document_text: text }).replay)
+      .toEqual({ caught: true, verdict: "darwin_reads_business" });
+    // An old snapshot takes the raw row's address from the step's join.
+    const old = { kind: "unreplayable" as const, canonical_fee_key: "wire_domestic_outgoing", fee_name: "Outgoing Wire", amount: 30, conditions: null };
+    expect(replayFieldCase({ status: "candidate", check_name: built.checkName, input: old, fee_live: false,
+      document_url: "https://bank.test/business/fees.pdf", raw_source_url: "https://bank.test/fees", document_text: text }).replay)
+      .toEqual({ caught: false, verdict: "darwin_reads_consumer" });
+  });
+
   it("flags the case when the audience rules regress", () => {
     const built = buildTakedownCase(takedown, []);
     const active = replayFieldCase({ status: built.status, check_name: built.checkName, input: built.input, fee_live: false, document_text: documentText }).outcome.status;
