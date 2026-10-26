@@ -21,6 +21,7 @@ import { sql } from "./connection";
 import { peerInstitutionIds, type PeerFilterSet } from "./fee-index";
 import { activeInstitutionFilter } from "./fee-stats";
 import { getHomeMarket, getMarketInstitutionIds, type PeerMarket } from "./peer-markets";
+import { cachedPublicRead } from "./public-read-cache";
 import { ASSET_TIER_RANGES } from "@/lib/hamilton/peer-index";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { STATE_NAMES } from "@/lib/us-states";
@@ -179,6 +180,19 @@ export function describePeerSet(def: PeerSetDefinition, market: PeerMarket | nul
 }
 
 /**
+ * Institutions with at least one approved published fee: the pool a "nearest" set picks from.
+ * Cached like the other public aggregates. Scanning the catalog inside every nearest lookup
+ * made it the database's largest cost (123,712 calls at 3.3 s on average by Oct 26), and each
+ * institution page runs one (findings/2026-10-26-stale-public-reads-block-page-renders.md).
+ */
+const getFeePublishingInstitutionIds = cachedPublicRead("fee-publishing-institution-ids", async () => {
+  const rows = (await sql`
+    SELECT DISTINCT institution_id FROM published_fee_catalog WHERE review_status = 'approved'
+  `) as { institution_id: number | string }[];
+  return rows.map((row) => Number(row.institution_id));
+});
+
+/**
  * The institutions meeting every dimension of a definition, leaving out the subject. Only
  * called when the definition has a dimension the fee index cannot filter on by itself.
  */
@@ -221,7 +235,7 @@ export async function resolvePeerInstitutionIds(
     if (!subject || !Number.isFinite(own) || own <= 0) throw new PeerSetError("This institution has no total assets on record, so nearest cannot be used for it");
     conditions.push("s.asset_size IS NOT NULL");
     conditions.push(activeInstitutionFilter("s"));
-    conditions.push("s.id IN (WITH eligible AS MATERIALIZED (SELECT DISTINCT institution_id FROM published_fee_catalog WHERE review_status = 'approved') SELECT institution_id FROM eligible)");
+    add((p) => `s.id = ANY(${p}::bigint[])`, await getFeePublishingInstitutionIds());
     params.push(own);
     order = `ABS(s.asset_size - $${params.length}::bigint), s.id`;
     params.push(def.nearest);
