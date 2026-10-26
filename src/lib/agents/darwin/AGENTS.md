@@ -1500,7 +1500,7 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
     false`) and the fee is not held: graded on the 123 v4 and 113 v3 holds against their stored
     text, nearly all of those were real fees at an unusual printed price (photocopies, box
     drilling, $5 stop payments). No-fee, discount and allowance lines are the shared name rule's
-    (`ruleFor`, Hamilton `EVAL_VERDICT_VERSION` v8). Each `verify.rules` attempt records
+    (`ruleFor`, Hamilton `EVAL_VERDICT_VERSION` v9). Each `verify.rules` attempt records
     `peer_version`, and a `peer_outlier` row decided under an older peer version is re-decided
     once. An older hold that has no `peer_version` is re-decided only when its own run's
     `verify.peer_range` attempt was a graded version (`DARWIN_PEER_GRADED_VERSIONS`, v3 and v4)

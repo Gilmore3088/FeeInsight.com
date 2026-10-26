@@ -398,8 +398,10 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v8 (#1112): new no-fee, discount, allowance and loan-amount name rules. Each step's eval-verdict
   // pass reads every live fee whose name or line matches one of their prefilter clauses
   // (`V8_PREFILTER`), then the second look; Darwin reads each new row under them. There is no
-  // backlog for a replay to count.
-  EVAL_VERDICT_VERSION: "Each step re-reads every live fee the eval-verdict prefilter selects (each rule shape has a clause, V8_PREFILTER for v8), and Darwin reads each new row at verify; nothing to replay.",
+  // backlog for a replay to count. v9 (#1696): the stored line's "$X discount" at the fee's own
+  // amount, with its own clause (`V9_PREFILTER`); the fees only v9 fails (8 live on 2026-10-26) wait
+  // behind `EVAL_VERDICT_SECOND_BATCH_ACTS`.
+  EVAL_VERDICT_VERSION: "Each step re-reads every live fee the eval-verdict prefilter selects (each rule shape has a clause, V8_PREFILTER and V9_PREFILTER), and Darwin reads each new row at verify; nothing to replay.",
   // v1 (Oct 17): a person uploads a copy of a schedule they downloaded. It runs only on an upload,
   // so there is no backlog of older documents to read again.
   HAND_SUPPLIED_STRATEGY: "Runs only when a person uploads a file on /admin/magellan/hand-supplied; nothing older to replay.",

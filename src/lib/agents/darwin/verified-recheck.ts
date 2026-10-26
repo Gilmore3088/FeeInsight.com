@@ -3,6 +3,7 @@ import type { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { recordAttestedAttempt } from "@/lib/agents/learning/attempts";
 import { inSavepoint } from "@/lib/agents/savepoint";
+import { EVAL_VERDICT_SECOND_BATCH_ACTS, failsOnlyAtV9 } from "@/lib/agents/hamilton/eval-verdicts";
 import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
 import { PENDING_KIND, SECOND_LOOK_MIN_MINUTES, secondLook, secondLookDedupeKey } from "@/lib/agents/hamilton/second-look";
 import { refileCategory } from "@/lib/fee-category-guard";
@@ -132,6 +133,12 @@ export interface VerifiedRecheckResult {
   dueSecondLooks?: DueSecondLookShadow | null;
   /** Due rows read for a switched-on code that now fail under another code: left flagged, not confirmed. */
   secondLookOtherCode?: number;
+  /**
+   * Live fees only name rules v9 fail, left untouched while `EVAL_VERDICT_SECOND_BATCH_ACTS` is off
+   * (#1696): not flagged, not confirmed, no attempt recorded, so the recheck reads them again once
+   * the switch is on. Published ids.
+   */
+  secondBatchDeferred?: number[];
 }
 
 export interface DueSecondLookShadow {
@@ -407,6 +414,8 @@ interface RecheckOptions {
   olderLive?: boolean;
   secondLooks?: boolean;
   secondLookCodes?: readonly string[];
+  /** Overrides `EVAL_VERDICT_SECOND_BATCH_ACTS` (#1696). */
+  secondBatchActs?: boolean;
 }
 interface SelectedText {
   id: number | string;
@@ -429,7 +438,7 @@ function executionFor(options: RecheckOptions): RecheckExecution {
     phases: { primary: "not_run", due: "not_run", source: "not_run", olderShadow: "not_run", dueShadow: "not_run" }, reasonCode: null, samples: [] };
 }
 function freshResult(execution: RecheckExecution): VerifiedRecheckResult {
-  return { ...EMPTY, rejected: [], restored: [], takenDown: [], secondLookOtherCode: 0, execution };
+  return { ...EMPTY, rejected: [], restored: [], takenDown: [], secondLookOtherCode: 0, secondBatchDeferred: [], execution };
 }
 function defer(execution: RecheckExecution, id: number, code: RecheckUnresolvedCode) {
   execution.unresolved += 1;
@@ -502,6 +511,7 @@ export async function recheckVerifiedFees(db: SqlTag, options: RecheckOptions): 
       const secondLooks = options.secondLooks ?? DARWIN_RECHECK_SECOND_LOOK_LIVE;
       const secondLookCodes = secondLooks ? [] : [...(options.secondLookCodes ?? DARWIN_RECHECK_SECOND_LOOK_LIVE_CODES)];
       const sameStep = options.sameStepTakedown ?? DARWIN_RECHECK_SAME_STEP_TAKEDOWN;
+      const secondBatchActs = options.secondBatchActs ?? EVAL_VERDICT_SECOND_BATCH_ACTS;
       if (!olderLive && options.runId % OLDER_LIVE_SHADOW_EVERY === 0) {
         result.olderLive = await olderLiveShadow(scope, { runId: options.runId });
         execution.phases.olderShadow = result.olderLive.error ? "partial" : "reported_unknown";
@@ -559,8 +569,12 @@ export async function recheckVerifiedFees(db: SqlTag, options: RecheckOptions): 
         try {
           const settled = await inSavepoint(scope, async tx => {
             await lockSelected(tx, row, text, dueIds.has(String(id)));
-            const { canonicalFeeKey, amount, check, layoutWouldPass: layoutPass } = recheckOf(row, texts);
+            const { canonicalFeeKey, amount, check, line, layoutWouldPass: layoutPass } = recheckOf(row, texts);
             assessed = true;
+            // #1696: a live fee only the v9 name rules fail belongs to Hamilton's second takedown
+            // batch; while its switch is off, this path neither flags nor archives it.
+            if (!secondBatchActs && check?.code === "name_rule" && row.fee_published_id != null && row.review_status !== "rejected"
+              && failsOnlyAtV9(canonicalFeeKey, row.fee_name, amount, line)) return { secondBatch: Number(row.fee_published_id) };
             if (check && dueIds.has(String(id)) && !secondLooks && !secondLookCodes.includes(check.code)) return { otherCode: true as const };
             const publishedId = row.fee_published_id == null ? null : Number(row.fee_published_id);
             const wasRejected = row.review_status === "rejected";
@@ -618,6 +632,7 @@ export async function recheckVerifiedFees(db: SqlTag, options: RecheckOptions): 
             return { otherCode: false as const, action, code: check?.code, publishedId, attemptId, feedbackIds, flagged, waiting, cleared, passed: !wasRejected && !check };
           });
           execution.assessed += 1;
+          if ("secondBatch" in settled && settled.secondBatch != null) { result.secondBatchDeferred!.push(settled.secondBatch); continue; }
           if (settled.otherCode) { result.secondLookOtherCode = (result.secondLookOtherCode ?? 0) + 1; continue; }
           execution.settled += 1; result.checked += 1;
           if (settled.passed) result.passed += 1;
