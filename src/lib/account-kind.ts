@@ -35,12 +35,21 @@ export function accountKind(name: string | null | undefined): AccountKind | null
 export const NON_CHECKING_ACCOUNT_KINDS: ReadonlySet<AccountKind> = new Set(["money_market", "ira_hsa_cd", "club", "savings"]);
 
 /**
+ * Rule 11 reads a name that also says checking ("Money Market Checking", "NOW/MONEYMARKET/DEMAND
+ * ACCOUNT CHECKING FEES") or names loans ("Share and Loan Accounts", a credit union's whole
+ * schedule) as no savings account: `accountKind`'s money-market-first order is for Knox's heading
+ * reads, and setting such a row aside would take a checking price out of the checking value.
+ */
+const NAMES_CHECKING_OR_LOANS = /checking\b|\bshare\s*drafts?\b|\bdemand\b|\bloans?\b/i;
+const NAMES_CHECKING_OR_LOANS_SQL = "checking\\y|\\yshare\\s*drafts?\\y|\\ydemand\\y|\\yloans?\\y";
+
+/**
  * A named savings, money market, certificate, IRA, HSA or club account (by `accountKind`). A stored
  * name that carries a phrase naming no account ("Truth in Savings", "Hotel Savings Network",
  * "Bangor Savings Bank", `namesNoAccount`) is not read as one: what it says is not the account.
  */
 export function isNonCheckingAccount(name: string | null | undefined): boolean {
-  if (!name || namesNoAccount(name)) return false;
+  if (!name || namesNoAccount(name) || NAMES_CHECKING_OR_LOANS.test(name)) return false;
   const kind = accountKind(name);
   return kind !== null && NON_CHECKING_ACCOUNT_KINDS.has(kind);
 }
@@ -60,5 +69,5 @@ export function accountKindSql(column: string): string {
 /** SQL twin of isNonCheckingAccount: true or false, never NULL. */
 export function nonCheckingAccountSql(column: string): string {
   const kinds = [...NON_CHECKING_ACCOUNT_KINDS].map((kind) => `'${kind}'`).join(", ");
-  return `COALESCE(NOT ${namesNoAccountSql(column)} AND ${accountKindSql(column)} IN (${kinds}), false)`;
+  return `COALESCE(NOT ${namesNoAccountSql(column)} AND ${column} !~* '${NAMES_CHECKING_OR_LOANS_SQL}' AND ${accountKindSql(column)} IN (${kinds}), false)`;
 }

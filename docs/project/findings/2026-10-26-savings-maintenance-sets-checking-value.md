@@ -11,9 +11,9 @@ row label or model read, an account table's column, an account heading within 12
 own name. The $20 was read from "The $20 monthly maintenance charge is waived if:" under the heading
 "Understanding the monthly maintenance charge"; the line above, "The M&T Preferred Money Market
 account has a $20 monthly maintenance charge.", names the account as the sentence's subject, and
-nothing read it. And rule 11 never set a non-checking account's own fee apart: on Oct 26, 100 live
+nothing read it. And rule 11 never set a non-checking account's own fee apart: on Oct 26, 91 live
 statistics rows in monthly maintenance and minimum balance already named a savings, money market,
-certificate, IRA, HSA or club account, and 48 of them pooled into 42 institution values beside
+certificate, IRA, HSA or club account, and 40 of them pooled into 37 institution values beside
 checking or unassigned rows.
 
 **Fix:**
@@ -24,8 +24,10 @@ checking or unassigned rows.
   `account-kind.ts` and its SQL twin): in monthly maintenance and minimum balance, a savings, money
   market, certificate, IRA, HSA or club account's row is an exception, so the bank's value rests on its
   checking and unassigned rows; with none, its rows count as before. A stored name that names no
-  account ("Truth in Savings") is not read as one. Rows stay live and listed. Dry run (prod,
-  read-only, Oct 26): 48 rows leave 42 values, 31 values at 31 institutions change.
+  account ("Truth in Savings"), or that also says checking, share draft or demand or names loans
+  ("Money Market Checking", "Share and Loan Accounts"), is not read as one: `accountKind`'s
+  money-market-first order is for Knox's heading reads and would set checking prices aside. Rows stay live and listed. Dry run (prod,
+  read-only, Oct 26): 40 rows leave 37 values, 27 values at 27 institutions change.
 - `correctAccountSubjects` (`knox/account-subject-correct.ts`) fills live NULL rows, behind
   `KNOX_ACCOUNT_SUBJECT_CORRECT_LIVE` (off), only in bank- or state-scoped extract steps. Dry run
   (prod, read-only, Oct 26): of 2,929 live NULL rows in the two categories, 50 sit on texts with a

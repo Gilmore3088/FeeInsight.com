@@ -1,7 +1,8 @@
 /**
  * #1912 parity witness: every distinct live monthly maintenance or minimum balance account name on
  * prod that might name a savings, money market, certificate, club or share account, with what
- * `nonCheckingAccountSql` returned for it in PostgreSQL (read-only SELECT, 2026-10-26).
+ * `nonCheckingAccountSql` returned for it in PostgreSQL (read-only SELECT, 2026-10-26; re-run after names
+ * that also say checking or loans stopped counting: 68 of 149 true).
  * `account-kind.test.ts` checks `isNonCheckingAccount` gives the same answer for each.
  */
 export const PROD_NON_CHECKING_SQL: readonly (readonly [string, boolean])[] = [
@@ -54,7 +55,7 @@ export const PROD_NON_CHECKING_SQL: readonly (readonly [string, boolean])[] = [
   ["Fresh Start Share Draft Account", false],
   ["Generations Gold® Club Checking", false],
   ["Gold Star Share Draft / Checking", false],
-  ["Health Savings Account - Checking", true],
+  ["Health Savings Account - Checking", false],
   ["Health Savings Card", false],
   ["High Yield Savings Account", true],
   ["HOLIDAY CLUB ACCOUNT FEES", true],
@@ -75,8 +76,8 @@ export const PROD_NON_CHECKING_SQL: readonly (readonly [string, boolean])[] = [
   ["Money Market Account (MMDA)", true],
   ["Money Market Accounts", true],
   ["Money Market Accounts Amount", true],
-  ["Money Market Checking", true],
-  ["Money Market Checking Account", true],
+  ["Money Market Checking", false],
+  ["Money Market Checking Account", false],
   ["Money Market Fund Account", true],
   ["Money Market Investment Account", true],
   ["Money Market Max", true],
@@ -86,7 +87,7 @@ export const PROD_NON_CHECKING_SQL: readonly (readonly [string, boolean])[] = [
   ["Money Market/Relationship Money Market Account", true],
   ["MyMoney Market™ Account†", false],
   ["MyOpportunity Checking Share Draft", false],
-  ["NOW/MONEYMARKET/DEMAND ACCOUNT CHECKING FEES", true],
+  ["NOW/MONEYMARKET/DEMAND ACCOUNT CHECKING FEES", false],
   ["PEOPLES CLUB ACCOUNT", false],
   ["Personal Money Market", true],
   ["Personal Savings", true],
@@ -125,7 +126,7 @@ export const PROD_NON_CHECKING_SQL: readonly (readonly [string, boolean])[] = [
   ["Second Chance/Crimson Share Draft Checking Account", false],
   ["Share (Savings)", true],
   ["Share (Savings) Account Fees", true],
-  ["Share and Loan Accounts", true],
+  ["Share and Loan Accounts", false],
   ["Share Draft (Checking)", false],
   ["Share Draft (Checking) Account Fees", false],
   ["SHARE DRAFT (CHECKING) ACCOUNT FEES", false],

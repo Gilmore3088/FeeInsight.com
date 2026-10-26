@@ -23,7 +23,9 @@ describe("accountKind (#1100, #1912)", () => {
     for (const name of ["M&T Preferred Money Market", "Statement Savings", "Christmas Club", "Traditional IRA", "12 Month CD", "Share Term Certificates"]) {
       expect(isNonCheckingAccount(name), name).toBe(true);
     }
-    for (const name of ["Advantage Checking", "Business Savings", "Premier Account", "", null, "Truth in Savings", "Hotel Savings Network", "Free Bangor Savings Bank Debit Mastercard®", "Health Savings Card"]) {
+    for (const name of ["Advantage Checking", "Business Savings", "Premier Account", "", null, "Truth in Savings", "Hotel Savings Network", "Free Bangor Savings Bank Debit Mastercard®", "Health Savings Card",
+      // Live checking prices a money-market-first read would set aside (banks 1518, 2427, 4862, 7334).
+      "Money Market Checking", "Money Market Checking Account", "NOW/MONEYMARKET/DEMAND ACCOUNT CHECKING FEES", "Share and Loan Accounts"]) {
       expect(isNonCheckingAccount(name), String(name)).toBe(false);
     }
   });
@@ -40,7 +42,7 @@ describe("accountKind (#1100, #1912)", () => {
     expect(kind.indexOf("'business'")).toBeLessThan(kind.indexOf("'money_market'"));
     expect(kind.indexOf("'checking'")).toBeLessThan(kind.indexOf("'savings'"));
     expect(nonCheckingAccountSql("ef.account_product_type")).toBe(
-      `COALESCE(NOT ${namesNoAccountSql("ef.account_product_type")} AND ${kind} IN ('money_market', 'ira_hsa_cd', 'club', 'savings'), false)`,
+      `COALESCE(NOT ${namesNoAccountSql("ef.account_product_type")} AND ef.account_product_type !~* 'checking\\y|\\yshare\\s*drafts?\\y|\\ydemand\\y|\\yloans?\\y' AND ${kind} IN ('money_market', 'ira_hsa_cd', 'club', 'savings'), false)`,
     );
     expect(namesNoAccountSql("ef.x")).toContain("\\ytruth[\\s-]+in[\\s-]+savings");
     expect(namesNoAccountSql("ef.x")).not.toContain("\\b");
