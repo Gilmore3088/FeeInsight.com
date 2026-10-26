@@ -20,7 +20,7 @@ export interface UnreadFeedbackSummary {
 }
 
 export async function readUnreadFeedback(db: SqlTag = sql): Promise<UnreadFeedbackSummary> {
-  const { unreadKinds, partial, registered } = unreadFeedbackPredicate();
+  const { unreadKinds, partial, stageOnly, registered } = unreadFeedbackPredicate();
   const rows = await db.begin(async (scope) => {
     const tx = scope as unknown as SqlTag;
     await tx`SELECT set_config('statement_timeout', '20000', true)`;
@@ -33,6 +33,12 @@ export async function readUnreadFeedback(db: SqlTag = sql): Promise<UnreadFeedba
                       ${partial.map((item) => item.checks.join(","))}::text[],
                       ${partial.map((item) => item.anyStageChecks.join(","))}::text[],
                       ${partial.map((item) => item.causes.join(","))}::text[]) AS p(kind, stages, checks, any_stage_checks, causes)
+      ), stage_only AS (
+        SELECT kind, stage, checks, reporters
+          FROM unnest(${stageOnly.map((item) => item.kind)}::text[],
+                      ${stageOnly.map((item) => item.stage)}::text[],
+                      ${stageOnly.map((item) => item.checks.join(","))}::text[],
+                      ${stageOnly.map((item) => item.reportedBy.join(","))}::text[]) AS s(kind, stage, checks, reporters)
       )
       SELECT f.kind, f.about_stage, COUNT(*)::int AS rows
         FROM pipeline_feedback f
@@ -51,6 +57,15 @@ export async function readUnreadFeedback(db: SqlTag = sql): Promise<UnreadFeedba
                 OR (p.stages IS NOT NULL AND f.about_stage <> ALL(string_to_array(p.stages, ','))
                     AND NOT (p.any_stage_checks IS NOT NULL
                              AND split_part(COALESCE(f.check_name, ''), ':', 1) = ANY(string_to_array(p.any_stage_checks, ','))))
+                -- At a stageOnly stage only the listed checks and reporters are read.
+                OR (NOT (p.any_stage_checks IS NOT NULL
+                         AND split_part(COALESCE(f.check_name, ''), ':', 1) = ANY(string_to_array(p.any_stage_checks, ',')))
+                    AND EXISTS (
+                      SELECT 1 FROM stage_only s
+                       WHERE s.kind = f.kind AND s.stage = f.about_stage
+                         AND NOT (COALESCE(f.check_name, '') = ANY(string_to_array(s.checks, ','))
+                                  AND f.reported_by = ANY(string_to_array(s.reporters, ',')))
+                    ))
               ))
          )
        GROUP BY f.kind, f.about_stage
