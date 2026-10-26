@@ -337,7 +337,7 @@ counting only banks whose right document Rosetta read. The goal scorecard (/admi
 both from the newest stored answer-key score (`goal.knox_answer_key_right_document`), and a row per
 specialist, grouped by the `knox_specialist:` flag (no flag is the rules pass; `knox_paid_extraction`
 is the paid pass). The score-answer-key step stores the specialist rows with each run
-(`by_stage._knox_specialists`). A fee is stored once, under the first specialist that read it.
+(`by_stage._knox_specialists`). A read two specialists both stored counts for each, so specialist rows can add up to more than Knox's total.
 
 ## Rules versions (`extract.rules`)
 

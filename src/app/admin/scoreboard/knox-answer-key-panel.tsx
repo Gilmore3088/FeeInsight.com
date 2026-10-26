@@ -50,7 +50,7 @@ function Cohort({ score }: { score: KnoxAnswerKeyScore }) {
   if (score.eligibleBanks == null || score.confirmedBanks == null) return null;
   return (
     <p className="mt-2 text-xs text-gray-700 dark:text-gray-300">
-      {n(score.eligibleBanks)} of {n(score.confirmedBanks)} answer-key banks qualify (right document read, key still current).
+      {n(score.eligibleBanks)} of {n(score.confirmedBanks)} answer-key banks are eligible references (key still current).
       {score.topExclusions.length > 0
         ? ` Most often left out because ${score.topExclusions.map((entry) => `${exclusionWords(entry.reason)} (${n(entry.count)})`).join(", ")}.`
         : ""}
@@ -100,7 +100,7 @@ export function KnoxAnswerKeyPanel({ goal }: { goal: GoalScorecard }) {
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Each Knox specialist on the answer key</p>
           <p className="mt-1 text-xs text-gray-500">
-            The same banks and documents, split by the specialist each Knox line is credited to (its <code>knox_specialist:</code> flag; no flag is the rules pass, and the paid pass is its own row). Knox stores a fee once, under the first specialist that read it, so a fee two specialists read counts for the first. Found is out of every key fee on these banks, so a specialist for one family of fees finds a small share by design; the 85% target is for Knox as a whole. Found only it: key fees no other specialist&apos;s line matched. The 90% target applies to each specialist&apos;s right share, and a share under it is marked only when the specialist read from at least {KNOX_TARGET_MIN_BANKS} banks.
+            The same banks and documents, split by the specialist each Knox line is credited to (its <code>knox_specialist:</code> flag; no flag is the rules pass, and the paid pass is its own row). A read two specialists both stored counts for each of them, so the rows can add up to more than Knox&apos;s total. Found is out of every key fee on these banks, so a specialist for one family of fees finds a small share by design; the 85% target is for Knox as a whole. Found only it: key fees no other specialist&apos;s line matched. The 90% target applies to each specialist&apos;s right share, and a share under it is marked only when the specialist read from at least {KNOX_TARGET_MIN_BANKS} banks.
           </p>
           {!score.bySpecialist ? (
             <p className="mt-2 text-xs text-gray-500">Specialist rows appear with the next answer-key score.</p>

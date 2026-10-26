@@ -57,7 +57,7 @@ describe("Knox's answer-key targets on the scorecard (#1098)", () => {
     expect(html).toContain("target 90.0%, not met");
     expect(html).toContain("230 of 300");
     expect(html).toContain("230 of 260");
-    expect(html).toContain("12 of 62 answer-key banks qualify (right document read, key still current).");
+    expect(html).toContain("12 of 62 answer-key banks are eligible references (key still current).");
     expect(html).not.toContain("Too few banks");
     expect(html).toContain("answer-key score run #41");
     expect(html).toContain("extract.table");
@@ -77,7 +77,7 @@ describe("Knox's answer-key targets on the scorecard (#1098)", () => {
     expect(html).not.toContain("not met");
     expect(html).not.toContain(", met");
     expect(html.match(/Too few banks to judge against the target \(fewer than 10\)/g)).toHaveLength(2);
-    expect(html).toContain("2 of 62 answer-key banks qualify (right document read, key still current).");
+    expect(html).toContain("2 of 62 answer-key banks are eligible references (key still current).");
     expect(html).toContain("a key line is no longer in the bank&#x27;s document (15), the bank has a newer document (14), not shown to be the consumer schedule (12)");
     expect(html).not.toContain("amber");
   });
