@@ -173,7 +173,7 @@ export const DEMING_LESSONS: AgentLesson[] = [
     stage: "error classes",
     lesson: "Group the week's fee errors by the family of the fee's name as well as by its category, using the name rules Knox already files fees with (and Knox's lesson family when they file nothing), never a second name list. A category error splits one fee across the categories each bank filed it under, so the class that matters never reaches two banks; the name family puts it back together. List a name class only when it says something its category class does not, and keep it a second view of the same rows so the error counts do not double.",
     why: "The first error classes grouped fee-level rows by category only. \"NSF Item Returned\" filed as overdraft at one bank and \"Returned item fee\" filed as account research at another were two one-bank patterns, so the class Knox needed to fix never showed.",
-    evidence: { issues: [2063], prs: [], files: ["src/lib/agents/deming/error-classes.ts", "src/lib/agents/deming/error-classes.test.ts"] },
+    evidence: { issues: [2063], prs: [2724], files: ["src/lib/agents/deming/error-classes.ts", "src/lib/agents/deming/error-classes.test.ts"] },
     appliesTo: "all",
     since: "2026-10-26",
   },
