@@ -1977,24 +1977,31 @@ rules re-check read it the same way. A read needs all of:
   returned items"): "if ...", "when ...", "on transactions under $5", "for the first ...", "more than 3
   per day", "for one-time debit card or ATM transactions", "on Assure Checking accounts" or a colon
   that opens a list keep it unread;
-- the nearest heading above (within 15 lines), or a heading-like sentence before it on its line, names
-  the fee's own topic or is a general fee heading ("Account Fees"): "Bill Pay Service" or "SafeBalance
-  Banking" makes it that service's or account's terms (review of #2710);
-- no line of the document names the category with a price above $0, read by any reader or not ("NSF
-  Fee $35.00", "Paid or returned item (NSF) 35"). The source check applies the same rule
-  (`noChargeWitness`, matching the fee's category too), so no $0 read by any path traces to such a
-  sentence on a priced document.
-One $0 per category per text, read from a sentence that prints the fee's name when one does. None when
-the rules pass already read a $0 in that category, or any specialist read a price in it from the same
-text. Darwin's conditional $0 and banded $0 checks pass such a sentence (no dollar figure, no band).
-Oct 26 dry run (prod, read-only, current copies): 6 texts at 6 institutions, 5 NSF (Wells Fargo 4, 172,
-359; Cape & Coast 678; Grand Bank for Savings 2568) and 1 overdraft transfer (New Tripoli 1424). 4 banks
-gain an NSF row and 1 an overdraft transfer row; Wells Fargo National Bank West (172) already shows $0.
-Before the heading and priced-line rules there were 10. HSBC (26) drops out because its heading names
-its Premier account; Regions (27), United Bank (67) and Monet (309) because a line of the document names
-the category with a figure (for United and Monet a table-of-contents page number, for Regions a
-neighbouring column's $40): conservative misses, not wrong reads. None has a live charged fee in the category, and
-no live fee's source-check verdict changes. Adds reads only, so there is no live takedown to re-check.
+- the heading right above it is wholly a fee-topic heading of its category (`topicHeading`): the
+  nearest non-empty line above when the sentence opens its line, or the line's first sentence when the
+  statement is its second ("Nonsufficient Funds (NSF) Fees. We do not currently charge NSF fees.").
+  Allowed: "Overdraft Fees", "Overdraft and NSF Fees", "Nonsufficient Funds (NSF) Fees", "NSF Fees",
+  "Overdraft Services", "Overdraft Transfer Fees", "Overdraft Protection" (transfers only), with an
+  optional "." or ":". A heading with any product, account, service or brand word ("SafeBalance
+  Banking", "Bill Pay Returned Payments", "Overdraft Protection for SafeBalance", "eChecking"), a general
+  heading ("Fee Schedule", "Account Fees"), prose, or no heading refuses it (review of #2710: which
+  account a sentence speaks for cannot otherwise be read reliably; accuracy beats recall);
+- no line of the document names the category with a price above $0 on it or on the next two non-empty
+  lines, read by any reader or not ("NSF Fee $35.00", "Paid or returned item (NSF) 35", "Overdraft Fee"
+  / "$35").
+The source check applies the same rule (`noChargeWitness`), only for a fee with a category equal to the
+sentence's and only after its line checks, so a fee that traces to a "Free" row keeps that row; Knox's
+category-free self-check calls the witness with the read's category. One $0 per category per text, read
+from a sentence that prints the fee's name when one does. None when the rules pass already read a $0 in
+that category, or any specialist read a price in it from the same text. Darwin's conditional $0 and
+banded $0 checks pass such a sentence (no dollar figure, no band).
+Oct 26 dry run (prod, read-only, current copies): 1 text at 1 institution, Grand Bank for Savings (2568,
+text 21968, "Nonsufficient Funds (NSF) Fees. We do not currently charge NSF fees."), which has no live NSF
+row. The 9 others the grammar matches stand under prose, not a topic heading: Wells Fargo 4, 172 and 359
+(the issue's own example sits under "Our overdraft fee for items paid into overdraft is $35 per item.
+..."), HSBC 26, Regions 27, United Bank 67, Monet 309, Cape & Coast 678 and New Tripoli 1424. They are
+conservative misses, not wrong reads; Wells Fargo's NSF $0 still needs another route.
+No live fee's source-check verdict changes. Adds reads only, so there is no live takedown to re-check.
 
 ## Darwin's re-read requests (`reread-feedback.ts`, #1511)
 

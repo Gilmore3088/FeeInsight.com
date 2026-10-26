@@ -41,7 +41,7 @@ import { withGluedFootnotePrices } from "@/lib/custom-report/glued-footnote-pric
 import { networkColumnReads, withoutNetworkTableRows } from "@/lib/custom-report/network-column-rows";
 import { namesLateChargeBound } from "@/lib/late-charge-bound";
 import { rateFloorOf } from "@/lib/rate-floor";
-import { documentPricesCategory, noChargeStatement } from "@/lib/no-charge-statement";
+import { documentPricesCategory, noChargeStatement, noChargeWitness } from "@/lib/no-charge-statement";
 
 /**
  * Knox's free extraction team, run over one whole document. Pure.
@@ -425,12 +425,13 @@ import { documentPricesCategory, noChargeStatement } from "@/lib/no-charge-state
 // present negation ("do not", "don't", "does not", "never"; not "will not" or "no longer"), naming an NSF
 // (with an NSF word), overdraft or overdraft transfer fee, with no figure and no words after the fee but a
 // restatement ("for items returned unpaid"); a waiver, band, allowance, cap or product scope is no read.
-// The nearest heading must be the fee's topic or general ("Bill Pay Service" is not), and no line of the
-// text may price the category, read or not. One $0 per category per text, none when the rules pass already
-// read a $0 in that category or any specialist a price. Oct 26 dry run (prod, read-only, current copies):
-// 6 texts at 6 institutions, 5 NSF and 1 overdraft transfer; 4 banks gain an NSF row and 1 an overdraft
-// transfer row, none has a live charged fee in the category. Adds reads only. The stale-read floor stays
-// at v97. Name re-tidy stays at v27.
+// The heading right above must be wholly a fee-topic heading of the category ("Overdraft and NSF Fees";
+// no product, account, service, brand or general heading, no prose, no missing heading), and no line of
+// the text may price the category on it or the next two lines, read or not. One $0 per category per
+// text, none when the rules pass already read a $0 in that category or any specialist a price. Oct 26
+// dry run (prod, read-only, current copies): 1 text at 1 institution (Grand Bank for Savings 2568, NSF);
+// the other 9 grammar matches, Wells Fargo's among them, stand under prose. Adds reads only. The
+// stale-read floor stays at v97. Name re-tidy stays at v27.
 export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 124 } as const;
 
 export interface SpecialistRun {
@@ -826,7 +827,10 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
       const foundRow = { ...heldRow, feeName: tidyUnmarkedName(heldRow.feeName, text, institutionName, heldRow.canonicalHint) };
       if (foundRow.shape === "zero" && readsAMeasuredAmount(text, foundRow.feeName, 0)) continue;
       // A $0 row can go live through the rules re-check, so it passes the same self-check.
-      const untracedZero = foundRow.shape === "zero" && !tracesToSource(checkText, foundRow.feeName, 0);
+      // v124 (#2040): the shared check's no-charge witness needs the read's category, which this
+      // category-free self-check does not pass, so a no-charge read is traced by the witness itself.
+      const untracedZero = foundRow.shape === "zero" && !tracesToSource(checkText, foundRow.feeName, 0) &&
+        !noChargeWitness(checkText, foundRow.feeName, foundRow.canonicalHint);
       if (untracedZero) selfCheckFailed += 1;
       const row: HeldFeeCandidate = untracedZero ? { ...foundRow, shape: "untraced" } : foundRow;
       const key = heldKey(row);

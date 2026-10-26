@@ -28,12 +28,16 @@
  *   often a returned deposited item.
  *
  * And the document must agree (`noChargeStatementsInText`, review of #2710):
- * - the nearest heading above (or a heading-like sentence before it on the line) names the fee's own
- *   topic or is a general fee heading; "Bill Pay Service" or "SafeBalance Banking" over the sentence
- *   makes it that service's or account's terms;
- * - no line of the document names the fee's category with a price above $0, whether or not any reader
- *   reads it ("NSF Fee $35.00", "Paid or returned item (NSF) 35"): a priced line and a "we do not
- *   charge" sentence on one page are two products' terms, never the bank's $0.
+ * - the heading right above the sentence (the nearest non-empty line, or the line's own first sentence
+ *   when the statement is its second) is wholly a fee-topic heading of its category ("Overdraft Fees",
+ *   "Nonsufficient Funds (NSF) Fees", "Overdraft Services", "Overdraft Transfer Fees"). Anything else,
+ *   a product, account, service or brand word anywhere in it ("Bill Pay Service", "SafeBalance
+ *   Banking", "Overdraft Protection for SafeBalance"), prose, or no heading at all, refuses it: which
+ *   account a sentence speaks for cannot be read reliably otherwise, and accuracy beats recall;
+ * - no line of the document names the fee's category with a price above $0 on it or on the next two
+ *   non-empty lines, whether or not any reader reads it ("NSF Fee $35.00", "Paid or returned item
+ *   (NSF) 35", "Overdraft Fee" / "$35"): a priced line and a "we do not charge" sentence on one page are
+ *   two products' terms, never the bank's $0.
  *
  * Categories (`NO_CHARGE_CATEGORIES`): `nsf`, `overdraft` and `od_protection_transfer`. These are the
  * fees banks announce in prose that they have dropped (NSF since 2022, overdraft at a few banks,
@@ -155,74 +159,80 @@ export function noChargeStatementsIn(line: string): NoChargeStatement[] {
   return line.split(SENTENCE_END).map(noChargeStatement).filter((statement): statement is NoChargeStatement => statement != null);
 }
 
-// The words that name each category's own topic, in a heading or on a priced line.
-const TOPIC: Record<NoChargeCategory, RegExp> = {
-  nsf: /\b(?:nsf|non[\s-]?sufficient|insufficient|returned?|bounced?|overdrafts?|overdrawn|od)\b/i,
-  overdraft: /\b(?:overdrafts?|overdrawn|od|o\/d|nsf|non[\s-]?sufficient|insufficient|courtesy\s+pay|bounce)\b/i,
-  od_protection_transfer: /\b(?:overdrafts?|overdrawn|od|transfers?)\b/i,
+// The heading right above the sentence must be wholly one of these, for the sentence's category
+// (review of #2710: a product, account, service or brand word anywhere in it refuses the sentence, and
+// there is no general-heading or no-heading fall-through). Bullets, "#" and a trailing "." or ":" are
+// ignored.
+const NSF_TOPIC = String.raw`(?:nsf|(?:non[\s-]?sufficient|insufficient)\s+funds?(?:\s*\(nsf\))?)`;
+const OD_TOPIC = String.raw`overdrafts?`;
+const JOIN_TOPIC = String.raw`\s*(?:and|&|\/|or)\s*`;
+const FEE_WORDS = String.raw`(?:\s+(?:fees?|charges?))?`;
+const ALLOWED_HEADINGS: Record<NoChargeCategory, RegExp> = {
+  nsf: new RegExp(String.raw`^(?:${NSF_TOPIC}(?:\s+(?:items?|returns?))?${FEE_WORDS}|${OD_TOPIC}${JOIN_TOPIC}${NSF_TOPIC}${FEE_WORDS}|${NSF_TOPIC}${JOIN_TOPIC}${OD_TOPIC}${FEE_WORDS}|overdraft\s+services)$`, "i"),
+  overdraft: new RegExp(String.raw`^(?:${OD_TOPIC}${FEE_WORDS}|${OD_TOPIC}${JOIN_TOPIC}${NSF_TOPIC}${FEE_WORDS}|${NSF_TOPIC}${JOIN_TOPIC}${OD_TOPIC}${FEE_WORDS}|overdraft\s+services)$`, "i"),
+  od_protection_transfer: new RegExp(String.raw`^(?:overdraft\s+(?:protection\s+)?transfers?${FEE_WORDS}|overdraft\s+protection${FEE_WORDS})$`, "i"),
 };
-// A priced line names the category by these (narrower than a heading's topic: an overdraft price is
-// not an NSF price).
+
+/** True when the heading is wholly an allowed fee-topic heading of the category. */
+export function topicHeading(heading: string, key: NoChargeCategory): boolean {
+  const text = heading.replace(/^[#\s•·▪◦‣*–—-]+/, "").replace(/[.:\s]+$/, "").replace(/\s+/g, " ").trim();
+  return text.length > 0 && ALLOWED_HEADINGS[key].test(text);
+}
+
+/**
+ * The heading the sentence stands under: the nearest non-empty line above when the sentence opens its
+ * line, the line's own first sentence when the statement is its second ("Nonsufficient Funds (NSF) Fees.
+ * We do not currently charge NSF fees."), and none when more prose stands between them.
+ */
+function headingOver(lines: readonly string[], index: number, sentences: readonly string[], at: number): string | null {
+  if (at === 1) return sentences[0];
+  if (at > 1) return null;
+  for (let j = index - 1; j >= 0; j -= 1) if (lines[j].trim()) return lines[j];
+  return null;
+}
+
+// A line names the category by these (an overdraft price is not an NSF price).
 const PRICED_TOPIC: Record<NoChargeCategory, RegExp> = {
   nsf: /\b(?:nsf|non[\s-]?sufficient|insufficient\s+funds?|returned[\s-]+(?:items?|checks?)|bounced?\s+checks?)\b/i,
   overdraft: /\b(?:overdrafts?|od|o\/d|courtesy\s+pay|bounce\s+protection|paid\s+items?)\b/i,
   od_protection_transfer: /\b(?:overdraft|od)\s+(?:protection\s+)?transfers?\b|\btransfers?\b[^.$]{0,40}\boverdraft\b|\boverdraft\b[^.$]{0,40}\btransfers?\b/i,
 };
-// A heading that names no product or service: only these words.
-const GENERAL_HEADING_WORDS = new Set([
-  "fee", "fees", "charge", "charges", "service", "schedule", "of", "and", "the", "your", "our", "other", "general",
-  "additional", "miscellaneous", "account", "accounts", "deposit", "deposits", "checking", "consumer", "personal",
-  "important", "information", "disclosure", "disclosures", "terms", "conditions", "policy", "policies", "pricing",
-  "common", "frequently", "asked", "questions", "faq", "faqs", "notes", "note", "about", "what", "you", "need", "to",
-  "know", "agreement", "rules",
-]);
-const HEADING_LOOKBACK_LINES = 15;
-
-/** A line (or a sentence) that reads as a heading: short, no sentence end, no price, no table cell. */
-function headingLike(text: string): boolean {
-  const line = text.replace(/^[#\s•·▪◦‣*–—-]+/, "").replace(/[:\s]+$/, "").trim();
-  if (!line || line.length > 60 || line.includes("|") || /[.!?,;]$/.test(line) || /\$|\d/.test(line)) return false;
-  const words = line.split(/\s+/);
-  return words.length <= 6 && /^[A-Z]/.test(line);
-}
-
-/** True when a heading over the sentence keeps it the bank's own statement: the fee's topic, or general. */
-function headingAllows(heading: string, key: NoChargeCategory): boolean {
-  if (TOPIC[key].test(heading)) return true;
-  const words = heading.toLowerCase().replace(/[^a-z&\s-]/g, " ").split(/[\s&-]+/).filter(Boolean);
-  return words.length > 0 && words.every((word) => GENERAL_HEADING_WORDS.has(word));
-}
-
-/** The nearest heading above sentence `at` of line `index`: an earlier heading-like sentence on the line, else a line above. */
-function nearestHeading(lines: readonly string[], index: number, sentences: readonly string[], at: number): string | null {
-  for (let k = at - 1; k >= 0; k -= 1) if (headingLike(sentences[k].replace(/[.!?]$/, ""))) return sentences[k].replace(/[.!?]$/, "");
-  for (let j = index - 1; j >= Math.max(0, index - HEADING_LOOKBACK_LINES); j -= 1) {
-    if (headingLike(lines[j])) return lines[j];
-  }
-  return null;
-}
-
 const DOLLARS = /\$\s*(\d[\d,]*(?:\.\d{1,2})?)/g;
 const DECIMAL_PRICE = /\b(\d{1,3}\.\d{2})\b/g;
 const TRAILING_FIGURE = /(?:^|[\s:)])(\d{1,3})\s*$/;
+const LEADING_FIGURE = /^\s*(\d{1,3})(?:\s|$)/;
+/** A price printed for a name on its own line or on one of this many non-empty lines below it. */
+const PRICE_REACH_LINES = 2;
 
-/** True when the line prints a figure above $0 that can be a price ("$35", "35.00", a trailing "35"). */
+/** True when the line prints a figure above $0 that can be a price ("$35", "35.00", a lone "35"). */
 function printsPrice(line: string): boolean {
   const values = [...line.matchAll(DOLLARS), ...line.matchAll(DECIMAL_PRICE)].map((match) => Number(match[1].replace(/,/g, "")));
-  const trailing = TRAILING_FIGURE.exec(line);
-  if (trailing) values.push(Number(trailing[1]));
+  for (const figure of [TRAILING_FIGURE.exec(line), LEADING_FIGURE.exec(line)]) if (figure) values.push(Number(figure[1]));
   return values.some((value) => value > 0);
 }
 
-/** True when some line of the document names the category with a price above $0, read or not. */
+/**
+ * True when some line of the document names the category with a price above $0 on it or on one of the
+ * next two non-empty lines ("Overdraft Fee" / "$35"), read by any reader or not.
+ */
 export function documentPricesCategory(lines: readonly string[], key: NoChargeCategory): boolean {
-  return lines.some((line) => PRICED_TOPIC[key].test(line) && printsPrice(line));
+  return lines.some((line, index) => {
+    if (!PRICED_TOPIC[key].test(line)) return false;
+    if (printsPrice(line)) return true;
+    let seen = 0;
+    for (let j = index + 1; j < lines.length && seen < PRICE_REACH_LINES; j += 1) {
+      if (!lines[j].trim()) continue;
+      seen += 1;
+      if (printsPrice(lines[j])) return true;
+    }
+    return false;
+  });
 }
 
 /**
  * Every statement in a document that the document lets stand as the fee's $0: the sentence's own
- * grammar (`noChargeStatementsIn`), a heading above that is the fee's topic or general, and no line
- * that prices the category.
+ * grammar (`noChargeStatementsIn`), right under a heading that is wholly the fee's topic
+ * (`topicHeading`), and no line that prices the category (`documentPricesCategory`).
  */
 export function noChargeStatementsInText(text: string): NoChargeStatement[] {
   const lines = text.split("\n");
@@ -234,8 +244,8 @@ export function noChargeStatementsInText(text: string): NoChargeStatement[] {
     sentences.forEach((sentence, at) => {
       const statement = noChargeStatement(sentence);
       if (!statement) return;
-      const heading = nearestHeading(lines, index, sentences, at);
-      if (heading != null && !headingAllows(heading, statement.canonicalKey)) return;
+      const heading = headingOver(lines, index, sentences, at);
+      if (heading == null || !topicHeading(heading, statement.canonicalKey)) return;
       if (!priced.has(statement.canonicalKey)) priced.set(statement.canonicalKey, documentPricesCategory(lines, statement.canonicalKey));
       if (priced.get(statement.canonicalKey)) return;
       statements.push(statement);
@@ -246,13 +256,13 @@ export function noChargeStatementsInText(text: string): NoChargeStatement[] {
 
 /**
  * The statement that makes this exact fee name, in this category, $0 in the document, or null. The
- * shared source check's witness for a $0 with no free word.
+ * shared source check's witness for a $0 with no free word; a fee with no category has none.
  */
-export function noChargeWitness(text: string, feeName: string, canonicalFeeKey?: string | null): NoChargeStatement | null {
+export function noChargeWitness(text: string, feeName: string, canonicalFeeKey: string | null | undefined): NoChargeStatement | null {
   const name = comparableName(feeName);
-  if (!name) return null;
+  if (!name || !canonicalFeeKey) return null;
   return noChargeStatementsInText(text).find((statement) =>
-    comparableName(statement.feeName) === name && (canonicalFeeKey == null || canonicalFeeKey === statement.canonicalKey)) ?? null;
+    comparableName(statement.feeName) === name && canonicalFeeKey === statement.canonicalKey) ?? null;
 }
 
 function comparableName(name: string): string {

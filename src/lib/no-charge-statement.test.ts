@@ -110,35 +110,58 @@ describe("noChargeStatement (#2040)", () => {
 });
 
 describe("noChargeStatementsInText: the document must agree (review of #2710)", () => {
-  it("refuses a sentence under a heading that names another service or account", () => {
-    expect(inText("Bill Pay Service\nWe do not charge an NSF fee.\n")).toEqual([]);
-    expect(inText("SafeBalance Banking\nWe don't charge overdraft fees.\n")).toEqual([]);
-    // A heading-like sentence before it on the line counts too.
-    expect(inText("Bill Pay Service. We do not charge an NSF fee.")).toEqual([]);
-  });
-
-  it("reads a sentence under the fee's own heading, a general heading, or none", () => {
-    expect(inText("Overdraft Services\nWe do not charge a returned item/non-sufficient funds (NSF) fee for items returned unpaid.\n"))
+  it("reads a sentence only right under a heading that is wholly the fee's topic", () => {
+    expect(inText("Overdraft and NSF Fees\nWe do not charge a returned item/non-sufficient funds (NSF) fee for items returned unpaid.\n"))
       .toEqual([["nsf", "Returned item/non-sufficient funds (NSF) fee"]]);
-    expect(inText("Account Fees\nThe bank does not charge NSF fees.\n")).toEqual([["nsf", "NSF fee"]]);
+    expect(inText("Nonsufficient Funds (NSF) Fees:\n\nThe bank does not charge NSF fees.\n")).toEqual([["nsf", "NSF fee"]]);
     expect(inText("Nonsufficient Funds (NSF) Fees. We do not currently charge NSF fees.")).toEqual([["nsf", "NSF fee"]]);
-    expect(inText("We don't charge overdraft fees.")).toEqual([["overdraft", "Overdraft fee"]]);
+    expect(inText("Overdraft Services\nWe do not charge an NSF fee.")).toEqual([["nsf", "NSF fee"]]);
+    expect(inText("# Overdraft Fees\nWe don't charge overdraft fees.")).toEqual([["overdraft", "Overdraft fee"]]);
+    expect(inText("Overdraft Transfer Fees.\nWe do not charge for overdraft protection transfers.")).toEqual([["od_protection_transfer", "Overdraft transfer fee"]]);
   });
 
-  it("refuses a sentence when any line of the document prices the category, read or not", () => {
-    expect(inText("Checking Fees\nNSF Fee $35.00\nWe do not charge an NSF fee.\n")).toEqual([]);
-    expect(inText("Overdraft fee $35 per item.\nWe don't charge overdraft fees.")).toEqual([]);
-    expect(inText("Paid or returned item (NSF) 35\nWe do not charge an NSF fee.")).toEqual([]);
-    // Another category's price, or a $0 of its own, is no price for this one.
-    expect(inText("Overdraft fee $35 per item\nWe do not charge an NSF fee.")).toEqual([["nsf", "NSF fee"]]);
-    expect(inText("Insufficient Funds (NSF) $0\nThe Bank does not charge NSF fees.")).toEqual([["nsf", "NSF fee"]]);
+  it("refuses a product, account, service or brand heading, a general heading, prose above, or no heading", () => {
+    for (const [heading, sentence] of [
+      ["Bill Pay Service", "We do not charge an NSF fee."],
+      ["SafeBalance Banking", "We don't charge overdraft fees."],
+      ["Bank of America Advantage SafeBalance Banking Account", "We don't charge overdraft fees."],
+      ["eChecking", "We don't charge overdraft fees."],
+      ["Essential Checking Account.", "We don't charge overdraft fees."],
+      ["With Clear Access Banking, you cannot overdraw.", "We don't charge overdraft fees."],
+      ["Bill Pay Returned Payments", "We do not charge an NSF fee."],
+      ["Overdraft Protection for SafeBalance", "We don't charge overdraft fees."],
+      ["Zelle Transfers", "We do not charge for overdraft protection transfers."],
+      ["Fee Schedule", "We don't charge overdraft fees."],
+      ["Account Fees", "The bank does not charge NSF fees."],
+    ]) {
+      expect(inText(`${heading}\n${sentence}`), heading).toEqual([]);
+    }
+    // Prose between "Fee Schedule" and the sentence, and a sentence with no heading at all.
+    expect(inText("Fee Schedule\nWith Clear Access Banking, you cannot overdraw.\nWe don't charge overdraft fees.")).toEqual([]);
+    expect(inText("We don't charge overdraft fees.")).toEqual([]);
+    // A product sentence first on the line, or prose between the opener and the sentence.
+    expect(inText("Bill Pay Service. We do not charge an NSF fee.")).toEqual([]);
+    expect(inText("Nonsufficient Funds (NSF) Fees. NSF items are returned unpaid. We do not charge an NSF fee.")).toEqual([]);
+  });
+
+  it("refuses a sentence when any line of the document prices the category, on its line or the next two", () => {
+    expect(inText("Checking Fees\nNSF Fee $35.00\nNSF Fees\nWe do not charge an NSF fee.\n")).toEqual([]);
+    expect(inText("Overdraft fee $35 per item.\nOverdraft Fees\nWe don't charge overdraft fees.")).toEqual([]);
+    expect(inText("Paid or returned item (NSF) 35\nNSF Fees\nWe do not charge an NSF fee.")).toEqual([]);
+    expect(inText("Overdraft Fee\n$35\nOverdraft Fees\nWe don't charge overdraft fees.")).toEqual([]);
+    expect(inText("Overdraft Fee\n\nper item\n35.00\nOverdraft Fees\nWe don't charge overdraft fees.")).toEqual([]);
+    expect(documentPricesCategory(["Overdraft Fee", "$35"], "overdraft")).toBe(true);
+    // A price three non-empty lines down, another category's price, or a $0 is no price for it.
+    expect(documentPricesCategory(["Overdraft Fee", "a", "b", "$35"], "overdraft")).toBe(false);
+    expect(inText("Overdraft fee $35 per item\nNSF Fees\nWe do not charge an NSF fee.")).toEqual([["nsf", "NSF fee"]]);
     expect(documentPricesCategory(["Insufficient Funds (NSF) $0"], "nsf")).toBe(false);
   });
 
-  it("witnesses only the exact name in its own category", () => {
-    const text = "We do not charge an NSF fee for returned items.";
-    expect(noChargeWitness(text, "NSF fee", "nsf")?.sentence).toBe(text);
+  it("witnesses only the exact name in its own category, and never with no category", () => {
+    const text = "NSF Fees\nWe do not charge an NSF fee for returned items.";
+    expect(noChargeWitness(text, "NSF fee", "nsf")?.sentence).toBe("We do not charge an NSF fee for returned items.");
     expect(noChargeWitness(text, "NSF fee", "deposited_item_return")).toBeNull();
+    expect(noChargeWitness(text, "NSF fee", null)).toBeNull();
     expect(noChargeWitness(text, "Returned item fee", "nsf")).toBeNull();
   });
 });
@@ -146,9 +169,22 @@ describe("noChargeStatementsInText: the document must agree (review of #2710)", 
 describe("checkFeeAgainstSource reads the sentence as the fee's $0 (#2040)", () => {
   const text = [
     "Overdraft fee | $35 per item",
-    "We do not charge a returned item/non-sufficient funds (NSF) fee for items returned unpaid.",
     "We do not charge overdraft fees on transactions under $5.",
+    "",
+    "Overdraft and NSF Fees",
+    "We do not charge a returned item/non-sufficient funds (NSF) fee for items returned unpaid.",
   ].join("\n");
+
+  it("keeps a fee that traces to a free row on that row", () => {
+    const free = "NSF Fees\nWe do not charge an NSF fee.\nNSF Fee | No Fee";
+    expect(checkFeeAgainstSource(free, "NSF Fee", 0, ".", "nsf")).toEqual({ ok: true, sourceLine: "NSF Fee | No Fee" });
+  });
+
+  it("fails a price printed on the line under the fee's name, and a fee with no category", () => {
+    expect(checkFeeAgainstSource("Overdraft Fee\n$35\nOverdraft Fees\nWe do not charge an overdraft fee.", "Overdraft fee", 0, ".", "overdraft").ok).toBe(false);
+    expect(checkFeeAgainstSource("Overdraft Fees\nWe do not charge an overdraft fee.", "Overdraft fee", 0, ".", "overdraft").ok).toBe(true);
+    expect(checkFeeAgainstSource("Overdraft Fees\nWe do not charge an overdraft fee.", "Overdraft fee", 0, ".", null).ok).toBe(false);
+  });
 
   it("traces the exact name the sentence prints at $0", () => {
     const result = checkFeeAgainstSource(text, "Returned item/non-sufficient funds (NSF) fee", 0, ".", "nsf");

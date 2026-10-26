@@ -1530,14 +1530,6 @@ function checkFeeAgainstSourceText(
     fee.feeName.toLowerCase() === feeName.toLowerCase() && fee.amount === amount &&
     (canonicalFeeKey == null || canonicalFeeKey === fee.canonicalHint));
   if (scoped) return { ok: true, sourceLine: scoped.excerpt };
-  // #2040: "We do not charge a returned item/non-sufficient funds (NSF) fee for items returned unpaid."
-  // states that fee's $0 with no free word. Only the exact name and category the sentence prints, only
-  // a whole sentence of the shared no-charge grammar under the fee's own or a general heading, and never
-  // on a document that prints a price for the category on any line (`noChargeWitness`).
-  if (amount === 0) {
-    const stated = noChargeWitness(text, feeName, canonicalFeeKey);
-    if (stated) return { ok: true, sourceLine: stated.sentence };
-  }
   if (statements.length > 0 && /\beliminated\b/i.test(feeName) && (canonicalFeeKey === "nsf" || /\b(?:nsf|non[- ]sufficient funds)\b/i.test(feeName))) {
     return { ok: false, reason: "amount_not_the_fee" };
   }
@@ -1560,6 +1552,15 @@ function checkFeeAgainstSourceText(
     if (!asCap) continue;
     const cap = checkAgainstLines(lines, feeName, amount, categoryPattern, true, false, sectionHeadingCategory);
     if (cap.ok) return cap;
+  }
+  // #2040: "We do not charge a returned item/non-sufficient funds (NSF) fee for items returned unpaid."
+  // states that fee's $0 with no free word. Read only after the line checks, so a fee that traces to a
+  // "Free" row keeps that row. Only the exact name and category the sentence prints (a category is
+  // required), only a whole sentence of the shared grammar right under a heading that is wholly the fee's
+  // topic, and never on a document with a priced line for the category (`noChargeWitness`).
+  if (amount === 0) {
+    const stated = noChargeWitness(text, feeName, canonicalFeeKey);
+    if (stated) return { ok: true, sourceLine: stated.sentence };
   }
   if (first && !first.ok && first.reason === "tiered_fee" && statements.length > 0 &&
       (canonicalFeeKey === "nsf" || /\bnsf\b/i.test(feeName))) {

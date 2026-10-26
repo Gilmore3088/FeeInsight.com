@@ -8,20 +8,33 @@ import { bandedZeroOf } from "@/lib/banded-zero";
 const zeros = (text: string) =>
   runFreeSpecialists(text).held.filter((row) => row.amount === 0).map((row) => [row.shape, row.canonicalHint, row.feeName]);
 
-// Wells Fargo's overdraft services page, doc 33356 (institution 4), lines as stored.
-const WELLS = [
+// Wells Fargo's overdraft services page, doc 33356 (institution 4), lines as stored: the NSF sentence
+// stands under prose, not under a heading that is wholly the fee's topic.
+const WELLS_STORED = [
   "Overdraft fee | $35 per item",
   "If we don't pay a transaction into overdraft, it will be declined or returned unpaid. We don't assess fees for declined or returned transactions.",
   "Overdraft fees can still apply even if you remove standard overdraft coverage. We do not assess fees for returned items or declined transactions.",
   "We do not charge transfer fees or advance fees for Overdraft Protection.",
   "We do not charge a returned item/non-sufficient funds (NSF) fee for items returned unpaid.",
 ].join("\n");
+// The same sentence right under its own topic heading.
+const WELLS = [
+  "Overdraft fee | $35 per item",
+  "We do not charge transfer fees or advance fees for Overdraft Protection.",
+  "",
+  "Overdraft and NSF Fees",
+  "We do not charge a returned item/non-sufficient funds (NSF) fee for items returned unpaid.",
+].join("\n");
 
 describe("Knox v124: a \"we do not charge\" sentence is the fee's confirmed $0 (#2040)", () => {
-  it("holds Wells Fargo's NSF sentence as a zero read, once, under the name it prints", () => {
+  it("holds the NSF sentence as a zero read, once, under the name it prints", () => {
     expect(zeros(WELLS)).toEqual([["zero", "nsf", "Returned item/non-sufficient funds (NSF) fee"]]);
     // The priced overdraft fee on the same page is read as before.
     expect(runFreeSpecialists(WELLS).candidates.map((read) => [read.canonicalHint, read.amount])).toContainEqual(["overdraft", 35]);
+  });
+
+  it("reads nothing from Wells Fargo's page as stored: prose, not a topic heading, stands above the sentence", () => {
+    expect(zeros(WELLS_STORED)).toEqual([]);
   });
 
   it("goes through Darwin's checks like a \"No Fee\" row: traced, not a conditional $0, filed, not banded", () => {
@@ -34,19 +47,20 @@ describe("Knox v124: a \"we do not charge\" sentence is the fee's confirmed $0 (
   });
 
   it("reads overdraft and overdraft transfer sentences too", () => {
-    expect(zeros("We don't charge overdraft fees.\nWe do not charge for overdraft protection transfers.")).toEqual([
+    expect(zeros("Overdraft Fees\nWe don't charge overdraft fees.\n\nOverdraft Transfer Fees\nWe do not charge for overdraft protection transfers.")).toEqual([
       ["zero", "overdraft", "Overdraft fee"],
       ["zero", "od_protection_transfer", "Overdraft transfer fee"],
     ]);
   });
 
-  it("reads no $0 beside a priced read of the same category", () => {
-    expect(zeros("NSF Fee | $30.00 per item\nWe do not charge NSF fees.")).toEqual([]);
-    expect(extractCandidatesFromText("Overdraft Fee | $35.00\nWe don't charge overdraft fees.").held.filter((row) => row.amount === 0)).toEqual([]);
+  it("reads no $0 beside a priced read of the same category, or a price on the line under its name", () => {
+    expect(zeros("NSF Fee | $30.00 per item\nNSF Fees\nWe do not charge NSF fees.")).toEqual([]);
+    expect(extractCandidatesFromText("Overdraft Fee | $35.00\nOverdraft Fees\nWe don't charge overdraft fees.").held.filter((row) => row.amount === 0)).toEqual([]);
+    expect(zeros("Overdraft Fee\n$35\nOverdraft Fees\nWe do not charge an overdraft fee.")).toEqual([]);
   });
 
   it("adds no second $0 when a free row already states it", () => {
-    expect(zeros("NSF Returned Item Fee | No Fee\nWe do not charge NSF fees.").map(([, key]) => key)).toEqual(["nsf"]);
+    expect(zeros("NSF Returned Item Fee | No Fee\nNSF Fees\nWe do not charge NSF fees.").map(([, key]) => key)).toEqual(["nsf"]);
   });
 
   it("reads nothing from a waiver, a band, a cap or a consequence", () => {

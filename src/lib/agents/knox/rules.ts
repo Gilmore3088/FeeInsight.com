@@ -3076,9 +3076,10 @@ export function extractCandidatesFromText(input: string): ExtractionRulesResult 
   // v124 (#2040): "We do not charge a returned item/non-sufficient funds (NSF) fee for items returned
   // unpaid." is the NSF fee's $0, held as `zero` like a "No Fee" row so Darwin verifies it. Only a whole
   // sentence of the shared grammar (`noChargeStatementsInText`): no condition, no figure, one named fee
-  // in nsf, overdraft or overdraft transfer, under the fee's own or a general heading ("Bill Pay Service"
-  // over it makes it the service's terms), and no line of the text prices the category, read or not ("NSF
-  // Fee $35.00", "Paid or returned item (NSF) 35"). One $0 per category per text, read from a sentence
+  // in nsf, overdraft or overdraft transfer, right under a heading that is wholly the fee's topic
+  // ("Overdraft and NSF Fees"; never a product, service, general heading or prose), and no line of the
+  // text prices the category on it or the next two lines, read or not ("NSF Fee $35.00", "Paid or
+  // returned item (NSF) 35", "Overdraft Fee" / "$35"). One $0 per category per text, read from a sentence
   // that prints the fee's own name when there is one.
   const statedFree = new Set<string>();
   const statements = noChargeStatementsInText(text);
