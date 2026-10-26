@@ -2154,6 +2154,12 @@ async function executeAgenticStep(
             on: holdFeedback.on,
             due: holdFeedback.due,
             zeroed: holdFeedback.zeroed,
+            // #1680: the hold's old release rows still labelled wrong / wrong_category.
+            release_relabel: {
+              on: holdFeedback.release.on,
+              due: holdFeedback.release.due,
+              relabeled: holdFeedback.release.relabeled,
+            },
             error: holdFeedback.error,
           },
           learning_feedback: feedbackSync.ready

@@ -575,6 +575,10 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     Each live takedown writes a weight-0 `pipeline_feedback` row `wrong` / `wrong_category` at publish;
     each release (part 3) writes `restored` / `account_type_hold_released`, a record, never a
     `wrong` row, so no reader keyed on kind or signal counts a release as a wrong category (#1680).
+    Darwin's release review leaves the kind out of its restore lessons by name (`RESTORE_RECORD_KINDS`).
+    The 5 releases written on Oct 16 with the old label are relabelled by the `holdFeedback` sweep
+    (`learning/account-type-hold-feedback.ts`) behind `ACCOUNT_TYPE_HOLD_RELEASE_RELABEL_ON` (off;
+    a dry run counts them, `holdFeedback.relabel`), keeping the old pair in `evidence.relabeled_from`.
     A fee a hand check found wrongly typed stays live through `ACCOUNT_TYPE_KEEP_LIVE`: one line per
     fee with its reason, keyed by institution, name, price and the stored document the hand check read,
     so a re-read's new row stays live too (28834: inst 5800, doc 3633). The key is bound to that
