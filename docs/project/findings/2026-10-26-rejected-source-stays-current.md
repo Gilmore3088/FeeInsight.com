@@ -42,5 +42,7 @@ fetch or discovery write.
 one checks the other, and only a read that judged the page overturns a reject. A check written
 against a stored shape is seeded from a production row, or it can report 0 forever.
 
-**Agent lessons:** magellan/issue-1105-rejected-is-never-current,
-rosetta/issue-1105-a-read-supersedes-a-reject, deming/issue-1105-check-the-stored-shape
+**Agent lesson:** magellan/issue-1105-rejected-is-never-current
+**Agent lesson:** rosetta/issue-1105-a-read-supersedes-a-reject
+**Agent lesson:** deming/issue-1105-check-the-stored-shape
+**Guard:** `src/lib/agents/learning/rejected-sources.db.test.ts` and Deming's daily playbook check (v2)
