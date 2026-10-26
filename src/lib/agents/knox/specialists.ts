@@ -355,7 +355,15 @@ import { rateFloorOf } from "@/lib/rate-floor";
 // rate) and keeps it held elsewhere. Another fee's floor on the same line, a lesser-of cap and a figure
 // not joined to the rate by "or" keep the read. Removes flat reads only. The stale-read floor stays at
 // v97. Name re-tidy stays at v27.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 118 } as const;
+// v119 (#1443): `isCutoffName` also reads the end shapes on the name without its closing qualifiers
+// (`liveQualifiedFragmentShape`, the same function Darwin's live fragment check reads behind its own
+// switch), so "Late Fee up to (see schedule)" and "Gift Cards up to (per card)" are cut off: the note
+// glued after the cut hid the dangling "up to". It uses the live twin's narrow end words, so "each"
+// before a unit note ("Stop payments - each (Draft or ACH)") stays a real name, and leaves out a
+// comparative ("Cashier's check more than (sold to MCB customers only)": a threshold figure the price
+// read took out, the fee itself whole). On 2026-10-25 it matched 3 live fees and 7 verified rows not live. Publish's `cutoff_name` hold, Darwin's release review and Deming's name check
+// read the same function. The stale-read floor stays at v97. Name re-tidy stays at v27.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 119 } as const;
 
 export interface SpecialistRun {
   strategy: string;

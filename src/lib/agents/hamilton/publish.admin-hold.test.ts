@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { insertPublishedFee } from "./publish";
+import { insertPublishedFee, publishNameHold } from "./publish";
 
 // H03 step 1 (#978): a held fee is not republished under a new id by a re-read of its page.
 
@@ -62,5 +62,30 @@ describe("publishing respects an admin hold", () => {
   it("should_publish_normally_when_no_matching_fee_is_held", async () => {
     const { db } = createDb([]);
     expect(await insertPublishedFee(db, { runId: 1, batchId: "b", row })).toBe(999);
+  });
+});
+
+// #1443: refresh copy v1 wrote 264 live rows straight through the insert, past publish's name hold
+// (Oct 9 to 13, e.g. live 103068 "Counter checks-first five are free"). The writer now holds them itself.
+describe("the single writer reads publish's name hold (#1443)", () => {
+  it.each([
+    ["Counter checks-first five are free", "counter_check", "2.00"],
+    ["GUASFCU charges a", "check_image", "2.00"],
+    ["Late Fee up to (see schedule)", "late_payment", "25.00"],
+  ])("refuses %s, the same name the publish step holds", async (name, key, amount) => {
+    const { db, calls } = createDb([]);
+    const onNameHeld = vi.fn();
+    const held = { ...(row as object), canonical_fee_key: key, amount, fee_name: name } as never;
+    expect(publishNameHold(name, key, Number(amount))).not.toBeNull();
+    expect(await insertPublishedFee(db, { runId: 1, batchId: "b", row: held, onNameHeld })).toBeNull();
+    expect(onNameHeld).toHaveBeenCalledWith(publishNameHold(name, key, Number(amount)));
+    expect(calls.some((call) => call.query.includes("INSERT INTO published_fee_records"))).toBe(false);
+  });
+
+  it("writes a name the hold passes", async () => {
+    const { db } = createDb([]);
+    const onNameHeld = vi.fn();
+    expect(await insertPublishedFee(db, { runId: 1, batchId: "b", row, onNameHeld })).toBe(999);
+    expect(onNameHeld).not.toHaveBeenCalled();
   });
 });

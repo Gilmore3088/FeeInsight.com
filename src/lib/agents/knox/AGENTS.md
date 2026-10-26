@@ -1890,6 +1890,18 @@ and `gluedSentenceHead` gives the fee name a fragment opens with ("Overdraft Fee
 charged ..." is "Overdraft Fee"), which Darwin renames the live fee to through `writeLiveRenames`,
 the same write path the tidy uses (feedback row first, update guarded on the old name).
 
+v119 (#1443): a closing note no longer hides a cut. `liveQualifiedFragmentShape` (`fee-name-fragments.ts`)
+reads the live twin's `trailing_range` and `sentence_end` shapes on the name without the closed
+parentheticals that end it (`withoutClosedQualifiers`, moved there from `cutoff-shape.ts`), and
+`isCutoffName` reads it, so "Late Fee up to (see schedule)" and "Gift Cards up to (per card)" are cut
+off. It uses the narrow words, so "Stop payments - each (Draft or ACH)" stays whole, and leaves out
+"than" and "below" (a threshold figure the price read took out of a whole name: "Cashier's check more
+than (sold to MCB customers only)", shadow lab live audit 273). Darwin's live check reads the same
+function behind `QUALIFIED_FRAGMENT_TAKEDOWN_LIVE` (off). Only a glued note counts (one opening "see",
+"per", "each" and the like): a parenthetical that completes the word is the fee's object ("Check Cashing
+Fee for (Non-Customers)", "ACH Origination Per (member transactions ...)"). Oct 25: 2 live fees, 4
+verified rows not live.
+
 ## Darwin's re-read requests (`reread-feedback.ts`, #1511)
 
 Darwin's live fragment check (`darwin/live-fragment-check.ts`) writes one `pipeline_feedback` row of
@@ -2143,7 +2155,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v118 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v119 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v10 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

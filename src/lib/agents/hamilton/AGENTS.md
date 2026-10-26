@@ -685,7 +685,10 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
 21. Refresh copy (`refreshFeesFromCurrentCopy`, `refresh-copy.ts`): a live fee the current copy
     states at the same amount moves to that copy in place (v2, #1068): the live row takes the
     current copy's verified row as its lineage and keeps its id, name and published date. Before
-    v2 a new row was written and the old one closed as `refreshed by #<new id>`.
+    v2 a new row was written and the old one closed as `refreshed by #<new id>`; those writes
+    skipped publish's name hold, which put the issue's 264 held names live from Oct 9 to 13 (#1443).
+    The single writer (`writePublishedFee`) now reads the hold itself (`publishNameHold`, the same
+    call the publish step makes), so no path writes a name the publish step would hold.
     Moved pages (#1200, `MOVED_PAGE_REFRESH_LIVE`): a live fee also follows its page when the
     page stopped answering at its own address, that is Magellan's live-source pass tried it in the
     last 37 days, after its newest copy, and no copy of it is under 30 days old. It moves to the newest current document of its bank
