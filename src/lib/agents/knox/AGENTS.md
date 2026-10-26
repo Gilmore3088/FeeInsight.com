@@ -188,7 +188,7 @@ model call; it runs under the `pipeline` pause and never waits on provider budge
 
 `correctAccountSubjects` (`knox/account-subject-correct.ts`, `ACCOUNT_SUBJECT_CORRECT_STRATEGY`
 `knox.account_subject_correct` v1) gives a live monthly maintenance or minimum balance fee read before
-v125 the account its own sentence names (`accountSubjectProduct`, v125 above). It runs only in an
+v126 the account its own sentence names (`accountSubjectProduct`, v126 above). It runs only in an
 extract step scoped to one bank or one state lane (at most 100 documents; an unscoped step skips it).
 It reads the newest completed text of each document with such a live Knox fee whose raw row has no
 product, takes the fee's stored excerpt from its extraction note, and fills `product_name` only when

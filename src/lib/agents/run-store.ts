@@ -995,7 +995,7 @@ async function executeAgenticStep(
         institutionId: numericRunParam(params, ["institution_id"]),
         stateCode,
       });
-      // #1912: live monthly or minimum balance fees read before v125 keep a NULL account; the account
+      // #1912: live monthly or minimum balance fees read before v126 keep a NULL account; the account
       // their own sentence names as subject gives it back. Switch off (KNOX_ACCOUNT_SUBJECT_CORRECT_LIVE): counted only.
       const accountSubject = await correctAccountSubjects(tx, {
         runId: run.id,
