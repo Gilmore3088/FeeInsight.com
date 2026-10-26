@@ -33,9 +33,12 @@ describe.skipIf(!connection)("error loop in isolated PostgreSQL (#2058)", () => 
   }
 
   /**
-   * Follow-up 1: a fee taken down and then read again identically. Knox's ON CONFLICT updates the
-   * old raw row (still dated before the error) and the fee is published again from it, so only the
-   * extract attempt says the fixed rules produced it.
+   * Follow-up 1: a fee taken down, then a new published row written from its old raw row. Knox's
+   * ON CONFLICT leaves an ordinary raw row it reads again identically as it was (it takes over only
+   * an unclassified, untraced or superseded row), so the raw row keeps its date from before the
+   * error. No specific Hamilton path is claimed here: the fixture writes a new published row (new
+   * published_at) from the old raw row directly. A restore that clears rolled_back_at on the same
+   * published row (darwin/edition-effective-check.ts) keeps the old published_at and is not counted.
    */
   async function republishIdentically(feePublishedId: number): Promise<number> {
     const [old] = await raw`SELECT lineage_ref, institution_id, canonical_fee_key, fee_name, amount FROM published_fee_records WHERE fee_published_id = ${feePublishedId}`;
@@ -84,7 +87,7 @@ describe.skipIf(!connection)("error loop in isolated PostgreSQL (#2058)", () => 
     await raw`INSERT INTO source_documents (id, institution_id, status, document_url, content_hash, crawled_at, superseded_by_id)
               VALUES (${OLD_DOC}, ${INST}, 'success', 'https://bank2058.test/fees', 'hash-2058-old', '2026-09-01T00:00:00Z', ${DOC})`;
     await raw`INSERT INTO agent_source_texts (source_document_id, institution_id, status, normalized_text)
-              VALUES (${DOC}, ${INST}, 'completed', ${"OTHER SERVICES\nStop Payment Fee | $35.00\nOverdraft Fee | $30.00 per item\nWire Transfer | $25.00\nMonthly Maintenance Fee | $12.00"})`;
+              VALUES (${DOC}, ${INST}, 'completed', ${"OTHER SERVICES\nStop Payment Fee | $35.00\nOverdraft Fee | $30.00 per item\nWire Transfer | $25.00\nMonthly Maintenance Fee | $12.00\nForeign ATM Fee | $3.00"})`;
     // Three live fee types, so the institution is deep enough for the catalog.
     const stop = await seedFee(INST, "Stop Payment Fee", "stop_payment", 35);
     await seedFee(INST, "Overdraft Fee", "overdraft", 30);
@@ -100,6 +103,13 @@ describe.skipIf(!connection)("error loop in isolated PostgreSQL (#2058)", () => 
     // Taken down, then read again identically by the re-run and published again from the old raw row.
     const maintenance = await seedFee(INST, "Monthly Maintenance Fee", "monthly_maintenance", 12);
     await republishIdentically(maintenance);
+    // Review blocker: a right foreign ATM fee live since before the error, beside a misread one
+    // taken down. The rules bump re-reads the document, so the right fee is re-read after the error
+    // too, but it was published before the error: it must not close the misread's row.
+    const atmRight = await seedFee(INST, "Foreign ATM Fee", "atm_foreign", 3);
+    await raw`UPDATE published_fee_records SET published_at = '2026-09-01T00:00:00Z' WHERE fee_published_id = ${atmRight}`;
+    const atmMisread = await seedFee(INST, "Foreign ATM Charge", "atm_foreign", 54);
+    await raw`UPDATE published_fee_records SET rolled_back_at = NOW() WHERE fee_published_id = ${atmMisread}`;
     await named("matches", INST, stop, "stop_payment");
     await named("down", INST, nsf, "nsf");
     await named("still", INST, wire, "wire_domestic_outgoing");
@@ -109,6 +119,7 @@ describe.skipIf(!connection)("error loop in isolated PostgreSQL (#2058)", () => 
     await named("waiting", WAITING, waitingFee, "overdraft");
     await named("inactive", INACTIVE, inactiveFee, "overdraft");
     await named("identical", INST, maintenance, "monthly_maintenance", "2026-10-10T00:00:00Z", "hamilton.source_check", DOC);
+    await named("live_beside", INST, atmMisread, "atm_foreign", "2026-10-10T00:00:00Z", "hamilton.source_check", DOC);
     // Recorded after the fix merged: not one of the errors it names.
     await named("after", INST, stop, "stop_payment", "2026-10-21T00:00:00Z");
     // Raised by a check the re-check does not re-run: never named, so never closed by it.
@@ -140,7 +151,8 @@ describe.skipIf(!connection)("error loop in isolated PostgreSQL (#2058)", () => 
     expect(first.skipped).toEqual([]);
     // The re-read maintenance fee is judged although its raw row predates the error; the closed
     // bank's row is reported apart, not as waiting.
-    expect(first.results[0]).toMatchObject({ named: 7, waiting: 1, inactive: 1, nowMatches: 3, notReproduced: 1, stillWrong: 1, unknown: 0, readFailed: false });
+    // The misread ATM fee stays open: the right one beside it was published before the error.
+    expect(first.results[0]).toMatchObject({ named: 8, waiting: 1, inactive: 1, nowMatches: 3, notReproduced: 2, stillWrong: 1, unknown: 0, readFailed: false });
     expect(first.results[0].stillWrongRows).toEqual([expect.objectContaining({ feedbackId: ids.still, check: "hamilton.source_check" })]);
     const ledger = await raw`SELECT kind, signal, weight, dedupe_key, evidence->>'verdict' AS verdict FROM pipeline_feedback
                               WHERE check_name = 'deming.error_fix_recheck' AND institution_id = ${INST} ORDER BY dedupe_key`;
@@ -154,7 +166,7 @@ describe.skipIf(!connection)("error loop in isolated PostgreSQL (#2058)", () => 
 
     // The next day: closed rows are not named again; the still-wrong one is judged, not re-written.
     const second = await runErrorFixRecheck({ db, entries: [FIX], runId: null });
-    expect(second.results[0]).toMatchObject({ named: 4, waiting: 1, inactive: 1, stillWrong: 1, notReproduced: 1 });
+    expect(second.results[0]).toMatchObject({ named: 5, waiting: 1, inactive: 1, stillWrong: 1, notReproduced: 2 });
     expect(second.written).toBe(0);
   });
 });

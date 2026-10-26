@@ -253,12 +253,16 @@ export interface ErrorFixJudgement {
 }
 
 /**
- * A live fee with the last time a completed run read its document text at the fix's Knox rules
- * version (`pipeline_attempts`, stage extract), to tell a fee the re-run produced from an older
- * one. Not the raw row's age: Knox updates the raw row of a fee it reads again identically
- * (`insertCandidate`'s ON CONFLICT) instead of inserting a new one.
+ * A live fee with two times that together tell a fee the re-run produced from an older one:
+ * `reread_at`, the last time a completed run read its document text at the fix's Knox rules
+ * version (`pipeline_attempts`, stage extract), and `published_at`, when its published row was
+ * written. The raw row's age cannot tell them apart: a fee Knox reads again with the same
+ * document, name, amount, audience and line share hits `insertCandidate`'s ON CONFLICT, which
+ * takes over only an unclassified, untraced or superseded raw row and otherwise leaves the old
+ * row, and its old date, as they were. Nor can the read alone: a rules bump re-reads every stored
+ * text, so every fee on the document gets a new `reread_at`, including one live all along.
  */
-export type ErrorFixFee = FreshAuditFee & { reread_at?: string | Date | null };
+export type ErrorFixFee = FreshAuditFee & { reread_at?: string | Date | null; published_at?: string | Date | null };
 
 function time(value: string | Date | null | undefined): number {
   return value == null ? Number.NaN : new Date(value).getTime();
@@ -266,14 +270,17 @@ function time(value: string | Date | null | undefined): number {
 
 /**
  * Pure: is the named error gone? The named fee is judged while it is still live. Once it is down
- * (a takedown names a fee already down), only the fees the re-run extracted in its place are
- * judged: live fees in its category whose document text the fixed Knox rules read after the error
- * (`reread_at`, from the extract attempt, since an identical re-read updates the old raw row rather
- * than inserting a newer one), from the error's document when it names one (any document once a
- * newer copy has replaced it, as the re-run guard counts). A fee whose text the fixed rules have
- * not read since the error proves nothing about the fix, so it is never counted. Every judged fee must pass the fresh audit's checks. With no
- * re-extracted fee the error is `not_reproduced`: the fix did not bring a right fee back, so the
- * row stays open. A fee with no stored text is unknown, never closed, and so is a named fee still
+ * (a takedown names a fee already down), only a fee put in its place after the error is judged: a
+ * live fee in its category whose document text the fixed Knox rules read after the error
+ * (`reread_at`) and whose published row was written after the error (`published_at`), from the
+ * error's document when it names one (any document once a newer copy has replaced it, as the
+ * re-run guard counts). Both are needed: a rules bump re-reads every text, so a fee live all along
+ * on the same document has a new `reread_at` too, and a fee published after the error from a read
+ * the fix never saw proves nothing either. A restore that clears `rolled_back_at` on the old
+ * published row keeps its old `published_at`, so it never counts: a restore is not a fix. Every
+ * judged fee must pass the fresh audit's checks. With no such fee the error is `not_reproduced`:
+ * the fix has not yet brought a right fee back (or the corrected fee has not cleared Darwin and
+ * Hamilton), so the row stays open. A fee with no stored text is unknown, never closed, and so is a named fee still
  * published but not among the dollar fees judged here (a rate) or one with no category.
  */
 export function judgeErrorFix(
@@ -289,6 +296,7 @@ export function judgeErrorFix(
   const fees = own.length > 0 ? own : live.filter((fee) =>
     fee.canonical_fee_key === row.canonical_fee_key
     && time(fee.reread_at) > errorAt
+    && time(fee.published_at) > errorAt
     && (row.source_document_id == null || truthy(row.document_replaced) || Number(fee.source_document_id) === Number(row.source_document_id)));
   const judged = fees.map((fee) => Number(fee.fee_published_id));
   if (fees.length === 0) return { verdict: "not_reproduced", judged };
@@ -351,11 +359,12 @@ async function recheckEntry(db: SqlTag, entry: ErrorFixEntry, runId: number | nu
   const institutions = [...new Set(ready.map((row) => Number(row.institution_id)))];
   // reread_at: the last time a completed run read the fee's own document at this fix's Knox rules
   // version. A raw row that records the text it came from (`text_hash=`) must match that read's text.
+  // published_at: when the fee's published row was written; a fee live since before the error never counts.
   // raw_created_at stays for the fresh audit's own checks; the judgement never dates a fee by it.
   const live = await db<ErrorFixFee[]>`
     SELECT c.id AS fee_id, c.fee_published_id, c.fee_verified_id AS lineage_ref, c.fee_raw_id, c.institution_id, c.source,
            c.source_document_id, c.canonical_fee_key, c.fee_name, c.amount, c.amount_kind, c.rate_percent,
-           sd.document_url, fr.created_at AS raw_created_at,
+           sd.document_url, fr.created_at AS raw_created_at, fp.published_at,
            (SELECT MAX(pa.created_at)
               FROM pipeline_attempts pa
               JOIN agent_runs run ON run.id = pa.agent_run_id AND run.status = 'completed'
@@ -368,6 +377,7 @@ async function recheckEntry(db: SqlTag, entry: ErrorFixEntry, runId: number | nu
                     OR pa.input_fingerprint = substring(COALESCE(fr.extraction_note, fr.conditions, '') FROM 'text_hash=([^;]+);'))
            ) AS reread_at
       FROM published_fee_catalog c
+      JOIN published_fee_records fp ON fp.fee_published_id = c.fee_published_id
       LEFT JOIN source_documents sd ON sd.id = c.source_document_id
       LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = c.fee_raw_id
      WHERE c.institution_id = ANY(${institutions}::bigint[])
