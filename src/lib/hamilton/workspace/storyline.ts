@@ -949,6 +949,7 @@ function marketLens(research: FeeResearch, name: string): Fact[] {
           `In group statistics, ${count(cheaper.length)} of ${countedGroup(n, group.label)} have values below ${subjectPossessive(research, false)} ${money(current)}; the named rows show their stated prices.`,
           `In group statistics, ${count(cheaper.length)} of ${countedGroup(n, group.label)} have values below ${subjectPossessive(research, false)} ${money(current)}.`,
           `In group statistics, ${count(cheaper.length)} of ${countedGroup(n, group.label)} have values below ${money(current)}.`,
+          `Group statistics: ${count(cheaper.length)} of ${countedGroup(n, group.label)} are below ${money(current)}.`,
         ),
         source: group.source,
         sampleSize: n,

@@ -375,7 +375,13 @@ describe("storyline", () => {
     for (const line of [...none, ...fewer, ...stats]) expect(words(line)).toBeLessThanOrEqual(MAX_STORY_LINE_WORDS);
     // A state in the label, or a long subject name, drops the possessive but keeps the price.
     const texas = parseSegment("Which credit unions in Texas in the top 25 of the $1 billion to $10 billion tier run a fee share below 4%?")!;
-    expect(market(26, true, texas)[0]).toBe("In group statistics, 6 of 10 of the 25 largest $1B to $10B credit unions in Texas have values below $26.");
+    const hampshire = parseSegment("Which credit unions in New Hampshire in the top 25 of the $1 billion to $10 billion tier run a fee share below 4%?")!;
+    const stated = [market(26, true, texas)[0], market(26, true, hampshire)[0]];
+    expect(stated).toEqual([
+      "Group statistics: 6 of 10 of the 25 largest $1B to $10B credit unions in Texas are below $26.",
+      "Group statistics: 6 of 10 of the 25 largest $1B to $10B credit unions in New Hampshire are below $26.",
+    ]);
+    for (const line of stated) expect(words(line)).toBeLessThanOrEqual(MAX_STORY_LINE_WORDS);
     const subject = "Lakeshore Community Federal Credit Union";
     const counted = [market(26, false, segment, subject)[0], market(26, true, segment, subject)[0], market(5, false, texas)[0]];
     expect(counted).toEqual([
