@@ -29,10 +29,11 @@ const fee = (over: Partial<ErrorFixFee> = {}): ErrorFixFee => ({
   fee_name: "Stop Payment Fee",
   amount: 35,
   document_url: "https://bank.example/fees.pdf",
-  raw_created_at: "2026-10-01T00:00:00Z",
+  reread_at: "2026-10-01T00:00:00Z",
+  published_at: "2026-10-01T00:00:00Z",
   ...over,
 } as ErrorFixFee);
-// The error rows below were recorded on Oct 10, after the fee above was extracted.
+// The error rows below were recorded on Oct 10, after the fixed rules last read the fee above.
 const at = { created_at: "2026-10-10T00:00:00Z", source_document_id: null };
 
 const TEXT = [{ source_document_id: 77, normalized_text: "OTHER SERVICES\nStop Payment Fee | $35.00\nWire Transfer | $25.00" }];
@@ -78,7 +79,7 @@ describe("the error loop: a process fix names its errors, re-runs their banks an
     // A stop payment fee live since before the error proves nothing about the fix.
     expect(judgeErrorFix(down, [fee()], TEXT)).toMatchObject({ verdict: "not_reproduced", judged: [] });
     // One the re-run extracted after the error, from the error's document, is judged.
-    const rerun = fee({ raw_created_at: "2026-10-21T00:00:00Z" });
+    const rerun = fee({ reread_at: "2026-10-21T00:00:00Z", published_at: "2026-10-22T00:00:00Z" });
     expect(judgeErrorFix(down, [rerun], TEXT)).toMatchObject({ verdict: "now_matches", judged: [501] });
     expect(judgeErrorFix({ ...down, source_document_id: 77 }, [rerun], TEXT)).toMatchObject({ verdict: "now_matches" });
     expect(judgeErrorFix({ ...down, source_document_id: 78 }, [rerun], TEXT)).toMatchObject({ verdict: "not_reproduced" });
@@ -164,5 +165,88 @@ describe("the error loop: a process fix names its errors, re-runs their banks an
     ]);
     expect(errorFixDetail(result)).toMatchObject({ entries: 1, closed: 1, not_reproduced: 1, still_wrong: 2, waiting: 1 });
     expect(summarizeErrorFixRecheck(result)).toBe("5 open error(s) named by 1 fix(es): 1 closed (now match the bank's document), 2 still wrong after a re-run, 1 taken down with no right fee extracted in their place, 1 waiting for a re-run, 0 not judged (no stored text, or the fee is a rate or has no category).");
+  });
+
+  it("judges a replacement by when the fixed rules read its text, not by its raw row's age (follow-up 1)", () => {
+    const down = { ...at, fee_published_id: 500, canonical_fee_key: "stop_payment" };
+    // Knox read the same fee again identically: its raw row is old, but the fixed rules read its
+    // text after the error, so the re-run produced it.
+    const identical = fee({ reread_at: "2026-10-21T00:00:00Z", published_at: "2026-10-22T00:00:00Z", raw_created_at: "2026-09-01T00:00:00Z" } as Partial<ErrorFixFee>);
+    expect(judgeErrorFix(down, [identical], TEXT)).toMatchObject({ verdict: "now_matches", judged: [501] });
+    // No read at the fixed version since the error (or none at all): not the re-run's fee.
+    expect(judgeErrorFix(down, [fee({ reread_at: null })], TEXT)).toMatchObject({ verdict: "not_reproduced" });
+    expect(judgeErrorFix(down, [fee({ reread_at: "2026-10-09T23:59:59Z", published_at: "2026-10-22T00:00:00Z" })], TEXT)).toMatchObject({ verdict: "not_reproduced" });
+  });
+
+  it("never closes a taken-down fee on a right fee live beside it since before the error (review blocker)", () => {
+    // The document shows Overdraft $30 (right, live since Oct 1) and a business overdraft misread
+    // as $54 (named, taken down). The rules bump re-read every text, so the $30 fee has a new
+    // reread_at, but it was published before the error: it is not the re-run's replacement.
+    const misread = { ...at, fee_published_id: 500, canonical_fee_key: "overdraft", source_document_id: 77 };
+    const OD_TEXT = [{ source_document_id: 77, normalized_text: "OTHER SERVICES\nOverdraft Fee | $30.00 per item\nBusiness Overdraft Fee | $34.00 per item" }];
+    const liveAllAlong = fee({ fee_published_id: 501, canonical_fee_key: "overdraft", fee_name: "Overdraft Fee", amount: 30, reread_at: "2026-10-21T00:00:00Z", published_at: "2026-10-01T00:00:00Z" });
+    expect(judgeErrorFix(misread, [liveAllAlong], OD_TEXT)).toMatchObject({ verdict: "not_reproduced", judged: [] });
+    // A restore clears rolled_back_at on the old row and keeps its old published_at: not a fix either.
+    const restored = fee({ fee_published_id: 500, canonical_fee_key: "overdraft", fee_name: "Business Overdraft Fee", amount: 34, reread_at: "2026-10-21T00:00:00Z", published_at: "2026-10-01T00:00:00Z" });
+    expect(judgeErrorFix({ ...misread, fee_published_id: 499 }, [restored], OD_TEXT)).toMatchObject({ verdict: "not_reproduced" });
+    // Once the corrected fee clears Darwin and Hamilton and is published after the error, it is judged.
+    const corrected = fee({ fee_published_id: 502, canonical_fee_key: "overdraft", fee_name: "Business Overdraft Fee", amount: 34, reread_at: "2026-10-21T00:00:00Z", published_at: "2026-10-22T00:00:00Z" });
+    expect(judgeErrorFix(misread, [liveAllAlong, corrected], OD_TEXT)).toMatchObject({ verdict: "now_matches", judged: [502] });
+  });
+
+  it("reads each replacement's last extract attempt at the fix's rules version, on its own document and text", async () => {
+    const queries: string[] = [];
+    const db = vi.fn(async (parts: TemplateStringsArray) => {
+      const text = parts.join("?");
+      queries.push(text);
+      if (text.includes("FROM pipeline_feedback f")) return [{ id: 1, institution_id: 9, fee_published_id: 500, canonical_fee_key: "stop_payment", kind: "k", check_name: "hamilton.source_check", created_at: "2026-10-10", rerun: true }];
+      return [];
+    });
+    await runErrorFixRecheck({ db: db as never, entries: [entry()], dryRun: true });
+    const live = queries.find((text) => text.includes("FROM published_fee_catalog c")) ?? "";
+    expect(live).toContain("FROM pipeline_attempts pa");
+    expect(live).toContain("pa.source_document_id = c.source_document_id");
+    expect(live).toContain("pa.strategy_version >=");
+    expect(live).toContain("pa.input_fingerprint = substring(");
+    expect(live).toContain("fp.published_at");
+  });
+
+  it("reports rows at banks no longer active apart from those waiting for a re-run (follow-up 2)", async () => {
+    const row = (id: number, over: Record<string, unknown>) => ({ id, institution_id: 9, fee_published_id: 500 + id, canonical_fee_key: "stop_payment", kind: "k", check_name: "hamilton.source_check", created_at: "2026-10-10", rerun: false, ...over });
+    const db = vi.fn(async (parts: TemplateStringsArray) => parts.join("?").includes("FROM pipeline_feedback f")
+      ? [row(1, {}), row(2, { bank_inactive: true }), row(3, { bank_inactive: "t", institution_id: 10 })]
+      : []);
+    const result = await runErrorFixRecheck({ db: db as never, entries: [entry()] });
+    expect(result.results[0]).toMatchObject({ named: 3, waiting: 1, inactive: 2 });
+    expect(errorFixDetail(result)).toMatchObject({ waiting: 1, inactive: 2, read_failed: 0 });
+    expect(summarizeErrorFixRecheck(result)).toContain("1 waiting for a re-run");
+    expect(summarizeErrorFixRecheck(result)).toContain("2 at banks no longer active, so never re-run.");
+    // The query marks them with the same active test the direct path's requests use.
+    expect(db.mock.calls.map(([parts]) => (parts as TemplateStringsArray).join("?")).join("\n")).toContain("COALESCE(inst.status, 'active') = 'active'");
+  });
+
+  it("reads each fix in its own savepoint, so a failed read neither throws nor stops the other fixes (follow-up 3)", async () => {
+    const savepoints: string[] = [];
+    let failNext = true;
+    const query = vi.fn(async (parts: TemplateStringsArray) => {
+      const text = parts.join("?");
+      if (text.includes("FROM pipeline_feedback f")) {
+        if (failNext) { failNext = false; throw new Error("canceling statement due to statement timeout"); }
+        return [{ id: 5, institution_id: 9, fee_published_id: 505, canonical_fee_key: "stop_payment", kind: "k", check_name: "hamilton.source_check", created_at: "2026-10-10", rerun: false }];
+      }
+      return [];
+    });
+    const db = Object.assign(query, {
+      savepoint: vi.fn(async (work: (scope: unknown) => Promise<unknown>) => {
+        savepoints.push("open");
+        try { return await work(query); } catch (error) { savepoints.push("rolled back"); throw error; }
+      }),
+    });
+    const result = await runErrorFixRecheck({ db: db as never, entries: [entry({ pr: 1 }), entry({ pr: 2 })] });
+    expect(savepoints).toEqual(["open", "rolled back", "open"]);
+    expect(result.skipped).toEqual(["PR #1 read: canceling statement due to statement timeout"]);
+    expect(result.results.map((outcome) => [outcome.pr, outcome.readFailed, outcome.waiting])).toEqual([[1, true, 0], [2, false, 1]]);
+    expect(errorFixDetail(result)).toMatchObject({ read_failed: 1, waiting: 1 });
+    expect(summarizeErrorFixRecheck(result)).toContain("The read failed for 1 fix(es); they are re-checked on the next run.");
   });
 });

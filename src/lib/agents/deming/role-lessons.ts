@@ -98,6 +98,16 @@ export const DEMING_LESSONS: AgentLesson[] = [
     since: "2026-10-25",
   },
   {
+    id: "issue-2064-replay-audience-against-every-rule-that-decides-it",
+    agent: "deming",
+    stage: "regression replay",
+    lesson: "Replay a confirmed consumer/business mix-up against every rule that decides audience, in the order the pipeline applies them and with the inputs they read, not only the check that caught it. Darwin decides audience first, from the fee's name, its document's address and the document's stored text; the business-schedule read judges only fees Darwin left unknown, so a Darwin read of consumer or both lets a business fee through even while the business-schedule read would still catch it. Give the replay the document's newest completed text, the one Darwin reads, and judge nothing without it: a replay without the text Darwin reads can call a fee caught that Darwin would publish as consumer. Give each rule the address it reads: Darwin reads the raw row's own address (Knox keeps the text's address there, which can differ from the document's), and the business-schedule read judges the document's address; never the published fee's. A business-schedule restore (the bank's consumer fee is gone) does not make the fee a consumer one, so never retire the case on it. When the read has a SQL form and a code form, test that they agree, on non-ASCII input too, against the production database's locale.",
+    why: "414 confirmed business-schedule takedowns sat as unreplayable cases, so a change to Darwin's audience words or to the business-schedule read could put a business price back on a consumer page with no regression alarm. A first replay without the page text called 413 caught; review found it ignored the text Darwin reads, which can turn a fee consumer before the business-schedule read ever sees it; a second review found it gave Darwin the document's address instead of the raw row's one Darwin reads, which can mask a regression.",
+    evidence: { issues: [2064], prs: [2720], files: ["src/lib/agents/deming/checkers.ts", "src/lib/agents/deming/regression.ts", "src/lib/agents/hamilton/business-schedule.ts"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
+  {
     id: "issue-2066-trace-every-live-miss",
     agent: "deming",
     stage: "loop proof",
@@ -106,6 +116,16 @@ export const DEMING_LESSONS: AgentLesson[] = [
     evidence: { issues: [2066], prs: [2581], files: ["scripts/live-batch-gaps.mjs"] },
     appliesTo: "all",
     since: "2026-10-25",
+  },
+  {
+    id: "issue-2058-judge-the-read-not-the-row",
+    agent: "deming",
+    stage: "error loop",
+    lesson: "Count a fee as the re-run's replacement for a taken-down fee only when both happened after the error: the fixed rules read its document text (the extract attempt in pipeline_attempts at the fixed version, on the fee's own document and text) and its published row was written. Never date it by its raw row: a fee Knox reads again identically keeps its old raw row, since the insert's ON CONFLICT takes over only unclassified, untraced or superseded rows. Never count the re-read alone: a rules bump re-reads every text, so a correct fee live all along on the same document would close an error the fix never touched, and a restored row keeps its old publish time because a restore is not a fix. Count a row as waiting for a re-run only when a run can still ask for its bank; report rows at banks no longer active apart. Run each read of a step that shares the run's transaction in its own savepoint, so one failed read is reported and the rest of the run goes on.",
+    why: "After #2561, a taken-down fee re-extracted identically kept its old raw row, so its error stayed 'taken down with nothing in its place' for good; the first fix dated replacements by the re-read alone, which a review showed would close a taken-down $54 misread because the correct $30 fee live beside it was re-read too; rows at inactive banks were counted as waiting for a re-run that would never come; and a failed read on the scoreboard transaction would have failed the whole run.",
+    evidence: { issues: [2058], prs: [2722], files: ["src/lib/agents/deming/error-fixes.ts", "src/lib/agents/deming/error-fixes.db.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-26",
   },
   {
     id: "issue-2065-plant-errors-walk-the-loop",

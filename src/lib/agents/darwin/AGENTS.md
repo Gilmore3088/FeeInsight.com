@@ -1851,7 +1851,15 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v96 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v96 (Oct 26,
+- The guard is at v97 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v97 (Oct 26,
+  #1905): an NSF or overdraft fee whose name names a home equity loan or line, an equity loan or line,
+  a HELOC or a line of credit (`LOAN_LINE_NAME`: "Home Equity Line Check returned (due to non-sufficient
+  funds)", Navy Federal 154634) fails that type and re-files to other_lending_fee (`LOAN_LINE_TARGET`),
+  in place on Hamilton's live guard unless a live other lending fee at that bank and price is its twin
+  (154634 beside 122342 comes down). A name that also names a checking, savings, share or deposit
+  account stays, as v80 reads a home equity line's stop payment; an overdraft (protection) line of
+  credit is the account's overdraft protection, never a loan. Dry-run counts in the PR.
+- v96 (Oct 26,
   #1912, review of #2639): a night depository's name ("Night Drop Deposit Box Late Fee", the
   double-spaced "Night  Deposit Box") is never a safe deposit box name (`NIGHT_DEPOSIT_NAME`), so a
   night drop's late fee stays a late payment and a box fee so named re-files to night_deposit. A box

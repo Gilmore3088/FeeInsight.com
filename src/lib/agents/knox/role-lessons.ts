@@ -726,4 +726,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-26",
   },
+  {
+    id: "issue-1911-ancillary-owner-recovery",
+    agent: "knox",
+    stage: "ancillary product recovery",
+    lesson: "When a new labelling rule lands, re-read the rows already live, not only the new reads: a rule that writes only on insert leaves every existing row as the old rule left it. Ship the explicit recovery with the rule, deterministic, filling only an empty field, keeping the old value and counting its dry run first.",
+    why: "Knox's ancillary ownership (#2179) labelled only newly inserted raw rows and an insert conflict kept the old row, so U.S. Bank's two live Safe Debit exceptions (money order $1.65, non-U.S. Bank ATM $2.50) kept a NULL product and the catalog showed them as the general account's fees.",
+    evidence: { issues: [1911], prs: [2179, 2670], files: ["src/lib/agents/knox/ancillary-owner-correct.ts", "src/lib/agents/knox/ancillary-owner-correct.test.ts"] },
+    appliesTo: ["extract"],
+    since: "2026-10-26",
+  },
 ];

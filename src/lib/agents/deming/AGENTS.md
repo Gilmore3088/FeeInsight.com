@@ -39,7 +39,13 @@ institutions remains the only human launch workflow.
 - `checkers.ts`: pure offline checkers. Runtime generic replay admits `hamilton.limit_guard` and
   `hamilton.category_guard` (#2064); a takedown frozen as `unreplayable` before its check had a
   replayer replays by its check name from the fee's frozen category, name, amount and conditions,
-  without the schedule's NSF price, so a catch that needed it stays a candidate. A legacy
+  without the schedule's NSF price, so a catch that needed it stays a candidate.
+  `hamilton.business_schedule` takedowns (a business fee shown as a consumer one) replay as
+  `audience` cases against today's audience rules in the pipeline's order: Darwin's decision from
+  the fee's name, its document's address and the document's newest completed text, then, for a fee
+  Darwin leaves unknown, Hamilton's business-schedule read (`readsAsBusinessSchedule`, or a
+  business-only footnote on the fee's line). A Darwin read of consumer or both is a let-through; a
+  case with no stored text is not judged. A business-schedule restore never retires its case. A legacy
   `source_check` body remains historical and unavailable. The prospective source-bound
   corrective protocol below has its own paired replay; other error families are not counted as
   evaluated merely because a checker name exists.
@@ -400,7 +406,7 @@ fails a PR that changes one of these constants without updating its line here (#
 |---|---|---|---|
 | `ACCURACY_REPORTING_VERSION` | — | v1 | `deming/accuracy-measure.ts` |
 | `FRESH_AUDIT_VERSION` | — | v9 | `deming/fresh-audit.ts` |
-| `DEMING_REGRESSION_VERSION` | — | v1 | `deming/regression.ts` |
+| `DEMING_REGRESSION_VERSION` | — | v2 | `deming/regression.ts` |
 | `BENCHMARK_HEALTH_VERSION` | — | v1 | `deming/benchmark-health.ts` |
 | `PLAYBOOK_CHECK_VERSION` | — | v1 | `deming/playbook-contradictions.ts` |
 | `AMOUNT_PATTERN_VERSION` | — | v1 | `deming/amount-patterns.ts` |

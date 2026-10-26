@@ -362,6 +362,8 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   TAKEDOWN_LESSONS_VERSION: "v2 restricts newly inserted learned holds to complete supported fee identity and a limit-guard witness captured before judgement, retained in confirmation, and current at insertion. Missing/unsupported/contended proof leaves new candidates for ordinary Darwin. Existing raw rows/holds and extract83/stale78/verify3/batch4/publish3/refresh2/current-copy2/newer-copy1 fingerprints stay settled; no historical release, replay or provider work is queued.",
   // #1911 code phase: evidence format, not a new extraction selector or recovery authorization.
   ANCILLARY_PRODUCT_VERSION: "v1 owns only newly inserted raw rows from a bounded single-primary-product document. Existing raw conflicts, held takeovers and settled extract/verify/publish/copy decisions stay unchanged. Normalized represented-product guards restrict future matching and ordinary live duplicate sweeps; no metadata backfill, historical replay, numeric-policy change or recovery is queued.",
+  // #1911 current-data recovery: a correction strategy behind its own switch, not a re-read selector.
+  ANCILLARY_OWNER_CORRECT_STRATEGY: "v1 names the attempts of Knox's ancillary product recovery (ancillary-owner-correct.ts): each document with a live Knox fee whose raw row has no product is read once per version and text id, and a fee its single named product's fee block witnesses takes that product and the ancillary_product:v1 flag, only while product_name is NULL. Applying waits for KNOX_ANCILLARY_OWNER_CORRECT_LIVE; off, it only counts. No extraction, verification or publication fingerprint is reopened, no row is deleted, no provider work is queued.",
   // v2 (#1862): provenance gating excludes old unbound fixture judgments. Original document
   // mappings are absent; replay cannot manufacture them or convert old scores into new trust.
   DARWIN_VERDICT_SCORE_STRATEGY: "Frozen-reference provenance starts a distinct protocol/manifest series. Unbound historical chunks and lessons remain historical; no fee replay or key repair is authorized.",
@@ -620,6 +622,10 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // v96 (Oct 26, #1912, numbered v93 while #2688 was open): a night drop or double-spaced night deposit box name is never a safe deposit
     // box name, and a box late fee keeps its own $1 Darwin floor, so a $1 box late fee (36020) re-files
     // in place instead of coming down. Dry-run counts in the PR.
+    // v97 (Oct 26, #1905): an NSF or overdraft fee named for a home equity loan or line, a HELOC or a
+    // line of credit (not an overdraft line of credit, nor one that also names a deposit account)
+    // re-files to other_lending_fee; beside a live other lending twin (154634 beside 122342) it goes to
+    // the second look. Dry-run counts in the PR.
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",
