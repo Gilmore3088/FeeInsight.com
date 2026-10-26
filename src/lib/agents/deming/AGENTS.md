@@ -118,6 +118,13 @@ institutions remains the only human launch workflow.
   runs its stage; rows with no pattern are counted, never a class. Each class keeps one weight-0
   `error_class` ledger row, opened the first day it is seen and updated with each later day's
   counts, date, examples and a GitHub-ready title and body. The morning brief lists the largest classes, so the data lane works classes, not fees.
+- Name families (#2063): fee-level rows (extract, verify, publish) also group by the family of the
+  fee's name, the category Knox's name rules file it under (`classifyPatternKey`, `name:<key>`),
+  else Knox's lesson family of two words or more (`lessonFamily`, `name_words:<words>`). "Wire
+  Transfer - Outgoing Domestic" and "Outgoing domestic wire" are one class whatever category each
+  bank's fee was filed under. A family that only restates one category's class is skipped; the
+  others carry the categories they span. They are a second view of the same rows and never change
+  the confirmed counts; the step's detail shows `name_family_classes` and `name_rows_read`.
 - Live wrong amounts at extract (#2067; `amount-patterns.ts`) group by the text layout around the
   fee, not its category: price-first rows paired with the wrong row, an opening deposit read as the
   fee, a cap or minimum, a figure in the name, a footnote glued to a $0 price, a price from the
