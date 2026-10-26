@@ -18,10 +18,23 @@ type Db = NonNullable<Parameters<typeof runDemingRegression>[0]["db"]>;
 describe.skipIf(!connection)("regression replay of fee-fields cases (#2064)", () => {
   let raw: postgres.Sql<{ numeric: number; json: unknown; text: string }>;
 
-  async function seed(key: string, dataset: string, check: string, input: Record<string, unknown>, fee: number, status = "candidate", sourceUrl: string | null = null) {
-    await raw`INSERT INTO eval_cases (case_key, dataset, status, agent, check_name, error_class, severity, institution_id, fee_published_id, source_url, input, expected, label_provenance)
-              VALUES (${key}, ${dataset}, ${status}, 'hamilton', ${check}, 'test', 'major', ${INST}, ${fee}, ${sourceUrl}, ${raw.json(input as never)},
-                      ${raw.json({ publishable: false })}, ${dataset === "regression" ? "takedown_confirmed" : "human"})`;
+  async function seed(key: string, dataset: string, check: string, input: Record<string, unknown>, fee: number, status = "candidate", sourceDocumentId: number | null = null) {
+    await raw`INSERT INTO eval_cases (case_key, dataset, status, agent, check_name, error_class, severity, institution_id, fee_published_id, source_document_id, source_url, input, expected, label_provenance)
+              VALUES (${key}, ${dataset}, ${status}, 'hamilton', ${check}, 'test', 'major', ${INST}, ${fee}, ${sourceDocumentId}, 'https://bank.test/business/not-the-document.pdf',
+                      ${raw.json(input as never)}, ${raw.json({ publishable: false })}, ${dataset === "regression" ? "takedown_confirmed" : "human"})`;
+  }
+
+  /** A stored document and its completed text, the text Darwin reads. */
+  async function document(id: number, url: string, text: string | null) {
+    await raw`INSERT INTO source_documents (id, institution_id, status, document_url, content_hash) VALUES (${id}, ${INST}, 'success', ${url}, ${`test2064-${id}`})`;
+    if (text) await raw`INSERT INTO agent_source_texts (source_document_id, institution_id, status, normalized_text) VALUES (${id}, ${INST}, 'completed', ${text})`;
+  }
+
+  async function clean() {
+    await raw`DELETE FROM eval_cases WHERE institution_id = ${INST}`;
+    await raw`DELETE FROM agent_source_texts WHERE institution_id = ${INST}`;
+    await raw`DELETE FROM source_documents WHERE institution_id = ${INST}`;
+    await raw`DELETE FROM institution_sources WHERE id = ${INST}`;
   }
 
   const row = async (key: string) => (await raw`SELECT status, last_caught, last_verdict, last_checked_at FROM eval_cases WHERE case_key = ${key}`)[0];
@@ -31,12 +44,13 @@ describe.skipIf(!connection)("regression replay of fee-fields cases (#2064)", ()
       throw new Error("Regression replay DB tests require a loopback E2E database; production connections are forbidden");
     }
     raw = postgres(connection, { max: 1, ssl: "require", types: { numeric: NUMERIC_AS_NUMBER, json: JSON_TEXT_PASSTHROUGH, text: TEXT_WITHOUT_NUL } });
-    await raw`DELETE FROM eval_cases WHERE institution_id = ${INST}`;
+    await clean();
+    await raw`INSERT INTO institution_sources (id, institution_name, charter_type, source, state_code) VALUES (${INST}, 'Replay Test Bank', 'bank', 'fdic', 'TX')`;
   });
 
   afterAll(async () => {
     if (raw) {
-      await raw`DELETE FROM eval_cases WHERE institution_id = ${INST}`;
+      await clean();
       await raw.end();
     }
   });
@@ -62,23 +76,34 @@ describe.skipIf(!connection)("regression replay of fee-fields cases (#2064)", ()
   });
 
   it("replays confirmed audience takedowns, old and new, against today's audience rules", async () => {
+    const DOC = 20640300;
     const old = { kind: "unreplayable", canonical_fee_key: "overdraft", fee_name: "Balancing Checkbook", amount: 15, conditions: null };
-    // An old snapshot: the address comes from the case, not the frozen input.
-    await seed("test2064:audience-old", "regression", "hamilton.business_schedule", old, FEE + 10, "candidate", "https://www.apgfcu.com/business-service-charges-and-fees-list.html");
-    await seed("test2064:audience-new", "regression", "hamilton.business_schedule",
-      { kind: "audience", canonical_fee_key: "wire_domestic_outgoing", fee_name: "Outgoing Wire", amount: 30, conditions: null, document_url: "https://bank.test/treasury/fees.pdf" }, FEE + 11);
-    // A business-only footnote needs the page: replayed, not caught, stays a candidate.
-    await seed("test2064:audience-footnote", "regression", "hamilton.business_schedule", { ...old, fee_name: "Overdraft - Insufficient Funds / Uncollected" }, FEE + 12, "candidate", "https://bank.test/Miscellaneous-Bank-Fees.pdf");
+    const wire = { kind: "audience", canonical_fee_key: "wire_domestic_outgoing", fee_name: "Outgoing Wire", amount: 30, conditions: null, document_url: "https://bank.test/treasury/fees.pdf" };
+    // An old snapshot: the address is its document's (never the case's source_url), the text its document's newest.
+    await document(DOC, "https://www.apgfcu.com/business-service-charges-and-fees-list.html", "Business Service Charges\nBalancing Checkbook $15.00");
+    await seed("test2064:audience-old", "regression", "hamilton.business_schedule", old, FEE + 10, "candidate", DOC);
+    // Darwin leaves a two-column price unknown; the business-schedule read catches the address.
+    await document(DOC + 1, wire.document_url, "Fees\nPersonal Checking | Business Checking\nOutgoing Wire | $25.00 | $30.00\nStop Payment | $25.00 | $25.00");
+    await seed("test2064:audience-new", "regression", "hamilton.business_schedule", wire, FEE + 11, "candidate", DOC + 1);
+    // Darwin reads the same fee as consumer from a schedule with no business fees: not caught (review of #2064).
+    await document(DOC + 2, wire.document_url, "Schedule of Fees\nOutgoing Wire $30.00\nStop Payment $25.00\nOverdraft Fee $30.00");
+    await seed("test2064:audience-consumer", "regression", "hamilton.business_schedule", wire, FEE + 12, "candidate", DOC + 2);
+    // No stored text: nothing is judged.
+    await document(DOC + 3, wire.document_url, null);
+    await seed("test2064:audience-no-text", "regression", "hamilton.business_schedule", wire, FEE + 13, "active", DOC + 3);
     // An active case today's rules would let through (Darwin reads its name as personal) is a regression.
+    await document(DOC + 4, "https://bank.test/business/fees.pdf", "Fees\nPersonal Overdraft Fee $35.00");
     await seed("test2064:audience-regressed", "regression", "hamilton.business_schedule",
-      { kind: "audience", canonical_fee_key: "overdraft", fee_name: "Personal Overdraft Fee", amount: 35, conditions: null, document_url: "https://bank.test/business/fees.pdf" }, FEE + 13, "active");
+      { kind: "audience", canonical_fee_key: "overdraft", fee_name: "Personal Overdraft Fee", amount: 35, conditions: null, document_url: "https://bank.test/business/fees.pdf" }, FEE + 14, "active", DOC + 4);
 
     const result = await runDemingRegression({ runId: null, db: raw as unknown as Db, promoteLimit: 0, replayLimit: 0 });
 
     expect(await row("test2064:audience-old")).toMatchObject({ status: "active", last_caught: true, last_verdict: "darwin_reads_business" });
     expect(await row("test2064:audience-new")).toMatchObject({ status: "active", last_caught: true, last_verdict: "business_schedule_read" });
-    expect(await row("test2064:audience-footnote")).toMatchObject({ status: "candidate", last_caught: false, last_verdict: "passes_audience_rules" });
+    expect(await row("test2064:audience-consumer")).toMatchObject({ status: "candidate", last_caught: false, last_verdict: "darwin_reads_consumer" });
+    expect(await row("test2064:audience-no-text")).toMatchObject({ status: "active", last_caught: null, last_verdict: null });
     expect(await row("test2064:audience-regressed")).toMatchObject({ status: "active", last_caught: false, last_verdict: "darwin_reads_consumer" });
+    expect(result.regressions.filter((miss) => miss.checkName === "hamilton.business_schedule")).toHaveLength(1);
     expect(result.regressions.some((miss) => miss.checkName === "hamilton.business_schedule" && miss.verdict === "darwin_reads_consumer")).toBe(true);
   });
 
@@ -93,10 +118,27 @@ describe.skipIf(!connection)("regression replay of fee-fields cases (#2064)", ()
       ["Monthly Service Charge", "https://bank.test/business-and-personal-fees.pdf"],
       ["Wire", "https://bank.test/treasury/fees?type=Retail"],
       ["Overdraft Fee", "https://bank.test/fees.pdf"],
+      // Non-ASCII (review of #2064): "é" continues the word, "_" too.
+      ["Businessé Fee", "https://bank.test/fees.pdf"],
+      ["Business Fee", "https://bank.test/fees.pdf"],
+      ["Commercial_Fee", "https://bank.test/fees.pdf"],
     ];
     for (const [name, url] of samples) {
       const [sqlRow] = await raw.unsafe(`SELECT (${BUSINESS_NAME_SQL("$1::text")} OR ${BUSINESS_DOC_SQL("$2::text")}) AS business`, [name, url]);
       expect([name, url, readsAsBusinessSchedule(name, url)]).toEqual([name, url, sqlRow.business]);
+    }
+    // Whether `\s` matches a no-break space depends on the database's locale. Prod (PostgreSQL 17.6,
+    // en_US.UTF-8) reads it as whitespace, as JS does; a C.UTF-8 test database does not. These are
+    // prod's answers from a SELECT on 2026-10-26; the local SQL is held to them only when its
+    // locale reads a no-break space as prod does.
+    const prodAnswers: Array<[string, boolean]> = [[" Business Checking", true], [" Business Days", false]];
+    const [{ unicode_space: unicodeSpace }] = await raw`SELECT E' ' ~ '^\\s$' AS unicode_space`;
+    for (const [name, prod] of prodAnswers) {
+      expect([name, readsAsBusinessSchedule(name, "https://bank.test/fees.pdf")]).toEqual([name, prod]);
+      if (unicodeSpace) {
+        const [sqlRow] = await raw.unsafe(`SELECT ${BUSINESS_NAME_SQL("$1::text")} AS business`, [name]);
+        expect([name, sqlRow.business]).toEqual([name, prod]);
+      }
     }
   });
 });

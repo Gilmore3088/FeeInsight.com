@@ -141,7 +141,12 @@ const CONSUMER_PATH = new RegExp(CONSUMER_PATH_SQL, "i");
  */
 export function readsAsBusinessSchedule(feeName: string | null | undefined, documentUrl: string | null | undefined): boolean {
   const name = feeName ?? "";
-  if (/^\s*(business|commercial)\b[^|:]*$/i.test(name) && !/^\s*business\s+days?\b/i.test(name)) return true;
+  // Postgres's `\M` ends a word only before a non-letter, non-digit, non-`_`, so "Businessé Fee" is
+  // not "Business"; JS `\b` is ASCII-only and would end it there. Prod (en_US.UTF-8) reads a no-break
+  // space as `\s`, as JS does (a C.UTF-8 database does not).
+  const wordEnd = String.raw`(?![\p{L}\p{N}_])`;
+  if (new RegExp(String.raw`^\s*(business|commercial)${wordEnd}[^|:]*$`, "iu").test(name) &&
+      !new RegExp(String.raw`^\s*business\s+days?${wordEnd}`, "iu").test(name)) return true;
   const path = (documentUrl ?? "").replace(/^https?:\/\/[^/]+/, "");
   return BUSINESS_PATH.test(path) && !CONSUMER_PATH.test(path);
 }

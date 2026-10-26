@@ -2,7 +2,7 @@ import { limitGuardVerdict, LIMIT_GUARD_CHECK } from "@/lib/agents/hamilton/limi
 import { traceLiveFee, type InstitutionText, type LiveFeeRow } from "@/lib/agents/hamilton/source-check";
 import { CATEGORY_GUARD_CHECK } from "@/lib/agents/hamilton/category-guard";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
-import { BUSINESS_SCHEDULE_CHECK, readsAsBusinessSchedule } from "@/lib/agents/hamilton/business-schedule";
+import { BUSINESS_SCHEDULE_CHECK, footnoteMarksBusiness, readsAsBusinessSchedule } from "@/lib/agents/hamilton/business-schedule";
 import { darwinAudience } from "@/lib/agents/darwin/audience";
 
 /**
@@ -21,14 +21,14 @@ import { darwinAudience } from "@/lib/agents/darwin/audience";
  * without it replays without it, so a catch that needed it stays `candidate`, never a false pass.
  *
  * Audience (#2064, target 0 consumer/business mix-ups): a confirmed business-schedule takedown is
- * a business fee that was shown as a consumer one. It replays against today's audience rules:
- * Darwin's audience decision from the fee's name and document address (`darwinAudience`, no page
- * text) and, when Darwin leaves it unknown, Hamilton's business-schedule read
- * (`readsAsBusinessSchedule`). Caught means today's rules still keep it off consumer pages: Darwin
- * calls it business, or the read calls it business. A Darwin read of consumer or both lets it
- * through, since the business-schedule read only judges unknown fees. A business-only footnote
- * needs the page, so its case stays `candidate`. An old `unreplayable` snapshot has no document
- * address; the replay passes the case's document's address (`context.documentUrl`).
+ * a business fee that was shown as a consumer one. It replays against today's audience rules in
+ * the pipeline's order (`replayAudience`): Darwin's audience decision with the document's stored
+ * text, then, for a fee Darwin leaves unknown, Hamilton's business-schedule read. Caught means
+ * today's rules still keep it off consumer pages. A Darwin read of consumer or both lets it
+ * through, since the business-schedule read only judges unknown fees. The text is the case's
+ * document's newest completed text (`context.documentText`, the one Darwin reads); without it
+ * nothing is judged. An old `unreplayable` snapshot has no document address; the replay passes
+ * the case's document's address (`context.documentUrl`).
  */
 
 export const SOURCE_CHECK_NAME = "hamilton.source_check";
@@ -89,14 +89,26 @@ export const FIELD_REPLAY_CHECKS: readonly string[] = [LIMIT_GUARD_CHECK, CATEGO
 /** Checks Deming can replay offline. */
 export const REPLAYABLE_CHECKS: readonly string[] = [LIMIT_GUARD_CHECK, SOURCE_CHECK_NAME, CATEGORY_GUARD_CHECK, BUSINESS_SCHEDULE_CHECK];
 
-/** Today's audience rules on a business fee once shown as a consumer one (#2064). */
-export function replayAudience(input: { fee_name: string | null; amount: number | null; document_url: string | null }): ReplayVerdict {
-  const darwin = darwinAudience({ fee_audience: null, source_url: input.document_url, fee_name: input.fee_name ?? "" }, input.amount, null);
+/**
+ * Today's audience rules on a business fee once shown as a consumer one (#2064), in the pipeline's
+ * order. Darwin decides first, with the document's stored text, as prospective verification does
+ * (`darwinAudience` with the fee's own price clause). Only a fee Darwin leaves unknown reaches
+ * Hamilton's business-schedule read: its name or document address (`readsAsBusinessSchedule`), or
+ * a business-only footnote on its line (`footnoteMarksBusiness`). Null without the stored text:
+ * Darwin's decision needs the page, so nothing is judged and the case keeps its status.
+ */
+export function replayAudience(
+  input: { fee_name: string | null; amount: number | null; document_url: string | null },
+  text: string | null | undefined,
+): ReplayVerdict | null {
+  if (!text) return null;
+  const name = input.fee_name ?? "";
+  const darwin = darwinAudience({ fee_audience: null, source_url: input.document_url, fee_name: name }, input.amount, text, { ownPriceClause: true });
   if (darwin?.feeAudience === "business") return { caught: true, verdict: "darwin_reads_business" };
   if (darwin) return { caught: false, verdict: `darwin_reads_${darwin.feeAudience}` };
-  return readsAsBusinessSchedule(input.fee_name, input.document_url)
-    ? { caught: true, verdict: "business_schedule_read" }
-    : { caught: false, verdict: "passes_audience_rules" };
+  if (readsAsBusinessSchedule(name, input.document_url)) return { caught: true, verdict: "business_schedule_read" };
+  if (footnoteMarksBusiness(text, name)) return { caught: true, verdict: "business_only_footnote" };
+  return { caught: false, verdict: "passes_audience_rules" };
 }
 
 function replayCategoryGuard(input: { canonical_fee_key: string | null; fee_name: string | null; amount: number | null; conditions: string | null }): ReplayVerdict {
@@ -108,16 +120,20 @@ function replayCategoryGuard(input: { canonical_fee_key: string | null; fee_name
  * Replays one case; null when the input has no replayer. An `unreplayable` snapshot needs the
  * check that caught it (`checkName`, the case's `check_name`).
  */
-export function replayCase(input: CaseInput, checkName?: string | null, context: { documentUrl?: string | null } = {}): ReplayVerdict | null {
+export function replayCase(
+  input: CaseInput,
+  checkName?: string | null,
+  context: { documentUrl?: string | null; documentText?: string | null } = {},
+): ReplayVerdict | null {
   if (input.kind === "limit_guard") {
     const verdict = limitGuardVerdict(input);
     return verdict ? { caught: true, verdict: verdict.code } : { caught: false, verdict: "passes_limit_guard" };
   }
   if (input.kind === "category_guard") return replayCategoryGuard(input);
-  if (input.kind === "audience") return replayAudience(input);
+  if (input.kind === "audience") return replayAudience(input, context.documentText);
   if (input.kind === "unreplayable") {
     if (checkName === CATEGORY_GUARD_CHECK) return replayCategoryGuard(input);
-    if (checkName === BUSINESS_SCHEDULE_CHECK) return replayAudience({ ...input, document_url: context.documentUrl ?? null });
+    if (checkName === BUSINESS_SCHEDULE_CHECK) return replayAudience({ ...input, document_url: context.documentUrl ?? null }, context.documentText);
     if (checkName === LIMIT_GUARD_CHECK && input.canonical_fee_key) {
       const verdict = limitGuardVerdict({ canonical_fee_key: input.canonical_fee_key, fee_name: input.fee_name, amount: input.amount, conditions: input.conditions });
       return verdict ? { caught: true, verdict: verdict.code } : { caught: false, verdict: "passes_limit_guard" };

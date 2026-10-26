@@ -41,10 +41,11 @@ institutions remains the only human launch workflow.
   replayer replays by its check name from the fee's frozen category, name, amount and conditions,
   without the schedule's NSF price, so a catch that needed it stays a candidate.
   `hamilton.business_schedule` takedowns (a business fee shown as a consumer one) replay as
-  `audience` cases against today's audience rules: Darwin's decision from the fee's name and
-  document address, then Hamilton's business-schedule read (`readsAsBusinessSchedule`). A Darwin
-  read of consumer or both is a let-through; a business-only footnote needs the page and stays a
-  candidate. A legacy
+  `audience` cases against today's audience rules in the pipeline's order: Darwin's decision from
+  the fee's name, its document's address and the document's newest completed text, then, for a fee
+  Darwin leaves unknown, Hamilton's business-schedule read (`readsAsBusinessSchedule`, or a
+  business-only footnote on the fee's line). A Darwin read of consumer or both is a let-through; a
+  case with no stored text is not judged. A business-schedule restore never retires its case. A legacy
   `source_check` body remains historical and unavailable. The prospective source-bound
   corrective protocol below has its own paired replay; other error families are not counted as
   evaluated merely because a checker name exists.

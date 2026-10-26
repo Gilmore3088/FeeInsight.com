@@ -220,6 +220,20 @@ async function loadNewTakedowns(db: SqlTag, limit: number): Promise<TakedownRow[
   `;
 }
 
+/** Each document's newest completed text, the one Darwin's verify reads (`loadSourceTexts`). */
+async function loadDocumentTexts(db: SqlTag, documentIds: number[]): Promise<Map<number, string>> {
+  if (documentIds.length === 0) return new Map();
+  const rows = await db<Array<{ source_document_id: number | string; normalized_text: string }>>`
+    SELECT DISTINCT ON (source_document_id) source_document_id, normalized_text
+      FROM agent_source_texts
+     WHERE source_document_id = ANY(${documentIds}::bigint[])
+       AND status = 'completed'
+       AND normalized_text IS NOT NULL
+     ORDER BY source_document_id, id DESC
+  `;
+  return new Map(rows.map((row) => [Number(row.source_document_id), row.normalized_text]));
+}
+
 async function insertCases(db: SqlTag, cases: NewCase[], runId: number | null): Promise<number> {
   let written = 0;
   for (let start = 0; start < cases.length; start += 50) {
@@ -288,12 +302,25 @@ export function replayOutcome(
  * rule no longer catches it, the restore is the regression and is reported, and the case stays
  * active until a person retires it. A restored fee the rule still catches was brought back by
  * another check (a second look), so its case retires as before.
+ *
+ * A business-schedule case never retires on a restore: Hamilton brings such a fee back when the
+ * bank's consumer fee in its category is gone (`restoreBusinessScheduleTakedowns`), which does not
+ * make it a consumer fee, and a retired case key would keep every later takedown of the same fee
+ * out of the replay. Its case keeps its status while the rules still catch it.
  */
-export function replayFieldCase(row: { status: string; check_name: string | null; input: CaseInput; fee_live: boolean; document_url?: string | null }) {
-  const replay = replayCase(row.input, row.check_name, { documentUrl: row.document_url ?? null });
+export function replayFieldCase(row: {
+  status: string;
+  check_name: string | null;
+  input: CaseInput;
+  fee_live: boolean;
+  document_url?: string | null;
+  document_text?: string | null;
+}) {
+  const replay = replayCase(row.input, row.check_name, { documentUrl: row.document_url ?? null, documentText: row.document_text ?? null });
   const caught = replay?.caught ?? null;
   const ruleLetItBack = row.fee_live && caught === false && row.status === "active";
-  const restored = row.fee_live && !ruleLetItBack;
+  const keepsThroughRestore = row.check_name === BUSINESS_SCHEDULE_CHECK || row.input.kind === "audience";
+  const restored = row.fee_live && !ruleLetItBack && !keepsThroughRestore;
   return { replay, restored, outcome: ruleLetItBack ? { status: "active" as const, regression: true } : replayOutcome(row.status, caught, restored) };
 }
 
@@ -372,11 +399,11 @@ export async function runDemingRegression({
     });
   }
   // Takedowns frozen as fee fields, replayed by their check name (#2064).
-  // An old snapshot froze no document address: the case's document's own address stands in (the
-  // read used it), then the fee's address the case froze.
-  const fieldDue = await db<Array<CaseRow & { fee_live: boolean; document_url: string | null }>>`
-    SELECT c.id, c.check_name, c.severity, c.status, c.input, c.fee_published_id,
-           COALESCE(sd.document_url, c.source_url) AS document_url,
+  // An old snapshot froze no document address: the case's document's own address stands in, the
+  // address the business-schedule read judges (as a new case freezes it).
+  const fieldDue = await db<Array<CaseRow & { fee_live: boolean; document_url: string | null; source_document_id: number | string | null }>>`
+    SELECT c.id, c.check_name, c.severity, c.status, c.input, c.fee_published_id, c.source_document_id,
+           sd.document_url,
            EXISTS (
              SELECT 1 FROM published_fee_records fp
               WHERE fp.fee_published_id = c.fee_published_id AND fp.rolled_back_at IS NULL
@@ -392,8 +419,16 @@ export async function runDemingRegression({
      ORDER BY c.last_checked_at NULLS FIRST, c.id
      LIMIT ${fieldLimit}
   `;
+  // Darwin decides audience with the document's newest completed text, so the audience replay reads
+  // that text too, once per document.
+  const audienceDocs = [...new Set(fieldDue
+    .filter((row) => row.check_name === BUSINESS_SCHEDULE_CHECK || row.input.kind === "audience")
+    .map((row) => num(row.source_document_id))
+    .filter((id): id is number => id != null))];
+  const documentTexts = await loadDocumentTexts(db, audienceDocs);
   for (const row of fieldDue) {
-    const { replay, restored, outcome } = replayFieldCase(row);
+    const documentText = documentTexts.get(num(row.source_document_id) ?? -1) ?? null;
+    const { replay, restored, outcome } = replayFieldCase({ ...row, document_text: documentText });
     result.replayed += 1;
     if (replay?.caught) result.caught += 1;
     if (outcome.status === "active" && row.status !== "active") result.activated += 1;

@@ -33,22 +33,27 @@ afterEach(() => {
   rules.regressed = false;
 });
 
+// The document's stored text, which the replay reads as Darwin does.
+const documentText = "Business Service Charges\nBalancing Checkbook $15.00\nStop Payment $30.00";
+
 describe("audience replay", () => {
-  it("catches a seeded audience case and keeps it active", () => {
+  it("catches a seeded audience case and makes it active", () => {
     const built = buildTakedownCase(takedown, []);
-    expect(built).toMatchObject({ status: "active", lastCaught: true, lastVerdict: "darwin_reads_business", input: { kind: "audience" } });
-    expect(replayFieldCase({ status: built.status, check_name: built.checkName, input: built.input, fee_live: false }).outcome)
-      .toEqual({ status: "active", regression: false });
+    expect(built).toMatchObject({ status: "candidate", input: { kind: "audience" } });
+    const replay = replayFieldCase({ status: built.status, check_name: built.checkName, input: built.input, fee_live: false, document_text: documentText });
+    expect(replay.replay).toEqual({ caught: true, verdict: "darwin_reads_business" });
+    expect(replay.outcome).toEqual({ status: "active", regression: false });
   });
 
   it("flags the case when the audience rules regress", () => {
     const built = buildTakedownCase(takedown, []);
+    const active = replayFieldCase({ status: built.status, check_name: built.checkName, input: built.input, fee_live: false, document_text: documentText }).outcome.status;
     rules.regressed = true;
-    const replay = replayFieldCase({ status: built.status, check_name: built.checkName, input: built.input, fee_live: false });
+    const replay = replayFieldCase({ status: active, check_name: built.checkName, input: built.input, fee_live: false, document_text: documentText });
     expect(replay.replay).toEqual({ caught: false, verdict: "passes_audience_rules" });
     expect(replay.outcome).toEqual({ status: "active", regression: true });
     // The regressed rule would also restore the fee: still a regression, never a retirement.
-    expect(replayFieldCase({ status: built.status, check_name: built.checkName, input: built.input, fee_live: true }).outcome)
+    expect(replayFieldCase({ status: active, check_name: built.checkName, input: built.input, fee_live: true, document_text: documentText }).outcome)
       .toEqual({ status: "active", regression: true });
   });
 });
