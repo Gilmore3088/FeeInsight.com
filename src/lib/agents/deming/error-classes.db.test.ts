@@ -112,6 +112,29 @@ describe.skipIf(!connection)("error classes in isolated PostgreSQL (#2063)", () 
     expect(summary.oneBankPatterns).toBeGreaterThanOrEqual(1);
   });
 
+  it("groups errors on one name family across banks whatever category each fee was filed under (#2063)", async () => {
+    const kind = "test_2063_name_family";
+    // The name a correction or audit recorded, at two banks, under two categories.
+    await feedback("extract", kind, BANKS[0], { key: "test_2063_cat_a", evidence: { old_name: "NSF Item Returned" } });
+    await feedback("extract", kind, BANKS[1], { key: "test_2063_cat_b", evidence: { fee_name: "Returned item fee" } });
+    // The live fee's own name, when the row records none.
+    await feedback("extract", kind, BANKS[2], { feePublishedId: await liveFee(BANKS[2], "Returned Item", 30), key: "test_2063_cat_b" });
+    // Not read: a stage with no fee, and a row older than the week.
+    await feedback("read", kind, BANKS[1], { key: null, evidence: { old_name: "NSF Item Returned" } });
+    await feedback("extract", kind, BANKS[1], { daysAgo: 9, evidence: { old_name: "NSF Item Returned" } });
+
+    const summary = await readErrorClasses(raw as unknown as Db);
+    const mine = summary.classes.filter((cls) => cls.kind === kind);
+    // The category view still sees only the two banks that share a category; the name view sees all three.
+    expect(mine.map((cls) => [cls.key, cls.owner, cls.banks, cls.rows, cls.categories])).toEqual([
+      [`extract:${kind}:name:nsf`, "knox", 3, 3, ["test_2063_cat_a", "test_2063_cat_b"]],
+      [`extract:${kind}:category:test_2063_cat_b`, "knox", 2, 2, undefined],
+    ]);
+    expect(mine[0].exampleInstitutions).toEqual(BANKS);
+    expect(summary.nameFamilyClasses).toBeGreaterThanOrEqual(1);
+    expect(summary.nameRowsRead).toBeGreaterThanOrEqual(3);
+  });
+
   it("groups live wrong amounts by the layout around the fee, read from the document Knox used, and counts rows today's check passes (#2067)", async () => {
     // The feedback rows name no document; the layout comes from the live fee's raw row.
     for (const [bank, name, amount] of [[BANKS[0], "Box 2063 Small/Year", 19], [BANKS[1], "Box 2063 Medium/Year", 21], [BANKS[1], "Box 2063 Small/Year", 14]] as const) {
