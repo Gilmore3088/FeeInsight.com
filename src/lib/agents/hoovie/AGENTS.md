@@ -52,7 +52,7 @@ vault's account and bucket, under `public-data-cold/`, or `R2_COLD_BUCKET`). The
 
 | Table | Hot | Cold |
 |---|---|---|
-| `institution_call_report_items` | newest 8 report dates per source (`ffiec`, `ncua`) | every older report date, one file per source and date |
+| `institution_call_report_items` | newest 12 report dates per source (`ffiec`, `ncua`) | every older report date, one verified file per source and date; POR identity witnesses stay hot |
 | `area_statistics` | all of it | not tiered yet: 29 sources, three period shapes and struck-row rules need a per-source policy first |
 
 - **Plan (runs daily).** In Atlas's storage step, on its one connection with a 10 s statement
@@ -63,9 +63,11 @@ vault's account and bucket, under `public-data-cold/`, or `R2_COLD_BUCKET`). The
   `cold-files.ts`'s `jsonl.gz` format, reads it back, checks the SHA-256 and row count, and records
   one verified row in `public_data_cold_files`. At most one date a run. It writes no existing row.
   Turned on by PR after James's yes.
-- **Prune (not built).** Removing the hot rows of a verified file is a production data change and
-  waits for James's yes, with the plan's dry-run count and size. Before it, the loaders' first
-  quarters must sit at or after the cold boundary, or a re-read loads the pruned rows again.
+- **Prune (implemented, off).** `call-period-prune.ts` verifies current logical rows against the
+  archive under a short-wait writer lock, keeps twelve newer quarters and the small POR identity
+  witnesses, then atomically removes financial detail and marks the index. The compact ingestion
+  function prevents reintroduction of archived detail. Current counts, consumer acceptance and a
+  restore rehearsal precede production approval; the rollout is `docs/plans/database-growth-controls-2026-10-25.md`.
 - **Read.** `src/lib/data-catalog/cold-reads.ts`: `queryData`'s `call:` measures read a date from its
   file only when its index row has `pruned_at` set, behind the hot rows, through the same citation,
   at most four files a question, each checked against its index row first.
@@ -257,3 +259,12 @@ makes it due at once; it is a priority source, so it runs before the backfill co
 Readers: `data-store/call-reports.ts` and the district/state hub. While the table is missing or
 empty they fall back to the per-request SQL (`call-reports-legacy.ts`) and log a warning.
 `call-report-quarters.db.test.ts` proves both paths return the same numbers.
+
+## Compact public-data storage
+
+Migration 78 adds `call_report_item_definitions`, a private `call_report_item_facts` invoker view,
+unchanged-aware compact ingestion and bounded metadata conversion/expansion. Compatible readers
+fall back before migration. `storage-compaction.ts` runs inside Atlas's existing storage step,
+off by default: at most 5,000 rows per table, exact HMDA before-images, malformed rows retained.
+HMDA preserves every statistic in versioned tuples; the manifest-pinned 2025 year is excluded.
+The migration changes no existing observations. See the dated rollout for acceptance and rollback.

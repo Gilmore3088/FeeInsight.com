@@ -1,5 +1,7 @@
 import { ncuaCallMeasure } from "@/lib/data-catalog/ncua-call-measures";
 import { sql } from "./connection";
+import { readColdCallRows, type ColdFileRef } from "@/lib/data-catalog/cold-reads";
+import { inSavepoint } from "@/lib/agents/savepoint";
 
 /**
  * A live re-read of the filing rows a Hamilton answer's supported filing claims rest on (#1077,
@@ -12,8 +14,9 @@ import { sql } from "./connection";
  *   the prior quarter's year to date in the same year (Q1 as filed), the split `QUARTER_SC` makes
  *   (call-report-sql.ts); with no prior quarter on file there is no live quarter.
  * - `institution_call_report_items`: the NCUA line with the measure's own item code, stored unit
- *   and period basis, as stored (dollars or a count, as `queryData` returns it). A quarter pruned to
- *   a cold file (#1870, waiting on James) is not read here and so reads as missing.
+ *   and period basis, as stored (dollars or a count, as `queryData` returns it). A pruned quarter
+ *   is re-read from its verified archive on exactly the same terms; storage movement is not a
+ *   missing fact. Corrupt, incomplete or unavailable archives remain missing.
  */
 
 export type FilingRereadTable = "institution_financial_records" | "institution_call_report_items";
@@ -87,6 +90,8 @@ export async function readFilingValues(keys: readonly FilingRereadKey[], db: typ
   const out = new Map<string, number | null>();
   const records = keys.filter((k) => k.table === "institution_financial_records" && RECORD_FIELDS[k.metric] && QUARTER_END.test(k.reportDate));
   const calls = keys.filter((k) => k.table === "institution_call_report_items" && k.source === "ncua" && QUARTER_END.test(k.reportDate));
+  const archiveIndex = new Map<string, Promise<ColdFileRef | null>>();
+  const archiveReads = new Map<string, ReturnType<typeof readColdCallRows>>();
   for (const key of keys) out.set(key.id, null);
 
   if (records.length > 0) {
@@ -119,7 +124,25 @@ export async function readFilingValues(keys: readonly FilingRereadKey[], db: typ
        LIMIT 1
     `;
     // The measure's stored unit is dollars or a count, as queryData returns it: no rescaling.
-    out.set(key.id, numberOrNull(row?.value));
+    if (row) { out.set(key.id, numberOrNull(row.value)); continue; }
+    if (!archiveIndex.has(key.reportDate)) archiveIndex.set(key.reportDate, inSavepoint(db, async (scope) => {
+      const [file] = await scope<Array<{ source: string; period: string; object_key: string; row_count: string; sha256: string }>>`
+        SELECT source,period,object_key,row_count,sha256 FROM public_data_cold_files
+         WHERE table_name=${"institution_call_report_items"} AND source='ncua' AND period=${key.reportDate}
+           AND pruned_at IS NOT NULL AND verified_at IS NOT NULL
+      `;
+      return file ? {source:file.source,period:file.period,objectKey:file.object_key,rowCount:Number(file.row_count),sha256:file.sha256} : null;
+    }).catch(() => null));
+    const file = await archiveIndex.get(key.reportDate)!;
+    if (!file) continue;
+    const cacheKey = `${key.reportDate}|${key.metric}`;
+    if (!archiveReads.has(cacheKey)) archiveReads.set(cacheKey, readColdCallRows([file], {
+      itemKey: measure.key,
+      institutionIds: [...new Set(calls.filter((k) => k.reportDate===key.reportDate && k.metric===key.metric).map((k) => k.institutionId))],
+    }));
+    const archived = await archiveReads.get(cacheKey)!;
+    if (archived.failed.length || archived.incomplete?.length) continue;
+    out.set(key.id, numberOrNull(archived.rows.find((r) => r.institution_id===key.institutionId)?.value));
   }
   return out;
 }

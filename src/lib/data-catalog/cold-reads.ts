@@ -16,7 +16,6 @@ import { MAX_COHORT_REPORTERS } from "./call-cohort-history";
 
 /** Most cold files one query reads; older quarters need a narrower period. */
 export const MAX_COLD_FILES_PER_QUERY = 4;
-const INDEX_CACHE_MS = 10 * 60 * 1000;
 
 export interface ColdFileRef {
   source: string;
@@ -26,16 +25,15 @@ export interface ColdFileRef {
   sha256: string;
 }
 
-let indexCache: { at: number; files: ColdFileRef[] } | null = null;
-
 /** Test hook. */
 export function clearColdIndexCache(): void {
-  indexCache = null;
+  // Kept for callers from before atomic pruning; index reads now always see committed changes.
 }
 
 /** Pruned call-report periods that live only in files. Empty when the index table is missing or unreadable. */
-export async function prunedCallFiles(now = Date.now()): Promise<ColdFileRef[]> {
-  if (indexCache && now - indexCache.at < INDEX_CACHE_MS) return indexCache.files;
+export async function prunedCallFiles(): Promise<ColdFileRef[]> {
+  // Never reuse the period list across queries: a newly pruned period must become readable
+  // immediately in every instance, including an instance that previously saw an empty list.
   let files: ColdFileRef[] = [];
   try {
     const rows = await sql<Array<{ source: string; period: string; object_key: string; row_count: string | number; sha256: string }>>`
@@ -47,7 +45,6 @@ export async function prunedCallFiles(now = Date.now()): Promise<ColdFileRef[]> 
   } catch {
     files = [];
   }
-  indexCache = { at: now, files };
   return files;
 }
 

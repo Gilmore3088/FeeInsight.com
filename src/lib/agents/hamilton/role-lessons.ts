@@ -138,6 +138,16 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     since: "2026-10-25",
   },
   {
+    id: "issue-1672-hold-never-waits-for-a-reread",
+    agent: "hamilton",
+    stage: "publish",
+    lesson: "When a publish check needs a fact a later read could fill, do not leave a live fee waiting on that read: a superseded copy is never read again. Read the fact from the fee's own stored text the same way the reader does, and act on it.",
+    why: "The account type hold left a live monthly fee with no stored account waiting for a re-read to fill it, but its schedule copy had been superseded, so it was never read again; the stored text showed it was the money market column's $10 fee, live as consumer checking (#1672).",
+    evidence: { issues: [1672], prs: [2678], files: ["src/lib/agents/hamilton/account-type-hold.ts", "src/lib/agents/hamilton/account-type-hold.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
+  {
     id: "issue-1916-refile-a-live-fee-in-place",
     agent: "hamilton",
     stage: "publish",

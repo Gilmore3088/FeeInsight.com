@@ -82,7 +82,8 @@ describe("resolvePeerSet", () => {
     unsafe().mockResolvedValue([{ id: 7 }]);
     await resolvePeerSet({ charter_type: "bank", nearest: 20 }, BANK);
     const [query, params] = unsafe().mock.calls[0];
-    expect(query).toContain("EXISTS (SELECT 1 FROM published_fee_catalog");
+    expect(query).toContain("WITH eligible AS MATERIALIZED");
+    expect(query).toContain("SELECT DISTINCT institution_id FROM published_fee_catalog WHERE review_status = 'approved'");
     expect(query).toMatch(/ORDER BY ABS\(s\.asset_size - \$\d+::bigint\), s\.id LIMIT \$\d+/);
     expect(params.slice(-2)).toEqual([800_000, 20]);
   });

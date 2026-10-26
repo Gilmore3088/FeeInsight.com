@@ -1920,6 +1920,16 @@ v120 (#1513): two category reads that filed a fee under another fee's name.
   Charge" after a minimum balance condition, live 88206), a region, direction, product or audience before
   (`FAMILY_QUALIFIER`), or a title no rule files keeps the read. Oct 26: 1 live fee of 7 with the shape.
 
+v121 (#1672): a table with no label column records the account of a monthly fee cell from its own
+column. The header row must name one account in every cell ("Savings Account | Checking Account |
+Money Market | Certificate Accounts | Holiday Account"); feature rows under it ("0% | 0% | 0.50% APY",
+"Does not earn dividends | ...") are climbed past. The price row's first cell must be a feature cell
+(a price, or "Label: value"), since a bare label means a label column, and the price cell must hold
+the fee's own name ("Monthly Service Charge ... $5.00 | Minimum deposit/balance ... $5.00" prices the
+first column). Account product only. Hamilton's account-type hold reads stored rows with no product
+the same way (`tableColumnProduct`, behind `ACCOUNT_TYPE_COLUMN_READ_LIVE`, off), because a
+superseded copy is never read again.
+
 ## Darwin's re-read requests (`reread-feedback.ts`, #1511)
 
 Darwin's live fragment check (`darwin/live-fragment-check.ts`) writes one `pipeline_feedback` row of
@@ -2173,7 +2183,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v120 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v121 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v10 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

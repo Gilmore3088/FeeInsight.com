@@ -346,7 +346,7 @@ function accountBlock(text: string, excerpt: string): AccountBlock | null {
  * column of any account, so a business or savings table's fee never takes a heading above the table.
  * Null when no price cell or no header row of the same width names an account there.
  */
-export function tableColumnProduct(text: string, excerpt: string, amount: number): string | null {
+export function tableColumnProduct(text: string, excerpt: string, amount: number, feeName?: string | null): string | null {
   const lines = text.split(/\n+/).map(squash).filter(Boolean);
   const at = feeLineIndex(lines, excerpt);
   if (at < 0 || !lines[at].includes("|")) return null;
@@ -355,7 +355,7 @@ export function tableColumnProduct(text: string, excerpt: string, amount: number
   const columns = cells
     .map((cell, index) => ({ index, prices: amountsIn(cell).map((found) => Math.round(found.value * 100)) }))
     .filter((cell) => cell.index > 0 && cell.prices[0] === cents);
-  if (columns.length !== 1) return null;
+  if (columns.length !== 1) return unlabelledHeaderColumn(lines, at, cells, cents, feeName);
   for (let index = at - 1; index >= Math.max(0, at - 15); index -= 1) {
     // A line that is no table row ends the table: a header above it is another table's.
     if (!lines[index].includes("|")) break;
@@ -373,6 +373,52 @@ export function tableColumnProduct(text: string, excerpt: string, amount: number
     const name = row[columns[0].index].replace(/[*†‡¹²³⁴⁵⁶⁷⁸⁹]+$/, "").trim();
     if (namesNoAccount(name)) return null;
     if (ACCOUNT_KIND_HEADING.test(name) || ACCOUNT_TYPE_HEADING.test(name) || distinctAccountName(name)) return name;
+  }
+  return unlabelledHeaderColumn(lines, at, cells, cents, feeName);
+}
+
+/** Letters only, lower case, single spaces: "Monthly service fee1:" reads "monthly service fee". */
+const nameKey = (value: string) => value.toLowerCase().replace(/[^a-z]+/g, " ").trim();
+const headerCell = (cell: string) => cell.replace(/[*†‡¹²³⁴⁵⁶⁷⁸⁹]+$/, "").trim();
+/** A header cell that names one account: a kind ("Savings Account", "Money Market") or a product. */
+const namesOneAccount = (cell: string) =>
+  Boolean(cell) && !namesNoAccount(cell) && (ACCOUNT_KIND_HEADING.test(cell) || ACCOUNT_TYPE_HEADING.test(cell) || distinctAccountName(cell) !== null);
+
+/**
+ * v121 (#1672): a table with no label column, whose header row names one account per column
+ * ("Savings Account | Checking Account | Money Market | Certificate Accounts | Holiday Account") and
+ * whose rows under it are the accounts' features, one cell each ("Min Balance: $1,000.00", "No monthly
+ * fee, if the Min balance is maintained; otherwise $10.00"). The price's own column names its account,
+ * the first column included. Every cell of the header must name an account, so a feature row ("0% |
+ * 0% | 0.50% APY", "Does not earn dividends | ...") is climbed past, never read as the header; a row of
+ * another width with no price, a labelled header, or a line that is no table row ends the climb.
+ * Each cell carries its own label here, so the price cell must also hold the fee's own name: "Monthly
+ * Service Charge (if balance falls below $100) ... $5.00 | Minimum deposit/balance ... $5.00" (inst
+ * 6636, doc 12872) prices the charge in the first column, not the second column's $5 balance.
+ */
+function unlabelledHeaderColumn(lines: string[], at: number, cells: string[], cents: number, feeName: string | null | undefined): string | null {
+  const columns = cells
+    .map((cell, index) => ({ index, prices: amountsIn(cell).map((found) => Math.round(found.value * 100)) }))
+    .filter((cell) => cell.prices[0] === cents);
+  if (columns.length !== 1 || cells.length < 2) return null;
+  const key = nameKey(feeName ?? "").split(" ").slice(0, 3).join(" ");
+  if (!key || !` ${nameKey(cells[columns[0].index])} `.includes(` ${key} `)) return null;
+  // The price row's first cell must be one account's feature too (a price, or "Maintenance Fee: ..."
+  // in the cell). A bare label ("Monthly fee ...... | $8") means a label column: its header's first
+  // cell is a label or a page column's heading, and the labelled reader above decides.
+  if (amountsIn(cells[0]).length === 0 && !/:\s*\S/.test(cells[0])) return null;
+  for (let index = at - 1; index >= Math.max(0, at - 15); index -= 1) {
+    if (!lines[index].includes("|")) return null;
+    const row = lines[index].split("|").map(squash);
+    if (row.length !== cells.length) {
+      if (!row.some((cell) => cell.includes("$"))) return null;
+      continue;
+    }
+    if (row.some((cell) => cell.includes("$"))) continue;
+    const header = row.map(headerCell);
+    if (header.every(namesOneAccount)) return header[columns[0].index];
+    // A labelled header row (read above) is another kind of table: it is not climbed past.
+    if (TABLE_HEADER_LABEL.test(row[0])) return null;
   }
   return null;
 }
@@ -489,7 +535,7 @@ export function accountProductFor(
   const own =
     usable(candidate.lineup?.productName) ??
     usable(candidate.amount == null ? null : accountTableProduct(text, candidate.excerpt, candidate.amount)) ??
-    usable(candidate.amount == null ? null : tableColumnProduct(text, candidate.excerpt, candidate.amount));
+    usable(candidate.amount == null ? null : tableColumnProduct(text, candidate.excerpt, candidate.amount, candidate.feeName));
   const named = usable(productNameFromFeeName(fee));
   // A fee whose own name says checking is a checking account's, even when its name gives no product
   // ("Enjoy! Rewards Checking monthly service fee" under a "SAVINGS" heading, #1598 review).

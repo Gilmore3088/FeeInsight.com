@@ -221,7 +221,7 @@ export async function resolvePeerInstitutionIds(
     if (!subject || !Number.isFinite(own) || own <= 0) throw new PeerSetError("This institution has no total assets on record, so nearest cannot be used for it");
     conditions.push("s.asset_size IS NOT NULL");
     conditions.push(activeInstitutionFilter("s"));
-    conditions.push("EXISTS (SELECT 1 FROM published_fee_catalog p WHERE p.institution_id = s.id AND p.review_status = 'approved')");
+    conditions.push("s.id IN (WITH eligible AS MATERIALIZED (SELECT DISTINCT institution_id FROM published_fee_catalog WHERE review_status = 'approved') SELECT institution_id FROM eligible)");
     params.push(own);
     order = `ABS(s.asset_size - $${params.length}::bigint), s.id`;
     params.push(def.nearest);

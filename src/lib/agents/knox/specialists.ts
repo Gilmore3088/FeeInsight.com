@@ -376,7 +376,18 @@ import { rateFloorOf } from "@/lib/rate-floor";
 // Dry run (Oct 26, read-only, live fees): 2 live domestic wires read international (90381, 90382)
 // and 1 live non-network ATM fee is the overdraft transfer (128668), each checked on its stored line. They move only when their banks are next read, each
 // still checked by Darwin. The stale-read floor stays at v97. Name re-tidy stays at v27.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 120 } as const;
+// v121 (#1672): a table with no label column, whose header row names one account per column ("Savings
+// Account | Checking Account | Money Market | Certificate Accounts | Holiday Account") over rows of
+// each account's features, records the account of a monthly fee cell from its own column
+// (`unlabelledHeaderColumn` in lineup.ts). Every header cell must name an account, the price row's
+// first cell must be a feature cell (a price or "Label: value"), and the price cell must hold the
+// fee's own name. Lower East Side People's FCU's money market "No monthly fee ... otherwise $10.00"
+// (live 135709) recorded no account and stayed live as checking's fee. Account product only: no fee's
+// category or price changes, so the rules re-check this bump replays finds nothing new from it. Oct 26 dry run
+// on prod's live no-product monthly fees with a table line (776): the new read names an account for 10,
+// 3 of them not checking (135709, 56641, 60745); the account-type hold's column read takes those down
+// once switched on. The stale-read floor stays at v97. Name re-tidy stays at v27.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 121 } as const;
 
 export interface SpecialistRun {
   strategy: string;

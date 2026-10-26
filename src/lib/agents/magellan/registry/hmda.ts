@@ -1,4 +1,6 @@
 import { sql } from "@/lib/data-store/connection";
+import { packHmdaCosts } from "@/lib/regulatory/hmda-cost-storage";
+import { HMDA_REPAIR_MANIFEST } from "@/lib/agents/hoovie/hmda-repair-manifest";
 import {
   fetchAporTable,
   fetchHmdaPanel,
@@ -312,7 +314,8 @@ async function writeCosts(db: RegistryDb, year: number, cells: HmdaCostCell[], s
         discount_points_median: c.costs.discount_points.median,
         lender_credits_n: c.costs.lender_credits.n,
         lender_credits_median: c.costs.lender_credits.median,
-        cost_detail: c.costs,
+        // This year's exact row hashes are pinned by the separately reviewed identity repair.
+        cost_detail: year === HMDA_REPAIR_MANIFEST.year ? c.costs : packHmdaCosts(c.costs),
       })),
     );
     const result = await db`
