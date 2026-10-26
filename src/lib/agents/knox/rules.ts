@@ -833,6 +833,17 @@ const PERCENT_PATTERN = /(\d{1,2}(?:\.\d{1,3})?)\s*%/;
 export const RANGE_JOINER = /^\s*(?:-|–|—|to)\s*$/i;
 export const ZERO_CELL = /^(?:free|no charge|no fee|none|waived|n\/c|\$\s*0(?:\.00)?)$/i;
 const NEGATIVE_FEE_LANGUAGE = /\b(no (?:[a-z]+ ){0,2}(?:fee|charge)s?|free|not charged|without charge)\b/i;
+/**
+ * v127 (#1918): a note that the fee is free with an account or condition ("Money Orders (Free with
+ * Platinum Checking) | $5.00", "Notary Fee (FREE for Members) | $10.00", "Bill Pay (Free with
+ * E-Statements) | $6.00"), or that a few are free ("Non-AgFed ATM Withdrawals (3 FREE each month) |
+ * $3.50"), waives the price for some; everyone else pays it. It is not "no fee", so the free word in
+ * it never drops the row, and the fee is read as waivable.
+ */
+const FREE_FOR_NOTE = /\((?=[^()$]*\b(?:free\s+(?:with|for|to)|(?:\d+|one|two|three|four|five|six)\s+free)\b)[^()$]*\)/gi;
+const withoutFreeForNotes = (text: string): string => text.replace(FREE_FOR_NOTE, " ");
+const hasFreeForNote = (text: string): boolean => new RegExp(FREE_FOR_NOTE.source, "i").test(text);
+const FREE_NOTE_ACCOUNT_KEYS = new Set(["monthly_maintenance", "minimum_balance"]);
 export const WAIVER_LANGUAGE = /\bwaiv(?:e|ed|er|able)\b/i;
 export const GENERIC_SCHEDULE_LANGUAGE = /\b(schedule of fees|fee schedule|truth in savings|effective date|member fdic)\b/i;
 /**
@@ -2196,7 +2207,15 @@ export function paperStatementRead(candidate: ExtractedFeeCandidate, segment: st
 const PAPER_STATEMENT_NAME = /\b(?:paper|printed|mailed)\b[^|]{0,12}\bstatements?\b/i;
 
 export function extractFromSegment(segment: string): ExtractionRulesResult {
-  const result = readSegment(segment);
+  const read = readSegment(segment);
+  // v127 (#1918): a row a free note no longer drops is read only under a name that starts as a name
+  // and holds no price ("in ATM fee refunds each month ..." and "(Monthly Fee. Over 55 Free)" are not).
+  // An account's monthly fee "free with" a condition stays the account expert's read, as before.
+  const result = hasFreeForNote(segment)
+    ? { ...read, candidates: read.candidates.filter((candidate) =>
+        /^[A-Z0-9]/.test(candidate.feeName) && amountsIn(candidate.feeName).length === 0 &&
+        (!FREE_NOTE_ACCOUNT_KEYS.has(candidate.canonicalHint) || !hasFreeForNote(candidate.feeName))) }
+    : read;
   if (!result.candidates.some((candidate) => candidate.canonicalHint === "monthly_maintenance")) return result;
   return { ...result, candidates: result.candidates.map((candidate) => paperStatementRead(candidate, segment)) };
 }
@@ -2458,7 +2477,8 @@ function readPlainSegment(segment: string): ExtractionRulesResult {
     : trailingFree || freeCells.some(Boolean)
       ? cells!.filter((cell, index) => !freeCells[index] && !(trailingFree && index >= cells!.length - 2)).join(CELL_SEPARATOR)
       : segment;
-  if (NEGATIVE_FEE_LANGUAGE.test(freeColumns ? cells![0] : prefix) || (NEGATIVE_FEE_LANGUAGE.test(conditionText) && !WAIVER_LANGUAGE.test(conditionText))) {
+  if (NEGATIVE_FEE_LANGUAGE.test(withoutFreeForNotes(freeColumns ? cells![0] : prefix)) ||
+      (NEGATIVE_FEE_LANGUAGE.test(withoutFreeForNotes(conditionText)) && !WAIVER_LANGUAGE.test(conditionText))) {
     return result;
   }
   if (freeColumns && hint && !notAZeroPrice(hint, cells![0]) && usableName(nameFrom(cells![0]))) {
@@ -2494,7 +2514,7 @@ function readPlainSegment(segment: string): ExtractionRulesResult {
   const beforeOrPastWaiver = (amount: AmountMatch) => amount.start < waiverAt || amount.start >= waiverEnd;
   const feeAmounts = amounts.filter((amount) => beforeOrPastWaiver(amount) && !inLabel(amount) && !isConditionAmount(segment, amount));
   if (feeAmounts.length === 0) return result;
-  const waivable = Number.isFinite(waiverAt);
+  const waivable = Number.isFinite(waiverAt) || hasFreeForNote(segment);
   // v110 (#1918): a price past a bracketed waiver is named without that waiver.
   const ownWords = (from: number, amount: AmountMatch) =>
     amount.start >= waiverEnd ? withoutBracketedWaiver(segment.slice(from, amount.start)) : segment.slice(from, amount.start);
@@ -2840,6 +2860,53 @@ export function columnContinuations(text: string): string[] {
 }
 
 /**
+ * v127 (#1918): a two-column PDF row whose left price cell was empty on the name's line. The reader
+ * keeps only the cells it sees, so the columns shift: "Wire Transfers – Domestic | Bill Pay Return
+ * Item Fee | $10.00" over "(Free with Platinum Checking) | $20.00 | (per item returned by payee)"
+ * (Bellco). Read as printed, the two names glue into one fee at the right column's price and the
+ * left fee's price is lost. The left name's price is the one after its note on the next line, and
+ * the right name keeps the price on its own line. A left name alone on its line ("Wire Transfers –
+ * International" over "(Free with Platinum Checking) | $40.00") takes the price under its note the
+ * same way. Only on a page laid out as "name | price | name | price"; of two glued names one must
+ * name a fee, a lone name must name one, and the note must open with "(". The two lines are replaced by one row per fee, so the line rules
+ * read each fee at its own price; a fee the next line starts after the note keeps its own row.
+ */
+export function withShiftedColumnsRebuilt(text: string): string {
+  const lines = text.split("\n");
+  const cellsOf = (line: string) => line.replace(/\s+/g, " ").trim().split(CELL_SEPARATOR).map((cell) => cell.trim());
+  const priceOnly = (cell: string | undefined) => cell != null && PRICE_ONLY_CELL.test(cell);
+  const nameCell = (cell: string | undefined) =>
+    cell != null && /[a-z]{3,}/i.test(cell) && amountsIn(cell).length === 0 && cell.split(" ").length <= 10;
+  const feeName = (cell: string | undefined) => nameCell(cell) && classifyPatternKey(cell!) !== null;
+  const noteCell = (cell: string | undefined) => cell != null && /^\(/.test(cell) && amountsIn(cell).length === 0;
+  const fourColumn = lines.filter((line) => {
+    const cells = cellsOf(line);
+    return cells.length === 4 && priceOnly(cells[1]) && priceOnly(cells[3]);
+  }).length;
+  if (fourColumn < 3) return text;
+  const closed = (note: string) => (/\)\s*$/.test(note) ? note : `${note})`);
+  const out: string[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const cells = cellsOf(lines[index]);
+    const next = index + 1 < lines.length ? cellsOf(lines[index + 1]) : [];
+    const shifted = noteCell(next[0]) && priceOnly(next[1]);
+    if (shifted && cells.length === 3 && nameCell(cells[0]) && nameCell(cells[1]) && (feeName(cells[0]) || feeName(cells[1])) && priceOnly(cells[2])) {
+      out.push(`${cells[0]} ${closed(next[0])}${CELL_SEPARATOR}${next[1]}`);
+      const rightNote = next.length === 3 && noteCell(next[2]) ? ` ${closed(next[2])}` : "";
+      out.push(`${cells[1]}${rightNote}${CELL_SEPARATOR}${cells[2]}`);
+      if (next.length === 4) out.push(next.slice(2).join(CELL_SEPARATOR));
+      index += 1;
+    } else if (shifted && cells.length === 1 && /^[A-Z]/.test(cells[0]) && feeName(cells[0]) && next.length === 2) {
+      out.push(`${cells[0]} ${closed(next[0])}${CELL_SEPARATOR}${next[1]}`);
+      index += 1;
+    } else {
+      out.push(lines[index]);
+    }
+  }
+  return out.join("\n");
+}
+
+/**
  * v35: a fee name that wraps onto a second or third line, with its price alone on the line
  * after ("Overdraft Fee (per item, both returned or paid created by check, in person
  * withdrawal," / "ATM withdrawal, or other electronic means. Maximum of 6 fees per day.)" /
@@ -3022,7 +3089,8 @@ export function extractCandidatesFromText(input: string): ExtractionRulesResult 
       excerpt: row.ownText, ownedPolicy: true, frequency: detectFrequency(row.ownText), confidence: .94, waivable: false });
   }
   const owned = recognizedFeeBullets(otherPrices);
-  const legacyText = withoutFeeBullets(otherPrices, owned);
+  // v127 (#1918): shifted two-column PDF rows are rebuilt before any line is read.
+  const legacyText = withShiftedColumnsRebuilt(withoutFeeBullets(otherPrices, owned));
   for (const row of owned) {
     if (row.problem || row.price == null || row.priceText == null) {
       countDrop(result, "wrapped_bullet_unresolved");

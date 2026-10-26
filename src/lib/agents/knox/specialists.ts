@@ -437,7 +437,16 @@ import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 // line just above, only when that sentence prints the fee's own price (`accountSubjectProduct` in
 // `lineup.ts`). Account product only; names, prices and categories are unchanged. The stale-read floor
 // stays at v97. Name re-tidy stays at v27.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 126 } as const;
+// v127 (#1918): a note that a fee is free with an account or condition, or that a few are free
+// ("Money Orders (Free with Platinum Checking) | $5.00", "ATM Withdrawals (3 FREE each month) | $3.50"),
+// no longer drops the row as "no fee"; the price is read, as waivable (`FREE_FOR_NOTE` in rules.ts).
+// An account's own monthly or minimum balance fee with such a note stays the account expert's read.
+// And a two-column PDF row whose left price cell was empty on the name's line ("Wire Transfers –
+// Domestic | Bill Pay Return Item Fee | $10.00" over "(Free with Platinum Checking) | $20.00 | ...")
+// is rebuilt as one row per fee before any line is read (`withShiftedColumnsRebuilt`). The stale-read
+// floor stays at v97; Hamilton's rules re-check revisits each live document once for the new
+// signature and asks Knox to read again where these rules read a fee that is not live.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 127 } as const;
 
 export interface SpecialistRun {
   strategy: string;

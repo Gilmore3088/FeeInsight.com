@@ -756,4 +756,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract"],
     since: "2026-10-26",
   },
+  {
+    id: "issue-1918-free-note-is-a-waiver",
+    agent: "knox",
+    stage: "extract",
+    lesson: "Read a price whose note says it is free with an account or condition (\"Money Orders (Free with Platinum Checking) | $5.00\", \"ATM Withdrawals (3 FREE each month) | $3.50\"): the note waives the fee for some, and everyone else pays the printed price, so it is a waivable fee, not \"no fee\". And when a two-column PDF row prints a name with no price beside it and the next line opens with that name's note and a price, the price under the note is that name's, not the next column's.",
+    why: "Bellco's money order, cashier's check, domestic wire ($20) and international wire ($40) were never stored: every row carried \"(Free with Platinum Checking)\" and Knox dropped any row with the word free in its name, and the wire rows' empty price cell shifted the columns so \"Wire Transfers – Domestic | Bill Pay Return Item Fee\" glued into one $10 NSF read that Darwin rightly rejected. On Oct 26 the same free-note drop hid 45 fee prices at 37 banks that no other read had published.",
+    evidence: { issues: [1918], prs: [], files: ["src/lib/agents/knox/rules.ts", "src/lib/agents/knox/free-note-prices.test.ts", "docs/project/findings/2026-10-26-free-note-drops-priced-row.md"] },
+    appliesTo: ["extract"],
+    since: "2026-10-26",
+  },
 ];
