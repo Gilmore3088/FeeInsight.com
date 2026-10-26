@@ -9,10 +9,10 @@ import { accountSubjectProduct, withLineupFromText, type AccountLineup } from "@
 type SqlTag = typeof sql;
 
 /**
- * #1912 current-data recovery. Since v125 Knox records, as a last resort, the account a monthly
+ * #1912 current-data recovery. Since v126 Knox records, as a last resort, the account a monthly
  * maintenance or minimum balance read's own sentence names as subject (`accountSubjectProduct`,
  * "The M&T Preferred Money Market account has a $20 monthly maintenance charge."). A live fee read
- * before v125 keeps its NULL product, and a re-read of the same document meets the raw-row insert
+ * before v126 keeps its NULL product, and a re-read of the same document meets the raw-row insert
  * conflict and keeps the existing row. This step is the explicit recovery, the sibling of
  * `ancillary-owner-correct.ts`: it re-reads the current text of each document with a live Knox
  * monthly maintenance or minimum balance fee whose raw row has no product, and when today's lineup

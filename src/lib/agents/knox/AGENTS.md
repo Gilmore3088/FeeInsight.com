@@ -2001,7 +2001,23 @@ account's NSF and monthly maintenance fees (154634, 154635). A row naming a depo
 a stop payment, and a $0 in words keep their read. Darwin re-checks live fees with the same rule
 (`darwin/loan-section-check.ts`, switch off).
 
-v125 (#1912): a monthly maintenance or minimum balance read whose row, table column, heading and own
+v125 (#1094 item 3): pass 1 skips only the schedule's heading phrase, not the line that holds it. A
+segment matching `GENERIC_SCHEDULE_LANGUAGE` ("Fee Schedule", "Schedule of Fees", "Truth in Savings",
+"Member FDIC") was dropped whole, so a PDF flattened to one line, or "Fee Schedule Overdraft Fee $35 Stop
+Payment $30", lost every fee on it. `readSegment` now cuts the segment at each phrase (with "and Charges"
+or "Disclosure" after it, "Equal Housing Lender" after "Member FDIC") and
+reads each piece that holds a dollar price on its own; capitalised section headings before the piece's
+first name ("DEPOSIT SERVICES MISCELLANEOUS SERVICES Cashier's Checks") are cut with `splitCapsHeading`
+only when the cut reads at least as many fees (a name in capitals, "OVERDRAFT ITEM Fee", is kept), and a
+footer's page number or web address is dropped from the start of the next piece. A phrase that names an
+audience ("Business Schedule of Fees", "Business Banking Fee Schedule") keeps the segment skipped whole: cutting it would cut the only word
+saying whose prices follow, and a business price would publish for everyone.
+A piece with no price is heading or boilerplate and yields nothing, so a heading-only line or a footer
+still reads nothing. A segment that also says "effective" ("Effective Date: ...", "will be $35 effective
+date January 1") stays skipped whole: a price not yet charged is R11 on #1094. Only segments holding the phrase read differently; the
+shadow lab's frozen cases are unchanged (ratchet gate: no loss, no gain).
+
+v126 (#1912): a monthly maintenance or minimum balance read whose row, table column, heading and own
 name give no account takes the account its own sentence names as subject, as a last resort
 (`accountSubjectProduct` in `lineup.ts`). The sentence sits on the fee's own line or the line just
 above it, opens with an article or possessive, names the account before "has", "carries", "charges",
@@ -2012,7 +2028,7 @@ one product name that names a kind of account or ends in "account"; "all account
 a bank's own name and disclosure titles never count, and two different subjects at the price give
 none. A fee whose own name says checking takes only a checking subject. No page title or address is
 read: M&T's page lists five other savings products. Account product only; the stale-read floor stays
-at v97. Live rows read before v125 keep their NULL product until the account-subject recovery below
+at v97. Live rows read before v126 keep their NULL product until the account-subject recovery below
 fills them (`account-subject-correct.ts`).
 
 ## Darwin's re-read requests (`reread-feedback.ts`, #1511)
@@ -2270,7 +2286,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v125 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v126 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v10 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

@@ -17,7 +17,7 @@ certificate, IRA, HSA or club account, and 40 of them pooled into 37 institution
 checking or unassigned rows.
 
 **Fix:**
-- Knox v125: `accountSubjectProduct` reads, as the last resort, the account a sentence on the fee's
+- Knox v126: `accountSubjectProduct` reads, as the last resort, the account a sentence on the fee's
   line or the line above names as subject at the fee's own price. No page title or address is read
   (M&T's page lists five other savings products).
 - Statistics method 23 (rule 11, `fee-product.ts` `isProductException` / `productExceptionSql`, with
