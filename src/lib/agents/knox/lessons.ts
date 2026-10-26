@@ -64,8 +64,17 @@ type SqlTag = typeof sql;
  * An amount, perk or name miss and an amount hold say nothing about the category and teach no
  * lesson here: Knox has no amount lesson yet (#2067), and a bad name goes to the re-read queue. The
  * takedown sync's copies of a correction (check `hamilton.admin_correction`) are skipped, since the
- * person's own row is the finding. Each extract step counts what it read by kind and verdict
- * (`loadKnoxFindingsRead`, `hand_findings_read` on the step).
+ * person's own row is the finding.
+ *
+ * Every finding is about a live fee, so Darwin already recorded that fee as `darwin_verified` under
+ * the category the finding rejects. Left in, that approval would put the finding's bank on both
+ * sides and no lesson would ever form; so a finding that calls a fee's category wrong supersedes
+ * Darwin's approval of that one fee (matched by its verified row, `published_fee_records.lineage_ref`),
+ * as a restore supersedes a takedown. Darwin's approvals of the bank's other fees still count.
+ *
+ * The lessons query also tallies every finding it read, all time, by kind and verdict, so the extract
+ * step shows what it read without a second scan (`loadKnoxLessonsAndFindings`,
+ * `hand_findings_read_all_time` on the step).
  */
 
 export const KNOX_LESSONS_VERSION = 5;
@@ -130,12 +139,13 @@ function nameKeySql(column: string): string {
 /**
  * Extract-stage holds, corrections and audit misses as category verdicts (v5): one row per side, with
  * `signal` null when the finding says nothing about the category. Columns: id, kind, verdict,
- * institution_id, name (the store's name key), raw_name, fee_key, signal. Static SQL, no parameters.
+ * institution_id, fee_verified_id (the verified row of the fee it is about), name (the store's name
+ * key), raw_name, fee_key, signal. Static SQL, no parameters; used as the `findings` CTE.
  */
 export function knoxFindingsSql(): string {
-  return `SELECT h.id, h.kind, h.verdict, h.institution_id, ${nameKeySql("h.raw_name")} AS name, h.raw_name, side.fee_key, side.signal
+  return `SELECT h.id, h.kind, h.verdict, h.institution_id, h.fee_verified_id, ${nameKeySql("h.raw_name")} AS name, h.raw_name, side.fee_key, side.signal
     FROM (
-      SELECT f.id, f.kind, f.institution_id,
+      SELECT f.id, f.kind, f.institution_id, pr.lineage_ref AS fee_verified_id,
              COALESCE(f.evidence->>'fee_name', f.evidence#>>'{before,feeName}') AS raw_name,
              f.canonical_fee_key AS before_key,
              f.evidence#>>'{after,canonicalFeeKey}' AS after_key,
@@ -148,12 +158,15 @@ export function knoxFindingsSql(): string {
                       WHEN f.evidence->>'cause' = 'wrong_category' THEN 'category' ELSE 'no_category_verdict' END
                ELSE
                  CASE WHEN EXISTS (SELECT 1 FROM pipeline_feedback r
-                                    WHERE r.kind = 'admin_correction_reversed' AND r.fee_published_id::text = f.evidence->>'new_fee_published_id') THEN 'withdrawn'
+                                    WHERE r.kind = 'admin_correction_reversed'
+                                      AND r.fee_published_id = CASE WHEN f.evidence->>'new_fee_published_id' ~ '^[1-9][0-9]{0,17}$'
+                                                                    THEN (f.evidence->>'new_fee_published_id')::bigint END) THEN 'withdrawn'
                       WHEN f.evidence#>>'{after,canonicalFeeKey}' IS NULL OR f.canonical_fee_key IS NULL THEN 'no_category_verdict'
                       WHEN f.evidence#>>'{after,canonicalFeeKey}' <> f.canonical_fee_key THEN 'category'
                       ELSE 'category_confirmed' END
              END AS verdict
         FROM pipeline_feedback f
+        LEFT JOIN published_fee_records pr ON pr.fee_published_id = f.fee_published_id
        WHERE f.about_stage = 'extract'
          AND f.signal = 'wrong'
          AND ((f.kind = 'audit_miss' AND f.reported_by = 'deming')
@@ -167,33 +180,27 @@ export function knoxFindingsSql(): string {
     ) AS side(fee_key, signal)`;
 }
 
-/** The findings' category verdicts: name, raw_name, fee_key, signal, institution_id. */
-export function knoxFindingVerdictsSql(): string {
-  return `SELECT hf.name, hf.raw_name, hf.fee_key, hf.signal, hf.institution_id FROM (${knoxFindingsSql()}) hf
-           WHERE hf.signal IS NOT NULL AND hf.fee_key IS NOT NULL AND hf.name <> ''`;
-}
+/** In a query with a `findings` CTE: the findings' category verdicts (name, raw_name, fee_key, signal, institution_id). */
+export const FINDING_VERDICTS_SQL = `SELECT name, raw_name, fee_key, signal, institution_id FROM findings
+           WHERE signal IS NOT NULL AND fee_key IS NOT NULL AND name <> ''`;
 
+/**
+ * In a query with a `findings` CTE, a join condition on feedback alias `f`: the finding that rejects
+ * the category of the very fee this `darwin_verified` row approved. Join it LEFT, alias `sv`, and keep
+ * rows where `sv.id IS NULL`.
+ */
+export const DARWIN_SUPERSEDED_ON = `f.kind = 'darwin_verified' AND sv.signal = 'wrong'
+              AND sv.fee_verified_id = f.fee_verified_id AND sv.fee_key = f.canonical_fee_key`;
+
+/** All-time tally of the extract-stage findings Knox read, by kind and verdict. */
 export type KnoxFindingsRead = Partial<Record<KnoxFindingKind, Partial<Record<KnoxFindingVerdict, number>>>>;
 
-/** The extract-stage findings Knox read, by kind and verdict, for the extract step's output. Empty on failure. */
+/** `name` of the lessons query's tally rows; never a lesson name (those are letters and spaces). */
+const FINDING_TALLY = "finding_tally:";
+
+/** The extract-stage findings Knox read, all time, by kind and verdict. Empty on failure. */
 export async function loadKnoxFindingsRead(db: SqlTag): Promise<KnoxFindingsRead> {
-  try {
-    return await inSavepoint(db, async (scope) => {
-      if (!(await feedbackSchemaReady(scope))) return {};
-      const rows = await scope<Array<{ kind: KnoxFindingKind; verdict: KnoxFindingVerdict; rows: number | string }>>`
-        SELECT kind, verdict, count(DISTINCT id)::int AS rows
-          FROM (${scope.unsafe(knoxFindingsSql())}) hf
-         GROUP BY kind, verdict
-         ORDER BY kind, verdict
-      `;
-      const read: KnoxFindingsRead = {};
-      for (const row of rows) read[row.kind] = { ...read[row.kind], [row.verdict]: Number(row.rows) };
-      return read;
-    });
-  } catch (error) {
-    console.error("loadKnoxFindingsRead failed:", error);
-    return {};
-  }
+  return (await loadKnoxLessonsAndFindings(db)).findingsRead;
 }
 
 function lessonKey(name: string, wrongKey: string, institutionId?: number | null): string {
@@ -218,10 +225,15 @@ export function lessonsFrom(rows: KnoxLesson[]): KnoxLessons {
 
 /** Reads the lessons; an empty set when the store is missing or the read fails. */
 export async function loadKnoxLessons(db: SqlTag): Promise<KnoxLessons> {
+  return (await loadKnoxLessonsAndFindings(db)).lessons;
+}
+
+/** The lessons, and the all-time tally of the findings they read (v5), from one query. Empty when the store is missing or the read fails. */
+export async function loadKnoxLessonsAndFindings(db: SqlTag): Promise<{ lessons: KnoxLessons; findingsRead: KnoxFindingsRead }> {
   try {
     const reference = await readReferenceEligibility(db);
     return await inSavepoint(db, async (scope) => {
-      if (!(await feedbackSchemaReady(scope))) return new Map();
+      if (!(await feedbackSchemaReady(scope))) return { lessons: new Map(), findingsRead: {} };
       const rows = await scope<Array<{ institution_id: number | string | null; name: string; wrong_key: string; right_key: string; wrong_banks: number | string; right_banks: number | string }>>`
         WITH restored AS MATERIALIZED (
           -- A fee Hamilton put back, under the category it went live with again.
@@ -234,23 +246,28 @@ export async function loadKnoxLessons(db: SqlTag): Promise<KnoxLessons> {
              AND COALESCE(r.evidence->>'restored_by', '') <> 'rules_recheck_restored:text_gone'
              AND r.canonical_fee_key IS NOT NULL
              AND fr.fee_name IS NOT NULL
+        ), findings AS MATERIALIZED (
+          -- v5: holds, corrections and audit misses filed against extract.
+          ${scope.unsafe(knoxFindingsSql())}
         ), judged AS (
           SELECT regexp_replace(btrim(lower(regexp_replace(f.evidence->>'fee_name', '[^A-Za-z ]+', ' ', 'g'))), '\\s+', ' ', 'g') AS name,
                  f.canonical_fee_key AS fee_key, f.signal, f.institution_id
             FROM pipeline_feedback f
             LEFT JOIN restored rs
               ON f.signal = 'wrong' AND rs.fee_raw_id = f.fee_raw_id AND rs.canonical_fee_key = f.canonical_fee_key
+            -- A finding on this very fee supersedes Darwin's approval of it (v5).
+            LEFT JOIN findings sv ON ${scope.unsafe(DARWIN_SUPERSEDED_ON)}
            WHERE f.about_stage = 'extract'
              AND f.evidence->>'fee_name' IS NOT NULL
              AND f.canonical_fee_key IS NOT NULL
              AND f.kind IN ('wrong_category', 'darwin_verified', 'answer_key')
              AND ${eligibleReferenceFeedbackSql(scope, "f", reference)}
              AND rs.fee_raw_id IS NULL
+             AND sv.id IS NULL
           UNION ALL
           SELECT name, canonical_fee_key, 'right', institution_id FROM restored
           UNION ALL
-          -- v5: holds, corrections and audit misses filed against extract, as category verdicts.
-          SELECT fv.name, fv.fee_key, fv.signal, fv.institution_id FROM (${scope.unsafe(knoxFindingVerdictsSql())}) fv
+          SELECT name, fee_key, signal, institution_id FROM (${scope.unsafe(FINDING_VERDICTS_SQL)}) fv
         ), families AS MATERIALIZED (
           SELECT name, ${scope.unsafe(familySql("name"))} AS family FROM (SELECT DISTINCT name FROM judged WHERE name <> '') d
         ), family_tally AS (
@@ -328,21 +345,33 @@ export async function loadKnoxLessons(db: SqlTag): Promise<KnoxLessons> {
          WHERE l.kind = 'name_label' AND l.signal = 'right'
            AND l.canonical_fee_key IS NOT NULL AND l.evidence->>'fee_name' IS NOT NULL
          LIMIT ${LESSON_LIMIT})
+        UNION ALL
+        -- v5: the all-time tally of the findings read, by kind (wrong_key) and verdict (right_key).
+        (SELECT NULL::bigint, ${FINDING_TALLY}::text, kind, verdict, count(DISTINCT id), 0
+          FROM findings GROUP BY kind, verdict)
       `;
-      return lessonsFrom(
-        rows.map((row) => ({
+      const findingsRead: KnoxFindingsRead = {};
+      const lessonRows: KnoxLesson[] = [];
+      for (const row of rows) {
+        if (row.name === FINDING_TALLY) {
+          const kind = row.wrong_key as KnoxFindingKind;
+          findingsRead[kind] = { ...findingsRead[kind], [row.right_key as KnoxFindingVerdict]: Number(row.wrong_banks) };
+          continue;
+        }
+        lessonRows.push({
           institutionId: row.institution_id === null ? null : Number(row.institution_id),
           name: row.name,
           wrongKey: row.wrong_key,
           rightKey: row.right_key,
           wrongBanks: Number(row.wrong_banks),
           rightBanks: Number(row.right_banks),
-        })),
-      );
+        });
+      }
+      return { lessons: lessonsFrom(lessonRows), findingsRead };
     });
   } catch (error) {
     console.error("loadKnoxLessons failed:", error);
-    return new Map();
+    return { lessons: new Map(), findingsRead: {} };
   }
 }
 

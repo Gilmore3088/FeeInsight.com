@@ -18,7 +18,7 @@ import {
   PAID_RETURNED_EVENT_FLAG, PAID_RETURNED_ELIGIBILITY_FLAG, type PaidReturnedUnit,
 } from "@/lib/custom-report/paid-returned-events";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists, type SpecialistRun } from "@/lib/agents/knox/specialists";
-import { applyKnoxLesson, loadKnoxFindingsRead, loadKnoxLessons, type KnoxFindingsRead } from "@/lib/agents/knox/lessons";
+import { applyKnoxLesson, loadKnoxLessonsAndFindings, type KnoxFindingsRead, type KnoxLessons } from "@/lib/agents/knox/lessons";
 import { emptyTakedownLessons, loadTakedownLessons, TAKEN_DOWN_REVIEW_FLAG, takedownLessonFlag, takedownLessonsFor, withCurrentTakedownLesson, type TakedownLessons } from "@/lib/agents/knox/takedown-lessons";
 import { candidateWriteFacts } from "./candidate-facts";
 import { monthlyAccountOwnerReview } from "./monthly-account-owners";
@@ -267,7 +267,7 @@ export interface RunKnoxExtractResult {
   /** Lessons read from the shared learning store, and fees they re-filed (`lessons.ts`). */
   lessonsLoaded: number;
   lessonRefiles: Record<string, number>;
-  /** v5: extract-stage holds, corrections and audit misses the lessons read, by kind and verdict. */
+  /** v5: all-time tally of the extract-stage holds, corrections and audit misses the lessons read, by kind and verdict. */
   handFindingsRead?: KnoxFindingsRead;
   /** Confirmed, still-down takedowns read before the run (`takedown-lessons.ts`). */
   takedownLessonsLoaded: number;
@@ -1609,9 +1609,10 @@ export async function runKnoxExtract(
       : [...new Set([...KNOX_PRIORITY_REREAD_IDS, ...(await loadMarketLeaderIds(db, { stateCode: options.stateCode ?? null }).catch(() => []))])];
   const rows = await selectTextArtifacts(db, limit, learning, currentCopy, options.institutionId, options.stateCode, priorityIds);
   const rowByDocumentTextId = new Map(rows.map((row) => [Number(row.document_text_id), row]));
-  const lessons = !dryRun && rows.length > 0 ? await loadKnoxLessons(db) : new Map();
-  // v5: the holds, corrections and audit misses filed against extract that those lessons read.
-  const handFindingsRead = !dryRun && rows.length > 0 ? await loadKnoxFindingsRead(db) : {};
+  // v5: the same query tallies, all time, the holds, corrections and audit misses filed against extract that the lessons read.
+  const { lessons, findingsRead: handFindingsRead } = !dryRun && rows.length > 0
+    ? await loadKnoxLessonsAndFindings(db)
+    : { lessons: new Map() as KnoxLessons, findingsRead: {} as KnoxFindingsRead };
   const lessonRefiles: Record<string, number> = {};
   const takedownLessons = !dryRun && rows.length > 0 ? await loadTakedownLessons(db,rows.map(row=>Number(row.institution_id))) : emptyTakedownLessons();
   const takedownHolds: Record<string, number> = {};
