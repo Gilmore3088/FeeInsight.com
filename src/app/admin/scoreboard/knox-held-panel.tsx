@@ -52,16 +52,16 @@ export function KnoxHeldPanel({ goal }: { goal: GoalScorecard }) {
               </tbody>
             </table>
             <p className="text-xs text-gray-700 dark:text-gray-300">
-              {n(pile.total)} held, {n(pile.setAside)} of them set aside.
+              {n(pile.total)} holds across the reasons, {n(pile.setAside)} of them set aside. A line held for two reasons is counted in both rows.
             </p>
             <p className="font-mono text-[10px] text-gray-400">query: {pile.query}</p>
           </>
         )}
       </div>
       <div>
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Lines leaving the held pile, week by week</p>
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">What happened to held lines, week by week</p>
         <p className="mt-1 text-xs text-gray-500">
-          From the counts each Knox extract step records in the run ledger. Weeks start Monday (UTC). Not counted: a held line that a new read of its document takes over, which the ledger does not count on its own. New held lines per week are not shown either: the ledger counts lines held per read, re-reads included, not new lines.
+          From the counts each Knox extract step records in the run ledger. Weeks start Monday (UTC). Sent to Darwin is the sum of the four columns after it, the lines that left the pile; set-aside lines stay in the pile, and back-on-hold lines are added to it. Not counted: a held line that a new read of its document takes over, which the ledger does not count on its own. New held lines per week are not shown either: the ledger counts lines held per read, re-reads included, not new lines.
         </p>
         {!exits ? (
           <p className="mt-2 text-xs text-gray-500">Could not be read.</p>
@@ -73,7 +73,7 @@ export function KnoxHeldPanel({ goal }: { goal: GoalScorecard }) {
                   <th scope="col" className="py-1 pr-4 font-semibold">Week of</th>
                   <th scope="col" className="py-1 pr-4 text-right font-semibold">Extract steps</th>
                   <th scope="col" className="py-1 pr-4 text-right font-semibold">Sent to Darwin</th>
-                  <th scope="col" className="py-1 pr-4 text-right font-semibold">Re-read</th>
+                  <th scope="col" className="py-1 pr-4 text-right font-semibold">Re-read and sent</th>
                   <th scope="col" className="py-1 pr-4 text-right font-semibold">Filed by name</th>
                   <th scope="col" className="py-1 pr-4 text-right font-semibold">Traced</th>
                   <th scope="col" className="py-1 pr-4 text-right font-semibold">Rates</th>
