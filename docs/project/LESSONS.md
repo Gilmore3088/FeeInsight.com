@@ -408,8 +408,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-16 — CFPB complaints were filed under banks by stripped-name matches with non-bank companies. — [finding](findings/2026-10-16-cfpb-non-bank-matches.md) — Agent lesson: hoovie/pr-1627-non-bank-company-names
 - 2026-10-09 — A switch that silently reads as off needs to say why in the run it affects. — [finding](findings/2026-10-09-congress-bills-flag-not-seen.md) — Guard: `src/lib/agents/magellan/registry/live-flag.test.ts` (+1 more)
 
-### Database and performance (22)
+### Database and performance (23)
 
+- 2026-10-26 — A cached page render waits for a stale cache entry to be recomputed, so a tag every takedown invalidates must never make a page wait on a catalog-wide aggregate: serve the last good value after a short grace, run one recompute at a time, and keep per-lookup catalog scans out of page reads. — [finding](findings/2026-10-26-stale-public-reads-block-page-renders.md) — Guard: `src/lib/data-store/public-read-cache.test.ts`, `src/lib/data-store/peer-sets.test.ts`
 - 2026-10-26 — A public page whose query string makes new views is an endless crawl space: keep filter views out of robots.txt, mark them noindex, nofollow, and keep a firewall rate limit on public data routes. — [finding](findings/2026-10-26-crawler-fee-explorer-starves-institution-pages.md) — Guard: `src/app/robots.test.ts`
 - 2026-10-20 — A figure derived only from loaded regulator data is computed when the data loads, not when a page is read. — [finding](findings/2026-10-20-call-report-recompute.md) — Guard: `src/lib/data-store/call-report-quarters.db.test.ts` (+2 more)
 - 2026-10-19 — Raising a step's expected time can starve a run that has a strict deadline. — [finding](findings/2026-10-19-scoreboard-starved-by-lanes.md) — Guard: `state-lane-budget.db.test.ts` (+1 more)
