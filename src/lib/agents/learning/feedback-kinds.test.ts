@@ -46,6 +46,17 @@ describe("every feedback kind names its reader (#2062)", () => {
     expect(feedbackRowRead({ kind: "flag_cleared", about_stage: "publish", check_name: "x" })).toBe(true);
     expect(feedbackRowRead({ kind: "audit_miss", about_stage: "discover", check_name: "hamilton.other_bank_document" })).toBe(true);
     expect(feedbackRowRead({ kind: "audit_miss", about_stage: "extract", check_name: "hamilton.source_check" })).toBe(false);
+    // Darwin reads a person's own holds and corrections filed against verify (#2057), nothing else there.
+    expect(feedbackRowRead({ kind: "audit_miss", about_stage: "verify", check_name: "hamilton.source_check", reported_by: "deming" })).toBe(false);
+    expect(feedbackRowRead({ kind: "admin_hold", about_stage: "verify", check_name: "admin.fee_hold", reported_by: "human" })).toBe(true);
+    expect(feedbackRowRead({ kind: "admin_correction", about_stage: "verify", check_name: "admin.fee_correction", reported_by: "human" })).toBe(true);
+    expect(feedbackRowRead({ kind: "admin_correction", about_stage: "verify", check_name: "admin.fee_correction", reported_by: "hamilton" })).toBe(false);
+    expect(feedbackRowRead({ kind: "admin_correction", about_stage: "verify", check_name: "admin.fee_correction" })).toBe(false);
+    expect(feedbackRowRead({ kind: "admin_hold", about_stage: "verify", check_name: "hamilton.other", reported_by: "human" })).toBe(false);
+    expect(feedbackRowRead({ kind: "admin_correction", about_stage: "verify", check_name: "hamilton.admin_correction", reported_by: "gutenberg", dedupe_key: "hamilton.takedown:pub:9:verify" })).toBe(false);
+    expect(feedbackRowRead({ kind: "admin_correction", about_stage: "publish", check_name: "admin.fee_correction", reported_by: "human" })).toBe(false);
+    // The narrowing is per stage: Rosetta's read-stage rows keep their own rule.
+    expect(feedbackRowRead({ kind: "admin_hold", about_stage: "read", check_name: "admin.fee_hold" })).toBe(true);
     expect(feedbackRowRead({ kind: "wrong_document", about_stage: "discover", check_name: "magellan.link_yield" })).toBe(true);
     expect(feedbackRowRead({ kind: "wrong_document", about_stage: "discover", check_name: "hamilton.article_page" })).toBe(false);
     // A takedown's verify row is read by nobody when the sync is the kind's only reader (#2062 review).
@@ -61,9 +72,14 @@ describe("every feedback kind names its reader (#2062)", () => {
   });
 
   it("splits the registry for the brief's query the same way", () => {
-    const { unreadKinds, partial, registered } = unreadFeedbackPredicate();
+    const { unreadKinds, partial, stageOnly, registered } = unreadFeedbackPredicate();
     expect(unreadKinds).toContain("search_miss");
     expect(partial).toContainEqual({ kind: "audit_miss", stages: ["discover"], checks: [], anyStageChecks: [] });
+    expect(partial).toContainEqual({ kind: "admin_correction", stages: ["discover", "read", "verify"], checks: ["hamilton.admin_correction"], anyStageChecks: [] });
+    const handRows = { stage: "verify", checks: ["admin.fee_hold", "admin.fee_correction"], reportedBy: ["human"] };
+    expect(stageOnly).toEqual([{ kind: "admin_hold", ...handRows }, { kind: "admin_correction", ...handRows }]);
+    // Every kind with a stageOnly rule is in the partial list the query joins.
+    for (const item of stageOnly) expect(partial.map((p) => p.kind)).toContain(item.kind);
     expect(new Set(registered)).toEqual(new Set(Object.keys(FEEDBACK_KINDS)));
   });
 
