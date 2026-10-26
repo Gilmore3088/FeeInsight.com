@@ -70,7 +70,7 @@ import {
   type HamiltonEvidenceBundle,
   type HamiltonEvidenceFact,
 } from "./evidence-contract";
-import { extractFigures, type NarrativeFigure } from "./figure-check";
+import { extractFigures, extractQuestionFigures, type NarrativeFigure } from "./figure-check";
 import { findUnrequestedAdvice } from "./workspace/four-roles";
 
 export const NARRATIVE_BINDING_VERSION = 1 as const;
@@ -527,7 +527,7 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
   const conflicts = conflictGroups(validFacts);
   const conflicted = new Set([...conflicts.values()].flat().map((fact) => fact.id));
   const superseded = supersededFees(validFacts);
-  const asked = input.question ? extractFigures(input.question) : [];
+  const asked = input.question ? extractQuestionFigures(input.question) : [];
   const hasEvidence = validFacts.length + validDerivations.length + unsourcedFacts.length > 0;
 
   const binding: NarrativeBinding = { version: NARRATIVE_BINDING_VERSION, supported: [], interpretation: [], omitted: [], limitations: [] };
