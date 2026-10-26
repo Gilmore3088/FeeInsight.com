@@ -422,7 +422,13 @@ import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 // "Copy of a draft or a Teller Check $5" stays one check-copy fee. "&#38;" and "&#x26;" read as "&",
 // and square brackets count as parentheses. Adds reads only. The stale-read floor stays at v97. Name
 // re-tidy stays at v27.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 124 } as const;
+// v125 (#1912): a monthly maintenance or minimum balance read with no account from its row, table,
+// heading or own name takes, as a last resort, the account its own sentence names as subject ("The
+// M&T Preferred Money Market account has a $20 monthly maintenance charge."), on the fee's line or the
+// line just above, only when that sentence prints the fee's own price (`accountSubjectProduct` in
+// `lineup.ts`). Account product only; names, prices and categories are unchanged. The stale-read floor
+// stays at v97. Name re-tidy stays at v27.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 125 } as const;
 
 export interface SpecialistRun {
   strategy: string;

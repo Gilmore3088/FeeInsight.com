@@ -184,6 +184,32 @@ model call; it runs under the `pipeline` pause and never waits on provider budge
   Safe Debit "Personal money order" $1.65 and "Non-U.S. Bank ATM transaction fee" $2.50 (published
   142603/142604, raw 678084/678085, document 33344, text 31406).
 
+### Account subject recovery (#1912, 2026-10-26)
+
+`correctAccountSubjects` (`knox/account-subject-correct.ts`, `ACCOUNT_SUBJECT_CORRECT_STRATEGY`
+`knox.account_subject_correct` v1) gives a live monthly maintenance or minimum balance fee read before
+v125 the account its own sentence names (`accountSubjectProduct`, v125 above). It runs only in an
+extract step scoped to one bank or one state lane (at most 100 documents; an unscoped step skips it).
+It reads the newest completed text of each document with such a live Knox fee whose raw row has no
+product, takes the fee's stored excerpt from its extraction note, and fills `product_name` only when
+the subject sentence prints the fee's own price and today's whole lineup read of that excerpt records
+the same account (a row, table, heading or name it prefers wins, and the row is left alone).
+Deterministic, no model call; it runs under the `pipeline` pause and never waits on provider budget.
+- The UPDATE lands only while `product_name` is NULL and the name and amount are as read; nothing is
+  deleted and no flag is added.
+- One `pipeline_feedback` row per change (`account_subject_corrected`, weight 0) keeps the old and new
+  values; applied, each document is an attempt keyed `v1:<text id>`, plus one run event; the step
+  detail carries `account_subject_correct` (up to 50 samples).
+- **Switch:** `KNOX_ACCOUNT_SUBJECT_CORRECT_LIVE` (env, `1` or `true`; unset by default). Off, or in a
+  dry-run run, the step only counts and lists. Dry run on 2026-10-26 (read-only): of 2,929 live NULL
+  rows in the two categories, 4 qualify: M&T 109815 ("M&T Preferred Money Market"), The Peoples Bank
+  131221 ("Regular savings"), Fort Worth City FCU 137327 ("Fresh Start checking") and Aberdeen Proving
+  Ground FCU 153281 ("Member Protect Checking").
+
+Statistics rule 11 (method 23) reads the account: a savings, money market, certificate, IRA, HSA or
+club account's own monthly or minimum balance fee no longer sets the bank's checking value
+(`fee-product.ts`, `account-kind.ts`).
+
 ## Authority
 
 - Knox reads `agent_source_texts`.
@@ -1975,6 +2001,20 @@ account's NSF and monthly maintenance fees (154634, 154635). A row naming a depo
 a stop payment, and a $0 in words keep their read. Darwin re-checks live fees with the same rule
 (`darwin/loan-section-check.ts`, switch off).
 
+v125 (#1912): a monthly maintenance or minimum balance read whose row, table column, heading and own
+name give no account takes the account its own sentence names as subject, as a last resort
+(`accountSubjectProduct` in `lineup.ts`). The sentence sits on the fee's own line or the line just
+above it, opens with an article or possessive, names the account before "has", "carries", "charges",
+"includes", "comes with" or "is subject to", and prints "a $N ... fee/charge" at the fee's own price
+("The M&T Preferred Money Market account has a $20 monthly maintenance charge." over "The $20 monthly
+maintenance charge is waived if:", M&T live 109815, raw 491668, text 21879). The subject must read as
+one product name that names a kind of account or ends in "account"; "all accounts", "this account",
+a bank's own name and disclosure titles never count, and two different subjects at the price give
+none. A fee whose own name says checking takes only a checking subject. No page title or address is
+read: M&T's page lists five other savings products. Account product only; the stale-read floor stays
+at v97. Live rows read before v125 keep their NULL product until the account-subject recovery below
+fills them (`account-subject-correct.ts`).
+
 ## Darwin's re-read requests (`reread-feedback.ts`, #1511)
 
 Darwin's live fragment check (`darwin/live-fragment-check.ts`) writes one `pipeline_feedback` row of
@@ -2225,11 +2265,12 @@ fails a PR that changes one of these constants without updating its line here (#
 | `NAME_FILE_KEY_VERSION` | — | v2 | `knox/held-recheck.ts` |
 | `KNOX_LAYOUT_SIGNATURE_VERSION` | — | v1 | `knox/layout-signature.ts` |
 | `KNOX_LESSONS_VERSION` | — | v5 | `knox/lessons.ts` |
+| `ACCOUNT_SUBJECT_CORRECT_STRATEGY` | `knox.account_subject_correct` | v1 | `knox/account-subject-correct.ts` |
 | `ANCILLARY_OWNER_CORRECT_STRATEGY` | `knox.ancillary_owner_correct` | v1 | `knox/ancillary-owner-correct.ts` |
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v124 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v125 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v10 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |
