@@ -422,7 +422,15 @@ import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 // "Copy of a draft or a Teller Check $5" stays one check-copy fee. "&#38;" and "&#x26;" read as "&",
 // and square brackets count as parentheses. Adds reads only. The stale-read floor stays at v97. Name
 // re-tidy stays at v27.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 124 } as const;
+// v125 (#1094 item 3): a segment holding the schedule's heading phrase or boilerplate ("Fee Schedule",
+// "Schedule of Fees", "Truth in Savings", "Member FDIC") is read without the phrase, not skipped whole
+// (`readSegment` in rules.ts): a PDF flattened to one line, or "Fee Schedule Overdraft Fee $35 Stop
+// Payment $30", lost every fee on it. Each piece between phrases that holds a dollar price is read on
+// its own, with capitalised section headings before its first name cut, so the phrase never joins a
+// name; a piece with no price yields nothing. A segment that also says "effective" stays skipped whole,
+// since it can announce a price not yet charged (R11 on #1094). Only segments holding the phrase read differently. The stale-read floor
+// stays at v97. Name re-tidy stays at v27.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 125 } as const;
 
 export interface SpecialistRun {
   strategy: string;

@@ -1,6 +1,6 @@
 import { scopedFeeStatements, type FeeApplicability } from "@/lib/fee-audience";
 import { CELL_SEPARATOR } from "@/lib/agents/rosetta/html-dom";
-import { composableTail, LEADER_PRICE_WORDS, nameAfterPrice, passesDarwinChecks, QUALIFIER, titleTail } from "@/lib/agents/knox/layout";
+import { composableTail, LEADER_PRICE_WORDS, nameAfterPrice, passesDarwinChecks, QUALIFIER, splitCapsHeading, titleTail } from "@/lib/agents/knox/layout";
 import type { AccountLineup } from "@/lib/agents/knox/lineup";
 import type { AncillaryProduct } from "@/lib/agents/knox/ancillary-product";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
@@ -2201,9 +2201,52 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
   return { ...result, candidates: result.candidates.map((candidate) => paperStatementRead(candidate, segment)) };
 }
 
+/**
+ * v125 (#1094 item 3): the schedule's own heading phrase or boilerplate (`GENERIC_SCHEDULE_LANGUAGE`,
+ * "effective date" aside) with the words that belong to it: an audience before ("Personal Schedule of
+ * Fees"), "and Charges" or "Disclosure" after, "Equal Housing Lender" after "Member FDIC".
+ */
+const SCHEDULE_HEADING_PHRASE =
+  /\b(?:(?:consumer|personal|business|commercial)\s+)?(?:schedule of fees(?:\s+(?:and|&)\s+(?:service\s+)?charges)?|fee schedule|truth in savings(?:\s+disclosures?)?|member fdic(?:\.?\s+equal housing (?:lender|opportunity))?)\b\.?/gi;
+/**
+ * v125: a segment with the phrase that also says "effective" ("Effective Date", "Schedule of fees effective
+ * January 1") is still skipped whole: it can announce a price not yet charged (R11 on #1094).
+ */
+const EFFECTIVE_WORD = /\beffective\b/i;
+
+/**
+ * v125 (#1094 item 3): a segment holding the schedule's heading phrase or boilerplate ("Fee Schedule",
+ * "Schedule of Fees", "Truth in Savings", "Member FDIC") is read without the phrase, not skipped whole:
+ * a PDF flattened to one line, or a line like "Fee Schedule Overdraft Fee $35 Stop Payment $30", lost
+ * every fee it held. The segment is cut at each phrase and each piece with a dollar price is read on
+ * its own, so the phrase, and the words on its other side, never join a fee's name. A piece with no
+ * price is heading or boilerplate and yields nothing, as the whole segment did before. Section headings
+ * in capitals between the phrase and the first name ("SCHEDULE OF FEES AND CHARGES DEPOSIT SERVICES
+ * MISCELLANEOUS SERVICES Cashier’s Checks…… $4.00") are cut too (`splitCapsHeading`). A segment that
+ * says "effective" is skipped whole, as before: it can announce a price the bank does not charge yet
+ * ("will be $35 effective date January 1"), a separate open item (R11 on #1094).
+ */
 function readSegment(segment: string): ExtractionRulesResult {
+  if (!GENERIC_SCHEDULE_LANGUAGE.test(segment)) return readPlainSegment(segment);
   const result: ExtractionRulesResult = { candidates: [], held: [] };
-  if (GENERIC_SCHEDULE_LANGUAGE.test(segment)) return result;
+  if (EFFECTIVE_WORD.test(segment)) return result;
+  for (const rawPiece of segment.split(SCHEDULE_HEADING_PHRASE)) {
+    const trimmed = rawPiece.replace(/^[\s|:;,.\-–—]+/, "").replace(/[\s|:;,\-–—]+$/, "");
+    const price = trimmed.search(/\$\s*\.?\d/);
+    if (price < 0 || GENERIC_SCHEDULE_LANGUAGE.test(trimmed)) continue;
+    const lead = splitCapsHeading(trimmed.slice(0, price));
+    const piece = lead.heading ? `${lead.name} ${trimmed.slice(price)}`.trim() : trimmed;
+    const read = readPlainSegment(piece);
+    result.candidates.push(...read.candidates);
+    result.held.push(...read.held);
+    if (read.tableHeld?.length) (result.tableHeld ??= []).push(...read.tableHeld);
+    for (const [reason, count] of Object.entries(read.dropped ?? {})) countDrop(result, reason as DroppedLineReason, count);
+  }
+  return result;
+}
+
+function readPlainSegment(segment: string): ExtractionRulesResult {
+  const result: ExtractionRulesResult = { candidates: [], held: [] };
 
   const cells = segment.includes(CELL_SEPARATOR) ? segment.split(CELL_SEPARATOR).map((cell) => cell.trim()) : null;
   const amounts = amountsIn(segment);
