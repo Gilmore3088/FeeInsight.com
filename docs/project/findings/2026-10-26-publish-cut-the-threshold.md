@@ -19,7 +19,7 @@ fix could reach it.
 **Fix:** this PR. `nameBeforeLeaders` keeps a first figure only when a comparison word leads into
 it ("below", "under", "over", "than", "least", "between", "balance of", "<"), or when a plain "is",
 "of", "for" or "at" leads into it and a closing comparison follows ("is $35.00 or less"); "fee of
-$20" stays a price. After a kept figure it keeps a range's second figure ("between $100 and $500")
+$20" stays a price. After a kept figure it keeps the second figure of a range "between" opened ("between $100 and $500"; "over $5 - $35" cuts at $35)
 and another comparison, and cuts at a next tier ("Up to $2,500 Over $2,500") and after the sentence
 that ends on the kept figure. Everything else is the fee's own price and still ends the name:
 "Checks $300 and over $10", "Overdraft up to $35 per item", "Monthly maintenance fee = $10",

@@ -215,7 +215,19 @@ describe("Hamilton agentic publish", () => {
     expect(publishedFeeName("Dormant Account Fee, balance $50 or greater", "dormant_account")).toBe("Dormant Account Fee, balance $50 or greater");
     // A range's second figure belongs to the range the threshold opened; another comparison keeps its own figure.
     expect(nameBeforeLeaders("Wire fee for balances between $100 and $500")).toBe("Wire fee for balances between $100 and $500");
-    expect(nameBeforeLeaders("Cash advance over $100 - $500 per day")).toBe("Cash advance over $100 - $500 per day");
+    expect(nameBeforeLeaders("Wire fee between $100 - $500")).toBe("Wire fee between $100 - $500");
+    expect(nameBeforeLeaders("Overdraft item between $5 and $35")).toBe("Overdraft item between $5 and $35");
+    // Only "between" opens a range: after a one-sided comparison the next figure is the fee's own price (#1443 re-review).
+    expect(nameBeforeLeaders("Cash advance over $100 - $500 per day")).toBe("Cash advance over $100");
+    for (const [name, amount, kept] of [
+      ["Overdraft item over $5 - $35", 35, "Overdraft item over $5"],
+      ["Overdraft item over $5 to $35", 35, "Overdraft item over $5"],
+      ["Overdraft item over $5 and $35", 35, "Overdraft item over $5"],
+      ["Monthly fee balance below $500 and $10 service", 10, "Monthly fee balance below $500"],
+    ] as const) {
+      expect(nameBeforeLeaders(name)).toBe(kept);
+      expect(publishedFeeName(name, "overdraft")).not.toContain(`$${amount}`);
+    }
     expect(nameBeforeLeaders("Monthly fee if balance falls below $1,000 or monthly average balance below $2,500")).toBe(
       "Monthly fee if balance falls below $1,000 or monthly average balance below $2,500",
     );

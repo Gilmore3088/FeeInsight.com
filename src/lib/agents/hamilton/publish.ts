@@ -1162,23 +1162,29 @@ const NEXT_TIER = /^[\d,.]*\s+(?:up to|over|under|above|below|more than|less tha
 const THRESHOLD_TAIL = /^[\d,.]*\s*(?:or|and)\s+(?:less|more|greater|higher|lower|over|under|above|below|fewer)\b/i;
 /** Words between a kept threshold and the next figure that only close the threshold ("$300 and over $10"). */
 const TAIL_ONLY = /^[\d,.]*\s*(?:or|and)\s+(?:less|more|greater|higher|lower|over|under|above|below|fewer)\s*$/i;
-/** The second figure of a range the kept threshold opened ("between $100 and $500", "$100 - $500"). */
+/**
+ * The second figure of a range the kept threshold opened ("between $100 and $500", "between $100 -
+ * $500"). Only "between" or "from" opens a range: after a one-sided comparison the next figure is
+ * the fee's own price ("Overdraft item over $5 - $35", "below $500 and $10 service").
+ */
 const RANGE_CLOSE = /^[\d,.]*\s*(?:[-–—]|to|and)\s*$/i;
-/** A plain word a cut after a kept threshold leaves dangling ("... below $500 is"). */
-const DANGLING_PLAIN = /\s+(?:is|are|of|for|at|=)\s*$/i;
+const RANGE_OPEN = /\b(?:between|from)\s*$/i;
+/** A plain word a cut after a kept threshold leaves dangling ("... below $500 is", "... over $5 to"). */
+const DANGLING_PLAIN = /\s+(?:is|are|of|for|at|=|to|and|or)\s*$/i;
 const THRESHOLD_SENTENCE_END = /^[\d,.]*\d(?=\.\s+[A-Z])/;
 /**
- * Whether the figure at `match` is the name's threshold. `keptEnd` is where the last kept threshold
- * figure ends, or null when none was kept yet.
+ * Whether the figure at `match` is the name's threshold. `kept` is where the last kept threshold
+ * figure ends and whether "between"/"from" opened it as a range, or null when none was kept yet.
  */
-function isThreshold(name: string, match: RegExpMatchArray, keptEnd: number | null): boolean {
+type KeptThreshold = { end: number; rangeOpen: boolean };
+function isThreshold(name: string, match: RegExpMatchArray, kept: KeptThreshold | null): boolean {
   const at = match.index ?? 0;
   const before = name.slice(0, at);
   const after = name.slice(at + match[0].length);
   if (NEXT_TIER.test(after)) return false;
-  if (keptEnd != null) {
-    const between = name.slice(keptEnd, at);
-    if (RANGE_CLOSE.test(between)) return true;
+  if (kept) {
+    const between = name.slice(kept.end, at);
+    if (kept.rangeOpen && RANGE_CLOSE.test(between)) return true;
     return COMPARISON_LEAD.test(before) && !TAIL_ONLY.test(between);
   }
   if (COMPARISON_LEAD.test(before)) return true;
@@ -1186,7 +1192,7 @@ function isThreshold(name: string, match: RegExpMatchArray, keptEnd: number | nu
 }
 export function nameBeforeLeaders(name: string): string {
   let end: number | undefined;
-  let keptEnd: number | null = null;
+  let kept = null as KeptThreshold | null;
   for (const match of name.matchAll(LEADER_OR_PRICE)) {
     if (!match[0].includes("$")) {
       end = match.index;
@@ -1194,13 +1200,15 @@ export function nameBeforeLeaders(name: string): string {
     }
     if (insideParenthesis(name.slice(0, match.index))) continue;
     const at = match.index ?? 0;
-    if (!isThreshold(name, match, keptEnd)) {
+    if (!isThreshold(name, match, kept)) {
       end = at;
       break;
     }
     const after = name.slice(at + match[0].length);
     const figure = after.match(/^[\d,]*(?:\.\d+)?/)?.[0] ?? "";
-    keptEnd = at + match[0].length + figure.length;
+    // A range's closing figure opens no further range.
+    const closesRange = kept != null && kept.rangeOpen && RANGE_CLOSE.test(name.slice(kept.end, at));
+    kept = { end: at + match[0].length + figure.length, rangeOpen: !closesRange && RANGE_OPEN.test(name.slice(0, at)) };
     const sentence = after.match(THRESHOLD_SENTENCE_END);
     if (sentence) {
       end = at + match[0].length + sentence[0].length;
@@ -1208,7 +1216,7 @@ export function nameBeforeLeaders(name: string): string {
     }
   }
   let cut = name.slice(0, end ?? name.length).replace(/[\s:;,.\-–—|]+$/u, "").trim();
-  if (keptEnd != null && end != null && end > keptEnd) cut = cut.replace(DANGLING_PLAIN, "").trim();
+  if (kept && end != null && end > kept.end) cut = cut.replace(DANGLING_PLAIN, "").trim();
   return cut.length >= 3 && /[a-z]/i.test(cut) ? cut : name.trim();
 }
 
