@@ -1299,6 +1299,24 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   25: 53 of 58 live fees at 48 institutions, 2 beside the live rate fee (13406, 68415). Missed: 80150,
   a floor ("C a sh Adva nce. ......$5.00 or 2% whichever is great er", text 242), for a misaligned
   excerpt and spaced OCR text.
+- A $0 overdraft, NSF or continuous overdraft fee that is not the fee's price (`banded-zero-check.ts`,
+  #1882). "Safety Net Overdraft | $0 if the negative balance is $5 or less. $10 if ... $35 per item**"
+  went live as a credit union's only overdraft price, $0: the conditional-$0 test reads a price cell of
+  more than four words as no price of the fee's, and a band printed on a row of its own is never on the
+  fee's line. Knox v122 holds such a free read as a range (`bandedZeroOf`, `src/lib/banded-zero.ts`).
+  Each verify step reads every live $0 fee in those categories with Knox's stored line and the lines of
+  the text Knox read that carry the fee's name (each with the line after it), and `bandedZeroOf` decides:
+  the $0's own cell prints a price (`own_cell`), the line prints a price straight after the name so the
+  free word is the next column's (`own_row_price`), or the name is priced on another row and one of the
+  rows states a band of the negative balance or the item (`priced_twin_row`). A $0 the schedule states
+  for the whole fee stays ("No-Fee Overdraft | Free", "We do not charge a fee for this service $0.00"),
+  as do two rows of one name with no band words (a consumer $0 beside a business price). The switch
+  (`BANDED_ZERO_TAKEDOWN_LIVE`) is off until the dry run is read clean (sampled-clean rule, DECISIONS
+  2026-10-20); on, a match goes through the 12-hour second look (`darwin.banded_zero`) and is archived
+  with `banded_zero: <kind>, $<price>` (verified row rejected with the `banded_zero` flag; event
+  `darwin.banded_zero_takedown`). Step detail `banded_zero_check`. Dry run Oct 26: 4 of 139 live fees at
+  4 institutions (99261 at 7374, 108088 at 6056, 116439 at 7358, 149658 at 5667), each checked on its
+  stored text.
 - Card program sections of a general schedule (`card-program-section-check.ts`, #1908, #1905). Navy
   Federal's fees page prints "Prepaid and Gift Cards" / "GO Prepaid Cards" sections after its deposit
   fees, and their "Lost/Stolen Card" $5 and Visa/PLUS ATM $1 rows went live as the account's fees on
@@ -1323,7 +1341,7 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   A live fee under a deposit category (`LOAN_SECTION_DEPOSIT_KEYS`; stop payment excluded) whose name
   names no deposit account or service comes down when every line of its document's latest stored text
   that prints its name at its price sits in a loan section (`loanSectionFee` in
-  `src/lib/custom-report/loan-section-fee.ts`, the same rule Knox v122 applies when it files a read).
+  `src/lib/custom-report/loan-section-fee.ts`, the same rule Knox v123 applies when it files a read).
   Each step reads the next 400 documents behind such a fee whose text names a loan (`LOAN_TEXT_SQL`),
   after a cursor kept on the `darwin.loan_section` event (`next_after_id`); an institution-scoped run
   reads that institution and leaves the cursor alone. The switch is the code constant
@@ -2143,6 +2161,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `CANADIAN_DOCUMENT_CHECK_VERSION` | `darwin.canadian_document` | v1 | `darwin/canadian-document-check.ts` |
 | `LATE_CHARGE_BOUND_CHECK_VERSION` | `darwin.late_charge_bound` | v1 | `darwin/late-charge-bound-check.ts` |
 | `RATE_FLOOR_CHECK_VERSION` | `darwin.rate_floor` | v1 | `darwin/rate-floor-check.ts` |
+| `BANDED_ZERO_CHECK_VERSION` | `darwin.banded_zero` | v1 | `darwin/banded-zero-check.ts` |
 | `CARD_PROGRAM_SECTION_CHECK_VERSION` | `darwin.card_program_section` | v1 | `darwin/card-program-section-check.ts` |
 | `LOAN_SECTION_CHECK_VERSION` | `darwin.loan_section` | v1 | `darwin/loan-section-check.ts` |
 | `DOCUMENT_OWNER_STRATEGY` | `verify.document_owner` | v1 | `darwin/document-owner.ts` |

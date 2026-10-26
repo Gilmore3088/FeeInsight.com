@@ -32,7 +32,7 @@ type SqlTag = typeof sql;
 /**
  * Darwin's live re-check of deposit-category fees printed in a loan section of a general fee
  * schedule (#1905; decision 2026-10-15, "Darwin re-checks every live fee against today's rules").
- * The rule is the shared `loanSectionFee` (`@/lib/custom-report/loan-section-fee`), which Knox v122
+ * The rule is the shared `loanSectionFee` (`@/lib/custom-report/loan-section-fee`), which Knox v123
  * also applies when it files a read (`loanSectionFeeRead`). It catches Navy Federal's "Equity Loan"
  * section inside `/membership/fees-and-charges.html` (doc 39026), whose "Home Equity Line Check
  * returned (due to non-sufficient funds)" $29 went live as the account's NSF fee (154634) and whose
@@ -52,7 +52,7 @@ type SqlTag = typeof sql;
  * 12-hour second look (check `darwin.loan_section`) and is archived on its second failure: rolled
  * back with `loan_section: #<doc>`, its verified row rejected with the `loan_section` flag, never
  * deleted, and a `darwin.loan_section_takedown` event lists them. The fee is not re-filed in place:
- * the bank's next read files the row under other lending (Knox v122), still checked by Darwin.
+ * the bank's next read files the row under other lending (Knox v123), still checked by Darwin.
  *
  * Read-only dry run, prod, 2026-10-26 (`loanSectionFeesSql`, the Postgres mirror, in three document
  * ranges for the SQL tool's 60-second limit): 8 live fees at 7 institutions, each read against its

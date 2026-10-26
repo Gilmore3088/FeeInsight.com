@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists } from "./specialists";
 import { loanSectionFeeRead, type ExtractedFeeCandidate } from "./rules";
+import { bandedZeroOf } from "@/lib/banded-zero";
 
 // #1905: Navy Federal's fees page (doc 39026, read Oct 21) prints its home equity line's fees under
 // "Equity Loan". Knox read the returned check as the account's NSF fee and the tax service charge as
@@ -37,9 +38,9 @@ function read(text: string, name: string, amount: number): ExtractedFeeCandidate
   return runFreeSpecialists(text, { institutionName: "Navy Federal Credit Union" }).candidates.filter((fee) => fee.feeName === name && fee.amount === amount);
 }
 
-describe("Knox v122: a loan section's rows are the loan's, not the account's (#1905)", () => {
-  it("ships from version 122 on", () => {
-    expect(KNOX_RULES_STRATEGY.version).toBeGreaterThanOrEqual(122);
+describe("Knox v123: a loan section's rows are the loan's, not the account's (#1905)", () => {
+  it("ships from version 123 on", () => {
+    expect(KNOX_RULES_STRATEGY.version).toBeGreaterThanOrEqual(123);
   });
 
   it("files the home equity line's returned check and tax service charge as other lending", () => {
@@ -81,5 +82,32 @@ describe("loanSectionFeeRead", () => {
     expect(loanSectionFeeRead(copy, SCHEDULE)).toBe(copy);
     const outside = candidate("Flagship Checking Monthly Fee", 10, "monthly_maintenance");
     expect(loanSectionFeeRead(outside, SCHEDULE)).toBe(outside);
+  });
+});
+
+describe("with the banded $0 hold (v122, #1882)", () => {
+  const candidate = (feeName: string, amount: number, canonicalHint: string, excerpt: string): ExtractedFeeCandidate => ({
+    feeName, amount, canonicalHint, frequency: null, confidence: 0.9, excerpt, waivable: false,
+  });
+  const band = "Safety Net Overdraft | $0 if the negative balance is $5 or less. $10 if the negative balance is $5.01 to $50. $35 per item";
+
+  it("leaves an account's banded $0 overdraft to the hold: no loan heading over it", () => {
+    const text = ["Checking Fees", "Fee | Amount", band].join("\n");
+    const read = candidate("Safety Net Overdraft", 0, "overdraft", band);
+    const next = loanSectionFeeRead(read, text);
+    expect(next).toBe(read);
+    expect(bandedZeroOf({ line: next.excerpt, feeName: next.feeName, canonicalFeeKey: next.canonicalHint, documentText: text })).not.toBeNull();
+  });
+
+  it("a deposit-named $0 band in a loan section keeps its hold; a re-filed loan fee leaves the hold's categories", () => {
+    const text = ["Equity Loan", "Fee | Amount", band].join("\n");
+    const next = loanSectionFeeRead(candidate("Safety Net Overdraft", 0, "overdraft", band), text);
+    // The row names "overdraft", a deposit service, so it keeps its read and the hold still applies.
+    expect(next.canonicalHint).toBe("overdraft");
+    expect(bandedZeroOf({ line: next.excerpt, feeName: next.feeName, canonicalFeeKey: next.canonicalHint, documentText: text })).not.toBeNull();
+    // A loan's own returned check filed as NSF moves to other lending, which the hold never reads.
+    const returned = loanSectionFeeRead(candidate("Home Equity Line Check returned (due to non-sufficient funds)", 29, "nsf", "Home Equity Line Check returned (due to non-sufficient funds) | $29.00"), SCHEDULE);
+    expect(returned.canonicalHint).toBe("other_lending_fee");
+    expect(bandedZeroOf({ line: returned.excerpt, feeName: returned.feeName, canonicalFeeKey: returned.canonicalHint, documentText: SCHEDULE })).toBeNull();
   });
 });

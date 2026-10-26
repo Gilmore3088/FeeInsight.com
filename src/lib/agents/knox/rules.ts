@@ -1299,7 +1299,7 @@ export function boxSectionLateFeeRead(candidate: ExtractedFeeCandidate, text: st
 }
 
 /**
- * v122 (#1905): a read filed under a deposit category whose every priced line sits in a loan section
+ * v123 (#1905): a read filed under a deposit category whose every priced line sits in a loan section
  * of the schedule ("Equity Loan" / "Fee | Amount" / "Home Equity Line Check returned (due to
  * non-sufficient funds) | $29.00" / "Tax Service Charge | $25.00", Navy Federal doc 39026) is the
  * loan's fee: it is filed as `other_lending_fee`, whichever specialist read it, when that type passes

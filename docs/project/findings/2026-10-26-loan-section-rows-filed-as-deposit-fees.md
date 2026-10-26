@@ -34,7 +34,7 @@ label. Only deposit categories are read (`LOAN_SECTION_DEPOSIT_KEYS`; stop payme
 "Loans" column heading can sit over a deposit stop payment), a row naming a deposit account or service
 keeps its read, and every line printing the name at its price must sit in such a section.
 
-- Knox v122 re-files such a read as `other_lending_fee` (`loanSectionFeeRead`). Fees move when their
+- Knox v123 re-files such a read as `other_lending_fee` (`loanSectionFeeRead`). Fees move when their
   banks are next read; the stale-read floor stays at v97.
 - Darwin's live re-check (`darwin/loan-section-check.ts`, `darwin.loan_section`) reads 400 documents a
   step after a cursor. Its switch `LOAN_SECTION_TAKEDOWN_LIVE` is off until James's yes on the dry run.
