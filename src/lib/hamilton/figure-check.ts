@@ -1,3 +1,4 @@
+import { ASSET_TIER_BOUND_VALUES } from "./asset-tier-facts";
 import { dollarUnitScale, dollarsFromUnit, numericPayloadValue, percentageUnitScale } from "./monetary-units";
 
 /**
@@ -8,8 +9,10 @@ import { dollarUnitScale, dollarsFromUnit, numericPayloadValue, percentageUnitSc
  * A figure matches when it equals a payload number, or a difference / percent
  * difference between two payload numbers (the deltas a narrative naturally states),
  * within the rounding its own precision implies ("$35" covers 34.50–35.49).
- * Two kinds of figure are not the data's to trace (#1425): one the reader's own question names,
- * and an asset-tier bound stated as a size ("banks with $1 billion to $10 billion in assets"). Anything else is reported as unmatched so the caller can regenerate or refuse.
+ * Two kinds of figure are not the data's to trace (#1425): one the reader's own question names
+ * (with or without a "$": "under 10B" names $10 billion, #1077), and an asset-tier bound stated as a
+ * size ("banks with $1 billion to $10 billion in assets"). A tier the evidence names traces as typed
+ * dollar facts (asset-tier-facts.ts). Anything else is reported as unmatched so the caller can regenerate or refuse.
  */
 
 export interface NarrativeFigure {
@@ -38,9 +41,15 @@ export interface FigureCheckResult {
 
 // Report payloads carry the institution, state peers and exhibits; keep them all in view.
 const MAX_PAYLOAD_NUMBERS = 1000;
-const SCALE: Record<string, number> = { k: 1e3, thousand: 1e3, m: 1e6, million: 1e6, b: 1e9, billion: 1e9 };
+const SCALE: Record<string, number> = { k: 1e3, thousand: 1e3, m: 1e6, mn: 1e6, million: 1e6, b: 1e9, bn: 1e9, billion: 1e9 };
 
-const USD_PATTERN = /\$\s?(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?\s*(k|m|b|thousand|million|billion)?\b/gi;
+const USD_PATTERN = /\$\s?(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?\s*(k|mn|m|bn|b|thousand|million|billion)?\b/gi;
+/**
+ * An asset size a question gives with no "$" ("credit unions < 10B", "over 250 billion"): a number
+ * in billions. Thousands and millions are not read: "2 million members" and "30k members" are
+ * counts, and reading them as dollars would exempt "$2 million" or "$30,000" in the answer.
+ */
+const UNITLESS_SCALED_PATTERN = /(?<![\w$.,])(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?\s*(bn|b|billion)\b/gi;
 const PCT_PATTERN = /(-?\d+)(?:\.(\d+))?\s?(?:%|percent\b)/gi;
 
 function toleranceFor(decimals: string | undefined, scale: number): number {
@@ -48,35 +57,95 @@ function toleranceFor(decimals: string | undefined, scale: number): number {
   return 0.5 * 10 ** -places * scale + 1e-9;
 }
 
+/**
+ * The fixed denominator of an asset-intensity quantity, parsed as one unit (#1077): a rate word
+ * ("per", "for every", "for each", "each", "/"), ten thousand dollars ("$10,000", "$10K", "$10k",
+ * "$10 thousand", "ten thousand dollars") and assets ("of assets", "in assets", "of total assets",
+ * or bare "assets"). The "$10,000" inside is part of the unit, never a reported dollar total, and
+ * the figure it divides traces only to a value the evidence types as income per $10,000 of assets.
+ */
+const PER_ASSETS_DENOMINATOR = new RegExp(
+  String.raw`(?:(?<![\w$])(?:per|for\s+(?:every|each)|each)\s+|\/\s*)`
+  + String.raw`(?:\$\s?10(?:,000|000)(?:\.00)?(?![\d,])|\$\s?10\s?(?:k|thousand)\b|ten[- ]thousand\s+dollars\b)`
+  + String.raw`\s*(?:(?:of|in)\s+)?(?:total\s+)?assets\b`, "gi");
+/**
+ * What may join a leading "per $10,000 of assets" to the figure it introduces, on one line and in
+ * one sentence: a colon or equals sign, a linking verb directly ("was", "is"), or an income
+ * subject and then a linking verb (", fee income was"). Any other words, a fee word above all
+ * ("the overdraft fee is") or a bare "at"/"of" ("at $35 per overdraft"), mean the figure is not the ratio.
+ */
+const DENOMINATOR_LEAD = new RegExp(
+  String.raw`^[ \t]*(?:[:=]|,?[ \t]*(?:(?:the[ \t]+)?(?:(?:fee|service[ \t]+charge|non-?interest)[ \t]+)?income[ \t]+)?`
+  + String.raw`(?:was|is|were|are|stood[ \t]+at|came[ \t]+to|averaged|equals?)[ \t]*:?)?[ \t]*$`, "i");
+/** A figure followed by a rate unit of its own ("$35 per overdraft", "$12 a month") is not a per-assets ratio. */
+const OWN_RATE_UNIT = /^[ \t]*(?:per\b|\/|each\b|every\b|for[ \t]+(?:each|every)\b|an?[ \t]+(?:month|year|quarter|week|day|item|overdraft|transaction|account|statement|check)\b)/i;
+
+interface DenominatorSpan { start: number; end: number }
+
 function figureDenominator(text: string, start: number, end: number): NarrativeFigure["denominatorUnit"] {
   const after = text.slice(end, end + 100).replace(/[*_`]/g, "");
-  if (/^\s*(?:per\s+|\/\s*)(?:\$\s*10,?000|ten thousand dollars)\s+(?:of\s+)?(?:total\s+)?assets\b/i.test(after)) return "ten_thousand_assets";
   const suffix = /^\s*(?:per\s+|\/\s*)(?:(?:share[- ]draft|checking)\s+)?(account|employee)s?\b/i.exec(after);
   if (suffix) return suffix[1].toLowerCase() as NarrativeFigure["denominatorUnit"];
   const before = text.slice(Math.max(0, start - 120), start).replace(/[*_`]/g, "");
-  if (/\bper\s+(?:\$\s*10,?000|ten thousand dollars)\s+(?:of\s+)?(?:total\s+)?assets\s*(?:(?:was|is|of|at|equals?|:)\s*){0,3}$/i.test(before)) return "ten_thousand_assets";
   const prefix = /\bper[- ]+(?:(?:share[- ]draft|checking)[- ]+)?(account|employee)s?\s*(?:(?:balance|ratio|figure|amount|was|is|of|at|equals?|averages?|:)\s*){0,5}$/i.exec(before);
   return prefix ? prefix[1].toLowerCase() as NarrativeFigure["denominatorUnit"] : undefined;
 }
 
 export function extractFigures(text: string): NarrativeFigure[] {
   const figures: NarrativeFigure[] = [];
-  for (const match of text.matchAll(USD_PATTERN)) {
+  // Markdown emphasis becomes spaces, so every index still points into the original text.
+  const plain = text.replace(/[*_`]/g, " ");
+  const spans: DenominatorSpan[] = [...plain.matchAll(PER_ASSETS_DENOMINATOR)]
+    .map((m) => ({ start: m.index ?? 0, end: (m.index ?? 0) + m[0].length }));
+  const usd = [...text.matchAll(USD_PATTERN)].map((match) => {
     const scale = match[3] ? SCALE[match[3].toLowerCase()] ?? 1 : 1;
     const value = Number(`${match[1].replace(/,/g, "")}${match[2] ? `.${match[2]}` : ""}`) * scale;
-    const previous = figures.at(-1);
-    // In a typed "$7.49 per $10,000 of assets" quantity, the fixed denominator
-    // is part of the unit, not a second reported dollar total.
-    if (value === 10000 && previous?.denominatorUnit === "ten_thousand_assets"
-      && /^\s*(?:per\s+|\/\s*)$/i.test(text.slice(previous.index + previous.raw.length, match.index))
-      && /^\s*(?:of\s+)?(?:total\s+)?assets\b/i.test(text.slice((match.index ?? 0) + match[0].length))) continue;
-    const denominatorUnit = figureDenominator(text, match.index ?? 0, (match.index ?? 0) + match[0].length);
-    figures.push({ raw: match[0].trim(), kind: "usd", value, tolerance: toleranceFor(match[2], scale), index: match.index ?? 0,
+    const index = match.index ?? 0;
+    const span = spans.find((s) => index >= s.start && index < s.end);
+    return { match, scale, value, index, end: index + match[0].length, span };
+  });
+  // A figure takes the denominator right after it ("$15.14 per $10,000 in assets"), or else one that
+  // leads into it with only a linking verb between ("for every $10,000 of assets, fee income was $15.14").
+  // Only the one figure beside the denominator takes it: a second figure in a list ("$35.10 and $12.00
+  // per $10,000 of assets") stays a dollar figure and holds, since a list can cross clauses.
+  const ratioOf = new Map<number, DenominatorSpan>();
+  const taken = new Set<DenominatorSpan>();
+  usd.forEach((figure, i) => {
+    if (figure.span) return;
+    const span = spans.find((s) => s.start >= figure.end && /^[ \t]*$/.test(plain.slice(figure.end, s.start)));
+    if (span) { ratioOf.set(i, span); taken.add(span); }
+  });
+  usd.forEach((figure, i) => {
+    if (figure.span || ratioOf.has(i) || OWN_RATE_UNIT.test(plain.slice(figure.end, figure.end + 40))) return;
+    const lead = spans.findLast((s) => s.end <= figure.index && !taken.has(s)
+      && DENOMINATOR_LEAD.test(plain.slice(s.end, figure.index)));
+    if (lead) { ratioOf.set(i, lead); taken.add(lead); }
+  });
+  usd.forEach(({ match, scale, value, index, end, span }, i) => {
+    // The "$10,000" of a denominator a figure took is that figure's unit, not a dollar total.
+    // A denominator no figure took ("Income per $10,000 of assets rose.") stays a figure to trace.
+    if (span && taken.has(span) && value === 10000) return;
+    const denominatorUnit = ratioOf.has(i) ? "ten_thousand_assets" as const : figureDenominator(text, index, end);
+    figures.push({ raw: match[0].trim(), kind: "usd", value, tolerance: toleranceFor(match[2], scale), index,
       ...(denominatorUnit ? { denominatorUnit } : {}) });
-  }
+  });
   for (const match of text.matchAll(PCT_PATTERN)) {
     const value = Number(`${match[1]}${match[2] ? `.${match[2]}` : ""}`);
     figures.push({ raw: match[0].trim(), kind: "pct", value, tolerance: toleranceFor(match[2], 1), index: match.index ?? 0 });
+  }
+  return figures;
+}
+
+/**
+ * The figures a reader's question names: its dollar figures and percentages, plus a scaled size it
+ * gives in billions without a "$" ("< 10B", "5B", "250 billion"), read as dollars (#1077).
+ */
+export function extractQuestionFigures(question: string): NarrativeFigure[] {
+  const figures = extractFigures(question);
+  for (const match of question.matchAll(UNITLESS_SCALED_PATTERN)) {
+    const scale = SCALE[match[3].toLowerCase()];
+    const value = Number(`${match[1].replace(/,/g, "")}${match[2] ? `.${match[2]}` : ""}`) * scale;
+    figures.push({ raw: match[0].trim(), kind: "usd", value, tolerance: toleranceFor(match[2], scale), index: match.index ?? 0 });
   }
   return figures;
 }
@@ -220,7 +289,7 @@ function candidateValues(numbers: PayloadNumber[], kind: NarrativeFigure["kind"]
 const near = (figure: NarrativeFigure, value: number) => Math.abs(Math.abs(figure.value) - value) <= figure.tolerance;
 
 /** The bounds of Hamilton's asset tiers, in dollars: the FDIC tiers and the peer-set tiers. */
-export const ASSET_TIER_BOUNDS: readonly number[] = [100e6, 300e6, 1e9, 10e9, 50e9, 250e9];
+export const ASSET_TIER_BOUNDS: readonly number[] = ASSET_TIER_BOUND_VALUES;
 
 const isTierBound = (figure: NarrativeFigure) => figure.kind === "usd" && ASSET_TIER_BOUNDS.some((bound) => near(figure, bound));
 /** Words that make a size phrase after the figure: "in assets", "in total assets", "asset tier", "tier". */
@@ -288,7 +357,7 @@ export function checkNarrativeFigures(narrative: string, data: unknown, options:
     if (!candidates.has(key)) candidates.set(key, candidateValues(numbers, figure.kind, options, figure.denominatorUnit));
     return candidates.get(key)!;
   };
-  const asked = options.question ? extractFigures(options.question) : [];
+  const asked = options.question ? extractQuestionFigures(options.question) : [];
   const sizes = tierBoundsAsSize(narrative, figures);
   const traced = (figure: NarrativeFigure) =>
     valuesFor(figure).some((value) => near(figure, value))

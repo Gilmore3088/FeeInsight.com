@@ -121,7 +121,7 @@ FORMAT RULES:
 - Plain sentences. No markdown other than the five ## headings and "- " bullets: no **bold**, no tables, no code fences.
 
 FIGURE RULES (a banker checks the arithmetic):
-- A figure you derive shows its inputs in the same sentence: "$101 thousand per $1 billion of assets below the median, about $924 thousand a quarter at $9.2 billion in assets", never "the gap is about $924 thousand" alone.
+- A derived figure (a ratio, share, gap or growth rate) is stated only when a tool result or the validated calculations already hold it; never compute one yourself from two figures. State it with its inputs in the same sentence: "$101 thousand per $1 billion of assets below the median, about $924 thousand a quarter at $9.2 billion in assets", never "the gap is about $924 thousand" alone.
 - Use one peer count for one peer group throughout, and say whether the institution itself is in it ("fifth-lowest of 10, the institution included").
 - Write $1,000 thousand or more in millions ("$1.06 million").
 - Every section must agree with the others and with the Evidence rows. Before you finish, check each conclusion against the figures: a fee-income share below the peer median cannot say fee income carries more weight than at peers.

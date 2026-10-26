@@ -318,8 +318,11 @@ describe("rereadFeedbackCountSql", () => {
     expect(text.trim().endsWith("ROLLBACK;")).toBe(true);
     expect(text).not.toMatch(/\b(INSERT|UPDATE|DELETE)\b/);
     expect(text).toContain(`req.kind = '${LIVE_FRAGMENT_REREAD_KIND}'`);
-    const key = rereadResolutionKey(123);
-    const [prefix, suffix] = key.split("123");
+    // A request id no rules version can contain (Knox v123 broke a split on "123").
+    const id = 987654321;
+    const key = rereadResolutionKey(id);
+    const at = key.indexOf(String(id));
+    const [prefix, suffix] = [key.slice(0, at), key.slice(at + String(id).length)];
     expect(text).toContain(`'${prefix}' || req.id || '${suffix}'`);
     expect(suffix).toContain(`rules${KNOX_RULES_STRATEGY.version}`);
   });

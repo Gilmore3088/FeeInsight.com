@@ -605,8 +605,10 @@ export async function sweepsAfterRows(ctx: MovedSweepContext) {
     ready: false, takedowns: 0, restores: 0, categoryRejects: 0, answerKeyFees: 0, written: 0, relabeled: 0,
   }), () => syncPipelineFeedback(tx, { runId, dryRun }));
   // #1100: the sync's old rows for account type holds go to weight 0, behind a switch (off).
+  // #1680: the hold's old release rows labelled as a wrong category are relabelled restore
+  // records, behind its own switch (off); a dry run counts them.
   const holdFeedback = await sweep(ctx, "holdFeedback", (): Result<typeof repairAccountTypeHoldFeedback> => ({
-    on: false, dryRun, due: null, zeroed: 0, error: null,
+    on: false, dryRun, due: null, zeroed: 0, release: { on: false, due: null, relabeled: 0 }, error: null,
   }), () => repairAccountTypeHoldFeedback(tx, { runId, dryRun }));
   return { importedTwins, sourceLinkFill, linkDrift, feedbackSync, holdFeedback };
 }
@@ -686,6 +688,8 @@ export function movedSweepCounts(r: MovedSweepResults, ran: (key: MovedPublishSw
     // A dry run writes nothing, so it counts the rows it would upsert (`wouldWrite`).
     feedbackSync: (r.feedbackSync.wouldWrite ?? r.feedbackSync.written) + r.feedbackSync.relabeled,
     holdFeedback: r.holdFeedback.zeroed,
+    // #1680: a dry run counts the release rows it would relabel; a live run the ones it did.
+    "holdFeedback.relabel": r.holdFeedback.dryRun ? r.holdFeedback.release.due ?? 0 : r.holdFeedback.release.relabeled,
   };
   const counts: Record<string, number> = {};
   for (const [key, value] of Object.entries(all)) {

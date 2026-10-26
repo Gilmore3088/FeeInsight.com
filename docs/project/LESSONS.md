@@ -282,8 +282,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A provider refusal inside a streamed response never reaches the route's catch; map it in the stream's `onError`. — [finding](findings/2026-10-09-provider-limit-blank-answers.md) — Guard: `src/lib/ai-provider.test.ts` (+2 more)
 - 2026-10-09 — The Console usage limit did not trip the provider stop, and the verdict score starved. — [finding](findings/2026-10-09-api-usage-limit-did-not-trip-provider-stop.md) — Guard: `src/lib/ai-provider-usage.test.ts` (+1 more)
 
-### Categorisation and audience (24)
+### Categorisation and audience (25)
 
+- 2026-10-26 — A row printed in a loan section of a general fee schedule ("Equity Loan", "LOAN FEES") is the loan's fee, however much its words sound like an account's (a returned check, a service charge); read the section before filing it under NSF or monthly maintenance. — [finding](findings/2026-10-26-loan-section-rows-filed-as-deposit-fees.md) — Guard: `src/lib/custom-report/loan-section-fee.test.ts`, `src/lib/agents/darwin/loan-section-check.test.ts`; Agent lesson: knox/issue-1905-loan-section-rows-are-loan-fees, darwin/issue-1905-loan-section-recheck
 - 2026-10-25 — A price its own line makes the paper statement charge ("$3.00 paper statement fee", "applies if you choose to receive paper statements") is the paper statement fee, never the account's monthly maintenance fee, however generic the words around it; a price for paper holders beside an electronic price stays maintenance. — [finding](findings/2026-10-25-paper-statement-price-filed-as-maintenance.md) — Guard: `src/lib/paper-statement-price.test.ts`, guard v92 tests; Agent lesson: knox/issue-1947-paper-statement-price-is-not-maintenance
 - 2026-10-25 — A price stated as "a/an <X> fee of $N" is the <X> fee: an NSF fee cut from overdraft words is the NSF fee, named by the phrase; outside that pair the words before are the more specific fee (an international wire, a deposited item return) and keep the read, as they do for a generic phrase ("a monthly fee of"). — [finding](findings/2026-10-25-cut-sentence-names-the-category.md) — Agent lesson: knox/priced-noun-phrase-names-the-fee; Guard: `src/lib/agents/knox/rules.test.ts`
 - 2026-10-25 — A fee's section heading, and what its name names, decide its category: a return charge under a foreign check or collection heading is not NSF, and a box-named late fee is the box's. — [finding](findings/2026-10-25-section-heading-and-destination-decide-category.md) — Guard: `collection-section-return.test.ts`, guard v90 tests; Agent lesson: `darwin/issue-1912-section-and-name-decide-category`, `knox/issue-1912-heading-decides-a-plain-return`
@@ -309,8 +310,10 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A consumer comparison needs the payer checked as well as the category. — [finding](findings/2026-10-09-business-wire-as-consumer-price.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 - 2026-10-09 — Returned bonds and coupons were filed as NSF. — [finding](findings/2026-10-09-bond-return-filed-nsf.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 
-### Verification and publication (54)
+### Verification and publication (57)
 
+- 2026-10-26 — An overdraft or NSF $0 is the fee's price only when the schedule states it for the whole fee: a $0 whose own cell goes on to price the fee, whose name is priced on a band row ("Negative account balance $10.00 or more"), or that is the next column's free word is held, never verified as free; 4 of 139 live $0s were such reads (#1882). — [finding](findings/2026-10-26-zero-overdraft-band-read-as-free.md) — Agent lesson: knox/issue-1882-a-zero-band-is-not-the-fee, darwin/issue-1882-zero-overdraft-needs-its-whole-cell; Guard: `src/lib/banded-zero.test.ts`, `src/lib/agents/darwin/banded-zero-check.test.ts`, `src/lib/agents/darwin/banded-zero-check.db.test.ts`
+- 2026-10-26 — Two reads of one printed line are one fee whatever their names or frequencies: a row whose stored line a live fee shares, printed once with its price once, frequencies not in conflict and one name inside the other, is not published again; 108 such second reads at 44 institutions were live (#1876). — [finding](findings/2026-10-26-one-line-read-twice.md) — Agent lesson: hamilton/issue-1876-one-line-read-twice; Guard: `src/lib/agents/hamilton/same-line-read.test.ts`, `src/lib/agents/darwin/same-line-read-check.test.ts`, `src/lib/agents/darwin/same-line-read-check.db.test.ts`
 - 2026-10-25 — An institution's value rests on its general price when it also states a named account's exception price in the category; the exception stays listed as that account's own fee, and with no general price the named prices count (#1911). — [finding](findings/2026-10-25-product-exceptions-pool-general-price.md) — Agent lesson: hamilton/issue-1911-general-over-product-exception; Guard: `src/lib/data-store/fee-stats.test.ts`, `src/lib/data-store/product-exception-value.db.test.ts`
 - 2026-10-26 — Grade the very holds a check's new version would re-decide, and replay today's rules on the sample, before it re-decides them: the peer v1/v2 holds (Oct 5–10) were 34 real, 21 misread and 5 unsure of 60, and v5 would verify 6 misreads among 27 (#1694). — [finding](findings/2026-10-26-peer-v1v2-holds-graded.md) — Agent lesson: darwin/issue-1694-grade-the-holds-you-re-decide; Guard: `src/lib/agents/darwin/verify.test.ts` (`DARWIN_PEER_GRADED_VERSIONS` stays [3, 4])
 - 2026-10-25 — Put a publish gate in the writer every path shares, not in one caller: refresh copy v1 wrote 264 live rows past the name hold (Oct 9–13); a closing note also hid a cut name's dangling "up to" from Knox (#1443). — [finding](findings/2026-10-25-publish-name-hold-bypass.md) — Agent lesson: hamilton/issue-1443-hold-in-the-writer, knox/issue-1443-qualifier-after-a-cut; Guard: `src/lib/agents/hamilton/publish.admin-hold.test.ts`, `src/lib/agents/knox/cutoff-shape.test.ts`
@@ -561,7 +564,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A shared log that every PR appends to at the same spot needs one file per entry. — [finding](findings/2026-10-09-findings-md-merge-conflicts.md) — Guard: `scripts/ci-guards.sh findings-file-kill`
 - 2026-10-09 — Backlog Node checks were accidentally discovered by application Vitest. — [finding](findings/2026-10-09-backlog-node-test-discovery.md) — Guard: `src/lib/vitest-collection.test.ts:26` (+2 more)
 
-### Agent process, learning and measurement (18)
+### Agent process, learning and measurement (19)
+
+- 2026-10-26 — A weight-0 restore record is named in every reader that treats a restore as a lesson, and rows written under an old label are relabelled by the typed repair behind an off switch: the account type hold's 5 Oct 16 releases still read wrong / wrong_category (#1680). — [finding](findings/2026-10-26-hold-release-labelled-wrong-category.md) — Agent lesson: hamilton/issue-1680-record-kind-named-by-every-reader; Guard: `src/lib/agents/learning/account-type-hold-feedback.db.test.ts`, `src/lib/agents/darwin/release-review.test.ts`
 
 - 2026-10-25 — A retrieval add-on is judged only by its lift on a holdout of human-confirmed current schedules; the first metadata and full-text ranker showed none over today's page choice, so no embeddings. — [finding](findings/2026-10-25-retrieval-pilot-no-holdout-lift.md) — Guard: `src/lib/agents/deming/shadow-lab/retrieval-pilot.test.ts`; Agent lesson: deming/o2-retrieval-holdout-before-embeddings
 - 2026-10-24 — Answer-key lines were compared to the bank's page as markup (table bars, HTML codes, dot leaders), so the same words and prices never matched. — [finding](findings/2026-10-24-answer-key-lines-compared-as-markup.md) — Agent lesson: deming/issue-2466-line-content-match
@@ -587,7 +592,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (252 in all).
+counts as of this index (264 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
@@ -595,10 +600,10 @@ counts as of this index (252 in all).
 | magellan | 22 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
 | hoovie | 11 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
 | rosetta | 12 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
-| knox | 68 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
-| darwin | 37 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
+| knox | 69 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
+| darwin | 38 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 40 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
-| hamilton | 40 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
+| hamilton | 50 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
 | deming | 14 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
 
 ## Before 2026-10-10

@@ -378,11 +378,16 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   LEI_MATCH_PARSER_VERSION: "First version: the gleif lei-match partitions check every institution in bounded batches; nothing older to replay.",
   // v1 (#1909): Darwin re-reads every live fee on a Spanish copy of a schedule each verify step (no
   // cursor; a few hundred rows), so there is no backlog for a replay to count.
-  TRANSLATED_COPY_CHECK_VERSION: "Each verify step re-reads every live fee on a Spanish-copy document (no cursor); nothing to replay.",
+  // v3 (#1986): the same step also re-reads every translated-copy takedown and restores one whose English line is gone (switch off).
+  TRANSLATED_COPY_CHECK_VERSION: "Each verify step re-reads every live fee on a Spanish-copy document and, from v3, every translated-copy takedown (no cursor); nothing to replay.",
   // v2 (#1910): the name cover reads NSF/insufficient, OD/overdraft and a paid NSF item/overdraft as one item.
   PRODUCT_PAGE_REPEAT_CHECK_VERSION: "Each verify step re-reads every live product-page fee with a same-price schedule twin (no cursor), so version 2's wider name cover reaches every live fee on the next step; nothing older to replay.",
   // v1 (#1673): same-line copies the v1 restore brought back beside their older line's live replacement.
   SAME_LINE_REPLACEMENT_CHECK_VERSION: "First version: each verify step re-reads every live fee after a confirmed same-line takedown (no cursor, a few dozen rows); its switch is off, so it only reports; nothing older to replay.",
+  // v1 (#1876): two live reads of one printed line (same document, line, category and amount).
+  SAME_LINE_READ_CHECK_VERSION: "First version: each verify step re-reads every live fee that shares its stored source line with another (no cursor, a few hundred rows); its switch is off, so it only reports; nothing older to replay.",
+  // v1 (#1882): a live $0 overdraft that is only the smallest band of a priced cell or row.
+  BANDED_ZERO_CHECK_VERSION: "First version: each verify step re-reads every live $0 overdraft, NSF and continuous overdraft fee (about 140 rows, no cursor); its switch is off, so it only reports; nothing older to replay.",
   // v2 (#1673): the same-line restore follows the older line's replacement before bringing a copy back.
   SAME_LINE_DUPLICATE_RESTORE_VERSION: "Each publish step re-reads every same-line takedown whose older line is down (no cursor), so v2's replacement check reaches every pending restore on the next step; the copies v1 already restored are read by Darwin's same-line replacement re-check.",
   // v1 (#1915): schedule editions not yet in effect. Every verify step reads every live fee on a dated document.
@@ -398,6 +403,9 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v1 (#1908, #1905): fees printed in a prepaid, payroll, gift or travel card section of a general
   // schedule. A full verify step re-reads every live document whose text names a card program, at most hourly.
   CARD_PROGRAM_SECTION_CHECK_VERSION: "First version: a verify step re-reads every live fee on a document whose text names a card program (no cursor, at most hourly); nothing older to replay.",
+  // v1 (#1905): deposit-category fees printed in a loan section of a general schedule. Off
+  // (LOAN_SECTION_TAKEDOWN_LIVE) until James's yes on the dry run.
+  LOAN_SECTION_CHECK_VERSION: "First version: each verify step reads the next batch of documents behind a live deposit-category fee whose text names a loan, after a cursor on the run ledger; its switch is off, so it only reports; nothing older to replay.",
   // v8 (#1112): new no-fee, discount, allowance and loan-amount name rules. Each step's eval-verdict
   // pass reads every live fee whose name or line matches one of their prefilter clauses
   // (`V8_PREFILTER`), then the second look; Darwin reads each new row under them. There is no
@@ -605,6 +613,9 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // (Knox v115's network table read); names only, 0 live and 0 raw rows on the Oct 25 dry run.
     // v92 (Oct 25, #1947): a monthly maintenance fee its own line prices as the paper statement charge
     // re-files to paper_statement (5 move in place; 14 beside a live twin go to the second look).
+    // v93 is claimed by open PR #2688 (#1912).
+    // v94 (Oct 26, #2100): International ATM refuses the card foreign transaction fee's non-fee names
+    // (low balance, currency exchange or orders, check collection, "many"); 0 live fees on the dry run.
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",
