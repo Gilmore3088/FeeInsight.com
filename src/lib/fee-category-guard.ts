@@ -774,7 +774,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   atm_international: {
     include: INTERNATIONAL_ATM,
     exclude:
-      /(\b(?:debit|pos|point of sale|purchases?|check ?cards?|credit cards?|cash advances?|wires?)\b|outside (?:the )?u\.?s\.?a?\.? excluded|^\s*allpoint\b|low balance|cash exchange|currency (cash|order|ordered|exchange|purchase)|foreign currency (cash|order|exchange|purchase|delivery)|check collection|\bmany\b)/i,
+      /(\b(?:debit|pos|point of sale|purchases?|check ?cards?|credit cards?|cash advances?|wires?)\b|outside (?:the )?u\.?s\.?a?\.? excluded|^\s*allpoint\b|low balance|cash exchange|currency (cash|order|ordered|exchange|purchase)|foreign currency (cash|order|exchange|purchase|delivery)|currency or checks?|check collection|\bmany\b)/i,
   },
   // Knox v26 folded collection items and foreign checks into check cashing (James, Oct 7
   // 2026); on Oct 8 he gave collection items their own type ("Own type"), so a check sent

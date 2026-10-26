@@ -2788,6 +2788,7 @@ describe("guard v94: International ATM refuses the card type's non-fee names (#2
       "International ATM foreign currency order",
       "International ATM foreign currency delivery",
       "International ATM check collection",
+      "International ATM currency or check",
       "Many international ATMs",
     ]) {
       expect(INTERNATIONAL_ATM.test(name), name).toBe(true);
