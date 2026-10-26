@@ -284,3 +284,41 @@ describe("a fee figure binds only to a record of the fee its clause names (#1077
     expect(result.omitted).toEqual([{ text: "Bank A's overdraft fee is $35, and Bank B's is $30.", reason: "wrong_category" }]);
   });
 });
+
+describe("one figure two institutions share: \"matches yours\" (#1077, cause 5)", () => {
+  const A30 = fee(50, A, 30, "2026-06-30");
+  const B30 = fee(51, B, 30, "2026-06-30");
+  const lead = "Bank B charges $30 for an overdraft.";
+  const sentence = "Its overdraft fee matches yours at $30.";
+  const bind = (facts: HamiltonEvidenceFact[], text = `${lead} ${sentence}`, accountInstitutionId: number | null = A) =>
+    bindNarrative({ text, evidence: bundle(facts, []), names, accountInstitutionId, researchInstitutionId: B });
+
+  it("binds to both institutions' records when both carry the figure", () => {
+    const result = bind([A30, B30]);
+    expect(result.omitted).toEqual([]);
+    expect(result.supported[1]).toEqual({ text: sentence, factIds: [A30.id, B30.id] });
+    for (const text of ["Bank B's overdraft fee is the same as yours, $30.", "Bank B's overdraft fee equals yours at $30."]) {
+      expect(bind([A30, B30], text).supported, text).toEqual([{ text, factIds: [A30.id, B30.id] }]);
+    }
+  });
+
+  it("only the other institution carries it: its figure is stated as the reader's own, and fails", () => {
+    expect(bind([B30, fee(52, A, 35, "2026-06-30")]).omitted).toEqual([{ text: sentence, reason: "account_as_subject" }]);
+    expect(bind([B30]).omitted).toEqual([{ text: sentence, reason: "account_as_subject" }]);
+  });
+
+  it("only the reader carries it: the other institution's figure is not in the records, and fails", () => {
+    const result = bind([A30, fee(53, B, 35, "2026-06-30")], `Bank B publishes an overdraft fee. ${sentence}`);
+    expect(result.omitted).toEqual([{ text: sentence, reason: "wrong_institution" }]);
+    expect(result.supported.map((s) => s.factIds)).toEqual([[]]);
+  });
+
+  it("a wrong figure still fails, and a group's figure or an unknown reader is read as before", () => {
+    expect(bind([fee(54, A, 35, "2026-06-30"), fee(55, B, 35, "2026-06-30")], `Bank B publishes an overdraft fee. ${sentence}`).supported)
+      .toEqual([{ text: "Bank B publishes an overdraft fee.", factIds: [] }]);
+    const median = "Your overdraft fee matches the peer median at $30.";
+    expect(bind([A30], median).omitted).toEqual([]);
+    // With the reader's institution unknown, today's rule: any institution's record binds.
+    expect(bind([B30], `${lead} ${sentence}`, null).supported[1].factIds).toEqual([B30.id]);
+  });
+});

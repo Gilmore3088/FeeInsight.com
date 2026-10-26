@@ -114,6 +114,8 @@ export interface GateFailure {
   source: "check" | "binding" | "cause" | "identity" | "surface" | "peers" | "status";
   /** The sentences a non-critical failure cuts from the view. */
   sentences?: string[];
+  /** The clauses an interpretation rule fired on (`interpretation_rule` only), so a view can find them in any section. */
+  clauses?: string[];
 }
 
 export interface GateVerdict {
@@ -182,15 +184,40 @@ function evaluate(input: GateInput): Evaluated {
   return { check, binding, shown: withoutSentences(input.text, omitted), factInstitutions: institutionIdsOf(evidence.bundle) };
 }
 
-/** Sentences a text-level problem can be pinned to, so it can be cut instead of holding the answer. */
-export function sentencesFor(code: GateFailureCode, sentences: readonly string[]): string[] {
+/** Text as a cut compares it: no markdown emphasis, single spaces, lower case. */
+const plainText = (text: string) => text.replace(/[*_`]+/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+
+/** Whether a sentence holds a clause an interpretation rule fired on (or is part of one). */
+function holdsClause(sentence: string, clauses: readonly string[]): boolean {
+  const plain = plainText(sentence);
+  return plain.length > 0 && clauses.some((clause) => {
+    const wanted = plainText(clause);
+    return wanted.length > 0 && (plain.includes(wanted) || wanted.includes(plain));
+  });
+}
+
+/**
+ * Sentences a text-level problem can be pinned to, so it can be cut instead of holding the answer.
+ * An interpretation rule's problem is pinned by the clauses it fired on (`clauses`, #1077 cause 5).
+ */
+export function sentencesFor(code: GateFailureCode, sentences: readonly string[], clauses: readonly string[] = []): string[] {
   switch (code) {
     case "advice": return sentences.filter((s) => findUnrequestedAdvice(s) !== null);
     case "internal_name": return sentences.filter((s) => PIPELINE_TERMS.test(s));
     case "house_wording": return sentences.filter((s) => CHEAP_WORDING.test(s));
     case "causal_unsupported": return sentences.filter((s) => causeLines(s).length > 0);
+    case "interpretation_rule": return sentences.filter((s) => holdsClause(s, clauses));
     default: return [];
   }
+}
+
+/**
+ * Whether every clause an interpretation rule fired on is in a sentence the view can drop: one it
+ * shows (and so cuts) or one the binding already left out. A clause found in neither (a heading,
+ * an Evidence line, a split the gate does not share) cannot be cut, so the answer holds.
+ */
+function everyClausePinned(clauses: readonly string[], shown: readonly string[], omitted: readonly string[]): boolean {
+  return clauses.length > 0 && clauses.every((clause) => [...shown, ...omitted].some((sentence) => holdsClause(sentence, [clause])));
 }
 
 function checkCode(problem: string, figureProblem: boolean, cause: ReadonlySet<string>): GateFailureCode {
@@ -336,13 +363,19 @@ export function gateAnswer(input: GateInput): GateVerdict {
 
   // 1. The shared evidence gate, problem by problem, in its own order.
   const figureLine = check.figureCheck.unmatched.length > 0 ? check.problems[0] : null;
+  const omittedTexts = (binding?.omitted ?? []).map((o) => o.text);
   for (const problem of check.problems) {
     const code = checkCode(problem, problem === figureLine, causeKnown);
     if (causeOff && code === "causal_unsupported") continue;
-    const cut = sentencesFor(code, shownSentences);
+    const clauses = code === "interpretation_rule"
+      ? check.interpretationClauses?.find((finding) => finding.problem === problem)?.clauses ?? [] : [];
+    const cut = sentencesFor(code, shownSentences, clauses);
     // Untraced figures stay critical (James, 2026-10-15). A problem that cannot be pinned to a sentence cannot be cut.
-    const critical = code === "untraced_figure" || code === "filed_peer_conflict" || cut.length === 0;
-    failures.push({ code, message: problem, critical, source: "check", ...(critical ? {} : { sentences: cut }) });
+    // An interpretation rule is cut only when every clause it fired on is in a sentence the view drops (#1077, cause 5).
+    const pinned = code === "interpretation_rule" ? everyClausePinned(clauses, shownSentences, omittedTexts) : cut.length > 0;
+    const critical = code === "untraced_figure" || code === "filed_peer_conflict" || !pinned;
+    failures.push({ code, message: problem, critical, source: "check", ...(critical ? {} : { sentences: cut }),
+      ...(clauses.length > 0 ? { clauses: [...clauses] } : {}) });
   }
   // 2. The cause rule as a shadow input: what it flags that today's gate does not already.
   for (const line of cause) {

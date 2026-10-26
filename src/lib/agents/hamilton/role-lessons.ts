@@ -496,4 +496,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-26",
   },
+  {
+    id: "issue-1077-interpretation-cut",
+    agent: "hamilton",
+    stage: "written answer",
+    lesson: "Every rule that faults one sentence names that sentence, so the gate cuts it and shows the rest; only a fault about the whole answer, or an untraced figure, holds it. A cause word is a cause only when it acts on an outcome: \"keeps fee income low\" is a cause, \"keeps you $5 above the median\" is a position. A figure stated as shared (\"its fee matches yours at $30\") binds only when both institutions' records carry it.",
+    why: "In paid batch 2026-10-25, 7 of 19 held or partial written answers came from rules firing on ordinary phrasing: the pricing-cause rule read \"keeps\" and \"removes\" as causal, its interpretation_rule failure pinned no sentence so it held the whole answer, and \"matches yours\" was read as the other bank's figure stated as the reader's own.",
+    evidence: { issues: [1077], prs: [], files: ["src/lib/hamilton/answer-interpretations.ts", "src/lib/hamilton/output-gate.ts", "src/lib/hamilton/narrative-bound.ts", "src/lib/hamilton/answer-gate.ts"] },
+    appliesTo: ["written-answer"],
+    since: "2026-10-26",
+  },
 ];
