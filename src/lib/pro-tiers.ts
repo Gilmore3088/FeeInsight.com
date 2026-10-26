@@ -1,13 +1,20 @@
 /**
  * Pro is priced by the size of the institution it covers (James, 8 Oct 2026): three tiers
- * by total assets, each one plan for up to 5 people. Annual is ten monthly payments, so it
- * comes with two months free. Consultants and other organizations with no assets of their
- * own pay NON_INSTITUTION_TIER.
+ * by total assets, each one plan for up to 5 people. It is sold annually only (James, 26 Oct
+ * 2026: banks budget and review vendors once a year). Consultants and other organizations with
+ * no assets of their own pay NON_INSTITUTION_TIER.
  *
  * Pure: no database or Stripe import, so the pricing page, checkout and tests share it.
  */
 
-export type ProPlan = "monthly" | "annual";
+/** The one plan on sale. */
+export type ProPlan = "annual";
+/**
+ * The plans Stripe can still hold: a monthly subscription started before 26 Oct 2026 keeps
+ * renewing, so its price is still recognised, but no checkout sells it.
+ */
+export type StripeProPlan = ProPlan | "monthly";
+export const PRO_PLAN: ProPlan = "annual";
 export type ProTier = "small" | "mid" | "large";
 
 export interface ProTierDef {
@@ -16,8 +23,9 @@ export interface ProTierDef {
   assetsLabel: string;
   /** Where the tier starts: "$500M" (null for the first tier). */
   fromLabel: string | null;
-  monthlyUsd: number;
   annualUsd: number;
+  /** The monthly price sold until 26 Oct 2026, kept only to recognise those Stripe prices. */
+  legacyMonthlyUsd: number;
 }
 
 /** `institution_sources.asset_size` is in thousands of dollars, as call reports file it. */
@@ -25,9 +33,9 @@ const MID_FROM_THOUSANDS = 500_000;
 const LARGE_FROM_THOUSANDS = 2_000_000;
 
 export const PRO_TIERS: readonly ProTierDef[] = [
-  { key: "small", assetsLabel: "Under $500M in assets", fromLabel: null, monthlyUsd: 150, annualUsd: 1_500 },
-  { key: "mid", assetsLabel: "$500M to $2B in assets", fromLabel: "$500M", monthlyUsd: 300, annualUsd: 3_000 },
-  { key: "large", assetsLabel: "Over $2B in assets", fromLabel: "$2B", monthlyUsd: 500, annualUsd: 5_000 },
+  { key: "small", assetsLabel: "Under $500M in assets", fromLabel: null, annualUsd: 1_500, legacyMonthlyUsd: 150 },
+  { key: "mid", assetsLabel: "$500M to $2B in assets", fromLabel: "$500M", annualUsd: 3_000, legacyMonthlyUsd: 300 },
+  { key: "large", assetsLabel: "Over $2B in assets", fromLabel: "$2B", annualUsd: 5_000, legacyMonthlyUsd: 500 },
 ];
 
 /** The tier for consultants and other organizations that are not a bank or credit union. */
@@ -47,8 +55,9 @@ const WHOLE_DOLLARS = new Intl.NumberFormat("en-US", {
 });
 const CENTS = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+/** Only the plan on sale: an old "?plan=monthly" link reads as no plan asked for. */
 export function isProPlan(value: string | undefined | null): value is ProPlan {
-  return value === "monthly" || value === "annual";
+  return value === PRO_PLAN;
 }
 
 export function isProTier(value: string | undefined | null): value is ProTier {
@@ -70,25 +79,19 @@ export function tierForAssets(assetsThousands: number | null | undefined): ProTi
   return "large";
 }
 
-export function tierPriceUsd(tier: ProTier, plan: ProPlan): number {
+export function tierPriceUsd(tier: ProTier, plan: StripeProPlan = PRO_PLAN): number {
   const def = proTier(tier);
-  return plan === "monthly" ? def.monthlyUsd : def.annualUsd;
+  return plan === "monthly" ? def.legacyMonthlyUsd : def.annualUsd;
 }
 
-/** "$150" or "$1,500" */
-export function tierAmountLabel(tier: ProTier, plan: ProPlan): string {
-  return WHOLE_DOLLARS.format(tierPriceUsd(tier, plan));
+/** "$1,500" */
+export function tierAmountLabel(tier: ProTier): string {
+  return WHOLE_DOLLARS.format(tierPriceUsd(tier));
 }
 
-/** "$150/mo" or "$1,500/yr" */
-export function tierPriceLabel(tier: ProTier, plan: ProPlan): string {
-  return `${tierAmountLabel(tier, plan)}${plan === "monthly" ? "/mo" : "/yr"}`;
-}
-
-/** Months the annual plan saves against twelve monthly payments: 2 for every tier today. */
-export function annualMonthsFree(tier: ProTier): number {
-  const def = proTier(tier);
-  return Math.round(12 - def.annualUsd / def.monthlyUsd);
+/** "$1,500/yr" */
+export function tierPriceLabel(tier: ProTier): string {
+  return `${tierAmountLabel(tier)}/yr`;
 }
 
 /**
@@ -130,24 +133,18 @@ export function assetsDetail(tierLabel: string, assetsThousands: number, report:
   return filing ? `${tierLabel}: ${assets} reported in its ${filing}` : `${tierLabel}: ${assets} in total assets on file`;
 }
 
-/** What the annual plan saves against twelve monthly payments: "$300". */
-export function annualSavingsLabel(tier: ProTier): string {
-  const def = proTier(tier);
-  return WHOLE_DOLLARS.format(def.monthlyUsd * 12 - def.annualUsd);
-}
-
 /** "$1,500 to $5,000 a year" */
 export const PRO_ANNUAL_RANGE_LABEL = `${WHOLE_DOLLARS.format(PRO_TIERS[0].annualUsd)} to ${WHOLE_DOLLARS.format(
   PRO_TIERS[PRO_TIERS.length - 1].annualUsd,
 )} a year`;
 
 /** The Vercel variable holding the Stripe price for a tier and plan, e.g. STRIPE_PRO_SMALL_ANNUAL_PRICE_ID. */
-export function proPriceEnvVar(tier: ProTier, plan: ProPlan): string {
+export function proPriceEnvVar(tier: ProTier, plan: StripeProPlan): string {
   return `STRIPE_PRO_${tier.toUpperCase()}_${plan.toUpperCase()}_PRICE_ID`;
 }
 
 /** Stripe lookup key for a tier and plan, e.g. pro_small_annual (src/lib/stripe-prices.ts). */
-export function proLookupKey(tier: ProTier, plan: ProPlan): string {
+export function proLookupKey(tier: ProTier, plan: StripeProPlan): string {
   return `pro_${tier}_${plan}`;
 }
 
@@ -155,15 +152,13 @@ export function proLookupKey(tier: ProTier, plan: ProPlan): string {
 export const PRO_PRODUCT_NAME = "Fee Insight Pro";
 
 /** A price id set by Vercel variable, or null; when null, src/lib/stripe-prices.ts sets one up. */
-export function proPriceId(tier: ProTier, plan: ProPlan): string | null {
+export function proPriceId(tier: ProTier, plan: StripeProPlan): string | null {
   return process.env[proPriceEnvVar(tier, plan)]?.trim() || null;
 }
 
-/** "Consultants and other organizations pay $300/mo or $3,000/yr, including 10 Hamilton reports a month; ..." */
-export const CONSULTANT_PRICE_NOTE = `Consultants and other organizations pay ${tierPriceLabel(
+/** "Consultants and other organizations pay $3,000 a year, including 10 Hamilton reports a month; ..." */
+export const CONSULTANT_PRICE_NOTE = `Consultants and other organizations pay ${tierAmountLabel(
   NON_INSTITUTION_TIER,
-  "monthly",
-)} or ${tierPriceLabel(NON_INSTITUTION_TIER, "annual")}, including ${CONSULTANT_MONTHLY_REPORTS} Hamilton reports a month; for more, it's ${tierPriceLabel(
+)} a year, including ${CONSULTANT_MONTHLY_REPORTS} Hamilton reports a month; for more, it's ${tierAmountLabel(
   CONSULTANT_UPGRADE_TIER,
-  "annual",
-)} with no monthly report limit.`;
+)} a year with no monthly report limit.`;

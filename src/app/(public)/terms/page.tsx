@@ -74,16 +74,17 @@ export default function TermsPage() {
           </h2>
           <ul className="list-disc pl-6 space-y-1.5">
             <li>
-              Subscriptions are billed in advance on a monthly or annual basis
-              depending on the plan selected, and renew automatically at the end
-              of each billing period until you cancel. You can cancel from your
-              account&apos;s billing page at any time.
+              Subscriptions are billed yearly in advance and renew automatically
+              at the end of each paid year until you cancel. You can cancel from
+              your account&apos;s billing page at any time. A monthly subscription
+              started before October 26, 2026 keeps billing monthly until it is
+              cancelled.
             </li>
             <li>
-              Annual plans: if you cancel within 14 days of your first annual
-              payment, we refund it in full. After that, an annual plan runs to
-              the end of its paid year and the unused part is not refunded.
-              Monthly plans are not refunded. You may cancel at any time; access
+              If you cancel within 14 days of your first annual payment, we refund
+              it in full. After that, a plan runs to the end of its paid year and
+              the unused part is not refunded. Payments on a monthly subscription
+              started before October 26, 2026 are not refunded. You may cancel at any time; access
               continues until the end of the current billing period. Other fees
               are non-refundable except where required by law.
             </li>

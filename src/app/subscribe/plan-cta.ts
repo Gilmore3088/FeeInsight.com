@@ -17,15 +17,14 @@ export interface ChosenInstitutionPrice {
   tier: ProTier;
 }
 
-/** "Space Coast Federal Credit Union: $5,000/yr or $500/mo". Annual first, the plan the page recommends. */
+/** "Capital City Bank: $5,000/yr". Pro is sold annually only. */
 export function chosenPriceLine({ name, tier }: ChosenInstitutionPrice): string {
-  return `${name}: ${tierPriceLabel(tier, "annual")} or ${tierPriceLabel(tier, "monthly")}`;
+  return `${name}: ${tierPriceLabel(tier)}`;
 }
 
-/** "From $1,500/yr or $150/mo": the lowest tier, annual first. */
+/** "From $1,500/yr": the lowest tier. */
 export function fromPriceLine(): string {
-  const lowest = PRO_TIERS[0].key;
-  return `From ${tierPriceLabel(lowest, "annual")} or ${tierPriceLabel(lowest, "monthly")}`;
+  return `From ${tierPriceLabel(PRO_TIERS[0].key)}`;
 }
 
 export function pricingCtaLabel(chosen: ChosenInstitutionPrice | null): string {

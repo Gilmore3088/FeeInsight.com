@@ -3,6 +3,19 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-10-26
+
+**Pro is sold annually only, at today's prices.** James, 2026-10-26, on a decision card in the
+"Rethink Hamilton subscription pricing" thread, after a pricing review (annual-only, per-report,
+per-seat, usage-based and an annual plan with reports included were compared). He chose "Annual
+only, today's prices": the monthly plan comes off sale and the three asset-size tiers stay at
+$1,500, $3,000 and $5,000 a year for up to 5 people; consultants stay at $3,000 a year. Why: banks
+budget and review vendors once a year and pay by invoice, and a monthly plan mostly adds churn while
+there is no paying customer yet. In code, `ProPlan` is `"annual"` only (`src/lib/pro-tiers.ts`);
+`StripeProPlan` and `legacyMonthlyUsd` keep the old monthly Stripe prices recognised for any
+subscription started before this date. No Stripe price was edited or archived. A report bundle, an
+over-$10B quoted tier and price changes were not chosen and wait for the first sales calls.
+
 ## 2026-10-25
 
 **Hamilton's peer minimum: 5 local, 10 everywhere.** James, 2026-10-25 ("5 local, 10 everywhere"),

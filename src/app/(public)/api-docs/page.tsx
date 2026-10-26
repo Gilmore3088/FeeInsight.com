@@ -311,7 +311,7 @@ export default async function ApiDocsPage() {
         <ol className="mt-3 list-decimal space-y-2 pl-5 text-[13px] leading-relaxed text-ink-soft">
           <li>
             <span className="font-semibold text-ink">Subscribe to {PRO_LABEL} on the {API_PLANS_LABEL}.</span>{" "}
-            Consultants pay the {tierAmountLabel(NON_INSTITUTION_TIER, "monthly")} price, so their plan includes it too.{" "}
+            Consultants pay the {tierAmountLabel(NON_INSTITUTION_TIER)} a year price, so their plan includes it too.{" "}
             <Link href="/subscribe" className="font-medium text-brick underline underline-offset-2">
               {PRO_PLANS_NAV.label}
             </Link>
@@ -1376,7 +1376,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
       <div className="grid gap-4 sm:grid-cols-2">
         <TierCard
           name={PRO_LABEL}
-          price={`${tierPriceLabel("mid", "monthly")} and up`}
+          price={`${tierPriceLabel("mid")} and up`}
           highlighted
           features={[
             "Your own API key, made on your account page",

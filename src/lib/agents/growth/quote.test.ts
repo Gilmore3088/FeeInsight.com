@@ -36,7 +36,7 @@ describe("buildQuoteDraft", () => {
     expect(draft.caption).toContain(`From $${REPORT_OFFER.fromPriceUsd}.`);
     // Unknown assets: all three Pro tiers, priced as /subscribe prices them.
     for (const tier of PRO_TIERS) {
-      expect(draft.caption).toContain(`${tier.assetsLabel}: ${tierPriceLabel(tier.key, "monthly")} or ${tierPriceLabel(tier.key, "annual")}`);
+      expect(draft.caption).toContain(`${tier.assetsLabel}: ${tierPriceLabel(tier.key)}`);
     }
     expect(draft.tier).toBeNull();
     expect(draft.reportPrice).toEqual({ cents: REPORT_OFFER.fromPriceUsd * 100, quoted: false });
@@ -46,7 +46,7 @@ describe("buildQuoteDraft", () => {
     const draft = buildQuoteDraft(lead({ quoteCents: 45_000, institutionId: 7, institutionName: "River Bank of Waco", assetsThousands: 900_000 }));
     expect(draft.caption).toContain("- $450 for River Bank of Waco against its local competitors.");
     expect(draft.tier).toBe("mid");
-    expect(draft.caption).toContain("$500M to $2B in assets: $300/mo or $3,000/yr (2 months free)");
+    expect(draft.caption).toContain("$500M to $2B in assets: $3,000/yr");
     expect(draft.caption).not.toContain("Under $500M in assets");
     expect(draft.caption).toContain("Report price: your saved quote on /admin/leads ($450).");
   });

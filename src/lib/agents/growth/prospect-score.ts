@@ -64,7 +64,7 @@ export interface ProspectScore {
  * The score for one prospect. Fit: $500M-$2B full, $100M-$500M 80%, halved when fewer than
  * SNAPSHOT_MIN_PEERS local institutions publish a schedule. Research: tier-A comparisons, 5 for full
  * marks. Confidence: the share of the prospect's own fee values that pass the source check.
- * Commercial: the plan's price tiers ($300/mo at $500M-$2B, $150/mo below).
+ * Commercial: the plan's price tiers ($3,000/yr at $500M-$2B, $1,500/yr below).
  */
 export function scoreProspect(
   snapshot: MarketSnapshot,

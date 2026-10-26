@@ -12,8 +12,8 @@ const WHOLE_DOLLARS = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 0,
 });
 
-/** "Monthly" / "Annual" for copy that names the plan. */
-export const PLAN_DISPLAY_NAME: Record<ProPlan, string> = { monthly: "Monthly", annual: "Annual" };
+/** "Annual" for copy that names the plan. */
+export const PLAN_DISPLAY_NAME: Record<ProPlan, string> = { annual: "Annual" };
 /** One subscription covers the whole team (James, 8 Oct 2026): "for up to 5 people". */
 export const PLAN_TEAM_LABEL = `for up to ${WORKSPACE_SEAT_LIMIT} people`;
 /** "From $300" while the report is quoted per institution. */

@@ -4,7 +4,7 @@ import { contentSchemaReady, insertContentDraft, recentSubjects } from "@/lib/da
 import { leadQualifiedReady } from "@/lib/data-store/lead-qualified";
 import { isTestLead } from "@/lib/leads/lead-status";
 import { formatUsd } from "@/lib/leads/report-payment";
-import { annualMonthsFree, PRO_TIERS, proTier, tierForAssets, tierPriceLabel, type ProTier } from "@/lib/pro-tiers";
+import { PRO_TIERS, proTier, tierForAssets, tierPriceLabel, type ProTier } from "@/lib/pro-tiers";
 import { OUTREACH_POSTAL_ADDRESS } from "./outreach";
 
 /**
@@ -60,7 +60,7 @@ function firstName(name: string): string {
 
 function proLine(tier: ProTier): string {
   const def = proTier(tier);
-  return `${def.assetsLabel}: ${tierPriceLabel(tier, "monthly")} or ${tierPriceLabel(tier, "annual")} (${annualMonthsFree(tier)} months free)`;
+  return `${def.assetsLabel}: ${tierPriceLabel(tier)}`;
 }
 
 /** The quote email and its audit block for one qualified lead. Pure. */

@@ -7,8 +7,8 @@ import { trackEvent } from "@/lib/analytics";
 import {
   CONSULTANT_PRICE_NOTE,
   NON_INSTITUTION_TIER,
+  PRO_PLAN,
   PRO_TIERS,
-  annualMonthsFree,
   annualPerMonthLabel,
   proTier,
   tierAmountLabel,
@@ -25,15 +25,6 @@ export type { ProTierSelection } from "./plan-checkout";
 import { CHECKOUT_ID, CHOOSER_INPUT_ID, PLANS_ID } from "./plan-ids";
 
 export { CHECKOUT_ID, CHOOSER_INPUT_ID, PLANS_ID } from "./plan-ids";
-
-/** "two months free", the one phrasing every page uses for annual billing (site audit #1952). */
-const MONTH_WORDS = ["", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven"];
-export function monthsFreeWords(months: number): string {
-  return `${MONTH_WORDS[months] ?? months} ${months === 1 ? "month" : "months"} free`;
-}
-
-/** Annual is the plan we point to: same features, two months free on every tier. */
-export const RECOMMENDED_PLAN: ProPlan = "annual";
 
 interface ProPlanBoardProps {
   isLoggedIn: boolean;
@@ -52,8 +43,6 @@ interface ProPlanBoardProps {
   destination: string | null;
   /** Sign-up links per plan for a signed-out buyer. */
   registerHref: Record<ProPlan, string>;
-  /** The plan asked for in the URL; annual otherwise. */
-  initialPlan: ProPlan | null;
   /** When set (post-signup hand-off), the matching plan starts checkout on mount. */
   autoStartPlan?: ProPlan | null;
   /** Where the buyer came from ("Regulatory Wire", or "direct"), sent with each funnel event. */
@@ -91,23 +80,13 @@ export const CONSULTANT_API_NOTE = "Both include API keys and the Claude connect
 export const ONE_SUBSCRIPTION_LINE = "One subscription, priced by institution size.";
 export const SAME_WORKSPACE_LINE = `Every plan gets the same Hamilton workspace. The only difference is API access, included from ${API_FROM_LABEL ?? proTier(API_INCLUDED_TIERS[0]).assetsLabel} in assets. Size is total assets in the latest FDIC or NCUA call report.`;
 /** Billing terms under the cards, two short lines, shown before a choice as well as at checkout. */
-export const BILLING_TERMS_LINE = "Annual plans are billed yearly and refunded in full if cancelled within 14 days of the first payment.";
-export const CANCEL_TERMS_LINE = "Monthly plans renew monthly. Cancel renewal anytime from your billing page.";
+export const BILLING_TERMS_LINE = "Every plan is billed yearly and refunded in full if cancelled within 14 days of the first payment.";
+export const CANCEL_TERMS_LINE = "Cancel renewal anytime from your billing page.";
 export const CONSULTANT_PRICING_LABEL = "Consultant pricing";
 
 /**
- * The "N months free" on the toggle. Every tier gives the same months free today
- * (pro-tiers.test.ts); if one ever differs the toggle says only "Recommended" rather than a
- * figure that is wrong for some tier.
- */
-function sharedMonthsFree(): number | null {
-  const counts = new Set(PRO_TIERS.map((tier) => annualMonthsFree(tier.key)));
-  return counts.size === 1 ? annualMonthsFree(PRO_TIERS[0].key) : null;
-}
-
-/**
- * The one plan comparison (James, Oct 16 evening: prices first, then the work). One billing
- * toggle, annual first and marked as recommended; then three cards, one per institution size,
+ * The one plan comparison (James, Oct 16 evening: prices first, then the work). Pro is sold
+ * annually only (James, Oct 26), so there is no billing toggle: three cards, one per institution size,
  * each priced from PRO_TIERS with a "Select institution" button that opens the lookup below them.
  * Once an institution is chosen the lookup becomes the checkout (two columns on desktop), its card
  * is marked and the others step back.
@@ -122,15 +101,12 @@ export function ProPlanBoard({
   returnTo,
   destination,
   registerHref,
-  initialPlan,
   autoStartPlan = null,
   entry,
 }: ProPlanBoardProps) {
-  const [plan, setPlan] = useState<ProPlan>(autoStartPlan ?? initialPlan ?? RECOMMENDED_PLAN);
+  const plan = PRO_PLAN;
   const [opened, setOpened] = useState(false);
   const open = opened || lookupOpen || selection !== null;
-  const annual = plan === "annual";
-  const monthsFree = sharedMonthsFree();
   // A consultant is priced on the middle tier, which is not their asset size.
   const markLabel = selection?.otherOrganization ? "Consultant price" : "Your price";
 
@@ -140,12 +116,6 @@ export function ProPlanBoard({
     window.addEventListener(OPEN_LOOKUP_EVENT, onOpen);
     return () => window.removeEventListener(OPEN_LOOKUP_EVENT, onOpen);
   }, []);
-
-  const choose = (next: ProPlan) => {
-    if (next === plan) return;
-    trackEvent("billing_frequency_selected", { plan: next, ...(selection ? { tier: selection.tier } : {}), entry });
-    setPlan(next);
-  };
 
   const selectInstitution = (tier: string) => {
     trackEvent("pricing_lookup_opened", { tier, entry });
@@ -158,35 +128,7 @@ export function ProPlanBoard({
 
   return (
     <div>
-      <div className="flex justify-center">
-        {/* Two toggle buttons (aria-pressed): each is its own Tab stop and works with Enter and Space. */}
-        <div role="group" aria-label="Billing" className="inline-flex max-w-full gap-1 rounded-full bg-surface-200 p-1 text-sm">
-          {(["annual", "monthly"] as const).map((option) => {
-            const on = plan === option;
-            return (
-              <button
-                key={option}
-                type="button"
-                aria-pressed={on}
-                onClick={() => choose(option)}
-                className={`flex min-h-11 items-center justify-center gap-2 rounded-full px-4 font-medium sm:px-5 ${
-                  on ? "bg-white text-ink shadow-sm" : "text-ink-muted hover:text-ink"
-                }`}
-              >
-                {option === "annual" ? "Annual" : "Monthly"}
-                {option === RECOMMENDED_PLAN && (
-                  <span className="whitespace-nowrap rounded-full bg-ink/[0.07] px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink">
-                    Recommended
-                    {monthsFree !== null && <span className="max-sm:hidden"> · {monthsFree} months free</span>}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="mx-auto mt-6 max-w-2xl text-center" data-one-subscription="">
+      <div className="mx-auto max-w-2xl text-center" data-one-subscription="">
         <p className="text-[15px] font-semibold text-ink">{ONE_SUBSCRIPTION_LINE}</p>
         <p className="mt-1 text-[13px] leading-relaxed text-ink-muted">{SAME_WORKSPACE_LINE}</p>
       </div>
@@ -217,15 +159,11 @@ export function ProPlanBoard({
                   className="font-mono text-[2.25rem] font-semibold leading-none tracking-tight text-ink tabular-nums sm:text-[2.5rem]"
                   style={DISPLAY}
                 >
-                  {tierAmountLabel(tier.key, plan)}
+                  {tierAmountLabel(tier.key)}
                 </span>
-                <span className="text-sm text-ink-muted">{annual ? "/ year" : "/ month"}</span>
+                <span className="text-sm text-ink-muted">/ year</span>
               </p>
-              <p className="mt-2 text-[13px] leading-relaxed text-ink-muted">
-                {annual
-                  ? `${annualPerMonthLabel(tier.key)} a month, billed yearly: ${monthsFreeWords(annualMonthsFree(tier.key))}`
-                  : `Billed monthly · or ${tierAmountLabel(tier.key, "annual")} a year`}
-              </p>
+              <p className="mt-2 text-[13px] leading-relaxed text-ink-muted">{`${annualPerMonthLabel(tier.key)} a month, billed yearly`}</p>
               {apiIncludedInTier(tier.key) && (
                 <p className="mt-1 text-[13px] leading-relaxed text-ink-muted" data-api-included="">
                   {`Includes ${API_CARD_LINE}`}

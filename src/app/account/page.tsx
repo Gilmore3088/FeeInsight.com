@@ -126,7 +126,7 @@ export default async function AccountPage({
           selectedInstitutionId: workspaceContext?.selectedInstitutionId ?? null,
         }),
       }
-    : { kind: "free", fromMonthlyUsd: Math.min(...PRO_TIERS.map((tier) => tier.monthlyUsd)) };
+    : { kind: "free", fromAnnualUsd: Math.min(...PRO_TIERS.map((tier) => tier.annualUsd)) };
 
   return (
     <div className="min-h-screen bg-paper">
