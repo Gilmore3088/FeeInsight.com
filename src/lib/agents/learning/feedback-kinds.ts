@@ -105,6 +105,7 @@ export const FEEDBACK_KINDS = {
   rule_revised: { record: "Hamilton's eval verdicts log a revised rule." },
   lineup_corrected: { record: "Knox's lineup correction logs each fee it moved." },
   ancillary_owner_corrected: { record: "Knox's ancillary product recovery logs each live fee's NULL product it filled, old and new values (ancillary-owner-correct.ts, #1911)." },
+  account_subject_corrected: { record: "Knox's account subject recovery logs each live monthly or minimum balance fee's NULL product it filled from its own sentence's subject, old and new values (account-subject-correct.ts, #1912)." },
   knox_reread_resolved: { record: "Knox settles each re-read request per rules version (reread-feedback.ts)." },
   batch_error_rate: { record: "One row per Knox or Rosetta batch: a cursor and the goal scorecard's error rate." },
   account_type_hold: { record: "Legacy takedown rows; the sync skips this kind now (feedback-sync.ts)." },

@@ -13,7 +13,8 @@ so both showed as fees of U.S. Bank's general accounts beside its $5 money order
 recover the label, by design, and no step re-read the rows already live.
 
 **Fix:** `correctAncillaryOwners` (`src/lib/agents/knox/ancillary-owner-correct.ts`, strategy
-`knox.ancillary_owner_correct` v1), run in every Knox extract step. It re-reads the current text of
+`knox.ancillary_owner_correct` v1), run in Knox extract steps scoped to one bank or one state lane
+(an unscoped step skips it). It re-reads the current text of
 each document with a live Knox fee whose raw row has no product and fills `product_name` and the
 `ancillary_product:v1` flag only where `withAncillaryProduct` witnesses the fee in the named
 product's block, and only while `product_name` is NULL. One `pipeline_feedback` row per change keeps

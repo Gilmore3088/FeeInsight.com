@@ -1,0 +1,58 @@
+/**
+ * #1912: M&T Bank's Preferred Money Market product page (institution 21, document 24707,
+ * agent_source_texts 21879, mtb.com/personal/savings-and-cds/preferred-money-market), the lines
+ * around its monthly maintenance charge as stored on 2026-10-26 (navigation, rate figures and most
+ * disclosures cut; the 12 lines above the waiver line are as stored). Live fee 109815 (raw 491668,
+ * $20) was read from the waiver line with no account.
+ */
+export const MT_PREFERRED_MONEY_MARKET_TEXT = [
+  "Log InAcceso",
+  "M&T Preferred Money Market",
+  "Certificate of Deposit",
+  "M&T Premium Savings",
+  "Relationship Savings",
+  "M&T Starter Savings",
+  "M&T Preferred Money Market",
+  "THE MORE YOU SAVE, THE MORE YOU EARN",
+  "Relationship Savings",
+  "YOUR RELATIONSHIP\nREWARDED",
+  "Enjoy convenient online access and monitor your account while easily avoiding monthly maintenance charges.{{d132*}}",
+  "M&T Starter Savings",
+  "Is your child or grandchild under 18? Learn about the M&T Starter Savings Account{{d375*}}, where there is no monthly maintenance charge.{{d131*}}",
+  "Getting started is easy:",
+  "From short‑term goals to long‑term plans, M&T Preferred Money Market gives you the flexibility to save today and the opportunity to earn more as your account balance grows.{{d1472*}}",
+  "Open an account",
+  "Start by opening an M&T Preferred Money Market online or in branch, schedule an appointment",
+  "Choose how to earn higher rates",
+  "Deposit $25,000 in new money{{d1484*}} within 90 days of account opening to qualify for Preferred Rates{{d1472*}}",
+  "OR",
+  "Maintain $100,000+ in your M&T Preferred Money Market account to earn competitive Standard Rates{{d1472*}} - no new money required",
+  "Add more. Earn More.",
+  "The more you add, to your M&T Preferred Money Market account, the more opportunity your savings has to grow—helping you earn more over time while keeping your money accessible.",
+  "Plus, enjoy other account benefits, such as:",
+  "Competitive rates",
+  "Choose between earning competitive Standard Rates or unlocking higher Preferred Rates.{{d1472*}}",
+  "Flexible access",
+  "Tap into your savings whenever you need and enjoy limited check-writing at no cost.{{d1262*}}",
+  "Digital tools",
+  "Save time with M&T Online & Mobile Banking, Direct Deposit, Easy Save and other features. {{d1471*}}",
+  "Real‑time account updates",
+  "Help protect your account with automatic notifications about suspicious activity.{{d1486*}}",
+  "Easy access to your documents",
+  "Your electronic statements are stored in  your online account, so they're there when you need them.",
+  "Explore our competitive money market rates",
+  "Balance | Standard Interest Rate | Standard Annual Percentage Yield (APY)** | Preferred Interest Rate | Preferred Annual Percentage Yield (APY)**",
+  "Have a maturing CD?",
+  "Good news! Funds deposited into a newly opened M&T Preferred Money Market account qualify as new money.",
+  "Understanding the monthly maintenance charge",
+  "The M&T Preferred Money Market account has a $20 monthly maintenance charge.",
+  "The $20 monthly maintenance charge is waived{{d1137*}} if:",
+  "The average daily balance maintained in the account for that monthly service charge cycle is at least $10,000; OR",
+  "On the service charge cycle date, you have a MyChoice Premium Checking, Power Checking, M&T Select, M&T Select with Interest, or Advantage Checking Account.{{d1483*}}",
+  "Explore M&T Platinum Client",
+  "Disclosure reference d1137",
+  "No monthly maintenance charge for M&T Preferred Money Market when you keep a minimum average daily balance of $10,000.",
+].join("\n\n");
+
+/** The excerpt Knox stored with raw 491668 (its extraction note). */
+export const MT_WAIVER_EXCERPT = "The $20 monthly maintenance charge is waived{{d1137*}} if:";

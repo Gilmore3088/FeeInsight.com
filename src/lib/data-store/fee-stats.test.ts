@@ -163,7 +163,23 @@ describe("general price over product exceptions (#1911, rule 11)", () => {
     expect(valuePerInstitution(two).get(9)).toBe(12.5);
   });
 
-  it("never treats an account's own monthly fee or minimum balance as an exception", () => {
+  it("values M&T's monthly maintenance at its checking price, not with its money market's charge (#1912)", () => {
+    const mt = [
+      { institution_id: 21, fee_category: "monthly_maintenance", amount: "4.95", account_product_type: null },
+      { institution_id: 21, fee_category: "monthly_maintenance", amount: "14.95", account_product_type: null },
+      { institution_id: 21, fee_category: "monthly_maintenance", amount: "24.95", account_product_type: null },
+      { institution_id: 21, fee_category: "monthly_maintenance", amount: "20.00", account_product_type: "M&T Preferred Money Market" },
+    ];
+    expect(valuePerInstitution(mt).get(21)).toBe(14.95);
+    // With no account on the $20 row (today's live row) the four pool: $17.475.
+    expect(valuePerInstitution(mt.map((row) => ({ ...row, account_product_type: null }))).get(21)).toBeCloseTo(17.475, 10);
+    // A bank that prices only savings keeps that value; the rows stay listed either way.
+    expect(valuePerInstitution([{ institution_id: 22, fee_category: "minimum_balance", amount: 5, account_product_type: "Statement Savings" }]).get(22)).toBe(5);
+    expect(rowIsProductException({ fee_category: "minimum_balance", account_product_type: "Statement Savings" })).toBe(true);
+    expect(rowIsProductException({ fee_category: "monthly_maintenance", account_product_type: "Truth in Savings" })).toBe(false);
+  });
+
+  it("never treats a checking account's own monthly fee or minimum balance as an exception", () => {
     const monthly = [
       { institution_id: 3, fee_category: "monthly_maintenance", amount: 12, account_product_type: "Premier Checking" },
       { institution_id: 3, fee_category: "monthly_maintenance", amount: 5, account_product_type: null },
@@ -208,7 +224,7 @@ describe("general price over product exceptions (#1911, rule 11)", () => {
     expect(sql).toContain(`COALESCE(MAX(ef.amount) ${general}, MAX(ef.amount))`);
     expect(sql).toContain(`COALESCE(percentile_cont(0.5) WITHIN GROUP (ORDER BY ef.amount) ${general}, percentile_cont(0.5) WITHIN GROUP (ORDER BY ef.amount))`);
     expect(sql).toContain("ef.fee_category IN ('overdraft')");
-    expect(institutionValueSql("f", "canonical_fee_key")).toContain("f.canonical_fee_key NOT IN ('monthly_maintenance', 'minimum_balance')");
+    expect(institutionValueSql("f", "canonical_fee_key")).toContain("WHEN f.canonical_fee_key IN ('monthly_maintenance', 'minimum_balance')");
     expect(() => institutionValueSql("ef; drop", "fee_category")).toThrow();
     expect(() => institutionValueSql("ef", "fee_category)--")).toThrow();
   });
@@ -452,7 +468,7 @@ describe("count once: sibling charters sharing one schedule (#1441, rule 7)", ()
     expect(COUNT_SHARED_SCHEDULE_ONCE).toBe(true);
     expect(summarizeFees(rows).institution_count).toBe(5);
     expect(STATS_SCHEDULE_KEYS).toBe(`${scheduleKeysSql("ef", true)} AS schedule_keys, ${scheduleGroupSql("ef", true)} AS schedule_group, ${productExceptionSql("ef")} AS product_exception`);
-    expect(STATS_METHOD_VERSION).toBe(21);
+    expect(STATS_METHOD_VERSION).toBe(23);
   });
 
   it("switched off, selects no keys and counts each charter", () => {
