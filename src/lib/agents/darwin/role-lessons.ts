@@ -7,6 +7,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const DARWIN_LESSONS: AgentLesson[] = [
   {
+    id: "issue-1577-learned-row-follows-current-key",
+    agent: "darwin",
+    stage: "classify",
+    lesson: "Trust a learned answer-key row only while it still matches the current confirmed key line: the same category, amount, source and fingerprints under a current eligibility receipt. When a person relabels that line, to another category or to unmapped, the old row is retired from the category model and every other reader at once; it is never kept as a vote for the label the key no longer gives.",
+    why: "The answer-key feedback rows were written when each key line was first scored, and 29 night-deposit lines were later relabelled unmapped (101767 among them) while their old rows still said night_deposit. Without the current-line match those rows would keep teaching a category the key had taken back. PR #2174 (adjusted by #2468) binds each row to its current key line; a read-only check on Oct 26 found 34 old rows that disagree with their current line (29 to unmapped, 5 to another category) and none of them reach training.",
+    evidence: { issues: [1577], prs: [2174, 2704], files: ["src/lib/data-store/answer-key-reference-store.ts", "src/lib/agents/darwin/category-model.ts", "src/lib/data-store/answer-key-eligibility.db.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
+  {
     id: "issue-1694-grade-the-holds-you-re-decide",
     agent: "darwin",
     stage: "verify",
