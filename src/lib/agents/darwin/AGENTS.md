@@ -1149,8 +1149,24 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   Step detail `translated_copy_check`. Dry run Oct 18 (prod, read-only, `translatedCopyRowsSql`): 127
   live fees on 12 Spanish-copy documents at 11 institutions; 35 would come down (Sound 22, OnPoint 6,
   M&T 5, FirstBank PR 2) and 92 stay. v2 (review of v1): a fee with no dollar amount (a percent fee)
-  never has a twin, and "fondos", "insuficientes" and "cobro" read as Spanish. A fee taken down for
-  its twin is not read again if the twin later comes down under another check; restore it by hand.
+  never has a twin, and "fondos", "insuficientes" and "cobro" read as Spanish. v3 (#1986): each
+  verify step first reads every translated-copy takedown again (`translatedCopyRestoreRowsSql`, no
+  cursor) and a fee comes back (`translatedCopyRestoreVerdict`) only when its own state is still this
+  check's alone (reason, batch, not quarantined, verified row rejected with `translated_copy` as its
+  last flag, no other check's second look pending or confirmed: else `other_takedown`), the named
+  twin is no longer live at its category and amount (`twin_live`), no other English line of the fee
+  is live or account-type-held (`english_twin_live`) or verified and waiting to publish
+  (`english_twin_waiting`), the twin was not replaced by a newer copy of the schedule
+  (`older_edition`, `refreshed by`, `superseded by`, `newer_copy_drops_fee`, `not_on_current_copy`:
+  `twin_replaced`), and its own document's newest text still states it (`checkFeeAgainstSource`;
+  `no_amount`, `no_text`, `not_on_own_document`). `TRANSLATED_COPY_RESTORE_LIVE` is off, so the step
+  only reports (`restore` in the step detail). Switched on, a restorable fee comes back in one
+  statement that re-checks its state: the rollback cleared, the verified row `verified` with
+  `translated_copy` replaced by `rules_recheck_restored:translated_copy_twin_gone` (the learning
+  sync's `restored_after_takedown` record names it), its second look set to `takedown_cleared`, event
+  `darwin.translated_copy_restored`. Dry run Oct 26 (prod, read-only): 35 archived, 0 would come
+  back; 32 twins live, and OnPoint's 64334 (`twin_replaced`: $133 in Spanish, $153 in the current
+  English edition), 64337 and 64339 (`english_twin_waiting`) stay down.
 - Product-page repeats of a schedule line (`product-page-repeat-check.ts`, v2, #1910, James's
   live-fee check Oct 18). TD's checking campaign page gave "Paper statements" $3 (fee 64717), live
   beside the fee schedule's "Paper statement (per statement cycle)" $3. Rosetta typed the page a
@@ -2154,7 +2170,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v3 | `darwin/hourly-frequency-check.ts` |
 | `NON_DEPOSIT_CHECK_VERSION` | `darwin.non_deposit_document` | v4 | `darwin/non-deposit-document-check.ts` |
 | `LINE_CONFLICT_CHECK_VERSION` | `darwin.line_conflict` | v1 | `darwin/line-conflict-check.ts` |
-| `TRANSLATED_COPY_CHECK_VERSION` | `darwin.translated_copy` | v2 | `darwin/translated-copy-check.ts` |
+| `TRANSLATED_COPY_CHECK_VERSION` | `darwin.translated_copy` | v3 | `darwin/translated-copy-check.ts` |
 | `PRODUCT_PAGE_REPEAT_CHECK_VERSION` | `darwin.product_page_repeat` | v2 | `darwin/product-page-repeat-check.ts` |
 | `SAME_LINE_REPLACEMENT_CHECK_VERSION` | `darwin.same_line_replacement` | v1 | `darwin/same-line-replacement-check.ts` |
 | `SAME_LINE_READ_CHECK_VERSION` | `darwin.same_line_read` | v1 | `darwin/same-line-read-check.ts` |

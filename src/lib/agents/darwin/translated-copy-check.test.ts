@@ -2,7 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   TRANSLATED_COPY_CHECK,
+  TRANSLATED_COPY_RESTORE_LIVE,
   TRANSLATED_COPY_TAKEDOWN_LIVE,
+  judgeTranslatedCopyRestores,
+  translatedCopyRestoreVerdict,
+  type TranslatedCopyRestoreRow,
   findTranslatedCopies,
   readsSpanish,
   recheckTranslatedCopies,
@@ -23,9 +27,11 @@ const ROWS = [
 ];
 
 type DbMock = ReturnType<typeof vi.fn>;
-function dbFor(rows: Array<Record<string, unknown>>, options: { flags?: Array<Record<string, unknown>> } = {}): DbMock {
+function dbFor(rows: Array<Record<string, unknown>>, options: { flags?: Array<Record<string, unknown>>; archived?: TranslatedCopyRestoreRow[] } = {}): DbMock {
   return vi.fn((strings: TemplateStringsArray) => {
     const text = strings.join("?");
+    if (text.includes("translated_copy_restore_rows")) return Promise.resolve(options.archived ?? []);
+    if (text.includes("WITH eligible AS")) return Promise.resolve((options.archived ?? []).map((row) => ({ fee_published_id: row.fee_published_id })));
     if (text.includes("information_schema") || text.includes("to_regclass")) return Promise.resolve([{ ready: true, exists: true, present: true }]);
     if (text.includes("FROM pipeline_feedback")) return Promise.resolve(options.flags ?? []);
     if (text.includes("UPDATE published_fee_records")) return Promise.resolve([{ fee_published_id: "145047" }]);
@@ -140,5 +146,89 @@ describe("recheckTranslatedCopies", () => {
     const db = vi.fn(() => Promise.reject(new Error("timeout")));
     const result = await recheckTranslatedCopies(asDb(db as DbMock), { runId: 7, dryRun: false, live: true });
     expect(result.checked).toBe(0);
+  });
+});
+
+// #1986: an archived Spanish fee, in the state the takedown left it, whose named twin is down.
+const ES_TEXT = "Cargos por servicios\nCargo por sobregiro $15.00 por partida\nCargo por cheque oficial $10.00";
+function archived(overrides: Partial<TranslatedCopyRestoreRow> = {}): TranslatedCopyRestoreRow {
+  return {
+    fee_published_id: "145047", fee_verified_id: "9001", institution_id: "21", fee_name: "Cargo por sobregiro", amount: "15",
+    canonical_fee_key: "overdraft", rolled_back_reason: "translated_copy: #33498 twin #68605", source_document_id: "33498",
+    own_state_clean: true, other_takedown: null, named_twin_id: "68605", named_twin_live: false,
+    named_twin_reason: "source_check: amount_not_in_text", english_twin_id: null, english_waiting_id: null, newest_text: ES_TEXT,
+    ...overrides,
+  };
+}
+
+describe("translatedCopyRestoreVerdict (#1986)", () => {
+  it("restores a Spanish fee whose English twin came down and that its own document still states", () => {
+    expect(translatedCopyRestoreVerdict(archived())).toBe("restore");
+  });
+
+  it("keeps it down while the named twin is live, or any other English line of it is live or waiting", () => {
+    expect(translatedCopyRestoreVerdict(archived({ named_twin_live: true }))).toBe("twin_live");
+    expect(translatedCopyRestoreVerdict(archived({ english_twin_id: "70001" }))).toBe("english_twin_live");
+    expect(translatedCopyRestoreVerdict(archived({ english_waiting_id: "65446" }))).toBe("english_twin_waiting");
+  });
+
+  it("keeps it down when another rule took it down too", () => {
+    expect(translatedCopyRestoreVerdict(archived({ own_state_clean: false }))).toBe("other_takedown");
+    expect(translatedCopyRestoreVerdict(archived({ other_takedown: "hamilton.source_check" }))).toBe("other_takedown");
+  });
+
+  it("keeps it down when a newer copy of the schedule replaced the twin (OnPoint 64334, Oct 26)", () => {
+    for (const reason of ["older_edition: #18549 dated 2026-10-01", "refreshed by #152577", "superseded by #9", "newer_copy_drops_fee: #1", "not_on_current_copy: #2"]) {
+      expect(translatedCopyRestoreVerdict(archived({ named_twin_reason: reason }))).toBe("twin_replaced");
+    }
+  });
+
+  it("keeps it down when its own document's newest read no longer states it", () => {
+    expect(translatedCopyRestoreVerdict(archived({ newest_text: "Cargo por sobregiro $25.00 por partida" }))).toBe("not_on_own_document");
+    expect(translatedCopyRestoreVerdict(archived({ newest_text: null }))).toBe("no_text");
+    expect(translatedCopyRestoreVerdict(archived({ amount: null }))).toBe("no_amount");
+  });
+
+  it("counts the kept ones by verdict", () => {
+    const judged = judgeTranslatedCopyRestores([
+      archived(),
+      archived({ fee_published_id: "145043", named_twin_live: true }),
+      archived({ fee_published_id: "64334", named_twin_reason: "older_edition: #18549 dated 2026-10-01" }),
+    ]);
+    expect(judged.archived).toBe(3);
+    expect(judged.restorable.map((fee) => fee.feePublishedId)).toEqual([145047]);
+    expect(judged.kept).toEqual({ twin_live: 1, twin_replaced: 1 });
+  });
+});
+
+describe("the restore in recheckTranslatedCopies (#1986)", () => {
+  it("is off until a dry run's sample checks clean (DECISIONS 2026-10-20)", () => {
+    expect(TRANSLATED_COPY_RESTORE_LIVE).toBe(false);
+  });
+
+  it("switched off, it reports what it would restore and writes no restore", async () => {
+    const db = dbFor([], { archived: [archived()] });
+    const result = await recheckTranslatedCopies(asDb(db), { runId: 9, stepId: 90, dryRun: false, live: false });
+    expect(result.restore.restorable.map((fee) => fee.feePublishedId)).toEqual([145047]);
+    expect(result.restore.restored).toEqual([]);
+    expect(texts(db).some((text) => text.includes("WITH eligible AS"))).toBe(false);
+  });
+
+  it("a dry run restores nothing, even switched on", async () => {
+    const db = dbFor([], { archived: [archived()] });
+    const result = await recheckTranslatedCopies(asDb(db), { runId: 9, dryRun: true, live: false, restoreLive: true });
+    expect(result.restore.restored).toEqual([]);
+    expect(texts(db).some((text) => text.includes("UPDATE") || text.includes("INSERT"))).toBe(false);
+  });
+
+  it("switched on, restores the fee with its verified row, clears its second look and logs it", async () => {
+    const db = dbFor([], { archived: [archived()] });
+    const result = await recheckTranslatedCopies(asDb(db), { runId: 9, stepId: 90, dryRun: false, live: false, restoreLive: true });
+    expect(result.restore.restored).toEqual([145047]);
+    const all = JSON.stringify(db.mock.calls);
+    expect(all).toContain("rules_recheck_restored:translated_copy_twin_gone");
+    expect(all).toContain("hamilton.second_look:darwin.translated_copy:pub:145047");
+    expect(all).toContain("takedown_cleared");
+    expect(all).toContain("darwin.translated_copy_restored");
   });
 });

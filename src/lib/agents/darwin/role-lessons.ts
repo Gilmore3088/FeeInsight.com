@@ -7,6 +7,20 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const DARWIN_LESSONS: AgentLesson[] = [
   {
+    id: "issue-1986-takedown-for-a-twin-follows-the-twin",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "A takedown that stands on another live line (a translated copy beside its English twin) holds only while that line, or another line of the same fee at the same category and price, is there. Read every such takedown again each step: when no English line of the fee is live, held or waiting to publish, bring the copy back, but only if no other rule has taken it down since, the twin was not replaced by a newer copy of the schedule (then the copy is no proof of today's price either), and the copy's own document's newest read still states it. A restore changes live data, so it ships behind its own switch with a prod dry-run count.",
+    why: "The translated-copy check (#1909) archived 35 Spanish-copy fees at 4 institutions on Oct 18 as `translated_copy: #<doc> twin #<fee>`, and nothing read them again when the twin later came down, so a bank could lose the fee entirely. By Oct 26 the dated-edition check had taken down three of OnPoint's English twins (152572, 22677, 50406). None of the three should come back: the current English edition prices the Oregon reconveyance at $153 where the Spanish copy says $133 (64334), and its Account Research $25 and Legal Process $75 rows are verified and waiting to publish (64337, 64339). The other 32 twins are still live.",
+    evidence: {
+      issues: [1986],
+      prs: [],
+      files: ["src/lib/agents/darwin/translated-copy-check.ts", "src/lib/agents/darwin/translated-copy-restore.db.test.ts", "src/lib/agents/darwin/translated-copy-check.test.ts"],
+    },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
+  {
     id: "issue-1577-learned-row-follows-current-key",
     agent: "darwin",
     stage: "classify",
