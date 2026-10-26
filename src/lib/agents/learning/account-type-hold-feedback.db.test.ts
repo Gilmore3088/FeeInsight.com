@@ -93,11 +93,11 @@ describe.skipIf(!connection)("account type hold release relabel in isolated Post
            AND institution_id IS DISTINCT FROM ${INST}`;
       const others = Number(prior[0].due);
 
-      const dry = await repairAccountTypeHoldFeedback(tx as unknown as Db, { runId, dryRun: true });
+      const dry = await repairAccountTypeHoldFeedback(tx as unknown as Db, { runId, dryRun: true, relabelOn: false });
       expect(dry.release).toEqual({ on: false, due: 2 + others, relabeled: 0 });
       expect((await label(tx, "hamilton.account_type_hold:restored:20168011")).signal).toBe("wrong");
 
-      const off = await repairAccountTypeHoldFeedback(tx as unknown as Db, { runId, dryRun: false });
+      const off = await repairAccountTypeHoldFeedback(tx as unknown as Db, { runId, dryRun: false, relabelOn: false });
       expect(off.release).toEqual({ on: false, due: null, relabeled: 0 });
 
       const live = await repairAccountTypeHoldFeedback(tx as unknown as Db, { runId, dryRun: false, relabelOn: true });

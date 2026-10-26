@@ -115,7 +115,7 @@ describe.skipIf(!connection)("banded $0 overdraft fees in isolated PostgreSQL", 
 
   it("matches only the band reads, and writes nothing on a dry run", async () => {
     const db = raw as unknown as Parameters<typeof recheckBandedZeros>[0];
-    const result = await recheckBandedZeros(db, { runId: 1, dryRun: true, institutionId: INST });
+    const result = await recheckBandedZeros(db, { runId: 1, dryRun: true, institutionId: INST, live: false });
     expect(result.live).toBe(false);
     expect(result.checked).toBe(4);
     expect(result.samples.map((fee) => [fee.feePublishedId, fee.kind, fee.price])).toEqual([
