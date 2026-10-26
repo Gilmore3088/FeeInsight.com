@@ -557,6 +557,16 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     since: "2026-10-26",
   },
   {
+    id: "issue-1077-paid-replay-never-drops-a-read",
+    agent: "hamilton",
+    stage: "paid work",
+    lesson: "A replay run never throws away a question it has read: a free read still running when the start window closes, or a sample read in full after it closed, is recorded as deferred, so the next run puts it last and moves on. A window closing is the run's limit, not the question's fault: it never counts toward passing a question over and never lets the batch call its plan spent.",
+    why: "On 2026-10-26 the paid gate replay batch stalled at $39.47 of $40 for two hours: every free read took longer than the 100-second start window, each run dropped the sample it had just read without recording it, and the next run read the same six questions first again.",
+    evidence: { issues: [1077], prs: [2714], files: ["src/lib/hamilton/paid-gate-replay.ts"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
+  {
     id: "issue-1896-no-per-1000-anywhere",
     agent: "hamilton",
     stage: "written answer",

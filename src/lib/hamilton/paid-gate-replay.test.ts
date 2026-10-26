@@ -37,7 +37,7 @@ interface Usage { subject_key: string | null; agent_run_id: number | null; micro
  * The run ledger and usage table in memory: the reads answer as the SQL does, the reservation's
  * conditional insert refuses as its WHERE does, and `begin` serializes like the advisory lock.
  */
-function ledger(seed: { events?: LedgerEvent[]; usage?: Usage[]; finished?: Array<{ keys?: string[]; errored?: string[]; complete?: boolean }> } = {}) {
+function ledger(seed: { events?: LedgerEvent[]; usage?: Usage[]; finished?: Array<{ keys?: string[]; errored?: string[]; deferred?: string[]; complete?: boolean }> } = {}) {
   const state = { events: [...(seed.events ?? [])], usage: [...(seed.usage ?? [])], finished: [...(seed.finished ?? [])], locks: 0, staleReads: 0 };
   const reservations = () => state.events.filter((e) => e.event_type === PAID_REPLAY_RESERVATION && e.detail.batch_id === PAID_REPLAY_BATCH_ID);
   const tag = vi.fn(async (parts: TemplateStringsArray, ...values: unknown[]) => {
@@ -57,7 +57,7 @@ function ledger(seed: { events?: LedgerEvent[]; usage?: Usage[]; finished?: Arra
       }
       return [...by].map(([subject, row]) => ({ subject, ...row }));
     }
-    if (text.includes("settledKeys")) return state.finished.map((f) => ({ keys: f.keys ?? [], errored: f.errored ?? [], complete: f.complete ? "true" : "false" }));
+    if (text.includes("settledKeys")) return state.finished.map((f) => ({ keys: f.keys ?? [], errored: f.errored ?? [], deferred: f.deferred ?? [], complete: f.complete ? "true" : "false" }));
     if (text.includes("INSERT INTO agent_run_events")) {
       const detail = JSON.parse(String(values.find((v) => typeof v === "string" && v.startsWith("{")))) as Record<string, unknown>;
       if (values.includes(PAID_REPLAY_RESERVATION)) {
@@ -431,6 +431,60 @@ describe("the one-off paid gate replay batch (#1077)", () => {
     expect(book.reservations()).toHaveLength(0);
     expect(summary.complete).toBe(false);
     expect(summary.stopped).toMatch(/free-read errors|free reads failed/);
+  });
+
+  it("leaves a free read still running at the start window for a later run, without counting it a failure", async () => {
+    const book = ledger();
+    const w = writers(book);
+    const summary = await runPaidGateReplay({
+      db: book.db, now: () => NOW, agentRunId: RUN, startWindowMs: 300,
+      deps: deps(book, w, { answer: () => new Promise<never>(() => {}) }).deps,
+    });
+    expect(summary.deferredKeys.length).toBeGreaterThan(0);
+    expect(summary.erroredKeys).toEqual([]);
+    expect(book.reservations()).toHaveLength(0);
+    expect(summary.complete).toBe(false);
+  });
+
+  it("defers a sample read after the start window closed, so the next run moves on (2026-10-26 stall)", async () => {
+    const book = ledger();
+    const w = writers(book);
+    const d = deps(book, w);
+    // The read itself is quick; the window closes while the budget check runs, after the sample is read.
+    const slowCheck = async () => { await new Promise((r) => setTimeout(r, 600)); return null; };
+    const summary = await runPaidGateReplay({
+      db: book.db, now: () => NOW, agentRunId: RUN, startWindowMs: 300,
+      deps: { ...d.deps, preflight: slowCheck },
+    });
+    expect(book.reservations()).toHaveLength(0);
+    expect(summary.deferredKeys.length).toBeGreaterThan(0);
+    expect(summary.erroredKeys).toEqual([]);
+    expect(summary.stopped).toMatch(/start window/);
+    // The next run puts those keys last, so the samples it reserves are questions it has not tried.
+    const later = ledger({ finished: [{ deferred: summary.deferredKeys }] });
+    await runPaidGateReplay({ db: later.db, now: () => NOW, agentRunId: RUN + 1, deps: deps(later, writers(later)).deps });
+    expect(later.reservations().length).toBeGreaterThan(0);
+    const keys = new Set(summary.deferredKeys);
+    expect(later.reservations().every((e) => !keys.has(String(e.detail.sample_key)))).toBe(true);
+  });
+
+  it("never passes a question over, or calls the batch complete, because windows keep closing", async () => {
+    const book = ledger();
+    const w = writers(book);
+    const slowCheck = async () => { await new Promise((r) => setTimeout(r, 5)); return null; };
+    let last: Awaited<ReturnType<typeof runPaidGateReplay>> | null = null;
+    for (let run = 0; run < 12; run += 1) {
+      last = await runPaidGateReplay({ db: book.db, now: () => NOW, agentRunId: RUN + run, startWindowMs: 1, deps: { ...deps(book, w).deps, preflight: slowCheck } });
+      book.state.finished.push({ keys: last.settledKeys, errored: last.erroredKeys, deferred: last.deferredKeys, complete: last.complete });
+    }
+    expect(book.reservations()).toHaveLength(0);
+    expect(book.state.finished.every((f) => (f.errored ?? []).length === 0)).toBe(true);
+    expect(last!.complete).toBe(false);
+    expect(last!.completeReason).toBeNull();
+    // Once windows stop closing early, every deferred question can still be written up.
+    const summary = await runPaidGateReplay({ db: book.db, now: () => NOW, agentRunId: RUN + 99, deps: deps(book, w).deps });
+    expect(book.reservations().length).toBeGreaterThan(0);
+    expect(summary.results.length).toBeGreaterThan(0);
   });
 
   it("keeps a report whose reads fail for a later run, and passes a question over only after three failed runs", async () => {
