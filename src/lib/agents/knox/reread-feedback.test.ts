@@ -7,12 +7,16 @@ import { isProviderStep } from "@/lib/agents/types";
 import {
   KNOX_REREAD_FEEDBACK_FLAG,
   KNOX_REREAD_FEEDBACK_LIVE,
+  KNOX_REREAD_PUBLISHED_NAME_LIVE,
   KNOX_REREAD_FEEDBACK_SAMPLE,
   KNOX_REREAD_FEEDBACK_STRATEGY,
   KNOX_REREAD_RESOLVED_KIND,
   consumeRereadRequests,
   decideReread,
+  publishedNameRepair,
   rereadFeedbackCountSql,
+  rereadFeedbackDetail,
+  rereadFeedbackMessage,
   rereadResolutionKey,
   rereadStale,
   toRereadRequest,
@@ -48,6 +52,18 @@ function row(overrides: Partial<RereadRequestRow> & { request_id: number; fragme
 const PAPER = row({ request_id: 1, fragment: "Paper statement fee for the" });
 const WIRE = row({ request_id: 2, fragment: "Bank sending the wire may charge a fee of", canonical_fee_key: "wire_domestic_outgoing", amount: "15.00", text: WIRE_TEXT });
 const TELLER = row({ request_id: 3, fragment: "Teller Check Payable to Someone Other than", canonical_fee_key: "cashiers_check", amount: "10.00", text: TELLER_TEXT, kept_live: false });
+
+// #1443: the line of 157375 as stored; the live name is publish's cut of Knox's whole read.
+const NSF_TEXT = "Overdraft/NSF Charge, per item if the amount of the individual item is $35.00 or less | $15.00\n\nMaximum amount of Overdraft/NSF Charges that may be assessed per day | $102.00\n";
+const NSF_WHOLE = "Overdraft/NSF Charge, per item if the amount of the individual item is $35.00 or less";
+const NSF_CUT = row({
+  request_id: 4,
+  fragment: "Overdraft/NSF Charge, per item if the amount of the individual item is",
+  raw_fee_name: NSF_WHOLE,
+  canonical_fee_key: "nsf",
+  amount: "15.00",
+  text: NSF_TEXT,
+});
 
 const requestOf = (fixture: ReturnType<typeof row>) => toRereadRequest(fixture);
 const readOf = (text: string) => runFreeSpecialists(text).candidates;
@@ -109,6 +125,25 @@ describe("decideReread (pure)", () => {
     expect(requestOf(PAPER).requestCheck).toBe("darwin.live_fragment_check");
     expect(decideReread(deming("Paper statement fee for the"), PAPER_TEXT, readOf(PAPER_TEXT))).toMatchObject({ outcome: "renamed", newName: "Paper statement fee for the life of the account" });
     expect(decideReread(deming("Paper statement fee for the life of the account"), PAPER_TEXT, readOf(PAPER_TEXT)).outcome).toBe("same_name");
+  });
+
+  it("renames a fragment that is publish's cut of Knox's own read to today's published name, only with the switch on (#1443)", () => {
+    // 157375: Knox read the whole line, publish cut it at its threshold, and every re-read settled same_name.
+    const request = requestOf(NSF_CUT);
+    const off = decideReread(request, NSF_TEXT, readOf(NSF_TEXT), { publishedName: false });
+    expect(off).toMatchObject({ outcome: "same_name", publishedName: NSF_WHOLE });
+    expect(decideReread(request, NSF_TEXT, readOf(NSF_TEXT))).toEqual(off);
+    expect(KNOX_REREAD_PUBLISHED_NAME_LIVE).toBe(false);
+    const on = decideReread(request, NSF_TEXT, readOf(NSF_TEXT), { publishedName: true });
+    expect(on).toMatchObject({ outcome: "renamed", newName: NSF_WHOLE, via: "published_name" });
+    expect(publishedNameRepair(request, NSF_TEXT, readOf(NSF_TEXT))).toBe(NSF_WHOLE);
+    // Never for a taken-down fee, a fragment that is not the head of the published name, or a line today's team no longer reads.
+    expect(publishedNameRepair({ ...request, kind: "fragment_reread" }, NSF_TEXT, readOf(NSF_TEXT))).toBeNull();
+    expect(publishedNameRepair({ ...request, fragmentName: "per item if the amount of the individual item is" }, NSF_TEXT, readOf(NSF_TEXT))).toBeNull();
+    const moved = "Overdraft/NSF Charge if the total amount of your overdrawn balance is $10.00 or less | $15.00\n";
+    expect(publishedNameRepair(request, moved, readOf(moved))).toBeNull();
+    // A raw name whose published form is the same fragment gives nothing new.
+    expect(publishedNameRepair(requestOf(WIRE), WIRE_TEXT, readOf(WIRE_TEXT))).toBeNull();
   });
 
   it("reads a request as stale when the kept-live fee was renamed or taken down, or the taken-down fee is live again", () => {
@@ -246,6 +281,23 @@ describe("consumeRereadRequests", () => {
     const again = await consumeRereadRequests(asDb(db), { runId: 8, dryRun: false, live: true });
     expect(again).toMatchObject({ pending: 0, read: 0, resolved: 0 });
     expect(sqlTexts(db).some((text) => /INSERT INTO|UPDATE published_fee_records/.test(text))).toBe(false);
+  });
+
+  it("published-name repair: off, reports the would-be rename; on, renames through Knox's live rename path (#1443)", async () => {
+    const { db } = dbFor([NSF_CUT]);
+    const off = await consumeRereadRequests(asDb(db), { runId: 7, dryRun: false, live: true });
+    expect(off.outcomes).toEqual({ same_name: 1 });
+    expect(off.renamed).toEqual([]);
+    expect(off.publishedName).toEqual({ live: false, renames: 1, samples: [{ fee_published_id: 604, from: NSF_CUT.live_fee_name, to: NSF_WHOLE }] });
+    expect(rereadFeedbackMessage(off)).toContain("1 would take the name publish gives Knox's own read (#1443, switch off)");
+    expect(rereadFeedbackDetail(off).published_name).toMatchObject({ live: false, renames: 1 });
+
+    const { db: onDb } = dbFor([NSF_CUT]);
+    const on = await consumeRereadRequests(asDb(onDb), { runId: 7, dryRun: false, live: true, publishedName: true });
+    expect(on.outcomes).toEqual({ renamed: 1 });
+    expect(on.renamed).toEqual([604]);
+    expect(on.publishedName).toMatchObject({ live: true, renames: 1 });
+    expect(sqlTexts(onDb).some((text) => text.includes("SET fee_name = rename.new_name"))).toBe(true);
   });
 
   it("switch on: a request whose proper name another live fee of the bank has is settled as a live twin, not renamed", async () => {

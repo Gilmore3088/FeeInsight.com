@@ -2119,6 +2119,18 @@ line, so the other column's note is never borrowed. A bill pay return with no pa
 names insufficient funds, stays NSF ("Bill Payment Return Item Fee (per presentment)", Texas tid 2419).
 The answer-key gates are unchanged. The stale-read floor stays at v97.
 
+v132 (#1912): a commercial lockbox service is not a safe deposit box. Forte Bank's flat fee table (document
+29204, on a page that says "Fees not included in this table: Safe Deposit Boxes") prints "Lock Box Service,
+per month | $225.00", a remittance-processing service for businesses; the category list filed it as a
+safe deposit box by its "lock box" words (live 135270). A lock box name that names the service (service,
+processing, items, remittances, wholesale or retail) and nothing of a box gets no category
+(`COMMERCIAL_LOCKBOX_NAME` in `custom-report/commercial-lockbox.ts`, the words guard v100 refuses), and
+any specialist's safe deposit box read whose name, own line or business, treasury or cash management
+heading says it is the service (`commercialLockboxOnLine`) is held unclassified: none of the 50 types
+holds it. A lock box with a size, key, drilling, rent, lease, year, or late or past-due charge stays a
+safe deposit box ("Lock Box Rental 5x5", "Lock Box Annual Fee 3 x 5", "Lock box past due date late fee").
+The answer-key gates are unchanged. The stale-read floor stays at v97.
+
 ## Darwin's re-read requests (`reread-feedback.ts`, #1511)
 
 Darwin's live fragment check (`darwin/live-fragment-check.ts`) writes one `pipeline_feedback` row of
@@ -2173,6 +2185,17 @@ after the held-line passes, reads these requests (`consumeRereadRequests`, `knox
   id`) and count read only the requests, and the settled rows by kind.
 - `rereadFeedbackCountSql()` is the read-only count of pending requests by kind, documents and
   banks, and of settled requests by outcome.
+- Publish's cut of Knox's own read (#1443, `publishedNameRepair`, `KNOX_REREAD_PUBLISHED_NAME_LIVE`,
+  off): a kept-live fragment such as "monthly fee if balance falls below" came from publish cutting
+  the read "monthly fee if balance falls below $2,500.00", so the re-read found the raw name and
+  settled `same_name`, `other_category` or `ambiguous` on every rules version. With the switch on,
+  such a request is `renamed` to today's `publishedFeeName` of the raw name when today's team
+  still reads the raw name on the line, the fragment is that name's head, and the name is no
+  fragment, passes the category guard and traces with `checkFeeAgainstSource`. Off, the outcome is
+  unchanged and the step detail's `published_name` counts the would-be renames with samples.
+  Settled requests are read again only after a rules bump, so the switch-on goes with one. Oct 26
+  dry run on the stored texts: 5 of the 6 requested live fees would be renamed, each right against
+  the bank's line.
 
 ## Batch review (`batch-review.ts`)
 
@@ -2397,7 +2420,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v131 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v132 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v10 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

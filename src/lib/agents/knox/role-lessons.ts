@@ -846,4 +846,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract"],
     since: "2026-10-26",
   },
+  {
+    id: "issue-1912-commercial-lockbox",
+    agent: "knox",
+    stage: "extract",
+    lesson: "\"Lock box\" names two different things. Many banks call a safe deposit box a lock box, and those rows say so: a size (\"Lock Box Rental 5x5\"), a key, drilling, rent, a lease, a year, or a late or past-due charge. A commercial lockbox is a remittance-processing service for businesses: its name says service, processing, items, remittances, wholesale or retail, and nothing of a box, and it is priced like a business service (Forte Bank's \"Lock Box Service, per month\" $225). Before filing a lock box as a safe deposit box, look for the box; when the row names the service and no box, or its own line or a business, treasury or cash management heading says it is the service, it is not a safe deposit box and none of the 50 fee types holds it, so hold it unfiled.",
+    why: "Knox's category list filed any \"lock box\" name as a safe deposit box, so Forte Bank's commercial lockbox service (document 29204, on a page that says \"Fees not included in this table: Safe Deposit Boxes\") went live as a $225 safe deposit box (135270), beside boxes that rent for $12 to $60 a year (#1912). The other 18 live lock box rows all name a size, key, drilling, rent or late charge and are real boxes.",
+    evidence: { issues: [1912], prs: [], files: ["src/lib/custom-report/commercial-lockbox.ts", "src/lib/agents/knox/commercial-lockbox.test.ts", "docs/project/findings/2026-10-26-commercial-lockbox-not-safe-deposit-box.md"] },
+    appliesTo: ["extract"],
+    since: "2026-10-26",
+  },
 ];
