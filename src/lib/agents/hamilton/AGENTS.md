@@ -544,8 +544,14 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     amount, a discount or allowance the bank gives (an allowance on the line only at the fee's own
     amount; never a discounted price, or a "discount of" a percentage or of a dollar figure that is
     not the fee's amount), and a loan's term amount
-    read as its fee. A takedown batch stays under 20 (DECISIONS 2026-10-16, #1613): fees left
-    for the next batch sit in `EVAL_VERDICT_SECOND_BATCH` (#1696), and the step event names them
+    read as its fee. v9 (#1696, Oct 26) reads the discount on the stored line too: a line that
+    prints the fee's own amount only as "$X discount" is a discount credit whatever the name,
+    because Knox cuts a run-on sentence mid-way ("Safe Deposit Box Discount An annual"); its
+    prefilter clause is `V9_PREFILTER`. The no-fee exception compares only the first price after
+    the cut, and a comma or colon followed by a condition ("after", "with", "if" …) stays in the
+    free clause. A takedown batch stays under 20 (DECISIONS 2026-10-16, #1613): the second batch
+    (`EVAL_VERDICT_SECOND_BATCH`, 120626, and every live fee only v9 fails) waits behind the
+    default-off switch `EVAL_VERDICT_SECOND_BATCH_ACTS`, and the step event names it
     (`deferred`, `deferred_ids`).
 10b. Account type hold (`account-type-hold.ts`, #1100 gap 1, James Oct 16): monthly maintenance
     is the consumer checking account's fee. A live monthly maintenance fee of a savings, money
@@ -1402,7 +1408,7 @@ fails a PR that changes one of these constants without updating its line here (#
 |---|---|---|---|
 | `ACCOUNT_NAME_STRATEGY` | `hamilton.account_names` | v4 | `hamilton/account-names.ts` |
 | `CURRENT_COPY_STRATEGY` | `hamilton.current_copy_check` | v2 | `hamilton/current-copy.ts` |
-| `EVAL_VERDICT_VERSION` | — | v8 | `hamilton/eval-verdicts.ts` |
+| `EVAL_VERDICT_VERSION` | — | v9 | `hamilton/eval-verdicts.ts` |
 | `FREQUENCY_FILL_VERSION` | — | v15 | `hamilton/frequency-fill.ts` |
 | `GUARD_REQUEUE_STRATEGY` | `publish.guard_requeue` | v1 | `hamilton/guard-requeue.ts` |
 | `NEWER_COPY_STRATEGY` | `hamilton.newer_copy_check` | v1 | `hamilton/newer-copy-retire.ts` |

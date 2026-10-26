@@ -66,7 +66,16 @@ export const EVAL_VERDICT_CHECK = "hamilton.eval_verdict";
  * after a $50 opening deposit", a leading "Fee-free …", "Safe Deposit Box Discount", "$5 Allowance",
  * and a loan's own term amount read as its application fee.
  */
-export const EVAL_VERDICT_VERSION = 8;
+/**
+ * v9 (#1696, Oct 26): the discount rule reads the stored line too. A line that prints the fee's own
+ * amount only as "$X discount" ("Safe Deposit Box Discount An annual $5.00 discount will apply…",
+ * "… Receive one $5.00 discount off the normal stop payment fee") is a discount credit, whatever the
+ * name: Knox cuts a run-on sentence mid-way, so the name alone ("Safe Deposit Box Discount An
+ * annual", "… however, a") never ends on "Discount". The no-fee exception (v8) now compares only the
+ * first price after the cut, and a comma or colon whose clause opens on a condition word ("…, after
+ * a $50 opening deposit") does not end the free clause (#1691 delta review).
+ */
+export const EVAL_VERDICT_VERSION = 9;
 /** Why v5 cleared v4's price_in_name flags; written on the rule_revised lesson and each reconstructed first look. */
 const RULE_REVISED_VERSION = 5;
 export const RULE_REVISED_WHY = "A dollar figure in a fee's name is a threshold, floor, cap, balance or range more often than the fee's price; price_in_name now fires only on a price the name presents as the fee's own";
@@ -351,13 +360,24 @@ const FEE_FREE_LEAD = /^\s*\*?\s*fee-free\b/i;
  * $5; $35 otherwise" at $0), and so does a price inside the free clause itself ("… no monthly
  * service fee after a $50 opening deposit").
  */
-const CLAUSE_BREAK = /[;,:|]|\.\s/;
-const DOLLAR_PRICE = /\$\s?(\d[\d,]*(?:\.\d{1,2})?)/g;
-function laterClausePricesAmount(name: string, amount: number | null | undefined): boolean {
-  const cut = CLAUSE_BREAK.exec(name);
-  if (!cut || amount == null) return false;
-  for (const match of name.slice(cut.index).matchAll(DOLLAR_PRICE)) {
-    if (sameAmount(match[1], amount)) return true;
+const CLAUSE_BREAK = /[;,:|]|\.\s/g;
+const DOLLAR_PRICE = /\$\s?(\d[\d,]*(?:\.\d{1,2})?)/;
+const DOLLAR_PRICES = /\$\s?(\d[\d,]*(?:\.\d{1,2})?)/g;
+/** v9: a comma or colon followed by a condition still belongs to the free clause ("no monthly service fee, after a $50 opening deposit"). */
+const CONDITION_AFTER_BREAK = /^\s*(?:after|with|when|if|unless|until|once|provided|upon|as\s+long\s+as)\b/i;
+function laterClausePricesAmount(name: string, amount: number | null | undefined, v9: boolean): boolean {
+  if (amount == null) return false;
+  for (const cut of name.matchAll(CLAUSE_BREAK)) {
+    const rest = name.slice(cut.index + cut[0].length);
+    if (!v9) {
+      // v8: any price after the first cut.
+      return Array.from(rest.matchAll(DOLLAR_PRICES)).some((match) => sameAmount(match[1], amount));
+    }
+    if ((cut[0] === "," || cut[0] === ":") && CONDITION_AFTER_BREAK.test(rest)) continue;
+    // v9: only the first price after the cut is the later clause's price; a cap after it is not
+    // ("No fee for overdrafts under $5, $35 per item, $175 daily max" at $175).
+    const first = DOLLAR_PRICE.exec(rest);
+    return Boolean(first && sameAmount(first[1], amount));
   }
   return false;
 }
@@ -381,6 +401,29 @@ function namesDiscount(name: string, amount: number | null | undefined): boolean
   return Boolean(byOf && (byOf[1] == null || sameAmount(byOf[1], amount)));
 }
 const DISCOUNTED_PRICE = /\bdiscounted\b|w\/\s*discount/i;
+/**
+ * v9: "$X discount" on the stored line (also "$X annual discount", "$X Annual Fee Discount"). Not
+ * "discounted": "$X discounted" is the discounted price, the fee itself.
+ */
+const DISCOUNT_PRICE = /\$\s?(\d[\d,]*(?:\.\d{1,2})?)(?=\s+(?:annual\s+(?:fee\s+)?)?discounts?\b)/gi;
+/**
+ * v9: true when the stored line prints the fee's own amount, and every time it prints that amount it
+ * is a discount ("An annual $5.00 discount will apply to the rental price…" at $5). A line that also
+ * prints the amount as a price is left alone, and so is a discount at another amount ("$9.95 service
+ * charge each statement cycle; $5 discount for anyone age 60+" at $9.95). Knox cuts a run-on sentence
+ * mid-way, so the name alone cannot say it.
+ */
+function discountAtAmount(name: string, excerpt: string | null | undefined, amount: number | null | undefined): boolean {
+  if (!excerpt || amount == null || DISCOUNTED_PRICE.test(name)) return false;
+  const discounts = new Set(Array.from(excerpt.matchAll(DISCOUNT_PRICE), (match) => match.index));
+  let seen = false;
+  for (const match of excerpt.matchAll(DOLLAR_PRICES)) {
+    if (!sameAmount(match[1], amount)) continue;
+    if (!discounts.has(match.index)) return false;
+    seen = true;
+  }
+  return seen;
+}
 /**
  * v8: an allowance the bank grants, in the name or right after the price on the line ("Courtesy Pay /
  * $5 Allowance"). On the line it counts only when the allowance is the fee's own amount: "Overdraft
@@ -418,6 +461,11 @@ export const V8_PREFILTER: ReadonlyArray<{ column: "name" | "line"; pattern: str
   { column: "line", pattern: "\\$\\s?[0-9][0-9,]*(\\.[0-9]{1,2})?\\s+allowance\\y" },
   { column: "name", pattern: "\\yterm\\s*/\\s*\\$" },
   { column: "line", pattern: "\\yterm\\s*/\\s*\\$" },
+];
+
+/** v9: the live re-check's prefilter for the stored line's "$X discount" (`discountAtAmount`). */
+export const V9_PREFILTER: ReadonlyArray<{ column: "name" | "line"; pattern: string }> = [
+  { column: "line", pattern: "\\$\\s?[0-9][0-9,]*(\\.[0-9]{1,2})?\\s+(annual\\s+(fee\\s+)?)?discounts?\\y" },
 ];
 
 /** The condition under which a fee is waived, or the balance that avoids it, as a $0 "fee". */
@@ -534,12 +582,17 @@ export const RULE_WHY: Readonly<Record<NameRule, string>> = {
   loan_amount: "The loan's own term amount, published as its fee",
 };
 
-/** Which name rule, if any, takes a live fee down. `excerpt` is the schedule line Knox read. Pure. */
-export function ruleFor(canonicalFeeKey: string, feeName: string | null | undefined, amount?: number | null, excerpt?: string | null): NameRule | null {
+/**
+ * Which name rule, if any, takes a live fee down. `excerpt` is the schedule line Knox read.
+ * `version: 8` reads the rules as they were before v9, so the live re-check can tell a fee only v9
+ * fails (held behind `EVAL_VERDICT_SECOND_BATCH_ACTS`). Pure.
+ */
+export function ruleFor(canonicalFeeKey: string, feeName: string | null | undefined, amount?: number | null, excerpt?: string | null, options: { version?: number } = {}): NameRule | null {
   const name = feeName ?? "";
+  const v9 = (options.version ?? EVAL_VERDICT_VERSION) >= 9;
   if (ATM_KEYS.has(canonicalFeeKey) && REBATE_WORDING.test(name) && !NON_REFUNDABLE.test(name)) return "rebate";
-  if ((NO_FEE_SENTENCE.test(name) || NO_FEE_CLAUSE.test(name) || FEE_FREE_LEAD.test(name)) && !laterClausePricesAmount(name, amount)) return "no_fee_sentence";
-  if (namesDiscount(name, amount) || ALLOWANCE_NAME.test(name) || allowanceAtAmount(excerpt, amount)) {
+  if ((NO_FEE_SENTENCE.test(name) || NO_FEE_CLAUSE.test(name) || FEE_FREE_LEAD.test(name)) && !laterClausePricesAmount(name, amount, v9)) return "no_fee_sentence";
+  if (namesDiscount(name, amount) || ALLOWANCE_NAME.test(name) || allowanceAtAmount(excerpt, amount) || (v9 && discountAtAmount(name, excerpt, amount))) {
     return "discount_or_allowance";
   }
   const term = LOAN_TERM_AMOUNT.exec(name) ?? LOAN_TERM_AMOUNT.exec(excerpt ?? "");
@@ -573,10 +626,21 @@ export function flagFor(canonicalFeeKey: string, feeName: string | null | undefi
 /** Every labelled row, eval or hand check: these are read whatever their name. */
 /**
  * Live fees a name rule fails that the re-check leaves for a second batch, so each takedown batch
- * stays under 20 (DECISIONS 2026-10-16, #1613). v8's live re-check fails 20 fees; 120626 (a loan's
- * term amount, `loan_amount`) waits here. #1696 empties the list once the first 19 are down.
+ * stays under 20 (DECISIONS 2026-10-16, #1613). v8's live re-check failed 20 fees; 120626 (a loan's
+ * term amount, `loan_amount`) waited here. The first 19 were down by 2026-10-17 20:43 UTC (read on
+ * prod 2026-10-26: each rolled back `not_a_fee:*`, its verified row rejected), so 120626 now goes
+ * with the second batch, behind `EVAL_VERDICT_SECOND_BATCH_ACTS`.
  */
 export const EVAL_VERDICT_SECOND_BATCH: ReadonlySet<number> = new Set([120626]);
+/**
+ * Default-off switch (#1696): the second takedown batch. Off, the live re-check counts and names
+ * (`deferred`, `deferredIds`) each live fee in `EVAL_VERDICT_SECOND_BATCH` and each live fee only
+ * the v9 rules fail, and writes nothing for them. On, they are flagged and come down after the
+ * 12-hour second look like any other rule row. Dry run on prod, 2026-10-26: 9 live fees (120626 and
+ * 8 "$X discount" lines), listed in #1696's PR. It turns on by PR; once those are down the list
+ * empties and the switch goes.
+ */
+export const EVAL_VERDICT_SECOND_BATCH_ACTS = false;
 const LABELLED_IDS = new Set([...EVAL_CRITICAL_VERDICTS, ...HAND_CHECKED_VERDICTS].map((entry) => entry.feePublishedId));
 
 /** The eval verdict a live record still matches, or null when none or the record has changed. Pure. */
@@ -633,7 +697,7 @@ export interface EvalVerdictResult {
   handMatched: number;
   /** Live fees a name rule fails. */
   ruleFailing: number;
-  /** Live fees a name rule fails that wait for a later batch (`EVAL_VERDICT_SECOND_BATCH`). */
+  /** Live fees a name rule fails that wait for the second batch: listed in `EVAL_VERDICT_SECOND_BATCH`, or failed only by v9, while `EVAL_VERDICT_SECOND_BATCH_ACTS` is off. */
   deferred: number;
   deferredIds: number[];
   flagged: number;
@@ -682,7 +746,7 @@ export function evalVerdictFeesSql(byInstitution: boolean): string {
             OR fp.fee_published_id IN (SELECT pf.fee_published_id FROM pipeline_feedback pf
                                         WHERE pf.check_name = '${EVAL_VERDICT_CHECK}' AND pf.kind = 'takedown_pending')
             OR (fp.canonical_fee_key IN ('atm_non_network', 'atm_international') AND fp.fee_name ~* '(rebate|reimburse|refund)')
-            ${V8_PREFILTER.map(({ column, pattern }) => `OR ${column === "name" ? "fp.fee_name" : "COALESCE(fr.extraction_note, fr.conditions)"} ~* '${pattern}'`).join("\n            ")}
+            ${[...V8_PREFILTER, ...V9_PREFILTER].map(({ column, pattern }) => `OR ${column === "name" ? "fp.fee_name" : "COALESCE(fr.extraction_note, fr.conditions)"} ~* '${pattern}'`).join("\n            ")}
             OR (fp.amount = 0 AND fp.fee_name ~* '\\y(if|when|unless)\\s+you\\y|\\yof\\s+the\\s+following\\y|\\yqualifications?\\s+(are|is)\\s+met\\y|\\yto\\s+avoid\\y')
             OR fp.fee_name ~* '^\\s*(minimum|average|min\\.?)\\y[a-z ]{0,30}?\\ybalance\\s+(required\\s+|requirement\\s+)?to\\s+avoid\\y'
             OR fp.fee_name ~* '\\y(merchant|payee)\\s+(pays|presenting|presented)\\y|\\ypaid\\s+by\\s+(the\\s+)?(merchant|payee)\\y'
@@ -701,7 +765,7 @@ export function evalVerdictFeesSql(byInstitution: boolean): string {
  */
 export async function retireEvalVerdictFees(
   db: SqlTag,
-  options: { runId: number; batchId: string; dryRun: boolean; institutionId?: number; limit?: number },
+  options: { runId: number; batchId: string; dryRun: boolean; institutionId?: number; limit?: number; secondBatchActs?: boolean },
 ): Promise<EvalVerdictResult> {
   const limit = Math.max(1, Math.min(options.limit ?? ROLLBACK_LIMIT, 2_000));
   const result: EvalVerdictResult = {
@@ -758,7 +822,14 @@ export async function retireEvalVerdictFees(
     // qualifications are met" at $0 is a waiver after its retidy to "Monthly Service Charge" too.
     const rule = ruleFor(base.canonicalFeeKey, base.feeName, base.amount, excerpt)
       ?? (originalFeeName ? ruleFor(base.canonicalFeeKey, originalFeeName, base.amount, excerpt) : null);
-    if (rule && EVAL_VERDICT_SECOND_BATCH.has(base.feePublishedId)) {
+    // v9: the second batch (the listed fees, and any fee only the v9 rules fail) waits while its
+    // switch is off.
+    const secondBatch = rule != null && !(options.secondBatchActs ?? EVAL_VERDICT_SECOND_BATCH_ACTS) && (
+      EVAL_VERDICT_SECOND_BATCH.has(base.feePublishedId)
+      || (ruleFor(base.canonicalFeeKey, base.feeName, base.amount, excerpt, { version: 8 })
+        ?? (originalFeeName ? ruleFor(base.canonicalFeeKey, originalFeeName, base.amount, excerpt, { version: 8 }) : null)) == null
+    );
+    if (secondBatch) {
       result.deferred += 1;
       result.deferredIds.push(base.feePublishedId);
       continue;

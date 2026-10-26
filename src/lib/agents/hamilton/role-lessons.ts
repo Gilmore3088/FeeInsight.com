@@ -386,4 +386,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-1696-discount-on-the-line",
+    agent: "hamilton",
+    stage: "publish",
+    lesson: "Decide whether a fee is a credit from the stored line, not only from its name. A cut name stops wherever the read ran out (\"Safe Deposit Box Discount An annual\", \"… however, a\"), so a rule anchored to how a name ends misses the run-on sentence; when the line prints the fee's own amount only as \"$X discount\", it is a discount credit, and when it also prints that amount as a price the line cannot say which, so leave it.",
+    why: "Name rules v8 read \"Discount\" only at the end of a name or before on/for, so two live discount credits, 142565 (\"Safe Deposit Box Discount An annual\" $5) and 142566 (\"Stop Payment Discount Receive one\" $5), and six more lines that print \"$X discount\" at the fee's amount stayed published after #1691 took 19 down (prod read 2026-10-26).",
+    evidence: { issues: [1696, 1691], prs: [], files: ["src/lib/agents/hamilton/eval-verdicts.ts", "src/lib/agents/hamilton/eval-verdicts.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
 ];
