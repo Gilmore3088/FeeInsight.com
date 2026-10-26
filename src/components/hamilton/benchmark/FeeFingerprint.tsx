@@ -68,7 +68,7 @@ export function stripNote(strip: FingerprintStrip, fingerprint: Pick<FeeFingerpr
       return `The schedule states several amounts (${strip.currentLabel}), so there is no one price to place. ${publishing}. ${source}`;
     case "stated_as_rate":
       return strip.audience === "business"
-        ? `Stated only for business accounts, as a rate (${strip.currentLabel}), so it is not placed among dollar prices or consumer fees.${strip.peerCount > 0 ? ` ${publishing} as a consumer dollar price. ${source}` : ""}`
+        ? `Stated only for business accounts, as a rate (${strip.currentLabel}), so it is not compared with the group's dollar prices.${strip.peerCount > 0 ? ` ${publishing} as a dollar price. ${source}` : ""}`
         : `Stated as a rate (${strip.currentLabel}), so it is not placed among dollar prices.${strip.peerCount > 0 ? ` ${publishing} as a dollar price. ${source}` : ""}`;
   }
 }

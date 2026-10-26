@@ -103,7 +103,7 @@ describe("FeeFingerprint", () => {
   it("labels a rate stated only for business accounts as business, never as missing (#1896)", () => {
     const rate: FingerprintStrip = { ...blank, feeCategory: "card_foreign_txn", feeName: "Foreign Transaction", status: "stated_as_rate", current: null, currentLabel: "1.5% of the transaction", percentile: null, band: null, audience: "business" };
     expect(stripNote(rate, fingerprint)).toBe(
-      "Stated only for business accounts, as a rate (1.5% of the transaction), so it is not placed among dollar prices or consumer fees. 12 institutions in the group publish it as a consumer dollar price. Source: published fee schedules, Mar 2026 to Oct 2026.",
+      "Stated only for business accounts, as a rate (1.5% of the transaction), so it is not compared with the group's dollar prices. 12 institutions in the group publish it as a dollar price. Source: published fee schedules, Mar 2026 to Oct 2026.",
     );
     const html = renderToStaticMarkup(<FeeFingerprintView fingerprint={{ ...fingerprint, strips: [rate] }} />);
     expect(html).toContain("Business accounts only");
