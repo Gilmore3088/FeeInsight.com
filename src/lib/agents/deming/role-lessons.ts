@@ -98,6 +98,16 @@ export const DEMING_LESSONS: AgentLesson[] = [
     since: "2026-10-25",
   },
   {
+    id: "issue-2064-replay-audience-against-every-rule-that-decides-it",
+    agent: "deming",
+    stage: "regression replay",
+    lesson: "Replay a confirmed consumer/business mix-up against every rule that decides audience, in the order the pipeline applies them and with the inputs they read, not only the check that caught it. Darwin decides audience first, from the fee's name, its document's address and the document's stored text; the business-schedule read judges only fees Darwin left unknown, so a Darwin read of consumer or both lets a business fee through even while the business-schedule read would still catch it. Give the replay the document's newest completed text, the one Darwin reads, and judge nothing without it: a replay without the text Darwin reads can call a fee caught that Darwin would publish as consumer. Give each rule the address it reads: Darwin reads the raw row's own address (Knox keeps the text's address there, which can differ from the document's), and the business-schedule read judges the document's address; never the published fee's. A business-schedule restore (the bank's consumer fee is gone) does not make the fee a consumer one, so never retire the case on it. When the read has a SQL form and a code form, test that they agree, on non-ASCII input too, against the production database's locale.",
+    why: "414 confirmed business-schedule takedowns sat as unreplayable cases, so a change to Darwin's audience words or to the business-schedule read could put a business price back on a consumer page with no regression alarm. A first replay without the page text called 413 caught; review found it ignored the text Darwin reads, which can turn a fee consumer before the business-schedule read ever sees it; a second review found it gave Darwin the document's address instead of the raw row's one Darwin reads, which can mask a regression.",
+    evidence: { issues: [2064], prs: [2720], files: ["src/lib/agents/deming/checkers.ts", "src/lib/agents/deming/regression.ts", "src/lib/agents/hamilton/business-schedule.ts"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
+  {
     id: "issue-2066-trace-every-live-miss",
     agent: "deming",
     stage: "loop proof",

@@ -994,7 +994,7 @@ describe("agentic run store", () => {
       regressionCases: [], unavailable: { count: null, atLeast: false }, deferred: 0, artifact: fixtureArtifact([]) };
     const replay = vi.spyOn(regression, "runDemingRegression").mockResolvedValue({ schemaReady: true, dryRun: false, promoted: 1, promotedActive: 0,
       promotedBySeverity: { critical: 0, major: 1, minor: 0, info: 0 }, replayed: 1, caught: 1, regressions: [], activated: 1, retired: 0,
-      activeTotal: 9, candidateTotal: 301, corrective: observed });
+      activeTotal: 9, candidateTotal: 301, notJudged: 0, corrective: observed });
     const persist = vi.spyOn(source, "persistCorrectiveArtifact").mockResolvedValue({ state: "unavailable", scope: "evaluated_this_run", complete: false,
       bytes: 0, cases: 0, chunks: 0, digest: observed.artifact.digest, ciImport: "not_implemented" });
     try {
