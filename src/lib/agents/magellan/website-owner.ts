@@ -172,19 +172,6 @@ export function judgeWebsiteOwner(input: {
       checks,
     };
   }
-  if (passing.length === 0 && !own.nameMatched) {
-    const named = others.filter(({ check }) => check.nameMatched);
-    if (named.length === 1) {
-      const owner = named[0].other;
-      return {
-        verdict: "other_institution",
-        ownerId: Number(owner.id),
-        ownerName: owner.institution_name,
-        evidence: `${host} names ${owner.institution_name} and not ${institution.institution_name}`,
-        checks,
-      };
-    }
-  }
   return { verdict: "unclear", ownerId: null, ownerName: null, evidence: `${host} homepage does not tell whose website it is; ${own.reason}`, checks };
 }
 
@@ -225,8 +212,8 @@ export async function selectContestedWebsites(db: SqlTag, stateCode: string | nu
        AND s.host !~ ${SHARED_CONTENT_HOST_PATTERN}
        AND (${state}::text IS NULL OR upper(btrim(s.state_code)) = ${state})
        AND NOT (
-         NULLIF(btrim(s.holding_company_rssd::text), '') IS NOT NULL
-         AND btrim(s.holding_company_rssd::text) = btrim(COALESCE(o.holding_company_rssd::text, ''))
+         NULLIF(ltrim(btrim(s.holding_company_rssd::text), '0'), '') IS NOT NULL
+         AND ltrim(btrim(s.holding_company_rssd::text), '0') = ltrim(btrim(COALESCE(o.holding_company_rssd::text, '')), '0')
        )
        AND NOT EXISTS (
          SELECT 1 FROM institution_source_profiles held

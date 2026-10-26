@@ -99,10 +99,18 @@ describe("judgeWebsiteOwner (#1455)", () => {
     expect(judgeWebsiteOwner({ institution: bluegrass, host: "ukcreditunion.org", sharers: [ukfcu], html: null }).verdict).toBe("unread");
   });
 
+  it("never flags on name words alone: a place-name word is on every local homepage (review of #2674)", () => {
+    const heritage = { ...bluegrass, id: 9101, institution_name: "Bluegrass Heritage Federal Credit Union" };
+    const kentuckyBank = { ...ukfcu, id: 9102, institution_name: "Kentucky Bank", city: "Paris", cert_number: "9102", charter_type: "commercial" };
+    const home = "<title>Bluegrass Credit Union</title><p>Serving eastern Kentucky families.</p><p>Branches in Ashland.</p>";
+    expect(judgeWebsiteOwner({ institution: heritage, host: "bgcu.org", sharers: [kentuckyBank], html: home }).verdict).not.toBe("other_institution");
+  });
+
   it("compares holding companies by RSSD, else by name", () => {
     expect(sameHoldingCompany(fnbOldham, fnbFortPierre)).toBe(false);
     expect(sameHoldingCompany({ ...bluegrass, holding_company_name: "X Corp" }, { ...ukfcu, holding_company_name: "x corp" })).toBe(true);
     expect(sameHoldingCompany(bluegrass, ukfcu)).toBe(false);
+    expect(sameHoldingCompany({ ...bluegrass, holding_company_rssd: "0" }, { ...ukfcu, holding_company_rssd: "0" })).toBe(false);
   });
 });
 

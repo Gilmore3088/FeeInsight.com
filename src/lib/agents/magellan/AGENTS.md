@@ -159,7 +159,7 @@ and `detail.method_version`).
   version and host every 30 days (7 when unread, 15 s per step). It reads the homepage once and
   applies website search's `checkHomepage` (distinctive name words plus city or charter number) to
   this institution and each sharer. Verdict `other_institution` only when exactly one other passes
-  and this one does not, or one other's name words are on the page and none of this one's; `own`,
+  and this one does not (name words alone never flag: a place-name word is on every local page); `own`,
   `shared`, `sibling`, `unclear` and `unread` flag nothing, and a host that spells the institution's
   own or its holding company's name (`host_names_own`: vallant.bank for Pinnacle Bank, held by
   Vallant Financial, after a rename) is never read. One attempt per institution (`website_host`,
