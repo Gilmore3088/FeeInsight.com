@@ -7,8 +7,25 @@
  * or peer: its row shows its stated price, or `SeveralFees` when it states several (#1931).
  */
 import { formatAmount } from "./format";
+import { isProductException } from "./fee-product";
 
 const SAME_AMOUNT = 0.005;
+
+/**
+ * A fee's name as listed among the institution's own fees: a price stated for one named
+ * product as an exception (#1911, fee-product.ts isProductException) carries the product,
+ * "Personal money order (Safe Debit Account)", so it reads as its own fee beside the general
+ * price that the statistics value rests on.
+ */
+export function ownFeeName(
+  category: string,
+  row: { fee_name?: string | null; account_product_type?: string | null },
+): string | null {
+  const name = typeof row.fee_name === "string" ? row.fee_name : null;
+  if (!isProductException(category, row.account_product_type)) return name;
+  const product = (row.account_product_type ?? "").replace(/\s+/g, " ").trim();
+  return name && name.trim() ? `${name.trim()} (${product})` : product;
+}
 
 export interface OwnFeeLine {
   name: string;
@@ -56,7 +73,7 @@ export function ownFeeFrom(
  */
 export function ownFeeFromRows(
   category: string,
-  rows: readonly { fee_name?: string | null; amount: unknown }[],
+  rows: readonly { fee_name?: string | null; amount: unknown; account_product_type?: string | null }[],
   value: number,
   standardTier: boolean,
 ): InstitutionOwnFee | null {
@@ -65,7 +82,7 @@ export function ownFeeFromRows(
     const raw = row.amount;
     if (raw === null || raw === undefined || (typeof raw === "string" && raw.trim() === "")) continue;
     const amount = Number(raw);
-    if (Number.isFinite(amount) && amount >= 0) counted.push({ fee_name: typeof row.fee_name === "string" ? row.fee_name : null, amount });
+    if (Number.isFinite(amount) && amount >= 0) counted.push({ fee_name: ownFeeName(category, row), amount });
   }
   return ownFeeFrom(category, counted, value, standardTier);
 }

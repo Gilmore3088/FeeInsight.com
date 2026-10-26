@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { institutionValueSql } from "@/lib/data-store/fee-stats";
 
 import { readInstitutionPrices } from "./common";
 import { readIncomeAndFees } from "./inferred-volume";
@@ -31,7 +32,7 @@ describe("Hamilton study fee audience boundaries", () => {
     expect(query).toContain("f.fee_audience IN ('consumer', 'both', 'unknown')");
     expect(query).toContain("f.amount >= 0");
     expect(query).not.toContain("f.amount > 0");
-    expect(query).toContain("THEN MAX(f.amount)");
+    expect(query).toContain(institutionValueSql("f", "canonical_fee_key"));
     expect(query).toContain("percentile_cont(0.5)");
   });
 

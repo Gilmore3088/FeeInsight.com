@@ -1,6 +1,6 @@
 import { createHash } from "crypto";
 import { sql } from "@/lib/data-store/connection";
-import { statsRowFilter } from "@/lib/data-store/fee-stats";
+import { institutionValueSql, statsRowFilter } from "@/lib/data-store/fee-stats";
 import { isConsumerFee, type FeeAudience } from "@/lib/fee-audience";
 import { isConfirmedMovement, withConfirmedMovements } from "./fee-movement-check";
 import { SITE_URL } from "@/lib/constants";
@@ -422,8 +422,7 @@ async function fillPublishedAmounts(digests: FeeAlertDigest[]): Promise<void> {
   if (institutionIds.size === 0) return;
   const rows = await sql<{ institution_id: number; fee_category: string; amount: number | string }[]>`
     SELECT ef.institution_id, ef.fee_category,
-           CASE WHEN ef.fee_category = 'overdraft' THEN MAX(ef.amount)
-                ELSE PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ef.amount) END AS amount
+           ${sql.unsafe(institutionValueSql("ef"))} AS amount
     FROM published_fee_catalog ef
     WHERE ef.review_status = 'approved'
       AND ef.amount IS NOT NULL AND ef.amount >= 0

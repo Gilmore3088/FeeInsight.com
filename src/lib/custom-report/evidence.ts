@@ -24,7 +24,7 @@
  * The amount is then rebuilt from the records that remain; when none remains, the institution
  * is left out of that line's comparison and the line's medians are worked out without it.
  */
-import { HIGHEST_TIER_CATEGORIES, institutionValue } from "@/lib/fee-institution-value";
+import { HIGHEST_TIER_CATEGORIES, institutionValue, statisticsRows } from "@/lib/fee-institution-value";
 import type { MarketFeeLine, MarketFeeRecord } from "@/lib/data-store/custom-report-market";
 import { isArticleLink } from "@/lib/agents/magellan/link-coverage";
 import { checkFeeAgainstSource } from "./source-check";
@@ -155,6 +155,13 @@ export interface EvidenceRecord {
   problem: EvidenceProblem | null;
   /** The same in words, naming what the quote describes and the fee it is not (`problemReason`); null when used. */
   reason?: string | null;
+  /** The account the record is priced for, when the schedule names one. */
+  account_product?: string | null;
+  /**
+   * Priced for one named account as an exception (fee-stats.ts rule 11, #1911): shown, but left
+   * out of the compared amount when the institution also states a general price.
+   */
+  product_exception?: boolean;
 }
 
 export interface AmountEvidence {
@@ -382,7 +389,7 @@ function dollars(value: number): string {
 /** The records behind a fee line: its tiers when it has several, otherwise the line itself. */
 function recordsOf(fee: MarketFeeLine): MarketFeeRecord[] {
   if (fee.tiers && fee.tiers.length > 1) return fee.tiers;
-  return [{ id: fee.id ?? null, amount: fee.amount, fee_name: fee.fee_name, source_line: fee.source_line, source_url: fee.source_url, schedule_read_on: fee.schedule_read_on }];
+  return [{ id: fee.id ?? null, amount: fee.amount, fee_name: fee.fee_name, source_line: fee.source_line, source_url: fee.source_url, schedule_read_on: fee.schedule_read_on, account_product: fee.account_product, product_exception: fee.product_exception }];
 }
 
 /** The evidence behind one institution's amount for one fee line. */
@@ -398,6 +405,8 @@ export function buildAmountEvidence(fee: MarketFeeLine): AmountEvidence {
       read_on: r.schedule_read_on === undefined ? fee.schedule_read_on : r.schedule_read_on,
       problem: null,
       reason: null,
+      ...(r.account_product ? { account_product: r.account_product } : {}),
+      ...(r.product_exception ? { product_exception: true } : {}),
     };
     const problem = evidenceProblem(fee.line, record);
     return { ...record, problem, reason: problem ? problemReason(fee.line, problem, record) : null };
@@ -406,7 +415,8 @@ export function buildAmountEvidence(fee: MarketFeeLine): AmountEvidence {
   const records = all.filter((r) => r.problem === null).sort(byAmount);
   const excluded = all.filter((r) => r.problem !== null).sort(byAmount);
   if (records.length === 0) return { amount: null, basis: null, records, excluded };
-  const amounts = records.map((r) => r.amount);
+  // Rule 11: a named account's exception price stays listed but the amount rests on the general records.
+  const amounts = statisticsRows(records, (r) => r.product_exception === true).map((r) => r.amount);
   return { amount: institutionValue(fee.line, amounts), basis: amountBasis(fee.line, amounts), records, excluded };
 }
 
@@ -434,12 +444,25 @@ export function withEvidence(fee: MarketFeeLine): (ReportFigure & { evidence: Am
     source_line: first.quote,
     source_url: first.source_url,
     schedule_read_on: first.read_on,
+    account_product: first.account_product ?? null,
+    product_exception: first.product_exception === true,
     tiers:
       evidence.records.length > 1
-        ? evidence.records.map((r) => ({ id: r.record_id, amount: r.amount, fee_name: r.product, source_line: r.quote, source_url: r.source_url, schedule_read_on: r.read_on }))
+        ? evidence.records.map((r) => ({
+            id: r.record_id, amount: r.amount, fee_name: r.product, source_line: r.quote, source_url: r.source_url, schedule_read_on: r.read_on,
+            account_product: r.account_product ?? null, product_exception: r.product_exception === true,
+          }))
         : undefined,
     evidence,
   };
+}
+
+/**
+ * Rule 11 (#1911): the record is a named account's exception price listed beside a general price
+ * in the same evidence, so it is shown but the compared amount does not rest on it.
+ */
+export function listedNotCompared(record: Pick<EvidenceRecord, "product_exception" | "problem">, used: readonly Pick<EvidenceRecord, "product_exception">[]): boolean {
+  return record.problem === null && record.product_exception === true && used.some((r) => r.product_exception !== true);
 }
 
 /** A left-out record's reason in words, from the record or, on older copies, its kind. */

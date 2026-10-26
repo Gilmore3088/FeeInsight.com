@@ -1118,10 +1118,12 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   that lists a student account among others, a negated mention ("does not apply to Youth
   Savings"), a credit union named for students and a youth heading past the third line do not
   count. The address never gives the youth kind: GTE Financial's `/go-student-checking` page carried
-  27 live general fees. Both rules act only with `OPENING_DOCUMENT_TAKEDOWN_LIVE` (off: counted,
-  left as they are; all 17 matched documents' stored openings were checked and none is a general
-  schedule, so the sample is clean for turning it on) and Hamilton's publish gate and depth count
-  ask the same rule with the row's document opening. Dry run (prod, read-only, Oct 25, `openingDocumentFeesSql()`):
+  27 live general fees. Both rules act only with `OPENING_DOCUMENT_TAKEDOWN_LIVE`, on since
+  2026-10-26 (James, "Take them down" on the decision card, 01:47 UTC; all 17 matched documents'
+  stored openings were checked and none is a general schedule; re-counted that day, prod,
+  read-only: the same 48 fees on the same 17 documents at 15 institutions). On, matched fees come
+  down on their second look; off (the rollback), they are counted and left as they are. Hamilton's
+  publish gate and depth count ask the same rule with the row's document opening. Dry run (prod, read-only, Oct 25, `openingDocumentFeesSql()`):
   48 live fees on 17 documents at 15 institutions, 41 `loan_titled_document` (15 documents) and 7
   `youth_account_document` (2 documents); none of the 17 had an address kind. A loan phrase after
   "your", "the" or a like word is a sentence, not a title, and an opening that names a general
@@ -1498,7 +1500,7 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
     false`) and the fee is not held: graded on the 123 v4 and 113 v3 holds against their stored
     text, nearly all of those were real fees at an unusual printed price (photocopies, box
     drilling, $5 stop payments). No-fee, discount and allowance lines are the shared name rule's
-    (`ruleFor`, Hamilton `EVAL_VERDICT_VERSION` v8). Each `verify.rules` attempt records
+    (`ruleFor`, Hamilton `EVAL_VERDICT_VERSION` v9). Each `verify.rules` attempt records
     `peer_version`, and a `peer_outlier` row decided under an older peer version is re-decided
     once. An older hold that has no `peer_version` is re-decided only when its own run's
     `verify.peer_range` attempt was a graded version (`DARWIN_PEER_GRADED_VERSIONS`, v3 and v4)

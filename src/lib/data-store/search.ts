@@ -1,6 +1,6 @@
 import { sql } from "./connection";
 import { boundedSearchTerm } from "@/lib/api-hardening/query-caps";
-import { activeInstitutionFilter, statsRowFilter } from "./fee-stats";
+import { activeInstitutionFilter, institutionValueSql, statsRowFilter } from "./fee-stats";
 import {
   classifyInstitutionQuality,
   getFeePublicationStatus,
@@ -280,8 +280,7 @@ export async function searchInstitutions(params: {
     paramIdx++;
     focusJoin = `
      LEFT JOIN LATERAL (
-       SELECT CASE WHEN $${paramIdx} = 'overdraft' THEN MAX(ef.amount)
-                   ELSE PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ef.amount) END AS amount
+       SELECT ${institutionValueSql("ef")} AS amount
        FROM published_fee_catalog ef
        WHERE ef.institution_id = ct.id
          AND ef.fee_category = $${paramIdx}
@@ -289,6 +288,7 @@ export async function searchInstitutions(params: {
          AND ef.amount IS NOT NULL
          AND ef.amount >= 0
          AND ${statsRowFilter("ef")}
+       GROUP BY ef.fee_category
      ) focus ON TRUE`;
     focusSelect = ",\n            focus.amount as focus_fee_amount";
     queryParams.push(focusCategory);

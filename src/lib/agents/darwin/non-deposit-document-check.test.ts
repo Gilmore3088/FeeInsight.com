@@ -366,8 +366,8 @@ describe("v4 rules: documents that open as a loan disclosure or a youth account'
     { fee_published_id: "301", fee_verified_id: "9304", institution_id: "6", fee_name: "Overdraft", amount: "35", canonical_fee_key: "overdraft", source_document_id: "74", document_url: "https://www.example.com/personal/Schedule-of-Fees-Personal-Checking.pdf", document_opening: GENERAL_OPENING },
   ];
 
-  it("ships with the opening sub-switch off until the takedown is confirmed", () => {
-    expect(OPENING_DOCUMENT_TAKEDOWN_LIVE).toBe(false);
+  it("has the opening sub-switch on since James's yes on the 48-fee count (2026-10-26)", () => {
+    expect(OPENING_DOCUMENT_TAKEDOWN_LIVE).toBe(true);
   });
 
   it("reads the kind from the opening only when the address names none", () => {
@@ -405,9 +405,28 @@ describe("v4 rules: documents that open as a loan disclosure or a youth account'
     expect(before.passing).toEqual([301, 115697, 142944, 142945]);
   });
 
-  it("leaves them live while the sub-switch is off, at publish and on the re-check", async () => {
+  it("with the switches as shipped, takes them down on their second look and leaves the general schedule's fee", async () => {
+    const now = new Date("2026-10-26T14:00:00Z");
+    const flag = (id: string, reason: string) => ({ fee_published_id: id, kind: "takedown_pending", evidence: { flag_run_id: 3, flagged_at: "2026-10-26T01:00:00Z", reason } });
+    const base = dbFor(OPENING_ROWS, {
+      flags: [flag("142944", "loan_titled_document: loan #33822"), flag("142945", "loan_titled_document: loan #33822"), flag("115697", "youth_account_document: youth_account #2241")],
+    });
+    const db: DbMock = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+      if (strings.join("?").includes("UPDATE published_fee_records")) return Promise.resolve([{ fee_published_id: "115697" }, { fee_published_id: "142944" }, { fee_published_id: "142945" }]);
+      return (base as unknown as (s: TemplateStringsArray, ...v: unknown[]) => Promise<unknown>)(strings, ...values);
+    });
+    const result = await recheckNonDepositDocuments(asDb(db), { runId: 8, stepId: 80, dryRun: false, now });
+    expect(result.openingLive).toBe(true);
+    expect(result.takenDown).toEqual([115697, 142944, 142945]);
+    const update = db.mock.calls.find(([strings]) => (strings as TemplateStringsArray).join("?").includes("UPDATE published_fee_records"));
+    expect(update?.[2]).toEqual([115697, 142944, 142945]);
+    expect(update?.[2]).not.toContain(301);
+    expect(nonDepositDetail(result)).toMatchObject({ opening_switch_live: true, taken_down: 3 });
+  });
+
+  it("leaves them live with the sub-switch off, at publish and on the re-check (the rollback)", async () => {
     const fee = { documentUrl: TD_FIT, sourceDocumentId: 33822, canonicalFeeKey: "nsf", feeName: "Non-sufficient funds (NSF) payment fee", documentOpening: TD_FIT_OPENING };
-    expect(nonDepositTakedownReason(fee)).toBeNull();
+    expect(nonDepositTakedownReason(fee)).toBe("loan_titled_document: loan #33822");
     expect(nonDepositTakedownReason(fee, { live: true, openingLive: false })).toBeNull();
     expect(nonDepositTakedownReason(fee, { live: false, openingLive: true })).toBeNull();
     expect(nonDepositTakedownReason(fee, { live: true, openingLive: true })).toBe("loan_titled_document: loan #33822");

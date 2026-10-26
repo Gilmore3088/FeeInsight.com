@@ -75,6 +75,9 @@ export async function generateMetadata({ searchParams }: PageProps): Promise<Met
     description:
       "Explore what banks and credit unions charge, fee by fee, read from their own published schedules: medians, the full spread, state and charter comparisons, and the institutions behind every figure.",
     alternates: { canonical: "/fees" },
+    // A filtered view (robots.txt disallows "/fees?") is neither indexed nor walked: its links lead to
+    // more filtered views without end, and each renders fresh.
+    robots: Object.keys(params).length > 0 ? { index: false, follow: false } : undefined,
   };
 }
 

@@ -1,5 +1,5 @@
 import { sql } from "./connection";
-import { statsRowFilter } from "./fee-stats";
+import { institutionValueSql, statsRowFilter } from "./fee-stats";
 import { FEE_FAMILIES } from "@/lib/fee-taxonomy";
 import { institutionDisplayName } from "@/lib/institution-display-name";
 
@@ -99,8 +99,7 @@ export async function getSavedInstitutionFees(
     FROM institution_fee_alert_subscriptions a
     JOIN institution_sources ct ON ct.id = a.institution_id
     LEFT JOIN LATERAL (
-      SELECT CASE WHEN ${feeCategory} = 'overdraft' THEN MAX(ef.amount)
-                  ELSE PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ef.amount) END AS amount
+      SELECT ${sql.unsafe(institutionValueSql("ef"))} AS amount
       FROM published_fee_catalog ef
       WHERE ef.institution_id = a.institution_id
         AND ef.fee_category = ${feeCategory}
@@ -108,6 +107,7 @@ export async function getSavedInstitutionFees(
         AND ef.amount IS NOT NULL
         AND ef.amount >= 0
         AND ${sql.unsafe(statsRowFilter("ef"))}
+      GROUP BY ef.fee_category
     ) f ON TRUE
     WHERE a.user_id = ${userId} AND a.is_active = TRUE
     ORDER BY ct.institution_name

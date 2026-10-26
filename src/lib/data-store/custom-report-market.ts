@@ -1,6 +1,8 @@
 import { sql } from "./connection";
 import { branchCitySpellings, hqPlacesInBranchCounties } from "./city-spellings";
 import { institutionValue, statsRowFilter } from "./fee-stats";
+import { statisticsRows } from "@/lib/fee-institution-value";
+import { productExceptionSql } from "@/lib/fee-product";
 import { FEE_LINE_RULES } from "@/lib/custom-report/rules";
 import { checkFeeAgainstSource, type SourceCheckFailure } from "@/lib/custom-report/source-check";
 import { nameIsFragment } from "@/lib/agents/darwin/release-review";
@@ -101,6 +103,14 @@ export interface MarketFeeRecord {
   source_line: string;
   source_url?: string | null;
   schedule_read_on?: string | null;
+  /** The account the row is priced for, when the schedule names one (published_fee_catalog.account_product_type). */
+  account_product?: string | null;
+  /**
+   * Priced for one named account as an exception to the general price (fee-stats.ts rule 11,
+   * #1911): left out of the compared value when the institution also states a general price.
+   * Missing on copies saved before it was kept, which count as general.
+   */
+  product_exception?: boolean;
 }
 
 export interface MarketFeeLine {
@@ -116,6 +126,9 @@ export interface MarketFeeLine {
   schedule_read_on: string | null;
   /** The line of the bank's own document that states this fee. */
   source_line: string;
+  /** The first record's account and rule 11 flag (MarketFeeRecord). */
+  account_product?: string | null;
+  product_exception?: boolean;
   /**
    * Every checked amount the institution states for this fee line, representative first,
    * when there is more than one (balance tiers, or two separate charges). With tiers, `amount`
@@ -350,6 +363,8 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
       amount: string | null;
       fee_id: string | number | null;
       fee_name: string | null;
+      account_product_type: string | null;
+      product_exception: boolean | null;
       source_url: string | null;
       updated_at: string | null;
       source_document_id: string | null;
@@ -381,6 +396,7 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
     ),
     guarded AS (
       SELECT c.id AS fee_id, c.institution_id, r.k AS line, c.amount, c.fee_name, c.source_document_id,
+             c.account_product_type, ${sql.unsafe(productExceptionSql("c", "canonical_fee_key"))} AS product_exception,
              COALESCE(c.document_url, c.source_url) AS source_url, c.updated_at,
              EXISTS (SELECT 1 FROM pipeline_feedback pf
                       WHERE pf.fee_published_id = c.id AND pf.kind = 'takedown_pending') AS takedown_pending,
@@ -407,7 +423,7 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
       FROM guarded g
     )
     SELECT m.institution_id, s.institution_name, s.city, s.state_code, s.charter_type,
-           m.deposits AS market_deposits, p.line, p.fee_id, p.amount, p.fee_name, p.source_url, p.updated_at::text AS updated_at,
+           m.deposits AS market_deposits, p.line, p.fee_id, p.amount, p.fee_name, p.account_product_type, p.product_exception, p.source_url, p.updated_at::text AS updated_at,
            p.source_document_id::text AS source_document_id, p.takedown_pending, p.conditions
     FROM members m
     JOIN institution_sources s ON s.id = m.institution_id
@@ -513,6 +529,8 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
         source_line: sourceLine,
         source_url: row.source_url ?? source?.url ?? null,
         schedule_read_on: source?.readOn ?? null,
+        account_product: row.account_product_type ?? null,
+        product_exception: row.product_exception === true,
       };
       const representative = filled.get(slot);
       if (representative) {
@@ -526,6 +544,8 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
             source_line: representative.source_line,
             source_url: representative.source_url,
             schedule_read_on: representative.schedule_read_on,
+            account_product: representative.account_product ?? null,
+            product_exception: representative.product_exception === true,
           },
         ];
         if (!tiers.some((tier) => tier.amount === amount && tier.source_line === sourceLine)) {
@@ -543,15 +563,21 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
         updated_at: row.updated_at ? row.updated_at.slice(0, 10) : null,
         schedule_read_on: source?.readOn ?? null,
         source_line: sourceLine,
+        account_product: record.account_product,
+        product_exception: record.product_exception,
       };
       filled.set(slot, entry);
       lines.push(entry);
     }
   }
 
-  // One value per institution, the statistics contract's own (fee-stats.ts rule 2).
+  // One value per institution, the statistics contract's own (fee-stats.ts rules 2 and 11): the
+  // general records when the institution also states a named account's exception price.
   for (const entry of lines) {
-    if (entry.tiers && entry.tiers.length > 1) entry.amount = institutionValue(entry.line, entry.tiers.map((t) => t.amount));
+    if (entry.tiers && entry.tiers.length > 1) {
+      const counted = statisticsRows(entry.tiers, (tier) => tier.product_exception === true);
+      entry.amount = institutionValue(entry.line, counted.map((t) => t.amount));
+    }
   }
 
   return {

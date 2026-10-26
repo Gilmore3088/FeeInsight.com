@@ -486,6 +486,7 @@ export function liveCatalogReader(): LiveReader {
             charter_type: r.charter_type,
             schedule_keys: r.schedule_keys ?? null,
             schedule_group: r.schedule_group ?? null,
+            product_exception: r.product_exception ?? null,
           })))
           .catch(() => null),
       );

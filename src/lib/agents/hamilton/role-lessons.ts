@@ -387,6 +387,16 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     since: "2026-10-25",
   },
   {
+    id: "issue-1911-general-over-product-exception",
+    agent: "hamilton",
+    stage: "analysis",
+    lesson: "When an institution states a general price for a fee and also a price for one named account as an exception to it, compare the institution at its general price and name the exception as that account's own fee; never blend the two into one figure. With no general price, the named accounts' prices are the institution's. An account's own monthly fee or minimum balance is never an exception.",
+    why: "U.S. Bank's Safe Debit money order ($1.65) and non-U.S. Bank ATM fee ($2.50) sat beside the general $5.00 and $3.00, and the per-institution median pooled them into $3.325 and $2.75, prices no customer is charged.",
+    evidence: { issues: [1911], prs: [2179], files: ["src/lib/data-store/fee-stats.ts", "src/lib/fee-product.ts", "src/lib/fee-institution-value.ts", "docs/project/findings/2026-10-25-product-exceptions-pool-general-price.md"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
+  {
     id: "issue-1896-empty-group-caption",
     agent: "hamilton",
     stage: "written answer",
@@ -395,6 +405,16 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     evidence: { issues: [1896], prs: [], files: ["src/components/hamilton/memo/memo.tsx", "src/components/hamilton/memo/memo-charts.test.ts"] },
     appliesTo: "all",
     since: "2026-10-25",
+  },
+  {
+    id: "issue-1696-discount-on-the-line",
+    agent: "hamilton",
+    stage: "publish",
+    lesson: "Decide whether a fee is a credit from the stored line, not only from its name. A cut name stops wherever the read ran out (\"Safe Deposit Box Discount An annual\", \"… however, a\"), so a rule anchored to how a name ends misses the run-on sentence; when the line prints the fee's own amount only as \"$X discount\", it is a discount credit, and when it also prints that amount as a price the line cannot say which, so leave it.",
+    why: "Name rules v8 read \"Discount\" only at the end of a name or before on/for, so two live discount credits, 142565 (\"Safe Deposit Box Discount An annual\" $5) and 142566 (\"Stop Payment Discount Receive one\" $5), and six more lines that print \"$X discount\" at the fee's amount stayed published after #1691 took 19 down (prod read 2026-10-26).",
+    evidence: { issues: [1696, 1691], prs: [2681], files: ["src/lib/agents/hamilton/eval-verdicts.ts", "src/lib/agents/hamilton/eval-verdicts.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-26",
   },
   {
     id: "issue-1896-price-labels-no-overlap",
