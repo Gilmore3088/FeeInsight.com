@@ -1,5 +1,5 @@
 import { runStorageCompaction } from "@/lib/agents/hoovie/storage-compaction";
-import { storageRolloutAction } from "@/lib/agents/hoovie/storage-rollout";
+import { STORAGE_ROLLOUT_SOURCE, storageRolloutAction } from "@/lib/agents/hoovie/storage-rollout";
 import { verifyNextArchivedCallRead } from "@/lib/agents/hoovie/storage-read-acceptance";
 import { sql, withTransaction } from "@/lib/data-store/connection";
 import { sweepInterruptedReportRuns } from "@/lib/hamilton/report-run";
@@ -4503,6 +4503,9 @@ export async function executeQueuedAgentRuns({
      -- then state lanes by Atlas's priority score (open work, report requests,
      -- near-ready markets), then launch order.
      ORDER BY (r.run_kind = 'report') DESC,
+              -- Explicit approved, bounded storage work must not starve behind a stuck publish.
+              (r.agent_name='atlas' AND r.run_kind='workflow' AND r.trigger_source='admin'
+                AND COALESCE(r.params_json->>'source'=${STORAGE_ROLLOUT_SOURCE},false)) DESC,
               -- The daily scoreboard holds its 150 s score step for a tick with that much left,
               -- and fresh lanes left at most 128 s, so run 9476 sat queued all of Oct 19 with
               -- the storage watch behind it. Once lanes have had 15 minutes it goes first.

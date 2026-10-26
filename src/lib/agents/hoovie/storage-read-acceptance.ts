@@ -20,7 +20,7 @@ export async function verifyNextArchivedCallRead(db: typeof sql) {
   if(!file)return {status:"no_unchecked_archives" as const};
   const itemKey=file.source==='ncua'?'acct_452':'service_charges_deposits_ytd';
   const ref:ColdFileRef={source:file.source,period:file.period,objectKey:file.object_key,rowCount:Number(file.row_count),sha256:file.sha256};
-  const read=await readColdCallRows([ref],{itemKey});
+  const read=await readColdCallRows([ref],{itemKey,institutionIds:null});
   if(read.failed.length||read.incomplete?.length||!read.rows.length)throw new Error("Historical acceptance requires a complete verified archive read");
   const sample=read.rows[0];
   const [expected]=coldInstitutionSeries([sample]);
