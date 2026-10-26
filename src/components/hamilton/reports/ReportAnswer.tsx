@@ -94,8 +94,50 @@ export function ReportAnswer({
   );
 }
 
+/** A middle column whose cells run longer than this is prose (a source line), not a figure. */
+const FIGURE_CELL_MAX = 40;
+
+export type ExhibitColumnKind = "label" | "figure" | "text";
+
+/**
+ * How each exhibit column reads (#1899). The first column names the row and the last carries
+ * notes; a middle column is a figure (right-aligned, one line) unless any of its cells runs long,
+ * when it is prose that wraps. A long middle cell held on one line pushed the table wider than its
+ * box and squeezed the first column to a word or two a line.
+ */
+export function exhibitColumnKinds(exhibit: Pick<ReportExhibit, "columns" | "rows">): ExhibitColumnKind[] {
+  const last = exhibit.columns.length - 1;
+  return exhibit.columns.map((_, i) => {
+    if (i === 0) return "label";
+    if (i === last) return "text";
+    return exhibit.rows.some((row) => (row[i] ?? "").length > FIGURE_CELL_MAX) ? "text" : "figure";
+  });
+}
+
+/**
+ * Cell classes per column: the label column keeps a readable width; a prose column wraps, breaking
+ * a long record ID where it must; a figure stays on one line. A table wider than a phone scrolls
+ * inside its own box.
+ */
+export function exhibitCellClass(kind: ExhibitColumnKind, index: number, columnCount: number, hasProse = false): string {
+  if (kind === "figure") return "text-right tabular-nums whitespace-nowrap";
+  // The minimum widths are only for a table with a prose middle column, which scrolls anyway;
+  // an all-figure table keeps fitting a phone as before.
+  if (kind === "label") return hasProse ? "text-left min-w-[13rem]" : "text-left";
+  if (index === columnCount - 1) return hasProse ? "text-left min-w-[10rem]" : "text-left";
+  return "text-left min-w-[16rem] [overflow-wrap:anywhere]";
+}
+
+/** True when a middle column reads as prose (exhibitColumnKinds). */
+export function exhibitHasProse(kinds: readonly ExhibitColumnKind[]): boolean {
+  return kinds.some((k, i) => k === "text" && i > 0 && i < kinds.length - 1);
+}
+
 /** A data exhibit: the title states the takeaway, the table carries the evidence. */
 export function ReportExhibitTable({ exhibit, number }: { exhibit: ReportExhibit; number: number }) {
+  const kinds = exhibitColumnKinds(exhibit);
+  const hasProse = exhibitHasProse(kinds);
+  const cellClass = (i: number) => exhibitCellClass(kinds[i] ?? "text", i, exhibit.columns.length, hasProse);
   return (
     <figure className="mb-8 last:mb-0">
       <figcaption className="mb-3">
@@ -123,7 +165,7 @@ export function ReportExhibitTable({ exhibit, number }: { exhibit: ReportExhibit
                 <th
                   key={i}
                   scope="col"
-                  className={`px-3 py-2 font-semibold ${i === 0 || i === exhibit.columns.length - 1 ? "text-left" : "text-right"}`}
+                  className={`px-3 py-2 font-semibold ${kinds[i] === "figure" ? "text-right" : "text-left"}`}
                   style={{ color: "var(--hamilton-text-secondary)" }}
                 >
                   {column}
@@ -137,7 +179,7 @@ export function ReportExhibitTable({ exhibit, number }: { exhibit: ReportExhibit
                 {row.map((cell, c) => (
                   <td
                     key={c}
-                    className={`px-3 py-2 align-top ${c === 0 || c === row.length - 1 ? "text-left" : "text-right tabular-nums whitespace-nowrap"}`}
+                    className={`px-3 py-2 align-top ${cellClass(c)}`}
                     style={{
                       color: c === 1 ? "var(--hamilton-text-primary)" : "var(--hamilton-text-secondary)",
                       fontWeight: c === 0 || c === 1 ? 600 : 400,

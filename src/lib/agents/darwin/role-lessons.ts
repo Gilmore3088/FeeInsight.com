@@ -7,6 +7,30 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const DARWIN_LESSONS: AgentLesson[] = [
   {
+    id: "issue-1986-takedown-for-a-twin-follows-the-twin",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "A takedown that stands on another live line (a translated copy beside its English twin) holds only while that line, or another line of the same fee at the same category and price, is there. Read every such takedown again each step: when no English line of the fee is live, held or waiting to publish, bring the copy back, but only if no other rule has taken it down since, the twin was not replaced by a newer copy of the schedule (then the copy is no proof of today's price either), and the copy's own document's newest read still states it. A restore changes live data, so it ships behind its own switch with a prod dry-run count.",
+    why: "The translated-copy check (#1909) archived 35 Spanish-copy fees at 4 institutions on Oct 18 as `translated_copy: #<doc> twin #<fee>`, and nothing read them again when the twin later came down, so a bank could lose the fee entirely. By Oct 26 the dated-edition check had taken down three of OnPoint's English twins (152572, 22677, 50406). None of the three should come back: the current English edition prices the Oregon reconveyance at $153 where the Spanish copy says $133 (64334), and its Account Research $25 and Legal Process $75 rows are verified and waiting to publish (64337, 64339). The other 32 twins are still live.",
+    evidence: {
+      issues: [1986],
+      prs: [2707],
+      files: ["src/lib/agents/darwin/translated-copy-check.ts", "src/lib/agents/darwin/translated-copy-restore.db.test.ts", "src/lib/agents/darwin/translated-copy-check.test.ts"],
+    },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
+  {
+    id: "issue-1577-learned-row-follows-current-key",
+    agent: "darwin",
+    stage: "classify",
+    lesson: "Trust a learned answer-key row only while it still matches the current confirmed key line: the same category, amount, source and fingerprints under a current eligibility receipt. When a person relabels that line, to another category or to unmapped, the old row is retired from the category model and every other reader at once; it is never kept as a vote for the label the key no longer gives.",
+    why: "The answer-key feedback rows were written when each key line was first scored, and 29 night-deposit lines were later relabelled unmapped (101767 among them) while their old rows still said night_deposit. Without the current-line match those rows would keep teaching a category the key had taken back. PR #2174 (adjusted by #2468) binds each row to its current key line; a read-only check on Oct 26 found 34 old rows that disagree with their current line (29 to unmapped, 5 to another category) and none of them reach training.",
+    evidence: { issues: [1577], prs: [2174, 2704], files: ["src/lib/data-store/answer-key-reference-store.ts", "src/lib/agents/darwin/category-model.ts", "src/lib/data-store/answer-key-eligibility.db.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
+  {
     id: "issue-1694-grade-the-holds-you-re-decide",
     agent: "darwin",
     stage: "verify",
@@ -337,6 +361,16 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     since: "2026-10-25",
   },
   {
+    id: "issue-2100-carry-over-non-fee-refusals",
+    agent: "darwin",
+    stage: "classify",
+    lesson: "When a new category type takes names from an older one, carry over the older type's non-fee refusals with its exact patterns, so a name the older type refused (a low balance charge, a currency exchange or order, a check collection, a sentence about \"many\" ATMs) is not accepted by the new one. Compare the two types' exclude lists in the same change and test each carried-over refusal on a name the new type's include matches.",
+    why: "Guard v76 split International ATM out of the card's foreign transaction fee, but its exclude kept only the card and purchase refusals, so \"Many international ATMs\" or \"International ATM foreign currency order\" would have passed as an International ATM fee (#2093 review). Guard v94 adds the six refusals; the Oct 26 read-only dry run found 0 of 60 live dollar and 0 of 3 live rate fees affected.",
+    evidence: { issues: [2100], prs: [2709], files: ["src/lib/fee-category-guard.ts", "src/lib/fee-category-guard.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
+  {
     id: "issue-1568-named-bank-non-customer-price",
     agent: "darwin",
     stage: "verify",
@@ -375,5 +409,25 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     evidence: { issues: [1615], prs: [2673], files: ["src/lib/agents/darwin/rate-floor-check.ts", "src/lib/rate-floor.ts"] },
     appliesTo: "all",
     since: "2026-10-25",
+  },
+  {
+    id: "issue-1882-zero-overdraft-needs-its-whole-cell",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "A $0 overdraft or NSF fee is the bank's price only when the schedule states $0 for the whole fee. Before passing one, read its whole price cell however long it is, and the document's other rows with its name: further prices in its own cell, the same name priced on a band row (\"Negative account balance $10.00 or more\"), or a price straight after the name with the free word in the next column mean the $0 is a band or another column. Re-check live $0s with the same rule Knox applies (bandedZeroOf).",
+    why: "Darwin's conditional-$0 test reads a price cell of more than four words as no price of the fee's, so \"Safety Net Overdraft | $0 if the negative balance is $5 or less. $10 if ... $35 per item\" passed the recheck and went live as the credit union's only overdraft price; 4 of 139 live $0 overdraft and NSF fees were such reads on Oct 26 (#1882). The banded $0 re-check lists them; its switch stays off until they are read against each bank's stored text (sampled-clean rule).",
+    evidence: { issues: [1882], prs: [2702], files: ["src/lib/agents/darwin/banded-zero-check.ts", "src/lib/banded-zero.ts"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
+  {
+    id: "issue-1905-loan-section-recheck",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "A fee that traces to its own line at its own price can still be filed under the wrong product: a row in a loan section of the bank's general fee schedule is the loan's fee even when its words sound like an account's (a returned check, a service charge). Re-check live deposit-category fees against the section their lines sit in, with the same shared rule Knox applies (loan-section-fee.ts), so a re-read cannot bring the fee back and the re-check cannot disagree with the reader. Take one down only when every line that prints its name at its price is in such a section.",
+    why: "Navy Federal's \"Equity Loan\" rows went live as the account's NSF fee ($29, 154634) and monthly maintenance fee ($25, 154635) on Oct 21, and Darwin verified them because both trace to the page (#1905). The Oct 26 dry run found 8 such live fees at 7 institutions; the switch stays off until James's yes.",
+    evidence: { issues: [1905], prs: [2703], files: ["src/lib/agents/darwin/loan-section-check.ts", "src/lib/custom-report/loan-section-fee.ts"] },
+    appliesTo: "all",
+    since: "2026-10-26",
   },
 ];

@@ -1,5 +1,5 @@
 import { namesNoAccount } from "@/lib/account-name-exclusions";
-import { productKey } from "@/lib/fee-product";
+import { ACCOUNT_PRICED_CATEGORIES, productKey } from "@/lib/fee-product";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 
 /** Evidence format only: does not expand any extractor/rejudge queue. */
@@ -105,7 +105,7 @@ export function primaryAncillaryProduct(text: string, institutionName?: string |
 export function withAncillaryProduct<T extends { feeName: string; canonicalHint: string; amount?: number | null }>(
   candidate: T, text: string, institutionName?: string | null,
 ): T & { ancillaryProduct?: AncillaryProduct } {
-  if (["monthly_maintenance", "minimum_balance"].includes(candidate.canonicalHint) || candidate.amount == null || !(candidate.amount > 0)) return candidate;
+  if (ACCOUNT_PRICED_CATEGORIES.has(candidate.canonicalHint) || candidate.amount == null || !(candidate.amount > 0)) return candidate;
   const owner = primaryAncillaryProduct(text, institutionName);
   if (!owner) return candidate;
   const witness = checkFeeAgainstSource(owner.block, candidate.feeName, candidate.amount, ".", candidate.canonicalHint);

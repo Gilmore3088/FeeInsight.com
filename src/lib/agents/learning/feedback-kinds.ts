@@ -83,7 +83,7 @@ export const FEEDBACK_KINDS = {
   audience_relabeled: { record: "Darwin's audience relabel keeps the old value for a rollback (audience-relabel.ts)." },
   audience_hand_fixed: { record: "Hamilton's hand audience fix keeps the old value for a rollback." },
   business_schedule_restored: { record: "A business-schedule takedown brought back; release review leaves it out on purpose." },
-  account_type_hold_released: { record: "A guard-refused row the account type hold put back to verified, held (#1680); not a category verdict, and with no published fee release review never reads it." },
+  account_type_hold_released: { record: "A guard-refused row the account type hold put back to verified, held (#1680); not a category verdict; release review leaves it out by name (`RESTORE_RECORD_KINDS`)." },
   category_fold: { record: "Hamilton's taxonomy fold logs each fee it moved." },
   name_account_added: { record: "Hamilton's account names log each name it added." },
   name_account_removed: { record: "Hamilton's account names log each name set back because its heading was no account, a breadcrumb or menu (account-names.ts v4, #1917)." },

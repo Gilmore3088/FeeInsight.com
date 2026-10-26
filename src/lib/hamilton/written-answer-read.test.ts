@@ -84,7 +84,7 @@ describe("writeWrittenAnswer, the paid eval's written answer (#1414)", () => {
 
   it("checks the exact briefing snapshot that the buffered writer saw, without a second fetch", async () => {
     const fact = { institution_id: 7, institution_name: "First Example Bank", context_role: "research", metric: "service_charge_income",
-      value: 57260, unit: "thousands of dollars", report_date: "2026-06-30", period_basis: "ytd",
+      value: 57_260_000, unit: "USD", report_date: "2026-06-30", period_basis: "ytd",
       source: "ncua", publisher: "NCUA", evidence_tier: "regulatory" };
     mocks.briefing.mockResolvedValueOnce({ prompt: `\nBRIEFING ${JSON.stringify([fact])}`, evidence: [fact] });
     mocks.generateText.mockResolvedValue({ text: "Fee income through June was $57.26 million year to date.", finishReason: "stop", steps: [], totalUsage: {} });
@@ -95,6 +95,11 @@ describe("writeWrittenAnswer, the paid eval's written answer (#1414)", () => {
     expect(String(system.content ?? system)).toContain(JSON.stringify([fact]));
     expect(String(system.content ?? system)).toContain("first call queryData");
     expect(String(system.content ?? system)).toContain("never calculation inputs");
+    // The briefing's money is whole dollars now (#1077): the writer is told so, and may state
+    // only the ratios the evidence or the calculation ledger already holds.
+    expect(String(system.content ?? system)).not.toContain("rounded thousands");
+    expect(String(system.content ?? system)).toContain("649000 is $649,000, never $649");
+    expect(String(system.content ?? system)).toContain("State a ratio, share, percentage, gap or growth rate only when it is already in the briefing evidence, a tool result or the VALIDATED FINANCIAL CALCULATIONS ledger");
     expect(result.status === "written" && result.check.passed).toBe(true);
   });
 

@@ -1,6 +1,11 @@
 # Database growth controls — October 25, 2026
 
-Status: implementation candidate on `codex/database-growth-controls`; production rollout is not active.
+Status: James approved the staged production rollout on October 26, 2026. PR #2668 merged as
+`fb42543af7fffae603d0e0a7a9f6030ade68e8c2`; all eight CI jobs passed on the reviewed head.
+Production deployment `dpl_9ZsGsD8sQnLgrmTh7ukRdZcaFhZw` is READY. Migration 79 is recorded
+in production; its three functions are invoker functions with anonymous execute revoked.
+The explicit apply attempt returned already-exists; the installed migration was verified rather
+than reapplied. No historical conversion or pruning has been activated yet.
 Existing owners: Foundation #1808 (log growth), Hoovie #2225 / #1783 (public data), and the archive foundation from closed #1870.
 
 ## Changes
@@ -42,7 +47,7 @@ At the measured table-average size this is roughly 0.5–0.7 GiB of reusable Pos
 ## Review and rollout
 
 1. Run guards, typecheck, lint, full unit suite, agent suite and isolated PostgreSQL integration tests. Review the exact diff against current main. Keep this migration-dependent PR unmerged until the schema rollout is approved.
-2. Deploy compatible readers before applying migration 78. Ensure old workers are drained before allowing metadata compaction or pruning. Verify dictionary-expanded facts equal originals and capture the current table/index sizes. The migration sets a 3-second lock timeout; retry it later if busy, rather than increasing the timeout indiscriminately. It also proposes 2% autovacuum/analyze scale factors on the two update-heavy filing tables; this is a production configuration change.
+2. Deploy compatible readers before applying migration 79. Ensure old workers are drained before allowing metadata compaction or pruning. Verify dictionary-expanded facts equal originals and capture the current table/index sizes. The migration sets a 3-second lock timeout; retry it later if busy, rather than increasing the timeout indiscriminately. It also proposes 2% autovacuum/analyze scale factors on the two update-heavy filing tables; this is a production configuration change.
 3. Enable only `STORAGE_COMPACTION_LIVE` first, after approval. Inspect a single completed storage-step receipt and original/expanded equality before permitting more batches. Monitor WAL, latency and dead tuples. Calls remain in the existing run ledger and obey its pipeline pause. Failed savepoints do not advance successful cursors.
 4. Run the archive planner with twelve periods hot. Record each source/date, exact row count, estimated bytes, archive hash, reader parity and retained POR count. Enable export separately, verify one file, and rehearse restore before approving pruning. Enabling the boolean alone is not authorization for every future deletion.
 5. Before the first prune, confirm every consumer needing old detail uses the cold path or is covered by the twelve-quarter/POR retention policy. Corrections to an archived financial period require restoring it first; a loader must not silently recreate it. A file failing checksum, current-row comparison, coverage, row cap or lock deadline stays hot.
@@ -57,3 +62,9 @@ Archived files remain the historical read authority. `restoreCallPeriod` and the
 ## Validation record
 
 Validated against main base `f9aadb79` on October 25: full suite 1,324 files / 17,754 passing tests (90 files skipped, 12 expected failures); agent suite 68 files / 1,892 passing tests; isolated PostgreSQL 2 files / 11 passing tests; typecheck and guards passed; lint had zero errors and 76 existing warnings. The real-Postgres suite covers dictionary/fact equality, unchanged writes, metadata expansion, archive atomicity, refusal after source changes, no resurrection, retained POR identity and fee-query parity. Pure tests cover the HMDA codec and same-step attempt scope. Production queries used for this work were read-only; no production migration, conversion, upload, deletion, index change or billing change has been performed.
+
+## Approved rollout receipts — October 26
+
+Before conversion, the first 5,000 reconstructed call facts (IDs 1–5,000) have ordered row-JSON MD5 `d4b39bc1bebcb2a5ac77d23e37f13624`. Database size at the schema verification was 16,389,377,171 bytes; the dictionary was empty. The dictionary has RLS enabled, and neither it nor the invoker view is readable by anon. The four archive counts still match the manifest. No archive was pruned.
+
+PR #2682 adds explicit one-step admin Atlas workflows with source `atlas.storage-rollout.2026-10-26`. A `compact` action enables only one bounded conversion batch; an `export` action enables only the next reviewed archive. The subsequent `rehearse` action restores the actual file into a disposable unlogged table introduced by migration 80, compares the complete ordered archive bytes, then truncates the check table. A `prune` action requires that exact SHA in a completed rehearsal receipt, plus all original manifest/coverage/content checks. All actions run through `atlas-storage-retention` and retain normal pipeline-pause behavior. Daily rollout switches stay off during canary review.

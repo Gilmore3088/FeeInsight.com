@@ -476,8 +476,8 @@ describe("Hamilton agentic publish", () => {
     expect(result.publishedFees).toBe(1);
     expect(result.results[0]).toMatchObject({ status: "published", feePublishedId: null });
     // The selection, the edition-hold read (#1915), the depth read, the three sweep-rule reads
-    // (#1069 step 2) and the document-owner verdict read, all SELECTs.
-    expect(db.unsafe.mock.calls.filter(([query]) => /SELECT|WITH/.test(query))).toHaveLength(7);
+    // (#1069 step 2), the document-owner verdict read and the same-line read (#1876), all SELECTs.
+    expect(db.unsafe.mock.calls.filter(([query]) => /SELECT|WITH/.test(query))).toHaveLength(8);
     expect(writes(db)).toEqual([]);
   });
 
@@ -666,6 +666,35 @@ describe("Hamilton agentic publish", () => {
     expect(db.mock.calls.some(([query]) => templateText(query).includes("SELECT DISTINCT ON (source_document_id)"))).toBe(false);
   });
 
+  it("refuses a second read of a live fee's printed line, and defers when that read fails (#1876)", async () => {
+    const liveRead = {
+      fee_published_id: 132908, fee_name: "Overdraft fee charged for each item", frequency: null,
+      excerpt: "overdraft fee | $35.00 per item", line_prints: 1,
+    };
+    const run = async (read: () => Promise<unknown[]>, refuseSameLineReadsLive?: boolean) => {
+      const db = createDbMock([verifiedFee]);
+      const base = db.unsafe.getMockImplementation()!;
+      db.unsafe.mockImplementation((query: string, params: unknown[]) => (query.includes("slr_candidate") ? read() : base(query, params)) as Promise<unknown[]>);
+      return { db, result: await runHamiltonPublish({ runId: 152, db: asPublishDb(db), refuseSameLineReadsLive }) };
+    };
+
+    const refused = await run(() => Promise.resolve([liveRead]));
+    expect(refused.result.results[0]).toMatchObject({ status: "skipped", reason: "Same printed line as live fee #132908", sameLineReadOf: 132908 });
+    expect(refused.result.sameLineReadCheck).toMatchObject({ live: true, wouldRefuse: 1, refused: 1 });
+    expect(writes(refused.db).join("\n")).not.toContain("INSERT INTO published_fee_records");
+
+    const counted = await run(() => Promise.resolve([liveRead]), false);
+    expect(counted.result.results[0]).toMatchObject({ status: "published", sameLineReadOf: 132908 });
+    expect(counted.result.sameLineReadCheck).toMatchObject({ live: false, wouldRefuse: 1, refused: 0 });
+
+    const apart = await run(() => Promise.resolve([{ ...liveRead, fee_name: "ACH Returned Item", line_prints: 1 }]));
+    expect(apart.result.results[0]).toMatchObject({ status: "published" });
+
+    const failed = await run(() => Promise.reject(new Error("private read failure")));
+    expect(failed.result.results[0]).toMatchObject({ evidenceDeferred: true, unavailableEvidence: ["same_line_read"] });
+    expect(failed.result.publishedFees).toBe(0);
+  });
+
   it("defers the wide same-line prerequisite instead of deciding from a failed reselect", async () => {
     const db = createDbMock([{ ...verifiedFee, same_line_reselect: true }]);
     const base = db.getMockImplementation()!;
@@ -847,12 +876,14 @@ describe("Hamilton agentic publish", () => {
       ...verifiedFee, canonical_fee_key, fee_name: "Monthly fee", amount: "5.00", source_document_id: 33822, document_url: TD_FIT, document_opening: TD_FIT_OPENING,
     });
 
-    // Both tests follow `OPENING_DOCUMENT_TAKEDOWN_LIVE`: off, the gate counts and lets them by.
-    const on = OPENING_DOCUMENT_TAKEDOWN_LIVE;
+    // `OPENING_DOCUMENT_TAKEDOWN_LIVE` is on (James, 2026-10-26): the gate refuses these rows.
+    it("ships with the opening sub-switch on", () => {
+      expect(OPENING_DOCUMENT_TAKEDOWN_LIVE).toBe(true);
+    });
 
-    it("refuses a deposit-category fee read from it once the sub-switch is on, and only with the opening", () => {
+    it("refuses a deposit-category fee read from it, and only with the opening", () => {
       expect(publishSkipReason(loanRow("monthly_maintenance"), 0.85, true)).toBe(
-        on ? "Refused at publish, Darwin's re-check would take it down: loan_titled_document: loan #33822" : null,
+        "Refused at publish, Darwin's re-check would take it down: loan_titled_document: loan #33822",
       );
       expect(nonDepositTakedownReason({ documentUrl: TD_FIT, sourceDocumentId: 33822, canonicalFeeKey: "monthly_maintenance", feeName: "Monthly fee", documentOpening: TD_FIT_OPENING }, { live: true, openingLive: true })).toBe(
         "loan_titled_document: loan #33822",
@@ -860,7 +891,7 @@ describe("Hamilton agentic publish", () => {
       expect(publishSkipReason({ ...loanRow("monthly_maintenance"), document_opening: "Personal Fee Schedule\nChecks" }, 0.85, true) ?? "").not.toMatch(/Darwin's re-check/);
     });
 
-    it("does not count its pending rows toward the institution's depth once the sub-switch is on", async () => {
+    it("does not count its pending rows toward the institution's depth", async () => {
       const general = (canonical_fee_key: string) => ({ depth_source: "pending", ...verifiedFee, canonical_fee_key });
       const pendingOnLoan = (canonical_fee_key: string) => ({ depth_source: "pending", ...loanRow(canonical_fee_key) });
       // Three fee types, two of them only from the loan disclosure: below the depth minimum.
@@ -871,7 +902,7 @@ describe("Hamilton agentic publish", () => {
       const published = await runHamiltonPublish({ runId: 1945, db: asPublishDb(deep) });
 
       expect(HAMILTON_PUBLISH_MIN_INSTITUTION_FEES).toBe(3);
-      expect(held.publishedFees).toBe(on ? 0 : 1);
+      expect(held.publishedFees).toBe(0);
       expect(published.publishedFees).toBe(1);
       const depthQuery = String((shallow.unsafe.mock.calls.find((call) => String(call[0]).includes("institution_fee_depth")) as [string, unknown[]])[0]);
       expect(depthQuery).toContain("LEFT JOIN source_documents sd ON sd.id = fr.source_document_id");

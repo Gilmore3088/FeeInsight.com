@@ -26,6 +26,7 @@ import { capFirstEligibility, CAP_FIRST_ELIGIBILITY_FLAG } from "./cap-first-eli
 import { mayHaveSymbolicLesserFee, symbolicLesserOfReview, SYMBOLIC_LESSER_ELIGIBILITY_FLAG } from "./symbolic-lesser-of";
 import { internationalWireEligibility, requiresInternationalWireSource, INTERNATIONAL_WIRE_ELIGIBILITY_FLAG } from "./international-wire-eligibility";
 import { mayHaveCapFirstItemPrice } from "@/lib/custom-report/stacked-fee-prices";
+import { bandedZeroOf } from "@/lib/banded-zero";
 import { withPublishedIdentityWrite } from "@/lib/agents/hamilton/published-identity";
 import { layoutSignature, thinLayouts, type LayoutYield } from "@/lib/agents/knox/layout-signature";
 import { calibratedConfidence, calibrationKey, loadKnoxCalibration, PUBLISH_FLOOR } from "@/lib/agents/knox/calibration";
@@ -151,6 +152,8 @@ export const COMBINED_NSF_OVERDRAFT_SQL =
  * it was written by an older Knox version, and a v73+ read may replace it; one with it is kept.
  */
 export const ACCOUNT_PRODUCT_FLAG = "account_product:v73";
+/** v122 (#1882): a $0 held because it is not the fee's price (`bandedZeroOf`), with its kind after a colon. */
+export const BANDED_ZERO_HOLD_FLAG = "knox_banded_zero";
 /**
  * Stored product names that name no account (`account-name-exclusions.ts`, as a Postgres regex):
  * a v73+ read replaces them, and a copy holding one is due a re-read. Prod on Oct 16: 14 "Truth in
@@ -1271,12 +1274,19 @@ export async function insertHeldCandidate(
         minOpeningDeposit: null, waiverText: null } : null }) : null;
   if (held.shape === "zero" && monthlyOwners) held = { ...held, shape: "eligibility", ownedPolicy: true,
     linkedConditions: [held.linkedConditions, monthlyOwners].filter(Boolean).join("\n\n") };
+  // v122 (#1882): a $0 that is one band of a priced overdraft or NSF fee ("$0 if the negative balance
+  // is $5 or less. $10 if ... $35 per item"), or the next column's free word beside the fee's own price,
+  // is no free fee: it is held as a range for review and never goes to Darwin as the fee's price.
+  const band = held.shape === "zero" && held.amount === 0 ? bandedZeroOf({ line: held.excerpt, feeName: held.feeName,
+    canonicalFeeKey: held.canonicalHint, documentText: sourceRow.normalized_text ?? options.row.normalized_text ?? null }) : null;
+  if (band) held = { ...held, shape: "range", amountMax: null };
   const applicability = feeApplicability(held.feeName, held.excerpt, held.amount);
   const agentEventId = stableUuid(
     `knox:held:${options.runId}:${documentTextId}:${sourceDocumentId}:${held.shape}:${held.feeName}:${held.amount}:${held.percent}`,
   );
   const toDarwin = heldGoesToDarwin(held);
   const flags = [`knox_review:${held.shape}`];
+  if (band) flags.push(`${BANDED_ZERO_HOLD_FLAG}:${band.kind}`);
   if (capOwner) flags.push(CAP_FIRST_ELIGIBILITY_FLAG);
   if (symbolicOwner) flags.push(SYMBOLIC_LESSER_ELIGIBILITY_FLAG);
   if (internationalOwner) flags.push(INTERNATIONAL_WIRE_ELIGIBILITY_FLAG);

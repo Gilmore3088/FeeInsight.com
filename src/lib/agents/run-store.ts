@@ -1,4 +1,6 @@
 import { runStorageCompaction } from "@/lib/agents/hoovie/storage-compaction";
+import { STORAGE_ROLLOUT_SOURCE, storageRolloutAction } from "@/lib/agents/hoovie/storage-rollout";
+import { verifyNextArchivedCallRead } from "@/lib/agents/hoovie/storage-read-acceptance";
 import { sql, withTransaction } from "@/lib/data-store/connection";
 import { sweepInterruptedReportRuns } from "@/lib/hamilton/report-run";
 import { feeSourceFetch } from "@/lib/agents/fee-source-fetch";
@@ -99,11 +101,14 @@ import { countNonDepositFees, nonDepositDetail, nonDepositFindingsDetail, rechec
 import { recheckTranslatedCopies, translatedCopyDetail } from "@/lib/agents/darwin/translated-copy-check";
 import { productPageRepeatDetail, recheckProductPageRepeats } from "@/lib/agents/darwin/product-page-repeat-check";
 import { recheckSameLineReplacements, sameLineReplacementDetail } from "@/lib/agents/darwin/same-line-replacement-check";
+import { recheckSameLineReads, sameLineReadDetail } from "@/lib/agents/darwin/same-line-read-check";
 import { editionCheckDetail, recheckScheduleEditions } from "@/lib/agents/darwin/edition-effective-check";
 import { canadianDocumentDetail, recheckCanadianDocuments } from "@/lib/agents/darwin/canadian-document-check";
 import { lateChargeBoundDetail, recheckLateChargeBounds } from "@/lib/agents/darwin/late-charge-bound-check";
 import { rateFloorDetail, recheckRateFloors } from "@/lib/agents/darwin/rate-floor-check";
+import { bandedZeroDetail, recheckBandedZeros } from "@/lib/agents/darwin/banded-zero-check";
 import { cardProgramSectionDetail, recheckCardProgramSections } from "@/lib/agents/darwin/card-program-section-check";
+import { loanSectionDetail, recheckLoanSections } from "@/lib/agents/darwin/loan-section-check";
 import { lineConflictDetail, recheckLineConflicts } from "@/lib/agents/darwin/line-conflict-check";
 import { documentOwnerDetail } from "@/lib/agents/darwin/document-owner";
 import { findingsDetail as releaseRepairFindingsDetail, releaseRepairDetail, runReleaseRepairStep } from "@/lib/agents/darwin/release-repair";
@@ -1170,6 +1175,17 @@ async function executeAgenticStep(
       const sameLineReplacementNote = sameLineReplacement.matched > 0
         ? ` Same-line replacement re-check: ${sameLineReplacement.matched.toLocaleString()} of ${sameLineReplacement.checked.toLocaleString()} restored same-line copies sit beside their older line's live replacement (${sameLineReplacement.live && !sameLineReplacement.dryRun ? `${sameLineReplacement.flagged.toLocaleString()} flagged, ${sameLineReplacement.takenDown.length.toLocaleString()} archived` : sameLineReplacement.dryRun ? "dry run: would take down, nothing written" : "switch off: would take down, nothing written"}).`
         : "";
+      // #1876: a live fee that is a second read of another live fee's printed line
+      // (same-line-read-check.ts); a report only on a dry run or with its switch off.
+      const sameLineRead = await recheckSameLineReads(tx, {
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+      });
+      const sameLineReadNote = sameLineRead.matched > 0
+        ? ` Same-line read re-check: ${sameLineRead.matched.toLocaleString()} live fee(s) at ${sameLineRead.institutions.toLocaleString()} institution(s) are a second read of one printed line (${sameLineRead.live && !sameLineRead.dryRun ? `${sameLineRead.flagged.toLocaleString()} flagged, ${sameLineRead.takenDown.length.toLocaleString()} archived` : sameLineRead.dryRun ? "dry run: would take down, nothing written" : "switch off: would take down, nothing written"}).`
+        : "";
       // #2022: fees read from a Canadian bank's document (canadian-document-check.ts), at most hourly.
       const canadianDocument = await recheckCanadianDocuments(tx, {
         runId: run.id,
@@ -1199,6 +1215,18 @@ async function executeAgenticStep(
       const rateFloorNote = rateFloor.matched > 0
         ? ` Rate floor re-check: ${rateFloor.matched.toLocaleString()} live flat fee(s) at ${rateFloor.institutions.toLocaleString()} institution(s) are a percentage charge's floor, ${rateFloor.rateTwinLive.toLocaleString()} beside the live rate fee (${rateFloor.live && !rateFloor.dryRun ? `${rateFloor.flagged.toLocaleString()} flagged, ${rateFloor.takenDown.length.toLocaleString()} archived` : rateFloor.dryRun ? "dry run: would take down, nothing written" : "switch off: would take down, nothing written"}).`
         : "";
+      // #1882: live $0 overdraft and NSF fees that are one band of a priced fee, or the next
+      // column's free word (banded-zero-check.ts); a report only on a dry run or with its switch off
+      // (BANDED_ZERO_TAKEDOWN_LIVE).
+      const bandedZero = await recheckBandedZeros(tx, {
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+      });
+      const bandedZeroNote = bandedZero.matched > 0
+        ? ` Banded $0 re-check: ${bandedZero.matched.toLocaleString()} of ${bandedZero.checked.toLocaleString()} live $0 overdraft or NSF fee(s) at ${bandedZero.institutions.toLocaleString()} institution(s) are not the fee's price (${bandedZero.live && !bandedZero.dryRun ? `${bandedZero.flagged.toLocaleString()} flagged, ${bandedZero.takenDown.length.toLocaleString()} archived` : bandedZero.dryRun ? "dry run: would take down, nothing written" : "switch off: would take down, nothing written"}).`
+        : "";
       const canadianDocumentNote = canadianDocument.matched > 0
         ? ` Canadian document re-check: ${canadianDocument.matched.toLocaleString()} live fee(s) on ${canadianDocument.documents.toLocaleString()} Canadian bank document(s) (${canadianDocument.live && !canadianDocument.dryRun ? `${canadianDocument.flagged.toLocaleString()} flagged, ${canadianDocument.takenDown.length.toLocaleString()} archived` : canadianDocument.dryRun ? "dry run: would take down, nothing written" : "switch off: would take down, nothing written"}).`
         : "";
@@ -1216,6 +1244,18 @@ async function executeAgenticStep(
       });
       const cardProgramSectionNote = cardProgramSection.matched > 0
         ? ` Card program section re-check: ${cardProgramSection.matched.toLocaleString()} live fee(s) on ${cardProgramSection.documents.toLocaleString()} document(s) are printed in a prepaid, payroll, gift or travel card section (${cardProgramSection.live && !cardProgramSection.dryRun ? `${cardProgramSection.flagged.toLocaleString()} flagged, ${cardProgramSection.takenDown.length.toLocaleString()} archived` : cardProgramSection.dryRun ? "dry run: would take down, nothing written" : "switch off: would take down, nothing written"}).`
+        : "";
+      // #1905: deposit-category fees printed in a loan section of a general schedule
+      // (loan-section-check.ts), the next batch of documents after a cursor; takes them down through
+      // the second look while its code switch LOAN_SECTION_TAKEDOWN_LIVE is on (a report only when off).
+      const loanSection = await recheckLoanSections(tx, {
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+      });
+      const loanSectionNote = loanSection.matched > 0
+        ? ` Loan section re-check: ${loanSection.matched.toLocaleString()} live deposit-category fee(s) on ${loanSection.documents.toLocaleString()} document(s) are printed in a loan section (${loanSection.live && !loanSection.dryRun ? `${loanSection.flagged.toLocaleString()} flagged, ${loanSection.takenDown.length.toLocaleString()} archived` : loanSection.dryRun ? "dry run: would take down, nothing written" : "switch off: would take down, nothing written"}).`
         : "";
       // #1440: one printed line live under two categories or two frequencies; Darwin keeps one
       // reading (line-conflict-check.ts). Every conflicting line each step; a report only while its
@@ -1275,7 +1315,7 @@ async function executeAgenticStep(
         : "";
       return {
         status: "completed",
-        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${verification.deferredRawFees ? ` ${verification.deferredRawFees.toLocaleString()} row(s) deferred without a verification decision because current source/raw admission remains unresolved.` : ""}${recheckReceiptNote(recheck)}${release.deferred ? ` ${release.deferred.toLocaleString()} held fee(s) deferred without a release decision.` : ""}${conditionalZero.selected > 0 ? ` Settled ${(conditionalZero.selected - (conditionalZero.deferred ?? 0)).toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).${conditionalZero.deferred ? ` ${conditionalZero.deferred.toLocaleString()} conditional-$0 hold(s) deferred without a decision.` : ""}` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${verification.categoryChange && verification.categoryChange.takeoverProof.rows > 0 ? ` ${verification.categoryChange.takeoverProof.rows.toLocaleString()} row(s) a re-read took over under a new category ${verification.categoryChange.takeoverProof.live ? "(judged again)" : "(take-over proof switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${hourlyNote}${hourlyFullNote}${nonDepositNote}${nonDepositFullNote}${translatedCopyNote}${productPageRepeatNote}${sameLineReplacementNote}${editionNote}${canadianDocumentNote}${lateChargeBoundNote}${rateFloorNote}${cardProgramSectionNote}${lineConflictNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}`,
+        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${verification.deferredRawFees ? ` ${verification.deferredRawFees.toLocaleString()} row(s) deferred without a verification decision because current source/raw admission remains unresolved.` : ""}${recheckReceiptNote(recheck)}${release.deferred ? ` ${release.deferred.toLocaleString()} held fee(s) deferred without a release decision.` : ""}${conditionalZero.selected > 0 ? ` Settled ${(conditionalZero.selected - (conditionalZero.deferred ?? 0)).toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).${conditionalZero.deferred ? ` ${conditionalZero.deferred.toLocaleString()} conditional-$0 hold(s) deferred without a decision.` : ""}` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${verification.categoryChange && verification.categoryChange.takeoverProof.rows > 0 ? ` ${verification.categoryChange.takeoverProof.rows.toLocaleString()} row(s) a re-read took over under a new category ${verification.categoryChange.takeoverProof.live ? "(judged again)" : "(take-over proof switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${hourlyNote}${hourlyFullNote}${nonDepositNote}${nonDepositFullNote}${translatedCopyNote}${productPageRepeatNote}${sameLineReplacementNote}${sameLineReadNote}${editionNote}${canadianDocumentNote}${lateChargeBoundNote}${rateFloorNote}${bandedZeroNote}${cardProgramSectionNote}${loanSectionNote}${lineConflictNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}`,
         detail: {
           selected_raw_fees: verification.selectedRawFees,
           processed_raw_fees: verification.processedRawFees,
@@ -1310,11 +1350,14 @@ async function executeAgenticStep(
           translated_copy_check: translatedCopyDetail(translatedCopy),
           product_page_repeat_check: productPageRepeatDetail(productPageRepeat),
           same_line_replacement_check: sameLineReplacementDetail(sameLineReplacement),
+          same_line_read_check: sameLineReadDetail(sameLineRead),
           edition_effective_check: editionCheckDetail(editions),
           canadian_document_check: canadianDocumentDetail(canadianDocument),
           late_charge_bound_check: lateChargeBoundDetail(lateChargeBound),
           rate_floor_check: rateFloorDetail(rateFloor),
+          banded_zero_check: bandedZeroDetail(bandedZero),
           card_program_section_check: cardProgramSectionDetail(cardProgramSection),
+          loan_section_check: loanSectionDetail(loanSection),
           line_conflict_check: lineConflictDetail(lineConflict),
           ...(nonDepositFull ? { non_deposit_document_full_count: nonDepositFindingsDetail(nonDepositFull) } : {}),
           release_repair: releaseRepair ? releaseRepairDetail(releaseRepair) : { error: releaseRepairError },
@@ -2126,6 +2169,12 @@ async function executeAgenticStep(
             on: holdFeedback.on,
             due: holdFeedback.due,
             zeroed: holdFeedback.zeroed,
+            // #1680: the hold's old release rows still labelled wrong / wrong_category.
+            release_relabel: {
+              on: holdFeedback.release.on,
+              due: holdFeedback.release.due,
+              relabeled: holdFeedback.release.relabeled,
+            },
             error: holdFeedback.error,
           },
           learning_feedback: feedbackSync.ready
@@ -2206,6 +2255,13 @@ async function executeAgenticStep(
             would_refuse: published.pageCopyCheck.wouldRefuse,
             refused: published.pageCopyCheck.refused,
             samples: published.pageCopyCheck.samples,
+          },
+          // #1876: rows this step was about to publish that are a second read of a live fee's printed line (same-line-read.ts).
+          same_line_read_check: {
+            live: published.sameLineReadCheck.live,
+            would_refuse: published.sameLineReadCheck.wouldRefuse,
+            refused: published.sameLineReadCheck.refused,
+            samples: published.sameLineReadCheck.samples,
           },
           near_name_collapse: {
             live: nearNameCollapse.live,
@@ -2897,11 +2953,18 @@ async function executeAgenticStep(
       return { status: "completed", summary: summarizeLessonSync(result), detail: lessonSyncDetail(result) };
     }
     case "atlas-storage-retention": {
+      const rolloutAction = storageRolloutAction(run,step.input);
       // commitDb: each expired legacy event-log partition is dropped in its own committed transaction.
       const result = await runStorageRetention({ db: tx, commitDb: sql, dryRun: run.runKind === "dry_run", context: { runId: run.id, stepId: step.id, stepKey: step.stepKey } });
       // #1870: Twelve quarters hot. Export, historical compaction and pruning stay off pending rollout.
-      const cold = await runColdTier({ db: tx, dryRun: run.runKind === "dry_run", runId: run.id });
-      const compaction = await runStorageCompaction(tx, { dryRun: run.runKind === "dry_run" });
+      const cold = await runColdTier({ db: tx, dryRun: run.runKind === "dry_run", runId: run.id,
+        ...(rolloutAction ? { exportLive: rolloutAction === "export", pruneLive: rolloutAction === "prune",
+          rehearseLive: rolloutAction === "rehearse", approvedExportsOnly: true, requireRehearsal: true } : {}),
+      });
+      const compaction = await runStorageCompaction(tx, { dryRun: run.runKind === "dry_run",
+        ...(rolloutAction ? { live: rolloutAction === "compact" } : {}),
+      });
+      const readAcceptance=rolloutAction==="verify"?await verifyNextArchivedCallRead(tx):null;
       const compactionAlerts = [
         ...(cold.error ? [`Public-data archive held: ${cold.error}`] : []),
         ...(compaction.error ? [`Public-data compaction held: ${compaction.error}`] : []),
@@ -2913,7 +2976,7 @@ async function executeAgenticStep(
         status: "completed",
         summary: `${summarizeStorageRetention(result)} ${summarizeColdTier(cold)} ${summarizeVaultRetention(vault)}`,
         // The vault's warnings join `alerts`, which the morning brief emails.
-        detail: { ...storageRetentionDetail(result), alerts: [...result.alerts, ...vault.alerts, ...compactionAlerts], cold_tier: coldTierDetail(cold), storage_compaction: compaction, vault: vaultRetentionDetail(vault) },
+        detail: { ...storageRetentionDetail(result), alerts: [...result.alerts, ...vault.alerts, ...compactionAlerts], cold_tier: coldTierDetail(cold), storage_compaction: compaction, ...(readAcceptance?{storage_read_acceptance:readAcceptance}:{}), vault: vaultRetentionDetail(vault) },
       };
     }
     case "schedule-check": {
@@ -3925,8 +3988,41 @@ const STEP_EXPECTED_MS: Record<string, number> = {
   "growth-withdraw": 30_000,
   // Quick-prefixed steps measured over the 30 s quick default (2026-10-17 p99: 57 s, 89-110 s, 48 s).
   "public-discovery": 60_000,
-  "registry-ncua-extras": 110_000,
-  "registry-cfpb-card-agreements": 50_000,
+  // #1820: registry steps that download big files, re-measured 2026-10-26 from completed
+  // `agent_run_steps` started over the 9 days before (seconds, n / p50 / p90 / p99 / max). Each
+  // is priced at about its max, above its p99, so a later partition in the registry tick starts
+  // it only when it can finish inside the 270 s budget; otherwise it waits for the next tick's
+  // first slot. All stay under 270 s, so each still fits a tick on its own.
+  // call-report-summaries 17 / 13 / 31 / 171 / 196
+  "registry-call-report-summaries": 200_000,
+  // ffiec-call-detail 47 / 16 / 86 / 144 / 153
+  "registry-ffiec-call-detail": 155_000,
+  // ncua-extras 18 / 50 / 95 / 109 / 110 (was 110 s, the measured max; a little margin added)
+  "registry-ncua-extras": 115_000,
+  // branch-census-tracts 103 / 33 / 67 / 94 / 122
+  "registry-branch-census-tracts": 125_000,
+  // industry-events 148 / 18 / 50 / 88 / 104
+  "registry-industry-events": 105_000,
+  // sec-filings 72 / 23 / 48 / 63 / 78
+  "registry-sec-filings": 80_000,
+  // cfpb-card-agreements 80 / 1 / 41 / 71 / 71 (was 50 s, under its max)
+  "registry-cfpb-card-agreements": 75_000,
+  // federal-bills 9 / 6 / 48 / 60 / 61
+  "registry-federal-bills": 65_000,
+  // fdic-history 18 / 6 / 10 / 37 / 43
+  "registry-fdic-history": 45_000,
+  // bls-laus 10 / 1 / 39 / 40 / 40
+  "registry-bls-laus": 45_000,
+  // nic-structure: 6 runs ever, all under a second, but its download allows a 300 s fetch
+  // (nic-structure.ts), longer than a later partition is left (it starts by 60 s into the tick,
+  // so it has at least 210 s before TICK_DEADLINE_MS). Priced at 240 s so only a tick's first slot
+  // starts it; re-measure and lower once it has run. The market-growth sources run under their own
+  // keys (registry-census-lehd holds the 240 s LODES fetch: 408 runs, max 25 s, so it keeps the
+  // quick default). designation-lists and economy (180 s fetches) fit a later partition as they
+  // are; payment-networks completed in at most 3 s (n 73), and its one failure took 56 s.
+  // bank-merger-orders (n 213, p99 12 s, one 93 s outlier) keeps the quick default; cfpb (171 s
+  // max), state-bills (94 s max) and fred (41 s max) keep their own entries.
+  "registry-nic-structure": 240_000,
   // Not measured yet (2026-10-18): each downloads and inflates a Board SDMX zip, H.15 about 68 MB
   // and H.8 about 75 MB, before the BLS/BEA or table reads; priced so a tick starts them early.
   "registry-fred": 150_000,
@@ -4503,6 +4599,9 @@ export async function executeQueuedAgentRuns({
      -- then state lanes by Atlas's priority score (open work, report requests,
      -- near-ready markets), then launch order.
      ORDER BY (r.run_kind = 'report') DESC,
+              -- Explicit approved, bounded storage work must not starve behind a stuck publish.
+              (r.agent_name='atlas' AND r.run_kind='workflow' AND r.trigger_source='admin'
+                AND COALESCE(r.params_json->>'source'=${STORAGE_ROLLOUT_SOURCE},false)) DESC,
               -- The daily scoreboard holds its 150 s score step for a tick with that much left,
               -- and fresh lanes left at most 128 s, so run 9476 sat queued all of Oct 19 with
               -- the storage watch behind it. Once lanes have had 15 minutes it goes first.

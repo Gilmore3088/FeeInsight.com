@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkAnswerInterpretations } from "./answer-interpretations";
+import { checkAnswerInterpretations, interpretationFindings } from "./answer-interpretations";
 import { writtenAnswerCheck } from "./answer-save";
 
 function query(metric: string, values: number[] = [100, 120], scope = "institution", id = "8322") {
@@ -356,5 +356,41 @@ If you want, a full fee-revenue-correlation analysis can be generated next. It w
 
   it("leaves unrelated sourced fee answers to the existing checks", () => {
     expect(check("Its customer base is growing. The peer median grew 14.2%.", { publisher: "FDIC", values: [1, 2] })).toEqual([]);
+  });
+});
+
+describe("interpretation rules name the clause they fire on (#1077, cause 5)", () => {
+  it.each([
+    "Your $30 overdraft fee keeps you $5 above the peer median.",
+    "Its $30 overdraft fee kept it above the peer median.",
+    "Removing the paper statement fee would put the price below the peer median.",
+  ])("a position stated with keeps, kept or remove is not a pricing cause: %s", (text) => {
+    expect(check(text)).toEqual([]);
+  });
+
+  it.each([
+    "The zero-fee stance is what keeps fee income near the bottom of peers.",
+    "Zero overdraft fees remove the largest fee line most peers earn.",
+    "Market pricing drove the gain in fee income.",
+    "Fee income growth was driven by overdraft pricing.",
+    // A position word before the outcome noun does not make it a position: the clause names an outcome.
+    "Zero-fee pricing keeps the bank at the bottom of the fee income table.",
+    "Overdraft pricing keeps the credit union behind peers on fee income.",
+    "Its pricing keeps the bank ahead of peers in revenue.",
+  ])("a genuine cause still fails: %s", (text) => {
+    expect(check(text).join(" ")).toContain("pricing or market cause");
+  });
+
+  it("returns each problem with the clause it fired on, in checkAnswerInterpretations's order", () => {
+    const cause = "The zero-fee stance is what keeps fee income near the bottom of peers.";
+    const text = `Alliant reported $120 in fee income. ${cause}`;
+    const findings = interpretationFindings(text, data);
+    expect(findings.map((finding) => finding.problem)).toEqual(check(text));
+    expect(findings).toEqual([expect.objectContaining({ clauses: [cause] })]);
+  });
+
+  it("a problem about the whole answer names no clause, so it can never be cut", () => {
+    expect(interpretationFindings("Alliant reported $120 in fee income.", { filed_peer_income_conflict: true }))
+      .toEqual([{ problem: expect.stringContaining("Conflicting filed financial peer reads"), clauses: [] }]);
   });
 });

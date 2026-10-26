@@ -1,7 +1,7 @@
 import { sql } from "./connection";
 import { PRIOR_QUARTER_JOIN, QUARTER_SC } from "./call-reports";
 import { CALL_REPORT_QUARTERS_TABLE, callReportQuartersReady } from "./call-report-quarters";
-import { activeInstitutionFilter, STATS_ROW_FILTER } from "./fee-stats";
+import { activeInstitutionFilter, institutionValueSql, STATS_ROW_FILTER } from "./fee-stats";
 import type { FinancialSource } from "./financial-sources";
 
 /**
@@ -141,7 +141,7 @@ export async function getFeeRevenueData(source?: FinancialSource): Promise<FeeRe
     -- Scope the semantic catalog through canonical institution IDs before category
     -- aggregation, retaining every catalog and fee eligibility predicate.
     WITH eligible_fee_rows AS MATERIALIZED (
-      SELECT ef.institution_id, ef.canonical_fee_key, ef.amount
+      SELECT ef.institution_id, ef.canonical_fee_key, ef.amount, ef.account_product_type
       FROM published_fee_catalog ef
       WHERE ef.review_status = 'approved'
         AND ef.amount IS NOT NULL
@@ -179,8 +179,7 @@ export async function getFeeRevenueData(source?: FinancialSource): Promise<FeeRe
              COUNT(*) AS fee_count
       FROM (
         SELECT ef.institution_id, ef.canonical_fee_key,
-               CASE WHEN ef.canonical_fee_key = 'overdraft' THEN MAX(ef.amount)
-                    ELSE PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ef.amount) END AS amount
+               ${sql.unsafe(institutionValueSql("ef", "canonical_fee_key"))} AS amount
         FROM eligible_fee_rows ef
         JOIN institution_sources fee_identity ON fee_identity.id = ef.institution_id
           AND fee_identity.charter_type IN ('bank', 'credit_union')
@@ -228,7 +227,7 @@ export async function getTierFeeRevenueSummary(source?: FinancialSource): Promis
     -- Scope the semantic catalog through canonical institution IDs before category
     -- aggregation, retaining every catalog and fee eligibility predicate.
     WITH eligible_fee_rows AS MATERIALIZED (
-      SELECT ef.institution_id, ef.canonical_fee_key, ef.amount
+      SELECT ef.institution_id, ef.canonical_fee_key, ef.amount, ef.account_product_type
       FROM published_fee_catalog ef
       WHERE ef.review_status = 'approved'
         AND ef.amount IS NOT NULL
@@ -257,8 +256,7 @@ export async function getTierFeeRevenueSummary(source?: FinancialSource): Promis
       SELECT institution_id, AVG(amount) as avg_fee
       FROM (
         SELECT ef.institution_id, ef.canonical_fee_key,
-               CASE WHEN ef.canonical_fee_key = 'overdraft' THEN MAX(ef.amount)
-                    ELSE PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ef.amount) END AS amount
+               ${sql.unsafe(institutionValueSql("ef", "canonical_fee_key"))} AS amount
         FROM eligible_fee_rows ef
         JOIN institution_sources fee_identity ON fee_identity.id = ef.institution_id
           AND fee_identity.charter_type IN ('bank', 'credit_union')
@@ -305,7 +303,7 @@ export async function getCharterFeeRevenueSummary(source?: FinancialSource): Pro
     -- Scope the semantic catalog through canonical institution IDs before category
     -- aggregation, retaining every catalog and fee eligibility predicate.
     WITH eligible_fee_rows AS MATERIALIZED (
-      SELECT ef.institution_id, ef.canonical_fee_key, ef.amount
+      SELECT ef.institution_id, ef.canonical_fee_key, ef.amount, ef.account_product_type
       FROM published_fee_catalog ef
       WHERE ef.review_status = 'approved'
         AND ef.amount IS NOT NULL
@@ -334,8 +332,7 @@ export async function getCharterFeeRevenueSummary(source?: FinancialSource): Pro
       SELECT institution_id, AVG(amount) as avg_fee
       FROM (
         SELECT ef.institution_id, ef.canonical_fee_key,
-               CASE WHEN ef.canonical_fee_key = 'overdraft' THEN MAX(ef.amount)
-                    ELSE PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ef.amount) END AS amount
+               ${sql.unsafe(institutionValueSql("ef", "canonical_fee_key"))} AS amount
         FROM eligible_fee_rows ef
         JOIN institution_sources fee_identity ON fee_identity.id = ef.institution_id
           AND fee_identity.charter_type IN ('bank', 'credit_union')

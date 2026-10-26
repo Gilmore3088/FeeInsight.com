@@ -1,3 +1,4 @@
+import { assetTierBoundFacts } from "./asset-tier-facts";
 import { deriveNcuaAnswerEvidence, type NcuaAnswerDerivation, type NcuaDerivationInput } from "./answer-derivations";
 import type { HamiltonBriefingEvidence } from "./institution-briefing";
 import { profileQuarterCalculations, type ProfileQuarterCalculation } from "./profile-quarter-evidence";
@@ -106,6 +107,9 @@ export function writtenAnswerEvidence(
 ): unknown {
   const calculated = calculationLedger(context.toolResults ?? []);
   const filedPeers = filedPeerIncomeEvidenceResult(context.toolResults ?? [], context.institutionId ?? null);
+  // The asset tiers the reads name (a peer filter, an institution's tier), as typed USD bounds,
+  // so "credit unions under $10 billion" traces to the tier the writer was given (#1077).
+  const tierBounds = assetTierBoundFacts([context.toolResults?.length ? context.toolResults : toolOutputs, context.briefingEvidence ?? []]);
   return {
     selected_institution_id: context.institutionId ?? null,
     briefing_evidence: context.briefingEvidence ?? [],
@@ -116,6 +120,7 @@ export function writtenAnswerEvidence(
     // Never take a conflict verdict from model/browser-supplied output-shaped data.
     filed_peer_income_conflict: filedPeers.conflicting,
     validated_call_peer_history: callPeerHistoryEvidence(context.toolResults ?? [], context.institutionId ?? null),
+    ...(tierBounds.length ? { asset_tier_bounds: tierBounds } : {}),
     tool_evidence: context.toolResults?.length
       ? context.toolResults.map((read) => ({ ...read, output: withoutEmbeddedDerivations(read.output) }))
       : toolOutputs.map((output) => withoutEmbeddedDerivations(output)),
@@ -130,7 +135,7 @@ export function writtenAnswerStepSystemPrompt(systemPrompt: string, steps: reado
   return `${systemPrompt}\n\nVALIDATED FINANCIAL CALCULATIONS FROM THIS ANSWER'S READS\n`
     + "These calculations were computed from the cited tool rows. Preserve the institution, metric, reporting dates, unit, denominator and period basis. "
     + "A calculation supports its stated arithmetic only, never a cause, a price recommendation, cash paid, member counts from accounts, or a comparison of changing peer populations. "
-    + "Use the exact values before rounding; show inputs for a calculation you state. Do not calculate additional unsupported ratios or growth from peer medians.\n"
+    + "Use the exact values before rounding; show inputs for a calculation you state. State only the ratios, shares and growth rates listed here or in a tool result; do not calculate any other, from peer medians or from any two figures.\n"
     + JSON.stringify(calculated.prompt)
     + "\nEND VALIDATED FINANCIAL CALCULATIONS.\n";
 }

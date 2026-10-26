@@ -17,6 +17,7 @@ import { feeBullets, withoutFeeBullets } from "@/lib/custom-report/fee-bullets";
 import { isStackedFeeLabel } from "@/lib/custom-report/stacked-fee-prices";
 import { loanReturnedPaymentRows } from "@/lib/agents/knox/loan-section-rows";
 import { boxSectionLateFee } from "@/lib/custom-report/box-section-late-fee";
+import { LOAN_SECTION_TARGET, loanSectionFee } from "@/lib/custom-report/loan-section-fee";
 import { domesticStackedStem, stackedCellVariants } from "@/lib/custom-report/stacked-cell-variants";
 import { domesticWireClausePrices } from "@/lib/custom-report/wire-clause-prices";
 import type { OwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
@@ -1295,6 +1296,21 @@ export function boxLateFee(candidate: ExtractedFeeCandidate, previousKind: strin
 export function boxSectionLateFeeRead(candidate: ExtractedFeeCandidate, text: string): ExtractedFeeCandidate {
   if (candidate.canonicalHint !== "late_payment" || !boxSectionLateFee(text, candidate.feeName, candidate.amount)) return candidate;
   return passesDarwinChecks("safe_deposit_box", candidate.feeName, candidate.amount) ? { ...candidate, canonicalHint: "safe_deposit_box" } : candidate;
+}
+
+/**
+ * v123 (#1905): a read filed under a deposit category whose every priced line sits in a loan section
+ * of the schedule ("Equity Loan" / "Fee | Amount" / "Home Equity Line Check returned (due to
+ * non-sufficient funds) | $29.00" / "Tax Service Charge | $25.00", Navy Federal doc 39026) is the
+ * loan's fee: it is filed as `other_lending_fee`, whichever specialist read it, when that type passes
+ * the name. The row's own words filed it (NSF by "non-sufficient funds", monthly maintenance by
+ * "service charge"); the section heading above them is what says whose fee it is (`loanSectionFee`
+ * in `@/lib/custom-report/loan-section-fee`, shared with Darwin's live re-check). The name and price
+ * stay the page's own.
+ */
+export function loanSectionFeeRead(candidate: ExtractedFeeCandidate, text: string): ExtractedFeeCandidate {
+  if (!loanSectionFee(text, candidate.feeName, candidate.amount, candidate.canonicalHint)) return candidate;
+  return passesDarwinChecks(LOAN_SECTION_TARGET, candidate.feeName, candidate.amount) ? { ...candidate, canonicalHint: LOAN_SECTION_TARGET } : candidate;
 }
 
 /** The FEE_PATTERNS key a fee name matches, before mapping to its canonical key. */

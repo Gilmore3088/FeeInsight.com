@@ -126,8 +126,9 @@ Hamilton supports the decision; it does not make it.
 - Never tell the institution to raise, lower or drop a fee, and never offer to "approve a
   recommendation". Model the prices the reader asks about; the tested price is always
   the reader's.
-- Every scenario is labeled with its evidence level: `market` (position and
-  per-1,000-items arithmetic, no dollar total), `working_estimate` (the bank's reported
+- Every scenario is labeled with its evidence level: `market` (position among
+  peers and local competitors and the change per item; no fee income figure of any kind, not
+  even per 1,000 items, #1896), `working_estimate` (the bank's reported
   income for that fee line divided by its published fee), or `institution` (items and
   waiver rate the bank gave Hamilton). The scenario names the one figure that would
   move it up a level.
@@ -544,8 +545,14 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     amount, a discount or allowance the bank gives (an allowance on the line only at the fee's own
     amount; never a discounted price, or a "discount of" a percentage or of a dollar figure that is
     not the fee's amount), and a loan's term amount
-    read as its fee. A takedown batch stays under 20 (DECISIONS 2026-10-16, #1613): fees left
-    for the next batch sit in `EVAL_VERDICT_SECOND_BATCH` (#1696), and the step event names them
+    read as its fee. v9 (#1696, Oct 26) reads the discount on the stored line too: a line that
+    prints the fee's own amount only as "$X discount" is a discount credit whatever the name,
+    because Knox cuts a run-on sentence mid-way ("Safe Deposit Box Discount An annual"); its
+    prefilter clause is `V9_PREFILTER`. The no-fee exception compares only the first price after
+    the cut, and a comma or colon followed by a condition ("after", "with", "if" …) stays in the
+    free clause. A takedown batch stays under 20 (DECISIONS 2026-10-16, #1613): the second batch
+    (`EVAL_VERDICT_SECOND_BATCH`, 120626, and every live fee only v9 fails) waits behind the
+    default-off switch `EVAL_VERDICT_SECOND_BATCH_ACTS`, and the step event names it
     (`deferred`, `deferred_ids`).
 10b. Account type hold (`account-type-hold.ts`, #1100 gap 1, James Oct 16): monthly maintenance
     is the consumer checking account's fee. A live monthly maintenance fee of a savings, money
@@ -569,6 +576,10 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     Each live takedown writes a weight-0 `pipeline_feedback` row `wrong` / `wrong_category` at publish;
     each release (part 3) writes `restored` / `account_type_hold_released`, a record, never a
     `wrong` row, so no reader keyed on kind or signal counts a release as a wrong category (#1680).
+    Darwin's release review leaves the kind out of its restore lessons by name (`RESTORE_RECORD_KINDS`).
+    The 5 releases written on Oct 16 with the old label are relabelled by the `holdFeedback` sweep
+    (`learning/account-type-hold-feedback.ts`) behind `ACCOUNT_TYPE_HOLD_RELEASE_RELABEL_ON` (off;
+    a dry run counts them, `holdFeedback.relabel`), keeping the old pair in `evidence.relabeled_from`.
     A fee a hand check found wrongly typed stays live through `ACCOUNT_TYPE_KEEP_LIVE`: one line per
     fee with its reason, keyed by institution, name, price and the stored document the hand check read,
     so a re-read's new row stays live too (28834: inst 5800, doc 3633). The key is bound to that
@@ -1130,6 +1141,21 @@ re-check; this check takes nothing down. An enabled unavailable read leaves the 
 rows closed as page copies in the 30 hours to Oct 18 02:40 UTC were closed behind a row already live
 when they published.
 
+**One printed line read twice, at publish (#1876, live).** Knox keeps each read of a line as its own
+raw row (a deterministic read and a paid read of one artifact; Knox v99's "Safe Deposit Box 3x5"
+beside the older "3x5"). The live-line read (`selectLivePublishedFees`) compares frequency
+exactly and the collapses need the same or a near name, so a second read published beside the
+first: Access FCU's 137315 "One-time debit overdraft charge" (per item) beside 132908 "charge for
+each one-time debit overdraft" (no frequency), one $30 line of doc 28555. Each dollar row about to
+publish is now read against the live fees of its institution, document, category, variant,
+amount, audience and product that share its stored source line (`selectSameLineReadOf`,
+`same-line-read.ts`). It is the same line read twice (`readsSameLine`) when the current completed
+text prints that line once, the line prints the amount once, the frequencies do not differ and
+one name's words are all in the other's (`namesShareReading`). Counted in the step's
+`same_line_read_check` and, while `PUBLISH_REFUSE_SAME_LINE_READS_LIVE` is on, skipped (`Same printed
+line as live fee #<id>`); an enabled unavailable read leaves the row pending. This takes nothing
+down; Darwin's `same-line-read-check.ts` re-checks what is already live.
+
 ## Rules Re-check
 
 In state-lane (or single-institution) publish steps, `rules-recheck.ts` re-runs Knox's
@@ -1408,7 +1434,7 @@ fails a PR that changes one of these constants without updating its line here (#
 |---|---|---|---|
 | `ACCOUNT_NAME_STRATEGY` | `hamilton.account_names` | v4 | `hamilton/account-names.ts` |
 | `CURRENT_COPY_STRATEGY` | `hamilton.current_copy_check` | v2 | `hamilton/current-copy.ts` |
-| `EVAL_VERDICT_VERSION` | — | v8 | `hamilton/eval-verdicts.ts` |
+| `EVAL_VERDICT_VERSION` | — | v9 | `hamilton/eval-verdicts.ts` |
 | `FREQUENCY_FILL_VERSION` | — | v15 | `hamilton/frequency-fill.ts` |
 | `GUARD_REQUEUE_STRATEGY` | `publish.guard_requeue` | v1 | `hamilton/guard-requeue.ts` |
 | `NEWER_COPY_STRATEGY` | `hamilton.newer_copy_check` | v1 | `hamilton/newer-copy-retire.ts` |
@@ -1420,7 +1446,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `SOURCE_LINK_VERSION` | `hamilton.source_link` | v2 | `hamilton/source-link.ts` |
 | `SOURCE_LINK_DRIFT_VERSION` | `hamilton.source_link_drift` | v1 | `hamilton/source-link.ts` |
 | `FEE_DEPENDENCE_VERSION` | — | v1 | `hamilton/studies/fee-dependence.ts` |
-| `PRICE_STUDY_VERSION` | — | v1 | `hamilton/studies/index.ts` |
+| `PRICE_STUDY_VERSION` | — | v2 (an institution's price rests on its general rows over named account exceptions, #1911) | `hamilton/studies/index.ts` |
 | `INFERRED_VOLUME_VERSION` | — | v4 (income current against the newest filing: banks one quarter, credit union December four quarters, #2052) | `hamilton/studies/inferred-volume.ts` |
 
 The shared figure gate and paid eval use the same explicit monetary-unit normalization

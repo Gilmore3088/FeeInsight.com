@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { EVAL_CRITICAL_VERDICTS, EVAL_VERDICT_SECOND_BATCH, HAND_CHECKED_VERDICTS, V8_PREFILTER, distinctPrices, evalVerdictFeesSql, flagFor, priceInName, retireEvalVerdictFees, ruleFor, verdictFor } from "./eval-verdicts";
+import { EVAL_CRITICAL_VERDICTS, EVAL_VERDICT_SECOND_BATCH, EVAL_VERDICT_SECOND_BATCH_ACTS, HAND_CHECKED_VERDICTS, V8_PREFILTER, V9_PREFILTER, distinctPrices, failsOnlyAtV9, evalVerdictFeesSql, flagFor, priceInName, retireEvalVerdictFees, ruleFor, verdictFor } from "./eval-verdicts";
 
 function templateText(strings: unknown): string {
   return Array.isArray(strings) ? strings.join(" ") : String(strings);
@@ -196,6 +196,129 @@ describe("v8 review fixes: narrower rules, the live prefilter and the batch limi
     expect(EVAL_VERDICT_SECOND_BATCH.has(120626)).toBe(true);
     // The first batch stays under 20 (DECISIONS 2026-10-16, #1613).
     expect(V8_LIVE.filter(([id]) => !EVAL_VERDICT_SECOND_BATCH.has(id)).length).toBeLessThan(20);
+  });
+});
+
+/** The live fees v9 fails, read on prod 2026-10-26 (read-only): id, category, name, amount, stored line. */
+const V9_LIVE: ReadonlyArray<readonly [number, string, string, number, string]> = [
+  [36535, "safe_deposit_box", "Elite Checking Account holders will receive a", 40, "Elite Checking Account holders will receive a $40 discount on one annual safe deposit fee rental"],
+  [43328, "monthly_maintenance", "monthly fee - Get", 2, "Monthly Service Charge $6.00 monthly fee - Get a $2 discount on the monthly fee with 20 posted debit card"],
+  [56235, "safe_deposit_box", "Free personal size safe deposit box for one (1) year or a", 45, "• Free personal size safe deposit box for one (1) year or a / $45.00 discount on a larger box. Additional terms and"],
+  [68843, "monthly_maintenance", "Service charge waived wi", 4, "$4 discount credit applied if enrolled | Service charge waived with | Service charge waived with"],
+  [83376, "safe_deposit_box", "All Truist One Checking account levels will receive a", 25, "• All Truist One Checking account levels will receive a $25 Annual Fee Discount on any size safe deposit box, | may change at any time."],
+  [140659, "safe_deposit_box", "Safe Deposit Box", 15, "Safe Deposit Box* $15 discount per year | Safe Deposit Box* $15 discount per Year | Safe Deposit Box* –"],
+  [142565, "safe_deposit_box", "Safe Deposit Box Discount An annual", 5, "Safe Deposit Box Discount An annual $5.00 discount will apply to the rental price of any size safe deposit box depending upon availability."],
+  [142566, "stop_payment", "Stop Payment Discount Receive one", 5, "Stop Payment Discount Receive one $5.00 discount off the normal stop payment fee each month."],
+];
+
+describe("v9: a discount the stored line prints at the fee's own amount (#1696)", () => {
+  it("fails the run-on discount lines v8 missed, and only at v9", () => {
+    for (const [id, key, name, amount, excerpt] of V9_LIVE) {
+      expect(ruleFor(key, name, amount, excerpt), String(id)).toBe("discount_or_allowance");
+      expect(ruleFor(key, name, amount, excerpt, { version: 8 }), String(id)).toBeNull();
+    }
+    // Raw 868619 (not live; its verified row is rejected): the name stops before "discount".
+    expect(ruleFor("safe_deposit_box", "Various sizes of safe deposit boxes are available for rent. Renters are not required to have a bank account; however, a", 5,
+      "Various sizes of safe deposit boxes are available for rent. Renters are not required to have a bank account; however, a $5 discount is available for a")).toBe("discount_or_allowance");
+  });
+
+  it("leaves real live fees that carry \"discount\" in their name or line alone (prod, 2026-10-26)", () => {
+    for (const [key, name, amount, excerpt] of [
+      ["safe_deposit_box", "3x5 .................w/ discount", 20, "3x5 .................w/ discount $20 .............w/out discount $35"],
+      ["safe_deposit_box", "10x10 Safe Deposit Box $2 discount/year if auto debit from account", 60, "$60.00/year"],
+      ["safe_deposit_box", "5x10", 50, "5x10$3 discount if paid by automatic debit | 5x10 | $50 per year"],
+      ["monthly_maintenance", "Service charge", 9.95, "Monthly Service Fee | None | None | None | $9.95 service charge each statement cycle; $5 discount for anyone age 60+"],
+      ["monthly_maintenance", "Rewards Checking Monthly Service Charge", 6, "Monthly Service Charge $6.00 monthly fee - Get a $2 discount on the monthly fee with 20 posted debit card"],
+      ["monthly_maintenance", "No Worry-Classic Checking Monthly Maintenance Fee", 4.95, "Monthly Maintenance Fee - $4.95. Monthly E-Statement Discount of $1.00."],
+      ["monthly_maintenance", "Monthly service fee", 3, "Monthly service fee6 $3.00 Fixed fee. A discount of $0.50 applies if the account is subscribed to e-Statement."],
+      ["cashiers_check", "Cashier's Checks", 6, "Cashier's Checks | $6.00 Per Check (50% Discount for Hometown Customers)"],
+      ["overdraft", "Discounted overdraft item fee", 24.99, "Discounted overdraft item fee* (only $24.99, maximum of five per day)"],
+      ["monthly_maintenance", "Monthly fee", 5.95, "discounted $5.95 monthly fee applies for Students (up to age 24 with proof of eligibility) and Seniors"],
+      ["monthly_maintenance", "monthly maintenance fee. If primary account holder is over age 50, a discounted monthly maintenance fee of", 4.95, "$6.95 monthly maintenance fee. If primary account holder is over age 50, a discounted monthly maintenance fee of $4.95 will apply."],
+      ["other_lending_fee", "Mortgage Loan Processing Fee .50% discount fee 1.% origination fee", 200, "Mortgage Loan Processing Fee .50% discount fee 1.% origination fee | $200.00"],
+      ["monthly_maintenance", "Beyond Essential monthly fee", 6, "For $6 a month, you get cell phone protection, BaZing discounts, ID theft aid, roadside assistance, and more."],
+      // The same amount printed as the charge and as a discount: the line alone cannot say which.
+      ["monthly_maintenance", "Checking Maintenance charge", 8, "Checking $8.00 | $8.00 discount when enrolled in Online Statements"],
+      // "$X discounted" is the discounted price, the fee itself.
+      ["safe_deposit_box", "Safe deposit box rent", 25, "Safe deposit box rent $25 discounted with auto debit"],
+      ["overdraft", "Overdraft Fee", 30, null],
+    ] as const) {
+      expect(ruleFor(key, name, amount, excerpt), name).toBeNull();
+    }
+  });
+
+  it("reads each v9 live fee in the live re-check's prefilter", () => {
+    const sql = evalVerdictFeesSql(false);
+    for (const { pattern } of V9_PREFILTER) expect(sql).toContain(`COALESCE(fr.extraction_note, fr.conditions) ~* '${pattern}'`);
+    for (const [id, , name, , excerpt] of V9_LIVE) {
+      const read = [...V8_PREFILTER, ...V9_PREFILTER].some(({ column, pattern }) => asJs(pattern).test(column === "name" ? name : excerpt));
+      expect(read, String(id)).toBe(true);
+    }
+  });
+
+  it("no-fee exception: only the first price after the cut, and a condition after a comma stays in the free clause (#1691 delta review)", () => {
+    expect(ruleFor("overdraft", "No fee for overdrafts under $5, $35 per item, $175 daily max", 175)).toBe("no_fee_sentence");
+    expect(ruleFor("monthly_maintenance", "There is no monthly service fee, after a $50 opening deposit", 50)).toBe("no_fee_sentence");
+    // v8 passed both.
+    expect(ruleFor("overdraft", "No fee for overdrafts under $5, $35 per item, $175 daily max", 175, null, { version: 8 })).toBeNull();
+    expect(ruleFor("monthly_maintenance", "There is no monthly service fee, after a $50 opening deposit", 50, null, { version: 8 })).toBeNull();
+    // Must still pass: the later clause prices the fee at its own amount.
+    expect(ruleFor("atm_non_network", "Fee-free ATMs; out-of-network $3", 3)).toBeNull();
+    expect(ruleFor("excess_withdrawal", "There is no charge for the first 2; $2 each after", 2)).toBeNull();
+    expect(ruleFor("overdraft", "No fee; overdraft $35 applies", 35)).toBeNull();
+    expect(ruleFor("overdraft", "No fee for overdrafts under $5, $35 per item, $175 daily max", 35)).toBeNull();
+  });
+
+  it("no-fee exception reads every price after the free clause, so a second fee later in the name passes (#2681 review B1)", () => {
+    for (const [key, name, amount] of [
+      ["paper_statement", "There is no monthly fee; stop payment $30, paper statement $2", 2],
+      ["overdraft", "There is no charge for the first 2 items; $5, then $35 per item", 35],
+      ["overdraft", "There is no fee for overdrafts: $5 or less; $35 per item", 35],
+      // A cap word that does not end the clause leaves the price a price.
+      ["overdraft", "No fee for overdrafts under $5; $35 maximum per item", 35],
+      ["wire_intl_outgoing", "No fee for incoming wires; outgoing $25 or more for international", 25],
+    ] as const) {
+      expect(ruleFor(key, name, amount), name).toBeNull();
+      expect(ruleFor(key, name, amount, null, { version: 8 }), name).toBeNull();
+    }
+    // A cap or threshold after the cut is not the fee's price.
+    expect(ruleFor("overdraft", "There is no fee for overdrafts: $5 or less; $35 per item", 5)).toBe("no_fee_sentence");
+    expect(ruleFor("overdraft", "No fee for overdrafts under $5; $35 per item; $175 maximum per day", 175)).toBe("no_fee_sentence");
+  });
+
+  it("a discount rate, price, plan or box is the discounted fee itself (#2681 review)", () => {
+    for (const [key, name, amount, excerpt] of [
+      ["safe_deposit_box", "Safe deposit box, members", 30, "Safe deposit box $40 regular, $30 discount rate for members"],
+      ["safe_deposit_box", "Safe deposit box", 30, "Safe deposit box $30 discount price"],
+      ["overdraft", "Overdraft protection", 5, "Overdraft protection $5 discount plan"],
+      ["safe_deposit_box", "Safe deposit box", 20, "3x5 $20 discount box"],
+    ] as const) {
+      expect(ruleFor(key, name, amount, excerpt), excerpt).toBeNull();
+    }
+    expect(failsOnlyAtV9("stop_payment", "Stop Payment Discount Receive one", 5, "Stop Payment Discount Receive one $5.00 discount off the normal stop payment fee each month.")).toBe(true);
+    expect(failsOnlyAtV9("overdraft", "Courtesy Pay", 5, "Courtesy Pay / $5 Allowance")).toBe(false);
+  });
+
+  it("holds the second batch behind its switch: counted and named while off, flagged when on", async () => {
+    const liveRows = [
+      { fee_published_id: 142565, fee_verified_id: 7, institution_id: 8, source_document_id: 9, canonical_fee_key: "safe_deposit_box", fee_name: "Safe Deposit Box Discount An annual", amount: "5.00", conditions: 'excerpt="Safe Deposit Box Discount An annual $5.00 discount will apply to the rental price of any size safe deposit box depending upon availability."' },
+      { fee_published_id: 120626, fee_verified_id: 4, institution_id: 5, source_document_id: 6, canonical_fee_key: "other_lending_fee", fee_name: "Budget Assist Loan Application Fee", amount: "1000.00", conditions: 'excerpt="Budget Assist Loan Application Fee (4 month term/$1,000)"' },
+      { fee_published_id: 141779, fee_verified_id: 1, institution_id: 2, source_document_id: 3, canonical_fee_key: "overdraft", fee_name: "Courtesy Pay", amount: "5.00", conditions: 'excerpt="Courtesy Pay / $5 Allowance"' },
+    ];
+    expect(EVAL_VERDICT_SECOND_BATCH_ACTS).toBe(false);
+    const off = createDb(null);
+    (off as unknown as { unsafe: unknown }).unsafe = vi.fn(() => Promise.resolve(liveRows));
+    const held = await retireEvalVerdictFees(off, options);
+    expect(held).toMatchObject({ ruleFailing: 1, deferred: 2, deferredIds: [142565, 120626] });
+    expect(JSON.stringify(off.mock.calls)).not.toContain("wrong_amount:loan_amount");
+
+    const on = createDb(null);
+    (on as unknown as { unsafe: unknown }).unsafe = vi.fn(() => Promise.resolve(liveRows));
+    const acted = await retireEvalVerdictFees(on, { ...options, secondBatchActs: true });
+    expect(acted).toMatchObject({ ruleFailing: 3, deferred: 0, deferredIds: [] });
+    expect(JSON.stringify(on.mock.calls)).toContain("wrong_amount:loan_amount");
+    // The second batch stays under 20 (DECISIONS 2026-10-16, #1613): 8 v9 lines plus 120626.
+    expect(V9_LIVE.length + EVAL_VERDICT_SECOND_BATCH.size).toBeLessThan(20);
   });
 });
 

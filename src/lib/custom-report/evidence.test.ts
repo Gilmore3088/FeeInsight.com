@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MarketFeeLine } from "@/lib/data-store/custom-report-market";
-import { amountBasis, buildAmountEvidence, educationalPage, evidenceProblem, problemReason, quoteNamesOtherFee, quoteStatesFigure, scopeProblem } from "./evidence";
+import { amountBasis, buildAmountEvidence, educationalPage, evidenceProblem, listedNotCompared, withEvidence, problemReason, quoteNamesOtherFee, quoteStatesFigure, scopeProblem } from "./evidence";
 
 const READ = "2026-10-15";
 
@@ -63,6 +63,65 @@ describe("buildAmountEvidence", () => {
     const evidence = buildAmountEvidence({ ...wells, tiers });
     expect(evidence.excluded.map((r) => r.record_id)).toEqual([68708]);
     expect(evidence).toMatchObject({ amount: 10, basis: "midpoint of $5 and $15" });
+  });
+});
+
+describe("named account exceptions in the report (#1911, statistics rule 11)", () => {
+  // U.S. Bank's general non-U.S. Bank ATM fee and its Safe Debit exception, as the catalog would carry them once owned.
+  const GENERAL = "Non-U.S. Bank ATM Transaction (International or Domestic) | $3.00";
+  const SAFE_DEBIT = "Non-U.S. Bank ATM transaction fee | $2.50";
+  const usBankAtm: MarketFeeLine = {
+    institution_id: 5,
+    line: "atm_non_network",
+    id: 75916,
+    amount: 3,
+    fee_name: "Non-U.S. Bank ATM Transaction (International or Domestic)",
+    source_url: "https://www.usbank.com/dam/en/documents/pdfs/disclosures/consumer-pricing-information.pdf",
+    updated_at: null,
+    schedule_read_on: READ,
+    source_line: GENERAL,
+    tiers: [
+      { id: 75916, amount: 3, fee_name: "Non-U.S. Bank ATM Transaction (International or Domestic)", source_line: GENERAL, account_product: null, product_exception: false },
+      { id: 142604, amount: 2.5, fee_name: "Non-U.S. Bank ATM transaction fee", source_line: SAFE_DEBIT, account_product: "Safe Debit Account", product_exception: true },
+    ],
+  };
+
+  it("compares U.S. Bank at its general price and still lists the Safe Debit record", () => {
+    const evidence = buildAmountEvidence(usBankAtm);
+    expect(evidence).toMatchObject({ amount: 3, basis: "published price" });
+    expect(evidence.records.map((r) => [r.record_id, r.amount, r.product_exception === true])).toEqual([
+      [142604, 2.5, true],
+      [75916, 3, false],
+    ]);
+    expect(evidence.records[0].account_product).toBe("Safe Debit Account");
+    expect(listedNotCompared(evidence.records[0], evidence.records)).toBe(true);
+    expect(listedNotCompared(evidence.records[1], evidence.records)).toBe(false);
+  });
+
+  it("keeps the blend when nothing marks the exception (copies saved before rule 11)", () => {
+    const unowned = {
+      ...usBankAtm,
+      tiers: usBankAtm.tiers!.map((tier) => {
+        const copy = { ...tier };
+        delete copy.account_product;
+        delete copy.product_exception;
+        return copy;
+      }),
+    };
+    expect(buildAmountEvidence(unowned)).toMatchObject({ amount: 2.75, basis: "midpoint of $2.50 and $3" });
+  });
+
+  it("uses the named accounts when the institution states no general price", () => {
+    const only = { ...usBankAtm, tiers: usBankAtm.tiers!.map((tier) => ({ ...tier, product_exception: true })) };
+    expect(buildAmountEvidence(only).amount).toBe(2.75);
+    expect(listedNotCompared(buildAmountEvidence(only).records[0], buildAmountEvidence(only).records)).toBe(false);
+  });
+
+  it("carries the flag through the rebuilt figure so a second pass agrees", () => {
+    const figure = withEvidence(usBankAtm)!;
+    expect(figure.amount).toBe(3);
+    expect(figure.tiers?.find((tier) => tier.id === 142604)?.product_exception).toBe(true);
+    expect(buildAmountEvidence(figure).amount).toBe(3);
   });
 });
 

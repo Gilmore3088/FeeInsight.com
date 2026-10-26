@@ -8,6 +8,7 @@
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { PUBLISH_SAME_LINE_READ_REFUSE_REASON_PREFIX } from "./same-line-read";
 
 const connection = process.env.E2E_DATABASE_URL;
 type Db = typeof import("@/lib/data-store/connection").sql;
@@ -154,6 +155,17 @@ describe.skipIf(!connection)("Hamilton publish selection in actual PostgreSQL", 
     await add("productPageEditionTwin", { documentId: productPage, name: "Late Fee", key: "nsf", amount: 30, createdAt: "2026-10-02T00:00:09Z" });
     await attempt(tx, institutionId, ids.productPageEditionTwin, "unchanged", { previous_fee_published_id: String(heldTwin) });
 
+    // #1876: refused as a second read of one printed line. Behind a live fee it stays decided;
+    // once the fee it was refused behind comes down, it is decided once more.
+    await add("sameLineReadLive", { documentId: docB, name: "Cashier's Check fee. The fee", key: "cashiers_check", amount: 10, createdAt: "2026-10-02T00:00:09.100Z" });
+    const keptLive = await published(tx, institutionId, ids.sameLineReadLive, "Cashier's Check fee. The fee", null);
+    await add("sameLineReadKept", { documentId: docB, name: "Cashier's Check Fee", key: "cashiers_check", amount: 10, createdAt: "2026-10-02T00:00:09.200Z" });
+    await attempt(tx, institutionId, ids.sameLineReadKept, "rejected", { reason: `${PUBLISH_SAME_LINE_READ_REFUSE_REASON_PREFIX}${keptLive}`, same_line_read_of: keptLive });
+    await add("sameLineReadGoneSource", { documentId: docB, name: "Courtesy Pay Fee is", key: "overdraft", amount: 32, createdAt: "2026-10-02T00:00:09.300Z", status: "rejected" });
+    const keptGone = await published(tx, institutionId, ids.sameLineReadGoneSource, "Courtesy Pay Fee is", "fragment_name");
+    await add("sameLineReadReopened", { documentId: docB, name: "Courtesy Pay Fee", key: "overdraft", amount: 32, createdAt: "2026-10-02T00:00:09.400Z" });
+    await attempt(tx, institutionId, ids.sameLineReadReopened, "rejected", { reason: `${PUBLISH_SAME_LINE_READ_REFUSE_REASON_PREFIX}${keptGone}`, same_line_read_of: keptGone });
+
     // No source document: its own one-row batch, newest.
     await add("noDocument", { documentId: null, name: "Research Fee", key: "research", amount: 25, createdAt: "2026-10-03T00:00:00Z" });
     return { institutionId, companionId, docA, docB, ids };
@@ -171,7 +183,8 @@ describe.skipIf(!connection)("Hamilton publish selection in actual PostgreSQL", 
       const fixture = await seed(tx);
       const rows = await select(tx, fixture, 100, true);
       expect(labelled(rows, fixture)).toEqual([
-        "undecided", "freeRead", "olderVersion", "twin", "sameLine", "confidenceCleared", "editionTwin", "olderEditionTwin", "noDocument",
+        "undecided", "freeRead", "olderVersion", "twin", "sameLine", "confidenceCleared", "editionTwin", "olderEditionTwin",
+        "sameLineReadReopened", "noDocument",
       ]);
       const byLabel = Object.fromEntries(rows.map((row) => [labelled([row], fixture)[0], row]));
       expect(byLabel.twin).toMatchObject({ twin_recheck: true, same_line_reselect: true });
@@ -197,7 +210,8 @@ describe.skipIf(!connection)("Hamilton publish selection in actual PostgreSQL", 
       const fixture = await seed(tx);
       expect(labelled(await select(tx, fixture, 100, false), fixture)).toEqual([
         "undecided", "decidedRejected", "freeRead", "olderVersion", "olderEditionOtherCopy",
-        "twin", "sameLine", "sameLineSettled", "confidenceCleared", "confidenceLow", "editionTwin", "olderEditionTwin", "productPageEditionTwin", "noDocument",
+        "twin", "sameLine", "sameLineSettled", "confidenceCleared", "confidenceLow", "editionTwin", "olderEditionTwin",
+        "productPageEditionTwin", "sameLineReadKept", "sameLineReadReopened", "noDocument",
       ]);
     });
   });
@@ -208,6 +222,7 @@ describe.skipIf(!connection)("Hamilton publish selection in actual PostgreSQL", 
       expect(labelled(await select(tx, fixture, 1, true), fixture)).toEqual(["undecided", "freeRead", "olderVersion"]);
       expect(labelled(await select(tx, fixture, 4, true), fixture)).toEqual([
         "undecided", "freeRead", "olderVersion", "twin", "sameLine", "confidenceCleared", "editionTwin", "olderEditionTwin",
+        "sameLineReadReopened",
       ]);
     });
   });
@@ -216,7 +231,7 @@ describe.skipIf(!connection)("Hamilton publish selection in actual PostgreSQL", 
     await rollback(async (tx) => {
       const fixture = await seed(tx);
       expect(await select(tx, fixture, 100, true, 50)).toEqual([]);
-      expect(labelled(await select(tx, fixture, 100, true, 3), fixture)).toHaveLength(9);
+      expect(labelled(await select(tx, fixture, 100, true, 3), fixture)).toHaveLength(10);
     });
   });
 });

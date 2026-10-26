@@ -1118,10 +1118,12 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   that lists a student account among others, a negated mention ("does not apply to Youth
   Savings"), a credit union named for students and a youth heading past the third line do not
   count. The address never gives the youth kind: GTE Financial's `/go-student-checking` page carried
-  27 live general fees. Both rules act only with `OPENING_DOCUMENT_TAKEDOWN_LIVE` (off: counted,
-  left as they are; all 17 matched documents' stored openings were checked and none is a general
-  schedule, so the sample is clean for turning it on) and Hamilton's publish gate and depth count
-  ask the same rule with the row's document opening. Dry run (prod, read-only, Oct 25, `openingDocumentFeesSql()`):
+  27 live general fees. Both rules act only with `OPENING_DOCUMENT_TAKEDOWN_LIVE`, on since
+  2026-10-26 (James, "Take them down" on the decision card, 01:47 UTC; all 17 matched documents'
+  stored openings were checked and none is a general schedule; re-counted that day, prod,
+  read-only: the same 48 fees on the same 17 documents at 15 institutions). On, matched fees come
+  down on their second look; off (the rollback), they are counted and left as they are. Hamilton's
+  publish gate and depth count ask the same rule with the row's document opening. Dry run (prod, read-only, Oct 25, `openingDocumentFeesSql()`):
   48 live fees on 17 documents at 15 institutions, 41 `loan_titled_document` (15 documents) and 7
   `youth_account_document` (2 documents); none of the 17 had an address kind. A loan phrase after
   "your", "the" or a like word is a sentence, not a title, and an opening that names a general
@@ -1147,8 +1149,33 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   Step detail `translated_copy_check`. Dry run Oct 18 (prod, read-only, `translatedCopyRowsSql`): 127
   live fees on 12 Spanish-copy documents at 11 institutions; 35 would come down (Sound 22, OnPoint 6,
   M&T 5, FirstBank PR 2) and 92 stay. v2 (review of v1): a fee with no dollar amount (a percent fee)
-  never has a twin, and "fondos", "insuficientes" and "cobro" read as Spanish. A fee taken down for
-  its twin is not read again if the twin later comes down under another check; restore it by hand.
+  never has a twin, and "fondos", "insuficientes" and "cobro" read as Spanish. v3 (#1986): each
+  verify step first reads every translated-copy takedown again (`translatedCopyRestoreRowsSql`, no
+  cursor) and a fee comes back (`translatedCopyRestoreVerdict`) only when its own state is still this
+  check's alone (reason, batch, not quarantined, verified row rejected with `translated_copy` as its
+  last flag, no other check's second look pending or confirmed: else `other_takedown`), the named
+  twin is no longer live at its category and amount (`twin_live`), no other English line of the fee
+  is live or account-type-held (`english_twin_live`) or verified with no catalog row yet
+  (`english_twin_waiting`), no other live fee at that institution, category and amount on any
+  document, another Spanish copy included, would be duplicated (`same_fee_live`; also every archived
+  copy but the lowest id when two pass at one institution, category and amount in a run, as Sound's
+  67050 and 108450 would), the twin was not
+  replaced by a newer copy of the schedule
+  (`older_edition`, `refreshed by`, `superseded by`, `newer_copy_drops_fee`, `not_on_current_copy`:
+  `twin_replaced`), and its own document's newest text still states it (`checkFeeAgainstSource`;
+  `no_amount`, `no_text`, `not_on_own_document`). `TRANSLATED_COPY_RESTORE_LIVE` is off, so the step
+  only reports (`restore` in the step detail). Switched on, a restorable fee comes back in one
+  statement whose write re-checks its own state, another check's open second look, an English line
+  live or account-type-held, an English row waiting, any other live fee at its price, and one restore
+  per price (`DISTINCT ON`, lowest id); not the twin by id, `twin_replaced` or the document text
+  (shared SQL fragments, so a publish between the read and the write cannot race it): the rollback cleared, the
+  verified row `verified` with `translated_copy` replaced by
+  `rules_recheck_restored:translated_copy_twin_gone` (the learning sync's `restored_after_takedown`
+  record names it), its second look set to `takedown_cleared` at weight 0 (the takedown was right
+  when made, so the check's precision is not credited), event
+  `darwin.translated_copy_restored`. Dry run Oct 26 (prod, read-only): 35 archived, 0 would come
+  back; 32 twins live, and OnPoint's 64334 (`twin_replaced`: $133 in Spanish, $153 in the current
+  English edition), 64337 and 64339 (`english_twin_waiting`) stay down.
 - Product-page repeats of a schedule line (`product-page-repeat-check.ts`, v2, #1910, James's
   live-fee check Oct 18). TD's checking campaign page gave "Paper statements" $3 (fee 64717), live
   beside the fee schedule's "Paper statement (per statement cycle)" $3. Rosetta typed the page a
@@ -1194,6 +1221,27 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   flag, never deleted; event `darwin.same_line_replacement_takedown`), so Hamilton's restore brings
   it back if that line goes. Dry run 2026-10-25 22:14 UTC (prod, read-only): 17 candidates, 8 at 5
   institutions would come down (15109, 66618, 104751, 104866, 105031 to 105034), 9 stay.
+- One printed line read twice (`same-line-read-check.ts`, v1, #1876). Access FCU (7235) showed
+  132908 "charge for each one-time debit overdraft" (no frequency) and 137315 "One-time debit
+  overdraft charge" (per item), both $30 from the one line "- $30.00 charge for each one-time debit
+  overdraft." of doc 28555: Knox's deterministic and paid reads of one artifact. The in-batch key
+  and Hamilton's live-line read compare frequency exactly, and the collapses need the same or a
+  near name, so the second read went live. Each step groups the live dollar fees that share an
+  institution, document, category, variant, amount, audience, product and stored source line
+  (`SAME_LINE_READ_ROWS_SQL`), keeps the read that states its frequency, then the oldest, and
+  matches each other read under Hamilton's one rule (`readsSameLine` in
+  `hamilton/same-line-read.ts`): the line is printed once in the current completed text, prints
+  the amount once, the frequencies do not differ and one name's words are all in the other's.
+  `SAME_LINE_READ_TAKEDOWN_LIVE` is off: the step reports only (step detail `same_line_read_check`).
+  Switched on, a match goes through the 12-hour second look (check `darwin.same_line_read`) and is
+  archived while its kept read is live (rolled back as `same_line_duplicate: live fee #<kept>`, batch
+  `darwin-same-line-read-<run>`, the verified row rejected with the `same_line_duplicate` flag;
+  event `darwin.same_line_read_takedown`), so Hamilton's same-line restore brings it back if the
+  kept read goes. Dry run 2026-10-26 (prod, read-only): 248 live fees in 124 groups at 58
+  institutions share a line; 108 at 44 institutions would come down (77 safe deposit boxes, 76 of
+  them Knox v99's "Safe Deposit Box <size>" beside the older annual read; 6 overdraft), and 16
+  groups stay. A seeded sample of 10 plus Access FCU, each read against its stored text, was one
+  line read twice in all 11 (finding 2026-10-26-one-line-read-twice).
 - Schedule editions (`edition-effective-check.ts`, #1915). Avidia's schedule "Effective December 1,
   2026" went live beside its March 2024 one, so the page showed next year's $35 overdraft. Each
   step reads the edition each document's heading states (`editionStarts` in
@@ -1276,6 +1324,24 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   25: 53 of 58 live fees at 48 institutions, 2 beside the live rate fee (13406, 68415). Missed: 80150,
   a floor ("C a sh Adva nce. ......$5.00 or 2% whichever is great er", text 242), for a misaligned
   excerpt and spaced OCR text.
+- A $0 overdraft, NSF or continuous overdraft fee that is not the fee's price (`banded-zero-check.ts`,
+  #1882). "Safety Net Overdraft | $0 if the negative balance is $5 or less. $10 if ... $35 per item**"
+  went live as a credit union's only overdraft price, $0: the conditional-$0 test reads a price cell of
+  more than four words as no price of the fee's, and a band printed on a row of its own is never on the
+  fee's line. Knox v122 holds such a free read as a range (`bandedZeroOf`, `src/lib/banded-zero.ts`).
+  Each verify step reads every live $0 fee in those categories with Knox's stored line and the lines of
+  the text Knox read that carry the fee's name (each with the line after it), and `bandedZeroOf` decides:
+  the $0's own cell prints a price (`own_cell`), the line prints a price straight after the name so the
+  free word is the next column's (`own_row_price`), or the name is priced on another row and one of the
+  rows states a band of the negative balance or the item (`priced_twin_row`). A $0 the schedule states
+  for the whole fee stays ("No-Fee Overdraft | Free", "We do not charge a fee for this service $0.00"),
+  as do two rows of one name with no band words (a consumer $0 beside a business price). The switch
+  (`BANDED_ZERO_TAKEDOWN_LIVE`) is off until the dry run is read clean (sampled-clean rule, DECISIONS
+  2026-10-20); on, a match goes through the 12-hour second look (`darwin.banded_zero`) and is archived
+  with `banded_zero: <kind>, $<price>` (verified row rejected with the `banded_zero` flag; event
+  `darwin.banded_zero_takedown`). Step detail `banded_zero_check`. Dry run Oct 26: 4 of 139 live fees at
+  4 institutions (99261 at 7374, 108088 at 6056, 116439 at 7358, 149658 at 5667), each checked on its
+  stored text.
 - Card program sections of a general schedule (`card-program-section-check.ts`, #1908, #1905). Navy
   Federal's fees page prints "Prepaid and Gift Cards" / "GO Prepaid Cards" sections after its deposit
   fees, and their "Lost/Stolen Card" $5 and Visa/PLUS ATM $1 rows went live as the account's fees on
@@ -1294,6 +1360,20 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   event `darwin.card_program_section_takedown`). Step detail `card_program_section_check`. Dry run
   (prod, read-only, Oct 25, `cardProgramSectionFeesSql`): 12 live fees on 9 documents at 9
   institutions; 35 purchase or reload prices in such sections stay.
+- Loan sections of a general schedule (`loan-section-check.ts`, #1905). Navy Federal's fees page prints
+  an "Equity Loan" section; its "Home Equity Line Check returned (due to non-sufficient funds)" $29 and
+  "Tax Service Charge" $25 went live as the account's NSF and monthly maintenance fees (154634, 154635).
+  A live fee under a deposit category (`LOAN_SECTION_DEPOSIT_KEYS`; stop payment excluded) whose name
+  names no deposit account or service comes down when every line of its document's latest stored text
+  that prints its name at its price sits in a loan section (`loanSectionFee` in
+  `src/lib/custom-report/loan-section-fee.ts`, the same rule Knox v123 applies when it files a read).
+  Each step reads the next 400 documents behind such a fee whose text names a loan (`LOAN_TEXT_SQL`),
+  after a cursor kept on the `darwin.loan_section` event (`next_after_id`); an institution-scoped run
+  reads that institution and leaves the cursor alone. The switch is the code constant
+  `LOAN_SECTION_TAKEDOWN_LIVE`, off; off, it only reports. On, a match goes through the 12-hour second
+  look and is archived with `loan_section: #<doc>` (verified row rejected with the `loan_section` flag;
+  event `darwin.loan_section_takedown`). Step detail `loan_section_check`. Dry run (prod, read-only,
+  Oct 26, `loanSectionFeesSql`): 8 live fees at 7 institutions, each read against its stored text.
 - One printed line, two reads (`line-conflict-check.ts`, #1440). James's catalog review (Oct 15)
   found live fees sharing institution, name, amount and source address under two categories (1st
   Summit's "Prepaid Card" $5 as document reproduction and gift card purchase) or one category with
@@ -1498,7 +1578,7 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
     false`) and the fee is not held: graded on the 123 v4 and 113 v3 holds against their stored
     text, nearly all of those were real fees at an unusual printed price (photocopies, box
     drilling, $5 stop payments). No-fee, discount and allowance lines are the shared name rule's
-    (`ruleFor`, Hamilton `EVAL_VERDICT_VERSION` v8). Each `verify.rules` attempt records
+    (`ruleFor`, Hamilton `EVAL_VERDICT_VERSION` v9). Each `verify.rules` attempt records
     `peer_version`, and a `peer_outlier` row decided under an older peer version is re-decided
     once. An older hold that has no `peer_version` is re-decided only when its own run's
     `verify.peer_range` attempt was a graded version (`DARWIN_PEER_GRADED_VERSIONS`, v3 and v4)
@@ -2099,13 +2179,16 @@ fails a PR that changes one of these constants without updating its line here (#
 | `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v3 | `darwin/hourly-frequency-check.ts` |
 | `NON_DEPOSIT_CHECK_VERSION` | `darwin.non_deposit_document` | v4 | `darwin/non-deposit-document-check.ts` |
 | `LINE_CONFLICT_CHECK_VERSION` | `darwin.line_conflict` | v1 | `darwin/line-conflict-check.ts` |
-| `TRANSLATED_COPY_CHECK_VERSION` | `darwin.translated_copy` | v2 | `darwin/translated-copy-check.ts` |
+| `TRANSLATED_COPY_CHECK_VERSION` | `darwin.translated_copy` | v3 | `darwin/translated-copy-check.ts` |
 | `PRODUCT_PAGE_REPEAT_CHECK_VERSION` | `darwin.product_page_repeat` | v2 | `darwin/product-page-repeat-check.ts` |
 | `SAME_LINE_REPLACEMENT_CHECK_VERSION` | `darwin.same_line_replacement` | v1 | `darwin/same-line-replacement-check.ts` |
+| `SAME_LINE_READ_CHECK_VERSION` | `darwin.same_line_read` | v1 | `darwin/same-line-read-check.ts` |
 | `CANADIAN_DOCUMENT_CHECK_VERSION` | `darwin.canadian_document` | v1 | `darwin/canadian-document-check.ts` |
 | `LATE_CHARGE_BOUND_CHECK_VERSION` | `darwin.late_charge_bound` | v1 | `darwin/late-charge-bound-check.ts` |
 | `RATE_FLOOR_CHECK_VERSION` | `darwin.rate_floor` | v1 | `darwin/rate-floor-check.ts` |
+| `BANDED_ZERO_CHECK_VERSION` | `darwin.banded_zero` | v1 | `darwin/banded-zero-check.ts` |
 | `CARD_PROGRAM_SECTION_CHECK_VERSION` | `darwin.card_program_section` | v1 | `darwin/card-program-section-check.ts` |
+| `LOAN_SECTION_CHECK_VERSION` | `darwin.loan_section` | v1 | `darwin/loan-section-check.ts` |
 | `DOCUMENT_OWNER_STRATEGY` | `verify.document_owner` | v1 | `darwin/document-owner.ts` |
 | `DARWIN_VERIFY_STRATEGY` | `verify.rules` | v3 | `darwin/verify.ts` |
 | `DARWIN_SOURCE_CHECK_VERSION` | — | v3 | `darwin/verify.ts` |

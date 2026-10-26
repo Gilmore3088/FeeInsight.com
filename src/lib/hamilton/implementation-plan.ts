@@ -4,6 +4,8 @@
  * this only lays out the work that follows a decision the bank has made.
  */
 
+import { inSentence } from "@/lib/hamilton/workspace/names";
+
 export type ChangeDirection = "increase" | "decrease" | "eliminate" | "none";
 export type Charter = "bank" | "credit_union";
 
@@ -75,7 +77,7 @@ export function buildImplementationPlan(input: {
   const businessOnly = BUSINESS_ONLY_CATEGORIES.has(input.feeCategory);
   const adverse = direction === "increase";
   const advanceNoticeDays = adverse && !businessOnly ? ADVERSE_CHANGE_NOTICE_DAYS : 0;
-  const fee = input.feeLabel.toLowerCase();
+  const fee = inSentence(input.feeLabel);
 
   const noticeSummary = businessOnly
     ? `The consumer deposit rules don't cover a business-only fee. Your business account agreement sets the notice for changing the ${fee}.`

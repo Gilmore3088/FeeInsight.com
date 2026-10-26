@@ -11,6 +11,8 @@ import { getRateFeesByInstitution, type RateFee } from "@/lib/data-store/rate-fe
 import { rateDisplayParts } from "@/lib/percent-fees";
 import { feeDisplayName } from "@/lib/fee-display-name";
 import { HIGHEST_TIER_CATEGORIES, institutionValue } from "@/lib/data-store/fee-stats";
+import { statisticsRows } from "@/lib/fee-institution-value";
+import { isProductException } from "@/lib/fee-product";
 import { accountPricesText, comparedAtText, type AccountPrice } from "@/lib/fee-representative";
 import {
   CARD_INACTIVITY_REASON,
@@ -299,7 +301,11 @@ export function pickHeadlineValues(verifiedFees: ExtractedFee[], categories: rea
         : category === "monthly_maintenance"
           ? pickFee(rows, category, undefined, isMonthlyMaintenanceFee)
           : pickFee(rows, category);
-    const value = institutionValue(category, amounts);
+    // Rule 11 (fee-stats.ts, #1911): the value rests on the general rows when the category also
+    // holds named product exceptions; every row stays in the range and the named prices.
+    const valueAmounts = statisticsRows(rows, (fee) => isProductException(category, fee.account_product_type ?? null))
+      .map((fee) => fee.amount as number);
+    const value = institutionValue(category, valueAmounts);
     const named: AccountPrice[] = rows.flatMap((fee) => {
       const name = readableProductName(fee.account_product_type ?? null) ?? productNameFromFeeName(fee.fee_name);
       return name ? [{ account: name, amount: fee.amount as number }] : [];
@@ -321,7 +327,7 @@ export function pickHeadlineValues(verifiedFees: ExtractedFee[], categories: rea
       excludedCard,
       excludedSafeDeposit,
       excludedBasis,
-      comparedAt: comparedAtText({ value, amounts, highestTier: HIGHEST_TIER_CATEGORIES.has(category) }),
+      comparedAt: comparedAtText({ value, amounts: valueAmounts, highestTier: HIGHEST_TIER_CATEGORIES.has(category) }),
       // One price only: with several, a waiver belongs to one account, not the compared value.
       waiver:
         !several && quoted
