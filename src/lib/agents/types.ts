@@ -119,6 +119,20 @@ export function isProviderStep(stepKey: string): boolean {
   return PROVIDER_STEP_KEYS.includes(stepKey);
 }
 
+/**
+ * Provider steps that can make a paid call now. Darwin's `verify-paid` cannot while neither of its
+ * passes can act (`verifyPaidMayCallProvider` in darwin/adjudicate.ts, #1111): it then runs only
+ * its free verdict score, so the tick treats it as a free step and it holds no provider budget,
+ * slot or wait on the provider stop. The step stays in PROVIDER_STEP_KEYS for everything else.
+ */
+export function payingProviderStepKeys(darwinVerifyPaidMayPay: boolean): readonly string[] {
+  return darwinVerifyPaidMayPay ? PROVIDER_STEP_KEYS : PROVIDER_STEP_KEYS.filter((key) => key !== "verify-paid");
+}
+
+export function isPayingProviderStep(stepKey: string, darwinVerifyPaidMayPay: boolean): boolean {
+  return payingProviderStepKeys(darwinVerifyPaidMayPay).includes(stepKey);
+}
+
 /** A step still `running` after this long was killed (function timeout, crash). */
 export const STALE_RUNNING_STEP_MINUTES = 15;
 /** Reaped attempts allowed before a step is declared dead and its run failed. */

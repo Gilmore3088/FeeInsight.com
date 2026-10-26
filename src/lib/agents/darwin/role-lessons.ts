@@ -7,6 +7,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const DARWIN_LESSONS: AgentLesson[] = [
   {
+    id: "issue-1111-pay-only-for-verdicts-that-act",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "Buy a paid verdict only when it can change a fee: while releases are off and the adjudicator is shadow only, make no model call, keep the free checks and the verdict score running, and leave a skipped event naming the switch that keeps each pass off. A step that cannot pay is free work, so it must not ask for provider budget, take a paid slot or wait on the provider stop; it becomes a paid step again the moment a switch that lets its verdict act is on.",
+    why: "In October the release review spent $9.02 on 812 calls and the shadow adjudicator $3.98 on 778, and neither changed any data: releases have been off since Oct 8 and shadow verdicts never act (#1111). PR #1126 stopped the calls, but the tick still treated verify-paid as a paid step, so with no budget or paid slot the free verdict score was skipped or the lane waited for a slot the step would not use.",
+    evidence: { issues: [1111], prs: [2738], files: ["src/lib/agents/darwin/adjudicate.ts", "src/lib/agents/types.ts", "src/lib/agents/run-store.ts"] },
+    appliesTo: ["verify-paid"],
+    since: "2026-10-26",
+  },
+  {
     id: "issue-2057-read-findings-against-verify",
     agent: "darwin",
     stage: "verify",

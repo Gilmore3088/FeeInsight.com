@@ -90,6 +90,8 @@ function narrateFinished(
         ? `$${dollars} in known estimates; cost unavailable for ${count(unknownCosts, "returned response")}`
         : `$${dollars}`;
       if (detail.budget_stopped === true && processed === 0) return `Paid pass to ${job} ${scope} did not run: ${String(detail.budget_reason ?? "budget cap")}.`;
+      const skippedPasses = Array.isArray(detail.skipped_passes) ? detail.skipped_passes.filter((entry): entry is string => typeof entry === "string") : [];
+      if (processed === 0 && skippedPasses.length > 0) return `Paid pass to ${job} ${scope} made no model call, $0 spent (${skippedPasses.join("; ")}).`;
       if (processed === 0) return `Paid pass to ${job} ${scope}: nothing the free passes left.`;
       return `Paid pass to ${job} ${scope}: ${n(detail, "succeeded")} of ${processed} succeeded for ${costSummary}${detail.budget_stopped === true ? `; then stopped: ${String(detail.budget_reason ?? "a budget cap (which cap was not recorded)").replace(/\.$/, "")}` : ""}.`;
     }
