@@ -7,7 +7,9 @@ import {
   judgeRereadCategory,
   rereadCategoryDetail,
   rereadCategoryMessage,
+  twinsToArchive,
   type RereadCategoryRow,
+  type RereadCategoryVerdict,
 } from "./reread-category-check";
 
 // #1513: each bank's stored text around the fee's line (agent_source_texts, prod, read-only, Oct 26).
@@ -139,5 +141,17 @@ describe("Darwin's re-read category re-check (#1513)", () => {
     expect(REREAD_CATEGORY_ROWS_SQL).toContain("res.evidence->>'outcome' = 'other_category'");
     expect(REREAD_CATEGORY_ROWS_SQL).toContain("'knox_reread_resolved'");
     expect(REREAD_CATEGORY_ROWS_SQL).toContain("fp.rolled_back_at IS NULL");
+  });
+});
+
+describe("twin takedowns keep the line shown (#1513 review)", () => {
+  const verdict = (id: number, outcome: "twin" | "refile", twin?: number): RereadCategoryVerdict => ({
+    feePublishedId: id, feeVerifiedId: id * 10, institutionId: 1, sourceDocumentId: 1, amount: 5, canonicalFeeKey: "dormant_account",
+    feeName: `fee ${id}`, outcome, newKey: "safe_deposit_box", newName: "Safe Deposit Box", reason: "r", ...(twin ? { twinFeePublishedId: twin } : {}),
+  });
+
+  it("holds back a twin pair and a twin whose twin is re-filed in the same pass", () => {
+    const kept = twinsToArchive([verdict(1, "twin", 2), verdict(2, "twin", 1), verdict(3, "twin", 4), verdict(4, "refile"), verdict(5, "twin", 9)]);
+    expect(kept.map((entry) => entry.feePublishedId)).toEqual([5]);
   });
 });

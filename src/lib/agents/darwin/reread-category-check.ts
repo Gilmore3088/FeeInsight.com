@@ -310,8 +310,9 @@ export async function recheckRereadCategories(
     result.waiting = look.waiting;
     result.cleared = look.cleared;
     if (look.confirmed.length > 0) {
-      result.refiled = await refile(db, options.runId, look.confirmed.filter((verdict) => verdict.outcome === "refile"));
-      result.takenDown = await archiveTwins(db, options.runId, look.confirmed.filter((verdict) => verdict.outcome === "twin"));
+      const stepId = options.stepId ?? null;
+      result.refiled = await refile(db, options.runId, stepId, look.confirmed.filter((verdict) => verdict.outcome === "refile"));
+      result.takenDown = await archiveRereadCategoryTwins(db, options.runId, stepId, twinsToArchive(look.confirmed));
       if (result.refiled.length + result.takenDown.length > 0) invalidatePublicReadCache();
     }
   }
@@ -334,7 +335,17 @@ export async function recheckRereadCategories(
 }
 
 /** Re-file confirmed fees in place, guarded on the old category and name; the old values logged first. */
-async function refile(db: SqlTag, runId: number, verdicts: RereadCategoryVerdict[]): Promise<number[]> {
+/**
+ * Pure: the confirmed twins that may come down this pass. A twin that this pass also re-files or
+ * takes down is no proof the line stays shown (a re-filed twin may leave the category; two fees
+ * that are each other's twin would both come down), so such a fee waits for a later pass.
+ */
+export function twinsToArchive(confirmed: RereadCategoryVerdict[]): RereadCategoryVerdict[] {
+  const moving = new Set(confirmed.filter((verdict) => verdict.outcome === "refile" || verdict.outcome === "twin").map((verdict) => verdict.feePublishedId));
+  return confirmed.filter((verdict) => verdict.outcome === "twin" && verdict.twinFeePublishedId != null && !moving.has(verdict.twinFeePublishedId));
+}
+
+async function refile(db: SqlTag, runId: number, stepId: number | null, verdicts: RereadCategoryVerdict[]): Promise<number[]> {
   if (verdicts.length === 0) return [];
   try {
     return await inSavepoint(db, async (scope) => {
@@ -367,9 +378,9 @@ async function refile(db: SqlTag, runId: number, verdicts: RereadCategoryVerdict
       if (applied.length > 0) await recordFeedback(scope, applied.map((verdict) => refiledRow(verdict, runId)));
       if (applied.length > 0) {
         await scope`
-          INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
+          INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
           VALUES (
-            ${runId}, ${`${REREAD_CATEGORY_CHECK}_refile`}, 'completed',
+            ${runId}, ${stepId}, ${`${REREAD_CATEGORY_CHECK}_refile`}, 'completed',
             ${`Re-filed ${applied.length} live fee(s) under the category Knox's re-read of their own line reads, on their second look`},
             ${JSON.stringify({ version: REREAD_CATEGORY_CHECK_VERSION, refiled: applied.map(sampleDetail) })}::jsonb
           )
@@ -407,24 +418,33 @@ function refiledRow(verdict: RereadCategoryVerdict, runId: number): FeedbackRow 
 }
 
 /** Take down confirmed twins while the twin is still live; the verified row rejected with the flag. Never deleted. */
-async function archiveTwins(db: SqlTag, runId: number, verdicts: RereadCategoryVerdict[]): Promise<number[]> {
+export async function archiveRereadCategoryTwins(db: SqlTag, runId: number, stepId: number | null, verdicts: RereadCategoryVerdict[]): Promise<number[]> {
   if (verdicts.length === 0) return [];
+  const ids = verdicts.map((verdict) => verdict.feePublishedId);
   try {
     return await inSavepoint(db, async (scope) => {
+      // The twin must still show the line: live, unquarantined, under the new category at this
+      // amount, and not itself one of the fees this statement takes down.
       const updated = await scope<{ fee_published_id: number | string }[]>`
         UPDATE published_fee_records fp
            SET rolled_back_at = NOW(),
                rolled_back_by_batch_id = ${`darwin-reread-category-${runId}`},
                rolled_back_reason = v.reason
-          FROM unnest(${verdicts.map((verdict) => verdict.feePublishedId)}::bigint[], ${verdicts.map((verdict) => verdict.twinFeePublishedId as number)}::bigint[],
-                      ${verdicts.map((verdict) => verdict.reason)}::text[], ${verdicts.map((verdict) => verdict.canonicalFeeKey)}::text[])
-               AS v(fee_published_id, twin_id, reason, from_key)
+          FROM unnest(${ids}::bigint[], ${verdicts.map((verdict) => verdict.twinFeePublishedId as number)}::bigint[],
+                      ${verdicts.map((verdict) => verdict.reason)}::text[], ${verdicts.map((verdict) => verdict.canonicalFeeKey)}::text[],
+                      ${verdicts.map((verdict) => verdict.newKey as string)}::text[])
+               AS v(fee_published_id, twin_id, reason, from_key, to_key)
          WHERE fp.fee_published_id = v.fee_published_id
            AND fp.canonical_fee_key = v.from_key
            AND fp.rolled_back_at IS NULL
+           AND v.twin_id <> ALL(${ids}::bigint[])
            AND EXISTS (
              SELECT 1 FROM published_fee_records twin
-              WHERE twin.fee_published_id = v.twin_id AND twin.rolled_back_at IS NULL AND twin.quarantined_at IS NULL
+              WHERE twin.fee_published_id = v.twin_id
+                AND twin.rolled_back_at IS NULL
+                AND twin.quarantined_at IS NULL
+                AND twin.canonical_fee_key = v.to_key
+                AND twin.amount = fp.amount
            )
         RETURNING fp.fee_published_id
       `;
@@ -445,9 +465,9 @@ async function archiveTwins(db: SqlTag, runId: number, verdicts: RereadCategoryV
       }
       if (applied.length > 0) {
         await scope`
-          INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
+          INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
           VALUES (
-            ${runId}, ${`${REREAD_CATEGORY_CHECK}_takedown`}, 'completed',
+            ${runId}, ${stepId}, ${`${REREAD_CATEGORY_CHECK}_takedown`}, 'completed',
             ${`Archived ${applied.length} live fee(s) whose own line Knox now reads as a fee already live under its right category, on their second look`},
             ${JSON.stringify({ version: REREAD_CATEGORY_CHECK_VERSION, taken_down: applied.map(sampleDetail) })}::jsonb
           )
