@@ -1,6 +1,7 @@
 import { sql } from "./connection";
 import { COUNT_SHARED_SCHEDULE_ONCE, MIN_LINKING_TEXT_CHARS, scheduleKeysSql, STATS_ROW_FILTER, STATS_SCHEDULE_KEYS, activeInstitutionFilter, countedValuePerInstitution, institutionValueSql, summarizeFeesBy, type StatsInputRow } from "./fee-stats";
 import { consumerPriceMoveSql } from "./consumer-price-moves";
+import { productExceptionSql } from "@/lib/fee-product";
 import type { FeeReview } from "./types";
 import { institutionDisplayName } from "@/lib/institution-display-name";
 import { readerFeeConditions } from "../fee-conditions";
@@ -116,6 +117,7 @@ export async function getFeeCategorySummaries(): Promise<FeeCategorySummary[]> {
   const rows = await sql`
     SELECT ef.fee_category, ef.amount, ef.institution_id, ct.charter_type, ef.fee_audience,
            ${sql.unsafe(scheduleKeysSql("ef", COUNT_SHARED_SCHEDULE_ONCE, "stats_text"))} AS schedule_keys,
+           ${sql.unsafe(productExceptionSql("ef"))} AS product_exception,
            ${sql.unsafe(COUNT_SHARED_SCHEDULE_ONCE ? "NULLIF(NULLIF(btrim(ct.holding_company_rssd), ''), '0')" : "NULL::text")} AS schedule_group
     FROM published_fee_catalog ef
     JOIN institution_sources ct ON ef.institution_id = ct.id
@@ -134,6 +136,7 @@ export async function getFeeCategorySummaries(): Promise<FeeCategorySummary[]> {
     fee_audience?: string | null;
     schedule_keys?: string[] | null;
     schedule_group?: string | null;
+    product_exception?: boolean | null;
   }[];
 
   // "Charge nothing" is stronger than "has a free tier": every usable price for
