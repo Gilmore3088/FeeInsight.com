@@ -66,7 +66,7 @@ const asDb = (db: DbMock) => db as unknown as Parameters<typeof recheckLoanSecti
 const texts = (db: DbMock) => db.mock.calls.map(([strings]) => (strings as TemplateStringsArray).join("?"));
 
 describe("the loan section switch (#1905)", () => {
-  it("is a code constant and ships off until James's yes on the dry run", () => {
+  it("is a code constant, on since James's yes on the dry run (2026-10-26)", () => {
     expect(LOAN_SECTION_TAKEDOWN_LIVE).toBe(true);
   });
 

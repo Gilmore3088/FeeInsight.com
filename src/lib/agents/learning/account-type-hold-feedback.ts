@@ -27,7 +27,7 @@ export const ACCOUNT_TYPE_HOLD_FEEDBACK_KIND = "account_type_hold";
  * `fee_published_id`, dedupe `hamilton.account_type_hold:restored:<fee_verified_id>`. This part
  * relabels them `restored` / `account_type_hold_released`, the label the hold writes a release
  * with today, keeping the old signal and kind in `evidence.relabeled_from`. Idempotent: a
- * relabelled row no longer matches. Off until James switches it on (a prod data change). Off, a
+ * relabelled row no longer matches. On since James's yes (2026-10-26; a prod data change). Off, a
  * dry run still counts the rows it would relabel (a read on the check's own rows) and a
  * real run reads nothing; on, a real run relabels them. Once it has run, the part can be removed.
  */

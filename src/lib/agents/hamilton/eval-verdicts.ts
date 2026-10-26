@@ -640,7 +640,7 @@ export function flagFor(canonicalFeeKey: string, feeName: string | null | undefi
  */
 export const EVAL_VERDICT_SECOND_BATCH: ReadonlySet<number> = new Set([120626]);
 /**
- * Default-off switch (#1696): the second takedown batch. Off, the live re-check counts and names
+ * Switch (#1696), on since James's yes (2026-10-26): the second takedown batch. Off, the live re-check counts and names
  * (`deferred`, `deferredIds`) each live fee in `EVAL_VERDICT_SECOND_BATCH` and each live fee only
  * the v9 rules fail, and writes nothing for them. On, they are flagged and come down after the
  * 12-hour second look like any other rule row. Dry run on prod, 2026-10-26: 9 live fees (120626 and

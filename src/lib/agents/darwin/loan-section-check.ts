@@ -47,7 +47,7 @@ type SqlTag = typeof sql;
  * (`LOAN_TEXT_SQL`). An institution-scoped run reads that institution's documents and leaves the
  * cursor alone.
  *
- * The switch is the code constant `LOAN_SECTION_TAKEDOWN_LIVE`, off. Off (`live: false`), or in a dry
+ * The switch is the code constant `LOAN_SECTION_TAKEDOWN_LIVE`, on since James's yes (2026-10-26). Off (`live: false`), or in a dry
  * run, the step only reports what it would take down. On, a matching fee goes through the shared
  * 12-hour second look (check `darwin.loan_section`) and is archived on its second failure: rolled
  * back with `loan_section: #<doc>`, its verified row rejected with the `loan_section` flag, never
@@ -61,7 +61,7 @@ type SqlTag = typeof sql;
  */
 export const LOAN_SECTION_CHECK = "darwin.loan_section";
 export const LOAN_SECTION_CHECK_VERSION = 1;
-/** The switch (see the module note): off until James's yes on the dry run; a one-line change turns it on. */
+/** The switch (see the module note): on since James's yes on the dry run (2026-10-26). */
 export const LOAN_SECTION_TAKEDOWN_LIVE: boolean = true;
 export const LOAN_SECTION_REASON = "loan_section";
 export const LOAN_SECTION_FLAG = "loan_section";

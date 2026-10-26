@@ -25,7 +25,7 @@ const STATED_ZERO = [28126, 50956, 107723, 23284, 115291, 93436, 85606, 56781, 7
 const BANDED_ONLY_PRICE = [99261, 108088, 116439];
 
 describe("Darwin's banded $0 re-check (#1882)", () => {
-  it("stays off until the dry run is read clean", () => {
+  it("is on since James's yes (2026-10-26)", () => {
     expect(BANDED_ZERO_TAKEDOWN_LIVE).toBe(true);
   });
 

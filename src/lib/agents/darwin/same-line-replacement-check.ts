@@ -35,8 +35,8 @@ type SqlTag = typeof sql;
  * A replacement the account type hold took down counts for the restore but not here: this check
  * takes a fee down only while the bank's price stays shown once.
  *
- * Shadow first: with `SAME_LINE_REPLACEMENT_TAKEDOWN_LIVE` false (the default until James says
- * yes), or in a dry run, the step only reports. Switched on, a match goes through the shared 12-hour
+ * Shadow first: with `SAME_LINE_REPLACEMENT_TAKEDOWN_LIVE` false (it is on since James's yes,
+ * 2026-10-26), or in a dry run, the step only reports. Switched on, a match goes through the shared 12-hour
  * second look (check `darwin.same_line_replacement`) and is archived on its second failure while its
  * replacement is still live: rolled back as `same_line_duplicate: live fee #<replacement>` (so
  * Hamilton's restore brings it back if that line goes), the verified row rejected with the

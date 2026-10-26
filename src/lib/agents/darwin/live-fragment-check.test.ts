@@ -1744,7 +1744,7 @@ describe("qualified shapes: an end shape behind a closing qualifier, behind its 
     fee_published_id: id, fee_verified_id: id + 1, institution_id: id + 2, fee_name: name, amount, canonical_fee_key: key, source_document_id: id + 3,
   }));
 
-  it("ships with its switch off", () => {
+  it("is on since James's yes (2026-10-26)", () => {
     expect(QUALIFIED_FRAGMENT_TAKEDOWN_LIVE).toBe(true);
   });
 

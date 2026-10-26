@@ -30,12 +30,12 @@ type SqlTag = typeof sql;
  * 2 of them beside the bank's live rate fee at that percentage (13406, 68415). 4 are kept because the
  * fee's own price stands alone and the floor on the line is another fee's (20404, 132118, 53988,
  * 83788). 1 is missed: 80150 is a floor (stored text 242, "C a sh Adva nce. ......$5.00 or 2% whichever
- * is great er"), missed for a misaligned excerpt and spaced OCR text. The switch stays off until a
- * reviewer reads a sample against each bank's stored text (sampled-clean rule, DECISIONS 2026-10-20).
+ * is great er"), missed for a misaligned excerpt and spaced OCR text. The switch is on since James's
+ * yes (2026-10-26, sampled-clean rule, DECISIONS 2026-10-20).
  */
 export const RATE_FLOOR_CHECK = "darwin.rate_floor";
 export const RATE_FLOOR_CHECK_VERSION = 1;
-/** The switch: off until a sample of the dry run is read clean. Set to true to take the matches down. */
+/** The switch: on takes matches down after the second look; off only reports. */
 export const RATE_FLOOR_TAKEDOWN_LIVE = true;
 export const RATE_FLOOR_REASON = "rate_floor";
 export const RATE_FLOOR_FLAG = "rate_floor";
