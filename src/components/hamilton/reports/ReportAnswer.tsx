@@ -119,16 +119,25 @@ export function exhibitColumnKinds(exhibit: Pick<ReportExhibit, "columns" | "row
  * a long record ID where it must; a figure stays on one line. A table wider than a phone scrolls
  * inside its own box.
  */
-export function exhibitCellClass(kind: ExhibitColumnKind, index: number, columnCount: number): string {
+export function exhibitCellClass(kind: ExhibitColumnKind, index: number, columnCount: number, hasProse = false): string {
   if (kind === "figure") return "text-right tabular-nums whitespace-nowrap";
-  if (kind === "label") return "text-left min-w-[13rem]";
-  return index === columnCount - 1 ? "text-left min-w-[10rem]" : "text-left min-w-[16rem] [overflow-wrap:anywhere]";
+  // The minimum widths are only for a table with a prose middle column, which scrolls anyway;
+  // an all-figure table keeps fitting a phone as before.
+  if (kind === "label") return hasProse ? "text-left min-w-[13rem]" : "text-left";
+  if (index === columnCount - 1) return hasProse ? "text-left min-w-[10rem]" : "text-left";
+  return "text-left min-w-[16rem] [overflow-wrap:anywhere]";
+}
+
+/** True when a middle column reads as prose (exhibitColumnKinds). */
+export function exhibitHasProse(kinds: readonly ExhibitColumnKind[]): boolean {
+  return kinds.some((k, i) => k === "text" && i > 0 && i < kinds.length - 1);
 }
 
 /** A data exhibit: the title states the takeaway, the table carries the evidence. */
 export function ReportExhibitTable({ exhibit, number }: { exhibit: ReportExhibit; number: number }) {
   const kinds = exhibitColumnKinds(exhibit);
-  const cellClass = (i: number) => exhibitCellClass(kinds[i] ?? "text", i, exhibit.columns.length);
+  const hasProse = exhibitHasProse(kinds);
+  const cellClass = (i: number) => exhibitCellClass(kinds[i] ?? "text", i, exhibit.columns.length, hasProse);
   return (
     <figure className="mb-8 last:mb-0">
       <figcaption className="mb-3">

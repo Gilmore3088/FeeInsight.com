@@ -34,4 +34,10 @@ describe("exhibit column sizing (#1899)", () => {
     expect(html).toContain("overflow-x-auto");
     expect(exhibitCellClass("label", 0, 4)).not.toContain("whitespace-nowrap");
   });
+
+  it("adds no minimum widths to a table with no prose column, so a short exhibit still fits a phone", () => {
+    const short = { columns: ["Year", "Reported", "Change"], rows: [["2025", "$1.2M", "+4%"]] };
+    const html = renderToStaticMarkup(<ReportExhibitTable exhibit={{ ...records, ...short }} number={1} />);
+    expect(html).not.toContain("min-w-[");
+  });
 });
