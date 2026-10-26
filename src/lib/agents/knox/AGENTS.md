@@ -2058,6 +2058,20 @@ read-only) these rules read 351 fee prices on 543 current lines at 228 banks tha
 The stale-read floor stays at v97; the new signature sends every live document through Hamilton's rules
 re-check once, which asks Knox to read it again where a fee these rules read is not live.
 
+v128 (#1912): a line whose only price is two different prices glued into one cell ("Card Replacement
+.....Share Draft Protest ..... $20.00$10.00", "Change of Personal Identification Number (PIN)Wire
+Transfers (incoming) ..... $ 2.00n/c*", Access FCU document 33871) is two PDF columns flattened onto
+one line, and the glued prices are not in the names' order (the same page prints the PIN change at $2
+and Share Draft Protest at $20 on clean lines). The line is emptied before any reader sees it, and the
+shared source check reads the same text, so no fee traces to it either (`gluedPricePair` in
+`custom-report/glued-price-pair.ts`). Two equal glued prices under a name printed twice ("Stop Payment
+In Branch - per itemStop Payment In Branch - per item | $30.00$30.00") are one price and read as
+before, and a line with any other price ("Up to $500.00$500.01 - $1,000.00") is left alone. On Oct 26
+(prod, read-only) 36 lines in the newest texts of 18 documents glue two different prices, most of
+them balance tables; 7 live fees at one credit union (Access FCU) were read only from such lines and
+go to the rules re-check's second look.
+The stale-read floor stays at v97.
+
 ## Darwin's re-read requests (`reread-feedback.ts`, #1511)
 
 Darwin's live fragment check (`darwin/live-fragment-check.ts`) writes one `pipeline_feedback` row of
@@ -2313,7 +2327,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v127 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v128 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v10 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

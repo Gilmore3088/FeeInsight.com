@@ -99,7 +99,8 @@ const OVERDRAFT_AND_RETURNED = new RegExp(
  * says consumer or personal covers both and stays; "business day" is a cut-off, not a payer.
  */
 const BUSINESS_ONLY = String.raw`^(?!.*\b(consumer|personal|retail|individual)\b).*\b(business|commercial|corporate)\b(?!\s+days?\b)`;
-const WIRE_CORRECTIONS = "trace|reversal|recall|amend|investigat|research|return";
+// v98 (#1912): a rejected wire ("Foreign Wire Reject" $25, Apl FCU 67971) is a correction too.
+const WIRE_CORRECTIONS = "trace|reversal|recall|amend|investigat|research|return|reject";
 // "Int'l Wire Fee Out" is an international wire; one price for "Domestic & Int'l" stays domestic.
 const INTL_ABBREV = String.raw`^(?!.*\bdomestic\b).*\bint['’]l\b`;
 /** Express, priority or two-day delivery of a card: the rush card fee, not the plain replacement. */
@@ -1196,7 +1197,10 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // other_lending_fee (`LOAN_LINE_TARGET`), in place on Hamilton's live guard with its own name and
 // price; where the bank already has a live other lending fee at that price (154634 beside 122342),
 // the copy is not moved and goes to the second look. Dry-run counts in the PR.
-export const CATEGORY_GUARD_VERSION = 97;
+// v98 (Oct 26, #1912): a rejected wire (`WIRE_CORRECTIONS` gains "reject") fails the domestic and
+// international wire types, as a returned or recalled wire does: Apl FCU's "Foreign Wire Reject" $25
+// (67971) was live as an international outgoing wire beside its real $40 price. Dry-run counts in the PR.
+export const CATEGORY_GUARD_VERSION = 98;
 
 /** v87 (#1916): where a late charge printed in a safe deposit box section is filed. */
 export const BOX_LATE_TARGET = "safe_deposit_box";
