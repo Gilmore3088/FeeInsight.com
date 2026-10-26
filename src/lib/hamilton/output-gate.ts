@@ -43,10 +43,14 @@ import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 import { FEE_PHRASES } from "./workspace/fee-phrases";
 import type { AnswerToolEvidence } from "./written-answer-evidence";
 
-/** 2: the `thin_peer_group` failure code (T5, #1726). A version 1 record is still read (output-gate-shadow.ts). */
-export const OUTPUT_GATE_VERSION = 2 as const;
+/**
+ * 2: the `thin_peer_group` failure code (T5, #1726). 3: interpretation rules cut the sentences they
+ * fire on, a sentence that points back to a cut one goes with it, and `GateFailure.clauses` (#1077,
+ * cause 5). Version 1 and 2 records are still read (output-gate-shadow.ts).
+ */
+export const OUTPUT_GATE_VERSION = 3 as const;
 /** Every version a stored shadow record may carry. */
-export const OUTPUT_GATE_VERSIONS = [1, 2] as const;
+export const OUTPUT_GATE_VERSIONS = [1, 2, 3] as const;
 export type OutputGateVersion = (typeof OUTPUT_GATE_VERSIONS)[number];
 
 /** `ask` is the free Ask bar's storyline, gated only by the replay (gate-replay.ts): the live Ask bar shows it with no gate. */
@@ -138,6 +142,8 @@ const FILED_PEER_CONFLICT = /^Conflicting filed financial peer reads/;
 /** Omit reasons the design (2.3) treats as critical; `premise_contradicted` only without a correction line. */
 const CRITICAL_OMIT = new Set<OmitReason>(["account_as_subject", "instruction_text"]);
 const LIST_MARKER = /^\s*(?:[-*+]|\d+\.)\s+|^\s*>\s*/;
+/** A sentence that opens by pointing back to the one before it. */
+const POINTS_BACK = /^\W*(?:that|this|these|those|as\s+a\s+result|so|which|therefore|thus|hence)\b/i;
 
 /** The text's sentences, split as the binding splits them (withoutSentences). */
 export function gateSentences(text: string): string[] {
@@ -192,7 +198,7 @@ function holdsClause(sentence: string, clauses: readonly string[]): boolean {
   const plain = plainText(sentence);
   return plain.length > 0 && clauses.some((clause) => {
     const wanted = plainText(clause);
-    return wanted.length > 0 && (plain.includes(wanted) || wanted.includes(plain));
+    return wanted.length > 0 && plain.includes(wanted);
   });
 }
 
@@ -405,6 +411,18 @@ export function gateAnswer(input: GateInput): GateVerdict {
       message: `A peer figure over ${thin.count} institution${thin.count === 1 ? "" : "s"} is stated as a benchmark; it needs ${thin.minimum} or more. Name the peers and their prices instead.` });
   }
 
+  // A shown sentence that points back to a cut one ("That is why ...", "As a result ...") leans on
+  // it, so it goes too, with the failure that cut the one before it (#1077, cause 5).
+  for (const failure of failures) {
+    if (!failure.sentences?.length) continue;
+    const own = new Set(failure.sentences);
+    for (const [index, sentence] of shownSentences.entries()) {
+      if (index > 0 && own.has(shownSentences[index - 1]) && !own.has(sentence) && POINTS_BACK.test(sentence)) {
+        own.add(sentence);
+        failure.sentences.push(sentence);
+      }
+    }
+  }
   const cut = new Set(failures.flatMap((f) => f.sentences ?? []));
   const left = shownSentences.filter((s) => !cut.has(s));
   if (left.length === 0 && input.text.trim()) {

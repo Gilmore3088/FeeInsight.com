@@ -373,6 +373,10 @@ describe("interpretation rules name the clause they fire on (#1077, cause 5)", (
     "Zero overdraft fees remove the largest fee line most peers earn.",
     "Market pricing drove the gain in fee income.",
     "Fee income growth was driven by overdraft pricing.",
+    // A position word before the outcome noun does not make it a position: the clause names an outcome.
+    "Zero-fee pricing keeps the bank at the bottom of the fee income table.",
+    "Overdraft pricing keeps the credit union behind peers on fee income.",
+    "Its pricing keeps the bank ahead of peers in revenue.",
   ])("a genuine cause still fails: %s", (text) => {
     expect(check(text).join(" ")).toContain("pricing or market cause");
   });

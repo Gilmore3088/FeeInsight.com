@@ -729,12 +729,15 @@ function knownInterpretationProblems(text: string, data: unknown, question?: str
 // --- Causal claims on every answer (#1077, claim contract step 3) ---
 
 /**
- * "Keeps", "kept" and "removes" state a cause only when what they act on is an outcome: "the zero-fee
- * stance keeps fee income near the bottom", "zero overdraft fees remove the largest fee line". Said
- * of a position ("your $30 fee keeps you $5 above the peer median") they restate arithmetic, not a
- * cause (#1077, cause 5). The outcome noun must come before any position word.
+ * "Keeps", "kept" and "removes" state a cause whenever the clause names an outcome: "the zero-fee
+ * stance keeps fee income near the bottom", "pricing keeps the bank behind peers on fee income",
+ * "zero overdraft fees remove the largest fee line". Only a clause with no outcome noun at all
+ * states a position ("your $30 fee keeps you $5 above the peer median"): arithmetic, not a cause
+ * (#1077, cause 5).
  */
-const KEEPS_AN_OUTCOME = String.raw`(?:keep(?:s|ing)?|kept|remov\w*)\b(?=(?:(?!\b(?:above|below|under|over|ahead|behind|at|near)\b)[^.;]){0,40}?\b(?:income|revenue|earnings|margins?|growth|fee\s+lines?|profit\w*|members?|customers?|accounts?|deposits|volumes?)\b)`;
+const OUTCOME_NOUN = String.raw`\b(?:income|revenue|earnings|margins?|growth|fee\s+lines?|profit\w*|members?|customers?|accounts?|deposits|volumes?)\b`;
+const KEEPS_VERB = String.raw`(?:keep(?:s|ing)?|kept|remov\w*)`;
+const KEEPS_AN_OUTCOME = String.raw`(?:(?<=${OUTCOME_NOUN}.*)${KEEPS_VERB}|${KEEPS_VERB}(?=.*${OUTCOME_NOUN}))`;
 /** The NCUA check's size-cause and pricing- or market-cause patterns and problem lines. */
 const SIZE_CAUSE = /\b(?:gap|difference|income|revenue|comparison|lead|rank(?:ing)?|position)\b.{0,80}\b(?:reflects?|explained by|due to|driven by|results? from|comes? from|stems? from|because of)\b.{0,50}\b(?:size|scale|assets?)\b/i;
 const PRICING_CAUSE = new RegExp(String.raw`\b(?:market|pricing|prices?|zero[ -]fee|overdraft fees?)\b.{0,80}\b(?:driv\w*|drove|caus\w*|explains?|responsible|${KEEPS_AN_OUTCOME})\b|\b(?:growth|income|revenue)\b.{0,70}\b(?:driven|caused|explained)\s+by\b.{0,50}\b(?:market|pricing|prices?|fees?)\b`, "i");

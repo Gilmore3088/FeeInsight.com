@@ -13,7 +13,8 @@ import { writtenAnswerBinding, writtenAnswerCheck } from "./answer-save";
 import { CLAIM_GOLDEN_CASES, type ClaimGoldenCase } from "./claim-golden-set";
 import { replayClaimGoldenGate } from "./claim-gate-replay";
 import { memoBinding, memoGateInput, memoProblems, writeStorylineMemo, type MemoClient } from "./memo";
-import { gateAnswer, sentencesFor, type GateInput } from "./output-gate";
+import { gateAnswer, OUTPUT_GATE_VERSION, OUTPUT_GATE_VERSIONS, sentencesFor, type GateInput } from "./output-gate";
+import { gatedAnswerView } from "./output-gate-repair";
 import type { HamiltonEvidenceFact } from "./evidence-contract";
 import { causeLines } from "./output-gate-signals";
 import { GATE_SHADOW_ERROR, gateShadowRecord, readGateShadowRecord, shadowDisagreement, shadowGate, tallyGateShadow, type GateShadowRecord } from "./output-gate-shadow";
@@ -111,10 +112,11 @@ describe("the gate in shadow", () => {
     const record = gateShadowRecord(gateAnswer(writtenInput(c)), "held", { path: "written_streaming", mode: "analyze" });
     expect(JSON.stringify(record)).not.toContain(c.text);
     expect(readGateShadowRecord(JSON.parse(JSON.stringify(record)))).toEqual(record);
-    expect(record.version).toBe(2);
+    expect(record.version).toBe(3);
     // A record from before the version 2 bump (thin_peer_group) still reads back, under its own version.
     expect(readGateShadowRecord({ ...record, version: 1 })).toEqual({ ...record, version: 1 });
-    expect(readGateShadowRecord({ ...record, version: 3 })).toBeNull();
+    expect(readGateShadowRecord({ ...record, version: 2 })).toEqual({ ...record, version: 2 });
+    expect(readGateShadowRecord({ ...record, version: 4 })).toBeNull();
     expect(readGateShadowRecord("nope")).toBeNull();
   });
 
@@ -382,10 +384,58 @@ describe("interpretation and binding rules cut a sentence instead of holding the
     expect(verdict.failures[0]).toMatchObject({ code: "untraced_figure", critical: true });
   });
 
-  it("an interpretation rule with no clause pins no sentence", () => {
+  it("an interpretation rule with no clause pins no sentence, and a short sentence inside a clause is not it", () => {
     expect(sentencesFor("interpretation_rule", ["Alliant reported $120 in fee income."])).toEqual([]);
     expect(sentencesFor("interpretation_rule", ["Alliant reported $120 in fee income.", "Its **pricing** drove growth."], ["Its pricing drove growth."]))
       .toEqual(["Its **pricing** drove growth."]);
+    expect(sentencesFor("interpretation_rule", ["Yes.", "Its pricing drove growth."], ["Yes. Its pricing drove growth."])).toEqual([]);
+  });
+
+  it("is gate version 3, and still reads version 1 and 2 records", () => {
+    expect(OUTPUT_GATE_VERSION).toBe(3);
+    expect(OUTPUT_GATE_VERSIONS).toEqual([1, 2, 3]);
+    expect(gate(clean).version).toBe(3);
+  });
+
+  it.each([
+    ["Market pricing drove the gain in fee income.", "That is why it trails peers."],
+    ["Membership grew this year.", "That gain outpaces the area."],
+  ])("a sentence that points back to a cut one goes with it: %s %s", (flagged, follower) => {
+    const verdict = gate(`${clean} ${flagged} ${follower}`);
+    expect(verdict.status).toBe("ready_partial");
+    const cut = verdict.failures.flatMap((f) => f.sentences ?? []);
+    expect(cut).toEqual(expect.arrayContaining([flagged, follower]));
+    const view = gatedAnswerView(`${clean} ${flagged} ${follower}`, verdict);
+    expect(view.text).toBe(clean);
+    // Held when nothing else is left.
+    expect(gate(`${flagged} ${follower}`).status).toBe("held");
+  });
+
+  describe("a written answer's sections", () => {
+    const read = ncua("acct_131", [100, 120]);
+    const written = (text: string) => gateAnswer({ surface: "written_answer", text,
+      evidence: { kind: "tool_reads", toolOutputs: [read.output], reads: [read] },
+      identity: { researchInstitutionId: 8322, accountInstitutionId: null } });
+    const lead = "Alliant reported $120 in fee income.";
+
+    it("a flagged clause repeated in Evidence holds the view, though the gate could cut it from the prose", () => {
+      const text = `## Hamilton's View\n${lead} Its customer base is growing.\n\n## Evidence\n- **Fee income:** $120; its customer base is growing.`;
+      const verdict = written(text);
+      expect(verdict.failures).toEqual([expect.objectContaining({ code: "interpretation_rule", critical: false })]);
+      expect(gatedAnswerView(text, verdict)).toMatchObject({ status: "held", heldBy: "failure_outside_prose" });
+    });
+
+    it("a flagged clause repeated in Explore Further holds the answer", () => {
+      const text = `## Hamilton's View\n${lead} Its customer base is growing.\n\n## Explore Further\n- Its customer base is growing, so what comes next?`;
+      expect(gatedAnswerView(text, written(text))).toMatchObject({ status: "held" });
+    });
+
+    it("a problem on two sentences, only one of them in the prose the gate can cut, holds the answer", () => {
+      const verdict = written(`## Hamilton's View\n${lead} Its customer base is growing.\n\n## Evidence\n- Membership grew this year.`);
+      expect(verdict.status).toBe("held");
+      expect(verdict.failures[0]).toMatchObject({ code: "interpretation_rule", critical: true,
+        clauses: ["Its customer base is growing.", "Membership grew this year."] });
+    });
   });
 
   describe("\"Its overdraft fee matches yours at $30\"", () => {
@@ -407,6 +457,16 @@ describe("interpretation and binding rules cut a sentence instead of holding the
 
     it("validates when both institutions carry the figure", () => {
       expect(matchGate([fact(1, A, 30), fact(2, B, 30)]).status).toBe("validated");
+    });
+
+    it("a clause found only in a sentence the binding already left out is already cut", () => {
+      const bundle = { version: 1 as const, generatedAt: "2026-10-26T00:00:00.000Z", facts: [fact(4, A, 10), fact(5, B, 35)], derivations: [], limitations: [] };
+      const omitted = "Bank A charges $35, and its membership grew.";
+      const verdict = gateAnswer({ surface: "memo", text: `Bank B charges $35. ${omitted}`,
+        evidence: { kind: "data", data: { ...data, bundle }, bundle, names }, identity: { researchInstitutionId: B, accountInstitutionId: A } });
+      expect(verdict.binding?.omitted).toEqual([{ text: omitted, reason: "wrong_institution" }]);
+      expect(verdict.failures).toContainEqual(expect.objectContaining({ code: "interpretation_rule", critical: false, sentences: [], clauses: ["its membership grew."] }));
+      expect(verdict.status).toBe("ready_partial");
     });
 
     it("still fails when only one side carries it", () => {
