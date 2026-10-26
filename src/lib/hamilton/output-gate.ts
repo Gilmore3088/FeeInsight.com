@@ -143,7 +143,7 @@ const FILED_PEER_CONFLICT = /^Conflicting filed financial peer reads/;
 const CRITICAL_OMIT = new Set<OmitReason>(["account_as_subject", "instruction_text"]);
 const LIST_MARKER = /^\s*(?:[-*+]|\d+\.)\s+|^\s*>\s*/;
 /** A sentence that opens by pointing back to the one before it. */
-const POINTS_BACK = /^\W*(?:that|this|these|those|as\s+a\s+result|so|which|therefore|thus|hence)\b/i;
+const POINTS_BACK = /^\W*(?:that|this|these|those|as\s+a\s+result|so|which|therefore|thus|hence|accordingly|consequently|because\s+of\s+this|it\s+is\s+why|it['’]s\s+why)\b/i;
 
 /** The text's sentences, split as the binding splits them (withoutSentences). */
 export function gateSentences(text: string): string[] {
@@ -160,6 +160,8 @@ function institutionIdsOf(bundle: HamiltonEvidenceBundle | null | undefined): Se
 interface Evaluated {
   check: AnswerEvidenceCheck;
   binding: NarrativeBinding | null;
+  /** The prose the gate reads, before the binding's omitted sentences go. */
+  before: string;
   /** The prose a reader would see once the binding's omitted sentences go. */
   shown: string;
   /** Institutions the evidence holds a fact for. */
@@ -178,7 +180,7 @@ function evaluate(input: GateInput): Evaluated {
       ...institutionIdsOf(writtenAnswerFeeEvidence(evidence.toolOutputs)?.evidence),
       ...institutionIdsOf(evidence.reads.length ? claimEvidenceFacts(evidence.reads, identity.researchInstitutionId) : null),
     ]);
-    return { check, binding, shown: writtenAnswerProse(withoutOmitted(sections, binding)), factInstitutions };
+    return { check, binding, before: writtenAnswerProse(sections), shown: writtenAnswerProse(withoutOmitted(sections, binding)), factInstitutions };
   }
   // A surface that runs today's checks with fewer inputs (the memo) says so, so the shadow compares like with like.
   const check = checkAnswerEvidence(input.text, evidence.data, evidence.checkQuestion === false ? {} : { question });
@@ -187,7 +189,7 @@ function evaluate(input: GateInput): Evaluated {
       ...(evidence.bindIdentity === false ? {} : { accountInstitutionId: identity.accountInstitutionId, researchInstitutionId: identity.researchInstitutionId }) })
     : null;
   const omitted = new Set((binding?.omitted ?? []).map((o) => o.text.trim()));
-  return { check, binding, shown: withoutSentences(input.text, omitted), factInstitutions: institutionIdsOf(evidence.bundle) };
+  return { check, binding, before: input.text, shown: withoutSentences(input.text, omitted), factInstitutions: institutionIdsOf(evidence.bundle) };
 }
 
 /** Text as a cut compares it: no markdown emphasis, single spaces, lower case. */
@@ -359,7 +361,7 @@ export function thinPeerSentences(input: GateInput, sentences: readonly string[]
 
 /** The one output gate. */
 export function gateAnswer(input: GateInput): GateVerdict {
-  const { check, binding, shown, factInstitutions } = evaluate(input);
+  const { check, binding, before, shown, factInstitutions } = evaluate(input);
   const causeOff = input.cause === "off";
   const cause = new Set(causeOff ? [] : input.cause ?? causeShadowInput(check));
   // Today's cause problem lines are recognised as causes even when the shadow input is replaced or off.
@@ -411,17 +413,22 @@ export function gateAnswer(input: GateInput): GateVerdict {
       message: `A peer figure over ${thin.count} institution${thin.count === 1 ? "" : "s"} is stated as a benchmark; it needs ${thin.minimum} or more. Name the peers and their prices instead.` });
   }
 
-  // A shown sentence that points back to a cut one ("That is why ...", "As a result ...") leans on
-  // it, so it goes too, with the failure that cut the one before it (#1077, cause 5).
-  for (const failure of failures) {
-    if (!failure.sentences?.length) continue;
-    const own = new Set(failure.sentences);
-    for (const [index, sentence] of shownSentences.entries()) {
-      if (index > 0 && own.has(shownSentences[index - 1]) && !own.has(sentence) && POINTS_BACK.test(sentence)) {
-        own.add(sentence);
-        failure.sentences.push(sentence);
-      }
+  // A shown sentence that points back to one that is not shown ("That is why ...", "As a result
+  // ...") leans on it, so it goes too, with the failure that took the one before it: a sentence a
+  // failure cuts, or one the binding left out (#1077, cause 5). Read in the prose's own order.
+  const shownSet = new Set(shownSentences);
+  const cutBy = new Map<string, GateFailure>();
+  for (const failure of failures) for (const sentence of failure.sentences ?? []) if (!cutBy.has(sentence)) cutBy.set(sentence, failure);
+  const leftOutBy = (sentence: string) => failures.find((f) => f.source === "binding" && holdsClause(f.message, [sentence]));
+  let previous: GateFailure | undefined;
+  for (const sentence of gateSentences(before)) {
+    let owner = cutBy.get(sentence) ?? (shownSet.has(sentence) ? undefined : leftOutBy(sentence));
+    if (!owner && previous && shownSet.has(sentence) && POINTS_BACK.test(sentence)) {
+      owner = previous;
+      owner.sentences = [...(owner.sentences ?? []), sentence];
+      cutBy.set(sentence, owner);
     }
+    previous = owner;
   }
   const cut = new Set(failures.flatMap((f) => f.sentences ?? []));
   const left = shownSentences.filter((s) => !cut.has(s));

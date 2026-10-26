@@ -400,6 +400,11 @@ describe("interpretation and binding rules cut a sentence instead of holding the
   it.each([
     ["Market pricing drove the gain in fee income.", "That is why it trails peers."],
     ["Membership grew this year.", "That gain outpaces the area."],
+    ["Membership grew this year.", "Accordingly, it trails the area."],
+    ["Membership grew this year.", "Consequently, it trails the area."],
+    ["Membership grew this year.", "Because of this, it trails the area."],
+    ["Membership grew this year.", "It is why it trails the area."],
+    ["Membership grew this year.", "It's why it trails the area."],
   ])("a sentence that points back to a cut one goes with it: %s %s", (flagged, follower) => {
     const verdict = gate(`${clean} ${flagged} ${follower}`);
     expect(verdict.status).toBe("ready_partial");
@@ -467,6 +472,25 @@ describe("interpretation and binding rules cut a sentence instead of holding the
       expect(verdict.binding?.omitted).toEqual([{ text: omitted, reason: "wrong_institution" }]);
       expect(verdict.failures).toContainEqual(expect.objectContaining({ code: "interpretation_rule", critical: false, sentences: [], clauses: ["its membership grew."] }));
       expect(verdict.status).toBe("ready_partial");
+    });
+
+    it("a sentence that points back to one the binding left out goes with it, with or without an interpretation rule", () => {
+      const bundle = { version: 1 as const, generatedAt: "2026-10-26T00:00:00.000Z", facts: [fact(4, A, 10), fact(5, B, 35)], derivations: [], limitations: [] };
+      const memo = (text: string) => gateAnswer({ surface: "memo", text,
+        evidence: { kind: "data", data: { ...data, bundle }, bundle, names }, identity: { researchInstitutionId: B, accountInstitutionId: A } });
+      for (const [leftOut, follower] of [
+        ["Bank A charges $35, and its membership grew.", "That growth outpaces the area."],
+        ["Bank A charges $35.", "That puts it at the top of the area."],
+      ]) {
+        const text = `Bank B charges $35. ${leftOut} ${follower}`;
+        const verdict = memo(text);
+        expect(verdict.binding?.omitted, text).toEqual([{ text: leftOut, reason: "wrong_institution" }]);
+        expect(verdict.failures.flatMap((f) => f.sentences ?? []), text).toContain(follower);
+        expect(verdict.status, text).toBe("ready_partial");
+        expect(gatedAnswerView(text, verdict).text, text).toBe("Bank B charges $35.");
+        // Nothing left once both go: held.
+        expect(memo(`${leftOut} ${follower}`).status, text).toBe("held");
+      }
     });
 
     it("still fails when only one side carries it", () => {
