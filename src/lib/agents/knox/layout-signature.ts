@@ -48,6 +48,15 @@ export function layoutSignature(text: string | null | undefined): LayoutSignatur
   return { signature: `${shape}/${length}`, priceLines };
 }
 
+/**
+ * The playbook's `layout_fingerprint` for a text (#1105): its signature and the signature
+ * version, e.g. `table/short@1`. Knox's free rules read records it with its attempt, so the
+ * institution's record says how its current text is laid out.
+ */
+export function knoxLayoutFingerprint(layout: Pick<LayoutSignature, "signature">): string {
+  return `${layout.signature}@${KNOX_LAYOUT_SIGNATURE_VERSION}`;
+}
+
 export interface LayoutYield {
   documents: number;
   thin: number;

@@ -67,4 +67,14 @@ describe("setting a fee link on a bank marked offline (#1884)", () => {
     expect(text(profile)).toContain("CASE WHEN read_strategy = 'manual_review' THEN NULL ELSE read_strategy END");
     expect(profile[1]).toBe("https://www.example.com/fees.pdf");
   });
+
+  it("takes the person's link off the playbook's rejected list (#1105)", async () => {
+    mocks.tx.mockResolvedValueOnce([{ state_code: "TX" }]).mockResolvedValueOnce([]);
+    await setInstitutionFeeUrl(42, "https://www.example.com/fees.pdf");
+
+    const [, profile] = mocks.tx.mock.calls;
+    expect(text(profile)).toContain("rejected_source_urls = CASE");
+    expect(text(profile)).toContain("WHERE entry->>'url' IS DISTINCT FROM ?");
+    expect(profile[2]).toBe("https://www.example.com/fees.pdf");
+  });
 });

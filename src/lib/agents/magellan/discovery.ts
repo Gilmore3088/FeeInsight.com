@@ -1879,9 +1879,13 @@ export async function recordDiscoveryResult(
     WHERE inst.id = ${result.institutionId}
     ON CONFLICT (institution_id) DO UPDATE SET
       state_code = EXCLUDED.state_code,
+      -- A rejected address is never made current by a search (#1105, rejected-sources.ts).
       canonical_source_url = CASE
         WHEN institution_source_profiles.locked_by_correction
           THEN institution_source_profiles.canonical_source_url
+        WHEN COALESCE(institution_source_profiles.rejected_source_urls, '[]'::jsonb)
+               @> jsonb_build_array(jsonb_build_object('url', COALESCE(EXCLUDED.canonical_source_url, institution_source_profiles.canonical_source_url)))
+          THEN NULL
         ELSE COALESCE(EXCLUDED.canonical_source_url, institution_source_profiles.canonical_source_url)
       END,
       source_kind = CASE
