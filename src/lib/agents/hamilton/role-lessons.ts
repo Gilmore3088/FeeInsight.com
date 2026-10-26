@@ -153,7 +153,7 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     stage: "publish",
     lesson: "When a publish check adds a weight-0 restore record kind, name it in every reader that treats signal restored as a lesson, beside the kinds already left out there. Do not count on the record lacking a column the reader joins on. Rows already written under the old label are relabelled by the typed feedback repair, behind an off switch with a dry-run count, never by hand-run SQL.",
     why: "After #2594 the account type hold wrote releases as restored / account_type_hold_released, but Darwin's release review left them out of its 'a check took it down by mistake' lessons only because a release has no fee_published_id. The 5 Oct 16 rows still carry wrong / wrong_category on prod.",
-    evidence: { issues: [1680], prs: [], files: ["src/lib/agents/darwin/release-review.ts", "src/lib/agents/learning/feedback.ts", "src/lib/agents/learning/account-type-hold-feedback.ts"] },
+    evidence: { issues: [1680], prs: [2594, 2705], files: ["src/lib/agents/darwin/release-review.ts", "src/lib/agents/learning/feedback.ts", "src/lib/agents/learning/account-type-hold-feedback.ts"] },
     appliesTo: "all",
     since: "2026-10-26",
   },
