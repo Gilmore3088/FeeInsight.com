@@ -44,8 +44,8 @@ export function isEmptyRead(value: unknown): boolean {
  */
 export const STALE_GRACE_MS = 2000;
 
-/** Most calls whose last good value one server keeps. Oldest used is dropped first. */
-const LAST_GOOD_LIMIT = 400;
+/** Most calls whose last good value one server keeps (some per-institution reads are large). Oldest used is dropped first. */
+const LAST_GOOD_LIMIT = 150;
 
 const lastGood = new Map<string, unknown>();
 const inFlight = new Map<string, Promise<unknown>>();
