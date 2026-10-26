@@ -546,8 +546,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — When an agent writes a link into a draft, check that the route exists on main. — [finding](findings/2026-10-09-outreach-snapshot-links-404.md) — Guard: `src/lib/agents/growth/norman.test.ts`
 - 2026-10-09 — An outgoing side effect needs its own record in Postgres; don't rely on a provider's read API that needs broader credentials than sending. — [finding](findings/2026-10-09-no-sent-email-log.md) — Guard: `src/lib/email/resend.test.ts` (+1 more)
 
-### CI, tests, tooling and PR workflow (15)
+### CI, tests, tooling and PR workflow (16)
 
+- 2026-10-26 — A DB test suite skips without a database, so the unit shards pass it unrun: it runs in CI only when the workflow names it, and eight never did, two of them cited as a fix's guard. — [finding](findings/2026-10-26-db-tests-never-wired-into-ci.md) — Guard: `scripts/ci-guards.sh db-test-wiring-kill`
 - 2026-10-25 — Every DB suite on the shared e2e database removes its own rows when it ends, and a suite that counts rows across the whole database isolates its fixture in its rolled-back transaction; vitest's file order is not the CLI order. — [finding](findings/2026-10-25-shared-test-database-leftover-fees.md) — Guard: `src/lib/agents/darwin/verified-recheck.db.test.ts`
 - 2026-10-20 — Parallel agents write PR bodies to a unique `mktemp` file and re-read the body after every edit. — [finding](findings/2026-10-20-shared-scratch-file-overwrote-pr-body.md) — Guard: Foundation tracker #1048 line "agents use mktemp for PR bodies and verify the body after edit"
 - 2026-10-20 — A push that drops scope while reconciling with `main` updates the PR title and body in the same push. — [finding](findings/2026-10-20-pr-descriptions-stale-after-reconcile.md) — Guard: the independent review of the exact head checks that the body matches the diff
