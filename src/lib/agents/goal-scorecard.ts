@@ -8,6 +8,7 @@ import { poolFreshAudits } from "@/lib/agents/deming/accuracy-measure";
 import { BATCH_REVIEW_CHECK, type BatchMissKind } from "@/lib/agents/rosetta/batch-review";
 import { readLiveSourceAudit } from "@/lib/data-store/live-source-audit-read";
 import { liveAuditBrief,validateLiveAuditComponent,type LiveAuditComponent } from "./deming/live-source-audit-records";
+import { readKnoxHoldGroups, type KnoxHoldAges } from "./knox/held-queue";
 
 /**
  * The goal scorecard (#1040): the numbers that say whether Fee Insight is getting closer to a
@@ -56,6 +57,8 @@ export const GOAL_QUERIES = {
   readerMissWeeks: "goal.rosetta_miss_rate_weekly",
   readerRemedies: "goal.rosetta_remedy_outcomes",
   dataQuality: "goal.deming_data_quality_latest",
+  knoxHeld: "goal.knox_held_by_reason_age",
+  knoxHeldExits: "goal.knox_held_exits_weekly",
 } as const;
 
 /** Weeks of text-reading misses shown, oldest first, the current week last (#1054). */
@@ -372,6 +375,58 @@ export function dataQualityFrom(at: string, detail: Record<string, unknown>): Om
   return { at, failing: strings(detail.failing), warning: strings(detail.warning), lines, drifts, duplicatesIdentity };
 }
 
+/** One reason Knox held lines for (`knox/held-queue.ts`), with how long they have been held. */
+export interface KnoxHeldReason {
+  shape: string;
+  label: string;
+  count: number;
+  setAside: number;
+  ages: KnoxHoldAges;
+  owner: string;
+  hasExit: boolean;
+}
+
+/** Knox's held pile now (#1102 item 4): every held line by reason and age. */
+export interface KnoxHeldPile {
+  query: string;
+  total: number;
+  setAside: number;
+  byReason: KnoxHeldReason[];
+}
+
+/** Weeks of held-line exits shown, oldest first, the current week last. */
+export const KNOX_HELD_EXIT_WEEKS = 8;
+
+/**
+ * One UTC week of lines leaving Knox's held pile, summed from the extract steps' own ledger
+ * (`step.finished` detail): each pass that moves held lines on records how many it moved.
+ */
+export interface KnoxHeldExitWeek {
+  weekStart: string;
+  /** Live extract steps whose ledger detail was read. */
+  steps: number;
+  /** Held lines sent to Darwin, all four passes. */
+  toDarwin: number;
+  /** Re-read with today's rules and categorized (`held_recheck.promoted`). */
+  heldRecheck: number;
+  /** Filed by a labelled or settled name (`held_name_file.filed`). */
+  nameFiled: number;
+  /** Traced by today's self-check (`untraced_recheck.promoted`). */
+  untraced: number;
+  /** Percentages sent on as rate fees (`held_rate_recheck.promoted`). */
+  rates: number;
+  /** Set aside, kept and still counted in the pile (`held_recheck.setAside` + `range_band_set_aside.setAside`). */
+  setAside: number;
+  /** Earlier promotions put back on hold (`promotion_recheck.withdrawn`). */
+  backOnHold: number;
+  partial: boolean;
+}
+
+export interface KnoxHeldExitWeeks {
+  query: string;
+  weeks: KnoxHeldExitWeek[];
+}
+
 export interface GoalScorecard {
   readAt: string;
   windowDays: number;
@@ -392,6 +447,9 @@ export interface GoalScorecard {
   dataQuality?: DataQuality | null;
   /** Separate automated fresh-site diagnostic; not missing-fee recall or the weekly launch review. */
   liveSourceAudit?:LiveAuditComponent|null;
+  /** Knox's held pile by reason and age, and lines leaving it each week (#1102); absent on snapshots from before it. */
+  knoxHeld?: KnoxHeldPile | null;
+  knoxHeldExits?: KnoxHeldExitWeeks | null;
 }
 
 const usd = (micro: unknown): number => Math.round(Number(micro ?? 0) / 10_000) / 100;
@@ -921,6 +979,114 @@ async function readDataQuality(db: SqlTag): Promise<DataQuality | null> {
   return read ? { query: GOAL_QUERIES.dataQuality, ...read } : null;
 }
 
+export async function readKnoxHeldPile(db: SqlTag): Promise<KnoxHeldPile> {
+  const groups = await readKnoxHoldGroups(db);
+  const byReason = groups.map(({ shape, label, count, setAside, ages, owner, hasExit }) => ({ shape, label, count, setAside, ages, owner, hasExit }));
+  return {
+    query: GOAL_QUERIES.knoxHeld,
+    total: byReason.reduce((sum, row) => sum + row.count, 0),
+    setAside: byReason.reduce((sum, row) => sum + row.setAside, 0),
+    byReason,
+  };
+}
+
+const passCount = (detail: Record<string, unknown>, pass: string, field: string): number => {
+  const value = detail[pass];
+  if (!value || typeof value !== "object") return 0;
+  const result = value as Record<string, unknown>;
+  // A pass run as a dry run moved nothing, whatever it counted.
+  if (result.dryRun === true) return 0;
+  return missCount(result[field]);
+};
+
+/** Pure: what one extract step's ledger detail says left the held pile. */
+export function heldExitsFromDetail(detail: Record<string, unknown>): Omit<KnoxHeldExitWeek, "weekStart" | "steps" | "partial"> {
+  const heldRecheck = passCount(detail, "held_recheck", "promoted");
+  const nameFiled = passCount(detail, "held_name_file", "filed");
+  const untraced = passCount(detail, "untraced_recheck", "promoted");
+  const rates = passCount(detail, "held_rate_recheck", "promoted");
+  return {
+    toDarwin: heldRecheck + nameFiled + untraced + rates,
+    heldRecheck,
+    nameFiled,
+    untraced,
+    rates,
+    setAside: passCount(detail, "held_recheck", "setAside") + passCount(detail, "range_band_set_aside", "setAside"),
+    backOnHold: passCount(detail, "promotion_recheck", "withdrawn"),
+  };
+}
+
+/**
+ * Pure: the extract steps' ledger rows summed into the last `weeks` UTC weeks. Every week is
+ * listed, so a week with no extract step shows as zero rather than dropping out. A dry-run step
+ * moved nothing and is skipped.
+ */
+export function bucketHeldExitWeeks(
+  rows: Array<{ at: string; detail: Record<string, unknown> | null }>,
+  now: Date,
+  weeks = KNOX_HELD_EXIT_WEEKS,
+): KnoxHeldExitWeek[] {
+  const buckets: KnoxHeldExitWeek[] = [];
+  const first = new Date(`${readerMissSince(now, weeks)}T00:00:00Z`);
+  for (let index = 0; index < weeks; index += 1) {
+    const start = new Date(first);
+    start.setUTCDate(first.getUTCDate() + index * 7);
+    buckets.push({ weekStart: start.toISOString().slice(0, 10), steps: 0, toDarwin: 0, heldRecheck: 0, nameFiled: 0, untraced: 0, rates: 0, setAside: 0, backOnHold: 0, partial: index === weeks - 1 });
+  }
+  const byWeek = new Map(buckets.map((bucket) => [bucket.weekStart, bucket]));
+  for (const row of rows) {
+    const at = new Date(row.at);
+    if (!row.detail || row.detail.dry_run === true || Number.isNaN(at.getTime())) continue;
+    const bucket = byWeek.get(weekStartUtc(at));
+    if (!bucket) continue;
+    const exits = heldExitsFromDetail(row.detail);
+    bucket.steps += 1;
+    bucket.toDarwin += exits.toDarwin;
+    bucket.heldRecheck += exits.heldRecheck;
+    bucket.nameFiled += exits.nameFiled;
+    bucket.untraced += exits.untraced;
+    bucket.rates += exits.rates;
+    bucket.setAside += exits.setAside;
+    bucket.backOnHold += exits.backOnHold;
+  }
+  return buckets;
+}
+
+/**
+ * Knox's extract step records, per pass, how many held lines it moved (run-store.ts, the
+ * `extract` step's detail). A held row carries no date it left the pile, so this ledger is the
+ * only dated record of exits. Not counted: a held line that a re-read of its document takes over
+ * (it is inside the step's inserted fees, with no count of its own).
+ */
+export async function readKnoxHeldExitWeeks(db: SqlTag, now: Date): Promise<KnoxHeldExitWeeks> {
+  const rows = await db<Array<{ created_at: Date | string; detail: unknown }>>`
+    SELECT e.created_at,
+           jsonb_build_object(
+             'dry_run', e.detail->'dry_run',
+             'held_recheck', e.detail->'held_recheck',
+             'held_name_file', e.detail->'held_name_file',
+             'untraced_recheck', e.detail->'untraced_recheck',
+             'held_rate_recheck', e.detail->'held_rate_recheck',
+             'range_band_set_aside', e.detail->'range_band_set_aside',
+             'promotion_recheck', e.detail->'promotion_recheck'
+           ) AS detail
+      FROM agent_run_events e
+      JOIN agent_run_steps s ON s.id = e.step_id
+     WHERE s.agent_name = 'knox'
+       AND s.step_key = 'extract'
+       AND e.event_type = 'step.finished'
+       AND e.status = 'completed'
+       AND e.created_at >= ${`${readerMissSince(now, KNOX_HELD_EXIT_WEEKS)}T00:00:00Z`}::timestamptz
+  `;
+  return {
+    query: GOAL_QUERIES.knoxHeldExits,
+    weeks: bucketHeldExitWeeks(rows.map((row) => ({
+      at: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
+      detail: (typeof row.detail === "string" ? JSON.parse(row.detail) : row.detail) as Record<string, unknown> | null,
+    })), now),
+  };
+}
+
 /** One read, in its own savepoint: a failure leaves that number null and the others standing. */
 async function guarded<T>(db: SqlTag, name: string, read: (scope: SqlTag) => Promise<T>): Promise<T | null> {
   return inSavepoint(db, read).catch((error) => {
@@ -944,6 +1110,8 @@ export async function readGoalScorecard(db: SqlTag = sql, now = new Date()): Pro
   const readerRemedies = await guarded(db, GOAL_QUERIES.readerRemedies, (scope) => readReaderRemedies(scope, now));
   const dataQuality = await guarded(db, GOAL_QUERIES.dataQuality, readDataQuality);
   const liveSourceAudit=await guarded(db,"goal.live_source_audit",scope=>readLiveSourceAudit(scope,now));
+  const knoxHeld = await guarded(db, GOAL_QUERIES.knoxHeld, readKnoxHeldPile);
+  const knoxHeldExits = await guarded(db, GOAL_QUERIES.knoxHeldExits, (scope) => readKnoxHeldExitWeeks(scope, now));
   return {
     readAt: now.toISOString(),
     windowDays: GOAL_WINDOW_DAYS,
@@ -959,6 +1127,8 @@ export async function readGoalScorecard(db: SqlTag = sql, now = new Date()): Pro
     readerRemedies,
     dataQuality,
     liveSourceAudit,
+    knoxHeld,
+    knoxHeldExits,
   };
 }
 

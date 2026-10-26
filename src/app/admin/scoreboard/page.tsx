@@ -17,6 +17,7 @@ import { accuracyStatusLabel, formatAccuracyBound } from "@/lib/agents/deming/ac
 import { AccuracyHistoryPanel } from "./accuracy-history";
 import { LiveSourceAuditPanel } from "./live-source-audit-panel";
 import { QueueBoardPanel } from "./queue-board-panel";
+import { KnoxHeldPanel } from "./knox-held-panel";
 import { readLiveSourceAudit } from "@/lib/data-store/live-source-audit-read";
 import type { LiveAuditComponent } from "@/lib/agents/deming/live-source-audit-records";
 
@@ -393,6 +394,7 @@ function GoalSection({ rows, current }: { rows: ScoreboardSnapshotRow[]; current
       </div>
       {latest.goal.spend ? <SpendTable goal={latest.goal} /> : null}
       <ReaderMisses goal={latest.goal} />
+      <KnoxHeldPanel goal={latest.goal} />
       </>}
     </section>
   );
