@@ -113,7 +113,7 @@ describe.skipIf(!connection)("website owner review in isolated PostgreSQL", () =
         (7367, 'Sunrise Family Federal Credit Union', 'credit_union', 'ncua', 'active', 'Bay City', 'MI', 'http://www.sunrisefamilycu.org'),
         (7353, 'Family First Federal Credit Union', 'credit_union', 'ncua', 'active', 'SAGINAW', 'MI', 'http://www.fam1st.com'),
         (8578, 'Lafcu Federal Credit Union', 'credit_union', 'ncua', 'active', 'Lansing', 'MI', 'http://www.lafcu.com'),
-        (4522, 'Louisiana Federal Credit Union', 'credit_union', 'ncua', 'active', 'La Place', 'LA', 'https://www.lafcu.org')
+        (4522, 'Los Angeles Federal Credit Union', 'credit_union', 'ncua', 'active', 'Glendale', 'CA', 'http://www.lafcu.org')
     `;
     const sunriseFile = "/files/sunrisefamilycu/1/file/Fee-Schedule-11-2025.pdf";
     expect(await otherInstitutionAtHost(asDb(), 7353, `http://www.fam1st.com${sunriseFile}`))

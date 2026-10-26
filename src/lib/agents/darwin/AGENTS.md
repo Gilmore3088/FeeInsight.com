@@ -530,14 +530,15 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   `darwin_document_owner`. Step detail `links_released`. Read-only count Oct 19: 3 (Bluegrass 5756
   on UK FCU's PDF, 5Star Bank 2092, First National Bank 1903).
   Vendor file folders (2026-10-26, #1455), behind `DARWIN_DOCUMENT_OWNER_FOLDER_LINKS` (off until
-  James's yes): a document at `/files/<folder>/<n>/file/` links the institution whose website's name
-  is the folder (`sunrisefamilycu` for sunrisefamilycu.org), the path counts as a vendor path, and
+  James's yes): a document at `/files/<folder>/<n>/file/` (read case-blind) links the institution
+  whose website's name is the folder (`sunrisefamilycu` for sunrisefamilycu.org), unless this
+  bank's own website carries that name (LAFCU's `/files/lafcu/` on lafcu.com), the path counts as a vendor path, and
   the vendor-copy rule reads the folder owner with the text-hash sharers (evidence
   `vendor copy: file folder` when only the folder links it); the text must still print its name.
   Such pairs get the fingerprint suffix `:folder`, so the switch re-reads them, and the publish
   refusal reads it too. Off, no folder link and every verdict as before. Dry run Oct 26
   (`documentOwnerCountSql({ detail: true, folderLinks: true })`): 4 `other_bank` pairs, 102 live
-  fees, all Sunrise Family CU's schedule (7353, 6428, 7078, 7662); LAFCU's own folder stays `own_named`.
+  fees, all Sunrise Family CU's schedule (7353, 6428, 7078, 7662); no other pair is folder-linked.
   `documentOwnerCountSql()` is the read-only count of the whole backlog by verdict, mirroring these
   rules in staged, materialized steps, as one script in a read-only transaction that rolls back (JIT
   and merge joins off, a 120 s statement timeout; names are matched only where their first two words

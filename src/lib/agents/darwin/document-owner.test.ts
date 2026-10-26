@@ -538,9 +538,10 @@ describe("vendor file folders (#1455, Oct 26)", () => {
     expect(documentOwnerVerdict(fees, alhambra, [sunrise], [], { documentHost: "alhambracu.com", folderIds: [7367] }).kind).not.toBe("other_bank");
     expect(documentOwnerVerdict(SUNRISE_TEXT, sunrise, [familyFirst, beach], [], { hashIds: [7353, 6428], documentHost: "sunrisefamilycu.org" }))
       .toMatchObject({ kind: "own_named" });
-    // LAFCU's own folder names another lafcu.* website: the text names LAFCU, so it is its own.
+    // Even if LAFCU's own folder were linked to another lafcu.* website (the selector no longer
+    // links it, below), the text names LAFCU, so it is its own.
     const lafcu: OwnerBank = { id: 8578, name: "Lafcu Federal Credit Union", city: "Lansing", stateCode: "MI", websiteHost: "lafcu.com" };
-    const other: OwnerBank = { id: 4522, name: "Louisiana Federal Credit Union", city: "La Place", stateCode: "LA", websiteHost: "lafcu.org" };
+    const other: OwnerBank = { id: 4522, name: "Los Angeles Federal Credit Union", city: "Glendale", stateCode: "CA", websiteHost: "lafcu.org" };
     expect(documentOwnerVerdict("LAFCU Federal Credit Union rates\nShare savings 0.10%", lafcu, [other], [], { documentHost: "lafcu.com", folderIds: [4522] }))
       .toMatchObject({ kind: "own_named" });
   });
@@ -550,7 +551,11 @@ describe("vendor file folders (#1455, Oct 26)", () => {
     const on = documentOwnerPairsSql({ folderLinks: true });
     expect(off).not.toContain("'folder' AS via");
     expect(on).toContain("'folder' AS via");
-    expect(on).toContain("lower(substring(p.document_url from '/files/([A-Za-z0-9_-]+)/[0-9]+/file/'))");
+    // Case-blind on both sides ("/Files/..."), and never this bank's own website's name.
+    expect(on).toContain("JOIN sites s ON s.label = substring(lower(p.document_url) from '/files/([A-Za-z0-9_-]+)/[0-9]+/file/')");
+    expect(on).toContain("WHERE lower(p.document_url) ~ '/files/([A-Za-z0-9_-]+)/[0-9]+/file/'");
+    expect(on).toContain("SELECT 1 FROM sites own\n            WHERE own.id = p.institution_id");
+    expect(on).not.toContain("~* '/files/");
     for (const text of [off, on]) {
       expect(text).toContain(`CASE WHEN cardinality(s.folder_ids) > 0 THEN '${DOCUMENT_OWNER_FOLDER_SUFFIX}' ELSE '' END`);
       expect(text).toContain("s.folder_ids");

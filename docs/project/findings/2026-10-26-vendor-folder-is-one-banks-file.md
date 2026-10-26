@@ -52,9 +52,9 @@ text did not decode).
 
 **Dry run (prod, read-only, Oct 26, `documentOwnerCountSql({ detail: true, folderLinks: true })`):**
 four `other_bank` pairs, 102 live fees, all Sunrise's file (7353 26, 6428 26, 7078 26, 7662 24);
-no other pair is `other_bank`. The one other folder-linked pair, 8578 LAFCU's own
-`/files/lafcu/1/file/...` (13 live, folder also the name of 4522 Louisiana FCU's lafcu.org), stays
-`own_named`. Sample of 12 (3 per institution): Bad Address $5.00, Check Cashing (non-members)
+no other pair is `other_bank`, and no other pair is folder-linked. 8578 LAFCU's own
+`/files/lafcu/1/file/...` (13 live) names the folder of its own website lafcu.com, so it is never
+linked to 4522 Los Angeles FCU (lafcu.org), as in Magellan's check; the folder is read case-blind. Sample of 12 (3 per institution): Bad Address $5.00, Check Cashing (non-members)
 $10.00 and Courtesy Pay/Overdraft $25.00 each appear in the stored text, which names Sunrise
 Family Credit Union, and in Sunrise's own copy (doc 28370 on sunrisefamilycu.org). On Magellan's
 side, only Sunrise's folder matches another institution's website among stored documents, apart

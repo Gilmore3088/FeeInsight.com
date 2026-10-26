@@ -575,15 +575,23 @@ export const DOCUMENT_OWNER_PENDING_DAYS = 14;
  */
 function scopedPairsSql(options: { pending?: boolean; folderLinks?: boolean } = {}): string {
   // With folder links on (#1455): the institution whose website's name (`hostLabel`) is the
-  // document's vendor file folder. Off: none, so every pair and verdict is as before.
+  // document's vendor file folder, read case-blind as `vendorFileFolder` does ("/Files/..."), and
+  // never when this bank's own website carries the folder's name (LAFCU's own `/files/lafcu/` on
+  // lafcu.com is not Los Angeles FCU's for lafcu.org), as `otherInstitutionAtHost` does. Off: none,
+  // so every pair and verdict is as before.
   const folderLinks = options.folderLinks
     ? `
       UNION
       SELECT p.institution_id, p.source_document_id, s.id AS other_id, 'folder' AS via
         FROM placed p
-        JOIN sites s ON s.label = lower(substring(p.document_url from '${VENDOR_FILE_FOLDER_PATH}')) AND s.id <> p.institution_id
-       WHERE p.document_url ~* '${VENDOR_FILE_FOLDER_PATH}'
-         AND length(s.label) >= 4`
+        JOIN sites s ON s.label = substring(lower(p.document_url) from '${VENDOR_FILE_FOLDER_PATH}') AND s.id <> p.institution_id
+       WHERE lower(p.document_url) ~ '${VENDOR_FILE_FOLDER_PATH}'
+         AND length(s.label) >= 4
+         AND NOT EXISTS (
+           SELECT 1 FROM sites own
+            WHERE own.id = p.institution_id
+              AND own.label = substring(lower(p.document_url) from '${VENDOR_FILE_FOLDER_PATH}')
+         )`
     : "";
   const pending = options.pending
     ? `
