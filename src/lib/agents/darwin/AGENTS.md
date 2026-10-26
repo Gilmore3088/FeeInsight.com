@@ -1,5 +1,20 @@
 # Darwin Agent Guide
 
+## Findings filed against verify (#2057, #2062)
+
+Each verify step reads the `pipeline_feedback` rows filed against its own stage: a person's
+hold or correction whose cause is "verification should have stopped it" (`admin_hold`,
+`admin_correction`, checks `admin.fee_hold` / `admin.fee_correction`) and Deming's `audit_miss`
+rows at verify (`verify-misses.ts`). Each standing finding becomes a lesson line naming the
+check that should have stopped the fee, inferred from what the finding changed (category:
+category guard; amount: source check; name: name rule; frequency: frequency check; otherwise
+`no_check`), and the step records a per-check missed tally as one `darwin.verify_misses` event
+and as `verify_misses` in its detail; `/admin/darwin` shows the same read. A later release or
+reversal of the same fee withdraws a finding. The takedown sync's copies (check
+`hamilton.admin_correction`) are not read: they mirror the hand row. The reader changes no fee,
+so it has no switch; a check change it motivates ships with its own re-check, switch and
+dry-run count.
+
 ## Prospective source-owned paid/returned events (#1918)
 
 The two faithful action names retain the literal compressed row as evidence and pass ordinary

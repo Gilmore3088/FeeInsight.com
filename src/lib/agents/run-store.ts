@@ -106,6 +106,7 @@ import { editionCheckDetail, recheckScheduleEditions } from "@/lib/agents/darwin
 import { canadianDocumentDetail, recheckCanadianDocuments } from "@/lib/agents/darwin/canadian-document-check";
 import { lateChargeBoundDetail, recheckLateChargeBounds } from "@/lib/agents/darwin/late-charge-bound-check";
 import { rateFloorDetail, recheckRateFloors } from "@/lib/agents/darwin/rate-floor-check";
+import { readVerifyMisses, verifyMissDetail, verifyMissNote } from "@/lib/agents/darwin/verify-misses";
 import { bandedZeroDetail, recheckBandedZeros } from "@/lib/agents/darwin/banded-zero-check";
 import { cardProgramSectionDetail, recheckCardProgramSections } from "@/lib/agents/darwin/card-program-section-check";
 import { loanSectionDetail, recheckLoanSections } from "@/lib/agents/darwin/loan-section-check";
@@ -1226,6 +1227,14 @@ async function executeAgenticStep(
       const bandedZeroNote = bandedZero.matched > 0
         ? ` Banded $0 re-check: ${bandedZero.matched.toLocaleString()} of ${bandedZero.checked.toLocaleString()} live $0 overdraft or NSF fee(s) at ${bandedZero.institutions.toLocaleString()} institution(s) are not the fee's price (${bandedZero.live && !bandedZero.dryRun ? `${bandedZero.flagged.toLocaleString()} flagged, ${bandedZero.takenDown.length.toLocaleString()} archived` : bandedZero.dryRun ? "dry run: would take down, nothing written" : "switch off: would take down, nothing written"}).`
         : "";
+      // #2057/#2062: the holds, corrections and Deming misses filed against verify, read into
+      // lessons and a per-check missed tally (verify-misses.ts). Read-only: no fee changes.
+      const verifyMisses = await readVerifyMisses(tx, {
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+      });
       const canadianDocumentNote = canadianDocument.matched > 0
         ? ` Canadian document re-check: ${canadianDocument.matched.toLocaleString()} live fee(s) on ${canadianDocument.documents.toLocaleString()} Canadian bank document(s) (${canadianDocument.live && !canadianDocument.dryRun ? `${canadianDocument.flagged.toLocaleString()} flagged, ${canadianDocument.takenDown.length.toLocaleString()} archived` : canadianDocument.dryRun ? "dry run: would take down, nothing written" : "switch off: would take down, nothing written"}).`
         : "";
@@ -1314,7 +1323,7 @@ async function executeAgenticStep(
         : "";
       return {
         status: "completed",
-        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${verification.deferredRawFees ? ` ${verification.deferredRawFees.toLocaleString()} row(s) deferred without a verification decision because current source/raw admission remains unresolved.` : ""}${recheckReceiptNote(recheck)}${release.deferred ? ` ${release.deferred.toLocaleString()} held fee(s) deferred without a release decision.` : ""}${conditionalZero.selected > 0 ? ` Settled ${(conditionalZero.selected - (conditionalZero.deferred ?? 0)).toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).${conditionalZero.deferred ? ` ${conditionalZero.deferred.toLocaleString()} conditional-$0 hold(s) deferred without a decision.` : ""}` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${verification.categoryChange && verification.categoryChange.takeoverProof.rows > 0 ? ` ${verification.categoryChange.takeoverProof.rows.toLocaleString()} row(s) a re-read took over under a new category ${verification.categoryChange.takeoverProof.live ? "(judged again)" : "(take-over proof switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${hourlyNote}${hourlyFullNote}${nonDepositNote}${nonDepositFullNote}${translatedCopyNote}${productPageRepeatNote}${sameLineReplacementNote}${sameLineReadNote}${editionNote}${canadianDocumentNote}${lateChargeBoundNote}${rateFloorNote}${bandedZeroNote}${cardProgramSectionNote}${loanSectionNote}${lineConflictNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}`,
+        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${verification.deferredRawFees ? ` ${verification.deferredRawFees.toLocaleString()} row(s) deferred without a verification decision because current source/raw admission remains unresolved.` : ""}${recheckReceiptNote(recheck)}${release.deferred ? ` ${release.deferred.toLocaleString()} held fee(s) deferred without a release decision.` : ""}${conditionalZero.selected > 0 ? ` Settled ${(conditionalZero.selected - (conditionalZero.deferred ?? 0)).toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).${conditionalZero.deferred ? ` ${conditionalZero.deferred.toLocaleString()} conditional-$0 hold(s) deferred without a decision.` : ""}` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${verification.categoryChange && verification.categoryChange.takeoverProof.rows > 0 ? ` ${verification.categoryChange.takeoverProof.rows.toLocaleString()} row(s) a re-read took over under a new category ${verification.categoryChange.takeoverProof.live ? "(judged again)" : "(take-over proof switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${hourlyNote}${hourlyFullNote}${nonDepositNote}${nonDepositFullNote}${translatedCopyNote}${productPageRepeatNote}${sameLineReplacementNote}${sameLineReadNote}${editionNote}${canadianDocumentNote}${lateChargeBoundNote}${rateFloorNote}${bandedZeroNote}${cardProgramSectionNote}${loanSectionNote}${lineConflictNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}${verifyMissNote(verifyMisses)}`,
         detail: {
           selected_raw_fees: verification.selectedRawFees,
           processed_raw_fees: verification.processedRawFees,
@@ -1358,6 +1367,7 @@ async function executeAgenticStep(
           card_program_section_check: cardProgramSectionDetail(cardProgramSection),
           loan_section_check: loanSectionDetail(loanSection),
           line_conflict_check: lineConflictDetail(lineConflict),
+          verify_misses: verifyMissDetail(verifyMisses),
           ...(nonDepositFull ? { non_deposit_document_full_count: nonDepositFindingsDetail(nonDepositFull) } : {}),
           release_repair: releaseRepair ? releaseRepairDetail(releaseRepair) : { error: releaseRepairError },
           ...(releaseRepairFull ? { release_repair_full_count: releaseRepairFindingsDetail(releaseRepairFull) } : {}),

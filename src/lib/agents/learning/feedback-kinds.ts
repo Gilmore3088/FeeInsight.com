@@ -50,6 +50,10 @@ const ROSETTA_READ_LESSONS = [ROSETTA_READ, "src/lib/agents/rosetta/paid-read.ts
 const ROSETTA_BATCH_READERS = [...ROSETTA_READ_LESSONS, "src/lib/agents/goal-scorecard.ts"] as const;
 /** Fee-level verdicts recorded by Darwin's verify that only Magellan's batch review counts. */
 const DARWIN_VERIFY = "darwin.verify";
+/** Darwin's reader of the holds, corrections and Deming misses filed against verify (#2057). */
+const DARWIN_VERIFY_MISSES = "src/lib/agents/darwin/verify-misses.ts";
+/** The takedown sync's copy of a hand correction's takedown (its reason starts "admin_correction:"). */
+const TAKEDOWN_SYNC_CORRECTION = "hamilton.admin_correction";
 /** The stage of the takedown sync's row that its restore detection reads. */
 const EXTRACT = ["extract"] as const;
 
@@ -122,10 +126,10 @@ export const FEEDBACK_KINDS = {
   flag_cleared: { record: "The second look's appended audit trail of a cleared flag." },
 
   // Daily audit and operator actions.
-  audit_miss: { readers: [MAGELLAN_DISCOVERY], readStages: ["discover"], note: "Magellan's stale-link search reads the document misses; extract misses teach Knox nothing yet." },
-  admin_hold: { readers: [MAGELLAN_DISCOVERY, ROSETTA_READ], readStages: ["discover", "read"], note: "A wrong-document hold goes to Magellan, a lost text to Rosetta's next reader version (#2059); other causes are read by no agent yet." },
-  admin_release: { readers: [MAGELLAN_DISCOVERY, RELEASE_REVIEW] },
-  admin_correction: { readers: [MAGELLAN_DISCOVERY, ROSETTA_READ], readStages: ["discover", "read"] },
+  audit_miss: { readers: [MAGELLAN_DISCOVERY, DARWIN_VERIFY_MISSES], readStages: ["discover", "verify"], note: "Magellan's stale-link search reads the document misses; Darwin's verify step reads verify misses into lessons and its per-check missed tally (#2057); extract misses teach Knox nothing yet." },
+  admin_hold: { readers: [MAGELLAN_DISCOVERY, ROSETTA_READ, DARWIN_VERIFY_MISSES], readStages: ["discover", "read", "verify"], note: "A wrong-document hold goes to Magellan, a lost text to Rosetta's next reader version (#2059), a verify miss to Darwin's lessons and missed tally (#2057); other causes are read by no agent yet." },
+  admin_release: { readers: [MAGELLAN_DISCOVERY, RELEASE_REVIEW, DARWIN_VERIFY_MISSES] },
+  admin_correction: { readers: [MAGELLAN_DISCOVERY, ROSETTA_READ, DARWIN_VERIFY_MISSES], readStages: ["discover", "read", "verify"], unreadChecks: [TAKEDOWN_SYNC_CORRECTION], note: "Darwin reads a person's verify-stage corrections (#2057). The takedown sync's copies (check hamilton.admin_correction, at extract and verify) mirror the hand row, which names its own stage, and no agent reads them." },
   admin_correction_reversed: { readers: [MAGELLAN_DISCOVERY, RELEASE_REVIEW] },
 
   // Rosetta's reads.

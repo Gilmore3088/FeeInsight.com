@@ -46,6 +46,12 @@ describe("every feedback kind names its reader (#2062)", () => {
     expect(feedbackRowRead({ kind: "flag_cleared", about_stage: "publish", check_name: "x" })).toBe(true);
     expect(feedbackRowRead({ kind: "audit_miss", about_stage: "discover", check_name: "hamilton.other_bank_document" })).toBe(true);
     expect(feedbackRowRead({ kind: "audit_miss", about_stage: "extract", check_name: "hamilton.source_check" })).toBe(false);
+    // Darwin reads the findings filed against verify (#2057), but not the takedown sync's copies.
+    expect(feedbackRowRead({ kind: "audit_miss", about_stage: "verify", check_name: "hamilton.source_check" })).toBe(true);
+    expect(feedbackRowRead({ kind: "admin_hold", about_stage: "verify", check_name: "admin.fee_hold" })).toBe(true);
+    expect(feedbackRowRead({ kind: "admin_correction", about_stage: "verify", check_name: "admin.fee_correction" })).toBe(true);
+    expect(feedbackRowRead({ kind: "admin_correction", about_stage: "verify", check_name: "hamilton.admin_correction", dedupe_key: "hamilton.takedown:pub:9:verify" })).toBe(false);
+    expect(feedbackRowRead({ kind: "admin_correction", about_stage: "publish", check_name: "admin.fee_correction" })).toBe(false);
     expect(feedbackRowRead({ kind: "wrong_document", about_stage: "discover", check_name: "magellan.link_yield" })).toBe(true);
     expect(feedbackRowRead({ kind: "wrong_document", about_stage: "discover", check_name: "hamilton.article_page" })).toBe(false);
     // A takedown's verify row is read by nobody when the sync is the kind's only reader (#2062 review).
@@ -63,7 +69,8 @@ describe("every feedback kind names its reader (#2062)", () => {
   it("splits the registry for the brief's query the same way", () => {
     const { unreadKinds, partial, registered } = unreadFeedbackPredicate();
     expect(unreadKinds).toContain("search_miss");
-    expect(partial).toContainEqual({ kind: "audit_miss", stages: ["discover"], checks: [], anyStageChecks: [] });
+    expect(partial).toContainEqual({ kind: "audit_miss", stages: ["discover", "verify"], checks: [], anyStageChecks: [] });
+    expect(partial).toContainEqual({ kind: "admin_correction", stages: ["discover", "read", "verify"], checks: ["hamilton.admin_correction"], anyStageChecks: [] });
     expect(new Set(registered)).toEqual(new Set(Object.keys(FEEDBACK_KINDS)));
   });
 
