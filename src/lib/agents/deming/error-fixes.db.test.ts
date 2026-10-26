@@ -9,7 +9,7 @@ import { KNOX_RULES_STRATEGY } from "@/lib/agents/knox/specialists";
 import { errorFixRequests, runErrorFixRecheck, type ErrorFixEntry } from "./error-fixes";
 
 const connection = process.env.E2E_DATABASE_URL;
-const INST = 20580001, WAITING = 20580002, DOC = 20580101, OLD_DOC = 20580100;
+const INST = 20580001, WAITING = 20580002, INACTIVE = 20580003, DOC = 20580101, OLD_DOC = 20580100;
 const EVENT = "00000000-0000-4000-8000-000020580001";
 const KIND = "test_2058_named_error";
 const FIX: ErrorFixEntry = { pr: 92058, issue: 2058, stage: "extract", merged_on: "2026-10-20", knox_version: KNOX_RULES_STRATEGY.version, kinds: [KIND] };
@@ -32,6 +32,21 @@ describe.skipIf(!connection)("error loop in isolated PostgreSQL (#2058)", () => 
     return Number(published.fee_published_id);
   }
 
+  /**
+   * Follow-up 1: a fee taken down and then read again identically. Knox's ON CONFLICT updates the
+   * old raw row (still dated before the error) and the fee is published again from it, so only the
+   * extract attempt says the fixed rules produced it.
+   */
+  async function republishIdentically(feePublishedId: number): Promise<number> {
+    const [old] = await raw`SELECT lineage_ref, institution_id, canonical_fee_key, fee_name, amount FROM published_fee_records WHERE fee_published_id = ${feePublishedId}`;
+    await raw`UPDATE published_fee_records SET rolled_back_at = NOW() WHERE fee_published_id = ${feePublishedId}`;
+    await raw`UPDATE raw_fee_observations fr SET created_at = '2026-09-01T00:00:00Z', extraction_note = 'text_hash=hash-2058-text;'
+                FROM verified_fee_observations fv WHERE fv.fee_raw_id = fr.fee_raw_id AND fv.fee_verified_id = ${old.lineage_ref}`;
+    const [again] = await raw`INSERT INTO published_fee_records (lineage_ref, institution_id, canonical_fee_key, published_by_adversarial_event_id, fee_name, amount, frequency, batch_id, source_url)
+              VALUES (${old.lineage_ref}, ${old.institution_id}, ${old.canonical_fee_key}, ${EVENT}, ${old.fee_name}, ${old.amount}, 'per_item', 'agentic-run-2058', 'https://bank2058.test/fees') RETURNING fee_published_id`;
+    return Number(again.fee_published_id);
+  }
+
   async function named(key: string, institutionId: number, feePublishedId: number, canonical: string, createdAt = "2026-10-10T00:00:00Z", check = "hamilton.source_check", documentId: number | null = null) {
     await raw`INSERT INTO pipeline_feedback (about_stage, signal, kind, reported_by, institution_id, fee_published_id, source_document_id, canonical_fee_key, check_name, dedupe_key, created_at)
               VALUES ('extract', 'wrong', ${KIND}, 'deming', ${institutionId}, ${feePublishedId}, ${documentId}, ${canonical}, ${check}, ${`test2058:${key}`}, ${createdAt})`;
@@ -40,14 +55,15 @@ describe.skipIf(!connection)("error loop in isolated PostgreSQL (#2058)", () => 
   }
 
   async function clean() {
-    await raw`DELETE FROM pipeline_feedback WHERE institution_id IN (${INST}, ${WAITING})`;
-    await raw`DELETE FROM pipeline_attempts WHERE institution_id IN (${INST}, ${WAITING})`;
-    await raw`DELETE FROM published_fee_records WHERE institution_id IN (${INST}, ${WAITING})`;
-    await raw`DELETE FROM verified_fee_observations WHERE institution_id IN (${INST}, ${WAITING})`;
-    await raw`DELETE FROM raw_fee_observations WHERE institution_id IN (${INST}, ${WAITING})`;
-    await raw`DELETE FROM agent_source_texts WHERE institution_id IN (${INST}, ${WAITING})`;
-    await raw`DELETE FROM source_documents WHERE institution_id IN (${INST}, ${WAITING})`;
-    await raw`DELETE FROM institution_sources WHERE id IN (${INST}, ${WAITING})`;
+    const banks = [INST, WAITING, INACTIVE];
+    await raw`DELETE FROM pipeline_feedback WHERE institution_id = ANY(${banks})`;
+    await raw`DELETE FROM pipeline_attempts WHERE institution_id = ANY(${banks})`;
+    await raw`DELETE FROM published_fee_records WHERE institution_id = ANY(${banks})`;
+    await raw`DELETE FROM verified_fee_observations WHERE institution_id = ANY(${banks})`;
+    await raw`DELETE FROM raw_fee_observations WHERE institution_id = ANY(${banks})`;
+    await raw`DELETE FROM agent_source_texts WHERE institution_id = ANY(${banks})`;
+    await raw`DELETE FROM source_documents WHERE institution_id = ANY(${banks})`;
+    await raw`DELETE FROM institution_sources WHERE id = ANY(${banks})`;
   }
 
   beforeAll(async () => {
@@ -59,13 +75,16 @@ describe.skipIf(!connection)("error loop in isolated PostgreSQL (#2058)", () => 
     await clean();
     await raw`INSERT INTO institution_sources (id, institution_name, charter_type, source, state_code)
               VALUES (${INST}, 'Loop Test Bank', 'bank', 'fdic', 'TX'), (${WAITING}, 'Loop Waiting Bank', 'bank', 'fdic', 'TX')`;
+    // Follow-up 2: a bank no longer active is never asked for, so its row is not waiting.
+    await raw`INSERT INTO institution_sources (id, institution_name, charter_type, source, state_code, status)
+              VALUES (${INACTIVE}, 'Loop Closed Bank', 'bank', 'fdic', 'TX', 'inactive')`;
     await raw`INSERT INTO source_documents (id, institution_id, status, document_url, content_hash, crawled_at)
               VALUES (${DOC}, ${INST}, 'success', 'https://bank2058.test/fees', 'hash-2058', '2026-10-01T00:00:00Z')`;
     // An older copy of the page that DOC replaced: an error on it is served by the re-run of DOC.
     await raw`INSERT INTO source_documents (id, institution_id, status, document_url, content_hash, crawled_at, superseded_by_id)
               VALUES (${OLD_DOC}, ${INST}, 'success', 'https://bank2058.test/fees', 'hash-2058-old', '2026-09-01T00:00:00Z', ${DOC})`;
     await raw`INSERT INTO agent_source_texts (source_document_id, institution_id, status, normalized_text)
-              VALUES (${DOC}, ${INST}, 'completed', ${"OTHER SERVICES\nStop Payment Fee | $35.00\nOverdraft Fee | $30.00 per item\nWire Transfer | $25.00"})`;
+              VALUES (${DOC}, ${INST}, 'completed', ${"OTHER SERVICES\nStop Payment Fee | $35.00\nOverdraft Fee | $30.00 per item\nWire Transfer | $25.00\nMonthly Maintenance Fee | $12.00"})`;
     // Three live fee types, so the institution is deep enough for the catalog.
     const stop = await seedFee(INST, "Stop Payment Fee", "stop_payment", 35);
     await seedFee(INST, "Overdraft Fee", "overdraft", 30);
@@ -77,6 +96,10 @@ describe.skipIf(!connection)("error loop in isolated PostgreSQL (#2058)", () => 
     const oldOverdraft = await seedFee(INST, "Overdraft Charge", "overdraft", 45);
     await raw`UPDATE published_fee_records SET rolled_back_at = NOW() WHERE fee_published_id = ${oldOverdraft}`;
     const waitingFee = await seedFee(WAITING, "Courtesy Overdraft Fee", "overdraft", 30);
+    const inactiveFee = await seedFee(INACTIVE, "Closed Bank Overdraft Fee", "overdraft", 30);
+    // Taken down, then read again identically by the re-run and published again from the old raw row.
+    const maintenance = await seedFee(INST, "Monthly Maintenance Fee", "monthly_maintenance", 12);
+    await republishIdentically(maintenance);
     await named("matches", INST, stop, "stop_payment");
     await named("down", INST, nsf, "nsf");
     await named("still", INST, wire, "wire_domestic_outgoing");
@@ -84,6 +107,8 @@ describe.skipIf(!connection)("error loop in isolated PostgreSQL (#2058)", () => 
     // Filed on the merge day itself: the fixed rules may already have read its text, so not named.
     await named("merge_day", INST, stop, "stop_payment", "2026-10-20T12:00:00Z");
     await named("waiting", WAITING, waitingFee, "overdraft");
+    await named("inactive", INACTIVE, inactiveFee, "overdraft");
+    await named("identical", INST, maintenance, "monthly_maintenance", "2026-10-10T00:00:00Z", "hamilton.source_check", DOC);
     // Recorded after the fix merged: not one of the errors it names.
     await named("after", INST, stop, "stop_payment", "2026-10-21T00:00:00Z");
     // Raised by a check the re-check does not re-run: never named, so never closed by it.
@@ -105,28 +130,31 @@ describe.skipIf(!connection)("error loop in isolated PostgreSQL (#2058)", () => 
     await raw`INSERT INTO pipeline_attempts (institution_id, source_document_id, stage, strategy, strategy_version, outcome, agent_run_id)
               VALUES (${INST}, ${DOC}, 'extract', ${KNOX_RULES_STRATEGY.strategy}, ${KNOX_RULES_STRATEGY.version - 1}, 'ok', ${Number(run.id)})`;
     expect((await errorFixRequests(db, [FIX])).map((request) => request.institutionId).sort()).toEqual([INST, WAITING]);
-    await raw`INSERT INTO pipeline_attempts (institution_id, source_document_id, stage, strategy, strategy_version, outcome, agent_run_id)
-              VALUES (${INST}, ${DOC}, 'extract', ${KNOX_RULES_STRATEGY.strategy}, ${KNOX_RULES_STRATEGY.version}, 'ok', ${Number(run.id)})`;
+    await raw`INSERT INTO pipeline_attempts (institution_id, source_document_id, stage, strategy, strategy_version, input_fingerprint, outcome, agent_run_id)
+              VALUES (${INST}, ${DOC}, 'extract', ${KNOX_RULES_STRATEGY.strategy}, ${KNOX_RULES_STRATEGY.version}, 'hash-2058-text', 'ok', ${Number(run.id)})`;
     expect((await errorFixRequests(db, [FIX])).map((request) => request.institutionId)).toEqual([WAITING]);
   });
 
   it("closes the errors that are gone, records the one still wrong once, and leaves the bank not yet re-run waiting", async () => {
     const first = await runErrorFixRecheck({ db, entries: [FIX], runId: null });
     expect(first.skipped).toEqual([]);
-    expect(first.results[0]).toMatchObject({ named: 5, waiting: 1, nowMatches: 2, notReproduced: 1, stillWrong: 1, unknown: 0 });
+    // The re-read maintenance fee is judged although its raw row predates the error; the closed
+    // bank's row is reported apart, not as waiting.
+    expect(first.results[0]).toMatchObject({ named: 7, waiting: 1, inactive: 1, nowMatches: 3, notReproduced: 1, stillWrong: 1, unknown: 0, readFailed: false });
     expect(first.results[0].stillWrongRows).toEqual([expect.objectContaining({ feedbackId: ids.still, check: "hamilton.source_check" })]);
     const ledger = await raw`SELECT kind, signal, weight, dedupe_key, evidence->>'verdict' AS verdict FROM pipeline_feedback
                               WHERE check_name = 'deming.error_fix_recheck' AND institution_id = ${INST} ORDER BY dedupe_key`;
     expect(ledger.map((row) => [row.dedupe_key, row.kind, row.verdict, Number(row.weight)])).toEqual([
       // The taken-down NSF fee has nothing extracted in its place: open, not written.
       [`deming.error_fix:92058:${ids.matches}:closed`, "error_fix_closed", "now_matches", 0],
+      [`deming.error_fix:92058:${ids.identical}:closed`, "error_fix_closed", "now_matches", 0],
       [`deming.error_fix:92058:${ids.replaced}:closed`, "error_fix_closed", "now_matches", 0],
       [`deming.error_fix:92058:${ids.still}:still_wrong`, "error_fix_still_wrong", "still_wrong", 0],
     ].sort((a, b) => String(a[0]).localeCompare(String(b[0]))));
 
     // The next day: closed rows are not named again; the still-wrong one is judged, not re-written.
     const second = await runErrorFixRecheck({ db, entries: [FIX], runId: null });
-    expect(second.results[0]).toMatchObject({ named: 3, waiting: 1, stillWrong: 1, notReproduced: 1 });
+    expect(second.results[0]).toMatchObject({ named: 4, waiting: 1, inactive: 1, stillWrong: 1, notReproduced: 1 });
     expect(second.written).toBe(0);
   });
 });
