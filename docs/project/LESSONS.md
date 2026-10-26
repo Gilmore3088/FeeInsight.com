@@ -213,7 +213,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-334 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+336 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
 ### Extraction and fee reading (51)
 
@@ -282,8 +282,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A provider refusal inside a streamed response never reaches the route's catch; map it in the stream's `onError`. — [finding](findings/2026-10-09-provider-limit-blank-answers.md) — Guard: `src/lib/ai-provider.test.ts` (+2 more)
 - 2026-10-09 — The Console usage limit did not trip the provider stop, and the verdict score starved. — [finding](findings/2026-10-09-api-usage-limit-did-not-trip-provider-stop.md) — Guard: `src/lib/ai-provider-usage.test.ts` (+1 more)
 
-### Categorisation and audience (26)
+### Categorisation and audience (27)
 
+- 2026-10-26 — A fee whose own name names a loan (a home equity loan or line, a HELOC, a line of credit) is the loan's fee, however much its words sound like an account's NSF or overdraft fee; an overdraft line of credit is the account's overdraft protection, not a loan. — [finding](findings/2026-10-26-equity-line-nsf-is-a-loan-fee.md) — Guard: guard v97 tests in `fee-category-guard.test.ts` and `hamilton/category-guard.test.ts`; Agent lesson: `darwin/issue-1905-equity-line-nsf`
 - 2026-10-26 — A category's price range is set for its main fee: check it against every kind of fee a re-file moves there (a box late fee is a late charge, not rent), and match a name's words however they are spaced ("Night Drop Deposit Box" is never the safe deposit box). — [finding](findings/2026-10-26-rent-floor-blocked-box-late-refile.md) — Guard: `box-late-envelope.test.ts`, guard v96 tests; Agent lesson: `darwin/issue-1912-box-late-floor-and-night-drop`
 - 2026-10-26 — A row printed in a loan section of a general fee schedule ("Equity Loan", "LOAN FEES") is the loan's fee, however much its words sound like an account's (a returned check, a service charge); read the section before filing it under NSF or monthly maintenance. — [finding](findings/2026-10-26-loan-section-rows-filed-as-deposit-fees.md) — Guard: `src/lib/custom-report/loan-section-fee.test.ts`, `src/lib/agents/darwin/loan-section-check.test.ts`; Agent lesson: knox/issue-1905-loan-section-rows-are-loan-fees, darwin/issue-1905-loan-section-recheck
 - 2026-10-25 — A price its own line makes the paper statement charge ("$3.00 paper statement fee", "applies if you choose to receive paper statements") is the paper statement fee, never the account's monthly maintenance fee, however generic the words around it; a price for paper holders beside an electronic price stays maintenance. — [finding](findings/2026-10-25-paper-statement-price-filed-as-maintenance.md) — Guard: `src/lib/paper-statement-price.test.ts`, guard v92 tests; Agent lesson: knox/issue-1947-paper-statement-price-is-not-maintenance
@@ -594,7 +595,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (281 in all).
+counts as of this index (282 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
@@ -603,7 +604,7 @@ counts as of this index (281 in all).
 | hoovie | 12 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
 | rosetta | 12 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
 | knox | 72 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
-| darwin | 44 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
+| darwin | 45 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 40 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
 | hamilton | 57 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
 | deming | 14 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |

@@ -450,4 +450,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-26",
   },
+  {
+    id: "issue-1905-equity-line-nsf",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "A deposit fee's words (a returned check, insufficient funds, an overdraft) do not make it the deposit account's fee when its own name names a loan: a home equity loan or line, a HELOC or a line of credit prices that loan. Refuse such a name under NSF and overdraft and re-file it to other lending, as a home equity line's stop payment was refused in v80, unless the name also names a checking, savings, share or deposit account. Read the product before the words: an overdraft (protection) line of credit is the checking account's overdraft protection, not a loan, so it never counts.",
+    why: "Navy Federal's \"Home Equity Line Check returned (due to non-sufficient funds)\" $29 (154634) went live as the account's NSF fee on Oct 21 beside its earlier copy, already hand-folded to other lending (122342) for #1655; the guard refused a home equity line's stop payment by name (v80) but read NSF and overdraft names for no loan product, and the loan section re-check (#2703) waits behind its switch (Oct 26, guard v97).",
+    evidence: { issues: [1905, 1655], prs: [], files: ["src/lib/fee-category-guard.ts", "src/lib/agents/hamilton/category-guard.ts"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
 ];
