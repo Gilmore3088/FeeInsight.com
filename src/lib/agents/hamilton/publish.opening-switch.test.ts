@@ -1,17 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
-// #1944: Hamilton's publish gate, and through it the depth count's pending rows, with
-// `OPENING_DOCUMENT_TAKEDOWN_LIVE` on. The constant ships off, so this file runs the shared reason
-// with the opening sub-switch on to show what turning it on does at publish.
-vi.mock("@/lib/agents/darwin/non-deposit-document-check", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/agents/darwin/non-deposit-document-check")>();
-  return {
-    ...actual,
-    nonDepositTakedownReason: (fee: Parameters<typeof actual.nonDepositTakedownReason>[0], switches = {}) =>
-      actual.nonDepositTakedownReason(fee, { ...switches, openingLive: true }),
-  };
-});
-
+// #1944: Hamilton's publish gate with `OPENING_DOCUMENT_TAKEDOWN_LIVE` on as shipped (James, "Take
+// them down", 2026-10-26). No mock: the gate reads the real switch, so turning it off again fails
+// these tests on purpose.
+import { OPENING_DOCUMENT_TAKEDOWN_LIVE } from "@/lib/agents/darwin/non-deposit-document-check";
 import { publishSkipReason } from "./publish";
 
 const TD_FIT = "https://www.td.com/content/dam/tdb/document/pdf/personal-banking/td-fit-account-guide-acc-en.pdf";
@@ -38,6 +30,10 @@ const row = {
 };
 
 describe("publish gate with the opening sub-switch on (#1944)", () => {
+  it("runs with the real switch on", () => {
+    expect(OPENING_DOCUMENT_TAKEDOWN_LIVE).toBe(true);
+  });
+
   it("refuses a fee from a document that opens as a loan disclosure", () => {
     expect(publishSkipReason(row, 0.85, true)).toBe("Refused at publish, Darwin's re-check would take it down: loan_titled_document: loan #33822");
   });
