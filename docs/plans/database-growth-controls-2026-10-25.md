@@ -62,3 +62,9 @@ Archived files remain the historical read authority. `restoreCallPeriod` and the
 ## Validation record
 
 Validated against main base `f9aadb79` on October 25: full suite 1,324 files / 17,754 passing tests (90 files skipped, 12 expected failures); agent suite 68 files / 1,892 passing tests; isolated PostgreSQL 2 files / 11 passing tests; typecheck and guards passed; lint had zero errors and 76 existing warnings. The real-Postgres suite covers dictionary/fact equality, unchanged writes, metadata expansion, archive atomicity, refusal after source changes, no resurrection, retained POR identity and fee-query parity. Pure tests cover the HMDA codec and same-step attempt scope. Production queries used for this work were read-only; no production migration, conversion, upload, deletion, index change or billing change has been performed.
+
+## Approved rollout receipts — October 26
+
+Before conversion, the first 5,000 reconstructed call facts (IDs 1–5,000) have ordered row-JSON MD5 `d4b39bc1bebcb2a5ac77d23e37f13624`. Database size at the schema verification was 16,389,377,171 bytes; the dictionary was empty. The dictionary has RLS enabled, and neither it nor the invoker view is readable by anon. The four archive counts still match the manifest. No archive was pruned.
+
+PR #2682 adds explicit one-step admin Atlas workflows with source `atlas.storage-rollout.2026-10-26`. A `compact` action enables only one bounded conversion batch; an `export` action enables only the next reviewed archive. Both run through `atlas-storage-retention`, retain normal pipeline-pause behavior and cannot enable pruning. Daily rollout switches stay off during canary review.
