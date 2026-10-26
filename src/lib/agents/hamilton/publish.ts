@@ -41,6 +41,7 @@ import { priceInName, RULE_WHY, ruleFor } from "@/lib/agents/hamilton/eval-verdi
 import { feeKey, reproducibleFees, RULES_RECHECK_REASON } from "@/lib/agents/hamilton/rules-recheck";
 import { closedInstitutionSql } from "@/lib/agents/hamilton/closed-institution";
 import { nonDepositTakedownReason } from "@/lib/agents/darwin/non-deposit-document-check";
+import { OPENING_SCAN_CHARS } from "@/lib/non-deposit-document";
 import {
   collapseKeepOrder,
   collapseLineKey,
@@ -155,6 +156,11 @@ export interface VerifiedFeeRow extends RateFields {
   same_line_reselect?: boolean | null;
   /** True when Knox's free-fee reader read this row (product-page.ts). */
   free_read?: boolean | null;
+  /**
+   * The start of the row's document's newest completed stored text (#1944): what the document's
+   * own opening says it is, for the non-deposit gate (`nonDepositTakedownReason`).
+   */
+  document_opening?: string | null;
 }
 
 export interface PriorPublishedFeeRow extends RateFields, Partial<Omit<PublishedIdentity, "fee_published_id">> {
@@ -360,12 +366,14 @@ export function publishSkipReason(row: VerifiedFeeRow, minConfidence: number, pr
   if (isArticlePage(row.source_url) || isArticlePage(row.document_url)) return ARTICLE_PAGE_SKIP_REASON;
   // A lending fee on a loan, rate, card or brokerage page: Darwin's live re-check would take it
   // down (`non-deposit-document-check.ts`), so it is refused before it is live (takedowns at the
-  // source, 2026-10-17). Same rule, reason and switches.
+  // source, 2026-10-17). Same rule, reason and switches; with its document's opening (#1944), a
+  // document that opens as a loan disclosure or a youth account's schedule too.
   const nonDeposit = nonDepositTakedownReason({
     documentUrl: row.document_url,
     sourceDocumentId: row.source_document_id,
     canonicalFeeKey: row.canonical_fee_key,
     feeName: publishedFeeName(row.fee_name, row.canonical_fee_key),
+    documentOpening: row.document_opening,
   });
   if (nonDeposit) return `${NON_DEPOSIT_PUBLISH_REASON_PREFIX}${nonDeposit}`;
   // A $0 benefit bullet on a product page, once James turns the check on (product-page.ts).
@@ -635,6 +643,13 @@ export async function selectVerifiedFees(
              sd.crawled_at AS document_crawled_at,
              sd.companion_source_id::text AS document_stream,
              sd.document_url,
+             -- #1944: the document's opening, for the non-deposit gate (newest completed text).
+             (SELECT left(op_ast.normalized_text, ${OPENING_SCAN_CHARS})
+                FROM agent_source_texts op_ast
+               WHERE op_ast.source_document_id = fr.source_document_id
+                 AND op_ast.status = 'completed'
+               ORDER BY op_ast.id DESC
+               LIMIT 1) AS document_opening,
              inst.institution_name,
              EXISTS (
                SELECT 1
@@ -707,7 +722,10 @@ async function institutionFeeDepth(
              NULL::text AS amount_kind,
              NULL::numeric AS rate_percent,
              NULL::numeric AS extraction_confidence,
-             '[]'::jsonb AS outlier_flags
+             '[]'::jsonb AS outlier_flags,
+             NULL::bigint AS source_document_id,
+             NULL::text AS document_url,
+             NULL::text AS document_opening
         FROM published_fee_records fp
        WHERE fp.institution_id = ANY($1::bigint[])
          AND ${CATALOG_DEPTH_LIVE_SQL("fp")}
@@ -723,9 +741,20 @@ async function institutionFeeDepth(
              fv.amount_kind,
              fv.rate_percent,
              fv.extraction_confidence,
-             fv.outlier_flags
+             fv.outlier_flags,
+             -- The non-deposit gate's inputs, as the publish select reads them (#1944): a pending
+             -- row from a loan or youth document does not count toward depth.
+             fr.source_document_id,
+             sd.document_url,
+             (SELECT left(op_ast.normalized_text, ${OPENING_SCAN_CHARS})
+                FROM agent_source_texts op_ast
+               WHERE op_ast.source_document_id = fr.source_document_id
+                 AND op_ast.status = 'completed'
+               ORDER BY op_ast.id DESC
+               LIMIT 1) AS document_opening
         FROM verified_fee_observations fv
         JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+        LEFT JOIN source_documents sd ON sd.id = fr.source_document_id
        WHERE fv.institution_id = ANY($1::bigint[])
          AND fv.review_status IN ('verified', 'approved')
          AND fv.outlier_flags ? 'agentic_darwin_verified'
@@ -762,6 +791,8 @@ interface PublishedInsertOptions {
     /** Called when an admin correction of the same logical fee blocked this publish. */
     onCorrected?: (block: CorrectionBlock) => void;
     onInternationalDeferred?: (detail: InternationalPublicationDeferral) => void;
+    /** #1443: called when publish's name hold (`publishNameHold`) kept the row's name off. */
+    onNameHeld?: (hold: { code: string; reason: string }) => void;
     /**
      * For a paired paid/returned event, the compressed line it was projected from: an operator's
      * hold or correction on that line, under either event's category, keeps the event off too.
@@ -806,6 +837,15 @@ async function writePublishedFee(db: SqlTag, options: PublishedInsertOptions): P
   const publishEventId = options.row.verified_by_agent_event_id;
   const feeName = publishedFeeName(options.row.fee_name, options.row.canonical_fee_key);
   const pairedLabel = options.pairedLabel ?? null;
+  // #1443: the single writer reads publish's name hold itself, the same call the publish step makes,
+  // so no path writes a name the step would hold. Refresh copy v1 wrote new live rows through this
+  // insert without it: the issue's 264 held names went live from Oct 9 to 13 (refresh copy v2, #1223, moves
+  // the live row in place instead and writes no new name).
+  const nameHold = publishNameHold(options.row.fee_name, options.row.canonical_fee_key, normalizedAmount(options.row.amount));
+  if (nameHold) {
+    options.onNameHeld?.(nameHold);
+    return null;
+  }
   // Current raw applicability survives a stale verified selection or a direct insertion.
   if (options.row.fee_raw_id != null) {
     const heldEvent = await db`SELECT fee_raw_id FROM raw_fee_observations
@@ -2563,6 +2603,8 @@ export async function runHamiltonPublish(
       // Insert and supersede succeed or fail together: never two live prices for one
       // fee, and never a closed row without its replacement.
       let heldBy: number | null = null;
+      // The writer re-checks the name hold on the re-read row (#1443 review): a name changed since the read is held there.
+      let nameHeld: { code: string; reason: string } | null = null;
       let correctedBy: CorrectionBlock | null = null;
       const guarded = await withSelectedInternationalPublication(db, row,
       async (prefixed, actual) => withPublishedIdentityWrite(prefixed, async (scope) => {
@@ -2597,6 +2639,7 @@ export async function runHamiltonPublish(
           batchId,
           row: actual ?? row,
           onHeld: (heldId) => { heldBy = heldId; },
+          onNameHeld: (hold) => { nameHeld = hold; },
           priorFeePublishedId: priorPublishedFee?.fee_published_id == null ? null : Number(priorPublishedFee.fee_published_id),
           onCorrected: (block) => { correctedBy = block; },
           pairedLabel: event ? event.originalLabel : null,
@@ -2619,7 +2662,7 @@ export async function runHamiltonPublish(
         ...base,
         status: feePublishedId ? "published" : "skipped",
         reason: guarded.kind === "deferred" ? "International wire evidence or identity is unresolved; left pending"
-          : feePublishedId ? null : heldBy ? `Held by an operator (fee #${heldBy})` : correctedReason(correctedBy) ?? ("identityChanged" in written && written.identityChanged ? "Selected verification, product or lineage changed; deferred" : "Duplicate published row"),
+          : feePublishedId ? null : heldBy ? `Held by an operator (fee #${heldBy})` : nameHeld ? `Name held at write: ${(nameHeld as { code: string; reason: string }).reason}` : correctedReason(correctedBy) ?? ("identityChanged" in written && written.identityChanged ? "Selected verification, product or lineage changed; deferred" : "Duplicate published row"),
         feePublishedId,
         ...("identityChanged" in written && written.identityChanged ? { identityDeferred: true } : {}),
         ...(guarded.kind === "deferred" ? { internationalDeferred: guarded.detail } : {}),

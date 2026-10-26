@@ -98,9 +98,11 @@ import { countHourlyFees, hourlyDetail, hourlyFindingsDetail, recheckHourlyFrequ
 import { countNonDepositFees, nonDepositDetail, nonDepositFindingsDetail, recheckNonDepositDocuments } from "@/lib/agents/darwin/non-deposit-document-check";
 import { recheckTranslatedCopies, translatedCopyDetail } from "@/lib/agents/darwin/translated-copy-check";
 import { productPageRepeatDetail, recheckProductPageRepeats } from "@/lib/agents/darwin/product-page-repeat-check";
+import { recheckSameLineReplacements, sameLineReplacementDetail } from "@/lib/agents/darwin/same-line-replacement-check";
 import { editionCheckDetail, recheckScheduleEditions } from "@/lib/agents/darwin/edition-effective-check";
 import { canadianDocumentDetail, recheckCanadianDocuments } from "@/lib/agents/darwin/canadian-document-check";
 import { lateChargeBoundDetail, recheckLateChargeBounds } from "@/lib/agents/darwin/late-charge-bound-check";
+import { rateFloorDetail, recheckRateFloors } from "@/lib/agents/darwin/rate-floor-check";
 import { cardProgramSectionDetail, recheckCardProgramSections } from "@/lib/agents/darwin/card-program-section-check";
 import { lineConflictDetail, recheckLineConflicts } from "@/lib/agents/darwin/line-conflict-check";
 import { documentOwnerDetail } from "@/lib/agents/darwin/document-owner";
@@ -589,6 +591,8 @@ async function executeAgenticStep(
           restored_fee_page_samples: discovery.restoredFeePages?.samples ?? [],
           kept_refused_answers: discovery.keptRefusedAnswers?.kept ?? 0,
           kept_refused_answer_samples: discovery.keptRefusedAnswers?.samples ?? [],
+          // Websites another institution also stores, judged before the search (#1455).
+          website_owners: discovery.websiteOwners,
           search_miss_lessons: discovery.searchMisses,
           // Freshness finds that kept the link: the page found states no date later than the old one's.
           stated_date_refusals: discovery.statedDateRefusals.length,
@@ -1154,6 +1158,17 @@ async function executeAgenticStep(
       const productPageRepeatNote = productPageRepeat.matched > 0
         ? ` Product-page repeat re-check: ${productPageRepeat.matched.toLocaleString()} of ${productPageRepeat.checked.toLocaleString()} live product-page fee(s) repeat a live schedule line at the same price (${productPageRepeat.live && !productPageRepeat.dryRun ? `${productPageRepeat.flagged.toLocaleString()} flagged, ${productPageRepeat.takenDown.length.toLocaleString()} archived` : productPageRepeat.dryRun ? "dry run: would take down, nothing written" : "switch off: would take down, nothing written"}).`
         : "";
+      // #1673: a same-line copy the v1 restore brought back beside its older line's live replacement
+      // (same-line-replacement-check.ts); a report only on a dry run or with its switch off.
+      const sameLineReplacement = await recheckSameLineReplacements(tx, {
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+      });
+      const sameLineReplacementNote = sameLineReplacement.matched > 0
+        ? ` Same-line replacement re-check: ${sameLineReplacement.matched.toLocaleString()} of ${sameLineReplacement.checked.toLocaleString()} restored same-line copies sit beside their older line's live replacement (${sameLineReplacement.live && !sameLineReplacement.dryRun ? `${sameLineReplacement.flagged.toLocaleString()} flagged, ${sameLineReplacement.takenDown.length.toLocaleString()} archived` : sameLineReplacement.dryRun ? "dry run: would take down, nothing written" : "switch off: would take down, nothing written"}).`
+        : "";
       // #2022: fees read from a Canadian bank's document (canadian-document-check.ts), at most hourly.
       const canadianDocument = await recheckCanadianDocuments(tx, {
         runId: run.id,
@@ -1171,6 +1186,17 @@ async function executeAgenticStep(
       });
       const lateChargeBoundNote = lateChargeBound.matched > 0
         ? ` Late charge bound re-check: ${lateChargeBound.matched.toLocaleString()} live late fee(s) at ${lateChargeBound.institutions.toLocaleString()} institution(s) are a late charge's cap or floor (${lateChargeBound.live && !lateChargeBound.dryRun ? `${lateChargeBound.flagged.toLocaleString()} flagged, ${lateChargeBound.takenDown.length.toLocaleString()} archived` : lateChargeBound.dryRun ? "dry run: would take down, nothing written" : "switch off: would take down, nothing written"}).`
+        : "";
+      // #1615: live flat fees that are a percentage charge's floor (rate-floor-check.ts); a report
+      // only on a dry run or with its switch off (RATE_FLOOR_TAKEDOWN_LIVE).
+      const rateFloor = await recheckRateFloors(tx, {
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+      });
+      const rateFloorNote = rateFloor.matched > 0
+        ? ` Rate floor re-check: ${rateFloor.matched.toLocaleString()} live flat fee(s) at ${rateFloor.institutions.toLocaleString()} institution(s) are a percentage charge's floor, ${rateFloor.rateTwinLive.toLocaleString()} beside the live rate fee (${rateFloor.live && !rateFloor.dryRun ? `${rateFloor.flagged.toLocaleString()} flagged, ${rateFloor.takenDown.length.toLocaleString()} archived` : rateFloor.dryRun ? "dry run: would take down, nothing written" : "switch off: would take down, nothing written"}).`
         : "";
       const canadianDocumentNote = canadianDocument.matched > 0
         ? ` Canadian document re-check: ${canadianDocument.matched.toLocaleString()} live fee(s) on ${canadianDocument.documents.toLocaleString()} Canadian bank document(s) (${canadianDocument.live && !canadianDocument.dryRun ? `${canadianDocument.flagged.toLocaleString()} flagged, ${canadianDocument.takenDown.length.toLocaleString()} archived` : canadianDocument.dryRun ? "dry run: would take down, nothing written" : "switch off: would take down, nothing written"}).`
@@ -1232,11 +1258,11 @@ async function executeAgenticStep(
       const hourlyFullNote = hourlyFull
         ? ` Whole live table: ${hourlyFull.wouldSet.toLocaleString()} live fees would be set hourly (${hourlyFull.wouldSetFromLine.toLocaleString()} only on their line), ${hourlyFull.exempt.toLocaleString()} exempt.`
         : "";
-      const nonDepositNote = nonDeposit.matched > 0 || nonDeposit.brokerageDocument > 0
-        ? ` Non-deposit document re-check: ${nonDeposit.matched.toLocaleString()} of ${nonDeposit.checked.toLocaleString()} live fee(s) read would come down from a brokerage or wealth (${nonDeposit.byKind.brokerage.toLocaleString()}) or loan, card or rate (${nonDeposit.byKind.loan.toLocaleString()}) document (${nonDeposit.byRule.lending_category.toLocaleString()} lending category, ${nonDeposit.byRule.lending_wording_on_loan_document.toLocaleString()} lending wording on a loan document); ${nonDeposit.brokerageDocument.toLocaleString()} deposit-category fee(s) on brokerage documents (own sub-switch${nonDeposit.live && nonDeposit.brokerageLive ? "" : ", off: they stay"}); ${(nonDeposit.keptDepositCategory + nonDeposit.keptGenericOnRatePage).toLocaleString()} fee(s) there stay live. Takedowns: ${nonDeposit.live && !nonDeposit.dryRun ? `${nonDeposit.flagged.toLocaleString()} flagged, ${nonDeposit.takenDown.length.toLocaleString()} archived` : "switch off, none made, nothing written"}.`
+      const nonDepositNote = nonDeposit.matched > 0 || nonDeposit.brokerageDocument > 0 || nonDeposit.openingDocument > 0
+        ? ` Non-deposit document re-check: ${nonDeposit.matched.toLocaleString()} of ${nonDeposit.checked.toLocaleString()} live fee(s) read would come down from a brokerage or wealth (${nonDeposit.byKind.brokerage.toLocaleString()}) or loan, card or rate (${nonDeposit.byKind.loan.toLocaleString()}) document (${nonDeposit.byRule.lending_category.toLocaleString()} lending category, ${nonDeposit.byRule.lending_wording_on_loan_document.toLocaleString()} lending wording on a loan document); ${nonDeposit.brokerageDocument.toLocaleString()} deposit-category fee(s) on brokerage documents (own sub-switch${nonDeposit.live && nonDeposit.brokerageLive ? "" : ", off: they stay"}); ${nonDeposit.openingDocument.toLocaleString()} fee(s) on documents that open as a loan disclosure or a youth account's (own sub-switch${nonDeposit.live && nonDeposit.openingLive ? "" : ", off: they stay"}); ${(nonDeposit.keptDepositCategory + nonDeposit.keptGenericOnRatePage).toLocaleString()} fee(s) there stay live. Takedowns: ${nonDeposit.live && !nonDeposit.dryRun ? `${nonDeposit.flagged.toLocaleString()} flagged, ${nonDeposit.takenDown.length.toLocaleString()} archived` : "switch off, none made, nothing written"}.`
         : "";
       const nonDepositFullNote = nonDepositFull
-        ? ` Whole live table: ${nonDepositFull.matched.toLocaleString()} live fees would come down from non-deposit documents (${nonDepositFull.byRule.lending_category.toLocaleString()} lending category, ${nonDepositFull.byRule.lending_wording_on_loan_document.toLocaleString()} lending wording on a loan document; ${nonDepositFull.byKind.brokerage.toLocaleString()} brokerage or wealth, ${nonDepositFull.byKind.loan.toLocaleString()} loan, card or rate) on ${nonDepositFull.documents.toLocaleString()} document(s); ${nonDepositFull.brokerageDocument.toLocaleString()} deposit-category fees on brokerage documents need their own sub-switch; ${(nonDepositFull.keptDepositCategory + nonDepositFull.keptGenericOnRatePage).toLocaleString()} fees there stay.`
+        ? ` Whole live table: ${nonDepositFull.matched.toLocaleString()} live fees would come down from non-deposit documents (${nonDepositFull.byRule.lending_category.toLocaleString()} lending category, ${nonDepositFull.byRule.lending_wording_on_loan_document.toLocaleString()} lending wording on a loan document; ${nonDepositFull.byKind.brokerage.toLocaleString()} brokerage or wealth, ${nonDepositFull.byKind.loan.toLocaleString()} loan, card or rate) on ${nonDepositFull.documents.toLocaleString()} document(s); ${nonDepositFull.brokerageDocument.toLocaleString()} deposit-category fees on brokerage documents need their own sub-switch; ${nonDepositFull.openingDocument.toLocaleString()} fees on ${nonDepositFull.openingDocuments.toLocaleString()} document(s) that open as a loan disclosure or a youth account's need theirs; ${(nonDepositFull.keptDepositCategory + nonDepositFull.keptGenericOnRatePage).toLocaleString()} fees there stay.`
         : "";
       // #1455: whose schedule each shared or vendor-served document is, by its own text.
       const documentOwner = verification.documentOwner;
@@ -1248,7 +1274,7 @@ async function executeAgenticStep(
         : "";
       return {
         status: "completed",
-        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${verification.deferredRawFees ? ` ${verification.deferredRawFees.toLocaleString()} row(s) deferred without a verification decision because current source/raw admission remains unresolved.` : ""}${recheckReceiptNote(recheck)}${release.deferred ? ` ${release.deferred.toLocaleString()} held fee(s) deferred without a release decision.` : ""}${conditionalZero.selected > 0 ? ` Settled ${(conditionalZero.selected - (conditionalZero.deferred ?? 0)).toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).${conditionalZero.deferred ? ` ${conditionalZero.deferred.toLocaleString()} conditional-$0 hold(s) deferred without a decision.` : ""}` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${verification.categoryChange && verification.categoryChange.takeoverProof.rows > 0 ? ` ${verification.categoryChange.takeoverProof.rows.toLocaleString()} row(s) a re-read took over under a new category ${verification.categoryChange.takeoverProof.live ? "(judged again)" : "(take-over proof switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${hourlyNote}${hourlyFullNote}${nonDepositNote}${nonDepositFullNote}${translatedCopyNote}${productPageRepeatNote}${editionNote}${canadianDocumentNote}${lateChargeBoundNote}${cardProgramSectionNote}${lineConflictNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}`,
+        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${verification.deferredRawFees ? ` ${verification.deferredRawFees.toLocaleString()} row(s) deferred without a verification decision because current source/raw admission remains unresolved.` : ""}${recheckReceiptNote(recheck)}${release.deferred ? ` ${release.deferred.toLocaleString()} held fee(s) deferred without a release decision.` : ""}${conditionalZero.selected > 0 ? ` Settled ${(conditionalZero.selected - (conditionalZero.deferred ?? 0)).toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).${conditionalZero.deferred ? ` ${conditionalZero.deferred.toLocaleString()} conditional-$0 hold(s) deferred without a decision.` : ""}` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${verification.categoryChange && verification.categoryChange.takeoverProof.rows > 0 ? ` ${verification.categoryChange.takeoverProof.rows.toLocaleString()} row(s) a re-read took over under a new category ${verification.categoryChange.takeoverProof.live ? "(judged again)" : "(take-over proof switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${hourlyNote}${hourlyFullNote}${nonDepositNote}${nonDepositFullNote}${translatedCopyNote}${productPageRepeatNote}${sameLineReplacementNote}${editionNote}${canadianDocumentNote}${lateChargeBoundNote}${rateFloorNote}${cardProgramSectionNote}${lineConflictNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}`,
         detail: {
           selected_raw_fees: verification.selectedRawFees,
           processed_raw_fees: verification.processedRawFees,
@@ -1282,9 +1308,11 @@ async function executeAgenticStep(
           non_deposit_document_check: nonDepositDetail(nonDeposit),
           translated_copy_check: translatedCopyDetail(translatedCopy),
           product_page_repeat_check: productPageRepeatDetail(productPageRepeat),
+          same_line_replacement_check: sameLineReplacementDetail(sameLineReplacement),
           edition_effective_check: editionCheckDetail(editions),
           canadian_document_check: canadianDocumentDetail(canadianDocument),
           late_charge_bound_check: lateChargeBoundDetail(lateChargeBound),
+          rate_floor_check: rateFloorDetail(rateFloor),
           card_program_section_check: cardProgramSectionDetail(cardProgramSection),
           line_conflict_check: lineConflictDetail(lineConflict),
           ...(nonDepositFull ? { non_deposit_document_full_count: nonDepositFindingsDetail(nonDepositFull) } : {}),

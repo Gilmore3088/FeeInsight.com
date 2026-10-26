@@ -213,10 +213,11 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-317 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+323 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
-### Extraction and fee reading (49)
+### Extraction and fee reading (50)
 
+- 2026-10-25 — "$5 or 3%, whichever is greater" costs the percentage: the dollar figure is the floor, read as the rate's `rate_min_amount`, never as a flat fee (#1615). — [finding](findings/2026-10-25-rate-floor-published-as-flat-fee.md) — Agent lesson: knox/issue-1615-rate-floor-is-no-flat-fee, darwin/issue-1615-rate-floor-recheck; Guard: `src/lib/agents/knox/rate-floor-read.test.ts`
 - 2026-10-25 — An ATM network table prices each row once per column: read the non-network column's price by row and column, never a row's first price; a late charge's cap or floor bounds a percentage charge and is not the late fee (#1905). — [finding](findings/2026-10-25-atm-network-table-and-late-charge-bounds.md) — Agent lesson: knox/issue-1905-network-table-columns, darwin/issue-1905-late-charge-bound-is-no-fee; Guard: `src/lib/agents/knox/network-column-table.test.ts`
 - 2026-10-25 — Judge a page, not a copy: a newer copy of a page that holds exactly the text of an older copy Knox already read gets that copy's verdict, or the page's current copy is rejected while its fees stay live on a superseded copy nothing checks. — [finding](findings/2026-10-25-same-text-newer-copy-rejected.md) — Agent lesson: rosetta/issue-2477-same-text-same-verdict; Guard: `src/lib/agents/rosetta/same-text-copy.test.ts`
 - 2026-10-25 — A card program is not only its own document: the rows of a prepaid, payroll, gift or travel card section inside a bank's own schedule are the card's fees, not the account's, so read the section a fee is printed in, not only the document's address (#1908, #1905). — [finding](findings/2026-10-25-card-program-sections-in-general-schedules.md) — Agent lesson: knox/issue-1908-card-program-sections-are-not-account-fees, darwin/issue-1908-card-program-section-recheck; Guard: `src/lib/custom-report/card-program-section.test.ts`
@@ -307,8 +308,10 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A consumer comparison needs the payer checked as well as the category. — [finding](findings/2026-10-09-business-wire-as-consumer-price.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 - 2026-10-09 — Returned bonds and coupons were filed as NSF. — [finding](findings/2026-10-09-bond-return-filed-nsf.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 
-### Verification and publication (50)
+### Verification and publication (52)
 
+- 2026-10-25 — Put a publish gate in the writer every path shares, not in one caller: refresh copy v1 wrote 264 live rows past the name hold (Oct 9–13); a closing note also hid a cut name's dangling "up to" from Knox (#1443). — [finding](findings/2026-10-25-publish-name-hold-bypass.md) — Agent lesson: hamilton/issue-1443-hold-in-the-writer, knox/issue-1443-qualifier-after-a-cut; Guard: `src/lib/agents/hamilton/publish.admin-hold.test.ts`, `src/lib/agents/knox/cutoff-shape.test.ts`
+- 2026-10-25 — A takedown that names another line is not undone just because that line is down: follow its takedown to the line that replaced it and keep the fee down while that replacement is live at its category and price (#1673). — [finding](findings/2026-10-25-same-line-restore-beside-replacement.md) — Agent lesson: hamilton/issue-1673-follow-the-replacement; Guard: `src/lib/agents/hamilton/same-line-duplicates.db.test.ts`, `src/lib/agents/darwin/same-line-replacement-check.test.ts`
 - 2026-10-25 — Keep live only the latest edition of a schedule in force today, dated by its own text whatever its address or read date; take an older line down only where the newer edition states the fee, and never pair one product's schedule with the bank's (#1945). — [finding](findings/2026-10-25-older-edition-left-live-beside-dated-edition.md) — Agent lesson: darwin/issue-1945-latest-edition-in-force; Guard: `src/lib/agents/darwin/dated-edition.test.ts`
 - 2026-10-25 — A price for people who are not the bank's customers is another party's price, not a condition on the customer's $0, even when it names the bank ("$5.00 charge for non-F&M customers"); run an older-live re-check over every older live row and read each failure against the bank's text before it goes on. — [finding](findings/2026-10-25-named-bank-non-customer-price.md) — Agent lesson: darwin/issue-1568-named-bank-non-customer-price; Guard: `src/lib/agents/darwin/verify.test.ts`, `src/lib/agents/darwin/verified-recheck.db.test.ts`
 - 2026-10-25 — A line skipped as identical to a fee later held as not yet in effect is decided again so today's schedule carries the fee, but only a schedule's line: a product page prices one account (#1915). — [finding](findings/2026-10-25-skipped-lines-behind-held-edition.md) — Agent lesson: hamilton/issue-1915-edition-hold-twins; Guard: `src/lib/agents/hamilton/publish-selection.db.test.ts`
@@ -360,8 +363,10 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — Every hand-set rule Darwin holds on needs a re-check exception keyed to the rule's own value, as the guard version has, or a change to the rule is a change for new reads only. — [finding](findings/2026-10-09-envelope-change-never-reached-held-rows.md) — Agent lesson: darwin/pr-883-rule-version-recheck
 - 2026-10-09 — When a fix changes how a fingerprinted check judges its input, bump that strategy's version in the same PR, or the fix only reaches input the check has never seen. — [finding](findings/2026-10-09-check-fingerprint-blocks-rejudge.md) — Agent lesson: gutenberg/pr-767-rejudge-on-change
 
-### Sources and discovery (20)
+### Sources and discovery (22)
 
+- 2026-10-25 — A stored website is a claim, not a fact: when an unrelated institution stores the same website host, read the homepage and ask whose it is; a website whose homepage names another institution and not this one is not searched, not counted as this institution's own host, and goes back to the website search (a host that spells the institution's or its holding company's name, as after a rename, is its own) (#1455). — [finding](findings/2026-10-25-website-is-another-institutions.md) — Agent lesson: magellan/issue-1455-whose-website-is-it; Guard: `src/lib/agents/magellan/website-owner.test.ts`, `src/lib/agents/magellan/website-owner.db.test.ts`
+- 2026-10-25 — A document says what it is in its opening lines: one that titles itself a loan, card or line-of-credit disclosure, or applies to youth, teen or student accounts, is not the general personal schedule whatever its address says, so neither discovery nor a companion search takes it, and its live fees are counted for Darwin's re-check (an address youth word alone decides nothing). — [finding](findings/2026-10-25-opening-names-non-general-documents.md) — Agent lesson: magellan/issue-1944-opening-names-the-document; Guard: `src/lib/non-deposit-document.test.ts`, `src/lib/agents/darwin/non-deposit-document-check.test.ts`
 - 2026-10-25 — A fetch date is not a schedule date: record the date a document states (its effective, revised or "as of" line, never a rate's date or an upload year), and replace an out-of-date link (by its stated, effective or address date) only with a page that states a later date, not counting a rate line (an undated page is refused only when the old date is printed in the old text). — [finding](findings/2026-10-25-read-date-is-not-schedule-date.md) — Agent lesson: magellan/issue-1878-stated-date-not-read-date
 - 2026-10-20 — Magellan's hub and crawl finders accepted product pages as fee schedules (#1051). — [finding](findings/2026-10-20-magellan-self-accepted-product-pages.md) — Guard: `src/lib/agents/magellan/discovery.test.ts`
 - 2026-10-20 — A freshness check has to start from what is live. — [finding](findings/2026-10-20-live-fee-pages-never-refetched.md) — Agent lesson: magellan/issue-1200-refetch-live-fee-pages
@@ -577,18 +582,18 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (234 in all).
+counts as of this index (242 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
 | atlas | 7 | [`src/lib/agents/atlas/role-lessons.ts`](../../src/lib/agents/atlas/role-lessons.ts) |
-| magellan | 20 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
+| magellan | 22 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
 | hoovie | 10 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
 | rosetta | 11 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
-| knox | 64 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
-| darwin | 34 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
+| knox | 66 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
+| darwin | 35 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 40 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
-| hamilton | 34 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
+| hamilton | 37 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
 | deming | 14 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
 
 ## Before 2026-10-10

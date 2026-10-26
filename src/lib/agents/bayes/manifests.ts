@@ -340,6 +340,8 @@ export function rosettaReaderManifests(versions: RosettaVersions): ReplayManifes
  * in a manifest above.
  */
 export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
+  // #1455: a review receipt for a shared website host, not a selector that replays fee work.
+  WEBSITE_OWNER_STRATEGY: "v1 names the attempt `discover.website_owner` that Magellan writes when it reads a homepage to decide whose website a host shared by unrelated active institutions is. It reviews each host once per version every 30 days (7 when the homepage was unread), at most 5 institutions per discover step. A flag only stops Magellan searching that host and sends the bank to the website search; no fee row is held, rejected or taken down, and no Knox or provider work is replayed by the version.",
   // #2477: a receipt strategy for a status-only reopen, not a selector that replays work.
   SAME_TEXT_COPY_STRATEGY: "v1 names the receipt `read.same_text_copy` that reopenSameTextCopies writes when it sets a wrong_document current copy to completed because an older copy of the same page holds the same text and Knox rows. The backlog pass is off (SAME_TEXT_COPY_REOPEN_LIVE false) and only counts and samples: 714 current copies at 641 banks on 2026-10-25. Nothing is replayed by the version; reopened texts reach Knox's ordinary selection, and no fee row or provider work is touched here.",
   // #2625: recorded on each fdic-financials partition, deliberately not a registry replay selector.
@@ -376,6 +378,10 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   TRANSLATED_COPY_CHECK_VERSION: "Each verify step re-reads every live fee on a Spanish-copy document (no cursor); nothing to replay.",
   // v2 (#1910): the name cover reads NSF/insufficient, OD/overdraft and a paid NSF item/overdraft as one item.
   PRODUCT_PAGE_REPEAT_CHECK_VERSION: "Each verify step re-reads every live product-page fee with a same-price schedule twin (no cursor), so version 2's wider name cover reaches every live fee on the next step; nothing older to replay.",
+  // v1 (#1673): same-line copies the v1 restore brought back beside their older line's live replacement.
+  SAME_LINE_REPLACEMENT_CHECK_VERSION: "First version: each verify step re-reads every live fee after a confirmed same-line takedown (no cursor, a few dozen rows); its switch is off, so it only reports; nothing older to replay.",
+  // v2 (#1673): the same-line restore follows the older line's replacement before bringing a copy back.
+  SAME_LINE_DUPLICATE_RESTORE_VERSION: "Each publish step re-reads every same-line takedown whose older line is down (no cursor), so v2's replacement check reaches every pending restore on the next step; the copies v1 already restored are read by Darwin's same-line replacement re-check.",
   // v1 (#1915): schedule editions not yet in effect. Every verify step reads every live fee on a dated document.
   // v2 (T1): an edition line past a web page's menu, counted only until EDITION_LATE_HEADING_LIVE.
   // v3 (#1945): a later dated edition of the same schedule takes over, read from every text-dated document each step.
@@ -384,6 +390,8 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   CANADIAN_DOCUMENT_CHECK_VERSION: "First version: a verify step re-reads every live fee's document text (no cursor, at most hourly); nothing older to replay.",
   // v1 (#1905): a late charge's cap or floor read as the late fee. On (LATE_CHARGE_BOUND_TAKEDOWN_LIVE), sampled clean 5 of 5.
   LATE_CHARGE_BOUND_CHECK_VERSION: "First version: each verify step reads every live late_payment fee whose name is a late charge's cap or floor (no cursor) and takes it down after the second look; nothing older to replay.",
+  // v1 (#1615): a percentage charge's floor read as a flat fee. Off (RATE_FLOOR_TAKEDOWN_LIVE) until sampled clean.
+  RATE_FLOOR_CHECK_VERSION: "First version: each verify step reads every live flat fee whose stored line carries greater-of wording and a percentage (no cursor, 58 rows on Oct 25); its switch is off, so it only reports; nothing older to replay.",
   // v1 (#1908, #1905): fees printed in a prepaid, payroll, gift or travel card section of a general
   // schedule. A full verify step re-reads every live document whose text names a card program, at most hourly.
   CARD_PROGRAM_SECTION_CHECK_VERSION: "First version: a verify step re-reads every live fee on a document whose text names a card program (no cursor, at most hourly); nothing older to replay.",
@@ -505,7 +513,7 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // each pass (2,000 a verify step), and nonDepositCountSql counts the whole live table read-only.
   // v2 (#1518): lending wording on loan documents and brokerage_document (own sub-switch) as their
   // own reasons, generic lending fees on rate pages kept live; same cursor, shadow, nothing written.
-  NON_DEPOSIT_CHECK_VERSION: "Its cursor re-reads every live fee's source document address each pass (2,000 a verify step); there is nothing to replay.",
+  NON_DEPOSIT_CHECK_VERSION: "Its cursor re-reads every live fee's source document address, and since v4 its document's opening, each pass (2,000 a verify step); there is nothing to replay.",
   // v1 (#1440): a new shadow pass over one printed line live under two readings.
   LINE_CONFLICT_CHECK_VERSION: "Every verify step reads every live line read twice in one grouped read; there is nothing to replay.",
   // v1 (#1455): a new shadow pass. Its selector reads every shared or vendor-path document pair not

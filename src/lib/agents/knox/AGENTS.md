@@ -284,6 +284,21 @@ fees found (54.7%); 56 of the 59 wrong reads are the right price under another c
 
 ## Rules versions (`extract.rules`)
 
+v118 (Oct 25, #1615): a price its own line makes the floor of a percentage charge is not a flat fee
+(`rateFloorOf` in `src/lib/rate-floor.ts`, shared with Darwin's `rate-floor-check.ts`). "Cash Advance |
+Either $5.00 or 3% of the amount of each cash advance, whichever is greater", "Greater of $10 or 5% of
+Scheduled Pmt" and "Merchant Check Cashing (Greater of 10% of Item or $10)" cost the percentage; the
+dollar figure is the least the charge can be. Such a read is held as the percentage, so the rate pass
+files the rate fee with the floor as `rate_min_amount` where the category publishes rates, and keeps it
+held elsewhere; `rateFeeFromHeld` now reads a "$Y or X%" floor (or a lesser-of cap) stated before the
+rate (a line with both greater-of and lesser-of words stays held). Only the fee's own figure, the
+first at its amount after its name, joined to the rate by "or" with no lesser-of words or sentence end
+before the greater-of words, counts: another fee's floor on the same line
+("ATM NSF Fee + | $29.50 | - 2% of each transfer or $20.00 whichever is greater"), a lesser-of cap and a
+figure in another cell keep the read. Oct 25 dry run: 53 of the 58 live flat fees (48 institutions)
+whose stored line carries greater-of wording and a percentage are such floors, each read on its stored
+line; Darwin's rate floor re-check (`darwin/rate-floor-check.ts`) lists them.
+
 v117 (Oct 25, #1947): a read filed as the account's monthly maintenance fee whose own line prices it
 as the paper statement charge is the paper statement fee, named "Paper statement fee" unless its name
 already says so (`paperStatementRead` in `rules.ts`, reading the line with `paperStatementPriceOnLine`
@@ -1875,6 +1890,18 @@ and `gluedSentenceHead` gives the fee name a fragment opens with ("Overdraft Fee
 charged ..." is "Overdraft Fee"), which Darwin renames the live fee to through `writeLiveRenames`,
 the same write path the tidy uses (feedback row first, update guarded on the old name).
 
+v119 (#1443): a closing note no longer hides a cut. `liveQualifiedFragmentShape` (`fee-name-fragments.ts`)
+reads the live twin's `trailing_range` and `sentence_end` shapes on the name without the closed
+parentheticals that end it (`withoutClosedQualifiers`, moved there from `cutoff-shape.ts`), and
+`isCutoffName` reads it, so "Late Fee up to (see schedule)" and "Gift Cards up to (per card)" are cut
+off. It uses the narrow words, so "Stop payments - each (Draft or ACH)" stays whole, and leaves out
+"than" and "below" (a threshold figure the price read took out of a whole name: "Cashier's check more
+than (sold to MCB customers only)", shadow lab live audit 273). Darwin's live check reads the same
+function behind `QUALIFIED_FRAGMENT_TAKEDOWN_LIVE` (off). Only a glued note counts (one opening "see",
+"per", "each" and the like): a parenthetical that completes the word is the fee's object ("Check Cashing
+Fee for (Non-Customers)", "ACH Origination Per (member transactions ...)"). Oct 25: 2 live fees, 4
+verified rows not live.
+
 ## Darwin's re-read requests (`reread-feedback.ts`, #1511)
 
 Darwin's live fragment check (`darwin/live-fragment-check.ts`) writes one `pipeline_feedback` row of
@@ -2128,7 +2155,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v117 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v119 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v10 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

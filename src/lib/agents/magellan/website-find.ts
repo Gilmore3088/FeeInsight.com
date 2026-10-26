@@ -13,6 +13,7 @@ import { loadGroupGaps, pickFromWorkLists, WORK_LIST_POOL, workListDetail, workL
 
 import { FOUND_COOLDOWN_DAYS, MISS_COOLDOWN_DAYS } from "./cooldowns";
 import { fetchWithTimeout } from "./find-validate";
+import { websiteOwnedElsewhereSql } from "./other-bank-host";
 import { webSearchTool } from "./web-search-tool";
 
 type SqlTag = typeof sql;
@@ -186,8 +187,14 @@ async function selectRows(db: SqlTag, stateCode: string | null, limit: number, g
       FROM institution_sources inst
       LEFT JOIN institution_source_profiles profile ON profile.institution_id = inst.id
      WHERE COALESCE(inst.status, 'active') = 'active'
-       AND (inst.website_url IS NULL OR btrim(inst.website_url) = '')
-       AND (inst.fee_schedule_url IS NULL OR btrim(inst.fee_schedule_url) = '')
+       AND (
+         (
+           (inst.website_url IS NULL OR btrim(inst.website_url) = '')
+           AND (inst.fee_schedule_url IS NULL OR btrim(inst.fee_schedule_url) = '')
+         )
+         -- A stored website judged another institution's is searched again (#1455, website-owner.ts).
+         OR ${websiteOwnedElsewhereSql(db)}
+       )
        AND (${stateCode}::text IS NULL OR upper(btrim(inst.state_code)) = ${stateCode})
        AND COALESCE(profile.locked_by_correction, false) = false
        AND COALESCE(profile.source_kind, 'unknown') <> 'offline'
@@ -363,15 +370,16 @@ export async function runWebsiteFind(options: {
     result.processed += 1;
     if (saved) {
       result.saved += 1;
-      // Only an empty website is filled, and never past a person's correction. The bank's
-      // search state resets so free discovery searches the new site on its next step.
+      // Only an empty website, or one judged another institution's (#1455), is filled, and
+      // never past a person's correction. The bank's search state resets so free discovery
+      // searches the new site on its next step.
       await db`
         UPDATE institution_sources inst
            SET website_url = ${saved},
                rescue_status = 'pending',
                last_rescue_attempt_at = NULL
          WHERE inst.id = ${institutionId}
-           AND (inst.website_url IS NULL OR btrim(inst.website_url) = '')
+           AND (inst.website_url IS NULL OR btrim(inst.website_url) = '' OR ${websiteOwnedElsewhereSql(db)})
            AND NOT EXISTS (
              SELECT 1 FROM institution_source_profiles held
               WHERE held.institution_id = inst.id AND held.locked_by_correction IS TRUE

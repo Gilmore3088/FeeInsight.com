@@ -7,6 +7,26 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const MAGELLAN_LESSONS: AgentLesson[] = [
   {
+    id: "issue-1455-whose-website-is-it",
+    agent: "magellan",
+    stage: "discover",
+    lesson: "A stored website is a claim, not a fact: when another active institution outside the holding company stores the same website host, open the homepage and ask whose it is before searching it. The homepage must name this institution (its distinctive name words plus its city or charter number); when it names exactly one other institution that way and not this one, the website is the other institution's: do not search it, do not count its host as this institution's own, and send the institution to the website search. Same-holding-company sites and a host that spells the institution's own or its holding company's name (a renamed bank's new domain, \"vallant.bank\" for Pinnacle Bank held by Vallant Financial) are its own.",
+    why: "The registry seed stored other institutions' websites for 5756 Bluegrass Community FCU (ukcreditunion.org), 4884 Metrowest Community FCU (stmaryscu.org) and 1903 First National Bank, Oldham SD (firstnationalbanks.bank, First National Bank, Fort Pierre's). Every finder trusted the website, and the other-bank check let the documents through because the host was this bank's own website too, so the other institution's schedules went live (52 fees, #1455) until Darwin's document-owner check took them down; the websites stayed wrong and the finders kept finding the same documents (Oct 5-18).",
+    evidence: { issues: [1455], prs: [2674], files: ["src/lib/agents/magellan/website-owner.ts", "src/lib/agents/magellan/other-bank-host.ts", "src/lib/agents/magellan/website-find.ts", "docs/project/findings/2026-10-25-website-is-another-institutions.md"] },
+    appliesTo: ["discover"],
+    since: "2026-10-25",
+  },
+  {
+    id: "issue-1944-opening-names-the-document",
+    agent: "magellan",
+    stage: "discover",
+    lesson: "Read what a document says it is before taking it as the schedule or a companion: when its first lines title it a loan, card or line-of-credit disclosure (\"TD Fit Personal Unsecured Consumer Loan Disclosure\") or say it applies to youth, teen or student accounts (\"disclosures apply to the Volt Teen Banking & Volt Banking accounts\"), it is not the institution's general personal schedule, whatever its address says, even when it lists fees by deposit names (NSF, monthly fee). A youth word in the address alone does not decide it: youth pages often carry the general schedule.",
+    why: "The companion finder and the fee-page check judged a document by its address and fee lines, and the shared classifier read only the address, so TD's td-fit-account-guide PDF (a loan disclosure) and Arbor Financial's Volt teen disclosures set live $0 NSF and $0 monthly fees the institutions' own schedules do not charge (#1944). On Oct 25, 48 live fees on 18 such documents at 16 institutions had passed every check.",
+    evidence: { issues: [1944], prs: [2671], files: ["src/lib/non-deposit-document.ts", "src/lib/agents/magellan/find-validate.ts", "src/lib/agents/magellan/second-document.ts", "docs/project/findings/2026-10-25-opening-names-non-general-documents.md"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
+  {
     id: "issue-1878-stated-date-not-read-date",
     agent: "magellan",
     stage: "discover",

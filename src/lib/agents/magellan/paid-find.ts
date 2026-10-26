@@ -28,7 +28,7 @@ import { LARGE_BANK_ASSETS, onBankDomain, websiteHost } from "./link-coverage";
 import { runScheduleSearch } from "./schedule-search";
 import { runWebsiteFind } from "./website-find";
 import { loadTopTenMissingIds, pickTopTenFirst, TOP_TEN_RETRY_DAYS } from "./top-ten-first";
-import { loadSharedNameIds } from "./other-bank-host";
+import { loadSharedNameIds, websiteOwnedElsewhereSql } from "./other-bank-host";
 import { blockedAnswerHostConfirmed, loadOwnHosts, onBankHosts } from "./own-hosts";
 import { domainRule, ownSiteDomains, webSearchToolFor } from "./web-search-tool";
 import { loadGroupGaps, WORK_LIST_POOL, workListDetail, workListPoolRankSql, type GroupGaps, type WorkListPlacement } from "@/lib/agents/state-expert/work-list";
@@ -200,6 +200,8 @@ async function selectBanks(db: typeof sql, stateCode: string | null, limit: numb
      WHERE COALESCE(inst.status, 'active') = 'active'
        AND (inst.fee_schedule_url IS NULL OR btrim(inst.fee_schedule_url) = '')
        AND inst.website_url IS NOT NULL AND btrim(inst.website_url) <> ''
+       -- Not a website judged another institution's (#1455, website-owner.ts).
+       AND NOT ${websiteOwnedElsewhereSql(db)}
        AND inst.rescue_status = 'dead'
        -- $10B+ banks, report requesters and state top-10 slot holders with nothing live are
        -- searched from any state's paid step: waiting for their own state's pass can take weeks.
