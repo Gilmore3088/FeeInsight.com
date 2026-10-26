@@ -226,4 +226,14 @@ export const MAGELLAN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-2062-conflicts-and-misses-steer-the-search",
+    agent: "magellan",
+    stage: "discover",
+    lesson: "When a later check proves the fee link's own page is not the bank's current word, search again: a price archived because another current document of the bank prices the same product newer means the link is out of date (search for the newer page, which may always replace it; any other page must state a later date), and a product-page fee the bank's schedule prices differently means the link should be the schedule (give it an upgrade search). Match the finding to the link's own current page, never to a companion, an old copy or the bank alone, so a finding about an old edition kept beside a good link changes nothing. When a search ends in a miss, the bank's next search on the same website runs the specialists that saw nothing last time after the others; it never skips one.",
+    why: "Hamilton's cross-page and product-page conflicts and Magellan's own search misses were written to pipeline_feedback with no reader (#2062): 19 stale_price rows at 12 banks, 2 schedule_conflict rows at 2 banks and 2,884 search_miss rows at 2,363 banks by 2026-10-26, so a link whose page lost a price conflict was never searched behind and a bank's next search repeated its last miss in the same order. 17 of the 19 stale_price rows and both schedule_conflict rows were about companion pages beside a current link, which is why the match is on the link's own page (#2558's audit-miss rule).",
+    evidence: { issues: [2062], prs: [], files: ["src/lib/agents/magellan/discovery.ts", "src/lib/agents/magellan/search-misses.ts", "src/lib/agents/learning/feedback-kinds.ts", "src/lib/agents/hamilton/cross-page-conflict.ts", "src/lib/agents/hamilton/product-page-conflict.ts"] },
+    appliesTo: ["discover"],
+    since: "2026-10-26",
+  },
 ];

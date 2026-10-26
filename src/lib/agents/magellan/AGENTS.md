@@ -78,6 +78,16 @@ Magellan owns institution source discovery and source fetching.
   rules to the state's stored pages (`reviewStoredCompanions`, up to 500): a page now ruled
   out (loan, HELOC, derivatives notice) is retired with reason `not_consumer_fee_page`, and
   a page named after its link text ("Download", "Product Details") is renamed from its URL.
+- Later checks steer the search (#2062; step detail `feedback_reads`). Hamilton's `stale_price`
+  (cross-page conflict: a price on the link's page archived because another current document of
+  the bank prices the product newer) sends the link to the freshness search, where the newer
+  document may always replace it and any other page must state a later date (`stalePriceReplaces`).
+  Hamilton's `schedule_conflict` (a product-page fee the schedule prices differently) gives the
+  link an upgrade search whatever its address. Both match only the link's own current page (its
+  address, or its main document while the remembered address agrees), never a companion or an old
+  copy, with the price still archived and one search per document, as audit misses are (#2558).
+  A bank's last `search_miss` on the same website runs the specialists that saw nothing then after
+  the others on its next search (`loadSearchMissDemotions`); nothing is skipped.
 - The free `discover` step runs in every hourly backlog run, not only the full pass, while
   the state has a bank due a free search; discovery's own backoff decides who is due. The
   paid find (`discover-paid`) stays on the full pass.
