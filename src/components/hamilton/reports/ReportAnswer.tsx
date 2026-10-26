@@ -165,7 +165,7 @@ export function ReportExhibitTable({ exhibit, number }: { exhibit: ReportExhibit
                 <th
                   key={i}
                   scope="col"
-                  className={`px-3 py-2 font-semibold ${kinds[i] === "figure" ? "text-right whitespace-nowrap" : "text-left"}`}
+                  className={`px-3 py-2 font-semibold ${kinds[i] === "figure" ? "text-right" : "text-left"}`}
                   style={{ color: "var(--hamilton-text-secondary)" }}
                 >
                   {column}
