@@ -7,6 +7,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const DARWIN_LESSONS: AgentLesson[] = [
   {
+    id: "issue-1513-read-what-knox-left-for-you",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "When Knox reads a live fee's own line again and gets a proper name under another category, that read is yours to act on: re-check the live fee against it on its own stored text. Re-file it under the new name and category only when exactly one proper read is on the line at its price, no read there keeps the live category, the category guard and amount checks accept the name, and the source check traces it at that price; take it down instead when another live fee of the bank already shows that line under the new category. Leave a move between overdraft and NSF to the paid-NSF convention, and never assume a fee moves \"on its next read\": a new read under a new category supersedes nothing that is live.",
+    why: "Knox's re-read pass settled the lines of 128668 (a $1 Overdraft Transfer Fee live as a non-network ATM fee), 85754 (a $10 Excess Withdrawal Fee live as account research) and 35970 (a $30 safe deposit box price live as a dormant account fee) as other_category, \"left for Darwin\", but no Darwin step read those rows, and Hamilton supersedes a live fee only by a new price in its own category, so all three stayed misfiled after #2677 said they would move on their next read (#1513).",
+    evidence: { issues: [1513], prs: [], files: ["src/lib/agents/darwin/reread-category-check.ts", "src/lib/agents/knox/reread-feedback.ts", "docs/project/findings/2026-10-26-reread-other-category-unread.md"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
+  {
     id: "issue-1111-pay-only-for-verdicts-that-act",
     agent: "darwin",
     stage: "verify",

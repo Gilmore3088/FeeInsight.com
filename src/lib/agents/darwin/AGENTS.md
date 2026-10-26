@@ -1227,6 +1227,24 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   matches 2, v2 adds 5 (105411, 105412, 49815, 110285, 142887 at institutions 156, 6110, 8577, 321),
   each one and its twin found on their own stored text by `checkFeeAgainstSource`, so the switch
   stays on.
+- Fees whose own line Knox's re-read files under another category (`reread-category-check.ts`, v1,
+  #1513). Knox's re-read pass settles such a request `other_category`, "left for Darwin", and until
+  this check nothing read those rows; a new read under a new category supersedes no live fee, so
+  the misfiled row stayed live (128668, 85754, 35970). Each verify step reads the live fees whose
+  re-read settled `other_category` and still carry that request's fragment name
+  (`REREAD_CATEGORY_ROWS_SQL`), reads the document's newest text with today's free team, and
+  re-files a fee in place (`refile`) when exactly one proper read is on its line at its price in
+  another category, no read keeps the live category, the guard and amount checks accept the name
+  and `checkFeeAgainstSource` traces it; takes it down (`twin`) when another live fee of the bank
+  already shows that line in the new category; and leaves an overdraft/NSF move
+  (`convention_pending`, the paid-NSF convention on #1513), a split, ambiguous or refused read alone.
+  `REREAD_CATEGORY_RECHECK_LIVE` is **off**; on, each move waits for the 12-hour second look (check
+  `darwin.reread_category`), a re-file is guarded on the old category and name and logged as
+  `reread_category_refiled`, and a takedown rolls back as `reread_category_twin: live fee #<twin>`
+  while the twin is live (verified row rejected with `darwin_reread_category`). Step detail
+  `reread_category_check`. Dry run 2026-10-26 (prod, read-only): 9 candidates; 2 re-file (128668,
+  85754), 1 comes down (35970, twin 158740), 1 convention_pending (60485), 5 split_read; see
+  docs/project/findings/2026-10-26-reread-other-category-unread.md.
 - Same-line copies beside their older line's replacement (`same-line-replacement-check.ts`, v1,
   #1673). Hamilton's same-line restore v1 brought a copy back once its older line was down, though
   that line had often come down for a newer line of the same fee (`refreshed by #`, `duplicate of
@@ -2255,6 +2273,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINE_CONFLICT_CHECK_VERSION` | `darwin.line_conflict` | v1 | `darwin/line-conflict-check.ts` |
 | `TRANSLATED_COPY_CHECK_VERSION` | `darwin.translated_copy` | v3 | `darwin/translated-copy-check.ts` |
 | `PRODUCT_PAGE_REPEAT_CHECK_VERSION` | `darwin.product_page_repeat` | v2 | `darwin/product-page-repeat-check.ts` |
+| `REREAD_CATEGORY_CHECK_VERSION` | `darwin.reread_category` | v1 | `darwin/reread-category-check.ts` |
 | `SAME_LINE_REPLACEMENT_CHECK_VERSION` | `darwin.same_line_replacement` | v1 | `darwin/same-line-replacement-check.ts` |
 | `SAME_LINE_READ_CHECK_VERSION` | `darwin.same_line_read` | v1 | `darwin/same-line-read-check.ts` |
 | `CANADIAN_DOCUMENT_CHECK_VERSION` | `darwin.canadian_document` | v1 | `darwin/canadian-document-check.ts` |
