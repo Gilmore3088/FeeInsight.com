@@ -453,7 +453,12 @@ import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 // (`gluedPricePair` in `custom-report/glued-price-pair.ts`). The stale-read floor stays at v97; Hamilton's rules re-check revisits
 // each live document once for the new signature, and a live fee read only from such a line goes to the
 // second look and comes down.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 128 } as const;
+// v129 (#1912, review of #2726): the account-subject read (v126) lets the fee's own line decide. Its own
+// line's subject wins over a different one on the line above, and the line above is read only when the
+// fee's own line names no account ("Basic Checking: the $5 monthly fee is waived ..." under "The
+// Everyday Savings account has a $5 monthly fee." is no longer the savings account's). Account product
+// only; the stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 129 } as const;
 
 export interface SpecialistRun {
   strategy: string;

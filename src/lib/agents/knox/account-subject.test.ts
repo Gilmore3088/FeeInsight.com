@@ -51,6 +51,17 @@ describe("accountSubjectProduct (#1912)", () => {
     }
   });
 
+  it("lets the fee's own line decide over the line above (Knox v129)", () => {
+    // Own line names another account, with no subject sentence: the line above is not read.
+    const named = "The Everyday Savings account has a $5 monthly fee.\n\nBasic Checking: the $5 monthly fee is waived with direct deposit.";
+    expect(accountSubjectProduct(named, "Basic Checking: the $5 monthly fee is waived with direct deposit.", 5)).toBeNull();
+    // Own line's subject wins over a different subject above.
+    const both = "The Everyday Savings account has a $5 monthly fee.\n\nThe Basic Checking account has a $5 monthly fee.";
+    expect(accountSubjectProduct(both, "The Basic Checking account has a $5 monthly fee.", 5)).toBe("Basic Checking");
+    // Own line names no account: the line above still decides (M&T).
+    expect(accountSubjectProduct(MT_PREFERRED_MONEY_MARKET_TEXT, MT_WAIVER_EXCERPT, 20, MT)).toBe("M&T Preferred Money Market");
+  });
+
   it("gives none when two subjects print the same price", () => {
     const text = "The Premier Savings account has a $5 monthly fee. The Gold Money Market account has a $5 monthly fee.\n\nThe $5 monthly fee is waived if:";
     expect(accountSubjectProduct(text, "The $5 monthly fee is waived if:", 5)).toBeNull();

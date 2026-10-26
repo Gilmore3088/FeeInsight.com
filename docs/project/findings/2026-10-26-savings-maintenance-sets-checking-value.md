@@ -36,8 +36,12 @@ checking or unassigned rows.
   137327 ("Fresh Start checking") and Aberdeen Proving Ground FCU 153281 ("Member Protect Checking").
   Once applied, M&T's value becomes $14.95.
 
+- Knox v129 (review of #2726): the fee's own line decides first. The line above is read only when the
+  fee's own line names no account, so a subject sentence above never overrides the account the fee's
+  own line names. The four rows above are unchanged.
+
 **Lesson:** a fee with no account counts as the bank's checking price, so read the account its own
 sentence names, and keep a savings account's own fee out of the checking value.
 
-**Agent lesson:** knox/issue-1912-account-named-in-fee-sentence
+**Agent lesson:** knox/issue-1912-account-named-in-fee-sentence, knox/issue-1912-own-line-account-first
 **Guard:** `src/lib/agents/knox/account-subject.test.ts`, `src/lib/agents/knox/account-subject-correct.test.ts`, `src/lib/account-kind.test.ts`, `src/lib/data-store/fee-stats.test.ts`

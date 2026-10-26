@@ -806,4 +806,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract"],
     since: "2026-10-26",
   },
+  {
+    id: "issue-1912-own-line-account-first",
+    agent: "knox",
+    stage: "extract",
+    lesson: "When reading which account a fee belongs to from the sentences around it, let the fee's own line decide first. Take an account from the line above only when the fee's own line names no account at all; if the fee's own line names a different account, the sentence above is about another product.",
+    why: "Knox v126 read the account a monthly fee's sentence names as subject from the fee's own line and the line above alike, so \"Basic Checking: the $5 monthly fee is waived ...\" under \"The Everyday Savings account has a $5 monthly fee.\" would have filed the checking fee under the savings account and set it out of the bank's checking value (review of #2726, #1912).",
+    evidence: { issues: [1912], prs: [2726], files: ["src/lib/agents/knox/lineup.ts", "src/lib/agents/knox/account-subject.test.ts"] },
+    appliesTo: ["extract"],
+    since: "2026-10-26",
+  },
 ];
