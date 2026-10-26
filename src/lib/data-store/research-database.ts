@@ -16,8 +16,9 @@ export interface ResearchFinancial {
 }
 export interface ResearchFee extends StatsInputRow { fee_category: string; charter_type: ResearchCharter; asset_size_tier: string | null }
 export interface ResearchArea { source: string; series_key: string; geo_code: string; period: string; value: number | null; unit: string; source_url: string | null }
-export interface ResearchLending { lei: string; county_fips: string; activity_year: number; originations: number; source_url: string | null }
+export interface ResearchLending { county_fips: string; activity_year: number; originations: number; lender_count: number; observation_count: number; source_url: string | null }
 export interface ResearchMacro { series_id: string; observation_date: string; value: number | null; units: string | null }
+export interface ResearchBranchSummary { vintage: string | null; branches: number; priced_branches: number; deposits: number | null; unmapped_branches: number }
 export interface ResearchInputs {
   capturedAt: string;
   institutions: ResearchInstitution[];
@@ -31,6 +32,7 @@ export interface ResearchInputs {
   lending?: ResearchLending[];
   macro?: ResearchMacro[];
   previous?: { capturedAt: string; cells: import("@/lib/research-database/types").ResearchCell[] } | null;
+  branchSummary?: ResearchBranchSummary | null;
 }
 
 /** Latest source-wide release, not each institution's last surviving office. Stale NCUA offices drop out.
@@ -76,7 +78,14 @@ export async function loadResearchInputs(request: ResearchRequest, db = getSql()
        WHERE regulatory_status IS DISTINCT FROM 'inactive' AND charter_type IN ('bank', 'credit_union') ORDER BY id`;
     const subject = request.institutionId === null ? null : allInstitutions.find(i => Number(i.id) === request.institutionId);
     if (request.scope === "footprint" && !subject) throw new Error("Active institution not found.");
-    const allBranches = await tx.unsafe<ResearchBranch[]>(RESEARCH_BRANCH_SQL);
+    // National research needs a bank-deposit fact, not every branch's address-level record.
+    const allBranches = request.scope === "national" ? [] : await tx.unsafe<ResearchBranch[]>(RESEARCH_BRANCH_SQL);
+    const [branchSummary] = request.scope === "national" && request.modules.includes("market") ? await tx<ResearchBranchSummary[]>`
+      SELECT MAX(year)::text AS vintage, COUNT(*) FILTER (WHERE county_fips IS NOT NULL)::int AS branches,
+             COUNT(*) FILTER (WHERE county_fips IS NOT NULL AND deposits IS NOT NULL)::int AS priced_branches,
+             SUM(deposits) FILTER (WHERE county_fips IS NOT NULL) * 1000.0 AS deposits,
+             COUNT(*) FILTER (WHERE county_fips IS NULL)::int AS unmapped_branches
+        FROM institution_branch_deposits WHERE year=(SELECT MAX(year) FROM institution_branch_deposits)` : [];
     const footprint = subject ? buildResearchFootprint(subject, allBranches) : null;
     if (footprint?.status === "unavailable") throw new Error("Footprint unavailable: no current branch counties could be established.");
     const counties = footprint?.counties ?? [];
@@ -119,11 +128,13 @@ export async function loadResearchInputs(request: ResearchRequest, db = getSql()
        ORDER BY source, series_key, geo_code` : [];
     const audit = buildResearchAudit(await getRegistryFeedFreshness(tx), new Date(capturedAt));
     const lending = request.modules.includes("market") ? await tx<ResearchLending[]>`
-      SELECT lei, county_fips, activity_year, SUM(originations)::int AS originations, MIN(source_url) AS source_url FROM hmda_lender_originations
+      SELECT county_fips, activity_year, SUM(originations)::bigint AS originations,
+             COUNT(DISTINCT lei)::int AS lender_count, COUNT(*)::int AS observation_count,
+             MIN(source_url) AS source_url FROM hmda_lender_originations
        WHERE activity_year = (SELECT MAX(activity_year) FROM hmda_lender_originations)
          AND county_fips IS NOT NULL
          AND (${request.scope === "national"} OR county_fips = ANY(${counties}::text[]))
-       GROUP BY lei, county_fips, activity_year ORDER BY lei, county_fips` : [];
+       GROUP BY county_fips, activity_year ORDER BY county_fips` : [];
     // Unlike transitional readers, published research excludes every FRED-era fallback row.
     const macro = request.modules.includes("market") ? await tx<ResearchMacro[]>`
       SELECT DISTINCT ON (e.series_id) e.series_id, e.observation_date, e.value, e.units
@@ -146,7 +157,7 @@ export async function loadResearchInputs(request: ResearchRequest, db = getSql()
          AND EXISTS (SELECT 1 FROM published_reports p WHERE p.job_id = report_jobs.id AND p.is_public = true)
        ORDER BY completed_at DESC LIMIT 1`;
     const previous = prior ? { capturedAt: prior.captured_at, cells: prior.cells } : null;
-    return JSON.parse(JSON.stringify({ capturedAt, institutions, footprint, branches, demographics, financials, fees, areas, audit, lending, macro, previous })) as ResearchInputs;
+    return JSON.parse(JSON.stringify({ capturedAt, institutions, footprint, branches, branchSummary: branchSummary ?? null, demographics, financials, fees, areas, audit, lending, macro, previous })) as ResearchInputs;
   }) as Promise<ResearchInputs>;
 }
 

@@ -105,10 +105,28 @@ The browser test starts a loopback-only S3 fixture; provider, billing and email 
 remain blank. Artifacts and screenshots are in `test-results/research-acceptance/`. Their
 economic values are synthetic fixtures and must never be published as research findings.
 
-The workspace's configured connection is `localhost:5433/bfi_test`, not production. Its stopped
-PostgreSQL container has been restored. Live coverage, real pilot findings and production
-publication remain unverified until the production project is connected. No production data
-or schema was changed during implementation.
+A read-only production audit on 2026-10-26 used the connected Fee Insight Supabase project
+`rmhwbbjjctzfaqjyhomu`. The national capture contains 8,519 active institutions, 8,512 current
+matched financial filings, 15,932 eligible fee rows and 3,222 covered ACS counties. Latest-year
+bank branches are aggregated in SQL for national reports; county lending is aggregated before
+capture. This keeps reproducible evidence within the 25 MB manifest limit.
+
+Three actual production-data drafts were rendered and replay-validated: national, Sunrise Banks
+(id 488; five branches, three counties), and Tampa Bay Federal Credit Union (id 4401; five
+branches, one county). The session deliverables are in
+`/workspace/shared/research/2026-10-26/`: PDFs, HTML, editorial briefs, normalized inputs,
+snapshots, CSV exhibits, read queries and a data-quality audit. These are distinct from the
+synthetic browser acceptance artifacts.
+
+Missing data remains explicit: seven active institutions lack matched current filings; national
+employment is withheld for a missing county. Population describes the covered ACS county
+universe. Branch deposits may include nonlocal funds booked at headquarters. Fee benchmark
+counts follow shared-schedule deduplication and are not population coverage estimates. Cohorts
+without an asset tier cannot publish financial benchmarks.
+
+No production data or schema was changed. Scheduling remains disabled, and all three PDFs are
+marked draft pending human editorial approval. Production publication and deployment have not
+yet been verified; the local release journeys above do not establish production publication.
 
 Copy review: neutral descriptions; every displayed statistic comes from a saved result; source
 periods, coverage and method are shown. CTAs describe paid customization without promises of

@@ -1,7 +1,13 @@
 /** Synthetic geography for research acceptance; loopback database only. */
-import { seedHamiltonFixtures, HOME, EXCLUDED, type FixtureDb } from "./fixtures";
+import { seedHamiltonFixtures, HOME, EXCLUDED, FIXTURE_USERS, type FixtureDb } from "./fixtures";
+export async function clearResearchPublications(db: FixtureDb) {
+  const users = Object.values(FIXTURE_USERS).map(user => String(user.id));
+  await db`DELETE FROM published_reports p USING report_jobs j
+    WHERE p.job_id=j.id AND j.params->>'edition'='research_v1' AND j.user_id::text=ANY(${users}::text[])`;
+}
 export async function seedResearchFixtures(db: FixtureDb) {
   const bank = EXCLUDED.find(i => i.charter === "bank")!;
+    await clearResearchPublications(db);
     await seedHamiltonFixtures(db);
     await db`INSERT INTO institution_branch_deposits (cert, year, branch_number, institution_id, county_fips, deposits)
       VALUES (9701015, 2026, 1, ${bank.id}, 12009, 1000), (9701015, 2026, 2, ${bank.id}, 12095, 2000)

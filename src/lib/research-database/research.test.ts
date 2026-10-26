@@ -42,6 +42,12 @@ describe("research calculations and frozen evidence", () => {
     const input = fixture(); input.demographics.pop();
     expect(assembleResearchSnapshot(request, input).cells.find(c => c.key === "population")?.value).toBeNull();
   });
+  it("uses a compact, measured national branch fact with its original coverage counts", () => {
+    const input = fixture(); input.footprint = null; input.branches = [];
+    input.branchSummary = { vintage: "2026", branches: 75859, priced_branches: 75859, deposits: 19050196416000, unmapped_branches: 0 };
+    const s = assembleResearchSnapshot({ ...request, scope: "national", institutionId: null }, input);
+    expect(s.cells.find(c => c.key === "bank_deposits")).toMatchObject({ value: 19050196416000, eligible: 75859, observed: 75859 });
+  });
   it("retains zero dollar fees and suppresses nine-institution cohorts", () => {
     const input = fixture();
     let s = assembleResearchSnapshot(request, input);
@@ -56,6 +62,13 @@ describe("research calculations and frozen evidence", () => {
     const s = assembleResearchSnapshot(request, input);
     expect(s.cells.filter(c => c.key === "asset_growth").map(c => c.value)).toEqual([100, 100]);
     expect(s.cells.filter(c => c.key === "equity_assets").map(c => c.value)).toEqual([10, 10]);
+  });
+  it("does not benchmark institutions whose asset-size cohort is unknown", () => {
+    const input = fixture();
+    input.institutions = input.institutions.map(i => ({ ...i, asset_size_tier: null }));
+    input.financials = input.financials.map(f => ({ ...f, asset_size_tier: null }));
+    const s = assembleResearchSnapshot(request, input);
+    expect(s.cells.filter(c => c.cohort.endsWith(":unclassified")).every(c => c.value === null)).toBe(true);
   });
   it("distinguishes new reporting periods from same-period values and fee catalog refreshes", () => {
     const input = fixture();

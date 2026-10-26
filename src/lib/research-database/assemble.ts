@@ -42,7 +42,9 @@ export function assembleResearchSnapshot(request: ResearchRequest, input: Resear
     "This is a snapshot of available evidence at capture time, not a reconstruction of what was known in an earlier period.",
     "A branch footprint describes physical presence, not the complete customer catchment or a credit union field of membership.",
     "Bank deposits exclude credit unions. Credit union branch deposits are unavailable and are never estimated.",
+    "Branch-assigned deposits can include nonlocal or online balances booked at a headquarters office. They do not measure resident household deposits or local demand.",
     "Fee benchmarks are verified-only consumer comparisons under the shared statistics contract; unknown-audience schedules remain included and provisional evidence is excluded.",
+    "Fee sample counts apply shared-schedule deduplication. They are counted benchmark observations, not a census of institutions in scope.",
     "Financial amounts are converted from stored thousands to dollars. Performance cohorts use current registry asset tiers and one latest quarter per regulator.",
     "Institution cohorts use the current active registry. Growth comparisons describe matched continuing reporters and do not adjust for mergers or survivor bias.",
     "Loan-to-deposit ratios are balance-sheet comparisons, not measures of local loan originations.",
@@ -51,13 +53,14 @@ export function assembleResearchSnapshot(request: ResearchRequest, input: Resear
     const definition = metricDefinition(key);
     const sources = definition.sources.filter(s => !(cohort.startsWith("bank:") && s === "ncua-financials") && !(cohort.startsWith("credit_union:") && s === "fdic-financials"));
     const blocked = sources.filter(s => s !== "published_fee_catalog").some(s => input.audit.some(a => a.source === s && a.status === "blocked"));
+    const incomparable = definition.module === "performance" && cohort.endsWith(":unclassified");
     const end = period ? periodEnd(period) : null;
     const age = end ? (new Date(input.capturedAt).getTime() - end.getTime()) / 86_400_000 : 0;
     const stale = age > definition.maxAgeDays;
-    const missing = observed === 0 || value === null || !Number.isFinite(value) || observed < min || blocked;
+    const missing = observed === 0 || value === null || !Number.isFinite(value) || observed < min || blocked || incomparable;
     cells.push({ key, cohort, value: missing ? null : value, period, eligible, observed,
       status: missing ? "unavailable" : observed < eligible || stale || input.footprint?.status === "partial" ? "limited" : "available",
-      note: blocked ? `${note} Source access or reuse is blocked.` : observed < min ? `${note} At least ${min} eligible observations are required.` : stale ? `${note} Reporting period is older than the metric freshness limit.` : note,
+      note: blocked ? `${note} Source access or reuse is blocked.` : incomparable ? `${note} Asset tier is unavailable, so a comparable size cohort cannot be established.` : observed < min ? `${note} At least ${min} eligible observations are required.` : stale ? `${note} Reporting period is older than the metric freshness limit.` : note,
       sourceUrls: [...new Set(sourceUrls.filter(url => {
         try { const parsed = new URL(url); return parsed.protocol === "https:" && !!parsed.hostname && !parsed.username && !parsed.password; }
         catch { return false; }
@@ -83,8 +86,10 @@ export function assembleResearchSnapshot(request: ResearchRequest, input: Resear
     }
     const bankBranches = input.branches.filter(b => b.branch_key.startsWith("bank:") && b.county_fips !== null);
     const deposits = bankBranches.map(b => finiteOrNull(b.deposits)).filter((v): v is number => v !== null && v >= 0);
-    add("bank_deposits", "Banks in market counties", deposits.length === bankBranches.length ? deposits.reduce((a, b) => a + b, 0) : null,
-      bankBranches[0]?.vintage ?? null, bankBranches.length, deposits.length, "Banks only. Each branch counted once; all deposits must be present.", ["https://banks.data.fdic.gov/bankfind-suite/SOD"]);
+    const summary = request.scope === "national" ? input.branchSummary : null;
+    add("bank_deposits", "Banks in market counties", summary ? summary.priced_branches === summary.branches ? finiteOrNull(summary.deposits) : null : deposits.length === bankBranches.length ? deposits.reduce((a, b) => a + b, 0) : null,
+      summary?.vintage ?? bankBranches[0]?.vintage ?? null, summary?.branches ?? bankBranches.length, summary?.priced_branches ?? deposits.length, "Banks only. Each branch counted once; all deposits must be present.", ["https://banks.data.fdic.gov/bankfind-suite/SOD"]);
+    if (summary?.unmapped_branches) limitations.push(`${summary.unmapped_branches} bank branches have no county identifier and are excluded from the county-based deposit total.`);
     for (const series of ["qcew_employment", "qcew_establishments"]) {
       const rows = input.areas.filter(a => a.series_key === series);
       const values = rows.map(a => finiteOrNull(a.value)).filter((v): v is number => v !== null && v >= 0);
@@ -92,8 +97,8 @@ export function assembleResearchSnapshot(request: ResearchRequest, input: Resear
         rows[0]?.period ?? null, counties.length, values.length, "BLS county annual averages. Suppressed or missing counties prevent a complete total.", rows.map(a => a.source_url ?? "https://www.bls.gov/cew/"));
     }
     const lending = input.lending ?? [];
-    add("mortgage_originations", "Reported lender-county cells", lending.length ? lending.reduce((sum, row) => sum + Number(row.originations), 0) : null,
-      lending[0]?.activity_year.toString() ?? null, lending.length, lending.length,
+    add("mortgage_originations", "Counties with reported lending", lending.length ? lending.reduce((sum, row) => sum + Number(row.originations), 0) : null,
+      lending[0]?.activity_year.toString() ?? null, counties.length, lending.length,
       "Reported HMDA observations only. This is not a completeness estimate for the mortgage market.", lending.map(r => r.source_url ?? "https://ffiec.cfpb.gov/data-browser/"));
   }
   if (request.modules.includes("performance")) {

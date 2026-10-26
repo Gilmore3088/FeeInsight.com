@@ -3,11 +3,13 @@
  * so a person can sign in by hand afterwards and look at the same data.
  */
 import { connectFixtureDb, teardownHamiltonFixtures } from "./fixtures";
+import { clearResearchPublications } from "./research-fixtures";
 
 export default async function globalTeardown(): Promise<void> {
   if (process.env.HAMILTON_E2E_KEEP === "1") return;
   const db = connectFixtureDb();
   try {
+    if (process.env.HAMILTON_E2E_REPORT_STORE) await clearResearchPublications(db);
     await teardownHamiltonFixtures(db);
   } finally {
     await db.end();
