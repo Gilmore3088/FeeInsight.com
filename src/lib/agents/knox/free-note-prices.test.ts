@@ -18,7 +18,7 @@ Official/Cashier’s Check (Free with Platinum Checking) | $5.00 | Overnight Mai
 
 describe("Knox v127: a free note waives a price for some, it is not \"no fee\" (#1918)", () => {
   it("is the version these reads ship under", () => {
-    expect(KNOX_RULES_STRATEGY.version).toBe(127);
+    expect(KNOX_RULES_STRATEGY.version).toBeGreaterThanOrEqual(127);
   });
 
   it("reads the price after a free-with or a-few-free note, as waivable", () => {

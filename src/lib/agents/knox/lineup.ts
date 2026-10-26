@@ -541,8 +541,8 @@ export function accountSubjectProduct(text: string, excerpt: string, amount: num
   const at = feeLineIndex(lines, excerpt);
   if (at < 0) return null;
   const cents = Math.round(amount * 100);
-  const found = new Set<string>();
-  for (const line of [lines[at], lines[at - 1]].filter((value): value is string => typeof value === "string")) {
+  const subjectsOn = (line: string) => {
+    const found = new Set<string>();
     for (const sentence of subjectSentences(line)) {
       const match = sentence.match(SUBJECT_SENTENCE);
       if (!match) continue;
@@ -556,8 +556,16 @@ export function accountSubjectProduct(text: string, excerpt: string, amount: num
       if (!readable || readable !== product || namesNoAccount(product, institutionName)) continue;
       found.add(product);
     }
-  }
-  return found.size === 1 ? [...found][0] : null;
+    return found;
+  };
+  // The fee's own line decides first. The line above is read only when the fee's own line names no
+  // account at all: "Basic Checking: the $5 monthly fee is waived ..." under "The Everyday Savings
+  // account has a $5 monthly fee." is Basic Checking's fee, not the savings account's (#1912 review).
+  const own = subjectsOn(lines[at]);
+  if (own.size > 0) return own.size === 1 ? [...own][0] : null;
+  if (lines[at - 1] == null || accountKind(lines[at])) return null;
+  const above = subjectsOn(lines[at - 1]);
+  return above.size === 1 ? [...above][0] : null;
 }
 
 /**

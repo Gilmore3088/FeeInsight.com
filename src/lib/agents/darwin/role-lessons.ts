@@ -460,4 +460,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-26",
   },
+  {
+    id: "issue-1912-rejected-wire-is-a-correction",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "A wire that is rejected, returned, recalled, amended or traced is a charge for fixing a wire, not the price of sending or receiving one. Refuse it under the four wire types, whatever direction or country it names, so it never sets a bank's wire value.",
+    why: "Apl FCU's \"Foreign Wire Reject\" $25 (67971) was live as an international outgoing wire beside the bank's real $40 price, pulling its wire value down: the guard refused a returned or recalled wire by name but had no word for a rejected one (guard v98, #1912).",
+    evidence: { issues: [1912], prs: [], files: ["src/lib/fee-category-guard.ts"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
 ];

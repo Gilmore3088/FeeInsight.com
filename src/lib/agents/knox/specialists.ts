@@ -17,6 +17,7 @@ import {
   type ExtractionRulesResult,
   type HeldFeeCandidate,
 } from "@/lib/agents/knox/rules";
+import { withoutGluedPricePairs } from "@/lib/custom-report/glued-price-pair";
 import { FAMILY_EXPERTS, priceWindows, runFamilyExpert } from "@/lib/agents/knox/families";
 import { newestColumnText } from "@/lib/fee-change-columns";
 import { namesALimit, namesAWorkedExample, passesDarwinChecks, readsAMeasuredAmount, tidyFeeName } from "@/lib/agents/knox/layout";
@@ -446,7 +447,18 @@ import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 // is rebuilt as one row per fee before any line is read (`withShiftedColumnsRebuilt`). The stale-read
 // floor stays at v97; Hamilton's rules re-check revisits each live document once for the new
 // signature and asks Knox to read again where these rules read a fee that is not live.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 127 } as const;
+// v128 (#1912): a line whose only price is two different prices glued into one cell ("Card Replacement
+// .....Share Draft Protest ..... $20.00$10.00", "...(PIN)Wire Transfers (incoming).... $ 2.00n/c*") is
+// two flattened columns whose price order is not the names' order, so it reads nothing
+// (`gluedPricePair` in `custom-report/glued-price-pair.ts`). The stale-read floor stays at v97; Hamilton's rules re-check revisits
+// each live document once for the new signature, and a live fee read only from such a line goes to the
+// second look and comes down.
+// v129 (#1912, review of #2726): the account-subject read (v126) lets the fee's own line decide. Its own
+// line's subject wins over a different one on the line above, and the line above is read only when the
+// fee's own line names no account ("Basic Checking: the $5 monthly fee is waived ..." under "The
+// Everyday Savings account has a $5 monthly fee." is no longer the savings account's). Account product
+// only; the stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 129 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -672,7 +684,8 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
   // must be supported by the stored row itself: "Courtesy Pay $20 $30 ..." at $30 is held untraced.
   // v106: "$03" is a $0 price with its footnote glued on (`withGluedFootnotePrices`, #1946).
   // v116: a card program section's price rows are no specialist's to read (`withoutCardProgramSections`).
-  const checkText = withSidewaysBoxTable(withBoxSizeCellsSplit(withoutBusinessOnlyFees(joinLabeledFeeCardText(withGluedFootnotePrices(withoutCardProgramSections(sourceText))))));
+  // v128 (#1912): a line whose only price is two different prices glued together reads nothing (`withoutGluedPricePairs`).
+  const checkText = withSidewaysBoxTable(withBoxSizeCellsSplit(withoutBusinessOnlyFees(joinLabeledFeeCardText(withGluedFootnotePrices(withoutCardProgramSections(withoutGluedPricePairs(sourceText)))))));
   // v115 (#1905): an ATM network table's rows are read only by their non-network column
   // (`withNetworkColumnFees`); no other reader sees them, so none takes another column's price.
   const text = withoutNetworkTableRows(withTierColumnRows(checkText));
