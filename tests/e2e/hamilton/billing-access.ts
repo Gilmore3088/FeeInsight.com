@@ -226,6 +226,7 @@ export const ROUTES: RouteEntry[] = [
   // Hamilton pages.
   page("pro/page.tsx", "/pro", "Hamilton entry (redirects to /pro/hamilton)"),
   page("pro/reports/new/page.tsx", "/pro/reports/new", "Old new-report address (redirects to Reports)"),
+  page("pro/(hamilton)/reports/research/page.tsx", "/pro/reports/research", "Institution footprint research"),
   page("pro/(hamilton)/hamilton/page.tsx", "/pro/hamilton", "Hamilton home"),
   page("pro/(hamilton)/analyze/page.tsx", "/pro/analyze", "Ask (analyze)"),
   page("pro/(hamilton)/research/page.tsx", "/pro/research", "Research (redirects to Ask)"),
@@ -277,6 +278,9 @@ export const ROUTES: RouteEntry[] = [
   { file: "api/reports/[id]/status/route.ts#PATCH", kind: "internal_secret", label: "Report job callback", probes: [json("PATCH", `/api/reports/${TOKENS.ownJob}/status`)] },
   { file: "api/reports/generate/route.ts", kind: "admin_api", label: "Queue a report job", probes: [json("POST", "/api/reports/generate")] },
   { file: "api/reports/catalog/route.ts", kind: "public", label: "Public report catalog", probes: [get("/api/reports/catalog")] },
+  { file: "api/reports/research/[slug]/pdf/route.ts", kind: "public", label: "Public research PDF", probes: [get("/api/reports/research/missing/pdf")] },
+  { file: "api/pro/research/[id]/export/route.ts", kind: "session_api", label: "Research export (owner; pending job answers 409)", probes: [get(`/api/pro/research/${TOKENS.ownJob}/export`)] },
+  { file: "api/pro/research/[id]/pdf/route.ts", kind: "session_api", label: "Research PDF (owner; pending job answers 409)", probes: [get(`/api/pro/research/${TOKENS.ownJob}/pdf`)] },
     // Not sent: public lead capture, limited to 8 posts per visitor per 10 minutes (rate-limit.ts).
   { file: "api/reports/email-gate/route.ts", kind: "public", label: "Sample report email gate (lead capture; not sent)", probes: [] },
 
@@ -406,6 +410,7 @@ const routeOnly = (file: string, name: string, reason: string): ActionEntry => (
 const sent = (file: string, name: string, args = "[]"): ActionEntry => ({ file: `${A}/${file}`, name, kind: "premium", args });
 
 export const ACTIONS: ActionEntry[] = [
+  { file: "pro/(hamilton)/reports/research/actions.ts", name: "customizeResearchReport", kind: "not_sent", reason: "Needs a canonical institution and queues a research job; checks canAccessPremium in its own body. Tested separately with authenticated ownership fixtures." },
   sent("analyze/actions.ts", "listSavedAnalyses"),
   sent("analyze/actions.ts", "loadAnalysisRecord", `["${ACTION_TOKENS.ownAnalysis}"]`),
   sent("analyze/actions.ts", "loadAnalysis", `["${ACTION_TOKENS.ownAnalysis}"]`),

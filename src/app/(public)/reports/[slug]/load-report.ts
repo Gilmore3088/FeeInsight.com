@@ -11,6 +11,7 @@ export interface PublicReportRow {
   published_at: string;
   is_public: boolean;
   artifact_key: string | null;
+  data_manifest?: unknown;
 }
 
 /**
@@ -29,7 +30,8 @@ export const loadPublicReport = cache(async (slug: string): Promise<PublicReport
       pr.title,
       pr.published_at,
       pr.is_public,
-      rj.artifact_key
+      rj.artifact_key,
+      rj.data_manifest
     FROM published_reports pr
     JOIN report_jobs rj ON pr.job_id = rj.id
     WHERE pr.slug = ${slug}

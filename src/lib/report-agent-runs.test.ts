@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { sqlMock, startAgentRunMock, assertAutomationEnabledMock } = vi.hoisted(() => ({
+const { sqlMock, startAgentRunMock, assertAutomationEnabledMock, assertPipelineEnabledMock } = vi.hoisted(() => ({
   sqlMock: vi.fn(),
   startAgentRunMock: vi.fn(),
   assertAutomationEnabledMock: vi.fn(),
+  assertPipelineEnabledMock: vi.fn(),
 }));
 
 vi.mock("./data-store/connection", () => ({
@@ -11,6 +12,7 @@ vi.mock("./data-store/connection", () => ({
 }));
 vi.mock("./automation-control", () => ({
   assertAutomationEnabled: assertAutomationEnabledMock,
+  assertPipelineEnabled: assertPipelineEnabledMock,
 }));
 vi.mock("./agents/run-store", () => ({
   startAgentRun: startAgentRunMock,
@@ -27,6 +29,7 @@ describe("agentic report job envelope", () => {
       steps: [],
     });
     assertAutomationEnabledMock.mockReset().mockResolvedValue({ enabled: true });
+    assertPipelineEnabledMock.mockReset().mockResolvedValue({ enabled: true });
   });
 
   it("creates a Hamilton report run and links it to report_jobs", async () => {
@@ -68,6 +71,21 @@ describe("agentic report job envelope", () => {
 
     expect(startAgentRunMock).not.toHaveBeenCalled();
     expect(sqlMock).not.toHaveBeenCalled();
+  });
+
+  it("queues deterministic research under the pipeline control without consulting provider safety", async () => {
+    const params = { edition: "research_v1", research: { scope: "national", cadence: "quarterly" } };
+    expect((await triggerReportJob("research-1", "national_index", params, "admin")).success).toBe(true);
+    expect(assertAutomationEnabledMock).not.toHaveBeenCalled();
+    expect(assertPipelineEnabledMock).toHaveBeenCalledOnce();
+    expect(startAgentRunMock.mock.calls[0][0].steps.map((step: { key: string }) => step.key)).toEqual(["research-render", "research-verify", "report-close"]);
+  });
+
+  it("refuses research when its deterministic pipeline is paused", async () => {
+    assertPipelineEnabledMock.mockRejectedValueOnce(new Error("Pipeline is paused"));
+    const result = await triggerReportJob("research-2", "national_index", { edition: "research_v1", research: { scope: "national", cadence: "quarterly" } }, "admin");
+    expect(result).toEqual({ success: false, error: "Pipeline is paused" });
+    expect(startAgentRunMock).not.toHaveBeenCalled();
   });
 
   it("does not create legacy peer brief runs outside Hamilton Reports", async () => {

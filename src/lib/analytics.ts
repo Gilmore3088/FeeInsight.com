@@ -4,8 +4,12 @@
  * layout is always mounted). Safe on the server, and never throws.
  */
 import { track } from "@vercel/analytics";
+import { researchAttribution } from "./research-database/attribution";
 
 export type AnalyticsEvent =
+  | "research_report_view"
+  | "research_pdf_download"
+  | "research_analysis_complete"
   | "create_account"
   /** A submitted report request (fires only after the server accepts it). */
   | "request_report"
@@ -59,7 +63,9 @@ export type AnalyticsProps = Record<string, string | number | boolean>;
 export function trackEvent(event: AnalyticsEvent, props?: AnalyticsProps): void {
   if (typeof window === "undefined") return;
   try {
-    track(event, props);
+    let attributed = props;
+    try { attributed = researchAttribution(event, props ?? {}, window.localStorage); } catch { /* Storage can be disabled. */ }
+    track(event, attributed);
   } catch {
     // Analytics must never break the page.
   }

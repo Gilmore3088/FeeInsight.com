@@ -36,7 +36,7 @@ vi.mock("@/lib/data-store/connection", () => {
     withTransaction: async (callback: (t: typeof tx) => Promise<unknown>) => {
       m.inTx = true;
       try {
-        return await callback(tx);
+        return await callback(Object.assign(tx, { json: (value: unknown) => value }));
       } finally {
         m.inTx = false;
       }
@@ -46,6 +46,8 @@ vi.mock("@/lib/data-store/connection", () => {
 
 import { cancelAgentRun } from "@/lib/agents/run-store";
 import { cancelReport, publishReport } from "./actions";
+import { assembleResearchSnapshot } from "@/lib/research-database/assemble";
+import { parseResearchRequest } from "@/lib/research-database/types";
 
 const tied = { printed: { figures: [] }, reconciliation: { ties_out: true } };
 const inserts = () => m.calls.filter((call) => call.text.includes("INSERT INTO published_reports"));
@@ -82,6 +84,22 @@ describe("cancelReport (#1271)", () => {
 });
 
 describe("publishReport (#1259)", () => {
+  it("records the human reviewer and frozen evidence hash when publishing research", async () => {
+    const input = { capturedAt: "2026-10-26T00:00:00Z", institutions: [], branches: [], footprint: null, audit: [], financials: [], fees: [], areas: [], demographics: [{ geo_id: "county:01001", geo_name: "County", year: 2024, total_population: 42, median_household_income: 100 }] };
+    const snapshot = assembleResearchSnapshot(parseResearchRequest({ scope: "national", cadence: "quarterly", modules: ["market"] }), input);
+    m.job = { status: "complete", report_type: "national_index", params: { edition: "research_v1" }, data_manifest: { research_snapshot: snapshot, research_inputs: input, research_verification: { verified: true, kind: "frozen_input_replay", snapshotHash: snapshot.snapshotHash } } };
+    expect((await publishReport("job-1", "Research Outlook", "national_index")).success).toBe(true);
+    const review = m.calls.find(c => c.text.includes("data_manifest = data_manifest ||"));
+    expect(review?.values[0]).toMatchObject({ research_editorial_review: { reviewerId: 1, snapshotHash: snapshot.snapshotHash } });
+    expect(m.calls.every(c => c.inTx)).toBe(true);
+  });
+
+  it("does not let an incomplete research manifest use the legacy reconciliation gate", async () => {
+    m.job = { status: "complete", params: { edition: "research_v1" }, data_manifest: tied };
+    expect((await publishReport("job-1", "Research Outlook", "national_index")).success).toBe(false);
+    expect(inserts()).toHaveLength(0);
+  });
+
   it("locks the job, checks it and inserts in one transaction", async () => {
     m.job = { status: "complete", data_manifest: tied };
     const result = await publishReport("job-1", "National Fee Index", "national_index");

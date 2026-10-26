@@ -165,6 +165,7 @@ import { runStateExpertStep } from "./state-expert/step";
 import { workListLedger } from "./state-expert/work-list";
 import { tallyByInstitution, type Sample } from "./flow-model";
 import { runReportCloseStep, runReportReconcileStep, runReportRenderStep } from "@/lib/report-engine/render-job";
+import { runResearchRender, runResearchVerify } from "@/lib/research-database/run";
 import type {
   AdminAgent,
   AgentRunEventSnapshot,
@@ -3128,6 +3129,10 @@ async function executeAgenticStep(
     }
     case "report-render":
       return runReportRenderStep(tx, stringRunParam(params, ["report_job_id"]));
+    case "research-render":
+      return runResearchRender(tx, stringRunParam(params, ["report_job_id"]));
+    case "research-verify":
+      return runResearchVerify(tx, stringRunParam(params, ["report_job_id"]));
     case "report-reconcile":
       return runReportReconcileStep(tx, stringRunParam(params, ["report_job_id"]));
     case "report-close":
@@ -3887,6 +3892,8 @@ const STEP_EXPECTED_MS: Record<string, number> = {
   read: 30_000,
   discover: 135_000,
   "report-render": 110_000,
+  "research-render": 110_000,
+  "research-verify": 60_000,
   rescue: 110_000,
   "extract-paid": 80_000,
   "verify-paid": 10_000,
@@ -4333,6 +4340,8 @@ export async function executeAgentRun(
           // A blocked report is marked failed and then the step throws; outside a
           // transaction, so the job keeps its failed status and recorded findings.
           step.stepKey === "report-reconcile" ||
+          step.stepKey === "research-render" ||
+          step.stepKey === "research-verify" ||
           // The lane sync writes through its own statements; a step transaction would sit idle.
           step.stepKey === "lane-sync" ||
           // A person's bounded HMDA repair verifies its source before opening its own transaction.

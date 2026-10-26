@@ -14,6 +14,8 @@ entry has no line here, or when a line links a finding that does not exist.
 Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 [Agent role lessons](#agent-role-lessons) · [Before 2026-10-10](#before-2026-10-10)
 
+- 2026-10-26 — Research verification must compare against the untouched saved manifest; fixture checks are supplemented by a real PostgreSQL lifecycle test. — [finding](findings/2026-10-26-research-verification-preimage.md) — research run and database acceptance tests
+
 ## Decisions
 
 191 entries, newest first. The full text, who decided and why are in [DECISIONS.md](DECISIONS.md).
