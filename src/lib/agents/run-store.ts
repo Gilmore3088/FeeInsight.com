@@ -452,10 +452,11 @@ async function executeAgenticStep(
     return { status: "completed", summary: gateReplaySummaryLine(result), detail: { ...result } };
   }
 
-  // Hamilton's one-off paid gate replay batch (#1077): a provider step, capped at 200 samples and $40 for the batch.
+  // Hamilton's one-off paid gate replay batch (#1077): a provider step, capped per batch (batch 2026-10-26: 50 written answers, $25).
+  // A run started for an earlier batch starts nothing (its params' batch_id is not the current batch's).
   if (step.stepKey === "hamilton-paid-gate-replay") {
     const { runPaidGateReplay, paidReplaySummaryLine } = await import("@/lib/hamilton/paid-gate-replay");
-    const result = await runPaidGateReplay({ agentRunId: run.id });
+    const result = await runPaidGateReplay({ agentRunId: run.id, runBatchId: params.batch_id });
     return { status: "completed", summary: paidReplaySummaryLine(result), detail: { ...result } };
   }
 

@@ -186,19 +186,25 @@ Hamilton supports the decision; it does not make it.
   apart from readers'. Runs pick up where the last stopped; none starts once the day is complete.
   No model calls; it covers the free Ask path only.
 - The paid gate replay batch (`hamilton/paid-gate-replay.ts`, provider step
-  `hamilton-paid-gate-replay`, #1077) is one batch, never a schedule: James approved about 200
-  samples, about $35, on 2026-10-25. It writes up the gate replay's plan (Pro questions first, then
-  the quality bar over a spread seeded by the batch id) through the paid eval's own paths, in the
-  mix 100 written answers, 50 memos, 25 Simulate reads, 25 report pages, and records each shadow
-  with `origin: "replay_paid"`. Every sample is reserved before its first call
-  (`paid_replay.sample_reserved`, under the batch's advisory lock) and refused past 200 samples,
+  `hamilton-paid-gate-replay`, #1077) runs one batch at a time, each with James's yes. The first,
+  `2026-10-25` (about 200 samples, about $35), ended at $39.47 of $40. The current batch,
+  `2026-10-26` (James, 2026-10-26), measures the written answer's hold rate after the gate fixes
+  #2696, #2699, #2700 and #2701: 50 written answers and $25, every other path's share 0 (a path at 0
+  never reserves and never holds completion back). It writes up the gate replay's plan (Pro
+  questions first, then the quality bar over a spread seeded by the batch id) through the paid
+  eval's own paths and records each shadow with `origin: "replay_paid"`. Every read of the ledger
+  is scoped to the batch id (reservations, usage by subject prefix, shadows by sample key, the
+  active run), so an earlier batch never counts. Every sample is reserved before its first call
+  (`paid_replay.sample_reserved`, under the batch's advisory lock) and refused past 50 samples,
   past 8 in flight across every run, or when the batch's charge plus the next sample's worst-case
-  ceiling would pass $40; the charge counts a sample's recorded cost only when it finished and every
+  ceiling would pass $25; the charge counts a sample's recorded cost only when it finished and every
   usage row completed with a cost, else its full ceiling. `?paid=1` runs it at once (returning a
-  running batch run rather than starting another), and the hourly gate replay call continues it once
-  the day's free plan is complete; once the batch is complete or capped, no run starts again. A new batch needs a
-  new `PAID_REPLAY_BATCH_ID` and James's yes. Its calls are budgeted and recorded as agent
-  `hamilton_replay` with no route (`agent:hamilton_replay`, $40, migration 20270110000078), never
+  running batch run rather than starting another); a cron calls it every 10 minutes for batch
+  2026-10-26, and the hourly gate replay call continues it once the day's free plan is complete;
+  once the batch is complete or capped, no run starts again. A new batch needs a new
+  `PAID_REPLAY_BATCH_ID` and James's yes. Its calls are budgeted and recorded as agent
+  `hamilton_replay` with no route (`agent:hamilton_replay`, $40 a day, $65 a month, migrations
+  20270110000078 and 20270110000081), never
   on the live readers' route lines or `agent:hamilton`.
 - The paid answer eval (`hamilton/paid-answer-eval.ts`, provider step `hamilton-paid-answer-eval`,
   cron once a day, `/api/admin/crew/answer-eval-paid`, #1079) writes at most five memos a day
