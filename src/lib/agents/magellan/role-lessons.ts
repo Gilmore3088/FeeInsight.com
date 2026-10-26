@@ -12,7 +12,7 @@ export const MAGELLAN_LESSONS: AgentLesson[] = [
     stage: "fetch",
     lesson: "Before remembering a fetched or found address as the bank's current source, look at the bank's own rejected list: a fetch or a search is no verdict on the page, so an address the pipeline rejected stays off the current source (left empty) until a read judges its text a fee page again. Only that read, or a person's link, takes an address off the rejected list.",
     why: "The fetch wrote every fetched address, ok or failed, as the profile's current source without looking at `rejected_source_urls`, and the profile sync and discovery did the same, so a page sent back as not a fee schedule, a 403 or another bank's host came back as current: 26 profiles on Oct 26 held a current source on their own rejected list (10 with no current text read from it), and Magellan's fetch then asked for the rejected address first on every pass. Deming's daily check missed them all, testing the list for a bare string when its entries are { url } objects.",
-    evidence: { issues: [1105], prs: [], files: ["src/lib/agents/learning/rejected-sources.ts", "src/lib/agents/magellan/fetch.ts", "src/lib/agents/magellan/discovery.ts", "src/lib/agents/state-lane-memory.ts"] },
+    evidence: { issues: [1105], prs: [2740], files: ["src/lib/agents/learning/rejected-sources.ts", "src/lib/agents/magellan/fetch.ts", "src/lib/agents/magellan/discovery.ts", "src/lib/agents/state-lane-memory.ts"] },
     appliesTo: ["fetch", "discover"],
     since: "2026-10-26",
   },
