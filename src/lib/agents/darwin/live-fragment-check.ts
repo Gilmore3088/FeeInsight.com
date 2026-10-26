@@ -9,7 +9,7 @@ import {
   writeLiveRenames,
   type RetidyRename,
 } from "@/lib/agents/knox/name-retidy";
-import { liveFragmentName, liveFragmentShape, type LiveFragmentPattern } from "@/lib/fee-name-fragments";
+import { liveFragmentName, liveFragmentShape, liveQualifiedFragmentShape, type LiveFragmentPattern } from "@/lib/fee-name-fragments";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
 import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 
@@ -107,6 +107,16 @@ export const LIVE_FRAGMENT_CHECK = "darwin.live_fragment_check";
  * `countLiveFragmentNames`). Set to false and the pass only reports.
  */
 export const FRAGMENT_NAME_TAKEDOWN_LIVE = true;
+/**
+ * #1443 (Knox v119): the end shapes a closing qualifier hid ("Late Fee up to (see schedule)",
+ * "Overdraft fee of (per item)"; `liveQualifiedFragmentShape` reads the name without the closed
+ * parentheticals that end it) join the check only with this switch on. Off, each step reports what
+ * they would do (`qualifiedShadow`, ledger `qualified_shadow`: the matches that are new or change
+ * action, by action and pattern, with samples) and acts on nothing it did not act on before. It
+ * goes on with James's go, after the dry-run count. The count SQL (`liveFragmentCountSql`) counts
+ * the check as it runs with the switch off.
+ */
+export const QUALIFIED_FRAGMENT_TAKEDOWN_LIVE = false;
 /** Live fees read per step. A name-only regex read, so a large share; the live table takes about (live fees / 2,000) steps a pass. */
 export const LIVE_FRAGMENT_BATCH = 2_000;
 export const LIVE_FRAGMENT_SAMPLES = 20;
@@ -383,9 +393,12 @@ export const LIVE_FRAGMENT_REDUCED_WORDING = /\b(?:lower(?:ed|s)?|half)\b/i;
  */
 export const LIVE_FRAGMENT_CAPS_ARTICLE = /^[^a-z]*\s(?:IS|OF|FOR|TO|WITH|BE|BY|CHARGE[DS]|ASSESS(?:ED)?|INCUR)\s(?:A|AN|THE)$/;
 /** The shape this check reads: Knox's, with `LIVE_FRAGMENT_CAPS_ARTICLE` as a `sentence_end` ahead of `pronoun`. */
-export function liveFragmentCheckShape(name: string | null | undefined): LiveFragmentPattern | null {
+export function liveFragmentCheckShape(name: string | null | undefined, qualified = false): LiveFragmentPattern | null {
   const shape = liveFragmentShape(name);
   if (shape === "plus" || shape === "trailing_range" || shape === "sentence_end") return shape;
+  // #1443 (Knox v119): an end shape a closing qualifier hid comes ahead of `pronoun`, as end shapes do.
+  const hidden = qualified ? liveQualifiedFragmentShape(name) : null;
+  if (hidden) return hidden;
   return LIVE_FRAGMENT_CAPS_ARTICLE.test((name ?? "").replace(/\s+/g, " ").trim()) ? "sentence_end" : shape;
 }
 /** v6 (129443): a balance band ("more than or equal to but less than") is the fee's own tier. */
@@ -599,6 +612,8 @@ export interface LiveFragmentFindings {
   renameDuplicateSamples: LiveFragmentSample[];
   /** Up to `LIVE_FRAGMENT_SAMPLES` of every match, in id order. */
   samples: LiveFragmentSample[];
+  /** #1443: what the qualified shapes would add (null when `QUALIFIED_FRAGMENT_TAKEDOWN_LIVE` is on and they are in the read). */
+  qualifiedShadow: LiveFragmentQualifiedShadow | null;
 }
 
 export interface LiveFragmentResult extends LiveFragmentFindings {
@@ -668,9 +683,10 @@ export function liveFragmentVerdictDetail(
   name: string | null | undefined,
   amount: number | null,
   canonicalFeeKey: string | null = null,
+  qualified = QUALIFIED_FRAGMENT_TAKEDOWN_LIVE,
 ): { verdict: LiveFragmentVerdict; amountRefused: boolean } | null {
   const verdict = (found: LiveFragmentVerdict, amountRefused = false) => ({ verdict: found, amountRefused });
-  const pattern = liveFragmentCheckShape(name);
+  const pattern = liveFragmentCheckShape(name, qualified);
   if (!pattern) return null;
   if (pattern === "pronoun" && !liveFragmentName(name)) return verdict({ pattern, action: "exempt", exemptReason: "parenthetical" });
   const current = (name ?? "").replace(/\s+/g, " ").trim();
@@ -815,7 +831,42 @@ function fragmentLineKey(twinKey: string | null, fragmentName: string): string |
  * from the same document and the same line (the same stored fragment name). Any other collision is
  * kept live as a `reread`: on prod 4 of 24 duplicates took down another account's fee.
  */
-export function findLiveFragments(rows: LiveFragmentRow[], liveNames: ReadonlySet<string> = new Set()): LiveFragmentFindings & { matches: LiveFragmentSample[] } {
+export function findLiveFragments(
+  rows: LiveFragmentRow[],
+  liveNames: ReadonlySet<string> = new Set(),
+  options: { qualified?: boolean } = {},
+): LiveFragmentFindings & { matches: LiveFragmentSample[] } {
+  const qualified = options.qualified ?? QUALIFIED_FRAGMENT_TAKEDOWN_LIVE;
+  const found = scanLiveFragments(rows, liveNames, qualified);
+  return { ...found, qualifiedShadow: qualified ? null : qualifiedShadowOf(found.matches, scanLiveFragments(rows, liveNames, true).matches) };
+}
+
+/**
+ * #1443 (Knox v119): what the qualified shapes would add while `QUALIFIED_FRAGMENT_TAKEDOWN_LIVE` is
+ * off: every match of the qualified read that the step's own read does not make, or makes with
+ * another action. Reported only.
+ */
+export interface LiveFragmentQualifiedShadow {
+  matched: number;
+  byAction: Record<LiveFragmentAction, PatternCounts>;
+  samples: LiveFragmentSample[];
+}
+function qualifiedShadowOf(base: LiveFragmentSample[], wider: LiveFragmentSample[]): LiveFragmentQualifiedShadow {
+  const before = new Map(base.map((fee) => [fee.feePublishedId, fee]));
+  const added = wider.filter((fee) => {
+    const prior = before.get(fee.feePublishedId);
+    return !prior || prior.action !== fee.action || prior.pattern !== fee.pattern;
+  });
+  const byAction = emptyByAction();
+  for (const fee of added) byAction[fee.action][fee.pattern] += 1;
+  return { matched: added.length, byAction, samples: added.slice(0, LIVE_FRAGMENT_SAMPLES) };
+}
+
+function scanLiveFragments(
+  rows: LiveFragmentRow[],
+  liveNames: ReadonlySet<string>,
+  qualified: boolean,
+): Omit<LiveFragmentFindings, "qualifiedShadow"> & { matches: LiveFragmentSample[] } {
   const byPattern = emptyPatterns();
   const byAction = emptyByAction();
   const samplesByAction = emptySamples();
@@ -834,7 +885,7 @@ export function findLiveFragments(rows: LiveFragmentRow[], liveNames: ReadonlySe
   for (const row of ordered) {
     const amount = num(row.amount);
     const canonicalFeeKey = row.canonical_fee_key ?? null;
-    const detail = liveFragmentVerdictDetail(row.fee_name, amount, canonicalFeeKey);
+    const detail = liveFragmentVerdictDetail(row.fee_name, amount, canonicalFeeKey, qualified);
     if (!detail) continue;
     const { verdict } = detail;
     let { action } = verdict;
@@ -926,7 +977,9 @@ const LIVE_FRAGMENT_SQL_SPACES_LITERAL = `U&'${[...LIVE_FRAGMENT_SQL_SPACES].map
  * one of the new names. Null when the read fails.
  */
 async function liveNamesFor(db: SqlTag, rows: LiveFragmentRow[]): Promise<Set<string> | null> {
-  const candidates = findLiveFragments(rows).matches.filter((fee) => fee.renameTo != null && fee.action !== "exempt");
+  // #1443: the qualified read's renames too, so its shadow counts duplicates as the step would.
+  const candidates = [...scanLiveFragments(rows, new Set(), false).matches, ...scanLiveFragments(rows, new Set(), true).matches]
+    .filter((fee) => fee.renameTo != null && fee.action !== "exempt");
   if (candidates.length === 0) return new Set();
   try {
     const existing = await inSavepoint(db, (scope) => scope<{ institution_id: number | string; canonical_fee_key: string | null; amount: number | string | null; fee_name: string; source_document_id?: number | string | null }[]>`
@@ -1253,6 +1306,12 @@ export function liveFragmentFindingsDetail(found: LiveFragmentFindings) {
       reread: found.samplesByAction.reread.map(sampleDetail),
     },
     samples_rename_duplicate: found.renameDuplicateSamples.map(sampleDetail),
+    qualified_takedown_live: QUALIFIED_FRAGMENT_TAKEDOWN_LIVE,
+    qualified_shadow: found.qualifiedShadow && {
+      matched: found.qualifiedShadow.matched,
+      by_action: found.qualifiedShadow.byAction,
+      samples: found.qualifiedShadow.samples.map(sampleDetail),
+    },
   };
 }
 

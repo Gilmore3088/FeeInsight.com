@@ -308,8 +308,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A consumer comparison needs the payer checked as well as the category. — [finding](findings/2026-10-09-business-wire-as-consumer-price.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 - 2026-10-09 — Returned bonds and coupons were filed as NSF. — [finding](findings/2026-10-09-bond-return-filed-nsf.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 
-### Verification and publication (51)
+### Verification and publication (52)
 
+- 2026-10-25 — Put a publish gate in the writer every path shares, not in one caller: refresh copy v1 wrote 264 live rows past the name hold (Oct 9–13); a closing note also hid a cut name's dangling "up to" from Knox (#1443). — [finding](findings/2026-10-25-publish-name-hold-bypass.md) — Agent lesson: hamilton/issue-1443-hold-in-the-writer, knox/issue-1443-qualifier-after-a-cut; Guard: `src/lib/agents/hamilton/publish.admin-hold.test.ts`, `src/lib/agents/knox/cutoff-shape.test.ts`
 - 2026-10-25 — A takedown that names another line is not undone just because that line is down: follow its takedown to the line that replaced it and keep the fee down while that replacement is live at its category and price (#1673). — [finding](findings/2026-10-25-same-line-restore-beside-replacement.md) — Agent lesson: hamilton/issue-1673-follow-the-replacement; Guard: `src/lib/agents/hamilton/same-line-duplicates.db.test.ts`, `src/lib/agents/darwin/same-line-replacement-check.test.ts`
 - 2026-10-25 — Keep live only the latest edition of a schedule in force today, dated by its own text whatever its address or read date; take an older line down only where the newer edition states the fee, and never pair one product's schedule with the bank's (#1945). — [finding](findings/2026-10-25-older-edition-left-live-beside-dated-edition.md) — Agent lesson: darwin/issue-1945-latest-edition-in-force; Guard: `src/lib/agents/darwin/dated-edition.test.ts`
 - 2026-10-25 — A price for people who are not the bank's customers is another party's price, not a condition on the customer's $0, even when it names the bank ("$5.00 charge for non-F&M customers"); run an older-live re-check over every older live row and read each failure against the bank's text before it goes on. — [finding](findings/2026-10-25-named-bank-non-customer-price.md) — Agent lesson: darwin/issue-1568-named-bank-non-customer-price; Guard: `src/lib/agents/darwin/verify.test.ts`, `src/lib/agents/darwin/verified-recheck.db.test.ts`
@@ -580,7 +581,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (239 in all).
+counts as of this index (241 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
@@ -588,10 +589,10 @@ counts as of this index (239 in all).
 | magellan | 21 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
 | hoovie | 10 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
 | rosetta | 11 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
-| knox | 65 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
+| knox | 66 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
 | darwin | 35 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 40 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
-| hamilton | 36 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
+| hamilton | 37 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
 | deming | 14 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
 
 ## Before 2026-10-10

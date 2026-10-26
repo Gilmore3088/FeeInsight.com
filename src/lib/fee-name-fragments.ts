@@ -74,6 +74,51 @@ export function withoutParentheticals(name: string): string {
   return name.replace(PARENTHETICAL, " ").replace(/\s+/g, " ").trim();
 }
 
+/** A closed parenthetical that ends the name after at least one word, with any footnote mark or stop after it. */
+const TRAILING_QUALIFIER = /(\S)\s*\([^()]*\)[\s.,;*†‡¹²³⁴⁵⁶⁷⁸⁹⁰]*$/u;
+/**
+ * The name with the closed parentheticals that end it taken off (#1443). A closed "(...)" after
+ * the name qualifies the fee ("ACH Return Item (fee is per item)", "Notary fee (this service is
+ * for members only)"), so a verb, pronoun or "if"/"when" inside it is not a sentence the name was
+ * cut from. What stays:
+ * - an unclosed "(", so "Perks Checking (monthly service charge if" is still cut off;
+ * - a parenthetical that opens the name, which is another column's cell glued on ("(Per month
+ *   some exclusions apply): Cashier's Check");
+ * - a parenthetical with words after it ("Inactive Fee (each month the account is inactive) After
+ *   12 months with no activity; excludes f"): the line runs on past it, so it may be the sentence.
+ * Moved here from knox/cutoff-shape.ts (Knox v119) so Darwin's live twin reads the same cut.
+ */
+export function withoutClosedQualifiers(name: string): string {
+  let current = name.replace(/\s+/g, " ").trim();
+  for (;;) {
+    const next = current.replace(TRAILING_QUALIFIER, "$1").trim();
+    if (next === current) return current;
+    current = next;
+  }
+}
+
+/**
+ * #1443 (Knox v119): the end shapes a name carries once the closed parentheticals that end it are
+ * taken off. A qualifier after the cut never makes a cut name whole: "Late Fee up to (see
+ * schedule)" is "Late Fee up to" with a note glued on, and "Overdraft fee of (per item)" still
+ * stops on "of". Only `trailing_range` and `sentence_end` are read here (a pronoun inside the
+ * qualifier is not a sentence, `liveFragmentName`). Null when no closing qualifier was taken off,
+ * so it never repeats `liveFragmentShape`. Darwin's live check reads it behind its own switch.
+ * A comparative before the note ("than", "below") is left out: there the cut is a threshold figure
+ * the price read took out of a whole fee's name, and the fee and its price are right ("Cashier's
+ * check more than $1,000 (sold to MCB customers only)" $5, read as "Cashier's check more than (sold
+ * to MCB customers only)"; shadow lab live audit 273 publishes it).
+ */
+const QUALIFIED_SENTENCE_END = endsIn(SENTENCE_END_WORDS.filter((word) => !["a", "an", "the", "above", "each", "than", "below"].includes(word)));
+export function liveQualifiedFragmentShape(name: string | null | undefined): "trailing_range" | "sentence_end" | null {
+  const current = (name ?? "").replace(/\s+/g, " ").trim();
+  const unqualified = withoutClosedQualifiers(current);
+  if (!unqualified || unqualified === current) return null;
+  if (LIVE_TRAILING_RANGE.test(unqualified)) return "trailing_range";
+  if (QUALIFIED_SENTENCE_END.test(unqualified) || LIVE_SENTENCE_END_ARTICLE.test(unqualified) || DANGLING_AUDIENCE.test(unqualified)) return "sentence_end";
+  return null;
+}
+
 /** The live fragment shape a name carries, parentheticals included (the shape before #1443's exemption). */
 export function liveFragmentShape(name: string | null | undefined): LiveFragmentPattern | null {
   const current = (name ?? "").replace(/\s+/g, " ").trim();

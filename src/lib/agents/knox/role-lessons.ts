@@ -656,4 +656,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-1443-qualifier-after-a-cut",
+    agent: "knox",
+    stage: "extract",
+    lesson: "A closing parenthetical does not make a cut name whole. Before judging where a fee's name ends, take off the closed notes that end it and read the words before them: \"Late Fee up to (see schedule)\" and \"Gift Cards up to (per card)\" still stop on \"up to\". Such a name is cut off; read the line on to the price or limit it lost. \"each\" before a unit note is the fee's own unit (\"Stop payments - each (Draft or ACH)\") and the name is whole. Keep a threshold figure in the name: \"Cashier's check more than $1,000 (sold to MCB customers only)\" must not become \"Cashier's check more than (sold to MCB customers only)\".",
+    why: "The v107 parenthetical rule read the sentence tests without the closing note but left the end tests on the full name, which ends on \")\", so a dangling \"up to\" or \"per\" hidden behind a note was never seen: 3 live fees and 7 verified rows not live on Oct 25 (#1443).",
+    evidence: { issues: [1443], prs: [], files: ["src/lib/agents/knox/cutoff-shape.ts", "src/lib/fee-name-fragments.ts", "src/lib/agents/knox/cutoff-shape.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
 ];

@@ -198,6 +198,16 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     since: "2026-10-25",
   },
   {
+    id: "issue-1443-hold-in-the-writer",
+    agent: "hamilton",
+    stage: "publish",
+    lesson: "A publish gate belongs in the one place a published row is written, not in one caller. Any path that writes a live row (a refresh to a newer copy, a restore, a twin, a direct insert) must meet the same name hold the publish step applies; moving or copying a live fee is publishing it again, and an old name that never met today's hold does not go live again under a new row without meeting it.",
+    why: "Refresh copy v1 wrote new live rows straight through the insert without the name hold: the issue's 264 live rows (273 read with Oct 9's rules) published from Oct 9 to Oct 13, logged as hamilton.refresh_copy with no publish.rules attempt; 257 of the 273 re-wrote the name of a row that went live before the hold (#1443).",
+    evidence: { issues: [1443, 1068], prs: [], files: ["src/lib/agents/hamilton/publish.ts", "src/lib/agents/hamilton/refresh-copy.ts", "src/lib/agents/hamilton/publish.admin-hold.test.ts", "docs/project/findings/2026-10-25-publish-name-hold-bypass.md"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
+  {
     id: "issue-1673-follow-the-replacement",
     agent: "hamilton",
     stage: "publish",

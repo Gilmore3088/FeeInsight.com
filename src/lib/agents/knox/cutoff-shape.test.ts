@@ -74,3 +74,41 @@ describe("isCutoffName reads a name cut before its noun after a count and an aud
     },
   );
 });
+
+// #1443 (Knox v119): live names read on prod on 2026-10-25 (ids in the comments) and the issue's example.
+describe("isCutoffName reads the end shapes behind a closing qualifier (#1443, v119)", () => {
+  it.each([
+    "Late Fee up to (see schedule)", // the issue's example
+    "Collection items up to (per item)", // 104534
+    "Gift Cards up to (per card)", // 149762
+    "ACH Origination Per (member transactions initiated by online and phone self-service platform)", // 69115
+    "Overdraft fee of (per item) (see note)",
+    "Counter Check: A blank page of 3 personal (pack)",
+  ])("holds %s as cut off", (name) => {
+    expect(isCutoffName(name)).toBe(true);
+  });
+
+  it.each([
+    // "each" before a unit note is the fee's unit, not a cut (the wide `TRAILING_RANGE` would catch these).
+    "Stop payments - each (Draft or ACH)", // 104991
+    "Money Order each (face value up to $500)", // 63131
+    "Photocopy-each (after the first 10)", // 91379
+    "Member Check Copy Each (free via Home Banking)", // 143293
+    // A capital "A" before a note is a label, as without the note.
+    "Plan A (see schedule)",
+    // A comparative before the note lost a threshold figure; the fee is whole (shadow lab live audit 273).
+    "Cashier's check more than (sold to MCB customers only)",
+    "Service charge for accounts with a minimum daily balance below (per statement cycle)", // 130463
+    // The v107 real names stay real.
+    "ACH Return Item (fee is per item)",
+    "Notary fee (this service is for members only)",
+  ])("keeps %s", (name) => {
+    expect(isCutoffName(name)).toBe(false);
+  });
+
+  it("publish holds the issue's example as cutoff_name", () => {
+    expect(publishNameHold("Late Fee up to (see schedule)", "late_payment", 25)?.code).toBe("cutoff_name");
+    expect(publishNameHold("Gift Cards up to (per card)", "gift_card_purchase", 3.95)?.code).toBe("cutoff_name");
+    expect(publishNameHold("Stop payments - each (Draft or ACH)", "stop_payment", 30)).toBeNull();
+  });
+});

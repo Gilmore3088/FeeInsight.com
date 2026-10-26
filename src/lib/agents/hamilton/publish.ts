@@ -791,6 +791,8 @@ interface PublishedInsertOptions {
     /** Called when an admin correction of the same logical fee blocked this publish. */
     onCorrected?: (block: CorrectionBlock) => void;
     onInternationalDeferred?: (detail: InternationalPublicationDeferral) => void;
+    /** #1443: called when publish's name hold (`publishNameHold`) kept the row's name off. */
+    onNameHeld?: (hold: { code: string; reason: string }) => void;
     /**
      * For a paired paid/returned event, the compressed line it was projected from: an operator's
      * hold or correction on that line, under either event's category, keeps the event off too.
@@ -835,6 +837,15 @@ async function writePublishedFee(db: SqlTag, options: PublishedInsertOptions): P
   const publishEventId = options.row.verified_by_agent_event_id;
   const feeName = publishedFeeName(options.row.fee_name, options.row.canonical_fee_key);
   const pairedLabel = options.pairedLabel ?? null;
+  // #1443: the single writer reads publish's name hold itself, the same call the publish step makes,
+  // so no path writes a name the step would hold. Refresh copy v1 wrote new live rows through this
+  // insert without it: the issue's 264 held names went live from Oct 9 to 13 (refresh copy v2, #1223, moves
+  // the live row in place instead and writes no new name).
+  const nameHold = publishNameHold(options.row.fee_name, options.row.canonical_fee_key, normalizedAmount(options.row.amount));
+  if (nameHold) {
+    options.onNameHeld?.(nameHold);
+    return null;
+  }
   // Current raw applicability survives a stale verified selection or a direct insertion.
   if (options.row.fee_raw_id != null) {
     const heldEvent = await db`SELECT fee_raw_id FROM raw_fee_observations
