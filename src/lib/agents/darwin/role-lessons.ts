@@ -14,7 +14,7 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     why: "The translated-copy check (#1909) archived 35 Spanish-copy fees at 4 institutions on Oct 18 as `translated_copy: #<doc> twin #<fee>`, and nothing read them again when the twin later came down, so a bank could lose the fee entirely. By Oct 26 the dated-edition check had taken down three of OnPoint's English twins (152572, 22677, 50406). None of the three should come back: the current English edition prices the Oregon reconveyance at $153 where the Spanish copy says $133 (64334), and its Account Research $25 and Legal Process $75 rows are verified and waiting to publish (64337, 64339). The other 32 twins are still live.",
     evidence: {
       issues: [1986],
-      prs: [],
+      prs: [2707],
       files: ["src/lib/agents/darwin/translated-copy-check.ts", "src/lib/agents/darwin/translated-copy-restore.db.test.ts", "src/lib/agents/darwin/translated-copy-check.test.ts"],
     },
     appliesTo: "all",
