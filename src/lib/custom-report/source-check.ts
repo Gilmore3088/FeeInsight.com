@@ -28,7 +28,7 @@ import { boxSectionLateFee } from "./box-section-late-fee";
 import { withGluedFootnotePrices } from "./glued-footnote-price";
 import { discontinuedRow } from "./discontinued-rows";
 import { networkColumnRow } from "./network-column-rows";
-import { statesNoChargeFor } from "@/lib/no-charge-statement";
+import { noChargeWitness } from "@/lib/no-charge-statement";
 const NSF_POLICY_CATEGORIES = new Set(["nsf", "overdraft"]);
 
 export type SourceCheckFailure =
@@ -1530,6 +1530,14 @@ function checkFeeAgainstSourceText(
     fee.feeName.toLowerCase() === feeName.toLowerCase() && fee.amount === amount &&
     (canonicalFeeKey == null || canonicalFeeKey === fee.canonicalHint));
   if (scoped) return { ok: true, sourceLine: scoped.excerpt };
+  // #2040: "We do not charge a returned item/non-sufficient funds (NSF) fee for items returned unpaid."
+  // states that fee's $0 with no free word. Only the exact name and category the sentence prints, only
+  // a whole sentence of the shared no-charge grammar under the fee's own or a general heading, and never
+  // on a document that prints a price for the category on any line (`noChargeWitness`).
+  if (amount === 0) {
+    const stated = noChargeWitness(text, feeName, canonicalFeeKey);
+    if (stated) return { ok: true, sourceLine: stated.sentence };
+  }
   if (statements.length > 0 && /\beliminated\b/i.test(feeName) && (canonicalFeeKey === "nsf" || /\b(?:nsf|non[- ]sufficient funds)\b/i.test(feeName))) {
     return { ok: false, reason: "amount_not_the_fee" };
   }
@@ -1640,10 +1648,6 @@ function checkAgainstLines(
     // A tier named by its own band ("Overdraft Item Fee (items $10.01 - $20.00)") is that
     // tier's price, not a band standing in for the whole fee.
     if (amountProblem === "tiered_fee" && namesItsBand(row, feeName)) amountProblem = null;
-    // #2040: "We do not charge a returned item/non-sufficient funds (NSF) fee for items returned unpaid."
-    // states that fee's $0 with no free word. Only the exact name the sentence prints, only in a whole
-    // sentence of the shared no-charge grammar (`statesNoChargeFor`), which never reads a condition.
-    if (amountProblem === "amount_not_the_fee" && rounded === 0 && !dailyCap && statesNoChargeFor(row, feeName)) amountProblem = null;
     const leader = dailyCap ? null : leaderRow(lines, i);
     if (amountProblem && leader && leader !== row && namesFee(leader, stems) && !statesAmount(leader, rounded, stems)) {
       row = leader;

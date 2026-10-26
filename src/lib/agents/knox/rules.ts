@@ -21,7 +21,7 @@ import { LOAN_SECTION_TARGET, loanSectionFee } from "@/lib/custom-report/loan-se
 import { domesticStackedStem, stackedCellVariants } from "@/lib/custom-report/stacked-cell-variants";
 import { domesticWireClausePrices } from "@/lib/custom-report/wire-clause-prices";
 import type { OwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
-import { noChargeStatementsIn } from "@/lib/no-charge-statement";
+import { noChargeStatementsInText } from "@/lib/no-charge-statement";
 
 /**
  * Knox's deterministic extraction rules (`extract.rules`), pass 1. Pure: text in,
@@ -3075,14 +3075,13 @@ export function extractCandidatesFromText(input: string): ExtractionRulesResult 
   }
   // v124 (#2040): "We do not charge a returned item/non-sufficient funds (NSF) fee for items returned
   // unpaid." is the NSF fee's $0, held as `zero` like a "No Fee" row so Darwin verifies it. Only a whole
-  // sentence of the shared grammar (`noChargeStatementsIn`): no condition, no figure, one named fee in
-  // nsf, overdraft or overdraft transfer. Not when this text prices the same category: a priced read
-  // and a "we do not charge" sentence on one page are two products' terms, not the bank's $0. One $0 per
-  // category per text: a page that says it three ways ("We don't assess fees for declined or returned
-  // transactions", "We do not charge a returned item/non-sufficient funds (NSF) fee ...") is one fee,
-  // read from a sentence that prints the fee's own name when there is one.
+  // sentence of the shared grammar (`noChargeStatementsInText`): no condition, no figure, one named fee
+  // in nsf, overdraft or overdraft transfer, under the fee's own or a general heading ("Bill Pay Service"
+  // over it makes it the service's terms), and no line of the text prices the category, read or not ("NSF
+  // Fee $35.00", "Paid or returned item (NSF) 35"). One $0 per category per text, read from a sentence
+  // that prints the fee's own name when there is one.
   const statedFree = new Set<string>();
-  const statements = text.split("\n").flatMap((line) => noChargeStatementsIn(line));
+  const statements = noChargeStatementsInText(text);
   for (const statement of [...statements.filter((read) => read.namePrinted), ...statements.filter((read) => !read.namePrinted)]) {
     if (statedFree.has(statement.canonicalKey) || result.held.some((read) => read.shape === "zero" && read.canonicalHint === statement.canonicalKey)) continue;
     if (result.candidates.some((read) => read.canonicalHint === statement.canonicalKey && read.amount > 0)) continue;

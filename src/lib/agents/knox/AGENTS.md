@@ -1968,22 +1968,33 @@ rules re-check read it the same way. A read needs all of:
   "don't", "does not", "doesn't", "never" ("currently" allowed). "In that case, we will not ...",
   "However, ...", a product name as subject, "will not"/"won't" (a scenario's consequence) and "no longer"
   (no unconditional prod example; the read cannot see whether the copy is current) are no read;
-- the fee named explicitly, in `nsf` (returned item, NSF, non-sufficient or insufficient funds),
-  `overdraft` or `od_protection_transfer` only: the fees banks announce in prose that they dropped, and
-  the ones #2040 names. Other "we do not charge for ..." sentences are mostly Reg E boilerplate whose
-  object is no one fee. A name with both overdraft and NSF ("overdraft or NSF fees") is not read;
+- the fee named explicitly, in `nsf` (an NSF, non-sufficient or insufficient funds word; "returned
+  item" or "returned checks" alone is as often a returned deposited item), `overdraft` or
+  `od_protection_transfer` only: the fees banks announce in prose that they dropped, and the ones #2040
+  names. Other "we do not charge for ..." sentences are mostly Reg E boilerplate whose object is no one
+  fee. A name with both overdraft and NSF ("overdraft or NSF fees") is not read;
 - no figure and nothing after the fee but a restatement of it ("for items returned unpaid", "for
   returned items"): "if ...", "when ...", "on transactions under $5", "for the first ...", "more than 3
   per day", "for one-time debit card or ATM transactions", "on Assure Checking accounts" or a colon
-  that opens a list keep it unread.
+  that opens a list keep it unread;
+- the nearest heading above (within 15 lines), or a heading-like sentence before it on its line, names
+  the fee's own topic or is a general fee heading ("Account Fees"): "Bill Pay Service" or "SafeBalance
+  Banking" makes it that service's or account's terms (review of #2710);
+- no line of the document names the category with a price above $0, read by any reader or not ("NSF
+  Fee $35.00", "Paid or returned item (NSF) 35"). The source check applies the same rule
+  (`noChargeWitness`, matching the fee's category too), so no $0 read by any path traces to such a
+  sentence on a priced document.
 One $0 per category per text, read from a sentence that prints the fee's name when one does. None when
 the rules pass already read a $0 in that category, or any specialist read a price in it from the same
 text. Darwin's conditional $0 and banded $0 checks pass such a sentence (no dollar figure, no band).
-Oct 26 dry run (prod, read-only, current copies): 10 texts at 10 institutions, 7 NSF (Wells Fargo 4,
-172, 359; HSBC 26; United Bank 67; Cape & Coast 678; Grand Bank for Savings 2568), 2 overdraft transfer
-(Regions 27, New Tripoli 1424) and 1 overdraft (Monet 309). 5 banks gain an NSF row and 2 an overdraft
-transfer row; the other 3 already show $0 there. None has a live charged fee in the category, and no
-live fee's source-check verdict changes. Adds reads only, so there is no live takedown to re-check.
+Oct 26 dry run (prod, read-only, current copies): 6 texts at 6 institutions, 5 NSF (Wells Fargo 4, 172,
+359; Cape & Coast 678; Grand Bank for Savings 2568) and 1 overdraft transfer (New Tripoli 1424). 4 banks
+gain an NSF row and 1 an overdraft transfer row; Wells Fargo National Bank West (172) already shows $0.
+Before the heading and priced-line rules there were 10. HSBC (26) drops out because its heading names
+its Premier account; Regions (27), United Bank (67) and Monet (309) because a line of the document names
+the category with a figure (for United and Monet a table-of-contents page number, for Regions a
+neighbouring column's $40): conservative misses, not wrong reads. None has a live charged fee in the category, and
+no live fee's source-check verdict changes. Adds reads only, so there is no live takedown to re-check.
 
 ## Darwin's re-read requests (`reread-feedback.ts`, #1511)
 

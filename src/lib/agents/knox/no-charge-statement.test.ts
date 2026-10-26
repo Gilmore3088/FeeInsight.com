@@ -60,6 +60,12 @@ describe("Knox v124: a \"we do not charge\" sentence is the fee's confirmed $0 (
       "We no longer charge NSF fees.",
       // Fidelity Bank, doc 23446: a bill pay service's row, under a schedule whose account NSF is $35.
       "BILL PAY SERVICES NSF | We do not charge a fee when we return an item unpaid due to insufficient funds in your account. However, the merchant may charge you a fee.",
+      // Review of #2710: a heading that names another service or account scopes the sentence to it.
+      "Bill Pay Service\nWe do not charge an NSF fee.\n",
+      "SafeBalance Banking\nWe don't charge overdraft fees.\n",
+      // A priced line no reader reads still prices the category.
+      "Paid or returned item (NSF) 35\nWe do not charge an NSF fee.",
+      "Checking Fees\nNSF Fee $35.00\nBill Pay\nWe do not charge an NSF fee.\n",
     ]) {
       expect(zeros(text), text).toEqual([]);
     }
