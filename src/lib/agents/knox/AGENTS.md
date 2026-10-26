@@ -278,7 +278,8 @@ club account's own monthly or minimum balance fee no longer sets the bank's chec
   without `needs_darwin_verification`, so Darwin never verifies them as exact amounts. A fee
   whose price varies with what the customer picks ("Check printing prices vary depending on
   style") is held as `knox_review:varies` with no amount (v76): Knox never writes a figure the
-  page does not print.
+  page does not print. No re-check reads a varies line, so it stays held, kept; /admin/knox
+  says so, and the scorecard (/admin/scoreboard) counts the held pile by reason and age (#1102).
 
 ## When Knox reads a text again
 
