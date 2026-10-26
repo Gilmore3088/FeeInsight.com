@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { institutionValueSql } from "@/lib/data-store/fee-stats";
 
 const state = vi.hoisted(() => ({ queries: [] as string[] }));
 
@@ -33,8 +34,8 @@ describe("saved institution guide fee audience boundary", () => {
     expect(query).toContain("ef.fee_audience IN ('consumer', 'both', 'unknown')");
     expect(query).toContain("ef.amount >= 0");
     expect(query).not.toContain("ef.amount > 0");
-    expect(query).toContain("THEN MAX(ef.amount)");
-    expect(query).toContain("PERCENTILE_CONT(0.5)");
+    expect(query).toContain(institutionValueSql("ef"));
+    expect(query).toContain("GROUP BY ef.fee_category");
     expect(query).not.toContain("ORDER BY ef.amount ASC");
   });
 });
