@@ -225,13 +225,14 @@ export function nonCustomerCashiersCheck(canonicalFeeKey: string, name: string, 
  * #1513: a wire filed as domestic whose name writes "international" short ("Wire Trans. (Intern.
  * Outgoing)", "Int. Wire Transfer – Outgoing", "Internat'l Wire"; `abbreviatesInternationalWire`,
  * the reading Knox v120 files them by) fails the domestic wire and re-files to the international
- * wire of its direction. Held by `INTL_ABBREVIATION_REFILE_LIVE`: off, the rule reads nothing. The
+ * wire of its direction. Held by `INTL_ABBREVIATION_REFILE_LIVE`, on since James's yes (Oct 26, guard
+ * v95); off, the rule reads nothing. The
  * read-only dry run (Oct 26) found 2 live domestic wires it would re-file (inst 1405: 90381
  * "Int. Wire Transfers – Incoming" $20 beside "Wire Transfers – Incoming" $15, and 90382 "Int. Wire
  * Transfer – Outgoing" $40 beside "Wire Transfers – Outgoing" $20). Turning it on bumps
  * `CATEGORY_GUARD_VERSION`, so Darwin's re-check judges every live wire again.
  */
-export const INTL_ABBREVIATION_REFILE_LIVE = false;
+export const INTL_ABBREVIATION_REFILE_LIVE = true;
 /** The international wire a domestic wire's abbreviated name re-files to, while the rule is live; null otherwise. Pure. */
 export function intlAbbreviationRefile(canonicalFeeKey: string, name: string, live: boolean = INTL_ABBREVIATION_REFILE_LIVE): string | null {
   if (!live) return null;
@@ -1149,7 +1150,10 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // refuses (low balance, cash or foreign currency exchange, order, purchase or delivery, check
 // collection, "many"), with that type's patterns. Read-only dry run (Oct 26): 0 of 60 live dollar and
 // 0 of 3 live rate fees filed atm_international carry the wording, so no fee is held or taken down.
-export const CATEGORY_GUARD_VERSION = 94;
+// v95 (Oct 26, #1513): `INTL_ABBREVIATION_REFILE_LIVE` on (James's yes): a domestic wire whose name
+// writes "international" short re-files to the international wire of its direction. Read-only dry
+// run (Oct 26): 2 live wires move (inst 1405: 90381, 90382).
+export const CATEGORY_GUARD_VERSION = 95;
 
 /** v87 (#1916): where a late charge printed in a safe deposit box section is filed. */
 export const BOX_LATE_TARGET = "safe_deposit_box";

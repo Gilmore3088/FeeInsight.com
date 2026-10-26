@@ -188,7 +188,7 @@ describe("v8 review fixes: narrower rules, the live prefilter and the batch limi
     ];
     const db = createDb(null);
     (db as unknown as { unsafe: unknown }).unsafe = vi.fn(() => Promise.resolve(v8Rows));
-    const result = await retireEvalVerdictFees(db, options);
+    const result = await retireEvalVerdictFees(db, { ...options, secondBatchActs: false });
     expect(result).toMatchObject({ ruleFailing: 1, deferred: 1, deferredIds: [120626] });
     const calls = JSON.stringify(db.mock.calls);
     expect(calls).toContain("not_a_fee:discount_or_allowance");
@@ -305,10 +305,10 @@ describe("v9: a discount the stored line prints at the fee's own amount (#1696)"
       { fee_published_id: 120626, fee_verified_id: 4, institution_id: 5, source_document_id: 6, canonical_fee_key: "other_lending_fee", fee_name: "Budget Assist Loan Application Fee", amount: "1000.00", conditions: 'excerpt="Budget Assist Loan Application Fee (4 month term/$1,000)"' },
       { fee_published_id: 141779, fee_verified_id: 1, institution_id: 2, source_document_id: 3, canonical_fee_key: "overdraft", fee_name: "Courtesy Pay", amount: "5.00", conditions: 'excerpt="Courtesy Pay / $5 Allowance"' },
     ];
-    expect(EVAL_VERDICT_SECOND_BATCH_ACTS).toBe(false);
+    expect(EVAL_VERDICT_SECOND_BATCH_ACTS).toBe(true);
     const off = createDb(null);
     (off as unknown as { unsafe: unknown }).unsafe = vi.fn(() => Promise.resolve(liveRows));
-    const held = await retireEvalVerdictFees(off, options);
+    const held = await retireEvalVerdictFees(off, { ...options, secondBatchActs: false });
     expect(held).toMatchObject({ ruleFailing: 1, deferred: 2, deferredIds: [142565, 120626] });
     expect(JSON.stringify(off.mock.calls)).not.toContain("wrong_amount:loan_amount");
 

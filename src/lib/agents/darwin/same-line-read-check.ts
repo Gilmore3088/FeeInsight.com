@@ -36,7 +36,7 @@ type SqlTag = typeof sql;
 export const SAME_LINE_READ_CHECK = "darwin.same_line_read";
 export const SAME_LINE_READ_CHECK_VERSION = 1;
 /** The switch: on takes matches down after the second look; off only reports. */
-export const SAME_LINE_READ_TAKEDOWN_LIVE = false;
+export const SAME_LINE_READ_TAKEDOWN_LIVE = true;
 /** Live fees read per step (a few hundred share a line; the cap is a guard). */
 export const SAME_LINE_READ_LIMIT = 5_000;
 export const SAME_LINE_READ_SAMPLES = 20;

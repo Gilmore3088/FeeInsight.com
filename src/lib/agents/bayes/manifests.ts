@@ -383,11 +383,11 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v2 (#1910): the name cover reads NSF/insufficient, OD/overdraft and a paid NSF item/overdraft as one item.
   PRODUCT_PAGE_REPEAT_CHECK_VERSION: "Each verify step re-reads every live product-page fee with a same-price schedule twin (no cursor), so version 2's wider name cover reaches every live fee on the next step; nothing older to replay.",
   // v1 (#1673): same-line copies the v1 restore brought back beside their older line's live replacement.
-  SAME_LINE_REPLACEMENT_CHECK_VERSION: "First version: each verify step re-reads every live fee after a confirmed same-line takedown (no cursor, a few dozen rows); its switch is off, so it only reports; nothing older to replay.",
+  SAME_LINE_REPLACEMENT_CHECK_VERSION: "First version: each verify step re-reads every live fee after a confirmed same-line takedown (no cursor, a few dozen rows); its switch is on (Oct 26), so matches come down after the second look; nothing older to replay.",
   // v1 (#1876): two live reads of one printed line (same document, line, category and amount).
-  SAME_LINE_READ_CHECK_VERSION: "First version: each verify step re-reads every live fee that shares its stored source line with another (no cursor, a few hundred rows); its switch is off, so it only reports; nothing older to replay.",
+  SAME_LINE_READ_CHECK_VERSION: "First version: each verify step re-reads every live fee that shares its stored source line with another (no cursor, a few hundred rows); its switch is on (Oct 26), so matches come down after the second look; nothing older to replay.",
   // v1 (#1882): a live $0 overdraft that is only the smallest band of a priced cell or row.
-  BANDED_ZERO_CHECK_VERSION: "First version: each verify step re-reads every live $0 overdraft, NSF and continuous overdraft fee (about 140 rows, no cursor); its switch is off, so it only reports; nothing older to replay.",
+  BANDED_ZERO_CHECK_VERSION: "First version: each verify step re-reads every live $0 overdraft, NSF and continuous overdraft fee (about 140 rows, no cursor); its switch is on (Oct 26), so matches come down after the second look; nothing older to replay.",
   // v2 (#1673): the same-line restore follows the older line's replacement before bringing a copy back.
   SAME_LINE_DUPLICATE_RESTORE_VERSION: "Each publish step re-reads every same-line takedown whose older line is down (no cursor), so v2's replacement check reaches every pending restore on the next step; the copies v1 already restored are read by Darwin's same-line replacement re-check.",
   // v1 (#1915): schedule editions not yet in effect. Every verify step reads every live fee on a dated document.
@@ -398,14 +398,14 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   CANADIAN_DOCUMENT_CHECK_VERSION: "First version: a verify step re-reads every live fee's document text (no cursor, at most hourly); nothing older to replay.",
   // v1 (#1905): a late charge's cap or floor read as the late fee. On (LATE_CHARGE_BOUND_TAKEDOWN_LIVE), sampled clean 5 of 5.
   LATE_CHARGE_BOUND_CHECK_VERSION: "First version: each verify step reads every live late_payment fee whose name is a late charge's cap or floor (no cursor) and takes it down after the second look; nothing older to replay.",
-  // v1 (#1615): a percentage charge's floor read as a flat fee. Off (RATE_FLOOR_TAKEDOWN_LIVE) until sampled clean.
-  RATE_FLOOR_CHECK_VERSION: "First version: each verify step reads every live flat fee whose stored line carries greater-of wording and a percentage (no cursor, 58 rows on Oct 25); its switch is off, so it only reports; nothing older to replay.",
+  // v1 (#1615): a percentage charge's floor read as a flat fee. On (RATE_FLOOR_TAKEDOWN_LIVE) since James's yes, Oct 26.
+  RATE_FLOOR_CHECK_VERSION: "First version: each verify step reads every live flat fee whose stored line carries greater-of wording and a percentage (no cursor, 58 rows on Oct 25); its switch is on (Oct 26), so matches come down after the second look; nothing older to replay.",
   // v1 (#1908, #1905): fees printed in a prepaid, payroll, gift or travel card section of a general
   // schedule. A full verify step re-reads every live document whose text names a card program, at most hourly.
   CARD_PROGRAM_SECTION_CHECK_VERSION: "First version: a verify step re-reads every live fee on a document whose text names a card program (no cursor, at most hourly); nothing older to replay.",
-  // v1 (#1905): deposit-category fees printed in a loan section of a general schedule. Off
-  // (LOAN_SECTION_TAKEDOWN_LIVE) until James's yes on the dry run.
-  LOAN_SECTION_CHECK_VERSION: "First version: each verify step reads the next batch of documents behind a live deposit-category fee whose text names a loan, after a cursor on the run ledger; its switch is off, so it only reports; nothing older to replay.",
+  // v1 (#1905): deposit-category fees printed in a loan section of a general schedule. On
+  // (LOAN_SECTION_TAKEDOWN_LIVE) since James's yes, Oct 26.
+  LOAN_SECTION_CHECK_VERSION: "First version: each verify step reads the next batch of documents behind a live deposit-category fee whose text names a loan, after a cursor on the run ledger; its switch is on (Oct 26), so matches come down after the second look; nothing older to replay.",
   // v8 (#1112): new no-fee, discount, allowance and loan-amount name rules. Each step's eval-verdict
   // pass reads every live fee whose name or line matches one of their prefilter clauses
   // (`V8_PREFILTER`), then the second look; Darwin reads each new row under them. There is no
@@ -616,6 +616,8 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // v93 is claimed by open PR #2688 (#1912).
     // v94 (Oct 26, #2100): International ATM refuses the card foreign transaction fee's non-fee names
     // (low balance, currency exchange or orders, check collection, "many"); 0 live fees on the dry run.
+    // v95 (Oct 26, #1513): a domestic wire whose name writes "international" short ("Int. Wire",
+    // "Intern.") re-files to the international wire, switched on by James; 2 live wires on the dry run.
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",

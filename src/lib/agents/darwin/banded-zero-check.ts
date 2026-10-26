@@ -33,13 +33,12 @@ type SqlTag = typeof sql;
  * 108088 (6056, Safety Net Overdraft $0 / $10 / $35 by negative balance), 116439 (7358, Privilege Pay
  * "$0 for items ≤ $5", "$30 for overdrawing" in the account terms) and 149658 (5667, "Overdraft Fee |
  * $12.00 | Free", the next column's free row, beside the live $12 overdraft fee 16766). The first three
- * are the only live overdraft price at their institution. The switch stays off until a reviewer reads
- * them against each bank's stored text (sampled-clean rule, DECISIONS 2026-10-20).
+ * are the only live overdraft price at their institution. The switch is on since James's yes (2026-10-26, sampled-clean rule, DECISIONS 2026-10-20).
  */
 export const BANDED_ZERO_CHECK = "darwin.banded_zero";
 export const BANDED_ZERO_CHECK_VERSION = 1;
-/** The switch: off until the dry run is read clean. Set to true to take the matches down. */
-export const BANDED_ZERO_TAKEDOWN_LIVE = false;
+/** The switch: on takes matches down after the second look; off only reports. */
+export const BANDED_ZERO_TAKEDOWN_LIVE = true;
 export const BANDED_ZERO_REASON = "banded_zero";
 export const BANDED_ZERO_FLAG = "banded_zero";
 export const BANDED_ZERO_LIMIT = 1_000;

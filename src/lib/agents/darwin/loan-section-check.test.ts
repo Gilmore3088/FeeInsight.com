@@ -66,8 +66,8 @@ const asDb = (db: DbMock) => db as unknown as Parameters<typeof recheckLoanSecti
 const texts = (db: DbMock) => db.mock.calls.map(([strings]) => (strings as TemplateStringsArray).join("?"));
 
 describe("the loan section switch (#1905)", () => {
-  it("is a code constant and ships off until James's yes on the dry run", () => {
-    expect(LOAN_SECTION_TAKEDOWN_LIVE).toBe(false);
+  it("is a code constant, on since James's yes on the dry run (2026-10-26)", () => {
+    expect(LOAN_SECTION_TAKEDOWN_LIVE).toBe(true);
   });
 
   it("reads texts through a plain alternation as wide as the heading words", () => {
@@ -96,7 +96,7 @@ describe("findLoanSectionFees", () => {
 describe("recheckLoanSections", () => {
   it("with the switch off reports, writes only its event, and moves the cursor", async () => {
     const db = dbFor(DOCUMENTS, { cursor: "100" });
-    const result = await recheckLoanSections(asDb(db), { runId: 1, stepId: 2, dryRun: false });
+    const result = await recheckLoanSections(asDb(db), { runId: 1, stepId: 2, dryRun: false, live: false });
     expect(result).toMatchObject({ live: false, matched: 3, flagged: 0, takenDown: [], afterId: 100, nextAfterId: 0 });
     const calls = texts(db);
     expect(calls.some((text) => text.includes("UPDATE published_fee_records"))).toBe(false);

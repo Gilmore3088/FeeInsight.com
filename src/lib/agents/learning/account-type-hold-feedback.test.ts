@@ -29,7 +29,7 @@ describe("account type hold feedback repair (#1100)", () => {
   it("is off by default and then reads nothing", async () => {
     expect(ACCOUNT_TYPE_HOLD_FEEDBACK_REPAIR_ON).toBe(false);
     const { db, calls } = mockDb(1428);
-    const result = await repairAccountTypeHoldFeedback(db, { runId: 1, dryRun: false });
+    const result = await repairAccountTypeHoldFeedback(db, { runId: 1, dryRun: false, relabelOn: false });
     expect(result).toMatchObject({ on: false, due: null, zeroed: 0 });
     expect(calls).toHaveLength(0);
   });
@@ -61,17 +61,17 @@ describe("account type hold feedback repair (#1100)", () => {
 });
 
 describe("account type hold release relabel (#1680)", () => {
-  it("is off by default; a real run then reads nothing", async () => {
-    expect(ACCOUNT_TYPE_HOLD_RELEASE_RELABEL_ON).toBe(false);
+  it("is on since James's yes (2026-10-26); off, a real run reads nothing", async () => {
+    expect(ACCOUNT_TYPE_HOLD_RELEASE_RELABEL_ON).toBe(true);
     const { db, calls } = mockDb(0, 5);
-    const result = await repairAccountTypeHoldFeedback(db, { runId: 1, dryRun: false });
+    const result = await repairAccountTypeHoldFeedback(db, { runId: 1, dryRun: false, relabelOn: false });
     expect(result.release).toEqual({ on: false, due: null, relabeled: 0 });
     expect(calls).toHaveLength(0);
   });
 
   it("a dry run counts the release rows with the switch off and changes nothing", async () => {
     const { db, calls, values } = mockDb(1428, 5);
-    const result = await repairAccountTypeHoldFeedback(db, { runId: 1, dryRun: true });
+    const result = await repairAccountTypeHoldFeedback(db, { runId: 1, dryRun: true, relabelOn: false });
     expect(result.release).toEqual({ on: false, due: 5, relabeled: 0 });
     // The #1100 part stays silent while its own switch is off.
     expect(result.due).toBeNull();

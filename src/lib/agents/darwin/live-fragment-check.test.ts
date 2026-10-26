@@ -1744,8 +1744,8 @@ describe("qualified shapes: an end shape behind a closing qualifier, behind its 
     fee_published_id: id, fee_verified_id: id + 1, institution_id: id + 2, fee_name: name, amount, canonical_fee_key: key, source_document_id: id + 3,
   }));
 
-  it("ships with its switch off", () => {
-    expect(QUALIFIED_FRAGMENT_TAKEDOWN_LIVE).toBe(false);
+  it("is on since James's yes (2026-10-26)", () => {
+    expect(QUALIFIED_FRAGMENT_TAKEDOWN_LIVE).toBe(true);
   });
 
   it("reads the shape on the name without its closing qualifiers, and only then", () => {
@@ -1771,13 +1771,13 @@ describe("qualified shapes: an end shape behind a closing qualifier, behind its 
   });
 
   it("with the switch off, reports what the live names would do and acts on none of them", () => {
-    const found = findLiveFragments(rows(LIVE));
+    const found = findLiveFragments(rows(LIVE), new Set(), { qualified: false });
     expect(found).toMatchObject({ matched: 0, wouldTakeDown: 0, wouldRename: 0, wouldReread: 0 });
     expect(found.qualifiedShadow?.matched).toBe(2);
     expect(found.qualifiedShadow?.byAction.takedown).toEqual({ plus: 0, trailing_range: 0, sentence_end: 0, pronoun: 0 });
     expect(found.qualifiedShadow?.byAction.exempt.trailing_range).toBe(2);
     const detail = liveFragmentFindingsDetail(found);
-    expect(detail.qualified_takedown_live).toBe(false);
+    expect(detail.qualified_takedown_live).toBe(true);
     expect(detail.qualified_shadow?.samples.map((sample) => sample.fee_published_id)).toEqual([104534, 149762]);
   });
 
@@ -1790,7 +1790,7 @@ describe("qualified shapes: an end shape behind a closing qualifier, behind its 
   });
 
   it("a shadow match already in the step's read with the same action is not counted again", () => {
-    const found = findLiveFragments(rows([[2, "Overdraft fee charged per", 0, "overdraft"]]));
+    const found = findLiveFragments(rows([[2, "Overdraft fee charged per", 0, "overdraft"]]), new Set(), { qualified: false });
     expect(found.matched).toBe(1);
     expect(found.qualifiedShadow?.matched).toBe(0);
   });
