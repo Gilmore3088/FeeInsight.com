@@ -433,6 +433,43 @@ describe("the one-off paid gate replay batch (#1077)", () => {
     expect(summary.stopped).toMatch(/free-read errors|free reads failed/);
   });
 
+  it("counts a free read longer than the start window as an error instead of waiting it out", async () => {
+    const book = ledger();
+    const w = writers(book);
+    const summary = await runPaidGateReplay({
+      db: book.db, now: () => NOW, agentRunId: RUN, startWindowMs: 20,
+      deps: deps(book, w, { answer: () => new Promise<never>(() => {}) }).deps,
+    });
+    expect(summary.erroredKeys.length).toBeGreaterThan(0);
+    expect(book.reservations()).toHaveLength(0);
+    expect(summary.complete).toBe(false);
+  });
+
+  it("keeps a sample whose read ends after the start window as an error, so the next run moves on (2026-10-26 stall)", async () => {
+    const book = ledger();
+    const w = writers(book);
+    const d = deps(book, w);
+    // The read itself is quick; the window closes while the budget check runs, after the sample is read.
+    const slowCheck = async () => { await new Promise((r) => setTimeout(r, 60)); return null; };
+    const summary = await runPaidGateReplay({
+      db: book.db, now: () => NOW, agentRunId: RUN, startWindowMs: 30,
+      deps: { ...d.deps, preflight: slowCheck },
+    });
+    expect(book.reservations()).toHaveLength(0);
+    expect(summary.erroredKeys.length).toBeGreaterThan(0);
+    expect(summary.stopped).toMatch(/start window/);
+    // The next run puts those keys last, so its first reads are questions it has not tried.
+    const later = ledger({ finished: [{ errored: summary.erroredKeys }] });
+    const first: number[] = [];
+    await runPaidGateReplay({
+      db: later.db, now: () => NOW, agentRunId: RUN + 1,
+      deps: deps(later, writers(later), { answer: vi.fn(async (id: number) => { first.push(id); return answered(id); }) }).deps,
+    });
+    expect(later.reservations().length).toBeGreaterThan(0);
+    const keys = new Set(summary.erroredKeys);
+    expect(later.reservations().every((e) => !keys.has(String(e.detail.sample_key)))).toBe(true);
+  });
+
   it("keeps a report whose reads fail for a later run, and passes a question over only after three failed runs", async () => {
     const book = ledger({ finished: [] });
     const w = writers(book);

@@ -632,11 +632,20 @@ export async function runPaidGateReplay({
   const pathErrors = { memo: 0, simulate: 0, written_answer: 0, report: 0 } as Record<PaidPath, number>;
   const prepare = async (path: PaidPath, item: ReplayItem): Promise<Prepared | null | "error"> => {
     if (!research.has(item.institutionId)) research.set(item.institutionId, new Map());
+    // A free read longer than the start window counts as an error: it could not start a sample in this run anyway.
     let answered: Answered;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      answered = await deps.answer(item.institutionId, item.question, research.get(item.institutionId)!);
+      const read = await Promise.race([
+        deps.answer(item.institutionId, item.question, research.get(item.institutionId)!),
+        new Promise<"slow">((resolve) => { timer = setTimeout(() => resolve("slow"), startWindowMs); }),
+      ]);
+      if (read === "slow") return "error";
+      answered = read;
     } catch {
       return "error";
+    } finally {
+      clearTimeout(timer);
     }
     if (!answered?.research) return null;
     const withResearch = answered as Answered & { research: FeeResearch };
@@ -705,7 +714,12 @@ export async function runPaidGateReplay({
         blocked[path] ??= refusal;
         continue;
       }
-      if (windowClosed()) return;
+      // A sample read in full after the window closed is kept as an error, not dropped: dropped, the
+      // next run read the same questions again and the batch stalled for good (2026-10-26).
+      if (windowClosed()) {
+        erroredKeys.push(sampleKey);
+        return;
+      }
       const outcome = await reservePaidReplaySample(db, { runId: agentRunId, path, sampleKey, now: now(), base });
       if (!outcome.reserved) {
         if (outcome.reason === "path_full") full.add(path);
