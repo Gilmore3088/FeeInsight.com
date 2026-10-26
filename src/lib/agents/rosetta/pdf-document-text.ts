@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { layoutPageResult, type PdfTextItem } from "./pdf-layout";
 import { compareReadings, streamPageText, type PdfReaderAgreement } from "./pdf-reader-agreement";
 import { textSha256, type StackedGeometryReceipt } from "./pdf-repair-survival";
-import { repairUnmappedGlyphs, restoreDroppedLigatures } from "./glyph-repair";
+import { droppedLigatureEvidence, repairUnmappedGlyphs, restoreDroppedLigatures } from "./glyph-repair";
 
 export interface PdfTextExtraction {
   text: string; totalPages: number; pages?: string[];
@@ -58,7 +58,8 @@ export async function extractPdfDocumentText(bytes: Uint8Array, options: {
         // readings, so the reader-agreement receipt compares like with like.
         const rawPages = layouts.map((page) => page.text);
         const rawDocument = rawPages.join("\n\n");
-        const repair = (page: string) => restoreDroppedLigatures(repairUnmappedGlyphs(page, rawDocument).text, rawDocument).text;
+        const evidence = droppedLigatureEvidence(rawDocument);
+        const repair = (page: string) => restoreDroppedLigatures(repairUnmappedGlyphs(page, rawDocument).text, evidence).text;
         const pageTexts = rawPages.map(repair);
         const streamTexts = pages.map((items) => repair(streamPageText(items)));
         const text = pageTexts.join("\n\n");

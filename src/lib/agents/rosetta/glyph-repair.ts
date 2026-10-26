@@ -391,17 +391,27 @@ export interface DroppedLigatureResult {
 }
 
 /**
- * The text with each dropped ligature restored, when the document (`documentText`, the whole PDF
- * a page belongs to; it defaults to the text itself) shows at least
- * `MIN_DROPPED_LIGATURE_WORDS` different broken words. Only spellings of `DROPPED_LIGATURE_WORDS`
- * are touched, between non-letters, so "social" never becomes "official". Deterministic.
+ * The listed words (a plural as its singular) a document shows broken outside web addresses. One
+ * pass over the document: the PDF reader computes it once and hands it to every page's repair.
  */
-export function restoreDroppedLigatures(input: string, documentText: string = input): DroppedLigatureResult {
+export function droppedLigatureEvidence(documentText: string): ReadonlySet<string> {
   const evidence = new Set<string>();
   for (const match of documentText.matchAll(DROPPED_FORM)) {
     const word = DROPPED_FORMS.get(match[0].toLowerCase());
     if (word && !insideUrl(documentText, match.index)) evidence.add(listedStem(word));
   }
+  return evidence;
+}
+
+/**
+ * The text with each dropped ligature restored, when its document shows at least
+ * `MIN_DROPPED_LIGATURE_WORDS` different broken words. `document` is the whole PDF a page belongs
+ * to (or its `droppedLigatureEvidence`, computed once); it defaults to the text itself. Only
+ * spellings of `DROPPED_LIGATURE_WORDS` are touched, between spaces or punctuation, so "social"
+ * never becomes "official". Deterministic.
+ */
+export function restoreDroppedLigatures(input: string, document: string | ReadonlySet<string> = input): DroppedLigatureResult {
+  const evidence = typeof document === "string" ? droppedLigatureEvidence(document) : document;
   if (evidence.size < MIN_DROPPED_LIGATURE_WORDS) return { text: input, restored: 0 };
   let restored = 0;
   const text = input.replace(DROPPED_FORM, (broken: string, offset: number) => {
@@ -419,9 +429,19 @@ function listedStem(word: string): string {
   return word.endsWith("s") && LISTED_WORDS.has(word.slice(0, -1)) ? word.slice(0, -1) : word;
 }
 
-/** True when `offset` falls inside a web address (a URL path is never a fee word). */
+/** Characters looked back from a broken word for the start of a web address it may sit in. */
+const URL_LOOKBACK = 256;
+const WHITESPACE = /\s/;
+
+/**
+ * True when `offset` falls inside a web address (a URL path is never a fee word). Looks back only
+ * to the nearest whitespace, and at most `URL_LOOKBACK` characters, so each word costs a bounded
+ * scan however long the document is (#2692 review).
+ */
 function insideUrl(text: string, offset: number): boolean {
-  const start = Math.max(text.lastIndexOf(" ", offset), text.lastIndexOf("\n", offset), text.lastIndexOf("\t", offset)) + 1;
+  let start = offset;
+  const floor = Math.max(0, offset - URL_LOOKBACK);
+  while (start > floor && !WHITESPACE.test(text[start - 1])) start -= 1;
   return /:\/\/|^www\.|\.[a-z]{2,6}\//i.test(text.slice(start, offset));
 }
 

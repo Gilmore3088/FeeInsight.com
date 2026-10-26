@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   decodeTextBytes,
   declaredCharset,
+  droppedLigatureEvidence,
   DROPPED_LIGATURE_DUE_PATTERN,
   DROPPED_LIGATURE_WORDS,
   expandUnicodeLigatures,
@@ -240,6 +241,22 @@ describe("restoreDroppedLigatures (#1513 follow-up)", () => {
     expect(due.test("Wire Transfer Outgoing (Internaonal)")).toBe(true);
     expect(due.test("ACH OVERDRA....30.00")).toBe(true);
     expect(due.test("Wire Transfer Outgoing (International) social")).toBe(false);
+  });
+
+  it("stays linear on a long document with many broken words (#2692 review)", () => {
+    // 100 pages, about 300 KB, 800 broken words, no tabs: the PDF reader's per-page loop.
+    const line = "Wire Transfer Outgoing (Internaonal) fee charged per item on the account ........ 50.00\n";
+    const filler = "Statement copy per page and other ordinary account services listed here ........ 1.00\n";
+    const pages = Array.from({ length: 100 }, () => (line.repeat(4) + filler.repeat(32)).replace("Internaonal) fee", "Domesc) fee"));
+    const doc = pages.join("\n\n");
+    expect(doc.length).toBeGreaterThan(300_000);
+    const started = performance.now();
+    const evidence = droppedLigatureEvidence(doc);
+    let restoredWords = 0;
+    for (const page of pages) restoredWords += restoreDroppedLigatures(page, evidence).restored + restoreDroppedLigatures(page, evidence).restored;
+    const elapsed = performance.now() - started;
+    expect(restoredWords).toBe(800);
+    expect(elapsed).toBeLessThan(500);
   });
 
   it("is applied by the PDF reader to every page", async () => {
