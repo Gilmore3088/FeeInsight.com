@@ -116,8 +116,10 @@ export const COUNT_SHARED_SCHEDULE_ONCE: boolean = true;
  * value when the bank states a checking or unassigned row (rule 11).
  * 25/26 (#1912): a wire row whose name states a channel (online, phone, fax, PIN, a repetitive or
  * template wire) no longer sets the bank's wire value when it states a general wire row (rule 11).
+ * 27/28 (#1912): a monthly maintenance or minimum balance fee whose own name says checking, share
+ * draft or demand counts as checking even when it was filed under a savings-named product (rule 11).
  */
-export const STATS_METHOD_VERSION = COUNT_SHARED_SCHEDULE_ONCE ? 25 : 26;
+export const STATS_METHOD_VERSION = COUNT_SHARED_SCHEDULE_ONCE ? 27 : 28;
 
 /** SQL predicate: the row's source address names a business-only schedule (rule 6). */
 export function businessSourceSql(alias: string): string {

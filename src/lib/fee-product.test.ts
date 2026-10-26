@@ -29,6 +29,17 @@ describe("product exceptions (#1911)", () => {
     }
   });
 
+  it("keeps a fee whose own name says checking in the checking value, whatever product it was filed under (#1912)", () => {
+    for (const category of ACCOUNT_PRICED_CATEGORIES) {
+      expect(isProductException(category, "Christmas Club", "Personal Checking Monthly service charge")).toBe(false);
+      expect(isProductException(category, "Membership Savings Accounts", "Monthly Maintenance Fee (on dividend checking)")).toBe(false);
+      expect(isProductException(category, "Statement Savings", "Share Draft monthly fee")).toBe(false);
+      expect(isProductException(category, "Statement Savings", "Monthly maintenance fee")).toBe(true);
+      // No name passed: the product test alone, as before.
+      expect(isProductException(category, "Membership Savings Accounts")).toBe(true);
+    }
+  });
+
   it("sets a wire channel row apart in the four wire categories only, by its fee name (#1912)", () => {
     expect(isProductException("wire_domestic_outgoing", null, "Online Outgoing Domestic Wire")).toBe(true);
     expect(isProductException("wire_intl_outgoing", null, "Wire Transfers – Outgoing Wire: PIN - International")).toBe(true);
@@ -47,6 +58,7 @@ describe("product exceptions (#1911)", () => {
     const wires = "'wire_domestic_outgoing', 'wire_intl_outgoing', 'wire_domestic_incoming', 'wire_intl_incoming'";
     expect(productExceptionSql("ef")).toBe(
       `COALESCE(CASE WHEN ef.fee_category IS NULL THEN false WHEN ef.fee_category IN ('monthly_maintenance', 'minimum_balance') THEN ${nonCheckingAccountSql("ef.account_product_type")} ` +
+        "AND COALESCE(ef.fee_name, '') !~* 'checking\\y|\\yshare\\s*drafts?\\y|\\ydemand\\y' " +
         `WHEN ef.fee_category IN (${wires}) AND ${wireChannelSql("ef.fee_name")} THEN true ` +
         `ELSE ${productKeySql("ef.account_product_type")} <> '' END, false)`,
     );

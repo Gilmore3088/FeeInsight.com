@@ -19,6 +19,9 @@ export function sameProduct(one: string | null | undefined, two: string | null |
  * ancillary owner never assigns these (ancillary-product.ts).
  */
 export const ACCOUNT_PRICED_CATEGORIES: ReadonlySet<string> = new Set(["monthly_maintenance", "minimum_balance"]);
+/** #1912: a fee name that says checking, share draft or demand names a checking account's fee. */
+const FEE_NAMES_CHECKING = /checking\b|\bshare\s*drafts?\b|\bdemand\b/i;
+const FEE_NAMES_CHECKING_SQL = "checking\\y|\\yshare\\s*drafts?\\y|\\ydemand\\y";
 
 /**
  * A row priced for one named product as an exception to the institution's general price
@@ -37,6 +40,11 @@ export const ACCOUNT_PRICED_CATEGORIES: ReadonlySet<string> = new Set(["monthly_
  * Bank OZK: "Outgoing Online Wire (Domestic)" $20 beside the general $30). "In branch", "in
  * person" and "manual" name the standard channel, so those rows are general. The name is
  * optional: a caller that passes none keeps the product test alone.
+ *
+ * In an account-priced category a fee whose own name says checking, share draft or demand is the
+ * checking account's fee whatever product it was filed under (#1912: "Personal Checking Monthly
+ * service charge" under "Twin Oaks Club", "Monthly Maintenance Fee (on dividend checking)" under
+ * "Membership Savings Accounts"), so it is never set aside as a savings account's own fee.
  */
 export function isProductException(
   category: string | null | undefined,
@@ -44,7 +52,7 @@ export function isProductException(
   feeName?: string | null,
 ): boolean {
   if (!category) return false;
-  if (ACCOUNT_PRICED_CATEGORIES.has(category)) return isNonCheckingAccount(product);
+  if (ACCOUNT_PRICED_CATEGORIES.has(category)) return isNonCheckingAccount(product) && !FEE_NAMES_CHECKING.test(feeName ?? "");
   if (WIRE_CHANNEL_CATEGORIES.has(category) && namesWireChannel(feeName)) return true;
   return productKey(product) !== "";
 }
@@ -61,7 +69,8 @@ export function productExceptionSql(alias = "ef", categoryColumn = "fee_category
   const wires = [...WIRE_CHANNEL_CATEGORIES].map((category) => `'${category}'`).join(", ");
   const product = `${alias}.account_product_type`;
   const channel = nameColumn === null ? "" : `WHEN ${alias}.${categoryColumn} IN (${wires}) AND ${wireChannelSql(`${alias}.${nameColumn}`)} THEN true `;
-  return `COALESCE(CASE WHEN ${alias}.${categoryColumn} IS NULL THEN false WHEN ${alias}.${categoryColumn} IN (${accountPriced}) THEN ${nonCheckingAccountSql(product)} ` +
+  const checkingName = nameColumn === null ? "" : ` AND COALESCE(${alias}.${nameColumn}, '') !~* '${FEE_NAMES_CHECKING_SQL}'`;
+  return `COALESCE(CASE WHEN ${alias}.${categoryColumn} IS NULL THEN false WHEN ${alias}.${categoryColumn} IN (${accountPriced}) THEN ${nonCheckingAccountSql(product)}${checkingName} ` +
     channel + `ELSE ${productKeySql(product)} <> '' END, false)`;
 }
 
