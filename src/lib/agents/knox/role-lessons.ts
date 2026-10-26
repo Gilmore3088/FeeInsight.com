@@ -692,7 +692,7 @@ export const KNOX_LESSONS: AgentLesson[] = [
     stage: "extract",
     lesson: "Before reading an overdraft or NSF fee as free, read its whole price cell and every other row with its name. A $0 followed in its own cell by more prices (\"$0 if the negative balance is $5 or less. $10 if ... $35 per item\", \"$0 for items ≤ $5\"), a $0 with the same name priced on a band row of its own (\"N/C\" for \"Negative account balance $0-$9.99\", \"up to 19.00\" above it), or a free word after the fee's own price (\"Overdraft Fee | $12.00 | Free\") is one band or another column, not the fee's price: hold it for review. Read $0 only when the schedule states it for the whole fee (\"No-Fee Overdraft | Free\", \"We do not charge a fee for this service\").",
     why: "The free read took the first figure after the name and tested only the name for a condition, so three credit unions' small-overdraft bands went live as their only overdraft price, $0, and a fourth's next-column free word sat live beside its $12 fee (#1882).",
-    evidence: { issues: [1882], prs: [], files: ["src/lib/banded-zero.ts", "src/lib/agents/knox/extract.ts", "src/lib/banded-zero.test.ts"] },
+    evidence: { issues: [1882], prs: [2702], files: ["src/lib/banded-zero.ts", "src/lib/agents/knox/extract.ts", "src/lib/banded-zero.test.ts"] },
     appliesTo: "all",
     since: "2026-10-26",
   },
