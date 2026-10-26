@@ -300,10 +300,10 @@ it("leaves safe deposit service charges out of every median, on any alias (#1816
 it("leaves fees charged on a different basis than their category's out of every median, on any alias (#1901, rule 9)", () => {
   const predicate = statsRowFilter("c");
   expect(predicate).toContain(`AND NOT ${basisMismatchSql("c")}`);
-  const freq = "lower(btrim(c.frequency, E' \\t\\r\\n'))";
+  const freq = "NULLIF(replace(btrim(regexp_replace(lower(c.frequency), '[[:space:]_-]+', ' ', 'g')), ' ', '_'), '')";
   expect(basisMismatchSql("c")).toBe(
     `COALESCE((c.fee_category IN ('dormant_account', 'minimum_balance', 'monthly_maintenance', 'paper_statement') AND ${freq} IN ('quarterly', 'annual', 'daily', 'hourly', 'one_time'))` +
-      ` OR (c.fee_category IN ('returned_mail', 'bill_pay') AND ${freq} IN ('quarterly', 'annual', 'daily', 'hourly', 'one_time', 'per_item', 'per_occurrence', 'per_transaction'))` +
+      ` OR (c.fee_category IN ('returned_mail', 'bill_pay') AND ${freq} IN ('quarterly', 'annual', 'daily', 'hourly', 'one_time', 'per_item', 'per_transaction', 'per_occurrence', 'each'))` +
       ` OR (c.fee_category IN ('safe_deposit_box', 'ira_administration') AND ${freq} IN ('monthly', 'quarterly', 'daily', 'hourly', 'one_time'))` +
       ` OR (c.fee_category IN ('continuous_od', 'od_daily_cap') AND ${freq} IN ('monthly', 'quarterly', 'annual', 'hourly', 'one_time'))` +
       ` OR (c.fee_category NOT IN ('dormant_account', 'minimum_balance', 'monthly_maintenance', 'paper_statement', 'returned_mail', 'bill_pay', 'safe_deposit_box', 'ira_administration', 'continuous_od', 'od_daily_cap') AND ${freq} IN ('monthly', 'quarterly', 'annual', 'daily')), false)`,

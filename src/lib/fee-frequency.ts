@@ -449,10 +449,37 @@ export function settledFrequency(
   return periodKey || !borrowedFrequency(sourceLine, amount, stated) ? stated : ownUsable;
 }
 
-/** How often a fee is charged, with per-event words folded together. */
+/**
+ * One spelling for a stored or stated frequency (#1975, #1992): case is ignored and underscores,
+ * hyphens and runs of spaces are one separator, so "per item", "Per_Item", "per-item" and
+ * "per_item" all read "per_item". Blank is null. Different words stay different here; the family
+ * below says which words mean the same thing. `frequencySpellingSql` is its SQL twin.
+ */
+export function frequencySpelling(frequency: string | null | undefined): string | null {
+  if (typeof frequency !== "string") return null;
+  const spelled = frequency.toLowerCase().replace(/[\s_-]+/g, " ").trim().replace(/ /g, "_");
+  return spelled.length > 0 ? spelled : null;
+}
+
+/** SQL twin of `frequencySpelling` on a column or expression; NULL for blank. */
+export function frequencySpellingSql(column: string): string {
+  return `NULLIF(replace(btrim(regexp_replace(lower(${column}), '[[:space:]_-]+', ' ', 'g')), ' ', '_'), '')`;
+}
+
+/**
+ * Spellings (after `frequencySpelling`) that mean one charge each time it happens (#1992). Every
+ * comparison by meaning reads them as one family: "each" and "per item" are the same basis.
+ */
+export const PER_EVENT_SPELLINGS: readonly string[] = ["per_item", "per_transaction", "per_occurrence", "one_time", "each"];
+
+/**
+ * How often a fee is charged, compared by meaning: the spelling rule above, then per-event words
+ * folded into "per_item". The one shared rule for comparing two frequencies (#1992).
+ */
 export function frequencyFamily(frequency: string | null | undefined): string | null {
-  if (!frequency) return null;
-  return ["per_item", "per_transaction", "per_occurrence", "one_time"].includes(frequency) ? "per_item" : frequency;
+  const spelled = frequencySpelling(frequency);
+  if (spelled == null) return null;
+  return PER_EVENT_SPELLINGS.includes(spelled) ? "per_item" : spelled;
 }
 
 /** The fee categories whose stated period is re-checked against their own line (#1196, #1339). */

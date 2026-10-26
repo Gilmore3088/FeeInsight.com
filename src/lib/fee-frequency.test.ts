@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { borrowedFrequency, boxTableAnnualHeader, frequencyFamily, frequencyFromLine, perEventFrequency, settledFrequency, wordsAfterPrice } from "./fee-frequency";
+import { borrowedFrequency, boxTableAnnualHeader, frequencyFamily, frequencySpelling, frequencySpellingSql, frequencyFromLine, perEventFrequency, settledFrequency, wordsAfterPrice } from "./fee-frequency";
 
 describe("frequencyFromLine (live excerpts, Oct 8)", () => {
   it("reads the words right after the fee's own price", () => {
@@ -55,6 +55,22 @@ describe("frequencyFromLine (live excerpts, Oct 8)", () => {
     expect(borrowedFrequency("Daily overdraft fee……………$3.00 | Online Cash Management & Bill Pay……...……$19.95/month", 3, "monthly")).toBe(true);
     expect(frequencyFamily("per_transaction")).toBe("per_item");
     expect(frequencyFamily("monthly")).toBe("monthly");
+  });
+
+  it("reads every spelling of a frequency by one rule (#1992)", () => {
+    for (const spelling of ["per item", "Per_Item", "each", "per_item", "PER-ITEM", "  per   item ", "One Time", "per transaction"]) {
+      expect(frequencyFamily(spelling), spelling).toBe("per_item");
+    }
+    expect(frequencySpelling("per item")).toBe("per_item");
+    expect(frequencySpelling("Per_Item")).toBe("per_item");
+    expect(frequencySpelling("each")).toBe("each");
+    expect(frequencySpelling("  ")).toBeNull();
+    expect(frequencySpelling(null)).toBeNull();
+    expect(frequencyFamily("Monthly ")).toBe("monthly");
+    expect(frequencyFamily("")).toBeNull();
+    expect(frequencySpellingSql("fp.frequency")).toBe(
+      "NULLIF(replace(btrim(regexp_replace(lower(fp.frequency), '[[:space:]_-]+', ' ', 'g')), ' ', '_'), '')",
+    );
   });
 
   it("keeps Darwin's reader unchanged", () => {

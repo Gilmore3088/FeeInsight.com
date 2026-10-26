@@ -58,7 +58,7 @@ describe("Hamilton duplicate collapse", () => {
     // Frequency is not part of the line: "per item", "per occurrence" and unstated are one fee,
     // while two different stated frequencies keep both rows.
     expect(query).not.toContain("COALESCE(fp.frequency, '')");
-    expect(query).toContain("WHEN fp.frequency IN ('per_item', 'per_occurrence', 'per_transaction', 'one_time') THEN 'each'");
+    expect(query).toContain("WHEN NULLIF(replace(btrim(regexp_replace(lower(fp.frequency), '[[:space:]_-]+', ' ', 'g')), ' ', '_'), '') IN ('per_item', 'per_transaction', 'per_occurrence', 'one_time', 'each') THEN 'each'");
     expect(query).toContain("ranked.min_class IS NULL OR ranked.min_class = ranked.max_class");
     expect(JSON.stringify(db.mock.calls)).toContain("rolled_back_reason");
     expect(params).toEqual([500]);

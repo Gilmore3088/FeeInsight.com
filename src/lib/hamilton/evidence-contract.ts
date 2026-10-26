@@ -1,4 +1,5 @@
 import { readerFeeConditions } from "@/lib/fee-conditions";
+import { frequencyFamily } from "@/lib/fee-frequency";
 import type { AnalyzeResponse } from "./types";
 import type { FeeResearch, OwnFeeRow, PeerFeeRecordRef, PeerValue } from "./workspace/types";
 
@@ -230,20 +231,15 @@ export const EVENT_FEE_CATEGORIES: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * One spelling for a stated frequency (#1975): case is ignored and underscores, hyphens and runs of
- * spaces count as one space, so "per_item", "Per-Item" and "per  item" all read "per item". Blank is null.
- * Different words stay different: "monthly" never matches "per item".
+ * A stated frequency by meaning (#1975, #1992): the shared rule in fee-frequency.ts
+ * (`frequencyFamily`). Case and separators are ignored ("per_item", "Per-Item" and "per item" match),
+ * and the per-event words (per item, per transaction, per occurrence, one time, each) are one
+ * family, read "per_item". Blank is null. Different meanings stay different: "monthly" never
+ * matches "per item".
  */
 export function normalizeFrequency(frequency: string | null | undefined): string | null {
-  if (typeof frequency !== "string") return null;
-  const spelled = frequency.toLowerCase().replace(/[\s_-]+/g, " ").trim();
-  return spelled.length > 0 ? spelled : null;
+  return frequencyFamily(frequency);
 }
-
-/** Stated frequencies (after normalizeFrequency) that already mean "each time"; a blank event fee matches only these. */
-const PER_EVENT_FREQUENCIES: ReadonlySet<string> = new Set([
-  "per item", "per transaction", "per occurrence", "each",
-]);
 
 /** True when a fee in this category is charged each time it happens, so a blank frequency means per item. */
 export function chargedPerEvent(feeCategory: string | null | undefined): boolean {
@@ -431,7 +427,7 @@ function comparabilityProblems(
       const event = chargedPerEvent(left.scope.feeCategory) && left.scope.feeCategory === right.scope.feeCategory;
       const stated = leftFrequency || rightFrequency;
       if (!event) problems.push("fee_frequency_unknown");
-      else if (stated && !PER_EVENT_FREQUENCIES.has(stated)) problems.push("fee_frequency_mismatch");
+      else if (stated && stated !== "per_item") problems.push("fee_frequency_mismatch");
     } else if (leftFrequency !== rightFrequency) problems.push("fee_frequency_mismatch");
     const consumer = (audience: HamiltonAccountApplicability) =>
       audience === "consumer" || audience === "both";
