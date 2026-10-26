@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { amountEnvelopeFor } from "@/lib/agents/darwin/envelopes";
+import { INTERNATIONAL_ATM } from "@/lib/fee-fold";
 
 import { BOX_LATE_TARGET, borrowedDirection, COLLECTION_RETURN_TARGET, cardProductMisfile, checkFeeCategory, CLUB_WITHDRAWAL, CLUB_WITHDRAWAL_LIVE, genericMonthlyCharge, GUARDED_CATEGORIES, headingAboveExcerpt, NON_CUSTOMER_CASHIERS_CHECK_LIVE, refileCategory, refileFromLine, withBoxSection, withCollectionSection, withHeadingAbove, type CategoryGuardContext } from "./fee-category-guard";
 
@@ -2771,5 +2772,40 @@ describe("guard v92: a maintenance fee its own line prices as the paper statemen
   it("admits a generic name as paper_statement only on a paper line", () => {
     expect(checkFeeCategory("paper_statement", "Monthly fee", { amount: 5 }).ok).toBe(false);
     expect(checkFeeCategory("paper_statement", "Monthly fee", line("Monthly fee: $5", 5)).ok).toBe(false);
+  });
+});
+
+describe("guard v94: International ATM refuses the card type's non-fee names (#2100)", () => {
+  it("refuses each name the card's foreign transaction fee refuses, now that it names an ATM abroad", () => {
+    for (const name of [
+      "International ATM low balance fee",
+      "International ATM cash exchange",
+      "International ATM currency cash",
+      "International ATM currency order",
+      "International ATM currency ordered",
+      "International ATM currency exchange",
+      "International ATM currency purchase",
+      "International ATM foreign currency order",
+      "International ATM foreign currency delivery",
+      "International ATM check collection",
+      "Many international ATMs",
+    ]) {
+      expect(INTERNATIONAL_ATM.test(name), name).toBe(true);
+      expect(checkFeeCategory("atm_international", name).ok, name).toBe(false);
+      expect(checkFeeCategory("card_foreign_txn", name).ok, name).toBe(false);
+    }
+  });
+
+  it("still passes real international ATM fees", () => {
+    for (const name of [
+      "International ATM withdrawal fee $5",
+      "ATM withdrawal outside the U.S.",
+      "International ATM Withdrawal Fee",
+      "International ATM balance inquiry",
+      "Non-PNC Bank ATM Fee (All Other Countries)",
+      "Non-IBC ATM locations (outside the U.S.): Withdrawal",
+    ]) {
+      expect(checkFeeCategory("atm_international", name), name).toEqual({ ok: true });
+    }
   });
 });

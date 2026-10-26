@@ -766,10 +766,15 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   // $10.00 per transaction, ... ATMs outside U.S. excluded") and a bank's own partner network
   // ("Allpoint ATM Transactions" $0 at SoFi) are no fee here (the Oct 9 review the retired fold
   // rule recorded).
+  // v94 (#2100): the type took its names from card_foreign_txn in v76, so it refuses what that type
+  // refuses as no ATM fee, with the card type's own patterns: a low balance charge, a cash or
+  // foreign currency exchange, order, purchase or delivery, a check collection, and "many" ("Many
+  // international ATMs" describes a network). Read-only dry run, Oct 26: 0 of 60 live dollar fees
+  // and 0 of 3 live rate fees filed here carry the wording, so no fee is held or taken down.
   atm_international: {
     include: INTERNATIONAL_ATM,
     exclude:
-      /(\b(?:debit|pos|point of sale|purchases?|check ?cards?|credit cards?|cash advances?|wires?)\b|outside (?:the )?u\.?s\.?a?\.? excluded|^\s*allpoint\b)/i,
+      /(\b(?:debit|pos|point of sale|purchases?|check ?cards?|credit cards?|cash advances?|wires?)\b|outside (?:the )?u\.?s\.?a?\.? excluded|^\s*allpoint\b|low balance|cash exchange|currency (cash|order|ordered|exchange|purchase)|foreign currency (cash|order|exchange|purchase|delivery)|check collection|\bmany\b)/i,
   },
   // Knox v26 folded collection items and foreign checks into check cashing (James, Oct 7
   // 2026); on Oct 8 he gave collection items their own type ("Own type"), so a check sent
@@ -1140,7 +1145,11 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // holders beside an electronic price ("$4 for paper statement or $3 for estatement", "$7 with paper
 // statement") stays. Where the bank already has a live paper statement fee at that price, the copy is
 // not moved and goes to the second look. Dry-run count in the PR.
-export const CATEGORY_GUARD_VERSION = 92;
+// v94 (Oct 26, #2100): International ATM refuses the non-fee names the card's foreign transaction fee
+// refuses (low balance, cash or foreign currency exchange, order, purchase or delivery, check
+// collection, "many"), with that type's patterns. Read-only dry run (Oct 26): 0 of 60 live dollar and
+// 0 of 3 live rate fees filed atm_international carry the wording, so no fee is held or taken down.
+export const CATEGORY_GUARD_VERSION = 94;
 
 /** v87 (#1916): where a late charge printed in a safe deposit box section is filed. */
 export const BOX_LATE_TARGET = "safe_deposit_box";
