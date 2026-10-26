@@ -397,7 +397,9 @@ function narrateFinished(
     }
     case "deming-error-classes": {
       if (detail.confirmed_rows == null) return "Could not group the week's errors into classes.";
-      return `Grouped ${count(n(detail, "confirmed_rows"), "confirmed error row")} into ${count(n(detail, "classes"), "class", "classes")} seen at two or more banks; ${n(detail, "one_bank_patterns")} patterns were seen at one bank only.`;
+      const byName = n(detail, "name_family_classes") > 0 ? ` (${n(detail, "name_family_classes")} of them by fee name, a second view of the same rows)` : "";
+      const nameFailed = detail.name_read_failed === true ? " The fee-name grouping could not be read this time." : "";
+      return `Grouped ${count(n(detail, "confirmed_rows"), "confirmed error row")} into ${count(n(detail, "classes"), "class", "classes")} seen at two or more banks${byName}; ${n(detail, "one_bank_patterns")} patterns were seen at one bank only.${nameFailed}`;
     }
     case "deming-monthly-review": {
       if (detail.ran === false) return "Not the 1st of the month: no monthly agent review this time.";

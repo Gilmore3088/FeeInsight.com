@@ -60,6 +60,11 @@ const EXAMPLES = 5;
 const AMOUNT_ROW_LIMIT = 500;
 /** Fee-level rows read with their fee name per run, for the name-family grouping. */
 export const NAME_ROW_LIMIT = 5000;
+/**
+ * Name-family classes listed per run, apart from `ERROR_CLASS_LIMIT`: a second view of the same
+ * rows never pushes a category class off the list (its ledger row would stop updating).
+ */
+export const NAME_CLASS_LIMIT = 50;
 /** Fewest words a lesson name family needs to group across banks; one word ("annual") is too broad (#2068). */
 const NAME_WORDS_MIN = 2;
 
@@ -113,6 +118,8 @@ export interface ErrorClassSummary {
   nameRowsRead?: number;
   /** Set when the week held more fee-level rows than one run reads (`NAME_ROW_LIMIT`). */
   nameRowLimitHit?: boolean;
+  /** Set when the name-family read failed; the category classes still stand. */
+  nameReadFailed?: boolean;
   classes: ErrorClass[];
 }
 
@@ -216,7 +223,9 @@ export async function readErrorClasses(db: SqlTag = sql, windowDays = ERROR_CLAS
   const withText: AmountErrorRow[] = amountRows.map(({ document_id, ...row }) => ({ ...row, text: document_id === null ? null : texts.get(Number(document_id)) ?? null }));
   // The same confirmed rows at the fee-level stages, one per row with its fee's name: the name a
   // correction or audit recorded, else the live fee's.
-  const nameRows = await db<NameErrorRow[]>`
+  // Its own savepoint: a failed name read loses only the name view, never the category classes.
+  let nameReadFailed = false;
+  const nameRows = await inSavepoint(db, (scope) => scope<NameErrorRow[]>`
     SELECT f.id AS feedback_id, f.about_stage, f.kind, f.check_name, f.institution_id, f.fee_published_id,
            COALESCE(f.canonical_fee_key, fp.canonical_fee_key) AS canonical_fee_key,
            COALESCE(NULLIF(f.evidence->>'old_name', ''), NULLIF(f.evidence->>'fee_name', ''), fp.fee_name) AS fee_name,
@@ -231,13 +240,17 @@ export async function readErrorClasses(db: SqlTag = sql, windowDays = ERROR_CLAS
        AND COALESCE(NULLIF(f.evidence->>'old_name', ''), NULLIF(f.evidence->>'fee_name', ''), fp.fee_name) IS NOT NULL
      ORDER BY f.id DESC
      LIMIT ${NAME_ROW_LIMIT + 1}
-  `;
-  const nameLimitHit = nameRows.length > NAME_ROW_LIMIT;
-  if (nameLimitHit) nameRows.length = NAME_ROW_LIMIT;
-  const summary = summarizeRows([...rows, ...amountClassRows(withText, EXAMPLES)], windowDays, nameRows);
+  `).catch(() => {
+    nameReadFailed = true;
+    return null;
+  });
+  const nameLimitHit = nameRows != null && nameRows.length > NAME_ROW_LIMIT;
+  if (nameRows && nameLimitHit) nameRows.length = NAME_ROW_LIMIT;
+  const summary = summarizeRows([...rows, ...amountClassRows(withText, EXAMPLES)], windowDays, nameRows ?? undefined);
   return {
     ...summary,
     ...(limitHit ? { amountRowLimitHit: true } : {}),
+    ...(nameReadFailed ? { nameReadFailed: true } : {}),
     ...(nameLimitHit ? { nameRowLimitHit: true } : {}),
   };
 }
@@ -335,11 +348,13 @@ export function summarizeRows(rows: ClassRow[], windowDays = ERROR_CLASS_WINDOW_
     }
     classes.push(toClass(row));
   }
+  const byReach = (a: ErrorClass, b: ErrorClass) => b.banks - a.banks || b.rows - a.rows || a.key.localeCompare(b.key);
+  const nameClasses: ErrorClass[] = [];
   for (const row of nameRows ? nameFamilyRows(nameRows) : []) {
-    if (Number(row.banks) >= ERROR_CLASS_MIN_BANKS) classes.push(toClass(row));
+    if (Number(row.banks) >= ERROR_CLASS_MIN_BANKS) nameClasses.push(toClass(row));
   }
-  classes.sort((a, b) => b.banks - a.banks || b.rows - a.rows || a.key.localeCompare(b.key));
-  const listed = classes.slice(0, ERROR_CLASS_LIMIT);
+  // Each view has its own limit, so name classes never push a category class off the list.
+  const listed = [...classes.sort(byReach).slice(0, ERROR_CLASS_LIMIT), ...nameClasses.sort(byReach).slice(0, NAME_CLASS_LIMIT)].sort(byReach);
   return {
     windowDays, confirmedRows, oneBankPatterns, unpatternedRows,
     ...(nameRows ? { nameFamilyClasses: listed.filter(isNameFamilyClass).length, nameRowsRead: nameRows.length } : {}),
@@ -480,6 +495,7 @@ export function errorClassesDetail(result: ErrorClassesResult) {
     amount_row_limit_hit: summary?.amountRowLimitHit ?? false,
     name_rows_read: summary?.nameRowsRead ?? null,
     name_row_limit_hit: summary?.nameRowLimitHit ?? false,
+    name_read_failed: summary?.nameReadFailed ?? false,
     classes: summary?.classes.length ?? null,
     name_family_classes: summary?.nameFamilyClasses ?? null,
     written: result.written,

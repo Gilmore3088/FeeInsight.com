@@ -11,11 +11,14 @@ import {
   nameFamilyRows,
   patternLabel,
   type NameErrorRow,
+  readErrorClasses,
   runErrorClasses,
   summarizeErrorClasses,
   summarizeRows,
   ERROR_CLASS_CHECK,
   ERROR_CLASS_KIND,
+  ERROR_CLASS_LIMIT,
+  NAME_CLASS_LIMIT,
 } from "./error-classes";
 
 const row = (stage: string, kind: string, pattern: string, banks: number, rows = banks) => ({
@@ -153,6 +156,28 @@ describe("error classes (#2063)", () => {
       ]);
       expect(summary.classes).toEqual([]);
       expect(summary.nameFamilyClasses).toBe(0);
+    });
+
+    it("never lets name classes push a category class off the list", () => {
+      const categories = Array.from({ length: ERROR_CLASS_LIMIT }, (_, i) => row("extract", "wrong_category", `category:c${i}`, 2));
+      const names = Array.from({ length: 30 }, (_, i) => named(100 + i, "NSF Item Returned", i % 2 ? "overdraft" : "account_research"));
+      const summary = summarizeRows(categories, 7, names);
+      expect(summary.classes.filter((cls) => !isNameFamilyClass(cls))).toHaveLength(ERROR_CLASS_LIMIT);
+      expect(summary.classes.filter(isNameFamilyClass)).toHaveLength(1);
+      // The widest class still leads the list.
+      expect(summary.classes[0].key).toBe("extract:wrong_category:name:nsf");
+      expect(NAME_CLASS_LIMIT).toBeGreaterThan(0);
+    });
+
+    it("keeps the category classes when the name read fails", async () => {
+      const db = ((strings: TemplateStringsArray) => {
+        const text = strings.join("?");
+        return text.includes("AS amount_row") ? Promise.reject(new Error("name read failed")) : Promise.resolve([]);
+      }) as unknown as Parameters<typeof readErrorClasses>[0];
+      const summary = await readErrorClasses(db, 7);
+      expect(summary).toMatchObject({ confirmedRows: 0, nameReadFailed: true });
+      expect(summary.nameRowsRead).toBeUndefined();
+      expect(errorClassesDetail({ asOf: "2026-10-26", written: 0, skipped: [], summary })).toMatchObject({ name_read_failed: true });
     });
 
     it("shows the name-family count in the step's summary and run-ledger detail", () => {
