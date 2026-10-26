@@ -378,7 +378,8 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   LEI_MATCH_PARSER_VERSION: "First version: the gleif lei-match partitions check every institution in bounded batches; nothing older to replay.",
   // v1 (#1909): Darwin re-reads every live fee on a Spanish copy of a schedule each verify step (no
   // cursor; a few hundred rows), so there is no backlog for a replay to count.
-  TRANSLATED_COPY_CHECK_VERSION: "Each verify step re-reads every live fee on a Spanish-copy document (no cursor); nothing to replay.",
+  // v3 (#1986): the same step also re-reads every translated-copy takedown and restores one whose English line is gone (switch off).
+  TRANSLATED_COPY_CHECK_VERSION: "Each verify step re-reads every live fee on a Spanish-copy document and, from v3, every translated-copy takedown (no cursor); nothing to replay.",
   // v2 (#1910): the name cover reads NSF/insufficient, OD/overdraft and a paid NSF item/overdraft as one item.
   PRODUCT_PAGE_REPEAT_CHECK_VERSION: "Each verify step re-reads every live product-page fee with a same-price schedule twin (no cursor), so version 2's wider name cover reaches every live fee on the next step; nothing older to replay.",
   // v1 (#1673): same-line copies the v1 restore brought back beside their older line's live replacement.
