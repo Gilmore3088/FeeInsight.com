@@ -21,6 +21,7 @@ import {
   runRosettaRead,
 } from "./read";
 import { ROSETTA_OCR_VERSION } from "./ocr";
+import { ROSETTA_TABLE_ROWS_VERSION } from "./table-rows";
 import { DROPPED_LIGATURE_DUE_PATTERN, DROPPED_LIGATURE_READER, GLYPH_REPAIR_DUE_PATTERN, GLYPH_REPAIR_VERSION } from "./glyph-repair";
 import { isLikelyScannedPdf } from "../learning/format";
 
@@ -1075,7 +1076,7 @@ describe("Rosetta agentic read", () => {
       const update = db.mock.calls.find((call) => templateText(call[0]).includes("SET table_rows ="));
       expect(update).toBeDefined();
       const stored = JSON.parse(update![1] as string);
-      expect(stored.version).toBe(1);
+      expect(stored.version).toBe(ROSETTA_TABLE_ROWS_VERSION);
       expect(stored.rows[0]).toMatchObject({ origin: "ocr_layout", cells: ["OVERDRAFT FEE", "$33.00"] });
       expect(update![2]).toBe("read.ocr_tesseract");
       // The caller owns an injected reader; the run does not close it.

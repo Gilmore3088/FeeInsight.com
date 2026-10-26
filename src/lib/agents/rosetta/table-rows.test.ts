@@ -16,9 +16,10 @@ describe("Rosetta table rows", () => {
       <dl><dt>Wire, outgoing</dt><dd>$25.00</dd></dl>`;
     const { rows, text } = extractHtmlDomText(html);
     expect(rows).toEqual([
-      { table: 0, page: null, cells: ["Service", "Fee"], header: true, origin: "html_table" },
-      { table: 0, page: null, cells: ["Overdraft fee", "$35.00"], header: false, origin: "html_table" },
-      { table: 0, page: null, cells: ["Stop payment", "$30.00"], header: false, origin: "html_table" },
+      { table: 0, page: null, cells: ["Service", "Fee"], columns: ["Service", "Fee", ""], header: true, origin: "html_table" },
+      // v2 (#1912): the empty cell keeps its column. The header names no third column, so the text line is unchanged.
+      { table: 0, page: null, cells: ["Overdraft fee", "$35.00"], columns: ["Overdraft fee", "", "$35.00"], header: false, origin: "html_table" },
+      { table: 0, page: null, cells: ["Stop payment", "$30.00"], columns: ["Stop payment", "$30.00", ""], header: false, origin: "html_table" },
       { table: 1, page: null, cells: ["Wire, outgoing", "$25.00"], header: false, origin: "html_definition_list" },
     ]);
     // Every row is a line of the text, so Knox can trace it back.
@@ -43,7 +44,7 @@ describe("Rosetta table rows", () => {
   it("stores nothing when a document has no rows", () => {
     expect(tableRowsPayload([])).toBeNull();
     expect(tableRowsPayload(tableRowsFromText("A | $1.00", "paid_transcription"))).toEqual({
-      version: 1,
+      version: 2,
       rows: [{ table: 0, page: null, cells: ["A", "$1.00"], header: false, origin: "paid_transcription" }],
     });
   });

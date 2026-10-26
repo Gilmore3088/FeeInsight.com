@@ -213,10 +213,11 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-343 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+345 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
-### Extraction and fee reading (55)
+### Extraction and fee reading (56)
 
+- 2026-10-26 — An empty table cell holds a column: place every cell on the table's grid before writing the row, and when an empty cell would shift a value under the column to its left, write that column's header name after the value; Capital City's IRA closing fee went live as a CD early closure (#1912). — [finding](findings/2026-10-26-html-table-empty-cells.md) — Agent lesson: rosetta/issue-1912-empty-cells-keep-their-column; Guard: `src/lib/agents/rosetta/html-table-columns.test.ts`
 - 2026-10-26 — When two prices are glued into one cell, the line is two columns flattened and neither price belongs to either name: read each fee from a line that prints it alone; and a rejected wire is a wire correction, not a wire price (#1912). — [finding](findings/2026-10-26-glued-price-pair.md) — Agent lesson: knox/issue-1912-glued-price-pair, darwin/issue-1912-rejected-wire-is-a-correction; Guard: `src/lib/custom-report/glued-price-pair.test.ts`
 - 2026-10-26 — A note that a fee is free for some is a waiver, not "no fee": read the price everyone else pays ("Money Orders (Free with Platinum Checking) | $5.00"), and on a two-column PDF give a name with no price beside it the price under its own note (#1918). — [finding](findings/2026-10-26-free-note-drops-priced-row.md) — Agent lesson: knox/issue-1918-free-note-is-a-waiver; Guard: `src/lib/agents/knox/free-note-prices.test.ts`
 - 2026-10-26 — A fee with no account counts as the bank's checking price: read the account its own sentence names ("The M&T Preferred Money Market account has a $20 monthly maintenance charge."), and keep a savings or money market account's own monthly or minimum balance fee out of the bank's checking value (#1912). — [finding](findings/2026-10-26-savings-maintenance-sets-checking-value.md) — Agent lessons: knox/issue-1912-account-named-in-fee-sentence, knox/issue-1912-own-line-account-first; Guard: `src/lib/agents/knox/account-subject.test.ts`, `src/lib/account-kind.test.ts`, `src/lib/data-store/fee-stats.test.ts`
@@ -316,8 +317,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A consumer comparison needs the payer checked as well as the category. — [finding](findings/2026-10-09-business-wire-as-consumer-price.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 - 2026-10-09 — Returned bonds and coupons were filed as NSF. — [finding](findings/2026-10-09-bond-return-filed-nsf.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 
-### Verification and publication (59)
+### Verification and publication (60)
 
+- 2026-10-26 — A price labelled with an account's column is that account's price: "$50 fee to close prior to maturity (ira)" does not trace a fee named "Early closure of CD"; a label carrying a figure is a condition, not a column (#1912). — [finding](findings/2026-10-26-column-label-names-the-account.md) — Agent lesson: darwin/issue-1912-column-label-names-the-account; Guard: `src/lib/custom-report/column-account.test.ts`
 - 2026-10-26 — A fee that names checking is a checking price, whatever product it was filed under: "Share Draft Checking Service Monthly service charge" under "Share Value" stays in the bank's checking value (#1912). — [finding](findings/2026-10-26-checking-name-under-savings-product.md) — Agent lesson: hamilton/issue-1912-checking-name-is-checking; Guard: `src/lib/fee-product.test.ts`, `src/lib/data-store/fee-stats.test.ts`
 - 2026-10-26 — A bank's wire value is its general wire price: an online, phone, fax, PIN or repetitive wire price beside it is an exception set aside from the value, "in branch" or "manual" is the general price, and with no general row every row counts; 76 live wire values moved (#1912). — [finding](findings/2026-10-26-channel-wire-price-sets-value.md) — Agent lesson: hamilton/issue-1912-channel-wire-is-an-exception; Guard: `src/lib/wire-channel.test.ts`, `src/lib/data-store/fee-stats.test.ts`, `src/lib/data-store/product-exception-value.db.test.ts`
 - 2026-10-26 — An overdraft or NSF $0 is the fee's price only when the schedule states it for the whole fee: a $0 whose own cell goes on to price the fee, whose name is priced on a band row ("Negative account balance $10.00 or more"), or that is the next column's free word is held, never verified as free; 4 of 139 live $0s were such reads (#1882). — [finding](findings/2026-10-26-zero-overdraft-band-read-as-free.md) — Agent lesson: knox/issue-1882-a-zero-band-is-not-the-fee, darwin/issue-1882-zero-overdraft-needs-its-whole-cell; Guard: `src/lib/banded-zero.test.ts`, `src/lib/agents/darwin/banded-zero-check.test.ts`, `src/lib/agents/darwin/banded-zero-check.db.test.ts`
@@ -604,16 +606,16 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (301 in all).
+counts as of this index (305 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
 | atlas | 8 | [`src/lib/agents/atlas/role-lessons.ts`](../../src/lib/agents/atlas/role-lessons.ts) |
 | magellan | 25 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
 | hoovie | 12 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
-| rosetta | 12 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
-| knox | 81 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
-| darwin | 46 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
+| rosetta | 13 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
+| knox | 82 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
+| darwin | 48 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 40 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
 | hamilton | 60 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
 | deming | 17 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |

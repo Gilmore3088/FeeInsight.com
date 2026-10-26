@@ -12,6 +12,7 @@ import { createHash } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { scannedFeePdf } from "@/lib/agents/rosetta/test-fixtures/scanned-pdf";
+import { ROSETTA_TABLE_ROWS_VERSION } from "@/lib/agents/rosetta/reader-versions";
 
 // The source runtime has its own pinned transport. Route that seam through this
 // suite's existing in-memory bank fixtures too; never resolve/contact fake bank
@@ -482,9 +483,9 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
     const byName = Object.fromEntries(texts.map((row) => [String(row.institution_name), row]));
     const greenRows = (byName["Green Mountain Test Bank"].table_rows as { version: number; rows: Array<Record<string, unknown>> });
     expect(byName["Green Mountain Test Bank"].reader).toBe("read.html_dom");
-    expect(greenRows.version).toBe(1);
+    expect(greenRows.version).toBe(ROSETTA_TABLE_ROWS_VERSION);
     expect(greenRows.rows[0]).toMatchObject({ cells: ["Service", "Fee"], header: true, origin: "html_table" });
-    expect(greenRows.rows).toContainEqual({ table: 0, page: null, cells: ["Overdraft fee (consumer accounts, per item)", "$32.00"], header: false, origin: "html_table" });
+    expect(greenRows.rows).toContainEqual({ table: 0, page: null, cells: ["Overdraft fee (consumer accounts, per item)", "$32.00"], columns: ["Overdraft fee (consumer accounts, per item)", "$32.00"], header: false, origin: "html_table" });
     expect(greenRows.rows).toHaveLength(10);
     expect(byName["Otter Creek Test Bank"].reader).toBe("read.ocr_tesseract");
     const attempts = await sql`

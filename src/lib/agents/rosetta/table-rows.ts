@@ -11,9 +11,17 @@ type SqlTag = typeof sql;
  * Contract (`agent_source_texts.table_rows`, jsonb, see rosetta/AGENTS.md):
  *   { "version": 1, "rows": [{ "table": 0, "page": null, "cells": ["Overdraft fee", "$35.00"],
  *                              "header": false, "origin": "html_table" }, ...] }
- * Each row's `cells.join(" | ")` is exactly one line of `normalized_text`, so a row can
- * always be traced back to the text Knox already reads. Empty cells are dropped, the
- * same as in the text. Rows of one table share `table` and appear in document order.
+ * Each row's `line` (when set) or else `cells.join(" | ")` is exactly one line of
+ * `normalized_text`, so a row can always be traced back to the text Knox already reads.
+ * Empty cells are dropped from `cells`. Rows of one table share `table` and appear in
+ * document order.
+ *
+ * Version 2 (#1912): an HTML table row also stores `columns`, its text per grid column with
+ * "" for an empty cell or a column a span covers, so a value keeps its column. Dropping empty
+ * cells moved Capital City's "$50 fee to close prior to maturity" from its IRA column under
+ * the CD column, and the fee was filed as a CD early closure. A cell an empty cell displaced is
+ * written in the text with its column's header name after it ("$50 fee to close prior to
+ * maturity (ira)"), and that row's text is in `line`. `cells` is unchanged, so v1 readers work.
  */
 
 import { ROSETTA_TABLE_ROWS_VERSION } from "./reader-versions";
@@ -38,6 +46,13 @@ export interface SourceTableRow {
   /** 1-based PDF page, or null when the document has no pages (HTML, plain text). */
   page: number | null;
   cells: string[];
+  /**
+   * v2, HTML tables only: the row's text per column of the table's grid, as wide as the table's
+   * widest row. "" is an empty cell, a column a colspan or a rowspan from above covers, or no cell.
+   */
+  columns?: string[];
+  /** v2: the row's text line, only when it is not `cells.join(" | ")` (a displaced cell with its header's name). */
+  line?: string;
   /** A header row (`<th>` cells only, or inside `<thead>`). Rows read from text are never headers. */
   header: boolean;
   origin: TableRowOrigin;
@@ -90,7 +105,7 @@ export function tableRowsFromText(
 /** Rows that still appear in the stored text after whitespace normalization. */
 export function rowsInText(rows: SourceTableRow[], normalizedText: string): SourceTableRow[] {
   const lines = new Set(normalizedText.split("\n").map((line) => line.trim()));
-  return rows.filter((row) => lines.has(row.cells.join(CELL_SEPARATOR))).slice(0, MAX_TABLE_ROWS);
+  return rows.filter((row) => lines.has(row.line ?? row.cells.join(CELL_SEPARATOR))).slice(0, MAX_TABLE_ROWS);
 }
 
 export function tableRowsPayload(rows: SourceTableRow[]): SourceTableRows | null {

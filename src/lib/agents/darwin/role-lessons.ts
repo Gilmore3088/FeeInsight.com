@@ -480,4 +480,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-26",
   },
+  {
+    id: "issue-1912-column-label-names-the-account",
+    agent: "darwin",
+    stage: "verification",
+    lesson: "A price whose own table cell closes with an account's column name (\"$50 fee to close prior to maturity (ira)\") is that account's price: a fee named for a different account (\"Early closure of CD\") does not trace to it, even when the words beside it name that account. A label that carries a figure (\"(Share minimum of $25.00)\") is a condition, not a column.",
+    why: "Capital City Bank's savings comparison table had an empty CD cell, so its IRA column's $50 closing fee sat beside the CD column's \"Early withdrawal penalty (CD)\" and went live as a CD early closure (fee 140269). Rosetta now writes the column's name after a shifted value (#2737), but the shared source check still traced the CD fee to the labelled line.",
+    evidence: { issues: [1912], prs: [2737], files: ["docs/project/findings/2026-10-26-column-label-names-the-account.md", "src/lib/custom-report/column-account.ts", "src/lib/custom-report/source-check.ts"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
 ];

@@ -136,4 +136,14 @@ export const ROSETTA_LESSONS: AgentLesson[] = [
     appliesTo: ["read"],
     since: "2026-10-26",
   },
+  {
+    id: "issue-1912-empty-cells-keep-their-column",
+    agent: "rosetta",
+    stage: "read",
+    lesson: "An empty table cell is part of the table: place every cell on the table's column grid (colspan, rowspan and empty cells included) before writing a row, so a value stays under its own column. When an empty cell would shift a value under the column to its left, write that column's header name after the value (\"$50 fee to close prior to maturity (ira)\").",
+    why: "The HTML reader dropped empty cells, so Capital City Bank's comparison row 'Fees/Penalties | (empty) | (empty) | Early withdrawal penalty | $50 fee to close prior to maturity | (empty)' was stored as 'Fees/Penalties | Early withdrawal penalty | $50 fee to close prior to maturity'. The IRA's $50 closing fee then sat under the CD column and went live as 'Early closure of CD' (live fee 140269, text 29131).",
+    evidence: { issues: [1912], prs: [], files: ["docs/project/findings/2026-10-26-html-table-empty-cells.md", "src/lib/agents/rosetta/html-dom.ts"] },
+    appliesTo: ["read"],
+    since: "2026-10-26",
+  },
 ];
