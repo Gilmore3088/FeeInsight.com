@@ -1,5 +1,5 @@
 import { sql } from "@/lib/data-store/connection";
-import { statsRowFilter } from "@/lib/data-store/fee-stats";
+import { institutionValueSql, statsRowFilter } from "@/lib/data-store/fee-stats";
 import { consumerPriceMoveSql } from "@/lib/data-store/consumer-price-moves";
 import { getInstitutionById } from "@/lib/data-store/core";
 import { HEADLINE_FEE_KEYS } from "@/lib/data-store/market-readiness";
@@ -280,8 +280,7 @@ async function loadWorkspaceBanks(onlyInstitutionId: number | null): Promise<Wor
 async function loadOwnFees(institutionId: number): Promise<Record<string, number>> {
   const rows = await sql<{ fee_category: string; amount: number | string }[]>`
     SELECT c.fee_category,
-           CASE WHEN c.fee_category = 'overdraft' THEN MAX(c.amount)
-                ELSE PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY c.amount) END AS amount
+           ${sql.unsafe(institutionValueSql("c"))} AS amount
       FROM published_fee_catalog c
      WHERE c.institution_id = ${institutionId}
        AND c.review_status = 'approved'

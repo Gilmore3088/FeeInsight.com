@@ -387,6 +387,16 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     since: "2026-10-25",
   },
   {
+    id: "issue-1911-general-over-product-exception",
+    agent: "hamilton",
+    stage: "analysis",
+    lesson: "When an institution states a general price for a fee and also a price for one named account as an exception to it, compare the institution at its general price and name the exception as that account's own fee; never blend the two into one figure. With no general price, the named accounts' prices are the institution's. An account's own monthly fee or minimum balance is never an exception.",
+    why: "U.S. Bank's Safe Debit money order ($1.65) and non-U.S. Bank ATM fee ($2.50) sat beside the general $5.00 and $3.00, and the per-institution median pooled them into $3.325 and $2.75, prices no customer is charged.",
+    evidence: { issues: [1911], prs: [2179], files: ["src/lib/data-store/fee-stats.ts", "src/lib/fee-product.ts", "src/lib/fee-institution-value.ts", "docs/project/findings/2026-10-25-product-exceptions-pool-general-price.md"] },
+    appliesTo: "all",
+    since: "2026-10-25",
+  },
+  {
     id: "issue-1896-empty-group-caption",
     agent: "hamilton",
     stage: "written answer",

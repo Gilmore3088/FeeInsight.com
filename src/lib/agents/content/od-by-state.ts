@@ -1,6 +1,7 @@
 import { sql } from "@/lib/data-store/connection";
 import { computePercentile } from "@/lib/data-store/fees";
 import { STATS_ROW_FILTER, STRONG_INSTITUTION_COUNT, valuePerInstitution } from "@/lib/data-store/fee-stats";
+import { productExceptionSql } from "@/lib/fee-product";
 import { contentSchemaReady, insertContentDraft } from "@/lib/data-store/content-drafts";
 import { unbackedNumbers } from "@/lib/agents/marketing/facts";
 import { PRODUCT_NAME, RESEARCH_IMPRINT, SITE_URL } from "@/lib/constants";
@@ -112,6 +113,8 @@ export interface OdRow {
   amount: number | string;
   charter_type?: string | null;
   asset_size_tier?: string | null;
+  /** Statistics rule 11 (fee-stats.ts, productExceptionSql): priced for one named account as an exception. */
+  product_exception?: boolean | null;
 }
 
 /** One institution's amount for a related fee (the overdraft transfer or recurring fee). */
@@ -119,6 +122,8 @@ export interface RelatedRow {
   institution_id: number | string;
   fee_category: string;
   amount: number | string;
+  /** Statistics rule 11 (fee-stats.ts, productExceptionSql): priced for one named account as an exception. */
+  product_exception?: boolean | null;
 }
 
 export interface SizeGroup {
@@ -577,7 +582,7 @@ export function checkedText(article: OdArticle): string {
 
 export async function loadOdRows(db: SqlTag = sql, category: string = OD_CATEGORY): Promise<OdRow[]> {
   const rows = await db.unsafe(
-    `SELECT ef.institution_id, s.state_code, s.charter_type, s.asset_size_tier, ef.amount
+    `SELECT ef.institution_id, s.state_code, s.charter_type, s.asset_size_tier, ef.amount, ${productExceptionSql("ef")} AS product_exception
        FROM published_fee_catalog ef
        JOIN institution_sources s ON s.id = ef.institution_id
       WHERE ${STATS_ROW_FILTER}
@@ -592,7 +597,7 @@ export async function loadOdRows(db: SqlTag = sql, category: string = OD_CATEGOR
 /** Overdraft's related fees: the protection transfer and the recurring fee for staying overdrawn. */
 export async function loadRelatedRows(db: SqlTag = sql): Promise<RelatedRow[]> {
   const rows = await db.unsafe(
-    `SELECT ef.institution_id, ef.fee_category, ef.amount
+    `SELECT ef.institution_id, ef.fee_category, ef.amount, ${productExceptionSql("ef")} AS product_exception
        FROM published_fee_catalog ef
       WHERE ${STATS_ROW_FILTER}
         AND ef.fee_category = ANY($1::text[])

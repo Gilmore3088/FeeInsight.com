@@ -1,5 +1,5 @@
 import { sql } from "./connection";
-import { activeInstitutionFilter, statsRowFilter } from "./fee-stats";
+import { activeInstitutionFilter, institutionValueSql, statsRowFilter } from "./fee-stats";
 import {
   aggregateCityFeeAverages,
   type CityFeeAverage,
@@ -210,22 +210,22 @@ export async function getCityInstitutions(city: string, stateCode: string): Prom
   const rows = await sql`
     SELECT ct.id, ct.institution_name, ct.charter_type, ct.asset_size,
            COALESCE(fc.fee_count, 0) as fee_count,
-           (SELECT MAX(ef.amount) FROM published_fee_catalog ef
+           (SELECT ${sql.unsafe(institutionValueSql("ef"))} FROM published_fee_catalog ef
               WHERE ef.institution_id = ct.id AND ef.fee_category = 'overdraft'
                 AND ef.review_status = 'approved' AND ef.amount IS NOT NULL AND ef.amount >= 0
-                AND ${sql.unsafe(statsRowFilter("ef"))}) as overdraft,
-           (SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ef.amount) FROM published_fee_catalog ef
+                AND ${sql.unsafe(statsRowFilter("ef"))} GROUP BY ef.fee_category) as overdraft,
+           (SELECT ${sql.unsafe(institutionValueSql("ef"))} FROM published_fee_catalog ef
               WHERE ef.institution_id = ct.id AND ef.fee_category = 'monthly_maintenance'
                 AND ef.review_status = 'approved' AND ef.amount IS NOT NULL AND ef.amount >= 0
-                AND ${sql.unsafe(statsRowFilter("ef"))}) as monthly_maintenance,
-           (SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ef.amount) FROM published_fee_catalog ef
+                AND ${sql.unsafe(statsRowFilter("ef"))} GROUP BY ef.fee_category) as monthly_maintenance,
+           (SELECT ${sql.unsafe(institutionValueSql("ef"))} FROM published_fee_catalog ef
               WHERE ef.institution_id = ct.id AND ef.fee_category = 'nsf'
                 AND ef.review_status = 'approved' AND ef.amount IS NOT NULL AND ef.amount >= 0
-                AND ${sql.unsafe(statsRowFilter("ef"))}) as nsf,
-           (SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ef.amount) FROM published_fee_catalog ef
+                AND ${sql.unsafe(statsRowFilter("ef"))} GROUP BY ef.fee_category) as nsf,
+           (SELECT ${sql.unsafe(institutionValueSql("ef"))} FROM published_fee_catalog ef
               WHERE ef.institution_id = ct.id AND ef.fee_category = 'atm_non_network'
                 AND ef.review_status = 'approved' AND ef.amount IS NOT NULL AND ef.amount >= 0
-                AND ${sql.unsafe(statsRowFilter("ef"))}) as atm_non_network
+                AND ${sql.unsafe(statsRowFilter("ef"))} GROUP BY ef.fee_category) as atm_non_network
     FROM institution_sources ct
     LEFT JOIN (
       SELECT institution_id, COUNT(*) as fee_count

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
-  rows: [] as { fee_category: string; amount: number | string | null; institution_id: number; charter_type: string; fee_audience?: string }[],
+  rows: [] as { fee_category: string; amount: number | string | null; institution_id: number; charter_type: string; fee_audience?: string; product_exception?: boolean }[],
   queries: [] as string[],
 }));
 vi.mock("./connection", () => {
@@ -17,6 +17,17 @@ import { getFeeCategorySummaries } from "./fees";
 beforeEach(() => { state.rows.length = 0; state.queries.length = 0; });
 
 describe("getFeeCategorySummaries charter medians", () => {
+  it("selects the product-exception flag so the national median follows rule 11 (#1911)", async () => {
+    state.rows.push(
+      { fee_category: "atm_non_network", amount: 2.5, institution_id: 5, charter_type: "bank", product_exception: true },
+      { fee_category: "atm_non_network", amount: 3, institution_id: 5, charter_type: "bank" },
+    );
+    for (let i = 0; i < 10; i++) state.rows.push({ fee_category: "atm_non_network", amount: 3 + i, institution_id: 100 + i, charter_type: "bank" });
+    const summaries = await getFeeCategorySummaries();
+    expect(state.queries[0]).toContain("AS product_exception");
+    expect(summaries.find((s) => s.fee_category === "atm_non_network")).toMatchObject({ institution_count: 11, min_amount: 3 });
+  });
+
   it("splits medians by charter and leaves thin charters null", async () => {
     const rows = state.rows;
     // Six banks at 30..35, six credit unions at 20..25, one unknown charter at 100.
