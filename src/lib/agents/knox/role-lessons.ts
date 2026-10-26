@@ -676,4 +676,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-1672-account-per-column-table",
+    agent: "knox",
+    stage: "extract",
+    lesson: "A table can have no label column: its header row names one account in every cell (\"Savings Account | Checking Account | Money Market | Certificate Accounts | Holiday Account\") and each row under it gives every account's feature in its own cell (\"Min Balance: $1,000.00\", \"No monthly fee, if the Min balance is maintained; otherwise $10.00\"). A monthly fee read from such a row belongs to the account over its own column, the first column included; climb past the feature rows (\"0% | 0% | 0.50% APY\", \"Does not earn dividends\") to the header. Record that account. Read it only when the price cell holds the fee's own words, since another cell can print the same price for something else (\"Minimum deposit/balance ... $5.00\"). A bare label in the first cell (\"Monthly fee ...... | $8\") means the table has a label column, so its first header cell is a label, not an account.",
+    why: "Lower East Side People's FCU's Dividend Rates table prints the money market's $10 monthly fee in its third column under \"Money Market\"; the column reader read only tables that open with a label column, so the fee recorded no account and stayed live as a consumer checking monthly fee (#1672). On Oct 26 the same shape held 2 more live non-checking fees (a business analysis checking and a regular savings fee).",
+    evidence: { issues: [1672], prs: [], files: ["src/lib/agents/knox/lineup.ts", "src/lib/agents/knox/lineup.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
 ];

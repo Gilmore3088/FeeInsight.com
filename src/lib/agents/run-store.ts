@@ -1853,6 +1853,8 @@ async function executeAgenticStep(
             typed_rejected: accountTypeHold.typedRejected.length,
             checked_untyped: accountTypeHold.checkedUntyped,
             recheck_no_product: accountTypeHold.recheckNoProduct,
+            // #1672: with ACCOUNT_TYPE_COLUMN_READ_LIVE off, a dry run's column-read holds (fee ids).
+            column_shadow: accountTypeHold.columnShadow.map((hold) => ({ fee_published_id: hold.feePublishedId, fee_verified_id: hold.feeVerifiedId, account_type: hold.accountType, product_name: hold.productName })),
             error: accountTypeHold.error,
           },
           cut_name_duplicate: {

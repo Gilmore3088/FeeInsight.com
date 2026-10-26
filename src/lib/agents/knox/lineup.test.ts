@@ -8,6 +8,7 @@ import {
   productNameFromFeeName,
   readableProductName,
   readableWaiver,
+  tableColumnProduct,
   waiverForDisplay,
   withLineupFromText,
 } from "./lineup";
@@ -548,5 +549,67 @@ describe("Knox account headings with a glued service mark (v96, #1810)", () => {
   it("should_keep_a_standalone_capital_word_in_the_heading", () => {
     const plain = "Platinum SM Checking\nMonthly Service Fee* | $12";
     expect(withLineupFromText(read("Monthly Service Fee* | $12", 12), plain).lineup?.productName).toBe("Platinum SM Checking");
+  });
+});
+
+describe("Knox account columns of a table with no label column (v121, #1672)", () => {
+  // Lower East Side People's FCU (doc 3089, text 7104): the Dividend Rates table names one account
+  // per column and has no label column, so the $10 money market cell (live 135709, "No monthly fee")
+  // recorded no account and stayed live as checking's monthly maintenance fee.
+  const page = [
+    "Dividend Rates",
+    "Savings Account | Checking Account | Money Market | Certificate Accounts | Holiday Account",
+    "0% | 0% | 0.50% APY | 0.50% APY - 6m 0.75% APY - 12m | 1% APY Rates are subject to change",
+    "Does not earn dividends | Does not earn dividends | Earn dividends | Earn dividends | Highest dividends",
+    "Min Balance: $75.00 | Min Balance: None | Min Balance: $1,000.00 | Min Balance: Entire Deposit | Min Balance: $15.00",
+    "No monthly fee, if the Min balance is maintained; otherwise $3.00 | No monthly fee | No monthly fee, if the Min balance is maintained; otherwise $10.00 | No monthly fee | No monthly fee",
+    "**APY = Annual Percentage Yield for dividends table.",
+  ].join("\n");
+  const read = (excerpt: string, amount: number, feeName = "No monthly fee") => ({
+    canonicalHint: "monthly_maintenance",
+    feeName,
+    excerpt,
+    amount,
+    lineup: null as AccountLineup | null,
+  });
+  const productOf = (candidate: ReturnType<typeof read>, text: string) => withLineupFromText(candidate, text).lineup?.productName ?? null;
+  const moneyMarket = "No monthly fee | No monthly fee, if the Min balance is maintained; otherwise $10.00";
+
+  it("should_name_the_column_account_when_the_header_names_one_account_per_column", () => {
+    expect(productOf(read(moneyMarket, 10), page)).toBe("Money Market");
+    expect(tableColumnProduct(page, moneyMarket, 10, "No monthly fee")).toBe("Money Market");
+    // The first column is an account too.
+    expect(tableColumnProduct(page, "No monthly fee, if the Min balance is maintained; otherwise $3.00 | No monthly fee", 3, "No monthly fee")).toBe("Savings Account");
+  });
+
+  it("should_not_read_a_header_unless_every_cell_names_an_account", () => {
+    const mixed = page.replace("Holiday Account", "Rates are subject to change");
+    expect(tableColumnProduct(mixed, moneyMarket, 10, "No monthly fee")).toBeNull();
+    // A line that is no table row between the header and the price ends the climb.
+    const apart = page.replace("Does not earn dividends | Does", "Dividends\nDoes not earn dividends | Does");
+    expect(tableColumnProduct(apart, moneyMarket, 10, "No monthly fee")).toBeNull();
+    // A labelled header ends the climb: its table is read by the labelled reader alone.
+    const labelled = ["Savings Account | Checking Account | Money Market", "Account | Basic | Plus", "Monthly fee | $3 | $10"].join("\n");
+    expect(tableColumnProduct(labelled, "Monthly fee | $3 | $10", 10, "Monthly fee")).toBeNull();
+    // One price in two columns: no one account.
+    const twice = ["Savings Account | Money Market", "Monthly fee $10 | Monthly fee $10"].join("\n");
+    expect(tableColumnProduct(twice, "Monthly fee $10 | Monthly fee $10", 10, "Monthly fee")).toBeNull();
+  });
+
+  it("should_read_the_column_only_when_the_price_cell_holds_the_fee_name", () => {
+    // Inst 6636, doc 12872 (prod): the $5 charge is the checking column's; the second column's $5 is
+    // its minimum balance, so the business savings column is not the charge's account.
+    const xplore = [
+      "CONSUMER CHECKING ACCOUNTS | BUSINESS ACCOUNTS 2",
+      "Xplore Spend Account* | Xplore Business Savings",
+      "Monthly Service Charge (if balance falls below $100) ……….. $5.00 | Minimum deposit/balance …………………………………... $5.00",
+    ].join("\n");
+    const line = "Monthly Service Charge (if balance falls below $100) ……….. $5.00 | Minimum deposit/balance …………………………………... $5.00";
+    expect(tableColumnProduct(xplore, line, 5, "Monthly Service Charge (if balance falls below $100)")).toBeNull();
+    // Without the fee's name the cell cannot be told apart: no account.
+    expect(tableColumnProduct(page, moneyMarket, 10)).toBeNull();
+    // A bare label in the first cell is a label column (inst 457, doc 19786: a two-column page).
+    const twoColumn = ["CONSUMER CHECKING ACCOUNTS | MONEY MARKET ACCOUNTS", "Monthly fee ........................ | $8"].join("\n");
+    expect(tableColumnProduct(twoColumn, "Monthly fee ........................ | $8", 8, "Monthly fee")).toBeNull();
   });
 });
