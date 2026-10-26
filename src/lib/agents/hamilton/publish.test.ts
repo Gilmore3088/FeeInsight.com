@@ -847,12 +847,14 @@ describe("Hamilton agentic publish", () => {
       ...verifiedFee, canonical_fee_key, fee_name: "Monthly fee", amount: "5.00", source_document_id: 33822, document_url: TD_FIT, document_opening: TD_FIT_OPENING,
     });
 
-    // Both tests follow `OPENING_DOCUMENT_TAKEDOWN_LIVE`: off, the gate counts and lets them by.
-    const on = OPENING_DOCUMENT_TAKEDOWN_LIVE;
+    // `OPENING_DOCUMENT_TAKEDOWN_LIVE` is on (James, 2026-10-26): the gate refuses these rows.
+    it("ships with the opening sub-switch on", () => {
+      expect(OPENING_DOCUMENT_TAKEDOWN_LIVE).toBe(true);
+    });
 
-    it("refuses a deposit-category fee read from it once the sub-switch is on, and only with the opening", () => {
+    it("refuses a deposit-category fee read from it, and only with the opening", () => {
       expect(publishSkipReason(loanRow("monthly_maintenance"), 0.85, true)).toBe(
-        on ? "Refused at publish, Darwin's re-check would take it down: loan_titled_document: loan #33822" : null,
+        "Refused at publish, Darwin's re-check would take it down: loan_titled_document: loan #33822",
       );
       expect(nonDepositTakedownReason({ documentUrl: TD_FIT, sourceDocumentId: 33822, canonicalFeeKey: "monthly_maintenance", feeName: "Monthly fee", documentOpening: TD_FIT_OPENING }, { live: true, openingLive: true })).toBe(
         "loan_titled_document: loan #33822",
@@ -860,7 +862,7 @@ describe("Hamilton agentic publish", () => {
       expect(publishSkipReason({ ...loanRow("monthly_maintenance"), document_opening: "Personal Fee Schedule\nChecks" }, 0.85, true) ?? "").not.toMatch(/Darwin's re-check/);
     });
 
-    it("does not count its pending rows toward the institution's depth once the sub-switch is on", async () => {
+    it("does not count its pending rows toward the institution's depth", async () => {
       const general = (canonical_fee_key: string) => ({ depth_source: "pending", ...verifiedFee, canonical_fee_key });
       const pendingOnLoan = (canonical_fee_key: string) => ({ depth_source: "pending", ...loanRow(canonical_fee_key) });
       // Three fee types, two of them only from the loan disclosure: below the depth minimum.
@@ -871,7 +873,7 @@ describe("Hamilton agentic publish", () => {
       const published = await runHamiltonPublish({ runId: 1945, db: asPublishDb(deep) });
 
       expect(HAMILTON_PUBLISH_MIN_INSTITUTION_FEES).toBe(3);
-      expect(held.publishedFees).toBe(on ? 0 : 1);
+      expect(held.publishedFees).toBe(0);
       expect(published.publishedFees).toBe(1);
       const depthQuery = String((shallow.unsafe.mock.calls.find((call) => String(call[0]).includes("institution_fee_depth")) as [string, unknown[]])[0]);
       expect(depthQuery).toContain("LEFT JOIN source_documents sd ON sd.id = fr.source_document_id");

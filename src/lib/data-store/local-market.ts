@@ -1,6 +1,6 @@
 import { sql } from "./connection";
 import { branchCitySpellings } from "./city-spellings";
-import { HIGHEST_TIER_CATEGORIES, statsRowFilter } from "./fee-stats";
+import { HIGHEST_TIER_CATEGORIES, institutionValueSql, statsRowFilter } from "./fee-stats";
 import { institutionDisplayName } from "@/lib/institution-display-name";
 import { ownFeeFromRows, severalFeesOf, type SeveralFees } from "@/lib/own-fee";
 
@@ -40,8 +40,8 @@ export interface LocalMarket {
 /**
  * How `getLocalMarketCompetitors` computes a competitor's amount for a category from its catalog
  * rows: the highest overdraft tier ("max", `MAX(amount)`), else their median ("median",
- * `PERCENTILE_CONT(0.5)`). Either is an aggregate of the rows, never one fee record. Keep in step
- * with the CASE in the query below.
+ * `PERCENTILE_CONT(0.5)`), over its general rows when it also states named product exceptions
+ * (fee-stats.ts rule 11, institutionValueSql). Either is an aggregate of the rows, never one fee record.
  */
 export function competitorAmountBasis(category: string): "max" | "median" {
   return category === "overdraft" ? "max" : "median";
@@ -57,7 +57,7 @@ function num(value: unknown): number | null {
 }
 
 /** Each catalog row's name and amount behind one competitor's category, as jsonb arrives (parsed or as text). */
-function feeLines(value: unknown): { fee_name?: string | null; amount: unknown }[] {
+function feeLines(value: unknown): { fee_name?: string | null; amount: unknown; account_product_type?: string | null }[] {
   let parsed = value;
   if (typeof parsed === "string") {
     try {
@@ -66,7 +66,7 @@ function feeLines(value: unknown): { fee_name?: string | null; amount: unknown }
       return [];
     }
   }
-  return Array.isArray(parsed) ? parsed.filter((l): l is { fee_name?: string | null; amount: unknown } => l !== null && typeof l === "object") : [];
+  return Array.isArray(parsed) ? parsed.filter((l): l is { fee_name?: string | null; amount: unknown; account_product_type?: string | null } => l !== null && typeof l === "object") : [];
 }
 
 async function marketFromOwnBranches(cert: number): Promise<{ counties: number[]; year: number; places: string[] } | null> {
@@ -140,9 +140,8 @@ export async function getLocalMarketCompetitors(params: {
     ),
     fees AS (
       SELECT c.institution_id, c.fee_category,
-             CASE WHEN c.fee_category = 'overdraft' THEN MAX(c.amount)
-                  ELSE PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY c.amount) END AS amount,
-             jsonb_agg(jsonb_build_object('fee_name', c.fee_name, 'amount', c.amount)) AS lines,
+             ${sql.unsafe(institutionValueSql("c"))} AS amount,
+             jsonb_agg(jsonb_build_object('fee_name', c.fee_name, 'amount', c.amount, 'account_product_type', c.account_product_type)) AS lines,
              MAX(c.document_url) AS document_url,
              MAX(c.updated_at) AS document_date
         FROM published_fee_catalog c

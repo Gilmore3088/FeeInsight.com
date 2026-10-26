@@ -213,7 +213,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-323 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+325 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
 ### Extraction and fee reading (50)
 
@@ -308,8 +308,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A consumer comparison needs the payer checked as well as the category. — [finding](findings/2026-10-09-business-wire-as-consumer-price.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 - 2026-10-09 — Returned bonds and coupons were filed as NSF. — [finding](findings/2026-10-09-bond-return-filed-nsf.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 
-### Verification and publication (53)
+### Verification and publication (54)
 
+- 2026-10-25 — An institution's value rests on its general price when it also states a named account's exception price in the category; the exception stays listed as that account's own fee, and with no general price the named prices count (#1911). — [finding](findings/2026-10-25-product-exceptions-pool-general-price.md) — Agent lesson: hamilton/issue-1911-general-over-product-exception; Guard: `src/lib/data-store/fee-stats.test.ts`, `src/lib/data-store/product-exception-value.db.test.ts`
 - 2026-10-26 — Grade the very holds a check's new version would re-decide, and replay today's rules on the sample, before it re-decides them: the peer v1/v2 holds (Oct 5–10) were 34 real, 21 misread and 5 unsure of 60, and v5 would verify 6 misreads among 27 (#1694). — [finding](findings/2026-10-26-peer-v1v2-holds-graded.md) — Agent lesson: darwin/issue-1694-grade-the-holds-you-re-decide; Guard: `src/lib/agents/darwin/verify.test.ts` (`DARWIN_PEER_GRADED_VERSIONS` stays [3, 4])
 - 2026-10-25 — Put a publish gate in the writer every path shares, not in one caller: refresh copy v1 wrote 264 live rows past the name hold (Oct 9–13); a closing note also hid a cut name's dangling "up to" from Knox (#1443). — [finding](findings/2026-10-25-publish-name-hold-bypass.md) — Agent lesson: hamilton/issue-1443-hold-in-the-writer, knox/issue-1443-qualifier-after-a-cut; Guard: `src/lib/agents/hamilton/publish.admin-hold.test.ts`, `src/lib/agents/knox/cutoff-shape.test.ts`
 - 2026-10-25 — A takedown that names another line is not undone just because that line is down: follow its takedown to the line that replaced it and keep the fee down while that replacement is live at its category and price (#1673). — [finding](findings/2026-10-25-same-line-restore-beside-replacement.md) — Agent lesson: hamilton/issue-1673-follow-the-replacement; Guard: `src/lib/agents/hamilton/same-line-duplicates.db.test.ts`, `src/lib/agents/darwin/same-line-replacement-check.test.ts`
@@ -320,6 +321,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-25 — A benchmark compares one charging basis per category; give every category a basis and have the medians and the subject's own value read that one rule, never a second data-driven measure in one surface (#1901). — [finding](findings/2026-10-25-benchmarks-pool-charging-bases.md) — Agent lesson: darwin/issue-1901-one-basis-per-benchmark
 - 2026-10-20 — A stored name carries the older copy's text layout; compare it against a newer layout only after undoing what that layout glued (#2477). — [finding](findings/2026-10-20-heading-row-glued-name-false-flag.md) — Guard: `src/lib/agents/hamilton/newer-copy-retire.test.ts`
 - 2026-10-20 — Measure a takedown rule on prod before building it out: the dry run showed the rule reached none of the fees it was meant for (#2477). — [finding](findings/2026-10-20-superseded-copy-fees-stay-live.md) — Guard: `src/lib/agents/hamilton/newer-copy-retire.db.test.ts`
+- 2026-10-26 — A check of what the bank serves today reads the address the bank is actually fetched at (remembered address, else saved link), not the saved link alone; Bayes's current-copy count had also failed since #2179 (#1200). — [finding](findings/2026-10-26-retired-copy-keyed-on-saved-link.md) — Agent lesson: hamilton/issue-1200-retired-key-is-the-fetch-target; Guard: `src/lib/agents/hamilton/current-copy.db.test.ts`
 - 2026-10-20 — A fee found again on a newer document should cite the newer document. — [finding](findings/2026-10-20-live-fees-stay-on-moved-pages.md) — Agent lesson: hamilton/issue-1200-follow-moved-pages
 - 2026-10-20 — Held rates kept Knox's 0.5 placeholder confidence after promotion (#1055). — [finding](findings/2026-10-20-held-rates-kept-placeholder-confidence.md) — Guard: `src/lib/agents/knox/held-rate-confidence.db.test.ts`
 - 2026-10-20 — Agent checks could take down a fee an admin had corrected. — [finding](findings/2026-10-20-agent-checks-undo-admin-corrections.md) — Guard: `src/lib/fee-corrections.db.test.ts`
@@ -406,8 +408,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-16 — CFPB complaints were filed under banks by stripped-name matches with non-bank companies. — [finding](findings/2026-10-16-cfpb-non-bank-matches.md) — Agent lesson: hoovie/pr-1627-non-bank-company-names
 - 2026-10-09 — A switch that silently reads as off needs to say why in the run it affects. — [finding](findings/2026-10-09-congress-bills-flag-not-seen.md) — Guard: `src/lib/agents/magellan/registry/live-flag.test.ts` (+1 more)
 
-### Database and performance (21)
+### Database and performance (22)
 
+- 2026-10-26 — A public page whose query string makes new views is an endless crawl space: keep filter views out of robots.txt, mark them noindex, nofollow, and keep a firewall rate limit on public data routes. — [finding](findings/2026-10-26-crawler-fee-explorer-starves-institution-pages.md) — Guard: `src/app/robots.test.ts`
 - 2026-10-20 — A figure derived only from loaded regulator data is computed when the data loads, not when a page is read. — [finding](findings/2026-10-20-call-report-recompute.md) — Guard: `src/lib/data-store/call-report-quarters.db.test.ts` (+2 more)
 - 2026-10-19 — Raising a step's expected time can starve a run that has a strict deadline. — [finding](findings/2026-10-19-scoreboard-starved-by-lanes.md) — Guard: `state-lane-budget.db.test.ts` (+1 more)
 - 2026-10-19 — Daily scoreboard execution exceeds its request budget. — [finding](findings/2026-10-19-scoreboard-execution-budget.md) — Guard: `src/app/api/admin/crew/scoreboard/route.test.ts` (+2 more)
@@ -583,18 +586,18 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (245 in all).
+counts as of this index (251 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
-| atlas | 7 | [`src/lib/agents/atlas/role-lessons.ts`](../../src/lib/agents/atlas/role-lessons.ts) |
+| atlas | 8 | [`src/lib/agents/atlas/role-lessons.ts`](../../src/lib/agents/atlas/role-lessons.ts) |
 | magellan | 22 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
-| hoovie | 10 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
+| hoovie | 11 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
 | rosetta | 11 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
-| knox | 67 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
+| knox | 68 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
 | darwin | 37 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 40 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
-| hamilton | 37 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
+| hamilton | 40 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
 | deming | 14 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
 
 ## Before 2026-10-10

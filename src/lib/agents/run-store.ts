@@ -1,4 +1,5 @@
 import { runStorageCompaction } from "@/lib/agents/hoovie/storage-compaction";
+import { storageRolloutAction } from "@/lib/agents/hoovie/storage-rollout";
 import { sql, withTransaction } from "@/lib/data-store/connection";
 import { sweepInterruptedReportRuns } from "@/lib/hamilton/report-run";
 import { feeSourceFetch } from "@/lib/agents/fee-source-fetch";
@@ -2896,11 +2897,17 @@ async function executeAgenticStep(
       return { status: "completed", summary: summarizeLessonSync(result), detail: lessonSyncDetail(result) };
     }
     case "atlas-storage-retention": {
+      const rolloutAction = storageRolloutAction(run,step.input);
       // commitDb: each expired legacy event-log partition is dropped in its own committed transaction.
       const result = await runStorageRetention({ db: tx, commitDb: sql, dryRun: run.runKind === "dry_run", context: { runId: run.id, stepId: step.id, stepKey: step.stepKey } });
       // #1870: Twelve quarters hot. Export, historical compaction and pruning stay off pending rollout.
-      const cold = await runColdTier({ db: tx, dryRun: run.runKind === "dry_run", runId: run.id });
-      const compaction = await runStorageCompaction(tx, { dryRun: run.runKind === "dry_run" });
+      const cold = await runColdTier({ db: tx, dryRun: run.runKind === "dry_run", runId: run.id,
+        ...(rolloutAction ? { exportLive: rolloutAction === "export", pruneLive: rolloutAction === "prune",
+          rehearseLive: rolloutAction === "rehearse", approvedExportsOnly: true, requireRehearsal: true } : {}),
+      });
+      const compaction = await runStorageCompaction(tx, { dryRun: run.runKind === "dry_run",
+        ...(rolloutAction ? { live: rolloutAction === "compact" } : {}),
+      });
       const compactionAlerts = [
         ...(cold.error ? [`Public-data archive held: ${cold.error}`] : []),
         ...(compaction.error ? [`Public-data compaction held: ${compaction.error}`] : []),

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { feeScheduleUrls, ownFeeFrom, ownFeeFromRows, ownFeeLabel, ownFeeList, severalFeesOf, statedFeeLabel, statedFeeText } from "./own-fee";
+import { feeScheduleUrls, ownFeeFrom, ownFeeFromRows, ownFeeLabel, ownFeeName, ownFeeList, severalFeesOf, statedFeeLabel, statedFeeText } from "./own-fee";
 
 it("preserves every distinct stored schedule and legacy links, excluding unsafe link values (#1993)", () => {
   expect(feeScheduleUrls(["https://bank.test/a.pdf", "https://bank.test/b.pdf", "https://bank.test/a.pdf"], "https://bank.test/a.pdf"))
@@ -62,5 +62,27 @@ describe("a named competitor's stated fees (#1931)", () => {
 
   it("drops rows the statistics contract does not count", () => {
     expect(ownFeeFromRows("nsf", [{ fee_name: "NSF", amount: "" }, { fee_name: "NSF", amount: -5 }, { amount: "abc" }], 0, false)).toBeNull();
+  });
+});
+
+describe("product exceptions stay listed as their own fees (#1911)", () => {
+  it("names the product on an exception row and leaves general rows as named", () => {
+    expect(ownFeeName("money_order", { fee_name: "Personal money order", account_product_type: "Safe Debit  Account" }))
+      .toBe("Personal money order (Safe Debit Account)");
+    expect(ownFeeName("money_order", { fee_name: "Personal Money Orders", account_product_type: null })).toBe("Personal Money Orders");
+    // An account's own monthly fee is not an exception, so its name is unchanged.
+    expect(ownFeeName("monthly_maintenance", { fee_name: "Monthly fee", account_product_type: "Easy Checking" })).toBe("Monthly fee");
+  });
+
+  it("keeps U.S. Bank's Safe Debit and general money orders both visible beside the general value", () => {
+    const fee = ownFeeFromRows("money_order", [
+      { fee_name: "Personal money order", amount: "1.65", account_product_type: "Safe Debit Account" },
+      { fee_name: "Personal Money Orders", amount: "5.00", account_product_type: null },
+    ], 5, false);
+    expect(fee).toMatchObject({ value: 5, price: null, low: 1.65, high: 5 });
+    expect(fee?.fees).toEqual([
+      { name: "Personal money order (Safe Debit Account)", amount: 1.65 },
+      { name: "Personal Money Orders", amount: 5 },
+    ]);
   });
 });

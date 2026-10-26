@@ -1,5 +1,5 @@
 import { callItemFactsRelation } from "@/lib/data-store/call-item-storage";
-import { CALL_PERIOD_PRUNE_LIVE, CALL_PERIOD_PRUNE_MANIFEST, CALL_PERIOD_RESTORE_TARGET, pruneCallPeriod, restoreCallPeriod } from "./call-period-prune";
+import { CALL_PERIOD_PRUNE_LIVE, CALL_PERIOD_PRUNE_MANIFEST, CALL_PERIOD_RESTORE_TARGET, archiveRehearsalRecorded, rehearseCallPeriod, pruneCallPeriod, restoreCallPeriod } from "./call-period-prune";
 import type { sql } from "@/lib/data-store/connection";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { STORAGE_STEP_KEY } from "@/lib/agents/atlas/storage-retention";
@@ -137,6 +137,7 @@ export interface ColdTierResult {
   exported: ColdExportResult[];
   pruned?: Array<{ source: string; period: string; deleted: number; status: string }>;
   restored?: { source: string; period: string; rows: number };
+  rehearsed?: { source: string; period: string; rowCount: number; sha256: string; status: "verified" };
   /** "source|period" -> rows, carried to the next run. */
   counts: Record<string, number>;
   error?: string;
@@ -310,7 +311,7 @@ export async function exportCallPeriod(
  * free. Export and atomic pruning require their separate switches. Default operation is read-only.
  */
 export async function runColdTier(
-  options: { db: SqlTag; dryRun?: boolean; exportLive?: boolean; pruneLive?: boolean; restore?: { source: "ffiec" | "ncua"; period: string }; store?: ColdStore; runId?: number | null },
+  options: { db: SqlTag; dryRun?: boolean; exportLive?: boolean; pruneLive?: boolean; approvedExportsOnly?: boolean; rehearseLive?: boolean; requireRehearsal?: boolean; restore?: { source: "ffiec" | "ncua"; period: string }; store?: ColdStore; runId?: number | null },
 ): Promise<ColdTierResult> {
   const { db } = options;
   const store = options.store ?? getColdStore();
@@ -376,7 +377,8 @@ export async function runColdTier(
   }
   if (exportLive && result.indexReady) {
     for (const table of result.tables) {
-      const next = table.cold.filter((p) => p.file === "none").slice(0, EXPORT_PARTITIONS_PER_RUN);
+      const next = table.cold.filter((p) => p.file === "none" && (!options.approvedExportsOnly
+        || CALL_PERIOD_PRUNE_MANIFEST.some((m) => m.source === p.source && m.period === p.period))).slice(0, EXPORT_PARTITIONS_PER_RUN);
       for (const partition of next) {
         const exported = await exportCallPeriod(db, store, { source: partition.source, period: partition.period, avgRowBytes: table.avgRowBytes, runId: options.runId });
         result.exported.push(exported);
@@ -384,13 +386,24 @@ export async function runColdTier(
       }
     }
   }
+  if (!options.dryRun && options.rehearseLive && result.indexReady) {
+    try {
+      for(const period of result.tables.flatMap((t)=>t.cold)) {
+        const manifest=CALL_PERIOD_PRUNE_MANIFEST.find((m)=>m.source===period.source&&m.period===period.period);
+        if(period.file!=="verified"||!manifest||await archiveRehearsalRecorded(db,period))continue;
+        result.rehearsed=await inSavepoint(db,(scope)=>rehearseCallPeriod(scope,store,manifest));
+        break;
+      }
+    } catch(error){result.error=`Archive rehearsal held: ${message(error)}`;}
+    return result;
+  }
   if (!options.dryRun && (options.pruneLive ?? CALL_PERIOD_PRUNE_LIVE) && result.indexReady) {
     const next = result.tables.flatMap((t) => t.cold).find((p) => p.file === "verified"
       && CALL_PERIOD_PRUNE_MANIFEST.some((m) => m.source === p.source && m.period === p.period));
     if (next && (next.source === "ffiec" || next.source === "ncua")) {
       try {
         const expected = CALL_PERIOD_PRUNE_MANIFEST.find((m) => m.source === next.source && m.period === next.period)!;
-        const receipt = await inSavepoint(db, (scope) => pruneCallPeriod(scope, store, { source: next.source as "ffiec" | "ncua", period: next.period, expected }));
+        const receipt = await inSavepoint(db, (scope) => pruneCallPeriod(scope, store, { source: next.source as "ffiec" | "ncua", period: next.period, expected, requireRehearsal: options.requireRehearsal }));
         result.pruned = [{ source: next.source, period: next.period, ...receipt }];
       } catch (error) { result.error = `Archive prune held: ${message(error)}`; }
     }
@@ -407,6 +420,7 @@ export function coldTierDetail(result: ColdTierResult): Record<string, unknown> 
     pruned: result.pruned ?? [],
     prune_manifest: CALL_PERIOD_PRUNE_MANIFEST,
     restored: result.restored ?? null,
+    rehearsed: result.rehearsed ?? null,
     counts: result.counts,
     tables: result.tables.map((t) => ({
       table: t.table,

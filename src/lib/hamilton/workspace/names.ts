@@ -20,7 +20,16 @@ export function directionalTitle(feeCategory: string): string | null {
 export function proseFeeName(feeCategory: string): string {
   const named = PROSE_NAMES[feeCategory];
   if (named) return named;
-  return getDisplayName(feeCategory)
+  return inSentence(getDisplayName(feeCategory));
+}
+
+/**
+ * A fee's heading name ("NSF / Returned Item", "Outgoing Domestic Wire") as it reads inside a
+ * sentence, the same words proseFeeName gives the headings: brackets dropped, words lower case,
+ * acronyms kept ("NSF / returned item"). Never lower-case a fee name with toLowerCase (#1896).
+ */
+export function inSentence(feeName: string): string {
+  return feeName
     .replace(/\s*\([^)]*\)\s*/g, " ")
     .trim()
     .split(/\s+/)
@@ -40,4 +49,11 @@ export function plainName(name: string): string {
 export function feeItem(name: string, plural = false): string {
   const base = /\bitem$/i.test(name) ? name : `${name} item`;
   return plural ? `${base}s` : base;
+}
+
+/** "a" or "an" before a fee's sentence name, by its sound: "an overdraft", "an NSF / returned item", "a stop payment". */
+export function feeArticle(sentenceName: string): "a" | "an" {
+  const first = sentenceName.split(/[\s/-]/)[0] ?? "";
+  if (first.length > 1 && first === first.toUpperCase() && /^[A-Z]/.test(first)) return /^[AEFHILMNORSX]/.test(first) ? "an" : "a";
+  return /^[aeiou]/i.test(first) ? "an" : "a";
 }

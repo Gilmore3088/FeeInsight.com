@@ -132,14 +132,18 @@ export const BROKERAGE_DOCUMENT_TAKEDOWN_LIVE = true;
 export const CARD_PROGRAM_TAKEDOWN_LIVE = true;
 /**
  * The sub-switch for the v4 opening rules (`loan_titled_document`, `youth_account_document`,
- * #1944). It acts only with `NON_DEPOSIT_DOCUMENT_TAKEDOWN_LIVE`. Off: the step, Hamilton's
- * publish gate and its depth count count these fees and leave them as they are. The dry run
- * (prod, read-only, Oct 25, after the review of #2671 tightened loan titles) matches 48 live fees
- * on 17 documents at 15 institutions, and every one of the 17 stored openings was checked against
- * the bank's own text: 15 loan, card, HELOC or MLA disclosures and 2 youth account documents, none
- * a general schedule (sampled clean, DECISIONS 2026-10-20). Turning it on takes those fees down; set it to true once that is confirmed.
+ * #1944). It acts only with `NON_DEPOSIT_DOCUMENT_TAKEDOWN_LIVE`. The dry run (prod, read-only,
+ * Oct 25, after the review of #2671 tightened loan titles) matched 48 live fees on 17 documents at
+ * 15 institutions, and every one of the 17 stored openings was checked against the bank's own
+ * text: 15 loan, card, HELOC or MLA disclosures and 2 youth account documents, none a general
+ * schedule (sampled clean, DECISIONS 2026-10-20). On since 2026-10-26 (James, "Take them down" on
+ * the decision card, 01:47 UTC), re-counted before the switch (prod, read-only, Oct 26): the same
+ * 48 fees on the same 17 documents at 15 institutions (41 `loan_titled_document`, 7
+ * `youth_account_document`). On, the step takes them down on their second look and Hamilton's
+ * publish gate and depth count refuse new rows from those documents. Off (roll back by setting it
+ * to false): they are counted and left as they are.
  */
-export const OPENING_DOCUMENT_TAKEDOWN_LIVE = false;
+export const OPENING_DOCUMENT_TAKEDOWN_LIVE = true;
 /** On a card program's document, the card's own purchase and reload prices stay live (they are real fees in those categories). */
 export const CARD_PROGRAM_KEEP_KEYS: ReadonlySet<string> = new Set(["gift_card_purchase", "prepaid_card_reload"]);
 export const NON_DEPOSIT_REASON = "non_deposit_document";
