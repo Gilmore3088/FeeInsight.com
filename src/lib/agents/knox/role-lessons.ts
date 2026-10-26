@@ -211,7 +211,7 @@ export const KNOX_LESSONS: AgentLesson[] = [
     stage: "held queue",
     lesson: "When you add a new way to hold a line, name in the same change who reads it again and how it leaves the pile. If nothing re-reads it, say so where the pile is shown (\"None today\"), so the gap is visible and not hidden behind \"Nobody recorded\"; never write a figure the page does not print just to give it a way out.",
     why: "The v76 `varies` hold (\"Check printing prices vary\") was added with no owner on /admin/knox and no re-check that selects it: on Oct 26, 1,513 held lines at 911 banks, all with a category and no amount, none ever re-read, verified or retired.",
-    evidence: { issues: [1102], prs: [], files: ["src/lib/agents/knox/held-queue.ts", "src/lib/agents/goal-scorecard.ts"] },
+    evidence: { issues: [1102], prs: [2731], files: ["src/lib/agents/knox/held-queue.ts", "src/lib/agents/goal-scorecard.ts"] },
     appliesTo: ["extract"],
     since: "2026-10-26",
   },
