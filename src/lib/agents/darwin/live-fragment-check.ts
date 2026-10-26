@@ -112,11 +112,11 @@ export const FRAGMENT_NAME_TAKEDOWN_LIVE = true;
  * "Overdraft fee of (per item)"; `liveQualifiedFragmentShape` reads the name without the closed
  * parentheticals that end it) join the check only with this switch on. Off, each step reports what
  * they would do (`qualifiedShadow`, ledger `qualified_shadow`: the matches that are new or change
- * action, by action and pattern, with samples) and acts on nothing it did not act on before. It
- * goes on with James's go, after the dry-run count. The count SQL (`liveFragmentCountSql`) counts
- * the check as it runs with the switch off.
+ * action, by action and pattern, with samples) and acts on nothing it did not act on before. On
+ * since James's yes (2026-10-26). Unlike the rule checks it takes a match down at once, with no
+ * second look. The count SQL (`liveFragmentCountSql`) counts the check without the qualified shapes.
  */
-export const QUALIFIED_FRAGMENT_TAKEDOWN_LIVE = false;
+export const QUALIFIED_FRAGMENT_TAKEDOWN_LIVE = true;
 /** Live fees read per step. A name-only regex read, so a large share; the live table takes about (live fees / 2,000) steps a pass. */
 export const LIVE_FRAGMENT_BATCH = 2_000;
 export const LIVE_FRAGMENT_SAMPLES = 20;

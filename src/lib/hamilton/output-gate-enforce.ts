@@ -68,12 +68,14 @@ export interface StreamedDecision {
  * and the start binding, the final metadata and the saved row already mark them left out. A
  * partial verdict that cuts any other sentence (a cause, advice, an internal name, house wording)
  * is held: the stream's binding and save would still carry that sentence as supported (#1077 T4
- * review). A validated verdict keeps today's decision.
+ * review). So is one whose binding failure also took a sentence pointing back to it. A validated verdict keeps today's decision.
  */
 export function enforceStreamedDecision(verdict: GateVerdict | null, today: StreamedDecision, supportsPartial: boolean): StreamedDecision {
   if (today.held) return { held: true };
   const outcome = enforcedOutcome(verdict, supportsPartial);
   if (outcome === "held") return { held: true };
   if (outcome === "validated") return today;
-  return verdict!.failures.every((f) => f.source === "binding") ? today : { held: true };
+  // A binding failure that carries sentences had a point-back sentence attached by the gate
+  // (output-gate.ts); today's view does not cut it, so the stream holds.
+  return verdict!.failures.every((f) => f.source === "binding" && !f.sentences?.length) ? today : { held: true };
 }

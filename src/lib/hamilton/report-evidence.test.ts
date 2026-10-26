@@ -371,6 +371,31 @@ describe("compareSelectedInstitutionFees (like for like)", () => {
     });
   });
 
+  it("reads a stored frequency by its meaning, not its spelling (#1992)", () => {
+    // "per item", "Per_Item", "each" and "per_item" are one per-event basis: on bill pay (monthly)
+    // each leaves the median, and on NSF (per event) each stays in it.
+    const nsf = { fee_category: "nsf", median_amount: 30, p25_amount: 25, p75_amount: 32, institution_count: 900, maturity_tier: "strong" as const };
+    for (const frequency of ["per item", "Per_Item", "each", "per_item"]) {
+      const billPay = compareSelectedInstitutionFees({
+        selectedFees: [{ fee_name: "Expedited payment", fee_category: "bill_pay", amount: 15, frequency, review_status: "approved", source_url: null }],
+        indexEntries: entries,
+      });
+      expect(billPay.deltas, frequency).toHaveLength(0);
+      expect(billPay.notLikeForLike[0], frequency).toMatchObject({ reason: "different_charge_basis" });
+      const perEvent = compareSelectedInstitutionFees({
+        selectedFees: [{ fee_name: "NSF", fee_category: "nsf", amount: 35, frequency, review_status: "approved", source_url: null }],
+        indexEntries: [nsf],
+      });
+      expect(perEvent.notLikeForLike, frequency).toHaveLength(0);
+      expect(perEvent.deltas, frequency).toEqual([expect.objectContaining({ institution_amount: 35, delta_amount: 5 })]);
+    }
+    const monthly = compareSelectedInstitutionFees({
+      selectedFees: [{ fee_name: "NSF", fee_category: "nsf", amount: 9, frequency: "Monthly", review_status: "approved", source_url: null }],
+      indexEntries: [nsf],
+    });
+    expect(monthly.notLikeForLike[0]).toMatchObject({ reason: "different_charge_basis", detail: expect.stringContaining("Monthly charge, not per item") });
+  });
+
   it("keeps a fee with no stated frequency, as the medians do", () => {
     const deltas = buildSelectedInstitutionFeeDeltas({
       selectedFees: [

@@ -42,7 +42,11 @@ export const REPLACEMENT_CHARACTER = "\uFFFD";
  */
 export const GLYPH_REPAIR_STRATEGY = "read.glyph_repair";
 
-/** A stored text carrying either glyph is due for one read with the current repair. */
+/**
+ * A stored text carrying either glyph is due for one read with the current repair. A PDF text with
+ * a fee word a dropped ligature broke is due too: read.ts tests that separately, PDF texts only
+ * (`DROPPED_LIGATURE_DUE_PATTERN`), so this cheap test stays the one every text gets.
+ */
 export const GLYPH_REPAIR_DUE_PATTERN = "[\uFFFD\uFB00-\uFB06]";
 
 /** The letters a Word ligature glyph draws, longest first within each family. */
@@ -275,6 +279,170 @@ export function repairUnmappedGlyphs(input: string, documentText: string = input
   });
   const left = text.split(REPLACEMENT_CHARACTER).length - 1;
   return { text, restored: total - left, left };
+}
+
+/**
+ * Dropped ligatures (#1513 follow-up). Some PDF fonts map a ligature glyph to no characters at all,
+ * so pdf.js reads nothing in its place: Bay Area CU's fee schedule (text 6266) reads "Wire Transfer
+ * Outgoing (Internaonal)", "(Domesc)", "ACH Overdra", "Transacon" and "Verificaons", while its
+ * "Sufficient" and "Official" are whole. There is no glyph left to find, so a dropped ligature is
+ * restored only against this short list of fee-schedule words, the words that name a fee's type
+ * (domestic or international, overdraft or not) or that the Bay Area text prints broken.
+ */
+const DROPPED_LIGATURE_WORDS_SOURCE = `
+activation activity additional certificate certificates certified consecutive domestic inactive
+inactivity information insufficient international nonsufficient notification notifications
+official overdraft overdrafts reactivation reconciliation relationship selection sufficient
+transaction transactions verification verifications violation violations
+`;
+
+export const DROPPED_LIGATURE_WORDS: readonly string[] = DROPPED_LIGATURE_WORDS_SOURCE.split(/\s+/).filter(Boolean);
+/** The ligatures a font may draw as one glyph, longest first. */
+const DROPPED_LIGATURES = ["ffi", "ffl", "ff", "fi", "fl", "ft", "ti", "tt"] as const;
+/**
+ * A font drops its ligature everywhere it draws it, so one document shows the loss in several
+ * words; a single broken word is more likely a slip of that one page (stored text 2451 prints
+ * "Overdra" once and "overdraft" 109 times). At least this many different broken words in the same
+ * document are needed before any is restored, a plural counting with its singular ("Overdra" and
+ * "Overdras" are one word).
+ */
+export const MIN_DROPPED_LIGATURE_WORDS = 2;
+/** A broken form shorter than this ("aer", "dra", "oce") is too short to be told from a real word. */
+const MIN_DROPPED_FORM_LETTERS = 5;
+
+/** Each spelling of `word` with one or more of its ligatures dropped (gap "") or left as a space. */
+function droppedSpellings(word: string): string[] {
+  const occurrences: Array<{ start: number; end: number }> = [];
+  for (const ligature of DROPPED_LIGATURES) {
+    for (let at = word.indexOf(ligature); at >= 0; at = word.indexOf(ligature, at + 1)) occurrences.push({ start: at, end: at + ligature.length });
+  }
+  const spellings = new Set<string>();
+  for (let mask = 1; mask < 1 << occurrences.length; mask += 1) {
+    const chosen = occurrences.filter((_, index) => mask & (1 << index)).sort((a, b) => a.start - b.start);
+    if (chosen.some((occurrence, index) => index > 0 && occurrence.start < chosen[index - 1].end)) continue;
+    for (const gap of ["", " "]) {
+      let spelling = "";
+      let position = 0;
+      for (const occurrence of chosen) {
+        spelling += word.slice(position, occurrence.start) + gap;
+        position = occurrence.end;
+      }
+      spelling += word.slice(position);
+      const letters = spelling.replace(/ /g, "");
+      // A gap at the word's edge, or one leaving a single letter beside it, is not a broken word.
+      if (letters.length < MIN_DROPPED_FORM_LETTERS || spelling !== spelling.trim() || / [a-z](?: |$)|(?:^| )[a-z] /.test(spelling)) continue;
+      spellings.add(spelling);
+    }
+  }
+  return [...spellings];
+}
+
+/** Each broken spelling, lowercased, and the one word it can only be; a real word is never one. */
+const DROPPED_FORMS: ReadonlyMap<string, string> = (() => {
+  const forms = new Map<string, string | null>();
+  const real = new Set([...DROPPED_LIGATURE_WORDS, ...FEE_TEXT_LIGATURE_WORDS]);
+  for (const word of DROPPED_LIGATURE_WORDS) {
+    for (const form of droppedSpellings(word)) {
+      if (form.split(" ").some((part) => real.has(part))) continue;
+      forms.set(form, forms.has(form) && forms.get(form) !== word ? null : word);
+    }
+  }
+  return new Map([...forms].filter((entry): entry is [string, string] => entry[1] !== null));
+})();
+
+const DROPPED_FORM_ALTERNATION = [...DROPPED_FORMS.keys()].sort((a, b) => b.length - a.length || a.localeCompare(b)).join("|");
+/**
+ * What may stand on each side of a broken word: a space, a line break or ordinary punctuation.
+ * Anything else means the font wrote the glyph as some other character, a different fault that
+ * stays as it is: a ligature letter Knox reads ("OverdraŌ", "InternaƟonal"), U+FFFD (glyph
+ * repair's case), or a stand-in such as "overdra*s", "Overdra(" or "transac5on" seen in stored
+ * texts 22732 and 10476. A "/" joins words ("Research/Reconciliaon", live fee 42757), so it is
+ * an edge, but a word inside a web address ("https://bank.com/forms/domesc") is never restored.
+ */
+const BEFORE_BROKEN_WORD = "\\s(\\[/|\"“‘-";
+const AFTER_BROKEN_WORD = "\\s.,;:!?)\\]/|\"”’-";
+const DROPPED_FORM = new RegExp(`(?<=^|[${BEFORE_BROKEN_WORD}])(?:${DROPPED_FORM_ALTERNATION})(?=[${AFTER_BROKEN_WORD}]|$)`, "gi");
+
+/** The only reader whose text gets dropped-ligature repair, and so the only one it makes due. */
+export const DROPPED_LIGATURE_READER = "read.pdf_layout";
+
+/**
+ * Postgres only, matched case-insensitively (`~*`): the broken spellings between word edges
+ * (`\m`, `\M`), one lowercase alternation. read.ts tests it only on `DROPPED_LIGATURE_READER`
+ * texts without a glyph, behind a CASE, so the scan every text gets stays the glyph test (#2692
+ * review: one case-sensitive pattern with every casing and punctuation edges took 20 s where the
+ * glyph test took 0.6 s). Its edges are wider than the repair's ("Overdra*" matches here), so a
+ * text it selects may be read and left as it was; the read settles it.
+ */
+export const DROPPED_LIGATURE_DUE_PATTERN = `\\m(${[...DROPPED_FORMS.keys()]
+  .sort((a, b) => b.length - a.length || a.localeCompare(b))
+  .join("|")})\\M`;
+
+function inCaseOf(word: string, broken: string): string {
+  const letters = broken.replace(/ /g, "");
+  if (letters.length >= 2 && letters === letters.toUpperCase()) return word.toUpperCase();
+  return broken[0] === broken[0].toUpperCase() ? word[0].toUpperCase() + word.slice(1) : word;
+}
+
+export interface DroppedLigatureResult {
+  text: string;
+  /** Broken words restored. */
+  restored: number;
+}
+
+/**
+ * The listed words (a plural as its singular) a document shows broken outside web addresses. One
+ * pass over the document: the PDF reader computes it once and hands it to every page's repair.
+ */
+export function droppedLigatureEvidence(documentText: string): ReadonlySet<string> {
+  const evidence = new Set<string>();
+  for (const match of documentText.matchAll(DROPPED_FORM)) {
+    const word = DROPPED_FORMS.get(match[0].toLowerCase());
+    if (word && !insideUrl(documentText, match.index)) evidence.add(listedStem(word));
+  }
+  return evidence;
+}
+
+/**
+ * The text with each dropped ligature restored, when its document shows at least
+ * `MIN_DROPPED_LIGATURE_WORDS` different broken words. `document` is the whole PDF a page belongs
+ * to (or its `droppedLigatureEvidence`, computed once); it defaults to the text itself. Only
+ * spellings of `DROPPED_LIGATURE_WORDS` are touched, between spaces or punctuation, so "social"
+ * never becomes "official". Deterministic.
+ */
+export function restoreDroppedLigatures(input: string, document: string | ReadonlySet<string> = input): DroppedLigatureResult {
+  const evidence = typeof document === "string" ? droppedLigatureEvidence(document) : document;
+  if (evidence.size < MIN_DROPPED_LIGATURE_WORDS) return { text: input, restored: 0 };
+  let restored = 0;
+  const text = input.replace(DROPPED_FORM, (broken: string, offset: number) => {
+    const word = DROPPED_FORMS.get(broken.toLowerCase());
+    if (!word || insideUrl(input, offset)) return broken;
+    restored += 1;
+    return inCaseOf(word, broken);
+  });
+  return { text, restored };
+}
+
+const LISTED_WORDS: ReadonlySet<string> = new Set(DROPPED_LIGATURE_WORDS);
+/** A listed plural as its listed singular ("overdrafts" is "overdraft"), so the two count once. */
+function listedStem(word: string): string {
+  return word.endsWith("s") && LISTED_WORDS.has(word.slice(0, -1)) ? word.slice(0, -1) : word;
+}
+
+/** Characters looked back from a broken word for the start of a web address it may sit in. */
+const URL_LOOKBACK = 256;
+const WHITESPACE = /\s/;
+
+/**
+ * True when `offset` falls inside a web address (a URL path is never a fee word). Looks back only
+ * to the nearest whitespace, and at most `URL_LOOKBACK` characters, so each word costs a bounded
+ * scan however long the document is (#2692 review).
+ */
+function insideUrl(text: string, offset: number): boolean {
+  let start = offset;
+  const floor = Math.max(0, offset - URL_LOOKBACK);
+  while (start > floor && !WHITESPACE.test(text[start - 1])) start -= 1;
+  return /:\/\/|^www\.|\.[a-z]{2,6}\//i.test(text.slice(start, offset));
 }
 
 /** The charset a Content-Type header or the page's own meta tag declares, lowercased. */

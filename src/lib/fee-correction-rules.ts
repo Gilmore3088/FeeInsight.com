@@ -5,6 +5,7 @@
 
 import { FEE_FAMILIES, getDisplayName } from "@/lib/fee-taxonomy";
 import { SPECIAL_UNIT_FREQUENCIES } from "@/lib/fee-unit";
+import { frequencySpelling } from "@/lib/fee-frequency";
 import { isFeeErrorCause, type FeeErrorCause } from "@/lib/fee-error-cause";
 
 export const FEE_CORRECTION_CHECK = "admin.fee_correction";
@@ -206,12 +207,17 @@ export function feeNameKey(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 
-/** True when the new values change nothing the operator can edit. Pure. */
+/**
+ * True when the new values change nothing the operator can edit. Pure. The frequency is compared by
+ * the shared spelling rule (`frequencySpelling`, #1992): "Per Item" and "per_item" are the same
+ * stored value, but a different word ("each" to "per_item", "one_time" to "per_item") is an edit the
+ * operator can make to the label the page shows, so it is not a no-op.
+ */
 export function sameFeeValues(a: FeeValues, b: FeeValues): boolean {
   return a.canonicalFeeKey === b.canonicalFeeKey
     && feeNameKey(a.feeName) === feeNameKey(b.feeName)
     && (a.amount == null ? b.amount == null : b.amount != null && Math.abs(a.amount - b.amount) < 0.005)
-    && (a.frequency ?? null) === (b.frequency ?? null)
+    && frequencySpelling(a.frequency) === frequencySpelling(b.frequency)
     && looseText(a.conditions ?? "") === looseText(b.conditions ?? "");
 }
 

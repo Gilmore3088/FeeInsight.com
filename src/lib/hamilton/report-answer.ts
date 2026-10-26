@@ -12,7 +12,7 @@ export const MAX_REPORT_DECISIONS = 3;
 export const ANSWER_SECTION_FORMAT = `
 OUTPUT FORMAT (plain text, exactly these labels, no markdown):
 HEADLINE: <one sentence: the single conclusion for this institution, with its key figure>
-DECISION: <the decision management faces on one fee, naming the fee, this institution's price and the local or peer anchor it is weighed against; never choose an option> || WHY: <one or two sentences of evidence: this institution's amount against the named local competitors or peer median, and what moving to the anchor would do from fee_impacts when present: the income per 1,000 charges and the local rank or peer band before and after> || CONFIDENCE: <Medium or Low> - <the reason: how many competitors or peers, verified or provisional. Do not write High; model-written confidence is not semantic claim verification.>
+DECISION: <the decision management faces on one fee, naming the fee, this institution's price and the local or peer anchor it is weighed against; never choose an option> || WHY: <one or two sentences of evidence: this institution's amount against the named local competitors or peer median, and what moving to the anchor would do from fee_impacts when present: the change per item and the local rank or peer band before and after; never state a fee income figure for the move, per 1,000 charges or otherwise, because no volume is known> || CONFIDENCE: <Medium or Low> - <the reason: how many competitors or peers, verified or provisional. Do not write High; model-written confidence is not semantic claim verification.>
 Write one to ${MAX_REPORT_DECISIONS} DECISION lines, the largest gap first. Never tell the institution to raise, lower, hold, cut or drop a fee.
 `.trim();
 

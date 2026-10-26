@@ -18,7 +18,7 @@ import {
   PAID_RETURNED_EVENT_FLAG, PAID_RETURNED_ELIGIBILITY_FLAG, type PaidReturnedUnit,
 } from "@/lib/custom-report/paid-returned-events";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists, type SpecialistRun } from "@/lib/agents/knox/specialists";
-import { applyKnoxLesson, loadKnoxLessons } from "@/lib/agents/knox/lessons";
+import { applyKnoxLesson, loadKnoxLessonsAndFindings, type KnoxFindingsRead, type KnoxLessons } from "@/lib/agents/knox/lessons";
 import { emptyTakedownLessons, loadTakedownLessons, TAKEN_DOWN_REVIEW_FLAG, takedownLessonFlag, takedownLessonsFor, withCurrentTakedownLesson, type TakedownLessons } from "@/lib/agents/knox/takedown-lessons";
 import { candidateWriteFacts } from "./candidate-facts";
 import { monthlyAccountOwnerReview } from "./monthly-account-owners";
@@ -26,6 +26,7 @@ import { capFirstEligibility, CAP_FIRST_ELIGIBILITY_FLAG } from "./cap-first-eli
 import { mayHaveSymbolicLesserFee, symbolicLesserOfReview, SYMBOLIC_LESSER_ELIGIBILITY_FLAG } from "./symbolic-lesser-of";
 import { internationalWireEligibility, requiresInternationalWireSource, INTERNATIONAL_WIRE_ELIGIBILITY_FLAG } from "./international-wire-eligibility";
 import { mayHaveCapFirstItemPrice } from "@/lib/custom-report/stacked-fee-prices";
+import { bandedZeroOf } from "@/lib/banded-zero";
 import { withPublishedIdentityWrite } from "@/lib/agents/hamilton/published-identity";
 import { layoutSignature, thinLayouts, type LayoutYield } from "@/lib/agents/knox/layout-signature";
 import { calibratedConfidence, calibrationKey, loadKnoxCalibration, PUBLISH_FLOOR } from "@/lib/agents/knox/calibration";
@@ -151,6 +152,8 @@ export const COMBINED_NSF_OVERDRAFT_SQL =
  * it was written by an older Knox version, and a v73+ read may replace it; one with it is kept.
  */
 export const ACCOUNT_PRODUCT_FLAG = "account_product:v73";
+/** v122 (#1882): a $0 held because it is not the fee's price (`bandedZeroOf`), with its kind after a colon. */
+export const BANDED_ZERO_HOLD_FLAG = "knox_banded_zero";
 /**
  * Stored product names that name no account (`account-name-exclusions.ts`, as a Postgres regex):
  * a v73+ read replaces them, and a copy holding one is due a re-read. Prod on Oct 16: 14 "Truth in
@@ -264,6 +267,10 @@ export interface RunKnoxExtractResult {
   /** Lessons read from the shared learning store, and fees they re-filed (`lessons.ts`). */
   lessonsLoaded: number;
   lessonRefiles: Record<string, number>;
+  /** v5: all-time tally of the extract-stage holds, corrections and audit misses the lessons read, by kind and verdict. */
+  handFindingsRead?: KnoxFindingsRead;
+  /** True when the lessons and findings read failed (the tally above is then empty, not zero). */
+  handFindingsReadFailed?: boolean;
   /** Confirmed, still-down takedowns read before the run (`takedown-lessons.ts`). */
   takedownLessonsLoaded: number;
   /** Fees written held because they repeat a confirmed takedown, by check. */
@@ -1271,12 +1278,19 @@ export async function insertHeldCandidate(
         minOpeningDeposit: null, waiverText: null } : null }) : null;
   if (held.shape === "zero" && monthlyOwners) held = { ...held, shape: "eligibility", ownedPolicy: true,
     linkedConditions: [held.linkedConditions, monthlyOwners].filter(Boolean).join("\n\n") };
+  // v122 (#1882): a $0 that is one band of a priced overdraft or NSF fee ("$0 if the negative balance
+  // is $5 or less. $10 if ... $35 per item"), or the next column's free word beside the fee's own price,
+  // is no free fee: it is held as a range for review and never goes to Darwin as the fee's price.
+  const band = held.shape === "zero" && held.amount === 0 ? bandedZeroOf({ line: held.excerpt, feeName: held.feeName,
+    canonicalFeeKey: held.canonicalHint, documentText: sourceRow.normalized_text ?? options.row.normalized_text ?? null }) : null;
+  if (band) held = { ...held, shape: "range", amountMax: null };
   const applicability = feeApplicability(held.feeName, held.excerpt, held.amount);
   const agentEventId = stableUuid(
     `knox:held:${options.runId}:${documentTextId}:${sourceDocumentId}:${held.shape}:${held.feeName}:${held.amount}:${held.percent}`,
   );
   const toDarwin = heldGoesToDarwin(held);
   const flags = [`knox_review:${held.shape}`];
+  if (band) flags.push(`${BANDED_ZERO_HOLD_FLAG}:${band.kind}`);
   if (capOwner) flags.push(CAP_FIRST_ELIGIBILITY_FLAG);
   if (symbolicOwner) flags.push(SYMBOLIC_LESSER_ELIGIBILITY_FLAG);
   if (internationalOwner) flags.push(INTERNATIONAL_WIRE_ELIGIBILITY_FLAG);
@@ -1597,7 +1611,10 @@ export async function runKnoxExtract(
       : [...new Set([...KNOX_PRIORITY_REREAD_IDS, ...(await loadMarketLeaderIds(db, { stateCode: options.stateCode ?? null }).catch(() => []))])];
   const rows = await selectTextArtifacts(db, limit, learning, currentCopy, options.institutionId, options.stateCode, priorityIds);
   const rowByDocumentTextId = new Map(rows.map((row) => [Number(row.document_text_id), row]));
-  const lessons = !dryRun && rows.length > 0 ? await loadKnoxLessons(db) : new Map();
+  // v5: the same query tallies, all time, the holds, corrections and audit misses filed against extract that the lessons read.
+  const { lessons, findingsRead: handFindingsRead, readFailed: handFindingsReadFailed } = !dryRun && rows.length > 0
+    ? await loadKnoxLessonsAndFindings(db)
+    : { lessons: new Map() as KnoxLessons, findingsRead: {} as KnoxFindingsRead };
   const lessonRefiles: Record<string, number> = {};
   const takedownLessons = !dryRun && rows.length > 0 ? await loadTakedownLessons(db,rows.map(row=>Number(row.institution_id))) : emptyTakedownLessons();
   const takedownHolds: Record<string, number> = {};
@@ -1760,6 +1777,8 @@ export async function runKnoxExtract(
     learning,
     lessonsLoaded: lessons.size,
     lessonRefiles,
+    handFindingsRead,
+    handFindingsReadFailed: handFindingsReadFailed === true,
     takedownLessonsLoaded: [...takedownLessons.values()].reduce((n,group)=>n+group.length,0),
     takedownHolds,
     takedownLessonsUnknown: takedownLessons.unknownReasons,

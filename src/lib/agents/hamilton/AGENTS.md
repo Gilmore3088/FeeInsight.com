@@ -126,8 +126,9 @@ Hamilton supports the decision; it does not make it.
 - Never tell the institution to raise, lower or drop a fee, and never offer to "approve a
   recommendation". Model the prices the reader asks about; the tested price is always
   the reader's.
-- Every scenario is labeled with its evidence level: `market` (position and
-  per-1,000-items arithmetic, no dollar total), `working_estimate` (the bank's reported
+- Every scenario is labeled with its evidence level: `market` (position among
+  peers and local competitors and the change per item; no fee income figure of any kind, not
+  even per 1,000 items, #1896), `working_estimate` (the bank's reported
   income for that fee line divided by its published fee), or `institution` (items and
   waiver rate the bank gave Hamilton). The scenario names the one figure that would
   move it up a level.
@@ -575,6 +576,10 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     Each live takedown writes a weight-0 `pipeline_feedback` row `wrong` / `wrong_category` at publish;
     each release (part 3) writes `restored` / `account_type_hold_released`, a record, never a
     `wrong` row, so no reader keyed on kind or signal counts a release as a wrong category (#1680).
+    Darwin's release review leaves the kind out of its restore lessons by name (`RESTORE_RECORD_KINDS`).
+    The 5 releases written on Oct 16 with the old label are relabelled by the `holdFeedback` sweep
+    (`learning/account-type-hold-feedback.ts`) behind `ACCOUNT_TYPE_HOLD_RELEASE_RELABEL_ON` (off;
+    a dry run counts them, `holdFeedback.relabel`), keeping the old pair in `evidence.relabeled_from`.
     A fee a hand check found wrongly typed stays live through `ACCOUNT_TYPE_KEEP_LIVE`: one line per
     fee with its reason, keyed by institution, name, price and the stored document the hand check read,
     so a re-read's new row stays live too (28834: inst 5800, doc 3633). The key is bound to that
@@ -1135,6 +1140,21 @@ the collapse would keep (the newer edition) publishes as before. The collapse st
 re-check; this check takes nothing down. An enabled unavailable read leaves the candidate pending. Dry count: 51 of the 53
 rows closed as page copies in the 30 hours to Oct 18 02:40 UTC were closed behind a row already live
 when they published.
+
+**One printed line read twice, at publish (#1876, live).** Knox keeps each read of a line as its own
+raw row (a deterministic read and a paid read of one artifact; Knox v99's "Safe Deposit Box 3x5"
+beside the older "3x5"). The live-line read (`selectLivePublishedFees`) compares frequency
+exactly and the collapses need the same or a near name, so a second read published beside the
+first: Access FCU's 137315 "One-time debit overdraft charge" (per item) beside 132908 "charge for
+each one-time debit overdraft" (no frequency), one $30 line of doc 28555. Each dollar row about to
+publish is now read against the live fees of its institution, document, category, variant,
+amount, audience and product that share its stored source line (`selectSameLineReadOf`,
+`same-line-read.ts`). It is the same line read twice (`readsSameLine`) when the current completed
+text prints that line once, the line prints the amount once, the frequencies do not differ and
+one name's words are all in the other's (`namesShareReading`). Counted in the step's
+`same_line_read_check` and, while `PUBLISH_REFUSE_SAME_LINE_READS_LIVE` is on, skipped (`Same printed
+line as live fee #<id>`); an enabled unavailable read leaves the row pending. This takes nothing
+down; Darwin's `same-line-read-check.ts` re-checks what is already live.
 
 ## Rules Re-check
 

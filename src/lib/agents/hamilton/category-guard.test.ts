@@ -520,13 +520,13 @@ describe("guard v90: a live collection return re-files in place from NSF (#1912)
   it("re-files a late fee named for the safe deposit box to the box type (159317)", () => {
     const base = { fee_published_id: 159317, canonical_fee_key: "late_payment", fee_name: "SDB Late Payment", amount: "10.00", conditions: null, document_nsf_amount: null };
     expect(restoreTarget(base)).toBe("safe_deposit_box");
-    // Guard v93 (#1912, review of #2639): 36020's $1 is under the box's $5 rent floor, but a box late
+    // Guard v96 (#1912, review of #2639): 36020's $1 is under the box's $5 rent floor, but a box late
     // fee has its own $1 floor (BOX_LATE_FEE_ENVELOPE), so it re-files instead of going to the second look.
     expect(restoreTarget({ ...base, fee_published_id: 36020, fee_name: "Safety Deposit Box-Late Fee", amount: "1.00" })).toBe("safe_deposit_box");
   });
 });
 
-describe("guard v93: a $1 box late fee re-files, and a night drop box is not the safe deposit box (#1912)", () => {
+describe("guard v96: a $1 box late fee re-files, and a night drop box is not the safe deposit box (#1912)", () => {
   const fee = (id: number, inst: number, name: string, amount: string, key = "late_payment") => ({
     fee_published_id: id, lineage_ref: id + 100000, institution_id: inst, source_document_id: null,
     canonical_fee_key: key, fee_name: name, amount, conditions: null, document_nsf_amount: null,

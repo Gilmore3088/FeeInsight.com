@@ -7,6 +7,7 @@
 import type { LocalMarketInfo, OwnFeeRow } from "./workspace/types";
 import type { LayerSummary } from "./research-layers";
 import { WORKSPACE_ENGINE_VERSION, type Provenance } from "./workspace/types";
+import { inSentence } from "./workspace/names";
 
 export interface AuditSource {
   label: string;
@@ -90,7 +91,7 @@ export function buildAuditTrail(input: {
   if (input.ownFeeRows.length > 0) {
     const latest = input.ownFeeRows.map((r) => r.publishedAt).filter(Boolean).sort().pop() ?? null;
     sources.push({
-      label: `Research institution ${input.feeName.toLowerCase()} fee`,
+      label: `Research institution ${inSentence(input.feeName)} fee`,
       detail: `${input.ownFeeRows.length} published ${input.ownFeeRows.length === 1 ? "line" : "lines"} from the research institution's fee schedule (listed below).`,
       asOf: dateOnly(latest),
       href: input.ownFeeRows.map((r) => r.documentUrl ?? r.sourceUrl).find(Boolean) ?? null,

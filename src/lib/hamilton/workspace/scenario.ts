@@ -3,8 +3,9 @@
  * recompute as the reader types.
  *
  * Three levels of evidence, always labeled:
- * - market: position against peers and per-1,000-items arithmetic; no dollar total,
- *   because public data has no event counts for one fee.
+ * - market: position against peers and local competitors and the change per item; no fee income
+ *   figure of any kind, not even per 1,000 items, because public data has no event counts for one
+ *   fee and the bank has given no volume (#1896).
  * - working_estimate: the bank's own reported income for this fee line divided by the
  *   published fee gives implied paid items (already net of waivers).
  * - institution: annual items and waiver rate the bank gave Hamilton.
@@ -151,18 +152,25 @@ function scenarioProvenance(
   };
 }
 
+/** How many of `amounts` sit above, at and below `price` (within a cent counts as the same). */
+function splitAt(amounts: readonly number[], price: number): { n: number; more: number; same: number; less: number } {
+  let more = 0;
+  let same = 0;
+  let less = 0;
+  for (const a of amounts) {
+    if (Math.abs(a - price) <= SAME_PRICE_TOLERANCE) same++;
+    else if (a > price) more++;
+    else less++;
+  }
+  return { n: amounts.length, more, same, less };
+}
+
 export function buildScenario(input: ScenarioInput): Scenario {
   const { feeCategory, current, tested, peers } = input;
   // The group's name only: a thin fee's label also carries "; only 3 of them publish this fee".
   const group = input.peerLabel.split(";")[0].trim();
-  let peersMore = 0;
-  let peersSame = 0;
-  let peersLess = 0;
-  for (const p of peers) {
-    if (Math.abs(p - tested) <= SAME_PRICE_TOLERANCE) peersSame++;
-    else if (p > tested) peersMore++;
-    else peersLess++;
-  }
+  const split = splitAt(peers, tested);
+  const local = input.localAmounts && input.localAmounts.length > 0 ? splitAt(input.localAmounts, tested) : null;
 
   const base = {
     feeCategory,
@@ -170,17 +178,21 @@ export function buildScenario(input: ScenarioInput): Scenario {
     tested,
     peerLabel: group,
     n: peers.length,
-    peersMore,
-    peersSame,
-    peersLess,
+    peersMore: split.more,
+    peersSame: split.same,
+    peersLess: split.less,
     positionBefore: pricePosition(current, peers),
     positionAfter: pricePosition(tested, peers),
-    per1000ItemsDelta: Math.round((tested - current) * 1000),
+    local,
   };
   const peerAssumption =
     peers.length < MIN_PEERS_FOR_POSITION
       ? `Only ${peers.length} peers in ${group} publish this fee, too few for a percentile.`
       : `Position is among ${peers.length} institutions in ${group} that publish this fee.`;
+  // The local count needs its own source line, as the peer count has (every number has a source).
+  const localAssumption = local
+    ? [`Local count is among the ${local.n} local competitors that publish this fee (FDIC Summary of Deposits branch markets).`]
+    : [];
 
   const facts = input.institutionFacts;
   if (facts?.annualItems !== undefined && facts.annualItems >= 0) {
@@ -188,6 +200,7 @@ export function buildScenario(input: ScenarioInput): Scenario {
     const paidItems = facts.annualItems * (1 - waiver);
     const assumptions = [
       peerAssumption,
+      ...localAssumption,
       `${fmtCount(facts.annualItems)} items a year, as you gave them, with ${Math.round(waiver * 100)}% waived or refunded${facts.waiverRate === undefined ? " (no waiver rate given yet, so none is assumed)" : ""}.`,
       volumeAssumption(tested, input.volumeChangePct),
     ];
@@ -207,6 +220,7 @@ export function buildScenario(input: ScenarioInput): Scenario {
     const impliedPaid = line.annualIncome / current;
     const assumptions = [
       peerAssumption,
+      ...localAssumption,
       `Implied paid items: ${fmtMoney(line.annualIncome)} reported (${line.label}, four quarters to ${line.quarterEnd}) ÷ ${fmtMoney(current)} ≈ ${fmtCount(impliedPaid)} a year. Waivers are already netted out.`,
       "Treats every paid item as charged the published amount; tiered or capped fees make this approximate.",
       ...(line.combinedWith
@@ -227,6 +241,7 @@ export function buildScenario(input: ScenarioInput): Scenario {
 
   const assumptions = [
     peerAssumption,
+    ...localAssumption,
     line === undefined || line === null
       ? "No current filing reports income for this fee on its own, so there is no dollar estimate from public data."
       : "The reported income for this fee cannot support an estimate at the current price.",

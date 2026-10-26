@@ -29,8 +29,15 @@ type Reader = {
   /** Rows from these checks are read at any stage, `readStages` aside. A check name matches on
    * its part before the first ":", as the readers match it. */
   anyStageChecks?: readonly string[];
+  /** Rows whose `evidence.cause` is one of these are not read: a person's hold or correction names
+   * its cause (#2057), and some causes have no reader yet. */
+  unreadCauses?: readonly string[];
+  /** At these stages only rows from these checks and reporters are read (the stage must also be
+   * in `readStages`); any other row there is unread. A check name matches whole. */
+  stageOnly?: readonly StageOnly[];
   note?: string;
 };
+type StageOnly = { stage: string; checks: readonly string[]; reportedBy: readonly string[] };
 type Unread = { unread: string };
 type RecordOnly = { record: string };
 export type FeedbackKindEntry = Reader | Unread | RecordOnly;
@@ -50,6 +57,14 @@ const ROSETTA_READ_LESSONS = [ROSETTA_READ, "src/lib/agents/rosetta/paid-read.ts
 const ROSETTA_BATCH_READERS = [...ROSETTA_READ_LESSONS, "src/lib/agents/goal-scorecard.ts"] as const;
 /** Fee-level verdicts recorded by Darwin's verify that only Magellan's batch review counts. */
 const DARWIN_VERIFY = "darwin.verify";
+/** Deming's extract-stage audit checks whose misses Knox does not learn from (`knox/lessons.ts` v5 reads only the category guard's). */
+const KNOX_UNREAD_AUDIT_CHECKS = ["hamilton.source_check", "hamilton.product_page_conflict", "deming.not_a_fee_line", "deming.name_quality"] as const;
+/** Darwin's reader of a person's holds and corrections filed against verify (#2057). */
+const DARWIN_VERIFY_MISSES = "src/lib/agents/darwin/verify-misses.ts";
+/** What Darwin's reader reads at verify: a person's own hold and correction rows (verify-misses.ts). */
+const DARWIN_VERIFY_HAND_ROWS = [{ stage: "verify", checks: ["admin.fee_hold", "admin.fee_correction"], reportedBy: ["human"] }] as const;
+/** The takedown sync's copy of a hand correction's takedown (its reason starts "admin_correction:"). */
+const TAKEDOWN_SYNC_CORRECTION = "hamilton.admin_correction";
 /** The stage of the takedown sync's row that its restore detection reads. */
 const EXTRACT = ["extract"] as const;
 
@@ -83,7 +98,7 @@ export const FEEDBACK_KINDS = {
   audience_relabeled: { record: "Darwin's audience relabel keeps the old value for a rollback (audience-relabel.ts)." },
   audience_hand_fixed: { record: "Hamilton's hand audience fix keeps the old value for a rollback." },
   business_schedule_restored: { record: "A business-schedule takedown brought back; release review leaves it out on purpose." },
-  account_type_hold_released: { record: "A guard-refused row the account type hold put back to verified, held (#1680); not a category verdict, and with no published fee release review never reads it." },
+  account_type_hold_released: { record: "A guard-refused row the account type hold put back to verified, held (#1680); not a category verdict; release review leaves it out by name (`RESTORE_RECORD_KINDS`)." },
   category_fold: { record: "Hamilton's taxonomy fold logs each fee it moved." },
   name_account_added: { record: "Hamilton's account names log each name it added." },
   name_account_removed: { record: "Hamilton's account names log each name set back because its heading was no account, a breadcrumb or menu (account-names.ts v4, #1917)." },
@@ -122,10 +137,10 @@ export const FEEDBACK_KINDS = {
   flag_cleared: { record: "The second look's appended audit trail of a cleared flag." },
 
   // Daily audit and operator actions.
-  audit_miss: { readers: [MAGELLAN_DISCOVERY], readStages: ["discover"], note: "Magellan's stale-link search reads the document misses; extract misses teach Knox nothing yet." },
-  admin_hold: { readers: [MAGELLAN_DISCOVERY, ROSETTA_READ], readStages: ["discover", "read"], note: "A wrong-document hold goes to Magellan, a lost text to Rosetta's next reader version (#2059); other causes are read by no agent yet." },
-  admin_release: { readers: [MAGELLAN_DISCOVERY, RELEASE_REVIEW] },
-  admin_correction: { readers: [MAGELLAN_DISCOVERY, ROSETTA_READ], readStages: ["discover", "read"] },
+  audit_miss: { readers: [MAGELLAN_DISCOVERY, KNOX_LESSONS, LABEL_QUEUE], readStages: ["discover", "extract"], unreadChecks: KNOX_UNREAD_AUDIT_CHECKS, note: "Magellan's stale-link search reads the document misses; Knox's lessons and label queue read the category guard's misses at extract as category verdicts (v5). Amount, product-page and perk misses teach Knox nothing yet (#2055, #2067); a bad name is acted on through its knox_reread_requested twin, not this row. Deming files no miss at verify (missOwner), so Darwin hears of none." },
+  admin_hold: { readers: [MAGELLAN_DISCOVERY, ROSETTA_READ, KNOX_LESSONS, LABEL_QUEUE, DARWIN_VERIFY_MISSES], readStages: ["discover", "read", "extract", "verify"], unreadCauses: ["wrong_amount"], stageOnly: DARWIN_VERIFY_HAND_ROWS, note: "A wrong-document hold goes to Magellan, a lost text to Rosetta's next reader version (#2059), a wrong category to Knox's lessons and label queue (v5), a verify miss to Darwin's lessons and missed tally (#2057); an amount hold teaches no agent yet (#2067)." },
+  admin_release: { readers: [MAGELLAN_DISCOVERY, RELEASE_REVIEW, DARWIN_VERIFY_MISSES] },
+  admin_correction: { readers: [MAGELLAN_DISCOVERY, ROSETTA_READ, KNOX_LESSONS, LABEL_QUEUE, DARWIN_VERIFY_MISSES], readStages: ["discover", "read", "extract", "verify"], stageOnly: DARWIN_VERIFY_HAND_ROWS, unreadChecks: [TAKEDOWN_SYNC_CORRECTION], note: "Knox's lessons read an extract correction as a verdict on its category, old and new (v5); Darwin reads a person's verify-stage corrections (#2057). The takedown sync's copies (check hamilton.admin_correction, at extract and verify) mirror the hand row, which names its own stage, and no agent reads them." },
   admin_correction_reversed: { readers: [MAGELLAN_DISCOVERY, RELEASE_REVIEW] },
 
   // Rosetta's reads.
@@ -169,31 +184,37 @@ function entry(kind: string): FeedbackKindEntry | undefined {
 }
 
 /** Pure: is this row read by any agent? Unregistered kinds are unread, records are not debt. */
-export function feedbackRowRead(row: { kind: string; about_stage: string; check_name: string | null; dedupe_key?: string | null }): boolean {
+export function feedbackRowRead(row: { kind: string; about_stage: string; check_name: string | null; dedupe_key?: string | null; reported_by?: string | null; cause?: string | null }): boolean {
   const known = entry(row.kind);
   if (!known) return /^hamilton\.takedown:pub:.*:extract$/.test(row.dedupe_key ?? "");
   if ("record" in known) return true;
   if ("unread" in known) return false;
   if (known.unreadChecks && row.check_name != null && known.unreadChecks.includes(row.check_name)) return false;
+  if (known.unreadCauses && row.cause != null && known.unreadCauses.includes(row.cause)) return false;
   const check = row.check_name?.split(":")[0];
   if (known.anyStageChecks && check != null && known.anyStageChecks.includes(check)) return true;
   if (known.readStages && !known.readStages.includes(row.about_stage)) return false;
+  const only = known.stageOnly?.find((item) => item.stage === row.about_stage);
+  if (only) return row.check_name != null && only.checks.includes(row.check_name) && row.reported_by != null && only.reportedBy.includes(row.reported_by);
   return true;
 }
 
 /** SQL-side split of the same rule, for the brief's count: kinds read whole, and the rest. */
 export function unreadFeedbackPredicate() {
   const unreadKinds: string[] = [];
-  const partial: Array<{ kind: string; stages: string[] | null; checks: string[]; anyStageChecks: string[] }> = [];
+  const partial: Array<{ kind: string; stages: string[] | null; checks: string[]; anyStageChecks: string[]; causes: string[] }> = [];
+  /** Per kind and stage, the only checks and reporters read there (`stageOnly`). */
+  const stageOnly: Array<{ kind: string; stage: string; checks: string[]; reportedBy: string[] }> = [];
   const records: string[] = [];
   const read: string[] = [];
   for (const [kind, value] of Object.entries(FEEDBACK_KINDS) as Array<[string, FeedbackKindEntry]>) {
+    if ("readers" in value) for (const item of value.stageOnly ?? []) stageOnly.push({ kind, stage: item.stage, checks: [...item.checks], reportedBy: [...item.reportedBy] });
     if ("record" in value) records.push(kind);
     else if ("unread" in value) unreadKinds.push(kind);
-    else if (value.readStages || value.unreadChecks) partial.push({ kind, stages: value.readStages ? [...value.readStages] : null, checks: value.unreadChecks ? [...value.unreadChecks] : [], anyStageChecks: value.anyStageChecks ? [...value.anyStageChecks] : [] });
+    else if (value.readStages || value.unreadChecks || value.unreadCauses || value.stageOnly) partial.push({ kind, stages: value.readStages ? [...value.readStages] : null, checks: value.unreadChecks ? [...value.unreadChecks] : [], anyStageChecks: value.anyStageChecks ? [...value.anyStageChecks] : [], causes: value.unreadCauses ? [...value.unreadCauses] : [] });
     else read.push(kind);
   }
-  return { unreadKinds, partial, registered: [...records, ...unreadKinds, ...read, ...partial.map((item) => item.kind)] };
+  return { unreadKinds, partial, stageOnly, registered: [...records, ...unreadKinds, ...read, ...partial.map((item) => item.kind)] };
 }
 
 /** Days of rows the brief looks back over, and how old a row must be to count as unread. */

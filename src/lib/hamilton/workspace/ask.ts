@@ -488,6 +488,7 @@ export function scenariosFor(research: FeeResearch, current: number, tested: num
       tested: price,
       peers,
       peerLabel: research.peerLabel,
+      localAmounts: research.localCompetitors && research.localCompetitors.length > 0 ? countedPeerAmounts({ peers: research.localCompetitors }) : null,
       revenueLine: research.revenueLine,
       institutionFacts: facts,
       generatedAt: research.provenance.generatedAt,
@@ -514,9 +515,20 @@ function revenueSentence(s: Scenario): string {
       ? `That is ${range} a year ${dir} in fee income, based on ${EVIDENCE_WORDS[s.evidenceLevel]}.`
       : `Fee income would change by ${formatDollarsInWords(low)} to ${formatDollarsInWords(high)} a year, based on ${EVIDENCE_WORDS[s.evidenceLevel]}.`;
   }
-  const delta = s.per1000ItemsDelta;
-  if (delta === 0) return "Fee income per item would not change.";
-  return `Every 1,000 items charged would bring ${formatDollarsInWords(Math.abs(delta))} ${delta > 0 ? "more" : "less"} in fee income, based on ${EVIDENCE_WORDS[s.evidenceLevel]}.`;
+  // No fee income figure without the bank's own yearly volume, not even per 1,000 items (#1896).
+  const delta = Math.round((s.tested - s.current) * 100) / 100;
+  if (delta === 0) return "The price per item would not change.";
+  return `Each item charged would bring ${money(Math.abs(delta))} ${delta > 0 ? "more" : "less"}; a yearly fee income figure needs your own yearly volume.`;
+}
+
+/** " 3 of the 7 local competitors that publish this fee would charge less.", or "" without a local market. */
+function localSentence(s: Scenario): string {
+  if (!s.local || s.local.n === 0) return "";
+  const { n, less } = s.local;
+  if (n === 1) return ` The one local competitor that publishes this fee would charge ${less === 1 ? "less" : "the same or more"}.`;
+  return less === 0
+    ? ` None of the ${n} local competitors that publish this fee would charge less.`
+    : ` ${less} of the ${n} local competitors that publish this fee would charge less.`;
 }
 
 /** One or two short sentences for a modeled price. */
@@ -526,7 +538,7 @@ export function scenarioSummary(s: Scenario, subject?: { subjectName?: string })
     s.positionAfter !== null && s.positionBefore !== null
       ? `At ${money(s.tested)}, ${subjectPossessive(subject, false)} ${name} fee would sit ${placeAmong(s.positionAfter, s.n)}; today it sits ${placeAmong(s.positionBefore, s.n, true)}.`
       : `At ${money(s.tested)}, ${s.peersMore} of ${s.n} peers would charge more and ${s.peersLess} less.`;
-  return `${position} ${revenueSentence(s)}`;
+  return `${position}${localSentence(s)} ${revenueSentence(s)}`;
 }
 
 /**

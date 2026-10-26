@@ -302,6 +302,25 @@ describe.skipIf(!connection)("reference eligibility in isolated PostgreSQL", () 
     expect(after?.categories).toContain("stop_payment");
   });
 
+  // #1577: a person relabels a confirmed key line after its answer-key row was learned. The key is
+  // re-approved with a fresh eligible receipt, so only the current-line match can retire the row.
+  it.each([["unmapped", "unmapped"], ["another category", "nsf"]])("retires the learned row when its key line is relabelled to %s", async (_, relabel) => {
+    await db`INSERT INTO answer_key_fees (id,answer_key_institution_id,canonical_key,amount,amount_kind,frequency,source_line,uncertain,status,confirmed_by,confirmed_at)
+      VALUES (2,1,'stop_payment',20,'fixed','per_item','Stop payment fee $20',false,'confirmed','existing person','2026-10-18T00:00:00Z')`;
+    await addFeedback();
+    expect(await trustedFeedbackCount()).toBe(1);
+    expect((await loadCategoryModel(asDb()))?.categories).toContain("overdraft");
+    await db`UPDATE answer_key_fees SET canonical_key=${relabel} WHERE id=1`;
+    await approve();
+    const snapshot = await readReferenceEligibility(asDb());
+    expect(snapshot.keys[0].status).toBe("eligible");
+    expect(await trustedFeedbackCount()).toBe(0);
+    const after = await loadCategoryModel(asDb());
+    expect(after?.categories).not.toContain("overdraft");
+    expect(after?.categories).not.toContain(relabel);
+    expect(after?.categories).toContain("stop_payment");
+  });
+
   it("keeps a valid original receipt across renewal and does not duplicate training weight", async () => {
     const { input, evidence } = await addFeedback();
     const before = await loadCategoryModel(asDb());

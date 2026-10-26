@@ -677,6 +677,52 @@ describe("v81: two fees named together at one price", () => {
   });
 });
 
+describe("v124 (#2079): a fee joined after an article", () => {
+  const read = (feeName: string, amount: number, excerpt: string, strategy?: string) => ({ feeName, amount, excerpt, canonicalHint: "x", frequency: null, confidence: 0.85, waivable: false, strategy });
+  const hints = (text: string) => runFreeSpecialists(`Other Services\n${text}\nCashier Check $5.00`).candidates.map((fee) => [fee.feeName, fee.canonicalHint]);
+
+  it("keeps the second fee when the words before the joiner name a fee", () => {
+    expect(hints("Overdraft Fee or an NSF Fee $30.00")).toContainEqual(["NSF Fee", "nsf"]);
+    const line = "Overdraft Fee or an NSF Fee $30.00";
+    expect(tailOfEarlierRead(read("Overdraft Fee or an NSF Fee", 30, line), read("NSF Fee", 30, line))).toBe(false);
+    expect(tailOfEarlierRead(read("Overdraft or an NSF Fee", 30, line), read("NSF Fee", 30, line))).toBe(false);
+    expect(tailOfEarlierRead(read("Returned Item Charge and the Stop Payment", 30, line), read("Stop Payment", 30, line))).toBe(false);
+  });
+
+  it("drops the tail when the words before the joiner are no fee (a live check-copy fee)", () => {
+    expect(hints("Copy of a draft or a Teller Check $5.00")).toEqual([["Copy of a draft or a Teller Check", "check_image"], ["Cashier Check", "cashiers_check"]]);
+    const line = "Copy of a draft or a Teller Check $5.00";
+    expect(tailOfEarlierRead(read("Copy of a draft or a Teller Check", 5, line), read("Teller Check", 5, line))).toBe(true);
+    // Without the article the joiner alone still makes it a fee of its own, as in v81.
+    expect(tailOfEarlierRead(read("Copy of a draft or Teller Check", 5, line), read("Teller Check", 5, line))).toBe(false);
+  });
+
+  it("reads a count after the price as no fee name, and an abbreviation as part of the category (#2711 review)", () => {
+    const each = "Overdraft fee applies to each item or the daily cap $35";
+    expect(tailOfEarlierRead(read("Overdraft fee applies to each item or the daily cap", 35, each), read("daily cap", 35, each))).toBe(true);
+    const series = "Stop payment item fee - one item or the whole series $30";
+    expect(tailOfEarlierRead(read("Stop payment item fee - one item or the whole series", 30, series), read("whole series", 30, series))).toBe(true);
+    const od = "Overdraft (OD) or an NSF Fee $30";
+    expect(tailOfEarlierRead(read("Overdraft (OD) or an NSF Fee", 30, od), read("NSF Fee", 30, od))).toBe(false);
+  });
+
+  it("counts an earlier pass-2 read as the earlier find", () => {
+    const line = "Stop Payment (check, ACH or Bill Pay) | $25 per request";
+    const tablePrior = read("Stop Payment (check, ACH or Bill Pay)", 25, line, "extract.table");
+    expect(tailOfEarlierRead(tablePrior, read("ACH or Bill Pay", 25, line, "extract.family.digital"))).toBe(true);
+    const joinedPrior = read("Overdraft Fee or an NSF Fee", 30, "Overdraft Fee or an NSF Fee $30.00", "extract.table");
+    expect(tailOfEarlierRead(joinedPrior, read("NSF Fee", 30, "Overdraft Fee or an NSF Fee $30.00", "extract.family.overdraft_nsf"))).toBe(false);
+  });
+
+  it("reads numeric ampersands as joiners and square brackets as parentheses", () => {
+    const line = "Returned Check &#38; Stop Payment Fee | $30.00";
+    expect(tailOfEarlierRead(read("Returned Check &#38; Stop Payment Fee", 30, line), read("Stop Payment Fee", 30, line))).toBe(false);
+    expect(tailOfEarlierRead(read("Returned Check &#x26; Stop Payment Fee", 30, line), read("Stop Payment Fee", 30, line))).toBe(false);
+    const bracketed = "Stop Payment [check, ACH or Bill Pay] | $25";
+    expect(tailOfEarlierRead(read("Stop Payment [check, ACH or Bill Pay]", 25, bracketed), read("Bill Pay", 25, bracketed))).toBe(true);
+  });
+});
+
 describe("v93: a row priced in words closes its line (#1828)", () => {
   it("never reads a dot-leader row priced in words as the heading of the row under it (Oregon Community FCU)", () => {
     // Doc 19849 (bank 7859): read as "Reconveyance .. Actual Cost: Returned payment" at $4.95.

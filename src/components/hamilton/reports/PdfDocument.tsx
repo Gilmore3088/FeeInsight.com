@@ -26,6 +26,7 @@ import { SAVED_ANSWER_FULL_LIST, SAVED_DATASET_SOURCE_LABEL, WRITTEN_SOURCES_NOT
 import { FINDING_EVIDENCE_LABELS, findingChartCaption, readAddedFindingEvidence } from "@/lib/hamilton/report-finding-evidence";
 import type { ReportFindingSource } from "@/lib/hamilton/report-finding-claims";
 import { FeeRangeChart } from "./BriefCharts";
+import { exhibitColumnKinds } from "./ReportAnswer";
 
 // Words wrap whole, as in AnalysisPdfDocument (the same route loads both): default hyphenation split
 // evidence record IDs mid-way ("fee:pub-lished:502"), so a printed ID no longer matched its record.
@@ -283,6 +284,10 @@ const styles = StyleSheet.create({
   wideCell: {
     flex: 2.6,
   },
+  // A middle column of source lines (#1899): wide enough that each saved record stays inside its row.
+  proseCell: {
+    flex: 2.4,
+  },
   exhibitNote: {
     fontSize: 7,
     fontFamily: "Helvetica",
@@ -388,9 +393,11 @@ export function PdfDocument({ report, reportType, artifactMetadata }: PdfDocumen
 }
 
 function PdfExhibit({ exhibit, number }: { exhibit: ReportExhibit; number: number }) {
-  // The last column carries names or labels; give it room.
+  // The last column carries names or labels; give it room. A middle column of prose gets room too.
+  const kinds = exhibitColumnKinds(exhibit);
   const cellStyle = <T,>(index: number, base: T) =>
-    index === exhibit.columns.length - 1 && exhibit.id === "local_market" ? [base, styles.wideCell] : [base];
+    index === exhibit.columns.length - 1 && exhibit.id === "local_market" ? [base, styles.wideCell]
+      : index > 0 && index < exhibit.columns.length - 1 && kinds[index] === "text" ? [base, styles.proseCell] : [base];
   return (
     <View style={styles.exhibit} wrap={false}>
       <Text style={styles.exhibitNumber}>Exhibit {number}</Text>

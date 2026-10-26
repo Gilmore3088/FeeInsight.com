@@ -1862,6 +1862,35 @@ describe("agentic run store", () => {
     expect(expectedStepMs("some-new-step")).toBe(120_000);
   });
 
+  it("prices the heavy registry downloads from their measured runtime, not the quick default (#1820)", () => {
+    // 2026-10-26 maxima over 9 days: each entry is at or above it, and every one fits the 270 s budget.
+    const measuredMaxSeconds: Record<string, number> = {
+      "registry-call-report-summaries": 196,
+      "registry-cfpb": 171,
+      "registry-ffiec-call-detail": 153,
+      "registry-ncua-extras": 110,
+      "registry-branch-census-tracts": 122,
+      "registry-state-bills": 94,
+      "registry-industry-events": 104,
+      "registry-cfpb-card-agreements": 71,
+      "registry-sec-filings": 78,
+      "registry-federal-bills": 61,
+      "registry-bls-laus": 40,
+      "registry-fred": 41,
+      "registry-fdic-history": 43,
+    };
+    for (const [key, maxSeconds] of Object.entries(measuredMaxSeconds)) {
+      expect(expectedStepMs(key), key).toBeGreaterThanOrEqual(maxSeconds * 1000);
+      expect(expectedStepMs(key), key).toBeLessThan(270_000);
+    }
+    // A 300 s fetch timeout with no long measured run: priced so only a tick's first slot runs it.
+    expect(expectedStepMs("registry-nic-structure")).toBe(240_000);
+    // Market-growth sources run under their own keys; LODES (census-lehd, max 25 s) stays quick.
+    expect(expectedStepMs("registry-census-lehd")).toBe(30_000);
+    // p99 12 s: one 93 s outlier in 213 runs does not move it off the quick default.
+    expect(expectedStepMs("registry-bank-merger-orders")).toBe(30_000);
+  });
+
   it("runs the fee-alert dispatch as a visible step while the pipeline is paused", async () => {
     getExecutionBackendMock.mockReturnValue("agentic_v1");
     getPipelineControlMock.mockResolvedValue({ enabled: false, reason: "Operator maintenance" });

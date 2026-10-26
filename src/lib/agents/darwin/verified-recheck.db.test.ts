@@ -429,13 +429,13 @@ suite("Darwin recheck committed settlement (#2072)",()=>{
     await rollback("live",async(tx,f)=>{
       await asV9OnlyDiscount(tx,f);
       // Second look due (fixture flag, 13 hours old).
-      const due=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,...SETTLEMENT_ONLY});
+      const due=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,secondBatchActs:false,...SETTLEMENT_ONLY});
       expect(due.takenDown).toEqual([]);expect(due.secondBatchDeferred).toEqual([f.publishedId]);expect(await attemptCount(tx,f)).toBe(0);
       expect((await tx`SELECT rolled_back_at FROM published_fee_records WHERE fee_published_id=${f.publishedId}`)[0].rolled_back_at).toBe(null);
       expect((await tx`SELECT kind FROM pipeline_feedback WHERE dedupe_key=${secondLookDedupeKey(DARWIN_RECHECK_CHECK,f.publishedId!)}`)[0].kind).toBe("takedown_pending");
       // First look: no flag is written.
       await tx`DELETE FROM pipeline_feedback WHERE fee_published_id=${f.publishedId}`;
-      const first=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,...SETTLEMENT_ONLY});
+      const first=await recheckVerifiedFees(tx as unknown as Db,{runId:f.runId,stepId:f.stepId,secondBatchActs:false,...SETTLEMENT_ONLY});
       expect(first.flagged).toBe(0);expect(first.secondBatchDeferred).toEqual([f.publishedId]);
       expect((await tx`SELECT count(*)::int AS n FROM pipeline_feedback WHERE fee_published_id=${f.publishedId}`)[0].n).toBe(0);
     });

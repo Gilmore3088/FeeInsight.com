@@ -83,6 +83,13 @@ describe("policy", () => {
 });
 
 describe("runColdTier", () => {
+  it("the dated rollout exports only periods in the reviewed manifest", async () => {
+    const { db, calls } = mockDb({ periods: { ffiec: QUARTERS(20) }, count: 1 });
+    const result = await runColdTier({ db, store: memoryStore(), exportLive: true, approvedExportsOnly: true });
+    expect(result.tables[0].cold.some((p) => p.period < "2023-03-31")).toBe(true);
+    expect(result.exported).toEqual([expect.objectContaining({ source: "ffiec", period: "2023-03-31" })]);
+    expect(calls.some((c) => c.text.includes("DELETE"))).toBe(false);
+  });
   it("counts at most a few cold periods a run, oldest first, carries earlier counts, and writes nothing", async () => {
     const ffiec = QUARTERS(16);
     const oldest = ffiec.at(-1)!;
@@ -107,7 +114,7 @@ describe("runColdTier", () => {
     expect(writes(calls)).toEqual([]);
     expect(calls.some((c) => c.text.includes("set_config('statement_timeout'") && c.values.includes("10s"))).toBe(true);
     expect(summarizeColdTier(result)).toContain("4 periods older than the newest 12 per source; 2,000 rows in 3 counted");
-    expect(summarizeColdTier(result)).toContain("Export off; pruning waits for James's yes.");
+    expect(summarizeColdTier(result)).toContain("Export off; pruning off.");
     expect(coldTierDetail(result)).toMatchObject({ export_live: false, index_ready: true, counts: { [`institution_call_report_items|ffiec|${oldest}`]: 1_000 } });
   });
 

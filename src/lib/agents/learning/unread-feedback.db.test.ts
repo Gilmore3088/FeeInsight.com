@@ -70,4 +70,23 @@ describe.skipIf(!connection)("unread error rows in isolated PostgreSQL (#2062)",
     expect(count(after, "product_page", "verify") - count(before, "product_page", "verify")).toBe(1);
     expect(count(after, "product_page", "extract") - count(before, "product_page", "extract")).toBe(0);
   });
+
+  it("counts a verify-stage hold or correction as read only when it is a person's own row (#2057)", async () => {
+    const before = await readUnreadFeedback(raw as unknown as Db);
+    const by = async (kind: string, check: string, reporter: string) => {
+      n += 1;
+      await raw`INSERT INTO pipeline_feedback (about_stage, signal, kind, reported_by, check_name, institution_id, weight, dedupe_key, created_at)
+                VALUES ('verify', 'wrong', ${kind}, ${reporter}, ${check}, ${INST}, 1, ${`test2062:${n}`}, NOW() - make_interval(hours => 72))`;
+    };
+    await by("admin_hold", "admin.fee_hold", "human"); // Darwin reads it
+    await by("admin_correction", "admin.fee_correction", "human"); // Darwin reads it
+    await by("admin_correction", "hamilton.admin_correction", "gutenberg"); // the takedown sync's copy
+    await by("admin_hold", "admin.fee_hold", "hamilton"); // not a person's row
+    await by("audit_miss", "hamilton.source_check", "deming"); // no reader at verify
+    const after = await readUnreadFeedback(raw as unknown as Db);
+    expect(after.total - before.total).toBe(3);
+    expect(count(after, "admin_hold", "verify") - count(before, "admin_hold", "verify")).toBe(1);
+    expect(count(after, "admin_correction", "verify") - count(before, "admin_correction", "verify")).toBe(1);
+    expect(count(after, "audit_miss", "verify") - count(before, "audit_miss", "verify")).toBe(1);
+  });
 });

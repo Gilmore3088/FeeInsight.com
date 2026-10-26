@@ -160,6 +160,11 @@ describe("explicit derivations", () => {
       ["  per   item ", "PER_ITEM"],
       ["per_transaction", "per transaction"],
       ["Monthly", "monthly "],
+      // #1992: one per-event family, the rule frequencyFamily applies everywhere.
+      ["per_item", "per_transaction"],
+      ["each", "per item"],
+      ["Per_Item", "each"],
+      ["per_item", "Each"],
     ]) {
       const result = deriveDifference("ok", fact({ id: "a", frequency: left }), fact({ frequency: right, value: 35 }));
       expect(result.problems, `${left} vs ${right}`).toEqual([]);
@@ -168,7 +173,7 @@ describe("explicit derivations", () => {
     // Different words are still different frequencies.
     for (const [left, right] of [
       ["monthly", "per item"],
-      ["per_item", "per_transaction"],
+      ["each", "monthly"],
       ["per item", "per month"],
       ["annual", "monthly"],
     ]) {

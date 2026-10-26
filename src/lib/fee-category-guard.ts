@@ -129,12 +129,12 @@ const ES_OUTGOING = "saliente|enviad";
  * v90 (#1912): a name that names the safe deposit box ("Safety Deposit Box-Late Fee", "Safe Box Late
  * Fee - Per Month after 3 months", "SDB Late Payment", "Late charge for safety deposit box rental
  * after 10 days"). A night deposit box is the night depository's, not this.
- * v93 (#1912, review of #2639): whatever stands between "night" and "deposit box": "Night Drop Deposit
+ * v96 (#1912, review of #2639): whatever stands between "night" and "deposit box": "Night Drop Deposit
  * Box Late Fee", the double-spaced "Night  Deposit Box", "Night Drop/Deposit Box" (`NIGHT_DEPOSIT_NAME`).
  */
 const SAFE_DEPOSIT_BOX_NAME = /\bsafe(?:ty)?[\s-]*(?:deposit|box)|\bsdb\b|(?<!night[\s\/-]+(?:drop[\s\/-]+)?)\bdeposit\s+box(?:es)?\b/i;
 /**
- * v93 (#1912): a night depository named by its night deposit or night drop words, however they are
+ * v96 (#1912): a night depository named by its night deposit or night drop words, however they are
  * spaced or joined ("Night  Deposit Box", "Night Drop Deposit Box", "Night-Drop"). Never a safe deposit box.
  */
 const NIGHT_DEPOSIT_NAME = String.raw`night[\s\/-]+(?:deposit|drop)`;
@@ -232,13 +232,14 @@ export function nonCustomerCashiersCheck(canonicalFeeKey: string, name: string, 
  * #1513: a wire filed as domestic whose name writes "international" short ("Wire Trans. (Intern.
  * Outgoing)", "Int. Wire Transfer – Outgoing", "Internat'l Wire"; `abbreviatesInternationalWire`,
  * the reading Knox v120 files them by) fails the domestic wire and re-files to the international
- * wire of its direction. Held by `INTL_ABBREVIATION_REFILE_LIVE`: off, the rule reads nothing. The
+ * wire of its direction. Held by `INTL_ABBREVIATION_REFILE_LIVE`, on since James's yes (Oct 26, guard
+ * v95); off, the rule reads nothing. The
  * read-only dry run (Oct 26) found 2 live domestic wires it would re-file (inst 1405: 90381
  * "Int. Wire Transfers – Incoming" $20 beside "Wire Transfers – Incoming" $15, and 90382 "Int. Wire
  * Transfer – Outgoing" $40 beside "Wire Transfers – Outgoing" $20). Turning it on bumps
  * `CATEGORY_GUARD_VERSION`, so Darwin's re-check judges every live wire again.
  */
-export const INTL_ABBREVIATION_REFILE_LIVE = false;
+export const INTL_ABBREVIATION_REFILE_LIVE = true;
 /** The international wire a domestic wire's abbreviated name re-files to, while the rule is live; null otherwise. Pure. */
 export function intlAbbreviationRefile(canonicalFeeKey: string, name: string, live: boolean = INTL_ABBREVIATION_REFILE_LIVE): string | null {
   if (!live) return null;
@@ -773,10 +774,15 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   // $10.00 per transaction, ... ATMs outside U.S. excluded") and a bank's own partner network
   // ("Allpoint ATM Transactions" $0 at SoFi) are no fee here (the Oct 9 review the retired fold
   // rule recorded).
+  // v94 (#2100): the type took its names from card_foreign_txn in v76, so it refuses what that type
+  // refuses as no ATM fee, with the card type's own patterns: a low balance charge, a cash or
+  // foreign currency exchange, order, purchase or delivery, a check collection, and "many" ("Many
+  // international ATMs" describes a network). Read-only dry run, Oct 26: 0 of 60 live dollar fees
+  // and 0 of 3 live rate fees filed here carry the wording, so no fee is held or taken down.
   atm_international: {
     include: INTERNATIONAL_ATM,
     exclude:
-      /(\b(?:debit|pos|point of sale|purchases?|check ?cards?|credit cards?|cash advances?|wires?)\b|outside (?:the )?u\.?s\.?a?\.? excluded|^\s*allpoint\b)/i,
+      /(\b(?:debit|pos|point of sale|purchases?|check ?cards?|credit cards?|cash advances?|wires?)\b|outside (?:the )?u\.?s\.?a?\.? excluded|^\s*allpoint\b|low balance|cash exchange|currency (cash|order|ordered|exchange|purchase)|foreign currency (cash|order|exchange|purchase|delivery)|currency or checks?|check collection|\bmany\b)/i,
   },
   // Knox v26 folded collection items and foreign checks into check cashing (James, Oct 7
   // 2026); on Oct 8 he gave collection items their own type ("Own type"), so a check sent
@@ -866,7 +872,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   // v85 (#1831): a refundable key deposit (`SAFE_DEPOSIT_KEY_DEPOSIT`) is not a charge for the box,
   // as v66 has it for the night deposit. A lost, replaced or duplicate key, drilling and the box's
   // annual or rental fee stay here (`SAFE_DEPOSIT_KEY_DEPOSIT_EXEMPT`); so do late fees.
-  // v93 (#1912): the night deposit words however spaced or joined (`NIGHT_DEPOSIT_NAME`: "Night Drop
+  // v96 (#1912): the night deposit words however spaced or joined (`NIGHT_DEPOSIT_NAME`: "Night Drop
   // Deposit Box Late Fee", "Night  Deposit Box"), not only "night deposit" with one space.
   safe_deposit_box: {
     include: /\S/,
@@ -1149,7 +1155,14 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // holders beside an electronic price ("$4 for paper statement or $3 for estatement", "$7 with paper
 // statement") stays. Where the bank already has a live paper statement fee at that price, the copy is
 // not moved and goes to the second look. Dry-run count in the PR.
-// v93 (Oct 26, #1912, review of #2639): a night depository's name is never a safe deposit box name,
+// v94 (Oct 26, #2100): International ATM refuses the non-fee names the card's foreign transaction fee
+// refuses (low balance, cash or foreign currency exchange, order, purchase or delivery, check
+// collection, "many"), with that type's patterns. Read-only dry run (Oct 26): 0 of 60 live dollar and
+// 0 of 3 live rate fees filed atm_international carry the wording, so no fee is held or taken down.
+// v95 (Oct 26, #1513): `INTL_ABBREVIATION_REFILE_LIVE` on (James's yes): a domestic wire whose name
+// writes "international" short re-files to the international wire of its direction. Read-only dry
+// run (Oct 26): 2 live wires move (inst 1405: 90381, 90382).
+// v96 (Oct 26, #1912, review of #2639; first numbered v93 in #2688): a night depository's name is never a safe deposit box name,
 // however its words are spaced or joined (`NIGHT_DEPOSIT_NAME`): "Night Drop Deposit Box Late Fee" and
 // the double-spaced "Night  Deposit Box" slipped past v90's one-space lookbehind, so a night drop's late
 // fee failed late_payment and re-filed to safe_deposit_box. Now it stays a late payment, a safe deposit
@@ -1157,7 +1170,7 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // Darwin's box floor ($5, a rent floor) no longer applies to a box late fee (`BOX_LATE_FEE_ENVELOPE`,
 // $1 floor), so a real $1 box late fee ("Safety Deposit Box-Late Fee" 36020) re-files in place instead
 // of coming down. Dry-run counts in the PR.
-export const CATEGORY_GUARD_VERSION = 93;
+export const CATEGORY_GUARD_VERSION = 96;
 
 /** v87 (#1916): where a late charge printed in a safe deposit box section is filed. */
 export const BOX_LATE_TARGET = "safe_deposit_box";
@@ -1253,7 +1266,7 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
   // "Returned Item fee (written to you)" is a check the customer deposited coming back.
   // v63: "Deposited Return Items" (Community First Guam FCU 327091) and "Depósito en cheque devuelto".
   { from: "nsf", to: "deposited_item_return", when: /(deposit|dep[oó]sit|written to you|\bbonds?\b|\bcoupons?\b)/i },
-  // v93 (#1912): "Night Drop Deposit Box" and "Night  Deposit Box" are the night depository's too (`NIGHT_DEPOSIT_NAME`).
+  // v96 (#1912): "Night Drop Deposit Box" and "Night  Deposit Box" are the night depository's too (`NIGHT_DEPOSIT_NAME`).
   { from: "safe_deposit_box", to: "night_deposit", when: new RegExp(String.raw`(\bbags?\b|depository|${NIGHT_DEPOSIT_NAME})`, "i") },
   { from: "wire_domestic_outgoing", to: "wire_intl_outgoing", when: /(international|foreign|intl|\bint['’]l\b|internacional|extranjer)/i, unless: /(domestic|dom[eé]stic|\bnacional)/i },
   // v63: "International wire transfer (Incoming)" $40 filed as a domestic incoming wire (Coast360 FCU 462933).

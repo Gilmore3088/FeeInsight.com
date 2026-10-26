@@ -13,6 +13,7 @@ import {
   notComparableReason,
 } from "./fee-comparability";
 import { FEE_FAMILIES } from "./fee-taxonomy";
+import { frequencySpellingSql } from "./fee-frequency";
 
 describe("notComparableReason: card inactivity under an account-dormancy category", () => {
   it("keeps a card's inactivity fee out of the dormant-account median, by name", () => {
@@ -149,11 +150,21 @@ describe("charging basis (#1901)", () => {
     }
   });
 
+  it("reads a stated frequency by the shared spelling rule (#1992)", () => {
+    for (const spelling of ["per item", "Per_Item", "each", "per_item"]) {
+      expect(basisMismatchReason("bill_pay", spelling), spelling).not.toBeNull();
+      expect(basisMismatchReason("nsf", spelling), spelling).toBeNull();
+    }
+    expect(basisMismatchReason("nsf", " Monthly")).toBe("Monthly charge, not per item");
+    expect(basisMismatchReason("nsf", "  ")).toBeNull();
+  });
+
   it("SQL and client rules agree on every category and frequency", () => {
     // Evaluate basisMismatchSql's arms by reading them back: each is a category list (IN or NOT IN)
     // and a frequency list. The SQL must flag exactly the rows basisMismatchReason flags.
     const sql = basisMismatchSql("c");
-    const arms = [...sql.matchAll(/\(c\.fee_category (NOT )?IN \(([^)]*)\) AND lower\(btrim\(c\.frequency, [^)]*\)\) IN \(([^)]*)\)\)/g)].map((m) => ({
+    const spelled = frequencySpellingSql("c.frequency").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const arms = [...sql.matchAll(new RegExp(`\\(c\\.fee_category (NOT )?IN \\(([^)]*)\\) AND ${spelled} IN \\(([^)]*)\\)\\)`, "g"))].map((m) => ({
       negated: Boolean(m[1]),
       categories: m[2].split(", ").map((v) => v.replace(/'/g, "")),
       frequencies: m[3].split(", ").map((v) => v.replace(/'/g, "")),
@@ -161,7 +172,7 @@ describe("charging basis (#1901)", () => {
     expect(arms.length).toBeGreaterThan(1);
     const flagged = (category: string, frequency: string) =>
       arms.some((arm) => arm.categories.includes(category) !== arm.negated && arm.frequencies.includes(frequency));
-    const frequencies = ["monthly", "quarterly", "annual", "daily", "hourly", "one_time", "per_item", "per_occurrence", "per_transaction", "other"];
+    const frequencies = ["monthly", "quarterly", "annual", "daily", "hourly", "one_time", "per_item", "per_occurrence", "per_transaction", "each", "other"];
     for (const category of [...Object.values(FEE_FAMILIES).flat(), "a_new_category"]) {
       for (const frequency of frequencies) {
         expect(flagged(category, frequency), `${category} ${frequency}`).toBe(basisMismatchReason(category, frequency) !== null);

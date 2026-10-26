@@ -179,6 +179,38 @@ describe("#1896 positioning from public data, fee income only from the bank's ow
   });
 });
 
+describe("#1896 fee names in sentences keep the heading's display name", () => {
+  const nsfWorkspace = (over: Record<string, unknown>) => async ({ instId }: { instId?: string }) => ({
+    institution: { id: Number(instId ?? "303"), name: "Synthetic Bank B", charterType: "bank" },
+    ownFees: [], fee: "nsf", feeName: "NSF / Returned Item",
+    ownAmount: 27, ownSeveral: null, research: null, local: null, ownFeeRows: [], unavailable: [],
+    layers: [{
+      ...summarizeLayer("national", "National", "Synthetic peers", [10, 20, 30], 27),
+      members: [10, 20, 30].map((amount, i) => ({
+        institutionId: i + 1, institutionName: `Synthetic Peer ${i + 1}`, amount, stateCode: "OH",
+        sourceDocumentIds: [], documentUrls: [], publishedAt: "2026-09-30",
+      })),
+    }],
+    ...over,
+  });
+  const render = async (params: Record<string, string>) =>
+    renderToStaticMarkup(await ModelPage({ searchParams: Promise.resolve({ instId: "303", fee: "nsf", ...params }) }));
+
+  it("prints NSF in capitals mid-sentence, never a lower-cased name", async () => {
+    mocks.workspace.mockImplementation(nsfWorkspace({}));
+    const priced = await render({ prices: "35", paid: "14500", check: "30" });
+    expect(priced).toContain("Test any NSF / returned item price side by side");
+    expect(priced).toContain("Starting price: $27, your published NSF / returned item fee.");
+    expect(priced).toContain("for NSF / returned item");
+    expect(priced).not.toContain("nsf / returned item");
+
+    mocks.workspace.mockImplementation(nsfWorkspace({ ownAmount: null }));
+    const unpriced = await render({ prices: "35" });
+    expect(unpriced).toContain("No published NSF / returned item fee for Synthetic Bank B yet, so each price is measured from $0.");
+    expect(unpriced).not.toContain("nsf / returned item");
+  });
+});
+
 describe("sign-in", () => {
   it("checks sign-in before reading the saved scenario", async () => {
     mocks.user.mockResolvedValue(null);

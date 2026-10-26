@@ -17,7 +17,7 @@ The same review found that v90's night-deposit lookbehind (`(?<!night[\s-])` in
 double-spaced "Night  Deposit Box" counted as safe deposit box names, and the box rule's own
 "night deposit" exclusion missed them too.
 
-**Fix (guard v93):** a box fee whose own name says late has its own Darwin range
+**Fix (guard v96):** a box fee whose own name says late has its own Darwin range
 (`BOX_LATE_FEE_ENVELOPE` in `src/lib/agents/darwin/envelopes.ts`: $1 floor, the box's ceiling), read
 wherever the hand range is read by name (Darwin verify, Hamilton publish, the guard's restore).
 Hamilton's outlier sweep leaves such fees live, and Darwin's verify re-reads box late holds the new
@@ -25,7 +25,7 @@ floor takes. `NIGHT_DEPOSIT_NAME` (`night[\s/-]+(deposit|drop)`) keeps night dep
 `SAFE_DEPOSIT_BOX_NAME`, fails them as a safe deposit box fee and re-files them to `night_deposit`.
 Dry-run counts are in the PR.
 
-**Guard:** `src/lib/agents/darwin/box-late-envelope.test.ts`, the v93 cases in
+**Guard:** `src/lib/agents/darwin/box-late-envelope.test.ts`, the v96 cases in
 `src/lib/fee-category-guard.test.ts` and `src/lib/agents/hamilton/category-guard.test.ts`, and the box
 late cases in `outlier-rollback.test.ts` and `verify.test.ts`.
 **Agent lesson:** `darwin/issue-1912-box-late-floor-and-night-drop`

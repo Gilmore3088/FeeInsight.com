@@ -1,7 +1,7 @@
 import type { sql } from "@/lib/data-store/connection";
 import { feedbackSchemaReady, recordFeedback } from "@/lib/agents/learning/feedback";
 import { inSavepoint } from "@/lib/agents/savepoint";
-import { lessonName } from "@/lib/agents/knox/lessons";
+import { DARWIN_SUPERSEDED_ON, FINDING_VERDICTS_SQL, knoxFindingsSql, lessonName } from "@/lib/agents/knox/lessons";
 import { eligibleReferenceFeedbackSql, readReferenceEligibility } from "@/lib/data-store/answer-key-reference-store";
 
 type SqlTag = typeof sql;
@@ -80,6 +80,9 @@ export async function loadLabelQueue(db: SqlTag, limit = LABEL_QUEUE_SIZE): Prom
              AND COALESCE(r.evidence->>'restored_by', '') <> 'rules_recheck_restored:text_gone'
              AND r.canonical_fee_key IS NOT NULL
              AND fr.fee_name IS NOT NULL
+        ), findings AS MATERIALIZED (
+          -- Holds, corrections and audit misses filed against extract, as in lessons.ts (v5).
+          ${scope.unsafe(knoxFindingsSql())}
         ), judged AS (
           SELECT regexp_replace(btrim(lower(regexp_replace(f.evidence->>'fee_name', '[^A-Za-z ]+', ' ', 'g'))), '\\s+', ' ', 'g') AS name,
                  f.evidence->>'fee_name' AS raw_name,
@@ -87,15 +90,20 @@ export async function loadLabelQueue(db: SqlTag, limit = LABEL_QUEUE_SIZE): Prom
             FROM pipeline_feedback f
             LEFT JOIN restored rs
               ON f.signal = 'wrong' AND rs.fee_raw_id = f.fee_raw_id AND rs.canonical_fee_key = f.canonical_fee_key
+            -- A finding on this very fee supersedes Darwin's approval of it (as in lessons.ts).
+            LEFT JOIN findings sv ON ${scope.unsafe(DARWIN_SUPERSEDED_ON)}
            WHERE f.about_stage = 'extract'
              AND f.evidence->>'fee_name' IS NOT NULL
              AND f.canonical_fee_key IS NOT NULL
              AND f.kind IN ('wrong_category', 'darwin_verified', 'answer_key')
              AND ${eligibleReferenceFeedbackSql(scope, "f", reference)}
              AND rs.fee_raw_id IS NULL
+             AND sv.id IS NULL
           UNION ALL
           -- A restored fee is verified under the category it came back with (as in lessons.ts).
           SELECT regexp_replace(btrim(lower(regexp_replace(fee_name, '[^A-Za-z ]+', ' ', 'g'))), '\\s+', ' ', 'g'), fee_name, canonical_fee_key, 'right', institution_id FROM restored
+          UNION ALL
+          SELECT fv.name, fv.raw_name, fv.fee_key, fv.signal, fv.institution_id FROM (${scope.unsafe(FINDING_VERDICTS_SQL)}) fv
         ), tally AS (
           SELECT name, fee_key,
                  count(DISTINCT institution_id) FILTER (WHERE signal = 'wrong')::int AS wrong_banks,

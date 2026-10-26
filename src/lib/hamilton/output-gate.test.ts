@@ -13,7 +13,9 @@ import { writtenAnswerBinding, writtenAnswerCheck } from "./answer-save";
 import { CLAIM_GOLDEN_CASES, type ClaimGoldenCase } from "./claim-golden-set";
 import { replayClaimGoldenGate } from "./claim-gate-replay";
 import { memoBinding, memoGateInput, memoProblems, writeStorylineMemo, type MemoClient } from "./memo";
-import { gateAnswer, type GateInput } from "./output-gate";
+import { gateAnswer, OUTPUT_GATE_VERSION, OUTPUT_GATE_VERSIONS, sentencesFor, type GateInput } from "./output-gate";
+import { gatedAnswerView } from "./output-gate-repair";
+import type { HamiltonEvidenceFact } from "./evidence-contract";
 import { causeLines } from "./output-gate-signals";
 import { GATE_SHADOW_ERROR, gateShadowRecord, readGateShadowRecord, shadowDisagreement, shadowGate, tallyGateShadow, type GateShadowRecord } from "./output-gate-shadow";
 import { simulateGateShadow, simulatePrompts, writeSimulateRead } from "./simulate-read";
@@ -110,10 +112,11 @@ describe("the gate in shadow", () => {
     const record = gateShadowRecord(gateAnswer(writtenInput(c)), "held", { path: "written_streaming", mode: "analyze" });
     expect(JSON.stringify(record)).not.toContain(c.text);
     expect(readGateShadowRecord(JSON.parse(JSON.stringify(record)))).toEqual(record);
-    expect(record.version).toBe(2);
+    expect(record.version).toBe(3);
     // A record from before the version 2 bump (thin_peer_group) still reads back, under its own version.
     expect(readGateShadowRecord({ ...record, version: 1 })).toEqual({ ...record, version: 1 });
-    expect(readGateShadowRecord({ ...record, version: 3 })).toBeNull();
+    expect(readGateShadowRecord({ ...record, version: 2 })).toEqual({ ...record, version: 2 });
+    expect(readGateShadowRecord({ ...record, version: 4 })).toBeNull();
     expect(readGateShadowRecord("nope")).toBeNull();
   });
 
@@ -291,5 +294,209 @@ describe("gateAnswer: the peer minimum (T5, #1726)", () => {
     // The answer's earlier sentence names the fee.
     expect(gate(`Harbor Point Bank charges $32 for a stop payment. ${text.replace("$33", "$31")}`, [profile, mixed(31)]).failures.map((f) => f.code))
       .not.toContain("thin_peer_group");
+  });
+});
+
+describe("gateAnswer: asset-tier bounds trace to the tier the writer was given (#1077)", () => {
+  const profile = { toolName: "getInstitution", input: { id: 9101 }, output: {
+    identity: { id: 9101, name: "Harbor Point Credit Union", state: "WY", city: "Synthetic City", charter_type: "credit_union", asset_tier: "community_large" },
+    fees: { verified: [{ fee_name: "Overdraft", fee_category: "overdraft", amount: 30, status: "verified", record_id: 1, source_document_id: 1001 }], provisional: [] },
+  } };
+  const peers = (tiers: string[]) => ({ toolName: "queryData", input: { view: "peer_fees", charter_type: "bank", asset_tiers: tiers }, output: {
+    scope: "filtered", data: [{ category: "overdraft", median: 27.5, p25: 25, p75: 30, institution_count: 12 }],
+  } });
+  const gate = (text: string, reads: Array<{ toolName: string; input: unknown; output: unknown }>, question?: string) => gateAnswer({
+    surface: "written_answer", text, question,
+    evidence: { kind: "tool_reads", toolOutputs: reads.map((r) => r.output), reads },
+    identity: { researchInstitutionId: 9101, accountInstitutionId: 9101 },
+  });
+  const untraced = (verdict: ReturnType<typeof gateAnswer>) => verdict.failures.filter((f) => f.code === "untraced_figure").map((f) => f.message);
+
+  it("traces the replay's tier phrasings when the tier is in the reads", () => {
+    for (const [text, reads] of [
+      ["Harbor Point Credit Union is among credit unions under $10 billion.", [profile]],
+      ["Banks over $250 billion have a $27.50 median overdraft fee.", [profile, peers(["super_regional"])]],
+      ["Harbor Point Credit Union has $1 billion to $10 billion in assets.", [profile]],
+    ] as const) expect(untraced(gate(text, [...reads])), text).toEqual([]);
+  });
+
+  it("still holds a figure that is not a bound of the tiers read", () => {
+    expect(untraced(gate("Credit unions under $7 billion charge $30.", [profile]))).toEqual(["These figures are not in DATA: $7 billion."]);
+    // A tier the reads never named is not evidence: $250 billion is super_regional's bound, not community_large's.
+    expect(untraced(gate("Banks over $250 billion charge $30.", [profile]))).toEqual(["These figures are not in DATA: $250 billion."]);
+    // Tier bounds are not pooled into arithmetic: $9 billion is no tier's bound.
+    expect(untraced(gate("The tier spans $9 billion.", [profile]))).toEqual(["These figures are not in DATA: $9 billion."]);
+  });
+
+  it("$5 billion is no tier's bound: it passes only when the question names it, with or without a $", () => {
+    const text = "Credit unions over $5 billion charge $30.";
+    expect(untraced(gate(text, [profile]))).toEqual(["These figures are not in DATA: $5 billion."]);
+    expect(untraced(gate(text, [profile], "How do credit unions over 5B price overdraft?"))).toEqual([]);
+  });
+
+  it("never takes a count in the question for a dollar figure the answer may restate", () => {
+    for (const [question, text, figure] of [
+      ["We serve 2 million members; how does our overdraft compare?", "Overdraft income was $2 million.", "$2 million"],
+      ["We have 30k members; how does our overdraft compare?", "Overdraft income was $30,000.", "$30,000"],
+    ] as const) {
+      const verdict = gate(text, [profile], question);
+      expect(untraced(verdict), question).toEqual([`These figures are not in DATA: ${figure}.`]);
+      expect(verdict.status, question).toBe("held");
+    }
+  });
+});
+
+describe("interpretation and binding rules cut a sentence instead of holding the answer (#1077, cause 5)", () => {
+  // An NCUA read, so the interpretation rules run (answer-interpretations.ts).
+  const ncua = (metric: string, values: number[], scope = "institution") => ({
+    toolName: "queryData", input: { measure: `call:${metric}`, scope: { kind: scope, id: "8322" } },
+    output: { ok: true, measure: `call:${metric}`, scope, measure_metadata: { source: "ncua-extras", unit: "USD", period_basis: "ytd" },
+      rows: values.map((value, i) => ({ period: ["2025-06-30", "2026-06-30"][i], ...(scope === "institution" ? { value } : { median: value }), unit: "USD", period_basis: "ytd" })) },
+  });
+  const data = { toolResults: [ncua("acct_131", [100, 120]), ncua("acct_131", [19, 22], "peer_set")], your_fee: 30, peer_median: 25, gap: 5 };
+  const gate = (text: string) => gateAnswer({ surface: "simulate", text, evidence: { kind: "data", data }, identity: { researchInstitutionId: null, accountInstitutionId: null } });
+  const clean = "Alliant reported $120 in fee income.";
+
+  it("\"keeps you $5 above the peer median\" states a position, not a cause: the answer validates", () => {
+    expect(gate(`${clean} Your $30 overdraft fee keeps you $5 above the peer median.`).status).toBe("validated");
+  });
+
+  it("a real cause with no evidence is cut from an otherwise clean answer, and held when it is all there is", () => {
+    const cause = "The zero-fee stance is what keeps fee income near the bottom of peers.";
+    const partial = gate(`${clean} ${cause}`);
+    expect(partial.status).toBe("ready_partial");
+    expect(partial.failures).toEqual([expect.objectContaining({ code: "interpretation_rule", critical: false, sentences: [cause], clauses: [cause] })]);
+    const alone = gate(cause);
+    expect(alone.status).toBe("held");
+    expect(alone.failures.map((f) => f.code)).toEqual(["interpretation_rule", "nothing_left"]);
+  });
+
+  it("an interpretation problem about the whole answer still holds it", () => {
+    const verdict = gateAnswer({ surface: "simulate", text: clean, evidence: { kind: "data", data: { ...data, filed_peer_income_conflict: true } },
+      identity: { researchInstitutionId: null, accountInstitutionId: null } });
+    expect(verdict.status).toBe("held");
+    expect(verdict.failures[0]).toMatchObject({ code: "filed_peer_conflict", critical: true });
+  });
+
+  it("an untraced figure beside a cut sentence still holds (James, 2026-10-15)", () => {
+    const verdict = gate(`Alliant reported $140 in fee income. The zero-fee stance is what keeps fee income near the bottom of peers.`);
+    expect(verdict.status).toBe("held");
+    expect(verdict.failures[0]).toMatchObject({ code: "untraced_figure", critical: true });
+  });
+
+  it("an interpretation rule with no clause pins no sentence, and a short sentence inside a clause is not it", () => {
+    expect(sentencesFor("interpretation_rule", ["Alliant reported $120 in fee income."])).toEqual([]);
+    expect(sentencesFor("interpretation_rule", ["Alliant reported $120 in fee income.", "Its **pricing** drove growth."], ["Its pricing drove growth."]))
+      .toEqual(["Its **pricing** drove growth."]);
+    expect(sentencesFor("interpretation_rule", ["Yes.", "Its pricing drove growth."], ["Yes. Its pricing drove growth."])).toEqual([]);
+  });
+
+  it("is gate version 3, and still reads version 1 and 2 records", () => {
+    expect(OUTPUT_GATE_VERSION).toBe(3);
+    expect(OUTPUT_GATE_VERSIONS).toEqual([1, 2, 3]);
+    expect(gate(clean).version).toBe(3);
+  });
+
+  it.each([
+    ["Market pricing drove the gain in fee income.", "That is why it trails peers."],
+    ["Membership grew this year.", "That gain outpaces the area."],
+    ["Membership grew this year.", "Accordingly, it trails the area."],
+    ["Membership grew this year.", "Consequently, it trails the area."],
+    ["Membership grew this year.", "Because of this, it trails the area."],
+    ["Membership grew this year.", "It is why it trails the area."],
+    ["Membership grew this year.", "It's why it trails the area."],
+  ])("a sentence that points back to a cut one goes with it: %s %s", (flagged, follower) => {
+    const verdict = gate(`${clean} ${flagged} ${follower}`);
+    expect(verdict.status).toBe("ready_partial");
+    const cut = verdict.failures.flatMap((f) => f.sentences ?? []);
+    expect(cut).toEqual(expect.arrayContaining([flagged, follower]));
+    const view = gatedAnswerView(`${clean} ${flagged} ${follower}`, verdict);
+    expect(view.text).toBe(clean);
+    // Held when nothing else is left.
+    expect(gate(`${flagged} ${follower}`).status).toBe("held");
+  });
+
+  describe("a written answer's sections", () => {
+    const read = ncua("acct_131", [100, 120]);
+    const written = (text: string) => gateAnswer({ surface: "written_answer", text,
+      evidence: { kind: "tool_reads", toolOutputs: [read.output], reads: [read] },
+      identity: { researchInstitutionId: 8322, accountInstitutionId: null } });
+    const lead = "Alliant reported $120 in fee income.";
+
+    it("a flagged clause repeated in Evidence holds the view, though the gate could cut it from the prose", () => {
+      const text = `## Hamilton's View\n${lead} Its customer base is growing.\n\n## Evidence\n- **Fee income:** $120; its customer base is growing.`;
+      const verdict = written(text);
+      expect(verdict.failures).toEqual([expect.objectContaining({ code: "interpretation_rule", critical: false })]);
+      expect(gatedAnswerView(text, verdict)).toMatchObject({ status: "held", heldBy: "failure_outside_prose" });
+    });
+
+    it("a flagged clause repeated in Explore Further holds the answer", () => {
+      const text = `## Hamilton's View\n${lead} Its customer base is growing.\n\n## Explore Further\n- Its customer base is growing, so what comes next?`;
+      expect(gatedAnswerView(text, written(text))).toMatchObject({ status: "held" });
+    });
+
+    it("a problem on two sentences, only one of them in the prose the gate can cut, holds the answer", () => {
+      const verdict = written(`## Hamilton's View\n${lead} Its customer base is growing.\n\n## Evidence\n- Membership grew this year.`);
+      expect(verdict.status).toBe("held");
+      expect(verdict.failures[0]).toMatchObject({ code: "interpretation_rule", critical: true,
+        clauses: ["Its customer base is growing.", "Membership grew this year."] });
+    });
+  });
+
+  describe("\"Its overdraft fee matches yours at $30\"", () => {
+    const A = 9101;
+    const B = 9102;
+    const names = new Map([[A, "Bank A"], [B, "Bank B"]]);
+    const fact = (id: number, institutionId: number, value: number): HamiltonEvidenceFact => ({
+      id: `fee:published:${id}`, kind: "observed",
+      scope: { institutionId, feeCategory: "overdraft", product: "Overdraft", reportingDate: "2026-06-30", effectiveDate: null, accountApplicability: "consumer" },
+      value, unit: "usd", currency: "USD", frequency: "per item", conditions: null, status: "published",
+      source: { label: "Published fee catalog", table: "published_fee_catalog", recordId: id, sourceDocumentIds: [id + 100], urls: [], asOf: "2026-06-30", verificationEventId: null },
+    });
+    const text = "Bank B charges $30 for an overdraft. Its overdraft fee matches yours at $30.";
+    const matchGate = (facts: HamiltonEvidenceFact[]) => {
+      const bundle = { version: 1 as const, generatedAt: "2026-10-26T00:00:00.000Z", facts, derivations: [], limitations: [] };
+      return gateAnswer({ surface: "memo", text, evidence: { kind: "data", data: bundle, bundle, names },
+        identity: { researchInstitutionId: B, accountInstitutionId: A } });
+    };
+
+    it("validates when both institutions carry the figure", () => {
+      expect(matchGate([fact(1, A, 30), fact(2, B, 30)]).status).toBe("validated");
+    });
+
+    it("a clause found only in a sentence the binding already left out is already cut", () => {
+      const bundle = { version: 1 as const, generatedAt: "2026-10-26T00:00:00.000Z", facts: [fact(4, A, 10), fact(5, B, 35)], derivations: [], limitations: [] };
+      const omitted = "Bank A charges $35, and its membership grew.";
+      const verdict = gateAnswer({ surface: "memo", text: `Bank B charges $35. ${omitted}`,
+        evidence: { kind: "data", data: { ...data, bundle }, bundle, names }, identity: { researchInstitutionId: B, accountInstitutionId: A } });
+      expect(verdict.binding?.omitted).toEqual([{ text: omitted, reason: "wrong_institution" }]);
+      expect(verdict.failures).toContainEqual(expect.objectContaining({ code: "interpretation_rule", critical: false, sentences: [], clauses: ["its membership grew."] }));
+      expect(verdict.status).toBe("ready_partial");
+    });
+
+    it("a sentence that points back to one the binding left out goes with it, with or without an interpretation rule", () => {
+      const bundle = { version: 1 as const, generatedAt: "2026-10-26T00:00:00.000Z", facts: [fact(4, A, 10), fact(5, B, 35)], derivations: [], limitations: [] };
+      const memo = (text: string) => gateAnswer({ surface: "memo", text,
+        evidence: { kind: "data", data: { ...data, bundle }, bundle, names }, identity: { researchInstitutionId: B, accountInstitutionId: A } });
+      for (const [leftOut, follower] of [
+        ["Bank A charges $35, and its membership grew.", "That growth outpaces the area."],
+        ["Bank A charges $35.", "That puts it at the top of the area."],
+      ]) {
+        const text = `Bank B charges $35. ${leftOut} ${follower}`;
+        const verdict = memo(text);
+        expect(verdict.binding?.omitted, text).toEqual([{ text: leftOut, reason: "wrong_institution" }]);
+        expect(verdict.failures.flatMap((f) => f.sentences ?? []), text).toContain(follower);
+        expect(verdict.status, text).toBe("ready_partial");
+        expect(gatedAnswerView(text, verdict).text, text).toBe("Bank B charges $35.");
+        // Nothing left once both go: held.
+        expect(memo(`${leftOut} ${follower}`).status, text).toBe("held");
+      }
+    });
+
+    it("still fails when only one side carries it", () => {
+      const competitorOnly = matchGate([fact(2, B, 30), fact(3, A, 35)]);
+      expect(competitorOnly.status).toBe("held");
+      expect(competitorOnly.failures).toContainEqual(expect.objectContaining({ code: "account_as_subject", critical: true }));
+    });
   });
 });

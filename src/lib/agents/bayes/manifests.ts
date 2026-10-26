@@ -286,13 +286,14 @@ export function rosettaReaderManifests(versions: RosettaVersions): ReplayManifes
     reader("js_fallback", "read.js_fallback", versions.jsFallback, "JavaScript-built pages read by an older browser fallback."),
     reader("table_rows", "read.table_rows", versions.tableRows, "Fee tables split into rows by an older table reader."),
     // GLYPH_REPAIR_VERSION (#2598): completed texts still carrying U+FFFD or a Unicode ligature,
-    // read once per version. Dry run 2026-10-25: 173 current copies at 100 institutions.
+    // read once per version. Dry run 2026-10-25: 173 current copies at 100 institutions. Oct 26
+    // (#1513): also PDF texts with a fee word a font's dropped ligature broke, 8 completed texts.
     {
       key: "rosetta.glyph_repair",
       owner: "rosetta", stage: "read", strategy: "read.glyph_repair",
       version: versions.glyphRepair,
       unit: "current-copy text",
-      affects: "Completed PDF, HTML and plain texts with a glyph their reader could not name (U+FFFD) or a Unicode ligature, read once more with glyph repair and charset-aware decoding. Knox reads each changed text; no fee row is changed by the read.",
+      affects: "Completed PDF, HTML and plain texts with a glyph their reader could not name (U+FFFD) or a Unicode ligature, or PDF texts with a fee word a dropped ligature broke (Internaonal), read once more with glyph repair and charset-aware decoding. Knox reads each changed text; no fee row is changed by the read.",
       count: async (db): Promise<ReplayCount> => {
         const { countGlyphRepairs } = await import("@/lib/agents/rosetta/read");
         const { queued, done } = await countGlyphRepairs(db);
@@ -355,8 +356,8 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   HMDA_PARSER_VERSION: "Implementation v3 is prepared, but the default-off ordinary identity gate leaves HMDA_SCHEDULED_PARSER_VERSION at2. Registry replay counts use that effective scheduled selector; the explicit ten-bank repair is manual-only and creates no automatic replay. Any ordinary activation requires separate review, including #2266.",
   FDIC_UNIVERSE_PARSER_VERSION: "Implementation v3 is prepared, but own-LEI propagation is default off and FDIC_UNIVERSE_SCHEDULED_PARSER_VERSION stays2. Registry replay counts use the effective scheduled selector. Enabling broader source identity writes is a separate reviewed release; the ten-bank repair does not authorize it.",
   PDF_PROSE_REREAD_VERSION: "Frozen layout4 prose retry floor. Stacked layout5 has a separate measured current-copy witness and pdf_stacked@1 persisted-artifact check; changing PDF_LAYOUT_VERSION does not reopen every settled prose document.",
-  // #2068: lessons apply when Knox reads a text, so they reach old texts only on a re-read.
-  KNOX_LESSONS_VERSION: "v4 adds name-family category lessons, applied only when the exact name has none. Lessons are read at each extract step and act on texts Knox reads; old texts are read again only when KNOX_RULES_STRATEGY moves, and the knox.rules manifest counts that replay. Dry run 2026-10-25: 7 live fees (balance inquiries filed as network ATM fees) would be re-filed when their banks are next read, each still checked by Darwin.",
+  // #2068, #2057: lessons apply when Knox reads a text, so they reach old texts only on a re-read.
+  KNOX_LESSONS_VERSION: "v5 also reads extract-stage hand corrections, category holds and Deming's category-guard audit misses as category verdicts, one bank each (v4 added name-family lessons). Lessons are read at each extract step and act on texts Knox reads; old texts are read again only when KNOX_RULES_STRATEGY moves, and the knox.rules manifest counts that replay. Dry run 2026-10-26 (SELECT on prod pipeline_feedback): 0 rows teach a category yet (no extract correction or hold of a person's own, no category audit miss; 76 name and 3 amount misses teach none; 21 takedown-sync copies of corrections are skipped), so no lesson or live fee changes until such findings are filed; every re-filed fee is still checked by Darwin.",
   // #2186: prospective hard-hold proof cannot be fabricated for historical confirmations.
   TAKEDOWN_LESSONS_VERSION: "v2 restricts newly inserted learned holds to complete supported fee identity and a limit-guard witness captured before judgement, retained in confirmation, and current at insertion. Missing/unsupported/contended proof leaves new candidates for ordinary Darwin. Existing raw rows/holds and extract83/stale78/verify3/batch4/publish3/refresh2/current-copy2/newer-copy1 fingerprints stay settled; no historical release, replay or provider work is queued.",
   // #1911 code phase: evidence format, not a new extraction selector or recovery authorization.
@@ -377,11 +378,16 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   LEI_MATCH_PARSER_VERSION: "First version: the gleif lei-match partitions check every institution in bounded batches; nothing older to replay.",
   // v1 (#1909): Darwin re-reads every live fee on a Spanish copy of a schedule each verify step (no
   // cursor; a few hundred rows), so there is no backlog for a replay to count.
-  TRANSLATED_COPY_CHECK_VERSION: "Each verify step re-reads every live fee on a Spanish-copy document (no cursor); nothing to replay.",
+  // v3 (#1986): the same step also re-reads every translated-copy takedown and restores one whose English line is gone (switch off).
+  TRANSLATED_COPY_CHECK_VERSION: "Each verify step re-reads every live fee on a Spanish-copy document and, from v3, every translated-copy takedown (no cursor); nothing to replay.",
   // v2 (#1910): the name cover reads NSF/insufficient, OD/overdraft and a paid NSF item/overdraft as one item.
   PRODUCT_PAGE_REPEAT_CHECK_VERSION: "Each verify step re-reads every live product-page fee with a same-price schedule twin (no cursor), so version 2's wider name cover reaches every live fee on the next step; nothing older to replay.",
   // v1 (#1673): same-line copies the v1 restore brought back beside their older line's live replacement.
-  SAME_LINE_REPLACEMENT_CHECK_VERSION: "First version: each verify step re-reads every live fee after a confirmed same-line takedown (no cursor, a few dozen rows); its switch is off, so it only reports; nothing older to replay.",
+  SAME_LINE_REPLACEMENT_CHECK_VERSION: "First version: each verify step re-reads every live fee after a confirmed same-line takedown (no cursor, a few dozen rows); its switch is on (Oct 26), so matches come down after the second look; nothing older to replay.",
+  // v1 (#1876): two live reads of one printed line (same document, line, category and amount).
+  SAME_LINE_READ_CHECK_VERSION: "First version: each verify step re-reads every live fee that shares its stored source line with another (no cursor, a few hundred rows); its switch is on (Oct 26), so matches come down after the second look; nothing older to replay.",
+  // v1 (#1882): a live $0 overdraft that is only the smallest band of a priced cell or row.
+  BANDED_ZERO_CHECK_VERSION: "First version: each verify step re-reads every live $0 overdraft, NSF and continuous overdraft fee (about 140 rows, no cursor); its switch is on (Oct 26), so matches come down after the second look; nothing older to replay.",
   // v2 (#1673): the same-line restore follows the older line's replacement before bringing a copy back.
   SAME_LINE_DUPLICATE_RESTORE_VERSION: "Each publish step re-reads every same-line takedown whose older line is down (no cursor), so v2's replacement check reaches every pending restore on the next step; the copies v1 already restored are read by Darwin's same-line replacement re-check.",
   // v1 (#1915): schedule editions not yet in effect. Every verify step reads every live fee on a dated document.
@@ -392,11 +398,14 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   CANADIAN_DOCUMENT_CHECK_VERSION: "First version: a verify step re-reads every live fee's document text (no cursor, at most hourly); nothing older to replay.",
   // v1 (#1905): a late charge's cap or floor read as the late fee. On (LATE_CHARGE_BOUND_TAKEDOWN_LIVE), sampled clean 5 of 5.
   LATE_CHARGE_BOUND_CHECK_VERSION: "First version: each verify step reads every live late_payment fee whose name is a late charge's cap or floor (no cursor) and takes it down after the second look; nothing older to replay.",
-  // v1 (#1615): a percentage charge's floor read as a flat fee. Off (RATE_FLOOR_TAKEDOWN_LIVE) until sampled clean.
-  RATE_FLOOR_CHECK_VERSION: "First version: each verify step reads every live flat fee whose stored line carries greater-of wording and a percentage (no cursor, 58 rows on Oct 25); its switch is off, so it only reports; nothing older to replay.",
+  // v1 (#1615): a percentage charge's floor read as a flat fee. On (RATE_FLOOR_TAKEDOWN_LIVE) since James's yes, Oct 26.
+  RATE_FLOOR_CHECK_VERSION: "First version: each verify step reads every live flat fee whose stored line carries greater-of wording and a percentage (no cursor, 58 rows on Oct 25); its switch is on (Oct 26), so matches come down after the second look; nothing older to replay.",
   // v1 (#1908, #1905): fees printed in a prepaid, payroll, gift or travel card section of a general
   // schedule. A full verify step re-reads every live document whose text names a card program, at most hourly.
   CARD_PROGRAM_SECTION_CHECK_VERSION: "First version: a verify step re-reads every live fee on a document whose text names a card program (no cursor, at most hourly); nothing older to replay.",
+  // v1 (#1905): deposit-category fees printed in a loan section of a general schedule. On
+  // (LOAN_SECTION_TAKEDOWN_LIVE) since James's yes, Oct 26.
+  LOAN_SECTION_CHECK_VERSION: "First version: each verify step reads the next batch of documents behind a live deposit-category fee whose text names a loan, after a cursor on the run ledger; its switch is on (Oct 26), so matches come down after the second look; nothing older to replay.",
   // v8 (#1112): new no-fee, discount, allowance and loan-amount name rules. Each step's eval-verdict
   // pass reads every live fee whose name or line matches one of their prefilter clauses
   // (`V8_PREFILTER`), then the second look; Darwin reads each new row under them. There is no
@@ -604,7 +613,11 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // (Knox v115's network table read); names only, 0 live and 0 raw rows on the Oct 25 dry run.
     // v92 (Oct 25, #1947): a monthly maintenance fee its own line prices as the paper statement charge
     // re-files to paper_statement (5 move in place; 14 beside a live twin go to the second look).
-    // v93 (Oct 26, #1912): a night drop or double-spaced night deposit box name is never a safe deposit
+    // v94 (Oct 26, #2100): International ATM refuses the card foreign transaction fee's non-fee names
+    // (low balance, currency exchange or orders, check collection, "many"); 0 live fees on the dry run.
+    // v95 (Oct 26, #1513): a domestic wire whose name writes "international" short ("Int. Wire",
+    // "Intern.") re-files to the international wire, switched on by James; 2 live wires on the dry run.
+    // v96 (Oct 26, #1912, numbered v93 while #2688 was open): a night drop or double-spaced night deposit box name is never a safe deposit
     // box name, and a box late fee keeps its own $1 Darwin floor, so a $1 box late fee (36020) re-files
     // in place instead of coming down. Dry-run counts in the PR.
     {

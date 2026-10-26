@@ -183,8 +183,15 @@ describe("retired documents (no longer a source, Oct 19)", () => {
     expect(retired).toContain("l.companion_source_id IS NULL");
     expect(retired).toContain("ias.status <> 'rejected'");
     expect(retired).toContain("d.doc_key <> d.link_key");
+    // #1200: the current copy is read at the plain fetch's target (remembered address, else saved link).
+    expect(retired).toContain("d.doc_key <> d.fetch_key");
+    expect(retired).toContain("COALESCE(NULLIF(btrim(profile.canonical_source_url), ''), l.fee_schedule_url, '')");
+    expect(retired).toContain("IN (d.fetch_key, d.link_key)");
+    // Newest read copy at either address wins; a copy with no address never pairs.
+    expect(retired).toContain("ORDER BY c.id DESC");
+    expect(retired).toContain("btrim(COALESCE(c.document_url, '')) <> ''");
     expect(retired).toContain("t.status = 'completed'");
-    expect(retired).toContain("FROM institution_source_profiles profile");
+    expect(retired).toContain("LEFT JOIN institution_source_profiles profile");
     expect(retired).toContain("c.status = 'success'");
   });
 

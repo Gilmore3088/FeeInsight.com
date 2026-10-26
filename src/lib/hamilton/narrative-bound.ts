@@ -70,7 +70,7 @@ import {
   type HamiltonEvidenceBundle,
   type HamiltonEvidenceFact,
 } from "./evidence-contract";
-import { extractFigures, type NarrativeFigure } from "./figure-check";
+import { extractFigures, extractQuestionFigures, type NarrativeFigure } from "./figure-check";
 import { findUnrequestedAdvice } from "./workspace/four-roles";
 
 export const NARRATIVE_BINDING_VERSION = 1 as const;
@@ -425,6 +425,14 @@ const PERSONAL = /\b(?:your|yours)\b/i;
 const YOUR_OTHER = /\byour\s+(?:[a-z-]+\s+){0,2}(?:competitors?|competition|rivals?|markets?|peers?|peer\s+group|area|region|footprint|state|county|city|neighbou?rs?)\b/gi;
 
 /**
+ * One figure stated as two institutions' own (#1077, cause 5): "its overdraft fee matches yours at
+ * $30", "Bank B's fee is the same as yours, $30", "equals yours". A group's figure ("matches the
+ * median") is not one institution's, so it is read as before.
+ */
+const SAME_FIGURE = /\b(?:match(?:es|ed|ing)?|(?:the\s+)?same\s+as|equals?|equal\s+to|identical\s+to)\b/i;
+const SAME_FIGURE_GROUP = /\b(?:median|midpoint|average|mean|peers?|industry|national|typical|benchmark|index|market)\b/i;
+
+/**
  * How the sentence names a figure: "median" when a median word sits within 40 characters of it,
  * "mean" when an average or mean does (a different figure, never bound to the median), else "other".
  */
@@ -527,7 +535,7 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
   const conflicts = conflictGroups(validFacts);
   const conflicted = new Set([...conflicts.values()].flat().map((fact) => fact.id));
   const superseded = supersededFees(validFacts);
-  const asked = input.question ? extractFigures(input.question) : [];
+  const asked = input.question ? extractQuestionFigures(input.question) : [];
   const hasEvidence = validFacts.length + validDerivations.length + unsourcedFacts.length > 0;
 
   const binding: NarrativeBinding = { version: NARRATIVE_BINDING_VERSION, supported: [], interpretation: [], omitted: [], limitations: [] };
@@ -552,6 +560,13 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
     const personal = named.length === 0 && PERSONAL.test(text.replace(YOUR_OTHER, ""));
     const claimSubjects: number[] | null = personal ? (account !== null ? [account] : null)
       : subjects.length > 0 ? subjects : research !== null ? [research] : null;
+    // "Its overdraft fee matches yours at $30": the institution the sentence is about and the reader
+    // share one figure, so it binds only when both carry it (#1077, cause 5). The other institution is
+    // the one named or carried, else the research subject. Empty when the sentence states no such
+    // shared figure, or the reader's institution is not known.
+    const sharedOthers = account !== null && SAME_FIGURE.test(text) && !SAME_FIGURE_GROUP.test(text)
+      && PERSONAL.test(text.replace(YOUR_OTHER, ""))
+      ? (subjects.length > 0 ? subjects : research !== null ? [research] : []).filter((id) => id !== account) : [];
 
     if (INSTRUCTION_TEXT.test(text)) {
       binding.omitted.push({ text, reason: "instruction_text" });
@@ -749,10 +764,14 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
         return years.includes(period.slice(0, 4)) ? "yes" : "no";
       };
 
+      // A figure the clause says two institutions share ("matches yours") is each one's own.
+      const shared = account !== null && sharedOthers.length > 0 && SAME_FIGURE.test(clauses[figures.indexOf(figure)] ?? text);
       // A fee record stated as "your" fee is the reader's own institution's, as a filing figure is;
       // with the account unknown it matches any institution, as before.
-      const feeSubjects: number[] = personal && claimSubjects !== null ? claimSubjects : subjects;
+      const feeSubjects: number[] = shared && account !== null ? [account, ...sharedOthers] : personal && claimSubjects !== null ? claimSubjects : subjects;
       const ids: string[] = [];
+      /** The institutions whose own fee records the figure bound to. */
+      const owners = new Set<number | null>();
       const found: { reason: OmitReason | null; filing: boolean } = { reason: null, filing: false };
       const contradict = (reason: OmitReason, filing = false) => {
         if (found.reason) return;
@@ -783,6 +802,7 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
         if (superseded.has(fact.id) && years.length === 0) { contradict("wrong_period"); continue; }
         if (conflicted.has(fact.id)) { contradict("conflicting_sources"); continue; }
         ids.push(fact.id);
+        owners.add(fact.scope.institutionId);
       }
       for (const derived of validDerivations.filter(sameValue)) {
         if (derived.unit !== unit) {
@@ -823,6 +843,7 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
           const owner = derived.scope.institutionId;
           if (feeSubjects.length > 0 && owner !== null && !feeSubjects.includes(owner)) { contradict(personal ? "account_as_subject" : "wrong_institution"); continue; }
           ids.push(derived.id, ...derived.derivation.inputFactIds);
+          owners.add(owner);
           continue;
         }
         // A gap or a change is never a fee: it binds only to a sentence that states a comparison.
@@ -845,6 +866,13 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
       }
       // A fee-income change over a span whose baseline quarter has no filing (#1077 defect 10): no such change exists.
       if (ids.length === 0 && unit === "percent" && !found.reason && baselineMissing(figure)) contradict("wrong_period", true);
+      if (shared) {
+        // Both sides must carry the figure. Only the other institution's: its figure is stated as the
+        // reader's own. Only the reader's: the other institution's figure is not in the records.
+        const own = owners.has(account);
+        const other = sharedOthers.some((id) => owners.has(id));
+        if (!own || !other) return { kind: "contradicted", reason: found.reason ?? (own ? "wrong_institution" : "account_as_subject"), filing: found.filing };
+      }
       if (ids.length > 0) return { kind: "bound", ids };
       if (premise) {
         // Quoted back, supposed, a group's figure, or about someone else: restated as before. Otherwise a record must hold it.

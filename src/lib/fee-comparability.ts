@@ -7,6 +7,7 @@
 
 /** Categories whose median is built from CD or IRA fees, where such a fee is the expected product. */
 import { specialUnitReason } from "@/lib/fee-unit";
+import { PER_EVENT_SPELLINGS, frequencySpelling, frequencySpellingSql } from "@/lib/fee-frequency";
 
 const CD_IRA_CATEGORIES: ReadonlySet<string> = new Set(["ira_termination", "ira_administration"]);
 
@@ -74,8 +75,8 @@ export const CATEGORY_BASIS: Readonly<Record<string, PeriodBasis>> = {
   od_daily_cap: "daily",
 };
 
-/** Frequencies that mean one charge per event. */
-export const PER_EVENT_FREQUENCIES: readonly string[] = ["per_item", "per_occurrence", "per_transaction", "one_time"];
+/** Frequencies that mean one charge per event: the shared per-event family (fee-frequency.ts, #1992). */
+export const PER_EVENT_FREQUENCIES: readonly string[] = PER_EVENT_SPELLINGS;
 
 /**
  * Period categories where a per-item price is a different fee, not a count unit. In most period
@@ -117,6 +118,7 @@ const FREQUENCY_LABEL: Readonly<Record<string, string>> = {
   per_item: "Per-item",
   per_occurrence: "Per-occurrence",
   per_transaction: "Per-transaction",
+  each: "Each",
 };
 
 const BASIS_LABEL: Readonly<Record<ChargingBasis, string>> = {
@@ -126,10 +128,14 @@ const BASIS_LABEL: Readonly<Record<ChargingBasis, string>> = {
   per_event: "per item",
 };
 
-/** "Quarterly charge, not monthly" when the stated frequency contradicts the category's basis; else null. */
+/**
+ * "Quarterly charge, not monthly" when the stated frequency contradicts the category's basis; else null.
+ * The frequency is read by the shared spelling rule (`frequencySpelling`, #1992), so "Per Item" and
+ * "per-item" are read as "per_item"; basisMismatchSql uses its SQL twin.
+ */
 export function basisMismatchReason(category: string | null | undefined, frequency: string | null | undefined): string | null {
-  if (!category || !frequency) return null;
-  const stated = frequency.trim().toLowerCase();
+  const stated = frequencySpelling(frequency);
+  if (!category || !stated) return null;
   return contradictingFrequencies(category).includes(stated)
     ? `${FREQUENCY_LABEL[stated]} charge, not ${BASIS_LABEL[categoryBasis(category)]}`
     : null;
@@ -143,7 +149,7 @@ const quoted = (values: readonly string[]) => values.map((v) => `'${v}'`).join("
  * Always true or false, never NULL, so `NOT` keeps rows with a blank frequency or category.
  */
 export function basisMismatchSql(alias: string): string {
-  const frequency = `lower(btrim(${alias}.frequency, E' \\t\\r\\n'))`;
+  const frequency = frequencySpellingSql(`${alias}.frequency`);
   // Period categories, grouped by the frequencies that contradict them.
   const groups = new Map<string, string[]>();
   for (const category of Object.keys(CATEGORY_BASIS)) {

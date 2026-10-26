@@ -43,6 +43,8 @@ export interface PlantedRecord {
   aboutStage: FeedbackStage;
   checkName: string | null;
   dedupeKey?: string | null;
+  /** The cause a person's hold or correction names (`evidence.cause`, #2057); some causes are unread. */
+  cause?: string | null;
 }
 
 export interface PlantedError {
@@ -64,7 +66,10 @@ export interface PlantedError {
 }
 
 const rows = (built: FeedbackRow[]): PlantedRecord[] =>
-  built.map((row) => ({ kind: String(row.kind), aboutStage: row.aboutStage, checkName: row.checkName ?? null, dedupeKey: row.dedupeKey ?? null }));
+  built.map((row) => ({
+    kind: String(row.kind), aboutStage: row.aboutStage, checkName: row.checkName ?? null, dedupeKey: row.dedupeKey ?? null,
+    cause: typeof row.evidence?.cause === "string" ? row.evidence.cause : null,
+  }));
 
 // One bank, one schedule, one day, for every planted fee.
 const INSTITUTION = 990001;
@@ -336,7 +341,7 @@ export function walkLoop(planted: PlantedError, source: (file: string) => string
     const readRow = recorded_rows.find((row) => {
       const entry = kindEntry(row.kind);
       return entry != null && "readers" in entry && entry.readers.includes(reader.file)
-        && feedbackRowRead({ kind: row.kind, about_stage: row.aboutStage, check_name: row.checkName, dedupe_key: row.dedupeKey });
+        && feedbackRowRead({ kind: row.kind, about_stage: row.aboutStage, check_name: row.checkName, dedupe_key: row.dedupeKey, cause: row.cause });
     });
     if (!reader.file.startsWith(`src/lib/agents/${planted.owner}/`)) fail("read", `${reader.file} is not ${planted.owner}'s`);
     else if (!readRow) fail("read", `${reader.file} is not a registered reader of a row this check writes`);

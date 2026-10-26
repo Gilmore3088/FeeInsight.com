@@ -68,6 +68,11 @@ import {
   selectPageCopyKeeper,
 } from "@/lib/agents/hamilton/page-copy-refuse";
 import {
+  PUBLISH_REFUSE_SAME_LINE_READS_LIVE,
+  PUBLISH_SAME_LINE_READ_REFUSE_REASON_PREFIX,
+  selectSameLineReadOf,
+} from "@/lib/agents/hamilton/same-line-read";
+import {
   PublicationEvidenceUnavailable,
   publicationEvidenceValue,
   readPublicationEvidence,
@@ -206,6 +211,8 @@ export interface HamiltonPublishResult {
   sweepRule?: PublishSweepRefusal | null;
   /** The live row the page-copy collapse would keep over this one once live (rows about to publish only). */
   pageCopyOf?: number | null;
+  /** #1876: the live fee this row would repeat as a second read of its printed line (rows about to publish only). */
+  sameLineReadOf?: number | null;
 }
 
 export interface RunHamiltonPublishOptions {
@@ -225,6 +232,8 @@ export interface RunHamiltonPublishOptions {
   refuseSweepRulesLive?: boolean;
   /** Refuse rows the page-copy collapse would close; defaults to `PUBLISH_REFUSE_PAGE_COPIES_LIVE`. */
   refusePageCopiesLive?: boolean;
+  /** Refuse a second read of a live fee's printed line (#1876); defaults to `PUBLISH_REFUSE_SAME_LINE_READS_LIVE`. */
+  refuseSameLineReadsLive?: boolean;
   /**
    * Epoch ms after which the row loop stops (after `PUBLISH_MIN_ROWS_PER_STEP` rows), so the step
    * ends inside the tick (2026-10-17 finding).
@@ -284,6 +293,8 @@ export interface RunHamiltonPublishResult {
   sweepCheck: PublishSweepCheck;
   /** Rows the page-copy collapse would close after this step publishes them (page-copy-refuse.ts). */
   pageCopyCheck: PublishPageCopyCheck;
+  /** #1876: rows that are a second read of a live fee's printed line (same-line-read.ts). */
+  sameLineReadCheck: PublishPageCopyCheck;
   evidenceCheck?: PublishEvidenceCheck;
   /** Rows the loop left for the next step because it reached `deadlineAt`, and whether the top-up was skipped. */
   timeBox: { stopped: boolean; rowsLeft: number; topUpSkipped: boolean };
@@ -510,6 +521,19 @@ function undecidedAtThisVersionSql(params: Array<number | string | number[]>, mi
                    AND prev_fr.source_document_id = fr.source_document_id
                    AND lower(regexp_replace(prev.fee_name, '[^a-zA-Z0-9]+', '', 'g'))
                        <> lower(regexp_replace(fv.fee_name, '[^a-zA-Z0-9]+', '', 'g'))
+              )
+            )
+            -- A row refused as a second read of one printed line is decided once more when the
+            -- live fee it was refused behind has come down (#1876): the kept read is often the
+            -- worse one ("Cashier's Check fee. The fee"), and a later takedown of it must not
+            -- leave the bank's price off the catalog while the clean read stays refused.
+            AND NOT (
+              pa.outcome = 'rejected'
+              AND pa.detail ? 'same_line_read_of'
+              AND NOT EXISTS (
+                SELECT 1 FROM published_fee_records kept
+                 WHERE kept.fee_published_id = NULLIF(pa.detail->>'same_line_read_of', '')::bigint
+                   AND kept.rolled_back_at IS NULL
               )
             )
             AND NOT (pa.outcome = 'unchanged' AND ${THRESHOLD_RESELECT_SQL})
@@ -2317,6 +2341,7 @@ export async function runHamiltonPublish(
   const refuseDuplicatesLive = options.refuseDuplicatesLive ?? PUBLISH_REFUSE_DUPLICATES_LIVE;
   const refuseSweepRulesLive = options.refuseSweepRulesLive ?? PUBLISH_REFUSE_SWEEP_RULES_LIVE;
   const refusePageCopiesLive = options.refusePageCopiesLive ?? PUBLISH_REFUSE_PAGE_COPIES_LIVE;
+  const refuseSameLineReadsLive = options.refuseSameLineReadsLive ?? PUBLISH_REFUSE_SAME_LINE_READS_LIVE;
   const learning = !dryRun && (await learningSchemaReady(db));
   const batchId = `agentic-run-${options.runId}`;
   const selected = await selectVerifiedFees(
@@ -2527,6 +2552,20 @@ export async function runHamiltonPublish(
       if (read.state === "available") pageCopyOf = read.value;
       else unavailable(read.check, refusePageCopiesLive);
     }
+    // #1876: a second read of a live fee's own printed line (another name, or a frequency the
+    // live read lacks), which the live-line read above and the exact collapse both miss.
+    let sameLineReadOf: number | null = null;
+    if (needsGate && priorReadsAvailable &&
+        exactDuplicate.kind !== "refuse" && !sweepRule && pageCopyOf == null && line.amount != null &&
+        line.ratePercent == null && row.source_document_id != null && row.fee_raw_id != null) {
+      const read = await selectSameLineReadOf(db, {
+        feeRawId: Number(row.fee_raw_id), institutionId: line.institutionId, canonicalFeeKey: line.canonicalFeeKey,
+        variantType: line.variantType, amount: line.amount, feeAudience: row.fee_audience,
+        feeName: row.fee_name, frequency: row.frequency,
+      }, namesShareReading);
+      if (read.state === "available") sameLineReadOf = read.value;
+      else unavailable(read.check, refuseSameLineReadsLive);
+    }
     if (skipReason) {
       result = { ...base, status: "skipped", reason: skipReason, feePublishedId: null, ...NO_MOVEMENT };
     } else if (decision?.kind === "identical") {
@@ -2570,6 +2609,14 @@ export async function runHamiltonPublish(
         ...base,
         status: "skipped",
         reason: `${PUBLISH_PAGE_COPY_REFUSE_REASON_PREFIX}${pageCopyOf}`,
+        feePublishedId: null,
+        ...NO_MOVEMENT,
+      };
+    } else if (refuseSameLineReadsLive && sameLineReadOf != null) {
+      result = {
+        ...base,
+        status: "skipped",
+        reason: `${PUBLISH_SAME_LINE_READ_REFUSE_REASON_PREFIX}${sameLineReadOf}`,
         feePublishedId: null,
         ...NO_MOVEMENT,
       };
@@ -2676,6 +2723,7 @@ export async function runHamiltonPublish(
     if (exactDuplicate.kind !== "none") result.exactDuplicate = exactDuplicate;
     if (sweepRule) result.sweepRule = sweepRule;
     if (pageCopyOf != null) result.pageCopyOf = pageCopyOf;
+    if (sameLineReadOf != null) result.sameLineReadOf = sameLineReadOf;
     if (result.status === "published") {
       stepCopies.set(lineKey, [
         ...(stepCopies.get(lineKey) ?? []),
@@ -2719,6 +2767,7 @@ export async function runHamiltonPublish(
           ...(result.exactDuplicate ? { exact_duplicate: result.exactDuplicate } : {}),
           ...(result.sweepRule ? { sweep_rule: result.sweepRule } : {}),
           ...(result.pageCopyOf != null ? { page_copy_of: result.pageCopyOf } : {}),
+          ...(result.sameLineReadOf != null ? { same_line_read_of: result.sameLineReadOf } : {}),
         },
       });
     }
@@ -2786,6 +2835,19 @@ export async function runHamiltonPublish(
       amount: result.amount,
     })),
   };
+  const sameLineReadHits = results.filter((result) => result.sameLineReadOf != null);
+  const sameLineReadCheck: PublishPageCopyCheck = {
+    live: refuseSameLineReadsLive,
+    wouldRefuse: sameLineReadHits.length,
+    refused: refuseSameLineReadsLive ? sameLineReadHits.filter((result) => result.status === "skipped").length : 0,
+    samples: sameLineReadHits.slice(0, 10).map((result) => ({
+      fee_verified_id: result.feeVerifiedId,
+      fee_published_id: result.feePublishedId,
+      kept_fee_published_id: result.sameLineReadOf!,
+      fee_name: result.feeName,
+      amount: result.amount,
+    })),
+  };
   const unavailableByCheck: PublishEvidenceCheck["unavailableByCheck"] = {};
   for (const result of results) {
     for (const check of result.unavailableEvidence ?? []) {
@@ -2840,6 +2902,7 @@ export async function runHamiltonPublish(
     duplicateCheck,
     sweepCheck,
     pageCopyCheck,
+    sameLineReadCheck,
     evidenceCheck,
     timeBox: { stopped: rowsLeft > 0, rowsLeft, topUpSkipped },
   };
