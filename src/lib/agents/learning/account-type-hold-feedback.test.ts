@@ -8,7 +8,7 @@ import {
 
 type Db = Parameters<typeof repairAccountTypeHoldFeedback>[0];
 
-const isRelabel = (text: string) => text.includes("dedupe_key >=");
+const isRelabel = (text: string) => text.includes("left(dedupe_key,");
 
 function mockDb(due: number, releaseDue = 0) {
   const calls: string[] = [];
@@ -79,9 +79,12 @@ describe("account type hold release relabel (#1680)", () => {
     expect(calls[0]).toContain("COUNT(*)");
     expect(calls[0]).toContain("signal = 'wrong'");
     expect(calls[0]).toContain("kind = 'wrong_category'");
-    // Only the hold's release keys: `<check>:restored:` up to `<check>:restored;`.
+    // Only the hold's release keys, matched by prefix equality. A `>= prefix AND < next` range
+    // depends on collation: prod's en_US.UTF-8 matched 0 of the 5 rows with it (#2705 review).
+    expect(calls[0]).toContain("left(dedupe_key, ?::int) = ?");
+    expect(calls[0]).not.toMatch(/dedupe_key\s*[<>]/);
     expect(values[0]).toEqual(expect.arrayContaining([
-      "hamilton.account_type_hold:restored:", "hamilton.account_type_hold:restored;", "hamilton.account_type_hold",
+      "hamilton.account_type_hold:restored:".length, "hamilton.account_type_hold:restored:", "hamilton.account_type_hold",
     ]));
   });
 
@@ -95,6 +98,8 @@ describe("account type hold release relabel (#1680)", () => {
     expect(update).toContain("'relabeled_from', jsonb_build_object('signal', signal, 'kind', kind)");
     expect(update).toContain("AND signal = 'wrong'");
     expect(update).toContain("AND kind = 'wrong_category'");
+    expect(update).toContain("left(dedupe_key, ?::int) = ?");
+    expect(update).not.toMatch(/dedupe_key\s*[<>]/);
     expect(values[at]).toContain("account_type_hold_released");
     const events = calls.map((text, index) => ({ text, args: values[index] })).filter(({ text }) => text.includes("INSERT INTO agent_run_events"));
     expect(events).toHaveLength(1);

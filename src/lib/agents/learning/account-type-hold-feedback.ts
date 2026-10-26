@@ -28,14 +28,18 @@ export const ACCOUNT_TYPE_HOLD_FEEDBACK_KIND = "account_type_hold";
  * relabels them `restored` / `account_type_hold_released`, the label the hold writes a release
  * with today, keeping the old signal and kind in `evidence.relabeled_from`. Idempotent: a
  * relabelled row no longer matches. Off until James switches it on (a prod data change). Off, a
- * dry run still counts the rows it would relabel (a range read on the unique dedupe index) and a
+ * dry run still counts the rows it would relabel (a read on the check's own rows) and a
  * real run reads nothing; on, a real run relabels them. Once it has run, the part can be removed.
  */
 export const ACCOUNT_TYPE_HOLD_RELEASE_RELABEL_ON: boolean = false;
 export const ACCOUNT_TYPE_HOLD_RELEASE_RELABEL_CHECK = "learning.account_type_hold_release_relabel";
-/** The dedupe-key range of the hold's release rows: from `<check>:restored:` up to, not including, `<check>:restored;`. */
-const RELEASE_KEY_FROM = `${ACCOUNT_TYPE_HOLD_CHECK}:restored:`;
-const RELEASE_KEY_TO = `${ACCOUNT_TYPE_HOLD_CHECK}:restored;`;
+/**
+ * The dedupe-key prefix of the hold's release rows, matched with `left(...) = prefix`. Not a
+ * `>= prefix AND < next` range: prod sorts text in en_US.UTF-8, which ignores punctuation at the
+ * first level, so `...:restored:4436` sorts above `...:restored;` there and the range matched 0 of
+ * the 5 rows (it matched all 5 only on the C-collated test database).
+ */
+const RELEASE_KEY_PREFIX = `${ACCOUNT_TYPE_HOLD_CHECK}:restored:`;
 
 export interface AccountTypeHoldFeedbackResult {
   on: boolean;
@@ -124,7 +128,7 @@ async function relabelReleaseRows(
   const [row] = await inSavepoint(db, (scope) => scope<Array<{ due: number | string }>>`
     SELECT COUNT(*)::int AS due
       FROM pipeline_feedback
-     WHERE dedupe_key >= ${RELEASE_KEY_FROM} AND dedupe_key < ${RELEASE_KEY_TO}
+     WHERE left(dedupe_key, ${RELEASE_KEY_PREFIX.length}::int) = ${RELEASE_KEY_PREFIX}
        AND check_name = ${ACCOUNT_TYPE_HOLD_CHECK}
        AND signal = 'wrong'
        AND kind = 'wrong_category'
@@ -143,7 +147,7 @@ async function relabelReleaseRows(
                              'relabel_issue', 1680
                            ),
              updated_at = NOW()
-       WHERE dedupe_key >= ${RELEASE_KEY_FROM} AND dedupe_key < ${RELEASE_KEY_TO}
+       WHERE left(dedupe_key, ${RELEASE_KEY_PREFIX.length}::int) = ${RELEASE_KEY_PREFIX}
          AND check_name = ${ACCOUNT_TYPE_HOLD_CHECK}
          AND signal = 'wrong'
          AND kind = 'wrong_category'

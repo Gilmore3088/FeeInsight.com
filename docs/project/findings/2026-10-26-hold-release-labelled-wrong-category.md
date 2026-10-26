@@ -27,6 +27,10 @@ of `signal = 'restored'` listed the record kinds they leave out one at a time (o
   switch `ACCOUNT_TYPE_HOLD_RELEASE_RELABEL_ON` is off: changing the rows is a production-data change,
   so James decides. Off, a dry run counts the rows (`release.due`, and `holdFeedback.relabel` in the
   sweep counts) and a real run reads nothing.
+  The rows are matched by `left(dedupe_key, n) = prefix`. A first version used the key range `...:restored:`
+  to `...:restored;`; it passed on the C-collated test database but counted 0 of the 5 rows on prod,
+  whose en_US.UTF-8 collation ignores punctuation when sorting (#2705 review). Match prefixes by equality,
+  never by a sort-order range.
 
 **Readers checked (Oct 26):** none counted the 5 rows as a lesson, because each one filters them out:
 - Knox's lessons and label queue read only extract-stage rows.
