@@ -41,6 +41,7 @@ import { withGluedFootnotePrices } from "@/lib/custom-report/glued-footnote-pric
 import { networkColumnReads, withoutNetworkTableRows } from "@/lib/custom-report/network-column-rows";
 import { namesLateChargeBound } from "@/lib/late-charge-bound";
 import { rateFloorOf } from "@/lib/rate-floor";
+import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 
 /**
  * Knox's free extraction team, run over one whole document. Pure.
@@ -415,7 +416,13 @@ import { rateFloorOf } from "@/lib/rate-floor";
 // (prod, read-only): 8 live fees at 7 institutions sit in a loan section under a deposit category. They
 // move only when their banks are next read, each still checked by Darwin. Categories only; names and
 // prices are unchanged. The stale-read floor stays at v97. Name re-tidy stays at v27.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 123 } as const;
+// v124 (#2079): a fee joined to an earlier find's name after an article ("Overdraft Fee or an NSF Fee
+// $30.00") is its own fee when the words before the joiner name a fee themselves (end in fee, charge
+// or item, or are a category's name), so the NSF read is kept beside the overdraft as before v81.
+// "Copy of a draft or a Teller Check $5" stays one check-copy fee. "&#38;" and "&#x26;" read as "&",
+// and square brackets count as parentheses. Adds reads only. The stale-read floor stays at v97. Name
+// re-tidy stays at v27.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 124 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -490,8 +497,9 @@ export function sameFee(a: ExtractedFeeCandidate, b: ExtractedFeeCandidate): boo
  * draft or a Teller Check". The earlier find already names the whole row, so the tail adds nothing.
  * Only a strictly shorter name made of whole words of the earlier one counts. Two fees named
  * together at one price ("Returned Check & Stop Payment Fee $30") are both kept: a part the earlier
- * name joins with "&", "and", "or", "/" or "+" outside any parenthesis is a fee of its own
- * (`joinedFeeName`), while one inside a parenthesis or after "on" or "including" is not.
+ * name joins with "&", "and", "or", "/" or "+" outside any parenthesis or bracket is a fee of its own
+ * (`joinedFeeName`). No other word marks a part as a fee: one after "on" or "including" ("Stop
+ * Payments including ACH and Bill Pay") is dropped only because no joiner comes right before it.
  */
 export function tailOfEarlierRead(prior: ExtractedFeeCandidate, later: ExtractedFeeCandidate): boolean {
   if (prior.amount !== later.amount || prior.excerpt.trim() !== later.excerpt.trim()) return false;
@@ -501,17 +509,36 @@ export function tailOfEarlierRead(prior: ExtractedFeeCandidate, later: Extracted
   return !joinedFeeName(prior.feeName, part);
 }
 
-/** v81: the part (already in `words` form) follows a top-level "&", "and", "or", "/" or "+" in the name. */
+/**
+ * v124 (#2079): words that name a fee by themselves: they end in fee, charge or item, or are a
+ * category's display name ("Overdraft", "Stop Payment"; a bracketed abbreviation is left out).
+ */
+const FEE_WORD_END = /\b(?:fees?|charges?|items?)$/;
+const CATEGORY_NAMES = new Set(Object.values(DISPLAY_NAMES).map((name) => words(name.replace(/\([^)]*\)/g, " "))));
+function namesAFee(text: string): boolean {
+  const name = words(text);
+  return FEE_WORD_END.test(name) || CATEGORY_NAMES.has(name);
+}
+
+/**
+ * v81: the part (already in `words` form) follows a top-level "&", "and", "or", "/" or "+" in the
+ * name. v124 (#2079): or follows such a joiner and an article ("a", "an", "the") when the words
+ * before the joiner name a fee themselves: "Overdraft Fee or an NSF Fee" is two fees, "Copy of a
+ * draft or a Teller Check" is one. Square brackets count as parentheses; "&amp;", "&#38;" and
+ * "&#x26;" read as "&".
+ */
 export function joinedFeeName(rawName: string, part: string): boolean {
-  const name = rawName.replace(/&amp;/gi, "&");
+  const name = rawName.replace(/&(?:amp|#0*38|#x0*26);/gi, "&");
   for (let index = 0; index < name.length; index += 1) {
     if (index > 0 && /[a-z0-9]/i.test(name[index - 1]!)) continue;
     const rest = words(name.slice(index));
     if (rest !== part && !rest.startsWith(`${part} `)) continue;
     const before = name.slice(0, index);
-    const depth = (before.match(/\(/g) ?? []).length - (before.match(/\)/g) ?? []).length;
+    const depth = (before.match(/[([]/g) ?? []).length - (before.match(/[)\]]/g) ?? []).length;
     if (depth > 0) continue;
     if (/(?:[&/+]|\b(?:and|or))\s*$/i.test(before)) return true;
+    const article = /(?:[&/+]|\b(?:and|or))\s*\b(?:a|an|the)\s+$/i.exec(before);
+    if (article && namesAFee(before.slice(0, article.index))) return true;
   }
   return false;
 }
