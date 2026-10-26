@@ -600,6 +600,16 @@ async function executeAgenticStep(
           // Websites another institution also stores, judged before the search (#1455).
           website_owners: discovery.websiteOwners,
           search_miss_lessons: discovery.searchMisses,
+          // Pipeline feedback read this step (#2062): stale prices and schedule conflicts that sent a
+          // search, and banks whose last search miss reordered their specialists.
+          feedback_reads: discovery.feedbackReads
+            ? {
+                stale_price_searches: discovery.feedbackReads.stalePriceSearches,
+                stale_price_refusals: discovery.feedbackReads.stalePriceRefusals,
+                schedule_conflict_searches: discovery.feedbackReads.scheduleConflictSearches,
+                search_miss_reorders: discovery.feedbackReads.searchMissReorders,
+              }
+            : null,
           // Freshness finds that kept the link: the page found states no date later than the old one's.
           stated_date_refusals: discovery.statedDateRefusals.length,
           stated_date_refusal_samples: discovery.statedDateRefusals.slice(0, 10),

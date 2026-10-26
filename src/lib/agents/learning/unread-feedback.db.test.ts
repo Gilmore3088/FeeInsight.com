@@ -43,10 +43,12 @@ describe.skipIf(!connection)("unread error rows in isolated PostgreSQL (#2062)",
 
   it("counts unread, unregistered and partly read kinds older than two days, and nothing else", async () => {
     const before = await readUnreadFeedback(raw as unknown as Db);
-    await row("search_miss", "discover", "magellan.search_miss", 72);
-    await row("search_miss", "discover", "magellan.search_miss", 1); // too new to count
-    await row("search_miss", "discover", "magellan.search_miss", 24 * 40); // older than the window
-    await row("search_miss", "discover", "magellan.search_miss", 72, { weight: 0 }); // a record, no weight
+    await row("unregistered_test_kind", "discover", "test.kind", 72);
+    await row("unregistered_test_kind", "discover", "test.kind", 1); // too new to count
+    await row("unregistered_test_kind", "discover", "test.kind", 24 * 40); // older than the window
+    await row("unregistered_test_kind", "discover", "test.kind", 72, { weight: 0 }); // a record, no weight
+    await row("search_miss", "discover", "magellan.search_miss", 72); // Magellan's next search reads it (#2062)
+    await row("stale_price", "publish", "hamilton.cross_page_conflict", 72); // Magellan's freshness search reads it
     await row("audit_miss", "extract", "hamilton.source_check", 72);
     await row("audit_miss", "discover", "hamilton.other_bank_document", 72); // Magellan reads it
     await row("wrong_document", "discover", "hamilton.article_page", 72);
@@ -63,7 +65,9 @@ describe.skipIf(!connection)("unread error rows in isolated PostgreSQL (#2062)",
     expect(count(after, "wrong_amount", "verify") - count(before, "wrong_amount", "verify")).toBe(1);
     expect(count(after, "wrong_amount", "extract") - count(before, "wrong_amount", "extract")).toBe(0);
     expect(count(after, "wrong_category", "verify") - count(before, "wrong_category", "verify")).toBe(1);
-    expect(count(after, "search_miss", "discover") - count(before, "search_miss", "discover")).toBe(1);
+    expect(count(after, "unregistered_test_kind", "discover") - count(before, "unregistered_test_kind", "discover")).toBe(1);
+    expect(count(after, "search_miss", "discover") - count(before, "search_miss", "discover")).toBe(0);
+    expect(count(after, "stale_price", "publish") - count(before, "stale_price", "publish")).toBe(0);
     expect(count(after, "audit_miss", "extract") - count(before, "audit_miss", "extract")).toBe(1);
     expect(count(after, "audit_miss", "discover") - count(before, "audit_miss", "discover")).toBe(0);
     expect(count(after, "wrong_document", "discover") - count(before, "wrong_document", "discover")).toBe(1);

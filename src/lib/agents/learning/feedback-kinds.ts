@@ -89,8 +89,8 @@ export const FEEDBACK_KINDS = {
   wrong_payer: { unread: "Hamilton's eval verdicts record it; Knox should learn the payer from it." },
   stated_on_later_look: { unread: "Darwin's held release records it with no fee id; Knox should learn from fees stated on a later look." },
   review_wrong: { readers: ["src/lib/agents/darwin/verdict-score.ts"] },
-  stale_price: { unread: "Hamilton's cross-page conflict records it; Magellan should learn which page is out of date." },
-  schedule_conflict: { unread: "Hamilton's product-page conflict records it; Magellan should learn which page wins." },
+  stale_price: { readers: [MAGELLAN_DISCOVERY], note: "Hamilton's cross-page conflict records it. Magellan's freshness search reads it: when the older document is the link's own current page, the link is searched for the newer one (#2062). A row on a companion or an old copy says nothing against the link and changes nothing." },
+  schedule_conflict: { readers: [MAGELLAN_DISCOVERY], note: "Hamilton's product-page conflict records it. Magellan's upgrade search reads it: when the product page is the link's own current page, the link is searched for the schedule (#2062). A row on a companion page changes nothing." },
   non_customer_price: { unread: "Hamilton's eval verdict flag; Knox should learn to skip prices that are not the customer's." },
   wire_shared_line: { unread: "Hamilton's eval verdict flag; Knox should learn to split a shared wire line." },
 
@@ -160,7 +160,7 @@ export const FEEDBACK_KINDS = {
   confirmed_wrong_fees: { readers: [...MAGELLAN_LINK_READERS, MAGELLAN_DISCOVERY] },
   wrong_document: { readers: MAGELLAN_LINK_READERS, unreadChecks: ["hamilton.other_bank_document", "hamilton.unconfirmed_document_host", "hamilton.article_page", "hamilton.business_schedule", "hamilton.hand_takedown"], note: "Magellan reads its own link-yield rows; Hamilton's wrong-document takedowns (hand takedowns too, #1677) reach it only as audit misses." },
   batch_review: { readers: ["src/lib/agents/magellan/batch-review.ts"] },
-  search_miss: { unread: "Magellan's search misses are recorded but its finders do not read them." },
+  search_miss: { readers: ["src/lib/agents/magellan/search-misses.ts", MAGELLAN_DISCOVERY], note: "The bank's next search runs the specialists its last miss on the same website ran with nothing to show after the others (search-misses.ts, #2062)." },
 
   // Marketing.
   campaign_result: { readers: ["src/lib/agents/marketing/monthly.ts"] },
