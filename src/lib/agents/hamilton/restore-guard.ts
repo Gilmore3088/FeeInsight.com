@@ -134,6 +134,20 @@ export function restoreGuardContext(
 }
 
 /**
+ * The restore bar's category step on its own: the category guard reads the fee's stored name with
+ * its stored-text context (`restoreGuardContext`). Every restore path calls it, the "same_read"
+ * restore in `rules-recheck.ts` included (#1912 follow-up: it restored on the source trace alone, so
+ * a fee its own text files elsewhere could come back under the category the live guard refuses). Pure.
+ */
+export function restoreCategoryVerdict(
+  text: string,
+  fee: { feeName: string; amount: number; canonicalFeeKey: string },
+): RestoreGuardVerdict {
+  const category = checkFeeCategory(fee.canonicalFeeKey, fee.feeName, restoreGuardContext(text, fee));
+  return category.ok ? { restore: true } : { restore: false, reason: `category_guard:${category.code}` };
+}
+
+/**
  * Whether a fee an earlier re-check took down, whose own text is `text`, meets the bar to
  * come back. `model` is Darwin's category model (`loadCategoryModel`); without it nothing
  * comes back this way. Pure.
@@ -155,8 +169,8 @@ export function disputedRestoreVerdict(
   }
   const traced = checkFeeAgainstSource(text, fee.feeName, fee.amount, ".", fee.canonicalFeeKey);
   if (!traced.ok && traced.reason !== "tiered_fee") return { restore: false, reason: `source_trace:${traced.reason}` };
-  const category = checkFeeCategory(fee.canonicalFeeKey, fee.feeName, restoreGuardContext(text, fee));
-  if (!category.ok) return { restore: false, reason: `category_guard:${category.code}` };
+  const category = restoreCategoryVerdict(text, fee);
+  if (!category.restore) return category;
   const opinion = categoryOpinion(model, fee.feeName, fee.canonicalFeeKey);
   if (!opinion) return { restore: false, reason: "category_model:no_opinion" };
   if (opinion.suggested !== fee.canonicalFeeKey || opinion.probability < RESTORE_MODEL_MIN_PROBABILITY) {

@@ -213,7 +213,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-350 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+351 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
 ### Extraction and fee reading (57)
 
@@ -319,9 +319,10 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A consumer comparison needs the payer checked as well as the category. — [finding](findings/2026-10-09-business-wire-as-consumer-price.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 - 2026-10-09 — Returned bonds and coupons were filed as NSF. — [finding](findings/2026-10-09-bond-return-filed-nsf.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 
-### Verification and publication (63)
+### Verification and publication (64)
 
 - 2026-10-26 — A tier's own document is known by what it is, not only a file named fees: a Bank On or premier account's truth-in-savings disclosure, terms and charges or summary of fees prices that account only, so its $0s are perks unless the text says the bank charges none of that fee; 13 live $0s at 3 institutions newly match, read through a narrow recheck cohort behind its switch (#1397). — [finding](findings/2026-10-26-tier-schedule-addresses.md) — Agent lesson: darwin/issue-1397-tier-disclosure-addresses; Guard: `src/lib/agents/darwin/tier-perk.test.ts`, `src/lib/agents/darwin/verified-recheck.db.test.ts`
+- 2026-10-26 — Every path that brings a fee back live calls the same shared category step with the same stored-text context: the rules re-check's same-read restore skipped it, so an NSF return printed in a collection section could come back as NSF; no restore verdict changed on Oct 26 (731 proposed restores before and after) (#1912). — [finding](findings/2026-10-26-same-read-restore-skipped-category-context.md) — Agent lesson: hamilton/issue-1912-every-restore-path-checks-category; Guard: `src/lib/agents/hamilton/rules-recheck.test.ts`
 - 2026-10-26 — A path that brings a fee back live must judge it with the same stored-text context as the paths that verify it and keep it live: the restore bar now reads the collection section, safe deposit box section and payee note from the fee's stored text, as Darwin and the live guard do; no restore verdict changed on Oct 26 (0 of 67 rows whose category step flips) (#1912). — [finding](findings/2026-10-26-restore-bar-reads-stored-text-context.md) — Agent lesson: hamilton/issue-1912-restore-reads-the-same-text; Guard: `src/lib/agents/hamilton/restore-guard.test.ts`
 - 2026-10-26 — A price labelled with an account's column is that account's price: "$50 fee to close prior to maturity (ira)" does not trace a fee named "Early closure of CD"; a label carrying a figure is a condition, not a column (#1912). — [finding](findings/2026-10-26-column-label-names-the-account.md) — Agent lesson: darwin/issue-1912-column-label-names-the-account; Guard: `src/lib/custom-report/column-account.test.ts`
 - 2026-10-26 — A fee that names checking is a checking price, whatever product it was filed under: "Share Draft Checking Service Monthly service charge" under "Share Value" stays in the bank's checking value (#1912). — [finding](findings/2026-10-26-checking-name-under-savings-product.md) — Agent lesson: hamilton/issue-1912-checking-name-is-checking; Guard: `src/lib/fee-product.test.ts`, `src/lib/data-store/fee-stats.test.ts`
@@ -610,7 +611,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (312 in all).
+counts as of this index (313 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
@@ -621,7 +622,7 @@ counts as of this index (312 in all).
 | knox | 84 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
 | darwin | 48 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 40 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
-| hamilton | 62 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
+| hamilton | 63 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
 | deming | 18 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
 
 ## Before 2026-10-10
