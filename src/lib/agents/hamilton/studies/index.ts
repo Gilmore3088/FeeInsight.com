@@ -52,7 +52,8 @@ export interface StudyStepResult {
   findings: Record<string, unknown>;
 }
 
-export const PRICE_STUDY_VERSION = 1;
+/** v2 (#1911): each institution's study price rests on its general rows over named account exceptions (fee-stats.ts rule 11). */
+export const PRICE_STUDY_VERSION = 2;
 
 const PRICE_DRIVERS: Record<"study-local-income" | "study-concentration" | "study-fee-income", {
   key: string;

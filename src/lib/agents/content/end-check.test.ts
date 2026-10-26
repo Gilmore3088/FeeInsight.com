@@ -37,4 +37,10 @@ describe("failingEnds", () => {
     const rows = [row(1, "Overdraft Fee", 35, SCHEDULE, "overdraft"), row(1, "Overdraft Fee", 7, SCHEDULE, "overdraft")];
     expect(failingEnds(rows)).toEqual([]);
   });
+
+  it("checks the general rows when a named account's exception sits beside them (#1911)", () => {
+    // The $30 general NSF is the value; a misread $3 exception row priced for one account is not checked.
+    const rows = [row(1, "Non-Sufficient Funds (NSF) Fee", 30), { ...row(1, "Non-Sufficient Funds (NSF) Fee", 3), product_exception: true }];
+    expect(failingEnds(rows)).toEqual([]);
+  });
 });

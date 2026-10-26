@@ -36,6 +36,19 @@ export function medianAmount(amounts: readonly number[]): number | null {
 /** Categories whose tiers are compared at the highest (standard) tier, not the median. */
 export const HIGHEST_TIER_CATEGORIES: ReadonlySet<string> = new Set(["overdraft"]);
 
+/**
+ * The rows one institution's value for one category rests on (#1911): its general rows when it
+ * states any, else every row. A price stated for one named product as an exception to the
+ * general price (U.S. Bank's Safe Debit $2.50 ATM fee beside the general $3.00,
+ * fee-product.ts isProductException) never blends into the general value; with no general row,
+ * the product rows count as before. The SQL twin is institutionValueSql (fee-stats.ts). The
+ * exception rows stay on the institution's page as their own named fees.
+ */
+export function statisticsRows<T>(rows: readonly T[], isException: (row: T) => boolean): T[] {
+  const general = rows.filter((row) => !isException(row));
+  return general.length > 0 ? general : [...rows];
+}
+
 /** One institution's value for a category from its own amounts (sorted or not). */
 export function institutionValue(category: string | null | undefined, amounts: number[]): number {
   const sorted = [...amounts].sort((a, b) => a - b);

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { institutionValueSql } from "@/lib/data-store/fee-stats";
 
 const state = vi.hoisted(() => ({ queries: [] as string[] }));
 
@@ -39,8 +40,8 @@ describe("city fee comparison audience boundaries", () => {
     expect(state.queries).toHaveLength(2);
     const query = state.queries[1];
     expectConsumerBoundary(query);
-    expect(query).toContain("MAX(ef.amount)");
-    expect(query).toContain("PERCENTILE_CONT(0.5)");
+    expect(query).toContain(institutionValueSql("ef"));
+    expect(query).toContain("GROUP BY ef.fee_category) as overdraft");
   });
 
   it("filters city averages to sourced consumer/both observations", async () => {

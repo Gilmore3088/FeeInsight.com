@@ -1,6 +1,7 @@
 import { sql } from "@/lib/data-store/connection";
 import { computePercentile } from "@/lib/data-store/fees";
 import { MIN_INSTITUTIONS_FOR_MEDIAN, STATS_ROW_FILTER, valuePerInstitution } from "@/lib/data-store/fee-stats";
+import { productExceptionSql } from "@/lib/fee-product";
 import { contentSchemaReady, insertContentDraft } from "@/lib/data-store/content-drafts";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { CONTACT_EMAIL, PRODUCT_NAME, SITE_NAME } from "@/lib/constants";
@@ -218,6 +219,8 @@ export interface StateFeeRow {
   charter_type: string | null;
   fee_category: string;
   amount: number | string | null;
+  /** Statistics rule 11 (fee-stats.ts, productExceptionSql): priced for one named account as an exception. */
+  product_exception?: boolean | null;
 }
 
 export interface FindingCandidate {
@@ -391,7 +394,7 @@ export function pitchStyleProblems(body: string): string[] {
 
 export async function loadStateFeeRows(fees: string[], db: SqlTag = sql): Promise<StateFeeRow[]> {
   const rows = await db.unsafe(
-    `SELECT ef.institution_id, s.state_code, s.charter_type, ef.fee_category, ef.amount
+    `SELECT ef.institution_id, s.state_code, s.charter_type, ef.fee_category, ef.amount, ${productExceptionSql("ef")} AS product_exception
        FROM published_fee_catalog ef
        JOIN institution_sources s ON s.id = ef.institution_id
       WHERE ${STATS_ROW_FILTER}
