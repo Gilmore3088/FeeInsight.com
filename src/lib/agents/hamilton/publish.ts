@@ -1163,20 +1163,30 @@ const THRESHOLD_TAIL = /^[\d,.]*\s*(?:or|and)\s+(?:less|more|greater|higher|lowe
 /** Words between a kept threshold and the next figure that only close the threshold ("$300 and over $10"). */
 const TAIL_ONLY = /^[\d,.]*\s*(?:or|and)\s+(?:less|more|greater|higher|lower|over|under|above|below|fewer)\s*$/i;
 /**
- * The second figure of a range the kept threshold opened ("between $100 and $500", "between $100 -
- * $500"). Only "between" or "from" opens a range: after a one-sided comparison the next figure is
- * the fee's own price ("Overdraft item over $5 - $35", "below $500 and $10 service").
+ * The second figure of a range the kept threshold opened. "between" opens one closed by "-", "to"
+ * or "and" ("between $100 and $500", "between $100 - $500"); a balance lead opens one closed by "-"
+ * or "to" ("Balances of $1,000 - $2,499.99 $5", whose $5 is the fee). After a one-sided comparison
+ * the next figure is the fee's own price ("Overdraft item over $5 - $35", "below $500 and $10
+ * service").
  */
 const RANGE_CLOSE = /^[\d,.]*\s*(?:[-–—]|to|and)\s*$/i;
-const RANGE_OPEN = /\b(?:between|from)\s*$/i;
+const DASH_RANGE_CLOSE = /^[\d,.]*\s*(?:[-–—]|to)\s*$/i;
+const BETWEEN_OPEN = /\bbetween\s*$/i;
+const BALANCE_OPEN = /\bbalances?(?:\s+(?:of|is|at))?\s*$/i;
 /** A plain word a cut after a kept threshold leaves dangling ("... below $500 is", "... over $5 to"). */
 const DANGLING_PLAIN = /\s+(?:is|are|of|for|at|=|to|and|or)\s*$/i;
-const THRESHOLD_SENTENCE_END = /^[\d,.]*\d(?=\.\s+[A-Z])/;
+/** The sentence ends right after the kept figure ("... over $5. Fee $35", "... below $2,500.00. Fee"). */
+const THRESHOLD_SENTENCE_END = /^[\d,]*(?:\.\d+)?(?=\.\s+[A-Z])/;
 /**
  * Whether the figure at `match` is the name's threshold. `kept` is where the last kept threshold
- * figure ends and whether "between"/"from" opened it as a range, or null when none was kept yet.
+ * figure ends and which range, if any, it opened, or null when none was kept yet.
  */
-type KeptThreshold = { end: number; rangeOpen: boolean };
+type KeptThreshold = { end: number; range: "between" | "balance" | null };
+function closesRange(kept: KeptThreshold | null, between: string): boolean {
+  if (kept?.range === "between") return RANGE_CLOSE.test(between);
+  if (kept?.range === "balance") return DASH_RANGE_CLOSE.test(between);
+  return false;
+}
 function isThreshold(name: string, match: RegExpMatchArray, kept: KeptThreshold | null): boolean {
   const at = match.index ?? 0;
   const before = name.slice(0, at);
@@ -1184,7 +1194,7 @@ function isThreshold(name: string, match: RegExpMatchArray, kept: KeptThreshold 
   if (NEXT_TIER.test(after)) return false;
   if (kept) {
     const between = name.slice(kept.end, at);
-    if (kept.rangeOpen && RANGE_CLOSE.test(between)) return true;
+    if (closesRange(kept, between)) return true;
     return COMPARISON_LEAD.test(before) && !TAIL_ONLY.test(between);
   }
   if (COMPARISON_LEAD.test(before)) return true;
@@ -1207,8 +1217,11 @@ export function nameBeforeLeaders(name: string): string {
     const after = name.slice(at + match[0].length);
     const figure = after.match(/^[\d,]*(?:\.\d+)?/)?.[0] ?? "";
     // A range's closing figure opens no further range.
-    const closesRange = kept != null && kept.rangeOpen && RANGE_CLOSE.test(name.slice(kept.end, at));
-    kept = { end: at + match[0].length + figure.length, rangeOpen: !closesRange && RANGE_OPEN.test(name.slice(0, at)) };
+    const before = name.slice(0, at);
+    const range = kept != null && closesRange(kept, name.slice(kept.end, at))
+      ? null
+      : BETWEEN_OPEN.test(before) ? "between" : BALANCE_OPEN.test(before) ? "balance" : null;
+    kept = { end: at + match[0].length + figure.length, range };
     const sentence = after.match(THRESHOLD_SENTENCE_END);
     if (sentence) {
       end = at + match[0].length + sentence[0].length;

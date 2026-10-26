@@ -219,6 +219,13 @@ describe("Hamilton agentic publish", () => {
     expect(nameBeforeLeaders("Overdraft item between $5 and $35")).toBe("Overdraft item between $5 and $35");
     // Only "between" opens a range: after a one-sided comparison the next figure is the fee's own price (#1443 re-review).
     expect(nameBeforeLeaders("Cash advance over $100 - $500 per day")).toBe("Cash advance over $100");
+    // A balance lead opens a "-"/"to" range, so the band keeps both ends and the fee after it is cut.
+    expect(nameBeforeLeaders("Balances of $1,000 - $2,499.99 $5")).toBe("Balances of $1,000 - $2,499.99");
+    expect(nameBeforeLeaders("Balance $100 - $500 $3")).toBe("Balance $100 - $500");
+    expect(nameBeforeLeaders("Balance $100 to $500 $3")).toBe("Balance $100 to $500");
+    expect(nameBeforeLeaders("Minimum balance $500 and $10 fee")).toBe("Minimum balance $500");
+    // A sentence that ends right after a one-digit threshold ends the name there.
+    expect(nameBeforeLeaders("Overdraft fee if item over $5. Fee $35")).toBe("Overdraft fee if item over $5");
     for (const [name, amount, kept] of [
       ["Overdraft item over $5 - $35", 35, "Overdraft item over $5"],
       ["Overdraft item over $5 to $35", 35, "Overdraft item over $5"],
