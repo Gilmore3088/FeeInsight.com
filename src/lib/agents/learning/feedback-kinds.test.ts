@@ -46,6 +46,13 @@ describe("every feedback kind names its reader (#2062)", () => {
     expect(feedbackRowRead({ kind: "flag_cleared", about_stage: "publish", check_name: "x" })).toBe(true);
     expect(feedbackRowRead({ kind: "audit_miss", about_stage: "discover", check_name: "hamilton.other_bank_document" })).toBe(true);
     expect(feedbackRowRead({ kind: "audit_miss", about_stage: "extract", check_name: "hamilton.source_check" })).toBe(false);
+    // Knox reads extract findings that say something about the category (lessons.ts v5).
+    expect(FEEDBACK_KINDS.audit_miss.readers).toContain("src/lib/agents/knox/lessons.ts");
+    expect(feedbackRowRead({ kind: "audit_miss", about_stage: "extract", check_name: "hamilton.category_guard" })).toBe(true);
+    expect(feedbackRowRead({ kind: "admin_correction", about_stage: "extract", check_name: "admin.fee_correction", cause: "wrong_category" })).toBe(true);
+    expect(feedbackRowRead({ kind: "admin_correction", about_stage: "extract", check_name: "hamilton.admin_correction" })).toBe(false);
+    expect(feedbackRowRead({ kind: "admin_hold", about_stage: "extract", check_name: "admin.fee_hold", cause: "wrong_category" })).toBe(true);
+    expect(feedbackRowRead({ kind: "admin_hold", about_stage: "extract", check_name: "admin.fee_hold", cause: "wrong_amount" })).toBe(false);
     // Darwin reads a person's own holds and corrections filed against verify (#2057), nothing else there.
     expect(feedbackRowRead({ kind: "audit_miss", about_stage: "verify", check_name: "hamilton.source_check", reported_by: "deming" })).toBe(false);
     expect(feedbackRowRead({ kind: "admin_hold", about_stage: "verify", check_name: "admin.fee_hold", reported_by: "human" })).toBe(true);
@@ -74,8 +81,9 @@ describe("every feedback kind names its reader (#2062)", () => {
   it("splits the registry for the brief's query the same way", () => {
     const { unreadKinds, partial, stageOnly, registered } = unreadFeedbackPredicate();
     expect(unreadKinds).toContain("search_miss");
-    expect(partial).toContainEqual({ kind: "audit_miss", stages: ["discover"], checks: [], anyStageChecks: [] });
-    expect(partial).toContainEqual({ kind: "admin_correction", stages: ["discover", "read", "verify"], checks: ["hamilton.admin_correction"], anyStageChecks: [] });
+    expect(partial).toContainEqual({ kind: "audit_miss", stages: ["discover", "extract"], checks: ["hamilton.source_check", "hamilton.product_page_conflict", "deming.not_a_fee_line", "deming.name_quality"], anyStageChecks: [], causes: [] });
+    expect(partial).toContainEqual(expect.objectContaining({ kind: "admin_hold", causes: ["wrong_amount"] }));
+    expect(partial).toContainEqual({ kind: "admin_correction", stages: ["discover", "read", "extract", "verify"], checks: ["hamilton.admin_correction"], anyStageChecks: [], causes: [] });
     const handRows = { stage: "verify", checks: ["admin.fee_hold", "admin.fee_correction"], reportedBy: ["human"] };
     expect(stageOnly).toEqual([{ kind: "admin_hold", ...handRows }, { kind: "admin_correction", ...handRows }]);
     // Every kind with a stageOnly rule is in the partial list the query joins.
