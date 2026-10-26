@@ -396,4 +396,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-25",
   },
+  {
+    id: "issue-1896-price-labels-no-overlap",
+    agent: "hamilton",
+    stage: "analysis",
+    lesson: "Place chart labels by their width in pixels at the chart's narrowest width, never by a fixed gap in percent: work out each label's row for every container width the chart can take, and stack a label onto a new row when it would touch its neighbour.",
+    why: "Try a price's price chart put its labels in rows by a 9% gap, which is wide enough on a desktop but only about 28px on a phone, so '$25' sat partly under 'Today $30' at 390px.",
+    evidence: { issues: [1896], prs: [], files: ["src/components/hamilton/memo/memo.tsx", "src/components/hamilton/memo/memo-charts.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
 ];
