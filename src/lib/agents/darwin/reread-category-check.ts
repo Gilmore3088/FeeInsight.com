@@ -334,7 +334,6 @@ export async function recheckRereadCategories(
   return result;
 }
 
-/** Re-file confirmed fees in place, guarded on the old category and name; the old values logged first. */
 /**
  * Pure: the confirmed twins that may come down this pass. A twin that this pass also re-files or
  * takes down is no proof the line stays shown (a re-filed twin may leave the category; two fees
@@ -345,6 +344,7 @@ export function twinsToArchive(confirmed: RereadCategoryVerdict[]): RereadCatego
   return confirmed.filter((verdict) => verdict.outcome === "twin" && verdict.twinFeePublishedId != null && !moving.has(verdict.twinFeePublishedId));
 }
 
+/** Re-file confirmed fees in place, guarded on the old category and name; the old values logged first. */
 async function refile(db: SqlTag, runId: number, stepId: number | null, verdicts: RereadCategoryVerdict[]): Promise<number[]> {
   if (verdicts.length === 0) return [];
   try {
