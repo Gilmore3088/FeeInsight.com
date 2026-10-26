@@ -10,6 +10,8 @@ import {
   refileFromLine,
   withHeadingAbove,
   BOX_LATE_TARGET,
+  LOAN_LINE_NAME,
+  LOAN_LINE_TARGET,
   withBoxSection,
   withCollectionSection,
   type CategoryGuardCode,
@@ -466,6 +468,13 @@ const RESTORE_REFILES: ReadonlyMap<string, RegExp> = new Map([
   ["atm_non_network>early_closure", /\baccount clos/i],
   ["late_payment>other_lending_fee", /\bskip/i],
   ["loan_origination>other_lending_fee", /\bskip/i],
+  // Guard v97 (#1905): an NSF or overdraft fee named for a home equity loan or line, a HELOC or a line
+  // of credit is the loan's fee. Checked on source: Navy Federal's "Home Equity Line Check returned
+  // (due to non-sufficient funds) | $29.00" prints under "Equity Loan" (doc 26712 and doc 39026), and
+  // its earlier copy was hand-folded there for #1655 (122342). The live move keeps its twin test, so
+  // 154634 beside 122342 is not moved and comes down.
+  [`nsf>${LOAN_LINE_TARGET}`, LOAN_LINE_NAME],
+  [`overdraft>${LOAN_LINE_TARGET}`, LOAN_LINE_NAME],
 ]);
 
 /**

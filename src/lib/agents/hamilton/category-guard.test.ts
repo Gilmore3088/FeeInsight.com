@@ -566,3 +566,53 @@ describe("guard v96: a $1 box late fee re-files, and a night drop box is not the
     }
   });
 });
+
+describe("guard v97: a loan line's NSF or overdraft fee re-files to other lending (#1905)", () => {
+  const fee = (id: number, inst: number, name: string, amount: string, key = "nsf") => ({
+    fee_published_id: id, lineage_ref: id + 100000, institution_id: inst, source_document_id: null,
+    canonical_fee_key: key, fee_name: name, amount, conditions: null, document_nsf_amount: null,
+  });
+  const navy = "Home Equity Line Check returned (due to non-sufficient funds)";
+
+  it("gives a home equity line, HELOC or line of credit NSF fee other lending as its home", () => {
+    for (const name of [navy, "Returned check - Home Equity Line", "HELOC NSF fee", "Line of Credit Insufficient Funds"]) {
+      expect(restoreTarget(fee(154634, 4956, name, "29.00")), name).toBe("other_lending_fee");
+    }
+    expect(restoreTarget(fee(1, 4956, "HELOC Overdraft Fee", "29.00", "overdraft"))).toBe("other_lending_fee");
+  });
+
+  it("leaves a deposit account's NSF fee and an overdraft line of credit's NSF fee where they are", () => {
+    for (const name of ["NSF fee (checking or savings)", "Insufficient Funds (Overdraft Line of Credit)"]) {
+      expect(restoreTarget(fee(2, 4956, name, "29.00")), name).toBe("nsf");
+    }
+    expect(restoreTarget(fee(3, 4956, "Overdraft Line of Credit transfer", "10.00", "od_protection_transfer"))).toBe("od_protection_transfer");
+  });
+
+  const run = (rows: unknown[], twin: boolean) => {
+    const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = templateText(strings);
+      if (text.includes("to_regclass('public.pipeline_feedback')")) return Promise.resolve([{ ready: true }]);
+      if (text.includes("UPDATE published_fee_records") && text.includes("v.from_key")) {
+        // With a twin, the live other lending fee at that bank and price keeps the copy from moving.
+        if (twin) return Promise.resolve([]);
+        return Promise.resolve((values[0] as number[]).map((id, i) => ({ fee_published_id: id, lineage_ref: id + 100000, canonical_fee_key: (values[2] as string[])[i] })));
+      }
+      if (text.includes("rolled_back_at IS NOT NULL")) return Promise.resolve([]);
+      if (text.includes("FROM published_fee_records")) return Promise.resolve(rows);
+      return Promise.resolve([]);
+    });
+    return { db, result: runHamiltonCategoryGuard({ runId: 97, db: db as unknown as GuardDb }) };
+  };
+
+  it("moves a loan line's NSF fee in place when the bank has no live other lending fee at its price", async () => {
+    const { db, result } = run([fee(9, 77, "HELOC NSF fee", "25.00")], false);
+    expect(await result).toMatchObject({ liveRefiledFees: 1, failingFees: 0 });
+    const move = db.mock.calls.find((call) => templateText(call[0]).includes("v.from_key") && templateText(call[0]).includes("UPDATE"));
+    expect([move?.[1], move?.[2], move?.[3]]).toEqual([[9], ["nsf"], ["other_lending_fee"]]);
+  });
+
+  it("sends Navy Federal's 154634 to the second look beside its live twin 122342", async () => {
+    const { result } = run([fee(154634, 4956, navy, "29.00")], true);
+    expect(await result).toMatchObject({ liveRefiledFees: 0, byCode: { name_contradicts: 1 } });
+  });
+});

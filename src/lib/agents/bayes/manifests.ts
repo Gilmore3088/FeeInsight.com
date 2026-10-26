@@ -620,6 +620,10 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // v96 (Oct 26, #1912, numbered v93 while #2688 was open): a night drop or double-spaced night deposit box name is never a safe deposit
     // box name, and a box late fee keeps its own $1 Darwin floor, so a $1 box late fee (36020) re-files
     // in place instead of coming down. Dry-run counts in the PR.
+    // v97 (Oct 26, #1905): an NSF or overdraft fee named for a home equity loan or line, a HELOC or a
+    // line of credit (not an overdraft line of credit, nor one that also names a deposit account)
+    // re-files to other_lending_fee; beside a live other lending twin (154634 beside 122342) it goes to
+    // the second look. Dry-run counts in the PR.
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",
