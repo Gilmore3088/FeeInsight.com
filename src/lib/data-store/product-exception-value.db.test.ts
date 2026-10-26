@@ -1,5 +1,9 @@
 // @vitest-environment node
-/** institutionValueSql (SQL) and valuePerInstitution (TS) give every institution the same value (#1911). */
+/**
+ * institutionValueSql (SQL) and valuePerInstitution (TS) give every institution the same value (#1911,
+ * #1912). The same rows gave the same ten values on prod PostgreSQL as a read-only VALUES query on
+ * 2026-10-26.
+ */
 import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { institutionValueSql, valuePerInstitution } from "./fee-stats";
@@ -23,6 +27,18 @@ const ROWS: { institution_id: number; fee_category: string; amount: number; acco
   { institution_id: 10, fee_category: "overdraft", amount: 39, account_product_type: "Premier Checking" },
   { institution_id: 10, fee_category: "overdraft", amount: 35, account_product_type: null },
   { institution_id: 10, fee_category: "overdraft", amount: 20, account_product_type: null },
+  // #1912: M&T's shape (institution 21): a money market account's own charge beside unassigned checking rows.
+  { institution_id: 21, fee_category: "monthly_maintenance", amount: 4.95, account_product_type: null },
+  { institution_id: 21, fee_category: "monthly_maintenance", amount: 14.95, account_product_type: null },
+  { institution_id: 21, fee_category: "monthly_maintenance", amount: 24.95, account_product_type: null },
+  { institution_id: 21, fee_category: "monthly_maintenance", amount: 20, account_product_type: "M&T Preferred Money Market" },
+  { institution_id: 22, fee_category: "minimum_balance", amount: 5, account_product_type: "Statement Savings" },
+  { institution_id: 23, fee_category: "minimum_balance", amount: 5, account_product_type: "Truth in Savings" },
+  { institution_id: 23, fee_category: "minimum_balance", amount: 10, account_product_type: "Holiday Club" },
+  { institution_id: 24, fee_category: "monthly_maintenance", amount: 3, account_product_type: "Kids' Club" },
+  { institution_id: 24, fee_category: "monthly_maintenance", amount: 9, account_product_type: "Gold Checking" },
+  { institution_id: 25, fee_category: "minimum_balance", amount: 2, account_product_type: null },
+  { institution_id: 25, fee_category: "minimum_balance", amount: 8, account_product_type: "Youth Savings Program" },
 ];
 
 describe.skipIf(!connection)("product exception value in PostgreSQL (#1911)", () => {
@@ -55,5 +71,10 @@ describe.skipIf(!connection)("product exception value in PostgreSQL (#1911)", ()
     expect(fromSql.get("8|excess_withdrawal")).toBe(12.5);
     expect(fromSql.get("9|monthly_maintenance")).toBe(8);
     expect(fromSql.get("10|overdraft")).toBe(35);
+    expect(fromSql.get("21|monthly_maintenance")).toBe(14.95);
+    expect(fromSql.get("22|minimum_balance")).toBe(5);
+    expect(fromSql.get("23|minimum_balance")).toBe(5);
+    expect(fromSql.get("24|monthly_maintenance")).toBe(9);
+    expect(fromSql.get("25|minimum_balance")).toBe(2);
   });
 });

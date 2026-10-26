@@ -746,4 +746,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-26",
   },
+  {
+    id: "issue-1912-account-named-in-fee-sentence",
+    agent: "knox",
+    stage: "extract",
+    lesson: "Record the account a monthly or minimum balance fee belongs to even when no heading, table column or fee name gives it: a sentence that names the account as its subject and prints the fee's own price (\"The M&T Preferred Money Market account has a $20 monthly maintenance charge.\") says whose fee it is. Read it only from the fee's own line or the line just above, only at the fee's own price, and never guess from a page title, address or a list of products; a fee with no account counts as the bank's checking price, so a savings or money market fee left unnamed moves the bank's checking value.",
+    why: "M&T's $20 Preferred Money Market charge (live 109815, raw 491668) was read from the waiver line under \"Understanding the monthly maintenance charge\" with no account, because Knox read the account only from row labels, table columns, headings within 12 lines and the fee's name. Untagged, it pooled with M&T's checking prices ($4.95, $14.95, $24.95), so M&T's checking maintenance value read $17.475 instead of $14.95.",
+    evidence: { issues: [1912], prs: [2670, 2723], files: ["src/lib/agents/knox/lineup.ts", "src/lib/agents/knox/account-subject-correct.ts", "src/lib/agents/knox/account-subject.test.ts", "src/lib/fee-product.ts"] },
+    appliesTo: ["extract"],
+    since: "2026-10-26",
+  },
 ];

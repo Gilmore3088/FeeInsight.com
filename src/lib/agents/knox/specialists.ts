@@ -431,7 +431,13 @@ import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 // since it can announce a price not yet charged (R11 on #1094), and so does one whose phrase names an
 // audience ("Business Schedule of Fees"), so a business price never reads as everyone's. Only segments holding the phrase read differently. The stale-read floor
 // stays at v97. Name re-tidy stays at v27.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 125 } as const;
+// v126 (#1912): a monthly maintenance or minimum balance read with no account from its row, table,
+// heading or own name takes, as a last resort, the account its own sentence names as subject ("The
+// M&T Preferred Money Market account has a $20 monthly maintenance charge."), on the fee's line or the
+// line just above, only when that sentence prints the fee's own price (`accountSubjectProduct` in
+// `lineup.ts`). Account product only; names, prices and categories are unchanged. The stale-read floor
+// stays at v97. Name re-tidy stays at v27.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 126 } as const;
 
 export interface SpecialistRun {
   strategy: string;
