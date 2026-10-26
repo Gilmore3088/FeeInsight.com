@@ -706,4 +706,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-26",
   },
+  {
+    id: "issue-2079-joined-fee-after-article",
+    agent: "knox",
+    stage: "extract",
+    lesson: "Before calling one part of a row's name a second fee, check that the words before the joiner name a fee themselves. \"Overdraft Fee or an NSF Fee $30\" is two fees at one price, because \"Overdraft Fee\" is a fee; \"Copy of a draft or a Teller Check $5\" is one check-copy fee, because \"Copy of a draft\" is no fee on its own. A joiner word (\"or\", \"and\", \"&\") is not enough by itself once an article follows it, and a part inside parentheses or square brackets is never a fee of its own.",
+    why: "Knox v81 kept a later specialist's read of a row's tail only when a joiner sat right before it, so \"Overdraft Fee or an NSF Fee $30.00\" lost its NSF fee. Allowing any article after the joiner would have split the live \"Copy of a draft or a Teller Check\" fee into a false cashier's check.",
+    evidence: { issues: [2079], prs: [2711], files: ["src/lib/agents/knox/specialists.ts", "src/lib/agents/knox/specialists.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
 ];
