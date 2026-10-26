@@ -123,7 +123,7 @@ export const DEMING_LESSONS: AgentLesson[] = [
     stage: "error loop",
     lesson: "Tell a fee the re-run produced by the extract attempt that read its document text at the fixed rules version after the error (pipeline_attempts, stage extract, on the fee's own document and text), never by its raw row's age: Knox updates the raw row of a fee it reads again identically, so the right fee keeps an old date. Count a row as waiting for a re-run only when a run can still ask for its bank; report rows at banks no longer active apart. Run each read of a step that shares the run's transaction in its own savepoint, so one failed read is reported and the rest of the run goes on.",
     why: "After #2561, a taken-down fee re-extracted identically kept its old raw row, so its error stayed 'taken down with nothing in its place' for good; rows at inactive banks were counted as waiting for a re-run that would never come; and a failed read on the scoreboard transaction would have failed the whole run.",
-    evidence: { issues: [2058], prs: [], files: ["src/lib/agents/deming/error-fixes.ts", "src/lib/agents/deming/error-fixes.db.test.ts"] },
+    evidence: { issues: [2058], prs: [2722], files: ["src/lib/agents/deming/error-fixes.ts", "src/lib/agents/deming/error-fixes.db.test.ts"] },
     appliesTo: "all",
     since: "2026-10-26",
   },
