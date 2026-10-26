@@ -24,7 +24,6 @@ export type AnalyticsEvent =
   | "pricing_tier_selected"
   /** The buyer pressed a plan card's Select institution button on /subscribe; `tier` names the card. */
   | "pricing_lookup_opened"
-  /** The buyer switched between annual and monthly billing on /subscribe. */
   /** The buyer opened one capability's example (Benchmark, Analyze, Monitor, Report) on /subscribe. */
   | "subscribe_example_viewed"
   /** A visitor opened a view of the homepage product demo by its tab; `view` names it. */
