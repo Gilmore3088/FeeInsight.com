@@ -135,7 +135,7 @@ export function writtenAnswerStepSystemPrompt(systemPrompt: string, steps: reado
   return `${systemPrompt}\n\nVALIDATED FINANCIAL CALCULATIONS FROM THIS ANSWER'S READS\n`
     + "These calculations were computed from the cited tool rows. Preserve the institution, metric, reporting dates, unit, denominator and period basis. "
     + "A calculation supports its stated arithmetic only, never a cause, a price recommendation, cash paid, member counts from accounts, or a comparison of changing peer populations. "
-    + "Use the exact values before rounding; show inputs for a calculation you state. Do not calculate additional unsupported ratios or growth from peer medians.\n"
+    + "Use the exact values before rounding; show inputs for a calculation you state. State only the ratios, shares and growth rates listed here or in a tool result; do not calculate any other, from peer medians or from any two figures.\n"
     + JSON.stringify(calculated.prompt)
     + "\nEND VALIDATED FINANCIAL CALCULATIONS.\n";
 }

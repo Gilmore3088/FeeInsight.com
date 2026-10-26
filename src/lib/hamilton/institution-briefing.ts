@@ -8,10 +8,12 @@ import {
 import {
   getInstitutionPeerRanking,
   getInstitutionRevenueTrend,
+  type PeerRanking,
 } from "@/lib/data-store/call-reports";
 import { getInstitutionFeeScheduleEvidence } from "@/lib/data-store/institution";
 import { getFeePublicationStatusLabel } from "@/lib/institution-quality";
 import type { HamiltonRequestContract } from "@/lib/hamilton/request-contract";
+import { callReportDollars, callReportRowInDollars } from "@/lib/hamilton/call-report-dollars";
 
 const PEER_TIER_RANGES: Record<string, string> = {
   micro: "assets under $100M",
@@ -30,12 +32,16 @@ function customerFeeRow(row: Record<string, unknown>): Record<string, unknown> {
 
 /** institution_sources.asset_size is in thousands of dollars. */
 function formatAssets(assetThousands: number | null | undefined): string {
-  if (assetThousands === null || assetThousands === undefined || !Number.isFinite(assetThousands) || assetThousands <= 0) {
-    return "unknown";
-  }
-  const dollars = assetThousands * 1_000;
+  const dollars = callReportDollars(assetThousands);
+  if (dollars === null || dollars <= 0) return "unknown";
   if (dollars >= 1e9) return `$${(dollars / 1e9).toFixed(1)}B`;
   return `$${(dollars / 1e6).toFixed(1)}M`;
+}
+
+/** The peer ranking's income fields in whole dollars; its comparison names the filed unit too. */
+function peerRankingInDollars(ranking: PeerRanking): Record<string, unknown> {
+  const dollars = callReportRowInDollars(ranking, ["sc_income", "peer_median_sc"]);
+  return ranking.comparison ? { ...dollars, comparison: { ...ranking.comparison, unit: "USD", filed_unit: ranking.comparison.unit } } : { ...dollars };
 }
 
 type HamiltonBriefingContract = Pick<
@@ -43,14 +49,18 @@ type HamiltonBriefingContract = Pick<
   "audience" | "intent" | "evidencePolicy" | "institutionId"
 >;
 
-/** Numeric facts are read-model fields, never numbers extracted from prompt prose. */
+/**
+ * Numeric facts are read-model fields, never numbers extracted from prompt prose. Call-report money
+ * is converted from the filings' thousands to whole dollars (`call-report-dollars.ts`) before the
+ * writer or the answer gate sees it, so both read the same "USD" value (#1077).
+ */
 export interface HamiltonBriefingEvidence {
   institution_id: number;
   institution_name: string;
   context_role: "research" | "account_evidence";
   metric: string;
   value: number;
-  unit: "USD" | "thousands of dollars" | "fraction" | "percent" | "count";
+  unit: "USD" | "fraction" | "percent" | "count";
   report_date: string | null;
   period_basis: "point_in_time" | "ytd" | "quarter" | "reported_ratio" | "fee_schedule";
   source: string;
@@ -148,8 +158,8 @@ export async function buildHamiltonInstitutionBriefingSnapshot(
     numericEvidence.push({ institution_id: inst.id, institution_name: inst.institution_name,
       context_role: options.contextRole ?? "research", ...fact, value });
   };
-  addEvidence({ metric: "registry_total_assets", unit: "thousands of dollars", report_date: null,
-    period_basis: "point_in_time", source: "institution_sources", publisher: "Institution registry", evidence_tier: "registry" }, inst.asset_size);
+  addEvidence({ metric: "registry_total_assets", unit: "USD", report_date: null,
+    period_basis: "point_in_time", source: "institution_sources", publisher: "Institution registry", evidence_tier: "registry" }, callReportDollars(inst.asset_size));
   const sampledFees = [...verifiedFees.slice(0, 12), ...provisionalFees.slice(0, 12)];
   for (const fee of sampledFees) {
     addEvidence({ metric: `fee_schedule:${fee.fee_category ?? fee.fee_name}`, unit: "USD", report_date: null,
@@ -169,18 +179,21 @@ export async function buildHamiltonInstitutionBriefingSnapshot(
       const ratio = metric === "fee_income_ratio" || metric === "roa";
       const count = metric === "branch_count" || metric === "member_count" || metric === "employee_count";
       const flow = metric === "service_charge_income" || metric === "total_revenue";
-      addEvidence({ metric, unit: metric === "fee_income_ratio" ? "fraction" : metric === "roa" ? "percent" : count ? "count" : "thousands of dollars",
+      const money = !ratio && !count;
+      addEvidence({ metric, unit: metric === "fee_income_ratio" ? "fraction" : metric === "roa" ? "percent" : count ? "count" : "USD",
         report_date: record.report_date, period_basis: ratio ? "reported_ratio" : flow ? (record.source === "ncua" ? "ytd" : "quarter") : "point_in_time",
-        source: record.source, publisher: record.source === "ncua" ? "NCUA" : "FDIC", evidence_tier: "regulatory" }, record[metric]);
+        source: record.source, publisher: record.source === "ncua" ? "NCUA" : "FDIC", evidence_tier: "regulatory" },
+      money ? callReportDollars(record[metric]) : record[metric]);
     }
   }
 
   const financialContext = options.writtenAnswer
     ? `- Structured briefing evidence (each value carries its own institution, source, unit and period basis; null dates are undated context): ${JSON.stringify(numericEvidence)}
+- Money values with unit USD are whole US dollars, already converted from the filings' thousands: a value of 649000 is $649,000 (or $649 thousand), never $649.
 - NCUA service_charge_income is the broad filed fee-income line, not overdraft revenue or bank deposit service charges. NCUA income is year to date; a standalone quarter needs the same institution's prior quarter from the same year.
 - A comparable peer ranking is not supplied here. Use a source-specific peer tool result before stating a peer position. Do not substitute a mixed bank/credit-union ranking or infer peer growth without a comparable cohort.\n`
-    : `- Call Report figures below (financial record, revenue trend, peer ranking) are in thousands of dollars; fee_income_ratio is a fraction (0.068 = 6.8%). Peer ranking tier: ${peerRanking ? `${peerRanking.tier} (${PEER_TIER_RANGES[peerRanking.tier] ?? "by total assets"}), the peer group for the revenue rank` : "none"}.
-- Latest financial record: ${latestFinancial ? JSON.stringify({
+    : `- Call Report money figures below (financial record, revenue trend, peer ranking) are whole US dollars, already converted from the filings' thousands: 649000 is $649,000, never $649. fee_income_ratio is a fraction (0.068 = 6.8%). Peer ranking tier: ${peerRanking ? `${peerRanking.tier} (${PEER_TIER_RANGES[peerRanking.tier] ?? "by total assets"}), the peer group for the revenue rank` : "none"}.
+- Latest financial record: ${latestFinancial ? JSON.stringify(callReportRowInDollars({
       report_date: latestFinancial.report_date,
       source: latestFinancial.source,
       total_assets: latestFinancial.total_assets,
@@ -190,9 +203,9 @@ export async function buildHamiltonInstitutionBriefingSnapshot(
       fee_income_ratio: latestFinancial.fee_income_ratio,
       roa: latestFinancial.roa,
       branch_count: latestFinancial.branch_count,
-    }) : "none"}
-- Revenue trend: ${JSON.stringify(revenueTrend.slice(0, 8))}
-- Peer ranking: ${peerRanking ? JSON.stringify(peerRanking) : "none"}\n`;
+    })) : "none"}
+- Revenue trend: ${JSON.stringify(revenueTrend.slice(0, 8).map((quarter) => callReportRowInDollars(quarter)))}
+- Peer ranking: ${peerRanking ? JSON.stringify(peerRankingInDollars(peerRanking)) : "none"}\n`;
 
   const prompt = `\n\n${heading}:
 - Institution ID: ${inst.id}
