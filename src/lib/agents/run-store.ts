@@ -1,3 +1,4 @@
+import { runStorageCompaction } from "@/lib/agents/hoovie/storage-compaction";
 import { sql, withTransaction } from "@/lib/data-store/connection";
 import { sweepInterruptedReportRuns } from "@/lib/hamilton/report-run";
 import { feeSourceFetch } from "@/lib/agents/fee-source-fetch";
@@ -1853,6 +1854,8 @@ async function executeAgenticStep(
             typed_rejected: accountTypeHold.typedRejected.length,
             checked_untyped: accountTypeHold.checkedUntyped,
             recheck_no_product: accountTypeHold.recheckNoProduct,
+            // #1672: with ACCOUNT_TYPE_COLUMN_READ_LIVE off, a dry run's column-read holds (fee ids).
+            column_shadow: accountTypeHold.columnShadow.map((hold) => ({ fee_published_id: hold.feePublishedId, fee_verified_id: hold.feeVerifiedId, account_type: hold.accountType, product_name: hold.productName })),
             error: accountTypeHold.error,
           },
           cut_name_duplicate: {
@@ -2895,15 +2898,21 @@ async function executeAgenticStep(
     case "atlas-storage-retention": {
       // commitDb: each expired legacy event-log partition is dropped in its own committed transaction.
       const result = await runStorageRetention({ db: tx, commitDb: sql, dryRun: run.runKind === "dry_run", context: { runId: run.id, stepId: step.id, stepKey: step.stepKey } });
-      // #1870: Hoovie's cold-tier plan on the same connection. Counts only; export is off and nothing prunes.
+      // #1870: Twelve quarters hot. Export, historical compaction and pruning stay off pending rollout.
       const cold = await runColdTier({ db: tx, dryRun: run.runKind === "dry_run", runId: run.id });
+      const compaction = await runStorageCompaction(tx, { dryRun: run.runKind === "dry_run" });
+      const compactionAlerts = [
+        ...(cold.error ? [`Public-data archive held: ${cold.error}`] : []),
+        ...(compaction.error ? [`Public-data compaction held: ${compaction.error}`] : []),
+        ...(compaction.hmda.invalid > 0 ? [`HMDA compaction kept ${compaction.hmda.invalid} malformed detail rows unchanged; review their source.`] : []),
+      ];
       // #1041: the document vault's size and growth, and the rejected-document retention count (deletion off).
       const vault = await runVaultRetention({ db: tx, dryRun: run.runKind === "dry_run", client: r2Client(), commitDb: sql });
       return {
         status: "completed",
         summary: `${summarizeStorageRetention(result)} ${summarizeColdTier(cold)} ${summarizeVaultRetention(vault)}`,
         // The vault's warnings join `alerts`, which the morning brief emails.
-        detail: { ...storageRetentionDetail(result), alerts: [...result.alerts, ...vault.alerts], cold_tier: coldTierDetail(cold), vault: vaultRetentionDetail(vault) },
+        detail: { ...storageRetentionDetail(result), alerts: [...result.alerts, ...vault.alerts, ...compactionAlerts], cold_tier: coldTierDetail(cold), storage_compaction: compaction, vault: vaultRetentionDetail(vault) },
       };
     }
     case "schedule-check": {

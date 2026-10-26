@@ -1,3 +1,4 @@
+import { callItemFactsRelation } from "@/lib/data-store/call-item-storage";
 import { sql } from "./connection";
 
 /**
@@ -44,7 +45,7 @@ export async function getInstitutionCallItemHistory(institutionId: number): Prom
     SELECT report_date::text AS report_date, item_key, item_code, item_description,
            value::float8 AS value, unit, period_basis,
            to_char(fetched_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS fetched_at
-      FROM institution_call_report_items
+      FROM ${sql.unsafe(await callItemFactsRelation(sql))}
      WHERE institution_id = ${institutionId}
        AND source = 'ffiec'
        AND item_key IN ${sql([...OVERVIEW_CALL_ITEM_KEYS])}

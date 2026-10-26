@@ -4,6 +4,7 @@ import { inSavepoint } from "@/lib/agents/savepoint";
 import { ACCOUNT_TYPE_HOLD_RELEASED_KIND, recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { accountTypeFlag, accountTypeOf, ACCOUNT_TYPE_FLAG_PREFIX, type AccountType } from "@/lib/account-type";
 import { passesDarwinChecks } from "@/lib/agents/knox/layout";
+import { tableColumnProduct } from "@/lib/agents/knox/lineup";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { recordStepWarning } from "@/lib/agents/hamilton/step-warning";
 
@@ -47,6 +48,21 @@ export const ACCOUNT_TYPE_CHECKED_FLAG = "account_type_checked:v1";
  */
 export const ACCOUNT_TYPE_HOLD_LIMIT = 20_000;
 export const HOLD_CATEGORY = "monthly_maintenance";
+/**
+ * #1672: the switch for the column read of rows with no lineup product. Such a row waits for a Knox
+ * re-read to fill its product, but a superseded copy is never read again, and a rules version before
+ * v121 read no account from a table whose header names one account per column. Live 135709 (Lower
+ * East Side People's FCU, doc 3089, superseded by 39454): "No monthly fee" $10 is the Money Market
+ * column of the Dividend Rates table and stayed live as checking's monthly fee. With the switch on,
+ * parts 1 and 2 read such a row's account from its stored text the way Knox does
+ * (`tableColumnProduct`) and hold it by that account's type. A row the read leaves untyped takes
+ * `ACCOUNT_TYPE_COLUMN_CHECKED_FLAG`, so its text is read once. Off, a dry run reports what it would
+ * hold (`columnShadow`) and a real run does not read the text at all. Stays off until a reviewer reads
+ * the dry run's sample against each bank's stored text (sampled-clean rule, DECISIONS 2026-10-20).
+ */
+export const ACCOUNT_TYPE_COLUMN_READ_LIVE = false;
+/** The flag a row with no product carries once the column read of its stored text typed nothing. */
+export const ACCOUNT_TYPE_COLUMN_CHECKED_FLAG = "account_type_column_checked:v1";
 
 /** The account words set aside before part 3's checks ("Business Checking Monthly Fee" is a "Monthly Fee"). */
 const ACCOUNT_WORDS = /\b(?:business|commercial|small\s*biz|non-?profit|corporate|analy[sz]\w*|money\s*market|mmda|christmas|holiday|vacation|club|savings?|saver|share|passbook|statement|ira|hsa|health|checking|accounts?)\b/gi;
@@ -84,6 +100,12 @@ export interface AccountTypeHoldResult {
   checkedUntyped: number;
   /** Parts 1 and 2: rows with no product and no type, left unflagged so the next step reads them again. */
   recheckNoProduct: number;
+  /**
+   * Parts 1 and 2, switch off, dry run only: rows with no product that the column read of their
+   * stored text would hold (`ACCOUNT_TYPE_COLUMN_READ_LIVE`). Empty when the switch is on: they are
+   * in `heldLive` and `heldWaiting` then.
+   */
+  columnShadow: PlannedHold[];
   /** Part 3: guard-refused rows back to verified, held. */
   restoredHeld: PlannedHold[];
   /** Part 3: guard-refused rows typed but left rejected (a check other than the account words fails). */
@@ -163,6 +185,44 @@ export function splitUntyped(untyped: HoldRow[]): { check: HoldRow[]; recheck: H
   return { check: untyped.filter(hasProduct), recheck: untyped.filter((row) => !hasProduct(row)) };
 }
 
+export interface ColumnReadRow {
+  fee_verified_id: number | string;
+  note: string | null;
+  /** The name Knox read from the cell (`raw_fee_observations.fee_name`); the published name when absent. */
+  raw_fee_name?: string | null;
+  normalized_text: string | null;
+}
+
+const EXCERPT = /\bexcerpt="([\s\S]*)"\s*$/;
+
+/**
+ * Pure (#1672): the account the stored text's table column names for a row with no product, read
+ * the way Knox reads it (`tableColumnProduct`), or null when the row's stored line or text is gone
+ * or no header names one.
+ */
+export function columnProductOf(row: Pick<HoldRow, "amount" | "fee_name">, read: ColumnReadRow | undefined): string | null {
+  const amount = amountOf(row.amount);
+  const excerpt = read?.note ? EXCERPT.exec(read.note)?.[1]?.trim() : null;
+  if (amount == null || !Number.isFinite(amount) || !excerpt || !excerpt.includes("|") || !read?.normalized_text) return null;
+  return tableColumnProduct(read.normalized_text, excerpt, amount, read.raw_fee_name ?? row.fee_name);
+}
+
+/**
+ * Pure: the rows with no product that their table column types, each with the column's account as
+ * its product, and the ones it leaves untyped.
+ */
+export function planColumnHolds(rows: HoldRow[], reads: Map<number, ColumnReadRow>): { typed: PlannedHold[]; untyped: HoldRow[] } {
+  const typed: PlannedHold[] = [];
+  const untyped: HoldRow[] = [];
+  for (const row of rows) {
+    const product = isKeptLive(row) ? null : columnProductOf(row, reads.get(Number(row.fee_verified_id)));
+    const type = product ? accountTypeOf(product, row.fee_name, row.institution_name) : null;
+    if (type) typed.push(planned({ ...row, product_name: product }, type));
+    else untyped.push(row);
+  }
+  return { typed, untyped };
+}
+
 /** Pure: whether a guard-refused typed row is a real monthly fee once its account words are set aside. */
 export function passesWithoutAccountWords(row: HoldRow): boolean {
   const amount = amountOf(row.amount);
@@ -176,10 +236,12 @@ export async function applyAccountTypeHold(
   db: SqlTag,
   // `institutionId` scopes all three reads to one bank (a Read-now publish once the publish-sweeps
   // split is on, hamilton/publish-sweeps.ts); unset, every institution, as before.
-  options: { runId: number; stepId?: number | null; batchId: string; dryRun: boolean; institutionId?: number },
+  // `columnLive` overrides `ACCOUNT_TYPE_COLUMN_READ_LIVE` (tests).
+  options: { runId: number; stepId?: number | null; batchId: string; dryRun: boolean; institutionId?: number; columnLive?: boolean },
 ): Promise<AccountTypeHoldResult> {
   const onlyInstitution = options.institutionId ?? null;
-  const result: AccountTypeHoldResult = { dryRun: options.dryRun, heldLive: [], heldWaiting: [], checkedUntyped: 0, recheckNoProduct: 0, restoredHeld: [], typedRejected: [], error: null };
+  const columnLive = options.columnLive ?? ACCOUNT_TYPE_COLUMN_READ_LIVE;
+  const result: AccountTypeHoldResult = { dryRun: options.dryRun, heldLive: [], heldWaiting: [], checkedUntyped: 0, recheckNoProduct: 0, columnShadow: [], restoredHeld: [], typedRejected: [], error: null };
   let live: HoldRow[];
   let waiting: HoldRow[];
   let refused: HoldRow[];
@@ -246,23 +308,64 @@ export async function applyAccountTypeHold(
   const refusedPlan = planHolds(refused);
   const liveUntyped = splitUntyped(livePlan.untyped);
   const waitingUntyped = splitUntyped(waitingPlan.untyped);
+  // #1672: rows with no product, read for their table column (switch on, or a dry run's report).
+  const noProduct = [...liveUntyped.recheck, ...waitingUntyped.recheck];
+  let columnReads = new Map<number, ColumnReadRow>();
+  if ((columnLive || options.dryRun) && noProduct.length > 0) {
+    try {
+      const ids = noProduct.map((row) => Number(row.fee_verified_id));
+      const rows = await inSavepoint(db, (scope) => scope<{ fee_verified_id: number | string; note: string | null; raw_fee_name: string | null; source_document_id: number | string | null }[]>`
+        SELECT fv.fee_verified_id, COALESCE(fr.extraction_note, fr.conditions) AS note, fr.fee_name AS raw_fee_name, fr.source_document_id
+          FROM verified_fee_observations fv
+          JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+         WHERE fv.fee_verified_id = ANY(${ids}::bigint[])
+           AND NOT (COALESCE(fv.outlier_flags, '[]'::jsonb) ? ${ACCOUNT_TYPE_COLUMN_CHECKED_FLAG})
+           AND COALESCE(fr.extraction_note, fr.conditions) LIKE '%excerpt=%|%'
+      `);
+      const documents = [...new Set(rows.filter((row) => row.source_document_id != null).map((row) => Number(row.source_document_id)))];
+      const texts = documents.length === 0 ? [] : await inSavepoint(db, (scope) => scope<{ source_document_id: number | string; normalized_text: string }[]>`
+        SELECT DISTINCT ON (t.source_document_id) t.source_document_id, t.normalized_text
+          FROM agent_source_texts t
+         WHERE t.source_document_id = ANY(${documents}::bigint[]) AND t.status = 'completed' AND t.normalized_text IS NOT NULL
+         ORDER BY t.source_document_id, t.id DESC
+      `);
+      const textOf = new Map(texts.map((row) => [Number(row.source_document_id), row.normalized_text]));
+      columnReads = new Map(rows.map((row) => [Number(row.fee_verified_id), {
+        fee_verified_id: row.fee_verified_id,
+        note: row.note,
+        raw_fee_name: row.raw_fee_name,
+        normalized_text: row.source_document_id == null ? null : textOf.get(Number(row.source_document_id)) ?? null,
+      }]));
+    } catch (error) {
+      console.error("account type hold column read failed:", error);
+      return { ...result, error: await recordStepWarning(db, { runId: options.runId, stepId: options.stepId, check: ACCOUNT_TYPE_HOLD_CHECK, what: "Account type hold column read", error }) };
+    }
+  }
+  const withRead = (rows: HoldRow[]) => rows.filter((row) => columnReads.has(Number(row.fee_verified_id)));
+  const liveColumn = planColumnHolds(withRead(liveUntyped.recheck), columnReads);
+  const waitingColumn = planColumnHolds(withRead(waitingUntyped.recheck), columnReads);
+  const columnTypedIds = new Set([...liveColumn.typed, ...waitingColumn.typed].map((hold) => hold.feeVerifiedId));
+  // A row the column read left untyped is flagged (switch on), so its text is read once; it is
+  // still read for a product on every step.
+  const columnChecked = columnLive ? [...liveColumn.untyped, ...waitingColumn.untyped].map((row) => Number(row.fee_verified_id)) : [];
   const refusedById = new Map(refused.map((row) => [Number(row.fee_verified_id), row]));
   const restored = refusedPlan.typed.filter((hold) => passesWithoutAccountWords(refusedById.get(hold.feeVerifiedId)!));
   const restoredIds = new Set(restored.map((hold) => hold.feeVerifiedId));
   const plan: AccountTypeHoldResult = {
     dryRun: options.dryRun,
     error: null,
-    heldLive: livePlan.typed,
-    heldWaiting: waitingPlan.typed,
+    heldLive: columnLive ? [...livePlan.typed, ...liveColumn.typed] : livePlan.typed,
+    heldWaiting: columnLive ? [...waitingPlan.typed, ...waitingColumn.typed] : waitingPlan.typed,
     checkedUntyped: liveUntyped.check.length + waitingUntyped.check.length,
-    recheckNoProduct: liveUntyped.recheck.length + waitingUntyped.recheck.length,
+    recheckNoProduct: noProduct.filter((row) => !(columnLive && columnTypedIds.has(Number(row.fee_verified_id)))).length,
+    columnShadow: columnLive ? [] : [...liveColumn.typed, ...waitingColumn.typed],
     restoredHeld: restored,
     typedRejected: refusedPlan.typed.filter((hold) => !restoredIds.has(hold.feeVerifiedId)),
   };
   if (options.dryRun) return plan;
   const changed = plan.heldLive.length + plan.heldWaiting.length + plan.restoredHeld.length + plan.typedRejected.length;
   result.recheckNoProduct = plan.recheckNoProduct;
-  if (changed === 0 && plan.checkedUntyped === 0) return result;
+  if (changed === 0 && plan.checkedUntyped === 0 && columnChecked.length === 0) return result;
 
   try {
     await inSavepoint(db, async (scope) => {
@@ -301,6 +404,7 @@ export async function applyAccountTypeHold(
       const checkedIds = [...liveUntyped.check, ...waitingUntyped.check].map((row) => Number(row.fee_verified_id));
       await addFlags(checkedIds, checkedIds.map(() => ACCOUNT_TYPE_CHECKED_FLAG), "keep");
       result.checkedUntyped = checkedIds.length;
+      await addFlags(columnChecked, columnChecked.map(() => ACCOUNT_TYPE_COLUMN_CHECKED_FLAG), "keep");
       // Part 3: refused rows typed; the ones that pass go back to verified, held.
       result.restoredHeld = plan.restoredHeld;
       await addFlags(plan.restoredHeld.map((hold) => hold.feeVerifiedId), plan.restoredHeld.map((hold) => accountTypeFlag(hold.accountType)), "verified");
@@ -342,7 +446,7 @@ export async function applyAccountTypeHold(
   } catch (error) {
     console.error("account type hold write failed:", error);
     return {
-      ...result, heldLive: [], heldWaiting: [], restoredHeld: [], typedRejected: [], checkedUntyped: 0, recheckNoProduct: 0,
+      ...result, heldLive: [], heldWaiting: [], restoredHeld: [], typedRejected: [], checkedUntyped: 0, recheckNoProduct: 0, columnShadow: [],
       error: await recordStepWarning(db, { runId: options.runId, stepId: options.stepId, check: ACCOUNT_TYPE_HOLD_CHECK, what: "Account type hold write", error }),
     };
   }
