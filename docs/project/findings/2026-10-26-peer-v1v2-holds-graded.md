@@ -4,7 +4,7 @@
 check's new version re-decides older holds, grade a sample of those holds against the banks'
 stored text, and replay today's rules on the sample to count the misreads that would get through.
 The peer v1/v2 holds (Oct 5–10) came from older Knox reads, and outside v5's hold categories
-about one in four was a misread, against one in nine for the v3/v4 holds v5 was built on.
+10 of the 30 graded rows were misreads, against 21 of the 236 v3/v4 holds v5 was built on (all categories).
 
 **What happened:** peer check v5 (#1691) re-decides an old `peer_outlier` hold only when its run's
 `verify.peer_range` attempt was v3 or v4 (`DARWIN_PEER_GRADED_VERSIONS`). #1694 asked whether the
@@ -26,14 +26,13 @@ read against its document's latest completed `agent_source_texts` text. The rows
 | v4 holds, Oct 16 grade (123) | 103 | 14 | 6 |
 | v3 holds, Oct 16 grade (113) | 103 | 7 | 3 |
 
-Weighted by each day's rows, about 25% of the 1,902 rows outside the hold categories are misreads.
+The sample is 5 rows a day, so these are sample rates, not a weighted estimate for all 1,902 rows.
 
 **Replay under today's rules** (the verify step's pure checks run over the 60 rows and their stored
 texts: category, name rules, source check, tier perk; learned envelopes and peer levels were not
 loaded):
 - Outside the hold categories, 27 of the 30 rows pass every rule, so v5 would verify them. 6 of
-  those 27 are misreads (22%; weighted by each day's rows, about 21%, or some 380 of the 1,820 or
-  so rows it would verify). Today's rules stop 3 misreads (a price in the name, two not in source),
+  those 27 are misreads (22% of the sample). Today's rules stop 3 misreads (a price in the name, two not in source),
   and a re-file now reads one (542647) at the right category.
 - In the hold categories, 7 rows fail a rule first. The other 23 reach the peer check, where v5
   still holds a state outlier, so the rows stay held as they are now.

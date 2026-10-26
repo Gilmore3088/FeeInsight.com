@@ -47,7 +47,7 @@ export const DARWIN_PEER_STRATEGY = { strategy: "verify.peer_range", version: 5 
 /**
  * The peer versions whose holds were graded against stored text before v5 (#1112, Oct 16: 113 v3
  * and 123 v4 holds). A hold made before attempts recorded `peer_version` is re-decided only when
- * its own run's `verify.peer_range` attempt is one of these versions and held it. The 2,350 or so
+ * its own run's `verify.peer_range` attempt is one of these versions and held it. The 2,124
  * v1/v2 holds from Oct 5–10 stay held: graded on Oct 26 (#1694, 60 rows read against stored
  * text), they were 34 real fees, 21 misreads and 5 unsure, and replaying today's rules on them, v5
  * would verify 27 of the 30 outside `PEER_HOLD_CATEGORIES`, 6 of them misreads. They are older
