@@ -26,6 +26,7 @@ import { stackedCellVariants } from "./stacked-cell-variants";
 import { refusesOtherColumnPrice } from "./column-pair-prices";
 import { boxSectionLateFee } from "./box-section-late-fee";
 import { withGluedFootnotePrices } from "./glued-footnote-price";
+import { pricedForOtherAccount } from "./column-account";
 import { withoutGluedPricePairs } from "./glued-price-pair";
 import { discontinuedRow } from "./discontinued-rows";
 import { networkColumnRow } from "./network-column-rows";
@@ -1404,6 +1405,9 @@ export function checkFeeAgainstSource(
   // (`boxSizeNamed`); the row is traced by its own words. Only for a fee filed as a safe deposit box
   // (a null key never borrows the box words: Knox's self-check passes the read's category), and only
   // on a row that is the size itself, not another product's row printing a size (`leadsBoxRow`).
+  // #1912: the price's own cell closes with another account's column name ("$50 ... (ira)" under a
+  // fee named for a CD): the amount is that account's price, not this fee's (`pricedForOtherAccount`).
+  if (result.ok && pricedForOtherAccount(result.sourceLine, feeName, amount)) return { ok: false, reason: "amount_not_the_fee" };
   const asRead = result.ok ? null : asReadBoxName(feeName, canonicalFeeKey);
   if (!asRead) return result;
   const traced = withoutDiscontinuedRow(rawText, asRead, amount, checkOwnName(rawText, asRead, amount, categoryPattern, canonicalFeeKey, options));
