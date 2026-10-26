@@ -16,17 +16,25 @@ figure inside an open parenthesis was kept since Oct 9 ("(daily balance falls be
 words before it lead into ("below", "of", "is", "<") or the words after it complete ("or less",
 "and over") was not. The fragment was made by the publish step, not by the read, so no read-side
 fix could reach it.
-**Fix:** this PR. `nameBeforeLeaders` keeps a threshold figure, a range's second figure and a tier
-after it, cuts at a fee's own price ("A fee of $20.00 will be ..."), at a second tier ("Up to $2,500
-Over $2,500") and after the sentence that ends on the kept figure. Across the 2,199 verified rows
-with a figure in the name, it changes 303 published names and no publish, hold or category-guard
-verdict; on the 54 live fees named apart from their verified name whose published name it changes, every new name passes the
-category guard and adds no name rule, Darwin's `sentence_end` flag goes from 31 to 1, and 1 gains a
-`pronoun` flag (90789, a $5 `reread`, no takedown). Live fees keep their names until a switch: with
+**Fix:** this PR. `nameBeforeLeaders` keeps a first figure only when a comparison word leads into
+it ("below", "under", "over", "than", "least", "between", "balance of", "<"), or when a plain "is",
+"of", "for" or "at" leads into it and a closing comparison follows ("is $35.00 or less"); "fee of
+$20" stays a price. After a kept figure it keeps a range's second figure ("between $100 and $500")
+and another comparison, and cuts at a next tier ("Up to $2,500 Over $2,500") and after the sentence
+that ends on the kept figure. Everything else is the fee's own price and still ends the name:
+"Checks $300 and over $10", "Overdraft up to $35 per item", "Monthly maintenance fee = $10",
+"Wire transfer outgoing domestic min $25", "Stop payment $30 or more", "Paper statement fee $2 and
+up", "ATM fee from $2.00 to $5.00"; a cut after a kept threshold also drops a dangling "is". Across
+the 2,199 verified rows whose name holds a figure (`fee_name ~ '\s\$\s?\d'`), it changes 265
+published names (79 of them live) and no publish, hold or category-guard verdict, and no name rule
+fires on a new name; Darwin's `sentence_end` flag clears on 161 and stays on 5, and 5 gain a
+`pronoun` flag ($5 to $12 `reread`s, no takedown). Of the 19 cut live fees, 14 get their whole
+name; 5 keep today's cut because the figure is the fee's own price or not a comparison (109859,
+139704 "For checks", 144480, 153355, 159922). Live fees keep their names until a switch: with
 `KNOX_REREAD_PUBLISHED_NAME_LIVE` (off) a kept-live re-read request whose fragment is the head of
-today's published name of Knox's own read takes that name. Dry run on the stored texts: 16 of the 19
+today's published name of Knox's own read takes that name. Dry run on the stored texts: 12 of the 19
 would be renamed if asked; Darwin asks for 6 today, and 5 of those would be renamed (154070 is
-`not_found` at its price); all 19 names trace with `checkFeeAgainstSource`, and the 5 read right
+`not_found` at its price); every new name traces with `checkFeeAgainstSource`, and the 5 read right
 against the bank's own line. Also here: the hold collapses a doubled space inside a name before its
 cut-off test, so the collapse no longer counts as Knox's repair (5 of 2,366 held names escaped with
 one added; 0 live or verified rows on prod have one).

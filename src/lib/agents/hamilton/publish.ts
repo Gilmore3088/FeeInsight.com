@@ -1139,47 +1139,76 @@ function insideParenthesis(text: string): boolean {
   return (text.match(/\(/g)?.length ?? 0) > (text.match(/\)/g)?.length ?? 0);
 }
 /**
- * #1443: a price the words before it lead into ("monthly fee if balance falls below $2,500.00",
- * "Paid NSF Item < $30", the second figure of a range) or the words after it complete ("For checks
- * $300 and over") is the name's own threshold, outside a parenthesis too. Cutting there published
- * "monthly fee if balance falls below" (149336) and "Paid NSF Item <" (109755), and cut a name
- * Knox's retidy had restored again on its next publish ("Check cashing if less than $100", 131639).
- * Darwin's live check asked Knox to re-read those lines every day; Knox read the whole name each
- * time and publish cut it again. A fee's own price ("Continuous overdraft fee - A fee of $20.00
- * will be assessed ...") is no threshold, so the name still ends there; a sentence that ends on
- * a kept threshold ends the name ("... less than $100. Fee is posted on last working").
+ * #1443: a figure a comparison leads into ("monthly fee if balance falls below $2,500.00", "Paid
+ * NSF Item < $30", "balance of $100.00") is the name's own threshold, outside a parenthesis too,
+ * and so is one a plain lead ("is", "of", "for") opens and a comparison closes ("the individual
+ * item is $35.00 or less", "for $100.00 or less"). Cutting there published "monthly fee if balance
+ * falls below" (149336) and "Paid NSF Item <" (109755); Darwin's live check asked for a re-read of
+ * those lines every day, and the re-read found the whole name each time. Anything else is the fee's
+ * own price and ends the name as before: a plain lead with no closing comparison ("Monthly
+ * maintenance fee = $10", "min $25", "up to $35", "from $2.00"), a figure the comparison only
+ * follows ("Stop payment $30 or more", "$2 and up"), and a fee's own price ("A fee of $20.00").
+ * After a kept threshold the next figure ends the name too ("... below $500 is $10", "Checks ...
+ * $300 and over $10"), unless a comparison of its own leads it ("below $1,000 or monthly average
+ * balance below $2,500") or it closes a range ("between $100 and $500"). A second tier ("Up to
+ * $2,500 Over $2,500") and the sentence that ends on a kept threshold end the name as well.
  */
-const THRESHOLD_LEAD =
-  /(?:\b(?:below|under|over|above|than|least|exceeds?|exceeding|excess of|of|is|are|balances?|minimum|maximum|min|max|between|from|to|up to|within)|[<>≤≥=]|\d\s*[-–—])\s*$/i;
+const COMPARISON_LEAD =
+  /(?:\b(?:below|under|over|above|than|least|exceeds?|exceeding|excess of|between|balances?(?:\s+(?:of|is|at))?|(?:below|under|over|above)\s+(?:the\s+)?(?:minimum|maximum|required))|[<>≤≥])\s*$/i;
+const PLAIN_LEAD = /\b(?:is|are|of|for|at)\s*$/i;
 const PRICE_OF_LEAD = /\b(?:fee|charge|cost|price|rate|total|sum|amount|payment)\s+of\s*$/i;
 /** A second tier after the first ("Up to $2,500 Over $2,500"): a tier header, not the name's own threshold. */
 const NEXT_TIER = /^[\d,.]*\s+(?:up to|over|under|above|below|more than|less than)\s+\$/i;
-const THRESHOLD_TAIL = /^[\d,.]*\s*(?:(?:or|and)\s+(?:less|more|greater|higher|lower|over|under|above|below|up|fewer)\b|\+)/i;
+const THRESHOLD_TAIL = /^[\d,.]*\s*(?:or|and)\s+(?:less|more|greater|higher|lower|over|under|above|below|fewer)\b/i;
+/** Words between a kept threshold and the next figure that only close the threshold ("$300 and over $10"). */
+const TAIL_ONLY = /^[\d,.]*\s*(?:or|and)\s+(?:less|more|greater|higher|lower|over|under|above|below|fewer)\s*$/i;
+/** The second figure of a range the kept threshold opened ("between $100 and $500", "$100 - $500"). */
+const RANGE_CLOSE = /^[\d,.]*\s*(?:[-–—]|to|and)\s*$/i;
+/** A plain word a cut after a kept threshold leaves dangling ("... below $500 is"). */
+const DANGLING_PLAIN = /\s+(?:is|are|of|for|at|=)\s*$/i;
 const THRESHOLD_SENTENCE_END = /^[\d,.]*\d(?=\.\s+[A-Z])/;
-/** Where a name with a threshold price at `match` ends: null when the price is no threshold (the name ends at it), -1 when it reads on. */
-function thresholdEnd(name: string, match: RegExpMatchArray): number | null {
+/**
+ * Whether the figure at `match` is the name's threshold. `keptEnd` is where the last kept threshold
+ * figure ends, or null when none was kept yet.
+ */
+function isThreshold(name: string, match: RegExpMatchArray, keptEnd: number | null): boolean {
   const at = match.index ?? 0;
   const before = name.slice(0, at);
   const after = name.slice(at + match[0].length);
-  if (!(THRESHOLD_LEAD.test(before) && !PRICE_OF_LEAD.test(before)) && !THRESHOLD_TAIL.test(after)) return null;
-  if (NEXT_TIER.test(after)) return null;
-  const sentence = after.match(THRESHOLD_SENTENCE_END);
-  return sentence ? at + match[0].length + sentence[0].length : -1;
+  if (NEXT_TIER.test(after)) return false;
+  if (keptEnd != null) {
+    const between = name.slice(keptEnd, at);
+    if (RANGE_CLOSE.test(between)) return true;
+    return COMPARISON_LEAD.test(before) && !TAIL_ONLY.test(between);
+  }
+  if (COMPARISON_LEAD.test(before)) return true;
+  return PLAIN_LEAD.test(before) && !PRICE_OF_LEAD.test(before) && THRESHOLD_TAIL.test(after);
 }
 export function nameBeforeLeaders(name: string): string {
   let end: number | undefined;
+  let keptEnd: number | null = null;
   for (const match of name.matchAll(LEADER_OR_PRICE)) {
     if (!match[0].includes("$")) {
       end = match.index;
       break;
     }
     if (insideParenthesis(name.slice(0, match.index))) continue;
-    const threshold = thresholdEnd(name, match);
-    if (threshold === -1) continue;
-    end = threshold ?? match.index;
-    break;
+    const at = match.index ?? 0;
+    if (!isThreshold(name, match, keptEnd)) {
+      end = at;
+      break;
+    }
+    const after = name.slice(at + match[0].length);
+    const figure = after.match(/^[\d,]*(?:\.\d+)?/)?.[0] ?? "";
+    keptEnd = at + match[0].length + figure.length;
+    const sentence = after.match(THRESHOLD_SENTENCE_END);
+    if (sentence) {
+      end = at + match[0].length + sentence[0].length;
+      break;
+    }
   }
-  const cut = name.slice(0, end ?? name.length).replace(/[\s:;,.\-–—|]+$/u, "").trim();
+  let cut = name.slice(0, end ?? name.length).replace(/[\s:;,.\-–—|]+$/u, "").trim();
+  if (keptEnd != null && end != null && end > keptEnd) cut = cut.replace(DANGLING_PLAIN, "").trim();
   return cut.length >= 3 && /[a-z]/i.test(cut) ? cut : name.trim();
 }
 

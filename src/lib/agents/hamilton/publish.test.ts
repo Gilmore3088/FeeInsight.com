@@ -208,10 +208,17 @@ describe("Hamilton agentic publish", () => {
     );
     expect(publishedFeeName("Paid NSF Item < $30 (Courtesy Pay)", "overdraft")).toBe("Paid NSF Item < $30 (Courtesy Pay)");
     expect(publishedFeeName("Loan Processing Fee > $5000 unsecured", "other_lending_fee")).toBe("Loan Processing Fee > $5000 unsecured");
-    expect(publishedFeeName("Non Member Check Cashing Fee - For checks $300 and over", "check_cashing")).toBe("Non Member Check Cashing Fee - For checks $300 and over");
+    expect(publishedFeeName("Stop Payments for $100.00 or less", "stop_payment")).toBe("Stop Payments for $100.00 or less");
+    expect(publishedFeeName("Service charge per month if a minimum balance of $100.00 is NOT maintained", "monthly_maintenance")).toBe(
+      "Service charge per month if a minimum balance of $100.00 is NOT maintained",
+    );
     expect(publishedFeeName("Dormant Account Fee, balance $50 or greater", "dormant_account")).toBe("Dormant Account Fee, balance $50 or greater");
-    // A range's second figure belongs to the range.
-    expect(nameBeforeLeaders("Gift Cards: Available in any amounts from $25 - $500")).toBe("Gift Cards: Available in any amounts from $25 - $500");
+    // A range's second figure belongs to the range the threshold opened; another comparison keeps its own figure.
+    expect(nameBeforeLeaders("Wire fee for balances between $100 and $500")).toBe("Wire fee for balances between $100 and $500");
+    expect(nameBeforeLeaders("Cash advance over $100 - $500 per day")).toBe("Cash advance over $100 - $500 per day");
+    expect(nameBeforeLeaders("Monthly fee if balance falls below $1,000 or monthly average balance below $2,500")).toBe(
+      "Monthly fee if balance falls below $1,000 or monthly average balance below $2,500",
+    );
     // A sentence that ends on the threshold ends the name.
     expect(nameBeforeLeaders("Service Charge - Monthly on all accounts with an average daily balance of less than $100. Fee is posted on last working")).toBe(
       "Service Charge - Monthly on all accounts with an average daily balance of less than $100",
@@ -223,6 +230,27 @@ describe("Hamilton agentic publish", () => {
     expect(nameBeforeLeaders("Foreign Check Collections (US & Non-US Dollars) Up to $2,500 Over $2,500")).toBe("Foreign Check Collections (US & Non-US Dollars) Up to");
     expect(nameBeforeLeaders("Check Cashing (Members with average balance less than $100) -- $5-500.00")).toBe("Check Cashing (Members with average balance less than $100)");
     expect(nameBeforeLeaders("Overdraft $10.00 – $29.99")).toBe("Overdraft");
+  });
+
+  it("still ends the name at the fee's own price, before and after a kept threshold (#1443 review)", () => {
+    // Each of these published whole, price and all, under the first #1443 rule, with no hold.
+    const cases: Array<[string, string, string]> = [
+      ["Monthly maintenance fee if balance is below $500 is $10", "monthly_maintenance", "Monthly maintenance fee if balance is below $500"],
+      ["Checks $300 and over $10", "check_cashing", "Checks"],
+      ["Overdraft up to $35 per item", "overdraft", "Overdraft up to"],
+      ["Overdraft Fee up to $35", "overdraft", "Overdraft Fee up to"],
+      ["Monthly maintenance fee = $10", "monthly_maintenance", "Monthly maintenance fee ="],
+      ["Wire transfer outgoing domestic min $25", "wire_domestic_outgoing", "Wire transfer outgoing domestic min"],
+      ["Stop payment $30 or more", "stop_payment", "Stop payment"],
+      ["Paper statement fee $2 and up", "paper_statement", "Paper statement fee"],
+      ["ATM fee from $2.00 to $5.00", "atm_non_network", "ATM fee from"],
+    ];
+    for (const [name, key, leaders] of cases) {
+      expect(nameBeforeLeaders(name)).toBe(leaders);
+      expect(publishedFeeName(name, key)).not.toMatch(/\$10\b|\$35|\$25|\$30|\$2\b|\$2\.00/);
+    }
+    // After a kept threshold, words that only close it do not lead the next figure.
+    expect(nameBeforeLeaders("Checks over $300 and over $10")).toBe("Checks over $300 and over");
   });
 
   it("reads a doubled space inside a cut name as one, so the collapse is no repair (#1443)", () => {
