@@ -121,7 +121,7 @@ export function statesRefundableDeposit(text: string, feeName: string): boolean 
  * #1912 follow-up: the category guard's stored-text context for a fee the restore bar judges, read
  * from `text` by the same functions Darwin's verify (`withCollectionSection`) and Hamilton's live
  * guard (`withCollectionSection`, `withBoxSection`) use: `collection_section` and `payee_returned`
- * for NSF, `box_section` for a late payment. Only those flags are kept, so no amount-based rule
+ * for NSF, `box_section` for a late payment, `commercial_lockbox` for a safe deposit box (v100). Only those flags are kept, so no amount-based rule
  * joins the restore bar here. Pure.
  */
 export function restoreGuardContext(
@@ -130,7 +130,7 @@ export function restoreGuardContext(
 ): CategoryGuardContext {
   const read = withBoxSection(fee.canonicalFeeKey, fee.feeName,
     withCollectionSection<CategoryGuardContext>(fee.canonicalFeeKey, fee.feeName, { amount: fee.amount }, text), text);
-  return { collection_section: read.collection_section, payee_returned: read.payee_returned, box_section: read.box_section };
+  return { collection_section: read.collection_section, payee_returned: read.payee_returned, box_section: read.box_section, commercial_lockbox: read.commercial_lockbox };
 }
 
 /**

@@ -1873,7 +1873,17 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v99 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v99 (Oct 26,
+- The guard is at v100 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v100 (Oct 26,
+  #1912): a commercial lockbox (a remittance-processing service for businesses) fails the safe deposit
+  box type: a lock box name that names the service (service, processing, items, remittances, wholesale or
+  retail) and nothing of a box (`commercialLockboxName`), or a lock box name with no box words whose
+  stored line or business, treasury or cash management heading says so (`commercial_lockbox`, read by
+  `withCollectionSection` with `commercialLockboxOnLine`; Darwin's verify now passes that context to its
+  category check). Forte Bank's "Lock Box Service, per month" $225 (135270) is the case. No type holds a
+  lockbox service, so the fee comes down. A lock box with a size, key, drilling, rent, lease, year, or
+  late or past-due charge stays ("Lock box past due date late fee", 144459). One live fee fails it, taken
+  down; none re-files (prod, read-only, Oct 26).
+- v99 (Oct 26,
   #1912): a bill pay return charge the payee sent back fails NSF and re-files to bill_pay: when its
   name says so, or when its stored text says so on its line or in the note wrapped onto the next line
   (`payee_returned`, read by `withCollectionSection` with `payeeReturnedBillPayOnLine`; Bellco FCU's

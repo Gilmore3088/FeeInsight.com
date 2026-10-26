@@ -22,6 +22,7 @@ import { domesticStackedStem, stackedCellVariants } from "@/lib/custom-report/st
 import { domesticWireClausePrices } from "@/lib/custom-report/wire-clause-prices";
 import { withCenteredHeadingCells } from "@/lib/custom-report/centered-heading-cell";
 import { BILL_PAY_RETURNED_BY_PAYEE, payeeReturnedBillPayOnLine } from "@/lib/custom-report/payee-returned-bill-pay";
+import { COMMERCIAL_LOCKBOX_NAME } from "@/lib/custom-report/commercial-lockbox";
 import type { OwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
 
 /**
@@ -1387,6 +1388,10 @@ export function classifyPatternKey(value: string): string | null {
   if (key === "atm_non_network" && /\binterim statements?\b/i.test(text)) key = "document_reproduction";
   // A book transfer inside the bank is not a wire.
   if (key?.startsWith("wire_") && /\bbook transfer\b/i.test(text)) return null;
+  // v132 (#1912): a commercial lockbox service ("Lock Box Service, per month", Forte Bank 135270) is
+  // remittance processing for businesses, not a safe deposit box; no type of the 50 holds it. A lock
+  // box with a size, key, drilling, rent, lease, year or late charge stays a safe deposit box.
+  if (key === "safe_deposit_box" && COMMERCIAL_LOCKBOX_NAME.test(text)) return null;
   // Reopening a closed account is not an early-closure fee.
   if (key === "early_closure" && /\bre-?open/i.test(text)) return null;
   // "Overdrafts initiated by debit card will be declined at no cost" describes a decline,

@@ -21,6 +21,7 @@
 import { boxSectionLateFee } from "@/lib/custom-report/box-section-late-fee";
 import { collectionSectionReturn } from "@/lib/custom-report/collection-section-return";
 import { billPayReturnedByPayee, payeeReturnedBillPayOnLine } from "@/lib/custom-report/payee-returned-bill-pay";
+import { commercialLockboxName, commercialLockboxOnLine } from "@/lib/custom-report/commercial-lockbox";
 import { namedForCheckingAccount } from "@/lib/checking-fee-name";
 import { paperStatementPriceOnLine } from "@/lib/paper-statement-price";
 import { abbreviatesInternationalWire, ATM_ABROAD, COLLECTION_ITEM, DRAFT_PROTECTION_FEE, foldRetiredCategory, FOREIGN_DEPOSIT_RETURN, FOREIGN_ITEM_RETURN, INCOMING_WIRE, INTERNATIONAL_ATM, IRA_CLOSING, ITEM_COPY, RESEARCH_SPLIT_LIVE, SKIP_A_PAY, SUSTAINED_OVERDRAFT } from "@/lib/fee-fold";
@@ -54,6 +55,13 @@ export interface CategoryGuardContext {
    * when the caller read it (`withCollectionSection`). Read only for NSF.
    */
   payee_returned?: boolean | null;
+  /**
+   * v100 (#1912): the fee's stored text prints this lock box name as the commercial lockbox service
+   * (remittance processing for businesses), on its own line or under a business, treasury or cash
+   * management heading (`commercialLockboxOnLine`), when the caller read it (`withCollectionSection`).
+   * Read only for a safe deposit box.
+   */
+  commercial_lockbox?: boolean | null;
 }
 
 export type CategoryGuardVerdict =
@@ -1218,7 +1226,18 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // 2419) as NSF. Read-only dry run (Oct 26): of the live NSF fees, 1 fails (85460, re-filed in place;
 // the bank has no live bill pay fee at $10). The other 19 live NSF bill pay return names with no NSF
 // words print no payee wording and stay NSF.
-export const CATEGORY_GUARD_VERSION = 99;
+// v100 (Oct 26, #1912): a commercial lockbox (a remittance-processing service for businesses) is not
+// a safe deposit box. Forte Bank's "Lock Box Service, per month" $225 (135270) went live as one by its
+// "lock box" words, on a page that says "Fees not included in this table: Safe Deposit Boxes". The safe
+// deposit box type refuses a lock box name that names the service (service, processing, items,
+// remittances, wholesale or retail) and nothing of a box (`commercialLockboxName`), or a lock box name
+// that says nothing of a box whose stored line or business, treasury or cash management heading says
+// so (`commercial_lockbox`, read by `withCollectionSection` with `commercialLockboxOnLine`). A lock box
+// with a size, key, drilling, rent, lease, year, late or past-due charge stays a safe deposit box ("Lock
+// Box Rental 5x5", "Lock box past due date late fee" 144459). No type of the 50 holds a lockbox
+// service, so the fee goes to the second look and comes down. Read-only dry run (Oct 26): of 7,759 live
+// safe deposit box fees, 1 fails (135270, taken down); 0 re-file.
+export const CATEGORY_GUARD_VERSION = 100;
 
 /** v87 (#1916): where a late charge printed in a safe deposit box section is filed. */
 export const BOX_LATE_TARGET = "safe_deposit_box";
@@ -1253,6 +1272,7 @@ function collectionReturn(canonicalFeeKey: string, name: string, context: Catego
  * v90 (#1912): the guard context with `collection_section` read from the fee's stored text, for an
  * NSF fee only (every other fee is returned as it is, so no text is needed for it). Darwin's verify,
  * Hamilton's live guard and its takedown restore call it with each such fee's stored text.
+ * v100 (#1912): and `commercial_lockbox` for a safe deposit box (`commercialLockboxOnLine`).
  */
 export function withCollectionSection<T extends CategoryGuardContext>(
   canonicalFeeKey: string | null | undefined,
@@ -1260,11 +1280,19 @@ export function withCollectionSection<T extends CategoryGuardContext>(
   context: T,
   text: string | null | undefined,
 ): T {
-  if (canonicalFeeKey !== "nsf" || !text || !feeName) return context;
+  if ((canonicalFeeKey !== "nsf" && canonicalFeeKey !== "safe_deposit_box") || !text || !feeName) return context;
   const amount = context.amount == null || context.amount === "" ? null : Number(context.amount);
   const priced = amount != null && Number.isFinite(amount) ? amount : null;
+  // v100 (#1912): a lock box name filed as a safe deposit box, read for the commercial lockbox service.
+  if (canonicalFeeKey === "safe_deposit_box") return { ...context, commercial_lockbox: commercialLockboxOnLine(text, feeName, priced) };
   // v99 (#1912): and `payee_returned`, a bill pay return its line or the next says the payee sent back.
   return { ...context, collection_section: collectionSectionReturn(text, feeName, priced), payee_returned: payeeReturnedBillPayOnLine(text, feeName, priced) };
+}
+
+function commercialLockboxReason(name: string, byText: boolean): string {
+  return byText
+    ? `"${name}" is printed as a commercial lockbox service (remittance processing for businesses), not a safe deposit box`
+    : `"${name}" names a commercial lockbox service (remittance processing for businesses), not a safe deposit box`;
 }
 
 function boxSectionReason(name: string): string {
@@ -1598,6 +1626,11 @@ export function checkFeeCategory(
       code: "rate_as_amount",
       reason: `"${name}" states a rate ("${rate}"), so its dollar amount is not the ${canonicalFeeKey} fee`,
     };
+  }
+  // v100 (#1912): a commercial lockbox service, by its name or its stored line, is not a safe deposit box.
+  if (canonicalFeeKey === "safe_deposit_box" && (commercialLockboxName(name) || context?.commercial_lockbox === true)) {
+    const byName = commercialLockboxName(name);
+    return { ok: false, code: byName ? "name_contradicts" : "schedule_contradicts", reason: commercialLockboxReason(name, !byName) };
   }
   const soft = rule.excludeUnless;
   // A note runs to its closing parenthesis, or to the end of a name cut mid-note.
