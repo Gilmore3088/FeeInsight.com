@@ -513,8 +513,8 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   reports. #1443 (Knox v119): an end shape a closing note hid ("Late Fee up to (see schedule)",
   `liveQualifiedFragmentShape`) joins the check only with `QUALIFIED_FRAGMENT_TAKEDOWN_LIVE`, which
   is off: each step reports those matches as `qualified_shadow` (new matches or changed actions, by
-  action and pattern, with samples) and acts on none. Oct 25 dry run on the 3 live matches: 0
-  down, 0 renamed, 0 re-read, 3 exempt as priced trailing ranges (69115, 104534, 149762); a $0 or
+  action and pattern, with samples) and acts on none. Oct 25 dry run on the 2 live matches: 0
+  down, 0 renamed, 0 re-read, 2 exempt as priced trailing ranges (104534, 149762); a $0 or
   waived one would come down or be re-read. The count SQL counts the check with the switch off. On, a `takedown` fee is archived in the same step (`rolled_back_reason` `fragment name:
   <pattern>`, batch `darwin-live-fragment-<run>`, never deleted), its verified row is rejected
   with `darwin_live_fragment:<pattern>` so publish does not bring it back, the public read cache

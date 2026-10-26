@@ -2603,6 +2603,8 @@ export async function runHamiltonPublish(
       // Insert and supersede succeed or fail together: never two live prices for one
       // fee, and never a closed row without its replacement.
       let heldBy: number | null = null;
+      // The writer re-checks the name hold on the re-read row (#1443 review): a name changed since the read is held there.
+      let nameHeld: { code: string; reason: string } | null = null;
       let correctedBy: CorrectionBlock | null = null;
       const guarded = await withSelectedInternationalPublication(db, row,
       async (prefixed, actual) => withPublishedIdentityWrite(prefixed, async (scope) => {
@@ -2637,6 +2639,7 @@ export async function runHamiltonPublish(
           batchId,
           row: actual ?? row,
           onHeld: (heldId) => { heldBy = heldId; },
+          onNameHeld: (hold) => { nameHeld = hold; },
           priorFeePublishedId: priorPublishedFee?.fee_published_id == null ? null : Number(priorPublishedFee.fee_published_id),
           onCorrected: (block) => { correctedBy = block; },
           pairedLabel: event ? event.originalLabel : null,
@@ -2659,7 +2662,7 @@ export async function runHamiltonPublish(
         ...base,
         status: feePublishedId ? "published" : "skipped",
         reason: guarded.kind === "deferred" ? "International wire evidence or identity is unresolved; left pending"
-          : feePublishedId ? null : heldBy ? `Held by an operator (fee #${heldBy})` : correctedReason(correctedBy) ?? ("identityChanged" in written && written.identityChanged ? "Selected verification, product or lineage changed; deferred" : "Duplicate published row"),
+          : feePublishedId ? null : heldBy ? `Held by an operator (fee #${heldBy})` : nameHeld ? `Name held at write: ${(nameHeld as { code: string; reason: string }).reason}` : correctedReason(correctedBy) ?? ("identityChanged" in written && written.identityChanged ? "Selected verification, product or lineage changed; deferred" : "Duplicate published row"),
         feePublishedId,
         ...("identityChanged" in written && written.identityChanged ? { identityDeferred: true } : {}),
         ...(guarded.kind === "deferred" ? { internationalDeferred: guarded.detail } : {}),

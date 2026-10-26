@@ -1897,7 +1897,10 @@ parentheticals that end it (`withoutClosedQualifiers`, moved there from `cutoff-
 off. It uses the narrow words, so "Stop payments - each (Draft or ACH)" stays whole, and leaves out
 "than" and "below" (a threshold figure the price read took out of a whole name: "Cashier's check more
 than (sold to MCB customers only)", shadow lab live audit 273). Darwin's live check reads the same
-function behind `QUALIFIED_FRAGMENT_TAKEDOWN_LIVE` (off). Oct 25: 3 live fees, 7 verified rows not live.
+function behind `QUALIFIED_FRAGMENT_TAKEDOWN_LIVE` (off). Only a glued note counts (one opening "see",
+"per", "each" and the like): a parenthetical that completes the word is the fee's object ("Check Cashing
+Fee for (Non-Customers)", "ACH Origination Per (member transactions ...)"). Oct 25: 2 live fees, 4
+verified rows not live.
 
 ## Darwin's re-read requests (`reread-feedback.ts`, #1511)
 

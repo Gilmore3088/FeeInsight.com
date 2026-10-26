@@ -1729,8 +1729,9 @@ describe("v7: a name cut before its noun after a count and an audience word is a
   });
 });
 
-// #1443 (Knox v119): live names on prod on 2026-10-25 whose end word a closing qualifier hid (the
-// first, second and last match; the two "below" names lost a threshold figure and do not).
+// #1443 (Knox v119): live names on prod on 2026-10-25 whose end word a closing qualifier hid
+// (104534 and 149762 match; the two "below" names lost a threshold figure, and 69115's parenthetical
+// is the object "per" needs, "ACH Origination per member transaction", so none of them does).
 describe("qualified shapes: an end shape behind a closing qualifier, behind its own switch (#1443)", () => {
   const LIVE = [
     [69115, "ACH Origination Per (member transactions initiated by online and phone self-service platform)", 7.95, "ach_origination"],
@@ -1759,6 +1760,10 @@ describe("qualified shapes: an end shape behind a closing qualifier, behind its 
     // A comparative before the note lost a threshold figure; the fee is whole.
     expect(liveQualifiedFragmentShape("Cashier's check more than (sold to MCB customers only)")).toBeNull();
     expect(liveQualifiedFragmentShape("ACH Return Item (fee is per item)")).toBeNull();
+    // A parenthetical that completes the end word is the fee's own object, not a glued note (review of #2675).
+    expect(liveQualifiedFragmentShape("Check Cashing Fee for (Non-Customers)")).toBeNull();
+    expect(liveQualifiedFragmentShape("Research Fee per (hour)")).toBeNull();
+    expect(liveQualifiedFragmentShape("Money Order up to ($1,000)")).toBeNull();
     // The public name and the step's own read are unchanged.
     expect(liveFragmentName("Late Fee up to (see schedule)")).toBeNull();
     expect(liveFragmentCheckShape("Late Fee up to (see schedule)")).toBeNull();
@@ -1768,18 +1773,18 @@ describe("qualified shapes: an end shape behind a closing qualifier, behind its 
   it("with the switch off, reports what the live names would do and acts on none of them", () => {
     const found = findLiveFragments(rows(LIVE));
     expect(found).toMatchObject({ matched: 0, wouldTakeDown: 0, wouldRename: 0, wouldReread: 0 });
-    expect(found.qualifiedShadow?.matched).toBe(3);
+    expect(found.qualifiedShadow?.matched).toBe(2);
     expect(found.qualifiedShadow?.byAction.takedown).toEqual({ plus: 0, trailing_range: 0, sentence_end: 0, pronoun: 0 });
-    expect(found.qualifiedShadow?.byAction.exempt.trailing_range).toBe(3);
+    expect(found.qualifiedShadow?.byAction.exempt.trailing_range).toBe(2);
     const detail = liveFragmentFindingsDetail(found);
     expect(detail.qualified_takedown_live).toBe(false);
-    expect(detail.qualified_shadow?.samples.map((sample) => sample.fee_published_id)).toEqual([69115, 104534, 149762]);
+    expect(detail.qualified_shadow?.samples.map((sample) => sample.fee_published_id)).toEqual([104534, 149762]);
   });
 
   it("with the switch on, the qualified shapes take the usual actions", () => {
     const found = findLiveFragments(rows([...LIVE, [1, "Late Fee up to (see schedule)", 0, "late_payment"], [3, "Paper statement fee for (each cycle)", 2, "paper_statement"]]), new Set(), { qualified: true });
     expect(found.qualifiedShadow).toBeNull();
-    expect(found).toMatchObject({ matched: 5, wouldTakeDown: 1, exempt: 3 });
+    expect(found).toMatchObject({ matched: 4, wouldTakeDown: 1, exempt: 2 });
     expect(found.matches.find((fee) => fee.feePublishedId === 3)).toMatchObject({ pattern: "sentence_end" });
     expect(found.matches.find((fee) => fee.feePublishedId === 1)).toMatchObject({ pattern: "trailing_range", action: "takedown" });
   });

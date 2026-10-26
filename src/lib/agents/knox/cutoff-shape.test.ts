@@ -81,7 +81,6 @@ describe("isCutoffName reads the end shapes behind a closing qualifier (#1443, v
     "Late Fee up to (see schedule)", // the issue's example
     "Collection items up to (per item)", // 104534
     "Gift Cards up to (per card)", // 149762
-    "ACH Origination Per (member transactions initiated by online and phone self-service platform)", // 69115
     "Overdraft fee of (per item) (see note)",
     "Counter Check: A blank page of 3 personal (pack)",
   ])("holds %s as cut off", (name) => {
@@ -99,6 +98,19 @@ describe("isCutoffName reads the end shapes behind a closing qualifier (#1443, v
     // A comparative before the note lost a threshold figure; the fee is whole (shadow lab live audit 273).
     "Cashier's check more than (sold to MCB customers only)",
     "Service charge for accounts with a minimum daily balance below (per statement cycle)", // 130463
+    // A parenthetical that completes the end word is the fee's own object, not a note glued on (review of #2675).
+    "ACH Origination Per (member transactions initiated by online and phone self-service platform)", // 69115
+    "Check Cashing Fee for (Non-Customers)",
+    "ATM Withdrawal at (Non-Network ATM)",
+    "Overdraft Protection Transfer from (Savings)",
+    "Wire Transfer to (International)",
+    "Late Charge Per (Month)",
+    "Research Fee per (hour)",
+    "Excess Transactions over 6 per (month)",
+    "Overdraft Fee Paid or (Returned)",
+    "Money Order up to ($1,000)",
+    "Gift Card up to ($500 value)",
+    "Transferencia a (otra cuenta)",
     // The v107 real names stay real.
     "ACH Return Item (fee is per item)",
     "Notary fee (this service is for members only)",
