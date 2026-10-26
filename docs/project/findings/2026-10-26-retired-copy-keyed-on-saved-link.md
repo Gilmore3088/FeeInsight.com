@@ -20,10 +20,12 @@ A copy with no address never pairs.
 Neither address counts as retired. The count's `live` CTE selects `product_name`. A new database
 test (`current-copy.db.test.ts`, in CI's e2e list) runs the pairing and the count.
 
-**Dry count (prod, read-only, SELECT only, 2026-10-26):** today's keying pairs 2,924 live fees on
-retired documents; the corrected keying pairs 3,274. 779 live fees (53 documents, 48 banks) are
-paired differently: 350 newly paired and 429 paired with another document; none lose their
-pairing. A pairing is only the start: a fee is flagged only when the current copy is the same
+**Dry count (prod, read-only, SELECT only, 2026-10-26, newest-copy rule):** today's keying pairs
+2,925 live fees on retired documents; the corrected keying pairs 3,275. 740 live fees (50
+documents, 45 banks) are paired differently: 350 newly paired and 390 paired with another
+document; none lose their pairing. 231 fees on 21 documents pair with a current copy older than
+the retired document (363 today), where nothing newer exists at either address; those belong in
+the hand check before `CURRENT_COPY_CONFIRM_LIVE` turns on. A pairing is only the start: a fee is flagged only when the current copy is the same
 schedule and no longer states it, and `CURRENT_COPY_CONFIRM_LIVE` is still false, so nothing is
 taken down by this change.
 
