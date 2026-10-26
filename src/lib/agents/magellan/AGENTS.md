@@ -150,6 +150,25 @@ and `detail.method_version`).
   bank's `website_url` host and not this bank's) is never saved. The search is recorded as
   `retry_after` with code `other_bank_host`, and the link joins the bank's rejected sources.
   Peoples Bank of Rock Valley IA had been given Peoples Bank of Bellingham WA's PDF (Oct 8).
+- Whose website is it (`website-owner.ts`, strategy `discover.website_owner`, #1455): the
+  registry seed stored other institutions' websites (5756 Bluegrass Community FCU had
+  ukcreditunion.org, 4884 Metrowest stmaryscu.org, 1903 First National Bank, Oldham SD Fort
+  Pierre's firstnationalbanks.bank), and every finder trusted them. Before choosing banks, each
+  discover step (not rescue) reviews up to `WEBSITE_OWNER_PER_STEP` (5) active institutions whose
+  website host another active institution outside its holding company (RSSD) also stores, once per
+  version and host every 30 days (7 when unread, 15 s per step). It reads the homepage once and
+  applies website search's `checkHomepage` (distinctive name words plus city or charter number) to
+  this institution and each sharer. Verdict `other_institution` only when exactly one other passes
+  and this one does not (name words alone never flag: a place-name word is on every local page); `own`,
+  `shared`, `sibling`, `unclear` and `unread` flag nothing, and a host that spells the institution's
+  own or its holding company's name (`host_names_own`: vallant.bank for Pinnacle Bank, held by
+  Vallant Financial, after a rename) is never read. One attempt per institution (`website_host`,
+  `verdict`, `owner_id`, `checks`, `live_fees_on_site`), one `magellan.website_owner` event, and the
+  step's `website_owners` detail. The flag (`websiteOwnedElsewhereSql` in `other-bank-host.ts`: the
+  latest non-unread verdict for the current host, no locked correction) keeps the bank out of the
+  discovery selectors, the companion finder, the paid schedule search and the paid find; the other-bank
+  check stops counting that host as the bank's own; and website search takes the bank and may
+  replace the website. Nothing here changes a fee.
 - Link coverage (`link-coverage.ts`), one shared rule for "is the stored page the
   consumer fee schedule?": not when the link is business-only, when none of the bank's
   stored texts prices an overdraft or NSF item (`hasOverdraftPrice`: the word, then $10+
@@ -696,6 +715,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `PAID_FIND_STRATEGY` | `discover.paid_web_search` | v2 (top-10 first) | `magellan/paid-find.ts` |
 | `PAID_PICK_STRATEGY` | `discover.paid_pick` | v1 | `magellan/paid-find.ts` |
 | `KEEP_REFUSED_ANSWER_STRATEGY` | `discover.keep_refused_answer` | v1 | `magellan/refused-answers.ts` |
+| `WEBSITE_OWNER_STRATEGY` | `discover.website_owner` | v1 | `magellan/website-owner.ts` |
 | `CENSUS_ACS_PARSER_VERSION` | — | v3 | `magellan/registry/census-acs.ts` |
 | `CFPB_PARSER_VERSION` | — | v5 | `magellan/registry/cfpb.ts` |
 | `FDIC_HISTORY_PARSER_VERSION` | — | v1 | `magellan/registry/fdic-history.ts` |

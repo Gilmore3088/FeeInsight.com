@@ -590,6 +590,8 @@ async function executeAgenticStep(
           restored_fee_page_samples: discovery.restoredFeePages?.samples ?? [],
           kept_refused_answers: discovery.keptRefusedAnswers?.kept ?? 0,
           kept_refused_answer_samples: discovery.keptRefusedAnswers?.samples ?? [],
+          // Websites another institution also stores, judged before the search (#1455).
+          website_owners: discovery.websiteOwners,
           search_miss_lessons: discovery.searchMisses,
           // Freshness finds that kept the link: the page found states no date later than the old one's.
           stated_date_refusals: discovery.statedDateRefusals.length,

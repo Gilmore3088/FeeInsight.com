@@ -14,7 +14,10 @@ describe("other bank host", () => {
     const db = vi.fn(() => Promise.resolve([{ id: 505, institution_name: "Peoples Bank", state_code: "WA" }]));
     const other = await otherInstitutionAtHost(db as never, 915, "https://www.peoplesbank-wa.com/Personal-Fee-Schedule.pdf");
     expect(other).toEqual({ institutionId: 505, institutionName: "Peoples Bank", stateCode: "WA", host: "peoplesbank-wa.com" });
-    expect((db.mock.calls[0] as unknown[]).slice(1)).toEqual([915, "peoplesbank-wa.com", 915, "peoplesbank-wa.com"]);
+    const query = db.mock.calls.find((call) => String((call as unknown[])[0]).includes("FROM institution_sources other")) as unknown[];
+    // The last value is the website-owner fragment (#1455): a website judged another institution's is not this bank's own.
+    expect(query.slice(1, 5)).toEqual([915, "peoplesbank-wa.com", 915, "peoplesbank-wa.com"]);
+    expect(db.mock.calls.some((call) => String((call as unknown[])[0]).includes("discover.website_owner"))).toBe(true);
   });
 
   it("finds none for an address that is no web address", async () => {
