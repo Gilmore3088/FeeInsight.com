@@ -11,7 +11,6 @@ import {
   MIN_DROPPED_LIGATURE_WORDS,
   repairUnmappedGlyphs,
   restoreDroppedLigatures,
-  UNMAPPED_GLYPH_PATTERN,
 } from "./glyph-repair";
 import { extractPdfDocumentText } from "./pdf-document-text";
 
@@ -189,9 +188,18 @@ describe("restoreDroppedLigatures (#1513 follow-up)", () => {
   });
 
   it("needs two different broken words in the document before it restores any", () => {
-    // Stored text 24946's kind of slip: one broken word in a text that prints the rest whole.
-    expect(restored("Account Informaon | information about your account")).toBe("Account Informaon | information about your account");
-    expect(restored("Overdra Fee $30 and overdras")).toBe("Overdraft Fee $30 and overdrafts");
+    // Stored text 2451's kind of slip: one broken word in a text that prints the rest whole.
+    expect(restored("- Overdra\nwill be available | overdraft")).toBe("- Overdra\nwill be available | overdraft");
+    // A plural counts with its singular (stored text 13094 holds only these two).
+    expect(restored("Overdra Fee $30 and overdras")).toBe("Overdra Fee $30 and overdras");
+    expect(restored("Overdra Fee $30 and Domesc wire")).toBe("Overdraft Fee $30 and Domestic wire");
+  });
+
+  it("never rewrites a word inside a web address", () => {
+    expect(restored("See https://bank.com/forms/Domesc.pdf | Domesc wire | Internaonal wire"))
+      .toBe("See https://bank.com/forms/Domesc.pdf | Domestic wire | International wire");
+    expect(restored("www.bank.com/internaonal | Research/Reconciliaon | Domesc"))
+      .toBe("www.bank.com/internaonal | Research/Reconciliation | Domestic");
   });
 
   it("keeps case and reads a ligature left as a space", () => {
@@ -220,15 +228,18 @@ describe("restoreDroppedLigatures (#1513 follow-up)", () => {
     }
   });
 
-  it("makes a text with a broken fee word due for its glyph-repair read, in the same edges", () => {
-    const due = new RegExp(GLYPH_REPAIR_DUE_PATTERN);
-    expect(new RegExp(DROPPED_LIGATURE_DUE_PATTERN).test("Wire Transfer Outgoing (Internaonal)")).toBe(true);
-    expect(due.test("ACH Overdra....30.00")).toBe(true);
-    expect(due.test("DOMESC")).toBe(true);
+  it("gives Postgres one lowercase pattern for broken fee words, apart from the glyph test", () => {
+    expect(GLYPH_REPAIR_DUE_PATTERN).toBe("[\uFFFD\uFB00-\uFB06]");
+    expect(new RegExp(GLYPH_REPAIR_DUE_PATTERN).test("ACH Overdra Fee")).toBe(false);
+    const alternation = DROPPED_LIGATURE_DUE_PATTERN.slice(3, -3);
+    expect(alternation).toMatch(/^[a-z |]+$/);
+    expect(DROPPED_LIGATURE_DUE_PATTERN.startsWith("\\m(")).toBe(true);
+    expect(DROPPED_LIGATURE_DUE_PATTERN.endsWith(")\\M")).toBe(true);
+    // Read as JavaScript with \b for Postgres's word edges, case-insensitively as `~*` reads it.
+    const due = new RegExp(DROPPED_LIGATURE_DUE_PATTERN.replace(/\\[mM]/g, "\\b"), "i");
+    expect(due.test("Wire Transfer Outgoing (Internaonal)")).toBe(true);
+    expect(due.test("ACH OVERDRA....30.00")).toBe(true);
     expect(due.test("Wire Transfer Outgoing (International) social")).toBe(false);
-    expect(due.test("OverdraŌ Fee")).toBe(false);
-    expect(due.test(`a${G}b`)).toBe(true);
-    expect(new RegExp(UNMAPPED_GLYPH_PATTERN).test("Overdra Fee")).toBe(false);
   });
 
   it("is applied by the PDF reader to every page", async () => {

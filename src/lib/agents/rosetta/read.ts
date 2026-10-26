@@ -79,7 +79,10 @@ import { extractPdfDocumentText as extractPdfText, type PdfTextExtraction } from
 import { losslessStackedRecovery, textSha256, type StackedGeometryReceipt } from "./pdf-repair-survival";
 import type { PdfReaderAgreement } from "./pdf-reader-agreement";
 import { GLYPH_REPAIR_VERSION, PDF_PROSE_REREAD_VERSION, PDF_STACKED_REPAIR_VERSION } from "./reader-versions";
-import { decodeTextBytes, expandUnicodeLigatures, GLYPH_REPAIR_DUE_PATTERN, GLYPH_REPAIR_STRATEGY } from "./glyph-repair";
+import {
+  decodeTextBytes, DROPPED_LIGATURE_DUE_PATTERN, DROPPED_LIGATURE_READER, expandUnicodeLigatures, GLYPH_REPAIR_DUE_PATTERN,
+  GLYPH_REPAIR_STRATEGY,
+} from "./glyph-repair";
 import { pdfStackedRepairDueSql, PDF_STACKED_REPAIR_MAX_PER_RUN, PDF_STACKED_REPAIR_STRATEGY } from "./pdf-stacked-repair";
 import { emptyLayoutRecheckResult, runLayoutRecheck, type LayoutRecheckResult } from "./layout-recheck";
 import { READER_REPLAY_EVENT, READER_REPLAY_OWN_VERSIONS, READER_REPLAY_PER_RUN, READER_REPLAY_READERS, readerReplayDueSql, recordReaderReplay } from "./reader-replay";
@@ -457,6 +460,20 @@ export { GLYPH_REPAIR_STRATEGY };
 /** Receipt outcomes that may pass on a retry; after this many tries the text is settled anyway. */
 export const GLYPH_REPAIR_RETRY_OUTCOMES: AttemptOutcome[] = ["timeout", "network_error", "http_429", "http_5xx", "budget_blocked"];
 export const GLYPH_REPAIR_MAX_TRIES = 3;
+
+/**
+ * SQL (text alias `alias`): the text is due for a glyph-repair read: it carries U+FFFD or a Unicode
+ * ligature (`GLYPH_REPAIR_DUE_PATTERN`, the cheap test every text gets), or it is a PDF text with a
+ * fee word a dropped ligature broke (`DROPPED_LIGATURE_DUE_PATTERN`, `~*`, #1513). The CASE keeps
+ * the long pattern off every other text.
+ */
+export function glyphRepairDueTextSql(alias: string, p: { glyph: string; reader: string; dropped: string }): string {
+  return `(CASE
+                    WHEN ${alias}.normalized_text ~ ${p.glyph} THEN TRUE
+                    WHEN ${alias}.reader IS DISTINCT FROM ${p.reader}::text THEN FALSE
+                    ELSE ${alias}.normalized_text ~* ${p.dropped}
+                  END)`;
+}
 
 /**
  * SQL (text alias `alias`): the text has had its read at the current glyph-repair version: a read
@@ -1172,6 +1189,11 @@ export function rosettaReadCandidatesQuery(
     // ligature gets one read per glyph-repair version (glyph-repair.ts, #2598).
     params.push(GLYPH_REPAIR_DUE_PATTERN);
     const glyphPatternParam = `$${params.length}`;
+    // A PDF text with a fee word a dropped ligature broke is due too (#1513), tested only there.
+    params.push(DROPPED_LIGATURE_READER);
+    const droppedReaderParam = `$${params.length}`;
+    params.push(DROPPED_LIGATURE_DUE_PATTERN);
+    const droppedPatternParam = `$${params.length}`;
     params.push(GLYPH_REPAIR_VERSION);
     const glyphVersionParam = `$${params.length}`;
     params.push(GLYPH_REPAIR_READERS);
@@ -1191,7 +1213,7 @@ export function rosettaReadCandidatesQuery(
                 AND ${alias}.reader = ANY(${glyphReadersParam}::text[])
                 -- CASE keeps the text scan behind the cheap checks.
                 AND CASE
-                  WHEN ${alias}.normalized_text !~ ${glyphPatternParam} THEN FALSE
+                  WHEN NOT ${glyphRepairDueTextSql(alias, { glyph: glyphPatternParam, reader: droppedReaderParam, dropped: droppedPatternParam })} THEN FALSE
                   WHEN ${glyphSettled(alias)} THEN FALSE
                   ELSE TRUE
                 END
@@ -1699,7 +1721,7 @@ export function pdfStackedRepairsPendingQuery(stateCode: string): { query: strin
 
 /**
  * Glyph-repair re-reads on current copies (not superseded or a duplicate): `queued` texts still
- * carry U+FFFD or a ligature with no settled read at the current version, `done` texts have one.
+ * carry U+FFFD or a ligature, or are PDF texts with a broken fee word, with no settled read at the current version, `done` texts have one.
  * Read-only, for Bayes's ledger; the read step's own selection also requires the bank's newest
  * document, so `queued` can run slightly above what it will read.
  */
@@ -1708,7 +1730,7 @@ export async function countGlyphRepairs(db: SqlTag): Promise<{ queued: number; d
     SELECT COUNT(*) FILTER (WHERE NOT repaired AND due) AS queued,
            COUNT(*) FILTER (WHERE repaired) AS done
       FROM (
-        SELECT adt.normalized_text ~ $1 AS due,
+        SELECT ${glyphRepairDueTextSql("adt", { glyph: "$1", reader: "$8", dropped: "$9" })} AS due,
                ${glyphRepairSettledSql("adt", { version: "$2", settled: "$3", strategy: "$5", retry: "$6", maxTries: "$7" })} AS repaired
           FROM agent_source_texts adt
           JOIN source_documents doc ON doc.id = adt.source_document_id
@@ -1720,7 +1742,7 @@ export async function countGlyphRepairs(db: SqlTag): Promise<{ queued: number; d
       ) texts
      WHERE due OR repaired
   `, [GLYPH_REPAIR_DUE_PATTERN, GLYPH_REPAIR_VERSION, [...PERMANENT_OUTCOMES, ...SETTLED_READ_OUTCOMES], GLYPH_REPAIR_READERS,
-    GLYPH_REPAIR_STRATEGY, GLYPH_REPAIR_RETRY_OUTCOMES, GLYPH_REPAIR_MAX_TRIES]);
+    GLYPH_REPAIR_STRATEGY, GLYPH_REPAIR_RETRY_OUTCOMES, GLYPH_REPAIR_MAX_TRIES, DROPPED_LIGATURE_READER, DROPPED_LIGATURE_DUE_PATTERN]);
   return { queued: Number(row?.queued ?? 0), done: Number(row?.done ?? 0) };
 }
 

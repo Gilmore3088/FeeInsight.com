@@ -21,7 +21,7 @@ import {
   runRosettaRead,
 } from "./read";
 import { ROSETTA_OCR_VERSION } from "./ocr";
-import { GLYPH_REPAIR_DUE_PATTERN, GLYPH_REPAIR_VERSION } from "./glyph-repair";
+import { DROPPED_LIGATURE_DUE_PATTERN, DROPPED_LIGATURE_READER, GLYPH_REPAIR_DUE_PATTERN, GLYPH_REPAIR_VERSION } from "./glyph-repair";
 import { isLikelyScannedPdf } from "../learning/format";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
@@ -613,9 +613,14 @@ describe("Rosetta agentic read", () => {
 
       const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
       const valueAt = (placeholder: string) => params[Number(placeholder) - 1];
-      const pattern = /adt\.normalized_text !~ \$(\d+)/.exec(query);
+      const pattern = /WHEN adt\.normalized_text ~ \$(\d+) THEN TRUE/.exec(query);
       expect(pattern).not.toBeNull();
       expect(valueAt(pattern![1])).toBe(GLYPH_REPAIR_DUE_PATTERN);
+      // A PDF text with a broken fee word (#1513): its long pattern is tested on PDF texts only.
+      const dropped = /WHEN adt\.reader IS DISTINCT FROM \$(\d+)::text THEN FALSE\s+ELSE adt\.normalized_text ~\* \$(\d+)/.exec(query);
+      expect(dropped).not.toBeNull();
+      expect(valueAt(dropped![1])).toBe(DROPPED_LIGATURE_READER);
+      expect(valueAt(dropped![2])).toBe(DROPPED_LIGATURE_DUE_PATTERN);
       const version = /COALESCE\(\(glyph_read\.detail->>'glyph_repair'\)::int, 0\) >= \$(\d+)/.exec(query);
       expect(version).not.toBeNull();
       expect(valueAt(version![1])).toBe(GLYPH_REPAIR_VERSION);
@@ -627,7 +632,7 @@ describe("Rosetta agentic read", () => {
       const survival = rosettaReadCandidatesQuery(10, true, undefined, undefined, true, true, true, true).query;
       const lostText = survival.slice(survival.indexOf("AS last_text_lost"), survival.indexOf("AS last_lost_text"));
       expect(lostText).toContain("read again for glyph repair");
-      expect(lostText).toMatch(/adt\.normalized_text !~ \$\d+/);
+      expect(lostText).toMatch(/WHEN adt\.normalized_text ~ \$\d+ THEN TRUE/);
     });
 
     it("settles the glyph lane on its own receipt, not only on a glyph-repair reader's read (#2649 review)", async () => {

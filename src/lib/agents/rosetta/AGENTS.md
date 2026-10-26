@@ -91,12 +91,14 @@ Rosetta owns source text normalization.
   (`restoreDroppedLigatures`): a broken spelling of a `DROPPED_LIGATURE_WORDS` word (30 fee
   words), with nothing or a space where the ligature was, between spaces or ordinary punctuation,
   is restored only when the same document shows at least `MIN_DROPPED_LIGATURE_WORDS` (2)
-  different broken words; a broken form under five letters ("aer"), one that leaves a single
-  letter beside a gap, or one touching another glyph ("Overdra*", "Overdra" plus a private-use
-  glyph) stays. A completed
+  different broken words, a plural counting with its singular; a broken form under five letters
+  ("aer"), one that leaves a single letter beside a gap, one inside a web address, or one
+  touching another glyph ("Overdra*", "Overdra" plus a private-use glyph) stays, and so do broken
+  words outside the list ("Eective"). A completed
   `read.pdf_layout`, `read.html_dom`, `read.plain_text` or `read.js_fallback` text that still
-  carries U+FFFD, a ligature or a broken fee word (`DROPPED_LIGATURE_DUE_PATTERN`) is read once
-  per glyph-repair version: the read attempt records
+  carries U+FFFD or a ligature, or a `read.pdf_layout` text with a broken fee word
+  (`DROPPED_LIGATURE_DUE_PATTERN`, `~*`, tested behind a CASE on PDF texts only so the scan every
+  text gets stays the glyph test), is read once per glyph-repair version: the read attempt records
   `detail.glyph_repair`, and every read of a due text also leaves a `read.glyph_repair` receipt
   (`GLYPH_REPAIR_STRATEGY`, auxiliary, outside the playbook) whatever its outcome. The text is
   settled by a glyph reader's answer or permanent failure, by a receipt that is not a transient

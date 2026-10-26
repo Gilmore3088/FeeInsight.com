@@ -25,8 +25,11 @@ export const LAYOUT_RECHECK_VERSION = 1;
  * Unknown glyphs restored where unambiguous, and non-UTF-8 pages decoded in their own charset
  * (#2598, glyph-repair.ts). A completed text still carrying U+FFFD or a U+FB00-U+FB06 ligature
  * is read once more at each bump; nothing else is reopened. Oct 26 (#1513): dropped-ligature
- * repair joined v1 without a bump: none of the 4 stored texts it changes carries U+FFFD or a
- * Unicode ligature, so none had been due or settled at v1. The wider due pattern reaches them at
- * v1; a bump would only re-read the settled glyph texts for no change.
+ * repair (PDF texts with a broken fee word are due too) joined v1 without a bump. A text is
+ * settled at v1 by any read attempt on its current hash with `detail.glyph_repair` >= 1, and
+ * every glyph-repair reader's read since Oct 25 records that, so a PDF read after Oct 25 would
+ * count as settled without this repair. Skipping the bump is safe only because, checked on prod on
+ * Oct 26, none of the 8 PDF texts the new test selects has such an attempt or a lane receipt on
+ * its current hash. A PDF read between Oct 25 and this change's deploy would need a bump.
  */
 export const GLYPH_REPAIR_VERSION = 1;

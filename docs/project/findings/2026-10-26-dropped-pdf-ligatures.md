@@ -33,11 +33,11 @@ holding a dropped-ligature spelling of a fee word, with a space or punctuation o
 | Text | Reader | Broken words | Changed by the repair |
 |---|---|---|---|
 | 6266 (Bay Area CU) | pdf_layout | 12 different words | yes |
-| 13094 (inst 2624) | pdf_layout | overdra, overdras | yes |
+| 13094 (inst 2624) | pdf_layout | overdra, overdras | no: a plural counts with its singular, so one word |
 | 23754 (inst 5469) | pdf_layout | Ocial, Sucient (ffi dropped) | yes |
-| 24946 (Marshland CU) | pdf_layout | Informaon, overdra | yes |
+| 24946 (Marshland CU) | pdf_layout | Informaon, overdra | yes (two words, though it also prints "information" in clear) |
 | 2451 (inst 61) | pdf_layout | one "Overdra" (prints "overdraft" 109 times) | no: one word |
-| 12789, 12920, 22776, 24680, 30872 | html_dom / js_fallback | one "certicate" or "Cerficates" | no: a site's own typo, and not PDF |
+| 12789, 12920, 22776, 24680, 30872 | html_dom / js_fallback | one "certicate" or "Cerficates" | no: a site's own typo, and not PDF; not selected for a read |
 
 No completed text holds a space-gap spelling ("Interna onal"). Live fees whose name holds a
 dropped-ligature spelling: 5, all in texts the repair changes. They are 42754 "...(Internaonal)"
@@ -45,7 +45,9 @@ dropped-ligature spelling: 5, all in texts the repair changes. They are 42754 ".
 "Non-Sucient Funds / Overdraft Privilege Fees" and 125299 "Ocial Checks & Money Orders".
 Run locally on text 6266's stored bytes, the repair restores 18 words and leaves no listed broken
 spelling ("aer" stays). Each of the 5 fee names reads whole with its document's evidence. The
-other 3 changed texts were measured by the SQL regex only, not repaired locally.
+other 2 changed texts were measured by the SQL regex only, not repaired locally. Broken words
+outside the list stay broken, in these texts and any other: "aer" in 6266, and forms such as
+"Eective" (effective) or "sta" (staff) wherever a font drops them.
 
 Two related patterns are left as they are, with counts. A font that writes the ligature as another
 character: "overdra*s" and "transac5on" (text 22732), "Overdra(" and "DonaRo..." (text 10476).
@@ -65,17 +67,39 @@ reader after glyph repair, on both readings of each page (`pdf-document-text.ts`
 
 - It restores a broken spelling of one of 30 fee words (`DROPPED_LIGATURE_WORDS`). A spelling
   is one or more of the word's ffi, ffl, ff, fi, fl, ft, ti or tt dropped, or left as a space.
-- The document must show at least 2 different broken words (`MIN_DROPPED_LIGATURE_WORDS`).
+- The document must show at least 2 different broken words (`MIN_DROPPED_LIGATURE_WORDS`),
+  a plural counting with its singular ("overdra" and "overdras" are one word).
 - A spelling is skipped when it is under five letters, leaves a single letter beside a gap, is
   ambiguous, or has a part that is itself a known word.
 - A space or ordinary punctuation must stand on each side, so "social" and "Overdra*" are never
-  touched.
+  touched. A "/" counts ("Research/Reconciliaon", fee 42757), but a word inside a web address
+  ("https://bank.com/forms/domesc") is never rewritten.
 
-`GLYPH_REPAIR_DUE_PATTERN` now also matches these spellings, so the glyph lane reads the 10
-matching completed texts once (current copies only, as before). `same-text-copy.ts` keeps the
-glyph-only `UNMAPPED_GLYPH_PATTERN`. The change stays at `GLYPH_REPAIR_VERSION` v1. None of the 4
-texts it changes carries U+FFFD or a Unicode ligature, so none was due or settled at v1. A bump
-would only re-read the settled glyph texts, and the repair leaves HTML and plain text alone.
+**Due selection:** `GLYPH_REPAIR_DUE_PATTERN` stays the cheap glyph test every text gets. A
+`read.pdf_layout` text without a glyph is also due when it matches `DROPPED_LIGATURE_DUE_PATTERN`,
+one lowercase alternation of the broken spellings between word edges, read with `~*` behind a
+CASE (`glyphRepairDueTextSql` in `read.ts`). The first version of this PR put all casings and the
+punctuation edges into the one pattern every text is tested with. The #2692 review timed it on
+prod at 20 s for texts 20000-23000, against 0.64 s for the glyph test, and the full count timed out
+at 60 s.
+
+Re-timed on prod (EXPLAIN ANALYZE, SELECT only, 2026-10-26):
+
+| Query | Glyph test only (main) | This PR |
+|---|---|---|
+| Completed texts 20000-23000 | 0.61 s | 0.46 s |
+| `countGlyphRepairs` shape, all current copies | 7.4 s warm (14.6 s cold) | 8.1 s |
+
+The new test selects 8 completed PDF texts, all current copies: 6266, 23754 and 24946 change, and
+2451, 13094, 10476, 10877 and 22732 are read once and keep their text. The `\m`/`\M` edges are
+wider than the repair's, which is why 10476, 10877 and 22732 are selected. The HTML and
+JavaScript-fallback texts are not selected.
+
+**Version:** the change stays at `GLYPH_REPAIR_VERSION` v1. A text is settled at v1 by any read
+attempt on its current hash with `detail.glyph_repair` >= 1, and every glyph-repair reader's read
+since Oct 25 records that. On Oct 26, none of the 8 selected texts had such an attempt or a lane
+receipt on its current hash, so all 8 are still due at v1. If one is read again before this
+change deploys, it is settled without the repair and needs a bump.
 
 The changed text reaches live fees only when the lane re-reads a text, Knox re-extracts it and
 Darwin re-checks the fees. This PR changes no fee row.
