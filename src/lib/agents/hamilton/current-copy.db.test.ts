@@ -18,7 +18,8 @@ describe.skipIf(!connection)("Retired-document pairing in isolated PostgreSQL (#
     await db`CREATE TEMP TABLE institution_source_profiles (institution_id bigint PRIMARY KEY, canonical_source_url text)`;
     await db`CREATE TEMP TABLE institution_additional_sources (institution_id bigint, url text, status text)`;
     await db`CREATE TEMP TABLE source_documents (id bigint PRIMARY KEY, institution_id bigint, document_url text,
-      superseded_by_id bigint, companion_source_id bigint, duplicate_of_id bigint, status text DEFAULT 'success')`;
+      superseded_by_id bigint, companion_source_id bigint, duplicate_of_id bigint, status text DEFAULT 'success',
+      crawled_at timestamptz, last_checked_at timestamptz)`;
     await db`CREATE TEMP TABLE agent_source_texts (source_document_id bigint, status text, normalized_text text)`;
     await db`CREATE TEMP TABLE raw_fee_observations (fee_raw_id bigint PRIMARY KEY, source_document_id bigint, product_name text)`;
     await db`CREATE TEMP TABLE verified_fee_observations (fee_verified_id bigint PRIMARY KEY, fee_raw_id bigint,
@@ -136,6 +137,30 @@ describe.skipIf(!connection)("Retired-document pairing in isolated PostgreSQL (#
     expect(await pairs()).toEqual([]);
     await db`UPDATE source_documents SET duplicate_of_id = NULL, superseded_by_id = 900 WHERE id = 700`;
     expect(await pairs()).toEqual([]);
+  });
+
+  it("never pairs a retired document with a copy the bank was last seen serving before the document was fetched", async () => {
+    // Prod, Oct 26: a print view read on Oct 20 was judged against the plain page last fetched on Oct 9.
+    await seed({ savedCopy: false });
+    await db`UPDATE source_documents SET crawled_at = '2026-10-20T12:00:00Z' WHERE id = 500`;
+    await db`UPDATE source_documents SET crawled_at = '2026-10-09T12:00:00Z' WHERE id = 700`;
+    expect(await pairs()).toEqual([]);
+    expect(await countCurrentCopyPairs(db as unknown as Db)).toEqual({ pairs: 0, done: 0, queued: 0, noText: 0 });
+    // A re-check after the retired document's fetch shows the bank still serves that copy: it pairs.
+    await db`UPDATE source_documents SET last_checked_at = '2026-10-21T12:00:00Z' WHERE id = 700`;
+    expect(await pairs()).toEqual([{ older: "500", current: "700" }]);
+    // The same instant counts as seen at that time.
+    await db`UPDATE source_documents SET last_checked_at = NULL, crawled_at = '2026-10-20T12:00:00Z' WHERE id = 700`;
+    expect(await pairs()).toEqual([{ older: "500", current: "700" }]);
+  });
+
+  it("falls back to an older-numbered copy seen after the retired document when the newest one was not", async () => {
+    // 800 (saved link) is the higher id but was last seen before the retired document; 700 was re-checked after.
+    await seed();
+    await db`UPDATE source_documents SET crawled_at = '2026-10-20T12:00:00Z' WHERE id = 500`;
+    await db`UPDATE source_documents SET crawled_at = '2026-10-01T12:00:00Z', last_checked_at = '2026-10-22T12:00:00Z' WHERE id = 700`;
+    await db`UPDATE source_documents SET crawled_at = '2026-10-05T12:00:00Z' WHERE id = 800`;
+    expect(await pairs()).toEqual([{ older: "500", current: "700" }]);
   });
 
   it("counts the retired pair in Bayes's manifest", async () => {
