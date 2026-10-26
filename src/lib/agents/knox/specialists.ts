@@ -458,7 +458,16 @@ import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 // fee's own line names no account ("Basic Checking: the $5 monthly fee is waived ..." under "The
 // Everyday Savings account has a $5 monthly fee." is no longer the savings account's). Account product
 // only; the stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 129 } as const;
+// v130 (#1912): a heading in a vertically centred merged cell, which the PDF reader prints on the middle
+// row of its block only ("Wire Transfers | Outgoing Domestic - Not in Person: $60.00" between "Outgoing
+// Domestic: $30.00" and "Outgoing International: $45.00 ..."), names the block's sibling "<name>:
+// <price>" rows above and below it too (`withCenteredHeadingCells` in
+// `custom-report/centered-heading-cell.ts`, applied by Knox with a fee-family check and by the shared
+// source check). "Not in Person" is a channel a heading may qualify, and an international wire whose
+// price is followed by "plus <the same wire's> fee" keeps its scope (`own-wire-scope.ts`). The stale-read
+// floor stays at v97; Hamilton's rules re-check revisits each live document once for the new signature
+// and asks Knox to read again where these rules read a fee that is not live.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 130 } as const;
 
 export interface SpecialistRun {
   strategy: string;
