@@ -43,7 +43,6 @@ export async function pruneCallPeriod(db: Db, store: ColdStore, args: {
 }): Promise<{ deleted: number; status: "pruned" | "already_pruned" }> {
   if (typeof (db as unknown as { savepoint?: unknown }).savepoint !== "function") throw new Error("Pruning requires a run-ledger transaction");
   if (!store.configured) throw new Error("Archive storage is not configured");
-  if(args.requireRehearsal && !await archiveRehearsalRecorded(db,args))throw new Error("This exact archive has no completed restore rehearsal");
   await db`SET LOCAL lock_timeout = '2s'`;
   await db`SET LOCAL statement_timeout = '30s'`;
   // Also excludes legacy writers, manual writers, compaction and simultaneous export/prune.
@@ -57,6 +56,8 @@ export async function pruneCallPeriod(db: Db, store: ColdStore, args: {
        AND source=${args.source} AND period=${args.period} FOR UPDATE
   `;
   if (!file || !file.verified_at || file.bucket !== store.bucket) throw new Error("A verified archive in the configured bucket is required");
+  // Check after locking the index row: a concurrent export cannot swap the rehearsed SHA.
+  if(args.requireRehearsal && !await archiveRehearsalRecorded(db,args))throw new Error("This exact archive has no completed restore rehearsal");
   if (file.pruned_at) {
     const hot = await db`SELECT 1 FROM institution_call_report_items WHERE source=${args.source}
       AND report_date=${args.period}::date AND NOT (item_key=ANY(${[...FFIEC_FILING_METADATA_KEYS]}::text[])) LIMIT 1`;
