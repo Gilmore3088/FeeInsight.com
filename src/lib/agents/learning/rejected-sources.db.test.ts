@@ -59,7 +59,7 @@ describe.skipIf(!connection)("rejected sources never become current (#1105)", ()
   ];
 
   /** One bank whose saved link is the rejected address, with a profile that has no current source. */
-  async function seed(scope: Db, canonical: string | null = null) {
+  async function seed(scope: Db, canonical: string | null = null, list: ReadonlyArray<{ url: string; reason: string; at: string }> = rejectedList) {
     const [inst] = await scope`
       INSERT INTO institution_sources (institution_name, charter_type, state_code, source, fee_schedule_url)
       VALUES ('Rejected source fixture', 'bank', 'ZR', 'e2e', ${REJECTED}) RETURNING id
@@ -67,7 +67,7 @@ describe.skipIf(!connection)("rejected sources never become current (#1105)", ()
     const institutionId = Number(inst.id);
     await scope`
       INSERT INTO institution_source_profiles (institution_id, state_code, canonical_source_url, rejected_source_urls)
-      VALUES (${institutionId}, 'ZR', ${canonical}, ${JSON.stringify(rejectedList)}::jsonb)
+      VALUES (${institutionId}, 'ZR', ${canonical}, ${JSON.stringify(list)}::jsonb)
     `;
     const [doc] = await scope`
       INSERT INTO source_documents (institution_id, status, document_url, content_hash)
@@ -103,6 +103,16 @@ describe.skipIf(!connection)("rejected sources never become current (#1105)", ()
     await reader.recordReadResult(scope, fixture.runId, { ...readResult(fixture, "completed"), textHash: reader.hashText(text) }, text, true);
     expect(await profile(scope, fixture.institutionId)).toMatchObject({ canonical: REJECTED, rejectedUrls: [OTHER] });
   }));
+
+  it.each(["document_owner", "other_bank_host", "unconfirmed_document_host", "hand_link_repair: another bank's pages"])(
+    "a completed read never overturns an ownership reject (%s): the address stays rejected and off the current source",
+    async (reason) => rolledBack(async (scope) => {
+      const fixture = await seed(scope, null, [{ url: REJECTED, reason, at: "2026-10-20T00:00:00.000Z" }, rejectedList[1]]);
+      const text = "Fee Schedule\nWire transfer $25.00 per item\nStop payment $30.00";
+      await reader.recordReadResult(scope, fixture.runId, { ...readResult(fixture, "completed"), textHash: reader.hashText(text) }, text, true);
+      expect(await profile(scope, fixture.institutionId)).toMatchObject({ canonical: null, rejectedUrls: [REJECTED, OTHER] });
+    }),
+  );
 
   it("a read that did not complete leaves a rejected address off the current source", async () => rolledBack(async (scope) => {
     const fixture = await seed(scope);

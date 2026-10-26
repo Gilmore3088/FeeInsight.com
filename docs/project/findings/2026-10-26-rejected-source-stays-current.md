@@ -25,8 +25,11 @@ Layout: `layout_fingerprint` was filled on 0 of 8,775 profiles; 5,732 have a com
 and no layout. Knox computed `layoutSignature` for every read but only put it in the attempt detail.
 
 **Fix:** this PR (`src/lib/agents/learning/rejected-sources.ts` states the rule).
-- A completed Rosetta read is newer evidence than the reject: it drops the address from the list as
-  it makes it current.
+- A completed Rosetta read is newer evidence than a fee-page reject: it drops that entry as it
+  makes the address current. It says nothing about whose page it is (another bank's schedule reads
+  as a fee page too), so an ownership reject (`document_owner`, `other_bank_host`,
+  `unconfirmed_document_host`, `hand_link_repair`) stays and the address stays off the current
+  source (review of #2740).
 - Any other automated write of a rejected address (fetch, failed or thin read, discovery, the
   profile sync filling an empty source) leaves the current source empty until a read judges it.
 - A person's fee link drops the address from the list. A locked correction keeps its address.

@@ -10,7 +10,7 @@ export const ROSETTA_LESSONS: AgentLesson[] = [
     id: "issue-1105-a-read-supersedes-a-reject",
     agent: "rosetta",
     stage: "read",
-    lesson: "When a read judges a page's text a fee page, that verdict is newer than an earlier reject of its address: take the address off the bank's rejected list as the read makes it current. A read that does not complete (a scan, an empty or failed read) is no verdict, so it never makes a rejected address current.",
+    lesson: "When a read judges a page's text a fee page, that verdict is newer than an earlier reject of its address: take the address off the bank's rejected list as the read makes it current. A fee-page verdict says nothing about whose page it is, so an ownership reject (another bank's document, another bank's host, an unconfirmed host, a person's link repair) stays, and the address stays off the current source. A read that does not complete (a scan, an empty or failed read) is no verdict, so it never makes a rejected address current.",
     why: "A completed read made its address the profile's current source but left the address's earlier reject in place, and a failed or thin read did the same, so the bank's memory said both \"this is the source\" and \"this is not a fee schedule\": 16 of the 26 profiles on Oct 26 held a completed text read from a current source still on their own rejected list.",
     evidence: { issues: [1105], prs: [2740], files: ["src/lib/agents/learning/rejected-sources.ts", "src/lib/agents/rosetta/read.ts"] },
     appliesTo: ["read"],
