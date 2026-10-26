@@ -111,6 +111,13 @@ describe("isCutoffName reads the end shapes behind a closing qualifier (#1443, v
     "Money Order up to ($1,000)",
     "Gift Card up to ($500 value)",
     "Transferencia a (otra cuenta)",
+    // A note word must be the whole word, and a capitalised tier word is a product name.
+    "Wire Transfer to (Personal Account)",
+    "Statement Copy Per (Periodic Statement)",
+    "Service Charge for (Perks Checking)",
+    "Transfer to (Referral Partner)",
+    "Transfer to (Plus Savings)",
+    "Monthly Fee for (Minimum Balance accounts)",
     // The v107 real names stay real.
     "ACH Return Item (fee is per item)",
     "Notary fee (this service is for members only)",

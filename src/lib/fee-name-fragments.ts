@@ -116,14 +116,16 @@ const QUALIFIED_SENTENCE_END = endsIn(SENTENCE_END_WORDS.filter((word) => !["a",
  * object and the name is whole: "Check Cashing Fee for (Non-Customers)", "Research Fee per (hour)",
  * "Money Order up to ($1,000)", "Transferencia a (otra cuenta)".
  */
-const GLUED_NOTE = /^\(\s*(?:see|per|each|ea\b|note|notes|refer|varies|plus|if|when|only|min(?:imum)?\b|max(?:imum)?\b)/i;
+const GLUED_NOTE = /^\(\s*(?:see|per|each|ea|note|notes|refer|varies|if|when)\b/i;
+/** Words that also open a product or tier name ("(Plus Savings)", "(Minimum Balance accounts)") count only in lower case. */
+const GLUED_NOTE_LOWER = /^\(\s*(?:plus|only|min|minimum|max|maximum)\b/;
 export function liveQualifiedFragmentShape(name: string | null | undefined): "trailing_range" | "sentence_end" | null {
   const current = (name ?? "").replace(/\s+/g, " ").trim();
   const unqualified = withoutClosedQualifiers(current);
   if (!unqualified || unqualified === current) return null;
   if (DANGLING_AUDIENCE.test(unqualified)) return "sentence_end";
   const note = current.slice(current.indexOf("(", unqualified.length - 1));
-  if (!GLUED_NOTE.test(note)) return null;
+  if (!GLUED_NOTE.test(note) && !GLUED_NOTE_LOWER.test(note)) return null;
   if (LIVE_TRAILING_RANGE.test(unqualified)) return "trailing_range";
   if (QUALIFIED_SENTENCE_END.test(unqualified) || LIVE_SENTENCE_END_ARTICLE.test(unqualified)) return "sentence_end";
   return null;
