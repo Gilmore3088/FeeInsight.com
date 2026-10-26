@@ -72,10 +72,22 @@ describe.skipIf(!connection)("Retired-document pairing in isolated PostgreSQL (#
     return rows.map((row) => ({ older: String(row.older_document_id), current: String(row.current_document_id) }));
   }
 
-  it("pairs a retired document with the copy at the address the plain fetch asks for, not the saved link's", async () => {
-    // The saved link's copy is newer (higher id), but the bank is fetched at the remembered address.
+  it("pairs a retired document with the newest read copy at either address, never an older fetch-target copy", async () => {
+    // The saved link's copy (800) is newer than the fetch target's (700): a stale copy must not judge the fee.
     await seed();
-    expect(await pairs()).toEqual([{ older: "500", current: "700" }]);
+    expect(await pairs()).toEqual([{ older: "500", current: "800" }]);
+    // A newer read of the address the plain fetch asks for takes over.
+    await db`INSERT INTO source_documents (id, institution_id, document_url) VALUES (900, 42, 'https://testbank.example/schedule-2026.pdf')`;
+    await db`INSERT INTO agent_source_texts VALUES (900, 'completed', 'Fee Schedule')`;
+    expect(await pairs()).toEqual([{ older: "500", current: "900" }]);
+  });
+
+  it("never pairs with a copy that has no address, even when the saved link is blank", async () => {
+    await seed({ savedCopy: false, rememberedCopy: false });
+    await db`UPDATE institution_sources SET fee_schedule_url = '' WHERE id = 42`;
+    await db`INSERT INTO source_documents (id, institution_id, document_url) VALUES (950, 42, '')`;
+    await db`INSERT INTO agent_source_texts VALUES (950, 'completed', 'Fee Schedule')`;
+    expect(await pairs()).toEqual([]);
   });
 
   it("pairs with the fetch target's copy when the saved link has none (keyed on fee_schedule_url, this paired nothing)", async () => {
@@ -99,7 +111,7 @@ describe.skipIf(!connection)("Retired-document pairing in isolated PostgreSQL (#
   });
 
   it("never retires the fetch target, the saved link, an additional source, a companion page or a superseded copy", async () => {
-    await seed();
+    await seed({ savedCopy: false });
     await db`UPDATE source_documents SET document_url = 'https://testbank.example/schedule-2026.pdf' WHERE id = 500`;
     expect(await pairs()).toEqual([]);
     await db`UPDATE source_documents SET document_url = 'https://testbank.example/fees.pdf/' WHERE id = 500`;
@@ -127,7 +139,7 @@ describe.skipIf(!connection)("Retired-document pairing in isolated PostgreSQL (#
   });
 
   it("counts the retired pair in Bayes's manifest", async () => {
-    await seed();
+    await seed({ savedCopy: false });
     expect(await countCurrentCopyPairs(db as unknown as Db)).toEqual({ pairs: 1, done: 0, queued: 1, noText: 0 });
     // The fetch target's copy restates the fee: nothing is left to judge.
     await db`INSERT INTO raw_fee_observations VALUES (9701, 700, NULL)`;

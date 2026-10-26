@@ -13,8 +13,10 @@ Bayes's count of the same selection (`countCurrentCopyPairs`) also failed every 
 CTE never selected `product_name`, which the `stale` CTE has read since #2179 (Oct 19), so the
 query stopped with `column live.product_name does not exist`. No database test ran it.
 
-**Fix:** this PR. The current copy is the newest read copy at the fetch target (remembered
-address, else saved link); the saved link's copy stands in only when the fetch target has none.
+**Fix:** this PR. The current copy is the newest read copy at either the fetch target (remembered
+address, else saved link) or the saved link, so an older copy at one address never judges a fee the
+other has re-read (review: 39 fees on 3 documents would otherwise pair with a stale fetch-target copy).
+A copy with no address never pairs.
 Neither address counts as retired. The count's `live` CTE selects `product_name`. A new database
 test (`current-copy.db.test.ts`, in CI's e2e list) runs the pairing and the count.
 

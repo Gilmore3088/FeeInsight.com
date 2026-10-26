@@ -43,8 +43,8 @@ type SqlTag = typeof sql;
  * cite 543 such documents; 258 of them (3,607 fees) have a read copy at the current link. The
  * other 285 have no read copy there, so they wait on capture (`magellan/saved-link-fetch.ts`).
  * The address the plain fetch asks for (the profile's remembered one) also counts as a source,
- * and since #1200 the current copy is read there first: the saved link's copy stands in only
- * when that fetch target has none.
+ * and since #1200 the current copy is the newest read copy at either that fetch target or the
+ * saved link, so a stale copy at one never judges a fee the other has re-read.
  *
  * `CURRENT_COPY_CONFIRM_LIVE` false logs first looks and confirms none, until a hand check of
  * the flags passes (18 of 20 stale), then a fix PR turns it on.
@@ -60,13 +60,14 @@ export const CURRENT_COPY_STRATEGY = { strategy: "hamilton.current_copy_check", 
 /**
  * The retired documents among the `live` CTE's rows (columns older_document_id, institution_id,
  * superseded_by_id, companion_source_id, document_url, fee_schedule_url), each paired with the
- * newest read copy at the address its bank's plain fetch asks for (see the module note). That
+ * newest read copy at the address its bank's plain fetch asks for or its saved link (see the module note). That
  * fetch target is the profile's remembered address, else the saved fee link (`fetch.ts`,
  * `profile_canonical_source_url ?? fee_schedule_url`): the page Magellan keeps fresh, and a
  * successful fetch remembers its final address, so its copies are stored under it. Keyed on
  * `fee_schedule_url` alone (#1200), a retired document paired only when the saved link had a copy
- * of its own, and never with the page the bank is actually fetched at. When the fetch target has
- * no read copy, the saved link's copy (`magellan/saved-link-fetch.ts`) stands in. Neither address
+ * of its own, and never with the page the bank is actually fetched at. The newest read copy at
+ * either address wins (the saved link is kept fresh by `magellan/saved-link-fetch.ts`), and a copy
+ * with no address never pairs. Neither address
  * is retired. Links are compared without scheme, "www.", case or trailing slashes. A bank with
  * neither address, or no read copy at either, pairs nothing. Changes here change both the check
  * and Bayes's count.
@@ -93,10 +94,11 @@ export function retiredCopiesSql(db: SqlTag) {
            AND c.status = 'success'
            AND c.duplicate_of_id IS NULL
            AND lower(regexp_replace(regexp_replace(btrim(COALESCE(c.document_url, '')), '^https?://(www\\.)?', '', 'i'), '/+$', '')) IN (d.fetch_key, d.link_key)
+           AND btrim(COALESCE(c.document_url, '')) <> ''
            AND EXISTS (SELECT 1 FROM agent_source_texts t WHERE t.source_document_id = c.id AND t.status = 'completed' AND t.normalized_text IS NOT NULL)
-         -- The fetch target's copy first; the saved link's only when the fetch target has none.
-         ORDER BY lower(regexp_replace(regexp_replace(btrim(COALESCE(c.document_url, '')), '^https?://(www\\.)?', '', 'i'), '/+$', '')) = d.fetch_key DESC,
-                  c.id DESC
+         -- The newest read copy at either address: an older copy at the fetch target never wins
+         -- over a newer one at the saved link, or a stale copy would judge the live fee.
+         ORDER BY c.id DESC
          LIMIT 1
       ) cur ON TRUE
      WHERE d.fetch_key <> ''
