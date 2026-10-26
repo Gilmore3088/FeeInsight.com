@@ -2,18 +2,20 @@
 
 ## Findings filed against verify (#2057, #2062)
 
-Each verify step reads the `pipeline_feedback` rows filed against its own stage: a person's
+The verify step reads the `pipeline_feedback` rows a person files against its own stage: a
 hold or correction whose cause is "verification should have stopped it" (`admin_hold`,
-`admin_correction`, checks `admin.fee_hold` / `admin.fee_correction`) and Deming's `audit_miss`
-rows at verify (`verify-misses.ts`). Each standing finding becomes a lesson line naming the
-check that should have stopped the fee, inferred from what the finding changed (category:
-category guard; amount: source check; name: name rule; frequency: frequency check; otherwise
-`no_check`), and the step records a per-check missed tally as one `darwin.verify_misses` event
-and as `verify_misses` in its detail; `/admin/darwin` shows the same read. A later release or
-reversal of the same fee withdraws a finding. The takedown sync's copies (check
-`hamilton.admin_correction`) are not read: they mirror the hand row. The reader changes no fee,
-so it has no switch; a check change it motivates ships with its own re-check, switch and
-dry-run count.
+`admin_correction`, checks `admin.fee_hold` / `admin.fee_correction`, reporter `human`;
+`verify-misses.ts`). Each standing finding becomes a lesson line naming the check that should
+have stopped the fee, inferred from what the correction changed (category: category guard;
+amount: source check; name: name rule; frequency: frequency check; a hold or anything else:
+`no_check`). A full read runs at most hourly and records the per-check missed tally over the
+newest 500 findings as one `darwin.verify_misses` event and as `verify_misses` in the step
+detail; a read scoped to one institution writes no event. `/admin/darwin` shows the same read.
+A hold is withdrawn by a later release of the same fee, a correction by a later reversal of
+the fee it created. Not read: the takedown sync's copies (check `hamilton.admin_correction`),
+which mirror the hand row, and Deming's audit misses, which Deming files at discover or
+extract only. The reader changes no fee, so it has no switch; a check change it motivates
+ships with its own re-check, switch and dry-run count.
 
 ## Prospective source-owned paid/returned events (#1918)
 

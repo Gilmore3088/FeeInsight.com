@@ -1227,8 +1227,8 @@ async function executeAgenticStep(
       const bandedZeroNote = bandedZero.matched > 0
         ? ` Banded $0 re-check: ${bandedZero.matched.toLocaleString()} of ${bandedZero.checked.toLocaleString()} live $0 overdraft or NSF fee(s) at ${bandedZero.institutions.toLocaleString()} institution(s) are not the fee's price (${bandedZero.live && !bandedZero.dryRun ? `${bandedZero.flagged.toLocaleString()} flagged, ${bandedZero.takenDown.length.toLocaleString()} archived` : bandedZero.dryRun ? "dry run: would take down, nothing written" : "switch off: would take down, nothing written"}).`
         : "";
-      // #2057/#2062: the holds, corrections and Deming misses filed against verify, read into
-      // lessons and a per-check missed tally (verify-misses.ts). Read-only: no fee changes.
+      // #2057/#2062: a person's holds and corrections filed against verify, read into
+      // lessons and a per-check missed tally, at most hourly (verify-misses.ts). Read-only: no fee changes.
       const verifyMisses = await readVerifyMisses(tx, {
         runId: run.id,
         stepId: step.id,
