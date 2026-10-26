@@ -121,6 +121,8 @@ import {
   movedSweepTakedownIds,
   GLOBAL_ONLY_PUBLISH_SWEEPS,
   SAMPLED_PUBLISH_SWEEPS,
+  SWEEP_DEPENDENTS,
+  type MovedPublishSweep,
   publishSweepMode,
   PUBLISH_SWEEPS_SPLIT_LIVE,
   runPublishSweepsStep,
@@ -168,6 +170,7 @@ function transaction() {
   const savepoints: Array<"rolled_back" | "released"> = [];
   const db = vi.fn((strings: TemplateStringsArray) => {
     const text = strings.join("?");
+    if (!("raw" in strings)) return Promise.resolve([]);
     if (text.includes("pg_current_xact_id_if_assigned")) return Promise.resolve([{ xid: wrote ? "777" : null }]);
     return Promise.resolve([]);
   }) as unknown as Db & { savepoint: unknown };
@@ -332,7 +335,8 @@ describe("the publish-sweeps step", () => {
     const tx = transaction();
     const outcome = await runPublishSweepsStep(tx.db, { runId: 42, stepId: 4200, live: false, categoryGuardLimit: 100 });
     results.outlierRollbacks = [];
-    expect(tx.savepoints).toEqual(["rolled_back"]);
+    // One savepoint per sweep (#1070), all released, inside the dry run's one rolled-back savepoint.
+    expect(tx.savepoints).toEqual([...MOVED_PUBLISH_SWEEPS.map(() => "released"), "rolled_back"]);
     expect(outcome.detail).toMatchObject({
       dry_run: true,
       rolled_back: true,
@@ -356,7 +360,7 @@ describe("the publish-sweeps step", () => {
       return results.nameRetidy as never;
     });
     const outcome = await runPublishSweepsStep(tx.db, { runId: 42, stepId: 4200, live: false, categoryGuardLimit: 100 });
-    expect(tx.savepoints).toEqual(["rolled_back"]);
+    expect(tx.savepoints.at(-1)).toBe("rolled_back");
     expect(outcome.detail).toMatchObject({ dry_run_write_check: "wrote", dry_run_first_writer: "nameRetidy" });
     expect(outcome.summary).toContain("nameRetidy");
   });
@@ -366,11 +370,98 @@ describe("the publish-sweeps step", () => {
     const tx = transaction();
     const outcome = await runPublishSweepsStep(tx.db, { runId: 42, stepId: 4200, live: true, categoryGuardLimit: 100 });
     results.handTakedowns = { ...(results.handTakedowns as object), takenDown: [] };
-    expect(tx.savepoints).toEqual([]);
+    expect(tx.savepoints).toEqual(MOVED_PUBLISH_SWEEPS.map(() => "released"));
     expect(outcome.detail).toMatchObject({ dry_run: false, changed: 1, taken_down_ids: [5], index_refreshed: true });
     expect(outcome.detail).not.toHaveProperty("dry_run_write_check");
     expect(mocks.refreshFeeIndexCache).toHaveBeenCalledWith(tx.db, { runId: 42, force: true });
     expect(calls.every((call) => !((call.key === "categoryGuard" ? call.args[0] : call.args[1]) as { dryRun: boolean }).dryRun)).toBe(true);
+  });
+
+  it("a failed sweep is rolled back alone, the rest run, and the failure is a ledger event", async () => {
+    mocks.retireArticlePageFees.mockImplementationOnce(async (...args: unknown[]) => {
+      calls.push({ key: "articlePage", args });
+      throw new Error("statement timeout");
+    });
+    results.handTakedowns = { ...(results.handTakedowns as object), takenDown: [{ feePublishedId: 5 }] };
+    const tx = transaction();
+    const outcome = await runPublishSweepsStep(tx.db, { runId: 42, stepId: 4200, live: true, categoryGuardLimit: 100 });
+    results.handTakedowns = { ...(results.handTakedowns as object), takenDown: [] };
+    expect(outcome.status).toBe("completed");
+    // Every sweep was called, the failed one included; only its savepoint rolled back.
+    expect(calls.map((call) => call.key)).toEqual([...MOVED_PUBLISH_SWEEPS]);
+    const articleIndex = MOVED_PUBLISH_SWEEPS.indexOf("articlePage");
+    expect(tx.savepoints[articleIndex]).toBe("rolled_back");
+    expect(tx.savepoints.filter((state) => state === "rolled_back")).toHaveLength(1);
+    expect(outcome.detail).toMatchObject({
+      sweeps_failed: 1,
+      sweeps_skipped: 0,
+      sweep_failures: [{ sweep: "articlePage", outcome: "failed", error: "statement timeout", after: null }],
+      taken_down_ids: [5],
+      index_refreshed: true,
+    });
+    expect(outcome.detail.sweep_ms).toHaveProperty("articlePage");
+    expect(outcome.summary).toContain("1 sweep(s) failed");
+    const events = (tx.db as unknown as ReturnType<typeof vi.fn>).mock.calls.filter((call) =>
+      (call[0] as TemplateStringsArray).join("?").includes("INSERT INTO agent_run_events"));
+    expect(events).toHaveLength(1);
+    expect(events[0].slice(1)).toEqual(expect.arrayContaining([42, 4200, "publish_sweeps.sweep_failed", "failed"]));
+    expect(JSON.parse(events[0].at(-1) as string)).toMatchObject({ sweep: "articlePage", error: "statement timeout", dry_run: false });
+  });
+
+  it("a failed taxonomy fold skips every later sweep, which judge fees by category, and records each skip", async () => {
+    mocks.foldRetiredCategories.mockImplementationOnce(async (...args: unknown[]) => {
+      calls.push({ key: "taxonomyFold", args });
+      throw new Error("deadlock detected");
+    });
+    const tx = transaction();
+    const outcome = await runPublishSweepsStep(tx.db, { runId: 42, stepId: 4200, live: false, categoryGuardLimit: 100 });
+    const foldIndex = MOVED_PUBLISH_SWEEPS.indexOf("taxonomyFold");
+    expect(calls.map((call) => call.key)).toEqual(MOVED_PUBLISH_SWEEPS.slice(0, foldIndex + 1));
+    const later = MOVED_PUBLISH_SWEEPS.slice(foldIndex + 1);
+    expect(outcome.detail).toMatchObject({ sweeps_failed: 1, sweeps_skipped: later.length, dry_run: true, rolled_back: true });
+    expect((outcome.detail.sweep_failures as Array<{ sweep: string; outcome: string; after: string | null }>).slice(1))
+      .toEqual(later.map((sweep) => ({ sweep, outcome: "skipped", error: null, after: "taxonomyFold" })));
+    // Recorded after the dry run's savepoint rolled back, so the events survive it.
+    const events = (tx.db as unknown as ReturnType<typeof vi.fn>).mock.calls.filter((call) =>
+      (call[0] as TemplateStringsArray).join("?").includes("INSERT INTO agent_run_events"));
+    expect(events).toHaveLength(1 + later.length);
+    expect(events.slice(1).every((call) => call.includes("publish_sweeps.sweep_skipped") && call.includes("skipped"))).toBe(true);
+  });
+
+  it("a failed change pairing skips only the cross-page restore", async () => {
+    mocks.pairFeeChangeRecords.mockImplementationOnce(async (...args: unknown[]) => {
+      calls.push({ key: "changePairing", args });
+      throw new Error("boom");
+    });
+    const tx = transaction();
+    const outcome = await runPublishSweepsStep(tx.db, { runId: 42, stepId: 4200, live: true, categoryGuardLimit: 100 });
+    expect(calls.map((call) => call.key)).toEqual(MOVED_PUBLISH_SWEEPS.filter((key) => key !== "crossPageRestore"));
+    expect(outcome.detail).toMatchObject({
+      sweeps_failed: 1,
+      sweeps_skipped: 1,
+      sweep_failures: [
+        { sweep: "changePairing", outcome: "failed", error: "boom", after: null },
+        { sweep: "crossPageRestore", outcome: "skipped", error: null, after: "changePairing" },
+      ],
+    });
+  });
+
+  it("a publish step does not isolate its sweeps: a failure still fails it, as before", async () => {
+    mocks.retireArticlePageFees.mockImplementationOnce(async (...args: unknown[]) => {
+      calls.push({ key: "articlePage", args });
+      throw new Error("statement timeout");
+    });
+    await expect(sweepsBeforeGuardRequeue(context("full"))).rejects.toThrow("statement timeout");
+  });
+
+  it("names its order dependencies by moved sweep", () => {
+    for (const [key, dependents] of Object.entries(SWEEP_DEPENDENTS)) {
+      expect(MOVED_PUBLISH_SWEEPS as readonly string[]).toContain(key);
+      if (dependents === "rest") continue;
+      for (const dependent of dependents ?? []) {
+        expect(MOVED_PUBLISH_SWEEPS.indexOf(dependent)).toBeGreaterThan(MOVED_PUBLISH_SWEEPS.indexOf(key as MovedPublishSweep));
+      }
+    }
   });
 
   it("the rollback savepoint passes a real error through", async () => {

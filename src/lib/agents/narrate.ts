@@ -199,8 +199,10 @@ function narrateFinished(
     case "publish-sweeps": {
       const changed = n(detail, "changed");
       const verb = detail.dry_run === true ? "Would change" : "Changed";
-      if (changed === 0) return detail.dry_run === true ? "Publish sweeps dry run: nothing to change." : "Publish sweeps: nothing to change.";
-      return `${verb} ${count(changed, "live fee row")} across the moved publish sweeps${detail.dry_run === true ? " (dry run, nothing written)" : ""}.`;
+      const failed = n(detail, "sweeps_failed");
+      const failedNote = failed > 0 ? ` ${count(failed, "sweep")} failed and ${failed === 1 ? "was" : "were"} rolled back alone; the rest ran.` : "";
+      if (changed === 0) return `${detail.dry_run === true ? "Publish sweeps dry run: nothing to change." : "Publish sweeps: nothing to change."}${failedNote}`;
+      return `${verb} ${count(changed, "live fee row")} across the moved publish sweeps${detail.dry_run === true ? " (dry run, nothing written)" : ""}.${failedNote}`;
     }
     case "category-guard": {
       const failing = n(detail, "failing_fees");
@@ -723,6 +725,8 @@ export function narrateEvent(event: NarratableEvent): string | null {
       return event.stepKey ? narrateStepFinished(event.stepKey, event.detail, event.stateCode) : null;
     case "step.failed":
       return `Stopped with an error${event.stepKey ? ` while working on "${event.stepKey}"` : ""}: ${shorten(event.message)}`;
+    case "publish_sweeps.sweep_failed":
+      return `A publish sweep failed and was rolled back on its own: ${shorten(event.message)}`;
     case "step.reaped":
       return "A step got stuck, so it was restarted.";
     case "step.dead":

@@ -4,7 +4,7 @@ const { startAgentRunMock } = vi.hoisted(() => ({ startAgentRunMock: vi.fn() }))
 vi.mock("@/lib/agents/run-store", () => ({ startAgentRun: startAgentRunMock }));
 vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
 
-import { PUBLISH_SWEEPS_DRY_RUN_INTERVAL_MINUTES, PUBLISH_SWEEPS_SOURCE, PUBLISH_SWEEPS_STEP_KEY } from "./publish-sweeps";
+import { PUBLISH_SWEEPS_INTERVAL_MINUTES, PUBLISH_SWEEPS_SOURCE, PUBLISH_SWEEPS_STEP_KEY } from "./publish-sweeps";
 import { schedulePublishSweepsRun } from "./publish-sweeps-schedule";
 
 const NOW = new Date("2026-10-18T12:00:45Z");
@@ -45,19 +45,43 @@ describe("publish-sweeps scheduling", () => {
     expect(startAgentRunMock).not.toHaveBeenCalled();
   });
 
-  it("off, waits out the dry-run interval; on, runs after every completed lane publish", async () => {
-    const recent = { last_queued_at: minutesAgo(PUBLISH_SWEEPS_DRY_RUN_INTERVAL_MINUTES - 1), last_publish_at: minutesAgo(2) };
-    expect(await schedulePublishSweepsRun(createDb(recent), { now: NOW, live: false })).toMatchObject({ scheduled: false, reason: "dry_run_interval" });
-    expect(await schedulePublishSweepsRun(createDb(recent), { now: NOW, live: true })).toMatchObject({ scheduled: true, live: true });
+  it("live or dry, starts at most once an hour (#1070), then runs once the hour is up", async () => {
+    expect(PUBLISH_SWEEPS_INTERVAL_MINUTES).toBe(60);
+    const recent = { last_queued_at: minutesAgo(PUBLISH_SWEEPS_INTERVAL_MINUTES - 1), last_publish_at: minutesAgo(2) };
+    expect(await schedulePublishSweepsRun(createDb(recent), { now: NOW, live: false })).toMatchObject({ scheduled: false, reason: "interval" });
+    expect(await schedulePublishSweepsRun(createDb(recent), { now: NOW, live: true })).toMatchObject({ scheduled: false, reason: "interval" });
+    expect(startAgentRunMock).not.toHaveBeenCalled();
+    const due = { last_queued_at: minutesAgo(PUBLISH_SWEEPS_INTERVAL_MINUTES + 1), last_publish_at: minutesAgo(2) };
+    expect(await schedulePublishSweepsRun(createDb(due), { now: NOW, live: true })).toMatchObject({ scheduled: true, live: true });
     expect(startAgentRunMock.mock.calls[0][0].params).toEqual({ source: PUBLISH_SWEEPS_SOURCE, dry_run: false });
-    const due = { last_queued_at: minutesAgo(PUBLISH_SWEEPS_DRY_RUN_INTERVAL_MINUTES + 1), last_publish_at: minutesAgo(2) };
-    expect(await schedulePublishSweepsRun(createDb(due), { now: NOW, live: false })).toMatchObject({ scheduled: true });
+    expect(await schedulePublishSweepsRun(createDb(due), { now: NOW, live: false })).toMatchObject({ scheduled: true, live: false });
   });
 
-  it("counts only state lane publishes, not Read-now ones", async () => {
+  it("twelve ticks of an hour with a publish before each start one run", async () => {
+    let lastQueued: string | null = null;
+    let started = 0;
+    for (let tick = 0; tick < 12; tick += 1) {
+      const now = new Date(NOW.getTime() + tick * 5 * 60_000);
+      const db = createDb({ last_queued_at: lastQueued, last_publish_at: new Date(now.getTime() - 60_000).toISOString() });
+      const result = await schedulePublishSweepsRun(db, { now, live: true });
+      if (result.scheduled) {
+        started += 1;
+        lastQueued = now.toISOString();
+      }
+    }
+    expect(started).toBe(1);
+  });
+
+  it("off counts only state lane publishes; live also counts a Read-now publish, which hands it the global sweeps", async () => {
     const db = createDb({ last_publish_at: minutesAgo(3) });
-    await schedulePublishSweepsRun(db, { now: NOW });
-    const text = (db.mock.calls[0] as unknown as [TemplateStringsArray])[0].join("?");
+    await schedulePublishSweepsRun(db, { now: NOW, live: false });
+    const call = db.mock.calls[0] as unknown as [TemplateStringsArray, ...unknown[]];
+    const text = call[0].join("?");
+    expect(text).toContain("::boolean");
+    expect(call.slice(1)).toContain(false);
+    const liveDb = createDb({ last_publish_at: minutesAgo(3) });
+    await schedulePublishSweepsRun(liveDb, { now: NOW, live: true });
+    expect((liveDb.mock.calls[0] as unknown as unknown[]).slice(1)).toContain(true);
     expect(text).toContain("r.run_kind IN ('workflow_lane', 'state_agent')");
     expect(text).toContain("r.params_json->>'institution_id' IS NULL");
     expect(text).toContain("s.step_key = 'publish'");

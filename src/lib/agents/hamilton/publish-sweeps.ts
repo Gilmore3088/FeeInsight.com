@@ -35,6 +35,7 @@ import { correctStoredLineups } from "@/lib/agents/knox/lineup-correct";
 import { syncPipelineFeedback } from "@/lib/agents/learning/feedback-sync";
 import { repairAccountTypeHoldFeedback } from "@/lib/agents/learning/account-type-hold-feedback";
 import { refreshFeeIndexCache } from "@/lib/data-store/fee-index";
+import { inSavepoint } from "@/lib/agents/savepoint";
 
 type SqlTag = typeof sql;
 type Result<F extends (...args: never[]) => unknown> = Awaited<ReturnType<F>>;
@@ -43,8 +44,8 @@ type Result<F extends (...args: never[]) => unknown> = Awaited<ReturnType<F>>;
  * The publish-sweeps split (2026-10-18 proposal, approved by the coordinator; switch-on is
  * James's call). A lane's publish step ran 40 sweeps that are scoped only by institution or
  * not at all, so in a lane they went over every state's live fees on every lane's publish:
- * about 106 s a step (p99 201 s), over the tick's room. With the switch on, those 40 run once
- * per tick in their own `publish-sweeps` step, and a lane publish keeps the 11 calls that act on
+ * about 106 s a step (p99 201 s), over the tick's room. With the switch on, those 40 run at most
+ * once an hour in their own `publish-sweeps` step, and a lane publish keeps the 11 calls that act on
  * its own state or its own rows. Off, every lane still runs all 51 calls, and the `publish-sweeps`
  * step runs the 40 as a dry run (counts, no writes) so the counts can be compared first.
  */
@@ -52,11 +53,15 @@ export const PUBLISH_SWEEPS_SPLIT_LIVE = false;
 export const PUBLISH_SWEEPS_SOURCE = "hamilton.publish_sweeps";
 export const PUBLISH_SWEEPS_STEP_KEY = "publish-sweeps";
 /**
- * Off, the dry run runs at most once an hour (after a completed lane publish). Once a tick would
- * take most of every other tick from the lanes while they still run every sweep themselves: the
- * step is priced at 205 s and ranks first, so a tick that runs it fits no lane publish (225 s).
+ * The `publish-sweeps` run starts at most once an hour, live or dry (#1070). Off, once a tick
+ * would take most of every other tick from the lanes while they still run every sweep themselves:
+ * the step is priced at 205 s and ranks first, so a tick that runs it fits no lane publish (225 s).
+ * Live, #1070 asked for once a day; an hour was picked instead so a takedown (a hand list, the
+ * category guard's confirmed second look, a closed bank) waits at most an hour, not a day, and
+ * the 12-hour second look (`hamilton/second-look.ts`) comes down within the hour after it is due.
+ * At about 125 s a run, hourly costs at most about 50 minutes of server time a day.
  */
-export const PUBLISH_SWEEPS_DRY_RUN_INTERVAL_MINUTES = 60;
+export const PUBLISH_SWEEPS_INTERVAL_MINUTES = 60;
 /** Would-be takedown ids the dry run keeps on its step detail, to measure the window. */
 export const PUBLISH_SWEEPS_TAKEDOWN_ID_LIMIT = 500;
 
@@ -215,56 +220,122 @@ export interface MovedSweepContext {
   mode: PublishSweepMode;
   /** Called after each sweep that ran (the dry run's write check). */
   afterSweep?: (key: MovedPublishSweep) => Promise<void>;
+  /**
+   * The `publish-sweeps` step only (#1070): each sweep runs in its own savepoint, so one that
+   * throws is rolled back alone and the others still run. A publish step leaves this unset: a
+   * failed sweep there still fails the step, as before.
+   */
+  isolate?: boolean;
+  /** Filled when `isolate` is on: each sweep that failed, or was skipped after a failure it depends on. */
+  failures?: SweepFailure[];
 }
 
-async function sweep<T>(ctx: MovedSweepContext, key: MovedPublishSweep, empty: () => T, run: () => Promise<T>): Promise<T> {
+export interface SweepFailure {
+  sweep: MovedPublishSweep;
+  /** `failed`: it threw and its savepoint was rolled back. `skipped`: a sweep it depends on failed. */
+  outcome: "failed" | "skipped";
+  error: string | null;
+  /** For a skip, the failed sweep it waits on. */
+  after: MovedPublishSweep | null;
+}
+
+/**
+ * Order dependencies between the moved sweeps that matter when one fails (#1070). Each key's
+ * failure skips the sweeps listed (or every later sweep, `rest`) until the next run:
+ * - `taxonomyFold` re-files fees under the 15 retired categories before any sweep judges a fee by
+ *   its category; without it the off-taxonomy rollback would take down fees the fold would move,
+ *   so the rest of the pass waits.
+ * - `changePairing` names a fee change's two rows before the cross-page restore reopens a
+ *   superseded row.
+ * Every other moved sweep acts on its own rows and reads no earlier sweep's result, so its
+ * failure leaves the rest to run.
+ */
+export const SWEEP_DEPENDENTS: Partial<Record<MovedPublishSweep, "rest" | readonly MovedPublishSweep[]>> = {
+  taxonomyFold: "rest",
+  changePairing: ["crossPageRestore"],
+};
+
+/** The failed sweep that `key` waits on, if any. */
+function blockingFailure(failures: readonly SweepFailure[], key: MovedPublishSweep): MovedPublishSweep | null {
+  for (const failure of failures) {
+    if (failure.outcome !== "failed") continue;
+    const dependents = SWEEP_DEPENDENTS[failure.sweep];
+    if (dependents === "rest" || dependents?.includes(key)) return failure.sweep;
+  }
+  return null;
+}
+
+async function sweep<T>(
+  ctx: MovedSweepContext,
+  key: MovedPublishSweep,
+  empty: () => T,
+  run: (db: SqlTag) => Promise<T>,
+): Promise<T> {
   if (!runsMovedSweep(ctx.mode, key)) return empty();
-  const result = await timedSweep(ctx.sweepMs, key, run);
-  if (ctx.afterSweep) await ctx.afterSweep(key);
-  return result;
+  if (!ctx.isolate) {
+    const result = await timedSweep(ctx.sweepMs, key, () => run(ctx.db));
+    if (ctx.afterSweep) await ctx.afterSweep(key);
+    return result;
+  }
+  const failures = (ctx.failures ??= []);
+  const after = blockingFailure(failures, key);
+  if (after) {
+    failures.push({ sweep: key, outcome: "skipped", error: null, after });
+    return empty();
+  }
+  try {
+    // The sweep must write through the savepoint's own scope: a statement that fails on the
+    // outer transaction's handle marks that transaction failed even after the savepoint rolls back.
+    const result = await timedSweep(ctx.sweepMs, key, () => inSavepoint(ctx.db, (scope) => run(scope)));
+    if (ctx.afterSweep) await ctx.afterSweep(key);
+    return result;
+  } catch (error) {
+    failures.push({ sweep: key, outcome: "failed", error: error instanceof Error ? error.message : String(error), after: null });
+    return empty();
+  }
 }
 
 const batchId = (ctx: MovedSweepContext) => `agentic-run-${ctx.runId}`;
 
 /** Before the guard requeue: restores, the fold, rollbacks, the hand lists and the category guard. */
 export async function sweepsBeforeGuardRequeue(ctx: MovedSweepContext) {
-  const { db: tx, dryRun, institutionId } = ctx;
+  const { dryRun, institutionId } = ctx;
   const runId = ctx.runId;
   // A takedown is never final: fees an earlier sweep took down come back once a range
   // widens or the taxonomy gains their category.
-  const outlierRestores = await sweep(ctx, "outlierRestores", () => [] as Result<typeof restoreOutliersNowInRange>, () => restoreOutliersNowInRange(tx, {
+  const outlierRestores = await sweep(ctx, "outlierRestores", () => [] as Result<typeof restoreOutliersNowInRange>, (db) => restoreOutliersNowInRange(db, {
     runId,
     dryRun,
     institutionId,
   }));
-  const offTaxonomyRestores = await sweep(ctx, "offTaxonomyRestores", () => [] as Result<typeof restoreFeesNowInTaxonomy>, () => restoreFeesNowInTaxonomy(tx, {
+  const offTaxonomyRestores = await sweep(ctx, "offTaxonomyRestores", () => [] as Result<typeof restoreFeesNowInTaxonomy>, (db) => restoreFeesNowInTaxonomy(db, {
     runId,
     dryRun,
     institutionId,
   }));
   // The top-50 fold: fees under the fifteen retired categories move to the one their
   // wording places them in, before any sweep judges them by category (fee-fold.ts).
-  const taxonomyFold = await sweep(ctx, "taxonomyFold", () => emptyTaxonomyFold(dryRun), () => foldRetiredCategories(tx, {
+  const taxonomyFold = await sweep(ctx, "taxonomyFold", () => emptyTaxonomyFold(dryRun), (db) => foldRetiredCategories(db, {
     runId,
     stepId: ctx.stepId,
     dryRun,
     institutionId,
     researchSplitFullCount: ctx.researchSplitFullCount,
   }));
-  const outlierRollbacks = await sweep(ctx, "outlierRollbacks", () => [] as Result<typeof rollBackPublishedOutliers>, () => rollBackPublishedOutliers(tx, {
+  const outlierRollbacks = await sweep(ctx, "outlierRollbacks", () => [] as Result<typeof rollBackPublishedOutliers>, (db) => rollBackPublishedOutliers(db, {
     runId,
     batchId: batchId(ctx),
     dryRun,
     institutionId,
   }));
-  const offTaxonomyRollbacks = await sweep(ctx, "offTaxonomyRollbacks", () => [] as Result<typeof rollBackOffTaxonomyFees>, () => rollBackOffTaxonomyFees(tx, {
+  const offTaxonomyRollbacks = await sweep(ctx, "offTaxonomyRollbacks", () => [] as Result<typeof rollBackOffTaxonomyFees>, (db) => rollBackOffTaxonomyFees(db, {
     runId,
     batchId: batchId(ctx),
     dryRun,
     institutionId,
   }));
   // A transfer or deposit limit read as a price ("Zelle® transfer limit | $1,000").
-  const limitRollbacks = await sweep(ctx, "limitRollbacks", () => [] as Result<typeof rollBackLimitsPublishedAsFees>, () => rollBackLimitsPublishedAsFees(tx, {
+  const limitRollbacks = await sweep(ctx, "limitRollbacks", () => [] as Result<typeof rollBackLimitsPublishedAsFees>, (db) => rollBackLimitsPublishedAsFees(db, {
     runId,
     batchId: batchId(ctx),
     dryRun,
@@ -273,7 +344,7 @@ export async function sweepsBeforeGuardRequeue(ctx: MovedSweepContext) {
   // A business schedule's fee beside the bank's consumer fee in the same category.
   const businessSchedule = await sweep(ctx, "businessSchedule", (): Result<typeof retireBusinessScheduleFees> => ({
     businessFees: 0, withConsumerFee: 0, flagged: 0, waiting: 0, rolledBack: [], restored: 0, dryRun,
-  }), () => retireBusinessScheduleFees(tx, {
+  }), (db) => retireBusinessScheduleFees(db, {
     runId,
     batchId: batchId(ctx),
     dryRun,
@@ -282,7 +353,7 @@ export async function sweepsBeforeGuardRequeue(ctx: MovedSweepContext) {
   // A fee the same-line re-decide (9 Oct) published beside an older live line of itself.
   const sameLineDuplicates = await sweep(ctx, "sameLineDuplicates", (): Result<typeof retireSameLineDuplicates> => ({
     candidates: 0, duplicates: 0, flagged: 0, waiting: 0, rolledBack: [], restored: 0, dryRun,
-  }), () => retireSameLineDuplicates(tx, {
+  }), (db) => retireSameLineDuplicates(db, {
     runId,
     batchId: batchId(ctx),
     dryRun,
@@ -292,7 +363,7 @@ export async function sweepsBeforeGuardRequeue(ctx: MovedSweepContext) {
   const otherBank = await sweep(ctx, "otherBank", (): Result<typeof retireOtherBankDocumentFees> => ({
     otherBankFees: 0, namesOwnBank: 0, flagged: 0, waiting: 0, unconfirmedHostFees: 0, unconfirmedHostFlagged: 0,
     unconfirmedHostWaiting: 0, rolledBack: [], linksCleared: 0, dryRun,
-  }), () => retireOtherBankDocumentFees(tx, {
+  }), (db) => retireOtherBankDocumentFees(db, {
     runId,
     batchId: batchId(ctx),
     dryRun,
@@ -303,7 +374,7 @@ export async function sweepsBeforeGuardRequeue(ctx: MovedSweepContext) {
   const evalVerdicts = await sweep(ctx, "evalVerdicts", (): Result<typeof retireEvalVerdictFees> => ({
     evalMatched: 0, evalChanged: 0, handMatched: 0, ruleFailing: 0, deferred: 0, deferredIds: [], flagged: 0, waiting: 0,
     cleared: 0, reconstructed: 0, rolledBack: [], flags: {} as Result<typeof retireEvalVerdictFees>["flags"], flagSamples: [], dryRun,
-  }), () => retireEvalVerdictFees(tx, {
+  }), (db) => retireEvalVerdictFees(db, {
     runId,
     batchId: batchId(ctx),
     dryRun,
@@ -313,11 +384,11 @@ export async function sweepsBeforeGuardRequeue(ctx: MovedSweepContext) {
   // unpublished copies of those reads rejected, before this step publishes anything.
   const handAmounts = await sweep(ctx, "handAmounts", (): Result<typeof applyHandAmountCorrections> => ({
     dryRun, corrected: [], skipped: [], rejectedTwins: [], skippedTwins: [],
-  }), () => applyHandAmountCorrections(tx, { runId, stepId: ctx.stepId, dryRun }));
+  }), (db) => applyHandAmountCorrections(db, { runId, stepId: ctx.stepId, dryRun }));
   // #1196: five live cut-name rows that repeat a clean live row come down; the clean row stays.
   const cutNameDuplicates = await sweep(ctx, "cutNameDuplicates", (): Result<typeof applyCutNameDuplicates> => ({
     dryRun, takenDown: [], skipped: [], error: null,
-  }), () => applyCutNameDuplicates(tx, {
+  }), (db) => applyCutNameDuplicates(db, {
     runId,
     stepId: ctx.stepId,
     batchId: batchId(ctx),
@@ -327,7 +398,7 @@ export async function sweepsBeforeGuardRequeue(ctx: MovedSweepContext) {
   // its account type and never published as consumer checking monthly maintenance.
   const accountTypeHold = await sweep(ctx, "accountTypeHold", (): Result<typeof applyAccountTypeHold> => ({
     dryRun, heldLive: [], heldWaiting: [], checkedUntyped: 0, recheckNoProduct: 0, columnShadow: [], restoredHeld: [], typedRejected: [], error: null,
-  }), () => applyAccountTypeHold(tx, {
+  }), (db) => applyAccountTypeHold(db, {
     runId,
     stepId: ctx.stepId,
     batchId: batchId(ctx),
@@ -338,7 +409,7 @@ export async function sweepsBeforeGuardRequeue(ctx: MovedSweepContext) {
   // Listed live fees confirmed wrong against their bank's own text (James, Oct 16; #1496 first).
   const handTakedowns = await sweep(ctx, "handTakedowns", (): Result<typeof applyHandTakedowns> => ({
     dryRun, takenDown: [], skipped: [], waitingRejected: [], returns: [], returnsLive: false, error: null,
-  }), () => applyHandTakedowns(tx, {
+  }), (db) => applyHandTakedowns(db, {
     runId,
     stepId: ctx.stepId,
     batchId: batchId(ctx),
@@ -347,11 +418,11 @@ export async function sweepsBeforeGuardRequeue(ctx: MovedSweepContext) {
   // Listed live fees whose audience is wrong against their bank's own text (#1302 first).
   const handAudience = await sweep(ctx, "handAudience", (): Result<typeof applyHandAudienceFixes> => ({
     dryRun, fixed: [], skipped: [], error: null,
-  }), () => applyHandAudienceFixes(tx, { runId, stepId: ctx.stepId, dryRun }));
+  }), (db) => applyHandAudienceFixes(db, { runId, stepId: ctx.stepId, dryRun }));
   // An institution that no longer operates keeps no live fee (#1200).
   const closedInstitution = await sweep(ctx, "closedInstitution", (): Result<typeof retireClosedInstitutionFees> => ({
     liveFees: 0, institutions: 0, rolledBack: [], dryRun,
-  }), () => retireClosedInstitutionFees(tx, {
+  }), (db) => retireClosedInstitutionFees(db, {
     runId,
     batchId: batchId(ctx),
     dryRun,
@@ -360,7 +431,7 @@ export async function sweepsBeforeGuardRequeue(ctx: MovedSweepContext) {
   // A fee read from an article (a blog post quoting a national average), not a schedule.
   const articlePage = await sweep(ctx, "articlePage", (): Result<typeof retireArticlePageFees> => ({
     articleFees: 0, flagged: 0, waiting: 0, rolledBack: [], dryRun,
-  }), () => retireArticlePageFees(tx, {
+  }), (db) => retireArticlePageFees(db, {
     runId,
     batchId: batchId(ctx),
     dryRun,
@@ -369,7 +440,7 @@ export async function sweepsBeforeGuardRequeue(ctx: MovedSweepContext) {
   // A $0 benefit bullet read from a product page, not a schedule (off until James answers).
   const productPage = await sweep(ctx, "productPage", (): Result<typeof retireProductPageFees> => ({
     enabled: false, productFees: 0, flagged: 0, waiting: 0, rolledBack: [], dryRun,
-  }), () => retireProductPageFees(tx, {
+  }), (db) => retireProductPageFees(db, {
     runId,
     batchId: batchId(ctx),
     dryRun,
@@ -379,7 +450,7 @@ export async function sweepsBeforeGuardRequeue(ctx: MovedSweepContext) {
   // (James, 2026-10-13). On since 2026-10-20 after an automatic sample checked clean (`PRODUCT_PAGE_CONFLICT_LIVE`).
   const productPageConflict = await sweep(ctx, "productPageConflict", (): Result<typeof retireProductPageConflicts> => ({
     live: false, conflicts: 0, flagged: 0, cleared: 0, waiting: 0, rolledBack: [], dryRun,
-  }), () => retireProductPageConflicts(tx, {
+  }), (db) => retireProductPageConflicts(db, {
     runId,
     batchId: batchId(ctx),
     dryRun,
@@ -388,7 +459,7 @@ export async function sweepsBeforeGuardRequeue(ctx: MovedSweepContext) {
   // One product priced differently on two current pages: the older page's price comes down.
   const crossPage = await sweep(ctx, "crossPage", (): Result<typeof retireCrossPageConflicts> => ({
     pairsChecked: 0, conflicts: 0, flagged: 0, waiting: 0, rolledBack: [], dryRun,
-  }), () => retireCrossPageConflicts(tx, {
+  }), (db) => retireCrossPageConflicts(db, {
     runId,
     batchId: batchId(ctx),
     dryRun,
@@ -401,12 +472,12 @@ export async function sweepsBeforeGuardRequeue(ctx: MovedSweepContext) {
     scannedFees: 0, failingFees: 0, rolledBackFees: 0, rejectedVerifiedFees: 0, flaggedFees: 0, awaitingSecondLook: 0,
     confirmedFeeIds: [], restoredFees: 0, refiledFees: 0, liveRefiledFees: 0, cardProductPending: 0, cardProductPendingSamples: [], headingReadFailed: false, boxSectionReadFailed: false, collectionSectionReadFailed: false,
     limit: ctx.categoryGuardLimit, dryRun, rollbackBatchId: batchId(ctx), guardVersion: 0, byCode: {}, byCategory: {}, failures: [],
-  }), () => runHamiltonCategoryGuard({
+  }), (db) => runHamiltonCategoryGuard({
     runId,
     dryRun,
     limit: ctx.categoryGuardLimit,
     institutionId,
-    db: tx,
+    db,
   }));
   return {
     outlierRestores, offTaxonomyRestores, taxonomyFold, outlierRollbacks, offTaxonomyRollbacks, limitRollbacks,
@@ -425,8 +496,8 @@ function emptyTaxonomyFold(dryRun: boolean): Result<typeof foldRetiredCategories
 
 /** After the companion retire, before the newer-copy check: duplicate and page-copy collapses, frequencies. */
 export async function sweepsBeforeNewerCopy(ctx: MovedSweepContext) {
-  const { db: tx, dryRun, institutionId, runId } = ctx;
-  const earlyDuplicateCollapses = await sweep(ctx, "earlyDuplicateCollapses", () => [] as Result<typeof collapsePublishedDuplicates>, () => collapsePublishedDuplicates(tx, {
+  const { dryRun, institutionId, runId } = ctx;
+  const earlyDuplicateCollapses = await sweep(ctx, "earlyDuplicateCollapses", () => [] as Result<typeof collapsePublishedDuplicates>, (db) => collapsePublishedDuplicates(db, {
     runId,
     batchId: batchId(ctx),
     dryRun,
@@ -437,7 +508,7 @@ export async function sweepsBeforeNewerCopy(ctx: MovedSweepContext) {
   // NEAR_NAME_COLLAPSE_LIVE is on; a dry run reports and changes nothing.
   const nearNameCollapse = await sweep(ctx, "nearNameCollapse", (): Result<typeof collapseNearNameDuplicates> => ({
     live: false, documents: 0, pairs: 0, apartOnPage: 0, notPrinted: 0, noText: 0, collapses: [],
-  }), () => collapseNearNameDuplicates(tx, {
+  }), (db) => collapseNearNameDuplicates(db, {
     runId,
     batchId: batchId(ctx),
     dryRun,
@@ -448,7 +519,7 @@ export async function sweepsBeforeNewerCopy(ctx: MovedSweepContext) {
   // before the collapse; it never makes a second live copy of a price.
   const pageCopyRestore = await sweep(ctx, "pageCopyRestore", (): Result<typeof restorePageCopiesOfDownedKeepers> => ({
     keptDown: 0, carriedOn: 0, keptJudged: 0, failing: [], restored: [], dryRun,
-  }), () => restorePageCopiesOfDownedKeepers(tx, {
+  }), (db) => restorePageCopiesOfDownedKeepers(db, {
     runId,
     dryRun,
     institutionId,
@@ -457,7 +528,7 @@ export async function sweepsBeforeNewerCopy(ctx: MovedSweepContext) {
   // address ("?print=1", "www.", a mirror). Closes them while PAGE_COPY_COLLAPSE_LIVE is on (James, Oct 17).
   const pageCopyCollapse = await sweep(ctx, "pageCopyCollapse", (): Result<typeof collapsePageCopies> => ({
     live: false, institutions: 0, pairs: 0, apartOnPage: 0, unproven: 0, otherDocument: 0, renamed: 0, collapses: [],
-  }), () => collapsePageCopies(tx, {
+  }), (db) => collapsePageCopies(db, {
     runId,
     batchId: batchId(ctx),
     dryRun,
@@ -468,7 +539,7 @@ export async function sweepsBeforeNewerCopy(ctx: MovedSweepContext) {
   // A failed fill write is a warning here, never a failed publish (#1349 review).
   const frequencyFill = await sweep(ctx, "frequencyFill", (): Result<typeof fillFrequenciesInPublish> => ({
     scanned: 0, filled: [], held: [], planWouldHold: [], dryRun, writeError: null,
-  }), () => fillFrequenciesInPublish(tx, {
+  }), (db) => fillFrequenciesInPublish(db, {
     runId,
     stepId: ctx.stepId,
     dryRun,
@@ -479,12 +550,12 @@ export async function sweepsBeforeNewerCopy(ctx: MovedSweepContext) {
 
 /** After the newer-copy check, before the copy refresh. */
 export async function sweepsBeforeRefreshCopy(ctx: MovedSweepContext) {
-  const { db: tx, dryRun, institutionId, runId } = ctx;
+  const { dryRun, institutionId, runId } = ctx;
   // A current copy whose text is identical to the superseded one has no rows of its
   // own (Knox skips text it has read), so the superseded copy's rows move to it.
   const identicalCopy = await sweep(ctx, "identicalCopy", (): Result<typeof moveRowsToIdenticalCopy> => ({
     documents: 0, rowsMoved: 0,
-  }), () => moveRowsToIdenticalCopy(tx, {
+  }), (db) => moveRowsToIdenticalCopy(db, {
     runId,
     dryRun,
     institutionId,
@@ -494,13 +565,13 @@ export async function sweepsBeforeRefreshCopy(ctx: MovedSweepContext) {
 
 /** After the rules re-check, before the source-link re-source and the row loop. */
 export async function sweepsBeforeRows(ctx: MovedSweepContext) {
-  const { db: tx, dryRun, institutionId, runId } = ctx;
+  const { dryRun, institutionId, runId } = ctx;
   // Live names stored before Knox tidied its reads ("Stop Payment | Item", "A dormant fee
   // of") take their tidy name, a batch of banks per step; the old name stays in
   // pipeline_feedback and a rename never makes a fee fail the source check.
   const nameRetidy = await sweep(ctx, "nameRetidy", (): Result<typeof retidyLiveFeeNames> => ({
     dryRun, institutionsChecked: 0, messyFees: 0, renames: [], skipped: {} as Result<typeof retidyLiveFeeNames>["skipped"],
-  }), () => retidyLiveFeeNames(tx, {
+  }), (db) => retidyLiveFeeNames(db, {
     runId,
     dryRun,
     institutionId,
@@ -508,12 +579,12 @@ export async function sweepsBeforeRows(ctx: MovedSweepContext) {
   // #1234 step 2: Knox's note leaves `conditions` for `extraction_note`, a batch per step.
   const extractionNotes = await sweep(ctx, "extractionNotes", (): Result<typeof moveExtractionNotes> => ({
     moved: 0, remaining: null, dryRun,
-  }), () => moveExtractionNotes(tx, { runId, dryRun }));
+  }), (db) => moveExtractionNotes(db, { runId, dryRun }));
   // A live fee named only "Monthly Service Fee" takes the account heading above it in its
   // schedule ("Chase Total Checking Monthly Service Fee"); the old name stays in pipeline_feedback.
   const accountNames = await sweep(ctx, "accountNames", (): Result<typeof nameLiveFeesByAccount> => ({
     dryRun, institutionsChecked: 0, genericFees: 0, reverts: [], renames: [], skipped: {} as Result<typeof nameLiveFeesByAccount>["skipped"],
-  }), () => nameLiveFeesByAccount(tx, {
+  }), (db) => nameLiveFeesByAccount(db, {
     runId,
     dryRun,
     institutionId,
@@ -522,7 +593,7 @@ export async function sweepsBeforeRows(ctx: MovedSweepContext) {
   // waiver or name) are corrected from the stored text; old values stay in pipeline_feedback.
   const lineupCorrect = await sweep(ctx, "lineupCorrect", (): Result<typeof correctStoredLineups> => ({
     dryRun, documentsChecked: 0, rowsChecked: 0, corrected: [],
-  }), () => correctStoredLineups(tx, {
+  }), (db) => correctStoredLineups(db, {
     runId,
     dryRun,
     institutionId,
@@ -530,7 +601,7 @@ export async function sweepsBeforeRows(ctx: MovedSweepContext) {
   // Fees an older re-check restored with no check at all get the restore bar on a second look.
   const restoreRecheck = await sweep(ctx, "restoreRecheck", (): Result<typeof recheckUncheckedRestores> => ({
     unchecked: 0, withoutText: 0, passing: 0, failing: [], flagged: 0, waiting: 0, rolledBack: [], dryRun,
-  }), () => recheckUncheckedRestores(tx, {
+  }), (db) => recheckUncheckedRestores(db, {
     runId,
     batchId: batchId(ctx),
     dryRun,
@@ -540,7 +611,7 @@ export async function sweepsBeforeRows(ctx: MovedSweepContext) {
   // judged once by the restore bar against their document's newest text; those that pass return.
   const lostRestore = await sweep(ctx, "lostRestore", (): Result<typeof restoreLostRecheckTakedowns> => ({
     candidates: 0, passed: [], failed: [], skipped: [], restored: 0, dryRun,
-  }), () => restoreLostRecheckTakedowns(tx, {
+  }), (db) => restoreLostRecheckTakedowns(db, {
     runId,
     batchId: batchId(ctx),
     dryRun,
@@ -550,7 +621,7 @@ export async function sweepsBeforeRows(ctx: MovedSweepContext) {
   // itself, before the restore below reopens any superseded row.
   const changePairing = await sweep(ctx, "changePairing", (): Result<typeof pairFeeChangeRecords> => ({
     unpaired: 0, likeForLike: 0, crossPage: 0, listsBoth: 0, noPair: 0, written: 0, dryRun,
-  }), () => pairFeeChangeRecords(tx, {
+  }), (db) => pairFeeChangeRecords(db, {
     runId,
     dryRun,
     institutionId,
@@ -558,7 +629,7 @@ export async function sweepsBeforeRows(ctx: MovedSweepContext) {
   // Live fees another page's price superseded come back through the restore bar.
   const crossPageRestore = await sweep(ctx, "crossPageRestore", (): Result<typeof restoreCrossPageSupersedes> => ({
     superseded: 0, crossPage: 0, businessLeftDown: 0, failing: [], restored: [], dryRun,
-  }), () => restoreCrossPageSupersedes(tx, {
+  }), (db) => restoreCrossPageSupersedes(db, {
     runId,
     dryRun,
     institutionId,
@@ -568,12 +639,12 @@ export async function sweepsBeforeRows(ctx: MovedSweepContext) {
 
 /** After the row loop and the source check: links, learning feedback. */
 export async function sweepsAfterRows(ctx: MovedSweepContext) {
-  const { db: tx, dryRun, institutionId, runId } = ctx;
+  const { dryRun, institutionId, runId } = ctx;
   // Imported fees with no document take their schedule through an identical imported
   // row the source check could not relink them past.
   const importedTwins = await sweep(ctx, "importedTwins", (): Result<typeof linkImportedFeesToTwins> => ({
     checked: 0, linked: 0, untraced: 0,
-  }), () => linkImportedFeesToTwins(tx, {
+  }), (db) => linkImportedFeesToTwins(db, {
     runId,
     dryRun,
     institutionId,
@@ -582,7 +653,7 @@ export async function sweepsAfterRows(ctx: MovedSweepContext) {
   // say) takes its own document's URL. Never a takedown. Off with SOURCE_LINK_FILL_ON.
   const sourceLinkFill = await sweep(ctx, "sourceLinkFill", (): Result<typeof fillSourceLinks> => ({
     on: false, dryRun, scanned: 0, fills: [], untraceable: 0, error: null,
-  }), () => fillSourceLinks(tx, {
+  }), (db) => fillSourceLinks(db, {
     runId,
     batchId: batchId(ctx),
     dryRun,
@@ -593,7 +664,7 @@ export async function sweepsAfterRows(ctx: MovedSweepContext) {
   // the second look and is archived. Off with SOURCE_LINK_DRIFT_LIVE (then it only reports).
   const linkDrift = await sweep(ctx, "linkDrift", (): Result<typeof repairLinkDrift> => ({
     live: false, dryRun, scanned: 0, repoints: [], flagged: 0, waiting: 0, archived: [], failing: [], skipped: [], error: null,
-  }), () => repairLinkDrift(tx, {
+  }), (db) => repairLinkDrift(db, {
     runId,
     batchId: batchId(ctx),
     dryRun,
@@ -603,13 +674,13 @@ export async function sweepsAfterRows(ctx: MovedSweepContext) {
   // restores (and a batch of older outcomes) go into the shared learning store.
   const feedbackSync = await sweep(ctx, "feedbackSync", (): Result<typeof syncPipelineFeedback> => ({
     ready: false, takedowns: 0, restores: 0, categoryRejects: 0, answerKeyFees: 0, written: 0, relabeled: 0,
-  }), () => syncPipelineFeedback(tx, { runId, dryRun }));
+  }), (db) => syncPipelineFeedback(db, { runId, dryRun }));
   // #1100: the sync's old rows for account type holds go to weight 0, behind a switch (off).
   // #1680: the hold's old release rows labelled as a wrong category are relabelled restore
   // records, behind its own switch (off); a dry run counts them.
   const holdFeedback = await sweep(ctx, "holdFeedback", (): Result<typeof repairAccountTypeHoldFeedback> => ({
     on: false, dryRun, due: null, zeroed: 0, release: { on: false, due: null, relabeled: 0 }, error: null,
-  }), () => repairAccountTypeHoldFeedback(tx, { runId, dryRun }));
+  }), (db) => repairAccountTypeHoldFeedback(db, { runId, dryRun }));
   return { importedTwins, sourceLinkFill, linkDrift, feedbackSync, holdFeedback };
 }
 
@@ -739,6 +810,29 @@ export function movedSweepSecondLookIds(r: MovedSweepResults): number[] {
   return Array.from(new Set(r.categoryGuard.failures.map((row) => row.feePublishedId).filter((id) => !confirmed.has(id)))).sort((a, b) => a - b);
 }
 
+/**
+ * One ledger event per failed or skipped sweep (`publish_sweeps.sweep_failed` /
+ * `publish_sweeps.sweep_skipped`) on the `publish-sweeps` step, so a failure shows in the run
+ * ledger even though the step itself completes with the other sweeps' work.
+ */
+export async function recordSweepFailures(
+  db: SqlTag,
+  input: { runId: number; stepId: number; dryRun: boolean; failures: readonly SweepFailure[] },
+): Promise<void> {
+  for (const failure of input.failures) {
+    const failed = failure.outcome === "failed";
+    const message = failed
+      ? `Publish sweep ${failure.sweep} failed and was rolled back on its own; the other sweeps ran${input.dryRun ? " (dry run)" : ""}: ${failure.error ?? "unknown error"}`
+      : `Publish sweep ${failure.sweep} skipped: it depends on ${failure.after}, which failed; it runs again next time${input.dryRun ? " (dry run)" : ""}.`;
+    await db`
+      INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
+      VALUES (${input.runId}, ${input.stepId}, ${failed ? "publish_sweeps.sweep_failed" : "publish_sweeps.sweep_skipped"},
+              ${failed ? "failed" : "skipped"}, ${message},
+              ${JSON.stringify({ sweep: failure.sweep, error: failure.error, after: failure.after, dry_run: input.dryRun })}::jsonb)
+    `;
+  }
+}
+
 const DRY_RUN_ROLLBACK = Symbol("publish-sweeps dry run rolled back");
 
 /**
@@ -782,6 +876,9 @@ export interface PublishSweepsStepOutcome {
  * every sweep gets `dryRun: true`, the whole pass runs in a savepoint that is rolled back, and the
  * step records whether anything was written anyway (`dry_run_write_check`). The dry run takes no
  * lock: it writes nothing, and holding the lock for its ~100 s would make lane publishes wait.
+ * Live or dry, each sweep runs in its own savepoint (#1070): one that throws is rolled back alone,
+ * recorded as a `publish_sweeps.sweep_failed` event and on `sweep_failures`, and the rest run,
+ * except the sweeps that depend on it (`SWEEP_DEPENDENTS`), which wait for the next run.
  */
 export async function runPublishSweepsStep(
   db: SqlTag,
@@ -792,6 +889,8 @@ export async function runPublishSweepsStep(
   const dryRun = !options.live;
   // Held in an object: the closure below sets it, which plain `let` narrowing does not see.
   const check: { state: "clean" | "wrote" | "unknown"; firstWriter: MovedPublishSweep | null } = { state: "clean", firstWriter: null };
+  // Each sweep runs in its own savepoint (#1070): one that throws is rolled back alone, the rest run.
+  const failures: SweepFailure[] = [];
   const pass = async (scope: SqlTag): Promise<MovedSweepResults> => {
     const ctx: MovedSweepContext = {
       db: scope,
@@ -803,6 +902,8 @@ export async function runPublishSweepsStep(
       categoryGuardLimit: options.categoryGuardLimit,
       sweepMs,
       mode: "sweeps",
+      isolate: true,
+      failures,
       afterSweep: dryRun
         ? async (key) => {
             if (check.state !== "clean") return;
@@ -836,6 +937,10 @@ export async function runPublishSweepsStep(
     results = await pass(db);
   }
 
+  // Recorded on the step's own handle after the pass, so a dry run's rolled-back savepoint keeps them.
+  await recordSweepFailures(db, { runId: options.runId, stepId: options.stepId, dryRun, failures });
+  const failed = failures.filter((failure) => failure.outcome === "failed");
+  const skipped = failures.filter((failure) => failure.outcome === "skipped");
   const counts = movedSweepCounts(results, () => true);
   const changed = Object.entries(counts)
     .filter(([key]) => !key.includes("."))
@@ -854,9 +959,12 @@ export async function runPublishSweepsStep(
     .slice(0, 5)
     .map(([key, value]) => `${key} ${value.toLocaleString()}`);
   const seconds = Math.round((Date.now() - startedAt) / 1000);
+  const failureNote = failed.length > 0
+    ? ` ${failed.length.toLocaleString()} sweep(s) failed and were rolled back on their own (${failed.map((failure) => failure.sweep).join(", ")})${skipped.length > 0 ? `; ${skipped.length.toLocaleString()} that depend on them wait for the next run` : ""}.`
+    : "";
   const summary = dryRun
-    ? `Publish sweeps dry run (switch off, nothing written): the ${MOVED_PUBLISH_SWEEPS.length} moved sweeps would change ${changed.toLocaleString()} row(s) and flag ${flagged.toLocaleString()} for a second look${busiest.length > 0 ? ` (${busiest.join(", ")})` : ""}, in ${seconds} s.${check.state === "wrote" ? ` A sweep wrote during the dry run (first seen after ${check.firstWriter}); rolled back.` : ""}`
-    : `Publish sweeps: the ${MOVED_PUBLISH_SWEEPS.length} moved sweeps changed ${changed.toLocaleString()} row(s) and flagged ${flagged.toLocaleString()} for a second look${busiest.length > 0 ? ` (${busiest.join(", ")})` : ""}, in ${seconds} s.${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`;
+    ? `Publish sweeps dry run (switch off, nothing written): the ${MOVED_PUBLISH_SWEEPS.length} moved sweeps would change ${changed.toLocaleString()} row(s) and flag ${flagged.toLocaleString()} for a second look${busiest.length > 0 ? ` (${busiest.join(", ")})` : ""}, in ${seconds} s.${check.state === "wrote" ? ` A sweep wrote during the dry run (first seen after ${check.firstWriter}); rolled back.` : ""}${failureNote}`
+    : `Publish sweeps: the ${MOVED_PUBLISH_SWEEPS.length} moved sweeps changed ${changed.toLocaleString()} row(s) and flagged ${flagged.toLocaleString()} for a second look${busiest.length > 0 ? ` (${busiest.join(", ")})` : ""}, in ${seconds} s.${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}${failureNote}`;
   return {
     status: "completed",
     summary,
@@ -877,6 +985,9 @@ export async function runPublishSweepsStep(
       // Category-guard first looks and fees awaiting their second look: still live, not takedowns.
       second_look_candidate_ids: secondLookIds.slice(0, PUBLISH_SWEEPS_TAKEDOWN_ID_LIMIT),
       second_look_candidates_total: secondLookIds.length,
+      sweeps_failed: failed.length,
+      sweeps_skipped: skipped.length,
+      sweep_failures: failures,
       ...(dryRun ? { dry_run_write_check: check.state, dry_run_first_writer: check.firstWriter, rolled_back: rolledBack } : {}),
       index_refreshed: indexRefresh?.refreshed ?? false,
       index_categories: indexRefresh?.categories ?? 0,
