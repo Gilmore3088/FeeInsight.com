@@ -406,4 +406,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-26",
   },
+  {
+    id: "issue-1896-fee-name-in-sentences",
+    agent: "hamilton",
+    stage: "written answer",
+    lesson: "Print a fee's name inside a sentence with the same in-sentence name its heading uses (proseFeeName, or inSentence for a display name): words in lower case, acronyms kept, so 'NSF / returned item'. Never call toLowerCase on a fee name.",
+    why: "My fees and Try a price fixed their headings to 'NSF / returned item' but their body sentences, the fee income assumptions, the position check, the audit sources and the Ask link still lower-cased the name to 'nsf / returned item'.",
+    evidence: { issues: [1896], prs: [], files: ["src/lib/hamilton/workspace/names.ts", "src/app/pro/(hamilton)/research/page.tsx", "src/app/pro/(hamilton)/simulate/page.tsx", "src/lib/hamilton/fee-scenario.ts", "src/lib/hamilton/audit-trail.ts", "src/lib/hamilton/implementation-plan.ts", "src/components/hamilton/PositionCheckPanel.tsx"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
 ];
