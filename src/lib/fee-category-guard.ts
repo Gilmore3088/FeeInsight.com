@@ -129,8 +129,15 @@ const ES_OUTGOING = "saliente|enviad";
  * v90 (#1912): a name that names the safe deposit box ("Safety Deposit Box-Late Fee", "Safe Box Late
  * Fee - Per Month after 3 months", "SDB Late Payment", "Late charge for safety deposit box rental
  * after 10 days"). A night deposit box is the night depository's, not this.
+ * v96 (#1912, review of #2639): whatever stands between "night" and "deposit box": "Night Drop Deposit
+ * Box Late Fee", the double-spaced "Night  Deposit Box", "Night Drop/Deposit Box" (`NIGHT_DEPOSIT_NAME`).
  */
-const SAFE_DEPOSIT_BOX_NAME = /\bsafe(?:ty)?[\s-]*(?:deposit|box)|\bsdb\b|(?<!night[\s-])\bdeposit\s+box(?:es)?\b/i;
+const SAFE_DEPOSIT_BOX_NAME = /\bsafe(?:ty)?[\s-]*(?:deposit|box)|\bsdb\b|(?<!night[\s\/-]+(?:drop[\s\/-]+)?)\bdeposit\s+box(?:es)?\b/i;
+/**
+ * v96 (#1912): a night depository named by its night deposit or night drop words, however they are
+ * spaced or joined ("Night  Deposit Box", "Night Drop Deposit Box", "Night-Drop"). Never a safe deposit box.
+ */
+const NIGHT_DEPOSIT_NAME = String.raw`night[\s\/-]+(?:deposit|drop)`;
 const BOOK_TRANSFER = String.raw`^(?![\s\S]*(?:\b(?:includ|incluid|exclud|excluy)\w*|\bincl\b|\bfree\b|\bwaiv\w*|\bno\s+charge|\bor\s+book))[\s\S]*(?:\bbook[- ]?(?:entry\s+)?transfers?\b|\btransferencias?\s+contables?\b)`;
 /** "Transferencia bancaria" and "Giro bancario" are a wire in a Spanish schedule. */
 const WIRE = /(wire|transferencias? (bancarias?|cablegr[aá]ficas?)|giros? bancarios?)/i;
@@ -865,10 +872,12 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   // v85 (#1831): a refundable key deposit (`SAFE_DEPOSIT_KEY_DEPOSIT`) is not a charge for the box,
   // as v66 has it for the night deposit. A lost, replaced or duplicate key, drilling and the box's
   // annual or rental fee stay here (`SAFE_DEPOSIT_KEY_DEPOSIT_EXEMPT`); so do late fees.
+  // v96 (#1912): the night deposit words however spaced or joined (`NIGHT_DEPOSIT_NAME`: "Night Drop
+  // Deposit Box Late Fee", "Night  Deposit Box"), not only "night deposit" with one space.
   safe_deposit_box: {
     include: /\S/,
     exclude: new RegExp(
-      String.raw`(\bbags?\b|zipper|pouch|depository|night deposit|drop box)|^(?![\s\S]*(?:${SAFE_DEPOSIT_KEY_DEPOSIT_EXEMPT.source}))[\s\S]*(?:${SAFE_DEPOSIT_KEY_DEPOSIT.source})`,
+      String.raw`(\bbags?\b|zipper|pouch|depository|${NIGHT_DEPOSIT_NAME}|drop box)|^(?![\s\S]*(?:${SAFE_DEPOSIT_KEY_DEPOSIT_EXEMPT.source}))[\s\S]*(?:${SAFE_DEPOSIT_KEY_DEPOSIT.source})`,
       "i",
     ),
   },
@@ -1153,7 +1162,15 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // v95 (Oct 26, #1513): `INTL_ABBREVIATION_REFILE_LIVE` on (James's yes): a domestic wire whose name
 // writes "international" short re-files to the international wire of its direction. Read-only dry
 // run (Oct 26): 2 live wires move (inst 1405: 90381, 90382).
-export const CATEGORY_GUARD_VERSION = 95;
+// v96 (Oct 26, #1912, review of #2639; first numbered v93 in #2688): a night depository's name is never a safe deposit box name,
+// however its words are spaced or joined (`NIGHT_DEPOSIT_NAME`): "Night Drop Deposit Box Late Fee" and
+// the double-spaced "Night  Deposit Box" slipped past v90's one-space lookbehind, so a night drop's late
+// fee failed late_payment and re-filed to safe_deposit_box. Now it stays a late payment, a safe deposit
+// box fee so named fails that type, and the safe deposit box re-file moves it to night_deposit.
+// Darwin's box floor ($5, a rent floor) no longer applies to a box late fee (`BOX_LATE_FEE_ENVELOPE`,
+// $1 floor), so a real $1 box late fee ("Safety Deposit Box-Late Fee" 36020) re-files in place instead
+// of coming down. Dry-run counts in the PR.
+export const CATEGORY_GUARD_VERSION = 96;
 
 /** v87 (#1916): where a late charge printed in a safe deposit box section is filed. */
 export const BOX_LATE_TARGET = "safe_deposit_box";
@@ -1249,7 +1266,8 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
   // "Returned Item fee (written to you)" is a check the customer deposited coming back.
   // v63: "Deposited Return Items" (Community First Guam FCU 327091) and "Depósito en cheque devuelto".
   { from: "nsf", to: "deposited_item_return", when: /(deposit|dep[oó]sit|written to you|\bbonds?\b|\bcoupons?\b)/i },
-  { from: "safe_deposit_box", to: "night_deposit", when: /(\bbags?\b|depository|night deposit)/i },
+  // v96 (#1912): "Night Drop Deposit Box" and "Night  Deposit Box" are the night depository's too (`NIGHT_DEPOSIT_NAME`).
+  { from: "safe_deposit_box", to: "night_deposit", when: new RegExp(String.raw`(\bbags?\b|depository|${NIGHT_DEPOSIT_NAME})`, "i") },
   { from: "wire_domestic_outgoing", to: "wire_intl_outgoing", when: /(international|foreign|intl|\bint['’]l\b|internacional|extranjer)/i, unless: /(domestic|dom[eé]stic|\bnacional)/i },
   // v63: "International wire transfer (Incoming)" $40 filed as a domestic incoming wire (Coast360 FCU 462933).
   // One price for domestic and international, or for both directions, stays where it is, as do a

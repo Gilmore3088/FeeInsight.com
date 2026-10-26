@@ -1173,6 +1173,22 @@ lessons_index_kill() {
   echo "lessons-index-kill: OK (every finding and decision has a line in ${index})"
 }
 
+db_test_wiring_kill() {
+  # A *.db.test.ts skips without E2E_DATABASE_URL, so the unit shards pass it unrun. It runs in CI
+  # only when .github/workflows/test.yml names it (E2E_TESTS or its own variable); eight suites,
+  # two of them cited as a fix's guard, never ran until #2717 (2026-10-26 finding).
+  local missing="" f
+  while IFS= read -r f; do
+    grep -qF "$f" .github/workflows/test.yml || missing+="$f"$'\n'
+  done < <(git ls-files 'src/*.db.test.ts' 'tests/*.db.test.ts')
+  if [[ -n "$missing" ]]; then
+    echo "db-test-wiring-kill: add each DB test to E2E_TESTS in .github/workflows/test.yml, or it never runs in CI:" >&2
+    printf '%s' "$missing" >&2
+    exit 1
+  fi
+  echo "db-test-wiring-kill: OK (every DB test runs in the e2e job)"
+}
+
 case "$SUBCOMMAND" in
   lesson-kill) lesson_kill ;;
   lessons-index-kill) lessons_index_kill ;;
@@ -1208,13 +1224,14 @@ case "$SUBCOMMAND" in
   bayes-manifest-kill) bayes_manifest_kill ;;
   api-docs-kill) api_docs_kill ;;
   runtime-ddl-kill) runtime_ddl_kill ;;
+  db-test-wiring-kill) db_test_wiring_kill ;;
   "")
-    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill|findings-file-kill|guide-version-kill|bayes-manifest-kill|api-docs-kill|runtime-ddl-kill|lesson-kill|queue-owner-kill|migration-lock-kill|lessons-index-kill|migration-claim-kill>" >&2
+    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill|findings-file-kill|guide-version-kill|bayes-manifest-kill|api-docs-kill|runtime-ddl-kill|lesson-kill|queue-owner-kill|migration-lock-kill|lessons-index-kill|migration-claim-kill|db-test-wiring-kill>" >&2
     exit 2
     ;;
   *)
     echo "Unknown subcommand: $SUBCOMMAND" >&2
-    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill|findings-file-kill|guide-version-kill|bayes-manifest-kill|api-docs-kill|runtime-ddl-kill|lesson-kill|queue-owner-kill|migration-lock-kill|lessons-index-kill|migration-claim-kill>" >&2
+    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill|findings-file-kill|guide-version-kill|bayes-manifest-kill|api-docs-kill|runtime-ddl-kill|lesson-kill|queue-owner-kill|migration-lock-kill|lessons-index-kill|migration-claim-kill|db-test-wiring-kill>" >&2
     exit 2
     ;;
 esac
