@@ -88,6 +88,16 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     since: "2026-10-20",
   },
   {
+    id: "issue-1200-retired-key-is-the-fetch-target",
+    agent: "hamilton",
+    stage: "publish",
+    lesson: "When judging a fee whose document is no longer one of its bank's sources, compare it with the newest read copy of the page the bank is actually fetched at (the remembered address, else the saved fee link), not the saved link alone; use the saved link's copy only when that page has none.",
+    why: "The retired-document check paired a retired document only with a copy stored under `fee_schedule_url`. The plain fetch asks for the profile's remembered address first and stores its copies there, so a bank whose remembered page differed from its saved link was judged against a one-off saved-link copy, or not judged at all when the saved link had never been captured.",
+    evidence: { issues: [1200], prs: [], files: ["docs/project/findings/2026-10-26-retired-copy-keyed-on-saved-link.md", "src/lib/agents/hamilton/current-copy.ts", "src/lib/agents/hamilton/current-copy.db.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
+  {
     id: "issue-1675-held-twin-blocks-restore",
     agent: "hamilton",
     stage: "publish",

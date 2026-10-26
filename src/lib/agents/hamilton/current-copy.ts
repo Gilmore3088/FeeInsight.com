@@ -42,7 +42,9 @@ type SqlTag = typeof sql;
  * at the bank's current fee link (`retiredCopiesSql`). Prod, read-only, Oct 19: 8,385 live fees
  * cite 543 such documents; 258 of them (3,607 fees) have a read copy at the current link. The
  * other 285 have no read copy there, so they wait on capture (`magellan/saved-link-fetch.ts`).
- * The address the plain fetch asks for (the profile's remembered one) also counts as a source.
+ * The address the plain fetch asks for (the profile's remembered one) also counts as a source,
+ * and since #1200 the current copy is read there first: the saved link's copy stands in only
+ * when that fetch target has none.
  *
  * `CURRENT_COPY_CONFIRM_LIVE` false logs first looks and confirms none, until a hand check of
  * the flags passes (18 of 20 stale), then a fix PR turns it on.
@@ -58,9 +60,16 @@ export const CURRENT_COPY_STRATEGY = { strategy: "hamilton.current_copy_check", 
 /**
  * The retired documents among the `live` CTE's rows (columns older_document_id, institution_id,
  * superseded_by_id, companion_source_id, document_url, fee_schedule_url), each paired with the
- * newest read copy at its bank's current fee link (see the module note). Links are compared
- * without scheme, "www.", case or trailing slashes. A bank with no fee link, or no read copy
- * there, pairs nothing. Changes here change both the check and Bayes's count.
+ * newest read copy at the address its bank's plain fetch asks for (see the module note). That
+ * fetch target is the profile's remembered address, else the saved fee link (`fetch.ts`,
+ * `profile_canonical_source_url ?? fee_schedule_url`): the page Magellan keeps fresh, and a
+ * successful fetch remembers its final address, so its copies are stored under it. Keyed on
+ * `fee_schedule_url` alone (#1200), a retired document paired only when the saved link had a copy
+ * of its own, and never with the page the bank is actually fetched at. When the fetch target has
+ * no read copy, the saved link's copy (`magellan/saved-link-fetch.ts`) stands in. Neither address
+ * is retired. Links are compared without scheme, "www.", case or trailing slashes. A bank with
+ * neither address, or no read copy at either, pairs nothing. Changes here change both the check
+ * and Bayes's count.
  */
 export function retiredCopiesSql(db: SqlTag) {
   return db`
@@ -68,8 +77,10 @@ export function retiredCopiesSql(db: SqlTag) {
       FROM (
         SELECT DISTINCT l.older_document_id, l.institution_id,
                lower(regexp_replace(regexp_replace(btrim(COALESCE(l.document_url, '')), '^https?://(www\\.)?', '', 'i'), '/+$', '')) AS doc_key,
-               lower(regexp_replace(regexp_replace(btrim(COALESCE(l.fee_schedule_url, '')), '^https?://(www\\.)?', '', 'i'), '/+$', '')) AS link_key
+               lower(regexp_replace(regexp_replace(btrim(COALESCE(l.fee_schedule_url, '')), '^https?://(www\\.)?', '', 'i'), '/+$', '')) AS link_key,
+               lower(regexp_replace(regexp_replace(btrim(COALESCE(NULLIF(btrim(profile.canonical_source_url), ''), l.fee_schedule_url, '')), '^https?://(www\\.)?', '', 'i'), '/+$', '')) AS fetch_key
           FROM live l
+          LEFT JOIN institution_source_profiles profile ON profile.institution_id = l.institution_id
          WHERE l.superseded_by_id IS NULL
            AND l.companion_source_id IS NULL
       ) d
@@ -81,19 +92,17 @@ export function retiredCopiesSql(db: SqlTag) {
            AND c.superseded_by_id IS NULL
            AND c.status = 'success'
            AND c.duplicate_of_id IS NULL
-           AND lower(regexp_replace(regexp_replace(btrim(COALESCE(c.document_url, '')), '^https?://(www\\.)?', '', 'i'), '/+$', '')) = d.link_key
+           AND lower(regexp_replace(regexp_replace(btrim(COALESCE(c.document_url, '')), '^https?://(www\\.)?', '', 'i'), '/+$', '')) IN (d.fetch_key, d.link_key)
            AND EXISTS (SELECT 1 FROM agent_source_texts t WHERE t.source_document_id = c.id AND t.status = 'completed' AND t.normalized_text IS NOT NULL)
-         ORDER BY c.id DESC
+         -- The fetch target's copy first; the saved link's only when the fetch target has none.
+         ORDER BY lower(regexp_replace(regexp_replace(btrim(COALESCE(c.document_url, '')), '^https?://(www\\.)?', '', 'i'), '/+$', '')) = d.fetch_key DESC,
+                  c.id DESC
          LIMIT 1
       ) cur ON TRUE
-     WHERE d.link_key <> ''
+     WHERE d.fetch_key <> ''
+       -- The address the plain fetch asks for and the saved link are still sources.
+       AND d.doc_key <> d.fetch_key
        AND d.doc_key <> d.link_key
-       -- The address the plain fetch asks for (the profile's remembered one) is still a source.
-       AND NOT EXISTS (
-         SELECT 1 FROM institution_source_profiles profile
-          WHERE profile.institution_id = d.institution_id
-            AND lower(regexp_replace(regexp_replace(btrim(COALESCE(profile.canonical_source_url, '')), '^https?://(www\\.)?', '', 'i'), '/+$', '')) = d.doc_key
-       )
        AND NOT EXISTS (
          SELECT 1 FROM institution_additional_sources ias
           WHERE ias.institution_id = d.institution_id
@@ -349,7 +358,7 @@ const EMPTY: CurrentCopyResult = {
 export async function countCurrentCopyPairs(db: SqlTag): Promise<{ pairs: number; done: number; queued: number; noText: number }> {
   const [row] = await db<Array<Record<string, number | string>>>`
     WITH live AS MATERIALIZED (
-      SELECT fp.canonical_fee_key, fp.amount, fp.rate_percent, fp.institution_id,
+      SELECT fp.canonical_fee_key, fp.amount, fp.rate_percent, fp.institution_id, fr.product_name,
              fr.source_document_id AS older_document_id,
              sd.superseded_by_id, sd.companion_source_id, sd.document_url, inst.fee_schedule_url
         FROM published_fee_records fp
