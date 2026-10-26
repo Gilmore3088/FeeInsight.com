@@ -457,7 +457,7 @@ export function settledFrequency(
  */
 export function frequencySpelling(frequency: string | null | undefined): string | null {
   if (typeof frequency !== "string") return null;
-  const spelled = frequency.toLowerCase().replace(/[\s_-]+/g, " ").trim().replace(/ /g, "_");
+  const spelled = frequency.toLowerCase().replace(/[ \t\n\r\f\v_-]+/g, " ").replace(/^ +| +$/g, "").replace(/ /g, "_");
   return spelled.length > 0 ? spelled : null;
 }
 

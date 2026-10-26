@@ -64,6 +64,9 @@ describe("frequencyFromLine (live excerpts, Oct 8)", () => {
     expect(frequencySpelling("per item")).toBe("per_item");
     expect(frequencySpelling("Per_Item")).toBe("per_item");
     expect(frequencySpelling("each")).toBe("each");
+    // Only ASCII whitespace is a separator, as in the SQL twin's [[:space:]] (#2712 review).
+    expect(frequencySpelling("MONTHLY\t\n")).toBe("monthly");
+    expect(frequencySpelling("per\u00a0item")).toBe("per\u00a0item");
     expect(frequencySpelling("  ")).toBeNull();
     expect(frequencySpelling(null)).toBeNull();
     expect(frequencyFamily("Monthly ")).toBe("monthly");
