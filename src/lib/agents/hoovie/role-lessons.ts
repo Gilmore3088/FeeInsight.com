@@ -6,6 +6,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const HOOVIE_LESSONS: AgentLesson[] = [
   {
+    id: "issue-1820-heavy-step-pricing",
+    agent: "hoovie",
+    stage: "registry dispatch",
+    lesson: "A registry step that downloads big files is priced in STEP_EXPECTED_MS from its measured runtime in agent_run_steps (about its p99 or max, with the date and numbers in a comment), never left to the 30 s quick default; one with a long fetch timeout and no measurements yet gets a conservative price until it has run. Price the key the dispatcher actually builds (registry-<source>, e.g. registry-census-lehd), not the module's name: an entry for a key no step uses never matches.",
+    why: "Only a few registry-* keys had their own estimate, so steps measured at 70-196 s (call-report summaries, FFIEC call detail, branch tracts, industry events, card agreements) were priced at 30 s and could be started late in a registry tick and killed at the 300 s limit.",
+    evidence: { issues: [1820], prs: [2706], files: ["src/lib/agents/run-store.ts", "src/app/api/admin/registry/tick/route.ts"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
+  {
     id: "issue-1870-storage-handoff",
     agent: "hoovie",
     stage: "public-data storage",
