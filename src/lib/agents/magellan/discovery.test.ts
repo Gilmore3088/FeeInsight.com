@@ -1720,9 +1720,11 @@ describe("Magellan reads Hamilton's conflict lessons and its own search misses (
     expect(PRODUCT_PAGE_CONFLICT_CHECK).toBe(HAMILTON_PRODUCT_PAGE_CHECK);
   });
 
-  it("lets a stale-price search take the newer document, hold any other page to the date, and refuse it with no date", () => {
+  it("holds every page to a known old date, takes the newer document only without one, and refuses others", () => {
     const stale = { kept_urls: ["https://www.bank.example/fees-2026.pdf"], only: true };
     expect(stalePriceReplaces(stale, "https://bank.example/fees-2026.pdf", false).verdict).toBe("newer_document");
+    // The conflict's "newer" can rest on fetch time: it never outranks a known date.
+    expect(stalePriceReplaces(stale, "https://bank.example/fees-2026.pdf", true).verdict).toBe("date_rule");
     expect(stalePriceReplaces(stale, "https://bank.example/other.pdf", true).verdict).toBe("date_rule");
     expect(stalePriceReplaces(stale, "https://bank.example/other.pdf", false).verdict).toBe("refused");
     // Sent for its age too: the age search's own rule holds.
@@ -1775,6 +1777,23 @@ describe("Magellan reads Hamilton's conflict lessons and its own search misses (
     expect(arm).toContain("sd.id = due.main_document_id AND due.main_document_url = due.profile_canonical_source_url");
     expect(arm).toContain("fp.rolled_back_at IS NOT NULL");
     expect(arm).toContain("pa.created_at > sd.crawled_at");
+    // The newer document is a main document, never a companion.
+    expect(arm).toContain("kept.companion_source_id IS NULL");
+  });
+
+  it("keeps a dated link when the newer document found states an earlier date (review of 56e9a5f95)", async () => {
+    const datedBank = { ...staleBank, stated_date: "2026-01-01", stated_date_basis: "effective_statement", stated_stale: false };
+    const db = createDbMock([], learningHandler((text) => (text.includes("stale-link freshness search") ? [datedBank] : undefined)));
+    const fetchImpl = site({
+      "https://stalebank.example/": () => response('<a href="/fees-current.pdf">Fee Schedule</a>'),
+      "https://stalebank.example/fees-current.pdf": () => response(`<p>Effective January 1, 2024</p>${FEE_TABLE}`),
+    });
+    const result = await runMagellanDiscovery({ runId: 144, db: asDiscoveryDb(db), fetchImpl, politeDelayMs: 0 });
+    expect(result.results[0]).toMatchObject({ outcome: "discovered", url: "https://stalebank.example/fees-current.pdf" });
+    expect(db.mock.calls.some((call) => templateText(call[0]).includes("UPDATE institution_sources"))).toBe(false);
+    const detail = attempts(db)[0].detail;
+    expect(detail.stale_price_check).toMatchObject({ verdict: "date_rule" });
+    expect(detail.stated_date_check).toMatchObject({ replaces: false, old_date: "2026-01-01" });
   });
 
   it("keeps a stale-priced link when the page found is neither the newer document nor known to be newer", async () => {

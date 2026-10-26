@@ -74,7 +74,8 @@ export async function recordSearchMisses(
  * that saw candidates, were cut short or never ran. Nothing is dropped, every page found still
  * passes the fee-page check, and the order is the only thing a miss changes, so no miss can
  * replace or clear a link. A miss counts only for the website it searched: one recorded on an
- * older website says nothing about the bank's current site.
+ * older website says nothing about the bank's current site, and one written before the bank's
+ * last successful find is out of date.
  */
 export const DEMOTED_MISS_OUTCOMES = new Set(["no_candidates"]);
 
@@ -116,6 +117,15 @@ export async function loadSearchMissDemotions(
          AND f.check_name = ${SEARCH_MISS_CHECK}
          AND f.about_stage = 'discover'
          AND f.institution_id = ANY(${banks.map((bank) => Number(bank.id))}::bigint[])
+         -- A miss from before the bank's last successful find is about a search that has since
+         -- been overtaken (the bank found a link, then lost it): it no longer steers the order.
+         AND NOT EXISTS (
+           SELECT 1 FROM pipeline_attempts found
+            WHERE found.institution_id = f.institution_id
+              AND found.stage = 'discover'
+              AND found.outcome = 'ok'
+              AND found.created_at > f.updated_at
+         )
        ORDER BY f.institution_id, f.updated_at DESC, f.id DESC
     `);
     const websites = new Map(banks.map((bank) => [Number(bank.id), bank.website_url]));

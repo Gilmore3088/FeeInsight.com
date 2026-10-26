@@ -168,18 +168,21 @@ export type StalePriceCheck = {
 };
 
 /**
- * Whether a page a stale-price search found may replace the link (#2062). One of the newer
- * documents the conflict kept always may: the bank's own current page priced the product newer.
- * Any other page is held to the date rule when an old date is known, and refused when the stale
- * price alone sent the search and no old date is known: nothing then says it is newer than the
- * link. Pure.
+ * Whether a page a stale-price search found may replace the link (#2062). When the old document's
+ * date is known, every page found is held to the date rule (`statedDateReplaces`), the conflict's
+ * newer document included: "newer" in the conflict can rest on fetch time alone when a document
+ * carries no Last-Modified, so it never outranks a date the link states (review of 56e9a5f95: a
+ * 2024 disclosure crawled after a 2026 schedule would otherwise replace it). With no old date, the
+ * newer document the conflict kept may replace the link, and any other page is refused when the
+ * stale price alone sent the search: nothing then says it is newer. Pure.
  */
 export function stalePriceReplaces(stale: { kept_urls: string[]; only: boolean }, candidateUrl: string | null, hasOldDate: boolean): StalePriceCheck {
   const base = { candidate_url: candidateUrl, kept_urls: stale.kept_urls };
+  if (hasOldDate) return { ...base, verdict: "date_rule", reason: "held to the old document's date" };
   if (candidateUrl && stale.kept_urls.some((url) => urlIdentity(url) === urlIdentity(candidateUrl))) {
-    return { ...base, verdict: "newer_document", reason: "the page found is the newer document the cross-page conflict kept" };
+    return { ...base, verdict: "newer_document", reason: "no old date is known and the page found is the newer document the cross-page conflict kept" };
   }
-  if (hasOldDate || !stale.only) return { ...base, verdict: "date_rule", reason: "the page found is not the newer document; held to the old date" };
+  if (!stale.only) return { ...base, verdict: "date_rule", reason: "the page found is not the newer document; the search's own rule holds" };
   return { ...base, verdict: "refused", reason: "kept the link: the page found is not the newer document and no old date says it is newer" };
 }
 type WrongAt = Date | string | null | undefined;
@@ -395,9 +398,9 @@ interface DiscoveryCandidateRow {
   /**
    * Set when Hamilton's cross-page conflict found the link's own page prices a product older than
    * another current document of the bank (`stale_price`). `kept_urls` are those newer documents'
-   * addresses, which the search may always take; `only` is true when nothing else (its age, a
-   * wrong document) sent the search, so a page found that is none of them must pass the date rule
-   * against a known old date (`stalePriceReplaces`).
+   * addresses, the only pages the search may take when no old date is known; with one, every page
+   * found is held to the date rule. `only` is true when nothing else (its age, a wrong document)
+   * sent the search (`stalePriceReplaces`).
    */
   stale_price?: { kept_urls: string[]; only: boolean };
   /** Why an upgrade search was sent beyond the link's address: `schedule_conflict` (#2062). */
@@ -1629,8 +1632,9 @@ export async function selectStaleCandidates(
         -- copy (17 of the first 19 rows were companions: an old edition kept beside a current link,
         -- which says nothing against the link). The newer document must still be current and the
         -- older price still archived, and each document is searched behind once. Not a wrong
-        -- document: the date rule still holds, and the addresses of the newer documents are the
-        -- pages a search may always take (stale_kept_urls).
+        -- document: the date rule holds whenever the old date is known; with none, the newer
+        -- documents' addresses (stale_kept_urls) are the only pages a search may take. The newer
+        -- document must be a main document, not a companion (stalePriceReplaces).
         LEFT JOIN LATERAL (
           SELECT max(f.created_at) AS stale_price_at, array_agg(DISTINCT kept.document_url) AS stale_kept_urls
             FROM pipeline_feedback f
@@ -1646,6 +1650,7 @@ export async function selectStaleCandidates(
              AND kept.status = 'success'
              AND kept.duplicate_of_id IS NULL
              AND kept.superseded_by_id IS NULL
+             AND kept.companion_source_id IS NULL
             JOIN published_fee_records fp
               ON fp.fee_published_id = f.fee_published_id
              AND fp.rolled_back_at IS NOT NULL
@@ -2215,19 +2220,17 @@ export async function runMagellanDiscovery(
     // A freshness search without a wrong-document finding replaces the link only with a page that
     // states a later date than the old document (or the year the older arm read), or states none
     // while the old date is not one the old document's text states (#2615 review).
-    // A search a stale price sent may always take the newer document the conflict kept; any other
-    // page is held to the date rule, and refused when no old date is known (#2062).
-    let heldToDate = Boolean(row.stale_stated_date);
+    // A search a stale price sent is held to the date rule whenever the old date is known; with
+    // none, it may take only the newer document the conflict kept (#2062).
     if (upgraded && row.freshness && row.stale_price) {
-      const check = stalePriceReplaces(row.stale_price, result.url, heldToDate);
+      const check = stalePriceReplaces(row.stale_price, result.url, Boolean(row.stale_stated_date));
       result.stalePriceCheck = check;
-      if (check.verdict === "newer_document") heldToDate = false;
       if (check.verdict === "refused") {
         upgraded = false;
         feedbackReads.stalePriceRefusals += 1;
       }
     }
-    if (upgraded && row.freshness && row.stale_stated_date && heldToDate) {
+    if (upgraded && row.freshness && row.stale_stated_date) {
       const check = statedDateReplaces({
         oldDate: row.stale_stated_date,
         oldBasis: row.stale_stated_basis ?? null,

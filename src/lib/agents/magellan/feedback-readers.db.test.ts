@@ -98,7 +98,7 @@ describe.skipIf(!connection)("Magellan reads Hamilton's conflict lessons and its
     const stale = async (id: number, link: string, linkDoc: { companion?: number; supersededBy?: number } = {}, rolledBack = true) => {
       await bank(id, `https://bank${id}.example`, link, id * 10 + 1);
       await document(id * 10 + 1, id, linkDoc.companion ? `https://bank${id}.example/old-edition.pdf` : link, linkDoc);
-      await document(id * 10 + 2, id, `https://bank${id}.example/fees-current.pdf`, { companion: 9 });
+      await document(id * 10 + 2, id, `https://bank${id}.example/fees-current.pdf`);
       await archivedFee(id * 100, id, rolledBack);
       await lesson("stale_price", "hamilton.cross_page_conflict", id, { documentId: id * 10 + 1, feeId: id * 100, evidence: { kept_document_id: id * 10 + 2 } });
     };
@@ -112,6 +112,9 @@ describe.skipIf(!connection)("Magellan reads Hamilton's conflict lessons and its
     // Already searched behind this document.
     await stale(105, "https://bank105.example/fees.pdf");
     await searched(105, { freshness_search: FRESHNESS_SEARCH_VERSION }, "2026-10-21T00:00:00Z");
+    // The "newer" document is a companion: never a page the link gives way to.
+    await stale(106, "https://bank106.example/fees.pdf");
+    await db`UPDATE source_documents SET companion_source_id = 11 WHERE id = ${1062}`;
 
     const rows = await selectStaleCandidates(asDb(), 10, "TX", new Date("2026-10-26T00:00:00Z"));
     expect(rows.map((row) => Number(row.id))).toEqual([101]);
@@ -166,10 +169,22 @@ describe.skipIf(!connection)("Magellan reads Hamilton's conflict lessons and its
       sourceUrl: "https://old-bank302.example",
       evidence: { finders: [{ key: "sitemap", outcome: "no_candidates" }] },
     });
+    // A miss from before the bank's last successful find is out of date.
+    await bank(303, "https://bank303.example", null);
+    await lesson("search_miss", "magellan.search_miss", 303, {
+      sourceUrl: "https://bank303.example",
+      at: "2026-10-10T00:00:00Z",
+      evidence: { finders: [{ key: "sitemap", outcome: "no_candidates" }] },
+    });
+    await db`
+      INSERT INTO pipeline_attempts (institution_id, stage, strategy, strategy_version, outcome, detail, created_at)
+      VALUES (303, 'discover', 'discover.sitemap', 2, 'ok', '{}'::jsonb, '2026-10-12T00:00:00Z')
+    `;
 
     const demotions = await loadSearchMissDemotions(asDb(), [
       { id: 301, website_url: "https://bank301.example" },
       { id: 302, website_url: "https://bank302.example" },
+      { id: 303, website_url: "https://bank303.example" },
     ]);
     expect([...demotions.keys()]).toEqual([301]);
     expect(demotions.get(301)).toEqual(["discover.sitemap", "discover.common_paths"]);
