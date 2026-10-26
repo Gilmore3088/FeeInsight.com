@@ -3975,8 +3975,42 @@ const STEP_EXPECTED_MS: Record<string, number> = {
   "growth-withdraw": 30_000,
   // Quick-prefixed steps measured over the 30 s quick default (2026-10-17 p99: 57 s, 89-110 s, 48 s).
   "public-discovery": 60_000,
-  "registry-ncua-extras": 110_000,
-  "registry-cfpb-card-agreements": 50_000,
+  // #1820: registry steps that download big files, re-measured 2026-10-26 from completed
+  // `agent_run_steps` started over the 9 days before (seconds, n / p50 / p90 / p99 / max). Each
+  // is priced at about its max, above its p99, so a later partition in the registry tick starts
+  // it only when it can finish inside the 270 s budget; otherwise it waits for the next tick's
+  // first slot. All stay under 270 s, so each still fits a tick on its own.
+  // call-report-summaries 17 / 13 / 31 / 171 / 196
+  "registry-call-report-summaries": 200_000,
+  // ffiec-call-detail 47 / 16 / 86 / 144 / 153
+  "registry-ffiec-call-detail": 155_000,
+  // ncua-extras 18 / 50 / 95 / 109 / 110 (was 110 s, the measured max; a little margin added)
+  "registry-ncua-extras": 115_000,
+  // branch-census-tracts 103 / 33 / 67 / 94 / 122
+  "registry-branch-census-tracts": 125_000,
+  // industry-events 148 / 18 / 50 / 88 / 104
+  "registry-industry-events": 105_000,
+  // sec-filings 72 / 23 / 48 / 63 / 78
+  "registry-sec-filings": 80_000,
+  // cfpb-card-agreements 80 / 1 / 41 / 71 / 71 (was 50 s, under its max)
+  "registry-cfpb-card-agreements": 75_000,
+  // federal-bills 9 / 6 / 48 / 60 / 61
+  "registry-federal-bills": 65_000,
+  // fdic-history 18 / 6 / 10 / 37 / 43
+  "registry-fdic-history": 45_000,
+  // bls-laus 10 / 1 / 39 / 40 / 40
+  "registry-bls-laus": 45_000,
+  // Not measured long (2 runs in 60 days, under a second; market-growth did not run): their
+  // downloads allow a 300 s fetch (nic-structure.ts) and 240 s LODES fetches (market-growth.ts),
+  // longer than any later partition is left (at least 240 s, START_NEXT_WITHIN_MS in the registry
+  // tick). Priced at 240 s so only a tick's first slot or its first 30 s starts them; re-measure
+  // and lower once they run. designation-lists and economy (180 s fetches) fit a later partition
+  // as they are; payment-networks completed in at most 3 s (n 73), and its one failure took 56 s.
+  // registry-bank-merger-orders (n 213, p99 12 s, one 93 s outlier) and registry-cfpb (171 s max,
+  // 180 s entry above), registry-state-bills (94 s max, 120 s) and registry-fred (41 s max,
+  // 150 s) keep the quick default or their own entries.
+  "registry-nic-structure": 240_000,
+  "registry-market-growth": 240_000,
   // Not measured yet (2026-10-18): each downloads and inflates a Board SDMX zip, H.15 about 68 MB
   // and H.8 about 75 MB, before the BLS/BEA or table reads; priced so a tick starts them early.
   "registry-fred": 150_000,
