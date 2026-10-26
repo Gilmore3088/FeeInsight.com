@@ -2082,6 +2082,15 @@ them balance tables; 7 live fees at one credit union (Access FCU) were read only
 go to the rules re-check's second look.
 The stale-read floor stays at v97.
 
+v129 (#1912, review of #2726): the account-subject read (v126, `accountSubjectProduct` in `lineup.ts`)
+lets the fee's own line decide. A subject sentence on the fee's own line wins over a different one on
+the line above, and the line above is read only when the fee's own line names no account: "Basic
+Checking: the $5 monthly fee is waived ..." under "The Everyday Savings account has a $5 monthly fee."
+gets no subject account. M&T's waiver line names no account, so it still takes "M&T Preferred Money
+Market" from the line above. The four live rows the account-subject recovery would fill
+(`KNOX_ACCOUNT_SUBJECT_CORRECT_LIVE`, off) are unchanged: three name their account on their own line.
+Account product only; the stale-read floor stays at v97.
+
 ## Darwin's re-read requests (`reread-feedback.ts`, #1511)
 
 Darwin's live fragment check (`darwin/live-fragment-check.ts`) writes one `pipeline_feedback` row of
@@ -2337,7 +2346,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v128 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v129 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v10 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |
