@@ -1,3 +1,5 @@
+import { lookup as dnsLookup } from "node:dns/promises";
+
 import { sql } from "@/lib/data-store/connection";
 import { crawlerUserAgent } from "@/lib/agents/crawler-identity";
 import { documentVaultSchemaReady, getDocumentVault, type DocumentVault } from "@/lib/agents/document-vault";
@@ -65,6 +67,30 @@ export function browserMayRequest(rawUrl: string): boolean {
   return true;
 }
 
+export type ResolveHost = (host: string) => Promise<Array<{ address: string }>>;
+const resolveHost: ResolveHost = (host) => dnsLookup(host, { all: true, verbatim: true });
+
+/**
+ * `browserMayRequest` plus DNS: a host name must resolve only to public addresses, so a name
+ * that points inward (`127.0.0.1.nip.io`, a rebinding domain) is refused too. Answers are
+ * cached per render in `seen`.
+ */
+export async function browserMayReach(rawUrl: string, resolve: ResolveHost, seen: Map<string, Promise<boolean>>): Promise<boolean> {
+  if (!browserMayRequest(rawUrl)) return false;
+  const url = new URL(rawUrl);
+  if (url.protocol === "data:" || url.protocol === "blob:") return true;
+  const host = url.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  if (/^[\d.]+$/.test(host) || host.includes(":")) return true;
+  let answer = seen.get(host);
+  if (!answer) {
+    answer = resolve(host)
+      .then((addresses) => addresses.length > 0 && addresses.every((entry) => isPublicFeeSourceAddress(entry.address)))
+      .catch(() => false);
+    seen.set(host, answer);
+  }
+  return answer;
+}
+
 /** Resource types the fee table never needs; skipping them keeps a render short and cheap. */
 const SKIPPED_RESOURCES = new Set(["image", "media", "font"]);
 
@@ -72,6 +98,9 @@ export type RouteHandler = (route: { request(): { url(): string; resourceType():
 
 interface BrowserPage {
   route(pattern: string, handler: RouteHandler): Promise<void>;
+  /** Every request, redirect hops included (`page.route` sees only the first hop). */
+  on(event: "request", listener: (request: { url(): string }) => void): void;
+  routeWebSocket?(pattern: RegExp, handler: (socket: { close(): Promise<void> | void }) => void): Promise<void>;
   goto(url: string, options: { waitUntil: "domcontentloaded" | "load" | "networkidle"; timeout: number }): Promise<{ status(): number; url(): string; headers(): Record<string, string>; body(): Promise<Buffer> } | null>;
   waitForLoadState(state: "networkidle", options: { timeout: number }): Promise<void>;
   evaluate<T, A>(fn: (arg: A) => T, arg: A): Promise<T>;
@@ -90,7 +119,8 @@ export type LaunchBrowser = () => Promise<Browser>;
 export const launchSlimChromium: LaunchBrowser = async () => {
   const [{ default: chromium }, { chromium: playwright }] = await Promise.all([import("@sparticuz/chromium"), import("playwright-core")]);
   return (await playwright.launch({
-    args: chromium.args,
+    // No WebRTC: its UDP traffic never passes `page.route`.
+    args: [...chromium.args, "--force-webrtc-ip-handling-policy=disable_non_proxied_udp", "--webrtc-ip-handling-policy=disable_non_proxied_udp"],
     executablePath: await chromium.executablePath(),
     headless: true,
   })) as unknown as Browser;
@@ -120,8 +150,10 @@ function expandFeeSections(args: { pattern: string; max: number }): number {
  * served) with the response's status. A failure to start the browser or load the page throws,
  * so `fetchAndRecordLink` records it as a network failure.
  */
-export async function renderedResponse(url: string, launch: LaunchBrowser = launchSlimChromium): Promise<Response> {
-  if (!browserMayRequest(url)) return new Response("address refused", { status: 400, statusText: "browser refused address" });
+export async function renderedResponse(url: string, launch: LaunchBrowser = launchSlimChromium, resolve: ResolveHost = resolveHost): Promise<Response> {
+  const seen = new Map<string, Promise<boolean>>();
+  const refused = () => new Response("address refused", { status: 400, statusText: "browser refused address" });
+  if (!(await browserMayReach(url, resolve, seen))) return refused();
   const browser = await launch();
   try {
     const context = await browser.newContext({ userAgent: crawlerUserAgent("Magellan"), javaScriptEnabled: true, acceptDownloads: false, serviceWorkers: "block" });
@@ -129,10 +161,18 @@ export async function renderedResponse(url: string, launch: LaunchBrowser = laun
       const page = await context.newPage();
       await page.route("**/*", async (route) => {
         const request = route.request();
-        if (SKIPPED_RESOURCES.has(request.resourceType()) || !browserMayRequest(request.url())) await route.abort();
+        if (SKIPPED_RESOURCES.has(request.resourceType()) || !(await browserMayReach(request.url(), resolve, seen))) await route.abort();
         else await route.continue();
       });
+      // Redirect hops skip `page.route`; any hop that points inward throws the render away.
+      const hops: Promise<boolean>[] = [];
+      page.on("request", (request) => {
+        hops.push(browserMayReach(request.url(), resolve, seen));
+      });
+      await page.routeWebSocket?.(/.*/, (socket) => void socket.close());
+      const reachedOnlyPublic = async () => (await Promise.all(hops)).every(Boolean) && (await browserMayReach(page.url(), resolve, seen));
       const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: NAVIGATION_TIMEOUT_MS });
+      if (!(await reachedOnlyPublic())) return refused();
       const status = response?.status() ?? 0;
       const contentType = response?.headers()["content-type"] ?? "";
       // The address served a document, not a page: keep its bytes as the fetcher would.
@@ -143,6 +183,7 @@ export async function renderedResponse(url: string, launch: LaunchBrowser = laun
       const expanded = await page.evaluate(expandFeeSections, { pattern: EXPAND_LABEL.source, max: MAX_EXPANDS }).catch(() => 0);
       if (expanded > 0) await page.waitForLoadState("networkidle", { timeout: SETTLE_TIMEOUT_MS }).catch(() => undefined);
       const html = await page.content();
+      if (!(await reachedOnlyPublic())) return refused();
       if (Buffer.byteLength(html) > MAX_HTML_BYTES) return new Response("rendered page too large", { status: 413, statusText: "rendered page too large" });
       return new Response(html, {
         status: status || 200,
@@ -254,7 +295,9 @@ export async function runBrowserFetch(options: {
   const vaultSchema = await documentVaultSchemaReady(db);
   const vault = options.vault ?? getDocumentVault();
   const vaultOn = vaultSchema && vault.configured;
-  for (const row of rows) {
+  for (const [index, row] of rows.entries()) {
+    // Another lane may have rendered since the count above: re-count before each later render.
+    if (index > 0 && (await rendersToday(db)) >= dailyCap) break;
     const url = (row.profile_canonical_source_url ?? row.fee_schedule_url ?? "").trim();
     let note: string | null = null;
     const fetched = await fetchAndRecordLink(db, row, async () => {
