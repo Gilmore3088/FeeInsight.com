@@ -906,4 +906,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract"],
     since: "2026-10-27",
   },
+  {
+    id: "issue-2064-daily-fee-cap-in-every-shape",
+    agent: "knox",
+    stage: "extract",
+    lesson: "A dollar cap on a day's overdraft or NSF fees is a fee of its own (the daily cap), however the schedule prints it: right after the fee (\"Maximum of $120.00 per day\"), named after its figure (\"$30.00/item ($150.00 max daily)\"), on its own line under the fee it caps (\"4 item cap per day (max fee of $120/day)\"), as \"Daily maximum\" after the per-item price, or in a sentence that names the fees it caps (\"Total overdraft charges/fees will not exceed $100.00 per day\"). Before reading one, rule out everything a cap is not. A limit is how far the bank covers an overdraft unless a fee or charge word governs the figure (\"Overdraft Limit $500 per day\", \"Total limit of $750\", \"Courtesy Pay limit of $500\" are no caps; \"max fee of $120/day\" and \"a limit of $108 each day in total fees\" are). Another service's limit (ATM, POS, card, deposit or returned deposited items), a sustained or extended charge (\"after 5 days\"), and a per-item price (\"Daily maximum $35 per item\") are no caps. A cap is two to twelve of the fee it caps, so \"Maximum of $25.00 per day\" beside a $35 fee is not one. It belongs to the overdraft or NSF fee on its line or the line right above with no other fee's price between them, the fee's own line included (\"Overdraft Fee $35 Stop Payment Fee $30\" over \"Limit of $120 per day\" is not the overdraft's), unless the cap prints its count (\"4 item cap\" at $30). A cap with no overdraft or NSF fee above it is no cap. Test every near-miss line through the shared check, which Darwin's live re-check and the restore paths also run, and put any widening of that check behind a switch until a live dry run counts what it would change.",
+    why: "The shadow lab's answer keys list daily caps at five banks that Knox never published (State keys 10500, 2017, 8741, live audits 2735 and 75). The first cut of v136 (#2768, head 1d60951) read them, but the review found it published caps from overdraft limits, deposited-item caps, other fees' lines, per-item prices and sustained charges, and its wider trace in the shared check would have kept or restored such rows on live paths. With the wider trace behind DAILY_CAP_LINES_LIVE (off), two of the six lab caps publish today (2017, 75); the switch, once James's live dry run clears it, adds 10500, 8741 and 2735.",
+    evidence: { issues: [2064, 1092], prs: [2768], files: ["src/lib/agents/knox/daily-fee-cap.ts", "src/lib/daily-cap-wording.ts", "src/lib/agents/knox/daily-fee-cap.test.ts", "src/lib/custom-report/daily-cap-lines.test.ts", "docs/project/findings/2026-10-27-daily-cap-lines-never-traced.md"] },
+    appliesTo: ["extract"],
+    since: "2026-10-27",
+  },
 ];

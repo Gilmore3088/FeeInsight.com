@@ -2393,7 +2393,15 @@ only on what the free team could not read.
     ATM/card, account maintenance/statements, checks, and the remaining services. They
     read price windows across a document, including PDFs flattened to one line: tiers
     ("2nd and subsequent items"), daily caps (`od_daily_cap` / `nsf_daily_cap`), waivers,
-    ranges and FREE/NONE.
+    ranges and FREE/NONE. v136 (#2064, `daily-fee-cap.ts`): a dollar cap is also read when named
+    after its figure ("($150.00 max daily)"), on its own line under the fee it caps ("4 item cap per
+    day (max fee of $120/day)"), as "Daily maximum" after the per-item price, or in a sentence that
+    names the fees it caps. The words before the figure must be only cap, count and fee words, and
+    `refusesDailyCap` (`src/lib/daily-cap-wording.ts`) refuses a card, ATM, deposit or deposited-item
+    limit, a sustained or "after N days" charge, a per-item price, and a limit no fee word governs
+    ("Overdraft Limit $500 per day"). The cap is two to twelve of the fee it caps, with no other price
+    between them unless the cap prints the count. The shared check's wider cap trace that most of these
+    need is behind `DAILY_CAP_LINES_LIVE` (off) until James's live dry run.
   - Every pass 2 row must pass Darwin's category guard and amount envelope before it is
     kept. A later specialist adds a fee only when no earlier one has the same fee.
     Pass 2 rows carry `knox_specialist:<strategy>`.
@@ -2512,7 +2520,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v135 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v136 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v10 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

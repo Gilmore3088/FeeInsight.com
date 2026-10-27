@@ -1,6 +1,7 @@
 import { CELL_SEPARATOR } from "@/lib/agents/rosetta/html-dom";
 import { retiredKeysInFamilies } from "@/lib/fee-fold";
 import { CANONICAL_KEY_MAP, FEE_FAMILIES } from "@/lib/fee-taxonomy";
+import { dailyFeeCap } from "@/lib/agents/knox/daily-fee-cap";
 import {
   AMOUNT_PATTERN,
   classifyPatternKey,
@@ -70,7 +71,8 @@ export const FAMILY_EXPERTS: readonly FamilyExpert[] = [
   {
     family: "overdraft_nsf",
     strategy: "extract.family.overdraft_nsf",
-    version: 5,
+    // v6 (#2064): the other ways a schedule prints a dollar cap on a day's fees (`daily-fee-cap.ts`).
+    version: 6,
     keys: familyKeys("Overdraft & NSF"),
     patterns: [
       { key: "od_protection_transfer", pattern: /\b(overdraft|OD)\b.{0,40}\bfrom (savings|shares?|money market|line)\b/i },
@@ -325,7 +327,7 @@ function matchFor(expert: FamilyExpert, name: string, heading: string | null, pe
 /** One family expert over the document's price windows. */
 export function runFamilyExpert(expert: FamilyExpert, windows: PriceWindow[]): ExtractionRulesResult {
   const result: ExtractionRulesResult = { candidates: [], held: [] };
-  let last: (FamilyMatch & { lineIndex: number }) | null = null;
+  let last: (FamilyMatch & { lineIndex: number; windowIndex: number; amount: number }) | null = null;
 
   windows.forEach((window, index) => {
     // In a flattened table row the cell nearest the price names it.
@@ -356,6 +358,21 @@ export function runFamilyExpert(expert: FamilyExpert, windows: PriceWindow[]): E
     const frequency = detectFrequency(detail);
 
     // A daily cap on overdraft or NSF fees, stated in dollars.
+    const pushCap = (hint: string, feeName: string): void => {
+      if (!passesDarwinChecks(hint, feeName, window.amount)) return;
+      result.candidates.push({
+        feeName,
+        amount: window.amount,
+        frequency: "daily",
+        canonicalHint: hint,
+        confidence: confidenceFor(window.excerpt) - 0.04,
+        excerpt: window.excerpt,
+        waivable: false,
+      });
+    };
+    // v136 (#2064): the other ways a schedule prints the cap (`dailyFeeCap`), for a figure the
+    // first rule below leaves unread, condition or not.
+    const otherCap = expert.family === "overdraft_nsf" ? () => dailyFeeCap(windows, index, last) : () => null;
     if (window.condition) {
       if (
         expert.family === "overdraft_nsf" &&
@@ -363,20 +380,16 @@ export function runFamilyExpert(expert: FamilyExpert, windows: PriceWindow[]): E
         recent &&
         (recent.hint === "overdraft" || recent.hint === "nsf")
       ) {
-        const hint = recent.hint === "overdraft" ? "od_daily_cap" : "nsf_daily_cap";
-        const feeName = `${recent.feeName} daily maximum`;
-        if (passesDarwinChecks(hint, feeName, window.amount)) {
-          result.candidates.push({
-            feeName,
-            amount: window.amount,
-            frequency: "daily",
-            canonicalHint: hint,
-            confidence: confidenceFor(window.excerpt) - 0.04,
-            excerpt: window.excerpt,
-            waivable: false,
-          });
-        }
+        pushCap(recent.hint === "overdraft" ? "od_daily_cap" : "nsf_daily_cap", `${recent.feeName} daily maximum`);
+      } else {
+        const cap = otherCap();
+        if (cap) pushCap(cap.hint, cap.feeName);
       }
+      return;
+    }
+    const cap = otherCap();
+    if (cap) {
+      pushCap(cap.hint, cap.feeName);
       return;
     }
     // A name that opens mid-sentence is prose from an agreement, not a fee row.
@@ -397,7 +410,7 @@ export function runFamilyExpert(expert: FamilyExpert, windows: PriceWindow[]): E
       if (hint && feeLineName) match = { hint, feeName: feeLineName };
     }
     if (!match) return;
-    last = { ...match, lineIndex: window.lineIndex };
+    last = { ...match, lineIndex: window.lineIndex, windowIndex: index, amount: window.amount };
 
     if (window.zero) {
       if (passesDarwinChecks(match.hint, match.feeName, 0) && !notAZeroPrice(match.hint, match.feeName)) {

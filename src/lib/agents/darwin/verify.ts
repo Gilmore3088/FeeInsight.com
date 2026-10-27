@@ -23,7 +23,7 @@ import { currentCopySchemaReady } from "@/lib/agents/magellan/current-copy";
 import { CATEGORY_GUARD_VERSION, checkFeeCategory, refileCategory, refileFromLine, withCollectionSection, withHeadingAbove } from "@/lib/fee-category-guard";
 import { RETIRED_CATEGORIES } from "@/lib/fee-fold";
 import { RULE_WHY, ruleFor } from "@/lib/agents/hamilton/eval-verdicts";
-import { checkFeeAgainstSource, checkRateAgainstSource, sourceLines } from "@/lib/custom-report/source-check";
+import { checkFeeAgainstSource, checkRateAgainstSource, sourceLines, type SourceCheckOptions } from "@/lib/custom-report/source-check";
 import { frequencyFamily, perEventFrequency, settledFrequency } from "@/lib/fee-frequency";
 import { HOURLY_PERIOD_WORD } from "@/lib/agents/darwin/hourly-frequency-check";
 import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
@@ -1076,6 +1076,7 @@ export function statedInOwnSource(
   row: Pick<RawFeeRow, "fee_name" | "amount" | "source_document_id" | "amount_kind" | "rate_percent"> & Partial<Pick<RawFeeRow,"product_name" | "outlier_flags">>,
   texts: ReadonlyMap<number, string>,
   canonicalFeeKey?: string | null,
+  options: SourceCheckOptions = {},
 ): boolean {
   if (isPercentFee(row)) {
     const rate = ratePercentOf(row);
@@ -1087,7 +1088,7 @@ export function statedInOwnSource(
   const stored = texts.get(Number(row.source_document_id));
   const text = stored ? ownedSourceText(row, stored) : null;
   if (!text) return false;
-  const result = checkFeeAgainstSource(text, row.fee_name, amount, ".", canonicalFeeKey);
+  const result = checkFeeAgainstSource(text, row.fee_name, amount, ".", canonicalFeeKey, options);
   return result.ok || result.reason === "tiered_fee";
 }
 
@@ -1096,6 +1097,7 @@ export function sourceLineFor(
   row: Pick<RawFeeRow, "fee_name" | "amount" | "source_document_id" | "amount_kind" | "rate_percent"> & Partial<Pick<RawFeeRow,"product_name" | "outlier_flags">>,
   texts: ReadonlyMap<number, string>,
   canonicalFeeKey?: string | null,
+  options: SourceCheckOptions = {},
 ): string | null {
   if (isPercentFee(row)) return null;
   const amount = normalizedAmount(row.amount);
@@ -1103,7 +1105,7 @@ export function sourceLineFor(
   const stored = texts.get(Number(row.source_document_id));
   const text = stored ? ownedSourceText(row, stored) : null;
   if (!text) return null;
-  const result = checkFeeAgainstSource(text, row.fee_name, amount, ".", canonicalFeeKey);
+  const result = checkFeeAgainstSource(text, row.fee_name, amount, ".", canonicalFeeKey, options);
   if (!result.ok) return null;
   // #1593: a $0 traced to a line that does not print it ("If an individual overdraft payment is
   // $20 or less any overdraft fees are waived" for "Overdraft Transfer Fee | $0"; a long line cut
