@@ -110,6 +110,7 @@ import { editionCheckDetail, recheckScheduleEditions } from "@/lib/agents/darwin
 import { canadianDocumentDetail, recheckCanadianDocuments } from "@/lib/agents/darwin/canadian-document-check";
 import { lateChargeBoundDetail, recheckLateChargeBounds } from "@/lib/agents/darwin/late-charge-bound-check";
 import { rateFloorDetail, recheckRateFloors } from "@/lib/agents/darwin/rate-floor-check";
+import { internationalDirectionDetail, recheckInternationalDirections } from "@/lib/agents/darwin/international-direction-check";
 import { readVerifyMisses, verifyMissDetail, verifyMissNote } from "@/lib/agents/darwin/verify-misses";
 import { bandedZeroDetail, recheckBandedZeros } from "@/lib/agents/darwin/banded-zero-check";
 import { cardProgramSectionDetail, recheckCardProgramSections } from "@/lib/agents/darwin/card-program-section-check";
@@ -1278,6 +1279,18 @@ async function executeAgenticStep(
       const rateFloorNote = rateFloor.matched > 0
         ? ` Rate floor re-check: ${rateFloor.matched.toLocaleString()} live flat fee(s) at ${rateFloor.institutions.toLocaleString()} institution(s) are a percentage charge's floor, ${rateFloor.rateTwinLive.toLocaleString()} beside the live rate fee (${rateFloor.live && !rateFloor.dryRun ? `${rateFloor.flagged.toLocaleString()} flagged, ${rateFloor.takenDown.length.toLocaleString()} archived` : rateFloor.dryRun ? "dry run: would take down, nothing written" : "switch off: would take down, nothing written"}).`
         : "";
+      // #1912: live international wire fees whose own line states no direction, or another one
+      // (international-direction-check.ts); a report only on a dry run or with its switch off
+      // (INTERNATIONAL_DIRECTION_TAKEDOWN_LIVE).
+      const internationalDirection = await recheckInternationalDirections(tx, {
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+      });
+      const internationalDirectionNote = internationalDirection.matched > 0
+        ? ` International wire direction re-check: ${internationalDirection.matched.toLocaleString()} live international wire fee(s) at ${internationalDirection.institutions.toLocaleString()} institution(s) fail the direction review, ${internationalDirection.unproven.toLocaleString()} unproven left live (${internationalDirection.live && !internationalDirection.dryRun ? `${internationalDirection.flagged.toLocaleString()} flagged, ${internationalDirection.takenDown.length.toLocaleString()} archived` : internationalDirection.dryRun ? "dry run: would take down, nothing written" : "switch off: would take down, nothing written"}).`
+        : "";
       // #1882: live $0 overdraft and NSF fees that are one band of a priced fee, or the next
       // column's free word (banded-zero-check.ts); a report only on a dry run or with its switch off
       // (BANDED_ZERO_TAKEDOWN_LIVE).
@@ -1386,7 +1399,7 @@ async function executeAgenticStep(
         : "";
       return {
         status: "completed",
-        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${verification.deferredRawFees ? ` ${verification.deferredRawFees.toLocaleString()} row(s) deferred without a verification decision because current source/raw admission remains unresolved.` : ""}${recheckReceiptNote(recheck)}${release.deferred ? ` ${release.deferred.toLocaleString()} held fee(s) deferred without a release decision.` : ""}${conditionalZero.selected > 0 ? ` Settled ${(conditionalZero.selected - (conditionalZero.deferred ?? 0)).toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).${conditionalZero.deferred ? ` ${conditionalZero.deferred.toLocaleString()} conditional-$0 hold(s) deferred without a decision.` : ""}` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${verification.categoryChange && verification.categoryChange.takeoverProof.rows > 0 ? ` ${verification.categoryChange.takeoverProof.rows.toLocaleString()} row(s) a re-read took over under a new category ${verification.categoryChange.takeoverProof.live ? "(judged again)" : "(take-over proof switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${hourlyNote}${hourlyFullNote}${nonDepositNote}${nonDepositFullNote}${translatedCopyNote}${productPageRepeatNote}${rereadCategoryNote}${sameLineReplacementNote}${sameLineReadNote}${editionNote}${canadianDocumentNote}${lateChargeBoundNote}${rateFloorNote}${bandedZeroNote}${cardProgramSectionNote}${loanSectionNote}${lineConflictNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}${verifyMissNote(verifyMisses)}`,
+        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${verification.deferredRawFees ? ` ${verification.deferredRawFees.toLocaleString()} row(s) deferred without a verification decision because current source/raw admission remains unresolved.` : ""}${recheckReceiptNote(recheck)}${release.deferred ? ` ${release.deferred.toLocaleString()} held fee(s) deferred without a release decision.` : ""}${conditionalZero.selected > 0 ? ` Settled ${(conditionalZero.selected - (conditionalZero.deferred ?? 0)).toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).${conditionalZero.deferred ? ` ${conditionalZero.deferred.toLocaleString()} conditional-$0 hold(s) deferred without a decision.` : ""}` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${verification.categoryChange && verification.categoryChange.takeoverProof.rows > 0 ? ` ${verification.categoryChange.takeoverProof.rows.toLocaleString()} row(s) a re-read took over under a new category ${verification.categoryChange.takeoverProof.live ? "(judged again)" : "(take-over proof switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${hourlyNote}${hourlyFullNote}${nonDepositNote}${nonDepositFullNote}${translatedCopyNote}${productPageRepeatNote}${rereadCategoryNote}${sameLineReplacementNote}${sameLineReadNote}${editionNote}${canadianDocumentNote}${lateChargeBoundNote}${rateFloorNote}${internationalDirectionNote}${bandedZeroNote}${cardProgramSectionNote}${loanSectionNote}${lineConflictNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}${verifyMissNote(verifyMisses)}`,
         detail: {
           selected_raw_fees: verification.selectedRawFees,
           processed_raw_fees: verification.processedRawFees,
@@ -1427,6 +1440,7 @@ async function executeAgenticStep(
           canadian_document_check: canadianDocumentDetail(canadianDocument),
           late_charge_bound_check: lateChargeBoundDetail(lateChargeBound),
           rate_floor_check: rateFloorDetail(rateFloor),
+          international_direction_check: internationalDirectionDetail(internationalDirection),
           banded_zero_check: bandedZeroDetail(bandedZero),
           card_program_section_check: cardProgramSectionDetail(cardProgramSection),
           loan_section_check: loanSectionDetail(loanSection),

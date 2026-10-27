@@ -1397,6 +1397,21 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   `late_charge_bound: <name>` (verified row rejected with the `late_charge_bound` flag). Step
   detail `late_charge_bound_check`. Dry run Oct 25: 5 live fees at 3 institutions (15729, 154636,
   154637 at 4956; 79880 at 5338; 124614 at 6789).
+- An international wire fee whose own line states no direction, or another one
+  (`international-direction-check.ts`, #1912). Verify holds such a new row (`internationalVerificationDecision`),
+  but the live recheck never ran that review, so Amarillo National Bank's "Foreign Wire: | $45.00"
+  (118154) stayed live as wire_intl_outgoing. Each verify step reads the next batch of live
+  `wire_intl_*` fees (and other wire fees whose name says international), after a cursor on the run
+  ledger, against the very text Knox read them from (same text hash), with the same
+  `internationalDirectionOutcome` verify uses. A hold is a match; a decline (own line not found exactly
+  once) is `unproven` and stays live; a changed or missing text is left to Knox's next read. The switch
+  (`INTERNATIONAL_DIRECTION_TAKEDOWN_LIVE`) is off until James approves the dry-run count; on, a match goes
+  through the 12-hour second look (`darwin.international_direction`) and is archived with
+  `international_direction: <reason>` (verified row rejected with the `international_direction` flag;
+  event `darwin.international_direction_takedown`). It never re-files; `sourceCategory` reports the
+  category the line shows. Step detail `international_direction_check`. Dry run Oct 27: 423 of 2,423 live
+  fees at 407 institutions (421 wire_intl_outgoing, 3 of them filed outgoing on an incoming line), 515
+  unproven, 195 left for Knox.
 - A percentage charge's floor read as a flat fee (`rate-floor-check.ts`, #1615). "Cash Advance |
   Either $5.00 or 3% of the amount of each cash advance, whichever is greater" costs the percentage;
   the $5 is the least it can be, and went live as a flat $5. Knox v118 no longer reads such a floor as
@@ -2336,6 +2351,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `CANADIAN_DOCUMENT_CHECK_VERSION` | `darwin.canadian_document` | v1 | `darwin/canadian-document-check.ts` |
 | `LATE_CHARGE_BOUND_CHECK_VERSION` | `darwin.late_charge_bound` | v1 | `darwin/late-charge-bound-check.ts` |
 | `RATE_FLOOR_CHECK_VERSION` | `darwin.rate_floor` | v1 | `darwin/rate-floor-check.ts` |
+| `INTERNATIONAL_DIRECTION_CHECK_VERSION` | `darwin.international_direction` | v1 | `darwin/international-direction-check.ts` |
 | `BANDED_ZERO_CHECK_VERSION` | `darwin.banded_zero` | v1 | `darwin/banded-zero-check.ts` |
 | `CARD_PROGRAM_SECTION_CHECK_VERSION` | `darwin.card_program_section` | v1 | `darwin/card-program-section-check.ts` |
 | `LOAN_SECTION_CHECK_VERSION` | `darwin.loan_section` | v1 | `darwin/loan-section-check.ts` |
