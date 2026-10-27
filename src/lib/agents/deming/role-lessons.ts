@@ -143,7 +143,7 @@ export const DEMING_LESSONS: AgentLesson[] = [
     stage: "loop proof",
     lesson: "Count a flag as routed only when the owning agent's reader of that row's own stage and check reads it, never because the kind has some reader in the agent's folder. Plant each class the weekly check finds with no catch as a listed gap, from a real miss's own line, and run every check that runs on live fees on it before calling it uncaught: a shape today's check would flag but the daily sample never reached is a coverage gap, not a missing check.",
     why: "W43's routed count was read kind by kind, so a Knox miss whose only Knox-kind row was a confirmed takedown from the rules re-check counted as routed, though Knox's takedown lessons read only the source check, limit guard and business schedule; read by stage and check, routed fell from 11 to 10. Of the weekly-check classes no loop caught, an annual box rent, a price ladder, a name read across two columns and a box late fee filed as a loan's pass every live check; W43's 'Courtesy Pay N/A' would have been flagged by the name check, which the daily audit's sample never reached.",
-    evidence: { issues: [2066], prs: [], files: ["src/lib/agents/deming/planted-errors.ts", "src/lib/agents/learning/feedback-kinds.ts", "scripts/live-batch-gaps.mjs"] },
+    evidence: { issues: [2066], prs: [2781], files: ["src/lib/agents/deming/planted-errors.ts", "src/lib/agents/learning/feedback-kinds.ts", "scripts/live-batch-gaps.mjs"] },
     appliesTo: "all",
     since: "2026-10-27",
   },
