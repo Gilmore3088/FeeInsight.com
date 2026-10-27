@@ -4,6 +4,7 @@ import { feedbackSchemaReady } from "@/lib/agents/learning/feedback";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { BUSINESS_DOC_SQL, BUSINESS_SCHEDULE_CHECK, BUSINESS_SCHEDULE_REASON } from "@/lib/agents/hamilton/business-schedule";
 import { CONFIRMED_KIND } from "@/lib/agents/hamilton/second-look";
+import { businessSectionPlacement, pricedSectionAudiences } from "./audience-context";
 import { lessonName } from "./lessons";
 import type { ExtractedFeeCandidate } from "./rules";
 
@@ -26,7 +27,14 @@ type SqlTag = typeof sql;
  *   a same-name read at another amount is not taught; a new business price on a new copy waits for
  *   its own takedown.
  * - document: the document's address names a business-only schedule (`BUSINESS_DOC_SQL`, the check's
- *   own rule), so each of its fees is business, as the check already judges them.
+ *   own rule), so each of its fees is business, as the check already judges them. v2 (#2072): the
+ *   address alone is not trusted for every fee. The document's stored text (`agent_source_texts`) is
+ *   read first: a text that holds a priced personal section (a tabbed page whose address names its
+ *   business tab, as Portland FCU's `Fee-Schedule?panel=Business-Fees` holds the whole page: Personal
+ *   Fees, then Business Fees, then Safe Deposit Boxes for all members) teaches only the fees whose
+ *   own line sits under a business heading (`businessSectionPlacement`); a fee under a personal or
+ *   general heading, or one whose line cannot be placed, stays unknown. No stored text, no document
+ *   lesson. Sampled before v2 at 27/47 correct, all 20 errors on that one document.
  * Only a takedown still down for its business-schedule reason counts: a restored fee, or one later
  * taken down for something else, teaches nothing. A lesson applies only when Knox's own read of the
  * line has no audience (`feeApplicability` says unknown): a line that states consumer stays consumer.
@@ -37,7 +45,7 @@ type SqlTag = typeof sql;
  * loads the lessons and counts the reads they would label (`audienceLessonMatches`), the live dry run.
  * Deterministic: no provider call.
  */
-export const KNOX_AUDIENCE_LESSONS_VERSION = 1;
+export const KNOX_AUDIENCE_LESSONS_VERSION = 2;
 export const KNOX_AUDIENCE_LESSONS_SWITCH = "KNOX_AUDIENCE_LESSONS_LIVE";
 /** Lessons read per extract step; 396 confirmed business-schedule takedowns were still down on 2026-10-27. */
 const AUDIENCE_LESSON_LIMIT = 5000;
@@ -137,15 +145,35 @@ export async function loadAudienceLessons(db: SqlTag, sourceDocumentIds: readonl
   }
 }
 
-/** Pure: the lesson for a read from this document, when Knox's own read of the line gives no audience. */
-export function audienceLessonFor(candidate: ExtractedFeeCandidate, lessons: AudienceLessons, sourceDocumentId: number): AudienceLessonMatch | null {
+/**
+ * Pure (#2072): whether a business-only document's lesson holds for this fee, judged from the
+ * document's stored text. A text with a priced personal section holds more than the business
+ * schedule its address names, so the fee's own line must sit under a business heading.
+ */
+export function documentLessonHolds(candidate: Pick<ExtractedFeeCandidate, "feeName" | "amount">, documentText: string | null): boolean {
+  if (!documentText?.trim()) return false;
+  const lines = documentText.split("\n");
+  if (!pricedSectionAudiences(lines).has("consumer")) return true;
+  return businessSectionPlacement(lines, candidate.feeName, candidate.amount).placed === "business";
+}
+
+/**
+ * Pure: the lesson for a read from this document, when Knox's own read of the line gives no audience.
+ * `documentText` is the document's stored text the read came from; a document lesson needs it.
+ */
+export function audienceLessonFor(
+  candidate: ExtractedFeeCandidate,
+  lessons: AudienceLessons,
+  sourceDocumentId: number,
+  documentText: string | null,
+): AudienceLessonMatch | null {
   if (lessons.loaded === 0 || !Number.isSafeInteger(sourceDocumentId)) return null;
   if (feeApplicability(candidate.feeName, candidate.excerpt, candidate.amount).feeAudience !== "unknown") return null;
   const amount = cents(candidate.amount);
   const named = amount == null ? undefined : lessons.names.get(nameKey(sourceDocumentId, candidate.feeName, amount));
   if (named != null) return { scope: "name", feedbackId: named };
   const document = lessons.documents.get(sourceDocumentId);
-  return document != null ? { scope: "document", feedbackId: document } : null;
+  return document != null && documentLessonHolds(candidate, documentText) ? { scope: "document", feedbackId: document } : null;
 }
 
 export function audienceLessonFlag(scope: AudienceLessonScope): string {

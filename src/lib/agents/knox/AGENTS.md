@@ -1910,7 +1910,7 @@ release, broad re-extraction, source fetch, recovery, migration, provider activa
 The guards cover selected rows under Read Committed, not serializable new-row phantom isolation.
 The original Oct7 recurrence counts remain dated history, not current impact measurements.
 
-Audience lessons (`audience-lessons.ts`, `KNOX_AUDIENCE_LESSONS_VERSION` v1, #2062): a confirmed
+Audience lessons (`audience-lessons.ts`, `KNOX_AUDIENCE_LESSONS_VERSION` v2, #2062, #2072): a confirmed
 business-schedule takedown (`takedown_confirmed`, check `hamilton.business_schedule`) whose fee is still
 down for its `business_schedule:` reason teaches the audience of the document it was read from. The
 same document's fee of the same name (`lessonName`) at the same amount is a business fee (a mixed
@@ -1929,6 +1929,15 @@ audience on 13 banks' business-only documents would be read as business on a re-
 lessons are taught; 3 live fees on those documents share a taught name, 1 of them at the taught amount,
 and all 3 state their audience, so none would be labelled. Switching it on takes a rules bump so the documents
 are read again.
+v2 (#2072): the document lesson no longer trusts the address for every fee. The v1 sample was 27/47
+correct, all 20 errors on one tabbed page (Portland FCU, document 37425, `Fee-Schedule?panel=Business-Fees`,
+whose stored text holds Personal Fees, then Business Fees, then Safe Deposit Boxes for all members). Now
+the document's stored text is read first (`documentLessonHolds`): a text with a priced personal section
+(`pricedSectionAudiences` in `audience-context.ts`) teaches only a fee whose own line sits under a
+business heading (`businessSectionPlacement`: the first heading above the line, past table rows, prices,
+prose and footnotes); a fee under a personal or general heading, or whose line cannot be placed, stays
+unknown, and with no stored text there is no document lesson. Business-only texts keep the lesson for
+every fee. The v2 count on prod was not re-run.
 
 Read lessons (`read-lessons.ts`, `KNOX_READ_LESSONS_VERSION` v1, #2062): what other agents' checks fixed
 in a document's read is read back before Knox reads that document again, keyed like the audience lessons
@@ -2573,7 +2582,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `HELD_RATE_RECHECK_VERSION` | — | v2 | `knox/held-recheck.ts` |
 | `NAME_FILE_KEY_VERSION` | — | v2 | `knox/held-recheck.ts` |
 | `KNOX_LAYOUT_SIGNATURE_VERSION` | — | v1 | `knox/layout-signature.ts` |
-| `KNOX_AUDIENCE_LESSONS_VERSION` | — | v1 | `knox/audience-lessons.ts` |
+| `KNOX_AUDIENCE_LESSONS_VERSION` | — | v2 | `knox/audience-lessons.ts` |
 | `KNOX_READ_LESSONS_VERSION` | — | v1 | `knox/read-lessons.ts` |
 | `KNOX_LESSONS_VERSION` | — | v5 | `knox/lessons.ts` |
 | `ACCOUNT_SUBJECT_CORRECT_STRATEGY` | `knox.account_subject_correct` | v1 | `knox/account-subject-correct.ts` |

@@ -100,12 +100,12 @@ describe.skipIf(!connection)("Knox learns the audience from confirmed business-s
       expect(loaded.loaded).toBe(2);
       expect([...loaded.names.values()].sort()).toEqual([nameLesson, docLesson].sort());
       expect([...loaded.documents.entries()]).toEqual([[business.documentId, docLesson]]);
-      expect(lessons.audienceLessonFor(candidate("Business ATM/Debit Transactions, off premises", 2, "atm_non_network"), loaded, mixed.documentId))
+      expect(lessons.audienceLessonFor(candidate("Business ATM/Debit Transactions, off premises", 2, "atm_non_network"), loaded, mixed.documentId, mixed.row.normalized_text ?? null))
         .toEqual({ scope: "name", feedbackId: nameLesson });
       // The same name at another price on the mixed schedule is not taught.
-      expect(lessons.audienceLessonFor(candidate("Business ATM/Debit Transactions, off premises", 2.5, "atm_non_network"), loaded, mixed.documentId)).toBeNull();
-      expect(lessons.audienceLessonFor(candidate("Stop Payment", 30, "stop_payment"), loaded, mixed.documentId)).toBeNull();
-      expect(lessons.audienceLessonFor(candidate("Stop Payment", 35, "stop_payment"), loaded, business.documentId))
+      expect(lessons.audienceLessonFor(candidate("Business ATM/Debit Transactions, off premises", 2.5, "atm_non_network"), loaded, mixed.documentId, mixed.row.normalized_text ?? null)).toBeNull();
+      expect(lessons.audienceLessonFor(candidate("Stop Payment", 30, "stop_payment"), loaded, mixed.documentId, mixed.row.normalized_text ?? null)).toBeNull();
+      expect(lessons.audienceLessonFor(candidate("Stop Payment", 35, "stop_payment"), loaded, business.documentId, business.row.normalized_text ?? null))
         .toEqual({ scope: "document", feedbackId: docLesson });
       // Another document of the same bank is not taught, and an unrelated document reads nothing.
       expect((await lessons.loadAudienceLessons(tx, [mixed.documentId])).documents.size).toBe(0);
@@ -120,10 +120,10 @@ describe.skipIf(!connection)("Knox learns the audience from confirmed business-s
       const id = await takenDown(tx, b, business, candidate("Monthly Service Charge", 20, "monthly_maintenance"), "business_schedule: consumer fee #9");
       const copy = await document(tx, b, "commercial/fees-2026", "Commercial Fees\nStop Payment | $35.00\nMonthly Service Charge | $20.00\n");
       // The newer copy is its own document, so only a lesson read from it teaches it: the lesson is the document's.
-      expect(lessons.audienceLessonFor(candidate("Stop Payment", 35, "stop_payment"), await lessons.loadAudienceLessons(tx, [copy.documentId]), copy.documentId)).toBeNull();
+      expect(lessons.audienceLessonFor(candidate("Stop Payment", 35, "stop_payment"), await lessons.loadAudienceLessons(tx, [copy.documentId]), copy.documentId, copy.row.normalized_text ?? null)).toBeNull();
       const loaded = await lessons.loadAudienceLessons(tx, [business.documentId]);
       const read = candidate("Stop Payment", 35, "stop_payment");
-      const match = lessons.audienceLessonFor(read, loaded, business.documentId)!;
+      const match = lessons.audienceLessonFor(read, loaded, business.documentId, business.row.normalized_text ?? null)!;
       expect(match).toEqual({ scope: "document", feedbackId: id });
       expect(await extract.insertCandidate(tx, { runId: b.runId, row: business.row, candidate: lessons.withAudienceLesson(read, match),
         extraFlags: [lessons.audienceLessonFlag(match.scope)] })).toBe(true);
