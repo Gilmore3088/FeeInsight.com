@@ -952,7 +952,7 @@ export const KNOX_LESSONS: AgentLesson[] = [
     stage: "extract",
     lesson: "An address that names a business schedule (\"Fee-Schedule?panel=Business-Fees\", \"/business/fees\") says which tab the bank linked, not what the stored text holds. A tabbed web page is often captured whole: a \"Personal Fees\" table, then a \"Business Fees\" table, then a section for every member (\"Safe Deposit Boxes For members that ...\"). Before reading a fee as business because of its document, place the fee's own line: only a line under a business heading is business; a line under a personal heading or a general section stays as the line reads, and a line that cannot be placed stays unknown.",
     why: "Knox's document audience lesson trusted a business-only address for every fee on the document and was sampled at 27/47 correct (#2072). All 20 errors were on one tabbed page, Portland FCU's document 37425: 14 Personal Fees rows at consumer prices (\"Account Reconciliation (per hour) | $25.00\") and 6 Safe Deposit Box sizes offered to all members, while the 12 other banks' business-only documents were 25/25 correct.",
-    evidence: { issues: [2072, 2062], prs: [], files: ["src/lib/agents/knox/audience-lessons.ts", "src/lib/agents/knox/audience-context.ts"] },
+    evidence: { issues: [2072, 2062], prs: [2786], files: ["src/lib/agents/knox/audience-lessons.ts", "src/lib/agents/knox/audience-context.ts"] },
     appliesTo: ["extract"],
     since: "2026-10-27",
   },
