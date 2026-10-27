@@ -20,6 +20,8 @@
 
 import { boxSectionLateFee } from "@/lib/custom-report/box-section-late-fee";
 import { collectionSectionReturn } from "@/lib/custom-report/collection-section-return";
+import { billPayReturnedByPayee, payeeReturnedBillPayOnLine } from "@/lib/custom-report/payee-returned-bill-pay";
+import { commercialLockboxName, commercialLockboxOnLine } from "@/lib/custom-report/commercial-lockbox";
 import { namedForCheckingAccount } from "@/lib/checking-fee-name";
 import { paperStatementPriceOnLine } from "@/lib/paper-statement-price";
 import { abbreviatesInternationalWire, ATM_ABROAD, COLLECTION_ITEM, DRAFT_PROTECTION_FEE, foldRetiredCategory, FOREIGN_DEPOSIT_RETURN, FOREIGN_ITEM_RETURN, INCOMING_WIRE, INTERNATIONAL_ATM, IRA_CLOSING, ITEM_COPY, RESEARCH_SPLIT_LIVE, SKIP_A_PAY, SUSTAINED_OVERDRAFT } from "@/lib/fee-fold";
@@ -47,6 +49,19 @@ export interface CategoryGuardContext {
    * (`collectionSectionReturn`), when the caller read it (`withCollectionSection`). Read only for NSF.
    */
   collection_section?: boolean | null;
+  /**
+   * v99 (#1912): the fee's stored text prints this bill pay return charge with the bank's words that
+   * the payee returned it, on its line or the note wrapped onto the next (`payeeReturnedBillPayOnLine`),
+   * when the caller read it (`withCollectionSection`). Read only for NSF.
+   */
+  payee_returned?: boolean | null;
+  /**
+   * v100 (#1912): the fee's stored text prints this lock box name as the commercial lockbox service
+   * (remittance processing for businesses), on its own line or under a business, treasury or cash
+   * management heading (`commercialLockboxOnLine`), when the caller read it (`withCollectionSection`).
+   * Read only for a safe deposit box.
+   */
+  commercial_lockbox?: boolean | null;
 }
 
 export type CategoryGuardVerdict =
@@ -99,7 +114,8 @@ const OVERDRAFT_AND_RETURNED = new RegExp(
  * says consumer or personal covers both and stays; "business day" is a cut-off, not a payer.
  */
 const BUSINESS_ONLY = String.raw`^(?!.*\b(consumer|personal|retail|individual)\b).*\b(business|commercial|corporate)\b(?!\s+days?\b)`;
-const WIRE_CORRECTIONS = "trace|reversal|recall|amend|investigat|research|return";
+// v98 (#1912): a rejected wire ("Foreign Wire Reject" $25, Apl FCU 67971) is a correction too.
+const WIRE_CORRECTIONS = "trace|reversal|recall|amend|investigat|research|return|reject";
 // "Int'l Wire Fee Out" is an international wire; one price for "Domestic & Int'l" stays domestic.
 const INTL_ABBREV = String.raw`^(?!.*\bdomestic\b).*\bint['’]l\b`;
 /** Express, priority or two-day delivery of a card: the rush card fee, not the plain replacement. */
@@ -119,18 +135,31 @@ const ES_INTL = "internacional|extranjer";
 const ES_INCOMING = "entrante|recibid";
 const ES_OUTGOING = "saliente|enviad";
 /**
+ * The words that put a name in the NSF category ("Unpaid Item Fee", "Returned ACH", "Cargo por fondos
+ * insuficientes"). Exported so the no-charge sentence rule (#2040, `src/lib/no-charge-statement.ts`)
+ * refuses a page that prices any line this guard would file as NSF.
+ */
+export const NSF_NAME_INCLUDE = /(nsf|insufficient|non[- ]?sufficient|returned item|return(ed)? (check|item|ach|payment|draft)|returned unpaid|unpaid item|fondos insuficientes|cheques? devuelt[oa]s?|art[ií]culos? devuelt[oa]s?|partidas? devuelt[oa]s?|devoluci[oó]n por fondos)/i;
+/**
+ * v90 (#1912): a name that names the safe deposit box ("Safety Deposit Box-Late Fee", "Safe Box Late
+ * Fee - Per Month after 3 months", "SDB Late Payment", "Late charge for safety deposit box rental
+ * after 10 days"). A night deposit box is the night depository's, not this.
+ * v96 (#1912, review of #2639): whatever stands between "night" and "deposit box": "Night Drop Deposit
+ * Box Late Fee", the double-spaced "Night  Deposit Box", "Night Drop/Deposit Box" (`NIGHT_DEPOSIT_NAME`).
+ */
+const SAFE_DEPOSIT_BOX_NAME = /\bsafe(?:ty)?[\s-]*(?:deposit|box)|\bsdb\b|(?<!night[\s\/-]+(?:drop[\s\/-]+)?)\bdeposit\s+box(?:es)?\b/i;
+/**
+ * v96 (#1912): a night depository named by its night deposit or night drop words, however they are
+ * spaced or joined ("Night  Deposit Box", "Night Drop Deposit Box", "Night-Drop"). Never a safe deposit box.
+ */
+const NIGHT_DEPOSIT_NAME = String.raw`night[\s\/-]+(?:deposit|drop)`;
+/**
  * v88 (#1912): a book transfer moves money to another account at the same bank ("Transferencia
  * bancaria saliente a una cuenta en M&T (transferencia contable)" $16, M&T 145046, beside its $32
  * outgoing wire; "Outgoing Wire Transfer within IBC (Book Transfer)" $10). It is not a domestic wire
  * out of the bank, and pooled with one it pulls the bank's wire price down. A wire price that only
  * says it also covers book transfers ("incluidas las transferencias contables") stays.
  */
-/**
- * v90 (#1912): a name that names the safe deposit box ("Safety Deposit Box-Late Fee", "Safe Box Late
- * Fee - Per Month after 3 months", "SDB Late Payment", "Late charge for safety deposit box rental
- * after 10 days"). A night deposit box is the night depository's, not this.
- */
-const SAFE_DEPOSIT_BOX_NAME = /\bsafe(?:ty)?[\s-]*(?:deposit|box)|\bsdb\b|(?<!night[\s-])\bdeposit\s+box(?:es)?\b/i;
 const BOOK_TRANSFER = String.raw`^(?![\s\S]*(?:\b(?:includ|incluid|exclud|excluy)\w*|\bincl\b|\bfree\b|\bwaiv\w*|\bno\s+charge|\bor\s+book))[\s\S]*(?:\bbook[- ]?(?:entry\s+)?transfers?\b|\btransferencias?\s+contables?\b)`;
 /** "Transferencia bancaria" and "Giro bancario" are a wire in a Spanish schedule. */
 const WIRE = /(wire|transferencias? (bancarias?|cablegr[aá]ficas?)|giros? bancarios?)/i;
@@ -225,13 +254,14 @@ export function nonCustomerCashiersCheck(canonicalFeeKey: string, name: string, 
  * #1513: a wire filed as domestic whose name writes "international" short ("Wire Trans. (Intern.
  * Outgoing)", "Int. Wire Transfer – Outgoing", "Internat'l Wire"; `abbreviatesInternationalWire`,
  * the reading Knox v120 files them by) fails the domestic wire and re-files to the international
- * wire of its direction. Held by `INTL_ABBREVIATION_REFILE_LIVE`: off, the rule reads nothing. The
+ * wire of its direction. Held by `INTL_ABBREVIATION_REFILE_LIVE`, on since James's yes (Oct 26, guard
+ * v95); off, the rule reads nothing. The
  * read-only dry run (Oct 26) found 2 live domestic wires it would re-file (inst 1405: 90381
  * "Int. Wire Transfers – Incoming" $20 beside "Wire Transfers – Incoming" $15, and 90382 "Int. Wire
  * Transfer – Outgoing" $40 beside "Wire Transfers – Outgoing" $20). Turning it on bumps
  * `CATEGORY_GUARD_VERSION`, so Darwin's re-check judges every live wire again.
  */
-export const INTL_ABBREVIATION_REFILE_LIVE = false;
+export const INTL_ABBREVIATION_REFILE_LIVE = true;
 /** The international wire a domestic wire's abbreviated name re-files to, while the rule is live; null otherwise. Pure. */
 export function intlAbbreviationRefile(canonicalFeeKey: string, name: string, live: boolean = INTL_ABBREVIATION_REFILE_LIVE): string | null {
   if (!live) return null;
@@ -256,6 +286,21 @@ const SIGNATURE_GUARANTEE = /\bmedallion\b|\bsignature\s+guarant/i;
 /** v74: a loan payment ("Foreign Returned Item | Varies | ACH Loan Payment on Website" $2, 153002) is not a deposited item coming back. */
 // A loan payment line that names no deposit ("Returned Deposit/Loan Payment" prices both and stays).
 const LOAN_PAYMENT = /^(?![\s\S]*\bdeposit)[\s\S]*\bloan\s+payments?\b/i;
+/**
+ * v97 (#1905): a name that names a home equity loan or line, an equity loan or line, a HELOC or a line
+ * of credit prices that loan, not a deposit account: "Home Equity Line Check returned (due to
+ * non-sufficient funds)" $29 (Navy Federal 154634, live as NSF beside its other lending twin 122342),
+ * "HELOC NSF fee", "Line of Credit Insufficient Funds". As v80 reads a home equity line's stop payment,
+ * one that also names a deposit account ("NSF fee (checking or savings)", "Returned Item - Checking /
+ * Home Equity Line") stays the account's. An overdraft (protection) line of credit ("Overdraft Line of
+ * Credit transfer", "OD Line of Credit", "Overdraft Protection or lines of credit can help avoid") is a
+ * checking account's overdraft protection, not a loan, and a fee that only includes one among others
+ * ("Return Item Fee (including Home Equity)") is the account's general fee.
+ * Mirrored for the read-only dry run in Postgres as
+ * `^(?!.*\m(checking|savings|shares?|deposits?)\M)(?!.*\minclud(es|ing)\s+(a\s+|the\s+)?(helocs?|home|equity|lines?)\M).*(\mhelocs?\M|\mhome\s+equity\M|\mequity\s+(lines?|loans?)\M|(?<!\m(overdraft|od)\s+(protection\s+)?((or|and)\s+|/\s*)?)\mlines?\s+of\s+credit\M)`.
+ */
+export const LOAN_LINE_NAME =
+  /^(?![\s\S]*\b(?:checking|savings|shares?|deposits?)\b)(?![\s\S]*\binclud(?:es|ing)\s+(?:a\s+|the\s+)?(?:helocs?|home|equity|lines?)\b)[\s\S]*(?:\bhelocs?\b|\bhome\s+equity\b|\bequity\s+(?:lines?|loans?)\b|(?<!\b(?:overdraft|od)\s+(?:protection\s+)?(?:(?:or|and)\s+|\/\s*)?)\blines?\s+of\s+credit\b)/i;
 
 /**
  * v69: a monthly ATM add-on or plan ("Power Checking +ATM Freedom" $2.99 a month, 114331; "Add ATM
@@ -553,7 +598,8 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // (`DRAFT_PROTECTION_FEE`, shared with Knox v112).
     include: new RegExp(`${DRAFT_PROTECTION_FEE.source}|` + /(overdraft|overdrawn|\bod\b|o\/d|sobregir|pago de cortes[ií]a|partidas? pagadas?|paid item|items? paid|paid nsf|paid (?:non[-\s]?|in)sufficient|paid (?:[\w&]+ ){1,3}nsf items?|courtesy pay|bounce protection|privilege|(?:in|non[-\s]?)sufficient funds?\b.{0,25}\(\s*paid\s*\)|\(\s*honou?red\s*\)|(?:nsf|(?:in|non[-\s]?)sufficient)\b[^|]{0,30}?(?:(?<!\bnon)[-–]\s*|\(\s*(?:check\s+)?)paid\b(?!\s+(?:or|from|by)\b))/.source, "i"),
     // v72 (#1788): staying overdrawn for days is the continuous overdraft fee (`SUSTAINED_OVERDRAFT`).
-    exclude: new RegExp(String.raw`${SUSTAINED_OVERDRAFT.source}|` +
+    // v97 (#1905): a home equity loan or line or a HELOC (`LOAN_LINE_NAME`) is the loan's fee, as for NSF.
+    exclude: new RegExp(String.raw`${SUSTAINED_OVERDRAFT.source}|${LOAN_LINE_NAME.source}|` +
       /(transfer|transferencia|traspaso|máxim|por d[ií]a|diari|xfe?r\b|sweep|from (your |eligible |a )?(savings|shares?|loan|loc)\b|to loan|share to share|daily|continu|consecutive|extended(?! coverage)|sustained|limit|line of credit|protection plan|\bcap\b|maximum|reduced to|not be (charged|assessed)|\bwill not (charge|assess)|non[- ]?paid|waive|night dep|notary|counter check|check images?|set ?up|dividend|(savings|share|loan|link(ed)?) overdraft protection|overdraft protection ?[-–(]+ ?(savings|loan)|loan overdraft|covered by|per advance|advances? from|annual|collection|accrual|account closed|closed in overdraft|late repayment|\blate (payment|charge|fee)\b|recurring overdraft|every \d+|beginning|threshold|cushion|overdrawn by|overdraws your account by|with approval|options|\b\d+ ?x ?\d+\b|\bbox\b|outgoing|international|\bwires?\b|check printing|statement cop(y|ies)|photo ?cop(y|ies)|\bcopy fee|\bcop(y|ies) of\b|annual fee|or less\b|\bat least\b|or equal to|is positive|would not apply|otherwise would\b|from (your |eligible |an? |linked )?(checking|money market|statement savings)|pre-?authori[sz]ed automatic tran|\bwill honor\b|\bvia\s*:?\s*$|^.{0,20}\bfee on$|because your (available |current |ledger )?balance|\b(mon|tues|wednes|thurs|fri|satur|sun)day['’]s\b|unless the total|contact us|online statements|\bno overdraft checking\b|\bas overdraft protection\b|\bcharge(d)?[- ]?off\b)/.source, "i"),
     // A returned item is the NSF fee, unless one name prices both: "Return check/overdraft
     // charges" (First Horizon), "Overdraft or Returned Item fee", like "NSF/Overdraft" (v19).
@@ -566,8 +612,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   // A sustained charge "after 5 consecutive days" and a "De Minimis" waiver line are not the
   // per-item NSF fee (v27, Oct 8).
   nsf: {
-    include:
-      /(nsf|insufficient|non[- ]?sufficient|returned item|return(ed)? (check|item|ach|payment|draft)|returned unpaid|unpaid item|fondos insuficientes|cheques? devuelt[oa]s?|art[ií]culos? devuelt[oa]s?|partidas? devuelt[oa]s?|devoluci[oó]n por fondos)/i,
+    include: NSF_NAME_INCLUDE,
     // v63: in Spanish, a deposited check ("depositado", "depósito"), a credit card, a loan, a
     // returned payment ("Pago por cheque o ACH devuelto", Puerto Rico FCU 262771), an outgoing ACH,
     // a transfer or a return for another reason ("motivo distinto a fondos insuficientes") is not it.
@@ -576,7 +621,8 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // v69: a returned Canadian or international check or item ("International Returned Item" $50,
     // 92115; "Canadian Returned Checks (per check)" $45, 117427; `FOREIGN_DEPOSIT_RETURN`) is a deposited
     // item coming back, not the member's own NSF item ("foreign" was already out).
-    exclude: new RegExp(String.raw`${FOREIGN_DEPOSIT_RETURN.source}|` +
+    // v97 (#1905): a home equity loan or line, a HELOC or a line of credit (`LOAN_LINE_NAME`) is the loan's fee.
+    exclude: new RegExp(String.raw`${FOREIGN_DEPOSIT_RETURN.source}|${LOAN_LINE_NAME.source}|` +
       /(deposit|dep[oó]sit|tarjeta de cr[eé]dito|pr[eé]stamo|\bpagos?\b|saliente|transferencia|distint[oa]|otr[oa]s? (motivo|raz[oó]n)|máxim|\bcap\b|daily max|maximum|\bpaid\b|\(\s*honou?red\s*\)|de minimis|after \d+ consecutive|\bsustained\b|\bcontinuous\b|others|re-?present|credit card|loan|transfer|cover|3rd party|third[- ]party|foreign|drawn on (an ?)?other|other inst|self[- ]to[- ]self|returned payment|payment returned|nsf payment|visa payment|re-?activation|card capture|converted|cancell?ation|returned ach origination|return ach origination|ach origination nsf|nsf ach origination|debit origination|reg d limit|\(reg d\)|sent for collection|presented multiple times|in the amount of|\bbox\b|check printing|statement cop(y|ies)|photo ?cop(y|ies)|\bcopy fee|\bcop(y|ies) of\b|written to you|re-?route|business only|payee[- ]returned|\b\d+ ?x ?\d+\b|\bmerchants?\b|\bbonds?\b|\bcoupons?\b)/.source, "i"), // v33: "03 x 10" is a worked sum; v39: a merchant presenting a member's NSF check is not the member's NSF fee
     // v35: "NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25 (First State Bank
     // of Rosemount) is the per-item fee; its note states the daily cap.
@@ -864,10 +910,12 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   // v85 (#1831): a refundable key deposit (`SAFE_DEPOSIT_KEY_DEPOSIT`) is not a charge for the box,
   // as v66 has it for the night deposit. A lost, replaced or duplicate key, drilling and the box's
   // annual or rental fee stay here (`SAFE_DEPOSIT_KEY_DEPOSIT_EXEMPT`); so do late fees.
+  // v96 (#1912): the night deposit words however spaced or joined (`NIGHT_DEPOSIT_NAME`: "Night Drop
+  // Deposit Box Late Fee", "Night  Deposit Box"), not only "night deposit" with one space.
   safe_deposit_box: {
     include: /\S/,
     exclude: new RegExp(
-      String.raw`(\bbags?\b|zipper|pouch|depository|night deposit|drop box)|^(?![\s\S]*(?:${SAFE_DEPOSIT_KEY_DEPOSIT_EXEMPT.source}))[\s\S]*(?:${SAFE_DEPOSIT_KEY_DEPOSIT.source})`,
+      String.raw`(\bbags?\b|zipper|pouch|depository|${NIGHT_DEPOSIT_NAME}|drop box)|^(?![\s\S]*(?:${SAFE_DEPOSIT_KEY_DEPOSIT_EXEMPT.source}))[\s\S]*(?:${SAFE_DEPOSIT_KEY_DEPOSIT.source})`,
       "i",
     ),
   },
@@ -1149,15 +1197,75 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // refuses (low balance, cash or foreign currency exchange, order, purchase or delivery, check
 // collection, "many"), with that type's patterns. Read-only dry run (Oct 26): 0 of 60 live dollar and
 // 0 of 3 live rate fees filed atm_international carry the wording, so no fee is held or taken down.
-export const CATEGORY_GUARD_VERSION = 94;
+// v95 (Oct 26, #1513): `INTL_ABBREVIATION_REFILE_LIVE` on (James's yes): a domestic wire whose name
+// writes "international" short re-files to the international wire of its direction. Read-only dry
+// run (Oct 26): 2 live wires move (inst 1405: 90381, 90382).
+// v96 (Oct 26, #1912, review of #2639; first numbered v93 in #2688): a night depository's name is never a safe deposit box name,
+// however its words are spaced or joined (`NIGHT_DEPOSIT_NAME`): "Night Drop Deposit Box Late Fee" and
+// the double-spaced "Night  Deposit Box" slipped past v90's one-space lookbehind, so a night drop's late
+// fee failed late_payment and re-filed to safe_deposit_box. Now it stays a late payment, a safe deposit
+// box fee so named fails that type, and the safe deposit box re-file moves it to night_deposit.
+// Darwin's box floor ($5, a rent floor) no longer applies to a box late fee (`BOX_LATE_FEE_ENVELOPE`,
+// $1 floor), so a real $1 box late fee ("Safety Deposit Box-Late Fee" 36020) re-files in place instead
+// of coming down. Dry-run counts in the PR.
+// v97 (Oct 26, #1905): an NSF or overdraft fee whose name names a home equity loan or line, an equity
+// loan or line, a HELOC or a line of credit (`LOAN_LINE_NAME`) fails that type: it is the loan's fee
+// (Navy Federal's "Home Equity Line Check returned (due to non-sufficient funds)" $29, 154634, live as
+// NSF beside its other lending twin 122342). A name that also names a checking, savings, share or
+// deposit account stays, as v80 reads a home equity line's stop payment, and an overdraft (protection)
+// line of credit is the account's overdraft protection, never a loan. The fee re-files to
+// other_lending_fee (`LOAN_LINE_TARGET`), in place on Hamilton's live guard with its own name and
+// price; where the bank already has a live other lending fee at that price (154634 beside 122342),
+// the copy is not moved and goes to the second look. Dry-run counts in the PR.
+// v98 (Oct 26, #1912): a rejected wire (`WIRE_CORRECTIONS` gains "reject") fails the domestic and
+// international wire types, as a returned or recalled wire does: Apl FCU's "Foreign Wire Reject" $25
+// (67971) was live as an international outgoing wire beside its real $40 price. Dry-run counts in the PR.
+// v99 (Oct 26, #1912): a bill pay return charge the payee sent back is the bill pay service's charge,
+// not the member's NSF fee. Bellco FCU's "Bill Pay Return Item Fee" $10 (85460) prints its note "(per
+// item returned by payee)" on the next line of a two-column PDF, outside the line Knox read. NSF
+// refuses a bill pay return name with no NSF words when the name itself says the payee returned it
+// (`billPayReturnedByPayee`), or when its stored text says so on its line or in the note wrapped onto
+// the next one (`payee_returned`, read by `withCollectionSection` with `payeeReturnedBillPayOnLine`),
+// and the fee re-files to bill_pay (`refileFromLine`), only where that type accepts the name. The name
+// alone never moves it: the Texas key files "Bill Payment Return Item Fee (per presentment)" (tid
+// 2419) as NSF. Read-only dry run (Oct 26): of the live NSF fees, 1 fails (85460, re-filed in place;
+// the bank has no live bill pay fee at $10). The other 19 live NSF bill pay return names with no NSF
+// words print no payee wording and stay NSF.
+// v100 (Oct 26, #1912): a commercial lockbox (a remittance-processing service for businesses) is not
+// a safe deposit box. Forte Bank's "Lock Box Service, per month" $225 (135270) went live as one by its
+// "lock box" words, on a page that says "Fees not included in this table: Safe Deposit Boxes". The safe
+// deposit box type refuses a lock box name that names the service (service, processing, items,
+// remittances, wholesale or retail) and nothing of a box (`commercialLockboxName`), or a lock box name
+// that says nothing of a box whose stored line or business, treasury or cash management heading says
+// so (`commercial_lockbox`, read by `withCollectionSection` with `commercialLockboxOnLine`). A lock box
+// with a size, key, drilling, rent, lease, year, late or past-due charge stays a safe deposit box ("Lock
+// Box Rental 5x5", "Lock box past due date late fee" 144459). No type of the 50 holds a lockbox
+// service, so the fee goes to the second look and comes down. Read-only dry run (Oct 26): of 7,759 live
+// safe deposit box fees, 1 fails (135270, taken down); 0 re-file.
+export const CATEGORY_GUARD_VERSION = 100;
 
 /** v87 (#1916): where a late charge printed in a safe deposit box section is filed. */
 export const BOX_LATE_TARGET = "safe_deposit_box";
+/** v97 (#1905): where an NSF or overdraft fee named for a home equity loan or line, a HELOC or a line of credit is filed. */
+export const LOAN_LINE_TARGET = "other_lending_fee";
 /** v90 (#1912): where a return charge printed in a foreign check or collection section is filed. */
 export const COLLECTION_RETURN_TARGET = "deposited_item_return";
 
 function collectionSectionReason(name: string): string {
   return `"${name}" is printed in a foreign check or collection section of its schedule: a deposited item coming back unpaid, not the member's NSF fee`;
+}
+
+/** v99 (#1912): where a bill pay return charge the payee sent back is filed. */
+export const PAYEE_RETURN_TARGET = "bill_pay";
+
+function payeeReturnReason(name: string): string {
+  return `"${name}" is a bill payment the payee returned: the bill pay service's charge, not the member's NSF fee`;
+}
+
+/** v99 (#1912): an NSF fee the payee returned, by its name or its stored line, and the bill pay type accepts it. */
+function payeeReturn(canonicalFeeKey: string, name: string, context: CategoryGuardContext | undefined): boolean {
+  return canonicalFeeKey === "nsf" && (billPayReturnedByPayee(name) || context?.payee_returned === true) &&
+    checkFeeCategory(PAYEE_RETURN_TARGET, name).ok;
 }
 
 /** v90 (#1912): the fee's stored text prints it in a collection section, and the returned deposited item type accepts it. */
@@ -1169,6 +1277,7 @@ function collectionReturn(canonicalFeeKey: string, name: string, context: Catego
  * v90 (#1912): the guard context with `collection_section` read from the fee's stored text, for an
  * NSF fee only (every other fee is returned as it is, so no text is needed for it). Darwin's verify,
  * Hamilton's live guard and its takedown restore call it with each such fee's stored text.
+ * v100 (#1912): and `commercial_lockbox` for a safe deposit box (`commercialLockboxOnLine`).
  */
 export function withCollectionSection<T extends CategoryGuardContext>(
   canonicalFeeKey: string | null | undefined,
@@ -1176,9 +1285,19 @@ export function withCollectionSection<T extends CategoryGuardContext>(
   context: T,
   text: string | null | undefined,
 ): T {
-  if (canonicalFeeKey !== "nsf" || !text || !feeName) return context;
+  if ((canonicalFeeKey !== "nsf" && canonicalFeeKey !== "safe_deposit_box") || !text || !feeName) return context;
   const amount = context.amount == null || context.amount === "" ? null : Number(context.amount);
-  return { ...context, collection_section: collectionSectionReturn(text, feeName, amount != null && Number.isFinite(amount) ? amount : null) };
+  const priced = amount != null && Number.isFinite(amount) ? amount : null;
+  // v100 (#1912): a lock box name filed as a safe deposit box, read for the commercial lockbox service.
+  if (canonicalFeeKey === "safe_deposit_box") return { ...context, commercial_lockbox: commercialLockboxOnLine(text, feeName, priced) };
+  // v99 (#1912): and `payee_returned`, a bill pay return its line or the next says the payee sent back.
+  return { ...context, collection_section: collectionSectionReturn(text, feeName, priced), payee_returned: payeeReturnedBillPayOnLine(text, feeName, priced) };
+}
+
+function commercialLockboxReason(name: string, byText: boolean): string {
+  return byText
+    ? `"${name}" is printed as a commercial lockbox service (remittance processing for businesses), not a safe deposit box`
+    : `"${name}" names a commercial lockbox service (remittance processing for businesses), not a safe deposit box`;
 }
 
 function boxSectionReason(name: string): string {
@@ -1245,7 +1364,8 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
   // "Returned Item fee (written to you)" is a check the customer deposited coming back.
   // v63: "Deposited Return Items" (Community First Guam FCU 327091) and "Depósito en cheque devuelto".
   { from: "nsf", to: "deposited_item_return", when: /(deposit|dep[oó]sit|written to you|\bbonds?\b|\bcoupons?\b)/i },
-  { from: "safe_deposit_box", to: "night_deposit", when: /(\bbags?\b|depository|night deposit)/i },
+  // v96 (#1912): "Night Drop Deposit Box" and "Night  Deposit Box" are the night depository's too (`NIGHT_DEPOSIT_NAME`).
+  { from: "safe_deposit_box", to: "night_deposit", when: new RegExp(String.raw`(\bbags?\b|depository|${NIGHT_DEPOSIT_NAME})`, "i") },
   { from: "wire_domestic_outgoing", to: "wire_intl_outgoing", when: /(international|foreign|intl|\bint['’]l\b|internacional|extranjer)/i, unless: /(domestic|dom[eé]stic|\bnacional)/i },
   // v63: "International wire transfer (Incoming)" $40 filed as a domestic incoming wire (Coast360 FCU 462933).
   // One price for domestic and international, or for both directions, stays where it is, as do a
@@ -1328,6 +1448,11 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
   // v78: research filed as account verification is account research, and a wire is the wire fee its name states.
   { from: "account_verification", to: "account_research", when: RESEARCH_WORD },
   { from: "account_verification", to: "wire_domestic_outgoing", when: /\bwires?\b/i, unless: /incoming|receiv|international|foreign|\bintl\b/i },
+  // v97 (#1905): an NSF or overdraft fee named for a home equity loan or line, a HELOC or a line of
+  // credit is the loan's fee (as the hand fold moved Navy Federal's 122342 for #1655). Last, so a
+  // transfer or a paid item keeps its own type.
+  { from: "nsf", to: LOAN_LINE_TARGET, when: LOAN_LINE_NAME },
+  { from: "overdraft", to: LOAN_LINE_TARGET, when: LOAN_LINE_NAME },
 ];
 
 /** v74: a re-file rule from `canonicalFeeKey` matches the name and its target's guard accepts it (`onlyIfRefiles`). */
@@ -1507,6 +1632,11 @@ export function checkFeeCategory(
       reason: `"${name}" states a rate ("${rate}"), so its dollar amount is not the ${canonicalFeeKey} fee`,
     };
   }
+  // v100 (#1912): a commercial lockbox service, by its name or its stored line, is not a safe deposit box.
+  if (canonicalFeeKey === "safe_deposit_box" && (commercialLockboxName(name) || context?.commercial_lockbox === true)) {
+    const byName = commercialLockboxName(name);
+    return { ok: false, code: byName ? "name_contradicts" : "schedule_contradicts", reason: commercialLockboxReason(name, !byName) };
+  }
   const soft = rule.excludeUnless;
   // A note runs to its closing parenthesis, or to the end of a name cut mid-note.
   const softName = soft?.outsideNotes ? name.replace(/\([^()]*(?:\)|$)/g, " ") : name;
@@ -1570,6 +1700,9 @@ export function checkFeeCategory(
   }
   if (collectionReturn(canonicalFeeKey, name, context)) {
     return { ok: false, code: "schedule_contradicts", reason: collectionSectionReason(name) };
+  }
+  if (payeeReturn(canonicalFeeKey, name, context)) {
+    return { ok: false, code: "schedule_contradicts", reason: payeeReturnReason(name) };
   }
   const addOnReason = addOnOnLine(canonicalFeeKey, context);
   if (addOnReason) return { ok: false, code: "schedule_contradicts", reason: addOnReason };
@@ -1803,6 +1936,8 @@ export function refileFromLine(
   }
   // v90 (#1912): a return charge its stored text prints in a collection section is a returned deposited item.
   if (collectionReturn(canonicalFeeKey, feeName ?? "", context)) return COLLECTION_RETURN_TARGET;
+  // v99 (#1912): a bill pay return its name or stored line says the payee sent back is bill pay.
+  if (payeeReturn(canonicalFeeKey, feeName ?? "", context)) return PAYEE_RETURN_TARGET;
   // v92 (#1947): a monthly maintenance row its own line prices as the paper statement charge.
   if (canonicalFeeKey === "monthly_maintenance" && paperStatementOnLine(context)) {
     return checkFeeCategory("paper_statement", feeName, context).ok ? "paper_statement" : null;

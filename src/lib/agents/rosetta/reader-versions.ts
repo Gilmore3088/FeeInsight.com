@@ -17,7 +17,12 @@ export const PDF_PROSE_REREAD_VERSION = 4;
 export const PDF_STACKED_REPAIR_VERSION = 1;
 export const ROSETTA_OCR_VERSION = 2;
 export const ROSETTA_JS_FALLBACK_VERSION = 3;
-export const ROSETTA_TABLE_ROWS_VERSION = 1;
+/**
+ * v2 (#1912): HTML table rows keep each cell's grid column (`columns`, `line`; table-rows.ts).
+ * Nothing selects a stored text by this version, so the bump re-reads nothing: a page's new
+ * rows arrive on its next ordinary read.
+ */
+export const ROSETTA_TABLE_ROWS_VERSION = 2;
 export const PDF_READER_AGREEMENT_VERSION = 1;
 /** Record-only layout recheck receipts (#2219, layout-recheck.ts); never reopens a document. */
 export const LAYOUT_RECHECK_VERSION = 1;

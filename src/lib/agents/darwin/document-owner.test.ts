@@ -6,7 +6,9 @@ import {
   DOCUMENT_OWNER_LINK_FAILURE,
   releaseOwnerLinks,
   buildNameDirectory,
+  DARWIN_DOCUMENT_OWNER_FOLDER_LINKS,
   DARWIN_DOCUMENT_OWNER_TAKEDOWN,
+  DOCUMENT_OWNER_FOLDER_SUFFIX,
   documentOwnerCountSql,
   documentOwnerFingerprint,
   documentOwnerPairsSql,
@@ -500,6 +502,83 @@ describe("sharedNameIds", () => {
       { id: 3, name: "Bluegrass Community FCU" },
     ]);
     expect([...sharedNameIds(directory, [1, 3])]).toEqual([1]);
+  });
+});
+
+describe("vendor file folders (#1455, Oct 26)", () => {
+  // Prod, Oct 26: Sunrise Family CU's schedule at /files/sunrisefamilycu/1/file/ was the live
+  // schedule of four other CUs (102 fees); two copies share Sunrise's text hash, two do not.
+  const sunrise: OwnerBank = { id: 7367, name: "Sunrise Family Federal Credit Union", city: "Bay City", stateCode: "MI", websiteHost: "sunrisefamilycu.org" };
+  const familyFirst: OwnerBank = { id: 7353, name: "Family First Federal Credit Union", city: "Saginaw", stateCode: "MI", websiteHost: "fam1st.com" };
+  const beach: OwnerBank = { id: 6428, name: "Beach Municipal Federal Credit Union", city: "Virginia Beach", stateCode: "VA", websiteHost: "beachmunicipal.org" };
+  const alhambra: OwnerBank = { id: 7078, name: "Alhambra Federal Credit Union", city: "Phoenix", stateCode: "AZ", websiteHost: "alhambracu.com" };
+  const SUNRISE_TEXT = "Sunrise Family Credit Union\n\nFee Schedule | Current\nEffective 11/01/2025\n\nDebit Card Replacement | $10.00\nBad Address (monthly fee) | $5.00\nCourtesy Pay/Overdraft(per presentment) | $25.00";
+
+  it("is off until James's yes", () => {
+    expect(DARWIN_DOCUMENT_OWNER_FOLDER_LINKS).toBe(false);
+  });
+
+  it("a copy on another CU's own domain that shares the text hash: shared_service without the folder, Sunrise's with it", () => {
+    const linked = [beach, sunrise];
+    const links = { hashIds: [6428, 7367], hostIds: [], documentHost: "fam1st.com", vendorPath: false };
+    expect(documentOwnerVerdict(SUNRISE_TEXT, familyFirst, linked, [], links)).toMatchObject({ kind: "shared_service" });
+    expect(documentOwnerVerdict(SUNRISE_TEXT, familyFirst, linked, [], { ...links, folderIds: [7367] }))
+      .toEqual({ kind: "other_bank", otherId: 7367, evidence: "vendor copy: text hash" });
+  });
+
+  it("a copy with its own text hash is linked only by its folder", () => {
+    expect(documentOwnerVerdict(SUNRISE_TEXT, alhambra, [], [sunrise], { documentHost: "alhambracu.com" }))
+      .toEqual({ kind: "registry_named", otherIds: [7367] });
+    expect(documentOwnerVerdict(SUNRISE_TEXT, alhambra, [sunrise], [], { documentHost: "alhambracu.com", folderIds: [7367] }))
+      .toEqual({ kind: "other_bank", otherId: 7367, evidence: "vendor copy: file folder" });
+  });
+
+  it("the folder owner's text must still name it, and the owner's own copy stays its own", () => {
+    const fees = "Fee Schedule\nBad Address (monthly fee) | $5.00\nCourtesy Pay | $25.00";
+    expect(documentOwnerVerdict(fees, alhambra, [sunrise], [], { documentHost: "alhambracu.com", folderIds: [7367] }).kind).not.toBe("other_bank");
+    expect(documentOwnerVerdict(SUNRISE_TEXT, sunrise, [familyFirst, beach], [], { hashIds: [7353, 6428], documentHost: "sunrisefamilycu.org" }))
+      .toMatchObject({ kind: "own_named" });
+    // Even if LAFCU's own folder were linked to another lafcu.* website (the selector no longer
+    // links it, below), the text names LAFCU, so it is its own.
+    const lafcu: OwnerBank = { id: 8578, name: "Lafcu Federal Credit Union", city: "Lansing", stateCode: "MI", websiteHost: "lafcu.com" };
+    const other: OwnerBank = { id: 4522, name: "Los Angeles Federal Credit Union", city: "Glendale", stateCode: "CA", websiteHost: "lafcu.org" };
+    expect(documentOwnerVerdict("LAFCU Federal Credit Union rates\nShare savings 0.10%", lafcu, [other], [], { documentHost: "lafcu.com", folderIds: [4522] }))
+      .toMatchObject({ kind: "own_named" });
+  });
+
+  it("the selector links folders only with the switch on, and reads such pairs again", () => {
+    const off = documentOwnerPairsSql({ folderLinks: false });
+    const on = documentOwnerPairsSql({ folderLinks: true });
+    expect(off).not.toContain("'folder' AS via");
+    expect(on).toContain("'folder' AS via");
+    // Case-blind on both sides ("/Files/..."), and never this bank's own website's name.
+    expect(on).toContain("JOIN sites s ON s.label = substring(lower(p.document_url) from '/files/([A-Za-z0-9_-]+)/[0-9]+/file/')");
+    expect(on).toContain("WHERE lower(p.document_url) ~ '/files/([A-Za-z0-9_-]+)/[0-9]+/file/'");
+    expect(on).toContain("SELECT 1 FROM sites own\n            WHERE own.id = p.institution_id");
+    expect(on).not.toContain("~* '/files/");
+    for (const text of [off, on]) {
+      expect(text).toContain(`CASE WHEN cardinality(s.folder_ids) > 0 THEN '${DOCUMENT_OWNER_FOLDER_SUFFIX}' ELSE '' END`);
+      expect(text).toContain("s.folder_ids");
+    }
+    expect(documentOwnerPairsSql()).toBe(off);
+    expect(documentOwnerRefusalsSql()).toContain(`|| '${DOCUMENT_OWNER_FOLDER_SUFFIX}'`);
+    const count = documentOwnerCountSql({ folderLinks: true });
+    expect(count).toContain("'folder' AS via");
+    expect(count).toContain("(c.id = ANY(j.hash_ids) OR c.id = ANY(j.folder_ids)) AS via_hash");
+    expect(count).toContain("WHERE (j.vendor_path OR cardinality(j.folder_ids) > 0) AND a.hash_linked > 0");
+    expect(count).not.toMatch(/\b(UPDATE|INSERT|DELETE|ALTER|DROP|TRUNCATE)\b/i);
+    expect(documentOwnerCountSql()).not.toContain("'folder' AS via");
+  });
+
+  it("a pair read with a folder link records it and gets its own fingerprint", async () => {
+    const db = createDb([
+      { institution_id: 5756, source_document_id: 17191, document_url: "https://ukcreditunion.org/files/ukcreditunion/1/file/fees.pdf", live_fees: 2, other_ids: [6729], folder_ids: [6729], text_hash: "h1", reread: false },
+    ]);
+    await recheckDocumentOwners(db, { runId: 82, takedown: false, folderLinks: true });
+    expect(db.unsafe.mock.calls[0][0]).toContain("'folder' AS via");
+    const calls = JSON.stringify(db.mock.calls);
+    expect(calls).toContain(`owner-shadow:5756:17191:h1${DOCUMENT_OWNER_FOLDER_SUFFIX}`);
+    expect(calls).toContain('\\"folder_ids\\":[6729]');
   });
 });
 

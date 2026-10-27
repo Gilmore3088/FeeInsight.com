@@ -7,6 +7,7 @@ import {
   RANGE_BAND_SET_ASIDE_LIVE,
   UNTRACED_RECHECK_LIMIT,
 } from "./held-recheck";
+import { UNTRACED_READ_ERROR_AFTER_VERSIONS, UNTRACED_READ_ERROR_LIMIT } from "./untraced-read-error";
 
 type SqlTag = typeof sql;
 
@@ -26,7 +27,17 @@ type SqlTag = typeof sql;
  * - `range_band`: a band Knox set aside as not a fee (`setAsideRangeBands`, behind its switch).
  * `rereadThrice` counts lines a versioned re-check has read under `HELD_SET_ASIDE_AFTER_VERSIONS`
  * or more rules versions without moving them: the part of the pile its owner is not shrinking.
+ * `ages` splits each group by how long its lines have been held (from the row's `created_at`), for
+ * the goal scorecard (#1040, #1102 item 4).
  */
+
+/** How long a group's lines have been held, in days since Knox wrote the row. */
+export interface KnoxHoldAges {
+  under7: number;
+  days7to14: number;
+  days14to30: number;
+  over30: number;
+}
 
 export interface KnoxHoldGroup {
   shape: string;
@@ -38,6 +49,7 @@ export interface KnoxHoldGroup {
   example: { feeName: string; amount: number | null } | null;
   /** Lines read by a versioned re-check under 3+ rules versions that are still held. */
   rereadThrice: number;
+  ages: KnoxHoldAges;
   owner: string;
   wayOut: string;
   hasExit: boolean;
@@ -99,9 +111,19 @@ const SHAPES: Record<string, ShapeInfo> = {
   },
   untraced: {
     label: "Not found in the source text",
-    owner: "Knox's untraced re-check; the lines it keeps failing are Rosetta's next (a possible reading error)",
-    wayOut: `Re-read ${UNTRACED_RECHECK_LIMIT} a step: promoted when today's rules trace the same name, amount and category.`,
+    owner: "Knox's untraced re-check; after 3 rules versions, Rosetta (a possible reading error)",
+    wayOut: `Re-read ${UNTRACED_RECHECK_LIMIT} a step: promoted when today's rules trace the same name, amount and category. A text whose lines stay untraced under ${UNTRACED_READ_ERROR_AFTER_VERSIONS} rules versions goes to Rosetta (${UNTRACED_READ_ERROR_LIMIT} texts a step), which reads the document again at its next reader version and keeps the new text only when it lists at least as many fees; Knox then reads the new text.`,
     hasExit: true,
+  },
+  // v76 (#1102): a price the schedule gives only as "varies", "call for pricing" or "printer's
+  // current price". Knox writes it with its category and no amount, and no re-check selects
+  // `knox_review:varies` (held-recheck.ts reads unclassified, range, untraced, superseded and
+  // percentage lines only). 1,513 lines at 911 banks on 26 Oct 2026, none ever moved on.
+  varies: {
+    label: "A price the schedule does not print (\"Check printing prices vary\")",
+    owner: "Knox holds these on purpose (v76); no re-check reads them",
+    wayOut: "None today. Knox never writes a figure the page does not print, and no re-check reads a varies line, so it stays held with its category, kept and never deleted. When a later read of the page prints a price for the fee, that price is a new line that goes to Darwin; the varies line stays as it is.",
+    hasExit: false,
   },
   zero: {
     label: "A $0 line held without going to Darwin",
@@ -138,6 +160,12 @@ export function toKnoxHoldGroup(row: Record<string, unknown>): KnoxHoldGroup {
     setAside: Number(row.set_aside ?? 0),
     newThisWeek: Number(row.new_7d ?? 0),
     rereadThrice: Number(row.reread_thrice ?? 0),
+    ages: {
+      under7: Number(row.new_7d ?? 0),
+      days7to14: Number(row.age_7_14 ?? 0),
+      days14to30: Number(row.age_14_30 ?? 0),
+      over30: Number(row.age_over_30 ?? 0),
+    },
     oldest: row.oldest ? new Date(row.oldest as string | Date).toISOString() : null,
     example: row.example_name ? { feeName: String(row.example_name), amount: Number.isFinite(amount) ? amount : null } : null,
     owner: info.owner,
@@ -173,6 +201,9 @@ export async function readKnoxHoldGroups(db: SqlTag): Promise<KnoxHoldGroup[]> {
            COUNT(*) FILTER (WHERE h.set_aside)::int AS set_aside,
            COUNT(*) FILTER (WHERE h.reread_thrice)::int AS reread_thrice,
            COUNT(*) FILTER (WHERE h.created_at > NOW() - INTERVAL '7 days')::int AS new_7d,
+           COUNT(*) FILTER (WHERE h.created_at <= NOW() - INTERVAL '7 days' AND h.created_at > NOW() - INTERVAL '14 days')::int AS age_7_14,
+           COUNT(*) FILTER (WHERE h.created_at <= NOW() - INTERVAL '14 days' AND h.created_at > NOW() - INTERVAL '30 days')::int AS age_14_30,
+           COUNT(*) FILTER (WHERE h.created_at <= NOW() - INTERVAL '30 days')::int AS age_over_30,
            MIN(h.created_at) AS oldest,
            e.fee_name AS example_name, e.amount AS example_amount
       FROM held h

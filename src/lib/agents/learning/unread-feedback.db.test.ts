@@ -43,10 +43,12 @@ describe.skipIf(!connection)("unread error rows in isolated PostgreSQL (#2062)",
 
   it("counts unread, unregistered and partly read kinds older than two days, and nothing else", async () => {
     const before = await readUnreadFeedback(raw as unknown as Db);
-    await row("search_miss", "discover", "magellan.search_miss", 72);
-    await row("search_miss", "discover", "magellan.search_miss", 1); // too new to count
-    await row("search_miss", "discover", "magellan.search_miss", 24 * 40); // older than the window
-    await row("search_miss", "discover", "magellan.search_miss", 72, { weight: 0 }); // a record, no weight
+    await row("unregistered_test_kind", "discover", "test.kind", 72);
+    await row("unregistered_test_kind", "discover", "test.kind", 1); // too new to count
+    await row("unregistered_test_kind", "discover", "test.kind", 24 * 40); // older than the window
+    await row("unregistered_test_kind", "discover", "test.kind", 72, { weight: 0 }); // a record, no weight
+    await row("search_miss", "discover", "magellan.search_miss", 72); // Magellan's next search reads it (#2062)
+    await row("stale_price", "publish", "hamilton.cross_page_conflict", 72); // Magellan's freshness search reads it
     await row("audit_miss", "extract", "hamilton.source_check", 72);
     await row("audit_miss", "discover", "hamilton.other_bank_document", 72); // Magellan reads it
     await row("wrong_document", "discover", "hamilton.article_page", 72);
@@ -63,11 +65,32 @@ describe.skipIf(!connection)("unread error rows in isolated PostgreSQL (#2062)",
     expect(count(after, "wrong_amount", "verify") - count(before, "wrong_amount", "verify")).toBe(1);
     expect(count(after, "wrong_amount", "extract") - count(before, "wrong_amount", "extract")).toBe(0);
     expect(count(after, "wrong_category", "verify") - count(before, "wrong_category", "verify")).toBe(1);
-    expect(count(after, "search_miss", "discover") - count(before, "search_miss", "discover")).toBe(1);
+    expect(count(after, "unregistered_test_kind", "discover") - count(before, "unregistered_test_kind", "discover")).toBe(1);
+    expect(count(after, "search_miss", "discover") - count(before, "search_miss", "discover")).toBe(0);
+    expect(count(after, "stale_price", "publish") - count(before, "stale_price", "publish")).toBe(0);
     expect(count(after, "audit_miss", "extract") - count(before, "audit_miss", "extract")).toBe(1);
     expect(count(after, "audit_miss", "discover") - count(before, "audit_miss", "discover")).toBe(0);
     expect(count(after, "wrong_document", "discover") - count(before, "wrong_document", "discover")).toBe(1);
     expect(count(after, "product_page", "verify") - count(before, "product_page", "verify")).toBe(1);
     expect(count(after, "product_page", "extract") - count(before, "product_page", "extract")).toBe(0);
+  });
+
+  it("counts a verify-stage hold or correction as read only when it is a person's own row (#2057)", async () => {
+    const before = await readUnreadFeedback(raw as unknown as Db);
+    const by = async (kind: string, check: string, reporter: string) => {
+      n += 1;
+      await raw`INSERT INTO pipeline_feedback (about_stage, signal, kind, reported_by, check_name, institution_id, weight, dedupe_key, created_at)
+                VALUES ('verify', 'wrong', ${kind}, ${reporter}, ${check}, ${INST}, 1, ${`test2062:${n}`}, NOW() - make_interval(hours => 72))`;
+    };
+    await by("admin_hold", "admin.fee_hold", "human"); // Darwin reads it
+    await by("admin_correction", "admin.fee_correction", "human"); // Darwin reads it
+    await by("admin_correction", "hamilton.admin_correction", "gutenberg"); // the takedown sync's copy
+    await by("admin_hold", "admin.fee_hold", "hamilton"); // not a person's row
+    await by("audit_miss", "hamilton.source_check", "deming"); // no reader at verify
+    const after = await readUnreadFeedback(raw as unknown as Db);
+    expect(after.total - before.total).toBe(3);
+    expect(count(after, "admin_hold", "verify") - count(before, "admin_hold", "verify")).toBe(1);
+    expect(count(after, "admin_correction", "verify") - count(before, "admin_correction", "verify")).toBe(1);
+    expect(count(after, "audit_miss", "verify") - count(before, "audit_miss", "verify")).toBe(1);
   });
 });

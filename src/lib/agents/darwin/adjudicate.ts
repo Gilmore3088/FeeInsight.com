@@ -66,6 +66,49 @@ export const FEES_PER_CALL = 25;
  * `measure: true` (a capped answer-key sample) still makes them.
  */
 export const DARWIN_ADJUDICATE_SHADOW = false;
+
+/** The switches that decide whether a `verify-paid` verdict can act; each defaults to its constant. */
+export interface VerifyPaidSwitches {
+  releaseActs?: boolean;
+  adjudicateShadow?: boolean;
+}
+
+/** A paid pass the plan skips, with the switch that keeps it off. */
+export interface SkippedPaidPass {
+  pass: "release_review" | "adjudicate";
+  /** Why, for the step's summary and the `darwin.<pass>.skipped` event. */
+  skipped: string;
+  switchName: "DARWIN_RELEASE_ACTS" | "DARWIN_ADJUDICATE_SHADOW";
+}
+
+/**
+ * Which of `verify-paid`'s two paid passes may call the model (#1111): the release review only
+ * while releases act, the adjudicator only while its shadow verdicts are switched on. A dry run
+ * spends nothing, so it still lists both; `measure` makes the calls for a capped measurement run.
+ */
+export function verifyPaidPlan(options: VerifyPaidSwitches & { dryRun?: boolean; measure?: boolean } = {}): {
+  reviewPays: boolean;
+  adjudicatePays: boolean;
+  skipped: SkippedPaidPass[];
+} {
+  const forced = Boolean(options.dryRun) || Boolean(options.measure);
+  const reviewPays = forced || (options.releaseActs ?? DARWIN_RELEASE_ACTS);
+  const adjudicatePays = forced || (options.adjudicateShadow ?? DARWIN_ADJUDICATE_SHADOW);
+  const skipped: SkippedPaidPass[] = [];
+  if (!reviewPays) skipped.push({ pass: "release_review", skipped: "releases are off, so a verdict would change nothing", switchName: "DARWIN_RELEASE_ACTS" });
+  if (!adjudicatePays) skipped.push({ pass: "adjudicate", skipped: "shadow verdicts are off; they never change a decision", switchName: "DARWIN_ADJUDICATE_SHADOW" });
+  return { reviewPays, adjudicatePays, skipped };
+}
+
+/**
+ * Whether a ledger `verify-paid` step can make a paid call at all (the tick never passes
+ * `measure`). While it cannot, the step is free work: it needs no provider budget, slot or
+ * clear provider stop, so its verdict score runs and the lane behind it never waits (#1111).
+ */
+export function verifyPaidMayCallProvider(switches: VerifyPaidSwitches = {}): boolean {
+  const plan = verifyPaidPlan(switches);
+  return plan.reviewPays || plan.adjudicatePays;
+}
 const MAX_OUTPUT_TOKENS = 4_000;
 const TRANSIENT_OUTCOMES = ["timeout", "network_error", "http_429", "http_5xx", "budget_blocked"];
 const STOP_ERRORS = new Set(["ProviderBudgetBlockedError", "EmergencyStopActiveError", "ProviderCircuitOpenError"]);
@@ -342,10 +385,9 @@ async function reviewAndAdjudicate(
 
   // Pay only for verdicts that can act (#1111). A dry run spends nothing, so it still lists both.
   const releaseActs = options.releaseActs ?? DARWIN_RELEASE_ACTS;
-  const reviewPays = dryRun || releaseActs || Boolean(options.measure);
-  const adjudicatePays = dryRun || DARWIN_ADJUDICATE_SHADOW || Boolean(options.measure);
-  if (!reviewPays) result.results.push({ pass: "release_review", skipped: "releases are off, so a verdict would change nothing" });
-  if (!adjudicatePays) result.results.push({ pass: "adjudicate", skipped: "shadow verdicts are off; they never change a decision" });
+  const { reviewPays, adjudicatePays, skipped } = verifyPaidPlan({ dryRun, releaseActs, measure: options.measure });
+  for (const pass of skipped) result.results.push({ pass: pass.pass, skipped: pass.skipped });
+  if (!dryRun) await recordSkippedPaidPasses(db, options, skipped);
 
   let stagedReview: StagedReleaseReview | undefined;
   let stagedAdjudication: StagedAdjudication | undefined;
@@ -392,6 +434,27 @@ async function reviewAndAdjudicate(
     }
   }
   return result;
+}
+
+/**
+ * One `darwin.<pass>.skipped` event per paid pass the plan skipped, so the ledger shows each
+ * call that was not bought and why (reason `verdict cannot act`). A failed write never fails the step.
+ */
+async function recordSkippedPaidPasses(db: SqlTag, options: AdjudicateOptions, skipped: SkippedPaidPass[]): Promise<void> {
+  for (const pass of skipped) {
+    try {
+      await inSavepoint(db, (scope) => scope`
+        INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
+        VALUES (
+          ${options.runId}, ${options.stepId ?? null}, ${`darwin.${pass.pass}.skipped`}, 'skipped',
+          ${`Paid ${pass.pass === "release_review" ? "release review" : "adjudicator"} skipped, $0 spent: ${pass.skipped}.`},
+          ${JSON.stringify({ pass: pass.pass, reason: "verdict cannot act", detail: pass.skipped, switch: pass.switchName, switch_on: false, provider_calls: 0, cost_microusd: 0, issue: 1111 })}::jsonb
+        )
+      `);
+    } catch (error) {
+      console.error(`[darwin] ${pass.pass} skipped event failed`, error instanceof Error ? error.message : error);
+    }
+  }
 }
 
 interface StagedAdjudication {

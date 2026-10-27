@@ -8,6 +8,9 @@ import { poolFreshAudits } from "@/lib/agents/deming/accuracy-measure";
 import { BATCH_REVIEW_CHECK, type BatchMissKind } from "@/lib/agents/rosetta/batch-review";
 import { readLiveSourceAudit } from "@/lib/data-store/live-source-audit-read";
 import { liveAuditBrief,validateLiveAuditComponent,type LiveAuditComponent } from "./deming/live-source-audit-records";
+import { readKnoxHoldGroups, type KnoxHoldAges } from "./knox/held-queue";
+import { ANSWER_KEY_SCORER_VERSION } from "@/lib/data-store/answer-key";
+import type { KnoxSpecialistScore } from "./answer-key-score";
 
 /**
  * The goal scorecard (#1040): the numbers that say whether Fee Insight is getting closer to a
@@ -56,7 +59,26 @@ export const GOAL_QUERIES = {
   readerMissWeeks: "goal.rosetta_miss_rate_weekly",
   readerRemedies: "goal.rosetta_remedy_outcomes",
   dataQuality: "goal.deming_data_quality_latest",
+  knoxHeld: "goal.knox_held_by_reason_age",
+  knoxHeldExits: "goal.knox_held_exits_weekly",
+  knoxAnswerKey: "goal.knox_answer_key_right_document",
 } as const;
+
+/** James, Oct 12 (#1098, DECISIONS): Knox finds 85% of the key's fees, and 90% of what it finds is right. */
+export const KNOX_FOUND_TARGET = 0.85;
+export const KNOX_RIGHT_TARGET = 0.9;
+/**
+ * Below this many qualifying banks a share is shown but not judged against its target: the
+ * project's 10-peer minimum for a median. Applies to Knox as a whole and to each specialist.
+ */
+export const KNOX_TARGET_MIN_BANKS = 10;
+
+/** Pure: met, not met, or too few banks to say. */
+export function knoxTargetVerdict(value: number | null, target: number, banks: number): "met" | "not_met" | "too_few_banks" | null {
+  if (value == null) return null;
+  if (banks < KNOX_TARGET_MIN_BANKS) return "too_few_banks";
+  return value >= target ? "met" : "not_met";
+}
 
 /** Weeks of text-reading misses shown, oldest first, the current week last (#1054). */
 export const READER_MISS_WEEKS = 8;
@@ -372,6 +394,93 @@ export function dataQualityFrom(at: string, detail: Record<string, unknown>): Om
   return { at, failing: strings(detail.failing), warning: strings(detail.warning), lines, drifts, duplicatesIdentity };
 }
 
+/** One reason Knox held lines for (`knox/held-queue.ts`), with how long they have been held. */
+export interface KnoxHeldReason {
+  shape: string;
+  label: string;
+  count: number;
+  setAside: number;
+  ages: KnoxHoldAges;
+  owner: string;
+  hasExit: boolean;
+}
+
+/** Knox's held pile now (#1102 item 4): every held line by reason and age. */
+export interface KnoxHeldPile {
+  query: string;
+  total: number;
+  setAside: number;
+  byReason: KnoxHeldReason[];
+}
+
+/** Weeks of held-line exits shown, oldest first, the current week last. */
+export const KNOX_HELD_EXIT_WEEKS = 8;
+
+/**
+ * One UTC week of lines leaving Knox's held pile, summed from the extract steps' own ledger
+ * (`step.finished` detail): each pass that moves held lines on records how many it moved.
+ */
+export interface KnoxHeldExitWeek {
+  weekStart: string;
+  /** Live extract steps whose ledger detail was read. */
+  steps: number;
+  /** Held lines sent to Darwin, all four passes. */
+  toDarwin: number;
+  /** Re-read with today's rules and categorized (`held_recheck.promoted`). */
+  heldRecheck: number;
+  /** Filed by a labelled or settled name (`held_name_file.filed`). */
+  nameFiled: number;
+  /** Traced by today's self-check (`untraced_recheck.promoted`). */
+  untraced: number;
+  /** Percentages sent on as rate fees (`held_rate_recheck.promoted`). */
+  rates: number;
+  /** Set aside, kept and still counted in the pile (`held_recheck.setAside` + `range_band_set_aside.setAside`). */
+  setAside: number;
+  /** Earlier promotions put back on hold (`promotion_recheck.withdrawn`). */
+  backOnHold: number;
+  partial: boolean;
+}
+
+export interface KnoxHeldExitWeeks {
+  query: string;
+  weeks: KnoxHeldExitWeek[];
+}
+
+/**
+ * Knox against its targets on the answer key (#1098), counting only banks whose right document
+ * Rosetta read: the newest stored answer-key score, summed from its per-bank Knox counts.
+ */
+export interface KnoxAnswerKeyScore {
+  query: string;
+  /** The answer-key score run read; null when there is none at this scorer version. */
+  scoreRunId: number | null;
+  scoredAt: string | null;
+  scorerVersion: number;
+  /** The reference cohort's state stored with that score ("measured" or "no_measurement"); null on a run from before it. */
+  referenceState: string | null;
+  /** Confirmed answer-key banks, and those eligible as references, stored with that score; null on a run from before it. */
+  confirmedBanks: number | null;
+  eligibleBanks: number | null;
+  /** The commonest reasons a confirmed bank was left out, most first (at most three). */
+  topExclusions: Array<{ reason: string; count: number }>;
+  /** Answer-key banks whose right document Rosetta read, with at least one key fee. */
+  banks: number;
+  /** Key fees on those banks. */
+  expected: number;
+  /** Key fees a Knox row from the right document matches. */
+  found: number;
+  /** Knox's distinct (category, price) reads from those documents. */
+  reads: number;
+  /** Reads that are in the key. */
+  right: number;
+  /** found / expected (target 85%). */
+  recall: number | null;
+  /** right / reads (target 90%). */
+  precision: number | null;
+  /** Each specialist's own found/right; null on a score run from before #1098. */
+  bySpecialist: KnoxSpecialistScore[] | null;
+}
+
 export interface GoalScorecard {
   readAt: string;
   windowDays: number;
@@ -392,6 +501,11 @@ export interface GoalScorecard {
   dataQuality?: DataQuality | null;
   /** Separate automated fresh-site diagnostic; not missing-fee recall or the weekly launch review. */
   liveSourceAudit?:LiveAuditComponent|null;
+  /** Knox's held pile by reason and age, and lines leaving it each week (#1102); absent on snapshots from before it. */
+  knoxHeld?: KnoxHeldPile | null;
+  knoxHeldExits?: KnoxHeldExitWeeks | null;
+  /** Knox's found/right on the answer key against 85/90, and per specialist (#1098); absent on snapshots from before it. */
+  knoxAnswerKey?: KnoxAnswerKeyScore | null;
 }
 
 const usd = (micro: unknown): number => Math.round(Number(micro ?? 0) / 10_000) / 100;
@@ -921,6 +1035,211 @@ async function readDataQuality(db: SqlTag): Promise<DataQuality | null> {
   return read ? { query: GOAL_QUERIES.dataQuality, ...read } : null;
 }
 
+export async function readKnoxHeldPile(db: SqlTag): Promise<KnoxHeldPile> {
+  const groups = await readKnoxHoldGroups(db);
+  const byReason = groups.map(({ shape, label, count, setAside, ages, owner, hasExit }) => ({ shape, label, count, setAside, ages, owner, hasExit }));
+  return {
+    query: GOAL_QUERIES.knoxHeld,
+    total: byReason.reduce((sum, row) => sum + row.count, 0),
+    setAside: byReason.reduce((sum, row) => sum + row.setAside, 0),
+    byReason,
+  };
+}
+
+const passCount = (detail: Record<string, unknown>, pass: string, field: string): number => {
+  const value = detail[pass];
+  if (!value || typeof value !== "object") return 0;
+  const result = value as Record<string, unknown>;
+  // A pass run as a dry run moved nothing, whatever it counted.
+  if (result.dryRun === true) return 0;
+  return missCount(result[field]);
+};
+
+/** Pure: what one extract step's ledger detail says left the held pile. */
+export function heldExitsFromDetail(detail: Record<string, unknown>): Omit<KnoxHeldExitWeek, "weekStart" | "steps" | "partial"> {
+  const heldRecheck = passCount(detail, "held_recheck", "promoted");
+  const nameFiled = passCount(detail, "held_name_file", "filed");
+  const untraced = passCount(detail, "untraced_recheck", "promoted");
+  const rates = passCount(detail, "held_rate_recheck", "promoted");
+  return {
+    toDarwin: heldRecheck + nameFiled + untraced + rates,
+    heldRecheck,
+    nameFiled,
+    untraced,
+    rates,
+    setAside: passCount(detail, "held_recheck", "setAside") + passCount(detail, "range_band_set_aside", "setAside"),
+    backOnHold: passCount(detail, "promotion_recheck", "withdrawn"),
+  };
+}
+
+/**
+ * Pure: the extract steps' ledger rows summed into the last `weeks` UTC weeks. Every week is
+ * listed, so a week with no extract step shows as zero rather than dropping out. A dry-run step
+ * moved nothing and is skipped.
+ */
+export function bucketHeldExitWeeks(
+  rows: Array<{ at: string; detail: Record<string, unknown> | null }>,
+  now: Date,
+  weeks = KNOX_HELD_EXIT_WEEKS,
+): KnoxHeldExitWeek[] {
+  const buckets: KnoxHeldExitWeek[] = [];
+  const first = new Date(`${readerMissSince(now, weeks)}T00:00:00Z`);
+  for (let index = 0; index < weeks; index += 1) {
+    const start = new Date(first);
+    start.setUTCDate(first.getUTCDate() + index * 7);
+    buckets.push({ weekStart: start.toISOString().slice(0, 10), steps: 0, toDarwin: 0, heldRecheck: 0, nameFiled: 0, untraced: 0, rates: 0, setAside: 0, backOnHold: 0, partial: index === weeks - 1 });
+  }
+  const byWeek = new Map(buckets.map((bucket) => [bucket.weekStart, bucket]));
+  for (const row of rows) {
+    const at = new Date(row.at);
+    if (!row.detail || row.detail.dry_run === true || Number.isNaN(at.getTime())) continue;
+    const bucket = byWeek.get(weekStartUtc(at));
+    if (!bucket) continue;
+    const exits = heldExitsFromDetail(row.detail);
+    bucket.steps += 1;
+    bucket.toDarwin += exits.toDarwin;
+    bucket.heldRecheck += exits.heldRecheck;
+    bucket.nameFiled += exits.nameFiled;
+    bucket.untraced += exits.untraced;
+    bucket.rates += exits.rates;
+    bucket.setAside += exits.setAside;
+    bucket.backOnHold += exits.backOnHold;
+  }
+  return buckets;
+}
+
+/**
+ * Knox's extract step records, per pass, how many held lines it moved (run-store.ts, the
+ * `extract` step's detail). A held row carries no date it left the pile, so this ledger is the
+ * only dated record of exits. Not counted: a held line that a re-read of its document takes over
+ * (it is inside the step's inserted fees, with no count of its own).
+ */
+export async function readKnoxHeldExitWeeks(db: SqlTag, now: Date): Promise<KnoxHeldExitWeeks> {
+  const rows = await db<Array<{ created_at: Date | string; detail: unknown }>>`
+    SELECT e.created_at,
+           jsonb_build_object(
+             'dry_run', e.detail->'dry_run',
+             'held_recheck', e.detail->'held_recheck',
+             'held_name_file', e.detail->'held_name_file',
+             'untraced_recheck', e.detail->'untraced_recheck',
+             'held_rate_recheck', e.detail->'held_rate_recheck',
+             'range_band_set_aside', e.detail->'range_band_set_aside',
+             'promotion_recheck', e.detail->'promotion_recheck'
+           ) AS detail
+      FROM agent_run_events e
+      JOIN agent_run_steps s ON s.id = e.step_id
+     WHERE s.agent_name = 'knox'
+       AND s.step_key = 'extract'
+       AND e.event_type = 'step.finished'
+       AND e.status = 'completed'
+       AND e.created_at >= ${`${readerMissSince(now, KNOX_HELD_EXIT_WEEKS)}T00:00:00Z`}::timestamptz
+  `;
+  return {
+    query: GOAL_QUERIES.knoxHeldExits,
+    weeks: bucketHeldExitWeeks(rows.map((row) => ({
+      at: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
+      detail: (typeof row.detail === "string" ? JSON.parse(row.detail) : row.detail) as Record<string, unknown> | null,
+    })), now),
+  };
+}
+
+const share = (numerator: number, denominator: number): number | null =>
+  denominator > 0 ? Math.round((numerator / denominator) * 10_000) / 10_000 : null;
+
+/** Pure: a stored specialist row, or null when it is not one. */
+function specialistFrom(value: unknown): KnoxSpecialistScore | null {
+  if (!value || typeof value !== "object") return null;
+  const row = value as Record<string, unknown>;
+  if (typeof row.strategy !== "string" || !row.strategy) return null;
+  const banks = missCount(row.banks);
+  const found = missCount(row.found);
+  const foundOnly = missCount(row.foundOnly);
+  const reads = missCount(row.reads);
+  const right = missCount(row.right);
+  const num = (field: unknown) => (field == null || !Number.isFinite(Number(field)) ? null : Number(field));
+  return { strategy: row.strategy, banks, found, foundOnly, reads, right, precision: share(right, reads), shareOfKey: num(row.shareOfKey) };
+}
+
+/**
+ * Pure: the newest answer-key score row as Knox's target numbers. The totals are summed in SQL from
+ * the run's per-bank Knox counts (banks whose right document Rosetta read); the specialist rows are
+ * the ones the scorer stored with the run (`by_stage._knox_specialists`), absent before #1098.
+ */
+export function knoxAnswerKeyFrom(row: Record<string, unknown> | undefined): Omit<KnoxAnswerKeyScore, "query"> {
+  if (!row || row.id == null) {
+    return { scoreRunId: null, scoredAt: null, scorerVersion: ANSWER_KEY_SCORER_VERSION, referenceState: null,
+      confirmedBanks: null, eligibleBanks: null, topExclusions: [],
+      banks: 0, expected: 0, found: 0, reads: 0, right: 0, recall: null, precision: null, bySpecialist: null };
+  }
+  const expected = missCount(row.expected);
+  const found = missCount(row.found);
+  const reads = missCount(row.reads);
+  const right = missCount(row.right);
+  const stored = (typeof row.specialists === "string" ? JSON.parse(row.specialists) : row.specialists) as Record<string, unknown> | null;
+  const list = stored && Array.isArray(stored.bySpecialist) ? stored.bySpecialist : null;
+  const reference = (typeof row.reference === "string" ? JSON.parse(row.reference) : row.reference) as Record<string, unknown> | null;
+  const bankCount = (value: unknown) => (value == null || !Number.isFinite(Number(value)) ? null : Number(value));
+  const scoredAt = row.scored_at instanceof Date ? row.scored_at.toISOString() : row.scored_at == null ? null : String(row.scored_at);
+  return {
+    scoreRunId: Number(row.id),
+    scoredAt,
+    scorerVersion: Number(row.scorer_version ?? ANSWER_KEY_SCORER_VERSION),
+    referenceState: typeof reference?.state === "string" ? reference.state : null,
+    confirmedBanks: bankCount(reference?.confirmedBanks),
+    eligibleBanks: bankCount(reference?.eligibleBanks),
+    topExclusions: Object.entries((reference?.byReason && typeof reference.byReason === "object" ? reference.byReason : {}) as Record<string, unknown>)
+      .map(([reason, value]) => ({ reason, count: missCount(value) }))
+      .filter((entry) => entry.count > 0)
+      .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason))
+      .slice(0, 3),
+    banks: missCount(row.banks),
+    expected,
+    found,
+    reads,
+    right,
+    recall: share(found, expected),
+    precision: share(right, reads),
+    bySpecialist: list ? list.map(specialistFrom).filter((entry): entry is KnoxSpecialistScore => entry != null) : null,
+  };
+}
+
+/**
+ * The newest answer-key score at the current scorer version (one row, by the `scored_at` index), with
+ * its per-bank Knox counts summed over the banks whose right document Rosetta read. Reads only the
+ * stored score; it never re-scores.
+ */
+export async function readKnoxAnswerKey(db: SqlTag): Promise<KnoxAnswerKeyScore> {
+  const [row] = await db<Array<Record<string, unknown>>>`
+    SELECT r.id, r.scored_at, r.scorer_version,
+           jsonb_build_object(
+             'state', r.by_stage->'_reference'->'state',
+             'confirmedBanks', r.by_stage->'_reference'->'confirmedBanks',
+             'eligibleBanks', r.by_stage->'_reference'->'eligibleBanks',
+             'byReason', r.by_stage->'_reference'->'byReason'
+           ) AS reference,
+           r.by_stage->'_knox_specialists' AS specialists,
+           k.banks, k.expected, k.found, k.reads, k.right
+      FROM (
+        SELECT id, scored_at, scorer_version, by_stage, by_bank
+          FROM answer_key_score_runs
+         WHERE scorer_version = ${ANSWER_KEY_SCORER_VERSION}
+         ORDER BY scored_at DESC, id DESC
+         LIMIT 1
+      ) r
+      CROSS JOIN LATERAL (
+        SELECT COUNT(*)::int AS banks,
+               COALESCE(SUM((b->'stages'->'knox'->>'expected')::int), 0)::int AS expected,
+               COALESCE(SUM((b->'stages'->'knox'->>'matched')::int), 0)::int AS found,
+               COALESCE(SUM((b->'stages'->'knox'->>'predicted')::int), 0)::int AS reads,
+               COALESCE(SUM((b->'stages'->'knox'->>'correct')::int), 0)::int AS right
+          FROM jsonb_array_elements(CASE WHEN jsonb_typeof(r.by_bank) = 'array' THEN r.by_bank ELSE '[]'::jsonb END) b
+         WHERE b->'stages'->'rosetta'->>'right' = 'true'
+           AND COALESCE((b->'stages'->'knox'->>'expected')::int, 0) > 0
+      ) k
+  `;
+  return { query: GOAL_QUERIES.knoxAnswerKey, ...knoxAnswerKeyFrom(row) };
+}
+
 /** One read, in its own savepoint: a failure leaves that number null and the others standing. */
 async function guarded<T>(db: SqlTag, name: string, read: (scope: SqlTag) => Promise<T>): Promise<T | null> {
   return inSavepoint(db, read).catch((error) => {
@@ -944,6 +1263,9 @@ export async function readGoalScorecard(db: SqlTag = sql, now = new Date()): Pro
   const readerRemedies = await guarded(db, GOAL_QUERIES.readerRemedies, (scope) => readReaderRemedies(scope, now));
   const dataQuality = await guarded(db, GOAL_QUERIES.dataQuality, readDataQuality);
   const liveSourceAudit=await guarded(db,"goal.live_source_audit",scope=>readLiveSourceAudit(scope,now));
+  const knoxHeld = await guarded(db, GOAL_QUERIES.knoxHeld, readKnoxHeldPile);
+  const knoxHeldExits = await guarded(db, GOAL_QUERIES.knoxHeldExits, (scope) => readKnoxHeldExitWeeks(scope, now));
+  const knoxAnswerKey = await guarded(db, GOAL_QUERIES.knoxAnswerKey, readKnoxAnswerKey);
   return {
     readAt: now.toISOString(),
     windowDays: GOAL_WINDOW_DAYS,
@@ -959,6 +1281,9 @@ export async function readGoalScorecard(db: SqlTag = sql, now = new Date()): Pro
     readerRemedies,
     dataQuality,
     liveSourceAudit,
+    knoxHeld,
+    knoxHeldExits,
+    knoxAnswerKey,
   };
 }
 

@@ -26,6 +26,10 @@ import { stackedCellVariants } from "./stacked-cell-variants";
 import { refusesOtherColumnPrice } from "./column-pair-prices";
 import { boxSectionLateFee } from "./box-section-late-fee";
 import { withGluedFootnotePrices } from "./glued-footnote-price";
+import { pricedForOtherAccount } from "./column-account";
+import { withoutGluedPricePairs } from "./glued-price-pair";
+import { NO_CHARGE_SENTENCE_READ_LIVE, noChargeNsfWitness } from "@/lib/no-charge-statement";
+import { withCenteredHeadingCells } from "./centered-heading-cell";
 import { discontinuedRow } from "./discontinued-rows";
 import { networkColumnRow } from "./network-column-rows";
 const NSF_POLICY_CATEGORIES = new Set(["nsf", "overdraft"]);
@@ -56,6 +60,11 @@ export type SourceCheckOptions = {
    * stricter nearby-lines rule until the change ships with Darwin's live re-check and dry-run count.
    */
   sectionHeadingCategory?: boolean;
+  /**
+   * #2040: accept an NSF $0 from a sentence saying the bank charges none (`noChargeNsfWitness`).
+   * Defaults to `NO_CHARGE_SENTENCE_READ_LIVE`, which is off; tests pass true.
+   */
+  noChargeSentences?: boolean;
 };
 
 const LONG_LINE = 300;
@@ -1391,7 +1400,9 @@ export function checkFeeAgainstSource(
   options: SourceCheckOptions = {},
 ): SourceCheckResult {
   // #1946: every refusal below reads a footnote glued to a $0 price ("$01") as $0, as the main path does.
-  const rawText = sourceText ? withGluedFootnotePrices(sourceText) : sourceText;
+  // #1912: a line whose only price is two different prices glued together traces no fee (`gluedPricePair`).
+  // #1912: a heading in a vertically centred merged cell leads every row of its block (`withCenteredHeadingCells`).
+  const rawText = sourceText ? withCenteredHeadingCells(withGluedFootnotePrices(withoutGluedPricePairs(sourceText))) : sourceText;
   if (namesItsClosedFreeRow(rawText, feeName, amount)) return { ok: false, reason: "amount_not_the_fee" };
   // #1916: a bare late charge printed in a safe deposit box section ("Safe Deposit Box Fees" /
   // "Late Payment (per month) | $10.00") is the box's late rent charge, not a loan's late payment.
@@ -1402,6 +1413,9 @@ export function checkFeeAgainstSource(
   // (`boxSizeNamed`); the row is traced by its own words. Only for a fee filed as a safe deposit box
   // (a null key never borrows the box words: Knox's self-check passes the read's category), and only
   // on a row that is the size itself, not another product's row printing a size (`leadsBoxRow`).
+  // #1912: the price's own cell closes with another account's column name ("$50 ... (ira)" under a
+  // fee named for a CD): the amount is that account's price, not this fee's (`pricedForOtherAccount`).
+  if (result.ok && pricedForOtherAccount(result.sourceLine, feeName, amount)) return { ok: false, reason: "amount_not_the_fee" };
   const asRead = result.ok ? null : asReadBoxName(feeName, canonicalFeeKey);
   if (!asRead) return result;
   const traced = withoutDiscontinuedRow(rawText, asRead, amount, checkOwnName(rawText, asRead, amount, categoryPattern, canonicalFeeKey, options));
@@ -1551,6 +1565,14 @@ function checkFeeAgainstSourceText(
     if (!asCap) continue;
     const cap = checkAgainstLines(lines, feeName, amount, categoryPattern, true, false, sectionHeadingCategory);
     if (cap.ok) return cap;
+  }
+  // #2040: "We do not charge a returned item/non-sufficient funds (NSF) fee for items returned unpaid."
+  // states the NSF fee's $0 with no free word. Read after the line checks, so a fee that traces to a
+  // "Free" row keeps that row; only the exact name the sentence prints, only as NSF, only where its
+  // surroundings name no narrower scope and no line prices NSF (`noChargeNsfWitness`). Off by default.
+  if (amount === 0) {
+    const stated = noChargeNsfWitness(text, feeName, canonicalFeeKey, options.noChargeSentences ?? NO_CHARGE_SENTENCE_READ_LIVE);
+    if (stated) return { ok: true, sourceLine: stated.sentence };
   }
   if (first && !first.ok && first.reason === "tiered_fee" && statements.length > 0 &&
       (canonicalFeeKey === "nsf" || /\bnsf\b/i.test(feeName))) {

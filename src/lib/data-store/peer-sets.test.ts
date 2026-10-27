@@ -12,6 +12,7 @@ const BANK: PeerSubject = {
   state_code: "TX", primary_regulator: "OCC", cu_charter_type: null, holding_company_rssd: "1234",
 };
 const unsafe = () => vi.mocked((sql as unknown as { unsafe: ReturnType<typeof vi.fn> }).unsafe);
+const template = () => sql as unknown as ReturnType<typeof vi.fn>;
 
 describe("definitionFor", () => {
   it("fills same from the institution", () => {
@@ -79,17 +80,21 @@ describe("resolvePeerSet", () => {
   });
 
   it("orders nearest by asset distance among institutions that publish fees", async () => {
+    template().mockResolvedValue([{ institution_id: 7 }, { institution_id: "8" }, { institution_id: 9 }]);
     unsafe().mockResolvedValue([{ id: 7 }]);
     await resolvePeerSet({ charter_type: "bank", nearest: 20 }, BANK);
     const [query, params] = unsafe().mock.calls[0];
-    expect(query).toContain("WITH eligible AS MATERIALIZED");
-    expect(query).toContain("SELECT DISTINCT institution_id FROM published_fee_catalog WHERE review_status = 'approved'");
+    // The pool of fee-publishing institutions is read once and cached, not scanned per lookup.
+    expect(query).not.toContain("published_fee_catalog");
+    expect(query).toMatch(/s\.id = ANY\(\$\d+::bigint\[\]\)/);
+    expect(params).toContainEqual([7, 8, 9]);
     expect(query).toMatch(/ORDER BY ABS\(s\.asset_size - \$\d+::bigint\), s\.id LIMIT \$\d+/);
     expect(params.slice(-2)).toEqual([800_000, 20]);
   });
 
   /** A fake institution_sources that applies the query's active rule, asset ordering and limit. */
   function nearestDatabase(rows: { id: number; asset_size: number; inactive?: boolean }[]) {
+    template().mockResolvedValue(rows.map((row) => ({ institution_id: row.id })));
     unsafe().mockImplementation((query: string, params: unknown[]) => {
       const activeOnly = query.includes("s.regulatory_status IS DISTINCT FROM 'inactive'");
       const [own, limit] = params.slice(-2) as number[];

@@ -90,6 +90,8 @@ function narrateFinished(
         ? `$${dollars} in known estimates; cost unavailable for ${count(unknownCosts, "returned response")}`
         : `$${dollars}`;
       if (detail.budget_stopped === true && processed === 0) return `Paid pass to ${job} ${scope} did not run: ${String(detail.budget_reason ?? "budget cap")}.`;
+      const skippedPasses = Array.isArray(detail.skipped_passes) ? detail.skipped_passes.filter((entry): entry is string => typeof entry === "string") : [];
+      if (processed === 0 && skippedPasses.length > 0) return `Paid pass to ${job} ${scope} made no model call, $0 spent (${skippedPasses.join("; ")}).`;
       if (processed === 0) return `Paid pass to ${job} ${scope}: nothing the free passes left.`;
       return `Paid pass to ${job} ${scope}: ${n(detail, "succeeded")} of ${processed} succeeded for ${costSummary}${detail.budget_stopped === true ? `; then stopped: ${String(detail.budget_reason ?? "a budget cap (which cap was not recorded)").replace(/\.$/, "")}` : ""}.`;
     }
@@ -199,8 +201,10 @@ function narrateFinished(
     case "publish-sweeps": {
       const changed = n(detail, "changed");
       const verb = detail.dry_run === true ? "Would change" : "Changed";
-      if (changed === 0) return detail.dry_run === true ? "Publish sweeps dry run: nothing to change." : "Publish sweeps: nothing to change.";
-      return `${verb} ${count(changed, "live fee row")} across the moved publish sweeps${detail.dry_run === true ? " (dry run, nothing written)" : ""}.`;
+      const failed = n(detail, "sweeps_failed");
+      const failedNote = failed > 0 ? ` ${count(failed, "sweep")} failed and ${failed === 1 ? "was" : "were"} rolled back alone; the rest ran.` : "";
+      if (changed === 0) return `${detail.dry_run === true ? "Publish sweeps dry run: nothing to change." : "Publish sweeps: nothing to change."}${failedNote}`;
+      return `${verb} ${count(changed, "live fee row")} across the moved publish sweeps${detail.dry_run === true ? " (dry run, nothing written)" : ""}.${failedNote}`;
     }
     case "category-guard": {
       const failing = n(detail, "failing_fees");
@@ -393,11 +397,13 @@ function narrateFinished(
     }
     case "deming-error-fix-recheck": {
       if (n(detail, "entries") === 0) return "No process fix names the errors it fixes yet.";
-      return `Re-checked the errors ${count(n(detail, "entries"), "process fix", "process fixes")} named: ${n(detail, "closed")} closed, ${n(detail, "still_wrong")} still wrong after a re-run, ${n(detail, "not_reproduced")} taken down with no right fee in their place, ${n(detail, "waiting")} waiting for a re-run, ${n(detail, "unknown")} not judged.`;
+      return `Re-checked the errors ${count(n(detail, "entries"), "process fix", "process fixes")} named: ${n(detail, "closed")} closed, ${n(detail, "still_wrong")} still wrong after a re-run, ${n(detail, "not_reproduced")} taken down with no right fee in their place, ${n(detail, "waiting")} waiting for a re-run, ${n(detail, "unknown")} not judged.${n(detail, "inactive") > 0 ? ` ${n(detail, "inactive")} at banks no longer active, so never re-run.` : ""}${n(detail, "read_failed") > 0 ? ` The read failed for ${count(n(detail, "read_failed"), "fix", "fixes")}; re-checked next run.` : ""}`;
     }
     case "deming-error-classes": {
       if (detail.confirmed_rows == null) return "Could not group the week's errors into classes.";
-      return `Grouped ${count(n(detail, "confirmed_rows"), "confirmed error row")} into ${count(n(detail, "classes"), "class", "classes")} seen at two or more banks; ${n(detail, "one_bank_patterns")} patterns were seen at one bank only.`;
+      const byName = n(detail, "name_family_classes") > 0 ? ` (${n(detail, "name_family_classes")} of them by fee name, a second view of the same rows)` : "";
+      const nameFailed = detail.name_read_failed === true ? " The fee-name grouping could not be read this time." : "";
+      return `Grouped ${count(n(detail, "confirmed_rows"), "confirmed error row")} into ${count(n(detail, "classes"), "class", "classes")} seen at two or more banks${byName}; ${n(detail, "one_bank_patterns")} patterns were seen at one bank only.${nameFailed}`;
     }
     case "deming-monthly-review": {
       if (detail.ran === false) return "Not the 1st of the month: no monthly agent review this time.";
@@ -721,6 +727,8 @@ export function narrateEvent(event: NarratableEvent): string | null {
       return event.stepKey ? narrateStepFinished(event.stepKey, event.detail, event.stateCode) : null;
     case "step.failed":
       return `Stopped with an error${event.stepKey ? ` while working on "${event.stepKey}"` : ""}: ${shorten(event.message)}`;
+    case "publish_sweeps.sweep_failed":
+      return `A publish sweep failed and was rolled back on its own: ${shorten(event.message)}`;
     case "step.reaped":
       return "A step got stuck, so it was restarted.";
     case "step.dead":

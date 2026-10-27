@@ -18,6 +18,7 @@ import {
 import { FEE_PAGE_CHECK_VERSION, scoreFeePage, urlNamesFeePage, type FeePageScore } from "@/lib/agents/learning/fee-page";
 import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
 import { backfillPlaybookFormats } from "@/lib/agents/learning/format-backfill";
+import { OWNERSHIP_REJECT_PREFIX, OWNERSHIP_REJECT_REASONS } from "@/lib/agents/learning/rejected-sources";
 import { backfillDocumentKinds } from "./document-kind-backfill";
 import {
   detectFormat,
@@ -75,6 +76,7 @@ import { atomicTextWrite, captureNormalizedWitness, normalizedWitnessSchemaReady
 import { PDF_LAYOUT_VERSION } from "@/lib/agents/rosetta/pdf-layout";
 import { FEE_HOLD_CHECK } from "@/lib/fee-hold-rules";
 import { FEE_CORRECTION_CHECK } from "@/lib/fee-correction-rules";
+import { UNTRACED_READ_ERROR_CHECK } from "@/lib/agents/knox/untraced-read-error";
 import { extractPdfDocumentText as extractPdfText, type PdfTextExtraction } from "./pdf-document-text";
 import { losslessStackedRecovery, textSha256, type StackedGeometryReceipt } from "./pdf-repair-survival";
 import type { PdfReaderAgreement } from "./pdf-reader-agreement";
@@ -1377,8 +1379,11 @@ export function rosettaReadCandidatesQuery(
       // wrong document. A finding that names the text's hash stays open until the text changes, so
       // a re-read that writes the same text keeps it for the next bump; one without a hash is about
       // the text written before it, and any rewrite settles it. A correction names the lost text's
-      // document in its evidence, since its own document is the cited one.
-      params.push([FEE_HOLD_CHECK, FEE_CORRECTION_CHECK]);
+      // document in its evidence, since its own document is the cited one. Knox's report of a text
+      // whose held lines its rules failed to trace under 3+ rules versions (`knox.untraced_held`,
+      // #1102) is read the same way: the text and the fee disagree, so the text may be wrong. It
+      // always names the text's hash.
+      params.push([FEE_HOLD_CHECK, FEE_CORRECTION_CHECK, UNTRACED_READ_ERROR_CHECK]);
       const operatorChecksParam = `$${params.length}`;
       const readErrorOnText = (alias: string, text: string) => `EXISTS (
                 SELECT 1 FROM pipeline_feedback ${alias}
@@ -1957,10 +1962,38 @@ async function writeReadResult(
     WHERE inst.id = ${result.institutionId}
     ON CONFLICT (institution_id) DO UPDATE SET
       state_code = EXCLUDED.state_code,
+      -- #1105: a completed read judged this page a fee page, newer evidence than an earlier
+      -- reject of its address, so the address leaves the rejected list and is current. Any other
+      -- read leaves a rejected address off the current source (rejected-sources.ts).
       canonical_source_url = CASE
         WHEN institution_source_profiles.locked_by_correction
           THEN institution_source_profiles.canonical_source_url
+        WHEN ${result.status} <> 'completed'
+             AND COALESCE(institution_source_profiles.rejected_source_urls, '[]'::jsonb)
+                 @> jsonb_build_array(jsonb_build_object('url', COALESCE(EXCLUDED.canonical_source_url, institution_source_profiles.canonical_source_url)))
+          THEN NULL
+        -- A completed read says the text is a fee page, never whose: an ownership reject stands.
+        WHEN jsonb_typeof(institution_source_profiles.rejected_source_urls) = 'array' AND EXISTS (
+            SELECT 1 FROM jsonb_array_elements(institution_source_profiles.rejected_source_urls) entry
+             WHERE entry->>'url' = COALESCE(EXCLUDED.canonical_source_url, institution_source_profiles.canonical_source_url)
+               AND (entry->>'reason' = ANY(${[...OWNERSHIP_REJECT_REASONS]}::text[])
+                    OR entry->>'reason' LIKE ${OWNERSHIP_REJECT_PREFIX + "%"})
+          )
+          THEN NULL
         ELSE COALESCE(EXCLUDED.canonical_source_url, institution_source_profiles.canonical_source_url)
+      END,
+      rejected_source_urls = CASE
+        WHEN ${result.status} = 'completed' AND EXCLUDED.canonical_source_url IS NOT NULL
+             AND COALESCE(institution_source_profiles.rejected_source_urls, '[]'::jsonb)
+                 @> jsonb_build_array(jsonb_build_object('url', EXCLUDED.canonical_source_url))
+          THEN (
+            SELECT COALESCE(jsonb_agg(entry), '[]'::jsonb)
+              FROM jsonb_array_elements(institution_source_profiles.rejected_source_urls) entry
+             WHERE entry->>'url' IS DISTINCT FROM EXCLUDED.canonical_source_url
+                OR entry->>'reason' = ANY(${[...OWNERSHIP_REJECT_REASONS]}::text[])
+                OR entry->>'reason' LIKE ${OWNERSHIP_REJECT_PREFIX + "%"}
+          )
+        ELSE institution_source_profiles.rejected_source_urls
       END,
       source_kind = CASE
         WHEN institution_source_profiles.locked_by_correction

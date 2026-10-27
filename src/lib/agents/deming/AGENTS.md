@@ -39,7 +39,13 @@ institutions remains the only human launch workflow.
 - `checkers.ts`: pure offline checkers. Runtime generic replay admits `hamilton.limit_guard` and
   `hamilton.category_guard` (#2064); a takedown frozen as `unreplayable` before its check had a
   replayer replays by its check name from the fee's frozen category, name, amount and conditions,
-  without the schedule's NSF price, so a catch that needed it stays a candidate. A legacy
+  without the schedule's NSF price, so a catch that needed it stays a candidate.
+  `hamilton.business_schedule` takedowns (a business fee shown as a consumer one) replay as
+  `audience` cases against today's audience rules in the pipeline's order: Darwin's decision from
+  the fee's name, its document's address and the document's newest completed text, then, for a fee
+  Darwin leaves unknown, Hamilton's business-schedule read (`readsAsBusinessSchedule`, or a
+  business-only footnote on the fee's line). A Darwin read of consumer or both is a let-through; a
+  case with no stored text is not judged. A business-schedule restore never retires its case. A legacy
   `source_check` body remains historical and unavailable. The prospective source-bound
   corrective protocol below has its own paired replay; other error families are not counted as
   evaluated merely because a checker name exists.
@@ -118,6 +124,13 @@ institutions remains the only human launch workflow.
   runs its stage; rows with no pattern are counted, never a class. Each class keeps one weight-0
   `error_class` ledger row, opened the first day it is seen and updated with each later day's
   counts, date, examples and a GitHub-ready title and body. The morning brief lists the largest classes, so the data lane works classes, not fees.
+- Name families (#2063): fee-level rows (extract, verify, publish) also group by the family of the
+  fee's name, the category Knox's name rules file it under (`classifyPatternKey`, `name:<key>`),
+  else Knox's lesson family of two words or more (`lessonFamily`, `name_words:<words>`). "Wire
+  Transfer - Outgoing Domestic" and "Outgoing domestic wire" are one class whatever category each
+  bank's fee was filed under. A family that only restates one category's class is skipped; the
+  others carry the categories they span. They are a second view of the same rows and never change
+  the confirmed counts; the step's detail shows `name_family_classes` and `name_rows_read`.
 - Live wrong amounts at extract (#2067; `amount-patterns.ts`) group by the text layout around the
   fee, not its category: price-first rows paired with the wrong row, an opening deposit read as the
   fee, a cap or minimum, a figure in the name, a footnote glued to a $0 price, a price from the
@@ -221,17 +234,21 @@ institutions remains the only human launch workflow.
 
 ## Playbook contradiction check
 
-- `playbook-contradictions.ts` (`PLAYBOOK_CHECK_VERSION` v1): the `deming-playbook-check` step in
+- `playbook-contradictions.ts` (`PLAYBOOK_CHECK_VERSION` v2): the `deming-playbook-check` step in
   Atlas's daily scoreboard run (#1105). One read-only SELECT over `institution_source_profiles`
   and each one's current text. Per institution it counts a playbook that contradicts itself: the
   current source on its own rejected list, on its own do-not-retry list for a fetch failure, or
   judged the wrong document by a discovery strategy; a fee schedule expected to hold fewer than
   `THIN_DOCUMENT_MAX_FEES` fees; a product page expected to hold `PAID_MIN_PRICED_LINES` or more.
-  It lists up to 20 institutions per contradiction in the step detail.
+  It lists up to 20 institutions per contradiction in the step detail. v2 (#1105): the rejected
+  list holds `{ url, reason, at }` objects, so the check matches their `url`
+  (`onRejectedListSql` in `learning/rejected-sources.ts`); v1 tested for a bare string and counted
+  0 every day while 26 profiles had one (Oct 26).
 - Not contradictions: the second-document finder and its site searches record the bank's current
   link as the input they searched *from* (`SEARCH_FROM_STRATEGIES`), so their `wrong_document` /
   `no_candidates` entry means "found nothing better". They are reported as
-  `search_from_entries`, as is `layout_never_recorded` (no stage writes a layout fingerprint yet).
+  `search_from_entries`, as is `layout_never_recorded` (Knox's free rules read writes the layout
+  fingerprint since #1105, so the pile drains as texts are read again).
 - Read-only, deterministic, no model calls, pause-exempt. It changes no row.
 
 ## Daily data-quality checks
@@ -393,9 +410,9 @@ fails a PR that changes one of these constants without updating its line here (#
 |---|---|---|---|
 | `ACCURACY_REPORTING_VERSION` | — | v1 | `deming/accuracy-measure.ts` |
 | `FRESH_AUDIT_VERSION` | — | v9 | `deming/fresh-audit.ts` |
-| `DEMING_REGRESSION_VERSION` | — | v1 | `deming/regression.ts` |
+| `DEMING_REGRESSION_VERSION` | — | v2 | `deming/regression.ts` |
 | `BENCHMARK_HEALTH_VERSION` | — | v1 | `deming/benchmark-health.ts` |
-| `PLAYBOOK_CHECK_VERSION` | — | v1 | `deming/playbook-contradictions.ts` |
+| `PLAYBOOK_CHECK_VERSION` | — | v2 | `deming/playbook-contradictions.ts` |
 | `AMOUNT_PATTERN_VERSION` | — | v1 | `deming/amount-patterns.ts` |
 | `DATA_QUALITY_VERSION` | — | v1 | `deming/data-quality.ts` |
 | `KNOX_MISSES_VERSION` | — | v1 | `deming/knox-misses.ts` |

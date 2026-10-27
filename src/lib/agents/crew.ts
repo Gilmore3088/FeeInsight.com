@@ -41,7 +41,7 @@ export interface CrewMemberStatus extends CrewMemberMeta {
   nextRunAt: string | null;
 }
 
-const FEED_EVENT_TYPES = ["step.finished", "step.failed", "step.reaped", "step.dead", "run.blocked", "run.completed"];
+const FEED_EVENT_TYPES = ["step.finished", "step.failed", "step.reaped", "step.dead", "run.blocked", "run.completed", "publish_sweeps.sweep_failed"];
 
 function eventTone(eventType: string, status: string): CrewFeedItem["tone"] {
   if (eventType === "step.failed" || eventType === "step.dead" || status === "failed") return "error";

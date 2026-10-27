@@ -381,6 +381,16 @@ Regulatory work needs a defensible position, so nothing Hamilton produces is a b
   no URL, the fee takes its document's (`publishSourceLink`); refresh-copy does the same.
 - `published_by_adversarial_event_id` holds Darwin's verification event id, the gate
   that actually ran.
+- A fee goes live under `publishedFeeName`: the verified name ends at a dot leader or a glued
+  price (`nameBeforeLeaders`), but a figure a comparison leads into ("falls below $2,500.00",
+  "< $30", "balance of $100"), a figure after a plain "is"/"of"/"for"/"at" that a closing
+  comparison completes ("is $35.00 or less"), a kept figure's range end ("between $100 and $500")
+  and any figure inside an open parenthesis are the name's own threshold and stay (#1443; the cut
+  put 19 live names such as "monthly fee if balance falls below" live). Every other figure is the
+  fee's own price and still ends the name ("Checks $300 and over $10", "Overdraft up to $35",
+  "Stop payment $30 or more", "ATM fee from $2.00 to $5.00", "A fee of $20.00 ..."), as do a next
+  tier ("Up to $2,500 Over $2,500") and the sentence that ends on a kept threshold. `publishNameHold` reads a doubled space inside the name
+  as one before its cut-off test.
 - Operators' holds and corrections win over a re-read (#978, docs/plans/hamilton-h03-corrections.md).
   A held line is not republished. A fee an admin corrected (`published_fee_corrections`, a new
   version per correction; the replaced row is quarantined `admin_correction: ...`) is matched by
@@ -486,7 +496,17 @@ institution or not at all (`MOVED_PUBLISH_SWEEPS`), so in a state lane they run 
 state's live fees. With the switch on, a state lane's `publish` skips those 40 and keeps its 11
 state-scoped and own-row calls (`KEPT_PUBLISH_CALLS`); a `publish-sweeps` step runs the 40 in
 this same order under the same lock, from a `hamilton.publish_sweeps` run queued by the tick
-at most one at a time and only after a lane publish completed. A Read-now or hand-found
+at most one at a time, at most once an hour (`PUBLISH_SWEEPS_INTERVAL_MINUTES`, #1070: the issue
+asked for daily; an hour keeps a takedown or a due 12-hour second look from waiting a day), and
+only after a publish completed since the last run (live: a lane or Read-now publish; dry: a lane
+publish). The tick queues it only while the `pipeline` control is on; it never waits on the
+provider budget. In that step each sweep runs in its own savepoint: one that throws is rolled
+back alone, recorded as a `publish_sweeps.sweep_failed` event and on `sweep_failures`, and the
+rest run, except the sweeps that depend on it (`SWEEP_DEPENDENTS`: a failed taxonomy fold skips
+every later sweep, a failed change pairing skips the cross-page restore), which are recorded as
+`publish_sweeps.sweep_skipped` and run next time. A sweep there writes through its savepoint's own
+handle: on postgres.js a failed statement on the outer handle fails the whole transaction even
+after the savepoint rolls back. A Read-now or hand-found
 publish keeps every sweep it can scope to its institution, and leaves the seven that take no
 institution id (`GLOBAL_ONLY_PUBLISH_SWEEPS`: the four hand lists, the extraction-note move and
 the two learning-store sweeps) to `publish-sweeps`. `accountTypeHold` stays in the Read-now
@@ -875,7 +895,10 @@ one price of several on a row) or at $0 ("FREE"). The verdict (`currentCopyVerdi
 counts a fee as stated when the current page follows a piece of its name with its price
 (`priceFollowsName`) or the shared source check traces it, and never judges a $0 row.
 Confirmations stay off until a new hand check passes. `refresh-copy.ts` moves up to 1,000
-fees a step.
+fees a step. A fee on a document that is no longer a source is judged against the newest read
+copy at the bank's fetch target or saved link (`retiredCopiesSql`), and only when the bank was
+seen serving that copy (fetched or re-checked) at or after the fee's own document was fetched:
+an older copy judges nothing (#1200, 139 live fees on Oct 26).
 
 ## Outlier Rollback
 

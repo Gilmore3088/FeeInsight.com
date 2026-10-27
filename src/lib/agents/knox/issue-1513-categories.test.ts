@@ -60,12 +60,13 @@ describe("Knox v120: a wire's abbreviated international (#1513)", () => {
 });
 
 describe("guard: the switched re-file of a domestic wire's abbreviated international (#1513)", () => {
-  it("is off, and off it reads nothing: live 90381 and 90382 still pass as domestic", () => {
-    expect(INTL_ABBREVIATION_REFILE_LIVE).toBe(false);
-    expect(checkFeeCategory("wire_domestic_outgoing", "Int. Wire Transfer – Outgoing").ok).toBe(true);
-    expect(checkFeeCategory("wire_domestic_incoming", "Int. Wire Transfers – Incoming").ok).toBe(true);
-    expect(refileCategory("wire_domestic_outgoing", "Int. Wire Transfer – Outgoing")).toBe("wire_domestic_outgoing");
-    expect(intlAbbreviationRefile("wire_domestic_outgoing", "Int. Wire Transfer – Outgoing")).toBe(null);
+  it("is on since James's yes (2026-10-26); off, it reads nothing: live 90381 and 90382 still pass as domestic", () => {
+    expect(INTL_ABBREVIATION_REFILE_LIVE).toBe(true);
+    const off = { intlAbbreviation: false };
+    expect(checkFeeCategory("wire_domestic_outgoing", "Int. Wire Transfer – Outgoing", undefined, off).ok).toBe(true);
+    expect(checkFeeCategory("wire_domestic_incoming", "Int. Wire Transfers – Incoming", undefined, off).ok).toBe(true);
+    expect(refileCategory("wire_domestic_outgoing", "Int. Wire Transfer – Outgoing", null, off)).toBe("wire_domestic_outgoing");
+    expect(intlAbbreviationRefile("wire_domestic_outgoing", "Int. Wire Transfer – Outgoing", false)).toBe(null);
   });
 
   it("on, re-files each to the international wire of its direction, and keeps a domestic-worded name", () => {

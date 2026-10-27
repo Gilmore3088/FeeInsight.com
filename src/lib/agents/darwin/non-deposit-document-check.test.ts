@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
   BROKERAGE_DOCUMENT_TAKEDOWN_LIVE,
   CARD_PROGRAM_TAKEDOWN_LIVE,
+  CREDIT_TERMS_TAKEDOWN_LIVE,
+  creditTermsDocumentFeesSql,
   NON_DEPOSIT_BATCH,
   NON_DEPOSIT_CHECK,
   NON_DEPOSIT_DOCUMENT_TAKEDOWN_LIVE,
@@ -23,6 +25,8 @@ import {
   recheckNonDepositDocuments,
 } from "./non-deposit-document-check";
 import { NON_DEPOSIT_FEE_FIXTURES } from "./non-deposit-document-check.fixtures";
+import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
+import { CREDIT_TERMS_FIXTURES, GREATER_VALLEY_VISA_TEXT } from "@/lib/non-deposit-document.fixtures";
 
 const ROWS = [
   { fee_published_id: "101", fee_verified_id: "9001", institution_id: "5", fee_name: "Appraisal", amount: "400", canonical_fee_key: "appraisal_fee", source_document_id: "71", document_url: "https://www.bankofgreene.com/current-rates/" },
@@ -54,7 +58,7 @@ describe("Darwin live non-deposit document re-check (#1442)", () => {
   it("ships with all three switches on (James, 2026-10-16; card programs 2026-10-18)", () => {
     expect(NON_DEPOSIT_DOCUMENT_TAKEDOWN_LIVE).toBe(true);
     expect(BROKERAGE_DOCUMENT_TAKEDOWN_LIVE).toBe(true);
-    expect(NON_DEPOSIT_CHECK_VERSION).toBe(4);
+    expect(NON_DEPOSIT_CHECK_VERSION).toBe(5);
     expect(CARD_PROGRAM_TAKEDOWN_LIVE).toBe(true);
     expect(NON_DEPOSIT_BATCH).toBe(2_000);
   });
@@ -143,10 +147,10 @@ describe("Darwin live non-deposit document re-check (#1442)", () => {
 
   it("gives step detail with the switch state and samples", () => {
     const detail = nonDepositDetail({
-      ...findNonDepositFees(ROWS), live: false, brokerageLive: false, cardProgramLive: false, openingLive: false, dryRun: false, afterId: 0, nextAfterId: 0, flagged: 0, waiting: 0, cleared: 0, takenDown: [],
+      ...findNonDepositFees(ROWS), live: false, brokerageLive: false, cardProgramLive: false, openingLive: false, creditTermsLive: false, dryRun: false, afterId: 0, nextAfterId: 0, flagged: 0, waiting: 0, cleared: 0, takenDown: [],
     });
     expect(detail).toMatchObject({
-      check: "darwin.non_deposit_document", version: 4, switch_live: false, brokerage_switch_live: false, would_take_down: 2, brokerage_document: 1,
+      check: "darwin.non_deposit_document", version: 5, switch_live: false, brokerage_switch_live: false, would_take_down: 2, brokerage_document: 1,
       kept_deposit_category: 1, kept_generic_on_rate_page: 0, on_matched_document: 4, taken_down: 0,
       by_rule: { lending_category: 2, lending_wording_on_loan_document: 0, brokerage_document: 1, card_program_document: 0 },
     });
@@ -181,7 +185,7 @@ describe("v2 rules: lending wording on loan documents, brokerage documents, gene
   });
 
   it("counts each rule on its own, and only the main rules in matched", () => {
-    expect(found.byRule).toEqual({ lending_category: 8, lending_wording_on_loan_document: 11, brokerage_document: 7, card_program_document: 0, loan_titled_document: 0, youth_account_document: 0 });
+    expect(found.byRule).toEqual({ lending_category: 8, lending_wording_on_loan_document: 11, brokerage_document: 7, card_program_document: 0, loan_titled_document: 0, youth_account_document: 0, credit_terms_document: 0 });
     expect(found.matched).toBe(19);
     expect(found.brokerageDocument).toBe(7);
     expect(found.keptGenericOnRatePage).toBe(2);
@@ -445,6 +449,105 @@ describe("v4 rules: documents that open as a loan disclosure or a youth account'
     const sql = openingDocumentFeesSql();
     expect(sql).toContain("agent_source_texts");
     expect(sql).toContain("ast.status = 'completed'");
+    expect(sql).not.toContain("extracted_fees");
+    expect(sql).not.toMatch(/\b(?:UPDATE|INSERT|DELETE)\b/);
+  });
+});
+
+describe("v5 rule: documents that open with a credit card's rate table (#1944 follow-up)", () => {
+  // Real rows and stored texts (prod, read-only, Oct 27): Greater Valley's "Visa® Disclosure"
+  // (doc 35811) and ELCA FCU's four-line title (doc 33235), both missed by the v4 title rule.
+  const GREATER_VALLEY = "https://static1.squarespace.com/static/5c6c3188b7c92c1f58671825/t/5cb89dc60d929793056a1f0f/1555602886476/Disclosure-Visa_Disclosure.pdf";
+  const ELCA = "https://cdn.prod.website-files.com/6182d082ebcfe261be706b21/6255f2f76d46d11f8fb6025d_ELCA-FCU-CC-Disclosures-2022.pdf";
+  const HEALTHCARE = "https://www.healthcarefcu.org/assets/1/6/Credit_Card_Disclosure1.pdf";
+  const ELCA_OPENING = CREDIT_TERMS_FIXTURES[0].text;
+  const GENERAL_OPENING = "Schedule of Fees and Charges\nEffective January 1, 2026\nOverdraft fee $35.00";
+  const RATE_ROWS = [
+    { fee_published_id: "149344", fee_verified_id: "9401", institution_id: "7724", fee_name: "Research Fee", amount: "20", canonical_fee_key: "account_research", source_document_id: "35811", document_url: GREATER_VALLEY, document_opening: GREATER_VALLEY_VISA_TEXT },
+    { fee_published_id: "149345", fee_verified_id: "9402", institution_id: "7724", fee_name: "Returned Check Fee", amount: "18", canonical_fee_key: "nsf", source_document_id: "35811", document_url: GREATER_VALLEY, document_opening: GREATER_VALLEY_VISA_TEXT },
+    { fee_published_id: "142538", fee_verified_id: "9403", institution_id: "6961", fee_name: "Cash Advance Fee", amount: "0", canonical_fee_key: "cash_advance", source_document_id: "33235", document_url: ELCA, document_opening: ELCA_OPENING },
+    // An address the classifier already calls a card page: its lending fee keeps v2's rule.
+    { fee_published_id: "30362", fee_verified_id: "9404", institution_id: "6844", fee_name: "Card Replacement Fee", amount: "10", canonical_fee_key: "card_replacement", source_document_id: "15143", document_url: HEALTHCARE, document_opening: GREATER_VALLEY_VISA_TEXT },
+    { fee_published_id: "30364", fee_verified_id: "9405", institution_id: "6844", fee_name: "Late Payment Fee", amount: "25", canonical_fee_key: "late_payment", source_document_id: "15143", document_url: HEALTHCARE, document_opening: GREATER_VALLEY_VISA_TEXT },
+    { fee_published_id: "301", fee_verified_id: "9304", institution_id: "6", fee_name: "Overdraft", amount: "35", canonical_fee_key: "overdraft", source_document_id: "74", document_url: "https://www.example.com/personal/Schedule-of-Fees-Personal-Checking.pdf", document_opening: GENERAL_OPENING },
+  ];
+
+  it("ships with its own sub-switch off (shadow until James says yes on the count)", () => {
+    expect(CREDIT_TERMS_TAKEDOWN_LIVE).toBe(false);
+  });
+
+  it("the stored text traces the fee, so only the document's kind can catch it", () => {
+    // Knox read the card disclosure correctly: the shared source check passes the card's own line.
+    expect(checkFeeAgainstSource(GREATER_VALLEY_VISA_TEXT, "Returned Check Fee", 18, ".", "nsf")).toMatchObject({ ok: true });
+    expect(documentScope(GREATER_VALLEY, null)).toBeNull();
+  });
+
+  it("reads the rate table only when the v4 title rules say nothing", () => {
+    expect(documentScope(GREATER_VALLEY, GREATER_VALLEY_VISA_TEXT)).toEqual({ kind: "loan", ratePage: false, opening: "credit_terms", fromAddress: false });
+    expect(documentScope(ELCA, ELCA_OPENING)).toEqual({ kind: "loan", ratePage: false, opening: "credit_terms", fromAddress: false });
+    expect(documentScope(GREATER_VALLEY, GENERAL_OPENING)).toBeNull();
+    // A title the v4 rule reads keeps its v4 rule.
+    expect(documentScope(GREATER_VALLEY, `VISA CREDIT CARD AGREEMENT\n${GREATER_VALLEY_VISA_TEXT}`)).toMatchObject({ opening: "loan" });
+  });
+
+  it("takes every fee on such a document, and on an address-named card page only what v2 kept", () => {
+    expect(nonDepositVerdict("loan", false, "nsf", "Returned Check Fee", "credit_terms", false)).toBe("credit_terms_document");
+    expect(nonDepositVerdict("loan", false, "cash_advance", "Cash Advance Fee", "credit_terms", false)).toBe("credit_terms_document");
+    expect(nonDepositVerdict("loan", false, "card_replacement", "Card Replacement Fee", "credit_terms", true)).toBe("credit_terms_document");
+    expect(nonDepositVerdict("loan", false, "late_payment", "Late Payment Fee", "credit_terms", true)).toBe("lending_category");
+  });
+
+  it("counts them on their own, outside matched and the v4 count", () => {
+    const found = findNonDepositFees(RATE_ROWS);
+    expect(found.matched).toBe(1);
+    expect(found.byRule.lending_category).toBe(1);
+    expect(found.openingDocument).toBe(0);
+    expect(found.byRule.credit_terms_document).toBe(4);
+    expect(found.creditTermsDocument).toBe(4);
+    expect(found.creditTermsDocuments).toBe(3);
+    expect(found.creditTermsInstitutions).toBe(3);
+    expect(found.creditTermsMatches.map((fee) => fee.reason)).toEqual([
+      "credit_terms_document: loan #15143", "credit_terms_document: loan #33235", "credit_terms_document: loan #35811", "credit_terms_document: loan #35811",
+    ]);
+    expect(found.passing).toEqual([301]);
+  });
+
+  it("with the sub-switch off as shipped, flags and archives none of them, at publish or on the re-check", async () => {
+    const fee = { documentUrl: GREATER_VALLEY, sourceDocumentId: 35811, canonicalFeeKey: "nsf", feeName: "Returned Check Fee", documentOpening: GREATER_VALLEY_VISA_TEXT };
+    expect(nonDepositTakedownReason(fee)).toBeNull();
+    expect(nonDepositTakedownReason(fee, { live: true, creditTermsLive: true })).toBe("credit_terms_document: loan #35811");
+    expect(nonDepositTakedownReason(fee, { live: false, creditTermsLive: true })).toBeNull();
+
+    const db = dbFor(RATE_ROWS);
+    const result = await recheckNonDepositDocuments(asDb(db), { runId: 9, stepId: 90, dryRun: false, now: new Date("2026-10-27T12:00:00Z") });
+    expect(result.creditTermsLive).toBe(false);
+    expect(result.creditTermsDocument).toBe(4);
+    // Only the address rule's lending fee is flagged.
+    expect(result.flagged).toBe(1);
+    const detail = nonDepositDetail(result);
+    expect(detail).toMatchObject({ version: 5, credit_terms_switch_live: false, credit_terms_document: 4, credit_terms_documents: 3 });
+    expect(detail.samples_credit_terms_document).toHaveLength(4);
+  });
+
+  it("with the sub-switch on, takes them down on their second look", async () => {
+    const flag = (id: string, reason: string) => ({ fee_published_id: id, kind: "takedown_pending", evidence: { flag_run_id: 3, flagged_at: "2026-10-26T01:00:00Z", reason } });
+    const base = dbFor(RATE_ROWS.slice(0, 3), {
+      flags: [flag("149344", "credit_terms_document: loan #35811"), flag("149345", "credit_terms_document: loan #35811"), flag("142538", "credit_terms_document: loan #33235")],
+    });
+    const db: DbMock = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+      if (strings.join("?").includes("UPDATE published_fee_records")) return Promise.resolve([{ fee_published_id: "142538" }, { fee_published_id: "149344" }, { fee_published_id: "149345" }]);
+      return (base as unknown as (s: TemplateStringsArray, ...v: unknown[]) => Promise<unknown>)(strings, ...values);
+    });
+    const result = await recheckNonDepositDocuments(asDb(db), { runId: 9, dryRun: false, creditTermsLive: true, now: new Date("2026-10-27T12:00:00Z") });
+    expect(result.takenDown).toEqual([142538, 149344, 149345]);
+  });
+
+  it("keeps the dry-run SQL read-only, on completed stored texts, with the v4 rules asked first", () => {
+    const sql = creditTermsDocumentFeesSql();
+    expect(sql).toContain("agent_source_texts");
+    expect(sql).toContain("ast.status = 'completed'");
+    expect(sql).toContain("rate_tables AS MATERIALIZED");
+    expect(sql).toContain(") IS NULL");
     expect(sql).not.toContain("extracted_fees");
     expect(sql).not.toMatch(/\b(?:UPDATE|INSERT|DELETE)\b/);
   });

@@ -340,6 +340,34 @@ describe("Hamilton rules re-check", () => {
     expect(JSON.parse(String(attempt?.at(-1)))).toMatchObject({ rolled_back: 0, restored: 1, missing_fees: 1 });
   });
 
+  it("keeps down a same-read takedown the category guard refuses with its stored-text context (#1912 follow-up)", async () => {
+    // BankUnited (doc 15894, live 56558): "Returned Items" printed under COLLECTIONS. Today's rules read
+    // it as NSF again and it traces, but the stored text files it as a returned deposited item.
+    const collection = [
+      "COLLECTIONS | Domestic (in) | $15",
+      "Domestic (out) | $15",
+      "Foreign Clean Collection | $50",
+      "Returned Items | $25",
+      "LEGAL PROCESSING FEE | Processing of any garnishment, tax levy, or other court | $100",
+    ].join("\n");
+    const collectionTexts = [{ source_document_id: 9, text_hash: "abc", normalized_text: collection }];
+    expect(reproducibleFees(collection).has("nsf:2500")).toBe(true);
+    const refused = await rollBackUnreproducedFees(
+      asDb(createDbMock([live(2, "nsf", "Returned Items", "25.00", "abc", true)], collectionTexts)),
+      { runId: 308, batchId: "b", takedownLive: true, dryRun: true, categoryModel: null },
+    );
+    expect(refused.restores).toEqual([]);
+
+    // The same name and price in a plain list still comes back the same-read way.
+    const plain = "Stop Payment Fee | $30.00\nReturned Items | $25\nCheck Cashing Fee | $5.00";
+    const plainTexts = [{ source_document_id: 9, text_hash: "abc", normalized_text: plain }];
+    const restored = await rollBackUnreproducedFees(
+      asDb(createDbMock([live(2, "nsf", "Returned Items", "25.00", "abc", true)], plainTexts)),
+      { runId: 309, batchId: "b", takedownLive: true, dryRun: true, categoryModel: null },
+    );
+    expect(restored.restores.map((fee) => [fee.feePublishedId, fee.restoreReason])).toEqual([[2, "same_read"]]);
+  });
+
   it("never restores a takedown into a category outside the top 50 (9 Oct)", async () => {
     const estatementTexts = [{ source_document_id: 9, text_hash: "abc", normalized_text: "E-Statement Fee | $2.00" }];
     const db = createDbMock([live(2, "estatement_fee", "E-Statement Fee", "2.00", "abc", true)], estatementTexts);

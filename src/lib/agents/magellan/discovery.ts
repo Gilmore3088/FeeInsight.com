@@ -64,7 +64,7 @@ import { keepRefusedPaidAnswers, type KeepRefusedAnswersResult } from "./refused
 import { restoreSwappedFeePages, type RestoreFeePagesResult } from "./restore-fee-page";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { AUDIT_FEEDBACK_KIND } from "@/lib/agents/deming/audit-misses";
-import { recordSearchMisses } from "./search-misses";
+import { loadSearchMissDemotions, recordSearchMisses } from "./search-misses";
 import { LEADER_RANK, runSecondDocumentFind, type RunSecondDocumentFindResult } from "./second-document";
 import { countAnchors, detectPlatform, looksJavaScriptBuilt, looksLikeBotChallenge } from "./site-signals";
 import { repairIsWorthSaving, repairWebsiteUrl } from "./website-repair";
@@ -136,6 +136,55 @@ export const BUSINESS_RESERVED_SLOTS = 3;
  */
 export const UPGRADE_RESERVED_SLOTS = 3;
 export const FRESHNESS_RESERVED_SLOTS = 2;
+/**
+ * Hamilton's two conflict checks whose lessons Magellan reads (#2062). Kept as strings so
+ * discovery does not load Hamilton's modules; `discovery.test.ts` pins them to Hamilton's own.
+ */
+export const STALE_PRICE_KIND = "stale_price";
+export const CROSS_PAGE_CONFLICT_CHECK = "hamilton.cross_page_conflict";
+export const SCHEDULE_CONFLICT_KIND = "schedule_conflict";
+export const PRODUCT_PAGE_CONFLICT_CHECK = "hamilton.product_page_conflict";
+export const STALE_PRICE_REASON = "another current document of the bank prices a product read from it differently, and is newer";
+export const SCHEDULE_CONFLICT_REASON = "the bank's schedule prices a fee read from this product page differently";
+
+/** What the discover step did with Hamilton's conflict lessons and its own search misses (#2062). */
+export interface DiscoveryFeedbackReads {
+  /** Banks searched because a price read from their link was archived as stale (`stale_price`). */
+  stalePriceSearches: number;
+  /** Of those, finds that kept the link: not the newer document and not known to be newer. */
+  stalePriceRefusals: number;
+  /** Banks given an upgrade search because their link's page lost to the schedule (`schedule_conflict`). */
+  scheduleConflictSearches: number;
+  /** Banks whose specialists were reordered by their last search miss (`search_miss`). */
+  searchMissReorders: number;
+}
+
+export type StalePriceCheck = {
+  candidate_url: string | null;
+  kept_urls: string[];
+  /** `newer_document`: the page found is one of the newer documents; `date_rule`: held to the old date; `refused`: neither. */
+  verdict: "newer_document" | "date_rule" | "refused";
+  reason: string;
+};
+
+/**
+ * Whether a page a stale-price search found may replace the link (#2062). When the old document's
+ * date is known, every page found is held to the date rule (`statedDateReplaces`), the conflict's
+ * newer document included: "newer" in the conflict can rest on fetch time alone when a document
+ * carries no Last-Modified, so it never outranks a date the link states (review of 56e9a5f95: a
+ * 2024 disclosure crawled after a 2026 schedule would otherwise replace it). With no old date, the
+ * newer document the conflict kept may replace the link, and any other page is refused when the
+ * stale price alone sent the search: nothing then says it is newer. Pure.
+ */
+export function stalePriceReplaces(stale: { kept_urls: string[]; only: boolean }, candidateUrl: string | null, hasOldDate: boolean): StalePriceCheck {
+  const base = { candidate_url: candidateUrl, kept_urls: stale.kept_urls };
+  if (hasOldDate) return { ...base, verdict: "date_rule", reason: "held to the old document's date" };
+  if (candidateUrl && stale.kept_urls.some((url) => urlIdentity(url) === urlIdentity(candidateUrl))) {
+    return { ...base, verdict: "newer_document", reason: "no old date is known and the page found is the newer document the cross-page conflict kept" };
+  }
+  if (!stale.only) return { ...base, verdict: "date_rule", reason: "the page found is not the newer document; the search's own rule holds" };
+  return { ...base, verdict: "refused", reason: "kept the link: the page found is not the newer document and no old date says it is newer" };
+}
 type WrongAt = Date | string | null | undefined;
 
 /** Why a link is searched again for its stored stated date (#1878, stated-date.ts). Pure. */
@@ -346,6 +395,18 @@ interface DiscoveryCandidateRow {
    */
   stale_stated_date?: string | null;
   stale_stated_basis?: FreshnessBasis | null;
+  /**
+   * Set when Hamilton's cross-page conflict found the link's own page prices a product older than
+   * another current document of the bank (`stale_price`). `kept_urls` are those newer documents'
+   * addresses, the only pages the search may take when no old date is known; with one, every page
+   * found is held to the date rule. `only` is true when nothing else (its age, a wrong document)
+   * sent the search (`stalePriceReplaces`).
+   */
+  stale_price?: { kept_urls: string[]; only: boolean };
+  /** Why an upgrade search was sent beyond the link's address: `schedule_conflict` (#2062). */
+  upgrade_reason?: string | null;
+  /** Specialists (strategies) run last because the bank's last search miss ran them with nothing to show. */
+  search_miss_demoted?: string[];
   /** `detail.resume` of the bank's last search, when it was cut short by time. */
   discovery_resume?: unknown;
   /** True when the bank's last search was cut short by time (`retry_after`, `out_of_time`). */
@@ -425,6 +486,8 @@ export interface CandidateDiscoveryResult {
    * date than the old document and so replaced the link, or the link was kept (#2615 review).
    */
   statedDateCheck?: StatedDateReplacement | null;
+  /** A search a stale price sent: whether the page found may replace the link (`stalePriceReplaces`). */
+  stalePriceCheck?: StalePriceCheck | null;
 }
 
 export interface WebsiteRepairSummary {
@@ -499,6 +562,8 @@ export interface RunMagellanDiscoveryResult {
   websiteOwners: WebsiteOwnerReviewResult | { error: string } | null;
   /** Search-miss lessons written (`magellan.search_miss`). */
   searchMisses: number;
+  /** Pipeline feedback this step read and acted on (#2062). */
+  feedbackReads: DiscoveryFeedbackReads;
   /**
    * Freshness searches without a wrong-document finding that found a page but kept the link,
    * because the page states an earlier or equal date, or states none while the old document's
@@ -1209,13 +1274,15 @@ async function selectNeverSearchedElsewhere(db: SqlTag, limit: number, stateCode
  * item (`isArticleLink`), or one deposit product's disclosure such as a CD truth-in-savings
  * sheet (`isSingleProductDisclosureLink`), or a page on another kind of site (`isOtherSiteLink`: a
  * government, broker or car-price site), not yet searched for the real schedule at this upgrade version.
- * Their link is kept until a fee schedule is found.
+ * Also, whatever its address, a link whose own page Hamilton found priced a fee the bank's schedule
+ * prices differently (`schedule_conflict`, product-page-conflict.ts, #2062): the schedule wins, so
+ * the link should be the schedule. Their link is kept until a fee schedule is found.
  */
-async function selectUpgradeCandidates(db: SqlTag, limit: number, stateCode: string | undefined): Promise<DiscoveryCandidateRow[]> {
+export async function selectUpgradeCandidates(db: SqlTag, limit: number, stateCode: string | undefined): Promise<DiscoveryCandidateRow[]> {
   if (limit <= 0) return [];
   const normalizedState = normalizeStateCode(stateCode);
   const upgradeMarker = JSON.stringify({ upgrade_search: UPGRADE_SEARCH_VERSION });
-  const rows = await db<DiscoveryCandidateRow[]>`
+  const rows = await db<Array<DiscoveryCandidateRow & { conflict_at: string | Date | null }>>`
     -- product-page upgrade search
     SELECT inst.id,
            inst.institution_name,
@@ -1230,12 +1297,50 @@ async function selectUpgradeCandidates(db: SqlTag, limit: number, stateCode: str
            profile.source_kind AS profile_source_kind,
            profile.read_strategy AS profile_read_strategy,
            profile.locked_by_correction AS profile_locked_by_correction,
-           profile.consecutive_failures AS profile_consecutive_failures
+           profile.consecutive_failures AS profile_consecutive_failures,
+           conflict.conflict_at
       FROM institution_sources inst
       LEFT JOIN institution_source_profiles profile
         ON profile.institution_id = inst.id
+      -- Hamilton took down a product-page fee read from this link because the bank's schedule prices
+      -- it differently (schedule_conflict). Matched as an audit miss is (#2558): the finding's own
+      -- document must be the link's page (its address, or the link's main document by id while the
+      -- remembered address is that document's) and the page's current copy, never a companion or an
+      -- old copy (both rows on prod at 2026-10-26 were companion account pages beside a schedule
+      -- link, which says nothing against the link). The fee must still be down, and each finding is
+      -- searched behind once, at any upgrade version.
+      LEFT JOIN LATERAL (
+        SELECT max(f.created_at) AS conflict_at
+          FROM pipeline_feedback f
+          JOIN source_documents sd
+            ON sd.id = f.source_document_id
+           AND sd.institution_id = inst.id
+           AND sd.superseded_by_id IS NULL
+           AND sd.companion_source_id IS NULL
+          JOIN published_fee_records fp
+            ON fp.fee_published_id = f.fee_published_id
+           AND fp.rolled_back_at IS NOT NULL
+         WHERE f.kind = ${SCHEDULE_CONFLICT_KIND}
+           AND f.check_name = ${PRODUCT_PAGE_CONFLICT_CHECK}
+           AND f.institution_id = inst.id
+           AND (
+             sd.document_url = inst.fee_schedule_url
+             OR (sd.id = profile.last_successful_source_document_id AND sd.document_url = profile.canonical_source_url)
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM pipeline_attempts pa
+              WHERE pa.institution_id = inst.id
+                AND pa.stage = 'discover'
+                AND pa.detail ? 'upgrade_search'
+                -- Newer than the finding, not only the copy: a search run before Hamilton saw the
+                -- conflict could not have acted on it.
+                AND pa.created_at > GREATEST(sd.crawled_at, f.created_at)
+           )
+      ) conflict ON TRUE
      WHERE COALESCE(inst.status, 'active') = 'active'
-       AND (
+       AND inst.fee_schedule_url IS NOT NULL
+       AND btrim(inst.fee_schedule_url) <> ''
+       AND (conflict.conflict_at IS NOT NULL OR ((
              (lower(inst.fee_schedule_url) ~ ${PRODUCT_LINK_SQL} AND lower(inst.fee_schedule_url) !~ ${FEE_NAMED_LINK_SQL})
              OR ((lower(inst.fee_schedule_url) ~ ${ARTICLE_LINK_SQL} OR lower(inst.fee_schedule_url) ~ ${DATED_POST_LINK_SQL})
                  AND lower(inst.fee_schedule_url) !~ ${FEE_DOCUMENT_NAME_SQL})
@@ -1248,6 +1353,12 @@ async function selectUpgradeCandidates(db: SqlTag, limit: number, stateCode: str
                  AND substring(lower(inst.fee_schedule_url) from '^[a-z]+://(?:www\\.)?([^/:?#]+)')
                      IS DISTINCT FROM substring(lower(btrim(inst.website_url)) from '^(?:[a-z]+://)?(?:www\\.)?([^/:?#]+)'))
            )
+         AND NOT EXISTS (
+           SELECT 1 FROM pipeline_attempts pa
+            WHERE pa.institution_id = inst.id
+              AND pa.stage = 'discover'
+              AND pa.detail @> ${upgradeMarker}::jsonb
+         )))
        AND inst.website_url IS NOT NULL
        AND btrim(inst.website_url) <> ''
        -- Not a website judged another institution's (#1455, website-owner.ts).
@@ -1256,16 +1367,10 @@ async function selectUpgradeCandidates(db: SqlTag, limit: number, stateCode: str
        AND COALESCE(profile.locked_by_correction, FALSE) IS FALSE
        AND COALESCE(profile.source_kind, 'unknown') <> 'offline'
        AND COALESCE(profile.read_strategy, '') <> 'manual_review'
-       AND NOT EXISTS (
-         SELECT 1 FROM pipeline_attempts pa
-          WHERE pa.institution_id = inst.id
-            AND pa.stage = 'discover'
-            AND pa.detail @> ${upgradeMarker}::jsonb
-       )
-     ORDER BY inst.asset_size DESC NULLS LAST, inst.id ASC
+     ORDER BY (conflict.conflict_at IS NOT NULL) DESC, inst.asset_size DESC NULLS LAST, inst.id ASC
      LIMIT ${limit}
   `;
-  return rows.map((row) => ({ ...row, upgrade: true }));
+  return rows.map(({ conflict_at, ...row }) => ({ ...row, upgrade: true, ...(conflict_at != null ? { upgrade_reason: SCHEDULE_CONFLICT_KIND } : {}) }));
 }
 
 /**
@@ -1333,7 +1438,7 @@ export function wrongDocumentAddresses(urls: ReadonlyArray<string | null | undef
  * equal to the old document's, nor leaves out a date the old text states (`freshnessOldDate`,
  * `statedDateReplaces`; #2615 review).
  */
-async function selectStaleCandidates(
+export async function selectStaleCandidates(
   db: SqlTag,
   limit: number,
   stateCode: string | undefined,
@@ -1346,7 +1451,7 @@ async function selectStaleCandidates(
   // The link's document's own stated date (#1878, stated-date.ts), once its columns exist.
   const statedReady = await statedDateColumnsReady(db);
   const rows = await db<
-    Array<DiscoveryCandidateRow & { stated_date: string | Date | null; stated_date_basis: string | null; stated_stale: boolean | null; effective_year: number | null; url_year: number | null; wrong_at: string | Date | null; confirmed_at: string | Date | null; audit_at: string | Date | null; audit_urls: Array<string | null> | null; hand_at: string | Date | null; hand_urls: Array<string | null> | null; main_document_url: string | null; searched_at: string | Date | null }>
+    Array<DiscoveryCandidateRow & { stated_date: string | Date | null; stated_date_basis: string | null; stated_stale: boolean | null; effective_year: number | null; url_year: number | null; wrong_at: string | Date | null; confirmed_at: string | Date | null; audit_at: string | Date | null; audit_urls: Array<string | null> | null; hand_at: string | Date | null; hand_urls: Array<string | null> | null; stale_price_at: string | Date | null; stale_kept_urls: Array<string | null> | null; main_document_url: string | null; searched_at: string | Date | null }>
   >`
     -- stale-link freshness search
     WITH due AS (
@@ -1370,6 +1475,7 @@ async function selectStaleCandidates(
                SELECT doc.document_url FROM source_documents doc
                 WHERE doc.id = profile.last_successful_source_document_id
              ) AS main_document_url,
+             profile.last_successful_source_document_id AS main_document_id,
              substring(inst.fee_schedule_url from ${URL_YEAR_SQL})::int AS url_year,
              (
                SELECT substring(left(text.normalized_text, 4000) from ${EFFECTIVE_YEAR_SQL})::int
@@ -1439,7 +1545,9 @@ async function selectStaleCandidates(
              audit.audit_at,
              audit.audit_urls,
              hand.hand_at,
-             hand.hand_urls
+             hand.hand_urls,
+             stale_price.stale_price_at,
+             stale_price.stale_kept_urls
         FROM due
         -- Deming's daily audit found a live fee read from this link came from the wrong document
         -- (another bank's, an unconfirmed host or an article; #2055). The miss names the stored
@@ -1517,6 +1625,55 @@ async function selectStaleCandidates(
                   AND undo.created_at > f.created_at
              )
         ) hand ON TRUE
+        -- Hamilton's cross-page conflict archived a price read from this link because another
+        -- current document of the bank, newer by its own date or its fetch, prices the same product
+        -- differently (stale_price, cross-page-conflict.ts). The link's page is out of date, so it is
+        -- searched for the newer one. Matched as an audit miss is (#2558): the finding's own
+        -- document must be the link's page (its address, or the link's main document by id while
+        -- the remembered address agrees) and that page's current copy, never a companion or an old
+        -- copy (17 of the first 19 rows were companions: an old edition kept beside a current link,
+        -- which says nothing against the link). The newer document must still be current and the
+        -- older price still archived, and each finding is searched behind once. Not a wrong
+        -- document: the date rule holds whenever the old date is known; with none, the newer
+        -- documents' addresses (stale_kept_urls) are the only pages a search may take. The newer
+        -- document must be a main document, not a companion (stalePriceReplaces).
+        LEFT JOIN LATERAL (
+          SELECT max(f.created_at) AS stale_price_at, array_agg(DISTINCT kept.document_url) AS stale_kept_urls
+            FROM pipeline_feedback f
+            JOIN source_documents sd
+              ON sd.id = f.source_document_id
+             AND sd.institution_id = due.id
+             AND sd.superseded_by_id IS NULL
+             AND sd.companion_source_id IS NULL
+            JOIN source_documents kept
+              ON kept.id = (f.evidence->>'kept_document_id')::bigint
+             AND kept.institution_id = due.id
+             AND kept.id <> sd.id
+             AND kept.status = 'success'
+             AND kept.duplicate_of_id IS NULL
+             AND kept.superseded_by_id IS NULL
+             AND kept.companion_source_id IS NULL
+            JOIN published_fee_records fp
+              ON fp.fee_published_id = f.fee_published_id
+             AND fp.rolled_back_at IS NOT NULL
+           WHERE f.kind = ${STALE_PRICE_KIND}
+             AND f.check_name = ${CROSS_PAGE_CONFLICT_CHECK}
+             AND f.institution_id = due.id
+             AND f.evidence ? 'kept_document_id'
+             AND (
+               sd.document_url = due.fee_schedule_url
+               OR (sd.id = due.main_document_id AND due.main_document_url = due.profile_canonical_source_url)
+             )
+             AND NOT EXISTS (
+               SELECT 1 FROM pipeline_attempts pa
+                WHERE pa.institution_id = due.id
+                  AND pa.stage = 'discover'
+                  AND pa.detail @> ${marker}::jsonb
+                  -- Newer than the finding, not only the copy: an age search run before Hamilton
+                  -- saw the conflict did not know the newer document.
+                  AND pa.created_at > GREATEST(sd.crawled_at, f.created_at)
+             )
+        ) stale_price ON TRUE
     ), judged AS (
       SELECT marked.*, GREATEST(confirmed_at, audit_at, hand_at) AS wrong_at FROM marked
     )
@@ -1524,22 +1681,29 @@ async function selectStaleCandidates(
      WHERE (COALESCE(effective_year, url_year) <= ${staleYear} AND searched_at IS NULL)
         OR (stated_stale AND searched_at IS NULL)
         OR (wrong_at IS NOT NULL AND (searched_at IS NULL OR searched_at < wrong_at))
-     ORDER BY (wrong_at IS NOT NULL) DESC, asset_size DESC NULLS LAST, id ASC
+        OR (stale_price_at IS NOT NULL AND (searched_at IS NULL OR searched_at < stale_price_at))
+     ORDER BY (wrong_at IS NOT NULL) DESC, (stale_price_at IS NOT NULL) DESC, asset_size DESC NULLS LAST, id ASC
      LIMIT ${limit}
   `;
-  return rows.map(({ stated_date, stated_date_basis, stated_stale, effective_year, url_year, wrong_at, confirmed_at, audit_at, audit_urls, hand_at, hand_urls, ...row }) => {
+  return rows.map(({ stated_date, stated_date_basis, stated_stale, effective_year, url_year, wrong_at, confirmed_at, audit_at, audit_urls, hand_at, hand_urls, stale_price_at, stale_kept_urls, ...row }) => {
     // Every search without a wrong-document finding is held to the old date (statedDateReplaces):
     // a wrong document is replaced whatever its date.
     const oldDate = wrong_at == null ? freshnessOldDate({ stated_date, stated_date_basis, effective_year, url_year }) : null;
+    // Sent only by a stale price (not for its age, not for a wrong document).
+    const agedOut = (effective_year ?? url_year) != null && Number(effective_year ?? url_year) <= staleYear;
+    const stalePriceOnly = stale_price_at != null && wrong_at == null && !agedOut && stated_stale !== true;
     return {
       ...row,
       freshness: true,
       // A wrong-document finding rules out the addresses it named, not only the link (#2055, #2057).
       ...(audit_at != null || hand_at != null ? { freshness_exclude: wrongDocumentAddresses([...(audit_urls ?? []), ...(hand_urls ?? [])]) } : {}),
       ...(oldDate ? { stale_stated_date: oldDate.date, stale_stated_basis: oldDate.basis } : {}),
+      ...(stale_price_at != null && wrong_at == null ? { stale_price: { kept_urls: wrongDocumentAddresses(stale_kept_urls), only: stalePriceOnly } } : {}),
       stale_reason:
         wrong_at != null
           ? staleWrongReason({ confirmed_at, audit_at, hand_at })
+          : stalePriceOnly
+            ? STALE_PRICE_REASON
           : stated_stale === true && stated_date != null
             ? statedStaleReason(stated_date, stated_date_basis)
             : effective_year != null
@@ -1617,7 +1781,10 @@ async function refuseOtherBankLink(db: SqlTag, result: CandidateDiscoveryResult)
   if (result.outcome !== "discovered" || !result.url) return result;
   const other = await otherInstitutionAtHost(db, result.institutionId, result.url);
   if (!other) return result;
-  const reason = `${result.url} is on ${other.host}, the website of ${other.institutionName}${other.stateCode ? ` (${other.stateCode})` : ""}, another institution`;
+  const owner = `${other.institutionName}${other.stateCode ? ` (${other.stateCode})` : ""}, another institution`;
+  const reason = other.folder
+    ? `${result.url} is in the "${other.folder}" vendor file folder, named for the website of ${owner}`
+    : `${result.url} is on ${other.host}, the website of ${owner}`;
   await db`
     UPDATE institution_source_profiles
        SET rejected_source_urls = (
@@ -1715,9 +1882,13 @@ export async function recordDiscoveryResult(
     WHERE inst.id = ${result.institutionId}
     ON CONFLICT (institution_id) DO UPDATE SET
       state_code = EXCLUDED.state_code,
+      -- A rejected address is never made current by a search (#1105, rejected-sources.ts).
       canonical_source_url = CASE
         WHEN institution_source_profiles.locked_by_correction
           THEN institution_source_profiles.canonical_source_url
+        WHEN COALESCE(institution_source_profiles.rejected_source_urls, '[]'::jsonb)
+               @> jsonb_build_array(jsonb_build_object('url', COALESCE(EXCLUDED.canonical_source_url, institution_source_profiles.canonical_source_url)))
+          THEN NULL
         ELSE COALESCE(EXCLUDED.canonical_source_url, institution_source_profiles.canonical_source_url)
       END,
       source_kind = CASE
@@ -1790,6 +1961,10 @@ async function recordFinderAttempts(
       ? { freshness_search: FRESHNESS_SEARCH_VERSION, stale_link: row.fee_schedule_url ?? null, stale_reason: row.stale_reason ?? null }
       : {}),
     ...(result.statedDateCheck ? { stated_date_check: result.statedDateCheck } : {}),
+    ...(result.stalePriceCheck ? { stale_price_check: result.stalePriceCheck } : {}),
+    ...(row.upgrade_reason ? { upgrade_reason: row.upgrade_reason } : {}),
+    // Specialists the bank's last search miss ran with nothing to show, run last this time (#2062).
+    ...(row.search_miss_demoted && row.search_miss_demoted.length > 0 ? { search_miss_demoted: row.search_miss_demoted } : {}),
     website: row.website_url,
     searched_website: result.websiteRepair?.repaired ?? row.website_url,
     moved_to: result.movedTo,
@@ -2002,6 +2177,12 @@ export async function runMagellanDiscovery(
   const results: CandidateDiscoveryResult[] = [];
   // Freshness finds that kept the link because the page found is not known to be newer.
   const statedDateRefusals: StatedDateRefusal[] = [];
+  // Pipeline feedback read this step (#2062): searches a stale price or a schedule conflict sent,
+  // and banks whose specialists their last search miss reordered.
+  const feedbackReads: DiscoveryFeedbackReads = { stalePriceSearches: 0, stalePriceRefusals: 0, scheduleConflictSearches: 0, searchMissReorders: 0 };
+  const missDemotions = learning
+    ? await loadSearchMissDemotions(db, rows.filter((row) => !(row.upgrade || row.business || row.freshness)))
+    : new Map<number, string[]>();
   const sharedNames = await loadSharedNameIds(db, rows, dryRun ? undefined : { runId: options.runId, stepId: options.stepId ?? null });
   for (const row of rows) {
     row.name_shared = sharedNames.has(Number(row.id));
@@ -2009,6 +2190,18 @@ export async function runMagellanDiscovery(
     if (Date.now() > lastBankStart) break;
     const institutionId = Number(row.id);
     const bankStarted = Date.now();
+    const demoted = missDemotions.get(institutionId);
+    let bankOrder = finderOrder;
+    if (demoted) {
+      const reordered = demoteFinders(finderOrder, new Set(demoted));
+      if (reordered.some((finder, index) => finder.key !== finderOrder[index].key)) {
+        bankOrder = reordered;
+        row.search_miss_demoted = demoted;
+        feedbackReads.searchMissReorders += 1;
+      }
+    }
+    if (row.stale_price) feedbackReads.stalePriceSearches += 1;
+    if (row.upgrade_reason === SCHEDULE_CONFLICT_KIND) feedbackReads.scheduleConflictSearches += 1;
     const result = await discoverForInstitution(row, {
       fetchImpl,
       rejectedUrls: rejected.get(institutionId),
@@ -2020,7 +2213,7 @@ export async function runMagellanDiscovery(
       resumable: learning,
       fullBudget: bankStarted + INSTITUTION_BUDGET_MS <= bankDeadline,
       pageClassifier,
-      finderOrder,
+      finderOrder: bankOrder,
       playbook: learning ? await loadPlaybook(db, institutionId) : null,
     });
     results.push(result);
@@ -2038,6 +2231,16 @@ export async function runMagellanDiscovery(
     // A freshness search without a wrong-document finding replaces the link only with a page that
     // states a later date than the old document (or the year the older arm read), or states none
     // while the old date is not one the old document's text states (#2615 review).
+    // A search a stale price sent is held to the date rule whenever the old date is known; with
+    // none, it may take only the newer document the conflict kept (#2062).
+    if (upgraded && row.freshness && row.stale_price) {
+      const check = stalePriceReplaces(row.stale_price, result.url, Boolean(row.stale_stated_date));
+      result.stalePriceCheck = check;
+      if (check.verdict === "refused") {
+        upgraded = false;
+        feedbackReads.stalePriceRefusals += 1;
+      }
+    }
     if (upgraded && row.freshness && row.stale_stated_date) {
       const check = statedDateReplaces({
         oldDate: row.stale_stated_date,
@@ -2160,6 +2363,7 @@ export async function runMagellanDiscovery(
     keptRefusedAnswers,
     websiteOwners,
     searchMisses,
+    feedbackReads,
     statedDateRefusals,
     limit,
     dryRun,

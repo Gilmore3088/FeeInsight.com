@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
-import { PUBLISH_MIN_ROWS_PER_STEP, ARTICLE_PAGE_RESELECT_SQL, EDITION_HOLD_RESELECT_SQL, OLDER_EDITION_RESELECT_SQL, ARTICLE_PAGE_SKIP_REASON, CATALOG_DEPTH_LIVE_SQL, decidePriorFee, normalizedFeeName, HAMILTON_PUBLISH_MIN_INSTITUTION_FEES, HAMILTON_PUBLISH_STRATEGY, linesApartOnPage, listsBothPrices, qualifiedLines, namesShareReading, newerCopyPrintsLine, otherBalanceLine, publishedFeeName, publishNameHold, publishSkipReason, runHamiltonPublish, selectListedFeeLines, sameLineDuplicateOf, sentenceFragmentName, separateLines } from "./publish";
+import { PUBLISH_MIN_ROWS_PER_STEP, ARTICLE_PAGE_RESELECT_SQL, EDITION_HOLD_RESELECT_SQL, OLDER_EDITION_RESELECT_SQL, ARTICLE_PAGE_SKIP_REASON, CATALOG_DEPTH_LIVE_SQL, decidePriorFee, normalizedFeeName, HAMILTON_PUBLISH_MIN_INSTITUTION_FEES, HAMILTON_PUBLISH_STRATEGY, linesApartOnPage, listsBothPrices, nameBeforeLeaders, qualifiedLines, namesShareReading, newerCopyPrintsLine, otherBalanceLine, publishedFeeName, publishNameHold, publishSkipReason, runHamiltonPublish, selectListedFeeLines, sameLineDuplicateOf, sentenceFragmentName, separateLines } from "./publish";
 import { NOT_YET_EFFECTIVE_REASON, OLDER_EDITION_REASON } from "../darwin/edition-effective-check";
 import { OPENING_DOCUMENT_TAKEDOWN_LIVE, nonDepositTakedownReason } from "../darwin/non-deposit-document-check";
 import { productPageUrlSql } from "@/lib/agents/learning/fee-page";
@@ -198,6 +198,98 @@ describe("Hamilton agentic publish", () => {
     expect(publishedFeeName("Service charge (daily balance falls below $500)", "minimum_balance")).toBe("Service charge (daily balance falls below $500)");
     expect(publishedFeeName("Classic Money Market Account (balance below $1,000)", "minimum_balance")).toBe("Classic Money Market Account (balance below $1,000)");
     expect(publishedFeeName("Wire Transfer Fee $25", "wire_domestic_outgoing")).toBe("Wire Transfer Fee");
+  });
+
+  it("keeps a threshold the name leads into or completes, outside a parenthesis too (#1443)", () => {
+    // Live on 2026-10-26 under publish's cut: 149336, 157375, 109755, 136523, 139704, 120270.
+    expect(publishedFeeName("monthly fee if balance falls below $2,500.00", "monthly_maintenance")).toBe("monthly fee if balance falls below $2,500.00");
+    expect(publishedFeeName("Overdraft/NSF Charge, per item if the amount of the individual item is $35.00 or less", "nsf")).toBe(
+      "Overdraft/NSF Charge, per item if the amount of the individual item is $35.00 or less",
+    );
+    expect(publishedFeeName("Paid NSF Item < $30 (Courtesy Pay)", "overdraft")).toBe("Paid NSF Item < $30 (Courtesy Pay)");
+    expect(publishedFeeName("Loan Processing Fee > $5000 unsecured", "other_lending_fee")).toBe("Loan Processing Fee > $5000 unsecured");
+    expect(publishedFeeName("Stop Payments for $100.00 or less", "stop_payment")).toBe("Stop Payments for $100.00 or less");
+    expect(publishedFeeName("Service charge per month if a minimum balance of $100.00 is NOT maintained", "monthly_maintenance")).toBe(
+      "Service charge per month if a minimum balance of $100.00 is NOT maintained",
+    );
+    expect(publishedFeeName("Dormant Account Fee, balance $50 or greater", "dormant_account")).toBe("Dormant Account Fee, balance $50 or greater");
+    // A range's second figure belongs to the range the threshold opened; another comparison keeps its own figure.
+    expect(nameBeforeLeaders("Wire fee for balances between $100 and $500")).toBe("Wire fee for balances between $100 and $500");
+    expect(nameBeforeLeaders("Wire fee between $100 - $500")).toBe("Wire fee between $100 - $500");
+    expect(nameBeforeLeaders("Overdraft item between $5 and $35")).toBe("Overdraft item between $5 and $35");
+    // Only "between" opens a range: after a one-sided comparison the next figure is the fee's own price (#1443 re-review).
+    expect(nameBeforeLeaders("Cash advance over $100 - $500 per day")).toBe("Cash advance over $100");
+    // A balance lead opens a "-"/"to" range, so the band keeps both ends and the fee after it is cut.
+    expect(nameBeforeLeaders("Balances of $1,000 - $2,499.99 $5")).toBe("Balances of $1,000 - $2,499.99");
+    expect(nameBeforeLeaders("Balance $100 - $500 $3")).toBe("Balance $100 - $500");
+    expect(nameBeforeLeaders("Balance $100 to $500 $3")).toBe("Balance $100 to $500");
+    expect(nameBeforeLeaders("Minimum balance $500 and $10 fee")).toBe("Minimum balance $500");
+    // A band's upper figure is higher; a lower second figure is the fee's own price (#1443 review).
+    for (const [name, amount, kept] of [
+      ["Minimum balance $500 - $10 fee", 10, "Minimum balance $500"],
+      ["Daily balance $1,000 - $12 per month", 12, "Daily balance $1,000"],
+      ["Monthly fee minimum balance $500 - $10", 10, "Monthly fee minimum balance $500"],
+      ["Monthly fee minimum balance $500 – $10.00 per month", 10, "Monthly fee minimum balance $500"],
+      ["Service charge if balance $500 to $10", 10, "Service charge if balance $500"],
+      ["Monthly fee balance of $1,000 - $5", 5, "Monthly fee balance of $1,000"],
+      ["Overdraft between $35 and $5", 5, "Overdraft between $35"],
+    ] as const) {
+      expect(nameBeforeLeaders(name)).toBe(kept);
+      expect(publishedFeeName(name, "monthly_maintenance")).not.toMatch(new RegExp(`\\$${amount}(?![\\d,])`));
+    }
+    expect(nameBeforeLeaders("Balance $100 – $500 $3")).toBe("Balance $100 – $500");
+    // A sentence that ends right after a one-digit threshold ends the name there.
+    expect(nameBeforeLeaders("Overdraft fee if item over $5. Fee $35")).toBe("Overdraft fee if item over $5");
+    for (const [name, amount, kept] of [
+      ["Overdraft item over $5 - $35", 35, "Overdraft item over $5"],
+      ["Overdraft item over $5 to $35", 35, "Overdraft item over $5"],
+      ["Overdraft item over $5 and $35", 35, "Overdraft item over $5"],
+      ["Monthly fee balance below $500 and $10 service", 10, "Monthly fee balance below $500"],
+    ] as const) {
+      expect(nameBeforeLeaders(name)).toBe(kept);
+      expect(publishedFeeName(name, "overdraft")).not.toContain(`$${amount}`);
+    }
+    expect(nameBeforeLeaders("Monthly fee if balance falls below $1,000 or monthly average balance below $2,500")).toBe(
+      "Monthly fee if balance falls below $1,000 or monthly average balance below $2,500",
+    );
+    // A sentence that ends on the threshold ends the name.
+    expect(nameBeforeLeaders("Service Charge - Monthly on all accounts with an average daily balance of less than $100. Fee is posted on last working")).toBe(
+      "Service Charge - Monthly on all accounts with an average daily balance of less than $100",
+    );
+    // Still cut: the fee's own price, a price after a closed name, a second tier, and a figure inside an unclosed parenthesis's cell.
+    expect(nameBeforeLeaders("Continuous overdraft fee - A fee of $20.00 will be assessed on the 6th calendar day")).toBe("Continuous overdraft fee - A fee of");
+    expect(publishedFeeName("Continuous overdraft fee - A fee of $20.00 will be assessed on the 6th calendar day", "continuous_od")).toBe("Continuous overdraft fee");
+    expect(nameBeforeLeaders("Stop Payment (single item or series) $35.00 Money Market Monthly Fee")).toBe("Stop Payment (single item or series)");
+    expect(nameBeforeLeaders("Foreign Check Collections (US & Non-US Dollars) Up to $2,500 Over $2,500")).toBe("Foreign Check Collections (US & Non-US Dollars) Up to");
+    expect(nameBeforeLeaders("Check Cashing (Members with average balance less than $100) -- $5-500.00")).toBe("Check Cashing (Members with average balance less than $100)");
+    expect(nameBeforeLeaders("Overdraft $10.00 – $29.99")).toBe("Overdraft");
+  });
+
+  it("still ends the name at the fee's own price, before and after a kept threshold (#1443 review)", () => {
+    // Each of these published whole, price and all, under the first #1443 rule, with no hold.
+    const cases: Array<[string, string, string]> = [
+      ["Monthly maintenance fee if balance is below $500 is $10", "monthly_maintenance", "Monthly maintenance fee if balance is below $500"],
+      ["Checks $300 and over $10", "check_cashing", "Checks"],
+      ["Overdraft up to $35 per item", "overdraft", "Overdraft up to"],
+      ["Overdraft Fee up to $35", "overdraft", "Overdraft Fee up to"],
+      ["Monthly maintenance fee = $10", "monthly_maintenance", "Monthly maintenance fee ="],
+      ["Wire transfer outgoing domestic min $25", "wire_domestic_outgoing", "Wire transfer outgoing domestic min"],
+      ["Stop payment $30 or more", "stop_payment", "Stop payment"],
+      ["Paper statement fee $2 and up", "paper_statement", "Paper statement fee"],
+      ["ATM fee from $2.00 to $5.00", "atm_non_network", "ATM fee from"],
+    ];
+    for (const [name, key, leaders] of cases) {
+      expect(nameBeforeLeaders(name)).toBe(leaders);
+      expect(publishedFeeName(name, key)).not.toMatch(/\$10\b|\$35|\$25|\$30|\$2\b|\$2\.00/);
+    }
+    // After a kept threshold, words that only close it do not lead the next figure.
+    expect(nameBeforeLeaders("Checks over $300 and over $10")).toBe("Checks over $300 and over");
+  });
+
+  it("reads a doubled space inside a cut name as one, so the collapse is no repair (#1443)", () => {
+    expect(publishNameHold("Courtesy Pay, you will incur a non-refundable fee of", "overdraft", 30)?.code).toBe("cutoff_name");
+    expect(publishNameHold("Courtesy  Pay, you will incur a non-refundable fee of", "overdraft", 30)?.code).toBe("cutoff_name");
+    expect(publishNameHold("Fees  Legal Process", "legal_process", 100)?.code).toBe(publishNameHold("Fees Legal Process", "legal_process", 100)?.code);
   });
 
   it("publishes a twin of a rules re-check takedown only when today's rules read it from its own document", async () => {

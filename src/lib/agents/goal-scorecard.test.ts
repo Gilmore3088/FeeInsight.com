@@ -4,7 +4,15 @@ vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
 
 import {
   answerQualityFrom,
+  knoxAnswerKeyFrom,
+  KNOX_FOUND_TARGET,
+  KNOX_RIGHT_TARGET,
+  KNOX_TARGET_MIN_BANKS,
+  knoxTargetVerdict,
   bucketReaderMissWeeks,
+  bucketHeldExitWeeks,
+  heldExitsFromDetail,
+  KNOX_HELD_EXIT_WEEKS,
   readerMissSince,
   summarizeReaderRemedies,
   weekStartUtc,
@@ -461,5 +469,109 @@ describe("coverageGroupsSql reads the live catalog once", () => {
     expect(text.match(/published_fee_catalog/g)).toHaveLength(1);
     expect(text).toContain("LEFT JOIN live ON live.institution_id = i.id");
     if (weekAgo) expect(text).toContain("week_ago AS MATERIALIZED (");
+  });
+});
+
+// #1102 item 4: the scorecard shows Knox's held lines by reason and age, and how many leave the
+// pile each week, from the counts Knox's extract step already writes to the run ledger.
+describe("Knox's held pile on the scorecard (#1102)", () => {
+  const step = (detail: Record<string, unknown>) => ({
+    dry_run: false,
+    held_recheck: { dryRun: false, checked: 300, promoted: 12, setAside: 40 },
+    held_name_file: { dryRun: false, filed: 3 },
+    untraced_recheck: { dryRun: false, promoted: 2 },
+    held_rate_recheck: { dryRun: false, promoted: 1 },
+    range_band_set_aside: { dryRun: false, setAside: 5 },
+    promotion_recheck: { dryRun: false, withdrawn: 4 },
+    ...detail,
+  });
+
+  it("counts each pass's exits, and nothing from a dry run", () => {
+    expect(heldExitsFromDetail(step({}))).toEqual({ toDarwin: 18, heldRecheck: 12, nameFiled: 3, untraced: 2, rates: 1, setAside: 45, backOnHold: 4 });
+    // A pass that ran as a dry run moved nothing.
+    expect(heldExitsFromDetail(step({ held_name_file: { dryRun: true, filed: 99 } })).nameFiled).toBe(0);
+    // An older step without a pass counts zero for it.
+    expect(heldExitsFromDetail({ held_recheck: { promoted: 7 } })).toMatchObject({ toDarwin: 7, untraced: 0, setAside: 0 });
+  });
+
+  it("sums steps into UTC weeks, every week listed, and skips dry-run steps", () => {
+    const now = new Date("2026-10-26T18:00:00Z");
+    const weeks = bucketHeldExitWeeks([
+      { at: "2026-10-26T01:00:00Z", detail: step({}) },
+      { at: "2026-10-26T02:00:00Z", detail: step({}) },
+      { at: "2026-10-26T03:00:00Z", detail: step({ dry_run: true }) },
+      { at: "2026-10-19T00:00:00Z", detail: step({ held_recheck: { promoted: 100 } }) },
+      { at: "2026-01-01T00:00:00Z", detail: step({}) },
+    ], now);
+    expect(weeks).toHaveLength(KNOX_HELD_EXIT_WEEKS);
+    expect(weeks.at(-1)).toMatchObject({ weekStart: "2026-10-26", steps: 2, toDarwin: 36, setAside: 90, backOnHold: 8, partial: true });
+    expect(weeks.at(-2)).toMatchObject({ weekStart: "2026-10-19", steps: 1, heldRecheck: 100, toDarwin: 106, partial: false });
+    expect(weeks[0]).toMatchObject({ weekStart: "2026-09-07", steps: 0, toDarwin: 0 });
+  });
+
+  it("reads the pile by reason and age and the weekly exits from the ledger", async () => {
+    const { db, queries } = fakeDb([
+      [/knox_review:%/, [
+        { shape: "unclassified", count: 38844, set_aside: 26363, new_7d: 4457, age_7_14: 20000, age_14_30: 14387, age_over_30: 0 },
+        { shape: "varies", count: 1513, set_aside: 0, new_7d: 636, age_7_14: 877, age_14_30: 0, age_over_30: 0 },
+      ]],
+      [/'held_recheck'/, [{ created_at: new Date("2026-10-26T01:00:00Z"), detail: step({}) }]],
+    ]);
+    const goal = await readGoalScorecard(db, new Date("2026-10-26T18:00:00Z"));
+    expect(goal.knoxHeld).toMatchObject({ query: "goal.knox_held_by_reason_age", total: 40357, setAside: 26363 });
+    expect(goal.knoxHeld?.byReason[1]).toMatchObject({ shape: "varies", hasExit: false, ages: { under7: 636, days7to14: 877, days14to30: 0, over30: 0 } });
+    expect(goal.knoxHeld?.byReason[1].owner).toContain("no re-check reads them");
+    expect(goal.knoxHeldExits?.query).toBe("goal.knox_held_exits_weekly");
+    expect(goal.knoxHeldExits?.weeks.at(-1)).toMatchObject({ weekStart: "2026-10-26", steps: 1, toDarwin: 18 });
+    const ledger = queries.find((q) => /'held_recheck'/.test(q))!;
+    expect(ledger).toContain("s.step_key = 'extract'");
+    expect(ledger).toContain("e.event_type = 'step.finished'");
+  });
+});
+
+describe("Knox against its answer-key targets (#1098)", () => {
+  it("turns the newest score run into found and right shares, with its specialist rows", () => {
+    const score = knoxAnswerKeyFrom({
+      id: "41", scored_at: new Date("2026-10-26T06:00:00Z"), scorer_version: 3,
+      reference: JSON.stringify({ state: "measured", confirmedBanks: 62, eligibleBanks: 12, byReason: { a_reason: 3, b_reason: 9, c_reason: 3, d_reason: 1, zero: 0 } }),
+      banks: 2, expected: 30, found: 23, reads: 26, right: 23,
+      specialists: JSON.stringify({ banks: 2, expected: 30, bySpecialist: [
+        { strategy: "extract.rules", banks: 2, found: 20, foundOnly: 18, reads: 24, right: 21, shareOfKey: 0.6667 },
+        { strategy: "", found: 1 },
+        null,
+      ] }),
+    });
+    expect(score).toMatchObject({ scoreRunId: 41, scoredAt: "2026-10-26T06:00:00.000Z", referenceState: "measured", recall: 0.7667, precision: 0.8846,
+      confirmedBanks: 62, eligibleBanks: 12 });
+    // The commonest exclusion reasons, most first, at most three.
+    expect(score.topExclusions).toEqual([{ reason: "b_reason", count: 9 }, { reason: "a_reason", count: 3 }, { reason: "c_reason", count: 3 }]);
+    // The right share is worked out again from the stored counts; a malformed row is dropped.
+    expect(score.bySpecialist).toEqual([{ strategy: "extract.rules", banks: 2, found: 20, foundOnly: 18, reads: 24, right: 21, precision: 0.875, shareOfKey: 0.6667 }]);
+    expect(KNOX_FOUND_TARGET).toBe(0.85);
+    expect(KNOX_RIGHT_TARGET).toBe(0.9);
+  });
+
+  it("says when there is no score, and has no specialist rows on a run from before them", () => {
+    expect(knoxAnswerKeyFrom(undefined)).toMatchObject({ scoreRunId: null, recall: null, precision: null, bySpecialist: null });
+    expect(knoxAnswerKeyFrom({ id: 5, scorer_version: 3, banks: 0, expected: 0, found: 0, reads: 0, right: 0, specialists: null }))
+      .toMatchObject({ scoreRunId: 5, recall: null, precision: null, bySpecialist: null, referenceState: null, confirmedBanks: null, eligibleBanks: null, topExclusions: [] });
+  });
+
+  it("judges a share against its target only from 10 qualifying banks (production's 2-bank run 62)", () => {
+    // Production, Oct 26, score run 62: 2 of 62 banks qualify; 46 of 60 found, 42 of 55 right.
+    const production = knoxAnswerKeyFrom({
+      id: 62, scored_at: "2026-10-26T12:40:00Z", scorer_version: 3,
+      reference: { state: "measured", confirmedBanks: 62, eligibleBanks: 2,
+        byReason: { key_line_not_in_reference: 15, reference_source_superseded: 14, consumer_scope_unproven: 12 } },
+      banks: 2, expected: 60, found: 46, reads: 55, right: 42, specialists: null,
+    });
+    expect(production).toMatchObject({ recall: 0.7667, precision: 0.7636, eligibleBanks: 2, confirmedBanks: 62 });
+    expect(production.topExclusions.map((entry) => entry.reason)).toEqual(["key_line_not_in_reference", "reference_source_superseded", "consumer_scope_unproven"]);
+    expect(KNOX_TARGET_MIN_BANKS).toBe(10);
+    expect(knoxTargetVerdict(production.recall, KNOX_FOUND_TARGET, production.banks)).toBe("too_few_banks");
+    expect(knoxTargetVerdict(production.precision, KNOX_RIGHT_TARGET, production.banks)).toBe("too_few_banks");
+    expect(knoxTargetVerdict(0.7667, KNOX_FOUND_TARGET, 10)).toBe("not_met");
+    expect(knoxTargetVerdict(0.85, KNOX_FOUND_TARGET, 10)).toBe("met");
+    expect(knoxTargetVerdict(null, KNOX_FOUND_TARGET, 50)).toBeNull();
   });
 });

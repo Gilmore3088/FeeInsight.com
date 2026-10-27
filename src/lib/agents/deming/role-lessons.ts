@@ -8,6 +8,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const DEMING_LESSONS: AgentLesson[] = [
   {
+    id: "issue-1105-check-the-stored-shape",
+    agent: "deming",
+    stage: "playbook check",
+    lesson: "Write a check against the shape production stores, and seed its test from a production row: a JSON list of { url, reason, at } objects is searched by its url field, never as a list of bare strings. A check that reports 0 every day is suspect until a seeded positive case shows it can fire.",
+    why: "The playbook check tested the rejected list with `rejected ? source`, which matches only bare strings, and its test seeded bare strings, so it reported 0 current sources on their own rejected list every day while 26 profiles had one (Oct 26).",
+    evidence: { issues: [1105], prs: [2740], files: ["src/lib/agents/deming/playbook-contradictions.ts", "src/lib/agents/deming/playbook-contradictions.db.test.ts"] },
+    appliesTo: ["deming-playbook-check"],
+    since: "2026-10-26",
+  },
+  {
     id: "pr-2119-bound-not-point",
     agent: "deming",
     stage: "accuracy audit",
@@ -98,6 +108,16 @@ export const DEMING_LESSONS: AgentLesson[] = [
     since: "2026-10-25",
   },
   {
+    id: "issue-2064-replay-audience-against-every-rule-that-decides-it",
+    agent: "deming",
+    stage: "regression replay",
+    lesson: "Replay a confirmed consumer/business mix-up against every rule that decides audience, in the order the pipeline applies them and with the inputs they read, not only the check that caught it. Darwin decides audience first, from the fee's name, its document's address and the document's stored text; the business-schedule read judges only fees Darwin left unknown, so a Darwin read of consumer or both lets a business fee through even while the business-schedule read would still catch it. Give the replay the document's newest completed text, the one Darwin reads, and judge nothing without it: a replay without the text Darwin reads can call a fee caught that Darwin would publish as consumer. Give each rule the address it reads: Darwin reads the raw row's own address (Knox keeps the text's address there, which can differ from the document's), and the business-schedule read judges the document's address; never the published fee's. A business-schedule restore (the bank's consumer fee is gone) does not make the fee a consumer one, so never retire the case on it. When the read has a SQL form and a code form, test that they agree, on non-ASCII input too, against the production database's locale.",
+    why: "414 confirmed business-schedule takedowns sat as unreplayable cases, so a change to Darwin's audience words or to the business-schedule read could put a business price back on a consumer page with no regression alarm. A first replay without the page text called 413 caught; review found it ignored the text Darwin reads, which can turn a fee consumer before the business-schedule read ever sees it; a second review found it gave Darwin the document's address instead of the raw row's one Darwin reads, which can mask a regression.",
+    evidence: { issues: [2064], prs: [2720], files: ["src/lib/agents/deming/checkers.ts", "src/lib/agents/deming/regression.ts", "src/lib/agents/hamilton/business-schedule.ts"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
+  {
     id: "issue-2066-trace-every-live-miss",
     agent: "deming",
     stage: "loop proof",
@@ -106,6 +126,16 @@ export const DEMING_LESSONS: AgentLesson[] = [
     evidence: { issues: [2066], prs: [2581], files: ["scripts/live-batch-gaps.mjs"] },
     appliesTo: "all",
     since: "2026-10-25",
+  },
+  {
+    id: "issue-2058-judge-the-read-not-the-row",
+    agent: "deming",
+    stage: "error loop",
+    lesson: "Count a fee as the re-run's replacement for a taken-down fee only when both happened after the error: the fixed rules read its document text (the extract attempt in pipeline_attempts at the fixed version, on the fee's own document and text) and its published row was written. Never date it by its raw row: a fee Knox reads again identically keeps its old raw row, since the insert's ON CONFLICT takes over only unclassified, untraced or superseded rows. Never count the re-read alone: a rules bump re-reads every text, so a correct fee live all along on the same document would close an error the fix never touched, and a restored row keeps its old publish time because a restore is not a fix. Count a row as waiting for a re-run only when a run can still ask for its bank; report rows at banks no longer active apart. Run each read of a step that shares the run's transaction in its own savepoint, so one failed read is reported and the rest of the run goes on.",
+    why: "After #2561, a taken-down fee re-extracted identically kept its old raw row, so its error stayed 'taken down with nothing in its place' for good; the first fix dated replacements by the re-read alone, which a review showed would close a taken-down $54 misread because the correct $30 fee live beside it was re-read too; rows at inactive banks were counted as waiting for a re-run that would never come; and a failed read on the scoreboard transaction would have failed the whole run.",
+    evidence: { issues: [2058], prs: [2722], files: ["src/lib/agents/deming/error-fixes.ts", "src/lib/agents/deming/error-fixes.db.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-26",
   },
   {
     id: "issue-2065-plant-errors-walk-the-loop",
@@ -146,5 +176,15 @@ export const DEMING_LESSONS: AgentLesson[] = [
     evidence: { issues: [1027], prs: [], files: ["docs/project/findings/2026-10-25-retrieval-pilot-no-holdout-lift.md", "src/lib/agents/deming/shadow-lab/retrieval-pilot.ts"] },
     appliesTo: "all",
     since: "2026-10-25",
+  },
+  {
+    id: "issue-2063-group-by-name-family",
+    agent: "deming",
+    stage: "error classes",
+    lesson: "Group the week's fee errors by the family of the fee's name as well as by its category, using the name rules Knox already files fees with (and Knox's lesson family when they file nothing), never a second name list. A category error splits one fee across the categories each bank filed it under, so the class that matters never reaches two banks; the name family puts it back together. List a name class only when it says something its category class does not, and keep it a second view of the same rows so the error counts do not double.",
+    why: "The first error classes grouped fee-level rows by category only. \"NSF Item Returned\" filed as overdraft at one bank and \"Returned item fee\" filed as account research at another were two one-bank patterns, so the class Knox needed to fix never showed.",
+    evidence: { issues: [2063], prs: [2724], files: ["src/lib/agents/deming/error-classes.ts", "src/lib/agents/deming/error-classes.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-26",
   },
 ];

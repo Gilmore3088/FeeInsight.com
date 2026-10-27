@@ -16,8 +16,11 @@ import {
   qualifies,
   runDarwinAdjudicate,
   verdictSide,
+  verifyPaidMayCallProvider,
+  verifyPaidPlan,
   type AdjudicationCandidate,
 } from "./adjudicate";
+import { isPayingProviderStep, isProviderStep, payingProviderStepKeys, PROVIDER_STEP_KEYS } from "@/lib/agents/types";
 import { DARWIN_RELEASE_ACTS } from "./release-held";
 import { providerRefusalSql } from "@/lib/agents/paid-pass";
 
@@ -194,6 +197,61 @@ describe("Darwin layer 3 adjudicator", () => {
     expect(result).toMatchObject({ selected: 0, processed: 0, costMicrousd: 0, budgetStopped: false });
     expect(result.results.filter((entry) => entry.skipped).map((entry) => entry.pass)).toEqual(["release_review", "adjudicate"]);
     expect(attempts(db)).toHaveLength(0);
+  });
+
+  it("records one skipped event per paid pass it did not buy, with the reason (#1111)", async () => {
+    const db = createDbMock([row()]);
+    await runDarwinAdjudicate({ runId: 5, stepId: 6, db: asDb(db), create: vi.fn() });
+
+    const events = db.mock.calls
+      .filter(([strings]) => templateText(strings).includes("INSERT INTO agent_run_events"))
+      .map((call) => ({ runId: call[1], stepId: call[2], type: call[3], message: String(call[4]), detail: JSON.parse(String(call[5])) }));
+    expect(events.map((event) => [event.runId, event.stepId, event.type])).toEqual([
+      [5, 6, "darwin.release_review.skipped"],
+      [5, 6, "darwin.adjudicate.skipped"],
+    ]);
+    expect(events.map((event) => event.detail)).toEqual([
+      expect.objectContaining({ pass: "release_review", reason: "verdict cannot act", switch: "DARWIN_RELEASE_ACTS", provider_calls: 0, cost_microusd: 0 }),
+      expect.objectContaining({ pass: "adjudicate", reason: "verdict cannot act", switch: "DARWIN_ADJUDICATE_SHADOW", provider_calls: 0, cost_microusd: 0 }),
+    ]);
+    expect(events[0].message).toContain("$0 spent");
+  });
+
+  it("records no skipped event on a dry run, which lists both passes and spends nothing", async () => {
+    const db = createDbMock([row()]);
+    await runDarwinAdjudicate({ runId: 5, stepId: 6, db: asDb(db), create: vi.fn(), dryRun: true });
+    expect(db.mock.calls.some(([strings]) => templateText(strings).includes("INSERT INTO agent_run_events"))).toBe(false);
+  });
+
+  it("plans a paid call only for a verdict that can act (#1111)", () => {
+    // Today's switches: neither pass can act, so neither pays and both are named as skipped.
+    expect(verifyPaidPlan()).toEqual({
+      reviewPays: false,
+      adjudicatePays: false,
+      skipped: [
+        expect.objectContaining({ pass: "release_review", switchName: "DARWIN_RELEASE_ACTS" }),
+        expect.objectContaining({ pass: "adjudicate", switchName: "DARWIN_ADJUDICATE_SHADOW" }),
+      ],
+    });
+    expect(verifyPaidPlan({ releaseActs: true })).toMatchObject({ reviewPays: true, adjudicatePays: false, skipped: [{ pass: "adjudicate" }] });
+    expect(verifyPaidPlan({ adjudicateShadow: true })).toMatchObject({ reviewPays: false, adjudicatePays: true, skipped: [{ pass: "release_review" }] });
+    for (const forced of [{ dryRun: true }, { measure: true }]) {
+      expect(verifyPaidPlan(forced)).toEqual({ reviewPays: true, adjudicatePays: true, skipped: [] });
+    }
+  });
+
+  it("makes verify-paid a free step while it cannot pay, and a provider step again once a switch is on (#1111)", () => {
+    expect(verifyPaidMayCallProvider()).toBe(false);
+    expect(verifyPaidMayCallProvider({ releaseActs: true })).toBe(true);
+    expect(verifyPaidMayCallProvider({ adjudicateShadow: true })).toBe(true);
+
+    // Still listed as a provider step everywhere else; only the spend gate leaves it out.
+    expect(isProviderStep("verify-paid")).toBe(true);
+    expect(isPayingProviderStep("verify-paid", false)).toBe(false);
+    expect(isPayingProviderStep("verify-paid", true)).toBe(true);
+    expect(payingProviderStepKeys(true)).toEqual(PROVIDER_STEP_KEYS);
+    expect(payingProviderStepKeys(false)).toEqual(PROVIDER_STEP_KEYS.filter((key) => key !== "verify-paid"));
+    for (const key of ["discover-paid", "read-paid", "extract-paid"]) expect(isPayingProviderStep(key, false)).toBe(true);
   });
 
   it("lists candidates without calling the model on a dry run", async () => {

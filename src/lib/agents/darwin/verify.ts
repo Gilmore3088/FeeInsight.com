@@ -57,6 +57,7 @@ import {
   ZERO_FEE_RAW_FLAG,
   ZERO_FEE_VERIFIED_FLAG,
   CATEGORY_AMOUNT_ENVELOPES,
+  BOX_LATE_FEE_ENVELOPE,
 } from "./envelopes";
 import { darwinEnvelopeFor, loadLearnedEnvelopes, type LearnedEnvelope } from "./learned-envelopes";
 import {
@@ -490,13 +491,19 @@ function positivelyOtherFee(label: string, feeName: string, line: string | null,
 // "Printed Image Copies $2.00").
 const LAYOUT_VARIANT_WORDS = /\b(?:lost|stolen|damaged|from|source|sweep|savings|line\s+of\s+credit|credit|rush|expedited|express|overnight|images?|imaged|printed|print|copies|copy|replacement|replaced|reissued?|renewal|additional|subsequent|each|second|third|linked|automatic|manual|online|branch|teller|phone|mobile|internal|external|domestic|international|incoming|outgoing)\b/i;
 
+// Words that name an item, payment or transaction a fee like this one is charged on, so the right
+// cell may price this same fee for that item: "Stop Payment No Charge | ACH Debit Charge $30.00" is
+// a stop payment on an ACH debit, not another fee (#1593, 2026-10-26, before the layout switch-on).
+const LAYOUT_INSTRUMENT_WORDS = /\b(?:ach|eft|debits?|drafts?|electronic|pre-?authori[sz]ed|recurring|checks?|cheques?|items?|payments?|transfers?|withdrawals?|transactions?|cards?|atm|pos|wires?)\b/i;
+
 /**
  * When rows printed side by side are the only evidence, the right cell's label must name a
  * different fee: a fee noun ("Night Depository Bags & Key") and no word of this fee's variants,
- * sources or channels (`LAYOUT_VARIANT_WORDS`). Pure (review of #2676).
+ * sources or channels (`LAYOUT_VARIANT_WORDS`), nor of an item or payment this fee could be
+ * charged on (`LAYOUT_INSTRUMENT_WORDS`, "ACH Debit Charge"). Pure (review of #2676, #1593).
  */
 function namesDifferentFee(label: string): boolean {
-  return FEE_NOUN.test(label.replace(/\([^)]*\)/g, " ")) && !LAYOUT_VARIANT_WORDS.test(label);
+  return FEE_NOUN.test(label.replace(/\([^)]*\)/g, " ")) && !LAYOUT_VARIANT_WORDS.test(label) && !LAYOUT_INSTRUMENT_WORDS.test(label);
 }
 
 /**
@@ -509,7 +516,12 @@ function namesDifferentFee(label: string): boolean {
  * version bump and that bump's dry run. Dry run (read-only SQL and this code over the stored texts,
  * 2026-10-26, after the review of #2676): of the 61 rows the recheck holds as
  * `darwin_recheck:conditional_zero`, 2 pass (verified 37685 / published 38491 and 59671 / 56797),
- * both real free fees on the stored text; 0 live fees fail that pass today.
+ * both real free fees on the stored text; 0 live fees fail that pass today. Before the switch-on
+ * (2026-10-26, #1593) the evidence also refuses a right cell naming an item or payment this fee is
+ * charged on (`LAYOUT_INSTRUMENT_WORDS`) and a note stating a status, dormancy, lapse, conversion,
+ * age or discount (`NOTE_CONDITION`). Dry run of that change (read-only SQL, this code over the
+ * stored lines near each fee): of the 65 rows the v5 recheck failed as `conditional_zero`, the same
+ * 2 pass with the switch on, and no verdict changes with it off.
  */
 export const DARWIN_CONDITIONAL_ZERO_LAYOUT_LIVE = false;
 
@@ -545,8 +557,10 @@ function wholeRowPair(line: string | undefined): boolean {
 const NOTE_PRICE = /^\(([^()]+)\)\s*\$\s*\d[\d,]*(?:\.\d{1,2})?$/;
 // Words that make such a note this fee's own terms, on top of `tailStatesCondition`: a way to
 // avoid it, a balance, a statement or deposit, an audience, a program, promotion or reward period
-// (review of #2676).
-const NOTE_CONDITION = /\b(?:if|unless|when|with|without|balances?|bal|avg|average|minimum|maximum|below|under|less|fewer|more|over|above|e-?statements?|statements?|paper|direct|deposits?|enroll\w*|qualif\w*|otherwise|waived?|avoid\w*|maintain\w*|keep\w*|or|members?|non-?members?|customers?|non-?customers?|students?|seniors?|ages?|youth|required|requires?|needed|needs?|recurring|purchases?|transactions?|activity|graduat\w*|rewards?|criteria|unmet|met|promo\w*|introductory|intro|periods?|ends?|ended|earn\w*|program\w*|eligib\w*|cash|bonus\w*|kasasa|accounts?)\b/i;
+// (review of #2676), or an account's status, dormancy, lapse, conversion, age or discount
+// ("(dormancy) $5.00", "(after turning 18) $5.00", "(discount removed) $5.00"; #1593, before the
+// layout switch-on).
+const NOTE_CONDITION = /\b(?:status(?:es)?|dorman\w*|laps\w*|turn(?:s|ed|ing)?|convert\w*|conversions?|discount\w*|if|unless|when|with|without|balances?|bal|avg|average|minimum|maximum|below|under|less|fewer|more|over|above|e-?statements?|statements?|paper|direct|deposits?|enroll\w*|qualif\w*|otherwise|waived?|avoid\w*|maintain\w*|keep\w*|or|members?|non-?members?|customers?|non-?customers?|students?|seniors?|ages?|youth|required|requires?|needed|needs?|recurring|purchases?|transactions?|activity|graduat\w*|rewards?|criteria|unmet|met|promo\w*|introductory|intro|periods?|ends?|ended|earn\w*|program\w*|eligib\w*|cash|bonus\w*|kasasa|accounts?)\b/i;
 // The one time limit a note may state and still be the right column's fee: an early-closure fee's
 // own window ("closed within 90 days of opening", 56797). Any other words in the note are read with
 // the full condition test.
@@ -1240,6 +1254,8 @@ export function darwinStandingDecisionSql(currentCopy = true): string {
   //   so a fix to the shared source check reaches the rows it was made for;
   // - a hold outside a hand-set amount envelope that today's envelope takes (the account_research
   //   floor went from $5 to $1 on 2026-10-09); learned envelopes move with the data and never re-select.
+  //   A box late fee held under the box's rent floor that its own floor takes (`BOX_LATE_FEE_ENVELOPE`,
+  //   #1912) is re-read the same way.
   // - a peer hold under an older peer version (v5, #1112). Attempts record `peer_version` from v5
   //   on; an older hold is re-decided only when its own run's peer attempt was a graded version
   //   (DARWIN_PEER_GRADED_VERSIONS: v3 and v4, Oct 10 on) and held it, so the ungraded v1/v2 holds
@@ -1281,6 +1297,12 @@ export function darwinStandingDecisionSql(currentCopy = true): string {
                 AND (pa.detail->>'amount')::numeric
                     BETWEEN (${envelopes}->(pa.detail->>'canonical_fee_key')->>'min')::numeric
                         AND (${envelopes}->(pa.detail->>'canonical_fee_key')->>'max')::numeric
+              )
+              AND NOT (
+                pa.detail->>'reason_code' = 'outside_envelope'
+                AND pa.detail->>'canonical_fee_key' = 'safe_deposit_box'
+                AND fr.fee_name ~* '\\mlate\\M'
+                AND (pa.detail->>'amount')::numeric BETWEEN ${BOX_LATE_FEE_ENVELOPE.min} AND ${BOX_LATE_FEE_ENVELOPE.max}
               )
 ${duplicateRecheck}
          )`;
@@ -1856,7 +1878,9 @@ export async function runDarwinVerify(
         if (admission) requireInternationalVerification(admission, canonicalFeeKey, categoryOf(admission.row));
         if (admission) requirePaidReturnedVerification(admission, canonicalFeeKey);
         // Guard v84 (#1788): a generic monthly charge is read under the heading its stored text prints above it.
-        let reasonCode = verificationReasonCode(withHeadingAbove(canonicalFeeKey, row.fee_name, row, sourceText), canonicalFeeKey, learnedEnvelopes);
+        // Guard v100 (#1912): and a lock box filed as a safe deposit box with its stored text's
+        // `commercial_lockbox`, so a lockbox service its line or heading names is refused here too.
+        let reasonCode = verificationReasonCode(withHeadingAbove(canonicalFeeKey, row.fee_name, withCollectionSection(canonicalFeeKey, row.fee_name, row, sourceText), sourceText), canonicalFeeKey, learnedEnvelopes);
         const categoryHold = reasonCode ? null : pendingCategoryLesson(canonicalFeeKey, row.fee_name);
         if (categoryHold) reasonCode = "category_lesson_pending";
         if (!reasonCode && !statedInOwnSource(row, rowSourceTexts, canonicalFeeKey)) reasonCode = "not_in_source";

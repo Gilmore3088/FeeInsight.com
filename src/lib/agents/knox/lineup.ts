@@ -1,6 +1,7 @@
 import { AMOUNT_PATTERN, amountsIn, BALANCE_BELOW_CLAUSE } from "@/lib/agents/knox/rules";
 import { accountTableProduct } from "@/lib/custom-report/account-table";
 import { namesNoAccount, withoutNonAccountWords } from "@/lib/account-name-exclusions";
+import { accountKind, CHECKING_WORDS } from "@/lib/account-kind";
 import { withAncillaryProduct } from "./ancillary-product";
 
 /**
@@ -509,6 +510,65 @@ function lineupSources(excerpt: string, text: string) {
 }
 
 /**
+ * #1912: a sentence that names the account as its subject and prices the fee: "The M&T Preferred
+ * Money Market account has a $20 monthly maintenance charge." The subject opens the sentence after
+ * an article or possessive and before the verb; the price follows "a"/"an" right after the verb,
+ * and the fee words follow the price. Footnote marks ("{{d1137*}}") and service marks are read
+ * through.
+ */
+const SUBJECT_SENTENCE =
+  /^(?:the|your|our|an?)\s+(.{3,90}?)\s+(?:has|carries|charges|includes|comes\s+with|is\s+subject\s+to)\s+an?\s+(\$\s?\d[\d,]*(?:\.\d{2})?)\s+(?:(?:monthly|maintenance|service|minimum|low|balance|account)\s+){0,4}(?:fee|charge|service\s+charge)s?\b/i;
+const SUBJECT_ACCOUNT_TAIL = /\s+accounts?$/i;
+const SENTENCE_BREAK = /(?<=[.!?])\s+(?=[A-Z"“])/;
+
+function subjectSentences(line: string): string[] {
+  const plain = squash(line.replace(/\{\{[^{}]{0,40}\}\}/g, " ").replace(/[®™℠]/g, ""));
+  return plain.split(SENTENCE_BREAK).map(squash).filter(Boolean);
+}
+
+/**
+ * #1912: the account named as the subject of the fee's own sentence, on the fee's own line or the
+ * line just above it ("The M&T Preferred Money Market account has a $20 monthly maintenance
+ * charge." over "The $20 monthly maintenance charge is waived if:"). Conservative: the sentence
+ * must print the fee's own price as the subject's fee; the subject must read as one product name
+ * (`readableProductName`) that names a kind of account or ends in "account"; a subject for every
+ * account, a bank's own name or a disclosure title is none. Two different subjects at the price:
+ * none. Null when no sentence says it.
+ */
+export function accountSubjectProduct(text: string, excerpt: string, amount: number | null | undefined, institutionName?: string | null): string | null {
+  if (amount == null || !Number.isFinite(amount)) return null;
+  const lines = text.split(/\n+/).map(squash).filter(Boolean);
+  const at = feeLineIndex(lines, excerpt);
+  if (at < 0) return null;
+  const cents = Math.round(amount * 100);
+  const subjectsOn = (line: string) => {
+    const found = new Set<string>();
+    for (const sentence of subjectSentences(line)) {
+      const match = sentence.match(SUBJECT_SENTENCE);
+      if (!match) continue;
+      const price = amountsIn(match[2])[0];
+      if (!price || Math.round(price.value * 100) !== cents) continue;
+      const subject = squash(match[1]);
+      if (ALL_ACCOUNTS.test(`${match[0]}`) || /\b(?:all|every|each|any|these|those|this|that|other)\b/i.test(subject)) continue;
+      const product = subject.replace(SUBJECT_ACCOUNT_TAIL, "");
+      if (!accountKind(product) && !SUBJECT_ACCOUNT_TAIL.test(subject)) continue;
+      const readable = readableProductName(product);
+      if (!readable || readable !== product || namesNoAccount(product, institutionName)) continue;
+      found.add(product);
+    }
+    return found;
+  };
+  // The fee's own line decides first. The line above is read only when the fee's own line names no
+  // account at all: "Basic Checking: the $5 monthly fee is waived ..." under "The Everyday Savings
+  // account has a $5 monthly fee." is Basic Checking's fee, not the savings account's (#1912 review).
+  const own = subjectsOn(lines[at]);
+  if (own.size > 0) return own.size === 1 ? [...own][0] : null;
+  if (lines[at - 1] == null || accountKind(lines[at])) return null;
+  const above = subjectsOn(lines[at - 1]);
+  return above.size === 1 ? [...above][0] : null;
+}
+
+/**
  * v49: a monthly fee with no account name takes it from its own name or the heading above it.
  * v51: the balance that avoids the fee, the waiver and the opening deposit are read the same
  * way: the fee's own line first, then the account's lines around it (never past its heading or
@@ -519,8 +579,9 @@ function lineupSources(excerpt: string, text: string) {
 /**
  * v73 (#1100): the account a monthly maintenance or minimum balance read belongs to, from the first
  * source that states one: the account lineup's product (the read's own row label, or a model read),
- * the account table's column header (#1438), the nearest account heading above the fee, then the
- * fee's own name. Null when none states one: an account is never assumed to be checking.
+ * the account table's column header (#1438), the nearest account heading above the fee, the
+ * fee's own name, then (#1912) the account its own sentence names as subject. Null when none
+ * states one: an account is never assumed to be checking.
  */
 export function accountProductFor(
   candidate: { feeName: string; excerpt: string; amount?: number | null; lineup?: AccountLineup | null },
@@ -539,10 +600,15 @@ export function accountProductFor(
   const named = usable(productNameFromFeeName(fee));
   // A fee whose own name says checking is a checking account's, even when its name gives no product
   // ("Enjoy! Rewards Checking monthly service fee" under a "SAVINGS" heading, #1598 review).
+  // #1912, last resort: the account the fee's own sentence names as its subject.
+  const subject = () => usable(accountSubjectProduct(text, candidate.excerpt, candidate.amount, institutionName));
   if (CHECKING_WORDS.test(fee)) {
     if (own && (accountKind(own) ?? "checking") === "checking") return own;
     const head = usable(heading);
-    return named ?? (head && accountKind(head) === "checking" ? head : null);
+    const checking = named ?? (head && accountKind(head) === "checking" ? head : null);
+    if (checking) return checking;
+    const said = subject();
+    return said && accountKind(said) === "checking" ? said : null;
   }
   if (own) return own;
   // A fee for every account, or one price printed across several columns, belongs to no one account.
@@ -551,13 +617,11 @@ export function accountProductFor(
   // A fee whose own name names another kind of account than the heading above it is that account's
   // ("Star Checking Monthly Fee" listed under a "Savings / Money Market" heading).
   if (head && named && accountKind(named) && accountKind(head) && accountKind(named) !== accountKind(head)) return named;
-  return head ?? named;
+  return head ?? named ?? subject();
 }
 
 /** "CONSUMER BANKING PACKAGES": a relationship package is a checking account's (inst 1310, prod). */
 const PACKAGE_HEADING = /\b(?:banking|relationship|account)\s+packages?\b/i;
-/** Checking, glued to a name too ("eChecking", "MyChecking"). */
-const CHECKING_WORDS = /checking\b|\bshare\s*drafts?\b/i;
 /** "Monthly Service Fee - all accounts", "per account, every account". */
 const ALL_ACCOUNTS = /\b(?:all|every|each|any)\s+(?:of\s+(?:our|your|the)\s+)?(?:deposit\s+|share\s+)?accounts?\b/i;
 
@@ -566,18 +630,6 @@ function samePriceAcrossColumns(excerpt: string): boolean {
   const prices = [...excerpt.matchAll(/\$\s?(\d[\d,]*(?:\.\d{2})?)/g)].map((match) => Number(match[1].replace(/,/g, "")));
   if (prices.length < 2 || new Set(prices).size !== 1) return false;
   return excerpt.includes("|") || /\$\s?[\d,.]+\s+\$\s?[\d,.]+/.test(excerpt);
-}
-
-/** The kind of account a name says, for telling a heading's account from the fee's own; null when it says none. */
-function accountKind(name: string): string | null {
-  if (/\b(?:business|commercial|non-?profit|corporate)\b/i.test(name)) return "business";
-  if (/\bmoney\s*market\b|\bmmda\b/i.test(name)) return "money_market";
-  if (/\b(?:ira|hsa|health savings|certificates?|cds?)\b/i.test(name)) return "ira_hsa_cd";
-  if (CHECKING_WORDS.test(name)) return "checking";
-  if (/\b(?:christmas|holiday|vacation)\b/i.test(name)) return "club";
-  // A kids' club is a kids' savings account ("Money Tree Kids Club", 643669); checking is checked above.
-  if (/\b(?:savings?|savers?|share|passbook)\b|\bkids?'?s?\s+club\b/i.test(name)) return "savings";
-  return null;
 }
 
 /** A literal, standalone account heading; no price/cell, fee heading or inferred owner. */

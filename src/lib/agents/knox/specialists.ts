@@ -3,6 +3,7 @@ import {
   billPayByHeading,
   boxSectionLateFeeRead,
   loanSectionFeeRead,
+  payeeReturnedBillPayRead,
   checkingNamePriceAmbiguous,
   extractCandidatesFromText,
   recognizedFeeBullets,
@@ -17,6 +18,7 @@ import {
   type ExtractionRulesResult,
   type HeldFeeCandidate,
 } from "@/lib/agents/knox/rules";
+import { withoutGluedPricePairs } from "@/lib/custom-report/glued-price-pair";
 import { FAMILY_EXPERTS, priceWindows, runFamilyExpert } from "@/lib/agents/knox/families";
 import { newestColumnText } from "@/lib/fee-change-columns";
 import { namesALimit, namesAWorkedExample, passesDarwinChecks, readsAMeasuredAmount, tidyFeeName } from "@/lib/agents/knox/layout";
@@ -42,6 +44,8 @@ import { networkColumnReads, withoutNetworkTableRows } from "@/lib/custom-report
 import { namesLateChargeBound } from "@/lib/late-charge-bound";
 import { rateFloorOf } from "@/lib/rate-floor";
 import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
+import { commercialLockboxName, commercialLockboxOnLine } from "@/lib/custom-report/commercial-lockbox";
+import { NO_CHARGE_SENTENCE_READ_LIVE, NSF_FAMILY_KEYS, chargesNsfFamily, readNoChargeNsf } from "@/lib/no-charge-statement";
 
 /**
  * Knox's free extraction team, run over one whole document. Pure.
@@ -422,7 +426,78 @@ import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 // "Copy of a draft or a Teller Check $5" stays one check-copy fee. "&#38;" and "&#x26;" read as "&",
 // and square brackets count as parentheses. Adds reads only. The stale-read floor stays at v97. Name
 // re-tidy stays at v27.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 124 } as const;
+// v125 (#1094 item 3): a segment holding the schedule's heading phrase or boilerplate ("Fee Schedule",
+// "Schedule of Fees", "Truth in Savings", "Member FDIC") is read without the phrase, not skipped whole
+// (`readSegment` in rules.ts): a PDF flattened to one line, or "Fee Schedule Overdraft Fee $35 Stop
+// Payment $30", lost every fee on it. Each piece between phrases that holds a dollar price is read on
+// its own, with capitalised section headings before its first name cut, so the phrase never joins a
+// name; a piece with no price yields nothing. A segment that also says "effective" stays skipped whole,
+// since it can announce a price not yet charged (R11 on #1094), and so does one whose phrase names an
+// audience ("Business Schedule of Fees"), so a business price never reads as everyone's. Only segments holding the phrase read differently. The stale-read floor
+// stays at v97. Name re-tidy stays at v27.
+// v126 (#1912): a monthly maintenance or minimum balance read with no account from its row, table,
+// heading or own name takes, as a last resort, the account its own sentence names as subject ("The
+// M&T Preferred Money Market account has a $20 monthly maintenance charge."), on the fee's line or the
+// line just above, only when that sentence prints the fee's own price (`accountSubjectProduct` in
+// `lineup.ts`). Account product only; names, prices and categories are unchanged. The stale-read floor
+// stays at v97. Name re-tidy stays at v27.
+// v127 (#1918): a note that a fee is free with an account or condition, or that a few are free
+// ("Money Orders (Free with Platinum Checking) | $5.00", "ATM Withdrawals (3 FREE each month) | $3.50"),
+// no longer drops the row as "no fee"; the price is read, as waivable (`FREE_FOR_NOTE` in rules.ts).
+// An account's own monthly or minimum balance fee with such a note stays the account expert's read.
+// And a two-column PDF row whose left price cell was empty on the name's line ("Wire Transfers –
+// Domestic | Bill Pay Return Item Fee | $10.00" over "(Free with Platinum Checking) | $20.00 | ...")
+// is rebuilt as one row per fee before any line is read (`withShiftedColumnsRebuilt`). The stale-read
+// floor stays at v97; Hamilton's rules re-check revisits each live document once for the new
+// signature and asks Knox to read again where these rules read a fee that is not live.
+// v128 (#1912): a line whose only price is two different prices glued into one cell ("Card Replacement
+// .....Share Draft Protest ..... $20.00$10.00", "...(PIN)Wire Transfers (incoming).... $ 2.00n/c*") is
+// two flattened columns whose price order is not the names' order, so it reads nothing
+// (`gluedPricePair` in `custom-report/glued-price-pair.ts`). The stale-read floor stays at v97; Hamilton's rules re-check revisits
+// each live document once for the new signature, and a live fee read only from such a line goes to the
+// second look and comes down.
+// v129 (#1912, review of #2726): the account-subject read (v126) lets the fee's own line decide. Its own
+// line's subject wins over a different one on the line above, and the line above is read only when the
+// fee's own line names no account ("Basic Checking: the $5 monthly fee is waived ..." under "The
+// Everyday Savings account has a $5 monthly fee." is no longer the savings account's). Account product
+// only; the stale-read floor stays at v97.
+// v130 (#1912): a heading in a vertically centred merged cell, which the PDF reader prints on the middle
+// row of its block only ("Wire Transfers | Outgoing Domestic - Not in Person: $60.00" between "Outgoing
+// Domestic: $30.00" and "Outgoing International: $45.00 ..."), names the block's sibling "<name>:
+// <price>" rows above and below it too (`withCenteredHeadingCells` in
+// `custom-report/centered-heading-cell.ts`, applied by Knox with a fee-family check and by the shared
+// source check). "Not in Person" is a channel a heading may qualify, and an international wire whose
+// price is followed by "plus <the same wire's> fee" keeps its scope (`own-wire-scope.ts`). The stale-read
+// floor stays at v97; Hamilton's rules re-check revisits each live document once for the new signature
+// and asks Knox to read again where these rules read a fee that is not live.
+// v131 (#1912): a bill pay return whose name says the payee returned it ("Bill Pay Return Item Fee (per
+// item returned by payee)", Bellco 85460, its note read from the next line since v127) is filed as bill
+// pay, not NSF (`BILL_PAY_RETURNED_BY_PAYEE` in `custom-report/payee-returned-bill-pay.ts`, shared with
+// guard v99). A bill pay return with no payee words stays NSF ("Bill Payment Return Item Fee (per
+// presentment)", Texas tid 2419). The stale-read floor stays at v97.
+// v132 (#1912): a commercial lockbox service ("Lock Box Service, per month" $225, Forte Bank 135270) is
+// not a safe deposit box: a lock box name that names the service (processing, items, remittances,
+// wholesale or retail) and nothing of a box gets no category (`COMMERCIAL_LOCKBOX_NAME` in
+// `custom-report/commercial-lockbox.ts`, shared with guard v100), and any specialist's safe deposit box
+// read whose name or stored line or business heading says so is held unclassified. A lock box with a
+// size, key, drilling, rent, lease, year or late charge stays a safe deposit box. The stale-read floor
+// stays at v97.
+// v133 (#2040): a whole sentence saying the bank charges no NSF fee ("We do not charge a returned
+// item/non-sufficient funds (NSF) fee for items returned unpaid.") is the NSF fee's $0, held as `zero`
+// like a "No Fee" row (`readNoChargeNsf` in `src/lib/no-charge-statement.ts`, shared with the source
+// check's witness). Only an unconditional sentence of the shared grammar, whose two sentences before,
+// two sentences after, headings in the 40 lines above and nearest section heading name no product,
+// account, audience, tier or service, whose next two sentences do not narrow it, on a text where no line
+// prices an NSF-family fee and no other sentence names an NSF-family fee or charge (refuse by default,
+// affirming or not, unless the sentence wholly agrees with the $0); none when any specialist read an NSF-family fee on the text, or a priced
+// read with NSF-family words. The extract step holds the read for review when the institution charges
+// an NSF-family fee anywhere (`knox_no_charge_conflict`). Behind `NO_CHARGE_SENTENCE_READ_LIVE` (off):
+// until it is switched on, the read is computed only by the dry run and tests, and no text reads it.
+// Oct 27 dry run (prod, read-only, current copies, after the third #2753 review): 3 texts at 3
+// institutions would read it once on (Wells Fargo 4, 172, 359); 2 have no NSF row today, 1 already
+// shows NSF $0, none is held. Of the 9 grammar matches, 3 more are refused by another NSF fee sentence,
+// 2 by the page price test and 1 by scope. The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 133 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -635,7 +710,10 @@ function cellAlreadyRead(read: ExtractedFeeCandidate, prior: readonly ExtractedF
   });
 }
 
-export function runFreeSpecialists(sourceText: string, options: { institutionName?: string | null } = {}): FreeExtractionResult {
+export function runFreeSpecialists(
+  sourceText: string,
+  options: { institutionName?: string | null; /** v133 (#2040): defaults to the switch, off. */ noChargeSentences?: boolean } = {},
+): FreeExtractionResult {
   const institutionName = options.institutionName ?? null;
   // Labeled fee cards ("Fee TypeX" / ... / "Fee$5.00") are read as one row, as the shared
   // check reads them. The self-check runs on `checkText`: the stored text with these layout
@@ -648,7 +726,8 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
   // must be supported by the stored row itself: "Courtesy Pay $20 $30 ..." at $30 is held untraced.
   // v106: "$03" is a $0 price with its footnote glued on (`withGluedFootnotePrices`, #1946).
   // v116: a card program section's price rows are no specialist's to read (`withoutCardProgramSections`).
-  const checkText = withSidewaysBoxTable(withBoxSizeCellsSplit(withoutBusinessOnlyFees(joinLabeledFeeCardText(withGluedFootnotePrices(withoutCardProgramSections(sourceText))))));
+  // v128 (#1912): a line whose only price is two different prices glued together reads nothing (`withoutGluedPricePairs`).
+  const checkText = withSidewaysBoxTable(withBoxSizeCellsSplit(withoutBusinessOnlyFees(joinLabeledFeeCardText(withGluedFootnotePrices(withoutCardProgramSections(withoutGluedPricePairs(sourceText)))))));
   // v115 (#1905): an ATM network table's rows are read only by their non-network column
   // (`withNetworkColumnFees`); no other reader sees them, so none takes another column's price.
   const text = withoutNetworkTableRows(withTierColumnRows(checkText));
@@ -688,7 +767,7 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
     // (`boxSectionLateFeeRead`), read on the self-check's text.
     // v123 (#1905): every specialist's deposit-category read printed in a loan section is the loan's
     // (`loanSectionFeeRead`), read on the same text.
-    const found = { ...run, candidates: run.candidates.map((read) => { const next = billPayByHeading(read); return next && carryColumnHeadingCell(read, next); }).filter((read): read is ExtractedFeeCandidate => read != null).map((read) => loanSectionFeeRead(boxSectionLateFeeRead(read, checkText), checkText)) };
+    const found = { ...run, candidates: run.candidates.map((read) => { const next = billPayByHeading(read); return next && carryColumnHeadingCell(read, next); }).filter((read): read is ExtractedFeeCandidate => read != null).map((read) => payeeReturnedBillPayRead(loanSectionFeeRead(boxSectionLateFeeRead(read, checkText), checkText), checkText)) };
     for (const [reason, count] of Object.entries(found.dropped ?? {})) countDropped(reason as DroppedLineReason, count);
     let added = 0;
     let selfCheckFailed = 0;
@@ -720,6 +799,20 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
       // v123 (#1905): the tidied name is the one the self-check traces, so a deposit-category read whose
       // name tidying changed is read for its loan section again under that name.
       if (feeName !== read.feeName) read.canonicalHint = loanSectionFeeRead({ ...read, feeName }, checkText).canonicalHint;
+      // v131 (#1912): and for the payee's return of a bill payment under that name.
+      if (feeName !== read.feeName) read.canonicalHint = payeeReturnedBillPayRead({ ...read, feeName }, checkText).canonicalHint;
+      // v132 (#1912): a lock box any specialist filed as a safe deposit box, whose name or own line or
+      // business heading names the commercial lockbox service, is no safe deposit box and no type of
+      // the 50: held unclassified for review, never filed (`custom-report/commercial-lockbox.ts`).
+      if (read.canonicalHint === "safe_deposit_box" && (commercialLockboxName(feeName) || commercialLockboxOnLine(checkText, feeName, read.amount))) {
+        const row: HeldFeeCandidate = { shape: "unclassified", feeName, amount: read.amount, amountMax: null, percent: null, frequency: read.frequency, canonicalHint: null, excerpt: read.excerpt };
+        const key = heldKey(row);
+        if (!seenHeld.has(key) && held.filter(prior => !unpricedHalf(prior)).length < MAX_HELD_PER_DOCUMENT) {
+          seenHeld.add(key);
+          held.push(row);
+        }
+        continue;
+      }
       const ownPrices = exclusiveStackedPrices(text, stackedPrices, feeName).filter(row => row.amount === read.amount);
       if (read.canonicalHint === "overdraft" && ownPrices.length > 0 && ownPrices.every(row => row.annualProgram)) {
         const row: HeldFeeCandidate = {
@@ -949,6 +1042,28 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
     held.push({ shape: "eligibility", feeName: read.feeName, amount: read.amount, amountMax: null,
       percent: null, frequency: read.frequency, canonicalHint: read.canonicalHint, excerpt: read.excerpt,
       ownedPolicy: true, linkedConditions: read.linkedConditions, lineShare: read.lineShare });
+  }
+  // v133 (#2040): "We do not charge a returned item/non-sufficient funds (NSF) fee for items returned
+  // unpaid." is the NSF fee's $0 when the shared rule lets it stand (`readNoChargeNsf`), held as `zero`
+  // like a "No Fee" row so Darwin verifies it. Once per text, and never beside any NSF-family read: a
+  // priced or $0 NSF read on the same text is the schedule's own row, and a held line no category took
+  // ("Item returned unpaid | $35", unclassified) still prices NSF when its words are NSF words. The name
+  // is pinned: a name Knox's tidy would change is not read, so Darwin traces the name the sentence
+  // prints. Off until NO_CHARGE_SENTENCE_READ_LIVE.
+  const nsfRead = [...candidates, ...held, ...untraced].some((row) =>
+    (row.canonicalHint != null && NSF_FAMILY_KEYS.includes(row.canonicalHint)) || chargesNsfFamily(row));
+  if ((options.noChargeSentences ?? NO_CHARGE_SENTENCE_READ_LIVE) && !nsfRead) {
+    const [statement] = readNoChargeNsf(sourceText).statements;
+    if (statement && tidyUnmarkedName(statement.feeName, text, institutionName, "nsf") === statement.feeName &&
+      passesDarwinChecks("nsf", statement.feeName, 0) && held.filter((row) => unpricedHalf(row)).length < MAX_HELD_PER_DOCUMENT) {
+      const row: HeldFeeCandidate = { shape: "zero", feeName: statement.feeName, amount: 0, amountMax: null, percent: null,
+        frequency: null, canonicalHint: "nsf", excerpt: statement.sentence, statedNoCharge: true };
+      const key = heldKey(row);
+      if (!seenHeld.has(key)) {
+        seenHeld.add(key);
+        held.push(row);
+      }
+    }
   }
   // An untraced read is held once, and only when no specialist read the same fee traceably.
   for (const row of untraced) {

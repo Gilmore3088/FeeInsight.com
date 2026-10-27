@@ -60,6 +60,28 @@ describe("replayCase", () => {
     expect(replayCase(takedown)).toBeNull();
   });
 
+  it("replays a business-schedule takedown against today's audience rules (#2064)", () => {
+    const old = { kind: "unreplayable" as const, canonical_fee_key: "overdraft", fee_name: "Balancing Checkbook", amount: 15, conditions: null };
+    const apg = "https://www.apgfcu.com/business-service-charges-and-fees-list.html";
+    // The document's address names the business schedule: Darwin reads business.
+    expect(replayCase(old, "hamilton.business_schedule", { documentUrl: apg, documentText: "Business Service Charges\nBalancing Checkbook $15.00" }))
+      .toEqual({ caught: true, verdict: "darwin_reads_business" });
+    // Darwin reads with the page, as verify does: a treasury address on a schedule that prices no
+    // business fees is Darwin's consumer default, so the business-schedule read never sees it (review of #2064).
+    const wire = { kind: "audience" as const, canonical_fee_key: "wire_domestic_outgoing", fee_name: "Outgoing Wire", amount: 30, conditions: null, document_url: "https://bank.test/treasury/fees.pdf" };
+    expect(replayCase(wire, null, { documentText: "Schedule of Fees\nOutgoing Wire $30.00\nStop Payment $25.00\nOverdraft Fee $30.00" }))
+      .toEqual({ caught: false, verdict: "darwin_reads_consumer" });
+    // Darwin leaves a two-column price unknown; the read catches the treasury address.
+    expect(replayCase(wire, null, { documentText: "Fees\nPersonal Checking | Business Checking\nOutgoing Wire | $25.00 | $30.00\nStop Payment | $25.00 | $25.00" }))
+      .toEqual({ caught: true, verdict: "business_schedule_read" });
+    // Darwin reading a business fee as personal lets it through again.
+    expect(replayCase({ ...old, fee_name: "Personal Overdraft Fee" }, "hamilton.business_schedule", { documentUrl: "https://bank.test/business/fees.pdf", documentText: "Fees\nPersonal Overdraft Fee $35.00" }))
+      .toEqual({ caught: false, verdict: "darwin_reads_consumer" });
+    // No stored text: Darwin's decision needs the page, so nothing is judged.
+    expect(replayCase(old, "hamilton.business_schedule", { documentUrl: apg })).toBeNull();
+    expect(replayCase(wire)).toBeNull();
+  });
+
   it("passes a real fee through the limit guard", () => {
     expect(replayCase({ kind: "limit_guard", canonical_fee_key: "overdraft", fee_name: "Overdraft Fee", amount: 35, conditions: null }))
       .toEqual({ caught: false, verdict: "passes_limit_guard" });
@@ -99,6 +121,15 @@ describe("buildTakedownCase", () => {
     expect(built.input).toMatchObject({ kind: "category_guard", canonical_fee_key: "stop_payment", amount: 25 });
     expect(built.status).toBe("active");
     expect(built.lastVerdict).toBe("name_contradicts");
+  });
+
+  it("freezes a business-schedule takedown with its document's address, as an audience case (#2064)", () => {
+    const built = buildTakedownCase({ ...baseRow, check_name: "hamilton.business_schedule", canonical_fee_key: "monthly_maintenance", fee_name: "Monthly Service Charge", amount: "20", reason: "business_schedule: consumer fee #9", document_url: "https://bank.test/commercial-fee-schedule.pdf" }, []);
+    expect(built.input).toEqual({ kind: "audience", canonical_fee_key: "monthly_maintenance", fee_name: "Monthly Service Charge", amount: 20, conditions: null, document_url: "https://bank.test/commercial-fee-schedule.pdf", darwin_url: null });
+    // Promotion reads no page text: the case waits for the replay, which reads the document's text.
+    expect(built.status).toBe("candidate");
+    expect(built.lastCaught).toBeNull();
+    expect(built.severity).toBe("critical");
   });
 
   it("gives a Knox source-check case only the document Knox read", () => {
@@ -143,6 +174,33 @@ describe("replayFieldCase", () => {
     // A candidate the guard never caught retires when its fee comes back.
     expect(replayFieldCase({ ...fine, status: "candidate", fee_live: true }).outcome.status).toBe("retired");
   });
+  it("flags an active audience case today's rules would let through again (#2064)", () => {
+    const audience = { status: "active", check_name: "hamilton.business_schedule", fee_live: false, document_text: "Fees\nOverdraft Fee $35.00",
+      input: { kind: "audience" as const, canonical_fee_key: "overdraft", fee_name: "Overdraft Fee", amount: 35, conditions: null, document_url: "https://bank.test/business-fee-schedule.pdf" } };
+    expect(replayFieldCase(audience).outcome).toEqual({ status: "active", regression: false });
+    // The same fee where Darwin now reads consumer: today's rules would let it through.
+    expect(replayFieldCase({ ...audience, input: { ...audience.input, document_url: "https://bank.test/fee-schedule.pdf" } }))
+      .toMatchObject({ replay: { caught: false, verdict: "darwin_reads_consumer" }, outcome: { status: "active", regression: true } });
+    // No stored text: the case keeps its status, never a regression.
+    expect(replayFieldCase({ ...audience, document_text: null }).outcome).toEqual({ status: "active", regression: false });
+  });
+
+  it("keeps an audience case through a take-down, a restore and a second take-down (review of #2064)", () => {
+    const audience = { status: "candidate", check_name: "hamilton.business_schedule", document_url: "https://www.apgfcu.com/business-service-charges-and-fees-list.html",
+      document_text: "Business Service Charges\nBalancing Checkbook $15.00",
+      input: { kind: "unreplayable" as const, canonical_fee_key: "overdraft", fee_name: "Balancing Checkbook", amount: 15, conditions: null } };
+    // Taken down: the rules catch it.
+    const first = replayFieldCase({ ...audience, fee_live: false });
+    expect(first.outcome).toEqual({ status: "active", regression: false });
+    // Restored because the bank's consumer fee is gone: still a business fee, so the case stays active.
+    const restored = replayFieldCase({ ...audience, status: first.outcome.status, fee_live: true });
+    expect(restored).toMatchObject({ restored: false, outcome: { status: "active", regression: false } });
+    // Taken down again: the same case, still active, still caught.
+    expect(replayFieldCase({ ...audience, status: restored.outcome.status, fee_live: false }).outcome).toEqual({ status: "active", regression: false });
+    // A candidate the rules catch, live after a restore, does not retire either.
+    expect(replayFieldCase({ ...audience, fee_live: true }).outcome.status).toBe("active");
+  });
+
   it("flags an active case the guard no longer catches", () => {
     const fine = { ...categoryCase, status: "active", input: { ...categoryCase.input, fee_name: "Stop Payment Fee" } };
     expect(replayFieldCase({ ...fine, fee_live: false }).outcome).toEqual({ status: "active", regression: true });
@@ -154,7 +212,7 @@ describe("summarizeDemingRegression", () => {
     schemaReady: true, dryRun: false, promoted: 3, promotedActive: 2,
     promotedBySeverity: { critical: 2, major: 1, minor: 0, info: 0 },
     replayed: 10, caught: 9, regressions: [{ caseId: 1, checkName: "hamilton.limit_guard", severity: "critical", verdict: "passes_limit_guard" }],
-    activated: 2, retired: 0, activeTotal: 9, candidateTotal: 4,
+    activated: 2, retired: 0, activeTotal: 9, candidateTotal: 4, notJudged: 0,
   };
   it("names counts and regressions", () => {
     expect(summarizeDemingRegression(result)).toBe("Added 3 confirmed mistakes as test cases (2 critical, 1 major). Replayed 10 cases on the deployed rules: 9 still caught, 1 regression: the deployed rules no longer catch a case they used to. 9 active, 4 waiting for a replayer.");

@@ -1,5 +1,22 @@
 # Darwin Agent Guide
 
+## Findings filed against verify (#2057, #2062)
+
+The verify step reads the `pipeline_feedback` rows a person files against its own stage: a
+hold or correction whose cause is "verification should have stopped it" (`admin_hold`,
+`admin_correction`, checks `admin.fee_hold` / `admin.fee_correction`, reporter `human`;
+`verify-misses.ts`). Each standing finding becomes a lesson line naming the check that should
+have stopped the fee, inferred from what the correction changed (category: category guard;
+amount: source check; name: name rule; frequency: frequency check; a hold or anything else:
+`no_check`). A full read runs at most hourly and records the per-check missed tally over the
+newest 500 findings as one `darwin.verify_misses` event and as `verify_misses` in the step
+detail; a read scoped to one institution writes no event. `/admin/darwin` shows the same read.
+A hold is withdrawn by a later release of the same fee, a correction by a later reversal of
+the fee it created. Not read: the takedown sync's copies (check `hamilton.admin_correction`),
+which mirror the hand row, and Deming's audit misses, which Deming files at discover or
+extract only. The reader changes no fee, so it has no switch; a check change it motivates
+ships with its own re-check, switch and dry-run count.
+
 ## Prospective source-owned paid/returned events (#1918)
 
 The two faithful action names retain the literal compressed row as evidence and pass ordinary
@@ -286,7 +303,7 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
 | `category_lesson_pending` | the fee name does not match a category lesson the shared guard has not learned yet (`DARWIN_CATEGORY_HOLDS` in `verify.ts`); Darwin never re-files a row itself, so the row waits for the guard | needs_review |
 | `retired_category` | after the source check: the category is not one the top-50 fold retired (`RETIRED_CATEGORIES` in `src/lib/fee-fold.ts`); Hamilton never publishes a retired type, so Darwin never verifies into one | rejected |
 | `conditional_zero` | after the source check: a $0 fee whose own schedule line (or Knox's excerpt) carries a non-zero price ("FREE with e-statements, else $6.95 per month"); the charge is the fee, so the $0 reading waits for a re-read | needs_review |
-| `tier_perk_zero` | after the source check: a $0 fee is not from one account tier's own schedule (a premium, private-banking or BankOn fee page, known by its address or title) and is not named for such an account (`tier-perk.ts`, #1397: one large bank's live overdraft, NSF, stop payment and wire fees were the $0s of its private-banking Premium Account); a priced row on that schedule is still verified | rejected |
+| `tier_perk_zero` | after the source check: a $0 fee is not from one account tier's own schedule (a premium, private-banking or BankOn fee page, known by its address or title) and is not named for such an account (`tier-perk.ts`, #1397: one large bank's live overdraft, NSF, stop payment and wire fees were the $0s of its private-banking Premium Account); a priced row on that schedule is still verified. Rule v2 (`TIER_PERK_RULE_VERSION`, 2026-10-26): the address test also knows a tier's truth-in-savings disclosure, terms and charges disclosure and summary of fees ("...-Bank-On-Checking-TIS.pdf", "..._premier_tcs.pdf", "BankOn_Summary_of_Fees.pdf"), and a schedule $0 stays when the text says the bank charges none of that fee ("The Bank does not charge NSF fees") | rejected |
 | `name_rule` | after the source check: the name and line pass Hamilton's live-fee name rules (`ruleFor` in `hamilton/eval-verdicts.ts`: rebate, no-fee or waiver sentence, balance threshold, merchant payer, two fees on one line, rate bound, price in name); the rule and why are in the reason text | rejected |
 | `insert_failed` | the database accepted the verified row; a refused insert holds that row so the rest of the batch still runs (#1113) | needs_review |
 
@@ -449,7 +466,14 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   a row is archived only when it fails again under a switched-on code, cleared when it passes, and
   left flagged when it now fails under another code (step detail `recheck.secondLookOtherCode`);
   `recheck.dueSecondLooks` keeps reporting every other code (conditional_zero, name_rule and the
-  rest). Roll back by turning the switch off, then emptying the list. `DARWIN_RECHECK_OLDER_LIVE` only
+  rest). Roll back by turning the switch off, then emptying the list.
+  `DARWIN_RECHECK_TIER_RULE_LIVE` (off, #1397) reaches live $0s a widened tier-perk test newly
+  matches without a recheck version bump, which would re-read every live fee under every check: on,
+  each step also reads up to 100 live $0 rows whose source address matches `TIER_PATH_SQL` and that
+  no attempt at this recheck version read under the current `TIER_PERK_RULE_VERSION` (every recheck
+  attempt records `tier_rule`). A failure goes through the shared 12-hour second look. Dry run,
+  2026-10-26: 13 live $0s at 3 institutions selected, 12 would fail `tier_perk_zero`
+  (`docs/project/findings/2026-10-26-tier-schedule-addresses.md`). It turns on by PR with James's yes. `DARWIN_RECHECK_OLDER_LIVE` only
   flags; without this switch its first looks would never be confirmed, so it turns on with or after
   this one.
 - `verify.document_owner` (`document-owner.ts`, version 1, 2026-10-15, #1455) ends every learning
@@ -505,6 +529,16 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   and `institution_sources` goes back to `rescue_status = 'pending'` with failure reason
   `darwin_document_owner`. Step detail `links_released`. Read-only count Oct 19: 3 (Bluegrass 5756
   on UK FCU's PDF, 5Star Bank 2092, First National Bank 1903).
+  Vendor file folders (2026-10-26, #1455), behind `DARWIN_DOCUMENT_OWNER_FOLDER_LINKS` (off until
+  James's yes): a document at `/files/<folder>/<n>/file/` (read case-blind) links the institution
+  whose website's name is the folder (`sunrisefamilycu` for sunrisefamilycu.org), unless this
+  bank's own website carries that name (LAFCU's `/files/lafcu/` on lafcu.com), the path counts as a vendor path, and
+  the vendor-copy rule reads the folder owner with the text-hash sharers (evidence
+  `vendor copy: file folder` when only the folder links it); the text must still print its name.
+  Such pairs get the fingerprint suffix `:folder`, so the switch re-reads them, and the publish
+  refusal reads it too. Off, no folder link and every verdict as before. Dry run Oct 26
+  (`documentOwnerCountSql({ detail: true, folderLinks: true })`): 4 `other_bank` pairs, 102 live
+  fees, all Sunrise Family CU's schedule (7353, 6428, 7078, 7662); no other pair is folder-linked.
   `documentOwnerCountSql()` is the read-only count of the whole backlog by verdict, mirroring these
   rules in staged, materialized steps, as one script in a read-only transaction that rolls back (JIT
   and merge joins off, a 120 s statement timeout; names are matched only where their first two words
@@ -935,10 +969,9 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
       of" were cut at their start and are rereads.
     - The count SQL and the duplicate-name read (`liveNamesFor`) turn U+00A0, U+2007, U+202F and
       U+FEFF into spaces (`LIVE_FRAGMENT_SQL_SPACES`) before collapsing whitespace.
-    - Left as they are, pending James: a floor on the same line still holds a cap ("Overdraft Fee
-      $35, maximum of $100 per day; $5 minimum" $100) or an opening deposit as a reread, and "$N
-      minimum" still reads "$500 minimum balance" as a floor. Closing either the issue's way adds
-      takedowns.
+    - Left for v8 (below): a floor on the same line held a cap ("Overdraft Fee $35, maximum of $100
+      per day; $5 minimum" $100) or an opening deposit as a reread, and "$N minimum" read "$500
+      minimum balance" as a floor.
   - Round 8 (139153; still v6). A `pronoun` name whose only pronoun is a closing "account you
     have at <bank>" clause (`LIVE_FRAGMENT_OWN_ACCOUNT`: account, loan, card or line of credit,
     an optional "that"/"which", you have/hold/own/maintain, at or with, then "us" or up to four
@@ -958,6 +991,26 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   Knox asked to re-read the line): 75914 "Counter Check: A blank page of 3 personal" $3 and 74142
   "Overdraft - Non-consumer - Continuous Overdraft Charge. Daily fee after 5 business" $10. No
   takedown, no rename. The count SQL reads it as `sentence_end_audience`.
+  v8 (#1521, `LIVE_FRAGMENT_STRATEGY` v8). The two floor gaps round 7 left open:
+  - A floor is read with the line's thresholds left out (`liveFragmentFloor`): "below $500
+    minimum" or "less than $500 minimum" is a balance threshold, and "$N minimum" before a balance,
+    deposit, "to open" or purchase word ("$500 minimum balance", "$25.00 minimum purchase") is no
+    floor (`LIVE_FRAGMENT_FLOOR_WORDING`'s lookahead).
+  - A floor holds a refused line live only when the amount is not a cap's or an opening deposit's
+    own figure (`liveFragmentFloorHolds`, `LIVE_FRAGMENT_LIMIT_FIGURE`: "maximum of $N", "maximum
+    charge of $N", "capped at $N", "lesser of $N", "minimum opening deposit of $N", "$N minimum
+    opening deposit", "$N deposit to open"; a bare "Max $N" may be a product's name, "Checking Max",
+    and is no cap here), or when that amount is also the floor's own figure
+    (`LIVE_FRAGMENT_FLOOR_FIGURE`: "$N minimum", "greater of $N", "minimum charge (of) $N", "min $N
+    or"). "Overdraft Fee $35, maximum of $100 per day; $5 minimum" at $100 comes down (with a
+    re-read request); at $35, $5 or $150 it stays a reread, and so do "minimum opening deposit of
+    $100, $100 minimum fee" and "greater of $100 or cost; maximum of $100" at $100. A floor still
+    bars every rename.
+  - Dry run 2026-10-26 (read-only): 115 live fees carry floor wording on main; the narrower read
+    drops it from 12 (all balance or purchase thresholds, none a fragment shape) and no fee's amount
+    is a cap's or deposit's figure beside a floor. Only 2 live fragment fees carry a floor (30992
+    "Greater of" $10, 68096 "Non-member check cashing min or 1% with max of" $25), both rereads
+    before and after. No live verdict changes. The count SQL mirrors both reads.
 - Live hourly re-check (`hourly-frequency-check.ts`, #1456). About 802 live fees say in their name
   that they are priced by the hour ("Research Fee $25/hour", "Subpoena Fee - Per Hour") but carried
   no frequency or a per-item one, so a report read the price as a flat charge. `hourly` shows as "per
@@ -1131,6 +1184,24 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   Agreement" dropped out). Step detail adds
   `opening_document`, `opening_documents`, `opening_institutions`, `opening_switch_live` and
   `samples_opening_document`; each sample carries `opening`.
+  v5 (#1944 follow-up, Oct 27): `credit_terms_document`, a document whose title the v4 rule cannot
+  read but whose first 2,000 characters hold a credit card's Truth in Lending table, a line opening
+  "Interest Rates and Interest Charges" with an APR after it and no general fee schedule title in
+  its first three lines (the v4 rule's own guard: a general schedule may print an overdraft line
+  of credit's table) (`creditTermsOpening` in
+  `src/lib/non-deposit-document.ts`, Postgres twin `creditTermsOpeningSql`, parity in
+  `non-deposit-document.db.test.ts`). Greater Valley's "Visa® Disclosure" (doc 35811, "Returned
+  Check Fee" $18 live as nsf) and ELCA FCU's title broken over four lines (doc 33235) are the
+  follow-ups named on the issue. It is asked only when the v4 title rules say nothing, so no fee
+  changes rule; with no address kind every fee on the document comes down, and on an address-named
+  loan or card page only the deposit-category fees v2 kept. Its own sub-switch,
+  `CREDIT_TERMS_TAKEDOWN_LIVE`, ships off: the step counts and samples the fees and they pass, and
+  Hamilton's publish gate lets them through. Dry run (prod, read-only, Oct 27,
+  `creditTermsDocumentFeesSql()`): 195 live fees on 55 documents at 55 institutions (46 documents
+  with no address kind, 9 the address calls a card page), none already pending; 56 of them carry
+  no dollar amount. Step detail adds `credit_terms_document`, `credit_terms_documents`,
+  `credit_terms_institutions`, `credit_terms_switch_live` and `samples_credit_terms_document`.
+  Magellan's discovery and companion finder refuse such documents with the same rule.
 - Spanish copies of an English schedule (`translated-copy-check.ts`, #1909, James's live-fee check
   Oct 18). M&T publishes its checking fee guide in English and Spanish, both were read, and "Cargo
   por sobregiro" $15 sat beside "Overdraft Fee" $15. A live fee comes down only when its document's
@@ -1203,6 +1274,24 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   matches 2, v2 adds 5 (105411, 105412, 49815, 110285, 142887 at institutions 156, 6110, 8577, 321),
   each one and its twin found on their own stored text by `checkFeeAgainstSource`, so the switch
   stays on.
+- Fees whose own line Knox's re-read files under another category (`reread-category-check.ts`, v1,
+  #1513). Knox's re-read pass settles such a request `other_category`, "left for Darwin", and until
+  this check nothing read those rows; a new read under a new category supersedes no live fee, so
+  the misfiled row stayed live (128668, 85754, 35970). Each verify step reads the live fees whose
+  re-read settled `other_category` and still carry that request's fragment name
+  (`REREAD_CATEGORY_ROWS_SQL`), reads the document's newest text with today's free team, and
+  re-files a fee in place (`refile`) when exactly one proper read is on its line at its price in
+  another category, no read keeps the live category, the guard and amount checks accept the name
+  and `checkFeeAgainstSource` traces it; takes it down (`twin`) when another live fee of the bank
+  already shows that line in the new category; and leaves an overdraft/NSF move
+  (`convention_pending`, the paid-NSF convention on #1513), a split, ambiguous or refused read alone.
+  `REREAD_CATEGORY_RECHECK_LIVE` is **off**; on, each move waits for the 12-hour second look (check
+  `darwin.reread_category`), a re-file is guarded on the old category and name and logged as
+  `reread_category_refiled`, and a takedown rolls back as `reread_category_twin: live fee #<twin>`
+  while the twin is live (verified row rejected with `darwin_reread_category`). Step detail
+  `reread_category_check`. Dry run 2026-10-26 (prod, read-only): 9 candidates; 2 re-file (128668,
+  85754), 1 comes down (35970, twin 158740), 1 convention_pending (60485), 5 split_read; see
+  docs/project/findings/2026-10-26-reread-other-category-unread.md.
 - Same-line copies beside their older line's replacement (`same-line-replacement-check.ts`, v1,
   #1673). Hamilton's same-line restore v1 brought a copy back once its older line was down, though
   that line had often come down for a newer line of the same fee (`refreshed by #`, `duplicate of
@@ -1626,7 +1715,8 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   (the other is the release review, below), both billed to `ANTHROPIC_API_KEY_DARWIN`. The model also trains on the hand-checked
   answer-key fees in the shared learning store (`pipeline_feedback`, kind `answer_key`).
 - Layer 3, Claude adjudicator (`adjudicate.ts`, step `verify-paid`, a provider step after
-  `classify`, shadow mode): `verify.adjudicate` v1 sends Claude only the fees the free
+  `classify`, shadow mode; it makes no call while `DARWIN_ADJUDICATE_SHADOW` is off, as now, see
+  "Paid calls only when they can act" below): `verify.adjudicate` v1 sends Claude only the fees the free
   layers disagree on: approved fees the category model disputes, and category-guard
   rejects where the model is at least 0.9 sure of another category the guard accepts.
   25 fees per call, at most 10 calls per run, `PIPELINE_PAID_VERIFY_MODEL` (default
@@ -1647,6 +1737,25 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   pass it skipped; the free verdict score still runs. In October the two passes had spent
   $9.02 (812 calls) and $3.98 (778 calls) on verdicts that changed nothing. A capped
   measurement run passes `measure: true` to make the calls anyway.
+  The plan is `verifyPaidPlan` (`adjudicate.ts`). Each pass it skips leaves one
+  `darwin.release_review.skipped` or `darwin.adjudicate.skipped` event (status `skipped`, detail
+  `reason: "verdict cannot act"`, the switch that keeps it off, 0 calls, $0), and the step detail
+  lists them as `skipped_passes`; a dry run writes none. While neither pass can pay
+  (`verifyPaidMayCallProvider`), the tick treats `verify-paid` as a free step
+  (`payingProviderStepKeys` in `types.ts`, #1111 follow-up, 2026-10-26): it asks for no provider
+  budget, is not deferred when the paid-run slots are used up and does not wait on the provider
+  stop, so the verdict score runs and the lane behind it never waits for a slot it would not use.
+  This is the tick only: an admin launch made only of provider steps, and the dispatch-readiness
+  check, still treat it as paid and refuse it while the provider stop is on. It stays in
+  `PROVIDER_STEP_KEYS` (and the pipeline control still pauses it), and it counts as a provider step
+  again as soon as either switch is on. No switch, default, strategy or prompt version changed.
+  Still open on #1111: the release path does not run the post-source checks (retired category,
+  conditional $0, name rules) before a release; it only matters once releases are back on, which
+  waits on the answer-key measurement (item 3) and James's yes. Live released fees are re-checked:
+  with `DARWIN_RECHECK_OLDER_LIVE` on (since 2026-10-25) the recheck reads every live verified row,
+  those with a current `verify.rules` verified attempt and those without, so `darwin_released_hold`
+  rows are no longer skipped (`verified-recheck.ts`), and `release-repair.ts` re-runs the release
+  check on them.
 - Verdict score (`verdict-score.ts`, runs at the end of `verify-paid`, no model call): the
   category review's and the release review's verdicts at answer-key institutions are scored
   against the hand-keyed schedules (`answer-key-fees.json`, compacted from the Knox
@@ -1667,7 +1776,9 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   with `checkFeeAgainstSource`. Not stated: `reject`. Stated but outside the hand-set range:
   `keep` for a person (Hamilton's publish gate uses that range). Stated only as a tier, or
   filed under a category the category model disputes: `keep`. Same fee already verified:
-  `duplicate`. Otherwise `review`: in the next `verify-paid` step, before the adjudicator and
+  `duplicate`. Otherwise `review`: while releases are on (`DARWIN_RELEASE_ACTS`; off since
+  2026-10-08, so today no `review` fee is sent to Claude or released and it stays held), in the
+  next `verify-paid` step, before the adjudicator and
   from the same call budget, `release-review.ts` (`verify.release_review`) has Claude read the
   fee beside its schedule line and release it only if it is a price the bank charges, fits
   the category it was filed under (the prompt lists the names the taxonomy files there), and
@@ -1834,7 +1945,44 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v92 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v91 (Oct 25, #1905):
+- The guard is at v100 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v100 (Oct 26,
+  #1912): a commercial lockbox (a remittance-processing service for businesses) fails the safe deposit
+  box type: a lock box name that names the service (service, processing, items, remittances, wholesale or
+  retail) and nothing of a box (`commercialLockboxName`), or a lock box name with no box words whose
+  stored line or business, treasury or cash management heading says so (`commercial_lockbox`, read by
+  `withCollectionSection` with `commercialLockboxOnLine`; Darwin's verify now passes that context to its
+  category check). Forte Bank's "Lock Box Service, per month" $225 (135270) is the case. No type holds a
+  lockbox service, so the fee comes down. A lock box with a size, key, drilling, rent, lease, year, or
+  late or past-due charge stays ("Lock box past due date late fee", 144459). One live fee fails it, taken
+  down; none re-files (prod, read-only, Oct 26).
+- v99 (Oct 26,
+  #1912): a bill pay return charge the payee sent back fails NSF and re-files to bill_pay: when its
+  name says so, or when its stored text says so on its line or in the note wrapped onto the next line
+  (`payee_returned`, read by `withCollectionSection` with `payeeReturnedBillPayOnLine`; Bellco FCU's
+  "Bill Pay Return Item Fee" $10, 85460, over "(per item returned by payee)"). A name with no payee
+  words stays NSF, as the Texas key files tid 2419's "Bill Payment Return Item Fee (per presentment)".
+  One live fee fails it, re-filed in place (prod, read-only, Oct 26).
+- v98 (Oct 26,
+  #1912): a rejected wire fails the four wire types, as a returned, recalled or traced wire does
+  (`WIRE_CORRECTIONS` gains "reject"): Apl FCU's "Foreign Wire Reject" $25 (67971) was live as an
+  international outgoing wire beside the bank's $40 price. One live fee fails it (prod, read-only, Oct 26).
+- v97 (Oct 26,
+  #1905): an NSF or overdraft fee whose name names a home equity loan or line, an equity loan or line,
+  a HELOC or a line of credit (`LOAN_LINE_NAME`: "Home Equity Line Check returned (due to non-sufficient
+  funds)", Navy Federal 154634) fails that type and re-files to other_lending_fee (`LOAN_LINE_TARGET`),
+  in place on Hamilton's live guard unless a live other lending fee at that bank and price is its twin
+  (154634 beside 122342 comes down). A name that also names a checking, savings, share or deposit
+  account stays, as v80 reads a home equity line's stop payment; an overdraft (protection) line of
+  credit is the account's overdraft protection, never a loan. Dry-run counts in the PR.
+- v96 (Oct 26,
+  #1912, review of #2639): a night depository's name ("Night Drop Deposit Box Late Fee", the
+  double-spaced "Night  Deposit Box") is never a safe deposit box name (`NIGHT_DEPOSIT_NAME`), so a
+  night drop's late fee stays a late payment and a box fee so named re-files to night_deposit. A box
+  late fee has its own range (`BOX_LATE_FEE_ENVELOPE` in `envelopes.ts`: $1 floor, the box's ceiling):
+  the box's $5 floor is a rent floor, and it made the guard's re-file of "Safety Deposit Box-Late Fee"
+  $1.00 (36020) fail Darwin's range, so the fee came down instead of moving. Verify re-reads box late
+  holds the new floor takes; Hamilton's outlier sweep leaves them live. Dry-run counts in the PR.
+- v91 (Oct 25, #1905):
   the network ATM rule's savings/share-withdrawal exclusion no longer refuses a share withdrawal
   priced at another network's ATM ("Share withdrawal at Non-Navy Federal/Non-CO-OP Network ATM",
   Knox v115's network table read); the savings withdrawal limit stays out. Dry run: 0 live and 0
@@ -2175,12 +2323,14 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DARWIN_SCHEDULE_REFILE_STRATEGY` | `verify.schedule_refile` | v1 | `darwin/schedule-refile.ts` |
 | `DARWIN_VERDICT_SCORE_STRATEGY` | `verify.verdict_score` | v2 | `darwin/verdict-score.ts` |
 | `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v5 | `darwin/verified-recheck.ts` |
-| `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v7 | `darwin/live-fragment-check.ts` |
+| `TIER_PERK_RULE_VERSION` | `tier_perk_zero` | v2 | `darwin/tier-perk.ts` |
+| `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v8 | `darwin/live-fragment-check.ts` |
 | `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v3 | `darwin/hourly-frequency-check.ts` |
-| `NON_DEPOSIT_CHECK_VERSION` | `darwin.non_deposit_document` | v4 | `darwin/non-deposit-document-check.ts` |
+| `NON_DEPOSIT_CHECK_VERSION` | `darwin.non_deposit_document` | v5 | `darwin/non-deposit-document-check.ts` |
 | `LINE_CONFLICT_CHECK_VERSION` | `darwin.line_conflict` | v1 | `darwin/line-conflict-check.ts` |
 | `TRANSLATED_COPY_CHECK_VERSION` | `darwin.translated_copy` | v3 | `darwin/translated-copy-check.ts` |
 | `PRODUCT_PAGE_REPEAT_CHECK_VERSION` | `darwin.product_page_repeat` | v2 | `darwin/product-page-repeat-check.ts` |
+| `REREAD_CATEGORY_CHECK_VERSION` | `darwin.reread_category` | v1 | `darwin/reread-category-check.ts` |
 | `SAME_LINE_REPLACEMENT_CHECK_VERSION` | `darwin.same_line_replacement` | v1 | `darwin/same-line-replacement-check.ts` |
 | `SAME_LINE_READ_CHECK_VERSION` | `darwin.same_line_read` | v1 | `darwin/same-line-read-check.ts` |
 | `CANADIAN_DOCUMENT_CHECK_VERSION` | `darwin.canadian_document` | v1 | `darwin/canadian-document-check.ts` |

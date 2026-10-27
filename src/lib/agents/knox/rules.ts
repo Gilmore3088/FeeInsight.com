@@ -1,6 +1,6 @@
 import { scopedFeeStatements, type FeeApplicability } from "@/lib/fee-audience";
 import { CELL_SEPARATOR } from "@/lib/agents/rosetta/html-dom";
-import { composableTail, LEADER_PRICE_WORDS, nameAfterPrice, passesDarwinChecks, QUALIFIER, titleTail } from "@/lib/agents/knox/layout";
+import { composableTail, LEADER_PRICE_WORDS, nameAfterPrice, passesDarwinChecks, QUALIFIER, splitCapsHeading, titleTail } from "@/lib/agents/knox/layout";
 import type { AccountLineup } from "@/lib/agents/knox/lineup";
 import type { AncillaryProduct } from "@/lib/agents/knox/ancillary-product";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
@@ -20,6 +20,9 @@ import { boxSectionLateFee } from "@/lib/custom-report/box-section-late-fee";
 import { LOAN_SECTION_TARGET, loanSectionFee } from "@/lib/custom-report/loan-section-fee";
 import { domesticStackedStem, stackedCellVariants } from "@/lib/custom-report/stacked-cell-variants";
 import { domesticWireClausePrices } from "@/lib/custom-report/wire-clause-prices";
+import { withCenteredHeadingCells } from "@/lib/custom-report/centered-heading-cell";
+import { BILL_PAY_RETURNED_BY_PAYEE, payeeReturnedBillPayOnLine } from "@/lib/custom-report/payee-returned-bill-pay";
+import { COMMERCIAL_LOCKBOX_NAME } from "@/lib/custom-report/commercial-lockbox";
 import type { OwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
 
 /**
@@ -96,6 +99,8 @@ export interface HeldFeeCandidate extends Partial<FeeApplicability> {
   ownCondition?: string;
   linkedConditions?: string;
   lineShare?: string;
+  /** v133 (#2040): a $0 read from a sentence saying the bank charges no such fee (`readNoChargeNsf`). */
+  statedNoCharge?: true;
   shape: HeldShape;
   feeName: string;
   /** 0 for a free fee, the low end of a range, null for a percentage. */
@@ -464,6 +469,11 @@ export const FEE_PATTERNS: FeePattern[] = [
   // "Overdraft at teller window") stood in for the institution's overdraft fee. "Over Draft
   // Protection" and a draft protection transfer, sweep, line or plan are not it.
   { key: "overdraft", pattern: DRAFT_PROTECTION_FEE },
+  // v131 (#1912): a bill payment the payee sent back is the bill pay service's charge, not NSF:
+  // Bellco's "Bill Pay Return Item Fee (per item returned by payee) | $10.00" (85460), its note read
+  // from the next line by v127. A bill pay return with no such words stays NSF, as the Texas key files
+  // "Bill Payment Return Item Fee (per presentment)" (tid 2419).
+  { key: "bill_pay", pattern: BILL_PAY_RETURNED_BY_PAYEE },
   {
     key: "nsf",
     pattern: /\b(NSF|non[-\s]?sufficient|insufficient funds|return(ed)? (checks?|items?|ach|drafts?))\b/i,
@@ -833,6 +843,17 @@ const PERCENT_PATTERN = /(\d{1,2}(?:\.\d{1,3})?)\s*%/;
 export const RANGE_JOINER = /^\s*(?:-|–|—|to)\s*$/i;
 export const ZERO_CELL = /^(?:free|no charge|no fee|none|waived|n\/c|\$\s*0(?:\.00)?)$/i;
 const NEGATIVE_FEE_LANGUAGE = /\b(no (?:[a-z]+ ){0,2}(?:fee|charge)s?|free|not charged|without charge)\b/i;
+/**
+ * v127 (#1918): a note that the fee is free with an account or condition ("Money Orders (Free with
+ * Platinum Checking) | $5.00", "Notary Fee (FREE for Members) | $10.00", "Bill Pay (Free with
+ * E-Statements) | $6.00"), or that a few are free ("Non-AgFed ATM Withdrawals (3 FREE each month) |
+ * $3.50"), waives the price for some; everyone else pays it. It is not "no fee", so the free word in
+ * it never drops the row, and the fee is read as waivable.
+ */
+const FREE_FOR_NOTE = /\((?=[^()$]*\b(?:free\s+(?:with|for|to)|(?:\d+|one|two|three|four|five|six)\s+free)\b)[^()$]*\)/gi;
+const withoutFreeForNotes = (text: string): string => text.replace(FREE_FOR_NOTE, " ");
+const hasFreeForNote = (text: string): boolean => new RegExp(FREE_FOR_NOTE.source, "i").test(text);
+const FREE_NOTE_ACCOUNT_KEYS = new Set(["monthly_maintenance", "minimum_balance"]);
 export const WAIVER_LANGUAGE = /\bwaiv(?:e|ed|er|able)\b/i;
 export const GENERIC_SCHEDULE_LANGUAGE = /\b(schedule of fees|fee schedule|truth in savings|effective date|member fdic)\b/i;
 /**
@@ -1313,6 +1334,18 @@ export function loanSectionFeeRead(candidate: ExtractedFeeCandidate, text: strin
   return passesDarwinChecks(LOAN_SECTION_TARGET, candidate.feeName, candidate.amount) ? { ...candidate, canonicalHint: LOAN_SECTION_TARGET } : candidate;
 }
 
+/**
+ * v131 (#1912): an NSF read of a bill pay return charge whose own line, or the note wrapped onto the
+ * next line, says the payee returned it is the bill pay service's charge: filed as `bill_pay`,
+ * whichever specialist read it, when that type passes the name. Bellco's table pass read "Bill Pay
+ * Return Item Fee | $10.00" without the "(per item returned by payee)" note printed under it (85460).
+ * Read with `payeeReturnedBillPayOnLine`, the check guard v99 makes on the fee's stored text. Pure.
+ */
+export function payeeReturnedBillPayRead(candidate: ExtractedFeeCandidate, text: string): ExtractedFeeCandidate {
+  if (candidate.canonicalHint !== "nsf" || !payeeReturnedBillPayOnLine(text, candidate.feeName, candidate.amount)) return candidate;
+  return passesDarwinChecks("bill_pay", candidate.feeName, candidate.amount) ? { ...candidate, canonicalHint: "bill_pay" } : candidate;
+}
+
 /** The FEE_PATTERNS key a fee name matches, before mapping to its canonical key. */
 export function classifyPatternKey(value: string): string | null {
   // PDFs usually render the apostrophe in "Cashier's check" as a curly quote. A waiver
@@ -1357,6 +1390,10 @@ export function classifyPatternKey(value: string): string | null {
   if (key === "atm_non_network" && /\binterim statements?\b/i.test(text)) key = "document_reproduction";
   // A book transfer inside the bank is not a wire.
   if (key?.startsWith("wire_") && /\bbook transfer\b/i.test(text)) return null;
+  // v132 (#1912): a commercial lockbox service ("Lock Box Service, per month", Forte Bank 135270) is
+  // remittance processing for businesses, not a safe deposit box; no type of the 50 holds it. A lock
+  // box with a size, key, drilling, rent, lease, year or late charge stays a safe deposit box.
+  if (key === "safe_deposit_box" && COMMERCIAL_LOCKBOX_NAME.test(text)) return null;
   // Reopening a closed account is not an early-closure fee.
   if (key === "early_closure" && /\bre-?open/i.test(text)) return null;
   // "Overdrafts initiated by debit card will be declined at no cost" describes a decline,
@@ -2196,14 +2233,82 @@ export function paperStatementRead(candidate: ExtractedFeeCandidate, segment: st
 const PAPER_STATEMENT_NAME = /\b(?:paper|printed|mailed)\b[^|]{0,12}\bstatements?\b/i;
 
 export function extractFromSegment(segment: string): ExtractionRulesResult {
-  const result = readSegment(segment);
+  const read = readSegment(segment);
+  // v127 (#1918): a row a free note no longer drops is read only under a name that starts as a name
+  // and holds no price ("in ATM fee refunds each month ..." and "(Monthly Fee. Over 55 Free)" are not).
+  // An account's monthly fee "free with" a condition stays the account expert's read, as before.
+  const result = hasFreeForNote(segment)
+    ? { ...read, candidates: read.candidates.filter((candidate) =>
+        /^[A-Z0-9]/.test(candidate.feeName) && amountsIn(candidate.feeName).length === 0 &&
+        (!FREE_NOTE_ACCOUNT_KEYS.has(candidate.canonicalHint) || !hasFreeForNote(candidate.feeName))) }
+    : read;
   if (!result.candidates.some((candidate) => candidate.canonicalHint === "monthly_maintenance")) return result;
   return { ...result, candidates: result.candidates.map((candidate) => paperStatementRead(candidate, segment)) };
 }
 
+/**
+ * v125 (#1094 item 3): the schedule's own heading phrase or boilerplate (`GENERIC_SCHEDULE_LANGUAGE`,
+ * "effective date" aside) with the words that belong to it: "and Charges" or "Disclosure" after,
+ * "Equal Housing Lender" after "Member FDIC". A phrase named for an audience never gets here
+ * (`AUDIENCE_HEADING_PHRASE`).
+ */
+const SCHEDULE_HEADING_PHRASE =
+  /\b(?:schedule of fees(?:\s+(?:and|&)\s+(?:service\s+)?charges)?|fee schedule|truth in savings(?:\s+disclosures?)?|member fdic(?:\.?\s+equal housing (?:lender|opportunity))?)\b\.?/gi;
+/**
+ * v125: a segment with the phrase that also says "effective" ("Effective Date", "Schedule of fees effective
+ * January 1") is still skipped whole: it can announce a price not yet charged (R11 on #1094).
+ */
+const EFFECTIVE_WORD = /\beffective\b/i;
+/**
+ * v125: a title naming an audience ("Business Schedule of Fees", "Business Banking Fee Schedule",
+ * "Treasury Management Fee Schedule", "Personal Fee Schedule") keeps the segment skipped whole: cutting
+ * the phrase would cut the only words saying whose prices follow, and a business price read without
+ * them publishes for everyone (review of #2725). The audience word may sit up to 60 characters before
+ * the phrase, with no price between.
+ */
+const AUDIENCE_HEADING_PHRASE =
+  /\b(?:consumer|personal|business|commercial|corporate|treasury|merchant|non-?profit|retail|individual)\b[^$\n]{0,60}?\b(?:schedule of fees|fee schedule|truth in savings)\b/i;
+/** v125: a page footer's leftovers at the start of the next piece: "Page 2 of 4", a bare page number, a web address. */
+const FOOTER_LEFTOVER = /^(?:page\s+\d+(?:\s+of\s+\d+)?|\d{1,3}|(?:https?:\/\/)?(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|org|net|bank|coop|us)\S*)\s+/i;
+
+/**
+ * v125 (#1094 item 3): a segment holding the schedule's heading phrase or boilerplate ("Fee Schedule",
+ * "Schedule of Fees", "Truth in Savings", "Member FDIC") is read without the phrase, not skipped whole:
+ * a PDF flattened to one line, or a line like "Fee Schedule Overdraft Fee $35 Stop Payment $30", lost
+ * every fee it held. The segment is cut at each phrase and each piece with a dollar price is read on
+ * its own, so the phrase, and the words on its other side, never join a fee's name. A piece with no
+ * price is heading or boilerplate and yields nothing, as the whole segment did before. Section headings
+ * in capitals between the phrase and the first name ("SCHEDULE OF FEES AND CHARGES DEPOSIT SERVICES
+ * MISCELLANEOUS SERVICES Cashier’s Checks…… $4.00") are cut too (`splitCapsHeading`). A segment that
+ * says "effective" is skipped whole, as before: it can announce a price the bank does not charge yet
+ * ("will be $35 effective date January 1"), a separate open item (R11 on #1094).
+ */
 function readSegment(segment: string): ExtractionRulesResult {
+  if (!GENERIC_SCHEDULE_LANGUAGE.test(segment)) return readPlainSegment(segment);
   const result: ExtractionRulesResult = { candidates: [], held: [] };
-  if (GENERIC_SCHEDULE_LANGUAGE.test(segment)) return result;
+  if (EFFECTIVE_WORD.test(segment) || AUDIENCE_HEADING_PHRASE.test(segment)) return result;
+  segment.split(SCHEDULE_HEADING_PHRASE).forEach((rawPiece, index) => {
+    let trimmed = rawPiece.replace(/^[\s|:;,.\-–—]+/, "").replace(/[\s|:;,\-–—]+$/, "");
+    // A piece after a phrase can open with the footer's page number or web address.
+    if (index > 0) for (let left = trimmed.match(FOOTER_LEFTOVER); left; left = trimmed.match(FOOTER_LEFTOVER)) trimmed = trimmed.slice(left[0].length);
+    const price = trimmed.search(/\$\s*\.?\d/);
+    if (price < 0) return;
+    const lead = splitCapsHeading(trimmed.slice(0, price));
+    // The capitals cut stands only when it reads at least as many fees as the whole piece: a name in
+    // capitals ("OVERDRAFT ITEM Fee", "DOMESTIC WIRE Outgoing") is not a section heading.
+    const whole = readPlainSegment(trimmed);
+    const cut = lead.heading ? readPlainSegment(`${lead.name} ${trimmed.slice(price)}`.trim()) : null;
+    const read = cut && cut.candidates.length >= whole.candidates.length ? cut : whole;
+    result.candidates.push(...read.candidates);
+    result.held.push(...read.held);
+    if (read.tableHeld?.length) (result.tableHeld ??= []).push(...read.tableHeld);
+    for (const [reason, count] of Object.entries(read.dropped ?? {})) countDrop(result, reason as DroppedLineReason, count);
+  });
+  return result;
+}
+
+function readPlainSegment(segment: string): ExtractionRulesResult {
+  const result: ExtractionRulesResult = { candidates: [], held: [] };
 
   const cells = segment.includes(CELL_SEPARATOR) ? segment.split(CELL_SEPARATOR).map((cell) => cell.trim()) : null;
   const amounts = amountsIn(segment);
@@ -2398,7 +2503,8 @@ function readSegment(segment: string): ExtractionRulesResult {
     : trailingFree || freeCells.some(Boolean)
       ? cells!.filter((cell, index) => !freeCells[index] && !(trailingFree && index >= cells!.length - 2)).join(CELL_SEPARATOR)
       : segment;
-  if (NEGATIVE_FEE_LANGUAGE.test(freeColumns ? cells![0] : prefix) || (NEGATIVE_FEE_LANGUAGE.test(conditionText) && !WAIVER_LANGUAGE.test(conditionText))) {
+  if (NEGATIVE_FEE_LANGUAGE.test(withoutFreeForNotes(freeColumns ? cells![0] : prefix)) ||
+      (NEGATIVE_FEE_LANGUAGE.test(withoutFreeForNotes(conditionText)) && !WAIVER_LANGUAGE.test(conditionText))) {
     return result;
   }
   if (freeColumns && hint && !notAZeroPrice(hint, cells![0]) && usableName(nameFrom(cells![0]))) {
@@ -2434,7 +2540,7 @@ function readSegment(segment: string): ExtractionRulesResult {
   const beforeOrPastWaiver = (amount: AmountMatch) => amount.start < waiverAt || amount.start >= waiverEnd;
   const feeAmounts = amounts.filter((amount) => beforeOrPastWaiver(amount) && !inLabel(amount) && !isConditionAmount(segment, amount));
   if (feeAmounts.length === 0) return result;
-  const waivable = Number.isFinite(waiverAt);
+  const waivable = Number.isFinite(waiverAt) || hasFreeForNote(segment);
   // v110 (#1918): a price past a bracketed waiver is named without that waiver.
   const ownWords = (from: number, amount: AmountMatch) =>
     amount.start >= waiverEnd ? withoutBracketedWaiver(segment.slice(from, amount.start)) : segment.slice(from, amount.start);
@@ -2780,6 +2886,76 @@ export function columnContinuations(text: string): string[] {
 }
 
 /**
+ * v127 (#1918): a two-column PDF row whose left price cell was empty on the name's line. The reader
+ * keeps only the cells it sees, so the columns shift: "Wire Transfers – Domestic | Bill Pay Return
+ * Item Fee | $10.00" over "(Free with Platinum Checking) | $20.00 | (per item returned by payee)"
+ * (Bellco). Read as printed, the two names glue into one fee at the right column's price and the
+ * left fee's price is lost. The left name's price is the one after its note on the next line, and
+ * the right name keeps the price on its own line. A left name alone on its line ("Wire Transfers –
+ * International" over "(Free with Platinum Checking) | $40.00") takes the price under its note the
+ * same way. Only on a page laid out as "name | price | name | price"; of two glued names one must
+ * name a fee, a lone name must name one, and the note must open with "(". The two lines are replaced by one row per fee, so the line rules
+ * read each fee at its own price; a fee the next line starts after the note keeps its own row.
+ */
+export function withShiftedColumnsRebuilt(text: string): string {
+  const lines = text.split("\n");
+  const cellsOf = (line: string) => line.replace(/\s+/g, " ").trim().split(CELL_SEPARATOR).map((cell) => cell.trim());
+  const priceOnly = (cell: string | undefined) => cell != null && PRICE_ONLY_CELL.test(cell);
+  const nameCell = (cell: string | undefined) =>
+    cell != null && /[a-z]{3,}/i.test(cell) && amountsIn(cell).length === 0 && cell.split(" ").length <= 10;
+  const feeName = (cell: string | undefined) => nameCell(cell) && classifyPatternKey(cell!) !== null;
+  const noteCell = (cell: string | undefined) => cell != null && /^\(/.test(cell) && amountsIn(cell).length === 0;
+  const fourColumn = lines.filter((line) => {
+    const cells = cellsOf(line);
+    return cells.length === 4 && priceOnly(cells[1]) && priceOnly(cells[3]);
+  }).length;
+  if (fourColumn < 3) return text;
+  const closed = (note: string) => (/\)\s*$/.test(note) ? note : `${note})`);
+  const out: string[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const cells = cellsOf(lines[index]);
+    const next = index + 1 < lines.length ? cellsOf(lines[index + 1]) : [];
+    const shifted = noteCell(next[0]) && priceOnly(next[1]);
+    if (shifted && cells.length === 3 && nameCell(cells[0]) && nameCell(cells[1]) && (feeName(cells[0]) || feeName(cells[1])) && priceOnly(cells[2])) {
+      out.push(`${cells[0]} ${closed(next[0])}${CELL_SEPARATOR}${next[1]}`);
+      const rightNote = next.length === 3 && noteCell(next[2]) ? ` ${closed(next[2])}` : "";
+      out.push(`${cells[1]}${rightNote}${CELL_SEPARATOR}${cells[2]}`);
+      if (next.length === 4) out.push(next.slice(2).join(CELL_SEPARATOR));
+      index += 1;
+    } else if (shifted && cells.length === 1 && /^[A-Z]/.test(cells[0]) && feeName(cells[0]) && next.length === 2) {
+      out.push(`${cells[0]} ${closed(next[0])}${CELL_SEPARATOR}${next[1]}`);
+      index += 1;
+    } else {
+      out.push(lines[index]);
+    }
+  }
+  return out.join("\n");
+}
+
+/**
+ * v130 (#1912): a heading in a vertically centred merged cell names every row of its block, not
+ * only the middle row the PDF reader printed it on ("Outgoing Domestic: $30.00" over "Wire Transfers |
+ * Outgoing Domestic - Not in Person: $60.00", Sound Community Bank). The block is found by layout
+ * (`withCenteredHeadingCells`, which the shared source check also applies); Knox lends the heading
+ * only when the heading names a fee family (a wire heading, or one that classifies), the middle row's
+ * name alone classifies nothing and reads with the heading, and each borrowed row's name alone
+ * classifies nothing, is made only of words a heading may qualify (`composableTail`: directions,
+ * regions, channels) and reads with the heading as the same family.
+ */
+export function withCenteredBlockHeadings(text: string): string {
+  const family = (key: string | null) => key?.split("_")[0] ?? null;
+  return withCenteredHeadingCells(text, {
+    accepts: (heading, middleName, rowName) => {
+      if (classifyFeeText(heading) === null && !FEE_FAMILY_HEADING.test(heading)) return false;
+      const kind = family(classifyFeeText(`${heading} ${middleName}`));
+      if (kind === null || classifyPatternKey(middleName) !== null) return false;
+      if (rowName === null) return true;
+      return classifyPatternKey(rowName) === null && composableTail(normalizeSegment(rowName)) && family(classifyFeeText(`${heading} ${rowName}`)) === kind;
+    },
+  });
+}
+
+/**
  * v35: a fee name that wraps onto a second or third line, with its price alone on the line
  * after ("Overdraft Fee (per item, both returned or paid created by check, in person
  * withdrawal," / "ATM withdrawal, or other electronic means. Maximum of 6 fees per day.)" /
@@ -2962,7 +3138,9 @@ export function extractCandidatesFromText(input: string): ExtractionRulesResult 
       excerpt: row.ownText, ownedPolicy: true, frequency: detectFrequency(row.ownText), confidence: .94, waivable: false });
   }
   const owned = recognizedFeeBullets(otherPrices);
-  const legacyText = withoutFeeBullets(otherPrices, owned);
+  // v127 (#1918): shifted two-column PDF rows are rebuilt before any line is read.
+  // v130 (#1912): a vertically centred heading cell names every row of its block.
+  const legacyText = withCenteredBlockHeadings(withShiftedColumnsRebuilt(withoutFeeBullets(otherPrices, owned)));
   for (const row of owned) {
     if (row.problem || row.price == null || row.priceText == null) {
       countDrop(result, "wrapped_bullet_unresolved");

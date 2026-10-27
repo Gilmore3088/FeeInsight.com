@@ -3,6 +3,8 @@ import { feedbackSchemaReady } from "@/lib/agents/learning/feedback";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import type { ExtractedFeeCandidate } from "@/lib/agents/knox/rules";
 import { eligibleReferenceFeedbackSql, readReferenceEligibility } from "@/lib/data-store/answer-key-reference-store";
+import { FEE_CORRECTION_CHECK } from "@/lib/fee-correction-rules";
+import { FEE_HOLD_CHECK } from "@/lib/fee-hold-rules";
 
 type SqlTag = typeof sql;
 
@@ -47,9 +49,35 @@ type SqlTag = typeof sql;
  * "balance inquiry". Families of two words or more learn globally under the same rule as
  * names (two banks each way, nothing on the other side), and apply only when the exact name
  * has no lesson. A one-word family ("annual", "additional") is too broad to learn from.
+ *
+ * v5, findings filed against extract (#2057, #2055, #2062): a person's hold or correction whose
+ * cause is Knox's step, and Deming's audit misses at extract, are read here as category verdicts,
+ * one bank each like every other verdict, never as a re-read (a re-read takes any other name on
+ * the line at the same price as the better one, so it could rename a correct fee sideways; Deming's
+ * lesson `issue-2055-route-to-owner-queue`). Only what a row says about the category counts
+ * (`knoxFindingsSql`):
+ * - an audit miss from the category guard is wrong under the fee's category;
+ * - a hold whose cause is the wrong category is wrong under it, until the hold is released;
+ * - a correction that moved the fee to another category is wrong under the old one and right under
+ *   the new one, for the name Knox read; one that kept the category is right under it (the person
+ *   cited the source line and the shared category guard passed it); a reversed one counts nothing.
+ * An amount, perk or name miss and an amount hold say nothing about the category and teach no
+ * lesson here: Knox has no amount lesson yet (#2067), and a bad name goes to the re-read queue. The
+ * takedown sync's copies of a correction (check `hamilton.admin_correction`) are skipped, since the
+ * person's own row is the finding.
+ *
+ * Every finding is about a live fee, so Darwin already recorded that fee as `darwin_verified` under
+ * the category the finding rejects. Left in, that approval would put the finding's bank on both
+ * sides and no lesson would ever form; so a finding that calls a fee's category wrong supersedes
+ * Darwin's approval of that one fee (matched by its verified row, `published_fee_records.lineage_ref`),
+ * as a restore supersedes a takedown. Darwin's approvals of the bank's other fees still count.
+ *
+ * The lessons query also tallies every finding it read, all time, by kind and verdict, so the extract
+ * step shows what it read without a second scan (`loadKnoxLessonsAndFindings`,
+ * `hand_findings_read_all_time` on the step).
  */
 
-export const KNOX_LESSONS_VERSION = 4;
+export const KNOX_LESSONS_VERSION = 5;
 /** Words a name family leaves out: they say a price is charged, not what for. */
 export const FAMILY_FILLER_WORDS = ["fee", "charge", "cost", "per", "item", "each", "the", "a", "an", "of", "for", "to", "on", "and", "or", "service", "by", "with"] as const;
 const FAMILY_PREFIX = "family:";
@@ -97,6 +125,84 @@ function familySql(column: string): string {
             FROM unnest(string_to_array(${column}, ' ')) AS w) q WHERE s <> '' AND s NOT IN (${fillers}) ORDER BY s), ' ')`;
 }
 
+/** The finding kinds Knox reads at extract (v5), and the audit check whose misses are category verdicts. */
+export const KNOX_FINDING_KINDS = ["admin_correction", "admin_hold", "audit_miss"] as const;
+export const AUDIT_CATEGORY_CHECK = "hamilton.category_guard";
+export type KnoxFindingKind = (typeof KNOX_FINDING_KINDS)[number];
+export type KnoxFindingVerdict = "category" | "category_confirmed" | "no_category_verdict" | "withdrawn";
+
+/** The store's name key in SQL, as `lessonName`. */
+function nameKeySql(column: string): string {
+  return `regexp_replace(btrim(lower(regexp_replace(${column}, '[^A-Za-z ]+', ' ', 'g'))), '\\s+', ' ', 'g')`;
+}
+
+/**
+ * Extract-stage holds, corrections and audit misses as category verdicts (v5): one row per side, with
+ * `signal` null when the finding says nothing about the category. Columns: id, kind, verdict,
+ * institution_id, fee_verified_id (the verified row of the fee it is about), name (the store's name
+ * key), raw_name, fee_key, signal. Static SQL, no parameters; used as the `findings` CTE.
+ */
+export function knoxFindingsSql(): string {
+  return `SELECT h.id, h.kind, h.verdict, h.institution_id, h.fee_verified_id, ${nameKeySql("h.raw_name")} AS name, h.raw_name, side.fee_key, side.signal
+    FROM (
+      SELECT f.id, f.kind, f.institution_id, pr.lineage_ref AS fee_verified_id,
+             COALESCE(f.evidence->>'fee_name', f.evidence#>>'{before,feeName}') AS raw_name,
+             f.canonical_fee_key AS before_key,
+             f.evidence#>>'{after,canonicalFeeKey}' AS after_key,
+             CASE
+               WHEN f.kind = 'audit_miss' THEN
+                 CASE WHEN split_part(COALESCE(f.check_name, ''), ':', 1) = '${AUDIT_CATEGORY_CHECK}' THEN 'category' ELSE 'no_category_verdict' END
+               WHEN f.kind = 'admin_hold' THEN
+                 CASE WHEN EXISTS (SELECT 1 FROM pipeline_feedback r
+                                    WHERE r.kind = 'admin_release' AND r.fee_published_id = f.fee_published_id AND r.created_at >= f.created_at) THEN 'withdrawn'
+                      WHEN f.evidence->>'cause' = 'wrong_category' THEN 'category' ELSE 'no_category_verdict' END
+               ELSE
+                 CASE WHEN EXISTS (SELECT 1 FROM pipeline_feedback r
+                                    WHERE r.kind = 'admin_correction_reversed'
+                                      AND r.fee_published_id = CASE WHEN f.evidence->>'new_fee_published_id' ~ '^[1-9][0-9]{0,17}$'
+                                                                    THEN (f.evidence->>'new_fee_published_id')::bigint END) THEN 'withdrawn'
+                      WHEN f.evidence#>>'{after,canonicalFeeKey}' IS NULL OR f.canonical_fee_key IS NULL THEN 'no_category_verdict'
+                      WHEN f.evidence#>>'{after,canonicalFeeKey}' <> f.canonical_fee_key THEN 'category'
+                      ELSE 'category_confirmed' END
+             END AS verdict
+        FROM pipeline_feedback f
+        LEFT JOIN published_fee_records pr ON pr.fee_published_id = f.fee_published_id
+       WHERE f.about_stage = 'extract'
+         AND f.signal = 'wrong'
+         AND ((f.kind = 'audit_miss' AND f.reported_by = 'deming')
+           OR (f.kind = 'admin_hold' AND f.check_name = '${FEE_HOLD_CHECK}')
+           OR (f.kind = 'admin_correction' AND f.check_name = '${FEE_CORRECTION_CHECK}'))
+    ) h
+    CROSS JOIN LATERAL (VALUES
+      (h.before_key, CASE WHEN h.verdict = 'category' THEN 'wrong' END),
+      (CASE WHEN h.kind = 'admin_correction' THEN h.after_key END,
+       CASE WHEN h.kind = 'admin_correction' AND h.verdict IN ('category', 'category_confirmed') THEN 'right' END)
+    ) AS side(fee_key, signal)`;
+}
+
+/** In a query with a `findings` CTE: the findings' category verdicts (name, raw_name, fee_key, signal, institution_id). */
+export const FINDING_VERDICTS_SQL = `SELECT name, raw_name, fee_key, signal, institution_id FROM findings
+           WHERE signal IS NOT NULL AND fee_key IS NOT NULL AND name <> ''`;
+
+/**
+ * In a query with a `findings` CTE, a join condition on feedback alias `f`: the finding that rejects
+ * the category of the very fee this `darwin_verified` row approved. Join it LEFT, alias `sv`, and keep
+ * rows where `sv.id IS NULL`.
+ */
+export const DARWIN_SUPERSEDED_ON = `f.kind = 'darwin_verified' AND sv.signal = 'wrong'
+              AND sv.fee_verified_id = f.fee_verified_id AND sv.fee_key = f.canonical_fee_key`;
+
+/** All-time tally of the extract-stage findings Knox read, by kind and verdict. */
+export type KnoxFindingsRead = Partial<Record<KnoxFindingKind, Partial<Record<KnoxFindingVerdict, number>>>>;
+
+/** `name` of the lessons query's tally rows; never a lesson name (those are letters and spaces). */
+const FINDING_TALLY = "finding_tally:";
+
+/** The extract-stage findings Knox read, all time, by kind and verdict. Empty on failure. */
+export async function loadKnoxFindingsRead(db: SqlTag): Promise<KnoxFindingsRead> {
+  return (await loadKnoxLessonsAndFindings(db)).findingsRead;
+}
+
 function lessonKey(name: string, wrongKey: string, institutionId?: number | null): string {
   return institutionId ? `${institutionId}|${name}|${wrongKey}` : `${name}|${wrongKey}`;
 }
@@ -119,10 +225,15 @@ export function lessonsFrom(rows: KnoxLesson[]): KnoxLessons {
 
 /** Reads the lessons; an empty set when the store is missing or the read fails. */
 export async function loadKnoxLessons(db: SqlTag): Promise<KnoxLessons> {
+  return (await loadKnoxLessonsAndFindings(db)).lessons;
+}
+
+/** The lessons, and the all-time tally of the findings they read (v5), from one query. Empty when the store is missing or the read fails. */
+export async function loadKnoxLessonsAndFindings(db: SqlTag): Promise<{ lessons: KnoxLessons; findingsRead: KnoxFindingsRead; readFailed?: true }> {
   try {
     const reference = await readReferenceEligibility(db);
     return await inSavepoint(db, async (scope) => {
-      if (!(await feedbackSchemaReady(scope))) return new Map();
+      if (!(await feedbackSchemaReady(scope))) return { lessons: new Map(), findingsRead: {} };
       const rows = await scope<Array<{ institution_id: number | string | null; name: string; wrong_key: string; right_key: string; wrong_banks: number | string; right_banks: number | string }>>`
         WITH restored AS MATERIALIZED (
           -- A fee Hamilton put back, under the category it went live with again.
@@ -135,20 +246,28 @@ export async function loadKnoxLessons(db: SqlTag): Promise<KnoxLessons> {
              AND COALESCE(r.evidence->>'restored_by', '') <> 'rules_recheck_restored:text_gone'
              AND r.canonical_fee_key IS NOT NULL
              AND fr.fee_name IS NOT NULL
+        ), findings AS MATERIALIZED (
+          -- v5: holds, corrections and audit misses filed against extract.
+          ${scope.unsafe(knoxFindingsSql())}
         ), judged AS (
           SELECT regexp_replace(btrim(lower(regexp_replace(f.evidence->>'fee_name', '[^A-Za-z ]+', ' ', 'g'))), '\\s+', ' ', 'g') AS name,
                  f.canonical_fee_key AS fee_key, f.signal, f.institution_id
             FROM pipeline_feedback f
             LEFT JOIN restored rs
               ON f.signal = 'wrong' AND rs.fee_raw_id = f.fee_raw_id AND rs.canonical_fee_key = f.canonical_fee_key
+            -- A finding on this very fee supersedes Darwin's approval of it (v5).
+            LEFT JOIN findings sv ON ${scope.unsafe(DARWIN_SUPERSEDED_ON)}
            WHERE f.about_stage = 'extract'
              AND f.evidence->>'fee_name' IS NOT NULL
              AND f.canonical_fee_key IS NOT NULL
              AND f.kind IN ('wrong_category', 'darwin_verified', 'answer_key')
              AND ${eligibleReferenceFeedbackSql(scope, "f", reference)}
              AND rs.fee_raw_id IS NULL
+             AND sv.id IS NULL
           UNION ALL
           SELECT name, canonical_fee_key, 'right', institution_id FROM restored
+          UNION ALL
+          SELECT name, fee_key, signal, institution_id FROM (${scope.unsafe(FINDING_VERDICTS_SQL)}) fv
         ), families AS MATERIALIZED (
           SELECT name, ${scope.unsafe(familySql("name"))} AS family FROM (SELECT DISTINCT name FROM judged WHERE name <> '') d
         ), family_tally AS (
@@ -226,21 +345,34 @@ export async function loadKnoxLessons(db: SqlTag): Promise<KnoxLessons> {
          WHERE l.kind = 'name_label' AND l.signal = 'right'
            AND l.canonical_fee_key IS NOT NULL AND l.evidence->>'fee_name' IS NOT NULL
          LIMIT ${LESSON_LIMIT})
+        UNION ALL
+        -- v5: the all-time tally of the findings read, by kind (wrong_key) and verdict (right_key).
+        (SELECT NULL::bigint, ${FINDING_TALLY}::text, kind, verdict, count(DISTINCT id), 0
+          FROM findings GROUP BY kind, verdict)
       `;
-      return lessonsFrom(
-        rows.map((row) => ({
+      const findingsRead: KnoxFindingsRead = {};
+      const lessonRows: KnoxLesson[] = [];
+      for (const row of rows) {
+        if (row.name === FINDING_TALLY) {
+          const kind = row.wrong_key as KnoxFindingKind;
+          findingsRead[kind] = { ...findingsRead[kind], [row.right_key as KnoxFindingVerdict]: Number(row.wrong_banks) };
+          continue;
+        }
+        lessonRows.push({
           institutionId: row.institution_id === null ? null : Number(row.institution_id),
           name: row.name,
           wrongKey: row.wrong_key,
           rightKey: row.right_key,
           wrongBanks: Number(row.wrong_banks),
           rightBanks: Number(row.right_banks),
-        })),
-      );
+        });
+      }
+      return { lessons: lessonsFrom(lessonRows), findingsRead };
     });
   } catch (error) {
     console.error("loadKnoxLessons failed:", error);
-    return new Map();
+    // The step records the failure, so an empty tally never reads as "nothing filed".
+    return { lessons: new Map(), findingsRead: {}, readFailed: true };
   }
 }
 

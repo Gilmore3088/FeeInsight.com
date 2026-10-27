@@ -54,9 +54,16 @@
  *    for a category and also a price for one named product as an exception to it (U.S. Bank's
  *    Safe Debit money order $1.65 beside the general $5.00), its value rests on the general rows
  *    only; with no general row, its product rows count as before. Monthly maintenance and
- *    minimum balance are priced per account, so a product name there is never an exception
- *    (fee-product.ts isProductException; SQL productExceptionSql and institutionValueSql). The
- *    exception rows stay on the bank's own page as their own named fees.
+ *    minimum balance are priced per account, so a checking account's name there is no exception;
+ *    a savings, money market, certificate, IRA, HSA or club account's own fee is (#1912, by
+ *    account-kind.ts accountKind), so the bank's value rests on its checking and unassigned rows
+ *    (fee-product.ts isProductException; SQL productExceptionSql and institutionValueSql). In the
+ *    four wire categories a fee name that names a channel or a set-up-in-advance wire (online,
+ *    digital, mobile, phone, fax, email, PIN, repetitive, recurring, template; wire-channel.ts
+ *    namesWireChannel) is an exception too (#1912, Bank OZK: "Outgoing Online Wire (Domestic)" $20
+ *    beside the general $30), so the bank's wire value rests on its general rows; "in branch",
+ *    "in person" and "manual" name the standard channel and count as general. The exception rows
+ *    stay on the bank's own page as their own named fees.
  */
 import { computePercentile, computeStats } from "./fees";
 import { countedAmounts } from "./counted-amounts";
@@ -104,8 +111,15 @@ export const COUNT_SHARED_SCHEDULE_ONCE: boolean = true;
  * continuous overdraft and the daily overdraft cap get their own period basis.
  * 21/22 (#1911): an institution's value rests on its general rows when it also states named
  * product exceptions in the category (rule 11).
+ * 23/24 (#1912): a savings, money market, certificate, IRA, HSA or club account's own monthly
+ * maintenance or minimum balance fee is an exception too, so it no longer sets the bank's checking
+ * value when the bank states a checking or unassigned row (rule 11).
+ * 25/26 (#1912): a wire row whose name states a channel (online, phone, fax, PIN, a repetitive or
+ * template wire) no longer sets the bank's wire value when it states a general wire row (rule 11).
+ * 27/28 (#1912): a monthly maintenance or minimum balance fee whose own name says checking, share
+ * draft or demand counts as checking even when it was filed under a savings-named product (rule 11).
  */
-export const STATS_METHOD_VERSION = COUNT_SHARED_SCHEDULE_ONCE ? 21 : 22;
+export const STATS_METHOD_VERSION = COUNT_SHARED_SCHEDULE_ONCE ? 27 : 28;
 
 /** SQL predicate: the row's source address names a business-only schedule (rule 6). */
 export function businessSourceSql(alias: string): string {
@@ -278,11 +292,13 @@ export interface StatsInputRow {
   product_exception?: boolean | null;
   /** The row's product, read by isProductException when product_exception was not selected. */
   account_product_type?: string | null;
+  /** The row's fee name, read by isProductException's wire channel test when product_exception was not selected. */
+  fee_name?: string | null;
 }
 
-/** Rule 11 for one row: the selected flag when present, else the same test on its category and product. */
-export function rowIsProductException(row: Pick<StatsInputRow, "product_exception" | "fee_category" | "account_product_type">): boolean {
-  return row.product_exception == null ? isProductException(row.fee_category, row.account_product_type) : row.product_exception === true;
+/** Rule 11 for one row: the selected flag when present, else the same test on its category, product and name. */
+export function rowIsProductException(row: Pick<StatsInputRow, "product_exception" | "fee_category" | "account_product_type" | "fee_name">): boolean {
+  return row.product_exception == null ? isProductException(row.fee_category, row.account_product_type, row.fee_name) : row.product_exception === true;
 }
 
 import { HIGHEST_TIER_CATEGORIES, institutionValue, statisticsRows } from "@/lib/fee-institution-value";

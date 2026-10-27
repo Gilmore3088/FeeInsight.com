@@ -25,7 +25,15 @@ import {
 } from "@/lib/agents/knox/extract";
 import { amountsIn, confidenceFor, detectFrequency, MAX_REASONABLE_FEE_AMOUNT } from "@/lib/agents/knox/rules";
 import { namesALimit } from "@/lib/agents/knox/layout";
-import { KNOX_RULES_STRATEGY } from "@/lib/agents/knox/specialists";
+import { KNOX_RULES_STRATEGY, runFreeSpecialists } from "@/lib/agents/knox/specialists";
+import {
+  paidFindMissMessage,
+  PAID_FIND_MISS_KINDS,
+  repeatedPaidFindMisses,
+  summarizePaidFindMisses,
+  type PaidFindMissKind,
+  type PaidFindMissSummary,
+} from "@/lib/agents/knox/paid-find-misses";
 import { groundLineup, LINEUP_CATEGORY, type AccountLineup } from "@/lib/agents/knox/lineup";
 import { CANONICAL_KEY_MAP, DISPLAY_NAMES, FEE_FAMILIES } from "@/lib/fee-taxonomy";
 import { ownFeeUnit, type OwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
@@ -56,6 +64,11 @@ type SqlTag = typeof sql;
  * learning or advice page (#1774; publish refuses its rows, `hamilton/article-page.ts`). Nor for
  * a page whose earlier paid read found no fee (`planPaidReads`); each skip is logged on the step
  * (`knox.paid_read_skipped`).
+ *
+ * Paid finds teach the free readers (#1101): each kept fee is filed against today's free read of
+ * the same text (`paid-find-misses.ts`) as read, read under another category, held or missed, with
+ * the text's layout, the page's host and the bank's platform. The summary rides the attempt's
+ * detail (`free_misses`) and the step writes one `knox.paid_find_misses` event.
  */
 
 /** Version 2: monthly maintenance rows carry the account's lineup fields (`lineup.ts`). */
@@ -78,6 +91,9 @@ interface PaidTextRow {
   normalized_text: string;
   text_hash: string;
   free_yield: number | string | null;
+  institution_name?: string | null;
+  /** The bank's website platform (`institution_source_profiles.platform`, else `cms_platform`). */
+  platform?: string | null;
   /** The latest paid read of this page's address that found no fee at all, when no paid read of it found one. */
   no_fee_read_id?: number | string | null;
 }
@@ -306,7 +322,8 @@ function pageAddressSql(column: string): string {
   return `lower(regexp_replace(${column}, '[?#].*$', ''))`;
 }
 
-async function selectPaidTexts(db: SqlTag, limit: number, stateCode?: string): Promise<PaidTextRow[]> {
+/** The texts a paid read may be bought for. Exported for tests. */
+export async function selectPaidTexts(db: SqlTag, limit: number, stateCode?: string): Promise<PaidTextRow[]> {
   const params: Array<string | number> = [];
   const strategy = `$${params.push(KNOX_RULES_STRATEGY.strategy)}`;
   const version = `$${params.push(KNOX_RULES_STRATEGY.version)}`;
@@ -329,6 +346,8 @@ async function selectPaidTexts(db: SqlTag, limit: number, stateCode?: string): P
              adt.normalized_text,
              adt.text_hash,
              free.yield_count AS free_yield,
+             inst.institution_name,
+             COALESCE(NULLIF(btrim(profile.platform), ''), NULLIF(btrim(inst.cms_platform), '')) AS platform,
              -- The paid reader read this page's address before and the model returned no fee at
              -- all, and no paid read of the address found one (zero-yield reads, 2026-10-17). The
              -- text is still selected so the step logs the skip (planPaidReads). Looked up only
@@ -358,6 +377,7 @@ async function selectPaidTexts(db: SqlTag, limit: number, stateCode?: string): P
         FROM agent_source_texts adt
         JOIN institution_sources inst ON inst.id = adt.institution_id
         LEFT JOIN source_documents page ON page.id = adt.source_document_id
+        LEFT JOIN institution_source_profiles profile ON profile.institution_id = adt.institution_id
         JOIN LATERAL (
           -- The current free version already read this exact text and found few fees.
           SELECT pa.yield_count
@@ -484,6 +504,40 @@ async function logPaidReadSkips(db: SqlTag, options: PaidStepOptions, skips: Pai
   `;
 }
 
+/**
+ * One `knox.paid_find_misses` event per step that kept a paid fee (#1101): what the run's paid
+ * finds were to the free team, and the misses that repeat at two banks or more under one layout
+ * and line shape.
+ */
+async function logPaidFindMisses(
+  db: SqlTag,
+  options: PaidStepOptions,
+  texts: Array<{ institutionId: number; documentTextId: number; summary: PaidFindMissSummary }>,
+): Promise<void> {
+  if (texts.length === 0) return;
+  const totals = Object.fromEntries(PAID_FIND_MISS_KINDS.map((kind) => [kind, 0])) as Record<PaidFindMissKind, number>;
+  for (const { summary } of texts) for (const kind of PAID_FIND_MISS_KINDS) totals[kind] += summary.by_kind[kind];
+  const repeated = repeatedPaidFindMisses(texts);
+  const detail = {
+    version: texts[0].summary.version,
+    by_kind: totals,
+    repeated,
+    texts: texts.map(({ institutionId, documentTextId, summary }) => ({
+      institution_id: institutionId,
+      document_text_id: documentTextId,
+      layout: summary.layout,
+      host: summary.host,
+      platform: summary.platform,
+      by_kind: summary.by_kind,
+      missed_line_shapes: summary.missed_line_shapes,
+    })),
+  };
+  await db`
+    INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
+    VALUES (${options.runId}, ${options.stepId ?? null}, 'knox.paid_find_misses', 'completed', ${paidFindMissMessage(totals, repeated)}, ${JSON.stringify(detail)}::jsonb)
+  `;
+}
+
 export async function runKnoxPaidExtract(
   options: PaidStepOptions & { create?: PaidMessageCreator },
 ): Promise<PaidPassResult> {
@@ -517,6 +571,7 @@ export async function runKnoxPaidExtract(
   const model = PAID_PASS_MODELS.extract();
   // Knox's role lessons ride every paid read as instructions (learning/lesson-reader.ts).
   const roleLessons = lessonsForModel("knox", "extract-paid");
+  const findMisses: Array<{ institutionId: number; documentTextId: number; summary: PaidFindMissSummary }> = [];
   for (const row of rows) {
     const startedAt = Date.now();
     const base = {
@@ -585,6 +640,18 @@ export async function runKnoxPaidExtract(
       accepted.push(grounded);
     }
 
+    // What each kept fee was to today's free team on the same text (#1101). Free, deterministic.
+    const freeMisses = accepted.length > 0
+      ? summarizePaidFindMisses({
+          text: row.normalized_text,
+          sourceUrl: row.source_url,
+          platform: row.platform ?? null,
+          finds: accepted,
+          free: runFreeSpecialists(row.normalized_text, { institutionName: row.institution_name ?? null }),
+        }).summary
+      : null;
+    if (freeMisses) findMisses.push({ institutionId: Number(row.institution_id), documentTextId: Number(row.document_text_id), summary: freeMisses });
+
     const textRow: KnoxTextRow = row;
     let inserted = 0;
     if (accepted.length > 0) await retireRowsFromOlderText(db, textRow);
@@ -636,6 +703,7 @@ export async function runKnoxPaidExtract(
       accepted: accepted.length,
       inserted,
       rejected: rejections,
+      ...(freeMisses ? { free_misses: freeMisses } : {}),
     };
     result.results.push({ ...detail, outcome, cost_microusd: call.costMicrousd });
     await recordAttempt(db, {
@@ -647,5 +715,6 @@ export async function runKnoxPaidExtract(
       detail,
     });
   }
+  await logPaidFindMisses(db, options, findMisses);
   return result;
 }

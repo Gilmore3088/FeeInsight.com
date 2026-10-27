@@ -7,6 +7,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const ROSETTA_LESSONS: AgentLesson[] = [
   {
+    id: "issue-1105-a-read-supersedes-a-reject",
+    agent: "rosetta",
+    stage: "read",
+    lesson: "When a read judges a page's text a fee page, that verdict is newer than an earlier reject of its address: take the address off the bank's rejected list as the read makes it current. A fee-page verdict says nothing about whose page it is, so an ownership reject (another bank's document, another bank's host, an unconfirmed host, a person's link repair) stays, and the address stays off the current source. A read that does not complete (a scan, an empty or failed read) is no verdict, so it never makes a rejected address current.",
+    why: "A completed read made its address the profile's current source but left the address's earlier reject in place, and a failed or thin read did the same, so the bank's memory said both \"this is the source\" and \"this is not a fee schedule\": 16 of the 26 profiles on Oct 26 held a completed text read from a current source still on their own rejected list.",
+    evidence: { issues: [1105], prs: [2740], files: ["src/lib/agents/learning/rejected-sources.ts", "src/lib/agents/rosetta/read.ts"] },
+    appliesTo: ["read"],
+    since: "2026-10-26",
+  },
+  {
     id: "issue-1053",
     agent: "rosetta",
     stage: "fee-page check",
@@ -123,6 +133,16 @@ export const ROSETTA_LESSONS: AgentLesson[] = [
     lesson: "A PDF font can drop a ligature with no character left, so a word loses its 'ti' or 'ft' without any glyph to find ('Internaonal', 'Domesc', 'Overdra'). Restore such a word only against a short list of fee words, and only when the same document shows the loss in at least two different words; leave short or doubtful forms, and words touching some other stand-in glyph, as they are.",
     why: "Bay Area CU's fee schedule (text 6266) read 'Wire Transfer Outgoing (Internaonal)' $50, so live fee 42754 went live as a domestic outgoing wire. No U+FFFD marked the loss, so glyph repair never saw it. On Oct 26, 3 stored PDF texts with the loss in two or more words held 5 live fee names that carried it.",
     evidence: { issues: [1513], prs: [2692], files: ["docs/project/findings/2026-10-26-dropped-pdf-ligatures.md", "src/lib/agents/rosetta/glyph-repair.ts"] },
+    appliesTo: ["read"],
+    since: "2026-10-26",
+  },
+  {
+    id: "issue-1912-empty-cells-keep-their-column",
+    agent: "rosetta",
+    stage: "read",
+    lesson: "An empty table cell is part of the table: place every cell on the table's column grid (colspan, rowspan and empty cells included) before writing a row, so a value stays under its own column. When an empty cell would shift a value under the column to its left, write that column's header name after the value (\"$50 fee to close prior to maturity (ira)\").",
+    why: "The HTML reader dropped empty cells, so Capital City Bank's comparison row 'Fees/Penalties | (empty) | (empty) | Early withdrawal penalty | $50 fee to close prior to maturity | (empty)' was stored as 'Fees/Penalties | Early withdrawal penalty | $50 fee to close prior to maturity'. The IRA's $50 closing fee then sat under the CD column and went live as 'Early closure of CD' (live fee 140269, text 29131).",
+    evidence: { issues: [1912], prs: [], files: ["docs/project/findings/2026-10-26-html-table-empty-cells.md", "src/lib/agents/rosetta/html-dom.ts"] },
     appliesTo: ["read"],
     since: "2026-10-26",
   },

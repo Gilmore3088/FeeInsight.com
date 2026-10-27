@@ -2,7 +2,7 @@ import { sql } from "@/lib/data-store/connection";
 import { startAgentRun } from "@/lib/agents/run-store";
 import {
   MOVED_PUBLISH_SWEEPS,
-  PUBLISH_SWEEPS_DRY_RUN_INTERVAL_MINUTES,
+  PUBLISH_SWEEPS_INTERVAL_MINUTES,
   PUBLISH_SWEEPS_SOURCE,
   PUBLISH_SWEEPS_SPLIT_LIVE,
   PUBLISH_SWEEPS_STEP_KEY,
@@ -15,14 +15,17 @@ export interface PublishSweepsScheduleResult {
   runId: number | null;
   live: boolean;
   /** Why no run was started, when none was. */
-  reason: "active" | "no_publish_since" | "dry_run_interval" | null;
+  reason: "active" | "no_publish_since" | "interval" | null;
 }
 
 /**
- * Queue the `publish-sweeps` run (hamilton/publish-sweeps.ts): at most one at a time, so at most
- * one a tick, and only when a state lane's publish step completed since the last one was queued.
- * Off (`PUBLISH_SWEEPS_SPLIT_LIVE` false) it is a dry run, at most once every
- * PUBLISH_SWEEPS_DRY_RUN_INTERVAL_MINUTES.
+ * Queue the `publish-sweeps` run (hamilton/publish-sweeps.ts): at most one at a time, at most once
+ * every PUBLISH_SWEEPS_INTERVAL_MINUTES (an hour), live or dry (#1070), and only when a publish
+ * step completed since the last one was queued. Off (`PUBLISH_SWEEPS_SPLIT_LIVE` false) it is a
+ * dry run and counts state lane publishes only. Live it also counts a Read-now or hand-found
+ * publish: those hand the seven sweeps that take no institution id (`GLOBAL_ONLY_PUBLISH_SWEEPS`)
+ * to this run too. The tick calls this only while the pipeline control is on; it is
+ * deterministic work and never waits on the provider budget.
  */
 export async function schedulePublishSweepsRun(
   db: SqlTag = sql,
@@ -46,8 +49,12 @@ export async function schedulePublishSweepsRun(
          WHERE s.step_key = 'publish'
            AND s.status = 'completed'
            AND s.completed_at > ${now}::timestamptz - INTERVAL '1 day'
-           AND r.run_kind IN ('workflow_lane', 'state_agent')
-           AND r.params_json->>'institution_id' IS NULL
+           -- Live, a dry run's publish wrote nothing, so it owes the sweeps nothing (review of #2727).
+           AND (NOT ${live}::boolean OR COALESCE(r.params_json->>'dry_run', 'false') <> 'true')
+           AND (
+             ${live}::boolean
+             OR (r.run_kind IN ('workflow_lane', 'state_agent') AND r.params_json->>'institution_id' IS NULL)
+           )
       ) AS last_publish_at
   `;
   const base = { live, runId: null };
@@ -57,8 +64,8 @@ export async function schedulePublishSweepsRun(
   if (!lastPublish || (lastQueued && lastPublish <= lastQueued)) {
     return { ...base, scheduled: false, reason: "no_publish_since" };
   }
-  if (!live && lastQueued && now.getTime() - lastQueued.getTime() < PUBLISH_SWEEPS_DRY_RUN_INTERVAL_MINUTES * 60_000) {
-    return { ...base, scheduled: false, reason: "dry_run_interval" };
+  if (lastQueued && now.getTime() - lastQueued.getTime() < PUBLISH_SWEEPS_INTERVAL_MINUTES * 60_000) {
+    return { ...base, scheduled: false, reason: "interval" };
   }
   const minute = now.toISOString().slice(0, 16);
   const started = await startAgentRun({
@@ -79,7 +86,7 @@ export async function schedulePublishSweepsRun(
       },
     ],
     summary: live
-      ? "A state lane published; the sweeps over every state's live fees run once, here."
+      ? "Fees published since the last run; the sweeps over every state's live fees run here, at most hourly."
       : "A state lane published; the moved sweeps are counted in a dry run beside the lanes' own counts.",
   });
   return { ...base, scheduled: !started.reused, runId: started.run.id, reason: null };

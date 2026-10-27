@@ -129,7 +129,7 @@ describe.skipIf(!connection)("same-line restore follows the older line's replace
       expect(findSameLineReplacements(rows).matches.map((match) => [match.feePublishedId, match.reason])).toEqual([[copy, `same_line_duplicate: live fee #${r2}`]]);
 
       const db = tx as unknown as Db;
-      const off = await recheckSameLineReplacements(db, { runId, dryRun: false, institutionId: INST });
+      const off = await recheckSameLineReplacements(db, { runId, dryRun: false, institutionId: INST, live: false });
       expect(off).toMatchObject({ live: false, checked: 2, matched: 1, flagged: 0, takenDown: [] });
       expect((await state(tx, copy)).rolled_back_at).toBeNull();
 

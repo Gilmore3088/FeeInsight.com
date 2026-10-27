@@ -127,6 +127,15 @@ Rosetta owns source text normalization.
   reversal does not withdraw the error, which costs at most one read per version. Magellan's side already
   holds: a `DISCOVERY_METHOD_VERSION` bump re-searches every bank whose last search missed,
   and a wrong-document error re-searches its bank through the stale-link search (#2055).
+- Knox's untraced lines (#1102, `knox/untraced-read-error.ts`): a text whose held lines Knox's
+  rules failed to trace to one row under 3 or more rules versions (`knox_review:untraced`) is
+  reported as a possible reading error (check `knox.untraced_held`, kind `untraced_lines`, weight
+  0.5, always naming the text's hash). The read selection treats it exactly like an operator's
+  lost-text finding above: one read when the text's reader version is older than
+  `ROSETTA_READ_VERSION`, the stored text kept unless the new one lists at least as many fees,
+  open until the text changes. On Oct 26, 2,062 texts at 1,302 banks (3,288 lines) qualified; 56
+  of them, at 55 banks, were last read below the current reader version and are read on the next
+  pass, and the rest wait for the next reader bump.
 - Reader replay (#2069, `reader-replay.ts`; "Re-read all", James, 25 Oct; live, no switch):
   when a reader's version moves, every current copy (not superseded or a duplicate) whose
   completed text an older version of that reader wrote is read once more, however many fees it
@@ -381,14 +390,21 @@ document has no tables) and `agent_source_texts.reader` (the strategy whose text
 stored). Rosetta writes them only once the migration is applied.
 
 ```json
-{ "version": 1,
+{ "version": 2,
   "rows": [
-    { "table": 0, "page": null, "cells": ["Service", "Fee"], "header": true, "origin": "html_table" },
-    { "table": 0, "page": null, "cells": ["Overdraft fee", "$35.00"], "header": false, "origin": "html_table" } ] }
+    { "table": 0, "page": null, "cells": ["Service", "Fee"], "columns": ["Service", "Fee"], "header": true, "origin": "html_table" },
+    { "table": 0, "page": null, "cells": ["Overdraft fee", "$35.00"], "columns": ["Overdraft fee", "$35.00"], "header": false, "origin": "html_table" } ] }
 ```
 
-- `cells.join(" | ")` is exactly one line of `normalized_text`; rows not found in the text
-  are dropped, empty cells are dropped (as in the text). Rows keep document order.
+- `line`, when present, or else `cells.join(" | ")` is exactly one line of `normalized_text`;
+  rows not found in the text are dropped. Empty cells are dropped from `cells`. Rows keep
+  document order.
+- v2 (#1912), HTML tables only: `columns` is the row's text per column of the table's grid
+  (colspan and rowspan expanded, as wide as the widest row), with "" for an empty cell or a
+  covered column. When an empty cell shifts a value under the column to its left and the header
+  row names that column, the text writes the name after the value
+  (`Fees/Penalties | Early withdrawal penalty (CD) | $50 fee to close prior to maturity (ira)`)
+  and the row stores that text in `line`. Every other row's text is unchanged.
 - `table` groups rows of one table (a run of consecutive row lines for text-derived
   rows); `page` is the 1-based PDF page when known, else null.
 - `header` is true only for HTML `<thead>` rows or rows of `<th>` cells, and Word rows
@@ -475,5 +491,5 @@ fails a PR that changes one of these constants without updating its line here (#
 | `ROSETTA_DOCUMENT_ACCESS_VERSION` | `read.document_access` | v1 | `rosetta/read.ts` |
 | `REOPEN_VERSION` | — | v1 | `rosetta/read.ts` |
 | `SAME_TEXT_COPY_STRATEGY` | `read.same_text_copy` | v1 | `rosetta/same-text-copy.ts` |
-| `ROSETTA_TABLE_ROWS_VERSION` | — | v1 | `rosetta/reader-versions.ts` |
+| `ROSETTA_TABLE_ROWS_VERSION` | `read.table_rows`; v2 (#1912) keeps each HTML table cell's grid column (`columns`, `line`); selects nothing, so it re-reads nothing | v2 | `rosetta/reader-versions.ts` |
 | `TEXT_SURVIVAL_VERSION` | — | v1 | `rosetta/text-survival.ts` |

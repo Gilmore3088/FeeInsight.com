@@ -630,6 +630,10 @@ describe("Darwin agentic verification", () => {
       expect(query).toContain("->>'min')::numeric");
       expect(query).toContain(`'${JSON.stringify(CATEGORY_AMOUNT_ENVELOPES)}'::jsonb`);
       expect(CATEGORY_AMOUNT_ENVELOPES.account_research).toEqual({ min: 1, max: 150 });
+      // #1912: a box late fee held under the box's $5 rent floor is re-read once its own $1 floor takes it.
+      expect(query).toContain("pa.detail->>'canonical_fee_key' = 'safe_deposit_box'");
+      expect(query).toContain("fr.fee_name ~* '\\mlate\\M'");
+      expect(query).toContain("(pa.detail->>'amount')::numeric BETWEEN 1 AND 1500");
     });
 
     it("records the learned category model's dispute without changing the decision", async () => {
@@ -1371,6 +1375,11 @@ describe("conditional $0 on two-column pages and its own line (#1593, live rows 
       ["Paper Statement", "Paper Statement No Charge | Printed Image Copies $2.00"],
       ["Wire Transfer", "Wire Transfer No Charge | International Wire Fee $35.00"],
       ["Debit Card", "Debit Card No Charge | Rush Card Order $25.00"],
+      // #1593 (before the switch-on): an item or payment this same fee is charged on.
+      ["Stop Payment", "Stop Payment No Charge | ACH Debit Charge $30.00"],
+      ["Stop Payment", "Stop Payment No Charge | Preauthorized Draft Charge $30.00"],
+      ["Overdraft Fee", "Overdraft Fee No Charge | Recurring Debit Charge $30.00"],
+      ["Returned Deposit", "Returned Deposit No Charge | Deposited Check Charge $15.00"],
     ]) {
       expect(conditionalZero(0, line, name, { documentText: sideBySide(line), layout: true })).toBe(true);
     }
@@ -1419,6 +1428,13 @@ describe("conditional $0 on two-column pages and its own line (#1593, live rows 
       ["Blue Lion Checking | Electronic Program", "Maintenance Fee (per statement cycle) $0.00 (electronic program) $3.00"],
       ["Rewards Checking | Rewards Criteria", "Maintenance Fee (per statement cycle) $0.00 (rewards criteria unmet) $10.00"],
       ["Kasasa Checking | Kasasa Cash", "Maintenance Fee (per statement cycle) $0.00 (kasasa cash not earned) $10.00"],
+      // #1593 (before the switch-on): a status, dormancy, lapse, conversion, age or discount.
+      ["Blue Lion Checking | Account Status Charge", "Maintenance Fee (per statement cycle) $0.00 (status change) $5.00"],
+      ["Blue Lion Checking | Dormancy Charge", "Maintenance Fee (per statement cycle) $0.00 (dormancy) $5.00"],
+      ["Blue Lion Checking | Lapsed Membership", "Maintenance Fee (per statement cycle) $0.00 (lapsed) $5.00"],
+      ["Student Checking | Turning 18 Conversion", "Maintenance Fee (per statement cycle) $0.00 (turning 18) $5.00"],
+      ["Student Checking | Account Conversion", "Maintenance Fee (per statement cycle) $0.00 (converted to checking) $5.00"],
+      ["Loyalty Checking | Loyalty Discount Removal", "Maintenance Fee (per statement cycle) $0.00 (discount removed) $5.00"],
       // An early-closure window with a condition after it is still a condition.
       ["Blue Lion Checking | Account Early Closure", "Maintenance Fee (per statement cycle) $0.00 (closed within 90 days of opening without direct deposit) $20.00"],
     ]) {

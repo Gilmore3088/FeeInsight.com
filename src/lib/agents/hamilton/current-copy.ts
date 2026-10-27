@@ -47,7 +47,9 @@ type SqlTag = typeof sql;
  * saved link, so a stale copy at one never judges a fee the other has re-read.
  *
  * `CURRENT_COPY_CONFIRM_LIVE` false logs first looks and confirms none, until a hand check of
- * the flags passes (18 of 20 stale), then a fix PR turns it on.
+ * the flags passes (18 of 20 stale), then a fix PR turns it on. A retired document is paired only
+ * with a copy the bank was seen serving at or after its fetch (`retiredCopiesSql`), so no flag
+ * rests on a copy older than the live fee's own document.
  */
 export const CURRENT_COPY_CHECK = "hamilton.current_copy";
 export const CURRENT_COPY_REASON = "not_on_current_copy";
@@ -71,6 +73,20 @@ export const CURRENT_COPY_STRATEGY = { strategy: "hamilton.current_copy_check", 
  * is retired. Links are compared without scheme, "www.", case or trailing slashes. A bank with
  * neither address, or no read copy at either, pairs nothing. Changes here change both the check
  * and Bayes's count.
+ *
+ * A copy the bank was last seen serving (fetched or re-checked) before the retired document was
+ * fetched never pairs (#1200, Oct 26). "Retired" only says the document's address is no longer a
+ * source; it does not say the document is old. On prod, read-only, 241 live fees on 25 such
+ * documents were paired with a copy fetched before them, and 139 fees on 19 documents with one
+ * the bank had not been seen serving since: a print view or a business schedule read on Oct 20
+ * judged against the plain page last fetched on Oct 9, a page read in October against a Feb 17
+ * copy at a dead link. Judging newer evidence against older evidence takes a current price down
+ * as "not on the current copy". The issue held those 241 back for a hand check; the order rule
+ * decides them instead: the 139 no longer pair, and the other 102 pair because the bank was still
+ * serving that copy after their document was fetched. Copies superseded in place already pass it
+ * (all 358 live fees whose superseding copy was fetched earlier have it re-checked since). When
+ * the copy's check date moves past the retired document's fetch (Magellan's next fetch of the
+ * address), the pair forms again and is judged as usual.
  */
 export function retiredCopiesSql(db: SqlTag) {
   return db`
@@ -96,6 +112,14 @@ export function retiredCopiesSql(db: SqlTag) {
            AND lower(regexp_replace(regexp_replace(btrim(COALESCE(c.document_url, '')), '^https?://(www\\.)?', '', 'i'), '/+$', '')) IN (d.fetch_key, d.link_key)
            AND btrim(COALESCE(c.document_url, '')) <> ''
            AND EXISTS (SELECT 1 FROM agent_source_texts t WHERE t.source_document_id = c.id AND t.status = 'completed' AND t.normalized_text IS NOT NULL)
+           -- The copy must be what the bank served at or after the retired document was fetched
+           -- (its own fetch or its last re-check). A copy last seen before then is older evidence
+           -- than the live fee and never judges it (#1200: 139 live fees, Oct 26).
+           AND NOT EXISTS (
+             SELECT 1 FROM source_documents older
+              WHERE older.id = d.older_document_id
+                AND GREATEST(c.crawled_at, c.last_checked_at) < older.crawled_at
+           )
          -- The newest read copy at either address: an older copy at the fetch target never wins
          -- over a newer one at the saved link, or a stale copy would judge the live fee.
          ORDER BY c.id DESC

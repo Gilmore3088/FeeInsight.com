@@ -137,6 +137,8 @@ export interface NamedErrorRow {
   rerun: boolean | string | null;
   /** The ledger already holds a still-wrong record of this row for this fix. */
   reported_still_wrong?: boolean | string | null;
+  /** The bank is no longer active, so the direct path never asks for it: not waiting for a re-run. */
+  bank_inactive?: boolean | string | null;
 }
 
 /**
@@ -145,7 +147,8 @@ export interface NamedErrorRow {
  * yet re-run, for the direct path's requests, in id order so the read stops at the limit.
  * Otherwise every open row is read, rows already recorded as still wrong last and the rest in an
  * order that changes each day, so neither stubborn rows nor rows with no stored text hold the
- * limit for good.
+ * limit for good. `bank_inactive` marks a row whose bank is no longer active: the direct path never
+ * asks for it, so it is reported apart from the rows waiting for a re-run.
  */
 async function namedRows(db: SqlTag, entry: ErrorFixEntry, limit: number, waiting = false): Promise<NamedErrorRow[]> {
   const ids = (entry.feedback_ids ?? []).map(Number);
@@ -164,6 +167,11 @@ async function namedRows(db: SqlTag, entry: ErrorFixEntry, limit: number, waitin
               OR EXISTS (SELECT 1 FROM source_documents old
                           WHERE old.id = f.source_document_id AND old.superseded_by_id IS NOT NULL))
     )`;
+  const active = db`
+    EXISTS (
+      SELECT 1 FROM institution_sources inst
+       WHERE inst.id = f.institution_id AND COALESCE(inst.status, 'active') = 'active'
+    )`;
   const stillWrong = db`
     EXISTS (
       SELECT 1 FROM pipeline_feedback still
@@ -174,7 +182,8 @@ async function namedRows(db: SqlTag, entry: ErrorFixEntry, limit: number, waitin
            EXISTS (SELECT 1 FROM source_documents old
                     WHERE old.id = f.source_document_id AND old.superseded_by_id IS NOT NULL) AS document_replaced,
            ${waiting ? db`FALSE` : rerun} AS rerun,
-           ${waiting ? db`FALSE` : stillWrong} AS reported_still_wrong
+           ${waiting ? db`FALSE` : stillWrong} AS reported_still_wrong,
+           ${waiting ? db`FALSE` : db`NOT ${active}`} AS bank_inactive
       FROM pipeline_feedback f
      WHERE f.signal = 'wrong'
        AND f.about_stage = ${entry.stage}::text
@@ -191,10 +200,7 @@ async function namedRows(db: SqlTag, entry: ErrorFixEntry, limit: number, waitin
        )
        ${waiting ? db`
        AND NOT ${rerun}
-       AND EXISTS (
-         SELECT 1 FROM institution_sources inst
-          WHERE inst.id = f.institution_id AND COALESCE(inst.status, 'active') = 'active'
-       )` : db``}
+       AND ${active}` : db``}
      ORDER BY ${waiting ? db`f.id` : db`rerun DESC, reported_still_wrong ASC, md5(f.id::text || CURRENT_DATE::text)`}
      LIMIT ${limit}::int
   `;
@@ -246,8 +252,17 @@ export interface ErrorFixJudgement {
   reason?: string;
 }
 
-/** A live fee with the time its raw observation was extracted, to tell a re-run's fee from an older one. */
-export type ErrorFixFee = FreshAuditFee & { raw_created_at?: string | Date | null };
+/**
+ * A live fee with two times that together tell a fee the re-run produced from an older one:
+ * `reread_at`, the last time a completed run read its document text at the fix's Knox rules
+ * version (`pipeline_attempts`, stage extract), and `published_at`, when its published row was
+ * written. The raw row's age cannot tell them apart: a fee Knox reads again with the same
+ * document, name, amount, audience and line share hits `insertCandidate`'s ON CONFLICT, which
+ * takes over only an unclassified, untraced or superseded raw row and otherwise leaves the old
+ * row, and its old date, as they were. Nor can the read alone: a rules bump re-reads every stored
+ * text, so every fee on the document gets a new `reread_at`, including one live all along.
+ */
+export type ErrorFixFee = FreshAuditFee & { reread_at?: string | Date | null; published_at?: string | Date | null };
 
 function time(value: string | Date | null | undefined): number {
   return value == null ? Number.NaN : new Date(value).getTime();
@@ -255,13 +270,17 @@ function time(value: string | Date | null | undefined): number {
 
 /**
  * Pure: is the named error gone? The named fee is judged while it is still live. Once it is down
- * (a takedown names a fee already down), only the fees the re-run extracted in its place are
- * judged: live fees in its category whose raw observation is newer than the error, from the
+ * (a takedown names a fee already down), only a fee put in its place after the error is judged: a
+ * live fee in its category whose document text the fixed Knox rules read after the error
+ * (`reread_at`) and whose published row was written after the error (`published_at`), from the
  * error's document when it names one (any document once a newer copy has replaced it, as the
- * re-run guard counts). A fee that has been live all along proves nothing about the
- * fix, so it is never counted. Every judged fee must pass the fresh audit's checks. With no
- * re-extracted fee the error is `not_reproduced`: the fix did not bring a right fee back, so the
- * row stays open. A fee with no stored text is unknown, never closed, and so is a named fee still
+ * re-run guard counts). Both are needed: a rules bump re-reads every text, so a fee live all along
+ * on the same document has a new `reread_at` too, and a fee published after the error from a read
+ * the fix never saw proves nothing either. A restore that clears `rolled_back_at` on the old
+ * published row keeps its old `published_at`, so it never counts: a restore is not a fix. Every
+ * judged fee must pass the fresh audit's checks. With no such fee the error is `not_reproduced`:
+ * the fix has not yet brought a right fee back (or the corrected fee has not cleared Darwin and
+ * Hamilton), so the row stays open. A fee with no stored text is unknown, never closed, and so is a named fee still
  * published but not among the dollar fees judged here (a rate) or one with no category.
  */
 export function judgeErrorFix(
@@ -276,7 +295,8 @@ export function judgeErrorFix(
   const errorAt = time(row.created_at);
   const fees = own.length > 0 ? own : live.filter((fee) =>
     fee.canonical_fee_key === row.canonical_fee_key
-    && time(fee.raw_created_at) > errorAt
+    && time(fee.reread_at) > errorAt
+    && time(fee.published_at) > errorAt
     && (row.source_document_id == null || truthy(row.document_replaced) || Number(fee.source_document_id) === Number(row.source_document_id)));
   const judged = fees.map((fee) => Number(fee.fee_published_id));
   if (fees.length === 0) return { verdict: "not_reproduced", judged };
@@ -294,7 +314,12 @@ export interface ErrorFixEntryResult {
   issue: number | null;
   stage: ErrorFixStage;
   named: number;
+  /** Not yet re-run, at an active bank the direct path asks for. */
   waiting: number;
+  /** Not yet re-run, at a bank no longer active: no run will ask for it, so it is not waiting. */
+  inactive: number;
+  /** This fix's reads failed (rolled back to their savepoint); it is re-checked on the next run. */
+  readFailed: boolean;
   nowMatches: number;
   /** The named fee is down and the re-run extracted no fee in its place: open, judged again daily. */
   notReproduced: number;
@@ -312,7 +337,123 @@ export interface ErrorFixRecheckResult {
   skipped: string[];
 }
 
-/** Deming's daily error-fix re-check. Writes only the ledger rows, and nothing on a dry run. */
+function emptyOutcome(entry: ErrorFixEntry, named = 0): ErrorFixEntryResult {
+  return {
+    pr: entry.pr, issue: entry.issue ?? null, stage: entry.stage, named,
+    waiting: 0, inactive: 0, readFailed: false, nowMatches: 0, notReproduced: 0, stillWrong: 0, unknown: 0, stillWrongRows: [],
+  };
+}
+
+/** One fix's named rows judged, with the ledger rows they earn. Reads only. */
+async function recheckEntry(db: SqlTag, entry: ErrorFixEntry, runId: number | null): Promise<{ outcome: ErrorFixEntryResult; ledger: FeedbackRow[] }> {
+  const ledger: FeedbackRow[] = [];
+  const rows = await namedRows(db, entry, ERROR_FIX_ROWS_PER_ENTRY);
+  const outcome = emptyOutcome(entry, rows.length);
+  const ready = rows.filter((row) => truthy(row.rerun));
+  for (const row of rows) {
+    if (truthy(row.rerun)) continue;
+    if (truthy(row.bank_inactive)) outcome.inactive += 1;
+    else outcome.waiting += 1;
+  }
+  if (ready.length === 0) return { outcome, ledger };
+  const institutions = [...new Set(ready.map((row) => Number(row.institution_id)))];
+  // reread_at: the last time a completed run read the fee's own document at this fix's Knox rules
+  // version. A raw row that records the text it came from (`text_hash=`) must match that read's text.
+  // published_at: when the fee's published row was written; a fee live since before the error never counts.
+  // raw_created_at stays for the fresh audit's own checks; the judgement never dates a fee by it.
+  const live = await db<ErrorFixFee[]>`
+    SELECT c.id AS fee_id, c.fee_published_id, c.fee_verified_id AS lineage_ref, c.fee_raw_id, c.institution_id, c.source,
+           c.source_document_id, c.canonical_fee_key, c.fee_name, c.amount, c.amount_kind, c.rate_percent,
+           sd.document_url, fr.created_at AS raw_created_at, fp.published_at,
+           (SELECT MAX(pa.created_at)
+              FROM pipeline_attempts pa
+              JOIN agent_runs run ON run.id = pa.agent_run_id AND run.status = 'completed'
+             WHERE pa.institution_id = c.institution_id
+               AND pa.source_document_id = c.source_document_id
+               AND pa.stage = 'extract'
+               AND pa.strategy = ${KNOX_RULES_STRATEGY.strategy}::text
+               AND pa.strategy_version >= ${entry.knox_version}::int
+               AND (substring(COALESCE(fr.extraction_note, fr.conditions, '') FROM 'text_hash=([^;]+);') IS NULL
+                    OR pa.input_fingerprint = substring(COALESCE(fr.extraction_note, fr.conditions, '') FROM 'text_hash=([^;]+);'))
+           ) AS reread_at
+      FROM published_fee_catalog c
+      JOIN published_fee_records fp ON fp.fee_published_id = c.fee_published_id
+      LEFT JOIN source_documents sd ON sd.id = c.source_document_id
+      LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = c.fee_raw_id
+     WHERE c.institution_id = ANY(${institutions}::bigint[])
+       AND c.review_status = 'approved'
+       AND c.amount IS NOT NULL
+       AND c.amount_kind IS DISTINCT FROM 'percent'
+  `;
+  const texts = await db<Array<InstitutionText & { institution_id: number | string }>>`
+    SELECT DISTINCT ON (source_document_id) institution_id, source_document_id, normalized_text
+      FROM agent_source_texts
+     WHERE institution_id = ANY(${institutions}::bigint[])
+       AND status = 'completed'
+       AND normalized_text IS NOT NULL
+     ORDER BY source_document_id, id DESC
+  `;
+  const evidence = await readEvidence(db, live.map((fee) => Number(fee.fee_published_id)));
+  // Named fees still published but outside the dollar catalog read above, e.g. a rate.
+  const stillPublished = new Set((await db<Array<{ fee_published_id: number | string }>>`
+    SELECT fee_published_id FROM published_fee_records
+     WHERE fee_published_id = ANY(${ready.map((row) => Number(row.fee_published_id))}::bigint[])
+       AND rolled_back_at IS NULL
+       AND quarantined_at IS NULL
+  `).map((fee) => Number(fee.fee_published_id)));
+  for (const row of ready) {
+    const institutionId = Number(row.institution_id);
+    const judgement = judgeErrorFix(
+      row,
+      live.filter((fee) => Number(fee.institution_id) === institutionId),
+      texts.filter((text) => Number(text.institution_id) === institutionId),
+      evidence,
+      stillPublished.has(Number(row.fee_published_id)),
+    );
+    const feedbackId = Number(row.id);
+    const feePublishedId = Number(row.fee_published_id);
+    if (judgement.verdict === "unknown") { outcome.unknown += 1; continue; }
+    if (judgement.verdict === "not_reproduced") { outcome.notReproduced += 1; continue; }
+    if (judgement.verdict === "still_wrong") {
+      outcome.stillWrong += 1;
+      outcome.stillWrongRows.push({ feedbackId, feePublishedId, institutionId, check: judgement.check, reason: judgement.reason });
+    } else outcome.nowMatches += 1;
+    const closed = judgement.verdict === "now_matches";
+    // A still-wrong row is recorded once per fix; it is judged again each day all the same.
+    if (!closed && truthy(row.reported_still_wrong)) continue;
+    ledger.push({
+      aboutStage: entry.stage,
+      signal: closed ? "right" : "wrong",
+      kind: closed ? ERROR_FIX_CLOSED_KIND : ERROR_FIX_STILL_WRONG_KIND,
+      reportedBy: "deming",
+      checkName: ERROR_FIX_CHECK,
+      institutionId,
+      feePublishedId,
+      canonicalFeeKey: row.canonical_fee_key,
+      weight: 0,
+      runId,
+      evidence: {
+        pr: entry.pr,
+        issue: entry.issue ?? null,
+        feedback_id: feedbackId,
+        feedback_kind: row.kind,
+        feedback_check: row.check_name,
+        verdict: judgement.verdict,
+        judged: judgement.judged,
+        ...(judgement.check ? { check: judgement.check, reason: judgement.reason } : {}),
+      },
+      dedupeKey: ledgerKey(entry.pr, feedbackId, closed ? "closed" : "still_wrong"),
+    });
+  }
+  return { outcome, ledger };
+}
+
+/**
+ * Deming's daily error-fix re-check. Writes only the ledger rows, and nothing on a dry run. It runs
+ * on the scoreboard step's transaction, so each fix's reads run in their own savepoint: a failed
+ * read rolls back only that savepoint and is reported in `skipped`, and never aborts the
+ * transaction the rest of the step, its ledger write and the scoreboard run go on with.
+ */
 export async function runErrorFixRecheck({
   db = sql,
   runId = null,
@@ -324,87 +465,13 @@ export async function runErrorFixRecheck({
   if (entries.length === 0 || problems.length > 0) return result;
   const ledger: FeedbackRow[] = [];
   for (const entry of entries) {
-    const rows = await namedRows(db, entry, ERROR_FIX_ROWS_PER_ENTRY);
-    const outcome: ErrorFixEntryResult = {
-      pr: entry.pr, issue: entry.issue ?? null, stage: entry.stage, named: rows.length,
-      waiting: 0, nowMatches: 0, notReproduced: 0, stillWrong: 0, unknown: 0, stillWrongRows: [],
-    };
-    result.results.push(outcome);
-    const ready = rows.filter((row) => truthy(row.rerun));
-    outcome.waiting = rows.length - ready.length;
-    if (ready.length === 0) continue;
-    const institutions = [...new Set(ready.map((row) => Number(row.institution_id)))];
-    const live = await db<ErrorFixFee[]>`
-      SELECT c.id AS fee_id, c.fee_published_id, c.fee_verified_id AS lineage_ref, c.fee_raw_id, c.institution_id, c.source,
-             c.source_document_id, c.canonical_fee_key, c.fee_name, c.amount, c.amount_kind, c.rate_percent,
-             sd.document_url, fr.created_at AS raw_created_at
-        FROM published_fee_catalog c
-        LEFT JOIN source_documents sd ON sd.id = c.source_document_id
-        LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = c.fee_raw_id
-       WHERE c.institution_id = ANY(${institutions}::bigint[])
-         AND c.review_status = 'approved'
-         AND c.amount IS NOT NULL
-         AND c.amount_kind IS DISTINCT FROM 'percent'
-    `;
-    const texts = await db<Array<InstitutionText & { institution_id: number | string }>>`
-      SELECT DISTINCT ON (source_document_id) institution_id, source_document_id, normalized_text
-        FROM agent_source_texts
-       WHERE institution_id = ANY(${institutions}::bigint[])
-         AND status = 'completed'
-         AND normalized_text IS NOT NULL
-       ORDER BY source_document_id, id DESC
-    `;
-    const evidence = await readEvidence(db, live.map((fee) => Number(fee.fee_published_id)));
-    // Named fees still published but outside the dollar catalog read above, e.g. a rate.
-    const stillPublished = new Set((await db<Array<{ fee_published_id: number | string }>>`
-      SELECT fee_published_id FROM published_fee_records
-       WHERE fee_published_id = ANY(${ready.map((row) => Number(row.fee_published_id))}::bigint[])
-         AND rolled_back_at IS NULL
-         AND quarantined_at IS NULL
-    `).map((fee) => Number(fee.fee_published_id)));
-    for (const row of ready) {
-      const institutionId = Number(row.institution_id);
-      const judgement = judgeErrorFix(
-        row,
-        live.filter((fee) => Number(fee.institution_id) === institutionId),
-        texts.filter((text) => Number(text.institution_id) === institutionId),
-        evidence,
-        stillPublished.has(Number(row.fee_published_id)),
-      );
-      const feedbackId = Number(row.id);
-      const feePublishedId = Number(row.fee_published_id);
-      if (judgement.verdict === "unknown") { outcome.unknown += 1; continue; }
-      if (judgement.verdict === "not_reproduced") { outcome.notReproduced += 1; continue; }
-      if (judgement.verdict === "still_wrong") {
-        outcome.stillWrong += 1;
-        outcome.stillWrongRows.push({ feedbackId, feePublishedId, institutionId, check: judgement.check, reason: judgement.reason });
-      } else outcome.nowMatches += 1;
-      const closed = judgement.verdict === "now_matches";
-      // A still-wrong row is recorded once per fix; it is judged again each day all the same.
-      if (!closed && truthy(row.reported_still_wrong)) continue;
-      ledger.push({
-        aboutStage: entry.stage,
-        signal: closed ? "right" : "wrong",
-        kind: closed ? ERROR_FIX_CLOSED_KIND : ERROR_FIX_STILL_WRONG_KIND,
-        reportedBy: "deming",
-        checkName: ERROR_FIX_CHECK,
-        institutionId,
-        feePublishedId,
-        canonicalFeeKey: row.canonical_fee_key,
-        weight: 0,
-        runId,
-        evidence: {
-          pr: entry.pr,
-          issue: entry.issue ?? null,
-          feedback_id: feedbackId,
-          feedback_kind: row.kind,
-          feedback_check: row.check_name,
-          verdict: judgement.verdict,
-          judged: judgement.judged,
-          ...(judgement.check ? { check: judgement.check, reason: judgement.reason } : {}),
-        },
-        dedupeKey: ledgerKey(entry.pr, feedbackId, closed ? "closed" : "still_wrong"),
-      });
+    try {
+      const checked = await inSavepoint(db, (scope) => recheckEntry(scope, entry, runId));
+      result.results.push(checked.outcome);
+      ledger.push(...checked.ledger);
+    } catch (error) {
+      result.results.push({ ...emptyOutcome(entry), readFailed: true });
+      result.skipped.push(`PR #${entry.pr} read: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
   if (dryRun) {
@@ -424,11 +491,14 @@ export async function runErrorFixRecheck({
 export function summarizeErrorFixRecheck(result: ErrorFixRecheckResult): string {
   if (result.problems.length > 0) return `The error-fix registry has ${result.problems.length} problem(s); nothing re-checked: ${result.problems.join("; ")}`;
   if (result.entries === 0) return "No process fix names the errors it fixes yet.";
-  const total = (key: "named" | "waiting" | "nowMatches" | "notReproduced" | "stillWrong" | "unknown") =>
+  const total = (key: "named" | "waiting" | "inactive" | "nowMatches" | "notReproduced" | "stillWrong" | "unknown") =>
     result.results.reduce((sum, entry) => sum + entry[key], 0);
+  const failed = result.results.filter((entry) => entry.readFailed).length;
+  const inactive = total("inactive") > 0 ? ` ${total("inactive")} at banks no longer active, so never re-run.` : "";
+  const unread = failed > 0 ? ` The read failed for ${failed} fix(es); they are re-checked on the next run.` : "";
   // Each fix's rows are read up to a limit, so a full window is a floor, not the total.
   const capped = result.results.some((entry) => entry.named >= ERROR_FIX_ROWS_PER_ENTRY);
-  return `${capped ? "At least " : ""}${total("named")} open error(s) named by ${result.entries} fix(es): ${total("nowMatches")} closed (now match the bank's document), ${total("stillWrong")} still wrong after a re-run, ${total("notReproduced")} taken down with no right fee extracted in their place, ${total("waiting")} waiting for a re-run, ${total("unknown")} not judged (no stored text, or the fee is a rate or has no category).`;
+  return `${capped ? "At least " : ""}${total("named")} open error(s) named by ${result.entries} fix(es): ${total("nowMatches")} closed (now match the bank's document), ${total("stillWrong")} still wrong after a re-run, ${total("notReproduced")} taken down with no right fee extracted in their place, ${total("waiting")} waiting for a re-run, ${total("unknown")} not judged (no stored text, or the fee is a rate or has no category).${inactive}${unread}`;
 }
 
 /** The step's detail: totals for the narration, and each fix's counts and still-wrong rows. */
@@ -441,6 +511,8 @@ export function errorFixDetail(result: ErrorFixRecheckResult) {
     not_reproduced: total((entry) => entry.notReproduced),
     still_wrong: total((entry) => entry.stillWrong),
     waiting: total((entry) => entry.waiting),
+    inactive: total((entry) => entry.inactive),
+    read_failed: result.results.filter((entry) => entry.readFailed).length,
     unknown: total((entry) => entry.unknown),
     written: result.written,
     skipped: result.skipped,

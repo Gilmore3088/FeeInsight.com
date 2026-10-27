@@ -10,6 +10,8 @@ import {
   refileFromLine,
   withHeadingAbove,
   BOX_LATE_TARGET,
+  LOAN_LINE_NAME,
+  LOAN_LINE_TARGET,
   withBoxSection,
   withCollectionSection,
   type CategoryGuardCode,
@@ -23,6 +25,9 @@ import { TAXONOMY_FOLD_CHECK, TAXONOMY_FOLD_KIND } from "@/lib/agents/hamilton/t
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { ACCOUNT_TYPE_HOLD_REASON } from "@/lib/agents/hamilton/account-type-hold";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
+import { RETURN_NAME_PATTERN } from "@/lib/custom-report/collection-section-return";
+import { billPayReturnName } from "@/lib/custom-report/payee-returned-bill-pay";
+import { bareLockboxName } from "@/lib/custom-report/commercial-lockbox";
 
 type SqlTag = typeof sql;
 
@@ -465,6 +470,13 @@ const RESTORE_REFILES: ReadonlyMap<string, RegExp> = new Map([
   ["atm_non_network>early_closure", /\baccount clos/i],
   ["late_payment>other_lending_fee", /\bskip/i],
   ["loan_origination>other_lending_fee", /\bskip/i],
+  // Guard v97 (#1905): an NSF or overdraft fee named for a home equity loan or line, a HELOC or a line
+  // of credit is the loan's fee. Checked on source: Navy Federal's "Home Equity Line Check returned
+  // (due to non-sufficient funds) | $29.00" prints under "Equity Loan" (doc 26712 and doc 39026), and
+  // its earlier copy was hand-folded there for #1655 (122342). The live move keeps its twin test, so
+  // 154634 beside 122342 is not moved and comes down.
+  [`nsf>${LOAN_LINE_TARGET}`, LOAN_LINE_NAME],
+  [`overdraft>${LOAN_LINE_TARGET}`, LOAN_LINE_NAME],
 ]);
 
 /**
@@ -552,8 +564,8 @@ export function lateBoxFlags(unique: LiveRefile[]): string[] {
  * section (`COLLECTION_HEADING` in collection-section-return.ts), so only those texts are read for NSF
  * fees, and only for a plain return name (`collectionSectionReturn` reads no other).
  */
-export const COLLECTION_TEXT_PATTERN = String.raw`collection|foreign\s+(check|item|draft)|check\s+clearing`;
-const RETURN_NAME_PATTERN = /^\W*return(?:ed)?\s+(?:checks?|items?)\b/i;
+// Guard v100 (#1912): and "lock box", the words a safe deposit box's lock box name is printed with.
+export const COLLECTION_TEXT_PATTERN = String.raw`collection|foreign\s+(check|item|draft)|check\s+clearing|(returned|rejected)\s+by\s+(the\s+)?payee|lock[\s-]?box`;
 
 /**
  * Guard v90 (#1912): the rows with `collection_section` read from their stored text, for NSF fees
@@ -564,7 +576,13 @@ async function withCollectionSections<T extends Pick<LivePublishedRow, "source_d
   db: SqlTag,
   rows: T[],
 ): Promise<T[] | null> {
-  const needing = rows.filter((row) => row.canonical_fee_key === "nsf" && row.source_document_id != null && RETURN_NAME_PATTERN.test(row.fee_name ?? ""));
+  // Guard v99 (#1912): and a bill pay return name, whose text may say the payee returned it
+  // (`payeeReturnedBillPayOnLine`); only texts that say "returned by payee" are fetched for it.
+  // Guard v100 (#1912): and a safe deposit box whose lock box name says nothing of a box, whose text may
+  // print it as the commercial lockbox service (`commercialLockboxOnLine`).
+  const needing = rows.filter((row) => row.source_document_id != null &&
+    ((row.canonical_fee_key === "nsf" && (RETURN_NAME_PATTERN.test(row.fee_name ?? "") || billPayReturnName(row.fee_name))) ||
+      (row.canonical_fee_key === "safe_deposit_box" && bareLockboxName(row.fee_name))));
   if (needing.length === 0) return rows;
   let texts: Map<number, string>;
   try {
