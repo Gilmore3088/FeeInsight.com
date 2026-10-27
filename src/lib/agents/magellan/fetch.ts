@@ -937,6 +937,11 @@ export interface FetchLinkContext {
   keepRemembered?: boolean;
   /** Extra fields for the attempt log's detail (`live-source-refetch.ts` keys its retries on them). */
   detail?: Record<string, unknown>;
+  /**
+   * The row's `fee_schedule_url` stands in for another page (`live-source-refetch.ts` puts a live
+   * fee's document address there), not the bank's saved link: no `detail.link` proof is recorded.
+   */
+  linkIsStandIn?: boolean;
 }
 
 /**
@@ -972,6 +977,17 @@ export async function fetchAndRecordLink(
   }
   result.body = null;
   if (learning && result.attemptOutcome) {
+    // The bank's saved link, recorded when this fetch is proven to be that link's page: it asked
+    // for the link itself, or it asked for a remembered address that a proven fetch of today's link
+    // landed on (a redirect's page). Magellan's stale-link search lets the document a fetch stored
+    // stand for the link only on this proof (#2055, `discovery.ts` main_document_from_link). Not
+    // recorded when the row's link is a stand-in (`linkIsStandIn`, live-source-refetch.ts).
+    const savedLink = ctx.linkIsStandIn ? null : row.fee_schedule_url;
+    const answered = result.attemptOutcome === "ok" || result.attemptOutcome === "unchanged";
+    const linkProven = savedLink != null && answered && (
+      savedLinkFetched(row, result.sourceUrl)
+      || await rememberedAddressProven(db, result.institutionId, savedLink, [result.sourceUrl, row.profile_canonical_source_url])
+    );
     await recordAttempt(db, {
       institutionId: result.institutionId,
       sourceDocumentId,
@@ -995,6 +1011,7 @@ export async function fetchAndRecordLink(
         vault: result.vaultStatus ?? (vaultOn ? null : vaultSchema ? "not_configured" : "schema_pending"),
         vault_key: result.vaultKey,
         reason: result.reason,
+        ...(linkProven ? { link: savedLink } : {}),
         ...(ctx.note ? { note: ctx.note } : {}),
         ...(ctx.detail ?? {}),
       },
@@ -1037,6 +1054,44 @@ export function withoutArticleRemembered(row: FetchCandidateRow): FetchCandidate
   const saved = normalizeHttpUrl(row.fee_schedule_url);
   if (!remembered || !saved || !isArticleLink(remembered) || isArticleLink(saved)) return row;
   return { ...row, profile_canonical_source_url: null };
+}
+
+/**
+ * Pure: this fetch asked for the bank's saved link itself (#2055). The plain fetch asks for the
+ * remembered address first, and a remembered address can be an older link's page (a link changed
+ * without a fetch, then a Rosetta re-read of the old page set it back), so only a request for the
+ * saved link proves the document it stored is that link's page.
+ */
+export function savedLinkFetched(row: Pick<FetchCandidateRow, "fee_schedule_url">, requestedUrl: string | null | undefined): boolean {
+  const link = normalizeHttpUrl(row.fee_schedule_url);
+  if (!link || !requestedUrl) return false;
+  try {
+    return samePage(link, requestedUrl);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether a remembered address is proven to be the saved link's page (#2055): an earlier fetch that
+ * asked for today's saved link itself, or one already proven so, answered and landed on that address
+ * (its attempt's `detail.link` and `detail.url`). A plain fetch asks for the remembered address once a
+ * redirect set it, so without this the proof would end with the fetch that asked for the link.
+ */
+export async function rememberedAddressProven(db: SqlTag, institutionId: number, link: string, requested: Array<string | null | undefined>): Promise<boolean> {
+  const urls = [...new Set(requested.map((url) => url?.trim()).filter((url): url is string => Boolean(url)))];
+  if (urls.length === 0) return false;
+  const [proof] = await db<{ proven: number }[]>`
+    SELECT 1 AS proven
+      FROM pipeline_attempts proof
+     WHERE proof.institution_id = ${institutionId}
+       AND proof.stage = 'fetch'
+       AND proof.outcome IN ('ok', 'unchanged')
+       AND proof.detail->>'link' = ${link}
+       AND proof.detail->>'url' = ANY(${urls}::text[])
+     LIMIT 1
+  `;
+  return proof != null;
 }
 
 /** Same host (without `www.`) and path (without a trailing slash); scheme, port and query aside. */
