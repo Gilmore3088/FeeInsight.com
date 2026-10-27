@@ -7,17 +7,22 @@ import { formatAdminDateTime } from "@/lib/admin-time";
 import {
   STAGE_AGENT,
   STAGE_ORDER,
+  getLiveFeeYield,
   getMethodScorecard,
   groupMethods,
   METHOD_OUTCOME_GROUPS,
   type MethodGroup,
   type MethodOutcomeGroup,
+  type LiveFeeYield,
   type MethodRow,
 } from "@/lib/data-store/method-scorecard";
 import { Unreadable } from "../../room-hub";
 
 // A 7-day scan of the attempt log takes about a quarter second; ten minutes old is fresh enough.
 const getCachedScorecard = unstable_cache(() => getMethodScorecard(7), ["admin", "method-scorecard", "outcome-breakdown-v2"], { revalidate: 600 });
+
+// The outcome ledger re-judges each bank's links once a day; ten minutes old is fresh enough.
+const getCachedLiveFeeYield = unstable_cache(() => getLiveFeeYield(), ["admin", "live-fee-yield-v1"], { revalidate: 600 });
 
 const OUTCOME_STYLES: Record<MethodOutcomeGroup, { label: string; bar: string; text: string }> = {
   worked: { label: "worked", bar: "bg-emerald-500", text: "text-emerald-700 dark:text-emerald-400" },
@@ -89,6 +94,16 @@ function money(value: number): string {
   return value > 0 && value < 0.01 ? "<$0.01" : `$${value.toFixed(2)}`;
 }
 
+function LiveFees({ live }: { live: LiveFeeYield | undefined }) {
+  if (!live || live.links === 0) return <p className="mt-1 text-[11px] text-gray-500">Live fees: none yet from links it found.</p>;
+  return (
+    <p className="mt-1 text-[11px] text-gray-500">
+      Live fees: <span className="font-semibold text-gray-700 dark:text-gray-200">{live.liveFees.toLocaleString("en-US")}</span> from {live.links.toLocaleString("en-US")} links it found
+      {" "}({(live.liveFees / live.links).toFixed(1)} a link; {live.goodLinks.toLocaleString("en-US")} with 3+ fee types live)
+    </p>
+  );
+}
+
 function OutcomeDetails({ row }: { row: MethodRow }) {
   return (
     <details className="mt-1 text-[11px] text-gray-500">
@@ -114,6 +129,12 @@ export default async function LearningPage() {
   } catch (error) {
     console.error("Learning scorecard failed", error);
   }
+  let liveYield: Awaited<ReturnType<typeof getLiveFeeYield>> | null = null;
+  try {
+    liveYield = await getCachedLiveFeeYield();
+  } catch (error) {
+    console.error("Learning live fee yield failed", error);
+  }
   const groups = scorecard ? groupMethods(scorecard.rows) : new Map<string, MethodGroup[]>();
   const stages = STAGE_ORDER.filter((stage) => groups.has(stage));
 
@@ -133,6 +154,7 @@ export default async function LearningPage() {
             <span key={group}><span aria-hidden="true" className={`mr-1 inline-block size-2 rounded-full ${OUTCOME_STYLES[group].bar}`} />{OUTCOME_STYLES[group].label}</span>
           ))}
         </p>
+        <p className="mt-2 text-[11px] text-gray-500">For Magellan's finders, live fees are counted from the outcome ledger: each link a method found, as last judged, and the live fee types it produced, across all versions. A finder that works often but yields few live fees is weak.</p>
         <p className="mt-2 text-[11px] text-gray-500">Worked means output was produced or a check passed. Holds and disagreements describe the input; they do not establish whether the decision was correct. Verdict scores measure accuracy against answer keys.</p>
         {scorecard ? <p className="mt-2 text-[11px] text-gray-500">Read {formatAdminDateTime(scorecard.readAt)}</p> : null}
       </header>
@@ -180,6 +202,7 @@ export default async function LearningPage() {
                             : `v${row.version} ${pct(share(row, "worked"))} worked of ${row.attempts.toLocaleString("en-US")}`).join(" · ")}
                         </p>
                       ) : null}
+                      {stage === "discover" && liveYield ? <LiveFees live={liveYield.byMethod[method.strategy]} /> : null}
                       <OutcomeDetails row={current} />
                     </div>
                     <p className="min-w-0 text-xs tabular-nums text-gray-600 dark:text-gray-300 xl:text-right">

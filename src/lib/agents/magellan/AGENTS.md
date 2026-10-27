@@ -502,7 +502,12 @@ first among that search's banks; the path's score in platform learning drops by 
 Anything else (not read or extracted yet, a bot wall) is not judged yet. `about_strategy`
 is the Magellan specialist whose attempt found the address (null for links the old
 crawler left). Only changed judgements are written; the step's `link_outcomes` detail
-reports the counts. Finders, the fee-page classifier and Darwin read these rows.
+reports the counts, plus `liveFeesByMethod`: links and live fee types per finder for the
+links it judged (`original_link` for links with no finder). Finders, the fee-page classifier
+and Darwin read these rows. The Learning page (`/admin/agents/learning`) shows each finder's
+live fees from these rows (`getLiveFeeYield` in `src/lib/data-store/method-scorecard.ts`,
+all versions, as last judged) beside its attempt outcomes, so a finder that often "works"
+but yields few live fees reads as weak.
 
 ## Error review per chunk (`batch-review.ts`)
 

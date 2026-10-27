@@ -71,3 +71,23 @@ describe("methodOutcomeGroup", () => {
     expect(methodOutcomeGroup("low_yield")).toBe("worked");
   });
 });
+
+describe("getLiveFeeYield", () => {
+  it("sums the outcome ledger's live fees per discovery method, with record links under their own name", async () => {
+    const { sql } = await import("./connection");
+    const calls: { text: string; values: unknown[] }[] = [];
+    (sql as unknown as ReturnType<typeof vi.fn>).mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
+      calls.push({ text: strings.join("?"), values });
+      return Promise.resolve([
+        { strategy: "discover.paid_schedule_search", links: 292, good_links: 241, live_fees: "3604" },
+        { strategy: "original_link", links: 2951, good_links: 2072, live_fees: "33247" },
+      ]);
+    });
+    const { getLiveFeeYield } = await import("./method-scorecard");
+    const { byMethod } = await getLiveFeeYield();
+    expect(byMethod["discover.paid_schedule_search"]).toEqual({ links: 292, goodLinks: 241, liveFees: 3604 });
+    expect(byMethod.original_link.liveFees).toBe(33247);
+    expect(calls[0].values).toEqual(["original_link", "magellan.link_yield"]);
+    expect(calls[0].text).toContain("about_stage = 'discover'");
+  });
+});

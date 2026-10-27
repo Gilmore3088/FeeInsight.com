@@ -1,6 +1,7 @@
 import { sql } from "./connection";
 import referenceManifest from "@/lib/agents/darwin/answer-key-reference-manifest.json";
 import { createHash } from "node:crypto";
+import { LINK_YIELD_CHECK, ORIGINAL_LINK_METHOD } from "@/lib/agents/magellan/outcomes";
 
 /** Reporting categories only; the attempt log and agents' retry rules stay unchanged. */
 export const METHOD_OUTCOME_GROUPS = ["worked", "nothing", "held", "nextStep", "failed"] as const;
@@ -143,4 +144,38 @@ export async function getMethodScorecard(days = 7): Promise<{ readAt: string; ro
     }
   }
   return { readAt: new Date().toISOString(), rows: [...methods.values()] };
+}
+
+/** What the links a discovery method found produced, as the outcome ledger last judged them. */
+export interface LiveFeeYield {
+  /** Links the method found that the ledger has judged. */
+  links: number;
+  /** Of those, links with at least 3 live fee types (the catalog's bar). */
+  goodLinks: number;
+  /** Live fee types summed over those links. */
+  liveFees: number;
+}
+
+/**
+ * Live fees produced per discovery method, summed over every version, from Magellan's
+ * outcome ledger (`magellan.link_yield` rows in `pipeline_feedback`, one row per link).
+ * A method that finds many pages but few live fees shows as weak here even when its
+ * attempts mostly "worked".
+ */
+export async function getLiveFeeYield(): Promise<{ readAt: string; byMethod: Record<string, LiveFeeYield> }> {
+  const rows = await sql`
+    SELECT COALESCE(about_strategy, ${ORIGINAL_LINK_METHOD}) AS strategy,
+           COUNT(*)::int AS links,
+           COUNT(*) FILTER (WHERE evidence->>'label' = 'good')::int AS good_links,
+           COALESCE(SUM(CASE WHEN evidence->>'live_fees' ~ '^[0-9]+$' THEN (evidence->>'live_fees')::bigint ELSE 0 END), 0)::bigint AS live_fees
+      FROM pipeline_feedback
+     WHERE check_name = ${LINK_YIELD_CHECK}
+       AND about_stage = 'discover'
+     GROUP BY 1
+  `;
+  const byMethod: Record<string, LiveFeeYield> = {};
+  for (const row of rows) {
+    byMethod[String(row.strategy)] = { links: Number(row.links), goodLinks: Number(row.good_links), liveFees: Number(row.live_fees) };
+  }
+  return { readAt: new Date().toISOString(), byMethod };
 }
