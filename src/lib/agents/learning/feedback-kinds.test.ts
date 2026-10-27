@@ -127,6 +127,9 @@ describe("which reader reads a row, by its stage and check (#2066)", () => {
     expect(feedbackRowReaders({ kind: "wrong_category", about_stage: "verify", check_name: "hamilton.category_guard:v80" })).toEqual([RELEASE]);
     expect(feedbackRowReaders({ kind: "wrong_category", about_stage: "extract", check_name: "hamilton.category_guard" })).toEqual([KNOX, "src/lib/agents/knox/label-queue.ts", RELEASE]);
     expect(feedbackRowReaders({ kind: "wrong_category", about_stage: "extract", check_name: "knox.lessons" })).toEqual([KNOX, "src/lib/agents/knox/label-queue.ts"]);
+    // Release review reads the taxonomy check's category rows too (release-review.ts).
+    expect(feedbackRowReaders({ kind: "wrong_category", about_stage: "publish", check_name: "hamilton.category_outside_taxonomy" })).toEqual([RELEASE]);
+    expect(feedbackRowReaders({ kind: "off_taxonomy", about_stage: "verify", check_name: "hamilton.category_guard:v80" })).toEqual([RELEASE]);
     // A person's hold goes to the reader of the stage it names.
     expect(feedbackRowReaders({ kind: "admin_hold", about_stage: "read", check_name: "admin.fee_hold" })).toEqual(["src/lib/agents/rosetta/read.ts"]);
     expect(feedbackRowReaders({ kind: "admin_hold", about_stage: "discover", check_name: "admin.fee_hold" })).toEqual(["src/lib/agents/magellan/discovery.ts"]);

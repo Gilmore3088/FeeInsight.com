@@ -78,6 +78,8 @@ const AT_DISCOVER = { stages: ["discover"] } as const;
 const AT_READ = { stages: ["read"] } as const;
 const AT_EXTRACT = { stages: EXTRACT } as const;
 const AT_VERIFY = { stages: ["verify"] } as const;
+/** The checks whose wrong_category and off_taxonomy rows Darwin's release review reads at any stage (release-review.ts). */
+const RELEASE_REVIEW_CATEGORY_CHECKS = ["hamilton.category_guard", "hamilton.category_outside_taxonomy"] as const;
 /** The confirmed takedowns Knox's takedown lessons and Magellan's link yield read (`KNOX_READ_CHECKS`, `READ_WRONG_CHECKS`). */
 const CONFIRMED_READ_CHECKS = ["hamilton.source_check", "hamilton.limit_guard", "hamilton.business_schedule"] as const;
 /** Each person's hold or correction goes to the reader of the stage it names (#2057, #2059). */
@@ -87,7 +89,7 @@ const HAND_ROW_SCOPES = {
 
 export const FEEDBACK_KINDS = {
   // Fee level.
-  wrong_category: { readers: [KNOX_LESSONS, LABEL_QUEUE, RELEASE_REVIEW], readStages: EXTRACT, anyStageChecks: ["hamilton.category_guard"], unreadChecks: ["hamilton.account_type_hold"], readerScopes: { [KNOX_LESSONS]: AT_EXTRACT, [LABEL_QUEUE]: AT_EXTRACT, [RELEASE_REVIEW]: { checks: ["hamilton.category_guard"] } }, note: "Knox's lessons read extract rows; release review reads the category guard's rows at any stage; the account-type hold files its live takedowns at publish (its releases are account_type_hold_released, #1680)." },
+  wrong_category: { readers: [KNOX_LESSONS, LABEL_QUEUE, RELEASE_REVIEW], readStages: EXTRACT, anyStageChecks: RELEASE_REVIEW_CATEGORY_CHECKS, unreadChecks: ["hamilton.account_type_hold"], readerScopes: { [KNOX_LESSONS]: AT_EXTRACT, [LABEL_QUEUE]: AT_EXTRACT, [RELEASE_REVIEW]: { checks: RELEASE_REVIEW_CATEGORY_CHECKS } }, note: "Knox's lessons read extract rows; release review reads the category guard's and the taxonomy check's rows at any stage (release-review.ts); the account-type hold files its live takedowns at publish (its releases are account_type_hold_released, #1680)." },
   wrong_amount: { readStages: EXTRACT, readers: [FEEDBACK_SYNC], unreadChecks: [DARWIN_VERIFY, "hamilton.hand_takedown", "hamilton.eval_verdict", "hamilton.hand_amount_correction"], note: "Only the takedown sync's restore detection reads it; Knox learns no amount lesson (#2067)." },
   not_a_fee: { readStages: EXTRACT, readers: [FEEDBACK_SYNC], unreadChecks: [DARWIN_VERIFY, "hamilton.hand_takedown", "hamilton.eval_verdict"] },
   threshold: { readStages: EXTRACT, readers: [FEEDBACK_SYNC] },
@@ -96,7 +98,7 @@ export const FEEDBACK_KINDS = {
   not_on_schedule: { readStages: EXTRACT, readers: ["src/lib/agents/darwin/release-held.ts", FEEDBACK_SYNC], unreadChecks: [DARWIN_VERIFY, "hamilton.product_page", "hamilton.hand_takedown"] },
   unreproduced: { readStages: EXTRACT, readers: [FEEDBACK_SYNC] },
   outside_range: { readStages: EXTRACT, readers: [FEEDBACK_SYNC], unreadChecks: [DARWIN_VERIFY] },
-  off_taxonomy: { readers: [FEEDBACK_SYNC, RELEASE_REVIEW], readStages: EXTRACT, anyStageChecks: ["hamilton.category_outside_taxonomy"], unreadChecks: [DARWIN_VERIFY], readerScopes: { [FEEDBACK_SYNC]: AT_EXTRACT, [RELEASE_REVIEW]: { checks: ["hamilton.category_outside_taxonomy"] } } },
+  off_taxonomy: { readers: [FEEDBACK_SYNC, RELEASE_REVIEW], readStages: EXTRACT, anyStageChecks: RELEASE_REVIEW_CATEGORY_CHECKS, unreadChecks: [DARWIN_VERIFY], readerScopes: { [FEEDBACK_SYNC]: AT_EXTRACT, [RELEASE_REVIEW]: { checks: RELEASE_REVIEW_CATEGORY_CHECKS } } },
   duplicate: { readStages: EXTRACT, readers: [FEEDBACK_SYNC], unreadChecks: ["hamilton.hand_takedown", "hamilton.cut_name_duplicate"] },
   refreshed: { readStages: EXTRACT, readers: [FEEDBACK_SYNC] },
   answer_key: { readers: ["src/lib/agents/darwin/category-model.ts", KNOX_LESSONS, LABEL_QUEUE] },

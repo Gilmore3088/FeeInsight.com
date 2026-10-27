@@ -195,11 +195,12 @@ function liveChecksFlag({ fee, text, line, frequency }: WeeklyMiss): string | nu
 
 // Hourly shown flat (W43: 42 of the 56 caught-but-not-routed misses): Darwin's hourly re-check sets
 // the frequency, but its frequency_filled row is a kind no Knox file reads, so Knox reads the next
-// bank's "/hour" the same way (W43's "Account research fee", "$25/hour, $25 minimum").
-const HOURLY_LINE = "Account research fee | $25.00/hour, $25.00 minimum";
+// bank's "/hour" the same way. W43, fee 107927 "Account research fee" $25: its stored excerpt, verbatim;
+// Darwin's hourly check filled it from blank (its frequency_filled row).
+const HOURLY_LINE = "Account research fee................................... $25.00 per hour, $25.00 minimum Online Bill Payment check copy mailed to merchant .............................. $5.00";
 const HOURLY: WeeklyMiss = {
   fee: liveFee(961, { canonical_fee_key: "account_research", fee_name: "Account research fee", amount: 25 }),
-  text: `Fee Schedule\n${HOURLY_LINE}\nStop Payment Fee | $30.00`, line: HOURLY_LINE, frequency: null,
+  text: `Fee Schedule\n${HOURLY_LINE}`, line: HOURLY_LINE, frequency: null,
 };
 const hourlyRows = () => findHourlyFees([{
   fee_published_id: 961, fee_verified_id: 961, institution_id: INSTITUTION, fee_name: HOURLY.fee.fee_name, amount: 25,
@@ -225,10 +226,13 @@ const TIER: WeeklyMiss = {
 // A garbled name (W43, fee 49726 "2.00 Inactive Checking and Money Mark"): two columns read across, so
 // the name opens on the price and is cut mid-word. (W43's "Courtesy Pay N/A" is not planted: the name
 // check flags it today, but the daily audit reads only a sample, so it never reached that fee.)
-const NAME_LINE = "Excessive Withdrawal Fee (Savings Accts only; 4 free per | 2.00 Inactive Checking and Money Market Account (monthly $2.00";
+// The text is the document's two-column lines; the line is the fee's stored excerpt, verbatim.
+const NAME_LINE = "Excessive Withdrawal Fee (Savings Accts only; 4 free per month then fee each time) 2.00 Inactive Checking and Money Market Account (monthly after 6 months no activity) $2.00";
 const GARBLED_NAME: WeeklyMiss = {
   fee: liveFee(964, { canonical_fee_key: "dormant_account", fee_name: "2.00 Inactive Checking and Money Mark", amount: 2 }),
-  text: ["Checking, Money Market and Savings Accounts", NAME_LINE, "month then fee each time) | after 6 months no activity)",
+  text: ["Checking, Money Market and Savings Accounts",
+    "Excessive Withdrawal Fee (Savings Accts only; 4 free per | 2.00 Inactive Checking and Money Market Account (monthly $2.00",
+    "month then fee each time) | after 6 months no activity)",
     "NSF, Courtesy Pay, ACH Returned Item, Loan Payment | $35.00 Re-Deposit Returned Item (each item) $10.00"].join("\n"),
   line: NAME_LINE, frequency: "monthly",
 };
@@ -375,7 +379,8 @@ export const PLANTED_ERRORS: PlantedError[] = [
       planted: () => judgeBank([KEY_FEE], keyText("Fee Schedule\nStop Payment Fee | $30.00"))[0].verdict === "missed",
       corrected: () => judgeBank([KEY_FEE], keyText("Fee Schedule\nStop Payment Fee | $30.00\nOutgoing wire | $25.00"))[0].verdict === "read",
     },
-  },  {
+  },
+  {
     key: "amount_hourly_flat",
     label: "an hourly price shown as a flat charge",
     owner: "knox",
