@@ -93,7 +93,8 @@ SELECT disputed, count(*) FILTER (WHERE cardinality(keys) = 1) AS unique_key,
 -- false: 1,678 / 1,599 / 1,592   true: 27 / 13 / 13
 ```
 
-**Stops a repeat:** Agent lessons knox/issue-2068-paid-reads-carry-the-free-reads-lessons and
-darwin/issue-2068-measure-a-shadow-check-before-it-acts. Guards: `src/lib/agents/knox/paid-extract.test.ts`,
-`src/lib/agents/learning/lesson-reader.test.ts`, `src/lib/agents/darwin/category-model.test.ts`,
-`src/lib/agents/darwin/verify.test.ts`.
+**Agent lesson:** knox/issue-2068-paid-reads-carry-the-free-reads-lessons,
+darwin/issue-2068-measure-a-shadow-check-before-it-acts
+
+**Guard:** `src/lib/agents/knox/paid-extract.test.ts`, `src/lib/agents/learning/lesson-reader.test.ts`,
+`src/lib/agents/darwin/category-model.test.ts`, `src/lib/agents/darwin/verify.test.ts`
