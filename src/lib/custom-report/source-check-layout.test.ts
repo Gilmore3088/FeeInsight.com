@@ -222,28 +222,6 @@ describe("checkFeeAgainstSource daily caps", () => {
     expect(checkFeeAgainstSource("Overdraft Daily Cap | $175", "Overdraft Daily Cap", 175, ".", "od_daily_cap").ok).toBe(true);
   });
 
-  it("v136: reads a cap named after its figure, priced per day, or capping the fees its sentence names", () => {
-    const cap = (text: string, name: string, amount: number) => checkFeeAgainstSource(text, name, amount, ".", "od_daily_cap").ok;
-    expect(cap("Paid Overdraft Charge: $30.00/item ($150.00 max daily)", "Paid Overdraft Charge daily maximum", 150)).toBe(true);
-    expect(cap("Total overdraft charges/fees will not exceed $100.00 per day", "Overdraft fees daily maximum", 100)).toBe(true);
-    // A cap line under the fee it caps (State key 8741, Texas keys 2416 and 2425, State key 2017).
-    expect(cap("Courtesy Pay | $30/item | Wire Transfer (incoming) | $5/item\n4 item cap per day (max fee of $120/day)", "Courtesy Pay daily maximum", 120)).toBe(true);
-    expect(cap("Return Item Fee: $30 (unpaid due to insufficient funds)\n\nLimit of $120 per day", "Return Item Fee daily maximum", 120)).toBe(true);
-    expect(cap("Overdraft (OD) Fee $32.50\n(Daily limit of $97.50 per\naccount)", "Overdraft (OD) Fee daily maximum", 97.5)).toBe(true);
-    expect(cap("Overdraft Charge each item paid\n\n$32.00 per item/Daily maximum $96.00. Overdraft charges will not be assessed on weekends.", "Overdraft Charge each item paid daily maximum", 96)).toBe(true);
-  });
-
-  it("v136: does not take another fee's line, or a limit on another service, as the cap line under a fee", () => {
-    const cap = (text: string, name: string, amount: number) => checkFeeAgainstSource(text, name, amount, ".", "od_daily_cap").ok;
-    expect(cap("Overdraft Fee | $30.00\nWire Transfer | $25.00 | Maximum of $120.00 per day", "Overdraft Fee daily maximum", 120)).toBe(false);
-    expect(cap("Overdraft Fee | $30.00\nTotal ATM withdrawals will not exceed $500.00 per day", "Overdraft Fee daily maximum", 500)).toBe(false);
-    expect(cap("Overdraft Fee | $30.00\nDaily ATM cash limit: $500", "Overdraft Fee daily maximum", 500)).toBe(false);
-    expect(cap("Overdraft Fee | $30.00 per item\nCourtesy Pay limit of $500 per day", "Overdraft Fee daily maximum", 500)).toBe(false);
-    expect(cap("Overdraft Fee | $30.00\nStop Payment | $25.00\nMoney Order | $5.00\nLimit of $120 per day", "Overdraft Fee daily maximum", 120)).toBe(false);
-    // A cap read never stands in for the price of a fee that is not a cap.
-    expect(checkFeeAgainstSource("Overdraft Fee | $30.00\nLimit of $120 per day", "Overdraft Fee", 120, ".", "overdraft").ok).toBe(false);
-  });
-
   it("does not read a figure without cap wording, or another fee's cap, as the cap", () => {
     expect(checkFeeAgainstSource("Overdraft Fee | $36.00 per item", "Overdraft Daily Cap", 36, ".", "od_daily_cap").ok).toBe(false);
     expect(checkFeeAgainstSource("Wire Transfer | $25.00 | Maximum of $120.00 per day", "Overdraft Daily Cap", 120, ".", "od_daily_cap").ok).toBe(false);

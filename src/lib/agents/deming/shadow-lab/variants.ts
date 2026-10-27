@@ -37,12 +37,15 @@ export interface ExperimentConfig {
   description: string;
   /** The publish row carries Knox's excerpt, so the existing limit guard reads the line too. */
   excerptAtPublish: boolean;
+  /** v136 (#2064): Knox's self-check and Darwin's verify trace daily caps the wider way (`dailyCapLines`). */
+  dailyCapLines?: boolean;
 }
 
 const CURRENT_CONFIG: ExperimentConfig = {
   id: "current",
   description: "Today's free Knox read, Darwin's verify checks and Hamilton's publish gate.",
   excerptAtPublish: false,
+  dailyCapLines: false,
 };
 
 export const DEFAULT_EXPERIMENT = "excerpt-at-publish";
@@ -53,6 +56,14 @@ export const EXPERIMENTS: Readonly<Record<string, ExperimentConfig>> = {
     description:
       "Hamilton's publish-time limit guard reads Knox's excerpt, instead of leaving the excerpt to the live limit sweep after publication.",
     excerptAtPublish: true,
+    dailyCapLines: false,
+  },
+  "daily-cap-lines": {
+    id: "daily-cap-lines",
+    description:
+      "The shared check traces a daily cap the wider v136 way (`DAILY_CAP_LINES_LIVE` switched on) in Knox's self-check and Darwin's verify.",
+    excerptAtPublish: false,
+    dailyCapLines: true,
   },
 };
 
@@ -74,8 +85,8 @@ function filedAs(text: string, hint: string, name: string, amount: number): stri
   return refileCategory(hint, name, foldContext(text, name, amount)) ?? hint;
 }
 
-function readText(text: string): StageOutput {
-  const result = runFreeSpecialists(text);
+function readText(text: string, dailyCapLines = false): StageOutput {
+  const result = runFreeSpecialists(text, { dailyCapLines });
   const passed: StageFee[] = result.candidates.map((candidate) => ({
     canonicalFeeKey: filedAs(text, candidate.canonicalHint, candidate.feeName, candidate.amount),
     feeName: candidate.feeName,
@@ -120,7 +131,7 @@ function rawRow(fee: StageFee): RawFeeRow {
   };
 }
 
-function verifyFee(fee: StageFee, text: string): VerifyResult {
+function verifyFee(fee: StageFee, text: string, dailyCapLines = false): VerifyResult {
   const key = fee.canonicalFeeKey;
   const name = fee.feeName ?? "";
   if (!key) return { ok: false, reason: "missing_canonical" };
@@ -130,9 +141,9 @@ function verifyFee(fee: StageFee, text: string): VerifyResult {
   const code =
     verificationReasonCode(row, key) ??
     (pendingCategoryLesson(key, name) ? "category_lesson_pending" : null) ??
-    (statedInOwnSource(row, texts, key) ? null : "not_in_source");
+    (statedInOwnSource(row, texts, key, { dailyCapLines }) ? null : "not_in_source");
   if (code) return { ok: false, reason: code };
-  const line = sourceLineFor(row, texts, key) ?? fee.excerpt;
+  const line = sourceLineFor(row, texts, key, { dailyCapLines }) ?? fee.excerpt;
   const post = postSourceCheck(key, name, amount, line, text);
   if (post) return { ok: false, reason: post.rule ? `${post.code}:${post.rule}` : post.code };
   if (tierPerkZero(amount, name, REPLAY_URL, text, key)) return { ok: false, reason: "tier_perk_zero" };
@@ -188,8 +199,8 @@ function buildVariant(config: ExperimentConfig): PipelineVariant {
       if (c.document.url && isProductPage(c.document.url)) return { accepted: false, reason: "product_page" };
       return { accepted: true, reason: null };
     },
-    extract: readText,
-    verify: verifyFee,
+    extract: (text) => readText(text, config.dailyCapLines ?? false),
+    verify: (fee, text) => verifyFee(fee, text, config.dailyCapLines ?? false),
     publishGate: (fee, text, live) => gateFee(config, fee, text, live),
   };
 }

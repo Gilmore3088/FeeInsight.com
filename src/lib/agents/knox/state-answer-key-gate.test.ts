@@ -73,15 +73,15 @@ const FLOORS: Record<string, { right: number; wrong: number }> = {
   GA: { right: 186, wrong: 10 },
   // 88 since the top-50 fold (Oct 8): a "Travel Card Reload" at $4.95 now files as a gift card
   // at $4.95, the same (category, price) pair as that schedule's gift card, so two right reads count once.
-  // v136 (#2064): key 10500's "($150.00 max daily)" is read as the daily cap: 116 -> 117.
-  IL: { right: 117, wrong: 4 },
+  IL: { right: 116, wrong: 4 },
   MI: { right: 138, wrong: 0 },
   // 96 since collection items got their own type (Oct 8): the key files a "$20.00 for the first
   // item" line under check cashing, and Knox now reads that schedule's "Collection Item" $20
   // as a collection item, so one right read became one wrong one.
-  // v136 (#2064): daily caps on overdraft and NSF fees, key 2017's "Daily maximum $96.00" and key 8741's
-  // "4 item cap per day (max fee of $120/day)" and "$140/day": 124 -> 127.
-  MN: { right: 127, wrong: 8 },
+  // v136 (#2064): key 2017's "$32.00 per item/Daily maximum $96.00" is read as the daily cap: 124 -> 125.
+  // With `DAILY_CAP_LINES_LIVE` on (off today), key 8741's "4 item cap per day (max fee of $120/day)"
+  // and "$140/day" trace too (MN 127), and key 10500's "($150.00 max daily)" (IL 117).
+  MN: { right: 125, wrong: 8 },
   NY: { right: 44, wrong: 4 },
   // v97: 870 -> 877 right (GA's key 60); wrong 33 -> 34, inside the floor.
   // Guard v81 and the escheat range (Oct 22): returned check deposits and escheat processing fees read
@@ -90,9 +90,10 @@ const FLOORS: Record<string, { right: number; wrong: number }> = {
   // v101: 890 -> 903 right (held vocabulary; see CA); wrong unchanged at 34.
   // v102: 903 -> 907 right (column headings; see CA); wrong unchanged at 34.
   // v103: 907 -> 909 right (stacked cells; see CA); wrong unchanged at 34, now the ceiling.
-  // v136 (#2064): main read 910 right (FL 141, one above its floor) / 31 wrong; the daily caps take it
-  // to 914 / 31 (IL 117, MN 127). No wrong read added; the wrong ceilings keep their slack from main.
-  all: { right: 914, wrong: 34 },
+  // v136 (#2064): main read 910 right (FL 141, one above its floor) / 31 wrong; key 2017's daily cap
+  // takes it to 911 / 31 (914 with `DAILY_CAP_LINES_LIVE` on). No wrong read added; the wrong ceilings
+  // keep their slack from main.
+  all: { right: 911, wrong: 34 },
 };
 
 const fixture = JSON.parse(

@@ -511,11 +511,13 @@ import { withWireChannelClause } from "./wire-channel-clause";
 // The new name must trace on the stored text, or the read keeps its old name.
 // v136 (#2064): a dollar cap on a day's overdraft or NSF fees is read in the other ways schedules print
 // it (`daily-fee-cap.ts`, the overdraft family v6): named after its figure ("$30.00/item ($150.00 max
-// daily)"), its own line under the fee it caps ("4 item cap per day (max fee of $120/day)", "Limit of
-// $120 per day"), "Daily maximum" after the per-item price, and a sentence that names the fees it caps
-// ("Total overdraft charges/fees will not exceed $100.00 per day"). The shared check traces such a cap
-// on its line under the capped fee's line (`capLineUnder`), for a cap category only. Admit-only: it
-// reads figures no rule filed as a fee. The stale-read floor stays at v97.
+// daily)"), its own line under the fee it caps ("4 item cap per day (max fee of $120/day)"), "Daily
+// maximum" after the per-item price, and a sentence that names the fees it caps. `refusesDailyCap`
+// (shared with the source check) refuses another service's limit, a sustained or "after N days" charge,
+// a per-item price and a limit no fee word governs; the cap is two to twelve of the fee it caps. The
+// shared check's wider cap trace is behind `DAILY_CAP_LINES_LIVE` (off), so with it off Knox's new reads
+// publish only where main's trace already finds them (State key 2017, live audit 75); the rest are held
+// untraced. Admit-only. The stale-read floor stays at v97.
 export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 136 } as const;
 
 export interface SpecialistRun {
@@ -648,8 +650,14 @@ function tracesToSource(text: string, feeName: string, amount: number): boolean 
 }
 
 /** The self-check's verdict: whether the fee traces, and the row it traced to. */
-function selfCheck(text: string, feeName: string, amount: number, canonicalHint?: string): { traces: boolean; row: string | null } {
-  const result = checkFeeAgainstSource(text, feeName, amount, ".", canonicalHint);
+function selfCheck(
+  text: string,
+  feeName: string,
+  amount: number,
+  canonicalHint?: string,
+  dailyCapLines?: boolean,
+): { traces: boolean; row: string | null } {
+  const result = checkFeeAgainstSource(text, feeName, amount, ".", canonicalHint, dailyCapLines == null ? {} : { dailyCapLines });
   return { traces: result.ok || result.reason === "tiered_fee", row: result.ok ? result.sourceLine : null };
 }
 
@@ -754,7 +762,13 @@ function cellAlreadyRead(read: ExtractedFeeCandidate, prior: readonly ExtractedF
 
 export function runFreeSpecialists(
   sourceText: string,
-  options: { institutionName?: string | null; /** v133 (#2040): defaults to the switch, off. */ noChargeSentences?: boolean } = {},
+  options: {
+    institutionName?: string | null;
+    /** v133 (#2040): defaults to the switch, off. */
+    noChargeSentences?: boolean;
+    /** v136 (#2064): the self-check's wider daily cap trace; defaults to `DAILY_CAP_LINES_LIVE`, off. */
+    dailyCapLines?: boolean;
+  } = {},
 ): FreeExtractionResult {
   const institutionName = options.institutionName ?? null;
   // Labeled fee cards ("Fee TypeX" / ... / "Fee$5.00") are read as one row, as the shared
@@ -877,7 +891,7 @@ export function runFreeSpecialists(
         }
         continue;
       }
-      const checked = selfCheck(checkText, feeName, read.amount, read.canonicalHint);
+      const checked = selfCheck(checkText, feeName, read.amount, read.canonicalHint, options.dailyCapLines);
       const rowFrequency = checked.row ? frequencyFromLine(checked.row, read.amount) : null;
       const frequency = rowFrequency
         ? settledFrequency(checked.row, read.amount, rowFrequency, read.canonicalHint)

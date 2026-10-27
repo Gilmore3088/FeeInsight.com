@@ -2374,10 +2374,14 @@ only on what the free team could not read.
     read price windows across a document, including PDFs flattened to one line: tiers
     ("2nd and subsequent items"), daily caps (`od_daily_cap` / `nsf_daily_cap`), waivers,
     ranges and FREE/NONE. v136 (#2064, `daily-fee-cap.ts`): a dollar cap is also read when named
-    after its figure ("($150.00 max daily)"), on its own line under the fee it caps ("Limit of $120
-    per day"), as "Daily maximum" after the per-item price, or in a sentence that names the fees it
-    caps; the words before the figure must be only cap, count and fee words, so a card, ATM,
-    deposit or Courtesy Pay limit is never a cap.
+    after its figure ("($150.00 max daily)"), on its own line under the fee it caps ("4 item cap per
+    day (max fee of $120/day)"), as "Daily maximum" after the per-item price, or in a sentence that
+    names the fees it caps. The words before the figure must be only cap, count and fee words, and
+    `refusesDailyCap` (`src/lib/daily-cap-wording.ts`) refuses a card, ATM, deposit or deposited-item
+    limit, a sustained or "after N days" charge, a per-item price, and a limit no fee word governs
+    ("Overdraft Limit $500 per day"). The cap is two to twelve of the fee it caps, with no other price
+    between them unless the cap prints the count. The shared check's wider cap trace that most of these
+    need is behind `DAILY_CAP_LINES_LIVE` (off) until James's live dry run.
   - Every pass 2 row must pass Darwin's category guard and amount envelope before it is
     kept. A later specialist adds a fee only when no earlier one has the same fee.
     Pass 2 rows carry `knox_specialist:<strategy>`.
