@@ -91,7 +91,7 @@ type SqlTag = typeof sql;
  * guard reads a bare cents price; credit words are whole words and no product noun; a credit after a
  * fee head with no price of its own is a `reread`; a tail rename never on a line cut at its start; the
  * SQL reads U+FEFF (and, in `liveNamesFor`, the no-break spaces) as spaces. A floor beside a cap and
- * "$N minimum balance" read as a floor are left as they are (closing them adds takedowns).
+ * "$N minimum balance" read as a floor were left for v8 (closed there; see `LIVE_FRAGMENT_STRATEGY`).
  *
  * v2 (#1499, after a prod hand-check of v1): the head is read wider for `sentence_end` names and
  * generic or clause heads are refused (see `gluedSentenceHead`); a name that speaks of a minimum or
@@ -153,8 +153,14 @@ export const LIVE_FRAGMENT_FLAG_PREFIX = "darwin_live_fragment";
  * v7 (#1521): a name cut before its noun, after a count and an audience word ("Counter Check: A
  * blank page of 3 personal", 75914; "... Daily fee after 5 business", 74142), is a `sentence_end`
  * (`DANGLING_AUDIENCE` in the shared shape). Both live matches on 2026-10-25 are rereads kept live.
+ * v8 (#1521): the two floor gaps the round 7 review left open. "$N minimum" before a balance,
+ * deposit, "to open" or purchase word, or after "below", "under" or "than", is a threshold, not a
+ * floor ("$500 minimum balance", "below $500 minimum"); and a floor holds a refused line live only
+ * when the amount is not a cap's or opening deposit's own figure (`liveFragmentFloorHolds`:
+ * "Overdraft Fee $35, maximum of $100 per day; $5 minimum" at $100 comes down). Dry run 2026-10-26:
+ * 2 live fragment fees carry floor wording, both under $100, so no live verdict changes.
  */
-export const LIVE_FRAGMENT_STRATEGY = { strategy: LIVE_FRAGMENT_CHECK, version: 7 } as const;
+export const LIVE_FRAGMENT_STRATEGY = { strategy: LIVE_FRAGMENT_CHECK, version: 8 } as const;
 /**
  * Waiver or discount wording: a name that says the price is waived or cut is a waived price, never
  * renamed. v6 (#1499 review): it bars a rename only; a waived line at a positive amount is kept live
@@ -358,7 +364,38 @@ export const LIVE_FRAGMENT_CAP_WORDING = /\b(?:max(?:imum)?|cap)\s+(?:of\s+\$|of
  * greater", "$100 minimum") states the least the fee can be, so the amount may well be the fee: the
  * line is a `reread`, never a takedown and never a rename. Caps (`LIVE_FRAGMENT_CAP_WORDING`) stay hard.
  */
-export const LIVE_FRAGMENT_FLOOR_WORDING = /\b(?:greater\s+of|minimum\s+charge|min\s+or|whichever\s+is\s+greater)\b|\$\s?\d[\d,]*(?:\.\d{1,2})?\s+minimum\b/i;
+export const LIVE_FRAGMENT_FLOOR_WORDING = /\b(?:greater\s+of|minimum\s+charge|min\s+or|whichever\s+is\s+greater)\b|\$\s?\d[\d,]*(?:\.\d{1,2})?\s+minimum\b(?!\s+(?:(?:daily|average|avg|monthly|account|opening|initial|collected|ledger)\s+)*(?:balances?|deposits?|to\s+open|purchases?)\b)/i;
+/**
+ * v8 (#1521): the line states a floor (`LIVE_FRAGMENT_FLOOR_WORDING`), read with its thresholds left
+ * out (`LIVE_FRAGMENT_THRESHOLD_DOLLAR`), so "below $500 minimum" or "less than $500 minimum" is a
+ * balance threshold, not a floor. "$N minimum" before a balance, deposit, "to open" or purchase word is
+ * no floor either ("$500 minimum balance", "$25.00 minimum purchase").
+ */
+export function liveFragmentFloor(name: string): boolean {
+  return LIVE_FRAGMENT_FLOOR_WORDING.test(name.replace(LIVE_FRAGMENT_THRESHOLD_DOLLAR, " "));
+}
+/**
+ * v8 (#1521): the figure a cap or an opening deposit states ("maximum of $100", "capped at $90",
+ * "lesser of $50", "minimum opening deposit of $100", "$100 minimum opening deposit", "$25 to open").
+ * A floor on the same line holds a refused line live only when the amount is not one of these
+ * figures: "Overdraft Fee $35, maximum of $100 per day; $5 minimum" at $100 is the cap, not the fee.
+ * Groups 1-4 are the figure.
+ */
+export const LIVE_FRAGMENT_LIMIT_FIGURE = /\b(?:max(?:imum)?|cap(?:ped)?(?:\s+at)?|lesser\s+of)\s+(?:of\s+)?\$\s?(\d[\d,]*(?:\.\d{1,2})?)|\b(?:minimum|min|opening|initial)\s+(?:(?:opening|initial)\s+)?deposits?\s+(?:(?:of|is|to\s+open)\s+)?\$\s?(\d[\d,]*(?:\.\d{1,2})?)|\$\s?(\d[\d,]*(?:\.\d{1,2})?)\s+(?:(?:minimum|min|opening|initial)\s+)+deposits?\b|\$\s?(\d[\d,]*(?:\.\d{1,2})?)\s+(?:deposit\s+)?to\s+open\b/gi;
+/** v8 (#1521): the amount is a cap's or an opening deposit's own figure (`LIVE_FRAGMENT_LIMIT_FIGURE`). */
+export function liveFragmentLimitIsAmount(name: string, amount: number): boolean {
+  return [...name.matchAll(LIVE_FRAGMENT_LIMIT_FIGURE)].some((match) => {
+    const figure = match.slice(1).find((group) => group != null);
+    return figure != null && Math.abs(figureValue(figure) - amount) < 0.005;
+  });
+}
+/**
+ * v8 (#1521): a floor holds a refused line live (`reread`) unless the amount is a cap's or an opening
+ * deposit's own figure on the line. A floor still bars every rename.
+ */
+export function liveFragmentFloorHolds(name: string, amount: number): boolean {
+  return liveFragmentFloor(name) && !liveFragmentLimitIsAmount(name, amount);
+}
 /**
  * v6 (133104): a line that ends on a balance ("Avoid service charge with minimum balance of" $3,
  * "You may avoid the fee if your balance is" $1,000) read the threshold as its amount: refused
@@ -727,7 +764,7 @@ export function liveFragmentVerdictDetail(
         || (LIVE_FRAGMENT_DURATION_HEAD.test(split.head) && LIVE_FRAGMENT_DURATION_FORM.test(split.rest)));
   let refused = false;
   // Round 6: `held` keeps a line live with no rename and never takes it down (a floor, a bare if/when clause).
-  const floor = LIVE_FRAGMENT_FLOOR_WORDING.test(current);
+  const floor = liveFragmentFloor(current);
   let held = floor;
   if (LIVE_FRAGMENT_OPENING_DEPOSIT.test(current) || LIVE_FRAGMENT_TOTAL_WORDING.test(current) || liveFragmentCapRefused(current, amount)
       || (liveFragmentThresholdEnd(current, amount) && !exception)) {
@@ -794,7 +831,8 @@ export function liveFragmentVerdictDetail(
   }
   // v5/v6 (#1499): a line with no rename and a plausible amount is usually a real fee Knox read badly:
   // kept live, re-read. Round 4: one a gate refused comes down (with a re-read request) only at $100 or more.
-  const takedown = refused && !soft && !floor;
+  // v8 (#1521): a floor holds the line only when the amount is not a cap's or opening deposit's own figure.
+  const takedown = refused && !soft && !liveFragmentFloorHolds(current, amount);
   return verdict({ pattern, action: takedown ? "takedown" : "reread" }, takedown);
 }
 
@@ -1412,7 +1450,10 @@ export function liveFragmentCountSql(): string {
   const creditBefore = `regexp_replace(name, '(?:${credit}).*$', '', 'i')`;
   const creditHeaded = `(${creditBefore} ~* '${postgresPattern(LIVE_FRAGMENT_CREDIT_HEAD)}' AND ${creditBefore} !~ '${postgresPattern(LIVE_FRAGMENT_OWN_PRICE)}')`;
   const notAFee = `(name ~* '${postgresPattern(LIVE_FRAGMENT_NOT_A_FEE)}' OR (name ~* '${postgresPattern(LIVE_FRAGMENT_OTHER_BANK)}' AND name !~* '${postgresPattern(LIVE_FRAGMENT_FEE_WORD)}'))`;
-  const floor = `name ~* '${postgresPattern(LIVE_FRAGMENT_FLOOR_WORDING)}'`;
+  // v8 (#1521): the floor is read with the line's thresholds left out ("below $500 minimum" is none).
+  const floor = `regexp_replace(name, '${postgresPattern(LIVE_FRAGMENT_THRESHOLD_DOLLAR)}', ' ', 'gi') ~* '${postgresPattern(LIVE_FRAGMENT_FLOOR_WORDING)}'`;
+  // v8 (#1521): a floor holds a takedown only when the amount is not a cap's or opening deposit's own figure.
+  const floorHolds = `(${floor} AND NOT EXISTS (SELECT 1 FROM regexp_matches(name, '${postgresPattern(LIVE_FRAGMENT_LIMIT_FIGURE)}', 'gi') m WHERE abs(replace(COALESCE(m[1], m[2], m[3], m[4]), ',', '')::numeric - amount) < 0.005))`;
   const ifHard = `(rest ~* '${postgresPattern(LIVE_FRAGMENT_IF_THRESHOLD_WORD)}' OR COALESCE(figure_is_amount, false))`;
   const capRefused = `(name ~* '${postgresPattern(LIVE_FRAGMENT_CAP_WORDING)}' AND NOT EXISTS (SELECT 1 FROM regexp_matches(regexp_replace(name, '${capDollar}', ' ', 'gi'), '${dollar}', 'g') m WHERE abs(replace(m[1], ',', '')::numeric - amount) < 0.005))`;
   const soft = `amount < ${LIVE_FRAGMENT_CONDITION_MAX}`;
@@ -1494,7 +1535,7 @@ export function liveFragmentCountSql(): string {
            OR ((head_ok OR head_generic) AND ${ifCondition} AND NOT exception_ok AND NOT ${band})
            OR (head_ok AND NOT ${ifCondition} AND ${restCondition} AND figure_is_amount)
            OR (pattern = 'sentence_end' AND NOT head_ok AND figure_is_amount))), false) AS gate_refused,
-         COALESCE(NOT (${floor}) AND (${hardGates} OR (NOT price_elsewhere AND ((NOT first_is_amount AND (priced_count >= 2 OR COALESCE(other_figure, false)))
+         COALESCE(NOT ${floorHolds} AND (${hardGates} OR (NOT price_elsewhere AND ((NOT first_is_amount AND (priced_count >= 2 OR COALESCE(other_figure, false)))
            OR ((head_ok OR head_generic) AND ${ifCondition} AND NOT exception_ok AND NOT ${band} AND ${ifHard})
            OR (head_ok AND NOT ${ifCondition} AND ${restCondition} AND figure_is_amount)
            OR (pattern = 'sentence_end' AND NOT head_ok AND figure_is_amount)))), false) AS takedown_refused

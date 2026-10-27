@@ -14,6 +14,9 @@ import {
   LIVE_FRAGMENT_IF_THRESHOLD_WORD,
   LIVE_FRAGMENT_REREAD_KIND,
   LIVE_FRAGMENT_SQL_SPACES,
+  LIVE_FRAGMENT_FLOOR_WORDING,
+  LIVE_FRAGMENT_THRESHOLD_DOLLAR,
+  liveFragmentFloorHolds,
   LIVE_FRAGMENT_STRATEGY,
   liveFragmentCheckShape,
   liveFragmentCredit,
@@ -345,7 +348,7 @@ describe("Darwin live fragment re-check", () => {
 
   it("v2: reads the head after the glued footnote number and refuses opening-deposit renames in SQL too", () => {
     const text = liveFragmentCountSql();
-    expect(LIVE_FRAGMENT_STRATEGY.version).toBe(7);
+    expect(LIVE_FRAGMENT_STRATEGY.version).toBe(8);
     expect(text).toContain("AS figure_is_amount");
     expect(text).toContain("AND tail_ok AND tail !~ '[0-9$]'");
     expect(text).toContain("btrim(regexp_replace(name, '\\s*\\((?:cont\\.?|continued)\\)', '', 'gi')), '^(?:(?:\\d{2}");
@@ -380,6 +383,29 @@ describe("Darwin live fragment re-check", () => {
     expect(text).toContain("WHEN reason = 'reread' THEN 'reread'");
     expect(text).toContain("ELSE 'reread'");
     expect(text).toContain("WHEN reason IN ('fragment', 'fragment_reread', 'rename_duplicate') THEN 'takedown'");
+  });
+
+  it("v8 (#1521): a floor holds a takedown in SQL only when the amount is no cap's or opening deposit's figure", () => {
+    const text = liveFragmentCountSql();
+    const floor = `regexp_replace(name, '${LIVE_FRAGMENT_THRESHOLD_DOLLAR.source.replace(/\\b/g, "\\y")}', ' ', 'gi') ~* '${LIVE_FRAGMENT_FLOOR_WORDING.source.replace(/\\b/g, "\\y")}'`;
+    expect(text).toContain(`COALESCE(NOT (${floor} AND NOT EXISTS (SELECT 1 FROM regexp_matches(name, '`);
+    expect(text).toContain("WHERE abs(replace(COALESCE(m[1], m[2], m[3], m[4]), ',', '')::numeric - amount) < 0.005)) AND (");
+    // The floor still bars renames: `gate_refused` reads the plain floor.
+    expect(text).toContain(`COALESCE(${floor} OR `);
+  });
+
+  it.each([
+    ["Overdraft Fee $35, maximum of $100 per day; $5 minimum", 100, false],
+    ["Overdraft Fee $35, maximum of $100 per day; $5 minimum", 35, true],
+    ["Research Fee minimum charge $100, maximum of $500", 100, true],
+    ["Savings $100 minimum opening deposit, $5 minimum", 100, false],
+    ["Monthly Fee waived with $500 minimum balance", 500, false],
+    ["Extreme Checking (below $500 minimum in any month)", 5, false],
+    ["MasterCard Gift Card ($25.00 minimum purchase)", 3.99, false],
+    ["Research Fee ($25.00 minimum)", 25, true],
+    ["Greater of", 10, true],
+  ] as const)("v8 (#1521): the floor in %j at $%s holds: %s", (name, amount, holds) => {
+    expect(liveFragmentFloorHolds(name, amount)).toBe(holds);
   });
 });
 
@@ -1318,10 +1344,36 @@ describe("live fragment switch-on rules (#1443)", () => {
     ["accounts are charged a monthly maintenance fee of", 5, null, { pattern: "sentence_end", action: "reread" }],
     ["you'll be charged an overdraft fee of", 35, null, { pattern: "sentence_end", action: "reread" }],
     ["Accounts are charged an overdraft fee of", 38, null, { pattern: "sentence_end", action: "rename", renameTo: "Overdraft fee", renameVia: "tail" }],
-    // Accepted in round 7, pending James (#1521): a floor still holds a cap or a "$N minimum balance" line as a
-    // reread; closing these the issue's way would add takedowns.
-    ["Overdraft Fee $35, maximum of $100 per day; $5 minimum if you", 100, null, { pattern: "pronoun", action: "reread" }],
+    // v8 (#1521): a floor holds a refused line live only when the amount is not a cap's or an opening
+    // deposit's own figure; the cap's figure comes down at $100 or more.
+    ["Overdraft Fee $35, maximum of $100 per day; $5 minimum if you", 100, null, { pattern: "pronoun", action: "takedown" }],
+    ["Overdraft Fee $35, maximum of $100 per day; $5 minimum if you", 35, null, { pattern: "pronoun", action: "reread" }],
+    ["Overdraft Fee $35, maximum of $100 per day; $5 minimum if you", 5, null, { pattern: "pronoun", action: "reread" }],
+    ["Overdraft Fee $35, maximum of $100 per day; $5 minimum if you", 150, null, { pattern: "pronoun", action: "reread" }],
+    ["Overdraft Fee $35 capped at $140 per day, $5 minimum if you", 140, null, { pattern: "pronoun", action: "takedown" }],
+    ["Research Fee minimum charge $10, maximum of $150 if you", 150, null, { pattern: "pronoun", action: "takedown" }],
+    ["Research Fee minimum charge $100, maximum of $500 if you", 100, null, { pattern: "pronoun", action: "reread" }],
+    ["Savings Account: minimum opening deposit of $100, $5 minimum monthly fee if you", 100, null, { pattern: "pronoun", action: "takedown" }],
+    ["Savings Account: $100 deposit to open, $5 minimum monthly fee if you", 100, null, { pattern: "pronoun", action: "takedown" }],
+    ["Savings Account: minimum opening deposit of $100, $5 minimum monthly fee if you", 5, null, { pattern: "pronoun", action: "reread" }],
+    // v8 (#1521): "$N minimum" before a balance, deposit, "to open" or purchase word, or after a comparative, is a
+    // threshold, not a floor, so it no longer holds a refused line.
+    ["Monthly Fee If balance falls below $500 minimum balance, you will be charged", 500, null, { pattern: "pronoun", action: "takedown" }],
+    ["Monthly Fee If balance is under $1,000 minimum, you will be charged", 1000, null, { pattern: "pronoun", action: "takedown" }],
+    ["Savings Account $100 minimum opening deposit; you will", 100, null, { pattern: "pronoun", action: "takedown" }],
+    ["Savings Account $100 minimum deposit; you will", 100, null, { pattern: "pronoun", action: "takedown" }],
+    ["Monthly Fee If balance falls below $500 minimum balance, you will be charged", 10, null, { pattern: "pronoun", action: "reread" }],
+    // ... a line no gate refuses is still a reread, with or without a floor.
     ["Monthly Fee waived with $500 minimum balance; you will", 500, null, { pattern: "pronoun", action: "reread" }],
+    ["Monthly Fee $100 minimum balance; you will", 100, null, { pattern: "pronoun", action: "reread" }],
+    // ... and a real floor still holds: "$N minimum" (charge) and "minimum charge" lines.
+    ["Research Fee $25 per hour, $100 minimum if you", 100, null, { pattern: "pronoun", action: "reread" }],
+    ["Safe Deposit Box Drilling Fee, minimum charge; you will be charged at cost over", 150, null, { pattern: "pronoun", action: "reread" }],
+    // Known and accepted (#1521), live on 2026-10-26: kept live for Knox's re-read, never taken down here.
+    // 95216 opens mid-sentence on a worked example ("Because the transact" is not at a sentence start);
+    // 91122 is one of the issue's same-document twins (the other, 93337, is no longer live).
+    ["available in your account, our payment of this transaction will result in an overdraft transaction. Because the transact", 20, "overdraft", { pattern: "pronoun", action: "reread" }],
+    ["There is a Debit/ATM Card Replacement Card Fee of", 10, "card_replacement", { pattern: "sentence_end", action: "reread" }],
     // U+FEFF reads as a space, as in JS's \s.
     ["Overdraft\ufeffFee You will be charged", 35, null, { pattern: "pronoun", action: "rename", renameTo: "Overdraft Fee", renameVia: "head" }],
     ["\ufeffOverdraft Fee You will be charged", 35, null, { pattern: "pronoun", action: "rename", renameTo: "Overdraft Fee", renameVia: "head" }],

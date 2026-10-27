@@ -969,10 +969,9 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
       of" were cut at their start and are rereads.
     - The count SQL and the duplicate-name read (`liveNamesFor`) turn U+00A0, U+2007, U+202F and
       U+FEFF into spaces (`LIVE_FRAGMENT_SQL_SPACES`) before collapsing whitespace.
-    - Left as they are, pending James: a floor on the same line still holds a cap ("Overdraft Fee
-      $35, maximum of $100 per day; $5 minimum" $100) or an opening deposit as a reread, and "$N
-      minimum" still reads "$500 minimum balance" as a floor. Closing either the issue's way adds
-      takedowns.
+    - Left for v8 (below): a floor on the same line held a cap ("Overdraft Fee $35, maximum of $100
+      per day; $5 minimum" $100) or an opening deposit as a reread, and "$N minimum" read "$500
+      minimum balance" as a floor.
   - Round 8 (139153; still v6). A `pronoun` name whose only pronoun is a closing "account you
     have at <bank>" clause (`LIVE_FRAGMENT_OWN_ACCOUNT`: account, loan, card or line of credit,
     an optional "that"/"which", you have/hold/own/maintain, at or with, then "us" or up to four
@@ -992,6 +991,21 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   Knox asked to re-read the line): 75914 "Counter Check: A blank page of 3 personal" $3 and 74142
   "Overdraft - Non-consumer - Continuous Overdraft Charge. Daily fee after 5 business" $10. No
   takedown, no rename. The count SQL reads it as `sentence_end_audience`.
+  v8 (#1521, `LIVE_FRAGMENT_STRATEGY` v8). The two floor gaps round 7 left open:
+  - A floor is read with the line's thresholds left out (`liveFragmentFloor`): "below $500
+    minimum" or "less than $500 minimum" is a balance threshold, and "$N minimum" before a balance,
+    deposit, "to open" or purchase word ("$500 minimum balance", "$25.00 minimum purchase") is no
+    floor (`LIVE_FRAGMENT_FLOOR_WORDING`'s lookahead).
+  - A floor holds a refused line live only when the amount is not a cap's or an opening deposit's
+    own figure (`liveFragmentFloorHolds`, `LIVE_FRAGMENT_LIMIT_FIGURE`: "maximum of $N", "capped at
+    $N", "lesser of $N", "minimum opening deposit of $N", "$N minimum opening deposit", "$N deposit
+    to open"). "Overdraft Fee $35, maximum of $100 per day; $5 minimum" at $100 comes down (with a
+    re-read request); at $35, $5 or $150 it stays a reread. A floor still bars every rename.
+  - Dry run 2026-10-26 (read-only): 115 live fees carry floor wording on main; the narrower read
+    drops it from 12 (all balance or purchase thresholds, none a fragment shape) and no fee's amount
+    is a cap's or deposit's figure beside a floor. Only 2 live fragment fees carry a floor (30992
+    "Greater of" $10, 68096 "Non-member check cashing min or 1% with max of" $25), both rereads
+    before and after. No live verdict changes. The count SQL mirrors both reads.
 - Live hourly re-check (`hourly-frequency-check.ts`, #1456). About 802 live fees say in their name
   that they are priced by the hour ("Research Fee $25/hour", "Subpoena Fee - Per Hour") but carried
   no frequency or a per-item one, so a report read the price as a flat charge. `hourly` shows as "per
@@ -2269,7 +2283,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DARWIN_VERDICT_SCORE_STRATEGY` | `verify.verdict_score` | v2 | `darwin/verdict-score.ts` |
 | `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v5 | `darwin/verified-recheck.ts` |
 | `TIER_PERK_RULE_VERSION` | `tier_perk_zero` | v2 | `darwin/tier-perk.ts` |
-| `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v7 | `darwin/live-fragment-check.ts` |
+| `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v8 | `darwin/live-fragment-check.ts` |
 | `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v3 | `darwin/hourly-frequency-check.ts` |
 | `NON_DEPOSIT_CHECK_VERSION` | `darwin.non_deposit_document` | v4 | `darwin/non-deposit-document-check.ts` |
 | `LINE_CONFLICT_CHECK_VERSION` | `darwin.line_conflict` | v1 | `darwin/line-conflict-check.ts` |
