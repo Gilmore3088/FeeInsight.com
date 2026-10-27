@@ -2181,8 +2181,8 @@ Darwin's live re-check of these $0 fees against the rule (Standing rules: a rule
 re-files a fee ships with its Darwin live re-check) with a dry-run count of the live fees it would take
 down, a fresh dry-run count of the reads on current copies, a sample check of those reads, another Knox
 rules version bump and a source check version bump.
-Oct 27 dry run (prod, read-only, current copies): 19 texts carry a "we do not charge" sentence that
-names NSF; 9 sentences match the grammar, on 9 texts at 9 institutions. After the third #2753 review
+Oct 27 dry run (prod, read-only, current copies): a broad pre-filter finds 52 texts with a "we do not
+charge" sentence near an NSF word; the grammar matches a sentence on 9 texts at 9 institutions. After the third #2753 review
 the document test refuses by default: any other sentence that names the NSF family and a fee, charge,
 cost or penalty word refuses the page, affirming or not, except a whole sentence that agrees with the
 $0 ("<subject> does not charge/assess/impose a fee for ...", no figure, condition, "but", "waive",
