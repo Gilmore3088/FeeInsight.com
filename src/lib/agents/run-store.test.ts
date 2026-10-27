@@ -1006,7 +1006,7 @@ describe("agentic run store", () => {
       deferredRawFees: options.deferred ?? 0, deferrals: options.deferrals ?? [],
       limit: 10, dryRun: options.dryRun === true, learning: options.learning ?? true, results: [], recheck,
       outcomes: {}, reasonCounts: {}, zeroFeesVerified: 0, peerFallbackChecks: 0,
-      peerFallbackOutliers: 0, learnedEnvelopeHolds: 0, categoryModelDisputes: 0,
+      peerFallbackOutliers: 0, learnedEnvelopeHolds: 0, categoryModelDisputes: 0, categoryModelHolds: 0, categoryModelLiveDisputes: null,
       feedbackWritten: 0, categoryChange: null, documentOwner: null,
     });
     const result = await executeAgentRun(101);

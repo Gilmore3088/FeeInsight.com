@@ -21,6 +21,27 @@ export const DARWIN_CATEGORY_MODEL_STRATEGY = { strategy: "verify.category_model
 /** Below this probability for Knox's category, the model disputes it. */
 export const CATEGORY_DISPUTE_THRESHOLD = 0.05;
 
+/**
+ * Default-off switch (#2068): hold a fee the model disputes for a person's review
+ * (`category_model_dispute`, needs_review, no verified row) instead of only recording the dispute.
+ *
+ * Measured on prod 2026-10-27 (read-only), over the 143,607 fees Darwin verified with a model
+ * opinion from Oct 6 to Oct 27:
+ * - A dispute marks a wrong category better than chance. 94 of the 3,919 disputed fees (2.4%) were
+ *   later rejected for their category by a guard under the same key, against 828 of 139,688
+ *   undisputed (0.59%): four times the rate. Against the hand-checked answer key, Knox's category
+ *   was wrong on 14 of the 27 disputed fees that match a key line, against 79 of 1,678 undisputed.
+ * - Its suggested category is no better than the keyword category: on those 27 the answer key
+ *   agreed with Knox's category 13 times and with the model's 13 times (2 neither). The key is
+ *   also in the model's training data, so even that tie flatters the model.
+ * So a dispute may hold a fee for review, never re-file it. It stays off: by the later-guard
+ * measure a hold is right about one time in 40, far under the takedown spot-check bar (9 of 10).
+ * The verify step reports the live fees the model disputes today on every run with rows
+ * (`liveDisputes`), the dry-run count of what a hold rule re-checked over live fees would take.
+ * Turning it on needs James's yes on that count and a hand-check of disputed fees.
+ */
+export const DARWIN_CATEGORY_DISPUTE_HOLD = false;
+
 /** A name repeated across many banks counts at most this many times in training. */
 const MAX_NAME_WEIGHT = 5;
 const SMOOTHING = 0.1;
@@ -43,6 +64,41 @@ export interface CategoryModel {
   tokenTotals: Map<string, number>;
   vocabularySize: number;
   examples: number;
+  /** The live fees this model disputes, read when it was loaded (#2068). */
+  liveDisputes?: LiveDisputeCount;
+}
+
+/** The dry-run count of live fees the model disputes (#2068): what a hold re-checked over live fees would take. */
+export interface LiveDisputeCount {
+  /** Live fees read (each distinct name and category counted as many times as it is live). */
+  liveFees: number;
+  disputedFees: number;
+  /** Disputed live fees by their category, largest first, at most 15. */
+  byCategory: Array<{ category: string; fees: number }>;
+  /** The most-live disputed names, at most 10. */
+  examples: Array<{ name: string; category: string; suggested: string; fees: number }>;
+}
+
+/** Counts the live fees `model` disputes, from the catalog's (name, category, count) rows. Pure. */
+export function countLiveDisputes(model: CategoryModel, rows: readonly CategoryExample[]): LiveDisputeCount {
+  let liveFees = 0;
+  let disputedFees = 0;
+  const byCategory = new Map<string, number>();
+  const examples: LiveDisputeCount["examples"] = [];
+  for (const row of rows) {
+    liveFees += row.count;
+    const opinion = categoryOpinion(model, row.name, row.categoryKey);
+    if (!opinion?.disputed) continue;
+    disputedFees += row.count;
+    byCategory.set(row.categoryKey, (byCategory.get(row.categoryKey) ?? 0) + row.count);
+    examples.push({ name: row.name, category: row.categoryKey, suggested: opinion.suggested, fees: row.count });
+  }
+  return {
+    liveFees,
+    disputedFees,
+    byCategory: [...byCategory].map(([category, fees]) => ({ category, fees })).sort((a, b) => b.fees - a.fees || a.category.localeCompare(b.category)).slice(0, 15),
+    examples: examples.sort((a, b) => b.fees - a.fees || a.name.localeCompare(b.name)).slice(0, 10),
+  };
 }
 
 export interface CategoryOpinion {
@@ -165,9 +221,10 @@ export async function loadCategoryModel(db: SqlTag, now = Date.now()): Promise<C
      GROUP BY 1, 2`;
   if (rows.length === 0) return null;
   const answerKey = await loadAnswerKeyExamples(db, reference);
-  const model = trainCategoryModel(
-    [...rows, ...answerKey].map((row) => ({ name: row.name, categoryKey: row.category_key, count: Number(row.count) })),
-  );
+  const live = rows.map((row) => ({ name: row.name, categoryKey: row.category_key, count: Number(row.count) }));
+  const model = trainCategoryModel([...live, ...answerKey.map((row) => ({ name: row.name, categoryKey: row.category_key, count: Number(row.count) }))]);
+  // #2068: the live fees it disputes, once per load (the cache keeps it for the hour).
+  model.liveDisputes = countLiveDisputes(model, live);
   cached = { model, loadedAt: now, referenceRevision: reference.revision };
   return model;
 }

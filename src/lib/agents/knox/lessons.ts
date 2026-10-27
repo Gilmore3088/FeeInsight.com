@@ -391,16 +391,7 @@ export function applyKnoxLesson(
   lessons: KnoxLessons,
   institutionId?: number | null,
 ): LessonApplied {
-  if (lessons.size === 0) return { candidate, lessonFlag: null };
-  const name = lessonName(candidate.feeName);
-  const label = lessons.get(lessonKey(name, LABEL_WRONG_KEY));
-  const bankLesson = institutionId ? lessons.get(lessonKey(name, candidate.canonicalHint, institutionId)) : undefined;
-  // A label that agrees with the rules keeps the global lessons from moving the fee.
-  const lesson =
-    bankLesson ??
-    (label
-      ? (label.rightKey !== candidate.canonicalHint ? label : undefined)
-      : lessons.get(lessonKey(name, candidate.canonicalHint)) ?? familyLesson(candidate, lessons));
+  const lesson = knoxLessonFor(candidate.feeName, candidate.canonicalHint, lessons, institutionId);
   if (!lesson) return { candidate, lessonFlag: null };
   return {
     candidate: { ...candidate, canonicalHint: lesson.rightKey },
@@ -408,8 +399,138 @@ export function applyKnoxLesson(
   };
 }
 
+/**
+ * The lesson that re-files a fee of this name filed under `canonicalKey`, if any: at this bank
+ * first, then a person's label, then anywhere, then by the name's family (v4). The free read and
+ * the paid read (#2068) both use it. Pure.
+ */
+export function knoxLessonFor(
+  feeName: string,
+  canonicalKey: string,
+  lessons: KnoxLessons,
+  institutionId?: number | null,
+): KnoxLesson | undefined {
+  if (lessons.size === 0) return undefined;
+  const name = lessonName(feeName);
+  const label = lessons.get(lessonKey(name, LABEL_WRONG_KEY));
+  const bankLesson = institutionId ? lessons.get(lessonKey(name, canonicalKey, institutionId)) : undefined;
+  // A label that agrees with the rules keeps the global lessons from moving the fee.
+  return (
+    bankLesson ??
+    (label
+      ? (label.rightKey !== canonicalKey ? label : undefined)
+      : lessons.get(lessonKey(name, canonicalKey)) ?? familyLesson(feeName, canonicalKey, lessons))
+  );
+}
+
 /** The family lesson for a fee whose exact name has none (v4); none for a one-word family. */
-function familyLesson(candidate: ExtractedFeeCandidate, lessons: KnoxLessons): KnoxLesson | undefined {
-  const family = lessonFamily(candidate.feeName);
-  return family.includes(" ") ? lessons.get(lessonKey(`${FAMILY_PREFIX}${family}`, candidate.canonicalHint)) : undefined;
+function familyLesson(feeName: string, canonicalKey: string, lessons: KnoxLessons): KnoxLesson | undefined {
+  const family = lessonFamily(feeName);
+  return family.includes(" ") ? lessons.get(lessonKey(`${FAMILY_PREFIX}${family}`, canonicalKey)) : undefined;
+}
+
+/** Most category lessons one paid read carries, and the most characters of them (#2068). */
+export const PAID_CATEGORY_LESSON_LIMIT = 20;
+export const PAID_CATEGORY_LESSON_MAX_CHARS = 2_500;
+
+export type DocumentCategoryLessonScope = "bank" | "label" | "name" | "family";
+
+export interface DocumentCategoryLesson {
+  /** Stable id for the run log: `<scope>:<name>:<wrong>-><right>` (a bank lesson adds its bank). */
+  id: string;
+  scope: DocumentCategoryLessonScope;
+  /** The store's name key, or the family's words for a family lesson. */
+  name: string;
+  wrongKey: string;
+  rightKey: string;
+}
+
+/** A line's words in family form (`lessonFamily` without the sort or dedupe): singular, fillers out. */
+function familyWords(line: string): string[] {
+  return lessonName(line).split(" ").filter(Boolean)
+    .map((word) => (word.length > 4 && word.endsWith("ies") ? `${word.slice(0, -3)}y` : word.length > 3 && word.endsWith("s") && !word.endsWith("ss") ? word.slice(0, -1) : word))
+    .filter((word) => !(FAMILY_FILLER_WORDS as readonly string[]).includes(word));
+}
+
+/** True when every family word appears within a window three words wider than the family. */
+function familyInLine(words: readonly string[], family: readonly string[]): boolean {
+  const need = new Set(family);
+  const span = need.size + 3;
+  for (let start = 0; start < words.length; start += 1) {
+    if (!need.has(words[start])) continue;
+    const seen = new Set<string>();
+    for (let index = start; index < Math.min(words.length, start + span); index += 1) if (need.has(words[index])) seen.add(words[index]);
+    if (seen.size === need.size) return true;
+  }
+  return false;
+}
+
+const SCOPE_RANK: Record<DocumentCategoryLessonScope, number> = { bank: 0, label: 1, name: 2, family: 3 };
+
+/**
+ * The category lessons that bear on one document (#2068): those whose exact name the text prints,
+ * or whose name family it prints within a few words, kept to this bank's own lessons and the
+ * global ones (never another bank's). This bank's lessons first, then people's labels, then exact
+ * names and families by how many banks taught them. At most `limit` lessons and `maxChars`
+ * characters of their prompt lines. Pure.
+ */
+export function categoryLessonsForText(
+  lessons: KnoxLessons,
+  text: string,
+  institutionId: number | null,
+  options: { limit?: number; maxChars?: number } = {},
+): DocumentCategoryLesson[] {
+  if (lessons.size === 0) return [];
+  const limit = options.limit ?? PAID_CATEGORY_LESSON_LIMIT;
+  const maxChars = options.maxChars ?? PAID_CATEGORY_LESSON_MAX_CHARS;
+  const lines = text.split(/\n+/);
+  // Every line's name key in one string, with a mark between lines so a name never spans two.
+  const printed = ` ${lines.map(lessonName).join(" | ")} `;
+  const lineFamilies = lines.map(familyWords).filter((words) => words.length > 0);
+  const found: Array<{ lesson: DocumentCategoryLesson; banks: number }> = [];
+  for (const lesson of lessons.values()) {
+    if (lesson.institutionId && lesson.institutionId !== institutionId) continue;
+    const isFamily = lesson.name.startsWith(FAMILY_PREFIX);
+    const name = isFamily ? lesson.name.slice(FAMILY_PREFIX.length) : lesson.name;
+    if (!name) continue;
+    const scope: DocumentCategoryLessonScope = lesson.institutionId ? "bank" : lesson.wrongKey === LABEL_WRONG_KEY ? "label" : isFamily ? "family" : "name";
+    const inText = isFamily ? lineFamilies.some((words) => familyInLine(words, name.split(" "))) : printed.includes(` ${name} `);
+    if (!inText) continue;
+    found.push({
+      lesson: {
+        id: `${scope}:${scope === "bank" ? `${lesson.institutionId}:` : ""}${name}:${lesson.wrongKey}->${lesson.rightKey}`,
+        scope,
+        name,
+        wrongKey: lesson.wrongKey,
+        rightKey: lesson.rightKey,
+      },
+      banks: lesson.wrongBanks,
+    });
+  }
+  found.sort((a, b) => SCOPE_RANK[a.lesson.scope] - SCOPE_RANK[b.lesson.scope] || b.banks - a.banks || a.lesson.id.localeCompare(b.lesson.id));
+  const chosen: DocumentCategoryLesson[] = [];
+  let chars = 0;
+  for (const { lesson } of found) {
+    const size = categoryLessonLine(lesson).length;
+    if (chosen.length >= limit || chars + size > maxChars) continue;
+    chosen.push(lesson);
+    chars += size;
+  }
+  return chosen;
+}
+
+function categoryLessonLine(lesson: DocumentCategoryLesson): string {
+  if (lesson.scope === "label") return `- "${lesson.name}": file under ${lesson.rightKey} (a person labelled it).`;
+  if (lesson.scope === "family") return `- names with the words "${lesson.name}": file under ${lesson.rightKey}, not ${lesson.wrongKey}.`;
+  return `- "${lesson.name}"${lesson.scope === "bank" ? " at this bank" : ""}: file under ${lesson.rightKey}, not ${lesson.wrongKey}.`;
+}
+
+/** The instructions block for a paid read's category lessons; empty when there are none (#2068). */
+export function categoryLessonsPromptBlock(lessons: readonly DocumentCategoryLesson[]): string {
+  if (lessons.length === 0) return "";
+  return [
+    "CATEGORY LESSONS FOR THIS DOCUMENT",
+    "The category guards rejected these fee names under the second key and verified them under the first, at several banks or at this one. When this document prints one, use the first key. They never override what the text says the fee is.",
+    ...lessons.map(categoryLessonLine),
+  ].join("\n");
 }

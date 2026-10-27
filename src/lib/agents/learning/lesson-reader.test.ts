@@ -4,6 +4,7 @@ import { ALL_AGENT_LESSONS } from "./lesson-registry";
 import {
   lessonAgentForStep,
   lessonsFor,
+  lessonsForDocument,
   lessonsForModel,
   lessonsForStep,
   lessonsPromptBlock,
@@ -95,5 +96,27 @@ describe("the lesson registry", () => {
       expect(l.evidence.issues.length + l.evidence.prs.length, l.id).toBeGreaterThan(0);
       for (const file of l.evidence.files) expect(existsSync(file), `${l.id}: ${file}`).toBe(true);
     }
+  });
+});
+
+describe("lessonsForDocument (#2068)", () => {
+  const lessons = [
+    lesson("own", "2026-10-01", { appliesTo: ["extract-paid"], lesson: "Nothing in common with any text." }),
+    lesson("wire", "2026-10-02", { appliesTo: ["extract"], lesson: "Name outgoing domestic wires by their channel, such as a phone request." }),
+    lesson("nsf", "2026-10-05", { lesson: "Overdraft and returned item pairs keep their paid and returned prices apart." }),
+    lesson("other-step", "2026-10-06", { appliesTo: ["classify"], lesson: "Name outgoing domestic wires by their channel, such as a phone request." }),
+  ];
+  const text = "Outgoing domestic wire $25.00 - phone request\nIncoming wire $15.00";
+
+  it("carries the step's own lessons and the ones that share the document's topics, from the free step too", () => {
+    const choice = lessonsForDocument("knox", "extract-paid", ["extract"], text, { lessons });
+    expect(choice.lessons.map((l) => l.id)).toEqual(["own", "wire"]);
+    expect(choice.cappedOut).toBe(0);
+  });
+
+  it("caps by count and by characters, counting what it left out", () => {
+    expect(lessonsForDocument("knox", "extract-paid", ["extract"], text, { lessons, limit: 1 })).toMatchObject({ cappedOut: 1 });
+    const bySize = lessonsForDocument("knox", "extract-paid", ["extract"], text, { lessons, maxChars: 40 });
+    expect(bySize.lessons.map((l) => l.id)).toEqual(["own"]);
   });
 });

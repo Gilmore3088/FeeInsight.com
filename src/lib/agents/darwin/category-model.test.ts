@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   CATEGORY_DISPUTE_THRESHOLD,
+  countLiveDisputes,
+  DARWIN_CATEGORY_DISPUTE_HOLD,
   categoryOpinion,
   categoryTokens,
   loadCategoryModel,
@@ -87,5 +89,15 @@ describe("Darwin learned category model", () => {
     expect(loaded?.categories).toContain("coin_counting");
     expect(loaded?.categories).toHaveLength(5);
     resetCategoryModelCache();
+  });
+
+  it("counts the live fees it disputes, weighted by how many are live (#2068)", () => {
+    const live = [...EXAMPLES, { name: "Zipper bag", categoryKey: "wire_domestic_incoming", count: 3 }];
+    const count = countLiveDisputes(model, live);
+    expect(count.liveFees).toBe(EXAMPLES.reduce((sum, example) => sum + example.count, 0) + 3);
+    expect(count.disputedFees).toBe(3);
+    expect(count.byCategory).toEqual([{ category: "wire_domestic_incoming", fees: 3 }]);
+    expect(count.examples).toEqual([{ name: "Zipper bag", category: "wire_domestic_incoming", suggested: "night_deposit", fees: 3 }]);
+    expect(DARWIN_CATEGORY_DISPUTE_HOLD).toBe(false);
   });
 });

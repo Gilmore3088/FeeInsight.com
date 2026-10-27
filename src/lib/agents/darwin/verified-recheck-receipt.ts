@@ -8,7 +8,7 @@ const REASONS = [
   "missing_canonical", "missing_name", "category_mismatch", "missing_lineage", "invalid_amount",
   "not_in_source", "outside_envelope", "peer_outlier", "duplicate_in_batch", "duplicate_verified",
   "percent_not_publishable", "category_lesson_pending", "retired_category", "conditional_zero",
-  "tier_perk_zero", "name_rule", "insert_failed",
+  "tier_perk_zero", "name_rule", "category_model_dispute", "insert_failed",
 ] as const satisfies readonly DarwinReasonCode[];
 const REASON_SET = new Set<string>(REASONS);
 const CATEGORIES = new Set(Object.values(CANONICAL_KEY_MAP));

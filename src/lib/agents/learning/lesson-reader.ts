@@ -72,3 +72,73 @@ export function lessonsForModel(agent: LessonAgent, stepKey: string, lessons: re
   const system = lessonsPromptBlock(applied);
   return system ? { system, lessonIds: lessonIds(applied) } : { lessonIds: [] };
 }
+
+/** Most characters of lesson text one document-scoped request carries (#2068). */
+export const DOCUMENT_LESSON_CHAR_CAP = 6_000;
+/** Distinct topic words a lesson must share with the document before it rides (#2068). */
+export const DOCUMENT_LESSON_MIN_SHARED = 3;
+
+/** Words every fee schedule and lesson share; they say nothing about which lesson fits a document. */
+const GENERIC_LESSON_WORDS = new Set(
+  ("which there their these those where would could while after before under about other every never always " +
+    "price prices priced charge charged charges account accounts service services customer customers member members " +
+    "schedule schedules stated states another itself fees")
+    .split(" ")
+    .map((word) => word.slice(0, 6)),
+);
+
+/** A text's topic words: letters only, five or more, cut to six letters so plurals match. Pure. */
+export function lessonTopicWords(text: string): Set<string> {
+  const words = new Set<string>();
+  for (const word of text.toLowerCase().match(/[a-z]{5,}/g) ?? []) {
+    const stem = word.slice(0, 6);
+    if (!GENERIC_LESSON_WORDS.has(stem)) words.add(stem);
+  }
+  return words;
+}
+
+export interface DocumentLessonChoice {
+  lessons: AgentLesson[];
+  /** Lessons of the pool left out by the count or size cap, though they matched the document. */
+  cappedOut: number;
+}
+
+/**
+ * The role lessons one document's model request carries (#2068): every lesson of the agent that
+ * shapes any of `stepKeys` (so a paid read gets the free read's lessons too), scoped to the
+ * document. A lesson written for `primaryStep` itself always rides; another rides only when it
+ * shares at least `DOCUMENT_LESSON_MIN_SHARED` topic words with the document, most shared first,
+ * then newest. At most `limit` lessons and `maxChars` characters of lesson text. Pure.
+ */
+export function lessonsForDocument(
+  agent: LessonAgent,
+  primaryStep: string,
+  stepKeys: readonly string[],
+  documentText: string,
+  options: { limit?: number; maxChars?: number; lessons?: readonly AgentLesson[] } = {},
+): DocumentLessonChoice {
+  const limit = options.limit ?? PROMPT_LESSON_LIMIT;
+  const maxChars = options.maxChars ?? DOCUMENT_LESSON_CHAR_CAP;
+  const pool = new Map<string, AgentLesson>();
+  for (const key of [primaryStep, ...stepKeys]) {
+    for (const lesson of lessonsFor(agent, key, options.lessons ?? ALL_AGENT_LESSONS)) pool.set(lesson.id, lesson);
+  }
+  const documentWords = lessonTopicWords(documentText);
+  const scored = [...pool.values()].map((lesson) => {
+    const own = lesson.appliesTo !== "all" && lesson.appliesTo.includes(primaryStep);
+    let shared = 0;
+    for (const word of lessonTopicWords(lesson.lesson)) if (documentWords.has(word)) shared += 1;
+    return { lesson, own, shared };
+  });
+  const ranked = scored
+    .filter((entry) => entry.own || entry.shared >= DOCUMENT_LESSON_MIN_SHARED)
+    .sort((a, b) => Number(b.own) - Number(a.own) || b.shared - a.shared || newestFirst(a.lesson, b.lesson));
+  const chosen: AgentLesson[] = [];
+  let chars = 0;
+  for (const { lesson } of ranked) {
+    if (chosen.length >= limit || chars + lesson.lesson.length > maxChars) continue;
+    chosen.push(lesson);
+    chars += lesson.lesson.length;
+  }
+  return { lessons: chosen, cappedOut: ranked.length - chosen.length };
+}

@@ -590,4 +590,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-27",
   },
+  {
+    id: "issue-2068-measure-a-shadow-check-before-it-acts",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "A check that runs in shadow is unfinished until it is measured against outcomes that came after it: the rate of later guard rejections and hand-checked answers for what it flagged, against the rate for what it passed. Measure what it says separately from what it suggests. A flag can beat chance while its suggestion does not, and then it may hold a fee for review but never re-file one. Report the live count a hold would take before any switch turns on.",
+    why: "Darwin's learned category model recorded 3,919 disputes on verified fees from Oct 6 to Oct 27 and acted on none, and no one had measured them. Measured on Oct 27, a dispute carried four times the later wrong-category rate (2.40% against 0.59%), but its suggested category tied Knox's keyword category 13 to 13 against the answer key. The hold is built behind an off switch, with a live dry-run count on every verify step (#2068).",
+    evidence: { issues: [2068], prs: [], files: ["src/lib/agents/darwin/category-model.ts", "src/lib/agents/darwin/verify.ts", "docs/project/findings/2026-10-27-category-model-disputes-measured.md"] },
+    appliesTo: "all",
+    since: "2026-10-27",
+  },
 ];
