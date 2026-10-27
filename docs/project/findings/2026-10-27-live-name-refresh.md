@@ -104,3 +104,6 @@ live fee.
 - Agent lessons: hamilton/issue-1912-reread-name-reaches-live-fee and
   knox/issue-1912-a-better-read-must-reach-the-live-name.
 - Guards: `src/lib/agents/hamilton/live-name-refresh.test.ts` and `src/lib/wire-channel.test.ts`.
+
+**Agent lesson:** hamilton/issue-1912-reread-name-reaches-live-fee, knox/issue-1912-a-better-read-must-reach-the-live-name
+**Guard:** `src/lib/agents/hamilton/live-name-refresh.test.ts`, `src/lib/wire-channel.test.ts`
