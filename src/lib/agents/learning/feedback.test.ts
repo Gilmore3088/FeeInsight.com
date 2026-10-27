@@ -73,7 +73,7 @@ describe("shared learning store", () => {
     const rows = takedownFeedback({ ...takedown, rolled_back_reason: reason }, 1);
     expect(rows.map((row) => row.checkName)).toEqual([LIMIT_GUARD_CHECK, LIMIT_GUARD_CHECK]);
     expect(rows.map((row) => row.kind)).toEqual(["not_a_fee", "not_a_fee"]);
-    expect(MISFILED_TAKEDOWN_CHECKS).toEqual(["hamilton.limit_as_fee"]);
+    expect(MISFILED_TAKEDOWN_CHECKS).toContain("hamilton.limit_as_fee");
   });
 
   it("relabels the misfiled limit-guard rows only with its switch on, and counts them on a dry run (#2062)", async () => {
@@ -88,7 +88,7 @@ describe("shared learning store", () => {
     const dry = mockDb([["f.check_name = ANY", stale]]);
     expect(await relabelMisfiledTakedowns(dry.db, { limit: 100, dryRun: true })).toEqual({ on: false, due: 2, relabeled: 0 });
     expect(dry.calls.some((call) => call.query.includes("UPDATE"))).toBe(false);
-    expect(dry.calls[0].values).toContainEqual(["hamilton.limit_as_fee"]);
+    expect(dry.calls[0].values).toContainEqual([...MISFILED_TAKEDOWN_CHECKS]);
     const live = mockDb([["f.check_name = ANY", stale], ["UPDATE pipeline_feedback", [{ id: 7 }, { id: 8 }]]]);
     expect(await relabelMisfiledTakedowns(live.db, { limit: 100, dryRun: false, on: true })).toEqual({ on: true, due: 2, relabeled: 2 });
     const update = live.calls.find((call) => call.query.includes("UPDATE pipeline_feedback"));

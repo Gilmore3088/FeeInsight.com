@@ -276,15 +276,48 @@ export function takedownKind(reason: string): FeedbackKind {
 }
 
 /**
- * Takedown reasons whose prefix is not the name of the check that wrote them (#2062). The sync
- * names a takedown's check from its reason, `hamilton.<reason prefix>`, which is right only when the
- * check names its reason after itself. The limit guard writes `limit_as_fee:<code>: ...` and files
- * its second look under `hamilton.limit_guard` (`LIMIT_GUARD_CHECK`), so 50 sync rows went under a
- * check no producer has, apart from the rows its readers look for. `feedback.test.ts` keeps each
- * entry equal to the producer's own constant.
+ * Takedown reasons whose prefix is not the name of the check that wrote them (#2062). Without an
+ * entry the sync names a takedown's check `hamilton.<reason prefix>`, which is right only for a
+ * Hamilton check that names its reason after itself. The limit guard writes `limit_as_fee:...` and
+ * files its second look under `hamilton.limit_guard`; each Darwin re-check writes `<x>:...` and files
+ * its second look under `darwin.<x>` (or another name: the line conflict writes "one line, two reads",
+ * the verified re-check `darwin_recheck:`). Without these entries 1,720 sync rows for 860 fees
+ * (Oct 27) sat under check names no producer has.
+ *
+ * Literal names, so this module imports no check (the checks import it). `feedback.test.ts` walks
+ * every module that runs a second look and pins each reason prefix it writes to that module's own
+ * check constant, so a new check cannot repeat the bug. Prefixes that more than one check writes
+ * (`same_line_duplicate`, the category guard's and eval verdicts' codes) keep the sync's name: the
+ * reason alone cannot say which check wrote them, and readers match those names.
  */
 export const TAKEDOWN_REASON_CHECKS: Readonly<Record<string, string>> = {
+  // Hamilton.
   limit_as_fee: "hamilton.limit_guard",
+  not_on_current_copy: "hamilton.current_copy",
+  source_link_untraceable: "hamilton.source_link",
+  // Darwin's re-checks of live fees.
+  banded_zero: "darwin.banded_zero",
+  canadian_document: "darwin.canadian_document",
+  card_program_section: "darwin.card_program_section",
+  document_owner: "darwin.document_owner",
+  international_direction: "darwin.international_direction",
+  late_charge_bound: "darwin.late_charge_bound",
+  "one line, two reads": "darwin.line_conflict",
+  loan_section: "darwin.loan_section",
+  non_deposit_document: "darwin.non_deposit_document",
+  lending_wording_on_loan_document: "darwin.non_deposit_document",
+  brokerage_document: "darwin.non_deposit_document",
+  card_program_document: "darwin.non_deposit_document",
+  loan_titled_document: "darwin.non_deposit_document",
+  youth_account_document: "darwin.non_deposit_document",
+  credit_terms_document: "darwin.non_deposit_document",
+  product_page_repeat: "darwin.product_page_repeat",
+  rate_floor: "darwin.rate_floor",
+  release_repair: "darwin.release_repair",
+  reread_category_twin: "darwin.reread_category",
+  "darwin.reread_category": "darwin.reread_category",
+  translated_copy: "darwin.translated_copy",
+  darwin_recheck: "darwin.verified_recheck",
 };
 
 /** The Hamilton check behind a takedown reason. */

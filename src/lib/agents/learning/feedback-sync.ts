@@ -38,8 +38,8 @@ export interface FeedbackSyncResult {
   /** Older takedown rows named after one fee ("hamilton.refreshed by #69017") given their fixed names. */
   relabeled: number;
   /**
-   * #2062: older takedown rows filed under a check named after their reason ("hamilton.limit_as_fee")
-   * instead of the check that wrote them. Off until James switches it on (a prod data change).
+   * #2062: older takedown rows filed under a check named after their reason ("hamilton.limit_as_fee",
+   * "hamilton.rate_floor") instead of the check that wrote them. Off until James switches it on (a prod data change).
    */
   misfiledRelabel?: MisfiledRelabelResult;
   referenceExcludedBanks?: number;
@@ -461,8 +461,9 @@ async function relabelTakedownRows(db: SqlTag, stale: readonly PerFeeTakedownRow
 }
 
 /**
- * #2062: relabel the takedown sync's older rows for a reason `TAKEDOWN_REASON_CHECKS` names (50 rows
- * on 2026-10-27, all `hamilton.limit_as_fee`, 25 fees at extract and verify). Off until James
+ * #2062: relabel the takedown sync's older rows for a reason `TAKEDOWN_REASON_CHECKS` names: 1,720 rows
+ * for 860 fees on 2026-10-27 (extract and verify), 50 of them the limit guard's `hamilton.limit_as_fee`
+ * and 1,670 the live re-checks' `hamilton.<x>` beside their `darwin.<x>` second looks. Off until James
  * switches it on: it changes stored feedback rows, never a fee. Off, a dry run still counts the
  * rows it would relabel and a real run reads nothing; on, a real run relabels them (bounded per
  * call), keeping the old name in `evidence.relabeled_from_check`. Idempotent: a relabelled row

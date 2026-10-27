@@ -580,4 +580,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-27",
   },
+  {
+    id: "issue-2062-reason-prefix-maps-to-its-check",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "A live re-check that takes fees down writes a reason prefix of its own (rate_floor:, document_owner:, one line, two reads:, darwin_recheck:) and files its second look under its darwin.<x> check. The learning store names the takedown's rows from the reason, so when a re-check is added or given a new reason, map each prefix to its check in TAKEDOWN_REASON_CHECKS and list the module, its check and every reason it writes in the producer table of takedown-reason-checks.test.ts; the test fails until every module that runs a second look is there. Never reuse another check's prefix for a new reason (same_line_duplicate is already shared and cannot name its check).",
+    why: "Every re-check's takedowns went into the learning store under hamilton.<x> while its second looks sat under darwin.<x>: on Oct 27 (read-only) 1,670 rows for 835 fees, such as document_owner 654, one line two reads 232, product_page_repeat 204, the non-deposit reasons 284 and rate_floor 108. Grouping by check (error classes, severity) split each re-check in two.",
+    evidence: { issues: [2062], prs: [], files: ["src/lib/agents/learning/feedback.ts", "src/lib/agents/learning/takedown-reason-checks.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-27",
+  },
 ];

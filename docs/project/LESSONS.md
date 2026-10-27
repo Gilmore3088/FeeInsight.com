@@ -594,7 +594,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ### Agent process, learning and measurement (20)
 
-- 2026-10-27 — A takedown's reason and the check that wrote it are two names: the sync filed the limit guard's takedowns under `hamilton.limit_as_fee` (50 rows), and Knox loaded the business-schedule check's confirmed takedowns but learned the audience from none of them (#2062). — [finding](findings/2026-10-27-takedown-sync-names-checks-from-reasons.md) — Agent lesson: knox/issue-2062-takedown-readers-get-their-own-check, hamilton/issue-2062-reason-prefix-is-not-the-check; Guard: `src/lib/agents/learning/feedback.test.ts`, `src/lib/agents/deming/planted-errors.test.ts`
+- 2026-10-27 — A takedown's reason and the check that wrote it are two names: the sync filed 1,720 rows for 860 fees under `hamilton.<reason prefix>` (the limit guard's `hamilton.limit_as_fee`, Darwin's re-checks beside their `darwin.<x>` second looks); a test now pins every second-look module's reasons to its check. Knox loaded the business-schedule check's confirmed takedowns but learned the audience from none of them (#2062). — [finding](findings/2026-10-27-takedown-sync-names-checks-from-reasons.md) — Agent lesson: knox/issue-2062-takedown-readers-get-their-own-check, hamilton/issue-2062-reason-prefix-is-not-the-check, darwin/issue-2062-reason-prefix-maps-to-its-check; Guard: `src/lib/agents/learning/takedown-reason-checks.test.ts`, `src/lib/agents/deming/planted-errors.test.ts`
 - 2026-10-26 — A weight-0 restore record is named in every reader that treats a restore as a lesson, and rows written under an old label are relabelled by the typed repair behind an off switch: the account type hold's 5 Oct 16 releases still read wrong / wrong_category (#1680). — [finding](findings/2026-10-26-hold-release-labelled-wrong-category.md) — Agent lesson: hamilton/issue-1680-record-kind-named-by-every-reader; Guard: `src/lib/agents/learning/account-type-hold-feedback.db.test.ts`, `src/lib/agents/darwin/release-review.test.ts`
 - 2026-10-25 — A retrieval add-on is judged only by its lift on a holdout of human-confirmed current schedules; the first metadata and full-text ranker showed none over today's page choice, so no embeddings. — [finding](findings/2026-10-25-retrieval-pilot-no-holdout-lift.md) — Guard: `src/lib/agents/deming/shadow-lab/retrieval-pilot.test.ts`; Agent lesson: deming/o2-retrieval-holdout-before-embeddings
 - 2026-10-24 — Answer-key lines were compared to the bank's page as markup (table bars, HTML codes, dot leaders), so the same words and prices never matched. — [finding](findings/2026-10-24-answer-key-lines-compared-as-markup.md) — Agent lesson: deming/issue-2466-line-content-match
@@ -620,7 +620,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (336 in all).
+counts as of this index (337 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
@@ -629,7 +629,7 @@ counts as of this index (336 in all).
 | hoovie | 12 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
 | rosetta | 14 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
 | knox | 89 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
-| darwin | 57 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
+| darwin | 58 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 40 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
 | hamilton | 69 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
 | deming | 18 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
