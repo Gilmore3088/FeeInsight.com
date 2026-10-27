@@ -13,6 +13,7 @@ import { documentVaultSchemaReady } from "@/lib/agents/document-vault";
 import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
 import { loadPlaybook, type Playbook } from "@/lib/agents/learning/playbook";
 import { chooseStrategy } from "@/lib/agents/learning/router";
+import { scoreFeePage } from "@/lib/agents/learning/fee-page";
 import { orderByHints, stateExpertHints, type StateExpertHints } from "@/lib/agents/state-expert/memory";
 import type { AttemptOutcome } from "@/lib/agents/learning/outcomes";
 
@@ -143,6 +144,19 @@ export const FRESHNESS_RESERVED_SLOTS = 2;
 export const STALE_PRICE_KIND = "stale_price";
 export const CROSS_PAGE_CONFLICT_CHECK = "hamilton.cross_page_conflict";
 export const SCHEDULE_CONFLICT_KIND = "schedule_conflict";
+/**
+ * A barren link (fix plan step 3, James 2026-10-27: "those 1208 are not the right pages"): the
+ * bank has no live fee, and its link's current page was read at least `BARREN_SETTLE_DAYS` ago,
+ * so Rosetta, Knox and Darwin have had their turn and fewer than three fee types came out. The
+ * link gets one upgrade search per `BARREN_LINK_SEARCH_VERSION`; a page found replaces it only
+ * when it passes the fee-page check and lists more fee lines than the old page's text. The old
+ * link stays beside it as a companion, so whatever it gave is kept.
+ */
+export const BARREN_LINK_KIND = "barren_link";
+export const BARREN_LINK_SEARCH_VERSION = 1;
+export const BARREN_SETTLE_DAYS = 3;
+/** Discovery slots kept for barren links even when banks without a link fill the step. */
+export const BARREN_RESERVED_SLOTS = 2;
 export const PRODUCT_PAGE_CONFLICT_CHECK = "hamilton.product_page_conflict";
 export const STALE_PRICE_REASON = "another current document of the bank prices a product read from it differently, and is newer";
 export const SCHEDULE_CONFLICT_REASON = "the bank's schedule prices a fee read from this product page differently";
@@ -407,6 +421,8 @@ interface DiscoveryCandidateRow {
   stale_price?: { kept_urls: string[]; only: boolean };
   /** Why an upgrade search was sent beyond the link's address: `schedule_conflict` (#2062). */
   upgrade_reason?: string | null;
+  /** A barren-link search's replacement check (`barrenLinkReplaces`), written to its attempt. */
+  barren_check?: { replaces: boolean; feeLines: number; oldFeeLines: number } | null;
   /** Specialists (strategies) run last because the bank's last search miss ran them with nothing to show. */
   search_miss_demoted?: string[];
   /** `detail.resume` of the bank's last search, when it was cut short by time. */
@@ -1385,6 +1401,105 @@ export async function selectUpgradeCandidates(db: SqlTag, limit: number, stateCo
 }
 
 /**
+ * Barren links (`BARREN_LINK_KIND`): no live fee, the current main page read (a completed text)
+ * and settled `BARREN_SETTLE_DAYS`, fewer than three verified fee types, and not yet searched
+ * at `BARREN_LINK_SEARCH_VERSION`. Largest first. `except` leaves out banks another upgrade
+ * search already took this step.
+ */
+export async function selectBarrenLinkCandidates(db: SqlTag, limit: number, stateCode: string | undefined, except: number[] = []): Promise<DiscoveryCandidateRow[]> {
+  if (limit <= 0) return [];
+  const normalizedState = normalizeStateCode(stateCode);
+  const marker = JSON.stringify({ barren_link_search: BARREN_LINK_SEARCH_VERSION });
+  const rows = await db<DiscoveryCandidateRow[]>`
+    -- barren-link upgrade search
+    SELECT inst.id,
+           inst.institution_name,
+           inst.city,
+           inst.cert_number,
+           inst.state_code,
+           inst.website_url,
+           inst.asset_size,
+           inst.rescue_status,
+           inst.fee_schedule_url,
+           profile.canonical_source_url AS profile_canonical_source_url,
+           profile.source_kind AS profile_source_kind,
+           profile.read_strategy AS profile_read_strategy,
+           profile.locked_by_correction AS profile_locked_by_correction,
+           profile.consecutive_failures AS profile_consecutive_failures
+      FROM institution_sources inst
+      LEFT JOIN institution_source_profiles profile
+        ON profile.institution_id = inst.id
+     WHERE COALESCE(inst.status, 'active') = 'active'
+       AND inst.fee_schedule_url IS NOT NULL
+       AND btrim(inst.fee_schedule_url) <> ''
+       AND inst.website_url IS NOT NULL
+       AND btrim(inst.website_url) <> ''
+       AND NOT (inst.id = ANY(${except}::bigint[]))
+       AND NOT EXISTS (
+         SELECT 1 FROM published_fee_records live
+          WHERE live.institution_id = inst.id AND live.rolled_back_at IS NULL
+       )
+       AND EXISTS (
+         SELECT 1
+           FROM source_documents doc
+           JOIN agent_source_texts text ON text.source_document_id = doc.id AND text.status = 'completed'
+          WHERE doc.institution_id = inst.id
+            AND doc.status = 'success'
+            AND doc.superseded_by_id IS NULL
+            AND doc.duplicate_of_id IS NULL
+            AND doc.companion_source_id IS NULL
+            AND doc.crawled_at < NOW() - make_interval(days => ${BARREN_SETTLE_DAYS}::int)
+       )
+       AND (
+         SELECT count(DISTINCT fv.canonical_fee_key)
+           FROM verified_fee_observations fv
+          WHERE fv.institution_id = inst.id AND fv.review_status <> 'rejected'
+       ) < 3
+       AND NOT EXISTS (
+         SELECT 1 FROM pipeline_attempts pa
+          WHERE pa.institution_id = inst.id
+            AND pa.stage = 'discover'
+            AND pa.detail @> ${marker}::jsonb
+       )
+       AND NOT ${websiteOwnedElsewhereSql(db)}
+       AND (${normalizedState}::text IS NULL OR upper(btrim(inst.state_code)) = ${normalizedState})
+       AND COALESCE(profile.locked_by_correction, FALSE) IS FALSE
+       AND COALESCE(profile.source_kind, 'unknown') <> 'offline'
+       AND COALESCE(profile.read_strategy, '') <> 'manual_review'
+     ORDER BY inst.asset_size DESC NULLS LAST, inst.id ASC
+     LIMIT ${limit}
+  `;
+  return rows.map((row) => ({ ...row, upgrade: true, upgrade_reason: BARREN_LINK_KIND }));
+}
+
+/** Fee lines on the bank's current main page, from its latest completed text (0 when none). */
+async function currentLinkFeeLines(db: SqlTag, institutionId: number): Promise<number> {
+  const [row] = await db<Array<{ normalized_text: string | null; document_url: string | null }>>`
+    SELECT text.normalized_text, doc.document_url
+      FROM source_documents doc
+      JOIN agent_source_texts text ON text.source_document_id = doc.id AND text.status = 'completed'
+     WHERE doc.institution_id = ${institutionId}
+       AND doc.status = 'success'
+       AND doc.superseded_by_id IS NULL
+       AND doc.duplicate_of_id IS NULL
+       AND doc.companion_source_id IS NULL
+     ORDER BY doc.crawled_at DESC, text.id DESC
+     LIMIT 1
+  `;
+  return row?.normalized_text ? scoreFeePage(row.normalized_text, row.document_url).feeLines : 0;
+}
+
+/**
+ * Pure: whether a page a barren-link search found replaces the link. It must have been read
+ * (`foundText`), pass the fee-page check and list more fee lines than the old page.
+ */
+export function barrenLinkReplaces(foundText: string | null | undefined, foundUrl: string | null | undefined, oldFeeLines: number): { replaces: boolean; feeLines: number; oldFeeLines: number } {
+  if (!foundText) return { replaces: false, feeLines: 0, oldFeeLines };
+  const score = scoreFeePage(foundText, foundUrl);
+  return { replaces: score.verdict === "fee_page" && score.feeLines > oldFeeLines, feeLines: score.feeLines, oldFeeLines };
+}
+
+/**
  * Banks whose fee link is a business-only schedule, not yet searched for the consumer
  * schedule at this version. Their link is kept until a consumer schedule is found.
  */
@@ -1995,6 +2110,7 @@ async function recordFinderAttempts(
   const base = {
     method_version: DISCOVERY_METHOD_VERSION,
     ...(row.upgrade ? { upgrade_search: UPGRADE_SEARCH_VERSION, replaced_url: row.fee_schedule_url ?? null } : {}),
+    ...(row.upgrade_reason === BARREN_LINK_KIND ? { barren_link_search: BARREN_LINK_SEARCH_VERSION, barren_check: row.barren_check ?? null } : {}),
     ...(row.business ? { business_search: BUSINESS_SEARCH_VERSION, replaced_url: row.fee_schedule_url ?? null } : {}),
     ...(row.freshness
       ? {
@@ -2178,14 +2294,22 @@ export async function runMagellanDiscovery(
   const upgrades = learning
     ? await selectUpgradeCandidates(db, Math.max(limit - found.length - business.length, reserved(upgradeSlots)), options.stateCode)
     : [];
+  const barren = learning
+    ? await selectBarrenLinkCandidates(
+        db,
+        Math.max(limit - found.length - business.length - upgrades.length, reserved(BARREN_RESERVED_SLOTS)),
+        options.stateCode,
+        upgrades.map((row) => Number(row.id)),
+      )
+    : [];
   const stale = learning
     ? await selectStaleCandidates(
         db,
-        Math.max(limit - found.length - business.length - upgrades.length, reserved(FRESHNESS_RESERVED_SLOTS)),
+        Math.max(limit - found.length - business.length - upgrades.length - barren.length, reserved(FRESHNESS_RESERVED_SLOTS)),
         options.stateCode,
       )
     : [];
-  const missing = found.slice(0, Math.max(0, limit - business.length - upgrades.length - stale.length));
+  const missing = found.slice(0, Math.max(0, limit - business.length - upgrades.length - barren.length - stale.length));
   // The selector puts up to RESUME_FIRST_PER_STEP cut-off banks first; they keep the front.
   let resumeCount = 0;
   while (resumeCount < Math.min(RESUME_FIRST_PER_STEP, missing.length) && cutOff(missing[resumeCount])) resumeCount += 1;
@@ -2193,10 +2317,12 @@ export async function runMagellanDiscovery(
     ...missing.slice(0, resumeCount),
     ...business.slice(0, BUSINESS_RESERVED_SLOTS),
     ...upgrades.slice(0, upgradeSlots),
+    ...barren.slice(0, BARREN_RESERVED_SLOTS),
     ...stale.slice(0, FRESHNESS_RESERVED_SLOTS),
     ...missing.slice(resumeCount),
     ...business.slice(BUSINESS_RESERVED_SLOTS),
     ...upgrades.slice(upgradeSlots),
+    ...barren.slice(BARREN_RESERVED_SLOTS),
     ...stale.slice(FRESHNESS_RESERVED_SLOTS),
   ];
   // A state with little left to search fills its spare slots with banks no finder has ever
@@ -2298,6 +2424,12 @@ export async function runMagellanDiscovery(
         upgraded = false;
         statedDateRefusals.push({ institution_id: institutionId, stale_link: row.fee_schedule_url ?? null, ...check });
       }
+    }
+    // A barren link is replaced only by a fee page with more fee lines than the old page.
+    if (upgraded && row.upgrade_reason === BARREN_LINK_KIND) {
+      const check = barrenLinkReplaces(result.foundText, result.url, await currentLinkFeeLines(db, institutionId));
+      row.barren_check = check;
+      if (!check.replaces) upgraded = false;
     }
     // A re-search that finds nothing new leaves the bank's link and rescue state alone.
     if (!reSearch || upgraded) await recordDiscoveryResult(db, result);

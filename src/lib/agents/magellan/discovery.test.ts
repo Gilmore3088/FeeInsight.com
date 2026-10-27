@@ -18,6 +18,7 @@ import {
   wrongDocumentAddresses,
   type DiscoveryResume,
   UPGRADE_SEARCH_VERSION,
+  BARREN_LINK_SEARCH_VERSION,
   FRESHNESS_SEARCH_VERSION,
   UPGRADE_RESERVED_SLOTS,
   CROSS_PAGE_CONFLICT_CHECK,
@@ -43,6 +44,7 @@ function createDbMock(rows: Array<Record<string, unknown>>, extra: Handler = () 
     const answer = extra(text, values);
     if (answer) return Promise.resolve(answer);
     if (text.includes("product-page upgrade search")) return Promise.resolve([]);
+    if (text.includes("barren-link upgrade search")) return Promise.resolve([]);
     if (text.includes("business-only link search")) return Promise.resolve([]);
     if (text.includes("stale-link freshness search")) return Promise.resolve([]);
     if (text.includes("never-searched banks in other states")) return Promise.resolve([]);
@@ -1042,6 +1044,47 @@ describe("Magellan agentic discovery", () => {
       const db = createDbMock([bank(92, "https://own.example")], learningHandler(() => undefined));
       await runMagellanDiscovery({ runId: 131, stateCode: "VT", limit: 1, db: asDiscoveryDb(db), fetchImpl: site({}), politeDelayMs: 0 });
       expect(db.mock.calls.some((c) => templateText(c[0]).includes("never-searched banks in other states"))).toBe(false);
+    });
+  });
+
+  describe("barren-link upgrade search (fix plan step 3)", () => {
+    const barrenBank = bank(79, "https://barren.example", {
+      fee_schedule_url: "https://barren.example/disclosures",
+      profile_canonical_source_url: "https://barren.example/disclosures",
+    });
+    const barrenDb = (oldText: string) =>
+      createDbMock([], learningHandler((text) => {
+        if (text.includes("barren-link upgrade search")) return [barrenBank];
+        if (text.includes("SELECT text.normalized_text, doc.document_url")) return [{ normalized_text: oldText, document_url: "https://barren.example/disclosures" }];
+        return undefined;
+      }));
+    const fetchImpl = () => site({
+      "https://barren.example/disclosures": () => response("<h1>Disclosures</h1><p>Overdraft fee $30.</p>"),
+      "https://barren.example/": () => response('<a href="/fees/schedule-of-fees">Schedule of Fees</a>'),
+      "https://barren.example/fees/schedule-of-fees": () => response(FEE_TABLE),
+    });
+
+    it("replaces a link whose page gave no live fee with a fee page that lists more fees, keeping the old one", async () => {
+      const db = barrenDb("Overdraft fee $30.");
+      const result = await runMagellanDiscovery({ runId: 130, db: asDiscoveryDb(db), fetchImpl: fetchImpl(), politeDelayMs: 0 });
+
+      expect(result.results[0]).toMatchObject({ outcome: "discovered", url: "https://barren.example/fees/schedule-of-fees" });
+      const texts = db.mock.calls.map((call) => templateText(call[0]));
+      expect(texts.some((text) => text.includes("UPDATE institution_sources"))).toBe(true);
+      const companion = db.mock.calls.find((call) => templateText(call[0]).includes("INSERT INTO institution_additional_sources"));
+      expect(companion).toContain("https://barren.example/disclosures");
+      const last = attempts(db).at(-1)!;
+      expect(last.detail).toMatchObject({ barren_link_search: BARREN_LINK_SEARCH_VERSION, upgrade_reason: "barren_link", barren_check: { replaces: true, oldFeeLines: 1 } });
+    });
+
+    it("keeps the link when the page found lists no more fee lines than the old page", async () => {
+      const oldText = Array.from({ length: 40 }, (_, i) => `Service fee ${i} $${i + 1}.00`).join("\n");
+      const db = barrenDb(oldText);
+      await runMagellanDiscovery({ runId: 131, db: asDiscoveryDb(db), fetchImpl: fetchImpl(), politeDelayMs: 0 });
+
+      const texts = db.mock.calls.map((call) => templateText(call[0]));
+      expect(texts.some((text) => text.includes("UPDATE institution_sources"))).toBe(false);
+      expect(attempts(db).at(-1)!.detail).toMatchObject({ barren_link_search: BARREN_LINK_SEARCH_VERSION, barren_check: { replaces: false } });
     });
   });
 

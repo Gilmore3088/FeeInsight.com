@@ -341,6 +341,8 @@ export function rosettaReaderManifests(versions: RosettaVersions): ReplayManifes
  * in a manifest above.
  */
 export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
+  // Fix plan step 3 (Oct 27): a discovery selector for links that gave no live fee, not fee work.
+  BARREN_LINK_SEARCH_VERSION: "v1 marks the `detail.barren_link_search` on discover attempts for banks with no live fee whose current main page was read at least 3 days ago and gave fewer than three verified fee types. Each such bank is searched once per version with the free finders, in 2 reserved slots a step plus spare capacity; a page found replaces the link only when it passes the fee-page check and lists more fee lines than the old page, and the old link is kept as a companion. No fee row is held, rejected or re-filed, no paid call is made, and nothing is replayed by the version.",
   // #1101: a report version on the paid attempt's detail, not a selector that replays fee work.
   KNOX_PAID_FIND_MISS_VERSION: "v1 names the `free_misses` summary on each `extract.paid` attempt's detail and the `knox.paid_find_misses` step event: each grounded paid fee filed as read, read under another category, held or missed by today's free team on the same text, with the line's shape, the text's layout, the host and the platform. It is computed after the paid call from the free team's deterministic read, buys no call, and writes, holds or re-files no fee; nothing is replayed by the version.",
   // #1102: an evidence version on learning-store rows, not a selector that replays fee work.
