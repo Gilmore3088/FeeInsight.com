@@ -1,4 +1,4 @@
-import { FEEDBACK_KINDS, feedbackRowRead, type FeedbackKindEntry } from "@/lib/agents/learning/feedback-kinds";
+import { FEEDBACK_KINDS, feedbackRowReaders, type FeedbackKindEntry } from "@/lib/agents/learning/feedback-kinds";
 import type { FeedbackRow, FeedbackStage } from "@/lib/agents/learning/feedback";
 import { takedownFeedback, takedownSynced } from "@/lib/agents/learning/feedback-sync";
 import { takedownCheck } from "@/lib/agents/learning/feedback";
@@ -15,6 +15,9 @@ import { auditFeedback } from "./audit-misses";
 import { errorFixProblems, judgeErrorFix, type ErrorFixFee } from "./error-fixes";
 import { scoreFreshAudit, type FreshAuditFee } from "./fresh-audit";
 import { judgeBank, type KeyFee } from "./knox-misses";
+import { findHourlyFees, hourlyFeedbackRow, hourlyVerdict, HOURLY_CHECK, HOURLY_FREQUENCY_LIVE, HOURLY_LINE_LIVE } from "@/lib/agents/darwin/hourly-frequency-check";
+import { FREQUENCY_FILL_CHECK } from "@/lib/agents/hamilton/frequency-fill";
+import { BOX_SIZE_NAME, boxTableAnnualHeader, settledFrequency } from "@/lib/fee-frequency";
 
 /**
  * The error loop, planted end to end (#2065). James asked "how do we know that we're not missing
@@ -169,6 +172,95 @@ const sourceCheckReason = (fee: ErrorFixFee): string | null => {
   return verdict.kind === "untraceable" ? `${SOURCE_CHECK_REASON}:${verdict.reason}` : null;
 };
 
+// The weekly live check's misses that no loop caught (#2066, W43): every check that runs on live fees
+// passes these fees. Each fee and line is copied from a W43 miss (its fee id in the comment).
+interface WeeklyMiss { fee: ErrorFixFee; text: string; line: string; frequency: string | null }
+
+/**
+ * Every check that runs on live fees today, on one weekly-check miss: Deming's daily audit (the shared
+ * source check, the category guard, the evidence, perk and name checks), Hamilton's frequency fill
+ * (the fee's own line, and a box table's annual header) and Darwin's hourly re-check. The first check
+ * that flags it, or null when none does: a gap, not a pass.
+ */
+function liveChecksFlag({ fee, text, line, frequency }: WeeklyMiss): string | null {
+  const audit = scoreFreshAudit([fee], new Map([[INSTITUTION, texts(text)]])).misses[0]?.check;
+  if (audit) return audit;
+  const amount = Number(fee.amount);
+  const settled = settledFrequency(line, amount, frequency, fee.canonical_fee_key);
+  if ((settled ?? null) !== frequency) return FREQUENCY_FILL_CHECK;
+  if (frequency == null && BOX_SIZE_NAME.test(fee.fee_name) && boxTableAnnualHeader(text, line, amount) === "annual") return FREQUENCY_FILL_CHECK;
+  const hourly = hourlyVerdict(fee.fee_name, fee.canonical_fee_key, frequency, line, amount);
+  if (hourly?.action === "set" && HOURLY_FREQUENCY_LIVE && (hourly.basis === "name" || HOURLY_LINE_LIVE)) return HOURLY_CHECK;
+  return null;
+}
+
+// Hourly shown flat (W43: 42 of the 56 caught-but-not-routed misses): Darwin's hourly re-check sets
+// the frequency, but its frequency_filled row is a kind no Knox file reads, so Knox reads the next
+// bank's "/hour" the same way. W43, fee 107927 "Account research fee" $25: its stored excerpt, verbatim;
+// Darwin's hourly check filled it from blank (its frequency_filled row).
+const HOURLY_LINE = "Account research fee................................... $25.00 per hour, $25.00 minimum Online Bill Payment check copy mailed to merchant .............................. $5.00";
+const HOURLY: WeeklyMiss = {
+  fee: liveFee(961, { canonical_fee_key: "account_research", fee_name: "Account research fee", amount: 25 }),
+  text: `Fee Schedule\n${HOURLY_LINE}`, line: HOURLY_LINE, frequency: null,
+};
+const hourlyRows = () => findHourlyFees([{
+  fee_published_id: 961, fee_verified_id: 961, institution_id: INSTITUTION, fee_name: HOURLY.fee.fee_name, amount: 25,
+  canonical_fee_key: "account_research", frequency: null, source_line: HOURLY_LINE,
+}]).matches.filter((match) => match.action === "set").map((match) => hourlyFeedbackRow(match, null));
+
+// An annual rent shown flat (W43, fee 66241 "10 x 10" $150): the "Annual Rental" heading sits more than
+// 12 lines above the row, past the box-table header's look-back, so the fill leaves it blank.
+const BOX_SIZES = ["2 x 5: $40.00", "3 x 5: $40.00", "4 x 5: $50.00", "5 x 5: $60.00", "3 x 10: $70.00", "4 x 10: $80.00", "5 x 10: $90.00", "6 x 10: $95.00", "7 x 10: $100.00", "10 x 10: $150.00"];
+const ANNUAL: WeeklyMiss = {
+  fee: liveFee(962, { canonical_fee_key: "safe_deposit_box", fee_name: "10 x 10", amount: 150 }),
+  text: ["Fee Schedule", "", "Safe Deposit Box Annual Rental", "", ...BOX_SIZES.flatMap((size) => [size, ""]), "Statement Services"].join("\n"),
+  line: "10 x 10: $150.00", frequency: null,
+};
+
+// A price ladder shown as one flat price (W43, fee 142980): three tiers on one row, published as the first.
+const TIER_LINE = "Credit/Debit/ATM Card Replacement Rush (2 Business Days) Rush (Overnight) | $25 $35 $50";
+const TIER: WeeklyMiss = {
+  fee: liveFee(963, { canonical_fee_key: "rush_card", fee_name: "Credit/Debit/ATM Card Replacement Rush (2 Business Days) Rush (Overnight)", amount: 25 }),
+  text: `Fee Schedule\nCheck Copy | $5\n${TIER_LINE}\nForeign Item | Cost as Incurred`, line: TIER_LINE, frequency: null,
+};
+
+// A garbled name (W43, fee 49726 "2.00 Inactive Checking and Money Mark"): two columns read across, so
+// the name opens on the price and is cut mid-word. (W43's "Courtesy Pay N/A" is not planted: the name
+// check flags it today, but the daily audit reads only a sample, so it never reached that fee.)
+// The text is the document's two-column lines; the line is the fee's stored excerpt, verbatim.
+const NAME_LINE = "Excessive Withdrawal Fee (Savings Accts only; 4 free per month then fee each time) 2.00 Inactive Checking and Money Market Account (monthly after 6 months no activity) $2.00";
+const GARBLED_NAME: WeeklyMiss = {
+  fee: liveFee(964, { canonical_fee_key: "dormant_account", fee_name: "2.00 Inactive Checking and Money Mark", amount: 2 }),
+  text: ["Checking, Money Market and Savings Accounts",
+    "Excessive Withdrawal Fee (Savings Accts only; 4 free per | 2.00 Inactive Checking and Money Market Account (monthly $2.00",
+    "month then fee each time) | after 6 months no activity)",
+    "NSF, Courtesy Pay, ACH Returned Item, Loan Payment | $35.00 Re-Deposit Returned Item (each item) $10.00"].join("\n"),
+  line: NAME_LINE, frequency: "monthly",
+};
+
+// A wrong category the guard passes (W43: 5 of the 23 with a fee id, e.g. fee 124105): a safe deposit
+// box's late charge filed as a loan's late payment fee; its name alone reads as a late payment.
+const LATE_LINE = "Late Payment Fee | $15.00";
+const BOX_LATE: WeeklyMiss = {
+  fee: liveFee(965, { canonical_fee_key: "late_payment", fee_name: "Late Payment Fee", amount: 15 }),
+  text: ["Table data for Schedule of Fees - Safe Deposit Boxes/Annual Fee 08-10-2020", "", "Type (Description) | Amount | Alert Me", "",
+    "3\" x 5\" | $50.00", "", "10\" x 10\" | $175.00", "", LATE_LINE, "", "Lost Key | $50.00", "", "Box Drilling | $250.00"].join("\n"),
+  line: LATE_LINE, frequency: null,
+};
+
+/** A weekly-check miss no check flags: nothing is detected, so no link past it can hold. */
+function unflagged(key: string, label: string, miss: WeeklyMiss): PlantedError {
+  return {
+    key, label, owner: "knox", stage: "extract",
+    detect: () => liveChecksFlag(miss),
+    // No check flags it, so no row is written.
+    record: () => [],
+    reader: null,
+    rerun: null,
+    recheck: null,
+  };
+}
+
 export const PLANTED_ERRORS: PlantedError[] = [
   {
     key: "wrong_document",
@@ -291,6 +383,27 @@ export const PLANTED_ERRORS: PlantedError[] = [
       corrected: () => judgeBank([KEY_FEE], keyText("Fee Schedule\nStop Payment Fee | $30.00\nOutgoing wire | $25.00"))[0].verdict === "read",
     },
   },
+  {
+    key: "amount_hourly_flat",
+    label: "an hourly price shown as a flat charge",
+    owner: "knox",
+    stage: "extract",
+    detect: () => liveChecksFlag(HOURLY),
+    record: () => rows(hourlyRows()),
+    // Knox's read lessons read Darwin's frequency_filled row at extract and write the hour at the
+    // document's next read, but only with KNOX_READ_LESSONS_LIVE on; off, no Knox file reads it (#2062).
+    reader: readLessonsLive() ? { file: "src/lib/agents/knox/read-lessons.ts", picksOut: "WHERE f.kind IN ('frequency_filled', 'frequency_corrected', 'frequency_cleared')" } : null,
+    rerun: null,
+    // Darwin's hourly re-check runs on every verify: it still sets the planted fee, and leaves it once hourly.
+    recheck: {
+      planted: () => hourlyVerdict(HOURLY.fee.fee_name, "account_research", null, HOURLY_LINE, 25)?.action === "set",
+      corrected: () => hourlyVerdict(HOURLY.fee.fee_name, "account_research", "hourly", HOURLY_LINE, 25) == null,
+    },
+  },
+  unflagged("amount_annual_flat", "an annual rent shown as a flat charge", ANNUAL),
+  unflagged("amount_tier_flat", "a price ladder shown as its first price", TIER),
+  unflagged("garbled_name", "a name glued to another column's words", GARBLED_NAME),
+  unflagged("category_unflagged", "a wrong category the category guard passes", BOX_LATE),
 ];
 
 /**
@@ -316,6 +429,19 @@ export const KNOWN_GAPS: Record<string, Partial<Record<LoopLink, number>>> = {
   discontinued_account: { read: 2062 },
   // A missed fee is a Deming test case, not a feedback row, so Knox never learns from it.
   missed_fee: { recorded: 2062, read: 2062, rerun: 2058 },
+  // #2066 (W43 weekly check): Darwin's hourly re-check fixes the fee, but its frequency_filled row has
+  // a Knox reader only with KNOX_READ_LESSONS_LIVE on, and no error fix re-runs extraction on it.
+  amount_hourly_flat: { ...(readLessonsLive() ? {} : { read: 2062 }), rerun: 2067 },
+  // #2066 (W43: 122 wrong amounts no check caught): the price is on the line, so the source check
+  // passes it; only its basis (a year, a ladder) is lost. Amount classes are #2067's.
+  amount_annual_flat: { detected: 2067, recorded: 2067, read: 2067, rerun: 2067, fixed: 2067 },
+  amount_tier_flat: { detected: 2067, recorded: 2067, read: 2067, rerun: 2067, fixed: 2067 },
+  // #2066 (W43: 22 garbled names no check caught): the name quality check reads glyphs and cut
+  // sentences, not another column's words glued to the label.
+  garbled_name: { detected: 2066, recorded: 2066, read: 2066, rerun: 2066, fixed: 2066 },
+  // #2066 (W43: 34 wrong categories the guard did not flag): the guard is a keyword check on the
+  // name, and the name alone is a fine late payment fee; category lessons are #2068's.
+  category_unflagged: { detected: 2068, recorded: 2068, read: 2068, rerun: 2068, fixed: 2068 },
 };
 
 function kindEntry(kind: string): FeedbackKindEntry | undefined {
@@ -345,11 +471,10 @@ export function walkLoop(planted: PlantedError, source: (file: string) => string
   else {
     const text = source(planted.reader.file);
     const reader = planted.reader;
-    const readRow = recorded_rows.find((row) => {
-      const entry = kindEntry(row.kind);
-      return entry != null && "readers" in entry && entry.readers.includes(reader.file)
-        && feedbackRowRead({ kind: row.kind, about_stage: row.aboutStage, check_name: row.checkName, dedupe_key: row.dedupeKey, cause: row.cause });
-    });
+    // The reader must read the row itself, at its stage and from its check (#2066), not only be a
+    // registered reader of the kind.
+    const readRow = recorded_rows.find((row) => kindEntry(row.kind) != null
+      && feedbackRowReaders({ kind: row.kind, about_stage: row.aboutStage, check_name: row.checkName, dedupe_key: row.dedupeKey, cause: row.cause }).includes(reader.file));
     if (!reader.file.startsWith(`src/lib/agents/${planted.owner}/`)) fail("read", `${reader.file} is not ${planted.owner}'s`);
     else if (!readRow) fail("read", `${reader.file} is not a registered reader of a row this check writes`);
     else if (text == null || !text.includes(reader.picksOut)) fail("read", `${reader.file} never names ${reader.picksOut}`);
