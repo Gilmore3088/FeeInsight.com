@@ -997,10 +997,15 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
     deposit, "to open" or purchase word ("$500 minimum balance", "$25.00 minimum purchase") is no
     floor (`LIVE_FRAGMENT_FLOOR_WORDING`'s lookahead).
   - A floor holds a refused line live only when the amount is not a cap's or an opening deposit's
-    own figure (`liveFragmentFloorHolds`, `LIVE_FRAGMENT_LIMIT_FIGURE`: "maximum of $N", "capped at
-    $N", "lesser of $N", "minimum opening deposit of $N", "$N minimum opening deposit", "$N deposit
-    to open"). "Overdraft Fee $35, maximum of $100 per day; $5 minimum" at $100 comes down (with a
-    re-read request); at $35, $5 or $150 it stays a reread. A floor still bars every rename.
+    own figure (`liveFragmentFloorHolds`, `LIVE_FRAGMENT_LIMIT_FIGURE`: "maximum of $N", "maximum
+    charge of $N", "capped at $N", "lesser of $N", "minimum opening deposit of $N", "$N minimum
+    opening deposit", "$N deposit to open"; a bare "Max $N" may be a product's name, "Checking Max",
+    and is no cap here), or when that amount is also the floor's own figure
+    (`LIVE_FRAGMENT_FLOOR_FIGURE`: "$N minimum", "greater of $N", "minimum charge (of) $N", "min $N
+    or"). "Overdraft Fee $35, maximum of $100 per day; $5 minimum" at $100 comes down (with a
+    re-read request); at $35, $5 or $150 it stays a reread, and so do "minimum opening deposit of
+    $100, $100 minimum fee" and "greater of $100 or cost; maximum of $100" at $100. A floor still
+    bars every rename.
   - Dry run 2026-10-26 (read-only): 115 live fees carry floor wording on main; the narrower read
     drops it from 12 (all balance or purchase thresholds, none a fragment shape) and no fee's amount
     is a cap's or deposit's figure beside a floor. Only 2 live fragment fees carry a floor (30992

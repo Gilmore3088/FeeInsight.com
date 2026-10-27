@@ -11,17 +11,18 @@ import {
   LIVE_FRAGMENT_CAP_WORDING,
   LIVE_FRAGMENT_CREDIT,
   LIVE_FRAGMENT_CREDIT_WORD,
+  LIVE_FRAGMENT_FLOOR_FIGURE,
+  LIVE_FRAGMENT_FLOOR_WORDING,
   LIVE_FRAGMENT_IF_THRESHOLD_WORD,
   LIVE_FRAGMENT_REREAD_KIND,
   LIVE_FRAGMENT_SQL_SPACES,
-  LIVE_FRAGMENT_FLOOR_WORDING,
-  LIVE_FRAGMENT_THRESHOLD_DOLLAR,
-  liveFragmentFloorHolds,
   LIVE_FRAGMENT_STRATEGY,
+  LIVE_FRAGMENT_THRESHOLD_DOLLAR,
   liveFragmentCheckShape,
   liveFragmentCredit,
   liveFragmentCreditHeaded,
   liveFragmentCapRefused,
+  liveFragmentFloorHolds,
   liveFragmentOwnAccountHead,
   countLiveFragmentNames,
   findLiveFragments,
@@ -388,8 +389,10 @@ describe("Darwin live fragment re-check", () => {
   it("v8 (#1521): a floor holds a takedown in SQL only when the amount is no cap's or opening deposit's figure", () => {
     const text = liveFragmentCountSql();
     const floor = `regexp_replace(name, '${LIVE_FRAGMENT_THRESHOLD_DOLLAR.source.replace(/\\b/g, "\\y")}', ' ', 'gi') ~* '${LIVE_FRAGMENT_FLOOR_WORDING.source.replace(/\\b/g, "\\y")}'`;
-    expect(text).toContain(`COALESCE(NOT (${floor} AND NOT EXISTS (SELECT 1 FROM regexp_matches(name, '`);
-    expect(text).toContain("WHERE abs(replace(COALESCE(m[1], m[2], m[3], m[4]), ',', '')::numeric - amount) < 0.005)) AND (");
+    const unthresholded = `regexp_replace(name, '${LIVE_FRAGMENT_THRESHOLD_DOLLAR.source.replace(/\\b/g, "\\y")}', ' ', 'gi')`;
+    expect(text).toContain(`COALESCE(NOT (${floor} AND (NOT EXISTS (SELECT 1 FROM regexp_matches(name, '`);
+    expect(text).toContain(`OR EXISTS (SELECT 1 FROM regexp_matches(${unthresholded}, '${LIVE_FRAGMENT_FLOOR_FIGURE.source.replace(/\\b/g, "\\y")}', 'gi') m`);
+    expect(text).toContain("WHERE abs(replace(COALESCE(m[1], m[2], m[3], m[4]), ',', '')::numeric - amount) < 0.005))) AND (");
     // The floor still bars renames: `gate_refused` reads the plain floor.
     expect(text).toContain(`COALESCE(${floor} OR `);
   });
@@ -404,6 +407,11 @@ describe("Darwin live fragment re-check", () => {
     ["MasterCard Gift Card ($25.00 minimum purchase)", 3.99, false],
     ["Research Fee ($25.00 minimum)", 25, true],
     ["Greater of", 10, true],
+    ["Savings minimum opening deposit of $100, $100 minimum fee", 100, true],
+    ["Research Fee greater of $100 or cost; maximum of $100", 100, true],
+    ["Research Fee minimum charge of $100; maximum of $100", 100, true],
+    ["Checking Max $100 balance; $5 minimum", 100, true],
+    ["Wire Fee maximum charge of $100; $5 minimum", 100, false],
   ] as const)("v8 (#1521): the floor in %j at $%s holds: %s", (name, amount, holds) => {
     expect(liveFragmentFloorHolds(name, amount)).toBe(holds);
   });
@@ -1356,6 +1364,9 @@ describe("live fragment switch-on rules (#1443)", () => {
     ["Savings Account: minimum opening deposit of $100, $5 minimum monthly fee if you", 100, null, { pattern: "pronoun", action: "takedown" }],
     ["Savings Account: $100 deposit to open, $5 minimum monthly fee if you", 100, null, { pattern: "pronoun", action: "takedown" }],
     ["Savings Account: minimum opening deposit of $100, $5 minimum monthly fee if you", 5, null, { pattern: "pronoun", action: "reread" }],
+    // v8 review: an amount that is also the floor's own figure stays held, cap or deposit beside it or not.
+    ["Savings Account: minimum opening deposit of $100, $100 minimum fee if you", 100, null, { pattern: "pronoun", action: "reread" }],
+    ["Research Fee greater of $100 or cost; maximum of $100 if you", 100, null, { pattern: "pronoun", action: "reread" }],
     // v8 (#1521): "$N minimum" before a balance, deposit, "to open" or purchase word, or after a comparative, is a
     // threshold, not a floor, so it no longer holds a refused line.
     ["Monthly Fee If balance falls below $500 minimum balance, you will be charged", 500, null, { pattern: "pronoun", action: "takedown" }],

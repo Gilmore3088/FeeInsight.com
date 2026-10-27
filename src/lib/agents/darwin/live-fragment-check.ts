@@ -376,25 +376,39 @@ export function liveFragmentFloor(name: string): boolean {
 }
 /**
  * v8 (#1521): the figure a cap or an opening deposit states ("maximum of $100", "capped at $90",
- * "lesser of $50", "minimum opening deposit of $100", "$100 minimum opening deposit", "$25 to open").
+ * "lesser of $50", "maximum charge of $50", "minimum opening deposit of $100", "$100 minimum opening
+ * deposit", "$25 deposit to open"). A bare "Max $100" is no cap: it may be a product's name ("Checking
+ * Max $100").
  * A floor on the same line holds a refused line live only when the amount is not one of these
  * figures: "Overdraft Fee $35, maximum of $100 per day; $5 minimum" at $100 is the cap, not the fee.
  * Groups 1-4 are the figure.
  */
-export const LIVE_FRAGMENT_LIMIT_FIGURE = /\b(?:max(?:imum)?|cap(?:ped)?(?:\s+at)?|lesser\s+of)\s+(?:of\s+)?\$\s?(\d[\d,]*(?:\.\d{1,2})?)|\b(?:minimum|min|opening|initial)\s+(?:(?:opening|initial)\s+)?deposits?\s+(?:(?:of|is|to\s+open)\s+)?\$\s?(\d[\d,]*(?:\.\d{1,2})?)|\$\s?(\d[\d,]*(?:\.\d{1,2})?)\s+(?:(?:minimum|min|opening|initial)\s+)+deposits?\b|\$\s?(\d[\d,]*(?:\.\d{1,2})?)\s+(?:deposit\s+)?to\s+open\b/gi;
-/** v8 (#1521): the amount is a cap's or an opening deposit's own figure (`LIVE_FRAGMENT_LIMIT_FIGURE`). */
-export function liveFragmentLimitIsAmount(name: string, amount: number): boolean {
-  return [...name.matchAll(LIVE_FRAGMENT_LIMIT_FIGURE)].some((match) => {
+export const LIVE_FRAGMENT_LIMIT_FIGURE = /\b(?:max(?:imum)?\s+of|maximum\s+(?:(?:daily|monthly|late|overdraft)\s+)?(?:charges?|fees?)(?:\s+of)?|cap(?:ped)?\s+(?:at|of)|lesser\s+of)\s+\$\s?(\d[\d,]*(?:\.\d{1,2})?)|\b(?:minimum|min|opening|initial)\s+(?:(?:opening|initial)\s+)?deposits?\s+(?:(?:of|is|to\s+open)\s+)?\$\s?(\d[\d,]*(?:\.\d{1,2})?)|\$\s?(\d[\d,]*(?:\.\d{1,2})?)\s+(?:(?:minimum|min|opening|initial)\s+)+deposits?\b|\$\s?(\d[\d,]*(?:\.\d{1,2})?)\s+(?:deposit\s+)?to\s+open\b/gi;
+/**
+ * v8 (#1521, review): a floor's own figure ("$100 minimum", "greater of $100", "minimum charge (of)
+ * $100", "min $100 or"), read with the line's thresholds left out. Groups 1-4 are the figure.
+ */
+export const LIVE_FRAGMENT_FLOOR_FIGURE = /\$\s?(\d[\d,]*(?:\.\d{1,2})?)\s+minimum\b(?!\s+(?:(?:daily|average|avg|monthly|account|opening|initial|collected|ledger)\s+)*(?:balances?|deposits?|to\s+open|purchases?)\b)|\bgreater\s+of\s+\$\s?(\d[\d,]*(?:\.\d{1,2})?)|\bminimum\s+charge\s+(?:of\s+)?\$\s?(\d[\d,]*(?:\.\d{1,2})?)|\bmin(?:imum)?\s+\$\s?(\d[\d,]*(?:\.\d{1,2})?)\s+or\b/gi;
+const figureMatches = (name: string, re: RegExp, amount: number) =>
+  [...name.matchAll(re)].some((match) => {
     const figure = match.slice(1).find((group) => group != null);
     return figure != null && Math.abs(figureValue(figure) - amount) < 0.005;
   });
+/** v8 (#1521): the amount is a cap's or an opening deposit's own figure (`LIVE_FRAGMENT_LIMIT_FIGURE`). */
+export function liveFragmentLimitIsAmount(name: string, amount: number): boolean {
+  return figureMatches(name, LIVE_FRAGMENT_LIMIT_FIGURE, amount);
+}
+/** v8 (#1521, review): the amount is a floor's own figure (`LIVE_FRAGMENT_FLOOR_FIGURE`). */
+export function liveFragmentFloorFigureIsAmount(name: string, amount: number): boolean {
+  return figureMatches(name.replace(LIVE_FRAGMENT_THRESHOLD_DOLLAR, " "), LIVE_FRAGMENT_FLOOR_FIGURE, amount);
 }
 /**
  * v8 (#1521): a floor holds a refused line live (`reread`) unless the amount is a cap's or an opening
- * deposit's own figure on the line. A floor still bars every rename.
+ * deposit's own figure on the line and not also the floor's own figure ("minimum opening deposit of
+ * $100, $100 minimum fee" at $100 stays held). A floor still bars every rename.
  */
 export function liveFragmentFloorHolds(name: string, amount: number): boolean {
-  return liveFragmentFloor(name) && !liveFragmentLimitIsAmount(name, amount);
+  return liveFragmentFloor(name) && (!liveFragmentLimitIsAmount(name, amount) || liveFragmentFloorFigureIsAmount(name, amount));
 }
 /**
  * v6 (133104): a line that ends on a balance ("Avoid service charge with minimum balance of" $3,
@@ -1452,8 +1466,10 @@ export function liveFragmentCountSql(): string {
   const notAFee = `(name ~* '${postgresPattern(LIVE_FRAGMENT_NOT_A_FEE)}' OR (name ~* '${postgresPattern(LIVE_FRAGMENT_OTHER_BANK)}' AND name !~* '${postgresPattern(LIVE_FRAGMENT_FEE_WORD)}'))`;
   // v8 (#1521): the floor is read with the line's thresholds left out ("below $500 minimum" is none).
   const floor = `regexp_replace(name, '${postgresPattern(LIVE_FRAGMENT_THRESHOLD_DOLLAR)}', ' ', 'gi') ~* '${postgresPattern(LIVE_FRAGMENT_FLOOR_WORDING)}'`;
-  // v8 (#1521): a floor holds a takedown only when the amount is not a cap's or opening deposit's own figure.
-  const floorHolds = `(${floor} AND NOT EXISTS (SELECT 1 FROM regexp_matches(name, '${postgresPattern(LIVE_FRAGMENT_LIMIT_FIGURE)}', 'gi') m WHERE abs(replace(COALESCE(m[1], m[2], m[3], m[4]), ',', '')::numeric - amount) < 0.005))`;
+  // v8 (#1521): a floor holds a takedown unless the amount is a cap's or opening deposit's own figure and not the floor's.
+  const figureIn = (text: string, re: RegExp) => `EXISTS (SELECT 1 FROM regexp_matches(${text}, '${postgresPattern(re)}', 'gi') m WHERE abs(replace(COALESCE(m[1], m[2], m[3], m[4]), ',', '')::numeric - amount) < 0.005)`;
+  const unthresholdedName = `regexp_replace(name, '${postgresPattern(LIVE_FRAGMENT_THRESHOLD_DOLLAR)}', ' ', 'gi')`;
+  const floorHolds = `(${floor} AND (NOT ${figureIn("name", LIVE_FRAGMENT_LIMIT_FIGURE)} OR ${figureIn(unthresholdedName, LIVE_FRAGMENT_FLOOR_FIGURE)}))`;
   const ifHard = `(rest ~* '${postgresPattern(LIVE_FRAGMENT_IF_THRESHOLD_WORD)}' OR COALESCE(figure_is_amount, false))`;
   const capRefused = `(name ~* '${postgresPattern(LIVE_FRAGMENT_CAP_WORDING)}' AND NOT EXISTS (SELECT 1 FROM regexp_matches(regexp_replace(name, '${capDollar}', ' ', 'gi'), '${dollar}', 'g') m WHERE abs(replace(m[1], ',', '')::numeric - amount) < 0.005))`;
   const soft = `amount < ${LIVE_FRAGMENT_CONDITION_MAX}`;
