@@ -81,6 +81,16 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     since: "2026-10-26",
   },
   {
+    id: "issue-1593-layout-evidence-names-no-own-item",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "When rows printed side by side are the only evidence that a $0 fee's right cell is another fee, refuse a right cell that names an item, payment or transaction this fee could be charged on (ACH, debit, draft, check, item, transfer, card, recurring, preauthorized): \"Stop Payment No Charge | ACH Debit Charge $30.00\" is a stop payment on an ACH debit, not another fee. And a note under the right column's heading that states an account's status, dormancy, lapse, conversion, age or discount (\"(dormancy) $5.00\", \"(turning 18) $5.00\", \"(discount removed) $5.00\") stays the fee's own condition. Tighten such evidence before its switch goes on, and dry-run it over the rows it would free.",
+    why: "The review of #2676 left these cases freed by the layout evidence behind its off switch: a fee noun with no variant word was enough to read the right cell as another fee, and the note test missed status, dormancy, lapse, conversion, turning and discount words. Dry run on Oct 26 (read-only SQL and the code over the stored lines near each fee): of the 65 rows the v5 recheck failed as conditional_zero, the same 2 real free fees (published 38491, 56797) pass with the switch on, and no verdict changes with it off.",
+    evidence: { issues: [1593], prs: [2751], files: ["src/lib/agents/darwin/verify.ts"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
+  {
     id: "issue-1945-latest-edition-in-force",
     agent: "darwin",
     stage: "verify",
