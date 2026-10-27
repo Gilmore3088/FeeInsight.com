@@ -118,6 +118,16 @@ export const DEMING_LESSONS: AgentLesson[] = [
     since: "2026-10-26",
   },
   {
+    id: "issue-2064-replay-each-error-kind-with-what-its-check-reads",
+    agent: "deming",
+    stage: "regression replay",
+    lesson: "Give every error kind a replayer that reads what its live check reads, and say plainly which kinds cannot have one. A wrong-document takedown replays on its document's address (and, for a rule that reads the document's opening, its stored text; with neither, judge nothing). A duplicate replays on whether the line it repeats, or that line's replacement, is still on the catalog, read with the restore's own rule: a copy live beside its kept line is the error back, and a copy whose kept line is gone waits as a candidate, never retired. Read a fee as live only in the category it was taken down from, for every check's cases, the oldest included. Retire a case a check deliberately accepts only through a reviewed entry tied to that check's version, never on a restore alone, and name the check whose restore put a live regression back. When CI replays a fixture the app cannot commit, report its drift from the confirmed cases on every run so a stale fixture is visible the day it falls behind.",
+    why: "Only the limit guard, the source check, the category guard and the audience rules could replay their confirmed takedowns: 1,058 duplicate and wrong-document cases (157 same-line, 748 product page, 14 article page, 139 non-deposit document) sat as candidates no replay read. The limit guard's own pass still read any live row as a restore with no category check, an accepted fee would have flagged as a regression every day with no way to retire it, and the CI fixture held 21 of 1,015 replayable active cases with nothing reporting the gap.",
+    evidence: { issues: [2064], prs: [2779], files: ["src/lib/agents/deming/checkers.ts", "src/lib/agents/deming/regression.ts", "src/lib/agents/deming/regression-fixture.ts"] },
+    appliesTo: "all",
+    since: "2026-10-27",
+  },
+  {
     id: "issue-2066-trace-every-live-miss",
     agent: "deming",
     stage: "loop proof",

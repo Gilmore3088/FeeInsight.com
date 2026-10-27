@@ -134,7 +134,7 @@ import { runIndexNowPing, summarizeIndexNow } from "@/lib/seo/indexnow";
 import { runAnswerKeyScore, summarizeAnswerKeyScore } from "@/lib/agents/answer-key-score";
 import { runScoreboardSnapshot, summarizeScoreboard } from "@/lib/agents/scoreboard";
 import { persistCorrectiveArtifact, recordCorrectiveWarnings } from "@/lib/agents/deming/corrective-source-store";
-import { runDemingRegression, summarizeDemingRegression, DEMING_REGRESSION_VERSION } from "@/lib/agents/deming/regression";
+import { runDemingRegression, summarizeDemingRegression, recordRegressionNotes, DEMING_REGRESSION_VERSION } from "@/lib/agents/deming/regression";
 import { freshAuditDetail, runFreshAudit, summarizeFreshAudit } from "@/lib/agents/deming/fresh-audit";
 import { benchmarkHealthDetail, runBenchmarkHealth, summarizeBenchmarkHealth } from "@/lib/agents/deming/benchmark-health";
 import { playbookContradictionsDetail, runPlaybookContradictions, summarizePlaybookContradictions } from "@/lib/agents/deming/playbook-contradictions";
@@ -2920,6 +2920,7 @@ async function executeAgenticStep(
         ? await persistCorrectiveArtifact(tx, run.id, step.id, result.corrective.artifact)
         : { state: "not_stored", ciImport: "not_implemented" };
       if (result.corrective?.warnings.length) await recordCorrectiveWarnings(tx, run.id, step.id, result.corrective.warnings);
+      await recordRegressionNotes(tx, run.id, step.id, result);
       return {
         status: "completed",
         summary: summarizeDemingRegression(result),
@@ -2939,6 +2940,12 @@ async function executeAgenticStep(
           active_total: result.activeTotal,
           candidate_total: result.candidateTotal,
           not_judged: result.notJudged,
+          // #2064: cases retired by a reviewed acceptance, and the committed CI fixture's drift.
+          accepted: result.accepted ?? 0,
+          ci_fixture: result.fixture ?? null,
+          field_eligible: result.fieldEligible ?? null,
+          field_limit: result.fieldLimit ?? null,
+          field_read_error: result.fieldReadError ?? null,
           totals_scope: "historical_all_datasets",
           corrective_source: result.corrective ? { protocol: 2, promoted: result.corrective.promoted, evaluated: result.corrective.evaluated,
             caught: result.corrective.caught, activated: result.corrective.activated, regressions: result.corrective.regressions,
