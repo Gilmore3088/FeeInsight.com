@@ -16,8 +16,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Decisions
 
-192 entries, newest first. The full text, who decided and why are in [DECISIONS.md](DECISIONS.md).
+193 entries, newest first. The full text, who decided and why are in [DECISIONS.md](DECISIONS.md).
 
+- 2026-10-27 — Sessions use three adapted engineering skills (diagnosing-bugs, tdd, domain-modeling) and keep project terms in GLOSSARY.md. — [decision](DECISIONS.md#2026-10-27) — `.claude/skills/`
 - 2026-10-25 — Hamilton's peer minimum: a median needs 5 local competitors, or 10 peers for any other group. — [decision](DECISIONS.md#2026-10-25) — `MIN_PEERS_FOR_POSITION` and its tests
 - 2026-10-22 — Data-quality work has an executive owner: its decisions, HOLD-class ones included, proceed after an independent exact-head review and green CI; CLAUDE.md hard limits still apply. — [decision](DECISIONS.md#2026-10-22)
 - 2026-10-22 — The second wave: Knox reads every stored document once more with today's rules (stale-read floor v78 to v97). — [decision](DECISIONS.md#2026-10-22)
@@ -213,7 +214,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-360 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+361 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
 ### Extraction and fee reading (58)
 
@@ -593,8 +594,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A shared log that every PR appends to at the same spot needs one file per entry. — [finding](findings/2026-10-09-findings-md-merge-conflicts.md) — Guard: `scripts/ci-guards.sh findings-file-kill`
 - 2026-10-09 — Backlog Node checks were accidentally discovered by application Vitest. — [finding](findings/2026-10-09-backlog-node-test-discovery.md) — Guard: `src/lib/vitest-collection.test.ts:26` (+2 more)
 
-### Agent process, learning and measurement (19)
+### Agent process, learning and measurement (20)
 
+- 2026-10-27 — A takedown's reason and the check that wrote it are two names: the sync filed 4,656 rows for 2,328 fees under `hamilton.<reason prefix>` (the limit guard's `hamilton.limit_as_fee`, hand takedowns, Darwin's re-checks); a test now pins the reasons of every module that takes fees down to its check. Knox loaded the business-schedule check's confirmed takedowns but learned the audience from none of them (#2062). — [finding](findings/2026-10-27-takedown-sync-names-checks-from-reasons.md) — Agent lesson: knox/issue-2062-takedown-readers-get-their-own-check, hamilton/issue-2062-reason-prefix-is-not-the-check, darwin/issue-2062-reason-prefix-maps-to-its-check; Guard: `src/lib/agents/learning/takedown-reason-checks.test.ts`, `src/lib/agents/deming/planted-errors.test.ts`
 - 2026-10-26 — A weight-0 restore record is named in every reader that treats a restore as a lesson, and rows written under an old label are relabelled by the typed repair behind an off switch: the account type hold's 5 Oct 16 releases still read wrong / wrong_category (#1680). — [finding](findings/2026-10-26-hold-release-labelled-wrong-category.md) — Agent lesson: hamilton/issue-1680-record-kind-named-by-every-reader; Guard: `src/lib/agents/learning/account-type-hold-feedback.db.test.ts`, `src/lib/agents/darwin/release-review.test.ts`
 - 2026-10-25 — A retrieval add-on is judged only by its lift on a holdout of human-confirmed current schedules; the first metadata and full-text ranker showed none over today's page choice, so no embeddings. — [finding](findings/2026-10-25-retrieval-pilot-no-holdout-lift.md) — Guard: `src/lib/agents/deming/shadow-lab/retrieval-pilot.test.ts`; Agent lesson: deming/o2-retrieval-holdout-before-embeddings
 - 2026-10-24 — Answer-key lines were compared to the bank's page as markup (table bars, HTML codes, dot leaders), so the same words and prices never matched. — [finding](findings/2026-10-24-answer-key-lines-compared-as-markup.md) — Agent lesson: deming/issue-2466-line-content-match
@@ -620,7 +622,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (336 in all).
+counts as of this index (339 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
@@ -628,10 +630,10 @@ counts as of this index (336 in all).
 | magellan | 29 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
 | hoovie | 12 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
 | rosetta | 14 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
-| knox | 89 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
-| darwin | 57 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
+| knox | 90 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
+| darwin | 58 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 40 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
-| hamilton | 69 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
+| hamilton | 70 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
 | deming | 18 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
 
 ## Before 2026-10-10

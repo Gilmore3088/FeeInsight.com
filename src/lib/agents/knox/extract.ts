@@ -19,6 +19,7 @@ import {
 } from "@/lib/custom-report/paid-returned-events";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists, type SpecialistRun } from "@/lib/agents/knox/specialists";
 import { applyKnoxLesson, loadKnoxLessonsAndFindings, type KnoxFindingsRead, type KnoxLessons } from "@/lib/agents/knox/lessons";
+import { audienceLessonFlag, audienceLessonFor, audienceLessonsLive, emptyAudienceLessons, loadAudienceLessons, withAudienceLesson, type AudienceLessonScope } from "@/lib/agents/knox/audience-lessons";
 import { emptyTakedownLessons, loadTakedownLessons, TAKEN_DOWN_REVIEW_FLAG, takedownLessonFlag, takedownLessonsFor, withCurrentTakedownLesson, type TakedownLessons } from "@/lib/agents/knox/takedown-lessons";
 import { candidateWriteFacts } from "./candidate-facts";
 import { monthlyAccountOwnerReview } from "./monthly-account-owners";
@@ -327,6 +328,15 @@ export interface RunKnoxExtractResult {
   takedownHolds: Record<string, number>;
   takedownLessonsUnknown?: Record<string,number>;
   takedownGuardDeclines?: Record<string,number>;
+  /**
+   * #2062: confirmed business-schedule takedowns read for this run's documents (`audience-lessons.ts`),
+   * the reads they matched by scope, and whether the lesson was applied (`KNOX_AUDIENCE_LESSONS_LIVE`).
+   * Off, the matches are what switching it on would label business: the live dry run.
+   */
+  audienceLessonsLoaded?: number;
+  audienceLessonMatches?: Partial<Record<AudienceLessonScope, number>>;
+  audienceLessonsLive?: boolean;
+  audienceLessonsReadFailed?: boolean;
   /** Strategy/category groups with survival history, and reads calibration puts below Hamilton's floor (`calibration.ts`, shadow). */
   calibrationGroups: number;
   calibratedBelowPublishFloor: number;
@@ -1678,6 +1688,9 @@ export async function runKnoxExtract(
   const lessonRefiles: Record<string, number> = {};
   const takedownLessons = !dryRun && rows.length > 0 ? await loadTakedownLessons(db,rows.map(row=>Number(row.institution_id))) : emptyTakedownLessons();
   const takedownHolds: Record<string, number> = {};
+  const audienceLessons = !dryRun && rows.length > 0 ? await loadAudienceLessons(db, rows.map((row) => Number(row.source_document_id))) : emptyAudienceLessons();
+  const audienceLive = audienceLessonsLive();
+  const audienceLessonMatches: Partial<Record<AudienceLessonScope, number>> = {};
   const takedownGuardDeclines: Record<string,number> = {};
   const calibration = !dryRun && rows.length > 0 ? await loadKnoxCalibration(db) : new Map();
   let calibratedBelowPublishFloor = 0;
@@ -1725,12 +1738,16 @@ export async function runKnoxExtract(
           calibration.get(calibrationKey(candidate.strategy ?? KNOX_RULES_STRATEGY.strategy, candidate.canonicalHint)),
         );
         if (calibrated < PUBLISH_FLOOR) calibratedBelowPublishFloor += 1;
-        const named = candidate;
+        // #2062: a confirmed business-schedule takedown of this document's fee names its audience.
+        const audience = audienceLessonFor(candidate, audienceLessons, Number(row.source_document_id));
+        if (audience) audienceLessonMatches[audience.scope] = (audienceLessonMatches[audience.scope] ?? 0) + 1;
+        const learned = audience && audienceLive ? audience : null;
+        const named = learned ? withAudienceLesson(candidate, learned) : candidate;
         const receipt=await insertCandidateWithLearning(db, {
             runId: options.runId,
             row,
             candidate: named.lineup ? { ...named, lineup: groundLineup(named.lineup, row.normalized_text) } : named,
-            extraFlags: lessonFlag ? [lessonFlag] : [],
+            extraFlags: [...(lessonFlag ? [lessonFlag] : []), ...(learned ? [audienceLessonFlag(learned.scope)] : [])],
             calibratedConfidence: calibrated,
           },takedownLessons);
         if (receipt.inserted) inserted+=1;
@@ -1869,6 +1886,10 @@ export async function runKnoxExtract(
     takedownHolds,
     takedownLessonsUnknown: takedownLessons.unknownReasons,
     takedownGuardDeclines,
+    audienceLessonsLoaded: audienceLessons.loaded,
+    audienceLessonMatches,
+    audienceLessonsLive: audienceLive,
+    audienceLessonsReadFailed: audienceLessons.readFailed === true,
     calibrationGroups: calibration.size,
     calibratedBelowPublishFloor,
     layouts: thinLayouts(layoutReads),

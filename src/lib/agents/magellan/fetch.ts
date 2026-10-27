@@ -25,6 +25,7 @@ import {
 } from "@/lib/agents/magellan/current-copy";
 import { detectFormat, documentTypeForFormat } from "@/lib/agents/learning/format";
 import { classifyFetchFailure, countOutcomes, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
+import type { BrowserFetchResult } from "./browser-fetch";
 import { runCompanionFetch, type RunCompanionFetchResult } from "./companion-fetch";
 import { addOperatorSchedules, OPERATOR_SCHEDULE_STRATEGY, OPERATOR_SCHEDULES, type OperatorScheduleResult } from "./operator-schedules";
 import { isArticleLink, isErrorPageLink } from "./link-coverage";
@@ -163,6 +164,8 @@ export interface RunMagellanFetchResult {
   supersededCopies: number;
   /** Companion pages (account pages, other fee documents) fetched after the fee links. */
   companions: RunCompanionFetchResult | null;
+  /** Fee links Rosetta read as JavaScript pages, rendered in a browser (off unless MAGELLAN_BROWSER=on). */
+  browser: BrowserFetchResult | null;
   operatorSchedules: OperatorScheduleResult | null;
   /** Current copies superseded (or logged, in shadow mode) by a newer spelling of their page. */
   samePageCopies: SamePageCopyResult | null;
@@ -1137,6 +1140,7 @@ export async function runMagellanFetch(
   // Companion pages ride on the same step, each stored as its own document stream. A
   // failure here never fails the fee-link fetch.
   let companions: RunCompanionFetchResult | null = null;
+  let browser: BrowserFetchResult | null = null;
   let operatorSchedules: OperatorScheduleResult | null = null;
   let samePageCopies: SamePageCopyResult | null = null;
   let movedHandFoundCopies: MovedHandFoundCopyResult | null = null;
@@ -1183,6 +1187,16 @@ export async function runMagellanFetch(
     } catch (error) {
       console.error("Companion fetch failed:", error);
     }
+    // Lane runs only: a one-bank fetch (an admin's extract) never starts a browser.
+    if (options.institutionId == null) {
+      try {
+        // Loaded here: browser-fetch stores through fetchAndRecordLink in this module.
+        const { runBrowserFetch } = await import("./browser-fetch");
+        browser = await runBrowserFetch({ db, runId: options.runId, stepId: options.stepId ?? null });
+      } catch (error) {
+        console.error("Browser fetch failed:", error);
+      }
+    }
   }
 
   return {
@@ -1202,6 +1216,7 @@ export async function runMagellanFetch(
     outcomes: countOutcomes(results.map((result) => result.attemptOutcome)),
     supersededCopies,
     companions,
+    browser,
     operatorSchedules,
     samePageCopies,
     movedHandFoundCopies,

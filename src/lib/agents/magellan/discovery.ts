@@ -17,7 +17,8 @@ import { scoreFeePage } from "@/lib/agents/learning/fee-page";
 import { orderByHints, stateExpertHints, type StateExpertHints } from "@/lib/agents/state-expert/memory";
 import type { AttemptOutcome } from "@/lib/agents/learning/outcomes";
 
-import { fetchWithTimeout } from "./find-validate";
+import { fetchWithTimeout, mainContentText } from "./find-validate";
+import { looksLikeJsShell } from "@/lib/agents/rosetta/js-fallback";
 import {
   FINDER_ORDER,
   FINDERS,
@@ -1036,6 +1037,8 @@ async function discoverForInstitution(
     homepageFailure("blocked_bot");
     return searchPastBlockedHomepage("served a bot challenge page");
   }
+  homepageTrail.anchors = countAnchors(html);
+  if (looksLikeJsShell(html, mainContentText(html))) homepageTrail.script_built = true;
   homepageHash = sha256Text(html);
   platform = detectPlatform(html);
   ctx.site = site;

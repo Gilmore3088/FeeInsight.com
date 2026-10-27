@@ -87,6 +87,12 @@ export interface ExtractedFeeCandidate extends Partial<FeeApplicability> {
   eligibilityReview?: true;
   /** Bounded, explicitly referenced context; never read as the price's charging unit. */
   linkedConditions?: string;
+  /**
+   * #2062: the audience a confirmed business-schedule takedown of this document's fee teaches
+   * (`audience-lessons.ts`, behind `KNOX_AUDIENCE_LESSONS_LIVE`). Written only while the line itself
+   * states no audience (`candidateWriteFacts`).
+   */
+  audienceLesson?: { audience: "business"; evidence: string };
 }
 
 /** `untraced`: a read whose name and price don't trace to one row of the text (Knox's self-check). */

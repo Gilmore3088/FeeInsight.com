@@ -3,6 +3,17 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-10-27
+
+**Three engineering skills from mattpocock/skills join the repo.** James, 2026-10-27 ("yeah thats
+good"), after a review of github.com/mattpocock/skills in the project thread. `diagnosing-bugs`,
+`tdd` and `domain-modeling` are copied into `.claude/skills/` (MIT, licence kept in each folder) and
+adapted to CLAUDE.md, so every session loads them: fee errors are traced to the pipeline step
+before any fix, rule changes start with a failing test from a real document, and project terms
+live in `docs/project/GLOSSARY.md`. They are fixed copies, not the self-updating plugin; upstream
+changes come in only by PR. Not taken: the ticketing, triage and spec skills (a second tracker
+beside #1026), its code-review and PR skills (ours exist) and git-guardrails (it blocks `git push`).
+
 ## 2026-10-25
 
 **Hamilton's peer minimum: 5 local, 10 everywhere.** James, 2026-10-25 ("5 local, 10 everywhere"),
