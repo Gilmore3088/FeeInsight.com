@@ -21,8 +21,10 @@ const fromSchedule = (request: NextRequest) => matchesConfiguredCronSecret(reque
 
 /**
  * One run of the one-off paid replay batch (paid-gate-replay.ts), or none once the batch is
- * complete or capped. Never two at once: a run left queued runs first, and while a batch run is
- * running this returns it and starts nothing, so calling `?paid=1` every few minutes is safe.
+ * complete or capped. Never two at once: a run of this batch left queued runs first, and while one
+ * is running this returns it and starts nothing, so calling `?paid=1` every few minutes is safe. A
+ * run left by an earlier batch is never picked up (activePaidReplayRun reads this batch's runs
+ * only), and the title and idempotency keys carry the batch id.
  * Keyed by the minute on demand (`?paid=1`) and by the hour from the hourly call; the batch's reservations (and
  * its batch-wide in-flight cap) hold its caps whatever runs at once.
  */
@@ -64,10 +66,12 @@ async function runPaidBatch(request: NextRequest, now: Date, onDemand: boolean) 
  * each verdict recorded as a shadow with origin "replay". One run answers what fits its time
  * budget; the next run picks up the rest. Once today's free plan is complete, the hourly call
  * continues the one-off paid replay batch instead (paid-gate-replay.ts, origin "replay_paid",
- * James's approval of 2026-10-25) until that batch is complete or capped, and then starts nothing
- * until tomorrow's free plan. `?paid=1` runs the paid batch at once (an admin or the cron
- * secret); once the batch is complete that call only reads the ledger and starts nothing. The free replay makes no model
- * calls; the paid batch is a provider step, held by the provider stop and budget lines.
+ * batch 2026-10-26: 50 written answers, $25, James's approval of 2026-10-27) until that batch is
+ * complete or capped, and then starts nothing until tomorrow's free plan. `?paid=1` runs the paid
+ * batch at once (an admin or the cron secret). A cron calls `?paid=1` every 10 minutes for batch
+ * 2026-10-26 (vercel.json; James, 2026-10-27); once the batch is complete each call only reads the
+ * ledger and starts nothing. The free replay makes no model calls; the paid batch is a provider
+ * step, held by the provider stop and budget lines.
  */
 async function handleGET(request: NextRequest) {
   if (!(await isAuthorized(request))) {

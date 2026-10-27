@@ -9,13 +9,19 @@ import type { PreparedReportAnswer, ReportAnswerWriter } from "./report-answer-r
 // Invented institutions, questions and figures for tests only; nothing here is live data. No provider is reached:
 // every writer is a double, and the database is an in-memory ledger.
 vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
+// The shadow store, for the default batchShadows read only: an earlier batch's replay_paid shadows sit beside this one's.
+const storedShadows = vi.hoisted(() => ({ rows: [] as Array<{ record: unknown; key: string | null }> }));
+vi.mock("./output-gate-shadow-store", () => ({
+  gateShadowRecordsSince: vi.fn(async () => storedShadows.rows),
+  recordGateShadow: vi.fn(async () => 1),
+}));
 
 const replay = await import("./paid-gate-replay");
 const {
   PAID_REPLAY_BATCH_ID, PAID_REPLAY_CEILING_MICROUSD, PAID_REPLAY_DONE, PAID_REPLAY_MAX_COST_MICROUSD, PAID_REPLAY_MAX_IN_FLIGHT,
   PAID_REPLAY_MAX_SAMPLES, PAID_REPLAY_MIX, PAID_REPLAY_RESERVATION, PAID_REPLAY_SOURCE, PAID_REPLAY_STEP_KEY, PAID_REPLAY_SUBJECT_PREFIX,
-  PAID_REPLAY_WORST_CASE, baseCeilings, batchCharge, paidReplayBatchComplete, paidReplaySummaryLine, pathCeilings, reservePaidReplaySample,
-  runPaidGateReplay, subjectKeyFor,
+  PAID_REPLAY_WORST_CASE, PAID_REPLAY_BATCH_START, activePaidReplayRun, baseCeilings, batchCharge, paidReplayBatchComplete, paidReplaySummaryLine,
+  pathCeilings, reservePaidReplaySample, runPaidGateReplay, subjectKeyFor,
 } = replay;
 const { PAID_EVAL_RESERVATION, PAID_EVAL_WRITTEN_OPERATION, runPaidAnswerEval } = await import("./paid-answer-eval");
 const { tallyGateShadow } = await import("./output-gate-shadow");
@@ -26,7 +32,9 @@ type GateShadowRecord = import("./output-gate-shadow").GateShadowRecord;
 type PaidPath = import("./paid-answer-eval").PaidPath;
 type SqlTag = Parameters<typeof reservePaidReplaySample>[0];
 
-const NOW = new Date("2026-10-25T18:00:00Z");
+const NOW = new Date("2026-10-26T18:00:00Z");
+/** The first batch, over before this one: nothing of it may count here. */
+const OLD_BATCH = "2026-10-25";
 const RUN = 501;
 
 interface LedgerEvent { agent_run_id: number; event_type: string; detail: Record<string, unknown>; created_at: string }
@@ -92,8 +100,8 @@ function ledger(seed: { events?: LedgerEvent[]; usage?: Usage[]; finished?: Arra
 /** `n` reservations already held on `path`, finished. */
 function held(path: PaidPath, n: number, runId = 400): LedgerEvent[] {
   return Array.from({ length: n }, (_, i) => [
-    { agent_run_id: runId, event_type: PAID_REPLAY_RESERVATION, detail: { batch_id: PAID_REPLAY_BATCH_ID, sample_key: `${path}|old-${i}`, path }, created_at: "2026-10-25T17:00:00.000Z" },
-    { agent_run_id: runId, event_type: PAID_REPLAY_DONE, detail: { batch_id: PAID_REPLAY_BATCH_ID, sample_key: `${path}|old-${i}`, path }, created_at: "2026-10-25T17:01:00.000Z" },
+    { agent_run_id: runId, event_type: PAID_REPLAY_RESERVATION, detail: { batch_id: PAID_REPLAY_BATCH_ID, sample_key: `${path}|old-${i}`, path }, created_at: "2026-10-26T17:00:00.000Z" },
+    { agent_run_id: runId, event_type: PAID_REPLAY_DONE, detail: { batch_id: PAID_REPLAY_BATCH_ID, sample_key: `${path}|old-${i}`, path }, created_at: "2026-10-26T17:01:00.000Z" },
   ]).flat();
 }
 
@@ -192,7 +200,120 @@ describe("the one-off paid gate replay batch (#1077)", () => {
     expect(Object.values(PAID_REPLAY_MIX).reduce((a, b) => a + b, 0)).toBe(PAID_REPLAY_MAX_SAMPLES);
   });
 
-  it("writes the mix in proportion, reserves each sample before its call, and records every shadow as replay_paid", async () => {
+  it("is batch 2026-10-26: 50 written answers and nothing else, from 2026-10-26", () => {
+    expect(PAID_REPLAY_BATCH_ID).toBe("2026-10-26");
+    expect(PAID_REPLAY_BATCH_START).toBe("2026-10-26T00:00:00.000Z");
+    expect(PAID_REPLAY_MAX_SAMPLES).toBe(50);
+    expect(PAID_REPLAY_MIX).toEqual({ written_answer: 50, memo: 0, simulate: 0, report: 0 });
+    expect(PAID_REPLAY_SUBJECT_PREFIX).toBe("hamilton-replay-paid:2026-10-26:");
+  });
+
+  it("caps the batch at $25, and says so in the ledger", async () => {
+    expect(PAID_REPLAY_MAX_COST_MICROUSD).toBe(25_000_000);
+    const book = ledger();
+    const summary = await runPaidGateReplay({ db: book.db, now: () => NOW, agentRunId: RUN, deps: deps(book, writers(book, { written_answer: 50_000 })).deps });
+    expect(summary.caps.costMicrousd).toBe(25_000_000);
+    expect(paidReplaySummaryLine(summary)).toContain("of $25.00 charged against the cap");
+    // $24.00 charged already: a written answer's $2.88 ceiling no longer fits under $25.
+    const full = ledger({ usage: [{ subject_key: `${PAID_REPLAY_SUBJECT_PREFIX}written_answer|old`, agent_run_id: 400, microusd: 24_000_000 }] });
+    expect(await reservePaidReplaySample(full.db, { runId: RUN, path: "written_answer", sampleKey: "written_answer|x", now: NOW, base: { ...PAID_REPLAY_CEILING_MICROUSD } }))
+      .toEqual({ reserved: false, reason: "spend_cap" });
+    // $22.00: it fits ($24.88).
+    const room = ledger({ usage: [{ subject_key: `${PAID_REPLAY_SUBJECT_PREFIX}written_answer|old`, agent_run_id: 400, microusd: 22_000_000 }] });
+    expect(await reservePaidReplaySample(room.db, { runId: RUN, path: "written_answer", sampleKey: "written_answer|x", now: NOW, base: { ...PAID_REPLAY_CEILING_MICROUSD } }))
+      .toEqual({ reserved: true });
+  });
+
+  it("never reserves a memo, Simulate or report sample, and never reads or writes one", async () => {
+    const book = ledger();
+    for (const path of ["memo", "simulate", "report"] as const) {
+      expect(await reservePaidReplaySample(book.db, { runId: RUN, path, sampleKey: `${path}|x`, now: NOW, base: { ...PAID_REPLAY_CEILING_MICROUSD } }))
+        .toEqual({ reserved: false, reason: "path_full" });
+    }
+    const w = writers(book, { written_answer: 50_000 });
+    const prepareReport = vi.fn(async () => prepared);
+    // Every run until the batch is over.
+    for (let i = 0; i < 20 && !(await paidReplayBatchComplete(book.db)); i += 1) {
+      await runPaidGateReplay({ db: book.db, now: () => NOW, agentRunId: RUN + i, deps: deps(book, w, { prepareReport }).deps });
+    }
+    expect(book.reservations().length).toBe(PAID_REPLAY_MAX_SAMPLES);
+    expect(book.reservations().every((e) => e.detail.path === "written_answer")).toBe(true);
+    expect(w.calls).toEqual({ written_answer: 50, memo: 0, simulate: 0, report: 0 });
+    expect(prepareReport).not.toHaveBeenCalled();
+    expect(w.operations.every((op) => op === "written_answer_replay")).toBe(true);
+  });
+
+  it("is complete (\"samples\") once 50 written answers are in, though every other path has none", async () => {
+    const book = ledger();
+    const w = writers(book, { written_answer: 50_000 });
+    const summaries = [];
+    for (let i = 0; i < 20; i += 1) {
+      const summary = await runPaidGateReplay({ db: book.db, now: () => NOW, agentRunId: RUN + i, deps: deps(book, w).deps });
+      summaries.push(summary);
+      if (summary.complete) break;
+    }
+    const last = summaries.at(-1)!;
+    expect(last).toMatchObject({ complete: true, completeReason: "samples", reserved: { total: 50, byPath: { written_answer: 50, memo: 0, simulate: 0, report: 0 } } });
+    expect(w.calls.written_answer).toBe(50);
+    expect(await paidReplayBatchComplete(book.db)).toBe(true);
+    expect(paidReplaySummaryLine(last)).toContain("50/50 written answers");
+    expect(paidReplaySummaryLine(last)).not.toContain("memos");
+    // The next run starts nothing.
+    const again = writers(book);
+    const next = await runPaidGateReplay({ db: book.db, now: () => NOW, agentRunId: RUN + 99, deps: deps(book, again).deps });
+    expect(next).toMatchObject({ complete: true, completeReason: "already", results: [] });
+    expect(Object.values(again.calls).every((n) => n === 0)).toBe(true);
+  });
+
+  it("counts nothing of the 2026-10-25 batch: its reservations, its $39.47 and its shadows", async () => {
+    const oldSubject = `hamilton-replay-paid:${OLD_BATCH}:written_answer|old`;
+    const book = ledger({
+      events: [{ agent_run_id: 300, event_type: PAID_REPLAY_RESERVATION, detail: { batch_id: OLD_BATCH, sample_key: "written_answer|old", path: "written_answer" }, created_at: "2026-10-26T01:00:00.000Z" }],
+      usage: [{ subject_key: oldSubject, agent_run_id: 300, microusd: 39_470_000 }],
+    });
+    const oldShadow = { version: 1 as const, origin: "replay_paid" as const, surface: "written_answer" as const, path: "written_streaming" as const, mode: "analyze", today: "shown" as const,
+      unified: "held" as const, agrees: false, disagreement: "unified_holds" as const, codes: [], critical: [], cause: false, corrections: 0 };
+    storedShadows.rows = [
+      { record: oldShadow, key: oldSubject },
+      { record: { ...oldShadow, unified: "validated", agrees: true, disagreement: null }, key: subjectKeyFor("written_answer|new") },
+    ];
+    const w = writers(book, { written_answer: 50_000 });
+    const d = deps(book, w);
+    const { batchShadows: _own, ...rest } = d.deps;
+    void _own;
+    const summary = await runPaidGateReplay({ db: book.db, now: () => NOW, agentRunId: RUN, deps: rest });
+    storedShadows.rows = [];
+    expect(summary.reservedBefore).toBe(0);
+    expect(summary.results.length).toBeGreaterThan(0);
+    expect(summary.spentMicrousd).toBe(50_000 * summary.results.length);
+    expect(summary.chargedMicrousd).toBeLessThan(PAID_REPLAY_MAX_COST_MICROUSD);
+    // The default shadow read keeps this batch's sample keys only.
+    expect(summary.shadows?.total).toBe(1);
+    expect(summary.shadows?.bySurface.written_answer?.validated).toBe(1);
+  });
+
+  it("starts nothing for a run of the 2026-10-25 batch left queued, and never picks one up as this batch's", async () => {
+    const book = ledger();
+    const w = writers(book);
+    const d = deps(book, w);
+    const summary = await runPaidGateReplay({ db: book.db, now: () => NOW, agentRunId: RUN, runBatchId: OLD_BATCH, deps: d.deps });
+    expect(d.pickProQuestions).not.toHaveBeenCalled();
+    expect(Object.values(w.calls).every((n) => n === 0)).toBe(true);
+    expect(book.reservations()).toHaveLength(0);
+    expect(summary).toMatchObject({ complete: false, completeReason: null, results: [] });
+    expect(summary.stopped).toContain(OLD_BATCH);
+    // A run of this batch runs as before.
+    const own = await runPaidGateReplay({ db: book.db, now: () => NOW, agentRunId: RUN + 1, runBatchId: PAID_REPLAY_BATCH_ID, deps: deps(book, writers(book)).deps });
+    expect(own.results.length).toBeGreaterThan(0);
+    // The active-run read is scoped to this batch's runs.
+    const seen: Array<{ text: string; values: unknown[] }> = [];
+    const db = vi.fn(async (parts: TemplateStringsArray, ...values: unknown[]) => { seen.push({ text: parts.join("?"), values }); return []; }) as unknown as SqlTag;
+    expect(await activePaidReplayRun(db)).toBeNull();
+    expect(seen[0].text).toContain("params_json->>'batch_id' = ?");
+    expect(seen[0].values).toContain(PAID_REPLAY_BATCH_ID);
+  });
+
+  it("writes only written answers, reserves each sample before its call, and records every shadow as replay_paid", async () => {
     const book = ledger();
     const w = writers(book, { written_answer: 50_000, memo: 20_000, simulate: 5_000, report: 30_000 });
     const d = deps(book, w);
@@ -204,16 +325,15 @@ describe("the one-off paid gate replay batch (#1077)", () => {
     expect(summary.results.length).toBe(keys.length);
     // Every reservation, granted or refused, took the batch's lock.
     expect(book.state.locks).toBeGreaterThanOrEqual(keys.length);
-    // The path furthest behind its share goes first, so every path is sampled.
-    for (const path of ["written_answer", "memo", "simulate", "report"] as const) expect(w.calls[path]).toBeGreaterThan(0);
-    expect(w.calls.written_answer).toBeGreaterThanOrEqual(w.calls.memo);
+    // Written answers only: every other path's share is 0.
+    expect(w.calls.written_answer).toBeGreaterThan(0);
+    expect({ memo: w.calls.memo, simulate: w.calls.simulate, report: w.calls.report }).toEqual({ memo: 0, simulate: 0, report: 0 });
     // Shadows: the batch's origin only, each naming its sample.
     expect(d.shadows.length).toBeGreaterThan(0);
     expect(d.shadows.every((s) => s.record.origin === "replay_paid")).toBe(true);
     expect(d.shadows.every((s) => String((s.context as { replayKey?: string }).replayKey).startsWith(PAID_REPLAY_SUBJECT_PREFIX))).toBe(true);
     // The batch's own operations, never the daily eval's.
     expect(w.operations).toContain("written_answer_replay");
-    expect(w.operations).toContain("report_answer_replay");
     expect(w.operations).not.toContain(PAID_EVAL_WRITTEN_OPERATION);
     // Every batch call books as hamilton_replay, off the live readers' lines.
     expect(w.ledgers.length).toBeGreaterThan(0);
@@ -221,13 +341,13 @@ describe("the one-off paid gate replay batch (#1077)", () => {
     expect(summary.shadows?.bySurface.written_answer?.total).toBe(w.calls.written_answer);
     const line = paidReplaySummaryLine(summary);
     expect(line).toContain(`of ${PAID_REPLAY_MAX_SAMPLES} samples reserved`);
-    expect(line).toContain("of $40.00 charged against the cap");
+    expect(line).toContain("of $25.00 charged against the cap");
     expect(line).toContain("Shadow gate by surface (validated/partial/held): ");
   });
 
-  it("stops at 200 samples: with 199 held it writes one, and the batch is complete", async () => {
-    const events = [...held("written_answer", 99), ...held("memo", 50), ...held("simulate", 25), ...held("report", 25)];
-    // Each held sample finished clean at $0.10, so the batch's charge is $19.90 and the last sample fits.
+  it("stops at 50 samples: with 49 held it writes one, and the batch is complete", async () => {
+    const events = held("written_answer", 49);
+    // Each held sample finished clean at $0.10, so the batch's charge is $4.90 and the last sample fits.
     const usage = events.filter((e) => e.event_type === PAID_REPLAY_RESERVATION)
       .map((e) => ({ subject_key: subjectKeyFor(String(e.detail.sample_key)), agent_run_id: 400, microusd: 100_000 }));
     const book = ledger({ events, usage });
@@ -235,13 +355,13 @@ describe("the one-off paid gate replay batch (#1077)", () => {
     const summary = await runPaidGateReplay({ db: book.db, now: () => NOW, agentRunId: RUN, deps: deps(book, w).deps });
     expect(w.calls).toEqual({ written_answer: 1, memo: 0, simulate: 0, report: 0 });
     expect(book.reservations()).toHaveLength(PAID_REPLAY_MAX_SAMPLES);
-    expect(summary).toMatchObject({ complete: true, completeReason: "samples", reserved: { total: 200 } });
+    expect(summary).toMatchObject({ complete: true, completeReason: "samples", reserved: { total: 50 } });
     expect(await paidReplayBatchComplete(book.db)).toBe(true);
   });
 
-  it("never passes $40: it refuses the sample whose ceiling would, and calls it complete once none fits", async () => {
-    // $34 spent already; each sample costs its full ceiling.
-    const book = ledger({ usage: [{ subject_key: `${PAID_REPLAY_SUBJECT_PREFIX}written_answer|old`, agent_run_id: 400, microusd: 34_000_000 }] });
+  it("never passes $25: it refuses the sample whose ceiling would, and calls it complete once none fits", async () => {
+    // $19 spent already; each sample costs its full ceiling, so two fit ($24.76) and a third does not.
+    const book = ledger({ usage: [{ subject_key: `${PAID_REPLAY_SUBJECT_PREFIX}written_answer|old`, agent_run_id: 400, microusd: 19_000_000 }] });
     const w = writers(book, { ...PAID_REPLAY_CEILING_MICROUSD });
     const summary = await runPaidGateReplay({ db: book.db, now: () => NOW, agentRunId: RUN, deps: deps(book, w).deps });
     const spent = book.state.usage.reduce((sum, u) => sum + (u.microusd ?? 0), 0);
@@ -256,8 +376,8 @@ describe("the one-off paid gate replay batch (#1077)", () => {
     expect(second.results).toEqual([]);
   });
 
-  it("starts nothing once $39.95 is spent", async () => {
-    const book = ledger({ usage: [{ subject_key: `${PAID_REPLAY_SUBJECT_PREFIX}memo|old`, agent_run_id: 400, microusd: 39_950_000 }] });
+  it("starts nothing once $24.95 is spent", async () => {
+    const book = ledger({ usage: [{ subject_key: `${PAID_REPLAY_SUBJECT_PREFIX}written_answer|old`, agent_run_id: 400, microusd: 24_950_000 }] });
     const w = writers(book);
     const summary = await runPaidGateReplay({ db: book.db, now: () => NOW, agentRunId: RUN, deps: deps(book, w).deps });
     expect(Object.values(w.calls).every((n) => n === 0)).toBe(true);
@@ -266,17 +386,16 @@ describe("the one-off paid gate replay batch (#1077)", () => {
   });
 
   it("charges a sample still in flight, or killed, its full ceiling, so a concurrent run cannot spend it twice", async () => {
-    // $36.00 recorded and one written answer reserved two minutes ago with no done mark: it is charged its $2.88.
-    const book = ledger({
-      usage: [{ subject_key: `${PAID_REPLAY_SUBJECT_PREFIX}memo|old`, agent_run_id: 400, microusd: 36_000_000 }],
-      events: [{ agent_run_id: 400, event_type: PAID_REPLAY_RESERVATION, detail: { batch_id: PAID_REPLAY_BATCH_ID, sample_key: "written_answer|flying", path: "written_answer" }, created_at: "2026-10-25T17:58:00.000Z" }],
-    });
+    // $20.00 recorded and one written answer reserved two minutes ago with no done mark: it is charged its $2.88.
+    const flying = { agent_run_id: 400, event_type: PAID_REPLAY_RESERVATION, detail: { batch_id: PAID_REPLAY_BATCH_ID, sample_key: "written_answer|flying", path: "written_answer" }, created_at: "2026-10-26T17:58:00.000Z" };
+    const usage = [{ subject_key: `${PAID_REPLAY_SUBJECT_PREFIX}written_answer|old`, agent_run_id: 400, microusd: 20_000_000 }];
+    const book = ledger({ usage, events: [flying] });
     const base = { ...PAID_REPLAY_CEILING_MICROUSD };
-    // $36.00 + $2.88 held + $2.88 for another written answer passes $40; a $0.13 Simulate read fits.
+    // $20.00 + $2.88 held + $2.88 for another written answer passes $25; without the flying sample it fits.
     expect(await reservePaidReplaySample(book.db, { runId: RUN, path: "written_answer", sampleKey: "written_answer|x", now: NOW, base })).toEqual({ reserved: false, reason: "spend_cap" });
-    expect(await reservePaidReplaySample(book.db, { runId: RUN, path: "simulate", sampleKey: "simulate|x", now: NOW, base })).toEqual({ reserved: true });
+    expect(await reservePaidReplaySample(ledger({ usage }).db, { runId: RUN, path: "written_answer", sampleKey: "written_answer|x", now: NOW, base })).toEqual({ reserved: true });
     // Fifteen minutes on the flying sample is taken as killed: it no longer counts in flight, but it keeps its ceiling.
-    const later = new Date("2026-10-25T18:20:00Z");
+    const later = new Date("2026-10-26T18:20:00Z");
     expect(await reservePaidReplaySample(book.db, { runId: RUN, path: "written_answer", sampleKey: "written_answer|x", now: later, base })).toEqual({ reserved: false, reason: "spend_cap" });
   });
 
@@ -307,8 +426,8 @@ describe("the one-off paid gate replay batch (#1077)", () => {
   });
 
   it("charges a sample whose written answer failed after spending, end to end", async () => {
-    // $37.00 recorded; the writer's call fails with unknown usage (a NULL-cost failed row) and returns unavailable.
-    const book = ledger({ usage: [{ subject_key: `${PAID_REPLAY_SUBJECT_PREFIX}memo|old`, agent_run_id: 400, microusd: 37_000_000 }] });
+    // $20.00 recorded; the writer's call fails with unknown usage (a NULL-cost failed row) and returns unavailable.
+    const book = ledger({ usage: [{ subject_key: `${PAID_REPLAY_SUBJECT_PREFIX}written_answer|old`, agent_run_id: 400, microusd: 20_000_000 }] });
     const w = writers(book);
     let calls = 0;
     const failing: WrittenAnswerWriter = async (input) => {
@@ -320,20 +439,20 @@ describe("the one-off paid gate replay batch (#1077)", () => {
       db: book.db, now: () => NOW, agentRunId: RUN,
       deps: deps(book, w, { written: failing, preflight: async (path) => (path === "written_answer" ? null : "only written answers in this test") }).deps,
     });
-    // $37.00 + $2.88 fits once; after that failed sample is charged its $2.88, a second does not fit.
+    // $20.00 + $2.88 fits once; after that failed sample is charged its $2.88, a second does not fit.
     expect(calls).toBe(1);
-    expect(summary.spentMicrousd).toBe(37_000_000);
-    expect(summary.chargedMicrousd).toBe(37_000_000 + PAID_REPLAY_CEILING_MICROUSD.written_answer);
+    expect(summary.spentMicrousd).toBe(20_000_000);
+    expect(summary.chargedMicrousd).toBe(20_000_000 + PAID_REPLAY_CEILING_MICROUSD.written_answer);
   });
 
   it("holds the batch-wide in-flight cap across runs", async () => {
     const flying = Array.from({ length: PAID_REPLAY_MAX_IN_FLIGHT }, (_, i) => ({
       agent_run_id: 400 + i, event_type: PAID_REPLAY_RESERVATION,
-      detail: { batch_id: PAID_REPLAY_BATCH_ID, sample_key: `simulate|flying-${i}`, path: "simulate" }, created_at: "2026-10-25T17:59:00.000Z",
+      detail: { batch_id: PAID_REPLAY_BATCH_ID, sample_key: `written_answer|flying-${i}`, path: "written_answer" }, created_at: "2026-10-26T17:59:00.000Z",
     }));
     const book = ledger({ events: flying });
     const base = { ...PAID_REPLAY_CEILING_MICROUSD };
-    expect(await reservePaidReplaySample(book.db, { runId: RUN, path: "memo", sampleKey: "memo|x", now: NOW, base })).toEqual({ reserved: false, reason: "in_flight" });
+    expect(await reservePaidReplaySample(book.db, { runId: RUN, path: "written_answer", sampleKey: "written_answer|x", now: NOW, base })).toEqual({ reserved: false, reason: "in_flight" });
     const w = writers(book);
     const summary = await runPaidGateReplay({ db: book.db, now: () => NOW, agentRunId: RUN, deps: deps(book, w).deps });
     expect(Object.values(w.calls).every((n) => n === 0)).toBe(true);
@@ -342,11 +461,11 @@ describe("the one-off paid gate replay batch (#1077)", () => {
   });
 
   it("returns the real reason when the guarded insert refuses on a stale read", async () => {
-    const book = ledger({ events: held("simulate", PAID_REPLAY_MIX.simulate) });
+    const book = ledger({ events: held("written_answer", PAID_REPLAY_MIX.written_answer) });
     // The decision's read misses the other runs' reservations; the insert still refuses, and says why.
     book.state.staleReads = 1;
-    expect(await reservePaidReplaySample(book.db, { runId: RUN, path: "simulate", sampleKey: "simulate|new", now: NOW, base: { ...PAID_REPLAY_CEILING_MICROUSD } }))
-      .toEqual({ reserved: false, reason: "path_full" });
+    expect(await reservePaidReplaySample(book.db, { runId: RUN, path: "written_answer", sampleKey: "written_answer|new", now: NOW, base: { ...PAID_REPLAY_CEILING_MICROUSD } }))
+      .toEqual({ reserved: false, reason: "count_cap" });
   });
 
   it("prices each path's worst case from its own limits, never below the floor", () => {
@@ -361,16 +480,17 @@ describe("the one-off paid gate replay batch (#1077)", () => {
 
   it("reserves a sample key once, however often it is retried", async () => {
     const book = ledger();
-    const input = { runId: RUN, path: "written_answer" as const, sampleKey: "written_answer|2026-10-25:2001:q01", now: NOW };
+    const input = { runId: RUN, path: "written_answer" as const, sampleKey: "written_answer|2026-10-26:2001:q01", now: NOW };
     expect(await reservePaidReplaySample(book.db, input)).toEqual({ reserved: true });
     expect(await reservePaidReplaySample(book.db, input)).toEqual({ reserved: false, reason: "duplicate" });
     expect(await reservePaidReplaySample(book.db, { ...input, runId: RUN + 1 })).toEqual({ reserved: false, reason: "duplicate" });
     expect(book.reservations()).toHaveLength(1);
   });
 
-  it("refuses a path past its share", async () => {
-    const book = ledger({ events: held("simulate", PAID_REPLAY_MIX.simulate) });
+  it("refuses a path whose share is 0 from the start", async () => {
+    const book = ledger();
     expect(await reservePaidReplaySample(book.db, { runId: RUN, path: "simulate", sampleKey: "simulate|new", now: NOW })).toEqual({ reserved: false, reason: "path_full" });
+    expect(book.reservations()).toHaveLength(0);
   });
 
   it("a second run picks up where the first stopped and never writes a sample twice", async () => {
@@ -394,7 +514,7 @@ describe("the one-off paid gate replay batch (#1077)", () => {
   });
 
   it("never runs once the batch is complete: no question is read and no writer is called", async () => {
-    for (const book of [ledger({ finished: [{ complete: true }] }), ledger({ events: [...held("written_answer", 100), ...held("memo", 50), ...held("simulate", 25), ...held("report", 25)] })]) {
+    for (const book of [ledger({ finished: [{ complete: true }] }), ledger({ events: held("written_answer", 50) })]) {
       const w = writers(book);
       const d = deps(book, w);
       const summary = await runPaidGateReplay({ db: book.db, now: () => NOW, agentRunId: RUN, deps: d.deps });
@@ -487,37 +607,37 @@ describe("the one-off paid gate replay batch (#1077)", () => {
     expect(summary.results.length).toBeGreaterThan(0);
   });
 
-  it("keeps a report whose reads fail for a later run, and passes a question over only after three failed runs", async () => {
+  it("keeps a question whose free reads fail for a later run, and passes it over only after three failed runs", async () => {
     const book = ledger({ finished: [] });
     const w = writers(book);
     const summary = await runPaidGateReplay({
       db: book.db, now: () => NOW, agentRunId: RUN,
-      deps: deps(book, w, { prepareReport: async () => { throw new Error("statement timeout"); } }).deps,
+      deps: deps(book, w, { answer: async () => { throw new Error("statement timeout"); } }).deps,
     });
-    expect(w.calls.report).toBe(0);
-    expect(summary.settledKeys.some((k) => k.startsWith("report|"))).toBe(false);
-    expect(summary.erroredKeys.every((k) => k.startsWith("report|"))).toBe(true);
-    expect(summary.blocked.report).toContain("free reads failed");
+    expect(w.calls.written_answer).toBe(0);
+    expect(summary.settledKeys).toEqual([]);
+    expect(summary.erroredKeys.every((k) => k.startsWith("written_answer|"))).toBe(true);
+    expect(summary.blocked.written_answer).toContain("free reads failed");
     expect(summary.complete).toBe(false);
-    // The same keys failing in three runs are passed over for good.
+    // The same key failing in three runs is passed over for good.
     const key = summary.erroredKeys[0];
     const later = ledger({ finished: [{ errored: [key] }, { errored: [key] }, { errored: [key] }] });
-    const tried: string[] = [];
-    await runPaidGateReplay({
-      db: later.db, now: () => NOW, agentRunId: RUN + 1,
-      deps: deps(later, writers(later), { prepareReport: async (id) => { tried.push(String(id)); return prepared; } }).deps,
-    });
-    expect(tried.length).toBeGreaterThan(0);
+    const lw = writers(later);
+    await runPaidGateReplay({ db: later.db, now: () => NOW, agentRunId: RUN + 1, deps: deps(later, lw).deps });
+    expect(lw.calls.written_answer).toBeGreaterThan(0);
     expect(later.reservations().map((e) => e.detail.sample_key)).not.toContain(key);
   });
 
   it("passes over questions a path cannot write up and keeps them for later runs", async () => {
     const book = ledger();
     const w = writers(book);
-    const summary = await runPaidGateReplay({ db: book.db, now: () => NOW, agentRunId: RUN, deps: deps(book, w, { prepareReport: async () => null }).deps });
-    expect(w.calls.report).toBe(0);
+    const summary = await runPaidGateReplay({
+      db: book.db, now: () => NOW, agentRunId: RUN,
+      deps: deps(book, w, { answer: vi.fn(async (id: number) => ({ ...answered(id), research: null })) }).deps,
+    });
+    expect(w.calls.written_answer).toBe(0);
     expect(summary.settledKeys.length).toBeGreaterThan(0);
-    expect(summary.settledKeys.every((k) => k.startsWith("report|"))).toBe(true);
+    expect(summary.settledKeys.every((k) => k.startsWith("written_answer|"))).toBe(true);
     expect(PAID_REPLAY_SOURCE).toBe("hamilton.paid_gate_replay");
   });
 });

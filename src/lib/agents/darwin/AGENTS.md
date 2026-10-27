@@ -1321,8 +1321,10 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   matches each other read under Hamilton's one rule (`readsSameLine` in
   `hamilton/same-line-read.ts`): the line is printed once in the current completed text, prints
   the amount once, the frequencies do not differ and one name's words are all in the other's.
-  `SAME_LINE_READ_TAKEDOWN_LIVE` is off: the step reports only (step detail `same_line_read_check`).
-  Switched on, a match goes through the 12-hour second look (check `darwin.same_line_read`) and is
+  `SAME_LINE_READ_TAKEDOWN_LIVE` is on (#2715, James's yes 2026-10-26); off, or on a dry run, the
+  step reports only (step detail `same_line_read_check`). On, a match goes through the 12-hour second
+  look (check `darwin.same_line_read`; a read under its row cap clears a pending flag whose fee it no
+  longer returns, #1876) and is
   archived while its kept read is live (rolled back as `same_line_duplicate: live fee #<kept>`, batch
   `darwin-same-line-read-<run>`, the verified row rejected with the `same_line_duplicate` flag;
   event `darwin.same_line_read_takedown`), so Hamilton's same-line restore brings it back if the
@@ -1459,8 +1461,9 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   Each step reads the next 400 documents behind such a fee whose text names a loan (`LOAN_TEXT_SQL`),
   after a cursor kept on the `darwin.loan_section` event (`next_after_id`); an institution-scoped run
   reads that institution and leaves the cursor alone. The switch is the code constant
-  `LOAN_SECTION_TAKEDOWN_LIVE`, off; off, it only reports. On, a match goes through the 12-hour second
-  look and is archived with `loan_section: #<doc>` (verified row rejected with the `loan_section` flag;
+  `LOAN_SECTION_TAKEDOWN_LIVE`, on since James's yes (2026-10-26); off, it only reports. On, a match
+  goes through the 12-hour second look (a batch also clears a pending flag on a live fee whose
+  document falls in the id range it read and that it no longer matches, #1876) and is archived with `loan_section: #<doc>` (verified row rejected with the `loan_section` flag;
   event `darwin.loan_section_takedown`). Step detail `loan_section_check`. Dry run (prod, read-only,
   Oct 26, `loanSectionFeesSql`): 8 live fees at 7 institutions, each read against its stored text.
 - One printed line, two reads (`line-conflict-check.ts`, #1440). James's catalog review (Oct 15)
