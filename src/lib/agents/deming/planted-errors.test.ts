@@ -5,6 +5,7 @@ vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
 
 import { KNOWN_GAPS, LOOP_LINKS, PLANTED_ERRORS, walkLoop } from "./planted-errors";
 import { audienceLessonsLive } from "@/lib/agents/knox/audience-lessons";
+import { KNOX_READ_LESSONS_SWITCH, readLessonsLive } from "@/lib/agents/knox/read-lessons-switch";
 
 const source = (file: string) => {
   try {
@@ -38,9 +39,10 @@ describe("the error loop, planted end to end (#2065)", () => {
       const walk = walkLoop(PLANTED_ERRORS.find((planted) => planted.key === key)!, source);
       expect([key, walk.links.detected, walk.why.detected]).toEqual([key, false, "the check passed the planted fee"]);
     }
-    // Hourly shown flat is caught and fixed by Darwin's hourly re-check, but routed to no Knox reader.
+    // Hourly shown flat is caught and fixed by Darwin's hourly re-check; a Knox file reads its row only
+    // with Knox's read lessons switched on.
     const hourly = walkLoop(PLANTED_ERRORS.find((planted) => planted.key === "amount_hourly_flat")!, source);
-    expect(hourly.links).toEqual({ detected: true, recorded: true, read: false, rerun: false, fixed: true });
+    expect(hourly.links).toEqual({ detected: true, recorded: true, read: readLessonsLive(), rerun: false, fixed: true });
   });
 
   for (const planted of PLANTED_ERRORS) {
@@ -67,9 +69,28 @@ describe("the error loop, planted end to end (#2065)", () => {
     }
     // Lower this when a gap closes; it never goes up without a new class.
     const missing = Object.values(KNOWN_GAPS).reduce((sum, gaps) => sum + Object.keys(gaps).length, 0);
-    // The wrong audience's read link holds once Knox's audience lessons are switched on (#2062).
-    // #2066: 2 for hourly shown flat, 5 each for the four weekly-check misses no check flags.
-    expect(missing).toBe(audienceLessonsLive() ? 34 : 35);
+    // The wrong audience's read link holds once Knox's audience lessons are switched on, and the
+    // duplicate's and hourly-shown-flat's once Knox's read lessons are (#2062).
+    // #2066 added 22: 2 for hourly shown flat, 5 each for the four weekly-check misses no check flags.
+    expect(missing).toBe(35 - (audienceLessonsLive() ? 1 : 0) - (readLessonsLive() ? 2 : 0));
+  });
+
+  it("closes the duplicate's and hourly-shown-flat's read gaps only with Knox's read lessons switched on", async () => {
+    const gaps = async (value: string) => {
+      vi.resetModules();
+      vi.stubEnv(KNOX_READ_LESSONS_SWITCH, value);
+      const planted = await import("./planted-errors");
+      return Object.values(planted.KNOWN_GAPS).reduce((sum, known) => sum + Object.keys(known).length, 0);
+    };
+    try {
+      const off = await gaps("");
+      const on = await gaps("true");
+      expect(off - on).toBe(2);
+      expect(off).toBe(35 - (audienceLessonsLive() ? 1 : 0));
+    } finally {
+      vi.unstubAllEnvs();
+      vi.resetModules();
+    }
   });
 
   it("fails a link when its reader stops naming the rows it reads", () => {

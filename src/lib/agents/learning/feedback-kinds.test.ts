@@ -9,8 +9,11 @@ import { KNOX_READ_CHECKS } from "@/lib/agents/knox/takedown-lessons";
 import { READ_WRONG_CHECKS } from "@/lib/agents/magellan/outcomes";
 import { takedownKind } from "./feedback";
 import { unreadFeedbackLines } from "./unread-feedback";
+import { KNOX_READ_LESSONS_SWITCH, readLessonsLive } from "@/lib/agents/knox/read-lessons-switch";
+import { DUPLICATE_LESSON_CHECKS, FREQUENCY_HOLD_CHECK, FREQUENCY_LESSON_CHECKS, HELD_RECHECK_CHECK } from "@/lib/agents/knox/read-lessons";
 
-const UNREAD_KINDS_CEILING = 14;
+// 14 when the registry was built; 8 once Knox's read lessons are switched on (#2062), which read six of them.
+const UNREAD_KINDS_CEILING = readLessonsLive() ? 8 : 14;
 const entries = Object.entries(FEEDBACK_KINDS) as Array<[string, FeedbackKindEntry]>;
 
 describe("every feedback kind names its reader (#2062)", () => {
@@ -32,6 +35,52 @@ describe("every feedback kind names its reader (#2062)", () => {
     // never raise it.
     const unread = entries.filter(([, entry]) => "unread" in entry).map(([kind]) => kind);
     expect(unread.length).toBeLessThanOrEqual(UNREAD_KINDS_CEILING);
+  });
+
+  it("files Knox's read lessons under the kinds they read only once their switch is on (#2062)", async () => {
+    const file = "src/lib/agents/knox/read-lessons.ts";
+    const kinds = ["wrong_payer", "frequency_filled", "frequency_corrected", "frequency_cleared", "frequency_held", "promoted_from_held", "duplicate"] as const;
+    const load = async (value: string) => {
+      vi.resetModules();
+      vi.stubEnv(KNOX_READ_LESSONS_SWITCH, value);
+      try { return await import("./feedback-kinds"); } finally { vi.unstubAllEnvs(); }
+    };
+    const on = await load("true"), off = await load("");
+    for (const kind of kinds) {
+      const live = on.FEEDBACK_KINDS[kind] as FeedbackKindEntry, dark = off.FEEDBACK_KINDS[kind] as FeedbackKindEntry;
+      expect("readers" in live && live.readers.includes(file), kind).toBe(true);
+      expect("readers" in dark && dark.readers.includes(file), kind).toBe(false);
+    }
+    // Off, the six kinds stay unread debt in the brief, and the duplicate keeps its unread hand rows.
+    expect(on.unreadFeedbackPredicate().unreadKinds.length + 6).toBe(off.unreadFeedbackPredicate().unreadKinds.length);
+    expect(off.feedbackRowRead({ kind: "frequency_filled", about_stage: "extract", check_name: "darwin.hourly_frequency_check" })).toBe(false);
+    expect(off.feedbackRowRead({ kind: "duplicate", about_stage: "extract", check_name: "hamilton.hand_takedown" })).toBe(false);
+    expect(on.feedbackRowRead({ kind: "frequency_filled", about_stage: "extract", check_name: "darwin.hourly_frequency_check" })).toBe(true);
+    expect(on.feedbackRowRead({ kind: "frequency_held", about_stage: "extract", check_name: "hamilton.frequency_fill" })).toBe(true);
+    expect(on.feedbackRowRead({ kind: "wrong_payer", about_stage: "extract", check_name: "hamilton.eval_verdict" })).toBe(true);
+    expect(on.feedbackRowRead({ kind: "promoted_from_held", about_stage: "extract", check_name: "knox.held_recheck" })).toBe(true);
+    // On, a hand or cut-name duplicate's extract row is read; a verify row still is not.
+    expect(on.feedbackRowRead({ kind: "duplicate", about_stage: "extract", check_name: "hamilton.hand_takedown" })).toBe(true);
+    expect(on.feedbackRowRead({ kind: "duplicate", about_stage: "extract", check_name: "hamilton.cut_name_duplicate" })).toBe(true);
+    expect(on.feedbackRowRead({ kind: "duplicate", about_stage: "verify", check_name: "hamilton.duplicate_collapse" })).toBe(false);
+    // #2066: on, Knox's read lessons are named the reader only of the rows read-lessons.ts selects;
+    // off, they read nothing.
+    expect(on.feedbackRowReaders({ kind: "frequency_filled", about_stage: "extract", check_name: "darwin.hourly_frequency_check" })).toEqual([file]);
+    expect(off.feedbackRowReaders({ kind: "frequency_filled", about_stage: "extract", check_name: "darwin.hourly_frequency_check" })).toEqual([]);
+    expect(on.feedbackRowReaders({ kind: "frequency_filled", about_stage: "extract", check_name: "hamilton.hand_frequency" })).toEqual([]);
+    expect(on.feedbackRowReaders({ kind: "frequency_held", about_stage: "extract", check_name: "darwin.other" })).toEqual([]);
+    expect(on.feedbackRowReaders({ kind: "promoted_from_held", about_stage: "extract", check_name: "knox.held_recheck" })).toEqual([file]);
+    expect(on.feedbackRowReaders({ kind: "duplicate", about_stage: "extract", check_name: "hamilton.duplicate_collapse" })).toEqual(["src/lib/agents/learning/feedback-sync.ts", file]);
+    expect(on.feedbackRowReaders({ kind: "duplicate", about_stage: "extract", check_name: "hamilton.near_name" })).toEqual(["src/lib/agents/learning/feedback-sync.ts"]);
+    // The scopes match the lists read-lessons.ts selects by.
+    const scope = (kind: (typeof kinds)[number]) => {
+      const entry = on.FEEDBACK_KINDS[kind] as FeedbackKindEntry;
+      return "readers" in entry ? entry.readerScopes?.[file]?.checks ?? null : null;
+    };
+    for (const kind of ["frequency_filled", "frequency_corrected", "frequency_cleared"] as const) expect([...(scope(kind) ?? [])].sort()).toEqual([...FREQUENCY_LESSON_CHECKS].sort());
+    expect(scope("frequency_held")).toEqual([FREQUENCY_HOLD_CHECK]);
+    expect(scope("promoted_from_held")).toEqual([HELD_RECHECK_CHECK]);
+    expect([...(scope("duplicate") ?? [])].sort()).toEqual([...DUPLICATE_LESSON_CHECKS].sort());
   });
 
   it("registers every kind the takedown sync maps a reason to", () => {
@@ -136,7 +185,9 @@ describe("which reader reads a row, by its stage and check (#2066)", () => {
     expect(feedbackRowReaders({ kind: "admin_correction", about_stage: "verify", check_name: "admin.fee_correction", reported_by: "human" })).toEqual(["src/lib/agents/darwin/verify-misses.ts"]);
     // Unread rows have no reader; an unscoped kind keeps all its readers.
     expect(feedbackRowReaders({ kind: "admin_hold", about_stage: "extract", check_name: "admin.fee_hold", cause: "wrong_amount" })).toEqual([]);
-    expect(feedbackRowReaders({ kind: "frequency_filled", about_stage: "extract", check_name: "darwin.hourly_frequency_check" })).toEqual([]);
+    expect(feedbackRowReaders({ kind: "frequency_filled", about_stage: "extract", check_name: "darwin.hourly_frequency_check" }))
+      .toEqual(readLessonsLive() ? ["src/lib/agents/knox/read-lessons.ts"] : []);
+    expect(feedbackRowReaders({ kind: "wrong_payer", about_stage: "verify", check_name: "hamilton.eval_verdict" })).toEqual([]);
     expect(feedbackRowReaders({ kind: "flag_cleared", about_stage: "publish", check_name: "x" })).toEqual([]);
     expect(feedbackRowReaders({ kind: "made_up", about_stage: "extract", check_name: null, dedupe_key: "hamilton.takedown:pub:9:extract" })).toEqual(["src/lib/agents/learning/feedback-sync.ts"]);
     expect(feedbackRowReaders({ kind: "search_miss", about_stage: "discover", check_name: "magellan.search_miss" })).toEqual([...FEEDBACK_KINDS.search_miss.readers]);

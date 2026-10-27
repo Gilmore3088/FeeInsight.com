@@ -20,6 +20,7 @@
  * still reads; those rows are judged without a reporter or cause. Writes nothing but `out.csv`.
  */
 import { readFileSync, writeFileSync } from "node:fs";
+import { registerHooks } from "node:module";
 import { pathToFileURL } from "node:url";
 
 /** The step each verdict of the weekly check blames, and the agent that runs it. */
@@ -172,6 +173,14 @@ async function main([command, ...args]) {
   }
   if (command === "tag") {
     const [csv, foundPath, out] = args;
+    // The registry imports through the app's "@/" alias (`@/lib/agents/knox/read-lessons-switch`, #2780),
+    // which plain Node does not know: map it to src/ and its .ts file (Node 22.15+ sync hooks).
+    registerHooks({
+      resolve(specifier, context, nextResolve) {
+        if (!specifier.startsWith("@/")) return nextResolve(specifier, context);
+        return nextResolve(new URL(`../src/${specifier.slice(2)}.ts`, import.meta.url).href, context);
+      },
+    });
     const registry = await import(new URL("../src/lib/agents/learning/feedback-kinds.ts", import.meta.url).href);
     const rows = parseCsv(readFileSync(csv, "utf8"));
     const summary = tagLiveBatch(rows, JSON.parse(readFileSync(foundPath, "utf8")), registry);

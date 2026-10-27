@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as registry from "../src/lib/agents/learning/feedback-kinds";
+import { readLessonsLive } from "../src/lib/agents/knox/read-lessons-switch";
 import { gapLine, liveBatchGapSql, liveBatchMisses, parseCsv, tagLiveBatch, toCsv } from "./live-batch-gaps.mjs";
 
 const HEADER = "institution_id,institution,fee_name_on_site,category_on_site,amount_on_site,audience_on_site,source_url,schedule_effective_date,schedule_amount,schedule_quote,verdict,error_type,correct_category_or_amount,notes";
@@ -41,8 +42,8 @@ describe("weekly live-check loop gaps (#2066)", () => {
     const summary = tagLiveBatch(rows, [
       // Read by Knox's lessons at extract.
       [1, 11, ["wrong_category|extract|hamilton.category_guard|t"]],
-      // An unread kind and a record: caught, never routed.
-      [2, 12, ["frequency_filled|extract|darwin.hourly_frequency_check|", "knox_reread_resolved|extract|knox.reread_feedback|"]],
+      // An unread row (a takedown's verify copy) and a record: caught, never routed.
+      [2, 12, ["wrong_amount|verify|hamilton.source_check|", "knox_reread_resolved|extract|knox.reread_feedback|"]],
       // A record alone is not a catch.
       [3, 13, ["category_fold|publish|hamilton.taxonomy_fold|"]],
       [4, null, []],
@@ -68,6 +69,8 @@ describe("weekly live-check loop gaps (#2066)", () => {
     // Knox's takedown lessons read the limit guard's confirmed takedowns, not the category guard's.
     expect(tagOf(1, ["takedown_confirmed|publish|hamilton.limit_guard||hamilton|"])).toBe("caught_routed");
     expect(tagOf(1, ["takedown_confirmed|publish|hamilton.category_guard||hamilton|"])).toBe("caught_not_routed");
+    // Darwin's hourly fix reaches Knox only through its read lessons, with KNOX_READ_LESSONS_LIVE on.
+    expect(tagOf(1, ["frequency_filled|extract|darwin.hourly_frequency_check||darwin|"])).toBe(readLessonsLive() ? "caught_routed" : "caught_not_routed");
     // The SELECT carries the reporter and the stated cause.
     expect(liveBatchGapSql(liveBatchMisses(rows), "2026-10-19")).toContain("f.reported_by || '|' || COALESCE(f.evidence->>'cause', '')");
   });
