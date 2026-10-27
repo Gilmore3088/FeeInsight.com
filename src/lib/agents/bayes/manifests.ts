@@ -530,6 +530,9 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // credits and "no fee of this bank" are narrowed to an allowlist and the line start; still shadow.
   // Round 6 (rev12): subject-carrying tail leads, soft if/when clauses and floors, cents figures as "$",
   // a credit guard and NBSP parity in the count SQL; still shadow.
+  // v8 (#1521): a floor read without the line's thresholds ("$500 minimum balance" is none), and a
+  // floor holds a refused line only when the amount is not a cap's or opening deposit's figure; the
+  // same cursor reads every live name again. Dry run 2026-10-26: no live verdict changes.
   LIVE_FRAGMENT_STRATEGY: "Its cursor re-reads every live fee name each pass (2,000 a verify step); there is nothing to replay.",
   // v2 (#1456): a fee whose name is silent on the hour is read on its own stored line too; line-only
   // fees are written only with HOURLY_LINE_LIVE on (on since 2026-10-20). Same cursor.

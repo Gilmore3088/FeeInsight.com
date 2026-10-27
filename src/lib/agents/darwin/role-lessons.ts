@@ -530,4 +530,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-26",
   },
+  {
+    id: "issue-1521-a-floor-is-not-a-cap-or-threshold",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "A floor (\"$5 minimum\", \"minimum charge\", \"greater of\") says the least a fee can be, so a live fee at the floor's figure may be the fee and stays live for a re-read. It does not vouch for a different figure on the same line: when the amount is a cap's own figure (\"maximum of $100\") or an opening deposit's (\"minimum opening deposit of $100\"), the amount is the limit, not the price. And \"$N minimum\" before a balance, deposit, \"to open\" or purchase word, or after \"below\", \"under\" or \"than\", is a threshold, not a floor.",
+    why: "The fragment check's round 7 review (#1521) found that any floor wording on a line held every refused amount live: \"Overdraft Fee $35, maximum of $100 per day; $5 minimum\" at $100 stayed live as a reread, and \"$500 minimum balance\" or \"below $500 minimum\" read as a floor. On 2026-10-26 the narrower read drops the floor from 12 live fees (all balance or purchase thresholds) and no live fragment fee changes verdict.",
+    evidence: { issues: [1521], prs: [2752], files: ["src/lib/agents/darwin/live-fragment-check.ts", "src/lib/agents/darwin/live-fragment-check.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
 ];
