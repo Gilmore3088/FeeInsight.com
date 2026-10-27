@@ -161,6 +161,13 @@ institutions remains the only human launch workflow.
   SQL tool, then tags the results file from its output. The gap count goes beside accuracy on the
   weekly scorecard; a miss whose class has no planted case gets one. 2026-W43: 445 of 532 misses
   not caught, 56 caught but not routed, 11 routed, 20 unresolved.
+- A miss is routed only when the owning agent's reader of that row's own stage and check reads it
+  (`feedbackRowReaders`, the registry's `readerScopes`), not when any reader of the kind sits in the
+  agent's folder. Re-tagged that way, W43 reads 10 routed and 57 caught but not routed.
+- The classes W43 found with no catch are planted (`planted-errors.ts`): hourly shown flat (caught
+  by Darwin's hourly re-check, read by no Knox file), an annual rent, a price ladder, a name read
+  across two columns, and a wrong category the guard passes. Each is a listed gap until a check
+  closes it.
 
 ## Planted error loop (#2065)
 
