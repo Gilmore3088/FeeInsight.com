@@ -25,6 +25,11 @@ function response(body: string, contentType = "text/html", status = 200): Respon
   return new Response(body, { status, headers: { "content-type": contentType } });
 }
 
+/** The candidate query: the fragments it embeds (`readNeedsNewCopySql`) are built first. */
+function candidateCall(db: { mock: { calls: unknown[][] } }): unknown[] {
+  return db.mock.calls.find((call) => templateText(call[0]).includes("FROM institution_sources inst"))!;
+}
+
 describe("Magellan agentic fetch", () => {
   // #1881: Texas Capital's row before run 8472 (Oct 18, read-only): its saved link was the new PDF,
   // its profile still remembered the old services-fees page.
@@ -180,7 +185,8 @@ describe("Magellan agentic fetch", () => {
 
     expect(result.succeeded).toBe(1);
     expect(result.results[0].documentType).toBe("pdf");
-    expect(db).toHaveBeenCalledTimes(1);
+    // One query: the re-fetch fragments are part of the candidate query.
+    expect(db.mock.calls.filter((call) => !templateText(call[0]).includes("access_failure"))).toHaveLength(1);
   });
 
   it("records failed source fetches and increments target failure state", async () => {
@@ -322,7 +328,7 @@ describe("Magellan agentic fetch", () => {
       fetchImpl,
     });
 
-    const sqlText = templateText(db.mock.calls[0][0]);
+    const sqlText = templateText(candidateCall(db)[0]);
     expect(sqlText).not.toContain("OR consecutive_failures > 0");
     expect(sqlText).toContain("WHEN COALESCE(inst.consecutive_failures, 0) >= 3 THEN INTERVAL '7 days'");
     expect(sqlText).toContain("WHEN COALESCE(inst.consecutive_failures, 0) > 0 THEN INTERVAL '24 hours'");
@@ -335,10 +341,10 @@ describe("Magellan agentic fetch", () => {
 
     await runMagellanFetch({ runId: 105, db: asFetchDb(db), fetchImpl: vi.fn(), newLinksOnly: true });
 
-    const sqlText = templateText(db.mock.calls[0][0]);
+    const sqlText = templateText(candidateCall(db)[0]);
     expect(sqlText).toContain("inst.last_rescue_attempt_at > COALESCE(inst.last_crawl_at, '-infinity'::timestamptz)");
     expect(sqlText).toContain("CASE WHEN inst.rescue_status = 'rescued' AND inst.last_rescue_attempt_at > inst.last_crawl_at THEN 0 ELSE 1 END");
-    expect(db.mock.calls[0]).toContain(true);
+    expect(candidateCall(db)).toContain(true);
   });
 
   it("also re-fetches links last fetched over a month ago in a backlog run", async () => {
@@ -346,9 +352,23 @@ describe("Magellan agentic fetch", () => {
 
     await runMagellanFetch({ runId: 106, db: asFetchDb(db), fetchImpl: vi.fn(), newLinksOnly: true });
 
-    const sqlText = templateText(db.mock.calls[0][0]);
+    const sqlText = templateText(candidateCall(db)[0]);
     expect(sqlText).toContain("OR inst.last_crawl_at < NOW() - make_interval(days =>");
-    expect(db.mock.calls[0]).toContain(MAGELLAN_STALE_LINK_REFETCH_DAYS);
+    expect(candidateCall(db)).toContain(MAGELLAN_STALE_LINK_REFETCH_DAYS);
+  });
+
+  it("re-fetches a bank whose current copy Rosetta could not match to the served bytes, before it reads again (fix plan step 7)", async () => {
+    for (const newLinksOnly of [true, false]) {
+      const db = createDbMock([]);
+      await runMagellanFetch({ runId: 107, db: asFetchDb(db), fetchImpl: vi.fn(), newLinksOnly });
+      const fragments = db.mock.calls.filter((call) => templateText(call[0]).includes("access_failure"));
+      // In the backlog filter, the due filter and the order, each built once.
+      expect(fragments).toHaveLength(3);
+      const text = templateText(fragments[0][0]);
+      expect(text).toContain("access_failure.outcome = 'evidence_mismatch'");
+      expect(text).toContain("access_failure.source_document_id = profile.last_successful_source_document_id");
+      expect(text).toMatch(/access_failure\.created_at > COALESCE\(inst\.last_crawl_at/);
+    }
   });
 
   it("re-fetches a bank with a live fee flagged since its last fetch, in backlog and full runs, ahead of stale links", async () => {
@@ -356,7 +376,7 @@ describe("Magellan agentic fetch", () => {
 
     await runMagellanFetch({ runId: 107, db: asFetchDb(db), fetchImpl: vi.fn(), newLinksOnly: true });
 
-    const sqlText = templateText(db.mock.calls[0][0]);
+    const sqlText = templateText(candidateCall(db)[0]);
     expect(sqlText).toContain("pending.kind = 'takedown_pending'");
     expect(sqlText).toContain("pending_fee.rolled_back_at IS NULL");
     // Inside the 12-hour window too: the flag is newer than the last fetch.
@@ -375,7 +395,7 @@ describe("Magellan agentic fetch", () => {
       fetchImpl,
     });
 
-    const sqlText = templateText(db.mock.calls[0][0]);
+    const sqlText = templateText(candidateCall(db)[0]);
     expect(sqlText).toContain("upper(btrim(inst.state_code))");
     expect(sqlText).toContain("institution_source_profiles");
     expect(sqlText).toContain("profile.canonical_source_url IS NOT NULL");

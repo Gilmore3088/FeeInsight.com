@@ -252,6 +252,152 @@ export function fitForOcr(image: GrayImage): GrayImage {
   return downscale(image, OCR_MAX_IMAGE_SIDE);
 }
 
+/** A page whose long side is below this is upscaled before the cleaned read (about 200 dpi). */
+const OCR_CLEAN_MIN_SIDE = 2200;
+/** Skew is searched within this many degrees either way, in OCR_SKEW_STEP steps. */
+const OCR_SKEW_MAX_DEGREES = 5;
+const OCR_SKEW_STEP = 0.5;
+/** Skew is measured on a copy at most this many pixels on the long side. */
+const OCR_SKEW_IMAGE_SIDE = 900;
+
+/** Bilinear upscale by an integer factor until the long side reaches `minSide` (at most 3x). */
+export function upscaleForOcr(image: GrayImage, minSide = OCR_CLEAN_MIN_SIDE): GrayImage {
+  const longSide = Math.max(image.width, image.height);
+  const factor = Math.min(3, Math.ceil(minSide / Math.max(1, longSide)));
+  if (factor <= 1) return image;
+  const width = image.width * factor;
+  const height = image.height * factor;
+  const data = new Uint8Array(width * height);
+  for (let y = 0; y < height; y += 1) {
+    const sy = Math.min(image.height - 1, (y + 0.5) / factor - 0.5);
+    const y0 = Math.max(0, Math.floor(sy));
+    const y1 = Math.min(image.height - 1, y0 + 1);
+    const fy = Math.max(0, sy - y0);
+    for (let x = 0; x < width; x += 1) {
+      const sx = Math.min(image.width - 1, (x + 0.5) / factor - 0.5);
+      const x0 = Math.max(0, Math.floor(sx));
+      const x1 = Math.min(image.width - 1, x0 + 1);
+      const fx = Math.max(0, sx - x0);
+      const top = image.data[y0 * image.width + x0] * (1 - fx) + image.data[y0 * image.width + x1] * fx;
+      const bottom = image.data[y1 * image.width + x0] * (1 - fx) + image.data[y1 * image.width + x1] * fx;
+      data[y * width + x] = top * (1 - fy) + bottom * fy;
+    }
+  }
+  return { width, height, data };
+}
+
+/** Otsu's threshold: the gray level that best splits ink from paper. */
+export function otsuThreshold(image: GrayImage): number {
+  const histogram = new Array<number>(256).fill(0);
+  for (let i = 0; i < image.data.length; i += 1) histogram[image.data[i]] += 1;
+  const total = image.data.length;
+  let sumAll = 0;
+  for (let level = 0; level < 256; level += 1) sumAll += level * histogram[level];
+  let sumBelow = 0;
+  let countBelow = 0;
+  let best = 127;
+  let bestVariance = -1;
+  for (let level = 0; level < 256; level += 1) {
+    countBelow += histogram[level];
+    if (countBelow === 0) continue;
+    const countAbove = total - countBelow;
+    if (countAbove === 0) break;
+    sumBelow += level * histogram[level];
+    const meanBelow = sumBelow / countBelow;
+    const meanAbove = (sumAll - sumBelow) / countAbove;
+    const variance = countBelow * countAbove * (meanBelow - meanAbove) ** 2;
+    if (variance > bestVariance) {
+      bestVariance = variance;
+      best = level;
+    }
+  }
+  return best;
+}
+
+/** Pure black ink on white paper, split at Otsu's threshold (grey scans, faint toner). */
+export function binarizeForOcr(image: GrayImage): GrayImage {
+  const threshold = otsuThreshold(image);
+  const data = new Uint8Array(image.data.length);
+  for (let i = 0; i < data.length; i += 1) data[i] = image.data[i] <= threshold ? 0 : 255;
+  return { width: image.width, height: image.height, data };
+}
+
+/**
+ * The page's tilt in degrees (positive: lines fall to the right), found as the angle whose
+ * ink rows are sharpest: dark pixels are projected onto rows along each candidate angle and
+ * the angle with the most uneven row counts wins. 0 when no angle beats level by 5%.
+ */
+export function estimateSkewDegrees(image: GrayImage): number {
+  const small = binarizeForOcr(downscale(image, OCR_SKEW_IMAGE_SIDE));
+  const ink: Array<[number, number]> = [];
+  for (let y = 0; y < small.height; y += 1) {
+    for (let x = 0; x < small.width; x += 1) if (small.data[y * small.width + x] === 0) ink.push([x, y]);
+  }
+  if (ink.length < 50 || ink.length > small.data.length * 0.6) return 0;
+  const spread = (degrees: number) => {
+    const slope = Math.tan((degrees * Math.PI) / 180);
+    const offset = Math.ceil(Math.abs(slope) * small.width) + 1;
+    const rows = new Array<number>(small.height + 2 * offset).fill(0);
+    for (const [x, y] of ink) rows[Math.round(y - x * slope) + offset] += 1;
+    let sumSquares = 0;
+    for (const count of rows) sumSquares += count * count;
+    return sumSquares;
+  };
+  const level = spread(0);
+  let best = 0;
+  let bestSpread = level;
+  for (let degrees = -OCR_SKEW_MAX_DEGREES; degrees <= OCR_SKEW_MAX_DEGREES + 1e-9; degrees += OCR_SKEW_STEP) {
+    if (Math.abs(degrees) < 1e-9) continue;
+    const value = spread(degrees);
+    if (value > bestSpread) {
+      bestSpread = value;
+      best = Math.round(degrees * 10) / 10;
+    }
+  }
+  return bestSpread > level * 1.05 ? best : 0;
+}
+
+/** Turns the page about its centre so a skew of `degrees` (as `estimateSkewDegrees`) is level (bilinear; uncovered corners are white paper). */
+export function straightenForOcr(image: GrayImage, degrees: number): GrayImage {
+  if (degrees === 0) return image;
+  const radians = (degrees * Math.PI) / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  const cx = (image.width - 1) / 2;
+  const cy = (image.height - 1) / 2;
+  const data = new Uint8Array(image.data.length).fill(255);
+  const at = (x: number, y: number) => image.data[y * image.width + x];
+  for (let y = 0; y < image.height; y += 1) {
+    for (let x = 0; x < image.width; x += 1) {
+      // The source pixel this output pixel came from.
+      const sx = cos * (x - cx) - sin * (y - cy) + cx;
+      const sy = sin * (x - cx) + cos * (y - cy) + cy;
+      if (sx < 0 || sy < 0 || sx > image.width - 1 || sy > image.height - 1) continue;
+      const x0 = Math.floor(sx);
+      const y0 = Math.floor(sy);
+      const x1 = Math.min(image.width - 1, x0 + 1);
+      const y1 = Math.min(image.height - 1, y0 + 1);
+      const fx = sx - x0;
+      const fy = sy - y0;
+      const top = at(x0, y0) * (1 - fx) + at(x1, y0) * fx;
+      const bottom = at(x0, y1) * (1 - fx) + at(x1, y1) * fx;
+      data[y * image.width + x] = top * (1 - fy) + bottom * fy;
+    }
+  }
+  return { width: image.width, height: image.height, data };
+}
+
+/**
+ * The cleaned copy a poor read gets one more try on (fix plan step 7, Oct 27: free OCR came
+ * back empty on 113 of 380 scans in 30 days): upscaled when small, straightened, then split
+ * into black ink on white paper.
+ */
+export function cleanForOcr(image: GrayImage): { image: GrayImage; skewDegrees: number } {
+  const larger = upscaleForOcr(image);
+  const skewDegrees = estimateSkewDegrees(larger);
+  return { image: binarizeForOcr(straightenForOcr(larger, skewDegrees)), skewDegrees };
+}
+
 /** A binary PGM (P5): the simplest format Tesseract's image reader accepts. */
 export function encodePgm(image: GrayImage): Uint8Array {
   const header = new TextEncoder().encode(`P5\n${image.width} ${image.height}\n255\n`);
@@ -478,13 +624,29 @@ function probeScore(page: OcrPage): number {
  * Reads a page the way it is drawn, starting with `preferredTurns`. When that reads
  * poorly (too few characters or low confidence), the other quarter turns are probed on a
  * smaller copy, and the page is read again at full size in the turn that probed clearly
- * best. A page that reads well is never turned.
+ * best. A page that reads well is never turned. A page that still reads poorly is read once
+ * more from a cleaned copy (`cleanForOcr`), kept only when it reads better.
  */
 export async function recognizeUpright(
   engine: OcrEngine,
   image: GrayImage,
   preferredTurns = 0,
   stopped: () => boolean = () => false,
+): Promise<{ page: OcrPage; height: number; turns: number; cleaned?: boolean }> {
+  const read = await recognizeTurned(engine, image, preferredTurns, stopped);
+  if (pageReadsWell(read.page) || stopped()) return read;
+  // One more try on a cleaned copy before the page counts as unreadable (and the paid read).
+  const cleaned = fitForOcr(cleanForOcr(turnImage(image, read.turns)).image);
+  const again = await engine.recognize(cleaned);
+  if (probeScore(again) <= probeScore(read.page)) return read;
+  return { page: again, height: cleaned.height, turns: read.turns, cleaned: true };
+}
+
+async function recognizeTurned(
+  engine: OcrEngine,
+  image: GrayImage,
+  preferredTurns: number,
+  stopped: () => boolean,
 ): Promise<{ page: OcrPage; height: number; turns: number }> {
   const first = fitForOcr(turnImage(image, preferredTurns));
   const page = await engine.recognize(first);

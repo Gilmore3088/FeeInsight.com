@@ -2,15 +2,21 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  binarizeForOcr,
+  cleanForOcr,
   cleanOcrLine,
   createScannedPdfReader,
   fitForOcr,
   layoutOcrWords,
   OcrError,
   orientAsDrawn,
+  estimateSkewDegrees,
+  otsuThreshold,
   recognizeUpright,
+  straightenForOcr,
   toGray,
   turnImage,
+  upscaleForOcr,
   type GrayImage,
   type OcrEngine,
   type OcrPage,
@@ -134,6 +140,57 @@ describe("Rosetta free OCR", () => {
     expect(result.turns).toBe(0);
     expect(calls).toHaveLength(1);
   });
+
+  it("cleans a poor scan before giving up: upscale, straighten, black on white (fix plan step 7)", async () => {
+    // Faint grey ink on grey paper.
+    const faint: GrayImage = { width: 4, height: 2, data: Uint8Array.from([180, 180, 120, 120, 180, 120, 180, 120]) };
+    expect(otsuThreshold(faint)).toBeGreaterThanOrEqual(120);
+    expect(otsuThreshold(faint)).toBeLessThan(180);
+    expect([...binarizeForOcr(faint).data]).toEqual([255, 255, 0, 0, 255, 0, 255, 0]);
+    expect(upscaleForOcr({ width: 1000, height: 800, data: new Uint8Array(800_000) })).toMatchObject({ width: 3000, height: 2400 });
+    expect(upscaleForOcr({ width: 2400, height: 3000, data: new Uint8Array(1) })).toMatchObject({ width: 2400 });
+
+    // Ruled lines tilted by 3 degrees read as a 3 degree skew; level lines read as none.
+    const lines = (degrees: number): GrayImage => {
+      const width = 800;
+      const height = 600;
+      const data = new Uint8Array(width * height).fill(255);
+      const slope = Math.tan((degrees * Math.PI) / 180);
+      for (let row = 60; row < height - 60; row += 40) {
+        for (let x = 40; x < width - 40; x += 1) {
+          const y = Math.round(row + (x - width / 2) * slope);
+          for (let t = 0; t < 3; t += 1) if (y + t >= 0 && y + t < height) data[(y + t) * width + x] = 0;
+        }
+      }
+      return { width, height, data };
+    };
+    expect(estimateSkewDegrees(lines(0))).toBe(0);
+    expect(Math.abs(estimateSkewDegrees(lines(3)) - 3)).toBeLessThanOrEqual(0.5);
+    expect(estimateSkewDegrees(straightenForOcr(lines(3), 3))).toBe(0);
+    expect(cleanForOcr(lines(3)).skewDegrees).not.toBe(0);
+  });
+
+  it("keeps the cleaned read only when it reads better, and never cleans a page that reads well", async () => {
+    const poor: OcrPage = { text: "", confidence: 20, words: [word("FEE", 0, 10, 10)] };
+    const good: OcrPage = { text: "x", confidence: 90, words: [word("OVERDRAFT FEE PER ITEM $33.00 MONTHLY FEE $9.00", 0, 10, 10)] };
+    const seen: Array<Set<number>> = [];
+    // Only a black-and-white copy reads well.
+    const engine: OcrEngine = {
+      recognize: async (image) => {
+        const levels = new Set(image.data);
+        seen.push(levels);
+        return [...levels].every((level) => level === 0 || level === 255) ? good : poor;
+      },
+      terminate: async () => undefined,
+    };
+    const grey: GrayImage = { width: 300, height: 400, data: new Uint8Array(120_000).map((_, i) => (i % 7 === 0 ? 90 : 200)) };
+    const result = await recognizeUpright(engine, grey);
+    expect(result).toMatchObject({ cleaned: true, turns: 0 });
+    expect(result.page).toBe(good);
+
+    const never: OcrEngine = { recognize: async () => poor, terminate: async () => undefined };
+    expect((await recognizeUpright(never, grey)).cleaned).toBeUndefined();
+  }, 60_000);
 
   it("refuses scans longer than the free page limit and PDFs with no page images", async () => {
     const reader = createScannedPdfReader(() => {
