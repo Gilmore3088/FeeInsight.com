@@ -128,6 +128,12 @@ describe("wireChannelClause", () => {
       ["Wire Transfer | $33/$15 each Outgoing Wires processed by the Branch $33. Online Banking outgoing wires", "Wire Transfer - Outgoing (Branch)", 33],
       ["(Outgoing Wire Transfers for Treasury Management Customers can be reduced by $10.00 if completed through Online Banking)", "Outgoing Wire Transfers for Treasury Management Customers can be reduced by", 10],
       ["Outgoing Wire $25.00 Online Banking", "Outgoing Wire", 25],
+      // Review of #2761: bare words after the last price, with no dash, colon or bracket tying them to
+      // it, may be the next row's label on a flattened two-column page.
+      ["Outgoing Wire $25.00 Phone Inquiry", "Outgoing Wire", 25],
+      ["Outgoing Wire $25.00 Mobile Wallet", "Outgoing Wire", 25],
+      ["Outgoing Wire $25.00 Online Wire", "Outgoing Wire", 25],
+      ["Outgoing Wire $25.00 Fax Number 555-1212", "Outgoing Wire", 25],
     ];
     for (const [line, name, amount] of cases) expect(wireChannelClause(line, name, amount, OUT), line).toBeNull();
   });

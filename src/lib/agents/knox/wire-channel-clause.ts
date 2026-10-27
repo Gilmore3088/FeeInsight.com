@@ -64,6 +64,10 @@ function labelAfter(line: string, from: number, next: number | null): string | n
   const tail = line.slice(from, next ?? line.length);
   const mark = tail.search(/[|/;,]/);
   if (next !== null && (mark < 0 || tail.slice(mark + 1).trim() !== "")) return null;
+  // Review of #2761: with nothing after it on the line, the words are its own label only when a dash,
+  // colon or bracket ties them to the price ("$30.00 - phone request"); bare words after a last price
+  // ("Outgoing Wire $25.00 PIN Reset") may be the next row's label on a flattened two-column page.
+  if (next === null && mark < 0 && !/^\s*[-–—:(]/.test(tail)) return null;
   const own = mark < 0 ? tail : tail.slice(0, mark);
   if (PRICE_WORDS.test(own)) return null;
   return own.replace(/^[\s\-–—:(]+/, "").replace(/[\s.)]+$/, "").trim();
