@@ -138,6 +138,16 @@ export const DEMING_LESSONS: AgentLesson[] = [
     since: "2026-10-26",
   },
   {
+    id: "issue-2058-rerun-the-fixed-step-itself",
+    agent: "deming",
+    stage: "error loop",
+    lesson: "Re-run the step a fix changed, by that step's own trigger, and wait for that re-run before judging: a read fix forces Rosetta to reopen the named documents (its reader skips unchanged bytes for good), a verify fix puts the named live fees in Darwin's verified recheck (it reads a row once per version), and a publish fix waits for a direct run's publish step for the bank. Count a re-run only when it came on or after the merge day, from a completed run, on the error's document or its replacement; a Knox re-extract or a lane run never stands in for another stage's re-run. Then judge each named fee with checkFeeAgainstSource on its own document, not only through the fresh audit, which counts a fee right when any of the bank's documents states it. Name an error raised by a check the fresh audit does not run only where the stage's re-run records that check's verdict per fee (Darwin's verify.recheck), and keep a still-live named fee unknown until that verdict exists.",
+    why: "After #2722 only extract fixes could be named: Rosetta never reads the same bytes twice and Knox does not re-extract at the same version, so a read, verify or publish fix would have left its rows waiting for a re-run that never came, or worse, been judged on a re-extract the fix never touched. The fresh audit also relinks an imported fee to another of the bank's documents, so a fee its own document contradicts could have closed its error.",
+    evidence: { issues: [2058], prs: [], files: ["src/lib/agents/deming/error-fix-targets.ts", "src/lib/agents/deming/error-fixes.ts", "src/lib/agents/deming/error-fix-stages.db.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-27",
+  },
+  {
     id: "issue-2065-plant-errors-walk-the-loop",
     agent: "deming",
     stage: "loop proof",

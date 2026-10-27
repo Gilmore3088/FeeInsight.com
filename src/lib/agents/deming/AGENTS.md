@@ -164,14 +164,22 @@ institutions remains the only human launch workflow.
 
 - `change-outcomes.ts`: the `deming-change-outcomes` step, last in Atlas's daily scoreboard run.
 - `error-fixes.ts`: the error loop (#2058). A process-fix PR names the error rows it fixes in
-  `error-fixes.json` (stage, merge day, the Knox rules version that carries the fix, and
-  `pipeline_feedback` kinds, checks or ids). Only extract fixes for now: Knox reads a stored text
-  again only when its rules version moves, and Rosetta reads unchanged bytes once, so read, verify
-  and publish fixes need their own re-run first (follow-ups on #2058). Only rows raised by a check
-  the fresh audit re-runs (`ERROR_FIX_CHECKS`) are named, so a fee still carrying the error fails
-  that same check. Atlas's direct path re-runs each named row's active bank once, as a request
-  dated the merge day; the `deming-error-fix-recheck` step, after the change check, judges each row
-  whose bank a completed run has extracted again at that version and writes a weight-0 ledger row:
+  `error-fixes.json` (stage, merge day, for an extract fix the Knox rules version that carries the
+  fix, and `pipeline_feedback` kinds, checks or ids). Each stage is re-run by its own step
+  (`error-fix-targets.ts`, a light module the fixed steps import): a read fix makes Rosetta's read
+  step reopen each named document (`read.reopen` attempt naming the fix, once per fix and bytes),
+  an extract fix waits for Knox's read at the fixed rules version, a verify fix puts each named live
+  fee in Darwin's verified recheck (`ERROR_FIX_RECHECK_LIMIT` a step, its `verify.recheck` attempt
+  carries `error_fix_pr`), and a publish fix waits for a direct run's publish step for the bank.
+  Every re-run but extract's must come on or after the merge day. Only rows raised by a check the
+  fresh audit re-runs (`ERROR_FIX_CHECKS`) are named, so a fee still carrying the error fails that
+  same check, plus, for a verify fix, `darwin.verified_recheck`, judged by the recheck's own verdict
+  (`STAGE_RERUN_CHECKS`; a still-live named fee with no verdict yet stays unknown). Each judged fee
+  must also pass `checkFeeAgainstSource` on its own document, which the fresh audit skips when it
+  relinks a fee. Atlas's direct path re-runs each named row's active bank once, as a request dated
+  the merge day (a verify fix asks only when the named fee is down); the
+  `deming-error-fix-recheck` step, after the change check, judges each row whose bank a completed
+  run has re-run through the fixed step and writes a weight-0 ledger row:
   `error_fix_closed` (the fee now matches) or `error_fix_still_wrong` (once; it is judged again
   daily). The re-run must have extracted the error's own document when the row names one. Once the
   named fee is down (a takedown names a fee already down), only a live fee in its category that the

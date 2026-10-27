@@ -77,6 +77,8 @@ import { PDF_LAYOUT_VERSION } from "@/lib/agents/rosetta/pdf-layout";
 import { FEE_HOLD_CHECK } from "@/lib/fee-hold-rules";
 import { FEE_CORRECTION_CHECK } from "@/lib/fee-correction-rules";
 import { UNTRACED_READ_ERROR_CHECK } from "@/lib/agents/knox/untraced-read-error";
+import { errorFixRereadDocuments, type ErrorFixEntry } from "@/lib/agents/deming/error-fix-targets";
+import { inSavepoint } from "@/lib/agents/savepoint";
 import { extractPdfDocumentText as extractPdfText, type PdfTextExtraction } from "./pdf-document-text";
 import { losslessStackedRecovery, textSha256, type StackedGeometryReceipt } from "./pdf-repair-survival";
 import type { PdfReaderAgreement } from "./pdf-reader-agreement";
@@ -288,6 +290,10 @@ export interface RunRosettaReadResult {
   reopenedLinksRestored: number;
   /** PDF texts whose embedded font read as noise, reopened for one more read (free OCR). */
   reopenedUnreadablePdfs: number;
+  /** Documents behind a registered read fix's named errors, reopened for one read under the fixed reader (#2058). */
+  reopenedForErrorFixes: number;
+  /** The error-fix reopen failed (rolled back to its savepoint); the reads went on and it is tried again next step. */
+  errorFixReopenError?: string | null;
   /** Current copies read as a bot check, script shell or bare title, put back on the page's readable copy. */
   thinCopiesSetAside: number[];
   /** Reads the fee-page check rejected but kept readable: an older copy of the page has the same text and Knox fees (#2477). */
@@ -2461,6 +2467,47 @@ async function reopenUnreadablePdfTexts(
   return reopened;
 }
 
+/**
+ * The error loop's re-run of a read fix (#2058): Rosetta reads unchanged bytes only once, so the
+ * documents behind a registered read fix's named errors (`error-fixes.json`, stage read) would
+ * never be read under the fixed reader. Each such current document gets a `read.reopen` attempt
+ * naming the fix (outcome "ok", fingerprint = its bytes' hash), which makes its stored text
+ * readable once more in this same step, as the other reopens do. Once per fix and bytes; bytes a
+ * primary read has read since the merge day are already read under the fix and are left alone.
+ * Deming's daily error-fix re-check then judges the named fees. Nothing here touches a fee, and
+ * nothing is selected while no read fix is registered.
+ */
+export async function reopenErrorFixDocuments(
+  db: SqlTag,
+  options: { runId: number; stepId: number | null; institutionId?: number; stateCode?: string; entries?: readonly ErrorFixEntry[] },
+): Promise<number> {
+  const documents = await errorFixRereadDocuments(db, {
+    limit: ROSETTA_REOPEN_LIMIT,
+    auxiliaryStrategies: AUXILIARY_READ_STRATEGIES,
+    reopenStrategy: REOPEN_STRATEGY,
+    institutionId: options.institutionId,
+    stateCode: normalizeStateCode(options.stateCode),
+    ...(options.entries ? { entries: options.entries } : {}),
+  });
+  for (const document of documents) {
+    await recordAttempt(db, {
+      institutionId: Number(document.institution_id),
+      sourceDocumentId: Number(document.source_document_id),
+      stage: "read",
+      strategy: REOPEN_STRATEGY,
+      version: REOPEN_VERSION,
+      fingerprint: document.content_hash,
+      outcome: "ok",
+      yieldCount: 0,
+      costMicrousd: 0,
+      runId: options.runId,
+      stepId: options.stepId,
+      detail: { error_fix_pr: String(document.pr), feedback_ids: document.feedback_ids.map(Number) },
+    });
+  }
+  return documents.length;
+}
+
 /** Five control codes (not tab or line breaks) in a stretch of text. */
 export const CONTROL_CODES_PATTERN = "([\\x01-\\x08\\x0e-\\x1f][^\\x01-\\x08\\x0e-\\x1f]*){5}";
 
@@ -2845,6 +2892,20 @@ export async function runRosettaRead(
         currentCopy,
       })
     : 0;
+  // #2058: a registered read fix's documents are read again under the fixed reader. In its own
+  // savepoint: a failed reopen is reported on the step and never stops the reads.
+  let errorFixReopenError: string | null = null;
+  const reopenedForErrorFixes = vaultSchema && !dryRun
+    ? await inSavepoint(db, (scope) => reopenErrorFixDocuments(scope, {
+        runId: options.runId,
+        stepId: options.stepId ?? null,
+        institutionId: options.institutionId,
+        stateCode: options.stateCode,
+      })).catch((error: unknown) => {
+        errorFixReopenError = error instanceof Error ? error.message : String(error);
+        return 0;
+      })
+    : 0;
   // A copy read as a bot check or script shell never displaces the page's readable copy.
   const thinCopies = learning
     ? await restoreReadableCopies(db, { institutionId: options.institutionId })
@@ -3010,6 +3071,8 @@ export async function runRosettaRead(
     reopenedBansLifted: reopen.unbanned,
     reopenedLinksRestored: reopen.relinked,
     reopenedUnreadablePdfs,
+    reopenedForErrorFixes,
+    errorFixReopenError,
     thinCopiesSetAside: thinCopies.thinCopies,
     sameTextCopiesKept: results.filter((result) => result.sameTextCopyOf != null).length,
     sameTextCopyReopen: { live: sameTextReopen.live, candidates: sameTextReopen.candidates, reopened: sameTextReopen.reopened },
