@@ -1945,7 +1945,16 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v100 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v100 (Oct 26,
+- The guard is at v101 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v101 (Oct 27,
+  #1947): an NSF-filed name that names a collection item (`COLLECTION_NSF_NAME`: "NSF Collection Item
+  (incoming)", "NSF Check Collection Item", "Collection Items (Replacing NSF Checks)", "Return Items
+  Entered For Collection") fails NSF and re-files to collection_item. The bank is collecting a bounced
+  item for someone, not charging the member for their own item. A name that also names the member's own
+  debits (ACH, debit, electronic, presentment, paid, honoured, overdraft, courtesy) stays NSF, as does
+  "uncollected funds" and a debt collection. v90's collection-section rule reads only plain "Return..."
+  names, so it missed County Excellence's 122514. Of the 96 live NSF fees whose names say "collect",
+  11 re-file in place and none comes down (prod, read-only, Oct 27).
+- v100 (Oct 26,
   #1912): a commercial lockbox (a remittance-processing service for businesses) fails the safe deposit
   box type: a lock box name that names the service (service, processing, items, remittances, wholesale or
   retail) and nothing of a box (`commercialLockboxName`), or a lock box name with no box words whose

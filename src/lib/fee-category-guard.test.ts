@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { amountEnvelopeFor } from "@/lib/agents/darwin/envelopes";
 import { INTERNATIONAL_ATM } from "@/lib/fee-fold";
 
-import { BOX_LATE_TARGET, borrowedDirection, LOAN_LINE_NAME, LOAN_LINE_TARGET, COLLECTION_RETURN_TARGET, cardProductMisfile, checkFeeCategory, CLUB_WITHDRAWAL, CLUB_WITHDRAWAL_LIVE, genericMonthlyCharge, GUARDED_CATEGORIES, headingAboveExcerpt, NON_CUSTOMER_CASHIERS_CHECK_LIVE, refileCategory, refileFromLine, withBoxSection, withCollectionSection, withHeadingAbove, type CategoryGuardContext } from "./fee-category-guard";
+import { BOX_LATE_TARGET, borrowedDirection, COLLECTION_NSF_NAME, LOAN_LINE_NAME, LOAN_LINE_TARGET, COLLECTION_RETURN_TARGET, cardProductMisfile, checkFeeCategory, CLUB_WITHDRAWAL, CLUB_WITHDRAWAL_LIVE, genericMonthlyCharge, GUARDED_CATEGORIES, headingAboveExcerpt, NON_CUSTOMER_CASHIERS_CHECK_LIVE, refileCategory, refileFromLine, withBoxSection, withCollectionSection, withHeadingAbove, type CategoryGuardContext } from "./fee-category-guard";
 
 describe("checkFeeCategory", () => {
   it("passes keys it does not guard", () => {
@@ -2911,5 +2911,60 @@ describe("guard v97: an NSF or overdraft fee named for a home equity line, a HEL
 
   it("passes the other lending fee under its own name", () => {
     expect(checkFeeCategory(LOAN_LINE_TARGET, "Home Equity Line Check returned (due to non-sufficient funds)")).toEqual({ ok: true });
+  });
+});
+
+describe("guard v101: an NSF-filed collection item is a collection item (#1947)", () => {
+  it("refuses a collection item named with NSF words as the member's NSF fee and re-files it to collection_item", () => {
+    for (const name of [
+      // County Excellence 122514, under "Collections Fees" beside its own "Insufficient Funds" $27.
+      "NSF Collection Item (incoming)",
+      "NSF Collection Item (outgoing)",
+      "NSF Check Collection Item",
+      "Bank NSF check collection item: (Collection dept.)",
+      "Collection Items NSF Fee",
+      "Collection Items (Replacing NSF Checks)",
+      "NSF Collection Fee",
+      "NSF Collection Fee (presented for payment by non-customer)",
+      "Collection – Return Item",
+      "Collection/Returned Item",
+      "Return Items Entered For Collection",
+      "Runner Collection for Insufficient Funds Fee",
+      "Incoming Collection - NSF",
+    ]) {
+      expect(COLLECTION_NSF_NAME.test(name), name).toBe(true);
+      const verdict = checkFeeCategory("nsf", name);
+      expect(verdict.ok ? null : verdict.code, name).toBe("name_contradicts");
+      expect(refileCategory("nsf", name), name).toBe("collection_item");
+      expect(checkFeeCategory("collection_item", name), name).toEqual({ ok: true });
+    }
+  });
+
+  it("keeps the member's own NSF fee", () => {
+    for (const name of [
+      "NSF Fee",
+      "NSF Item Paid",
+      "NSF Item Returned",
+      "Insufficient Funds",
+      "Non-Sufficient Funds Return (NSF)",
+      "NSF/Uncollected Funds",
+      "Non-Sufficient Funds / Non-Collected Funds (Insufficient/Uncollected Funds)",
+      "Uncollected Funds Return Check Fee",
+      // Live 81426: a column heading ("Collection Items") glued onto the bank's own NSF line.
+      "Collection Items Non-Sufficient Funds (NSF) Fee: Check and ACH",
+      // Live 57461: a Canadian check returned NSF names no collection.
+      "Non-Sufficient Funds Fee - Canadian Check",
+    ]) {
+      expect(COLLECTION_NSF_NAME.test(name), name).toBe(false);
+    }
+    for (const name of ["NSF Fee", "NSF Item Returned", "Insufficient Funds", "NSF/Uncollected Funds", "Collection Items Non-Sufficient Funds (NSF) Fee: Check and ACH"]) {
+      expect(checkFeeCategory("nsf", name), name).toEqual({ ok: true });
+    }
+  });
+
+  it("never reads a debt collection as a collection item", () => {
+    for (const name of ["NSF Collection Agency Fee", "Negative Balance Collection Fee - NSF", "Charged Off NSF Collection Fee"]) {
+      expect(COLLECTION_NSF_NAME.test(name), name).toBe(false);
+    }
   });
 });
