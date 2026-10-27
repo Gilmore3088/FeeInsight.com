@@ -101,7 +101,7 @@ interface BrowserPage {
   /** Every request, redirect hops included (`page.route` sees only the first hop). */
   on(event: "request", listener: (request: { url(): string }) => void): void;
   routeWebSocket?(pattern: RegExp, handler: (socket: { close(): Promise<void> | void }) => void): Promise<void>;
-  goto(url: string, options: { waitUntil: "domcontentloaded" | "load" | "networkidle"; timeout: number }): Promise<{ status(): number; url(): string; headers(): Record<string, string>; body(): Promise<Buffer> } | null>;
+  goto(url: string, options: { waitUntil: "domcontentloaded" | "load" | "networkidle"; timeout: number }): Promise<{ status(): number; url(): string; headers(): Record<string, string>; body(): Promise<Buffer>; serverAddr?(): Promise<{ ipAddress: string } | null> } | null>;
   waitForLoadState(state: "networkidle", options: { timeout: number }): Promise<void>;
   evaluate<T, A>(fn: (arg: A) => T, arg: A): Promise<T>;
   content(): Promise<string>;
@@ -173,6 +173,9 @@ export async function renderedResponse(url: string, launch: LaunchBrowser = laun
       const reachedOnlyPublic = async () => (await Promise.all(hops)).every(Boolean) && (await browserMayReach(page.url(), resolve, seen));
       const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: NAVIGATION_TIMEOUT_MS });
       if (!(await reachedOnlyPublic())) return refused();
+      // Chromium resolves names itself: the address it actually connected to must be public too.
+      const server = await response?.serverAddr?.().catch(() => null);
+      if (server?.ipAddress && !isPublicFeeSourceAddress(server.ipAddress)) return refused();
       const status = response?.status() ?? 0;
       const contentType = response?.headers()["content-type"] ?? "";
       // The address served a document, not a page: keep its bytes as the fetcher would.

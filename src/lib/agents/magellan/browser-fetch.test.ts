@@ -15,7 +15,7 @@ import {
 /** Public answers for every name except the ones that point inward. */
 const resolve: ResolveHost = async (host) => [{ address: host === "rebind.example" ? "127.0.0.1" : "93.184.216.34" }];
 
-function fakeBrowser(page: { status?: number; contentType?: string; html?: string; body?: Buffer; expanded?: number; scriptRequests?: string[]; redirectTo?: string }) {
+function fakeBrowser(page: { status?: number; contentType?: string; html?: string; body?: Buffer; expanded?: number; scriptRequests?: string[]; redirectTo?: string; serverIp?: string }) {
   const seen = { routed: [] as string[], aborted: [] as string[], userAgent: "", closed: 0 };
   const launch: LaunchBrowser = async () => ({
     async newContext(options) {
@@ -41,7 +41,7 @@ function fakeBrowser(page: { status?: number; contentType?: string; html?: strin
                   continue: async () => { seen.routed.push(request); },
                 });
               }
-              return { status: () => page.status ?? 200, url: () => finalUrl, headers: () => ({ "content-type": page.contentType ?? "text/html" }), body: async () => page.body ?? Buffer.from("") };
+              return { status: () => page.status ?? 200, url: () => finalUrl, headers: () => ({ "content-type": page.contentType ?? "text/html" }), body: async () => page.body ?? Buffer.from(""), serverAddr: async () => ({ ipAddress: page.serverIp ?? "93.184.216.34" }) };
             },
             async waitForLoadState() {},
             async evaluate() { return (page.expanded ?? 0) as never; },
@@ -122,6 +122,12 @@ describe("renderedResponse", () => {
     expect(response.status).toBe(400);
     expect(seen.aborted).toContain("http://169.254.169.254/latest");
     expect(seen.aborted).toContain("https://rebind.example/x");
+  });
+
+  it("throws the render away when Chromium connected to a private address (DNS rebinding)", async () => {
+    const { launch } = fakeBrowser({ html: "<html>internal</html>", serverIp: "10.1.2.3" });
+    const response = await renderedResponse("https://bank.example/fee-schedule", launch, resolve);
+    expect(response.status).toBe(400);
   });
 
   it("throws the render away when a redirect leads inward", async () => {
