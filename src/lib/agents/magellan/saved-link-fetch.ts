@@ -40,7 +40,10 @@ type Fetcher = typeof fetch;
  * fetch that answered, and at most once per `SAVED_LINK_RETRY_DAYS` after one that did not. Free:
  * a plain GET with Magellan's crawler identity, no provider.
  */
-export const SAVED_LINK_FETCH_STRATEGY = { strategy: "fetch.saved_link", version: 1 } as const;
+// v2 (#2055): each bank is tried again once, so its fetch records the saved link it asked for
+// (`detail.link`): v1 attempts never did, and Magellan's stale-link search takes a redirect's page
+// for the link only on that proof.
+export const SAVED_LINK_FETCH_STRATEGY = { strategy: "fetch.saved_link", version: 2 } as const;
 /**
  * The switch. Off, each fetch step selects the banks it would fetch and reports them
  * (`saved_links.would_fetch` in the step detail), fetching and storing nothing. A new document can

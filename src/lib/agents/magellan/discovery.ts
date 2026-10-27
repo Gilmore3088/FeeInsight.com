@@ -1332,6 +1332,7 @@ export async function selectUpgradeCandidates(db: SqlTag, limit: number, stateCo
                SELECT 1 FROM pipeline_attempts link_fetch
                 WHERE link_fetch.institution_id = inst.id
                   AND link_fetch.stage = 'fetch'
+                  AND link_fetch.outcome IN ('ok', 'unchanged')
                   AND link_fetch.source_document_id IS NOT NULL
                   AND link_fetch.detail->>'link' = inst.fee_schedule_url
                   AND link_fetch.detail->>'url' = sd.document_url
@@ -1486,15 +1487,17 @@ export async function selectStaleCandidates(
                 WHERE doc.id = profile.last_successful_source_document_id
              ) AS main_document_url,
              profile.last_successful_source_document_id AS main_document_id,
-             -- The main document stands for the link only when a fetch that asked for the link
-             -- itself landed on its address (the fetch attempt's detail.link, fetch.ts
-             -- savedLinkFetched): a redirect's page counts, an older link's page never does (#2055).
+             -- The main document stands for the link only when a fetch proven to be the link's page
+             -- answered on its address (the fetch attempt's detail.link: the fetch asked for the
+             -- link itself, or for a remembered address a proven fetch of the link landed on;
+             -- fetch.ts): a redirect's page counts, an older link's page never does (#2055).
              -- The remembered address is no proof: a link changed without a fetch, then a Rosetta
              -- re-read of the old main document, sets it back to the old page's address.
              EXISTS (
                SELECT 1 FROM pipeline_attempts link_fetch
                 WHERE link_fetch.institution_id = inst.id
                   AND link_fetch.stage = 'fetch'
+                  AND link_fetch.outcome IN ('ok', 'unchanged')
                   AND link_fetch.source_document_id IS NOT NULL
                   AND link_fetch.detail->>'link' = inst.fee_schedule_url
                   AND link_fetch.detail->>'url' = (

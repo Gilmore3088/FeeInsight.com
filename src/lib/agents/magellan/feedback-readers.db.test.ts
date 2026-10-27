@@ -6,6 +6,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { JSON_TEXT_PASSTHROUGH } from "@/lib/data-store/connection";
 
 import { FRESHNESS_SEARCH_VERSION, STALE_PRICE_REASON, selectStaleCandidates, selectUpgradeCandidates } from "./discovery";
+import { rememberedAddressProven } from "./fetch";
 import { loadSearchMissDemotions } from "./search-misses";
 
 const connection = process.env.E2E_DATABASE_URL;
@@ -103,12 +104,43 @@ describe.skipIf(!connection)("Magellan reads Hamilton's conflict lessons and its
     `;
   }
 
-  async function fetched(institutionId: number, documentId: number, detail: Record<string, unknown>, at = "2026-10-01T00:00:00Z") {
+  async function fetched(institutionId: number, documentId: number, detail: Record<string, unknown>, at = "2026-10-01T00:00:00Z", strategy = "fetch.direct", version = 1, outcome = "ok") {
     await db`
       INSERT INTO pipeline_attempts (institution_id, source_document_id, stage, strategy, strategy_version, outcome, detail, created_at)
-      VALUES (${institutionId}, ${documentId}, 'fetch', 'fetch.direct', 1, 'ok', ${JSON.stringify(detail)}::jsonb, ${at})
+      VALUES (${institutionId}, ${documentId}, 'fetch', ${strategy}, ${version}, ${outcome}, ${JSON.stringify(detail)}::jsonb, ${at})
     `;
   }
+
+  it("takes a redirect's page for the link on a saved-link fetch's proof, even when the plain fetches predate it (#2055)", async () => {
+    const redirect = async (id: number, link: string, savedLinkAsked: string | null, version = 2) => {
+      const page = `https://bank${id}.example/docs/fees.pdf`;
+      await bank(id, `https://bank${id}.example`, link, id * 10 + 1);
+      await db`UPDATE institution_source_profiles SET canonical_source_url = ${page} WHERE institution_id = ${id}`;
+      await document(id * 10 + 1, id, page);
+      // The plain fetches asked for the remembered address and predate detail.link.
+      await fetched(id, id * 10 + 1, { url: page }, "2026-09-20T00:00:00Z", "fetch.direct", 1, "unchanged");
+      await fetched(id, id * 10 + 1, { url: page, remembered: page, ...(savedLinkAsked ? { link: savedLinkAsked } : {}) }, "2026-10-26T00:00:00Z", "fetch.saved_link", version, "unchanged");
+      await archivedFee(id * 100, id, false);
+      await auditMiss(id, id * 10 + 1, id * 100, page, "2026-10-20T00:00:00Z");
+    };
+    // 601: the saved-link fetch asked for today's link and landed on the main document.
+    await redirect(601, "https://bank601.example/fees", "https://bank601.example/fees");
+    // 602: the link moved since: the saved-link proof is the old link's.
+    await redirect(602, "https://bank602.example/fees-2026", "https://bank602.example/fees");
+    // 603: a v1 saved-link fetch, which never recorded the link it asked for: no proof (v2 re-tries it).
+    await redirect(603, "https://bank603.example/fees", null, 1);
+    // 604: a failed fetch is no proof.
+    await redirect(604, "https://bank604.example/fees", null);
+    await db`UPDATE pipeline_attempts SET outcome = 'http_403', detail = detail || '{"link": "https://bank604.example/fees"}'::jsonb WHERE institution_id = 604 AND strategy = 'fetch.saved_link'`;
+
+    const rows = await selectStaleCandidates(asDb(), 10, "TX", new Date("2026-10-26T00:00:00Z"));
+    expect(rows.map((row) => Number(row.id)).sort()).toEqual([601]);
+
+    // The next plain fetch asks for the remembered address; the earlier proof carries forward to it.
+    expect(await rememberedAddressProven(asDb(), 601, "https://bank601.example/fees", ["https://bank601.example/docs/fees.pdf"])).toBe(true);
+    expect(await rememberedAddressProven(asDb(), 602, "https://bank602.example/fees-2026", ["https://bank602.example/docs/fees.pdf"])).toBe(false);
+    expect(await rememberedAddressProven(asDb(), 604, "https://bank604.example/fees", ["https://bank604.example/docs/fees.pdf"])).toBe(false);
+  });
 
   it("never searches behind a link that moved to another page on the old page's audit misses (#2055)", async () => {
     // 401: the link was re-pointed without a search, then Rosetta re-read the old main document,

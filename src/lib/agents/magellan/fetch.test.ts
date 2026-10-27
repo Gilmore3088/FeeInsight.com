@@ -442,6 +442,16 @@ describe("Magellan agentic fetch", () => {
       await runMagellanFetch({ runId: 201, stepId: 7, db: asFetchDb(rememberedDb), fetchImpl: vi.fn().mockResolvedValueOnce(response(body)) });
       expect(detailOf(rememberedDb)).not.toBeNull();
       expect(detailOf(rememberedDb)).not.toHaveProperty("link");
+      // A remembered address an earlier fetch of today's link landed on (a redirect's page) carries the proof forward.
+      const unproven = learningDb({ id: 900, content_hash: bodyHash, etag: null, last_modified: null }, null, remembered);
+      const provenDb: DbMock = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) =>
+        templateText(strings).includes("AS proven") ? Promise.resolve([{ proven: 1 }]) : (unproven as unknown as (s: TemplateStringsArray, ...v: unknown[]) => Promise<unknown[]>)(strings, ...values),
+      ) as unknown as DbMock;
+      await runMagellanFetch({ runId: 201, stepId: 7, db: asFetchDb(provenDb), fetchImpl: vi.fn().mockResolvedValueOnce(response(body)) });
+      expect(detailOf(provenDb)).toMatchObject({ link: "https://learning.example/fees" });
+      const proofQuery = provenDb.mock.calls.find((call) => templateText(call[0]).includes("AS proven"))!;
+      expect(templateText(proofQuery[0])).toContain("proof.outcome IN ('ok', 'unchanged')");
+      expect(proofQuery.slice(1)).toEqual(expect.arrayContaining([45, "https://learning.example/fees"]));
     });
 
     // saved-link-fetch.ts: a copy fetched beside the bank's own link changes nothing on the bank.
