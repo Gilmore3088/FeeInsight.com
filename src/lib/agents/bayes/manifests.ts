@@ -586,6 +586,10 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // v134 (#1912): the international wire direction review reads more of the ways banks print a
     // direction ("(in/out)", "Wire – Out", "Outside U.S.", a direction in the next cell). Live fees it
     // reaches are judged by Darwin's international direction re-check (switch off), not a replay. Floor stays v97.
+    // v135 (#1912): a wire's channel printed after its price ("$30.00 - phone request") stays in its
+    // name. Category and amount are unchanged, so the rules re-check reproduces the same fees and no
+    // live fee moves; Oct 27 dry run (read-only): 3 of 187 candidate live wire fees would be renamed on
+    // a re-read (110356, 110355, 71592). Floor stays v97.
     {
       key: "knox.rules",
       owner: "knox",

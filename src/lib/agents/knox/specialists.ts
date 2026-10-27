@@ -46,6 +46,7 @@ import { rateFloorOf } from "@/lib/rate-floor";
 import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 import { commercialLockboxName, commercialLockboxOnLine } from "@/lib/custom-report/commercial-lockbox";
 import { NO_CHARGE_SENTENCE_READ_LIVE, NSF_FAMILY_KEYS, chargesNsfFamily, readNoChargeNsf } from "@/lib/no-charge-statement";
+import { withWireChannelClause } from "./wire-channel-clause";
 
 /**
  * Knox's free extraction team, run over one whole document. Pure.
@@ -504,7 +505,11 @@ import { NO_CHARGE_SENTENCE_READ_LIVE, NSF_FAMILY_KEYS, chargesNsfFamily, readNo
 // direction in the next cell ("$45.00 | Outgoing"). "Outside U.S." is international and "Non-Domestic"
 // is not domestic. A "Wire Transfer Incoming | None" row is a priced row, not a heading over the wire
 // below it. The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 134 } as const;
+// v135 (#1912): a wire price whose channel is printed after it on its own line ("$30.00 - phone request",
+// "$15.00 Recurring / $25.00 New") keeps that channel in its name (`wire-channel-clause.ts`,
+// `withWireChannelReads`), so statistics rule 11 sets the channel price aside beside the general one.
+// The new name must trace on the stored text, or the read keeps its old name.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 135 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -683,6 +688,29 @@ function withNetworkColumnFees(checkText: string, read: ExtractionRulesResult): 
   return network.length === 0 ? read : { ...read, candidates: [...network, ...read.candidates] };
 }
 
+/** The stored line a read's excerpt came from (whitespace folded), or the excerpt itself. */
+function ownLineOf(checkText: string, excerpt: string): string {
+  const fold = (value: string) => value.replace(/\s+/g, " ").trim();
+  const want = fold(excerpt);
+  if (!want) return excerpt;
+  return checkText.split("\n").map(fold).find((line) => line.includes(want)) ?? want;
+}
+
+/**
+ * v135 (#1912): a wire read whose channel is printed right after its price on its own line
+ * ("Outgoing Domestic Wire Transfer $30.00 - phone request", "| $15.00 Recurring / $25.00 New") is
+ * named with that channel (`wire-channel-clause.ts`). The new name must trace on the stored text, or
+ * the read keeps the name it had.
+ */
+function withWireChannelReads(checkText: string, reads: ExtractedFeeCandidate[]): ExtractedFeeCandidate[] {
+  return reads.map((read) => {
+    if (!read.canonicalHint?.startsWith("wire_")) return read;
+    const line = ownLineOf(checkText, read.excerpt);
+    const named = withWireChannelClause(line, read.feeName, read.amount, read.canonicalHint);
+    return named !== read.feeName && tracesToSource(checkText, named, read.amount) ? { ...read, feeName: named } : read;
+  });
+}
+
 /** v74: a read name without the footnote number the page glued to its front; the name as read otherwise. */
 function unmarkedName(name: string, text: string, institutionName: string | null): string {
   return withoutLeadingFootnoteMark(name, [text], institutionName) ?? name;
@@ -774,7 +802,9 @@ export function runFreeSpecialists(
     // (`boxSectionLateFeeRead`), read on the self-check's text.
     // v123 (#1905): every specialist's deposit-category read printed in a loan section is the loan's
     // (`loanSectionFeeRead`), read on the same text.
-    const found = { ...run, candidates: run.candidates.map((read) => { const next = billPayByHeading(read); return next && carryColumnHeadingCell(read, next); }).filter((read): read is ExtractedFeeCandidate => read != null).map((read) => payeeReturnedBillPayRead(loanSectionFeeRead(boxSectionLateFeeRead(read, checkText), checkText), checkText)) };
+    // v135 (#1912): a wire price whose channel is printed after it on its own line keeps that channel
+    // in its name (`withWireChannelReads`), so statistics rule 11 can tell it from the general price.
+    const found = { ...run, candidates: withWireChannelReads(checkText, run.candidates.map((read) => { const next = billPayByHeading(read); return next && carryColumnHeadingCell(read, next); }).filter((read): read is ExtractedFeeCandidate => read != null).map((read) => payeeReturnedBillPayRead(loanSectionFeeRead(boxSectionLateFeeRead(read, checkText), checkText), checkText))) };
     for (const [reason, count] of Object.entries(found.dropped ?? {})) countDropped(reason as DroppedLineReason, count);
     let added = 0;
     let selfCheckFailed = 0;

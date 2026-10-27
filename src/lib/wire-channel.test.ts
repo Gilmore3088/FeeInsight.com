@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { PROD_WIRE_CHANNEL_SQL } from "./__fixtures__/wire-channel-names-2026-10-26";
-import { CHANNEL_SQL, STANDARD_SQL, WIRE_CHANNEL_CATEGORIES, namesWireChannel, wireChannelSql } from "./wire-channel";
+import { PROD_WIRE_CHANNEL_SQL } from "./__fixtures__/wire-channel-names-2026-10-27";
+import { CHANNEL_SQL, NEGATED_STANDARD_SQL, NOTICE_SQL, STANDARD_SQL, WIRE_CHANNEL_CATEGORIES, namesWireChannel, wireChannelSql } from "./wire-channel";
 
 describe("namesWireChannel (#1912)", () => {
   it("reads a channel or set-up-in-advance wire", () => {
@@ -59,17 +59,53 @@ describe("namesWireChannel (#1912)", () => {
     }
   });
 
+  it("v2: reads a negated standard channel as the premium channel (Sound Community Bank 978, fee 15716)", () => {
+    for (const name of [
+      "Wire Transfers: Outgoing Domestic - Not in Person",
+      "Outgoing Domestic Wire (not in-person)",
+      "Outgoing Wire - Non-Branch",
+      "Outgoing wire requested outside the branch",
+      "Outgoing wire other than in person",
+      "Wire Transfer - Remote Outgoing",
+    ]) {
+      expect(namesWireChannel(name), name).toBe(true);
+    }
+    // The plain standard channel stays general, and so does a name that also states one.
+    expect(namesWireChannel("Wire Transfers: Outgoing Domestic")).toBe(false);
+    expect(namesWireChannel("Outgoing Domestic Wire (in person)")).toBe(false);
+    expect(namesWireChannel("Outgoing Wire (In Person or Not in Person)")).toBe(false);
+  });
+
+  it("v2: a phone, fax or email notice names how the bank tells the customer, not a channel", () => {
+    for (const name of [
+      "Incoming Wire with Phone Notification",
+      "Incoming Wires: Email or Fax Confirmation",
+      "Incoming wire, notice by phone",
+    ]) {
+      expect(namesWireChannel(name), name).toBe(false);
+    }
+    // A wire requested by phone is still a channel, notice or not.
+    expect(namesWireChannel("Outgoing Wire by Phone with Email Confirmation")).toBe(true);
+  });
+
   it("covers the four wire categories", () => {
     expect([...WIRE_CHANNEL_CATEGORIES].sort()).toEqual(["wire_domestic_incoming", "wire_domestic_outgoing", "wire_intl_incoming", "wire_intl_outgoing"]);
   });
 
-  it("agrees with PostgreSQL on every live wire name it might apply to (prod, 2026-10-26)", () => {
+  it("agrees with PostgreSQL on every live wire name it might apply to (prod, 2026-10-27)", () => {
     expect(PROD_WIRE_CHANNEL_SQL.length).toBeGreaterThan(150);
     for (const [name, sqlSays] of PROD_WIRE_CHANNEL_SQL) expect(namesWireChannel(name), name).toBe(sqlSays);
   });
 
   it("states the same rule in SQL, static columns only", () => {
-    expect(wireChannelSql("ef.fee_name")).toBe(`COALESCE(ef.fee_name ~* '${CHANNEL_SQL}' AND ef.fee_name !~* '${STANDARD_SQL}', false)`);
+    expect(wireChannelSql("ef.fee_name")).toBe(
+      `COALESCE((regexp_replace(ef.fee_name, '${NOTICE_SQL}', ' ', 'gi') ~* '${CHANNEL_SQL}' OR ef.fee_name ~* '${NEGATED_STANDARD_SQL}')`
+      + ` AND regexp_replace(ef.fee_name, '${NEGATED_STANDARD_SQL}', ' ', 'gi') !~* '${STANDARD_SQL}', false)`,
+    );
+    for (const pattern of [NOTICE_SQL, NEGATED_STANDARD_SQL]) {
+      expect(pattern).not.toContain("\\b");
+      expect(pattern).not.toContain("'");
+    }
     expect(CHANNEL_SQL).toMatch(/^\\y\(\?:online\|/);
     expect(CHANNEL_SQL).not.toContain("\\b");
     expect(STANDARD_SQL).not.toContain("'");
