@@ -16,7 +16,7 @@ import { qualityLedgerLines, readQualityLedger, type QualityLedger } from "./qua
 import { redactRegistrySecrets } from "@/lib/regulatory/http";
 import { STORAGE_STEP_KEY } from "./atlas/storage-retention";
 import { readSourceHealth, sourceHealthLines, urgentSourceCount, type SourceHealthReport } from "./hoovie/source-health";
-import { hamiltonHealthProblems, readHamiltonHealth, type HamiltonHealthReport } from "@/lib/hamilton/health-check";
+import { hamiltonCheckSkippedReason, hamiltonCheckTimeoutMs, hamiltonHealthProblems, readHamiltonHealth, type HamiltonHealthReport } from "@/lib/hamilton/health-check";
 import { readUnreadFeedback, unreadFeedbackLines, type UnreadFeedbackSummary } from "./learning/unread-feedback";
 import { errorClassLines, readErrorClasses, type ErrorClassSummary } from "./deming/error-classes";
 
@@ -352,6 +352,24 @@ async function stepsFinishedByAgent(): Promise<Record<string, number>> {
   return Object.fromEntries(rows.map((row) => [String(row.agent), Number(row.steps)]));
 }
 
+/**
+ * Hamilton's database, Ask and export probes (#1921): deterministic, read-only, no model call.
+ * Run after the brief's other reads, never alongside them: with them, the probes waited for one of
+ * the pool's connections and timed out (Oct 25 and 26), so the alert measured the brief, not
+ * Hamilton.
+ */
+async function briefHamiltonHealth(now: Date): Promise<{ hamilton: HamiltonHealthReport | null; hamiltonError: string | null }> {
+  const elapsedMs = Date.now() - now.getTime();
+  const timeoutMs = hamiltonCheckTimeoutMs(elapsedMs);
+  if (timeoutMs === null) return { hamilton: null, hamiltonError: hamiltonCheckSkippedReason(elapsedMs) };
+  try {
+    return { hamilton: await readHamiltonHealth({ now, timeoutMs }), hamiltonError: null };
+  } catch (error) {
+    console.error("Morning brief Hamilton health check failed to run", error);
+    return { hamilton: null, hamiltonError: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 export interface DailyBriefResult {
   brief: DailyBrief;
   funnel: PipelineFunnel;
@@ -367,8 +385,7 @@ export interface DailyBriefResult {
 /** Gathers the numbers, writes the brief and emails it. Never throws on delivery. */
 export async function runDailyBrief({ dryRun = false }: { dryRun?: boolean } = {}): Promise<DailyBriefResult> {
   const now = new Date();
-  let hamiltonError: string | null = null;
-  const [health, funnel, previous, stepsByAgent, feed, center, failureAlerts, leads, spend, goal, ledger, storage, sources, hamilton, unread, errorClasses] = await Promise.all([
+  const [health, funnel, previous, stepsByAgent, feed, center, failureAlerts, leads, spend, goal, ledger, storage, sources, unread, errorClasses] = await Promise.all([
     getPipelineHealth(),
     getPipelineFunnel(),
     previousBrief(now),
@@ -402,12 +419,6 @@ export async function runDailyBrief({ dryRun = false }: { dryRun?: boolean } = {
       console.error("Morning brief source health read failed", error);
       return null;
     }),
-    // Hamilton's database, Ask and export probes (#1921): deterministic, read-only, no model call.
-    readHamiltonHealth({ now }).catch((error) => {
-      console.error("Morning brief Hamilton health check failed to run", error);
-      hamiltonError = error instanceof Error ? error.message : String(error);
-      return null;
-    }),
     readUnreadFeedback().catch((error) => {
       console.error("Morning brief unread feedback read failed", error);
       return null;
@@ -417,6 +428,7 @@ export async function runDailyBrief({ dryRun = false }: { dryRun?: boolean } = {
       return null;
     }),
   ]);
+  const { hamilton, hamiltonError } = await briefHamiltonHealth(now);
   const since = now.getTime() - DAY_MS;
   const feed24h = feed.filter((item) => new Date(item.at).getTime() >= since);
   // Without Atlas's attention list the Needs-you count would be short, so the brief falls back to its older summary.
