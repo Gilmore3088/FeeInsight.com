@@ -196,8 +196,28 @@ const LEADING_PRICE = /^\s*(?:\$\s*\d[\d,]*(?:\.\d{2})?|free\b|none\b|no charge|
 export const DAILY_CAP_CATEGORIES: ReadonlySet<string> = new Set(["od_daily_cap", "nsf_daily_cap"]);
 /** Words that make a name a cap; the row names the fee, not the cap. */
 const DAILY_CAP_NAME_WORDS = new Set(["daily", "maxim", "max", "cap", "limit", "day"]);
-const DAILY_CAP_BEFORE = /\b(max(?:imum)?|cap(?:ped)?|up to|not to exceed|limit(?:ed)?|no more than|daily)\b[^$|]{0,30}$/i;
-const DAILY_CAP_AFTER = /^\s*\)?\s*(?:(?:per|a|each|in (?:a|one))\s+(?:business\s+|calendar\s+)?day\b|daily\b|(?:max(?:imum)?|cap)\s+(?:per|a|each)\s+(?:business\s+)?day\b)/i;
+// v136 (#2064): "will not exceed" ("Total overdraft charges/fees will not exceed $100.00 per day").
+const DAILY_CAP_BEFORE = /\b(max(?:imum)?|cap(?:ped)?|up to|not to exceed|(?:will )?not exceed|limit(?:ed)?|no more than|daily)\b[^$|]{0,30}$/i;
+// v136: "/day" ("max fee of $120/day") and a note between the figure and its day ("$125 (5 overdraft
+// fees) per day").
+const DAILY_CAP_AFTER =
+  /^\s*\)?\s*(?:\([^()$]{0,40}\)\s*)?(?:(?:per|a|each|in (?:a|one))\s+(?:business\s+|calendar\s+)?day\b|\/\s*day\b|daily\b|(?:max(?:imum)?|cap)\s+(?:per|a|each)\s+(?:business\s+)?day\b)/i;
+/** v136: a cap named right after its figure, with no cap word before it ("$30.00/item ($150.00 max daily)"). */
+const DAILY_CAP_NAMED_AFTER = /^\s*(?:max(?:imum)?|cap)\s+(?:(?:per|a|each)\s+(?:business\s+)?day\b|daily\b)/i;
+/** A cap line's other service: a card, ATM, deposit or transfer limit is never a fee cap. */
+const CAP_LINE_OTHER_SERVICE = /\b(atms?|pos|purchases?|withdraw(?:al)?s?|deposits?|transfers?|wires?|cards?|cash|zelle|teller|advances?|loans?)\b/i;
+/** "$32.00 per item/" opening a cap line: the capped fee's own price before its daily maximum. */
+const ITEM_PRICE_LEAD = /^\s*\$\s?\d[\d,]*(?:\.\d{2})?\s*(?:per|each|\/)\s*(?:item|check|presentment|occurrence)s?\b\s*[/,;-]?\s*/i;
+/** The only words a cap line may hold before its figure: cap words, counts and fee words ("4 item cap per day (max fee of"). */
+const CAP_LINE_WORDS = new Set(
+  ("total item items cap capped per day daily business max maximum limit limited of fee fees charge charges the a an is " +
+    "are there will not exceed to up note overdraft overdrafts od nsf returned return paid insufficient non sufficient " +
+    "nonsufficient funds account each in")
+    .split(" "),
+);
+/** How far under its fee's line a cap line may sit. */
+const CAP_LINE_REACH = 1;
+const CAP_LINE_MAX_LENGTH = 90;
 const CENTS = /\$\s*\.(\d{2})(?!\d)|(?<![\d.,$])(\d{1,2})\s*(?:¢|cents?\b)/gi;
 // v24 (#1918): "$15K" or "$1.5M" is a balance in thousands or millions, never a price.
 const MONEY = /\$\s*(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{2}))?(?!\d)(?!(?:\.\d+)?[KkMm]\b)|(?<![\d,$])(?<!\d\.)(\d+)\.(\d{2})(?![\d])/g;
@@ -865,8 +885,32 @@ export function statesDailyCap(line: string, amount: number): boolean {
     if (Math.abs(t.value - amount) >= 0.005) return false;
     const before = line.slice(Math.max(0, t.start - 40), t.start);
     const after = line.slice(t.end, t.end + 30);
-    return DAILY_CAP_BEFORE.test(before) && (DAILY_CAP_AFTER.test(after) || /\bdaily\b/i.test(before));
+    return (DAILY_CAP_BEFORE.test(before) && (DAILY_CAP_AFTER.test(after) || /\bdaily\b/i.test(before))) || DAILY_CAP_NAMED_AFTER.test(after);
   });
+}
+
+/**
+ * v136 (#2064): a cap printed as its own line right under the fee it caps ("Courtesy Pay | $30/item"
+ * over "4 item cap per day (max fee of $120/day)"; "Return Item Fee: $30" over "Limit of $120 per
+ * day"). The line is the cap and nothing else: short, its only figure the cap (after the capped
+ * fee's own "$32.00 per item/"), read to the end of the cap's sentence, and naming no card, ATM,
+ * deposit or transfer limit. Returns that line, or null. Read only for a cap category.
+ */
+function capLineUnder(lines: string[], index: number, amount: number): string | null {
+  for (let k = index + 1; k <= Math.min(lines.length - 1, index + CAP_LINE_REACH); k += 1) {
+    const line = lines[k];
+    const capAt = moneyTokens(line).find((token) => Math.abs(token.value - amount) < 0.005);
+    if (!capAt) continue;
+    const sentenceEnd = line.slice(capAt.end).search(/[.;](?:\s|$)/);
+    const capLine = (sentenceEnd >= 0 ? line.slice(0, capAt.end + sentenceEnd) : line).replace(ITEM_PRICE_LEAD, "");
+    if (capLine.length > CAP_LINE_MAX_LENGTH || capLine.includes("|") || CAP_LINE_OTHER_SERVICE.test(capLine)) return null;
+    if (moneyTokens(capLine).length !== 1 || !statesDailyCap(capLine, amount)) return null;
+    // "Courtesy Pay limit of $500 per day" limits the overdraft coverage, not the fees.
+    const lead = capLine.slice(0, moneyTokens(capLine)[0].start).toLowerCase().match(/[a-z]+/g) ?? [];
+    if (!lead.every((word) => CAP_LINE_WORDS.has(word))) return null;
+    return capLine;
+  }
+  return null;
 }
 
 /**
@@ -1658,6 +1702,11 @@ function checkAgainstLines(
     let amountProblem = dailyCap
       ? statesDailyCap(row, rounded) ? null : "amount_not_the_fee"
       : statesAmount(row, rounded, stems);
+    const capLine = amountProblem && dailyCap ? capLineUnder(lines, i, rounded) : null;
+    if (capLine) {
+      row = capLine;
+      amountProblem = null;
+    }
     // A tier named by its own band ("Overdraft Item Fee (items $10.01 - $20.00)") is that
     // tier's price, not a band standing in for the whole fee.
     if (amountProblem === "tiered_fee" && namesItsBand(row, feeName)) amountProblem = null;

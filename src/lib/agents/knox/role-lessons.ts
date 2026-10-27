@@ -886,4 +886,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract"],
     since: "2026-10-27",
   },
+  {
+    id: "issue-2064-daily-fee-cap-in-every-shape",
+    agent: "knox",
+    stage: "extract",
+    lesson: "A dollar cap on a day's overdraft or NSF fees is a fee of its own (the daily cap), however the schedule prints it: right after the fee (\"Maximum of $120.00 per day\"), named after its figure (\"$30.00/item ($150.00 max daily)\"), on its own line under the fee it caps (\"4 item cap per day (max fee of $120/day)\", \"Limit of $120 per day\"), as \"Daily maximum\" after the per-item price, or in a sentence that names the fees it caps (\"Total overdraft charges/fees will not exceed $100.00 per day\"). Read it only when the words before the figure are cap, count and fee words and nothing else: a limit on something else (\"Courtesy Pay limit of $500 per day\", \"You may withdraw up to a maximum of $500\", \"Daily ATM cash limit\", \"Maximum daily deposits\") is never a fee cap, and neither is a count (\"Maximum 3 per day\"). Give it to the overdraft or NSF fee on its own line or the line right above, with no other fee's price between them, and only when it is larger than that one fee; a cap equal to one fee is a count of one. A read the shared check cannot trace is no read: check that the cap's own line traces before calling the reader done.",
+    why: "The shadow lab's answer keys list daily caps at five banks that Knox never published (State keys 10500, 2017, 8741, live audits 2735 and 75): the overdraft family read only \"Maximum of $X per day\" right after the fee, and the shared check traced a cap only on its fee's own row, so Texas key 2416's \"Limit of $120 per day\" had been read and held as untraced on every run. v136 publishes the six lab caps and two Texas ones; no published fee changes.",
+    evidence: { issues: [2064, 1092], prs: [], files: ["src/lib/agents/knox/daily-fee-cap.ts", "src/lib/agents/knox/daily-fee-cap.test.ts", "src/lib/custom-report/source-check.ts", "docs/project/findings/2026-10-27-daily-cap-lines-never-traced.md"] },
+    appliesTo: ["extract"],
+    since: "2026-10-27",
+  },
 ];

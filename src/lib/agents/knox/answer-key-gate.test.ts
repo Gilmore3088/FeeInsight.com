@@ -57,8 +57,11 @@ import { combineScores, scoreAnswerKeys, type AnswerKeyDocument, type GateScore 
 // 2416, 2426); Knox read one of them as a right fee (tid 2414, VeraBank, "Safe Deposit Box Rental** - Key
 // Deposit | $10.00"), and the guard now refuses it: all 590 / 11 to
 // 589 / 11, held out stays 60 / 4. No wrong read is added.
+// v136 (#2064): a dollar cap on a day's overdraft or NSF fees, on its own line under the fee it caps,
+// is read and traced: tid 2416 "Limit of $120 per day" and tid 2425 "(Daily limit of $97.50 per account)"
+// are right reads, all 589 / 11 to 591 / 11; held out stays 60 / 4. No wrong read is added.
 const FLOORS = {
-  all: { right: 589, wrong: 11 },
+  all: { right: 591, wrong: 11 },
   holdout: { right: 60, wrong: 4 },
 };
 

@@ -509,7 +509,14 @@ import { withWireChannelClause } from "./wire-channel-clause";
 // "$15.00 Recurring / $25.00 New") keeps that channel in its name (`wire-channel-clause.ts`,
 // `withWireChannelReads`), so statistics rule 11 sets the channel price aside beside the general one.
 // The new name must trace on the stored text, or the read keeps its old name.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 135 } as const;
+// v136 (#2064): a dollar cap on a day's overdraft or NSF fees is read in the other ways schedules print
+// it (`daily-fee-cap.ts`, the overdraft family v6): named after its figure ("$30.00/item ($150.00 max
+// daily)"), its own line under the fee it caps ("4 item cap per day (max fee of $120/day)", "Limit of
+// $120 per day"), "Daily maximum" after the per-item price, and a sentence that names the fees it caps
+// ("Total overdraft charges/fees will not exceed $100.00 per day"). The shared check traces such a cap
+// on its line under the capped fee's line (`capLineUnder`), for a cap category only. Admit-only: it
+// reads figures no rule filed as a fee. The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 136 } as const;
 
 export interface SpecialistRun {
   strategy: string;
