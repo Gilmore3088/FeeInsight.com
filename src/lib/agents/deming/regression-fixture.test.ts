@@ -3,6 +3,8 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   buildRegressionFixture,
+  FIXTURE_CATEGORY_LIMIT,
+  fixtureSelection,
   FIXTURE_CASE_KEYS,
   fixtureDrift,
   isFixtureCase,
@@ -37,6 +39,23 @@ describe("regression fixture", () => {
     expect(isFixtureCase({ ...categoryRow, check_name: "hamilton.business_schedule" })).toBe(false);
     expect(isFixtureCase({ ...categoryRow, label_provenance: "deming_audit" })).toBe(false);
     expect(isFixtureCase({ check_name: "hamilton.source_check", input: { kind: "source_check" } as never, dataset: "regression", label_provenance: "takedown_confirmed" })).toBe(false);
+  });
+
+  it("holds every limit-guard case and the first category-guard cases in byte order (review of #2064)", () => {
+    const keys = ["takedown:a:hamilton.category_guard", "takedown:B:hamilton.category_guard", "takedown:2:hamilton.category_guard"];
+    const rows = [...keys.map((case_key) => ({ ...categoryRow, case_key })), { ...limitRow, case_key: "takedown:9:hamilton.limit_guard" }];
+    // Byte order, as Postgres COLLATE "C": digits, then capitals, then lower case (a locale puts "a" before "B").
+    expect(fixtureSelection(rows, 2).map((item) => item.case_key)).toEqual([
+      "takedown:2:hamilton.category_guard", "takedown:9:hamilton.limit_guard", "takedown:B:hamilton.category_guard",
+    ]);
+    expect(buildRegressionFixture(rows, "2026-10-27T00:00:00Z", 1).cases.map((item) => item.case_key)).toEqual([
+      "takedown:2:hamilton.category_guard", "takedown:9:hamilton.limit_guard",
+    ]);
+    // The committed file is exactly the capped selection of itself, so a rebuild reproduces it.
+    const committedFile = JSON.parse(readFileSync(FIXTURE_PATH, "utf8")) as RegressionFixture;
+    const asRows = committedFile.cases.map((item) => ({ ...item, check_name: item.check_name ?? "hamilton.limit_guard", dataset: "regression", label_provenance: "takedown_confirmed" }));
+    expect(fixtureSelection(asRows).map((item) => item.case_key)).toEqual(committedFile.cases.map((item) => item.case_key));
+    expect(committedFile.cases.filter((item) => item.input.kind !== "limit_guard")).toHaveLength(FIXTURE_CATEGORY_LIMIT);
   });
 
   it("builds the fixture sorted, keeps the check name off limit-guard cases, and drops cases with no verdict", () => {

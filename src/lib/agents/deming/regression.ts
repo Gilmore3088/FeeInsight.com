@@ -11,7 +11,7 @@ import { ACCOUNT_TYPE_HOLD_REASON } from "@/lib/agents/hamilton/account-type-hol
 import { SOURCE_CHECK_RESTORE_PREFIX, SOURCE_CHECK_STRATEGY } from "@/lib/agents/hamilton/source-check";
 import { NON_DEPOSIT_CHECK, NON_DEPOSIT_CHECK_VERSION } from "@/lib/agents/darwin/non-deposit-document-check";
 import { CATEGORY_GUARD_VERSION } from "@/lib/fee-category-guard";
-import { FIXTURE_CASE_KEYS, fixtureDrift, isFixtureCase, type FixtureDrift } from "@/lib/agents/deming/regression-fixture";
+import { FIXTURE_CASE_KEYS, fixtureDrift, fixtureSelection, type FixtureDrift } from "@/lib/agents/deming/regression-fixture";
 import { severityFor, reasonCode, type Severity } from "@/lib/agents/deming/severity";
 
 import { CORRECTIVE_CHECK } from "./corrective-source";
@@ -585,13 +585,20 @@ export async function runDemingRegression({
      ORDER BY c.last_checked_at NULLS FIRST, c.id
      LIMIT ${fieldLimit}
     `);
-    const [eligible] = await inSavepoint(db, (scope) => scope<Array<{ n: number | string }>>`SELECT COUNT(*) AS n FROM eval_cases c WHERE ${fieldWhere}`);
-    result.fieldEligible = Number(eligible?.n ?? 0);
-    result.fieldLimit = fieldLimit;
   } catch (error) {
     // Nothing in the fee-fields pass is judged this run; the step records the warning and goes on.
     result.fieldReadError = error instanceof Error ? error.message : String(error);
     console.warn("[deming] regression fee-fields read failed", result.fieldReadError);
+  }
+  // The backlog count is its own read: when it fails the backlog is unknown (null), and the cases
+  // read above are still judged.
+  result.fieldLimit = fieldLimit;
+  try {
+    const [eligible] = await inSavepoint(db, (scope) => scope<Array<{ n: number | string }>>`SELECT COUNT(*) AS n FROM eval_cases c WHERE ${fieldWhere}`);
+    result.fieldEligible = Number(eligible?.n ?? 0);
+  } catch (error) {
+    result.fieldEligible = null;
+    console.warn("[deming] regression fee-fields backlog count failed", error instanceof Error ? error.message : error);
   }
   // Darwin decides audience with the document's newest completed text, and the non-deposit rule
   // reads its opening, so those replays read that text too, once per document.
@@ -665,10 +672,12 @@ export async function runDemingRegression({
     const active = await inSavepoint(db, (scope) => scope<Array<{ case_key: string; check_name: string | null; input: CaseInput; dataset: string; label_provenance: string }>>`
       SELECT case_key, check_name, jsonb_build_object('kind', input->>'kind') AS input, dataset, label_provenance
         FROM eval_cases
-       WHERE status = 'active' AND last_caught IS TRUE
+       WHERE status = 'active' AND last_caught IS TRUE AND last_verdict IS NOT NULL
          AND input->>'kind' IN ('limit_guard', 'category_guard', 'unreplayable')
     `);
-    result.fixture = fixtureDrift(FIXTURE_CASE_KEYS, active.filter((row) => isFixtureCase(row)).map((row) => row.case_key));
+    // The same selection the rebuild makes (all limit-guard cases, the first N category-guard), so
+    // drift counts only real staleness, never the cases the cap leaves out.
+    result.fixture = fixtureDrift(FIXTURE_CASE_KEYS, fixtureSelection(active).map((row) => row.case_key));
   } catch (error) {
     console.warn("[deming] regression fixture drift read failed", error instanceof Error ? error.message : error);
     result.fixture = null;

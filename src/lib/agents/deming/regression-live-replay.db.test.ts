@@ -183,6 +183,33 @@ describe.skipIf(!connection)("regression replay on seeded live fees (#2064)", ()
     });
   });
 
+  it("leaves the backlog unknown when only its count fails, and still judges the cases read (review of #2064)", async () => {
+    await inRollback(async (tx) => {
+      const product = await document(tx, "https://bank.test/personal/savings");
+      const live = await fee(tx, "bill_pay", "Online Bill Pay", 0);
+      await seed(tx, "test2064live:count-down", "hamilton.product_page", { kind: "unreplayable", canonical_fee_key: "bill_pay", fee_name: "Online Bill Pay", amount: 0, conditions: "Knox read a free fee from Rosetta artifact #1." }, live, { documentId: product });
+      // The backlog count fails before it reaches the database; every other statement runs.
+      const failingCount = new Proxy(tx, {
+        apply(target, thisArg, args) {
+          const strings = args[0] as unknown;
+          if (Array.isArray(strings) && String(strings[0]).startsWith("SELECT COUNT(*) AS n FROM eval_cases c WHERE")) throw new Error("count unavailable");
+          return Reflect.apply(target as never, thisArg, args);
+        },
+        get(target, prop) {
+          if (prop === "savepoint") return undefined;
+          const value = Reflect.get(target, prop);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      });
+
+      const result = await runDemingRegression({ runId: null, db: failingCount as unknown as Db, promoteLimit: 0, replayLimit: 0 });
+
+      expect(result.fieldEligible).toBeNull();
+      expect(result.fieldReadError ?? null).toBeNull();
+      expect(await row(tx, "test2064live:count-down")).toMatchObject({ status: "active", last_caught: true, last_verdict: "product_page" });
+    });
+  });
+
   it("judges nothing on a completed text row with no text, as Darwin's opening read does (review of #2064)", async () => {
     await inRollback(async (tx) => {
       // One text row per document (unique source_document_id): a completed row with no text.

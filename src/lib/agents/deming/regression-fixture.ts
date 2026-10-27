@@ -22,6 +22,10 @@ import type { CaseInput } from "./checkers";
  *    `REGRESSION_FIXTURE_ROWS=<file> npx vitest run src/lib/agents/deming/regression-fixture.test.ts`
  *    (`buildRegressionFixture`), the same lock-in pattern as the shadow lab's `SHADOW_LAB_REBASE`.
  *    The gate then replays every case and fails on any the deployed rules no longer catch.
+ * 3. The fixture holds every limit-guard case and the first `FIXTURE_CATEGORY_LIMIT` category-guard
+ *    cases by case key in byte (C collation) order (`fixtureSelection`). Both the rebuild and the
+ *    daily drift apply that cap, so the rebuild reproduces the committed file and drift reports
+ *    only real staleness, not the cases the cap leaves out.
  */
 
 export interface FixtureCase {
@@ -44,6 +48,31 @@ export const FIXTURE_ABOUT =
 
 /** Checks whose fee-fields snapshot CI replays with no live rows. */
 export const FIXTURE_CHECKS: readonly string[] = [LIMIT_GUARD_CHECK, CATEGORY_GUARD_CHECK];
+
+/**
+ * How many category-guard cases the fixture holds (2026-10-27: 100 of 990 eligible). Every
+ * limit-guard case goes in; the category guard's are capped so the file stays small (about 48 KB).
+ */
+export const FIXTURE_CATEGORY_LIMIT = 100;
+
+/** Byte order, as Postgres `COLLATE "C"`: never the locale's, which skips punctuation. */
+export function byCaseKey(a: { case_key: string }, b: { case_key: string }): number {
+  return a.case_key < b.case_key ? -1 : a.case_key > b.case_key ? 1 : 0;
+}
+
+/**
+ * Pure: the cases the fixture holds from today's eligible rows: every limit-guard case plus the
+ * first `limit` others by case key in byte order, returned in that order.
+ */
+export function fixtureSelection<T extends { case_key: string; check_name: string | null; input: Pick<CaseInput, "kind">; dataset?: string; label_provenance?: string }>(
+  rows: readonly T[],
+  limit: number = FIXTURE_CATEGORY_LIMIT,
+): T[] {
+  const eligible = rows.filter((row) => isFixtureCase(row)).sort(byCaseKey);
+  const limits = eligible.filter((row) => row.input.kind === "limit_guard");
+  const others = eligible.filter((row) => row.input.kind !== "limit_guard").slice(0, Math.max(0, limit));
+  return [...limits, ...others].sort(byCaseKey);
+}
 
 const committed = fixture as RegressionFixture;
 
@@ -83,13 +112,13 @@ export function fixtureDrift(committedKeys: readonly string[], activeKeys: reado
 
 /**
  * Read-only: every active, still-caught fixture case, as one JSON value `rows` (run through the
- * read-only SQL tool; never from app code). Ordered by case key so a rebuild diffs cleanly.
+ * read-only SQL tool; never from app code). `buildRegressionFixture` applies the category cap.
  */
 export const REGRESSION_FIXTURE_SQL = `
 SELECT COALESCE(jsonb_agg(jsonb_build_object(
          'case_key', case_key, 'check_name', check_name, 'severity', severity, 'error_class', error_class,
          'expected_verdict', last_verdict, 'input', input, 'dataset', dataset, 'label_provenance', label_provenance
-       ) ORDER BY case_key), '[]'::jsonb) AS rows
+       ) ORDER BY case_key COLLATE "C"), '[]'::jsonb) AS rows
   FROM eval_cases
  WHERE status = 'active'
    AND last_caught IS TRUE
@@ -109,10 +138,12 @@ export interface FixtureExportRow {
   label_provenance?: string;
 }
 
-/** Pure: the fixture file from the export's rows (only fixture cases with a verdict, by case key). */
-export function buildRegressionFixture(rows: readonly FixtureExportRow[], readAt: string): RegressionFixture {
-  const cases = rows
-    .filter((row) => row.expected_verdict && isFixtureCase(row))
+/**
+ * Pure: the fixture file from the export's rows: the `fixtureSelection` of the cases with a
+ * verdict, in byte order of case key.
+ */
+export function buildRegressionFixture(rows: readonly FixtureExportRow[], readAt: string, limit: number = FIXTURE_CATEGORY_LIMIT): RegressionFixture {
+  const cases = fixtureSelection(rows.filter((row) => row.expected_verdict), limit)
     .map((row): FixtureCase => ({
       case_key: row.case_key,
       ...(row.check_name && row.check_name !== LIMIT_GUARD_CHECK ? { check_name: row.check_name } : {}),
@@ -120,7 +151,6 @@ export function buildRegressionFixture(rows: readonly FixtureExportRow[], readAt
       error_class: row.error_class,
       expected_verdict: row.expected_verdict as string,
       input: row.input,
-    }))
-    .sort((a, b) => a.case_key.localeCompare(b.case_key));
+    }));
   return { about: FIXTURE_ABOUT, read_at: readAt, cases };
 }
