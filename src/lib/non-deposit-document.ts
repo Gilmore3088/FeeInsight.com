@@ -399,11 +399,6 @@ export function documentOpeningKind(text: string | null | undefined): DocumentOp
   return youth ? "youth_account" : null;
 }
 
-/**
- * Postgres: `documentOpeningKind(column)` as 'loan', 'youth_account' or NULL, over a text column
- * (the read-only dry-run counts): one scalar subquery that cuts the opening lines once (`o.l`) and
- * their words once (`o.w`). The same patterns and the same line cut as the JS.
- */
 /** Postgres: is opening line `i` (1-based) of the `o` subquery a title (`titleWords` is not null)? */
 function openingTitleSql(i: number): string {
   return `(o.l[${i}] IS NOT NULL AND strpos(o.l[${i}], '$') = 0 AND length(o.w[${i}]) <= ${OPENING_LINE_MAX_CHARS + 2})`;
@@ -425,6 +420,11 @@ function openingLinesFromSql(column: string): string {
              FROM (SELECT ${lines} AS l) c) o`;
 }
 
+/**
+ * Postgres: `documentOpeningKind(column)` as 'loan', 'youth_account' or NULL, over a text column
+ * (the read-only dry-run counts): one scalar subquery that cuts the opening lines once (`o.l`) and
+ * their words once (`o.w`). The same patterns and the same line cut as the JS.
+ */
 export function documentOpeningKindSql(column: string): string {
   const title = openingTitleSql;
   const loan = (words: string) => `(${words} ~ ${pgLiteral(LOAN_OPENING)} AND ${words} !~ ${pgLiteral(NOT_LOAN_OPENING)} AND ${words} !~ ${pgLiteral(LOAN_OPENING_MENTION)})`;
