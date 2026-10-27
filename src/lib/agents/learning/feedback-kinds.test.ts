@@ -8,7 +8,7 @@ import { FEEDBACK_KINDS, feedbackRowRead, unreadFeedbackPredicate, type Feedback
 import { takedownKind } from "./feedback";
 import { unreadFeedbackLines } from "./unread-feedback";
 
-const UNREAD_KINDS_CEILING = 14;
+const UNREAD_KINDS_CEILING = 8;
 const entries = Object.entries(FEEDBACK_KINDS) as Array<[string, FeedbackKindEntry]>;
 
 describe("every feedback kind names its reader (#2062)", () => {
@@ -30,6 +30,22 @@ describe("every feedback kind names its reader (#2062)", () => {
     // never raise it.
     const unread = entries.filter(([, entry]) => "unread" in entry).map(([kind]) => kind);
     expect(unread.length).toBeLessThanOrEqual(UNREAD_KINDS_CEILING);
+  });
+
+  it("files Knox's read lessons under the kinds they read (#2062)", () => {
+    const file = "src/lib/agents/knox/read-lessons.ts";
+    for (const kind of ["wrong_payer", "frequency_filled", "frequency_corrected", "frequency_cleared", "frequency_held", "promoted_from_held", "duplicate"] as const) {
+      const entry = FEEDBACK_KINDS[kind] as FeedbackKindEntry;
+      expect("readers" in entry && entry.readers.includes(file), kind).toBe(true);
+    }
+    expect(feedbackRowRead({ kind: "frequency_filled", about_stage: "extract", check_name: "darwin.hourly_frequency_check" })).toBe(true);
+    expect(feedbackRowRead({ kind: "frequency_held", about_stage: "extract", check_name: "hamilton.frequency_fill" })).toBe(true);
+    expect(feedbackRowRead({ kind: "wrong_payer", about_stage: "extract", check_name: "hamilton.eval_verdict" })).toBe(true);
+    expect(feedbackRowRead({ kind: "promoted_from_held", about_stage: "extract", check_name: "knox.held_recheck" })).toBe(true);
+    // A hand or cut-name duplicate's extract row is read now; a verify row still is not.
+    expect(feedbackRowRead({ kind: "duplicate", about_stage: "extract", check_name: "hamilton.hand_takedown" })).toBe(true);
+    expect(feedbackRowRead({ kind: "duplicate", about_stage: "extract", check_name: "hamilton.cut_name_duplicate" })).toBe(true);
+    expect(feedbackRowRead({ kind: "duplicate", about_stage: "verify", check_name: "hamilton.duplicate_collapse" })).toBe(false);
   });
 
   it("registers every kind the takedown sync maps a reason to", () => {

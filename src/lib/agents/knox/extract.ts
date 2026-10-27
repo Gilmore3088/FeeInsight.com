@@ -20,6 +20,7 @@ import {
 import { KNOX_RULES_STRATEGY, runFreeSpecialists, type SpecialistRun } from "@/lib/agents/knox/specialists";
 import { applyKnoxLesson, loadKnoxLessonsAndFindings, type KnoxFindingsRead, type KnoxLessons } from "@/lib/agents/knox/lessons";
 import { audienceLessonFlag, audienceLessonFor, audienceLessonsLive, emptyAudienceLessons, loadAudienceLessons, withAudienceLesson, type AudienceLessonScope } from "@/lib/agents/knox/audience-lessons";
+import { documentReadKeys, emptyReadLessons, frequencyLessonFor, holdLessonFor, loadReadLessons, promotedCandidate, promotionLessonFor, readLessonCount, readLessonFlag, readLessonsLive, withFrequencyLesson, type ReadLessonKind } from "@/lib/agents/knox/read-lessons";
 import { emptyTakedownLessons, loadTakedownLessons, TAKEN_DOWN_REVIEW_FLAG, takedownLessonFlag, takedownLessonsFor, withCurrentTakedownLesson, type TakedownLessons } from "@/lib/agents/knox/takedown-lessons";
 import { candidateWriteFacts } from "./candidate-facts";
 import { monthlyAccountOwnerReview } from "./monthly-account-owners";
@@ -337,6 +338,16 @@ export interface RunKnoxExtractResult {
   audienceLessonMatches?: Partial<Record<AudienceLessonScope, number>>;
   audienceLessonsLive?: boolean;
   audienceLessonsReadFailed?: boolean;
+  /**
+   * #2062: the read lessons loaded for this run's documents (`read-lessons.ts`: frequency fixes, wrong
+   * payer, frequency holds, Knox's own duplicates, promoted held lines), the reads each matched by kind,
+   * and whether they were applied (`KNOX_READ_LESSONS_LIVE`). Off, the matches are what switching it on
+   * would change: the live dry run.
+   */
+  readLessonsLoaded?: Partial<Record<ReadLessonKind, number>>;
+  readLessonMatches?: Partial<Record<ReadLessonKind, number>>;
+  readLessonsLive?: boolean;
+  readLessonsReadFailed?: boolean;
   /** Strategy/category groups with survival history, and reads calibration puts below Hamilton's floor (`calibration.ts`, shadow). */
   calibrationGroups: number;
   calibratedBelowPublishFloor: number;
@@ -971,6 +982,16 @@ async function writeCandidate(
   }
   const rawFlags=inserted[0]?.outlier_flags;
   return {inserted:inserted.length>0,flags:Array.isArray(rawFlags)?rawFlags.map(String):[]};
+}
+
+/**
+ * #2062: a read a read lesson holds (`read-lessons.ts`: its fee is still down as a wrong payer, a
+ * frequency hold or Knox's own duplicate): written held for review under that check's
+ * `knox_lesson:taken_down:` flag, never sent to Darwin, like a takedown lesson's hold. An existing
+ * row keeps every fact.
+ */
+export async function insertReadLessonHold(db: SqlTag, options: CandidateInsertOptions, check: string): Promise<boolean> {
+  return (await writeCandidate(db, { ...options, takenDownBy: check })).inserted;
 }
 
 /** Ordinary callers cannot supply an unvalidated learned-hold flag. */
@@ -1691,6 +1712,11 @@ export async function runKnoxExtract(
   const audienceLessons = !dryRun && rows.length > 0 ? await loadAudienceLessons(db, rows.map((row) => Number(row.source_document_id))) : emptyAudienceLessons();
   const audienceLive = audienceLessonsLive();
   const audienceLessonMatches: Partial<Record<AudienceLessonScope, number>> = {};
+  // #2062: what other agents' checks fixed in this run's documents' reads, read back as lessons.
+  const readLessons = !dryRun && rows.length > 0 ? await loadReadLessons(db, rows.map((row) => Number(row.source_document_id))) : emptyReadLessons();
+  const readLive = readLessonsLive();
+  const readLessonMatches: Partial<Record<ReadLessonKind, number>> = {};
+  const matchRead = (kind: ReadLessonKind) => { readLessonMatches[kind] = (readLessonMatches[kind] ?? 0) + 1; };
   const takedownGuardDeclines: Record<string,number> = {};
   const calibration = !dryRun && rows.length > 0 ? await loadKnoxCalibration(db) : new Map();
   let calibratedBelowPublishFloor = 0;
@@ -1731,6 +1757,8 @@ export async function runKnoxExtract(
     let freeInserted = 0;
     if (!dryRun) {
       retiredOlderRows += await retireRowsFromOlderText(db, row);
+      const documentId = Number(row.source_document_id);
+      const documentReads = readLessonCount(readLessons) > 0 ? documentReadKeys(candidates) : new Set<string>();
       for (const candidate of candidates) {
         const lessonFlag = lessonFlags.get(candidate);
         const calibrated = calibratedConfidence(
@@ -1738,16 +1766,34 @@ export async function runKnoxExtract(
           calibration.get(calibrationKey(candidate.strategy ?? KNOX_RULES_STRATEGY.strategy, candidate.canonicalHint)),
         );
         if (calibrated < PUBLISH_FLOOR) calibratedBelowPublishFloor += 1;
+        // #2062: a fee still down as a wrong payer, a frequency hold or Knox's own duplicate holds the same read.
+        const hold = holdLessonFor(candidate, readLessons, documentId, documentReads);
+        if (hold) {
+          matchRead(hold.kind);
+          if (readLive) {
+            if (await insertReadLessonHold(db, { runId: options.runId, row, candidate, calibratedConfidence: calibrated,
+              extraFlags: [...(lessonFlag ? [lessonFlag] : []), readLessonFlag(hold.kind)] }, hold.check)) {
+              inserted += 1;
+              takedownHolds[hold.check] = (takedownHolds[hold.check] ?? 0) + 1;
+            }
+            continue;
+          }
+        }
+        // #2062: a frequency Hamilton's fill or Darwin's hourly check corrected on this document's live fee.
+        const frequency = frequencyLessonFor(candidate, readLessons, documentId);
+        if (frequency) matchRead("frequency");
+        const timed = frequency && readLive ? withFrequencyLesson(candidate, frequency) : candidate;
         // #2062: a confirmed business-schedule takedown of this document's fee names its audience.
-        const audience = audienceLessonFor(candidate, audienceLessons, Number(row.source_document_id));
+        const audience = audienceLessonFor(timed, audienceLessons, Number(row.source_document_id));
         if (audience) audienceLessonMatches[audience.scope] = (audienceLessonMatches[audience.scope] ?? 0) + 1;
         const learned = audience && audienceLive ? audience : null;
-        const named = learned ? withAudienceLesson(candidate, learned) : candidate;
+        const named = learned ? withAudienceLesson(timed, learned) : timed;
         const receipt=await insertCandidateWithLearning(db, {
             runId: options.runId,
             row,
             candidate: named.lineup ? { ...named, lineup: groundLineup(named.lineup, row.normalized_text) } : named,
-            extraFlags: [...(lessonFlag ? [lessonFlag] : []), ...(learned ? [audienceLessonFlag(learned.scope)] : [])],
+            extraFlags: [...(lessonFlag ? [lessonFlag] : []), ...(learned ? [audienceLessonFlag(learned.scope)] : []),
+              ...(frequency && readLive ? [readLessonFlag("frequency")] : [])],
             calibratedConfidence: calibrated,
           },takedownLessons);
         if (receipt.inserted) inserted+=1;
@@ -1767,6 +1813,19 @@ export async function runKnoxExtract(
         if (heldCandidate.statedNoCharge) {
           deferredNoCharge.push({ row, held: heldCandidate, resultIndex: results.length });
           continue;
+        }
+        // #2062: a held line this document's earlier read had promoted, and Darwin verified, is that fee.
+        const promotion = promotionLessonFor(heldCandidate, readLessons, documentId);
+        if (promotion) {
+          matchRead("promoted_from_held");
+          if (readLive) {
+            const receipt = await insertCandidateWithLearning(db, { runId: options.runId, row, candidate: promotedCandidate(heldCandidate, promotion),
+              extraFlags: [readLessonFlag("promoted_from_held")] }, takedownLessons);
+            if (receipt.inserted) inserted += 1;
+            if (receipt.takenDownBy) takedownHolds[receipt.takenDownBy] = (takedownHolds[receipt.takenDownBy] ?? 0) + 1;
+            if (receipt.declinedReason) takedownGuardDeclines[receipt.declinedReason] = (takedownGuardDeclines[receipt.declinedReason] ?? 0) + 1;
+            continue;
+          }
         }
         if (await insertHeldCandidate(db, { runId: options.runId, row, held: heldCandidate })) {
           heldInserted += 1;
@@ -1890,6 +1949,10 @@ export async function runKnoxExtract(
     audienceLessonMatches,
     audienceLessonsLive: audienceLive,
     audienceLessonsReadFailed: audienceLessons.readFailed === true,
+    readLessonsLoaded: readLessons.loaded,
+    readLessonMatches,
+    readLessonsLive: readLive,
+    readLessonsReadFailed: readLessons.readFailed === true,
     calibrationGroups: calibration.size,
     calibratedBelowPublishFloor,
     layouts: thinLayouts(layoutReads),

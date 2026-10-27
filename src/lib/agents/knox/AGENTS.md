@@ -1912,6 +1912,31 @@ lessons are taught; 3 live fees on those documents share a taught name, 1 of the
 and all 3 state their audience, so none would be labelled. Switching it on takes a rules bump so the documents
 are read again.
 
+Read lessons (`read-lessons.ts`, `KNOX_READ_LESSONS_VERSION` v1, #2062): what other agents' checks fixed
+in a document's read is read back before Knox reads that document again, keyed like the audience lessons
+on the document, the name (`lessonName`) and the amount in cents, and acting only on a read that repeats
+what was fixed:
+- frequency (`frequency_filled`, `frequency_corrected`, `frequency_cleared` from Hamilton's frequency
+  fill and Darwin's hourly check, while the live fee still carries the check's value): a read that gives
+  the old frequency again is written with the check's, flag `knox_lesson:read:frequency`;
+- hold (`wrong_payer`, `frequency_held`, and Knox's own `duplicate`, each while the fee is still down for
+  that reason): the read is written held for review (`knox_review:taken_down`,
+  `knox_lesson:taken_down:<check>`, `knox_lesson:read:<kind>`), never sent to Darwin. A frequency hold
+  holds only a read that gives the held period again. A duplicate teaches only when its kept twin is on
+  the same document at the same amount under another name, and holds only when the same text also reads
+  the kept name at that amount; a collapse across copies of a page or of the same name is not Knox's error;
+- promotion (`promoted_from_held`, when Darwin verified the promoted line and its fee is live): a held
+  unclassified read of that name and amount is written as a candidate under Darwin's verified category,
+  flag `knox_lesson:read:promoted_from_held`, and Darwin checks it.
+Every lesson changes what a re-read writes, so it applies only with `KNOX_READ_LESSONS_LIVE` on (off by
+default). Off, each extract step still loads the lessons and reports `read_lessons_loaded` and
+`read_lesson_matches` on its step detail (the reads each would change), the live dry run; the step
+detail now also carries the audience lessons' counts. Oct 27 dry run (read-only SQL on prod): 15,446
+frequency lessons on 4,629 documents; 4 wrong-payer, 40 frequency-hold and 121 duplicate lessons; 940
+promotion lessons on 721 documents. No live fee comes down or is re-filed by switching it on: only a new
+raw read changes. A missed answer-key fee does not teach here yet: Deming files it as an eval case, not a
+feedback row, and the key has no fee name to key on.
+
 Live name tidy (`name-retidy.ts`, Oct 7): names Knox stored before it tidied reads ("Stop Payment |
 Item", "/mo. | Dormant Fee", "An overdraft fee of") are re-tidied on live rows, a batch of banks per
 publish step. A rename must keep the fee tracing in its own schedule and passing the category guard;
@@ -2505,6 +2530,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `NAME_FILE_KEY_VERSION` | — | v2 | `knox/held-recheck.ts` |
 | `KNOX_LAYOUT_SIGNATURE_VERSION` | — | v1 | `knox/layout-signature.ts` |
 | `KNOX_AUDIENCE_LESSONS_VERSION` | — | v1 | `knox/audience-lessons.ts` |
+| `KNOX_READ_LESSONS_VERSION` | — | v1 | `knox/read-lessons.ts` |
 | `KNOX_LESSONS_VERSION` | — | v5 | `knox/lessons.ts` |
 | `ACCOUNT_SUBJECT_CORRECT_STRATEGY` | `knox.account_subject_correct` | v1 | `knox/account-subject-correct.ts` |
 | `ANCILLARY_OWNER_CORRECT_STRATEGY` | `knox.ancillary_owner_correct` | v1 | `knox/ancillary-owner-correct.ts` |
