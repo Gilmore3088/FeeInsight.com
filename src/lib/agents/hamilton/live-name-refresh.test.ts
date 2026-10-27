@@ -114,6 +114,9 @@ describe("nameImprovement", () => {
     expect(nameImprovement("Outgoing Wire Transfer: International", "Outgoing Wire Transfer: International (Foreign Currency)", "wire_intl_outgoing")).toBeNull();
     expect(nameImprovement("Incoming Wire", "Incoming Wire with Phone Notification", "wire_domestic_incoming")).toBeNull();
     expect(nameImprovement("Wire Transfer (incoming)", "Foreign Wire Transfer (incoming)", "wire_domestic_incoming")).toBeNull();
+    // Review of #2766: a channel word beside another price's words is not a channel clause.
+    expect(nameImprovement("Outgoing Wire", "Outgoing Wire Each Additional Recurring", "wire_domestic_outgoing")).toBeNull();
+    expect(nameImprovement("Domestic Wire", "Domestic Wire Waived Online", "wire_domestic_outgoing")).toBeNull();
     // A channel clause on a fee that is not a wire.
     expect(nameImprovement("Stop Payment", "Stop Payment (online)", "stop_payment")).toBeNull();
     // A new name still carrying a glyph.

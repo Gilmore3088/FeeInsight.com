@@ -46,7 +46,7 @@ export const WIRE_CHANNEL_CATEGORIES: ReadonlySet<string> = new Set([
 
 export const CHANNEL_WORDS =
   "online|remote|digital|mobile|internet|e-?bank(?:ing)?|e-?branch|electronic\\s+banking|electronically\\s+submitted|web(?:site)?|self[- ]?service|phone|telephone|fax|e-?mail|pin|template|repetitive|recurring|standing";
-const STANDARD_WORDS =
+export const STANDARD_WORDS =
   "branch|in[- ]person|manual(?:ly)?|assisted|representative|teller|non-?recurring|non-?repetitive|not\\s+(?:initiated\\s+)?online";
 
 /** v2: a negated standard channel ("Not in Person", "Non-Branch") names the premium channel. */

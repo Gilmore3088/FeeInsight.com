@@ -11,7 +11,7 @@ import { restoreTarget } from "@/lib/agents/hamilton/category-guard";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { checkFeeCategory, refileCategory } from "@/lib/fee-category-guard";
 import { productKeySql } from "@/lib/fee-product";
-import { statesWireChannel, WIRE_CHANNEL_CATEGORIES } from "@/lib/wire-channel";
+import { CHANNEL_WORDS, NEGATED_STANDARD_WORDS, STANDARD_WORDS, statesWireChannel, WIRE_CHANNEL_CATEGORIES } from "@/lib/wire-channel";
 
 type SqlTag = typeof sql;
 
@@ -232,7 +232,22 @@ function glyphRepaired(old: string, next: string): boolean {
 
 const words = (text: string): string[] => text.toLowerCase().match(/[a-z0-9]+/g) ?? [];
 
-/** For a wire: `old`'s words all kept in order, and the words added state a channel. */
+/** Channel phrases, and the few words that join them ("phone request", "via online banking"). */
+const CHANNEL_CLAUSE_PART = new RegExp(
+  `\\b(?:${NEGATED_STANDARD_WORDS}|${CHANNEL_WORDS}|${STANDARD_WORDS}|requests?|requested|initiated|agreement|banking|by|via|through|using|or|and|only)\\b`,
+  "gi",
+);
+
+/**
+ * Review of #2766: the added words are a channel clause only when they state a channel and nothing
+ * else is left once the channel phrases and their joining words are taken out, so "Each Additional
+ * Recurring" or "Waived Online" (another price's words beside a channel word) is not one.
+ */
+function onlyStatesChannel(added: string): boolean {
+  return statesWireChannel(added) && added.replace(CHANNEL_CLAUSE_PART, " ").trim() === "";
+}
+
+/** For a wire: `old`'s words all kept in order, and the words added state a channel and nothing else. */
 function addsChannelClause(old: string, next: string): boolean {
   if (old.includes(REPLACEMENT_CHARACTER)) return false;
   const oldWords = words(old);
@@ -245,7 +260,7 @@ function addsChannelClause(old: string, next: string): boolean {
     else added.push(word);
   }
   if (at < oldWords.length || added.length === 0 || added.length > MAX_CLAUSE_WORDS) return false;
-  return statesWireChannel(added.join(" "));
+  return onlyStatesChannel(added.join(" "));
 }
 
 /**
