@@ -28,6 +28,7 @@ import { boxSectionLateFee } from "./box-section-late-fee";
 import { withGluedFootnotePrices } from "./glued-footnote-price";
 import { pricedForOtherAccount } from "./column-account";
 import { withoutGluedPricePairs } from "./glued-price-pair";
+import { NO_CHARGE_SENTENCE_READ_LIVE, noChargeNsfWitness } from "@/lib/no-charge-statement";
 import { withCenteredHeadingCells } from "./centered-heading-cell";
 import { discontinuedRow } from "./discontinued-rows";
 import { networkColumnRow } from "./network-column-rows";
@@ -59,6 +60,11 @@ export type SourceCheckOptions = {
    * stricter nearby-lines rule until the change ships with Darwin's live re-check and dry-run count.
    */
   sectionHeadingCategory?: boolean;
+  /**
+   * #2040: accept an NSF $0 from a sentence saying the bank charges none (`noChargeNsfWitness`).
+   * Defaults to `NO_CHARGE_SENTENCE_READ_LIVE`, which is off; tests pass true.
+   */
+  noChargeSentences?: boolean;
 };
 
 const LONG_LINE = 300;
@@ -1559,6 +1565,14 @@ function checkFeeAgainstSourceText(
     if (!asCap) continue;
     const cap = checkAgainstLines(lines, feeName, amount, categoryPattern, true, false, sectionHeadingCategory);
     if (cap.ok) return cap;
+  }
+  // #2040: "We do not charge a returned item/non-sufficient funds (NSF) fee for items returned unpaid."
+  // states the NSF fee's $0 with no free word. Read after the line checks, so a fee that traces to a
+  // "Free" row keeps that row; only the exact name the sentence prints, only as NSF, only where its
+  // surroundings name no narrower scope and no line prices NSF (`noChargeNsfWitness`). Off by default.
+  if (amount === 0) {
+    const stated = noChargeNsfWitness(text, feeName, canonicalFeeKey, options.noChargeSentences ?? NO_CHARGE_SENTENCE_READ_LIVE);
+    if (stated) return { ok: true, sourceLine: stated.sentence };
   }
   if (first && !first.ok && first.reason === "tiered_fee" && statements.length > 0 &&
       (canonicalFeeKey === "nsf" || /\bnsf\b/i.test(feeName))) {

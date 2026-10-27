@@ -135,12 +135,11 @@ const ES_INTL = "internacional|extranjer";
 const ES_INCOMING = "entrante|recibid";
 const ES_OUTGOING = "saliente|enviad";
 /**
- * v88 (#1912): a book transfer moves money to another account at the same bank ("Transferencia
- * bancaria saliente a una cuenta en M&T (transferencia contable)" $16, M&T 145046, beside its $32
- * outgoing wire; "Outgoing Wire Transfer within IBC (Book Transfer)" $10). It is not a domestic wire
- * out of the bank, and pooled with one it pulls the bank's wire price down. A wire price that only
- * says it also covers book transfers ("incluidas las transferencias contables") stays.
+ * The words that put a name in the NSF category ("Unpaid Item Fee", "Returned ACH", "Cargo por fondos
+ * insuficientes"). Exported so the no-charge sentence rule (#2040, `src/lib/no-charge-statement.ts`)
+ * refuses a page that prices any line this guard would file as NSF.
  */
+export const NSF_NAME_INCLUDE = /(nsf|insufficient|non[- ]?sufficient|returned item|return(ed)? (check|item|ach|payment|draft)|returned unpaid|unpaid item|fondos insuficientes|cheques? devuelt[oa]s?|art[ií]culos? devuelt[oa]s?|partidas? devuelt[oa]s?|devoluci[oó]n por fondos)/i;
 /**
  * v90 (#1912): a name that names the safe deposit box ("Safety Deposit Box-Late Fee", "Safe Box Late
  * Fee - Per Month after 3 months", "SDB Late Payment", "Late charge for safety deposit box rental
@@ -154,6 +153,13 @@ const SAFE_DEPOSIT_BOX_NAME = /\bsafe(?:ty)?[\s-]*(?:deposit|box)|\bsdb\b|(?<!ni
  * spaced or joined ("Night  Deposit Box", "Night Drop Deposit Box", "Night-Drop"). Never a safe deposit box.
  */
 const NIGHT_DEPOSIT_NAME = String.raw`night[\s\/-]+(?:deposit|drop)`;
+/**
+ * v88 (#1912): a book transfer moves money to another account at the same bank ("Transferencia
+ * bancaria saliente a una cuenta en M&T (transferencia contable)" $16, M&T 145046, beside its $32
+ * outgoing wire; "Outgoing Wire Transfer within IBC (Book Transfer)" $10). It is not a domestic wire
+ * out of the bank, and pooled with one it pulls the bank's wire price down. A wire price that only
+ * says it also covers book transfers ("incluidas las transferencias contables") stays.
+ */
 const BOOK_TRANSFER = String.raw`^(?![\s\S]*(?:\b(?:includ|incluid|exclud|excluy)\w*|\bincl\b|\bfree\b|\bwaiv\w*|\bno\s+charge|\bor\s+book))[\s\S]*(?:\bbook[- ]?(?:entry\s+)?transfers?\b|\btransferencias?\s+contables?\b)`;
 /** "Transferencia bancaria" and "Giro bancario" are a wire in a Spanish schedule. */
 const WIRE = /(wire|transferencias? (bancarias?|cablegr[aá]ficas?)|giros? bancarios?)/i;
@@ -606,8 +612,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   // A sustained charge "after 5 consecutive days" and a "De Minimis" waiver line are not the
   // per-item NSF fee (v27, Oct 8).
   nsf: {
-    include:
-      /(nsf|insufficient|non[- ]?sufficient|returned item|return(ed)? (check|item|ach|payment|draft)|returned unpaid|unpaid item|fondos insuficientes|cheques? devuelt[oa]s?|art[ií]culos? devuelt[oa]s?|partidas? devuelt[oa]s?|devoluci[oó]n por fondos)/i,
+    include: NSF_NAME_INCLUDE,
     // v63: in Spanish, a deposited check ("depositado", "depósito"), a credit card, a loan, a
     // returned payment ("Pago por cheque o ACH devuelto", Puerto Rico FCU 262771), an outgoing ACH,
     // a transfer or a return for another reason ("motivo distinto a fondos insuficientes") is not it.
