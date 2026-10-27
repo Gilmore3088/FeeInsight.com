@@ -75,7 +75,7 @@ export interface LinkOutcomeResult {
   unchanged: number;
   written: number;
   /**
-   * Live fee types this run's links produced, by the method that found each link
+   * Live fee types from every link this run looked at (judged or not yet), by the method that found each link
    * (`ORIGINAL_LINK_METHOD` for a link that came with the bank's record), so a method that finds
    * many pages but few live fees shows as weak in the run itself.
    */

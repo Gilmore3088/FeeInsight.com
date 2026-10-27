@@ -152,7 +152,7 @@ export interface LiveFeeYield {
   links: number;
   /** Of those, links with at least 3 live fee types (the catalog's bar). */
   goodLinks: number;
-  /** Live fee types summed over those links. */
+  /** Live fee types summed over those links, leaving out business-only and confirmed-wrong links. */
   liveFees: number;
 }
 
@@ -167,7 +167,8 @@ export async function getLiveFeeYield(): Promise<{ readAt: string; byMethod: Rec
     SELECT COALESCE(about_strategy, ${ORIGINAL_LINK_METHOD}) AS strategy,
            COUNT(*)::int AS links,
            COUNT(*) FILTER (WHERE evidence->>'label' = 'good')::int AS good_links,
-           COALESCE(SUM(CASE WHEN evidence->>'live_fees' ~ '^[0-9]+$' THEN (evidence->>'live_fees')::bigint ELSE 0 END), 0)::bigint AS live_fees
+           COALESCE(SUM(CASE WHEN evidence->>'live_fees' ~ '^[0-9]+$' THEN (evidence->>'live_fees')::bigint ELSE 0 END)
+             FILTER (WHERE COALESCE(evidence->>'label', '') NOT IN ('business', 'wrong_fees')), 0)::bigint AS live_fees
       FROM pipeline_feedback
      WHERE check_name = ${LINK_YIELD_CHECK}
        AND about_stage = 'discover'

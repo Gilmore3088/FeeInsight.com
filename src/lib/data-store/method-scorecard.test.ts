@@ -89,5 +89,7 @@ describe("getLiveFeeYield", () => {
     expect(byMethod.original_link.liveFees).toBe(33247);
     expect(calls[0].values).toEqual(["original_link", "magellan.link_yield"]);
     expect(calls[0].text).toContain("about_stage = 'discover'");
+    // Business-only and confirmed-wrong links do not count toward a finder's live fees.
+    expect(calls[0].text).toContain("NOT IN ('business', 'wrong_fees')");
   });
 });
