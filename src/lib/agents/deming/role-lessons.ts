@@ -217,4 +217,14 @@ export const DEMING_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-26",
   },
+  {
+    id: "issue-2067-judge-the-read-that-was-flagged",
+    agent: "deming",
+    stage: "error classes",
+    lesson: "Judge an error row at the read it flagged, not at the live row as it stands today. A hand correction rewrites the live fee in place, so its amount and name are the corrected ones: take a hand amount correction's own read from its `old_amount` and `old_name`, any other row's from the `amount` and `evidence.fee_name` its writer stored when it filed, and the live row only when the row stored neither. Check what each writer stores before trusting a column: the hand correction's `amount` is the corrected price, every other writer's is the read it judged.",
+    why: "Deming's amount layouts (#2582) read every row other than the correction's own at the live amount, so a row filed before a later hand correction would be re-checked at the corrected price, which traces, and counted as a layout the rules let through (the review of #2582). On Oct 27 no live amount error had hit this yet, and every production writer stored the live amount at filing (fee 5600's Oct 6 row holds $0, its Oct 16 correction $35), so the read can use it.",
+    evidence: { issues: [2067], prs: [2783], files: ["src/lib/agents/deming/error-classes.ts", "src/lib/agents/deming/error-classes.db.test.ts", "src/lib/agents/learning/feedback-sync.ts", "src/lib/agents/hamilton/hand-amount-corrections.ts"] },
+    appliesTo: "all",
+    since: "2026-10-27",
+  },
 ];
