@@ -103,6 +103,7 @@ import { countHourlyFees, hourlyDetail, hourlyFindingsDetail, recheckHourlyFrequ
 import { countNonDepositFees, nonDepositDetail, nonDepositFindingsDetail, recheckNonDepositDocuments } from "@/lib/agents/darwin/non-deposit-document-check";
 import { recheckTranslatedCopies, translatedCopyDetail } from "@/lib/agents/darwin/translated-copy-check";
 import { productPageRepeatDetail, recheckProductPageRepeats } from "@/lib/agents/darwin/product-page-repeat-check";
+import { recheckRereadCategories, rereadCategoryDetail } from "@/lib/agents/darwin/reread-category-check";
 import { recheckSameLineReplacements, sameLineReplacementDetail } from "@/lib/agents/darwin/same-line-replacement-check";
 import { recheckSameLineReads, sameLineReadDetail } from "@/lib/agents/darwin/same-line-read-check";
 import { editionCheckDetail, recheckScheduleEditions } from "@/lib/agents/darwin/edition-effective-check";
@@ -1215,6 +1216,17 @@ async function executeAgenticStep(
       const productPageRepeatNote = productPageRepeat.matched > 0
         ? ` Product-page repeat re-check: ${productPageRepeat.matched.toLocaleString()} of ${productPageRepeat.checked.toLocaleString()} live product-page fee(s) repeat a live schedule line at the same price (${productPageRepeat.live && !productPageRepeat.dryRun ? `${productPageRepeat.flagged.toLocaleString()} flagged, ${productPageRepeat.takenDown.length.toLocaleString()} archived` : productPageRepeat.dryRun ? "dry run: would take down, nothing written" : "switch off: would take down, nothing written"}).`
         : "";
+      // #1513: a live fee whose own line Knox's re-read files under another category
+      // (reread-category-check.ts); a report only on a dry run or with its switch off.
+      const rereadCategory = await recheckRereadCategories(tx, {
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+      });
+      const rereadCategoryNote = rereadCategory.matched > 0
+        ? ` Re-read category re-check: ${rereadCategory.matched.toLocaleString()} of ${rereadCategory.checked.toLocaleString()} live fee(s) are read on their own line under another category (${rereadCategory.live && !rereadCategory.dryRun ? `${rereadCategory.flagged.toLocaleString()} flagged, ${rereadCategory.refiled.length.toLocaleString()} re-filed, ${rereadCategory.takenDown.length.toLocaleString()} archived` : rereadCategory.dryRun ? "dry run: would move, nothing written" : "switch off: would move, nothing written"}).`
+        : "";
       // #1673: a same-line copy the v1 restore brought back beside its older line's live replacement
       // (same-line-replacement-check.ts); a report only on a dry run or with its switch off.
       const sameLineReplacement = await recheckSameLineReplacements(tx, {
@@ -1374,7 +1386,7 @@ async function executeAgenticStep(
         : "";
       return {
         status: "completed",
-        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${verification.deferredRawFees ? ` ${verification.deferredRawFees.toLocaleString()} row(s) deferred without a verification decision because current source/raw admission remains unresolved.` : ""}${recheckReceiptNote(recheck)}${release.deferred ? ` ${release.deferred.toLocaleString()} held fee(s) deferred without a release decision.` : ""}${conditionalZero.selected > 0 ? ` Settled ${(conditionalZero.selected - (conditionalZero.deferred ?? 0)).toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).${conditionalZero.deferred ? ` ${conditionalZero.deferred.toLocaleString()} conditional-$0 hold(s) deferred without a decision.` : ""}` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${verification.categoryChange && verification.categoryChange.takeoverProof.rows > 0 ? ` ${verification.categoryChange.takeoverProof.rows.toLocaleString()} row(s) a re-read took over under a new category ${verification.categoryChange.takeoverProof.live ? "(judged again)" : "(take-over proof switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${hourlyNote}${hourlyFullNote}${nonDepositNote}${nonDepositFullNote}${translatedCopyNote}${productPageRepeatNote}${sameLineReplacementNote}${sameLineReadNote}${editionNote}${canadianDocumentNote}${lateChargeBoundNote}${rateFloorNote}${bandedZeroNote}${cardProgramSectionNote}${loanSectionNote}${lineConflictNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}${verifyMissNote(verifyMisses)}`,
+        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${verification.deferredRawFees ? ` ${verification.deferredRawFees.toLocaleString()} row(s) deferred without a verification decision because current source/raw admission remains unresolved.` : ""}${recheckReceiptNote(recheck)}${release.deferred ? ` ${release.deferred.toLocaleString()} held fee(s) deferred without a release decision.` : ""}${conditionalZero.selected > 0 ? ` Settled ${(conditionalZero.selected - (conditionalZero.deferred ?? 0)).toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).${conditionalZero.deferred ? ` ${conditionalZero.deferred.toLocaleString()} conditional-$0 hold(s) deferred without a decision.` : ""}` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${verification.categoryChange && verification.categoryChange.takeoverProof.rows > 0 ? ` ${verification.categoryChange.takeoverProof.rows.toLocaleString()} row(s) a re-read took over under a new category ${verification.categoryChange.takeoverProof.live ? "(judged again)" : "(take-over proof switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${hourlyNote}${hourlyFullNote}${nonDepositNote}${nonDepositFullNote}${translatedCopyNote}${productPageRepeatNote}${rereadCategoryNote}${sameLineReplacementNote}${sameLineReadNote}${editionNote}${canadianDocumentNote}${lateChargeBoundNote}${rateFloorNote}${bandedZeroNote}${cardProgramSectionNote}${loanSectionNote}${lineConflictNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}${verifyMissNote(verifyMisses)}`,
         detail: {
           selected_raw_fees: verification.selectedRawFees,
           processed_raw_fees: verification.processedRawFees,
@@ -1408,6 +1420,7 @@ async function executeAgenticStep(
           non_deposit_document_check: nonDepositDetail(nonDeposit),
           translated_copy_check: translatedCopyDetail(translatedCopy),
           product_page_repeat_check: productPageRepeatDetail(productPageRepeat),
+          reread_category_check: rereadCategoryDetail(rereadCategory),
           same_line_replacement_check: sameLineReplacementDetail(sameLineReplacement),
           same_line_read_check: sameLineReadDetail(sameLineRead),
           edition_effective_check: editionCheckDetail(editions),

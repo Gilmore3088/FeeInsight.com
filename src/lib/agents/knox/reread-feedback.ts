@@ -44,7 +44,10 @@ type SqlTag = typeof sql;
  *   is the usual answer while the rules have not changed since the line was read: the free team
  *   is deterministic, so the same text under the same rules gives the same name. The request is
  *   settled as unresolved for this rules version and is read again only after a rules bump.
- * - `other_category`: a proper name, but under another category than the fee's (left for Darwin).
+ * - `other_category`: a proper name, but under another category than the fee's. Left for Darwin:
+ *   its live re-check (`darwin/reread-category-check.ts`, #1513, switch off) reads these rows. Until
+ *   it did, no step read them, so a misfiled live fee stayed live under its old category for good
+ *   (128668, 85754, 35970).
  * - `ambiguous`: two or more proper names on the line at that price.
  * - `refused`: the proper name fails Darwin's category guard or the shared source check
  *   (`checkFeeAgainstSource`).
@@ -233,6 +236,30 @@ export function lineKey(value: string | null | undefined): string {
 }
 
 /**
+ * Today's reads of a fragment's line at its price (pure): `onLine` every read whose name is the
+ * fragment or whose excerpt holds it as whole words, `proper` those with a name that is neither a
+ * fragment nor the old name. Null when the fragment is too short to find one line by. Shared with
+ * Darwin's live re-check of an `other_category` re-read (`darwin/reread-category-check.ts`, #1513).
+ */
+export function readsOnLine(
+  fragmentName: string | null | undefined,
+  amount: number,
+  candidates: ExtractedFeeCandidate[],
+  rawFeeName?: string | null,
+): { onLine: ExtractedFeeCandidate[]; proper: ExtractedFeeCandidate[] } | null {
+  // The line is found by Darwin's fragment only; Knox's raw name only marks a read as not new.
+  const key = lineKey(fragmentName);
+  if (key.length === 0 || key.split(" ").length < REREAD_MIN_KEY_WORDS) return null;
+  const keys = [key, lineKey(rawFeeName)].filter((entry) => entry.length > 0);
+  const onLine = candidates.filter((candidate) => {
+    if (Math.abs(candidate.amount - amount) >= 0.005) return false;
+    return lineKey(candidate.feeName) === key || ` ${lineKey(candidate.excerpt)} `.includes(` ${key} `);
+  });
+  const proper = onLine.filter((candidate) => !liveFragmentName(candidate.feeName) && !keys.includes(lineKey(candidate.feeName)));
+  return { onLine, proper };
+}
+
+/**
  * What today's free team makes of a request's line. Pure: `text` is the document's newest completed
  * text and `candidates` today's free read of it. Live state (stale, live twin) is the caller's.
  */
@@ -244,21 +271,18 @@ export function decideReread(
 ): RereadDecision {
   if (!text || !text.trim() || request.amount == null) return { outcome: "no_text" };
   const amount = request.amount;
-  // The line is found by Darwin's fragment only; Knox's raw name only marks a read as not new.
   const key = lineKey(request.fragmentName);
   if (key.length === 0) return { outcome: "not_found" };
-  if (key.split(" ").length < REREAD_MIN_KEY_WORDS) return { outcome: "ambiguous" };
-  const onLine = candidates.filter((candidate) => {
-    if (Math.abs(candidate.amount - amount) >= 0.005) return false;
-    return lineKey(candidate.feeName) === key || ` ${lineKey(candidate.excerpt)} `.includes(` ${key} `);
-  });
+  const reads = readsOnLine(request.fragmentName, amount, candidates, request.rawFeeName);
+  if (!reads) return { outcome: "ambiguous" };
+  const { onLine, proper } = reads;
   if (onLine.length === 0) return { outcome: "not_found" };
   const readNames = [...new Set(onLine.map((candidate) => candidate.feeName))];
   const published = publishedNameRepair(request, text, onLine);
   if (published && (options.publishedName ?? KNOX_REREAD_PUBLISHED_NAME_LIVE)) {
     return { outcome: "renamed", newName: published, readNames, via: "published_name" };
   }
-  const decision = decideFromRead(request, text, onLine, readNames, key);
+  const decision = decideFromRead(request, text, proper, readNames);
   return published ? { ...decision, publishedName: published } : decision;
 }
 
@@ -279,10 +303,9 @@ export function publishedNameRepair(request: RereadRequest, text: string, onLine
   return checkFeeAgainstSource(text, name, request.amount, ".", feeKey).ok ? name : null;
 }
 
-function decideFromRead(request: RereadRequest, text: string, onLine: ExtractedFeeCandidate[], readNames: string[], key: string): RereadDecision {
+/** `proper`: the line's reads with a proper name (`readsOnLine`). */
+function decideFromRead(request: RereadRequest, text: string, proper: ExtractedFeeCandidate[], readNames: string[]): RereadDecision {
   const amount = request.amount as number;
-  const keys = [key, lineKey(request.rawFeeName)].filter((entry) => entry.length > 0);
-  const proper = onLine.filter((candidate) => !liveFragmentName(candidate.feeName) && !keys.includes(lineKey(candidate.feeName)));
   if (proper.length === 0) return { outcome: "same_name", readNames };
   const sameCategory = proper.filter((candidate) => request.canonicalFeeKey == null || candidate.canonicalHint === request.canonicalFeeKey);
   if (sameCategory.length === 0) return { outcome: "other_category", readNames };

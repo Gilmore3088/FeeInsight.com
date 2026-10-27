@@ -7,6 +7,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const DARWIN_LESSONS: AgentLesson[] = [
   {
+    id: "issue-1513-read-what-knox-left-for-you",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "When Knox reads a live fee's own line again and gets a proper name under another category, that read is yours to act on: re-check the live fee against it on its own stored text. Re-file it under the new name and category only when exactly one proper read is on the line at its price, no read there keeps the live category, the category guard and amount checks accept the name, and the source check traces it at that price; take it down instead when another live fee of the bank already shows that line under the new category. Leave a move between overdraft and NSF to the paid-NSF convention, and never assume a fee moves \"on its next read\": a new read under a new category supersedes nothing that is live.",
+    why: "Knox's re-read pass settled the lines of 128668 (a $1 Overdraft Transfer Fee live as a non-network ATM fee), 85754 (a $10 Excess Withdrawal Fee live as account research) and 35970 (a $30 safe deposit box price live as a dormant account fee) as other_category, \"left for Darwin\", but no Darwin step read those rows, and Hamilton supersedes a live fee only by a new price in its own category, so all three stayed misfiled after #2677 said they would move on their next read (#1513).",
+    evidence: { issues: [1513], prs: [2750], files: ["src/lib/agents/darwin/reread-category-check.ts", "src/lib/agents/knox/reread-feedback.ts", "docs/project/findings/2026-10-26-reread-other-category-unread.md"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
+  {
     id: "issue-1111-pay-only-for-verdicts-that-act",
     agent: "darwin",
     stage: "verify",
@@ -67,6 +77,16 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     lesson: "Before reading a second price on a $0 fee's line as its condition, read how the page lays out the lines around it: when the neighbouring lines are each two whole rows side by side (a label and its own price on both sides of the cell break), a right cell whose label names a different fee (a fee noun, and no word of this fee's own variants, sources or channels such as lost, stolen, from, sweep, rush, printed or images) is the right column's row; and a note-and-price tail under the right column's heading printed just above is that heading's fee only when the note is an early-closure window (\"closed within 90 days of opening\") or states no term at all, and the fee's own row, its name with a $0 straight after it, repeats for another account. A note that states a balance, statement, deposit, audience, promotion, status, program or reward stays the fee's condition. Ship such a release behind a switch with a dry run, never a recheck version bump that re-reads every row under other unmeasured rule changes.",
     why: "After #1621, two real free fees stayed held as conditional $0 and were taken down by the second look: Terrabank's \"Foreign Transaction Fees No Charge | Night Depository Bags & Key $ 30.00\" (38491) and Bank of Prairie Village's Blue Lion Checking maintenance fee (56797). The test read a fee noun or a condition-like word as enough, ignoring the page's own two-column layout. The review of #2676 found the first draft freed notes such as \"(after promotional period) $10.00\" and right cells such as \"Lost Or Stolen $10.00\", and that its recheck bump would have re-read every verified row under ten days of uncounted rule changes. Dry run on Oct 26 (read-only SQL and the code over the stored texts): of the 61 rows the recheck holds as conditional_zero, these 2 pass with the layout evidence and no other row changes.",
     evidence: { issues: [1593], prs: [2676], files: ["src/lib/agents/darwin/verify.ts", "src/lib/agents/darwin/verified-recheck.ts"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
+  {
+    id: "issue-1593-layout-evidence-names-no-own-item",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "When rows printed side by side are the only evidence that a $0 fee's right cell is another fee, refuse a right cell that names an item, payment or transaction this fee could be charged on (ACH, debit, draft, check, item, transfer, card, recurring, preauthorized): \"Stop Payment No Charge | ACH Debit Charge $30.00\" is a stop payment on an ACH debit, not another fee. And a note under the right column's heading that states an account's status, dormancy, lapse, conversion, age or discount (\"(dormancy) $5.00\", \"(turning 18) $5.00\", \"(discount removed) $5.00\") stays the fee's own condition. Tighten such evidence before its switch goes on, and dry-run it over the rows it would free.",
+    why: "The review of #2676 left these cases freed by the layout evidence behind its off switch: a fee noun with no variant word was enough to read the right cell as another fee, and the note test missed status, dormancy, lapse, conversion, turning and discount words. Dry run on Oct 26 (read-only SQL and the code over the stored lines near each fee): of the 65 rows the v5 recheck failed as conditional_zero, the same 2 real free fees (published 38491, 56797) pass with the switch on, and no verdict changes with it off.",
+    evidence: { issues: [1593], prs: [2751], files: ["src/lib/agents/darwin/verify.ts"] },
     appliesTo: "all",
     since: "2026-10-26",
   },
