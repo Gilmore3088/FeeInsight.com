@@ -134,7 +134,7 @@ export const FEEDBACK_KINDS = {
 
   // Second look (one row per fee and check, plus the appended audit trail).
   takedown_pending: { readers: ["src/lib/agents/deming/fresh-audit.ts", "src/lib/agents/magellan/fetch.ts", "src/lib/agents/state-lane-scheduler.ts", "src/lib/agents/hamilton/second-look.ts"] },
-  takedown_confirmed: { readers: ["src/lib/agents/knox/takedown-lessons.ts", "src/lib/agents/deming/regression.ts", "src/lib/agents/magellan/outcomes.ts"] },
+  takedown_confirmed: { readers: ["src/lib/agents/knox/takedown-lessons.ts", "src/lib/agents/knox/audience-lessons.ts", "src/lib/agents/deming/regression.ts", "src/lib/agents/magellan/outcomes.ts"], note: "Knox's takedown lessons act on the limit guard's (with its witness); its audience lessons read the business-schedule check's as the document's business fees (#2062, behind KNOX_AUDIENCE_LESSONS_LIVE)." },
   takedown_cleared: { readers: ["src/lib/agents/deming/fresh-audit.ts", "src/lib/agents/hamilton/second-look.ts"] },
   flag_recorded: { readers: ["src/lib/agents/hamilton/second-look.ts"] },
   flag_confirmed: { readers: [FEEDBACK_SYNC] },

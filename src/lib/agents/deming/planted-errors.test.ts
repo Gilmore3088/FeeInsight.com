@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
 
 import { KNOWN_GAPS, LOOP_LINKS, PLANTED_ERRORS, walkLoop } from "./planted-errors";
+import { audienceLessonsLive } from "@/lib/agents/knox/audience-lessons";
 
 const source = (file: string) => {
   try {
@@ -51,7 +52,8 @@ describe("the error loop, planted end to end (#2065)", () => {
     }
     // Lower this when a gap closes; it never goes up without a new class.
     const missing = Object.values(KNOWN_GAPS).reduce((sum, gaps) => sum + Object.keys(gaps).length, 0);
-    expect(missing).toBe(13);
+    // The wrong audience's read link holds once Knox's audience lessons are switched on (#2062).
+    expect(missing).toBe(audienceLessonsLive() ? 12 : 13);
   });
 
   it("fails a link when its reader stops naming the rows it reads", () => {

@@ -697,6 +697,16 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     since: "2026-10-27",
   },
   {
+    id: "issue-2062-reason-prefix-is-not-the-check",
+    agent: "hamilton",
+    stage: "publish",
+    lesson: "A takedown's reason and the check that wrote it are two names, and the learning store files each takedown's rows under the check. A check whose reason prefix is not its own check name (the limit guard writes limit_as_fee:<code> under hamilton.limit_guard; a person's source_mismatch: takedown is the hand check's; each live re-check writes its own words, such as older_edition: or \"one line, two reads\", and files under its own check) maps the prefix to its check in TAKEDOWN_REASON_CHECKS. Every module that takes live fees down, through a second look or by archiving a fee with a reason, goes in the producer table of takedown-reason-checks.test.ts with its check and every reason it writes; the test fails until it is there and each reason names that check. A prefix more than one check writes (same_line_duplicate, duplicate of #, the eval verdict kinds), a module with no check of its own, and a name a reader matches keep the sync's name, marked in the table. Rows already filed under a reason's name are relabelled by the sync's typed relabel behind its off switch, with a dry-run count, never by hand-run SQL.",
+    why: "The takedown sync named each takedown's check hamilton.<reason prefix>, so on Oct 27 (read-only) 4,656 rows for 2,328 fees sat under check names no producer has: 50 for the limit guard's 25 takedowns under hamilton.limit_as_fee beside its confirmed second looks under hamilton.limit_guard, 382 for hand takedowns under hamilton.source_mismatch, and 4,224 for the live re-checks under hamilton.<x> (older_edition 2,208, document_owner 654, not_yet_effective 334, one line two reads 232, product_page_repeat 204, the non-deposit reasons 284, rate_floor 108, darwin_recheck 74, translated_copy 70, card_program_section 24, fragment name 12, late_charge_bound 10, banded_zero 8, release_repair 2). The first drift test found only second-look callers; the review found the edition and fragment checks, which archive fees directly. Anything that groups or names rows by check, such as the error classes and the severity scale, saw one check as two.",
+    evidence: { issues: [2062], prs: [2772], files: ["src/lib/agents/learning/feedback.ts", "src/lib/agents/learning/feedback-sync.ts", "src/lib/agents/learning/takedown-reason-checks.test.ts", "src/lib/agents/hamilton/hand-takedowns.ts"] },
+    appliesTo: "all",
+    since: "2026-10-27",
+  },
+  {
     id: "issue-1912-reread-name-reaches-live-fee",
     agent: "hamilton",
     stage: "publish",
