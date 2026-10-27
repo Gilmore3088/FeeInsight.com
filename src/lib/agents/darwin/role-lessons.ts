@@ -560,4 +560,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-27",
   },
+  {
+    id: "issue-1912-record-the-range-you-judged",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "When a fee's range depends on its name as well as its category (a box late fee's $1 floor, escheat processing's $150 ceiling), every place that reads or records that range passes the name: the hold decision, the attempt's amount_envelope and the run's group record. A hold whose record shows the category's range (the box's $5 rent floor) tells the reviewer the wrong reason. Key a name range apart from its category's in a group record, so a box late fee and a box rent fee held together each keep their own.",
+    why: "After guard v96 gave box late fees their own $1 floor, Darwin's hold decision read it but the attempt record and the run's group record still called darwinEnvelopeFor without the name, so a held $0.50 box late fee was recorded under the box's $5-$1,500 rent range (#1912, review of #2688). Only the record was wrong; the decision was right.",
+    evidence: { issues: [1912], prs: [], files: ["src/lib/agents/darwin/verify.ts", "src/lib/agents/darwin/envelopes.ts", "docs/project/findings/2026-10-27-box-late-fee-judged-the-same-everywhere.md"] },
+    appliesTo: "all",
+    since: "2026-10-27",
+  },
 ];

@@ -24,7 +24,7 @@ import { billPayReturnedByPayee, payeeReturnedBillPayOnLine } from "@/lib/custom
 import { commercialLockboxName, commercialLockboxOnLine } from "@/lib/custom-report/commercial-lockbox";
 import { namedForCheckingAccount } from "@/lib/checking-fee-name";
 import { paperStatementPriceOnLine } from "@/lib/paper-statement-price";
-import { abbreviatesInternationalWire, ATM_ABROAD, COLLECTION_ITEM, DRAFT_PROTECTION_FEE, foldRetiredCategory, FOREIGN_DEPOSIT_RETURN, FOREIGN_ITEM_RETURN, INCOMING_WIRE, INTERNATIONAL_ATM, IRA_CLOSING, ITEM_COPY, RESEARCH_SPLIT_LIVE, SKIP_A_PAY, SUSTAINED_OVERDRAFT } from "@/lib/fee-fold";
+import { abbreviatesInternationalWire, ATM_ABROAD, COLLECTION_ITEM, DRAFT_PROTECTION_FEE, foldRetiredCategory, FOREIGN_DEPOSIT_RETURN, FOREIGN_ITEM_RETURN, INCOMING_WIRE, INTERNATIONAL_ATM, IRA_CLOSING, ITEM_COPY, NIGHT_DEPOSIT_WORDS, RESEARCH_SPLIT_LIVE, SKIP_A_PAY, SUSTAINED_OVERDRAFT } from "@/lib/fee-fold";
 
 export type CategoryGuardCode = "name_contradicts" | "name_unsupported" | "rate_as_amount" | "schedule_contradicts" | "amount_implausible";
 
@@ -151,8 +151,10 @@ const SAFE_DEPOSIT_BOX_NAME = /\bsafe(?:ty)?[\s-]*(?:deposit|box)|\bsdb\b|(?<!ni
 /**
  * v96 (#1912): a night depository named by its night deposit or night drop words, however they are
  * spaced or joined ("Night  Deposit Box", "Night Drop Deposit Box", "Night-Drop"). Never a safe deposit box.
+ * The fold's split reads the same words (`NIGHT_DEPOSIT_WORDS` in fee-fold.ts, fold v20; the same
+ * pattern, so the guard's behaviour is unchanged).
  */
-const NIGHT_DEPOSIT_NAME = String.raw`night[\s\/-]+(?:deposit|drop)`;
+const NIGHT_DEPOSIT_NAME = NIGHT_DEPOSIT_WORDS;
 /**
  * v88 (#1912): a book transfer moves money to another account at the same bank ("Transferencia
  * bancaria saliente a una cuenta en M&T (transferencia contable)" $16, M&T 145046, beside its $32

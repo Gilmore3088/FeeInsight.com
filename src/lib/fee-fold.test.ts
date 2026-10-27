@@ -1,6 +1,7 @@
 import { describe, expect, it, test } from "vitest";
 import { FEE_FAMILIES, CANONICAL_KEY_MAP } from "./fee-taxonomy";
 import { passesDarwinChecks } from "./agents/knox/layout";
+import { checkFeeCategory, refileCategory } from "./fee-category-guard";
 import {
   foldContext,
   foldRetiredCategory,
@@ -21,6 +22,8 @@ import {
   EXCESS_WITHDRAWAL,
   RETURNED_MAIL,
   estatementReturnRules,
+  FOLD_RULES_VERSION,
+  NIGHT_DEPOSIT_WORDS,
 } from "./fee-fold";
 
 const TAXONOMY = new Set(Object.values(FEE_FAMILIES).flat());
@@ -577,5 +580,48 @@ describe("fold v19: a fax-led line names where the fax goes (#1829)", () => {
     for (const name of ["Domestic incoming (fax)", "Fax Request", "Fax Payoff Request", "Fax/Email Charge", "Car Fax", "Fax Request Outgoing Wire - Domestic", "Wire Confirmation Fax"]) {
       expect(splitLiveCategory("account_research", name)?.to, name).not.toBe("document_reproduction");
     }
+  });
+});
+
+describe("fold v20: a box late fee is judged the same as the guard judges it (#1912)", () => {
+  const nightLate = [
+    "Night Drop Deposit Box Late Fee",
+    "Night  Deposit Box Late Fee",
+    "Night Deposit Box Late Fee",
+    "Night Drop/Deposit Box Late Fee",
+    "Night Depository Rental Late Fee",
+    "Drop Box Late Fee",
+    "Night Drop Bag Late Fee",
+  ];
+
+  test("a night depository's late charge does not split from late payment to safe_deposit_box", () => {
+    for (const name of nightLate) {
+      expect(splitLiveCategory("late_payment", name), name).toBeNull();
+      // The guard keeps it in late payment and refuses it as a safe deposit box.
+      expect(checkFeeCategory("late_payment", name).ok, name).toBe(true);
+      expect(checkFeeCategory("safe_deposit_box", name).ok, name).toBe(false);
+      expect(refileCategory("late_payment", name), name).toBe("late_payment");
+    }
+  });
+
+  test("a safe deposit box late charge still splits there, where the guard re-files it", () => {
+    for (const name of ["Safe Deposit Box Late Fee", "SDB Late payment", "Safety Deposit Box-Late Fee", "Deposit Box Late Fee"]) {
+      expect(splitLiveCategory("late_payment", name)?.to, name).toBe("safe_deposit_box");
+      expect(refileCategory("late_payment", name), name).toBe("safe_deposit_box");
+    }
+  });
+
+  test("a night deposit name in safe_deposit_box splits to night_deposit however its words are spaced or joined", () => {
+    for (const name of ["Night  Deposit Key", "Night-Drop Key Replacement", "Night/Deposit Key", "Night Drop Key"]) {
+      expect(splitLiveCategory("safe_deposit_box", name)?.to, name).toBe("night_deposit");
+      expect(refileCategory("safe_deposit_box", name), name).toBe("night_deposit");
+    }
+    expect(splitLiveCategory("safe_deposit_box", "Overnight Deposit Box Rent")).toBeNull();
+    expect(SPLIT_CATEGORIES.safe_deposit_box.sqlPattern).toBe("night[[:space:]/-]+(deposit|drop)");
+    expect(new RegExp(NIGHT_DEPOSIT_WORDS, "i").test("Night \t Drop")).toBe(true);
+  });
+
+  test("the fold rules version is bumped for the change", () => {
+    expect(FOLD_RULES_VERSION).toBeGreaterThanOrEqual(20);
   });
 });
