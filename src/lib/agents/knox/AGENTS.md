@@ -1895,7 +1895,8 @@ The original Oct7 recurrence counts remain dated history, not current impact mea
 Audience lessons (`audience-lessons.ts`, `KNOX_AUDIENCE_LESSONS_VERSION` v1, #2062): a confirmed
 business-schedule takedown (`takedown_confirmed`, check `hamilton.business_schedule`) whose fee is still
 down for its `business_schedule:` reason teaches the audience of the document it was read from. The
-same document's fee of the same name (`lessonName`) is a business fee; when the document's address names
+same document's fee of the same name (`lessonName`) at the same amount is a business fee (a mixed
+schedule can print the name again at a consumer price); when the document's address names
 a business-only schedule (`BUSINESS_DOC_SQL`, the check's own rule), every fee read from it is. A lesson
 never spans the bank's other documents, and applies only when the line itself states no audience
 (`feeApplicability` unknown); the read is then written `fee_audience = 'business'` with its evidence
@@ -1906,8 +1907,9 @@ still loads the lessons for its documents and reports `audienceLessonsLoaded` an
 `audienceLessonMatches` (the reads it would label), the live dry run. Oct 27 dry run (read-only SQL on
 prod): 396 confirmed business-schedule takedowns are still down, on 158 documents at the banks they
 came from (332 on 101 business-only documents); of the live fees on those documents, 47 with no
-audience on 13 banks' business-only documents would be read as business on a re-read, and no live fee
-matches a name lesson (every taught name is down). Switching it on takes a rules bump so the documents
+audience on 13 banks' business-only documents would be read as business on a re-read. 376 name
+lessons are taught; 3 live fees on those documents share a taught name, 1 of them at the taught amount,
+and all 3 state their audience, so none would be labelled. Switching it on takes a rules bump so the documents
 are read again.
 
 Live name tidy (`name-retidy.ts`, Oct 7): names Knox stored before it tidied reads ("Stop Payment |

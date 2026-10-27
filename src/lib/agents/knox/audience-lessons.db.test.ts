@@ -100,8 +100,10 @@ describe.skipIf(!connection)("Knox learns the audience from confirmed business-s
       expect(loaded.loaded).toBe(2);
       expect([...loaded.names.values()].sort()).toEqual([nameLesson, docLesson].sort());
       expect([...loaded.documents.entries()]).toEqual([[business.documentId, docLesson]]);
-      expect(lessons.audienceLessonFor(candidate("Business ATM/Debit Transactions, off premises", 2.5, "atm_non_network"), loaded, mixed.documentId))
+      expect(lessons.audienceLessonFor(candidate("Business ATM/Debit Transactions, off premises", 2, "atm_non_network"), loaded, mixed.documentId))
         .toEqual({ scope: "name", feedbackId: nameLesson });
+      // The same name at another price on the mixed schedule is not taught.
+      expect(lessons.audienceLessonFor(candidate("Business ATM/Debit Transactions, off premises", 2.5, "atm_non_network"), loaded, mixed.documentId)).toBeNull();
       expect(lessons.audienceLessonFor(candidate("Stop Payment", 30, "stop_payment"), loaded, mixed.documentId)).toBeNull();
       expect(lessons.audienceLessonFor(candidate("Stop Payment", 35, "stop_payment"), loaded, business.documentId))
         .toEqual({ scope: "document", feedbackId: docLesson });

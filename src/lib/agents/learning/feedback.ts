@@ -281,20 +281,23 @@ export function takedownKind(reason: string): FeedbackKind {
  * Hamilton check that names its reason after itself. The limit guard writes `limit_as_fee:...` and
  * files its second look under `hamilton.limit_guard`; each Darwin re-check writes `<x>:...` and files
  * its second look under `darwin.<x>` (or another name: the line conflict writes "one line, two reads",
- * the verified re-check `darwin_recheck:`). Without these entries 1,720 sync rows for 860 fees
- * (Oct 27) sat under check names no producer has.
+ * the verified re-check `darwin_recheck:`, the edition check `older_edition:` and `not_yet_effective:`).
+ * Without these entries the sync filed thousands of rows (Oct 27) under check names no producer has.
  *
- * Literal names, so this module imports no check (the checks import it). `feedback.test.ts` walks
- * every module that runs a second look and pins each reason prefix it writes to that module's own
- * check constant, so a new check cannot repeat the bug. Prefixes that more than one check writes
- * (`same_line_duplicate`, the category guard's and eval verdicts' codes) keep the sync's name: the
- * reason alone cannot say which check wrote them, and readers match those names.
+ * Literal names, so this module imports no check (the checks import it).
+ * `takedown-reason-checks.test.ts` finds every module that takes live fees down (a second look, or an
+ * archive of `published_fee_records` with a reason) and pins each reason prefix it writes to that
+ * module's own check constant, so a new check cannot repeat the bug. Prefixes that more than one
+ * check writes (`same_line_duplicate`, `duplicate of #`, the eval verdicts' kinds) keep the sync's
+ * name: the reason alone cannot say which check wrote them, and readers match those names.
  */
 export const TAKEDOWN_REASON_CHECKS: Readonly<Record<string, string>> = {
   // Hamilton.
   limit_as_fee: "hamilton.limit_guard",
   not_on_current_copy: "hamilton.current_copy",
   source_link_untraceable: "hamilton.source_link",
+  frequency_hold: "hamilton.frequency_fill",
+  source_mismatch: "hamilton.hand_takedown",
   // Darwin's re-checks of live fees.
   banded_zero: "darwin.banded_zero",
   canadian_document: "darwin.canadian_document",
@@ -318,6 +321,9 @@ export const TAKEDOWN_REASON_CHECKS: Readonly<Record<string, string>> = {
   "darwin.reread_category": "darwin.reread_category",
   translated_copy: "darwin.translated_copy",
   darwin_recheck: "darwin.verified_recheck",
+  older_edition: "darwin.edition_effective_check",
+  not_yet_effective: "darwin.edition_effective_check",
+  "fragment name": "darwin.live_fragment_check",
 };
 
 /** The Hamilton check behind a takedown reason. */

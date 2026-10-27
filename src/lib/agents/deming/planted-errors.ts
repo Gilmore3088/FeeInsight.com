@@ -4,6 +4,7 @@ import { takedownFeedback, takedownSynced } from "@/lib/agents/learning/feedback
 import { takedownCheck } from "@/lib/agents/learning/feedback";
 import { CONFIRMED_KIND, secondLookDedupeKey } from "@/lib/agents/hamilton/second-look";
 import { LIMIT_GUARD_CHECK, limitGuardReason, limitGuardVerdict } from "@/lib/agents/hamilton/limit-guard";
+import { audienceLessonsLive } from "@/lib/agents/knox/audience-lessons";
 import { BUSINESS_FOOTNOTE_REASON, BUSINESS_SCHEDULE_CHECK, footnoteMarksBusiness } from "@/lib/agents/hamilton/business-schedule";
 import { DUPLICATE_COLLAPSE_REASON_PREFIX, NEAR_NAME_COLLAPSE_REASON_SUFFIX, nearNameRepeats, type NearNameRow } from "@/lib/agents/hamilton/duplicate-collapse";
 import { nextReaderRung, PRIMARY_READERS, survivalFeedback, type SurvivalRow } from "@/lib/agents/rosetta/text-survival";
@@ -235,8 +236,9 @@ export const PLANTED_ERRORS: PlantedError[] = [
     stage: "extract",
     detect: () => (footnoteMarksBusiness(AUDIENCE_TEXT, "Overdraft - Insufficient Funds / Uncollected") ? BUSINESS_FOOTNOTE_REASON : null),
     record: (reason) => [...rows(takedown(931, reason, { canonical_fee_key: "nsf", fee_name: "Overdraft - Insufficient Funds / Uncollected", amount: 40 })), confirmed(BUSINESS_SCHEDULE_CHECK, 931)],
-    // Knox's audience lessons read the business schedule's confirmed takedowns as the document's business fees (#2062).
-    reader: { file: "src/lib/agents/knox/audience-lessons.ts", picksOut: "f.check_name = ${BUSINESS_SCHEDULE_CHECK}" },
+    // Knox's audience lessons read the business schedule's confirmed takedowns as the document's business
+    // fees (#2062), but act on them only with KNOX_AUDIENCE_LESSONS_LIVE on: off, nothing reads them.
+    reader: audienceLessonsLive() ? { file: "src/lib/agents/knox/audience-lessons.ts", picksOut: "f.check_name = ${BUSINESS_SCHEDULE_CHECK}" } : null,
     rerun: () => errorFixCanName("extract", BUSINESS_SCHEDULE_CHECK),
     recheck: null,
   },
@@ -298,10 +300,11 @@ export const KNOWN_GAPS: Record<string, Partial<Record<LoopLink, number>>> = {
   wrong_document: { fixed: 2058 },
   // The error loop names only checks its daily re-check re-runs; the limit guard is not one.
   limit_as_fee: { rerun: 2058 },
-  // Knox's audience lessons read the business-schedule second look (#2062), but that row names publish:
-  // the takedown sync skips business-schedule reasons (a whole business document is Magellan's
-  // lesson), so a business-only footnote on a mixed schedule leaves no row naming extract.
-  wrong_audience: { recorded: 2062, rerun: 2058, fixed: 2058 },
+  // Knox's audience lessons read the business-schedule second look (#2062), but only once
+  // KNOX_AUDIENCE_LESSONS_LIVE is on, so the read gap stays until then. That row names publish: the
+  // takedown sync skips business-schedule reasons (a whole business document is Magellan's lesson), so
+  // a business-only footnote on a mixed schedule leaves no row naming extract.
+  wrong_audience: { recorded: 2062, ...(audienceLessonsLive() ? {} : { read: 2062 }), rerun: 2058, fixed: 2058 },
   // Duplicates teach Knox nothing: only the takedown sync's restore detection reads them.
   duplicate: { read: 2062, rerun: 2058, fixed: 2058 },
   // #2070: the takedown sync records a discontinued account's takedown as its own kind, but only its

@@ -15,8 +15,8 @@ const read = (changes: Partial<ExtractedFeeCandidate> = {}): ExtractedFeeCandida
 // Two confirmed business-schedule takedowns: a business-named fee on a mixed schedule (doc 40), and a
 // fee read from a business-only schedule's address (doc 50).
 const lessons = audienceLessonsFrom([
-  { feedback_id: 11, source_document_id: 40, fee_name: "Business ATM/Debit Transactions, off premises", business_document: false },
-  { feedback_id: 12, source_document_id: 50, fee_name: "Monthly Service Charge", business_document: true },
+  { feedback_id: 11, source_document_id: 40, fee_name: "Business ATM/Debit Transactions, off premises", amount: "2.00", business_document: false },
+  { feedback_id: 12, source_document_id: 50, fee_name: "Monthly Service Charge", amount: 20, business_document: true },
 ]);
 
 describe("Knox audience lessons from confirmed business-schedule takedowns (#2062)", () => {
@@ -36,15 +36,24 @@ describe("Knox audience lessons from confirmed business-schedule takedowns (#206
     expect(audienceLessonFor(read(), lessons, 41)).toBeNull();
   });
 
+  it("teaches a name only at the amount the takedown read, since a mixed schedule may print it again at a consumer price", () => {
+    expect(audienceLessonFor(read({ amount: 2.5, excerpt: "Business ATM/Debit Transactions, off premises | $2.50" }), lessons, 40)).toBeNull();
+    // On a business-only document the document lesson still covers any amount.
+    expect(audienceLessonFor(read({ feeName: "Monthly Service Charge", amount: 15, excerpt: "Monthly Service Charge | $15.00" }), lessons, 50))
+      .toEqual({ scope: "document", feedbackId: 12 });
+    // No usable amount teaches no name lesson.
+    expect(audienceLessonsFrom([{ feedback_id: 3, source_document_id: 7, fee_name: "Business Fee", amount: null, business_document: false }]).names.size).toBe(0);
+  });
+
   it("learns every fee of a business-only document", () => {
     expect(audienceLessonFor(read({ feeName: "Stop Payment", excerpt: "Stop Payment | $35.00", canonicalHint: "stop_payment" }), lessons, 50))
       .toEqual({ scope: "document", feedbackId: 12 });
-    expect(audienceLessonFor(read({ feeName: "Monthly Service Charge", excerpt: "Monthly Service Charge | $20.00" }), lessons, 50))
+    expect(audienceLessonFor(read({ feeName: "Monthly Service Charge", amount: 20, excerpt: "Monthly Service Charge | $20.00" }), lessons, 50))
       .toEqual({ scope: "name", feedbackId: 12 });
   });
 
   it("never overrides an audience the line states", () => {
-    const consumer = read({ feeName: "Stop Payment", excerpt: "Stop Payment (consumer accounts) | $35.00" });
+    const consumer = read({ feeName: "Stop Payment", amount: 35, excerpt: "Stop Payment (consumer accounts) | $35.00" });
     expect(candidateWriteFacts(consumer).applicability.feeAudience).toBe("consumer");
     expect(audienceLessonFor(consumer, lessons, 50)).toBeNull();
     // Even a candidate carrying a lesson keeps the line's own audience.
@@ -64,6 +73,6 @@ describe("Knox audience lessons from confirmed business-schedule takedowns (#206
 
   it("reads nothing from no lessons or a bad document id", () => {
     expect(audienceLessonFor(read(), emptyAudienceLessons(), 40)).toBeNull();
-    expect(audienceLessonsFrom([{ feedback_id: 1, source_document_id: "x", fee_name: "Fee", business_document: true }]).loaded).toBe(0);
+    expect(audienceLessonsFrom([{ feedback_id: 1, source_document_id: "x", fee_name: "Fee", amount: 1, business_document: true }]).loaded).toBe(0);
   });
 });

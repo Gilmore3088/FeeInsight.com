@@ -20,8 +20,11 @@ type SqlTag = typeof sql;
  * A lesson is one of two, both scoped to the document the takedown read (a bank can print the same
  * name at a business price on one schedule and a consumer price on another, so a lesson never spans
  * the bank's other documents):
- * - name: the document's fee of that exact name (`lessonName`) is business. Covers a business-named fee
- *   on a mixed schedule ("Business ATM/Debit Transactions") and a business-only footnote's fee.
+ * - name: the document's fee of that exact name (`lessonName`) and amount is business. Covers a
+ *   business-named fee on a mixed schedule ("Business ATM/Debit Transactions") and a business-only
+ *   footnote's fee. A mixed schedule can print the same name at a consumer price on another line, so
+ *   a same-name read at another amount is not taught; a new business price on a new copy waits for
+ *   its own takedown.
  * - document: the document's address names a business-only schedule (`BUSINESS_DOC_SQL`, the check's
  *   own rule), so each of its fees is business, as the check already judges them.
  * Only a takedown still down for its business-schedule reason counts: a restored fee, or one later
@@ -54,7 +57,7 @@ export interface AudienceLessonMatch {
   feedbackId: number;
 }
 export interface AudienceLessons {
-  /** `<source_document_id>|<name key>` -> the takedown that teaches it. */
+  /** `<source_document_id>|<name key>|<amount>` -> the takedown that teaches it. */
   names: Map<string, number>;
   /** Business-only documents -> the first takedown read from them. */
   documents: Map<number, number>;
@@ -67,12 +70,19 @@ export function emptyAudienceLessons(): AudienceLessons {
   return { names: new Map(), documents: new Map(), loaded: 0 };
 }
 
-const nameKey = (sourceDocumentId: number, feeName: string) => `${sourceDocumentId}|${lessonName(feeName)}`;
+/** Cents, so 2 and "2.00" are one amount; null for no usable amount. */
+const cents = (amount: unknown): number | null => {
+  const value = typeof amount === "number" ? amount : typeof amount === "string" && amount.trim() ? Number(amount) : NaN;
+  return Number.isFinite(value) ? Math.round(value * 100) : null;
+};
+const nameKey = (sourceDocumentId: number, feeName: string, amountCents: number) => `${sourceDocumentId}|${lessonName(feeName)}|${amountCents}`;
 
 export interface AudienceLessonRow {
   feedback_id: number | string;
   source_document_id: number | string;
   fee_name: string | null;
+  /** The raw read's amount: a name lesson teaches only that price. */
+  amount: number | string | null;
   business_document: boolean | null;
 }
 
@@ -83,8 +93,9 @@ export function audienceLessonsFrom(rows: readonly AudienceLessonRow[]): Audienc
     const documentId = Number(row.source_document_id), feedbackId = Number(row.feedback_id);
     if (!Number.isSafeInteger(documentId) || documentId <= 0 || !Number.isSafeInteger(feedbackId)) continue;
     lessons.loaded += 1;
-    if (row.fee_name && lessonName(row.fee_name)) {
-      const key = nameKey(documentId, row.fee_name);
+    const amount = cents(row.amount);
+    if (row.fee_name && lessonName(row.fee_name) && amount != null) {
+      const key = nameKey(documentId, row.fee_name, amount);
       if (!lessons.names.has(key)) lessons.names.set(key, feedbackId);
     }
     if (row.business_document === true && !lessons.documents.has(documentId)) lessons.documents.set(documentId, feedbackId);
@@ -103,7 +114,7 @@ export async function loadAudienceLessons(db: SqlTag, sourceDocumentIds: readonl
     return await inSavepoint(db, async (scope) => {
       if (!(await feedbackSchemaReady(scope))) return emptyAudienceLessons();
       const rows = await scope<AudienceLessonRow[]>`
-        SELECT f.id AS feedback_id, fr.source_document_id, fr.fee_name,
+        SELECT f.id AS feedback_id, fr.source_document_id, fr.fee_name, fr.amount,
                ${scope.unsafe(BUSINESS_DOC_SQL("sd.document_url"))} AS business_document
           FROM pipeline_feedback f
           JOIN published_fee_records fp ON fp.fee_published_id = f.fee_published_id
@@ -129,7 +140,8 @@ export async function loadAudienceLessons(db: SqlTag, sourceDocumentIds: readonl
 export function audienceLessonFor(candidate: ExtractedFeeCandidate, lessons: AudienceLessons, sourceDocumentId: number): AudienceLessonMatch | null {
   if (lessons.loaded === 0 || !Number.isSafeInteger(sourceDocumentId)) return null;
   if (feeApplicability(candidate.feeName, candidate.excerpt, candidate.amount).feeAudience !== "unknown") return null;
-  const named = lessons.names.get(nameKey(sourceDocumentId, candidate.feeName));
+  const amount = cents(candidate.amount);
+  const named = amount == null ? undefined : lessons.names.get(nameKey(sourceDocumentId, candidate.feeName, amount));
   if (named != null) return { scope: "name", feedbackId: named };
   const document = lessons.documents.get(sourceDocumentId);
   return document != null ? { scope: "document", feedbackId: document } : null;
