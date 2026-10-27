@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { countCurrentCopyPairs, currentCopyVerdict, interleavedPriceWitness, isFeeChangeNotice, judgeAgainstCurrentCopy, linkYear, listsFewerFees, readableCurrentText, retiredCopiesSql, retiredCopyIsNewer, secondLookFeesNotOnCurrentCopy, type CurrentCopyFeeRow } from "./current-copy";
+import { countCurrentCopyPairs, currentCopyVerdict, feeChangeNoticeKind, interleavedPriceWitness, isFeeChangeNotice, judgeAgainstCurrentCopy, linkYear, listsFewerFees, readableCurrentText, retiredCopiesSql, retiredCopyIsNewer, secondLookFeesNotOnCurrentCopy, type CurrentCopyFeeRow } from "./current-copy";
 
 function templateText(strings: unknown): string {
   return Array.isArray(strings) ? strings.join(" ") : String(strings);
@@ -388,14 +388,38 @@ describe("currentCopyVerdict (third hand check, #2072, Oct 27: 11 of 20 first lo
       ...JDCU_OLDER.split("\n").slice(1).filter((line) => !line.startsWith("Statement Reprint")),
     ].join("\n");
     expect(currentCopyVerdict(fee(1, "Statement Reprint", "5.00"), schedule, JDCU_OLDER)).toBe("dropped");
+    // Known only by its change table, a copy reprinting nearly every fee is a schedule.
     const reprinted = [
-      "The fees highlighted below have been adjusted and will be effective on August 1, 2026.",
       "Fees | Fee through | Fee as of",
       ...JDCU_OLDER.split("\n").slice(1).filter((line) => !line.startsWith("Statement Reprint")).map((line) => `${line} | ${line.split("| ")[1]}`),
     ].join("\n");
-    expect(isFeeChangeNotice(reprinted)).toBe(true);
-    expect(listsFewerFees(reprinted, JDCU_OLDER)).toBe(false);
+    expect(feeChangeNoticeKind(reprinted)).toBe("table");
+    expect(listsFewerFees(reprinted, JDCU_OLDER, "table")).toBe(false);
     expect(currentCopyVerdict(fee(1, "Statement Reprint", "5.00"), reprinted, JDCU_OLDER)).toBe("dropped");
+  });
+
+  it("needs only fewer fees than the older copy when the notice says outright that fees changed (re-review)", () => {
+    const older = "Schedule of Fees\nMoney Orders | $2.00\nStop Payment | $30.00\nStatement Reprint | $5.00\nWire Transfer Outgoing | $25.00";
+    const notice = "General Fee Changes:\nThe fees highlighted below have been adjusted.\nMoney Orders | $5.00\nStop Payment | $35.00";
+    expect(feeChangeNoticeKind(notice)).toBe("stated");
+    expect(listsFewerFees(notice, older, "stated")).toBe(true);
+    expect(listsFewerFees(notice, older, "table")).toBe(false);
+    expect(currentCopyVerdict(fee(1, "Statement Reprint", "5.00"), notice, older)).toBe("unproven");
+    expect(currentCopyVerdict(fee(2, "Wire Transfer Outgoing", "25.00"), notice, older)).toBe("unproven");
+    // A row the notice reprices is still stale.
+    expect(currentCopyVerdict(fee(3, "Stop Payment", "30.00", { canonical_fee_key: "stop_payment" }), notice, older)).toBe("still_named");
+    // As many priced lines as the older copy: a schedule, whatever it says.
+    const full = `${notice}\nStatement Reprint | $5.00\nWire Transfer Incoming | $10.00`;
+    expect(listsFewerFees(full, older, "stated")).toBe(false);
+  });
+
+  it.each([
+    ["Overdraft Fee: Per Occurrence"],
+    ["Overdraft - Per Transaction"],
+  ])("never anchors %s on its per-unit words (re-review)", (name) => {
+    const current = `${filler}Courtesy Pay $35.00\nStop Payment per occurrence..........Research per transaction.......... $30.00$29.00\n`;
+    expect(interleavedPriceWitness(name, 29, current)).toBe(false);
+    expect(currentCopyVerdict(fee(1, name, "29.00", { canonical_fee_key: "overdraft" }), current, `${filler}${name} | $29.00\n`)).not.toBe("unproven");
   });
 
   it("keeps a fee stale when the priced line above the glued prices is its own (review of 3d9f46ef9)", () => {

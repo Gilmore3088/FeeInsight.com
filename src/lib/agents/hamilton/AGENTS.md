@@ -916,12 +916,13 @@ The third hand check (#2072, Oct 27) found 11 of 20 first looks really stale. Si
 current copy is read as a reader sees it (`readableCurrentText`: a `<br>` is a line break, a
 point spaced off its cents is the price, a change table's row is its newest column). A fee whose
 label sits on a line of glued two-column prices that includes its price, or on an unpriced line
-just above it (`interleavedPriceWitness`), is not proven stale. Generic fee words ("Per Item")
-never find a label, and a fee whose name is priced on a line of its own is judged by that line. A
-copy that states a fee change outright ("have been adjusted", "the following fees will change", a
-"Fee through | Fee as of" table: `isFeeChangeNotice`) and lists fewer than half the older copy's
-priced lines (`listsFewerFees`) proves no fee stale by leaving it out; only a notice row naming the
-fee at another price does. Fees the check reads but cannot prove stale have their first looks
+just above it (`interleavedPriceWitness`), is not proven stale. Generic fee words and per-unit
+words ("Per Item", "Per Occurrence") never find a label, and a fee whose name is priced on a line
+of its own is judged by that line. A copy that states a fee change outright ("have been adjusted",
+"the following fees will change") and lists fewer priced lines than the older copy, or that opens
+with a "Fee through | Fee as of" table and lists fewer than half (`isFeeChangeNotice`,
+`listsFewerFees`), proves no fee stale by leaving it out; only a notice row naming the fee at
+another price does. Fees the check reads but cannot prove stale have their first looks
 cleared as `could_not_judge` at weight 0, never counted as a learned pass. Confirmations stay off
 until a re-sample passes 18 of 20.
 

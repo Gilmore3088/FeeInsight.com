@@ -256,7 +256,8 @@ export function currentCopyVerdict(fee: CurrentCopyFeeRow, rawCurrentText: strin
   if (interleavedPriceWitness(fee.fee_name, amount, currentText)) return "unproven";
   // #2072: a fee-change notice's silence proves nothing; only a row of its own naming the fee at
   // another price does ("Money Orders | $2.00 | $5.00" makes a live $2 stale).
-  if (isFeeChangeNotice(rawCurrentText) && listsFewerFees(currentText, olderText)) {
+  const notice = feeChangeNoticeKind(rawCurrentText);
+  if (notice && listsFewerFees(currentText, olderText, notice)) {
     const traced = checkFeeAgainstSource(currentText, fee.fee_name, amount, ".", fee.canonical_fee_key);
     if (!traced.ok && traced.reason === "name_not_in_text") return "unproven";
   }
@@ -264,14 +265,16 @@ export function currentCopyVerdict(fee: CurrentCopyFeeRow, rawCurrentText: strin
 }
 
 /**
- * #2072: a notice lists only what changes, so it prints clearly fewer priced lines than the full
- * schedule it amends: fewer than half the older copy's. A copy that reprints every fee (a full
- * schedule with "Current fee | New fee" columns) is a schedule, and its silence still drops a fee.
- * Pure.
+ * #2072: a notice lists only what changes, so it prints fewer priced lines than the full schedule
+ * it amends. A copy that says outright its fees changed ("The fees highlighted below have been
+ * adjusted") needs only fewer than the older copy: on a 4-fee page, a notice reprinting 2 of them
+ * still proves nothing about the other 2. A copy known only by a change table needs fewer than
+ * half, since a full schedule can print "Current fee | New fee" columns for every fee and its
+ * silence still drops a fee. Pure.
  */
-export function listsFewerFees(currentText: string, olderText: string): boolean {
+export function listsFewerFees(currentText: string, olderText: string, notice: "stated" | "table" = "table"): boolean {
   const priced = (text: string) => text.split("\n").filter((line) => /\$\s?\d/.test(line)).length;
-  return priced(currentText) * 2 < priced(olderText);
+  return notice === "stated" ? priced(currentText) < priced(olderText) : priced(currentText) * 2 < priced(olderText);
 }
 
 /**
@@ -286,6 +289,11 @@ export function listsFewerFees(currentText: string, olderText: string): boolean 
 export function readableCurrentText(text: string): string {
   return newestColumnText(withDroppedDecimalPoints(text.replace(/<br\s*\/?>/gi, "\n")));
 }
+
+/** Units a fee is charged per ("per occurrence", "per transaction", "per hour"): no fee's own words. */
+const UNIT_WORDS: ReadonlySet<string> = new Set(
+  "occurrence occurrences transaction transactions item items check checks request requests statement statements hour hours copy copies day days week weeks month months year years each page pages time times instance instances event events occasion use uses visit visits box boxes".split(" "),
+);
 
 /** A run of two or more prices glued with nothing between them: "$10.00$25.00", "$ 5.00$15.00". */
 const GLUED_PRICE_RUN = /\$\s?\d[\d,]*\.\d{2}(?:\$\s?\d[\d,]*\.\d{2})+/g;
@@ -328,12 +336,14 @@ export function interleavedPriceWitness(feeName: string, amount: number, current
 /**
  * The pieces of a fee's name that can find its label on a page, squashed: the name without its
  * parentheses and each piece between separators, of 5 or more letters, holding at least one word
- * that is not generic fee vocabulary ("NSF Fee", not "Per Item"). Pure.
+ * that is neither generic fee vocabulary (`GENERIC_WORDS`) nor a unit the fee is charged per
+ * (`UNIT_WORDS`): "NSF Fee" and "Overdraft Fee" anchor, "Per Item" and "Per Occurrence" do not,
+ * since another column's "Stop Payment per occurrence" prints the same words. Pure.
  */
 function nameAnchors(feeName: string): string[] {
   const bare = feeName.replace(/\([^()]*\)/g, " ");
   const pieces = [bare, ...bare.split(/[:|–—]| - /)];
-  const distinctive = (piece: string) => (piece.toLowerCase().match(/[a-z]{3,}/g) ?? []).some((word) => !GENERIC_WORDS.has(word));
+  const distinctive = (piece: string) => (piece.toLowerCase().match(/[a-z]{3,}/g) ?? []).some((word) => !GENERIC_WORDS.has(word) && !UNIT_WORDS.has(word));
   return [...new Set(pieces.filter(distinctive).map(squash).filter((piece) => piece.length >= 5))];
 }
 
@@ -350,8 +360,17 @@ function nameAnchors(feeName: string): string[] {
  * copy to list clearly fewer fees than the older one (`listsFewerFees`). Pure.
  */
 export function isFeeChangeNotice(text: string): boolean {
+  return feeChangeNoticeKind(text) != null;
+}
+
+/**
+ * How a copy shows it is a notice: "stated" when its opening says outright that fees changed,
+ * "table" when it only opens with a change table, null when neither. Pure.
+ */
+export function feeChangeNoticeKind(text: string): "stated" | "table" | null {
   const head = text.slice(0, FEE_CHANGE_NOTICE_HEAD_CHARS);
-  return FEE_CHANGE_NOTICE.some((pattern) => pattern.test(head)) || hasFeeChangeTable(head);
+  if (FEE_CHANGE_NOTICE.some((pattern) => pattern.test(head))) return "stated";
+  return hasFeeChangeTable(head) ? "table" : null;
 }
 
 export const FEE_CHANGE_NOTICE_HEAD_CHARS = 1500;
