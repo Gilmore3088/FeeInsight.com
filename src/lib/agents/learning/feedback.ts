@@ -47,7 +47,9 @@ export type FeedbackStage = (typeof FEEDBACK_STAGES)[number];
  *   Audience records (weight 0, the old value kept for a rollback): audience_relabeled
  *     (`darwin/audience-relabel.ts`), audience_hand_fixed (`hamilton/hand-takedowns.ts`, #1302)
  *   Link level (Magellan): produced_live_fees, thin_link, wrong_document, dead_link,
- *     business_schedule (a main link that is a business-only schedule)
+ *     business_schedule (a main link that is a business-only schedule), missed_second_schedule (a
+ *     document known to price the bank's fees that Magellan never stored, #2070; Deming writes it,
+ *     the companion finder reads it, `magellan/missed-schedules.ts`)
  *   Text level (Rosetta, `rosetta/text-survival.ts`): text_held_up, text_lost_fees
  *   Possible reading error (Knox, `knox/untraced-read-error.ts`, #1102): untraced_lines (a text whose
  *     held lines Knox's rules failed to trace under 3+ rules versions; Rosetta reads it again)

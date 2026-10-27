@@ -627,6 +627,16 @@ export const KNOX_LESSONS: AgentLesson[] = [
     since: "2026-10-25",
   },
   {
+    id: "issue-2070-flag-the-legacy-table-before-reading",
+    agent: "knox",
+    stage: "extract",
+    lesson: "Before reading a text, find the tables for accounts the bank no longer offers: the price rows under a legacy section heading (\"Legacy Accounts\", \"Grandfathered Checking Account Types:\") until a blank line or the next section, and rows whose own price cell or label says the account is no longer offered. Flag them on the document's read, and leave them out of the text you read rather than reading each row and letting the self-check refuse it, so they never become held untraced lines that look like a reading error. Take only what the shared check would refuse for every fee on the row: a two-column line, a footnote cell, a long one-line page and a fee also priced in a current row stay with the shared check.",
+    why: "Since rules v113 the self-check refused each discontinued row after the read, so every legacy table came back as held untraced lines on every read, which feed the reading-error report Rosetta acts on, and nothing showed the table itself on the run ledger (#2070).",
+    evidence: { issues: [2070], prs: [2784], files: ["src/lib/agents/knox/discontinued-tables.ts", "src/lib/custom-report/discontinued-rows.ts", "src/lib/agents/knox/specialists.ts", "src/lib/agents/knox/extract.ts"] },
+    appliesTo: "all",
+    since: "2026-10-27",
+  },
+  {
     id: "issue-1912-heading-decides-a-plain-return",
     agent: "knox",
     stage: "extract",

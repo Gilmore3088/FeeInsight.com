@@ -208,6 +208,7 @@ export const FEEDBACK_KINDS = {
   wrong_document: { readers: MAGELLAN_LINK_READERS, unreadChecks: ["hamilton.other_bank_document", "hamilton.unconfirmed_document_host", "hamilton.article_page", "hamilton.business_schedule", "hamilton.hand_takedown"], note: "Magellan reads its own link-yield rows; Hamilton's wrong-document takedowns (hand takedowns too, #1677) reach it only as audit misses." },
   batch_review: { readers: ["src/lib/agents/magellan/batch-review.ts"] },
   search_miss: { readers: ["src/lib/agents/magellan/search-misses.ts", MAGELLAN_DISCOVERY], note: "The bank's next search runs the specialists its last miss on the same website ran with nothing to show after the others (search-misses.ts, #2062)." },
+  missed_second_schedule: { readers: ["src/lib/agents/magellan/missed-schedules.ts"], readStages: ["discover"], note: "#2070: a document known to price the bank's fees (the answer key's) that Magellan never stored. Deming's answer-key replay records it; the companion finder reads it and searches the bank first, in rescue mode too, checking the missed address before anything else (missed-schedules.ts, second-document.ts)." },
 
   // Marketing.
   campaign_result: { readers: ["src/lib/agents/marketing/monthly.ts"] },
