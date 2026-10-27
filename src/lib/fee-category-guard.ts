@@ -1272,7 +1272,8 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // paid, honoured, overdraft, courtesy) stays NSF, so "Collection Items Non-Sufficient Funds (NSF)
 // Fee***: Check and ACH" (81426, a glued column heading) keeps its category. Read-only dry run (Oct
 // 27): of the 96 live NSF fees whose names say "collect", 11 fail and re-file in place (no bank has a
-// live collection item at the same price); 0 come down. Each was read on its stored source line.
+// live collection item at the same price), 1 takedown is restored as collection_item (26203, "Items
+// sent for Collection" $30) and 0 come down. Each was read on its stored source line.
 export const CATEGORY_GUARD_VERSION = 101;
 
 /** v87 (#1916): where a late charge printed in a safe deposit box section is filed. */

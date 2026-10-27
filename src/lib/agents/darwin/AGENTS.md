@@ -1953,7 +1953,8 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   debits (ACH, debit, electronic, presentment, paid, honoured, overdraft, courtesy) stays NSF, as does
   "uncollected funds" and a debt collection. v90's collection-section rule reads only plain "Return..."
   names, so it missed County Excellence's 122514. Of the 96 live NSF fees whose names say "collect",
-  11 re-file in place and none comes down (prod, read-only, Oct 27).
+  11 re-file in place, 1 takedown is restored as collection_item (26203) and none comes down (prod,
+  read-only, Oct 27).
 - v100 (Oct 26,
   #1912): a commercial lockbox (a remittance-processing service for businesses) fails the safe deposit
   box type: a lock box name that names the service (service, processing, items, remittances, wholesale or

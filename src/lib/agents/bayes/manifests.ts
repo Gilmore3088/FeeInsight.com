@@ -654,7 +654,7 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // heading) fails safe_deposit_box with no re-file; 1 live fee (135270) comes down on the dry run.
     // v101 (Oct 27, #1947): an NSF-filed name that names a collection item ("NSF Collection Item
     // (incoming)", `COLLECTION_NSF_NAME`) fails NSF and re-files to collection_item; 11 live fees re-file
-    // in place on the dry run, 0 come down.
+    // in place on the dry run, 1 takedown is restored as collection_item (26203), 0 come down.
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",

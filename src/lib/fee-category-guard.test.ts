@@ -2952,6 +2952,8 @@ describe("guard v101: an NSF-filed collection item is a collection item (#1947)"
       "Uncollected Funds Return Check Fee",
       // Live 81426: a column heading ("Collection Items") glued onto the bank's own NSF line.
       "Collection Items Non-Sufficient Funds (NSF) Fee: Check and ACH",
+      // A name that also names the member's own debits stays NSF.
+      "NSF Item Returned - Collection Item or Debit",
       // Live 57461: a Canadian check returned NSF names no collection.
       "Non-Sufficient Funds Fee - Canadian Check",
     ]) {
