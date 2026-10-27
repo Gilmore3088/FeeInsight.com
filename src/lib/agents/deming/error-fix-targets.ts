@@ -92,6 +92,21 @@ export function namedErrorSql(db: SqlTag, entry: ErrorFixEntry) {
        )`;
 }
 
+/**
+ * SQL: the current copy of a document, following its `superseded_by_id` chain to the end (A to B
+ * to C gives C), never one level only. A document no copy replaced is its own current copy.
+ */
+export function currentCopySql(db: SqlTag, documentId: ReturnType<SqlTag>) {
+  return db`(WITH RECURSIVE chain(id, next_id, depth) AS (
+             SELECT d.id, d.superseded_by_id, 0 FROM source_documents d WHERE d.id = ${documentId}
+             UNION ALL
+             SELECT d.id, d.superseded_by_id, chain.depth + 1
+               FROM chain JOIN source_documents d ON d.id = chain.next_id
+              WHERE chain.depth < 50
+           )
+           SELECT chain.id FROM chain WHERE chain.next_id IS NULL LIMIT 1)`;
+}
+
 /** The merge day as a UTC timestamp, the earliest a re-run under the fixed code counts. */
 export function mergedAtSql(db: SqlTag, entry: ErrorFixEntry) {
   return db`(${entry.merged_on}::date::timestamp AT TIME ZONE 'UTC')`;
@@ -116,8 +131,10 @@ export async function errorFixVerifyTargets(
   const targets = new Map<number, ErrorFixVerifyTarget>();
   for (const entry of entries) {
     if (entry.stage !== "verify" || targets.size >= limit) continue;
+    // Rotated daily (as `namedRows` reads): fees the recheck defers stay targets, so a fixed order
+    // would let the first `limit` of them hold the cohort for good.
     const rows = await db<ErrorFixVerifyTarget[]>`
-      SELECT DISTINCT ${entry.pr}::int AS pr, p.fee_published_id, p.lineage_ref AS fee_verified_id
+      SELECT ${entry.pr}::int AS pr, p.fee_published_id, p.lineage_ref AS fee_verified_id
         FROM pipeline_feedback f
         JOIN published_fee_records p ON p.fee_published_id = f.fee_published_id
        WHERE ${namedErrorSql(db, entry)}
@@ -130,7 +147,8 @@ export async function errorFixVerifyTargets(
               AND pa.strategy = ${recheckStrategy}::text
               AND pa.created_at >= ${mergedAtSql(db, entry)}
          )
-       ORDER BY p.fee_published_id
+       GROUP BY p.fee_published_id, p.lineage_ref
+       ORDER BY md5(p.fee_published_id::text || CURRENT_DATE::text)
        LIMIT ${limit - targets.size}::int
     `;
     for (const row of rows) {
@@ -150,23 +168,27 @@ export interface ErrorFixRereadDocument {
 
 /**
  * Rosetta's re-run of a read fix (#2058): the current documents behind open named read errors
- * (the error's own document, or the copy that replaced it) whose bytes no primary read has read
- * since the merge day and that this fix has not reopened yet. Read-only; empty while no read fix
- * is registered.
+ * (the error's own document, or the end of the chain of copies that replaced it) whose bytes no
+ * settled primary read has read since the merge day and that this fix has not reopened yet. A
+ * failed read (a vault miss, an http_403) is not a read, so it leaves the document due. Read-only;
+ * empty while no read fix is registered.
  */
 export async function errorFixRereadDocuments(
   db: SqlTag,
   {
     limit,
     auxiliaryStrategies,
+    settledOutcomes,
     reopenStrategy,
     institutionId,
     stateCode,
     entries = ERROR_FIXES,
   }: {
     limit: number;
-    /** Strategies that never settle a read (`AUXILIARY_READ_STRATEGIES`), so they never count as the re-read. */
+    /** Strategies that never count as the re-read (`ERROR_FIX_UNCOUNTED_READ_STRATEGIES`: auxiliary passes, document access). */
     auxiliaryStrategies: readonly string[];
+    /** Outcomes of a read that read the bytes (`SETTLED_READ_OUTCOMES`). */
+    settledOutcomes: readonly string[];
     reopenStrategy: string;
     institutionId?: number;
     stateCode?: string | null;
@@ -181,8 +203,7 @@ export async function errorFixRereadDocuments(
       SELECT ${entry.pr}::int AS pr, doc.institution_id, doc.id AS source_document_id, doc.content_hash,
              array_agg(DISTINCT f.id ORDER BY f.id) AS feedback_ids
         FROM pipeline_feedback f
-        JOIN source_documents named ON named.id = f.source_document_id
-        JOIN source_documents doc ON doc.id = COALESCE(named.superseded_by_id, named.id)
+        JOIN source_documents doc ON doc.id = ${currentCopySql(db, db`f.source_document_id`)}
         JOIN institution_sources inst ON inst.id = doc.institution_id
        WHERE ${namedErrorSql(db, entry)}
          AND doc.institution_id = f.institution_id
@@ -200,6 +221,7 @@ export async function errorFixRereadDocuments(
               AND again.institution_id = doc.institution_id
               AND again.input_fingerprint = doc.content_hash
               AND again.strategy <> ALL(${[...auxiliaryStrategies]}::text[])
+              AND again.outcome = ANY(${[...settledOutcomes]}::text[])
               AND again.created_at >= ${mergedAtSql(db, entry)}
          )
          -- Reopened once per fix and bytes; a read that fails stays for the daily report.

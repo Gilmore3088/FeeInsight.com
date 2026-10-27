@@ -653,17 +653,6 @@ export async function recheckVerifiedFees(db: SqlTag, options: RecheckOptions): 
           for (const row of cohort) tierRuleIds.add(String(row.fee_verified_id));
           rows = [...rows, ...cohort];
         }
-        // #2058: a registered verify fix's named fees, read once more since the fix merged. A row
-        // the primary selection already holds is read there, which serves the fix as well.
-        {
-          const seen = new Set(rows.map(row => String(row.fee_verified_id)));
-          const cohort = (await selectErrorFixRows(scope, ERROR_FIX_RECHECK_LIMIT, errorFixes).catch((error: unknown) => {
-            result.errorFixError = error instanceof Error ? error.message : String(error);
-            return [];
-          })).filter(row => !seen.has(String(row.fee_verified_id)));
-          for (const row of cohort) errorFixIds.set(String(row.fee_verified_id), { pr: row.error_fix_pr, since: row.error_fix_since });
-          rows = [...rows, ...cohort];
-        }
         execution.phases.primary = "complete";
       } catch {
         // A later primary selector may fail after an earlier one returned rows. The
@@ -678,6 +667,19 @@ export async function recheckVerifiedFees(db: SqlTag, options: RecheckOptions): 
           for (const row of due) dueIds.add(String(row.fee_verified_id));
           rows = [...rows, ...due]; execution.phases.due = "complete";
         } catch { execution.phases.due = "unavailable"; execution.reasonCode = "selection_failed"; }
+      }
+      // #2058: a registered verify fix's named fees, read once more since the fix merged. After the
+      // due rows, so a row due its second look keeps the due path; a row the primary selection holds
+      // is read there, which serves the fix as well. Its own savepoint: a failed selection is
+      // reported and the rest of the recheck goes on.
+      if (execution.phases.primary === "complete") {
+        const seen = new Set(rows.map(row => String(row.fee_verified_id)));
+        const cohort = (await selectErrorFixRows(scope, ERROR_FIX_RECHECK_LIMIT, errorFixes).catch((error: unknown) => {
+          result.errorFixError = error instanceof Error ? error.message : String(error);
+          return [];
+        })).filter(row => !seen.has(String(row.fee_verified_id)));
+        for (const row of cohort) errorFixIds.set(String(row.fee_verified_id), { pr: row.error_fix_pr, since: row.error_fix_since });
+        rows = [...rows, ...cohort];
       }
       if (rows.length > 1_600) throw new RecheckDeferred("producer_witness_failed");
       execution.selected = execution.phases.primary === "complete" ? rows.length : null;

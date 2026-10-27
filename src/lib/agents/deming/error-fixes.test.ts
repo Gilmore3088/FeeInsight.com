@@ -85,9 +85,9 @@ describe("the error loop: a process fix names its errors, re-runs their banks an
 
   it("selects nothing for Rosetta or Darwin while no read or verify fix is registered", async () => {
     const db = vi.fn();
-    expect(await errorFixRereadDocuments(db as never, { limit: 10, auxiliaryStrategies: [], reopenStrategy: "read.reopen", entries: [entry()] })).toEqual([]);
+    expect(await errorFixRereadDocuments(db as never, { limit: 10, auxiliaryStrategies: [], settledOutcomes: [], reopenStrategy: "read.reopen", entries: [entry()] })).toEqual([]);
     expect(await errorFixVerifyTargets(db as never, { limit: 10, recheckStrategy: "verify.recheck", entries: [entry()] })).toEqual([]);
-    expect(await errorFixRereadDocuments(db as never, { limit: 10, auxiliaryStrategies: [], reopenStrategy: "read.reopen" })).toEqual([]);
+    expect(await errorFixRereadDocuments(db as never, { limit: 10, auxiliaryStrategies: [], settledOutcomes: [], reopenStrategy: "read.reopen" })).toEqual([]);
     expect(db).not.toHaveBeenCalled();
   });
 
@@ -127,6 +127,9 @@ describe("the error loop: a process fix names its errors, re-runs their banks an
     expect(read).toContain("again.stage = 'read'");
     expect(read).toContain("again.strategy <> ALL(");
     expect(read).toContain("f.source_document_id IS NOT NULL");
+    // Only a settled read counts, of the current copy at the end of the supersession chain.
+    expect(read).toContain("again.outcome = ANY(");
+    expect(read).toContain("WITH RECURSIVE chain");
     const verify = await queriesFor("verify");
     expect(verify).toContain("'verified:' || named_fee.lineage_ref::text");
     // A live named fee is Darwin's to re-read; only a bank whose named fee is down is asked for.

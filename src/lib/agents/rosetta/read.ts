@@ -255,6 +255,8 @@ export interface RunRosettaReadOptions {
   layoutRecheckPerRun?: number;
   /** Scans OCR'd per run at most; more are deferred to the next run. */
   ocrDocumentsPerRun?: number;
+  /** The error-fix registry the read fixes' reopen reads (#2058); the shipped one by default. */
+  errorFixes?: readonly ErrorFixEntry[];
 }
 
 export interface RunRosettaReadResult {
@@ -432,7 +434,12 @@ export const AUXILIARY_READ_STRATEGIES = [
   JS_FALLBACK_STRATEGY,
   "read.paid_transcribe",
 ];
-const SETTLED_READ_OUTCOMES: AttemptOutcome[] = ["ok", "ok_partial", "unchanged", "low_yield"];
+export const SETTLED_READ_OUTCOMES: AttemptOutcome[] = ["ok", "ok_partial", "unchanged", "low_yield"];
+/**
+ * Reads that never count as the error loop's re-read (#2058): the auxiliary passes, and a failed
+ * attempt to obtain the bytes (a vault miss, an http_403), which read nothing.
+ */
+export const ERROR_FIX_UNCOUNTED_READ_STRATEGIES: readonly string[] = [...AUXILIARY_READ_STRATEGIES, DOCUMENT_ACCESS_STRATEGY];
 /** Free OCR outcomes a newer OCR version may turn around: it read the page, but poorly. */
 const OCR_RETRY_OUTCOMES: AttemptOutcome[] = ["rejected", "empty"];
 /**
@@ -2483,7 +2490,8 @@ export async function reopenErrorFixDocuments(
 ): Promise<number> {
   const documents = await errorFixRereadDocuments(db, {
     limit: ROSETTA_REOPEN_LIMIT,
-    auxiliaryStrategies: AUXILIARY_READ_STRATEGIES,
+    auxiliaryStrategies: ERROR_FIX_UNCOUNTED_READ_STRATEGIES,
+    settledOutcomes: SETTLED_READ_OUTCOMES,
     reopenStrategy: REOPEN_STRATEGY,
     institutionId: options.institutionId,
     stateCode: normalizeStateCode(options.stateCode),
@@ -2901,6 +2909,7 @@ export async function runRosettaRead(
         stepId: options.stepId ?? null,
         institutionId: options.institutionId,
         stateCode: options.stateCode,
+        ...(options.errorFixes ? { entries: options.errorFixes } : {}),
       })).catch((error: unknown) => {
         errorFixReopenError = error instanceof Error ? error.message : String(error);
         return 0;

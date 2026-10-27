@@ -2,7 +2,7 @@ import { sql } from "@/lib/data-store/connection";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { KNOX_RULES_STRATEGY } from "@/lib/agents/knox/specialists";
-import { AUXILIARY_READ_STRATEGIES } from "@/lib/agents/rosetta/read";
+import { ERROR_FIX_UNCOUNTED_READ_STRATEGIES, SETTLED_READ_OUTCOMES } from "@/lib/agents/rosetta/read";
 import { DARWIN_RECHECK_STRATEGY } from "@/lib/agents/darwin/verified-recheck";
 import { DARWIN_VERIFY_STRATEGY } from "@/lib/agents/darwin/verify";
 import type { InstitutionText } from "@/lib/agents/hamilton/source-check";
@@ -14,6 +14,7 @@ import {
   type FreshAuditFee,
 } from "./fresh-audit";
 import {
+  currentCopySql,
   DARWIN_VERIFIED_RECHECK_CHECK,
   ERROR_FIX_CHECKS,
   ERROR_FIX_STAGES,
@@ -148,8 +149,9 @@ export interface NamedErrorRow {
  * SQL (feedback alias `f`): a completed run re-ran the entry's fixed step for this error's
  * institution after the error and, for every stage but extract (whose rules version marks the
  * fix), on or after the merge day, so the re-run ran the fixed code:
- * - read: a primary read (not an auxiliary pass) of the error's document, or of any document once a
- *   newer copy has replaced it;
+ * - read: a settled primary read (not an auxiliary pass, not a failed attempt to obtain the bytes)
+ *   of the error's document's current copy (`currentCopySql`: the error's own document, or the end
+ *   of the chain of copies that replaced it);
  * - extract: Knox read the error's document (or any, as above) at the fixed rules version;
  * - verify: Darwin's verified recheck read the named fee's verified row; once the named fee is down
  *   there is nothing live to re-read, so a direct run's classify step for the institution counts;
@@ -180,10 +182,11 @@ export function rerunSql(db: SqlTag, entry: ErrorFixEntry) {
         JOIN agent_runs run ON run.id = again.agent_run_id AND run.status = 'completed'
        WHERE again.institution_id = f.institution_id
          AND again.stage = 'read'
-         AND again.strategy <> ALL(${[...AUXILIARY_READ_STRATEGIES]}::text[])
+         AND again.strategy <> ALL(${[...ERROR_FIX_UNCOUNTED_READ_STRATEGIES]}::text[])
+         AND again.outcome = ANY(${[...SETTLED_READ_OUTCOMES]}::text[])
          AND again.created_at > f.created_at
          AND again.created_at >= ${mergedAt}
-         AND ${sameDocument}
+         AND again.source_document_id = ${currentCopySql(db, db`f.source_document_id`)}
     )`;
     case "verify":
       return db`
@@ -454,7 +457,7 @@ function emptyOutcome(entry: ErrorFixEntry, named = 0): ErrorFixEntryResult {
  * the fix's step on this fee.
  * - extract: the last read of the fee's own document at the fix's Knox rules version; a raw row
  *   that records the text it came from (`text_hash=`) must match that read's text;
- * - read: the last primary read of the fee's own document since the merge day;
+ * - read: the last settled primary read of the fee's own document since the merge day;
  * - verify: the last `verify.rules` or `verify.recheck` attempt on the fee's raw or verified row
  *   since the merge day;
  * - publish: its own publication, when that was on or after the merge day.
@@ -469,7 +472,8 @@ function rereadAtSql(db: SqlTag, entry: ErrorFixEntry) {
              WHERE pa.institution_id = c.institution_id
                AND pa.source_document_id = c.source_document_id
                AND pa.stage = 'read'
-               AND pa.strategy <> ALL(${[...AUXILIARY_READ_STRATEGIES]}::text[])
+               AND pa.strategy <> ALL(${[...ERROR_FIX_UNCOUNTED_READ_STRATEGIES]}::text[])
+               AND pa.outcome = ANY(${[...SETTLED_READ_OUTCOMES]}::text[])
                AND pa.created_at >= ${mergedAt})`;
     case "verify":
       return db`(SELECT MAX(pa.created_at)

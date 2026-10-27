@@ -8,26 +8,44 @@
 import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { JSON_TEXT_PASSTHROUGH, NUMERIC_AS_NUMBER, TEXT_WITHOUT_NUL } from "@/lib/data-store/connection";
-import { AUXILIARY_READ_STRATEGIES, REOPEN_STRATEGY, reopenErrorFixDocuments, rosettaReadCandidatesQuery } from "@/lib/agents/rosetta/read";
+import { DOCUMENT_ACCESS_STRATEGY, ERROR_FIX_UNCOUNTED_READ_STRATEGIES, REOPEN_STRATEGY, SETTLED_READ_OUTCOMES, reopenErrorFixDocuments, rosettaReadCandidatesQuery } from "@/lib/agents/rosetta/read";
 import { ROSETTA_READ_VERSION } from "@/lib/agents/rosetta/reader-versions";
 import { DARWIN_RECHECK_STRATEGY, recheckVerifiedFees } from "@/lib/agents/darwin/verified-recheck";
 import { errorFixRereadDocuments, errorFixVerifyTargets } from "./error-fix-targets";
 import { errorFixRequests, runErrorFixRecheck, type ErrorFixEntry } from "./error-fixes";
 
 const connection = process.env.E2E_DATABASE_URL;
-const READ = 20581001, VERIFY = 20581002, PUBLISH = 20581003, COHORT = 20581004;
-const BANKS = [READ, VERIFY, PUBLISH, COHORT];
+const READ = 20581001, VERIFY = 20581002, PUBLISH = 20581003, COHORT = 20581004, CHAIN = 20581005;
+const BANKS = [READ, VERIFY, PUBLISH, COHORT, CHAIN];
+// The chain bank's copies: A was replaced by B, B by C (current).
+const CHAIN_A = 20581201, CHAIN_B = 20581202, CHAIN_C = 20581203;
+const REOPEN_ARGS = { limit: 10, auxiliaryStrategies: ERROR_FIX_UNCOUNTED_READ_STRATEGIES, settledOutcomes: SETTLED_READ_OUTCOMES, reopenStrategy: REOPEN_STRATEGY };
 const EVENT = "00000000-0000-4000-8000-000020581001";
 const TEXT = "OTHER SERVICES\nStop Payment Fee | $35.00\nOverdraft Fee | $30.00 per item\nWire Transfer | $25.00";
 const READ_FIX: ErrorFixEntry = { pr: 92101, issue: 2058, stage: "read", merged_on: "2026-10-20", checks: ["hamilton.source_check"] };
 const VERIFY_FIX: ErrorFixEntry = { pr: 92102, issue: 2058, stage: "verify", merged_on: "2026-10-20", checks: ["darwin.verified_recheck"] };
 const PUBLISH_FIX: ErrorFixEntry = { pr: 92103, issue: 2058, stage: "publish", merged_on: "2026-10-20", checks: ["hamilton.source_check"] };
+/** Injects a real SQL error at one query, preserving native savepoint semantics (as verified-recheck.db.test.ts does). */
+function failSelectedSql(tx: unknown, needle: string): unknown {
+  const target = tx as ((...args: unknown[]) => unknown) & { unsafe: (query: string) => unknown; savepoint: (work: (inner: unknown) => Promise<unknown>) => Promise<unknown> };
+  return new Proxy(target, {
+    apply(fn, thisArg, args) {
+      if (Array.isArray(args[0]) && (args[0] as string[]).join(" ").includes(needle)) return fn.unsafe("SELECT 1/0");
+      return Reflect.apply(fn, thisArg, args);
+    },
+    get(fn, key) {
+      if (key === "savepoint") return (work: (inner: unknown) => Promise<unknown>) => fn.savepoint((inner) => work(failSelectedSql(inner, needle)));
+      const value = Reflect.get(fn, key);
+      return typeof value === "function" ? value.bind(fn) : value;
+    },
+  });
+}
 type Db = Parameters<typeof runErrorFixRecheck>[0] extends infer O ? O extends { db?: infer D } ? D : never : never;
 
 describe.skipIf(!connection)("error loop re-runs for read, verify and publish fixes (#2058)", () => {
   let raw: postgres.Sql<{ numeric: number; json: unknown; text: string }>;
   let db: Db;
-  let nextRaw = 20581200;
+  let nextRaw = 20581300;
   const fees: Record<string, number> = {};
   const verifiedOf: Record<string, number> = {};
 
@@ -113,7 +131,7 @@ describe.skipIf(!connection)("error loop re-runs for read, verify and publish fi
     };
     // Settled bytes: no read selects them on its own.
     expect(await selected()).toEqual([]);
-    const reopen = await errorFixRereadDocuments(db, { limit: 10, auxiliaryStrategies: AUXILIARY_READ_STRATEGIES, reopenStrategy: REOPEN_STRATEGY, entries: [READ_FIX] });
+    const reopen = await errorFixRereadDocuments(db, { ...REOPEN_ARGS, entries: [READ_FIX] });
     expect(reopen.map((row) => [row.pr, Number(row.source_document_id), row.content_hash, row.feedback_ids.map(Number)])).toEqual([[READ_FIX.pr, doc(READ), hash(READ), [id]]]);
     // Atlas asks for the bank, with no Knox version to reach.
     const requests = await errorFixRequests(db, [READ_FIX]);
@@ -131,13 +149,19 @@ describe.skipIf(!connection)("error loop re-runs for read, verify and publish fi
     expect(await reopenErrorFixDocuments(db as never, { runId: run, stepId: null, institutionId: READ, entries: [READ_FIX] })).toBe(0);
     // Not yet read: waiting.
     expect((await runErrorFixRecheck({ db, entries: [READ_FIX] })).results[0]).toMatchObject({ named: 1, waiting: 1 });
+    // A failed attempt to obtain the bytes (http_403), or a read that failed, read nothing: still waiting.
+    await raw`INSERT INTO pipeline_attempts (institution_id, source_document_id, stage, strategy, strategy_version, input_fingerprint, outcome, agent_run_id)
+              VALUES (${READ}, ${doc(READ)}, 'read', ${DOCUMENT_ACCESS_STRATEGY}, 1, ${hash(READ)}, 'http_403', ${run}),
+                     (${READ}, ${doc(READ)}, 'read', 'read.pdf_layout', ${ROSETTA_READ_VERSION}, ${hash(READ)}, 'parse_error', ${run})`;
+    expect((await runErrorFixRecheck({ db, entries: [READ_FIX] })).results[0]).toMatchObject({ named: 1, waiting: 1 });
+    expect((await errorFixRequests(db, [READ_FIX])).map((request) => request.institutionId)).toEqual([READ]);
 
     // The re-read under the fixed reader, in a completed run: the request ends and the fee is judged.
     await raw`INSERT INTO pipeline_attempts (institution_id, source_document_id, stage, strategy, strategy_version, input_fingerprint, outcome, agent_run_id)
               VALUES (${READ}, ${doc(READ)}, 'read', 'read.pdf_layout', ${ROSETTA_READ_VERSION}, ${hash(READ)}, 'ok', ${run})`;
     expect(await selected()).toEqual([]);
     expect(await errorFixRequests(db, [READ_FIX])).toEqual([]);
-    expect(await errorFixRereadDocuments(db, { limit: 10, auxiliaryStrategies: AUXILIARY_READ_STRATEGIES, reopenStrategy: REOPEN_STRATEGY, entries: [READ_FIX] })).toEqual([]);
+    expect(await errorFixRereadDocuments(db, { ...REOPEN_ARGS, entries: [READ_FIX] })).toEqual([]);
     const result = await runErrorFixRecheck({ db, entries: [READ_FIX] });
     expect(result.results[0]).toMatchObject({ named: 1, waiting: 0, nowMatches: 1 });
   });
@@ -200,6 +224,78 @@ describe.skipIf(!connection)("error loop re-runs for read, verify and publish fi
       expect(attempt).toMatchObject({ pr: String(entry.pr) });
       // Read once since the merge: not a target again.
       expect(await errorFixVerifyTargets(tx as never, { limit: 10, recheckStrategy: DARWIN_RECHECK_STRATEGY.strategy, entries: [entry] })).toEqual([]);
+      throw stop;
+    }).catch((error) => { if (error !== stop) throw error; });
+  });
+
+  it("read fix on a replaced document: reopens the end of the supersession chain and waits for a read of that copy", async () => {
+    await raw`INSERT INTO institution_sources (id, institution_name, charter_type, source, state_code) VALUES (${CHAIN}, 'Loop Chain Bank', 'bank', 'fdic', 'TX')`;
+    for (const [id, next, crawled] of [[CHAIN_C, null, "2026-10-03"], [CHAIN_B, CHAIN_C, "2026-10-02"], [CHAIN_A, CHAIN_B, "2026-10-01"]] as const) {
+      await raw`INSERT INTO source_documents (id, institution_id, status, document_url, content_hash, crawled_at, superseded_by_id)
+                VALUES (${id}, ${CHAIN}, 'success', 'https://chain2058.test/fees.pdf', ${`hash-chain-${id}`}, ${crawled}, ${next})`;
+    }
+    await raw`INSERT INTO agent_source_texts (source_document_id, institution_id, status, normalized_text, text_hash, source_hash, reader, document_type)
+              VALUES (${CHAIN_C}, ${CHAIN}, 'completed', ${TEXT}, 'text-chain', ${`hash-chain-${CHAIN_C}`}, 'read.pdf_layout', 'pdf')`;
+    const rawId = nextRaw++;
+    await raw`INSERT INTO raw_fee_observations (fee_raw_id, institution_id, source_document_id, agent_event_id, fee_name, amount, frequency, source)
+              VALUES (${rawId}, ${CHAIN}, ${CHAIN_A}, ${EVENT}, 'Stop Payment Fee', 99, 'per_item', 'knox')`;
+    const [verified] = await raw`INSERT INTO verified_fee_observations (fee_raw_id, institution_id, canonical_fee_key, verified_by_agent_event_id, fee_name, amount, frequency, review_status)
+              VALUES (${rawId}, ${CHAIN}, 'stop_payment', ${EVENT}, 'Stop Payment Fee', 99, 'per_item', 'verified') RETURNING fee_verified_id`;
+    const [published] = await raw`INSERT INTO published_fee_records (lineage_ref, institution_id, canonical_fee_key, published_by_adversarial_event_id, fee_name, amount, frequency, batch_id, source_url, rolled_back_at)
+              VALUES (${verified.fee_verified_id}, ${CHAIN}, 'stop_payment', ${EVENT}, 'Stop Payment Fee', 99, 'per_item', 'agentic-run-2058', 'https://chain2058.test/fees.pdf', NOW()) RETURNING fee_published_id`;
+    fees[`${CHAIN}:stop_payment`] = Number(published.fee_published_id);
+    await named("read", CHAIN, "stop_payment", "hamilton.source_check", CHAIN_A);
+    const run = await completedRun({ institution_id: CHAIN });
+    // A failed access of the current copy since the merge day is no read: it is still reopened.
+    await raw`INSERT INTO pipeline_attempts (institution_id, source_document_id, stage, strategy, strategy_version, input_fingerprint, outcome, agent_run_id)
+              VALUES (${CHAIN}, ${CHAIN_C}, 'read', ${DOCUMENT_ACCESS_STRATEGY}, 1, ${`hash-chain-${CHAIN_C}`}, 'http_403', ${run})`;
+    const reopen = await errorFixRereadDocuments(db, { ...REOPEN_ARGS, entries: [READ_FIX] });
+    expect(reopen.filter((row) => Number(row.institution_id) === CHAIN).map((row) => Number(row.source_document_id))).toEqual([CHAIN_C]);
+    // A settled read of the middle copy B is not the re-read: the error's current copy is C.
+    await raw`INSERT INTO pipeline_attempts (institution_id, source_document_id, stage, strategy, strategy_version, input_fingerprint, outcome, agent_run_id)
+              VALUES (${CHAIN}, ${CHAIN_B}, 'read', 'read.pdf_layout', ${ROSETTA_READ_VERSION}, ${`hash-chain-${CHAIN_B}`}, 'ok', ${run})`;
+    const pending = async () => (await runErrorFixRecheck({ db, entries: [READ_FIX] })).results[0];
+    const chainRequests = async () => (await errorFixRequests(db, [READ_FIX])).filter((request) => request.institutionId === CHAIN);
+    expect(await chainRequests()).toHaveLength(1);
+    expect(await pending()).toMatchObject({ named: 1, waiting: 1 });
+    await raw`INSERT INTO pipeline_attempts (institution_id, source_document_id, stage, strategy, strategy_version, input_fingerprint, outcome, agent_run_id)
+              VALUES (${CHAIN}, ${CHAIN_C}, 'read', 'read.pdf_layout', ${ROSETTA_READ_VERSION}, ${`hash-chain-${CHAIN_C}`}, 'ok', ${run})`;
+    expect(await chainRequests()).toEqual([]);
+    // Re-read, but no right fee published in the taken-down fee's place yet: open, not waiting.
+    expect(await pending()).toMatchObject({ named: 1, waiting: 0, notReproduced: 1 });
+  });
+
+  it("verify fix whose named fee is already down: asks Atlas for the bank and counts its direct run's classify step", async () => {
+    const DOWN_FIX: ErrorFixEntry = { pr: 92105, issue: 2058, stage: "verify", merged_on: "2026-10-20", checks: ["hamilton.source_check"] };
+    await raw`UPDATE published_fee_records SET rolled_back_at = NOW() WHERE fee_published_id = ${fees[`${VERIFY}:stop_payment`]}`;
+    await named("verify", VERIFY, "stop_payment", "hamilton.source_check");
+    // Down, so Darwin's recheck has nothing live to read: not a target, and Atlas is asked instead.
+    expect(await errorFixVerifyTargets(db, { limit: 10, recheckStrategy: DARWIN_RECHECK_STRATEGY.strategy, entries: [DOWN_FIX] })).toEqual([]);
+    expect((await errorFixRequests(db, [DOWN_FIX])).map((request) => request.institutionId)).toEqual([VERIFY]);
+    expect((await runErrorFixRecheck({ db, entries: [DOWN_FIX] })).results[0]).toMatchObject({ named: 1, waiting: 1 });
+    const run = await completedRun({ institution_id: VERIFY });
+    await raw`INSERT INTO agent_run_steps (agent_run_id, step_key, agent_name, title, status, completed_at)
+              VALUES (${run}, 'classify', 'darwin', 'Classify and verify extracted fees', 'completed', NOW())`;
+    expect(await errorFixRequests(db, [DOWN_FIX])).toEqual([]);
+    expect((await runErrorFixRecheck({ db, entries: [DOWN_FIX] })).results[0]).toMatchObject({ named: 1, waiting: 0, notReproduced: 1 });
+  });
+
+  it("verify fix: a failed cohort selection inside the step's transaction is reported and the recheck finishes", async () => {
+    const stop = new Error("rollback cohort failure fixture");
+    await raw.begin(async (native) => {
+      const tx = native as unknown as typeof raw;
+      const [run] = await tx`INSERT INTO agent_runs (agent_name, run_kind, title, status) VALUES ('darwin', 'state_agent', 'Loop stage re-run', 'running') RETURNING id`;
+      const [step] = await tx`INSERT INTO agent_run_steps (agent_run_id, step_key, agent_name, title, status) VALUES (${run.id}, 'classify', 'darwin', 'Cohort failure fixture', 'running') RETURNING id`;
+      // A real SQL error at the cohort's target read only, keeping native savepoint semantics.
+      const failing = failSelectedSql(native, "'verified:' || p.lineage_ref::text");
+      const result = await recheckVerifiedFees(failing as never, {
+        runId: Number(run.id), stepId: Number(step.id), olderLive: false, secondLooks: false, secondLookCodes: [], errorFixes: [VERIFY_FIX],
+      });
+      expect(result.errorFixError).toContain("division by zero");
+      expect(result.execution).toMatchObject({ eventId: expect.any(Number) });
+      expect(result.execution?.phases.primary).toBe("complete");
+      // The host transaction is still usable.
+      expect((await tx`SELECT 1 AS ok`)[0].ok).toBe(1);
       throw stop;
     }).catch((error) => { if (error !== stop) throw error; });
   });
