@@ -11,6 +11,7 @@ import {
   MAX_SEARCH_PAGES_PER_BANK,
   runSecondDocumentFind,
   SECOND_DOCUMENT_FINDER,
+  SITE_SEARCH_DUD_DAYS,
   SITE_SEARCH_QUERIES,
   SITE_SEARCH_STRATEGY,
   siteSearchQueries,
@@ -433,8 +434,13 @@ describe("Magellan site search for fee schedules and agreements", () => {
         templateText(strings).includes("-- site search duds") ? Promise.resolve([{ institution_id: thinBank.id }]) : base(strings, ...values)) as unknown as DbMock;
     };
     const fetchImpl = agreementFetch();
-    await runSecondDocumentFind({ db: asDb(dudDb()), fetchImpl, runId: 9, deadline: Date.now() + 60_000, learning: true, searchRotation: 3 });
+    const db = dudDb();
+    await runSecondDocumentFind({ db: asDb(db), fetchImpl, runId: 9, deadline: Date.now() + 60_000, learning: true, searchRotation: 3 });
     expect(fetchImpl.mock.calls.map((call) => String(call[0])).filter((url) => url.includes("/search?"))).toEqual([]);
+    // A dud needs misses on two days inside the window, so one bad run never marks a site.
+    const dudQuery = db.mock.calls.find((call) => templateText(call[0] as TemplateStringsArray).includes("-- site search duds"));
+    expect(templateText(dudQuery![0] as TemplateStringsArray)).toMatch(/count\(DISTINCT pa\.created_at::date\) >= 2/);
+    expect(dudQuery).toContain(SITE_SEARCH_DUD_DAYS);
 
     const agreements = agreementFetch();
     const broken = vi.fn(async (input: RequestInfo | URL) => (String(input).includes("/search?") ? notFound() : agreements(input)));

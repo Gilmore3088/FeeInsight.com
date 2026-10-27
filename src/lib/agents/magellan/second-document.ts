@@ -555,9 +555,12 @@ interface ThinBankRow {
 /**
  * A site whose search never gave a result link beyond its menu in this many tries, and never a
  * kept page, is a dud: its search form returns nothing to a plain request (step 6, Oct 27: 232
- * banks had no candidate in 1,586 tries).
+ * banks had no candidate in 1,586 tries). The tries must fall on at least two days, so one bad
+ * run cannot mark a site, and only the last `SITE_SEARCH_DUD_DAYS` count, so a dud is tried again
+ * once its misses age out.
  */
 export const SITE_SEARCH_DUD_TRIES = 3;
+export const SITE_SEARCH_DUD_DAYS = 90;
 
 /** Banks whose site search is a dud (`SITE_SEARCH_DUD_TRIES`). */
 async function loadSiteSearchDuds(db: SqlTag, ids: number[]): Promise<Set<number>> {
@@ -569,8 +572,10 @@ async function loadSiteSearchDuds(db: SqlTag, ids: number[]): Promise<Set<number
      WHERE pa.institution_id = ANY(${ids}::bigint[])
        AND pa.stage = 'discover'
        AND pa.strategy = ${SITE_SEARCH_STRATEGY.strategy}
+       AND pa.created_at > now() - make_interval(days => ${SITE_SEARCH_DUD_DAYS})
      GROUP BY pa.institution_id
     HAVING count(*) >= ${SITE_SEARCH_DUD_TRIES}
+       AND count(DISTINCT pa.created_at::date) >= 2
        AND sum(COALESCE((pa.detail->>'candidates')::int, 0)) = 0
        AND NOT bool_or(pa.outcome = 'ok')
   `;
