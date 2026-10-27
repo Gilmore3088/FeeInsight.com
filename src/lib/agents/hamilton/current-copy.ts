@@ -11,6 +11,7 @@ import { sameSchedule } from "@/lib/agents/hamilton/schedule-edition";
 import {
   NEWER_COPY_MIN_SHARED_FEES,
   NEWER_COPY_MIN_SHARED_SHARE,
+  GENERIC_WORDS,
   newerCopyVerdict,
   squash,
   type NewerCopyVerdict,
@@ -255,11 +256,22 @@ export function currentCopyVerdict(fee: CurrentCopyFeeRow, rawCurrentText: strin
   if (interleavedPriceWitness(fee.fee_name, amount, currentText)) return "unproven";
   // #2072: a fee-change notice's silence proves nothing; only a row of its own naming the fee at
   // another price does ("Money Orders | $2.00 | $5.00" makes a live $2 stale).
-  if (isFeeChangeNotice(rawCurrentText)) {
-    const traced = checkFeeAgainstSource(currentText, fee.fee_name, amount, ".");
+  if (isFeeChangeNotice(rawCurrentText) && listsFewerFees(currentText, olderText)) {
+    const traced = checkFeeAgainstSource(currentText, fee.fee_name, amount, ".", fee.canonical_fee_key);
     if (!traced.ok && traced.reason === "name_not_in_text") return "unproven";
   }
   return verdict;
+}
+
+/**
+ * #2072: a notice lists only what changes, so it prints clearly fewer priced lines than the full
+ * schedule it amends: fewer than half the older copy's. A copy that reprints every fee (a full
+ * schedule with "Current fee | New fee" columns) is a schedule, and its silence still drops a fee.
+ * Pure.
+ */
+export function listsFewerFees(currentText: string, olderText: string): boolean {
+  const priced = (text: string) => text.split("\n").filter((line) => /\$\s?\d/.test(line)).length;
+  return priced(currentText) * 2 < priced(olderText);
 }
 
 /**
@@ -284,30 +296,58 @@ const GLUED_PRICE_RUN = /\$\s?\d[\d,]*\.\d{2}(?:\$\s?\d[\d,]*\.\d{2})+/g;
  * $10.00$25.00", "Card Replacement ……Share Draft Protest …… $20.00$10.00", Access FCU). The order of
  * the prices is not the order of the names (`gluedPricePair`), so such a line neither states nor
  * drops a fee: when the fee's name is on the line, or on the line just above it, and its price is one
- * of the glued prices, its absence from the current copy is not proven. Pure.
+ * of the glued prices, its absence from the current copy is not proven.
+ *
+ * Guards from the review of the first version: the line above counts only when it has no price of
+ * its own ("Card Replacement Fee $20.00" above "Share Draft Protest……Statement Copy…… $10.00$5.00"
+ * prices the card at $20, so a live $10 stays stale); a piece of the name made only of generic fee
+ * words ("Per Item" of "NSF Fee - Per Item", `GENERIC_WORDS`) never anchors; and a fee whose name the
+ * page prices on a line of its own, outside any glued run, is judged by that line, not witnessed. Pure.
  */
 export function interleavedPriceWitness(feeName: string, amount: number, currentText: string): boolean {
   const lines = currentText.split("\n");
-  const name = squash(feeName.replace(/\([^()]*\)/g, " "));
-  const parts = feeName.replace(/\([^()]*\)/g, " ").split(/[:|–—]| - /).map(squash);
-  const anchors = [name, ...parts].filter((part) => part.length >= 5);
+  const anchors = nameAnchors(feeName);
   if (anchors.length === 0) return false;
+  const names = (text: string) => {
+    const squashed = squash(text);
+    return anchors.some((anchor) => squashed.includes(anchor));
+  };
+  const glued = (line: string) => line.match(GLUED_PRICE_RUN);
+  // Priced on a line of its own elsewhere: that line judges the fee.
+  if (lines.some((line) => !glued(line) && /\$\s?\d/.test(line) && names(line))) return false;
   return lines.some((line, index) => {
-    const runs = line.match(GLUED_PRICE_RUN);
+    const runs = glued(line);
     if (!runs) return false;
     const prices = runs.flatMap((run) => run.match(/\d[\d,]*\.\d{2}/g) ?? []).map((price) => Number(price.replace(/,/g, "")));
     if (!prices.some((price) => Math.abs(price - amount) < 0.005)) return false;
-    const pair = squash(`${lines[index - 1] ?? ""} ${line}`);
-    return anchors.some((anchor) => pair.includes(anchor));
+    const above = lines[index - 1] ?? "";
+    return names(line) || (!/\$\s?\d/.test(above) && names(above));
   });
+}
+
+/**
+ * The pieces of a fee's name that can find its label on a page, squashed: the name without its
+ * parentheses and each piece between separators, of 5 or more letters, holding at least one word
+ * that is not generic fee vocabulary ("NSF Fee", not "Per Item"). Pure.
+ */
+function nameAnchors(feeName: string): string[] {
+  const bare = feeName.replace(/\([^()]*\)/g, " ");
+  const pieces = [bare, ...bare.split(/[:|–—]| - /)];
+  const distinctive = (piece: string) => (piece.toLowerCase().match(/[a-z]{3,}/g) ?? []).some((word) => !GENERIC_WORDS.has(word));
+  return [...new Set(pieces.filter(distinctive).map(squash).filter((piece) => piece.length >= 5))];
 }
 
 /**
  * #2072: a notice of changed fees lists only the fees that change ("General Fee Changes: The fees
  * highlighted below have been adjusted …", Jeanne D'Arc CU, doc 21764), so a fee missing from it is
- * not missing from the bank's schedule. Such a copy never proves a fee stale. Read from the opening
- * of the text only: a full schedule that mentions fee changes further down ("We may change these
- * fees with notice") is still the schedule. Pure.
+ * not missing from the bank's schedule. Such a copy never proves a fee stale.
+ *
+ * Only a definite statement that fees changed counts ("The fees highlighted below have been
+ * adjusted", "the following fees will change"), or a change table ("Fee through | Fee as of",
+ * `hasFeeChangeTable`). A schedule's ordinary words do not: "subject to change without notice",
+ * "updated annually", a "Fee Changes" heading over a change policy, "Notice of change in terms: see
+ * your account agreement". Read from the opening of the text only. The caller also requires the
+ * copy to list clearly fewer fees than the older one (`listsFewerFees`). Pure.
  */
 export function isFeeChangeNotice(text: string): boolean {
   const head = text.slice(0, FEE_CHANGE_NOTICE_HEAD_CHARS);
@@ -315,14 +355,12 @@ export function isFeeChangeNotice(text: string): boolean {
 }
 
 export const FEE_CHANGE_NOTICE_HEAD_CHARS = 1500;
+const CHANGED = "(?:adjusted|changed|revised|increased|decreased|reduced|modified|raised|lowered)";
 const FEE_CHANGE_NOTICE: readonly RegExp[] = [
-  // "The fees highlighted below have been adjusted", "Fees listed below will change".
-  /\b(?:fees?|charges?|prices?|pricing)\s+(?:highlighted|marked|shown|listed|noted|bolded|shaded)\s+below\s+(?:have|has|will|are|were)\b[^.\n]{0,30}?\b(?:adjust|chang|updat|revis|increas|reduc|modif)\w*/i,
-  // A heading that is only "General Fee Changes:", "Important Fee Changes", "Upcoming Pricing Changes".
-  /^\s*(?:general|important|upcoming|recent|summary of|notice of)?\s*(?:fee|pricing|price|service charge)\s+changes?\s*:?\s*$/im,
-  // "Notice of change in terms", "Change in Terms Notice", "Notice of amendment to fees".
-  /\bnotice\s+of\s+(?:a\s+)?(?:change|amendment)s?\s+(?:in|to)\s+(?:terms|fees|your\s+account)\b/i,
-  /\bchange\s+(?:in|of)\s+terms\s+notice\b/i,
+  // "The fees highlighted below have been adjusted", "Prices shown below have been increased".
+  new RegExp(String.raw`\b(?:fees?|charges?|prices?|pricing)\s+(?:(?:highlighted|marked|shown|listed|noted|bolded|shaded)\s+)?below\s+(?:have|has)\s+been\s+${CHANGED}\b`, "i"),
+  // "the following fees will change", "The following fees have been increased".
+  new RegExp(String.raw`\bthe\s+following\s+(?:fees?|charges?|prices?)\s+(?:will\s+(?:change|be\s+${CHANGED})|have\s+(?:changed|been\s+${CHANGED}))\b`, "i"),
 ];
 
 /**
@@ -658,7 +696,8 @@ export async function secondLookFeesNotOnCurrentCopy(
     check: CURRENT_COPY_CHECK,
     runId: options.runId,
     failing,
-    passing: [...passing, ...documents.flatMap((doc) => doc.notProven)],
+    passing,
+    unjudged: documents.flatMap((doc) => doc.notProven),
     dryRun: options.dryRun,
     minMinutes: confirmLive ? SECOND_LOOK_MIN_MINUTES : Number.POSITIVE_INFINITY,
   });

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { countCurrentCopyPairs, currentCopyVerdict, interleavedPriceWitness, isFeeChangeNotice, judgeAgainstCurrentCopy, linkYear, readableCurrentText, retiredCopiesSql, retiredCopyIsNewer, secondLookFeesNotOnCurrentCopy, type CurrentCopyFeeRow } from "./current-copy";
+import { countCurrentCopyPairs, currentCopyVerdict, interleavedPriceWitness, isFeeChangeNotice, judgeAgainstCurrentCopy, linkYear, listsFewerFees, readableCurrentText, retiredCopiesSql, retiredCopyIsNewer, secondLookFeesNotOnCurrentCopy, type CurrentCopyFeeRow } from "./current-copy";
 
 function templateText(strings: unknown): string {
   return Array.isArray(strings) ? strings.join(" ") : String(strings);
@@ -332,7 +332,20 @@ describe("currentCopyVerdict (third hand check, #2072, Oct 27: 11 of 20 first lo
     "Same Day ACH Service Charge | $10.00 | $10.00",
     "Account Research | $35.00 per hour | $50.00 per hour",
   ].join("\n");
-  const JDCU_OLDER = "Schedule of Fees\nMoney Orders | $2.00\nSame Day ACH Service Charge | $10.00\nCoin Counting (non-members) | $5.00\nStatement Reprint | $5.00\nWire Transfer Incoming | $10.00\n";
+  // The full schedule the notice amends: many more priced lines than the notice.
+  const JDCU_OLDER = [
+    "Schedule of Fees",
+    "Money Orders | $2.00",
+    "Same Day ACH Service Charge | $10.00",
+    "Coin Counting (non-members) | $5.00",
+    "Statement Reprint | $5.00",
+    "Wire Transfer Incoming | $10.00",
+    "Wire Transfer Outgoing | $25.00",
+    "Stop Payment | $30.00",
+    "Overdraft Fee | $30.00",
+    "Dormant Account | $5.00",
+    "Account Research | $35.00 per hour",
+  ].join("\n");
 
   it.each([
     [64213, "Coin Counting (non-members)", "5.00"],
@@ -352,12 +365,51 @@ describe("currentCopyVerdict (third hand check, #2072, Oct 27: 11 of 20 first lo
 
   it("knows a notice from a schedule", () => {
     expect(isFeeChangeNotice("NOTICE OF CHANGE IN TERMS\nEffective December 1, 2026 the following fees will change:")).toBe(true);
-    expect(isFeeChangeNotice("Important Fee Changes\nOverdraft Fee | $30.00")).toBe(true);
+    expect(isFeeChangeNotice("Effective January 1 the following fees have been increased:\nOverdraft Fee | $35.00")).toBe(true);
+    // A bare heading or a schedule's ordinary words are not a notice (review of 3d9f46ef9).
+    expect(isFeeChangeNotice("Important Fee Changes\nOverdraft Fee | $30.00")).toBe(false);
+    expect(isFeeChangeNotice("Schedule of Fees\nThe fees listed below are subject to change without notice.\nOverdraft Fee | $30.00")).toBe(false);
+    expect(isFeeChangeNotice("Schedule of Fees\nPrices listed below are updated annually.\nOverdraft Fee | $30.00")).toBe(false);
+    expect(isFeeChangeNotice("Schedule of Fees\nFee Changes\nWe may change our fees at any time; we will notify you 30 days before a change.\nOverdraft Fee | $30.00")).toBe(false);
+    expect(isFeeChangeNotice("Schedule of Fees\nNotice of change in terms: see your account agreement.\nOverdraft Fee | $30.00")).toBe(false);
     expect(isFeeChangeNotice(OLDER)).toBe(false);
     expect(isFeeChangeNotice(CURRENT)).toBe(false);
     expect(isFeeChangeNotice("Service Fees Effective October 9th, 2026\nOverdraft Fee | $30.00\nWe may change these fees with notice.")).toBe(false);
     // Only the opening is read: a schedule's closing note about changes is not a notice.
-    expect(isFeeChangeNotice(`${"Overdraft Fee | $30.00\n".repeat(80)}Fee Changes\n`)).toBe(false);
+    expect(isFeeChangeNotice(`${"Overdraft Fee | $30.00\n".repeat(80)}The following fees will change:\n`)).toBe(false);
+  });
+
+  it("still drops a fee a full schedule leaves out, whatever its opening says", () => {
+    // A full schedule that opens with notice-like words, or reprints every fee in a change table,
+    // lists as many fees as the older copy: its silence still drops a fee.
+    const schedule = [
+      "Schedule of Fees",
+      "The fees listed below are subject to change without notice.",
+      ...JDCU_OLDER.split("\n").slice(1).filter((line) => !line.startsWith("Statement Reprint")),
+    ].join("\n");
+    expect(currentCopyVerdict(fee(1, "Statement Reprint", "5.00"), schedule, JDCU_OLDER)).toBe("dropped");
+    const reprinted = [
+      "The fees highlighted below have been adjusted and will be effective on August 1, 2026.",
+      "Fees | Fee through | Fee as of",
+      ...JDCU_OLDER.split("\n").slice(1).filter((line) => !line.startsWith("Statement Reprint")).map((line) => `${line} | ${line.split("| ")[1]}`),
+    ].join("\n");
+    expect(isFeeChangeNotice(reprinted)).toBe(true);
+    expect(listsFewerFees(reprinted, JDCU_OLDER)).toBe(false);
+    expect(currentCopyVerdict(fee(1, "Statement Reprint", "5.00"), reprinted, JDCU_OLDER)).toBe("dropped");
+  });
+
+  it("keeps a fee stale when the priced line above the glued prices is its own (review of 3d9f46ef9)", () => {
+    const current = `${filler}Card Replacement Fee $20.00\nShare Draft Protest..........Statement Copy.......... $10.00$5.00\n`;
+    expect(interleavedPriceWitness("Card Replacement Fee", 10, current)).toBe(false);
+    expect(currentCopyVerdict(fee(1, "Card Replacement Fee", "10.00", { canonical_fee_key: "card_replacement" }), current, `${filler}Card Replacement Fee | $10.00\n`)).toBe("still_named");
+  });
+
+  it("never anchors on generic fee words, and judges a fee priced on a line of its own there", () => {
+    const current = `${filler}NSF Fee $35.00\nStop Payment (per item)..........Research.......... $30.00$25.00\n`;
+    expect(interleavedPriceWitness("NSF Fee - Per Item", 25, current)).toBe(false);
+    expect(currentCopyVerdict(fee(1, "NSF Fee - Per Item", "25.00", { canonical_fee_key: "nsf" }), current, `${filler}NSF Fee - Per Item | $25.00\n`)).toBe("still_named");
+    // Generic words alone never anchor, even on the glued line itself.
+    expect(interleavedPriceWitness("Per Item Fee", 25, "Stop Payment (per item)..........Research.......... $30.00$25.00")).toBe(false);
   });
 
   it("finds a glued price only beside the fee's own label", () => {
