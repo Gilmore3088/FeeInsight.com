@@ -39,7 +39,8 @@
  *    penalty word in one sentence), whether it says the fee is charged, waived, capped or listed
  *    elsewhere ("You will owe an NSF fee for each item we return.", "The NSF fee does not apply to Free
  *    accounts.", "See the Schedule of Fees for our NSF fee."). Only a repeat of a statement the grammar
- *    accepts, or the fee's bare name as an inline heading, is let through. Item handling with no fee
+ *    accepts, the fee's bare name as an inline heading, or a whole "<subject> does not charge a fee
+ *    for ..." sentence with no figure, condition, waiver, "may" or scope (`agreesNoFee`) is let through. Item handling with no fee
  *    word ("will be declined or returned unpaid") refuses nothing.
  *
  * Knox adds two more: no read beside any NSF-family read on the same text, priced or held unclassified,
@@ -338,9 +339,9 @@ function wholeSentence(lines: readonly string[], index: number, start: number): 
 /**
  * NSF-family words: whatever the category guard files as NSF (`NSF_NAME_INCLUDE`, read from a word's start: "Unpaid Item Fee",
  * "Item returned unpaid", "Returned ACH", "Cargo por fondos insuficientes"), plus a dishonored,
- * bounced or bounce item.
+ * bounced or bounce item, and "items returned" in that order ("a fee for items returned unless ...").
  */
-const NSF_EXTRA_WORDS = /\b(?:dishonou?red|bounced?|bouncing)\b/i;
+const NSF_EXTRA_WORDS = /\b(?:dishonou?red|bounced?|bouncing|items?\s+returned)\b/i;
 let nsfWords: RegExp | null = null;
 export function namesNsfFamily(text: string): boolean {
   // The guard reads one fee name, so its words have no leading word boundary; on a whole page "nsf"
@@ -457,10 +458,34 @@ function documentSentences(lines: readonly string[]): string[] {
 const INLINE_FEE_HEADING = new RegExp(String.raw`^${NSF_NAME}\s*[.:]?$`, "i");
 
 /**
+ * A whole sentence that agrees with the $0: "<subject> does/do not charge/assess/impose [a/any] fee(s)
+ * for ...", the subject "We", "The bank", "The credit union" or a capitalised name of up to four words,
+ * optionally led by a "No <fee name> fee:" label ("We do not assess fees for returned items or declined
+ * transactions.", "No returned item (NSF) fee: Wells Fargo does not charge a fee for items that are
+ * declined or returned unpaid.").
+ */
+const AGREES_NO_FEE = /^(?:no\s+[^.:]{0,60}?fee:\s*)?(?:we|the\s+bank|the\s+credit\s+union|[A-Z][\w&.]*(?:\s+[A-Z][\w&.]*){0,3})\s+(?:do|does)\s+not\s+(?:charge|assess|impose)\s+(?:a\s+|any\s+)?fees?\s+for\s+[^.!?]*[.!]$/i;
+/** What keeps such a sentence from agreeing: a figure, a condition, a first-item or count limit, a contrast, a waiver or a "may". */
+const AGREES_NO_FEE_REFUSES = /[\d$]|\b(?:if|when|unless|only|except|first|more\s+than|but|until|after|waiv\w*|may)\b/i;
+
+/**
+ * True when the sentence is a whole `AGREES_NO_FEE` sentence with no figure and none of if, when,
+ * unless, only, except, first, more than, but, until, after, waive or may (`AGREES_NO_FEE_REFUSES`),
+ * and names no scope (`scopeWordIn`: a product, account, tier, audience or service). Such a sentence
+ * says the same as the statement, so it does not refuse the page. "We do not charge a fee for the first
+ * returned item each year.", "... on Premier Checking.", "... under $5." and "... unless you overdraw
+ * more than three times." still refuse it.
+ */
+function agreesNoFee(text: string): boolean {
+  return AGREES_NO_FEE.test(text) && !AGREES_NO_FEE_REFUSES.test(text) && !scopeWordIn(text);
+}
+
+/**
  * True when a sentence names the NSF family (`namesNsfFamily`) and carries a fee or charge word
  * (`FEE_OR_CHARGE_WORD`) and is not itself a no-charge statement the grammar accepts
- * (`noChargeNsfSentence`, such as a repeat of the same "We do not charge NSF fees.") or only the fee's
- * name standing as an inline heading ("Nonsufficient Funds (NSF) Fees."). Refuse by
+ * (`noChargeNsfSentence`, such as a repeat of the same "We do not charge NSF fees."), only the fee's
+ * name standing as an inline heading ("Nonsufficient Funds (NSF) Fees.") or a whole sentence that
+ * agrees with the $0 with no figure, condition or scope (`agreesNoFee`). Refuse by
  * default: it does not judge whether the sentence affirms or negates the charge, so "An NSF fee will be
  * charged for each item, which we may waive", "The NSF fee does not apply to Free accounts" and "See the
  * Schedule of Fees for our NSF fee" all count. Item handling with no fee in it ("your transaction will
@@ -471,7 +496,8 @@ const INLINE_FEE_HEADING = new RegExp(String.raw`^${NSF_NAME}\s*[.:]?$`, "i");
  */
 export function mentionsNsfFee(sentence: string): boolean {
   if (!namesNsfFamily(sentence) || !FEE_OR_CHARGE_WORD.test(sentence)) return false;
-  return noChargeNsfSentence(sentence) == null && !INLINE_FEE_HEADING.test(tidy(sentence));
+  const text = tidy(sentence);
+  return noChargeNsfSentence(sentence) == null && !INLINE_FEE_HEADING.test(text) && !agreesNoFee(text);
 }
 
 /**

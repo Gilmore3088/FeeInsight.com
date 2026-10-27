@@ -488,14 +488,15 @@ import { NO_CHARGE_SENTENCE_READ_LIVE, NSF_FAMILY_KEYS, chargesNsfFamily, readNo
 // check's witness). Only an unconditional sentence of the shared grammar, whose two sentences before,
 // two sentences after, headings in the 40 lines above and nearest section heading name no product,
 // account, audience, tier or service, whose next two sentences do not narrow it, on a text where no line
-// prices an NSF-family fee and no other sentence names an NSF-family fee or charge at all (refuse by
-// default, affirming or not); none when any specialist read an NSF-family fee on the text, or a priced
+// prices an NSF-family fee and no other sentence names an NSF-family fee or charge (refuse by default,
+// affirming or not, unless the sentence wholly agrees with the $0); none when any specialist read an NSF-family fee on the text, or a priced
 // read with NSF-family words. The extract step holds the read for review when the institution charges
 // an NSF-family fee anywhere (`knox_no_charge_conflict`). Behind `NO_CHARGE_SENTENCE_READ_LIVE` (off):
 // until it is switched on, the read is computed only by the dry run and tests, and no text reads it.
-// Oct 27 dry run (prod, read-only, current copies, after the third #2753 review): 0 texts at 0
-// institutions would read it once on, so none gains a $0 and none is held; the 9 grammar matches are
-// all refused, 6 by another NSF fee sentence on the page. The stale-read floor stays at v97.
+// Oct 27 dry run (prod, read-only, current copies, after the third #2753 review): 3 texts at 3
+// institutions would read it once on (Wells Fargo 4, 172, 359); 2 have no NSF row today, 1 already
+// shows NSF $0, none is held. Of the 9 grammar matches, 3 more are refused by another NSF fee sentence,
+// 2 by the page price test and 1 by scope. The stale-read floor stays at v97.
 export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 133 } as const;
 
 export interface SpecialistRun {

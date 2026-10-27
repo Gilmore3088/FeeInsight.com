@@ -576,7 +576,8 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // v133 (#2040): a "we do not charge an NSF fee" sentence is the NSF fee's $0, behind
     // NO_CHARGE_SENTENCE_READ_LIVE (off), so the bump reads nothing new; switching it on takes its own
     // bump. Oct 27 dry run (read-only, current copies, after the third #2753 review, refuse by default on
-    // any other NSF fee sentence): 0 texts at 0 institutions would read it, none held. Floor stays v97.
+    // any other NSF fee sentence that does not agree with the $0): 3 texts at 3 institutions would read
+    // it, none held. Floor stays v97.
     {
       key: "knox.rules",
       owner: "knox",

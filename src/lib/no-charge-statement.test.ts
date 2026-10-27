@@ -308,6 +308,17 @@ describe("no-charge NSF sentences (#2040)", () => {
       expect(readNoChargeNsf(text).refused.map((row) => row.reason)).toEqual(["document_charges_nsf"]);
     });
 
+    it.each([
+      "We do not charge a fee for the first returned item each year.",
+      "We do not charge a fee for returned items on Premier Checking.",
+      "We do not charge a fee for returned items under $5.",
+      "We do not charge a fee for returned items, but a $35 NSF fee applies to paid items.",
+      "We do not charge a fee for items returned unless you overdraw more than three times.",
+    ])("a no-fee sentence with a figure, condition or scope still refuses the page: %s", (other) => {
+      expect(mentionsNsfFee(other)).toBe(true);
+      expect(names(`${S}\n\nReturned Items\n\n${other}`)).toEqual([]);
+    });
+
     it("a repeat of the statement on the same page refuses nothing", () => {
       expect(names(`Fees\n\n${S}\n\nReturned Items\n\n${S}`)).toEqual(["Non-sufficient funds (NSF) fee", "Non-sufficient funds (NSF) fee"]);
     });
@@ -323,6 +334,9 @@ describe("no-charge NSF sentences (#2040)", () => {
       "An item that was previously returned for Non-Sufficient Funds may be paid at the time of a resubmission either because additional funds have become available in your account or because we elect to pay the item under a Courtesy Overdraft service.",
       "Items presented for payment after the Account is closed may be dishonored.",
       "A foreign item may be returned unpaid much later (sometimes many months later) than checks or other items that are drawn on banks located in the U.S.",
+      // Wells Fargo's own sentences agree with the $0.
+      "We do not assess fees for returned items or declined transactions.",
+      "No returned item (NSF) fee: Wells Fargo does not charge a fee for items that are declined or returned unpaid.",
     ])("%s", (other) => {
       expect(mentionsNsfFee(other)).toBe(false);
       expect(names(`Fees\n\n${S}\n\nReturned Items\n\n${other}`)).toEqual(["Non-sufficient funds (NSF) fee"]);
