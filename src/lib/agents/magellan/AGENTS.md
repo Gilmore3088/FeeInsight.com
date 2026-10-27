@@ -216,6 +216,14 @@ and `detail.method_version`).
 - A state step with slots left over fills them with banks in other states that no finder
   has ever searched (no `discover` attempt), largest first, so a state whose lane runs
   rarely does not hold its never-searched banks back.
+- Barren-link search (`BARREN_LINK_SEARCH_VERSION`, `selectBarrenLinkCandidates`, fix plan
+  step 3, Oct 27): a bank with no live fee whose current main page was read at least
+  `BARREN_SETTLE_DAYS` (3) ago and gave fewer than three verified fee types is searched once
+  per version like an upgrade (`detail.barren_link_search`, `upgrade_reason: barren_link`), in
+  `BARREN_RESERVED_SLOTS` (2) a step plus spare capacity, largest first. A page found replaces
+  the link only when it passes the fee-page check and lists more fee lines than the old page's
+  latest text (`barrenLinkReplaces`, recorded as `detail.barren_check`); the old link stays as a
+  companion. 828 banks qualified on prod at the first read (Oct 27).
 - Upgrade search (`UPGRADE_SEARCH_VERSION`): banks whose fee
   link is a product page are searched once per version for the real schedule
   (`detail.upgrade_search`). A find replaces the link and keeps the old page as a
@@ -752,6 +760,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DISCOVERY_METHOD_VERSION` | — | v7 | `magellan/discovery.ts` |
 | `WEBSITE_REPAIR_STRATEGY` | `discover.website_repair` | v1 | `magellan/discovery.ts` |
 | `UPGRADE_SEARCH_VERSION` | — | v3 | `magellan/discovery.ts` |
+| `BARREN_LINK_SEARCH_VERSION` | — | v1 | `magellan/discovery.ts` |
 | `BUSINESS_SEARCH_VERSION` | — | v1 | `magellan/discovery.ts` |
 | `FRESHNESS_SEARCH_VERSION` | — | v2 | `magellan/discovery.ts` |
 | `MAGELLAN_FETCH_STRATEGY` | `fetch.http` | v2 | `magellan/fetch.ts` |
