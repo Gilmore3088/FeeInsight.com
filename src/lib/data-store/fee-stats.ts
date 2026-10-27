@@ -62,7 +62,8 @@
  *    digital, mobile, phone, fax, email, PIN, repetitive, recurring, template; wire-channel.ts
  *    namesWireChannel) is an exception too (#1912, Bank OZK: "Outgoing Online Wire (Domestic)" $20
  *    beside the general $30), so the bank's wire value rests on its general rows; "in branch",
- *    "in person" and "manual" name the standard channel and count as general. The exception rows
+ *    "in person" and "manual" name the standard channel and count as general, while "not in person",
+ *    "non-branch" and "remote" name the premium channel (v2). The exception rows
  *    stay on the bank's own page as their own named fees.
  */
 import { computePercentile, computeStats } from "./fees";
@@ -118,8 +119,11 @@ export const COUNT_SHARED_SCHEDULE_ONCE: boolean = true;
  * template wire) no longer sets the bank's wire value when it states a general wire row (rule 11).
  * 27/28 (#1912): a monthly maintenance or minimum balance fee whose own name says checking, share
  * draft or demand counts as checking even when it was filed under a savings-named product (rule 11).
+ * 29/30 (#1912): a wire row named for a negated standard channel ("Not in Person", "Non-Branch") or a
+ * remote wire is a channel row, and a phone, fax or email notice ("with Phone Notification") is not
+ * (wire-channel.ts v2, rule 11).
  */
-export const STATS_METHOD_VERSION = COUNT_SHARED_SCHEDULE_ONCE ? 27 : 28;
+export const STATS_METHOD_VERSION = COUNT_SHARED_SCHEDULE_ONCE ? 29 : 30;
 
 /** SQL predicate: the row's source address names a business-only schedule (rule 6). */
 export function businessSourceSql(alias: string): string {
