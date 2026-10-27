@@ -84,8 +84,10 @@ function boundKindAt(line: string, start: number, end: number): RateBoundKind | 
 function sameClause(line: string, from: number, to: number): boolean {
   const between = line.slice(from, to);
   if (between.length > WINDOW || (between.match(/\|/g) ?? []).length > 1) return false;
-  // A semicolon ends the clause unless the next words are the bound itself ("2.00% of advance amount; minimum of $5.00").
-  if (/;(?!\s*(?:min|max))/i.test(between)) return false;
+  // A semicolon ends the clause unless the bound, its figure or the percentage comes right after it
+  // ("2.00% of advance amount; minimum of $5.00", "3%; $10 min", "$10 max; 5% of total");
+  // "$25.00 maximum; international 1% of amount" is two clauses.
+  if (/;(?!\s*(?:min|max|\$\s?[\d.,]+\s*(?:min|max)|$))/i.test(between)) return false;
   if (/[.;!?]\s+[A-Z][a-z]+\s+[A-Za-z]/.test(between.replace(/\b(?:min|max)\.\s/gi, "min "))) return false;
   // Any other price between them must itself be a bound of the same charge.
   for (const money of between.matchAll(MONEY)) {

@@ -71,5 +71,8 @@ describe("rateBoundOf (#2067): a percentage charge's minimum or maximum is not a
   it("a semicolon ends the clause unless the bound follows it", () => {
     expect(rateBoundOf("Wire Transfer Domestic $25.00 maximum; international 1% of amount", 25, "Wire Transfer Domestic")).toBeNull();
     expect(rateBoundOf("Cash Advance | 2.00% of advance amount; minimum of $5.00", 5, "Cash Advance")).toMatchObject({ kind: "min", ratePercent: 2 });
+    expect(rateBoundOf("Cash Advance 3%; $10 min", 10, "Cash Advance")).toMatchObject({ kind: "min", ratePercent: 3 });
+    expect(rateBoundOf("Check cashing (non-members) 2%; $5.00 minimum", 5, "Check cashing (non-members)")).toMatchObject({ kind: "min", ratePercent: 2 });
+    expect(rateBoundOf("Coin Counting | $10 max; 5% of total", 10, "Coin Counting")).toMatchObject({ kind: "max", ratePercent: 5 });
   });
 });
