@@ -10,7 +10,7 @@ import postgres from "postgres";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { JSON_TEXT_PASSTHROUGH, NUMERIC_AS_NUMBER, TEXT_WITHOUT_NUL, type sql } from "@/lib/data-store/connection";
 import {
-  CLEARED_KIND, CLEARED_NOT_FLAGGED, CONFIRMED_KIND, FLAG_CLEARED_KIND, PENDING_KIND, secondLook, secondLookDedupeKey,
+  CLEARED_KIND, CLEARED_NOT_FLAGGED, CONFIRMED_KIND, FLAG_CLEARED_KIND, PENDING_KIND, clearPendingStates, secondLook, secondLookDedupeKey,
   type SecondLookCandidate,
 } from "./second-look";
 
@@ -49,10 +49,11 @@ describe.skipIf(!connection)("second look read-scope clear in isolated PostgreSQ
     institutionOf[label] = institutionId;
   }
 
-  async function flag(label: string, check = CHECK): Promise<void> {
-    const evidence = { flag_run_id: FLAG_RUN, flagged_at: flaggedAt.toISOString(), reason: `test: ${label}` };
+  async function flag(label: string, check = CHECK, at = flaggedAt, kind = PENDING_KIND): Promise<void> {
+    const evidence = { flag_run_id: FLAG_RUN, flagged_at: at.toISOString(), reason: `test: ${label}` };
     await raw`INSERT INTO pipeline_feedback (about_stage, about_strategy, signal, kind, reported_by, check_name, institution_id, fee_published_id, weight, evidence, agent_run_id, dedupe_key)
-              VALUES ('publish', ${check}, 'wrong', ${PENDING_KIND}, 'gutenberg', ${check}, ${institutionOf[label]}, ${ids[label]}, 0, ${JSON.stringify(evidence)}::jsonb, ${FLAG_RUN}, ${secondLookDedupeKey(check, ids[label])})`;
+              VALUES ('publish', ${check}, 'wrong', ${kind}, 'gutenberg', ${check}, ${institutionOf[label]}, ${ids[label]}, 0, ${JSON.stringify(evidence)}::jsonb, ${FLAG_RUN}, ${secondLookDedupeKey(check, ids[label])})
+              ON CONFLICT (dedupe_key) DO UPDATE SET kind = EXCLUDED.kind, evidence = EXCLUDED.evidence`;
   }
 
   async function stateOf(label: string, check = CHECK): Promise<string | null> {
@@ -116,7 +117,7 @@ describe.skipIf(!connection)("second look read-scope clear in isolated PostgreSQ
 
   it("an institution's full read clears its stale flags and still confirms the failing fee", async () => {
     const look = await secondLook(db, {
-      check: CHECK, runId: RUN, failing: [candidate("failing")], passing: [], dryRun: false, now, readScope: { institutionId: INST },
+      check: CHECK, runId: RUN, failing: [candidate("failing")], passing: [], dryRun: false, now, readScope: { readStartedAt: now, institutionId: INST },
     });
     expect(look.confirmed.map((fee) => fee.feePublishedId)).toEqual([ids.failing]);
     expect(look.cleared).toBe(2);
@@ -135,16 +136,18 @@ describe.skipIf(!connection)("second look read-scope clear in isolated PostgreSQ
     const evidence = typeof audit.evidence === "string" ? JSON.parse(audit.evidence) : audit.evidence;
     expect(evidence).toMatchObject({
       flag_run_id: FLAG_RUN, cleared_run_id: RUN, cleared_why: CLEARED_NOT_FLAGGED,
-      read_scope: { institution_id: INST, document_id_after: null, document_id_through: null },
+      read_scope: { read_started_at: now.toISOString(), institution_id: INST, document_id_after: null, document_id_through: null },
+      // These test documents have no stored text: the clear says so.
+      text_missing: true,
     });
     // Nothing is left to clear on the next run.
-    const again = await secondLook(db, { check: CHECK, runId: RUN + 1, failing: [], passing: [], dryRun: false, now, readScope: { institutionId: INST } });
+    const again = await secondLook(db, { check: CHECK, runId: RUN + 1, failing: [], passing: [], dryRun: false, now, readScope: { readStartedAt: now, institutionId: INST } });
     expect(again.cleared).toBe(0);
   });
 
   it("a document range clears only fees whose document it read", async () => {
     const look = await secondLook(db, {
-      check: CHECK, runId: RUN, failing: [], passing: [], dryRun: false, now, readScope: { documentIdAfter: DOC_A - 1, documentIdThrough: DOC_A },
+      check: CHECK, runId: RUN, failing: [], passing: [], dryRun: false, now, readScope: { readStartedAt: now, documentIdAfter: DOC_A - 1, documentIdThrough: DOC_A },
     });
     expect(look.cleared).toBe(2);
     expect(await stateOf("stale")).toBe(CLEARED_KIND);
@@ -154,10 +157,10 @@ describe.skipIf(!connection)("second look read-scope clear in isolated PostgreSQ
   });
 
   it("a whole-table read clears every live stale flag of the check; a dry run counts and writes nothing", async () => {
-    const dry = await secondLook(db, { check: CHECK, runId: RUN, failing: [candidate("failing")], passing: [], dryRun: true, now, readScope: {} });
+    const dry = await secondLook(db, { check: CHECK, runId: RUN, failing: [candidate("failing")], passing: [], dryRun: true, now, readScope: { readStartedAt: now } });
     expect(dry.cleared).toBe(3);
     expect(await stateOf("stale")).toBe(PENDING_KIND);
-    const look = await secondLook(db, { check: CHECK, runId: RUN, failing: [candidate("failing")], passing: [ids.stale], dryRun: false, now, readScope: {} });
+    const look = await secondLook(db, { check: CHECK, runId: RUN, failing: [candidate("failing")], passing: [ids.stale], dryRun: false, now, readScope: { readStartedAt: now } });
     expect(look.cleared).toBe(3);
     expect(await stateOf("otherInst")).toBe(CLEARED_KIND);
     expect(await stateOf("rolledBack")).toBe(PENDING_KIND);
@@ -170,12 +173,40 @@ describe.skipIf(!connection)("second look read-scope clear in isolated PostgreSQ
 
   it("strict persistence locks and witnesses the clears in the caller's transaction", async () => {
     const look = await raw.begin(async (tx) => secondLook(tx as unknown as SqlTag, {
-      check: CHECK, runId: RUN, failing: [candidate("failing")], passing: [], dryRun: false, now, strictPersistence: true, readScope: { institutionId: INST },
+      check: CHECK, runId: RUN, failing: [candidate("failing")], passing: [], dryRun: false, now, strictPersistence: true, readScope: { readStartedAt: now, institutionId: INST },
     }));
     expect(look.confirmed.map((fee) => fee.feePublishedId)).toEqual([ids.failing]);
     expect(look.cleared).toBe(2);
     // Two rows (state and audit) for the confirmation and for each clear.
     expect(look.feedbackIds).toHaveLength(6);
     expect(await stateOf("stale")).toBe(CLEARED_KIND);
+  });
+
+  it("a flag first looked at after the read began stays pending", async () => {
+    // Another run flagged it while this run was reading: this read could not have seen it.
+    await flag("stale", CHECK, new Date(now.getTime() + 60_000));
+    const look = await secondLook(db, { check: CHECK, runId: RUN, failing: [], passing: [], dryRun: false, now, readScope: { readStartedAt: now, institutionId: INST } });
+    expect(look.cleared).toBe(2);
+    expect(await stateOf("stale")).toBe(PENDING_KIND);
+    expect(await stateOf("failing")).toBe(CLEARED_KIND);
+    expect(await stateOf("laterDoc")).toBe(CLEARED_KIND);
+  });
+
+  it("a clear never overwrites a confirmation, and writes no audit row for it", async () => {
+    // The stale read saw it pending; another run confirmed it before this run's write.
+    await flag("stale", CHECK, flaggedAt, CONFIRMED_KIND);
+    const changed = await clearPendingStates(db, RUN, [
+      { feePublishedId: ids.stale, key: secondLookDedupeKey(CHECK, ids.stale), evidence: { cleared_run_id: RUN } },
+      { feePublishedId: ids.laterDoc, key: secondLookDedupeKey(CHECK, ids.laterDoc), evidence: { cleared_run_id: RUN } },
+    ]);
+    expect([...changed]).toEqual([ids.laterDoc]);
+    expect(await stateOf("stale")).toBe(CONFIRMED_KIND);
+    expect(await stateOf("laterDoc")).toBe(CLEARED_KIND);
+    // Through secondLook: a confirmed row is neither read as stale nor cleared from passing.
+    const look = await secondLook(db, { check: CHECK, runId: RUN, failing: [], passing: [ids.stale], dryRun: false, now, readScope: { readStartedAt: now, institutionId: INST } });
+    expect(look.cleared).toBe(1);
+    expect(await stateOf("stale")).toBe(CONFIRMED_KIND);
+    const audits = await raw`SELECT 1 FROM pipeline_feedback WHERE dedupe_key = ${`${secondLookDedupeKey(CHECK, ids.stale)}:cleared:${RUN}`}`;
+    expect(audits).toHaveLength(0);
   });
 });

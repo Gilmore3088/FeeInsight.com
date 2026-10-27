@@ -377,6 +377,8 @@ export async function recheckLoanSections(
   const afterId = scoped ? 0 : await readCursor(db);
   const result: LoanSectionResult = { live, dryRun: options.dryRun, scoped, afterId, nextAfterId: afterId, ...empty, flagged: 0, waiting: 0, cleared: 0, takenDown: [] };
 
+  // Before the read: a flag another run writes after this cannot be cleared by this read (#1876).
+  const readStartedAt = options.now ?? new Date();
   let documents: LoanSectionDocumentRow[];
   try {
     documents = await inSavepoint(db, (scope) => loanSectionDocumentsSql(scope, { institutionId: options.institutionId, afterId, limit: options.limit }));
@@ -397,6 +399,7 @@ export async function recheckLoanSections(
     // pending flag there that this step no longer matches clears. A full batch stops at its last
     // document; a fee on a later document waits for the next step. Scoped runs stay in the institution.
     const readScope = {
+      readStartedAt,
       institutionId: options.institutionId ?? null,
       documentIdAfter: scoped ? null : afterId,
       documentIdThrough: documents.length >= limit ? lastId : null,

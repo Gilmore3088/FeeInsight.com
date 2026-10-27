@@ -238,6 +238,8 @@ export async function recheckSameLineReads(
   const result: SameLineReadResult = {
     live, dryRun: options.dryRun, ...findingsOnly(findSameLineReads([])), flagged: 0, waiting: 0, cleared: 0, takenDown: [],
   };
+  // Before the read: a flag another run writes after this cannot be cleared by this read (#1876).
+  const readStartedAt = options.now ?? new Date();
   let rows: SameLineReadRow[];
   try {
     rows = await inSavepoint(db, (scope) => sameLineReadRows(scope, { institutionId: options.institutionId, limit: options.limit }));
@@ -255,7 +257,7 @@ export async function recheckSameLineReads(
   if (live && !options.dryRun && (fullRead || found.matches.length > 0 || found.passing.length > 0)) {
     const look = await secondLook(db, {
       check: SAME_LINE_READ_CHECK, runId: options.runId, failing: found.matches, passing: found.passing, dryRun: false, now: options.now,
-      readScope: fullRead ? { institutionId: options.institutionId ?? null } : undefined,
+      readScope: fullRead ? { readStartedAt, institutionId: options.institutionId ?? null } : undefined,
     });
     result.flagged = look.flagged;
     result.waiting = look.waiting;

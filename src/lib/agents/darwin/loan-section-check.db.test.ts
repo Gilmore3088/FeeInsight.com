@@ -148,4 +148,44 @@ describe.skipIf(!connection)("loan section re-check in isolated PostgreSQL", () 
       await raw`DELETE FROM agent_run_events WHERE agent_run_id IN (1905901, 1905902)`;
     }
   });
+
+  it("an unscoped batch after a cursor clears only in (cursor, last document read] (#1876)", async () => {
+    // A fee on a document at or before the cursor: an earlier batch's, never this one's.
+    const LOW = SCHEDULE - 50;
+    await raw`INSERT INTO source_documents (id, institution_id, status, document_url, content_hash, crawled_at)
+              VALUES (${LOW}, ${INST}, 'success', 'https://bank.test/old-fees.html', 'h0', NOW())`;
+    await seed("lowFee", LOW, "monthly_maintenance", "Tax Service Charge", 25);
+    const feeIds = Object.values(ids);
+    const [run] = await raw<{ id: number }[]>`INSERT INTO agent_runs (agent_name, run_kind, title, status) VALUES ('darwin', 'state_agent', 'Loan section cursor fixture', 'running') RETURNING id`;
+    const runId = Number(run.id);
+    const pendingFlag = async (label: string) => {
+      const evidence = { flag_run_id: 1905900, flagged_at: "2026-10-26T13:00:00.000Z", reason: `loan_section: test ${label}` };
+      await raw`INSERT INTO pipeline_feedback (about_stage, about_strategy, signal, kind, reported_by, check_name, institution_id, fee_published_id, weight, evidence, agent_run_id, dedupe_key)
+                VALUES ('publish', ${LOAN_SECTION_CHECK}, 'wrong', 'takedown_pending', 'gutenberg', ${LOAN_SECTION_CHECK}, ${INST}, ${ids[label]}, 0, ${JSON.stringify(evidence)}::jsonb, 1905900, ${secondLookDedupeKey(LOAN_SECTION_CHECK, ids[label])})`;
+    };
+    const kind = async (label: string) => String((await raw`SELECT kind FROM pipeline_feedback WHERE dedupe_key = ${secondLookDedupeKey(LOAN_SECTION_CHECK, ids[label])}`)[0].kind);
+    try {
+      await raw`DELETE FROM pipeline_feedback WHERE check_name = ${LOAN_SECTION_CHECK} AND fee_published_id = ANY(${feeIds}::bigint[])`;
+      // The cursor the step resumes from: the latest loan-section event's next_after_id.
+      await raw`INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
+                VALUES (${runId}, ${LOAN_SECTION_CHECK}, 'completed', 'cursor fixture', ${JSON.stringify({ next_after_id: SCHEDULE - 1 })}::jsonb)`;
+      for (const label of ["lowFee", "accountNsf", "plainTax"]) await pendingFlag(label);
+      const result = await recheckLoanSections(raw as never, { runId, dryRun: false, live: true, limit: 1, now: new Date("2026-10-27T03:00:00Z") });
+      expect(result.scoped).toBe(false);
+      expect(result.afterId).toBe(SCHEDULE - 1);
+      expect(result.nextAfterId).toBe(SCHEDULE);
+      expect(result.cleared).toBe(1);
+      expect(await kind("accountNsf")).toBe("takedown_cleared");
+      expect(await kind("lowFee")).toBe("takedown_pending");
+      expect(await kind("plainTax")).toBe("takedown_pending");
+    } finally {
+      await raw`DELETE FROM pipeline_feedback WHERE check_name = ${LOAN_SECTION_CHECK} AND (fee_published_id = ANY(${feeIds}::bigint[]) OR agent_run_id = ${runId})`;
+      await raw`DELETE FROM agent_runs WHERE id = ${runId}`;
+      await raw`DELETE FROM published_fee_records WHERE fee_published_id = ${ids.lowFee}`;
+      await raw`DELETE FROM verified_fee_observations WHERE institution_id = ${INST} AND fee_verified_id NOT IN (SELECT lineage_ref FROM published_fee_records WHERE institution_id = ${INST})`;
+      await raw`DELETE FROM raw_fee_observations WHERE institution_id = ${INST} AND source_document_id = ${LOW}`;
+      await raw`DELETE FROM source_documents WHERE id = ${LOW}`;
+      delete ids.lowFee;
+    }
+  });
 });
