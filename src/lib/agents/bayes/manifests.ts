@@ -570,6 +570,10 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // No stale-floor increase or historical rejection replay accompanies this fix.
     // v132 (#1912): a commercial lockbox service is no safe deposit box (held unclassified); the live
     // fee it reached (135270) comes down through guard v100's catch-up, not a replay. Floor stays v97.
+    // v133 (#2040): a "we do not charge an NSF fee" sentence is the NSF fee's $0, behind
+    // NO_CHARGE_SENTENCE_READ_LIVE (off), so the bump reads nothing new; switching it on takes its own
+    // bump. Oct 27 dry run (read-only, current copies): 7 texts at 7 institutions would read it, 1 held
+    // as a conflict with a live charged NSF. Floor stays v97.
     {
       key: "knox.rules",
       owner: "knox",

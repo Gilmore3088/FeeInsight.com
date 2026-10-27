@@ -2131,6 +2131,38 @@ holds it. A lock box with a size, key, drilling, rent, lease, year, or late or p
 safe deposit box ("Lock Box Rental 5x5", "Lock Box Annual Fee 3 x 5", "Lock box past due date late fee").
 The answer-key gates are unchanged. The stale-read floor stays at v97.
 
+v133 (#2040): a whole sentence saying the bank charges no NSF fee is the NSF fee's $0, held as `zero`
+like a "No Fee" row so Darwin verifies it ("We do not charge a returned item/non-sufficient funds (NSF)
+fee for items returned unpaid.", Wells Fargo document 33356, which has no NSF row). The shared rule is
+`readNoChargeNsf` in `src/lib/no-charge-statement.ts`; the shared source check's witness
+(`noChargeNsfWitness`) uses the same rule, so Knox and Darwin trace the $0 to the sentence. A sentence
+counts only when:
+- it is one whole sentence of the grammar `<We | The bank | The credit union> <do not | does not | don't |
+  doesn't> [currently] <charge | assess | impose> [you] <a/an/any> <NSF name> [<restatement>]`, joined
+  across a line wrap to its real end, with no figure, condition, transaction type, count, second fee,
+  "will not" or "no longer" ("we do not charge a fee for the first item" and "we do not charge NSF fees
+  for declined one-time debit card purchases" are not $0), and the NSF name carries an NSF word;
+- it opens its line after a blank line, a sentence end or a heading, or follows a sentence end on its
+  line ("In your Easy Checking account, we do not charge ..." is one account's terms);
+- the two sentences before it in its paragraph, the sentence after it and every heading in the 40 lines
+  above name no product, account, tier, audience or service (`scopeWordIn`: "Business", "Bill Pay",
+  "Premier", "student", a capitalised name before Checking, Savings, Account or Banking);
+- no line of the text prices NSF, a returned item or a bounced check on it, or on the next two lines
+  under a short label (`documentPricesNsf`); a table of contents' page number does not count;
+- no specialist read any NSF fee on the text (one read per text).
+The extract step holds such a $0 as a range for review, flagged `knox_no_charge_conflict`, when the
+institution has a live NSF fee above $0 (`institutionChargesCategoryLive`). Only NSF: overdraft and
+overdraft transfer sentences stay unread (most on prod are scoped to a transaction type or threshold).
+Behind `NO_CHARGE_SENTENCE_READ_LIVE` (off): while it is off, Knox reads none of these sentences and the
+source check accepts none, so this version changes no read; switching it on takes the sample check of
+the dry-run reads and another rules version bump. Oct 27 dry run (prod, read-only, the 238 current texts
+with such a sentence near an NSF word): 9 sentences match the grammar; 7 texts at 7 institutions pass
+(Wells Fargo 4, 172 and 359, Monet Bank 309, Montecito Bank & Trust 570, Cape & Coast Bank 678, Grand
+Bank for Savings 2568). 4 of them have no NSF row today (4, 359, 678, 2568); 172 and 309 already show
+NSF $0; Montecito has live returned item fees of $9 and $10 and would be held as a conflict. HSBC
+Premier's terms (scope) and United Bank's agreement (an NSF line priced in its table of contents) are
+refused. The answer-key gates are unchanged. The stale-read floor stays at v97.
+
 ## Darwin's re-read requests (`reread-feedback.ts`, #1511)
 
 Darwin's live fragment check (`darwin/live-fragment-check.ts`) writes one `pipeline_feedback` row of
@@ -2420,7 +2452,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v132 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v133 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v10 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

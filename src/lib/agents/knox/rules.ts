@@ -99,6 +99,8 @@ export interface HeldFeeCandidate extends Partial<FeeApplicability> {
   ownCondition?: string;
   linkedConditions?: string;
   lineShare?: string;
+  /** v133 (#2040): a $0 read from a sentence saying the bank charges no such fee (`readNoChargeNsf`). */
+  statedNoCharge?: true;
   shape: HeldShape;
   feeName: string;
   /** 0 for a free fee, the low end of a range, null for a percentage. */

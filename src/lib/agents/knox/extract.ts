@@ -154,6 +154,21 @@ export const COMBINED_NSF_OVERDRAFT_SQL =
 export const ACCOUNT_PRODUCT_FLAG = "account_product:v73";
 /** v122 (#1882): a $0 held because it is not the fee's price (`bandedZeroOf`), with its kind after a colon. */
 export const BANDED_ZERO_HOLD_FLAG = "knox_banded_zero";
+/** v133 (#2040): a no-charge sentence's $0 held because the institution has a live charged fee in its category. */
+export const NO_CHARGE_CONFLICT_FLAG = "knox_no_charge_conflict";
+
+/** True when the institution has a live fee above $0 in the category (`published_fee_records`, not rolled back). */
+export async function institutionChargesCategoryLive(db: SqlTag, institutionId: number, canonicalFeeKey: string): Promise<boolean> {
+  const rows = await db<Array<{ charged: boolean }>>`
+    SELECT EXISTS (
+      SELECT 1 FROM published_fee_records live_fee
+       WHERE live_fee.institution_id = ${institutionId}
+         AND live_fee.canonical_fee_key = ${canonicalFeeKey}
+         AND live_fee.rolled_back_at IS NULL
+         AND live_fee.amount > 0
+    ) AS charged`;
+  return Boolean(rows[0]?.charged);
+}
 /**
  * Stored product names that name no account (`account-name-exclusions.ts`, as a Postgres regex):
  * a v73+ read replaces them, and a copy holding one is due a re-read. Prod on Oct 16: 14 "Truth in
@@ -1284,6 +1299,12 @@ export async function insertHeldCandidate(
   const band = held.shape === "zero" && held.amount === 0 ? bandedZeroOf({ line: held.excerpt, feeName: held.feeName,
     canonicalFeeKey: held.canonicalHint, documentText: sourceRow.normalized_text ?? options.row.normalized_text ?? null }) : null;
   if (band) held = { ...held, shape: "range", amountMax: null };
+  // v133 (#2040): a $0 read from a "we do not charge an NSF fee" sentence never goes to Darwin while
+  // the institution has a live charged fee in that category: one of its documents prices it, so the
+  // sentence is another product's or an older practice's terms. Held as a range for review.
+  const noChargeConflict = held.shape === "zero" && held.statedNoCharge && held.canonicalHint
+    ? await institutionChargesCategoryLive(db, Number(options.row.institution_id), held.canonicalHint) : false;
+  if (noChargeConflict) held = { ...held, shape: "range", amountMax: null };
   const applicability = feeApplicability(held.feeName, held.excerpt, held.amount);
   const agentEventId = stableUuid(
     `knox:held:${options.runId}:${documentTextId}:${sourceDocumentId}:${held.shape}:${held.feeName}:${held.amount}:${held.percent}`,
@@ -1291,6 +1312,7 @@ export async function insertHeldCandidate(
   const toDarwin = heldGoesToDarwin(held);
   const flags = [`knox_review:${held.shape}`];
   if (band) flags.push(`${BANDED_ZERO_HOLD_FLAG}:${band.kind}`);
+  if (noChargeConflict) flags.push(NO_CHARGE_CONFLICT_FLAG);
   if (capOwner) flags.push(CAP_FIRST_ELIGIBILITY_FLAG);
   if (symbolicOwner) flags.push(SYMBOLIC_LESSER_ELIGIBILITY_FLAG);
   if (internationalOwner) flags.push(INTERNATIONAL_WIRE_ELIGIBILITY_FLAG);

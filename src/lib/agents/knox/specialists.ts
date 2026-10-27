@@ -45,6 +45,7 @@ import { namesLateChargeBound } from "@/lib/late-charge-bound";
 import { rateFloorOf } from "@/lib/rate-floor";
 import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 import { commercialLockboxName, commercialLockboxOnLine } from "@/lib/custom-report/commercial-lockbox";
+import { NO_CHARGE_SENTENCE_READ_LIVE, readNoChargeNsf } from "@/lib/no-charge-statement";
 
 /**
  * Knox's free extraction team, run over one whole document. Pure.
@@ -481,7 +482,18 @@ import { commercialLockboxName, commercialLockboxOnLine } from "@/lib/custom-rep
 // read whose name or stored line or business heading says so is held unclassified. A lock box with a
 // size, key, drilling, rent, lease, year or late charge stays a safe deposit box. The stale-read floor
 // stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 132 } as const;
+// v133 (#2040): a whole sentence saying the bank charges no NSF fee ("We do not charge a returned
+// item/non-sufficient funds (NSF) fee for items returned unpaid.") is the NSF fee's $0, held as `zero`
+// like a "No Fee" row (`readNoChargeNsf` in `src/lib/no-charge-statement.ts`, shared with the source
+// check's witness). Only an unconditional sentence of the shared grammar, whose two sentences before,
+// one sentence after and headings in the 40 lines above name no product, account, audience, tier or
+// service, on a text where no line prices NSF; none when any specialist read a priced or $0 NSF fee on
+// the text. The extract step holds the read for review when the institution has a live charged NSF fee
+// (`knox_no_charge_conflict`). Behind `NO_CHARGE_SENTENCE_READ_LIVE` (off): until it is switched on,
+// the read is computed only by the dry run and tests, and no text reads it. Oct 27 dry run (prod,
+// read-only, current copies): 7 texts at 7 institutions would read it once on; 4 have no NSF row today,
+// 2 already show NSF $0, 1 has a live charged NSF and would be held. The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 133 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -694,7 +706,10 @@ function cellAlreadyRead(read: ExtractedFeeCandidate, prior: readonly ExtractedF
   });
 }
 
-export function runFreeSpecialists(sourceText: string, options: { institutionName?: string | null } = {}): FreeExtractionResult {
+export function runFreeSpecialists(
+  sourceText: string,
+  options: { institutionName?: string | null; /** v133 (#2040): defaults to the switch, off. */ noChargeSentences?: boolean } = {},
+): FreeExtractionResult {
   const institutionName = options.institutionName ?? null;
   // Labeled fee cards ("Fee TypeX" / ... / "Fee$5.00") are read as one row, as the shared
   // check reads them. The self-check runs on `checkText`: the stored text with these layout
@@ -1023,6 +1038,23 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
     held.push({ shape: "eligibility", feeName: read.feeName, amount: read.amount, amountMax: null,
       percent: null, frequency: read.frequency, canonicalHint: read.canonicalHint, excerpt: read.excerpt,
       ownedPolicy: true, linkedConditions: read.linkedConditions, lineShare: read.lineShare });
+  }
+  // v133 (#2040): "We do not charge a returned item/non-sufficient funds (NSF) fee for items returned
+  // unpaid." is the NSF fee's $0 when the shared rule lets it stand (`readNoChargeNsf`), held as `zero`
+  // like a "No Fee" row so Darwin verifies it. Once per text, and never beside any read of NSF: a priced
+  // or $0 NSF read on the same text is the schedule's own row. Off until NO_CHARGE_SENTENCE_READ_LIVE.
+  const nsfRead = [...candidates, ...held, ...untraced].some((row) => row.canonicalHint === "nsf");
+  if ((options.noChargeSentences ?? NO_CHARGE_SENTENCE_READ_LIVE) && !nsfRead) {
+    const [statement] = readNoChargeNsf(sourceText).statements;
+    if (statement && passesDarwinChecks("nsf", statement.feeName, 0) && held.filter((row) => unpricedHalf(row)).length < MAX_HELD_PER_DOCUMENT) {
+      const row: HeldFeeCandidate = { shape: "zero", feeName: statement.feeName, amount: 0, amountMax: null, percent: null,
+        frequency: null, canonicalHint: "nsf", excerpt: statement.sentence, statedNoCharge: true };
+      const key = heldKey(row);
+      if (!seenHeld.has(key)) {
+        seenHeld.add(key);
+        held.push(row);
+      }
+    }
   }
   // An untraced read is held once, and only when no specialist read the same fee traceably.
   for (const row of untraced) {
