@@ -10,6 +10,8 @@ import {
   askVerdict,
   databaseVerdict,
   exportVerdict,
+  hamiltonCheckSkippedReason,
+  hamiltonCheckTimeoutMs,
   hamiltonHealthDetail,
   hamiltonHealthProblems,
   liveHamiltonHealthDeps,
@@ -70,6 +72,34 @@ describe("Hamilton health check (#1921)", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("holds every probe to the time limit it is given", async () => {
+    vi.useFakeTimers();
+    try {
+      const pending = runHamiltonHealth(deps({ probeAsk: () => new Promise(() => undefined) }), new Date(), { timeoutMs: 8_000 });
+      await vi.advanceTimersByTimeAsync(8_001);
+      const report = await pending;
+      expect(report.checks[1]).toMatchObject({ check: "ask", ok: false, reason: "the ask check took longer than 8 seconds" });
+      expect(report.failed).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("gives the probes the brief's time left, up to 20 seconds, and skips them when too little is left", () => {
+    // Oct 24 to 26: the brief's other reads took about 20 seconds.
+    expect(hamiltonCheckTimeoutMs(0)).toBe(20_000);
+    expect(hamiltonCheckTimeoutMs(20_000)).toBe(20_000);
+    expect(hamiltonCheckTimeoutMs(30_000)).toBe(15_000);
+    expect(hamiltonCheckTimeoutMs(40_000)).toBe(5_000);
+    expect(hamiltonCheckTimeoutMs(40_001)).toBeNull();
+    expect(hamiltonCheckTimeoutMs(-5)).toBe(20_000);
+    const skipped = hamiltonHealthProblems(null, hamiltonCheckSkippedReason(41_400));
+    expect(skipped).toEqual([
+      "Hamilton health check could not run: the brief's other reads took 41 seconds, leaving too little time to run the check. See docs/runbooks/hamilton-incident.md.",
+    ]);
+    expect(skipped.join("")).not.toContain("—");
   });
 
   it("reads each verdict plainly", () => {
