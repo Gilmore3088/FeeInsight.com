@@ -476,7 +476,10 @@ const AGREES_NO_FEE_LABEL = new RegExp(String.raw`^no\s+${NSF_NAME}\s*:\s*`, "i"
  * to four words ("Wells Fargo"), never a generic one ("Other banks", "Many Banks", "Some institutions").
  */
 const AGREES_NO_FEE_SUBJECT = /^(?:We|we|The\s+[Bb]ank|The\s+[Cc]redit\s+[Uu]nion|(?!(?:Other|Many|Some|Most|All|Any|Certain|Several|These|Those|Such|Our|Your|Their|Few|No)\b)[A-Z][\w&.'’-]*(?:\s+[A-Z][\w&.'’-]*){0,3})\s+(?=(?:do|does)\b)/;
-const GENERIC_INSTITUTIONS = /\b(?:banks|credit\s+unions|institutions|lenders|merchants|payees)\b/i;
+// An account, product or audience as the subject ("Savings Accounts do not charge ...") narrows the
+// statement to that group, so it is not an agreeing sentence either.
+const GENERIC_INSTITUTIONS =
+  /\b(?:banks|credit\s+unions|institutions|lenders|merchants|payees|accounts?|checking|savings|banking|cards?|members?|customers?|clients?)\b/i;
 
 /**
  * True when the sentence is a whole agreeing no-fee sentence (`AGREES_NO_FEE_LABEL`,

@@ -332,6 +332,10 @@ describe("no-charge NSF sentences (#2040)", () => {
       "Other banks do not charge a fee for returned items.",
       "Many banks do not charge a fee for returned items.",
       "Some do not charge a fee for returned items.",
+      // An account or audience as the subject narrows the statement to that group.
+      "Savings Accounts do not charge a fee for returned items.",
+      "Personal Checking Accounts do not charge a fee for returned items.",
+      "Premier Members do not charge a fee for returned items.",
     ])("a no-fee sentence with a figure, condition or scope still refuses the page: %s", (other) => {
       expect(mentionsNsfFee(other)).toBe(true);
       expect(names(`${S}\n\nReturned Items\n\n${other}`)).toEqual([]);
