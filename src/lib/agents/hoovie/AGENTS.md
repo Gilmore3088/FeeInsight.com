@@ -265,7 +265,8 @@ empty they fall back to the per-request SQL (`call-reports-legacy.ts`) and log a
 Migration 79 adds `call_report_item_definitions`, a private `call_report_item_facts` invoker view,
 unchanged-aware compact ingestion and bounded metadata conversion/expansion. Compatible readers
 fall back before migration. `storage-compaction.ts` runs inside Atlas's existing storage step,
-off by default: at most 5,000 rows per table, exact HMDA before-images, malformed rows retained.
+enabled for bounded daily continuation after production canary 14469 passed on October 27:
+at most 5,000 rows per table, exact HMDA before-images, malformed rows retained.
 HMDA preserves every statistic in versioned tuples; the manifest-pinned 2025 year is excluded.
 Order the HMDA cursor by the qualified numeric table ID, never its text output alias. Resume
 from the latest conversion receipt without an error; a completed enclosing step can contain a
@@ -275,11 +276,16 @@ The migration changes no existing observations. See the dated rollout for accept
 James approved the staged rollout on October 26. An admin Atlas workflow with source
 `atlas.storage-rollout.2026-10-26` can request one `compact`, `export`, `rehearse` or `prune` action through the
 existing storage step. Each compaction remains bounded to 5,000 rows per table; exports are
-restricted to the four reviewed source/periods. Daily switches remain off. Pruning requires a successful
+restricted to the four reviewed source/periods. Daily compaction is on; daily export/pruning remain off.
+The permanent receipt page advances one server-selected stage and period at a time, reusing terminal
+idempotency keys and requiring the successful production canary. Pruning requires a successful
 rehearsal receipt for that exact file checksum, the approved row counts and twelve newer quarters.
 Rehearsal restores into the migration-owned disposable unlogged table and empties it after exact
 byte comparison. Rollback restoring remains outside this action path. Invalid actions fail before
 the storage step writes.
+The consumer check also verifies the public institution's complete FFIEC history and NCUA measure
+discovery bounds. Both read verified archives; an unreadable or incomplete file is an error rather
+than a shorter history. One multi-measure pass per file retains raw units for public history.
 
 The approved workflow also has a `verify` action: after a prune commits, read one archived sample
 through Hamilton's shared `queryData` and compare amount, unit, identity and citation with the

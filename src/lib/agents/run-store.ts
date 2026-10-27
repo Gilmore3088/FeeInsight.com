@@ -1,5 +1,5 @@
 import { runStorageCompaction } from "@/lib/agents/hoovie/storage-compaction";
-import { STORAGE_ROLLOUT_SOURCE, storageRolloutAction } from "@/lib/agents/hoovie/storage-rollout";
+import { STORAGE_ROLLOUT_SOURCE, storageRolloutAction, storageRolloutTarget } from "@/lib/agents/hoovie/storage-rollout";
 import { verifyNextArchivedCallRead } from "@/lib/agents/hoovie/storage-read-acceptance";
 import { sql, withTransaction } from "@/lib/data-store/connection";
 import { sweepInterruptedReportRuns } from "@/lib/hamilton/report-run";
@@ -3083,17 +3083,19 @@ async function executeAgenticStep(
     }
     case "atlas-storage-retention": {
       const rolloutAction = storageRolloutAction(run,step.input);
+      const rolloutTarget = storageRolloutTarget(run.params);
       // commitDb: each expired legacy event-log partition is dropped in its own committed transaction.
       const result = await runStorageRetention({ db: tx, commitDb: sql, dryRun: run.runKind === "dry_run", context: { runId: run.id, stepId: step.id, stepKey: step.stepKey } });
-      // #1870: Twelve quarters hot. Export, historical compaction and pruning stay off pending rollout.
+      // Twelve quarters hot. Daily conversion is bounded; archive writes require the approved workflow.
       const cold = await runColdTier({ db: tx, dryRun: run.runKind === "dry_run", runId: run.id,
         ...(rolloutAction ? { exportLive: rolloutAction === "export", pruneLive: rolloutAction === "prune",
-          rehearseLive: rolloutAction === "rehearse", approvedExportsOnly: true, requireRehearsal: true } : {}),
+          rehearseLive: rolloutAction === "rehearse", approvedExportsOnly: true, requireRehearsal: true, requireConsumerAcceptance: true, target: rolloutTarget } : {}),
       });
       const compaction = await runStorageCompaction(tx, { dryRun: run.runKind === "dry_run",
         ...(rolloutAction ? { live: rolloutAction === "compact" } : {}),
       });
-      const readAcceptance=rolloutAction==="verify"?await verifyNextArchivedCallRead(tx):null;
+      const readAcceptance=rolloutAction==="verify"?await verifyNextArchivedCallRead(tx, rolloutTarget):null;
+      const prePruneAcceptance=rolloutAction==="rehearse"&&!cold.error?await verifyNextArchivedCallRead(tx,rolloutTarget,true):null;
       const compactionAlerts = [
         ...(cold.error ? [`Public-data archive held: ${cold.error}`] : []),
         ...(compaction.error ? [`Public-data compaction held: ${compaction.error}`] : []),
@@ -3101,11 +3103,15 @@ async function executeAgenticStep(
       ];
       // #1041: the document vault's size and growth, and the rejected-document retention count (deletion off).
       const vault = await runVaultRetention({ db: tx, dryRun: run.runKind === "dry_run", client: r2Client(), commitDb: sql });
+      const conversionSummary = compaction.live ? compaction.error
+        ? ` Public-data conversion held: ${compaction.error}.`
+        : ` Public-data conversion committed: ${compaction.callItems.changed} call-report rows; ${compaction.hmda.changed} HMDA rows; ${compaction.hmda.invalid} malformed HMDA rows retained.` : "";
+      const acceptanceSummary = readAcceptance?.status === "verified" ? ` Historical consumers verified: ${readAcceptance.source} ${readAcceptance.period}.` : "";
       return {
         status: "completed",
-        summary: `${summarizeStorageRetention(result)} ${summarizeColdTier(cold)} ${summarizeVaultRetention(vault)}`,
+        summary: `${conversionSummary}${acceptanceSummary} ${summarizeStorageRetention(result)} ${summarizeColdTier(cold)} ${summarizeVaultRetention(vault)}`.trim(),
         // The vault's warnings join `alerts`, which the morning brief emails.
-        detail: { ...storageRetentionDetail(result), alerts: [...result.alerts, ...vault.alerts, ...compactionAlerts], cold_tier: coldTierDetail(cold), storage_compaction: compaction, ...(readAcceptance?{storage_read_acceptance:readAcceptance}:{}), vault: vaultRetentionDetail(vault) },
+        detail: { ...storageRetentionDetail(result), alerts: [...result.alerts, ...vault.alerts, ...compactionAlerts], cold_tier: coldTierDetail(cold), storage_compaction: compaction, ...(readAcceptance?{storage_read_acceptance:readAcceptance}:{}), ...(prePruneAcceptance?{storage_preprune_acceptance:prePruneAcceptance}:{}), vault: vaultRetentionDetail(vault) },
       };
     }
     case "schedule-check": {

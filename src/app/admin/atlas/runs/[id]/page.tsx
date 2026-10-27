@@ -7,8 +7,10 @@ import { notFound } from "next/navigation";
 import { requireAuth } from "@/lib/auth";
 import { formatAdminDateTime } from "@/lib/admin-time";
 import { getAgentRun, getAgentRunEvents, getAgentRunSteps } from "@/lib/agents/run-store";
-import { STORAGE_COMPACTION_RETRY_OF } from "@/lib/agents/hoovie/storage-rollout";
-import { retryStorageCompaction } from "./actions";
+import { STORAGE_COMPACTION_RETRY_OF, STORAGE_ROLLOUT_SOURCE } from "@/lib/agents/hoovie/storage-rollout";
+import { readArchiveRolloutProgress } from "@/lib/agents/hoovie/storage-rollout-progress";
+import { sql } from "@/lib/data-store/connection";
+import { advanceApprovedStorageRollout, retryStorageCompaction } from "./actions";
 
 /**
  * A permanent run receipt, not the last-30-runs dashboard. The run ID is the
@@ -30,6 +32,12 @@ export default async function AtlasRunReceiptPage({
     getAgentRunSteps(runId),
     getAgentRunEvents(runId, 50),
   ]);
+  let nextArchive: Awaited<ReturnType<typeof readArchiveRolloutProgress>> | undefined;
+  let archiveError: string | undefined;
+  if (run.params.source === STORAGE_ROLLOUT_SOURCE) {
+    try { nextArchive = await readArchiveRolloutProgress(sql); }
+    catch (error) { archiveError = error instanceof Error ? error.message.slice(0, 300) : "Archive progression could not be read"; }
+  }
 
   return (
     <main className="mx-auto max-w-4xl space-y-6 px-4 py-8">
@@ -52,6 +60,15 @@ export default async function AtlasRunReceiptPage({
         </p>
         {run.error && <p role="alert" className="text-sm text-red-700 dark:text-red-400">{run.error}</p>}
       </header>
+      {archiveError && <p role="alert">Storage rollout held: {archiveError}</p>}
+      {nextArchive && (
+        <form action={advanceApprovedStorageRollout} className="space-y-2 rounded-lg border border-gray-200 p-4 dark:border-gray-700">
+          <p className="text-sm">Next approved stage: {nextArchive.action} {nextArchive.source.toUpperCase()} {nextArchive.period}.</p>
+          <button type="submit" className="rounded-md bg-[var(--brand-primary)] px-4 py-2 text-sm font-semibold text-white">Continue approved storage rollout</button>
+          <p className="text-xs text-gray-500">One period and stage per run. Verified files, restore rehearsal, exact counts, and the pipeline pause remain enforced.</p>
+        </form>
+      )}
+      {nextArchive === null && <p role="status">All four approved archive periods have completed export, restore rehearsal, pruning and consumer verification.</p>}
       {run.id === STORAGE_COMPACTION_RETRY_OF && (
         <form action={retryStorageCompaction.bind(null, run.id)} className="space-y-2 rounded-lg border border-gray-200 p-4 dark:border-gray-700">
           <p className="text-sm">The first approved conversion rolled back. Retry one batch of at most 5,000 rows per table, preserving the 2025 HMDA hold and existing archive controls.</p>

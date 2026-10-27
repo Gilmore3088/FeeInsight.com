@@ -5,8 +5,8 @@ import { inSavepoint } from "@/lib/agents/savepoint";
 import { HMDA_REPAIR_MANIFEST } from "./hmda-repair-manifest";
 
 type Db = typeof sql;
-/** Production history changes require the reviewed rollout; new ingestion already uses compact formats. */
-export const STORAGE_COMPACTION_LIVE = false;
+/** Approved staged rollout: run 14469 passed exact equality on October 27; keep every daily batch bounded. */
+export const STORAGE_COMPACTION_LIVE = true;
 const BATCH = 5000;
 
 export interface CompactionReceipt {
