@@ -8,6 +8,9 @@ import { JSON_TEXT_PASSTHROUGH } from "@/lib/data-store/connection";
 import { FRESHNESS_SEARCH_VERSION, STALE_PRICE_REASON, selectStaleCandidates, selectUpgradeCandidates } from "./discovery";
 import { rememberedAddressProven } from "./fetch";
 import { loadSearchMissDemotions } from "./search-misses";
+import { loadMissedSchedules, missedScheduleFeedback } from "./missed-schedules";
+import { runSecondDocumentFind } from "./second-document";
+import { recordFeedback } from "@/lib/agents/learning/feedback";
 
 const connection = process.env.E2E_DATABASE_URL;
 const schema = `magellan_feedback_${randomBytes(8).toString("hex")}`;
@@ -19,6 +22,9 @@ const TABLES = [
   "pipeline_attempts",
   "pipeline_feedback",
   "published_fee_records",
+  "institution_additional_sources",
+  "leads",
+  "verified_fee_observations",
 ];
 
 /**
@@ -299,5 +305,61 @@ describe.skipIf(!connection)("Magellan reads Hamilton's conflict lessons and its
     ]);
     expect([...demotions.keys()]).toEqual([301]);
     expect(demotions.get(301)).toEqual(["discover.sitemap", "discover.common_paths"]);
+  });
+
+  it("sends a bank with a missed second schedule back to the companion finder once, in any state (#2070)", async () => {
+    // The writer upserts on the dedupe key, which LIKE does not copy.
+    await db`CREATE UNIQUE INDEX IF NOT EXISTS pipeline_feedback_dedupe_key_test ON pipeline_feedback (dedupe_key)`;
+    for (const id of [401, 402, 403, 404]) await bank(id, `https://bank${id}.example`, `https://bank${id}.example/fees`);
+    await db`UPDATE institution_sources SET state_code = 'OK' WHERE id = 402`;
+    await db`UPDATE institution_sources SET status = 'closed' WHERE id = 404`;
+    const missed = (id: number) => missedScheduleFeedback({ institutionId: id, documentUrl: `https://bank${id}.example/overdraft.pdf`, documentType: "pdf", categories: ["overdraft"], evidenceFeeIds: [id] });
+    await recordFeedback(asDb(), [missed(401), missed(402), missed(403), missed(404)]);
+    // Bank 403's companion search ran after its row: the row is closed.
+    await db`
+      INSERT INTO pipeline_attempts (institution_id, stage, strategy, strategy_version, outcome, detail, created_at)
+      VALUES (403, 'discover', 'discover.second_document', 5, 'no_candidates', '{}'::jsonb, NOW() + interval '1 second')
+    `;
+    const all = await loadMissedSchedules(asDb(), { limit: 10 });
+    expect([...all.urls.keys()].sort()).toEqual([401, 402]);
+    expect(all.urls.get(401)).toEqual(["https://bank401.example/overdraft.pdf"]);
+    // A state lane keeps to its state; the step's own picks are left out.
+    expect([...(await loadMissedSchedules(asDb(), { stateCode: "ok", limit: 10 })).urls.keys()]).toEqual([402]);
+    expect([...(await loadMissedSchedules(asDb(), { excludeIds: [401], limit: 10 })).urls.keys()]).toEqual([402]);
+    // Written again the next day, the row keeps its first time, so a searched bank is not sent back daily.
+    await db`
+      INSERT INTO pipeline_attempts (institution_id, stage, strategy, strategy_version, outcome, detail, created_at)
+      VALUES (401, 'discover', 'discover.second_document', 5, 'ok', '{}'::jsonb, NOW() + interval '1 second')
+    `;
+    await recordFeedback(asDb(), [missed(401)]);
+    expect([...(await loadMissedSchedules(asDb(), { limit: 10 })).urls.keys()]).toEqual([402]);
+  });
+
+  it("searches a missed second schedule's bank in rescue mode's companion pass and keeps the missed page (#2070)", async () => {
+    await db`CREATE UNIQUE INDEX IF NOT EXISTS pipeline_feedback_dedupe_key_test ON pipeline_feedback (dedupe_key)`;
+    await db`CREATE UNIQUE INDEX IF NOT EXISTS institution_additional_sources_test ON institution_additional_sources (institution_id, url)`;
+    // A full bank (many live categories) that the thin-bank search would never pick.
+    await bank(501, "https://bank501.example", "https://bank501.example/fees");
+    const keys = ["overdraft", "nsf", "monthly_maintenance", "stop_payment", "wire_domestic_outgoing", "paper_statement", "atm_non_network", "cashiers_check", "dormant_account"];
+    for (const [index, key] of keys.entries()) {
+      await db`
+        INSERT INTO published_fee_records (fee_published_id, institution_id, canonical_fee_key, fee_name, published_by_adversarial_event_id, lineage_ref)
+        VALUES (${5010 + index}, 501, ${key}, ${key}, gen_random_uuid(), ${5010 + index})
+      `;
+    }
+    await bank(502, "https://bank502.example", "https://bank502.example/fees");
+    await recordFeedback(asDb(), [missedScheduleFeedback({ institutionId: 501, documentUrl: "https://bank501.example/overdraft-fee-schedule", categories: ["overdraft"] })]);
+    const page = "<html><body><main><h1>Overdraft Fee Schedule</h1><p>Overdraft fee $35.00 per item</p><p>NSF fee $35.00 per item</p><p>Returned item fee $30.00</p><p>Stop payment fee $30.00</p><p>Extended overdraft fee $5.00 per day</p></main></body></html>";
+    const fetchImpl = (async (input: string | URL) => {
+      const url = String(input);
+      const body = url.includes("overdraft-fee-schedule") ? page : "<html><body><main>Welcome</main></body></html>";
+      return new Response(body, { status: 200, headers: { "content-type": "text/html" } });
+    }) as typeof fetch;
+    const result = await runSecondDocumentFind({ db: asDb(), fetchImpl, runId: 1, deadline: Date.now() + 60_000, learning: true, missedOnly: true });
+    expect(result).toMatchObject({ status: "ran", checked: 1, missedSchedules: 1 });
+    expect(result.results[0]).toMatchObject({ institutionId: 501, outcome: "ok" });
+    expect(await db`SELECT institution_id, url FROM institution_additional_sources`).toEqual([{ institution_id: "501", url: "https://bank501.example/overdraft-fee-schedule" }]);
+    // The search closes the row: the bank is not sent back again.
+    expect((await loadMissedSchedules(asDb(), { limit: 10 })).urls.size).toBe(0);
   });
 });

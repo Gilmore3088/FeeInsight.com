@@ -7,6 +7,26 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const MAGELLAN_LESSONS: AgentLesson[] = [
   {
+    id: "issue-2070-legacy-page-is-not-the-schedule",
+    agent: "magellan",
+    stage: "discover",
+    lesson: "A page or PDF for accounts the bank no longer opens (\"Legacy Accounts Fee Schedule\", \"Accounts No Longer Offered\", \"/discontinued-products.pdf\") prices what existing holders pay, not what a customer can sign up for. Refuse it before it is stored, as the main link or as a companion, when its address, its link words or its own title name legacy, discontinued, grandfathered or retired accounts or products. Judge the title, not a section further down: a current schedule with a legacy table inside is still the schedule, and Knox flags that table. \"Retirement Accounts\", \"Retired Military Accounts\" and a bank named Legacy are not legacy pages.",
+    why: "Discontinued account fees were caught only after extraction, by the shared check's row and heading rules or by hand takedowns (#1908-#1911); a fee under a legacy page's own title is not under any section heading the shared check sees, so a whole legacy page could publish as the bank's prices. Magellan, Rosetta and Knox had no check before the read (#2070).",
+    evidence: { issues: [2070], prs: [], files: ["src/lib/agents/magellan/legacy-page.ts", "src/lib/agents/magellan/find-validate.ts", "src/lib/agents/magellan/second-document.ts"] },
+    appliesTo: ["discover"],
+    since: "2026-10-27",
+  },
+  {
+    id: "issue-2070-missed-second-schedule-goes-back-to-the-companion-finder",
+    agent: "magellan",
+    stage: "discover",
+    lesson: "When a document known to price the bank's fees (the answer key's) is not among the documents you stored for it, you missed a second schedule. Send the bank back to the companion finder at its next step, past the monthly recheck and however many fees it already has, in rescue mode too, and check the missed address first with the same document check as any other. Search it once per missed document: the row closes on that search, whatever it found, so the bank is not searched again every day.",
+    why: "The companion finder picked only thin banks once a month and never ran in rescue mode, and a missed schedule left no row any agent read, so a bank whose overdraft or account disclosure Magellan never stored kept its partial fees with nothing sending it back (#2070).",
+    evidence: { issues: [2070], prs: [], files: ["src/lib/agents/magellan/missed-schedules.ts", "src/lib/agents/magellan/second-document.ts", "src/lib/agents/magellan/discovery.ts", "src/lib/agents/deming/knox-misses.ts"] },
+    appliesTo: ["discover"],
+    since: "2026-10-27",
+  },
+  {
     id: "issue-1944-card-rate-table-is-not-the-schedule",
     agent: "magellan",
     stage: "discover",

@@ -6,6 +6,8 @@ import { latestFinishedStep } from "@/lib/data-store/agent-quality";
 import { severityFor } from "./severity";
 import { eligibleReferences, loadReferenceOrigins, referenceFeeFingerprint, readReferenceEligibility, type ReferenceEligibilitySnapshot } from "@/lib/data-store/answer-key-reference-store";
 import { referenceKeyFingerprint } from "@/lib/data-store/answer-key-eligibility";
+import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
+import { missedScheduleFeedback, scheduleMissed } from "@/lib/agents/magellan/missed-schedules";
 
 /**
  * Deming's daily replay of Knox's answer-key misses (#1099). Every hand-checked answer-key fee
@@ -23,7 +25,9 @@ import { referenceKeyFingerprint } from "@/lib/data-store/answer-key-eligibility
  * A case whose key fee is no longer confirmed is retired; if the fee is confirmed again, the case
  * reopens (a candidate when missed, active when read). Inputs are frozen at insert (the key's
  * source line, category, price, document and text hash); a replay reads the document's newest
- * completed text. The step writes only `eval_cases`; it never touches a fee row. Deterministic,
+ * completed text. The step writes `eval_cases`, and one `missed_second_schedule` feedback row per key
+ * document whose address Magellan never stored for the bank (#2070, `magellan/missed-schedules.ts`),
+ * which sends the bank back to the companion finder; it never touches a fee row. Deterministic,
  * no model calls. Its own daily run (`/api/admin/crew/knox-misses`), so the replay's reading time
  * never holds up the scoreboard; a run that reaches its deadline leaves the rest for the next day,
  * least recently checked banks first.
@@ -138,6 +142,8 @@ export interface KnoxMissesResult {
   stillMissing: number;
   /** Banks the run did not reach before its deadline; the next run starts with them. */
   banksLeftIds: number[];
+  /** #2070: key documents Magellan never stored, recorded as missed second schedules (counted, not written, in a dry run). */
+  missedSchedules?: number;
 }
 
 const positiveReferenceEventId = (value: unknown): number | null =>
@@ -193,6 +199,31 @@ function finish(counts: Record<string, { expected: number; missed: number }>): R
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([key, value]) => [key, { ...value, missRate: ratio(value.missed, value.expected) }]),
   );
+}
+
+/**
+ * #2070: the key documents whose address Magellan never stored for the bank (no source document of
+ * any status, no companion page), as missed-second-schedule rows. Read-only.
+ */
+async function missedKeyDocuments(
+  db: SqlTag,
+  keys: Array<{ institutionId: number; documentUrl: string; documentType: string; feeIds: number[]; categories: string[] }>,
+  runId: number | null,
+): Promise<FeedbackRow[]> {
+  const ids = [...new Set(keys.map((key) => key.institutionId))];
+  const [ready] = await db<Array<{ companions: boolean }>>`SELECT to_regclass('institution_additional_sources') IS NOT NULL AS companions`;
+  const stored = await db<Array<{ institution_id: number | string; url: string | null }>>`
+    SELECT institution_id, document_url AS url FROM source_documents WHERE institution_id = ANY(${ids}::bigint[])
+    ${ready?.companions ? db`UNION ALL SELECT institution_id, url FROM institution_additional_sources WHERE institution_id = ANY(${ids}::bigint[])` : db``}
+  `;
+  const byBank = new Map<number, string[]>();
+  for (const row of stored) byBank.set(Number(row.institution_id), [...(byBank.get(Number(row.institution_id)) ?? []), row.url ?? ""]);
+  return keys
+    .filter((key) => scheduleMissed(key.documentUrl, byBank.get(key.institutionId) ?? []))
+    .map((key) => missedScheduleFeedback({
+      institutionId: key.institutionId, documentUrl: key.documentUrl, documentType: key.documentType,
+      categories: key.categories, evidenceFeeIds: key.feeIds, runId,
+    }));
 }
 
 async function schemaReady(db: SqlTag): Promise<boolean> {
@@ -305,6 +336,7 @@ export async function runKnoxMisses({
   const newCases: Array<Record<string, unknown>> = [];
   const replays: Array<{ case_key: string; verdict: KnoxMissVerdict }> = [];
 
+  const noKeyDocument: number[] = [];
   for (const institutionId of order) {
     if (now() - started > budgetMs) {
       result.banksLeft += 1;
@@ -313,6 +345,8 @@ export async function runKnoxMisses({
     }
     const bank = banks.get(institutionId)!;
     const right = rightDocumentIds(bank.url, bank.hash, (docsByBank.get(institutionId) ?? []).filter((doc) => doc.contentHash === bank.hash));
+    // #2070: no copy of the key's document; whether Magellan ever stored its address is read below.
+    if (right.length === 0) noKeyDocument.push(institutionId);
     // The newest completed text of the key's document.
     const [row] = right.length === 0 ? [] : await db<TextRow[]>`
       SELECT id, institution_id, source_document_id, text_hash, normalized_text
@@ -387,7 +421,24 @@ export async function runKnoxMisses({
   result.byDocumentType = finish(byType);
   result.newCases = newCases.length;
   result.retired = toRetire.length;
+  // #2070: a key document Magellan never stored is a missed second schedule: the row sends the bank
+  // back to the companion finder (`magellan/missed-schedules.ts`). Read-only until the write below.
+  const keyDocuments = noKeyDocument.map((id) => {
+    const bank = banks.get(id)!;
+    return { institutionId: id, documentUrl: bank.url, documentType: bank.type, feeIds: bank.fees.map((fee) => fee.feeId), categories: bank.fees.map((fee) => fee.canonicalKey) };
+  });
+  const missed = keyDocuments.length === 0 ? [] : await inSavepoint(db, (scope) => missedKeyDocuments(scope, keyDocuments, runId)).catch((error) => {
+    console.error("missedKeyDocuments failed:", error);
+    return [];
+  });
+  result.missedSchedules = missed.length;
   if (dryRun) return result;
+  if (missed.length > 0) {
+    await inSavepoint(db, (scope) => recordFeedback(scope, missed)).catch((error) => {
+      console.error("missed second schedule feedback failed:", error);
+      result.missedSchedules = 0;
+    });
+  }
 
   const severity = severityFor(KNOX_MISS_CHECK, KNOX_MISS_ERROR_CLASS);
   if (newCases.length > 0) {
@@ -506,5 +557,6 @@ export function knoxMissesDetail(result: KnoxMissesResult) {
     retired: result.retired,
     reopened: result.reopened,
     banks_left_ids: result.banksLeftIds,
+    missed_second_schedules: result.missedSchedules ?? 0,
   };
 }

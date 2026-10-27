@@ -68,6 +68,7 @@ import { inSavepoint } from "@/lib/agents/savepoint";
 import { AUDIT_FEEDBACK_KIND } from "@/lib/agents/deming/audit-misses";
 import { loadSearchMissDemotions, recordSearchMisses } from "./search-misses";
 import { LEADER_RANK, runSecondDocumentFind, type RunSecondDocumentFindResult } from "./second-document";
+import { missedSchedulesPending } from "./missed-schedules";
 import { countAnchors, detectPlatform, looksJavaScriptBuilt, looksLikeBotChallenge } from "./site-signals";
 import { repairIsWorthSaving, repairWebsiteUrl } from "./website-repair";
 
@@ -2423,8 +2424,17 @@ export async function runMagellanDiscovery(
   const finderOrder = demoteFinders(hintedOrder, demotedFinders);
 
   const wantSecondDocuments = options.secondDocuments ?? options.mode !== "rescue";
+  // #2070: rescue mode runs no thin-bank search, but a missed second schedule still sends its bank
+  // back to the companion finder there (`missed-schedules.ts`), with the finder's time reserve.
+  const rescueMissedSchedules = !wantSecondDocuments && options.secondDocuments !== false && learning
+    ? await inSavepoint(db, (scope) => missedSchedulesPending(scope)).catch((error) => {
+        console.error("missedSchedulesPending failed:", error);
+        return false;
+      })
+    : false;
+  const runCompanionFinder = wantSecondDocuments || rescueMissedSchedules;
   // With the companion search on, banks stop early enough to leave it its reserve.
-  const { stepDeadline, lastBankStart, bankDeadline } = discoveryTimeBudget(Date.now(), wantSecondDocuments);
+  const { stepDeadline, lastBankStart, bankDeadline } = discoveryTimeBudget(Date.now(), runCompanionFinder);
   const results: CandidateDiscoveryResult[] = [];
   // Freshness finds that kept the link because the page found is not known to be newer.
   const statedDateRefusals: StatedDateRefusal[] = [];
@@ -2555,7 +2565,7 @@ export async function runMagellanDiscovery(
         return null;
       })
     : null;
-  const secondDocuments = wantSecondDocuments && Date.now() < stepDeadline
+  const secondDocuments = runCompanionFinder && Date.now() < stepDeadline
     ? await runSecondDocumentFind({
         db,
         fetchImpl,
@@ -2565,10 +2575,14 @@ export async function runMagellanDiscovery(
         deadline: stepDeadline,
         dryRun,
         learning,
-        leaderIds: await loadMarketLeaderIds(db, { perState: LEADER_RANK }).catch((error) => {
-          console.error("loadMarketLeaderIds failed:", error);
-          return [];
-        }),
+        // Rescue mode searches only the banks a missed second schedule sent back (#2070).
+        missedOnly: !wantSecondDocuments,
+        leaderIds: wantSecondDocuments
+          ? await loadMarketLeaderIds(db, { perState: LEADER_RANK }).catch((error) => {
+              console.error("loadMarketLeaderIds failed:", error);
+              return [];
+            })
+          : [],
       })
     : null;
 
