@@ -550,4 +550,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-26",
   },
+  {
+    id: "issue-1947-collection-item-is-not-nsf",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "NSF words in a name do not make it the member's NSF fee when the name is a collection item. \"NSF Collection Item (incoming)\", \"NSF Check Collection Item\", \"Collection Items (Replacing NSF Checks)\" and \"Return Items Entered For Collection\" are the bank collecting a bounced item for someone, so file them as collection items. Keep NSF for a name that also names the member's own debits (ACH, debit, presentment, paid or overdraft items), for \"uncollected funds\" and for a debt collection. When a rule for one shape of a misfile lands (a plain \"Return...\" name under a collection heading), check the other names of the same fee before calling the class fixed.",
+    why: "County Excellence FCU's \"NSF Collection Item (incoming)\" $27 (122514) went live as NSF from its \"Collections Fees\" section, beside its own \"Insufficient Funds\" $27 (#1947). Guard v90's collection rule for #1912 reads only names that start with \"Return\" and none with NSF words, so it passed. Of the 96 live NSF fees whose names say \"collect\" (Oct 27), 11 were collection items. In 81426, \"Collection Items\" is a column heading glued onto the bank's own NSF line, so that fee stays NSF.",
+    evidence: { issues: [1947, 1912], prs: [2759], files: ["src/lib/fee-category-guard.ts", "src/lib/fee-category-guard.test.ts", "src/lib/agents/hamilton/category-guard.ts"] },
+    appliesTo: "all",
+    since: "2026-10-27",
+  },
 ];

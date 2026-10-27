@@ -866,4 +866,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract"],
     since: "2026-10-27",
   },
+  {
+    id: "issue-1947-collection-item-named-with-nsf-words",
+    agent: "knox",
+    stage: "extract",
+    lesson: "File a row by what the bank does, not by the first fee word in its name. A collection item named with NSF words (\"NSF Collection Item (incoming)\", \"NSF Check Collection Item\", \"Collection Items (Replacing NSF Checks)\") is the bank collecting a bounced item, so it is a collection item, and its section heading (\"Collections Fees\") says so. The member's own NSF row is elsewhere on the page under its own name. Read a column heading as a heading, too: \"Collection Items\" printed before the next column's \"Non-Sufficient Funds (NSF) Fee: Check and ACH\" is not part of that fee's name.",
+    why: "Knox filed County Excellence FCU's \"NSF Collection Item (incoming)\" $27 as NSF by its NSF word (122514, #1947), and 10 collection items at other banks the same way. On one three-column schedule (81426, document 21124), it glued the left column's \"Collection Items\" heading onto the bank's own NSF line. The category guard now re-files the collection items at verify (guard v101). The glued heading is still Knox's to fix.",
+    evidence: { issues: [1947], prs: [2759], files: ["src/lib/fee-category-guard.ts", "src/lib/fee-category-guard.test.ts"] },
+    appliesTo: ["extract"],
+    since: "2026-10-27",
+  },
 ];
