@@ -460,8 +460,8 @@ and `detail.method_version`).
   run again, since a linked page can change without the menu changing.
 - The paid web search takes a dead bank that never had a paid try (`discover.paid_web_search`
   or `discover.paid_pick`) after any free search, not only one under today's method version,
-  and puts those banks first after requesters, paying customers and top-10 slot holders,
-  within the existing caps. 729 dead banks had never had a paid try (Oct 27).
+  and puts those banks first within each work-list rank (so the pool cut still reaches every
+  cell, #1269), within the existing caps. 729 dead banks had never had a paid try (Oct 27).
 
 ## Outcome ledger (`outcomes.ts`)
 
