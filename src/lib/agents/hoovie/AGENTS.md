@@ -267,6 +267,9 @@ unchanged-aware compact ingestion and bounded metadata conversion/expansion. Com
 fall back before migration. `storage-compaction.ts` runs inside Atlas's existing storage step,
 off by default: at most 5,000 rows per table, exact HMDA before-images, malformed rows retained.
 HMDA preserves every statistic in versioned tuples; the manifest-pinned 2025 year is excluded.
+Order the HMDA cursor by the qualified numeric table ID, never its text output alias. Resume
+from the latest conversion receipt without an error; a completed enclosing step can contain a
+rolled-back conversion and must not reset either successful cursor.
 The migration changes no existing observations. See the dated rollout for acceptance and rollback.
 
 James approved the staged rollout on October 26. An admin Atlas workflow with source

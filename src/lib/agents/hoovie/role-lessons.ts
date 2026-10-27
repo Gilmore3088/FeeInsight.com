@@ -6,6 +6,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const HOOVIE_LESSONS: AgentLesson[] = [
   {
+    id: "storage-compaction-numeric-cursor",
+    agent: "hoovie",
+    stage: "public-data storage",
+    lesson: "Qualify numeric cursor columns in ORDER BY when projecting them as text, and resume only from error-free conversion receipts. Check the committed conversion receipt and reconstructed facts before calling a completed storage step a successful rollout.",
+    why: "Run 13204 sorted the HMDA text ID alias across the table, hit its 10-second timeout and rolled back both conversion batches while the enclosing step still completed.",
+    evidence: { issues: [2225], prs: [], files: ["src/lib/agents/hoovie/storage-compaction.ts", "docs/plans/database-growth-controls-2026-10-25.md"] },
+    appliesTo: "all",
+    since: "2026-10-27",
+  },
+  {
     id: "issue-1820-heavy-step-pricing",
     agent: "hoovie",
     stage: "registry dispatch",

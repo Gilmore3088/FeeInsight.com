@@ -32,6 +32,7 @@ export async function runStorageCompaction(db: Db, options: { live?: boolean; dr
           JOIN agent_run_steps s ON s.id=e.step_id
          WHERE s.step_key='atlas-storage-retention' AND e.event_type='step.finished'
            AND e.status='completed' AND e.detail->'storage_compaction'->>'live'='true'
+           AND NOT (e.detail->'storage_compaction' ? 'error')
          ORDER BY e.id DESC LIMIT 1
       `;
       const cursor = (raw: unknown): string => typeof raw === "string" && /^\d+$/.test(raw) ? raw : "0";
@@ -46,11 +47,12 @@ export async function runStorageCompaction(db: Db, options: { live?: boolean; dr
       await scope`SET LOCAL lock_timeout='2s'`;
       await scope`LOCK TABLE hmda_lender_loan_costs IN SHARE ROW EXCLUSIVE MODE NOWAIT`;
       const rows = await scope<Array<{ id: string; cost_detail: unknown }>>`
-        SELECT id::text,cost_detail FROM hmda_lender_loan_costs
-         WHERE id>${cursor(last?.compaction?.hmda?.nextAfterId)}::bigint
+        SELECT c.id::text,c.cost_detail FROM hmda_lender_loan_costs c
+         WHERE c.id>${cursor(last?.compaction?.hmda?.nextAfterId)}::bigint
            AND activity_year<>${HMDA_REPAIR_MANIFEST.year}
            AND jsonb_typeof(cost_detail)='object'
-         ORDER BY id LIMIT ${BATCH}
+         -- Unqualified id resolves to the text output above: sorts the table and breaks cursors.
+         ORDER BY c.id LIMIT ${BATCH}
       `;
       const replacements: Array<{ id: string; before: unknown; after: unknown }> = [];
       for (const row of rows) {

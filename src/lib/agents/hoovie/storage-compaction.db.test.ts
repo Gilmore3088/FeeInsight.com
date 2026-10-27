@@ -97,6 +97,43 @@ describe.skipIf(!url)("public-data compaction and atomic archive", () => {
     await upsert();
     for(let year=2021;year<=2023;year++) for(const day of ["03-31","06-30","09-30","12-31"]) await upsert(input(),`${year}-${day}`);
   }
+  // Use the actual transaction/savepoints, qualifying only the migration's isolated test schema.
+  function compactionDb(scope: unknown): Parameters<typeof runStorageCompaction>[0] {
+    const tag = (strings: TemplateStringsArray, ...values: unknown[]) => {
+      const parts = strings.map((part) => part.replaceAll("public.compact_call_report_item_metadata", `${schema}.compact_call_report_item_metadata`));
+      return Reflect.apply(scope as (...args: unknown[]) => unknown, null, [Object.assign(parts, { raw: parts }), ...values]);
+    };
+    return Object.assign(tag, {
+      savepoint: (callback: (s: unknown) => unknown) => (scope as { savepoint: (fn: (s: unknown) => unknown) => unknown }).savepoint((s) => callback(compactionDb(s))),
+    }) as unknown as Parameters<typeof runStorageCompaction>[0];
+  }
+  it("converts the first numeric 5,000 HMDA IDs and resumes past invalid rows and a newer failed receipt", async () => {
+    const costs = Object.fromEntries(HMDA_COST_FIELDS.map((key) => [key, { n: 2, median: 12.5, p25: 0, p75: 25, exempt: 0, na: 1, blank: 0, unreadable: 0, negative: 0 }]));
+    await db`INSERT INTO hmda_lender_loan_costs(activity_year,cost_detail)
+      VALUES (2025,${JSON.stringify(costs)}::jsonb),(2018,'{}'::jsonb)`;
+    await db`INSERT INTO hmda_lender_loan_costs(activity_year,cost_detail)
+      SELECT 2019,${JSON.stringify(costs)}::jsonb FROM generate_series(1,5002)`;
+    const first = await db.begin((tx) => runStorageCompaction(compactionDb(tx), { live: true }));
+    expect(first.error).toBeUndefined();
+    expect(first.hmda).toEqual({ changed: 4999, invalid: 1, nextAfterId: "5001" });
+    const pending = await db`SELECT id::text FROM hmda_lender_loan_costs
+      WHERE activity_year<>2025 AND cost_detail=${JSON.stringify(costs)}::jsonb ORDER BY hmda_lender_loan_costs.id`;
+    expect(pending.map((row) => row.id)).toEqual(["5002", "5003", "5004"]);
+    await db`INSERT INTO agent_run_steps(id,step_key) VALUES(1001,'atlas-storage-retention')`;
+    await db`INSERT INTO agent_run_events(id,step_id,event_type,status,detail) VALUES
+      (1001,1001,'step.finished','completed',${JSON.stringify({ storage_compaction: first })}::jsonb),
+      (1002,1001,'step.finished','completed',${JSON.stringify({ storage_compaction: { live: true, error: "canceling statement due to statement timeout", callItems: { nextAfterId: "0" }, hmda: { nextAfterId: "0" } } })}::jsonb)`;
+    const second = await db.begin((tx) => runStorageCompaction(compactionDb(tx), { live: true }));
+    expect(second.error).toBeUndefined();
+    expect(second.hmda).toEqual({ changed: 3, invalid: 0, nextAfterId: "5004" });
+    const rows = await db`SELECT id::text,activity_year,cost_detail FROM hmda_lender_loan_costs ORDER BY hmda_lender_loan_costs.id`;
+    expect(rows).toHaveLength(5004);
+    expect(rows[0].cost_detail).toEqual(costs); // Manifest-pinned 2025 stays byte-for-byte original.
+    expect(rows[1].cost_detail).toEqual({});
+    for (const row of rows.slice(2)) expect(unpackHmdaCosts(row.cost_detail)).toEqual(costs);
+    await db`DELETE FROM agent_run_events WHERE id IN (1001,1002)`;
+    await db`DELETE FROM agent_run_steps WHERE id=1001`;
+  }, 30000);
   it("stores definitions once, preserves source values and suppresses unchanged writes", async () => {
     expect(await upsert()).toBe(1);
     const [before] = await db.unsafe(`SELECT id,fetched_at FROM ${schema}.institution_call_report_items`);
@@ -181,16 +218,7 @@ describe.skipIf(!url)("public-data compaction and atomic archive", () => {
     await db`INSERT INTO hmda_lender_loan_costs(activity_year,cost_detail) VALUES(2019,${JSON.stringify(costs)}::jsonb),(2025,${JSON.stringify(costs)}::jsonb),(2018,'{}'::jsonb)`;
     expect((await runStorageCompaction(db as unknown as Parameters<typeof runStorageCompaction>[0])).live).toBe(false);
     const result=await db.begin(async(tx)=>{
-      // The production-qualified function is installed in this test's isolated schema.
-      const wrap=(scope:unknown):Parameters<typeof runStorageCompaction>[0]=>{
-        const tag=(strings:TemplateStringsArray,...values:unknown[])=>{
-          const parts=strings.map((part)=>part.replaceAll("public.compact_call_report_item_metadata",`${schema}.compact_call_report_item_metadata`));
-          const template=Object.assign(parts,{raw:parts});
-          return Reflect.apply(scope as (...args:unknown[])=>unknown,null,[template,...values]);
-        };
-        return Object.assign(tag,{savepoint:(callback:(s:unknown)=>unknown)=>(scope as {savepoint:(fn:(s:unknown)=>unknown)=>unknown}).savepoint((s)=>callback(wrap(s)))}) as unknown as Parameters<typeof runStorageCompaction>[0];
-      };
-      return runStorageCompaction(wrap(tx),{live:true});
+      return runStorageCompaction(compactionDb(tx),{live:true});
     });
     expect(result.error).toBeUndefined();
     expect(result.hmda).toMatchObject({changed:1,invalid:1});
