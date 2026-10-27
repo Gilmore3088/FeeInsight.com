@@ -252,12 +252,10 @@ async function selectBanks(db: typeof sql, stateCode: string | null, limit: numb
        AND (NOT cooled.pick OR NOT cooled.web OR retry.early)
      -- Requesters and paying customers first, then top-10 slot holders with nothing live, then
      -- each work-list cell's first rows in turn (#1269), so the cut never drops a whole
-     -- small-bank group; the work lists reorder the rest.
+     -- small-bank group; the work lists reorder the rest. Inside each cell a bank never
+     -- paid-searched ranks first (fix plan step 5).
      ORDER BY requested DESC, paying DESC, top_ten DESC,
-              ${workListPoolRankSql(db, { state: "inst.state_code", assets: "inst.asset_size", id: "inst.id" })},
-              -- Within each work-list rank, a bank never paid-searched first (step 5), so the
-              -- pool cut still reaches every cell (#1269).
-              (NOT ${paidBeforeSql}) DESC,
+              ${workListPoolRankSql(db, { state: "inst.state_code", assets: "inst.asset_size", id: "inst.id", first: db`NOT ${paidBeforeSql}` })},
               inst.asset_size DESC NULLS LAST, inst.id ASC
      LIMIT ${WORK_LIST_POOL}
   `;
