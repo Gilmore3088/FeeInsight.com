@@ -872,6 +872,8 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "publish-context": "gutenberg",
   "publish-sweeps": "gutenberg",
   "report-render": "hamilton",
+  "research-render": "hamilton",
+  "research-verify": "hamilton",
   "report-reconcile": "hamilton",
   "report-close": "hamilton",
   "category-guard": "gutenberg",

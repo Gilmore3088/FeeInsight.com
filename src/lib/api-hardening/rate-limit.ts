@@ -7,6 +7,7 @@ import { API_ROUTE_POLICIES, type ApiRoutePolicy } from "./policies";
  * limit holds across serverless instances. Buckets not listed here are not limited.
  */
 export const RATE_LIMITS: Record<string, { max: number; windowMinutes: number }> = {
+  "research-pdf": { max: 10, windowMinutes: 10 },
   // Form posts that store a lead and send email: generous for a person, tight for a bot.
   "lead-write": { max: 8, windowMinutes: 10 },
   // Free account signups (a server action; see action-rate-limit.ts): the same limit.

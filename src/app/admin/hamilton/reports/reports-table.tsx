@@ -22,6 +22,7 @@ const STATUS_BADGE_CLASSES: Record<string, string> = {
 };
 
 function getReportTitle(job: ReportJob): string {
+  if (job.params?.edition === "research_v1") return "Banking and Local Markets Research";
   const typeLabel = REPORT_TYPE_LABELS[job.report_type] ?? job.report_type;
   if (job.report_type === "state_index" && job.params?.state_code) {
     return `${typeLabel} — ${job.params.state_code}`;

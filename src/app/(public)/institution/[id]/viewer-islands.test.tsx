@@ -55,7 +55,9 @@ afterEach(() => {
 describe("Pro financial profile client island", () => {
   it("loads and renders the real chart component from the plain action data", async () => {
     render(<ProFinancialProfile {...input} />);
-    expect(await screen.findByRole("region", { name: "Financial profile" })).toBeInTheDocument();
+    // A cold dynamic chart import includes Recharts transformation in the local runner.
+    // Keep the real import/SQL-boundary assertion without a one-second machine-speed limit.
+    expect(await screen.findByRole("region", { name: "Financial profile" }, { timeout: 4000 })).toBeInTheDocument();
     expect(screen.getByText("Total assets")).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "Time range" })).toBeInTheDocument();
     expect(screen.getByText("$1.1B")).toBeInTheDocument();

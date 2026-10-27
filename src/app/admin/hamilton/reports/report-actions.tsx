@@ -27,7 +27,7 @@ export function ReportActions({ job, title, isPublished }: { job: ReportJob; tit
     <div className="flex items-center gap-2 flex-wrap">
       {job.status === "complete" && (
         <a
-          href={`/api/reports/${job.id}/download`}
+          href={job.params?.edition === "research_v1" ? `/api/pro/research/${job.id}/pdf` : `/api/reports/${job.id}/download`}
           target="_blank"
           rel="noopener noreferrer"
           className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 text-[12px] font-medium transition-colors"

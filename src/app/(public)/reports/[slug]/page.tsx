@@ -18,6 +18,10 @@ import { RESEARCH_IMPRINT, SITE_NAME, SITE_URL } from "@/lib/constants";
 import { TrackLink } from "@/components/track-link";
 import { PAGE_CRUMBS, PAGE_H1, PAGE_HEADER } from "@/components/public/page-header";
 import { DEMO_REQUEST_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
+import { readResearchManifest, researchReadyToRead } from "@/lib/research-database/manifest";
+import { ResearchReport } from "@/components/research/research-report";
+import { researchDestination } from "@/lib/research-database/presentation";
+import { TrackView } from "@/components/track-view";
 
 export const revalidate = 3600;
 
@@ -65,7 +69,7 @@ export async function generateMetadata({
     title: `${report.title}`,
     description,
     // No on-page summary yet, so this page adds nothing a search result should land on.
-    robots: { index: false, follow: true },
+    robots: { index: researchReadyToRead(report.data_manifest), follow: true },
     alternates: {
       canonical: `${SITE_URL}/reports/${slug}`,
     },
@@ -92,6 +96,20 @@ export default async function ReportPage({
 
   // The layout already answered 404 for a missing slug; this keeps the type narrow.
   if (!report) notFound();
+
+  const research = readResearchManifest(report.data_manifest);
+  if (research && researchReadyToRead(report.data_manifest)) {
+    return <div className="mx-auto max-w-page space-y-8 px-4 py-12 sm:px-6">
+      <TrackView event="research_report_view" eventProps={{ report: report.id }} />
+      <Link href="/reports" className="underline">Reports</Link>
+      <header><h1 className={PAGE_H1}>{report.title}</h1><p className="mt-3">{RESEARCH_IMPRINT} · Published {formatDate(report.published_at)}</p></header>
+      <div className="flex flex-wrap gap-4">
+        <TrackLink event="research_pdf_download" eventProps={{ report: report.id }} prefetch={false} href={`/api/reports/research/${slug}/pdf`} className="rounded-full border border-border px-5 py-3">Download PDF</TrackLink>
+        <TrackLink event="upgrade_click" eventProps={{ placement: "research_report", report: report.id }} href={researchDestination(research.research_snapshot, report.id)} className="rounded-full bg-ink px-5 py-3 text-white">Analyze your institution</TrackLink>
+      </div>
+      <ResearchReport snapshot={research.research_snapshot} />
+    </div>;
+  }
 
   // artifact_key is used only to derive this boolean — never passed to client (T-16-06)
   const artifactExists = !!report.artifact_key;

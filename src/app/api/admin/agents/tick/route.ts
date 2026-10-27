@@ -7,6 +7,7 @@ import {
   reapStaleAgentSteps,
 } from "@/lib/agents/run-store";
 import { schedulePriorityInstitutionRuns } from "@/lib/agents/atlas/priority-institutions";
+import { scheduleResearchReports } from "@/lib/research-database/schedule";
 import { schedulePriorityStateResearchRuns } from "@/lib/agents/atlas/priority-state-research";
 import { scheduleGuardCatchUpRun } from "@/lib/agents/hamilton/guard-catch-up";
 import { schedulePublishSweepsRun } from "@/lib/agents/hamilton/publish-sweeps-schedule";
@@ -201,6 +202,10 @@ async function handleGET(request: NextRequest) {
   // Darwin's audience relabel (#1059): a daily dry run while off, once when switched on.
   let audienceRelabel: Awaited<ReturnType<typeof scheduleAudienceRelabelRun>> | { error: string } | null = null;
   if (pipeline.enabled) {
+    if (process.env.RESEARCH_SCHEDULE_ENABLED === "true") {
+      try { await scheduleResearchReports(); }
+      catch (error) { console.error("Research scheduling failed:", error); }
+    }
     try {
       guardCatchUp = await scheduleGuardCatchUpRun();
     } catch (error) {

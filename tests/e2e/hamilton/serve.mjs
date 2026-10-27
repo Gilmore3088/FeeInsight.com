@@ -37,6 +37,14 @@ for (const key of [
   "ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY_HAMILTON", "ANTHROPIC_API_KEY_GROWTH", "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET",
   "RESEND_API_KEY", "MAILERLITE_API_KEY", "CRON_SECRET", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY",
 ]) env[key] = "";
+// Optional loopback S3 fixture for research browser tests. Never accepts a remote endpoint.
+if (process.env.HAMILTON_E2E_REPORT_STORE) {
+  const endpoint = new URL(process.env.HAMILTON_E2E_REPORT_STORE);
+  if (!["localhost", "127.0.0.1"].includes(endpoint.hostname)) throw new Error("Report fixture storage must be loopback.");
+  env.R2_ENDPOINT = endpoint.origin;
+  env.R2_ACCESS_KEY_ID = "research-e2e-only";
+  env.R2_SECRET_ACCESS_KEY = "research-e2e-only";
+}
 env.DATABASE_URL = url;
 env.DATABASE_POOL_MAX = "4";
 env.BFI_COOKIE_SECRET = "hamilton-e2e-local-cookie-secret";

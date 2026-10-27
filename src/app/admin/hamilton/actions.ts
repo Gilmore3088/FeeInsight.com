@@ -8,6 +8,7 @@ import { triggerReportJob } from "@/lib/report-agent-runs";
 import type { ReportType } from "@/lib/report-engine/types";
 import { assertLegacyGeneratableReportType } from "@/lib/report-engine/legacy-generation-policy";
 import { reconciliationTiesOut } from "@/lib/report-engine/reconcile";
+import { readResearchManifest, researchReadyToPublish } from "@/lib/research-database/manifest";
 
 // Slug generation helper — title to URL-safe slug
 function generateSlug(title: string): string {
@@ -30,7 +31,7 @@ export async function publishReport(
   reportType: ReportType,
   isPublic: boolean = true,
 ): Promise<{ success: boolean; slug?: string; error?: string }> {
-  await requireAuth("edit");
+  const reviewer = await requireAuth("edit");
 
   const slug = generateSlug(title);
 
@@ -40,15 +41,21 @@ export async function publishReport(
     // (FOR UPDATE), so the job cannot change between them. The tie-out test is
     // reconciliationTiesOut itself, which also reads a manifest stored as a JSON string.
     const outcome = await withTransaction(async (tx): Promise<{ slug: string } | { error: string }> => {
-      const [job] = await tx<Array<{ status: string; data_manifest: unknown }>>`
-        SELECT status, data_manifest FROM report_jobs WHERE id = ${jobId} FOR UPDATE
+      const [job] = await tx<Array<{ status: string; data_manifest: unknown; report_type?: string; params?: Record<string, unknown> }>>`
+        SELECT status, data_manifest, report_type, params FROM report_jobs WHERE id = ${jobId} FOR UPDATE
       `;
       if (!job) return { error: "Report job not found." };
       if (job.status !== "complete") return { error: `Report job is ${job.status}, not complete.` };
-      if (!reconciliationTiesOut(job.data_manifest)) {
+      if (job.report_type && job.report_type !== reportType) return { error: "Report type does not match the prepared job." };
+      const research = readResearchManifest(job.data_manifest);
+      const researchEdition = job.params?.edition === "research_v1" || research !== null;
+      if (researchEdition ? !researchReadyToPublish(job.data_manifest) : !reconciliationTiesOut(job.data_manifest)) {
         return {
           error: "This report has no reconciliation that tied out to live data, so it cannot be published. Generate the report again to render and reconcile it.",
         };
+      }
+      if (research) {
+        await tx`UPDATE report_jobs SET data_manifest = data_manifest || ${tx.json({ research_editorial_review: { reviewerId: reviewer.id, reviewedAt: new Date().toISOString(), snapshotHash: research.research_snapshot.snapshotHash } })} WHERE id = ${jobId}`;
       }
       const rows = await tx<Array<{ slug: string }>>`
         INSERT INTO published_reports (job_id, report_type, slug, title, is_public)

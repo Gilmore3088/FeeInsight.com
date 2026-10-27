@@ -1056,6 +1056,26 @@ export const API_ROUTE_POLICIES = [
     auditPriority: "medium",
   },
   {
+    routeId: "api.research.pdf", routeTemplate: "/api/reports/research/[slug]/pdf",
+    file: "src/app/api/reports/research/[slug]/pdf/route.ts", surface: "reports",
+    allowedMethods: ["GET"], authRequirement: "public", rateLimitBucket: "research-pdf",
+    costPolicy: "pdf_generation", telemetryEvent: "api.research.pdf", failBehavior: "fail_closed", auditPriority: "medium",
+  },
+  {
+    routeId: "api.research.export", routeTemplate: "/api/pro/research/[id]/export",
+    file: "src/app/api/pro/research/[id]/export/route.ts", surface: "pro",
+    allowedMethods: ["GET"], authRequirement: "session", rateLimitBucket: "report-read",
+    costPolicy: "none", telemetryEvent: "api.research.export", failBehavior: "fail_closed", auditPriority: "medium",
+    notes: "Owner-scoped frozen research exports; existing paid artifacts remain readable after cancellation.",
+  },
+  {
+    routeId: "api.research.private_pdf", routeTemplate: "/api/pro/research/[id]/pdf",
+    file: "src/app/api/pro/research/[id]/pdf/route.ts", surface: "pro",
+    allowedMethods: ["GET"], authRequirement: "session", rateLimitBucket: "research-pdf",
+    costPolicy: "pdf_generation", telemetryEvent: "api.research.private_pdf", failBehavior: "fail_closed", auditPriority: "medium",
+    notes: "Owner or admin PDF preview from the frozen research snapshot; completed artifacts remain readable after cancellation.",
+  },
+  {
     routeId: "api.reports.status",
     routeTemplate: "/api/reports/[id]/status",
     file: "src/app/api/reports/[id]/status/route.ts",

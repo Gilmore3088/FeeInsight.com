@@ -5,6 +5,7 @@ import { ReportControls } from "../report-controls";
 import { cancelAllPending } from "../actions";
 import { ReportsTable } from "./reports-table";
 import { ScreenHeader } from "../../room-hub";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +39,7 @@ export default async function HamiltonReportsPage({
 
   // Fetch jobs with optional filters
   const jobs = await sql<ReportJob[]>`
-    SELECT id, report_type, status, params, artifact_key, error, created_at, completed_at, user_id, data_manifest
+    SELECT id, report_type, status, params, artifact_key, error, created_at, completed_at, user_id
     FROM report_jobs
     ${statusFilter ? sql`WHERE status = ${statusFilter}` : sql``}
     ${typeFilter && !statusFilter ? sql`WHERE report_type = ${typeFilter}` : typeFilter ? sql`AND report_type = ${typeFilter}` : sql``}
@@ -56,6 +57,7 @@ export default async function HamiltonReportsPage({
   return (
     <div className="space-y-6">
       <ScreenHeader title="Reports" lede="Generate the National Index, Monthly Pulse and state reports, then publish them." />
+      <Link href="/admin/hamilton/research-database" className="inline-block underline">Research database and market reports</Link>
       {/* Generation controls -- client component */}
       <ReportControls publishedJobIds={publishedJobIds} />
 

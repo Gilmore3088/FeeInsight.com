@@ -14,6 +14,8 @@ entry has no line here, or when a line links a finding that does not exist.
 Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 [Agent role lessons](#agent-role-lessons) · [Before 2026-10-10](#before-2026-10-10)
 
+- 2026-10-26 — Research verification must compare against the untouched saved manifest; fixture checks are supplemented by a real PostgreSQL lifecycle test. — [finding](findings/2026-10-26-research-verification-preimage.md) — research run and database acceptance tests
+
 ## Decisions
 
 192 entries, newest first. The full text, who decided and why are in [DECISIONS.md](DECISIONS.md).
@@ -632,6 +634,8 @@ counts as of this index (328 in all).
 | deming | 18 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
 
 ## Before 2026-10-10
+
+- [2026-10-27: Research snapshots carry shared fee context](findings/2026-10-27-research-fee-context.md): select the complete statistics contract and refresh drafts when the method changes.
 
 Findings up to 2026-10-09 were written into one file, [FINDINGS.md](FINDINGS.md), before each
 finding got its own file. It is the archive and takes no new entries; read it for the earlier
