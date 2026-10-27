@@ -2,6 +2,7 @@ import { sql } from "./connection";
 import { FINANCIAL_SOURCES } from "./financial-sources";
 import { institutionDisplayName } from "@/lib/institution-display-name";
 import { OPERATOR_SCHEDULE_STRATEGY } from "@/lib/agents/magellan/operator-schedules";
+import { HAND_SUPPLIED_STRATEGY } from "@/lib/agents/magellan/hand-supplied";
 import type { RefusedBank } from "@/lib/agents/magellan/hand-supplied-files";
 
 type SqlTag = typeof sql;
@@ -44,7 +45,10 @@ export async function getRefusedBanks(options: { db?: SqlTag; limit?: number } =
     WITH link_fetch AS MATERIALIZED (
       SELECT DISTINCT ON (pa.institution_id) pa.institution_id, pa.outcome, pa.created_at
         FROM pipeline_attempts pa
+        JOIN institution_sources linked ON linked.id = pa.institution_id
        WHERE pa.stage = 'fetch' AND pa.strategy = 'fetch.http'
+         -- Only fetches of the bank's current link, not of its companion pages.
+         AND pa.detail->>'url' = btrim(linked.fee_schedule_url)
          AND pa.created_at > NOW() - make_interval(days => ${REFUSED_WINDOW_DAYS})
        ORDER BY pa.institution_id, pa.created_at DESC
     ),
@@ -69,6 +73,12 @@ export async function getRefusedBanks(options: { db?: SqlTag; limit?: number } =
            SELECT 1 FROM institution_additional_sources hand
             WHERE hand.institution_id = inst.id AND hand.found_by_strategy = ${OPERATOR_SCHEDULE_STRATEGY.strategy}
               AND hand.status = 'found' AND hand.last_fetched_at IS NULL
+         )
+         -- A schedule someone already loaded by hand is not downloaded again.
+         AND NOT EXISTS (
+           SELECT 1 FROM pipeline_attempts supplied
+            WHERE supplied.institution_id = inst.id AND supplied.stage = 'fetch'
+              AND supplied.strategy = ${HAND_SUPPLIED_STRATEGY.strategy} AND supplied.outcome = 'ok'
          )
          AND (
            (NULLIF(btrim(inst.fee_schedule_url), '') IS NOT NULL

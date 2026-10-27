@@ -29,6 +29,8 @@ describe("the hand-download list (fix plan step 9)", () => {
     // A paid fetch that opened the link since takes the bank off.
     expect(text).toMatch(/paid\.strategy LIKE 'fetch\.paid_web_fetch%'[\s\S]*paid\.created_at >= link_fetch\.created_at/);
     expect(text).toContain("strategy = 'discover.homepage_links'");
+    expect(text).toContain("pa.detail->>'url' = btrim(linked.fee_schedule_url)");
+    expect(values).toContain("supply.hand_supplied");
     expect(text).toContain("ORDER BY deposits.total_deposits DESC NULLS LAST");
     expect(values).toContainEqual([...REFUSED_OUTCOMES]);
     // Capped at 1,000.
