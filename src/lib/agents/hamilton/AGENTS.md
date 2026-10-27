@@ -199,8 +199,7 @@ Hamilton supports the decision; it does not make it.
   past 8 in flight across every run, or when the batch's charge plus the next sample's worst-case
   ceiling would pass $25; the charge counts a sample's recorded cost only when it finished and every
   usage row completed with a cost, else its full ceiling. `?paid=1` runs it at once (returning a
-  running batch run rather than starting another); a cron calls it every 10 minutes for batch
-  2026-10-26, and the hourly gate replay call continues it once the day's free plan is complete;
+  running batch run rather than starting another), and the hourly gate replay call continues it once the day's free plan is complete;
   once the batch is complete or capped, no run starts again. A new batch needs a new
   `PAID_REPLAY_BATCH_ID` and James's yes. Its calls are budgeted and recorded as agent
   `hamilton_replay` with no route (`agent:hamilton_replay`, $40 a day, $65 a month, migrations
@@ -1466,6 +1465,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `EVAL_VERDICT_VERSION` | — | v9 | `hamilton/eval-verdicts.ts` |
 | `FREQUENCY_FILL_VERSION` | — | v15 | `hamilton/frequency-fill.ts` |
 | `GUARD_REQUEUE_STRATEGY` | `publish.guard_requeue` | v1 | `hamilton/guard-requeue.ts` |
+| `LIVE_NAME_REFRESH_VERSION` | `hamilton.live_name_refresh` | v1 (a live fee takes its re-read's repaired name; off until `LIVE_NAME_REFRESH_LIVE=true`, #1912) | `hamilton/live-name-refresh.ts` |
 | `NEWER_COPY_STRATEGY` | `hamilton.newer_copy_check` | v1 | `hamilton/newer-copy-retire.ts` |
 | `HAMILTON_PUBLISH_STRATEGY` | `publish.rules` | v3 | `hamilton/publish.ts` |
 | `REFRESH_COPY_STRATEGY` | `hamilton.refresh_copy` | v2 | `hamilton/refresh-copy.ts` |

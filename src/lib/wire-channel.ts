@@ -46,7 +46,7 @@ export const WIRE_CHANNEL_CATEGORIES: ReadonlySet<string> = new Set([
 
 export const CHANNEL_WORDS =
   "online|remote|digital|mobile|internet|e-?bank(?:ing)?|e-?branch|electronic\\s+banking|electronically\\s+submitted|web(?:site)?|self[- ]?service|phone|telephone|fax|e-?mail|pin|template|repetitive|recurring|standing";
-const STANDARD_WORDS =
+export const STANDARD_WORDS =
   "branch|in[- ]person|manual(?:ly)?|assisted|representative|teller|non-?recurring|non-?repetitive|not\\s+(?:initiated\\s+)?online";
 
 /** v2: a negated standard channel ("Not in Person", "Non-Branch") names the premium channel. */
@@ -76,6 +76,17 @@ export function namesWireChannel(name: string | null | undefined): boolean {
   if (!name) return false;
   const channel = CHANNEL.test(name.replace(NOTICE_ALL, " ")) || NEGATED_STANDARD.test(name);
   return channel && !STANDARD.test(name.replace(NEGATED_STANDARD_ALL, " "));
+}
+
+/**
+ * Words that state a wire's channel of any kind: a premium one, a negated standard one or the
+ * standard one ("phone request", "Recurring", "Not in Person", "in branch"). A notice word names no
+ * channel. Hamilton's live name refresh (#1912) reads the clause a re-read added to a wire's name.
+ */
+export function statesWireChannel(text: string | null | undefined): boolean {
+  if (!text) return false;
+  const words = text.replace(NOTICE_ALL, " ");
+  return CHANNEL.test(words) || STANDARD.test(words) || NEGATED_STANDARD.test(text);
 }
 
 /** SQL twin of namesWireChannel over a static internal text column: true or false, never NULL. */

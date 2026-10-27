@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import { PROD_WIRE_CHANNEL_SQL } from "./__fixtures__/wire-channel-names-2026-10-27";
-import { CHANNEL_SQL, NEGATED_STANDARD_SQL, NOTICE_SQL, STANDARD_SQL, WIRE_CHANNEL_CATEGORIES, namesWireChannel, wireChannelSql } from "./wire-channel";
+import { CHANNEL_SQL, NEGATED_STANDARD_SQL, NOTICE_SQL, STANDARD_SQL, WIRE_CHANNEL_CATEGORIES, namesWireChannel, statesWireChannel, wireChannelSql } from "./wire-channel";
+
+describe("statesWireChannel (#1912 live name refresh)", () => {
+  it("reads a channel clause of any kind, never a notice", () => {
+    for (const clause of ["phone request", "recurring", "not in person", "in branch", "online"]) expect(statesWireChannel(clause)).toBe(true);
+    for (const clause of ["with phone notification", "foreign currency", "outgoing", "", null]) expect(statesWireChannel(clause)).toBe(false);
+  });
+});
 
 describe("namesWireChannel (#1912)", () => {
   it("reads a channel or set-up-in-advance wire", () => {

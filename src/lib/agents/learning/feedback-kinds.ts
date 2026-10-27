@@ -107,6 +107,7 @@ export const FEEDBACK_KINDS = {
   ancillary_owner_corrected: { record: "Knox's ancillary product recovery logs each live fee's NULL product it filled, old and new values (ancillary-owner-correct.ts, #1911)." },
   account_subject_corrected: { record: "Knox's account subject recovery logs each live monthly or minimum balance fee's NULL product it filled from its own sentence's subject, old and new values (account-subject-correct.ts, #1912)." },
   knox_reread_resolved: { record: "Knox settles each re-read request per rules version (reread-feedback.ts); Darwin's reread category re-check reads the `other_category` ones (reread-category-check.ts, #1513)." },
+  live_name_refreshed: { record: "Hamilton's live name refresh logs each live fee it renamed to its re-read's repaired name, with the old name, for a rollback (live-name-refresh.ts, #1912)." },
   reread_category_refiled: { record: "Darwin's reread category re-check logs each live fee it re-filed, with the old category and name, for a rollback (reread-category-check.ts, #1513)." },
   batch_error_rate: { record: "One row per Knox or Rosetta batch: a cursor and the goal scorecard's error rate." },
   account_type_hold: { record: "Legacy takedown rows; the sync skips this kind now (feedback-sync.ts)." },
@@ -133,7 +134,7 @@ export const FEEDBACK_KINDS = {
 
   // Second look (one row per fee and check, plus the appended audit trail).
   takedown_pending: { readers: ["src/lib/agents/deming/fresh-audit.ts", "src/lib/agents/magellan/fetch.ts", "src/lib/agents/state-lane-scheduler.ts", "src/lib/agents/hamilton/second-look.ts"] },
-  takedown_confirmed: { readers: ["src/lib/agents/knox/takedown-lessons.ts", "src/lib/agents/deming/regression.ts", "src/lib/agents/magellan/outcomes.ts"] },
+  takedown_confirmed: { readers: ["src/lib/agents/knox/takedown-lessons.ts", "src/lib/agents/knox/audience-lessons.ts", "src/lib/agents/deming/regression.ts", "src/lib/agents/magellan/outcomes.ts"], note: "Knox's takedown lessons act on the limit guard's (with its witness); its audience lessons read the business-schedule check's as the document's business fees (#2062, behind KNOX_AUDIENCE_LESSONS_LIVE)." },
   takedown_cleared: { readers: ["src/lib/agents/deming/fresh-audit.ts", "src/lib/agents/hamilton/second-look.ts"] },
   flag_recorded: { readers: ["src/lib/agents/hamilton/second-look.ts"] },
   flag_confirmed: { readers: [FEEDBACK_SYNC] },
