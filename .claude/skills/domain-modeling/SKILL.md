@@ -48,12 +48,11 @@ When a term is resolved, update `docs/project/GLOSSARY.md` in the same PR as the
 
 ### Record decisions in DECISIONS.md, sparingly
 
-Only James's decisions go in `docs/project/DECISIONS.md`, and only when all three are true:
+Only James's decisions go in `docs/project/DECISIONS.md`, and only ones that change how work is
+done (CLAUDE.md). A settled word belongs in the glossary instead. A decision is most worth
+recording when it is hard to reverse, surprising without context, or the result of a real
+trade-off.
 
-1. **Hard to reverse**: the cost of changing your mind later is meaningful
-2. **Surprising without context**: a future reader will wonder "why did they do it this way?"
-3. **The result of a real trade-off**: there were genuine alternatives and he picked one for specific reasons
-
-If any of the three is missing, skip it. When it qualifies, follow the existing format: a dated
+When it qualifies, follow the existing format: a dated
 `## YYYY-MM-DD` heading, a bold one-line summary, then who decided, his words, why and what it
 changes. Add its one-line entry to `docs/project/LESSONS.md` in the same PR.

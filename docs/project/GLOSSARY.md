@@ -3,7 +3,8 @@
 The words this project uses for its business, its data and its pipeline, so every session and
 person means the same thing. Terms only; how things are built lives in the code, and why lives in
 [DECISIONS.md](DECISIONS.md). The `domain-modeling` skill (`.claude/skills/domain-modeling/`)
-keeps it current. Every entry below is taken from CLAUDE.md or DECISIONS.md.
+keeps it current. Every entry below is taken from CLAUDE.md, DECISIONS.md or James's standing
+rules in project memory.
 
 ## Brand and product
 
@@ -63,4 +64,5 @@ the fee.
 
 **Peer minimum**:
 Every median other than local competitors needs at least 10 institutions; below it Hamilton names
-the institutions and their prices without a median.
+the institutions and their prices without a median. Set 2026-10-25 for Hamilton; the public Index's own minimum
+(`MIN_INSTITUTIONS_FOR_MEDIAN`) stays 5.
