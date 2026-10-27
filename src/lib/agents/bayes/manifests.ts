@@ -341,6 +341,8 @@ export function rosettaReaderManifests(versions: RosettaVersions): ReplayManifes
  * in a manifest above.
  */
 export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
+  // 2026-10-27: a new fetch strategy behind an off switch, not a selector that replays fee work.
+  BROWSER_FETCH_STRATEGY: "v1 names the attempt `fetch.browser_render` that Magellan's fetch step writes when it renders, in headless Chromium, a fee link whose current main document Rosetta read as `js_required`. It is off unless MAGELLAN_BROWSER=on, renders at most 5 a step and 50 a day, and stores the page as an ordinary source document through fetchAndRecordLink; Rosetta, Knox, Darwin and Hamilton then read it under their own versions. No fee row is held, rejected or re-filed, no provider is called, and nothing is replayed by the version.",
   // #1101: a report version on the paid attempt's detail, not a selector that replays fee work.
   KNOX_PAID_FIND_MISS_VERSION: "v1 names the `free_misses` summary on each `extract.paid` attempt's detail and the `knox.paid_find_misses` step event: each grounded paid fee filed as read, read under another category, held or missed by today's free team on the same text, with the line's shape, the text's layout, the host and the platform. It is computed after the paid call from the free team's deterministic read, buys no call, and writes, holds or re-files no fee; nothing is replayed by the version.",
   // #1102: an evidence version on learning-store rows, not a selector that replays fee work.
