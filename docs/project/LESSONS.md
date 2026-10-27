@@ -625,7 +625,7 @@ counts as of this index (334 in all).
 | Agent | Lessons | File |
 |---|---|---|
 | atlas | 8 | [`src/lib/agents/atlas/role-lessons.ts`](../../src/lib/agents/atlas/role-lessons.ts) |
-| magellan | 28 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
+| magellan | 29 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
 | hoovie | 12 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
 | rosetta | 14 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
 | knox | 89 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
