@@ -897,6 +897,16 @@ export const KNOX_LESSONS: AgentLesson[] = [
     since: "2026-10-27",
   },
   {
+    id: "issue-2062-another-check-fixing-your-read-is-a-lesson",
+    agent: "knox",
+    stage: "extract",
+    lesson: "When another agent's check fixes a fee you read, the fix is a lesson about that document's read; read it before you read the document again, or you make the same read and the check has to fix it again. Key it on the document, the name and the amount, and act only on a read that repeats what was fixed: a frequency Hamilton's fill or Darwin's hourly check set on the live fee is written when you read the old one again; a fee still down as a price the customer does not pay, as a period its price cannot have, or as your own second read of one printed fee under another name (only when this text also reads the kept name) is written held; a line you held that your recheck filed and Darwin verified is filed under Darwin's category. A duplicate across two documents or of the same name is the collapse doing its job on two copies, not your error. Every such lesson changes what you write, so it waits for its switch and counts what it would change while off.",
+    why: "Six feedback kinds aimed at Knox had no reader and a seventh (duplicate) taught Knox nothing (#2062): about 15,700 frequency fills, corrections and clears, 66 frequency holds, 4 wrong payers and 3,197 held-line promotions, so a re-read repeated each read and the same check fixed it again. Of 13,061 extract-stage duplicate collapse rows only 129 were Knox reading one printed fee under two names on one document beside a kept twin still live; 10,491 were the same fee on another copy of a page. Oct 27 dry run (read-only SQL on prod): 11,452 frequency lessons on 3,864 documents (no other live fee repeats one); 4 wrong-payer, 40 frequency-hold and 92 duplicate lessons (4 live fees repeat a duplicate lesson, none the others); 940 promotion lessons on 721 documents, 9 of whose lines are held today. The extract step also had not written the audience lessons' dry-run counts to its step detail.",
+    evidence: { issues: [2062], prs: [2780], files: ["src/lib/agents/knox/read-lessons.ts", "src/lib/agents/knox/extract.ts", "src/lib/agents/learning/feedback-kinds.ts", "src/lib/agents/deming/planted-errors.ts"] },
+    appliesTo: ["extract"],
+    since: "2026-10-27",
+  },
+  {
     id: "issue-1912-a-better-read-must-reach-the-live-name",
     agent: "knox",
     stage: "extract",

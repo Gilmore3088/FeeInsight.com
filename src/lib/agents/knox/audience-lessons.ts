@@ -125,6 +125,7 @@ export async function loadAudienceLessons(db: SqlTag, sourceDocumentIds: readonl
            AND f.check_name = ${BUSINESS_SCHEDULE_CHECK}
            AND fp.rolled_back_at IS NOT NULL
            AND left(fp.rolled_back_reason, ${BUSINESS_SCHEDULE_REASON.length + 1}) = ${`${BUSINESS_SCHEDULE_REASON}:`}
+           AND fr.source = 'knox'
            AND fr.source_document_id = ANY(${ids}::bigint[])
          ORDER BY f.id
          LIMIT ${AUDIENCE_LESSON_LIMIT}`;
