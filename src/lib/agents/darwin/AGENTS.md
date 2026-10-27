@@ -1732,7 +1732,7 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   Disputes are meant for the Claude adjudicator (layer 3), one of Darwin's two paid passes
   (the other is the release review, below), both billed to `ANTHROPIC_API_KEY_DARWIN`. The model also trains on the hand-checked
   answer-key fees in the shared learning store (`pipeline_feedback`, kind `answer_key`).
-  Measured on prod on 2026-10-27 (#2068, `docs/project/findings/2026-10-27-category-model-disputes-measured.md`):
+  Measured on prod on 2026-10-27 (#2068, `docs/project/findings/2026-10-27-darwin-category-model-disputes-measured.md`):
   - Of the 3,919 disputed fees Darwin verified, 2.40% were later rejected for their category,
     against 0.59% of the 139,688 undisputed.
   - The model's suggested category tied Knox's 13 to 13 against the answer key.
