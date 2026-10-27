@@ -48,9 +48,9 @@ function wireValue(text: string, category: string): number | undefined {
   return valuePerInstitution(rows).get(1);
 }
 
-describe("a wire's channel printed after its price (Knox v134, #1912)", () => {
+describe("a wire's channel printed after its price (Knox v135, #1912)", () => {
   it("bumps the rules strategy so Hamilton's rules re-check revisits live documents", () => {
-    expect(KNOX_RULES_STRATEGY.version).toBeGreaterThanOrEqual(134);
+    expect(KNOX_RULES_STRATEGY.version).toBeGreaterThanOrEqual(135);
   });
 
   it("names the phone request's price with its channel, and leaves the in-person price general", () => {
@@ -134,6 +134,7 @@ describe("wireChannelClause", () => {
       ["Outgoing Wire $25.00 Mobile Wallet", "Outgoing Wire", 25],
       ["Outgoing Wire $25.00 Online Wire", "Outgoing Wire", 25],
       ["Outgoing Wire $25.00 Fax Number 555-1212", "Outgoing Wire", 25],
+      ["Outgoing Wire $25.00 Mobile, extra", "Outgoing Wire", 25],
     ];
     for (const [line, name, amount] of cases) expect(wireChannelClause(line, name, amount, OUT), line).toBeNull();
   });

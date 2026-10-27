@@ -1,5 +1,5 @@
 /**
- * Knox v134 (#1912): a wire price whose channel is printed after the price, on the fee's own line.
+ * Knox v135 (#1912): a wire price whose channel is printed after the price, on the fee's own line.
  *
  * Statistics rule 11 sets a channel wire row aside from the bank's wire value by its fee name
  * (`wire-channel.ts` namesWireChannel), and nothing else carries the channel: `variant_type` is
@@ -67,7 +67,7 @@ function labelAfter(line: string, from: number, next: number | null): string | n
   // Review of #2761: with nothing after it on the line, the words are its own label only when a dash,
   // colon or bracket ties them to the price ("$30.00 - phone request"); bare words after a last price
   // ("Outgoing Wire $25.00 PIN Reset") may be the next row's label on a flattened two-column page.
-  if (next === null && mark < 0 && !/^\s*[-–—:(]/.test(tail)) return null;
+  if (next === null && !/^\s*[-–—:(]/.test(tail)) return null;
   const own = mark < 0 ? tail : tail.slice(0, mark);
   if (PRICE_WORDS.test(own)) return null;
   return own.replace(/^[\s\-–—:(]+/, "").replace(/[\s.)]+$/, "").trim();

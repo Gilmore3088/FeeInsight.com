@@ -410,6 +410,9 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   LATE_CHARGE_BOUND_CHECK_VERSION: "First version: each verify step reads every live late_payment fee whose name is a late charge's cap or floor (no cursor) and takes it down after the second look; nothing older to replay.",
   // v1 (#1615): a percentage charge's floor read as a flat fee. On (RATE_FLOOR_TAKEDOWN_LIVE) since James's yes, Oct 26.
   RATE_FLOOR_CHECK_VERSION: "First version: each verify step reads every live flat fee whose stored line carries greater-of wording and a percentage (no cursor, 58 rows on Oct 25); its switch is on (Oct 26), so matches come down after the second look; nothing older to replay.",
+  // v1 (#1912): a live international wire fee whose own line states no direction, or another one. Off
+  // (INTERNATIONAL_DIRECTION_TAKEDOWN_LIVE) until James approves the dry-run count.
+  INTERNATIONAL_DIRECTION_CHECK_VERSION: "First version: each verify step reads the next batch of live international wire fees after a cursor on the run ledger; its switch is off, so it only reports (Oct 27 dry run: 423 of 2,423 at 407 institutions); nothing older to replay.",
   // v1 (#1908, #1905): fees printed in a prepaid, payroll, gift or travel card section of a general
   // schedule. A full verify step re-reads every live document whose text names a card program, at most hourly.
   CARD_PROGRAM_SECTION_CHECK_VERSION: "First version: a verify step re-reads every live fee on a document whose text names a card program (no cursor, at most hourly); nothing older to replay.",
@@ -580,7 +583,10 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // bump. Oct 27 dry run (read-only, current copies, after the third #2753 review, refuse by default on
     // any other NSF fee sentence that does not agree with the $0): 3 texts at 3 institutions would read
     // it, none held. Floor stays v97.
-    // v134 (#1912): a wire's channel printed after its price ("$30.00 - phone request") stays in its
+    // v134 (#1912): the international wire direction review reads more of the ways banks print a
+    // direction ("(in/out)", "Wire – Out", "Outside U.S.", a direction in the next cell). Live fees it
+    // reaches are judged by Darwin's international direction re-check (switch off), not a replay. Floor stays v97.
+    // v135 (#1912): a wire's channel printed after its price ("$30.00 - phone request") stays in its
     // name. Category and amount are unchanged, so the rules re-check reproduces the same fees and no
     // live fee moves; Oct 27 dry run (read-only): 3 of 187 candidate live wire fees would be renamed on
     // a re-read (110356, 110355, 71592). Floor stays v97.

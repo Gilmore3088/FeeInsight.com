@@ -32,7 +32,7 @@ so words printed after the price never reach the name.
   - "remote" is a channel word;
   - a phone, fax, email or text notice, confirmation, advice or alert ("with Phone Notification",
     "Email or Fax Confirmation", "notice by phone") is removed before the channel test.
-- Knox v134 (`wire-channel-clause.ts`, `withWireChannelReads`): a wire read whose own price is
+- Knox v135 (`wire-channel-clause.ts`, `withWireChannelReads`): a wire read whose own price is
   followed on its line by a short channel label gets that label in its name, as in "Outgoing
   Domestic Wire Transfer (phone request)" and "Outgoing Domestic Wire fee (Recurring)". The label
   must:

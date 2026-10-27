@@ -498,11 +498,18 @@ import { withWireChannelClause } from "./wire-channel-clause";
 // institutions would read it once on (Wells Fargo 4, 172, 359); 2 have no NSF row today, 1 already
 // shows NSF $0, none is held. Of the 9 grammar matches, 3 more are refused by another NSF fee sentence,
 // 2 by the page price test and 1 by scope. The stale-read floor stays at v97.
-// v134 (#1912): a wire price whose channel is printed after it on its own line ("$30.00 - phone request",
+// v134 (#1912): the international wire direction review (`own-wire-scope.ts`, shared with Knox's
+// eligibility hold, Darwin's verify and its live re-check, and Hamilton's publication policy) reads the
+// directions banks print another way: "(in/out)", "Wire – Out" (any dash), "International Out",
+// "(Out)", "Foreign-In", "Receive", "Outcoming", "Income Wire", a wire "Withdrawal" or "Deposit", and a
+// direction in the next cell ("$45.00 | Outgoing"). "Outside U.S." is international and "Non-Domestic"
+// is not domestic. A "Wire Transfer Incoming | None" row is a priced row, not a heading over the wire
+// below it. The stale-read floor stays at v97.
+// v135 (#1912): a wire price whose channel is printed after it on its own line ("$30.00 - phone request",
 // "$15.00 Recurring / $25.00 New") keeps that channel in its name (`wire-channel-clause.ts`,
 // `withWireChannelReads`), so statistics rule 11 sets the channel price aside beside the general one.
 // The new name must trace on the stored text, or the read keeps its old name.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 134 } as const;
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 135 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -690,7 +697,7 @@ function ownLineOf(checkText: string, excerpt: string): string {
 }
 
 /**
- * v134 (#1912): a wire read whose channel is printed right after its price on its own line
+ * v135 (#1912): a wire read whose channel is printed right after its price on its own line
  * ("Outgoing Domestic Wire Transfer $30.00 - phone request", "| $15.00 Recurring / $25.00 New") is
  * named with that channel (`wire-channel-clause.ts`). The new name must trace on the stored text, or
  * the read keeps the name it had.
@@ -795,7 +802,7 @@ export function runFreeSpecialists(
     // (`boxSectionLateFeeRead`), read on the self-check's text.
     // v123 (#1905): every specialist's deposit-category read printed in a loan section is the loan's
     // (`loanSectionFeeRead`), read on the same text.
-    // v134 (#1912): a wire price whose channel is printed after it on its own line keeps that channel
+    // v135 (#1912): a wire price whose channel is printed after it on its own line keeps that channel
     // in its name (`withWireChannelReads`), so statistics rule 11 can tell it from the general price.
     const found = { ...run, candidates: withWireChannelReads(checkText, run.candidates.map((read) => { const next = billPayByHeading(read); return next && carryColumnHeadingCell(read, next); }).filter((read): read is ExtractedFeeCandidate => read != null).map((read) => payeeReturnedBillPayRead(loanSectionFeeRead(boxSectionLateFeeRead(read, checkText), checkText), checkText))) };
     for (const [reason, count] of Object.entries(found.dropped ?? {})) countDropped(reason as DroppedLineReason, count);
