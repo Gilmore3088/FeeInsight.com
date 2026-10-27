@@ -596,11 +596,18 @@ export async function takeDownUntraceableFees(
       continue;
     }
     const institutionTexts = textsByInstitution.get(institutionId) ?? [];
+    // #2067: the refusal of a percentage charge's minimum or maximum runs on its own, for counting.
+    // With the switch off the verdict is always the pre-v27 one: the bound run must never relink a fee
+    // to another document (a prod write) or take it down. With it on, the bound run is the verdict.
+    const plainVerdict = traceLiveFee(fee, institutionTexts, { rateBounds: false });
     const boundVerdict = traceLiveFee(fee, institutionTexts, { rateBounds: true });
-    const rateBound = boundVerdict.kind === "untraceable" && boundVerdict.reason === "rate_bound";
+    const rateBound =
+      plainVerdict.kind !== "untraceable" &&
+      ((boundVerdict.kind === "untraceable" && boundVerdict.reason === "rate_bound") ||
+        (boundVerdict.kind === "relinked" && boundVerdict.sourceDocumentId !== plainVerdict.sourceDocumentId));
     if (rateBound) {
-      // #2067: a fee whose only row makes its amount a percentage charge's minimum or maximum. With the
-      // switch off it is only counted, and the check goes on as it did before v27.
+      // The fee's row makes its amount a percentage charge's minimum or maximum (it is refused, or would
+      // move to another document). With the switch off it is only counted.
       if (!fee.taken_down) {
         result.rateBound += 1;
         if (result.rateBoundSamples.length < RATE_BOUND_SAMPLES) {
@@ -608,7 +615,7 @@ export async function takeDownUntraceableFees(
         }
       }
     }
-    const verdict = rateBound && !rateBoundRefusalLive() ? traceLiveFee(fee, institutionTexts, { rateBounds: false }) : boundVerdict;
+    const verdict = rateBoundRefusalLive() ? boundVerdict : plainVerdict;
     const readerLost = verdict.kind === "untraceable" && readerLostLine(fee, institutionTexts, verdict.reason);
     if (readerLost && !(fee.taken_down && !(READER_LOSS_RESTORES_ON && restorableName(fee.fee_name) && restorableExcerpt(fee) && restoreStillPrinted(fee, institutionTexts, verdict.reason)))) {
       // The re-read lost the line, not the bank: keep it live (or put it back once restores are on).

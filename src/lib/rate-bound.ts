@@ -27,6 +27,8 @@ const PERCENT = /(?<!\d|\d\.)(\d{1,3}(?:\.\d{1,4})?)\s*(?:%|percent\b)/gi;
 const BOUND_WORDS = /\b(?:min|minimum|max|maximum)\b/i;
 /** Min/max wording right before the figure: "minimum charge of ", "with max of ", "(or minimum of) | ". */
 const BOUND_BEFORE = /\b(min(?:imum)?|max(?:imum)?)\.?(?:\s+(?:charge|fee|amount))?(?:\s+of)?[\s:)(|–-]*$/i;
+/** A minimum or maximum of time or count, not of a charge: "(1 hour minimum) $25.00 per hour", "(2 item max)". */
+const UNIT_BOUND = /\b(?:hours?|hrs?|minutes?|mins?|items?|days?|checks?|months?|years?|weeks?|pages?|copies|copy|transactions?|units?|visits?)\.?\s+(?:min(?:imum)?|max(?:imum)?)\.?[\s:)(|–-]*$/i;
 /** Min/max wording right after the figure: "$5 min", "($50 maximum)", "$2.00 min" — never a balance or payment. */
 const BOUND_AFTER =
   /^\s*\.?\s*(min(?:imum)?|max(?:imum)?)\b\.?(?!\s*(?:daily|average|monthly|opening|collected|ledger)?\s*(?:balance|deposit|payment|term|credit|to open|required|apr|ltv|loan|amount financed|purchase))/i;
@@ -72,7 +74,7 @@ function ownStart(line: string, feeName: string | null | undefined): number {
 function boundKindAt(line: string, start: number, end: number): RateBoundKind | null {
   const before = line.slice(Math.max(0, start - 40), start);
   const after = line.slice(end, end + 40);
-  const word = BOUND_BEFORE.exec(before)?.[1] ?? BOUND_AFTER.exec(after)?.[1] ?? null;
+  const word = (UNIT_BOUND.test(before) ? undefined : BOUND_BEFORE.exec(before)?.[1]) ?? BOUND_AFTER.exec(after)?.[1] ?? null;
   if (!word) return null;
   if (BOUND_BEFORE.test(before) && NOT_A_CHARGE_BOUND.test(before)) return null;
   return /^min/i.test(word) ? "min" : "max";
@@ -82,6 +84,8 @@ function boundKindAt(line: string, start: number, end: number): RateBoundKind | 
 function sameClause(line: string, from: number, to: number): boolean {
   const between = line.slice(from, to);
   if (between.length > WINDOW || (between.match(/\|/g) ?? []).length > 1) return false;
+  // A semicolon ends the clause unless the next words are the bound itself ("2.00% of advance amount; minimum of $5.00").
+  if (/;(?!\s*(?:min|max))/i.test(between)) return false;
   if (/[.;!?]\s+[A-Z][a-z]+\s+[A-Za-z]/.test(between.replace(/\b(?:min|max)\.\s/gi, "min "))) return false;
   // Any other price between them must itself be a bound of the same charge.
   for (const money of between.matchAll(MONEY)) {

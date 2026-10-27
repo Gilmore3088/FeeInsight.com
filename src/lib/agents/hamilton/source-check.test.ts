@@ -589,7 +589,7 @@ describe("source check v27: a percentage charge's minimum or maximum (#2067)", (
   afterEach(() => { delete process.env.SOURCE_CHECK_RATE_BOUND; });
 
   it("traceLiveFee refuses the bound only when asked to", () => {
-    expect(traceLiveFee(bound, cusbTexts).kind).toBe("traced");
+    expect(traceLiveFee(bound, cusbTexts, { rateBounds: false }).kind).toBe("traced");
     expect(traceLiveFee(bound, cusbTexts, { rateBounds: true })).toEqual({ kind: "untraceable", reason: "rate_bound" });
     expect(traceLiveFee(own, cusbTexts, { rateBounds: true }).kind).toBe("traced");
   });
@@ -608,6 +608,30 @@ describe("source check v27: a percentage charge's minimum or maximum (#2067)", (
     const event = db.mock.calls.find((call) => (call[0] as unknown as string[]).join("?").includes("'hamilton.source_check'"));
     expect(JSON.stringify(event)).toContain('\\"rate_bound\\":1');
     expect(JSON.stringify(event)).toContain('\\"rate_bound_takedowns_on\\":false');
+  });
+
+  it("with the switch off, never relinks a fee whose own document holds only the bound row", async () => {
+    const imported = fee(13, "On-Us Check Cashing", "20", "migration_v10", 7);
+    const twoDocs = [
+      { source_document_id: 7, normalized_text: "On-Us Check Cashing | 3% / $20 Max" },
+      { source_document_id: 9, normalized_text: "On-Us Check Cashing | $20.00" },
+    ];
+    expect(traceLiveFee(imported, twoDocs, { rateBounds: true })).toEqual({ kind: "relinked", sourceDocumentId: 9 });
+    expect(traceLiveFee(imported, twoDocs, { rateBounds: false })).toEqual({ kind: "traced", sourceDocumentId: 7 });
+    const db = vi.fn((strings: TemplateStringsArray) => {
+      const query = strings.join("?");
+      if (query.includes("to_regclass('public.pipeline_feedback')")) return Promise.resolve([{ ready: true }]);
+      if (query.includes("MAX(fp.fee_published_id)")) return Promise.resolve([{ institution_id: 42, max_fee_id: 13 }]);
+      if (query.includes("FROM agent_source_texts")) return Promise.resolve(twoDocs.map((text) => ({ ...text, institution_id: 42 })));
+      if (query.includes("JOIN raw_fee_observations")) return Promise.resolve([imported]);
+      return Promise.resolve([]);
+    });
+    const result = await takeDownUntraceableFees(db as never, { runId: 5, batchId: "b", dryRun: false });
+    expect(result).toMatchObject({ traced: 1, relinked: 0, rateBound: 1 });
+    expect(result.takedowns).toEqual([]);
+    const statements = db.mock.calls.map((call) => (call[0] as unknown as string[]).join("?"));
+    expect(statements.some((query) => query.includes("SET source_document_id = link.source_document_id"))).toBe(false);
+    expect(statements.some((query) => query.includes("SET source_url = target.url"))).toBe(false);
   });
 
   it("with SOURCE_CHECK_RATE_BOUND=on, takes the fee down on its second look", async () => {
