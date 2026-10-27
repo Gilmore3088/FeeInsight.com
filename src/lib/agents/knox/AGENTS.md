@@ -2131,6 +2131,77 @@ holds it. A lock box with a size, key, drilling, rent, lease, year, or late or p
 safe deposit box ("Lock Box Rental 5x5", "Lock Box Annual Fee 3 x 5", "Lock box past due date late fee").
 The answer-key gates are unchanged. The stale-read floor stays at v97.
 
+v133 (#2040): a whole sentence saying the bank charges no NSF fee is the NSF fee's $0, held as `zero`
+like a "No Fee" row so Darwin verifies it ("We do not charge a returned item/non-sufficient funds (NSF)
+fee for items returned unpaid.", Wells Fargo document 33356, which has no NSF row). The shared rule is
+`readNoChargeNsf` in `src/lib/no-charge-statement.ts`; the shared source check's witness
+(`noChargeNsfWitness`) uses the same rule, so Knox and Darwin trace the $0 to the sentence.
+
+Why a deterministic rule, when #2040's note after #2710 said scope needs the provider pass, which sees
+the section: a paid read may not run while provider billing is gated, and a provider's judgement of
+scope is not a fixed reason Darwin can re-check on live fees. This rule does not try to judge scope. It
+refuses on any sign of a narrower one (a scope word, a named product, a narrowing next sentence, a
+section heading however far up, an NSF-family price anywhere on the page or at the bank), so what it
+cannot tell apart stays unread for the provider pass, never live as a wrong $0. A sentence counts only
+when:
+- it is one whole sentence of the grammar `<We | The bank | The credit union> <do not | does not | don't |
+  doesn't> [currently] <charge | assess | impose> [you] <a/an/any> <NSF name> [<restatement>]`, joined
+  across a line wrap to its real end, with no figure, condition, transaction type, count, second fee,
+  "will not" or "no longer" ("we do not charge a fee for the first item" and "we do not charge NSF fees
+  for declined one-time debit card purchases" are not $0), and the NSF name carries an NSF word;
+- it opens its line after a blank line, a sentence end or a heading, or follows a sentence end on its
+  line ("In your Easy Checking account, we do not charge ..." is one account's terms);
+- the two sentences before it in its paragraph, the sentence after it (in its paragraph or the next),
+  every heading in the 40 lines above and the nearest section heading wherever it is (in capitals or
+  numbered: "BUSINESS ACCOUNTS", "4. Business Accounts") name no product, account, tier, audience or
+  service (`scopeWordIn`: "Business", "SMB", "Bill Pay", "Premier", "Relationship", "student", "Young
+  Saver", "Kids Club", "under 18", "Fresh Start", "Second Chance", "Online-only", a named product in any
+  case, "Easy Checking", "VALUE CHECKING" or "eChecking");
+- the sentence after it does not narrow it (`narrowsStatement`: "This applies only to items under five
+  dollars.", "Except ...", "Unless ...", "If ...", "This does not apply to ...");
+- no line of the text prices an NSF-family fee on it, or on the next two lines under a short label
+  (`documentPricesNsf`). The NSF words are the category guard's own (`NSF_NAME_INCLUDE`, exported from
+  `fee-category-guard.ts` and shared, so "Unpaid Item Fee", "Item returned unpaid", "Returned
+  ACH/payment/draft" and "Cargo por fondos insuficientes" count) plus dishonored and bounced items; a
+  price is a dollar figure, a decimal, a figure with its unit ("35 each") or an amount in words
+  ("twenty-five dollars"). A table of contents' page number does not count;
+- no read on the text is in the NSF family (`NSF_FAMILY_KEYS`: `nsf`, `nsf_daily_cap`), and no priced
+  read, filed or held unclassified, carries NSF-family words (`chargesNsfFamily`); one read per text;
+- Knox's name tidy leaves the sentence's name as printed, so the stored name is `statement.feeName` and
+  the witness traces it; a later re-tidy that would lose the trace is skipped (`would_not_trace`).
+The extract step holds such a $0 as a range for review, flagged `knox_no_charge_conflict`, when the
+institution charges any NSF-family fee (`institutionChargesCategory`): live in `published_fee_records`
+(not rolled back), in `verified_fee_observations` (not rejected), in Knox's raw reads of a current copy
+(not retired or rejected), in `published_fee_rate_catalog`, or read in the same run on another document
+(the $0 waits until every text of the run is read). Only NSF: overdraft and overdraft transfer
+sentences stay unread (most on prod are scoped to a transaction type or threshold).
+Behind `NO_CHARGE_SENTENCE_READ_LIVE` (off): while it is off, Knox reads none of these sentences and the
+source check accepts none, so this version changes no read. Switching it on needs, in the same PR,
+Darwin's live re-check of these $0 fees against the rule (Standing rules: a rule that holds, rejects or
+re-files a fee ships with its Darwin live re-check) with a dry-run count of the live fees it would take
+down, a fresh dry-run count of the reads on current copies, a sample check of those reads, another Knox
+rules version bump and a source check version bump.
+Oct 27 dry run (prod, read-only, current copies): a broad pre-filter finds 52 texts with a "we do not
+charge" sentence near an NSF word; the grammar matches a sentence on 9 texts at 9 institutions. After the third #2753 review
+the document test refuses by default: any other sentence that names the NSF family and a fee, charge,
+cost or penalty word refuses the page, affirming or not, except a whole sentence that agrees with the
+$0: the bank itself (never "Other banks") "does not charge/assess/impose a fee for" a closed
+restatement ("returned items", "items that are declined or returned unpaid") and nothing after it, no
+scope word (`agreesNoFee`). On that rule 3 texts at 3 institutions pass, all Wells Fargo:
+4 and 359 have no NSF row today and would gain a $0; 172 already shows NSF $0 (checked on
+`published_fee_catalog`, Oct 27). None is held as a conflict. Their agreeing sentences ("We do not
+assess fees for returned items or declined transactions.", "No returned item (NSF) fee: Wells Fargo
+does not charge a fee for items that are declined or returned unpaid.") no longer refuse them. Montecito
+Bank & Trust 570 (live returned item fees of $9 and $10) is refused on its own page ("FEES ARE CHARGED
+FOR NON-SUFFICIENT FUNDS ITEMS BEING PAID"); Monet Bank 309 by a fraud-recovery clause ("for example,
+non-sufficient funds fees") and a merchant's returned check charge; Cape & Coast Bank 678 by "There is
+no fee for an NSF return, but ..." and a merchant's "recurring charge for non-sufficient funds". Grand
+Bank for Savings 2568 (a funds-availability line prices "a check that has been returned unpaid") and
+United Bank 67 (an NSF line priced in its table of contents) are refused by the page price test, and
+HSBC Premier 26 by scope. That recall cost is accepted: what the rule misses waits for the provider
+pass. The answer-key gates are unchanged. The
+stale-read floor stays at v97.
+
 ## Darwin's re-read requests (`reread-feedback.ts`, #1511)
 
 Darwin's live fragment check (`darwin/live-fragment-check.ts`) writes one `pipeline_feedback` row of
@@ -2420,7 +2491,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v27 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
 | `KNOX_PAID_FIND_MISS_VERSION` | — | v1 | `knox/paid-find-misses.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v132 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v133 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v10 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

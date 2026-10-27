@@ -35,6 +35,7 @@ import { currentCopySchemaReady } from "@/lib/agents/magellan/current-copy";
 import { loadMarketLeaderIds } from "@/lib/data-store/market-leaders";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
 import { KNOX_TAKEOVER_FROM_PREFIX } from "@/lib/agents/darwin/category-change";
+import { NSF_FAMILY_KEYS, chargesNsfFamily } from "@/lib/no-charge-statement";
 
 type SqlTag = typeof sql;
 
@@ -154,6 +155,55 @@ export const COMBINED_NSF_OVERDRAFT_SQL =
 export const ACCOUNT_PRODUCT_FLAG = "account_product:v73";
 /** v122 (#1882): a $0 held because it is not the fee's price (`bandedZeroOf`), with its kind after a colon. */
 export const BANDED_ZERO_HOLD_FLAG = "knox_banded_zero";
+/** v133 (#2040): a no-charge sentence's $0 held because the institution charges an NSF-family fee elsewhere. */
+export const NO_CHARGE_CONFLICT_FLAG = "knox_no_charge_conflict";
+
+/**
+ * True when the institution charges a fee in one of the categories (the NSF family, `NSF_FAMILY_KEYS`):
+ * live (`published_fee_records`, not rolled back), verified and not rejected
+ * (`verified_fee_observations`: verified, approved or challenged), read by Knox on a current copy, not retired and not rejected
+ * (`raw_fee_observations`, by its `canonical_hint` flag), or published as a rate
+ * (`published_fee_rate_catalog`). Any key in the family counts: a live $35 `nsf_daily_cap` contradicts
+ * an NSF $0 as much as a $35 `nsf` does.
+ */
+export async function institutionChargesCategory(db: SqlTag, institutionId: number, canonicalFeeKeys: readonly string[]): Promise<boolean> {
+  const keys = [...canonicalFeeKeys];
+  const hints = keys.map((key) => `canonical_hint:${key}`);
+  const rows = await db<Array<{ charged: boolean }>>`
+    SELECT (
+      EXISTS (
+        SELECT 1 FROM published_fee_records live_fee
+         WHERE live_fee.institution_id = ${institutionId}
+           AND live_fee.canonical_fee_key = ANY(${keys}::text[])
+           AND live_fee.rolled_back_at IS NULL
+           AND (live_fee.amount > 0 OR live_fee.rate_percent > 0)
+      ) OR EXISTS (
+        SELECT 1 FROM verified_fee_observations verified
+         WHERE verified.institution_id = ${institutionId}
+           AND verified.canonical_fee_key = ANY(${keys}::text[])
+           AND verified.review_status IS DISTINCT FROM 'rejected'
+           AND (verified.amount > 0 OR verified.rate_percent > 0)
+      ) OR EXISTS (
+        SELECT 1 FROM raw_fee_observations raw
+          JOIN source_documents current_copy
+            ON current_copy.id = raw.source_document_id AND current_copy.superseded_by_id IS NULL
+         WHERE raw.institution_id = ${institutionId}
+           AND (raw.amount > 0 OR raw.rate_percent > 0)
+           AND COALESCE(raw.outlier_flags, '[]'::jsonb) ?| ${hints}::text[]
+           AND NOT (COALESCE(raw.outlier_flags, '[]'::jsonb) ?| array['superseded_by_reread', 'superseded_by_newer_copy'])
+           AND NOT EXISTS (
+             SELECT 1 FROM verified_fee_observations rejected
+              WHERE rejected.fee_raw_id = raw.fee_raw_id AND rejected.review_status = 'rejected'
+           )
+      ) OR EXISTS (
+        SELECT 1 FROM published_fee_rate_catalog rate
+         WHERE rate.institution_id = ${institutionId}
+           AND rate.canonical_fee_key = ANY(${keys}::text[])
+      )
+    ) AS charged`;
+  return Boolean(rows[0]?.charged);
+}
+
 /**
  * Stored product names that name no account (`account-name-exclusions.ts`, as a Postgres regex):
  * a v73+ read replaces them, and a copy holding one is due a re-read. Prod on Oct 16: 14 "Truth in
@@ -1226,6 +1276,8 @@ export async function insertHeldCandidate(
     extraFlags?: string[];
     /** A paid free-price read's already grounded product, used only to disambiguate its owner. */
     assignedMonthlyProduct?: string | null;
+    /** v133 (#2040): this run read a charged NSF-family fee for the institution on another document. */
+    chargedInRun?: boolean;
   },
 ): Promise<boolean> {
   if (options.held.amount !== null && options.held.canonicalHint
@@ -1284,6 +1336,13 @@ export async function insertHeldCandidate(
   const band = held.shape === "zero" && held.amount === 0 ? bandedZeroOf({ line: held.excerpt, feeName: held.feeName,
     canonicalFeeKey: held.canonicalHint, documentText: sourceRow.normalized_text ?? options.row.normalized_text ?? null }) : null;
   if (band) held = { ...held, shape: "range", amountMax: null };
+  // v133 (#2040): a $0 read from a "we do not charge an NSF fee" sentence never goes to Darwin while
+  // the institution charges an NSF-family fee anywhere: live, verified, read on a current copy, as a
+  // rate, or read in this run on another document (`chargedInRun`). One of its documents prices it, so
+  // the sentence is another product's or an older practice's terms. Held as a range for review.
+  const noChargeConflict = held.shape === "zero" && held.statedNoCharge && held.canonicalHint === "nsf"
+    ? Boolean(options.chargedInRun) || await institutionChargesCategory(db, Number(options.row.institution_id), NSF_FAMILY_KEYS) : false;
+  if (noChargeConflict) held = { ...held, shape: "range", amountMax: null };
   const applicability = feeApplicability(held.feeName, held.excerpt, held.amount);
   const agentEventId = stableUuid(
     `knox:held:${options.runId}:${documentTextId}:${sourceDocumentId}:${held.shape}:${held.feeName}:${held.amount}:${held.percent}`,
@@ -1291,6 +1350,7 @@ export async function insertHeldCandidate(
   const toDarwin = heldGoesToDarwin(held);
   const flags = [`knox_review:${held.shape}`];
   if (band) flags.push(`${BANDED_ZERO_HOLD_FLAG}:${band.kind}`);
+  if (noChargeConflict) flags.push(NO_CHARGE_CONFLICT_FLAG);
   if (capOwner) flags.push(CAP_FIRST_ELIGIBILITY_FLAG);
   if (symbolicOwner) flags.push(SYMBOLIC_LESSER_ELIGIBILITY_FLAG);
   if (internationalOwner) flags.push(INTERNATIONAL_WIRE_ELIGIBILITY_FLAG);
@@ -1626,6 +1686,8 @@ export async function runKnoxExtract(
 
   const results: KnoxExtractDocumentResult[] = [];
   let retiredOlderRows = 0;
+  const chargedNsfInRun = new Set<number>();
+  const deferredNoCharge: Array<{ row: KnoxTextRow; held: HeldFeeCandidate; resultIndex: number }> = [];
   for (const row of rows) {
     const playbook = playbookFromRow(row);
     // The router is given one strategy, so it only says why (its reason goes in the attempt
@@ -1678,7 +1740,17 @@ export async function runKnoxExtract(
       for (const rate of rates) {
         if (await insertRateCandidate(db, { runId: options.runId, row, rate })) inserted += 1;
       }
+      // v133 (#2040): an institution this run read a charged NSF-family fee for, on any document.
+      const institutionId = Number(row.institution_id);
+      if ([...candidates, ...rates.map((rate) => ({ ...rate, amount: null, percent: rate.ratePercent })), ...held]
+        .some((read) => chargesNsfFamily(read))) chargedNsfInRun.add(institutionId);
       for (const heldCandidate of held) {
+        // v133 (#2040): a no-charge sentence's $0 waits until every text of the run is read, so a
+        // charged NSF fee read later in the run on another of the bank's documents still holds it.
+        if (heldCandidate.statedNoCharge) {
+          deferredNoCharge.push({ row, held: heldCandidate, resultIndex: results.length });
+          continue;
+        }
         if (await insertHeldCandidate(db, { runId: options.runId, row, held: heldCandidate })) {
           heldInserted += 1;
           if (heldGoesToDarwin(heldCandidate)) freeInserted += 1;
@@ -1759,6 +1831,18 @@ export async function runKnoxExtract(
   }
 
   if (!dryRun) {
+    // #2040: the no-charge $0s are inserted last, after every document's reads, so the conflict check
+    // sees NSF-family prices read anywhere in this run. If the run aborts before this point, they are
+    // simply not written: no $0 goes in without its check, and the next run reads the sentence again
+    // (its document's other reads are already in, and the next run's check finds them in raw reads).
+    for (const deferred of deferredNoCharge) {
+      const chargedInRun = chargedNsfInRun.has(Number(deferred.row.institution_id));
+      if (await insertHeldCandidate(db, { runId: options.runId, row: deferred.row, held: deferred.held, chargedInRun })) {
+        // Counted as held only: whether the conflict check sent it to Darwin is in its flags.
+        const result = results[deferred.resultIndex];
+        if (result) result.heldInserted += 1;
+      }
+    }
     await recordExtractionSignals(db, options.runId, results, rowByDocumentTextId);
   }
   const retiredOlderCopyRows = currentCopy ? await retireRowsFromOlderCopies(db) : 0;
