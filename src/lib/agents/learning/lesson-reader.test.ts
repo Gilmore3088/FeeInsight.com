@@ -119,4 +119,11 @@ describe("lessonsForDocument (#2068)", () => {
     const bySize = lessonsForDocument("knox", "extract-paid", ["extract"], text, { lessons, maxChars: 40 });
     expect(bySize.lessons.map((l) => l.id)).toEqual(["own"]);
   });
+
+  it("never drops the step's own lesson for its length, only for the count cap", () => {
+    const tiny = lessonsForDocument("knox", "extract-paid", ["extract"], text, { lessons, maxChars: 5 });
+    expect(tiny.lessons.map((l) => l.id)).toEqual(["own"]);
+    expect(tiny.cappedOut).toBe(1);
+    expect(lessonsForDocument("knox", "extract-paid", ["extract"], text, { lessons, limit: 0 }).lessons).toEqual([]);
+  });
 });

@@ -321,7 +321,10 @@ function canonicalFeeList(): string {
 
 /**
  * The fixed part of every paid read's request: the task, the output format and the fee list. The
- * same for every document, so it is the cached prefix (#2068).
+ * same for every document, so it is the cached prefix (#2068). About 3,400 characters (roughly 860
+ * tokens at four characters a token, Oct 27): over the default model's (`claude-sonnet-5-5`) 512-token
+ * cache minimum, but under the 1,024 or more of older models, so a `PIPELINE_PAID_EXTRACT_MODEL`
+ * override to one of those silently caches nothing.
  */
 export function paidExtractInstructions(): string {
   return [
@@ -362,7 +365,8 @@ export interface PaidReadLessons {
 export function paidReadLessons(text: string, institutionId: number | null, categoryLessons: KnoxLessons): PaidReadLessons {
   const read = text.slice(0, MAX_TEXT_CHARS);
   const role = lessonsForDocument("knox", PAID_LESSON_STEPS[0], PAID_LESSON_STEPS, read);
-  const category = categoryLessonsForText(categoryLessons, read, institutionId);
+  // Never name a retired category in the prompt: the model may only answer with a live key.
+  const category = categoryLessonsForText(categoryLessons, read, institutionId, { validKey: (key) => VALID_CANONICAL_KEYS.has(key) });
   const block = [lessonsPromptBlock(role.lessons), categoryLessonsPromptBlock(category)].filter(Boolean).join("\n\n");
   return { block, roleLessonIds: lessonIds(role.lessons), roleLessonsCappedOut: role.cappedOut, categoryLessons: category };
 }

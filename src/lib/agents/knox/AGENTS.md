@@ -2468,16 +2468,21 @@ only on what the free team could not read.
 
   Lessons (v3, #2068): every paid read carries the lessons the free read learns from, scoped to
   its document. The fixed instructions and fee list are the first system block, marked for the
-  prompt cache. A second block carries two kinds of lesson:
+  prompt cache. That block is about 3,400 characters, roughly 860 tokens: over the default model's
+  512-token cache minimum, but under the 1,024 or more of older models, so a
+  `PIPELINE_PAID_EXTRACT_MODEL` override to one of those caches nothing. A second block carries two
+  kinds of lesson:
   - Role lessons of the `extract-paid` and `extract` steps that share at least 3 topic words with
-    the text (`lessonsForDocument`). The paid step's own lessons always ride. At most 10 lessons
-    and 6,000 characters.
+    the text (`lessonsForDocument`). At most 10 lessons. The others stop at 6,000 characters; the
+    paid step's own lessons always ride, whatever their length.
   - Category lessons whose exact name, or name family within a few words, the text prints
     (`categoryLessonsForText`). This bank's lessons come first, then labels, then global ones;
-    another bank's never ride. At most 20 lessons and 2,500 characters.
+    another bank's never ride, and neither does a lesson that names a retired key. At most 20
+    lessons and 2,500 characters.
 
-  A kept row is then filed through the free read's lesson lookup (`knoxLessonFor`), with the same
-  `knox_lesson:` flag. What each read carried is recorded in four places: the call metadata, the
+  A kept row is then filed through the free read's lesson lookup (`knoxLessonFor`). Its flag has
+  the same form as the free read's, `knox_lesson:<wrong>-><right>`, but the wrong side is the key
+  the model returned, not one the rules chose. What each read carried is recorded in four places: the call metadata, the
   attempt (`lessons_sent`, `lesson_refiles`), the step detail (`lessons_sent`) and one
   `knox.paid_lessons_sent` event.
 

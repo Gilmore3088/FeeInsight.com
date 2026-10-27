@@ -452,8 +452,19 @@ function familyWords(line: string): string[] {
     .filter((word) => !(FAMILY_FILLER_WORDS as readonly string[]).includes(word));
 }
 
-/** True when every family word appears within a window three words wider than the family. */
-function familyInLine(words: readonly string[], family: readonly string[]): boolean {
+/** A line's family words in order, and as a set for the quick test that every word is there. */
+interface IndexedLine {
+  words: readonly string[];
+  present: ReadonlySet<string>;
+}
+
+/**
+ * True when every family word appears within a window three words wider than the family. A line
+ * missing any of the words is skipped before the window scan, which could only fail on it.
+ */
+function familyInLine(line: IndexedLine, family: readonly string[]): boolean {
+  if (!family.every((word) => line.present.has(word))) return false;
+  const { words } = line;
   const need = new Set(family);
   const span = need.size + 3;
   for (let start = 0; start < words.length; start += 1) {
@@ -471,30 +482,41 @@ const SCOPE_RANK: Record<DocumentCategoryLessonScope, number> = { bank: 0, label
  * The category lessons that bear on one document (#2068): those whose exact name the text prints,
  * or whose name family it prints within a few words, kept to this bank's own lessons and the
  * global ones (never another bank's). This bank's lessons first, then people's labels, then exact
- * names and families by how many banks taught them. At most `limit` lessons and `maxChars`
- * characters of their prompt lines. Pure.
+ * names and families by how many banks taught them. A lesson that names a key `validKey` refuses
+ * (a retired category) is left out, so the prompt never names one. At most `limit` lessons and
+ * `maxChars` characters of their prompt lines. Pure.
  */
 export function categoryLessonsForText(
   lessons: KnoxLessons,
   text: string,
   institutionId: number | null,
-  options: { limit?: number; maxChars?: number } = {},
+  options: { limit?: number; maxChars?: number; validKey?: (key: string) => boolean } = {},
 ): DocumentCategoryLesson[] {
   if (lessons.size === 0) return [];
   const limit = options.limit ?? PAID_CATEGORY_LESSON_LIMIT;
   const maxChars = options.maxChars ?? PAID_CATEGORY_LESSON_MAX_CHARS;
+  const validKey = options.validKey ?? (() => true);
   const lines = text.split(/\n+/);
   // Every line's name key in one string, with a mark between lines so a name never spans two.
   const printed = ` ${lines.map(lessonName).join(" | ")} `;
-  const lineFamilies = lines.map(familyWords).filter((words) => words.length > 0);
+  const lineFamilies: IndexedLine[] = lines
+    .map(familyWords)
+    .filter((words) => words.length > 0)
+    .map((words) => ({ words, present: new Set(words) }));
+  // Every family word the document prints anywhere: a family with a word outside it matches no line.
+  const documentWords = new Set(lineFamilies.flatMap((line) => [...line.present]));
   const found: Array<{ lesson: DocumentCategoryLesson; banks: number }> = [];
   for (const lesson of lessons.values()) {
     if (lesson.institutionId && lesson.institutionId !== institutionId) continue;
+    if (!validKey(lesson.rightKey) || (lesson.wrongKey !== LABEL_WRONG_KEY && !validKey(lesson.wrongKey))) continue;
     const isFamily = lesson.name.startsWith(FAMILY_PREFIX);
     const name = isFamily ? lesson.name.slice(FAMILY_PREFIX.length) : lesson.name;
     if (!name) continue;
     const scope: DocumentCategoryLessonScope = lesson.institutionId ? "bank" : lesson.wrongKey === LABEL_WRONG_KEY ? "label" : isFamily ? "family" : "name";
-    const inText = isFamily ? lineFamilies.some((words) => familyInLine(words, name.split(" "))) : printed.includes(` ${name} `);
+    const family = isFamily ? name.split(" ") : [];
+    const inText = isFamily
+      ? family.every((word) => documentWords.has(word)) && lineFamilies.some((line) => familyInLine(line, family))
+      : printed.includes(` ${name} `);
     if (!inText) continue;
     found.push({
       lesson: {

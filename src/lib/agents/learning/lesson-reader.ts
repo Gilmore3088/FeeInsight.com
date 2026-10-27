@@ -108,7 +108,8 @@ export interface DocumentLessonChoice {
  * shapes any of `stepKeys` (so a paid read gets the free read's lessons too), scoped to the
  * document. A lesson written for `primaryStep` itself always rides; another rides only when it
  * shares at least `DOCUMENT_LESSON_MIN_SHARED` topic words with the document, most shared first,
- * then newest. At most `limit` lessons and `maxChars` characters of lesson text. Pure.
+ * then newest. At most `limit` lessons in all; the others stop at `maxChars` characters of lesson
+ * text, which the step's own lessons count toward but are never dropped by. Pure.
  */
 export function lessonsForDocument(
   agent: LessonAgent,
@@ -135,8 +136,9 @@ export function lessonsForDocument(
     .sort((a, b) => Number(b.own) - Number(a.own) || b.shared - a.shared || newestFirst(a.lesson, b.lesson));
   const chosen: AgentLesson[] = [];
   let chars = 0;
-  for (const { lesson } of ranked) {
-    if (chosen.length >= limit || chars + lesson.lesson.length > maxChars) continue;
+  for (const { lesson, own } of ranked) {
+    // A lesson written for the step itself rides whatever its length (still within the count cap).
+    if (chosen.length >= limit || (!own && chars + lesson.lesson.length > maxChars)) continue;
     chosen.push(lesson);
     chars += lesson.lesson.length;
   }

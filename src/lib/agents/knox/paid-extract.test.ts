@@ -14,7 +14,7 @@ vi.mock("./lessons", async (importOriginal) => ({
 
 import { KNOX_RULES_STRATEGY } from "./specialists";
 import { lessonsFor } from "@/lib/agents/learning/lesson-reader";
-import { lessonsFrom } from "./lessons";
+import { categoryLessonsForText, lessonsFrom } from "./lessons";
 import { articleLinkSql } from "@/lib/agents/magellan/link-coverage";
 import { providerRefusalSql } from "@/lib/agents/paid-pass";
 import {
@@ -322,9 +322,35 @@ describe("Knox paid extraction (pass 3)", () => {
     expect(JSON.parse(String(event?.[4]))).toMatchObject({ reads: 1, texts: [{ institution_id: 52, document_text_id: 801 }] });
   });
 
+  it("never names a retired category in the prompt (#2068)", () => {
+    const lessons = lessonsFrom([
+      { name: "statement copy", wrongKey: "paper_statement", rightKey: "document_reproduction", wrongBanks: 3, rightBanks: 4 },
+      { name: "stop payment", wrongKey: "stop_payment", rightKey: "retired_category_key", wrongBanks: 3, rightBanks: 4 },
+      { name: "domestic wires you send", wrongKey: "retired_category_key", rightKey: "wire_domestic_outgoing", wrongBanks: 3, rightBanks: 4 },
+      { name: "family:domestic send wire", wrongKey: "wire_intl_outgoing", rightKey: "retired_category_key", wrongBanks: 3, rightBanks: 4 },
+    ]);
+    const read = paidReadLessons(`${denseText}\nStatement copy $5.00 each`, 52, lessons);
+    expect(read.categoryLessons.map((lesson) => lesson.id)).toEqual(["name:statement copy:paper_statement->document_reproduction"]);
+    expect(read.block).not.toContain("retired_category_key");
+  });
+
+  it("matches a family only within a few words on one line, as before the word index (#2068)", () => {
+    const lessons = lessonsFrom([{ name: "family:domestic outgoing wire", wrongKey: "wire_intl_outgoing", rightKey: "wire_domestic_outgoing", wrongBanks: 2, rightBanks: 2 }]);
+    const ids = (text: string) => categoryLessonsForText(lessons, text, 52).map((lesson) => lesson.id);
+    const id = "family:domestic outgoing wire:wire_intl_outgoing->wire_domestic_outgoing";
+    expect(ids("Outgoing Domestic Wires $25.00")).toEqual([id]);
+    expect(ids("Wire transfer, domestic, outgoing: $25.00")).toEqual([id]);
+    // All the words, but on two lines.
+    expect(ids("Domestic wire $25.00\nOutgoing items $5.00")).toEqual([]);
+    // All the words on one line, but too far apart.
+    expect(ids("Domestic checking statement copy research notary photocopy wire $25.00 outgoing")).toEqual([]);
+    // A word the document never prints.
+    expect(ids("Domestic wire $25.00")).toEqual([]);
+  });
+
   it("scopes role lessons to the document and caps category lessons by count and size", () => {
     const many = lessonsFrom(
-      Array.from({ length: 40 }, (_, index) => ({ name: `service number ${["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"][index % 10]} ${"x".repeat(index + 1)}`, wrongKey: "a", rightKey: "b", wrongBanks: 2, rightBanks: 2 })),
+      Array.from({ length: 40 }, (_, index) => ({ name: `service number ${["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"][index % 10]} ${"x".repeat(index + 1)}`, wrongKey: "paper_statement", rightKey: "document_reproduction", wrongBanks: 2, rightBanks: 2 })),
     );
     const text = Array.from(many.values()).map((lesson) => `${lesson.name} $1.00`).join("\n");
     expect(paidReadLessons(text, 52, many).categoryLessons.length).toBe(20);
