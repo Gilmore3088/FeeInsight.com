@@ -656,4 +656,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-26",
   },
+  {
+    id: "issue-1077-measure-after-fix",
+    agent: "hamilton",
+    stage: "paid work",
+    lesson: "A fix's effect is measured by a fresh batch scoped to the surface it changed, with its own id, its own budget and its own schedule, all in one approval; an earlier batch's numbers never stand in for it, and nothing of that batch counts toward the new one.",
+    why: "The 2026-10-25 paid replay batch's written-answer hold rate predates the four gate fixes #2696, #2699, #2700 and #2701, so it cannot say what they changed; batch 2026-10-26 writes 50 written answers only, for $25, on its own budget line and 10-minute schedule.",
+    evidence: { issues: [1077], prs: [], files: ["src/lib/hamilton/paid-gate-replay.ts", "supabase/migrations/20270110000081_hamilton_replay_budget_1026.sql", "vercel.json"] },
+    appliesTo: "all",
+    since: "2026-10-26",
+  },
 ];
