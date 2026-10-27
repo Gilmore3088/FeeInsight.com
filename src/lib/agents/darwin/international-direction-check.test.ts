@@ -82,6 +82,11 @@ describe("findInternationalDirections (#1912)", () => {
     const found = findInternationalDirections([reread, missing, held]);
     expect(found).toMatchObject({ matched: 0, textChanged: 2, eligibilityHeld: 1 });
   });
+
+  it("never judges a fee against another institution's text, even one that hashes right", () => {
+    const otherOwner = { ...AMARILLO_ROW, text_institution_id: String(Number(AMARILLO_ROW.institution_id) + 1) };
+    expect(findInternationalDirections([otherOwner])).toMatchObject({ matched: 0, textChanged: 1 });
+  });
 });
 
 describe("own-wire-scope reads directions as banks print them (#1912)", () => {

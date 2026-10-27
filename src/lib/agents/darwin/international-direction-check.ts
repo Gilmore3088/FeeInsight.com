@@ -203,7 +203,9 @@ export function findInternationalDirections(rows: InternationalDirectionRow[]): 
       fee_name: row.raw_fee_name ?? "", amount: row.raw_amount, outlier_flags: row.outlier_flags,
     } as Parameters<typeof internationalDirectionOutcome>[0];
     // Only the text the fee was read from is evidence; any other copy is Knox's next read to decide.
-    const source = storedTextIsOriginal(row) ? sourceOf(row) : null;
+    // The proof skips the locked owner match, so the text must also belong to the fee's institution.
+    const sameOwner = num(row.text_institution_id) != null && num(row.text_institution_id) === num(raw.institution_id);
+    const source = sameOwner && storedTextIsOriginal(row) ? sourceOf(row) : null;
     const outcome = internationalDirectionOutcome(raw, category, category,
       source ? { kind: "bound", source, currentRaw: raw } : { kind: "unavailable" }, { originalTextProved: true });
     if (outcome.kind !== "deferred") {
