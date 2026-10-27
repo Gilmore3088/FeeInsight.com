@@ -14,6 +14,7 @@ import {
   SITE_SEARCH_QUERIES,
   SITE_SEARCH_STRATEGY,
   siteSearchQueries,
+  missingFeeQueries,
   siteSearchUrl,
   siteSearchUrls,
   THIN_BANK_CATEGORY_LIMIT,
@@ -42,6 +43,7 @@ function createDb(ready = true, stateRows: unknown[] = [thinBank], hiddenRows: u
   return vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
     const text = templateText(strings);
     if (text.includes("AS companion_ready")) return Promise.resolve([{ companion_ready: ready }]);
+    if (text.includes("-- known fee keys")) return Promise.resolve([]);
     // The hidden-bank top-up passes hiddenOnly = true; the state's own query passes false.
     if (text.includes("FROM published_fee_records")) return Promise.resolve(values.includes(true) ? hiddenRows : stateRows);
     if (text.includes("SELECT document_url AS url")) return Promise.resolve([{ url: thinBank.fee_schedule_url }]);
@@ -238,6 +240,11 @@ describe("Magellan site search for fee schedules and agreements", () => {
 
   it("runs several queries: fee schedule first, then a rotating slice of fee and agreement wording", () => {
     expect(siteSearchQueries(0)).toEqual(["fee schedule", "account agreement", "schedule of fees", "member agreement"]);
+    // A thin bank's missing fee types come right after "fee schedule" (fix plan step 4).
+    expect(siteSearchQueries(0, 4, missingFeeQueries(["overdraft", "monthly_maintenance"]))).toEqual(["fee schedule", "insufficient funds", "wire transfer", "stop payment"]);
+    expect(siteSearchQueries(0, 4, missingFeeQueries(["overdraft", "nsf", "monthly_maintenance", "stop_payment"]))).toEqual(["fee schedule", "wire transfer", "account agreement", "schedule of fees"]);
+    expect(missingFeeQueries(["overdraft", "nsf", "monthly_maintenance", "wire_intl_outgoing", "stop_payment"])).toEqual([]);
+    expect(missingFeeQueries([])).toEqual([]);
     expect(siteSearchQueries(1)).toEqual(["fee schedule", "truth in savings", "deposit agreement", "membership agreement"]);
     // Two runs cover every query.
     expect(new Set([...siteSearchQueries(0), ...siteSearchQueries(1)])).toEqual(new Set(SITE_SEARCH_QUERIES));
