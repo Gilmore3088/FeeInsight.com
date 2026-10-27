@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ auth: vi.fn(), ready: vi.fn(), run: vi.fn(), steps: vi.fn(), events: vi.fn(), start: vi.fn(), execute: vi.fn(), redirect: vi.fn() }));
+const mocks = vi.hoisted(() => ({ auth: vi.fn(), ready: vi.fn(), run: vi.fn(), steps: vi.fn(), events: vi.fn(), start: vi.fn(), execute: vi.fn(), redirect: vi.fn(), progress: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ requireAuth: mocks.auth }));
 vi.mock("@/lib/agents/dispatch-readiness", () => ({ assertAtlasDispatchReady: mocks.ready }));
 vi.mock("@/lib/agents/run-store", () => ({ getAgentRun: mocks.run, getAgentRunSteps: mocks.steps, getAgentRunEvents: mocks.events, startAgentRun: mocks.start, executeAgentRun: mocks.execute }));
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
-import { retryStorageCompaction } from "./actions";
+vi.mock("@/lib/agents/hoovie/storage-rollout-progress", () => ({ readArchiveRolloutProgress: mocks.progress }));
+import { advanceApprovedStorageRollout, retryStorageCompaction } from "./actions";
 import { STORAGE_ROLLOUT_SOURCE } from "@/lib/agents/hoovie/storage-rollout";
 
 describe("approved storage canary retry", () => {
@@ -29,6 +30,21 @@ describe("approved storage canary retry", () => {
     }));
     expect(mocks.execute).toHaveBeenCalledWith(20001, { maxSteps: 1, allowProviderSteps: false });
     expect(mocks.redirect).toHaveBeenCalledWith("/admin/atlas/runs/20001");
+  });
+  it("executes only the next server-selected manifest stage with terminal idempotency", async () => {
+    mocks.progress.mockResolvedValue({ source: "ffiec", period: "2023-03-31", action: "export" });
+    await advanceApprovedStorageRollout();
+    expect(mocks.auth).toHaveBeenCalledWith("trigger_jobs");
+    expect(mocks.ready).toHaveBeenCalledWith(["atlas-storage-retention"]);
+    expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({ reuseTerminal: true,
+      params: { source: STORAGE_ROLLOUT_SOURCE, storageAction: "export", storageSource: "ffiec", storagePeriod: "2023-03-31" },
+      idempotencyKey: "atlas:storage-rollout:ffiec:2023-03-31:export:v1" }));
+    expect(mocks.execute).toHaveBeenCalledWith(20001, { maxSteps: 1, allowProviderSteps: false });
+  });
+  it("does not create archive work without the completed conversion canary", async () => {
+    mocks.progress.mockRejectedValue(new Error("verified production conversion canary is required"));
+    await expect(advanceApprovedStorageRollout()).rejects.toThrow("canary");
+    expect(mocks.start).not.toHaveBeenCalled();
   });
   it("refuses unauthenticated or paused execution before creating work", async () => {
     mocks.auth.mockRejectedValueOnce(new Error("Unauthorized"));

@@ -6,6 +6,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const HOOVIE_LESSONS: AgentLesson[] = [
   {
+    id: "storage-archive-all-consumers",
+    agent: "hoovie",
+    stage: "public-data storage",
+    lesson: "After a successful approved canary, continue the bounded rollout through its existing ledger stages. Before removing a hot quarter, cover every historical reader, including public institution charts and measure discovery; verify both against the archive after removal.",
+    why: "The conversion canary passed but daily continuation remained off, while public institution history and NCUA discovery still read hot rows only and would silently lose archived quarters.",
+    evidence: { issues: [2225], prs: [2789], files: ["src/lib/data-store/institution-quarterly.ts", "src/lib/data-catalog/ncua-call-series.ts", "src/lib/agents/hoovie/storage-rollout-progress.ts"] },
+    appliesTo: "all",
+    since: "2026-10-27",
+  },
+  {
     id: "storage-compaction-numeric-cursor",
     agent: "hoovie",
     stage: "public-data storage",

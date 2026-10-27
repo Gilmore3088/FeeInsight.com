@@ -10,7 +10,7 @@ vi.mock("@/lib/data-store/call-item-storage", () => ({
   compactCallStorageReady: async () => true,
 }));
 import { exportCallPeriod } from "./storage-tiers";
-import { archiveRehearsalRecorded, rehearseCallPeriod, pruneCallPeriod, restoreCallPeriod } from "./call-period-prune";
+import { archiveConsumerAcceptanceRecorded, archiveRehearsalRecorded, rehearseCallPeriod, pruneCallPeriod, restoreCallPeriod } from "./call-period-prune";
 import { decodeColdFile, type ColdStore } from "./cold-files";
 import { runStorageCompaction } from "./storage-compaction";
 import { JSON_TEXT_PASSTHROUGH } from "@/lib/data-store/connection";
@@ -80,8 +80,13 @@ describe.skipIf(!url)("public-data compaction and atomic archive", () => {
       await scope`INSERT INTO agent_run_steps(id,step_key) VALUES(987,'atlas-storage-retention')`;
       await scope`INSERT INTO agent_run_events(id,step_id,event_type,status,detail) VALUES(987,987,'step.finished','completed',${JSON.stringify({cold_tier:{rehearsed}})}::jsonb)`;
       expect(await archiveRehearsalRecorded(scope,rehearsed)).toBe(true);
+      expect(await archiveConsumerAcceptanceRecorded(scope,rehearsed)).toBe(false);
+      await expect(pruneCallPeriod(scope,store,{source:"ffiec",period:"2023-03-31",requireRehearsal:true,requireConsumerAcceptance:true})).rejects.toThrow("no completed consumer acceptance");
+      await scope`UPDATE agent_run_events SET detail=${JSON.stringify({cold_tier:{rehearsed},storage_preprune_acceptance:{...rehearsed,consumersVerified:true}})}::jsonb WHERE id=987`;
+      expect(await archiveConsumerAcceptanceRecorded(scope,rehearsed)).toBe(true);
       await scope`UPDATE public_data_cold_files SET sha256='changed'`;
       expect(await archiveRehearsalRecorded(scope,rehearsed)).toBe(false);
+      expect(await archiveConsumerAcceptanceRecorded(scope,rehearsed)).toBe(false);
       await expect(pruneCallPeriod(scope,store,{source:"ffiec",period:"2023-03-31",requireRehearsal:true})).rejects.toThrow("no completed restore rehearsal");
     });
   },30000);
@@ -216,7 +221,7 @@ describe.skipIf(!url)("public-data compaction and atomic archive", () => {
   it("bounds historical HMDA conversion, retains malformed data and excludes the pinned repair year", async () => {
     const costs=Object.fromEntries(HMDA_COST_FIELDS.map((key)=>[key,{n:2,median:12.5,p25:0,p75:25,exempt:0,na:1,blank:0,unreadable:0,negative:0}]));
     await db`INSERT INTO hmda_lender_loan_costs(activity_year,cost_detail) VALUES(2019,${JSON.stringify(costs)}::jsonb),(2025,${JSON.stringify(costs)}::jsonb),(2018,'{}'::jsonb)`;
-    expect((await runStorageCompaction(db as unknown as Parameters<typeof runStorageCompaction>[0])).live).toBe(false);
+    expect((await runStorageCompaction(db as unknown as Parameters<typeof runStorageCompaction>[0], { live: false })).live).toBe(false);
     const result=await db.begin(async(tx)=>{
       return runStorageCompaction(compactionDb(tx),{live:true});
     });
