@@ -25,3 +25,5 @@ PR re-fetches a bank whose current copy Rosetta could not match to the bytes the
 
 **Lesson:** a hand-off between agents is not done when the sender marks the work due: check that
 the receiver's order reaches it, by counting what is due and never picked.
+
+**Guard:** `src/lib/agents/magellan/discovery.test.ts` ("searches a bank Rosetta sent back, once") and `src/lib/agents/magellan/fetch.test.ts`.

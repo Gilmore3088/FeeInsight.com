@@ -254,16 +254,21 @@ export function fitForOcr(image: GrayImage): GrayImage {
 
 /** A page whose long side is below this is upscaled before the cleaned read (about 200 dpi). */
 const OCR_CLEAN_MIN_SIDE = 2200;
+/** A scan stops trying cleaned copies after this many that read no better. */
+const OCR_CLEAN_MAX_MISSES = 2;
 /** Skew is searched within this many degrees either way, in OCR_SKEW_STEP steps. */
 const OCR_SKEW_MAX_DEGREES = 5;
 const OCR_SKEW_STEP = 0.5;
 /** Skew is measured on a copy at most this many pixels on the long side. */
 const OCR_SKEW_IMAGE_SIDE = 900;
 
-/** Bilinear upscale by an integer factor until the long side reaches `minSide` (at most 3x). */
+/**
+ * Bilinear upscale by an integer factor until the long side reaches `minSide` (at most 3x, and
+ * never past OCR_MAX_IMAGE_SIDE, so `fitForOcr` never undoes it).
+ */
 export function upscaleForOcr(image: GrayImage, minSide = OCR_CLEAN_MIN_SIDE): GrayImage {
-  const longSide = Math.max(image.width, image.height);
-  const factor = Math.min(3, Math.ceil(minSide / Math.max(1, longSide)));
+  const longSide = Math.max(1, image.width, image.height);
+  const factor = Math.min(3, Math.ceil(minSide / longSide), Math.floor(OCR_MAX_IMAGE_SIDE / longSide));
   if (factor <= 1) return image;
   const width = image.width * factor;
   const height = image.height * factor;
@@ -393,7 +398,8 @@ export function straightenForOcr(image: GrayImage, degrees: number): GrayImage {
  * into black ink on white paper.
  */
 export function cleanForOcr(image: GrayImage): { image: GrayImage; skewDegrees: number } {
-  const larger = upscaleForOcr(image);
+  // Sized for OCR first, so the black-and-white copy is what Tesseract reads.
+  const larger = upscaleForOcr(fitForOcr(image));
   const skewDegrees = estimateSkewDegrees(larger);
   return { image: binarizeForOcr(straightenForOcr(larger, skewDegrees)), skewDegrees };
 }
@@ -632,14 +638,15 @@ export async function recognizeUpright(
   image: GrayImage,
   preferredTurns = 0,
   stopped: () => boolean = () => false,
-): Promise<{ page: OcrPage; height: number; turns: number; cleaned?: boolean }> {
+  clean = true,
+): Promise<{ page: OcrPage; height: number; turns: number; cleaned?: boolean; triedClean?: boolean }> {
   const read = await recognizeTurned(engine, image, preferredTurns, stopped);
-  if (pageReadsWell(read.page) || stopped()) return read;
+  if (!clean || pageReadsWell(read.page) || stopped()) return read;
   // One more try on a cleaned copy before the page counts as unreadable (and the paid read).
-  const cleaned = fitForOcr(cleanForOcr(turnImage(image, read.turns)).image);
+  const cleaned = cleanForOcr(turnImage(image, read.turns)).image;
   const again = await engine.recognize(cleaned);
-  if (probeScore(again) <= probeScore(read.page)) return read;
-  return { page: again, height: cleaned.height, turns: read.turns, cleaned: true };
+  if (probeScore(again) <= probeScore(read.page)) return { ...read, triedClean: true };
+  return { page: again, height: cleaned.height, turns: read.turns, cleaned: true, triedClean: true };
 }
 
 async function recognizeTurned(
@@ -699,14 +706,18 @@ export function createScannedPdfReader(engineFactory: () => OcrEngine = createTe
         const words: OcrWord[] = [];
         // A scan's pages are usually all turned the same way: try the last page's turn first.
         let turnsSoFar = 0;
+        // A cleaned copy that did not help twice will not help this scan: stop paying for it,
+        // so a long poor scan stays inside the document's time.
+        let cleanMisses = 0;
         for (const image of images) {
           if (timedOut) break;
           if (!image) {
             pages.push("");
             continue;
           }
-          const read = await recognizeUpright(engine, image, turnsSoFar, () => timedOut);
+          const read = await recognizeUpright(engine, image, turnsSoFar, () => timedOut, cleanMisses < OCR_CLEAN_MAX_MISSES);
           turnsSoFar = read.turns;
+          if (read.triedClean && !read.cleaned) cleanMisses += 1;
           words.push(...read.page.words);
           pages.push(
             read.page.words.length > 0

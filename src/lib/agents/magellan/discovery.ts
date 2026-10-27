@@ -1064,19 +1064,6 @@ function foundResult(
 }
 
 /**
- * Banks due for a search: no fee link, or a stale link whose last document failed and
- * that has no live fee. Nothing is dead forever:
- * - never searched, or pending/`retry_after` older than 12 hours;
- * - a miss (`dead`, `needs_human`) after a month, then after a quarter once it has
- *   missed twice in a row (`consecutive_failures` on the bank's profile);
- * - any miss at once when its last search used an older discovery method version.
- *
- * A bank whose last search was cut short by time (`retry_after`, `out_of_time`) carries
- * that search's resume state (`discovery_resume`, from the attempt log). The first
- * `RESUME_FIRST_PER_STEP` such banks go to the front of the step so they get the full
- * per-bank budget; the rest keep their usual place.
- */
-/**
  * A bank whose link Rosetta sent back (not a fee page, a script-only page or a dead link;
  * `sendBackToMagellan`) and that no discovery has searched since: the send-back stamps
  * `failure_reason_updated_at`, and a search stamps it with `last_rescue_attempt_at` in the same
@@ -1092,6 +1079,19 @@ export function sentBackUnsearchedSql(db: SqlTag) {
   )`;
 }
 
+/**
+ * Banks due for a search: no fee link, or a stale link whose last document failed and
+ * that has no live fee. Nothing is dead forever:
+ * - never searched, or pending/`retry_after` older than 12 hours;
+ * - a miss (`dead`, `needs_human`) after a month, then after a quarter once it has
+ *   missed twice in a row (`consecutive_failures` on the bank's profile);
+ * - any miss at once when its last search used an older discovery method version.
+ *
+ * A bank whose last search was cut short by time (`retry_after`, `out_of_time`) carries
+ * that search's resume state (`discovery_resume`, from the attempt log). The first
+ * `RESUME_FIRST_PER_STEP` such banks go to the front of the step so they get the full
+ * per-bank budget; the rest keep their usual place.
+ */
 async function selectCandidates(
   db: SqlTag,
   limit: number,

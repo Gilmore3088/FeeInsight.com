@@ -149,6 +149,9 @@ describe("Rosetta free OCR", () => {
     expect([...binarizeForOcr(faint).data]).toEqual([255, 255, 0, 0, 255, 0, 255, 0]);
     expect(upscaleForOcr({ width: 1000, height: 800, data: new Uint8Array(800_000) })).toMatchObject({ width: 3000, height: 2400 });
     expect(upscaleForOcr({ width: 2400, height: 3000, data: new Uint8Array(1) })).toMatchObject({ width: 2400 });
+    // Never past the OCR size, so fitting for OCR does not undo it.
+    expect(upscaleForOcr({ width: 1700, height: 2000, data: new Uint8Array(3_400_000) })).toMatchObject({ width: 1700 });
+    expect(cleanForOcr({ width: 1700, height: 2000, data: new Uint8Array(3_400_000).fill(200) }).image).toMatchObject({ width: 1700, height: 2000 });
 
     // Ruled lines tilted by 3 degrees read as a 3 degree skew; level lines read as none.
     const lines = (degrees: number): GrayImage => {
