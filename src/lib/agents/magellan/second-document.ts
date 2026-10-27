@@ -109,15 +109,42 @@ export const ROTATING_SEARCH_QUERIES = [
 ] as const;
 export const SITE_SEARCH_QUERIES = [PRIMARY_SEARCH_QUERY, ...ROTATING_SEARCH_QUERIES] as const;
 
-/** The queries for one run: "fee schedule", then the rotation's slice of the others. */
-export function siteSearchQueries(rotation: number, limit = MAX_SEARCH_PAGES_PER_BANK): string[] {
+/**
+ * Core fee types and the words a bank's own search finds their document by (fix plan step 4,
+ * Oct 27): of 1,230 banks held under three fee types, most had the wrong or a partial document,
+ * not a wrong hold, so the search asks for the fee types the bank still lacks.
+ */
+export const MISSING_FEE_QUERIES: ReadonlyArray<{ keys: readonly string[]; query: string }> = [
+  { keys: ["overdraft"], query: "overdraft" },
+  { keys: ["nsf"], query: "insufficient funds" },
+  { keys: ["monthly_maintenance"], query: "monthly service charge" },
+  { keys: ["wire_domestic_outgoing", "wire_intl_outgoing"], query: "wire transfer" },
+  { keys: ["stop_payment"], query: "stop payment" },
+];
+
+/**
+ * Pure: the search words for the core fee types a bank has no verified or live fee for, in
+ * order. A bank with no fee at all lacks the whole schedule, so it keeps the broad queries.
+ */
+export function missingFeeQueries(knownKeys: readonly string[] | null | undefined): string[] {
+  if (knownKeys == null || knownKeys.length === 0) return [];
+  const known = new Set(knownKeys);
+  return MISSING_FEE_QUERIES.filter((entry) => !entry.keys.some((key) => known.has(key))).map((entry) => entry.query);
+}
+
+/**
+ * The queries for one run: "fee schedule", then the words for the bank's missing fee types
+ * (`missingFeeQueries`), then the rotation's slice of the others.
+ */
+export function siteSearchQueries(rotation: number, limit = MAX_SEARCH_PAGES_PER_BANK, missing: readonly string[] = []): string[] {
   const count = Math.max(0, Math.min(limit, SITE_SEARCH_QUERIES.length));
   if (count === 0) return [];
   const slots = count - 1;
   const size = ROTATING_SEARCH_QUERIES.length;
   const start = (((Math.trunc(rotation) * slots) % size) + size) % size;
   const rest = Array.from({ length: slots }, (_, index) => ROTATING_SEARCH_QUERIES[(start + index) % size]);
-  return [PRIMARY_SEARCH_QUERY, ...rest];
+  // The missing-type words take all but one slot, so a rotating fee or agreement query always runs.
+  return [PRIMARY_SEARCH_QUERY, ...missing.slice(0, Math.max(0, slots - 1)), ...rest].slice(0, count);
 }
 
 /** Changes once per recheck window, so a bank's next search uses the next queries. */
@@ -519,6 +546,61 @@ interface ThinBankRow {
   categories: number | string;
   /** The link is not the consumer schedule yet (link-coverage.ts). */
   incomplete?: boolean | null;
+  /** Fee types the bank has a verified or live fee for (`loadKnownFeeKeys`). */
+  known_keys?: string[] | null;
+  /** The site's own search never gave a result link in `SITE_SEARCH_DUD_TRIES` tries (`loadSiteSearchDuds`). */
+  site_search_dud?: boolean;
+}
+
+/**
+ * A site whose search never gave a result link beyond its menu in this many tries, and never a
+ * kept page, is a dud: its search form returns nothing to a plain request (step 6, Oct 27: 232
+ * banks had no candidate in 1,586 tries). The tries must fall on at least two days, so one bad
+ * run cannot mark a site, and only the last `SITE_SEARCH_DUD_DAYS` count, so a dud is tried again
+ * once its misses age out.
+ */
+export const SITE_SEARCH_DUD_TRIES = 3;
+export const SITE_SEARCH_DUD_DAYS = 90;
+
+/** Banks whose site search is a dud (`SITE_SEARCH_DUD_TRIES`). */
+async function loadSiteSearchDuds(db: SqlTag, ids: number[]): Promise<Set<number>> {
+  if (ids.length === 0) return new Set();
+  const rows = await db<Array<{ institution_id: number | string }>>`
+    -- site search duds
+    SELECT pa.institution_id
+      FROM pipeline_attempts pa
+     WHERE pa.institution_id = ANY(${ids}::bigint[])
+       AND pa.stage = 'discover'
+       AND pa.strategy = ${SITE_SEARCH_STRATEGY.strategy}
+       AND pa.created_at > now() - make_interval(days => ${SITE_SEARCH_DUD_DAYS})
+     GROUP BY pa.institution_id
+    HAVING count(*) >= ${SITE_SEARCH_DUD_TRIES}
+       AND count(DISTINCT pa.created_at::date) >= 2
+       AND sum(COALESCE((pa.detail->>'candidates')::int, 0)) = 0
+       AND NOT bool_or(pa.outcome = 'ok')
+  `;
+  return new Set(rows.map((row) => Number(row.institution_id)));
+}
+
+/** Fee types each bank has a verified (not rejected) or live fee for. */
+async function loadKnownFeeKeys(db: SqlTag, ids: number[]): Promise<Map<number, string[]>> {
+  if (ids.length === 0) return new Map();
+  const rows = await db<Array<{ institution_id: number | string; keys: string[] | null }>>`
+    -- known fee keys
+    SELECT known.institution_id, array_agg(DISTINCT known.canonical_fee_key) AS keys
+      FROM (
+        SELECT fv.institution_id, fv.canonical_fee_key
+          FROM verified_fee_observations fv
+         WHERE fv.institution_id = ANY(${ids}::bigint[]) AND fv.review_status <> 'rejected'
+        UNION
+        SELECT fp.institution_id, fp.canonical_fee_key
+          FROM public.published_fee_records fp
+         WHERE fp.institution_id = ANY(${ids}::bigint[]) AND fp.rolled_back_at IS NULL
+      ) known
+     WHERE known.canonical_fee_key IS NOT NULL
+     GROUP BY known.institution_id
+  `;
+  return new Map(rows.map((row) => [Number(row.institution_id), row.keys ?? []]));
 }
 
 export interface CompanionPage {
@@ -849,10 +931,14 @@ async function searchBank(
       indexPages.push({ url: row.fee_schedule_url, links: feePageLinks });
     }
   }
-  // The site's own search (James found Triangle FCU's fees this way): "fee schedule" plus
-  // fee and agreement wording, at most MAX_SEARCH_PAGES_PER_BANK result pages per bank.
-  const searches = siteSearchUrls(homepage, site, siteSearchQueries(rotation)).slice(0, MAX_SEARCH_PAGES_PER_BANK);
-  for (const search of searches) {
+  // The site's own search (James found Triangle FCU's fees this way): "fee schedule", the bank's
+  // missing fee types, then fee and agreement wording, at most MAX_SEARCH_PAGES_PER_BANK result
+  // pages per bank.
+  // A site whose search never gave a result link is not searched again (fix plan step 6).
+  const searches = row.site_search_dud
+    ? []
+    : siteSearchUrls(homepage, site, siteSearchQueries(rotation, MAX_SEARCH_PAGES_PER_BANK, missingFeeQueries(row.known_keys ?? []))).slice(0, MAX_SEARCH_PAGES_PER_BANK);
+  for (const [index, search] of searches.entries()) {
     if (Date.now() > deadline) break;
     const startedAt = Date.now();
     const results = await openHtml(search.url, "crawl_page", `site search: ${search.query}`);
@@ -865,6 +951,10 @@ async function searchBank(
       if (!foundBySearch.has(identity)) foundBySearch.set(identity, search.query);
     }
     searchRuns.push({ query: search.query, url: search.url, status, ok: results != null, links: found, durationMs: Date.now() - startedAt });
+    // The first results page failed (an error, a 404 or not a page): the form is broken, so the
+    // other queries would spend the step's time the same way (step 6: 1,932 search hits were
+    // left unchecked at the deadline, against 3,518 checked).
+    if (index === 0 && results == null) break;
   }
   const hubs = hubPages(links.filter((link) => !BUSINESS.test(linkText(link)) && !NOT_A_FEE_DOCUMENT.test(linkText(link)) && !nonDepositDiscoveryLink(link)), site, exclude, MAX_HUBS);
   for (const hub of hubs) {
@@ -1045,6 +1135,12 @@ export async function runSecondDocumentFind(options: {
     rows.push(...(await selectThinBanks(db, null, limit - rows.length, { hiddenOnly: true, excludeIds: rows.map((row) => Number(row.id)) })));
   }
   const results: SecondDocumentResult[] = [];
+  const knownKeys = await loadKnownFeeKeys(db, rows.map((row) => Number(row.id)));
+  const duds = await loadSiteSearchDuds(db, rows.map((row) => Number(row.id)));
+  for (const row of rows) {
+    row.known_keys = knownKeys.get(Number(row.id)) ?? [];
+    row.site_search_dud = duds.has(Number(row.id));
+  }
   const sharedNames = await loadSharedNameIds(db, rows, options.dryRun ? undefined : { runId: options.runId, stepId: options.stepId ?? null });
   for (const row of rows) {
     row.name_shared = sharedNames.has(Number(row.id));

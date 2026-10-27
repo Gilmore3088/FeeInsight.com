@@ -15,7 +15,12 @@ export const PDF_LAYOUT_VERSION = 5;
 /** Existing prose rereads stay settled; the new detector has its own due witness. */
 export const PDF_PROSE_REREAD_VERSION = 4;
 export const PDF_STACKED_REPAIR_VERSION = 1;
-export const ROSETTA_OCR_VERSION = 2;
+/**
+ * v3 (fix plan step 7, Oct 27): a page that reads poorly gets one more read from a cleaned copy
+ * (upscaled, straightened, black on white; `cleanForOcr`). The bump replays free-OCR texts
+ * through reader-replay.ts, which keeps a new text only when it is not worse.
+ */
+export const ROSETTA_OCR_VERSION = 3;
 export const ROSETTA_JS_FALLBACK_VERSION = 3;
 /**
  * v2 (#1912): HTML table rows keep each cell's grid column (`columns`, `line`; table-rows.ts).

@@ -11,9 +11,11 @@ import {
   MAX_SEARCH_PAGES_PER_BANK,
   runSecondDocumentFind,
   SECOND_DOCUMENT_FINDER,
+  SITE_SEARCH_DUD_DAYS,
   SITE_SEARCH_QUERIES,
   SITE_SEARCH_STRATEGY,
   siteSearchQueries,
+  missingFeeQueries,
   siteSearchUrl,
   siteSearchUrls,
   THIN_BANK_CATEGORY_LIMIT,
@@ -42,6 +44,7 @@ function createDb(ready = true, stateRows: unknown[] = [thinBank], hiddenRows: u
   return vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
     const text = templateText(strings);
     if (text.includes("AS companion_ready")) return Promise.resolve([{ companion_ready: ready }]);
+    if (text.includes("-- known fee keys")) return Promise.resolve([]);
     // The hidden-bank top-up passes hiddenOnly = true; the state's own query passes false.
     if (text.includes("FROM published_fee_records")) return Promise.resolve(values.includes(true) ? hiddenRows : stateRows);
     if (text.includes("SELECT document_url AS url")) return Promise.resolve([{ url: thinBank.fee_schedule_url }]);
@@ -238,6 +241,12 @@ describe("Magellan site search for fee schedules and agreements", () => {
 
   it("runs several queries: fee schedule first, then a rotating slice of fee and agreement wording", () => {
     expect(siteSearchQueries(0)).toEqual(["fee schedule", "account agreement", "schedule of fees", "member agreement"]);
+    // A thin bank's missing fee types come right after "fee schedule" (fix plan step 4).
+    // At least one rotating query stays, so agreements are still asked for.
+    expect(siteSearchQueries(0, 4, missingFeeQueries(["overdraft", "monthly_maintenance"]))).toEqual(["fee schedule", "insufficient funds", "wire transfer", "account agreement"]);
+    expect(siteSearchQueries(0, 4, missingFeeQueries(["overdraft", "nsf", "monthly_maintenance", "stop_payment"]))).toEqual(["fee schedule", "wire transfer", "account agreement", "schedule of fees"]);
+    expect(missingFeeQueries(["overdraft", "nsf", "monthly_maintenance", "wire_intl_outgoing", "stop_payment"])).toEqual([]);
+    expect(missingFeeQueries([])).toEqual([]);
     expect(siteSearchQueries(1)).toEqual(["fee schedule", "truth in savings", "deposit agreement", "membership agreement"]);
     // Two runs cover every query.
     expect(new Set([...siteSearchQueries(0), ...siteSearchQueries(1)])).toEqual(new Set(SITE_SEARCH_QUERIES));
@@ -416,6 +425,27 @@ describe("Magellan site search for fee schedules and agreements", () => {
     const result = await runSecondDocumentFind({ db: asDb(createDb()), fetchImpl, runId: 13, deadline: Date.now() + 60_000, learning: true, searchRotation: 0 });
 
     expect(result.results[0].searches.find((search) => search.query === "member agreement")).toMatchObject({ outcome: "no_candidates", candidates: 4, kept: 0, checked: 3, unchecked: 1, rejected: 3 });
+  });
+
+  it("skips a site whose search never gave a result link, and stops when the first search page fails (fix plan step 6)", async () => {
+    const dudDb = () => {
+      const base = createDb() as unknown as (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown>;
+      return vi.fn((strings: TemplateStringsArray, ...values: unknown[]) =>
+        templateText(strings).includes("-- site search duds") ? Promise.resolve([{ institution_id: thinBank.id }]) : base(strings, ...values)) as unknown as DbMock;
+    };
+    const fetchImpl = agreementFetch();
+    const db = dudDb();
+    await runSecondDocumentFind({ db: asDb(db), fetchImpl, runId: 9, deadline: Date.now() + 60_000, learning: true, searchRotation: 3 });
+    expect(fetchImpl.mock.calls.map((call) => String(call[0])).filter((url) => url.includes("/search?"))).toEqual([]);
+    // A dud needs misses on two days inside the window, so one bad run never marks a site.
+    const dudQuery = db.mock.calls.find((call) => templateText(call[0] as TemplateStringsArray).includes("-- site search duds"));
+    expect(templateText(dudQuery![0] as TemplateStringsArray)).toMatch(/count\(DISTINCT pa\.created_at::date\) >= 2/);
+    expect(dudQuery).toContain(SITE_SEARCH_DUD_DAYS);
+
+    const agreements = agreementFetch();
+    const broken = vi.fn(async (input: RequestInfo | URL) => (String(input).includes("/search?") ? notFound() : agreements(input)));
+    await runSecondDocumentFind({ db: asDb(createDb()), fetchImpl: broken, runId: 10, deadline: Date.now() + 60_000, learning: true, searchRotation: 3 });
+    expect(broken.mock.calls.map((call) => String(call[0])).filter((url) => url.includes("/search?"))).toHaveLength(1);
   });
 
   it("requests at most MAX_SEARCH_PAGES_PER_BANK search pages per bank", async () => {

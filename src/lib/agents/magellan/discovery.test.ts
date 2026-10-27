@@ -18,6 +18,7 @@ import {
   wrongDocumentAddresses,
   type DiscoveryResume,
   UPGRADE_SEARCH_VERSION,
+  BARREN_LINK_SEARCH_VERSION,
   FRESHNESS_SEARCH_VERSION,
   UPGRADE_RESERVED_SLOTS,
   CROSS_PAGE_CONFLICT_CHECK,
@@ -43,6 +44,7 @@ function createDbMock(rows: Array<Record<string, unknown>>, extra: Handler = () 
     const answer = extra(text, values);
     if (answer) return Promise.resolve(answer);
     if (text.includes("product-page upgrade search")) return Promise.resolve([]);
+    if (text.includes("barren-link upgrade search")) return Promise.resolve([]);
     if (text.includes("business-only link search")) return Promise.resolve([]);
     if (text.includes("stale-link freshness search")) return Promise.resolve([]);
     if (text.includes("never-searched banks in other states")) return Promise.resolve([]);
@@ -171,8 +173,8 @@ describe("Magellan agentic discovery", () => {
 
     expect(result.discovered).toBe(1);
     // Only reads: the market-leader ranking, the shared-name read and the candidate list (the
-    // website-owner fragment is part of the candidate query, #1455).
-    const reads = db.mock.calls.map((call) => templateText(call[0])).filter((text) => !text.includes("discover.website_owner"));
+    // website-owner and Rosetta send-back fragments are part of the candidate query, #1455).
+    const reads = db.mock.calls.map((call) => templateText(call[0])).filter((text) => !text.includes("discover.website_owner") && !text.includes("rosetta_wrong_document"));
     expect(reads.filter((text) => !text.includes("market leaders by state") && !text.includes("market gaps:") && !text.includes("shared-name check"))).toHaveLength(1);
   });
 
@@ -182,6 +184,21 @@ describe("Magellan agentic discovery", () => {
     const call = db.mock.calls.find((c) => templateText(c[0]).includes("AS profile_canonical_source_url"));
     expect(templateText(call![0])).toMatch(/profile\.canonical_source_url IS NOT NULL THEN 0 ELSE 1 END,[\s\S]*?inst\.id = ANY\(\s*::bigint\[\]\) THEN 0/);
     expect(call!.slice(1)).toContainEqual([7, 9]);
+  });
+
+  it("searches a bank Rosetta sent back, once, right after a person's correction (fix plan step 7)", async () => {
+    const db = createDbMock([]);
+    await runMagellanDiscovery({ runId: 104, dryRun: true, stateCode: "KS", leaderIds: [7], db: asDiscoveryDb(db), fetchImpl: vi.fn() });
+    const call = db.mock.calls.find((c) => templateText(c[0]).includes("AS profile_canonical_source_url"));
+    const text = templateText(call![0]);
+    // Ranked before the market leaders, and due at once without the 12-hour wait.
+    expect(text).toMatch(/canonical_source_url IS NOT NULL THEN 0 ELSE 1 END,[\s\S]*?Rosetta sent back[\s\S]*?CASE WHEN\s+THEN 0 ELSE 1 END,[\s\S]*?inst\.id = ANY/);
+    expect(text).toMatch(/OR inst\.last_rescue_attempt_at IS NULL\s+OR\s+OR \(/);
+    const sentBack = db.mock.calls.filter((c) => templateText(c[0]).includes("rosetta_wrong_document"));
+    expect(sentBack).toHaveLength(2);
+    // Once: a search stamps last_rescue_attempt_at with failure_reason_updated_at in one write.
+    expect(templateText(sentBack[0][0])).toMatch(/failure_reason_updated_at >= COALESCE\(inst\.last_rescue_attempt_at/);
+    expect(templateText(sentBack[0][0])).toContain("rosetta_dead_link");
   });
 
   it("runs every free specialist before calling a bank a miss, and logs each one", async () => {
@@ -247,10 +264,10 @@ describe("Magellan agentic discovery", () => {
         if (text.includes("SELECT format, best_strategy")) return [{ do_not_retry: memory }];
         return extra(text, values);
       }));
-      const remember = (strategy: string, versionOffset = 0) => {
+      const remember = (strategy: string, versionOffset = 0, ageDays = 0) => {
         const call = db.mock.calls.find((entry) => templateText(entry[0]).includes("INSERT INTO pipeline_attempts") && entry[4] === strategy)!;
         memory = isPermanentForInput(call[7] as AttemptOutcome)
-          ? [{ stage: "discover", strategy, version: Number(call[5]) + versionOffset, fingerprint: call[6], outcome: call[7], at: new Date().toISOString() }]
+          ? [{ stage: "discover", strategy, version: Number(call[5]) + versionOffset, fingerprint: call[6], outcome: call[7], at: new Date(Date.now() - ageDays * 86_400_000).toISOString() }]
           : [];
       };
       const run = (fetchImpl: ReturnType<typeof site>) => runMagellanDiscovery({ runId: 190, db: asDiscoveryDb(db), fetchImpl, politeDelayMs: 0, secondDocuments: false });
@@ -451,19 +468,26 @@ describe("Magellan agentic discovery", () => {
       ]);
     });
 
-    it("keeps observed homepage links retryable even when the homepage is unchanged", async () => {
+    it("skips homepage links on an unchanged link set for 90 days, then tries them again (fix plan step 5)", async () => {
       const fixture = retryFixture();
       let feePage = "<p>Not the fee document</p>";
+      let homepage = '<a href="/disclosures/consumer-fee-schedule">Fee Schedule</a><p>Rates as of today</p>';
       const fetchImpl = site({
-        "https://memorybank.example/": () => response('<a href="/disclosures/consumer-fee-schedule">Fee Schedule</a>'),
+        "https://memorybank.example/": () => response(homepage),
         "https://memorybank.example/disclosures/consumer-fee-schedule": () => response(feePage),
       });
       await fixture.run(fetchImpl);
       fixture.remember("discover.homepage_links");
       feePage = FEE_TABLE;
+      // The page's bytes change, its links do not: homepage links stay skipped.
+      homepage = '<a href="/disclosures/consumer-fee-schedule">Fee Schedule</a><p>Rates as of tomorrow</p>';
 
       const repeat = await fixture.run(fetchImpl);
-      expect(repeat.results[0]).toMatchObject({ foundBy: "homepageLinks", url: "https://memorybank.example/disclosures/consumer-fee-schedule" });
+      expect(repeat.results[0].foundBy).not.toBe("homepageLinks");
+
+      fixture.remember("discover.homepage_links", 0, 91);
+      const later = await fixture.run(fetchImpl);
+      expect(later.results[0]).toMatchObject({ foundBy: "homepageLinks", url: "https://memorybank.example/disclosures/consumer-fee-schedule" });
     });
 
     it("records preparation exceptions as failures without a suppressing fingerprint", async () => {
@@ -1042,6 +1066,50 @@ describe("Magellan agentic discovery", () => {
       const db = createDbMock([bank(92, "https://own.example")], learningHandler(() => undefined));
       await runMagellanDiscovery({ runId: 131, stateCode: "VT", limit: 1, db: asDiscoveryDb(db), fetchImpl: site({}), politeDelayMs: 0 });
       expect(db.mock.calls.some((c) => templateText(c[0]).includes("never-searched banks in other states"))).toBe(false);
+    });
+  });
+
+  describe("barren-link upgrade search (fix plan step 3)", () => {
+    const barrenBank = bank(79, "https://barren.example", {
+      fee_schedule_url: "https://barren.example/disclosures",
+      profile_canonical_source_url: "https://barren.example/disclosures",
+    });
+    const barrenDb = (oldText: string) =>
+      createDbMock([], learningHandler((text) => {
+        if (text.includes("barren-link upgrade search")) return [barrenBank];
+        if (text.includes("SELECT text.normalized_text, doc.document_url")) return [{ normalized_text: oldText, document_url: "https://barren.example/disclosures" }];
+        return undefined;
+      }));
+    const fetchImpl = () => site({
+      "https://barren.example/disclosures": () => response("<h1>Disclosures</h1><p>Overdraft fee $30.</p>"),
+      "https://barren.example/": () => response('<a href="/fees/schedule-of-fees">Schedule of Fees</a>'),
+      "https://barren.example/fees/schedule-of-fees": () => response(FEE_TABLE),
+    });
+
+    it("replaces a link whose page gave no live fee with a fee page that lists more fees, keeping the old one", async () => {
+      const db = barrenDb("Overdraft fee $30.");
+      const result = await runMagellanDiscovery({ runId: 130, db: asDiscoveryDb(db), fetchImpl: fetchImpl(), politeDelayMs: 0 });
+
+      expect(result.results[0]).toMatchObject({ outcome: "discovered", url: "https://barren.example/fees/schedule-of-fees" });
+      const texts = db.mock.calls.map((call) => templateText(call[0]));
+      expect(texts.some((text) => text.includes("UPDATE institution_sources"))).toBe(true);
+      const companion = db.mock.calls.find((call) => templateText(call[0]).includes("INSERT INTO institution_additional_sources"));
+      expect(companion).toContain("https://barren.example/disclosures");
+      expect(templateText(companion![0] as TemplateStringsArray)).toContain("discover.barren_link_search");
+      // Its own marker only: the product-page upgrade search still runs for this bank.
+      expect(attempts(db).some((attempt) => attempt.detail.upgrade_search !== undefined)).toBe(false);
+      const last = attempts(db).at(-1)!;
+      expect(last.detail).toMatchObject({ barren_link_search: BARREN_LINK_SEARCH_VERSION, upgrade_reason: "barren_link", barren_check: { replaces: true, oldFeeLines: 1 } });
+    });
+
+    it("keeps the link when the page found lists no more fee lines than the old page", async () => {
+      const oldText = Array.from({ length: 40 }, (_, i) => `Service fee ${i} $${i + 1}.00`).join("\n");
+      const db = barrenDb(oldText);
+      await runMagellanDiscovery({ runId: 131, db: asDiscoveryDb(db), fetchImpl: fetchImpl(), politeDelayMs: 0 });
+
+      const texts = db.mock.calls.map((call) => templateText(call[0]));
+      expect(texts.some((text) => text.includes("UPDATE institution_sources"))).toBe(false);
+      expect(attempts(db).at(-1)!.detail).toMatchObject({ barren_link_search: BARREN_LINK_SEARCH_VERSION, barren_check: { replaces: false } });
     });
   });
 
