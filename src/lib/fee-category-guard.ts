@@ -590,10 +590,14 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // v72 (#1788): an optional add-on named as one ("Account \"Protect\" Add-On Monthly fee" $6,
     // 141761), or a charge for each additional membership in a package (95198), is not it either;
     // an add-on named only "Monthly fee" is read from its own source line (`addOnOnLine`).
+    // v102: a statement named only in the waiver clause ("Monthly Fee (Waived with Direct Deposit and
+    // eStatements)" $10, 6026; "monthly service charge (waived with enrollment in eStatements)" $5,
+    // 2153) is the account's monthly fee; a statement before the waiver, or a "Monthly Fee for Paper
+    // Documents (waived if enrolled in eDocument delivery of statements...)" (7170), is not.
     exclude:
     // v63: the same in Spanish: a debit card's monthly fee ("Cargo manejo mensual (Tarjeta de Débito
     // ATH)" $1, Puerto Rico FCU 262769), savings, a loan, a statement or an annual charge (#1312).
-      /((?<!(?:\+|\bplus\b|\band\b)[^|]{0,20})\bper[- ]?(?:item|transfer|transaction|withdrawal|debit)s?\b|\bstop\b|re-?issue|investigat|\birs\b|negative balance|\batm service charge|\btarjeta|ahorros?\b|pr[eé]stamo|estados? de cuenta|\banual\b|\bsweep|\bid\s*theft|\bidentity\s+(theft|protect|monitor|restor)|^\s*accidental death|\binsurance plan\b|\badd[- ]?ons?\b|\beach additional\b[^|]{0,40}\bmemberships?\b|\bpackage monthly fee|otherwise,? a fee of\s*$|\bmerchant (capture|services?|processing|accounts?)\b|terminat|\boverdraft (privilege|courtesy)|paper (stmt|states|mailed)|\bstmt fee|is waived under|\|\s*na\s*\||transfer service charge|\bwire (manager|module)\b|\bmodule\b|treasury|cash management|\bapi\b|\bach\b|positive pay|paper mailed|cashier|^monthly fee \(per account\)|\batm\/debit card monthly fee|location|scanner|remote deposit|\bcheck\s*capture\b|\brdc\b|lockbox|intrafi|\bics\b|^waiving\b|savings|money market|club|night deposit|safe deposit|box|(?<!\bcross[- ]?border (?:banking )?(?:bundles?|packages?|accounts?|banking) )annual|dormant|inactive|statement(?! cycle)|\bira\b|certificate|\bcd\b|loan|escheat|clos|research|excess|activity|withdrawal|saver|business|commercial|analysis|\bhsa\b|health|escrow|trust|address|fax|cop(y|ies)|(pos|pin[- ]based) transaction|for transactions|transaction service charge|earnings credit (is applied|available to offset))/i,
+      /((?<!(?:\+|\bplus\b|\band\b)[^|]{0,20})\bper[- ]?(?:item|transfer|transaction|withdrawal|debit)s?\b|\bstop\b|re-?issue|investigat|\birs\b|negative balance|\batm service charge|\btarjeta|ahorros?\b|pr[eé]stamo|estados? de cuenta|\banual\b|\bsweep|\bid\s*theft|\bidentity\s+(theft|protect|monitor|restor)|^\s*accidental death|\binsurance plan\b|\badd[- ]?ons?\b|\beach additional\b[^|]{0,40}\bmemberships?\b|\bpackage monthly fee|otherwise,? a fee of\s*$|\bmerchant (capture|services?|processing|accounts?)\b|terminat|\boverdraft (privilege|courtesy)|paper (stmt|states|mailed)|\bstmt fee|is waived under|\|\s*na\s*\||transfer service charge|\bwire (manager|module)\b|\bmodule\b|treasury|cash management|\bapi\b|\bach\b|positive pay|paper mailed|cashier|^monthly fee \(per account\)|\batm\/debit card monthly fee|location|scanner|remote deposit|\bcheck\s*capture\b|\brdc\b|lockbox|intrafi|\bics\b|^waiving\b|savings|money market|club|night deposit|safe deposit|box|(?<!\bcross[- ]?border (?:banking )?(?:bundles?|packages?|accounts?|banking) )annual|dormant|inactive|paper documents?|(?<!\bwaive[sdr]?\b[^|]{0,80})statement(?! cycle)|\bira\b|certificate|\bcd\b|loan|escheat|clos|research|excess|activity|withdrawal|saver|business|commercial|analysis|\bhsa\b|health|escrow|trust|address|fax|cop(y|ies)|(pos|pin[- ]based) transaction|for transactions|transaction service charge|earnings credit (is applied|available to offset))/i,
   },
   // "at least" is a balance or a statistic, and a short name ending in "fee on" is a
   // line cut mid-sentence ("Overdraft Fee on" $60), never the overdraft fee itself (v17).
@@ -1276,7 +1280,10 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // 27): of the 96 live NSF fees whose names say "collect", 11 fail and re-file in place (no bank has a
 // live collection item at the same price), 1 takedown is restored as collection_item (26203, "Items
 // sent for Collection" $30) and 0 come down. Each was read on its stored source line.
-export const CATEGORY_GUARD_VERSION = 101;
+// v102 (Oct 27, fix plan step 2): a monthly fee whose waiver clause names e-statements ("waived
+// with enrollment in eStatements") is the monthly fee, not a statement fee; see the
+// monthly_maintenance rule.
+export const CATEGORY_GUARD_VERSION = 102;
 
 /** v87 (#1916): where a late charge printed in a safe deposit box section is filed. */
 export const BOX_LATE_TARGET = "safe_deposit_box";

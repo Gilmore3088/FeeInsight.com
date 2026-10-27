@@ -805,6 +805,16 @@ describe("checkFeeCategory", () => {
     }
   });
 
+  it("v102 keeps a monthly fee whose waiver clause names e-statements (Oct 27)", () => {
+    for (const name of ["monthly service charge (waived with enrollment in eStatements)", "Monthly Fee (Waived with Direct Deposit and eStatements)", "monthly fee waived if enrolled in eStatements", "monthly service charge; Waived if receiving electronic bank statements"]) {
+      expect(checkFeeCategory("monthly_maintenance", name), name).toEqual({ ok: true });
+    }
+    // A statement named before the waiver, or a fee for paper documents, is still not the monthly fee.
+    for (const name of ["Monthly Service Charge with e-Statements (paper statements waived)", "Monthly Fee for Paper Documents (waived if enrolled in eDocument delivery of statements and notices)", "Monthly Maintenance Fee waived on every U.S. Bank Smartly® Savings account 9"]) {
+      expect(checkFeeCategory("monthly_maintenance", name).ok, name).toBe(false);
+    }
+  });
+
   it("v38 keeps overdraft, paper statement, transfer and wire module fees out of the monthly fee (Oct 8)", () => {
     expect(checkFeeCategory("monthly_maintenance", "Overdraft Privilege Service Charge - Wise Checking").ok).toBe(false);
     expect(refileCategory("monthly_maintenance", "Overdraft Privilege Service Charge - Wise Checking")).toBe("overdraft");
