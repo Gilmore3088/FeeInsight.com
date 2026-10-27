@@ -1073,6 +1073,9 @@ describe("Magellan agentic discovery", () => {
       expect(texts.some((text) => text.includes("UPDATE institution_sources"))).toBe(true);
       const companion = db.mock.calls.find((call) => templateText(call[0]).includes("INSERT INTO institution_additional_sources"));
       expect(companion).toContain("https://barren.example/disclosures");
+      expect(companion).toContain("discover.barren_link_search");
+      // Its own marker only: the product-page upgrade search still runs for this bank.
+      expect(attempts(db).some((attempt) => attempt.detail.upgrade_search !== undefined)).toBe(false);
       const last = attempts(db).at(-1)!;
       expect(last.detail).toMatchObject({ barren_link_search: BARREN_LINK_SEARCH_VERSION, upgrade_reason: "barren_link", barren_check: { replaces: true, oldFeeLines: 1 } });
     });

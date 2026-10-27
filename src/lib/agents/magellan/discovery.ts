@@ -1909,6 +1909,18 @@ async function keepProductPageAsCompanion(
   `;
 }
 
+/** A barren link replaced by a fuller fee page stays beside it, so whatever it gave is kept. */
+async function keepBarrenLinkAsCompanion(db: SqlTag, institutionId: number, url: string, runId: number): Promise<void> {
+  await db`
+    INSERT INTO institution_additional_sources
+      (institution_id, url, document_type, document_role, found_by_strategy, strategy_version, agent_run_id, reason)
+    VALUES
+      (${institutionId}, ${url}, ${/\.pdf($|[?#])/i.test(url) ? "pdf" : "html"}, 'consumer_supplement', 'discover.barren_link_search', ${BARREN_LINK_SEARCH_VERSION}, ${runId},
+       'Former fee link (gave no live fee), kept when a fuller fee page was found')
+    ON CONFLICT (institution_id, url) DO NOTHING
+  `;
+}
+
 /** A business-only link replaced by the consumer schedule stays as a business companion. */
 async function keepBusinessScheduleAsCompanion(
   db: SqlTag,
@@ -2109,7 +2121,9 @@ async function recordFinderAttempts(
 ): Promise<void> {
   const base = {
     method_version: DISCOVERY_METHOD_VERSION,
-    ...(row.upgrade ? { upgrade_search: UPGRADE_SEARCH_VERSION, replaced_url: row.fee_schedule_url ?? null } : {}),
+    // A barren-link search carries its own marker, so the product-page upgrade search still runs.
+    ...(row.upgrade && row.upgrade_reason !== BARREN_LINK_KIND ? { upgrade_search: UPGRADE_SEARCH_VERSION } : {}),
+    ...(row.upgrade ? { replaced_url: row.fee_schedule_url ?? null } : {}),
     ...(row.upgrade_reason === BARREN_LINK_KIND ? { barren_link_search: BARREN_LINK_SEARCH_VERSION, barren_check: row.barren_check ?? null } : {}),
     ...(row.business ? { business_search: BUSINESS_SEARCH_VERSION, replaced_url: row.fee_schedule_url ?? null } : {}),
     ...(row.freshness
@@ -2325,6 +2339,8 @@ export async function runMagellanDiscovery(
     ...barren.slice(BARREN_RESERVED_SLOTS),
     ...stale.slice(FRESHNESS_RESERVED_SLOTS),
   ];
+  // A bank two selectors both picked (a barren link that also looks stale) is searched once.
+  rows.splice(0, rows.length, ...rows.filter((row, index) => rows.findIndex((other) => Number(other.id) === Number(row.id)) === index));
   // A state with little left to search fills its spare slots with banks no finder has ever
   // searched, in any state, largest first (65 of 405 steps on 6-7 Oct ended in under 30 s
   // while 1,418 banks with a website had never been searched).
@@ -2434,7 +2450,9 @@ export async function runMagellanDiscovery(
     // A re-search that finds nothing new leaves the bank's link and rescue state alone.
     if (!reSearch || upgraded) await recordDiscoveryResult(db, result);
     // An article, blog link or one product's disclosure is not kept beside the schedule: its amounts were never the bank's schedule.
-    if (upgraded && row.upgrade && row.fee_schedule_url && !isArticleLink(row.fee_schedule_url) && !isSingleProductDisclosureLink(row.fee_schedule_url) && !isOtherSiteLink(row.fee_schedule_url, row.website_url)) {
+    if (upgraded && row.upgrade_reason === BARREN_LINK_KIND && row.fee_schedule_url) {
+      await keepBarrenLinkAsCompanion(db, institutionId, row.fee_schedule_url, options.runId);
+    } else if (upgraded && row.upgrade && row.fee_schedule_url && !isArticleLink(row.fee_schedule_url) && !isSingleProductDisclosureLink(row.fee_schedule_url) && !isOtherSiteLink(row.fee_schedule_url, row.website_url)) {
       await keepProductPageAsCompanion(db, institutionId, row.fee_schedule_url, options.runId);
     }
     if (upgraded && row.business && row.fee_schedule_url) {
