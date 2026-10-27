@@ -686,4 +686,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-27",
   },
+  {
+    id: "issue-1912-not-in-person-is-a-channel",
+    agent: "hamilton",
+    stage: "analysis",
+    lesson: "A negated standard channel names the premium channel: \"Outgoing Domestic - Not in Person\" $60 beside \"Outgoing Domestic\" $30 is the not-in-person price, so it is set aside from the bank's wire value like an online or phone row, and its \"in person\" is not the standard word. \"Non-Branch\", \"outside the branch\", \"other than in person\" and a \"Remote\" wire read the same way. A phone, fax, email or text word that says how the bank tells the customer (\"Incoming Wire with Phone Notification\", \"Email or Fax Confirmation\") names no channel: the wire itself was not requested that way.",
+    why: "The channel rule read \"Not in Person\" as \"in person\", so Sound Community Bank's (978) $60 not-in-person wire would have counted as a general row beside its $30 standard wire once Knox v130 reads that, valuing the bank at $45; institution 2521's \"Remote Outgoing\" $40 and $70 rows set its domestic value at $40 beside a $20 general wire. On Oct 27 the change reclassified 4 of 7,209 live wire rows (15716, 140285, 140286, 129879) and moved one value today: institution 2521, domestic outgoing, $40 to $20.",
+    evidence: { issues: [1912], prs: [], files: ["docs/project/findings/2026-10-27-wire-channel-lost-or-misread.md", "src/lib/wire-channel.ts", "src/lib/wire-channel.test.ts", "src/lib/data-store/fee-stats.ts"] },
+    appliesTo: "all",
+    since: "2026-10-27",
+  },
 ];

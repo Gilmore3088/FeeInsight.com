@@ -876,4 +876,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract"],
     since: "2026-10-27",
   },
+  {
+    id: "issue-1912-channel-after-price",
+    agent: "knox",
+    stage: "extract",
+    lesson: "A wire's channel is part of its name, because nothing else carries it (no tier stores a variant). When a bank prints the channel after the price on the wire's own line (\"Outgoing Domestic Wire Transfer $30.00 - phone request\", \"Outgoing Domestic Wire fee | $15.00 Recurring / $25.00 New\"), name the fee with it: \"Outgoing Domestic Wire Transfer (phone request)\". Take the words only when they open with a channel, run to the end of the price's own cell (a slash, semicolon, comma or cell mark ends it, with the next price right after), are four words at most and name no other service (\"Online Banking\", \"Use Online BillPay\", \"E-mail Alerts - Free\"). Words that run into the next price without a mark may be that price's label printed before it (\"In-Person - $30.00 Fax/Manual - $75.00\"), so they qualify nothing. A clause that also names the standard channel (\"in person or recurring agreement request\") is the general price and adds nothing.",
+    why: "Dutrac (7711) printed \"$25.00 - in person or recurring agreement request\" and \"$30.00 - phone request\" for one wire; Knox read both as \"Outgoing Domestic Wire Transfer\", so statistics rule 11, which reads the channel from the name, blended them to $27.50. 3 Rivers (4366) read \"$15.00 Recurring / $25.00 New\" as a plain $15 wire. Across the 187 live wire fees whose stored line prints a channel word after a price (Oct 27, read-only), exactly 3 qualify: 110356, 110355 and 71592; the six other lines with such words were another service or a sentence.",
+    evidence: { issues: [1912], prs: [], files: ["src/lib/agents/knox/wire-channel-clause.ts", "src/lib/agents/knox/wire-channel-clause.test.ts", "docs/project/findings/2026-10-27-wire-channel-lost-or-misread.md"] },
+    appliesTo: ["extract"],
+    since: "2026-10-27",
+  },
 ];
