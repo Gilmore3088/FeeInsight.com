@@ -54,6 +54,24 @@ describe("weekly live-check loop gaps (#2066)", () => {
     expect(gapLine(summary)).toBe("5 misses: 2 not caught (gaps), 1 caught but not routed to the step that made them, 1 caught and routed, 1 unresolved.");
   });
 
+  it("counts a miss as routed only when the owner's reader for that stage and check reads the row (review of #2581)", () => {
+    const tagOf = (row: number, packed: string[]) => tagLiveBatch(rows, [[row, 10 + row, packed]], registry).tagged.find((m: { row: number }) => m.row === row)?.tag;
+    // Release review (Darwin) reads the category guard's verify row; Knox's lessons read extract rows only.
+    expect(tagOf(2, ["wrong_category|verify|hamilton.category_guard:v80|"])).toBe("caught_not_routed");
+    expect(tagOf(2, ["wrong_category|extract|hamilton.category_guard|t"])).toBe("caught_routed");
+    // A person's hold at read is Rosetta's, not Magellan's, though Magellan reads discover holds.
+    expect(tagOf(3, ["admin_hold|read|admin.fee_hold||human|lost_text"])).toBe("caught_not_routed");
+    expect(tagOf(3, ["admin_hold|discover|admin.fee_hold||human|wrong_document"])).toBe("caught_routed");
+    // A hold whose cause is a wrong amount teaches no agent yet (#2067), even at extract.
+    expect(tagOf(1, ["admin_hold|extract|admin.fee_hold||human|wrong_amount"])).toBe("caught_not_routed");
+    expect(tagOf(1, ["admin_hold|extract|admin.fee_hold||human|wrong_category"])).toBe("caught_routed");
+    // Knox's takedown lessons read the limit guard's confirmed takedowns, not the category guard's.
+    expect(tagOf(1, ["takedown_confirmed|publish|hamilton.limit_guard||hamilton|"])).toBe("caught_routed");
+    expect(tagOf(1, ["takedown_confirmed|publish|hamilton.category_guard||hamilton|"])).toBe("caught_not_routed");
+    // The SELECT carries the reporter and the stated cause.
+    expect(liveBatchGapSql(liveBatchMisses(rows), "2026-10-19")).toContain("f.reported_by || '|' || COALESCE(f.evidence->>'cause', '')");
+  });
+
   it("counts a discover miss as routed only when Magellan reads the row", () => {
     const misses = [[3, 13, ["audit_miss|discover|hamilton.article_page|"]]];
     expect(tagLiveBatch(rows, misses, registry).tagged.find((m: { row: number }) => m.row === 3)?.tag).toBe("caught_routed");

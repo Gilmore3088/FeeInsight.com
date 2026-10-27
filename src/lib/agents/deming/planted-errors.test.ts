@@ -16,7 +16,9 @@ const source = (file: string) => {
 
 // The classes the 2026-10-19 learning audit named (#2065).
 // #2070 added the discontinued account's fee.
-const AUDIT_CLASSES = ["wrong_document", "lost_text", "limit_as_fee", "wrong_category", "wrong_audience", "duplicate", "missed_fee", "discontinued_account"];
+// #2066 added the weekly live check's misses no loop caught: amounts, names and categories.
+const WEEKLY_CHECK_CLASSES = ["amount_hourly_flat", "amount_annual_flat", "amount_tier_flat", "garbled_name", "category_unflagged"];
+const AUDIT_CLASSES = ["wrong_document", "lost_text", "limit_as_fee", "wrong_category", "wrong_audience", "duplicate", "missed_fee", "discontinued_account", ...WEEKLY_CHECK_CLASSES];
 
 describe("the error loop, planted end to end (#2065)", () => {
   it("plants one of each error class the learning audit named", () => {
@@ -24,8 +26,21 @@ describe("the error loop, planted end to end (#2065)", () => {
     for (const key of Object.keys(KNOWN_GAPS)) expect(AUDIT_CLASSES).toContain(key);
   });
 
-  it("detects every planted error with the check that runs on live fees", () => {
-    for (const planted of PLANTED_ERRORS) expect([planted.key, walkLoop(planted, source).links.detected]).toEqual([planted.key, true]);
+  it("detects every planted error with the check that runs on live fees, or lists the miss as a gap", () => {
+    for (const planted of PLANTED_ERRORS) {
+      const detected = walkLoop(planted, source).links.detected;
+      expect([planted.key, detected]).toEqual([planted.key, KNOWN_GAPS[planted.key]?.detected == null]);
+    }
+  });
+
+  it("plants the weekly check's uncaught misses as gaps no check closes yet, not as catches (#2066)", () => {
+    for (const key of ["amount_annual_flat", "amount_tier_flat", "garbled_name", "category_unflagged"]) {
+      const walk = walkLoop(PLANTED_ERRORS.find((planted) => planted.key === key)!, source);
+      expect([key, walk.links.detected, walk.why.detected]).toEqual([key, false, "the check passed the planted fee"]);
+    }
+    // Hourly shown flat is caught and fixed by Darwin's hourly re-check, but routed to no Knox reader.
+    const hourly = walkLoop(PLANTED_ERRORS.find((planted) => planted.key === "amount_hourly_flat")!, source);
+    expect(hourly.links).toEqual({ detected: true, recorded: true, read: false, rerun: false, fixed: true });
   });
 
   for (const planted of PLANTED_ERRORS) {
@@ -53,7 +68,8 @@ describe("the error loop, planted end to end (#2065)", () => {
     // Lower this when a gap closes; it never goes up without a new class.
     const missing = Object.values(KNOWN_GAPS).reduce((sum, gaps) => sum + Object.keys(gaps).length, 0);
     // The wrong audience's read link holds once Knox's audience lessons are switched on (#2062).
-    expect(missing).toBe(audienceLessonsLive() ? 12 : 13);
+    // #2066: 2 for hourly shown flat, 5 each for the four weekly-check misses no check flags.
+    expect(missing).toBe(audienceLessonsLive() ? 34 : 35);
   });
 
   it("fails a link when its reader stops naming the rows it reads", () => {

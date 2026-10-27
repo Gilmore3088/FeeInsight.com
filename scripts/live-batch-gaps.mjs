@@ -4,7 +4,8 @@
  * The weekly live check (data-quality/weekly-live-batch/) gives the accuracy score. This tags each
  * miss in a week's per-fee results with the step that caused it and what the pipeline did about it:
  *   - caught_routed: an error row (`pipeline_feedback`, wrong or missed, not a record) is on the fee,
- *     and a reader of the cause step's agent reads it (`feedbackRowRead` and `FEEDBACK_KINDS`, #2062);
+ *     and the cause step's agent has a reader that reads that row itself, at its stage and from its
+ *     check (`feedbackRowReaders`, #2062): a Darwin reader of a verify row does not route it to Knox;
  *   - caught_not_routed: an error row is on the fee, but no reader of that agent reads any of them;
  *   - not_caught: no error row is on the fee, or the fee was missing (only answer-key banks check
  *     for a missing fee): a gap, which gets a planted case (`deming/planted-errors.ts`) and an issue;
@@ -13,8 +14,10 @@
  * Two steps, because the production read runs through the read-only SQL tool, never from here:
  *   node scripts/live-batch-gaps.mjs sql <results.csv> <as-of YYYY-MM-DD>      prints one SELECT
  *   node scripts/live-batch-gaps.mjs tag <results.csv> <found.json> <out.csv>  writes the tags
- * `found.json` is the SELECT's single `found` value: [[row, fee_id, ["kind|stage|check|t", ...]], ...]
- * where `t` marks the takedown sync's extract row. Writes nothing but `out.csv`.
+ * `found.json` is the SELECT's single `found` value: [[row, fee_id, ["kind|stage|check|t|reporter|cause", ...]], ...]
+ * where `t` marks the takedown sync's extract row, and the reporter and a person's stated cause decide
+ * whether some rows are read (a hold whose cause is a wrong amount is not). An older file without them
+ * still reads; those rows are judged without a reporter or cause. Writes nothing but `out.csv`.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
@@ -114,7 +117,8 @@ resolved AS (
 )
 SELECT COALESCE(json_agg(json_build_array(r.i, r.fee_id, COALESCE((
   SELECT json_agg(DISTINCT f.kind || '|' || f.about_stage || '|' || COALESCE(f.check_name, '') || '|' ||
-                  CASE WHEN f.dedupe_key LIKE 'hamilton.takedown:pub:%:extract' THEN 't' ELSE '' END)
+                  CASE WHEN f.dedupe_key LIKE 'hamilton.takedown:pub:%:extract' THEN 't' ELSE '' END || '|' ||
+                  f.reported_by || '|' || COALESCE(f.evidence->>'cause', ''))
     FROM pipeline_feedback f
    WHERE f.fee_published_id = r.fee_id AND f.signal IN ('wrong', 'missed')
 ), '[]'::json)) ORDER BY r.i), '[]'::json) AS found
@@ -127,15 +131,17 @@ export function tagLiveBatchMiss(miss, found, registry) {
   if (!found || found.feeId == null) return { tag: "unresolved", rows: [] };
   const owner = STEP_OWNER[miss.step];
   const rows = found.rows.map((packed) => {
-    const [kind, about_stage, check_name, mark] = packed.split("|");
-    return { kind, about_stage, check_name: check_name || null, dedupe_key: mark === "t" ? `hamilton.takedown:pub:${found.feeId}:extract` : null };
+    const [kind, about_stage, check_name, mark, reported_by, ...cause] = packed.split("|");
+    return {
+      kind, about_stage, check_name: check_name || null, dedupe_key: mark === "t" ? `hamilton.takedown:pub:${found.feeId}:extract` : null,
+      reported_by: reported_by || null, cause: cause.join("|") || null,
+    };
   });
   const errors = rows.filter((row) => !("record" in (registry.FEEDBACK_KINDS[row.kind] ?? {})));
   if (errors.length === 0) return { tag: "not_caught", rows };
-  const routed = errors.some((row) => {
-    const entry = registry.FEEDBACK_KINDS[row.kind];
-    return entry && "readers" in entry && entry.readers.some((file) => file.startsWith(`src/lib/agents/${owner}/`)) && registry.feedbackRowRead(row);
-  });
+  // Routed only when the owner's own reader for this row's stage and check reads it (review of #2581):
+  // a kind with some reader in the owner's folder is not enough.
+  const routed = errors.some((row) => registry.feedbackRowReaders(row).some((file) => file.startsWith(`src/lib/agents/${owner}/`)));
   return { tag: routed ? "caught_routed" : "caught_not_routed", rows };
 }
 

@@ -4,7 +4,9 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
 
-import { FEEDBACK_KINDS, feedbackRowRead, unreadFeedbackPredicate, type FeedbackKindEntry } from "./feedback-kinds";
+import { FEEDBACK_KINDS, feedbackRowRead, feedbackRowReaders, unreadFeedbackPredicate, type FeedbackKindEntry } from "./feedback-kinds";
+import { KNOX_READ_CHECKS } from "@/lib/agents/knox/takedown-lessons";
+import { READ_WRONG_CHECKS } from "@/lib/agents/magellan/outcomes";
 import { takedownKind } from "./feedback";
 import { unreadFeedbackLines } from "./unread-feedback";
 
@@ -103,5 +105,39 @@ describe("every feedback kind names its reader (#2062)", () => {
     expect(unreadFeedbackLines({ total: 0, byKind: [] })[0]).toContain(": none.");
     const line = unreadFeedbackLines({ total: 1500, byKind: [{ kind: "audit_miss", stage: "extract", rows: 1200 }, { kind: "search_miss", stage: "discover", rows: 300 }] }, 1)[0];
     expect(line).toBe("Error rows no agent reads (last 30 days, older than 48 hours): 1,500: audit_miss at extract 1,200, and 1 more kinds.");
+  });
+});
+
+describe("which reader reads a row, by its stage and check (#2066)", () => {
+  const KNOX = "src/lib/agents/knox/lessons.ts";
+  const RELEASE = "src/lib/agents/darwin/release-review.ts";
+
+  it("scopes only registered readers, and agrees with each reader's own check list", () => {
+    for (const [kind, entry] of entries) {
+      if (!("readers" in entry) || !entry.readerScopes) continue;
+      for (const file of Object.keys(entry.readerScopes)) expect(entry.readers, `${kind}: ${file}`).toContain(file);
+    }
+    const confirmed = FEEDBACK_KINDS.takedown_confirmed.readerScopes;
+    expect([...confirmed["src/lib/agents/knox/takedown-lessons.ts"].checks].sort()).toEqual([...KNOX_READ_CHECKS].sort());
+    expect([...confirmed["src/lib/agents/magellan/outcomes.ts"].checks].sort()).toEqual([...READ_WRONG_CHECKS].sort());
+  });
+
+  it("names the reader of the row's own stage or check, not every reader of the kind", () => {
+    // The category guard's verify row is read by release review only; its extract row by Knox too.
+    expect(feedbackRowReaders({ kind: "wrong_category", about_stage: "verify", check_name: "hamilton.category_guard:v80" })).toEqual([RELEASE]);
+    expect(feedbackRowReaders({ kind: "wrong_category", about_stage: "extract", check_name: "hamilton.category_guard" })).toEqual([KNOX, "src/lib/agents/knox/label-queue.ts", RELEASE]);
+    expect(feedbackRowReaders({ kind: "wrong_category", about_stage: "extract", check_name: "knox.lessons" })).toEqual([KNOX, "src/lib/agents/knox/label-queue.ts"]);
+    // A person's hold goes to the reader of the stage it names.
+    expect(feedbackRowReaders({ kind: "admin_hold", about_stage: "read", check_name: "admin.fee_hold" })).toEqual(["src/lib/agents/rosetta/read.ts"]);
+    expect(feedbackRowReaders({ kind: "admin_hold", about_stage: "discover", check_name: "admin.fee_hold" })).toEqual(["src/lib/agents/magellan/discovery.ts"]);
+    expect(feedbackRowReaders({ kind: "admin_correction", about_stage: "verify", check_name: "admin.fee_correction", reported_by: "human" })).toEqual(["src/lib/agents/darwin/verify-misses.ts"]);
+    // Unread rows have no reader; an unscoped kind keeps all its readers.
+    expect(feedbackRowReaders({ kind: "admin_hold", about_stage: "extract", check_name: "admin.fee_hold", cause: "wrong_amount" })).toEqual([]);
+    expect(feedbackRowReaders({ kind: "frequency_filled", about_stage: "extract", check_name: "darwin.hourly_frequency_check" })).toEqual([]);
+    expect(feedbackRowReaders({ kind: "flag_cleared", about_stage: "publish", check_name: "x" })).toEqual([]);
+    expect(feedbackRowReaders({ kind: "made_up", about_stage: "extract", check_name: null, dedupe_key: "hamilton.takedown:pub:9:extract" })).toEqual(["src/lib/agents/learning/feedback-sync.ts"]);
+    expect(feedbackRowReaders({ kind: "search_miss", about_stage: "discover", check_name: "magellan.search_miss" })).toEqual([...FEEDBACK_KINDS.search_miss.readers]);
+    // Confirmed takedowns: Knox's takedown lessons read the source check, limit guard and business schedule only.
+    expect(feedbackRowReaders({ kind: "takedown_confirmed", about_stage: "publish", check_name: "hamilton.category_guard" })).toEqual(["src/lib/agents/deming/regression.ts"]);
   });
 });
