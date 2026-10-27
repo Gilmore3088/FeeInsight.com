@@ -2182,13 +2182,21 @@ re-files a fee ships with its Darwin live re-check) with a dry-run count of the 
 down, a fresh dry-run count of the reads on current copies, a sample check of those reads, another Knox
 rules version bump and a source check version bump.
 Oct 27 dry run (prod, read-only, current copies): 19 texts carry a "we do not charge" sentence that
-names NSF; 9 sentences match the grammar; 6 texts at 6 institutions pass after the #2753 review (Wells
-Fargo 4, 172 and 359, Monet Bank 309, Montecito Bank & Trust 570, Cape & Coast Bank 678), down from 7:
-Grand Bank for Savings 2568 is now refused because a funds-availability line prices "a check that has
-been returned unpaid" ($6,725 threshold) and "returned unpaid" is the guard's NSF word. 3 of them have
-no NSF row today (4, 359, 678); 172 and 309 already show NSF $0; Montecito has live returned item fees
-of $9 and $10 and is held as a conflict. HSBC Premier's terms (scope) and United Bank's agreement (an
-NSF line priced in its table of contents) stay refused. The answer-key gates are unchanged. The
+names NSF; 9 sentences match the grammar, on 9 texts at 9 institutions. After the third #2753 review
+the document test refuses by default: any other sentence that names the NSF family and a fee, charge,
+cost or penalty word refuses the page, affirming or not. On that rule 0 texts at 0 institutions pass:
+none would gain a $0 (Wells Fargo 4 and 359 and Cape & Coast Bank 678 have no NSF row today), neither
+of the two that already show NSF $0 (Wells Fargo 172, Monet Bank 309) is backed by the sentence, and
+none is held as a conflict (Montecito Bank & Trust 570, live returned item fees of $9 and $10, is
+refused on its own page, which says "FEES ARE CHARGED FOR NON-SUFFICIENT FUNDS ITEMS BEING PAID").
+Wells Fargo's three texts are refused by sentences that agree with the $0 ("We do not assess fees for
+returned items or declined transactions.") because the rule does not judge negation; Monet by a
+fraud-recovery clause ("for example, non-sufficient funds fees") and a merchant's returned check charge;
+Cape & Coast by "There is no fee for an NSF return, but ..." and a merchant's "recurring charge for
+non-sufficient funds". Grand Bank for Savings 2568 (a funds-availability line prices "a check that has
+been returned unpaid") and United Bank 67 (an NSF line priced in its table of contents) are refused by
+the page price test, and HSBC Premier 26 by scope. That recall cost is accepted: what the rule misses
+waits for the provider pass. The answer-key gates are unchanged. The
 stale-read floor stays at v97.
 
 ## Darwin's re-read requests (`reread-feedback.ts`, #1511)

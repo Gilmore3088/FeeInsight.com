@@ -575,8 +575,8 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // fee it reached (135270) comes down through guard v100's catch-up, not a replay. Floor stays v97.
     // v133 (#2040): a "we do not charge an NSF fee" sentence is the NSF fee's $0, behind
     // NO_CHARGE_SENTENCE_READ_LIVE (off), so the bump reads nothing new; switching it on takes its own
-    // bump. Oct 27 dry run (read-only, current copies, after the #2753 review): 6 texts at 6 institutions
-    // would read it, 1 held as a conflict with a charged NSF. Floor stays v97.
+    // bump. Oct 27 dry run (read-only, current copies, after the third #2753 review, refuse by default on
+    // any other NSF fee sentence): 0 texts at 0 institutions would read it, none held. Floor stays v97.
     {
       key: "knox.rules",
       owner: "knox",

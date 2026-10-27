@@ -486,15 +486,16 @@ import { NO_CHARGE_SENTENCE_READ_LIVE, NSF_FAMILY_KEYS, chargesNsfFamily, readNo
 // item/non-sufficient funds (NSF) fee for items returned unpaid.") is the NSF fee's $0, held as `zero`
 // like a "No Fee" row (`readNoChargeNsf` in `src/lib/no-charge-statement.ts`, shared with the source
 // check's witness). Only an unconditional sentence of the shared grammar, whose two sentences before,
-// one sentence after, headings in the 40 lines above and nearest section heading name no product,
-// account, audience, tier or service, whose next sentence does not narrow it, on a text where no line
-// prices an NSF-family fee; none when any specialist read an NSF-family fee on the text, or a priced
+// two sentences after, headings in the 40 lines above and nearest section heading name no product,
+// account, audience, tier or service, whose next two sentences do not narrow it, on a text where no line
+// prices an NSF-family fee and no other sentence names an NSF-family fee or charge at all (refuse by
+// default, affirming or not); none when any specialist read an NSF-family fee on the text, or a priced
 // read with NSF-family words. The extract step holds the read for review when the institution charges
 // an NSF-family fee anywhere (`knox_no_charge_conflict`). Behind `NO_CHARGE_SENTENCE_READ_LIVE` (off):
 // until it is switched on, the read is computed only by the dry run and tests, and no text reads it.
-// Oct 27 dry run (prod, read-only, current copies, after the #2753 review): 6 texts at 6 institutions
-// would read it once on; 3 have no NSF row today, 2 already show NSF $0, 1 charges NSF and would be
-// held. The stale-read floor stays at v97.
+// Oct 27 dry run (prod, read-only, current copies, after the third #2753 review): 0 texts at 0
+// institutions would read it once on, so none gains a $0 and none is held; the 9 grammar matches are
+// all refused, 6 by another NSF fee sentence on the page. The stale-read floor stays at v97.
 export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 133 } as const;
 
 export interface SpecialistRun {

@@ -4,7 +4,6 @@ import { describe, expect, it } from "vitest";
 import { CATEGORY_GUARD_RULES, NSF_NAME_INCLUDE } from "./fee-category-guard";
 import {
   NO_CHARGE_SENTENCE_READ_LIVE,
-  affirmsNsfCharge,
   chargesNsfFamily,
   documentChargesNsf,
   documentPricesNsf,
@@ -12,6 +11,7 @@ import {
   narrowsStatement,
   noChargeNsfSentence,
   noChargeNsfWitness,
+  mentionsNsfFee,
   readNoChargeNsf,
   scopeWordIn,
 } from "./no-charge-statement";
@@ -269,19 +269,63 @@ describe("no-charge NSF sentences (#2040)", () => {
       "We will not charge more than three NSF fees per day.",
       "If you do not have enough money, an NSF fee will be charged.",
       "Insufficient funds fees apply to each item returned.",
-    ])("affirms an NSF charge: %s", (sentence) => {
-      expect(affirmsNsfCharge(sentence)).toBe(true);
+      // Refuse by default: a negated or waived NSF fee also names one (these read false under the old verb rule).
+      "An NSF fee will not be charged.",
+      "No NSF fee will be charged for items we return.",
+    ])("names an NSF fee: %s", (sentence) => {
+      expect(mentionsNsfFee(sentence)).toBe(true);
     });
 
     it.each([
+      // The statement itself, repeated, and the fee's bare name as an inline heading are the exceptions.
       "We do not charge NSF fees.",
-      "An NSF fee will not be charged.",
-      "No NSF fee will be charged for items we return.",
+      "Nonsufficient Funds (NSF) Fees.",
       "We will return the item unpaid.",
       "Yes. A returned item / non-sufficient funds (NSF) item occurs when the bank returns an item unpaid.",
       "We charge no more than four overdraft fees per business day.",
-    ])("affirms none: %s", (sentence) => {
-      expect(affirmsNsfCharge(sentence)).toBe(false);
+    ])("names none: %s", (sentence) => {
+      expect(mentionsNsfFee(sentence)).toBe(false);
+    });
+  });
+
+  describe("third review of #2753: refuse by default on any NSF fee sentence (must not pass)", () => {
+    const S = "We do not charge a non-sufficient funds (NSF) fee.";
+    it.each([
+      "You will owe an NSF fee for each item we return.",
+      "Returned items are subject to an NSF fee.",
+      "Each returned item incurs an NSF fee.",
+      "An item returned for insufficient funds results in a fee.",
+      "See the Schedule of Fees for our NSF fee.",
+      "The NSF fee is listed in our fee schedule.",
+      "An NSF fee will be charged for each item, which we may waive at our discretion.",
+      "An NSF fee will be charged for each returned item, and no other fees apply.",
+      "An NSF fee is charged on each item, even on free checking.",
+      "The NSF fee does not apply to Free accounts.",
+    ])("%s", (other) => {
+      const text = `${S}\n\nReturned Items\n\n${other}`;
+      expect(noChargeNsfSentence(S)).toBe("Non-sufficient funds (NSF) fee");
+      expect(names(text)).toEqual([]);
+      expect(readNoChargeNsf(text).refused.map((row) => row.reason)).toEqual(["document_charges_nsf"]);
+    });
+
+    it("a repeat of the statement on the same page refuses nothing", () => {
+      expect(names(`Fees\n\n${S}\n\nReturned Items\n\n${S}`)).toEqual(["Non-sufficient funds (NSF) fee", "Non-sufficient funds (NSF) fee"]);
+    });
+  });
+
+  describe("third review of #2753: item handling with no fee in it refuses nothing (must pass)", () => {
+    const S = "We do not charge a non-sufficient funds (NSF) fee.";
+    it.each([
+      "If we don't pay a transaction into overdraft, it will be declined or returned unpaid.",
+      "If we do not authorize and pay an overdraft, your transaction will be declined or returned unpaid.",
+      "Debit Card Overdraft Service is offered at the discretion of Wells Fargo and may be removed by the bank at any time for a variety of reasons, including excessive overdrafts or returned items, as determined by the bank.",
+      "If you convert from a Wells Fargo account with check writing ability to a Clear Access Banking account, any outstanding check(s) presented on the new Clear Access Banking account on or after the date of conversion will be returned unpaid.",
+      "An item that was previously returned for Non-Sufficient Funds may be paid at the time of a resubmission either because additional funds have become available in your account or because we elect to pay the item under a Courtesy Overdraft service.",
+      "Items presented for payment after the Account is closed may be dishonored.",
+      "A foreign item may be returned unpaid much later (sometimes many months later) than checks or other items that are drawn on banks located in the U.S.",
+    ])("%s", (other) => {
+      expect(mentionsNsfFee(other)).toBe(false);
+      expect(names(`Fees\n\n${S}\n\nReturned Items\n\n${other}`)).toEqual(["Non-sufficient funds (NSF) fee"]);
     });
   });
 
@@ -299,6 +343,11 @@ describe("no-charge NSF sentences (#2040)", () => {
       expect(narrowsStatement(after)).toBe(true);
       expect(names(`Fees\n\n${S}\n${after}`)).toEqual([]);
       expect(readNoChargeNsf(`Fees\n\n${S}\n${after}`).refused.map((row) => row.reason)).toEqual(["narrowed_after"]);
+    });
+
+    it.each(["You can bank without worry.", "We may still return items without paying them."])("bare 'without' narrows nothing: %s", (after) => {
+      expect(narrowsStatement(after)).toBe(false);
+      expect(names(`Fees\n\n${S}\n${after}`)).toEqual(["NSF fee"]);
     });
 
     it("the second sentence after it", () => {

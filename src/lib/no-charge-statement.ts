@@ -26,7 +26,7 @@
  *    above must be blank or end a sentence, so the tail of "In your Easy Checking account," never
  *    reads as a sentence of its own.
  * 3. Scope (`scopeWordIn`): no product, account, audience, tier or service word in the two sentences
- *    before it, the sentence, the one after it, the headings in the 40 lines above or the nearest
+ *    before it, the sentence, the two after it, the headings in the 40 lines above or the nearest
  *    section heading however far up ("Bill Pay Services", "Business Checking", "HSBC Premier", "VALUE
  *    CHECKING", "eChecking", "Young Saver", "SMB", "Relationship"). And neither of the two sentences
  *    after it may narrow it (`narrowsStatement`: "This applies only to items under five dollars.",
@@ -34,10 +34,13 @@
  * 4. Document (`documentPricesNsf`): no line of the document names an NSF-family fee (the category
  *    guard's own NSF words, `NSF_NAME_INCLUDE`, plus dishonored and bounced items) with a price above
  *    $0. A priced line and a "we do not charge" sentence on one page are two products' terms.
- * 5. Document (`documentChargesNsf`): no other sentence of the document says an NSF-family fee is
- *    charged, priced or not ("An NSF fee will be charged for each item we return unpaid.", "NSF fees
- *    are assessed per item as listed in the Schedule of Fees."), and none caps them ("We charge no
- *    more than five NSF fees per business day.").
+ * 5. Document (`documentChargesNsf`), refuse by default: no other sentence of the document names an
+ *    NSF-family fee or charge at all (`mentionsNsfFee`: an NSF-family word and a fee, charge, cost or
+ *    penalty word in one sentence), whether it says the fee is charged, waived, capped or listed
+ *    elsewhere ("You will owe an NSF fee for each item we return.", "The NSF fee does not apply to Free
+ *    accounts.", "See the Schedule of Fees for our NSF fee."). Only a repeat of a statement the grammar
+ *    accepts, or the fee's bare name as an inline heading, is let through. Item handling with no fee
+ *    word ("will be declined or returned unpaid") refuses nothing.
  *
  * Knox adds two more: no read beside any NSF-family read on the same text, priced or held unclassified,
  * and the extract step holds the read for review (`knox_no_charge_conflict`) when the institution has a
@@ -163,7 +166,14 @@ const CHANGE_NOTICE = /\bchange\s+(?:this|our|the)\s+(?:practice|policy)\b.*\bno
  * applies.", "Accounts opened online are excluded.", "Gold members are not eligible.", "Members
  * without direct deposit pay the standard fee."
  */
-const NARROWS_ANYWHERE = /\b(?:otherwise|excluded?|excludes|not\s+eligible|ineligible|without|(?:standard|regular|usual|normal)\s+(?:fees?|charges?|price|pricing|rate))\b/i;
+const NARROWS_ANYWHERE = /\b(?:otherwise|excluded?|excludes|not\s+eligible|ineligible|(?:standard|regular|usual|normal)\s+(?:fees?|charges?|price|pricing|rate))\b/i;
+/**
+ * "Without" that names a condition: within a few words, direct deposit, a minimum, a balance, an
+ * account, a qualifying item, "paying the" fee or "the standard" / "a" fee ("Members without direct
+ * deposit pay the standard fee.", "Accounts without a minimum balance ..."). Bare "without" ("You can
+ * bank without worry.", "We may still return items without paying them.") narrows nothing.
+ */
+const WITHOUT_CONDITION = /\bwithout\s+(?:[\w'’-]+\s+){0,3}?(?:direct\s+deposits?|minimums?|balances?|accounts?|qualifying\b|paying\s+the\b[^.!?]{0,20}\b(?:fees?|charges?)|(?:the\s+standard|an?)\s+(?:[\w-]+\s+){0,2}?(?:fees?|charges?))/i;
 /** An amount, in figures or words. */
 const AMOUNT = new RegExp(String.raw`\$\s*\d|\b\d+(?:\.\d{2})?\s*(?:dollars?|usd)\b|${SPELLED_AMOUNT.source}`, "i");
 /** A fee word, or a unit an amount is charged by ("$35 per item"). */
@@ -179,17 +189,22 @@ function pricesAFee(text: string): boolean {
 /**
  * True when a sentence after the statement, in its paragraph or the next one, narrows it: it opens
  * with a narrowing word ("Only applies to ...", "Except ..."); it carries, wherever they stand,
- * "otherwise", "standard fee", "excluded", "not eligible" or "without"; it prices a fee
+ * "otherwise", "standard fee", "excluded" or "not eligible", or "without" naming a condition
+ * (`WITHOUT_CONDITION`: "without direct deposit", not "without worry"); it prices a fee
  * ("A $35 fee applies to Classic accounts.", "Other accounts: $35 per item.") that is not another
  * named fee; or it carries a narrowing word or an amount and points back at the statement or itself
  * names NSF ("This applies only to items under five dollars."). A following note about another fee
  * ("Note: We will not charge an overdraft fee on items that are $10 or less") and a
  * change-of-practice notice do not.
+ *
+ * Only the next two sentences are read (`sentencesAfter`); a third sentence that narrows the statement
+ * ("We do not charge NSF fees. We want to help. Call us. This applies only to Smart accounts.") is a
+ * known limit, left for the document checks and the provider pass.
  */
 export function narrowsStatement(sentence: string): boolean {
   if (!sentence || CHANGE_NOTICE.test(sentence)) return false;
   const text = sentence.trim();
-  if (OPENS_NARROWING.test(text) || NARROWS_ANYWHERE.test(text) || pricesAFee(text)) return true;
+  if (OPENS_NARROWING.test(text) || NARROWS_ANYWHERE.test(text) || WITHOUT_CONDITION.test(text) || pricesAFee(text)) return true;
   if (!NARROWING.test(text) && !SPELLED_AMOUNT.test(text)) return false;
   return BACK_REFERENCE.test(text) || namesNsfFamily(text);
 }
@@ -411,15 +426,12 @@ export function documentPricesNsf(lines: readonly string[]): boolean {
   });
 }
 
-/** "Charge" as a verb ("we charge", "will be charged", "to charge"), not the noun in "NSF Charge". */
-const CHARGE_VERB = /\b(?:(?:we|you|bank|union|it|they|will|may|shall|can|might|would|to)\s+(?:\w+\s+){0,2}charges?|charged|charging)\b/i;
-/** A sentence that says a fee is charged: a charge verb, "assess", "impose", "apply", "will be", "may be", "per item", "per day". */
-const AFFIRMATIVE = /\b(?:assess(?:es|ed|ing)?|impos(?:e|es|ed|ing)|appl(?:y|ies|ied)|will\s+be|may\s+be|per\s+(?:item|check|day|business\s+day|presentment|occurrence))\b/i;
-/** The charge itself negated: "do not charge", "will not be charged", "no NSF fee will be", "waived". */
-const NEGATED_CHARGE = /\b(?:not|never|no\s+longer)\s+(?:\w+\s+){0,2}?(?:charg|assess|impos|appl|be\b)|n['’]t\s+(?:\w+\s+){0,2}?(?:charg|assess|impos|appl|be\b)|\bno\s+(?:[\w()\/-]+\s+){0,5}?(?:fees?|charges?)\b|\bwaive|\bfree\b|\bwithout\s+(?:a\s+|any\s+)?(?:fees?|charges?)\b/i;
-/** A count cap, which says the fee is charged: "no more than five ... per day", "not charge more than 3". */
-const COUNT_CAP = new RegExp(String.raw`\b(?:no|not)\b[^.!?]{0,40}?\bmore\s+than\s+(?:\(?\d+\)?|${NUMBER_WORD})\b|\bup\s+to\s+(?:\(?\d+\)?|${NUMBER_WORD})\b`, "i");
-
+/**
+ * A fee or charge word: "fee(s)", "charge(s)" as a noun or a verb ("charged", "charging"), "cost(s)",
+ * "penalty". Keyed on the noun, not on a list of verbs, so "You will owe an NSF fee", "Returned items are
+ * subject to an NSF fee" and "See the Schedule of Fees for our NSF fee" all count.
+ */
+const FEE_OR_CHARGE_WORD = /\b(?:fees?|charg(?:e|es|ed|ing)|costs?|penalt(?:y|ies))\b/i;
 /**
  * The document's sentences: each run of non-blank lines joined and split at sentence ends, with a
  * heading line that ends no sentence ("Daily limits", "Returned Items") standing apart and not read.
@@ -441,25 +453,34 @@ function documentSentences(lines: readonly string[]): string[] {
   return sentences;
 }
 
+/** A sentence that is only the fee's name, an inline heading ("Nonsufficient Funds (NSF) Fees. We do not ..."). */
+const INLINE_FEE_HEADING = new RegExp(String.raw`^${NSF_NAME}\s*[.:]?$`, "i");
+
 /**
- * True when a sentence names an NSF-family fee (`namesNsfFamily`) and says it is charged: a count cap
- * ("We charge no more than five NSF fees per business day.", "We will not charge more than three NSF
- * fees per day."), or a charge verb, "assess", "impose", "apply", "will be", "may be", "per item" or
- * "per day" with the charge itself not negated ("An NSF fee will be charged for each item we return
- * unpaid.", "NSF fees are assessed per item as listed in the Schedule of Fees.").
+ * True when a sentence names the NSF family (`namesNsfFamily`) and carries a fee or charge word
+ * (`FEE_OR_CHARGE_WORD`) and is not itself a no-charge statement the grammar accepts
+ * (`noChargeNsfSentence`, such as a repeat of the same "We do not charge NSF fees.") or only the fee's
+ * name standing as an inline heading ("Nonsufficient Funds (NSF) Fees."). Refuse by
+ * default: it does not judge whether the sentence affirms or negates the charge, so "An NSF fee will be
+ * charged for each item, which we may waive", "The NSF fee does not apply to Free accounts" and "See the
+ * Schedule of Fees for our NSF fee" all count. Item handling with no fee in it ("your transaction will
+ * be declined or returned unpaid", "Items presented after the Account is closed may be dishonored")
+ * does not. The recall cost is accepted: a fraud-recovery clause ("fees that were charged as a result
+ * of the withdrawal (for example, NSF fees)") or a merchant's "collect a charge in the event a check is
+ * returned for insufficient funds" also counts, and that page reads no $0.
  */
-export function affirmsNsfCharge(sentence: string): boolean {
-  if (!namesNsfFamily(sentence)) return false;
-  if (COUNT_CAP.test(sentence)) return true;
-  return (CHARGE_VERB.test(sentence) || AFFIRMATIVE.test(sentence)) && !NEGATED_CHARGE.test(sentence);
+export function mentionsNsfFee(sentence: string): boolean {
+  if (!namesNsfFamily(sentence) || !FEE_OR_CHARGE_WORD.test(sentence)) return false;
+  return noChargeNsfSentence(sentence) == null && !INLINE_FEE_HEADING.test(tidy(sentence));
 }
 
 /**
- * True when some sentence of the document says an NSF-family fee is charged (`affirmsNsfCharge`),
- * priced or not. A "we do not charge" sentence beside it speaks for another product or another time.
+ * True when some other sentence of the document names an NSF-family fee or charge (`mentionsNsfFee`),
+ * priced or not. A "we do not charge" sentence beside it may speak for another product or another time,
+ * and the rule does not try to tell which.
  */
 export function documentChargesNsf(lines: readonly string[]): boolean {
-  return documentSentences(lines).some(affirmsNsfCharge);
+  return documentSentences(lines).some(mentionsNsfFee);
 }
 
 /** Why a grammar match was refused, for the dry run and tests. */
