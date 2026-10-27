@@ -45,6 +45,7 @@ import { discontinuedTablesLive, flagDiscontinuedTables, type DiscontinuedTableF
 import { namesLateChargeBound } from "@/lib/late-charge-bound";
 import { rateFloorOf } from "@/lib/rate-floor";
 import { rateBoundOf } from "@/lib/rate-bound";
+import { rewardCreditOf } from "@/lib/reward-credit";
 import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 import { commercialLockboxName, commercialLockboxOnLine } from "@/lib/custom-report/commercial-lockbox";
 import { NO_CHARGE_SENTENCE_READ_LIVE, NSF_FAMILY_KEYS, chargesNsfFamily, readNoChargeNsf } from "@/lib/no-charge-statement";
@@ -519,7 +520,15 @@ import { withWireChannelClause } from "./wire-channel-clause";
 // publishes rates and keeps it held elsewhere. A price that stands alone after its own name, a balance
 // ("$1,500 minimum balance") and a reward or interest rate ("4% cash back ... maximum of $10") keep the read.
 // Removes flat reads only. The stale-read floor stays at v97.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 136 } as const;
+// v137 (#2137): money the bank pays the customer ("2) Earn $50 when you complete two or more online bill
+// payments", "To receive up to a $150 bonus", "Submit A Mobile Deposit | $5 reward", "receive a $25 credit
+// toward the rental of a safe deposit box", "request a one-time service charge refund of $50") is no fee
+// (`rewardCreditOf` in `src/lib/reward-credit.ts`, shared with the source check's `reward_credit`
+// refusal). Such a read is dropped unless the self-check traces it to a row that prices it as a fee. A
+// figure a fee word follows ("receive a $20.00 late fee") keeps the read, and a bare "receive" or "get"
+// never makes a reward without a reward noun in its clause ("Fax / Receive $1.00 per page", "Incoming
+// wire: to receive $15.00"). Removes reads only. The stale-read floor stays at v97.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 137 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -653,11 +662,13 @@ function tracesToSource(text: string, feeName: string, amount: number): boolean 
 }
 
 /** The self-check's verdict: whether the fee traces, and the row it traced to. */
-function selfCheck(text: string, feeName: string, amount: number, canonicalHint?: string): { traces: boolean; row: string | null } {
+function selfCheck(text: string, feeName: string, amount: number, canonicalHint?: string): { traces: boolean; row: string | null; reward: boolean } {
   // v136 (#2067): the row is read even when it makes the amount a rate's bound, so the read is held as
   // the percentage below rather than lost as untraced, whatever `SOURCE_CHECK_RATE_BOUND` says.
-  const result = checkFeeAgainstSource(text, feeName, amount, ".", canonicalHint, { rateBounds: false });
-  return { traces: result.ok || result.reason === "tiered_fee", row: result.ok ? result.sourceLine : null };
+  // v137 (#2137): a row that states the amount as a reward paid to the customer never traces a read,
+  // whatever `SOURCE_CHECK_REWARD_CREDIT` says, so a read traces only to a row that prices it.
+  const result = checkFeeAgainstSource(text, feeName, amount, ".", canonicalHint, { rateBounds: false, rewardCredits: true });
+  return { traces: result.ok || result.reason === "tiered_fee", row: result.ok ? result.sourceLine : null, reward: !result.ok && result.reason === "reward_credit" };
 }
 
 function heldKey(held: HeldFeeCandidate): string {
@@ -904,6 +915,10 @@ export function runFreeSpecialists(
       // v115 (#1905): a late charge's cap or floor ("maximum late charge of $30 in WV", "Minimum Late
       // Fee $10" beside "5% of Payment Amount") bounds a percentage charge; it is no late fee.
       if (namesLateChargeBound(candidate.feeName)) continue;
+      // v137 (#2137): a reward, bonus or credit paid to the customer ("Earn $50 when you complete two or
+      // more online bill payments", "$5 reward") is no price. The read is dropped when the only row the
+      // self-check finds states the figure as one, or when its own line does and no row prices it.
+      if (checked.reward || (rewardCreditOf(candidate.excerpt, candidate.amount, candidate.feeName) && !checked.traces)) continue;
       // v118 (#1615): a price its own line makes the floor of a percentage charge ("$5.00 or 3% of
       // each cash advance, whichever is greater", "Greater of 10% of Item or $10") is the least the
       // charge can be, not its price. It is held as the percentage, so the rate pass below files the

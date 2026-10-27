@@ -214,10 +214,11 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-363 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+364 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
-### Extraction and fee reading (59)
+### Extraction and fee reading (60)
 
+- 2026-10-27 — "2) Earn $50 when you complete two or more online bill payments" is money the bank pays the customer: a reward, bonus, credit or refund is never a fee, Knox drops such a read, and the shared check refuses a fee whose only row states its amount as one (behind `SOURCE_CHECK_REWARD_CREDIT`, off) (#2137). — [finding](findings/2026-10-27-reward-paid-to-customer-published-as-fee.md) — Agent lesson: knox/issue-2137-reward-is-no-fee, hamilton/issue-2137-reward-is-not-traced; Guard: `src/lib/custom-report/reward-credit-check.test.ts`, `src/lib/agents/knox/reward-credit-read.test.ts`
 - 2026-10-27 — "4% of advance (min. of $5)" costs the percentage: a dollar minimum or maximum beside a percentage is the rate's bound, read as its `rate_min_amount` or `rate_max_amount`, never as a flat fee, and the shared check refuses a flat fee whose only row makes it one (behind `SOURCE_CHECK_RATE_BOUND`, off) (#2067). — [finding](findings/2026-10-27-rate-bound-published-as-flat-fee.md) — Agent lesson: hamilton/issue-2067-rate-bound-is-not-traced; Guard: `src/lib/custom-report/rate-bound-check.test.ts`, `src/lib/agents/knox/rate-bound-read.test.ts`
 - 2026-10-27 — A wire's channel has to reach its name, because the name is all that carries it (no tier sets `variant_type`): "Not in Person" is the premium channel, not the standard one, a phone notice is no channel, and a channel printed after the price ("$30.00 - phone request") stays in the name; Sound Community's $60 not-in-person wire would have set its value beside the $30 standard one (#1912). — [finding](findings/2026-10-27-wire-channel-lost-or-misread.md) — Agent lesson: knox/issue-1912-channel-after-price, hamilton/issue-1912-not-in-person-is-a-channel; Guard: `src/lib/wire-channel.test.ts`, `src/lib/agents/knox/wire-channel-clause.test.ts`
 - 2026-10-26 — A heading cell that spans several rows is printed on the middle row only; when a "<Heading> | <name>: <price>" row has sibling "<name>: <price>" rows directly above and below it, the heading names them all; Sound Community Bank's $30 wire went unread beside its $60 not-in-person wire (#1912). — [finding](findings/2026-10-26-centred-heading-cell.md) — Agent lesson: knox/issue-1912-centred-heading-cell; Guard: `src/lib/agents/knox/centered-heading.test.ts`
@@ -626,7 +627,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (354 in all).
+counts as of this index (356 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
@@ -634,10 +635,10 @@ counts as of this index (354 in all).
 | magellan | 31 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
 | hoovie | 12 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
 | rosetta | 14 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
-| knox | 95 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
+| knox | 96 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
 | darwin | 59 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 40 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
-| hamilton | 72 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
+| hamilton | 73 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
 | deming | 23 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
 
 ## Before 2026-10-10

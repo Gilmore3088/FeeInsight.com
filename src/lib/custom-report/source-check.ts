@@ -33,6 +33,7 @@ import { withCenteredHeadingCells } from "./centered-heading-cell";
 import { discontinuedRow } from "./discontinued-rows";
 import { networkColumnRow } from "./network-column-rows";
 import { rateBoundOf } from "@/lib/rate-bound";
+import { rewardCreditOf } from "@/lib/reward-credit";
 const NSF_POLICY_CATEGORIES = new Set(["nsf", "overdraft"]);
 
 export type SourceCheckFailure =
@@ -46,7 +47,9 @@ export type SourceCheckFailure =
   /** #2070: the fee's own row prices an account the bank no longer offers (`discontinuedRow`). */
   | "discontinued_account"
   /** #2067: the fee's only row makes its amount the minimum or maximum of a percentage charge (`rateBoundOf`). */
-  | "rate_bound";
+  | "rate_bound"
+  /** #2137: the fee's only row states its amount as a reward, bonus or credit paid to the customer (`rewardCreditOf`). */
+  | "reward_credit";
 
 export type SourceCheckResult = {
   ok: true;
@@ -76,6 +79,14 @@ export type SourceCheckOptions = {
    * check passes true to measure them, and takes them down only when the switch is on.
    */
   rateBounds?: boolean;
+  /**
+   * #2137: refuse a flat fee whose only row states its amount as money paid to the customer ("2) Earn
+   * $50 when you complete two or more online bill payments", "Submit A Mobile Deposit | $5 reward") as
+   * `reward_credit`. Defaults to `rewardCreditRefusalLive()`, off until `SOURCE_CHECK_REWARD_CREDIT=on`,
+   * for the same reason as `rateBounds`. Hamilton's source check passes true to measure them, and takes
+   * them down only when the switch is on.
+   */
+  rewardCredits?: boolean;
 };
 
 /** The switch for the #2067 refusal (see `SourceCheckOptions.rateBounds`). Off unless set to "on". */
@@ -83,6 +94,13 @@ export const RATE_BOUND_SWITCH = "SOURCE_CHECK_RATE_BOUND";
 
 export function rateBoundRefusalLive(): boolean {
   return typeof process !== "undefined" && process.env?.[RATE_BOUND_SWITCH] === "on";
+}
+
+/** The switch for the #2137 refusal (see `SourceCheckOptions.rewardCredits`). Off unless set to "on". */
+export const REWARD_CREDIT_SWITCH = "SOURCE_CHECK_REWARD_CREDIT";
+
+export function rewardCreditRefusalLive(): boolean {
+  return typeof process !== "undefined" && process.env?.[REWARD_CREDIT_SWITCH] === "on";
 }
 
 const LONG_LINE = 300;
@@ -1417,10 +1435,43 @@ export function checkFeeAgainstSource(
   canonicalFeeKey?: string | null,
   options: SourceCheckOptions = {},
 ): SourceCheckResult {
-  const result = checkFeeAgainstOwnSource(sourceText, feeName, amount, categoryPattern, canonicalFeeKey, options);
-  if (!(options.rateBounds ?? rateBoundRefusalLive())) return result;
-  return withoutRateBoundRow(sourceText, feeName, amount, result, (text) =>
-    checkFeeAgainstOwnSource(text, feeName, amount, categoryPattern, canonicalFeeKey, options));
+  const own = (text: string | null | undefined) => checkFeeAgainstOwnSource(text, feeName, amount, categoryPattern, canonicalFeeKey, options);
+  const bounded = (text: string | null | undefined) => {
+    const result = own(text);
+    if (!(options.rateBounds ?? rateBoundRefusalLive())) return result;
+    return withoutRateBoundRow(text, feeName, amount, result, (kept) => own(kept));
+  };
+  const result = bounded(sourceText);
+  if (!(options.rewardCredits ?? rewardCreditRefusalLive())) return result;
+  return withoutRewardCreditRow(sourceText, feeName, amount, result, (kept) => bounded(kept));
+}
+
+/**
+ * #2137: a fee that traces only to a row stating its amount as money the bank pays the customer
+ * ("2) Earn $50 when you complete two or more online bill payments", "To receive up to a $150 bonus",
+ * "Submit A Mobile Deposit | $5 reward", "receive a $25 credit toward the rental of a safe deposit
+ * box") is refused as `reward_credit`: a promotion's reward is no price. When the traced row is such a
+ * reward, the fee is traced again without every row that states its amount as one, so a fee the
+ * schedule also prices on a row of its own ("Monthly service charge | $5" beside "Monthly service
+ * charge | $5 reward status") still traces there.
+ */
+function withoutRewardCreditRow(
+  sourceText: string | null | undefined,
+  feeName: string,
+  amount: number,
+  result: SourceCheckResult,
+  retrace: (text: string) => SourceCheckResult,
+): SourceCheckResult {
+  if (!result.ok || !sourceText || !rewardCreditOf(result.sourceLine, amount, feeName)) return result;
+  const lines = sourceText.split("\n");
+  const kept = lines.filter((line) => !rewardCreditOf(line, amount, feeName));
+  if (kept.length < lines.length) {
+    const again = retrace(kept.join("\n"));
+    if (again.ok && !rewardCreditOf(again.sourceLine, amount, feeName)) return again;
+    // Another row refused the fee for its own reason (a rate's bound): that reason stands.
+    if (!again.ok && again.reason === "rate_bound") return again;
+  }
+  return { ok: false, reason: "reward_credit" };
 }
 
 /**
@@ -1683,9 +1734,10 @@ function checkAgainstLines(
     amount_is_a_threshold: 4,
     tiered_fee: 5,
     category_not_in_text: 6,
-    // Set only after a fee traces (`withoutDiscontinuedRow`, `withoutRateBoundRow`), never by the line scan.
+    // Set only after a fee traces (`withoutDiscontinuedRow`, `withoutRateBoundRow`, `withoutRewardCreditRow`), never by the line scan.
     discontinued_account: 7,
     rate_bound: 8,
+    reward_credit: 9,
   };
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];

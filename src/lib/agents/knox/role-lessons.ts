@@ -947,6 +947,16 @@ export const KNOX_LESSONS: AgentLesson[] = [
     since: "2026-10-27",
   },
   {
+    id: "issue-2137-reward-is-no-fee",
+    agent: "knox",
+    stage: "extract",
+    lesson: "Money the bank pays the customer is never a fee, however close it sits to a fee's name: \"2) Earn $50 when you complete two or more online bill payments\", \"To receive up to a $150 bonus\", \"Submit A Mobile Deposit | $5 reward\", \"receive a $25 credit toward the rental of a safe deposit box\" and \"request a one-time service charge refund of $50\" are a promotion's reward, a credit or a refund. Before emitting a figure, read the words right around it: words that only ever pay the customer before it (earn, we'll credit, bonus of, refund of) or a reward noun after it (bonus, reward, credit toward) make it a reward. A bare \"receive\" or \"get\" does not: it names a service as often as a payment (\"Fax / Receive $1.00 per page\", \"Incoming wire: to receive $15.00\"), so it counts only with a reward noun in the same clause (\"receive a $100 rebate\"). A fee word after the figure (\"receive a $20.00 late fee\") keeps it a fee. Emit the read only when a row of the schedule prices it.",
+    why: "Fremont Bank's $50 \"2 Earn\" (fee 36519) went live as a bill pay fee from promotion footnote 10, which pays $50 for qualifying Bill Pay activity, and stayed live because the shared check traced the figure on the page (#2137). An Oct 27 read-only dry run found 7 live fees at 7 banks read the same way (a $5 mobile deposit reward, a $25 safe deposit box credit, a $100 closing-cost credit filed as an appraisal fee, a $50 service charge refund filed as a monthly fee); on their stored lines, v136's free read still emitted 4 of the 5 tried.",
+    evidence: { issues: [2137], prs: [], files: ["src/lib/reward-credit.ts", "src/lib/agents/knox/specialists.ts", "src/lib/agents/knox/reward-credit-read.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-27",
+  },
+  {
     id: "issue-2072-a-business-address-is-not-every-fee-on-the-page",
     agent: "knox",
     stage: "extract",
