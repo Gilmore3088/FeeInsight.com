@@ -840,6 +840,9 @@ function normalizeSite(value: string): URL | null {
   return null;
 }
 
+/** The trail label of a missed second schedule's own address (#2070). */
+const MISSED_SCHEDULE_LABEL = "missed second schedule";
+
 async function searchBank(
   row: ThinBankRow,
   fetchImpl: Fetcher,
@@ -947,9 +950,14 @@ async function searchBank(
   // check as any other (an address on another host must still name the bank).
   for (const url of row.missed_urls ?? []) {
     if (Date.now() > deadline || pages.length >= MAX_COMPANIONS_PER_BANK) break;
-    if (exclude.has(urlIdentity(url)) || isForeignHostLink(url, site.toString())) continue;
+    const label = MISSED_SCHEDULE_LABEL;
+    // A skipped address is still written to the trail, so the attempt that closes the row says why.
+    const skipped = exclude.has(urlIdentity(url)) ? "skipped_already_stored" : isForeignHostLink(url, site.toString()) ? "skipped_foreign_host" : null;
+    if (skipped) {
+      trail.push({ url, source: "known_link", foundOn: null, label, score: 1, verdict: skipped });
+      continue;
+    }
     fetches += 1;
-    const label = "missed second schedule";
     const entry: TrailEntry = { url, source: "known_link", foundOn: null, label, score: 1, verdict: "" };
     trail.push(entry);
     try {
@@ -1271,7 +1279,12 @@ export async function runSecondDocumentFind(options: {
       detail: {
         pass: 2,
         // #2070: the missed second schedules that sent the bank back, if any.
-        ...(row.missed_urls?.length ? { missed_second_schedule: row.missed_urls } : {}),
+        ...(row.missed_urls?.length ? {
+          missed_second_schedule: row.missed_urls,
+          missed_second_schedule_checks: trail
+            .filter((entry) => entry.label === MISSED_SCHEDULE_LABEL)
+            .map((entry) => ({ url: entry.url, verdict: entry.verdict })),
+        } : {}),
         url: result.url,
         pages: result.pages.map((page) => ({ url: page.url, kind: page.kind, role: page.role, account: page.accountName, document_type: page.documentType })),
         published_categories: result.categories,

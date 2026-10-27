@@ -14,17 +14,30 @@
  *     the fee-page check reads every HTML page and PDF (`openingRejection`).
  * A schedule that only has a legacy section further down is kept: Knox flags that table before it reads
  * (`knox/discontinued-tables.ts`). "Retired Military Accounts", "Retirement Accounts" (an IRA), "Legacy
- * Bank" and a bare "no longer available" are never a legacy page. Pure.
+ * Bank", a singular "Legacy Checking Account" (a current product) and a bare "no longer available"
+ * are never a legacy page. Pure.
  */
 
-/** "Legacy Accounts", "Discontinued Checking Products", "Grandfathered Account Types", "Retired Plans". */
-const LEGACY_NAME = /\b(?:legacy|discontinued|grandfathered|retired)\s+(?:(?:checking|savings|deposit|personal|consumer|share|money market)\s+)?(?:accounts?|account types?|products?|plans?)\b/i;
-/** "Accounts No Longer Offered", "Products no longer available", "Previously Offered Products". */
-const NO_LONGER_OFFERED_NAME = /\b(?:accounts?|account types?|products?)\s+(?:that are\s+|we\s+)?no longer (?:offered|available)\b|\bpreviously offered (?:accounts?|account types?|products?)\b/i;
+const ACCOUNT_KIND = "(?:(?:checking|savings|deposit|personal|consumer|share|money market)\\s+)?";
+/**
+ * "Discontinued Checking Product", "Grandfathered Account Types": these words always mean an account
+ * the bank no longer opens, singular or plural.
+ */
+const DISCONTINUED_NAME = new RegExp(`\\b(?:discontinued|grandfathered)\\s+${ACCOUNT_KIND}(?:accounts?|account types?|products?|plans?)\\b`, "i");
+/**
+ * "Legacy Accounts", "Legacy Checking Accounts", "Retired Products": "legacy" and "retired" name a
+ * page of old accounts only in the plural. A singular "Legacy Checking Account" is often a current
+ * product (a 50+ account), and a bank named Legacy has a "legacy-account-agreement" (#2070 review).
+ * A singular one is legacy only beside "no longer offered" (`NO_LONGER_OFFERED_NAME`).
+ */
+const PLURAL_LEGACY_NAME = new RegExp(`\\b(?:legacy|retired)\\s+${ACCOUNT_KIND}(?:accounts|account types|products|plans)\\b`, "i");
+const LEGACY_NAMES = [DISCONTINUED_NAME, PLURAL_LEGACY_NAME];
+/** "Accounts No Longer Offered", "Legacy Checking Account - no longer offered", "Previously Offered Products". */
+const NO_LONGER_OFFERED_NAME = /\b(?:accounts?|account types?|products?)\s*[-–—:(,]?\s*(?:that (?:are|is)\s+|we\s+|(?:is|are)\s+)?no longer (?:offered|available)\b|\bpreviously offered (?:accounts?|account types?|products?)\b/i;
 
 /** Pure: link words or an address's words that name a legacy or discontinued account page. */
 export function legacyLinkWords(text: string): boolean {
-  return LEGACY_NAME.test(text) || NO_LONGER_OFFERED_NAME.test(text);
+  return LEGACY_NAMES.some((name) => name.test(text)) || NO_LONGER_OFFERED_NAME.test(text);
 }
 
 /** Pure: the address's path names a legacy or discontinued account page ("/legacy-accounts-fee-schedule.pdf"). */
@@ -51,6 +64,6 @@ export function legacyOpening(text: string | null | undefined): boolean {
     const title = line.replace(/^[#*\s]+/, "");
     // The title opens with the legacy words, or with "Fee Schedule" for them ("Fee Schedule - Legacy Accounts").
     const start = title.replace(/^(?:(?:schedule of )?fees?(?: schedule)?(?: and charges)?|fee and service schedule|disclosures?)\s*(?:for|[-–—:|])?\s*/i, "");
-    return LEGACY_NAME.exec(start)?.index === 0 || NO_LONGER_OFFERED_NAME.exec(start)?.index === 0;
+    return [...LEGACY_NAMES, NO_LONGER_OFFERED_NAME].some((name) => name.exec(start)?.index === 0);
   });
 }

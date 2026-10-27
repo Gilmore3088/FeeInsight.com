@@ -335,6 +335,26 @@ describe.skipIf(!connection)("Magellan reads Hamilton's conflict lessons and its
     expect([...(await loadMissedSchedules(asDb(), { limit: 10 })).urls.keys()]).toEqual([402]);
   });
 
+  it("never loads a missed schedule whose bank's website is another institution's, so it cannot block the queue (#2070)", async () => {
+    await db`CREATE UNIQUE INDEX IF NOT EXISTS pipeline_feedback_dedupe_key_test ON pipeline_feedback (dedupe_key)`;
+    for (const id of [451, 452]) await bank(id, `https://bank${id}.example`, `https://bank${id}.example/fees`);
+    // Bank 451's website was judged another institution's (#1455): the companion finder never searches it.
+    await db`
+      INSERT INTO pipeline_attempts (institution_id, stage, strategy, strategy_version, outcome, detail, created_at)
+      VALUES (451, 'discover', 'discover.website_owner', 1, 'ok', '{"verdict": "other_institution", "website_host": "bank451.example"}'::jsonb, NOW() - interval '1 day')
+    `;
+    await recordFeedback(asDb(), [451, 452].map((id) => missedScheduleFeedback({ institutionId: id, documentUrl: `https://bank${id}.example/overdraft.pdf`, categories: ["overdraft"] })));
+    expect([...(await loadMissedSchedules(asDb(), { limit: 10 })).urls.keys()]).toEqual([452]);
+    // Even at one bank a step, the owned-elsewhere row does not stand in front of the searchable one.
+    expect([...(await loadMissedSchedules(asDb(), { limit: 1 })).urls.keys()]).toEqual([452]);
+    const result = await runSecondDocumentFind({
+      db: asDb(), fetchImpl: (async () => new Response("<html><body><main>Welcome</main></body></html>", { status: 200, headers: { "content-type": "text/html" } })) as typeof fetch,
+      runId: 1, deadline: Date.now() + 60_000, learning: true, missedOnly: true,
+    });
+    expect(result.results.map((row) => row.institutionId)).toEqual([452]);
+    expect((await loadMissedSchedules(asDb(), { limit: 10 })).urls.size).toBe(0);
+  });
+
   it("searches a missed second schedule's bank in rescue mode's companion pass and keeps the missed page (#2070)", async () => {
     await db`CREATE UNIQUE INDEX IF NOT EXISTS pipeline_feedback_dedupe_key_test ON pipeline_feedback (dedupe_key)`;
     await db`CREATE UNIQUE INDEX IF NOT EXISTS institution_additional_sources_test ON institution_additional_sources (institution_id, url)`;

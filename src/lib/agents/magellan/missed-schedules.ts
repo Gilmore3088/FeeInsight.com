@@ -2,6 +2,7 @@ import type { sql } from "@/lib/data-store/connection";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import type { FeedbackRow } from "@/lib/agents/learning/feedback";
 import { urlIdentity } from "./finders";
+import { websiteOwnedElsewhereSql } from "./other-bank-host";
 
 type SqlTag = typeof sql;
 
@@ -79,7 +80,9 @@ export interface MissedSchedules {
 /**
  * The banks with an open missed-schedule row, oldest row first: no companion search
  * (`discover.second_document`, any version) has run for the bank since the row was first written.
- * Read-only. `stateCode` keeps a state lane to its state; rescue mode passes none.
+ * Read-only. `stateCode` keeps a state lane to its state; rescue mode passes none. Uses the same
+ * bank filters as the companion finder's `selectThinBanks` (active, a website that is the bank's
+ * own, a fee link), so every row loaded is a row the finder searches and closes.
  */
 export async function loadMissedSchedules(
   db: SqlTag,
@@ -98,6 +101,9 @@ export async function loadMissedSchedules(
          AND f.source_url IS NOT NULL
          AND COALESCE(inst.status, 'active') = 'active'
          AND inst.website_url IS NOT NULL AND btrim(inst.website_url) <> ''
+         -- The companion finder's own filters (selectThinBanks): a row it would never search
+         -- would never be closed, and would block the oldest-first queue for good.
+         AND NOT ${websiteOwnedElsewhereSql(db)}
          AND inst.fee_schedule_url IS NOT NULL AND btrim(inst.fee_schedule_url) <> ''
          AND (${stateCode}::text IS NULL OR upper(btrim(inst.state_code)) = ${stateCode})
          AND f.institution_id <> ALL(${excludeIds}::bigint[])

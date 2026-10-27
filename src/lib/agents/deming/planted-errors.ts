@@ -480,8 +480,8 @@ export const KNOWN_GAPS: Record<string, Partial<Record<LoopLink, number>>> = {
   discontinued_account: { read: 2062 },
   // #2070: Magellan refuses a legacy page before it is stored, but a page stored before is not reviewed
   // again, and the takedown of its fees names Knox's read (extract), not the document; so no Magellan
-  // reader learns from it yet.
-  legacy_page: { recorded: 2070, read: 2070, rerun: 2070 },
+  // reader learns from it yet. Open on the Magellan tracker (#1027).
+  legacy_page: { recorded: 1027, read: 1027, rerun: 1027 },
   // A missed fee is a Deming test case, not a feedback row, so Knox never learns from it.
   missed_fee: { recorded: 2062, read: 2062, rerun: 2058 },
   // #2066 (W43 weekly check): Darwin's hourly re-check fixes the fee, but its frequency_filled row has

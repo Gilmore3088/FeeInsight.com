@@ -24,6 +24,21 @@ describe("Magellan's legacy page check (#2070)", () => {
     expect(legacyAddress("https://bank.example/personal/retirement-accounts")).toBe(false);
   });
 
+  it("reads \"legacy\" and \"retired\" as old accounts only in the plural or beside \"no longer offered\" (#2070 review)", () => {
+    // A current product named Legacy (a 50+ account) and a bank named Legacy are kept.
+    for (const words of ["Legacy Checking Account", "Legacy Savings Account fee schedule", "Legacy Account Agreement and Fee Schedule", "Retired Product"]) {
+      expect([words, legacyLinkWords(words)]).toEqual([words, false]);
+    }
+    expect(legacyAddress("https://bank.example/personal/legacy-checking-account")).toBe(false);
+    expect(legacyAddress("https://legacybank.example/docs/legacy-account-agreement-and-fee-schedule.pdf")).toBe(false);
+    expect(legacyOpening("Legacy Checking Account\nMonthly Fee | $5.00")).toBe(false);
+    // The plural, or a singular one marked no longer offered, is still a legacy page.
+    expect(legacyAddress("https://www.blackhawkbank.com/-legacy-checking-accounts/")).toBe(true);
+    expect(legacyLinkWords("Legacy Checking Account - no longer offered")).toBe(true);
+    expect(legacyLinkWords("Discontinued Checking Account")).toBe(true);
+    expect(legacyOpening("Legacy Checking Accounts\nMonthly Fee | $5.00")).toBe(true);
+  });
+
   it("reads the page's own title, not a legacy section further down", () => {
     expect(legacyOpening("Accounts No Longer Offered\nGold Checking\nMonthly Fee | $15.00")).toBe(true);
     expect(legacyOpening("Fee Schedule - Legacy Accounts\nGold Checking | $15.00")).toBe(true);

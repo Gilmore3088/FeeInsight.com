@@ -142,7 +142,12 @@ export interface KnoxMissesResult {
   stillMissing: number;
   /** Banks the run did not reach before its deadline; the next run starts with them. */
   banksLeftIds: number[];
-  /** #2070: key documents Magellan never stored, recorded as missed second schedules (counted, not written, in a dry run). */
+  /**
+   * #2070: key documents this run found still not stored for their bank, recorded as missed second
+   * schedules (counted, not written, in a dry run). A per-run count, not new rows: a document still
+   * missed on the next run is counted again, and its write is an upsert on the same row (dedupe key),
+   * which keeps the row's first time, so the companion finder is not sent back daily.
+   */
   missedSchedules?: number;
 }
 
