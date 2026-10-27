@@ -886,4 +886,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract"],
     since: "2026-10-27",
   },
+  {
+    id: "issue-2062-takedown-readers-get-their-own-check",
+    agent: "knox",
+    stage: "extract",
+    lesson: "A confirmed takedown that says who a fee is for is a lesson about the document it was read from, so read it, not only the takedowns whose witness you can replay. When Hamilton's business-schedule check took a fee down as a business price on a consumer page and its second look confirmed it, the same document's fee of that name is a business fee, and every fee of a document whose address names a business-only schedule is. Write such a re-read as business only while its own line states no audience, keep the lesson to that one document (the bank may print the same name at a consumer price on another schedule), and say where the audience came from in its evidence and flag. A reader finds its rows by the check name that wrote them, so check that the producer files them under that name.",
+    why: "takedown-lessons.ts loaded the 423 confirmed business-schedule takedowns but acted only on the limit guard's, so on a re-read every one of those documents was read with no audience again, and the consumer index counted the fee as personal until the check took it down once more; the planted error loop listed the wrong audience as read nowhere (#2579). Separately the takedown sync filed the limit guard's 25 takedowns (50 rows, extract and verify) under hamilton.limit_as_fee, the reason's prefix, while the guard's second look and its readers use hamilton.limit_guard. Oct 27 dry run (read-only): 396 business-schedule takedowns still down, on 158 documents; 47 live fees with no audience on 13 banks' business-only documents would be read as business on a re-read.",
+    evidence: { issues: [2062], prs: [], files: ["src/lib/agents/knox/audience-lessons.ts", "src/lib/agents/knox/candidate-facts.ts", "src/lib/agents/learning/feedback.ts", "src/lib/agents/deming/planted-errors.ts"] },
+    appliesTo: ["extract"],
+    since: "2026-10-27",
+  },
 ];

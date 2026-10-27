@@ -1892,6 +1892,24 @@ release, broad re-extraction, source fetch, recovery, migration, provider activa
 The guards cover selected rows under Read Committed, not serializable new-row phantom isolation.
 The original Oct7 recurrence counts remain dated history, not current impact measurements.
 
+Audience lessons (`audience-lessons.ts`, `KNOX_AUDIENCE_LESSONS_VERSION` v1, #2062): a confirmed
+business-schedule takedown (`takedown_confirmed`, check `hamilton.business_schedule`) whose fee is still
+down for its `business_schedule:` reason teaches the audience of the document it was read from. The
+same document's fee of the same name (`lessonName`) is a business fee; when the document's address names
+a business-only schedule (`BUSINESS_DOC_SQL`, the check's own rule), every fee read from it is. A lesson
+never spans the bank's other documents, and applies only when the line itself states no audience
+(`feeApplicability` unknown); the read is then written `fee_audience = 'business'` with its evidence
+(`knox_lesson:hamilton.business_schedule:<scope> (confirmed takedown feedback #<id>)`) and the flag
+`knox_lesson:business_audience:<scope>`, and Darwin still checks it. It changes how a re-read fee is
+judged, so it applies only with `KNOX_AUDIENCE_LESSONS_LIVE` on (off by default). Off, each extract step
+still loads the lessons for its documents and reports `audienceLessonsLoaded` and
+`audienceLessonMatches` (the reads it would label), the live dry run. Oct 27 dry run (read-only SQL on
+prod): 396 confirmed business-schedule takedowns are still down, on 158 documents at the banks they
+came from (332 on 101 business-only documents); of the live fees on those documents, 47 with no
+audience on 13 banks' business-only documents would be read as business on a re-read, and no live fee
+matches a name lesson (every taught name is down). Switching it on takes a rules bump so the documents
+are read again.
+
 Live name tidy (`name-retidy.ts`, Oct 7): names Knox stored before it tidied reads ("Stop Payment |
 Item", "/mo. | Dormant Fee", "An overdraft fee of") are re-tidied on live rows, a batch of banks per
 publish step. A rename must keep the fee tracing in its own schedule and passing the category guard;
@@ -2484,6 +2502,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `HELD_RATE_RECHECK_VERSION` | — | v2 | `knox/held-recheck.ts` |
 | `NAME_FILE_KEY_VERSION` | — | v2 | `knox/held-recheck.ts` |
 | `KNOX_LAYOUT_SIGNATURE_VERSION` | — | v1 | `knox/layout-signature.ts` |
+| `KNOX_AUDIENCE_LESSONS_VERSION` | — | v1 | `knox/audience-lessons.ts` |
 | `KNOX_LESSONS_VERSION` | — | v5 | `knox/lessons.ts` |
 | `ACCOUNT_SUBJECT_CORRECT_STRATEGY` | `knox.account_subject_correct` | v1 | `knox/account-subject-correct.ts` |
 | `ANCILLARY_OWNER_CORRECT_STRATEGY` | `knox.ancillary_owner_correct` | v1 | `knox/ancillary-owner-correct.ts` |

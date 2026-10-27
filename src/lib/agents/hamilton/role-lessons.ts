@@ -696,4 +696,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-27",
   },
+  {
+    id: "issue-2062-reason-prefix-is-not-the-check",
+    agent: "hamilton",
+    stage: "publish",
+    lesson: "A takedown's reason and the check that wrote it are two names. When a publish check writes a reason whose prefix is not its own check name (the limit guard writes limit_as_fee:<code> and files its second look under hamilton.limit_guard), map that prefix to the check in TAKEDOWN_REASON_CHECKS in the same change, with a test that the entry equals the check's own constant, so the learning store files every row of one takedown under one check. Rows already filed under the reason's name are relabelled by the sync's typed relabel behind its off switch, with a dry-run count, never by hand-run SQL.",
+    why: "The takedown sync named each takedown's check hamilton.<reason prefix>, so the limit guard's 25 takedowns went into the learning store as 50 rows under hamilton.limit_as_fee, a check no producer has, beside the guard's 25 confirmed second looks under hamilton.limit_guard (Oct 27, read-only). Anything that groups or names rows by check, such as the error loop's check names and the error classes, saw one guard as two.",
+    evidence: { issues: [2062], prs: [], files: ["src/lib/agents/learning/feedback.ts", "src/lib/agents/learning/feedback-sync.ts", "src/lib/agents/learning/feedback.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-27",
+  },
 ];

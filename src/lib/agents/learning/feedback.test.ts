@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { knoxStrategyFromFlags, lastPerDedupeKey, recordFeedback, takedownCheck, takedownKind } from "./feedback";
-import { relabelPerFeeTakedowns, syncPipelineFeedback, takedownFeedback, takedownSynced, TAKEDOWN_SYNC_SKIPS } from "./feedback-sync";
+import { MISFILED_TAKEDOWN_CHECKS, MISFILED_TAKEDOWN_RELABEL_ON, relabelMisfiledTakedowns, relabelPerFeeTakedowns, syncPipelineFeedback, takedownFeedback, takedownSynced, TAKEDOWN_SYNC_SKIPS } from "./feedback-sync";
+import { TAKEDOWN_REASON_CHECKS } from "./feedback";
+import { LIMIT_GUARD_CHECK, LIMIT_GUARD_REASON, limitGuardReason } from "@/lib/agents/hamilton/limit-guard";
 
 import * as referenceStore from "@/lib/data-store/answer-key-reference-store";
 import { feedbackRowRead } from "./feedback-kinds";
@@ -61,7 +63,36 @@ describe("shared learning store", () => {
     expect(takedownKind("older document than #14909")).toBe("duplicate");
     expect(takedownCheck("older document than #14909")).toBe("hamilton.duplicate_collapse");
     expect(takedownKind("limit_as_fee:name_states_limit: the name states a limit")).toBe("not_a_fee");
-    expect(takedownCheck("limit_as_fee:name_states_limit: the name states a limit")).toBe("hamilton.limit_as_fee");
+    expect(takedownCheck("limit_as_fee:name_states_limit: the name states a limit")).toBe("hamilton.limit_guard");
+  });
+
+  it("files a limit-guard takedown under the check that made it, not its reason (#2062)", () => {
+    // The guard names its reason limit_as_fee but files its second look under hamilton.limit_guard.
+    expect(TAKEDOWN_REASON_CHECKS[LIMIT_GUARD_REASON]).toBe(LIMIT_GUARD_CHECK);
+    const reason = limitGuardReason({ code: "name_states_limit", detail: "the name states a limit" } as Parameters<typeof limitGuardReason>[0]);
+    const rows = takedownFeedback({ ...takedown, rolled_back_reason: reason }, 1);
+    expect(rows.map((row) => row.checkName)).toEqual([LIMIT_GUARD_CHECK, LIMIT_GUARD_CHECK]);
+    expect(rows.map((row) => row.kind)).toEqual(["not_a_fee", "not_a_fee"]);
+    expect(MISFILED_TAKEDOWN_CHECKS).toEqual(["hamilton.limit_as_fee"]);
+  });
+
+  it("relabels the misfiled limit-guard rows only with its switch on, and counts them on a dry run (#2062)", async () => {
+    expect(MISFILED_TAKEDOWN_RELABEL_ON).toBe(false);
+    const stale = [
+      { id: 7, check_name: "hamilton.limit_as_fee", reason: "limit_as_fee:name_states_limit: Zelle limit" },
+      { id: 8, check_name: "hamilton.limit_as_fee", reason: "limit_as_fee:source_states_limit: $2,500 Limit" },
+    ];
+    const off = mockDb([["f.check_name = ANY", stale]]);
+    expect(await relabelMisfiledTakedowns(off.db, { limit: 100, dryRun: false })).toEqual({ on: false, due: null, relabeled: 0 });
+    expect(off.calls).toHaveLength(0);
+    const dry = mockDb([["f.check_name = ANY", stale]]);
+    expect(await relabelMisfiledTakedowns(dry.db, { limit: 100, dryRun: true })).toEqual({ on: false, due: 2, relabeled: 0 });
+    expect(dry.calls.some((call) => call.query.includes("UPDATE"))).toBe(false);
+    expect(dry.calls[0].values).toContainEqual(["hamilton.limit_as_fee"]);
+    const live = mockDb([["f.check_name = ANY", stale], ["UPDATE pipeline_feedback", [{ id: 7 }, { id: 8 }]]]);
+    expect(await relabelMisfiledTakedowns(live.db, { limit: 100, dryRun: false, on: true })).toEqual({ on: true, due: 2, relabeled: 2 });
+    const update = live.calls.find((call) => call.query.includes("UPDATE pipeline_feedback"));
+    expect(update?.values.slice(0, 3)).toEqual([[7, 8], [LIMIT_GUARD_CHECK, LIMIT_GUARD_CHECK], ["not_a_fee", "not_a_fee"]]);
   });
 
   it("names a reason that points at another row once, never once per fee", () => {

@@ -11,6 +11,7 @@ import {
   takedownKind,
   takedownPointer,
   takedownSignal,
+  TAKEDOWN_REASON_CHECKS,
   type FeedbackRow,
 } from "./feedback";
 import { PUBLISHER_AGENT_NAMES } from "@/lib/agents/gutenberg/names";
@@ -36,6 +37,11 @@ export interface FeedbackSyncResult {
   wouldWrite?: number;
   /** Older takedown rows named after one fee ("hamilton.refreshed by #69017") given their fixed names. */
   relabeled: number;
+  /**
+   * #2062: older takedown rows filed under a check named after their reason ("hamilton.limit_as_fee")
+   * instead of the check that wrote them. Off until James switches it on (a prod data change).
+   */
+  misfiledRelabel?: MisfiledRelabelResult;
   referenceExcludedBanks?: number;
   referenceCohort?: string;
 }
@@ -411,6 +417,7 @@ export async function syncPipelineFeedback(
   }
 
   result.relabeled = await relabelPerFeeTakedowns(db, { limit, dryRun: options.dryRun === true });
+  result.misfiledRelabel = await relabelMisfiledTakedowns(db, { limit, dryRun: options.dryRun === true });
   if (options.dryRun) {
     result.wouldWrite = lastPerDedupeKey(rows).length;
     return result;
@@ -427,6 +434,78 @@ export async function syncPipelineFeedback(
 interface PerFeeTakedownRow {
   id: number | string;
   reason: string;
+}
+
+/** The same rows' new names, signal and pointer, as `takedownFeedback` gives their reason today. */
+async function relabelTakedownRows(db: SqlTag, stale: readonly PerFeeTakedownRow[]): Promise<number> {
+  const updated = await inSavepoint(db, (scope) => scope<{ id: number | string }[]>`
+    UPDATE pipeline_feedback f
+       SET check_name = v.check_name,
+           kind = v.kind,
+           signal = v.signal,
+           evidence = f.evidence
+             || jsonb_build_object('relabeled_from_check', f.check_name)
+             || CASE WHEN v.pointer IS NULL THEN '{}'::jsonb ELSE jsonb_build_object('pointer_fee_published_id', v.pointer) END,
+           updated_at = NOW()
+      FROM unnest(
+             ${stale.map((row) => Number(row.id))}::bigint[],
+             ${stale.map((row) => takedownCheck(row.reason))}::text[],
+             ${stale.map((row) => takedownKind(row.reason))}::text[],
+             ${stale.map((row) => takedownSignal(row.reason))}::text[],
+             ${stale.map((row) => takedownPointer(row.reason))}::bigint[]
+           ) AS v(id, check_name, kind, signal, pointer)
+     WHERE f.id = v.id
+    RETURNING f.id
+  `);
+  return updated.length;
+}
+
+/**
+ * #2062: relabel the takedown sync's older rows for a reason `TAKEDOWN_REASON_CHECKS` names (50 rows
+ * on 2026-10-27, all `hamilton.limit_as_fee`, 25 fees at extract and verify). Off until James
+ * switches it on: it changes stored feedback rows, never a fee. Off, a dry run still counts the
+ * rows it would relabel and a real run reads nothing; on, a real run relabels them (bounded per
+ * call), keeping the old name in `evidence.relabeled_from_check`. Idempotent: a relabelled row
+ * no longer carries the misfiled name.
+ */
+export const MISFILED_TAKEDOWN_RELABEL_ON: boolean = false;
+/** The names the sync used to give those reasons' rows: `hamilton.<reason prefix>`. */
+export const MISFILED_TAKEDOWN_CHECKS: readonly string[] = Object.keys(TAKEDOWN_REASON_CHECKS).map((group) => `hamilton.${group}`);
+
+export interface MisfiledRelabelResult {
+  on: boolean;
+  /** Rows the relabel would change; null when nothing was read (switch off, real run). */
+  due: number | null;
+  relabeled: number;
+}
+
+export async function relabelMisfiledTakedowns(
+  db: SqlTag,
+  options: { limit: number; dryRun: boolean; on?: boolean },
+): Promise<MisfiledRelabelResult> {
+  const on = options.on ?? MISFILED_TAKEDOWN_RELABEL_ON;
+  const result: MisfiledRelabelResult = { on, due: null, relabeled: 0 };
+  if (!on && !options.dryRun) return result;
+  try {
+    const stale = await inSavepoint(db, (scope) => scope<Array<PerFeeTakedownRow & { check_name: string }>>`
+      SELECT f.id, f.check_name, f.evidence->>'reason' AS reason
+        FROM pipeline_feedback f
+       WHERE f.reported_by = ANY(${[...PUBLISHER_AGENT_NAMES]}::text[])
+         AND f.check_name = ANY(${[...MISFILED_TAKEDOWN_CHECKS]}::text[])
+         AND f.evidence->>'reason' IS NOT NULL
+       ORDER BY f.id
+       LIMIT ${options.limit}
+    `);
+    // Only a row whose reason the sync now files under another check moves.
+    const due = stale.filter((row) => takedownCheck(row.reason) !== row.check_name);
+    result.due = due.length;
+    if (!on || options.dryRun || due.length === 0) return result;
+    result.relabeled = await relabelTakedownRows(db, due);
+  } catch (error) {
+    // Learning must never block the publish step it runs in.
+    console.error("relabelMisfiledTakedowns failed:", error);
+  }
+  return result;
 }
 
 /**
@@ -447,26 +526,7 @@ export async function relabelPerFeeTakedowns(db: SqlTag, options: { limit: numbe
        LIMIT ${options.limit}
     `);
     if (options.dryRun || stale.length === 0) return stale.length;
-    const updated = await inSavepoint(db, (scope) => scope<{ id: number | string }[]>`
-      UPDATE pipeline_feedback f
-         SET check_name = v.check_name,
-             kind = v.kind,
-             signal = v.signal,
-             evidence = f.evidence
-               || jsonb_build_object('relabeled_from_check', f.check_name)
-               || CASE WHEN v.pointer IS NULL THEN '{}'::jsonb ELSE jsonb_build_object('pointer_fee_published_id', v.pointer) END,
-             updated_at = NOW()
-        FROM unnest(
-               ${stale.map((row) => Number(row.id))}::bigint[],
-               ${stale.map((row) => takedownCheck(row.reason))}::text[],
-               ${stale.map((row) => takedownKind(row.reason))}::text[],
-               ${stale.map((row) => takedownSignal(row.reason))}::text[],
-               ${stale.map((row) => takedownPointer(row.reason))}::bigint[]
-             ) AS v(id, check_name, kind, signal, pointer)
-       WHERE f.id = v.id
-      RETURNING f.id
-    `);
-    return updated.length;
+    return await relabelTakedownRows(db, stale);
   } catch (error) {
     // Learning must never block the publish step it runs in.
     console.error("relabelPerFeeTakedowns failed:", error);

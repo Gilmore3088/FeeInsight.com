@@ -275,9 +275,22 @@ export function takedownKind(reason: string): FeedbackKind {
   return group.replace(/[^a-z0-9]+/gi, "_").toLowerCase() as FeedbackKind;
 }
 
+/**
+ * Takedown reasons whose prefix is not the name of the check that wrote them (#2062). The sync
+ * names a takedown's check from its reason, `hamilton.<reason prefix>`, which is right only when the
+ * check names its reason after itself. The limit guard writes `limit_as_fee:<code>: ...` and files
+ * its second look under `hamilton.limit_guard` (`LIMIT_GUARD_CHECK`), so 50 sync rows went under a
+ * check no producer has, apart from the rows its readers look for. `feedback.test.ts` keeps each
+ * entry equal to the producer's own constant.
+ */
+export const TAKEDOWN_REASON_CHECKS: Readonly<Record<string, string>> = {
+  limit_as_fee: "hamilton.limit_guard",
+};
+
 /** The Hamilton check behind a takedown reason. */
 export function takedownCheck(reason: string): string {
   const group = takedownGroup(reason.split(":")[0]);
+  if (Object.hasOwn(TAKEDOWN_REASON_CHECKS, group)) return TAKEDOWN_REASON_CHECKS[group];
   if (group === "refreshed by") return "hamilton.refresh_copy";
   if (/^(duplicate of|superseded by|older document than)/.test(group)) return "hamilton.duplicate_collapse";
   if (group === "rules_recheck_unreproduced") return "hamilton.rules_recheck";

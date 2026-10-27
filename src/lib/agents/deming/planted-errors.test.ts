@@ -51,7 +51,7 @@ describe("the error loop, planted end to end (#2065)", () => {
     }
     // Lower this when a gap closes; it never goes up without a new class.
     const missing = Object.values(KNOWN_GAPS).reduce((sum, gaps) => sum + Object.keys(gaps).length, 0);
-    expect(missing).toBe(13);
+    expect(missing).toBe(12);
   });
 
   it("fails a link when its reader stops naming the rows it reads", () => {
