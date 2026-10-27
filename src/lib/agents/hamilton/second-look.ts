@@ -110,8 +110,32 @@ interface FlagRow {
 }
 
 /**
+ * What a run read in full (#1876): every live fee in this scope was in the check's read, so a fee
+ * the run did not flag passed it, whether or not the read returned it. All bounds are optional and
+ * combine: `institutionId` (an institution-scoped run), and a source-document id range
+ * `(documentIdAfter, documentIdThrough]` on the fee's current document (a cursor-paged run's batch;
+ * `documentIdThrough` null or absent reads to the end). An empty object is the whole live table.
+ * A caller passes it only when its read was complete for that scope: never for a sampled read, a
+ * read that hit its row cap, or a read that failed.
+ */
+export interface SecondLookReadScope {
+  institutionId?: number | null;
+  documentIdAfter?: number | null;
+  documentIdThrough?: number | null;
+}
+
+/** `cleared_why` on a clear of a fee its run's full read no longer flags (#1876). */
+export const CLEARED_NOT_FLAGGED = "not_flagged_in_scope";
+
+interface StaleFlagRow extends FlagRow {
+  institution_id: number | string | null;
+}
+
+/**
  * Runs the second look for one check. `failing` are the fees the check would take down
- * this run; `passing` are fees it checked and passed (clears their pending flags). Returns
+ * this run; `passing` are fees it checked and passed (clears their pending flags). With
+ * `readScope`, a pending flag of this check on a live fee in that scope that this run does not
+ * fail also clears: the run read every such fee and no longer flags it (#1876). Returns
  * only the fees to take down now. A dry run reads the log and writes nothing. If the log
  * cannot be read, nothing is taken down.
  */
@@ -128,14 +152,18 @@ export async function secondLook<T extends SecondLookCandidate>(
     minMinutes?: number;
     /** Opt-in: propagate unavailable/short writes to the caller-owned atomic settlement. */
     strictPersistence?: boolean;
+    /** Opt-in (#1876): the scope this run read in full; clears its stale pending flags (`SecondLookReadScope`). */
+    readScope?: SecondLookReadScope;
   },
 ): Promise<SecondLookResult<T>> {
-  const { check, runId, failing, dryRun } = options;
+  const { check, runId, failing, dryRun, readScope } = options;
   const passing = options.passing ?? [];
   const empty: SecondLookResult<T> = { confirmed: [], flagged: 0, waiting: 0, cleared: 0 };
-  if (failing.length === 0 && passing.length === 0) return empty;
+  if (failing.length === 0 && passing.length === 0 && !readScope) return empty;
   const keys = failing.map((fee) => secondLookDedupeKey(check, fee.feePublishedId));
+  const failingIdList = failing.map((fee) => fee.feePublishedId);
   let rows: FlagRow[];
+  let stale: StaleFlagRow[] = [];
   try {
     if (!(await feedbackSchemaReady(db))) {
       if (options.strictPersistence) throw new Error("Second-look feedback unavailable");
@@ -152,6 +180,7 @@ export async function secondLook<T extends SecondLookCandidate>(
        WHERE dedupe_key = ANY(${keys}::text[])
           OR (check_name = ${check} AND kind = ${PENDING_KIND} AND fee_published_id = ANY(${passing}::bigint[]))
     `);
+    if (readScope) stale = await readStaleFlags(db, check, failingIdList, readScope, options.strictPersistence === true);
   } catch (error) {
     if (options.strictPersistence) throw error;
     // No log, no takedown: a fee is never taken down without its first look on record.
@@ -172,8 +201,24 @@ export async function secondLook<T extends SecondLookCandidate>(
   );
   const now = options.now ?? new Date();
   const plan = planSecondLook(failing, pending, runId, now, options.minMinutes ?? SECOND_LOOK_MIN_MINUTES);
-  const failingIds = new Set(failing.map((fee) => fee.feePublishedId));
-  const cleared = passing.filter((id) => !failingIds.has(id) && pending.get(id)?.kind === PENDING_KIND);
+  const failingIds = new Set(failingIdList);
+  const passed = passing.filter((id) => !failingIds.has(id) && pending.get(id)?.kind === PENDING_KIND);
+  // A stale flag: pending on a live fee in the run's full read that this run does not fail (#1876).
+  const passedIds = new Set(passed);
+  const staleIds = new Set<number>();
+  for (const row of stale) {
+    const id = Number(row.fee_published_id);
+    if (failingIds.has(id) || passedIds.has(id) || staleIds.has(id) || row.kind !== PENDING_KIND) continue;
+    pending.set(id, {
+      feePublishedId: id,
+      kind: row.kind,
+      flagRunId: row.evidence?.flag_run_id == null ? null : Number(row.evidence.flag_run_id),
+      flaggedAt: row.evidence?.flagged_at ? new Date(row.evidence.flagged_at) : null,
+      reason: row.evidence?.reason ?? null,
+    });
+    staleIds.add(id);
+  }
+  const cleared = [...passed, ...staleIds];
   const result: SecondLookResult<T> = {
     confirmed: plan.confirmed.map((entry) => entry.candidate),
     flagged: plan.flagged.length,
@@ -243,6 +288,8 @@ export async function secondLook<T extends SecondLookCandidate>(
           cleared_run_id: runId,
           cleared_at: now.toISOString(),
           flag_key: secondLookEventKey(check, id, "flag", first.flagRunId),
+          // A fee left out of a full read of its scope says so; a fee read and passed keeps the old shape.
+          ...(staleIds.has(id) && readScope ? { cleared_why: CLEARED_NOT_FLAGGED, read_scope: readScopeEvidence(readScope) } : {}),
         },
       };
       return [
@@ -275,6 +322,49 @@ export async function secondLook<T extends SecondLookCandidate>(
     return { ...result, confirmed: [] };
   }
   return result;
+}
+
+function readScopeEvidence(scope: SecondLookReadScope): Record<string, number | null> {
+  return {
+    institution_id: scope.institutionId ?? null,
+    document_id_after: scope.documentIdAfter ?? null,
+    document_id_through: scope.documentIdThrough ?? null,
+  };
+}
+
+/**
+ * This check's pending state rows on live fees in `scope` whose fee is not in `failing` (#1876).
+ * Live is not rolled back and not quarantined: a fee no check reads is not cleared by its silence.
+ * The document range is on the fee's current source document (its published row's lineage).
+ */
+async function readStaleFlags(db: SqlTag, check: string, failing: number[], scope: SecondLookReadScope, lock: boolean): Promise<StaleFlagRow[]> {
+  const institutionId = scope.institutionId ?? null;
+  const after = scope.documentIdAfter ?? null;
+  const through = scope.documentIdThrough ?? null;
+  const byDocument = after != null || through != null;
+  const prefix = `hamilton.second_look:${check}:pub:`;
+  const query = (scoped: SqlTag) => scoped<StaleFlagRow[]>`
+    SELECT f.fee_published_id, f.kind, f.evidence, fp.institution_id
+      FROM pipeline_feedback f
+      JOIN published_fee_records fp ON fp.fee_published_id = f.fee_published_id
+     WHERE f.check_name = ${check}
+       AND f.kind = ${PENDING_KIND}
+       AND f.dedupe_key = ${prefix} || f.fee_published_id::text
+       AND NOT (f.fee_published_id = ANY(${failing}::bigint[]))
+       AND fp.rolled_back_at IS NULL
+       AND fp.quarantined_at IS NULL
+       AND (${institutionId}::bigint IS NULL OR fp.institution_id = ${institutionId}::bigint)
+       AND (${!byDocument} OR EXISTS (
+             SELECT 1 FROM verified_fee_observations fv
+               JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+              WHERE fv.fee_verified_id = fp.lineage_ref
+                AND fr.source_document_id IS NOT NULL
+                AND (${after}::bigint IS NULL OR fr.source_document_id > ${after}::bigint)
+                AND (${through}::bigint IS NULL OR fr.source_document_id <= ${through}::bigint)))
+     ORDER BY f.id
+     ${lock ? scoped`FOR UPDATE OF f NOWAIT` : scoped``}
+  `;
+  return lock ? query(db) : inSavepoint(db, (scoped) => query(scoped as SqlTag));
 }
 
 interface LegacyClearedRow {

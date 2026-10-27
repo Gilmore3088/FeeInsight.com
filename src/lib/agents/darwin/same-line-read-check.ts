@@ -23,9 +23,11 @@ type SqlTag = typeof sql;
  * against a kept read: the line is printed once in the document's current completed text, prints
  * the amount once, the frequencies do not differ and one name's words are all in the other's.
  *
- * Shadow first (CLAUDE.md standing rule): with `SAME_LINE_READ_TAKEDOWN_LIVE` false, or in a dry run,
- * the step only reports. Switched on, a match goes through the shared 12-hour second look (check
- * `darwin.same_line_read`) and is archived on its second failure while its kept read is still live:
+ * The switch `SAME_LINE_READ_TAKEDOWN_LIVE` is on (#2715, James's yes 2026-10-26); off, or in a dry
+ * run, the step only reports. On, a match goes through the shared 12-hour second look (check
+ * `darwin.same_line_read`). A read under its row cap is every live fee in its scope that shares a
+ * line, so it also clears a pending flag whose fee it no longer returns (its twin went, #1876). A
+ * match is archived on its second failure while its kept read is still live:
  * rolled back as `same_line_duplicate: live fee #<kept>` (so Hamilton's same-line restore brings it
  * back if that line goes), the verified row rejected with the `same_line_duplicate` flag, never
  * deleted, and a `darwin.same_line_read_takedown` event lists them.
@@ -211,8 +213,12 @@ export const SAME_LINE_READ_ROWS_SQL = `
 
 /** Read the rows (`SAME_LINE_READ_ROWS_SQL`). */
 export function sameLineReadRows(db: SqlTag, options: { institutionId?: number; limit?: number } = {}): Promise<SameLineReadRow[]> {
-  const limit = Math.max(1, Math.min(options.limit ?? SAME_LINE_READ_LIMIT, 50_000));
-  return db.unsafe<SameLineReadRow[]>(SAME_LINE_READ_ROWS_SQL, [options.institutionId ?? null, limit]);
+  return db.unsafe<SameLineReadRow[]>(SAME_LINE_READ_ROWS_SQL, [options.institutionId ?? null, sameLineReadLimit(options.limit)]);
+}
+
+/** The row cap a read uses: a read that returns this many rows may have stopped short. */
+export function sameLineReadLimit(limit?: number): number {
+  return Math.max(1, Math.min(limit ?? SAME_LINE_READ_LIMIT, 50_000));
 }
 
 function findingsOnly(found: ReturnType<typeof findSameLineReads>): SameLineReadFindings {
@@ -243,9 +249,13 @@ export async function recheckSameLineReads(
   const found = findSameLineReads(rows);
   Object.assign(result, findingsOnly(found));
 
-  if (live && !options.dryRun && (found.matches.length > 0 || found.passing.length > 0)) {
+  // The read is every live fee sharing a line in its scope unless it hit the row cap; a full read
+  // also clears a pending flag whose fee it no longer returns, e.g. its twin went (#1876).
+  const fullRead = rows.length < sameLineReadLimit(options.limit);
+  if (live && !options.dryRun && (fullRead || found.matches.length > 0 || found.passing.length > 0)) {
     const look = await secondLook(db, {
       check: SAME_LINE_READ_CHECK, runId: options.runId, failing: found.matches, passing: found.passing, dryRun: false, now: options.now,
+      readScope: fullRead ? { institutionId: options.institutionId ?? null } : undefined,
     });
     result.flagged = look.flagged;
     result.waiting = look.waiting;
@@ -263,7 +273,7 @@ export async function recheckSameLineReads(
         INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
         VALUES (
           ${options.runId}, ${options.stepId ?? null}, ${SAME_LINE_READ_CHECK}, 'completed',
-          ${`Read ${result.checked} live fee(s) that share a stored source line with another live fee: ${result.matched} are a second read of one printed line and would come down; ${live ? `${result.flagged} flagged, ${result.takenDown.length} archived` : "switch off, nothing written"}`},
+          ${`Read ${result.checked} live fee(s) that share a stored source line with another live fee: ${result.matched} are a second read of one printed line and would come down; ${live ? `${result.flagged} flagged, ${result.cleared} cleared, ${result.takenDown.length} archived` : "switch off, nothing written"}`},
           ${JSON.stringify(sameLineReadDetail(result))}::jsonb
         )
       `);
