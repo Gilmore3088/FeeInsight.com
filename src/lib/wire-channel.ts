@@ -78,6 +78,17 @@ export function namesWireChannel(name: string | null | undefined): boolean {
   return channel && !STANDARD.test(name.replace(NEGATED_STANDARD_ALL, " "));
 }
 
+/**
+ * Words that state a wire's channel of any kind: a premium one, a negated standard one or the
+ * standard one ("phone request", "Recurring", "Not in Person", "in branch"). A notice word names no
+ * channel. Hamilton's live name refresh (#1912) reads the clause a re-read added to a wire's name.
+ */
+export function statesWireChannel(text: string | null | undefined): boolean {
+  if (!text) return false;
+  const words = text.replace(NOTICE_ALL, " ");
+  return CHANNEL.test(words) || STANDARD.test(words) || NEGATED_STANDARD.test(text);
+}
+
 /** SQL twin of namesWireChannel over a static internal text column: true or false, never NULL. */
 export function wireChannelSql(column: string): string {
   if (!/^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/i.test(column)) throw new Error("Invalid internal fee name column");

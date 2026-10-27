@@ -213,7 +213,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-359 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+360 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
 ### Extraction and fee reading (58)
 
@@ -322,8 +322,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A consumer comparison needs the payer checked as well as the category. — [finding](findings/2026-10-09-business-wire-as-consumer-price.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 - 2026-10-09 — Returned bonds and coupons were filed as NSF. — [finding](findings/2026-10-09-bond-return-filed-nsf.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 
-### Verification and publication (66)
+### Verification and publication (67)
 
+- 2026-10-27 — Refusing a second read of a live line keeps the line shown once, but must not throw the better name away: when the current re-read of the same document reads the same line at the same amount, and its name only repairs the live one (glyphs or dropped ligatures restored, or a wire's channel clause added) and traces on the stored text, the live row takes the name in place behind `LIVE_NAME_REFRESH_LIVE` (off); 6 of 176 live fees with a candidate re-read would be renamed, 140286 then failing the guard as a domestic wire (#1912). — [finding](findings/2026-10-27-live-name-refresh.md) — Agent lesson: hamilton/issue-1912-reread-name-reaches-live-fee, knox/issue-1912-a-better-read-must-reach-the-live-name; Guard: `src/lib/agents/hamilton/live-name-refresh.test.ts`
 - 2026-10-26 — A read one agent leaves for another needs the other's reader in the same PR: Knox's re-read settled three misfiled live fees' lines as `other_category`, "left for Darwin", and nothing read them, so they stayed misfiled; Darwin's re-check (switch off) would re-file 2 and take down 1 of 9 such live fees (#1513). — [finding](findings/2026-10-26-reread-other-category-unread.md) — Agent lesson: darwin/issue-1513-read-what-knox-left-for-you; Guard: `src/lib/agents/darwin/reread-category-check.test.ts`, `src/lib/agents/darwin/reread-category-check.db.test.ts`
 - 2026-10-26 — A figure a name leads into or completes is part of the name: publish cut "monthly fee if balance falls below $2,500.00" to "... falls below", and the re-read never settled it because the whole name was its own raw read; 19 live fees showed the cut (#1443). — [finding](findings/2026-10-26-publish-cut-the-threshold.md) — Agent lesson: hamilton/issue-1443-keep-the-threshold; Guard: `src/lib/agents/hamilton/publish.test.ts`, `src/lib/agents/knox/reread-feedback.test.ts`
 - 2026-10-26 — A tier's own document is known by what it is, not only a file named fees: a Bank On or premier account's truth-in-savings disclosure, terms and charges or summary of fees prices that account only, so its $0s are perks unless the text says the bank charges none of that fee; 13 live $0s at 3 institutions newly match, read through a narrow recheck cohort behind its switch (#1397). — [finding](findings/2026-10-26-tier-schedule-addresses.md) — Agent lesson: darwin/issue-1397-tier-disclosure-addresses; Guard: `src/lib/agents/darwin/tier-perk.test.ts`, `src/lib/agents/darwin/verified-recheck.db.test.ts`
@@ -619,7 +620,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (333 in all).
+counts as of this index (335 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
@@ -627,10 +628,10 @@ counts as of this index (333 in all).
 | magellan | 28 | [`src/lib/agents/magellan/role-lessons.ts`](../../src/lib/agents/magellan/role-lessons.ts) |
 | hoovie | 12 | [`src/lib/agents/hoovie/role-lessons.ts`](../../src/lib/agents/hoovie/role-lessons.ts) |
 | rosetta | 14 | [`src/lib/agents/rosetta/role-lessons.ts`](../../src/lib/agents/rosetta/role-lessons.ts) |
-| knox | 88 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
+| knox | 89 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
 | darwin | 57 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 40 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
-| hamilton | 68 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
+| hamilton | 69 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
 | deming | 18 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
 
 ## Before 2026-10-10
