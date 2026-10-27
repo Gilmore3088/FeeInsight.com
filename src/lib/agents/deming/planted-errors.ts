@@ -5,6 +5,7 @@ import { takedownCheck } from "@/lib/agents/learning/feedback";
 import { CONFIRMED_KIND, secondLookDedupeKey } from "@/lib/agents/hamilton/second-look";
 import { LIMIT_GUARD_CHECK, limitGuardReason, limitGuardVerdict } from "@/lib/agents/hamilton/limit-guard";
 import { audienceLessonsLive } from "@/lib/agents/knox/audience-lessons";
+import { readLessonsLive } from "@/lib/agents/knox/read-lessons";
 import { BUSINESS_FOOTNOTE_REASON, BUSINESS_SCHEDULE_CHECK, footnoteMarksBusiness } from "@/lib/agents/hamilton/business-schedule";
 import { DUPLICATE_COLLAPSE_REASON_PREFIX, NEAR_NAME_COLLAPSE_REASON_SUFFIX, nearNameRepeats, type NearNameRow } from "@/lib/agents/hamilton/duplicate-collapse";
 import { nextReaderRung, PRIMARY_READERS, survivalFeedback, type SurvivalRow } from "@/lib/agents/rosetta/text-survival";
@@ -253,7 +254,9 @@ export const PLANTED_ERRORS: PlantedError[] = [
     },
     // The page prints the dotted name at the price, so the bare one comes down.
     record: (reason) => rows(takedown(941, reason, { canonical_fee_key: "stop_payment", fee_name: "Stop Payment", amount: 35 })),
-    reader: null,
+    // Knox's read lessons hold a same-document duplicate's read when the text reads its kept name too
+    // (#2062), but act only with KNOX_READ_LESSONS_LIVE on: off, nothing reads them.
+    reader: readLessonsLive() ? { file: "src/lib/agents/knox/read-lessons.ts", picksOut: "f.kind = 'duplicate'" } : null,
     rerun: null,
     recheck: null,
   },
@@ -305,8 +308,9 @@ export const KNOWN_GAPS: Record<string, Partial<Record<LoopLink, number>>> = {
   // takedown sync skips business-schedule reasons (a whole business document is Magellan's lesson), so
   // a business-only footnote on a mixed schedule leaves no row naming extract.
   wrong_audience: { recorded: 2062, ...(audienceLessonsLive() ? {} : { read: 2062 }), rerun: 2058, fixed: 2058 },
-  // Duplicates teach Knox nothing: only the takedown sync's restore detection reads them.
-  duplicate: { read: 2062, rerun: 2058, fixed: 2058 },
+  // Knox's read lessons read a same-document duplicate (#2062), but only once KNOX_READ_LESSONS_LIVE is
+  // on, so the read gap stays until then.
+  duplicate: { ...(readLessonsLive() ? {} : { read: 2062 }), rerun: 2058, fixed: 2058 },
   // #2070: the takedown sync records a discontinued account's takedown as its own kind, but only its
   // restore detection reads it; Knox learns the class from the shared check, not from the rows.
   discontinued_account: { read: 2062 },

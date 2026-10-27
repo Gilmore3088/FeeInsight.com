@@ -20,6 +20,8 @@
  * the sync's extract rows.
  */
 
+import { readLessonsLive } from "@/lib/agents/knox/read-lessons-switch";
+
 type Reader = {
   readers: readonly string[];
   /** Only rows about these stages are read. */
@@ -43,6 +45,17 @@ type RecordOnly = { record: string };
 export type FeedbackKindEntry = Reader | Unread | RecordOnly;
 
 const KNOX_LESSONS = "src/lib/agents/knox/lessons.ts";
+/** Knox's read lessons (#2062): a check's fix to one document's read, read back at that document's next extract. */
+const KNOX_READ_LESSONS = "src/lib/agents/knox/read-lessons.ts";
+const READ_LESSONS_SWITCH_NOTE = "It acts only with KNOX_READ_LESSONS_LIVE on.";
+/**
+ * Knox's read lessons act only with their switch on, so their kinds count as read only then: off, the
+ * brief keeps showing the rows as unread debt (each extract step counts the reads they would change,
+ * `read_lesson_matches`), as the planted error loop keeps the duplicate's read gap until then.
+ */
+function readLesson(reader: Reader, unread: string): Reader | Unread {
+  return readLessonsLive() ? reader : { unread: `${unread} Knox's read lessons (read-lessons.ts) read it once KNOX_READ_LESSONS_LIVE is on; off, each extract step only counts the reads they would change.` };
+}
 const LABEL_QUEUE = "src/lib/agents/knox/label-queue.ts";
 const RELEASE_REVIEW = "src/lib/agents/darwin/release-review.ts";
 const FEEDBACK_SYNC = "src/lib/agents/learning/feedback-sync.ts";
@@ -80,13 +93,14 @@ export const FEEDBACK_KINDS = {
   unreproduced: { readStages: EXTRACT, readers: [FEEDBACK_SYNC] },
   outside_range: { readStages: EXTRACT, readers: [FEEDBACK_SYNC], unreadChecks: [DARWIN_VERIFY] },
   off_taxonomy: { readers: [FEEDBACK_SYNC, RELEASE_REVIEW], readStages: EXTRACT, anyStageChecks: ["hamilton.category_outside_taxonomy"], unreadChecks: [DARWIN_VERIFY] },
-  duplicate: { readStages: EXTRACT, readers: [FEEDBACK_SYNC], unreadChecks: ["hamilton.hand_takedown", "hamilton.cut_name_duplicate"] },
+  duplicate: readLessonsLive() ? { readStages: EXTRACT, readers: [FEEDBACK_SYNC, KNOX_READ_LESSONS], note: `The takedown sync's restore detection reads its extract rows. Knox's read lessons read a duplicate still down whose kept twin is on the same document at the same amount under another name (one printed fee read twice), and hold that read when the text also reads the kept name. A collapse across documents or of the same name is not Knox's error: the collapse and Magellan's current copy own it. ${READ_LESSONS_SWITCH_NOTE}` }
+    : { readStages: EXTRACT, readers: [FEEDBACK_SYNC], unreadChecks: ["hamilton.hand_takedown", "hamilton.cut_name_duplicate"], note: "Only the takedown sync's restore detection reads it until KNOX_READ_LESSONS_LIVE is on (read-lessons.ts)." },
   refreshed: { readStages: EXTRACT, readers: [FEEDBACK_SYNC] },
   answer_key: { readers: ["src/lib/agents/darwin/category-model.ts", KNOX_LESSONS, LABEL_QUEUE] },
   restored_after_takedown: { readers: [KNOX_LESSONS, LABEL_QUEUE, "src/lib/agents/knox/calibration.ts", RELEASE_REVIEW] },
   darwin_verified: { readers: [KNOX_LESSONS, LABEL_QUEUE, "src/lib/agents/magellan/batch-review.ts"] },
   missing_lineage: { readers: [RELEASE_REVIEW], unreadChecks: [DARWIN_VERIFY, "hamilton.source_link", "hamilton.source_link_drift"], note: "Darwin's release review reads only the restore rows." },
-  wrong_payer: { unread: "Hamilton's eval verdicts record it; Knox should learn the payer from it." },
+  wrong_payer: readLesson({ readers: [KNOX_READ_LESSONS], readStages: EXTRACT, note: `Hamilton's eval verdicts (and the merchant-payer rule) record it; Knox holds the same name and amount on that document while the fee is still down for it. ${READ_LESSONS_SWITCH_NOTE}` }, "Hamilton's eval verdicts record it."),
   stated_on_later_look: { unread: "Darwin's held release records it with no fee id; Knox should learn from fees stated on a later look." },
   review_wrong: { readers: ["src/lib/agents/darwin/verdict-score.ts"] },
   stale_price: { readers: [MAGELLAN_DISCOVERY], note: "Hamilton's cross-page conflict records it. Magellan's freshness search reads it: when the older document is the link's own current page, the link is searched for the newer one (#2062). A row on a companion or an old copy says nothing against the link and changes nothing." },
@@ -116,11 +130,11 @@ export const FEEDBACK_KINDS = {
   error_class: { record: "Deming's error classes: one row per class of confirmed errors, updated each day it is seen, with its counts and a GitHub-ready record (error-classes.ts, #2063)." },
 
   // Frequency and held fees.
-  frequency_filled: { unread: "Darwin's hourly check and Hamilton's frequency fill record it; Knox should learn the frequency." },
-  frequency_corrected: { unread: "Darwin's hourly check and Hamilton's frequency fill record it; Knox should learn the frequency." },
-  frequency_cleared: { unread: "Hamilton's frequency fill records it; Knox should learn the frequency." },
-  frequency_held: { unread: "Hamilton's frequency fill records it; Knox should learn the frequency." },
-  promoted_from_held: { unread: "Knox's held recheck records it; Knox's lessons should read it." },
+  frequency_filled: readLesson({ readers: [KNOX_READ_LESSONS], readStages: EXTRACT, note: `Darwin's hourly check and Hamilton's frequency fill record it; Knox writes the same name and amount on that document with the check's frequency when it reads the old one again, while the live fee still has the check's. ${READ_LESSONS_SWITCH_NOTE}` }, "Darwin's hourly check and Hamilton's frequency fill record it."),
+  frequency_corrected: readLesson({ readers: [KNOX_READ_LESSONS], readStages: EXTRACT, note: `As frequency_filled. ${READ_LESSONS_SWITCH_NOTE}` }, "Darwin's hourly check and Hamilton's frequency fill record it."),
+  frequency_cleared: readLesson({ readers: [KNOX_READ_LESSONS], readStages: EXTRACT, note: `As frequency_filled, the check's frequency being none. ${READ_LESSONS_SWITCH_NOTE}` }, "Hamilton's frequency fill records it."),
+  frequency_held: readLesson({ readers: [KNOX_READ_LESSONS], readStages: EXTRACT, note: `Hamilton's frequency fill took the fee down for a period its price cannot have; Knox holds a read that gives that period again while the fee is still down. ${READ_LESSONS_SWITCH_NOTE}` }, "Hamilton's frequency fill records it."),
+  promoted_from_held: readLesson({ readers: [KNOX_READ_LESSONS], note: `Knox's held recheck records it; when Darwin verified the promoted line and its fee is live, Knox's full read files the same held name and amount on that document under the verified category instead of holding it again. ${READ_LESSONS_SWITCH_NOTE}` }, "Knox's held recheck records it."),
   held_no_category: { unread: "Knox's held recheck records it; Knox's lessons should read it." },
   set_aside_no_category: { unread: "Knox's held recheck records it; Knox's lessons should read it." },
   range_band_set_aside: { unread: "Knox's range band records it; Knox's lessons should read it." },
