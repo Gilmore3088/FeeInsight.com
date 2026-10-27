@@ -213,7 +213,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-360 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+361 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
 ### Extraction and fee reading (58)
 
@@ -322,8 +322,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A consumer comparison needs the payer checked as well as the category. — [finding](findings/2026-10-09-business-wire-as-consumer-price.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 - 2026-10-09 — Returned bonds and coupons were filed as NSF. — [finding](findings/2026-10-09-bond-return-filed-nsf.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 
-### Verification and publication (67)
+### Verification and publication (68)
 
+- 2026-10-27 — Before loosening a hold to publish more banks, read what it holds: of 1,230 thin banks, the held lines were mostly balance thresholds, sentence fragments and money market fees, and one wrong class (a monthly fee whose waiver names e-statements, guard v102: 25 more pass, 0 come down); the real gap is the schedule of fees. — [finding](findings/2026-10-27-thin-bank-holds.md) — Guard: `src/lib/fee-category-guard.test.ts`
 - 2026-10-27 — Refusing a second read of a live line keeps the line shown once, but must not throw the better name away: when the current re-read of the same document reads the same line at the same amount, and its name only repairs the live one (glyphs or dropped ligatures restored, or a wire's channel clause added) and traces on the stored text, the live row takes the name in place behind `LIVE_NAME_REFRESH_LIVE` (off); 6 of 176 live fees with a candidate re-read would be renamed, 140286 then failing the guard as a domestic wire (#1912). — [finding](findings/2026-10-27-live-name-refresh.md) — Agent lesson: hamilton/issue-1912-reread-name-reaches-live-fee, knox/issue-1912-a-better-read-must-reach-the-live-name; Guard: `src/lib/agents/hamilton/live-name-refresh.test.ts`
 - 2026-10-26 — A read one agent leaves for another needs the other's reader in the same PR: Knox's re-read settled three misfiled live fees' lines as `other_category`, "left for Darwin", and nothing read them, so they stayed misfiled; Darwin's re-check (switch off) would re-file 2 and take down 1 of 9 such live fees (#1513). — [finding](findings/2026-10-26-reread-other-category-unread.md) — Agent lesson: darwin/issue-1513-read-what-knox-left-for-you; Guard: `src/lib/agents/darwin/reread-category-check.test.ts`, `src/lib/agents/darwin/reread-category-check.db.test.ts`
 - 2026-10-26 — A figure a name leads into or completes is part of the name: publish cut "monthly fee if balance falls below $2,500.00" to "... falls below", and the re-read never settled it because the whole name was its own raw read; 19 live fees showed the cut (#1443). — [finding](findings/2026-10-26-publish-cut-the-threshold.md) — Agent lesson: hamilton/issue-1443-keep-the-threshold; Guard: `src/lib/agents/hamilton/publish.test.ts`, `src/lib/agents/knox/reread-feedback.test.ts`
