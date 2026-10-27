@@ -143,6 +143,14 @@ describe("Knox audience lessons from confirmed business-schedule takedowns (#206
     expect(audienceLessonFor(row("Stop Payment", 30), pure, 13912, "  ")).toBeNull();
   });
 
+  it("reads a markdown-bold heading as a heading and a rate under a menu link as no fee section (#2072)", () => {
+    const bold = "Personal Fees\nBusiness Fees\n**Personal Fees**\nService | Fee\nAccount Reconciliation | $25.00\n**Business Fees**\nService | Fee\nStop Pay | $25.00";
+    expect(audienceLessonFor(row("Account Reconciliation", 25), pure, 13912, bold)).toBeNull();
+    expect(audienceLessonFor(row("Stop Pay", 25), pure, 13912, bold)).toEqual({ scope: "document", feedbackId: 22 });
+    const menu = "Personal Checking\nSavings\nRates as low as 5.99% APR\nBusiness Fee Schedule\nOther Services\nStop Payment | $35.00";
+    expect(audienceLessonFor(row("Stop Payment", 35), pure, 13912, menu)).toEqual({ scope: "document", feedbackId: 22 });
+  });
+
   it("reads nothing from no lessons or a bad document id", () => {
     expect(lessonFor(read(), emptyAudienceLessons(), 40)).toBeNull();
     expect(audienceLessonsFrom([{ feedback_id: 1, source_document_id: "x", fee_name: "Fee", amount: 1, business_document: true }]).loaded).toBe(0);

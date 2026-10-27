@@ -1937,7 +1937,11 @@ the document's stored text is read first (`documentLessonHolds`): a text with a 
 business heading (`businessSectionPlacement`: the first heading above the line, past table rows, prices,
 prose and footnotes); a fee under a personal or general heading, or whose line cannot be placed, stays
 unknown, and with no stored text there is no document lesson. Business-only texts keep the lesson for
-every fee. The v2 count on prod was not re-run.
+every fee. A markdown-bold heading counts as a heading, and a rate ("5.99% APR") under a menu link does not
+make a priced personal section. Known limits, all in the safe direction except the first: a fee printed at the
+same name and price in both sections is placed at its first line; a business fee under a sub-heading of a
+tabbed page ("Wire Transfers") stays unknown; a tab bar with no headings of its own, or one table with
+personal and business price columns, still teaches every fee as v1 did. The v2 count on prod was not re-run.
 
 Read lessons (`read-lessons.ts`, `KNOX_READ_LESSONS_VERSION` v1, #2062): what other agents' checks fixed
 in a document's read is read back before Knox reads that document again, keyed like the audience lessons

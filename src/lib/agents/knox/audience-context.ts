@@ -706,7 +706,9 @@ export function pricedSectionAudiences(lines: string[]): Set<"consumer" | "busin
     if (audience !== "consumer" && audience !== "business") continue;
     for (let below = index + 1; below < Math.min(lines.length, index + 1 + SECTION_REACH_LINES); below += 1) {
       if (isHeading(lines[below]) && audienceOf(lines[below])) break;
-      if (PRICED.test(lines[below]) && !NOT_A_SECTION.test(lines[below])) {
+      // A rate ("as low as 5.99% APR") under a menu link is not a priced fee section.
+      const priced = lines[below].replace(/\d+(?:\.\d+)?\s*%/g, "");
+      if (PRICED.test(priced) && !NOT_A_SECTION.test(lines[below])) {
         found.add(audience);
         break;
       }
@@ -736,8 +738,9 @@ export function businessSectionPlacement(lines: string[], feeName: string, amoun
   const feeIndex = feeLineIndex(lines, feeName, amount);
   if (feeIndex < 0) return { placed: "unplaced" };
   for (let index = feeIndex - 1; index >= 0; index -= 1) {
-    const trimmed = lines[index].trim();
-    if (!isHeading(lines[index]) || trimmed.startsWith("(") || trimmed.startsWith("*") || BULLET.test(trimmed)) continue;
+    // A markdown-bold heading ("**Personal Fees**") is a heading; only a footnote starts with a lone "*".
+    const trimmed = lines[index].trim().replace(/^\*\*(.+?)\*\*$/, "$1").trim();
+    if (!isHeading(trimmed) || trimmed.startsWith("(") || trimmed.startsWith("*") || BULLET.test(trimmed)) continue;
     if (overAPrice(lines, index)) {
       if (audienceOf(trimmed)) return { placed: "unplaced" };
       continue;
