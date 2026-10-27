@@ -1286,7 +1286,9 @@ the verified row rejected with the same flag; nothing is deleted and a rollback 
 The takedown spot-check still applies first: the pass flags until UAT has hand-checked 10 of the
 rows it would take down and found at least 9 right, then the switch
 (`DARWIN_RECHECK_SAME_STEP_TAKEDOWN`) turns on by PR. Hamilton's other takedowns keep their 12-hour
-second look unless James says otherwise.
+second look unless James says otherwise. (2026-10-27, #2072: the switch never turned on and was
+deleted; the recheck takes a live fee down through the shared 12-hour second look,
+`DARWIN_RECHECK_SECOND_LOOK_LIVE`.)
 
 **A fee from the bank's own checking or savings page counts, unless its schedule prices it
 differently.** James, 2026-10-13 (builder loop, answering the question on #1026): "Yes: a fee from

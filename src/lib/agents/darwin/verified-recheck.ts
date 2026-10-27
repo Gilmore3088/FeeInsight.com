@@ -18,9 +18,9 @@ type SqlTag = typeof sql;
  * Darwin's own second look at the rows it verified: every row verified by `verify.rules` is
  * read once more under the checks that follow the source check (`postSourceCheck`: live
  * category, no conditional $0, Hamilton's name rules). A row that fails and is not live is
- * rejected with a flag; one that is live is archived (rolled back with the reason, never
- * deleted) in the same step once `DARWIN_RECHECK_SAME_STEP_TAKEDOWN` is on, and until then is
- * flagged through the shared 12-hour second look. Never a hand UPDATE. Each row is read once per
+ * rejected with a flag; one that is live is flagged through the shared 12-hour second look and
+ * archived (rolled back with the reason, never deleted) once that look confirms it. Never a hand
+ * UPDATE. Each row is read once per
  * version, recorded as a `verify.recheck` attempt.
  *
  * v1 (2026-10-09): UAT's 20-row check of the not_in_source re-select (#883) found 16 right;
@@ -51,14 +51,6 @@ export const DARWIN_RECHECK_STRATEGY = { strategy: "verify.recheck", version: 5 
 export const RECHECK_LIMIT = 200;
 /** The shared second look's check name while live failures are only flagged. */
 export const DARWIN_RECHECK_CHECK = "darwin.verified_recheck";
-/**
- * Default-off switch for archiving a failing live fee in the same step (James, 11:55 UTC
- * 2026-10-09: "stop waiting 12 hours. go"). Off: the live row is flagged `takedown_pending`
- * through the shared second look (the 12-hour path). It turns on by PR once UAT has hand-checked
- * 10 of the rows a dry read says the recheck would take down and found at least 9 right (the
- * takedown spot-check bar).
- */
-export const DARWIN_RECHECK_SAME_STEP_TAKEDOWN = false;
 export const RECHECK_REJECTED_FLAG_PREFIX = "darwin_recheck";
 /**
  * Default-off switch (#1568): also re-read live fees that `verify.rules` verified under an older
@@ -515,7 +507,6 @@ interface RecheckOptions {
   stepId?: number | null;
   limit?: number;
   now?: Date;
-  sameStepTakedown?: boolean;
   olderLive?: boolean;
   secondLooks?: boolean;
   secondLookCodes?: readonly string[];
@@ -627,7 +618,6 @@ export async function recheckVerifiedFees(db: SqlTag, options: RecheckOptions): 
       const olderLive = options.olderLive ?? DARWIN_RECHECK_OLDER_LIVE;
       const secondLooks = options.secondLooks ?? DARWIN_RECHECK_SECOND_LOOK_LIVE;
       const secondLookCodes = secondLooks ? [] : [...(options.secondLookCodes ?? DARWIN_RECHECK_SECOND_LOOK_LIVE_CODES)];
-      const sameStep = options.sameStepTakedown ?? DARWIN_RECHECK_SAME_STEP_TAKEDOWN;
       const secondBatchActs = options.secondBatchActs ?? EVAL_VERDICT_SECOND_BATCH_ACTS;
       const tierRule = options.tierRule ?? DARWIN_RECHECK_TIER_RULE_LIVE;
       const errorFixes = options.errorFixes ?? ERROR_FIXES;
@@ -741,13 +731,10 @@ export async function recheckVerifiedFees(db: SqlTag, options: RecheckOptions): 
             } else if (publishedId != null && !wasRejected) {
               const candidate = { feePublishedId: publishedId, institutionId: Number(row.institution_id), canonicalFeeKey, amount,
                 sourceDocumentId: Number(row.source_document_id), reason };
-              let archive = Boolean(check && sameStep);
-              if (!sameStep || !check) {
-                const look = await secondLook(tx, { check: DARWIN_RECHECK_CHECK, runId: options.runId,
-                  failing: check ? [candidate] : [], passing: check ? [] : [publishedId], dryRun: false, now: options.now, strictPersistence: true });
-                feedbackIds = look.feedbackIds ?? []; flagged = look.flagged; waiting = look.waiting; cleared = look.cleared;
-                archive = look.confirmed.length === 1;
-              }
+              const look = await secondLook(tx, { check: DARWIN_RECHECK_CHECK, runId: options.runId,
+                failing: check ? [candidate] : [], passing: check ? [] : [publishedId], dryRun: false, now: options.now, strictPersistence: true });
+              feedbackIds = look.feedbackIds ?? []; flagged = look.flagged; waiting = look.waiting; cleared = look.cleared;
+              const archive = look.confirmed.length === 1;
               action = check ? (archive ? "taken_down" : flagged ? "flagged" : "waiting") : "passed";
               if (archive) {
                 const archived = await tx<{ fee_published_id: number | string; lineage_ref: number | string }[]>`
