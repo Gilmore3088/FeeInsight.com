@@ -214,10 +214,11 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-362 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+363 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
-### Extraction and fee reading (58)
+### Extraction and fee reading (59)
 
+- 2026-10-27 — "4% of advance (min. of $5)" costs the percentage: a dollar minimum or maximum beside a percentage is the rate's bound, read as its `rate_min_amount` or `rate_max_amount`, never as a flat fee, and the shared check refuses a flat fee whose only row makes it one (behind `SOURCE_CHECK_RATE_BOUND`, off) (#2067). — [finding](findings/2026-10-27-rate-bound-published-as-flat-fee.md) — Agent lesson: hamilton/issue-2067-rate-bound-is-not-traced; Guard: `src/lib/custom-report/rate-bound-check.test.ts`, `src/lib/agents/knox/rate-bound-read.test.ts`
 - 2026-10-27 — A wire's channel has to reach its name, because the name is all that carries it (no tier sets `variant_type`): "Not in Person" is the premium channel, not the standard one, a phone notice is no channel, and a channel printed after the price ("$30.00 - phone request") stays in the name; Sound Community's $60 not-in-person wire would have set its value beside the $30 standard one (#1912). — [finding](findings/2026-10-27-wire-channel-lost-or-misread.md) — Agent lesson: knox/issue-1912-channel-after-price, hamilton/issue-1912-not-in-person-is-a-channel; Guard: `src/lib/wire-channel.test.ts`, `src/lib/agents/knox/wire-channel-clause.test.ts`
 - 2026-10-26 — A heading cell that spans several rows is printed on the middle row only; when a "<Heading> | <name>: <price>" row has sibling "<name>: <price>" rows directly above and below it, the heading names them all; Sound Community Bank's $30 wire went unread beside its $60 not-in-person wire (#1912). — [finding](findings/2026-10-26-centred-heading-cell.md) — Agent lesson: knox/issue-1912-centred-heading-cell; Guard: `src/lib/agents/knox/centered-heading.test.ts`
 - 2026-10-26 — An empty table cell holds a column: place every cell on the table's grid before writing the row, and when an empty cell would shift a value under the column to its left, write that column's header name after the value; Capital City's IRA closing fee went live as a CD early closure (#1912). — [finding](findings/2026-10-26-html-table-empty-cells.md) — Agent lesson: rosetta/issue-1912-empty-cells-keep-their-column; Guard: `src/lib/agents/rosetta/html-table-columns.test.ts`
@@ -624,7 +625,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 Agent lessons are reviewed code, not prose: each pipeline agent keeps its own in
 `role-lessons.ts`, `src/lib/agents/learning/lesson-registry.ts` gathers them, and every run of
 that agent reads them. `lesson-kill` checks the files. They live there and are not copied here;
-counts as of this index (345 in all).
+counts as of this index (346 in all).
 
 | Agent | Lessons | File |
 |---|---|---|
@@ -635,7 +636,7 @@ counts as of this index (345 in all).
 | knox | 92 | [`src/lib/agents/knox/role-lessons.ts`](../../src/lib/agents/knox/role-lessons.ts) |
 | darwin | 59 | [`src/lib/agents/darwin/role-lessons.ts`](../../src/lib/agents/darwin/role-lessons.ts) |
 | gutenberg | 40 | [`src/lib/agents/gutenberg/role-lessons.ts`](../../src/lib/agents/gutenberg/role-lessons.ts) |
-| hamilton | 70 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
+| hamilton | 71 | [`src/lib/agents/hamilton/role-lessons.ts`](../../src/lib/agents/hamilton/role-lessons.ts) |
 | deming | 21 | [`src/lib/agents/deming/role-lessons.ts`](../../src/lib/agents/deming/role-lessons.ts) |
 
 ## Before 2026-10-10

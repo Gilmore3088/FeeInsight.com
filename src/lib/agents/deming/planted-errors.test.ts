@@ -6,6 +6,7 @@ vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
 import { KNOWN_GAPS, LOOP_LINKS, PLANTED_ERRORS, walkLoop } from "./planted-errors";
 import { audienceLessonsLive } from "@/lib/agents/knox/audience-lessons";
 import { KNOX_READ_LESSONS_SWITCH, readLessonsLive } from "@/lib/agents/knox/read-lessons-switch";
+import { rateBoundRefusalLive } from "@/lib/custom-report/source-check";
 
 const source = (file: string) => {
   try {
@@ -17,9 +18,10 @@ const source = (file: string) => {
 
 // The classes the 2026-10-19 learning audit named (#2065).
 // #2070 added the discontinued account's fee.
+// #2067 added a percentage charge's minimum or maximum read as a flat fee.
 // #2066 added the weekly live check's misses no loop caught: amounts, names and categories.
 const WEEKLY_CHECK_CLASSES = ["amount_hourly_flat", "amount_annual_flat", "amount_tier_flat", "garbled_name", "category_unflagged"];
-const AUDIT_CLASSES = ["wrong_document", "lost_text", "limit_as_fee", "wrong_category", "wrong_audience", "duplicate", "missed_fee", "discontinued_account", ...WEEKLY_CHECK_CLASSES];
+const AUDIT_CLASSES = ["wrong_document", "lost_text", "limit_as_fee", "wrong_category", "wrong_audience", "duplicate", "missed_fee", "discontinued_account", "amount_rate_bound", ...WEEKLY_CHECK_CLASSES];
 
 describe("the error loop, planted end to end (#2065)", () => {
   it("plants one of each error class the learning audit named", () => {
@@ -72,7 +74,8 @@ describe("the error loop, planted end to end (#2065)", () => {
     // The wrong audience's read link holds once Knox's audience lessons are switched on, and the
     // duplicate's and hourly-shown-flat's once Knox's read lessons are (#2062).
     // #2066 added 22: 2 for hourly shown flat, 5 each for the four weekly-check misses no check flags.
-    expect(missing).toBe(35 - (audienceLessonsLive() ? 1 : 0) - (readLessonsLive() ? 2 : 0));
+    // #2067 added 5 for a rate's bound read as a flat fee: 1 (read) once SOURCE_CHECK_RATE_BOUND is on.
+    expect(missing).toBe(40 - (audienceLessonsLive() ? 1 : 0) - (readLessonsLive() ? 2 : 0) - (rateBoundRefusalLive() ? 4 : 0));
   });
 
   it("closes the duplicate's and hourly-shown-flat's read gaps only with Knox's read lessons switched on", async () => {
@@ -86,7 +89,7 @@ describe("the error loop, planted end to end (#2065)", () => {
       const off = await gaps("");
       const on = await gaps("true");
       expect(off - on).toBe(2);
-      expect(off).toBe(35 - (audienceLessonsLive() ? 1 : 0));
+      expect(off).toBe(40 - (audienceLessonsLive() ? 1 : 0) - (rateBoundRefusalLive() ? 4 : 0));
     } finally {
       vi.unstubAllEnvs();
       vi.resetModules();

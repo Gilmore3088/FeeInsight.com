@@ -32,6 +32,7 @@ import { NO_CHARGE_SENTENCE_READ_LIVE, noChargeNsfWitness } from "@/lib/no-charg
 import { withCenteredHeadingCells } from "./centered-heading-cell";
 import { discontinuedRow } from "./discontinued-rows";
 import { networkColumnRow } from "./network-column-rows";
+import { rateBoundOf } from "@/lib/rate-bound";
 const NSF_POLICY_CATEGORIES = new Set(["nsf", "overdraft"]);
 
 export type SourceCheckFailure =
@@ -43,7 +44,9 @@ export type SourceCheckFailure =
   | "tiered_fee"
   | "category_not_in_text"
   /** #2070: the fee's own row prices an account the bank no longer offers (`discontinuedRow`). */
-  | "discontinued_account";
+  | "discontinued_account"
+  /** #2067: the fee's only row makes its amount the minimum or maximum of a percentage charge (`rateBoundOf`). */
+  | "rate_bound";
 
 export type SourceCheckResult = {
   ok: true;
@@ -65,7 +68,22 @@ export type SourceCheckOptions = {
    * Defaults to `NO_CHARGE_SENTENCE_READ_LIVE`, which is off; tests pass true.
    */
   noChargeSentences?: boolean;
+  /**
+   * #2067: refuse a flat fee whose only row makes its amount the minimum or maximum of a percentage
+   * charge ("4% of advance (min. of $5)", "Non-Member ($10 Max) | 5% of Total") as `rate_bound`.
+   * Defaults to `rateBoundRefusalLive()`, off until `SOURCE_CHECK_RATE_BOUND=on`: switched on, every
+   * caller that acts on live fees can take such fees down, which needs James's yes. Hamilton's source
+   * check passes true to measure them, and takes them down only when the switch is on.
+   */
+  rateBounds?: boolean;
 };
+
+/** The switch for the #2067 refusal (see `SourceCheckOptions.rateBounds`). Off unless set to "on". */
+export const RATE_BOUND_SWITCH = "SOURCE_CHECK_RATE_BOUND";
+
+export function rateBoundRefusalLive(): boolean {
+  return typeof process !== "undefined" && process.env?.[RATE_BOUND_SWITCH] === "on";
+}
 
 const LONG_LINE = 300;
 /** Only a short line is read price-first; a flattened paragraph can open with any price. */
@@ -1399,6 +1417,45 @@ export function checkFeeAgainstSource(
   canonicalFeeKey?: string | null,
   options: SourceCheckOptions = {},
 ): SourceCheckResult {
+  const result = checkFeeAgainstOwnSource(sourceText, feeName, amount, categoryPattern, canonicalFeeKey, options);
+  if (!(options.rateBounds ?? rateBoundRefusalLive())) return result;
+  return withoutRateBoundRow(sourceText, feeName, amount, result, (text) =>
+    checkFeeAgainstOwnSource(text, feeName, amount, categoryPattern, canonicalFeeKey, options));
+}
+
+/**
+ * #2067: a fee that traces only to a row making its amount the minimum or maximum of a percentage
+ * charge ("Cash advance transaction fee | 4% of advance (min. of $5)", "Non-Member ($10 Max) | 5% of
+ * Total") is refused as `rate_bound`: the figure bounds the percentage; it is not a flat price. Knox
+ * reads the rate into the rate catalog with the figure as its `rate_min_amount` / `rate_max_amount`.
+ * When the traced row is such a bound, the fee is traced again without every row that makes its amount
+ * a bound, so a fee the schedule also prices flat on a row of its own still traces there.
+ */
+function withoutRateBoundRow(
+  sourceText: string | null | undefined,
+  feeName: string,
+  amount: number,
+  result: SourceCheckResult,
+  retrace: (text: string) => SourceCheckResult,
+): SourceCheckResult {
+  if (!result.ok || !sourceText || !rateBoundOf(result.sourceLine, amount, feeName)) return result;
+  const lines = sourceText.split("\n");
+  const kept = lines.filter((line) => !rateBoundOf(line, amount, feeName));
+  if (kept.length < lines.length) {
+    const again = retrace(kept.join("\n"));
+    if (again.ok && !rateBoundOf(again.sourceLine, amount, feeName)) return again;
+  }
+  return { ok: false, reason: "rate_bound" };
+}
+
+function checkFeeAgainstOwnSource(
+  sourceText: string | null | undefined,
+  feeName: string,
+  amount: number,
+  categoryPattern: string,
+  canonicalFeeKey: string | null | undefined,
+  options: SourceCheckOptions,
+): SourceCheckResult {
   // #1946: every refusal below reads a footnote glued to a $0 price ("$01") as $0, as the main path does.
   // #1912: a line whose only price is two different prices glued together traces no fee (`gluedPricePair`).
   // #1912: a heading in a vertically centred merged cell leads every row of its block (`withCenteredHeadingCells`).
@@ -1626,8 +1683,9 @@ function checkAgainstLines(
     amount_is_a_threshold: 4,
     tiered_fee: 5,
     category_not_in_text: 6,
-    // Set only after a fee traces (`withoutDiscontinuedRow`), never by the line scan.
+    // Set only after a fee traces (`withoutDiscontinuedRow`, `withoutRateBoundRow`), never by the line scan.
     discontinued_account: 7,
+    rate_bound: 8,
   };
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];

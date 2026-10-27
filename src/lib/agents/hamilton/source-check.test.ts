@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   SOURCE_CHECK_KEPT_DOWN,
@@ -471,6 +471,8 @@ describe("sourceCheckReceiptNote", () => {
     cleared: 0,
     readerLost: 0,
     keptDown: [],
+    rateBound: 0,
+    rateBoundSamples: [],
   };
 
   it("says nothing when the check ran and changed nothing", () => {
@@ -557,5 +559,61 @@ describe("markRestoredForSourceCheck", () => {
     const db = vi.fn(() => Promise.resolve([]));
     await markRestoredForSourceCheck(db as unknown as Parameters<typeof markRestoredForSourceCheck>[0], [], { runId: 3, restoredBy: "x" });
     expect(db).not.toHaveBeenCalled();
+  });
+});
+
+describe("source check v27: a percentage charge's minimum or maximum (#2067)", () => {
+  // inst 7936 / doc 28799, verbatim: the NSF fee went live at the cap "($10 Max)" of "5% of Total".
+  const CUSB = "Account Reinstatement | $20.00 | Coin Counting\n(Within 90 days of close) | Member** | Free\nNon-Sufficient Funds (NSF) | Non-Member ($10 Max) | 5% of Total\nTransfer from Savings (manual/automatic) | $5.00 | Credit Card Cash Advance Fee | $3.00\nOverdraft/Return | $30.00 | CUSB Transaction Fee** | $2.00";
+  const bound = { ...fee(11, "Non-Sufficient Funds (NSF): Non-Member", "10"), canonical_fee_key: "nsf" };
+  const own = { ...fee(12, "Overdraft/Return", "30"), canonical_fee_key: "overdraft" };
+  const cusbTexts = [{ source_document_id: 7, normalized_text: CUSB }];
+  const pending = [{
+    fee_published_id: 11,
+    kind: "takedown_pending",
+    evidence: { flag_run_id: 4, flagged_at: new Date(Date.now() - 13 * 3_600_000).toISOString(), reason: "rate_bound" },
+  }];
+
+  function boundDb() {
+    return vi.fn((strings: TemplateStringsArray) => {
+      const query = strings.join("?");
+      if (query.includes("to_regclass('public.pipeline_feedback')")) return Promise.resolve([{ ready: true }]);
+      if (query.includes("FROM pipeline_feedback") && query.includes("dedupe_key = ANY")) return Promise.resolve(pending);
+      if (query.includes("MAX(fp.fee_published_id)")) return Promise.resolve([{ institution_id: 42, max_fee_id: 12 }]);
+      if (query.includes("FROM agent_source_texts")) return Promise.resolve(cusbTexts.map((text) => ({ ...text, institution_id: 42 })));
+      if (query.includes("JOIN raw_fee_observations")) return Promise.resolve([bound, own]);
+      return Promise.resolve([]);
+    });
+  }
+
+  afterEach(() => { delete process.env.SOURCE_CHECK_RATE_BOUND; });
+
+  it("traceLiveFee refuses the bound only when asked to", () => {
+    expect(traceLiveFee(bound, cusbTexts).kind).toBe("traced");
+    expect(traceLiveFee(bound, cusbTexts, { rateBounds: true })).toEqual({ kind: "untraceable", reason: "rate_bound" });
+    expect(traceLiveFee(own, cusbTexts, { rateBounds: true }).kind).toBe("traced");
+  });
+
+  it("with the switch off, counts the fee and writes nothing that takes it down", async () => {
+    const db = boundDb();
+    const result = await takeDownUntraceableFees(db as never, { runId: 5, batchId: "b", dryRun: false });
+    expect(result.rateBound).toBe(1);
+    expect(result.rateBoundSamples).toEqual([{ feePublishedId: 11, institutionId: 42, feeName: bound.fee_name, amount: 10 }]);
+    expect(result.takedowns).toEqual([]);
+    expect(result.flagged).toBe(0);
+    expect(result.traced).toBe(2);
+    const statements = db.mock.calls.map((call) => (call[0] as unknown as string[]).join("?"));
+    expect(statements.some((query) => query.includes("SET rolled_back_at = NOW()"))).toBe(false);
+    expect(statements.some((query) => query.includes("INSERT INTO pipeline_feedback"))).toBe(false);
+    const event = db.mock.calls.find((call) => (call[0] as unknown as string[]).join("?").includes("'hamilton.source_check'"));
+    expect(JSON.stringify(event)).toContain('\\"rate_bound\\":1');
+    expect(JSON.stringify(event)).toContain('\\"rate_bound_takedowns_on\\":false');
+  });
+
+  it("with SOURCE_CHECK_RATE_BOUND=on, takes the fee down on its second look", async () => {
+    process.env.SOURCE_CHECK_RATE_BOUND = "on";
+    const result = await takeDownUntraceableFees(boundDb() as never, { runId: 5, batchId: "b", dryRun: true });
+    expect(result.rateBound).toBe(1);
+    expect(result.takedowns).toEqual([expect.objectContaining({ feePublishedId: 11, reason: "rate_bound" })]);
   });
 });

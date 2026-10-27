@@ -10,6 +10,7 @@ import { BUSINESS_FOOTNOTE_REASON, BUSINESS_SCHEDULE_CHECK, footnoteMarksBusines
 import { DUPLICATE_COLLAPSE_REASON_PREFIX, NEAR_NAME_COLLAPSE_REASON_SUFFIX, nearNameRepeats, type NearNameRow } from "@/lib/agents/hamilton/duplicate-collapse";
 import { nextReaderRung, PRIMARY_READERS, survivalFeedback, type SurvivalRow } from "@/lib/agents/rosetta/text-survival";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
+import { rateBoundRefusalLive } from "@/lib/custom-report/source-check";
 import { SOURCE_CHECK_REASON, traceLiveFee, type InstitutionText } from "@/lib/agents/hamilton/source-check";
 import { auditFeedback } from "./audit-misses";
 import { errorFixProblems, judgeErrorFix, type ErrorFixFee } from "./error-fixes";
@@ -167,10 +168,18 @@ const keyText = (text: string) => ({ textId: 1, sourceDocumentId: DOCUMENT, text
 const DISCONTINUED_TEXT = "Fee Schedule\nBasic Checking Monthly Service Charge | $3.00\nMonthly Service Charge (80 Suffix) daily balance below $500 | $5.00 (this account no longer offered)";
 const DISCONTINUED_PLANTED = liveFee(951, { canonical_fee_key: "monthly_maintenance", fee_name: "Monthly Service Charge (80 Suffix)", amount: 5 });
 const DISCONTINUED_CORRECTED = liveFee(952, { canonical_fee_key: "monthly_maintenance", fee_name: "Basic Checking Monthly Service Charge", amount: 3 });
-const sourceCheckReason = (fee: ErrorFixFee): string | null => {
-  const verdict = traceLiveFee(fee, texts(DISCONTINUED_TEXT));
+const sourceCheckReason = (fee: ErrorFixFee, text = DISCONTINUED_TEXT): string | null => {
+  const verdict = traceLiveFee(fee, texts(text));
   return verdict.kind === "untraceable" ? `${SOURCE_CHECK_REASON}:${verdict.reason}` : null;
 };
+
+// A percentage charge's minimum or maximum read as a flat fee (#2067). Verbatim from inst 7936's stored
+// schedule (doc 28799): the NSF fee went live at "$10 Max", the cap of "5% of Total". Source check v27
+// refuses it as `rate_bound`, but only with SOURCE_CHECK_RATE_BOUND on; off, the live check only counts it.
+const RATE_BOUND_TEXT = "Account Reinstatement | $20.00 | Coin Counting\n(Within 90 days of close) | Member** | Free\nNon-Sufficient Funds (NSF) | Non-Member ($10 Max) | 5% of Total\nTransfer from Savings (manual/automatic) | $5.00 | Credit Card Cash Advance Fee | $3.00\nOverdraft/Return | $30.00 | CUSB Transaction Fee** | $2.00";
+const RATE_BOUND_PLANTED = liveFee(971, { canonical_fee_key: "nsf", fee_name: "Non-Sufficient Funds (NSF): Non-Member", amount: 10 });
+// The re-check still passes a fee the same schedule prices flat on its own row.
+const RATE_BOUND_CORRECTED = liveFee(972, { canonical_fee_key: "cash_advance", fee_name: "Credit Card Cash Advance Fee", amount: 3 });
 
 // The weekly live check's misses that no loop caught (#2066, W43): every check that runs on live fees
 // passes these fees. Each fee and line is copied from a W43 miss (its fee id in the comment).
@@ -368,6 +377,22 @@ export const PLANTED_ERRORS: PlantedError[] = [
     },
   },
   {
+    key: "amount_rate_bound",
+    label: "a percentage charge's minimum or maximum read as a flat fee",
+    owner: "knox",
+    stage: "extract",
+    // The live source check passes the default switch, so with SOURCE_CHECK_RATE_BOUND off it flags nothing.
+    detect: () => sourceCheckReason(RATE_BOUND_PLANTED, RATE_BOUND_TEXT),
+    record: (reason) => rows(takedown(971, reason, { canonical_fee_key: "nsf", fee_name: RATE_BOUND_PLANTED.fee_name, amount: 10 })),
+    // Knox learns the class from the shared rule (rules v136, `rateBoundOf`); no Knox file reads its takedown rows.
+    reader: null,
+    rerun: rateBoundRefusalLive() ? () => errorFixCanName("extract", "hamilton.source_check") : null,
+    recheck: rateBoundRefusalLive() ? {
+      planted: () => errorFixJudges(RATE_BOUND_PLANTED, RATE_BOUND_TEXT, "hamilton.source_check") === "still_wrong",
+      corrected: () => errorFixJudges(RATE_BOUND_CORRECTED, RATE_BOUND_TEXT, "hamilton.source_check") === "now_matches",
+    } : null,
+  },
+  {
     key: "missed_fee",
     label: "a fee on the schedule that Knox did not read",
     owner: "knox",
@@ -427,6 +452,10 @@ export const KNOWN_GAPS: Record<string, Partial<Record<LoopLink, number>>> = {
   // #2070: the takedown sync records a discontinued account's takedown as its own kind, but only its
   // restore detection reads it; Knox learns the class from the shared check, not from the rows.
   discontinued_account: { read: 2062 },
+  // #2067: source check v27 refuses a rate's bound only with SOURCE_CHECK_RATE_BOUND on (James's yes);
+  // off, the live check counts it in its event and writes no row. Knox learns the class from the shared
+  // rule (rules v136), not from rows.
+  amount_rate_bound: rateBoundRefusalLive() ? { read: 2062 } : { detected: 2067, recorded: 2067, read: 2062, rerun: 2067, fixed: 2067 },
   // A missed fee is a Deming test case, not a feedback row, so Knox never learns from it.
   missed_fee: { recorded: 2062, read: 2062, rerun: 2058 },
   // #2066 (W43 weekly check): Darwin's hourly re-check fixes the fee, but its frequency_filled row has
