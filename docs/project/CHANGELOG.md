@@ -6,8 +6,9 @@ Started 2026-10-05; for anything earlier, see `git log`.
 ## 2026-10-22, later (from 2026-10-22 07:40 UTC)
 **Accuracy and data quality**
 - **Shadow lab, on the frozen cases:** answer-key fees published 916 -> 946 of 1,312; names that
-  match the schedule 287 / 317 -> 315 / 319; seven-state gate 877 -> 909 right, 34 wrong; false
-  publication flat at 34 / 160. The ratchet lost nothing.
+  match the schedule 287 / 317 -> 315 / 319; seven-state gate 877 -> 909 right, 34 wrong. False
+  publication started the window at 25 / 127; the base widened to 160 when #2544 added the live
+  audit, and it stayed at 34 / 160 after that. The ratchet lost nothing.
 - **Deming:** James's W43 live audit replays as a shadow-lab scenario, with a name score (#2544).
 - **Knox:**
   - Second wave: every stored copy last read before v97 is read once more (#2542).
