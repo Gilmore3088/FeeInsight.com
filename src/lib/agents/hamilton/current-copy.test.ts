@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { countCurrentCopyPairs, currentCopyVerdict, judgeAgainstCurrentCopy, linkYear, retiredCopiesSql, retiredCopyIsNewer, secondLookFeesNotOnCurrentCopy, type CurrentCopyFeeRow } from "./current-copy";
+import { countCurrentCopyPairs, currentCopyVerdict, interleavedPriceWitness, isFeeChangeNotice, judgeAgainstCurrentCopy, linkYear, readableCurrentText, retiredCopiesSql, retiredCopyIsNewer, secondLookFeesNotOnCurrentCopy, type CurrentCopyFeeRow } from "./current-copy";
 
 function templateText(strings: unknown): string {
   return Array.isArray(strings) ? strings.join(" ") : String(strings);
@@ -245,5 +245,141 @@ describe("retired documents (no longer a source, Oct 19)", () => {
     expect(linkYear("https://x.org/2021-Fee-Schedule-102021.pdf")).toBe(2021);
     expect(linkYear("https://x.org/fees/12345.pdf")).toBeNull();
     expect(linkYear(null)).toBeNull();
+  });
+});
+
+describe("currentCopyVerdict (third hand check, #2072, Oct 27: 11 of 20 first looks stale)", () => {
+  // Each case is one sampled first look: the live fee, its older copy's line and the current
+  // copy's line, copied from the bank's stored text (triage/switches-2072-samples.md, section 3).
+  // Where the sample copied no fee name, the name is the line's own label.
+  type Case = { id: number; name: string; amount: string; older: string; current: string; key?: string };
+  const filler = "Fee Schedule\nOverdraft Fee | $30.00\nStatement Copy | $3.00\n";
+  const judge = (c: Case) => currentCopyVerdict(fee(c.id, c.name, c.amount, { canonical_fee_key: c.key ?? "fee" }), `${filler}${c.current}\n`, `${filler}${c.older}\n`);
+
+  // The 11 the hand check found really stale: still judged stale.
+  const stale: Case[] = [
+    { id: 6082, name: "Special Order", amount: "5.00",
+      older: "Coin and Currency Requests\nStanding Order $3.00\nSpecial Order $5.00",
+      current: "Service Fees Effective October 9th, 2026\nWire Transfer Outgoing | $25.00" },
+    { id: 19946, name: "Bill Payment", amount: "5.00", older: "Bill Payment / $5.00 each", current: "bill payment | $29.00 each" },
+    { id: 24913, name: "ATM/Debit Replacement Cards", amount: "10.00", older: "ATM/Debit Replacement Cards | $10.00 per card",
+      current: "ATM/Debit Replacement Cards | $25.00 per card, expedited cards $50.00", key: "card_replacement" },
+    { id: 49180, name: "Mortgage Loan Application", amount: "200.00",
+      older: "Loan Refinance Fee $20.00 per loan\nMortgage Loan Application $200.00 per application\nMortgage Loan Origination Fee | 1%",
+      current: "Loan Refinance Fee | $20.00 per loan Mortgage Loan Origination Fee | 1%" },
+    { id: 61439, name: "Automated Overdraft Transfer Fee From Savings", amount: "5.00", older: "Automated Overdraft Transfer Fee From Savings | $5.00",
+      current: "Automated Overdraft Transfer Fee From Savings (per transfer) | No Charge", key: "od_protection_transfer" },
+    { id: 67070, name: "Returned Deposit", amount: "8.00", older: "Returned Deposit | $8.00",
+      current: "Returned Deposit Your deposited/cashed check was returned to us unpaid. | No Fee", key: "deposited_item_return" },
+    { id: 81970, name: "Returned Deposit Item Fee", amount: "15.00", older: "Returned Deposit Item Fee ...... $15.00",
+      current: "Pricing Schedule Effective Sept 9, 2026\nWire Transfer Outgoing | $25.00", key: "deposited_item_return" },
+    { id: 81978, name: "Check-for-Less Monthly Fee", amount: "10.00", older: "Check-for-Less Pricing Information: Monthly Fee ...... $10.00",
+      current: "Pricing Schedule Effective Sept 9, 2026\nWire Transfer Outgoing | $25.00" },
+    { id: 93933, name: "Incorrect Address/Returned Mail per Item Fee", amount: "5.00", older: "Incorrect Address/Returned Mail per Item Fee ---$5.00",
+      current: "Paper Statements Monthly | $3.00\nWire Transfer Outgoing | $25.00" },
+    { id: 97804, name: "Debit Card - lost or stolen card", amount: "10.00", older: "Debit Card - lost or stolen card | $10.00",
+      current: "Debit Card - lost or stolen card | $5.00", key: "card_replacement" },
+    { id: 115075, name: "Returned Deposited Items - Charge Back", amount: "15.00", older: "Returned Deposited Items - Charge Back | $15.00",
+      current: "Returned Deposited Items - Charge Back | $25.00", key: "deposited_item_return" },
+  ];
+  it.each(stale)("still judges fee $id stale", (c) => {
+    expect(["still_named", "dropped"]).toContain(judge(c));
+  });
+
+  // The 9 the hand check found wrong: no longer judged stale.
+  it.each<Case>([
+    // Two-column PDF, Access FCU (doc 33871): the labels and prices of two columns interleave.
+    { id: 27733, name: "Bill Payment Insufficient Funds Surcharge (each item)", amount: "15.00", older: "Bill Payment Insufficient Funds Surcharge (each item) | $15.00",
+      current: "ACH Revoke ................. $10.00$10.00 Bill Payment Insufficient Funds Surcharge ........ (each item) ........ $ 5.00$15.00" },
+    { id: 63730, name: "Research & Reconcilement (per hour)", amount: "25.00", older: "Research & Reconcilement (per hour) | $25.00", key: "account_research",
+      current: "Courtesy Pay Fee (per transaction) ..........Research & Reconcilement (per hour)........ $10.00$25.00" },
+    { id: 128075, name: "Card Replacement", amount: "10.00", older: "Card Replacement | $10.00", key: "card_replacement",
+      current: "Card Replacement ..........Share Draft Protest .......... $20.00$10.00" },
+    // The label on one line, the glued prices on the next.
+    { id: 128076, name: "Card Replacement", amount: "10.00", older: "Card Replacement | $10.00", key: "card_replacement",
+      current: "Card Replacement ..........Share Draft Protest\n.......... $20.00$10.00" },
+  ])("does not prove fee $id stale from interleaved columns", (c) => {
+    expect(judge(c)).toBe("unproven");
+  });
+
+  it.each<Case>([
+    // A point spaced off its cents (doc 12872).
+    { id: 42058, name: "Stop Payment-Standard (180 days)", amount: "29.00", older: "Stop Payment-Standard (180 days) | $29.00", key: "stop_payment",
+      current: "Stop Payment-Standard (180 days) .......... $29. 00/eac h" },
+    // A line break kept as markup, the price before its name (doc 40020).
+    { id: 101033, name: "Card Replacement Fee", amount: "10.00", older: "Card Replacement Fee | $10.00", key: "card_replacement",
+      current: "Debit Card*** | No Annual Fee<br>$10.00 Card Replacement Fee" },
+    // The price before its name and unit (doc 36629).
+    { id: 138008, name: "Account Research", amount: "25.00", older: "Account Research | $25.00 per hour", key: "account_research",
+      current: "$25.00 per hour / 1-hour Account Research fee minimum" },
+  ])("reads fee $id as still stated", (c) => {
+    expect(judge(c)).toBe("still_stated");
+  });
+
+  it("reads markup breaks as lines and a spaced point as a price", () => {
+    expect(readableCurrentText("No Annual Fee<br>$10.00 Card Replacement Fee<br />x")).toBe("No Annual Fee\n$10.00 Card Replacement Fee\nx");
+    expect(readableCurrentText("Stop Payment .... $29. 00/eac h")).toBe("Stop Payment .... $29.00/eac h");
+  });
+
+  // Jeanne D'Arc CU (doc 21764), the notice the hand check found taken as the current copy. The
+  // sampled fees (64213 $5, 64221 $5, 93814 $10) are not on it; their names here are illustrative.
+  const NOTICE = [
+    "General Fee Changes:",
+    "The fees highlighted below have been adjusted and will be effective on August 1, 2026.",
+    "Consumer and Business Account Fees | Fee through | Fee as of",
+    "July 31,2026 | August 1, 2026",
+    "Money Orders | $2.00 | $5.00",
+    "Same Day ACH Service Charge | $10.00 | $10.00",
+    "Account Research | $35.00 per hour | $50.00 per hour",
+  ].join("\n");
+  const JDCU_OLDER = "Schedule of Fees\nMoney Orders | $2.00\nSame Day ACH Service Charge | $10.00\nCoin Counting (non-members) | $5.00\nStatement Reprint | $5.00\nWire Transfer Incoming | $10.00\n";
+
+  it.each([
+    [64213, "Coin Counting (non-members)", "5.00"],
+    [64221, "Statement Reprint", "5.00"],
+    [93814, "Wire Transfer Incoming", "10.00"],
+  ])("never proves fee %s stale from a fee-change notice that does not list it", (id, name, amount) => {
+    expect(isFeeChangeNotice(NOTICE)).toBe(true);
+    expect(currentCopyVerdict(fee(id, name, amount), NOTICE, JDCU_OLDER)).toBe("unproven");
+  });
+
+  it("still reads a fee a notice restates at its price, and one it reprices", () => {
+    expect(currentCopyVerdict(fee(1, "Same Day ACH Service Charge", "10.00"), NOTICE, JDCU_OLDER)).toBe("still_stated");
+    expect(currentCopyVerdict(fee(1, "Money Orders", "5.00"), NOTICE, JDCU_OLDER)).toBe("still_stated");
+    // The newest column prices Money Orders at $5: a live $2 is stale, not stated by the old column.
+    expect(currentCopyVerdict(fee(1, "Money Orders", "2.00"), NOTICE, JDCU_OLDER)).toBe("still_named");
+  });
+
+  it("knows a notice from a schedule", () => {
+    expect(isFeeChangeNotice("NOTICE OF CHANGE IN TERMS\nEffective December 1, 2026 the following fees will change:")).toBe(true);
+    expect(isFeeChangeNotice("Important Fee Changes\nOverdraft Fee | $30.00")).toBe(true);
+    expect(isFeeChangeNotice(OLDER)).toBe(false);
+    expect(isFeeChangeNotice(CURRENT)).toBe(false);
+    expect(isFeeChangeNotice("Service Fees Effective October 9th, 2026\nOverdraft Fee | $30.00\nWe may change these fees with notice.")).toBe(false);
+    // Only the opening is read: a schedule's closing note about changes is not a notice.
+    expect(isFeeChangeNotice(`${"Overdraft Fee | $30.00\n".repeat(80)}Fee Changes\n`)).toBe(false);
+  });
+
+  it("finds a glued price only beside the fee's own label", () => {
+    const line = "Card Replacement ..........Share Draft Protest .......... $20.00$10.00";
+    expect(interleavedPriceWitness("Card Replacement", 10, line)).toBe(true);
+    expect(interleavedPriceWitness("Card Replacement", 15, line)).toBe(false);
+    expect(interleavedPriceWitness("Wire Transfer", 10, line)).toBe(false);
+    expect(interleavedPriceWitness("Card Replacement", 10, "Card Replacement | $20.00 | $10.00")).toBe(false);
+  });
+
+  it("clears a first look on a fee it can no longer prove stale", () => {
+    const rows = [
+      fee(1, "Money Orders", "2.00"),
+      fee(2, "Same Day ACH Service Charge", "10.00"),
+      fee(3, "Coin Counting (non-members)", "5.00"),
+    ];
+    const doc = judgeAgainstCurrentCopy(rows, NOTICE, JDCU_OLDER);
+    // One fee stated is too few to recognize the notice as the schedule: nothing fails, and the
+    // fees it could not prove stale clear any first look they carry.
+    expect(doc.recognized).toBe(false);
+    expect(doc.failing).toEqual([]);
+    expect(doc.notProven).toEqual(expect.arrayContaining([1, 3]));
+    expect(doc.notProven).not.toContain(2);
   });
 });

@@ -726,4 +726,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-27",
   },
+  {
+    id: "issue-2072-current-copy-absence-needs-a-full-schedule",
+    agent: "hamilton",
+    stage: "publish",
+    lesson: "A fee is stale only when the bank's current copy, read the way a reader sees it, no longer states it. Read the copy first: a <br> kept as markup is a line break, a point spaced off its cents (\"$29. 00/eac h\") is the price, and a change table's row is its newest column. A two-column PDF that glues both columns' names and then both prices on one line (\"Card Replacement ……Share Draft Protest …… $20.00$10.00\") proves nothing either way when the fee's label is on that line or the one above and its price is one of the glued ones: the fee is not proven stale. A fee-change notice (\"The fees highlighted below have been adjusted\", \"General Fee Changes\", a notice of change in terms, a \"Fee through | Fee as of\" table) lists only what changes, so a fee missing from it is not missing from the schedule; only a row of the notice naming the fee at another price makes it stale. A fee the check can no longer prove stale has its first look cleared.",
+    why: "The hand check of 20 current-copy first looks (Oct 27, read-only) found 11 really stale and 9 still printed: three at Access FCU on a two-column PDF whose prices interleave, three at Jeanne D'Arc CU whose newest copy was a change notice listing only changed fees, and three where the price was split by a glyph gap, a <br> or a price-before-name row. At 11 of 20 the CURRENT_COPY_CONFIRM_LIVE switch could not be turned on (its bar is 18 of 20).",
+    evidence: { issues: [2072], prs: [], files: ["src/lib/agents/hamilton/current-copy.ts", "src/lib/agents/hamilton/current-copy.test.ts", "src/lib/fee-change-columns.ts"] },
+    appliesTo: "all",
+    since: "2026-10-27",
+  },
 ];

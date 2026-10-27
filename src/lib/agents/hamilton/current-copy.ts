@@ -4,13 +4,15 @@ import { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { inSavepoint } from "@/lib/agents/savepoint";
-import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
+import { checkFeeAgainstSource, withDroppedDecimalPoints } from "@/lib/custom-report/source-check";
+import { hasFeeChangeTable, newestColumnText } from "@/lib/fee-change-columns";
 import { secondLook, secondLookDedupeKey, SECOND_LOOK_MIN_MINUTES } from "@/lib/agents/hamilton/second-look";
 import { sameSchedule } from "@/lib/agents/hamilton/schedule-edition";
 import {
   NEWER_COPY_MIN_SHARED_FEES,
   NEWER_COPY_MIN_SHARED_SHARE,
   newerCopyVerdict,
+  squash,
   type NewerCopyVerdict,
 } from "@/lib/agents/hamilton/newer-copy-retire";
 
@@ -57,7 +59,10 @@ export const CURRENT_COPY_FLAG = "not_on_current_copy";
 export const CURRENT_COPY_CONFIRM_LIVE = false;
 export const CURRENT_COPY_DOCUMENT_LIMIT = 40;
 // v2 (9 Oct): copies judged before #471's verdict and the renamed-account fix are judged again.
-export const CURRENT_COPY_STRATEGY = { strategy: "hamilton.current_copy_check", version: 2 } as const;
+// v3 (27 Oct, #2072): copies are judged again with the layout fixes of the second hand check
+// (glued two-column prices, markup line breaks, spaced decimal points, fee-change notices). While
+// `CURRENT_COPY_CONFIRM_LIVE` is false the re-run only logs first looks; it takes nothing down.
+export const CURRENT_COPY_STRATEGY = { strategy: "hamilton.current_copy_check", version: 3 } as const;
 
 /**
  * The retired documents among the `live` CTE's rows (columns older_document_id, institution_id,
@@ -187,6 +192,12 @@ export interface CurrentCopyDocument {
   retired: boolean;
   failing: CurrentCopyCandidate[];
   passing: number[];
+  /**
+   * Fees this run read but could not prove stale: `unproven`, or suspected on a copy that is not
+   * recognizably the same schedule. A first look left on one is cleared (#2072), since the check no
+   * longer has evidence for it.
+   */
+  notProven: number[];
 }
 
 /** Pure: one older copy's live fees judged against its current copy. */
@@ -234,9 +245,92 @@ const GENERIC_FEE_WORDS = /\s*\b(?:monthly\s+)?(?:maintenance|service)\s+(?:fee|
  * still follows with its price is stated (`priceFollowsName`), and a
  * $0 row is never judged, since "FREE" carries no price to match.
  */
-export function currentCopyVerdict(fee: CurrentCopyFeeRow, currentText: string, olderText: string): NewerCopyVerdict {
+export function currentCopyVerdict(fee: CurrentCopyFeeRow, rawCurrentText: string, olderText: string): NewerCopyVerdict {
   const amount = fee.amount == null ? null : Number(fee.amount);
   if (amount != null && !(amount > 0)) return "unproven";
+  const currentText = readableCurrentText(rawCurrentText);
+  const verdict = layoutVerdict(fee, currentText, olderText);
+  if (verdict === "still_stated" || verdict === "unproven" || amount == null) return verdict;
+  // #2072: a glued column's prices neither state nor drop the fee.
+  if (interleavedPriceWitness(fee.fee_name, amount, currentText)) return "unproven";
+  // #2072: a fee-change notice's silence proves nothing; only a row of its own naming the fee at
+  // another price does ("Money Orders | $2.00 | $5.00" makes a live $2 stale).
+  if (isFeeChangeNotice(rawCurrentText)) {
+    const traced = checkFeeAgainstSource(currentText, fee.fee_name, amount, ".");
+    if (!traced.ok && traced.reason === "name_not_in_text") return "unproven";
+  }
+  return verdict;
+}
+
+/**
+ * #2072 (hand check of 20 first looks, Oct 27: 11 really stale): the current copy's text as a
+ * reader sees it. A line break kept as markup ("Debit Card*** | No Annual Fee<br>$10.00 Card
+ * Replacement Fee") is a line break, and a price whose point the PDF spaced off its cents
+ * ("$29. 00/eac h") is that price (`withDroppedDecimalPoints`, the source check's own repair), so
+ * `priceFollowsName` reads $29.00 rather than $29. A change table's row is read at its newest
+ * column (`newestColumnText`, Knox's reading), so "Money Orders | $2.00 | $5.00" never has
+ * `priceFollowsName` find the old $2. Pure.
+ */
+export function readableCurrentText(text: string): string {
+  return newestColumnText(withDroppedDecimalPoints(text.replace(/<br\s*\/?>/gi, "\n")));
+}
+
+/** A run of two or more prices glued with nothing between them: "$10.00$25.00", "$ 5.00$15.00". */
+const GLUED_PRICE_RUN = /\$\s?\d[\d,]*\.\d{2}(?:\$\s?\d[\d,]*\.\d{2})+/g;
+
+/**
+ * #2072: a two-column PDF flattened row by row glues both columns' names onto one line and both
+ * prices after them ("Courtesy Pay Fee (per transaction) ……Research & Reconcilement (per hour)…
+ * $10.00$25.00", "Card Replacement ……Share Draft Protest …… $20.00$10.00", Access FCU). The order of
+ * the prices is not the order of the names (`gluedPricePair`), so such a line neither states nor
+ * drops a fee: when the fee's name is on the line, or on the line just above it, and its price is one
+ * of the glued prices, its absence from the current copy is not proven. Pure.
+ */
+export function interleavedPriceWitness(feeName: string, amount: number, currentText: string): boolean {
+  const lines = currentText.split("\n");
+  const name = squash(feeName.replace(/\([^()]*\)/g, " "));
+  const parts = feeName.replace(/\([^()]*\)/g, " ").split(/[:|–—]| - /).map(squash);
+  const anchors = [name, ...parts].filter((part) => part.length >= 5);
+  if (anchors.length === 0) return false;
+  return lines.some((line, index) => {
+    const runs = line.match(GLUED_PRICE_RUN);
+    if (!runs) return false;
+    const prices = runs.flatMap((run) => run.match(/\d[\d,]*\.\d{2}/g) ?? []).map((price) => Number(price.replace(/,/g, "")));
+    if (!prices.some((price) => Math.abs(price - amount) < 0.005)) return false;
+    const pair = squash(`${lines[index - 1] ?? ""} ${line}`);
+    return anchors.some((anchor) => pair.includes(anchor));
+  });
+}
+
+/**
+ * #2072: a notice of changed fees lists only the fees that change ("General Fee Changes: The fees
+ * highlighted below have been adjusted …", Jeanne D'Arc CU, doc 21764), so a fee missing from it is
+ * not missing from the bank's schedule. Such a copy never proves a fee stale. Read from the opening
+ * of the text only: a full schedule that mentions fee changes further down ("We may change these
+ * fees with notice") is still the schedule. Pure.
+ */
+export function isFeeChangeNotice(text: string): boolean {
+  const head = text.slice(0, FEE_CHANGE_NOTICE_HEAD_CHARS);
+  return FEE_CHANGE_NOTICE.some((pattern) => pattern.test(head)) || hasFeeChangeTable(head);
+}
+
+export const FEE_CHANGE_NOTICE_HEAD_CHARS = 1500;
+const FEE_CHANGE_NOTICE: readonly RegExp[] = [
+  // "The fees highlighted below have been adjusted", "Fees listed below will change".
+  /\b(?:fees?|charges?|prices?|pricing)\s+(?:highlighted|marked|shown|listed|noted|bolded|shaded)\s+below\s+(?:have|has|will|are|were)\b[^.\n]{0,30}?\b(?:adjust|chang|updat|revis|increas|reduc|modif)\w*/i,
+  // A heading that is only "General Fee Changes:", "Important Fee Changes", "Upcoming Pricing Changes".
+  /^\s*(?:general|important|upcoming|recent|summary of|notice of)?\s*(?:fee|pricing|price|service charge)\s+changes?\s*:?\s*$/im,
+  // "Notice of change in terms", "Change in Terms Notice", "Notice of amendment to fees".
+  /\bnotice\s+of\s+(?:a\s+)?(?:change|amendment)s?\s+(?:in|to)\s+(?:terms|fees|your\s+account)\b/i,
+  /\bchange\s+(?:in|of)\s+terms\s+notice\b/i,
+];
+
+/**
+ * The newer-copy verdict, with the layout guards of the hand checks (`priceFollowsName`, the
+ * shared source check). Pure.
+ */
+function layoutVerdict(fee: CurrentCopyFeeRow, currentText: string, olderText: string): NewerCopyVerdict {
+  const amount = fee.amount == null ? null : Number(fee.amount);
   if (productKey(fee.product_name)) {
     const owner = primaryAncillaryProduct(currentText);
     if (!owner || !sameProduct(owner.productName, fee.product_name)) return "unproven";
@@ -301,6 +395,7 @@ export function judgeAgainstCurrentCopy(fees: CurrentCopyFeeRow[], currentText: 
     retired: first.retired === true,
     failing: [],
     passing: [],
+    notProven: [],
   };
   const suspect: CurrentCopyCandidate[] = [];
   for (const fee of fees) {
@@ -315,6 +410,7 @@ export function judgeAgainstCurrentCopy(fees: CurrentCopyFeeRow[], currentText: 
     else if (verdict === "dropped") doc.dropped += 1;
     else {
       doc.unproven += 1;
+      doc.notProven.push(Number(fee.fee_published_id));
       continue;
     }
     suspect.push({
@@ -334,6 +430,7 @@ export function judgeAgainstCurrentCopy(fees: CurrentCopyFeeRow[], currentText: 
   doc.recognized = doc.stated >= NEWER_COPY_MIN_SHARED_FEES && judged > 0 && doc.stated / judged >= NEWER_COPY_MIN_SHARED_SHARE
     && (!doc.retired || retiredCopyIsNewer(first, currentText, olderText));
   if (doc.recognized) doc.failing = suspect;
+  else doc.notProven.push(...suspect.map((candidate) => candidate.feePublishedId));
   return doc;
 }
 
@@ -561,7 +658,7 @@ export async function secondLookFeesNotOnCurrentCopy(
     check: CURRENT_COPY_CHECK,
     runId: options.runId,
     failing,
-    passing,
+    passing: [...passing, ...documents.flatMap((doc) => doc.notProven)],
     dryRun: options.dryRun,
     minMinutes: confirmLive ? SECOND_LOOK_MIN_MINUTES : Number.POSITIVE_INFINITY,
   });
