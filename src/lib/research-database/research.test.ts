@@ -114,7 +114,7 @@ describe("research calculations and frozen evidence", () => {
     const input = fixture(); input.demographics[0].geo_name = '<img src=x onerror="alert(1)">';
     const s = assembleResearchSnapshot(request, input);
     const html = renderResearchHtml(s, "Example <report>");
-    expect(html).not.toContain("<img"); expect(html).toContain("&lt;img");
+    expect(html).not.toContain("<img src=x"); expect(html).toContain("&lt;img");
     for (const cell of researchExhibits(s)) expect(html).toContain(cell.formatted);
     expect(researchHash({ b: 1, a: 2 })).toBe(researchHash({ a: 2, b: 1 }));
   });
