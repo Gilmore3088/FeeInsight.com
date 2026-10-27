@@ -3,6 +3,7 @@ import { htmlToScoringText, isProductPageUrl, scoreFeePage, urlNamesFeePage } fr
 
 import { isArticleLink, isBusinessOnlyLink, isBusinessOnlyText, isErrorPageLink, isForeignHostLink, isNonFeeDocumentLink, isSingleProductDisclosureLink, looksForeignSchedule } from "./link-coverage";
 import { unconfirmedDocumentHost } from "./other-bank-host";
+import { looksLikeJsShell } from "@/lib/agents/rosetta/js-fallback";
 import { creditTermsOpening, documentOpeningKind } from "@/lib/non-deposit-document";
 
 /**
@@ -122,6 +123,11 @@ export interface CandidateValidation {
   scoringText?: string | null;
   /** Where the candidate's address redirected to, when it did. */
   finalUrl?: string | null;
+  /**
+   * The page HTML is a script-built shell (Rosetta's `looksLikeJsShell`): its fee table, if
+   * any, is drawn by JavaScript we do not run. Measurement only; it changes no verdict.
+   */
+  scriptBuilt?: boolean;
 }
 
 /**
@@ -315,8 +321,13 @@ export function checkOpenedFeePage(candidate: FeeCandidate, html: string, status
 }
 
 function checkFeeHtml(candidate: FeeCandidate, rawBody: string, status: number): CandidateValidation {
-  const response = { status };
   const mainText = mainContentText(rawBody);
+  const validation = checkFeeHtmlText(candidate, rawBody, mainText, status);
+  return looksLikeJsShell(rawBody, mainText) ? { ...validation, scriptBuilt: true } : validation;
+}
+
+function checkFeeHtmlText(candidate: FeeCandidate, rawBody: string, mainText: string, status: number): CandidateValidation {
+  const response = { status };
   const body = mainText.toLowerCase();
   // Fee words in a footer or menu ("Fee Schedule | Truth in Savings") appear on every page
   // of the site, so they are counted on the page's own content only.

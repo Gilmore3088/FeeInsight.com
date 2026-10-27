@@ -125,6 +125,11 @@ and `detail.method_version`).
 | 3 | `discover.paid_pick` | `paid-find.ts`: one model call, no tools, picks up to 3 of the homepage's links; each pick passes the fee-page check. Off with `MAGELLAN_PAID_PICK=off`. |
 | 3 | `discover.paid_web_search` | `paid-find.ts`, the `discover-paid` provider step (below); runs only when the pick found nothing, then waits out the paid cooldown (90 days after a find, 30 after a miss; `cooldowns.ts`). |
 
+- Script-built pages are counted, not judged differently (measurement for the browser tool,
+  2026-10-27): an HTML candidate whose page is a script shell (Rosetta's `looksLikeJsShell`)
+  carries `scriptBuilt` on its validation and `script_built: true` on its trail entry, and the
+  homepage trail entry records its raw link count (`anchors`) and `script_built`. No verdict
+  changes; the counts size the browser step.
 - Fee-page check (`find-validate.ts`), shared by every finder and the paid pass: HTML
   must pass `scoreFeePage` and not be a rates page; PDFs are downloaded (up to 8 MB)
   and their first pages read, so a rate sheet or press release is rejected. A PDF with
