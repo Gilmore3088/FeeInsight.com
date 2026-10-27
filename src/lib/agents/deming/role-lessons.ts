@@ -173,7 +173,7 @@ export const DEMING_LESSONS: AgentLesson[] = [
     stage: "answer-key replay",
     lesson: "When the answer key's document has no stored copy for its bank, do not only count the bank as having no text: check whether Magellan ever stored its address, as a document of any status or a companion page. If it never did, record a missed second schedule against discovery, one row per bank and address, so the companion finder searches the bank for it. A stored copy with other bytes is a newer read, not a miss.",
     why: "The Knox miss replay counted such banks in banks_no_text and moved on, so a schedule Magellan never captured taught no agent anything and the bank was never searched for it again (#2070).",
-    evidence: { issues: [2070], prs: [], files: ["src/lib/agents/deming/knox-misses.ts", "src/lib/agents/magellan/missed-schedules.ts"] },
+    evidence: { issues: [2070], prs: [2784], files: ["src/lib/agents/deming/knox-misses.ts", "src/lib/agents/magellan/missed-schedules.ts"] },
     appliesTo: "all",
     since: "2026-10-27",
   },
