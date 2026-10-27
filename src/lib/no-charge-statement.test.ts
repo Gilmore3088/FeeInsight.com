@@ -1,9 +1,13 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { CATEGORY_GUARD_RULES, NSF_NAME_INCLUDE } from "./fee-category-guard";
 import {
   NO_CHARGE_SENTENCE_READ_LIVE,
+  chargesNsfFamily,
   documentPricesNsf,
+  namesNsfFamily,
+  narrowsStatement,
   noChargeNsfSentence,
   noChargeNsfWitness,
   readNoChargeNsf,
@@ -147,6 +151,97 @@ describe("no-charge NSF sentences (#2040)", () => {
     });
     it.each(["What is the fee for overdrafts?", "Nonsufficient Funds (NSF)", "Bank on the go using your mobile device", "Your Checking Account"])("%s names none", (text) => {
       expect(scopeWordIn(text)).toBe(false);
+    });
+  });
+
+  describe("review of #2753: NSF-family prices the old page test missed (must not pass)", () => {
+    it("reads the category guard's own NSF words, shared and not copied", () => {
+      expect(CATEGORY_GUARD_RULES.nsf.include).toBe(NSF_NAME_INCLUDE);
+      // On a whole page "nsf" never matches inside another word.
+      expect(namesNsfFamily("Transfer Fee $5")).toBe(false);
+    });
+
+    it.each([
+      "Unpaid Item Fee $35",
+      "Item returned unpaid $35",
+      "Returned ACH $30",
+      "Returned payment $30",
+      "Returned draft $30",
+      "Cargo por fondos insuficientes $30",
+      "Dishonored check $25",
+      "Bounce fee $30",
+      "NSF fee 35 each",
+      "NSF fee: twenty-five dollars per item",
+      "Returned check charge twenty five dollars",
+    ])("%s prices NSF on the page", (line) => {
+      expect(documentPricesNsf([line])).toBe(true);
+      expect(names(`We do not charge NSF fees.\n\nFee Schedule\n${line}`)).toEqual([]);
+      expect(readNoChargeNsf(`We do not charge NSF fees.\n\nFee Schedule\n${line}`).refused.map((row) => row.reason)).toEqual(["document_prices_nsf"]);
+    });
+
+    it("a short label priced on the next line in figures or words", () => {
+      expect(documentPricesNsf(["Unpaid Item", "35 each"])).toBe(true);
+      expect(documentPricesNsf(["Bounced Check", "Twenty-five dollars"])).toBe(true);
+    });
+
+    it("a held read no category took, with NSF-family words and a price, charges NSF", () => {
+      expect(chargesNsfFamily({ canonicalHint: null, amount: 35, feeName: "Item returned unpaid", excerpt: "Item returned unpaid | $35" })).toBe(true);
+      expect(chargesNsfFamily({ canonicalHint: null, amount: 35, feeName: "Item", excerpt: "Item returned unpaid | $35" })).toBe(true);
+      expect(chargesNsfFamily({ canonicalHint: "nsf_daily_cap", amount: 105, feeName: "Maximum per day" })).toBe(true);
+      expect(chargesNsfFamily({ canonicalHint: null, amount: 0, feeName: "Item returned unpaid" })).toBe(false);
+      expect(chargesNsfFamily({ canonicalHint: null, amount: 5, feeName: "Wire transfer", excerpt: "Wire transfer | $5" })).toBe(false);
+    });
+  });
+
+  describe("review of #2753: scope the old test missed (must not pass)", () => {
+    it.each([
+      "This applies only to items under five dollars.",
+      "Only applies to accounts opened after January 1.",
+      "Except for items presented by our affiliates.",
+      "This does not apply to items presented more than once.",
+      "This waiver applies to accounts in good standing.",
+      "Unless you are enrolled in overdraft protection.",
+      "If your account is closed, a fee may apply.",
+      "This covers items of twenty dollars or less.",
+    ])("the next sentence narrows it: %s", (after) => {
+      expect(narrowsStatement(after)).toBe(true);
+      expect(names(`Fees\n\nWe do not charge NSF fees. ${after}\n`)).toEqual([]);
+      // In the next paragraph too.
+      expect(names(`Fees\n\nWe do not charge NSF fees.\n\n${after}\n`)).toEqual([]);
+    });
+
+    it("a following note about another fee, or a change-of-practice notice, narrows nothing", () => {
+      expect(narrowsStatement("Note: We will not charge an overdraft fee on items that are $10 or less.")).toBe(false);
+      expect(narrowsStatement("If we change this practice, we will provide you with advance notice.")).toBe(false);
+    });
+
+    it.each([
+      "VALUE CHECKING\n\nWe do not charge NSF fees.",
+      "Fees\n\nWith eChecking, statements are online. We do not charge NSF fees.",
+      "Fees\n\nThese terms are for iSavings. We do not charge NSF fees.",
+    ])("a named product in capitals or led by a lowercase letter: %s", (text) => {
+      expect(names(text)).toEqual([]);
+    });
+
+    it.each(["Young Saver", "Kids Club", "for members under 18", "kids", "SMB accounts", "Fresh Start", "Second Chance", "Relationship pricing", "Online-only accounts", "VALUE CHECKING", "eChecking"])("%s names a scope", (text) => {
+      expect(scopeWordIn(text)).toBe(true);
+    });
+
+    it.each(["PERSONAL CHECKING", "FEES FOR ACCOUNTS", "CHECKING AND SAVINGS ACCOUNTS", "Checking"])("%s names none", (text) => {
+      expect(scopeWordIn(text)).toBe(false);
+    });
+
+    it("a section heading more than 40 lines up still scopes the sentence", () => {
+      const prose = Array.from({ length: 60 }, (_, i) => `Paragraph ${i + 1} explains how deposits are posted and when the funds become available for withdrawal.`).join("\n");
+      for (const heading of ["BUSINESS ACCOUNTS", "4. Business Accounts"]) {
+        const read = readNoChargeNsf(`${heading}\n\n${prose}\n\nFees\n\nWe do not charge NSF fees.`);
+        expect(read.statements).toEqual([]);
+        expect(read.refused.map((row) => row.reason)).toEqual(["scope"]);
+      }
+      // With no section heading, the nearest heading counts however far up.
+      expect(names(`Business Checking\n\n${prose}\n\nWe do not charge NSF fees.`)).toEqual([]);
+      // A neutral section heading far up refuses nothing.
+      expect(names(`ACCOUNT TERMS\n\n${prose}\n\nFees\n\nWe do not charge NSF fees.`)).toEqual(["NSF fee"]);
     });
   });
 

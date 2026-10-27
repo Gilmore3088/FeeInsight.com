@@ -10,8 +10,11 @@
  * and a sample check of the dry-run reads (DECISIONS 2026-10-20).
  *
  * An earlier try (#2710, closed) read a sentence only under a heading wholly about the fee, which read
- * almost nothing, because who a sentence speaks for sits in the prose and headings around it. This
- * version reads the sentence's surroundings instead, and refuses on any sign of a narrower scope:
+ * almost nothing, because who a sentence speaks for sits in the prose and headings around it. #2040's
+ * note proposed the provider pass, which sees the section. This rule stays deterministic because a
+ * paid read must not run while provider billing is gated (CLAUDE.md), every refusal here is a fixed,
+ * testable reason Darwin can re-check on live fees, and it refuses on any sign of a narrower scope
+ * rather than guess, so what it misses goes to that pass later instead of going live wrong:
  *
  * 1. Grammar (`noChargeNsfSentence`): one whole sentence, `<We | The bank | The credit union> <do not |
  *    does not | don't | doesn't> [currently] <charge | assess | impose> [you] <a/an/any> <NSF fee
@@ -22,22 +25,34 @@
  * 2. Opening: the sentence opens its line or follows a sentence end. At the start of a line, the line
  *    above must be blank or end a sentence, so the tail of "In your Easy Checking account," never
  *    reads as a sentence of its own.
- * 3. Scope (`scopeWordIn`): no product, account, audience, tier or service word in the sentence, the
- *    rest of its paragraph (before and after it), or any heading in the 40 lines above it ("Bill Pay
- *    Services", "Business Checking", "HSBC Premier", "Assure Checking", "for Business accounts").
- * 4. Document (`documentPricesNsf`): no line of the document names NSF, a returned item or a bounced
- *    check with a price above $0 on it or on the next two non-empty lines. A priced line and a "we do
- *    not charge" sentence on one page are two products' terms, never the bank's $0.
+ * 3. Scope (`scopeWordIn`): no product, account, audience, tier or service word in the two sentences
+ *    before it, the sentence, the one after it, the headings in the 40 lines above or the nearest
+ *    section heading however far up ("Bill Pay Services", "Business Checking", "HSBC Premier", "VALUE
+ *    CHECKING", "eChecking", "Young Saver", "SMB", "Relationship"). And the sentence after it must not
+ *    narrow it (`narrowsStatement`: "This applies only to items under five dollars.").
+ * 4. Document (`documentPricesNsf`): no line of the document names an NSF-family fee (the category
+ *    guard's own NSF words, `NSF_NAME_INCLUDE`, plus dishonored and bounced items) with a price above
+ *    $0. A priced line and a "we do not charge" sentence on one page are two products' terms.
  *
- * The institution-wide check (another document of the bank prices NSF) is Knox's extract step's, which
- * holds such a read for review (`knox_no_charge_conflict`) rather than send it to Darwin.
+ * Knox adds two more: no read beside any NSF-family read on the same text, priced or held unclassified,
+ * and the extract step holds the read for review (`knox_no_charge_conflict`) when the institution has a
+ * charged NSF-family fee live, verified, waiting in raw reads of a current copy, in the rate catalog,
+ * or read in the same run.
+ *
+ * Switching on needs, in the same PR: Darwin's live re-check of these $0 fees, the dry-run count on
+ * current copies, a sample check, a Knox rules version bump and a source check version bump.
  *
  * Only NSF: overdraft and overdraft transfer "no fee" sentences on prod (Oct 27) are mostly scoped to
  * one transaction type, a threshold or an account, and Darwin's $0 overdraft work (#1882) owns those.
  */
 
+import { NSF_NAME_INCLUDE } from "@/lib/fee-category-guard";
+
 /** The switch, off: on, Knox reads these sentences as NSF $0 and the source check accepts them. */
 export const NO_CHARGE_SENTENCE_READ_LIVE = false;
+
+/** The fee types a charged price in which contradicts an NSF $0 ("NSF fee", the NSF daily cap). */
+export const NSF_FAMILY_KEYS: readonly string[] = ["nsf", "nsf_daily_cap"];
 
 export interface NoChargeNsfStatement {
   canonicalKey: "nsf";
@@ -101,18 +116,58 @@ export function noChargeNsfSentence(sentence: string): string | null {
 
 /**
  * Words that say the sentence speaks for one product, account, audience, tier or service, not the
- * bank's own price: "Bill Pay Services", "Business accounts", "HSBC Premier", "student", a card
- * program or a loan. A capitalised name before "Checking", "Savings", "Account" or "Banking" ("Easy
- * Checking", "Assure Checking Accounts") is a named product too. "BankOn" names a certified account;
- * "Bank on the go" does not.
+ * bank's own price: "Bill Pay Services", "Business accounts", "SMB", "HSBC Premier", "Relationship",
+ * "student", "Young Saver", "Kids Club", "under 18", "Fresh Start", "Online-only", a card program or a
+ * loan. "BankOn" names a certified account; "Bank on the go" does not.
  */
-const SCOPE_WORDS = /\b(?:business(?:es)?|commercial|corporate|bill\s*pay(?:ments?)?|premier|preferred|private\s+(?:bank|client)|elite|platinum|signature|student|youth|teen|minor|senior|second\s+chance|basic\s+banking|safe\s*balance|clear\s+access|prepaid|payroll|gift\s+card|loans?|mortgage|heloc|line\s+of\s+credit|credit\s+card|treasury|cash\s+management|sweep|trust|ira|health\s+savings|hsa)\b/i;
+const SCOPE_WORDS = /\b(?:business(?:es)?|smb|commercial|corporate|bill\s*pay(?:ments?)?|premier|preferred|private\s+(?:bank|client)|elite|platinum|signature|relationship|student|youth|young\s+savers?|kids?(?:\s+club)?|children|teens?|minors?|under\s+(?:the\s+age\s+of\s+)?(?:18|eighteen)|seniors?|second\s+chance|fresh\s+start|basic\s+banking|safe\s*balance|clear\s+access|online[\s-]+only|prepaid|payroll|gift\s+card|loans?|mortgage|heloc|line\s+of\s+credit|credit\s+card|treasury|cash\s+management|sweep|trust|ira|health\s+savings|hsa)\b/i;
 const BANK_ON = /\bBank ?On\b/;
-const NAMED_PRODUCT = /\b(?!(?:The|Your|Our|This|That|These|Each|Any|All|An?|My|Every|Consumer|Personal|Deposit|Checking|Savings|Individual|Joint)\b)[A-Z][A-Za-z0-9®™&'’.-]+[ \t]+(?:Checking|Savings|Accounts?|Banking)\b/;
+/** Words that start a generic account phrase, not a product's name ("Your Checking Account", "PERSONAL CHECKING"). */
+const GENERIC_WORDS = ["the", "your", "our", "this", "that", "these", "each", "any", "all", "a", "an", "my", "every", "consumer", "personal",
+  "deposit", "checking", "savings", "individual", "joint", "other", "such", "new", "existing", "linked",
+  // Words that join a heading's phrases ("FEES FOR ACCOUNTS", "CHECKING AND SAVINGS ACCOUNTS").
+  "for", "of", "and", "or", "to", "on", "in", "with", "fee", "fees", "schedule", "service", "services", "charges"];
+const capitalised = (word: string) => word.charAt(0).toUpperCase() + word.slice(1);
+/**
+ * A product's name: a capitalised word before Checking, Savings, Account or Banking ("Easy Checking",
+ * "Assure Checking Accounts"), the same in capitals ("VALUE CHECKING"), or a name led by a lowercase
+ * letter glued to it ("eChecking", "iSavings").
+ */
+const NAMED_PRODUCT = new RegExp(String.raw`\b(?!(?:${GENERIC_WORDS.map(capitalised).join("|")})\b)[A-Z][A-Za-z0-9®™&'’.-]+[ \t]+(?:Checking|Savings|Accounts?|Banking)\b`);
+const NAMED_PRODUCT_CAPITALS = new RegExp(String.raw`\b(?!(?:${GENERIC_WORDS.join("|").toUpperCase()})\b)[A-Z][A-Z0-9®™&'’.-]+[ \t]+(?:CHECKING|SAVINGS|ACCOUNTS?|BANKING)\b`);
+const LOWERCASE_LED_PRODUCT = /\b[a-z]{1,2}(?:Checking|Savings|Banking|Account)\b/;
 
 /** True when the text names a narrower scope than the bank's own price. */
 export function scopeWordIn(text: string): boolean {
-  return SCOPE_WORDS.test(text) || BANK_ON.test(text) || NAMED_PRODUCT.test(text);
+  return SCOPE_WORDS.test(text) || BANK_ON.test(text) || NAMED_PRODUCT.test(text) || NAMED_PRODUCT_CAPITALS.test(text) || LOWERCASE_LED_PRODUCT.test(text);
+}
+
+const NUMBER_WORD = String.raw`(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred)`;
+/** An amount in words: "five dollars", "twenty-five dollars", "thirty five dollars ($35)". */
+const SPELLED_AMOUNT = new RegExp(String.raw`\b${NUMBER_WORD}(?:[\s-]+(?:and[\s-]+)?${NUMBER_WORD})*[\s-]+dollars?\b`, "i");
+/** A word that narrows a statement: "only", "except", "does not apply", "applies to", "unless", "if". */
+const NARROWING = /\b(?:only|except(?:ions?)?|excluding|does\s+not\s+apply|do\s+not\s+apply|appl(?:y|ies)\s+(?:only\s+)?to|unless|if|when|provided|limited\s+to)\b|[$\d]/i;
+/** A sentence that opens by narrowing what came before ("Only applies to ...", "Except for ...", "Applies to ..."). */
+const OPENS_NARROWING = /^(?:note:\s*)?(?:only|except|excluding|unless|if|applies|applicable|does\s+not\s+apply|not\s+applicable|limited)\b/i;
+/** A sentence that points back at the one before it ("This applies only to ...", "That waiver ..."). */
+const BACK_REFERENCE = /^(?:note:\s*)?(?:this|that|it|these|those|such|the\s+above|the\s+foregoing|the\s+waiver)\b/i;
+/** A notice that the practice may change ("If we change this practice ... we will provide you with advance notice") narrows nothing. */
+const CHANGE_NOTICE = /\bchange\s+(?:this|our|the)\s+(?:practice|policy)\b.*\bnotice\b/i;
+
+/**
+ * True when the sentence after the statement, in its paragraph or the next one, narrows it: a sentence
+ * that opens with a narrowing word ("Only applies to ...", "Except ..."), or a narrowing word or an
+ * amount, in figures or words, in a sentence that points back at it or itself names NSF ("This applies
+ * only to items under five dollars."). A
+ * following note about another fee ("Note: We will not charge an overdraft fee on items that are $10
+ * or less") and a change-of-practice notice do not.
+ */
+export function narrowsStatement(sentence: string): boolean {
+  if (!sentence || CHANGE_NOTICE.test(sentence)) return false;
+  const text = sentence.trim();
+  if (OPENS_NARROWING.test(text)) return true;
+  if (!NARROWING.test(text) && !SPELLED_AMOUNT.test(text)) return false;
+  return BACK_REFERENCE.test(text) || namesNsfFamily(text);
 }
 
 /** A short line that can stand as a heading: few words, no table cell, not a clause cut by a comma. */
@@ -137,6 +192,19 @@ function isHeading(lines: readonly string[], index: number): boolean {
   return !above || ENDS_A_SENTENCE.test(above) || headingLike(above);
 }
 
+/**
+ * A section heading: a heading in capitals ("BUSINESS ACCOUNTS", "VALUE CHECKING") or numbered or
+ * lettered ("3. Business Accounts", "(iii) Returned Items.", "Section 4"). It opens a section however
+ * far above the sentence it is.
+ */
+function isSectionHeading(lines: readonly string[], index: number): boolean {
+  if (!isHeading(lines, index)) return false;
+  const text = lines[index].trim();
+  const letters = text.replace(/[^A-Za-z]/g, "");
+  return (letters.length >= 3 && letters === letters.toUpperCase()) ||
+    /^(?:\d+(?:\.\d+)*\.?|[A-Z]\.|\(?[ivxlc]+\)|\(?[a-z]\)|section\b|part\b|article\b)\s*/i.test(text);
+}
+
 const SCOPE_REACH_LINES = 40;
 const PARAGRAPH_REACH_LINES = 6;
 /** How many sentences right before the statement, in its paragraph, are read for scope words. */
@@ -157,20 +225,43 @@ function paragraphAbove(lines: readonly string[], index: number): { before: stri
   return { before, top };
 }
 
-/** The first sentence after the statement in its paragraph: the rest of its last line, then up to two lines. */
+/**
+ * The first sentence after the statement: the rest of its last line, then the lines below, across a
+ * blank line into the next paragraph (at most three lines), stopping at a heading that ends no sentence.
+ */
 function sentenceAfter(lines: readonly string[], lastLine: number, tail: string): string {
   const parts = [tail.trim()];
-  for (let j = lastLine + 1; j < lines.length && j - lastLine <= 2; j += 1) {
-    if (!lines[j].trim() || isHeading(lines, j)) break;
+  for (let j = lastLine + 1, read = 0; j < lines.length && read < 3; j += 1) {
+    if (!lines[j].trim()) {
+      if (parts.some(Boolean)) break;
+      continue;
+    }
+    // A short sentence standing alone ("This applies only to items under five dollars.") reads like
+    // a heading; only a line that ends no sentence stops the read.
+    if (isHeading(lines, j) && !/[.!?]["”’)]?$/.test(lines[j].trim())) break;
     parts.push(lines[j].trim());
+    read += 1;
   }
   return parts.filter(Boolean).join(" ").split(SENTENCE_SPLIT)[0] ?? "";
 }
 
-/** Every heading in the 40 lines above the paragraph's first line. */
+/**
+ * The headings over the paragraph: every heading in the 40 lines above its first line, the nearest
+ * section heading (`isSectionHeading`) wherever it is, so a "BUSINESS ACCOUNTS" heading 60 lines up
+ * still scopes the sentence under it, and the nearest heading of any kind when none is within 40
+ * lines. A plain heading beyond 40 lines under a nearer one is another section's (Wells Fargo's
+ * "Mobile Banking" menu, 42 lines above its overdraft FAQ).
+ */
 function headingsAbove(lines: readonly string[], top: number): string[] {
   const headings: string[] = [];
-  for (let j = top - 1; j >= 0 && top - j <= SCOPE_REACH_LINES; j -= 1) if (isHeading(lines, j)) headings.push(lines[j].trim());
+  let section = false;
+  for (let j = top - 1; j >= 0 && !(section && top - j > SCOPE_REACH_LINES && headings.length > 0); j -= 1) {
+    if (!isHeading(lines, j)) continue;
+    const near = top - j <= SCOPE_REACH_LINES;
+    const sectionHeading = isSectionHeading(lines, j);
+    if (near || (sectionHeading && !section) || headings.length === 0) headings.push(lines[j].trim());
+    if (sectionHeading) section = true;
+  }
   return headings;
 }
 
@@ -199,42 +290,84 @@ function wholeSentence(lines: readonly string[], index: number, start: number): 
   }
 }
 
-const PRICED_NSF = /\b(?:nsf|non[\s-]?sufficient|insufficient\s+funds?|returned[\s-]+(?:items?|checks?)|bounced?\s+checks?)\b/i;
+/**
+ * NSF-family words: whatever the category guard files as NSF (`NSF_NAME_INCLUDE`, read from a word's start: "Unpaid Item Fee",
+ * "Item returned unpaid", "Returned ACH", "Cargo por fondos insuficientes"), plus a dishonored,
+ * bounced or bounce item.
+ */
+const NSF_EXTRA_WORDS = /\b(?:dishonou?red|bounced?|bouncing)\b/i;
+let nsfWords: RegExp | null = null;
+export function namesNsfFamily(text: string): boolean {
+  // The guard reads one fee name, so its words have no leading word boundary; on a whole page "nsf"
+  // must not match inside "transfer". Built on first use from the guard's own pattern.
+  nsfWords ??= new RegExp(String.raw`\b(?:${NSF_NAME_INCLUDE.source})`, "i");
+  return nsfWords.test(text) || NSF_EXTRA_WORDS.test(text);
+}
+
+/** A fee read as Knox holds it: its category hint, price and words. */
+export interface NsfFamilyReadShape {
+  canonicalHint: string | null;
+  amount: number | null;
+  percent?: number | null;
+  feeName?: string | null;
+  excerpt?: string | null;
+}
+
+/**
+ * True when a read charges an NSF-family fee: above $0 (or a rate) and filed in the family
+ * (`NSF_FAMILY_KEYS`, "nsf_daily_cap" included), named with NSF-family words whatever its category
+ * ("Overdraft/NSF fee $35"), or held unclassified with NSF-family words on its line ("Item returned
+ * unpaid | $35", no category). Such a read contradicts an NSF $0 from a sentence, on the same text or
+ * another of the bank's documents.
+ */
+export function chargesNsfFamily(read: NsfFamilyReadShape): boolean {
+  if (!((read.amount ?? 0) > 0 || (read.percent ?? 0) > 0)) return false;
+  if (read.canonicalHint != null && NSF_FAMILY_KEYS.includes(read.canonicalHint)) return true;
+  if (namesNsfFamily(read.feeName ?? "")) return true;
+  return read.canonicalHint == null && namesNsfFamily(read.excerpt ?? "");
+}
+
 const DOLLARS = /\$\s*(\d[\d,]*(?:\.\d{1,2})?)/g;
 const DECIMAL_PRICE = /\b(\d{1,3}\.\d{2})\b/g;
 const TRAILING_FIGURE = /(?:^|[\s:).])(\d{1,3})\s*$/;
-const FEE_WORD = /\b(?:fees?|charges?)\b/i;
+/** A bare figure with its unit after it: "NSF fee 35 each", "25 per item", "30 dollars". */
+const FIGURE_WITH_UNIT = /\b(\d{1,3})\s*(?:each\b|per\b|\/\s*(?:item|check|presentment)|a[\s-]+(?:check|item|presentment)\b|dollars?\b|usd\b)/i;
+const FEE_WORD = /\b(?:fees?|charges?|cargos?)\b/i;
 /** A short label line, a table row's name cell flattened onto its own line ("NSF Fee", "Returned Item"). */
 const LABEL_MAX_LENGTH = 60;
 const PRICE_REACH_LINES = 2;
-/** A line that opens with its price ("$35.00", "35.00 per item"). */
-const PRICE_FIRST = /^\s*(?:\$\s*\d|\d{1,3}\.\d{2}\b)/;
+/** A line that opens with its price ("$35.00", "35.00 per item", "35 each", "Twenty-five dollars"). */
+const PRICE_FIRST = new RegExp(String.raw`^\s*(?:\$\s*\d|\d{1,3}\.\d{2}\b|\d{1,3}\s*(?:each|per|\/|dollars?)\b|${NUMBER_WORD}\b)`, "i");
 
 function positive(values: Iterable<RegExpMatchArray>): boolean {
   return [...values].some((match) => Number(match[1].replace(/,/g, "")) > 0);
 }
 
 /**
- * True when the line prints a price above $0: a dollar figure or a decimal price anywhere, or a bare
- * figure at its end when the line is a short row or names a fee ("Paid or returned item (NSF) 35").
- * A table of contents' page number ("Overdraft and Returned Items ........ 22") names no fee and is long.
+ * True when the line prints a price above $0: a dollar figure, a decimal price, a figure with its unit
+ * ("35 each") or an amount in words ("twenty-five dollars") anywhere, or a bare figure at its end when
+ * the line is a short row or names a fee ("Paid or returned item (NSF) 35"). A table of contents' page
+ * number ("Overdraft and Returned Items ........ 22") names no fee and is long.
  */
 function printsPrice(line: string): boolean {
   if (positive(line.matchAll(DOLLARS)) || positive(line.matchAll(DECIMAL_PRICE))) return true;
+  const unit = FIGURE_WITH_UNIT.exec(line);
+  if ((unit && Number(unit[1]) > 0) || SPELLED_AMOUNT.test(line)) return true;
   const figure = TRAILING_FIGURE.exec(line.trim());
   return figure != null && Number(figure[1]) > 0 && (line.trim().length <= LABEL_MAX_LENGTH || FEE_WORD.test(line));
 }
 
 /**
- * True when some line names NSF, a returned item or a bounced check with a price above $0: on the line
- * itself ("NSF Fee $35.00", "Overdraft/NSF fee ..... $35", "Paid or returned item (NSF) 35"), or, for a
- * short label that ends no sentence ("NSF Fee", "Returned Item"), on one of the next two non-empty lines
- * that opens with its price ("$35.00 per item"). Read whether or not any reader reads it. A sentence's
- * next line, a heading's first row naming another fee, or a page number is not that line's price.
+ * True when some line names an NSF-family fee (`namesNsfFamily`) with a price above $0: on the line
+ * itself ("NSF Fee $35.00", "Unpaid Item Fee $35", "Dishonored check $25", "NSF fee 35 each"), or, for
+ * a short label that ends no sentence ("NSF Fee", "Returned Item"), on one of the next two non-empty
+ * lines that opens with its price ("$35.00 per item"). Read whether or not any reader reads it. A
+ * sentence's next line, a heading's first row naming another fee, or a page number is not that line's
+ * price.
  */
 export function documentPricesNsf(lines: readonly string[]): boolean {
   return lines.some((line, index) => {
-    if (!PRICED_NSF.test(line)) return false;
+    if (!namesNsfFamily(line)) return false;
     if (printsPrice(line)) return true;
     const label = line.trim();
     if (label.length > LABEL_MAX_LENGTH || ENDS_A_SENTENCE.test(label)) return false;
@@ -248,9 +381,8 @@ export function documentPricesNsf(lines: readonly string[]): boolean {
   });
 }
 
-
 /** Why a grammar match was refused, for the dry run and tests. */
-export type NoChargeRefusal = "continues_line_above" | "scope" | "document_prices_nsf";
+export type NoChargeRefusal = "continues_line_above" | "scope" | "narrowed_after" | "document_prices_nsf";
 
 export interface NoChargeNsfReading {
   statements: NoChargeNsfStatement[];
@@ -259,7 +391,7 @@ export interface NoChargeNsfReading {
 
 /**
  * Every NSF no-charge sentence in a document, with the ones its surroundings refuse. Only `statements`
- * may stand as the fee's $0; the caller still checks the institution's other documents.
+ * may stand as the fee's $0; the caller still checks the institution's other documents and reads.
  */
 export function readNoChargeNsf(text: string): NoChargeNsfReading {
   const lines = text.split("\n");
@@ -288,12 +420,16 @@ export function readNoChargeNsf(text: string): NoChargeNsfReading {
         }
       }
       // Scope: the two sentences before it in its paragraph, the sentence itself, the one after it,
-      // and every heading in the 40 lines above, each read on its own.
+      // the headings in the 40 lines above and the nearest section heading, each read on its own.
       const paragraph = paragraphAbove(lines, index);
       const leadIn = [...paragraph.before, prefix].join(" ").split(SENTENCE_SPLIT).filter(Boolean).slice(-LEAD_IN_SENTENCES);
       const after = sentenceAfter(lines, whole.lastLine, whole.tail);
       if ([...leadIn, sentence, after, ...headingsAbove(lines, paragraph.top)].some(scopeWordIn)) {
         refused.push({ sentence, line: index, reason: "scope" });
+        continue;
+      }
+      if (narrowsStatement(after)) {
+        refused.push({ sentence, line: index, reason: "narrowed_after" });
         continue;
       }
       priced ??= documentPricesNsf(lines);
@@ -309,7 +445,10 @@ export function readNoChargeNsf(text: string): NoChargeNsfReading {
 
 /**
  * The statement that makes this exact fee name $0 as NSF in the document, or null: the source check's
- * witness for a $0 with no free word. Only for `nsf`, and only while the switch is on (`live`).
+ * witness for a $0 with no free word. Only for `nsf`, and only while the switch is on (`live`). The
+ * name is pinned: Knox files the name the sentence prints, untouched by its name tidy, and Knox's name
+ * re-tidy skips any rename that would no longer trace (`would_not_trace`), so a renamed fee never loses
+ * its witness silently.
  */
 export function noChargeNsfWitness(
   text: string,

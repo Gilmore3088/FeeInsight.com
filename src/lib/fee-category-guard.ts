@@ -148,6 +148,12 @@ const ES_OUTGOING = "saliente|enviad";
  * v96 (#1912, review of #2639): whatever stands between "night" and "deposit box": "Night Drop Deposit
  * Box Late Fee", the double-spaced "Night  Deposit Box", "Night Drop/Deposit Box" (`NIGHT_DEPOSIT_NAME`).
  */
+/**
+ * The words that put a name in the NSF category ("Unpaid Item Fee", "Returned ACH", "Cargo por fondos
+ * insuficientes"). Exported so the no-charge sentence rule (#2040, `src/lib/no-charge-statement.ts`)
+ * refuses a page that prices any line this guard would file as NSF.
+ */
+export const NSF_NAME_INCLUDE = /(nsf|insufficient|non[- ]?sufficient|returned item|return(ed)? (check|item|ach|payment|draft)|returned unpaid|unpaid item|fondos insuficientes|cheques? devuelt[oa]s?|art[ií]culos? devuelt[oa]s?|partidas? devuelt[oa]s?|devoluci[oó]n por fondos)/i;
 const SAFE_DEPOSIT_BOX_NAME = /\bsafe(?:ty)?[\s-]*(?:deposit|box)|\bsdb\b|(?<!night[\s\/-]+(?:drop[\s\/-]+)?)\bdeposit\s+box(?:es)?\b/i;
 /**
  * v96 (#1912): a night depository named by its night deposit or night drop words, however they are
@@ -606,8 +612,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   // A sustained charge "after 5 consecutive days" and a "De Minimis" waiver line are not the
   // per-item NSF fee (v27, Oct 8).
   nsf: {
-    include:
-      /(nsf|insufficient|non[- ]?sufficient|returned item|return(ed)? (check|item|ach|payment|draft)|returned unpaid|unpaid item|fondos insuficientes|cheques? devuelt[oa]s?|art[ií]culos? devuelt[oa]s?|partidas? devuelt[oa]s?|devoluci[oó]n por fondos)/i,
+    include: NSF_NAME_INCLUDE,
     // v63: in Spanish, a deposited check ("depositado", "depósito"), a credit card, a loan, a
     // returned payment ("Pago por cheque o ACH devuelto", Puerto Rico FCU 262771), an outgoing ACH,
     // a transfer or a return for another reason ("motivo distinto a fondos insuficientes") is not it.
