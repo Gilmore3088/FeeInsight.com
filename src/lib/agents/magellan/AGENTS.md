@@ -44,6 +44,10 @@ Magellan owns institution source discovery and source fetching.
   window. The state's hourly backlog run (`new_links_only`) fetches those links and any
   link last fetched over 30 days ago (`MAGELLAN_STALE_LINK_REFETCH_DAYS`), so a link found
   mid-month is read the same hour and no schedule goes months without a fetch.
+- A bank whose current main copy Rosetta could not read because the bytes the bank serves no
+  longer match the captured copy (`evidence_mismatch` on `read.document_access`, no stored bytes)
+  is fetched in the next run, backlog runs included, ahead of other due links
+  (`readNeedsNewCopySql`, fix plan step 7), so the new copy is stored before Rosetta reads again.
 - A fetch that finds the link gone (HTTP 404/410, or a deep link whose redirects end on a
   homepage) clears the fee link, records the URL in `rejected_source_urls`, and marks the bank
   `rescue_status = 'pending'` (`failure_reason = 'magellan_dead_link'`) so discovery searches it
@@ -107,7 +111,10 @@ The `discover` step (`discovery.ts`) searches banks with a website but no fee li
 The state's market leaders (top 15 by deposits or fee income, `loadMarketLeaderIds`) and the
 top 100 market gaps (banks with no live fees whose fees would add the most competitor coverage
 across every bank's branch counties, `loadMarketGapIds` in `src/lib/data-store/competitor-coverage.ts`)
-go first among banks due, after corrections.
+go first among banks due, after corrections and after a bank Rosetta sent back that no search
+has reached since (`sentBackUnsearchedSql`, fix plan step 7, Oct 27: 624 such banks had waited,
+608 for more than three days). A sent-back bank is due at once, without the 12-hour wait, and
+gets this place once: the search stamps `last_rescue_attempt_at` with `failure_reason_updated_at`.
 For one bank it first repairs the stored website (`website-repair.ts`, below), reads the
 homepage once, then calls the specialists in `finders.ts` in order and stops at the first
 link that passes the fee-page check. Each specialist

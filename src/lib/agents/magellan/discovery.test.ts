@@ -173,8 +173,8 @@ describe("Magellan agentic discovery", () => {
 
     expect(result.discovered).toBe(1);
     // Only reads: the market-leader ranking, the shared-name read and the candidate list (the
-    // website-owner fragment is part of the candidate query, #1455).
-    const reads = db.mock.calls.map((call) => templateText(call[0])).filter((text) => !text.includes("discover.website_owner"));
+    // website-owner and Rosetta send-back fragments are part of the candidate query, #1455).
+    const reads = db.mock.calls.map((call) => templateText(call[0])).filter((text) => !text.includes("discover.website_owner") && !text.includes("rosetta_wrong_document"));
     expect(reads.filter((text) => !text.includes("market leaders by state") && !text.includes("market gaps:") && !text.includes("shared-name check"))).toHaveLength(1);
   });
 
@@ -184,6 +184,21 @@ describe("Magellan agentic discovery", () => {
     const call = db.mock.calls.find((c) => templateText(c[0]).includes("AS profile_canonical_source_url"));
     expect(templateText(call![0])).toMatch(/profile\.canonical_source_url IS NOT NULL THEN 0 ELSE 1 END,[\s\S]*?inst\.id = ANY\(\s*::bigint\[\]\) THEN 0/);
     expect(call!.slice(1)).toContainEqual([7, 9]);
+  });
+
+  it("searches a bank Rosetta sent back, once, right after a person's correction (fix plan step 7)", async () => {
+    const db = createDbMock([]);
+    await runMagellanDiscovery({ runId: 104, dryRun: true, stateCode: "KS", leaderIds: [7], db: asDiscoveryDb(db), fetchImpl: vi.fn() });
+    const call = db.mock.calls.find((c) => templateText(c[0]).includes("AS profile_canonical_source_url"));
+    const text = templateText(call![0]);
+    // Ranked before the market leaders, and due at once without the 12-hour wait.
+    expect(text).toMatch(/canonical_source_url IS NOT NULL THEN 0 ELSE 1 END,[\s\S]*?Rosetta sent back[\s\S]*?CASE WHEN\s+THEN 0 ELSE 1 END,[\s\S]*?inst\.id = ANY/);
+    expect(text).toMatch(/OR inst\.last_rescue_attempt_at IS NULL\s+OR\s+OR \(/);
+    const sentBack = db.mock.calls.filter((c) => templateText(c[0]).includes("rosetta_wrong_document"));
+    expect(sentBack).toHaveLength(2);
+    // Once: a search stamps last_rescue_attempt_at with failure_reason_updated_at in one write.
+    expect(templateText(sentBack[0][0])).toMatch(/failure_reason_updated_at >= COALESCE\(inst\.last_rescue_attempt_at/);
+    expect(templateText(sentBack[0][0])).toContain("rosetta_dead_link");
   });
 
   it("runs every free specialist before calling a bank a miss, and logs each one", async () => {

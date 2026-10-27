@@ -53,6 +53,26 @@ export const MAGELLAN_STALE_LINK_REFETCH_DAYS = 30;
  * stamps last_crawl_at, so a bank is fetched once per flag.
  */
 
+/**
+ * Re-fetch before Rosetta reads again (fix plan step 7, Oct 27): Rosetta could not read the
+ * bank's current main document because the bytes the bank serves today no longer match the copy
+ * Magellan captured, and no stored copy exists (`evidence_mismatch` on `read.document_access`;
+ * 24 banks in 30 days, all with no stored bytes). Such a bank is fetched in the next run, backlog
+ * runs included, ahead of the other due links, so the new copy is stored and read. Once per
+ * failure: the fetch moves `last_crawl_at` past it.
+ */
+export function readNeedsNewCopySql(db: SqlTag) {
+  return db`EXISTS (
+    SELECT 1 FROM pipeline_attempts access_failure
+     WHERE access_failure.institution_id = inst.id
+       AND access_failure.stage = 'read'
+       AND access_failure.strategy = 'read.document_access'
+       AND access_failure.outcome = 'evidence_mismatch'
+       AND access_failure.source_document_id = profile.last_successful_source_document_id
+       AND access_failure.created_at > COALESCE(inst.last_crawl_at, '-infinity'::timestamptz)
+  )`;
+}
+
 /** The fetch strategy recorded in the attempt log; bump the version when its behavior changes. */
 export const MAGELLAN_FETCH_STRATEGY = { strategy: "fetch.http", version: 2 } as const;
 
@@ -495,6 +515,7 @@ async function selectCandidates(
          inst.rescue_status = 'rescued'
          AND inst.last_rescue_attempt_at > COALESCE(inst.last_crawl_at, '-infinity'::timestamptz)
        ) OR inst.last_crawl_at < NOW() - make_interval(days => ${MAGELLAN_STALE_LINK_REFETCH_DAYS})
+         OR ${readNeedsNewCopySql(db)}
          OR EXISTS (
            SELECT 1 FROM pipeline_feedback pending
              JOIN published_fee_records pending_fee ON pending_fee.fee_published_id = pending.fee_published_id
@@ -506,6 +527,7 @@ async function selectCandidates(
        AND (
          inst.last_crawl_at IS NULL
          OR (inst.rescue_status = 'rescued' AND inst.last_rescue_attempt_at > inst.last_crawl_at)
+         OR ${readNeedsNewCopySql(db)}
          OR EXISTS (
            SELECT 1 FROM pipeline_feedback pending
              JOIN published_fee_records pending_fee ON pending_fee.fee_published_id = pending.fee_published_id
@@ -524,6 +546,7 @@ async function selectCandidates(
        CASE WHEN profile.locked_by_correction IS TRUE AND profile.canonical_source_url IS NOT NULL THEN 0 ELSE 1 END,
        CASE WHEN inst.last_crawl_at IS NULL THEN 0 ELSE 1 END,
        CASE WHEN inst.rescue_status = 'rescued' AND inst.last_rescue_attempt_at > inst.last_crawl_at THEN 0 ELSE 1 END,
+       CASE WHEN ${readNeedsNewCopySql(db)} THEN 0 ELSE 1 END,
        CASE WHEN EXISTS (
          SELECT 1 FROM pipeline_feedback pending
           WHERE pending.institution_id = inst.id

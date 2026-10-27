@@ -1122,6 +1122,22 @@ function foundResult(
 }
 
 /**
+ * A bank whose link Rosetta sent back (not a fee page, a script-only page or a dead link;
+ * `sendBackToMagellan`) and that no discovery has searched since: the send-back stamps
+ * `failure_reason_updated_at`, and a search stamps it with `last_rescue_attempt_at` in the same
+ * write. Such a bank is due at once and ranks right after a person's correction (fix plan step
+ * 7, Oct 27: 624 sent-back banks had never been searched again, 608 of them for more than three
+ * days, while each step's slots went to market leaders and banks searched before).
+ */
+export function sentBackUnsearchedSql(db: SqlTag) {
+  return db`(
+    COALESCE(inst.failure_reason, '') IN ('rosetta_wrong_document', 'rosetta_js_required', 'rosetta_dead_link')
+    AND inst.failure_reason_updated_at IS NOT NULL
+    AND inst.failure_reason_updated_at >= COALESCE(inst.last_rescue_attempt_at, '-infinity'::timestamptz)
+  )`;
+}
+
+/**
  * Banks due for a search: no fee link, or a stale link whose last document failed and
  * that has no live fee. Nothing is dead forever:
  * - never searched, or pending/`retry_after` older than 12 hours;
@@ -1162,6 +1178,8 @@ async function selectCandidates(
              AND COALESCE(inst.failure_reason_note, '') LIKE 'out_of_time:%') AS discovery_cut_off,
            row_number() OVER (ORDER BY
        CASE WHEN profile.locked_by_correction IS TRUE AND profile.canonical_source_url IS NOT NULL THEN 0 ELSE 1 END,
+       -- A bank Rosetta sent back, not searched since, goes next, once (fix plan step 7).
+       CASE WHEN ${sentBackUnsearchedSql(db)} THEN 0 ELSE 1 END,
        -- The state's market leaders (top 15 by deposits or fee income) set its prices.
        CASE WHEN inst.id = ANY(${leaderIds}::bigint[]) THEN 0 ELSE 1 END,
        -- A bank whose page was ruled out has a page whose links point the way: search it first.
@@ -1233,6 +1251,7 @@ async function selectCandidates(
        AND (
          profile.locked_by_correction IS TRUE
          OR inst.last_rescue_attempt_at IS NULL
+         OR ${sentBackUnsearchedSql(db)}
          OR (
            COALESCE(inst.rescue_status, 'pending') IN ('pending', 'retry_after')
            AND inst.last_rescue_attempt_at < NOW() - INTERVAL '12 hours'

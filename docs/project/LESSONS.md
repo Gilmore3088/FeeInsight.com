@@ -214,7 +214,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-361 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+362 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
 ### Extraction and fee reading (58)
 
@@ -393,8 +393,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — Every hand-set rule Darwin holds on needs a re-check exception keyed to the rule's own value, as the guard version has, or a change to the rule is a change for new reads only. — [finding](findings/2026-10-09-envelope-change-never-reached-held-rows.md) — Agent lesson: darwin/pr-883-rule-version-recheck
 - 2026-10-09 — When a fix changes how a fingerprinted check judges its input, bump that strategy's version in the same PR, or the fix only reaches input the check has never seen. — [finding](findings/2026-10-09-check-fingerprint-blocks-rejudge.md) — Agent lesson: gutenberg/pr-767-rejudge-on-change
 
-### Sources and discovery (24)
+### Sources and discovery (25)
 
+- 2026-10-27 — A hand-off between agents is not done when the sender marks the work due: check that the receiver's order reaches it, by counting what is due and never picked (624 banks Rosetta sent back had no search since; they now go first, once). — [finding](findings/2026-10-27-sent-back-banks-never-searched.md) — Guard: `src/lib/agents/magellan/discovery.test.ts`, `src/lib/agents/magellan/fetch.test.ts`
 - 2026-10-26 — A path that opens one institution's file is not a path for another bank: a website vendor's file folder (`/files/sunrisefamilycu/1/file/...`) names its owner whatever host serves it, so it is never learned as a platform path or peer hint, a found link in another institution's folder is refused, and Darwin's document-owner check links the folder's owner behind its switch (off); 102 live fees at 4 CUs were Sunrise Family CU's (#1455). — [finding](findings/2026-10-26-vendor-folder-is-one-banks-file.md) — Agent lesson: magellan/issue-1455-a-vendor-folder-is-one-banks-file, darwin/issue-1455-a-file-folder-names-its-owner; Guard: `src/lib/agents/magellan/platform-learning.test.ts`, `src/lib/agents/magellan/website-owner.db.test.ts`, `src/lib/agents/darwin/document-owner.test.ts`
 
 - 2026-10-26 — A current source and the reject list are one judgement: no fetch, failed read, search or sync makes an address on the bank's own rejected list its current source; only a read that judged the page a fee page (or a person's link) takes it off the list, and never an ownership reject (another bank's page). Deming's daily check now matches the list's { url } entries, and Knox's rules read records the layout fingerprint (#1105). — [finding](findings/2026-10-26-rejected-source-stays-current.md) — Agent lesson: magellan/issue-1105-rejected-is-never-current, rosetta/issue-1105-a-read-supersedes-a-reject, deming/issue-1105-check-the-stored-shape; Guard: `src/lib/agents/learning/rejected-sources.db.test.ts`, `src/lib/agents/deming/playbook-contradictions.db.test.ts`
