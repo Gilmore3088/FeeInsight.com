@@ -551,6 +551,16 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     since: "2026-10-26",
   },
   {
+    id: "issue-1912-wire-direction-live-recheck",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "A review verify applies to new rows must also run over the fees already live, with the same function, or the fees published before it keep the claim it now refuses. Judge a live fee only against the very text it was read from (proved by its text hash, not its artifact id), and only when the review finds the fee's own line: a line it cannot place is no evidence against a live fee, so count it and leave it live. Before sizing the takedown, read the matches by hand: each false positive is a way banks print the fact that the shared rule should learn (\"(in/out)\", \"Wire – Out\", \"Outside U.S.\", a direction in the next cell), not an exception for the check.",
+    why: "Verify holds an international wire whose own line names no direction, but the live recheck never ran that review, so Amarillo National Bank's \"Foreign Wire: | $45.00\" (118154) stayed live as wire_intl_outgoing. The first Oct 27 dry run would have taken down hundreds of unplaced lines and directions printed another way; the final run matches 423 of 2,423 live fees at 407 institutions, 515 unplaced left live.",
+    evidence: { issues: [1912], prs: [2762], files: ["src/lib/agents/darwin/international-direction-check.ts", "src/lib/agents/darwin/international-verification.ts", "src/lib/custom-report/own-wire-scope.ts"] },
+    appliesTo: "all",
+    since: "2026-10-27",
+  },
+  {
     id: "issue-1947-collection-item-is-not-nsf",
     agent: "darwin",
     stage: "verify",
