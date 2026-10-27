@@ -450,6 +450,19 @@ and `detail.method_version`).
   else stays for a person: `detail.candidate_url`, `needs_human: true`. A one-word stored
   name ("CALIFORNIA") is not searched. It runs at most 2 searches a call (#1035).
 
+### Dead banks: link-set memory and the first paid try (fix plan step 5, Oct 27)
+
+- Homepage links, hub pages and the site crawl record their miss against the homepage's link
+  set (`linkSetFingerprint`: the sorted distinct link addresses, hashed), not the page's bytes.
+  Each skips a link set it already missed on at its own version for `LINK_SET_MEMORY_DAYS` (90),
+  so a method bump no longer re-runs them on a dead bank whose menu has not changed
+  (`linkSetAlreadyMissed`; a timeout or refused request is never remembered). After 90 days they
+  run again, since a linked page can change without the menu changing.
+- The paid web search takes a dead bank that never had a paid try (`discover.paid_web_search`
+  or `discover.paid_pick`) after any free search, not only one under today's method version,
+  and puts those banks first after requesters, paying customers and top-10 slot holders,
+  within the existing caps. 729 dead banks had never had a paid try (Oct 27).
+
 ## Outcome ledger (`outcomes.ts`)
 
 Every discover step judges its state's banks (a step without a state judges one 24th of

@@ -98,6 +98,40 @@ const DISCOVERY_METHOD = "magellan_agentic_discovery";
  * youth, teen or student account's schedule, is refused (`openingRejection`, #1944).
  */
 export const DISCOVERY_METHOD_VERSION = 7;
+/**
+ * Finders that only follow the homepage's links remember a miss against the homepage's link
+ * set (`linkSetFingerprint`), not the page's bytes (fix plan step 5, Oct 27: in the week to
+ * Oct 26 homepage links worked 0% of 1,029 tries and hub pages 1% of 279, mostly dead banks
+ * searched again after each method bump with an unchanged menu). Each skips an unchanged link
+ * set for this many days, then tries again: a linked page can change without the menu changing.
+ */
+export const LINK_SET_MEMORY_DAYS: Readonly<Partial<Record<FinderKey, number>>> = {
+  homepageLinks: 90,
+  hubPages: 90,
+  siteCrawl: 90,
+};
+
+/** Pure: the homepage's link set, as the sorted distinct link addresses, hashed. */
+export function linkSetFingerprint(links: ReadonlyArray<{ url: string }>): string | null {
+  const urls = Array.from(new Set(links.map((link) => urlIdentity(link.url)))).sort();
+  return urls.length > 0 ? sha256Text(JSON.stringify({ links: urls })) : null;
+}
+
+/**
+ * Pure: whether a finder already missed on this link set within its memory window. Only a
+ * permanent miss is in `doNotRetry`; a timeout or refused request is not remembered.
+ */
+export function linkSetAlreadyMissed(playbook: Playbook | null | undefined, key: FinderKey, fingerprint: string | null, now = Date.now()): boolean {
+  const days = LINK_SET_MEMORY_DAYS[key];
+  if (!playbook || !fingerprint || days === undefined) return false;
+  const finder = FINDERS[key];
+  return playbook.doNotRetry.some((entry) =>
+    entry.stage === "discover" &&
+    entry.strategy === finder.strategy &&
+    entry.version === finder.version &&
+    entry.fingerprint === fingerprint &&
+    now - Date.parse(entry.at) < days * 24 * 60 * 60 * 1000);
+}
 /** The website repair, logged as its own attempt when it changes the stored address. */
 export const WEBSITE_REPAIR_STRATEGY = { strategy: "discover.website_repair", version: 1 } as const;
 /**
@@ -850,6 +884,14 @@ async function discoverForInstitution(
       let fingerprint: string | null | undefined;
       let outcomeOverride: AttemptOutcome | undefined;
       try {
+        if (homepageRead && LINK_SET_MEMORY_DAYS[key] !== undefined) {
+          fingerprint = linkSetFingerprint(ctx.homepageLinks) ?? undefined;
+          if (linkSetAlreadyMissed(options.playbook, key, fingerprint ?? null)) {
+            learningSkippedFinders.push(key);
+            completed.push(key);
+            continue;
+          }
+        }
         if (isGuessedFinder(key)) {
           const candidates = await prepareGuessedCandidates(ctx, key);
           // No platform, hints, or untried guesses is inapplicable rather than an attempt.

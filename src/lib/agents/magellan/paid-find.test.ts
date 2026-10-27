@@ -330,7 +330,7 @@ describe("state experts' work lists (#1029)", () => {
     const select = db.mock.calls.find((call) => templateText(call[0]).includes("inst.city"))!;
     expect(templateText(select[0])).toContain("institution_workspace_memberships");
     // The pool cut keeps requesters and paying customers, then each cell's first rows (#1269).
-    expect(templateText(select[0])).toMatch(/ORDER BY requested DESC, paying DESC, top_ten DESC,\s+,/);
+    expect(templateText(select[0])).toMatch(/ORDER BY requested DESC, paying DESC, top_ten DESC,[\s\S]*?\) DESC,\s+,/);
     expect(db.mock.calls.some((call) => templateText(call[0]).includes("PARTITION BY"))).toBe(true);
   });
 });

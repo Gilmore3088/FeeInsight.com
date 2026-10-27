@@ -247,10 +247,10 @@ describe("Magellan agentic discovery", () => {
         if (text.includes("SELECT format, best_strategy")) return [{ do_not_retry: memory }];
         return extra(text, values);
       }));
-      const remember = (strategy: string, versionOffset = 0) => {
+      const remember = (strategy: string, versionOffset = 0, ageDays = 0) => {
         const call = db.mock.calls.find((entry) => templateText(entry[0]).includes("INSERT INTO pipeline_attempts") && entry[4] === strategy)!;
         memory = isPermanentForInput(call[7] as AttemptOutcome)
-          ? [{ stage: "discover", strategy, version: Number(call[5]) + versionOffset, fingerprint: call[6], outcome: call[7], at: new Date().toISOString() }]
+          ? [{ stage: "discover", strategy, version: Number(call[5]) + versionOffset, fingerprint: call[6], outcome: call[7], at: new Date(Date.now() - ageDays * 86_400_000).toISOString() }]
           : [];
       };
       const run = (fetchImpl: ReturnType<typeof site>) => runMagellanDiscovery({ runId: 190, db: asDiscoveryDb(db), fetchImpl, politeDelayMs: 0, secondDocuments: false });
@@ -451,19 +451,26 @@ describe("Magellan agentic discovery", () => {
       ]);
     });
 
-    it("keeps observed homepage links retryable even when the homepage is unchanged", async () => {
+    it("skips homepage links on an unchanged link set for 90 days, then tries them again (fix plan step 5)", async () => {
       const fixture = retryFixture();
       let feePage = "<p>Not the fee document</p>";
+      let homepage = '<a href="/disclosures/consumer-fee-schedule">Fee Schedule</a><p>Rates as of today</p>';
       const fetchImpl = site({
-        "https://memorybank.example/": () => response('<a href="/disclosures/consumer-fee-schedule">Fee Schedule</a>'),
+        "https://memorybank.example/": () => response(homepage),
         "https://memorybank.example/disclosures/consumer-fee-schedule": () => response(feePage),
       });
       await fixture.run(fetchImpl);
       fixture.remember("discover.homepage_links");
       feePage = FEE_TABLE;
+      // The page's bytes change, its links do not: homepage links stay skipped.
+      homepage = '<a href="/disclosures/consumer-fee-schedule">Fee Schedule</a><p>Rates as of tomorrow</p>';
 
       const repeat = await fixture.run(fetchImpl);
-      expect(repeat.results[0]).toMatchObject({ foundBy: "homepageLinks", url: "https://memorybank.example/disclosures/consumer-fee-schedule" });
+      expect(repeat.results[0].foundBy).not.toBe("homepageLinks");
+
+      fixture.remember("discover.homepage_links", 0, 91);
+      const later = await fixture.run(fetchImpl);
+      expect(later.results[0]).toMatchObject({ foundBy: "homepageLinks", url: "https://memorybank.example/disclosures/consumer-fee-schedule" });
     });
 
     it("records preparation exceptions as failures without a suppressing fingerprint", async () => {
