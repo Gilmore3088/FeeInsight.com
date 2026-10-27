@@ -1,7 +1,7 @@
 import { createHash } from "crypto";
 import { describe, expect, it, vi } from "vitest";
 
-import { fetchAndRecordLink, MAGELLAN_FETCH_STRATEGY, MAGELLAN_STALE_LINK_REFETCH_DAYS, redirectedToHomepage, runMagellanFetch, sendsValidators, withoutArticleRemembered, withRequestedUrl } from "./fetch";
+import { fetchAndRecordLink, MAGELLAN_FETCH_STRATEGY, MAGELLAN_STALE_LINK_REFETCH_DAYS, redirectedToHomepage, runMagellanFetch, savedLinkFetched, sendsValidators, withoutArticleRemembered, withRequestedUrl } from "./fetch";
 
 type DbMock = ReturnType<typeof vi.fn>;
 
@@ -396,11 +396,11 @@ describe("Magellan agentic fetch", () => {
       profile_last_document_id: 900,
     };
 
-    function learningDb(previous: Record<string, unknown> | null, sameContent: Record<string, unknown> | null = null): DbMock {
+    function learningDb(previous: Record<string, unknown> | null, sameContent: Record<string, unknown> | null = null, row: Record<string, unknown> = candidate): DbMock {
       return vi.fn((strings: TemplateStringsArray) => {
         const text = templateText(strings);
         if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
-        if (text.includes("FROM institution_sources")) return Promise.resolve([candidate]);
+        if (text.includes("FROM institution_sources")) return Promise.resolve([row]);
         if (text.includes("doc.content_hash =")) return Promise.resolve(sameContent ? [sameContent] : []);
         if (text.includes("FROM source_documents")) return Promise.resolve(previous ? [previous] : []);
         if (text.includes("INSERT INTO source_documents")) return Promise.resolve([{ id: 1001 }]);
@@ -426,6 +426,32 @@ describe("Magellan agentic fetch", () => {
       expect(sqlText).toContain("last_checked_at = NOW()");
       const [attempt] = attemptValues(db);
       expect(attempt).toEqual(expect.arrayContaining([45, 900, "fetch", MAGELLAN_FETCH_STRATEGY.strategy, bodyHash, "unchanged", 201, 7]));
+    });
+
+    it("records the saved link on a fetch that asked for it, and not on one that asked for a remembered address (#2055)", async () => {
+      const detailOf = (db: DbMock) => {
+        const values = attemptValues(db)[0] ?? [];
+        const json = values.find((value) => typeof value === "string" && value.includes('"url"')) as string | undefined;
+        return json ? JSON.parse(json) : null;
+      };
+      const linkDb = learningDb({ id: 900, content_hash: bodyHash, etag: null, last_modified: null });
+      await runMagellanFetch({ runId: 201, stepId: 7, db: asFetchDb(linkDb), fetchImpl: vi.fn().mockResolvedValueOnce(response(body)) });
+      expect(detailOf(linkDb)).toMatchObject({ link: "https://learning.example/fees" });
+      const remembered = { ...candidate, profile_canonical_source_url: "https://learning.example/old-fees.pdf" };
+      const rememberedDb = learningDb({ id: 900, content_hash: bodyHash, etag: null, last_modified: null }, null, remembered);
+      await runMagellanFetch({ runId: 201, stepId: 7, db: asFetchDb(rememberedDb), fetchImpl: vi.fn().mockResolvedValueOnce(response(body)) });
+      expect(detailOf(rememberedDb)).not.toBeNull();
+      expect(detailOf(rememberedDb)).not.toHaveProperty("link");
+      // A remembered address an earlier fetch of today's link landed on (a redirect's page) carries the proof forward.
+      const unproven = learningDb({ id: 900, content_hash: bodyHash, etag: null, last_modified: null }, null, remembered);
+      const provenDb: DbMock = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) =>
+        templateText(strings).includes("AS proven") ? Promise.resolve([{ proven: 1 }]) : (unproven as unknown as (s: TemplateStringsArray, ...v: unknown[]) => Promise<unknown[]>)(strings, ...values),
+      ) as unknown as DbMock;
+      await runMagellanFetch({ runId: 201, stepId: 7, db: asFetchDb(provenDb), fetchImpl: vi.fn().mockResolvedValueOnce(response(body)) });
+      expect(detailOf(provenDb)).toMatchObject({ link: "https://learning.example/fees" });
+      const proofQuery = provenDb.mock.calls.find((call) => templateText(call[0]).includes("AS proven"))!;
+      expect(templateText(proofQuery[0])).toContain("proof.outcome IN ('ok', 'unchanged')");
+      expect(proofQuery.slice(1)).toEqual(expect.arrayContaining([45, "https://learning.example/fees"]));
     });
 
     // saved-link-fetch.ts: a copy fetched beside the bank's own link changes nothing on the bank.
@@ -633,5 +659,17 @@ describe("redirectedToHomepage", () => {
     expect(redirectedToHomepage("https://bank.example/", "https://bank.example/")).toBe(false);
     expect(redirectedToHomepage("https://bank.example/#fees", "https://bank.example/")).toBe(false);
     expect(redirectedToHomepage("https://bank.example/fees", null)).toBe(false);
+  });
+});
+
+describe("savedLinkFetched (#2055)", () => {
+  it("is true only when the fetch asked for the bank's saved link itself", () => {
+    const row = { fee_schedule_url: " https://www.bank.example/fees/ " };
+    expect(savedLinkFetched(row, "https://bank.example/fees")).toBe(true);
+    // The remembered address of an older link, or a redirect's page asked for directly, is not the link.
+    expect(savedLinkFetched(row, "https://bank.example/old-fees.pdf")).toBe(false);
+    expect(savedLinkFetched({ fee_schedule_url: null }, "https://bank.example/fees")).toBe(false);
+    expect(savedLinkFetched({ fee_schedule_url: "not a url" }, "https://bank.example/fees")).toBe(false);
+    expect(savedLinkFetched(row, null)).toBe(false);
   });
 });

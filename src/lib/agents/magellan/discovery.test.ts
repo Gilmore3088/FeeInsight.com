@@ -1214,12 +1214,12 @@ describe("Magellan agentic discovery", () => {
       const call = db.mock.calls.find((c) => templateText(c[0]).includes("stale-link freshness search"))!;
       const text = templateText(call[0]);
       expect(text).toContain("'confirmed_wrong_fees'");
-      expect(text).toMatch(/searched_at < wrong_at/);
+      expect(text).toContain("searched_at < GREATEST(confirmed_at, hand_at)");
       expect(attempts(db).some((attempt) => attempt.detail.stale_reason === "fees read from it were confirmed wrong on a second look")).toBe(true);
     });
 
     it("re-searches a link Deming's audit found a wrong document behind (#2055)", async () => {
-      const auditBank = { ...staleBank, url_year: null, effective_year: null, wrong_at: "2026-10-24T05:00:00Z", confirmed_at: null, audit_at: "2026-10-24T05:00:00Z", searched_at: null };
+      const auditBank = { ...staleBank, url_year: null, effective_year: null, wrong_at: "2026-10-24T05:00:00Z", confirmed_at: null, audit_at: "2026-10-24T05:00:00Z", audit_document_ids: ["7802", "7801"], searched_at: null };
       const db = createDbMock([], learningHandler((text) => (text.includes("stale-link freshness search") ? [auditBank] : undefined)));
       const result = await runMagellanDiscovery({ runId: 127, dryRun: false, db: asDiscoveryDb(db), fetchImpl: site({}), politeDelayMs: 0 });
       expect(result.results.map((row) => Number(row.institutionId))).toContain(78);
@@ -1228,10 +1228,13 @@ describe("Magellan agentic discovery", () => {
       // The link or the document its own last fetch stored (after redirects); a live fee; once per finding.
       const auditQuery = templateText(call[0]).split("LEFT JOIN LATERAL")[1].split(") audit ON TRUE")[0];
       expect(auditQuery).toContain("f.source_url = due.fee_schedule_url");
-      // The main document stands for the link only while the remembered address agrees (not
-      // right after a search replaced the link), and each document is searched behind once.
-      expect(auditQuery).toContain("f.source_url = due.main_document_url AND due.main_document_url = due.profile_canonical_source_url");
-      expect(auditQuery).toContain("pa.created_at > sd.crawled_at");
+      // The main document stands for the link only while a fetch of the link itself landed on it
+      // (never on the remembered address alone), and each document is acted on once, by a search
+      // that names it (an unrelated search on the same document does not count).
+      expect(auditQuery).toContain("f.source_url = due.main_document_url AND due.main_document_from_link");
+      expect(templateText(call[0])).toContain("link_fetch.detail->>'link' = inst.fee_schedule_url");
+      expect(auditQuery).toContain("pa.detail->'audit_document_ids' @> jsonb_build_array(sd.id)");
+      expect(auditQuery).not.toContain("pa.created_at > sd.crawled_at");
       // The main fetch's document, never the remembered address a side copy's read can set.
       expect(templateText(call[0])).toContain("WHERE doc.id = profile.last_successful_source_document_id");
       expect(auditQuery).toContain("fp.rolled_back_at IS NULL");
@@ -1243,12 +1246,14 @@ describe("Magellan agentic discovery", () => {
       const handQuery = templateText(call[0]).split(") audit ON TRUE")[1].split(") hand ON TRUE")[0];
       expect(handQuery).toContain("f.kind IN ('admin_hold', 'admin_correction')");
       expect(handQuery).toContain("f.about_stage = 'discover'");
-      expect(handQuery).toContain("f.evidence->>'wrong_document_url' = due.main_document_url AND due.main_document_url = due.profile_canonical_source_url");
+      expect(handQuery).toContain("f.evidence->>'wrong_document_url' = due.main_document_url AND due.main_document_from_link");
       // Only the page's current copy, and a release or reversal withdraws the finding.
       expect(handQuery).toContain("sd.superseded_by_id IS NULL AND sd.companion_source_id IS NULL");
       expect(handQuery).toContain("undo.kind IN ('admin_release', 'admin_correction_reversed')");
       expect(call.slice(1)).toContain("audit_miss");
       expect(attempts(db).some((attempt) => attempt.detail.stale_reason === "Deming's audit found fees read from it came from the wrong document")).toBe(true);
+      // The search records the documents it acted on, so each miss's document is searched behind once.
+      expect(attempts(db).filter((attempt) => attempt.detail.freshness_search != null).every((attempt) => JSON.stringify(attempt.detail.audit_document_ids) === "[7801,7802]")).toBe(true);
     });
 
     it("replaces an out-of-date link with the bank's current schedule, without keeping the old one", async () => {
@@ -1774,7 +1779,7 @@ describe("Magellan reads Hamilton's conflict lessons and its own search misses (
     expect(arm).toContain("sd.superseded_by_id IS NULL");
     expect(arm).toContain("sd.companion_source_id IS NULL");
     expect(arm).toContain("sd.document_url = due.fee_schedule_url");
-    expect(arm).toContain("sd.id = due.main_document_id AND due.main_document_url = due.profile_canonical_source_url");
+    expect(arm).toContain("sd.id = due.main_document_id AND due.main_document_from_link");
     expect(arm).toContain("fp.rolled_back_at IS NOT NULL");
     expect(arm).toContain("pa.created_at > GREATEST(sd.crawled_at, f.created_at)");
     // The newer document is a main document, never a companion.

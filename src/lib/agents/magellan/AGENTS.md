@@ -86,8 +86,14 @@ Magellan owns institution source discovery and source fetching.
   document, a main document and not a companion, may replace the link (`stalePriceReplaces`).
   Hamilton's `schedule_conflict` (a product-page fee the schedule prices differently) gives the
   link an upgrade search whatever its address. Both match only the link's own current page (its
-  address, or its main document while the remembered address agrees), never a companion or an old
-  copy, with the price still archived and one search per document, as audit misses are (#2558).
+  address, or its main document while a fetch proven to be the link's page landed on it: the
+  fetch attempt's `detail.link`, written when the fetch asked for the link itself or for a
+  remembered address an earlier proven fetch of today's link landed on, so a redirect's proof
+  carries from fetch to fetch; `fetch.saved_link` v2 re-tries each bank once to give v1 banks
+  the proof), never a companion or an old copy, with the price still archived
+  and one search per document, as audit misses are (#2558). An audit miss is acted on once, against
+  its own document: the search records `detail.audit_document_ids`, and only a search that names
+  the document counts, so a miss after an unrelated age search is still picked up (#2055).
   A bank's last `search_miss` on the same website, written after its last successful find, runs
   the specialists that saw nothing then after the others on its next search
   (`loadSearchMissDemotions`); nothing is skipped.
@@ -728,7 +734,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `HAND_SUPPLIED_STRATEGY` | `supply.hand_supplied` | v1 | `magellan/hand-supplied.ts` |
 | `OPERATOR_SCHEDULE_STRATEGY` | `discover.operator_schedule` | v1 | `magellan/operator-schedules.ts` |
 | `PAGE_CLASSIFIER_VERSION` | — | v2 | `magellan/page-classifier.ts` |
-| `SAVED_LINK_FETCH_STRATEGY` | `fetch.saved_link` | v1 | `magellan/saved-link-fetch.ts` |
+| `SAVED_LINK_FETCH_STRATEGY` | `fetch.saved_link` | v2 | `magellan/saved-link-fetch.ts` |
 | `LIVE_SOURCE_REFETCH_STRATEGY` | `fetch.live_source` | v1 | `magellan/live-source-refetch.ts` |
 | `STATED_DATE_VERSION` | — | v1 | `magellan/stated-date.ts` |
 | `PAID_FIND_STRATEGY` | `discover.paid_web_search` | v2 (top-10 first) | `magellan/paid-find.ts` |

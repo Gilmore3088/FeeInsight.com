@@ -6,6 +6,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { JSON_TEXT_PASSTHROUGH } from "@/lib/data-store/connection";
 
 import { FRESHNESS_SEARCH_VERSION, STALE_PRICE_REASON, selectStaleCandidates, selectUpgradeCandidates } from "./discovery";
+import { rememberedAddressProven } from "./fetch";
 import { loadSearchMissDemotions } from "./search-misses";
 
 const connection = process.env.E2E_DATABASE_URL;
@@ -93,6 +94,110 @@ describe.skipIf(!connection)("Magellan reads Hamilton's conflict lessons and its
       VALUES (${institutionId}, 'discover', 'discover.homepage_links', 1, 'no_candidates', ${JSON.stringify(detail)}::jsonb, ${at})
     `;
   }
+
+  async function auditMiss(institutionId: number, documentId: number, feeId: number, sourceUrl: string, at: string) {
+    n += 1;
+    await db`
+      INSERT INTO pipeline_feedback (about_stage, signal, kind, reported_by, check_name, institution_id, source_document_id, fee_published_id, source_url, evidence, dedupe_key, created_at, updated_at)
+      VALUES ('discover', 'wrong', 'audit_miss', 'deming', 'hamilton.other_bank_document', ${institutionId}, ${documentId}, ${feeId}, ${sourceUrl},
+              '{}'::jsonb, ${`test2055:${n}`}, ${at}, ${at})
+    `;
+  }
+
+  async function fetched(institutionId: number, documentId: number, detail: Record<string, unknown>, at = "2026-10-01T00:00:00Z", strategy = "fetch.direct", version = 1, outcome = "ok") {
+    await db`
+      INSERT INTO pipeline_attempts (institution_id, source_document_id, stage, strategy, strategy_version, outcome, detail, created_at)
+      VALUES (${institutionId}, ${documentId}, 'fetch', ${strategy}, ${version}, ${outcome}, ${JSON.stringify(detail)}::jsonb, ${at})
+    `;
+  }
+
+  it("takes a redirect's page for the link on a saved-link fetch's proof, even when the plain fetches predate it (#2055)", async () => {
+    const redirect = async (id: number, link: string, savedLinkAsked: string | null, version = 2) => {
+      const page = `https://bank${id}.example/docs/fees.pdf`;
+      await bank(id, `https://bank${id}.example`, link, id * 10 + 1);
+      await db`UPDATE institution_source_profiles SET canonical_source_url = ${page} WHERE institution_id = ${id}`;
+      await document(id * 10 + 1, id, page);
+      // The plain fetches asked for the remembered address and predate detail.link.
+      await fetched(id, id * 10 + 1, { url: page }, "2026-09-20T00:00:00Z", "fetch.direct", 1, "unchanged");
+      await fetched(id, id * 10 + 1, { url: page, remembered: page, ...(savedLinkAsked ? { link: savedLinkAsked } : {}) }, "2026-10-26T00:00:00Z", "fetch.saved_link", version, "unchanged");
+      await archivedFee(id * 100, id, false);
+      await auditMiss(id, id * 10 + 1, id * 100, page, "2026-10-20T00:00:00Z");
+    };
+    // 601: the saved-link fetch asked for today's link and landed on the main document.
+    await redirect(601, "https://bank601.example/fees", "https://bank601.example/fees");
+    // 602: the link moved since: the saved-link proof is the old link's.
+    await redirect(602, "https://bank602.example/fees-2026", "https://bank602.example/fees");
+    // 603: a v1 saved-link fetch, which never recorded the link it asked for: no proof (v2 re-tries it).
+    await redirect(603, "https://bank603.example/fees", null, 1);
+    // 604: a failed fetch is no proof.
+    await redirect(604, "https://bank604.example/fees", null);
+    await db`UPDATE pipeline_attempts SET outcome = 'http_403', detail = detail || '{"link": "https://bank604.example/fees"}'::jsonb WHERE institution_id = 604 AND strategy = 'fetch.saved_link'`;
+
+    const rows = await selectStaleCandidates(asDb(), 10, "TX", new Date("2026-10-26T00:00:00Z"));
+    expect(rows.map((row) => Number(row.id)).sort()).toEqual([601]);
+
+    // The next plain fetch asks for the remembered address; the earlier proof carries forward to it.
+    expect(await rememberedAddressProven(asDb(), 601, "https://bank601.example/fees", ["https://bank601.example/docs/fees.pdf"])).toBe(true);
+    expect(await rememberedAddressProven(asDb(), 602, "https://bank602.example/fees-2026", ["https://bank602.example/docs/fees.pdf"])).toBe(false);
+    expect(await rememberedAddressProven(asDb(), 604, "https://bank604.example/fees", ["https://bank604.example/docs/fees.pdf"])).toBe(false);
+  });
+
+  it("never searches behind a link that moved to another page on the old page's audit misses (#2055)", async () => {
+    // 401: the link was re-pointed without a search, then Rosetta re-read the old main document,
+    // which set the remembered address back to the old page. The new link has not been fetched.
+    await bank(401, "https://bank401.example", "https://bank401.example/fees-new.pdf", 4011);
+    await db`UPDATE institution_source_profiles SET canonical_source_url = 'https://bank401.example/fees-old.pdf' WHERE institution_id = 401`;
+    await document(4011, 401, "https://bank401.example/fees-old.pdf");
+    await fetched(401, 4011, { url: "https://bank401.example/fees-old.pdf", link: "https://bank401.example/fees-old.pdf" });
+    await archivedFee(40100, 401, false);
+    await auditMiss(401, 4011, 40100, "https://bank401.example/fees-old.pdf", "2026-10-20T00:00:00Z");
+    // 402: the link redirects; its own fetch landed on the main document, so the miss counts.
+    await bank(402, "https://bank402.example", "https://bank402.example/fees", 4021);
+    await db`UPDATE institution_source_profiles SET canonical_source_url = 'https://bank402.example/docs/fees.pdf' WHERE institution_id = 402`;
+    await document(4021, 402, "https://bank402.example/docs/fees.pdf");
+    await fetched(402, 4021, { url: "https://bank402.example/docs/fees.pdf", link: "https://bank402.example/fees" });
+    await archivedFee(40200, 402, false);
+    await auditMiss(402, 4021, 40200, "https://bank402.example/docs/fees.pdf", "2026-10-20T00:00:00Z");
+    // 403: the miss is on the link's own address.
+    await bank(403, "https://bank403.example", "https://bank403.example/fees.pdf", 4031);
+    await document(4031, 403, "https://bank403.example/fees.pdf");
+    await archivedFee(40300, 403, false);
+    await auditMiss(403, 4031, 40300, "https://bank403.example/fees.pdf", "2026-10-20T00:00:00Z");
+
+    const rows = await selectStaleCandidates(asDb(), 10, "TX", new Date("2026-10-26T00:00:00Z"));
+    expect(rows.map((row) => Number(row.id)).sort()).toEqual([402, 403]);
+    expect(rows.find((row) => Number(row.id) === 402)).toMatchObject({
+      stale_reason: "Deming's audit found fees read from it came from the wrong document",
+      audit_document_ids: [4021],
+    });
+  });
+
+  it("acts on each audit miss once, against its own document, whatever other search ran (#2055)", async () => {
+    const linked = async (id: number, at: string) => {
+      await bank(id, `https://bank${id}.example`, `https://bank${id}.example/fees.pdf`, id * 10 + 1);
+      await document(id * 10 + 1, id, `https://bank${id}.example/fees.pdf`);
+      await archivedFee(id * 100, id, false);
+      await auditMiss(id, id * 10 + 1, id * 100, `https://bank${id}.example/fees.pdf`, at);
+    };
+    // 501: an age search ran on the same document before the miss; it did not act on the miss.
+    await linked(501, "2026-10-20T00:00:00Z");
+    await searched(501, { freshness_search: FRESHNESS_SEARCH_VERSION, stale_reason: "effective 2022" }, "2026-10-05T00:00:00Z");
+    // 502: a search already acted on this document's misses; a later miss on another fee is the same finding.
+    await linked(502, "2026-10-20T00:00:00Z");
+    await searched(502, { freshness_search: FRESHNESS_SEARCH_VERSION, audit_document_ids: [5021] }, "2026-10-21T00:00:00Z");
+    await archivedFee(50201, 502, false);
+    await auditMiss(502, 5021, 50201, "https://bank502.example/fees.pdf", "2026-10-24T00:00:00Z");
+    // 503: a search acted on another document of the bank; this document's miss is still new.
+    await linked(503, "2026-10-20T00:00:00Z");
+    await searched(503, { freshness_search: FRESHNESS_SEARCH_VERSION, audit_document_ids: [9999] }, "2026-10-21T00:00:00Z");
+    // 504: an age search after the miss that did not act on it (the miss did not count then).
+    await linked(504, "2026-10-20T00:00:00Z");
+    await searched(504, { freshness_search: FRESHNESS_SEARCH_VERSION, stale_reason: "effective 2022" }, "2026-10-22T00:00:00Z");
+
+    const rows = await selectStaleCandidates(asDb(), 10, "TX", new Date("2026-10-26T00:00:00Z"));
+    expect(rows.map((row) => Number(row.id)).sort()).toEqual([501, 503, 504]);
+    expect(rows.find((row) => Number(row.id) === 501)).toMatchObject({ audit_document_ids: [5011], freshness_exclude: ["https://bank501.example/fees.pdf"] });
+  });
 
   it("sends a stale price on the link's own current page to the freshness search, and nothing else", async () => {
     const stale = async (id: number, link: string, linkDoc: { companion?: number; supersededBy?: number } = {}, rolledBack = true) => {
