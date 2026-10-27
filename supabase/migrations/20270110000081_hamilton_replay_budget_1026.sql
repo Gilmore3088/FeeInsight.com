@@ -3,7 +3,7 @@
 -- The first batch ("2026-10-25", migration 20270110000078) ended at $39.47 of its $40. The second
 -- batch ("2026-10-26", src/lib/hamilton/paid-gate-replay.ts) writes 50 written answers, capped at
 -- $25 in the run ledger, to measure the written answer's hold rate after the gate fixes #2696,
--- #2699, #2700 and #2701. James's approval of 2026-10-26 covers the batch, this line and its
+-- #2699, #2700 and #2701. James's approval of 2026-10-27 covers the batch, this line and its
 -- 10-minute schedule together. Its calls are still budgeted and recorded as agent
 -- `hamilton_replay` with no route id, so they check only `global:provider:default` and this row,
 -- never the live Pro readers' route lines or `agent:hamilton`. It still bills to Hamilton's API key.
@@ -22,7 +22,7 @@ UPDATE public.api_budget_policies
    SET hard_monthly_microusd = 65000000,
        hard_daily_microusd = 40000000,
        max_estimated_cost_per_run_microusd = 20000000,
-       notes = 'Hamilton''s one-off paid gate replay batches: $40/day, $65/month, $20 a run (James, 2026-10-25, #1077); $25 more for batch 2026-10-26 (James, 2026-10-26, #1077). Bills to Hamilton''s API key.',
+       notes = 'Hamilton''s one-off paid gate replay batches: $40/day, $65/month, $20 a run (James, 2026-10-25, #1077); $25 more for batch 2026-10-26 (James, 2026-10-27, #1077). Bills to Hamilton''s API key.',
        updated_by = 'migration:hamilton_replay_budget_1026',
        updated_at = now()
  WHERE policy_key = 'agent:hamilton_replay';

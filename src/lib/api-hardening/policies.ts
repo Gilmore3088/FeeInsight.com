@@ -621,7 +621,7 @@ export const API_ROUTE_POLICIES = [
     telemetryEvent: "api.admin.crew.gate-replay",
     failBehavior: "fail_closed",
     auditPriority: "high",
-    notes: "Hamilton's gate replay: real questions through the free Ask engine and the one output gate in shadow, up to 400 a day across hourly runs, no provider calls. Once the day's free plan is complete (or with ?paid=1) it runs the one-off paid replay batch (batch 2026-10-26, James, 2026-10-26; a cron calls ?paid=1 every 10 minutes, which only reads the ledger once the batch is complete): a provider step capped at 50 written answers and $25 for the whole batch, held by the provider stop and the agent:hamilton_replay budget line.",
+    notes: "Hamilton's gate replay: real questions through the free Ask engine and the one output gate in shadow, up to 400 a day across hourly runs, no provider calls. Once the day's free plan is complete (or with ?paid=1) it runs the one-off paid replay batch (batch 2026-10-26, James, 2026-10-27; a cron calls ?paid=1 every 10 minutes, which only reads the ledger once the batch is complete): a provider step capped at 50 written answers and $25 for the whole batch, held by the provider stop and the agent:hamilton_replay budget line.",
   },
   {
     routeId: "api.admin.crew.lane-sync",

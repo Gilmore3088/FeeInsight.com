@@ -66,10 +66,10 @@ async function runPaidBatch(request: NextRequest, now: Date, onDemand: boolean) 
  * each verdict recorded as a shadow with origin "replay". One run answers what fits its time
  * budget; the next run picks up the rest. Once today's free plan is complete, the hourly call
  * continues the one-off paid replay batch instead (paid-gate-replay.ts, origin "replay_paid",
- * batch 2026-10-26: 50 written answers, $25, James's approval of 2026-10-26) until that batch is
+ * batch 2026-10-26: 50 written answers, $25, James's approval of 2026-10-27) until that batch is
  * complete or capped, and then starts nothing until tomorrow's free plan. `?paid=1` runs the paid
  * batch at once (an admin or the cron secret). A cron calls `?paid=1` every 10 minutes for batch
- * 2026-10-26 (vercel.json; James, 2026-10-26); once the batch is complete each call only reads the
+ * 2026-10-26 (vercel.json; James, 2026-10-27); once the batch is complete each call only reads the
  * ledger and starts nothing. The free replay makes no model calls; the paid batch is a provider
  * step, held by the provider stop and budget lines.
  */

@@ -188,7 +188,7 @@ Hamilton supports the decision; it does not make it.
 - The paid gate replay batch (`hamilton/paid-gate-replay.ts`, provider step
   `hamilton-paid-gate-replay`, #1077) runs one batch at a time, each with James's yes. The first,
   `2026-10-25` (about 200 samples, about $35), ended at $39.47 of $40. The current batch,
-  `2026-10-26` (James, 2026-10-26), measures the written answer's hold rate after the gate fixes
+  `2026-10-26` (James, 2026-10-27), measures the written answer's hold rate after the gate fixes
   #2696, #2699, #2700 and #2701: 50 written answers and $25, every other path's share 0 (a path at 0
   never reserves and never holds completion back). It writes up the gate replay's plan (Pro
   questions first, then the quality bar over a spread seeded by the batch id) through the paid

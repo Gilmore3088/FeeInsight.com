@@ -3,7 +3,7 @@
  * (the written answer, the memo, the Simulate read and a report's answer page) so the one output
  * gate's shadow verdicts on paid text can be read in volume, not five a day. The first batch,
  * "2026-10-25" (about 200 samples, about $35, James's approval of 2026-10-25), ended at $39.47 of
- * $40. This is the second batch, "2026-10-26" (James's approval of 2026-10-26): 50 written answers
+ * $40. This is the second batch, "2026-10-26" (James's approval of 2026-10-27): 50 written answers
  * and $25, to measure the written answer's hold rate after the gate fixes #2696, #2699, #2700 and
  * #2701, which the first batch's numbers predate.
  *
@@ -62,7 +62,7 @@ import { writeWrittenAnswer, type WrittenAnswerWriter } from "./written-answer-r
 import type { FeeResearch } from "./workspace/types";
 
 /**
- * The batch James approved (James's approval of 2026-10-26; the first batch, "2026-10-25", is over).
+ * The batch James approved (James's approval of 2026-10-27; the first batch, "2026-10-25", is over).
  * A new batch needs a new id and his yes.
  */
 export const PAID_REPLAY_BATCH_ID = "2026-10-26";
