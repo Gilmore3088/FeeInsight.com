@@ -896,4 +896,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract"],
     since: "2026-10-27",
   },
+  {
+    id: "issue-1912-a-better-read-must-reach-the-live-name",
+    agent: "knox",
+    stage: "extract",
+    lesson: "A name fix in Knox is finished only when the live fee shows it. A re-read of a line already live is refused at publish as a second read, so a better name (a glyph repaired, a channel added) reaches the live row only through Hamilton's live name refresh (`hamilton/live-name-refresh.ts`): keep the re-read's stored line (`excerpt=`) the very line the live read stored, widened at most, and keep every word of the old name in the new one, or the refresh cannot tell it is the same fee and the live name stays as it was. When a rules change renames a live fee, name the refresh in the PR's live effect, not the re-read alone.",
+    why: "Knox's name re-tidy leaves a glyph inside a word \"for a re-read\" (`junkStrippedName`), and #2761 expected Dutrac's (7711) wires to take their channel on the next read; but publish refused each renamed re-read and no step refreshed a live name, so 14 live names kept U+FFFD after Rosetta repaired their texts and 7711's wire value stayed blended at $27.50. On Oct 27 today's free read of 7711's text 21982 also reads no $55 at all, so 110355's channel cannot arrive from a free re-read.",
+    evidence: { issues: [1912], prs: [], files: ["docs/project/findings/2026-10-27-live-name-refresh.md", "src/lib/agents/hamilton/live-name-refresh.ts", "src/lib/agents/knox/name-retidy.ts"] },
+    appliesTo: ["extract"],
+    since: "2026-10-27",
+  },
 ];

@@ -706,4 +706,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-27",
   },
+  {
+    id: "issue-1912-reread-name-reaches-live-fee",
+    agent: "hamilton",
+    stage: "publish",
+    lesson: "Refusing a second read of a live fee's line keeps the line shown once, but a refusal must not also throw away a better name: when the current re-read of the same document reads the same printed line at the same amount and frequency, and its name only repairs the live name (unknown glyphs or dropped ligatures restored, or a wire's channel clause added with every old word kept), and that name traces on the bank's current stored text, the live row takes the name in place. Anything else stays refused. The renamed fee is then judged by the category guard like any live fee; never re-file it in the rename.",
+    why: "Publish refused every renamed re-read and no step refreshed a live name, so Rosetta's glyph repair and Knox v135's wire channels never reached live fees: 14 live names kept U+FFFD, and 140286 \"Wire Interna�onal Transfer-Remote Outgoing\" stayed filed as a domestic wire because the garbled word hid \"International\" from the guard. Dry run on Oct 27 (read-only): 6 of 176 live fees with a candidate re-read would take its name (61057, 124887, 133131, 133140, 140286, 144305); the guard then fails 140286 under domestic and its re-read publishes as an international wire.",
+    evidence: { issues: [1912], prs: [], files: ["docs/project/findings/2026-10-27-live-name-refresh.md", "src/lib/agents/hamilton/live-name-refresh.ts", "src/lib/agents/hamilton/live-name-refresh.test.ts"] },
+    appliesTo: "all",
+    since: "2026-10-27",
+  },
 ];
